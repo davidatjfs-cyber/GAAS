@@ -1206,6 +1206,17 @@ function pickSmsTemplateByStore(storeId) {
   return def;
 }
 
+// 沉睡客召回券「现金抵用券」新模板（变量 name/value/date/code，含券码到店报码核销）。
+// 与上面旧模板分开独立环境变量，避免新旧模板变量不一致互相串扰。
+// store_id：51866138=马己仙，64822111=洪潮。
+function pickWinbackTemplateByStore(storeId) {
+  const sid = String(storeId || '').trim();
+  const def = String(process.env.ALIYUN_SMS_WINBACK_TEMPLATE_DEFAULT || '').trim();
+  if (sid === '64822111') return String(process.env.ALIYUN_SMS_WINBACK_TEMPLATE_HONGCHAO || '').trim() || def; // 洪潮
+  if (sid === '51866138') return String(process.env.ALIYUN_SMS_WINBACK_TEMPLATE_MAJIXIAN || '').trim() || def; // 马己仙
+  return def;
+}
+
 export async function executeGrowthActionRecord(pool, before, operator, extraPayload = {}, reason = '') {
   const basePayload = before.payload && typeof before.payload === 'object' ? before.payload : {};
   const payload = Object.assign({}, basePayload, extraPayload || {});
@@ -1837,6 +1848,63 @@ export function registerGrowthRoutes(app, pool) {
     );
     return safeDays;
   }
+
+  // 沉睡客召回：小程序生成带短码的券后,调本接口由 HRMS 用阿里云发短信。
+  // 仅用「小程序→HRMS」这一已验证方向;幂等按券码去重;发送结果写 growth_delivery_logs(带活动+券码)供算核销率/ROI。
+  app.post('/api/growth/winback/send-sms', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const b = req.body && typeof req.body === 'object' ? req.body : {};
+      const phone = cleanPhone(b.phone);
+      const storeId = cleanText(b.store_id, 128);
+      const code = cleanText(b.coupon_code || b.code, 64);
+      const name = smsSafeName(b.customer_name || b.name) || '顾客';
+      const valueYuan = Math.max(0, Math.floor(Number(b.value_yuan || b.value) || 0));
+      const validUntil = cleanText(b.valid_until || b.date, 40); // 如「6月20日」或「2026-06-20」
+      const campaignId = cleanText(b.campaign_id || b.scene, 128);
+      const idempotencyKey = cleanText(b.idempotency_key, 255) || (code ? `winback_sms:${code}` : '');
+
+      if (!phone) return res.status(400).json({ ok: false, error: 'missing_phone' });
+      if (!code) return res.status(400).json({ ok: false, error: 'missing_coupon_code' });
+      if (valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
+      if (!validUntil) return res.status(400).json({ ok: false, error: 'missing_valid_until' });
+
+      const templateCode = pickWinbackTemplateByStore(storeId);
+      if (!templateCode) return res.status(503).json({ ok: false, error: 'winback_template_not_configured' });
+
+      // 幂等：同一券码已发过 → 不重复发（防小程序重试导致客人收多条）
+      if (idempotencyKey) {
+        const dup = await pool.query(`SELECT status FROM growth_delivery_logs WHERE delivery_key = $1 LIMIT 1`, [idempotencyKey]);
+        if (dup.rows.length && dup.rows[0].status === 'sent') {
+          return res.json({ ok: true, deduped: true });
+        }
+      }
+      const deliveryKey = idempotencyKey || `winback_sms:${phone}:${Date.now()}`;
+      const templateParam = { name, value: String(valueYuan), date: validUntil, code };
+
+      try {
+        const sent = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
+        await upsertDeliveryLog(pool, {
+          delivery_key: deliveryKey, action_key: campaignId || 'winback', rule_key: 'winback_sms',
+          customer_id: null, store_id: storeId, channel: 'sms', external_userid: '',
+          provider_msg_id: sent.provider_msg_id, status: 'sent',
+          payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId },
+          result: sent.raw || {}
+        });
+        return res.json({ ok: true, provider_msg_id: sent.provider_msg_id });
+      } catch (deliveryErr) {
+        await upsertDeliveryLog(pool, {
+          delivery_key: deliveryKey, action_key: campaignId || 'winback', rule_key: 'winback_sms',
+          customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'failed',
+          payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId },
+          result: {}, error_message: deliveryErr?.message || 'sms_send_failed'
+        });
+        return res.status(502).json({ ok: false, error: deliveryErr?.message || 'sms_send_failed' });
+      }
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
 
   app.post('/api/miniprogram/events', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
