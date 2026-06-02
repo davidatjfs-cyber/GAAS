@@ -2680,7 +2680,12 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
    // 前厅经理可发起请款申请（仅 payment，本人为申请人，审批链照常 门店店长→徐彬→李艳玲）
    const _frontManagerPaymentCreate = approvalType === 'payment'
      && normalizeRoleForJwt(String(req.user?.role || '')) === 'front_manager';
-   if (approvalType !== 'offboarding' && approvalType !== 'points' && !_frontManagerPaymentCreate
+   // 员工本人自助发起的审批类型（申请人恒为登录者本人，见下方 insert 的 applicant_username=username），
+   // 无需「审批中心」权限：离职(offboarding)、积分(points)、休假(leave)、晋升(promotion)。
+   // 否则普通员工(store_employee)会被 canAccessApprovalCenter 拦截，提交即 403——
+   // 休假/升职申请此前一直无法提交即此根因（仅 offboarding/points 被豁免，漏了 leave/promotion）。
+   const _selfServiceApproval = ['offboarding', 'points', 'leave', 'promotion'].includes(approvalType);
+   if (!_selfServiceApproval && !_frontManagerPaymentCreate
        && !canAccessApprovalCenter(req.user?.role, { dutyRows: [], currentStore: req.user?.current_store, primaryStore: req.user?.primary_store })) {
      return res.status(403).json({ error: 'forbidden' });
    }
