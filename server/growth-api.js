@@ -1858,7 +1858,6 @@ export function registerGrowthRoutes(app, pool) {
       const phone = cleanPhone(b.phone);
       const storeId = cleanText(b.store_id, 128);
       const code = cleanText(b.coupon_code || b.code, 64);
-      const name = smsSafeName(b.customer_name || b.name) || '顾客';
       const valueYuan = Math.max(0, Math.floor(Number(b.value_yuan || b.value) || 0));
       const validUntil = cleanText(b.valid_until || b.date, 40); // 如「6月20日」或「2026-06-20」
       const campaignId = cleanText(b.campaign_id || b.scene, 128);
@@ -1880,7 +1879,9 @@ export function registerGrowthRoutes(app, pool) {
         }
       }
       const deliveryKey = idempotencyKey || `winback_sms:${phone}:${Date.now()}`;
-      const templateParam = { name, value: String(valueYuan), date: validUntil, code };
+      // 已报备模板仅 3 个变量 value/date/code（无 name，避免超 3 变量报备失败）。
+      // 务必与模板严格一致，多传 name 会被阿里云判「参数不匹配」拒收。
+      const templateParam = { value: String(valueYuan), date: validUntil, code };
 
       try {
         const sent = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
