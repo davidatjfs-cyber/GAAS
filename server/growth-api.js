@@ -1740,6 +1740,20 @@ async function runTouchRuleEngine(pool, options = {}) {
         channel = 'sms';
       }
       if (!channel) continue;
+      // 发送频率（冷却）：规则可设 frequency_days（每位会员最短重发间隔）。
+      // 若该会员在 frequency_days 天内已被本规则成功触达过，则本轮跳过，避免高频打扰。
+      // 未设置(0)时沿用默认的「每个到店周期最多 1 次」语义（由 period_key 去重保证）。
+      const freqDays = Math.max(0, Math.floor(Number((rule.action_payload || {}).frequency_days) || 0));
+      if (freqDays > 0) {
+        const recent = await pool.query(
+          `SELECT 1 FROM growth_delivery_logs
+           WHERE rule_key = $1 AND customer_id = $2 AND status = 'sent'
+             AND updated_at > NOW() - ($3::int || ' days')::interval
+           LIMIT 1`,
+          [rule.rule_key, row.customer_id, freqDays]
+        );
+        if (recent.rows.length) continue;
+      }
       const actionPayload = Object.assign({}, rule.action_payload || {}, {
         rule_key: rule.rule_key,
         customer_id: row.customer_id,
@@ -2336,6 +2350,27 @@ export function registerGrowthRoutes(app, pool) {
       [days]
     );
     return res.json({ ok: true, days, stats: r.rows });
+  });
+
+  // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
+  // 用于前台展示活动覆盖范围，让管理员审核前清楚知道这次会发给多少人。
+  app.get('/api/growth/touch-rules/audience', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules ORDER BY rule_key ASC`);
+      const audience = {};
+      for (const rule of (rulesResult.rows || [])) {
+        try {
+          const candidates = await loadRuleCandidates(pool, rule);
+          audience[rule.rule_key] = Array.isArray(candidates) ? candidates.length : 0;
+        } catch (e) {
+          audience[rule.rule_key] = null; // 计算失败标记为未知，不阻断
+        }
+      }
+      return res.json({ ok: true, audience });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: e?.message || 'audience_failed' });
+    }
   });
 
   app.post('/api/growth/rule-engine/run', async (req, res) => {

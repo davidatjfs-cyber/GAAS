@@ -19157,6 +19157,7 @@
                                         <div><label class="am-sub-lbl">未到店天数 ≥</label><input id="am-sub-mindays" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
                                         <div><label class="am-sub-lbl">未到店天数 ≤</label><input id="am-sub-maxdays" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
                                         <div><label class="am-sub-lbl">优先级</label><input id="am-sub-priority" class="am-sub-in" type="number" value="50"></div>
+                                        <div><label class="am-sub-lbl">发送频率：每位会员每 N 天最多1次</label><input id="am-sub-freq" class="am-sub-in" type="number" min="0" placeholder="0=按到店周期"></div>
                                     </div>
                                 </div>
                                 <div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">
@@ -55411,9 +55412,16 @@ ${body}
 
         function amDescribeAction(rule) {
             var p = rule.action_payload || {};
-            var ch = (p.channel || (rule.action_type === 'send_message' ? 'sms' : rule.action_type) || '-');
-            var chMap = { sms: '短信', wecom: '企微', subscribe: '订阅消息' };
-            var bits = [chMap[ch] || ch];
+            var ch = p.channel || '';
+            var bits;
+            if (ch === 'subscribe') {
+                bits = ['订阅消息'];
+            } else if (ch === 'sms') {
+                bits = ['短信'];
+            } else {
+                // 引擎实际为「企微优先，无企微的会员自动回落短信」，故如实展示双通道
+                bits = ['企微优先，无企微回落短信'];
+            }
             if (p.coupon_value || p.value) bits.push('券额 ¥' + (p.coupon_value || p.value));
             if (p.template_text || p.content) bits.push('「' + String(p.template_text || p.content).slice(0, 28) + '」');
             return bits.join(' · ');
@@ -55440,10 +55448,12 @@ ${body}
                 var hdr = growthAuthHeaders();
                 var rs = await Promise.all([
                     fetch('/api/growth/touch-rules', { headers: hdr }).then(function(r){return r.json();}),
-                    fetch('/api/growth/touch-rules/stats?days=' + encodeURIComponent(days), { headers: hdr }).then(function(r){return r.json();})
+                    fetch('/api/growth/touch-rules/stats?days=' + encodeURIComponent(days), { headers: hdr }).then(function(r){return r.json();}),
+                    fetch('/api/growth/touch-rules/audience', { headers: hdr }).then(function(r){return r.json();}).catch(function(){return {};})
                 ]);
                 var allRules = (rs[0] && rs[0].rules) || [];
                 var statRows = (rs[1] && rs[1].stats) || [];
+                var audienceMap = (rs[2] && rs[2].audience) || {};
                 var statMap = {};
                 statRows.forEach(function(s){ statMap[s.rule_key] = s; });
 
@@ -55475,6 +55485,8 @@ ${body}
                 host.innerHTML = rules.map(function(rule){
                     var st = statMap[rule.rule_key] || {};
                     var sent = Number(st.sent_count || 0), red = Number(st.redeemed_count || 0);
+                    var reach = (audienceMap && (rule.rule_key in audienceMap)) ? audienceMap[rule.rule_key] : null;
+                    var curFreq = Math.max(0, Math.floor(Number((rule.action_payload || {}).frequency_days) || 0));
                     var rrate = sent > 0 ? ((red / sent) * 100).toFixed(1) : '0.0';
                     var approved = !!rule.approved_at;
                     var autoLive = approved && rule.enabled && rule.auto_execute !== false;
@@ -55500,7 +55512,14 @@ ${body}
                         +   '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' + storeBadge + statusBadge + '</div>'
                         + '</div>'
                         + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin:10px 0 4px;">🎯 目标人群：' + escapeHtml(amDescribeCriteria(rule.criteria)) + '</div>'
-                        + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:10px;">📣 触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
+                        + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:4px;">👥 涉及会员：' + (reach == null ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>' : ('<strong style="color:#a5b4fc;">' + reach + '</strong> 人（命中人群且可触达）')) + '</div>'
+                        + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:6px;">📣 触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
+                        + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:10px;">'
+                        +   '<span>⏱️ 发送频率：每位会员每</span>'
+                        +   '<input id="am-freq-' + rk + '" type="number" min="0" value="' + curFreq + '" style="width:60px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);">'
+                        +   '<span>天最多1次（填0=按到店周期）</span>'
+                        +   '<button class="btn btn-secondary" type="button" onclick="amSetFrequency(\'' + rk + '\')" style="font-size:11px;padding:4px 10px;">保存频率</button>'
+                        + '</div>'
                         + '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 12px;background:rgba(0,0,0,0.25);border-radius:10px;margin-bottom:10px;">'
                         +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">发送 <strong style="color:#fff;">' + sent + '</strong></span>'
                         +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">核销 <strong style="color:#22c55e;">' + red + '</strong></span>'
@@ -55589,6 +55608,31 @@ ${body}
             } catch (e) { showNotification('操作失败：' + (e && e.message || e), 'error'); }
         }
 
+        // 设置某规则的「发送频率」（每位会员最短重发间隔，天）。改动 action_payload，
+        // 按治理规则会重置审核态（频率属重大变更，需重新审核后才继续自动执行）。
+        async function amSetFrequency(ruleKey) {
+            var inp = document.getElementById('am-freq-' + ruleKey);
+            var val = inp ? Math.max(0, Math.floor(Number(inp.value) || 0)) : 0;
+            if (!confirm('将「' + ruleKey + '」的发送频率设为' + (val > 0 ? ('每位会员每 ' + val + ' 天最多1次') : '按到店周期（默认）') + '？\n注意：修改频率会重置审核态，需重新「审核通过」后才会继续自动执行。')) return;
+            try {
+                var rg = await fetch('/api/growth/touch-rules', { headers: growthAuthHeaders() }).then(function(r){return r.json();});
+                var rule = ((rg && rg.rules) || []).find(function(x){ return x.rule_key === ruleKey; });
+                if (!rule) throw new Error('rule_not_found');
+                var ap = Object.assign({}, rule.action_payload || {}, { frequency_days: val });
+                var body = {
+                    rule_key: rule.rule_key, name: rule.name, priority: rule.priority,
+                    auto_execute: rule.auto_execute, enabled: rule.enabled,
+                    criteria: rule.criteria || {}, action_type: rule.action_type,
+                    action_payload: ap, owner: rule.owner || '', note: rule.note || ''
+                };
+                var r = await fetch('/api/growth/touch-rules', { method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify(body) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'save_failed');
+                showNotification('发送频率已更新（如该规则原已审核，请重新审核以继续自动执行）', 'success');
+                loadAutoMarketing();
+            } catch (e) { showNotification('保存频率失败：' + (e && e.message || e), 'error'); }
+        }
+
         // ===== 订阅消息规则：前台设置 + 内容管理（与短信同一治理闭环） =====
         // 模板字段说明（与小程序 sendSubscribeMessage 报备模板严格一致）：
         //  received 领取通知：thing1门店名 / thing2券名 / thing3面额 / thing5有效期（其余补占位）
@@ -55648,7 +55692,7 @@ ${body}
         }
 
         function amResetSubscribeForm() {
-            ['am-sub-key','am-sub-name','am-sub-owner','am-sub-minvisit','am-sub-mindays','am-sub-maxdays','am-sub-page'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+            ['am-sub-key','am-sub-name','am-sub-owner','am-sub-minvisit','am-sub-mindays','am-sub-maxdays','am-sub-page','am-sub-freq'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
             document.getElementById('am-sub-priority').value = '50';
             document.getElementById('am-sub-stage').value = '';
             document.getElementById('am-sub-tier').value = '';
@@ -55677,9 +55721,11 @@ ${body}
                 showNotification('请至少设置一个人群条件（生命周期/价值/到店次数/未到店天数），否则规则不会命中任何人', 'error');
                 return;
             }
+            var freqDays = amNum('am-sub-freq'); freqDays = (freqDays != null && freqDays > 0) ? Math.floor(freqDays) : 0;
             var actionPayload = {
                 channel: 'subscribe',
                 store_id: storeId,
+                frequency_days: freqDays,
                 subscribe_template_type: type,
                 subscribe_template_data: amBuildSubscribeData(type),
                 subscribe_page: String(document.getElementById('am-sub-page').value || '').trim() || undefined,
@@ -55726,6 +55772,7 @@ ${body}
                 document.getElementById('am-sub-mindays').value = c.min_days_since_last_visit != null ? c.min_days_since_last_visit : '';
                 document.getElementById('am-sub-maxdays').value = c.max_days_since_last_visit != null ? c.max_days_since_last_visit : '';
                 document.getElementById('am-sub-page').value = p.subscribe_page || '';
+                document.getElementById('am-sub-freq').value = (p.frequency_days && Number(p.frequency_days) > 0) ? Number(p.frequency_days) : '';
                 // 反解 thing 字段为友好输入
                 var td = p.subscribe_template_data || {};
                 function tv(k){ return (td[k] && td[k].value) ? td[k].value : ''; }
