@@ -36,6 +36,36 @@ function parseOccurredAt(value) {
 import jwt from 'jsonwebtoken';
 import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from './sms.js';
 
+// 订阅消息推送网关（方案B）：HRMS 自己没有小程序 access_token，发不了订阅消息，
+// 改为 POST 到云函数 growthSubscribePush（云开发 HTTP 访问服务暴露的 URL），
+// 由小程序侧复用 sendSubscribeMessage 真正下发。URL 配在 env HRMS_SUBSCRIBE_PUSH_URL。
+function subscribePushUrl() {
+  return cleanText(process.env.HRMS_SUBSCRIBE_PUSH_URL || '', 500);
+}
+function isSubscribePushConfigured() {
+  return !!subscribePushUrl() && !!cleanText(process.env.MINIPROGRAM_SYNC_SECRET || process.env.HRMS_GROWTH_EVENT_SECRET || '', 500);
+}
+// 与召回短信回调同一套密钥口径，云函数侧用 X-Miniprogram-Sync-Secret 校验。
+async function postSubscribePush(body) {
+  const url = subscribePushUrl();
+  const secret = cleanText(process.env.MINIPROGRAM_SYNC_SECRET || process.env.HRMS_GROWTH_EVENT_SECRET || '', 500);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Miniprogram-Sync-Secret': secret },
+      body: JSON.stringify(body || {}),
+      signal: ctrl.signal
+    });
+    let json = {};
+    try { json = await resp.json(); } catch (e) { json = {}; }
+    return { httpStatus: resp.status, body: json };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function authMiniProgramSync(req) {
   const secret = cleanText(process.env.MINIPROGRAM_SYNC_SECRET || '', 500);
   if (!secret) return { ok: false, status: 503, error: 'miniprogram_sync_disabled' };
@@ -342,6 +372,12 @@ export async function ensureGrowthTables(pool) {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_touch_rules_enabled ON growth_touch_rules (enabled, priority ASC, updated_at DESC)`);
+  // 治理字段：经办人 + 审核（只有经管理员审核的规则才允许自动执行）+ 上次运行时间。
+  await pool.query(`ALTER TABLE growth_touch_rules ADD COLUMN IF NOT EXISTS owner TEXT`);
+  await pool.query(`ALTER TABLE growth_touch_rules ADD COLUMN IF NOT EXISTS note TEXT`);
+  await pool.query(`ALTER TABLE growth_touch_rules ADD COLUMN IF NOT EXISTS approved_by TEXT`);
+  await pool.query(`ALTER TABLE growth_touch_rules ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE growth_touch_rules ADD COLUMN IF NOT EXISTS last_run_at TIMESTAMPTZ`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS growth_delivery_logs (
@@ -1442,6 +1478,99 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
         });
       }
       }
+    } else if (cleanText(payload.channel || '', 80) === 'subscribe' && (cleanPhone(payload.phone) || cleanText(payload.openid || '', 128))) {
+      // 订阅消息通道：POST 到云函数代发网关。订阅消息平台硬约束——只能发给已点过
+      // 订阅授权且仍有剩余次数的用户，未授权云函数回 ok:false(error:'...43101...')，
+      // 这里如实记录为 failed/skipped，不抛错（属业务结果非系统故障）。
+      const subPhone = cleanPhone(payload.phone);
+      const subOpenid = cleanText(payload.openid || '', 128);
+      const templateType = (cleanText(payload.subscribe_template_type || payload.templateType || '', 40) === 'expiring') ? 'expiring' : 'received';
+      const templateData = (payload.subscribe_template_data && typeof payload.subscribe_template_data === 'object')
+        ? payload.subscribe_template_data
+        : (payload.templateData && typeof payload.templateData === 'object' ? payload.templateData : null);
+      const subPage = cleanText(payload.subscribe_page || payload.page || '', 256);
+      const deliveryKey = `${actionKey}:sub:${subOpenid || subPhone}:${Date.now()}`;
+      if (!isSubscribePushConfigured()) {
+        executionResults.delivery_error = 'subscribe_push_not_configured';
+        await upsertDeliveryLog(pool, {
+          delivery_key: deliveryKey,
+          action_key: actionKey,
+          rule_key: cleanText(payload.rule_key, 128),
+          customer_id: payload.customer_id,
+          store_id: storeId,
+          channel: 'subscribe',
+          external_userid: '',
+          status: 'skipped',
+          payload: { phone: subPhone, openid: subOpenid, template_type: templateType },
+          result: {},
+          error_message: '未配置 HRMS_SUBSCRIBE_PUSH_URL / MINIPROGRAM_SYNC_SECRET，已跳过订阅消息发送'
+        });
+      } else {
+        try {
+          const pushResp = await postSubscribePush({
+            phone: subPhone || undefined,
+            openid: subOpenid || undefined,
+            store_id: storeId,
+            templateType,
+            templateData: templateData || undefined,
+            page: subPage || undefined
+          });
+          const ok = !!(pushResp.body && pushResp.body.ok);
+          const providerMsgId = (pushResp.body && (pushResp.body.openid || (pushResp.body.sub_result && pushResp.body.sub_result.msgid))) || deliveryKey;
+          payload.delivery_key = deliveryKey;
+          await upsertDeliveryLog(pool, {
+            delivery_key: deliveryKey,
+            action_key: actionKey,
+            rule_key: cleanText(payload.rule_key, 128),
+            customer_id: payload.customer_id,
+            store_id: storeId,
+            channel: 'subscribe',
+            external_userid: '',
+            provider_msg_id: String(providerMsgId),
+            status: ok ? 'sent' : 'failed',
+            payload: { phone: subPhone, openid: subOpenid, template_type: templateType, template_data: templateData },
+            result: pushResp.body || {},
+            error_message: ok ? null : ((pushResp.body && pushResp.body.error) || `subscribe_push_http_${pushResp.httpStatus}`)
+          });
+          if (ok) {
+            await insertGrowthEvent(pool, {
+              event_type: 'marketing_triggered',
+              customer_id: payload.customer_id,
+              phone: subPhone || null,
+              external_userid: null,
+              store_id: storeId,
+              campaign_id: campaignId,
+              channel: 'subscribe',
+              coupon_id: payload.coupon_id,
+              idempotency_key: `marketing_triggered:${actionKey}:${providerMsgId}`,
+              metadata: {
+                action_key: actionKey,
+                rule_key: cleanText(payload.rule_key, 128),
+                delivery_key: deliveryKey,
+                template_type: templateType
+              }
+            });
+            executionResults.real_executions.push({ type: 'subscribe_message', provider_msg_id: String(providerMsgId), status: 'sent' });
+          } else {
+            executionResults.delivery_error = (pushResp.body && pushResp.body.error) || `subscribe_push_http_${pushResp.httpStatus}`;
+          }
+        } catch (deliveryErr) {
+          executionResults.delivery_error = deliveryErr?.message || 'subscribe_send_failed';
+          await upsertDeliveryLog(pool, {
+            delivery_key: deliveryKey,
+            action_key: actionKey,
+            rule_key: cleanText(payload.rule_key, 128),
+            customer_id: payload.customer_id,
+            store_id: storeId,
+            channel: 'subscribe',
+            external_userid: '',
+            status: 'failed',
+            payload: { phone: subPhone, openid: subOpenid, template_type: templateType },
+            result: {},
+            error_message: deliveryErr?.message || 'subscribe_send_failed'
+          });
+        }
+      }
     }
   } catch (execErr) {
     executionResults.error = execErr?.message;
@@ -1542,12 +1671,21 @@ async function loadRuleCandidates(pool, rule) {
     // 新分类规则：按生命周期阶段 + 价值分级筛选候选人，对齐营销矩阵
     const stage = row.lifecycle_stage || '';
     const tier = row.value_tier || 'low';
+    // 门店限定：规则带 store_id 时只命中本店客户，避免跨店误发（订阅规则必带门店）
+    if (criteria.store_id && String(row.store_id || '') !== String(criteria.store_id)) return false;
     if (criteria.lifecycle_stage && stage !== criteria.lifecycle_stage) return false;
     if (criteria.value_tier && tier !== criteria.value_tier) return false;
     if (criteria.value_tier_not && tier === criteria.value_tier_not) return false;
     if (Number.isFinite(Number(criteria.max_days_since_last_visit)) && days > Number(criteria.max_days_since_last_visit)) return false;
     if (Number.isFinite(Number(criteria.min_days_since_last_visit)) && days < Number(criteria.min_days_since_last_visit)) return false;
-    return Boolean(criteria.lifecycle_stage);
+    if (Number.isFinite(Number(criteria.min_visit_count)) && visits < Number(criteria.min_visit_count)) return false;
+    // 必须至少有一个「人群」维度筛选（生命周期/价值/天数/到店次数），
+    // 否则视为无条件全量，拒绝命中以防误群发（store_id 不算人群筛选）。
+    const hasAudienceFilter = !!(criteria.lifecycle_stage || criteria.value_tier || criteria.value_tier_not
+      || Number.isFinite(Number(criteria.max_days_since_last_visit))
+      || Number.isFinite(Number(criteria.min_days_since_last_visit))
+      || Number.isFinite(Number(criteria.min_visit_count)));
+    return hasAudienceFilter;
   });
 }
 
@@ -1587,17 +1725,27 @@ async function runTouchRuleEngine(pool, options = {}) {
   for (const rule of (rulesResult.rows || [])) {
     const candidates = (await loadRuleCandidates(pool, rule)).slice(0, limitPerRule);
     for (const row of candidates) {
-      // 通道选择：企微优先，无企微但有手机号且短信已配置时回落短信，否则跳过
+      // 通道选择：
+      //  - 规则显式声明 channel='subscribe' 时走订阅消息（需手机号/openid 以解析，
+      //    且配置了推送网关 HRMS_SUBSCRIBE_PUSH_URL），不回落短信/企微；
+      //  - 否则企微优先，无企微但有手机号且短信已配置时回落短信，再否则跳过。
       const rowPhone = cleanPhone(row.phone);
+      const ruleChannel = cleanText((rule.action_payload && rule.action_payload.channel) || '', 40);
       let channel = null;
-      if (row.external_userid) channel = 'wecom';
-      else if (rowPhone && isAliyunSmsConfigured()) channel = 'sms';
+      if (ruleChannel === 'subscribe') {
+        if ((rowPhone || cleanText(row.openid || '', 128)) && isSubscribePushConfigured()) channel = 'subscribe';
+      } else if (row.external_userid) {
+        channel = 'wecom';
+      } else if (rowPhone && isAliyunSmsConfigured()) {
+        channel = 'sms';
+      }
       if (!channel) continue;
       const actionPayload = Object.assign({}, rule.action_payload || {}, {
         rule_key: rule.rule_key,
         customer_id: row.customer_id,
         store_id: row.store_id,
         phone: row.phone,
+        openid: row.openid || '',
         external_userid: row.external_userid,
         channel,
         customer_name: row.customer_name || row.phone || `客户#${row.customer_id}`,
@@ -1631,11 +1779,17 @@ async function runTouchRuleEngine(pool, options = {}) {
       // 短信通道仅在显式开启 ALIYUN_SMS_ENABLED 时才自动发送，
       // 否则留作「AI建议(proposed)」由人工在面板确认执行，避免配好密钥即群发。
       const smsAutoBlocked = channel === 'sms' && !isAliyunSmsAutoSendEnabled();
-      if (rule.auto_execute !== false && !smsAutoBlocked) {
-        await executeGrowthActionRecord(pool, actionRow, { username: 'rule_engine', role: 'system' }, {}, `规则引擎自动执行:${rule.rule_key}`);
+      // 治理门：只有经管理员「审核」（approved_at 不为空）的规则才允许自动执行。
+      // 未审核的规则照常生成 proposed 动作进待发队列，等人工在面板确认，从而做到
+      // 「自动执行可视化 + 有明确经办人」，且新规则默认不会偷偷群发。
+      const ruleApproved = !!rule.approved_at;
+      if (rule.auto_execute !== false && !smsAutoBlocked && ruleApproved) {
+        await executeGrowthActionRecord(pool, actionRow, { username: 'rule_engine', role: rule.owner ? `owner:${rule.owner}` : 'system' }, {}, `规则引擎自动执行:${rule.rule_key}（审核人:${rule.approved_by || '?'}）`);
       }
       createdActions.push(actionKey);
     }
+    // 记录本规则最近一次被引擎扫描的时间，供前端展示「上次运行」。
+    await pool.query(`UPDATE growth_touch_rules SET last_run_at = NOW() WHERE rule_key = $1`, [rule.rule_key]).catch(() => {});
   }
   return { created: createdActions.length, action_keys: createdActions };
 }
@@ -2077,9 +2231,22 @@ export function registerGrowthRoutes(app, pool) {
     const b = req.body || {};
     const ruleKey = cleanText(b.rule_key, 128);
     if (!ruleKey) return res.status(400).json({ ok: false, error: 'missing_rule_key' });
+    const criteriaStr = JSON.stringify(b.criteria || {});
+    const payloadStr = JSON.stringify(b.action_payload || {});
+    const actionType = cleanText(b.action_type || 'send_message', 80);
+    // 改了「目标人群/券额文案/动作类型」就要重新审核——避免审过的规则被人偷偷改条件后继续自动群发。
+    const existing = await pool.query(`SELECT criteria, action_payload, action_type FROM growth_touch_rules WHERE rule_key = $1 LIMIT 1`, [ruleKey]);
+    let keepApproval = false;
+    if (existing.rows.length) {
+      const ex = existing.rows[0];
+      keepApproval =
+        JSON.stringify(ex.criteria || {}) === criteriaStr &&
+        JSON.stringify(ex.action_payload || {}) === payloadStr &&
+        (ex.action_type || '') === actionType;
+    }
     const r = await pool.query(
-      `INSERT INTO growth_touch_rules (rule_key, name, enabled, priority, auto_execute, criteria, action_type, action_payload)
-       VALUES ($1,$2,COALESCE($3,TRUE),$4,COALESCE($5,TRUE),$6::jsonb,$7,$8::jsonb)
+      `INSERT INTO growth_touch_rules (rule_key, name, enabled, priority, auto_execute, criteria, action_type, action_payload, owner, note)
+       VALUES ($1,$2,COALESCE($3,TRUE),$4,COALESCE($5,TRUE),$6::jsonb,$7,$8::jsonb,NULLIF($9,''),NULLIF($10,''))
        ON CONFLICT (rule_key) DO UPDATE SET
          name = EXCLUDED.name,
          enabled = EXCLUDED.enabled,
@@ -2088,6 +2255,10 @@ export function registerGrowthRoutes(app, pool) {
          criteria = EXCLUDED.criteria,
          action_type = EXCLUDED.action_type,
          action_payload = EXCLUDED.action_payload,
+         owner = COALESCE(EXCLUDED.owner, growth_touch_rules.owner),
+         note = COALESCE(EXCLUDED.note, growth_touch_rules.note),
+         approved_by = CASE WHEN $11 THEN growth_touch_rules.approved_by ELSE NULL END,
+         approved_at = CASE WHEN $11 THEN growth_touch_rules.approved_at ELSE NULL END,
          updated_at = NOW()
        RETURNING *`,
       [
@@ -2096,12 +2267,75 @@ export function registerGrowthRoutes(app, pool) {
         b.enabled !== false,
         Math.max(1, Math.floor(Number(b.priority) || 100)),
         b.auto_execute !== false,
-        JSON.stringify(b.criteria || {}),
-        cleanText(b.action_type || 'send_message', 80),
-        JSON.stringify(b.action_payload || {})
+        criteriaStr,
+        actionType,
+        payloadStr,
+        cleanText(b.owner || '', 128),
+        cleanText(b.note || '', 1000),
+        keepApproval
       ]
     );
     return res.json({ ok: true, rule: r.rows[0] });
+  });
+
+  // 审核规则：记录审核人 + 时间。只有审核过的规则才允许引擎自动执行。
+  app.post('/api/growth/touch-rules/:ruleKey/approve', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    const ruleKey = cleanText(req.params.ruleKey, 128);
+    const operator = getGrowthOperator(req);
+    const owner = cleanText(req.body?.owner || '', 128);
+    const r = await pool.query(
+      `UPDATE growth_touch_rules
+         SET approved_by = $2, approved_at = NOW(),
+             owner = COALESCE(NULLIF($3,''), owner),
+             updated_at = NOW()
+       WHERE rule_key = $1
+       RETURNING *`,
+      [ruleKey, operator.username || 'system', owner]
+    );
+    if (!r.rows.length) return res.status(404).json({ ok: false, error: 'rule_not_found' });
+    return res.json({ ok: true, rule: r.rows[0] });
+  });
+
+  // 撤销审核：撤销后该规则不再自动执行，仅生成待发动作供人工确认。
+  app.post('/api/growth/touch-rules/:ruleKey/unapprove', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    const ruleKey = cleanText(req.params.ruleKey, 128);
+    const r = await pool.query(
+      `UPDATE growth_touch_rules SET approved_by = NULL, approved_at = NULL, updated_at = NOW() WHERE rule_key = $1 RETURNING *`,
+      [ruleKey]
+    );
+    if (!r.rows.length) return res.status(404).json({ ok: false, error: 'rule_not_found' });
+    return res.json({ ok: true, rule: r.rows[0] });
+  });
+
+  // 规则维度闭环统计：本规则累计 已发送 / 已核销 / 核销率（delivery_logs + redemptions 经 action_key/rule_key 关联）。
+  app.get('/api/growth/touch-rules/stats', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+    const r = await pool.query(
+      `WITH sent AS (
+         SELECT rule_key, COUNT(*)::int AS sent_count
+         FROM growth_delivery_logs
+         WHERE status = 'sent' AND created_at >= NOW() - ($1::int || ' days')::interval
+         GROUP BY rule_key
+       ),
+       redeemed AS (
+         SELECT (metadata->>'rule_key') AS rule_key, COUNT(*)::int AS redeemed_count
+         FROM growth_events
+         WHERE event_type = 'coupon_redeemed' AND created_at >= NOW() - ($1::int || ' days')::interval
+           AND metadata ? 'rule_key'
+         GROUP BY metadata->>'rule_key'
+       )
+       SELECT tr.rule_key,
+              COALESCE(s.sent_count, 0) AS sent_count,
+              COALESCE(rd.redeemed_count, 0) AS redeemed_count
+       FROM growth_touch_rules tr
+       LEFT JOIN sent s ON s.rule_key = tr.rule_key
+       LEFT JOIN redeemed rd ON rd.rule_key = tr.rule_key`,
+      [days]
+    );
+    return res.json({ ok: true, days, stats: r.rows });
   });
 
   app.post('/api/growth/rule-engine/run', async (req, res) => {

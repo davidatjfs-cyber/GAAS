@@ -18524,6 +18524,7 @@
                   <button class="rep-tab" onclick="showGrowthTab('actions')" id="growth-tab-actions">AI建议</button>
                   <button class="rep-tab" onclick="showGrowthTab('abtests')" id="growth-tab-abtests">A/B测试</button>
                   <button class="rep-tab" onclick="showGrowthTab('contentsys')" id="growth-tab-contentsys">内容系统</button>
+                  <button class="rep-tab" onclick="showGrowthTab('automarketing')" id="growth-tab-automarketing">自动营销</button>
                   <button class="rep-tab" onclick="showGrowthTab('exec-logs')" id="growth-tab-exec-logs">执行记录</button>
                   <button class="rep-tab" onclick="showGrowthTab('pos')" id="growth-tab-pos">POS消费</button>
                 </nav>
@@ -19112,6 +19113,69 @@
                                 </select>
                             </div>
                             <div id="growth-exec-logs-list" style="max-height:50vh;overflow-y:auto;"></div>
+                        </div>
+                    </div>
+                    <div id="growth-automarketing-content" style="display:none;">
+                        <style>
+                            .am-sub-lbl{display:block;color:rgba(226,232,240,0.55);font-size:11px;margin-bottom:4px;}
+                            .am-sub-in{width:100%;box-sizing:border-box;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px 10px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);}
+                            .am-sub-in:focus{outline:none;border-color:rgba(99,102,241,0.6);}
+                        </style>
+                        <div class="rep-filters" style="margin-bottom:14px;">
+                            <div class="rep-filters__eyebrow">闭环看板</div>
+                            <div class="rep-filters__title">自动营销闭环</div>
+                            <p style="color:rgba(226,232,240,0.6);font-size:12px;margin:4px 0 12px;">管理员审核后的规则才会被引擎（每15分钟）自动执行。未审核的规则只生成待发建议，需在「AI建议」标签人工确认。每条规则下方展示累计发送 / 核销 / 核销率，结果回流用于下一轮决策。</p>
+                            <div class="rep-seg" style="margin-bottom:14px;">
+                                <button onclick="loadAutoMarketing()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">刷新</button>
+                                <select id="am-stats-days" onchange="loadAutoMarketing()" style="flex:1;min-width:100px;border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;background:rgba(0,0,0,0.35);color:var(--rep-text);">
+                                    <option value="7">近7天</option>
+                                    <option value="30" selected>近30天</option>
+                                    <option value="90">近90天</option>
+                                </select>
+                            </div>
+                            <div id="am-summary" class="rep-grid" style="margin-bottom:6px;"></div>
+                        </div>
+                        <div id="am-rules-list"></div>
+                        <div class="rep-filters" style="margin-top:14px;">
+                            <div class="rep-filters__eyebrow">订阅消息</div>
+                            <div class="rep-filters__title">新建 / 编辑「订阅消息」规则</div>
+                            <p style="color:rgba(226,232,240,0.6);font-size:12px;margin:4px 0 12px;">订阅消息只能发给已在小程序点过「订阅授权」且仍有剩余次数的用户（微信平台硬约束，未授权会返回 43101 记为失败、不会误扰）。在此配置目标人群与消息内容并保存，再到上方列表「审核通过」即进入引擎自动执行（与短信同一套治理 / 审核 / 统计闭环）。</p>
+                            <div style="display:grid;gap:10px;">
+                                <input id="am-sub-key" type="hidden" value="">
+                                <div><label class="am-sub-lbl">规则名称</label><input id="am-sub-name" class="am-sub-in" placeholder="如 订阅·领券提醒"></div>
+                                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+                                    <div><label class="am-sub-lbl">门店</label><select id="am-sub-store" class="am-sub-in"><option value="51866138">马己仙广东小馆</option><option value="64822111">洪潮潮汕传统菜</option></select></div>
+                                    <div><label class="am-sub-lbl">模板类型</label><select id="am-sub-type" class="am-sub-in" onchange="amRenderSubFields()"><option value="received">领取通知</option><option value="expiring">过期提醒</option></select></div>
+                                    <div><label class="am-sub-lbl">经办人</label><input id="am-sub-owner" class="am-sub-in" placeholder="负责人姓名"></div>
+                                </div>
+                                <div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">
+                                    <div style="color:rgba(226,232,240,0.55);font-size:11px;margin-bottom:8px;">🎯 目标人群</div>
+                                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+                                        <div><label class="am-sub-lbl">生命周期</label><select id="am-sub-stage" class="am-sub-in"><option value="">不限</option><option value="active">活跃</option><option value="at_risk">流失预警</option><option value="dormant">沉睡</option><option value="new">新客</option></select></div>
+                                        <div><label class="am-sub-lbl">价值分层</label><select id="am-sub-tier" class="am-sub-in"><option value="">不限</option><option value="vip">VIP</option><option value="high">高价值</option><option value="mid">中价值</option><option value="normal">普通</option></select></div>
+                                        <div><label class="am-sub-lbl">到店次数 ≥</label><input id="am-sub-minvisit" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
+                                        <div><label class="am-sub-lbl">未到店天数 ≥</label><input id="am-sub-mindays" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
+                                        <div><label class="am-sub-lbl">未到店天数 ≤</label><input id="am-sub-maxdays" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
+                                        <div><label class="am-sub-lbl">优先级</label><input id="am-sub-priority" class="am-sub-in" type="number" value="50"></div>
+                                    </div>
+                                </div>
+                                <div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">
+                                    <div style="color:rgba(226,232,240,0.55);font-size:11px;margin-bottom:8px;">📝 消息内容（写入对应模板字段）</div>
+                                    <div id="am-sub-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;"></div>
+                                    <div style="margin-top:8px;"><label class="am-sub-lbl">跳转页面(可选)</label><input id="am-sub-page" class="am-sub-in" placeholder="pages/index/index"></div>
+                                </div>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                    <button class="btn" type="button" onclick="amSaveSubscribeRule()" style="font-size:13px;">保存订阅规则（默认未审核·仅建议）</button>
+                                    <button class="btn btn-secondary" type="button" onclick="amResetSubscribeForm()" style="font-size:13px;">清空表单</button>
+                                </div>
+                                <div style="color:rgba(226,232,240,0.4);font-size:11px;">保存后默认为「待审核」，只生成待发建议；需在上方规则卡片点「审核通过」并「启用」才会自动下发。</div>
+                            </div>
+                        </div>
+                        <div class="rep-filters" style="margin-top:14px;">
+                            <div class="rep-filters__eyebrow">核销回流</div>
+                            <div class="rep-filters__title">到店核销明细（结果回流）</div>
+                            <p style="color:rgba(226,232,240,0.6);font-size:12px;margin:4px 0 12px;">门店「凭码核销」后，小程序原子置券为已用并同步 coupon_redeemed 到 HRMS（按券码幂等，杜绝重复核销重复计数）。以下为最近核销记录，是营销结果的真实回流。</p>
+                            <div id="am-redemptions-list" style="max-height:46vh;overflow-y:auto;"></div>
                         </div>
                     </div>
                 </div>
@@ -53830,7 +53894,7 @@ ${body}
         }
         function showGrowthTab(tab) {
             __growthActiveTab = tab;
-            ['dashboard', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'constraints', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs'].forEach(function(name) {
+            ['dashboard', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'constraints', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing'].forEach(function(name) {
                 var content = document.getElementById('growth-' + name + '-content');
                 var btn = document.getElementById('growth-tab-' + name);
                 if (content) content.style.display = name === tab ? '' : 'none';
@@ -53876,6 +53940,8 @@ ${body}
                 loadExecutionLogs();
             } else if (tab === 'wecomconfig') {
                 loadStoreWecomConfigs();
+            } else if (tab === 'automarketing') {
+                loadAutoMarketing();
             } else {
                 refreshGrowthDashboard();
             }
@@ -55327,6 +55393,349 @@ ${body}
         }
 
         async function feedbackGrowthAction(actionKey) { return; }
+
+        // ── 自动营销治理 + 闭环统计 ──
+        function amDescribeCriteria(c) {
+            c = c || {};
+            var parts = [];
+            var stageMap = { dormant: '沉睡', at_risk: '流失预警', active: '活跃', new: '新客', churned: '流失', prospect: '潜客' };
+            var tierMap = { vip: 'VIP', high: '高价值', mid: '中价值', normal: '普通', low: '低价值' };
+            if (c.lifecycle_stage) parts.push('阶段:' + (stageMap[c.lifecycle_stage] || c.lifecycle_stage));
+            if (c.value_tier) parts.push('价值:' + (tierMap[c.value_tier] || c.value_tier));
+            if (c.min_days_since_last_visit != null || c.max_days_since_last_visit != null) {
+                parts.push('未到店 ' + (c.min_days_since_last_visit != null ? c.min_days_since_last_visit : '?') + '~' + (c.max_days_since_last_visit != null ? c.max_days_since_last_visit : '∞') + ' 天');
+            }
+            if (c.min_visit_count != null) parts.push('到店≥' + c.min_visit_count + '次');
+            return parts.length ? parts.join(' · ') : '全部人群';
+        }
+
+        function amDescribeAction(rule) {
+            var p = rule.action_payload || {};
+            var ch = (p.channel || (rule.action_type === 'send_message' ? 'sms' : rule.action_type) || '-');
+            var chMap = { sms: '短信', wecom: '企微', subscribe: '订阅消息' };
+            var bits = [chMap[ch] || ch];
+            if (p.coupon_value || p.value) bits.push('券额 ¥' + (p.coupon_value || p.value));
+            if (p.template_text || p.content) bits.push('「' + String(p.template_text || p.content).slice(0, 28) + '」');
+            return bits.join(' · ');
+        }
+
+        // 取规则所属门店ID（优先动作门店，其次人群门店；都没有则为「全部门店」）
+        function amRuleStoreId(rule) {
+            var p = rule.action_payload || {};
+            var c = rule.criteria || {};
+            return String(p.store_id || c.store_id || '').trim();
+        }
+        function amStoreName(storeId) {
+            if (!storeId) return '全部门店';
+            return (window.__GROWTH_STORE_MAP && __GROWTH_STORE_MAP[storeId]) || ('门店 ' + storeId);
+        }
+
+        async function loadAutoMarketing() {
+            if (!canAccessGrowthModule()) { document.getElementById('growth-page').style.display = 'none'; return; }
+            var host = document.getElementById('am-rules-list');
+            var days = document.getElementById('am-stats-days')?.value || '30';
+            if (document.getElementById('am-sub-fields') && !document.querySelector('#am-sub-fields [data-sub-field]')) amRenderSubFields();
+            host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">加载中…</div>';
+            try {
+                var hdr = growthAuthHeaders();
+                var rs = await Promise.all([
+                    fetch('/api/growth/touch-rules', { headers: hdr }).then(function(r){return r.json();}),
+                    fetch('/api/growth/touch-rules/stats?days=' + encodeURIComponent(days), { headers: hdr }).then(function(r){return r.json();})
+                ]);
+                var allRules = (rs[0] && rs[0].rules) || [];
+                var statRows = (rs[1] && rs[1].stats) || [];
+                var statMap = {};
+                statRows.forEach(function(s){ statMap[s.rule_key] = s; });
+
+                // 按上方「门店范围」筛选：选中某门店时，展示该门店规则 +「全部门店」通用规则
+                var storeFilter = document.getElementById('growth-store-filter')?.value || '';
+                var rules = storeFilter
+                    ? allRules.filter(function(rule){ var sid = amRuleStoreId(rule); return sid === storeFilter || sid === ''; })
+                    : allRules;
+
+                // 汇总
+                var totalSent = 0, totalRedeemed = 0, approvedCount = 0, autoLiveCount = 0;
+                rules.forEach(function(rule){
+                    var st = statMap[rule.rule_key] || {};
+                    totalSent += Number(st.sent_count || 0);
+                    totalRedeemed += Number(st.redeemed_count || 0);
+                    if (rule.approved_at) approvedCount++;
+                    if (rule.approved_at && rule.enabled && rule.auto_execute !== false) autoLiveCount++;
+                });
+                var rate = totalSent > 0 ? ((totalRedeemed / totalSent) * 100).toFixed(1) : '0.0';
+                var summary = document.getElementById('am-summary');
+                function card(k, v){ return '<div class="rep-metric"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
+                summary.innerHTML = card('近' + days + '天发送', totalSent)
+                    + card('已核销', totalRedeemed)
+                    + card('核销率', rate + '%')
+                    + card('自动执行中', autoLiveCount + ' / ' + rules.length);
+
+                if (!rules.length) { host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">暂无营销规则</div>'; return; }
+
+                host.innerHTML = rules.map(function(rule){
+                    var st = statMap[rule.rule_key] || {};
+                    var sent = Number(st.sent_count || 0), red = Number(st.redeemed_count || 0);
+                    var rrate = sent > 0 ? ((red / sent) * 100).toFixed(1) : '0.0';
+                    var approved = !!rule.approved_at;
+                    var autoLive = approved && rule.enabled && rule.auto_execute !== false;
+                    var statusBadge = autoLive
+                        ? '<span style="background:rgba(34,197,94,0.15);color:#22c55e;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">自动执行中</span>'
+                        : (approved
+                            ? '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">已审核·未启用</span>'
+                            : '<span style="background:rgba(148,163,184,0.18);color:#94a3b8;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">待审核（仅建议）</span>');
+                    var lastRun = rule.last_run_at ? new Date(rule.last_run_at).toLocaleString('zh-CN') : '从未运行';
+                    var approver = approved ? ('审核人 ' + escapeHtml(rule.approved_by || '?') + ' · ' + new Date(rule.approved_at).toLocaleDateString('zh-CN')) : '尚未审核';
+                    var rk = escapeHtml(rule.rule_key);
+                    var btn = approved
+                        ? '<button class="btn btn-secondary" type="button" onclick="amUnapprove(\'' + rk + '\')" style="font-size:12px;padding:7px 14px;">撤销审核</button>'
+                        : '<button class="btn" type="button" onclick="amApprove(\'' + rk + '\')" style="font-size:12px;padding:7px 14px;">审核通过 → 允许自动执行</button>';
+                    var isSubscribe = ((rule.action_payload || {}).channel === 'subscribe');
+                    var editBtn = isSubscribe ? '<button class="btn btn-secondary" type="button" onclick="amEditSubscribeRule(\'' + rk + '\')" style="font-size:12px;padding:7px 14px;">编辑内容</button>' : '';
+                    var storeNm = amStoreName(amRuleStoreId(rule));
+                    var storeBadge = '<span style="background:rgba(99,102,241,0.16);color:#a5b4fc;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">🏪 ' + escapeHtml(storeNm) + '</span>';
+                    return '<div class="rep-pay-card" style="margin-bottom:12px;">'
+                        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">'
+                        +   '<div><div style="color:#fff;font-weight:700;font-size:14px;">' + escapeHtml(rule.name || rule.rule_key) + '</div>'
+                        +     '<div style="color:rgba(226,232,240,0.45);font-size:11px;margin-top:2px;">所属门店 ' + escapeHtml(storeNm) + ' · 优先级 ' + (rule.priority || '-') + ' · 经办人 ' + escapeHtml(rule.owner || '未指派') + '</div></div>'
+                        +   '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' + storeBadge + statusBadge + '</div>'
+                        + '</div>'
+                        + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin:10px 0 4px;">🎯 目标人群：' + escapeHtml(amDescribeCriteria(rule.criteria)) + '</div>'
+                        + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:10px;">📣 触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
+                        + '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 12px;background:rgba(0,0,0,0.25);border-radius:10px;margin-bottom:10px;">'
+                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">发送 <strong style="color:#fff;">' + sent + '</strong></span>'
+                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">核销 <strong style="color:#22c55e;">' + red + '</strong></span>'
+                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">核销率 <strong style="color:#fff;">' + rrate + '%</strong></span>'
+                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.5);">上次运行 ' + escapeHtml(lastRun) + '</span>'
+                        + '</div>'
+                        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">'
+                        +   '<span style="font-size:11px;color:rgba(226,232,240,0.5);">' + escapeHtml(approver) + '</span>'
+                        +   '<div style="display:flex;gap:8px;">'
+                        +     editBtn
+                        +     '<button class="btn btn-secondary" type="button" onclick="amToggleEnabled(\'' + rk + '\',' + (rule.enabled ? 'true' : 'false') + ')" style="font-size:12px;padding:7px 14px;">' + (rule.enabled ? '停用' : '启用') + '</button>'
+                        +     btn
+                        +   '</div>'
+                        + '</div>'
+                        + '</div>';
+                }).join('');
+            } catch (e) {
+                host.innerHTML = '<div style="color:#ef4444;padding:14px 0;">加载自动营销失败：' + escapeHtml(String(e && e.message || e)) + '</div>';
+            }
+            loadAmRedemptions();
+        }
+
+        async function loadAmRedemptions() {
+            var host = document.getElementById('am-redemptions-list');
+            if (!host) return;
+            var store = document.getElementById('growth-store-filter')?.value || '';
+            try {
+                var url = '/api/growth/redemptions?limit=100' + (store ? ('&store_id=' + encodeURIComponent(store)) : '');
+                var d = await fetch(url, { headers: growthAuthHeaders() }).then(function(r){return r.json();});
+                var rows = (d && d.redemptions) || [];
+                if (!rows.length) { host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无核销记录</div>'; return; }
+                host.innerHTML = rows.map(function(x){
+                    var amt = Number(x.amount_fen || 0) / 100;
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">'
+                        + '<span style="color:#fff;">券 ' + escapeHtml(String(x.coupon_id || '-')) + '</span>'
+                        + '<span style="color:rgba(226,232,240,0.7);">门店 ' + escapeHtml(String(x.store_id || '-')) + ' · 客户#' + escapeHtml(String(x.customer_id || '-')) + '</span>'
+                        + '<span style="color:#22c55e;">核销 ¥' + amt.toFixed(2) + '</span>'
+                        + '<span style="color:rgba(226,232,240,0.5);">' + (x.redeemed_at ? new Date(x.redeemed_at).toLocaleString('zh-CN') : '-') + '</span>'
+                        + '</div>';
+                }).join('');
+            } catch (e) {
+                host.innerHTML = '<div style="color:#ef4444;padding:10px 0;">加载核销记录失败</div>';
+            }
+        }
+
+        async function amApprove(ruleKey) {
+            if (!confirm('确认审核通过「' + ruleKey + '」？审核后引擎将每15分钟自动向命中人群发送，您将作为经办人记录在案。')) return;
+            try {
+                var r = await fetch('/api/growth/touch-rules/' + encodeURIComponent(ruleKey) + '/approve', { method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify({}) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'approve_failed');
+                showNotification('已审核通过，规则进入自动执行', 'success');
+                loadAutoMarketing();
+            } catch (e) { showNotification('审核失败：' + (e && e.message || e), 'error'); }
+        }
+
+        async function amUnapprove(ruleKey) {
+            if (!confirm('撤销「' + ruleKey + '」的审核？撤销后该规则不再自动发送，仅生成待发建议。')) return;
+            try {
+                var r = await fetch('/api/growth/touch-rules/' + encodeURIComponent(ruleKey) + '/unapprove', { method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify({}) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'unapprove_failed');
+                showNotification('已撤销审核', 'success');
+                loadAutoMarketing();
+            } catch (e) { showNotification('撤销失败：' + (e && e.message || e), 'error'); }
+        }
+
+        async function amToggleEnabled(ruleKey, currentEnabled) {
+            try {
+                // 复用 upsert：仅改 enabled，criteria/action 不变 → 后端 keepApproval 保留审核态。
+                var rg = await fetch('/api/growth/touch-rules', { headers: growthAuthHeaders() }).then(function(r){return r.json();});
+                var rule = ((rg && rg.rules) || []).find(function(x){ return x.rule_key === ruleKey; });
+                if (!rule) throw new Error('rule_not_found');
+                var body = {
+                    rule_key: rule.rule_key, name: rule.name, priority: rule.priority,
+                    auto_execute: rule.auto_execute, criteria: rule.criteria || {},
+                    action_type: rule.action_type, action_payload: rule.action_payload || {},
+                    owner: rule.owner || '', note: rule.note || '',
+                    enabled: !currentEnabled
+                };
+                var r = await fetch('/api/growth/touch-rules', { method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify(body) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'toggle_failed');
+                showNotification(currentEnabled ? '已停用' : '已启用', 'success');
+                loadAutoMarketing();
+            } catch (e) { showNotification('操作失败：' + (e && e.message || e), 'error'); }
+        }
+
+        // ===== 订阅消息规则：前台设置 + 内容管理（与短信同一治理闭环） =====
+        // 模板字段说明（与小程序 sendSubscribeMessage 报备模板严格一致）：
+        //  received 领取通知：thing1门店名 / thing2券名 / thing3面额 / thing5有效期（其余补占位）
+        //  expiring 过期提醒：thing1券名 / thing2到期日 / thing3面额 / thing4提示语 / thing5到期日
+        var AM_SUB_FIELDS = {
+            received: [
+                { id: 'storeName', label: '门店名称', ph: '如 马己仙广东小馆' },
+                { id: 'couponName', label: '优惠券名称', ph: '如 满100减20券' },
+                { id: 'faceValue', label: '面额', ph: '如 20元' },
+                { id: 'validUntil', label: '有效期', ph: '如 2026-12-31' }
+            ],
+            expiring: [
+                { id: 'couponName', label: '优惠券名称', ph: '如 满100减20券' },
+                { id: 'expireDate', label: '到期日期', ph: '如 2026-06-30' },
+                { id: 'faceValue', label: '面额', ph: '如 20元' },
+                { id: 'tip', label: '提示语', ph: '如 优惠券即将过期请尽快使用' }
+            ]
+        };
+
+        function amRenderSubFields(values) {
+            values = values || {};
+            var type = document.getElementById('am-sub-type').value === 'expiring' ? 'expiring' : 'received';
+            var host = document.getElementById('am-sub-fields');
+            host.innerHTML = AM_SUB_FIELDS[type].map(function(f){
+                var v = values[f.id] != null ? String(values[f.id]) : '';
+                return '<div><label class="am-sub-lbl">' + f.label + '</label>'
+                    + '<input class="am-sub-in" data-sub-field="' + f.id + '" placeholder="' + f.ph + '" value="' + escapeHtml(v) + '"></div>';
+            }).join('');
+        }
+
+        // 把友好字段拼成微信模板 data（thing1-9/time8）。20字截断与小程序侧一致。
+        function amBuildSubscribeData(type) {
+            function g(id){ var el = document.querySelector('#am-sub-fields [data-sub-field="' + id + '"]'); return el ? String(el.value || '').trim() : ''; }
+            function thing(v, fallback){ return { value: (v || fallback || '-').substring(0, 20) }; }
+            if (type === 'expiring') {
+                var exp = g('expireDate') || '详见小程序';
+                return {
+                    thing1: thing(g('couponName'), '优惠券'),
+                    thing2: thing(exp),
+                    thing3: thing(g('faceValue'), '详见小程序'),
+                    thing4: thing(g('tip'), '您的优惠券即将过期，请尽快使用'),
+                    thing5: thing(exp)
+                };
+            }
+            var vu = g('validUntil') || '详见小程序';
+            return {
+                thing1: thing(g('storeName'), '本店'),
+                thing2: thing(g('couponName'), '优惠券'),
+                thing3: thing(g('faceValue'), '详见小程序'),
+                thing4: thing(g('faceValue'), '详见小程序'),
+                thing5: thing(vu),
+                thing6: { value: '-' },
+                thing7: { value: '-' },
+                time8: { value: (vu || '详见小程序').substring(0, 20) },
+                thing9: { value: '-' }
+            };
+        }
+
+        function amResetSubscribeForm() {
+            ['am-sub-key','am-sub-name','am-sub-owner','am-sub-minvisit','am-sub-mindays','am-sub-maxdays','am-sub-page'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+            document.getElementById('am-sub-priority').value = '50';
+            document.getElementById('am-sub-stage').value = '';
+            document.getElementById('am-sub-tier').value = '';
+            document.getElementById('am-sub-type').value = 'received';
+            amRenderSubFields();
+        }
+
+        function amNum(id){ var el=document.getElementById(id); var v=el&&el.value!==''?Number(el.value):null; return (v!=null&&Number.isFinite(v))?v:null; }
+
+        async function amSaveSubscribeRule() {
+            var name = String(document.getElementById('am-sub-name').value || '').trim();
+            if (!name) { showNotification('请填写规则名称', 'error'); return; }
+            // 规则标识为系统内部用，自动生成；编辑时沿用原标识
+            var ruleKey = String(document.getElementById('am-sub-key').value || '').trim();
+            if (!ruleKey) ruleKey = 'sub_' + Date.now().toString(36);
+            var type = document.getElementById('am-sub-type').value === 'expiring' ? 'expiring' : 'received';
+            var storeId = document.getElementById('am-sub-store').value || '';
+            var criteria = {};
+            var stage = document.getElementById('am-sub-stage').value; if (stage) criteria.lifecycle_stage = stage;
+            var tier = document.getElementById('am-sub-tier').value; if (tier) criteria.value_tier = tier;
+            var minVisit = amNum('am-sub-minvisit'); if (minVisit != null) criteria.min_visit_count = minVisit;
+            var minDays = amNum('am-sub-mindays'); if (minDays != null) criteria.min_days_since_last_visit = minDays;
+            var maxDays = amNum('am-sub-maxdays'); if (maxDays != null) criteria.max_days_since_last_visit = maxDays;
+            if (storeId) criteria.store_id = storeId;
+            if (!(criteria.lifecycle_stage || criteria.value_tier || criteria.min_visit_count != null || criteria.min_days_since_last_visit != null || criteria.max_days_since_last_visit != null)) {
+                showNotification('请至少设置一个人群条件（生命周期/价值/到店次数/未到店天数），否则规则不会命中任何人', 'error');
+                return;
+            }
+            var actionPayload = {
+                channel: 'subscribe',
+                store_id: storeId,
+                subscribe_template_type: type,
+                subscribe_template_data: amBuildSubscribeData(type),
+                subscribe_page: String(document.getElementById('am-sub-page').value || '').trim() || undefined,
+                content_template: name,
+                title_template: name
+            };
+            var body = {
+                rule_key: ruleKey, name: name,
+                priority: amNum('am-sub-priority') != null ? amNum('am-sub-priority') : 50,
+                auto_execute: true, enabled: true,
+                criteria: criteria,
+                action_type: 'send_message',
+                action_payload: actionPayload,
+                owner: String(document.getElementById('am-sub-owner').value || '').trim(),
+                note: '订阅消息规则（前台创建）'
+            };
+            try {
+                var r = await fetch('/api/growth/touch-rules', { method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify(body) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'save_failed');
+                showNotification('订阅规则已保存（待审核）。请在上方卡片「审核通过」后生效', 'success');
+                amResetSubscribeForm();
+                loadAutoMarketing();
+            } catch (e) { showNotification('保存失败：' + (e && e.message || e), 'error'); }
+        }
+
+        // 点击订阅规则卡片「编辑」→ 回填表单（保留 rule_key）
+        function amEditSubscribeRule(ruleKey) {
+            fetch('/api/growth/touch-rules', { headers: growthAuthHeaders() }).then(function(r){return r.json();}).then(function(rg){
+                var rule = ((rg && rg.rules) || []).find(function(x){ return x.rule_key === ruleKey; });
+                if (!rule) { showNotification('未找到规则', 'error'); return; }
+                var p = rule.action_payload || {};
+                var c = rule.criteria || {};
+                document.getElementById('am-sub-key').value = rule.rule_key;
+                document.getElementById('am-sub-key').setAttribute('readonly', 'readonly');
+                document.getElementById('am-sub-name').value = rule.name || '';
+                document.getElementById('am-sub-owner').value = rule.owner || '';
+                document.getElementById('am-sub-store').value = p.store_id || c.store_id || '51866138';
+                document.getElementById('am-sub-type').value = (p.subscribe_template_type === 'expiring') ? 'expiring' : 'received';
+                document.getElementById('am-sub-priority').value = rule.priority != null ? rule.priority : 50;
+                document.getElementById('am-sub-stage').value = c.lifecycle_stage || '';
+                document.getElementById('am-sub-tier').value = c.value_tier || '';
+                document.getElementById('am-sub-minvisit').value = c.min_visit_count != null ? c.min_visit_count : '';
+                document.getElementById('am-sub-mindays').value = c.min_days_since_last_visit != null ? c.min_days_since_last_visit : '';
+                document.getElementById('am-sub-maxdays').value = c.max_days_since_last_visit != null ? c.max_days_since_last_visit : '';
+                document.getElementById('am-sub-page').value = p.subscribe_page || '';
+                // 反解 thing 字段为友好输入
+                var td = p.subscribe_template_data || {};
+                function tv(k){ return (td[k] && td[k].value) ? td[k].value : ''; }
+                var vals = (p.subscribe_template_type === 'expiring')
+                    ? { couponName: tv('thing1'), expireDate: tv('thing2'), faceValue: tv('thing3'), tip: tv('thing4') }
+                    : { storeName: tv('thing1'), couponName: tv('thing2'), faceValue: tv('thing3'), validUntil: tv('thing5') };
+                amRenderSubFields(vals);
+                document.getElementById('am-sub-fields').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }).catch(function(e){ showNotification('加载失败：' + (e && e.message || e), 'error'); });
+        }
 
         async function refreshGrowthDashboard() {
             if (!canAccessGrowthModule()) { document.getElementById('growth-page').style.display = 'none'; return; }
