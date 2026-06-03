@@ -209,9 +209,11 @@ export async function ensureGrowthTables(pool) {
       metrics JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW(),
-      resolved_at TIMESTAMPTZ
+      resolved_at TIMESTAMPTZ,
+      resolved_by TEXT
     )
   `);
+  await pool.query(`ALTER TABLE growth_alerts ADD COLUMN IF NOT EXISTS resolved_by TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_alerts_status ON growth_alerts (status, created_at DESC)`);
 
   await pool.query(`
@@ -2231,6 +2233,20 @@ export function registerGrowthRoutes(app, pool) {
        RETURNING *`,
       [alertKey, cleanText(b.alert_type, 80), cleanText(b.severity || 'medium', 40), cleanText(b.store_id, 128), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.message, 2000), cleanText(b.suggested_action, 2000), JSON.stringify(b.metrics || {})]
     );
+    return res.json({ ok: true, alert: r.rows[0] });
+  });
+
+  // 标记预警为已处理（关闭预警）
+  app.post('/api/growth/alerts/:alertKey/resolve', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    const alertKey = cleanText(req.params.alertKey, 255);
+    const operator = getGrowthOperator(req);
+    const r = await pool.query(
+      `UPDATE growth_alerts SET status = 'resolved', resolved_by = $2, resolved_at = NOW(), updated_at = NOW()
+       WHERE alert_key = $1 RETURNING *`,
+      [alertKey, operator.username || 'system']
+    );
+    if (!r.rows.length) return res.status(404).json({ ok: false, error: 'alert_not_found' });
     return res.json({ ok: true, alert: r.rows[0] });
   });
 
