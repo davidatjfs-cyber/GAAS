@@ -38,7 +38,7 @@ test('指标卡片包含数据来源说明', () => {
   assert(html.includes("source: 'HRMS自动营销引擎触发'"), '缺少营销来源');
   assert(html.includes("source: '小程序店员核销'"), '缺少核销来源');
   assert(html.includes("source: '小程序支付订单'"), '缺少支付来源');
-  assert(html.includes("source: '小程序支付金额'"), '缺少收入来源');
+  assert(!html.includes("label: '收入(元)'"), '收入指标已移除');
 });
 
 test('看板分A/B两条数据链', () => {
@@ -105,7 +105,7 @@ console.log('\n=== 5. 近期指标趋势细化 ===');
 test('趋势包含更多指标', () => {
   assert(html.includes("key: 'scan'"), '缺少扫码指标');
   assert(html.includes("key: 'auth'"), '缺少授权指标');
-  assert(html.includes("key: 'issued'"), '缺少领券指标');
+  assert(html.includes("key: 'claimed'"), '缺少领券指标');
   assert(html.includes("key: 'redeem'"), '缺少核销指标');
   assert(html.includes("key: 'payment'"), '缺少支付指标');
 });

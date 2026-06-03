@@ -18497,7 +18497,7 @@
                   </div>
                 </header>
                 <div class="rep-filters" style="margin-bottom:14px;">
-                  <div class="rep-filters__grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;position:relative;">
+                  <div class="rep-filters__grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;position:relative;">
                     <div class="rep-field">
                       <label for="growth-store-filter">门店范围</label>
                       <select id="growth-store-filter" class="dr-store-select" onchange="refreshGrowthCurrentTab()">
@@ -18506,8 +18506,17 @@
                     </div>
                     <div class="rep-field">
                       <label for="growth-campaign-filter">活动筛选</label>
-                      <select id="growth-campaign-filter" class="dr-store-select">
+                      <select id="growth-campaign-filter" class="dr-store-select" onchange="refreshGrowthCurrentTab()">
                         <option value="">全部活动</option>
+                      </select>
+                    </div>
+                    <div class="rep-field">
+                      <label for="growth-days-filter">时间范围</label>
+                      <select id="growth-days-filter" class="dr-store-select" onchange="refreshGrowthCurrentTab()">
+                        <option value="7">近7天</option>
+                        <option value="14">近14天</option>
+                        <option value="30" selected>近30天</option>
+                        <option value="90">近90天</option>
                       </select>
                     </div>
                   </div>
@@ -55828,12 +55837,13 @@ ${body}
             if (!canAccessGrowthModule()) { document.getElementById('growth-page').style.display = 'none'; return; }
             const storeFilter = document.getElementById('growth-store-filter')?.value || '';
             const campaignFilter = document.getElementById('growth-campaign-filter')?.value || '';
+            const daysFilter = document.getElementById('growth-days-filter')?.value || '30';
             try {
                 var gh = { 'Authorization': 'Bearer ' + (HRMS_API.token() || '') };
 
                 // A链：POS数据
                 try {
-                    var posRes = await fetch('/api/growth/pos-stats?days=30&store_id=' + encodeURIComponent(storeFilter), { headers: gh });
+                    var posRes = await fetch('/api/growth/pos-stats?days=' + daysFilter + '&store_id=' + encodeURIComponent(storeFilter), { headers: gh });
                     var posData = await posRes.json();
                     renderGrowthPosMetricsCards(posData);
                 } catch (e) {
@@ -55841,7 +55851,7 @@ ${body}
                 }
 
                 // B链：小程序数据
-                var metricsUrl = '/api/growth/metrics?days=7&store_id=' + encodeURIComponent(storeFilter);
+                var metricsUrl = '/api/growth/metrics?days=' + daysFilter + '&store_id=' + encodeURIComponent(storeFilter);
                 if (campaignFilter) metricsUrl += '&campaign_id=' + encodeURIComponent(campaignFilter);
                 const metricsRes = await fetch(metricsUrl, { headers: gh });
                 const metricsData = await metricsRes.json();
@@ -55906,13 +55916,26 @@ ${body}
                 var sel = document.getElementById('growth-campaign-filter');
                 if (!sel) return;
                 sel.innerHTML = '<option value="">全部活动</option>';
+                var seen = {};
                 campaigns.forEach(function(c) {
                     var opt = document.createElement('option');
                     opt.value = c.campaign_id || '';
                     var chLabel = growthChannelLabel(c.channel || '');
                     var storeLabel = growthStoreName(c.store_id || '');
-                    var displayName = c.name || chLabel || c.campaign_id || '-';
-                    opt.textContent = displayName + (storeLabel && storeLabel !== c.campaign_id ? ' · ' + storeLabel : '');
+                    var displayName;
+                    if (c.name) {
+                        displayName = c.name;
+                    } else if (c.channel === 'miniprogram' && c.store_id) {
+                        displayName = '小程序·' + storeLabel;
+                    } else if (c.channel) {
+                        displayName = chLabel;
+                    } else {
+                        displayName = '活动 ' + (c.campaign_id || '').slice(-8);
+                    }
+                    var key = displayName + '|' + (c.store_id || '');
+                    if (seen[key]) return;
+                    seen[key] = true;
+                    opt.textContent = displayName + (storeLabel && !displayName.includes(storeLabel) ? ' · ' + storeLabel : '');
                     sel.appendChild(opt);
                 });
             } catch (e) { /* ignore */ }
@@ -56007,19 +56030,23 @@ ${body}
         function renderGrowthPosMetricsCards(posData) {
             var s = posData.summary || {};
             var takeaway = (posData.byOrderType || []).find(function(t) { return t.order_type === '平台外卖'; });
+            var dineIn = (posData.byOrderType || []).find(function(t) { return t.order_type === '堂食'; });
             var takeawayOrders = takeaway ? takeaway.cnt : 0;
             var takeawayRevenue = takeaway ? Number(takeaway.revenue) : 0;
+            var dineInOrders = dineIn ? dineIn.cnt : 0;
+            var dineInRevenue = dineIn ? Number(dineIn.revenue) : 0;
             var allOrders = (s.total_orders || 0) + takeawayOrders;
             var allRevenue = Number(s.total_revenue || 0) + takeawayRevenue;
             var cards = [
                 { label: '总订单', value: allOrders, tag: '订单', source: 'POS系统导入' },
-                { label: '总收入(元)', value: allRevenue.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}), tag: '收入', source: 'POS系统导入' },
-                { label: '客单价(元)', value: (allOrders > 0 ? (allRevenue / allOrders).toFixed(2) : '0.00'), tag: '均消', source: 'POS系统导入' },
+                { label: '堂食均消', value: (dineInOrders > 0 ? (dineInRevenue / dineInOrders).toFixed(2) : '0.00'), tag: '堂食均消', source: '仅堂食订单' },
+                { label: '外卖均消', value: (takeawayOrders > 0 ? (takeawayRevenue / takeawayOrders).toFixed(2) : '0.00'), tag: '外卖均消', source: '仅外卖订单' },
                 { label: '识别客户', value: s.distinct_phones || 0, tag: '手机号', source: 'POS系统导入' },
                 { label: '外卖订单', value: takeawayOrders, tag: '外卖', source: 'POS系统导入' },
-                { label: '新客率', value: (posData.profileInsights && posData.profileInsights.new_vs_returning ? posData.profileInsights.new_vs_returning.new_pct : '-') + '%', tag: '新客', source: 'POS系统导入' }
+                { label: '新客率', value: (posData.profileInsights && posData.profileInsights.new_vs_returning ? posData.profileInsights.new_vs_returning.new_pct : '-') + '%', tag: '新客', source: '首次出现手机号占比' }
             ];
-            document.getElementById('growth-pos-metrics-cards').innerHTML = cards.map(function(c) {
+            document.getElementById('growth-pos-metrics-cards').innerHTML = '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:8px;"> 新客率 = 统计期内首次出现手机号数 / 总识别手机号数（基于POS订单手机号去重）</div>'
+                + cards.map(function(c) {
                 return '<div class="rep-metric" style="text-align:center;">'
                     + '<div class="k" style="text-align:center;">' + c.tag + '</div>'
                     + '<div class="v" style="text-align:center;font-size:24px;">' + c.value + '</div>'
@@ -56029,7 +56056,7 @@ ${body}
         }
 
         function renderGrowthMetricsCards(metrics) {
-            var total = { scan: 0, auth: 0, claimed: 0, purchased: 0, marketing: 0, redeem: 0, payment: 0, revenue: 0 };
+            var total = { scan: 0, auth: 0, claimed: 0, purchased: 0, marketing: 0, redeem: 0, payment: 0 };
             metrics.forEach(function(m) {
                 total.scan += Number(m.scan_count) || 0;
                 total.auth += Number(m.authorized_count) || 0;
@@ -56038,7 +56065,6 @@ ${body}
                 total.marketing += Number(m.marketing_triggered_count) || 0;
                 total.redeem += Number(m.coupon_redeemed_count) || 0;
                 total.payment += Number(m.payment_count) || 0;
-                total.revenue += Number(m.revenue_fen) || 0;
             });
             var cards = [
                 { label: '扫码', value: total.scan, tag: '扫码', source: '小程序扫码进店' },
@@ -56047,8 +56073,7 @@ ${body}
                 { label: '购券', value: total.purchased, tag: '购券', source: '小程序支付后购券' },
                 { label: '营销发券', value: total.marketing, tag: '营销', source: 'HRMS自动营销引擎触发' },
                 { label: '核销', value: total.redeem, tag: '核销', source: '小程序店员核销' },
-                { label: '支付', value: total.payment, tag: '支付', source: '小程序支付订单' },
-                { label: '收入(元)', value: (total.revenue / 100).toFixed(2), tag: '收入', source: '小程序支付金额' }
+                { label: '支付', value: total.payment, tag: '支付', source: '小程序支付订单' }
             ];
             document.getElementById('growth-metrics-cards').innerHTML = cards.map(function(c) {
                 return '<div class="rep-metric" style="text-align:center;">'
@@ -56576,19 +56601,62 @@ ${body}
             var byDate = {};
             metrics.forEach(function(m) {
                 var d = m.metric_date;
-                if (!byDate[d]) byDate[d] = { scan: 0, auth: 0, issued: 0, redeem: 0, payment: 0, revenue: 0 };
+                if (!byDate[d]) byDate[d] = { scan: 0, auth: 0, claimed: 0, redeem: 0, payment: 0 };
                 byDate[d].scan += Number(m.scan_count) || 0;
                 byDate[d].auth += Number(m.authorized_count) || 0;
-                byDate[d].issued += Number(m.coupon_issued_count) || 0;
+                byDate[d].claimed += Number(m.coupon_claimed_count) || 0;
                 byDate[d].redeem += Number(m.coupon_redeemed_count) || 0;
                 byDate[d].payment += Number(m.payment_count) || 0;
-                byDate[d].revenue += Number(m.revenue_fen) || 0;
             });
             var dates = Object.keys(byDate).sort();
             if (!dates.length) {
                 document.getElementById('growth-trends').innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:20px;">暂无数据</div>';
                 return;
             }
+            var trendIndicators = [
+                { key: 'scan', label: '扫码', color: '#3b82f6' },
+                { key: 'auth', label: '授权', color: '#22c55e' },
+                { key: 'claimed', label: '领券', color: '#a78bfa' },
+                { key: 'redeem', label: '核销', color: '#f59e0b' },
+                { key: 'payment', label: '支付', color: '#f472b6' }
+            ];
+            var activeKey = __growthTrendIndicator || 'scan';
+            var barHeight = 120;
+            var colWidth = Math.max(40, Math.min(80, 600 / dates.length));
+            var maxVal = 0;
+            dates.forEach(function(d) { maxVal = Math.max(maxVal, byDate[d][activeKey] || 0); });
+            var lastDate = dates[dates.length - 1];
+            var prevDate = dates.length >= 2 ? dates[dates.length - 2] : null;
+            var curVal = byDate[lastDate][activeKey] || 0;
+            var prevVal = prevDate ? (byDate[prevDate][activeKey] || 0) : 0;
+            var changePct = prevVal > 0 ? (((curVal - prevVal) / prevVal) * 100).toFixed(1) : '0.0';
+            var changeDir = curVal >= prevVal ? '↑' : '↓';
+            var changeColor = curVal >= prevVal ? '#22c55e' : '#ef4444';
+            var daysLabel = document.getElementById('growth-days-filter')?.value || '30';
+            var indicatorHtml = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">'
+                + '<span style="font-size:11px;color:rgba(226,232,240,0.5);">指标：</span>'
+                + trendIndicators.map(function(ind) {
+                    return '<button onclick="switchTrendIndicator(\'' + ind.key + '\')" style="padding:3px 8px;border-radius:4px;font-size:11px;border:1px solid ' + (ind.key === activeKey ? ind.color : 'rgba(255,255,255,0.1)') + ';background:' + (ind.key === activeKey ? ind.color + '33' : 'transparent') + ';color:' + (ind.key === activeKey ? ind.color : 'rgba(226,232,240,0.5)') + ';cursor:pointer;">' + ind.label + '</button>';
+                }).join('')
+                + '<span style="margin-left:auto;font-size:11px;color:' + changeColor + ';">' + changeDir + ' ' + changePct + '%（较前一日）</span>'
+                + '</div>';
+            document.getElementById('growth-trends').innerHTML = '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:8px;"> 近' + daysLabel + '天核心指标趋势，数据来自小程序事件上报</div>'
+                + indicatorHtml
+                + '<div style="display:flex;align-items:flex-end;gap:' + (colWidth * 0.25) + 'px;min-height:' + (barHeight + 30) + 'px;padding-top:10px;overflow-x:auto;">'
+                + dates.map(function(d) {
+                    var s = byDate[d];
+                    var val = s[activeKey] || 0;
+                    var h = maxVal > 0 ? Math.round(val / maxVal * barHeight) : 0;
+                    var activeInd = trendIndicators.find(function(ind) { return ind.key === activeKey; });
+                    var barColor = activeInd ? activeInd.color : '#3b82f6';
+                    return '<div style="display:flex;flex-direction:column;align-items:center;width:' + colWidth + 'px;">'
+                        + '<div style="font-size:10px;color:rgba(226,232,240,0.6);margin-bottom:2px;white-space:nowrap;">' + val + '</div>'
+                        + '<div style="width:12px;background:' + barColor + ';border-radius:3px 3px 0 0;height:' + h + 'px;"></div>'
+                        + '<div style="font-size:10px;color:rgba(226,232,240,0.5);margin-top:4px;white-space:nowrap;">' + d.slice(5) + '</div>'
+                        + '</div>';
+                }).join('')
+                + '</div>';
+        }
             var trendIndicators = [
                 { key: 'scan', label: '扫码', color: '#3b82f6' },
                 { key: 'auth', label: '授权', color: '#22c55e' },
