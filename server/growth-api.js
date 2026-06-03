@@ -181,7 +181,9 @@ export async function ensureGrowthTables(pool) {
       channel TEXT NOT NULL DEFAULT '',
       scan_count INTEGER DEFAULT 0,
       authorized_count INTEGER DEFAULT 0,
-      coupon_issued_count INTEGER DEFAULT 0,
+      coupon_claimed_count INTEGER DEFAULT 0,
+      coupon_purchased_count INTEGER DEFAULT 0,
+      marketing_triggered_count INTEGER DEFAULT 0,
       coupon_redeemed_count INTEGER DEFAULT 0,
       payment_count INTEGER DEFAULT 0,
       revenue_fen INTEGER DEFAULT 0,
@@ -192,6 +194,9 @@ export async function ensureGrowthTables(pool) {
       UNIQUE(metric_date, store_id, campaign_id, channel)
     )
   `);
+  await pool.query(`ALTER TABLE growth_daily_metrics ADD COLUMN IF NOT EXISTS coupon_claimed_count INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE growth_daily_metrics ADD COLUMN IF NOT EXISTS coupon_purchased_count INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE growth_daily_metrics ADD COLUMN IF NOT EXISTS marketing_triggered_count INTEGER DEFAULT 0`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_daily_metrics_date ON growth_daily_metrics (metric_date DESC, store_id, campaign_id)`);
 
   await pool.query(`
@@ -1984,7 +1989,9 @@ export function registerGrowthRoutes(app, pool) {
     await pool.query(
       `INSERT INTO growth_daily_metrics (
          metric_date, store_id, campaign_id, channel,
-         scan_count, authorized_count, coupon_issued_count, coupon_redeemed_count, payment_count, revenue_fen, roi, updated_at
+         scan_count, authorized_count,
+         coupon_claimed_count, coupon_purchased_count, marketing_triggered_count,
+         coupon_redeemed_count, payment_count, revenue_fen, roi, updated_at
        )
        SELECT
          occurred_at::date AS metric_date,
@@ -1993,7 +2000,9 @@ export function registerGrowthRoutes(app, pool) {
          COALESCE(channel, '') AS channel,
          COUNT(*) FILTER (WHERE event_type = 'campaign_scan')::int AS scan_count,
          COUNT(*) FILTER (WHERE event_type = 'phone_authorized')::int AS authorized_count,
-         COUNT(*) FILTER (WHERE event_type IN ('coupon_claimed','coupon_purchased','marketing_triggered'))::int AS coupon_issued_count,
+         COUNT(*) FILTER (WHERE event_type = 'coupon_claimed')::int AS coupon_claimed_count,
+         COUNT(*) FILTER (WHERE event_type = 'coupon_purchased')::int AS coupon_purchased_count,
+         COUNT(*) FILTER (WHERE event_type = 'marketing_triggered')::int AS marketing_triggered_count,
          COUNT(*) FILTER (WHERE event_type = 'coupon_redeemed')::int AS coupon_redeemed_count,
          COUNT(*) FILTER (WHERE event_type = 'payment_success')::int AS payment_count,
           COALESCE(SUM(amount_fen) FILTER (WHERE event_type IN ('payment_success','coupon_redeemed')), 0)::int AS revenue_fen,
@@ -2008,7 +2017,9 @@ export function registerGrowthRoutes(app, pool) {
        DO UPDATE SET
          scan_count = EXCLUDED.scan_count,
          authorized_count = EXCLUDED.authorized_count,
-         coupon_issued_count = EXCLUDED.coupon_issued_count,
+         coupon_claimed_count = EXCLUDED.coupon_claimed_count,
+         coupon_purchased_count = EXCLUDED.coupon_purchased_count,
+         marketing_triggered_count = EXCLUDED.marketing_triggered_count,
          coupon_redeemed_count = EXCLUDED.coupon_redeemed_count,
           payment_count = EXCLUDED.payment_count,
           revenue_fen = EXCLUDED.revenue_fen,

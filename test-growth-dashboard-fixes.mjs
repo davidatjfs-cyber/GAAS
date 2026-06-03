@@ -31,16 +31,21 @@ function test(name, fn) {
 
 console.log('\n=== 1. 看板数据来源标注 ===');
 test('指标卡片包含数据来源说明', () => {
-  assert(html.includes("source: '小程序扫码活动'"), '缺少扫码来源');
+  assert(html.includes("source: '小程序扫码进店'"), '缺少扫码来源');
   assert(html.includes("source: '小程序授权手机号'"), '缺少授权来源');
-  assert(html.includes("source: '小程序领券 + 自动营销发券'"), '缺少发券来源');
-  assert(html.includes("source: '小程序/POS核销券码'"), '缺少核销来源');
+  assert(html.includes("source: '小程序用户主动领取'"), '缺少领券来源');
+  assert(html.includes("source: '小程序支付后购券'"), '缺少购券来源');
+  assert(html.includes("source: 'HRMS自动营销引擎触发'"), '缺少营销来源');
+  assert(html.includes("source: '小程序店员核销'"), '缺少核销来源');
   assert(html.includes("source: '小程序支付订单'"), '缺少支付来源');
-  assert(html.includes("source: '小程序支付 + 核销金额'"), '缺少收入来源');
+  assert(html.includes("source: '小程序支付金额'"), '缺少收入来源');
 });
 
-test('指标卡片顶部有数据来源总说明', () => {
-  assert(html.includes('所有指标均来自「小程序事件上报 + POS消费数据」'), '缺少总说明');
+test('看板分A/B两条数据链', () => {
+  assert(html.includes('POS系统数据'), '缺少POS数据区块标题');
+  assert(html.includes('小程序数据'), '缺少小程序数据区块标题');
+  assert(html.includes('growth-pos-metrics-cards'), '缺少POS指标容器');
+  assert(html.includes('renderGrowthPosMetricsCards'), '缺少POS指标渲染函数');
 });
 
 console.log('\n=== 2. 活动漏斗渠道细分 ===');
