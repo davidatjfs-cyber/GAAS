@@ -56657,49 +56657,6 @@ ${body}
                 }).join('')
                 + '</div>';
         }
-            var trendIndicators = [
-                { key: 'scan', label: '扫码', color: '#3b82f6' },
-                { key: 'auth', label: '授权', color: '#22c55e' },
-                { key: 'issued', label: '领券', color: '#a78bfa' },
-                { key: 'redeem', label: '核销', color: '#f59e0b' },
-                { key: 'payment', label: '支付', color: '#f472b6' }
-            ];
-            var activeKey = __growthTrendIndicator || 'scan';
-            var barHeight = 120;
-            var colWidth = Math.max(40, Math.min(80, 600 / dates.length));
-            var maxVal = 0;
-            dates.forEach(function(d) { maxVal = Math.max(maxVal, byDate[d][activeKey] || 0); });
-            var lastDate = dates[dates.length - 1];
-            var prevDate = dates.length >= 2 ? dates[dates.length - 2] : null;
-            var curVal = byDate[lastDate][activeKey] || 0;
-            var prevVal = prevDate ? (byDate[prevDate][activeKey] || 0) : 0;
-            var changePct = prevVal > 0 ? (((curVal - prevVal) / prevVal) * 100).toFixed(1) : '0.0';
-            var changeDir = curVal >= prevVal ? '↑' : '↓';
-            var changeColor = curVal >= prevVal ? '#22c55e' : '#ef4444';
-            var indicatorHtml = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">'
-                + '<span style="font-size:11px;color:rgba(226,232,240,0.5);">指标：</span>'
-                + trendIndicators.map(function(ind) {
-                    return '<button onclick="switchTrendIndicator(\'' + ind.key + '\')" style="padding:3px 8px;border-radius:4px;font-size:11px;border:1px solid ' + (ind.key === activeKey ? ind.color : 'rgba(255,255,255,0.1)') + ';background:' + (ind.key === activeKey ? ind.color + '33' : 'transparent') + ';color:' + (ind.key === activeKey ? ind.color : 'rgba(226,232,240,0.5)') + ';cursor:pointer;">' + ind.label + '</button>';
-                }).join('')
-                + '<span style="margin-left:auto;font-size:11px;color:' + changeColor + ';">' + changeDir + ' ' + changePct + '%（较前一日）</span>'
-                + '</div>';
-            document.getElementById('growth-trends').innerHTML = '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:8px;">📌 近7天核心指标趋势，数据来自小程序事件上报</div>'
-                + indicatorHtml
-                + '<div style="display:flex;align-items:flex-end;gap:' + (colWidth * 0.25) + 'px;min-height:' + (barHeight + 30) + 'px;padding-top:10px;overflow-x:auto;">'
-                + dates.map(function(d) {
-                    var s = byDate[d];
-                    var val = s[activeKey] || 0;
-                    var h = maxVal > 0 ? Math.round(val / maxVal * barHeight) : 0;
-                    var activeInd = trendIndicators.find(function(ind) { return ind.key === activeKey; });
-                    var barColor = activeInd ? activeInd.color : '#3b82f6';
-                    return '<div style="display:flex;flex-direction:column;align-items:center;width:' + colWidth + 'px;">'
-                        + '<div style="font-size:10px;color:rgba(226,232,240,0.6);margin-bottom:2px;white-space:nowrap;">' + val + '</div>'
-                        + '<div style="width:12px;background:' + barColor + ';border-radius:3px 3px 0 0;height:' + h + 'px;"></div>'
-                        + '<div style="font-size:10px;color:rgba(226,232,240,0.5);margin-top:4px;white-space:nowrap;">' + d.slice(5) + '</div>'
-                        + '</div>';
-                }).join('')
-                + '</div>';
-        }
 
         function switchTrendIndicator(key) {
             __growthTrendIndicator = key;
