@@ -1767,7 +1767,10 @@ export function registerPhaseRoutes(app, pool) {
     ]);
 
     const [byOrderTypeR, byOrderSourceR, byDeptR, lifecycleR, spendDistR, visitR, dishCatR, highValueR, custOrderTypeR, custOrderSourceR, custDeptR, valueTierR, repurchase30R] = await Promise.all([
-      pool.query(`SELECT order_type, COUNT(*)::int AS cnt,
+      // cnt 必须是「订单数」（按 order_no 去重），不能用菜品明细行数，
+      // 否则客单价=明细行均价（堂食¥51/外卖¥29），与真实客单价（堂食¥342/外卖¥55）严重不符。
+      pool.query(`SELECT order_type, COUNT(DISTINCT order_no)::int AS cnt,
+        COUNT(*)::int AS line_count,
         COALESCE(SUM(amount_after_discount),0)::numeric AS revenue,
         COALESCE(SUM(qty),0)::int AS total_qty
         FROM pos_order_items

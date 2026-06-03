@@ -13285,7 +13285,11 @@
             }
 
             #growth-page .rep-dashboard-grid {
-                grid-template-columns: 1fr !important;
+                grid-template-columns: minmax(0, 1fr) !important;
+            }
+            #growth-page .rep-dashboard-grid > * {
+                min-width: 0 !important;
+                overflow-x: hidden;
             }
             #growth-page .rep-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -18575,42 +18579,6 @@
                         <div class="rep-filters">
                             <div class="rep-filters__eyebrow">TRENDS</div>
                             <div class="rep-filters__title">📊 小程序指标趋势</div>
-                            <div id="growth-trends" style="min-height:180px;position:relative;"></div>
-                        </div>
-                    </div>
-                    <div class="rep-filters" style="margin-bottom:0;">
-                        <div class="rep-filters__eyebrow">SUGGESTIONS</div>
-                        <div class="rep-filters__title">💡 行动建议</div>
-                        <div id="growth-actions" style="min-height:100px;position:relative;"></div>
-                    </div>
-                    </div>
-                        <div class="rep-hero">
-                            <div class="meta">ALERTS</div>
-                            <div style="font-size:15px;font-weight:700;margin:8px 0 4px;color:var(--rep-text);letter-spacing:0.02em;">流失预警</div>
-                            <div id="growth-alerts" style="min-height:180px;"></div>
-                        </div>
-                    </div>
-                    <div class="rep-dashboard-grid">
-                        <div class="rep-filters">
-                            <div class="rep-filters__eyebrow">WEATHER</div>
-                            <div class="rep-filters__title">🌤️ 天气/时令</div>
-                            <div id="growth-weather" style="min-height:80px;position:relative;"></div>
-                        </div>
-                        <div class="rep-filters">
-                            <div class="rep-filters__eyebrow">TIMING</div>
-                            <div class="rep-filters__title">📅 最佳触达时段</div>
-                            <div id="growth-active-window" style="min-height:80px;position:relative;"></div>
-                        </div>
-                    </div>
-                    <div class="rep-dashboard-grid">
-                        <div class="rep-filters">
-                            <div class="rep-filters__eyebrow">REPURCHASE</div>
-                            <div class="rep-filters__title">🔄 复购触发</div>
-                            <div id="growth-repurchase" style="min-height:80px;position:relative;"></div>
-                        </div>
-                        <div class="rep-filters">
-                            <div class="rep-filters__eyebrow">TRENDS</div>
-                            <div class="rep-filters__title">📊 近期指标趋势</div>
                             <div id="growth-trends" style="min-height:180px;position:relative;"></div>
                         </div>
                     </div>
@@ -56551,11 +56519,13 @@ ${body}
                 var sevEmoji = a.severity === 'high' ? '🚨' : a.severity === 'medium' ? '⚠️' : 'ℹ️';
                 var sevZh = a.severity === 'high' ? '严重' : a.severity === 'medium' ? '中等' : '低';
                 var storeId = (a.store_id || '').replace(/'/g, "\\'");
+                var storeLabel = a.store_id ? ('🏪 ' + amStoreName(a.store_id)) : '🏪 未关联门店';
                 return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
                     + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
                     + '<span style="font-size:13px;font-weight:800;color:#fff;line-height:1.35;">' + sevEmoji + ' ' + (a.title || '').slice(0, 48) + '</span>'
                     + '<span style="font-size:10px;padding:3px 8px;border-radius:999px;background:' + sevColor + ';color:#fff;flex:0 0 auto;">' + sevZh + '</span>'
                     + '</div>'
+                    + '<div style="margin-top:5px;"><span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(56,189,248,0.14);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);">' + storeLabel + '</span></div>'
                     + '<div style="font-size:12px;color:rgba(226,232,240,0.66);margin-top:6px;line-height:1.55;">' + (a.message || '').slice(0, 120) + '</div>'
                     + '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'
                     + '<button onclick="alertActionRecall(\'' + storeId + '\',\'' + (a.alert_key || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;border-radius:6px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:11px;"> 发送召回券</button>'
@@ -56720,13 +56690,15 @@ ${body}
             var el = document.getElementById('growth-repurchase');
             if (!el) return;
             var total = atRiskCount + churnedCount;
+            var storeLabel = storeId ? amStoreName(storeId) : '全部门店';
             var html = '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:8px;">📌 基于客户最近到店时间自动判定：14-30天未到店=临界，30天+=流失</div>'
-                + '<div style="display:flex;gap:16px;margin-bottom:10px;">'
-                + '<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#f59e0b;">' + atRiskCount + '</div><div style="font-size:11px;color:rgba(226,232,240,0.55);">临界客户</div></div>'
-                + '<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#ef4444;">' + churnedCount + '</div><div style="font-size:11px;color:rgba(226,232,240,0.55);">流失客户</div></div>'
+                + '<div style="margin-bottom:8px;"><span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(56,189,248,0.14);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);">🏪 ' + storeLabel + '</span></div>'
+                + '<div style="display:flex;gap:10px;margin-bottom:12px;">'
+                + '<div style="flex:1;text-align:center;background:rgba(245,158,11,0.08);border-radius:10px;padding:10px 4px;"><div style="font-size:24px;font-weight:800;color:#f59e0b;">' + atRiskCount + '</div><div style="font-size:11px;color:rgba(226,232,240,0.6);margin-top:2px;">临界客户</div></div>'
+                + '<div style="flex:1;text-align:center;background:rgba(239,68,68,0.08);border-radius:10px;padding:10px 4px;"><div style="font-size:24px;font-weight:800;color:#ef4444;">' + churnedCount + '</div><div style="font-size:11px;color:rgba(226,232,240,0.6);margin-top:2px;">流失客户</div></div>'
                 + '</div>';
             if (total > 0) {
-                html += '<button onclick="triggerRepurchase(\'' + (storeId || '') + '\')" style="padding:6px 14px;border-radius:8px;background:rgba(245,158,11,0.2);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:12px;">🚀 立即触发复购行动</button>'
+                html += '<button onclick="triggerRepurchase(\'' + (storeId || '') + '\')" style="display:block;width:100%;box-sizing:border-box;min-height:44px;padding:11px 14px;border-radius:10px;background:rgba(245,158,11,0.2);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:14px;font-weight:700;">🚀 立即触发复购行动</button>'
                     + '<div style="font-size:10px;color:rgba(226,232,240,0.35);margin-top:6px;line-height:1.4;">⚡ 点击后将自动为这些客户创建「发券/内容触达」待办行动，请到「AI建议」Tab中逐条确认后执行，不会自动发送</div>';
             } else {
                 html += '<div style="font-size:12px;color:rgba(226,232,240,0.4);">当前无复购临界客户</div>';
