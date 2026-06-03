@@ -66,6 +66,34 @@ async function postSubscribePush(body) {
   }
 }
 
+// 小程序站内推券网关：HRMS 策略 → 调云函数 growthMemberCoupon → 给会员发券进卡包。
+// URL 配在 env HRMS_MEMBER_COUPON_PUSH_URL，密钥与订阅推送同口径。
+function memberCouponPushUrl() {
+  return cleanText(process.env.HRMS_MEMBER_COUPON_PUSH_URL || '', 500);
+}
+function isMemberCouponPushConfigured() {
+  return !!memberCouponPushUrl() && !!cleanText(process.env.MINIPROGRAM_SYNC_SECRET || process.env.HRMS_GROWTH_EVENT_SECRET || '', 500);
+}
+async function postMemberCouponPush(body) {
+  const url = memberCouponPushUrl();
+  const secret = cleanText(process.env.MINIPROGRAM_SYNC_SECRET || process.env.HRMS_GROWTH_EVENT_SECRET || '', 500);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Miniprogram-Sync-Secret': secret },
+      body: JSON.stringify(body || {}),
+      signal: ctrl.signal
+    });
+    let json = {};
+    try { json = await resp.json(); } catch (e) { json = {}; }
+    return { httpStatus: resp.status, body: json };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function authMiniProgramSync(req) {
   const secret = cleanText(process.env.MINIPROGRAM_SYNC_SECRET || '', 500);
   if (!secret) return { ok: false, status: 503, error: 'miniprogram_sync_disabled' };
@@ -1578,6 +1606,97 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           });
         }
       }
+    } else if (cleanText(payload.channel || '', 80) === 'member' && (cleanPhone(payload.phone) || cleanText(payload.openid || '', 128))) {
+      // 小程序站内推券通道：HRMS 策略 → 云函数 growthMemberCoupon → 发券进会员卡包。
+      // 只在自己的小程序里触达（不经短信/企微）。需在规则 action_payload 配 member_template_id
+      // （指向小程序已建好的券模板）。未配置或网关未配则如实记 skipped，不抛错。
+      const memPhone = cleanPhone(payload.phone);
+      const memOpenid = cleanText(payload.openid || '', 128);
+      const memberTemplateId = cleanText(payload.member_template_id || payload.template_id || '', 128);
+      const deliveryKey = `${actionKey}:member:${memOpenid || memPhone}:${Date.now()}`;
+      if (!isMemberCouponPushConfigured() || !memberTemplateId) {
+        executionResults.delivery_error = !memberTemplateId ? 'member_template_not_set' : 'member_coupon_push_not_configured';
+        await upsertDeliveryLog(pool, {
+          delivery_key: deliveryKey,
+          action_key: actionKey,
+          rule_key: cleanText(payload.rule_key, 128),
+          customer_id: payload.customer_id,
+          store_id: storeId,
+          channel: 'member',
+          external_userid: '',
+          status: 'skipped',
+          payload: { phone: memPhone, openid: memOpenid, template_id: memberTemplateId },
+          result: {},
+          error_message: !memberTemplateId
+            ? '规则未配置 member_template_id（小程序券模板ID），已跳过站内推券'
+            : '未配置 HRMS_MEMBER_COUPON_PUSH_URL / MINIPROGRAM_SYNC_SECRET，已跳过站内推券'
+        });
+      } else {
+        try {
+          const pushResp = await postMemberCouponPush({
+            phone: memPhone || undefined,
+            openid: memOpenid || undefined,
+            store_id: storeId,
+            template_id: memberTemplateId,
+            idempotency_key: deliveryKey
+          });
+          const ok = !!(pushResp.body && pushResp.body.ok);
+          const providerMsgId = (pushResp.body && pushResp.body.voucher_id) || deliveryKey;
+          payload.delivery_key = deliveryKey;
+          await upsertDeliveryLog(pool, {
+            delivery_key: deliveryKey,
+            action_key: actionKey,
+            rule_key: cleanText(payload.rule_key, 128),
+            customer_id: payload.customer_id,
+            store_id: storeId,
+            channel: 'member',
+            external_userid: '',
+            provider_msg_id: String(providerMsgId),
+            status: ok ? 'sent' : 'failed',
+            payload: { phone: memPhone, openid: memOpenid, template_id: memberTemplateId },
+            result: pushResp.body || {},
+            error_message: ok ? null : ((pushResp.body && pushResp.body.error) || `member_coupon_http_${pushResp.httpStatus}`)
+          });
+          if (ok) {
+            await insertGrowthEvent(pool, {
+              event_type: 'marketing_triggered',
+              customer_id: payload.customer_id,
+              phone: memPhone || null,
+              external_userid: null,
+              store_id: storeId,
+              campaign_id: campaignId,
+              channel: 'member',
+              coupon_id: payload.coupon_id,
+              idempotency_key: `marketing_triggered:${actionKey}:${providerMsgId}`,
+              metadata: {
+                action_key: actionKey,
+                rule_key: cleanText(payload.rule_key, 128),
+                delivery_key: deliveryKey,
+                template_id: memberTemplateId,
+                voucher_id: String(providerMsgId)
+              }
+            });
+            executionResults.real_executions.push({ type: 'member_coupon', provider_msg_id: String(providerMsgId), status: 'sent' });
+          } else {
+            executionResults.delivery_error = (pushResp.body && pushResp.body.error) || `member_coupon_http_${pushResp.httpStatus}`;
+          }
+        } catch (deliveryErr) {
+          executionResults.delivery_error = deliveryErr?.message || 'member_coupon_send_failed';
+          await upsertDeliveryLog(pool, {
+            delivery_key: deliveryKey,
+            action_key: actionKey,
+            rule_key: cleanText(payload.rule_key, 128),
+            customer_id: payload.customer_id,
+            store_id: storeId,
+            channel: 'member',
+            external_userid: '',
+            status: 'failed',
+            payload: { phone: memPhone, openid: memOpenid, template_id: memberTemplateId },
+            result: {},
+            error_message: deliveryErr?.message || 'member_coupon_send_failed'
+          });
+        }
+      }
     }
   } catch (execErr) {
     executionResults.error = execErr?.message;
@@ -1739,7 +1858,10 @@ async function runTouchRuleEngine(pool, options = {}) {
       const rowPhone = cleanPhone(row.phone);
       const ruleChannel = cleanText((rule.action_payload && rule.action_payload.channel) || '', 40);
       let channel = null;
-      if (ruleChannel === 'subscribe') {
+      if (ruleChannel === 'member') {
+        // 小程序站内推券：需会员有 openid 或手机号，且配置了推券网关
+        if ((rowPhone || cleanText(row.openid || '', 128)) && isMemberCouponPushConfigured()) channel = 'member';
+      } else if (ruleChannel === 'subscribe') {
         if ((rowPhone || cleanText(row.openid || '', 128)) && isSubscribePushConfigured()) channel = 'subscribe';
       } else if (row.external_userid) {
         channel = 'wecom';
@@ -1747,6 +1869,43 @@ async function runTouchRuleEngine(pool, options = {}) {
         channel = 'sms';
       }
       if (!channel) continue;
+
+      // ===== 全局营销疲劳保护（跨规则 / 跨活动去重）=====
+      // 痛点：多条规则可能同时命中同一客户（如「7天未到店」+「新品上线」），
+      // 若各自独立发送会对客人造成轰炸。这里在「本规则冷却」之外再加两道全局闸门：
+      //  (1) 全局触达间隔 GROWTH_GLOBAL_MIN_GAP_DAYS（默认7天）：客户被【任何】规则
+      //      成功触达后，该天数内不再发送【任何】新营销。
+      //  (2) 活动/券有效期排他 GROWTH_COUPON_MIN_GAP_DAYS（默认14天）：客户在上一张券
+      //      可能仍有效的期间内，不再发【新的发券类活动】（send_voucher），
+      //      避免「上次的券还没用，又发新券」。
+      const GLOBAL_GAP = Math.max(0, Math.floor(Number(process.env.GROWTH_GLOBAL_MIN_GAP_DAYS) || 7));
+      const COUPON_GAP = Math.max(0, Math.floor(Number(process.env.GROWTH_COUPON_MIN_GAP_DAYS) || 14));
+      const reachedStatuses = `('sent','delivered','read','clicked','redeemed')`;
+      if (GLOBAL_GAP > 0) {
+        const g = await pool.query(
+          `SELECT 1 FROM growth_delivery_logs
+           WHERE customer_id = $1 AND status IN ${reachedStatuses}
+             AND updated_at > NOW() - ($2::int || ' days')::interval
+           LIMIT 1`,
+          [row.customer_id, GLOBAL_GAP]
+        );
+        if (g.rows.length) continue; // 全局静默期内，跳过该客户的一切新营销
+      }
+      const isVoucherRule = cleanText(rule.action_type || '', 80) === 'send_voucher';
+      if (isVoucherRule && COUPON_GAP > 0) {
+        // 仅对发券类规则：检查该客户最近 COUPON_GAP 天内是否已收到过任何发券类触达
+        const c = await pool.query(
+          `SELECT 1 FROM growth_delivery_logs dl
+           JOIN growth_actions ga ON ga.action_key = dl.action_key
+           WHERE dl.customer_id = $1 AND dl.status IN ${reachedStatuses}
+             AND ga.action_type = 'send_voucher'
+             AND dl.updated_at > NOW() - ($2::int || ' days')::interval
+           LIMIT 1`,
+          [row.customer_id, COUPON_GAP]
+        );
+        if (c.rows.length) continue; // 上一张券可能仍在有效期内，不重复发券
+      }
+
       // 发送频率（冷却）：规则可设 frequency_days（每位会员最短重发间隔）。
       // 若该会员在 frequency_days 天内已被本规则成功触达过，则本轮跳过，避免高频打扰。
       // 未设置(0)时沿用默认的「每个到店周期最多 1 次」语义（由 period_key 去重保证）。
@@ -2433,16 +2592,49 @@ export function registerGrowthRoutes(app, pool) {
     const offset = Math.max(Number(req.query.offset) || 0, 0);
     const storeId = cleanText(req.query.store_id || '', 128);
     const decision = cleanText(req.query.decision || '', 40);
-    let sql = `SELECT * FROM growth_execution_logs`;
+    // 关键语义修正：growth_execution_logs.decision='executed' 只代表「引擎处理了该动作」，
+    // 不代表「触达到了客人」。真正的渠道触达结果在 growth_delivery_logs。这里按 action_key
+    // 聚合投递日志，回传每条执行记录的真实触达统计，供前端区分「已触达 / 失败 / 跳过 / 仅内部执行」。
+    let sql = `SELECT el.*,
+        tr.name AS rule_name,
+        COALESCE(d.total_count, 0) AS delivery_total,
+        COALESCE(d.delivered_count, 0) AS delivery_delivered,
+        COALESCE(d.failed_count, 0) AS delivery_failed,
+        COALESCE(d.skipped_count, 0) AS delivery_skipped,
+        d.channels AS delivery_channels,
+        d.last_error AS delivery_last_error
+      FROM growth_execution_logs el
+      LEFT JOIN growth_touch_rules tr ON tr.rule_key = split_part(el.action_key, ':', 2)
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) AS total_count,
+          COUNT(*) FILTER (WHERE status IN ('sent','delivered','read','clicked','redeemed')) AS delivered_count,
+          COUNT(*) FILTER (WHERE status = 'failed') AS failed_count,
+          COUNT(*) FILTER (WHERE status = 'skipped') AS skipped_count,
+          string_agg(DISTINCT channel, ',') AS channels,
+          (array_agg(error_message ORDER BY created_at DESC) FILTER (WHERE error_message IS NOT NULL))[1] AS last_error
+        FROM growth_delivery_logs dl
+        WHERE dl.action_key = el.action_key
+      ) d ON TRUE`;
     const params = [];
     const conds = [];
-    if (storeId) { conds.push(`store_id = $${params.length + 1}`); params.push(storeId); }
-    if (decision) { conds.push(`decision = $${params.length + 1}`); params.push(decision); }
+    if (storeId) { conds.push(`el.store_id = $${params.length + 1}`); params.push(storeId); }
+    if (decision) { conds.push(`el.decision = $${params.length + 1}`); params.push(decision); }
     if (conds.length) sql += ` WHERE ` + conds.join(' AND ');
-    sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    sql += ` ORDER BY el.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
     const r = await pool.query(sql, params);
-    return res.json({ ok: true, logs: r.rows, limit, offset });
+    const logs = r.rows.map((l) => {
+      let reach = 'na';
+      if (l.decision === 'ignored') reach = 'ignored';
+      else if (Number(l.delivery_total) === 0) reach = 'internal_only';
+      else if (Number(l.delivery_delivered) > 0) reach = 'reached';
+      else if (Number(l.delivery_failed) > 0) reach = 'failed';
+      else if (Number(l.delivery_skipped) > 0) reach = 'skipped';
+      else reach = 'internal_only';
+      return Object.assign({}, l, { reach });
+    });
+    return res.json({ ok: true, logs, limit, offset });
   });
 
   app.post('/api/growth/actions', async (req, res) => {

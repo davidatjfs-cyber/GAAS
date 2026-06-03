@@ -12281,6 +12281,37 @@
             box-shadow: 0 8px 24px -8px rgba(212, 175, 55, 0.45);
         }
 
+        /* ── Growth: 分组内子导航 ── */
+        #growth-page .rep-subtabs {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            scrollbar-width: none;
+            padding-bottom: 2px;
+        }
+        #growth-page .rep-subtabs::-webkit-scrollbar { display: none; }
+        #growth-page .rep-subtab {
+            flex: 0 0 auto;
+            padding: 7px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            border: 1px solid var(--rep-border-soft);
+            border-radius: 999px;
+            cursor: pointer;
+            color: var(--rep-text);
+            background: rgba(255,255,255,0.03);
+            opacity: 0.7;
+            white-space: nowrap;
+            transition: color 0.2s, background 0.2s, opacity 0.2s;
+        }
+        #growth-page .rep-subtab:hover { opacity: 0.95; }
+        #growth-page .rep-subtab--active {
+            opacity: 1;
+            color: #f4e4a6;
+            background: rgba(201, 162, 39, 0.16);
+            border-color: rgba(201, 162, 39, 0.4);
+        }
+
         /* ── Growth: report-style layout ── */
         #growth-page .rep-filters {
             position: relative;
@@ -18525,22 +18556,15 @@
                     </div>
                   </div>
                 </div>
-                <nav class="rep-tabs" style="margin-bottom:16px;">
+                <nav class="rep-tabs" style="margin-bottom:10px;">
                   <button class="rep-tab rep-tab--active" onclick="showGrowthTab('dashboard')" id="growth-tab-dashboard">看板</button>
-                  <button class="rep-tab" onclick="showGrowthTab('wecom')" id="growth-tab-wecom">企微客户</button>
-                  <button class="rep-tab" onclick="showGrowthTab('wecomconfig')" id="growth-tab-wecomconfig">企微配置</button>
-                  <button class="rep-tab" onclick="showGrowthTab('campaigns')" id="growth-tab-campaigns">活动管理</button>
-                  <button class="rep-tab" onclick="showGrowthTab('profiles')" id="growth-tab-profiles">用户画像</button>
-                  <button class="rep-tab" onclick="showGrowthTab('constraints')" id="growth-tab-constraints">营销约束</button>
-                  <button class="rep-tab" onclick="showGrowthTab('posters')" id="growth-tab-posters">海报</button>
-                  <button class="rep-tab" onclick="showGrowthTab('public')" id="growth-tab-public">公域品宣</button>
-                  <button class="rep-tab" onclick="showGrowthTab('actions')" id="growth-tab-actions">AI建议</button>
-                  <button class="rep-tab" onclick="showGrowthTab('abtests')" id="growth-tab-abtests">A/B测试</button>
-                  <button class="rep-tab" onclick="showGrowthTab('contentsys')" id="growth-tab-contentsys">内容系统</button>
-                  <button class="rep-tab" onclick="showGrowthTab('automarketing')" id="growth-tab-automarketing">自动营销</button>
-                  <button class="rep-tab" onclick="showGrowthTab('exec-logs')" id="growth-tab-exec-logs">执行记录</button>
-                  <button class="rep-tab" onclick="showGrowthTab('pos')" id="growth-tab-pos">POS消费</button>
+                  <button class="rep-tab" onclick="showGrowthTab('audience')" id="growth-tab-audience">客群洞察</button>
+                  <button class="rep-tab" onclick="showGrowthTab('engine')" id="growth-tab-engine">自动营销</button>
+                  <button class="rep-tab" onclick="showGrowthTab('content')" id="growth-tab-content">内容中心</button>
+                  <button class="rep-tab" onclick="showGrowthTab('execution')" id="growth-tab-execution">执行中心</button>
+                  <button class="rep-tab" onclick="showGrowthTab('settings')" id="growth-tab-settings">设置治理</button>
                 </nav>
+                <div id="growth-subnav" class="rep-subtabs" style="display:none;margin-bottom:14px;"></div>
                     <div id="growth-dashboard-content">
                     <div style="font-size:13px;font-weight:700;color:#38bdf8;margin-bottom:12px;">️ POS系统数据</div>
                     <div id="growth-pos-metrics-cards" class="rep-grid" style="margin-bottom:14px;"></div>
@@ -53910,59 +53934,86 @@ ${body}
         function refreshGrowthCurrentTab() {
             showGrowthTab(__growthActiveTab || 'dashboard');
         }
-        function showGrowthTab(tab) {
-            __growthActiveTab = tab;
-            ['dashboard', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'constraints', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing'].forEach(function(name) {
-                var content = document.getElementById('growth-' + name + '-content');
-                var btn = document.getElementById('growth-tab-' + name);
-                if (content) content.style.display = name === tab ? '' : 'none';
-                if (btn) {
-                    if (name === tab) btn.classList.add('rep-tab--active');
-                    else btn.classList.remove('rep-tab--active');
-                }
-            });
-            if (tab === 'wecom') {
-                loadWechatWorkStats();
-                loadWechatWorkCustomers();
-            } else if (tab === 'campaigns') {
-                loadCampaignPlans();
-                loadContentCalendar();
-            } else if (tab === 'profiles') {
-                loadGrowthProfiles();
-            } else if (tab === 'constraints') {
-                loadGrowthConstraints();
-            } else if (tab === 'actions') {
-                loadGrowthActionBoard();
-            } else if (tab === 'abtests') {
-                loadGrowthAbTests();
-            } else if (tab === 'contentsys') {
-                loadGrowthContentSuggestions();
-                loadGrowthContentPerformance();
-                loadGrowthLearnings();
-            } else if (tab === 'posters') {
-                loadPosterTemplates();
-                loadPosterHistory();
-                loadCreativeAssets();
-                loadPublicChannels();
-                populatePosterStoreSelect();
-                initAutoCampaignId();
+        // ── 增长模块 6 大分组（14→6 重组，零DOM搬迁：内容区按 id 显示/隐藏）──
+        var GROWTH_GROUPS = [
+            { key: 'dashboard', label: '看板', members: ['dashboard'] },
+            { key: 'audience', label: '客群洞察', members: ['profiles', 'pos', 'wecom'] },
+            { key: 'engine', label: '自动营销', members: ['automarketing', 'abtests'] },
+            { key: 'content', label: '内容中心', members: ['campaigns', 'posters', 'public', 'contentsys'] },
+            { key: 'execution', label: '执行中心', members: ['actions', 'exec-logs'] },
+            { key: 'settings', label: '设置治理', members: ['wecomconfig', 'constraints'] }
+        ];
+        var GROWTH_MEMBER_LABEL = {
+            dashboard: '看板', profiles: '用户画像', pos: 'POS消费', wecom: '企微客户',
+            automarketing: '规则引擎', abtests: 'A/B测试',
+            campaigns: '活动管理', posters: '海报创意', public: '公域品宣', contentsys: '内容系统',
+            actions: 'AI建议', 'exec-logs': '执行记录',
+            wecomconfig: '企微配置', constraints: '营销约束'
+        };
+        var GROWTH_ALL_MEMBERS = ['dashboard', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'constraints', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing'];
+        var __growthActiveSub = {}; // group.key -> 最近激活的成员
+
+        function growthGroupOf(member) {
+            for (var i = 0; i < GROWTH_GROUPS.length; i++) {
+                if (GROWTH_GROUPS[i].members.indexOf(member) !== -1) return GROWTH_GROUPS[i];
+            }
+            return null;
+        }
+
+        function loadGrowthMember(member) {
+            if (member === 'wecom') { loadWechatWorkStats(); loadWechatWorkCustomers(); }
+            else if (member === 'campaigns') { loadCampaignPlans(); loadContentCalendar(); }
+            else if (member === 'profiles') { loadGrowthProfiles(); }
+            else if (member === 'constraints') { loadGrowthConstraints(); }
+            else if (member === 'actions') { loadGrowthActionBoard(); }
+            else if (member === 'abtests') { loadGrowthAbTests(); }
+            else if (member === 'contentsys') { loadGrowthContentSuggestions(); loadGrowthContentPerformance(); loadGrowthLearnings(); }
+            else if (member === 'posters') {
+                loadPosterTemplates(); loadPosterHistory(); loadCreativeAssets(); loadPublicChannels();
+                populatePosterStoreSelect(); initAutoCampaignId();
                 renderTagCheckboxes('poster-gen-purposes', __CONTENT_PURPOSE_TAGS, []);
                 renderTagCheckboxes('poster-gen-channels', __CONTENT_CHANNEL_TAGS, []);
-                populatePosterGenStylePrompt();
-                populateTemplateFormSelects();
-            } else if (tab === 'public') {
-                refreshPublicContentWorkspace();
-            } else if (tab === 'pos') {
-                loadPosStats();
-            } else if (tab === 'exec-logs') {
-                loadExecutionLogs();
-            } else if (tab === 'wecomconfig') {
-                loadStoreWecomConfigs();
-            } else if (tab === 'automarketing') {
-                loadAutoMarketing();
-            } else {
-                refreshGrowthDashboard();
+                populatePosterGenStylePrompt(); populateTemplateFormSelects();
             }
+            else if (member === 'public') { refreshPublicContentWorkspace(); }
+            else if (member === 'pos') { loadPosStats(); }
+            else if (member === 'exec-logs') { loadExecutionLogs(); }
+            else if (member === 'wecomconfig') { loadStoreWecomConfigs(); }
+            else if (member === 'automarketing') { loadAutoMarketing(); }
+            else { refreshGrowthDashboard(); }
+        }
+
+        function renderGrowthSubnav(group, activeMember) {
+            var host = document.getElementById('growth-subnav');
+            if (!host) return;
+            if (!group || group.members.length <= 1) { host.innerHTML = ''; host.style.display = 'none'; return; }
+            host.style.display = '';
+            host.innerHTML = group.members.map(function(m) {
+                var on = m === activeMember;
+                return '<button type="button" class="rep-subtab' + (on ? ' rep-subtab--active' : '') + '" onclick="showGrowthTab(\'' + m + '\')">' + (GROWTH_MEMBER_LABEL[m] || m) + '</button>';
+            }).join('');
+        }
+
+        function showGrowthTab(tab) {
+            // 兼容旧调用：tab 可为分组名(dashboard/audience/engine/content/execution/settings)或成员名(actions/abtests/…)
+            var group = null, member = null;
+            for (var gi = 0; gi < GROWTH_GROUPS.length; gi++) { if (GROWTH_GROUPS[gi].key === tab) { group = GROWTH_GROUPS[gi]; break; } }
+            if (group) { member = __growthActiveSub[group.key] || group.members[0]; }
+            else { group = growthGroupOf(tab); member = tab; }
+            if (!group) { group = GROWTH_GROUPS[0]; member = 'dashboard'; }
+            __growthActiveSub[group.key] = member;
+            __growthActiveTab = member;
+
+            GROWTH_ALL_MEMBERS.forEach(function(name) {
+                var content = document.getElementById('growth-' + name + '-content');
+                if (content) content.style.display = name === member ? '' : 'none';
+            });
+            GROWTH_GROUPS.forEach(function(g) {
+                var btn = document.getElementById('growth-tab-' + g.key);
+                if (btn) { if (g.key === group.key) btn.classList.add('rep-tab--active'); else btn.classList.remove('rep-tab--active'); }
+            });
+            renderGrowthSubnav(group, member);
+            loadGrowthMember(member);
         }
 
         
@@ -54751,6 +54802,11 @@ ${body}
                         + '<div style="margin-top:10px;font-size:12px;color:rgba(226,232,240,0.78);line-height:1.6;">' + escapeHtml(t.ai_summary || '尚未生成总结') + '</div>'
                         + '<div style="margin-top:10px;display:flex;gap:8px;">'
                         + '<button class="rep-seg-btn" style="flex:1;" onclick="refreshGrowthAbTest(' + Number(t.id || 0) + ')">刷新结果</button>'
+                        + ((winner === 'A' || winner === 'B')
+                            ? (t.promoted_rule_key
+                                ? '<button class="rep-seg-btn" style="flex:1.4;opacity:0.6;cursor:default;" disabled>✅ 已采用为自动规则</button>'
+                                : '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1.4;" onclick="promoteGrowthAbTest(' + Number(t.id || 0) + ',\'' + String(winner) + '\')">🚀 采用胜者为自动规则</button>')
+                            : '')
                         + '</div>'
                         + '</div>';
                 }).join('') : '<div class="rep-pay-empty">暂无A/B测试</div>';
@@ -54830,6 +54886,25 @@ ${body}
                 loadGrowthAbTests();
             } catch (e) {
                 showNotification('刷新失败：' + (e?.message || e), 'error');
+            }
+        }
+
+        // 闭环回路：把 A/B 胜出变体一键采用为「自动营销」规则（approved + auto_execute）。
+        async function promoteGrowthAbTest(id, winner) {
+            if (!confirm('确认采用 ' + winner + ' 组胜出变体为「自动营销」规则？\n\n采用后将写入自动营销规则库并标记为「已审核·自动执行」，引擎下一轮按该胜出版本对【临界/流失】客群自动放量（短信/订阅仍受各自自动发送总闸限制）。\n默认人群为召回型，可在「自动营销」里再调整后再开启。')) return;
+            try {
+                var r = await fetch('/api/growth/ab-tests/' + encodeURIComponent(String(id || '')) + '/promote', {
+                    method: 'POST',
+                    headers: Object.assign({}, growthAuthHeaders(), { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({})
+                });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.message || d.error || 'promote_failed');
+                showNotification('已采用为自动规则：' + (d.rule_key || ''), 'success');
+                loadGrowthAbTests();
+                if (typeof loadAutoMarketing === 'function') { try { loadAutoMarketing(); } catch (e) {} }
+            } catch (e) {
+                showNotification('采用失败：' + (e?.message || e), 'error');
             }
         }
 
@@ -55318,6 +55393,92 @@ ${body}
             }
         }
 
+        // 执行记录中英文词条 → 中文映射
+        var GROWTH_CN_TOKENS = {
+            // 动作类型
+            'send_voucher': '发券', 'send_coupon': '发券', 'send_message': '发消息',
+            'send_sms': '发短信', 'send_wecom': '发企微', 'send_subscribe': '发订阅消息',
+            'generate_poster': '生成海报', 'create_campaign': '创建活动', 'create_plan': '创建活动方案',
+            'content_calendar': '内容排期', 'push_subscribe': '订阅推送', 'churn_alert': '流失预警',
+            'repurchase': '复购触发', 'recall': '召回',
+            // 操作人
+            'rule_engine': '规则引擎', 'agent_v2': 'AI助手', 'system': '系统', 'auto': '自动',
+            'admin': '管理员',
+            // 内部动作类型
+            'marked_executed': '已标记执行', 'wecom_message': '企微消息', 'sms_message': '短信',
+            'subscribe_message': '订阅消息', 'member_coupon': '小程序站内推券', 'poster': '海报', 'campaign_plan': '活动方案',
+            'coupon': '优惠券', 'content': '内容',
+            // 状态/结果
+            'sent': '已发送', 'delivered': '已送达', 'read': '已读', 'clicked': '已点击',
+            'redeemed': '已核销', 'failed': '发送失败', 'skipped': '已跳过', 'active': '生效中',
+            'pending': '待处理', 'none': '无',
+            // 渠道
+            'wecom': '企业微信', 'sms': '短信', 'subscribe': '订阅消息', 'member': '小程序会员', 'phone': '电话',
+            // 常见错误片段
+            'sms_skipped_no_coupon_value': '无券面额已跳过', 'subscribe_push_not_configured': '订阅推送未配置',
+            'no_coupon_value': '无券面额'
+        };
+        function growthCnToken(s) {
+            if (s === null || s === undefined || s === '') return '-';
+            var str = String(s);
+            if (GROWTH_CN_TOKENS[str]) return GROWTH_CN_TOKENS[str];
+            // 逐词替换（处理 a=b,c 这类组合串）
+            return str.replace(/[a-zA-Z_]+/g, function(m) { return GROWTH_CN_TOKENS[m] || m; });
+        }
+        function growthCnChannels(s) {
+            if (!s) return '';
+            return String(s).split(',').map(function(c){ return GROWTH_CN_TOKENS[c.trim()] || c.trim(); }).join('、');
+        }
+        function growthCnStore(s) {
+            var map = {
+                'majixian': '马己仙广东小馆', 'hongchao': '洪潮潮汕传统菜',
+                '51866138': '马己仙广东小馆', '64822111': '洪潮潮汕传统菜'
+            };
+            if (!s) return '-';
+            return map[String(s)] || String(s);
+        }
+        function growthCnActionKey(k, ruleName) {
+            if (!k) return '-';
+            // rule:xxx:123:period → 规则「中文名」· 客户#123（中文名优先取后端 rule_name）
+            var str = String(k);
+            var m = str.match(/^rule:([^:]+):(\d+):?(.*)$/);
+            if (m) {
+                var label = ruleName || growthCnToken(m[1]);
+                return '规则「' + label + '」· 客户#' + m[2];
+            }
+            return str.length > 48 ? str.slice(0, 48) + '…' : str;
+        }
+        function growthCnReason(reason, actionKey, ruleName) {
+            if (!reason) return '';
+            var str = String(reason);
+            // 把 "...:lost_lowfreq_lastcall" 里的规则代码替换成中文规则名
+            if (actionKey) {
+                var m = String(actionKey).match(/^rule:([^:]+):/);
+                if (m) {
+                    var label = ruleName || growthCnToken(m[1]);
+                    str = str.split(m[1]).join('「' + label + '」');
+                }
+            }
+            return growthCnToken(str);
+        }
+        function growthCnResultSummary(s) {
+            if (!s) return '-';
+            var str = String(s).replace(/^真实执行[:：]\s*/, '');
+            if (!str || str === 'none' || str === '无') return '无（未产生内部动作）';
+            // 形如 "campaign_plan=exec_plan_x,active; coupon=exec_coupon_y; sms_message=...,sent"
+            return str.split(';').map(function(part) {
+                part = part.trim();
+                if (!part) return '';
+                var eq = part.indexOf('=');
+                if (eq < 0) return growthCnToken(part);
+                var key = part.slice(0, eq).trim();
+                var val = part.slice(eq + 1).trim();
+                // 值里通常是 内部ID,状态；只翻译状态词，ID保留
+                var vparts = val.split(',').map(function(v){ return growthCnToken(v.trim()); });
+                return growthCnToken(key) + '：' + vparts.join('，');
+            }).filter(Boolean).join('；');
+        }
+
         async function loadExecutionLogs() {
             try {
                 var host = document.getElementById('growth-exec-logs-list');
@@ -55330,18 +55491,35 @@ ${body}
                 const data = await r.json();
                 if (!data.ok) throw new Error(data.error || 'api_error');
                 const logs = data?.logs || [];
-                var decisionLabels = { 'executed': '✅ 已执行', 'ignored': '⛔ 已忽略', 'edited_then_executed': '✏️ 修改后执行', 'feedback': '📝 回填' };
+                // 引擎处理结果（仅代表「引擎是否处理了该动作」，不代表是否触达客人）
+                var decisionLabels = { 'executed': '引擎已处理', 'ignored': '已忽略', 'edited_then_executed': '修改后处理', 'feedback': '已回填' };
+                // 真实触达状态（核心语义：只有「打通的渠道把消息送到客人」才算已触达）
+                var reachMeta = {
+                    'reached':       { label: '✅ 已触达客户', color: '#22c55e' },
+                    'failed':        { label: '❌ 发送失败（未触达）', color: '#ef4444' },
+                    'skipped':       { label: '⏭️ 已跳过（未触达）', color: '#f59e0b' },
+                    'internal_only': { label: '⚪ 仅内部执行（未触达客户）', color: '#94a3b8' },
+                    'ignored':       { label: '⛔ 已忽略', color: '#ef4444' },
+                    'na':            { label: '—', color: '#94a3b8' }
+                };
                 host.innerHTML = logs.length ? logs.map(function(l) {
                     var dLabel = decisionLabels[l.decision] || l.decision || '-';
-                    var dColor = l.decision === 'executed' || l.decision === 'edited_then_executed' ? '#22c55e' : l.decision === 'ignored' ? '#ef4444' : '#f59e0b';
+                    var reach = reachMeta[l.reach] || reachMeta['na'];
+                    var channels = growthCnChannels(l.delivery_channels);
+                    var reachDetail = '';
+                    if (l.reach === 'reached') reachDetail = (channels ? '渠道：' + channels + ' · ' : '') + '已送达 ' + (l.delivery_delivered || 0) + ' 条';
+                    else if (l.reach === 'failed') reachDetail = (channels ? '渠道：' + channels + ' · ' : '') + '失败 ' + (l.delivery_failed || 0) + ' 条' + (l.delivery_last_error ? '（' + growthCnToken(l.delivery_last_error) + '）' : '');
+                    else if (l.reach === 'skipped') reachDetail = (channels ? '渠道：' + channels + ' · ' : '') + '跳过 ' + (l.delivery_skipped || 0) + ' 条' + (l.delivery_last_error ? '（' + growthCnToken(l.delivery_last_error) + '）' : '');
+                    else if (l.reach === 'internal_only') reachDetail = '仅生成了券/活动/海报等内部动作，未通过任何渠道发送给客人';
                     return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;">'
-                        + '<div style="display:flex;justify-content:space-between;align-items:center;">'
-                        + '<span style="color:#fff;font-weight:600;">' + (l.action_key || '').slice(0, 40) + '</span>'
-                        + '<span style="color:' + dColor + ';font-size:11px;">' + dLabel + '</span>'
+                        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+                        + '<span style="color:#fff;font-weight:600;word-break:break-all;">' + escapeHtml(growthCnActionKey(l.action_key, l.rule_name)) + '</span>'
+                        + '<span style="color:' + reach.color + ';font-size:11px;white-space:nowrap;font-weight:600;">' + reach.label + '</span>'
                         + '</div>'
-                        + '<div style="color:rgba(226,232,240,0.5);margin-top:4px;">门店：' + (l.store_id || '-') + ' · 类型：' + (l.action_type || '-') + ' · 操作人：' + (l.operator_username || '-') + ' · ' + (l.created_at ? String(l.created_at).slice(0, 16) : '') + '</div>'
-                        + (l.decision_reason ? '<div style="color:rgba(226,232,240,0.6);margin-top:2px;">原因：' + escapeHtml(l.decision_reason) + '</div>' : '')
-                        + (l.result_summary ? '<div style="color:rgba(226,232,240,0.6);margin-top:2px;">结果：' + escapeHtml(l.result_summary) + '</div>' : '')
+                        + (reachDetail ? '<div style="color:' + reach.color + ';opacity:0.85;margin-top:3px;font-size:11px;">' + escapeHtml(reachDetail) + '</div>' : '')
+                        + '<div style="color:rgba(226,232,240,0.5);margin-top:4px;">门店：' + growthCnStore(l.store_id) + ' · 类型：' + growthCnToken(l.action_type) + ' · 操作人：' + growthCnToken(l.operator_username) + ' · 引擎处理：' + dLabel + ' · ' + (l.created_at ? String(l.created_at).slice(0, 16).replace('T',' ') : '') + '</div>'
+                        + (l.decision_reason ? '<div style="color:rgba(226,232,240,0.6);margin-top:2px;">原因：' + escapeHtml(growthCnReason(l.decision_reason, l.action_key, l.rule_name)) + '</div>' : '')
+                        + (l.result_summary ? '<div style="color:rgba(226,232,240,0.6);margin-top:2px;">内部动作：' + escapeHtml(growthCnResultSummary(l.result_summary)) + '</div>' : '')
                         + '</div>';
                 }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无执行记录</div>';
             } catch (e) {

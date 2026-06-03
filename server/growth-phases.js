@@ -886,6 +886,8 @@ export async function ensurePhaseTables(pool) {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ab_test_tasks_store_status ON ab_test_tasks (store_code, status, created_at DESC)`);
+  // 闭环回路：记录该测试胜出变体已被采用为哪条自动营销规则（rule_key），供前端展示「已采用」。
+  await pool.query(`ALTER TABLE ab_test_tasks ADD COLUMN IF NOT EXISTS promoted_rule_key TEXT`).catch(() => {});
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ab_test_results (
       id BIGSERIAL PRIMARY KEY,
@@ -2254,6 +2256,87 @@ export function registerPhaseRoutes(app, pool) {
     const evaluated = safeDateOnly(task.end_date) <= todayShanghaiYmd() ? await evaluateAbTask(pool, task) : null;
     const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1`, [id]);
     return res.json({ ok: true, task: latest.rows[0], refreshed, evaluated });
+  });
+
+  // ── 闭环关键回路：A/B 胜出变体 → 一键提升为「自动营销」规则 ──
+  // 实验跑出更优文案/券额后，由人点击采用，写入 growth_touch_rules 并 approved + auto_execute，
+  // 引擎下一轮即按胜出版本自动放量。SMS/订阅渠道仍受各自的自动发送总闸控制，不会越权群发。
+  app.post('/api/growth/ab-tests/:id/promote', async (req, res) => {
+    const auth = authPhaseApi(req);
+    if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error || 'unauthorized' });
+    const id = Number(req.params.id || 0);
+    if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
+    const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 LIMIT 1`, [id]);
+    if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
+    const task = taskRes.rows[0];
+
+    // 必须有明确赢家才能放量；平局/未判定时拒绝，避免把没结论的文案推成自动规则。
+    const winner = String(task.winner || '').toUpperCase();
+    if (winner !== 'A' && winner !== 'B') {
+      return res.status(400).json({ ok: false, error: 'no_winner_yet', message: '该测试尚无明确赢家：需先完成并判定 A/B 胜负后才能采用。' });
+    }
+    const winnerDef = (winner === 'A' ? task.variant_a : task.variant_b) || {};
+    const content = cleanText(winnerDef.content || winnerDef.text || winnerDef.label || '', 2000);
+    if (!content) return res.status(400).json({ ok: false, error: 'empty_winner_content', message: '胜出变体内容为空，无法采用。' });
+
+    const b = req.body || {};
+    const operator = cleanText(auth.user?.username || 'system', 80);
+    const storeCode = cleanText(task.store_code || '', 128);
+
+    // 券额：仅 coupon_value 型测试尝试从胜出变体解析数字。
+    let couponValue = null;
+    if ((task.test_type || '') === 'coupon_value') {
+      const m = String(winnerDef.value != null ? winnerDef.value : content).match(/\d+(\.\d+)?/);
+      if (m) couponValue = Number(m[0]);
+    }
+
+    // 默认人群：召回型（临界/流失），可由 body.criteria 覆盖；采用后仍可在「自动营销」里调整。
+    const criteria = (b.criteria && typeof b.criteria === 'object' && !Array.isArray(b.criteria))
+      ? b.criteria
+      : { lifecycle_stage: 'at_risk', store_id: storeCode || undefined, min_days_since_last_visit: 14 };
+
+    const channel = cleanText(b.channel || '', 40); // 留空=企微优先，无企微回落短信
+    const frequencyDays = Math.max(0, Math.floor(Number(b.frequency_days) || 30));
+    const actionPayload = Object.assign(
+      {
+        channel,
+        store_id: storeCode || undefined,
+        content_template: content,
+        template_text: content,
+        frequency_days: frequencyDays,
+        source_ab_test_id: task.id,
+        ab_winner: winner,
+        ab_winner_lift: Number(task.winner_lift || 0)
+      },
+      couponValue != null ? { coupon_value: couponValue, value: couponValue } : {}
+    );
+
+    const ruleKey = `abwin_${task.id}`;
+    const name = cleanText(`A/B胜出·${task.test_name}（${winner}组 +${Number(task.winner_lift || 0)}%）`, 255);
+    const note = cleanText(`由 A/B 测试 #${task.id}「${task.test_name}」胜出变体 ${winner} 自动生成并采用（经办人:${operator}）`, 1000);
+
+    const upserted = await pool.query(
+      `INSERT INTO growth_touch_rules
+         (rule_key, name, enabled, priority, auto_execute, criteria, action_type, action_payload, owner, note, approved_by, approved_at, updated_at)
+       VALUES ($1,$2,TRUE,$3,TRUE,$4::jsonb,'send_message',$5::jsonb,$6,$7,$8,NOW(),NOW())
+       ON CONFLICT (rule_key) DO UPDATE SET
+         name = EXCLUDED.name,
+         enabled = TRUE,
+         auto_execute = TRUE,
+         criteria = EXCLUDED.criteria,
+         action_payload = EXCLUDED.action_payload,
+         owner = EXCLUDED.owner,
+         note = EXCLUDED.note,
+         approved_by = EXCLUDED.approved_by,
+         approved_at = NOW(),
+         updated_at = NOW()
+       RETURNING *`,
+      [ruleKey, name, Math.max(1, Math.floor(Number(b.priority) || 100)), JSON.stringify(criteria), JSON.stringify(actionPayload), operator, note, operator]
+    );
+
+    await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, ruleKey]).catch(() => {});
+
+    return res.json({ ok: true, rule: upserted.rows[0], rule_key: ruleKey });
   });
 
   app.get('/api/growth/learnings', async (req, res) => {
