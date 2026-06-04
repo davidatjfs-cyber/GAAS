@@ -350,9 +350,14 @@ export async function queryMarginByBiz(store, startDate, endDate) {
             lower(regexp_replace(COALESCE(dlc.store, '*'), '\\s+', '', 'g')) = lower(regexp_replace(COALESCE(x.store, ''), '\\s+', '', 'g'))
             OR COALESCE(NULLIF(trim(dlc.store), ''), '*') = '*'
           )
+          AND (
+            dlc.brand = '*'
+            OR dlc.brand = (CASE WHEN x.store LIKE '%洪潮%' THEN '洪潮' WHEN x.store LIKE '%马己仙%' THEN '马己仙' END)
+          )
           AND ${BIZ_MATCH_WHERE_SQL('dlc.biz_type', 'x.biz_type')}
         ORDER BY
           ${BIZ_PRIORITY_SQL('dlc.biz_type', 'x.biz_type')},
+          CASE WHEN dlc.brand = '*' THEN 2 ELSE 1 END,
           CASE WHEN COALESCE(NULLIF(trim(dlc.store), ''), '*') = '*' THEN 2 ELSE 1 END,
           dlc.updated_at DESC
         LIMIT 1
@@ -470,9 +475,14 @@ async function queryMarginBySlot(store, startDate, endDate) {
             lower(regexp_replace(COALESCE(dlc.store, '*'), '\\s+', '', 'g')) = lower(regexp_replace(COALESCE(x.store, ''), '\\s+', '', 'g'))
             OR COALESCE(NULLIF(trim(dlc.store), ''), '*') = '*'
           )
+          AND (
+            dlc.brand = '*'
+            OR dlc.brand = (CASE WHEN x.store LIKE '%洪潮%' THEN '洪潮' WHEN x.store LIKE '%马己仙%' THEN '马己仙' END)
+          )
           AND ${BIZ_MATCH_WHERE_SQL('dlc.biz_type', 'x.biz_type')}
         ORDER BY
           ${BIZ_PRIORITY_SQL('dlc.biz_type', 'x.biz_type')},
+          CASE WHEN dlc.brand = '*' THEN 2 ELSE 1 END,
           CASE WHEN COALESCE(NULLIF(trim(dlc.store), ''), '*') = '*' THEN 2 ELSE 1 END,
           dlc.updated_at DESC
         LIMIT 1
@@ -586,9 +596,14 @@ export async function queryCostCoverageDiagnostics(store, startDate, endDate, un
             lower(regexp_replace(COALESCE(dlc.store, '*'), '\\s+', '', 'g')) = lower(regexp_replace(COALESCE(x.store, ''), '\\s+', '', 'g'))
             OR COALESCE(NULLIF(trim(dlc.store), ''), '*') = '*'
           )
+          AND (
+            dlc.brand = '*'
+            OR dlc.brand = (CASE WHEN x.store LIKE '%洪潮%' THEN '洪潮' WHEN x.store LIKE '%马己仙%' THEN '马己仙' END)
+          )
           AND ${BIZ_MATCH_WHERE_SQL('dlc.biz_type', 'x.biz_type')}
         ORDER BY
           ${BIZ_PRIORITY_SQL('dlc.biz_type', 'x.biz_type')},
+          CASE WHEN dlc.brand = '*' THEN 2 ELSE 1 END,
           CASE WHEN COALESCE(NULLIF(trim(dlc.store), ''), '*') = '*' THEN 2 ELSE 1 END,
           dlc.updated_at DESC
         LIMIT 1
@@ -657,9 +672,14 @@ export async function queryCostCoverageDiagnostics(store, startDate, endDate, un
             lower(regexp_replace(COALESCE(dlc.store, '*'), '\\s+', '', 'g')) = lower(regexp_replace(COALESCE(x.store, ''), '\\s+', '', 'g'))
             OR COALESCE(NULLIF(trim(dlc.store), ''), '*') = '*'
           )
+          AND (
+            dlc.brand = '*'
+            OR dlc.brand = (CASE WHEN x.store LIKE '%洪潮%' THEN '洪潮' WHEN x.store LIKE '%马己仙%' THEN '马己仙' END)
+          )
           AND ${BIZ_MATCH_WHERE_SQL('dlc.biz_type', 'x.biz_type')}
         ORDER BY
           ${BIZ_PRIORITY_SQL('dlc.biz_type', 'x.biz_type')},
+          CASE WHEN dlc.brand = '*' THEN 2 ELSE 1 END,
           CASE WHEN COALESCE(NULLIF(trim(dlc.store), ''), '*') = '*' THEN 2 ELSE 1 END,
           dlc.updated_at DESC
         LIMIT 1

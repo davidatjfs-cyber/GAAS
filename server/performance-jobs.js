@@ -321,41 +321,45 @@ async function sendFeishuPerformanceDigest(period) {
   ).catch(() => {});
 }
 
+// 成本按「品牌」归集（品牌从门店名前缀洪潮/马己仙推断），避免跨品牌同名菜成本污染；'*' 为通用兜底。
+function dishBrandToken(s) {
+  const t = String(s || '');
+  if (t.includes('洪潮')) return '洪潮';
+  if (t.includes('马己仙')) return '马己仙';
+  return '';
+}
+
 async function loadDishCostsForStores(storeNames) {
-  const keys = [...new Set(storeNames.map(normalizeStoreKey).filter(Boolean))];
-  if (!keys.length) return new Map();
+  const brands = [...new Set((storeNames || []).map(dishBrandToken).filter(Boolean))];
   const r = await pool().query(
-    `SELECT store, biz_type, dish_name, unit_cost
+    `SELECT brand, biz_type, dish_name, unit_cost
      FROM dish_library_costs
-     WHERE enabled = true AND (lower(regexp_replace(coalesce(store,''), '\\s+', '', 'g')) = ANY($1) OR store = '*')`,
-    [keys]
+     WHERE enabled = true${brands.length ? ` AND (brand = ANY($1) OR brand = '*')` : ''}`,
+    brands.length ? [brands] : []
   );
   const m = new Map();
   for (const row of r.rows || []) {
-    const sk = normalizeStoreKey(row.store === '*' ? '' : row.store);
+    const bk = String(row.brand || '*').trim() || '*';
     const biz = String(row.biz_type || '').trim().toLowerCase();
     const dk = normDish(row.dish_name);
     const c = Number(row.unit_cost);
     if (!dk || !Number.isFinite(c) || c < 0) continue;
-    m.set(`${sk}||${biz}||${dk}`, c);
-    m.set(`${sk}||||${dk}`, c);
-    m.set(`||${biz}||${dk}`, c);
-    m.set(`||||${dk}`, c);
+    m.set(`${bk}||${biz}||${dk}`, c);
+    m.set(`${bk}||||${dk}`, c);
   }
   return m;
 }
 
 function costFor(m, store, bizRaw, dish) {
-  const sk = normalizeStoreKey(store);
+  const bk = dishBrandToken(store);
   const biz = String(bizRaw || '').trim().toLowerCase();
   const dk = normDish(dish);
-  return (
-    m.get(`${sk}||${biz}||${dk}`) ??
-    m.get(`${sk}||||${dk}`) ??
-    m.get(`||${biz}||${dk}`) ??
-    m.get(`||||${dk}`) ??
-    null
-  );
+  if (bk) {
+    const v = m.get(`${bk}||${biz}||${dk}`) ?? m.get(`${bk}||||${dk}`);
+    if (v != null) return v;
+  }
+  // 仅在品牌不可推断时回退到通用 '*' 成本，不跨品牌借用，避免污染。
+  return m.get(`*||${biz}||${dk}`) ?? m.get(`*||||${dk}`) ?? null;
 }
 
 function medianThreshold(getVal, arr) {

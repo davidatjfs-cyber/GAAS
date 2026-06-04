@@ -8638,6 +8638,14 @@ function normalizeForecastBizType(input) {
   return '';
 }
 
+// 从品牌名/门店名推断品牌 token（洪潮/马己仙），用于按品牌过滤菜品库成本，避免跨品牌成本污染。
+function forecastBrandToken(input) {
+  const t = String(input || '');
+  if (t.includes('洪潮')) return '洪潮';
+  if (t.includes('马己仙')) return '马己仙';
+  return '';
+}
+
 // Store-level business slot configuration.
 // hasAfternoon: false  → no afternoon tea slot; 14:00-16:59 becomes early dinner.
 // dineinEarlyStart: hour at which dine-in can start (e.g. 16 for weekend 16:30 arrivals).
@@ -12929,7 +12937,12 @@ app.get('/api/reports/inventory-forecast/gross-profit-profiles', authRequired, a
     // 合并飞书菜品库成本数据（dish_library_costs）
     try {
       const storeKeys = scope.storeScope.map(s => normalizeStoreKey(s));
-      const dlR = await pool.query(`SELECT biz_type,dish_name,dish_price,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=ANY($1) OR store='*')`, [storeKeys]);
+      // 按品牌过滤成本，避免两品牌同名菜成本互相污染（品牌从 scope/门店名前缀可靠推断；'*' 为通用兜底）。
+      const dlBrand = forecastBrandToken(`${scope.brandName||''}${(scope.storeScope||[]).join('')}`);
+      const dlParams = [storeKeys];
+      let dlBrandClause = '';
+      if (dlBrand) { dlParams.push(dlBrand); dlBrandClause = ` AND (brand=$${dlParams.length} OR brand='*')`; }
+      const dlR = await pool.query(`SELECT biz_type,dish_name,dish_price,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=ANY($1) OR store='*')${dlBrandClause}`, dlParams);
       const existingKeys = new Set(items.map(x => `${normalizeForecastBizType(x?.bizType)||''}||${normalizeProductName(String(x?.product||'').trim())}`));
       for (const r of (dlR.rows||[])) {
         const biz = normalizeForecastBizType(r.biz_type) || '';
@@ -13182,7 +13195,12 @@ app.post('/api/reports/inventory-forecast/gross-margin-estimate', authRequired, 
     // 合并飞书菜品库成本
     try {
       const sk = scope.storeScope.map(s => normalizeStoreKey(s));
-      const dlR = await pool.query(`SELECT biz_type,dish_name,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=ANY($1) OR store='*')`, [sk]);
+      // 按品牌过滤成本，避免两品牌同名菜成本互相污染。
+      const dlBrand = forecastBrandToken(`${scope.brandName||''}${(scope.storeScope||[]).join('')}`);
+      const dlParams = [sk];
+      let dlBrandClause = '';
+      if (dlBrand) { dlParams.push(dlBrand); dlBrandClause = ` AND (brand=$${dlParams.length} OR brand='*')`; }
+      const dlR = await pool.query(`SELECT biz_type,dish_name,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=ANY($1) OR store='*')${dlBrandClause}`, dlParams);
       const ek = new Set(profiles.map(x => `${normalizeForecastBizType(x?.bizType)||''}||${normalizeProductName(String(x?.product||'').trim())}`));
       for (const r of (dlR.rows||[])) { const b=normalizeForecastBizType(r.biz_type)||''; const n=String(r.dish_name||'').trim(); const nNorm=normalizeProductName(n); const c=safeNumber(r.unit_cost); if(!nNorm||!Number.isFinite(c)||c<0) continue; const k=`${b}||${nNorm}`; if(!ek.has(k)){profiles.push({product:n,bizType:b,costPerUnit:Number(c.toFixed(4))});ek.add(k);} }
     } catch(e) { console.error('[margin-est] dish_library_costs merge error:', e?.message||e); }

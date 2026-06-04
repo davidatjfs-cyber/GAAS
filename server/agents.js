@@ -4405,9 +4405,14 @@ async function estimateMarginMetricsForRange({ state, store, startDate, endDate 
   const profiles = Array.isArray(state?.forecastGrossProfitProfiles) ? state.forecastGrossProfitProfiles : [];
   const profileMap = buildGrossProfileMap(profiles, store);
   try {
+    // 按品牌过滤成本，避免两品牌同名菜成本互相污染（品牌从门店名前缀推断；'*' 通用兜底）。
+    const dlBrand = String(store||'').includes('洪潮') ? '洪潮' : (String(store||'').includes('马己仙') ? '马己仙' : '');
+    const dlParams = [normalizeStoreKey(store)];
+    let dlBrandClause = '';
+    if (dlBrand) { dlParams.push(dlBrand); dlBrandClause = ` AND (brand=$${dlParams.length} OR brand='*')`; }
     const dlR = await pool().query(
-      `SELECT biz_type,dish_name,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=$1 OR store='*')`,
-      [normalizeStoreKey(store)]
+      `SELECT biz_type,dish_name,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=$1 OR store='*')${dlBrandClause}`,
+      dlParams
     );
     for (const r of (dlR.rows||[])) { const biz=String(r.biz_type||'').trim().toLowerCase(); const pk=normProductKey(r.dish_name); const c=toNum(r.unit_cost,NaN); if(!pk||!Number.isFinite(c)||c<0) continue; if(!profileMap.has(`${biz}||${pk}`)) profileMap.set(`${biz}||${pk}`,{costPerUnit:c,grossPerUnit:NaN}); if(!profileMap.has(`||${pk}`)) profileMap.set(`||${pk}`,{costPerUnit:c,grossPerUnit:NaN}); }
   } catch(e) { console.error('[margin] dish_library_costs query error:', e?.message||e); }

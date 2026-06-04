@@ -174,6 +174,13 @@ function pickFieldNumber(fields, names = []) {
 function extractDishLibraryEntries(fields, recordId, opts = {}) {
   const forceBizType = String(opts.forceBizType || '').trim();
   const store = pickFieldText(fields, ['门店', '门店名称', '适用门店', '适用店铺'], '*') || '*';
+  // 品牌：优先取「品牌」列；缺省则从「所属门店」/门店名前缀(洪潮/马己仙)推断；再缺省 '*'（通用）。
+  // 品牌是成本归属的唯一可靠维度，避免两品牌同名菜成本互相污染。
+  const brandText = pickFieldText(fields, ['品牌', 'brand']);
+  const ownerStore = pickFieldText(fields, ['所属门店'], '');
+  const brand = brandText
+    || (`${ownerStore}${store}`.includes('洪潮') ? '洪潮' : (`${ownerStore}${store}`.includes('马己仙') ? '马己仙' : ''))
+    || '*';
 
   const commonCost = pickFieldNumber(fields, ['菜品成本', '成本', '标准成本']);
   const dineinName = pickFieldText(fields, ['堂食名称', '堂食菜品名称', '堂食菜名', '菜品名称']);
@@ -191,6 +198,7 @@ function extractDishLibraryEntries(fields, recordId, opts = {}) {
     rows.push({
       feishu_record_id: recordId,
       store,
+      brand,
       biz_type: 'takeaway',
       dish_name: genericDishName,
       dish_price: genericPrice,
@@ -203,6 +211,7 @@ function extractDishLibraryEntries(fields, recordId, opts = {}) {
     rows.push({
       feishu_record_id: recordId,
       store,
+      brand,
       biz_type: 'dinein',
       dish_name: dineinName,
       dish_price: dineinPrice,
@@ -215,6 +224,7 @@ function extractDishLibraryEntries(fields, recordId, opts = {}) {
     rows.push({
       feishu_record_id: recordId,
       store,
+      brand,
       biz_type: 'takeaway',
       dish_name: takeawayName,
       dish_price: takeawayPrice,
@@ -553,6 +563,7 @@ async function ensureDishLibraryTable() {
     CREATE TABLE IF NOT EXISTS dish_library_costs (
       id BIGSERIAL PRIMARY KEY,
       store VARCHAR(200) NOT NULL,
+      brand VARCHAR(50) NOT NULL DEFAULT '*',
       biz_type VARCHAR(20) NOT NULL,
       dish_name VARCHAR(255) NOT NULL,
       dish_price NUMERIC(12,2),
@@ -562,10 +573,28 @@ async function ensureDishLibraryTable() {
       enabled BOOLEAN NOT NULL DEFAULT TRUE,
       updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      CONSTRAINT uq_dish_library_costs_store_biz_dish UNIQUE (store, biz_type, dish_name)
+      CONSTRAINT uq_dish_library_costs_brand_biz_dish UNIQUE (brand, biz_type, dish_name)
     )
   `);
-  await pool().query(`CREATE INDEX IF NOT EXISTS idx_dish_library_costs_lookup ON dish_library_costs (store, biz_type, dish_name) WHERE enabled = TRUE`);
+  // 迁移既有表：加 brand 列，并把唯一键从 (store,biz_type,dish_name) 改为 (brand,biz_type,dish_name)。
+  // 品牌是成本归属的唯一可靠维度，避免两品牌同名菜成本互相覆盖/污染。
+  await pool().query(`ALTER TABLE dish_library_costs ADD COLUMN IF NOT EXISTS brand VARCHAR(50) NOT NULL DEFAULT '*'`);
+  await pool().query(`
+    UPDATE dish_library_costs
+       SET brand = COALESCE(
+             NULLIF(source_data->>'品牌',''),
+             CASE WHEN source_data->>'所属门店' LIKE '洪潮%' THEN '洪潮'
+                  WHEN source_data->>'所属门店' LIKE '马己仙%' THEN '马己仙' END,
+             '*')
+     WHERE brand IS NULL OR brand = '*'`);
+  await pool().query(`ALTER TABLE dish_library_costs DROP CONSTRAINT IF EXISTS uq_dish_library_costs_store_biz_dish`);
+  await pool().query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='uq_dish_library_costs_brand_biz_dish') THEN
+        ALTER TABLE dish_library_costs ADD CONSTRAINT uq_dish_library_costs_brand_biz_dish UNIQUE (brand, biz_type, dish_name);
+      END IF;
+    END $$`);
+  await pool().query(`CREATE INDEX IF NOT EXISTS idx_dish_library_costs_brand_lookup ON dish_library_costs (brand, biz_type, dish_name) WHERE enabled = TRUE`);
 }
 
 export async function syncDishLibraryCosts() {
@@ -591,10 +620,11 @@ export async function syncDishLibraryCosts() {
         for (const row of rows) {
           await pool().query(
             `INSERT INTO dish_library_costs
-              (store, biz_type, dish_name, dish_price, unit_cost, source_data, source_record_id, enabled, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,NOW())
-             ON CONFLICT (store, biz_type, dish_name)
+              (store, brand, biz_type, dish_name, dish_price, unit_cost, source_data, source_record_id, enabled, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,NOW())
+             ON CONFLICT (brand, biz_type, dish_name)
              DO UPDATE SET
+               store = EXCLUDED.store,
                dish_price = EXCLUDED.dish_price,
                unit_cost = EXCLUDED.unit_cost,
                source_data = EXCLUDED.source_data,
@@ -603,6 +633,7 @@ export async function syncDishLibraryCosts() {
                updated_at = NOW()`,
             [
               row.store,
+              row.brand,
               row.biz_type,
               row.dish_name,
               row.dish_price,
