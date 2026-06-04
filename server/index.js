@@ -9209,7 +9209,7 @@ async function loadInventoryForecastHistoryFromSalesRaw({ storeScope, bizType, s
       ROUND(SUM(COALESCE(sales_amount, 0))::numeric, 2) AS sales_amount,
       ROUND(SUM(COALESCE(revenue, 0))::numeric, 2) AS revenue,
       ROUND(SUM(COALESCE(discount, 0))::numeric, 2) AS discount
-    FROM sales_raw
+    FROM pos_sales_detail
     WHERE ${where.join(' AND ')}
     GROUP BY store, date, biz_type, slot, dish_name
     ORDER BY date DESC
@@ -9466,7 +9466,9 @@ function buildForecastByHeuristic(historyRows, target, topN) {
     // Small sample size is very noisy. Use stronger damping to avoid runaway qty inflation.
     const exp = list.length < 8 ? 0.45 : (list.length < 20 ? 0.6 : 0.72);
     revenueScale = Math.pow(Math.max(0.01, ratio), exp);
-    if (revenueScale > 1.9) revenueScale = 1.9;
+    // 旺日/节假日放宽缩放上限，避免大促当天备货系统性不足；样本越多越敢放宽。
+    const upperCap = target?.isHoliday ? 2.8 : (list.length >= 20 ? 2.3 : 1.9);
+    if (revenueScale > upperCap) revenueScale = upperCap;
     if (revenueScale < 0.6) revenueScale = 0.6;
   }
 
@@ -12871,7 +12873,7 @@ app.post('/api/reports/inventory-forecast/revenue-estimate', authRequired, async
       })
       .slice(0, 1200);
 
-    // 补充 sales_raw 数据提高预测准确度（扩至90天以覆盖1月正常数据）
+    // 补充 POS订单明细 数据提高预测准确度（扩至90天以覆盖1月正常数据）
     const nsk = String(store||'').trim().toLowerCase().replace(/\s+/g,'');
     const targetDow0 = (() => { try { const td=new Date(date+'T00:00:00'); return Number.isFinite(td.getTime())?td.getDay():-1; } catch(e){return -1;} })();
     const targetIsNormalWd0 = targetDow0>=1 && targetDow0<=5 && !isHoliday && !isCNYPeriod(date) && !isKnownPublicHoliday(date);
@@ -12884,15 +12886,16 @@ app.post('/api/reports/inventory-forecast/revenue-estimate', authRequired, async
       }
     }
     try {
-      const srR = await pool.query(`SELECT s.date::text AS date, ROUND(SUM(COALESCE(s.revenue,0))::numeric,2) AS day_revenue FROM sales_raw s WHERE lower(regexp_replace(coalesce(s.store,''),'\\s+','','g'))=$1 AND s.date<=$2::date AND s.date>=($2::date-INTERVAL '90 days') GROUP BY s.date ORDER BY s.date DESC LIMIT 90`,[nsk,date]);
-      const exD=new Set(historyRows.map(r=>safeDateOnly(r?.date)).filter(Boolean));
+      // 按堂食/外卖分别补充近90天日营收，口径与上方一致用折前(sales_amount)，避免把外卖营收误记到堂食、或混用折后口径。
+      const srR = await pool.query(`SELECT s.date::text AS date, s.biz_type, ROUND(SUM(COALESCE(s.sales_amount,0))::numeric,2) AS day_revenue FROM pos_sales_detail s WHERE lower(regexp_replace(coalesce(s.store,''),'\\s+','','g'))=$1 AND s.date<=$2::date AND s.date>=($2::date-INTERVAL '90 days') GROUP BY s.date, s.biz_type ORDER BY s.date DESC`,[nsk,date]);
+      const exD=new Set(historyRows.map(r=>`${safeDateOnly(r?.date)}||${normalizeForecastBizType(r?.bizType)}`));
       for(const sr of(srR.rows||[])){
-        const d=safeDateOnly(sr.date),rev=Number(sr.day_revenue)||0;
-        if(!d||rev<=0||exD.has(d))continue;
+        const d=safeDateOnly(sr.date),biz=normalizeForecastBizType(sr.biz_type),rev=Number(sr.day_revenue)||0;
+        if(!d||!biz||rev<=0||exD.has(`${d}||${biz}`))continue;
         const srIsCNY=isCNYPeriod(d),srIsHol=isKnownPublicHoliday(d);
         // For normal-weekday targets: skip CNY and public-holiday source days entirely
         if(targetIsNormalWd0 && (srIsCNY||srIsHol)) continue;
-        historyRows.push({date:d,bizType:'dinein',slot:'lunch',expectedRevenue:rev,isHoliday:srIsCNY||srIsHol});
+        historyRows.push({date:d,bizType:biz,slot:'',expectedRevenue:rev,isHoliday:srIsCNY||srIsHol});
       }
     } catch(e){}
 
@@ -13302,7 +13305,13 @@ app.post('/api/reports/inventory-forecast/predict', authRequired, async (req, re
       expectedRevenue: slotExpectedRevenue
     };
 
-    const calibration = buildForecastCalibrationFactors([], date);
+    // 自校准：用本店该堂外/时段、目标日之前的「预测 vs 实际」评估数据修正系数。
+    // （buildForecastCalibrationFactors 内部会再按 cutoff=date 过滤掉目标日及之后的记录，避免数据泄漏。）
+    const calibrationEvals = (Array.isArray(state0.inventoryForecastEvaluations) ? state0.inventoryForecastEvaluations : [])
+      .filter((x) => String(x?.store || '').trim() === store)
+      .filter((x) => normalizeForecastBizType(x?.bizType) === bizType)
+      .filter((x) => normalizeForecastSlot(x?.slot) === slot);
+    const calibration = buildForecastCalibrationFactors(calibrationEvals, date);
 
     const heuristic = buildForecastByHeuristic(historyRows, target, topN);
     let source = 'heuristic';
