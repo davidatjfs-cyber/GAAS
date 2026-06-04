@@ -4920,8 +4920,9 @@ app.use(
       const lp = String(filePath || '').toLowerCase();
       if (lp.endsWith('.html')) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
+        // no-cache（非 no-store）：浏览器可缓存，但每次用前必须带 ETag 回源校验；
+        // 内容未变回 304（几乎0流量并复用缓存），改版后 ETag 变化即拉新版，不会读到过期页面。
+        res.setHeader('Cache-Control', 'no-cache');
       } else if (lp.endsWith('sw.js')) {
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
         res.setHeader('Pragma', 'no-cache');
@@ -5167,7 +5168,8 @@ app.get('/', (req, res) => {
   const p2 = path.join(webRootDir, 'index.html');
   const target = fs.existsSync(p1) ? p1 : (fs.existsSync(p2) ? p2 : null);
   if (!target) return res.status(404).send('Missing frontend html');
-  res.setHeader('Cache-Control', 'no-store');
+  // no-cache（非 no-store）：允许缓存但每次回源校验，命中 ETag 回 304；改版即拉新版。
+  res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   return res.sendFile(target);
 });

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hrms-pwa-v242';
+const CACHE_NAME = 'hrms-pwa-20260604-swr';
 const PRECACHE_URLS = [
   '/manifest.json',
   '/pwa-icon.svg'
@@ -61,8 +61,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       (async () => {
         try {
-          // Bypass HTTP cache so nginx always returns the latest HTML
-          const fresh = await fetch(new Request(req, { cache: 'no-store' }));
+          // 走 HTTP 缓存校验（ETag/Last-Modified）：内容未变服务端回 304，浏览器复用已缓存 HTML，
+          // 避免每次导航都重下整页；变了才回 200 全量。比 no-store 快很多且不会读到过期内容。
+          const fresh = await fetch(req);
           const cache = await caches.open(CACHE_NAME);
           try {
             await cache.put(req, fresh.clone());
