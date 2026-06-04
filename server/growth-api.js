@@ -2393,6 +2393,45 @@ export function registerGrowthRoutes(app, pool) {
     return res.json({ ok: true, days });
   });
 
+  // 按手机号聚合 POS 消费，供小程序写回 users.total_spent 等字段。
+  // 入参 { phones: ['1xx...'], window_days: 30 }；金额以「分」返回，与小程序 users.total_spent 单位一致。
+  app.post('/api/growth/pos/consumption', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    const body = req.body || {};
+    const windowDays = Math.min(Math.max(Number(body.window_days) || 30, 1), 365);
+    let phones = Array.isArray(body.phones) ? body.phones : [];
+    phones = phones.map((p) => cleanPhone(p)).filter(Boolean);
+    phones = Array.from(new Set(phones));
+    if (phones.length > 5000) phones = phones.slice(0, 5000);
+    if (!phones.length) return res.json({ ok: true, window_days: windowDays, matched: 0, data: {} });
+
+    const r = await pool.query(
+      `SELECT trim(phone) AS phone,
+              ROUND(COALESCE(SUM(amount_after_discount), 0) * 100)::bigint AS total_spent_fen,
+              COUNT(*)::int AS total_orders,
+              ROUND(COALESCE(SUM(amount_after_discount)
+                FILTER (WHERE biz_date >= (CURRENT_DATE - ($2::int || ' days')::interval)), 0) * 100)::bigint AS spent_30d_fen,
+              MAX(checkout_time) AS last_visit,
+              (ARRAY_AGG(store_id ORDER BY checkout_time DESC NULLS LAST))[1] AS last_store_id
+       FROM pos_orders
+       WHERE trim(phone) = ANY($1::text[]) AND phone IS NOT NULL AND trim(phone) <> ''
+       GROUP BY trim(phone)`,
+      [phones, windowDays]
+    );
+
+    const data = {};
+    for (const row of r.rows) {
+      data[row.phone] = {
+        total_spent_fen: Number(row.total_spent_fen) || 0,
+        total_orders: Number(row.total_orders) || 0,
+        spent_30d_fen: Number(row.spent_30d_fen) || 0,
+        last_visit: row.last_visit ? new Date(row.last_visit).toISOString() : null,
+        store_id: row.last_store_id || ''
+      };
+    }
+    return res.json({ ok: true, window_days: windowDays, requested: phones.length, matched: r.rows.length, data });
+  });
+
   app.get('/api/growth/metrics', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 90);
