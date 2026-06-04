@@ -19164,7 +19164,7 @@
                         <div class="rep-filters" style="margin-bottom:14px;">
                             <div class="rep-filters__eyebrow">闭环看板</div>
                             <div class="rep-filters__title">自动营销闭环</div>
-                            <p style="color:rgba(226,232,240,0.6);font-size:12px;margin:4px 0 12px;">管理员审核后的规则才会被引擎（每15分钟）自动执行。未审核的规则只生成待发建议，需在「AI建议」标签人工确认。每条规则下方展示累计发送 / 核销 / 核销率，结果回流用于下一轮决策。</p>
+                            <p style="color:rgba(226,232,240,0.6);font-size:12px;margin:4px 0 12px;">管理员审核后的规则才会被引擎（每15分钟）自动执行。未审核的规则只生成待发建议，需在「AI建议」标签人工确认。每条规则下方展示累计发送 / 核销 / 核销率 / 营收 / 成本（短信 0.05 元·条，订阅与小程序为 0）/ ROI / 评分，并给出优化建议；列表按效果评分从高到低排序，供下一轮决策参考。</p>
                             <div class="rep-seg" style="margin-bottom:14px;">
                                 <button onclick="loadAutoMarketing()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">刷新</button>
                                 <select id="am-stats-days" onchange="loadAutoMarketing()" style="flex:1;min-width:100px;border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;background:rgba(0,0,0,0.35);color:var(--rep-text);">
@@ -55658,6 +55658,14 @@ ${body}
                     ? allRules.filter(function(rule){ var sid = amRuleStoreId(rule); return sid === storeFilter || sid === ''; })
                     : allRules;
 
+                // 按营销效果评分排序（打分排序）：已发送且评分高的排前，未发送的排后，便于复用高效规则
+                rules = rules.slice().sort(function(a, b){
+                    var sa = statMap[a.rule_key], sb = statMap[b.rule_key];
+                    var va = (sa && sa.score != null) ? Number(sa.score) : -1;
+                    var vb = (sb && sb.score != null) ? Number(sb.score) : -1;
+                    return vb - va;
+                });
+
                 // 汇总
                 var totalSent = 0, totalRedeemed = 0, approvedCount = 0, autoLiveCount = 0;
                 rules.forEach(function(rule){
@@ -55683,6 +55691,14 @@ ${body}
                     var reach = (audienceMap && (rule.rule_key in audienceMap)) ? audienceMap[rule.rule_key] : null;
                     var curFreq = Math.max(0, Math.floor(Number((rule.action_payload || {}).frequency_days) || 0));
                     var rrate = sent > 0 ? ((red / sent) * 100).toFixed(1) : '0.0';
+                    // 营销效果：营收 / 成本(短信0.05元·条) / ROI / 评分 / 建议
+                    var revYuan = (Number(st.revenue_fen || 0) / 100).toFixed(2);
+                    var costYuan = (Number(st.cost_fen || 0) / 100).toFixed(2);
+                    var roiTxt = (st.roi == null) ? '—' : (Number(st.roi).toFixed(2) + '×');
+                    var scoreVal = (st.score == null) ? null : Number(st.score);
+                    var scoreColor = scoreVal == null ? '#94a3b8' : (scoreVal >= 70 ? '#22c55e' : (scoreVal >= 40 ? '#f59e0b' : '#ef4444'));
+                    var scoreTxt = scoreVal == null ? '未发送' : (scoreVal + ' 分');
+                    var suggestionTxt = st.suggestion || '';
                     var approved = !!rule.approved_at;
                     var autoLive = approved && rule.enabled && rule.auto_execute !== false;
                     var statusBadge = autoLive
@@ -55715,12 +55731,17 @@ ${body}
                         +   '<span>天最多1次（填0=按到店周期）</span>'
                         +   '<button class="btn btn-secondary" type="button" onclick="amSetFrequency(\'' + rk + '\')" style="font-size:11px;padding:4px 10px;">保存频率</button>'
                         + '</div>'
-                        + '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 12px;background:rgba(0,0,0,0.25);border-radius:10px;margin-bottom:10px;">'
+                        + '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 12px;background:rgba(0,0,0,0.25);border-radius:10px;margin-bottom:8px;">'
                         +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">发送 <strong style="color:#fff;">' + sent + '</strong></span>'
                         +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">核销 <strong style="color:#22c55e;">' + red + '</strong></span>'
                         +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">核销率 <strong style="color:#fff;">' + rrate + '%</strong></span>'
+                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">营收 <strong style="color:#22c55e;">¥' + revYuan + '</strong></span>'
+                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">成本 <strong style="color:#fff;">¥' + costYuan + '</strong></span>'
+                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">ROI <strong style="color:#a5b4fc;">' + roiTxt + '</strong></span>'
+                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">评分 <strong style="color:' + scoreColor + ';">' + scoreTxt + '</strong></span>'
                         +   '<span style="font-size:12px;color:rgba(226,232,240,0.5);">上次运行 ' + escapeHtml(lastRun) + '</span>'
                         + '</div>'
+                        + (suggestionTxt ? '<div style="font-size:12px;color:rgba(226,232,240,0.7);background:rgba(99,102,241,0.08);border-left:3px solid rgba(99,102,241,0.5);padding:7px 10px;border-radius:6px;margin-bottom:10px;">💡 优化建议：' + escapeHtml(suggestionTxt) + '</div>' : '')
                         + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">'
                         +   '<span style="font-size:11px;color:rgba(226,232,240,0.5);">' + escapeHtml(approver) + '</span>'
                         +   '<div style="display:flex;gap:8px;">'

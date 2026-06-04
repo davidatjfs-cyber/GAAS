@@ -2225,12 +2225,35 @@ export function registerGrowthRoutes(app, pool) {
 
       try {
         const sent = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
+        // 解析/登记客户，使发送日志与触达事件都带 customer_id，核销时可按人归因
+        const winbackCustomer = await upsertCustomer(pool, { phone, store_id: storeId }).catch(() => null);
         await upsertDeliveryLog(pool, {
           delivery_key: deliveryKey, action_key: campaignId || 'winback', rule_key: 'winback_sms',
-          customer_id: null, store_id: storeId, channel: 'sms', external_userid: '',
+          customer_id: winbackCustomer?.id || null, store_id: storeId, channel: 'sms', external_userid: '',
           provider_msg_id: sent.provider_msg_id, status: 'sent',
           payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId },
           result: sent.raw || {}
+        });
+        // 写 marketing_triggered 事件：让日指标按活动统计「发送量」，与后续 coupon_redeemed 配对算核销率/ROI。
+        // 幂等键带短码，云函数重试不会重复计数。
+        await insertGrowthEvent(pool, {
+          event_type: 'marketing_triggered',
+          customer_id: winbackCustomer?.id || null,
+          phone,
+          external_userid: null,
+          store_id: storeId,
+          campaign_id: campaignId,
+          channel: 'sms',
+          coupon_id: code,
+          idempotency_key: `marketing_triggered:winback_sms:${code}`,
+          metadata: {
+            rule_key: 'winback_sms',
+            delivery_key: deliveryKey,
+            provider_msg_id: sent.provider_msg_id,
+            short_code: code,
+            coupon_value_fen: valueYuan * 100,
+            template_code: templateCode
+          }
         });
         return res.json({ ok: true, provider_msg_id: sent.provider_msg_id });
       } catch (deliveryErr) {
@@ -2310,6 +2333,19 @@ export function registerGrowthRoutes(app, pool) {
            ON CONFLICT DO NOTHING`,
           [customer?.id || null, cleanText(body.coupon_id, 128), campaignId, storeId, amountFen, JSON.stringify(metadata), occurredAt]
         );
+        // 闭环回写：按核销回传的短码，把对应「已发送」短信日志翻成「已核销」，
+        // 使 growth_delivery_logs 单表即可查「发→核销」全过程（核销率 = redeemed / sent）。
+        const redeemShortCode = cleanText(metadata.short_code || '', 64);
+        if (redeemShortCode) {
+          await pool.query(
+            `UPDATE growth_delivery_logs
+                SET status = 'redeemed', updated_at = NOW()
+              WHERE channel = 'sms'
+                AND status = 'sent'
+                AND payload->>'coupon_code' = $1`,
+            [redeemShortCode]
+          ).catch((e) => console.warn('[growth] delivery redeem flip failed:', e?.message));
+        }
       }
 
       // Phase 2: 授权手机号/匹配检查时，反查 wechat_work_customers 并绑定
@@ -2514,14 +2550,21 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
     const r = await pool.query(
+      // 注：核销成功后 Fix3 会把投递日志 status 由 'sent' 翻成 'redeemed'，
+      // 故发送数须把已触达的各终态都计入，否则被核销的那条会从发送数里漏掉。
       `WITH sent AS (
-         SELECT rule_key, COUNT(*)::int AS sent_count
+         SELECT rule_key,
+                COUNT(*)::int AS sent_count,
+                COUNT(*) FILTER (WHERE channel = 'sms')::int AS sms_sent_count
          FROM growth_delivery_logs
-         WHERE status = 'sent' AND created_at >= NOW() - ($1::int || ' days')::interval
+         WHERE status IN ('sent','delivered','read','clicked','redeemed')
+           AND created_at >= NOW() - ($1::int || ' days')::interval
          GROUP BY rule_key
        ),
        redeemed AS (
-         SELECT (metadata->>'rule_key') AS rule_key, COUNT(*)::int AS redeemed_count
+         SELECT (metadata->>'rule_key') AS rule_key,
+                COUNT(*)::int AS redeemed_count,
+                COALESCE(SUM(amount_fen), 0)::bigint AS revenue_fen
          FROM growth_events
          WHERE event_type = 'coupon_redeemed' AND created_at >= NOW() - ($1::int || ' days')::interval
            AND metadata ? 'rule_key'
@@ -2529,13 +2572,72 @@ export function registerGrowthRoutes(app, pool) {
        )
        SELECT tr.rule_key,
               COALESCE(s.sent_count, 0) AS sent_count,
-              COALESCE(rd.redeemed_count, 0) AS redeemed_count
+              COALESCE(s.sms_sent_count, 0) AS sms_sent_count,
+              COALESCE(rd.redeemed_count, 0) AS redeemed_count,
+              COALESCE(rd.revenue_fen, 0) AS revenue_fen
        FROM growth_touch_rules tr
        LEFT JOIN sent s ON s.rule_key = tr.rule_key
        LEFT JOIN redeemed rd ON rd.rule_key = tr.rule_key`,
       [days]
     );
-    return res.json({ ok: true, days, stats: r.rows });
+    // 单条短信成本 0.05 元（5 分）；订阅消息 / 小程序渠道成本为 0。
+    // ROI = 带来的营收 ÷ 投入成本；据此打分排序并给运营建议（不自动改投放，仅供决策）。
+    const SMS_COST_FEN = 5;
+    const stats = r.rows.map((row) => {
+      const sent = Number(row.sent_count) || 0;
+      const smsSent = Number(row.sms_sent_count) || 0;
+      const redeemed = Number(row.redeemed_count) || 0;
+      const revenueFen = Number(row.revenue_fen) || 0;
+      const costFen = smsSent * SMS_COST_FEN;
+      const redeemRate = sent > 0 ? redeemed / sent : null; // 0~1
+      const roi = costFen > 0 ? revenueFen / costFen : null; // 营收/成本，成本为 0 时不适用
+      const revenueMissing = redeemed > 0 && revenueFen === 0; // 核销了但实收未录入
+
+      // 评分（0~100）：核销率为主（实收常缺失），有成本时再融合 ROI。
+      let score = null;
+      if (sent > 0) {
+        const rateScore = Math.min(100, Math.round((redeemRate || 0) * 100 * 5)); // 20% 核销=满分
+        if (costFen > 0) {
+          const roiScore = Math.min(100, Math.round(((roi || 0) / 5) * 100)); // ROI≥5=满分
+          score = Math.round(rateScore * 0.6 + roiScore * 0.4);
+        } else {
+          score = rateScore;
+        }
+      }
+
+      // 文字建议
+      let suggestion;
+      if (sent === 0) {
+        suggestion = '尚未发送，审核启用后可观察效果';
+      } else if (redeemed === 0) {
+        suggestion = '已发送但暂无核销，建议优化文案/券面额或更换目标人群';
+      } else if (redeemRate < 0.05) {
+        suggestion = '核销率偏低（<5%），建议收窄人群定向或提高券吸引力';
+      } else if (redeemRate >= 0.15) {
+        suggestion = '核销率优秀，建议保持并可适度加大投放';
+      } else {
+        suggestion = '核销率中等，可小幅优化文案或做面额 A/B 测试';
+      }
+      if (costFen > 0 && revenueFen > 0) {
+        if (roi >= 3) suggestion += '；ROI 高，投入产出优';
+        else if (roi < 1) suggestion += '；ROI<1 尚未回本，注意控制成本';
+      }
+      if (revenueMissing) {
+        suggestion += '；注：本期实收金额未录入，ROI 暂按 0 计，建议核销时录入实收金额以精确核算';
+      }
+
+      return Object.assign({}, row, {
+        sent_count: sent,
+        sms_sent_count: smsSent,
+        redeemed_count: redeemed,
+        revenue_fen: revenueFen,
+        cost_fen: costFen,
+        roi: roi == null ? null : Math.round(roi * 100) / 100,
+        score,
+        suggestion
+      });
+    });
+    return res.json({ ok: true, days, stats });
   });
 
   // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
