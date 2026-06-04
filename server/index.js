@@ -9175,12 +9175,67 @@ function mergePreferredForecastHistoryRows(primaryRows, fallbackRows, limit = 0)
   return sortForecastHistoryRows(Array.from(map.values()), limit);
 }
 
+// POS 上传门店名（导出全称，如「洪潮传统潮汕菜【大宁久光中心店】」）与系统配置门店名
+// （简称，如「洪潮大宁久光店」）属于两套命名体系，直接等值匹配取不到数（毛利率/预测全为0）。
+// 这里把配置门店名解析成真实 POS 门店名：① 精确 key 命中；② 用品牌词（店名前2个汉字）圈定
+// POS 候选，品牌下唯一候选即命中；③ 多候选时用去掉品牌/通用词后的位置词最长公共子串≥2 兜底。
+// 解析不到则回退原 key（结果与修复前一致，不引入回归）。结果带 60s 缓存。
+let _posStoreListCache = { at: 0, list: [] };
+async function listPosStoreNames() {
+  const now = Date.now();
+  if (now - _posStoreListCache.at < 60000 && _posStoreListCache.list.length) return _posStoreListCache.list;
+  try {
+    const r = await pool.query(`SELECT DISTINCT store FROM pos_sales_detail WHERE store IS NOT NULL AND trim(store) <> ''`);
+    _posStoreListCache = { at: now, list: (r.rows || []).map((x) => String(x.store || '').trim()).filter(Boolean) };
+  } catch (_e) { /* keep stale cache on error */ }
+  return _posStoreListCache.list;
+}
+function longestCommonRun(a, b) {
+  if (!a || !b) return 0;
+  let best = 0;
+  for (let i = 0; i < a.length; i++) {
+    for (let j = 0; j < b.length; j++) {
+      let k = 0;
+      while (i + k < a.length && j + k < b.length && a[i + k] === b[j + k]) k++;
+      if (k > best) best = k;
+    }
+  }
+  return best;
+}
+function stripStoreGenericWords(key) {
+  return String(key || '').replace(/(传统潮汕菜|广东小馆|荔枝木烧鹅|上海|北京|深圳|广州|中心|门店|店铺|商场|购物中心|店)/g, '');
+}
+async function resolvePosStoreKeys(storeScope) {
+  const wanted = (Array.isArray(storeScope) ? storeScope : []).map((x) => String(x || '').trim()).filter(Boolean);
+  if (!wanted.length) return [];
+  const posStores = await listPosStoreNames();
+  if (!posStores.length) return Array.from(new Set(wanted.map((x) => normalizeStoreKey(x)).filter(Boolean)));
+  const out = new Set();
+  for (const w of wanted) {
+    const wk = normalizeStoreKey(w);
+    const exact = posStores.find((p) => normalizeStoreKey(p) === wk);
+    if (exact) { out.add(normalizeStoreKey(exact)); continue; }
+    const brandTok = (w.match(/[一-龥]{2}/) || [''])[0]; // 店名前2个汉字作品牌词
+    let cands = brandTok ? posStores.filter((p) => p.includes(brandTok)) : posStores.slice();
+    if (cands.length !== 1) {
+      const wa = stripStoreGenericWords(wk);
+      const scored = cands
+        .map((c) => ({ c, run: longestCommonRun(wa, stripStoreGenericWords(normalizeStoreKey(c))) }))
+        .filter((x) => x.run >= 2)
+        .sort((a, b) => b.run - a.run);
+      cands = scored.length ? [scored[0].c] : [];
+    }
+    out.add(cands.length === 1 ? normalizeStoreKey(cands[0]) : wk);
+  }
+  return Array.from(out);
+}
+
 async function loadInventoryForecastHistoryFromSalesRaw({ storeScope, bizType, slot, startDate, endDate }) {
   const stores = Array.isArray(storeScope)
     ? Array.from(new Set(storeScope.map((x) => String(x || '').trim()).filter(Boolean)))
     : [];
   if (!stores.length) return [];
-  const storeKeys = stores.map((x) => normalizeStoreKey(x)).filter(Boolean);
+  const storeKeys = await resolvePosStoreKeys(stores);
   if (!storeKeys.length) return [];
 
   const qBizType = normalizeForecastBizType(bizType);
@@ -12882,7 +12937,8 @@ app.post('/api/reports/inventory-forecast/revenue-estimate', authRequired, async
       .slice(0, 1200);
 
     // 补充 POS订单明细 数据提高预测准确度（扩至90天以覆盖1月正常数据）
-    const nsk = String(store||'').trim().toLowerCase().replace(/\s+/g,'');
+    // 配置门店名→真实 POS 门店名解析，避免命名体系不一致导致补充数据为空。
+    const nsk = (await resolvePosStoreKeys([store]))[0] || String(store||'').trim().toLowerCase().replace(/\s+/g,'');
     const targetDow0 = (() => { try { const td=new Date(date+'T00:00:00'); return Number.isFinite(td.getTime())?td.getDay():-1; } catch(e){return -1;} })();
     const targetIsNormalWd0 = targetDow0>=1 && targetDow0<=5 && !isHoliday && !isCNYPeriod(date) && !isKnownPublicHoliday(date);
     // For normal-weekday targets: strip CNY/holiday records from stored history
