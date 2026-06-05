@@ -128,6 +128,28 @@ export async function ensureGrowthTables(pool) {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_svm_store_consume ON growth_stored_value_members (store_id, last_consume_date)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_svm_phone ON growth_stored_value_members (phone)`);
+  // 召回活动任务:HRMS 发起时冻结目标名单,小程序定时器拉取执行(发起权集中在 HRMS)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS growth_campaign_jobs (
+      id BIGSERIAL PRIMARY KEY,
+      campaign_id TEXT,
+      store_id TEXT,
+      value_yuan INTEGER,
+      valid_days INTEGER,
+      dormant_days INTEGER,
+      min_balance_fen INTEGER,
+      targets JSONB NOT NULL DEFAULT '[]'::jsonb,
+      total INTEGER DEFAULT 0,
+      sent INTEGER DEFAULT 0,
+      failed INTEGER DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_by TEXT,
+      result JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_campaign_jobs_status ON growth_campaign_jobs (status, created_at)`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS growth_customers (
       id BIGSERIAL PRIMARY KEY,
@@ -2477,6 +2499,92 @@ export function registerGrowthRoutes(app, pool) {
         frequency_days: freqDays,
         sample
       });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 【HRMS 集中发起】储值召回:发起时即解析并冻结目标名单(已过余额+沉睡+频控),写入待执行任务。
+  app.post('/api/growth/winback/launch', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const b = req.body || {};
+      const storeId = cleanText(b.store_id, 128);
+      const valueYuan = Math.max(0, Math.floor(Number(b.value_yuan) || 0));
+      const validDays = Math.max(1, Math.floor(Number(b.valid_days) || 14));
+      const dormantDays = Math.max(1, Math.floor(Number(b.dormant_days) || 14));
+      const minBalanceFen = Math.max(0, Math.floor((Number(b.min_balance_yuan) || 1) * 100));
+      const maxTargets = Math.min(Math.max(Number(b.max_targets) || 500, 1), 2000);
+      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_WINBACK_FREQUENCY_DAYS) || 30));
+      if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
+      if (valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
+      const r = await pool.query(
+        `SELECT card_no, member_name, phone FROM growth_stored_value_members m
+          WHERE m.phone IS NOT NULL AND m.phone <> '' AND m.store_id = $2 AND m.balance_fen >= $3
+            AND (m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))
+            AND NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
+              WHERE d.channel='sms' AND d.rule_key='winback_sms' AND d.status='sent'
+                AND d.payload->>'phone' = m.phone AND d.created_at > now() - ($1 || ' days')::interval)
+          ORDER BY m.balance_fen DESC LIMIT ${maxTargets}`,
+        [String(freqDays), storeId, minBalanceFen]
+      );
+      const targets = r.rows.map((x) => ({ phone: x.phone, name: x.member_name || '', card_no: x.card_no }));
+      if (!targets.length) return res.json({ ok: true, job_id: null, target_count: 0, message: '没有符合条件的对象(余额/沉睡/频控筛选后为空)' });
+      const campaignId = cleanText(b.campaign_id, 128) || ('winback_' + storeId + '_' + Date.now());
+      const ins = await pool.query(
+        `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,'pending',$9) RETURNING id`,
+        [campaignId, storeId, valueYuan, validDays, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, cleanText(b.operator, 128) || 'hrms_admin']
+      );
+      return res.json({ ok: true, job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 小程序定时器拉取一个待执行任务(原子认领:置为 running,避免并发重复执行)
+  app.get('/api/growth/winback/pending-jobs', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const r = await pool.query(
+        `UPDATE growth_campaign_jobs SET status='running', updated_at=now()
+          WHERE id = (SELECT id FROM growth_campaign_jobs WHERE status='pending' ORDER BY created_at ASC LIMIT 1)
+          RETURNING id, campaign_id, store_id, value_yuan, valid_days, targets`
+      );
+      return res.json({ ok: true, job: r.rows[0] || null });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 小程序回写任务执行结果
+  app.post('/api/growth/winback/job-result', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const b = req.body || {};
+      const jobId = Math.floor(Number(b.job_id) || 0);
+      if (!jobId) return res.status(400).json({ ok: false, error: 'missing_job_id' });
+      await pool.query(
+        `UPDATE growth_campaign_jobs SET sent=$2, failed=$3, status=$4, result=$5::jsonb, updated_at=now() WHERE id=$1`,
+        [jobId, Math.max(0, Math.floor(Number(b.sent) || 0)), Math.max(0, Math.floor(Number(b.failed) || 0)),
+         cleanText(b.status, 40) || 'done', JSON.stringify(b.result || {})]
+      );
+      return res.json({ ok: true });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 管理端查看近期召回任务及进度
+  app.get('/api/growth/winback/jobs', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+      const r = await pool.query(
+        `SELECT id, campaign_id, store_id, value_yuan, valid_days, dormant_days, total, sent, failed, status, created_by, created_at, updated_at
+           FROM growth_campaign_jobs ORDER BY created_at DESC LIMIT ${limit}`
+      );
+      return res.json({ ok: true, jobs: r.rows });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
