@@ -2295,6 +2295,21 @@ export function registerGrowthRoutes(app, pool) {
           return res.json({ ok: true, deduped: true });
         }
       }
+      // 触达频控(防骚扰核心):同一手机号 N 天内最多收 1 条召回短信。
+      // 写在发送总入口,无论从哪发起(小程序/HRMS/对账)都统一拦截。N 经 env 配置,默认 30 天。
+      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_WINBACK_FREQUENCY_DAYS) || 30));
+      if (freqDays > 0) {
+        const recent = await pool.query(
+          `SELECT 1 FROM growth_delivery_logs
+            WHERE channel = 'sms' AND rule_key = 'winback_sms' AND status = 'sent'
+              AND payload->>'phone' = $1 AND created_at > now() - ($2 || ' days')::interval
+            LIMIT 1`,
+          [phone, String(freqDays)]
+        );
+        if (recent.rows.length) {
+          return res.json({ ok: true, skipped: true, reason: 'frequency_capped', frequency_days: freqDays });
+        }
+      }
       const deliveryKey = idempotencyKey || `winback_sms:${phone}:${Date.now()}`;
       // 已报备模板仅 3 个变量 value/date/code（无 name，避免超 3 变量报备失败）。
       // 务必与模板严格一致，多传 name 会被阿里云判「参数不匹配」拒收。
@@ -2420,6 +2435,48 @@ export function registerGrowthRoutes(app, pool) {
         params
       );
       return res.json({ ok: true, count: r.rows.length, targets: r.rows });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 召回预览/试算(不发送):返回命中人数、扣除频控后真正会发的人数、样例。发起前必看,防误群发。
+  app.get('/api/growth/winback/preview', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const storeId = cleanText(req.query.store_id, 128);
+      const dormantDays = Math.max(1, Math.floor(Number(req.query.dormant_days) || 14));
+      const minBalanceFen = Math.max(0, Math.floor((Number(req.query.min_balance_yuan) || 1) * 100));
+      const freqDays = Math.max(0, Math.floor(Number(req.query.freq_days != null ? req.query.freq_days : (process.env.ALIYUN_SMS_WINBACK_FREQUENCY_DAYS || 30))));
+      const params = [String(freqDays)];
+      const clauses = ["m.phone IS NOT NULL AND m.phone <> ''", `m.balance_fen >= ${minBalanceFen}`,
+        `(m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))`];
+      if (storeId) { params.push(storeId); clauses.push(`m.store_id = $${params.length}`); }
+      const r = await pool.query(
+        `SELECT m.card_no, m.member_name, m.phone, m.balance_fen, m.last_consume_date,
+                (NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
+                   WHERE d.channel='sms' AND d.rule_key='winback_sms' AND d.status='sent'
+                     AND d.payload->>'phone' = m.phone AND d.created_at > now() - ($1 || ' days')::interval)) AS sendable
+           FROM growth_stored_value_members m
+          WHERE ${clauses.join(' AND ')}
+          ORDER BY m.balance_fen DESC LIMIT 5000`,
+        params
+      );
+      const matchCount = r.rows.length;
+      const sendable = r.rows.filter((x) => x.sendable);
+      const sample = sendable.slice(0, 10).map((x) => ({
+        phone: x.phone ? (String(x.phone).slice(0, 3) + '****' + String(x.phone).slice(-4)) : '',
+        balance_yuan: Math.round((x.balance_fen || 0) / 100),
+        last_consume_date: x.last_consume_date
+      }));
+      return res.json({
+        ok: true, dry_run: true,
+        match_count: matchCount,
+        capped_count: matchCount - sendable.length,
+        sendable_count: sendable.length,
+        frequency_days: freqDays,
+        sample
+      });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
