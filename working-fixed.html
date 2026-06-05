@@ -55683,7 +55683,11 @@ ${body}
                     var st = statMap[rule.rule_key] || {};
                     var sent = Number(st.sent_count || 0), red = Number(st.redeemed_count || 0);
                     var reach = (audienceMap && (rule.rule_key in audienceMap)) ? audienceMap[rule.rule_key] : null;
-                    var curFreq = Math.max(0, Math.floor(Number((rule.action_payload || {}).frequency_days) || 0));
+                    var __ap0 = rule.action_payload || {};
+                    var curFreq = Math.max(0, Math.floor(Number(__ap0.frequency_days) || 0));
+                    var curValYuan = Math.max(0, Math.round(Number(__ap0.coupon_value_fen || __ap0.value_fen || 0) / 100));
+                    var curValidDays = Math.max(0, Math.floor(Number(__ap0.valid_days) || 0));
+                    var curTpl = String(__ap0.content_template || __ap0.message_template || '');
                     var rrate = sent > 0 ? ((red / sent) * 100).toFixed(1) : '0.0';
                     // 营销效果：营收 / 成本(短信0.05元·条) / ROI / 评分 / 建议
                     var revYuan = (Number(st.revenue_fen || 0) / 100).toFixed(2);
@@ -55725,6 +55729,20 @@ ${body}
                         +   '<span>天最多1次（填0=按到店周期）</span>'
                         +   '<button class="btn btn-secondary" type="button" onclick="amSetFrequency(\'' + rk + '\')" style="font-size:11px;padding:4px 10px;">保存频率</button>'
                         + '</div>'
+                        + (isSubscribe ? '' : (
+                            '<div style="padding:10px 12px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.18);border-radius:10px;margin-bottom:8px;">'
+                          +   '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:rgba(226,232,240,0.8);font-size:12px;margin-bottom:8px;">'
+                          +     '<span>🎫 券面额</span>'
+                          +     '<input id="am-val-' + rk + '" type="number" min="0" value="' + curValYuan + '" style="width:70px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);"><span>元</span>'
+                          +     '<span style="margin-left:8px;">⏳ 有效期</span>'
+                          +     '<input id="am-vd-' + rk + '" type="number" min="0" value="' + curValidDays + '" style="width:60px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);"><span>天</span>'
+                          +   '</div>'
+                          +   '<textarea id="am-tpl-' + rk + '" rows="2" placeholder="短信文案，可用占位符：{customer_name} {coupon_value_text}（自动填券面额）{valid_days}（自动填有效天数）{days_since_last_visit} {favorite_dishes_text}" style="width:100%;box-sizing:border-box;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:6px 8px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);resize:vertical;">' + escapeHtml(curTpl) + '</textarea>'
+                          +   '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;">'
+                          +     '<span style="font-size:11px;color:rgba(226,232,240,0.45);">金额写文案用 {coupon_value_text}（自动 = ¥券面额）；到期天数用 {valid_days}，避免写死天数对不上券有效期</span>'
+                          +     '<button class="btn btn-secondary" type="button" onclick="amSetCoupon(\'' + rk + '\')" style="font-size:11px;padding:4px 10px;">保存券面额/有效期/文案</button>'
+                          +   '</div>'
+                          + '</div>'))
                         + '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 12px;background:rgba(0,0,0,0.25);border-radius:10px;margin-bottom:8px;">'
                         +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">发送 <strong style="color:#fff;">' + sent + '</strong></span>'
                         +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">核销 <strong style="color:#22c55e;">' + red + '</strong></span>'
@@ -55841,6 +55859,43 @@ ${body}
                 showNotification('发送频率已更新（如该规则原已审核，请重新审核以继续自动执行）', 'success');
                 loadAutoMarketing();
             } catch (e) { showNotification('保存频率失败：' + (e && e.message || e), 'error'); }
+        }
+
+        // 设置某规则的「券面额 / 有效期 / 短信文案」。写入 action_payload：
+        //  coupon_value_fen（分，引擎据此换算 {coupon_value_text}=¥面额）、valid_days（券真实有效天数，
+        //  也作为 {valid_days} 占位）、content_template（短信正文）。
+        //  属重大变更 → 按治理规则会重置审核态，需重新「审核通过」后才继续自动执行。
+        async function amSetCoupon(ruleKey) {
+            var vInp = document.getElementById('am-val-' + ruleKey);
+            var dInp = document.getElementById('am-vd-' + ruleKey);
+            var tInp = document.getElementById('am-tpl-' + ruleKey);
+            var valYuan = vInp ? Math.max(0, Math.floor(Number(vInp.value) || 0)) : 0;
+            var validDays = dInp ? Math.max(0, Math.floor(Number(dInp.value) || 0)) : 0;
+            var tpl = tInp ? String(tInp.value || '').trim() : '';
+            if (valYuan <= 0) { showNotification('券面额需大于 0 元', 'error'); return; }
+            if (validDays <= 0) { showNotification('有效期需大于 0 天', 'error'); return; }
+            if (!confirm('将「' + ruleKey + '」设为：券面额 ¥' + valYuan + ' · 有效期 ' + validDays + ' 天？\n注意：修改会重置审核态，需重新「审核通过」后才会继续自动执行。')) return;
+            try {
+                var rg = await fetch('/api/growth/touch-rules', { headers: growthAuthHeaders() }).then(function(r){return r.json();});
+                var rule = ((rg && rg.rules) || []).find(function(x){ return x.rule_key === ruleKey; });
+                if (!rule) throw new Error('rule_not_found');
+                var ap = Object.assign({}, rule.action_payload || {}, {
+                    coupon_value_fen: valYuan * 100,
+                    valid_days: validDays
+                });
+                if (tpl) ap.content_template = tpl;
+                var body = {
+                    rule_key: rule.rule_key, name: rule.name, priority: rule.priority,
+                    auto_execute: rule.auto_execute, enabled: rule.enabled,
+                    criteria: rule.criteria || {}, action_type: rule.action_type,
+                    action_payload: ap, owner: rule.owner || '', note: rule.note || ''
+                };
+                var r = await fetch('/api/growth/touch-rules', { method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify(body) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'save_failed');
+                showNotification('券面额/有效期/文案已更新（如该规则原已审核，请重新审核以继续自动执行）', 'success');
+                loadAutoMarketing();
+            } catch (e) { showNotification('保存失败：' + (e && e.message || e), 'error'); }
         }
 
         // ===== 订阅消息规则：前台设置 + 内容管理（与短信同一治理闭环） =====
