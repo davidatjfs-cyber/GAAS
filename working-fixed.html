@@ -19219,6 +19219,42 @@
                             <div id="am-redemptions-list" style="max-height:46vh;overflow-y:auto;"></div>
                         </div>
                     </div>
+                    <div id="growth-paymentrules-content" style="display:none;">
+                        <div class="rep-filters" style="margin-bottom:14px;">
+                            <div class="rep-filters__eyebrow">实时触发</div>
+                            <div class="rep-filters__title">支付后发券规则</div>
+                            <p style="color:rgba(226,232,240,0.6);font-size:12px;margin:4px 0 12px;">顾客在小程序店内支付成功后实时发券。规则在此集中配置，小程序每 2 分钟同步并执行；停用或删除后小程序同步移除，无需在小程序端操作。券模板 ID 须为小程序「券模板管理」中已存在的模板 ID。</p>
+                            <div class="rep-seg" style="margin-bottom:6px;">
+                                <button onclick="loadPaymentRules()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">刷新</button>
+                            </div>
+                        </div>
+                        <div id="pay-rules-list"></div>
+                        <div class="rep-filters" style="margin-top:14px;">
+                            <div class="rep-filters__eyebrow">新建 / 编辑</div>
+                            <div class="rep-filters__title">支付后发券规则</div>
+                            <div style="display:grid;gap:10px;">
+                                <input id="pay-rule-key" type="hidden" value="">
+                                <div><label class="am-sub-lbl">规则名称</label><input id="pay-name" class="am-sub-in" placeholder="如 VIP高价值用户激励"></div>
+                                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+                                    <div><label class="am-sub-lbl">门店</label><select id="pay-store" class="am-sub-in"><option value="51866138">马己仙广东小馆</option><option value="64822111">洪潮潮汕传统菜</option></select></div>
+                                    <div><label class="am-sub-lbl">目标人群</label><select id="pay-tag" class="am-sub-in"><option value="">不限</option><option value="vip">VIP</option><option value="regular">常规价值</option><option value="low">低价值</option><option value="general">普通用户</option><option value="prospect">潜在新客</option><option value="new">新客</option><option value="active">活跃客</option><option value="at_risk">临界客</option><option value="dormant">沉睡老客</option><option value="churned">流失客</option></select></div>
+                                    <div><label class="am-sub-lbl">优先级</label><input id="pay-priority" class="am-sub-in" type="number" value="100"></div>
+                                </div>
+                                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+                                    <div><label class="am-sub-lbl">实付满额(元，0=无门槛)</label><input id="pay-minspend" class="am-sub-in" type="number" min="0" value="0"></div>
+                                    <div><label class="am-sub-lbl">每人每日上限(空=不限)</label><input id="pay-daily-user" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
+                                    <div><label class="am-sub-lbl">全店每日上限(空=不限)</label><input id="pay-daily-global" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
+                                </div>
+                                <div><label class="am-sub-lbl">关联券模板ID（小程序 voucher_templates 的 _id）</label><input id="pay-template" class="am-sub-in" placeholder="如 vip_exclusive_xxx"></div>
+                                <div><label class="am-sub-lbl"><input id="pay-active" type="checkbox" checked style="vertical-align:middle;"> 启用（同步后立即生效）</label></div>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                    <button class="btn" type="button" onclick="savePaymentRule()" style="font-size:13px;">保存规则</button>
+                                    <button class="btn btn-secondary" type="button" onclick="resetPaymentRuleForm()" style="font-size:13px;">清空表单</button>
+                                </div>
+                                <div style="color:rgba(226,232,240,0.4);font-size:11px;">保存后约 2 分钟内同步到小程序并对支付实时生效。</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div id="exam-page" class="hidden">
@@ -53932,19 +53968,19 @@ ${body}
         var GROWTH_GROUPS = [
             { key: 'dashboard', label: '看板', members: ['dashboard'] },
             { key: 'audience', label: '客群洞察', members: ['profiles', 'pos', 'wecom'] },
-            { key: 'engine', label: '自动营销', members: ['automarketing', 'abtests'] },
+            { key: 'engine', label: '自动营销', members: ['automarketing', 'abtests', 'paymentrules'] },
             { key: 'content', label: '内容中心', members: ['campaigns', 'posters', 'public', 'contentsys'] },
             { key: 'execution', label: '执行中心', members: ['actions', 'exec-logs'] },
             { key: 'settings', label: '设置治理', members: ['wecomconfig', 'constraints'] }
         ];
         var GROWTH_MEMBER_LABEL = {
             dashboard: '看板', profiles: '用户画像', pos: 'POS消费', wecom: '企微客户',
-            automarketing: '规则引擎', abtests: 'A/B测试',
+            automarketing: '规则引擎', abtests: 'A/B测试', paymentrules: '支付发券',
             campaigns: '活动管理', posters: '海报创意', public: '公域品宣', contentsys: '内容系统',
             actions: 'AI建议', 'exec-logs': '执行记录',
             wecomconfig: '企微配置', constraints: '营销约束'
         };
-        var GROWTH_ALL_MEMBERS = ['dashboard', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'constraints', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing'];
+        var GROWTH_ALL_MEMBERS = ['dashboard', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'constraints', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing', 'paymentrules'];
         var __growthActiveSub = {}; // group.key -> 最近激活的成员
 
         function growthGroupOf(member) {
@@ -53974,6 +54010,7 @@ ${body}
             else if (member === 'exec-logs') { loadExecutionLogs(); }
             else if (member === 'wecomconfig') { loadStoreWecomConfigs(); }
             else if (member === 'automarketing') { loadAutoMarketing(); }
+            else if (member === 'paymentrules') { loadPaymentRules(); }
             else { refreshGrowthDashboard(); }
         }
 
@@ -54010,7 +54047,140 @@ ${body}
             loadGrowthMember(member);
         }
 
-        
+        // ── 支付后发券规则（配置集中在 HRMS，小程序定时同步执行）──
+        var PAY_TAG_LABEL = { '': '不限人群', vip: 'VIP', regular: '常规价值', low: '低价值', general: '普通用户', prospect: '潜在新客', new: '新客', active: '活跃客', at_risk: '临界客', dormant: '沉睡老客', churned: '流失客' };
+        function payStoreName(sid){ return (window.__GROWTH_STORE_MAP && __GROWTH_STORE_MAP[sid]) || ('门店 ' + (sid||'')); }
+        function payMinYuan(triggerValue){ var m = String(triggerValue||'').match(/(\d+)/); var fen = m ? parseInt(m[1],10) : 0; return fen>0 ? (fen/100) : 0; }
+
+        async function loadPaymentRules(){
+            var host = document.getElementById('pay-rules-list');
+            if (!host) return;
+            host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">加载中…</div>';
+            try {
+                var storeFilter = document.getElementById('growth-store-filter')?.value || '';
+                var r = await fetch('/api/growth/payment-rules', { headers: growthAuthHeaders() }).then(function(x){return x.json();});
+                var rules = (r && r.rules) || [];
+                if (storeFilter) rules = rules.filter(function(x){ return String(x.store_id)===storeFilter; });
+                window.__PAY_RULES_CACHE = rules;
+                if (!rules.length){ host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">暂无支付发券规则，请在下方新建。</div>'; return; }
+                host.innerHTML = rules.map(function(rule){
+                    var tags = Array.isArray(rule.target_tags) ? rule.target_tags : [];
+                    var tagTxt = tags.length ? tags.map(function(t){return PAY_TAG_LABEL[t]||t;}).join('、') : '不限人群';
+                    var minY = payMinYuan(rule.trigger_value);
+                    var minTxt = minY>0 ? ('实付满'+minY+'元') : '无消费门槛';
+                    var lim = [];
+                    if (rule.daily_user_limit!=null) lim.push('每人'+rule.daily_user_limit+'次/天');
+                    if (rule.global_daily_limit!=null) lim.push('全店'+rule.global_daily_limit+'次/天');
+                    var statusBadge = rule.active
+                        ? '<span style="background:rgba(34,197,94,0.15);color:#22c55e;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">启用中</span>'
+                        : '<span style="background:rgba(148,163,184,0.18);color:#94a3b8;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">已停用</span>';
+                    var rk = escapeHtml(rule.rule_key);
+                    return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:14px;margin-bottom:10px;background:rgba(0,0,0,0.2);">'
+                        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">'
+                        +   '<div style="font-weight:700;color:#fff;font-size:14px;">'+escapeHtml(rule.name||rule.rule_key)+'</div>'+statusBadge+'</div>'
+                        + '<div style="color:rgba(226,232,240,0.7);font-size:12px;line-height:1.9;">'
+                        +   '门店：'+escapeHtml(payStoreName(rule.store_id))+' · 优先级 '+(rule.priority||0)+'<br>'
+                        +   '触发：支付成功后发券（'+minTxt+'）<br>'
+                        +   '目标人群：'+escapeHtml(tagTxt)+'<br>'
+                        +   '券模板ID：'+escapeHtml(rule.member_template_id||'—')+'<br>'
+                        +   (lim.length ? '限额：'+escapeHtml(lim.join(' · '))+'<br>' : '')
+                        + '</div>'
+                        + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" onclick="editPaymentRule(\''+rk+'\')">编辑</button>'
+                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" onclick="togglePaymentRule(\''+rk+'\','+(rule.active?'false':'true')+')">'+(rule.active?'停用':'启用')+'</button>'
+                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;color:#ef4444;" onclick="deletePaymentRule(\''+rk+'\')">删除</button>'
+                        + '</div></div>';
+                }).join('');
+            } catch(e){
+                host.innerHTML = '<div style="color:#ef4444;padding:14px 0;">加载失败：'+escapeHtml(String(e&&e.message||e))+'</div>';
+            }
+        }
+
+        function resetPaymentRuleForm(){
+            ['pay-rule-key','pay-name','pay-template'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+            var p=document.getElementById('pay-priority'); if(p) p.value='100';
+            var m=document.getElementById('pay-minspend'); if(m) m.value='0';
+            ['pay-daily-user','pay-daily-global'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+            var t=document.getElementById('pay-tag'); if(t) t.value='';
+            var a=document.getElementById('pay-active'); if(a) a.checked=true;
+        }
+
+        function editPaymentRule(ruleKey){
+            var rule=(window.__PAY_RULES_CACHE||[]).filter(function(x){return x.rule_key===ruleKey;})[0];
+            if(!rule) return;
+            document.getElementById('pay-rule-key').value=rule.rule_key;
+            document.getElementById('pay-name').value=rule.name||'';
+            document.getElementById('pay-store').value=String(rule.store_id||'51866138');
+            var tags=Array.isArray(rule.target_tags)?rule.target_tags:[];
+            document.getElementById('pay-tag').value=tags[0]||'';
+            document.getElementById('pay-priority').value=rule.priority||100;
+            document.getElementById('pay-minspend').value=payMinYuan(rule.trigger_value)||0;
+            document.getElementById('pay-daily-user').value=rule.daily_user_limit==null?'':rule.daily_user_limit;
+            document.getElementById('pay-daily-global').value=rule.global_daily_limit==null?'':rule.global_daily_limit;
+            document.getElementById('pay-template').value=rule.member_template_id||'';
+            document.getElementById('pay-active').checked=!!rule.active;
+            try{ document.getElementById('pay-rules-list').scrollIntoView({behavior:'smooth'}); }catch(e){}
+        }
+
+        async function savePaymentRule(){
+            var name=(document.getElementById('pay-name').value||'').trim();
+            var storeId=document.getElementById('pay-store').value||'';
+            var templateId=(document.getElementById('pay-template').value||'').trim();
+            if(!name) return showNotification('请填写规则名称','error');
+            if(!templateId) return showNotification('请填写关联券模板ID','error');
+            var minYuan=Math.max(0, Math.floor(Number(document.getElementById('pay-minspend').value)||0));
+            var tag=document.getElementById('pay-tag').value||'';
+            var du=document.getElementById('pay-daily-user').value;
+            var dg=document.getElementById('pay-daily-global').value;
+            var body={
+                rule_key: document.getElementById('pay-rule-key').value||'',
+                store_id: storeId,
+                name: name,
+                active: document.getElementById('pay-active').checked,
+                priority: Math.max(0, Math.floor(Number(document.getElementById('pay-priority').value)||0)),
+                target_tags: tag? [tag] : [],
+                trigger_value: String(minYuan*100),
+                member_template_id: templateId,
+                daily_user_limit: du===''?null:Math.max(0,Math.floor(Number(du)||0)),
+                global_daily_limit: dg===''?null:Math.max(0,Math.floor(Number(dg)||0))
+            };
+            try{
+                var r=await fetch('/api/growth/payment-rules',{method:'POST',headers:growthAuthHeaders(),body:JSON.stringify(body)}).then(function(x){return x.json();});
+                if(!r||!r.ok) throw new Error((r&&r.error)||'保存失败');
+                showNotification('已保存，约2分钟内同步到小程序生效','success');
+                resetPaymentRuleForm();
+                loadPaymentRules();
+            }catch(e){ showNotification('保存失败：'+(e.message||e),'error'); }
+        }
+
+        async function togglePaymentRule(ruleKey, toActive){
+            var rule=(window.__PAY_RULES_CACHE||[]).filter(function(x){return x.rule_key===ruleKey;})[0];
+            if(!rule) return;
+            var body={
+                rule_key: rule.rule_key, store_id: rule.store_id, name: rule.name,
+                active: !!toActive, priority: rule.priority||0,
+                target_tags: Array.isArray(rule.target_tags)?rule.target_tags:[],
+                trigger_value: rule.trigger_value||'', member_template_id: rule.member_template_id||'',
+                daily_user_limit: rule.daily_user_limit, global_daily_limit: rule.global_daily_limit
+            };
+            try{
+                var r=await fetch('/api/growth/payment-rules',{method:'POST',headers:growthAuthHeaders(),body:JSON.stringify(body)}).then(function(x){return x.json();});
+                if(!r||!r.ok) throw new Error((r&&r.error)||'操作失败');
+                showNotification(toActive?'已启用':'已停用','success');
+                loadPaymentRules();
+            }catch(e){ showNotification('操作失败：'+(e.message||e),'error'); }
+        }
+
+        async function deletePaymentRule(ruleKey){
+            var ok = await hrmsConfirm({title:'删除规则',message:'确定删除该支付发券规则？删除后小程序约2分钟内同步移除。',okText:'确认删除',icon:'🗑️'});
+            if(!ok) return;
+            try{
+                var r=await fetch('/api/growth/payment-rules/'+encodeURIComponent(ruleKey),{method:'DELETE',headers:growthAuthHeaders()}).then(function(x){return x.json();});
+                if(!r||!r.ok) throw new Error((r&&r.error)||'删除失败');
+                showNotification('已删除','success');
+                loadPaymentRules();
+            }catch(e){ showNotification('删除失败：'+(e.message||e),'error'); }
+        }
 
     // 增长移动端导航权限
     try {
