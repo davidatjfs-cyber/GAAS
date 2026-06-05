@@ -2367,7 +2367,7 @@ export function registerGrowthRoutes(app, pool) {
           cur.latestMs = txnMs;
           cur.member_name = bitText(f['会员名称']).trim();
           cur.phone = bitPhone(f['手机号']);
-          cur.level = bitText(f['会员登记']).trim();   // 飞书字段名为「会员登记」(即会员等级)
+          cur.level = bitText(f['会员等级'] || f['会员登记']).trim();   // 兼容旧字段名「会员登记」
           cur.tags = bitText(f['人群标签']).trim();
           cur.store_id = mapStoreNameToId(bitText(f['交易门店']) || bitText(f['开卡门店']));
           cur.balance_fen = Math.round((bitNum(f['交易后-储值余额']) || 0) * 100);
