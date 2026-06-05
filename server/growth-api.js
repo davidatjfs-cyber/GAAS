@@ -111,6 +111,23 @@ function authMiniProgramSync(req) {
 }
 
 export async function ensureGrowthTables(pool) {
+  // 储值客户(从客如云→飞书「储值客户」表同步,按卡号聚合当前余额与最近消费日)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS growth_stored_value_members (
+      card_no TEXT PRIMARY KEY,
+      member_name TEXT,
+      phone TEXT,
+      level TEXT,
+      tags TEXT,
+      store_id TEXT,
+      balance_fen INTEGER DEFAULT 0,
+      last_consume_date DATE,
+      last_recharge_date DATE,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_svm_store_consume ON growth_stored_value_members (store_id, last_consume_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_svm_phone ON growth_stored_value_members (phone)`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS growth_customers (
       id BIGSERIAL PRIMARY KEY,
@@ -1288,6 +1305,66 @@ function pickWinbackTemplateByStore(storeId) {
   return def;
 }
 
+// 门店名 → POS门店号(储值客户表里的开卡/交易门店是中文名)
+function mapStoreNameToId(name) {
+  const s = String(name || '');
+  if (s.includes('洪潮')) return '64822111';
+  if (s.includes('马己仙')) return '51866138';
+  return '';
+}
+// 飞书多维表字段值解析(文本/数字/日期/电话)
+function bitText(v) {
+  if (v == null) return '';
+  if (Array.isArray(v)) return v.map((x) => (x && (x.text || x.name)) || x).join(',');
+  if (typeof v === 'object') return String(v.text || v.name || '');
+  return String(v);
+}
+function bitNum(v) {
+  if (v == null) return 0;
+  if (typeof v === 'object' && v.text != null) return Number(v.text) || 0;
+  const n = Number(v);
+  return isNaN(n) ? 0 : n;
+}
+function bitDateMs(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number') return v;
+  const n = Number(v);
+  if (!isNaN(n) && n > 1e10) return n; // epoch ms
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? 0 : d.getTime();
+}
+function bitPhone(v) { return bitText(v).replace(/[^0-9]/g, ''); }
+
+// 用 BITABLE_TASK_RESP 飞书应用获取 tenant_access_token(该应用对储值客户表有读权限)
+async function getBitableTenantToken() {
+  const id = process.env.BITABLE_TASK_RESP_APP_ID;
+  const secret = process.env.BITABLE_TASK_RESP_APP_SECRET;
+  if (!id || !secret) throw new Error('bitable_app_not_configured');
+  const r = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ app_id: id, app_secret: secret })
+  });
+  const d = await r.json();
+  if (!d.tenant_access_token) throw new Error('bitable_token_failed:' + (d.code || '') + ' ' + (d.msg || ''));
+  return d.tenant_access_token;
+}
+// 分页读「储值客户」多维表全部记录
+async function readStoredValueBitableRecords() {
+  const appToken = process.env.STORED_VALUE_BITABLE_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe';
+  const tableId = process.env.STORED_VALUE_BITABLE_TABLE_ID || 'tblvAcEjXHmEYQGZ';
+  const token = await getBitableTenantToken();
+  let all = [];
+  let pageToken = '';
+  for (let i = 0; i < 500; i++) {
+    const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records?page_size=500` + (pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : '');
+    const d = await (await fetch(url, { headers: { Authorization: 'Bearer ' + token } })).json();
+    if (d.code !== 0) throw new Error('bitable_read_failed:' + d.code + ' ' + d.msg);
+    all = all.concat((d.data && d.data.items) || []);
+    if (d.data && d.data.has_more && d.data.page_token) pageToken = d.data.page_token; else break;
+  }
+  return all;
+}
+
 export async function executeGrowthActionRecord(pool, before, operator, extraPayload = {}, reason = '') {
   const basePayload = before.payload && typeof before.payload === 'object' ? before.payload : {};
   const payload = Object.assign({}, basePayload, extraPayload || {});
@@ -2265,6 +2342,84 @@ export function registerGrowthRoutes(app, pool) {
         });
         return res.status(502).json({ ok: false, error: deliveryErr?.message || 'sms_send_failed' });
       }
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 储值客户同步:从飞书「储值客户」表拉全部记录,按卡号聚合(当前余额=最新一行余额,
+  // 最近消费日=交易类型含「消费」的最新营业日期),写入 growth_stored_value_members。
+  // 你每周更新飞书表后,调用本接口(或我手动跑)即可同步。
+  app.post('/api/growth/stored-value/sync', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const records = await readStoredValueBitableRecords();
+      const byCard = new Map();
+      for (const rec of records) {
+        const f = (rec && rec.fields) || {};
+        const card = bitText(f['卡号']).trim();
+        if (!card) continue;
+        const txnMs = bitDateMs(f['交易时间']) || bitDateMs(f['营业日期']) || 0;
+        const type = bitText(f['交易类型']);
+        const od = bitDateMs(f['营业日期']);
+        const cur = byCard.get(card) || { card, latestMs: -1, consumeMs: 0, rechargeMs: 0 };
+        if (txnMs >= cur.latestMs) {
+          cur.latestMs = txnMs;
+          cur.member_name = bitText(f['会员名称']).trim();
+          cur.phone = bitPhone(f['手机号']);
+          cur.level = bitText(f['会员登记']).trim();   // 飞书字段名为「会员登记」(即会员等级)
+          cur.tags = bitText(f['人群标签']).trim();
+          cur.store_id = mapStoreNameToId(bitText(f['交易门店']) || bitText(f['开卡门店']));
+          cur.balance_fen = Math.round((bitNum(f['交易后-储值余额']) || 0) * 100);
+        }
+        if (/消费|支付/.test(type) && od > cur.consumeMs) cur.consumeMs = od;
+        if (/充值|储值$/.test(type) && od > cur.rechargeMs) cur.rechargeMs = od;
+        byCard.set(card, cur);
+      }
+      let upserted = 0;
+      for (const m of byCard.values()) {
+        await pool.query(
+          `INSERT INTO growth_stored_value_members
+             (card_no, member_name, phone, level, tags, store_id, balance_fen, last_consume_date, last_recharge_date, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+           ON CONFLICT (card_no) DO UPDATE SET
+             member_name=EXCLUDED.member_name, phone=EXCLUDED.phone, level=EXCLUDED.level,
+             tags=EXCLUDED.tags, store_id=EXCLUDED.store_id, balance_fen=EXCLUDED.balance_fen,
+             last_consume_date=EXCLUDED.last_consume_date, last_recharge_date=EXCLUDED.last_recharge_date, updated_at=NOW()`,
+          [m.card, m.member_name || null, m.phone || null, m.level || null, m.tags || null, m.store_id || null,
+           m.balance_fen || 0,
+           m.consumeMs > 0 ? new Date(m.consumeMs) : null,
+           m.rechargeMs > 0 ? new Date(m.rechargeMs) : null]
+        );
+        upserted++;
+      }
+      return res.json({ ok: true, records: records.length, members: byCard.size, upserted });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 储值客户召回目标:有余额 + 久未消费(dormant_days),按门店,供 sendWinbackCampaign 取名单。
+  app.get('/api/growth/stored-value/targets', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const storeId = cleanText(req.query.store_id, 128);
+      const dormantDays = Math.max(1, Math.floor(Number(req.query.dormant_days) || 14));
+      const minBalanceFen = Math.max(0, Math.floor((Number(req.query.min_balance_yuan) || 1) * 100));
+      const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 2000);
+      const params = [];
+      const clauses = ["phone IS NOT NULL AND phone <> ''", `balance_fen >= ${minBalanceFen}`,
+        `(last_consume_date IS NULL OR last_consume_date <= (CURRENT_DATE - ${dormantDays}))`];
+      if (storeId) { params.push(storeId); clauses.push(`store_id = $${params.length}`); }
+      params.push(limit);
+      const r = await pool.query(
+        `SELECT card_no, member_name, phone, level, tags, store_id, balance_fen, last_consume_date
+           FROM growth_stored_value_members
+          WHERE ${clauses.join(' AND ')}
+          ORDER BY balance_fen DESC LIMIT $${params.length}`,
+        params
+      );
+      return res.json({ ok: true, count: r.rows.length, targets: r.rows });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
