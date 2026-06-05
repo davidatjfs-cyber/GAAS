@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>储值客户召回 · HRMS</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; background:#0f1115; color:#e8e0d4; padding:16px; }
+  .wrap { max-width:680px; margin:0 auto; }
+  h1 { font-size:20px; margin:8px 0 4px; }
+  .sub { font-size:13px; color:#8a8f99; margin-bottom:16px; }
+  .card { background:#171a21; border:1px solid #232733; border-radius:14px; padding:16px; margin-bottom:16px; }
+  .row { display:flex; align-items:center; margin:10px 0; }
+  .row label { width:130px; font-size:14px; color:#cfd3db; }
+  .row select, .row input { flex:1; padding:10px 12px; background:#0f1115; border:1px solid #2c3140; border-radius:10px; color:#e8e0d4; font-size:15px; }
+  button { width:100%; padding:13px; border:0; border-radius:12px; font-size:16px; font-weight:600; margin-top:10px; }
+  .btn-preview { background:#2c3140; color:#e8e0d4; }
+  .btn-launch { background:#1f8f5f; color:#fff; }
+  .btn-launch:disabled { opacity:.5; }
+  .stat { display:flex; gap:12px; margin:12px 0; }
+  .stat .box { flex:1; background:#0f1115; border:1px solid #2c3140; border-radius:10px; padding:12px; text-align:center; }
+  .stat .num { font-size:24px; font-weight:700; }
+  .stat .lbl { font-size:12px; color:#8a8f99; margin-top:4px; }
+  .sendable .num { color:#5fd39a; }
+  .capped .num { color:#e0a85f; }
+  .muted { font-size:12px; color:#8a8f99; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid #232733; }
+  th { color:#8a8f99; font-weight:500; }
+  .msg { font-size:13px; margin-top:10px; padding:10px; border-radius:8px; }
+  .msg.ok { background:#13321f; color:#7fe0b0; }
+  .msg.err { background:#3a1d1d; color:#ff9a9a; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:99px; }
+  .pill.done { background:#13321f; color:#7fe0b0; }
+  .pill.pending,.pill.running { background:#2c2a17; color:#e0c85f; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>💎 储值客户召回</h1>
+  <div class="sub">发起前先「预览」确认人数,再「发起」。同一客人 30 天内最多收 1 条召回短信(频控)。</div>
+
+  <div id="authMsg" class="msg err" style="display:none;">未检测到登录态,请先在 HRMS 主系统登录后再打开本页。</div>
+
+  <div class="card">
+    <div class="row"><label>门店</label>
+      <select id="store">
+        <option value="51866138">马己仙广东小馆</option>
+        <option value="64822111">洪潮潮汕传统菜</option>
+      </select>
+    </div>
+    <div class="row"><label>券面额(元)</label><input id="value" type="number" value="30" /></div>
+    <div class="row"><label>有效期(天)</label><input id="validDays" type="number" value="14" /></div>
+    <div class="row"><label>多少天未消费</label><input id="dormantDays" type="number" value="30" /></div>
+    <div class="row"><label>余额≥(元)</label><input id="minBalance" type="number" value="100" /></div>
+    <button class="btn-preview" onclick="doPreview()">① 预览人数(不发送)</button>
+
+    <div id="previewBox" style="display:none;">
+      <div class="stat">
+        <div class="box"><div class="num" id="matchN">0</div><div class="lbl">命中</div></div>
+        <div class="box capped"><div class="num" id="cappedN">0</div><div class="lbl">频控扣除</div></div>
+        <div class="box sendable"><div class="num" id="sendableN">0</div><div class="lbl">实际会发</div></div>
+      </div>
+      <div class="muted" id="sampleBox"></div>
+      <button class="btn-launch" id="launchBtn" onclick="doLaunch()">② 确认发起(发给上方「实际会发」人数)</button>
+    </div>
+    <div id="msg"></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <strong>近期召回任务</strong>
+      <span class="muted" style="cursor:pointer;" onclick="loadJobs()">↻ 刷新</span>
+    </div>
+    <table><thead><tr><th>时间</th><th>门店</th><th>面额</th><th>目标</th><th>已发</th><th>失败</th><th>状态</th></tr></thead>
+      <tbody id="jobsBody"><tr><td colspan="7" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  var STORE_NAME = { '51866138':'马己仙', '64822111':'洪潮' };
+  function token(){ try { return localStorage.getItem('hrms_token') || ''; } catch(e){ return ''; } }
+  function authHeaders(){ return { 'Content-Type':'application/json', 'Authorization':'Bearer '+token() }; }
+  var lastPreview = null;
+
+  if (!token()) document.getElementById('authMsg').style.display = 'block';
+
+  function params(){
+    return {
+      store_id: document.getElementById('store').value,
+      value_yuan: Number(document.getElementById('value').value)||0,
+      valid_days: Number(document.getElementById('validDays').value)||14,
+      dormant_days: Number(document.getElementById('dormantDays').value)||30,
+      min_balance_yuan: Number(document.getElementById('minBalance').value)||1
+    };
+  }
+  function showMsg(t, ok){ var m=document.getElementById('msg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; }
+
+  function doPreview(){
+    var p = params();
+    var qs = 'store_id='+p.store_id+'&dormant_days='+p.dormant_days+'&min_balance_yuan='+p.min_balance_yuan;
+    showMsg('预览中…', true);
+    fetch('/api/growth/winback/preview?'+qs, { headers: authHeaders() })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d.ok){ showMsg('预览失败:'+(d.error||''), false); return; }
+        lastPreview = p;
+        document.getElementById('matchN').textContent = d.match_count;
+        document.getElementById('cappedN').textContent = d.capped_count;
+        document.getElementById('sendableN').textContent = d.sendable_count;
+        var s = (d.sample||[]).map(function(x){ return x.phone+' 余额¥'+x.balance_yuan+'(最近'+(x.last_consume_date||'-')+')'; }).join('<br>');
+        document.getElementById('sampleBox').innerHTML = s ? ('样例:<br>'+s) : '无符合条件对象';
+        document.getElementById('previewBox').style.display = 'block';
+        document.getElementById('launchBtn').disabled = (d.sendable_count<=0);
+        showMsg('', true);
+      })
+      .catch(function(e){ showMsg('预览出错:'+e, false); });
+  }
+
+  function doLaunch(){
+    var p = params();
+    if(!confirm('确认对【'+STORE_NAME[p.store_id]+'】发起召回?面额'+p.value_yuan+'元,有效期'+p.valid_days+'天。将给「实际会发」人数群发短信。')) return;
+    document.getElementById('launchBtn').disabled = true;
+    showMsg('发起中…', true);
+    fetch('/api/growth/winback/launch', { method:'POST', headers: authHeaders(), body: JSON.stringify(p) })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d.ok){ showMsg('发起失败:'+(d.error||''), false); return; }
+        if(!d.job_id){ showMsg(d.message||'没有符合条件的对象', false); return; }
+        showMsg('已发起!任务#'+d.job_id+',冻结目标 '+d.target_count+' 人,1-2 分钟内陆续发送。', true);
+        document.getElementById('previewBox').style.display='none';
+        setTimeout(loadJobs, 1500);
+      })
+      .catch(function(e){ showMsg('发起出错:'+e, false); });
+  }
+
+  function loadJobs(){
+    fetch('/api/growth/winback/jobs?limit=20', { headers: authHeaders() })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var b=document.getElementById('jobsBody');
+        if(!d.ok || !d.jobs || !d.jobs.length){ b.innerHTML='<tr><td colspan="7" class="muted">暂无</td></tr>'; return; }
+        b.innerHTML = d.jobs.map(function(j){
+          var t = (j.created_at||'').replace('T',' ').slice(5,16);
+          return '<tr><td>'+t+'</td><td>'+(STORE_NAME[j.store_id]||j.store_id||'')+'</td><td>'+j.value_yuan+'元</td><td>'+j.total+'</td><td>'+j.sent+'</td><td>'+j.failed+'</td><td><span class="pill '+j.status+'">'+j.status+'</span></td></tr>';
+        }).join('');
+      })
+      .catch(function(){ document.getElementById('jobsBody').innerHTML='<tr><td colspan="7" class="muted">加载失败</td></tr>'; });
+  }
+  loadJobs();
+</script>
+</body>
+</html>
