@@ -56051,11 +56051,22 @@ ${body}
                 if (!rows.length) { host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无核销记录</div>'; return; }
                 host.innerHTML = rows.map(function(x){
                     var amt = Number(x.amount_fen || 0) / 100;
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">'
-                        + '<span style="color:#fff;">券 ' + escapeHtml(String(x.coupon_id || '-')) + '</span>'
-                        + '<span style="color:rgba(226,232,240,0.7);">门店 ' + escapeHtml(String(x.store_id || '-')) + ' · 客户#' + escapeHtml(String(x.customer_id || '-')) + '</span>'
-                        + '<span style="color:#22c55e;">核销 ¥' + amt.toFixed(2) + '</span>'
-                        + '<span style="color:rgba(226,232,240,0.5);">' + (x.redeemed_at ? new Date(x.redeemed_at).toLocaleString('zh-CN') : '-') + '</span>'
+                    var md = x.metadata || {};
+                    // 活动中文名：优先 campaigns.name，其次 metadata 里的活动/规则名，再次 campaign_id，最后占位
+                    var actName = x.campaign_name || md.campaign_name || md.rule_name || md.rule_key || md.coupon_source || x.campaign_id || md.template_id || '—';
+                    var storeNm = amStoreName(String(x.store_id || ''));
+                    var dateTxt = x.redeemed_at ? new Date(x.redeemed_at).toLocaleString('zh-CN') : '—';
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;">'
+                        + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">'
+                        +   '<span style="color:#fff;font-weight:600;">🎟 ' + escapeHtml(String(actName)) + '</span>'
+                        +   '<span style="color:#22c55e;font-weight:700;">核销 ¥' + amt.toFixed(2) + '</span>'
+                        + '</div>'
+                        + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px;color:rgba(226,232,240,0.6);">'
+                        +   '<span>🏪 ' + escapeHtml(storeNm) + '</span>'
+                        +   '<span>券号 ' + escapeHtml(String(x.coupon_id || '—')) + '</span>'
+                        +   '<span>客户#' + escapeHtml(String(x.customer_id || '—')) + '</span>'
+                        +   '<span>🗓 ' + escapeHtml(dateTxt) + '</span>'
+                        + '</div>'
                         + '</div>';
                 }).join('');
             } catch (e) {

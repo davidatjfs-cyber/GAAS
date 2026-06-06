@@ -3746,10 +3746,18 @@ export function registerGrowthRoutes(app, pool) {
     const conditions = [];
     const params = [];
     let idx = 1;
-    if (campaign_id) { conditions.push(`campaign_id = $${idx++}`); params.push(campaign_id); }
-    if (store_id) { conditions.push(`store_id = $${idx++}`); params.push(store_id); }
+    if (campaign_id) { conditions.push(`r.campaign_id = $${idx++}`); params.push(campaign_id); }
+    if (store_id) { conditions.push(`r.store_id = $${idx++}`); params.push(store_id); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-    const r = await pool.query(`SELECT id, customer_id, coupon_id, campaign_id, store_id, amount_fen, redeemed_at FROM growth_redemptions ${where} ORDER BY redeemed_at DESC LIMIT $${idx++} OFFSET $${idx}`, [...params, limit, offset]);
+    // 关联活动中文名（campaign_id → growth_campaigns.name），并回传 metadata 供前台兜底取活动/规则名
+    const r = await pool.query(
+      `SELECT r.id, r.customer_id, r.coupon_id, r.campaign_id, r.store_id, r.amount_fen, r.redeemed_at, r.metadata,
+              c.name AS campaign_name
+       FROM growth_redemptions r
+       LEFT JOIN growth_campaigns c ON c.campaign_id = r.campaign_id
+       ${where} ORDER BY r.redeemed_at DESC LIMIT $${idx++} OFFSET $${idx}`,
+      [...params, limit, offset]
+    );
     return res.json({ ok: true, redemptions: r.rows });
   });
 
