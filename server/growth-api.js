@@ -27,6 +27,39 @@ function smsSafeName(value) {
   return /^[一-龥·]{2,15}$/.test(s) ? s : '顾客';
 }
 
+// 自动营销规则发券短信：阿里云已报备模板的可用英文变量及其取值口径。
+// 模板正文(content_template)须与阿里云模板逐字一致，本函数按正文里出现的 {var} 精确组装
+// templateParam，确保「参数名/个数」与阿里云严格匹配（不匹配会被整批拒收）。
+const SMS_DERIVED_VARS = new Set(['name', 'value', 'date', 'code', 'balance', 'days']);
+
+// 券有效期 → 「M月D日」（到店报码时客人一眼能看懂的中文日期；以 valid_days 自当日顺延）。
+function formatSmsValidDate(validDays) {
+  const d = new Date();
+  d.setDate(d.getDate() + Math.max(1, Math.floor(Number(validDays) || 7)));
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+// 唯一券码：6 位数字，便于客人口述、店员在核销台输入。带时间熵降低碰撞，核销按本码配对。
+function genSmsShortCode() {
+  const n = (Date.now() % 1000000) ^ Math.floor(Math.random() * 1000000);
+  return String(100000 + (Math.abs(n) % 900000));
+}
+
+// 储值余额(元)：按手机号(可选门店)取储值会员当前余额，供储值维护模板的 {balance} 变量。
+async function getStoredValueBalanceYuan(pool, phone, storeId) {
+  const p = cleanPhone(phone);
+  if (!p) return 0;
+  const params = [p];
+  let where = "phone = $1 AND phone <> ''";
+  const sid = cleanText(storeId, 128);
+  if (sid) { params.push(sid); where += ` AND store_id = $${params.length}`; }
+  const r = await pool.query(
+    `SELECT balance_fen FROM growth_stored_value_members WHERE ${where} ORDER BY balance_fen DESC LIMIT 1`,
+    params
+  ).catch(() => ({ rows: [] }));
+  return Math.max(0, Math.round((r.rows[0]?.balance_fen || 0) / 100));
+}
+
 function parseOccurredAt(value) {
   if (!value) return new Date();
   const d = new Date(value);
@@ -150,6 +183,9 @@ export async function ensureGrowthTables(pool) {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_campaign_jobs_status ON growth_campaign_jobs (status, created_at)`);
+  // kind 区分任务类型：'winback'=发券召回(小程序定时器执行，需生成并注册券码)；
+  // 'stored_value_remind'=储值余额提醒(HRMS 自身后台执行，只发 {balance}，无券无码)。
+  await pool.query(`ALTER TABLE growth_campaign_jobs ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'winback'`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS growth_customers (
       id BIGSERIAL PRIMARY KEY,
@@ -1397,6 +1433,80 @@ function pickWinbackTemplateByStore(storeId) {
   return def;
 }
 
+// 储值余额提醒模板（变量仅 balance；无券无码，提醒客人用余额+推荐菜促复购）。
+// store_id：51866138=马己仙，64822111=洪潮。可被规则/任务里的 sms_template_code 覆盖。
+function pickBalanceTemplateByStore(storeId) {
+  const sid = String(storeId || '').trim();
+  const def = String(process.env.ALIYUN_SMS_BALANCE_TEMPLATE_DEFAULT || '').trim();
+  if (sid === '64822111') return String(process.env.ALIYUN_SMS_BALANCE_TEMPLATE_HONGCHAO || '').trim() || def; // 洪潮
+  if (sid === '51866138') return String(process.env.ALIYUN_SMS_BALANCE_TEMPLATE_MAJIXIAN || '').trim() || def; // 马己仙
+  return def;
+}
+
+// 通用「营销发券一键发起」段配置。所有带券码段统一走召回任务管道：
+// HRMS 冻结 job(kind=段key) → 小程序 runWinbackJobs 生成短码+写 user_vouchers → 调 HRMS 发短信。
+// 券码因此在小程序 user_vouchers 落地，核销台 verifyVoucher 可校验+统计。
+// source='profiles' 取 growth_customer_profiles(到店次数/天数/价值分级)；'stored' 取储值客户表。
+// 沉睡60-90 沿用现有「储值召回」页(winback)，不在此注册。
+// vars: 该段阿里云模板的变量集合(须与已报备模板逐字一致，否则整批拒收)。
+// 赠菜/赠糖水类只有 date+code(无门槛礼品券)；长期流失是 value+date+code 的满额回归券(2张/1码核销2次)。
+const CAMPAIGN_TYPES = {
+  vip_gift:    { label: 'VIP赠菜',  source: 'profiles', tplPrefix: 'VIP',      coupon_count: 1, vars: ['date', 'code'] },
+  newcomer_4d: { label: '新客4天',  source: 'profiles', tplPrefix: 'NEW4',     coupon_count: 1, vars: ['date', 'code'] },
+  newcomer_8d: { label: '新客8天',  source: 'profiles', tplPrefix: 'NEW8',     coupon_count: 1, vars: ['date', 'code'] },
+  active:      { label: '活跃客',   source: 'profiles', tplPrefix: 'ACTIVE',   coupon_count: 1, vars: ['date', 'code'] },
+  lost_long:   { label: '长期流失', source: 'profiles', tplPrefix: 'LOSTLONG', coupon_count: 2, vars: ['value', 'date', 'code'] },
+};
+// 按段+门店解析阿里云模板 code：ALIYUN_SMS_<PREFIX>_<MAJIXIAN|HONGCHAO|DEFAULT>
+function pickCampaignTemplate(campaignKey, storeId) {
+  const cfg = CAMPAIGN_TYPES[campaignKey];
+  if (!cfg) return '';
+  const pfx = cfg.tplPrefix;
+  const sid = String(storeId || '').trim();
+  const def = String(process.env[`ALIYUN_SMS_${pfx}_DEFAULT`] || '').trim();
+  if (sid === '64822111') return String(process.env[`ALIYUN_SMS_${pfx}_HONGCHAO`] || '').trim() || def; // 洪潮
+  if (sid === '51866138') return String(process.env[`ALIYUN_SMS_${pfx}_MAJIXIAN`] || '').trim() || def; // 马己仙
+  return def;
+}
+
+// 通用发券人群(profiles)取数：可编辑筛选(门店/价值分级/生命周期/到店次数/未消费天数)+频控。
+// 返回 SQL 与参数，preview 与 launch 共用，保证「预览即所发」。
+// 至少需一个人群维度，否则视为全量、拒绝(防误群发)。
+function buildCampaignTargetQuery(opts) {
+  const { storeId, valueTier, lifecycleStage, minVisits, maxVisits, minDays, maxDays, ruleKey, freqDays, limit } = opts;
+  const hasAudience = !!(valueTier || lifecycleStage
+    || Number.isFinite(minVisits) || Number.isFinite(maxVisits)
+    || Number.isFinite(minDays) || Number.isFinite(maxDays));
+  if (!hasAudience) return null;
+  const params = [String(Math.max(0, Math.floor(Number(freqDays) || 0)))];
+  const daysExpr = '(CURRENT_DATE - COALESCE(cp.pos_last_order_at::date, gc.last_seen_at::date))';
+  const clauses = ["cp.phone IS NOT NULL AND cp.phone <> ''"];
+  if (storeId) { params.push(storeId); clauses.push(`cp.store_id = $${params.length}`); }
+  if (valueTier) { params.push(valueTier); clauses.push(`cp.value_tier = $${params.length}`); }
+  if (lifecycleStage) { params.push(lifecycleStage); clauses.push(`cp.lifecycle_stage = $${params.length}`); }
+  if (Number.isFinite(minVisits)) clauses.push(`COALESCE(cp.pos_order_count,0) >= ${Math.floor(minVisits)}`);
+  if (Number.isFinite(maxVisits)) clauses.push(`COALESCE(cp.pos_order_count,0) <= ${Math.floor(maxVisits)}`);
+  if (Number.isFinite(minDays)) clauses.push(`${daysExpr} >= ${Math.floor(minDays)}`);
+  if (Number.isFinite(maxDays)) clauses.push(`${daysExpr} <= ${Math.floor(maxDays)}`);
+  params.push(ruleKey);
+  const ruleIdx = params.length;
+  const lim = Math.min(Math.max(Math.floor(Number(limit) || 500), 1), 5000);
+  const sql = `
+    SELECT cp.customer_id, cp.store_id, cp.phone,
+           COALESCE(cp.pos_order_count,0) AS visits,
+           ${daysExpr}::int AS days,
+           COALESCE(NULLIF(gc.meta->>'title',''), NULLIF(gc.meta->>'name',''), '') AS name,
+           (NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
+              WHERE d.channel='sms' AND d.rule_key=$${ruleIdx} AND d.status='sent'
+                AND d.payload->>'phone' = cp.phone
+                AND d.created_at > now() - ($1 || ' days')::interval)) AS sendable
+    FROM growth_customer_profiles cp
+    JOIN growth_customers gc ON gc.id = cp.customer_id
+    WHERE ${clauses.join(' AND ')}
+    ORDER BY days ASC LIMIT ${lim}`;
+  return { sql, params };
+}
+
 // 门店名 → POS门店号(储值客户表里的开卡/交易门店是中文名)
 function mapStoreNameToId(name) {
   const s = String(name || '');
@@ -1602,10 +1712,56 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
       // 旧逻辑多传 dishes/count、无券时又把 value 删掉）。
       // 现按门店选模板（马己仙 SMS_507400089 / 洪潮 SMS_507130081），二者变量均为
       // name/days/value 三个，缺一不可、不得多传。
-      const smsTemplateCode = cleanText(payload.sms_template_code, 64) || pickSmsTemplateByStore(storeId);
-      // 该模板本质是「优惠券召回」，无券面额时既无 value 可填、也不应发「0元券」短信，跳过而非发送。
-      if (couponValueFen <= 0) {
-        executionResults.delivery_error = 'sms_skipped_no_coupon_value';
+      // 同一触达段在两店是不同的已报备模板(CODE 不同)，而规则是「不分店」的一条，
+      // 故支持 payload.sms_template_code_by_store = {"51866138":"SMS_xxx","64822111":"SMS_yyy"}，
+      // 发送时按客人门店取；其次单一 sms_template_code；最后回退门店默认模板。
+      const smsTplByStore = (payload.sms_template_code_by_store && typeof payload.sms_template_code_by_store === 'object')
+        ? cleanText(payload.sms_template_code_by_store[storeId], 64) : '';
+      const smsTemplateCode = smsTplByStore || cleanText(payload.sms_template_code, 64) || pickSmsTemplateByStore(storeId);
+
+      // 解析模板正文（content_template，与阿里云已报备模板逐字一致）中的 {var} 占位符，
+      // 仅当出现的变量都属于受支持的英文变量集时走「按需精确组装」新模式；
+      // 否则（如旧规则用 {customer_name} 等展示型变量）回退到旧的 name/days/value 固定三变量。
+      const tplText = cleanText(payload.content_template || payload.message_template, 1800);
+      const neededVars = Array.from(new Set((tplText.match(/\{([a-zA-Z0-9_]+)\}/g) || []).map((s) => s.slice(1, -1))));
+      const useDerivedParams = neededVars.length > 0 && neededVars.every((v) => SMS_DERIVED_VARS.has(v));
+
+      let templateParam = null;
+      let generatedCode = '';
+      let skipReason = '';
+      if (useDerivedParams) {
+        const param = {};
+        for (const v of neededVars) {
+          if (v === 'name') param.name = smsSafeName(payload.customer_name) || '顾客';
+          else if (v === 'days') param.days = String(Math.max(0, Math.floor(Number(payload.days_since_last_visit) || 0)));
+          else if (v === 'value') {
+            if (couponValueFen <= 0) { skipReason = 'no_coupon_value'; break; }
+            param.value = String(Math.round(couponValueFen / 100));
+          } else if (v === 'date') {
+            param.date = formatSmsValidDate(payload.valid_days);
+          } else if (v === 'code') {
+            generatedCode = genSmsShortCode();
+            param.code = generatedCode;
+          } else if (v === 'balance') {
+            const balYuan = await getStoredValueBalanceYuan(pool, smsPhone, storeId);
+            if (balYuan <= 0) { skipReason = 'no_balance'; break; }
+            param.balance = String(balYuan);
+          }
+        }
+        if (!skipReason) templateParam = param;
+      } else if (couponValueFen <= 0) {
+        // 旧模板本质是「优惠券召回」，无券面额时既无 value 可填、也不应发「0元券」短信。
+        skipReason = 'no_coupon_value';
+      } else {
+        templateParam = {
+          name: smsSafeName(payload.customer_name) || '顾客',
+          days: String(Math.max(0, Math.floor(Number(payload.days_since_last_visit) || 0))),
+          value: String(Math.round(couponValueFen / 100))
+        };
+      }
+
+      if (skipReason) {
+        executionResults.delivery_error = `sms_skipped_${skipReason}`;
         await upsertDeliveryLog(pool, {
           delivery_key: deliveryKey,
           action_key: actionKey,
@@ -1615,16 +1771,13 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           channel: 'sms',
           external_userid: '',
           status: 'skipped',
-          payload: { phone: smsPhone, reason: 'no_coupon_value', template_code: smsTemplateCode },
+          payload: { phone: smsPhone, reason: skipReason, template_code: smsTemplateCode },
           result: {},
-          error_message: `无优惠券面额，模板 ${smsTemplateCode || 'default'} 需要 value 变量，已跳过发送`
+          error_message: skipReason === 'no_balance'
+            ? `储值余额为 0，模板 ${smsTemplateCode || 'default'} 需要 balance 变量，已跳过发送`
+            : `无优惠券面额，模板 ${smsTemplateCode || 'default'} 需要 value 变量，已跳过发送`
         });
       } else {
-      const templateParam = {
-        name: smsSafeName(payload.customer_name) || '顾客',
-        days: String(Math.max(0, Math.floor(Number(payload.days_since_last_visit) || 0))),
-        value: String(Math.round(couponValueFen / 100))
-      };
       try {
         const sent = await sendAliyunSms({
           phoneNumbers: smsPhone,
@@ -1643,7 +1796,10 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           external_userid: '',
           provider_msg_id: sent.provider_msg_id,
           status: 'sent',
-          payload: { phone: smsPhone, template_param: templateParam },
+          // coupon_code 写入投递日志：核销回传同一短码时按 payload->>'coupon_code' 配对翻成 redeemed。
+          payload: generatedCode
+            ? { phone: smsPhone, template_param: templateParam, coupon_code: generatedCode }
+            : { phone: smsPhone, template_param: templateParam },
           result: sent.raw || {}
         });
         await insertGrowthEvent(pool, {
@@ -1654,14 +1810,15 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           store_id: storeId,
           campaign_id: campaignId,
           channel: 'sms',
-          coupon_id: payload.coupon_id,
+          coupon_id: generatedCode || payload.coupon_id,
           idempotency_key: `marketing_triggered:${actionKey}:${sent.provider_msg_id || deliveryKey}`,
           metadata: {
             action_key: actionKey,
             rule_key: cleanText(payload.rule_key, 128),
             delivery_key: deliveryKey,
             provider_msg_id: sent.provider_msg_id,
-            template_param: templateParam
+            template_param: templateParam,
+            ...(generatedCode ? { short_code: generatedCode } : {})
           }
         });
         executionResults.real_executions.push({ type: 'sms_message', provider_msg_id: sent.provider_msg_id || deliveryKey, status: 'sent' });
@@ -2616,10 +2773,12 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/winback/pending-jobs', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     try {
+      // 小程序认领所有「带券码」任务：召回(winback) + 通用发券(各段key)。
+      // 仅排除 stored_value_remind（无券无码，由 HRMS 后台 worker 直发）。
       const r = await pool.query(
         `UPDATE growth_campaign_jobs SET status='running', updated_at=now()
-          WHERE id = (SELECT id FROM growth_campaign_jobs WHERE status='pending' ORDER BY created_at ASC LIMIT 1)
-          RETURNING id, campaign_id, store_id, value_yuan, valid_days, targets`
+          WHERE id = (SELECT id FROM growth_campaign_jobs WHERE status='pending' AND kind <> 'stored_value_remind' ORDER BY created_at ASC LIMIT 1)
+          RETURNING id, campaign_id, store_id, kind, value_yuan, valid_days, targets, result`
       );
       return res.json({ ok: true, job: r.rows[0] || null });
     } catch (e) {
@@ -2651,7 +2810,7 @@ export function registerGrowthRoutes(app, pool) {
     try {
       const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
       const r = await pool.query(
-        `SELECT id, campaign_id, store_id, value_yuan, valid_days, dormant_days, total, sent, failed, status, created_by, created_at, updated_at
+        `SELECT id, campaign_id, store_id, kind, value_yuan, valid_days, dormant_days, total, sent, failed, status, created_by, created_at, updated_at
            FROM growth_campaign_jobs ORDER BY created_at DESC LIMIT ${limit}`
       );
       return res.json({ ok: true, jobs: r.rows });
@@ -2659,6 +2818,295 @@ export function registerGrowthRoutes(app, pool) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
+
+  // ── 通用「营销发券一键发起」(VIP/新客/活跃/长期流失)：profiles 人群 + 召回任务管道 ──
+  // 与储值召回同理：HRMS 冻结名单 → 小程序执行(生成券码+写券+发短信)，券码可核销可统计。
+  function parseCampaignCriteria(src) {
+    const num = (v) => (v === '' || v == null || isNaN(Number(v)) ? NaN : Math.floor(Number(v)));
+    return {
+      storeId: cleanText(src.store_id, 128),
+      valueTier: cleanText(src.value_tier, 32),
+      lifecycleStage: cleanText(src.lifecycle_stage, 32),
+      minVisits: num(src.min_visits),
+      maxVisits: num(src.max_visits),
+      minDays: num(src.min_days),
+      maxDays: num(src.max_days),
+    };
+  }
+
+  app.post('/api/growth/campaign/preview', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const b = req.body && typeof req.body === 'object' ? req.body : {};
+      const campaignKey = cleanText(b.campaign_key, 64);
+      if (!CAMPAIGN_TYPES[campaignKey]) return res.status(400).json({ ok: false, error: 'unknown_campaign_key' });
+      const c = parseCampaignCriteria(b);
+      const freqDays = Math.max(0, Math.floor(Number(b.freq_days != null ? b.freq_days : (process.env.ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS || 30))));
+      const q = buildCampaignTargetQuery({ ...c, ruleKey: campaignKey, freqDays, limit: 5000 });
+      if (!q) return res.status(400).json({ ok: false, error: 'need_audience_filter' });
+      const r = await pool.query(q.sql, q.params);
+      const sendable = r.rows.filter((x) => x.sendable);
+      const sample = sendable.slice(0, 10).map((x) => ({
+        phone: x.phone ? (String(x.phone).slice(0, 3) + '****' + String(x.phone).slice(-4)) : '',
+        name: x.name || '', visits: x.visits, days: x.days
+      }));
+      return res.json({
+        ok: true, dry_run: true,
+        match_count: r.rows.length,
+        capped_count: r.rows.length - sendable.length,
+        sendable_count: sendable.length,
+        coupon_count: CAMPAIGN_TYPES[campaignKey].coupon_count,
+        frequency_days: freqDays, sample
+      });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/growth/campaign/launch', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const b = req.body && typeof req.body === 'object' ? req.body : {};
+      const campaignKey = cleanText(b.campaign_key, 64);
+      const cfg = CAMPAIGN_TYPES[campaignKey];
+      if (!cfg) return res.status(400).json({ ok: false, error: 'unknown_campaign_key' });
+      const c = parseCampaignCriteria(b);
+      if (!c.storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
+      const valueYuan = Math.max(0, Math.floor(Number(b.value_yuan) || 0));
+      const validDays = Math.max(1, Math.floor(Number(b.valid_days) || 14));
+      if (valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
+      if (!pickCampaignTemplate(campaignKey, c.storeId)) return res.status(503).json({ ok: false, error: 'sms_template_not_configured' });
+      const maxTargets = Math.min(Math.max(Number(b.max_targets) || 500, 1), 2000);
+      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS) || 30));
+      const q = buildCampaignTargetQuery({ ...c, ruleKey: campaignKey, freqDays, limit: maxTargets });
+      if (!q) return res.status(400).json({ ok: false, error: 'need_audience_filter' });
+      const r = await pool.query(q.sql, q.params);
+      const targets = r.rows.filter((x) => x.sendable).map((x) => ({ phone: x.phone, name: x.name || '' }));
+      if (!targets.length) return res.json({ ok: true, job_id: null, target_count: 0, message: '没有符合条件的对象(人群/频控筛选后为空)' });
+      const campaignId = cleanText(b.campaign_id, 128) || (campaignKey + '_' + c.storeId + '_' + Date.now());
+      const result = { campaign_key: campaignKey, coupon_count: cfg.coupon_count };
+      const ins = await pool.query(
+        `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result)
+         VALUES ($1,$2,$3,$4,0,0,$5::jsonb,$6,'pending',$7,$8,$9::jsonb) RETURNING id`,
+        [campaignId, c.storeId, valueYuan, validDays, JSON.stringify(targets), targets.length, campaignKey, cleanText(b.operator, 128) || 'hrms_admin', JSON.stringify(result)]
+      );
+      return res.json({ ok: true, job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length, coupon_count: cfg.coupon_count });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 【通用发券短信发送】小程序 runWinbackJobs 生成短码+写券后回调本接口发短信。
+  // 模板按 段key+门店 解析(pickCampaignTemplate)，templateParam 严格按 CAMPAIGN_TYPES[key].vars 拼装
+  // (赠菜类只 date+code；长期流失 value+date+code)。多/少变量都会被阿里云整批拒收，故以 vars 为准。
+  // 频控/幂等/落库/事件与 winback/send-sms 同构，但 rule_key=段key，核销可按活动归因统计。
+  app.post('/api/growth/campaign/send-sms', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const b = req.body && typeof req.body === 'object' ? req.body : {};
+      const campaignKey = cleanText(b.campaign_key, 64);
+      const cfg = CAMPAIGN_TYPES[campaignKey];
+      if (!cfg) return res.status(400).json({ ok: false, error: 'unknown_campaign_key' });
+      const phone = cleanPhone(b.phone);
+      const storeId = cleanText(b.store_id, 128);
+      const code = cleanText(b.coupon_code || b.code, 64);
+      const valueYuan = Math.max(0, Math.floor(Number(b.value_yuan || b.value) || 0));
+      const validUntil = cleanText(b.valid_until || b.date, 40) || formatSmsValidDate(b.valid_days);
+      const campaignId = cleanText(b.campaign_id || b.scene, 128);
+      const idempotencyKey = cleanText(b.idempotency_key, 255) || (code ? `${campaignKey}:${code}` : '');
+
+      if (!phone) return res.status(400).json({ ok: false, error: 'missing_phone' });
+      if (cfg.vars.includes('code') && !code) return res.status(400).json({ ok: false, error: 'missing_coupon_code' });
+      if (cfg.vars.includes('value') && valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
+
+      const templateCode = pickCampaignTemplate(campaignKey, storeId);
+      if (!templateCode) return res.status(503).json({ ok: false, error: 'sms_template_not_configured' });
+
+      // 幂等：同一券码已发过 → 不重复发
+      if (idempotencyKey) {
+        const dup = await pool.query(`SELECT status FROM growth_delivery_logs WHERE delivery_key = $1 LIMIT 1`, [idempotencyKey]);
+        if (dup.rows.length && dup.rows[0].status === 'sent') return res.json({ ok: true, deduped: true });
+      }
+      // 触达频控：同一手机号 N 天内最多收 1 条本活动短信。
+      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS) || 30));
+      if (freqDays > 0) {
+        const recent = await pool.query(
+          `SELECT 1 FROM growth_delivery_logs
+            WHERE channel = 'sms' AND rule_key = $1 AND status = 'sent'
+              AND payload->>'phone' = $2 AND created_at > now() - ($3 || ' days')::interval
+            LIMIT 1`,
+          [campaignKey, phone, String(freqDays)]
+        );
+        if (recent.rows.length) return res.json({ ok: true, skipped: true, reason: 'frequency_capped', frequency_days: freqDays });
+      }
+      const deliveryKey = idempotencyKey || `${campaignKey}:${phone}:${Date.now()}`;
+      // 严格按 vars 拼模板参数：缺/多变量阿里云都判「参数不匹配」整批拒收。
+      const templateParam = {};
+      if (cfg.vars.includes('value')) templateParam.value = String(valueYuan);
+      if (cfg.vars.includes('date')) templateParam.date = validUntil;
+      if (cfg.vars.includes('code')) templateParam.code = code;
+
+      try {
+        const sent = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
+        const camCustomer = await upsertCustomer(pool, { phone, store_id: storeId }).catch(() => null);
+        await upsertDeliveryLog(pool, {
+          delivery_key: deliveryKey, action_key: campaignId || campaignKey, rule_key: campaignKey,
+          customer_id: camCustomer?.id || null, store_id: storeId, channel: 'sms', external_userid: '',
+          provider_msg_id: sent.provider_msg_id, status: 'sent',
+          payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId, campaign_key: campaignKey },
+          result: sent.raw || {}
+        });
+        await insertGrowthEvent(pool, {
+          event_type: 'marketing_triggered',
+          customer_id: camCustomer?.id || null, phone, external_userid: null, store_id: storeId,
+          campaign_id: campaignId, channel: 'sms', coupon_id: code,
+          idempotency_key: `marketing_triggered:${campaignKey}:${code || phone}`,
+          metadata: {
+            rule_key: campaignKey, delivery_key: deliveryKey, provider_msg_id: sent.provider_msg_id,
+            short_code: code, coupon_value_fen: valueYuan * 100, template_code: templateCode
+          }
+        });
+        return res.json({ ok: true, provider_msg_id: sent.provider_msg_id });
+      } catch (deliveryErr) {
+        await upsertDeliveryLog(pool, {
+          delivery_key: deliveryKey, action_key: campaignId || campaignKey, rule_key: campaignKey,
+          customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'failed',
+          payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId, campaign_key: campaignKey },
+          result: {}, error_message: deliveryErr?.message || 'sms_send_failed'
+        });
+        return res.status(502).json({ ok: false, error: deliveryErr?.message || 'sms_send_failed' });
+      }
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // ── 储值余额提醒（HRMS 自身后台直发，只发 {balance}，无券无码）──
+  // 目标口径：有余额(≥min) + 久未消费(dormant_days) + 频控(remind 类 N 天内不重发)。
+  // 与「储值召回(发券)」共用 growth_campaign_jobs 表，kind='stored_value_remind' 区分，
+  // 由本文件内的后台 worker 认领执行（小程序定时器只认 kind='winback'，不会误发本类）。
+  function buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets) {
+    return {
+      sql: `SELECT card_no, member_name, phone, balance_fen FROM growth_stored_value_members m
+              WHERE m.phone IS NOT NULL AND m.phone <> '' AND m.store_id = $2 AND m.balance_fen >= $3
+                AND (m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))
+                AND NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
+                  WHERE d.channel='sms' AND d.rule_key='stored_value_remind' AND d.status IN ('sent','redeemed')
+                    AND d.payload->>'phone' = m.phone AND d.created_at > now() - ($1 || ' days')::interval)
+              ORDER BY m.balance_fen DESC LIMIT ${maxTargets}`,
+      params: [String(freqDays), storeId, minBalanceFen]
+    };
+  }
+
+  app.post('/api/growth/stored-value/remind/preview', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const b = req.body || {};
+      const storeId = cleanText(b.store_id, 128);
+      const dormantDays = Math.max(0, Math.floor(Number(b.dormant_days) || 30));
+      const minBalanceFen = Math.max(0, Math.floor((Number(b.min_balance_yuan) || 1) * 100));
+      const maxTargets = Math.min(Math.max(Number(b.max_targets) || 1000, 1), 2000);
+      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_REMIND_FREQUENCY_DAYS) || 30));
+      if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
+      const q = buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets);
+      const r = await pool.query(q.sql, q.params);
+      return res.json({
+        ok: true,
+        target_count: r.rows.length,
+        sample: r.rows.slice(0, 5).map((x) => ({ name: x.member_name || '', balance_yuan: Math.round((x.balance_fen || 0) / 100) }))
+      });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/growth/stored-value/remind/launch', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const b = req.body || {};
+      const storeId = cleanText(b.store_id, 128);
+      const dormantDays = Math.max(0, Math.floor(Number(b.dormant_days) || 30));
+      const minBalanceFen = Math.max(0, Math.floor((Number(b.min_balance_yuan) || 1) * 100));
+      const maxTargets = Math.min(Math.max(Number(b.max_targets) || 1000, 1), 2000);
+      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_REMIND_FREQUENCY_DAYS) || 30));
+      const templateCode = cleanText(b.sms_template_code, 64) || pickBalanceTemplateByStore(storeId);
+      if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
+      if (!templateCode) return res.status(503).json({ ok: false, error: 'balance_template_not_configured' });
+      const q = buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets);
+      const r = await pool.query(q.sql, q.params);
+      // 冻结目标(含发起时点余额快照)，发送时直接用，无需重查。
+      const targets = r.rows.map((x) => ({ phone: x.phone, name: x.member_name || '', card_no: x.card_no, balance_yuan: Math.round((x.balance_fen || 0) / 100) }));
+      if (!targets.length) return res.json({ ok: true, job_id: null, target_count: 0, message: '没有符合条件的对象(余额/沉睡/频控筛选后为空)' });
+      const campaignId = cleanText(b.campaign_id, 128) || ('svremind_' + storeId + '_' + Date.now());
+      const ins = await pool.query(
+        `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result)
+         VALUES ($1,$2,0,0,$3,$4,$5::jsonb,$6,'pending','stored_value_remind',$7,$8::jsonb) RETURNING id`,
+        [campaignId, storeId, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, cleanText(b.operator, 128) || 'hrms_admin', JSON.stringify({ template_code: templateCode })]
+      );
+      return res.json({ ok: true, job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 后台 worker：认领 pending 的储值余额提醒任务并由 HRMS 自身逐条下发(不经小程序)。
+  // 每 30s 跑一次；同一时刻只处理一个任务，发送结果写 delivery_logs + marketing_triggered。
+  async function processOneRemindJob() {
+    const claim = await pool.query(
+      `UPDATE growth_campaign_jobs SET status='running', updated_at=now()
+        WHERE id = (SELECT id FROM growth_campaign_jobs WHERE status='pending' AND kind='stored_value_remind' ORDER BY created_at ASC LIMIT 1)
+        RETURNING id, campaign_id, store_id, targets, result`
+    );
+    const job = claim.rows[0];
+    if (!job) return;
+    const storeId = cleanText(job.store_id, 128);
+    const templateCode = cleanText(job.result?.template_code, 64) || pickBalanceTemplateByStore(storeId);
+    const targets = Array.isArray(job.targets) ? job.targets : [];
+    let sent = 0, failed = 0;
+    if (!templateCode) {
+      await pool.query(`UPDATE growth_campaign_jobs SET status='failed', failed=$2, result=result||$3::jsonb, updated_at=now() WHERE id=$1`,
+        [job.id, targets.length, JSON.stringify({ error: 'balance_template_not_configured' })]);
+      return;
+    }
+    for (const t of targets) {
+      const phone = cleanPhone(t.phone);
+      const balanceYuan = Math.max(0, Math.floor(Number(t.balance_yuan) || 0));
+      if (!phone || balanceYuan <= 0) { failed++; continue; }
+      const deliveryKey = `svremind:${job.id}:${phone}`;
+      const templateParam = { balance: String(balanceYuan) };
+      try {
+        const result = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
+        const cust = await upsertCustomer(pool, { phone, store_id: storeId }).catch(() => null);
+        await upsertDeliveryLog(pool, {
+          delivery_key: deliveryKey, action_key: job.campaign_id || 'svremind', rule_key: 'stored_value_remind',
+          customer_id: cust?.id || null, store_id: storeId, channel: 'sms', external_userid: '',
+          provider_msg_id: result.provider_msg_id, status: 'sent',
+          payload: { phone, template_param: templateParam, campaign_id: job.campaign_id }, result: result.raw || {}
+        });
+        await insertGrowthEvent(pool, {
+          event_type: 'marketing_triggered', customer_id: cust?.id || null, phone, external_userid: null,
+          store_id: storeId, campaign_id: job.campaign_id, channel: 'sms', coupon_id: null,
+          idempotency_key: `marketing_triggered:svremind:${job.id}:${phone}`,
+          metadata: { rule_key: 'stored_value_remind', delivery_key: deliveryKey, provider_msg_id: result.provider_msg_id, template_code: templateCode, template_param: templateParam }
+        });
+        sent++;
+      } catch (err) {
+        await upsertDeliveryLog(pool, {
+          delivery_key: deliveryKey, action_key: job.campaign_id || 'svremind', rule_key: 'stored_value_remind',
+          customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'failed',
+          payload: { phone, template_param: templateParam, campaign_id: job.campaign_id }, result: {},
+          error_message: err?.message || 'sms_send_failed'
+        }).catch(() => null);
+        failed++;
+      }
+    }
+    await pool.query(`UPDATE growth_campaign_jobs SET sent=$2, failed=$3, status='done', updated_at=now() WHERE id=$1`,
+      [job.id, sent, failed]);
+  }
+  if (!globalThis.__growthRemindWorker) {
+    globalThis.__growthRemindWorker = true;
+    setInterval(() => { processOneRemindJob().catch((e) => console.warn('[svremind] worker failed:', e?.message)); }, 30 * 1000);
+  }
 
   app.post('/api/miniprogram/events', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
