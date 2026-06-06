@@ -19175,6 +19175,10 @@
                             </div>
                             <div id="am-summary" class="rep-grid" style="margin-bottom:6px;"></div>
                         </div>
+                        <details class="rep-filters" style="margin-bottom:14px;">
+                            <summary style="cursor:pointer;color:#a5b4fc;font-size:13px;font-weight:700;list-style:none;">📖 人群字典 / 渠道说明（点击展开）— 统一客群定义与可用投放渠道</summary>
+                            <div id="am-glossary" style="margin-top:12px;"></div>
+                        </details>
                         <div id="am-rules-list"></div>
                         <div class="rep-filters" style="margin-top:14px;">
                             <div class="rep-filters__eyebrow">订阅消息</div>
@@ -19191,8 +19195,8 @@
                                 <div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">
                                     <div style="color:rgba(226,232,240,0.55);font-size:11px;margin-bottom:8px;">🎯 目标人群</div>
                                     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-                                        <div><label class="am-sub-lbl">生命周期</label><select id="am-sub-stage" class="am-sub-in"><option value="">不限</option><option value="active">活跃</option><option value="at_risk">流失预警</option><option value="dormant">沉睡</option><option value="new">新客</option></select></div>
-                                        <div><label class="am-sub-lbl">价值分层</label><select id="am-sub-tier" class="am-sub-in"><option value="">不限</option><option value="vip">VIP</option><option value="high">高价值</option><option value="mid">中价值</option><option value="normal">普通</option></select></div>
+                                        <div><label class="am-sub-lbl">生命周期</label><select id="am-sub-stage" class="am-sub-in"><option value="">不限</option><option value="prospect">潜在新客</option><option value="new">新客</option><option value="active">活跃客</option><option value="at_risk">临界客</option><option value="dormant">沉睡老客</option><option value="churned">流失低频客</option></select></div>
+                                        <div><label class="am-sub-lbl">价值分层</label><select id="am-sub-tier" class="am-sub-in"><option value="">不限</option><option value="vip">VIP客</option><option value="regular">普通客</option><option value="low">低价值客</option></select></div>
                                         <div><label class="am-sub-lbl">到店次数 ≥</label><input id="am-sub-minvisit" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
                                         <div><label class="am-sub-lbl">未到店天数 ≥</label><input id="am-sub-mindays" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
                                         <div><label class="am-sub-lbl">未到店天数 ≤</label><input id="am-sub-maxdays" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
@@ -19237,7 +19241,7 @@
                                 <div><label class="am-sub-lbl">规则名称</label><input id="pay-name" class="am-sub-in" placeholder="如 VIP高价值用户激励"></div>
                                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
                                     <div><label class="am-sub-lbl">门店</label><select id="pay-store" class="am-sub-in"><option value="51866138">马己仙广东小馆</option><option value="64822111">洪潮潮汕传统菜</option></select></div>
-                                    <div><label class="am-sub-lbl">目标人群</label><select id="pay-tag" class="am-sub-in"><option value="">不限</option><option value="vip">VIP</option><option value="regular">常规价值</option><option value="low">低价值</option><option value="general">普通用户</option><option value="prospect">潜在新客</option><option value="new">新客</option><option value="active">活跃客</option><option value="at_risk">临界客</option><option value="dormant">沉睡老客</option><option value="churned">流失客</option></select></div>
+                                    <div><label class="am-sub-lbl">目标人群</label><select id="pay-tag" class="am-sub-in"><option value="">不限</option><option value="vip">VIP客</option><option value="regular">普通客</option><option value="low">低价值客</option><option value="general">普通用户(不限分层)</option><option value="prospect">潜在新客</option><option value="new">新客</option><option value="active">活跃客</option><option value="at_risk">临界客</option><option value="dormant">沉睡老客</option><option value="churned">流失低频客</option></select></div>
                                     <div><label class="am-sub-lbl">优先级</label><input id="pay-priority" class="am-sub-in" type="number" value="100"></div>
                                 </div>
                                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
@@ -55755,13 +55759,37 @@ ${body}
         async function feedbackGrowthAction(actionKey) { return; }
 
         // ── 自动营销治理 + 闭环统计 ──
+        // 人群字典（与 HRMS 客户标签/分级口径统一，后端 growth_customer_profiles 自动派生）：
+        //  生命周期 6 段 + 价值分层 3 级，每项含「中文名 + 判定口径」，全站唯一来源。
+        var AM_LIFECYCLE = {
+            prospect: { name: '潜在新客', tip: '扫码/被触达但从未下单' },
+            new:      { name: '新客',     tip: '累计下单 1 次 且 近 14 天到店' },
+            active:   { name: '活跃客',   tip: '累计下单 ≥2 次 且 近 14 天到店' },
+            at_risk:  { name: '临界客',   tip: '14–30 天未到店（流失预警）' },
+            dormant:  { name: '沉睡老客', tip: '30 天以上未到店 且 累计 ≥2 单' },
+            churned:  { name: '流失低频客', tip: '30 天以上未到店 且 仅 1 单' }
+        };
+        var AM_VALUE_TIER = {
+            vip:     { name: 'VIP客',   tip: '消费额排名前 15%（≥85 分位）' },
+            regular: { name: '普通客',  tip: '消费额 30–85 分位' },
+            low:     { name: '低价值客', tip: '消费额 <30 分位 或 未消费' }
+        };
+        // 可用投放渠道（与引擎 deliverViaChannel 分支一致）。企微为旧规则保留项。
+        var AM_CHANNELS = {
+            sms:       { name: '短信',         cost: '0.05 元/条', note: '需手机号；阿里云已报备模板' },
+            subscribe: { name: '订阅消息',     cost: '免费',       note: '需 openid+订阅授权（微信硬约束，实际覆盖≤上限）' },
+            member:    { name: '小程序站内券', cost: '免费',       note: '需 openid；发券进会员卡包' },
+            wecom:     { name: '企微（旧）',   cost: '免费',       note: '企微优先，无企微回落短信' }
+        };
+        function amLifecycleName(k){ return (AM_LIFECYCLE[k] && AM_LIFECYCLE[k].name) || k; }
+        function amTierName(k){ return (AM_VALUE_TIER[k] && AM_VALUE_TIER[k].name) || k; }
+
         function amDescribeCriteria(c) {
             c = c || {};
             var parts = [];
-            var stageMap = { dormant: '沉睡', at_risk: '流失预警', active: '活跃', new: '新客', churned: '流失', prospect: '潜客' };
-            var tierMap = { vip: 'VIP', high: '高价值', mid: '中价值', normal: '普通', low: '低价值' };
-            if (c.lifecycle_stage) parts.push('阶段:' + (stageMap[c.lifecycle_stage] || c.lifecycle_stage));
-            if (c.value_tier) parts.push('价值:' + (tierMap[c.value_tier] || c.value_tier));
+            if (c.lifecycle_stage) parts.push('阶段:' + amLifecycleName(c.lifecycle_stage));
+            if (c.value_tier) parts.push('价值:' + amTierName(c.value_tier));
+            if (c.value_tier_not) parts.push('排除:' + amTierName(c.value_tier_not));
             if (c.min_days_since_last_visit != null || c.max_days_since_last_visit != null) {
                 parts.push('未到店 ' + (c.min_days_since_last_visit != null ? c.min_days_since_last_visit : '?') + '~' + (c.max_days_since_last_visit != null ? c.max_days_since_last_visit : '∞') + ' 天');
             }
@@ -55769,21 +55797,66 @@ ${body}
             return parts.length ? parts.join(' · ') : '全部人群';
         }
 
+        // 规则的人群「判定口径」一行说明（取生命周期/价值的口径，便于一眼看懂选了谁）
+        function amCriteriaTip(c) {
+            c = c || {};
+            var tips = [];
+            if (c.lifecycle_stage && AM_LIFECYCLE[c.lifecycle_stage]) tips.push(AM_LIFECYCLE[c.lifecycle_stage].name + '：' + AM_LIFECYCLE[c.lifecycle_stage].tip);
+            if (c.value_tier && AM_VALUE_TIER[c.value_tier]) tips.push(AM_VALUE_TIER[c.value_tier].name + '：' + AM_VALUE_TIER[c.value_tier].tip);
+            if (c.value_tier_not && AM_VALUE_TIER[c.value_tier_not]) tips.push('排除' + AM_VALUE_TIER[c.value_tier_not].name);
+            return tips.join('；');
+        }
+
         function amDescribeAction(rule) {
             var p = rule.action_payload || {};
-            var ch = p.channel || '';
-            var bits;
-            if (ch === 'subscribe') {
-                bits = ['订阅消息'];
-            } else if (ch === 'sms') {
-                bits = ['短信'];
-            } else {
-                // 引擎实际为「企微优先，无企微的会员自动回落短信」，故如实展示双通道
-                bits = ['企微优先，无企微回落短信'];
-            }
+            var ch = p.channel || 'wecom';
+            var bits = [ (AM_CHANNELS[ch] && AM_CHANNELS[ch].name) || ch ];
             if (p.coupon_value || p.value) bits.push('券额 ¥' + (p.coupon_value || p.value));
             if (p.template_text || p.content) bits.push('「' + String(p.template_text || p.content).slice(0, 28) + '」');
             return bits.join(' · ');
+        }
+
+        // 可选短信模板（仅阿里云已报备的可真正下发；其余文案见「待报备文案库」）
+        var AM_SMS_TEMPLATES = [
+            { code: '', label: '自动（按门店默认模板）' },
+            { code: 'SMS_507400089', label: '马己仙·优惠券召回（name/days/value）' },
+            { code: 'SMS_507130081', label: '洪潮·优惠券召回（name/days/value）' }
+        ];
+        // 待报备短信文案库（变量严格 name/days/value 三个，提交阿里云审核后回填 code 即可下发）
+        var AM_SMS_DRAFTS = [
+            { name: '沉睡老客召回',   text: '尊敬的${name}，您已${days}天未光临，备好${value}元优惠券期待您回归，到店即可使用。' },
+            { name: '临界客温和提醒', text: '${name}您好，距上次到店已${days}天，送您${value}元优惠券，近期来尝尝新品吧。' },
+            { name: '流失低频客召回', text: '${name}您好，好久不见已${days}天，特送${value}元券一张，欢迎回店体验。' },
+            { name: 'VIP专属回馈',    text: '尊贵的${name}，感谢长期支持，专属${value}元贵宾券已送达，${days}天内到店尽享。' },
+            { name: '新客复购激励',   text: '${name}您好，首次光临已${days}天，送您${value}元复购券，期待再次为您服务。' }
+        ];
+        function amSmsTemplateLabel(code){
+            var t = AM_SMS_TEMPLATES.find(function(x){ return x.code === (code || ''); });
+            return t ? t.label : (code || '自动');
+        }
+
+        // 渲染「人群字典 / 渠道说明 / 待报备文案库」（静态，只需渲染一次）
+        function amRenderGlossary(){
+            var host = document.getElementById('am-glossary');
+            if (!host || host.dataset.rendered === '1') return;
+            function row(name, tip){ return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;"><span style="color:#fff;min-width:78px;font-weight:600;">' + escapeHtml(name) + '</span><span style="color:rgba(226,232,240,0.65);">' + escapeHtml(tip) + '</span></div>'; }
+            var life = Object.keys(AM_LIFECYCLE).map(function(k){ return row(AM_LIFECYCLE[k].name, AM_LIFECYCLE[k].tip); }).join('');
+            var tier = Object.keys(AM_VALUE_TIER).map(function(k){ return row(AM_VALUE_TIER[k].name, AM_VALUE_TIER[k].tip); }).join('');
+            var chan = ['sms','subscribe','member'].map(function(k){ var c = AM_CHANNELS[k]; return row(c.name, c.note + '（成本 ' + c.cost + '）'); }).join('');
+            var drafts = AM_SMS_DRAFTS.map(function(d){
+                return '<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">'
+                    + '<div style="color:#fff;font-weight:600;margin-bottom:2px;">' + escapeHtml(d.name) + ' <span style="color:#f59e0b;font-size:11px;font-weight:400;">（待报备）</span></div>'
+                    + '<div style="color:rgba(226,232,240,0.7);">' + escapeHtml(d.text) + '</div>'
+                    + '</div>';
+            }).join('');
+            host.innerHTML =
+                '<div style="color:#a5b4fc;font-size:12px;font-weight:700;margin-bottom:4px;">🧭 生命周期（6 段）</div>' + life
+                + '<div style="color:#a5b4fc;font-size:12px;font-weight:700;margin:12px 0 4px;">💎 价值分层（3 级）</div>' + tier
+                + '<div style="color:#a5b4fc;font-size:12px;font-weight:700;margin:12px 0 4px;">📣 可用投放渠道</div>' + chan
+                + '<div style="color:#a5b4fc;font-size:12px;font-weight:700;margin:12px 0 4px;">✉️ 待报备短信文案库（变量固定 name/days/value）</div>'
+                + '<div style="color:rgba(226,232,240,0.5);font-size:11px;margin-bottom:6px;">将下列文案提交阿里云短信平台报备，审核通过后把得到的 SMS_xxx 模板号发我，我加入「短信模板」下拉即可下发。</div>'
+                + drafts;
+            host.dataset.rendered = '1';
         }
 
         // 取规则所属门店ID（优先动作门店，其次人群门店；都没有则为「全部门店」）
@@ -55802,6 +55875,7 @@ ${body}
             var host = document.getElementById('am-rules-list');
             var days = document.getElementById('am-stats-days')?.value || '30';
             if (document.getElementById('am-sub-fields') && !document.querySelector('#am-sub-fields [data-sub-field]')) amRenderSubFields();
+            amRenderGlossary();
             host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">加载中…</div>';
             try {
                 var hdr = growthAuthHeaders();
@@ -55852,8 +55926,13 @@ ${body}
                 host.innerHTML = rules.map(function(rule){
                     var st = statMap[rule.rule_key] || {};
                     var sent = Number(st.sent_count || 0), red = Number(st.redeemed_count || 0);
-                    var reach = (audienceMap && (rule.rule_key in audienceMap)) ? audienceMap[rule.rule_key] : null;
+                    var reachRaw = (audienceMap && (rule.rule_key in audienceMap)) ? audienceMap[rule.rule_key] : null;
+                    // 兼容老接口（数字）与新接口（分渠道对象）
+                    var cov = (reachRaw && typeof reachRaw === 'object') ? reachRaw : null;
+                    var reach = cov ? cov.total : reachRaw;
                     var __ap0 = rule.action_payload || {};
+                    var curChannel = String(__ap0.channel || 'wecom');
+                    var curSmsCode = String(__ap0.sms_template_code || '');
                     var curFreq = Math.max(0, Math.floor(Number(__ap0.frequency_days) || 0));
                     var curValYuan = Math.max(0, Math.round(Number(__ap0.coupon_value_fen || __ap0.value_fen || 0) / 100));
                     var curValidDays = Math.max(0, Math.floor(Number(__ap0.valid_days) || 0));
@@ -55884,6 +55963,16 @@ ${body}
                     var editBtn = isSubscribe ? '<button class="btn btn-secondary" type="button" onclick="amEditSubscribeRule(\'' + rk + '\')" style="font-size:12px;padding:7px 14px;">编辑内容</button>' : '';
                     var storeNm = amStoreName(amRuleStoreId(rule));
                     var storeBadge = '<span style="background:rgba(99,102,241,0.16);color:#a5b4fc;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">🏪 ' + escapeHtml(storeNm) + '</span>';
+                    var critTip = amCriteriaTip(rule.criteria);
+                    // 投放渠道下拉：短信/订阅消息/小程序站内券；旧规则若为企微则保留该选项
+                    var channelOpts = ['sms','subscribe','member'].concat(curChannel === 'wecom' ? ['wecom'] : []).map(function(k){
+                        return '<option value="' + k + '"' + (curChannel === k ? ' selected' : '') + '>' + AM_CHANNELS[k].name + '</option>';
+                    }).join('');
+                    // 各渠道覆盖标注（命中人群中可触达人数）
+                    var covLine = cov
+                        ? ('短信 <strong style="color:#a5b4fc;">' + cov.sms + '</strong> 人 · 订阅消息 <strong style="color:#a5b4fc;">' + cov.subscribe + '</strong> 人(上限·需授权) · 小程序站内 <strong style="color:#a5b4fc;">' + cov.member + '</strong> 人')
+                        : '计算中/未知';
+                    var smsOpts = AM_SMS_TEMPLATES.map(function(t){ return '<option value="' + t.code + '"' + (curSmsCode === t.code ? ' selected' : '') + '>' + escapeHtml(t.label) + '</option>'; }).join('');
                     return '<div class="rep-pay-card" style="margin-bottom:12px;">'
                         + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">'
                         +   '<div><div style="color:#fff;font-weight:700;font-size:14px;">' + escapeHtml(rule.name || rule.rule_key) + '</div>'
@@ -55891,8 +55980,19 @@ ${body}
                         +   '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' + storeBadge + statusBadge + '</div>'
                         + '</div>'
                         + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin:10px 0 4px;">🎯 目标人群：' + escapeHtml(amDescribeCriteria(rule.criteria)) + '</div>'
+                        + (critTip ? '<div style="color:rgba(226,232,240,0.45);font-size:11px;margin-bottom:4px;padding-left:18px;">判定口径：' + escapeHtml(critTip) + '</div>' : '')
                         + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:4px;">👥 涉及会员：' + (reach == null ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>' : ('<strong style="color:#a5b4fc;">' + reach + '</strong> 人（命中人群且可触达）')) + '</div>'
+                        + '<div style="color:rgba(226,232,240,0.55);font-size:11px;margin-bottom:6px;padding-left:18px;">分渠道覆盖：' + covLine + '</div>'
                         + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:6px;">📣 触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
+                        + (isSubscribe ? '' : (
+                            '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:10px;">'
+                          +   '<span>📡 投放渠道</span>'
+                          +   '<select id="am-ch-' + rk + '" onchange="amOnChannelChange(\'' + rk + '\')" style="border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);">' + channelOpts + '</select>'
+                          +   '<span id="am-ch-sms-' + rk + '" style="display:' + (curChannel === 'sms' ? 'inline-flex' : 'none') + ';align-items:center;gap:6px;">'
+                          +     '<span>短信模板</span><select id="am-smstpl-' + rk + '" style="border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);">' + smsOpts + '</select>'
+                          +   '</span>'
+                          +   '<button class="btn btn-secondary" type="button" onclick="amSetChannel(\'' + rk + '\')" style="font-size:11px;padding:4px 10px;">保存渠道</button>'
+                          + '</div>'))
                         + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:10px;">'
                         +   '<span>⏱️ 发送频率：每位会员每</span>'
                         +   '<input id="am-freq-' + rk + '" type="number" min="0" value="' + curFreq + '" style="width:60px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);">'
@@ -56066,6 +56166,45 @@ ${body}
                 showNotification('券面额/有效期/文案已更新（如该规则原已审核，请重新审核以继续自动执行）', 'success');
                 loadAutoMarketing();
             } catch (e) { showNotification('保存失败：' + (e && e.message || e), 'error'); }
+        }
+
+        // 切换渠道下拉时，仅在「短信」渠道显示短信模板选择
+        function amOnChannelChange(ruleKey) {
+            var sel = document.getElementById('am-ch-' + ruleKey);
+            var smsBox = document.getElementById('am-ch-sms-' + ruleKey);
+            if (sel && smsBox) smsBox.style.display = (sel.value === 'sms') ? 'inline-flex' : 'none';
+        }
+
+        // 设置某规则的「投放渠道」（+短信模板）。改动 action_payload → 按治理规则重置审核态。
+        async function amSetChannel(ruleKey) {
+            var sel = document.getElementById('am-ch-' + ruleKey);
+            var channel = sel ? sel.value : '';
+            if (!channel) { showNotification('请选择投放渠道', 'error'); return; }
+            var smsSel = document.getElementById('am-smstpl-' + ruleKey);
+            var smsCode = (channel === 'sms' && smsSel) ? String(smsSel.value || '') : '';
+            var chName = (AM_CHANNELS[channel] && AM_CHANNELS[channel].name) || channel;
+            var extra = channel === 'sms' ? ('\n短信模板：' + amSmsTemplateLabel(smsCode)) : '';
+            if (channel === 'member') extra += '\n注意：小程序站内券需在 action_payload 配置 member_template_id（券模板ID），否则会跳过下发。';
+            if (channel === 'subscribe') extra += '\n注意：订阅消息仅能发给已「订阅授权」且有剩余次数的用户（微信硬约束）。';
+            if (!confirm('将「' + ruleKey + '」投放渠道设为：' + chName + extra + '\n\n注意：修改渠道会重置审核态，需重新「审核通过」后才会继续自动执行。')) return;
+            try {
+                var rg = await fetch('/api/growth/touch-rules', { headers: growthAuthHeaders() }).then(function(r){return r.json();});
+                var rule = ((rg && rg.rules) || []).find(function(x){ return x.rule_key === ruleKey; });
+                if (!rule) throw new Error('rule_not_found');
+                var ap = Object.assign({}, rule.action_payload || {}, { channel: channel });
+                if (channel === 'sms') { ap.sms_template_code = smsCode; } else { delete ap.sms_template_code; }
+                var body = {
+                    rule_key: rule.rule_key, name: rule.name, priority: rule.priority,
+                    auto_execute: rule.auto_execute, enabled: rule.enabled,
+                    criteria: rule.criteria || {}, action_type: rule.action_type,
+                    action_payload: ap, owner: rule.owner || '', note: rule.note || ''
+                };
+                var r = await fetch('/api/growth/touch-rules', { method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify(body) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'save_failed');
+                showNotification('投放渠道已更新（如该规则原已审核，请重新审核以继续自动执行）', 'success');
+                loadAutoMarketing();
+            } catch (e) { showNotification('保存渠道失败：' + (e && e.message || e), 'error'); }
         }
 
         // ===== 订阅消息规则：前台设置 + 内容管理（与短信同一治理闭环） =====

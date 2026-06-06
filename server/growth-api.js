@@ -1874,7 +1874,7 @@ async function loadRuleCandidates(pool, rule) {
   if (rule.rule_key === 'loyal_birthday_month') {
     const r = await pool.query(
       `SELECT cp.customer_id, cp.store_id, cp.phone, cp.pos_order_count, cp.pos_last_order_at, cp.visit_interval_days,
-              gc.meta AS customer_meta, gc.last_seen_at, gc.external_userid AS customer_external_userid,
+              gc.meta AS customer_meta, gc.last_seen_at, gc.openid, gc.external_userid AS customer_external_userid,
               COALESCE(ww.external_userid, gc.external_userid) AS external_userid,
               COALESCE(NULLIF(gc.meta->>'title',''), NULLIF(ww.name,''), NULLIF(gc.meta->>'name',''), cp.phone, '') AS customer_name
        FROM growth_customer_profiles cp
@@ -1894,7 +1894,7 @@ async function loadRuleCandidates(pool, rule) {
   const r = await pool.query(
     `SELECT cp.customer_id, cp.store_id, cp.phone, cp.price_sensitivity, cp.response_to_discount,
             cp.lifecycle_stage, cp.value_tier, cp.price_sensitive,
-            cp.pos_order_count, cp.pos_total_spend, cp.pos_last_order_at, cp.visit_interval_days, cp.favorite_dishes, gc.last_seen_at,
+            cp.pos_order_count, cp.pos_total_spend, cp.pos_last_order_at, cp.visit_interval_days, cp.favorite_dishes, gc.last_seen_at, gc.openid,
             COALESCE(cp.pos_last_order_at::date, gc.last_seen_at::date) AS last_visit_at,
             (CURRENT_DATE - COALESCE(cp.pos_last_order_at::date, gc.last_seen_at::date))::int AS days_since_last_visit,
             gc.meta AS customer_meta,
@@ -3136,7 +3136,14 @@ export function registerGrowthRoutes(app, pool) {
       for (const rule of (rulesResult.rows || [])) {
         try {
           const candidates = await loadRuleCandidates(pool, rule);
-          audience[rule.rule_key] = Array.isArray(candidates) ? candidates.length : 0;
+          // 分渠道覆盖：短信=有手机号；订阅消息/小程序站内券=有 openid（上限，订阅另受授权限制）；企微=有外部联系人。
+          let sms = 0, subscribe = 0, member = 0, wecom = 0;
+          for (const c of (candidates || [])) {
+            if (cleanPhone(c.phone)) sms++;
+            if (cleanText(c.openid || '', 128)) { subscribe++; member++; }
+            if (c.external_userid) wecom++;
+          }
+          audience[rule.rule_key] = { total: (candidates || []).length, sms, subscribe, member, wecom };
         } catch (e) {
           audience[rule.rule_key] = null; // 计算失败标记为未知，不阻断
         }
