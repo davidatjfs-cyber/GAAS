@@ -18991,22 +18991,25 @@
                             <div class="rep-filters__title">A/B 测试系统</div>
                             <div class="rep-seg" style="margin-bottom:14px;">
                                 <button onclick="loadGrowthAbTests()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">刷新测试</button>
-                                <button onclick="bootstrapGrowthAbTest()" class="rep-seg-btn" style="flex:1;">启动首个测试</button>
                             </div>
                             <div class="rep-filters" style="margin-bottom:14px;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px;">
                                 <div class="rep-filters__eyebrow">NEW TEST</div>
-                                <div class="rep-filters__title" style="font-size:15px;">新建 A/B 测试</div>
-                                <div style="font-size:12px;color:rgba(226,232,240,0.55);margin:4px 0 10px;">仅创建测试与文案变体（不会立即发短信）；人群投放仍由规则引擎/「启动首个测试」回放。文案可用占位符：{name} 或 {姓名}。</div>
+                                <div class="rep-filters__title" style="font-size:15px;">新建 A/B 测试（绑定已有规则）</div>
+                                <div style="font-size:12px;color:rgba(226,232,240,0.55);margin:4px 0 10px;">A/B 测试必须绑定一条<b>已有的可投放规则</b>（规则引擎/订阅 或 支付发券）。A组=该规则当前版本，B组=你的挑战版本；实际投放由所绑定规则负责，结果<b>手动录入</b>，胜者一键回写原规则。</div>
                                 <div class="rep-filters__grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;position:relative;">
                                     <div class="rep-field"><label>测试名称 *</label><input id="abtest-name" class="dr-store-select" placeholder="如 午市召回文案A/B" style="padding:10px;color:var(--rep-text);"></div>
                                     <div class="rep-field"><label>门店ID（留空取上方门店）</label><input id="abtest-store-code" class="dr-store-select" placeholder="如 51866138" style="padding:10px;color:var(--rep-text);"></div>
-                                    <div class="rep-field"><label>目标指标</label><select id="abtest-metric" class="dr-store-select"><option value="redemption_rate">核销率</option><option value="click_rate">点击率</option><option value="response_rate">回复率</option></select></div>
-                                    <div class="rep-field"><label>测试类型</label><select id="abtest-type" class="dr-store-select"><option value="sms_copy">短信文案</option><option value="coupon_value">券面额</option></select></div>
+                                    <div class="rep-field"><label>绑定规则类型 *</label><select id="abtest-target-kind" class="dr-store-select" onchange="loadAbBindableRules()"><option value="touch_rule">规则引擎/订阅</option><option value="payment_rule">支付发券</option></select></div>
+                                    <div class="rep-field"><label>绑定规则 *</label><select id="abtest-target-rule" class="dr-store-select" onchange="onAbBindRuleChange()"><option value="">— 请先选择 —</option></select></div>
+                                    <div class="rep-field"><label>目标指标</label><select id="abtest-metric" class="dr-store-select"><option value="redemption_rate">核销率</option><option value="click_rate">点击率</option><option value="revenue">营收</option></select></div>
+                                    <div class="rep-field"><label>最小样本量/组</label><input id="abtest-minsample" type="number" min="1" class="dr-store-select" placeholder="默认30" style="padding:10px;color:var(--rep-text);"></div>
                                     <div class="rep-field"><label>开始日期（可选）</label><input id="abtest-start" type="date" class="dr-store-select" style="padding:10px;color:var(--rep-text);"></div>
                                     <div class="rep-field"><label>结束日期（可选）</label><input id="abtest-end" type="date" class="dr-store-select" style="padding:10px;color:var(--rep-text);"></div>
                                 </div>
-                                <textarea id="abtest-variant-a" class="dr-store-select" placeholder="文案A *" style="margin-top:10px;width:100%;min-height:60px;padding:10px;color:var(--rep-text);resize:vertical;"></textarea>
-                                <textarea id="abtest-variant-b" class="dr-store-select" placeholder="文案B *" style="margin-top:10px;width:100%;min-height:60px;padding:10px;color:var(--rep-text);resize:vertical;"></textarea>
+                                <div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">A组 · 当前版本（只读）</div>
+                                <textarea id="abtest-variant-a" class="dr-store-select" readonly placeholder="选择绑定规则后自动带出当前版本" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:rgba(226,232,240,0.7);background:rgba(255,255,255,0.03);resize:vertical;"></textarea>
+                                <div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">B组 · 挑战版本 *（<span id="abtest-b-hint">短信文案，可用 {name}/{姓名} 占位</span>）</div>
+                                <textarea id="abtest-variant-b" class="dr-store-select" placeholder="输入挑战版本内容" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:var(--rep-text);resize:vertical;"></textarea>
                                 <div class="rep-seg" style="margin-top:12px;">
                                     <button onclick="createGrowthAbTest()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">创建测试</button>
                                 </div>
@@ -54000,7 +54003,7 @@ ${body}
             else if (member === 'profiles') { loadGrowthProfiles(); }
             else if (member === 'constraints') { loadGrowthConstraints(); }
             else if (member === 'actions') { loadGrowthActionBoard(); }
-            else if (member === 'abtests') { loadGrowthAbTests(); }
+            else if (member === 'abtests') { loadGrowthAbTests(); loadAbBindableRules(); }
             else if (member === 'contentsys') { loadGrowthContentSuggestions(); loadGrowthContentPerformance(); loadGrowthLearnings(); }
             else if (member === 'posters') {
                 loadPosterTemplates(); loadPosterHistory(); loadCreativeAssets(); loadPublicChannels();
@@ -54962,20 +54965,22 @@ ${body}
                         + '</div>'
                         + '<div style="font-size:11px;padding:3px 10px;border-radius:999px;background:' + (t.status === 'completed' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)') + ';color:' + (t.status === 'completed' ? '#22c55e' : '#f59e0b') + ';font-weight:700;">' + escapeHtml(t.status || 'running') + '</div>'
                         + '</div>'
+                        + (t.target_rule_key ? '<div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">绑定：' + escapeHtml(t.target_kind === 'payment_rule' ? '支付发券' : '规则引擎/订阅') + ' · ' + escapeHtml(t.target_rule_key) + '</div>' : '')
                         + '<div class="rep-grid" style="margin-top:12px;grid-template-columns:repeat(3,minmax(0,1fr));">'
-                        + '<div class="rep-metric"><div class="k">A组</div><div class="v">' + growthFmtPct(mA.redemption_rate || 0) + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">发送' + (mA.sent || 0) + ' · 核销' + (mA.redemptions || 0) + '</div></div>'
-                        + '<div class="rep-metric"><div class="k">B组</div><div class="v">' + growthFmtPct(mB.redemption_rate || 0) + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">发送' + (mB.sent || 0) + ' · 核销' + (mB.redemptions || 0) + '</div></div>'
+                        + '<div class="rep-metric"><div class="k">A组(当前)</div><div class="v">' + growthFmtPct(mA.redemption_rate || 0) + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">发送' + (mA.sent || 0) + ' · 核销' + (mA.redemptions || 0) + ' · ¥' + (mA.revenue || 0) + '</div></div>'
+                        + '<div class="rep-metric"><div class="k">B组(挑战)</div><div class="v">' + growthFmtPct(mB.redemption_rate || 0) + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">发送' + (mB.sent || 0) + ' · 核销' + (mB.redemptions || 0) + ' · ¥' + (mB.revenue || 0) + '</div></div>'
                         + '<div class="rep-metric"><div class="k">胜者</div><div class="v" style="color:var(--rep-gold);">' + escapeHtml(String(winner)) + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">提升 ' + lift + '%</div></div>'
                         + '</div>'
                         + '<div style="margin-top:10px;font-size:12px;color:rgba(226,232,240,0.78);line-height:1.6;">' + escapeHtml(t.ai_summary || '尚未生成总结') + '</div>'
                         + '<div style="margin-top:10px;display:flex;gap:8px;">'
-                        + '<button class="rep-seg-btn" style="flex:1;" onclick="refreshGrowthAbTest(' + Number(t.id || 0) + ')">刷新结果</button>'
+                        + '<button class="rep-seg-btn" style="flex:1;" onclick="toggleAbResultForm(' + Number(t.id || 0) + ')">✏️ 录入结果</button>'
                         + ((winner === 'A' || winner === 'B')
                             ? (t.promoted_rule_key
-                                ? '<button class="rep-seg-btn" style="flex:1.4;opacity:0.6;cursor:default;" disabled>✅ 已采用为自动规则</button>'
-                                : '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1.4;" onclick="promoteGrowthAbTest(' + Number(t.id || 0) + ',\'' + String(winner) + '\')">🚀 采用胜者为自动规则</button>')
+                                ? '<button class="rep-seg-btn" style="flex:1.4;opacity:0.6;cursor:default;" disabled>✅ ' + (winner === 'A' ? '已采用(维持当前)' : '已采用(挑战者)') + '</button>'
+                                : '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1.4;" onclick="promoteGrowthAbTest(' + Number(t.id || 0) + ',\'' + String(winner) + '\')">🚀 采用胜者</button>')
                             : '')
                         + '</div>'
+                        + abResultFormHtml(Number(t.id || 0))
                         + '</div>';
                 }).join('') : '<div class="rep-pay-empty">暂无A/B测试</div>';
                 loadGrowthLearnings();
@@ -54984,19 +54989,49 @@ ${body}
             }
         }
 
-        async function bootstrapGrowthAbTest() {
+        // 绑定模式：拉取可绑定的已有规则（规则引擎/订阅 touch_rule 或 支付发券 payment_rule）填入下拉框。
+        var _abBindableRules = {};
+        async function loadAbBindableRules() {
+            var kind = document.getElementById('abtest-target-kind')?.value || 'touch_rule';
+            var sel = document.getElementById('abtest-target-rule');
+            var hint = document.getElementById('abtest-b-hint');
+            if (hint) hint.textContent = kind === 'payment_rule' ? '支付发券：填写挑战的券模板ID / 触发门槛' : '短信文案，可用 {name}/{姓名} 占位';
+            if (!sel) return;
+            sel.innerHTML = '<option value="">加载中…</option>';
+            _abBindableRules = {};
             try {
-                var r = await fetch('/api/growth/ab-tests/bootstrap-first', {
-                    method: 'POST',
-                    headers: Object.assign({}, growthAuthHeaders(), { 'Content-Type': 'application/json' }),
-                    body: JSON.stringify({ store_code: '51866138' })
-                });
+                var url = kind === 'payment_rule' ? '/api/growth/payment-rules' : '/api/growth/touch-rules';
+                var r = await fetch(url, { headers: growthAuthHeaders() });
                 var d = await r.json();
-                if (!d.ok) throw new Error(d.error || 'bootstrap_failed');
-                showNotification('首个A/B测试已启动并完成回放评估', 'success');
-                loadGrowthAbTests();
+                var rows = d?.rules || d?.data || [];
+                var opts = ['<option value="">— 请选择规则 —</option>'];
+                rows.forEach(function(row) {
+                    var key = row.rule_key || '';
+                    if (!key) return;
+                    _abBindableRules[key] = row;
+                    opts.push('<option value="' + escapeHtml(key) + '">' + escapeHtml(row.name || key) + '</option>');
+                });
+                sel.innerHTML = opts.join('');
             } catch (e) {
-                showNotification('启动失败：' + (e?.message || e), 'error');
+                sel.innerHTML = '<option value="">加载失败</option>';
+            }
+            var aBox = document.getElementById('abtest-variant-a');
+            if (aBox) aBox.value = '';
+        }
+
+        // 选中绑定规则后，把该规则当前版本带入 A组只读框。
+        function onAbBindRuleChange() {
+            var kind = document.getElementById('abtest-target-kind')?.value || 'touch_rule';
+            var key = document.getElementById('abtest-target-rule')?.value || '';
+            var aBox = document.getElementById('abtest-variant-a');
+            var row = _abBindableRules[key];
+            if (!aBox) return;
+            if (!row) { aBox.value = ''; return; }
+            if (kind === 'payment_rule') {
+                aBox.value = '券模板ID：' + (row.member_template_id || '-') + ' ｜ 触发门槛：' + (row.trigger_value || '无');
+            } else {
+                var ap = row.action_payload || {};
+                aBox.value = (ap.content_template || ap.template_text || '(该规则当前无文案内容)');
             }
         }
 
@@ -55006,22 +55041,28 @@ ${body}
                 var store = (document.getElementById('abtest-store-code')?.value || '').trim()
                     || (document.getElementById('growth-store-filter')?.value || '').trim()
                     || '51866138';
-                var vA = (document.getElementById('abtest-variant-a')?.value || '').trim();
+                var kind = (document.getElementById('abtest-target-kind')?.value || 'touch_rule').trim();
+                var ruleKey = (document.getElementById('abtest-target-rule')?.value || '').trim();
                 var vB = (document.getElementById('abtest-variant-b')?.value || '').trim();
                 var metric = (document.getElementById('abtest-metric')?.value || 'redemption_rate').trim();
-                var testType = (document.getElementById('abtest-type')?.value || 'sms_copy').trim();
+                var minSample = parseInt(document.getElementById('abtest-minsample')?.value || '', 10);
                 var start = (document.getElementById('abtest-start')?.value || '').trim();
                 var end = (document.getElementById('abtest-end')?.value || '').trim();
-                if (!name || !vA || !vB) { showNotification('请填写测试名称和A/B两组文案', 'error'); return; }
+                if (!name) { showNotification('请填写测试名称', 'error'); return; }
+                if (!ruleKey) { showNotification('请选择要绑定的已有规则', 'error'); return; }
+                if (!vB) { showNotification('请填写 B组（挑战版本）内容', 'error'); return; }
+                var variantB = kind === 'payment_rule'
+                    ? { label: '挑战者(B)', template_id: vB, content: vB }
+                    : { label: '挑战者(B)', content: vB };
                 var body = {
                     test_name: name,
                     store_code: store,
-                    test_type: testType,
+                    target_kind: kind,
+                    target_rule_key: ruleKey,
                     target_metric: metric,
-                    variant_a: { label: '文案A', content: vA },
-                    variant_b: { label: '文案B', content: vB },
-                    auto_seed: false
+                    variant_b: variantB
                 };
+                if (Number.isFinite(minSample) && minSample > 0) body.min_sample_size = minSample;
                 if (start) body.start_date = start;
                 if (end) body.end_date = end;
                 var r = await fetch('/api/growth/ab-tests', {
@@ -55030,15 +55071,62 @@ ${body}
                     body: JSON.stringify(body)
                 });
                 var d = await r.json();
-                if (!d.ok) throw new Error(d.error || 'create_failed');
-                showNotification('A/B测试已创建', 'success');
-                ['abtest-name', 'abtest-store-code', 'abtest-variant-a', 'abtest-variant-b', 'abtest-start', 'abtest-end'].forEach(function(id) {
+                if (!d.ok) throw new Error(d.message || d.error || 'create_failed');
+                showNotification('A/B测试已创建（已绑定规则）', 'success');
+                ['abtest-name', 'abtest-store-code', 'abtest-variant-a', 'abtest-variant-b', 'abtest-start', 'abtest-end', 'abtest-minsample'].forEach(function(id) {
                     var el = document.getElementById(id);
                     if (el) el.value = '';
                 });
+                var sel = document.getElementById('abtest-target-rule');
+                if (sel) sel.value = '';
                 loadGrowthAbTests();
             } catch (e) {
                 showNotification('创建失败：' + (e?.message || e), 'error');
+            }
+        }
+
+        // 每张测试卡片下的「录入结果」内联表单（默认折叠）。
+        function abResultFormHtml(id) {
+            function cell(grp, k, ph) {
+                return '<input id="abres-' + id + '-' + grp + '-' + k + '" type="number" min="0" step="0.01" placeholder="' + ph + '" class="dr-store-select" style="padding:8px;color:var(--rep-text);font-size:12px;">';
+            }
+            return '<div id="ab-result-form-' + id + '" style="display:none;margin-top:10px;padding:12px;border:1px solid rgba(255,255,255,0.08);border-radius:10px;background:rgba(255,255,255,0.02);">'
+                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-bottom:8px;">录入真实投放结果（大众点评/小红书/线下核销等），按发送/点击/核销/营收分组填写，可多次录入累加。</div>'
+                + '<div class="rep-field" style="margin-bottom:8px;"><label style="font-size:11px;">数据日期（留空=今天）</label><input id="abres-' + id + '-date" type="date" class="dr-store-select" style="padding:8px;color:var(--rep-text);"></div>'
+                + '<div style="font-size:12px;font-weight:700;color:#fff;margin:6px 0 4px;">A组（当前版本）</div>'
+                + '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;">' + cell('a','sent','发送') + cell('a','clicks','点击') + cell('a','redm','核销') + cell('a','rev','营收¥') + '</div>'
+                + '<div style="font-size:12px;font-weight:700;color:#fff;margin:8px 0 4px;">B组（挑战版本）</div>'
+                + '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;">' + cell('b','sent','发送') + cell('b','clicks','点击') + cell('b','redm','核销') + cell('b','rev','营收¥') + '</div>'
+                + '<div class="rep-seg" style="margin-top:10px;"><button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" onclick="submitAbResult(' + id + ')">提交结果并判定</button></div>'
+                + '</div>';
+        }
+
+        // 手动录入 A/B 结果（绑定模式闭环）：把 A/B 两组的真实投放数据录入并触发胜负判定。
+        function toggleAbResultForm(id) {
+            var box = document.getElementById('ab-result-form-' + id);
+            if (box) box.style.display = (box.style.display === 'none' || !box.style.display) ? 'block' : 'none';
+        }
+
+        async function submitAbResult(id) {
+            try {
+                function num(elId){ var v = parseFloat(document.getElementById(elId)?.value || ''); return Number.isFinite(v) ? v : 0; }
+                var body = {
+                    A: { sent: num('abres-' + id + '-a-sent'), clicks: num('abres-' + id + '-a-clicks'), redemptions: num('abres-' + id + '-a-redm'), revenue: num('abres-' + id + '-a-rev') },
+                    B: { sent: num('abres-' + id + '-b-sent'), clicks: num('abres-' + id + '-b-clicks'), redemptions: num('abres-' + id + '-b-redm'), revenue: num('abres-' + id + '-b-rev') }
+                };
+                var rd = (document.getElementById('abres-' + id + '-date')?.value || '').trim();
+                if (rd) body.result_date = rd;
+                var r = await fetch('/api/growth/ab-tests/' + encodeURIComponent(String(id)) + '/results', {
+                    method: 'POST',
+                    headers: Object.assign({}, growthAuthHeaders(), { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body)
+                });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.message || d.error || 'submit_failed');
+                showNotification('结果已录入并完成判定', 'success');
+                loadGrowthAbTests();
+            } catch (e) {
+                showNotification('录入失败：' + (e?.message || e), 'error');
             }
         }
 
@@ -55057,9 +55145,12 @@ ${body}
             }
         }
 
-        // 闭环回路：把 A/B 胜出变体一键采用为「自动营销」规则（approved + auto_execute）。
+        // 闭环回路：把 A/B 胜出变体一键回写到所绑定的真实规则。
         async function promoteGrowthAbTest(id, winner) {
-            if (!confirm('确认采用 ' + winner + ' 组胜出变体为「自动营销」规则？\n\n采用后将写入自动营销规则库并标记为「已审核·自动执行」，引擎下一轮按该胜出版本对【临界/流失】客群自动放量（短信/订阅仍受各自自动发送总闸限制）。\n默认人群为召回型，可在「自动营销」里再调整后再开启。')) return;
+            var msg = winner === 'A'
+                ? '确认采用 A组（当前版本）为胜者？\n\nA组即所绑定规则的现有版本，采用后规则维持不变，仅标记本次测试已采用。'
+                : '确认采用 B组（挑战版本）为胜者？\n\n采用后将把 B组内容直接回写覆盖到所绑定的真实规则（规则引擎/订阅 的文案/券，或 支付发券 的券模板/门槛），并标记为已审核。绑定规则的引擎下一轮即按新版本投放。';
+            if (!confirm(msg)) return;
             try {
                 var r = await fetch('/api/growth/ab-tests/' + encodeURIComponent(String(id || '')) + '/promote', {
                     method: 'POST',

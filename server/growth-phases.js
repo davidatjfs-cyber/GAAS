@@ -168,6 +168,46 @@ async function upsertAbTaskResult(pool, row) {
   );
 }
 
+// 读取被绑定的「可投放规则」当前版本，作为 A 组基线快照。
+// kind='touch_rule' → growth_touch_rules（规则引擎/订阅）；kind='payment_rule' → marketing_payment_rules（支付发券）。
+async function loadAbBoundRule(pool, kind, ruleKey) {
+  const key = cleanText(ruleKey, 200);
+  if (!key) return null;
+  if (kind === 'payment_rule') {
+    const r = await pool.query(`SELECT * FROM marketing_payment_rules WHERE rule_key = $1 LIMIT 1`, [key]);
+    if (!r.rows?.length) return null;
+    const row = r.rows[0];
+    return {
+      kind: 'payment_rule',
+      rule: row,
+      variant_a: {
+        label: '当前版本(A)',
+        rule_key: row.rule_key,
+        name: cleanText(row.name, 255),
+        template_id: cleanText(row.member_template_id, 128),
+        trigger_value: String(row.trigger_value == null ? '' : row.trigger_value),
+        content: cleanText(row.name, 255)
+      }
+    };
+  }
+  // 默认 touch_rule
+  const r = await pool.query(`SELECT * FROM growth_touch_rules WHERE rule_key = $1 LIMIT 1`, [key]);
+  if (!r.rows?.length) return null;
+  const row = r.rows[0];
+  const ap = (row.action_payload && typeof row.action_payload === 'object') ? row.action_payload : {};
+  return {
+    kind: 'touch_rule',
+    rule: row,
+    variant_a: {
+      label: '当前版本(A)',
+      rule_key: row.rule_key,
+      name: cleanText(row.name, 255),
+      content: cleanText(ap.content_template || ap.template_text || '', 2000),
+      coupon_value: ap.coupon_value != null ? Number(ap.coupon_value) : (ap.value != null ? Number(ap.value) : null)
+    }
+  };
+}
+
 async function queueAbSmsAssignments(pool, taskRow, audienceRows, opts = {}) {
   const taskId = Number(taskRow?.id || 0);
   if (!taskId || !Array.isArray(audienceRows) || !audienceRows.length) return { created: 0, audience: 0 };
@@ -305,20 +345,22 @@ async function refreshAbTestResults(pool, taskRow) {
 async function computeAbTestOutcome(pool, taskRow) {
   const taskId = Number(taskRow?.id || 0);
   if (!taskId) return null;
-  const deliveries = await pool.query(
-    `SELECT customer_id, payload->>'variant' AS variant
-       FROM growth_delivery_logs
-      WHERE channel='sms' AND payload->>'ab_test_id' = $1`,
-    [String(taskId)]
-  );
-  const assigns = deliveries.rows || [];
+  // 绑定模式（target_rule_key 存在）：所有指标(含 sent)均来自手动录入的 ab_test_results，不查 POS / 投放日志。
+  // 非绑定模式（price_test 等）：保留旧逻辑——sent 由 SMS 投放日志推导，核销/营收由 POS 归因写入 ab_test_results。
+  const isBound = !!cleanText(taskRow?.target_rule_key, 200);
   const sendCount = { A: 0, B: 0 };
-  const customerByVariant = { A: new Set(), B: new Set() };
-  assigns.forEach((a) => {
-    const v = cleanText(a.variant, 8) === 'B' ? 'B' : 'A';
-    sendCount[v] += 1;
-    customerByVariant[v].add(Number(a.customer_id));
-  });
+  if (!isBound) {
+    const deliveries = await pool.query(
+      `SELECT customer_id, payload->>'variant' AS variant
+         FROM growth_delivery_logs
+        WHERE channel='sms' AND payload->>'ab_test_id' = $1`,
+      [String(taskId)]
+    );
+    (deliveries.rows || []).forEach((a) => {
+      const v = cleanText(a.variant, 8) === 'B' ? 'B' : 'A';
+      sendCount[v] += 1;
+    });
+  }
   const rows = await pool.query(
     `SELECT result_date, variant, sent, impressions, clicks, orders, redemptions, revenue, conversion_rate
        FROM ab_test_results
@@ -332,6 +374,7 @@ async function computeAbTestOutcome(pool, taskRow) {
   };
   (rows.rows || []).forEach((r) => {
     const v = cleanText(r.variant, 8) === 'B' ? 'B' : 'A';
+    if (isBound) byVariant[v].sent += Math.max(0, Math.floor(Number(r.sent) || 0));
     byVariant[v].impressions += Math.max(0, Math.floor(Number(r.impressions) || 0));
     byVariant[v].clicks += Math.max(0, Math.floor(Number(r.clicks) || 0));
     byVariant[v].orders += Math.max(0, Math.floor(Number(r.orders) || 0));
@@ -389,6 +432,23 @@ async function maybeWriteAbLearning(pool, taskRow, outcome, winner, winnerLift) 
   ).catch(() => {});
 }
 
+// 依据 target_metric 计算某变体的比较值（越大越好）。
+function abMetricValue(v, metric) {
+  const sent = Number(v?.sent || 0);
+  switch (cleanText(metric, 40)) {
+    case 'click_rate':
+    case 'response_rate':
+      return sent > 0 ? Number((Number(v?.clicks || 0) / sent).toFixed(4)) : 0;
+    case 'revenue':
+      return Number(v?.revenue || 0);
+    case 'revenue_per_order':
+      return Number(v?.revenue_per_order || 0);
+    case 'redemption_rate':
+    default:
+      return Number(v?.redemption_rate || 0);
+  }
+}
+
 async function evaluateAbTask(pool, taskRow) {
   const outcome = await computeAbTestOutcome(pool, taskRow);
   if (!outcome) return null;
@@ -396,10 +456,14 @@ async function evaluateAbTask(pool, taskRow) {
   const b = outcome.byVariant.B || {};
   const minSample = Math.max(1, Math.floor(Number(taskRow?.min_sample_size) || 30));
   if ((a.sent || 0) < minSample || (b.sent || 0) < minSample) return { outcome, finalized: false };
-  const rateA = Number(a.redemption_rate || 0);
-  const rateB = Number(b.redemption_rate || 0);
+  const metric = taskRow?.target_metric || 'redemption_rate';
+  const rateA = abMetricValue(a, metric);
+  const rateB = abMetricValue(b, metric);
+  // 比率类指标用 0.01 绝对差作为最小可分辨差异；金额类指标只要不相等即可分胜负。
+  const isRate = ['redemption_rate', 'click_rate', 'response_rate'].includes(cleanText(metric, 40));
+  const minDiff = isRate ? 0.01 : 0.0001;
   let winner = 'tie';
-  if (Math.abs(rateA - rateB) >= 0.01) winner = rateA > rateB ? 'A' : 'B';
+  if (Math.abs(rateA - rateB) >= minDiff) winner = rateA > rateB ? 'A' : 'B';
   const base = winner === 'A' ? rateB : rateA;
   const top = winner === 'A' ? rateA : rateB;
   const winnerLift = winner === 'tie' ? 0 : Number((base > 0 ? ((top - base) / base) * 100 : top * 100).toFixed(2));
@@ -888,6 +952,11 @@ export async function ensurePhaseTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ab_test_tasks_store_status ON ab_test_tasks (store_code, status, created_at DESC)`);
   // 闭环回路：记录该测试胜出变体已被采用为哪条自动营销规则（rule_key），供前端展示「已采用」。
   await pool.query(`ALTER TABLE ab_test_tasks ADD COLUMN IF NOT EXISTS promoted_rule_key TEXT`).catch(() => {});
+  // 绑定模式：A/B 测试必须绑定一条已有的可投放规则（规则引擎 touch_rule / 支付发券 payment_rule）。
+  // target_kind ∈ {'touch_rule','payment_rule'}；target_rule_key = 被绑定规则的 rule_key。
+  // 绑定测试的结果走「手动录入」聚合（ab_test_results 累加），不走 POS 归因（POS 归因仅留给 price_test）。
+  await pool.query(`ALTER TABLE ab_test_tasks ADD COLUMN IF NOT EXISTS target_kind TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE ab_test_tasks ADD COLUMN IF NOT EXISTS target_rule_key TEXT`).catch(() => {});
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ab_test_results (
       id BIGSERIAL PRIMARY KEY,
@@ -2169,26 +2238,43 @@ export function registerPhaseRoutes(app, pool) {
     const b = req.body || {};
     const testName = cleanText(b.test_name, 255);
     const storeCode = cleanText(b.store_code, 128);
-    const testType = cleanText(b.test_type || 'sms_copy', 80);
+    const targetKind = cleanText(b.target_kind || 'touch_rule', 40);
+    const targetRuleKey = cleanText(b.target_rule_key, 200);
     const targetMetric = cleanText(b.target_metric || 'redemption_rate', 80);
     const startDate = safeDateOnly(b.start_date) || todayShanghaiYmd();
     const endDate = safeDateOnly(b.end_date) || ymdAddDays(startDate, 7);
     if (!testName || !storeCode) return res.status(400).json({ ok: false, error: 'missing_test_name_or_store_code' });
+    // 绑定模式：必须绑定一条已有的可投放规则（规则引擎/订阅 touch_rule 或 支付发券 payment_rule）。
+    if (!['touch_rule', 'payment_rule'].includes(targetKind)) {
+      return res.status(400).json({ ok: false, error: 'invalid_target_kind', message: 'target_kind 必须为 touch_rule 或 payment_rule' });
+    }
+    if (!targetRuleKey) {
+      return res.status(400).json({ ok: false, error: 'missing_target_rule_key', message: 'A/B 测试必须绑定一条已有规则（规则引擎/订阅/支付发券）' });
+    }
+    const bound = await loadAbBoundRule(pool, targetKind, targetRuleKey);
+    if (!bound) return res.status(404).json({ ok: false, error: 'bound_rule_not_found', message: '未找到要绑定的规则，请确认 rule_key' });
+    // test_type 由绑定规则类型推导：payment_rule→coupon_value（券/模板）；touch_rule→sms_copy（文案/券）。
+    const testType = targetKind === 'payment_rule' ? 'coupon_value' : cleanText(b.test_type || 'sms_copy', 80);
+    // A 组 = 绑定规则的当前版本快照；B 组 = 用户输入的挑战者。
+    const variantA = bound.variant_a;
+    const variantB = (b.variant_b && typeof b.variant_b === 'object') ? Object.assign({ label: '挑战者(B)' }, b.variant_b) : { label: '挑战者(B)' };
     const created = await pool.query(
       `INSERT INTO ab_test_tasks (
-         test_name, store_code, test_type, target_metric,
+         test_name, store_code, test_type, target_metric, target_kind, target_rule_key,
          variant_a, variant_b, rotation_config, start_date, end_date,
          min_sample_size, created_by, status
-       ) VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9,$10,$11,'running')
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11,$12,$13,'running')
        RETURNING *`,
       [
         testName,
         storeCode,
         testType,
         targetMetric,
-        JSON.stringify(b.variant_a || {}),
-        JSON.stringify(b.variant_b || {}),
-        JSON.stringify(b.rotation_config || { method: 'time', a_days: [1, 2, 3], b_days: [4, 5, 6, 0] }),
+        targetKind,
+        targetRuleKey,
+        JSON.stringify(variantA),
+        JSON.stringify(variantB),
+        JSON.stringify(b.rotation_config || { method: 'manual' }),
         startDate,
         endDate,
         Math.max(1, Math.floor(Number(b.min_sample_size) || 30)),
@@ -2196,52 +2282,51 @@ export function registerPhaseRoutes(app, pool) {
       ]
     );
     const task = created.rows[0];
-    const autoSeed = b.auto_seed !== false;
-    if (autoSeed) {
-      const audience = await listAbAudienceForSendDate(pool, storeCode, startDate, 7);
-      await queueAbSmsAssignments(pool, task, audience, { sendDate: startDate });
-      await refreshAbTestResults(pool, task);
-      if (safeDateOnly(endDate) <= todayShanghaiYmd()) await evaluateAbTask(pool, task);
-    }
-    return res.json({ ok: true, task: (await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1`, [task.id])).rows[0] });
+    // 绑定模式不做任何自动投放/POS 归因：实际投放由所绑定规则的引擎负责，结果由人工录入。
+    return res.json({ ok: true, task });
   });
 
-  app.post('/api/growth/ab-tests/bootstrap-first', async (req, res) => {
+  // ── 手动录入 A/B 结果（绑定模式核心闭环）──
+  // 大众点评/小红书/线下核销等真实投放数据由人工录入；按变体累加到 ab_test_results，再判定胜负。
+  app.post('/api/growth/ab-tests/:id/results', async (req, res) => {
     const auth = authPhaseApi(req);
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error || 'unauthorized' });
-    const existing = await pool.query(`SELECT * FROM ab_test_tasks WHERE test_name = $1 ORDER BY id DESC LIMIT 1`, ['7日未到店短信召回A/B']);
-    if (existing.rows?.length) {
-      const task = existing.rows[0];
-      await refreshAbTestResults(pool, task);
-      if (safeDateOnly(task.end_date) <= todayShanghaiYmd()) await evaluateAbTask(pool, task);
-      return res.json({ ok: true, task: existing.rows[0], reused: true });
+    const id = Number(req.params.id || 0);
+    if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
+    const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 LIMIT 1`, [id]);
+    if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
+    const task = taskRes.rows[0];
+    const b = req.body || {};
+    const resultDate = safeDateOnly(b.result_date) || todayShanghaiYmd();
+    // 接受 {A:{sent,clicks,redemptions,revenue}, B:{...}} 或 {variant,sent,...}
+    const groups = [];
+    if (b.A || b.B) {
+      if (b.A) groups.push(Object.assign({ variant: 'A' }, b.A));
+      if (b.B) groups.push(Object.assign({ variant: 'B' }, b.B));
+    } else if (b.variant) {
+      groups.push(b);
     }
-    const startDate = ymdAddDays(todayShanghaiYmd(), -7);
-    const endDate = todayShanghaiYmd();
-    const created = await pool.query(
-      `INSERT INTO ab_test_tasks (
-         test_name, store_code, test_type, target_metric,
-         variant_a, variant_b, rotation_config, start_date, end_date,
-         min_sample_size, created_by, status
-       ) VALUES ($1,$2,'sms_copy','redemption_rate',$3::jsonb,$4::jsonb,$5::jsonb,$6,$7,30,$8,'running')
-       RETURNING *`,
-      [
-        '7日未到店短信召回A/B',
-        '51866138',
-        JSON.stringify({ label: '文案A', content: '锅气十足，今晚来尝尝？烧鹅刚出炉，专属8折券已发' }),
-        JSON.stringify({ label: '文案B', content: '{姓名}，已有7天没来了，准备了一张减8元券，3天内有效' }),
-        JSON.stringify({ method: 'hash', a_days: [1, 2, 3], b_days: [4, 5, 6, 0] }),
-        startDate,
-        endDate,
-        cleanText(auth.user?.username || 'system', 80)
-      ]
-    );
-    const task = created.rows[0];
-    const audience = await listAbAudienceForSendDate(pool, '51866138', startDate, 7);
-    const queued = await queueAbSmsAssignments(pool, task, audience, { sendDate: startDate });
-    await refreshAbTestResults(pool, task);
+    if (!groups.length) return res.status(400).json({ ok: false, error: 'missing_results', message: '请提供 A/B 两组结果数据' });
+    for (const g of groups) {
+      const variant = cleanText(g.variant, 8) === 'B' ? 'B' : 'A';
+      const sent = Math.max(0, Math.floor(Number(g.sent) || 0));
+      const redemptions = Math.max(0, Math.floor(Number(g.redemptions) || 0));
+      await upsertAbTaskResult(pool, {
+        test_id: id,
+        result_date: resultDate,
+        variant,
+        sent,
+        impressions: Math.max(0, Math.floor(Number(g.impressions) || 0)),
+        clicks: Math.max(0, Math.floor(Number(g.clicks) || 0)),
+        orders: Math.max(0, Math.floor(Number(g.orders) || g.redemptions || 0)),
+        redemptions,
+        revenue: Number(g.revenue || 0),
+        conversion_rate: sent > 0 ? redemptions / sent : 0
+      });
+    }
     const evaluated = await evaluateAbTask(pool, task);
-    return res.json({ ok: true, task: evaluated?.task || task, queued, evaluated });
+    const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1`, [id]);
+    return res.json({ ok: true, task: latest.rows[0], evaluated });
   });
 
   app.post('/api/growth/ab-tests/:id/refresh', async (req, res) => {
@@ -2252,8 +2337,10 @@ export function registerPhaseRoutes(app, pool) {
     const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 LIMIT 1`, [id]);
     if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
     const task = taskRes.rows[0];
-    const refreshed = await refreshAbTestResults(pool, task);
-    const evaluated = safeDateOnly(task.end_date) <= todayShanghaiYmd() ? await evaluateAbTask(pool, task) : null;
+    // 绑定模式不做 POS 归因刷新（结果靠人工录入）；仅非绑定（price_test 等）才走 refreshAbTestResults。
+    const isBound = !!cleanText(task.target_rule_key, 200);
+    const refreshed = isBound ? null : await refreshAbTestResults(pool, task);
+    const evaluated = (isBound || safeDateOnly(task.end_date) <= todayShanghaiYmd()) ? await evaluateAbTask(pool, task) : null;
     const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1`, [id]);
     return res.json({ ok: true, task: latest.rows[0], refreshed, evaluated });
   });
@@ -2270,73 +2357,68 @@ export function registerPhaseRoutes(app, pool) {
     if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
     const task = taskRes.rows[0];
 
-    // 必须有明确赢家才能放量；平局/未判定时拒绝，避免把没结论的文案推成自动规则。
+    // 必须有明确赢家才能放量；平局/未判定时拒绝，避免把没结论的版本推成正式规则。
     const winner = String(task.winner || '').toUpperCase();
     if (winner !== 'A' && winner !== 'B') {
-      return res.status(400).json({ ok: false, error: 'no_winner_yet', message: '该测试尚无明确赢家：需先完成并判定 A/B 胜负后才能采用。' });
+      return res.status(400).json({ ok: false, error: 'no_winner_yet', message: '该测试尚无明确赢家：需先录入结果并判定 A/B 胜负后才能采用。' });
     }
     const winnerDef = (winner === 'A' ? task.variant_a : task.variant_b) || {};
-    const content = cleanText(winnerDef.content || winnerDef.text || winnerDef.label || '', 2000);
-    if (!content) return res.status(400).json({ ok: false, error: 'empty_winner_content', message: '胜出变体内容为空，无法采用。' });
-
-    const b = req.body || {};
     const operator = cleanText(auth.user?.username || 'system', 80);
-    const storeCode = cleanText(task.store_code || '', 128);
+    const targetKind = cleanText(task.target_kind || '', 40);
+    const targetRuleKey = cleanText(task.target_rule_key || '', 200);
 
-    // 券额：仅 coupon_value 型测试尝试从胜出变体解析数字。
-    let couponValue = null;
-    if ((task.test_type || '') === 'coupon_value') {
-      const m = String(winnerDef.value != null ? winnerDef.value : content).match(/\d+(\.\d+)?/);
-      if (m) couponValue = Number(m[0]);
+    // 绑定模式：胜者直接回写到所绑定的真实规则（不再新建 abwin_ 规则）。
+    if (targetRuleKey && (targetKind === 'touch_rule' || targetKind === 'payment_rule')) {
+      if (winner === 'A') {
+        // A 组(当前版本)胜出：维持现状，仅记录采用结果，无需改规则。
+        await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
+        return res.json({ ok: true, rule_key: targetRuleKey, winner, kept_current: true, message: 'A组(当前版本)胜出，规则维持不变。' });
+      }
+      // B 组(挑战者)胜出：把挑战者内容覆盖回原规则。
+      if (targetKind === 'touch_rule') {
+        const ruleRes = await pool.query(`SELECT * FROM growth_touch_rules WHERE rule_key = $1 LIMIT 1`, [targetRuleKey]);
+        if (!ruleRes.rows?.length) return res.status(404).json({ ok: false, error: 'target_rule_not_found' });
+        const row = ruleRes.rows[0];
+        const ap = (row.action_payload && typeof row.action_payload === 'object') ? Object.assign({}, row.action_payload) : {};
+        const content = cleanText(winnerDef.content || winnerDef.text || '', 2000);
+        if (content) { ap.content_template = content; ap.template_text = content; }
+        if (winnerDef.coupon_value != null && winnerDef.coupon_value !== '') {
+          ap.coupon_value = Number(winnerDef.coupon_value); ap.value = Number(winnerDef.coupon_value);
+        }
+        ap.source_ab_test_id = task.id; ap.ab_winner = winner; ap.ab_winner_lift = Number(task.winner_lift || 0);
+        const upd = await pool.query(
+          `UPDATE growth_touch_rules
+              SET action_payload = $2::jsonb,
+                  approved_by = $3, approved_at = NOW(),
+                  note = $4, updated_at = NOW()
+            WHERE rule_key = $1
+            RETURNING *`,
+          [targetRuleKey, JSON.stringify(ap),
+           operator,
+           cleanText(`A/B #${task.id}「${task.test_name}」B组胜出(+${Number(task.winner_lift || 0)}%)，已采用为当前版本（经办人:${operator}）`, 1000)]
+        );
+        await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
+        return res.json({ ok: true, rule: upd.rows[0], rule_key: targetRuleKey, winner, kind: targetKind });
+      }
+      // payment_rule
+      const ruleRes = await pool.query(`SELECT * FROM marketing_payment_rules WHERE rule_key = $1 LIMIT 1`, [targetRuleKey]);
+      if (!ruleRes.rows?.length) return res.status(404).json({ ok: false, error: 'target_rule_not_found' });
+      const templateId = cleanText(winnerDef.template_id, 128);
+      const triggerValue = winnerDef.trigger_value != null ? String(winnerDef.trigger_value) : null;
+      const upd = await pool.query(
+        `UPDATE marketing_payment_rules
+            SET member_template_id = COALESCE(NULLIF($2,''), member_template_id),
+                trigger_value = COALESCE($3, trigger_value),
+                updated_at = NOW()
+          WHERE rule_key = $1
+          RETURNING *`,
+        [targetRuleKey, templateId, triggerValue]
+      );
+      await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
+      return res.json({ ok: true, rule: upd.rows[0], rule_key: targetRuleKey, winner, kind: targetKind });
     }
 
-    // 默认人群：召回型（临界/流失），可由 body.criteria 覆盖；采用后仍可在「自动营销」里调整。
-    const criteria = (b.criteria && typeof b.criteria === 'object' && !Array.isArray(b.criteria))
-      ? b.criteria
-      : { lifecycle_stage: 'at_risk', store_id: storeCode || undefined, min_days_since_last_visit: 14 };
-
-    const channel = cleanText(b.channel || '', 40); // 留空=企微优先，无企微回落短信
-    const frequencyDays = Math.max(0, Math.floor(Number(b.frequency_days) || 30));
-    const actionPayload = Object.assign(
-      {
-        channel,
-        store_id: storeCode || undefined,
-        content_template: content,
-        template_text: content,
-        frequency_days: frequencyDays,
-        source_ab_test_id: task.id,
-        ab_winner: winner,
-        ab_winner_lift: Number(task.winner_lift || 0)
-      },
-      couponValue != null ? { coupon_value: couponValue, value: couponValue } : {}
-    );
-
-    const ruleKey = `abwin_${task.id}`;
-    const name = cleanText(`A/B胜出·${task.test_name}（${winner}组 +${Number(task.winner_lift || 0)}%）`, 255);
-    const note = cleanText(`由 A/B 测试 #${task.id}「${task.test_name}」胜出变体 ${winner} 自动生成并采用（经办人:${operator}）`, 1000);
-
-    const upserted = await pool.query(
-      `INSERT INTO growth_touch_rules
-         (rule_key, name, enabled, priority, auto_execute, criteria, action_type, action_payload, owner, note, approved_by, approved_at, updated_at)
-       VALUES ($1,$2,TRUE,$3,TRUE,$4::jsonb,'send_message',$5::jsonb,$6,$7,$8,NOW(),NOW())
-       ON CONFLICT (rule_key) DO UPDATE SET
-         name = EXCLUDED.name,
-         enabled = TRUE,
-         auto_execute = TRUE,
-         criteria = EXCLUDED.criteria,
-         action_payload = EXCLUDED.action_payload,
-         owner = EXCLUDED.owner,
-         note = EXCLUDED.note,
-         approved_by = EXCLUDED.approved_by,
-         approved_at = NOW(),
-         updated_at = NOW()
-       RETURNING *`,
-      [ruleKey, name, Math.max(1, Math.floor(Number(b.priority) || 100)), JSON.stringify(criteria), JSON.stringify(actionPayload), operator, note, operator]
-    );
-
-    await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, ruleKey]).catch(() => {});
-
-    return res.json({ ok: true, rule: upserted.rows[0], rule_key: ruleKey });
+    return res.status(400).json({ ok: false, error: 'not_bound', message: '该测试未绑定可投放规则，无法采用。' });
   });
 
   app.get('/api/growth/learnings', async (req, res) => {
@@ -2795,7 +2877,9 @@ export function registerPhaseRoutes(app, pool) {
       try {
         const running = await pool.query(`SELECT * FROM ab_test_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 20`);
         for (const task of running.rows || []) {
-          await refreshAbTestResults(pool, task).catch(() => null);
+          // 绑定模式（手动录入）跳过 POS 归因刷新；仅非绑定（price_test 等）走自动归因。
+          const isBound = !!cleanText(task.target_rule_key, 200);
+          if (!isBound) await refreshAbTestResults(pool, task).catch(() => null);
           if (safeDateOnly(task.end_date) <= nowYmd) await evaluateAbTask(pool, task).catch(() => null);
         }
       } catch (e) {
