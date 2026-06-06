@@ -19195,7 +19195,7 @@
                                 <div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">
                                     <div style="color:rgba(226,232,240,0.55);font-size:11px;margin-bottom:8px;">🎯 目标人群</div>
                                     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-                                        <div><label class="am-sub-lbl">生命周期</label><select id="am-sub-stage" class="am-sub-in"><option value="">不限</option><option value="prospect">潜在新客</option><option value="new">新客</option><option value="active">活跃客</option><option value="at_risk">临界客</option><option value="dormant">沉睡老客</option><option value="churned">流失低频客</option></select></div>
+                                        <div><label class="am-sub-lbl">生命周期</label><select id="am-sub-stage" class="am-sub-in"><option value="">不限</option><option value="prospect">潜在新客</option><option value="new">新客</option><option value="active">活跃客</option><option value="at_risk">临界客</option><option value="dormant">沉睡老客</option><option value="churned">流失低频客</option><option value="lost_90">流失客(3-6月)</option><option value="lost_180">流失客(6-12月)</option><option value="lost_365">流失客(1年+)</option></select></div>
                                         <div><label class="am-sub-lbl">价值分层</label><select id="am-sub-tier" class="am-sub-in"><option value="">不限</option><option value="vip">VIP客</option><option value="regular">普通客</option><option value="low">低价值客</option></select></div>
                                         <div><label class="am-sub-lbl">到店次数 ≥</label><input id="am-sub-minvisit" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
                                         <div><label class="am-sub-lbl">未到店天数 ≥</label><input id="am-sub-mindays" class="am-sub-in" type="number" min="0" placeholder="不限"></div>
@@ -54912,8 +54912,8 @@ ${body}
             var clusters = Array.isArray(data?.clusters) ? data.clusters : [];
             var total = data?.total || 0;
             if (!clusters.length) { el.innerHTML = '<div style="color:rgba(226,232,240,0.4);font-size:12px;">暂无分群数据</div>'; return; }
-            var stageColors = { prospect: '#94a3b8', new: '#38bdf8', active: '#22c55e', at_risk: '#f59e0b', dormant: '#ef4444', churned: '#6b7280' };
-            var stageLabels = { prospect: '潜在新客', new: '新客', active: '活跃', at_risk: '临界客', dormant: '沉睡老客', churned: '流失客' };
+            var stageColors = { prospect: '#94a3b8', new: '#38bdf8', active: '#22c55e', at_risk: '#f59e0b', dormant: '#ef4444', churned: '#6b7280', lost_90: '#a855f7', lost_180: '#7c3aed', lost_365: '#4c1d95' };
+            var stageLabels = { prospect: '潜在新客', new: '新客', active: '活跃', at_risk: '临界客', dormant: '沉睡老客', churned: '流失客', lost_90: '流失客(3-6月)', lost_180: '流失客(6-12月)', lost_365: '流失客(1年+)' };
             el.innerHTML = '<div style="font-size:11px;color:rgba(226,232,240,0.5);margin-bottom:8px;">共' + total + '人</div>' + clusters.map(function(c) {
                 var label = stageLabels[c.lifecycle_stage] || c.lifecycle_stage;
                 var color = stageColors[c.lifecycle_stage] || '#38bdf8';
@@ -55766,8 +55766,11 @@ ${body}
             new:      { name: '新客',     tip: '累计下单 1 次 且 近 14 天到店' },
             active:   { name: '活跃客',   tip: '累计下单 ≥2 次 且 近 14 天到店' },
             at_risk:  { name: '临界客',   tip: '14–30 天未到店（流失预警）' },
-            dormant:  { name: '沉睡老客', tip: '30 天以上未到店 且 累计 ≥2 单' },
-            churned:  { name: '流失低频客', tip: '30 天以上未到店 且 仅 1 单' }
+            dormant:  { name: '沉睡老客', tip: '30–90 天未到店 且 累计 ≥2 单' },
+            churned:  { name: '流失低频客', tip: '30–90 天未到店 且 仅 1 单' },
+            lost_90:  { name: '流失客(3-6月)', tip: '90–180 天未到店（导入老客，试召回）' },
+            lost_180: { name: '流失客(6-12月)', tip: '180–365 天未到店（导入老客，试召回）' },
+            lost_365: { name: '流失客(1年+)', tip: '365 天以上未到店（导入老客，试召回）' }
         };
         var AM_VALUE_TIER = {
             vip:     { name: 'VIP客',   tip: '消费额排名前 15%（≥85 分位）' },
@@ -56849,9 +56852,9 @@ ${body}
             }
 
             var lifecycle = pi.lifecycle || {};
-            var lifecycleLabels = { prospect: '潜在新客', new: '新客', active: '活跃', at_risk: '临界客', dormant: '沉睡老客', churned: '流失客' };
+            var lifecycleLabels = { prospect: '潜在新客', new: '新客', active: '活跃', at_risk: '临界客', dormant: '沉睡老客', churned: '流失客', lost_90: '流失客(3-6月)', lost_180: '流失客(6-12月)', lost_365: '流失客(1年+)' };
             var totalLc = totalOf(lifecycle);
-            var lcColors = { prospect: '#94a3b8', new: '#38bdf8', active: '#22c55e', at_risk: '#f59e0b', dormant: '#ef4444', churned: '#6b7280' };
+            var lcColors = { prospect: '#94a3b8', new: '#38bdf8', active: '#22c55e', at_risk: '#f59e0b', dormant: '#ef4444', churned: '#6b7280', lost_90: '#a855f7', lost_180: '#7c3aed', lost_365: '#4c1d95' };
             var lcHtml = '<div style="margin-bottom:12px;"><div style="font-size:12px;color:rgba(226,232,240,0.88);font-weight:700;margin-bottom:8px;">客户生命周期</div>'
                 + '<div style="display:flex;gap:0;height:22px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,0.04);">';
             var lifecycleDefs = {
@@ -56859,8 +56862,11 @@ ${body}
                 new: '累计下单1次 · 近14天内到过店',
                 active: '累计下单≥2次 · 近14天内到过店',
                 at_risk: '14–30天未到店 · 有流失苗头',
-                dormant: '30天+未到店 · 但曾下单≥2次，值得召回',
-                churned: '30天+未到店 · 历史仅下过1单'
+                dormant: '30–90天未到店 · 但曾下单≥2次，值得召回',
+                churned: '30–90天未到店 · 历史仅下过1单',
+                lost_90: '90–180天未到店 · 导入老客，分批试召回',
+                lost_180: '180–365天未到店 · 导入老客，分批试召回',
+                lost_365: '365天+未到店 · 导入老客，分批试召回'
             };
             var lcLegend = '';
             for (var lk in lifecycleLabels) {

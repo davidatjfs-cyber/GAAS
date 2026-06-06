@@ -799,20 +799,65 @@ export async function ensureGrowthTables(pool) {
         title_template: '新品上线通知',
         content_template: '{customer_name}，我们新菜上线啦！作为老朋友第一时间告诉你，欢迎来尝鲜～'
       }
+    },
+    // 长期流失客召回（90天以上）：渠道走短信(企微/订阅触达率为0)，钩子随流失时长递增；
+    // 默认未审批(approved_at 为空→不自动发)，需在 HRMS 审批并备好对应短信报备模板后再启用。
+    {
+      rule_key: 'lost_90_winback',
+      name: '流失客(3-6月)召回券',
+      priority: 42,
+      auto_execute: true,
+      criteria: { lifecycle_stage: 'lost_90' },
+      action_type: 'send_voucher',
+      action_payload: {
+        channel: 'sms',
+        coupon_value_fen: 2000,
+        valid_days: 15,
+        coupon_name: '老客回归券',
+        title_template: '好久不见召回',
+        content_template: '{customer_name}，好久没见啦，这张{coupon_value_text}回归券为你保留15天，欢迎回来尝尝。'
+      }
+    },
+    {
+      rule_key: 'lost_180_winback',
+      name: '流失客(6-12月)召回券',
+      priority: 43,
+      auto_execute: true,
+      criteria: { lifecycle_stage: 'lost_180' },
+      action_type: 'send_voucher',
+      action_payload: {
+        channel: 'sms',
+        coupon_value_fen: 3000,
+        valid_days: 15,
+        coupon_name: '老客回归券',
+        title_template: '想念你召回',
+        content_template: '{customer_name}，很久没见到你啦，这张{coupon_value_text}回归券为你保留15天，期待你回来。'
+      }
+    },
+    {
+      rule_key: 'lost_365_winback',
+      name: '流失客(1年+)唤醒大券',
+      priority: 44,
+      auto_execute: true,
+      criteria: { lifecycle_stage: 'lost_365' },
+      action_type: 'send_voucher',
+      action_payload: {
+        channel: 'sms',
+        coupon_value_fen: 5000,
+        valid_days: 15,
+        coupon_name: '老客唤醒大券',
+        title_template: '老朋友唤醒',
+        content_template: '{customer_name}，太久没见啦，特地为你准备{coupon_value_text}唤醒大券，保留15天，欢迎回来坐坐。'
+      }
     }
   ];
   for (const rule of defaultTouchRules) {
     await pool.query(
+      // 仅作首次默认种子：已存在则保留运营在 HRMS UI 上的编辑（渠道/短信模板/券额/频次/审批），
+      // 避免每次进程重启用代码默认值覆盖用户配置。
       `INSERT INTO growth_touch_rules (rule_key, name, enabled, priority, auto_execute, criteria, action_type, action_payload)
        VALUES ($1,$2,TRUE,$3,$4,$5::jsonb,$6,$7::jsonb)
-       ON CONFLICT (rule_key) DO UPDATE SET
-         name = EXCLUDED.name,
-         priority = EXCLUDED.priority,
-         auto_execute = EXCLUDED.auto_execute,
-         criteria = EXCLUDED.criteria,
-         action_type = EXCLUDED.action_type,
-         action_payload = EXCLUDED.action_payload,
-         updated_at = NOW()`,
+       ON CONFLICT (rule_key) DO NOTHING`,
       [
         rule.rule_key,
         rule.name,
@@ -991,9 +1036,13 @@ async function recomputeCustomerProfiles(pool, days = 90) {
                AND GREATEST(e.payment_count, COALESCE(p.pos_order_count, 0)) >= 2 THEN 'active'
           -- 临界客：14-30天未到店
           WHEN GREATEST(e.last_event_at, p.pos_last_order_at) >= NOW() - INTERVAL '30 days' THEN 'at_risk'
-          -- 沉睡老客：30天+未到店 且 曾累计下单≥2次（值得花力气召回）
+          -- 长期流失客：90天以上未到店，按时长细分（资料再利用，分批触达试召回）
+          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) < NOW() - INTERVAL '365 days' THEN 'lost_365'
+          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) < NOW() - INTERVAL '180 days' THEN 'lost_180'
+          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) < NOW() - INTERVAL '90 days' THEN 'lost_90'
+          -- 沉睡老客：30-90天未到店 且 曾累计下单≥2次（值得花力气召回）
           WHEN GREATEST(e.payment_count, COALESCE(p.pos_order_count, 0)) >= 2 THEN 'dormant'
-          -- 流失低频客：30天+未到店 且 只下过1单
+          -- 流失低频客：30-90天未到店 且 只下过1单
           ELSE 'churned'
         END,
         CASE
