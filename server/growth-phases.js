@@ -45,6 +45,144 @@ function ymdAddDays(ymd, delta) {
   return d.toISOString().slice(0, 10);
 }
 
+// ── A/B 测试模板注册表 ───────────────────────────────────────────────
+// 每个模板 = 该渠道/活动特有的录入字段 + 主判定指标(primary, 决定胜负) + 辅助展示指标(extra)。
+// scope='bound'：绑定内部可投放规则(规则引擎/订阅 touch_rule、支付发券 payment_rule)，胜者自动回写规则。
+// scope='channel'：外部渠道(点评/小红书/达人/团购套餐等)，手动录入，胜者自动沉淀到经验库 growth_learnings。
+// 指标公式 metric = { key,label, num:[字段...], den:分母字段|null, format:'pct'|'money'|'x'|'int' }；den 为空=求和。
+const AB_TEMPLATES = [
+  {
+    key: 'sms', label: '短信召回', scope: 'bound', bind_kind: 'touch_rule', channel: 'sms',
+    fields: [
+      { key: 'sent', label: '发送量', type: 'int' },
+      { key: 'delivered', label: '成功送达', type: 'int' },
+      { key: 'clicks', label: '点击/回复', type: 'int' },
+      { key: 'redemptions', label: '核销', type: 'int' },
+      { key: 'revenue', label: '营收', type: 'money' }
+    ],
+    primary: { key: 'redemption_rate', label: '核销率', num: ['redemptions'], den: 'sent', format: 'pct' },
+    extra: [
+      { key: 'click_rate', label: '点击率', num: ['clicks'], den: 'sent', format: 'pct' },
+      { key: 'revenue_per_send', label: '人均营收', num: ['revenue'], den: 'sent', format: 'money' }
+    ]
+  },
+  {
+    key: 'coupon', label: '支付发券/券活动', scope: 'bound', bind_kind: 'payment_rule', channel: 'coupon',
+    fields: [
+      { key: 'issued', label: '发券量', type: 'int' },
+      { key: 'redemptions', label: '核销', type: 'int' },
+      { key: 'reorders', label: '复购单', type: 'int' },
+      { key: 'revenue', label: '营收', type: 'money' }
+    ],
+    primary: { key: 'redemption_rate', label: '核销率', num: ['redemptions'], den: 'issued', format: 'pct' },
+    extra: [ { key: 'revenue_per_issue', label: '人均营收', num: ['revenue'], den: 'issued', format: 'money' } ]
+  },
+  {
+    key: 'groupbuy', label: '团购套餐', scope: 'channel', channel: '团购套餐',
+    fields: [
+      { key: 'views', label: '浏览/曝光', type: 'int' },
+      { key: 'sold', label: '售出', type: 'int' },
+      { key: 'redemptions', label: '核销', type: 'int' },
+      { key: 'revenue', label: '营收', type: 'money' },
+      { key: 'refunds', label: '退款', type: 'int' }
+    ],
+    primary: { key: 'conversion_rate', label: '转化率', num: ['sold'], den: 'views', format: 'pct' },
+    extra: [
+      { key: 'redemption_rate', label: '核销率', num: ['redemptions'], den: 'sold', format: 'pct' },
+      { key: 'aov', label: '客单价', num: ['revenue'], den: 'sold', format: 'money' }
+    ]
+  },
+  {
+    key: 'dianping', label: '大众点评', scope: 'channel', channel: '大众点评',
+    fields: [
+      { key: 'impressions', label: '曝光', type: 'int' },
+      { key: 'visits', label: '进店浏览', type: 'int' },
+      { key: 'favorites', label: '收藏', type: 'int' },
+      { key: 'coupon_sold', label: '团购售出', type: 'int' },
+      { key: 'redemptions', label: '到店核销', type: 'int' },
+      { key: 'revenue', label: '营收', type: 'money' }
+    ],
+    primary: { key: 'visit_rate', label: '进店转化率', num: ['visits'], den: 'impressions', format: 'pct' },
+    extra: [
+      { key: 'redemption_rate', label: '核销率', num: ['redemptions'], den: 'coupon_sold', format: 'pct' },
+      { key: 'aov', label: '客单价', num: ['revenue'], den: 'redemptions', format: 'money' }
+    ]
+  },
+  {
+    key: 'xiaohongshu', label: '小红书', scope: 'channel', channel: '小红书',
+    fields: [
+      { key: 'impressions', label: '曝光', type: 'int' },
+      { key: 'reads', label: '阅读', type: 'int' },
+      { key: 'likes', label: '点赞', type: 'int' },
+      { key: 'favorites', label: '收藏', type: 'int' },
+      { key: 'comments', label: '评论', type: 'int' },
+      { key: 'follows', label: '涨粉', type: 'int' },
+      { key: 'arrivals', label: '到店核销', type: 'int' }
+    ],
+    primary: { key: 'engagement_rate', label: '互动率', num: ['likes', 'favorites', 'comments'], den: 'impressions', format: 'pct' },
+    extra: [
+      { key: 'read_rate', label: '阅读率', num: ['reads'], den: 'impressions', format: 'pct' },
+      { key: 'arrival_per_read', label: '到店/阅读', num: ['arrivals'], den: 'reads', format: 'pct' }
+    ]
+  },
+  {
+    key: 'kol', label: '达人探店', scope: 'channel', channel: '达人探店',
+    fields: [
+      { key: 'plays', label: '播放量', type: 'int' },
+      { key: 'interactions', label: '互动', type: 'int' },
+      { key: 'follows', label: '涨粉', type: 'int' },
+      { key: 'arrivals', label: '到店核销', type: 'int' },
+      { key: 'revenue', label: '营收', type: 'money' },
+      { key: 'cost', label: '投放成本', type: 'money' }
+    ],
+    primary: { key: 'roi', label: 'ROI', num: ['revenue'], den: 'cost', format: 'x' },
+    extra: [
+      { key: 'arrival_rate', label: '到店率', num: ['arrivals'], den: 'plays', format: 'pct' },
+      { key: 'interaction_rate', label: '互动率', num: ['interactions'], den: 'plays', format: 'pct' }
+    ]
+  },
+  {
+    key: 'custom', label: '自定义', scope: 'channel', channel: '自定义',
+    fields: [], primary: null, extra: []
+  }
+];
+
+function getAbTemplate(key) {
+  return AB_TEMPLATES.find((t) => t.key === cleanText(key, 40)) || null;
+}
+
+// 校验/规整一个指标公式定义（用于自定义模板的 primary 由前端传入）。
+function sanitizeMetricDef(m, allowedKeys) {
+  if (!m || typeof m !== 'object') return null;
+  const num = Array.isArray(m.num) ? m.num.map((k) => cleanText(k, 40)).filter((k) => allowedKeys.includes(k)) : [];
+  if (!num.length) return null;
+  const den = m.den ? cleanText(m.den, 40) : null;
+  if (den && !allowedKeys.includes(den)) return null;
+  const fmt = ['pct', 'money', 'x', 'int'].includes(m.format) ? m.format : (den ? 'pct' : 'int');
+  return { key: cleanText(m.key || 'primary', 40), label: cleanText(m.label || '主指标', 40), num, den, format: fmt };
+}
+
+// 根据「字段定义列表」构建 metrics_schema 快照（存到 task，保证历史测试展示稳定）。
+function sanitizeFields(fields) {
+  if (!Array.isArray(fields)) return [];
+  return fields.map((f) => ({
+    key: cleanText(f.key || f.label, 40).replace(/[^a-zA-Z0-9_]/g, '') || ('f' + Math.random().toString(36).slice(2, 7)),
+    label: cleanText(f.label || f.key, 40),
+    type: ['int', 'money'].includes(f.type) ? f.type : 'int'
+  })).filter((f) => f.key && f.label).slice(0, 12);
+}
+
+// 依据公式在「聚合后的字段值」上求值。format='pct' 返回比率(0-1)；其余返回绝对值。
+function evalAbMetric(agg, def) {
+  if (!def) return 0;
+  const num = (def.num || []).reduce((s, k) => s + Number(agg[k] || 0), 0);
+  if (!def.den) return Number(num.toFixed(2));
+  const den = Number(agg[def.den] || 0);
+  if (den <= 0) return 0;
+  const v = num / den;
+  return def.format === 'pct' ? Number(v.toFixed(4)) : Number(v.toFixed(2));
+}
+
 function diffDaysInclusive(startYmd, endYmd) {
   const s = new Date(`${startYmd}T00:00:00Z`);
   const e = new Date(`${endYmd}T00:00:00Z`);
@@ -164,6 +302,33 @@ async function upsertAbTaskResult(pool, row) {
       Math.max(0, Math.floor(Number(row.redemptions) || 0)),
       Number(Number(row.revenue || 0).toFixed(2)),
       Number(Number(row.conversion_rate || 0).toFixed(4))
+    ]
+  );
+}
+
+// 模板化结果写入：把一组任意字段(metrics_json)按 (test_id,result_date,variant) upsert。
+// 同时把通用字段(sent/redemptions/clicks/revenue 若存在)回填固定列，便于旧报表/兼容。
+async function upsertAbTaskMetrics(pool, testId, resultDate, variant, metrics) {
+  const m = (metrics && typeof metrics === 'object') ? metrics : {};
+  const num = (k) => Math.max(0, Number(m[k]) || 0);
+  await pool.query(
+    `INSERT INTO ab_test_results (
+       test_id, result_date, variant, sent, clicks, redemptions, revenue, metrics_json
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+     ON CONFLICT (test_id, result_date, variant) DO UPDATE SET
+       sent = EXCLUDED.sent,
+       clicks = EXCLUDED.clicks,
+       redemptions = EXCLUDED.redemptions,
+       revenue = EXCLUDED.revenue,
+       metrics_json = EXCLUDED.metrics_json,
+       created_at = NOW()`,
+    [
+      Number(testId), safeDateOnly(resultDate), (cleanText(variant, 8) === 'B' ? 'B' : 'A'),
+      Math.floor(num('sent') || num('issued') || num('impressions') || num('views') || num('plays')),
+      Math.floor(num('clicks') || num('interactions')),
+      Math.floor(num('redemptions') || num('arrivals') || num('sold')),
+      Number((num('revenue')).toFixed(2)),
+      JSON.stringify(m)
     ]
   );
 }
@@ -342,9 +507,48 @@ async function refreshAbTestResults(pool, taskRow) {
   return { sendCount, assignments: assignments.length };
 }
 
+// 模板化测试结果聚合：从 metrics_json 累加各字段，按 schema 的 primary/extra 公式求值。
+async function computeSchemaOutcome(pool, taskRow, schema) {
+  const taskId = Number(taskRow?.id || 0);
+  const rows = await pool.query(
+    `SELECT result_date, variant, metrics_json
+       FROM ab_test_results WHERE test_id = $1 ORDER BY result_date ASC, variant ASC`,
+    [taskId]
+  );
+  const fields = Array.isArray(schema.fields) ? schema.fields : [];
+  const agg = { A: {}, B: {} };
+  fields.forEach((f) => { agg.A[f.key] = 0; agg.B[f.key] = 0; });
+  (rows.rows || []).forEach((r) => {
+    const v = cleanText(r.variant, 8) === 'B' ? 'B' : 'A';
+    const m = (r.metrics_json && typeof r.metrics_json === 'object') ? r.metrics_json : {};
+    fields.forEach((f) => { agg[v][f.key] += Number(m[f.key] || 0); });
+  });
+  const primary = schema.primary || null;
+  const extra = Array.isArray(schema.extra) ? schema.extra : [];
+  const sampleField = (primary && primary.den) || (fields[0] && fields[0].key) || null;
+  const byVariant = { A: {}, B: {} };
+  ['A', 'B'].forEach((v) => {
+    byVariant[v].raw = agg[v];
+    byVariant[v].sample = sampleField ? Math.floor(Number(agg[v][sampleField] || 0)) : 0;
+    byVariant[v].primary = primary ? evalAbMetric(agg[v], primary) : 0;
+    byVariant[v].extras = extra.map((e) => ({ key: e.key, label: e.label, format: e.format, value: evalAbMetric(agg[v], e) }));
+    // 兼容旧前端字段
+    byVariant[v].sent = byVariant[v].sample;
+    byVariant[v].redemption_rate = primary && primary.format === 'pct' ? byVariant[v].primary : 0;
+    byVariant[v].revenue = Number(agg[v].revenue || 0);
+    byVariant[v].redemptions = Math.floor(Number(agg[v].redemptions || agg[v].arrivals || agg[v].sold || 0));
+  });
+  return { schema: { fields, primary, extra }, byVariant, daily: rows.rows || [] };
+}
+
 async function computeAbTestOutcome(pool, taskRow) {
   const taskId = Number(taskRow?.id || 0);
   if (!taskId) return null;
+  // 模板化测试：有 metrics_schema → 走通用字段聚合 + 公式求值。
+  const schema = (taskRow.metrics_schema && typeof taskRow.metrics_schema === 'object') ? taskRow.metrics_schema : null;
+  if (schema && Array.isArray(schema.fields) && schema.fields.length) {
+    return computeSchemaOutcome(pool, taskRow, schema);
+  }
   // 绑定模式（target_rule_key 存在）：所有指标(含 sent)均来自手动录入的 ab_test_results，不查 POS / 投放日志。
   // 非绑定模式（price_test 等）：保留旧逻辑——sent 由 SMS 投放日志推导，核销/营收由 POS 归因写入 ab_test_results。
   const isBound = !!cleanText(taskRow?.target_rule_key, 200);
@@ -403,12 +607,22 @@ async function buildAbAiSummary(taskRow, outcome) {
 
 async function maybeWriteAbLearning(pool, taskRow, outcome, winner, winnerLift) {
   if (!['A', 'B'].includes(winner)) return;
-  const variable = taskRow?.test_type === 'sms_copy' ? '文案风格' : cleanText(taskRow?.test_type || '测试变量', 80);
+  const schema = (taskRow.metrics_schema && typeof taskRow.metrics_schema === 'object') ? taskRow.metrics_schema : null;
+  const isChannel = cleanText(taskRow.mode, 20) === 'channel';
+  // variable = 本次测试比较的变量；渠道模式由用户填(存 test_type)，绑定模式按类型映射。
+  const variable = isChannel
+    ? cleanText(taskRow.test_type || '测试变量', 80)
+    : (taskRow.test_type === 'sms_copy' ? '文案风格' : cleanText(taskRow.test_type || '测试变量', 80));
+  const channel = cleanText(taskRow.channel || (taskRow.test_type === 'sms_copy' ? 'sms' : taskRow.test_type), 80);
   const variantA = taskRow?.variant_a && typeof taskRow.variant_a === 'object' ? taskRow.variant_a : {};
   const variantB = taskRow?.variant_b && typeof taskRow.variant_b === 'object' ? taskRow.variant_b : {};
   const winDef = winner === 'A' ? variantA : variantB;
   const loseDef = winner === 'A' ? variantB : variantA;
-  const learningKey = `ab_test:${taskRow.id}:${winner}`;
+  const metricLabel = (schema && schema.primary && schema.primary.label) || '核销率';
+  const sample = Math.max(
+    Number(outcome?.byVariant?.A?.sample || outcome?.byVariant?.A?.sent || 0),
+    Number(outcome?.byVariant?.B?.sample || outcome?.byVariant?.B?.sent || 0)
+  );
   await pool.query(
     `INSERT INTO growth_learnings (
        source_type, source_id, store_code, channel, scene, audience_tag, variable,
@@ -418,15 +632,15 @@ async function maybeWriteAbLearning(pool, taskRow, outcome, winner, winnerLift) 
     [
       String(taskRow.id),
       cleanText(taskRow.store_code, 128),
-      taskRow.test_type === 'sms_copy' ? 'sms' : cleanText(taskRow.test_type, 80),
-      '晚市',
-      '7日未到店',
+      channel,
+      isChannel ? null : '晚市',
+      isChannel ? null : '7日未到店',
       variable,
-      cleanText(winDef.label || winDef.content || winner, 500),
-      cleanText(loseDef.label || loseDef.content || (winner === 'A' ? 'B' : 'A'), 500),
-      cleanText(`核销率+${Number(winnerLift || 0).toFixed(2)}%`, 255),
-      Math.max(Number(outcome?.byVariant?.A?.sent || 0), Number(outcome?.byVariant?.B?.sent || 0)),
-      Math.max(Number(outcome?.byVariant?.A?.sent || 0), Number(outcome?.byVariant?.B?.sent || 0)) >= 100 ? 'high' : 'medium',
+      cleanText(winDef.content || winDef.label || winner, 500),
+      cleanText(loseDef.content || loseDef.label || (winner === 'A' ? 'B' : 'A'), 500),
+      cleanText(`${metricLabel}+${Number(winnerLift || 0).toFixed(2)}%`, 255),
+      sample,
+      sample >= 100 ? 'high' : 'medium',
       ymdAddDays(todayShanghaiYmd(), 90)
     ]
   ).catch(() => {});
@@ -455,12 +669,22 @@ async function evaluateAbTask(pool, taskRow) {
   const a = outcome.byVariant.A || {};
   const b = outcome.byVariant.B || {};
   const minSample = Math.max(1, Math.floor(Number(taskRow?.min_sample_size) || 30));
-  if ((a.sent || 0) < minSample || (b.sent || 0) < minSample) return { outcome, finalized: false };
-  const metric = taskRow?.target_metric || 'redemption_rate';
-  const rateA = abMetricValue(a, metric);
-  const rateB = abMetricValue(b, metric);
-  // 比率类指标用 0.01 绝对差作为最小可分辨差异；金额类指标只要不相等即可分胜负。
-  const isRate = ['redemption_rate', 'click_rate', 'response_rate'].includes(cleanText(metric, 40));
+  const schema = (taskRow.metrics_schema && typeof taskRow.metrics_schema === 'object') ? taskRow.metrics_schema : null;
+  let rateA, rateB, isRate;
+  if (schema && schema.primary) {
+    // 模板化：胜负由 schema.primary 公式值决定（越大越好）；样本量看 primary 分母字段。
+    if ((a.sample || 0) < minSample || (b.sample || 0) < minSample) return { outcome, finalized: false };
+    rateA = Number(a.primary || 0);
+    rateB = Number(b.primary || 0);
+    isRate = schema.primary.format === 'pct';
+  } else {
+    if ((a.sent || 0) < minSample || (b.sent || 0) < minSample) return { outcome, finalized: false };
+    const metric = taskRow?.target_metric || 'redemption_rate';
+    rateA = abMetricValue(a, metric);
+    rateB = abMetricValue(b, metric);
+    isRate = ['redemption_rate', 'click_rate', 'response_rate'].includes(cleanText(metric, 40));
+  }
+  // 比率类指标用 0.01 绝对差作为最小可分辨差异；金额/倍数类指标只要不相等即可分胜负。
   const minDiff = isRate ? 0.01 : 0.0001;
   let winner = 'tie';
   if (Math.abs(rateA - rateB) >= minDiff) winner = rateA > rateB ? 'A' : 'B';
@@ -957,6 +1181,11 @@ export async function ensurePhaseTables(pool) {
   // 绑定测试的结果走「手动录入」聚合（ab_test_results 累加），不走 POS 归因（POS 归因仅留给 price_test）。
   await pool.query(`ALTER TABLE ab_test_tasks ADD COLUMN IF NOT EXISTS target_kind TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE ab_test_tasks ADD COLUMN IF NOT EXISTS target_rule_key TEXT`).catch(() => {});
+  // 模板化：mode('bound'|'channel') + 渠道 + 模板key + 指标schema快照(字段/主指标/辅助指标)。
+  await pool.query(`ALTER TABLE ab_test_tasks ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'bound'`).catch(() => {});
+  await pool.query(`ALTER TABLE ab_test_tasks ADD COLUMN IF NOT EXISTS channel TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE ab_test_tasks ADD COLUMN IF NOT EXISTS template_key TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE ab_test_tasks ADD COLUMN IF NOT EXISTS metrics_schema JSONB`).catch(() => {});
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ab_test_results (
       id BIGSERIAL PRIMARY KEY,
@@ -975,6 +1204,8 @@ export async function ensurePhaseTables(pool) {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ab_test_results_test_date ON ab_test_results (test_id, result_date DESC, variant)`);
+  // 模板化：任意渠道字段以 JSON 存放（固定列仅保留给旧的 POS 归因/price_test 路径）。
+  await pool.query(`ALTER TABLE ab_test_results ADD COLUMN IF NOT EXISTS metrics_json JSONB`).catch(() => {});
   await pool.query(`
     CREATE TABLE IF NOT EXISTS growth_learnings (
       id BIGSERIAL PRIMARY KEY,
@@ -2211,6 +2442,12 @@ export function registerPhaseRoutes(app, pool) {
   });
 
   // ── Phase 4: A/B tests ─────────────────────────────────────────────
+  // 返回 A/B 测试模板注册表（前端据此渲染建测试表单与结果录入字段）。
+  app.get('/api/growth/ab-templates', async (req, res) => {
+    if (!authPhaseApi(req).ok) return res.status(401).json({ ok: false, error: 'unauthorized' });
+    return res.json({ ok: true, templates: AB_TEMPLATES });
+  });
+
   app.get('/api/growth/ab-tests', async (req, res) => {
     if (!authPhaseApi(req).ok) return res.status(401).json({ ok: false, error: 'unauthorized' });
     const storeCode = cleanText(req.query.store_code || '', 128);
@@ -2238,52 +2475,89 @@ export function registerPhaseRoutes(app, pool) {
     const b = req.body || {};
     const testName = cleanText(b.test_name, 255);
     const storeCode = cleanText(b.store_code, 128);
-    const targetKind = cleanText(b.target_kind || 'touch_rule', 40);
-    const targetRuleKey = cleanText(b.target_rule_key, 200);
-    const targetMetric = cleanText(b.target_metric || 'redemption_rate', 80);
     const startDate = safeDateOnly(b.start_date) || todayShanghaiYmd();
     const endDate = safeDateOnly(b.end_date) || ymdAddDays(startDate, 7);
     if (!testName || !storeCode) return res.status(400).json({ ok: false, error: 'missing_test_name_or_store_code' });
-    // 绑定模式：必须绑定一条已有的可投放规则（规则引擎/订阅 touch_rule 或 支付发券 payment_rule）。
-    if (!['touch_rule', 'payment_rule'].includes(targetKind)) {
-      return res.status(400).json({ ok: false, error: 'invalid_target_kind', message: 'target_kind 必须为 touch_rule 或 payment_rule' });
+
+    // 模板：决定 mode（bound 绑定内部规则 / channel 外部渠道）、录入字段、主判定指标。
+    const template = getAbTemplate(b.template_key) || getAbTemplate('sms');
+    const minSample = Math.max(1, Math.floor(Number(b.min_sample_size) || 30));
+
+    // 构建 metrics_schema 快照：custom 模板用前端传入字段/主指标，其余用内置定义。
+    let fields, primary, extra;
+    if (template.key === 'custom') {
+      fields = sanitizeFields(b.fields);
+      if (!fields.length) return res.status(400).json({ ok: false, error: 'missing_custom_fields', message: '自定义模板需至少定义 1 个字段' });
+      primary = sanitizeMetricDef(b.primary, fields.map((f) => f.key));
+      if (!primary) return res.status(400).json({ ok: false, error: 'invalid_primary_metric', message: '请正确指定主判定指标(分子字段必填)' });
+      extra = [];
+    } else {
+      fields = template.fields;
+      primary = template.primary;
+      extra = template.extra || [];
     }
-    if (!targetRuleKey) {
-      return res.status(400).json({ ok: false, error: 'missing_target_rule_key', message: 'A/B 测试必须绑定一条已有规则（规则引擎/订阅/支付发券）' });
+    const metricsSchema = { fields, primary, extra };
+    const targetMetric = primary ? cleanText(primary.key, 80) : 'redemption_rate';
+
+    if (template.scope === 'bound') {
+      // ── 绑定模式：必须绑定一条已有可投放规则；A组=规则当前版本，B组=挑战者，胜者回写规则。──
+      const targetKind = template.bind_kind; // sms→touch_rule, coupon→payment_rule
+      const targetRuleKey = cleanText(b.target_rule_key, 200);
+      if (!targetRuleKey) return res.status(400).json({ ok: false, error: 'missing_target_rule_key', message: 'A/B 测试需绑定一条已有规则（规则引擎/订阅/支付发券）' });
+      const bound = await loadAbBoundRule(pool, targetKind, targetRuleKey);
+      if (!bound) return res.status(404).json({ ok: false, error: 'bound_rule_not_found', message: '未找到要绑定的规则，请确认 rule_key' });
+      const variantA = bound.variant_a;
+      const variantB = (b.variant_b && typeof b.variant_b === 'object') ? Object.assign({ label: '挑战者(B)' }, b.variant_b) : { label: '挑战者(B)' };
+      const testType = targetKind === 'payment_rule' ? 'coupon_value' : 'sms_copy';
+      const created = await pool.query(
+        `INSERT INTO ab_test_tasks (
+           test_name, store_code, test_type, target_metric, target_kind, target_rule_key,
+           mode, channel, template_key, metrics_schema,
+           variant_a, variant_b, rotation_config, start_date, end_date,
+           min_sample_size, created_by, status
+         ) VALUES ($1,$2,$3,$4,$5,$6,'bound',$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15,$16,'running')
+         RETURNING *`,
+        [
+          testName, storeCode, testType, targetMetric, targetKind, targetRuleKey,
+          cleanText(template.channel, 80), template.key, JSON.stringify(metricsSchema),
+          JSON.stringify(variantA), JSON.stringify(variantB),
+          JSON.stringify({ method: 'manual' }), startDate, endDate,
+          minSample, cleanText(auth.user?.username || 'system', 80)
+        ]
+      );
+      return res.json({ ok: true, task: created.rows[0] });
     }
-    const bound = await loadAbBoundRule(pool, targetKind, targetRuleKey);
-    if (!bound) return res.status(404).json({ ok: false, error: 'bound_rule_not_found', message: '未找到要绑定的规则，请确认 rule_key' });
-    // test_type 由绑定规则类型推导：payment_rule→coupon_value（券/模板）；touch_rule→sms_copy（文案/券）。
-    const testType = targetKind === 'payment_rule' ? 'coupon_value' : cleanText(b.test_type || 'sms_copy', 80);
-    // A 组 = 绑定规则的当前版本快照；B 组 = 用户输入的挑战者。
-    const variantA = bound.variant_a;
-    const variantB = (b.variant_b && typeof b.variant_b === 'object') ? Object.assign({ label: '挑战者(B)' }, b.variant_b) : { label: '挑战者(B)' };
+
+    // ── 渠道模式：外部渠道(点评/小红书/达人/团购套餐/自定义)；手动录入，胜者自动沉淀经验库。──
+    const channel = template.key === 'custom' ? (cleanText(b.channel, 80) || '自定义') : template.channel;
+    // test_type 存「测试变量」(比较的是什么，如 封面图/标题/套餐组合)，用于经验库 variable。
+    const variable = cleanText(b.variable, 80) || '内容版本';
+    const variantA = (b.variant_a && typeof b.variant_a === 'object')
+      ? Object.assign({ label: 'A版本' }, b.variant_a)
+      : { label: 'A版本', content: cleanText(b.variant_a_text || '', 2000) };
+    const variantB = (b.variant_b && typeof b.variant_b === 'object')
+      ? Object.assign({ label: 'B版本' }, b.variant_b)
+      : { label: 'B版本', content: cleanText(b.variant_b_text || '', 2000) };
+    if (!cleanText(variantA.content, 2000) || !cleanText(variantB.content, 2000)) {
+      return res.status(400).json({ ok: false, error: 'missing_variants', message: '请填写 A/B 两个版本的内容描述' });
+    }
     const created = await pool.query(
       `INSERT INTO ab_test_tasks (
-         test_name, store_code, test_type, target_metric, target_kind, target_rule_key,
+         test_name, store_code, test_type, target_metric,
+         mode, channel, template_key, metrics_schema,
          variant_a, variant_b, rotation_config, start_date, end_date,
          min_sample_size, created_by, status
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11,$12,$13,'running')
+       ) VALUES ($1,$2,$3,$4,'channel',$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,$13,$14,'running')
        RETURNING *`,
       [
-        testName,
-        storeCode,
-        testType,
-        targetMetric,
-        targetKind,
-        targetRuleKey,
-        JSON.stringify(variantA),
-        JSON.stringify(variantB),
-        JSON.stringify(b.rotation_config || { method: 'manual' }),
-        startDate,
-        endDate,
-        Math.max(1, Math.floor(Number(b.min_sample_size) || 30)),
-        cleanText(auth.user?.username || 'system', 80)
+        testName, storeCode, variable, targetMetric,
+        channel, template.key, JSON.stringify(metricsSchema),
+        JSON.stringify(variantA), JSON.stringify(variantB),
+        JSON.stringify({ method: 'manual' }), startDate, endDate,
+        minSample, cleanText(auth.user?.username || 'system', 80)
       ]
     );
-    const task = created.rows[0];
-    // 绑定模式不做任何自动投放/POS 归因：实际投放由所绑定规则的引擎负责，结果由人工录入。
-    return res.json({ ok: true, task });
+    return res.json({ ok: true, task: created.rows[0] });
   });
 
   // ── 手动录入 A/B 结果（绑定模式核心闭环）──
@@ -2298,31 +2572,34 @@ export function registerPhaseRoutes(app, pool) {
     const task = taskRes.rows[0];
     const b = req.body || {};
     const resultDate = safeDateOnly(b.result_date) || todayShanghaiYmd();
-    // 接受 {A:{sent,clicks,redemptions,revenue}, B:{...}} 或 {variant,sent,...}
+    // 接受 {A:{字段...}, B:{字段...}}；字段以测试的 metrics_schema 为准。
     const groups = [];
-    if (b.A || b.B) {
-      if (b.A) groups.push(Object.assign({ variant: 'A' }, b.A));
-      if (b.B) groups.push(Object.assign({ variant: 'B' }, b.B));
-    } else if (b.variant) {
-      groups.push(b);
-    }
+    if (b.A) groups.push(['A', b.A]);
+    if (b.B) groups.push(['B', b.B]);
     if (!groups.length) return res.status(400).json({ ok: false, error: 'missing_results', message: '请提供 A/B 两组结果数据' });
-    for (const g of groups) {
-      const variant = cleanText(g.variant, 8) === 'B' ? 'B' : 'A';
-      const sent = Math.max(0, Math.floor(Number(g.sent) || 0));
-      const redemptions = Math.max(0, Math.floor(Number(g.redemptions) || 0));
-      await upsertAbTaskResult(pool, {
-        test_id: id,
-        result_date: resultDate,
-        variant,
-        sent,
-        impressions: Math.max(0, Math.floor(Number(g.impressions) || 0)),
-        clicks: Math.max(0, Math.floor(Number(g.clicks) || 0)),
-        orders: Math.max(0, Math.floor(Number(g.orders) || g.redemptions || 0)),
-        redemptions,
-        revenue: Number(g.revenue || 0),
-        conversion_rate: sent > 0 ? redemptions / sent : 0
-      });
+
+    const schema = (task.metrics_schema && typeof task.metrics_schema === 'object') ? task.metrics_schema : null;
+    if (schema && Array.isArray(schema.fields) && schema.fields.length) {
+      // 模板化：按 schema 字段抽取数值存入 metrics_json。
+      for (const [variant, data] of groups) {
+        const metrics = {};
+        schema.fields.forEach((f) => { metrics[f.key] = Math.max(0, Number((data || {})[f.key]) || 0); });
+        await upsertAbTaskMetrics(pool, id, resultDate, variant, metrics);
+      }
+    } else {
+      // 兼容旧固定字段路径。
+      for (const [variant, g] of groups) {
+        const sent = Math.max(0, Math.floor(Number(g.sent) || 0));
+        const redemptions = Math.max(0, Math.floor(Number(g.redemptions) || 0));
+        await upsertAbTaskResult(pool, {
+          test_id: id, result_date: resultDate, variant, sent,
+          impressions: Math.max(0, Math.floor(Number(g.impressions) || 0)),
+          clicks: Math.max(0, Math.floor(Number(g.clicks) || 0)),
+          orders: Math.max(0, Math.floor(Number(g.orders) || g.redemptions || 0)),
+          redemptions, revenue: Number(g.revenue || 0),
+          conversion_rate: sent > 0 ? redemptions / sent : 0
+        });
+      }
     }
     const evaluated = await evaluateAbTask(pool, task);
     const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1`, [id]);
@@ -2337,10 +2614,10 @@ export function registerPhaseRoutes(app, pool) {
     const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 LIMIT 1`, [id]);
     if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
     const task = taskRes.rows[0];
-    // 绑定模式不做 POS 归因刷新（结果靠人工录入）；仅非绑定（price_test 等）才走 refreshAbTestResults。
-    const isBound = !!cleanText(task.target_rule_key, 200);
-    const refreshed = isBound ? null : await refreshAbTestResults(pool, task);
-    const evaluated = (isBound || safeDateOnly(task.end_date) <= todayShanghaiYmd()) ? await evaluateAbTask(pool, task) : null;
+    // 手动录入类(绑定模式 或 任何模板测试)不做 POS 归因刷新；仅旧的 price_test 走 refreshAbTestResults。
+    const manualInput = !!cleanText(task.target_rule_key, 200) || !!(task.metrics_schema && typeof task.metrics_schema === 'object');
+    const refreshed = manualInput ? null : await refreshAbTestResults(pool, task);
+    const evaluated = (manualInput || safeDateOnly(task.end_date) <= todayShanghaiYmd()) ? await evaluateAbTask(pool, task) : null;
     const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1`, [id]);
     return res.json({ ok: true, task: latest.rows[0], refreshed, evaluated });
   });
@@ -2418,7 +2695,15 @@ export function registerPhaseRoutes(app, pool) {
       return res.json({ ok: true, rule: upd.rows[0], rule_key: targetRuleKey, winner, kind: targetKind });
     }
 
-    return res.status(400).json({ ok: false, error: 'not_bound', message: '该测试未绑定可投放规则，无法采用。' });
+    // 渠道模式：无内部规则可回写 → 把胜者沉淀到经验库(growth_learnings)，供内容建议引擎与未来活动复用。
+    if (cleanText(task.mode, 20) === 'channel') {
+      const outcome = await computeAbTestOutcome(pool, task).catch(() => null);
+      await maybeWriteAbLearning(pool, task, outcome, winner, Number(task.winner_lift || 0));
+      await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, 'learning:' + task.id]).catch(() => {});
+      return res.json({ ok: true, winner, channel: task.channel, learned: true, message: `已将「${task.channel}」胜出版本沉淀到经验库，供内容建议复用。` });
+    }
+
+    return res.status(400).json({ ok: false, error: 'not_promotable', message: '该测试无可采用的回路（既未绑定规则也非渠道模式）。' });
   });
 
   app.get('/api/growth/learnings', async (req, res) => {
@@ -2877,9 +3162,9 @@ export function registerPhaseRoutes(app, pool) {
       try {
         const running = await pool.query(`SELECT * FROM ab_test_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 20`);
         for (const task of running.rows || []) {
-          // 绑定模式（手动录入）跳过 POS 归因刷新；仅非绑定（price_test 等）走自动归因。
-          const isBound = !!cleanText(task.target_rule_key, 200);
-          if (!isBound) await refreshAbTestResults(pool, task).catch(() => null);
+          // 手动录入类(绑定模式 或 任何模板测试)跳过 POS 归因刷新；仅旧的 price_test 走自动归因。
+          const manualInput = !!cleanText(task.target_rule_key, 200) || !!(task.metrics_schema && typeof task.metrics_schema === 'object');
+          if (!manualInput) await refreshAbTestResults(pool, task).catch(() => null);
           if (safeDateOnly(task.end_date) <= nowYmd) await evaluateAbTask(pool, task).catch(() => null);
         }
       } catch (e) {

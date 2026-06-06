@@ -18994,22 +18994,18 @@
                             </div>
                             <div class="rep-filters" style="margin-bottom:14px;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px;">
                                 <div class="rep-filters__eyebrow">NEW TEST</div>
-                                <div class="rep-filters__title" style="font-size:15px;">新建 A/B 测试（绑定已有规则）</div>
-                                <div style="font-size:12px;color:rgba(226,232,240,0.55);margin:4px 0 10px;">A/B 测试必须绑定一条<b>已有的可投放规则</b>（规则引擎/订阅 或 支付发券）。A组=该规则当前版本，B组=你的挑战版本；实际投放由所绑定规则负责，结果<b>手动录入</b>，胜者一键回写原规则。</div>
+                                <div class="rep-filters__title" style="font-size:15px;">新建 A/B 测试（按模板）</div>
+                                <div style="font-size:12px;color:rgba(226,232,240,0.55);margin:4px 0 10px;">先选<b>测试模板</b>。内部渠道（短信召回 / 支付发券）绑定一条已有可投放规则，A组=规则当前版本，胜者自动回写规则；外部渠道（团购套餐 / 大众点评 / 小红书 / 达人探店 / 自定义）手动录入投放数据，胜者自动<b>沉淀进经验库</b>供内容引擎复用。每个模板录入的指标不同，按提示填写即可。</div>
                                 <div class="rep-filters__grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;position:relative;">
                                     <div class="rep-field"><label>测试名称 *</label><input id="abtest-name" class="dr-store-select" placeholder="如 午市召回文案A/B" style="padding:10px;color:var(--rep-text);"></div>
                                     <div class="rep-field"><label>门店ID（留空取上方门店）</label><input id="abtest-store-code" class="dr-store-select" placeholder="如 51866138" style="padding:10px;color:var(--rep-text);"></div>
-                                    <div class="rep-field"><label>绑定规则类型 *</label><select id="abtest-target-kind" class="dr-store-select" onchange="loadAbBindableRules()"><option value="touch_rule">规则引擎/订阅</option><option value="payment_rule">支付发券</option></select></div>
-                                    <div class="rep-field"><label>绑定规则 *</label><select id="abtest-target-rule" class="dr-store-select" onchange="onAbBindRuleChange()"><option value="">— 请先选择 —</option></select></div>
-                                    <div class="rep-field"><label>目标指标</label><select id="abtest-metric" class="dr-store-select"><option value="redemption_rate">核销率</option><option value="click_rate">点击率</option><option value="revenue">营收</option></select></div>
+                                    <div class="rep-field"><label>测试模板 *</label><select id="abtest-template" class="dr-store-select" onchange="onAbTemplateChange()"><option value="">加载中…</option></select></div>
+                                    <div class="rep-field"><label>主判定指标</label><input id="abtest-metric-label" class="dr-store-select" readonly placeholder="选择模板后自动确定" style="padding:10px;color:rgba(226,232,240,0.7);background:rgba(255,255,255,0.03);"></div>
                                     <div class="rep-field"><label>最小样本量/组</label><input id="abtest-minsample" type="number" min="1" class="dr-store-select" placeholder="默认30" style="padding:10px;color:var(--rep-text);"></div>
                                     <div class="rep-field"><label>开始日期（可选）</label><input id="abtest-start" type="date" class="dr-store-select" style="padding:10px;color:var(--rep-text);"></div>
                                     <div class="rep-field"><label>结束日期（可选）</label><input id="abtest-end" type="date" class="dr-store-select" style="padding:10px;color:var(--rep-text);"></div>
                                 </div>
-                                <div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">A组 · 当前版本（只读）</div>
-                                <textarea id="abtest-variant-a" class="dr-store-select" readonly placeholder="选择绑定规则后自动带出当前版本" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:rgba(226,232,240,0.7);background:rgba(255,255,255,0.03);resize:vertical;"></textarea>
-                                <div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">B组 · 挑战版本 *（<span id="abtest-b-hint">短信文案，可用 {name}/{姓名} 占位</span>）</div>
-                                <textarea id="abtest-variant-b" class="dr-store-select" placeholder="输入挑战版本内容" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:var(--rep-text);resize:vertical;"></textarea>
+                                <div id="abtest-dynamic" style="margin-top:10px;"></div>
                                 <div class="rep-seg" style="margin-top:12px;">
                                     <button onclick="createGrowthAbTest()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">创建测试</button>
                                 </div>
@@ -54003,7 +53999,7 @@ ${body}
             else if (member === 'profiles') { loadGrowthProfiles(); }
             else if (member === 'constraints') { loadGrowthConstraints(); }
             else if (member === 'actions') { loadGrowthActionBoard(); }
-            else if (member === 'abtests') { loadGrowthAbTests(); loadAbBindableRules(); }
+            else if (member === 'abtests') { loadGrowthAbTests(); loadAbTemplates(); }
             else if (member === 'contentsys') { loadGrowthContentSuggestions(); loadGrowthContentPerformance(); loadGrowthLearnings(); }
             else if (member === 'posters') {
                 loadPosterTemplates(); loadPosterHistory(); loadCreativeAssets(); loadPublicChannels();
@@ -54936,12 +54932,37 @@ ${body}
             return (v * 100).toFixed(2) + '%';
         }
 
+        // 模板化 A/B：内存里保存已加载的任务（供录入表单按 metrics_schema 动态生成字段）。
+        var _abTasksById = {};
+        // 按指标公式 format 格式化展示值。pct→百分比；money→¥；x→倍数；其余→整数。
+        function abFmtMetric(v, fmt) {
+            v = Number(v || 0);
+            if (!Number.isFinite(v)) v = 0;
+            if (fmt === 'pct') return (v * 100).toFixed(2) + '%';
+            if (fmt === 'money') return '¥' + (Math.round(v * 100) / 100);
+            if (fmt === 'x') return v.toFixed(2) + 'x';
+            return String(Math.round(v));
+        }
+        function abVariantCell(label, m, schema) {
+            m = m || {};
+            if (schema && schema.primary) {
+                var pf = schema.primary.format;
+                var extras = (m.extras || []).map(function(e) { return escapeHtml(e.label) + ' ' + abFmtMetric(e.value, e.format); }).join(' · ');
+                return '<div class="rep-metric"><div class="k">' + label + '</div><div class="v">' + abFmtMetric(m.primary, pf) + '</div>'
+                    + '<div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">样本' + (m.sample || 0) + (extras ? (' · ' + extras) : '') + '</div></div>';
+            }
+            return '<div class="rep-metric"><div class="k">' + label + '</div><div class="v">' + growthFmtPct(m.redemption_rate || 0) + '</div>'
+                + '<div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">发送' + (m.sent || 0) + ' · 核销' + (m.redemptions || 0) + ' · ¥' + (m.revenue || 0) + '</div></div>';
+        }
+
         async function loadGrowthAbTests() {
             try {
                 var store = document.getElementById('growth-store-filter')?.value || '51866138';
                 var r = await fetch('/api/growth/ab-tests?store_code=' + encodeURIComponent(store), { headers: growthAuthHeaders() });
                 var data = await r.json();
                 var tasks = data?.tasks || [];
+                _abTasksById = {};
+                tasks.forEach(function(t) { _abTasksById[Number(t.id || 0)] = t; });
                 var summary = document.getElementById('growth-abtest-summary');
                 var host = document.getElementById('growth-abtests-list');
                 var completed = tasks.filter(function(t){ return t.status === 'completed'; }).length;
@@ -54953,34 +54974,46 @@ ${body}
                         + '</div>';
                 }
                 host.innerHTML = tasks.length ? tasks.map(function(t) {
+                    var id = Number(t.id || 0);
+                    var schema = (t.metrics_schema && typeof t.metrics_schema === 'object') ? t.metrics_schema : null;
                     var mA = t.metrics?.A || {};
                     var mB = t.metrics?.B || {};
                     var winner = t.winner || '-';
                     var lift = Number(t.winner_lift || 0).toFixed(2);
+                    var metricName = (schema && schema.primary && schema.primary.label) || t.target_metric || '-';
+                    var isBound = !!t.target_rule_key;
+                    var modeLine = isBound
+                        ? '绑定：' + escapeHtml(t.target_kind === 'payment_rule' ? '支付发券' : '规则引擎/订阅') + ' · ' + escapeHtml(t.target_rule_key)
+                        : (t.mode === 'channel' ? '渠道：' + escapeHtml(t.channel || '-') + ' · 变量：' + escapeHtml(t.test_type || '-') : '');
+                    var vA = (t.variant_a && typeof t.variant_a === 'object') ? (t.variant_a.content || '') : '';
+                    var vB = (t.variant_b && typeof t.variant_b === 'object') ? (t.variant_b.content || '') : '';
+                    var aLabel = isBound ? 'A组(当前)' : 'A版本';
+                    var bLabel = isBound ? 'B组(挑战)' : 'B版本';
                     return '<div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
                         + '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
                         + '<div style="min-width:0;flex:1;">'
                         + '<div style="font-size:14px;font-weight:800;color:#fff;">' + escapeHtml(t.test_name || '未命名测试') + '</div>'
-                        + '<div style="font-size:12px;color:var(--rep-muted);margin-top:4px;">' + escapeHtml(t.test_type || '-') + ' · ' + escapeHtml(t.target_metric || '-') + ' · ' + escapeHtml(t.start_date || '') + ' ~ ' + escapeHtml(t.end_date || '') + '</div>'
+                        + '<div style="font-size:12px;color:var(--rep-muted);margin-top:4px;">' + escapeHtml(metricName) + ' · ' + escapeHtml(t.start_date || '') + ' ~ ' + escapeHtml(t.end_date || '') + '</div>'
                         + '</div>'
                         + '<div style="font-size:11px;padding:3px 10px;border-radius:999px;background:' + (t.status === 'completed' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)') + ';color:' + (t.status === 'completed' ? '#22c55e' : '#f59e0b') + ';font-weight:700;">' + escapeHtml(t.status || 'running') + '</div>'
                         + '</div>'
-                        + (t.target_rule_key ? '<div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">绑定：' + escapeHtml(t.target_kind === 'payment_rule' ? '支付发券' : '规则引擎/订阅') + ' · ' + escapeHtml(t.target_rule_key) + '</div>' : '')
+                        + (modeLine ? '<div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">' + modeLine + '</div>' : '')
+                        + ((!isBound && (vA || vB)) ? '<div style="font-size:11px;color:rgba(226,232,240,0.6);margin-top:4px;line-height:1.5;">A：' + escapeHtml(vA.slice(0, 60)) + '　｜　B：' + escapeHtml(vB.slice(0, 60)) + '</div>' : '')
                         + '<div class="rep-grid" style="margin-top:12px;grid-template-columns:repeat(3,minmax(0,1fr));">'
-                        + '<div class="rep-metric"><div class="k">A组(当前)</div><div class="v">' + growthFmtPct(mA.redemption_rate || 0) + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">发送' + (mA.sent || 0) + ' · 核销' + (mA.redemptions || 0) + ' · ¥' + (mA.revenue || 0) + '</div></div>'
-                        + '<div class="rep-metric"><div class="k">B组(挑战)</div><div class="v">' + growthFmtPct(mB.redemption_rate || 0) + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">发送' + (mB.sent || 0) + ' · 核销' + (mB.redemptions || 0) + ' · ¥' + (mB.revenue || 0) + '</div></div>'
+                        + abVariantCell(aLabel, mA, schema)
+                        + abVariantCell(bLabel, mB, schema)
                         + '<div class="rep-metric"><div class="k">胜者</div><div class="v" style="color:var(--rep-gold);">' + escapeHtml(String(winner)) + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">提升 ' + lift + '%</div></div>'
                         + '</div>'
                         + '<div style="margin-top:10px;font-size:12px;color:rgba(226,232,240,0.78);line-height:1.6;">' + escapeHtml(t.ai_summary || '尚未生成总结') + '</div>'
                         + '<div style="margin-top:10px;display:flex;gap:8px;">'
-                        + '<button class="rep-seg-btn" style="flex:1;" onclick="toggleAbResultForm(' + Number(t.id || 0) + ')">✏️ 录入结果</button>'
+                        + '<button class="rep-seg-btn" style="flex:1;" onclick="toggleAbResultForm(' + id + ')">✏️ 录入结果</button>'
                         + ((winner === 'A' || winner === 'B')
                             ? (t.promoted_rule_key
-                                ? '<button class="rep-seg-btn" style="flex:1.4;opacity:0.6;cursor:default;" disabled>✅ ' + (winner === 'A' ? '已采用(维持当前)' : '已采用(挑战者)') + '</button>'
-                                : '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1.4;" onclick="promoteGrowthAbTest(' + Number(t.id || 0) + ',\'' + String(winner) + '\')">🚀 采用胜者</button>')
+                                ? '<button class="rep-seg-btn" style="flex:1.4;opacity:0.6;cursor:default;" disabled>✅ ' + (isBound ? (winner === 'A' ? '已采用(维持当前)' : '已采用(挑战者)') : '已沉淀经验库') + '</button>'
+                                : '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1.4;" onclick="promoteGrowthAbTest(' + id + ',\'' + String(winner) + '\')">' + (isBound ? '🚀 采用胜者' : '📚 沉淀经验库') + '</button>')
                             : '')
                         + '</div>'
-                        + abResultFormHtml(Number(t.id || 0))
+                        + abResultFormHtml(id)
                         + '</div>';
                 }).join('') : '<div class="rep-pay-empty">暂无A/B测试</div>';
                 loadGrowthLearnings();
@@ -54989,13 +55022,126 @@ ${body}
             }
         }
 
-        // 绑定模式：拉取可绑定的已有规则（规则引擎/订阅 touch_rule 或 支付发券 payment_rule）填入下拉框。
+        // ── 模板：加载模板注册表并填入下拉，按所选模板动态渲染创建表单 ──
+        var _abTemplates = [];
+        var _abCurrentTemplate = null;
         var _abBindableRules = {};
+        var _abCustomFieldKeys = [];
+        async function loadAbTemplates() {
+            var sel = document.getElementById('abtest-template');
+            if (!sel) return;
+            try {
+                var r = await fetch('/api/growth/ab-templates', { headers: growthAuthHeaders() });
+                var d = await r.json();
+                _abTemplates = d?.templates || [];
+                sel.innerHTML = '<option value="">— 请选择模板 —</option>' + _abTemplates.map(function(t) {
+                    var tag = t.scope === 'bound' ? '内部·绑定规则' : '外部·经验库';
+                    return '<option value="' + escapeHtml(t.key) + '">' + escapeHtml(t.label) + '（' + tag + '）</option>';
+                }).join('');
+            } catch (e) {
+                sel.innerHTML = '<option value="">加载模板失败</option>';
+            }
+        }
+
+        function onAbTemplateChange() {
+            var key = document.getElementById('abtest-template')?.value || '';
+            var tpl = _abTemplates.find(function(t) { return t.key === key; }) || null;
+            _abCurrentTemplate = tpl;
+            var dyn = document.getElementById('abtest-dynamic');
+            var metricLabel = document.getElementById('abtest-metric-label');
+            if (!dyn) return;
+            if (!tpl) { dyn.innerHTML = ''; if (metricLabel) metricLabel.value = ''; return; }
+            if (metricLabel) metricLabel.value = tpl.primary ? tpl.primary.label : (tpl.key === 'custom' ? '由自定义指标决定' : '-');
+            if (tpl.scope === 'bound') {
+                dyn.innerHTML = ''
+                    + '<div class="rep-field"><label>绑定规则 *（' + escapeHtml(tpl.bind_kind === 'payment_rule' ? '支付发券' : '规则引擎/订阅') + '）</label>'
+                    + '<select id="abtest-target-rule" class="dr-store-select" onchange="onAbBindRuleChange()"><option value="">加载中…</option></select></div>'
+                    + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">A组 · 当前版本（只读）</div>'
+                    + '<textarea id="abtest-variant-a" class="dr-store-select" readonly placeholder="选择绑定规则后自动带出当前版本" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:rgba(226,232,240,0.7);background:rgba(255,255,255,0.03);resize:vertical;"></textarea>'
+                    + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">B组 · 挑战版本 *（' + (tpl.bind_kind === 'payment_rule' ? '券模板ID / 触发门槛' : '短信文案，可用 {name}/{姓名} 占位') + '）</div>'
+                    + '<textarea id="abtest-variant-b" class="dr-store-select" placeholder="输入挑战版本内容" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:var(--rep-text);resize:vertical;"></textarea>';
+                loadAbBindableRules();
+                return;
+            }
+            // channel / custom
+            var fieldsNote = '';
+            if (tpl.key !== 'custom') {
+                fieldsNote = '<div style="font-size:11px;color:rgba(226,232,240,0.55);margin-top:8px;">本模板将录入：' + tpl.fields.map(function(f) { return escapeHtml(f.label); }).join(' / ') + '；主判定指标：<b>' + escapeHtml(tpl.primary.label) + '</b>。</div>';
+            }
+            var customEditor = '';
+            if (tpl.key === 'custom') {
+                _abCustomFieldKeys = [];
+                customEditor = ''
+                    + '<div class="rep-field" style="margin-top:8px;"><label>渠道名称 *（如 抖音团购 / 私域社群）</label><input id="abtest-channel" class="dr-store-select" placeholder="渠道名称" style="padding:10px;color:var(--rep-text);"></div>'
+                    + '<div style="font-size:12px;font-weight:700;color:#fff;margin:12px 0 4px;">自定义录入字段（至少1个）</div>'
+                    + '<div id="abtest-custom-fields"></div>'
+                    + '<button type="button" class="rep-seg-btn" style="margin-top:6px;" onclick="abAddCustomField()">+ 添加字段</button>'
+                    + '<div style="font-size:12px;font-weight:700;color:#fff;margin:12px 0 4px;">主判定指标 *（决定胜负）</div>'
+                    + '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">'
+                    + '<div class="rep-field"><label style="font-size:11px;">指标名称</label><input id="abtest-primary-label" class="dr-store-select" placeholder="如 转化率" style="padding:8px;color:var(--rep-text);"></div>'
+                    + '<div class="rep-field"><label style="font-size:11px;">展示格式</label><select id="abtest-primary-format" class="dr-store-select"><option value="pct">比率 %</option><option value="money">金额 ¥</option><option value="x">倍数 x</option><option value="int">计数</option></select></div>'
+                    + '<div class="rep-field"><label style="font-size:11px;">分子字段</label><select id="abtest-primary-num" class="dr-store-select"></select></div>'
+                    + '<div class="rep-field"><label style="font-size:11px;">分母字段（留空=求和）</label><select id="abtest-primary-den" class="dr-store-select"></select></div>'
+                    + '</div>';
+            }
+            dyn.innerHTML = ''
+                + '<div class="rep-field"><label>测试变量 *（比较的是什么，如 封面图 / 标题 / 套餐组合）</label><input id="abtest-variable" class="dr-store-select" placeholder="如 封面图风格" style="padding:10px;color:var(--rep-text);"></div>'
+                + customEditor
+                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">A版本内容 *</div>'
+                + '<textarea id="abtest-variant-a-text" class="dr-store-select" placeholder="描述 A 版本（如 探店实拍封面 + 套餐价标题）" style="margin-top:6px;width:100%;min-height:48px;padding:10px;color:var(--rep-text);resize:vertical;"></textarea>'
+                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">B版本内容 *</div>'
+                + '<textarea id="abtest-variant-b-text" class="dr-store-select" placeholder="描述 B 版本" style="margin-top:6px;width:100%;min-height:48px;padding:10px;color:var(--rep-text);resize:vertical;"></textarea>'
+                + fieldsNote;
+            if (tpl.key === 'custom') abAddCustomField();
+        }
+
+        // 自定义模板：动态字段编辑器。每行 key 由前端分配为 f1/f2…（保证与主指标分子/分母引用一致）。
+        function abAddCustomField() {
+            var host = document.getElementById('abtest-custom-fields');
+            if (!host) return;
+            if (_abCustomFieldKeys.length >= 12) { showNotification('最多 12 个字段', 'error'); return; }
+            var idx = (_abCustomFieldKeys.length ? Math.max.apply(null, _abCustomFieldKeys.map(function(k){ return parseInt(k.slice(1), 10) || 0; })) : 0) + 1;
+            var key = 'f' + idx;
+            _abCustomFieldKeys.push(key);
+            var row = document.createElement('div');
+            row.id = 'abcf-row-' + key;
+            row.style.cssText = 'display:grid;grid-template-columns:1fr 110px 36px;gap:6px;margin-bottom:6px;';
+            row.innerHTML = '<input id="abcf-' + key + '-label" class="dr-store-select" placeholder="字段名（如 浏览量）" style="padding:8px;color:var(--rep-text);font-size:12px;" oninput="abRefreshCustomMetric()">'
+                + '<select id="abcf-' + key + '-type" class="dr-store-select" style="font-size:12px;"><option value="int">计数</option><option value="money">金额</option></select>'
+                + '<button type="button" class="rep-seg-btn" style="padding:0;" onclick="abRemoveCustomField(\'' + key + '\')">×</button>';
+            host.appendChild(row);
+            abRefreshCustomMetric();
+        }
+        function abRemoveCustomField(key) {
+            _abCustomFieldKeys = _abCustomFieldKeys.filter(function(k) { return k !== key; });
+            var row = document.getElementById('abcf-row-' + key);
+            if (row) row.remove();
+            abRefreshCustomMetric();
+        }
+        function abReadCustomFields() {
+            return _abCustomFieldKeys.map(function(key) {
+                var label = (document.getElementById('abcf-' + key + '-label')?.value || '').trim();
+                var type = document.getElementById('abcf-' + key + '-type')?.value || 'int';
+                return { key: key, label: label, type: type };
+            }).filter(function(f) { return f.label; });
+        }
+        function abRefreshCustomMetric() {
+            var fields = abReadCustomFields();
+            var numSel = document.getElementById('abtest-primary-num');
+            var denSel = document.getElementById('abtest-primary-den');
+            if (!numSel || !denSel) return;
+            var prevNum = numSel.value, prevDen = denSel.value;
+            var numOpts = fields.map(function(f) { return '<option value="' + f.key + '">' + escapeHtml(f.label) + '</option>'; }).join('');
+            numSel.innerHTML = numOpts || '<option value="">（先添加字段）</option>';
+            denSel.innerHTML = '<option value="">（求和，无分母）</option>' + numOpts;
+            if (prevNum) numSel.value = prevNum;
+            if (prevDen) denSel.value = prevDen;
+        }
+
+        // 绑定模式：拉取可绑定的已有规则（规则引擎/订阅 touch_rule 或 支付发券 payment_rule）填入下拉框。
         async function loadAbBindableRules() {
-            var kind = document.getElementById('abtest-target-kind')?.value || 'touch_rule';
+            var kind = (_abCurrentTemplate && _abCurrentTemplate.bind_kind) || 'touch_rule';
             var sel = document.getElementById('abtest-target-rule');
-            var hint = document.getElementById('abtest-b-hint');
-            if (hint) hint.textContent = kind === 'payment_rule' ? '支付发券：填写挑战的券模板ID / 触发门槛' : '短信文案，可用 {name}/{姓名} 占位';
             if (!sel) return;
             sel.innerHTML = '<option value="">加载中…</option>';
             _abBindableRules = {};
@@ -55021,7 +55167,7 @@ ${body}
 
         // 选中绑定规则后，把该规则当前版本带入 A组只读框。
         function onAbBindRuleChange() {
-            var kind = document.getElementById('abtest-target-kind')?.value || 'touch_rule';
+            var kind = (_abCurrentTemplate && _abCurrentTemplate.bind_kind) || 'touch_rule';
             var key = document.getElementById('abtest-target-rule')?.value || '';
             var aBox = document.getElementById('abtest-variant-a');
             var row = _abBindableRules[key];
@@ -55037,34 +55183,57 @@ ${body}
 
         async function createGrowthAbTest() {
             try {
+                var tpl = _abCurrentTemplate;
+                if (!tpl) { showNotification('请先选择测试模板', 'error'); return; }
                 var name = (document.getElementById('abtest-name')?.value || '').trim();
                 var store = (document.getElementById('abtest-store-code')?.value || '').trim()
                     || (document.getElementById('growth-store-filter')?.value || '').trim()
                     || '51866138';
-                var kind = (document.getElementById('abtest-target-kind')?.value || 'touch_rule').trim();
-                var ruleKey = (document.getElementById('abtest-target-rule')?.value || '').trim();
-                var vB = (document.getElementById('abtest-variant-b')?.value || '').trim();
-                var metric = (document.getElementById('abtest-metric')?.value || 'redemption_rate').trim();
                 var minSample = parseInt(document.getElementById('abtest-minsample')?.value || '', 10);
                 var start = (document.getElementById('abtest-start')?.value || '').trim();
                 var end = (document.getElementById('abtest-end')?.value || '').trim();
                 if (!name) { showNotification('请填写测试名称', 'error'); return; }
-                if (!ruleKey) { showNotification('请选择要绑定的已有规则', 'error'); return; }
-                if (!vB) { showNotification('请填写 B组（挑战版本）内容', 'error'); return; }
-                var variantB = kind === 'payment_rule'
-                    ? { label: '挑战者(B)', template_id: vB, content: vB }
-                    : { label: '挑战者(B)', content: vB };
-                var body = {
-                    test_name: name,
-                    store_code: store,
-                    target_kind: kind,
-                    target_rule_key: ruleKey,
-                    target_metric: metric,
-                    variant_b: variantB
-                };
+                var body = { test_name: name, store_code: store, template_key: tpl.key };
                 if (Number.isFinite(minSample) && minSample > 0) body.min_sample_size = minSample;
                 if (start) body.start_date = start;
                 if (end) body.end_date = end;
+
+                if (tpl.scope === 'bound') {
+                    var ruleKey = (document.getElementById('abtest-target-rule')?.value || '').trim();
+                    var vB = (document.getElementById('abtest-variant-b')?.value || '').trim();
+                    if (!ruleKey) { showNotification('请选择要绑定的已有规则', 'error'); return; }
+                    if (!vB) { showNotification('请填写 B组（挑战版本）内容', 'error'); return; }
+                    body.target_rule_key = ruleKey;
+                    body.variant_b = tpl.bind_kind === 'payment_rule'
+                        ? { label: '挑战者(B)', template_id: vB, content: vB }
+                        : { label: '挑战者(B)', content: vB };
+                } else {
+                    var variable = (document.getElementById('abtest-variable')?.value || '').trim();
+                    var vAt = (document.getElementById('abtest-variant-a-text')?.value || '').trim();
+                    var vBt = (document.getElementById('abtest-variant-b-text')?.value || '').trim();
+                    if (!variable) { showNotification('请填写测试变量', 'error'); return; }
+                    if (!vAt || !vBt) { showNotification('请填写 A / B 两个版本的内容', 'error'); return; }
+                    body.variable = variable;
+                    body.variant_a = { content: vAt };
+                    body.variant_b = { content: vBt };
+                    if (tpl.key === 'custom') {
+                        var ch = (document.getElementById('abtest-channel')?.value || '').trim();
+                        if (!ch) { showNotification('请填写渠道名称', 'error'); return; }
+                        var fields = abReadCustomFields();
+                        if (!fields.length) { showNotification('请至少添加 1 个录入字段', 'error'); return; }
+                        var pNum = document.getElementById('abtest-primary-num')?.value || '';
+                        if (!pNum) { showNotification('请选择主指标的分子字段', 'error'); return; }
+                        body.channel = ch;
+                        body.fields = fields;
+                        body.primary = {
+                            key: 'primary',
+                            label: (document.getElementById('abtest-primary-label')?.value || '主指标').trim() || '主指标',
+                            num: [pNum],
+                            den: (document.getElementById('abtest-primary-den')?.value || '') || null,
+                            format: document.getElementById('abtest-primary-format')?.value || 'pct'
+                        };
+                    }
+                }
                 var r = await fetch('/api/growth/ab-tests', {
                     method: 'POST',
                     headers: Object.assign({}, growthAuthHeaders(), { 'Content-Type': 'application/json' }),
@@ -55072,48 +55241,64 @@ ${body}
                 });
                 var d = await r.json();
                 if (!d.ok) throw new Error(d.message || d.error || 'create_failed');
-                showNotification('A/B测试已创建（已绑定规则）', 'success');
-                ['abtest-name', 'abtest-store-code', 'abtest-variant-a', 'abtest-variant-b', 'abtest-start', 'abtest-end', 'abtest-minsample'].forEach(function(id) {
+                showNotification(tpl.scope === 'bound' ? 'A/B测试已创建（已绑定规则）' : 'A/B测试已创建（外部渠道，结果手动录入）', 'success');
+                ['abtest-name', 'abtest-store-code', 'abtest-start', 'abtest-end', 'abtest-minsample'].forEach(function(id) {
                     var el = document.getElementById(id);
                     if (el) el.value = '';
                 });
-                var sel = document.getElementById('abtest-target-rule');
-                if (sel) sel.value = '';
+                document.getElementById('abtest-template').value = '';
+                onAbTemplateChange();
                 loadGrowthAbTests();
             } catch (e) {
                 showNotification('创建失败：' + (e?.message || e), 'error');
             }
         }
 
-        // 每张测试卡片下的「录入结果」内联表单（默认折叠）。
+        // 每张测试卡片下的「录入结果」内联表单（默认折叠）。字段按该测试的 metrics_schema 动态生成。
         function abResultFormHtml(id) {
-            function cell(grp, k, ph) {
-                return '<input id="abres-' + id + '-' + grp + '-' + k + '" type="number" min="0" step="0.01" placeholder="' + ph + '" class="dr-store-select" style="padding:8px;color:var(--rep-text);font-size:12px;">';
+            var t = _abTasksById[id] || {};
+            var schema = (t.metrics_schema && typeof t.metrics_schema === 'object') ? t.metrics_schema : null;
+            var fields = (schema && Array.isArray(schema.fields) && schema.fields.length)
+                ? schema.fields
+                : [{ key: 'sent', label: '发送' }, { key: 'clicks', label: '点击' }, { key: 'redemptions', label: '核销' }, { key: 'revenue', label: '营收¥' }];
+            function cells(grp) {
+                return fields.map(function(f) {
+                    return '<input id="abres-' + id + '-' + grp + '-' + f.key + '" type="number" min="0" step="0.01" placeholder="' + escapeHtml(f.label) + '" class="dr-store-select" style="padding:8px;color:var(--rep-text);font-size:12px;">';
+                }).join('');
             }
+            var cols = Math.min(4, Math.max(2, fields.length));
+            var gridStyle = 'display:grid;grid-template-columns:repeat(' + cols + ',minmax(0,1fr));gap:6px;';
             return '<div id="ab-result-form-' + id + '" style="display:none;margin-top:10px;padding:12px;border:1px solid rgba(255,255,255,0.08);border-radius:10px;background:rgba(255,255,255,0.02);">'
-                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-bottom:8px;">录入真实投放结果（大众点评/小红书/线下核销等），按发送/点击/核销/营收分组填写，可多次录入累加。</div>'
+                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-bottom:8px;">录入真实投放结果，按该模板的指标分组填写，可多次录入累加。</div>'
                 + '<div class="rep-field" style="margin-bottom:8px;"><label style="font-size:11px;">数据日期（留空=今天）</label><input id="abres-' + id + '-date" type="date" class="dr-store-select" style="padding:8px;color:var(--rep-text);"></div>'
-                + '<div style="font-size:12px;font-weight:700;color:#fff;margin:6px 0 4px;">A组（当前版本）</div>'
-                + '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;">' + cell('a','sent','发送') + cell('a','clicks','点击') + cell('a','redm','核销') + cell('a','rev','营收¥') + '</div>'
-                + '<div style="font-size:12px;font-weight:700;color:#fff;margin:8px 0 4px;">B组（挑战版本）</div>'
-                + '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;">' + cell('b','sent','发送') + cell('b','clicks','点击') + cell('b','redm','核销') + cell('b','rev','营收¥') + '</div>'
+                + '<div style="font-size:12px;font-weight:700;color:#fff;margin:6px 0 4px;">A组</div>'
+                + '<div style="' + gridStyle + '">' + cells('a') + '</div>'
+                + '<div style="font-size:12px;font-weight:700;color:#fff;margin:8px 0 4px;">B组</div>'
+                + '<div style="' + gridStyle + '">' + cells('b') + '</div>'
                 + '<div class="rep-seg" style="margin-top:10px;"><button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" onclick="submitAbResult(' + id + ')">提交结果并判定</button></div>'
                 + '</div>';
         }
 
-        // 手动录入 A/B 结果（绑定模式闭环）：把 A/B 两组的真实投放数据录入并触发胜负判定。
         function toggleAbResultForm(id) {
             var box = document.getElementById('ab-result-form-' + id);
             if (box) box.style.display = (box.style.display === 'none' || !box.style.display) ? 'block' : 'none';
         }
 
+        // 手动录入 A/B 结果：按该测试 metrics_schema 的字段收集 A/B 两组数据并触发判定。
         async function submitAbResult(id) {
             try {
                 function num(elId){ var v = parseFloat(document.getElementById(elId)?.value || ''); return Number.isFinite(v) ? v : 0; }
-                var body = {
-                    A: { sent: num('abres-' + id + '-a-sent'), clicks: num('abres-' + id + '-a-clicks'), redemptions: num('abres-' + id + '-a-redm'), revenue: num('abres-' + id + '-a-rev') },
-                    B: { sent: num('abres-' + id + '-b-sent'), clicks: num('abres-' + id + '-b-clicks'), redemptions: num('abres-' + id + '-b-redm'), revenue: num('abres-' + id + '-b-rev') }
-                };
+                var t = _abTasksById[id] || {};
+                var schema = (t.metrics_schema && typeof t.metrics_schema === 'object') ? t.metrics_schema : null;
+                var fields = (schema && Array.isArray(schema.fields) && schema.fields.length)
+                    ? schema.fields
+                    : [{ key: 'sent' }, { key: 'clicks' }, { key: 'redemptions' }, { key: 'revenue' }];
+                var A = {}, B = {};
+                fields.forEach(function(f) {
+                    A[f.key] = num('abres-' + id + '-a-' + f.key);
+                    B[f.key] = num('abres-' + id + '-b-' + f.key);
+                });
+                var body = { A: A, B: B };
                 var rd = (document.getElementById('abres-' + id + '-date')?.value || '').trim();
                 if (rd) body.result_date = rd;
                 var r = await fetch('/api/growth/ab-tests/' + encodeURIComponent(String(id)) + '/results', {
