@@ -2317,6 +2317,17 @@ function shiftDate(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
+// 门店编号（企微/POS code）→ 门店名称。映射源见 growth-phases.js 摄取逻辑（洪潮/马己仙归一化）。
+// 增长日报需展示门店名称而非编号。
+const GROWTH_STORE_CODE_TO_NAME = {
+  '51866138': '马己仙上海音乐广场店',
+  '64822111': '洪潮大宁久光店'
+};
+function growthStoreName(storeCode) {
+  const k = String(storeCode || '').trim();
+  return GROWTH_STORE_CODE_TO_NAME[k] || k;
+}
+
 // Build report for ONE store using sales_growth_snapshot + pos_orders
 async function buildStoreReport(pool, storeCode, yd) {
   const dbd = shiftDate(yd, -1);
@@ -2391,7 +2402,7 @@ async function buildStoreReport(pool, storeCode, yd) {
   const totalRev = rev || 1;
 
   const lines = [
-    `【增长日报 · ${storeCode}店 · ${yd}】`,
+    `【增长日报 · ${growthStoreName(storeCode)} · ${yd}】`,
     '',
     '━━ 昨日销售 ━━',
     `总营收：${fmtMoney(rev)}  订单数：${orderCnt}单`,
