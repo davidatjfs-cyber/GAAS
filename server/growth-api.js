@@ -715,7 +715,7 @@ export async function ensureGrowthTables(pool) {
       name: '新客72小时黄金窗口问候',
       priority: 15,
       auto_execute: true,
-      criteria: { min_visit_count: 1, max_visit_count: 1, min_days_since_last_visit: 4, max_days_since_last_visit: 7 },
+      criteria: { min_visit_count: 1, max_visit_count: 1, min_days_since_last_visit: 4, max_days_since_last_visit: 7, value_tier_not: 'vip', lifecycle_stage_not: 'active' },
       action_type: 'send_message',
       action_payload: {
         channel: 'wecom',
@@ -799,7 +799,7 @@ export async function ensureGrowthTables(pool) {
       name: '7天未到店关怀',
       priority: 35,
       auto_execute: true,
-      criteria: { min_visit_count: 1, max_visit_count: 1, min_days_since_last_visit: 8, max_days_since_last_visit: 20 },
+      criteria: { min_visit_count: 1, max_visit_count: 1, min_days_since_last_visit: 8, max_days_since_last_visit: 20, value_tier_not: 'vip', lifecycle_stage_not: 'active' },
       action_type: 'send_message',
       action_payload: {
         channel: 'wecom',
@@ -843,7 +843,7 @@ export async function ensureGrowthTables(pool) {
       name: '流失客(3-6月)召回券',
       priority: 42,
       auto_execute: true,
-      criteria: { lifecycle_stage: 'lost_90' },
+      criteria: { lifecycle_stage: 'lost_90', value_tier_not: 'vip' },
       action_type: 'send_voucher',
       action_payload: {
         channel: 'sms',
@@ -859,7 +859,7 @@ export async function ensureGrowthTables(pool) {
       name: '流失客(6-12月)召回券',
       priority: 43,
       auto_execute: true,
-      criteria: { lifecycle_stage: 'lost_180' },
+      criteria: { lifecycle_stage: 'lost_180', value_tier_not: 'vip' },
       action_type: 'send_voucher',
       action_payload: {
         channel: 'sms',
@@ -875,7 +875,7 @@ export async function ensureGrowthTables(pool) {
       name: '流失客(1年+)唤醒大券',
       priority: 44,
       auto_execute: true,
-      criteria: { lifecycle_stage: 'lost_365' },
+      criteria: { lifecycle_stage: 'lost_365', value_tier_not: 'vip' },
       action_type: 'send_voucher',
       action_payload: {
         channel: 'sms',
@@ -919,6 +919,18 @@ export async function ensureGrowthTables(pool) {
       criteria: { min_visit_count: 2, min_days_since_last_visit: 21, max_days_since_last_visit: 60, value_tier_not: 'vip', lifecycle_stage_not: 'active' },
       action_type: 'send_message',
       action_payload: { channel: 'sms', campaign_key: 'regular_cooling', valid_days: 14 }
+    },
+    {
+      // VIP专属召回·61-365天：VIP客在61-365天未到店，单独走专属现金券召回(SMS_507220292/SMS_507240296)。
+      // 与 dormant_vip_winback(VIP·0-60天)衔接，与沉睡/长期阶梯互斥(后者已加 value_tier_not:'vip')。
+      // 现金券(value/date/code)，券面额/有效期在「自动营销」面板按效果调整(coupon_value_fen=0时不发)。
+      rule_key: 'vip_winback_61_365',
+      name: 'VIP专属召回·61-365天',
+      priority: 26,
+      auto_execute: true,
+      criteria: { value_tier: 'vip', min_days_since_last_visit: 61, max_days_since_last_visit: 365 },
+      action_type: 'send_message',
+      action_payload: { channel: 'sms', campaign_key: 'vip_winback', valid_days: 14, coupon_value_fen: 0 }
     }
   ];
   for (const rule of defaultTouchRules) {
@@ -1493,6 +1505,8 @@ const CAMPAIGN_TYPES = {
   // 常客降温唤醒(21-60天,到店≥2次,赠品券,复用活跃模板): env ALIYUN_SMS_COOLING_* (SMS_507100271/SMS_507400282)
   regular_cooling:{ label: '常客降温唤醒·21-60天',  source: 'profiles', tplPrefix: 'COOLING',   coupon_count: 1, vars: ['date', 'code'] },
   active:         { label: '活跃客经营',           source: 'profiles', tplPrefix: 'ACTIVE',    coupon_count: 1, vars: ['date', 'code'] },
+  // VIP专属召回(61-365天,VIP,现金券): env ALIYUN_SMS_VIPWB_* (SMS_507220292/SMS_507240296)
+  vip_winback:    { label: 'VIP专属召回·61-365天', source: 'profiles', tplPrefix: 'VIPWB',     coupon_count: 1, vars: ['value', 'date', 'code'] },
   // 沉睡召回60-90：沿用现有 winback 已报备模板(SMS_507220292/SMS_507240296)，env 见 ALIYUN_SMS_DORM6090_*
   dormant_60_90:  { label: '沉睡召回·60-90天',     source: 'profiles', tplPrefix: 'DORM6090',  coupon_count: 1, vars: ['value', 'date', 'code'] },
   // 沉睡召回90-180：短信后补，未配 env → pickCampaignTemplate 返回 '' → 不可发(launch/send 报 sms_template_not_configured)
