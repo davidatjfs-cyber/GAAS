@@ -715,7 +715,7 @@ export async function ensureGrowthTables(pool) {
       name: '新客72小时黄金窗口问候',
       priority: 15,
       auto_execute: true,
-      criteria: { lifecycle_stage: 'new', max_days_since_last_visit: 3 },
+      criteria: { min_visit_count: 1, max_visit_count: 1, min_days_since_last_visit: 4, max_days_since_last_visit: 7 },
       action_type: 'send_message',
       action_payload: {
         channel: 'wecom',
@@ -799,7 +799,7 @@ export async function ensureGrowthTables(pool) {
       name: '7天未到店关怀',
       priority: 35,
       auto_execute: true,
-      criteria: { min_days_since_last_visit: 7, max_days_since_last_visit: 20, min_visit_count: 2 },
+      criteria: { min_visit_count: 1, max_visit_count: 1, min_days_since_last_visit: 8, max_days_since_last_visit: 20 },
       action_type: 'send_message',
       action_payload: {
         channel: 'wecom',
@@ -2179,12 +2179,14 @@ async function loadRuleCandidates(pool, rule) {
     if (Number.isFinite(Number(criteria.max_days_since_last_visit)) && days > Number(criteria.max_days_since_last_visit)) return false;
     if (Number.isFinite(Number(criteria.min_days_since_last_visit)) && days < Number(criteria.min_days_since_last_visit)) return false;
     if (Number.isFinite(Number(criteria.min_visit_count)) && visits < Number(criteria.min_visit_count)) return false;
+    if (Number.isFinite(Number(criteria.max_visit_count)) && visits > Number(criteria.max_visit_count)) return false;
     // 必须至少有一个「人群」维度筛选（生命周期/价值/天数/到店次数），
     // 否则视为无条件全量，拒绝命中以防误群发（store_id 不算人群筛选）。
     const hasAudienceFilter = !!(criteria.lifecycle_stage || criteria.value_tier || criteria.value_tier_not
       || Number.isFinite(Number(criteria.max_days_since_last_visit))
       || Number.isFinite(Number(criteria.min_days_since_last_visit))
-      || Number.isFinite(Number(criteria.min_visit_count)));
+      || Number.isFinite(Number(criteria.min_visit_count))
+      || Number.isFinite(Number(criteria.max_visit_count)));
     return hasAudienceFilter;
   });
 }
