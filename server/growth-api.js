@@ -2165,7 +2165,8 @@ async function loadRuleCandidates(pool, rule) {
   return r.rows.filter((row) => {
     const days = Math.max(0, Math.floor(Number(row.days_since_last_visit) || 0));
     const visits = Math.max(0, Math.floor(Number(row.pos_order_count) || 0));
-    if (rule.rule_key === 'seven_days_no_visit') return visits >= 2 && days >= 7 && days <= 20;
+    // 新客回头·8天(seven_days_no_visit)已并入活动制，按其 criteria(lifecycle_stage=new + 天数窗口)筛选，
+    // 不再用旧版「任意≥2次访问」硬编码命中(否则会把大量老客误当新客发新客券)。
     if (rule.rule_key === 'new_dish_launch_notify') return visits >= 4 && days >= 5 && days <= 20;
     // 新分类规则：按生命周期阶段 + 价值分级筛选候选人，对齐营销矩阵
     const stage = row.lifecycle_stage || '';
@@ -3817,6 +3818,22 @@ export function registerGrowthRoutes(app, pool) {
       const audience = {};
       for (const rule of (rulesResult.rows || [])) {
         try {
+          // 储值余额提醒(channel=balance)的人群在 growth_stored_value_members，不在 customer_profiles，
+          // 口径=有手机号 + 余额≥min + 久未消费(dormant_days)，与短信直发目标一致。
+          if (String((rule.action_payload || {}).channel || '') === 'balance') {
+            const crit = (rule.criteria && typeof rule.criteria === 'object') ? rule.criteria : {};
+            const dormantDays = Math.max(0, Math.floor(Number(crit.dormant_days) || 30));
+            const minBalanceFen = Math.max(0, Math.floor((Number(crit.min_balance_yuan) || 1) * 100));
+            const br = await pool.query(
+              `SELECT count(*)::int AS n FROM growth_stored_value_members m
+                 WHERE m.phone IS NOT NULL AND m.phone <> '' AND m.balance_fen >= $1
+                   AND (m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))`,
+              [minBalanceFen]
+            );
+            const n = Number(br.rows?.[0]?.n) || 0;
+            audience[rule.rule_key] = { total: n, sms: n, subscribe: 0, member: 0, wecom: 0 };
+            continue;
+          }
           const candidates = await loadRuleCandidates(pool, rule);
           // 分渠道覆盖：短信=有手机号；订阅消息/小程序站内券=有 openid（上限，订阅另受授权限制）；企微=有外部联系人。
           let sms = 0, subscribe = 0, member = 0, wecom = 0;
