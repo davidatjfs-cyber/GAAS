@@ -12430,6 +12430,64 @@
             box-shadow: 0 16px 40px -28px rgba(0, 0, 0, 0.55);
         }
         #growth-page .rep-pay-card:last-child { margin-bottom: 0; }
+        /* ===== 自动营销规则卡（移动优先：竖排、整宽控件、大触控区） ===== */
+        #growth-page .amr { padding: 16px; }
+        #growth-page .amr-head { display:flex; flex-direction:column; gap:8px; margin-bottom:14px; }
+        #growth-page .amr-title { color:#fff; font-weight:800; font-size:17px; line-height:1.3; }
+        #growth-page .amr-meta { color:rgba(226,232,240,0.5); font-size:12px; }
+        #growth-page .amr-badges { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+        #growth-page .amr-sec { margin-bottom:14px; }
+        #growth-page .amr-sec:last-child { margin-bottom:0; }
+        #growth-page .amr-sec-title { display:flex; align-items:center; gap:6px; color:rgba(226,232,240,0.55); font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; margin-bottom:8px; }
+        #growth-page .amr-info { color:rgba(226,232,240,0.78); font-size:13px; line-height:1.55; margin-bottom:4px; }
+        #growth-page .amr-info--sub { color:rgba(226,232,240,0.5); font-size:12px; padding-left:2px; }
+        #growth-page .amr-info strong { color:#a5b4fc; }
+        #growth-page .amr-field { margin-bottom:10px; }
+        #growth-page .amr-field:last-child { margin-bottom:0; }
+        #growth-page .amr-label { display:block; color:rgba(226,232,240,0.7); font-size:12px; font-weight:600; margin-bottom:6px; }
+        #growth-page .amr-ctrl,
+        #growth-page select.amr-ctrl,
+        #growth-page input.amr-ctrl,
+        #growth-page textarea.amr-ctrl {
+            width:100%; box-sizing:border-box; min-height:44px;
+            border:1px solid rgba(255,255,255,0.14); border-radius:10px;
+            padding:11px 12px; font-size:14px;
+            background:rgba(0,0,0,0.32); color:var(--rep-text);
+            -webkit-appearance:none; appearance:none;
+        }
+        #growth-page textarea.amr-ctrl { min-height:84px; line-height:1.55; resize:vertical; }
+        #growth-page .amr-row2 { display:flex; gap:10px; }
+        #growth-page .amr-row2 > div { flex:1; }
+        #growth-page .amr-suffix { display:flex; align-items:center; gap:8px; }
+        #growth-page .amr-suffix .amr-ctrl { flex:1; }
+        #growth-page .amr-suffix-txt { color:rgba(226,232,240,0.6); font-size:13px; white-space:nowrap; }
+        #growth-page .amr-hint { color:rgba(226,232,240,0.45); font-size:11px; line-height:1.5; margin-top:6px; }
+        #growth-page .amr-btn {
+            width:100%; min-height:44px; border:none; border-radius:10px;
+            font-size:14px; font-weight:600; cursor:pointer; margin-top:10px;
+            color:#0a0c10; background:linear-gradient(135deg,#e8d48b,#c9a227);
+        }
+        #growth-page .amr-btn--ghost {
+            color:var(--rep-text); background:rgba(255,255,255,0.06);
+            border:1px solid rgba(255,255,255,0.14);
+        }
+        #growth-page .amr-btn:active { transform:scale(0.99); }
+        #growth-page .amr-coupon-box { padding:14px; background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.18); border-radius:14px; }
+        #growth-page .amr-stats { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; padding:14px; background:rgba(0,0,0,0.25); border-radius:14px; }
+        #growth-page .amr-stat { display:flex; flex-direction:column; gap:2px; }
+        #growth-page .amr-stat-k { font-size:11px; color:rgba(226,232,240,0.5); }
+        #growth-page .amr-stat-v { font-size:16px; font-weight:700; color:#fff; }
+        #growth-page .amr-suggest { font-size:12px; color:rgba(226,232,240,0.75); background:rgba(99,102,241,0.08); border-left:3px solid rgba(99,102,241,0.5); padding:9px 12px; border-radius:8px; line-height:1.5; }
+        #growth-page .amr-foot { display:flex; flex-direction:column; gap:8px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); }
+        #growth-page .amr-foot-by { font-size:11px; color:rgba(226,232,240,0.5); }
+        #growth-page .amr-foot-btns { display:flex; flex-direction:column; gap:8px; }
+        #growth-page .amr-foot-btns .amr-btn { margin-top:0; }
+        @media (min-width:560px) {
+            #growth-page .amr-stats { grid-template-columns:repeat(4,1fr); }
+            #growth-page .amr-foot { flex-direction:row; justify-content:space-between; align-items:center; }
+            #growth-page .amr-foot-btns { flex-direction:row; }
+            #growth-page .amr-foot-btns .amr-btn { width:auto; padding:0 16px; }
+        }
         #growth-page .rep-seg {
             display: inline-flex;
             gap: 4px;
@@ -56097,11 +56155,26 @@ ${body}
             return bits.join(' · ');
         }
 
-        // 可选短信模板（仅阿里云已报备的可真正下发；其余文案见「待报备文案库」）
+        // 阿里云已报备短信模板「权威库」：code→真实报备正文+变量+门店。
+        // 文案以此为唯一真相：选定模板后文案只读展示真实内容，content_template 同步落库，
+        // 保证「自动营销文案 = 客人实际收到的短信」一致，便于统一管理。
+        // store: 51866138=马己仙音乐广场店, 64822111=洪潮大宁久光店。
         var AM_SMS_TEMPLATES = [
-            { code: '', label: '自动（按门店默认模板）' },
-            { code: 'SMS_507400089', label: '马己仙·优惠券召回（name/days/value）' },
-            { code: 'SMS_507130081', label: '洪潮·优惠券召回（name/days/value）' }
+            { code: '', label: '自动（按门店默认模板）', vars: [], content: '' },
+            { code: 'SMS_507105250', store: '51866138', vars: ['value','date','code'], label: '长期流失召回180-365天 · 马己仙（value/date/code）', content: '马己仙音乐广场店菜单全面升级，特别赠送${value}元回归礼券2张，${date}前有效，券码${code}，单次使用1张，拒收请回复R' },
+            { code: 'SMS_507370283', store: '64822111', vars: ['value','date','code'], label: '长期流失召回180-365天 · 洪潮（value/date/code）', content: '洪潮大宁久光店2.0菜单全面升级，新增荔枝木烧鹅、黑金叉烧等招牌菜。欢迎您回来，特别赠送${value}元回归礼券2张，${date}前有效，券码${code}，单次使用1张，到门店可以直接抵扣使用，拒收请回复R' },
+            { code: 'SMS_507220292', store: '51866138', vars: ['value','date','code'], label: '沉睡老客召回60-90天 · 马己仙（value/date/code）', content: '好久没来马己仙音乐广场店吃饭了，为您准备一张${value}元无门槛回归礼券，${date}前来门店报券码${code}可抵扣，拒收请回复R' },
+            { code: 'SMS_507240296', store: '64822111', vars: ['value','date','code'], label: '沉睡老客召回60-90天 · 洪潮（value/date/code）', content: '好久没来洪潮大宁久光店吃饭了，为您准备一张${value}元无门槛回归礼券，${date}前来门店报券码${code}可直接抵扣拒收请回复R' },
+            { code: 'SMS_507100271', store: '51866138', vars: ['date','code'], label: '活跃客户维护 · 马己仙（date/code）', content: '马己仙音乐广场店：招牌荔枝木烧鹅每日现烤现卖+推荐蚝仔捞饭，在${date}前到店赠送养生炖汤一份，凭券码${code}领取，拒收请回复R' },
+            { code: 'SMS_507400282', store: '64822111', vars: ['date','code'], label: '活跃客户维护 · 洪潮（date/code）', content: '洪潮大宁久光店新升级：荔枝木烧鹅，每日现烤限量供应，${date}前到店赠送养生炖汤一份，凭券码${code}领取，拒收请回复R' },
+            { code: 'SMS_507260262', store: '51866138', vars: ['balance'], label: '储值客户维护 · 马己仙（balance）', content: '您在马己仙音乐广场店的会员账户尚有${balance}元，本周推荐：荔枝木烧鹅+啫啫沙姜走地鸡+蚝仔捞饭，可提前预定！拒收请回复R' },
+            { code: 'SMS_507290291', store: '64822111', vars: ['balance'], label: '储值客户维护 · 洪潮（balance）', content: '您在洪潮大宁久光店的会员账户尚有${balance}元，本周推荐：荔枝木烧鹅+招牌潮州虾生，可提前订位！拒收请回复R' },
+            { code: 'SMS_507280284', store: '51866138', vars: ['date','code'], label: '新客第8天维护 · 马己仙（date/code）', content: '感谢您对马己仙音乐广场店的支持，二次到店客人最爱：荔枝木烧鹅、蚝仔捞饭，${date}前到店报券码${code}赠送糖水一份！拒收请回复R' },
+            { code: 'SMS_507055275', store: '64822111', vars: ['date','code'], label: '新客第8天维护 · 洪潮（date/code）', content: '感谢您对洪潮大宁久光店支持，二次到店客人最爱：荔枝木烧鹅、潮州虾生，${date}前到店报券码${code}赠送招牌冻奶茶1份，拒收请回复R' },
+            { code: 'SMS_507390274', store: '51866138', vars: ['date','code'], label: '新客第4天维护 · 马己仙（date/code）', content: '感谢光临马己仙音乐广场店，本店招牌荔枝木烧鹅，${date}前再次到店赠送招牌冻柠茶一份，报券码${code}使用，一桌限1份！拒收请回复R' },
+            { code: 'SMS_507075274', store: '64822111', vars: ['date','code'], label: '新客第4天维护 · 洪潮（date/code）', content: '感谢光临洪潮大宁久光店，潮州虾生是本店招牌，${date}前再次到店赠送潮州奶冻一份，报券码${code}使用，一桌限1份！拒收请回复R' },
+            { code: 'SMS_507290290', store: '51866138', vars: ['date','code'], label: 'VIP客人维护 · 马己仙（date/code）', content: '感谢您一直以来对马己仙大宁音乐广场店的支持，为您预留一份招牌手打虾饼免费品鉴，请于${date}前到店报券码${code}使用，一桌限一张，拒收请回复R' },
+            { code: 'SMS_507310288', store: '64822111', vars: ['date','code'], label: 'VIP客人维护 · 洪潮（date/code）', content: '感谢您一直以来对洪潮大宁久光店的支持，洪潮2.0菜单升级，为您预留一份潮汕蚝仔烙免费品鉴，请于${date}前到店报券码${code}使用，一桌限一张拒收请回复R' }
         ];
         // 待报备短信文案库（变量严格 name/days/value 三个，提交阿里云审核后回填 code 即可下发）
         var AM_SMS_DRAFTS = [
@@ -56114,6 +56187,35 @@ ${body}
         function amSmsTemplateLabel(code){
             var t = AM_SMS_TEMPLATES.find(function(x){ return x.code === (code || ''); });
             return t ? t.label : (code || '自动');
+        }
+        // 返回已报备模板真实正文（用于文案只读展示 + content_template 落库）；未知/自动返回 ''
+        function amSmsTemplateContent(code){
+            var t = AM_SMS_TEMPLATES.find(function(x){ return x.code === (code || ''); });
+            return (t && t.content) ? t.content : '';
+        }
+        // 由短信模板派生「干净的规则名」（去掉变量后缀（value/date/code）），用于规则标题与模板对齐。
+        function amSmsTemplateName(code){
+            var t = AM_SMS_TEMPLATES.find(function(x){ return x.code === (code || ''); });
+            if (!t || !t.code) return '';
+            return String(t.label || '').replace(/（[^（）]*）\s*$/, '').trim();
+        }
+        // 选择短信模板时：把文案区刷新为该模板真实正文并锁为只读（保持「文案=实际短信」一致）
+        function amOnSmsTplChange(ruleKey){
+            var smsSel = document.getElementById('am-smstpl-' + ruleKey);
+            var tInp = document.getElementById('am-tpl-' + ruleKey);
+            if (!tInp) return;
+            var content = smsSel ? amSmsTemplateContent(smsSel.value) : '';
+            var chSel = document.getElementById('am-ch-' + ruleKey);
+            var isSms = chSel && chSel.value === 'sms';
+            if (isSms && content) {
+                tInp.value = content;
+                tInp.readOnly = true;
+                tInp.style.opacity = '0.85';
+            } else if (isSms) {
+                // 选「自动（按门店默认模板）」时无固定正文，保留可编辑
+                tInp.readOnly = false;
+                tInp.style.opacity = '1';
+            }
         }
 
         // 渲染「人群字典 / 渠道说明 / 待报备文案库」（静态，只需渲染一次）
@@ -56218,6 +56320,10 @@ ${body}
                     var curValYuan = Math.max(0, Math.round(Number(__ap0.coupon_value_fen || __ap0.value_fen || 0) / 100));
                     var curValidDays = Math.max(0, Math.floor(Number(__ap0.valid_days) || 0));
                     var curTpl = String(__ap0.content_template || __ap0.message_template || '');
+                    // 短信渠道且选定了已报备模板：文案只读=模板真实正文（与客人实收一致）
+                    var __smsTplContent = (curChannel === 'sms') ? amSmsTemplateContent(curSmsCode) : '';
+                    var __tplReadonly = !!__smsTplContent;
+                    var __tplShown = __tplReadonly ? __smsTplContent : curTpl;
                     var rrate = sent > 0 ? ((red / sent) * 100).toFixed(1) : '0.0';
                     // 营销效果：营收 / 成本(短信0.05元·条) / ROI / 评分 / 建议
                     var revYuan = (Number(st.revenue_fen || 0) / 100).toFixed(2);
@@ -56237,11 +56343,7 @@ ${body}
                     var lastRun = rule.last_run_at ? new Date(rule.last_run_at).toLocaleString('zh-CN') : '从未运行';
                     var approver = approved ? ('审核人 ' + escapeHtml(rule.approved_by || '?') + ' · ' + new Date(rule.approved_at).toLocaleDateString('zh-CN')) : '尚未审核';
                     var rk = escapeHtml(rule.rule_key);
-                    var btn = approved
-                        ? '<button class="btn btn-secondary" type="button" onclick="amUnapprove(\'' + rk + '\')" style="font-size:12px;padding:7px 14px;">撤销审核</button>'
-                        : '<button class="btn" type="button" onclick="amApprove(\'' + rk + '\')" style="font-size:12px;padding:7px 14px;">审核通过 → 允许自动执行</button>';
                     var isSubscribe = ((rule.action_payload || {}).channel === 'subscribe');
-                    var editBtn = isSubscribe ? '<button class="btn btn-secondary" type="button" onclick="amEditSubscribeRule(\'' + rk + '\')" style="font-size:12px;padding:7px 14px;">编辑内容</button>' : '';
                     var storeNm = amStoreName(amRuleStoreId(rule));
                     var storeBadge = '<span style="background:rgba(99,102,241,0.16);color:#a5b4fc;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">🏪 ' + escapeHtml(storeNm) + '</span>';
                     var critTip = amCriteriaTip(rule.criteria);
@@ -56254,63 +56356,86 @@ ${body}
                         ? ('短信 <strong style="color:#a5b4fc;">' + cov.sms + '</strong> 人 · 订阅消息 <strong style="color:#a5b4fc;">' + cov.subscribe + '</strong> 人(上限·需授权) · 小程序站内 <strong style="color:#a5b4fc;">' + cov.member + '</strong> 人')
                         : '计算中/未知';
                     var smsOpts = AM_SMS_TEMPLATES.map(function(t){ return '<option value="' + t.code + '"' + (curSmsCode === t.code ? ' selected' : '') + '>' + escapeHtml(t.label) + '</option>'; }).join('');
-                    return '<div class="rep-pay-card" style="margin-bottom:12px;">'
-                        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">'
-                        +   '<div><div style="color:#fff;font-weight:700;font-size:14px;">' + escapeHtml(rule.name || rule.rule_key) + '</div>'
-                        +     '<div style="color:rgba(226,232,240,0.45);font-size:11px;margin-top:2px;">所属门店 ' + escapeHtml(storeNm) + ' · 优先级 ' + (rule.priority || '-') + ' · 经办人 ' + escapeHtml(rule.owner || '未指派') + '</div></div>'
-                        +   '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' + storeBadge + statusBadge + '</div>'
+                    return '<div class="rep-pay-card amr">'
+                        // —— 卡头：标题 + 元信息 + 状态徽章（竖排，整宽自适应）——
+                        + '<div class="amr-head">'
+                        +   '<div class="amr-title">' + escapeHtml(rule.name || rule.rule_key) + '</div>'
+                        +   '<div class="amr-meta">所属门店 ' + escapeHtml(storeNm) + ' · 优先级 ' + (rule.priority || '-') + ' · 经办人 ' + escapeHtml(rule.owner || '未指派') + '</div>'
+                        +   '<div class="amr-badges">' + storeBadge + statusBadge + '</div>'
                         + '</div>'
-                        + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin:10px 0 4px;">🎯 目标人群：' + escapeHtml(amDescribeCriteria(rule.criteria)) + '</div>'
-                        + (critTip ? '<div style="color:rgba(226,232,240,0.45);font-size:11px;margin-bottom:4px;padding-left:18px;">判定口径：' + escapeHtml(critTip) + '</div>' : '')
-                        + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:4px;">👥 涉及会员：' + (reach == null ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>' : ('<strong style="color:#a5b4fc;">' + reach + '</strong> 人（命中人群且可触达）')) + '</div>'
-                        + '<div style="color:rgba(226,232,240,0.55);font-size:11px;margin-bottom:6px;padding-left:18px;">分渠道覆盖：' + covLine + '</div>'
-                        + '<div style="color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:6px;">📣 触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
+                        // —— 人群与动作概览 ——
+                        + '<div class="amr-sec">'
+                        +   '<div class="amr-sec-title">🎯 人群与动作</div>'
+                        +   '<div class="amr-info">目标人群：' + escapeHtml(amDescribeCriteria(rule.criteria)) + '</div>'
+                        +   (critTip ? '<div class="amr-info amr-info--sub">判定口径：' + escapeHtml(critTip) + '</div>' : '')
+                        +   '<div class="amr-info">涉及会员：' + (reach == null ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>' : ('<strong>' + reach + '</strong> 人（命中人群且可触达）')) + '</div>'
+                        +   '<div class="amr-info amr-info--sub">分渠道覆盖：' + covLine + '</div>'
+                        +   '<div class="amr-info">触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
+                        + '</div>'
+                        // —— 投放渠道 ——
                         + (isSubscribe ? '' : (
-                            '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:10px;">'
-                          +   '<span>📡 投放渠道</span>'
-                          +   '<select id="am-ch-' + rk + '" onchange="amOnChannelChange(\'' + rk + '\')" style="border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);">' + channelOpts + '</select>'
-                          +   '<span id="am-ch-sms-' + rk + '" style="display:' + (curChannel === 'sms' ? 'inline-flex' : 'none') + ';align-items:center;gap:6px;">'
-                          +     '<span>短信模板</span><select id="am-smstpl-' + rk + '" style="border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);">' + smsOpts + '</select>'
-                          +   '</span>'
-                          +   '<button class="btn btn-secondary" type="button" onclick="amSetChannel(\'' + rk + '\')" style="font-size:11px;padding:4px 10px;">保存渠道</button>'
+                            '<div class="amr-sec">'
+                          +   '<div class="amr-sec-title">📡 投放渠道</div>'
+                          +   '<div class="amr-field">'
+                          +     '<select id="am-ch-' + rk + '" class="amr-ctrl" onchange="amOnChannelChange(\'' + rk + '\')">' + channelOpts + '</select>'
+                          +   '</div>'
+                          +   '<div id="am-ch-sms-' + rk + '" class="amr-field" style="display:' + (curChannel === 'sms' ? 'block' : 'none') + ';">'
+                          +     '<label class="amr-label">短信模板（已报备，决定文案与规则标题）</label>'
+                          +     '<select id="am-smstpl-' + rk + '" class="amr-ctrl" onchange="amOnSmsTplChange(\'' + rk + '\')">' + smsOpts + '</select>'
+                          +   '</div>'
+                          +   '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetChannel(\'' + rk + '\')">保存渠道</button>'
                           + '</div>'))
-                        + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:10px;">'
-                        +   '<span>⏱️ 发送频率：每位会员每</span>'
-                        +   '<input id="am-freq-' + rk + '" type="number" min="0" value="' + curFreq + '" style="width:60px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);">'
-                        +   '<span>天最多1次（填0=按到店周期）</span>'
-                        +   '<button class="btn btn-secondary" type="button" onclick="amSetFrequency(\'' + rk + '\')" style="font-size:11px;padding:4px 10px;">保存频率</button>'
+                        // —— 发送频率 ——
+                        + '<div class="amr-sec">'
+                        +   '<div class="amr-sec-title">⏱️ 发送频率</div>'
+                        +   '<div class="amr-field amr-suffix">'
+                        +     '<span class="amr-suffix-txt">每位会员每</span>'
+                        +     '<input id="am-freq-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curFreq + '">'
+                        +     '<span class="amr-suffix-txt">天最多1次</span>'
+                        +   '</div>'
+                        +   '<div class="amr-hint">填 0 = 按到店周期自动判定。另有全局总闸：每号码每周最多 1 条短信。</div>'
+                        +   '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetFrequency(\'' + rk + '\')">保存频率</button>'
                         + '</div>'
+                        // —— 券与文案 ——
                         + (isSubscribe ? '' : (
-                            '<div style="padding:10px 12px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.18);border-radius:10px;margin-bottom:8px;">'
-                          +   '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:rgba(226,232,240,0.8);font-size:12px;margin-bottom:8px;">'
-                          +     '<span>🎫 券面额</span>'
-                          +     '<input id="am-val-' + rk + '" type="number" min="0" value="' + curValYuan + '" style="width:70px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);"><span>元</span>'
-                          +     '<span style="margin-left:8px;">⏳ 有效期</span>'
-                          +     '<input id="am-vd-' + rk + '" type="number" min="0" value="' + curValidDays + '" style="width:60px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);"><span>天</span>'
-                          +   '</div>'
-                          +   '<textarea id="am-tpl-' + rk + '" rows="2" placeholder="短信文案，可用占位符：{customer_name} {coupon_value_text}（自动填券面额）{valid_days}（自动填有效天数）{days_since_last_visit} {favorite_dishes_text}" style="width:100%;box-sizing:border-box;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:6px 8px;font-size:12px;background:rgba(0,0,0,0.3);color:var(--rep-text);resize:vertical;">' + escapeHtml(curTpl) + '</textarea>'
-                          +   '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;">'
-                          +     '<span style="font-size:11px;color:rgba(226,232,240,0.45);">金额写文案用 {coupon_value_text}（自动 = ¥券面额）；到期天数用 {valid_days}，避免写死天数对不上券有效期</span>'
-                          +     '<button class="btn btn-secondary" type="button" onclick="amSetCoupon(\'' + rk + '\')" style="font-size:11px;padding:4px 10px;">保存券面额/有效期/文案</button>'
+                            '<div class="amr-sec">'
+                          +   '<div class="amr-sec-title">🎫 券与文案</div>'
+                          +   '<div class="amr-coupon-box">'
+                          +     '<div class="amr-row2">'
+                          +       '<div><label class="amr-label">券面额（元）</label><input id="am-val-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curValYuan + '"></div>'
+                          +       '<div><label class="amr-label">有效期（天）</label><input id="am-vd-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curValidDays + '"></div>'
+                          +     '</div>'
+                          +     '<div class="amr-field" style="margin-top:10px;">'
+                          +       '<label class="amr-label">短信文案' + (__tplReadonly ? '（🔒 只读·已报备模板）' : '') + '</label>'
+                          +       '<textarea id="am-tpl-' + rk + '" class="amr-ctrl"' + (__tplReadonly ? ' readonly style="opacity:0.85;"' : '') + ' placeholder="短信文案，可用占位符：{customer_name} {coupon_value_text}（自动填券面额）{valid_days}（自动填有效天数）{days_since_last_visit} {favorite_dishes_text}">' + escapeHtml(__tplShown) + '</textarea>'
+                          +       '<div class="amr-hint">' + (__tplReadonly ? '文案为阿里云已报备模板真实内容（客人实收即此文）。${value}=券面额、${date}=有效期(按上方天数)、${code}=券码，发送时自动填充。' : '金额写文案用 {coupon_value_text}（自动=¥券面额）；到期天数用 {valid_days}，避免写死天数对不上券有效期。') + '</div>'
+                          +     '</div>'
+                          +     '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetCoupon(\'' + rk + '\')">保存券面额/有效期/文案</button>'
                           +   '</div>'
                           + '</div>'))
-                        + '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 12px;background:rgba(0,0,0,0.25);border-radius:10px;margin-bottom:8px;">'
-                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">发送 <strong style="color:#fff;">' + sent + '</strong></span>'
-                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">核销 <strong style="color:#22c55e;">' + red + '</strong></span>'
-                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">核销率 <strong style="color:#fff;">' + rrate + '%</strong></span>'
-                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">营收 <strong style="color:#22c55e;">¥' + revYuan + '</strong></span>'
-                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">成本 <strong style="color:#fff;">¥' + costYuan + '</strong></span>'
-                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">ROI <strong style="color:#a5b4fc;">' + roiTxt + '</strong></span>'
-                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.8);">评分 <strong style="color:' + scoreColor + ';">' + scoreTxt + '</strong></span>'
-                        +   '<span style="font-size:12px;color:rgba(226,232,240,0.5);">上次运行 ' + escapeHtml(lastRun) + '</span>'
+                        // —— 效果统计 ——
+                        + '<div class="amr-sec">'
+                        +   '<div class="amr-stats">'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">发送</span><span class="amr-stat-v">' + sent + '</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">核销</span><span class="amr-stat-v" style="color:#22c55e;">' + red + '</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">核销率</span><span class="amr-stat-v">' + rrate + '%</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">营收</span><span class="amr-stat-v" style="color:#22c55e;">¥' + revYuan + '</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">成本</span><span class="amr-stat-v">¥' + costYuan + '</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">ROI</span><span class="amr-stat-v" style="color:#a5b4fc;">' + roiTxt + '</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">评分</span><span class="amr-stat-v" style="color:' + scoreColor + ';">' + scoreTxt + '</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">上次运行</span><span class="amr-stat-v" style="font-size:12px;font-weight:600;color:rgba(226,232,240,0.7);">' + escapeHtml(lastRun) + '</span></div>'
+                        +   '</div>'
                         + '</div>'
-                        + (suggestionTxt ? '<div style="font-size:12px;color:rgba(226,232,240,0.7);background:rgba(99,102,241,0.08);border-left:3px solid rgba(99,102,241,0.5);padding:7px 10px;border-radius:6px;margin-bottom:10px;">💡 优化建议：' + escapeHtml(suggestionTxt) + '</div>' : '')
-                        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">'
-                        +   '<span style="font-size:11px;color:rgba(226,232,240,0.5);">' + escapeHtml(approver) + '</span>'
-                        +   '<div style="display:flex;gap:8px;">'
-                        +     editBtn
-                        +     '<button class="btn btn-secondary" type="button" onclick="amToggleEnabled(\'' + rk + '\',' + (rule.enabled ? 'true' : 'false') + ')" style="font-size:12px;padding:7px 14px;">' + (rule.enabled ? '停用' : '启用') + '</button>'
-                        +     btn
+                        + (suggestionTxt ? '<div class="amr-sec"><div class="amr-suggest">💡 优化建议：' + escapeHtml(suggestionTxt) + '</div></div>' : '')
+                        // —— 底部：审核信息 + 操作 ——
+                        + '<div class="amr-foot">'
+                        +   '<span class="amr-foot-by">' + escapeHtml(approver) + '</span>'
+                        +   '<div class="amr-foot-btns">'
+                        +     (isSubscribe ? '<button type="button" class="amr-btn amr-btn--ghost" onclick="amEditSubscribeRule(\'' + rk + '\')">编辑内容</button>' : '')
+                        +     '<button type="button" class="amr-btn amr-btn--ghost" onclick="amToggleEnabled(\'' + rk + '\',' + (rule.enabled ? 'true' : 'false') + ')">' + (rule.enabled ? '停用' : '启用') + '</button>'
+                        +     (approved
+                              ? '<button type="button" class="amr-btn amr-btn--ghost" onclick="amUnapprove(\'' + rk + '\')">撤销审核</button>'
+                              : '<button type="button" class="amr-btn" onclick="amApprove(\'' + rk + '\')">审核通过 → 允许自动执行</button>')
                         +   '</div>'
                         + '</div>'
                         + '</div>';
@@ -56464,7 +56589,9 @@ ${body}
         function amOnChannelChange(ruleKey) {
             var sel = document.getElementById('am-ch-' + ruleKey);
             var smsBox = document.getElementById('am-ch-sms-' + ruleKey);
-            if (sel && smsBox) smsBox.style.display = (sel.value === 'sms') ? 'inline-flex' : 'none';
+            if (sel && smsBox) smsBox.style.display = (sel.value === 'sms') ? 'block' : 'none';
+            // 切到短信渠道时，按当前模板把文案刷成只读真实正文；切走则恢复可编辑
+            amOnSmsTplChange(ruleKey);
         }
 
         // 设置某规则的「投放渠道」（+短信模板）。改动 action_payload → 按治理规则重置审核态。
@@ -56475,7 +56602,10 @@ ${body}
             var smsSel = document.getElementById('am-smstpl-' + ruleKey);
             var smsCode = (channel === 'sms' && smsSel) ? String(smsSel.value || '') : '';
             var chName = (AM_CHANNELS[channel] && AM_CHANNELS[channel].name) || channel;
+            // 短信为主力渠道：选定已报备模板后，规则标题以短信模板名为准（保持与实收短信一致）
+            var newName = (channel === 'sms') ? amSmsTemplateName(smsCode) : '';
             var extra = channel === 'sms' ? ('\n短信模板：' + amSmsTemplateLabel(smsCode)) : '';
+            if (channel === 'sms' && newName) extra += '\n规则标题将同步为：' + newName;
             if (channel === 'member') extra += '\n注意：小程序站内券需在 action_payload 配置 member_template_id（券模板ID），否则会跳过下发。';
             if (channel === 'subscribe') extra += '\n注意：订阅消息仅能发给已「订阅授权」且有剩余次数的用户（微信硬约束）。';
             if (!confirm('将「' + ruleKey + '」投放渠道设为：' + chName + extra + '\n\n注意：修改渠道会重置审核态，需重新「审核通过」后才会继续自动执行。')) return;
@@ -56484,9 +56614,14 @@ ${body}
                 var rule = ((rg && rg.rules) || []).find(function(x){ return x.rule_key === ruleKey; });
                 if (!rule) throw new Error('rule_not_found');
                 var ap = Object.assign({}, rule.action_payload || {}, { channel: channel });
-                if (channel === 'sms') { ap.sms_template_code = smsCode; } else { delete ap.sms_template_code; }
+                if (channel === 'sms') {
+                    ap.sms_template_code = smsCode;
+                    // 选定已报备模板 → content_template 锁定为该模板真实正文，保证「文案=实收短信」一致
+                    var __c = amSmsTemplateContent(smsCode);
+                    if (__c) ap.content_template = __c;
+                } else { delete ap.sms_template_code; }
                 var body = {
-                    rule_key: rule.rule_key, name: rule.name, priority: rule.priority,
+                    rule_key: rule.rule_key, name: (newName || rule.name), priority: rule.priority,
                     auto_execute: rule.auto_execute, enabled: rule.enabled,
                     criteria: rule.criteria || {}, action_type: rule.action_type,
                     action_payload: ap, owner: rule.owner || '', note: rule.note || ''

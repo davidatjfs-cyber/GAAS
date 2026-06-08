@@ -1469,6 +1469,32 @@ function pickCampaignTemplate(campaignKey, storeId) {
   return def;
 }
 
+// 解析「天数」类环境变量：未配置(缺省/空串)用默认值；显式填 0 表示「关闭频控」。
+// 修复老坑：旧写法 `Number(env) || 30` 把 0 当假值会回落成 30，导致频控永远关不掉。
+function freqDaysEnv(name, def) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === '') return def;
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n >= 0 ? n : def;
+}
+
+// 全局短信总闸：同一手机号 N 天内最多收 1 条「任意类型」营销短信，跨所有触达段叠加防骚扰。
+// 默认 7 天(每周最多 1 条)，由 ALIYUN_SMS_GLOBAL_FREQUENCY_DAYS 配置，设 0 关闭。
+// 只统计真正发出(status='sent')的记录；命中返回 days(>0)，未命中返回 0。
+async function globalSmsCapped(pool, phone) {
+  const days = freqDaysEnv('ALIYUN_SMS_GLOBAL_FREQUENCY_DAYS', 7);
+  const p = String(phone || '').trim();
+  if (days <= 0 || !p) return 0;
+  const r = await pool.query(
+    `SELECT 1 FROM growth_delivery_logs
+       WHERE channel = 'sms' AND status = 'sent' AND payload->>'phone' = $1
+         AND created_at > now() - ($2 || ' days')::interval
+       LIMIT 1`,
+    [p, String(days)]
+  );
+  return r.rows.length ? days : 0;
+}
+
 // 通用发券人群(profiles)取数：可编辑筛选(门店/价值分级/生命周期/到店次数/未消费天数)+频控。
 // 返回 SQL 与参数，preview 与 launch 共用，保证「预览即所发」。
 // 至少需一个人群维度，否则视为全量、拒绝(防误群发)。
@@ -1760,6 +1786,9 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
         };
       }
 
+      // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
+      if (!skipReason && await globalSmsCapped(pool, smsPhone)) skipReason = 'global_capped';
+
       if (skipReason) {
         executionResults.delivery_error = `sms_skipped_${skipReason}`;
         await upsertDeliveryLog(pool, {
@@ -1775,6 +1804,8 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           result: {},
           error_message: skipReason === 'no_balance'
             ? `储值余额为 0，模板 ${smsTemplateCode || 'default'} 需要 balance 变量，已跳过发送`
+            : skipReason === 'global_capped'
+            ? `该号码近期已收过短信，触发全局短信总闸(每周最多1条)，已跳过发送`
             : `无优惠券面额，模板 ${smsTemplateCode || 'default'} 需要 value 变量，已跳过发送`
         });
       } else {
@@ -2557,7 +2588,7 @@ export function registerGrowthRoutes(app, pool) {
       }
       // 触达频控(防骚扰核心):同一手机号 N 天内最多收 1 条召回短信。
       // 写在发送总入口,无论从哪发起(小程序/HRMS/对账)都统一拦截。N 经 env 配置,默认 30 天。
-      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_WINBACK_FREQUENCY_DAYS) || 30));
+      const freqDays = freqDaysEnv('ALIYUN_SMS_WINBACK_FREQUENCY_DAYS', 30);
       if (freqDays > 0) {
         const recent = await pool.query(
           `SELECT 1 FROM growth_delivery_logs
@@ -2570,6 +2601,9 @@ export function registerGrowthRoutes(app, pool) {
           return res.json({ ok: true, skipped: true, reason: 'frequency_capped', frequency_days: freqDays });
         }
       }
+      // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
+      const gCap = await globalSmsCapped(pool, phone);
+      if (gCap) return res.json({ ok: true, skipped: true, reason: 'global_frequency_capped', frequency_days: gCap });
       const deliveryKey = idempotencyKey || `winback_sms:${phone}:${Date.now()}`;
       // 已报备模板仅 3 个变量 value/date/code（无 name，避免超 3 变量报备失败）。
       // 务必与模板严格一致，多传 name 会被阿里云判「参数不匹配」拒收。
@@ -2753,7 +2787,7 @@ export function registerGrowthRoutes(app, pool) {
       const dormantDays = Math.max(1, Math.floor(Number(b.dormant_days) || 14));
       const minBalanceFen = Math.max(0, Math.floor((Number(b.min_balance_yuan) || 1) * 100));
       const maxTargets = Math.min(Math.max(Number(b.max_targets) || 500, 1), 2000);
-      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_WINBACK_FREQUENCY_DAYS) || 30));
+      const freqDays = freqDaysEnv('ALIYUN_SMS_WINBACK_FREQUENCY_DAYS', 30);
       if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
       if (valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
       const r = await pool.query(
@@ -2888,7 +2922,7 @@ export function registerGrowthRoutes(app, pool) {
       if (valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
       if (!pickCampaignTemplate(campaignKey, c.storeId)) return res.status(503).json({ ok: false, error: 'sms_template_not_configured' });
       const maxTargets = Math.min(Math.max(Number(b.max_targets) || 500, 1), 2000);
-      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS) || 30));
+      const freqDays = freqDaysEnv('ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS', 30);
       const q = buildCampaignTargetQuery({ ...c, ruleKey: campaignKey, freqDays, limit: maxTargets });
       if (!q) return res.status(400).json({ ok: false, error: 'need_audience_filter' });
       const r = await pool.query(q.sql, q.params);
@@ -2939,7 +2973,7 @@ export function registerGrowthRoutes(app, pool) {
         if (dup.rows.length && dup.rows[0].status === 'sent') return res.json({ ok: true, deduped: true });
       }
       // 触达频控：同一手机号 N 天内最多收 1 条本活动短信。
-      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS) || 30));
+      const freqDays = freqDaysEnv('ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS', 30);
       if (freqDays > 0) {
         const recent = await pool.query(
           `SELECT 1 FROM growth_delivery_logs
@@ -2950,6 +2984,9 @@ export function registerGrowthRoutes(app, pool) {
         );
         if (recent.rows.length) return res.json({ ok: true, skipped: true, reason: 'frequency_capped', frequency_days: freqDays });
       }
+      // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
+      const gCap = await globalSmsCapped(pool, phone);
+      if (gCap) return res.json({ ok: true, skipped: true, reason: 'global_frequency_capped', frequency_days: gCap });
       const deliveryKey = idempotencyKey || `${campaignKey}:${phone}:${Date.now()}`;
       // 严格按 vars 拼模板参数：缺/多变量阿里云都判「参数不匹配」整批拒收。
       const templateParam = {};
@@ -3017,7 +3054,7 @@ export function registerGrowthRoutes(app, pool) {
       const dormantDays = Math.max(0, Math.floor(Number(b.dormant_days) || 30));
       const minBalanceFen = Math.max(0, Math.floor((Number(b.min_balance_yuan) || 1) * 100));
       const maxTargets = Math.min(Math.max(Number(b.max_targets) || 1000, 1), 2000);
-      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_REMIND_FREQUENCY_DAYS) || 30));
+      const freqDays = freqDaysEnv('ALIYUN_SMS_REMIND_FREQUENCY_DAYS', 30);
       if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
       const q = buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets);
       const r = await pool.query(q.sql, q.params);
@@ -3039,7 +3076,7 @@ export function registerGrowthRoutes(app, pool) {
       const dormantDays = Math.max(0, Math.floor(Number(b.dormant_days) || 30));
       const minBalanceFen = Math.max(0, Math.floor((Number(b.min_balance_yuan) || 1) * 100));
       const maxTargets = Math.min(Math.max(Number(b.max_targets) || 1000, 1), 2000);
-      const freqDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_REMIND_FREQUENCY_DAYS) || 30));
+      const freqDays = freqDaysEnv('ALIYUN_SMS_REMIND_FREQUENCY_DAYS', 30);
       const templateCode = cleanText(b.sms_template_code, 64) || pickBalanceTemplateByStore(storeId);
       if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
       if (!templateCode) return res.status(503).json({ ok: false, error: 'balance_template_not_configured' });
@@ -3085,6 +3122,17 @@ export function registerGrowthRoutes(app, pool) {
       if (!phone || balanceYuan <= 0) { failed++; continue; }
       const deliveryKey = `svremind:${job.id}:${phone}`;
       const templateParam = { balance: String(balanceYuan) };
+      // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
+      const gCap = await globalSmsCapped(pool, phone);
+      if (gCap) {
+        await upsertDeliveryLog(pool, {
+          delivery_key: deliveryKey, action_key: job.campaign_id || 'svremind', rule_key: 'stored_value_remind',
+          customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'skipped',
+          payload: { phone, template_param: templateParam, campaign_id: job.campaign_id, reason: 'global_capped' },
+          result: {}, error_message: '触发全局短信总闸(每周最多1条)，已跳过'
+        }).catch(() => null);
+        continue;
+      }
       try {
         const result = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
         const cust = await upsertCustomer(pool, { phone, store_id: storeId }).catch(() => null);
