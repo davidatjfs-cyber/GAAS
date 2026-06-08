@@ -2158,7 +2158,7 @@ async function loadRuleCandidates(pool, rule) {
      LEFT JOIN wechat_work_customers ww ON ww.bind_customer_id = cp.customer_id
      WHERE COALESCE(ww.external_userid, gc.external_userid) IS NOT NULL
         OR (cp.phone IS NOT NULL AND cp.phone <> '')
-     LIMIT 1000`
+     LIMIT 50000`
   );
   // 旧版基于访问/天数的规则（企微分支保留），先于生命周期匹配处理
   const criteria = rule.criteria || {};
