@@ -1451,11 +1451,15 @@ function pickBalanceTemplateByStore(storeId) {
 // vars: 该段阿里云模板的变量集合(须与已报备模板逐字一致，否则整批拒收)。
 // 赠菜/赠糖水类只有 date+code(无门槛礼品券)；长期流失是 value+date+code 的满额回归券(2张/1码核销2次)。
 const CAMPAIGN_TYPES = {
-  vip_gift:    { label: 'VIP赠菜',  source: 'profiles', tplPrefix: 'VIP',      coupon_count: 1, vars: ['date', 'code'] },
-  newcomer_4d: { label: '新客4天',  source: 'profiles', tplPrefix: 'NEW4',     coupon_count: 1, vars: ['date', 'code'] },
-  newcomer_8d: { label: '新客8天',  source: 'profiles', tplPrefix: 'NEW8',     coupon_count: 1, vars: ['date', 'code'] },
-  active:      { label: '活跃客',   source: 'profiles', tplPrefix: 'ACTIVE',   coupon_count: 1, vars: ['date', 'code'] },
-  lost_long:   { label: '长期流失', source: 'profiles', tplPrefix: 'LOSTLONG', coupon_count: 2, vars: ['value', 'date', 'code'] },
+  vip_gift:       { label: 'VIP客户维护',          source: 'profiles', tplPrefix: 'VIP',       coupon_count: 1, vars: ['date', 'code'] },
+  newcomer_4d:    { label: '新客回头·4天',         source: 'profiles', tplPrefix: 'NEW4',      coupon_count: 1, vars: ['date', 'code'] },
+  newcomer_8d:    { label: '新客回头·8天',         source: 'profiles', tplPrefix: 'NEW8',      coupon_count: 1, vars: ['date', 'code'] },
+  active:         { label: '活跃客经营',           source: 'profiles', tplPrefix: 'ACTIVE',    coupon_count: 1, vars: ['date', 'code'] },
+  // 沉睡召回60-90：沿用现有 winback 已报备模板(SMS_507220292/SMS_507240296)，env 见 ALIYUN_SMS_DORM6090_*
+  dormant_60_90:  { label: '沉睡召回·60-90天',     source: 'profiles', tplPrefix: 'DORM6090',  coupon_count: 1, vars: ['value', 'date', 'code'] },
+  // 沉睡召回90-180：短信后补，未配 env → pickCampaignTemplate 返回 '' → 不可发(launch/send 报 sms_template_not_configured)
+  dormant_90_180: { label: '沉睡召回·90-180天',    source: 'profiles', tplPrefix: 'DORM90180', coupon_count: 1, vars: ['value', 'date', 'code'] },
+  lost_long:      { label: '长期流失召回',          source: 'profiles', tplPrefix: 'LOSTLONG',  coupon_count: 2, vars: ['value', 'date', 'code'] },
 };
 // 按段+门店解析阿里云模板 code：ALIYUN_SMS_<PREFIX>_<MAJIXIAN|HONGCHAO|DEFAULT>
 function pickCampaignTemplate(campaignKey, storeId) {
@@ -2180,6 +2184,50 @@ function buildRulePeriodKey(ruleKey, row) {
 // POS数据滞后阈值（天）。上传频率为每2天一次，超过3天视为异常。
 const POS_STALE_DAYS = 3;
 
+// 活动制规则：把命中候选「冻结」成发券任务(growth_campaign_jobs, kind=campaign_key)，
+// 由小程序 runWinbackJobs 生成短码+写 user_vouchers + 调 /campaign/send-sms 下发，券码可核销可归因。
+// 治理门：仅在 规则已审核 + 启用 + auto + 短信总闸(ALIYUN_SMS_ENABLED)开 时才自动冻结，
+// 任一不满足都不发(开关默认关闭即全部静默，与 smsAutoBlocked 同款守护)。
+// 幂等：同活动+同店+同日 一个任务(引擎每15分钟跑)。频控/全局总闸由 /campaign/send-sms 在发送时兜底。
+async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
+  const cfg = CAMPAIGN_TYPES[campaignKey];
+  if (!cfg) return { enqueued: 0, skipped: 'unknown_campaign' };
+  const ap = rule.action_payload || {};
+  const ok = rule.enabled && !!rule.approved_at && rule.auto_execute !== false && isAliyunSmsAutoSendEnabled();
+  if (!ok) return { enqueued: 0, skipped: 'governance' };
+  const valueYuan = Math.max(0, Math.floor(Number(ap.coupon_value_fen || ap.value_fen || 0) / 100));
+  const validDays = Math.max(1, Math.floor(Number(ap.valid_days) || 14));
+  const needsValue = Array.isArray(cfg.vars) && cfg.vars.includes('value');
+  if (needsValue && valueYuan <= 0) return { enqueued: 0, skipped: 'missing_value' };
+  // 按客户门店分组(一条规则覆盖两店，按门店分别冻结任务+解析已报备模板)
+  const byStore = new Map();
+  for (const row of candidates) {
+    const phone = cleanPhone(row.phone);
+    if (!phone) continue;
+    const sid = String(row.store_id || ap.store_id || '').trim();
+    if (!sid) continue;
+    if (!pickCampaignTemplate(campaignKey, sid)) continue; // 该门店模板未配置(后补)→跳过，防整批拒收
+    if (!byStore.has(sid)) byStore.set(sid, []);
+    byStore.get(sid).push({ phone, name: row.customer_name || '' });
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  let enqueued = 0;
+  for (const [sid, targets] of byStore) {
+    if (!targets.length) continue;
+    const campaignId = `auto_${campaignKey}_${sid}_${today}`;
+    const exist = await pool.query(`SELECT 1 FROM growth_campaign_jobs WHERE campaign_id = $1 LIMIT 1`, [campaignId]);
+    if (exist.rows.length) continue; // 当日已冻结，避免重复
+    const result = { campaign_key: campaignKey, coupon_count: cfg.coupon_count, rule_key: rule.rule_key };
+    await pool.query(
+      `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result)
+       VALUES ($1,$2,$3,$4,0,0,$5::jsonb,$6,'pending',$7,$8,$9::jsonb)`,
+      [campaignId, sid, valueYuan, validDays, JSON.stringify(targets), targets.length, campaignKey, `rule_engine:${rule.rule_key}`, JSON.stringify(result)]
+    );
+    enqueued += targets.length;
+  }
+  return { enqueued };
+}
+
 async function runTouchRuleEngine(pool, options = {}) {
   // 第三层防护：POS数据新鲜度闸门。数据滞后会让全员被误判为临界/流失，
   // 进而乱发券。滞后超阈值时停止自动触达，改为告警人工核查。
@@ -2207,6 +2255,13 @@ async function runTouchRuleEngine(pool, options = {}) {
   const createdActions = [];
   for (const rule of (rulesResult.rows || [])) {
     const candidates = (await loadRuleCandidates(pool, rule)).slice(0, limitPerRule);
+    // 活动制规则(action_payload.campaign_key)：不逐人直发，改为聚合候选→冻结发券任务(可核销可归因)。
+    const ruleCampaignKey = cleanText((rule.action_payload || {}).campaign_key || '', 64);
+    if (ruleCampaignKey && CAMPAIGN_TYPES[ruleCampaignKey]) {
+      await enqueueCampaignJobsForRule(pool, rule, candidates, ruleCampaignKey).catch((e) => console.warn('[growth] enqueue campaign job failed:', rule.rule_key, e?.message));
+      await pool.query(`UPDATE growth_touch_rules SET last_run_at = NOW() WHERE rule_key = $1`, [rule.rule_key]).catch(() => {});
+      continue;
+    }
     for (const row of candidates) {
       // 通道选择：
       //  - 规则显式声明 channel='subscribe' 时走订阅消息（需手机号/openid 以解析，

@@ -56184,40 +56184,50 @@ ${body}
             { name: 'VIP专属回馈',    text: '尊贵的${name}，感谢长期支持，专属${value}元贵宾券已送达，${days}天内到店尽享。' },
             { name: '新客复购激励',   text: '${name}您好，首次光临已${days}天，送您${value}元复购券，期待再次为您服务。' }
         ];
-        function amSmsTemplateLabel(code){
-            var t = AM_SMS_TEMPLATES.find(function(x){ return x.code === (code || ''); });
-            return t ? t.label : (code || '自动');
-        }
         // 返回已报备模板真实正文（用于文案只读展示 + content_template 落库）；未知/自动返回 ''
         function amSmsTemplateContent(code){
             var t = AM_SMS_TEMPLATES.find(function(x){ return x.code === (code || ''); });
             return (t && t.content) ? t.content : '';
         }
-        // 由短信模板派生「干净的规则名」（去掉变量后缀（value/date/code）），用于规则标题与模板对齐。
-        function amSmsTemplateName(code){
-            var t = AM_SMS_TEMPLATES.find(function(x){ return x.code === (code || ''); });
-            if (!t || !t.code) return '';
-            return String(t.label || '').replace(/（[^（）]*）\s*$/, '').trim();
-        }
-        // 选择短信模板时：把文案区刷新为该模板真实正文并锁为只读（保持「文案=实际短信」一致）
-        function amOnSmsTplChange(ruleKey){
-            var smsSel = document.getElementById('am-smstpl-' + ruleKey);
-            var tInp = document.getElementById('am-tpl-' + ruleKey);
-            if (!tInp) return;
-            var content = smsSel ? amSmsTemplateContent(smsSel.value) : '';
-            var chSel = document.getElementById('am-ch-' + ruleKey);
-            var isSms = chSel && chSel.value === 'sms';
-            if (isSms && content) {
-                tInp.value = content;
-                tInp.readOnly = true;
-                tInp.style.opacity = '0.85';
-            } else if (isSms) {
-                // 选「自动（按门店默认模板）」时无固定正文，保留可编辑
-                tInp.readOnly = false;
-                tInp.style.opacity = '1';
-            }
-        }
 
+        // ── 活动制（campaign）单一真相表 ──
+        // 自动营销规则 = 一个活动；选活动即自动绑定「门店双模板对」并把规则标题同步为活动名，
+        // 避免从 14 条短信模板里逐条挑选导致选错/无策略。key 与后端 CAMPAIGN_TYPES 对齐。
+        // tpl: 门店ID→已报备短信模板 code（51866138=马己仙，64822111=洪潮）；空表示短信后补未配。
+        var AM_CAMPAIGNS = {
+            vip_gift:       { name: 'VIP客户维护',          vars: ['date','code'],         tpl: { '51866138': 'SMS_507290290', '64822111': 'SMS_507310288' } },
+            active:         { name: '活跃客经营',           vars: ['date','code'],         tpl: { '51866138': 'SMS_507100271', '64822111': 'SMS_507400282' } },
+            newcomer_4d:    { name: '新客回头·4天',         vars: ['date','code'],         tpl: { '51866138': 'SMS_507390274', '64822111': 'SMS_507075274' } },
+            newcomer_8d:    { name: '新客回头·8天',         vars: ['date','code'],         tpl: { '51866138': 'SMS_507280284', '64822111': 'SMS_507055275' } },
+            dormant_60_90:  { name: '沉睡客户召回·60-90天',  vars: ['value','date','code'], tpl: { '51866138': 'SMS_507220292', '64822111': 'SMS_507240296' } },
+            dormant_90_180: { name: '沉睡客户召回·90-180天', vars: ['value','date','code'], tpl: {} },
+            lost_long:      { name: '长期流失召回',          vars: ['value','date','code'], tpl: { '51866138': 'SMS_507105250', '64822111': 'SMS_507370283' } }
+        };
+        // 券模板 id（campaign_<key>_<store> / winback_cash_<store>）→ 活动中文名，用于核销明细标注来源。
+        function amCampaignLabelFromTemplate(templateId){
+            var t = String(templateId || '');
+            if (!t) return '';
+            if (t.indexOf('winback_') === 0) return '储值客召回·现金券';
+            var m = t.match(/^campaign_(.+)_(\d+)$/);
+            if (m) { var c = AM_CAMPAIGNS[m[1]]; return c ? c.name : ('营销发券·' + m[1]); }
+            return '';
+        }
+        // 活动 → 已绑定门店双模板提示（选活动即绑定「马己仙＋洪潮」，无需手挑 14 条模板）
+        function amCampaignPairTip(key){
+            var c = AM_CAMPAIGNS[key]; if (!c) return '';
+            var m = c.tpl['51866138'] || '（短信后补）';
+            var h = c.tpl['64822111'] || '（短信后补）';
+            return '已绑定门店模板：马己仙 ' + m + ' · 洪潮 ' + h + '（变量 ' + c.vars.join('/') + '）';
+        }
+        // 活动 → 双门店已报备短信正文预览（只读展示，发送时引擎按客户门店自动取对应模板）
+        function amCampaignContentPreview(key){
+            var c = AM_CAMPAIGNS[key]; if (!c) return '';
+            return ['51866138','64822111'].map(function(sid){
+                var code = c.tpl[sid];
+                var content = code ? amSmsTemplateContent(code) : '';
+                return '【' + amStoreName(sid) + '】' + (content || '（短信模板后补，暂不可发）');
+            }).join('\n\n');
+        }
         // 渲染「人群字典 / 渠道说明 / 待报备文案库」（静态，只需渲染一次）
         function amRenderGlossary(){
             var host = document.getElementById('am-glossary');
@@ -56316,12 +56326,15 @@ ${body}
                     var __ap0 = rule.action_payload || {};
                     var curChannel = String(__ap0.channel || 'wecom');
                     var curSmsCode = String(__ap0.sms_template_code || '');
+                    var curCampaign = String(__ap0.campaign_key || '');
                     var curFreq = Math.max(0, Math.floor(Number(__ap0.frequency_days) || 0));
                     var curValYuan = Math.max(0, Math.round(Number(__ap0.coupon_value_fen || __ap0.value_fen || 0) / 100));
                     var curValidDays = Math.max(0, Math.floor(Number(__ap0.valid_days) || 0));
                     var curTpl = String(__ap0.content_template || __ap0.message_template || '');
-                    // 短信渠道且选定了已报备模板：文案只读=模板真实正文（与客人实收一致）
-                    var __smsTplContent = (curChannel === 'sms') ? amSmsTemplateContent(curSmsCode) : '';
+                    // 短信渠道：活动制规则按 campaign_key 预览双门店模板正文；旧规则回落单一模板正文（与客人实收一致）
+                    var __smsTplContent = (curChannel === 'sms')
+                        ? (curCampaign ? amCampaignContentPreview(curCampaign) : amSmsTemplateContent(curSmsCode))
+                        : '';
                     var __tplReadonly = !!__smsTplContent;
                     var __tplShown = __tplReadonly ? __smsTplContent : curTpl;
                     var rrate = sent > 0 ? ((red / sent) * 100).toFixed(1) : '0.0';
@@ -56355,7 +56368,8 @@ ${body}
                     var covLine = cov
                         ? ('短信 <strong style="color:#a5b4fc;">' + cov.sms + '</strong> 人 · 订阅消息 <strong style="color:#a5b4fc;">' + cov.subscribe + '</strong> 人(上限·需授权) · 小程序站内 <strong style="color:#a5b4fc;">' + cov.member + '</strong> 人')
                         : '计算中/未知';
-                    var smsOpts = AM_SMS_TEMPLATES.map(function(t){ return '<option value="' + t.code + '"' + (curSmsCode === t.code ? ' selected' : '') + '>' + escapeHtml(t.label) + '</option>'; }).join('');
+                    var campaignOpts = '<option value="">（请选择营销活动）</option>' + Object.keys(AM_CAMPAIGNS).map(function(k){ return '<option value="' + k + '"' + (curCampaign === k ? ' selected' : '') + '>' + escapeHtml(AM_CAMPAIGNS[k].name) + '</option>'; }).join('');
+                    var campaignTip = curCampaign ? amCampaignPairTip(curCampaign) : '选定活动即自动绑定「马己仙＋洪潮」双门店已报备模板，规则标题同步为活动名（无需从十几条模板里逐条挑选）。';
                     return '<div class="rep-pay-card amr">'
                         // —— 卡头：标题 + 元信息 + 状态徽章（竖排，整宽自适应）——
                         + '<div class="amr-head">'
@@ -56380,8 +56394,9 @@ ${body}
                           +     '<select id="am-ch-' + rk + '" class="amr-ctrl" onchange="amOnChannelChange(\'' + rk + '\')">' + channelOpts + '</select>'
                           +   '</div>'
                           +   '<div id="am-ch-sms-' + rk + '" class="amr-field" style="display:' + (curChannel === 'sms' ? 'block' : 'none') + ';">'
-                          +     '<label class="amr-label">短信模板（已报备，决定文案与规则标题）</label>'
-                          +     '<select id="am-smstpl-' + rk + '" class="amr-ctrl" onchange="amOnSmsTplChange(\'' + rk + '\')">' + smsOpts + '</select>'
+                          +     '<label class="amr-label">营销活动（自动绑定门店双模板＋同步规则标题）</label>'
+                          +     '<select id="am-campaign-' + rk + '" class="amr-ctrl" onchange="amOnCampaignChange(\'' + rk + '\')">' + campaignOpts + '</select>'
+                          +     '<div class="amr-hint" id="am-campaign-tip-' + rk + '">' + escapeHtml(campaignTip) + '</div>'
                           +   '</div>'
                           +   '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetChannel(\'' + rk + '\')">保存渠道</button>'
                           + '</div>'))
@@ -56458,8 +56473,8 @@ ${body}
                 host.innerHTML = rows.map(function(x){
                     var amt = Number(x.amount_fen || 0) / 100;
                     var md = x.metadata || {};
-                    // 活动中文名：优先 campaigns.name，其次 metadata 里的活动/规则名，再次 campaign_id，最后占位
-                    var actName = x.campaign_name || md.campaign_name || md.rule_name || md.rule_key || md.coupon_source || x.campaign_id || md.template_id || '—';
+                    // 活动中文名：优先 campaigns.name，其次券模板id解析出的活动名，再次 metadata 活动/规则名，最后占位
+                    var actName = x.campaign_name || md.campaign_name || amCampaignLabelFromTemplate(md.template_id) || md.rule_name || md.rule_key || x.campaign_id || md.coupon_source || '—';
                     var storeNm = amStoreName(String(x.store_id || ''));
                     var dateTxt = x.redeemed_at ? new Date(x.redeemed_at).toLocaleString('zh-CN') : '—';
                     return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;">'
@@ -56585,26 +56600,45 @@ ${body}
             } catch (e) { showNotification('保存失败：' + (e && e.message || e), 'error'); }
         }
 
-        // 切换渠道下拉时，仅在「短信」渠道显示短信模板选择
+        // 切换渠道下拉时，仅在「短信」渠道显示营销活动选择
         function amOnChannelChange(ruleKey) {
             var sel = document.getElementById('am-ch-' + ruleKey);
             var smsBox = document.getElementById('am-ch-sms-' + ruleKey);
             if (sel && smsBox) smsBox.style.display = (sel.value === 'sms') ? 'block' : 'none';
-            // 切到短信渠道时，按当前模板把文案刷成只读真实正文；切走则恢复可编辑
-            amOnSmsTplChange(ruleKey);
+            // 切到短信渠道时，按当前活动把文案刷成只读双门店真实正文；切走则恢复可编辑
+            amOnCampaignChange(ruleKey);
         }
 
-        // 设置某规则的「投放渠道」（+短信模板）。改动 action_payload → 按治理规则重置审核态。
+        // 选择营销活动时：刷新「已绑定门店双模板」提示，并把文案区刷为双门店真实正文（只读）
+        function amOnCampaignChange(ruleKey) {
+            var sel = document.getElementById('am-campaign-' + ruleKey);
+            var tip = document.getElementById('am-campaign-tip-' + ruleKey);
+            var tInp = document.getElementById('am-tpl-' + ruleKey);
+            var chSel = document.getElementById('am-ch-' + ruleKey);
+            var isSms = chSel && chSel.value === 'sms';
+            var key = sel ? sel.value : '';
+            if (tip) tip.textContent = key ? amCampaignPairTip(key) : '选定活动即自动绑定双门店已报备模板，规则标题同步为活动名。';
+            if (tInp && isSms && key) {
+                tInp.value = amCampaignContentPreview(key);
+                tInp.readOnly = true;
+                tInp.style.opacity = '0.85';
+            }
+        }
+
+        // 设置某规则的「投放渠道」（+营销活动）。活动制：短信渠道只选「活动」，
+        // 系统自动绑定门店双模板（按客户门店发送时解析）并把规则标题同步为活动名。
+        // 改动 action_payload → 按治理规则重置审核态。
         async function amSetChannel(ruleKey) {
             var sel = document.getElementById('am-ch-' + ruleKey);
             var channel = sel ? sel.value : '';
             if (!channel) { showNotification('请选择投放渠道', 'error'); return; }
-            var smsSel = document.getElementById('am-smstpl-' + ruleKey);
-            var smsCode = (channel === 'sms' && smsSel) ? String(smsSel.value || '') : '';
+            var cpSel = document.getElementById('am-campaign-' + ruleKey);
+            var campaignKey = (channel === 'sms' && cpSel) ? String(cpSel.value || '') : '';
+            if (channel === 'sms' && !campaignKey) { showNotification('请选择营销活动', 'error'); return; }
             var chName = (AM_CHANNELS[channel] && AM_CHANNELS[channel].name) || channel;
-            // 短信为主力渠道：选定已报备模板后，规则标题以短信模板名为准（保持与实收短信一致）
-            var newName = (channel === 'sms') ? amSmsTemplateName(smsCode) : '';
-            var extra = channel === 'sms' ? ('\n短信模板：' + amSmsTemplateLabel(smsCode)) : '';
+            var cpName = campaignKey ? ((AM_CAMPAIGNS[campaignKey] && AM_CAMPAIGNS[campaignKey].name) || campaignKey) : '';
+            var newName = (channel === 'sms') ? cpName : '';
+            var extra = channel === 'sms' ? ('\n营销活动：' + cpName + '\n' + amCampaignPairTip(campaignKey)) : '';
             if (channel === 'sms' && newName) extra += '\n规则标题将同步为：' + newName;
             if (channel === 'member') extra += '\n注意：小程序站内券需在 action_payload 配置 member_template_id（券模板ID），否则会跳过下发。';
             if (channel === 'subscribe') extra += '\n注意：订阅消息仅能发给已「订阅授权」且有剩余次数的用户（微信硬约束）。';
@@ -56615,11 +56649,11 @@ ${body}
                 if (!rule) throw new Error('rule_not_found');
                 var ap = Object.assign({}, rule.action_payload || {}, { channel: channel });
                 if (channel === 'sms') {
-                    ap.sms_template_code = smsCode;
-                    // 选定已报备模板 → content_template 锁定为该模板真实正文，保证「文案=实收短信」一致
-                    var __c = amSmsTemplateContent(smsCode);
-                    if (__c) ap.content_template = __c;
-                } else { delete ap.sms_template_code; }
+                    ap.campaign_key = campaignKey;
+                    delete ap.sms_template_code; // 活动制：按客户门店解析模板，不再存单一模板
+                    // content_template 仅作面板展示（双门店真实正文）；发送时引擎按门店取已报备模板
+                    ap.content_template = amCampaignContentPreview(campaignKey);
+                } else { delete ap.sms_template_code; delete ap.campaign_key; }
                 var body = {
                     rule_key: rule.rule_key, name: (newName || rule.name), priority: rule.priority,
                     auto_execute: rule.auto_execute, enabled: rule.enabled,
