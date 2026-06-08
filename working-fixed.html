@@ -18616,13 +18616,13 @@
                 <nav class="rep-tabs" style="margin-bottom:10px;">
                   <button class="rep-tab rep-tab--active" onclick="showGrowthTab('dashboard')" id="growth-tab-dashboard">看板</button>
                   <button class="rep-tab" onclick="showGrowthTab('audience')" id="growth-tab-audience">客群洞察</button>
-                  <button class="rep-tab" onclick="showGrowthTab('engine')" id="growth-tab-engine">自动营销</button>
+                  <button class="rep-tab" onclick="showGrowthTab('engine')" id="growth-tab-engine">⚙️ 自动营销（自动台）</button>
                   <button class="rep-tab" onclick="showGrowthTab('content')" id="growth-tab-content">内容中心</button>
                   <button class="rep-tab" onclick="showGrowthTab('execution')" id="growth-tab-execution">执行中心</button>
                   <button class="rep-tab" onclick="showGrowthTab('settings')" id="growth-tab-settings">设置治理</button>
-                  <button class="rep-tab" onclick="window.open('/winback.html','_blank')" id="growth-tab-winback">💎 储值召回</button>
-                  <button class="rep-tab" onclick="window.open('/svremind.html','_blank')" id="growth-tab-svremind">💰 储值余额提醒</button>
-                  <button class="rep-tab" onclick="window.open('/campaign.html','_blank')" id="growth-tab-campaign">🎟️ 营销发券</button>
+                  <button class="rep-tab" onclick="window.open('/campaign.html','_blank')" id="growth-tab-campaign">🎟️ 营销发券（手动补发）</button>
+                  <button class="rep-tab" onclick="window.open('/winback.html','_blank')" id="growth-tab-winback">💎 储值召回（手动）</button>
+                  <button class="rep-tab" onclick="window.open('/svremind.html','_blank')" id="growth-tab-svremind">💰 储值提醒（手动测试）</button>
                 </nav>
                 <div id="growth-subnav" class="rep-subtabs" style="display:none;margin-bottom:14px;"></div>
                     <div id="growth-dashboard-content">
@@ -56118,7 +56118,8 @@ ${body}
             sms:       { name: '短信',         cost: '0.05 元/条', note: '需手机号；阿里云已报备模板' },
             subscribe: { name: '订阅消息',     cost: '免费',       note: '需 openid+订阅授权（微信硬约束，实际覆盖≤上限）' },
             member:    { name: '小程序站内券', cost: '免费',       note: '需 openid；发券进会员卡包' },
-            wecom:     { name: '企微（旧）',   cost: '免费',       note: '企微优先，无企微回落短信' }
+            wecom:     { name: '企微（旧）',   cost: '免费',       note: '企微优先，无企微回落短信' },
+            balance:   { name: '储值余额提醒', cost: '0.05 元/条', note: 'HRMS 直发余额短信，无券无码（独立触发器）' }
         };
         function amLifecycleName(k){ return (AM_LIFECYCLE[k] && AM_LIFECYCLE[k].name) || k; }
         function amTierName(k){ return (AM_VALUE_TIER[k] && AM_VALUE_TIER[k].name) || k; }
@@ -56291,6 +56292,13 @@ ${body}
                     ? allRules.filter(function(rule){ var sid = amRuleStoreId(rule); return sid === storeFilter || sid === ''; })
                     : allRules;
 
+                // 隐藏「已停用的旧企微规则」：已被活动制短信规则取代，停用后不再展示，避免新旧混淆。
+                // 新的短信/余额规则即便停用也保留（便于重新启用）。
+                rules = rules.filter(function(rule){
+                    var ch = String((rule.action_payload || {}).channel || 'wecom');
+                    return !(rule.enabled === false && ch === 'wecom');
+                });
+
                 // 按营销效果评分排序（打分排序）：已发送且评分高的排前，未发送的排后，便于复用高效规则
                 rules = rules.slice().sort(function(a, b){
                     var sa = statMap[a.rule_key], sb = statMap[b.rule_key];
@@ -56331,6 +56339,10 @@ ${body}
                     var curCampaign = String(__ap0.campaign_key || '');
                     var curFreq = Math.max(0, Math.floor(Number(__ap0.frequency_days) || 0));
                     var curValYuan = Math.max(0, Math.round(Number(__ap0.coupon_value_fen || __ap0.value_fen || 0) / 100));
+                    // 活动是否需要券面额：仅「沉睡召回/长期流失」等现金券含 value 变量；VIP/新客/活跃为赠菜券无需面额
+                    var campNeedsValue = curCampaign ? !!(AM_CAMPAIGNS[curCampaign] && AM_CAMPAIGNS[curCampaign].vars.indexOf('value') >= 0) : true;
+                    // 储值余额提醒：HRMS 后台直发余额短信，无券无码，由独立触发器执行（不走渠道/活动/券）
+                    var isBalance = curChannel === 'balance';
                     var curValidDays = Math.max(0, Math.floor(Number(__ap0.valid_days) || 0));
                     var curTpl = String(__ap0.content_template || __ap0.message_template || '');
                     // 短信渠道：活动制规则按 campaign_key 预览双门店模板正文；旧规则回落单一模板正文（与客人实收一致）
@@ -56382,14 +56394,22 @@ ${body}
                         // —— 人群与动作概览 ——
                         + '<div class="amr-sec">'
                         +   '<div class="amr-sec-title">🎯 人群与动作</div>'
-                        +   '<div class="amr-info">目标人群：' + escapeHtml(amDescribeCriteria(rule.criteria)) + '</div>'
-                        +   (critTip ? '<div class="amr-info amr-info--sub">判定口径：' + escapeHtml(critTip) + '</div>' : '')
+                        +   '<div class="amr-info">目标人群：' + escapeHtml(isBalance ? '有储值余额且久未消费的会员' : amDescribeCriteria(rule.criteria)) + '</div>'
+                        +   (isBalance ? '<div class="amr-info amr-info--sub">判定口径：余额≥下限（默认1元）且超过设定天数未消费</div>' : (critTip ? '<div class="amr-info amr-info--sub">判定口径：' + escapeHtml(critTip) + '</div>' : ''))
                         +   '<div class="amr-info">涉及会员：' + (reach == null ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>' : ('<strong>' + reach + '</strong> 人（命中人群且可触达）')) + '</div>'
                         +   '<div class="amr-info amr-info--sub">分渠道覆盖：' + covLine + '</div>'
                         +   '<div class="amr-info">触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
                         + '</div>'
+                        // —— 储值余额提醒（HRMS 直发·无券）说明 ——
+                        + (isBalance ? (
+                            '<div class="amr-sec">'
+                          +   '<div class="amr-sec-title">💰 储值余额提醒（HRMS 直发）</div>'
+                          +   '<div class="amr-info">由 HRMS 每日自动为各门店冻结余额提醒任务，仅发送「您账户尚有 ¥余额」短信，<strong>无券无码</strong>。</div>'
+                          +   '<div class="amr-info amr-info--sub">口径：有储值余额 + 久未消费的会员；受全局短信总闸（每号码每周≤1条）与 remind 频控控制。</div>'
+                          +   '<div class="amr-hint">门店余额模板需在服务器配置 ALIYUN_SMS_BALANCE_TEMPLATE_*（未配置则该门店跳过）。审核通过并启用后才会自动执行。</div>'
+                          + '</div>') : '')
                         // —— 投放渠道 ——
-                        + (isSubscribe ? '' : (
+                        + ((isSubscribe || isBalance) ? '' : (
                             '<div class="amr-sec">'
                           +   '<div class="amr-sec-title">📡 投放渠道</div>'
                           +   '<div class="amr-field">'
@@ -56403,23 +56423,26 @@ ${body}
                           +   '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetChannel(\'' + rk + '\')">保存渠道</button>'
                           + '</div>'))
                         // —— 发送频率 ——
-                        + '<div class="amr-sec">'
-                        +   '<div class="amr-sec-title">⏱️ 发送频率</div>'
-                        +   '<div class="amr-field amr-suffix">'
-                        +     '<span class="amr-suffix-txt">每位会员每</span>'
-                        +     '<input id="am-freq-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curFreq + '">'
-                        +     '<span class="amr-suffix-txt">天最多1次</span>'
-                        +   '</div>'
-                        +   '<div class="amr-hint">填 0 = 按到店周期自动判定。另有全局总闸：每号码每周最多 1 条短信。</div>'
-                        +   '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetFrequency(\'' + rk + '\')">保存频率</button>'
-                        + '</div>'
+                        + (isBalance ? '' : (
+                            '<div class="amr-sec">'
+                          +   '<div class="amr-sec-title">⏱️ 发送频率</div>'
+                          +   '<div class="amr-field amr-suffix">'
+                          +     '<span class="amr-suffix-txt">每位会员每</span>'
+                          +     '<input id="am-freq-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curFreq + '">'
+                          +     '<span class="amr-suffix-txt">天最多1次</span>'
+                          +   '</div>'
+                          +   '<div class="amr-hint">填 0 = 按到店周期自动判定。另有全局总闸：每号码每周最多 1 条短信。</div>'
+                          +   '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetFrequency(\'' + rk + '\')">保存频率</button>'
+                          + '</div>'))
                         // —— 券与文案 ——
-                        + (isSubscribe ? '' : (
+                        + ((isSubscribe || isBalance) ? '' : (
                             '<div class="amr-sec">'
                           +   '<div class="amr-sec-title">🎫 券与文案</div>'
                           +   '<div class="amr-coupon-box">'
                           +     '<div class="amr-row2">'
-                          +       '<div><label class="amr-label">券面额（元）</label><input id="am-val-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curValYuan + '"></div>'
+                          +       (campNeedsValue
+                                    ? '<div><label class="amr-label">券面额（元）</label><input id="am-val-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curValYuan + '"></div>'
+                                    : '<div><label class="amr-label">券类型</label><input class="amr-ctrl" value="赠菜/赠品券（无需面额）" disabled style="opacity:0.6;"></div>')
                           +       '<div><label class="amr-label">有效期（天）</label><input id="am-vd-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curValidDays + '"></div>'
                           +     '</div>'
                           +     '<div class="amr-field" style="margin-top:10px;">'
@@ -56576,7 +56599,7 @@ ${body}
             var valYuan = vInp ? Math.max(0, Math.floor(Number(vInp.value) || 0)) : 0;
             var validDays = dInp ? Math.max(0, Math.floor(Number(dInp.value) || 0)) : 0;
             var tpl = tInp ? String(tInp.value || '').trim() : '';
-            if (valYuan <= 0) { showNotification('券面额需大于 0 元', 'error'); return; }
+            if (vInp && valYuan <= 0) { showNotification('券面额需大于 0 元', 'error'); return; }
             if (validDays <= 0) { showNotification('有效期需大于 0 天', 'error'); return; }
             if (!confirm('将「' + ruleKey + '」设为：券面额 ¥' + valYuan + ' · 有效期 ' + validDays + ' 天？\n注意：修改会重置审核态，需重新「审核通过」后才会继续自动执行。')) return;
             try {

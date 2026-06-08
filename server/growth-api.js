@@ -885,6 +885,18 @@ export async function ensureGrowthTables(pool) {
         title_template: '老朋友唤醒',
         content_template: '{customer_name}，太久没见啦，特地为你准备{coupon_value_text}唤醒大券，保留15天，欢迎回来坐坐。'
       }
+    },
+    {
+      // 储值余额提醒：收编进自动营销当一条规则。channel='balance' → 引擎跳过逐人触达，
+      // 由 enqueueAutoStoredValueReminds 触发器按门店每日冻结余额提醒任务(无券无码)。
+      // 默认未审核(approved_at=null) → 治理门拦住，需在面板「审核通过 + 启用」才会自动跑。
+      rule_key: 'stored_value_remind',
+      name: '储值余额提醒',
+      priority: 15,
+      auto_execute: true,
+      criteria: { dormant_days: 30, min_balance_yuan: 1 },
+      action_type: 'send_message',
+      action_payload: { channel: 'balance' }
     }
   ];
   for (const rule of defaultTouchRules) {
@@ -2254,6 +2266,9 @@ async function runTouchRuleEngine(pool, options = {}) {
   const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules WHERE enabled = TRUE ORDER BY priority ASC, rule_key ASC LIMIT 20`);
   const createdActions = [];
   for (const rule of (rulesResult.rows || [])) {
+    // 储值余额提醒规则(channel='balance')：不走逐人触达引擎，由独立触发器
+    // enqueueAutoStoredValueReminds 按门店每日冻结余额提醒任务。此处直接跳过。
+    if (String((rule.action_payload || {}).channel || '') === 'balance') continue;
     const candidates = (await loadRuleCandidates(pool, rule)).slice(0, limitPerRule);
     // 活动制规则(action_payload.campaign_key)：不逐人直发，改为聚合候选→冻结发券任务(可核销可归因)。
     const ruleCampaignKey = cleanText((rule.action_payload || {}).campaign_key || '', 64);
@@ -3228,9 +3243,19 @@ export function registerGrowthRoutes(app, pool) {
   // 口径与频控同 /remind/launch：余额≥min + 久未消费(dormant_days) + remind 类 N 天不重发 + 全局总闸。
   // 幂等：同店同日一条任务(campaign_id=auto_svremind_<store>_<日期>)，定时器多跑也不会重复冻结。
   async function enqueueAutoStoredValueReminds() {
-    if (!isAliyunSmsAutoSendEnabled()) return { enqueued: 0, skipped: 'governance' };
-    const dormantDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_REMIND_AUTO_DORMANT_DAYS) || 30));
-    const minBalanceFen = Math.max(0, Math.floor((Number(process.env.ALIYUN_SMS_REMIND_AUTO_MIN_BALANCE_YUAN) || 1) * 100));
+    if (!isAliyunSmsAutoSendEnabled()) return { enqueued: 0, skipped: 'sms_switch_off' };
+    // 治理门：把「储值余额提醒」收编为自动营销里的一条规则(rule_key='stored_value_remind')，
+    // 必须 规则启用 + 已审核 + auto_execute 才自动跑(与其它活动制规则同一治理口径)。
+    const rr = await pool.query(
+      `SELECT enabled, approved_at, auto_execute, criteria FROM growth_touch_rules WHERE rule_key = 'stored_value_remind' LIMIT 1`
+    );
+    const rule = rr.rows[0];
+    if (!rule || !rule.enabled || !rule.approved_at || rule.auto_execute === false) {
+      return { enqueued: 0, skipped: 'governance' };
+    }
+    const crit = (rule.criteria && typeof rule.criteria === 'object') ? rule.criteria : {};
+    const dormantDays = Math.max(0, Math.floor(Number(crit.dormant_days) || Number(process.env.ALIYUN_SMS_REMIND_AUTO_DORMANT_DAYS) || 30));
+    const minBalanceFen = Math.max(0, Math.floor((Number(crit.min_balance_yuan) || Number(process.env.ALIYUN_SMS_REMIND_AUTO_MIN_BALANCE_YUAN) || 1) * 100));
     const maxTargets = Math.min(Math.max(Number(process.env.ALIYUN_SMS_REMIND_AUTO_MAX_TARGETS) || 1000, 1), 2000);
     const freqDays = freqDaysEnv('ALIYUN_SMS_REMIND_FREQUENCY_DAYS', 30);
     const today = new Date().toISOString().slice(0, 10);
