@@ -3222,6 +3222,52 @@ export function registerGrowthRoutes(app, pool) {
     setInterval(() => { processOneRemindJob().catch((e) => console.warn('[svremind] worker failed:', e?.message)); }, 30 * 1000);
   }
 
+  // 储值余额提醒·定时自动触发器：每日为每个有储值客的门店自动冻结一条 remind 任务，
+  // 由上面的 processOneRemindJob worker 认领下发(只发 {balance}，无券无码)。
+  // 治理门：仅在短信总闸(ALIYUN_SMS_ENABLED)开启时才冻结(开关默认关 → 全部静默)。
+  // 口径与频控同 /remind/launch：余额≥min + 久未消费(dormant_days) + remind 类 N 天不重发 + 全局总闸。
+  // 幂等：同店同日一条任务(campaign_id=auto_svremind_<store>_<日期>)，定时器多跑也不会重复冻结。
+  async function enqueueAutoStoredValueReminds() {
+    if (!isAliyunSmsAutoSendEnabled()) return { enqueued: 0, skipped: 'governance' };
+    const dormantDays = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_REMIND_AUTO_DORMANT_DAYS) || 30));
+    const minBalanceFen = Math.max(0, Math.floor((Number(process.env.ALIYUN_SMS_REMIND_AUTO_MIN_BALANCE_YUAN) || 1) * 100));
+    const maxTargets = Math.min(Math.max(Number(process.env.ALIYUN_SMS_REMIND_AUTO_MAX_TARGETS) || 1000, 1), 2000);
+    const freqDays = freqDaysEnv('ALIYUN_SMS_REMIND_FREQUENCY_DAYS', 30);
+    const today = new Date().toISOString().slice(0, 10);
+    const stores = await pool.query(
+      `SELECT DISTINCT store_id FROM growth_stored_value_members WHERE store_id IS NOT NULL AND store_id <> ''`
+    );
+    let enqueued = 0;
+    for (const s of stores.rows) {
+      const storeId = String(s.store_id || '').trim();
+      if (!storeId) continue;
+      const templateCode = pickBalanceTemplateByStore(storeId);
+      if (!templateCode) continue; // 该门店余额模板未配置 → 跳过，防整批拒收
+      const campaignId = `auto_svremind_${storeId}_${today}`;
+      const exist = await pool.query(`SELECT 1 FROM growth_campaign_jobs WHERE campaign_id = $1 LIMIT 1`, [campaignId]);
+      if (exist.rows.length) continue; // 当日已冻结
+      const q = buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets);
+      const r = await pool.query(q.sql, q.params);
+      const targets = r.rows.map((x) => ({ phone: x.phone, name: x.member_name || '', card_no: x.card_no, balance_yuan: Math.round((x.balance_fen || 0) / 100) }));
+      if (!targets.length) continue;
+      await pool.query(
+        `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result)
+         VALUES ($1,$2,0,0,$3,$4,$5::jsonb,$6,'pending','stored_value_remind',$7,$8::jsonb)`,
+        [campaignId, storeId, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, 'auto_scheduler', JSON.stringify({ template_code: templateCode })]
+      );
+      enqueued += targets.length;
+    }
+    return { enqueued };
+  }
+  if (!globalThis.__growthRemindAutoTimer) {
+    globalThis.__growthRemindAutoTimer = setInterval(() => {
+      enqueueAutoStoredValueReminds().catch((e) => console.warn('[svremind] auto enqueue failed:', e?.message));
+    }, 60 * 60 * 1000);
+    setTimeout(() => {
+      enqueueAutoStoredValueReminds().catch((e) => console.warn('[svremind] initial auto enqueue failed:', e?.message));
+    }, 20000);
+  }
+
   app.post('/api/miniprogram/events', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
 
