@@ -897,6 +897,28 @@ export async function ensureGrowthTables(pool) {
       criteria: { dormant_days: 30, min_balance_yuan: 1 },
       action_type: 'send_message',
       action_payload: { channel: 'balance' }
+    },
+    {
+      // 新客二次召回·21-60天：到店仅1次、首访后21-60天未回头(非VIP；VIP另走VIP维护)。
+      // 现金券(value/date/code)，券面额/有效期在「自动营销」面板按效果调整(coupon_value_fen=0时不发)。
+      rule_key: 'newcomer_recall_21_60',
+      name: '新客二次召回·21-60天',
+      priority: 28,
+      auto_execute: true,
+      criteria: { min_visit_count: 1, max_visit_count: 1, min_days_since_last_visit: 21, max_days_since_last_visit: 60, value_tier_not: 'vip', lifecycle_stage_not: 'active' },
+      action_type: 'send_message',
+      action_payload: { channel: 'sms', campaign_key: 'newcomer_recall', valid_days: 14, coupon_value_fen: 0 }
+    },
+    {
+      // 常客降温唤醒·21-60天：到店≥2次、21-60天未回头(排除VIP与"活跃"阶段，避免与VIP维护/活跃经营重叠)。
+      // 赠品券(date/code，复用活跃模板)，有效期在面板调整。
+      rule_key: 'regular_cooling_21_60',
+      name: '常客降温唤醒·21-60天',
+      priority: 29,
+      auto_execute: true,
+      criteria: { min_visit_count: 2, min_days_since_last_visit: 21, max_days_since_last_visit: 60, value_tier_not: 'vip', lifecycle_stage_not: 'active' },
+      action_type: 'send_message',
+      action_payload: { channel: 'sms', campaign_key: 'regular_cooling', valid_days: 14 }
     }
   ];
   for (const rule of defaultTouchRules) {
@@ -1466,6 +1488,10 @@ const CAMPAIGN_TYPES = {
   vip_gift:       { label: 'VIP客户维护',          source: 'profiles', tplPrefix: 'VIP',       coupon_count: 1, vars: ['date', 'code'] },
   newcomer_4d:    { label: '新客回头·4天',         source: 'profiles', tplPrefix: 'NEW4',      coupon_count: 1, vars: ['date', 'code'] },
   newcomer_8d:    { label: '新客回头·8天',         source: 'profiles', tplPrefix: 'NEW8',      coupon_count: 1, vars: ['date', 'code'] },
+  // 新客二次召回(21-60天,到店1次,现金券): env ALIYUN_SMS_NEWRECALL_* (SMS_507205142/SMS_507240155)
+  newcomer_recall:{ label: '新客二次召回·21-60天',  source: 'profiles', tplPrefix: 'NEWRECALL', coupon_count: 1, vars: ['value', 'date', 'code'] },
+  // 常客降温唤醒(21-60天,到店≥2次,赠品券,复用活跃模板): env ALIYUN_SMS_COOLING_* (SMS_507100271/SMS_507400282)
+  regular_cooling:{ label: '常客降温唤醒·21-60天',  source: 'profiles', tplPrefix: 'COOLING',   coupon_count: 1, vars: ['date', 'code'] },
   active:         { label: '活跃客经营',           source: 'profiles', tplPrefix: 'ACTIVE',    coupon_count: 1, vars: ['date', 'code'] },
   // 沉睡召回60-90：沿用现有 winback 已报备模板(SMS_507220292/SMS_507240296)，env 见 ALIYUN_SMS_DORM6090_*
   dormant_60_90:  { label: '沉睡召回·60-90天',     source: 'profiles', tplPrefix: 'DORM6090',  coupon_count: 1, vars: ['value', 'date', 'code'] },
@@ -2174,6 +2200,7 @@ async function loadRuleCandidates(pool, rule) {
     // 门店限定：规则带 store_id 时只命中本店客户，避免跨店误发（订阅规则必带门店）
     if (criteria.store_id && String(row.store_id || '') !== String(criteria.store_id)) return false;
     if (criteria.lifecycle_stage && stage !== criteria.lifecycle_stage) return false;
+    if (criteria.lifecycle_stage_not && stage === criteria.lifecycle_stage_not) return false;
     if (criteria.value_tier && tier !== criteria.value_tier) return false;
     if (criteria.value_tier_not && tier === criteria.value_tier_not) return false;
     if (Number.isFinite(Number(criteria.max_days_since_last_visit)) && days > Number(criteria.max_days_since_last_visit)) return false;
@@ -2182,7 +2209,7 @@ async function loadRuleCandidates(pool, rule) {
     if (Number.isFinite(Number(criteria.max_visit_count)) && visits > Number(criteria.max_visit_count)) return false;
     // 必须至少有一个「人群」维度筛选（生命周期/价值/天数/到店次数），
     // 否则视为无条件全量，拒绝命中以防误群发（store_id 不算人群筛选）。
-    const hasAudienceFilter = !!(criteria.lifecycle_stage || criteria.value_tier || criteria.value_tier_not
+    const hasAudienceFilter = !!(criteria.lifecycle_stage || criteria.lifecycle_stage_not || criteria.value_tier || criteria.value_tier_not
       || Number.isFinite(Number(criteria.max_days_since_last_visit))
       || Number.isFinite(Number(criteria.min_days_since_last_visit))
       || Number.isFinite(Number(criteria.min_visit_count))
