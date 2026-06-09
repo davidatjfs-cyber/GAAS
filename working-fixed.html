@@ -56508,7 +56508,7 @@ ${body}
                     var amt = Number(x.amount_fen || 0) / 100;
                     var md = x.metadata || {};
                     // 活动中文名：优先 campaigns.name，其次券模板id解析出的活动名，再次 metadata 活动/规则名，最后占位
-                    var actName = x.campaign_name || md.campaign_name || amCampaignLabelFromTemplate(md.template_id) || md.rule_name || md.rule_key || x.campaign_id || md.coupon_source || '—';
+                    var actName = x.campaign_name || md.campaign_name || amCampaignLabelFromTemplate(md.template_id) || md.coupon_label || md.coupon_name || md.rule_name || md.rule_key || x.campaign_id || md.coupon_source || '—';
                     var storeNm = amStoreName(String(x.store_id || ''));
                     var dateTxt = x.redeemed_at ? new Date(x.redeemed_at).toLocaleString('zh-CN') : '—';
                     return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;">'
