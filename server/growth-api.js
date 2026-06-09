@@ -2255,11 +2255,24 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
   const validDays = Math.max(1, Math.floor(Number(ap.valid_days) || 14));
   const needsValue = Array.isArray(cfg.vars) && cfg.vars.includes('value');
   if (needsValue && valueYuan <= 0) return { enqueued: 0, skipped: 'missing_value' };
+  // 冻结前预排除「近 global-freq 天内已成功发过短信」的号码：与发送端 globalSmsCapped 同口径，
+  // 双保险确保不对已触达客户重复建券/重复发短信(发送端也会再兜底跳过，此处避免空建券)。
+  const gDays = freqDaysEnv('ALIYUN_SMS_GLOBAL_FREQUENCY_DAYS', 7);
+  let recentSentSet = new Set();
+  if (gDays > 0) {
+    const rc = await pool.query(
+      `SELECT DISTINCT payload->>'phone' AS phone FROM growth_delivery_logs
+         WHERE channel='sms' AND status='sent' AND created_at > now() - ($1 || ' days')::interval`,
+      [String(gDays)]
+    );
+    recentSentSet = new Set((rc.rows || []).map((r) => String(r.phone || '')).filter(Boolean));
+  }
   // 按客户门店分组(一条规则覆盖两店，按门店分别冻结任务+解析已报备模板)
   const byStore = new Map();
   for (const row of candidates) {
     const phone = cleanPhone(row.phone);
     if (!phone) continue;
+    if (recentSentSet.has(phone)) continue; // 近期已触达，跳过(防重复)
     const sid = String(row.store_id || ap.store_id || '').trim();
     if (!sid) continue;
     if (!pickCampaignTemplate(campaignKey, sid)) continue; // 该门店模板未配置(后补)→跳过，防整批拒收
@@ -2306,7 +2319,7 @@ async function runTouchRuleEngine(pool, options = {}) {
     );
     return { created: 0, skipped: true, reason: 'pos_data_stale', lag_days: Number.isFinite(lagDays) ? lagDays : null };
   }
-  const limitPerRule = Math.min(Math.max(Number(options.limit_per_rule) || 100, 1), 500);
+  const limitPerRule = Math.min(Math.max(Number(options.limit_per_rule) || 100, 1), 5000);
   const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules WHERE enabled = TRUE ORDER BY priority ASC, rule_key ASC LIMIT 20`);
   const createdActions = [];
   for (const rule of (rulesResult.rows || [])) {
@@ -2934,9 +2947,15 @@ export function registerGrowthRoutes(app, pool) {
     try {
       // 小程序认领所有「带券码」任务：召回(winback) + 通用发券(各段key)。
       // 仅排除 stored_value_remind（无券无码，由 HRMS 后台 worker 直发）。
+      // 认领待执行任务：pending 优先；另回收「卡死的 running」——小程序断点续跑会把未发完的
+      // 任务置回 pending，但若其执行中崩溃/超时来不及回写，任务会滞留 running。超过 3 分钟未更新
+      // 即视为僵死，重新认领续跑（已发出的人受 7 天频控保护不会重复发，按 result.processed 续跑不重复建券）。
       const r = await pool.query(
         `UPDATE growth_campaign_jobs SET status='running', updated_at=now()
-          WHERE id = (SELECT id FROM growth_campaign_jobs WHERE status='pending' AND kind <> 'stored_value_remind' ORDER BY created_at ASC LIMIT 1)
+          WHERE id = (SELECT id FROM growth_campaign_jobs
+                       WHERE kind <> 'stored_value_remind'
+                         AND (status='pending' OR (status='running' AND updated_at < now() - interval '3 minutes'))
+                       ORDER BY created_at ASC LIMIT 1)
           RETURNING id, campaign_id, store_id, kind, value_yuan, valid_days, targets, result`
       );
       return res.json({ ok: true, job: r.rows[0] || null });
@@ -5032,10 +5051,10 @@ export function registerGrowthRoutes(app, pool) {
 
   if (!globalThis.__growthTouchRuleTimer) {
     globalThis.__growthTouchRuleTimer = setInterval(() => {
-      runTouchRuleEngine(pool, { limit_per_rule: 100 }).catch((e) => console.warn('[growth] rule engine run failed:', e?.message));
+      runTouchRuleEngine(pool, { limit_per_rule: 5000 }).catch((e) => console.warn('[growth] rule engine run failed:', e?.message));
     }, 15 * 60 * 1000);
     setTimeout(() => {
-      runTouchRuleEngine(pool, { limit_per_rule: 100 }).catch((e) => console.warn('[growth] initial rule engine run failed:', e?.message));
+      runTouchRuleEngine(pool, { limit_per_rule: 5000 }).catch((e) => console.warn('[growth] initial rule engine run failed:', e?.message));
     }, 10000);
   }
 
