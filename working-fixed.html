@@ -18605,10 +18605,12 @@
                     <div class="rep-field">
                       <label for="growth-days-filter">时间范围</label>
                       <select id="growth-days-filter" class="dr-store-select" onchange="refreshGrowthCurrentTab()">
+                        <option value="1">今日</option>
                         <option value="7">近7天</option>
                         <option value="14">近14天</option>
                         <option value="30" selected>近30天</option>
                         <option value="90">近90天</option>
+                        <option value="365">近一年</option>
                       </select>
                     </div>
                   </div>
@@ -19227,9 +19229,11 @@
                             <div class="rep-seg" style="margin-bottom:14px;">
                                 <button onclick="loadAutoMarketing()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">刷新</button>
                                 <select id="am-stats-days" onchange="loadAutoMarketing()" style="flex:1;min-width:100px;border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;background:rgba(0,0,0,0.35);color:var(--rep-text);">
+                                    <option value="1">今日</option>
                                     <option value="7">近7天</option>
                                     <option value="30" selected>近30天</option>
                                     <option value="90">近90天</option>
+                                    <option value="365">近一年</option>
                                 </select>
                             </div>
                             <div id="am-summary" class="rep-grid" style="margin-bottom:6px;"></div>

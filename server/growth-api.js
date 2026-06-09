@@ -3501,7 +3501,7 @@ export function registerGrowthRoutes(app, pool) {
 
   app.get('/api/growth/metrics', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 90);
+    const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 365);
     if (req.query.recompute === '1' || req.query.recompute === 'true') {
       await recomputeDailyMetrics(days);
     }
