@@ -14620,7 +14620,14 @@ function employeeAccountShouldDisable(emp) {
     emp.offboardingApproved === true
     || String(emp.offboardingApproved || '').trim().toLowerCase() === 'true'
     || String(emp.offboardingApproved || '').trim() === '1';
-  if (ob) return true;
+  if (ob) {
+    const obDate = String(emp.offboardingDate || emp.extra_json?.offboardingDate || '').trim().slice(0, 10);
+    if (obDate) {
+      const today = new Date().toLocaleString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+      if (obDate > today) return false;
+    }
+    return true;
+  }
   return false;
 }
 
