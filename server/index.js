@@ -60,6 +60,7 @@ import fileRoutes from './file-routes.js';
 import { enforceRuntimeSafetyOrExit, configureDbSessionSafety, isSchemaChangeAllowed, getAppEnv, isWebhookEnabled, isExternalEnabled } from './safety.js';
 import { expandAgentStoreLabels, resolveAgentCanonicalStore } from './v2-store-alignment.js';
 import { ensureGrowthTables, registerGrowthRoutes, setSendGrowthAlert } from './growth-api.js';
+import strategyExperimentRoutes from './strategy-experiment-api.js';
 import { ensurePhaseTables, registerPhaseRoutes } from './growth-phases.js';
 import {
   reconcileDailyReportAttendanceRegister,
@@ -5376,6 +5377,7 @@ setSendGrowthAlert(async (msg) => {
   return sendLarkMessage(GROWTH_REPORT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
 });
 registerPhaseRoutes(app, pool);
+app.use(strategyExperimentRoutes(pool, authRequired));
 
 app.post('/api/growth/upload', authRequired, upload.single('file'), async (req, res) => {
   try {

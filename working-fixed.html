@@ -13496,6 +13496,108 @@
                 max-width: 100%;
             }
 
+            /* ── 门店营销策略 ── */
+            #strategy-page {
+                padding: 20px;
+                max-width: 960px;
+                margin: 0 auto;
+                color: #f8fafc;
+            }
+            #strategy-page .sp-head {
+                display: flex; align-items: center; justify-content: space-between;
+                margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+            }
+            #strategy-page .sp-head h2 {
+                font-size: 22px; font-weight: 800; letter-spacing: -0.03em; margin: 0;
+            }
+            #strategy-page .sp-tabs {
+                display: flex; gap: 4px; margin-bottom: 18px;
+                background: rgba(15,23,42,0.5); border-radius: 12px; padding: 4px;
+            }
+            #strategy-page .sp-tab {
+                padding: 8px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
+                cursor: pointer; color: rgba(226,232,240,0.6); background: transparent; border: none;
+                transition: all .2s;
+            }
+            #strategy-page .sp-tab:hover { color: rgba(226,232,240,0.85); }
+            #strategy-page .sp-tab--active {
+                background: rgba(14,165,233,0.18); color: #38bdf8;
+            }
+            #strategy-page .sp-card {
+                background: rgba(15,23,42,0.6); border: 1px solid rgba(148,163,184,0.12);
+                border-radius: 16px; padding: 18px; margin-bottom: 14px;
+            }
+            #strategy-page .sp-card h3 {
+                font-size: 15px; font-weight: 700; margin: 0 0 10px;
+                color: #e2e8f0;
+            }
+            #strategy-page .sp-badge {
+                display: inline-block; font-size: 11px; font-weight: 700;
+                padding: 3px 10px; border-radius: 99px; letter-spacing: .04em;
+            }
+            #strategy-page .sp-badge--pending { background: rgba(251,191,36,0.15); color: #fbbf24; }
+            #strategy-page .sp-badge--approved { background: rgba(34,197,94,0.15); color: #22c55e; }
+            #strategy-page .sp-badge--running { background: rgba(14,165,233,0.15); color: #0ea5e9; }
+            #strategy-page .sp-badge--reviewing { background: rgba(168,85,247,0.15); color: #a855f7; }
+            #strategy-page .sp-badge--completed { background: rgba(34,197,94,0.2); color: #4ade80; }
+            #strategy-page .sp-badge--rejected { background: rgba(239,68,68,0.15); color: #ef4444; }
+            #strategy-page .sp-badge--incomplete { background: rgba(148,163,184,0.15); color: #94a3b8; }
+            #strategy-page .sp-row {
+                display: flex; justify-content: space-between; align-items: center;
+                padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.08);
+                font-size: 13px;
+            }
+            #strategy-page .sp-row:last-child { border-bottom: none; }
+            #strategy-page .sp-row .label { color: rgba(226,232,240,0.5); }
+            #strategy-page .sp-row .value { color: #e2e8f0; font-weight: 500; }
+            #strategy-page .sp-btn {
+                padding: 8px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
+                cursor: pointer; border: none; transition: all .15s;
+            }
+            #strategy-page .sp-btn--primary {
+                background: linear-gradient(135deg, #0ea5e9, #2563eb); color: #fff;
+            }
+            #strategy-page .sp-btn--primary:hover { filter: brightness(1.1); }
+            #strategy-page .sp-btn--secondary {
+                background: rgba(148,163,184,0.1); color: rgba(226,232,240,0.75);
+                border: 1px solid rgba(148,163,184,0.2);
+            }
+            #strategy-page .sp-form-group {
+                margin-bottom: 14px;
+            }
+            #strategy-page .sp-form-group label {
+                display: block; font-size: 12px; font-weight: 600;
+                color: rgba(226,232,240,0.55); margin-bottom: 4px;
+            }
+            #strategy-page .sp-form-group input,
+            #strategy-page .sp-form-group select,
+            #strategy-page .sp-form-group textarea {
+                width: 100%; padding: 10px 14px; border-radius: 10px;
+                border: 1px solid rgba(148,163,184,0.18); background: rgba(15,23,42,0.6);
+                color: #e2e8f0; font-size: 14px;
+            }
+            #strategy-page .sp-form-group textarea { min-height: 70px; resize: vertical; }
+            #strategy-page .sp-variant-form {
+                border-left: 3px solid rgba(14,165,233,0.4); padding-left: 14px; margin-bottom: 16px;
+            }
+            #strategy-page .sp-variant-form.variant-b { border-left-color: rgba(168,85,247,0.4); }
+            #strategy-page .sp-result-form { margin-top: 12px; }
+            #strategy-page .sp-empty {
+                text-align: center; padding: 48px 20px; color: rgba(226,232,240,0.35);
+                font-size: 14px;
+            }
+            #strategy-page .sp-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+            #strategy-page .sp-score {
+                font-size: 28px; font-weight: 800; letter-spacing: -0.04em;
+            }
+            #strategy-page .sp-score--high { color: #4ade80; }
+            #strategy-page .sp-score--mid { color: #fbbf24; }
+            #strategy-page .sp-score--low { color: #ef4444; }
+            @media (max-width: 768px) {
+                #strategy-page { padding: 12px 10px; }
+                #strategy-page .sp-head h2 { font-size: 18px; }
+            }
+
             #campaign-create-form {
                 margin-top: 12px !important;
                 padding: 14px !important;
@@ -13802,6 +13904,11 @@
                 <div class="nav-item" data-page="growth">
                     <a href="#" class="nav-link growth-nav-link" onclick="showPage('growth')" style="display:none;">
                         <i>📈</i> <span>增长看板</span>
+                    </a>
+                </div>
+                <div class="nav-item" data-page="strategy" id="strategy-nav-item" style="display:none;">
+                    <a href="#" class="nav-link" onclick="showPage('strategy')">
+                        <i>🧪</i> <span>门店营销策略</span>
                     </a>
                 </div>
                 <div class="nav-item" data-page="agent-tasks" style="display:none;">
@@ -19324,7 +19431,23 @@
                     </div>
                 </div>
             </div>
-            <div id="exam-page" class="hidden">
+            <div id="strategy-page" class="hidden">
+                <div class="sp-head">
+                    <h2>门店营销策略</h2>
+                    <div id="sp-create-btn-wrap" style="display:none;">
+                        <button class="sp-btn sp-btn--primary" onclick="showStrategyCreateForm()">+ 新建实验</button>
+                    </div>
+                </div>
+                <div class="sp-tabs" id="sp-tabs">
+                    <button class="sp-tab sp-tab--active" data-tab="experiments" onclick="switchStrategyTab('experiments')">实验列表</button>
+                    <button class="sp-tab" data-tab="pending" onclick="switchStrategyTab('pending')">待执行</button>
+                    <button class="sp-tab" data-tab="create" id="sp-create-tab" style="display:none;" onclick="switchStrategyTab('create')">新建实验</button>
+                </div>
+                <div id="sp-experiments-view"></div>
+                <div id="sp-pending-view" style="display:none;"></div>
+                <div id="sp-create-view" style="display:none;"></div>
+                <div id="sp-detail-view" style="display:none;"></div>
+            </div>
                 <div class="exam-shell">
                     <div class="exam-header">
                         <div>
@@ -25425,7 +25548,7 @@ th { background: #f5f5f5; font-weight: 700; }
                 updateUserInfo();
                 restoreSidebarState();
                 try { updateKitchenNavVisibility(); } catch(e) {}
-                try { updateGrowthModuleVisibility(); } catch(e) {}
+                try { updateGrowthModuleVisibility(); updateStrategyModuleVisibility(); } catch(e) {}
                 showPage(getHomePageName());
                 maybeOpenSmartAssistantFromRoute();
 
@@ -25441,7 +25564,7 @@ th { background: #f5f5f5; font-weight: 700; }
                         if (empInfo2.department) currentUser.department = empInfo2.department;
                         updateUserInfo();
                         try { updateKitchenNavVisibility(); } catch(e) {}
-                        try { updateGrowthModuleVisibility(); } catch(e) {}
+                        try { updateGrowthModuleVisibility(); updateStrategyModuleVisibility(); } catch(e) {}
                     } catch (e) {}
                     try { loadProfileData(); } catch (e) {}
                     try { if (!document.getElementById('employees-page')?.classList.contains('hidden')) loadEmployeesData(); } catch (e) {}
@@ -25570,6 +25693,10 @@ th { background: #f5f5f5; font-weight: 700; }
             if (page === 'growth') {
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN;
+            }
+            if (page === 'strategy') {
+                const r = String(role == null ? currentUser?.role : role || '').trim();
+                return r === ROLES.ADMIN || r === ROLES.HQ_MANAGER || r === ROLES.STORE_MANAGER || r === ROLES.PRODUCTION_MANAGER;
             }
             if (page === 'daily-report') {
                 const r = String(role == null ? currentUser?.role : role || '').trim();
@@ -25860,7 +25987,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         if (empInfo2.department) currentUser.department = empInfo2.department;
                         updateUserInfo();
                         try { updateKitchenNavVisibility(); } catch(e) {}
-                        try { updateGrowthModuleVisibility(); } catch(e) {}
+                        try { updateGrowthModuleVisibility(); updateStrategyModuleVisibility(); } catch(e) {}
                     } catch (e) {}
                     try { loadProfileData(); } catch (e) {}
                     try { if (!document.getElementById('employees-page')?.classList.contains('hidden')) loadEmployeesData(); } catch (e) {}
@@ -25875,7 +26002,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 document.getElementById('main-app').classList.remove('hidden');
                 updateUserInfo();
                 restoreSidebarState();
-                try { updateGrowthModuleVisibility(); } catch(e) {}
+                try { updateGrowthModuleVisibility(); updateStrategyModuleVisibility(); } catch(e) {}
                 showPage(getHomePageName());
                 maybeOpenSmartAssistantFromRoute();
                 showNotification(`欢迎回来，${currentUser.name}！`, 'success');
@@ -26472,6 +26599,14 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 }
             }
 
+            if (pageName === 'strategy') {
+                const canAccess = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER || currentUser.role === ROLES.STORE_MANAGER || currentUser.role === ROLES.STORE_PRODUCTION_MANAGER);
+                if (!canAccess) {
+                    showNotification('门店营销策略需要门店或总部角色权限', 'warning');
+                    pageName = getHomePageName();
+                }
+            }
+
             if (pageName === 'agent-tasks') {
                 const canAccess = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER || currentUser.role === ROLES.HR_MANAGER);
                 if (!canAccess) {
@@ -26582,6 +26717,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         agents: '数据中心',
                         growth: '增长看板',
                         'agent-tasks': 'Agent任务',
+                        strategy: '门店营销策略',
                         flashcards: '自我测验',
                         stores: '门店管理',
                         roles: '角色权限',
@@ -26705,6 +26841,9 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                     break;
                 case 'agent-tasks':
                     loadAgentTaskBoard();
+                    break;
+                case 'strategy':
+                    loadStrategyPage();
                     break;
                 case 'flashcards':
                     loadFlashcardsModule();
@@ -43629,7 +43768,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                 }).catch(() => {});
                 showPage(getHomePageName());
                 try { updateKitchenNavVisibility(); } catch (e) {}
-                try { updateGrowthModuleVisibility(); } catch (e) {}
+                try { updateGrowthModuleVisibility(); updateStrategyModuleVisibility(); } catch (e) {}
             } catch (e) {
                 showNotification('代登录失败：' + (e?.message || e || '网络错误'), 'error');
             }
@@ -43657,7 +43796,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                 }).catch(() => {});
                 showPage(getHomePageName());
                 try { updateKitchenNavVisibility(); } catch (e) {}
-                try { updateGrowthModuleVisibility(); } catch (e) {}
+                try { updateGrowthModuleVisibility(); updateStrategyModuleVisibility(); } catch (e) {}
             } catch (e) {
                 showNotification('恢复失败：' + (e?.message || '未知错误'), 'error');
             }
@@ -52738,6 +52877,7 @@ ${body}
                 { icon:'🎓', label:'培训认证', page:'training' },
                 { icon:'📊', label:'数据中心', page:'agents', roles:['admin'] },
                 { icon:'📈', label:'增长看板', page:'growth', roles:['admin'] },
+                { icon:'🧪', label:'门店营销策略', page:'strategy', roles:['admin','hq_manager','store_manager','store_production_manager'] },
                 { icon:'🧭', label:'Agent任务', page:'agent-tasks', roles:['admin','hq_manager','hr_manager'] },
                 // 考试测评已停用
                 // 奖惩管理：管理员/HR/总部营运/店长/出品经理 可见
@@ -54026,6 +54166,23 @@ ${body}
             document.querySelectorAll('.growth-nav-link').forEach(function(el) { el.style.display = canAccess ? '' : 'none'; });
         }
 
+        function canAccessStrategyModule() {
+            if (!currentUser) return false;
+            var role = String(currentUser.role || '').trim();
+            return ['admin', 'hq_manager', 'store_manager', 'store_production_manager'].includes(role);
+        }
+
+        function updateStrategyModuleVisibility() {
+            var canAccess = canAccessStrategyModule();
+            var navEl = document.getElementById('strategy-nav-item');
+            if (navEl) navEl.style.display = canAccess ? '' : 'none';
+            var createBtn = document.getElementById('sp-create-btn-wrap');
+            var createTab = document.getElementById('sp-create-tab');
+            var isAdminOrHq = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER);
+            if (createBtn) createBtn.style.display = (canAccess && isAdminOrHq) ? '' : 'none';
+            if (createTab) createTab.style.display = isAdminOrHq ? '' : 'none';
+        }
+
         var __growthActiveTab = 'dashboard';
         var __growthTrendIndicator = 'scan';
         function refreshGrowthCurrentTab() {
@@ -54252,11 +54409,18 @@ ${body}
     // 增长移动端导航权限
     try {
       updateGrowthModuleVisibility();
+      updateStrategyModuleVisibility();
     } catch(e) {}
 
     // Phase 8: 增长模块仅管理员/总部可见
     try {
       updateGrowthModuleVisibility();
+      updateStrategyModuleVisibility();
+    } catch(e) {}
+
+    // 门店营销策略模块
+    try {
+      updateStrategyModuleVisibility();
     } catch(e) {}
 
         function growthCsvList(id) {
@@ -60700,6 +60864,402 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
       if (nav) nav.style.display = (isKitchenRole || isKitchenPos || isManager) ? '' : 'none';
     }
     // ═══════════════════════════════════════════════════════
+
+        // ── 门店营销策略模块 ──
+        var __strategyTab = 'experiments';
+        var __strategyExperiments = [];
+        var __strategyPendingVariants = [];
+
+        function switchStrategyTab(tab) {
+            __strategyTab = tab;
+            document.querySelectorAll('#sp-tabs .sp-tab').forEach(function(el) {
+                el.classList.toggle('sp-tab--active', el.dataset.tab === tab);
+            });
+            document.getElementById('sp-experiments-view').style.display = tab === 'experiments' ? '' : 'none';
+            document.getElementById('sp-pending-view').style.display = tab === 'pending' ? '' : 'none';
+            document.getElementById('sp-create-view').style.display = tab === 'create' ? '' : 'none';
+            document.getElementById('sp-detail-view').style.display = 'none';
+            if (tab === 'experiments') loadStrategyExperiments();
+            if (tab === 'pending') loadStrategyPendingVariants();
+        }
+
+        function statusLabelZh(s) {
+            var m = { pending_approval:'待审批', approved:'已审批', running:'进行中', reviewing:'评估中', completed:'已完成', rejected:'已拒绝', incomplete:'未完成', archived:'已归档' };
+            return m[s] || s || '未知';
+        }
+        function statusBadgeClass(s) {
+            var m = { pending_approval:'sp-badge--pending', approved:'sp-badge--approved', running:'sp-badge--running', reviewing:'sp-badge--reviewing', completed:'sp-badge--completed', rejected:'sp-badge--rejected', incomplete:'sp-badge--incomplete' };
+            return m[s] || 'sp-badge--pending';
+        }
+        function fidelityLabelZh(f) {
+            var m = { full:'完全执行', partial:'部分执行', failed:'执行失败' };
+            return m[f] || f || '部分执行';
+        }
+        function metricFocusZh(mf) {
+            var m = { revenue:'营收', customer_count:'客流', composite:'综合' };
+            return m[mf] || mf || '营收';
+        }
+
+        async function loadStrategyPage() {
+            updateStrategyModuleVisibility();
+            switchStrategyTab('experiments');
+        }
+
+        async function loadStrategyExperiments() {
+            var el = document.getElementById('sp-experiments-view');
+            try {
+                var resp = await HRMS_API.request('/api/strategy-experiments?limit=50');
+                if (!resp || !resp.ok) { el.innerHTML = '<div class="sp-empty">加载失败</div>'; return; }
+                __strategyExperiments = resp.experiments || [];
+                renderStrategyExperiments();
+            } catch(e) {
+                el.innerHTML = '<div class="sp-empty">网络错误</div>';
+            }
+        }
+
+        function renderStrategyExperiments() {
+            var el = document.getElementById('sp-experiments-view');
+            if (!__strategyExperiments.length) {
+                el.innerHTML = '<div class="sp-empty">暂无实验数据</div>';
+                return;
+            }
+            var isAdminOrHq = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER);
+            var html = '';
+            __strategyExperiments.forEach(function(exp) {
+                var variants = Array.isArray(exp.variants) ? exp.variants : [];
+                html += '<div class="sp-card" onclick="showStrategyDetail(\'' + exp.experiment_code + '\')" style="cursor:pointer;">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+                html += '<h3>' + (exp.title || exp.experiment_code) + '</h3>';
+                html += '<span class="sp-badge ' + statusBadgeClass(exp.status) + '">' + statusLabelZh(exp.status) + '</span>';
+                html += '</div>';
+                html += '<div class="sp-row"><span class="label">目标</span><span class="value">' + (exp.goal || '—') + '</span></div>';
+                html += '<div class="sp-row"><span class="label">指标侧重</span><span class="value">' + metricFocusZh(exp.metric_focus) + '</span></div>';
+                html += '<div class="sp-row"><span class="label">开始日期</span><span class="value">' + (exp.planned_start || '—').slice(0,10) + '</span></div>';
+                html += '<div class="sp-row"><span class="label">结束日期</span><span class="value">' + (exp.planned_end || '—').slice(0,10) + '</span></div>';
+                if (variants.length) {
+                    html += '<div style="margin-top:8px;">';
+                    variants.forEach(function(v) {
+                        html += '<div class="sp-row"><span class="label">方案' + v.variant_code + '</span><span class="value">' + (v.label || '—') + ' · ' + (v.store || '—') + '</span></div>';
+                    });
+                    html += '</div>';
+                }
+                if (isAdminOrHq && exp.status === 'pending_approval') {
+                    html += '<div class="sp-actions">';
+                    html += '<button class="sp-btn sp-btn--primary" onclick="event.stopPropagation();approveStrategyExperiment(\'' + exp.experiment_code + '\')">审批通过</button>';
+                    html += '<button class="sp-btn sp-btn--secondary" onclick="event.stopPropagation();rejectStrategyExperiment(\'' + exp.experiment_code + '\')">拒绝</button>';
+                    html += '</div>';
+                }
+                html += '</div>';
+            });
+            el.innerHTML = html;
+        }
+
+        async function loadStrategyPendingVariants() {
+            var el = document.getElementById('sp-pending-view');
+            try {
+                var resp = await HRMS_API.request('/api/strategy-experiments/pending-for-store');
+                if (!resp || !resp.ok) { el.innerHTML = '<div class="sp-empty">加载失败</div>'; return; }
+                __strategyPendingVariants = resp.variants || [];
+                renderStrategyPendingVariants();
+            } catch(e) {
+                el.innerHTML = '<div class="sp-empty">网络错误</div>';
+            }
+        }
+
+        function renderStrategyPendingVariants() {
+            var el = document.getElementById('sp-pending-view');
+            if (!__strategyPendingVariants.length) {
+                el.innerHTML = '<div class="sp-empty">暂无待执行策略</div>';
+                return;
+            }
+            var html = '';
+            __strategyPendingVariants.forEach(function(v) {
+                var statusZh = v.status === 'executing' ? '执行中' : '待执行';
+                html += '<div class="sp-card">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+                html += '<h3>方案' + v.variant_code + '：' + (v.label || '—') + '</h3>';
+                html += '<span class="sp-badge ' + (v.status === 'executing' ? 'sp-badge--running' : 'sp-badge--pending') + '">' + statusZh + '</span>';
+                html += '</div>';
+                html += '<div class="sp-row"><span class="label">实验</span><span class="value">' + (v.experiment_code || '—') + '</span></div>';
+                html += '<div class="sp-row"><span class="label">动作</span><span class="value">' + (v.action || '—') + '</span></div>';
+                html += '<div class="sp-row"><span class="label">执行指南</span><span class="value">' + (v.execution_guide || '—') + '</span></div>';
+                html += '<div class="sp-row"><span class="label">截止日期</span><span class="value">' + (v.planned_end || '—').toString().slice(0,10) + '</span></div>';
+                if (v.status === 'pending') {
+                    html += '<div class="sp-actions"><button class="sp-btn sp-btn--primary" onclick="startVariantExecution(\'' + v.experiment_code + '\',\'' + v.variant_code + '\')">开始执行</button></div>';
+                }
+                if (v.status === 'executing' || v.status === 'pending') {
+                    html += '<div class="sp-result-form" id="sp-result-form-' + v.experiment_code + '-' + v.variant_code + '">';
+                    html += '<h4 style="font-size:13px;font-weight:700;margin:10px 0 6px;color:#e2e8f0;">提交执行结果</h4>';
+                    html += '<div class="sp-form-group"><label>执行前日均营收（元）</label><input type="number" id="sp-before-rev-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：5000"></div>';
+                    html += '<div class="sp-form-group"><label>执行期间日均营收（元）</label><input type="number" id="sp-during-rev-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：6500"></div>';
+                    html += '<div class="sp-form-group"><label>执行前日均客流</label><input type="number" id="sp-before-traffic-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：80"></div>';
+                    html += '<div class="sp-form-group"><label>执行期间日均客流</label><input type="number" id="sp-during-traffic-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：95"></div>';
+                    html += '<div class="sp-form-group"><label>额外成本（元，选填）</label><input type="number" id="sp-extra-cost-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：2000"></div>';
+                    html += '<div class="sp-form-group"><label>新增客户数（选填）</label><input type="number" id="sp-new-cust-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：30"></div>';
+                    html += '<div class="sp-form-group"><label>执行保真度</label><select id="sp-fidelity-' + v.experiment_code + '-' + v.variant_code + '"><option value="full">完全执行</option><option value="partial" selected>部分执行</option><option value="failed">执行失败</option></select></div>';
+                    html += '<div class="sp-form-group"><label>补充说明</label><textarea id="sp-feedback-' + v.experiment_code + '-' + v.variant_code + '" placeholder="执行情况备注"></textarea></div>';
+                    html += '<button class="sp-btn sp-btn--primary" onclick="submitStrategyVariantResult(\'' + v.experiment_code + '\',\'' + v.variant_code + '\')">提交结果</button>';
+                    html += '</div>';
+                }
+                html += '</div>';
+            });
+            el.innerHTML = html;
+        }
+
+        async function showStrategyDetail(code) {
+            var el = document.getElementById('sp-detail-view');
+            document.getElementById('sp-experiments-view').style.display = 'none';
+            document.getElementById('sp-pending-view').style.display = 'none';
+            document.getElementById('sp-create-view').style.display = 'none';
+            el.style.display = '';
+            try {
+                var resp = await HRMS_API.request('/api/strategy-experiments/' + code);
+                if (!resp || !resp.ok) { el.innerHTML = '<div class="sp-empty">加载失败</div>'; return; }
+                renderStrategyDetail(resp);
+            } catch(e) {
+                el.innerHTML = '<div class="sp-empty">网络错误</div>';
+            }
+        }
+
+        function renderStrategyDetail(data) {
+            var exp = data.experiment || {};
+            var variants = data.variants || [];
+            var el = document.getElementById('sp-detail-view');
+            var isAdminOrHq = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER);
+            var html = '<div class="sp-card">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+            html += '<div><button class="sp-btn sp-btn--secondary" onclick="switchStrategyTab(\'experiments\')">&larr; 返回列表</button></div>';
+            html += '<span class="sp-badge ' + statusBadgeClass(exp.status) + '">' + statusLabelZh(exp.status) + '</span>';
+            html += '</div>';
+            html += '<h3>' + (exp.title || exp.experiment_code) + '</h3>';
+            html += '<div class="sp-row"><span class="label">实验编号</span><span class="value">' + exp.experiment_code + '</span></div>';
+            html += '<div class="sp-row"><span class="label">目标</span><span class="value">' + (exp.goal || '—') + '</span></div>';
+            html += '<div class="sp-row"><span class="label">指标侧重</span><span class="value">' + metricFocusZh(exp.metric_focus) + '</span></div>';
+            html += '<div class="sp-row"><span class="label">开始日期</span><span class="value">' + (exp.planned_start || '—').toString().slice(0,10) + '</span></div>';
+            html += '<div class="sp-row"><span class="label">结束日期</span><span class="value">' + (exp.planned_end || '—').toString().slice(0,10) + '</span></div>';
+            html += '<div class="sp-row"><span class="label">结果截止</span><span class="value">' + (exp.result_deadline || '—').toString().slice(0,10) + '</span></div>';
+            html += '<div class="sp-row"><span class="label">异常类型</span><span class="value">' + (exp.anomaly_type || '—') + '</span></div>';
+            if (exp.result_summary) {
+                html += '<div class="sp-row"><span class="label">评估结论</span><span class="value">' + (exp.conclusion || '—') + '</span></div>';
+            }
+            html += '</div>';
+
+            variants.forEach(function(v) {
+                html += '<div class="sp-card sp-variant-form' + (v.variant_code === 'B' ? ' sp-variant-form variant-b' : '') + '">';
+                html += '<h3>方案' + v.variant_code + '：' + (v.label || '—') + '</h3>';
+                html += '<span class="sp-badge ' + statusBadgeClass(v.status) + '">' + statusLabelZh(v.status) + '</span>';
+                html += '<div class="sp-row"><span class="label">执行门店</span><span class="value">' + (v.store || '—') + '</span></div>';
+                html += '<div class="sp-row"><span class="label">策略动作</span><span class="value">' + (v.action || '—') + '</span></div>';
+                if (v.execution_guide) html += '<div class="sp-row"><span class="label">执行指南</span><span class="value">' + v.execution_guide + '</span></div>';
+                if (v.result_data) {
+                    var rd = typeof v.result_data === 'string' ? JSON.parse(v.result_data) : v.result_data;
+                    html += '<div style="margin-top:10px;padding:10px;background:rgba(14,165,233,0.06);border-radius:10px;">';
+                    html += '<div class="sp-row"><span class="label">执行前日均营收</span><span class="value">¥' + (rd.before_daily_revenue || '—') + '</span></div>';
+                    html += '<div class="sp-row"><span class="label">执行期间日均营收</span><span class="value">¥' + (rd.during_daily_revenue || '—') + '</span></div>';
+                    html += '<div class="sp-row"><span class="label">执行前日均客流</span><span class="value">' + (rd.before_daily_traffic || '—') + '</span></div>';
+                    html += '<div class="sp-row"><span class="label">执行期间日均客流</span><span class="value">' + (rd.during_daily_traffic || '—') + '</span></div>';
+                    if (rd.extra_cost) html += '<div class="sp-row"><span class="label">额外成本</span><span class="value">¥' + rd.extra_cost + '</span></div>';
+                    html += '<div class="sp-row"><span class="label">执行保真度</span><span class="value">' + fidelityLabelZh(rd.execution_fidelity) + '</span></div>';
+                    if (v.outcome_score != null) {
+                        var score = Number(v.outcome_score);
+                        var cls = score >= 7 ? 'sp-score--high' : score >= 4 ? 'sp-score--mid' : 'sp-score--low';
+                        html += '<div class="sp-row"><span class="label">综合得分</span><span class="sp-score ' + cls + '">' + score.toFixed(1) + '</span></div>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+            });
+
+            if (isAdminOrHq && exp.status === 'pending_approval') {
+                html += '<div class="sp-actions">';
+                html += '<button class="sp-btn sp-btn--primary" onclick="approveStrategyExperiment(\'' + exp.experiment_code + '\')">审批通过并启动</button>';
+                html += '<button class="sp-btn sp-btn--secondary" onclick="rejectStrategyExperiment(\'' + exp.experiment_code + '\')">拒绝</button>';
+                html += '</div>';
+            }
+            if (isAdminOrHq && exp.status === 'reviewing') {
+                html += '<div class="sp-actions">';
+                html += '<button class="sp-btn sp-btn--primary" onclick="evaluateStrategyExperiment(\'' + exp.experiment_code + '\')">评估实验</button>';
+                html += '</div>';
+            }
+            el.innerHTML = html;
+        }
+
+        async function approveStrategyExperiment(code) {
+            if (!confirm('确认审批通过并启动实验 ' + code + '？')) return;
+            try {
+                var resp = await HRMS_API.request('/api/strategy-experiments/' + code + '/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+                if (resp && resp.ok) {
+                    showNotification('实验已审批通过并启动', 'success');
+                    loadStrategyExperiments();
+                } else {
+                    showNotification('审批失败: ' + (resp?.error || '未知错误'), 'error');
+                }
+            } catch(e) {
+                showNotification('网络错误', 'error');
+            }
+        }
+
+        async function rejectStrategyExperiment(code) {
+            if (!confirm('确认拒绝实验 ' + code + '？')) return;
+            try {
+                var resp = await HRMS_API.request('/api/strategy-experiments/' + code + '/reject', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                if (resp && resp.ok) {
+                    showNotification('实验已拒绝', 'success');
+                    loadStrategyExperiments();
+                } else {
+                    showNotification('拒绝失败: ' + (resp?.error || '未知错误'), 'error');
+                }
+            } catch(e) {
+                showNotification('网络错误', 'error');
+            }
+        }
+
+        async function startVariantExecution(code, variant) {
+            try {
+                var resp = await HRMS_API.request('/api/strategy-experiments/' + code + '/variants/' + variant + '/start', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                if (resp && resp.ok) {
+                    showNotification('已开始执行', 'success');
+                    loadStrategyPendingVariants();
+                } else {
+                    showNotification('操作失败: ' + (resp?.error || '未知错误'), 'error');
+                }
+            } catch(e) {
+                showNotification('网络错误', 'error');
+            }
+        }
+
+        async function submitStrategyVariantResult(code, variant) {
+            var baseId = 'sp-' + code + '-' + variant;
+            var beforeRev = parseFloat(document.getElementById('before-rev-' + code + '-' + variant)?.value || document.getElementById('sp-before-rev-' + code + '-' + variant)?.value);
+            var duringRev = parseFloat(document.getElementById('during-rev-' + code + '-' + variant)?.value || document.getElementById('sp-during-rev-' + code + '-' + variant)?.value);
+            var beforeTraffic = parseInt(document.getElementById('before-traffic-' + code + '-' + variant)?.value || document.getElementById('sp-before-traffic-' + code + '-' + variant)?.value);
+            var duringTraffic = parseInt(document.getElementById('during-traffic-' + code + '-' + variant)?.value || document.getElementById('sp-during-traffic-' + code + '-' + variant)?.value);
+            var extraCost = parseFloat(document.getElementById('sp-extra-cost-' + code + '-' + variant)?.value) || null;
+            var newCustomers = parseInt(document.getElementById('sp-new-cust-' + code + '-' + variant)?.value) || null;
+            var fidelityEl = document.getElementById('sp-fidelity-' + code + '-' + variant);
+            var fidelity = fidelityEl ? fidelityEl.value : 'partial';
+            var feedback = document.getElementById('sp-feedback-' + code + '-' + variant)?.value || '';
+
+            if (isNaN(beforeRev) || isNaN(duringRev) || isNaN(beforeTraffic) || isNaN(duringTraffic)) {
+                showNotification('请填写日均营收和日均客流', 'warning');
+                return;
+            }
+
+            try {
+                var resp = await HRMS_API.request('/api/strategy-experiments/' + code + '/variants/' + variant + '/result', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        before_daily_revenue: beforeRev,
+                        during_daily_revenue: duringRev,
+                        before_daily_traffic: beforeTraffic,
+                        during_daily_traffic: duringTraffic,
+                        extra_cost: extraCost,
+                        new_customers: newCustomers,
+                        execution_fidelity: fidelity,
+                        feedback: feedback
+                    })
+                });
+                if (resp && resp.ok) {
+                    showNotification('结果已提交', 'success');
+                    loadStrategyPendingVariants();
+                } else {
+                    showNotification('提交失败: ' + (resp?.error || '未知错误'), 'error');
+                }
+            } catch(e) {
+                showNotification('网络错误', 'error');
+            }
+        }
+
+        async function evaluateStrategyExperiment(code) {
+            try {
+                var resp = await HRMS_API.request('/api/strategy-experiments/' + code + '/evaluate', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                if (resp && resp.ok) {
+                    showNotification('评估完成', 'success');
+                    showStrategyDetail(code);
+                } else {
+                    showNotification('评估失败: ' + (resp?.error || '未知错误'), 'error');
+                }
+            } catch(e) {
+                showNotification('网络错误', 'error');
+            }
+        }
+
+        function showStrategyCreateForm() {
+            switchStrategyTab('create');
+            var el = document.getElementById('sp-create-view');
+            el.innerHTML = '<div class="sp-card">' +
+                '<h3>新建策略实验</h3>' +
+                '<div class="sp-form-group"><label>实验标题</label><input type="text" id="sp-new-title" placeholder="例：午市引流方案"></div>' +
+                '<div class="sp-form-group"><label>实验目标</label><textarea id="sp-new-goal" placeholder="例：提升午市营收20%"></textarea></div>' +
+                '<div class="sp-form-group"><label>指标侧重</label><select id="sp-new-metric"><option value="revenue">营收</option><option value="customer_count">客流</option><option value="composite">综合</option></select></div>' +
+                '<div class="sp-form-group"><label>开始日期</label><input type="date" id="sp-new-start"></div>' +
+                '<div class="sp-form-group"><label>结束日期（14天实验）</label><input type="date" id="sp-new-end"></div>' +
+                '<div class="sp-variant-form"><h4 style="font-size:14px;font-weight:700;color:#38bdf8;margin-bottom:8px;">方案 A</h4>' +
+                '<div class="sp-form-group"><label>方案名称</label><input type="text" id="sp-new-va-label" placeholder="例：满减券方案"></div>' +
+                '<div class="sp-form-group"><label>策略动作</label><textarea id="sp-new-va-action" placeholder="详细描述策略内容"></textarea></div>' +
+                '<div class="sp-form-group"><label>执行门店</label><input type="text" id="sp-new-va-store" placeholder="门店名称"></div>' +
+                '<div class="sp-form-group"><label>执行指南（选填）</label><textarea id="sp-new-va-guide" placeholder="具体执行步骤"></textarea></div></div>' +
+                '<div class="sp-variant-form variant-b"><h4 style="font-size:14px;font-weight:700;color:#a855f7;margin-bottom:8px;">方案 B（选填，留空则为单方案实验）</h4>' +
+                '<div class="sp-form-group"><label>方案名称</label><input type="text" id="sp-new-vb-label" placeholder="例：新菜品推广方案"></div>' +
+                '<div class="sp-form-group"><label>策略动作</label><textarea id="sp-new-vb-action" placeholder="详细描述策略内容"></textarea></div>' +
+                '<div class="sp-form-group"><label>执行门店</label><input type="text" id="sp-new-vb-store" placeholder="门店名称"></div>' +
+                '<div class="sp-form-group"><label>执行指南（选填）</label><textarea id="sp-new-vb-guide" placeholder="具体执行步骤"></textarea></div></div>' +
+                '<div class="sp-actions"><button class="sp-btn sp-btn--primary" onclick="createStrategyExperiment()">创建实验</button>' +
+                '<button class="sp-btn sp-btn--secondary" onclick="switchStrategyTab(\'experiments\')">取消</button></div>' +
+                '</div>';
+        }
+
+        async function createStrategyExperiment() {
+            var title = document.getElementById('sp-new-title').value.trim();
+            var goal = document.getElementById('sp-new-goal').value.trim();
+            var metricFocus = document.getElementById('sp-new-metric').value;
+            var plannedStart = document.getElementById('sp-new-start').value;
+            var plannedEnd = document.getElementById('sp-new-end').value;
+            var vaLabel = document.getElementById('sp-new-va-label').value.trim();
+            var vaAction = document.getElementById('sp-new-va-action').value.trim();
+            var vaStore = document.getElementById('sp-new-va-store').value.trim();
+            var vaGuide = document.getElementById('sp-new-va-guide').value.trim();
+            var vbLabel = document.getElementById('sp-new-vb-label').value.trim();
+            var vbAction = document.getElementById('sp-new-vb-action').value.trim();
+            var vbStore = document.getElementById('sp-new-vb-store').value.trim();
+            var vbGuide = document.getElementById('sp-new-vb-guide').value.trim();
+
+            if (!title || !goal || !vaAction) {
+                showNotification('请填写标题、目标和方案A的动作', 'warning');
+                return;
+            }
+
+            var variantA = { label: vaLabel || '方案A', action: vaAction, store: vaStore, executionGuide: vaGuide };
+            var variantB = null;
+            if (vbAction) {
+                variantB = { label: vbLabel || '方案B', action: vbAction, store: vbStore, executionGuide: vbGuide };
+            }
+
+            try {
+                var resp = await HRMS_API.request('/api/strategy-experiments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: title,
+                        goal: goal,
+                        metricFocus: metricFocus,
+                        variantA: variantA,
+                        variantB: variantB,
+                        plannedStart: plannedStart || undefined,
+                        plannedEnd: plannedEnd || undefined
+                    })
+                });
+                if (resp && resp.ok) {
+                    showNotification('实验创建成功', 'success');
+                    switchStrategyTab('experiments');
+                } else {
+                    showNotification('创建失败: ' + (resp?.error || '未知错误'), 'error');
+                }
+            } catch(e) {
+                showNotification('网络错误', 'error');
+            }
+        }
 
     </script>
 
