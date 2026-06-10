@@ -1511,7 +1511,9 @@ const CAMPAIGN_TYPES = {
   dormant_60_90:  { label: '沉睡召回·60-90天',     source: 'profiles', tplPrefix: 'DORM6090',  coupon_count: 1, vars: ['value', 'date', 'code'] },
   // 沉睡召回90-180：短信后补，未配 env → pickCampaignTemplate 返回 '' → 不可发(launch/send 报 sms_template_not_configured)
   dormant_90_180: { label: '沉睡召回·90-180天',    source: 'profiles', tplPrefix: 'DORM90180', coupon_count: 1, vars: ['value', 'date', 'code'] },
-  lost_long:      { label: '长期流失召回',          source: 'profiles', tplPrefix: 'LOSTLONG',  coupon_count: 2, vars: ['value', 'date', 'code'] },
+  lost_long:      { label: '长期流失召回·181-365天', source: 'profiles', tplPrefix: 'LOSTLONG',  coupon_count: 2, vars: ['value', 'date', 'code'] },
+  // 长期流失超1年(>365天)：与181-365分开运营，频次30天/有效期30天。env ALIYUN_SMS_LOSTOVER365_* (洪潮SMS_507890076/马己仙SMS_507105250)
+  lost_over365:   { label: '长期流失超1年召回',      source: 'profiles', tplPrefix: 'LOSTOVER365', coupon_count: 2, vars: ['value', 'date', 'code'] },
 };
 // 按段+门店解析阿里云模板 code：ALIYUN_SMS_<PREFIX>_<MAJIXIAN|HONGCHAO|DEFAULT>
 function pickCampaignTemplate(campaignKey, storeId) {
@@ -2184,6 +2186,14 @@ async function loadRuleCandidates(pool, rule) {
       return deriveBirthdayMonth(row.customer_meta || {}) === currentMonth && visits >= 3 && Number.isFinite(interval) && interval <= 10;
     });
   }
+  const rows = await fetchGenericRuleCandidates(pool);
+  return filterGenericRuleCandidates(rows, rule);
+}
+
+// 通用候选集扫描：除生日规则(loyal_birthday_month)外所有规则共用同一份 profiles 扫描结果。
+// 抽离为独立函数，使 audience 端点可「一次扫描、内存复用」，避免 19 条规则各扫一遍 13k 行
+// （旧实现导致自动营销页加载约 30 秒）。
+async function fetchGenericRuleCandidates(pool) {
   const r = await pool.query(
     `SELECT cp.customer_id, cp.store_id, cp.phone, cp.price_sensitivity, cp.response_to_discount,
             cp.lifecycle_stage, cp.value_tier, cp.price_sensitive,
@@ -2200,9 +2210,14 @@ async function loadRuleCandidates(pool, rule) {
         OR (cp.phone IS NOT NULL AND cp.phone <> '')
      LIMIT 50000`
   );
+  return r.rows;
+}
+
+// 在内存中按规则 criteria 过滤通用候选集（与 loadRuleCandidates 同口径，供 audience 批量复用）。
+function filterGenericRuleCandidates(rows, rule) {
   // 旧版基于访问/天数的规则（企微分支保留），先于生命周期匹配处理
   const criteria = rule.criteria || {};
-  return r.rows.filter((row) => {
+  return rows.filter((row) => {
     const days = Math.max(0, Math.floor(Number(row.days_since_last_visit) || 0));
     const visits = Math.max(0, Math.floor(Number(row.pos_order_count) || 0));
     // 新客回头·8天(seven_days_no_visit)已并入活动制，按其 criteria(lifecycle_stage=new + 天数窗口)筛选，
@@ -3878,6 +3893,9 @@ export function registerGrowthRoutes(app, pool) {
     try {
       const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules ORDER BY rule_key ASC`);
       const audience = {};
+      // 性能：通用人群表只扫一次，19 条规则在内存复用过滤，避免逐规则各扫 13k 行(旧版~30s)。
+      // 生日规则(loyal_birthday_month) / 余额规则(channel=balance)人群口径不同，仍各自单独查询(均很轻)。
+      let genericRows = null;
       for (const rule of (rulesResult.rows || [])) {
         try {
           // 储值余额提醒(channel=balance)的人群在 growth_stored_value_members，不在 customer_profiles，
@@ -3896,7 +3914,14 @@ export function registerGrowthRoutes(app, pool) {
             audience[rule.rule_key] = { total: n, sms: n, subscribe: 0, member: 0, wecom: 0 };
             continue;
           }
-          const candidates = await loadRuleCandidates(pool, rule);
+          let candidates;
+          if (rule.rule_key === 'loyal_birthday_month') {
+            // 生日规则有独立(轻量 LIMIT 500)查询口径，仍走原函数
+            candidates = await loadRuleCandidates(pool, rule);
+          } else {
+            if (!genericRows) genericRows = await fetchGenericRuleCandidates(pool);
+            candidates = filterGenericRuleCandidates(genericRows, rule);
+          }
           // 分渠道覆盖：短信=有手机号；订阅消息/小程序站内券=有 openid（上限，订阅另受授权限制）；企微=有外部联系人。
           let sms = 0, subscribe = 0, member = 0, wecom = 0;
           for (const c of (candidates || [])) {
