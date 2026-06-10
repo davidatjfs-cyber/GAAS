@@ -1594,8 +1594,11 @@ function inSmsQuietHours(now = new Date()) {
   return s > e ? (bjMins >= s || bjMins < e) : (bjMins >= s && bjMins < e);
 }
 
-// 永久性失败判别：停机/空号/黑名单/号码无效 → 入抑制名单，后续一切营销短信跳过。
-const SMS_PERMANENT_FAIL_RE = /停机|空号|黑名单|号码状态错误|MOBILE_NUMBER_ILLEGAL|BLACK_KEY_CONTROL_LIMIT/i;
+// 永久性失败判别 → 入抑制名单，后续一切营销短信跳过。
+// 注意：「业务停机」不算永久失败！实测停机号码绝大多数之前都成功发过，属临时状态
+// （关机/临时欠费），下次照常重试（7天频控自然控制节奏）。只有空号/号码非法/黑名单退订
+// 才是真正不可达或客人明确拒收，需永久抑制。
+const SMS_PERMANENT_FAIL_RE = /空号|黑名单|号码状态错误|MOBILE_NUMBER_ILLEGAL|MOBILE_NUMBER_NULL|BLACK_KEY_CONTROL_LIMIT/i;
 // 账户级故障判别：余额不足 → 写 growth_alerts 高优告警（前台已有告警展示）。
 const SMS_BALANCE_FAIL_RE = /余额不足|AMOUNT_NOT_ENOUGH|OUT_OF_SERVICE/i;
 
