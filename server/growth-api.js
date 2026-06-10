@@ -67,6 +67,7 @@ function parseOccurredAt(value) {
 }
 
 import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from './sms.js';
 
 // 订阅消息推送网关（方案B）：HRMS 自己没有小程序 access_token，发不了订阅消息，
@@ -323,6 +324,30 @@ export async function ensureGrowthTables(pool) {
   `);
   await pool.query(`ALTER TABLE growth_alerts ADD COLUMN IF NOT EXISTS resolved_by TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_alerts_status ON growth_alerts (status, created_at DESC)`);
+
+  // 短信永久抑制名单：停机/空号/黑名单等永久性失败的号码，后续一切营销短信跳过，
+  // 不再浪费发送费且避免投诉。由发送失败时自动判别入表（见 maybeSuppressPhone）。
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS growth_sms_suppression (
+      phone TEXT PRIMARY KEY,
+      reason TEXT NOT NULL,
+      error_message TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // holdout 对照组：每个活动按手机号确定性抽样 N%（GROWTH_HOLDOUT_PCT，默认10）不发送，
+  // 用于衡量营销的真实增量（对照组回店率 vs 触达组回店率）。同一号码对同一活动恒定分组。
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS growth_holdout_members (
+      phone TEXT NOT NULL,
+      campaign_key TEXT NOT NULL,
+      store_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (phone, campaign_key)
+    )
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS growth_actions (
@@ -1553,6 +1578,81 @@ async function globalSmsCapped(pool, phone) {
   return r.rows.length ? days : 0;
 }
 
+// 禁发时段：北京时间 21:30 — 次日 09:00 不下发营销短信（任务保持 pending，窗口外自动续跑）。
+// 在任务认领层（pending-jobs 拉取 + 储值提醒 worker）统一拦截，覆盖全部自动发送路径。
+function inSmsQuietHours(now = new Date()) {
+  const start = cleanText(process.env.SMS_QUIET_HOURS_START || '21:30', 10);
+  const end = cleanText(process.env.SMS_QUIET_HOURS_END || '09:00', 10);
+  const toMins = (s) => { const [h, m] = s.split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+  const bjMins = (() => {
+    const p = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(now);
+    const h = Number((p.find((x) => x.type === 'hour') || {}).value || 0);
+    const m = Number((p.find((x) => x.type === 'minute') || {}).value || 0);
+    return h * 60 + m;
+  })();
+  const s = toMins(start), e = toMins(end);
+  return s > e ? (bjMins >= s || bjMins < e) : (bjMins >= s && bjMins < e);
+}
+
+// 永久性失败判别：停机/空号/黑名单/号码无效 → 入抑制名单，后续一切营销短信跳过。
+const SMS_PERMANENT_FAIL_RE = /停机|空号|黑名单|号码状态错误|MOBILE_NUMBER_ILLEGAL|BLACK_KEY_CONTROL_LIMIT/i;
+// 账户级故障判别：余额不足 → 写 growth_alerts 高优告警（前台已有告警展示）。
+const SMS_BALANCE_FAIL_RE = /余额不足|AMOUNT_NOT_ENOUGH|OUT_OF_SERVICE/i;
+
+async function isPhoneSuppressed(pool, phone) {
+  const p = String(phone || '').trim();
+  if (!p) return false;
+  const r = await pool.query(`SELECT 1 FROM growth_sms_suppression WHERE phone = $1 LIMIT 1`, [p]);
+  return r.rows.length > 0;
+}
+
+// 发送失败后调用：永久性失败入抑制名单；余额不足写告警。容错（自身失败不影响主流程）。
+async function handleSmsFailure(pool, phone, errMsg) {
+  const msg = String(errMsg || '');
+  try {
+    const p = String(phone || '').trim();
+    if (p && SMS_PERMANENT_FAIL_RE.test(msg)) {
+      await pool.query(
+        `INSERT INTO growth_sms_suppression (phone, reason, error_message) VALUES ($1, 'permanent_failure', $2)
+         ON CONFLICT (phone) DO UPDATE SET error_message = EXCLUDED.error_message, updated_at = NOW()`,
+        [p, msg.slice(0, 500)]
+      );
+    }
+    if (SMS_BALANCE_FAIL_RE.test(msg)) {
+      const alertKey = `sms_account_balance:${new Date().toISOString().slice(0, 10)}`;
+      await pool.query(
+        `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, title, message, suggested_action, metrics)
+         VALUES ($1,'sms_account','high','','阿里云短信账户余额不足，发送已失败','短信发送返回「${msg.slice(0, 120)}」。在余额恢复前所有营销短信都会失败。','前往阿里云控制台为短信账户充值，并核对今日失败记录是否需要补发',$2::jsonb)
+         ON CONFLICT (alert_key) DO UPDATE SET message = EXCLUDED.message, status = 'open', updated_at = NOW()`,
+        [alertKey, JSON.stringify({ error: msg.slice(0, 200) })]
+      );
+    }
+  } catch (e) { console.warn('[growth] handleSmsFailure error:', e?.message); }
+}
+
+// 触达上限：同一手机号同一活动累计成功发送 N 次（默认3）仍未回店则永久停发该活动，
+// 防止对明确不响应的客人无限期发券。回店后 days_since 重置、自然脱离人群，不受此限影响。
+async function campaignTouchCapped(pool, campaignKey, phone) {
+  const cap = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_CAMPAIGN_MAX_TOUCHES) || 3));
+  if (cap <= 0) return false;
+  const r = await pool.query(
+    `SELECT count(*)::int n FROM growth_delivery_logs
+      WHERE channel='sms' AND status='sent' AND rule_key = $1 AND payload->>'phone' = $2`,
+    [campaignKey, String(phone || '').trim()]
+  );
+  return (Number(r.rows[0]?.n) || 0) >= cap;
+}
+
+// holdout 对照组：md5(phone) 前4位十六进制 %100 < pct 即入对照组（确定性、与活动无关的均匀抽样）。
+function holdoutPct() {
+  const v = Number(process.env.GROWTH_HOLDOUT_PCT);
+  return Number.isFinite(v) ? Math.min(Math.max(Math.floor(v), 0), 50) : 10;
+}
+function phoneHashPct(phone) {
+  const h = crypto.createHash('md5').update(String(phone || '')).digest('hex');
+  return parseInt(h.slice(0, 4), 16) % 100;
+}
+
 // 通用发券人群(profiles)取数：可编辑筛选(门店/价值分级/生命周期/到店次数/未消费天数)+频控。
 // 返回 SQL 与参数，preview 与 launch 共用，保证「预览即所发」。
 // 至少需一个人群维度，否则视为全量、拒绝(防误群发)。
@@ -1846,6 +1946,8 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
 
       // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
       if (!skipReason && await globalSmsCapped(pool, smsPhone)) skipReason = 'global_capped';
+      // 永久抑制名单：停机/空号/黑名单号码不再发送
+      if (!skipReason && await isPhoneSuppressed(pool, smsPhone)) skipReason = 'suppressed';
 
       if (skipReason) {
         executionResults.delivery_error = `sms_skipped_${skipReason}`;
@@ -1926,6 +2028,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           result: {},
           error_message: deliveryErr?.message || 'sms_send_failed'
         });
+        await handleSmsFailure(pool, smsPhone, deliveryErr?.message);
       }
       }
     } else if (cleanText(payload.channel || '', 80) === 'subscribe' && (cleanPhone(payload.phone) || cleanText(payload.openid || '', 128))) {
@@ -2236,13 +2339,21 @@ function filterGenericRuleCandidates(rows, rule) {
     if (Number.isFinite(Number(criteria.min_days_since_last_visit)) && days < Number(criteria.min_days_since_last_visit)) return false;
     if (Number.isFinite(Number(criteria.min_visit_count)) && visits < Number(criteria.min_visit_count)) return false;
     if (Number.isFinite(Number(criteria.max_visit_count)) && visits > Number(criteria.max_visit_count)) return false;
-    // 必须至少有一个「人群」维度筛选（生命周期/价值/天数/到店次数），
+    // 个人复购周期超时：interval_overdue_multiplier=2 表示「距上次到店 ≥ 个人平均到店间隔×2」才命中。
+    // 比固定天窗更精准（周客超14天即异常，月客45天才算）。要求有稳定周期数据(visit_interval_days>0)。
+    if (Number.isFinite(Number(criteria.interval_overdue_multiplier))) {
+      const interval = Number(row.visit_interval_days);
+      if (!Number.isFinite(interval) || interval <= 0) return false;
+      if (days < interval * Number(criteria.interval_overdue_multiplier)) return false;
+    }
+    // 必须至少有一个「人群」维度筛选（生命周期/价值/天数/到店次数/周期超时），
     // 否则视为无条件全量，拒绝命中以防误群发（store_id 不算人群筛选）。
     const hasAudienceFilter = !!(criteria.lifecycle_stage || criteria.lifecycle_stage_not || criteria.value_tier || criteria.value_tier_not
       || Number.isFinite(Number(criteria.max_days_since_last_visit))
       || Number.isFinite(Number(criteria.min_days_since_last_visit))
       || Number.isFinite(Number(criteria.min_visit_count))
-      || Number.isFinite(Number(criteria.max_visit_count)));
+      || Number.isFinite(Number(criteria.max_visit_count))
+      || Number.isFinite(Number(criteria.interval_overdue_multiplier)));
     return hasAudienceFilter;
   });
 }
@@ -2282,34 +2393,71 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
     );
     recentSentSet = new Set((rc.rows || []).map((r) => String(r.phone || '')).filter(Boolean));
   }
-  // 按客户门店分组(一条规则覆盖两店，按门店分别冻结任务+解析已报备模板)
-  const byStore = new Map();
+  // 抑制名单：停机/黑名单号码冻结前剔除（发送端也兜底，此处避免空建券）
+  const supRes = await pool.query(`SELECT phone FROM growth_sms_suppression`);
+  const suppressedSet = new Set((supRes.rows || []).map((r) => String(r.phone || '')));
+  // 变体分配：A/B 面额实验(ab_value_split=[a分,b分]，按手机号哈希均分) 优先于
+  // 价值分档(coupon_value_fen_high：历史消费≥阈值的客人发高档面额)。都未配置则单一面额。
+  const abSplit = Array.isArray(ap.ab_value_split) && ap.ab_value_split.length === 2
+    ? ap.ab_value_split.map((v) => Math.max(0, Math.floor(Number(v) || 0))) : null;
+  const highFen = Math.max(0, Math.floor(Number(ap.coupon_value_fen_high) || 0));
+  const highThresholdFen = Math.max(0, Math.floor(Number(ap.high_spend_threshold_fen) || 50000));
+  const pickVariant = (row, phone) => {
+    if (abSplit && abSplit[0] > 0 && abSplit[1] > 0) {
+      return phoneHashPct(phone) % 2 === 0
+        ? { suffix: '_a', valueYuan: Math.floor(abSplit[0] / 100) }
+        : { suffix: '_b', valueYuan: Math.floor(abSplit[1] / 100) };
+    }
+    // pos_total_spend 为「元」（POS amount_after_discount 累计），阈值按「分」配置 → 换算后比较
+    if (highFen > 0 && Math.round(Number(row.pos_total_spend || 0) * 100) >= highThresholdFen) {
+      return { suffix: '_hi', valueYuan: Math.floor(highFen / 100) };
+    }
+    return { suffix: '', valueYuan };
+  };
+  // 按 门店×变体 分组(一条规则覆盖两店，按门店分别冻结任务+解析已报备模板)
+  const hPct = holdoutPct();
+  const byGroup = new Map();
+  let heldOut = 0;
   for (const row of candidates) {
     const phone = cleanPhone(row.phone);
     if (!phone) continue;
     if (recentSentSet.has(phone)) continue; // 近期已触达，跳过(防重复)
+    if (suppressedSet.has(phone)) continue; // 永久抑制(停机/黑名单)
     const sid = String(row.store_id || ap.store_id || '').trim();
     if (!sid) continue;
     if (!pickCampaignTemplate(campaignKey, sid)) continue; // 该门店模板未配置(后补)→跳过，防整批拒收
-    if (!byStore.has(sid)) byStore.set(sid, []);
-    byStore.get(sid).push({ phone, name: row.customer_name || '' });
+    // holdout 对照组：确定性抽样不发送，仅记录，用于衡量真实增量
+    if (hPct > 0 && phoneHashPct(phone) < hPct) {
+      heldOut++;
+      await pool.query(
+        `INSERT INTO growth_holdout_members (phone, campaign_key, store_id) VALUES ($1,$2,$3)
+         ON CONFLICT (phone, campaign_key) DO NOTHING`,
+        [phone, campaignKey, sid]
+      ).catch(() => {});
+      continue;
+    }
+    const variant = pickVariant(row, phone);
+    const gKey = `${sid}${variant.suffix}`;
+    if (!byGroup.has(gKey)) byGroup.set(gKey, { sid, variant, targets: [] });
+    byGroup.get(gKey).targets.push({ phone, name: row.customer_name || '' });
   }
   const today = new Date().toISOString().slice(0, 10);
   let enqueued = 0;
-  for (const [sid, targets] of byStore) {
-    if (!targets.length) continue;
-    const campaignId = `auto_${campaignKey}_${sid}_${today}`;
+  for (const [, g] of byGroup) {
+    if (!g.targets.length) continue;
+    const campaignId = `auto_${campaignKey}_${g.sid}_${today}${g.variant.suffix}`;
     const exist = await pool.query(`SELECT 1 FROM growth_campaign_jobs WHERE campaign_id = $1 LIMIT 1`, [campaignId]);
     if (exist.rows.length) continue; // 当日已冻结，避免重复
     const result = { campaign_key: campaignKey, coupon_count: cfg.coupon_count, rule_key: rule.rule_key };
+    if (g.variant.suffix) result.variant = g.variant.suffix.slice(1);
     await pool.query(
       `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result)
        VALUES ($1,$2,$3,$4,0,0,$5::jsonb,$6,'pending',$7,$8,$9::jsonb)`,
-      [campaignId, sid, valueYuan, validDays, JSON.stringify(targets), targets.length, campaignKey, `rule_engine:${rule.rule_key}`, JSON.stringify(result)]
+      [campaignId, g.sid, g.variant.valueYuan, validDays, JSON.stringify(g.targets), g.targets.length, campaignKey, `rule_engine:${rule.rule_key}`, JSON.stringify(result)]
     );
-    enqueued += targets.length;
+    enqueued += g.targets.length;
   }
-  return { enqueued };
+  return { enqueued, held_out: heldOut };
 }
 
 async function runTouchRuleEngine(pool, options = {}) {
@@ -2746,6 +2894,8 @@ export function registerGrowthRoutes(app, pool) {
       // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
       const gCap = await globalSmsCapped(pool, phone);
       if (gCap) return res.json({ ok: true, skipped: true, reason: 'global_frequency_capped', frequency_days: gCap });
+      // 永久抑制名单：停机/空号/黑名单号码不再发送
+      if (await isPhoneSuppressed(pool, phone)) return res.json({ ok: true, skipped: true, reason: 'suppressed' });
       const deliveryKey = idempotencyKey || `winback_sms:${phone}:${Date.now()}`;
       // 已报备模板仅 3 个变量 value/date/code（无 name，避免超 3 变量报备失败）。
       // 务必与模板严格一致，多传 name 会被阿里云判「参数不匹配」拒收。
@@ -2791,6 +2941,7 @@ export function registerGrowthRoutes(app, pool) {
           payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId },
           result: {}, error_message: deliveryErr?.message || 'sms_send_failed'
         });
+        await handleSmsFailure(pool, phone, deliveryErr?.message);
         return res.status(502).json({ ok: false, error: deliveryErr?.message || 'sms_send_failed' });
       }
     } catch (e) {
@@ -2960,6 +3111,9 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/winback/pending-jobs', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     try {
+      // 禁发时段(默认北京时间21:30-9:00)：不放出任务，pending 保持原状，窗口外自动续跑。
+      // 此端点是小程序执行器唯一的任务入口，在这里拦截即覆盖全部发券短信。
+      if (inSmsQuietHours()) return res.json({ ok: true, job: null, quiet_hours: true });
       // 小程序认领所有「带券码」任务：召回(winback) + 通用发券(各段key)。
       // 仅排除 stored_value_remind（无券无码，由 HRMS 后台 worker 直发）。
       // 认领待执行任务：pending 优先；另回收「卡死的 running」——小程序断点续跑会把未发完的
@@ -3135,6 +3289,10 @@ export function registerGrowthRoutes(app, pool) {
       // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
       const gCap = await globalSmsCapped(pool, phone);
       if (gCap) return res.json({ ok: true, skipped: true, reason: 'global_frequency_capped', frequency_days: gCap });
+      // 永久抑制名单：停机/空号/黑名单号码不再发送
+      if (await isPhoneSuppressed(pool, phone)) return res.json({ ok: true, skipped: true, reason: 'suppressed' });
+      // 触达上限：同活动累计发满 N 次(默认3)仍未回店 → 停发本活动
+      if (await campaignTouchCapped(pool, campaignKey, phone)) return res.json({ ok: true, skipped: true, reason: 'touch_capped' });
       const deliveryKey = idempotencyKey || `${campaignKey}:${phone}:${Date.now()}`;
       // 严格按 vars 拼模板参数：缺/多变量阿里云都判「参数不匹配」整批拒收。
       const templateParam = {};
@@ -3170,6 +3328,7 @@ export function registerGrowthRoutes(app, pool) {
           payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId, campaign_key: campaignKey },
           result: {}, error_message: deliveryErr?.message || 'sms_send_failed'
         });
+        await handleSmsFailure(pool, phone, deliveryErr?.message);
         return res.status(502).json({ ok: false, error: deliveryErr?.message || 'sms_send_failed' });
       }
     } catch (e) {
@@ -3248,6 +3407,7 @@ export function registerGrowthRoutes(app, pool) {
   // 后台 worker：认领 pending 的储值余额提醒任务并由 HRMS 自身逐条下发(不经小程序)。
   // 每 30s 跑一次；同一时刻只处理一个任务，发送结果写 delivery_logs + marketing_triggered。
   async function processOneRemindJob() {
+    if (inSmsQuietHours()) return; // 禁发时段：任务保持 pending，窗口外自动续跑
     const claim = await pool.query(
       `UPDATE growth_campaign_jobs SET status='running', updated_at=now()
         WHERE id = (SELECT id FROM growth_campaign_jobs WHERE status='pending' AND kind='stored_value_remind' ORDER BY created_at ASC LIMIT 1)
@@ -3270,6 +3430,8 @@ export function registerGrowthRoutes(app, pool) {
       if (!phone || balanceYuan <= 0) { failed++; continue; }
       const deliveryKey = `svremind:${job.id}:${phone}`;
       const templateParam = { balance: String(balanceYuan) };
+      // 永久抑制名单：停机/空号/黑名单号码不再发送
+      if (await isPhoneSuppressed(pool, phone)) continue;
       // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
       const gCap = await globalSmsCapped(pool, phone);
       if (gCap) {
@@ -3304,6 +3466,7 @@ export function registerGrowthRoutes(app, pool) {
           payload: { phone, template_param: templateParam, campaign_id: job.campaign_id }, result: {},
           error_message: err?.message || 'sms_send_failed'
         }).catch(() => null);
+        await handleSmsFailure(pool, phone, err?.message);
         failed++;
       }
     }
