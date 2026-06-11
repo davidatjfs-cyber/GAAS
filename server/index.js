@@ -15580,7 +15580,7 @@ async function buildRootDiskHealthInfo() {
     const availGb = Math.round((avail / (1024 ** 3)) * 100) / 100;
     const totalGb = Math.round((total / (1024 ** 3)) * 100) / 100;
     const availCrit = 2 * 1024 ** 3;
-    const availWarn = 8 * 1024 ** 3;
+    const availWarn = 20 * 1024 ** 3;
     let level = 'ok';
     let message = null;
     if (avail < availCrit || (usedPct != null && usedPct >= 92)) {
@@ -15618,7 +15618,7 @@ async function maybeNotifyDiskPressureByLark(disk) {
     .filter(Boolean);
   if (!ids.length) return;
   const now = Date.now();
-  const minMs = disk.level === 'crit' ? 30 * 60 * 1000 : 6 * 60 * 60 * 1000;
+  const minMs = disk.level === 'crit' ? 30 * 60 * 1000 : 24 * 60 * 60 * 1000;
   if (now - __lastDiskLarkNoticeAt < minMs) return;
   __lastDiskLarkNoticeAt = now;
   const text =
