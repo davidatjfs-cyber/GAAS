@@ -175,6 +175,16 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
         }
       }
 
+      const agentsUrl = process.env.AGENTS_SERVICE_URL || 'http://127.0.0.1:3101';
+      try {
+        const resp = await axios.post(`${agentsUrl}/api/strategy/experiments/${req.params.code}/approve`, { storeAssignments }, {
+          headers: { Authorization: req.headers.authorization || '', 'Content-Type': 'application/json' }
+        });
+        return res.json(resp.data);
+      } catch (proxyErr) {
+        console.error('proxy approve to agents-service failed, falling back to local:', proxyErr?.message);
+      }
+
       await pool.query(`
         UPDATE strategy_experiments SET status = 'approved', approved_by = $1, approved_at = NOW(), updated_at = NOW()
         WHERE id = $2
