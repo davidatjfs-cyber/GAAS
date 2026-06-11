@@ -5216,7 +5216,7 @@ const knowledgeUpload = multer({
       cb(null, `${randomUUID()}${ext}`);
     }
   }),
-  limits: { fileSize: 200 * 1024 * 1024 } // 视频上传需 200MB
+  limits: { fileSize: 500 * 1024 * 1024 } // 视频上传需 500MB
 });
 
 // 配方工艺步骤媒体上传（图片 + 视频）

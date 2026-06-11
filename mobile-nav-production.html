@@ -23140,7 +23140,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             const hint = document.getElementById('knowledge-upload-file-hint');
             const fileEl = document.getElementById('knowledge-upload-file');
             if (hint) {
-                if (type === 'video') hint.textContent = '支持：视频（mp4/mov/webm等），且必须 ≤ 300MB';
+                if (type === 'video') hint.textContent = '支持：视频（mp4/mov/webm等），且必须 ≤ 500MB';
                 else if (type === 'pdf') hint.textContent = '支持：PDF';
                 else if (type === 'doc') hint.textContent = '支持：DOC/DOCX（推荐DOCX）';
                 else if (type === 'txt') hint.textContent = '支持：TXT';
@@ -23227,17 +23227,17 @@ ${knowledgeContent.slice(0, 30000)}`;
                 return;
             }
             if (type === 'video') {
-                const maxSize = 300 * 1024 * 1024;
+                const maxSize = 500 * 1024 * 1024;
                 if (size > maxSize) {
-                    if (statusEl) statusEl.textContent = '视频必须 ≤ 300MB（当前：' + formatFileSize(size) + '）';
-                    showNotification('视频必须 ≤ 300MB，当前文件过大', 'warning');
+                    if (statusEl) statusEl.textContent = '视频必须 ≤ 500MB（当前：' + formatFileSize(size) + '）';
+                    showNotification('视频必须 ≤ 500MB，当前文件过大', 'warning');
                     event.target.value = '';
                     return;
                 }
             }
-            if (size > 300 * 1024 * 1024) {
-                if (statusEl) statusEl.textContent = '文件必须 ≤ 300MB（当前：' + formatFileSize(size) + '）';
-                showNotification('文件必须 ≤ 300MB，当前文件过大', 'warning');
+            if (size > 500 * 1024 * 1024) {
+                if (statusEl) statusEl.textContent = '文件必须 ≤ 500MB（当前：' + formatFileSize(size) + '）';
+                showNotification('文件必须 ≤ 500MB，当前文件过大', 'warning');
                 event.target.value = '';
                 return;
             }
