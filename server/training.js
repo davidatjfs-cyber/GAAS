@@ -33,6 +33,33 @@ async function getUserStore(username) {
   } catch (_) { return ''; }
 }
 
+// 出题/学习取材：优先用管理员精修过的 AI解析(ai_explanation)，其次原始正文(content)，
+// 并附上步骤图谱(step_rubric)的标准类内容。
+// 原则：培训内容与考题必须以更新后的 AI解析/知识图谱为准。
+function formatRubricStandards(rubric) {
+  if (!rubric || !Array.isArray(rubric.items) || rubric.items.length === 0) return '';
+  const steps = rubric.items.map((it) => {
+    const seq = it.step_seq != null ? `步骤${it.step_seq}` : '步骤';
+    const parts = [`${seq}：${it.action || ''}`];
+    if (it.quality_standard) parts.push(`质量标准：${it.quality_standard}`);
+    if (it.is_critical) parts.push('（关键步骤）');
+    if (it.common_failure) parts.push(`常见失败：${it.common_failure}`);
+    return '- ' + parts.join('；');
+  }).join('\n');
+  const fail = Array.isArray(rubric.fail_criteria) && rubric.fail_criteria.length
+    ? `\n一票否决项：${rubric.fail_criteria.join('；')}` : '';
+  return `【步骤标准图谱（以此为准的操作标准）】\n${steps}${fail}`;
+}
+
+function buildKbArticleText(row) {
+  const explanation = String(row.ai_explanation || '').trim();
+  const base = explanation.length > 50
+    ? explanation.slice(0, 6000)
+    : String(row.content || '').trim();
+  const rubricText = formatRubricStandards(row.step_rubric);
+  return rubricText ? `${base}\n\n${rubricText}` : base;
+}
+
 // 角色层级：谁能给谁布置培训
 // admin/hr_manager → 所有人
 // hq_manager → 店长 + 出品经理 + 所有员工
@@ -203,6 +230,21 @@ export async function ensureTrainingSchema() {
     await pool().query(`ALTER TABLE training_certifications ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) DEFAULT 'pending'`);
     await pool().query(`ALTER TABLE training_certifications ADD COLUMN IF NOT EXISTS manager_score INT`);
     await pool().query(`ALTER TABLE training_certifications ADD COLUMN IF NOT EXISTS final_score INT`);
+
+    // ── 知识库 AI解析/步骤图谱 修改记录（2026-06-11新增，留痕便于追溯与回滚）──
+    await pool().query(`
+      CREATE TABLE IF NOT EXISTS knowledge_edit_history (
+        id BIGSERIAL PRIMARY KEY,
+        knowledge_id UUID NOT NULL,
+        field VARCHAR(32) NOT NULL,
+        old_value TEXT,
+        new_value TEXT,
+        editor VARCHAR(100),
+        editor_role VARCHAR(50),
+        edited_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool().query(`CREATE INDEX IF NOT EXISTS idx_keh_knowledge ON knowledge_edit_history (knowledge_id, edited_at DESC)`);
 
     console.log('[Training] Schema ensured');
   } catch (e) {
@@ -428,9 +470,36 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
       }
 
       await pool().query(`UPDATE knowledge_base SET step_rubric = $1 WHERE id = $2`, [JSON.stringify(rubric), id]);
+      await pool().query(
+        `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role)
+         VALUES ($1::uuid, 'step_rubric', $2, $3, $4, $5)`,
+        [id, article.step_rubric ? JSON.stringify(article.step_rubric) : null, JSON.stringify(rubric),
+         req.user?.username || null, req.user?.role || null]
+      ).catch((e) => console.error('[Training] edit-history(rubric) failed:', e?.message));
       res.json({ success: true, rubric });
     } catch (e) {
       console.error('[Training] analyze-rubric error:', e?.message);
+      res.json({ success: false, error: e?.message });
+    }
+  });
+
+  // GET /api/knowledge/:id/edit-history — AI解析/步骤图谱 修改记录查询（管理端）
+  app.get('/api/knowledge/:id/edit-history', authMiddleware, async (req, res) => {
+    try {
+      if (!isManager(req.user?.role)) return res.status(403).json({ success: false, error: '无权限' });
+      const r = await pool().query(
+        `SELECT id, field, editor, editor_role, edited_at,
+                LEFT(COALESCE(old_value,''), 300) AS old_preview,
+                LEFT(COALESCE(new_value,''), 300) AS new_preview,
+                length(COALESCE(old_value,'')) AS old_len,
+                length(COALESCE(new_value,'')) AS new_len
+         FROM knowledge_edit_history
+         WHERE knowledge_id = $1::uuid
+         ORDER BY edited_at DESC LIMIT 100`,
+        [req.params.id]
+      );
+      res.json({ success: true, history: r.rows });
+    } catch (e) {
       res.json({ success: false, error: e?.message });
     }
   });
@@ -1344,12 +1413,12 @@ ${rawContent}
       let kbContext = '';
       if (topic.kb_article_ids.length > 0) {
         const kbResult = await pool().query(
-          `SELECT title, LEFT(content, 6000) AS content FROM knowledge_base WHERE id = ANY($1) AND enabled = true`,
+          `SELECT title, LEFT(content, 6000) AS content, ai_explanation, step_rubric FROM knowledge_base WHERE id = ANY($1) AND enabled = true`,
           [topic.kb_article_ids]
         );
         if (kbResult.rows.length > 0) {
-          kbContext = '\n\n以下是相关参考资料，请结合这些内容回答：\n\n' +
-            kbResult.rows.map(r => `【${r.title}】\n${r.content}`).join('\n\n---\n\n');
+          kbContext = '\n\n以下是相关参考资料，请结合这些内容回答（标准类内容以此为准）：\n\n' +
+            kbResult.rows.map(r => `【${r.title}】\n${buildKbArticleText(r)}`).join('\n\n---\n\n');
         }
       }
 
@@ -1426,12 +1495,12 @@ ${rawContent}
       let kbQuizContext = '';
       if (topic.kb_article_ids.length > 0) {
         const kbResult = await pool().query(
-          `SELECT title, LEFT(content, 6000) AS content FROM knowledge_base WHERE id = ANY($1) AND enabled = true`,
+          `SELECT title, LEFT(content, 6000) AS content, ai_explanation, step_rubric FROM knowledge_base WHERE id = ANY($1) AND enabled = true`,
           [topic.kb_article_ids]
         );
         if (kbResult.rows.length > 0) {
-          kbQuizContext = '\n参考资料：\n' +
-            kbResult.rows.map(r => `【${r.title}】\n${r.content}`).join('\n---\n');
+          kbQuizContext = '\n参考资料（请严格依据以下内容出题，标准类内容以此为准）：\n' +
+            kbResult.rows.map(r => `【${r.title}】\n${buildKbArticleText(r)}`).join('\n---\n');
         }
       }
 

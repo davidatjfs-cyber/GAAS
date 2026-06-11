@@ -16840,7 +16840,14 @@ app.put('/api/knowledge/:id/explanation', authRequired, async (req, res) => {
   if (!id) return res.status(400).json({ error: 'missing_id' });
   if (!explanation) return res.status(400).json({ error: 'missing_explanation' });
   try {
+    const prev = await pool.query('SELECT ai_explanation FROM knowledge_base WHERE id = $1::uuid LIMIT 1', [id]);
+    const oldVal = prev.rows?.[0]?.ai_explanation || null;
     await pool.query('UPDATE knowledge_base SET ai_explanation = $1, updated_at = NOW() WHERE id = $2::uuid', [explanation, id]);
+    await pool.query(
+      `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role)
+       VALUES ($1::uuid, 'ai_explanation', $2, $3, $4, $5)`,
+      [id, oldVal, explanation, req.user?.username || null, req.user?.role || null]
+    ).catch((e) => console.error('[knowledge] edit-history(explanation) failed:', e?.message));
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: 'server_error', message: String(e?.message || e) });
