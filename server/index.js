@@ -9826,7 +9826,9 @@ function buildAttendanceSummaryRows(registerRows, checkinDetails) {
         restDates: new Set(),
         restOffsetDates: new Set(),
         anomalyPunches: 0,
-        punchDays: new Set()
+        punchDays: new Set(),
+        workFrac: new Map(),   // 日期 -> 上班天数（半天=0.5），来自台账 declared_days
+        restFrac: new Map()    // 日期 -> 休息天数（半天=0.5）
       };
       summaryMap.set(key, row);
     } else {
@@ -9848,13 +9850,17 @@ function buildAttendanceSummaryRows(registerRows, checkinDetails) {
       const row = ensureSummary(store, username, name);
       if (!row) continue;
       const kind = String(line?.kind || '').trim();
+      const declared = Number(line?.declared_days);
+      const frac = Number.isFinite(declared) && declared > 0 ? declared : 1;
       if (kind === 'work') {
         row.actualDates.add(reportDate);
+        row.workFrac.set(reportDate, (Number(row.workFrac.get(reportDate)) || 0) + frac);
       } else if (kind === 'absent') {
         row.absentDates.add(reportDate);
       } else if (kind === 'rest' || kind === 'leave_only') {
         row.restDates.add(reportDate);
         row.restOffsetDates.add(reportDate);
+        row.restFrac.set(reportDate, (Number(row.restFrac.get(reportDate)) || 0) + frac);
       }
     }
   }
@@ -9917,14 +9923,17 @@ function buildAttendanceSummaryRows(registerRows, checkinDetails) {
       const lateDates = sortIsoDateList(Array.from(row.lateDates));
       const restDates = sortIsoDateList(Array.from(row.restDates));
       const restOffsetDates = sortIsoDateList(Array.from(row.restOffsetDates));
+      // 半天精度：台账有 declared_days 用其分数，无台账记录（仅打卡推断）按整天计
+      const sumFrac = (dates, fracMap) => Number(dates.reduce(
+        (s, d) => s + (fracMap.has(d) ? Number(fracMap.get(d)) || 0 : 1), 0).toFixed(2));
       return {
         store: row.store,
         username: row.username,
         name: row.name || row.username,
-        actualAttendanceDays: actualDates.length,
+        actualAttendanceDays: sumFrac(actualDates, row.workFrac),
         absenceDays: absentDates.length,
         lateDays: lateDates.length,
-        restDays: restDates.length,
+        restDays: sumFrac(restDates, row.restFrac),
         anomalyPunches: Number(row.anomalyPunches || 0),
         checkinDays: row.punchDays.size,
         actualDates,
@@ -11054,8 +11063,10 @@ app.get('/api/reports/leave-owed', authRequired, async (req, res) => {
       });
     }
 
+    const penaltyMap = await computeAttendanceMissingClockPenalties(month, store);
     const rows = people.map((p) => {
-      const bal = calcEmployeeMonthlyLeaveBalance(state0, p, month) || {
+      const penalty = penaltyMap.get(String(p?.username || '').trim().toLowerCase());
+      const bal = calcEmployeeMonthlyLeaveBalance(state0, p, month, { penalty }) || {
         baseLeave: 0, annualLeave: 0, usedLeave: 0, totalLeave: 0, computedRemaining: 0, remaining: 0, overridden: false, weeklyDetails: [], lastAdjustment: null
       };
       const remaining = Number(bal?.remaining || 0);
@@ -13752,6 +13763,24 @@ function dailyReportHasRestForEmployee(staffObj, unameLower, nameRaw) {
   });
 }
 
+// 返回员工当日日报休息「天数」（支持半天 0.5），未命中返回 0。
+// 与 dailyReportHasRestForEmployee 的布尔判定一致，但保留 days 精度。
+function dailyReportRestDaysForEmployee(staffObj, unameLower, nameRaw) {
+  const uname = String(unameLower || '').trim().toLowerCase();
+  const name = String(nameRaw || '').trim();
+  if (!uname && !name) return 0;
+  const restStaff = dailyReportRestStaffForLeaveCalc(staffObj);
+  for (const it of restStaff) {
+    const u = String(it?.user || it?.username || '').trim().toLowerCase();
+    const n = String(it?.name || '').trim();
+    if ((u && uname && u === uname) || (!u && name && n && n === name)) {
+      const d = Number(it?.days);
+      return Number.isFinite(d) && d > 0 ? d : 1;
+    }
+  }
+  return 0;
+}
+
 function calcEmployeeMonthlyActualRestFromDailyReports(state, employee, month) {
   const m = safeMonthOnly(month);
   const emp = employee && typeof employee === 'object' ? employee : null;
@@ -13807,7 +13836,7 @@ function calcEmployeeMonthlyActualRestFromDailyReports(state, employee, month) {
     }
 
     if (days != null && days > 0) {
-      byDay[repDate] = 1;
+      byDay[repDate] = Number(days);   // 半天休息=0.5，不再硬编码为整天
     }
   });
 
@@ -14093,7 +14122,64 @@ async function runLeaveCumulativeCloseSnapshotForClosedMonth(closedMonth) {
   return { ok: true, closedMonth: m, nextMonth: nextM, employees: n };
 }
 
-function calcEmployeeMonthlyLeaveBalance(state, employee, month) {
+// 考勤缺失扣假规则起始日（含）：2026-06-01 之前不统计
+const ATTENDANCE_PENALTY_START_DATE = '2026-06-01';
+
+/**
+ * 计算某月「有出勤但缺考勤」的扣假：日报标记上班(work)，但当天缺上班卡或下班卡（任一缺即算缺勤），
+ * 每缺勤 1 天扣 1 天休假。返回 Map<usernameLower, { days, details:[{date,days,type,source}] }>。
+ * store 仅用于圈定日报台账范围；打卡按 用户+日期 全局匹配（员工打卡归属其本人）。
+ */
+async function computeAttendanceMissingClockPenalties(month, store) {
+  const m = safeMonthOnly(month);
+  const out = new Map();
+  if (!m) return out;
+  const [yr, mo] = m.split('-').map(Number);
+  const monthStart = `${m}-01`;
+  const monthEnd = `${m}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`;
+  const effStart = monthStart > ATTENDANCE_PENALTY_START_DATE ? monthStart : ATTENDANCE_PENALTY_START_DATE;
+  if (effStart > monthEnd) return out;
+  try {
+    const wArgs = [effStart, monthEnd];
+    let storeClause = '';
+    if (store) { wArgs.push(store); storeClause = ` AND TRIM(store) = TRIM($3::text)`; }
+    const workSql = `
+      SELECT DISTINCT lower(trim(ld->>'username')) AS u, report_date::text AS d
+      FROM daily_report_attendance_register, LATERAL jsonb_array_elements(line_details) ld
+      WHERE report_date >= $1::date AND report_date <= $2::date${storeClause}
+        AND ld->>'kind' = 'work' AND coalesce(ld->>'username','') <> ''`;
+    const workRows = (await pool.query(workSql, wArgs)).rows || [];
+    if (!workRows.length) return out;
+
+    const ciSql = `
+      SELECT lower(trim(username)) AS u,
+             (timezone('Asia/Shanghai', check_time))::date::text AS d,
+             bool_or(type = 'clock_in')  AS has_in,
+             bool_or(type = 'clock_out') AS has_out
+      FROM checkin_records
+      WHERE (timezone('Asia/Shanghai', check_time))::date >= $1::date
+        AND (timezone('Asia/Shanghai', check_time))::date <= $2::date
+      GROUP BY 1, 2`;
+    const ciRows = (await pool.query(ciSql, [effStart, monthEnd])).rows || [];
+    const ciMap = new Map();
+    for (const r of ciRows) ciMap.set(`${r.u}||${r.d}`, { has_in: r.has_in === true, has_out: r.has_out === true });
+
+    for (const w of workRows) {
+      const ci = ciMap.get(`${w.u}||${w.d}`);
+      if (ci && ci.has_in && ci.has_out) continue; // 上下班卡齐全 → 不缺勤
+      const miss = !ci ? '无打卡' : (!ci.has_in ? '缺上班卡' : '缺下班卡');
+      let entry = out.get(w.u);
+      if (!entry) { entry = { days: 0, details: [] }; out.set(w.u, entry); }
+      entry.days = Number((entry.days + 1).toFixed(2));
+      entry.details.push({ date: w.d, days: 1, type: '考勤缺失扣假', source: `有出勤·${miss}` });
+    }
+  } catch (e) {
+    console.error('[attendance-penalty] compute failed:', e?.message);
+  }
+  return out;
+}
+
+function calcEmployeeMonthlyLeaveBalance(state, employee, month, opts = {}) {
   const m = safeMonthOnly(month);
   const emp = employee && typeof employee === 'object' ? employee : null;
   const uname = String(emp?.username || '').trim();
@@ -14210,6 +14296,17 @@ function calcEmployeeMonthlyLeaveBalance(state, employee, month) {
   });
 
   usedLeave = Number((Number(usedLeave || 0)).toFixed(2));
+
+  // 考勤缺失扣假：有出勤(日报上班)但当天缺上班卡或下班卡，每缺勤1天扣1天休假（2026-06起）。
+  // 由调用方异步算好后通过 opts.penalty 注入，计入已用假期并在「休息明细」展示。
+  const penalty = opts && typeof opts === 'object' ? opts.penalty : null;
+  const penaltyDays = Number(penalty?.days || 0);
+  if (Number.isFinite(penaltyDays) && penaltyDays > 0) {
+    usedLeave = Number((usedLeave + penaltyDays).toFixed(2));
+    if (Array.isArray(penalty?.details)) {
+      for (const d of penalty.details) usedLeaveDetails.push(d);
+    }
+  }
 
   // 月初「累计假期」池：人工 carryover > 上月闭合快照 > 实时滚动（与我的档案、欠休展示一致）
   const cumulativeLeaveDays = getLockedOpeningCarryForMonth(state, emp, m);
@@ -20276,10 +20373,10 @@ app.get('/api/profile/attendance-overview', authRequired, async (req, res) => {
 
       // 休息统计：按当天日报记录（优先结构化 staff list，兼容旧文本）
       if (repDate >= monthStart && repDate <= monthEnd) {
-        let rested = dailyReportHasRestForEmployee(data?.staff, meLower, myName);
+        let restedDays = dailyReportRestDaysForEmployee(data?.staff, meLower, myName);  // 支持半天 0.5
 
         // legacy fallback: comma-separated text names
-        if (!rested) {
+        if (!(restedDays > 0)) {
           const frontRest = String(data?.staff?.frontRest || '').trim();
           const kitchenRest = String(data?.staff?.kitchenRest || '').trim();
           const tokens = splitNameTokens(frontRest).concat(splitNameTokens(kitchenRest));
@@ -20288,11 +20385,11 @@ app.get('/api/profile/attendance-overview', authRequired, async (req, res) => {
           const hitByRaw = (!!myName && (frontRest.includes(myName) || kitchenRest.includes(myName)))
             || frontRest.toLowerCase().includes(meLower)
             || kitchenRest.toLowerCase().includes(meLower);
-          if (hitByToken || hitByRaw) rested = true;
+          if (hitByToken || hitByRaw) restedDays = 1;
         }
 
-        if (rested) {
-          restByDay.set(repDate, 1);
+        if (restedDays > 0) {
+          restByDay.set(repDate, Number(restedDays));
         }
       }
 
@@ -20359,7 +20456,10 @@ app.get('/api/profile/attendance-overview', authRequired, async (req, res) => {
       if (Number.isFinite(n) && n > 0) restDays += n;
     });
     restDays = Number(restDays.toFixed(2));
-    const leaveBalance = calcEmployeeMonthlyLeaveBalance(state, me, month);
+    const _penaltyMap = await computeAttendanceMissingClockPenalties(month, myStore);
+    const leaveBalance = calcEmployeeMonthlyLeaveBalance(state, me, month, {
+      penalty: _penaltyMap.get(String(me?.username || '').trim().toLowerCase())
+    });
     const monthRestRemaining = leaveBalance ? Number(leaveBalance.monthRemaining || 0) : Number((4 - restDays).toFixed(2));
     const cumulativeLeaveDays = leaveBalance ? Number(leaveBalance.cumulativeLeaveDays || 0) : 0;
 
