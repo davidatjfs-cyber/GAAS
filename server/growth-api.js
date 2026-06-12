@@ -1684,6 +1684,11 @@ function phoneHashPct(phone) {
   const h = crypto.createHash('md5').update(String(phone || '')).digest('hex');
   return parseInt(h.slice(0, 4), 16) % 100;
 }
+// A/B 分桶：用 md5 的不同片段(slice 8-12)，与 holdout(slice 0-4) 独立，避免两者抽样相关联。
+function phoneAbBucket(phone, n) {
+  const h = crypto.createHash('md5').update(String(phone || '')).digest('hex');
+  return parseInt(h.slice(8, 12), 16) % Math.max(1, n);
+}
 
 // 通用发券人群(profiles)取数：可编辑筛选(门店/价值分级/生命周期/到店次数/未消费天数)+频控。
 // 返回 SQL 与参数，preview 与 launch 共用，保证「预览即所发」。
@@ -2562,6 +2567,24 @@ async function runTouchRuleEngine(pool, options = {}) {
     // enqueueAutoStoredValueReminds 按门店每日冻结余额提醒任务。此处直接跳过。
     if (String((rule.action_payload || {}).channel || '') === 'balance') continue;
     const candidates = (await loadRuleCandidates(pool, rule)).slice(0, limitPerRule);
+    // 券类型 A/B 实验(ab_campaign_split=[活动A,活动B])：同一人群按手机号哈希对半分流到两个活动
+    // (各自不同已报备模板/券种)，分别冻结。两半人群统计上等同，唯一变量是券种 → 事后用打分端点
+    // 按 campaign_key 对比核销率即可干净判胜负。分桶用与 holdout 不同的哈希片段，避免抽样相关联。
+    const abSplitCampaigns = (() => {
+      const arr = (rule.action_payload || {}).ab_campaign_split;
+      if (!Array.isArray(arr) || arr.length !== 2) return null;
+      const a = cleanText(arr[0], 64), b = cleanText(arr[1], 64);
+      return (a && b && CAMPAIGN_TYPES[a] && CAMPAIGN_TYPES[b]) ? [a, b] : null;
+    })();
+    if (abSplitCampaigns) {
+      const [A, B] = abSplitCampaigns;
+      const candA = candidates.filter((r) => phoneAbBucket(cleanPhone(r.phone), 2) === 0);
+      const candB = candidates.filter((r) => phoneAbBucket(cleanPhone(r.phone), 2) === 1);
+      await enqueueCampaignJobsForRule(pool, rule, candA, A).catch((e) => console.warn('[growth] ab enqueue A failed:', rule.rule_key, e?.message));
+      await enqueueCampaignJobsForRule(pool, rule, candB, B).catch((e) => console.warn('[growth] ab enqueue B failed:', rule.rule_key, e?.message));
+      await pool.query(`UPDATE growth_touch_rules SET last_run_at = NOW() WHERE rule_key = $1`, [rule.rule_key]).catch(() => {});
+      continue;
+    }
     // 活动制规则(action_payload.campaign_key)：不逐人直发，改为聚合候选→冻结发券任务(可核销可归因)。
     const ruleCampaignKey = cleanText((rule.action_payload || {}).campaign_key || '', 64);
     if (ruleCampaignKey && CAMPAIGN_TYPES[ruleCampaignKey]) {
