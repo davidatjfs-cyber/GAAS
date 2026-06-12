@@ -14012,13 +14012,11 @@ function calcEmployeeMonthlyCarryover(state, employee, month, opts) {
     const monthQuota = 4;
     const restInfo = calcEmployeeMonthlyActualRestFromDailyReports(state, emp, cur);
     const usedRest = Number(restInfo?.total || 0);
-    const usedLeaveApproved = calcEmployeeMonthlyApprovedLeaveDays(state, emp, cur);
     const restDaySetCarry = new Set(Object.keys(restInfo?.byDay || {}));
     const leaveRecordsCarry = Array.isArray(state?.leaveRecords) ? state.leaveRecords : [];
     const unameCarry = String(emp?.username || '').trim().toLowerCase();
     const mCurCarry = safeMonthOnly(cur);
-    let usedUniqueDays = 0;
-    const uniqueDaySet = new Set(restDaySetCarry);
+    let nonOverlapLeaveDays = 0;
     leaveRecordsCarry.forEach((lr) => {
       if (String(lr?.applicant || '').toLowerCase() !== unameCarry) return;
       if (String(lr?.status || '') !== 'approved') return;
@@ -14034,12 +14032,12 @@ function calcEmployeeMonthlyCarryover(state, employee, month, opts) {
         const l = new Date(segEndCarry + 'T00:00:00');
         while (c <= l) {
           const dayKey = hrmsDateKeyInShanghai(c);
-          if (!uniqueDaySet.has(dayKey)) { uniqueDaySet.add(dayKey); usedUniqueDays++; }
+          if (!restDaySetCarry.has(dayKey)) nonOverlapLeaveDays++;
           c.setDate(c.getDate() + 1);
         }
-      } catch (_) { usedUniqueDays += Number(lr?.days || 0) || 0; }
+      } catch (_) { nonOverlapLeaveDays += Number(lr?.days || 0) || 0; }
     });
-    const usedLike = Number((usedUniqueDays || (usedRest > usedLeaveApproved ? usedRest : usedLeaveApproved)).toFixed(2));
+    const usedLike = Number((usedRest + nonOverlapLeaveDays).toFixed(2));
     const startCarry = ov && ov.mode === 'carryover' ? ov.value : carry;
     carry = Number((startCarry + monthQuota - usedLike).toFixed(2));
     cur = shiftMonth(cur, 1);
