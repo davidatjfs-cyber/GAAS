@@ -56398,14 +56398,15 @@ ${body}
         // 活动 → 已绑定门店双模板提示（选活动即绑定「马己仙＋洪潮」，无需手挑 14 条模板）
         function amCampaignPairTip(key){
             var c = AM_CAMPAIGNS[key]; if (!c) return '';
-            var m = c.tpl['51866138'] || '（短信后补）';
-            var h = c.tpl['64822111'] || '（短信后补）';
-            return '已绑定门店模板：马己仙 ' + m + ' · 洪潮 ' + h + '（变量 ' + c.vars.join('/') + '）';
+            var parts = [];
+            if (c.tpl['51866138']) parts.push('马己仙 ' + c.tpl['51866138']);
+            if (c.tpl['64822111']) parts.push('洪潮 ' + c.tpl['64822111']);
+            return '已绑定门店模板：' + (parts.join(' · ') || '（短信后补）') + '（变量 ' + c.vars.join('/') + '）';
         }
         // 活动 → 双门店已报备短信正文预览（只读展示，发送时引擎按客户门店自动取对应模板）
         function amCampaignContentPreview(key){
             var c = AM_CAMPAIGNS[key]; if (!c) return '';
-            return ['51866138','64822111'].map(function(sid){
+            return ['51866138','64822111'].filter(function(sid){ return c.tpl[sid]; }).map(function(sid){
                 var code = c.tpl[sid];
                 var content = code ? amSmsTemplateContent(code) : '';
                 return '【' + amStoreName(sid) + '】' + (content || '（短信模板后补，暂不可发）');

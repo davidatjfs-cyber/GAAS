@@ -2399,6 +2399,11 @@ function filterGenericRuleCandidates(rows, rule, segmentSet) {
     if (criteria.segment_key) {
       if (!segmentSet || !segmentSet.has(String(row.phone || ''))) return false;
     }
+    // 券类型A/B分桶：同一人群拆成两条「可见可控」的规则(现金组/免费菜组)，各取一半。
+    // ab_bucket=0/1 按手机号哈希(与 holdout 不同片段)分流，两组统计等同、唯一变量是券种。
+    if (criteria.ab_bucket === 0 || criteria.ab_bucket === 1) {
+      if (phoneAbBucket(cleanPhone(row.phone), 2) !== criteria.ab_bucket) return false;
+    }
     // 必须至少有一个「人群」维度筛选（生命周期/价值/天数/到店次数/周期超时/时段标签），
     // 否则视为无条件全量，拒绝命中以防误群发（store_id 不算人群筛选）。
     const hasAudienceFilter = !!(criteria.lifecycle_stage || criteria.lifecycle_stage_not || criteria.value_tier || criteria.value_tier_not
@@ -2570,24 +2575,6 @@ async function runTouchRuleEngine(pool, options = {}) {
     // enqueueAutoStoredValueReminds 按门店每日冻结余额提醒任务。此处直接跳过。
     if (String((rule.action_payload || {}).channel || '') === 'balance') continue;
     const candidates = (await loadRuleCandidates(pool, rule)).slice(0, limitPerRule);
-    // 券类型 A/B 实验(ab_campaign_split=[活动A,活动B])：同一人群按手机号哈希对半分流到两个活动
-    // (各自不同已报备模板/券种)，分别冻结。两半人群统计上等同，唯一变量是券种 → 事后用打分端点
-    // 按 campaign_key 对比核销率即可干净判胜负。分桶用与 holdout 不同的哈希片段，避免抽样相关联。
-    const abSplitCampaigns = (() => {
-      const arr = (rule.action_payload || {}).ab_campaign_split;
-      if (!Array.isArray(arr) || arr.length !== 2) return null;
-      const a = cleanText(arr[0], 64), b = cleanText(arr[1], 64);
-      return (a && b && CAMPAIGN_TYPES[a] && CAMPAIGN_TYPES[b]) ? [a, b] : null;
-    })();
-    if (abSplitCampaigns) {
-      const [A, B] = abSplitCampaigns;
-      const candA = candidates.filter((r) => phoneAbBucket(cleanPhone(r.phone), 2) === 0);
-      const candB = candidates.filter((r) => phoneAbBucket(cleanPhone(r.phone), 2) === 1);
-      await enqueueCampaignJobsForRule(pool, rule, candA, A).catch((e) => console.warn('[growth] ab enqueue A failed:', rule.rule_key, e?.message));
-      await enqueueCampaignJobsForRule(pool, rule, candB, B).catch((e) => console.warn('[growth] ab enqueue B failed:', rule.rule_key, e?.message));
-      await pool.query(`UPDATE growth_touch_rules SET last_run_at = NOW() WHERE rule_key = $1`, [rule.rule_key]).catch(() => {});
-      continue;
-    }
     // 活动制规则(action_payload.campaign_key)：不逐人直发，改为聚合候选→冻结发券任务(可核销可归因)。
     const ruleCampaignKey = cleanText((rule.action_payload || {}).campaign_key || '', 64);
     if (ruleCampaignKey && CAMPAIGN_TYPES[ruleCampaignKey]) {
