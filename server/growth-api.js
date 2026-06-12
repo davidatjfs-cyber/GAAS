@@ -1568,6 +1568,9 @@ const CAMPAIGN_TYPES = {
   mj_dinner_weekend: { label: '马己仙晚市/周末复购客', source: 'profiles', tplPrefix: 'MJDINNERWK', coupon_count: 1, vars: ['value', 'date', 'code'] },
   // 洪潮平日午市客唤醒(赠菜券,无面额) env ALIYUN_SMS_HCWDLUNCH_HONGCHAO=SMS_508135078
   hc_weekday_lunch:  { label: '洪潮平日午市客唤醒',   source: 'profiles', tplPrefix: 'HCWDLUNCH',  coupon_count: 1, vars: ['date', 'code'] },
+  // 券类型A/B「免费菜组」：复用活跃客马己仙赠菜模板(SMS_507100271)，但独立 campaign_key 保证打分不混。
+  // env ALIYUN_SMS_MJDWGIFT_MAJIXIAN=SMS_507100271
+  mj_dinner_weekend_gift: { label: '马己仙晚市赠菜券(A/B免费菜组)', source: 'profiles', tplPrefix: 'MJDWGIFT', coupon_count: 1, vars: ['date', 'code'] },
 };
 // 按段+门店解析阿里云模板 code：ALIYUN_SMS_<PREFIX>_<MAJIXIAN|HONGCHAO|DEFAULT>
 function pickCampaignTemplate(campaignKey, storeId) {

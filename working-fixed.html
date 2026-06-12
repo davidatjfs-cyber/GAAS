@@ -56383,7 +56383,8 @@ ${body}
             lost_long:      { name: '长期流失召回',          vars: ['value','date','code'], tpl: { '51866138': 'SMS_507105250', '64822111': 'SMS_507890076' } },
             lost_over365:   { name: '长期流失超1年召回',     vars: ['value','date','code'], tpl: { '51866138': 'SMS_507105250', '64822111': 'SMS_507890076' } },
             mj_dinner_weekend: { name: '马己仙晚市/周末复购客', vars: ['value','date','code'], tpl: { '51866138': 'SMS_508075082', '64822111': '' } },
-            hc_weekday_lunch:  { name: '洪潮平日午市客唤醒',   vars: ['date','code'],         tpl: { '51866138': '', '64822111': 'SMS_508135078' } }
+            hc_weekday_lunch:  { name: '洪潮平日午市客唤醒',   vars: ['date','code'],         tpl: { '51866138': '', '64822111': 'SMS_508135078' } },
+            mj_dinner_weekend_gift: { name: '马己仙晚市赠菜券(A/B免费菜组)', vars: ['date','code'], tpl: { '51866138': 'SMS_507100271', '64822111': '' } }
         };
         // 券模板 id（campaign_<key>_<store> / winback_cash_<store>）→ 活动中文名，用于核销明细标注来源。
         function amCampaignLabelFromTemplate(templateId){
