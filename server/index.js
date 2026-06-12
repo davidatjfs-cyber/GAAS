@@ -11332,6 +11332,35 @@ app.post('/api/admin/reconcile-daily-attendance-register-from-pg', authRequired,
   }
 });
 
+// 管理端：重算指定「已闭合月份」的累计假期闭合快照（覆盖 system_month_close，保留人工 manual_carryover）。
+// 用途：累计假期公式修复后，旧公式在月初锁定的快照仍会被 getLockedOpeningCarryForMonth 取用，需刷新。
+app.post('/api/admin/leave-close-snapshot/recompute', authRequired, async (req, res) => {
+  if (String(req.user?.role || '') !== 'admin') return res.status(403).json({ error: 'admin_only' });
+  const month = safeMonthOnly(req.body?.month || '');
+  if (!month) return res.status(400).json({ error: 'missing_month' });
+  try {
+    const r = await runLeaveCumulativeCloseSnapshotForClosedMonth(month);
+    return res.json(r);
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: String(e?.message || e) });
+  }
+});
+
+/** 员工是否在指定薪资月「之前」已离职（离职日早于当月1日 → 不应再计薪）。
+ *  当月或之后离职仍保留（末月结算）；已审离职但离职日未到者视为在职。 */
+function isEmployeeDepartedBeforeMonth(emp, month) {
+  const m = safeMonthOnly(month);
+  if (!m || !emp || typeof emp !== 'object') return false;
+  const status = String(emp?.status || '').trim().toLowerCase();
+  const inactive = status === 'inactive' || status === '离职';
+  const offApproved = emp?.offboardingApproved === true
+    || String(emp?.offboardingApproved || '').trim().toLowerCase() === 'true';
+  if (!inactive && !offApproved) return false;
+  const offDate = String(emp?.offboardingDate || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(offDate)) return offDate < `${m}-01`;
+  return inactive || offApproved; // 已离职但无离职日期 → 视为已离职，排除
+}
+
 app.get('/api/reports/payroll', authRequired, async (req, res) => {
   const username = String(req.user?.username || '').trim();
   const role = String(req.user?.role || '').trim();
@@ -11457,6 +11486,19 @@ app.get('/api/reports/payroll', authRequired, async (req, res) => {
       sumMap.set(key, prev);
     }
 
+    // 奖惩归属月份以「审批单的生效/创建月」为准，而非 salaryAdjustment 记录的 createdAt
+    // （再次终审会把记录 createdAt 重写成当时时间，导致跨月奖惩被错并到同一月 → 金额翻倍）。
+    const approvalMonthById = new Map();
+    try {
+      const arRows = await pool.query(
+        `SELECT id::text AS id, to_char(COALESCE(effective_date, created_at::date), 'YYYY-MM') AS ym
+         FROM approval_requests WHERE type = 'reward_punishment'`
+      );
+      for (const r of (arRows.rows || [])) approvalMonthById.set(String(r.id), String(r.ym || ''));
+    } catch (e) {
+      console.warn('[payroll] load approval months failed:', e?.message);
+    }
+
     const adjustmentMap = new Map();
     const adjRows = Array.isArray(state0?.salaryAdjustments) ? state0.salaryAdjustments : [];
     for (const a of adjRows) {
@@ -11466,7 +11508,8 @@ app.get('/api/reports/payroll', authRequired, async (req, res) => {
       const target = String(a?.targetUsername || '').trim();
       if (!target) continue;
       if (isLegacyTestUsername(target)) continue;
-      const ym = String(a?.createdAt || a?.effectiveAt || '').slice(0, 7);
+      const apprId = String(a?.approvalId || '').trim();
+      const ym = (apprId && approvalMonthById.get(apprId)) || String(a?.createdAt || a?.effectiveAt || '').slice(0, 7);
       if (ym !== month) continue;
       let signed = safeNumber(a?.signedAmount);
       if (signed == null) {
@@ -11613,6 +11656,15 @@ app.get('/api/reports/payroll', authRequired, async (req, res) => {
         amount
       };
     });
+
+    // 排除当月之前已离职的人员（避免离职后每月仍计薪）
+    const rowsActive = rows.filter((r) => {
+      const lower = String(r?.username || '').trim().toLowerCase();
+      const emp = peopleByLower.get(lower) || stateFindUserRecord(state0, r?.username) || null;
+      return !isEmployeeDepartedBeforeMonth(emp, month);
+    });
+    rows.length = 0;
+    rows.push(...rowsActive);
 
     rows.sort((a, b) => String(a.store).localeCompare(String(b.store), 'zh-Hans-CN') || String(a.name || a.username).localeCompare(String(b.name || b.username), 'zh-Hans-CN'));
 
