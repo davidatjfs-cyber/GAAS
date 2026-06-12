@@ -4052,8 +4052,11 @@ export function registerGrowthRoutes(app, pool) {
     const r = await pool.query(
       // 注：核销成功后 Fix3 会把投递日志 status 由 'sent' 翻成 'redeemed'，
       // 故发送数须把已触达的各终态都计入，否则被核销的那条会从发送数里漏掉。
+      // 归因键修正：投递日志的 rule_key 实际存的是 campaign_key（活动制规则），核销事件
+      // metadata 里也是 campaign_key。故统一按「归因键 akey = COALESCE(campaign_key, rule_key)」
+      // 聚合并 JOIN，否则活动制规则(主力)发送/核销全部漏算成 0（旧实现的真实 bug）。
       `WITH sent AS (
-         SELECT rule_key,
+         SELECT rule_key AS akey,
                 COUNT(*)::int AS sent_count,
                 COUNT(*) FILTER (WHERE channel = 'sms')::int AS sms_sent_count
          FROM growth_delivery_logs
@@ -4062,22 +4065,23 @@ export function registerGrowthRoutes(app, pool) {
          GROUP BY rule_key
        ),
        redeemed AS (
-         SELECT (metadata->>'rule_key') AS rule_key,
+         SELECT COALESCE(NULLIF(metadata->>'campaign_key',''), NULLIF(metadata->>'rule_key','')) AS akey,
                 COUNT(*)::int AS redeemed_count,
                 COALESCE(SUM(amount_fen), 0)::bigint AS revenue_fen
          FROM growth_events
          WHERE event_type = 'coupon_redeemed' AND created_at >= NOW() - ($1::int || ' days')::interval
-           AND metadata ? 'rule_key'
-         GROUP BY metadata->>'rule_key'
+           AND COALESCE(NULLIF(metadata->>'campaign_key',''), NULLIF(metadata->>'rule_key','')) IS NOT NULL
+         GROUP BY 1
        )
        SELECT tr.rule_key,
+              tr.action_payload->>'campaign_key' AS campaign_key,
               COALESCE(s.sent_count, 0) AS sent_count,
               COALESCE(s.sms_sent_count, 0) AS sms_sent_count,
               COALESCE(rd.redeemed_count, 0) AS redeemed_count,
               COALESCE(rd.revenue_fen, 0) AS revenue_fen
        FROM growth_touch_rules tr
-       LEFT JOIN sent s ON s.rule_key = tr.rule_key
-       LEFT JOIN redeemed rd ON rd.rule_key = tr.rule_key`,
+       LEFT JOIN sent s ON s.akey = COALESCE(NULLIF(tr.action_payload->>'campaign_key',''), tr.rule_key)
+       LEFT JOIN redeemed rd ON rd.akey = COALESCE(NULLIF(tr.action_payload->>'campaign_key',''), tr.rule_key)`,
       [days]
     );
     // 单条短信成本 0.05 元（5 分）；订阅消息 / 小程序渠道成本为 0。
@@ -4126,6 +4130,9 @@ export function registerGrowthRoutes(app, pool) {
         suggestion += '；注：本期实收金额未录入，ROI 暂按 0 计，建议核销时录入实收金额以精确核算';
       }
 
+      // 券类型：活动模板含 value 变量=现金券，否则=免费菜/赠菜券。供「现金券 vs 免费菜」对比。
+      const cfg = CAMPAIGN_TYPES[row.campaign_key];
+      const couponKind = cfg ? (Array.isArray(cfg.vars) && cfg.vars.includes('value') ? 'cash' : 'gift') : 'unknown';
       return Object.assign({}, row, {
         sent_count: sent,
         sms_sent_count: smsSent,
@@ -4133,11 +4140,24 @@ export function registerGrowthRoutes(app, pool) {
         revenue_fen: revenueFen,
         cost_fen: costFen,
         roi: roi == null ? null : Math.round(roi * 100) / 100,
+        coupon_kind: couponKind,
         score,
         suggestion
       });
     });
-    return res.json({ ok: true, days, stats });
+    // 券类型汇总（现金券 vs 免费菜券）：供管理员一眼看清哪类券核销更好。
+    // 注意：样本不足或人群不同会让对比失真，前端展示需带「样本量/置信」提示，不可仅凭此切换全部投放。
+    const byKind = {};
+    for (const s of stats) {
+      const k = s.coupon_kind;
+      if (k !== 'cash' && k !== 'gift') continue;
+      const b = byKind[k] || (byKind[k] = { sent: 0, redeemed: 0 });
+      b.sent += s.sent_count; b.redeemed += s.redeemed_count;
+    }
+    for (const k of Object.keys(byKind)) {
+      byKind[k].redeem_rate = byKind[k].sent > 0 ? Math.round(byKind[k].redeemed / byKind[k].sent * 10000) / 100 : null;
+    }
+    return res.json({ ok: true, days, stats, coupon_kind_summary: byKind });
   });
 
   // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
