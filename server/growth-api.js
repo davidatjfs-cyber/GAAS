@@ -349,6 +349,30 @@ export async function ensureGrowthTables(pool) {
     )
   `);
 
+  // 中国法定节假日日历：day_type='holiday'(放假) / 'workday'(调休补班日,周末上班算平日)。
+  // 供「平日/周末/节假日」就餐时段划分使用(洪潮平日口径需排除节假日)。
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cn_holiday_calendar (
+      day DATE PRIMARY KEY,
+      day_type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // 就餐时段标签成员：按 segment_key 存手机号(如 mj_dinner_weekend_repeat / hc_weekday_lunch)，
+  // 由 POS order_time 聚合离线计算(recomputeDiningSegments)，营销规则按 criteria.segment_key 命中。
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS growth_segment_members (
+      phone TEXT NOT NULL,
+      segment_key TEXT NOT NULL,
+      store_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (phone, segment_key)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_segment_key ON growth_segment_members (segment_key)`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS growth_actions (
       id BIGSERIAL PRIMARY KEY,
@@ -1539,6 +1563,11 @@ const CAMPAIGN_TYPES = {
   lost_long:      { label: '长期流失召回·181-365天', source: 'profiles', tplPrefix: 'LOSTLONG',  coupon_count: 2, vars: ['value', 'date', 'code'] },
   // 长期流失超1年(>365天)：与181-365分开运营，频次30天/有效期30天。env ALIYUN_SMS_LOSTOVER365_* (洪潮SMS_507890076/马己仙SMS_507105250)
   lost_over365:   { label: '长期流失超1年召回',      source: 'profiles', tplPrefix: 'LOSTOVER365', coupon_count: 2, vars: ['value', 'date', 'code'] },
+  // 就餐时段标签(基于 growth_segment_members，按 criteria.segment_key 命中)：
+  // 马己仙晚市/周末复购客(现金券) env ALIYUN_SMS_MJDINNERWK_MAJIXIAN=SMS_508075082
+  mj_dinner_weekend: { label: '马己仙晚市/周末复购客', source: 'profiles', tplPrefix: 'MJDINNERWK', coupon_count: 1, vars: ['value', 'date', 'code'] },
+  // 洪潮平日午市客唤醒(赠菜券,无面额) env ALIYUN_SMS_HCWDLUNCH_HONGCHAO=SMS_508135078
+  hc_weekday_lunch:  { label: '洪潮平日午市客唤醒',   source: 'profiles', tplPrefix: 'HCWDLUNCH',  coupon_count: 1, vars: ['date', 'code'] },
 };
 // 按段+门店解析阿里云模板 code：ALIYUN_SMS_<PREFIX>_<MAJIXIAN|HONGCHAO|DEFAULT>
 function pickCampaignTemplate(campaignKey, storeId) {
@@ -2293,7 +2322,8 @@ async function loadRuleCandidates(pool, rule) {
     });
   }
   const rows = await fetchGenericRuleCandidates(pool);
-  return filterGenericRuleCandidates(rows, rule);
+  const segmentSet = await loadSegmentPhoneSet(pool, (rule.criteria || {}).segment_key);
+  return filterGenericRuleCandidates(rows, rule, segmentSet);
 }
 
 // 通用候选集扫描：除生日规则(loyal_birthday_month)外所有规则共用同一份 profiles 扫描结果。
@@ -2319,8 +2349,16 @@ async function fetchGenericRuleCandidates(pool) {
   return r.rows;
 }
 
+// 就餐时段标签成员(growth_segment_members)按 segment_key 取手机号集合，供 criteria.segment_key 命中。
+async function loadSegmentPhoneSet(pool, segmentKey) {
+  if (!segmentKey) return null;
+  const r = await pool.query(`SELECT phone FROM growth_segment_members WHERE segment_key = $1`, [segmentKey]);
+  return new Set((r.rows || []).map((x) => String(x.phone || '')));
+}
+
 // 在内存中按规则 criteria 过滤通用候选集（与 loadRuleCandidates 同口径，供 audience 批量复用）。
-function filterGenericRuleCandidates(rows, rule) {
+// segmentSet: 当 criteria.segment_key 存在时，传入该标签的手机号集合(loadSegmentPhoneSet)，否则 null。
+function filterGenericRuleCandidates(rows, rule, segmentSet) {
   // 旧版基于访问/天数的规则（企微分支保留），先于生命周期匹配处理
   const criteria = rule.criteria || {};
   return rows.filter((row) => {
@@ -2349,9 +2387,14 @@ function filterGenericRuleCandidates(rows, rule) {
       if (!Number.isFinite(interval) || interval <= 0) return false;
       if (days < interval * Number(criteria.interval_overdue_multiplier)) return false;
     }
-    // 必须至少有一个「人群」维度筛选（生命周期/价值/天数/到店次数/周期超时），
+    // 就餐时段标签：criteria.segment_key 命中 growth_segment_members(按手机号)。
+    if (criteria.segment_key) {
+      if (!segmentSet || !segmentSet.has(String(row.phone || ''))) return false;
+    }
+    // 必须至少有一个「人群」维度筛选（生命周期/价值/天数/到店次数/周期超时/时段标签），
     // 否则视为无条件全量，拒绝命中以防误群发（store_id 不算人群筛选）。
     const hasAudienceFilter = !!(criteria.lifecycle_stage || criteria.lifecycle_stage_not || criteria.value_tier || criteria.value_tier_not
+      || criteria.segment_key
       || Number.isFinite(Number(criteria.max_days_since_last_visit))
       || Number.isFinite(Number(criteria.min_days_since_last_visit))
       || Number.isFinite(Number(criteria.min_visit_count))
@@ -2364,6 +2407,32 @@ function filterGenericRuleCandidates(rows, rule) {
 function buildRulePeriodKey(ruleKey, row) {
   if (ruleKey === 'loyal_birthday_month') return fmtYm(new Date());
   return fmtYmd(row.last_visit_at || row.pos_last_order_at || row.last_seen_at);
+}
+
+// 就餐时段标签重算：从 pos_orders.order_time(北京时间) 聚合，刷新 growth_segment_members。
+// 随 POS 数据更新需定期重算(每日)。口径：
+//  - mj_dinner_weekend_repeat: 马己仙 晚市(≥16点)≥2次 或 周末(周六日)≥2次 的复购客；
+//  - hc_weekday_lunch:        洪潮 平日(排除周末+法定节假日,含调休补班) 午市(10-15点) ≥1次。
+async function recomputeDiningSegments(pool) {
+  const BJ = "AT TIME ZONE 'Asia/Shanghai'";
+  const hj = `LEFT JOIN cn_holiday_calendar h ON h.day=(order_time ${BJ})::date AND h.day_type='holiday'
+              LEFT JOIN cn_holiday_calendar w ON w.day=(order_time ${BJ})::date AND w.day_type='workday'`;
+  const eff = `((extract(dow from order_time ${BJ}) BETWEEN 1 AND 5 AND h.day IS NULL) OR w.day IS NOT NULL)`;
+  await pool.query(`DELETE FROM growth_segment_members WHERE segment_key='mj_dinner_weekend_repeat'`);
+  const mj = await pool.query(`INSERT INTO growth_segment_members(phone,segment_key,store_id)
+    SELECT phone,'mj_dinner_weekend_repeat','51866138' FROM (
+      SELECT phone,
+        count(*) FILTER (WHERE extract(hour from order_time ${BJ})>=16) dinner,
+        count(*) FILTER (WHERE extract(dow from order_time ${BJ}) IN (0,6)) weekend
+      FROM pos_orders WHERE store_id='51866138' AND order_time IS NOT NULL AND phone<>'' GROUP BY phone
+    ) t WHERE dinner>=2 OR weekend>=2 ON CONFLICT DO NOTHING`);
+  await pool.query(`DELETE FROM growth_segment_members WHERE segment_key='hc_weekday_lunch'`);
+  const hc = await pool.query(`INSERT INTO growth_segment_members(phone,segment_key,store_id)
+    SELECT DISTINCT phone,'hc_weekday_lunch','64822111' FROM (
+      SELECT phone FROM pos_orders ${hj} WHERE store_id='64822111' AND order_time IS NOT NULL AND phone<>''
+        AND ${eff} AND extract(hour from order_time ${BJ}) BETWEEN 10 AND 15
+    ) t ON CONFLICT DO NOTHING`);
+  return { mj_dinner_weekend_repeat: mj.rowCount, hc_weekday_lunch: hc.rowCount };
 }
 
 // POS数据滞后阈值（天）。上传频率为每2天一次，超过3天视为异常。
@@ -3537,6 +3606,25 @@ export function registerGrowthRoutes(app, pool) {
     }, 20000);
   }
 
+  // 就餐时段标签：手动重算端点 + 每日重算(随 POS 数据更新保持新鲜)
+  app.post('/api/growth/segments/recompute', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    try {
+      const result = await recomputeDiningSegments(pool);
+      return res.json({ ok: true, result });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+  if (!globalThis.__growthSegmentTimer) {
+    globalThis.__growthSegmentTimer = setInterval(() => {
+      recomputeDiningSegments(pool).catch((e) => console.warn('[segments] recompute failed:', e?.message));
+    }, 24 * 60 * 60 * 1000);
+    setTimeout(() => {
+      recomputeDiningSegments(pool).catch((e) => console.warn('[segments] initial recompute failed:', e?.message));
+    }, 30000);
+  }
+
   app.post('/api/miniprogram/events', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
 
@@ -4062,6 +4150,7 @@ export function registerGrowthRoutes(app, pool) {
       // 性能：通用人群表只扫一次，19 条规则在内存复用过滤，避免逐规则各扫 13k 行(旧版~30s)。
       // 生日规则(loyal_birthday_month) / 余额规则(channel=balance)人群口径不同，仍各自单独查询(均很轻)。
       let genericRows = null;
+      const segmentCache = new Map(); // segment_key → 手机号Set，多条同标签规则复用
       for (const rule of (rulesResult.rows || [])) {
         try {
           // 储值余额提醒(channel=balance)的人群在 growth_stored_value_members，不在 customer_profiles，
@@ -4086,7 +4175,14 @@ export function registerGrowthRoutes(app, pool) {
             candidates = await loadRuleCandidates(pool, rule);
           } else {
             if (!genericRows) genericRows = await fetchGenericRuleCandidates(pool);
-            candidates = filterGenericRuleCandidates(genericRows, rule);
+            // 时段标签规则：取该 segment 的手机号集合(按 segment_key 缓存，避免重复查询)
+            const segKey = (rule.criteria || {}).segment_key || '';
+            let segSet = null;
+            if (segKey) {
+              if (!segmentCache.has(segKey)) segmentCache.set(segKey, await loadSegmentPhoneSet(pool, segKey));
+              segSet = segmentCache.get(segKey);
+            }
+            candidates = filterGenericRuleCandidates(genericRows, rule, segSet);
           }
           // 分渠道覆盖：短信=有手机号；订阅消息/小程序站内券=有 openid（上限，订阅另受授权限制）；企微=有外部联系人。
           let sms = 0, subscribe = 0, member = 0, wecom = 0;

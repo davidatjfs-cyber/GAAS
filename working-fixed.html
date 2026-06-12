@@ -56348,7 +56348,9 @@ ${body}
             { code: 'SMS_507390274', store: '51866138', vars: ['date','code'], label: '新客第4天维护 · 马己仙（date/code）', content: '感谢光临马己仙音乐广场店，本店招牌荔枝木烧鹅，${date}前再次到店赠送招牌冻柠茶一份，报券码${code}使用，一桌限1份！拒收请回复R' },
             { code: 'SMS_507075274', store: '64822111', vars: ['date','code'], label: '新客第4天维护 · 洪潮（date/code）', content: '感谢光临洪潮大宁久光店，潮州虾生是本店招牌，${date}前再次到店赠送潮州奶冻一份，报券码${code}使用，一桌限1份！拒收请回复R' },
             { code: 'SMS_507760075', store: '51866138', vars: ['date','code'], label: 'VIP客人维护 · 马己仙（date/code）', content: '感谢您一直以来对马己仙大宁音乐广场店的支持，为您预留一份招牌手打虾饼免费品鉴，请于${date}前到店报券码${code}使用,拒收请回复R' },
-            { code: 'SMS_507580073', store: '64822111', vars: ['date','code'], label: 'VIP客人维护 · 洪潮（date/code）', content: '感谢您对洪潮大宁久光店的支持，洪潮2.0菜单升级，为您预留一份潮汕蚝仔烙免费品鉴，请于${date}前到店报券码${code}拒收请回复R' }
+            { code: 'SMS_507580073', store: '64822111', vars: ['date','code'], label: 'VIP客人维护 · 洪潮（date/code）', content: '感谢您对洪潮大宁久光店的支持，洪潮2.0菜单升级，为您预留一份潮汕蚝仔烙免费品鉴，请于${date}前到店报券码${code}拒收请回复R' },
+            { code: 'SMS_508075082', store: '51866138', vars: ['value','date','code'], label: '马己仙晚市/周末复购客（value/date/code）', content: '马己仙音乐广场店为您准备一张${value}元无门槛晚市专享礼券17点后可用，${date}前来门店报券码${code}可抵扣，拒收请回复R' },
+            { code: 'SMS_508135078', store: '64822111', vars: ['date','code'], label: '洪潮平日午市客唤醒（date/code）', content: '洪潮大宁久光店新升级：荔枝木烧鹅，每日现烤限量供应，${date}前到店赠送养生炖汤一份，凭券码${code}，仅限平日午市使用拒收请回复R' }
         ];
         // 待报备短信文案库（变量严格 name/days/value 三个，提交阿里云审核后回填 code 即可下发）
         var AM_SMS_DRAFTS = [
@@ -56379,7 +56381,9 @@ ${body}
             dormant_60_90:  { name: '沉睡客户召回·60-90天',  vars: ['value','date','code'], tpl: { '51866138': 'SMS_507220292', '64822111': 'SMS_507240296' } },
             dormant_90_180: { name: '沉睡客户召回·90-180天', vars: ['value','date','code'], tpl: { '51866138': 'SMS_507165317', '64822111': 'SMS_507390330' } },
             lost_long:      { name: '长期流失召回',          vars: ['value','date','code'], tpl: { '51866138': 'SMS_507105250', '64822111': 'SMS_507890076' } },
-            lost_over365:   { name: '长期流失超1年召回',     vars: ['value','date','code'], tpl: { '51866138': 'SMS_507105250', '64822111': 'SMS_507890076' } }
+            lost_over365:   { name: '长期流失超1年召回',     vars: ['value','date','code'], tpl: { '51866138': 'SMS_507105250', '64822111': 'SMS_507890076' } },
+            mj_dinner_weekend: { name: '马己仙晚市/周末复购客', vars: ['value','date','code'], tpl: { '51866138': 'SMS_508075082', '64822111': '' } },
+            hc_weekday_lunch:  { name: '洪潮平日午市客唤醒',   vars: ['date','code'],         tpl: { '51866138': '', '64822111': 'SMS_508135078' } }
         };
         // 券模板 id（campaign_<key>_<store> / winback_cash_<store>）→ 活动中文名，用于核销明细标注来源。
         function amCampaignLabelFromTemplate(templateId){
