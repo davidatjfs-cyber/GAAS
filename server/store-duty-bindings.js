@@ -83,6 +83,9 @@ export function canAccessApprovalCenter(role, context) {
   const normalizedRole = String(role || '').trim();
   if (['admin', 'hq_manager', 'cashier', 'hr_manager'].includes(normalizedRole)) return true;
   if (normalizedRole === 'store_manager') return true;
+  // 出品经理需审批后厨晋升等单据，准入与店长一致；具体仅能看到「待自己审批」的记录
+  // 由 /api/approvals 的 view=assigned 链路过滤保证，points 类单据另有排除逻辑。
+  if (normalizedRole === 'store_production_manager') return true;
   if (normalizedRole === 'front_manager') return false;
   const row = Array.isArray(context?.dutyRows)
     ? context.dutyRows.find((item) => item.store === context.currentStore || item.store === context.primaryStore)

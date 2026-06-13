@@ -23500,12 +23500,10 @@
             box.innerHTML = '<div class="ap-hint" style="padding:22px;text-align:center;">加载中…</div>';
             empty.style.display = 'none';
 
-            // 店长按「当前门店」过滤待审批：多店店长（如兼管门店）切换门店时，
-            // 待审批应只显示当前门店的单据，而非跨店混在一起。
-            const apStoreScope = (String(currentUser?.role || '') === ROLES.STORE_MANAGER)
-                ? String(currentUser?.current_store || currentUser?.store || '').trim()
-                : '';
-            HRMS_API.getApprovals({ view: String(viewEl?.value || 'assigned'), status, type: typeFilter || undefined, store: apStoreScope || undefined, dateStart: approvedStart, dateEnd: approvedEnd, dateField, search, limit: lim })
+            // 不按当前门店过滤待审批：多店店长/出品经理（如喻烽兼管马己仙）必须能看到所有
+            // 「指派给自己」的待办；后端 view=assigned 已按 current_assignee/链路过滤，
+            // 再叠加门店过滤会把兼管门店（如马己仙）的单据误藏。请款按门店的过滤由后端独立处理。
+            HRMS_API.getApprovals({ view: String(viewEl?.value || 'assigned'), status, type: typeFilter || undefined, dateStart: approvedStart, dateEnd: approvedEnd, dateField, search, limit: lim })
                 .then(resp => {
                     const items = Array.isArray(resp?.items) ? resp.items : [];
                     __APPROVALS_CACHE = items;
@@ -25702,6 +25700,11 @@ th { background: #f5f5f5; font-weight: 700; }
             if (page === 'daily-report') {
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN || r === ROLES.HQ_MANAGER || r === ROLES.STORE_MANAGER || r === ROLES.FRONT_MANAGER || r === ROLES.FRONT_SUPERVISOR;
+            }
+            // 出品经理需审批后厨晋升等单据：固定开放「待审批」模块，不依赖可变的角色模块配置
+            if (page === 'approvals') {
+                const r = String(role == null ? currentUser?.role : role || '').trim();
+                if (r === ROLES.PRODUCTION_MANAGER) return true;
             }
             const pages = getRoleModulePages(role == null ? currentUser?.role : role);
             if (pages === null) return true;
@@ -52872,7 +52875,7 @@ ${body}
                 { icon:'👤', label:'我的档案', page:'profile' },
                 { icon:'👥', label:'员工管理', page:'employees', roles:['admin','hr_manager','hq_manager','store_manager'] },
                 { icon:'📋', label:'营业日报', page:'daily-report', roles:['admin','hq_manager','store_manager','front_manager','front_supervisor'] },
-                { icon:'✅', label:'待审批', page:'approvals', roles:['admin','hr_manager','hq_manager','store_manager'] },
+                { icon:'✅', label:'待审批', page:'approvals', roles:['admin','hr_manager','hq_manager','store_manager','store_production_manager'] },
                 { icon:'💰', label:'请款', page:'payment', roles:['admin','hq_manager','store_manager','cashier','front_manager'] },
                 { icon:'📚', label:'知识库', page:'knowledge' },
                 { icon:'🎓', label:'培训认证', page:'training' },
