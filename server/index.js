@@ -11347,18 +11347,17 @@ app.post('/api/admin/leave-close-snapshot/recompute', authRequired, async (req, 
 });
 
 /** 离职员工是否不应计入指定薪资月。
- *  规则：在职(status 非 inactive/离职)一律保留（含已审但离职日未到、status 仍 active 者）；
- *  已离职者——若离职日早于当月1日则排除；否则仅当「当月有实际出勤」才保留（末月结算），
- *  无出勤即排除。用 status+出勤判定，避免 offboardingDate 填成未来日导致离职者仍计薪。 */
+ *  规则：以员工信息表里的 status 为准（管理员手动改的离职状态优先于 offboardingDate）：
+ *  status 非 inactive/离职 → 一律保留（含已审但离职日未到者）；
+ *  status=inactive/离职 → 当月有实际出勤才保留（末月结算），无出勤即排除。
+ *  不再依赖 offboardingDate，避免审批时填的（可能与实际离职日不一致的）日期导致误判。 */
 function isEmployeeDepartedForPayroll(emp, month, attendanceDays) {
   const m = safeMonthOnly(month);
   if (!m || !emp || typeof emp !== 'object') return false;
   const status = String(emp?.status || '').trim().toLowerCase();
   const inactive = status === 'inactive' || status === '离职';
   if (!inactive) return false;
-  const offDate = String(emp?.offboardingDate || '').trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(offDate) && offDate < `${m}-01`) return true;
-  if (Number(attendanceDays) > 0) return false; // 当月有实际出勤 → 末月结算保留
+  if (Number(attendanceDays) > 0) return false; // 已离职但当月有实际出勤 → 末月结算保留
   return true; // 已离职且当月无出勤 → 排除
 }
 
