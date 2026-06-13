@@ -54,7 +54,7 @@ import { ensureHRMSApiSchema, registerHRMSApiRoutes } from './hrms-api-tools.js'
 import { ensureSOPDistributionSchema, registerSOPDistributionRoutes } from './sop-distribution.js';
 import { ensureKitchenExecutionSchema, registerKitchenExecutionRoutes } from './kitchen-execution.js';
 import { ensureRecipeSchema, registerRecipeRoutes, generateRecipeTemplate, importRecipeFromExcel } from './recipe-management.js';
-import { ensureTrainingSchema, registerTrainingRoutes, startTrainingReminderScheduler } from './training.js';
+import { ensureTrainingSchema, registerTrainingRoutes, startTrainingReminderScheduler, getPromotionRequiredTopics, createTrainingAssignment, getPromotionTrackProgress, getCrossTrackTechnicianStatus } from './training.js';
 import { setDataExecutorPool, purgeExpiredCache, updateMetricVersion } from './data-executor.js';
 import fileRoutes from './file-routes.js';
 import { enforceRuntimeSafetyOrExit, configureDbSessionSafety, isSchemaChangeAllowed, getAppEnv, isWebhookEnabled, isExternalEnabled } from './safety.js';
@@ -2799,8 +2799,22 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
         const tracks = Array.isArray(state?.promotionTracks) ? state.promotionTracks : [];
         const track = tracks.find(t => String(t?.id || '').trim() === trackId && String(t?.applicantUsername || '').trim().toLowerCase() === username.toLowerCase());
         if (!track) return res.status(400).json({ error: 'invalid_promotion_track' });
-        if (String(track?.assessmentStatus || '').trim() !== 'passed') {
+        // 唯一渠道：考核结果由系统根据培训认证进度自动判定，去掉人工考核环节
+        if (Array.isArray(track?.requiredTopicIds)) {
+          const progress = await getPromotionTrackProgress(track.applicantUsername, track.requiredTopicIds);
+          if (!progress.passed) return res.status(400).json({ error: 'track_not_passed' });
+        } else if (String(track?.assessmentStatus || '').trim() !== 'passed') {
           return res.status(400).json({ error: 'track_not_passed' });
+        }
+      } else if (stage === 'qualification') {
+        // 储备厨师长资格申请前提：须在任一专业线(炒锅/砧板/烧味卤水/刺身)达最高技师级，且第二条线达L2
+        const targetPosition = String(payload?.targetPosition || payload?.newPosition || '').trim();
+        const targetLevel = String(payload?.targetLevel || payload?.newLevel || '').trim();
+        if (targetPosition === '出品经理' && targetLevel === '储备') {
+          const crossTrack = await getCrossTrackTechnicianStatus(username);
+          if (!crossTrack.eligible) {
+            return res.status(400).json({ error: 'cross_track_prerequisite_not_met' });
+          }
         }
       }
     } else {
@@ -3798,6 +3812,34 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             state = { ...state, salaryChangeHistory: historyRows };
           }
 
+          // 闭环收尾：标记晋升资格记录已完成，并为新岗位尚未认证的晋升能力要求知识点派发培训任务
+          const trackId = String(updated.payload?.promotionTrackId || '').trim();
+          const tracks = Array.isArray(state.promotionTracks) ? state.promotionTracks.slice() : [];
+          const trackIdx = tracks.findIndex(t => String(t?.id || '').trim() === trackId);
+          if (trackIdx >= 0) {
+            tracks[trackIdx] = { ...tracks[trackIdx], status: 'promoted', updatedAt: hrmsNowISO() };
+          }
+
+          if (newPosition) {
+            const newPosTopics = await getPromotionRequiredTopics(newPosition, newLevel);
+            if (newPosTopics.length) {
+              const progress = await getPromotionTrackProgress(applicantUser, newPosTopics.map(t => t.id));
+              const certifiedIds = new Set(progress.items.filter(i => i.certified).map(i => i.topicId));
+              for (const topic of newPosTopics) {
+                if (certifiedIds.has(topic.id)) continue;
+                await createTrainingAssignment({
+                  employeeUsername: applicantUser,
+                  topicId: topic.id,
+                  assignedBy: applicantManager || username,
+                  note: `晋升至「${newPosition}」后的岗位培训`,
+                  requirePractice: true,
+                  source: 'promotion_formal',
+                  relatedTrackId: trackId || null
+                });
+              }
+            }
+          }
+
           // Notify applicant + direct supervisor (正式晋升通过)
           const msg = `${applicantName}，恭喜，你的晋升已经审批通过。`;
           const recipients = uniqUsernames([applicantUser, applicantManager].filter(Boolean));
@@ -3805,8 +3847,13 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
 
           // 原子合并，避免 saveSharedState 全量写回与并发请求互相覆盖
           await mergeSharedStateFields(
-            { employees: state.employees, salaryChangeHistory: state.salaryChangeHistory, notifications: notifs },
-            { employees: 'username', notifications: 'id' }
+            {
+              employees: state.employees,
+              salaryChangeHistory: state.salaryChangeHistory,
+              notifications: notifs,
+              ...(trackIdx >= 0 ? { promotionTracks: tracks } : {})
+            },
+            { employees: 'username', notifications: 'id', ...(trackIdx >= 0 ? { promotionTracks: 'id' } : {}) }
           );
         }
 
@@ -3819,24 +3866,21 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           const trainingDays = Math.max(1, Math.min(30, Number(updated.payload?.trainingDays || 3) || 3));
           const trainingPeriods = normalizePromotionTrainingPeriods(updated.payload?.trainingPeriods);
 
-          const abilityMap = state.promotionAbilityRequirements && typeof state.promotionAbilityRequirements === 'object'
-            ? state.promotionAbilityRequirements
-            : {};
-          const reqList = Array.isArray(abilityMap[targetPosition])
-            ? abilityMap[targetPosition].map(x => String(x || '').trim()).filter(Boolean)
-            : [];
-          const fallbackReqText = String(updated.payload?.capabilityRequirements || '').trim();
-          const fallbackReqList = fallbackReqText
-            ? fallbackReqText.split(/\n|;|；|,/).map(x => String(x || '').trim()).filter(Boolean)
-            : [];
-          const requirements = reqList.length ? reqList : fallbackReqList;
+          // 培训-晋升单一渠道：能力要求 = 培训知识库中标记了该岗位「晋升要求」的知识点
+          const requiredTopics = await getPromotionRequiredTopics(targetPosition, targetLevel);
 
-          const plan = trainingPeriods.length
-            ? calcPromotionTrainingPlanByPeriods(trainingPeriods, requirements)
-            : calcPromotionTrainingPlan(trainingStartDate, requirements, trainingDays);
+          let trainingDueDate = trainingStartDate;
+          if (trainingPeriods.length) {
+            trainingDueDate = trainingPeriods[trainingPeriods.length - 1].endDate;
+          } else {
+            const dueTs = new Date(trainingStartDate + 'T00:00:00').getTime() + (trainingDays - 1) * 86400000;
+            trainingDueDate = new Date(dueTs).toISOString().slice(0, 10);
+          }
+
+          const trackId = randomUUID();
           const tracks = Array.isArray(state.promotionTracks) ? state.promotionTracks.slice() : [];
           tracks.unshift({
-            id: randomUUID(),
+            id: trackId,
             approvalId: String(updated.id || ''),
             applicantUsername: applicantUser,
             applicantName,
@@ -3850,11 +3894,11 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             promotionType: String(updated.payload?.promotionType || '').trim(),
             mentorUsername,
             mentorName,
-            requirements,
+            requiredTopicIds: requiredTopics.map(t => t.id),
             trainingStartDate,
             trainingDays,
             trainingPeriods,
-            trainingSessions: plan,
+            trainingDueDate,
             assessmentStatus: 'pending',
             formalApplied: false,
             status: 'qualification_approved',
@@ -3862,6 +3906,20 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             updatedAt: hrmsNowISO()
           });
           state = { ...state, promotionTracks: tracks };
+
+          // 唯一渠道：为每个晋升能力要求知识点创建培训指派
+          for (const topic of requiredTopics) {
+            await createTrainingAssignment({
+              employeeUsername: applicantUser,
+              topicId: topic.id,
+              assignedBy: mentorUsername || username,
+              dueDate: trainingDueDate,
+              note: `晋升至「${targetPosition}」的能力要求培训`,
+              requirePractice: true,
+              source: 'promotion_qualification',
+              relatedTrackId: trackId
+            });
+          }
 
           const isKitchen = isKitchenByRoleOrPosition(applicantRole, applicantPosition, applicantDepartment);
           const productionManagerByStore = pickStoreRoleUsernameByStore(state, applicantStore, ['store_production_manager']);
@@ -3879,9 +3937,9 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             isKitchen ? productionManagerByStore : ''
           ].filter(Boolean));
           const notifications = recipients.map((u) => makeNotif(u, title, msg, { type: 'promotion_qualification_approved', approvalId: updated.id }));
-          if (plan.length) {
-            const planMsg = `系统已生成培训安排：${plan.map(s => `${s.date} ${s.title}`).join('；')}`;
-            notifications.push(...recipients.map((u) => makeNotif(u, '晋升培训安排已生成', planMsg, { type: 'promotion_training_plan', approvalId: updated.id })));
+          if (requiredTopics.length) {
+            const planMsg = `系统已根据培训知识库为${applicantName}生成晋升能力培训任务：${requiredTopics.map(t => t.title).join('、')}，截止日期：${trainingDueDate}。`;
+            notifications.push(...recipients.map((u) => makeNotif(u, '晋升培训任务已生成', planMsg, { type: 'promotion_training_plan', approvalId: updated.id })));
           }
           await appendNotifications(notifications);
         }
@@ -5352,21 +5410,6 @@ app.post('/api/uploads/points-evidence', authRequired, upload.array('files', 6),
   }
 });
 
-app.post('/api/uploads/promotion-evidence', authRequired, upload.array('files', 9), async (req, res) => {
-  const username = String(req.user?.username || '').trim();
-  if (!username) return res.status(400).json({ error: 'missing_user' });
-  try {
-    const files = Array.isArray(req.files) ? req.files : [];
-    if (!files.length) return res.status(400).json({ error: 'missing_file' });
-    const urls = files
-      .map(f => (f && f.filename ? `/uploads/${f.filename}` : ''))
-      .filter(Boolean);
-    return res.json({ urls });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
 const pool = new Pool({ connectionString: DATABASE_URL });
 setAgentPool(pool);
 configureDbSessionSafety(pool, { serviceName: 'hrms-server' });
@@ -6480,28 +6523,6 @@ function isKitchenByRoleOrPosition(roleRaw, positionRaw, departmentRaw) {
   return /(后厨|厨房|后堂|后场|出品|厨师|厨工)/.test(txt);
 }
 
-function calcPromotionTrainingPlan(startDateRaw, topics, daySpanRaw) {
-  const start = safeDateOnly(startDateRaw) || new Date().toISOString().slice(0, 10);
-  const daySpan = Math.max(1, Number(daySpanRaw || 3) || 3);
-  const baseTopics = Array.isArray(topics) ? topics.filter(Boolean) : [];
-  const content = baseTopics.length ? baseTopics : ['岗位认知与职责', '标准流程实操', '服务/出品质量标准', '应急与协作能力'];
-  const sessions = [];
-  const st = new Date(start + 'T00:00:00');
-  for (let i = 0; i < daySpan; i += 1) {
-    const d = new Date(st.getTime() + i * 86400000);
-    const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    sessions.push({
-      id: randomUUID(),
-      date: ds,
-      title: `第${i + 1}天培训`,
-      content: content[i % content.length],
-      status: 'planned',
-      feedback: ''
-    });
-  }
-  return sessions;
-}
-
 function normalizePromotionTrainingPeriods(input) {
   const list = Array.isArray(input) ? input : [];
   const out = [];
@@ -6525,36 +6546,6 @@ function normalizePromotionTrainingPeriods(input) {
   });
   out.sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
   return out;
-}
-
-function calcPromotionTrainingPlanByPeriods(periodsInput, topics) {
-  const periods = normalizePromotionTrainingPeriods(periodsInput);
-  if (!periods.length) return [];
-  const baseTopics = Array.isArray(topics) ? topics.filter(Boolean) : [];
-  const content = baseTopics.length ? baseTopics : ['岗位认知与职责', '标准流程实操', '服务/出品质量标准', '应急与协作能力'];
-  const sessions = [];
-  let seq = 0;
-  periods.forEach((p) => {
-    const st = new Date(String(p.startDate) + 'T00:00:00').getTime();
-    const ed = new Date(String(p.endDate) + 'T00:00:00').getTime();
-    if (!Number.isFinite(st) || !Number.isFinite(ed) || ed < st) return;
-    for (let ts = st; ts <= ed; ts += 86400000) {
-      seq += 1;
-      const d = new Date(ts);
-      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      sessions.push({
-        id: randomUUID(),
-        periodId: String(p.id || ''),
-        periodTitle: String(p.title || ''),
-        date: ds,
-        title: `${String(p.title || '培训周期')} · 第${seq}课`,
-        content: content[(seq - 1) % content.length],
-        status: 'planned',
-        feedback: ''
-      });
-    }
-  });
-  return sessions;
 }
 
 async function getPromotionTrackRecipients(state, track) {
@@ -15397,116 +15388,15 @@ app.get('/api/promotion/tracks', authRequired, async (req, res) => {
       });
     }
     items.sort((a, b) => String(b?.updatedAt || '').localeCompare(String(a?.updatedAt || '')));
+
+    // 唯一渠道：考核结果由系统根据培训认证进度自动判定，去掉人工考核环节
+    items = await Promise.all(items.map(async (t) => {
+      if (!Array.isArray(t?.requiredTopicIds)) return t;
+      const progress = await getPromotionTrackProgress(t.applicantUsername, t.requiredTopicIds);
+      return { ...t, trainingProgress: progress, assessmentStatus: progress.passed ? 'passed' : 'pending' };
+    }));
+
     return res.json({ items });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-app.post('/api/promotion/tracks/:id/sessions/:sessionId/complete', authRequired, async (req, res) => {
-  const username = String(req.user?.username || '').trim();
-  const role = String(req.user?.role || '').trim();
-  const id = String(req.params?.id || '').trim();
-  const sessionId = String(req.params?.sessionId || '').trim();
-  const feedback = String(req.body?.feedback || '').trim();
-  const evidenceUrls = Array.isArray(req.body?.evidenceUrls) ? req.body.evidenceUrls.map(x => String(x || '').trim()).filter(Boolean) : [];
-  if (!username) return res.status(400).json({ error: 'missing_user' });
-  if (!id || !sessionId) return res.status(400).json({ error: 'missing_id' });
-  try {
-    const state = (await getSharedState()) || {};
-    const tracks = Array.isArray(state.promotionTracks) ? state.promotionTracks.slice() : [];
-    const idx = tracks.findIndex(t => String(t?.id || '').trim() === id);
-    if (idx < 0) return res.status(404).json({ error: 'not_found' });
-    const track = tracks[idx] || {};
-    const mentor = String(track?.mentorUsername || '').trim();
-    const canEdit = username === mentor || role === 'admin' || role === 'hq_manager' || role === 'hr_manager' || role === 'store_manager' || role === 'store_production_manager';
-    if (!canEdit) return res.status(403).json({ error: 'forbidden' });
-
-    const sessions = Array.isArray(track.trainingSessions) ? track.trainingSessions.slice() : [];
-    const sIdx = sessions.findIndex(s => String(s?.id || '').trim() === sessionId);
-    if (sIdx < 0) return res.status(404).json({ error: 'session_not_found' });
-
-    sessions[sIdx] = {
-      ...sessions[sIdx],
-      status: 'completed',
-      feedback,
-      evidenceUrls,
-      completedBy: username,
-      completedAt: hrmsNowISO()
-    };
-    const allDone = sessions.length > 0 && sessions.every(s => String(s?.status || '') === 'completed');
-    tracks[idx] = {
-      ...track,
-      trainingSessions: sessions,
-      status: allDone ? 'training_completed' : (track?.status || 'qualification_approved'),
-      updatedAt: hrmsNowISO()
-    };
-    let nextState = { ...state, promotionTracks: tracks };
-
-    const recipients = await getPromotionTrackRecipients(nextState, tracks[idx]);
-    const title = '晋升培训反馈已提交';
-    const msg = `${String(track?.applicantName || track?.applicantUsername || '').trim() || '员工'} 的培训「${String(sessions[sIdx]?.title || '').trim() || '课程'}」已完成并提交反馈。`;
-    for (const u of recipients) {
-      nextState = addStateNotification(nextState, makeNotif(u, title, msg, { type: 'promotion_training_feedback', trackId: id }));
-    }
-    await saveSharedState(nextState);
-    return res.json({ ok: true, track: tracks[idx] });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-app.post('/api/promotion/tracks/:id/assessment', authRequired, async (req, res) => {
-  const username = String(req.user?.username || '').trim();
-  const role = String(req.user?.role || '').trim();
-  const id = String(req.params?.id || '').trim();
-  const result = String(req.body?.result || '').trim().toLowerCase();
-  const comment = String(req.body?.comment || '').trim();
-  const evidenceUrls = Array.isArray(req.body?.evidenceUrls) ? req.body.evidenceUrls.map(x => String(x || '').trim()).filter(Boolean) : [];
-  if (!username) return res.status(400).json({ error: 'missing_user' });
-  if (!id) return res.status(400).json({ error: 'missing_id' });
-  if (!(result === 'passed' || result === 'failed')) return res.status(400).json({ error: 'invalid_result' });
-  try {
-    const state = (await getSharedState()) || {};
-    const tracks = Array.isArray(state.promotionTracks) ? state.promotionTracks.slice() : [];
-    const idx = tracks.findIndex(t => String(t?.id || '').trim() === id);
-    if (idx < 0) return res.status(404).json({ error: 'not_found' });
-    const track = tracks[idx] || {};
-    const store = String(track?.store || '').trim();
-    const department = String(track?.department || '').trim();
-    const currentPosition = String(track?.currentPosition || '').trim();
-    const applicantRole = String(track?.applicantRole || '').trim();
-    const kitchen = isKitchenByRoleOrPosition(applicantRole, currentPosition, department);
-    const assessorExpected = kitchen
-      ? pickStoreRoleUsernameByStore(state, store, ['store_production_manager'])
-      : pickStoreRoleUsernameByStore(state, store, ['store_manager']);
-    const canOverride = role === 'admin' || role === 'hq_manager' || role === 'hr_manager';
-    if (!canOverride && assessorExpected && assessorExpected !== username) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    tracks[idx] = {
-      ...track,
-      assessmentStatus: result,
-      assessmentComment: comment,
-      assessmentEvidenceUrls: evidenceUrls,
-      assessmentBy: username,
-      assessmentAt: hrmsNowISO(),
-      status: result === 'passed' ? 'assessment_passed' : 'assessment_failed',
-      formalApplied: result === 'failed' ? false : !!track?.formalApplied,
-      updatedAt: hrmsNowISO()
-    };
-    let nextState = { ...state, promotionTracks: tracks };
-    const recipients = await getPromotionTrackRecipients(nextState, tracks[idx]);
-    const title = result === 'passed' ? '晋升考核已通过' : '晋升考核未通过';
-    const msg = result === 'passed'
-      ? `${String(track?.applicantName || track?.applicantUsername || '').trim() || '员工'} 的晋升考核已通过，可发起正式晋升申请。`
-      : `${String(track?.applicantName || track?.applicantUsername || '').trim() || '员工'} 的晋升考核未通过，可重新申请晋升资格。`;
-    for (const u of recipients) {
-      nextState = addStateNotification(nextState, makeNotif(u, title, msg, { type: 'promotion_assessment_result', trackId: id }));
-    }
-    await saveSharedState(nextState);
-    return res.json({ ok: true, track: tracks[idx] });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
   }

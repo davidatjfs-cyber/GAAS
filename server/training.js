@@ -131,6 +131,113 @@ async function sendTrainingFeishuMessage(username, message) {
   return false;
 }
 
+// 某岗位+级别的晋升能力要求 = 标记了 promotion_required 且 position 包含该岗位、level 匹配该级别的知识点
+// level 留空时不按级别过滤（兼容未设置级别体系的旧知识点）
+export async function getPromotionRequiredTopics(position, level) {
+  const pos = String(position || '').trim();
+  if (!pos) return [];
+  const lvl = String(level || '').trim();
+  const params = [pos, pos + ',%', '%,' + pos, '%,' + pos + ',%'];
+  let levelClause = '';
+  if (lvl) {
+    params.push(lvl);
+    levelClause = ` AND level = $${params.length}`;
+  }
+  const r = await pool().query(
+    `SELECT * FROM training_topics
+     WHERE is_active = true AND promotion_required = true
+       AND (position = $1 OR position LIKE $2 OR position LIKE $3 OR position LIKE $4)
+       ${levelClause}
+     ORDER BY sort_order, id`,
+    params
+  );
+  return r.rows || [];
+}
+
+// 厨师长晋升阶段一前提："任一专业线达最高技师级 + 第二条线达L2"
+// 各专业线的最高级 / L2级 命名（与该 position 下 training_topics.level 对应）
+const KITCHEN_TRACK_LEVELS = {
+  '炒锅': { top: '头镬', l2: '二镬' },
+  '砧板': { top: '头砧', l2: '二砧' },
+  '烧味/卤水': { top: '主管', l2: '师' },
+  '刺身': { top: '主管', l2: 'L2' },
+};
+
+export async function getCrossTrackTechnicianStatus(username) {
+  const tracks = Object.keys(KITCHEN_TRACK_LEVELS);
+  const status = {};
+  for (const track of tracks) {
+    const { top, l2 } = KITCHEN_TRACK_LEVELS[track];
+    const topTopics = await getPromotionRequiredTopics(track, top);
+    const l2Topics = await getPromotionRequiredTopics(track, l2);
+    const topProgress = await getPromotionTrackProgress(username, topTopics.map(t => t.id));
+    const l2Progress = await getPromotionTrackProgress(username, l2Topics.map(t => t.id));
+    status[track] = { topLevel: top, l2Level: l2, topPassed: topProgress.passed, l2Passed: l2Progress.passed };
+  }
+  const topTracks = tracks.filter(t => status[t].topPassed);
+  const eligible = topTracks.some(top => tracks.some(other => other !== top && status[other].l2Passed));
+  return { tracks: status, topTracks, eligible };
+}
+
+// 创建一条培训指派（统一入口：管理员手动指派 / 异常触发 / 晋升要求 / 到期复训均走此函数）
+export async function createTrainingAssignment({ employeeUsername, topicId, assignedBy, dueDate, note, requirePractice, source, relatedTrackId }) {
+  const username = String(employeeUsername || '').trim();
+  if (!username || !topicId) return null;
+  const topicRes = await pool().query(`SELECT title FROM training_topics WHERE id = $1`, [topicId]);
+  const topicTitle = topicRes.rows[0]?.title || '培训任务';
+  const r = await pool().query(
+    `INSERT INTO training_assignments (employee_username, topic_id, assigned_by, due_date, note, require_practice, source, related_track_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING *`,
+    [username, topicId, String(assignedBy || '').trim() || null, dueDate || null, note || '', !!requirePractice, String(source || 'manual'), relatedTrackId ? String(relatedTrackId) : null]
+  );
+  const row = r.rows[0];
+  if (!row) return null;
+
+  const assignerName = String(assignedBy || '').trim() || '系统';
+  await createTrainingUserNotification(
+    username,
+    '你有新的培训任务',
+    `${assignerName} 为你指派了培训任务「${topicTitle}」${dueDate ? '，截止日期：' + dueDate : ''}，请尽快完成。`,
+    { topic_id: topicId, topic_title: topicTitle, assigned_by: assignedBy || null, source: source || 'manual', related_track_id: relatedTrackId || null }
+  );
+  await sendTrainingFeishuMessage(
+    username,
+    `📚 培训任务通知\n\n${assignerName} 为您指派了培训任务：\n【${topicTitle}】\n${dueDate ? '截止日期：' + dueDate + '\n' : ''}${note ? '备注：' + note + '\n' : ''}\n请登录 HRMS 系统完成培训。`
+  );
+  return row;
+}
+
+// 晋升资格的培训认证进度（系统自动判定考核结果，去掉人工考核环节）
+// 通过 = 每个晋升能力要求知识点都有一条有效（valid）且经理已确认通过（manager_verdict='passed'）的认证
+export async function getPromotionTrackProgress(applicantUsername, requiredTopicIds) {
+  const username = String(applicantUsername || '').trim();
+  const ids = Array.isArray(requiredTopicIds) ? requiredTopicIds.filter(x => x != null) : [];
+  if (!username || !ids.length) return { total: ids.length, certifiedCount: 0, passed: ids.length === 0, items: [] };
+
+  const r = await pool().query(
+    `SELECT t.id AS topic_id, t.title,
+            c.manager_verdict, c.review_status, c.valid_until, c.status AS cert_status, c.certified_at
+     FROM training_topics t
+     LEFT JOIN LATERAL (
+       SELECT * FROM training_certifications
+       WHERE employee_username = $1 AND topic_id = t.id
+       ORDER BY created_at DESC LIMIT 1
+     ) c ON true
+     WHERE t.id = ANY($2)`,
+    [username, ids]
+  );
+  const items = r.rows.map(row => ({
+    topicId: row.topic_id,
+    title: row.title,
+    certified: row.manager_verdict === 'passed' && (row.cert_status || 'valid') === 'valid',
+    validUntil: row.valid_until || null,
+    certifiedAt: row.certified_at || null
+  }));
+  const certifiedCount = items.filter(i => i.certified).length;
+  return { total: items.length, certifiedCount, passed: items.length > 0 && certifiedCount === items.length, items };
+}
+
 // ─── Schema ───────────────────────────────────────────────
 export async function ensureTrainingSchema() {
   try {
@@ -246,6 +353,20 @@ export async function ensureTrainingSchema() {
     `);
     await pool().query(`CREATE INDEX IF NOT EXISTS idx_keh_knowledge ON knowledge_edit_history (knowledge_id, edited_at DESC)`);
 
+    // ── 培训-晋升一体化（2026-06-13新增）──
+    // 知识点：是否作为对应岗位的晋升能力要求项 + 认证有效期（天）
+    await pool().query(`ALTER TABLE training_topics ADD COLUMN IF NOT EXISTS promotion_required BOOLEAN DEFAULT false`);
+    await pool().query(`ALTER TABLE training_topics ADD COLUMN IF NOT EXISTS validity_days INT DEFAULT 180`);
+    // 晋升等级（如 三砧/二砧/头砧、见习镬/二镬/头镬、L1/L2/L3、储备/正式 等），与 position 一起确定该知识点是哪个岗位+级别的晋升要求
+    await pool().query(`ALTER TABLE training_topics ADD COLUMN IF NOT EXISTS level VARCHAR(20)`);
+    // 指派来源（manual/anomaly_trigger/promotion_qualification/recert）+ 关联晋升记录
+    await pool().query(`ALTER TABLE training_assignments ADD COLUMN IF NOT EXISTS source VARCHAR(30) DEFAULT 'manual'`);
+    await pool().query(`ALTER TABLE training_assignments ADD COLUMN IF NOT EXISTS related_track_id VARCHAR(64)`);
+    await pool().query(`CREATE INDEX IF NOT EXISTS idx_ta_related_track ON training_assignments (related_track_id)`);
+    // 认证有效期与状态（valid/expired/under_review）
+    await pool().query(`ALTER TABLE training_certifications ADD COLUMN IF NOT EXISTS valid_until DATE`);
+    await pool().query(`ALTER TABLE training_certifications ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'valid'`);
+
     console.log('[Training] Schema ensured');
   } catch (e) {
     console.error('[Training] Schema error:', e?.message);
@@ -258,6 +379,30 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
   // ═══════════════════════════════════════════════════════════
   // 管理端路由
   // ═══════════════════════════════════════════════════════════
+
+  // GET /api/training/promotion-requirements?position=X&level=Y - 该岗位+级别的晋升能力要求知识点（员工/管理员均可查看）
+  app.get('/api/training/promotion-requirements', authMiddleware, async (req, res) => {
+    try {
+      const topics = await getPromotionRequiredTopics(req.query.position || '', req.query.level || '');
+      res.json({ success: true, topics: topics.map(t => ({ id: t.id, title: t.title, level: t.level, validity_days: t.validity_days })) });
+    } catch (e) {
+      res.json({ success: false, error: e?.message });
+    }
+  });
+
+  // GET /api/training/cross-track-status?username=X - 厨师长晋升阶段一前提：跨专业线技师级状态
+  app.get('/api/training/cross-track-status', authMiddleware, async (req, res) => {
+    try {
+      const target = String(req.query.username || req.user?.username || '').trim();
+      if (!isManager(req.user?.role) && target !== req.user?.username) {
+        return res.status(403).json({ error: '无权限查看他人数据' });
+      }
+      const status = await getCrossTrackTechnicianStatus(target);
+      res.json({ success: true, ...status });
+    } catch (e) {
+      res.json({ success: false, error: e?.message });
+    }
+  });
 
   // GET /api/training/topics - 列出知识点
   app.get('/api/training/topics', authMiddleware, async (req, res) => {
@@ -294,7 +439,7 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
       if (!['admin', 'hq_manager'].includes(req.user?.role)) {
         return res.status(403).json({ error: '仅管理员和总部营运可新建知识点' });
       }
-      const { title, positions, position, description, key_points, practice_task, sort_order, kb_article_ids, store } = req.body;
+      const { title, positions, position, description, key_points, practice_task, sort_order, kb_article_ids, store, promotion_required, validity_days, level } = req.body;
       // positions 优先（新格式：数组），position 备用（旧格式：字符串）
       const posArr = Array.isArray(positions) && positions.length ? positions : (position ? [position] : []);
       const posStr = posArr.join(',');
@@ -308,11 +453,14 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
       if (['store_manager', 'store_production_manager'].includes(userRole)) {
         storeVal = await getUserStore(req.user?.username);
       }
+      const promotionRequired = promotion_required === true || promotion_required === 'true';
+      const validityDays = Math.max(1, Number(validity_days) || 180);
+      const levelVal = String(level || '').trim();
       const result = await pool().query(
-        `INSERT INTO training_topics (title, position, description, key_points, practice_task, sort_order, created_by, kb_article_ids, store)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO training_topics (title, position, description, key_points, practice_task, sort_order, created_by, kb_article_ids, store, promotion_required, validity_days, level)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *`,
-        [title, posStr, description || '', JSON.stringify(key_points || []), practice_task || '', sort_order || 0, req.user?.username, kbIds, storeVal]
+        [title, posStr, description || '', JSON.stringify(key_points || []), practice_task || '', sort_order || 0, req.user?.username, kbIds, storeVal, promotionRequired, validityDays, levelVal]
       );
       res.json({ success: true, topic: result.rows[0] });
     } catch (e) {
@@ -327,7 +475,7 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
         return res.status(403).json({ error: '仅管理员和总部营运可编辑知识点' });
       }
       const { id } = req.params;
-      const { title, positions, position, description, key_points, practice_task, sort_order, kb_article_ids, store } = req.body;
+      const { title, positions, position, description, key_points, practice_task, sort_order, kb_article_ids, store, promotion_required, validity_days, level } = req.body;
       const posArr = Array.isArray(positions) && positions.length ? positions : (position ? [position] : null);
       const posStr = posArr ? posArr.join(',') : null;
       const kbIds = Array.isArray(kb_article_ids) ? kb_article_ids : null;
@@ -337,6 +485,9 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
       if (['store_manager', 'store_production_manager'].includes(userRole)) {
         storeVal = await getUserStore(req.user?.username);
       }
+      const promotionRequired = promotion_required === undefined ? null : (promotion_required === true || promotion_required === 'true');
+      const validityDays = validity_days === undefined ? null : Math.max(1, Number(validity_days) || 180);
+      const levelVal = level === undefined ? null : String(level || '').trim();
       const result = await pool().query(
         `UPDATE training_topics
          SET title = COALESCE($1, title),
@@ -346,10 +497,13 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
              practice_task = COALESCE($5, practice_task),
              sort_order = COALESCE($6, sort_order),
              kb_article_ids = COALESCE($7, kb_article_ids),
-             store = COALESCE($9, store)
+             store = COALESCE($9, store),
+             promotion_required = COALESCE($10, promotion_required),
+             validity_days = COALESCE($11, validity_days),
+             level = COALESCE($12, level)
          WHERE id = $8
          RETURNING *`,
-        [title, posStr, description, JSON.stringify(key_points), practice_task, sort_order, kbIds, id, storeVal]
+        [title, posStr, description, JSON.stringify(key_points), practice_task, sort_order, kbIds, id, storeVal, promotionRequired, validityDays, levelVal]
       );
       if (result.rows.length === 0) {
         return res.json({ success: false, error: '知识点不存在' });
@@ -828,12 +982,7 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
         return res.json({ success: false, error: '员工和知识点必填' });
       }
 
-      // 获取知识点标题（用于通知）
-      const topicRes = await pool().query(`SELECT title FROM training_topics WHERE id = $1`, [topic_id]);
-      const topicTitle = topicRes.rows[0]?.title || '培训任务';
-
       const assignableRoles = getAssignableRoles(req.user?.role);
-      const assignerName = req.user?.name || req.user?.username;
       const requirePractice = req.body.require_practice === true || req.body.require_practice === 'true';
       const created = [];
 
@@ -845,37 +994,16 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
           if (empCheck.rows.length === 0) continue;
           if (!assignableRoles.includes(empCheck.rows[0].role)) continue;
         }
-        const r = await pool().query(
-          `INSERT INTO training_assignments (employee_username, topic_id, assigned_by, due_date, note, require_practice)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING *`,
-          [username, topic_id, req.user?.username, due_date || null, note || '', requirePractice]
-        );
-        if (r.rows.length) created.push(r.rows[0]);
-
-        // ── HRMS 站内通知 ──
-        try {
-          await pool().query(
-            `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at)
-             VALUES ($1, $2, $3, $4, $5, NOW())`,
-            [
-              username,
-              '你有新的培训任务',
-              `${assignerName} 为你指派了培训任务「${topicTitle}」${due_date ? '，截止日期：' + due_date : ''}，请尽快完成。`,
-              'training_assignment',
-              JSON.stringify({ topic_id, topic_title: topicTitle, assigned_by: req.user?.username })
-            ]
-          );
-        } catch (_) {}
-
-        // ── 飞书消息通知 ──
-        try {
-          const fu = await lookupFeishuUserByUsername(username);
-          if (fu?.open_id) {
-            const feishuMsg = `📚 培训任务通知\n\n${assignerName} 为您指派了培训任务：\n【${topicTitle}】\n${due_date ? '截止日期：' + due_date + '\n' : ''}${note ? '备注：' + note + '\n' : ''}\n请登录 HRMS 系统完成培训。`;
-            await sendLarkMessage(fu.open_id, feishuMsg, { skipDedup: true });
-          }
-        } catch (_) {}
+        const row = await createTrainingAssignment({
+          employeeUsername: username,
+          topicId: topic_id,
+          assignedBy: req.user?.username,
+          dueDate: due_date || null,
+          note: note || '',
+          requirePractice,
+          source: 'manual'
+        });
+        if (row) created.push(row);
       }
 
       res.json({ success: true, count: created.length, assignments: created });
@@ -1078,15 +1206,25 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
         return res.json({ success: false, error: '请提供 action (confirm/override) 或 verdict (passed/failed)' });
       }
 
+      // 通过则按知识点的认证有效期计算到期日，作为P3持续认证的起点
+      let validUntil = null;
+      if (passed) {
+        const topicRes = await pool().query(`SELECT validity_days FROM training_topics WHERE id = $1`, [existing.topic_id]);
+        const days = Math.max(1, Number(topicRes.rows[0]?.validity_days) || 180);
+        validUntil = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+      }
+
       await pool().query(
         `UPDATE training_certifications
          SET manager_verdict = $1, manager_note = $2, manager_reviewed_by = $3,
              review_status = $4, manager_score = $5, final_score = $6,
              ai_step_scores = CASE WHEN $7::jsonb IS NOT NULL THEN $7::jsonb ELSE ai_step_scores END,
-             certified_at = CASE WHEN $8 THEN NOW() ELSE NULL END
+             certified_at = CASE WHEN $8 THEN NOW() ELSE NULL END,
+             valid_until = CASE WHEN $8 THEN $10::date ELSE valid_until END,
+             status = CASE WHEN $8 THEN 'valid' ELSE status END
          WHERE id = $9`,
         [passed ? 'passed' : 'failed', managerNote, reviewer,
-         reviewStatus, managerScore, finalScore, JSON.stringify(stepScores), passed, id]
+         reviewStatus, managerScore, finalScore, JSON.stringify(stepScores), passed, id, validUntil]
       );
 
       if (passed) {
@@ -1958,6 +2096,68 @@ export async function runTrainingReminderSweep() {
   return { ok: true, preDueSent, overdueEscalated };
 }
 
+// 认证到期前提前天数，触发复训指派
+const RECERT_LEAD_DAYS = 14;
+
+// 认证到期复训：每条知识点认证有效期到期（或即将到期）时，
+// 自动将认证标记为过期，并指派一条复训任务（source='recert'）
+export async function runCertificationExpirySweep() {
+  let expired = 0;
+  let recertAssigned = 0;
+
+  try {
+    const result = await pool().query(`
+      SELECT c.id, c.employee_username, c.topic_id, c.valid_until, c.certified_at, c.status, t.title
+      FROM training_certifications c
+      JOIN training_topics t ON t.id = c.topic_id
+      WHERE c.manager_verdict = 'passed'
+        AND c.status IN ('valid', 'expired')
+        AND c.valid_until IS NOT NULL
+        AND c.valid_until <= CURRENT_DATE + INTERVAL '${RECERT_LEAD_DAYS} days'
+        AND c.id = (
+          SELECT c2.id FROM training_certifications c2
+          WHERE c2.employee_username = c.employee_username AND c2.topic_id = c.topic_id
+          ORDER BY c2.created_at DESC LIMIT 1
+        )
+      AND t.is_active = true
+    `);
+
+    for (const row of result.rows || []) {
+      if (row.status === 'valid' && row.valid_until && getShanghaiDateKey() > String(row.valid_until).slice(0, 10)) {
+        await pool().query(`UPDATE training_certifications SET status = 'expired' WHERE id = $1`, [row.id]);
+        expired++;
+      }
+
+      const existing = await pool().query(
+        `SELECT 1 FROM training_assignments
+         WHERE employee_username = $1 AND topic_id = $2 AND source = 'recert' AND created_at > $3
+         LIMIT 1`,
+        [row.employee_username, row.topic_id, row.certified_at]
+      );
+      if (existing.rows.length) continue;
+
+      await createTrainingAssignment({
+        employeeUsername: row.employee_username,
+        topicId: row.topic_id,
+        assignedBy: null,
+        dueDate: row.valid_until,
+        note: `认证「${row.title}」即将于 ${String(row.valid_until).slice(0, 10)} 到期，请完成复训重新认证。`,
+        requirePractice: true,
+        source: 'recert'
+      });
+      recertAssigned++;
+    }
+  } catch (e) {
+    console.error('[Training] certification expiry sweep error:', e?.message || e);
+    return { ok: false, error: e?.message || String(e), expired, recertAssigned };
+  }
+
+  if (expired || recertAssigned) {
+    console.log(`[Training] certification expiry sweep complete: expired=${expired}, recertAssigned=${recertAssigned}`);
+  }
+  return { ok: true, expired, recertAssigned };
+}
+
 export function startTrainingReminderScheduler() {
   if (_trainingReminderSchedulerStarted) return;
   _trainingReminderSchedulerStarted = true;
@@ -1965,6 +2165,9 @@ export function startTrainingReminderScheduler() {
   const tick = () => {
     runTrainingReminderSweep().catch((e) => {
       console.error('[Training] reminder scheduler tick error:', e?.message || e);
+    });
+    runCertificationExpirySweep().catch((e) => {
+      console.error('[Training] certification expiry scheduler tick error:', e?.message || e);
     });
   };
 

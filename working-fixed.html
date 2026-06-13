@@ -17812,6 +17812,23 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- 晋升能力要求 -->
+                        <div class="tt-section-card">
+                            <label class="tt-field-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                <input type="checkbox" id="training-topic-promotion-required" style="width:18px;height:18px;accent-color:#6366f1;">
+                                ④ 作为「适用岗位」的晋升能力要求项
+                            </label>
+                            <div class="tt-section-tip" style="margin-top:4px;">勾选后，员工申请晋升到该岗位时会自动派发本知识点的培训任务，认证通过才能进入晋升考核。</div>
+                            <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+                                <span class="tt-field-label" style="margin:0;">晋升级别（如 三砧/二砧/头砧、L1/L2/L3、储备/正式，留空表示不分级别）</span>
+                                <input type="text" id="training-topic-level" class="tt-input" style="width:140px;" placeholder="例如：三砧">
+                            </div>
+                            <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+                                <span class="tt-field-label" style="margin:0;">认证有效期（天）</span>
+                                <input type="number" id="training-topic-validity-days" class="tt-input" style="width:100px;" min="1" value="180">
+                            </div>
+                        </div>
                     </div>
                     <div class="tt-footer">
                         <button class="btn btn-secondary" onclick="closeTrainingTopicModal()">取消</button>
@@ -19654,36 +19671,8 @@
                                 <div class="form-hint">正式晋升审批流：店长 → 总部营运 → 总部人事</div>
                             </div>
 
-                            <div id="promo-ability-config" style="margin-top: 14px; display:none;">
-                                <div style="font-weight:800; margin-bottom:6px;">能力要求配置（管理员可维护）</div>
-                                <div style="font-size:12px; color:rgba(200,215,230,0.68); margin-bottom:8px;">支持长文本：岗位独立维护，要求一行一条，便于录入与修改。</div>
-                                <div style="padding:10px; border:1px solid rgba(255,255,255,0.08); border-radius:12px; background:rgba(15,23,42,0.35);">
-                                    <div style="display:grid; grid-template-columns:1fr; gap:8px;">
-                                        <div>
-                                            <label class="form-label" style="font-size:12px; margin-bottom:4px;">岗位</label>
-                                            <div style="display:flex; gap:8px;">
-                                                <select id="promo-ability-position-select" class="form-input" onchange="promoLoadAbilityEditorPosition(this.value, false)"></select>
-                                                <button class="btn btn-secondary" type="button" style="padding:8px 10px;" onclick="promoCreateAbilityPosition()">+ 新增岗位</button>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label class="form-label" style="font-size:12px; margin-bottom:4px;">能力要求（每行一条）</label>
-                                            <textarea id="promo-ability-items-text" class="form-input form-textarea" style="min-height:150px;" placeholder="例如：
-服务礼仪标准
-客诉闭环处理
-高峰期协同能力"></textarea>
-                                        </div>
-                                    </div>
-                                    <div class="form-actions" style="margin-top:8px; gap:8px;">
-                                        <button class="btn btn-secondary" type="button" onclick="promoApplyAbilityEditor()">更新当前岗位要求</button>
-                                        <button class="btn btn-secondary" type="button" onclick="promoRemoveAbilityPosition()">删除当前岗位</button>
-                                        <button class="btn" type="button" onclick="promoSaveAbilityRequirementsConfig()">保存全部能力配置</button>
-                                    </div>
-                                </div>
-                                <div id="promo-ability-config-list" style="margin-top:10px;"></div>
-                                <div class="form-actions" style="margin-top:8px;">
-                                    <button class="btn btn-secondary" type="button" onclick="promoReloadAbilityConfig()">重新加载配置</button>
-                                </div>
+                            <div id="promo-ability-config-hint" style="margin-top: 14px; display:none; font-size:12px; color:rgba(200,215,230,0.68);">
+                                晋升能力要求已与培训知识库统一：请到「培训认证 → 知识点管理」中为对应岗位的知识点勾选「作为该岗位的晋升能力要求项」，员工申请晋升资格时会自动展示并派发这些培训任务。
                             </div>
                         </div>
                     </div>
@@ -23283,26 +23272,6 @@
             },
             async getPromotionTracks() {
                 return this.request('/api/promotion/tracks', { method: 'GET' });
-            },
-            async completePromotionTrainingSession(trackId, sessionId, feedback, evidenceUrls) {
-                return this.request('/api/promotion/tracks/' + encodeURIComponent(String(trackId || '')) + '/sessions/' + encodeURIComponent(String(sessionId || '')) + '/complete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ feedback: String(feedback || ''), evidenceUrls: Array.isArray(evidenceUrls) ? evidenceUrls : [] })
-                });
-            },
-            async submitPromotionAssessment(trackId, result, comment, evidenceUrls) {
-                return this.request('/api/promotion/tracks/' + encodeURIComponent(String(trackId || '')) + '/assessment', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ result: String(result || ''), comment: String(comment || ''), evidenceUrls: Array.isArray(evidenceUrls) ? evidenceUrls : [] })
-                });
-            },
-            async uploadPromotionEvidence(formData) {
-                return this.request('/api/uploads/promotion-evidence', {
-                    method: 'POST',
-                    body: formData
-                });
             },
         };
 
@@ -30331,6 +30300,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     const posArr = (t.position || '').split(',').map(s => s.trim()).filter(Boolean);
                     const posTags = posArr.map(p => `<span class="training-admin-chip">${escapeHtml(p)}</span>`).join('');
                     const storeBadge = t.store ? `<span class="training-admin-chip">🏪 ${escapeHtml(t.store)}</span>` : '<span class="training-admin-chip">🏪 全部门店</span>';
+                    const promotionBadge = t.promotion_required ? `<span class="training-admin-chip">🎯 晋升要求${t.level ? ' · ' + escapeHtml(t.level) : ''} · 有效期${t.validity_days || 180}天</span>` : '';
                     const editBtns = canEdit ? `
                         <div class="training-admin-actions">
                             <button onclick="editTrainingTopic(${t.id})" class="training-admin-btn">✏️ 编辑</button>
@@ -30350,6 +30320,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                                 <div class="training-admin-meta">
                                     ${storeBadge}
                                     ${posTags || '<span class="training-admin-chip">未设置岗位</span>'}
+                                    ${promotionBadge}
                                 </div>
                             </summary>
                             <button class="training-admin-toggle" type="button" onclick="this.parentElement.open = !this.parentElement.open;">查看详情</button>
@@ -30705,6 +30676,9 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             if (modalTitle) modalTitle.textContent = id ? '编辑知识点' : '新建知识点';
             document.getElementById('training-topic-title').value = '';
             document.getElementById('training-topic-practice').value = '';
+            document.getElementById('training-topic-promotion-required').checked = false;
+            document.getElementById('training-topic-level').value = '';
+            document.getElementById('training-topic-validity-days').value = '180';
             document.getElementById('training-kb-search').value = '';
             document.getElementById('training-kb-dropdown').style.display = 'none';
             _selectedKbArticles = [];
@@ -30807,6 +30781,9 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 }
                 updateTrainingTopicSummary();
                 document.getElementById('training-topic-practice').value = topic.practice_task || '';
+                document.getElementById('training-topic-promotion-required').checked = !!topic.promotion_required;
+                document.getElementById('training-topic-level').value = topic.level || '';
+                document.getElementById('training-topic-validity-days').value = topic.validity_days || 180;
                 // 恢复已关联知识库文章
                 const kbIds = topic.kb_article_ids || [];
                 if (kbIds.length > 0) {
@@ -30839,6 +30816,9 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             const store = document.getElementById('training-topic-store')?.value || '';
             const practice = document.getElementById('training-topic-practice').value.trim();
             const kb_article_ids = _selectedKbArticles.map(a => a.id);
+            const promotion_required = document.getElementById('training-topic-promotion-required').checked;
+            const level = document.getElementById('training-topic-level').value.trim();
+            const validity_days = Math.max(1, parseInt(document.getElementById('training-topic-validity-days').value, 10) || 180);
 
             if (!title) return showNotification('标题必填', 'warning');
             if (positions.length === 0) return showNotification('请至少选择一个适用岗位', 'warning');
@@ -30853,7 +30833,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                         'Content-Type': 'application/json',
                         'Authorization': 'Bearer ' + localStorage.getItem('hrms_token')
                     },
-                    body: JSON.stringify({ title, positions, store, description: '', key_points: [], practice_task: practice, kb_article_ids })
+                    body: JSON.stringify({ title, positions, store, description: '', key_points: [], practice_task: practice, kb_article_ids, promotion_required, validity_days, level })
                 });
                 const data = await resp.json();
                 if (data.success) {
@@ -36248,42 +36228,52 @@ ${knowledgeContent.slice(0, 30000)}`;
 
         function promoDefaultLevelsMap() {
             return {
-                '前厅服务员': ['S1', 'S2', 'S3', 'S4'],
-                '收银员': ['C1', 'C2', 'C3'],
-                '出品员工': ['T1', 'T2', 'T3', 'T4'],
-                '出品经理': ['P1', 'P2', 'P3'],
-                '门店店长': ['M1', 'M2', 'M3']
+                '打荷': ['L1', 'L2', 'L3'],
+                '砧板': ['三砧', '二砧', '头砧'],
+                '炒锅': ['见习镬', '二镬', '头镬'],
+                '烧味/卤水': ['学徒', '师', '主管'],
+                '刺身': ['L1', 'L2', 'L3', '主管'],
+                '传菜': ['L1'],
+                '服务员': ['L2'],
+                '主管': ['L3', 'L4'],
+                '前厅经理': ['L5'],
+                '出纳': ['L1', 'L2'],
+                '出品经理': ['储备', '正式']
             };
         }
 
-        function promoGetAbilityRequirementsMap() {
-            const data = HRMS_STORE.ensure ? HRMS_STORE.ensure() : {};
-            const m = data?.promotionAbilityRequirements;
-            if (m && typeof m === 'object') return m;
-            const d = {
-                '前厅服务员': ['服务礼仪', '客户沟通', '标准收银'],
-                '收银员': ['账款准确', '风险识别', '流程合规'],
-                '出品员工': ['出品标准', '食品安全', '效率与协作'],
-                '出品经理': ['带教能力', '品质管理', '排班协调'],
-                '门店店长': ['经营管理', '团队管理', '跨部门沟通']
-            };
-            data.promotionAbilityRequirements = d;
-            if (HRMS_STORE.set) HRMS_STORE.set(data);
-            return d;
+        // 目标岗位的晋升能力要求知识点（来自 /api/training/promotion-requirements，与培训知识库统一）
+        let __PROMO_TARGET_TOPICS = [];
+
+        async function promoFetchPromotionRequirements(position, level) {
+            if (!position) return [];
+            try {
+                let url = '/api/training/promotion-requirements?position=' + encodeURIComponent(position);
+                if (level) url += '&level=' + encodeURIComponent(level);
+                const resp = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }
+                });
+                const data = await resp.json();
+                return Array.isArray(data?.topics) ? data.topics : [];
+            } catch (e) {
+                return [];
+            }
         }
 
-        function promoCalcNextLevel(currentLevel) {
-            const lv = String(currentLevel || '').trim().toUpperCase();
-            const m = lv.match(/^([A-Z]+)(\d+)$/);
-            if (!m) return lv || 'L1';
-            return `${m[1]}${Number(m[2]) + 1}`;
+        // 同岗位晋升时，按该岗位的级别序列计算下一级；若已是该线最高级（或当前级别未在序列中），
+        // 返回序列首级（无记录时视为从0级开始挑战）；已在最高级则返回空字符串，提示需跨岗位晋升
+        function promoCalcNextLevel(position, currentLevel) {
+            const levels = promoDefaultLevelsMap()[position];
+            if (!Array.isArray(levels) || !levels.length) return '';
+            const idx = levels.indexOf(String(currentLevel || '').trim());
+            if (idx === -1) return levels[0];
+            return idx + 1 < levels.length ? levels[idx + 1] : '';
         }
 
         function promoRenderTargetOptions() {
             const sel = document.getElementById('promo-target-position');
             if (!sel) return;
-            const ability = promoGetAbilityRequirementsMap();
-            const names = Object.keys(ability).filter(Boolean);
+            const names = Object.keys(promoDefaultLevelsMap()).filter(Boolean);
             const profile = promoGetCurrentProfile();
             if (profile.position && !names.includes(profile.position)) names.unshift(profile.position);
             sel.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
@@ -36298,27 +36288,35 @@ ${knowledgeContent.slice(0, 30000)}`;
             promoOnTargetPositionChange();
         }
 
-        function promoOnTargetPositionChange() {
+        async function promoOnTargetPositionChange() {
             const profile = promoGetCurrentProfile();
             const type = String(document.getElementById('promo-qualification-type')?.value || 'same').trim();
             const targetPosition = String(document.getElementById('promo-target-position')?.value || '').trim();
             const levelEl = document.getElementById('promo-target-level');
             const abilityEl = document.getElementById('promo-capability-list');
-            const abilityMap = promoGetAbilityRequirementsMap();
             const levelMap = promoDefaultLevelsMap();
             let targetLevel = '';
             if (type === 'same') {
-                targetLevel = promoCalcNextLevel(profile.level);
+                targetLevel = promoCalcNextLevel(profile.position, profile.level);
             } else {
                 const lvList = Array.isArray(levelMap[targetPosition]) ? levelMap[targetPosition] : [];
-                targetLevel = lvList[0] || 'L1';
+                targetLevel = lvList[0] || '';
             }
             if (levelEl) levelEl.value = targetLevel;
-            const reqs = Array.isArray(abilityMap[targetPosition]) ? abilityMap[targetPosition] : [];
+            if (!targetLevel) {
+                __PROMO_TARGET_TOPICS = [];
+                if (abilityEl) {
+                    abilityEl.innerHTML = type === 'same'
+                        ? '<span style="color:rgba(200,215,230,0.7)">当前岗位已是该线最高级，暂无更高级别可挑战，请选择「跨岗位晋升」。</span>'
+                        : '<span style="color:rgba(200,215,230,0.7)">该岗位暂未配置晋升级别，请联系管理员配置。</span>';
+                }
+                return;
+            }
+            __PROMO_TARGET_TOPICS = await promoFetchPromotionRequirements(targetPosition, targetLevel);
             if (abilityEl) {
-                abilityEl.innerHTML = reqs.length
-                    ? `<ul style="margin:0; padding-left:18px;">${reqs.map(x => `<li>${escapeHtml(String(x || ''))}</li>`).join('')}</ul>`
-                    : '<span style="color:rgba(200,215,230,0.7)">暂无配置，请联系管理员在下方维护能力要求。</span>';
+                abilityEl.innerHTML = __PROMO_TARGET_TOPICS.length
+                    ? `<ul style="margin:0; padding-left:18px;">${__PROMO_TARGET_TOPICS.map(t => `<li>${escapeHtml(String(t?.title || ''))}</li>`).join('')}</ul>`
+                    : '<span style="color:rgba(200,215,230,0.7)">暂无配置，请联系管理员在「培训认证 → 知识点管理」中为该岗位配置晋升能力要求。</span>';
             }
         }
 
@@ -36333,147 +36331,9 @@ ${knowledgeContent.slice(0, 30000)}`;
         }
 
         function promoRenderAbilityConfigEditor() {
-            const box = document.getElementById('promo-ability-config');
-            const posSel = document.getElementById('promo-ability-position-select');
-            const listBox = document.getElementById('promo-ability-config-list');
-            const canEdit = currentUser && String(currentUser.role || '') === ROLES.ADMIN;
-            if (box) box.style.display = canEdit ? '' : 'none';
-            if (!canEdit || !posSel || !listBox) return;
-            const map = promoGetAbilityRequirementsMap();
-            const names = Object.keys(map).filter(Boolean).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
-            posSel.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
-            if (!posSel.value && names.length) posSel.value = names[0];
-            promoLoadAbilityEditorPosition(posSel.value, false);
-
-            listBox.innerHTML = names.length ? names.map(name => {
-                const items = Array.isArray(map[name]) ? map[name] : [];
-                return `
-                    <div style="padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.02); margin-bottom:8px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-                            <div style="font-weight:800; color:rgba(226,232,240,0.92);">${escapeHtml(name)}</div>
-                            <button class="btn btn-secondary" type="button" style="padding:4px 8px; font-size:12px;" onclick="promoLoadAbilityEditorPosition('${escapeJsString(name)}', true)">编辑</button>
-                        </div>
-                        <div style="margin-top:6px; font-size:12px; color:rgba(200,215,230,0.8); line-height:1.6;">${items.length ? items.map(x => '• ' + escapeHtml(String(x || ''))).join('<br>') : '暂无要求'}</div>
-                    </div>
-                `;
-            }).join('') : '<div style="font-size:12px; color:rgba(200,215,230,0.7);">暂无岗位配置，请先新增岗位。</div>';
-        }
-
-        function promoScrollAbilityEditorIntoView() {
-            const textEl = document.getElementById('promo-ability-items-text');
-            if (!textEl) return;
-            try {
-                textEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            } catch (e) {}
-            try { textEl.focus(); } catch (e) {}
-        }
-
-        function promoLoadAbilityEditorPosition(positionName, autoFocus) {
-            const posSel = document.getElementById('promo-ability-position-select');
-            const textEl = document.getElementById('promo-ability-items-text');
-            if (!posSel || !textEl) return;
-            const name = String(positionName || posSel.value || '').trim();
-            if (!name) {
-                textEl.value = '';
-                return;
-            }
-            posSel.value = name;
-            const map = promoGetAbilityRequirementsMap();
-            const arr = Array.isArray(map[name]) ? map[name] : [];
-            textEl.value = arr.map(x => String(x || '').trim()).filter(Boolean).join('\n');
-            if (autoFocus) {
-                promoScrollAbilityEditorIntoView();
-                showNotification(`已切换到「${name}」配置`, 'success');
-            }
-        }
-
-        function promoCreateAbilityPosition() {
-            if (!currentUser || String(currentUser.role || '') !== ROLES.ADMIN) return;
-            const input = prompt('请输入新岗位名称');
-            if (input === null) return;
-            const name = String(input || '').trim();
-            if (!name) return showNotification('岗位名称不能为空', 'warning');
-            const data = HRMS_STORE.ensure ? HRMS_STORE.ensure() : {};
-            const map = promoGetAbilityRequirementsMap();
-            if (!Array.isArray(map[name])) map[name] = [];
-            data.promotionAbilityRequirements = map;
-            if (HRMS_STORE.set) HRMS_STORE.set(data);
-            promoRenderAbilityConfigEditor();
-            promoLoadAbilityEditorPosition(name, true);
-            showNotification('岗位已创建', 'success');
-        }
-
-        function promoApplyAbilityEditor() {
-            if (!currentUser || String(currentUser.role || '') !== ROLES.ADMIN) {
-                showNotification('仅管理员可配置能力要求', 'warning');
-                return;
-            }
-            const posSel = document.getElementById('promo-ability-position-select');
-            const textEl = document.getElementById('promo-ability-items-text');
-            if (!posSel || !textEl) return;
-            const name = String(posSel.value || '').trim();
-            if (!name) return showNotification('请先选择岗位', 'warning');
-            const arr = String(textEl.value || '')
-                .split('\n')
-                .map(x => String(x || '').trim())
-                .filter(Boolean);
-            const data = HRMS_STORE.ensure ? HRMS_STORE.ensure() : {};
-            const map = promoGetAbilityRequirementsMap();
-            map[name] = arr;
-            data.promotionAbilityRequirements = map;
-            if (HRMS_STORE.set) HRMS_STORE.set(data);
-            promoRenderAbilityConfigEditor();
-            promoLoadAbilityEditorPosition(name, false);
-            promoRenderTargetOptions();
-            promoOnTargetPositionChange();
-            showNotification('当前岗位能力要求已更新', 'success');
-        }
-
-        async function promoRemoveAbilityPosition() {
-            if (!currentUser || String(currentUser.role || '') !== ROLES.ADMIN) {
-                showNotification('仅管理员可配置能力要求', 'warning');
-                return;
-            }
-            const posSel = document.getElementById('promo-ability-position-select');
-            if (!posSel) return;
-            const name = String(posSel.value || '').trim();
-            if (!name) return;
-            const _okAbility = await hrmsConfirm({ title: '删除能力配置', message: `确定删除岗位「${name}」的能力配置？`, okText: '确认删除', icon: '⚙️' });
-            if (!_okAbility) return;
-            const data = HRMS_STORE.ensure ? HRMS_STORE.ensure() : {};
-            const map = promoGetAbilityRequirementsMap();
-            delete map[name];
-            data.promotionAbilityRequirements = map;
-            if (HRMS_STORE.set) HRMS_STORE.set(data);
-            promoRenderAbilityConfigEditor();
-            promoRenderTargetOptions();
-            promoOnTargetPositionChange();
-            showNotification('岗位能力配置已删除', 'success');
-        }
-
-        function promoSaveAbilityRequirementsConfig() {
-            if (!currentUser || String(currentUser.role || '') !== ROLES.ADMIN) {
-                showNotification('仅管理员可配置能力要求', 'warning');
-                return;
-            }
-            const map = promoGetAbilityRequirementsMap();
-            const names = Object.keys(map).filter(Boolean);
-            if (!names.length) {
-                showNotification('请先至少维护一个岗位能力要求', 'warning');
-                return;
-            }
-            const data = HRMS_STORE.ensure ? HRMS_STORE.ensure() : {};
-            data.promotionAbilityRequirements = map;
-            if (HRMS_STORE.set) HRMS_STORE.set(data);
-            promoRenderTargetOptions();
-            promoOnTargetPositionChange();
-            promoRenderAbilityConfigEditor();
-            showNotification('能力要求配置已保存', 'success');
-        }
-
-        function promoReloadAbilityConfig() {
-            promoRenderAbilityConfigEditor();
-            showNotification('能力配置已重新加载', 'success');
+            const hint = document.getElementById('promo-ability-config-hint');
+            const canEdit = currentUser && [ROLES.ADMIN, ROLES.HQ_MANAGER].includes(String(currentUser.role || ''));
+            if (hint) hint.style.display = canEdit ? '' : 'none';
         }
 
         function promoSwitchTab(tab) {
@@ -36528,8 +36388,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             const targetLevel = String(document.getElementById('promo-target-level')?.value || '').trim();
             const reason = String(document.getElementById('promo-qualification-reason')?.value || '').trim();
             const agreed = !!document.getElementById('promo-qualification-confirm')?.checked;
-            const abilityMap = promoGetAbilityRequirementsMap();
-            const reqs = Array.isArray(abilityMap[targetPosition]) ? abilityMap[targetPosition] : [];
+            const reqs = Array.isArray(__PROMO_TARGET_TOPICS) ? __PROMO_TARGET_TOPICS.map(t => String(t?.title || '').trim()).filter(Boolean) : [];
             if (!promotionType) return showNotification('请选择晋升申请类型', 'warning');
             if (!targetPosition) return showNotification('请选择目标岗位', 'warning');
             if (!targetLevel) return showNotification('目标级别不能为空', 'warning');
@@ -36594,115 +36453,6 @@ ${knowledgeContent.slice(0, 30000)}`;
             }
         }
 
-        function promoCanActAsMentor(track) {
-            if (!currentUser) return false;
-            const role = String(currentUser.role || '');
-            const me = String(currentUser.username || '').toLowerCase();
-            const mentor = String(track?.mentorUsername || '').toLowerCase();
-            return mentor === me || role === ROLES.ADMIN || role === ROLES.HQ_MANAGER || role === ROLES.HR_MANAGER || role === ROLES.STORE_MANAGER || role === ROLES.PRODUCTION_MANAGER;
-        }
-
-        function promoCanAssess(track) {
-            if (!currentUser) return false;
-            const role = String(currentUser.role || '');
-            if (role === ROLES.ADMIN || role === ROLES.HQ_MANAGER || role === ROLES.HR_MANAGER) return true;
-            const store = String(track?.store || '').trim();
-            const myStore = String(currentUser?.store || '').trim();
-            const kitchen = /(后厨|厨房|后堂|后场|出品|厨师|厨工)/.test(String(track?.currentPosition || '') + ' ' + String(track?.department || ''))
-                || String(track?.applicantRole || '') === ROLES.PRODUCTION_MANAGER;
-            if (kitchen) return role === ROLES.PRODUCTION_MANAGER && store && store === myStore;
-            return role === ROLES.STORE_MANAGER && store && store === myStore;
-        }
-
-        function hrmsToAbsUrl(u) {
-            const s = String(u || '').trim();
-            if (!s) return '';
-            if (/^https?:\/\//i.test(s)) return s;
-            const base = String(HRMS_API.baseUrl ? HRMS_API.baseUrl() : '').replace(/\/$/, '');
-            if (!base) return s;
-            return s.startsWith('/') ? (base + s) : (base + '/' + s);
-        }
-
-        async function promoPickEvidenceUrls() {
-            return new Promise((resolve) => {
-                const ipt = document.createElement('input');
-                ipt.type = 'file';
-                ipt.multiple = true;
-                ipt.accept = 'image/*,video/*';
-                ipt.style.display = 'none';
-                document.body.appendChild(ipt);
-                let settled = false;
-                const done = (list) => {
-                    if (settled) return;
-                    settled = true;
-                    try { window.removeEventListener('focus', onFocusBack, true); } catch (e) {}
-                    try { ipt.remove(); } catch (e) {}
-                    resolve(Array.isArray(list) ? list : []);
-                };
-                const onFocusBack = () => {
-                    setTimeout(() => {
-                        if (settled) return;
-                        const files = Array.from(ipt.files || []);
-                        if (!files.length) done([]);
-                    }, 280);
-                };
-                window.addEventListener('focus', onFocusBack, true);
-                ipt.onchange = async () => {
-                    try {
-                        const files = Array.from(ipt.files || []);
-                        if (!files.length) return done([]);
-                        const form = new FormData();
-                        files.slice(0, 9).forEach(f => form.append('files', f));
-                        const resp = await HRMS_API.uploadPromotionEvidence(form);
-                        const urls = Array.isArray(resp?.urls) ? resp.urls.map(x => String(x || '').trim()).filter(Boolean) : [];
-                        done(urls);
-                    } catch (e) {
-                        showNotification('上传资料失败：' + String(e?.message || e), 'error');
-                        done([]);
-                    }
-                };
-                ipt.click();
-            });
-        }
-
-        async function promoCompleteSession(trackId, sessionId) {
-            const input = prompt('请输入培训反馈（可选）：');
-            if (input === null) return;
-            const feedback = String(input || '');
-            try {
-                let evidenceUrls = [];
-                if (await hrmsConfirm({ title: '上传培训资料', message: '是否上传图片/视频培训资料？', okText: '上传', icon: '📎' })) {
-                    evidenceUrls = await promoPickEvidenceUrls();
-                }
-                await HRMS_API.completePromotionTrainingSession(trackId, sessionId, feedback, evidenceUrls);
-                await promoLoadTracks();
-                showNotification('培训反馈已提交', 'success');
-            } catch (e) {
-                showNotification('提交失败：' + String(e?.message || e), 'error');
-            }
-        }
-
-        async function promoSubmitAssessment(trackId, result) {
-            const input = prompt(result === 'passed' ? '请输入通过评语（可选）：' : '请输入未通过原因：');
-            if (input === null) return;
-            const comment = String(input || '');
-            if (result === 'failed' && !String(comment || '').trim()) {
-                showNotification('未通过时请填写原因', 'warning');
-                return;
-            }
-            try {
-                let evidenceUrls = [];
-                if (await hrmsConfirm({ title: '上传考核资料', message: '是否上传图片/视频考核资料？', okText: '上传', icon: '📎' })) {
-                    evidenceUrls = await promoPickEvidenceUrls();
-                }
-                await HRMS_API.submitPromotionAssessment(trackId, result, comment, evidenceUrls);
-                await promoLoadTracks();
-                showNotification(result === 'passed' ? '已提交通过考核' : '已提交未通过考核', 'success');
-            } catch (e) {
-                showNotification('提交失败：' + String(e?.message || e), 'error');
-            }
-        }
-
         function promoRenderTrackBoard() {
             const box = document.getElementById('promo-track-board');
             if (!box) return;
@@ -36712,46 +36462,27 @@ ${knowledgeContent.slice(0, 30000)}`;
                 return;
             }
             box.innerHTML = tracks.map(t => {
-                const id = String(t?.id || '');
                 const applicant = String(t?.applicantName || t?.applicantUsername || '-');
                 const status = String(t?.status || '-');
                 const assess = String(t?.assessmentStatus || 'pending');
-                const sessions = Array.isArray(t?.trainingSessions) ? t.trainingSessions : [];
-                const canMentor = promoCanActAsMentor(t);
-                const canAssess = promoCanAssess(t);
-                const sessionRows = sessions.length ? sessions.map(s => {
-                    const sid = String(s?.id || '');
-                    const st = String(s?.status || 'planned');
-                    const stTxt = st === 'completed' ? '已完成' : '待完成';
-                    const evidence = Array.isArray(s?.evidenceUrls) ? s.evidenceUrls : [];
-                    const btn = (st !== 'completed' && canMentor)
-                        ? `<button class="btn btn-secondary" type="button" style="padding:4px 8px;font-size:12px;" onclick="promoCompleteSession('${escapeHtml(id)}','${escapeHtml(sid)}')">反馈完成</button>`
-                        : '';
-                    return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,0.08);">
-                        <div style="font-size:12px;color:rgba(226,232,240,0.92);">${escapeHtml(String(s?.date || '-'))} ${escapeHtml(String(s?.title || '-'))} · ${escapeHtml(stTxt)}
-                            ${s?.feedback ? `<div style="margin-top:3px;color:rgba(200,215,230,0.75);">反馈：${escapeHtml(String(s.feedback || ''))}</div>` : ''}
-                            ${evidence.length ? `<div style="margin-top:3px;">${evidence.map((u, i) => `<a href="${escapeHtml(hrmsToAbsUrl(u))}" target="_blank" rel="noopener" style="font-size:11px;color:#60a5fa;margin-right:8px;">资料${i + 1}</a>`).join('')}</div>` : ''}
-                        </div>
-                        <div>${btn}</div>
+                const assessText = assess === 'passed' ? '已通过' : '进行中';
+                const progress = t?.trainingProgress && typeof t.trainingProgress === 'object' ? t.trainingProgress : null;
+                const items = Array.isArray(progress?.items) ? progress.items : [];
+                const progressRows = items.length ? items.map(it => {
+                    const ok = !!it?.certified;
+                    const validTxt = ok && it?.validUntil ? `（有效期至 ${escapeHtml(String(it.validUntil))}）` : '';
+                    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,0.08);font-size:12px;">
+                        <div style="color:rgba(226,232,240,0.92);">${escapeHtml(String(it?.title || '-'))}</div>
+                        <div style="color:${ok ? '#34d399' : 'rgba(200,215,230,0.6)'};">${ok ? '✅ 已认证' : '⏳ 待认证'}${validTxt}</div>
                     </div>`;
-                }).join('') : '<div style="font-size:12px;color:rgba(200,215,230,0.72);">暂无培训排期</div>';
-                const assessEvidence = Array.isArray(t?.assessmentEvidenceUrls) ? t.assessmentEvidenceUrls : [];
-                const assessActions = (canAssess && assess !== 'passed')
-                    ? `<div style="display:flex;gap:8px;margin-top:8px;">
-                        <button class="btn" type="button" style="padding:6px 10px;font-size:12px;" onclick="promoSubmitAssessment('${escapeHtml(id)}','passed')">考核通过</button>
-                        <button class="btn btn-secondary" type="button" style="padding:6px 10px;font-size:12px;" onclick="promoSubmitAssessment('${escapeHtml(id)}','failed')">考核未通过</button>
-                    </div>` : '';
+                }).join('') : '<div style="font-size:12px;color:rgba(200,215,230,0.72);">该岗位暂无配置晋升能力要求，可直接发起正式晋升申请</div>';
                 return `<div style="margin-top:10px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.03);">
                     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
                         <div style="font-weight:800;">${escapeHtml(applicant)} · ${escapeHtml(String(t?.targetPosition || '-'))}/${escapeHtml(String(t?.targetLevel || '-'))}</div>
-                        <div style="font-size:12px;color:rgba(226,232,240,0.85);">状态：${escapeHtml(status)} · 考核：${escapeHtml(assess)}</div>
+                        <div style="font-size:12px;color:rgba(226,232,240,0.85);">状态：${escapeHtml(status)} · 培训考核：${escapeHtml(assessText)}${progress ? `（${progress.certifiedCount}/${progress.total}）` : ''}</div>
                     </div>
-                    <div style="margin-top:8px;font-size:12px;color:rgba(200,215,230,0.85);">带教人：${escapeHtml(String(t?.mentorName || t?.mentorUsername || '待指定'))}</div>
-                    <div style="margin-top:8px;">${sessionRows}</div>
-                    ${(t?.assessmentComment || assessEvidence.length) ? `<div style="margin-top:8px;font-size:12px;color:rgba(200,215,230,0.8);">考核反馈：${escapeHtml(String(t?.assessmentComment || '-'))}
-                        ${assessEvidence.length ? `<div style="margin-top:3px;">${assessEvidence.map((u, i) => `<a href="${escapeHtml(hrmsToAbsUrl(u))}" target="_blank" rel="noopener" style="font-size:11px;color:#60a5fa;margin-right:8px;">考核资料${i + 1}</a>`).join('')}</div>` : ''}
-                    </div>` : ''}
-                    ${assessActions}
+                    <div style="margin-top:8px;font-size:12px;color:rgba(200,215,230,0.85);">带教人：${escapeHtml(String(t?.mentorName || t?.mentorUsername || '待指定'))}${t?.trainingDueDate ? ` · 培训截止：${escapeHtml(String(t.trainingDueDate))}` : ''}</div>
+                    <div style="margin-top:8px;">${progressRows}</div>
                 </div>`;
             }).join('');
         }
