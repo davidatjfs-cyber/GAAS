@@ -11346,19 +11346,20 @@ app.post('/api/admin/leave-close-snapshot/recompute', authRequired, async (req, 
   }
 });
 
-/** 员工是否在指定薪资月「之前」已离职（离职日早于当月1日 → 不应再计薪）。
- *  当月或之后离职仍保留（末月结算）；已审离职但离职日未到者视为在职。 */
-function isEmployeeDepartedBeforeMonth(emp, month) {
+/** 离职员工是否不应计入指定薪资月。
+ *  规则：在职(status 非 inactive/离职)一律保留（含已审但离职日未到、status 仍 active 者）；
+ *  已离职者——若离职日早于当月1日则排除；否则仅当「当月有实际出勤」才保留（末月结算），
+ *  无出勤即排除。用 status+出勤判定，避免 offboardingDate 填成未来日导致离职者仍计薪。 */
+function isEmployeeDepartedForPayroll(emp, month, attendanceDays) {
   const m = safeMonthOnly(month);
   if (!m || !emp || typeof emp !== 'object') return false;
   const status = String(emp?.status || '').trim().toLowerCase();
   const inactive = status === 'inactive' || status === '离职';
-  const offApproved = emp?.offboardingApproved === true
-    || String(emp?.offboardingApproved || '').trim().toLowerCase() === 'true';
-  if (!inactive && !offApproved) return false;
+  if (!inactive) return false;
   const offDate = String(emp?.offboardingDate || '').trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(offDate)) return offDate < `${m}-01`;
-  return inactive || offApproved; // 已离职但无离职日期 → 视为已离职，排除
+  if (/^\d{4}-\d{2}-\d{2}$/.test(offDate) && offDate < `${m}-01`) return true;
+  if (Number(attendanceDays) > 0) return false; // 当月有实际出勤 → 末月结算保留
+  return true; // 已离职且当月无出勤 → 排除
 }
 
 app.get('/api/reports/payroll', authRequired, async (req, res) => {
@@ -11657,11 +11658,11 @@ app.get('/api/reports/payroll', authRequired, async (req, res) => {
       };
     });
 
-    // 排除当月之前已离职的人员（避免离职后每月仍计薪）
+    // 排除已离职且当月无出勤的人员（避免离职后每月仍计薪；末月有出勤者保留结算）
     const rowsActive = rows.filter((r) => {
       const lower = String(r?.username || '').trim().toLowerCase();
       const emp = peopleByLower.get(lower) || stateFindUserRecord(state0, r?.username) || null;
-      return !isEmployeeDepartedBeforeMonth(emp, month);
+      return !isEmployeeDepartedForPayroll(emp, month, r?.attendanceDays);
     });
     rows.length = 0;
     rows.push(...rowsActive);
