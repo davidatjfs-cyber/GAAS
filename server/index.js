@@ -14055,32 +14055,7 @@ function calcEmployeeMonthlyCarryover(state, employee, month, opts) {
     const monthQuota = 4;
     const restInfo = calcEmployeeMonthlyActualRestFromDailyReports(state, emp, cur);
     const usedRest = Number(restInfo?.total || 0);
-    const restDaySetCarry = new Set(Object.keys(restInfo?.byDay || {}));
-    const leaveRecordsCarry = Array.isArray(state?.leaveRecords) ? state.leaveRecords : [];
-    const unameCarry = String(emp?.username || '').trim().toLowerCase();
-    const mCurCarry = safeMonthOnly(cur);
-    let nonOverlapLeaveDays = 0;
-    leaveRecordsCarry.forEach((lr) => {
-      if (String(lr?.applicant || '').toLowerCase() !== unameCarry) return;
-      if (String(lr?.status || '') !== 'approved') return;
-      const sd = safeDateOnly(lr?.startDate || lr?.start_date);
-      const ed = safeDateOnly(lr?.endDate || lr?.end_date);
-      if (!sd || !ed) return;
-      const mStartCarry = mCurCarry + '-01';
-      const mEndCarry = mCurCarry + '-' + String(new Date(parseInt(mCurCarry.slice(0,4)), parseInt(mCurCarry.slice(5,7)), 0).getDate()).padStart(2, '0');
-      const segStartCarry = sd > mStartCarry ? sd : mStartCarry;
-      const segEndCarry = ed < mEndCarry ? ed : mEndCarry;
-      try {
-        const c = new Date(segStartCarry + 'T00:00:00');
-        const l = new Date(segEndCarry + 'T00:00:00');
-        while (c <= l) {
-          const dayKey = hrmsDateKeyInShanghai(c);
-          if (!restDaySetCarry.has(dayKey)) nonOverlapLeaveDays++;
-          c.setDate(c.getDate() + 1);
-        }
-      } catch (_) { nonOverlapLeaveDays += Number(lr?.days || 0) || 0; }
-    });
-    const usedLike = Number((usedRest + nonOverlapLeaveDays).toFixed(2));
+    const usedLike = Number(usedRest.toFixed(2));
     const startCarry = ov && ov.mode === 'carryover' ? ov.value : carry;
     carry = Number((startCarry + monthQuota - usedLike).toFixed(2));
     cur = shiftMonth(cur, 1);
@@ -14291,76 +14266,6 @@ function calcEmployeeMonthlyLeaveBalance(state, employee, month, opts = {}) {
       if (day < ws || day > we) return;
       wk.used = Number((Number(wk.used || 0) + n).toFixed(2));
     });
-  });
-
-  // Approved leave: only count days NOT already covered by daily report rest (避免重复)
-  const leaveRecords = Array.isArray(state?.leaveRecords) ? state.leaveRecords : [];
-  const uLower = uname.toLowerCase();
-  const restDaySet = new Set(Object.keys(restStats?.byDay || {}));
-
-  leaveRecords.forEach((lr) => {
-    if (String(lr?.applicant || '').toLowerCase() !== uLower) return;
-    if (String(lr?.status || '') !== 'approved') return;
-    const sd = String(lr?.startDate || '').trim();
-    const ed = String(lr?.endDate || '').trim();
-    const rawDays = lr?.days != null && lr?.days !== '' ? Number(lr.days) : null;
-    const overlapDays = calcOverlapDaysWithinMonth(sd, ed, m);
-
-    if (overlapDays > 0) {
-      // 逐日计算休假区间与日报休息的重叠，扣除已被日报统计的休息日
-      const mStart = m + '-01';
-      const mEnd = m + '-' + String(new Date(yr, mo, 0).getDate()).padStart(2, '0');
-      const segStart = sd > mStart ? sd : mStart;
-      const segEnd   = ed < mEnd   ? ed : mEnd;
-
-      let newDaysInMonth = 0;
-      let overlappedDays = 0;
-      try {
-        const cur = new Date(segStart + 'T00:00:00');
-        const last = new Date(segEnd + 'T00:00:00');
-        while (cur <= last) {
-          const ymd = hrmsDateKeyInShanghai(cur);
-          if (restDaySet.has(ymd)) {
-            overlappedDays++;
-          } else {
-            newDaysInMonth++;
-          }
-          cur.setDate(cur.getDate() + 1);
-        }
-      } catch (_) {
-        newDaysInMonth = overlapDays;
-      }
-
-      if (newDaysInMonth > 0) {
-        usedLeave = Number((usedLeave + newDaysInMonth).toFixed(2));
-        usedLeaveDetails.push({ date: `${sd}~${ed}`, days: Number(newDaysInMonth.toFixed(2)), type: '休假', source: '已批休假' });
-      }
-
-      // Week details: only count non-overlapping leave days per week segment
-      weekDetails.forEach((wk) => {
-        const [ws, we] = String(wk?.range || '').split('~');
-        if (!ws || !we) return;
-        const wkStart = ws > segStart ? ws : segStart;
-        const wkEnd   = we < segEnd   ? we : segEnd;
-        if (wkStart > wkEnd) return;
-        let wkNewDays = 0;
-        try {
-          const cur = new Date(wkStart + 'T00:00:00');
-          const last = new Date(wkEnd + 'T00:00:00');
-          while (cur <= last) {
-            const ymd = hrmsDateKeyInShanghai(cur);
-            if (!restDaySet.has(ymd)) wkNewDays++;
-            cur.setDate(cur.getDate() + 1);
-          }
-        } catch (_) {}
-        if (wkNewDays > 0) wk.used = Number((Number(wk.used || 0) + wkNewDays).toFixed(2));
-      });
-    } else if (rawDays != null && Number.isFinite(rawDays) && rawDays > 0 && sd.startsWith(m)) {
-      if (!restDaySet.has(sd)) {
-        usedLeave = Number((usedLeave + rawDays).toFixed(2));
-        usedLeaveDetails.push({ date: `${sd}`, days: Number(rawDays.toFixed(2)), type: '休假', source: '已批休假' });
-      }
-    }
   });
 
   usedLeave = Number((Number(usedLeave || 0)).toFixed(2));
