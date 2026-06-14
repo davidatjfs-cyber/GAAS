@@ -16823,6 +16823,47 @@ app.put('/api/knowledge/:id/explanation', authRequired, async (req, res) => {
   }
 });
 
+// POST /api/knowledge/:id/explanation/reformat — AI重新整理已保存内容的排版（不改变内容，仅优化格式）
+app.post('/api/knowledge/:id/explanation/reformat', authRequired, async (req, res) => {
+  if (String(req.user?.role || '') !== 'admin') {
+    return res.status(403).json({ error: 'admin_only' });
+  }
+  const id = String(req.params?.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'missing_id' });
+  try {
+    const prev = await pool.query('SELECT ai_explanation FROM knowledge_base WHERE id = $1::uuid LIMIT 1', [id]);
+    const row = prev.rows?.[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    const oldVal = String(row.ai_explanation || '').trim();
+    if (!oldVal || oldVal.length < 20) return res.status(400).json({ error: 'no_content' });
+    const aiResp = await callLLM([
+      { role: 'system', content: '你是一名文档排版专家。任务是把用户提供的培训资料文本整理成清晰、易读的中文Markdown，但绝对不能增删、改写或归纳原文的实质内容——只调整格式、结构、标点和换行。' },
+      { role: 'user', content: `请重新整理以下文本的版面，使其符合标准Markdown格式（合理使用 ## 二级标题、### 三级标题、- 列表、1. 2. 3. 编号步骤、**重点加粗** 等），让排版清晰、便于阅读。要求：
+1. 不得删除、增加或改写任何实质信息，只调整格式、分段、标点和换行。
+2. 不要添加开场白或结尾语，直接输出整理后的内容。
+
+【原文】
+${oldVal.slice(0, 20000)}` }
+    ], { max_tokens: 6000 });
+    const reformatted = String(aiResp?.content || '').trim();
+    if (!reformatted || reformatted.length < 20) {
+      return res.json({ success: false, error: 'ai_failed', message: 'AI整理失败，请稍后重试' });
+    }
+    await pool.query('UPDATE knowledge_base SET ai_explanation = $1, updated_at = NOW() WHERE id = $2::uuid', [reformatted, id]);
+    await pool.query(
+      `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role)
+       VALUES ($1::uuid, 'ai_explanation', $2, $3, $4, $5)`,
+      [id, oldVal, reformatted, req.user?.username || null, req.user?.role || null]
+    ).catch((e) => console.error('[knowledge] edit-history(reformat) failed:', e?.message));
+    res.json({ success: true, explanation: reformatted });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (/invalid input syntax for type uuid/i.test(msg)) return res.status(400).json({ error: 'invalid_id' });
+    console.error('[knowledge] explanation reformat error:', msg);
+    res.status(500).json({ error: 'server_error', message: msg });
+  }
+});
+
 // POST /api/knowledge/:id/explanation/regenerate — 清除缓存并强制重新生成AI解析
 app.post('/api/knowledge/:id/explanation/regenerate', authRequired, async (req, res) => {
   if (String(req.user?.role || '') !== 'admin') {
@@ -16969,7 +17010,7 @@ app.put('/api/knowledge/:id', authRequired, async (req, res) => {
   const id = String(req.params?.id || '').trim();
   if (!id) return res.status(400).json({ error: 'missing_id' });
 
-  const { title, category, audience, scope, tags, version } = req.body || {};
+  const { title, category, audience, scope, tags, version, content } = req.body || {};
   const groupNameRaw = Object.prototype.hasOwnProperty.call(req.body || {}, 'groupName')
     ? req.body?.groupName
     : undefined;
@@ -16979,6 +17020,7 @@ app.put('/api/knowledge/:id', authRequired, async (req, res) => {
   let idx = 1;
 
   if (title !== undefined) { sets.push(`title = $${idx}`); params.push(String(title).trim()); idx++; }
+  if (content !== undefined) { sets.push(`content = $${idx}`); params.push(String(content)); idx++; }
   if (category !== undefined) { sets.push(`category = $${idx}`); params.push(String(category).trim() || null); idx++; }
   if (scope !== undefined && ['public','business','sensitive'].includes(scope)) { sets.push(`scope = $${idx}`); params.push(scope); idx++; }
   if (version !== undefined) { sets.push(`version = $${idx}`); params.push(String(version).trim() || null); idx++; }
@@ -17015,12 +17057,24 @@ app.put('/api/knowledge/:id', authRequired, async (req, res) => {
       const groupLookup = await pool.query('SELECT group_id FROM knowledge_base WHERE id = $1::uuid LIMIT 1', [id]);
       targetGroupId = String(groupLookup.rows?.[0]?.group_id || '').trim();
     }
+    let oldContent;
+    if (content !== undefined) {
+      const prev = await pool.query('SELECT content FROM knowledge_base WHERE id = $1::uuid LIMIT 1', [id]);
+      oldContent = prev.rows?.[0]?.content || null;
+    }
     const r = await pool.query(
       `UPDATE knowledge_base SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id, title, category, tags, scope, file_path, file_type, file_size, access_roles, access_departments, created_by, version, created_at, updated_at, audience, group_id, group_name`,
       params
     );
     const row = r.rows?.[0];
     if (!row) return res.status(404).json({ error: 'not_found' });
+    if (content !== undefined) {
+      await pool.query(
+        `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role)
+         VALUES ($1::uuid, 'content', $2, $3, $4, $5)`,
+        [id, oldContent, content, req.user?.username || null, req.user?.role || null]
+      ).catch((e) => console.error('[knowledge] edit-history(content) failed:', e?.message));
+    }
     if (targetGroupId && groupName) {
       await pool.query(
         `UPDATE knowledge_base

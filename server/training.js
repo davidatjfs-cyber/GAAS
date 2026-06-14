@@ -238,6 +238,95 @@ export async function getPromotionTrackProgress(applicantUsername, requiredTopic
   return { total: items.length, certifiedCount, passed: items.length > 0 && certifiedCount === items.length, items };
 }
 
+// ─── 发展地图（我的档案首页）─────────────────────────────────
+// 岗位 → 该岗位的级别阶梯（顺序）。与生产 training_topics.position/level 对齐。
+const POSITION_LADDER = {
+  '打荷': ['T1', 'T2'], '汤档/煲仔': ['T1', 'T2'], '刺身': ['T1', 'T2'],
+  '烧味/卤水': ['T1', 'T2'], '砧板': ['T1', 'T2'], '炒锅': ['T1', 'T2'],
+  '出品经理': ['T2', 'T3'], '洗碗': ['T1'],
+  '传菜': ['L1'], '服务员': ['L2'], '水吧': ['L1', 'L2', 'L3'], '收银员': ['L1', 'L2'],
+  '主管': ['M1'], '前厅经理': ['M2'], '门店店长': ['M3'],
+};
+const LEVEL_LABEL = {
+  T1: 'T1 合格', T2: 'T2 师傅', T3: 'T3 厨师长',
+  L1: 'L1', L2: 'L2', L3: 'L3', M1: 'M1 主管', M2: 'M2 经理', M3: 'M3 店长',
+};
+const POSITION_DISPLAY = { '出品经理': '厨师长', '烧味/卤水': '烧味', '汤档/煲仔': '汤档', '门店店长': '店长' };
+// 厨房技术难度主路 / 前厅成长主路（横向）
+const KITCHEN_MAIN_PATH = ['打荷', '汤档/煲仔', '刺身', '烧味/卤水', '砧板', '炒锅', '出品经理'];
+const FRONT_MAIN_PATH = ['传菜', '服务员', '主管', '前厅经理', '门店店长'];
+
+export async function getMyDevelopmentMap(username) {
+  const uname = String(username || '').trim();
+  if (!uname) return null;
+  const er = await pool().query(`SELECT position, extra_json FROM employees WHERE username = $1 LIMIT 1`, [uname]);
+  const emp = er.rows[0] || {};
+  const position = String(emp.position || '').trim();
+  const ej = emp.extra_json && typeof emp.extra_json === 'object' ? emp.extra_json : {};
+  const currentLevel = String(ej.level || ej.jobLevel || ej.rank || '').trim();
+
+  // 级别阶梯（优先配置，兜底用库里该岗位实际有的级别）
+  let levels = POSITION_LADDER[position];
+  if (!levels) {
+    const lr = await pool().query(
+      `SELECT DISTINCT level FROM training_topics WHERE is_active AND promotion_required AND position = $1 AND level IS NOT NULL AND level <> ''`,
+      [position]
+    );
+    levels = lr.rows.map(r => r.level).sort();
+  }
+  const ladder = [];
+  for (const lv of (levels || [])) {
+    const topics = await getPromotionRequiredTopics(position, lv);
+    const prog = await getPromotionTrackProgress(uname, topics.map(t => t.id));
+    ladder.push({
+      level: lv, label: LEVEL_LABEL[lv] || lv,
+      total: prog.total, certified: prog.certifiedCount,
+      complete: prog.total > 0 && prog.passed,
+      isCurrent: lv === currentLevel,
+    });
+  }
+
+  // 横向主路
+  let path = null;
+  const inKitchen = KITCHEN_MAIN_PATH.includes(position);
+  const inFront = FRONT_MAIN_PATH.includes(position);
+  if (inKitchen || inFront) {
+    const arr = inKitchen ? KITCHEN_MAIN_PATH : FRONT_MAIN_PATH;
+    path = {
+      type: inKitchen ? 'kitchen' : 'front',
+      note: inKitchen ? '厨房技术难度主路（参考，可专精/按需调岗）' : '前厅成长主路（参考）',
+      nodes: arr.map(p => ({ position: p, display: POSITION_DISPLAY[p] || p, isCurrent: p === position, isApex: p === '出品经理' || p === '门店店长' })),
+    };
+  } else if (position === '洗碗') {
+    path = { type: 'feeder', note: '保洁岗精进后可转「打荷」进入厨房技术主路', nodes: [] };
+  }
+
+  // 下一步提示：以"当前级别"为基准 —— 当前级别未达标 → 提示补齐当前级别；
+  // 当前级别已达标且阶梯里有下一级 → 提示可申请晋升下一级；否则按主路提示下一岗位。
+  let nextStep = '';
+  let cta = null;
+  const curIdx = ladder.findIndex(l => l.isCurrent);
+  const cur = curIdx >= 0 ? ladder[curIdx] : null;
+  const next = curIdx >= 0 && curIdx + 1 < ladder.length ? ladder[curIdx + 1] : null;
+
+  if (cur && cur.total > 0 && !cur.complete) {
+    const remain = cur.total - cur.certified;
+    nextStep = `当前级别「${cur.label}」还需认证 ${remain}/${cur.total} 项能力`;
+    cta = { text: '要升职，先培训', action: 'promotion' };
+  } else if (next) {
+    nextStep = `当前级别「${cur ? cur.label : (LEVEL_LABEL[currentLevel] || currentLevel)}」能力已达标，可申请晋升至「${next.label}」（需认证 ${next.total} 项能力）`;
+    cta = { text: '要升职，先培训', action: 'promotion' };
+  } else if (inKitchen && position !== '出品经理' && (!cur || cur.complete || cur.total === 0)) {
+    const ni = KITCHEN_MAIN_PATH.indexOf(position);
+    const nextPos = KITCHEN_MAIN_PATH[ni + 1];
+    nextStep = nextPos ? `本岗位已达顶，可沿主路进入「${POSITION_DISPLAY[nextPos] || nextPos}」继续成长` : '本岗位能力已全部认证 ✅';
+  } else {
+    nextStep = '本岗位能力已全部认证 ✅';
+  }
+
+  return { position, positionDisplay: POSITION_DISPLAY[position] || position, currentLevel, ladder, path, nextStep, cta };
+}
+
 // ─── Schema ───────────────────────────────────────────────
 export async function ensureTrainingSchema() {
   try {
@@ -385,6 +474,20 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
     try {
       const topics = await getPromotionRequiredTopics(req.query.position || '', req.query.level || '');
       res.json({ success: true, topics: topics.map(t => ({ id: t.id, title: t.title, level: t.level, validity_days: t.validity_days })) });
+    } catch (e) {
+      res.json({ success: false, error: e?.message });
+    }
+  });
+
+  // GET /api/training/my-development-map - 我的发展地图（档案首页）
+  app.get('/api/training/my-development-map', authMiddleware, async (req, res) => {
+    try {
+      const target = String(req.query.username || req.user?.username || '').trim();
+      if (!isManager(req.user?.role) && target !== req.user?.username) {
+        return res.status(403).json({ success: false, error: '无权限查看他人数据' });
+      }
+      const map = await getMyDevelopmentMap(target);
+      res.json({ success: true, map });
     } catch (e) {
       res.json({ success: false, error: e?.message });
     }

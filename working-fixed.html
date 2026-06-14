@@ -16808,19 +16808,22 @@
                             </div>
                             <select id="training-filter-position" onchange="loadTrainingTopics()" style="width:100%;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.12);color:#fff;font-size:14px;margin-bottom:12px;">
                                 <option value="">全部岗位</option>
-                                <option value="炒锅">炒锅</option>
-                                <option value="烧味">烧味</option>
                                 <option value="打荷">打荷</option>
-                                <option value="切配">切配</option>
-                                <option value="出品">出品</option>
-                                <option value="洗碗工">洗碗工</option>
-                                <option value="前厅服务员">前厅服务员</option>
-                                <option value="收银">收银</option>
-                                <option value="迎宾">迎宾</option>
-                                <option value="前厅主管">前厅主管</option>
+                                <option value="汤档/煲仔">汤档/煲仔</option>
+                                <option value="刺身">刺身</option>
+                                <option value="烧味/卤水">烧味/卤水</option>
+                                <option value="砧板">砧板</option>
+                                <option value="炒锅">炒锅</option>
                                 <option value="出品经理">出品经理</option>
-                                <option value="店长">店长</option>
-                                <option value="全员">全员通用</option>
+                                <option value="洗碗">洗碗</option>
+                                <option value="传菜">传菜</option>
+                                <option value="服务员">服务员</option>
+                                <option value="水吧">水吧</option>
+                                <option value="收银员">收银员</option>
+                                <option value="主管">主管</option>
+                                <option value="前厅经理">前厅经理</option>
+                                <option value="门店店长">门店店长</option>
+                                <option value="全员通用">全员通用</option>
                             </select>
                             <div id="training-topics-list"></div>
                         </div>
@@ -16865,7 +16868,8 @@
                                 <div id="training-my-topics-list" style="display:grid;gap:12px;"></div>
                                 <div id="training-my-topics-empty" style="display:none;text-align:center;padding:48px 20px;color:rgba(255,255,255,0.4);">
                                     <div style="font-size:48px;margin-bottom:12px;">📋</div>
-                                    <div>暂无培训任务<br><span style="font-size:12px;">管理员指派后将在此显示</span></div>
+                                    <div>暂无培训任务<br><span style="font-size:12px;">请先到「我要升职」申请晋升资格，审批通过后系统会自动派发对应的培训任务</span></div>
+                                    <div onclick="showPage('promotion')" style="display:inline-block;margin-top:14px;padding:8px 20px;border-radius:10px;background:#6D7CFF;color:#0B0F1E;font-weight:800;font-size:13px;cursor:pointer;">去申请晋升资格 ›</div>
                                 </div>
                             </div>
                             <!-- 我的认证 -->
@@ -17363,6 +17367,38 @@
                     flex-direction: column;
                     gap: 10px;
                 }
+                .tt-level-group {
+                    border: 1px solid rgba(94,234,212,0.18);
+                    border-radius: 16px;
+                    background: rgba(94,234,212,0.04);
+                    overflow: hidden;
+                }
+                .tt-level-group > summary {
+                    list-style: none;
+                    cursor: pointer;
+                    padding: 12px 14px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    font-size: 13.5px;
+                    font-weight: 800;
+                    color: #5EEAD4;
+                }
+                .tt-level-group > summary::-webkit-details-marker { display: none; }
+                .tt-level-body {
+                    padding: 0 12px 12px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                }
+                .tt-stage-header {
+                    margin-top: 4px;
+                    padding: 6px 4px 2px;
+                    font-size: 12px;
+                    font-weight: 700;
+                    color: rgba(226,232,240,0.6);
+                }
                 .training-admin-card {
                     background: rgba(255,255,255,0.05);
                     border: 1px solid rgba(255,255,255,0.08);
@@ -17821,8 +17857,19 @@
                             </label>
                             <div class="tt-section-tip" style="margin-top:4px;">勾选后，员工申请晋升到该岗位时会自动派发本知识点的培训任务，认证通过才能进入晋升考核。</div>
                             <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
-                                <span class="tt-field-label" style="margin:0;">晋升级别（如 三砧/二砧/头砧、L1/L2/L3、储备/正式，留空表示不分级别）</span>
-                                <input type="text" id="training-topic-level" class="tt-input" style="width:140px;" placeholder="例如：三砧">
+                                <span class="tt-field-label" style="margin:0;">晋升级别</span>
+                                <select id="training-topic-level" class="tt-input" style="width:160px;">
+                                    <option value="">不分级别</option>
+                                    <option value="L1">L1</option>
+                                    <option value="L2">L2</option>
+                                    <option value="L3">L3</option>
+                                    <option value="T1">T1 合格</option>
+                                    <option value="T2">T2 师傅</option>
+                                    <option value="T3">T3 厨师长</option>
+                                    <option value="M1">M1 主管</option>
+                                    <option value="M2">M2 经理</option>
+                                    <option value="M3">M3 店长</option>
+                                </select>
                             </div>
                             <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
                                 <span class="tt-field-label" style="margin:0;">认证有效期（天）</span>
@@ -20711,6 +20758,9 @@
                     <span id="profile-hometown" style="display:none;">--</span>
                 </div>
 
+                <!-- 发展地图 -->
+                <div id="profile-devmap" class="card" style="margin-bottom: 16px; padding: 18px; display:none;"></div>
+
                 <!-- 多劳多得：置顶在通知上方 -->
                 <div style="margin-bottom: 16px;">
                     <div class="pf-points-banner pf-band pf-band--amber" onclick="showPage('points')">
@@ -22991,6 +23041,12 @@
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ explanation })
+                });
+            },
+
+            async reformatKnowledgeExplanation(id) {
+                return this.request('/api/knowledge/' + encodeURIComponent(String(id || '')) + '/explanation/reformat', {
+                    method: 'POST'
                 });
             },
 
@@ -29096,6 +29152,13 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             if (type === 'video') aiBox.style.marginTop = '16px';
             body.appendChild(aiBox);
             kbLoadAiSummary(id, aiBox, { showFileBtn: isAdminUser() && type !== 'video', fileSrc, fileType: type });
+
+            if (isAdminUser()) {
+                const contentBox = document.createElement('div');
+                contentBox.style.marginTop = '16px';
+                body.appendChild(contentBox);
+                kbLoadRawContent(id, contentBox);
+            }
         }
 
         // ── 知识库 AI 解析（复用培训认证缓存端点）──
@@ -29435,6 +29498,12 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 btn.textContent = '保存中...';
                 await HRMS_API.updateKnowledgeExplanation(itemId, explanation);
                 showNotification('已保存', 'success');
+                btn.textContent = 'AI正在整理排版...';
+                try {
+                    await HRMS_API.reformatKnowledgeExplanation(itemId);
+                } catch (e2) {
+                    console.error('reformat failed:', e2);
+                }
                 // reload the summary
                 const aiBox = container?.querySelector('.kb-ai-card')?.parentElement || container;
                 await kbLoadAiSummary(itemId, aiBox, {});
@@ -29507,6 +29576,85 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 showNotification('请求失败：' + (e.message || e), 'error');
                 if (btn) { btn.disabled = false; btn.textContent = origText; }
             }
+        }
+
+        // ── 知识库 教材原文（可编辑，留痕）──
+        async function kbLoadRawContent(itemId, container) {
+            container.innerHTML = `<div style="text-align:center;padding:16px 0;color:rgba(255,255,255,0.3);font-size:12px;">加载教材原文…</div>`;
+            try {
+                const resp = await HRMS_API.request('/api/knowledge/' + encodeURIComponent(itemId) + '/content', { method: 'GET' });
+                const content = String(resp?.content || '').trim();
+                if (!content) { container.innerHTML = ''; return; }
+                const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+                container.dataset.rawContent = content;
+                container.innerHTML = `
+                    <details class="kb-ai-card kb-content-card">
+                        <summary style="cursor:pointer;font-weight:700;color:#EEF1FA;font-size:13px;">📄 教材原文（${content.length}字，可编辑）</summary>
+                        <div class="kb-ai-card-actions" style="margin-top:12px;">
+                            <button onclick="editKnowledgeContent('${escapeHtml(itemId)}', this)" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>
+                        </div>
+                        <div class="kb-ai-content" style="margin-top:12px;font-size:12px;white-space:pre-wrap;max-height:400px;overflow-y:auto;">${esc(content)}</div>
+                    </details>`;
+            } catch (e) {
+                container.innerHTML = '';
+            }
+        }
+
+        function editKnowledgeContent(itemId, btn) {
+            const card = btn?.closest('.kb-content-card');
+            if (!card) return;
+            const raw = card.parentElement?.dataset?.rawContent || '';
+            const contentDiv = card.querySelector('.kb-ai-content');
+            if (!contentDiv) return;
+            const textarea = document.createElement('textarea');
+            textarea.value = raw;
+            textarea.style.width = '100%';
+            textarea.style.minHeight = '240px';
+            textarea.style.marginTop = '12px';
+            textarea.style.padding = '12px';
+            textarea.style.borderRadius = '10px';
+            textarea.style.border = '1px solid rgba(255,255,255,0.15)';
+            textarea.style.background = 'rgba(0,0,0,0.25)';
+            textarea.style.color = 'rgba(255,255,255,0.85)';
+            textarea.style.fontSize = '12px';
+            textarea.style.lineHeight = '1.7';
+            textarea.style.resize = 'vertical';
+            textarea.style.outline = 'none';
+            contentDiv.replaceWith(textarea);
+            const actions = card.querySelector('.kb-ai-card-actions');
+            if (actions) {
+                actions.innerHTML = `
+                    <button onclick="saveKnowledgeContent('${escapeHtml(itemId)}', this)" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
+                    <button onclick="cancelEditKnowledgeContent(this)" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
+                `;
+            }
+        }
+
+        async function saveKnowledgeContent(itemId, btn) {
+            const card = btn?.closest('.kb-content-card');
+            const textarea = card?.querySelector('textarea');
+            if (!textarea) return;
+            const content = textarea.value;
+            if (!content.trim()) { showNotification('内容不能为空', 'warning'); return; }
+            try {
+                btn.disabled = true;
+                btn.textContent = '保存中...';
+                await HRMS_API.updateKnowledge(itemId, { content });
+                showNotification('已保存', 'success');
+                const container = card.parentElement;
+                await kbLoadRawContent(itemId, container);
+            } catch (e) {
+                showNotification('保存失败：' + String(e?.message || e), 'error');
+                btn.disabled = false;
+                btn.textContent = '💾 保存';
+            }
+        }
+
+        function cancelEditKnowledgeContent(btn) {
+            const card = btn?.closest('.kb-content-card');
+            const container = card?.parentElement;
+            const itemId = document.getElementById('knowledge-viewer-body')?.dataset?.itemId || window.__HRMS_KB_ACTIVE_ID;
+            if (container && itemId) kbLoadRawContent(itemId, container);
         }
 
         function normalizeBiDataSourcesForUi(cfg) {
@@ -30296,7 +30444,10 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     return;
                 }
                 const canEdit = isAdminOrHQ();
-                list.innerHTML = `<div class="training-admin-stack">` + data.topics.map(t => {
+                const TT_LEVEL_LABEL = { T1:'T1 合格', T2:'T2 师傅', T3:'T3 厨师长', M1:'M1 主管', M2:'M2 经理', M3:'M3 店长', L1:'L1', L2:'L2', L3:'L3' };
+                const ttLevelRank = lv => { const m = /^([A-Z]+)(\d+)$/.exec(lv || ''); return m ? m[1].charCodeAt(0) * 100 + Number(m[2]) : 9999; };
+
+                const renderTopicCard = (t, displayTitle) => {
                     const posArr = (t.position || '').split(',').map(s => s.trim()).filter(Boolean);
                     const posTags = posArr.map(p => `<span class="training-admin-chip">${escapeHtml(p)}</span>`).join('');
                     const storeBadge = t.store ? `<span class="training-admin-chip">🏪 ${escapeHtml(t.store)}</span>` : '<span class="training-admin-chip">🏪 全部门店</span>';
@@ -30312,7 +30463,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                             <summary class="training-admin-summary" style="list-style:none;cursor:pointer;">
                                 <div class="training-admin-row">
                                     <div style="flex:1;min-width:0;">
-                                        <div class="training-admin-title">${escapeHtml(t.title)}</div>
+                                        <div class="training-admin-title">${escapeHtml(displayTitle)}</div>
                                         <div class="training-admin-sub">${t.kb_article_ids?.length ? `关联 ${t.kb_article_ids.length} 篇知识库文章` : '未配置知识库文章数量展示'}</div>
                                     </div>
                                     <span class="training-admin-badge" style="background:rgba(99,102,241,0.14);color:#c7d2fe;">${posArr.length || 0} 岗位</span>
@@ -30330,7 +30481,71 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                             </div>
                         </details>
                     </div>`;
-                }).join('') + `</div>`;
+                };
+
+                // 按"岗位 + 晋升级别"归类，组内再按标题"："前缀细分阶段，让培训内容有清晰的进阶方向
+                const graded = data.topics.filter(t => t.promotion_required && t.level);
+                const ungraded = data.topics.filter(t => !(t.promotion_required && t.level));
+
+                const groupMap = new Map();
+                graded.forEach(t => {
+                    const key = (t.position || '') + '|' + t.level;
+                    if (!groupMap.has(key)) groupMap.set(key, { position: t.position, level: t.level, items: [] });
+                    groupMap.get(key).items.push(t);
+                });
+                const groups = [...groupMap.values()].sort((a, b) => {
+                    if (a.position !== b.position) return String(a.position).localeCompare(String(b.position), 'zh');
+                    return ttLevelRank(a.level) - ttLevelRank(b.level);
+                });
+
+                let html = `<div class="training-admin-stack">`;
+                groups.forEach(g => {
+                    // 组内按标题"XXX："前缀再细分阶段（出现≥2次才算一个阶段，否则单独展示）
+                    const stageOrder = [];
+                    const stageMap = new Map();
+                    g.items.forEach(t => {
+                        const m = /^(.+?)[：:]/.exec(t.title || '');
+                        const prefix = m ? m[1] : '';
+                        if (!stageMap.has(prefix)) { stageMap.set(prefix, []); stageOrder.push(prefix); }
+                        stageMap.get(prefix).push(t);
+                    });
+                    let bodyHtml = '';
+                    stageOrder.forEach(prefix => {
+                        const items = stageMap.get(prefix);
+                        const useStage = prefix && items.length >= 2;
+                        if (useStage) {
+                            bodyHtml += `<div class="tt-stage-header">📍 ${escapeHtml(prefix)}（${items.length}项）</div>`;
+                        }
+                        items.forEach(t => {
+                            const displayTitle = (useStage && t.title.startsWith(prefix))
+                                ? t.title.slice(prefix.length).replace(/^[：:]\s*/, '')
+                                : t.title;
+                            bodyHtml += renderTopicCard(t, displayTitle);
+                        });
+                    });
+                    const levelLabel = TT_LEVEL_LABEL[g.level] || g.level;
+                    html += `
+                    <details class="tt-level-group" open>
+                        <summary>
+                            <span>${escapeHtml(g.position)} · ${escapeHtml(levelLabel)}</span>
+                            <span class="training-admin-badge" style="background:rgba(94,234,212,0.16);color:#5EEAD4;">${g.items.length} 项</span>
+                        </summary>
+                        <div class="tt-level-body">${bodyHtml}</div>
+                    </details>`;
+                });
+                if (ungraded.length) {
+                    html += `
+                    <details class="tt-level-group" open>
+                        <summary>
+                            <span>📚 通用知识点（非晋升要求）</span>
+                            <span class="training-admin-badge" style="background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);">${ungraded.length} 项</span>
+                        </summary>
+                        <div class="tt-level-body">${ungraded.map(t => renderTopicCard(t, t.title)).join('')}</div>
+                    </details>`;
+                }
+                html += `</div>`;
+                list.innerHTML = html;
+
                 // 更新指派弹窗的下拉框
                 const assignSelect = document.getElementById('training-assign-topic');
                 if (assignSelect) {
@@ -45160,8 +45375,66 @@ tr:nth-child(even) td { background: #fafafa; }
         }
         
         // 加载个人信息数据
+        async function renderDevelopmentMap() {
+            const box = document.getElementById('profile-devmap');
+            if (!box) return;
+            try {
+                const resp = await fetch('/api/training/my-development-map', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                const data = await resp.json();
+                const m = data && data.success ? data.map : null;
+                if (!m || !m.position || !m.ladder || !m.ladder.length) { box.style.display = 'none'; return; }
+                const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+                const ladderHtml = m.ladder.map(l => {
+                    const pct = l.total ? Math.round(l.certified / l.total * 100) : 0;
+                    const cur = l.isCurrent ? ' <span style="font-size:10px;font-weight:700;color:#0B0F1E;background:#5EEAD4;padding:1px 7px;border-radius:8px;vertical-align:middle;">当前</span>' : '';
+                    const tick = l.complete ? ' ✅' : '';
+                    return `<div style="margin-top:10px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;">
+                            <span style="font-weight:700;color:#EEF1FA;">${esc(l.label)}${cur}${tick}</span>
+                            <span style="color:#9AA3C7;font-size:12px;">认证 ${l.certified}/${l.total}</span>
+                        </div>
+                        <div style="margin-top:5px;height:7px;border-radius:99px;background:rgba(255,255,255,0.10);overflow:hidden;">
+                            <div style="height:100%;width:${pct}%;border-radius:99px;background:linear-gradient(90deg,#6D7CFF,#5EEAD4);"></div>
+                        </div>
+                    </div>`;
+                }).join('');
+                let pathHtml = '';
+                if (m.path && m.path.nodes && m.path.nodes.length) {
+                    const steps = m.path.nodes.map((n, i) => {
+                        const sep = i < m.path.nodes.length - 1 ? '<span style="color:#5B6597;margin:0 2px;">›</span>' : '';
+                        let st = 'color:#9AA3C7;background:rgba(255,255,255,0.06);';
+                        if (n.isApex) st = 'color:#FFC46B;background:rgba(255,196,107,0.12);font-weight:700;';
+                        if (n.isCurrent) st = 'color:#0B0F1E;background:#6D7CFF;font-weight:800;';
+                        return `<span style="white-space:nowrap;padding:3px 9px;border-radius:9px;font-size:12px;${st}">${esc(n.display)}</span>${sep}`;
+                    }).join('');
+                    pathHtml = `<div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.10);">
+                        <div style="font-size:11px;color:#9AA3C7;margin-bottom:8px;">${esc(m.path.note)}</div>
+                        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 2px;overflow-x:auto;">${steps}</div>
+                    </div>`;
+                } else if (m.path && m.path.note) {
+                    pathHtml = `<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.10);font-size:12px;color:#9AA3C7;">${esc(m.path.note)}</div>`;
+                }
+                const ctaHtml = m.cta ? `<span onclick="showPage('promotion')" style="display:inline-block;margin-left:8px;padding:2px 10px;border-radius:8px;background:#6D7CFF;color:#0B0F1E;font-weight:800;font-size:11.5px;cursor:pointer;white-space:nowrap;vertical-align:middle;">${esc(m.cta.text)} ›</span>` : '';
+                const nextHtml = m.nextStep ? `<div style="margin-top:14px;padding:10px 12px;border-radius:12px;background:rgba(109,124,255,0.14);border:1px solid rgba(109,124,255,0.28);font-size:12.5px;color:#C7CEFF;">👉 ${esc(m.nextStep)}${ctaHtml}</div>` : '';
+                box.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                        <div class="pf-icon-chip pf-icon-chip--iris" style="font-size:16px;">🚀</div>
+                        <div>
+                            <div style="font-weight:800;font-size:15px;color:#EEF1FA;">我的发展地图</div>
+                            <div style="font-size:11px;color:#9AA3C7;margin-top:1px;">当前岗位 <b style="color:#EEF1FA;">${esc(m.positionDisplay)}</b>${m.currentLevel ? ' · ' + esc(m.currentLevel) : ''}</div>
+                        </div>
+                    </div>
+                    ${ladderHtml}
+                    ${nextHtml}
+                    ${pathHtml}
+                `;
+                box.style.display = 'block';
+            } catch (e) { box.style.display = 'none'; }
+        }
+
         async function loadProfileData() {
             if (!currentUser) return;
+            try { renderDevelopmentMap(); } catch (e) {}
 
             // Re-read employee/user data to ensure onboarding fields are up-to-date
             let _empRec = {};
