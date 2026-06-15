@@ -56465,16 +56465,30 @@ ${body}
                 var hdr = growthAuthHeaders();
                 var rs = await Promise.all([
                     fetch('/api/growth/touch-rules', { headers: hdr }).then(function(r){return r.json();}),
-                    fetch('/api/growth/touch-rules/stats?days=' + encodeURIComponent(days), { headers: hdr }).then(function(r){return r.json();}),
-                    fetch('/api/growth/touch-rules/audience', { headers: hdr }).then(function(r){return r.json();}).catch(function(){return {};})
+                    fetch('/api/growth/touch-rules/stats?days=' + encodeURIComponent(days), { headers: hdr }).then(function(r){return r.json();})
                 ]);
                 var allRules = (rs[0] && rs[0].rules) || [];
                 var statRows = (rs[1] && rs[1].stats) || [];
-                var audienceMap = (rs[2] && rs[2].audience) || {};
-                var statMap = {};
-                statRows.forEach(function(s){ statMap[s.rule_key] = s; });
+                amRenderRulesList(allRules, statRows, {});
+                // 涉及会员（人群覆盖）单独异步获取：全表扫描较慢(冷缓存约5秒)，不阻塞规则列表先行展示，
+                // 拿到后再补渲染一次，避免整页卡在"加载中…"。
+                fetch('/api/growth/touch-rules/audience', { headers: hdr }).then(function(r){return r.json();}).then(function(d){
+                    var audienceMap = (d && d.audience) || {};
+                    amRenderRulesList(allRules, statRows, audienceMap);
+                }).catch(function(){});
+            } catch (e) {
+                host.innerHTML = '<div style="color:#ef4444;padding:14px 0;">加载自动营销失败：' + escapeHtml(String(e && e.message || e)) + '</div>';
+            }
+            loadAmRedemptions();
+        }
 
-                // 按上方「门店范围」筛选：选中某门店时，展示该门店规则 +「全部门店」通用规则
+        function amRenderRulesList(allRules, statRows, audienceMap) {
+            var host = document.getElementById('am-rules-list');
+            var days = document.getElementById('am-stats-days')?.value || '30';
+            var statMap = {};
+            statRows.forEach(function(s){ statMap[s.rule_key] = s; });
+
+            // 按上方「门店范围」筛选：选中某门店时，展示该门店规则 +「全部门店」通用规则
                 var storeFilter = document.getElementById('growth-store-filter')?.value || '';
                 var rules = storeFilter
                     ? allRules.filter(function(rule){ var sid = amRuleStoreId(rule); return sid === storeFilter || sid === ''; })
@@ -56668,10 +56682,6 @@ ${body}
                         + '</div>'
                         + '</div>';
                 }).join('');
-            } catch (e) {
-                host.innerHTML = '<div style="color:#ef4444;padding:14px 0;">加载自动营销失败：' + escapeHtml(String(e && e.message || e)) + '</div>';
-            }
-            loadAmRedemptions();
         }
 
         async function loadAmRedemptions() {
