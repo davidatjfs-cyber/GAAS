@@ -707,6 +707,75 @@ async function evaluateAbTask(pool, taskRow) {
   return { outcome, finalized: true, task: updated.rows[0] || taskRow };
 }
 
+// 闭环关键回路：A/B 胜出变体 → 写回正式规则并直接生效（approved_at=NOW()）。
+// 供 promote 端点（人工点击）与定时任务（测试到期后自动执行）共用。
+async function promoteAbWinner(pool, task, operatorName) {
+  const winner = String(task.winner || '').toUpperCase();
+  if (winner !== 'A' && winner !== 'B') return { ok: false, error: 'no_winner_yet', message: '该测试尚无明确赢家：需先录入结果并判定 A/B 胜负后才能采用。' };
+  const winnerDef = (winner === 'A' ? task.variant_a : task.variant_b) || {};
+  const operator = cleanText(operatorName || 'system', 80);
+  const targetKind = cleanText(task.target_kind || '', 40);
+  const targetRuleKey = cleanText(task.target_rule_key || '', 200);
+
+  if (targetRuleKey && (targetKind === 'touch_rule' || targetKind === 'payment_rule')) {
+    if (winner === 'A') {
+      await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
+      return { ok: true, rule_key: targetRuleKey, winner, kept_current: true, message: 'A组(当前版本)胜出，规则维持不变。' };
+    }
+    if (targetKind === 'touch_rule') {
+      const ruleRes = await pool.query(`SELECT * FROM growth_touch_rules WHERE rule_key = $1 LIMIT 1`, [targetRuleKey]);
+      if (!ruleRes.rows?.length) return { ok: false, error: 'target_rule_not_found' };
+      const row = ruleRes.rows[0];
+      const ap = (row.action_payload && typeof row.action_payload === 'object') ? Object.assign({}, row.action_payload) : {};
+      const content = cleanText(winnerDef.content || winnerDef.text || '', 2000);
+      if (content) { ap.content_template = content; ap.template_text = content; }
+      if (winnerDef.coupon_value != null && winnerDef.coupon_value !== '') {
+        ap.coupon_value = Number(winnerDef.coupon_value); ap.value = Number(winnerDef.coupon_value);
+      }
+      ap.source_ab_test_id = task.id; ap.ab_winner = winner; ap.ab_winner_lift = Number(task.winner_lift || 0);
+      const upd = await pool.query(
+        `UPDATE growth_touch_rules
+            SET action_payload = $2::jsonb,
+                approved_by = $3, approved_at = NOW(),
+                note = $4, updated_at = NOW()
+          WHERE rule_key = $1
+          RETURNING *`,
+        [targetRuleKey, JSON.stringify(ap),
+         operator,
+         cleanText(`A/B #${task.id}「${task.test_name}」B组胜出(+${Number(task.winner_lift || 0)}%)，已采用为当前版本（经办人:${operator}）`, 1000)]
+      );
+      await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
+      return { ok: true, rule: upd.rows[0], rule_key: targetRuleKey, winner, kind: targetKind };
+    }
+    // payment_rule
+    const ruleRes = await pool.query(`SELECT * FROM marketing_payment_rules WHERE rule_key = $1 LIMIT 1`, [targetRuleKey]);
+    if (!ruleRes.rows?.length) return { ok: false, error: 'target_rule_not_found' };
+    const templateId = cleanText(winnerDef.template_id, 128);
+    const triggerValue = winnerDef.trigger_value != null ? String(winnerDef.trigger_value) : null;
+    const upd = await pool.query(
+      `UPDATE marketing_payment_rules
+          SET member_template_id = COALESCE(NULLIF($2,''), member_template_id),
+              trigger_value = COALESCE($3, trigger_value),
+              updated_at = NOW()
+        WHERE rule_key = $1
+        RETURNING *`,
+      [targetRuleKey, templateId, triggerValue]
+    );
+    await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
+    return { ok: true, rule: upd.rows[0], rule_key: targetRuleKey, winner, kind: targetKind };
+  }
+
+  // 渠道模式：无内部规则可回写 → 把胜者沉淀到经验库(growth_learnings)，供内容建议引擎与未来活动复用。
+  if (cleanText(task.mode, 20) === 'channel') {
+    const outcome = await computeAbTestOutcome(pool, task).catch(() => null);
+    await maybeWriteAbLearning(pool, task, outcome, winner, Number(task.winner_lift || 0));
+    await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, 'learning:' + task.id]).catch(() => {});
+    return { ok: true, winner, channel: task.channel, learned: true, message: `已将「${task.channel}」胜出版本沉淀到经验库，供内容建议复用。` };
+  }
+
+  return { ok: false, error: 'not_promotable', message: '该测试无可采用的回路（既未绑定规则也非渠道模式）。' };
+}
+
 async function generateDishTrendSummary(pool, storeCode) {
   const store = cleanText(storeCode, 128);
   const r = await pool.query(
@@ -2634,76 +2703,12 @@ export function registerPhaseRoutes(app, pool) {
     if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
     const task = taskRes.rows[0];
 
-    // 必须有明确赢家才能放量；平局/未判定时拒绝，避免把没结论的版本推成正式规则。
-    const winner = String(task.winner || '').toUpperCase();
-    if (winner !== 'A' && winner !== 'B') {
-      return res.status(400).json({ ok: false, error: 'no_winner_yet', message: '该测试尚无明确赢家：需先录入结果并判定 A/B 胜负后才能采用。' });
+    const result = await promoteAbWinner(pool, task, auth.user?.username);
+    if (!result.ok) {
+      const status = result.error === 'target_rule_not_found' ? 404 : 400;
+      return res.status(status).json(result);
     }
-    const winnerDef = (winner === 'A' ? task.variant_a : task.variant_b) || {};
-    const operator = cleanText(auth.user?.username || 'system', 80);
-    const targetKind = cleanText(task.target_kind || '', 40);
-    const targetRuleKey = cleanText(task.target_rule_key || '', 200);
-
-    // 绑定模式：胜者直接回写到所绑定的真实规则（不再新建 abwin_ 规则）。
-    if (targetRuleKey && (targetKind === 'touch_rule' || targetKind === 'payment_rule')) {
-      if (winner === 'A') {
-        // A 组(当前版本)胜出：维持现状，仅记录采用结果，无需改规则。
-        await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
-        return res.json({ ok: true, rule_key: targetRuleKey, winner, kept_current: true, message: 'A组(当前版本)胜出，规则维持不变。' });
-      }
-      // B 组(挑战者)胜出：把挑战者内容覆盖回原规则。
-      if (targetKind === 'touch_rule') {
-        const ruleRes = await pool.query(`SELECT * FROM growth_touch_rules WHERE rule_key = $1 LIMIT 1`, [targetRuleKey]);
-        if (!ruleRes.rows?.length) return res.status(404).json({ ok: false, error: 'target_rule_not_found' });
-        const row = ruleRes.rows[0];
-        const ap = (row.action_payload && typeof row.action_payload === 'object') ? Object.assign({}, row.action_payload) : {};
-        const content = cleanText(winnerDef.content || winnerDef.text || '', 2000);
-        if (content) { ap.content_template = content; ap.template_text = content; }
-        if (winnerDef.coupon_value != null && winnerDef.coupon_value !== '') {
-          ap.coupon_value = Number(winnerDef.coupon_value); ap.value = Number(winnerDef.coupon_value);
-        }
-        ap.source_ab_test_id = task.id; ap.ab_winner = winner; ap.ab_winner_lift = Number(task.winner_lift || 0);
-        const upd = await pool.query(
-          `UPDATE growth_touch_rules
-              SET action_payload = $2::jsonb,
-                  approved_by = $3, approved_at = NOW(),
-                  note = $4, updated_at = NOW()
-            WHERE rule_key = $1
-            RETURNING *`,
-          [targetRuleKey, JSON.stringify(ap),
-           operator,
-           cleanText(`A/B #${task.id}「${task.test_name}」B组胜出(+${Number(task.winner_lift || 0)}%)，已采用为当前版本（经办人:${operator}）`, 1000)]
-        );
-        await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
-        return res.json({ ok: true, rule: upd.rows[0], rule_key: targetRuleKey, winner, kind: targetKind });
-      }
-      // payment_rule
-      const ruleRes = await pool.query(`SELECT * FROM marketing_payment_rules WHERE rule_key = $1 LIMIT 1`, [targetRuleKey]);
-      if (!ruleRes.rows?.length) return res.status(404).json({ ok: false, error: 'target_rule_not_found' });
-      const templateId = cleanText(winnerDef.template_id, 128);
-      const triggerValue = winnerDef.trigger_value != null ? String(winnerDef.trigger_value) : null;
-      const upd = await pool.query(
-        `UPDATE marketing_payment_rules
-            SET member_template_id = COALESCE(NULLIF($2,''), member_template_id),
-                trigger_value = COALESCE($3, trigger_value),
-                updated_at = NOW()
-          WHERE rule_key = $1
-          RETURNING *`,
-        [targetRuleKey, templateId, triggerValue]
-      );
-      await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
-      return res.json({ ok: true, rule: upd.rows[0], rule_key: targetRuleKey, winner, kind: targetKind });
-    }
-
-    // 渠道模式：无内部规则可回写 → 把胜者沉淀到经验库(growth_learnings)，供内容建议引擎与未来活动复用。
-    if (cleanText(task.mode, 20) === 'channel') {
-      const outcome = await computeAbTestOutcome(pool, task).catch(() => null);
-      await maybeWriteAbLearning(pool, task, outcome, winner, Number(task.winner_lift || 0));
-      await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, 'learning:' + task.id]).catch(() => {});
-      return res.json({ ok: true, winner, channel: task.channel, learned: true, message: `已将「${task.channel}」胜出版本沉淀到经验库，供内容建议复用。` });
-    }
-
-    return res.status(400).json({ ok: false, error: 'not_promotable', message: '该测试无可采用的回路（既未绑定规则也非渠道模式）。' });
+    return res.json(result);
   });
 
   app.get('/api/growth/learnings', async (req, res) => {
@@ -3165,7 +3170,17 @@ export function registerPhaseRoutes(app, pool) {
           // 手动录入类(绑定模式 或 任何模板测试)跳过 POS 归因刷新；仅旧的 price_test 走自动归因。
           const manualInput = !!cleanText(task.target_rule_key, 200) || !!(task.metrics_schema && typeof task.metrics_schema === 'object');
           if (!manualInput) await refreshAbTestResults(pool, task).catch(() => null);
-          if (safeDateOnly(task.end_date) <= nowYmd) await evaluateAbTask(pool, task).catch(() => null);
+          if (safeDateOnly(task.end_date) <= nowYmd) {
+            const evaluated = await evaluateAbTask(pool, task).catch(() => null);
+            const evTask = evaluated?.task;
+            // 测试期已满+判出明确赢家+尚未采用 → 自动写回正式规则并生效，闭环不再需要人工点击。
+            if (evaluated?.finalized && evTask && evTask.status === 'completed' && !evTask.promoted_rule_key) {
+              const w = String(evTask.winner || '').toUpperCase();
+              if (w === 'A' || w === 'B') {
+                await promoteAbWinner(pool, evTask, 'auto').catch((e) => console.warn('[growth-phase4] ab auto-promote failed:', e?.message));
+              }
+            }
+          }
         }
       } catch (e) {
         console.warn('[growth-phase4] ab cron failed:', e?.message);

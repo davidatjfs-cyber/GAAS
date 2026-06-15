@@ -3669,6 +3669,31 @@ export function registerGrowthRoutes(app, pool) {
         );
       }
 
+      // 核销时若小程序未填消费金额，按"同门店+同手机号+核销时间前后"匹配最近一笔POS订单自动回填，
+      // 避免店员漏填导致营收/ROI统计为0；匹配不到则保持0，不影响现有行为。
+      let effectiveAmountFen = amountFen;
+      if (eventType === 'coupon_redeemed' && effectiveAmountFen === 0) {
+        const redeemPhone = cleanPhone(body.phone) || customer?.phone || '';
+        if (redeemPhone && storeId) {
+          try {
+            const posMatch = await pool.query(
+              `SELECT amount_after_discount
+                 FROM pos_orders
+                WHERE store_id = $1 AND phone = $2
+                  AND order_time BETWEEN $3::timestamptz - INTERVAL '2 hours' AND $3::timestamptz + INTERVAL '30 minutes'
+                ORDER BY ABS(EXTRACT(EPOCH FROM (order_time - $3::timestamptz)))
+                LIMIT 1`,
+              [storeId, redeemPhone, occurredAt]
+            );
+            if (posMatch.rows.length) {
+              effectiveAmountFen = Math.max(0, Math.round(Number(posMatch.rows[0].amount_after_discount || 0) * 100));
+            }
+          } catch (e) {
+            console.warn('[growth] pos amount auto-fill failed:', e?.message);
+          }
+        }
+      }
+
       const inserted = await pool.query(
         `INSERT INTO growth_events (
            event_type, customer_id, phone, openid, external_userid, store_id, campaign_id, channel,
@@ -3687,7 +3712,7 @@ export function registerGrowthRoutes(app, pool) {
           channel,
           cleanText(body.coupon_id, 128),
           cleanText(body.order_id, 128),
-          amountFen,
+          effectiveAmountFen,
           idempotencyKey,
           JSON.stringify(metadata),
           occurredAt
@@ -3699,7 +3724,7 @@ export function registerGrowthRoutes(app, pool) {
           `INSERT INTO growth_redemptions (customer_id, coupon_id, campaign_id, store_id, amount_fen, metadata, redeemed_at)
            VALUES ($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6::jsonb,$7)
            ON CONFLICT DO NOTHING`,
-          [customer?.id || null, cleanText(body.coupon_id, 128), campaignId, storeId, amountFen, JSON.stringify(metadata), occurredAt]
+          [customer?.id || null, cleanText(body.coupon_id, 128), campaignId, storeId, effectiveAmountFen, JSON.stringify(metadata), occurredAt]
         );
         // 闭环回写：按核销回传的短码，把对应「已发送」短信日志翻成「已核销」，
         // 使 growth_delivery_logs 单表即可查「发→核销」全过程（核销率 = redeemed / sent）。
@@ -4255,6 +4280,15 @@ export function registerGrowthRoutes(app, pool) {
   if (!globalThis.__growthAudienceTimer) {
     setTimeout(() => refreshTouchRulesAudienceCache().catch(() => {}), 15000);
     globalThis.__growthAudienceTimer = setInterval(() => { refreshTouchRulesAudienceCache().catch(() => {}); }, 10 * 60 * 1000);
+  }
+  // 客户画像（生命周期/价值分级等，决定"涉及会员"人数）每日自动重算，避免依赖人工触发而过期；
+  // 重算后顺带刷新人群缓存，使"涉及会员"数据始终与画像同步。
+  if (!globalThis.__growthProfileTimer) {
+    const runProfileRecompute = () => recomputeCustomerProfiles(pool, 90)
+      .then(() => refreshTouchRulesAudienceCache())
+      .catch((e) => console.warn('[profiles] recompute failed:', e?.message));
+    setTimeout(runProfileRecompute, 20000);
+    globalThis.__growthProfileTimer = setInterval(runProfileRecompute, 24 * 60 * 60 * 1000);
   }
   app.get('/api/growth/touch-rules/audience', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
