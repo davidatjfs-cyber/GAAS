@@ -56751,7 +56751,7 @@ ${body}
         }
 
         async function amApprove(ruleKey) {
-            if (!confirm('确认审核通过「' + ruleKey + '」？审核后引擎将每15分钟自动向命中人群发送，您将作为经办人记录在案。')) return;
+            if (!await hrmsConfirm({ title: '审核通过', message: '确认审核通过「' + ruleKey + '」？审核后引擎将每15分钟自动向命中人群发送，您将作为经办人记录在案。', okText: '确认通过', icon: '✅' })) return;
             try {
                 var r = await fetch('/api/growth/touch-rules/' + encodeURIComponent(ruleKey) + '/approve', { method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify({}) });
                 var d = await r.json();
@@ -56762,7 +56762,7 @@ ${body}
         }
 
         async function amUnapprove(ruleKey) {
-            if (!confirm('撤销「' + ruleKey + '」的审核？撤销后该规则不再自动发送，仅生成待发建议。')) return;
+            if (!await hrmsConfirm({ title: '撤销审核', message: '撤销「' + ruleKey + '」的审核？撤销后该规则不再自动发送，仅生成待发建议。', okText: '确认撤销', icon: '↩️' })) return;
             try {
                 var r = await fetch('/api/growth/touch-rules/' + encodeURIComponent(ruleKey) + '/unapprove', { method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify({}) });
                 var d = await r.json();
@@ -56798,7 +56798,7 @@ ${body}
         async function amSetFrequency(ruleKey) {
             var inp = document.getElementById('am-freq-' + ruleKey);
             var val = inp ? Math.max(0, Math.floor(Number(inp.value) || 0)) : 0;
-            if (!confirm('将「' + ruleKey + '」的发送频率设为' + (val > 0 ? ('每位会员每 ' + val + ' 天最多1次') : '按到店周期（默认）') + '？\n注意：修改频率会重置审核态，需重新「审核通过」后才会继续自动执行。')) return;
+            if (!await hrmsConfirm({ title: '设置发送频率', message: '将「' + ruleKey + '」的发送频率设为' + (val > 0 ? ('每位会员每 ' + val + ' 天最多1次') : '按到店周期（默认）') + '？注意：修改频率会重置审核态，需重新「审核通过」后才会继续自动执行。', okText: '确认保存', icon: '⏱️' })) return;
             try {
                 var rg = await fetch('/api/growth/touch-rules', { headers: growthAuthHeaders() }).then(function(r){return r.json();});
                 var rule = ((rg && rg.rules) || []).find(function(x){ return x.rule_key === ruleKey; });
@@ -56831,7 +56831,7 @@ ${body}
             var tpl = tInp ? String(tInp.value || '').trim() : '';
             if (vInp && valYuan <= 0) { showNotification('券面额需大于 0 元', 'error'); return; }
             if (validDays <= 0) { showNotification('有效期需大于 0 天', 'error'); return; }
-            if (!confirm('将「' + ruleKey + '」设为：券面额 ¥' + valYuan + ' · 有效期 ' + validDays + ' 天？\n注意：修改会重置审核态，需重新「审核通过」后才会继续自动执行。')) return;
+            if (!await hrmsConfirm({ title: '设置券面额/有效期', message: '将「' + ruleKey + '」设为：券面额 ¥' + valYuan + ' · 有效期 ' + validDays + ' 天？注意：修改会重置审核态，需重新「审核通过」后才会继续自动执行。', okText: '确认保存', icon: '🎟️' })) return;
             try {
                 var rg = await fetch('/api/growth/touch-rules', { headers: growthAuthHeaders() }).then(function(r){return r.json();});
                 var rule = ((rg && rg.rules) || []).find(function(x){ return x.rule_key === ruleKey; });
@@ -56897,7 +56897,7 @@ ${body}
             if (channel === 'sms' && newName) extra += '\n规则标题将同步为：' + newName;
             if (channel === 'member') extra += '\n注意：小程序站内券需在 action_payload 配置 member_template_id（券模板ID），否则会跳过下发。';
             if (channel === 'subscribe') extra += '\n注意：订阅消息仅能发给已「订阅授权」且有剩余次数的用户（微信硬约束）。';
-            if (!confirm('将「' + ruleKey + '」投放渠道设为：' + chName + extra + '\n\n注意：修改渠道会重置审核态，需重新「审核通过」后才会继续自动执行。')) return;
+            if (!await hrmsConfirm({ title: '设置投放渠道', message: '将「' + ruleKey + '」投放渠道设为：' + chName + extra.replace(/\n/g, ' ') + ' 注意：修改渠道会重置审核态，需重新「审核通过」后才会继续自动执行。', okText: '确认保存', icon: '📡' })) return;
             try {
                 var rg = await fetch('/api/growth/touch-rules', { headers: growthAuthHeaders() }).then(function(r){return r.json();});
                 var rule = ((rg && rg.rules) || []).find(function(x){ return x.rule_key === ruleKey; });
