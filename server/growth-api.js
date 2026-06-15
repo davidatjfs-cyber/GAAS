@@ -1026,6 +1026,16 @@ async function upsertCustomer(pool, payload) {
     existing = r.rows[0] || null;
   }
 
+  // 若按手机号匹配到的记录将把 openid 改写为另一条记录已占用的值（同一 openid 此前绑定在不同/无手机号的记录上），
+  // 先释放该记录的 openid，避免下面的 UPDATE 触发 uq_growth_customers_openid 冲突。
+  if (existing && openid && existing.openid !== openid) {
+    const conflict = await pool.query('SELECT id FROM growth_customers WHERE openid = $1 LIMIT 1', [openid]);
+    const conflictId = conflict.rows[0]?.id;
+    if (conflictId && conflictId !== existing.id) {
+      await pool.query('UPDATE growth_customers SET openid = NULL, updated_at = NOW() WHERE id = $1', [conflictId]);
+    }
+  }
+
   if (existing) {
     const r = await pool.query(
       `UPDATE growth_customers SET
@@ -1045,6 +1055,13 @@ async function upsertCustomer(pool, payload) {
     const r = await pool.query(
       `INSERT INTO growth_customers (phone, openid, external_userid, first_store_id, last_store_id, meta)
        VALUES (NULLIF($1,''), NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($4,''), $5::jsonb)
+       ON CONFLICT (openid) WHERE openid IS NOT NULL AND openid <> '' DO UPDATE SET
+         phone = COALESCE(growth_customers.phone, EXCLUDED.phone),
+         external_userid = COALESCE(EXCLUDED.external_userid, growth_customers.external_userid),
+         last_store_id = COALESCE(EXCLUDED.last_store_id, growth_customers.last_store_id),
+         last_seen_at = NOW(),
+         meta = COALESCE(growth_customers.meta, '{}'::jsonb) || EXCLUDED.meta,
+         updated_at = NOW()
        RETURNING *`,
       [phone, openid, externalUserId, storeId, JSON.stringify(meta)]
     );
@@ -1283,6 +1300,40 @@ async function recomputeCustomerProfiles(pool, days = 90) {
   `);
 
   return safeDays;
+}
+
+// 核销时小程序常未填消费金额（amount_fen=0），且POS数据是按天批量同步、核销当时查不到。
+// 每天凌晨批量补算：按"同门店+同手机号+核销时间前后2小时内最近一单"匹配 pos_orders 回填，
+// 只扫近7天内仍为0的核销记录，匹配不到则保持0（不影响现有数据）。
+async function backfillRedemptionAmounts(pool) {
+  const r = await pool.query(`
+    WITH matched AS (
+      SELECT DISTINCT ON (gr.id) gr.id AS redemption_id, po.amount_after_discount
+      FROM growth_redemptions gr
+      JOIN growth_customers gc ON gc.id = gr.customer_id
+      JOIN pos_orders po ON po.store_id = gr.store_id AND po.phone = gc.phone
+        AND po.order_time BETWEEN gr.redeemed_at - INTERVAL '2 hours' AND gr.redeemed_at + INTERVAL '30 minutes'
+      WHERE gr.amount_fen = 0
+        AND gr.redeemed_at >= NOW() - INTERVAL '7 days'
+        AND NULLIF(gc.phone, '') IS NOT NULL
+        AND NULLIF(gr.store_id, '') IS NOT NULL
+      ORDER BY gr.id, ABS(EXTRACT(EPOCH FROM (po.order_time - gr.redeemed_at)))
+    )
+    UPDATE growth_redemptions gr
+    SET amount_fen = GREATEST(0, ROUND(matched.amount_after_discount * 100))
+    FROM matched
+    WHERE gr.id = matched.redemption_id
+    RETURNING gr.id
+  `);
+  // 同步把对应的 coupon_redeemed 事件记录一起补齐，保持两表一致。
+  await pool.query(`
+    UPDATE growth_events ge
+    SET amount_fen = gr.amount_fen
+    FROM growth_redemptions gr
+    WHERE ge.event_type = 'coupon_redeemed' AND ge.amount_fen = 0 AND gr.amount_fen > 0
+      AND ge.customer_id = gr.customer_id AND ge.coupon_id = gr.coupon_id AND ge.occurred_at = gr.redeemed_at
+  `).catch(() => {});
+  return r.rows.length;
 }
 
 async function appendExecutionLog(pool, payload) {
@@ -3669,31 +3720,6 @@ export function registerGrowthRoutes(app, pool) {
         );
       }
 
-      // 核销时若小程序未填消费金额，按"同门店+同手机号+核销时间前后"匹配最近一笔POS订单自动回填，
-      // 避免店员漏填导致营收/ROI统计为0；匹配不到则保持0，不影响现有行为。
-      let effectiveAmountFen = amountFen;
-      if (eventType === 'coupon_redeemed' && effectiveAmountFen === 0) {
-        const redeemPhone = cleanPhone(body.phone) || customer?.phone || '';
-        if (redeemPhone && storeId) {
-          try {
-            const posMatch = await pool.query(
-              `SELECT amount_after_discount
-                 FROM pos_orders
-                WHERE store_id = $1 AND phone = $2
-                  AND order_time BETWEEN $3::timestamptz - INTERVAL '2 hours' AND $3::timestamptz + INTERVAL '30 minutes'
-                ORDER BY ABS(EXTRACT(EPOCH FROM (order_time - $3::timestamptz)))
-                LIMIT 1`,
-              [storeId, redeemPhone, occurredAt]
-            );
-            if (posMatch.rows.length) {
-              effectiveAmountFen = Math.max(0, Math.round(Number(posMatch.rows[0].amount_after_discount || 0) * 100));
-            }
-          } catch (e) {
-            console.warn('[growth] pos amount auto-fill failed:', e?.message);
-          }
-        }
-      }
-
       const inserted = await pool.query(
         `INSERT INTO growth_events (
            event_type, customer_id, phone, openid, external_userid, store_id, campaign_id, channel,
@@ -3712,7 +3738,7 @@ export function registerGrowthRoutes(app, pool) {
           channel,
           cleanText(body.coupon_id, 128),
           cleanText(body.order_id, 128),
-          effectiveAmountFen,
+          amountFen,
           idempotencyKey,
           JSON.stringify(metadata),
           occurredAt
@@ -3724,7 +3750,7 @@ export function registerGrowthRoutes(app, pool) {
           `INSERT INTO growth_redemptions (customer_id, coupon_id, campaign_id, store_id, amount_fen, metadata, redeemed_at)
            VALUES ($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6::jsonb,$7)
            ON CONFLICT DO NOTHING`,
-          [customer?.id || null, cleanText(body.coupon_id, 128), campaignId, storeId, effectiveAmountFen, JSON.stringify(metadata), occurredAt]
+          [customer?.id || null, cleanText(body.coupon_id, 128), campaignId, storeId, amountFen, JSON.stringify(metadata), occurredAt]
         );
         // 闭环回写：按核销回传的短码，把对应「已发送」短信日志翻成「已核销」，
         // 使 growth_delivery_logs 单表即可查「发→核销」全过程（核销率 = redeemed / sent）。
@@ -4289,6 +4315,21 @@ export function registerGrowthRoutes(app, pool) {
       .catch((e) => console.warn('[profiles] recompute failed:', e?.message));
     setTimeout(runProfileRecompute, 20000);
     globalThis.__growthProfileTimer = setInterval(runProfileRecompute, 24 * 60 * 60 * 1000);
+  }
+  // 核销消费金额每天凌晨2点(北京时间)批量补算一次：POS数据是按天同步的，核销当时大概率查不到，
+  // 等次日POS数据到位后统一回填近7天内仍为0的核销记录。
+  if (!globalThis.__growthRedemptionBackfillTimer) {
+    let __growthRedemptionBackfillLastYmd = '';
+    const runBackfill = () => {
+      const nowCst = new Date(Date.now() + 8 * 3600000);
+      const ymd = nowCst.toISOString().slice(0, 10);
+      if (nowCst.getUTCHours() < 2 || __growthRedemptionBackfillLastYmd === ymd) return;
+      __growthRedemptionBackfillLastYmd = ymd;
+      backfillRedemptionAmounts(pool)
+        .then((n) => console.log(`[growth] redemption amount backfill: ${n} rows updated`))
+        .catch((e) => console.warn('[growth] redemption amount backfill failed:', e?.message));
+    };
+    globalThis.__growthRedemptionBackfillTimer = setInterval(runBackfill, 10 * 60 * 1000);
   }
   app.get('/api/growth/touch-rules/audience', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
