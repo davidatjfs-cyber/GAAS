@@ -1776,19 +1776,20 @@ function pickAbcTemplate(step, storeId) {
   return def;
 }
 
-// 按"该手机号在本活动下累计成功发送次数"纯推导当前应发的模板步骤+降频阶梯天数；
-// 走完一轮(顺序数组长度次)后进入降频阶梯 15/30/45/60 天，每阶段再走一轮；
-// 阶梯也走完(总次数 >= 模板数*5)后该客户对本活动进入"红名单"，不再自动触达。
+// 按"该手机号在本活动下累计成功发送次数"纯推导当前应发的模板步骤+降频阶梯天数。
+// 单调降频：第1轮起每条间隔即按阶梯 15→30→45→60 天逐轮变慢；共走 4 轮(=阶梯长度)，
+// 每轮一整套模板(常规段6条/马己仙拆分段3条)；满 模板数×4 条(常规24/马己仙12)仍未回应
+// → 该客户对本活动进入"红名单"，不再自动触达。中途到店消费会清零(见 countCampaignSent)。
 function deriveAbcStep(campaignKey, totalSent) {
   const order = ABC_ROTATION_ORDER[campaignKey];
   if (!order) return { step: null, freqDaysOverride: null, blacklisted: false };
-  const ladder = ABC_DEFAULT_LADDER_DAYS;
+  const ladder = ABC_DEFAULT_LADDER_DAYS; // [15,30,45,60]
   const perCycle = order.length;
-  const blacklistAt = perCycle * (1 + ladder.length);
+  const blacklistAt = perCycle * ladder.length; // 常规6×4=24，马己仙3×4=12
   if (totalSent >= blacklistAt) return { step: null, freqDaysOverride: null, blacklisted: true };
-  const cycleIdx = Math.floor(totalSent / perCycle);
+  const cycleIdx = Math.floor(totalSent / perCycle); // 0..3
   const posInCycle = totalSent % perCycle;
-  const freqDaysOverride = cycleIdx > 0 ? ladder[cycleIdx - 1] : null;
+  const freqDaysOverride = ladder[cycleIdx]; // 第1轮即15，单调15/30/45/60
   return { step: order[posInCycle], freqDaysOverride, blacklisted: false };
 }
 
@@ -1807,6 +1808,35 @@ async function countCampaignSent(pool, campaignKey, phone) {
     [campaignKey, p]
   );
   return Number(r.rows[0]?.n) || 0;
+}
+
+// 跨活动疲劳总闸：某号码在 MARKETING_FATIGUE_WINDOW_DAYS(默认90)天内、且「最近一次到店之后」
+// 累计收到的【任意活动】营销短信达到 MARKETING_FATIGUE_MAX(默认8)条仍未回店 → 暂停其所有营销短信。
+// 解决「不回应客人随距今天数变大滑过多个标签、每段ABC计数清零导致跨标签累计轰炸」的问题。
+// 一旦到店消费，post-visit 计数归零，疲劳状态自动解除。返回 true=已疲劳应暂停。
+function marketingFatigueMax() {
+  const v = Number(process.env.MARKETING_FATIGUE_MAX);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 8;
+}
+function marketingFatigueWindowDays() {
+  const v = Number(process.env.MARKETING_FATIGUE_WINDOW_DAYS);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 90;
+}
+async function marketingFatigueCapped(pool, phone) {
+  const p = String(phone || '').trim();
+  if (!p) return false;
+  const max = marketingFatigueMax();
+  const win = marketingFatigueWindowDays();
+  const r = await pool.query(
+    `SELECT count(*)::int n FROM growth_delivery_logs
+      WHERE channel='sms' AND status='sent' AND payload->>'phone' = $1
+        AND created_at > now() - ($2 || ' days')::interval
+        AND created_at > COALESCE(
+          (SELECT MAX(pos_last_order_at) FROM growth_customer_profiles WHERE phone = $1),
+          '1970-01-01'::timestamptz)`,
+    [p, String(win)]
+  );
+  return (Number(r.rows[0]?.n) || 0) >= max;
 }
 
 // holdout 对照组：md5(phone) 前4位十六进制 %100 < pct 即入对照组（确定性、与活动无关的均匀抽样）。
@@ -2614,27 +2644,45 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
   // 抑制名单：停机/黑名单号码冻结前剔除（发送端也兜底，此处避免空建券）
   const supRes = await pool.query(`SELECT phone FROM growth_sms_suppression`);
   const suppressedSet = new Set((supRes.rows || []).map((r) => String(r.phone || '')));
-  // ABC 6模板滚动：批量预取每个手机号在本活动下累计成功发送次数，用于推导当前轮换步骤。
+  const candPhones = [...new Set(candidates.map((c) => cleanPhone(c.phone)).filter(Boolean))];
+  // 跨活动疲劳总闸：近 window 天内、最近一次到店之后累计收满 max 条【任意活动】营销短信仍未回店
+  // → 暂停其所有营销(冻结前剔除，避免空建券；发送端 marketingFatigueCapped 再兜底)。
+  let fatigueSet = new Set();
+  if (candPhones.length) {
+    const fr = await pool.query(
+      `WITH lastvisit AS (
+         SELECT phone, MAX(pos_last_order_at) AS lv FROM growth_customer_profiles
+          WHERE phone = ANY($1::text[]) GROUP BY phone
+       )
+       SELECT dl.payload->>'phone' AS phone FROM growth_delivery_logs dl
+         LEFT JOIN lastvisit lv ON lv.phone = dl.payload->>'phone'
+        WHERE dl.channel='sms' AND dl.status='sent'
+          AND dl.payload->>'phone' = ANY($1::text[])
+          AND dl.created_at > now() - ($2 || ' days')::interval
+          AND dl.created_at > COALESCE(lv.lv, '1970-01-01'::timestamptz)
+        GROUP BY 1 HAVING count(*) >= $3`,
+      [candPhones, String(marketingFatigueWindowDays()), marketingFatigueMax()]
+    );
+    fatigueSet = new Set((fr.rows || []).map((r) => String(r.phone || '')).filter(Boolean));
+  }
+  // ABC 滚动：批量预取每个手机号在本活动下「最近一次到店之后」的成功发送数 n + 最后发送时间，
+  // 用于推导当前轮换步骤(n)与每步降频冷却(last_sent，避免冷却期内重复建券超发券)。
   let abcSentByPhone = new Map();
-  if (abcOrder) {
-    const abcPhones = [...new Set(candidates.map((c) => cleanPhone(c.phone)).filter(Boolean))];
-    if (abcPhones.length) {
-      // 「到店即清零」：仅统计各手机号最近一次到店(pos_last_order_at)之后的成功发送数。
-      const sc = await pool.query(
-        `WITH lastvisit AS (
-           SELECT phone, MAX(pos_last_order_at) AS lv FROM growth_customer_profiles
-            WHERE phone = ANY($2::text[]) GROUP BY phone
-         )
-         SELECT dl.payload->>'phone' AS phone, count(*)::int n FROM growth_delivery_logs dl
-           LEFT JOIN lastvisit lv ON lv.phone = dl.payload->>'phone'
-          WHERE dl.channel='sms' AND dl.status='sent' AND dl.rule_key = $1
-            AND dl.payload->>'phone' = ANY($2::text[])
-            AND dl.created_at > COALESCE(lv.lv, '1970-01-01'::timestamptz)
-          GROUP BY 1`,
-        [campaignKey, abcPhones]
-      );
-      abcSentByPhone = new Map(sc.rows.map((r) => [r.phone, Number(r.n)]));
-    }
+  if (abcOrder && candPhones.length) {
+    const sc = await pool.query(
+      `WITH lastvisit AS (
+         SELECT phone, MAX(pos_last_order_at) AS lv FROM growth_customer_profiles
+          WHERE phone = ANY($2::text[]) GROUP BY phone
+       )
+       SELECT dl.payload->>'phone' AS phone, count(*)::int n, MAX(dl.created_at) AS last_sent FROM growth_delivery_logs dl
+         LEFT JOIN lastvisit lv ON lv.phone = dl.payload->>'phone'
+        WHERE dl.channel='sms' AND dl.status='sent' AND dl.rule_key = $1
+          AND dl.payload->>'phone' = ANY($2::text[])
+          AND dl.created_at > COALESCE(lv.lv, '1970-01-01'::timestamptz)
+        GROUP BY 1`,
+      [campaignKey, candPhones]
+    );
+    abcSentByPhone = new Map(sc.rows.map((r) => [r.phone, { n: Number(r.n), last: r.last_sent ? new Date(r.last_sent).getTime() : null }]));
   }
   // 变体分配：A/B 面额实验(ab_value_split=[a分,b分]，按手机号哈希均分) 优先于
   // 价值分档(coupon_value_fen_high：历史消费≥阈值的客人发高档面额)。都未配置则单一面额。
@@ -2663,14 +2711,18 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
     if (!phone) continue;
     if (recentSentSet.has(phone)) continue; // 近期已触达，跳过(防重复)
     if (suppressedSet.has(phone)) continue; // 永久抑制(停机/黑名单)
+    if (fatigueSet.has(phone)) continue; // 跨活动疲劳：累计触达过多仍未回店 → 暂停所有营销
     const sid = String(row.store_id || ap.store_id || '').trim();
     if (!sid) continue;
     let variant = null;
     let abcStep = null;
     if (abcOrder) {
-      const totalSent = abcSentByPhone.get(phone) || 0;
-      const derived = deriveAbcStep(campaignKey, totalSent);
+      const rec = abcSentByPhone.get(phone) || { n: 0, last: null };
+      const derived = deriveAbcStep(campaignKey, rec.n);
       if (derived.blacklisted) continue; // 已走完降频阶梯仍未回应 → 红名单，本活动不再自动触达
+      // 降频冷却：距上次成功发送不足本步阶梯天数 → 跳过，避免冷却期内反复建券/超发券
+      if (rec.last && derived.freqDaysOverride > 0 &&
+          (Date.now() - rec.last) < derived.freqDaysOverride * 86400000) continue;
       if (!pickAbcTemplate(derived.step, sid)) continue; // 该门店该步骤模板未配置(后补)→跳过
       abcStep = derived.step;
       variant = { suffix: `_${abcStep}`, valueYuan: Math.floor(ABC_STEP_DEFS[abcStep].coupon_value_fen / 100) };
@@ -3564,6 +3616,8 @@ export function registerGrowthRoutes(app, pool) {
       if (gCap) return res.json({ ok: true, skipped: true, reason: 'global_frequency_capped', frequency_days: gCap });
       // 永久抑制名单：停机/空号/黑名单号码不再发送
       if (await isPhoneSuppressed(pool, phone)) return res.json({ ok: true, skipped: true, reason: 'suppressed' });
+      // 跨活动疲劳总闸：近90天最近到店后累计收满8条任意活动短信仍未回店 → 暂停所有营销
+      if (await marketingFatigueCapped(pool, phone)) return res.json({ ok: true, skipped: true, reason: 'marketing_fatigue' });
       // 触达上限：同活动累计发满 N 次(默认3)仍未回店 → 停发本活动。ABC 轮换自带 15/30/45/60天
       // 降频阶梯+红名单机制，不再叠加此上限。
       if (!abcOrder && await campaignTouchCapped(pool, campaignKey, phone)) return res.json({ ok: true, skipped: true, reason: 'touch_capped' });
@@ -4402,16 +4456,16 @@ export function registerGrowthRoutes(app, pool) {
 
     const dist = {};
     for (const step of order) dist[step] = 0;
-    let cycling = 0; // 已完成第一轮(正常频率)，进入降频阶梯
+    let cycling = 0; // 已走完至少一轮、进入更慢降频轮次(第2轮及以后)的人数
     let blacklisted = 0;
     for (const c of candidates) {
       const phone = cleanPhone(c.phone);
       if (!phone) continue;
       const totalSent = sentByPhone.get(phone) || 0;
-      const { step, freqDaysOverride, blacklisted: bl } = deriveAbcStep(campaignKey, totalSent);
+      const { step, blacklisted: bl } = deriveAbcStep(campaignKey, totalSent);
       if (bl) { blacklisted++; continue; }
       dist[step] = (dist[step] || 0) + 1;
-      if (freqDaysOverride != null) cycling++;
+      if (totalSent >= order.length) cycling++; // 超过一轮(perCycle)即已进入降频后续轮次
     }
     return res.json({ ok: true, enabled: true, total: candidates.length, step_distribution: dist, cycling, blacklisted });
   });
