@@ -580,6 +580,8 @@ export async function ensureGrowthTables(pool) {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_delivery_logs_action ON growth_delivery_logs (action_key, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_delivery_logs_msg ON growth_delivery_logs (provider_msg_id, created_at DESC)`);
+  // ABC 6模板滚动：按 rule_key(=campaign_key)+手机号统计累计成功发送次数，加速轮换推导。
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_delivery_logs_rule_phone_status ON growth_delivery_logs (rule_key, status, (payload->>'phone'))`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS store_wecom_configs (
@@ -1729,6 +1731,84 @@ async function campaignTouchCapped(pool, campaignKey, phone) {
   return (Number(r.rows[0]?.n) || 0) >= cap;
 }
 
+const ABC_DEFAULT_LADDER_DAYS = [15, 30, 45, 60];
+
+// ABC方案轮换(活动制)：8条常规段「赠菜A/B/C + 赠券30/50/2X50」共6个模板按固定顺序轮换
+// (顺序差异=先菜后券 vs 先券后菜)；马己仙晚市2条拆分段各自只含本组3个模板。
+// 顺序即"该客户在本活动下累计成功发送次数 % 模板数"对应到第几个模板。
+const ABC_ROTATION_ORDER = {
+  vip_gift:               ['giftA', 'giftB', 'giftC', 'coupon30', 'coupon50', 'coupon2x50'], // VIP客户维护：先菜后券
+  active:                 ['giftA', 'giftB', 'giftC', 'coupon30', 'coupon50', 'coupon2x50'], // 活跃客经营：先菜后券
+  regular_cooling:        ['giftA', 'giftB', 'giftC', 'coupon30', 'coupon50', 'coupon2x50'], // 常客降温唤醒21-60天：先菜后券
+  dormant_90_180:         ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 沉睡召回90-180天：先券后菜
+  newcomer_recall:        ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 新客二次召回21-60天：先券后菜
+  dormant_60_90:          ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 沉睡召回60-90天：先券后菜
+  vip_winback:            ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // VIP专属召回61-365天：先券后菜
+  lost_long:              ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 长期流失召回181-365天：先券后菜
+  lost_over365:           ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 长期流失超1年召回：先券后菜
+  mj_dinner_weekend_gift: ['giftA', 'giftB', 'giftC'],                                       // 马己仙晚市·免费菜组：只赠菜
+  mj_dinner_weekend:      ['coupon30', 'coupon50', 'coupon2x50'],                            // 马己仙晚市·现金券组：只赠券
+};
+
+// 6个模板各自的短信变量集合与券面额/张数。2X50=2张50元券(coupon_count:2)，
+// 与现有 lost_long/lost_over365 的「2张/1码核销2次」模式一致。
+const ABC_STEP_DEFS = {
+  giftA:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
+  giftB:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
+  giftC:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
+  coupon30:   { vars: ['value', 'date', 'code'], coupon_value_fen: 3000, coupon_count: 1 },
+  coupon50:   { vars: ['value', 'date', 'code'], coupon_value_fen: 5000, coupon_count: 1 },
+  coupon2x50: { vars: ['value', 'date', 'code'], coupon_value_fen: 5000, coupon_count: 2 },
+};
+
+// 按模板步骤+门店解析阿里云模板code：ALIYUN_SMS_ABC<STEP>_<MAJIXIAN|HONGCHAO|DEFAULT>
+const ABC_STEP_TPL_PREFIX = {
+  giftA: 'ABCGIFTA', giftB: 'ABCGIFTB', giftC: 'ABCGIFTC',
+  coupon30: 'ABCCOUPON30', coupon50: 'ABCCOUPON50', coupon2x50: 'ABCCOUPON2X50',
+};
+function pickAbcTemplate(step, storeId) {
+  const pfx = ABC_STEP_TPL_PREFIX[step];
+  if (!pfx) return '';
+  const sid = String(storeId || '').trim();
+  const def = String(process.env[`ALIYUN_SMS_${pfx}_DEFAULT`] || '').trim();
+  if (sid === '64822111') return String(process.env[`ALIYUN_SMS_${pfx}_HONGCHAO`] || '').trim() || def; // 洪潮
+  if (sid === '51866138') return String(process.env[`ALIYUN_SMS_${pfx}_MAJIXIAN`] || '').trim() || def; // 马己仙
+  return def;
+}
+
+// 按"该手机号在本活动下累计成功发送次数"纯推导当前应发的模板步骤+降频阶梯天数；
+// 走完一轮(顺序数组长度次)后进入降频阶梯 15/30/45/60 天，每阶段再走一轮；
+// 阶梯也走完(总次数 >= 模板数*5)后该客户对本活动进入"红名单"，不再自动触达。
+function deriveAbcStep(campaignKey, totalSent) {
+  const order = ABC_ROTATION_ORDER[campaignKey];
+  if (!order) return { step: null, freqDaysOverride: null, blacklisted: false };
+  const ladder = ABC_DEFAULT_LADDER_DAYS;
+  const perCycle = order.length;
+  const blacklistAt = perCycle * (1 + ladder.length);
+  if (totalSent >= blacklistAt) return { step: null, freqDaysOverride: null, blacklisted: true };
+  const cycleIdx = Math.floor(totalSent / perCycle);
+  const posInCycle = totalSent % perCycle;
+  const freqDaysOverride = cycleIdx > 0 ? ladder[cycleIdx - 1] : null;
+  return { step: order[posInCycle], freqDaysOverride, blacklisted: false };
+}
+
+// 「到店即清零」：轮换计数只统计客户「最近一次到店(pos_last_order_at)之后」的成功发送数。
+// 这样自循环段(VIP客户维护/活跃客经营)里每次回头消费都会让轮换从头开始、不会把忠诚回头客
+// 误推进降频阶梯/红名单；而真正不回头的客户发送数持续累积，照常走阶梯并最终入红名单。
+// 从未到店(pos_last_order_at 为空)的潜客则统计全部发送数(无到店可清零)。
+async function countCampaignSent(pool, campaignKey, phone) {
+  const p = String(phone || '').trim();
+  const r = await pool.query(
+    `SELECT count(*)::int n FROM growth_delivery_logs
+      WHERE channel='sms' AND status='sent' AND rule_key = $1 AND payload->>'phone' = $2
+        AND created_at > COALESCE(
+          (SELECT MAX(pos_last_order_at) FROM growth_customer_profiles WHERE phone = $2),
+          '1970-01-01'::timestamptz)`,
+    [campaignKey, p]
+  );
+  return Number(r.rows[0]?.n) || 0;
+}
+
 // holdout 对照组：md5(phone) 前4位十六进制 %100 < pct 即入对照组（确定性、与活动无关的均匀抽样）。
 function holdoutPct() {
   const v = Number(process.env.GROWTH_HOLDOUT_PCT);
@@ -2515,8 +2595,10 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
   if (!ok) return { enqueued: 0, skipped: 'governance' };
   const valueYuan = Math.max(0, Math.floor(Number(ap.coupon_value_fen || ap.value_fen || 0) / 100));
   const validDays = Math.max(1, Math.floor(Number(ap.valid_days) || 14));
+  const abcOrder = ABC_ROTATION_ORDER[campaignKey];
   const needsValue = Array.isArray(cfg.vars) && cfg.vars.includes('value');
-  if (needsValue && valueYuan <= 0) return { enqueued: 0, skipped: 'missing_value' };
+  // ABC 6模板滚动：面额按当前模板步骤(ABC_STEP_DEFS)推导，不依赖规则自身的 coupon_value_fen。
+  if (needsValue && valueYuan <= 0 && !abcOrder) return { enqueued: 0, skipped: 'missing_value' };
   // 冻结前预排除「近 global-freq 天内已成功发过短信」的号码：与发送端 globalSmsCapped 同口径，
   // 双保险确保不对已触达客户重复建券/重复发短信(发送端也会再兜底跳过，此处避免空建券)。
   const gDays = freqDaysEnv('ALIYUN_SMS_GLOBAL_FREQUENCY_DAYS', 7);
@@ -2532,6 +2614,28 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
   // 抑制名单：停机/黑名单号码冻结前剔除（发送端也兜底，此处避免空建券）
   const supRes = await pool.query(`SELECT phone FROM growth_sms_suppression`);
   const suppressedSet = new Set((supRes.rows || []).map((r) => String(r.phone || '')));
+  // ABC 6模板滚动：批量预取每个手机号在本活动下累计成功发送次数，用于推导当前轮换步骤。
+  let abcSentByPhone = new Map();
+  if (abcOrder) {
+    const abcPhones = [...new Set(candidates.map((c) => cleanPhone(c.phone)).filter(Boolean))];
+    if (abcPhones.length) {
+      // 「到店即清零」：仅统计各手机号最近一次到店(pos_last_order_at)之后的成功发送数。
+      const sc = await pool.query(
+        `WITH lastvisit AS (
+           SELECT phone, MAX(pos_last_order_at) AS lv FROM growth_customer_profiles
+            WHERE phone = ANY($2::text[]) GROUP BY phone
+         )
+         SELECT dl.payload->>'phone' AS phone, count(*)::int n FROM growth_delivery_logs dl
+           LEFT JOIN lastvisit lv ON lv.phone = dl.payload->>'phone'
+          WHERE dl.channel='sms' AND dl.status='sent' AND dl.rule_key = $1
+            AND dl.payload->>'phone' = ANY($2::text[])
+            AND dl.created_at > COALESCE(lv.lv, '1970-01-01'::timestamptz)
+          GROUP BY 1`,
+        [campaignKey, abcPhones]
+      );
+      abcSentByPhone = new Map(sc.rows.map((r) => [r.phone, Number(r.n)]));
+    }
+  }
   // 变体分配：A/B 面额实验(ab_value_split=[a分,b分]，按手机号哈希均分) 优先于
   // 价值分档(coupon_value_fen_high：历史消费≥阈值的客人发高档面额)。都未配置则单一面额。
   const abSplit = Array.isArray(ap.ab_value_split) && ap.ab_value_split.length === 2
@@ -2561,7 +2665,18 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
     if (suppressedSet.has(phone)) continue; // 永久抑制(停机/黑名单)
     const sid = String(row.store_id || ap.store_id || '').trim();
     if (!sid) continue;
-    if (!pickCampaignTemplate(campaignKey, sid)) continue; // 该门店模板未配置(后补)→跳过，防整批拒收
+    let variant = null;
+    let abcStep = null;
+    if (abcOrder) {
+      const totalSent = abcSentByPhone.get(phone) || 0;
+      const derived = deriveAbcStep(campaignKey, totalSent);
+      if (derived.blacklisted) continue; // 已走完降频阶梯仍未回应 → 红名单，本活动不再自动触达
+      if (!pickAbcTemplate(derived.step, sid)) continue; // 该门店该步骤模板未配置(后补)→跳过
+      abcStep = derived.step;
+      variant = { suffix: `_${abcStep}`, valueYuan: Math.floor(ABC_STEP_DEFS[abcStep].coupon_value_fen / 100) };
+    } else {
+      if (!pickCampaignTemplate(campaignKey, sid)) continue; // 该门店模板未配置(后补)→跳过，防整批拒收
+    }
     // holdout 对照组：确定性抽样不发送，仅记录，用于衡量真实增量
     if (hPct > 0 && phoneHashPct(phone) < hPct) {
       heldOut++;
@@ -2572,9 +2687,9 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
       ).catch(() => {});
       continue;
     }
-    const variant = pickVariant(row, phone);
+    if (!variant) variant = pickVariant(row, phone);
     const gKey = `${sid}${variant.suffix}`;
-    if (!byGroup.has(gKey)) byGroup.set(gKey, { sid, variant, targets: [] });
+    if (!byGroup.has(gKey)) byGroup.set(gKey, { sid, variant, abcStep, targets: [] });
     byGroup.get(gKey).targets.push({ phone, name: row.customer_name || '' });
   }
   const today = new Date().toISOString().slice(0, 10);
@@ -2584,8 +2699,13 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
     const campaignId = `auto_${campaignKey}_${g.sid}_${today}${g.variant.suffix}`;
     const exist = await pool.query(`SELECT 1 FROM growth_campaign_jobs WHERE campaign_id = $1 LIMIT 1`, [campaignId]);
     if (exist.rows.length) continue; // 当日已冻结，避免重复
-    const result = { campaign_key: campaignKey, coupon_count: cfg.coupon_count, rule_key: rule.rule_key };
+    const result = {
+      campaign_key: campaignKey,
+      coupon_count: g.abcStep ? ABC_STEP_DEFS[g.abcStep].coupon_count : cfg.coupon_count,
+      rule_key: rule.rule_key,
+    };
     if (g.variant.suffix) result.variant = g.variant.suffix.slice(1);
+    if (g.abcStep) result.abc_step = g.abcStep;
     await pool.query(
       `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result)
        VALUES ($1,$2,$3,$4,0,0,$5::jsonb,$6,'pending',$7,$8,$9::jsonb)`,
@@ -2692,7 +2812,7 @@ async function runTouchRuleEngine(pool, options = {}) {
       // 发送频率（冷却）：规则可设 frequency_days（每位会员最短重发间隔）。
       // 若该会员在 frequency_days 天内已被本规则成功触达过，则本轮跳过，避免高频打扰。
       // 未设置(0)时沿用默认的「每个到店周期最多 1 次」语义（由 period_key 去重保证）。
-      const freqDays = Math.max(0, Math.floor(Number((rule.action_payload || {}).frequency_days) || 0));
+      const freqDays = Math.max(0, Math.floor(Number(rule.action_payload?.frequency_days) || 0));
       if (freqDays > 0) {
         const recent = await pool.query(
           `SELECT 1 FROM growth_delivery_logs
@@ -3399,10 +3519,26 @@ export function registerGrowthRoutes(app, pool) {
       const idempotencyKey = cleanText(b.idempotency_key, 255) || (code ? `${campaignKey}:${code}` : '');
 
       if (!phone) return res.status(400).json({ ok: false, error: 'missing_phone' });
-      if (cfg.vars.includes('code') && !code) return res.status(400).json({ ok: false, error: 'missing_coupon_code' });
-      if (cfg.vars.includes('value') && valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
 
-      const templateCode = pickCampaignTemplate(campaignKey, storeId);
+      // ABC 6模板滚动：按该手机号在本活动下累计成功发送次数推导当前应发的模板步骤+降频阶梯天数。
+      const abcOrder = ABC_ROTATION_ORDER[campaignKey];
+      let effectiveVars = cfg.vars;
+      let templateCode;
+      let abcFreqDaysOverride = null;
+      let abcStep = null;
+      if (abcOrder) {
+        const totalSent = await countCampaignSent(pool, campaignKey, phone);
+        const derived = deriveAbcStep(campaignKey, totalSent);
+        if (derived.blacklisted) return res.json({ ok: true, skipped: true, reason: 'abc_blacklisted' });
+        abcStep = derived.step;
+        abcFreqDaysOverride = derived.freqDaysOverride;
+        effectiveVars = ABC_STEP_DEFS[abcStep].vars;
+        templateCode = pickAbcTemplate(abcStep, storeId);
+      } else {
+        templateCode = pickCampaignTemplate(campaignKey, storeId);
+      }
+      if (effectiveVars.includes('code') && !code) return res.status(400).json({ ok: false, error: 'missing_coupon_code' });
+      if (effectiveVars.includes('value') && valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
       if (!templateCode) return res.status(503).json({ ok: false, error: 'sms_template_not_configured' });
 
       // 幂等：同一券码已发过 → 不重复发
@@ -3410,8 +3546,9 @@ export function registerGrowthRoutes(app, pool) {
         const dup = await pool.query(`SELECT status FROM growth_delivery_logs WHERE delivery_key = $1 LIMIT 1`, [idempotencyKey]);
         if (dup.rows.length && dup.rows[0].status === 'sent') return res.json({ ok: true, deduped: true });
       }
-      // 触达频控：同一手机号 N 天内最多收 1 条本活动短信。
-      const freqDays = freqDaysEnv('ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS', 30);
+      // 触达频控：同一手机号 N 天内最多收 1 条本活动短信。ABC 轮换走完一轮后按降频阶梯
+      // (15/30/45/60天)覆盖默认频率。
+      const freqDays = abcFreqDaysOverride != null ? abcFreqDaysOverride : freqDaysEnv('ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS', 30);
       if (freqDays > 0) {
         const recent = await pool.query(
           `SELECT 1 FROM growth_delivery_logs
@@ -3427,14 +3564,15 @@ export function registerGrowthRoutes(app, pool) {
       if (gCap) return res.json({ ok: true, skipped: true, reason: 'global_frequency_capped', frequency_days: gCap });
       // 永久抑制名单：停机/空号/黑名单号码不再发送
       if (await isPhoneSuppressed(pool, phone)) return res.json({ ok: true, skipped: true, reason: 'suppressed' });
-      // 触达上限：同活动累计发满 N 次(默认3)仍未回店 → 停发本活动
-      if (await campaignTouchCapped(pool, campaignKey, phone)) return res.json({ ok: true, skipped: true, reason: 'touch_capped' });
+      // 触达上限：同活动累计发满 N 次(默认3)仍未回店 → 停发本活动。ABC 轮换自带 15/30/45/60天
+      // 降频阶梯+红名单机制，不再叠加此上限。
+      if (!abcOrder && await campaignTouchCapped(pool, campaignKey, phone)) return res.json({ ok: true, skipped: true, reason: 'touch_capped' });
       const deliveryKey = idempotencyKey || `${campaignKey}:${phone}:${Date.now()}`;
       // 严格按 vars 拼模板参数：缺/多变量阿里云都判「参数不匹配」整批拒收。
       const templateParam = {};
-      if (cfg.vars.includes('value')) templateParam.value = String(valueYuan);
-      if (cfg.vars.includes('date')) templateParam.date = validUntil;
-      if (cfg.vars.includes('code')) templateParam.code = code;
+      if (effectiveVars.includes('value')) templateParam.value = String(valueYuan);
+      if (effectiveVars.includes('date')) templateParam.date = validUntil;
+      if (effectiveVars.includes('code')) templateParam.code = code;
 
       try {
         const sent = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
@@ -4227,6 +4365,55 @@ export function registerGrowthRoutes(app, pool) {
       byKind[k].redeem_rate = byKind[k].sent > 0 ? Math.round(byKind[k].redeemed / byKind[k].sent * 10000) / 100 : null;
     }
     return res.json({ ok: true, days, stats, coupon_kind_summary: byKind });
+  });
+
+  // ABC 6模板滚动分布：该活动当前命中人群中，各模板步骤(赠菜A/B/C+赠券30/50/2X50)×
+  // 降频阶梯(0=正常频率,1+=第几轮降频)各有多少人、以及已进入「红名单」(阶梯走完未回应，
+  // 本活动不再自动触达)的人数。campaign_key 未配置 ABC 轮换时返回 enabled:false。
+  app.get('/api/growth/campaign/:campaignKey/abc-distribution', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    const campaignKey = cleanText(req.params.campaignKey, 64);
+    const order = ABC_ROTATION_ORDER[campaignKey];
+    if (!order) return res.json({ ok: true, enabled: false });
+    const ruleRes = await pool.query(
+      `SELECT * FROM growth_touch_rules WHERE action_payload->>'campaign_key' = $1 LIMIT 1`,
+      [campaignKey]
+    );
+    if (!ruleRes.rows.length) return res.status(404).json({ ok: false, error: 'rule_not_found' });
+    const rule = ruleRes.rows[0];
+
+    const candidates = (await loadRuleCandidates(pool, rule)).slice(0, 500);
+    const phones = [...new Set(candidates.map((c) => cleanPhone(c.phone)).filter(Boolean))];
+    const sentCounts = phones.length ? await pool.query(
+      // 「到店即清零」：与发送端同口径，只统计最近一次到店(pos_last_order_at)之后的成功发送数。
+      `WITH lastvisit AS (
+         SELECT phone, MAX(pos_last_order_at) AS lv FROM growth_customer_profiles
+          WHERE phone = ANY($2::text[]) GROUP BY phone
+       )
+       SELECT dl.payload->>'phone' AS phone, count(*)::int n FROM growth_delivery_logs dl
+         LEFT JOIN lastvisit lv ON lv.phone = dl.payload->>'phone'
+        WHERE dl.channel='sms' AND dl.status = 'sent' AND dl.rule_key = $1
+          AND dl.payload->>'phone' = ANY($2::text[])
+          AND dl.created_at > COALESCE(lv.lv, '1970-01-01'::timestamptz)
+        GROUP BY 1`,
+      [campaignKey, phones]
+    ) : { rows: [] };
+    const sentByPhone = new Map(sentCounts.rows.map((r) => [r.phone, Number(r.n)]));
+
+    const dist = {};
+    for (const step of order) dist[step] = 0;
+    let cycling = 0; // 已完成第一轮(正常频率)，进入降频阶梯
+    let blacklisted = 0;
+    for (const c of candidates) {
+      const phone = cleanPhone(c.phone);
+      if (!phone) continue;
+      const totalSent = sentByPhone.get(phone) || 0;
+      const { step, freqDaysOverride, blacklisted: bl } = deriveAbcStep(campaignKey, totalSent);
+      if (bl) { blacklisted++; continue; }
+      dist[step] = (dist[step] || 0) + 1;
+      if (freqDaysOverride != null) cycling++;
+    }
+    return res.json({ ok: true, enabled: true, total: candidates.length, step_distribution: dist, cycling, blacklisted });
   });
 
   // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
