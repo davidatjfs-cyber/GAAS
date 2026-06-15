@@ -3880,10 +3880,12 @@ export function registerGrowthRoutes(app, pool) {
     // 改了「目标人群/券额文案/动作类型」就要重新审核——避免审过的规则被人偷偷改条件后继续自动群发。
     const existing = await pool.query(`SELECT criteria, action_payload, action_type FROM growth_touch_rules WHERE rule_key = $1 LIMIT 1`, [ruleKey]);
     let keepApproval = false;
+    let criteriaChanged = true;
     if (existing.rows.length) {
       const ex = existing.rows[0];
+      criteriaChanged = JSON.stringify(ex.criteria || {}) !== criteriaStr;
       keepApproval =
-        JSON.stringify(ex.criteria || {}) === criteriaStr &&
+        !criteriaChanged &&
         JSON.stringify(ex.action_payload || {}) === payloadStr &&
         (ex.action_type || '') === actionType;
     }
@@ -3918,7 +3920,7 @@ export function registerGrowthRoutes(app, pool) {
         keepApproval
       ]
     );
-    if (!keepApproval) __touchRulesAudienceCache = { data: null, at: 0 }; // 人群定向变了，缓存失效
+    if (criteriaChanged) __touchRulesAudienceCache = { data: null, at: 0 }; // 人群定向变了，缓存失效
     return res.json({ ok: true, rule: r.rows[0] });
   });
 
