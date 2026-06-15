@@ -3918,6 +3918,7 @@ export function registerGrowthRoutes(app, pool) {
         keepApproval
       ]
     );
+    if (!keepApproval) __touchRulesAudienceCache = { data: null, at: 0 }; // 人群定向变了，缓存失效
     return res.json({ ok: true, rule: r.rows[0] });
   });
 
@@ -4175,8 +4176,14 @@ export function registerGrowthRoutes(app, pool) {
 
   // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
   // 用于前台展示活动覆盖范围，让管理员审核前清楚知道这次会发给多少人。
+  // 性能：全量人群扫描(~5s)，结果加3分钟缓存——保存规则后前台会立即重新拉取该接口，
+  // 不加缓存会让"保存→刷新"看起来像卡死；人群数据本身只随客户画像/分群每日更新，缓存几分钟无影响。
+  let __touchRulesAudienceCache = { data: null, at: 0 };
   app.get('/api/growth/touch-rules/audience', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
+    if (__touchRulesAudienceCache.data && Date.now() - __touchRulesAudienceCache.at < 180000) {
+      return res.json({ ok: true, audience: __touchRulesAudienceCache.data, cached: true });
+    }
     try {
       const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules ORDER BY rule_key ASC`);
       const audience = {};
@@ -4229,6 +4236,7 @@ export function registerGrowthRoutes(app, pool) {
           audience[rule.rule_key] = null; // 计算失败标记为未知，不阻断
         }
       }
+      __touchRulesAudienceCache = { data: audience, at: Date.now() };
       return res.json({ ok: true, audience });
     } catch (e) {
       return res.status(500).json({ ok: false, error: e?.message || 'audience_failed' });
