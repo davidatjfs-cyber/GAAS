@@ -2631,7 +2631,7 @@ const POS_STALE_DAYS = 3;
 // 治理门：仅在 规则已审核 + 启用 + auto + 短信总闸(ALIYUN_SMS_ENABLED)开 时才自动冻结，
 // 任一不满足都不发(开关默认关闭即全部静默，与 smsAutoBlocked 同款守护)。
 // 幂等：同活动+同店+同日 一个任务(引擎每15分钟跑)。频控/全局总闸由 /campaign/send-sms 在发送时兜底。
-async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
+async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey, claimedPhones = null) {
   const cfg = CAMPAIGN_TYPES[campaignKey];
   if (!cfg) return { enqueued: 0, skipped: 'unknown_campaign' };
   const ap = rule.action_payload || {};
@@ -2726,6 +2726,7 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
     if (recentSentSet.has(phone)) continue; // 近期已触达，跳过(防重复)
     if (suppressedSet.has(phone)) continue; // 永久抑制(停机/黑名单)
     if (fatigueSet.has(phone)) continue; // 跨活动疲劳：累计触达过多仍未回店 → 暂停所有营销
+    if (claimedPhones && claimedPhones.has(phone)) continue; // 本轮已被更高优先级活动占用 → 一人一活动
     const sid = String(row.store_id || ap.store_id || '').trim();
     if (!sid) continue;
     let variant = null;
@@ -2757,6 +2758,7 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey) {
     const gKey = `${sid}${variant.suffix}`;
     if (!byGroup.has(gKey)) byGroup.set(gKey, { sid, variant, abcStep, targets: [] });
     byGroup.get(gKey).targets.push({ phone, name: row.customer_name || '' });
+    if (claimedPhones) claimedPhones.add(phone); // 占用该号码，本轮其它活动不再触达
   }
   const today = new Date().toISOString().slice(0, 10);
   let enqueued = 0;
@@ -2807,6 +2809,9 @@ async function runTouchRuleEngine(pool, options = {}) {
   const limitPerRule = Math.min(Math.max(Number(options.limit_per_rule) || 100, 1), 5000);
   const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules WHERE enabled = TRUE ORDER BY priority ASC, rule_key ASC LIMIT 20`);
   const createdActions = [];
+  // 跨活动单触达：同一手机号本轮只进入一个活动(按 priority 高者先占)，杜绝一个客人因同时命中
+  // 多个段(如就餐时段标签×召回段)在同一轮被多条活动各发一条短信。发送端 globalSmsCapped 再兜底。
+  const claimedPhones = new Set();
   for (const rule of (rulesResult.rows || [])) {
     // 储值余额提醒规则(channel='balance')：不走逐人触达引擎，由独立触发器
     // enqueueAutoStoredValueReminds 按门店每日冻结余额提醒任务。此处直接跳过。
@@ -2815,7 +2820,7 @@ async function runTouchRuleEngine(pool, options = {}) {
     // 活动制规则(action_payload.campaign_key)：不逐人直发，改为聚合候选→冻结发券任务(可核销可归因)。
     const ruleCampaignKey = cleanText((rule.action_payload || {}).campaign_key || '', 64);
     if (ruleCampaignKey && CAMPAIGN_TYPES[ruleCampaignKey]) {
-      await enqueueCampaignJobsForRule(pool, rule, candidates, ruleCampaignKey).catch((e) => console.warn('[growth] enqueue campaign job failed:', rule.rule_key, e?.message));
+      await enqueueCampaignJobsForRule(pool, rule, candidates, ruleCampaignKey, claimedPhones).catch((e) => console.warn('[growth] enqueue campaign job failed:', rule.rule_key, e?.message));
       await pool.query(`UPDATE growth_touch_rules SET last_run_at = NOW() WHERE rule_key = $1`, [rule.rule_key]).catch(() => {});
       continue;
     }
