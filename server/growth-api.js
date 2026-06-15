@@ -982,6 +982,17 @@ export async function ensureGrowthTables(pool) {
       criteria: { value_tier: 'vip', min_days_since_last_visit: 61, max_days_since_last_visit: 365 },
       action_type: 'send_message',
       action_payload: { channel: 'sms', campaign_key: 'vip_winback', valid_days: 14, coupon_value_fen: 0 }
+    },
+    {
+      // 到店未买单潜客召回：扫码/陪客但从未下单(lifecycle=prospect)。先赠券(¥30/¥50/2×¥50)后赠菜，
+      // 走 ABC 轮换，用现金券钩子促成首次消费。复用 ABC 6模板，无需新报备模板。
+      rule_key: 'prospect_recall',
+      name: '到店未买单潜客召回',
+      priority: 52,
+      auto_execute: true,
+      criteria: { lifecycle_stage: 'prospect' },
+      action_type: 'send_message',
+      action_payload: { channel: 'sms', campaign_key: 'prospect_recall', valid_days: 14 }
     }
   ];
   for (const rule of defaultTouchRules) {
@@ -1624,6 +1635,8 @@ const CAMPAIGN_TYPES = {
   // 券类型A/B「免费菜组」：复用活跃客马己仙赠菜模板(SMS_507100271)，但独立 campaign_key 保证打分不混。
   // env ALIYUN_SMS_MJDWGIFT_MAJIXIAN=SMS_507100271
   mj_dinner_weekend_gift: { label: '马己仙晚市赠菜券(A/B免费菜组)', source: 'profiles', tplPrefix: 'MJDWGIFT', coupon_count: 1, vars: ['date', 'code'] },
+  // 到店未买单潜客召回：扫码/陪客但从未下单，先券后菜促首单。走 ABC 轮换(复用 ABC 6模板，无新模板)。
+  prospect_recall: { label: '到店未买单潜客召回', source: 'profiles', tplPrefix: 'PROSPECT', coupon_count: 1, vars: ['value', 'date', 'code'] },
 };
 // 按段+门店解析阿里云模板 code：ALIYUN_SMS_<PREFIX>_<MAJIXIAN|HONGCHAO|DEFAULT>
 function pickCampaignTemplate(campaignKey, storeId) {
@@ -1748,6 +1761,7 @@ const ABC_ROTATION_ORDER = {
   lost_over365:           ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 长期流失超1年召回：先券后菜
   mj_dinner_weekend_gift: ['giftA', 'giftB', 'giftC'],                                       // 马己仙晚市·免费菜组：只赠菜
   mj_dinner_weekend:      ['coupon30', 'coupon50', 'coupon2x50'],                            // 马己仙晚市·现金券组：只赠券
+  prospect_recall:        ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 到店未买单潜客：先券后菜
 };
 
 // 6个模板各自的短信变量集合与券面额/张数。2X50=2张50元券(coupon_count:2)，

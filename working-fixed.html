@@ -56391,12 +56391,13 @@ ${body}
             lost_over365:   { name: '长期流失超1年召回',     vars: ['value','date','code'], tpl: { '51866138': 'SMS_507105250', '64822111': 'SMS_507890076' } },
             mj_dinner_weekend: { name: '马己仙晚市/周末复购客', vars: ['value','date','code'], tpl: { '51866138': 'SMS_508075082', '64822111': '' } },
             hc_weekday_lunch:  { name: '洪潮平日午市客唤醒',   vars: ['date','code'],         tpl: { '51866138': '', '64822111': 'SMS_508135078' } },
-            mj_dinner_weekend_gift: { name: '马己仙晚市赠菜券(A/B免费菜组)', vars: ['date','code'], tpl: { '51866138': 'SMS_507100271', '64822111': '' } }
+            mj_dinner_weekend_gift: { name: '马己仙晚市赠菜券(A/B免费菜组)', vars: ['date','code'], tpl: { '51866138': 'SMS_507100271', '64822111': '' } },
+            prospect_recall: { name: '到店未买单潜客召回', vars: ['value','date','code'], tpl: { '51866138': '', '64822111': '' } }
         };
         // ABC 6模板滚动活动：这些活动的「券面额」按模板步骤固定(赠菜¥0/赠券¥30·¥50·2×¥50)、
         // 「发送频率」由降频阶梯15/30/45/60自动控制，前端这两项设置不生效→渲染时标灰禁用。
         // 与后端 ABC_ROTATION_ORDER 保持一致。
-        var AM_ABC_CAMPAIGNS = ['vip_gift','active','regular_cooling','dormant_90_180','newcomer_recall','dormant_60_90','vip_winback','lost_long','lost_over365','mj_dinner_weekend_gift','mj_dinner_weekend'];
+        var AM_ABC_CAMPAIGNS = ['vip_gift','active','regular_cooling','dormant_90_180','newcomer_recall','dormant_60_90','vip_winback','lost_long','lost_over365','mj_dinner_weekend_gift','mj_dinner_weekend','prospect_recall'];
         // 券模板 id（campaign_<key>_<store> / winback_cash_<store>）→ 活动中文名，用于核销明细标注来源。
         function amCampaignLabelFromTemplate(templateId){
             var t = String(templateId || '');
