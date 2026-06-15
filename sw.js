@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hrms-pwa-20260604-swr';
+const CACHE_NAME = 'hrms-pwa-20260615-swr';
 const PRECACHE_URLS = [
   '/manifest.json',
   '/pwa-icon.svg'

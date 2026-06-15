@@ -56591,7 +56591,7 @@ ${body}
                         + '<div class="amr-head">'
                         +   '<div class="amr-title">' + escapeHtml(rule.name || rule.rule_key) + '</div>'
                         +   '<div class="amr-meta">所属门店 ' + escapeHtml(storeNm) + ' · 优先级 ' + (rule.priority || '-') + ' · 经办人 ' + escapeHtml(rule.owner || '未指派') + '</div>'
-                        +   '<div class="amr-badges">' + storeBadge + statusBadge + '</div>'
+                        +   '<div class="amr-badges">' + storeBadge + '<span id="am-status-' + rk + '">' + statusBadge + '</span></div>'
                         + '</div>'
                         // —— 人群与动作概览 ——
                         + '<div class="amr-sec">'
@@ -56708,6 +56708,14 @@ ${body}
             });
         }
 
+        // 保存「频率/券面额/有效期/文案」后就地把该规则状态徽章改为「待审核」（这类改动会重置审核态），
+        // 不整列表重渲染——避免在手机上重建大 DOM 造成数秒卡顿（即"一改就死机"的真正来源）。
+        function amMarkRulePendingReview(ruleKey) {
+            var rk = (typeof escapeHtml === 'function') ? escapeHtml(ruleKey) : ruleKey;
+            var el = document.getElementById('am-status-' + rk);
+            if (el) el.innerHTML = '<span style="background:rgba(148,163,184,0.18);color:#94a3b8;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">待审核（仅建议）</span>';
+        }
+
         async function loadAmRedemptions() {
             var host = document.getElementById('am-redemptions-list');
             if (!host) return;
@@ -56806,7 +56814,7 @@ ${body}
                 var d = await r.json();
                 if (!d.ok) throw new Error(d.error || 'save_failed');
                 showNotification('发送频率已更新（如该规则原已审核，请重新审核以继续自动执行）', 'success');
-                loadAutoMarketing();
+                amMarkRulePendingReview(ruleKey); // 就地更新状态，不整列表重渲染（避免手机卡顿）
             } catch (e) { showNotification('保存频率失败：' + (e && e.message || e), 'error'); }
         }
 
@@ -56843,7 +56851,7 @@ ${body}
                 var d = await r.json();
                 if (!d.ok) throw new Error(d.error || 'save_failed');
                 showNotification('券面额/有效期/文案已更新（如该规则原已审核，请重新审核以继续自动执行）', 'success');
-                loadAutoMarketing();
+                amMarkRulePendingReview(ruleKey); // 就地更新状态，不整列表重渲染（避免手机卡顿）
             } catch (e) { showNotification('保存失败：' + (e && e.message || e), 'error'); }
         }
 
