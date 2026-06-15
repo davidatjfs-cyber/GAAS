@@ -56393,6 +56393,10 @@ ${body}
             hc_weekday_lunch:  { name: '洪潮平日午市客唤醒',   vars: ['date','code'],         tpl: { '51866138': '', '64822111': 'SMS_508135078' } },
             mj_dinner_weekend_gift: { name: '马己仙晚市赠菜券(A/B免费菜组)', vars: ['date','code'], tpl: { '51866138': 'SMS_507100271', '64822111': '' } }
         };
+        // ABC 6模板滚动活动：这些活动的「券面额」按模板步骤固定(赠菜¥0/赠券¥30·¥50·2×¥50)、
+        // 「发送频率」由降频阶梯15/30/45/60自动控制，前端这两项设置不生效→渲染时标灰禁用。
+        // 与后端 ABC_ROTATION_ORDER 保持一致。
+        var AM_ABC_CAMPAIGNS = ['vip_gift','active','regular_cooling','dormant_90_180','newcomer_recall','dormant_60_90','vip_winback','lost_long','lost_over365','mj_dinner_weekend_gift','mj_dinner_weekend'];
         // 券模板 id（campaign_<key>_<store> / winback_cash_<store>）→ 活动中文名，用于核销明细标注来源。
         function amCampaignLabelFromTemplate(templateId){
             var t = String(templateId || '');
@@ -56539,6 +56543,8 @@ ${body}
                     var curChannel = String(__ap0.channel || 'wecom');
                     var curSmsCode = String(__ap0.sms_template_code || '');
                     var curCampaign = String(__ap0.campaign_key || '');
+                    // ABC 滚动活动：券面额(按步骤固定)与发送频率(降频阶梯自动控制)在前端不生效 → 标灰禁用
+                    var isAbcCampaign = curCampaign && AM_ABC_CAMPAIGNS.indexOf(curCampaign) >= 0;
                     var curFreq = Math.max(0, Math.floor(Number(__ap0.frequency_days) || 0));
                     var curValYuan = Math.max(0, Math.round(Number(__ap0.coupon_value_fen || __ap0.value_fen || 0) / 100));
                     // 活动是否需要券面额：仅「沉睡召回/长期流失」等现金券含 value 变量；VIP/新客/活跃为赠菜券无需面额
@@ -56625,7 +56631,17 @@ ${body}
                           +   '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetChannel(\'' + rk + '\')">保存渠道</button>'
                           + '</div>'))
                         // —— 发送频率 ——
-                        + (isBalance ? '' : (
+                        + (isBalance ? '' : (isAbcCampaign ? (
+                            '<div class="amr-sec">'
+                          +   '<div class="amr-sec-title">⏱️ 发送频率</div>'
+                          +   '<div class="amr-field amr-suffix" style="opacity:0.45;">'
+                          +     '<span class="amr-suffix-txt">每位会员每</span>'
+                          +     '<input class="amr-ctrl" type="number" value="' + curFreq + '" disabled>'
+                          +     '<span class="amr-suffix-txt">天最多1次</span>'
+                          +   '</div>'
+                          +   '<div class="amr-hint">🔒 ABC 滚动活动的发送频率由系统「降频阶梯 15/30/45/60 天」自动控制，此处不生效。仍受全局总闸：每号码每周最多 1 条短信。</div>'
+                          + '</div>'
+                          ) : (
                             '<div class="amr-sec">'
                           +   '<div class="amr-sec-title">⏱️ 发送频率</div>'
                           +   '<div class="amr-field amr-suffix">'
@@ -56635,16 +56651,18 @@ ${body}
                           +   '</div>'
                           +   '<div class="amr-hint">填 0 = 按到店周期自动判定。另有全局总闸：每号码每周最多 1 条短信。</div>'
                           +   '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetFrequency(\'' + rk + '\')">保存频率</button>'
-                          + '</div>'))
+                          + '</div>')))
                         // —— 券与文案 ——
                         + ((isSubscribe || isBalance) ? '' : (
                             '<div class="amr-sec">'
                           +   '<div class="amr-sec-title">🎫 券与文案</div>'
                           +   '<div class="amr-coupon-box">'
                           +     '<div class="amr-row2">'
-                          +       (campNeedsValue
-                                    ? '<div><label class="amr-label">券面额（元）</label><input id="am-val-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curValYuan + '"></div>'
-                                    : '<div><label class="amr-label">券类型</label><input class="amr-ctrl" value="赠菜/赠品券（无需面额）" disabled style="opacity:0.6;"></div>')
+                          +       (isAbcCampaign
+                                    ? '<div><label class="amr-label">券面额（元）</label><input class="amr-ctrl" value="🔒 ABC按步骤固定 菜¥0/券¥30·¥50·2×¥50" disabled style="opacity:0.5;"></div>'
+                                    : (campNeedsValue
+                                        ? '<div><label class="amr-label">券面额（元）</label><input id="am-val-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curValYuan + '"></div>'
+                                        : '<div><label class="amr-label">券类型</label><input class="amr-ctrl" value="赠菜/赠品券（无需面额）" disabled style="opacity:0.6;"></div>'))
                           +       '<div><label class="amr-label">有效期（天）</label><input id="am-vd-' + rk + '" class="amr-ctrl" type="number" min="0" value="' + curValidDays + '"></div>'
                           +     '</div>'
                           +     '<div class="amr-field" style="margin-top:10px;">'
@@ -56836,10 +56854,9 @@ ${body}
                 var rg = await fetch('/api/growth/touch-rules', { headers: growthAuthHeaders() }).then(function(r){return r.json();});
                 var rule = ((rg && rg.rules) || []).find(function(x){ return x.rule_key === ruleKey; });
                 if (!rule) throw new Error('rule_not_found');
-                var ap = Object.assign({}, rule.action_payload || {}, {
-                    coupon_value_fen: valYuan * 100,
-                    valid_days: validDays
-                });
+                var ap = Object.assign({}, rule.action_payload || {}, { valid_days: validDays });
+                // ABC 活动券面额输入已标灰移除(am-val 不存在)→ 不改 coupon_value_fen，保留原值
+                if (vInp) ap.coupon_value_fen = valYuan * 100;
                 if (tpl) ap.content_template = tpl;
                 var body = {
                     rule_key: rule.rule_key, name: rule.name, priority: rule.priority,
