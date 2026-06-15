@@ -56470,11 +56470,11 @@ ${body}
                 var allRules = (rs[0] && rs[0].rules) || [];
                 var statRows = (rs[1] && rs[1].stats) || [];
                 amRenderRulesList(allRules, statRows, {});
-                // 涉及会员（人群覆盖）单独异步获取：全表扫描较慢(冷缓存约5秒)，不阻塞规则列表先行展示，
-                // 拿到后再补渲染一次，避免整页卡在"加载中…"。
+                // 涉及会员（人群覆盖）单独异步获取：全表扫描较慢(冷缓存约5秒)，不阻塞规则列表先行展示。
+                // 拿到后只就地更新每条规则的"涉及会员/分渠道覆盖"两处文字（不整列表重渲染，避免
+                // 在手机上重建大 DOM 造成卡顿、也避免清掉用户正在编辑的输入框）。
                 fetch('/api/growth/touch-rules/audience', { headers: hdr }).then(function(r){return r.json();}).then(function(d){
-                    var audienceMap = (d && d.audience) || {};
-                    amRenderRulesList(allRules, statRows, audienceMap);
+                    amApplyAudience((d && d.audience) || {});
                 }).catch(function(){});
             } catch (e) {
                 host.innerHTML = '<div style="color:#ef4444;padding:14px 0;">加载自动营销失败：' + escapeHtml(String(e && e.message || e)) + '</div>';
@@ -56598,8 +56598,8 @@ ${body}
                         +   '<div class="amr-sec-title">🎯 人群与动作</div>'
                         +   '<div class="amr-info">目标人群：' + escapeHtml(isBalance ? '有储值余额且久未消费的会员' : amDescribeCriteria(rule.criteria)) + '</div>'
                         +   (isBalance ? '<div class="amr-info amr-info--sub">判定口径：余额≥下限（默认1元）且超过设定天数未消费</div>' : (critTip ? '<div class="amr-info amr-info--sub">判定口径：' + escapeHtml(critTip) + '</div>' : ''))
-                        +   '<div class="amr-info">涉及会员：' + (reach == null ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>' : ('<strong>' + reach + '</strong> 人（命中人群且可触达）')) + '</div>'
-                        +   '<div class="amr-info amr-info--sub">分渠道覆盖：' + covLine + '</div>'
+                        +   '<div class="amr-info">涉及会员：<span id="am-reach-' + rk + '">' + (reach == null ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>' : ('<strong>' + reach + '</strong> 人（命中人群且可触达）')) + '</span></div>'
+                        +   '<div class="amr-info amr-info--sub">分渠道覆盖：<span id="am-cov-' + rk + '">' + covLine + '</span></div>'
                         +   '<div class="amr-info">触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
                         + '</div>'
                         // —— 储值余额提醒（HRMS 直发·无券）说明 ——
@@ -56682,6 +56682,30 @@ ${body}
                         + '</div>'
                         + '</div>';
                 }).join('');
+        }
+
+        // 异步拿到「涉及会员/分渠道覆盖」后就地更新文字，不重渲染整个规则列表（手机上更流畅，
+        // 也不会清掉用户正在编辑的输入框）。audienceMap: rule_key → {total,sms,subscribe,member,wecom}
+        function amApplyAudience(audienceMap) {
+            if (!audienceMap) return;
+            Object.keys(audienceMap).forEach(function(ruleKey){
+                var rk = (typeof escapeHtml === 'function') ? escapeHtml(ruleKey) : ruleKey;
+                var raw = audienceMap[ruleKey];
+                var cov = (raw && typeof raw === 'object') ? raw : null;
+                var reach = cov ? cov.total : raw;
+                var reachEl = document.getElementById('am-reach-' + rk);
+                if (reachEl) {
+                    reachEl.innerHTML = (reach == null)
+                        ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>'
+                        : ('<strong>' + reach + '</strong> 人（命中人群且可触达）');
+                }
+                var covEl = document.getElementById('am-cov-' + rk);
+                if (covEl) {
+                    covEl.innerHTML = cov
+                        ? ('短信 <strong style="color:#a5b4fc;">' + cov.sms + '</strong> 人 · 订阅消息 <strong style="color:#a5b4fc;">' + cov.subscribe + '</strong> 人(上限·需授权) · 小程序站内 <strong style="color:#a5b4fc;">' + cov.member + '</strong> 人')
+                        : '计算中/未知';
+                }
+            });
         }
 
         async function loadAmRedemptions() {
