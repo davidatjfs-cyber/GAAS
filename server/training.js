@@ -53,8 +53,9 @@ function formatRubricStandards(rubric) {
 
 function buildKbArticleText(row) {
   const explanation = String(row.ai_explanation || '').trim();
+  // 优先用管理员锁定的精修内容或已缓存的AI解析，截断上限提高到12000确保完整内容传入AI上下文
   const base = explanation.length > 50
-    ? explanation.slice(0, 6000)
+    ? explanation.slice(0, 12000)
     : String(row.content || '').trim();
   const rubricText = formatRubricStandards(row.step_rubric);
   return rubricText ? `${base}\n\n${rubricText}` : base;
@@ -415,6 +416,8 @@ export async function ensureTrainingSchema() {
     await pool().query(`ALTER TABLE training_assignments DROP CONSTRAINT IF EXISTS training_assignments_employee_username_topic_id_key`);
     // AI 智能解析缓存（生成一次，全员复用）
     await pool().query(`ALTER TABLE knowledge_base ADD COLUMN IF NOT EXISTS ai_explanation TEXT`);
+    // 管理员手动编辑锁：锁定后自动生成不得覆盖（管理员通过"重新生成"解锁）
+    await pool().query(`ALTER TABLE knowledge_base ADD COLUMN IF NOT EXISTS ai_explanation_locked BOOLEAN DEFAULT false`);
     // 考试历史记录（每次提交均追加）
     await pool().query(`ALTER TABLE training_sessions ADD COLUMN IF NOT EXISTS quiz_history JSONB DEFAULT '[]'`);
 
@@ -1477,13 +1480,19 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
       if (check.rows.length === 0) return res.status(403).json({ error: 'forbidden' });
 
       const r = await pool().query(
-        `SELECT title, content, file_type, ai_explanation FROM knowledge_base WHERE id = $1 AND enabled = true LIMIT 1`,
+        `SELECT title, content, file_type, ai_explanation, ai_explanation_locked FROM knowledge_base WHERE id = $1 AND enabled = true LIMIT 1`,
         [articleId]
       );
       const row = r.rows[0];
       if (!row) return res.status(404).json({ error: 'not_found' });
 
-      // 已有缓存直接返回（管理员可传 ?force=1 强制重新生成）
+      // 管理员手动编辑锁：锁定后直接返回，任何角色均不能自动覆盖；
+      // 只有管理员在知识库调用"重新生成"后才能解锁并重新生成
+      if (row.ai_explanation_locked) {
+        return res.json({ success: true, explanation: row.ai_explanation || '', cached: true, locked: true });
+      }
+
+      // 已有缓存直接返回（管理员可传 ?force=1 强制重新生成，仅在未锁定时有效）
       const forceRegen = req.query.force === '1' && isManager(req.user?.role);
       if (!forceRegen && row.ai_explanation && row.ai_explanation.trim().length > 50) {
         return res.json({ success: true, explanation: row.ai_explanation, cached: true });
@@ -1576,7 +1585,7 @@ ${rawContent}
       const aiResp = await callLLM([
         { role: 'system', content: '你是专业的餐饮培训导师，擅长把复杂的操作规程转化成一线员工能快速理解和记忆的培训内容。输出时严格遵守给定的结构，不添加多余内容。' },
         { role: 'user', content: prompt }
-      ], { max_tokens: 3500, temperature: 0.45 });
+      ], { max_tokens: 6000, temperature: 0.45 });
 
       const explanation = String(aiResp?.content || '').trim();
       if (!explanation || explanation.length < 100) {

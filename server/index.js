@@ -16718,12 +16718,16 @@ app.get('/api/knowledge/:id/explanation', authRequired, async (req, res) => {
   if (!id) return res.status(400).json({ error: 'missing_id' });
   try {
     const r = await pool.query(
-      'SELECT id, title, content, file_type, ai_explanation, step_rubric FROM knowledge_base WHERE id = $1::uuid AND enabled = true LIMIT 1',
+      'SELECT id, title, content, file_type, ai_explanation, ai_explanation_locked, step_rubric FROM knowledge_base WHERE id = $1::uuid AND enabled = true LIMIT 1',
       [id]
     );
     const row = r.rows?.[0];
     if (!row) return res.status(404).json({ error: 'not_found' });
     const rubric = row.step_rubric || null;
+    // 锁定状态：管理员手动编辑后锁定，直接返回已有内容，不触发自动生成
+    if (row.ai_explanation_locked) {
+      return res.json({ success: true, explanation: row.ai_explanation || '', cached: true, locked: true, rubric });
+    }
     if (row.ai_explanation && String(row.ai_explanation).trim().length > 50) {
       return res.json({ success: true, explanation: row.ai_explanation, cached: true, rubric });
     }
@@ -16845,13 +16849,14 @@ app.put('/api/knowledge/:id/explanation', authRequired, async (req, res) => {
   try {
     const prev = await pool.query('SELECT ai_explanation FROM knowledge_base WHERE id = $1::uuid LIMIT 1', [id]);
     const oldVal = prev.rows?.[0]?.ai_explanation || null;
-    await pool.query('UPDATE knowledge_base SET ai_explanation = $1, updated_at = NOW() WHERE id = $2::uuid', [explanation, id]);
+    // 手动保存同时设置锁定，防止后续自动生成覆盖管理员精修的内容
+    await pool.query('UPDATE knowledge_base SET ai_explanation = $1, ai_explanation_locked = true, updated_at = NOW() WHERE id = $2::uuid', [explanation, id]);
     await pool.query(
       `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role)
        VALUES ($1::uuid, 'ai_explanation', $2, $3, $4, $5)`,
       [id, oldVal, explanation, req.user?.username || null, req.user?.role || null]
     ).catch((e) => console.error('[knowledge] edit-history(explanation) failed:', e?.message));
-    res.json({ success: true });
+    res.json({ success: true, locked: true });
   } catch (e) {
     res.status(500).json({ error: 'server_error', message: String(e?.message || e) });
   }
@@ -16883,7 +16888,8 @@ ${oldVal.slice(0, 20000)}` }
     if (!reformatted || reformatted.length < 20) {
       return res.json({ success: false, error: 'ai_failed', message: 'AI整理失败，请稍后重试' });
     }
-    await pool.query('UPDATE knowledge_base SET ai_explanation = $1, updated_at = NOW() WHERE id = $2::uuid', [reformatted, id]);
+    // 重新整理排版后同样维持锁定（整理=精修行为，锁定不变）
+    await pool.query('UPDATE knowledge_base SET ai_explanation = $1, ai_explanation_locked = true, updated_at = NOW() WHERE id = $2::uuid', [reformatted, id]);
     await pool.query(
       `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role)
        VALUES ($1::uuid, 'ai_explanation', $2, $3, $4, $5)`,
@@ -16906,8 +16912,8 @@ app.post('/api/knowledge/:id/explanation/regenerate', authRequired, async (req, 
   const id = String(req.params?.id || '').trim();
   if (!id) return res.status(400).json({ error: 'missing_id' });
   try {
-    // Clear cached explanation to force re-generation
-    await pool.query('UPDATE knowledge_base SET ai_explanation = NULL, updated_at = NOW() WHERE id = $1::uuid', [id]);
+    // 清除缓存并解锁，允许下次访问时按新 prompt 重新生成（解锁才能触发自动生成）
+    await pool.query('UPDATE knowledge_base SET ai_explanation = NULL, ai_explanation_locked = false, updated_at = NOW() WHERE id = $1::uuid', [id]);
     res.json({ success: true, message: '缓存已清除，重新打开文件将重新生成完整解析' });
   } catch (e) {
     const msg = String(e?.message || e);
