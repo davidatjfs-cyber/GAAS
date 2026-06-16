@@ -3467,10 +3467,12 @@ export function registerGrowthRoutes(app, pool) {
       const b = req.body || {};
       const jobId = Math.floor(Number(b.job_id) || 0);
       if (!jobId) return res.status(400).json({ ok: false, error: 'missing_job_id' });
+      const sentN = Math.max(0, Math.floor(Number(b.sent) || 0));
+      const failedN = Math.max(0, Math.floor(Number(b.failed) || 0));
+      const computedStatus = sentN === 0 && failedN > 0 ? 'failed' : sentN > 0 && failedN > 0 ? 'partial' : 'done';
       await pool.query(
         `UPDATE growth_campaign_jobs SET sent=$2, failed=$3, status=$4, result=$5::jsonb, updated_at=now() WHERE id=$1`,
-        [jobId, Math.max(0, Math.floor(Number(b.sent) || 0)), Math.max(0, Math.floor(Number(b.failed) || 0)),
-         cleanText(b.status, 40) || 'done', JSON.stringify(b.result || {})]
+        [jobId, sentN, failedN, computedStatus, JSON.stringify(b.result || {})]
       );
       return res.json({ ok: true });
     } catch (e) {
@@ -5253,11 +5255,59 @@ export function registerGrowthRoutes(app, pool) {
   });
 
   // ── Phase 3: Action feedback / 执行回填 ──
+  // 纯手动建议看板：店长回填实际结果(触达/核销/营收) → 按预计目标自动打分 → 沉淀经验库供下一轮AI建议复用。
   app.post('/api/growth/actions/:actionKey/feedback', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const actionKey = cleanText(req.params.actionKey, 255);
     const b = req.body || {};
     const operator = getGrowthOperator(req);
+
+    // 先取动作，拿到 expected_kpi / 渠道 / 文案，用于打分与经验沉淀
+    const cur = await pool.query('SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1', [actionKey]);
+    if (!cur.rows.length) return res.status(404).json({ ok: false, error: 'action_not_found' });
+    const action = cur.rows[0];
+    const payload = action.payload || {};
+
+    // 结构化实际结果（任一可空；提供越多打分越准）
+    const hasResult = b.actual_reach != null || b.actual_redemptions != null || b.actual_revenue_fen != null;
+    const actual = {
+      reach: b.actual_reach != null ? Math.max(0, Math.floor(Number(b.actual_reach) || 0)) : null,
+      redemptions: b.actual_redemptions != null ? Math.max(0, Math.floor(Number(b.actual_redemptions) || 0)) : null,
+      revenue_fen: b.actual_revenue_fen != null ? Math.max(0, Math.floor(Number(b.actual_revenue_fen) || 0)) : null
+    };
+    const expected = (payload.expected_kpi && typeof payload.expected_kpi === 'object') ? payload.expected_kpi : {};
+
+    // 自动打分：各指标实际/预计的达成比，1.0=达标→80分；缺指标则跳过
+    let scorePayload = null;
+    if (hasResult) {
+      const parts = [];
+      if (Number(expected.reach) > 0 && actual.reach != null) parts.push(Math.min(2, actual.reach / Number(expected.reach)));
+      const actualRate = actual.reach && actual.reach > 0 && actual.redemptions != null ? (actual.redemptions / actual.reach) * 100 : null;
+      if (Number(expected.redemption_rate) > 0 && actualRate != null) parts.push(Math.min(2, actualRate / Number(expected.redemption_rate)));
+      if (Number(expected.revenue_fen) > 0 && actual.revenue_fen != null) parts.push(Math.min(2, actual.revenue_fen / Number(expected.revenue_fen)));
+      const achievement = parts.length ? parts.reduce((a, c) => a + c, 0) / parts.length : null;
+      const score = achievement != null ? Math.round(Math.min(100, achievement * 80)) : null;
+      const effectiveness = score == null ? '已回填' : score >= 70 ? '有效' : score >= 40 ? '部分有效' : '无效';
+      scorePayload = {
+        actual,
+        expected_kpi: expected,
+        actual_redemption_rate: actualRate != null ? Number(actualRate.toFixed(1)) : null,
+        achievement: achievement != null ? Number(achievement.toFixed(2)) : null,
+        effectiveness_score: score,
+        effectiveness,
+        scored_at: new Date().toISOString()
+      };
+    }
+
+    const mergePayload = {
+      feedback_note: cleanText(b.note, 4000),
+      feedback_screenshot_url: cleanText(b.screenshot_url, 1000),
+      feedback_result_url: cleanText(b.result_url, 1000),
+      executed_by: operator.username,
+      executed_at: new Date().toISOString()
+    };
+    if (scorePayload) mergePayload.outcome_summary = scorePayload;
+
     const r = await pool.query(
       `UPDATE growth_actions
        SET status = COALESCE(NULLIF($2,''), status),
@@ -5265,11 +5315,42 @@ export function registerGrowthRoutes(app, pool) {
            updated_at = NOW()
        WHERE action_key = $1
        RETURNING *`,
-      [actionKey, cleanText(b.status, 40), JSON.stringify({ feedback_note: cleanText(b.note, 4000), feedback_screenshot_url: cleanText(b.screenshot_url, 1000), feedback_result_url: cleanText(b.result_url, 1000), executed_by: operator.username, executed_at: new Date().toISOString() })]
+      [actionKey, cleanText(b.status, 40), JSON.stringify(mergePayload)]
     );
-    if (!r.rows.length) return res.status(404).json({ ok: false, error: 'action_not_found' });
-    await appendExecutionLog(pool, { action_key: actionKey, store_id: r.rows[0].store_id, action_type: r.rows[0].action_type, decision: 'feedback', operator_username: operator.username, operator_role: operator.role, after_payload: r.rows[0].payload, decision_reason: cleanText(b.note, 2000), result_summary: b.note || '执行回填完成' });
-    return res.json({ ok: true, action: r.rows[0] });
+
+    // 沉淀经验库：复用 growth_learnings，被下一轮 AI 建议生成读取
+    if (scorePayload && scorePayload.effectiveness_score != null) {
+      const approach = cleanText(payload.ready_copy || payload.execution_action || action.title, 500);
+      const channel = cleanText(payload.channel || '', 80);
+      const audienceTag = cleanText(payload.target_audience || '', 120) || null;
+      const isWin = scorePayload.effectiveness_score >= 70;
+      const effectDesc = cleanText(
+        `${scorePayload.effectiveness}｜核销率${scorePayload.actual_redemption_rate != null ? scorePayload.actual_redemption_rate + '%' : '-'}，实收¥${actual.revenue_fen != null ? Math.round(actual.revenue_fen / 100) : '-'}，达成${scorePayload.achievement != null ? Math.round(scorePayload.achievement * 100) + '%' : '-'}`,
+        255
+      );
+      const sample = actual.reach || 0;
+      await pool.query(
+        `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, valid_until)
+         VALUES ('ai_suggestion',$1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT DO NOTHING`,
+        [
+          actionKey,
+          cleanText(action.store_id, 128),
+          channel || null,
+          audienceTag,
+          'AI建议方案有效性',
+          isWin ? approach : '换其它方向（避免重复）',
+          isWin ? null : approach,
+          effectDesc,
+          sample,
+          sample >= 100 ? 'high' : sample >= 30 ? 'medium' : 'low',
+          new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10)
+        ]
+      ).catch((e) => { console.warn('[growth] deposit learning failed:', e?.message || e); });
+    }
+
+    await appendExecutionLog(pool, { action_key: actionKey, store_id: r.rows[0].store_id, action_type: r.rows[0].action_type, decision: 'feedback', operator_username: operator.username, operator_role: operator.role, after_payload: r.rows[0].payload, decision_reason: cleanText(b.note, 2000), result_summary: scorePayload ? `回填打分：${scorePayload.effectiveness}(${scorePayload.effectiveness_score}分)` : (b.note || '执行回填完成') });
+    return res.json({ ok: true, action: r.rows[0], score: scorePayload });
   });
 
   // ── Phase 5: Semantic write-back to profiles ──

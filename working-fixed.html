@@ -18790,7 +18790,7 @@
                   <button class="rep-tab rep-tab--active" onclick="showGrowthTab('dashboard')" id="growth-tab-dashboard">看板</button>
                   <button class="rep-tab" onclick="showGrowthTab('audience')" id="growth-tab-audience">客群洞察</button>
                   <button class="rep-tab" onclick="showGrowthTab('engine')" id="growth-tab-engine">⚙️ 自动营销（自动台）</button>
-                  <button class="rep-tab" onclick="showGrowthTab('content')" id="growth-tab-content">内容中心</button>
+                  <button class="rep-tab" onclick="showGrowthTab('content')" id="growth-tab-content">海报创意</button>
                   <button class="rep-tab" onclick="showGrowthTab('execution')" id="growth-tab-execution">执行中心</button>
                   <button class="rep-tab" onclick="showGrowthTab('settings')" id="growth-tab-settings">设置治理</button>
                   <button class="rep-tab" onclick="window.open('/campaign.html','_blank')" id="growth-tab-campaign">🎟️ 营销发券（手动补发）</button>
@@ -54201,7 +54201,7 @@ ${body}
             { key: 'dashboard', label: '看板', members: ['dashboard'] },
             { key: 'audience', label: '客群洞察', members: ['profiles', 'pos', 'wecom'] },
             { key: 'engine', label: '自动营销', members: ['automarketing', 'abtests', 'paymentrules'] },
-            { key: 'content', label: '内容中心', members: ['campaigns', 'posters', 'public', 'contentsys'] },
+            { key: 'content', label: '海报创意', members: ['posters'] },
             { key: 'execution', label: '执行中心', members: ['actions', 'exec-logs'] },
             { key: 'settings', label: '设置治理', members: ['wecomconfig', 'constraints'] }
         ];
@@ -55806,7 +55806,7 @@ ${body}
                 if (!actionsData.ok) throw new Error(actionsData.error || 'api_error');
                 const rows = actionsData?.actions || [];
                 try { document.getElementById('__growth_actions_cache').textContent = JSON.stringify(rows); } catch (e) {}
-                var channelLabels = { 'miniprogram': '小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'dianping': '大众点评', 'waimai': '美团' };
+                var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团' };
                 var actionTypeLabels = { 'send_voucher': '🎫 发券', 'campaign_activate': '🚀 激活活动', 'create_content': '📝 创建内容', 'promo_task': '📋 推广任务', 'generate_poster': '🖼️ 生成海报' };
                 host.innerHTML = rows.length ? rows.map(function(x) {
                     const key = x.action_key || '';
@@ -55819,14 +55819,38 @@ ${body}
                     var channelColor = channel === 'wecom' ? '#22c55e' : channel === 'miniprogram' ? '#38bdf8' : channel === 'xiaohongshu' ? '#ef4444' : '#94a3b8';
                     var typeLabel = actionTypeLabels[x.action_type] || '✅ 触达';
                     var isFinal = x.status === 'executed' || x.status === 'ignored';
+                    var kpi = payload.expected_kpi || {};
+                    var kpiHtml = (kpi && (kpi.redemption_rate || kpi.revenue_fen || kpi.reach)) ?
+                        '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">'
+                        + '<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(99,102,241,0.12);color:#a5b4fc;">🎯 预计核销率 ' + (kpi.redemption_rate || 0) + '%</span>'
+                        + '<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(99,102,241,0.12);color:#a5b4fc;">预计营收 ¥' + Math.round(Number(kpi.revenue_fen || 0) / 100) + '</span>'
+                        + '<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(99,102,241,0.12);color:#a5b4fc;">预计触达 ' + (kpi.reach || 0) + '人</span>'
+                        + '</div>' : '';
+                    var readyCopy = payload.ready_copy || '';
+                    var readyCopyHtml = readyCopy ?
+                        '<div style="margin-top:6px;padding:8px 10px;background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.18);border-radius:8px;">'
+                        + '<div style="font-size:10px;color:#22c55e;font-weight:700;margin-bottom:4px;">📝 成品文案（可直接使用）</div>'
+                        + '<div style="font-size:11px;color:rgba(226,232,240,0.85);line-height:1.6;white-space:pre-wrap;">' + escapeHtml(readyCopy) + '</div>'
+                        + '<button onclick="event.stopPropagation();copyReadyCopy(this)" data-copy="' + escapeHtml(readyCopy) + '" style="margin-top:6px;padding:3px 10px;border:none;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;font-size:10px;cursor:pointer;">📋 复制文案</button>'
+                        + '</div>' : '';
+                    var oc = payload.outcome_summary || null;
+                    var ocHtml = (oc && oc.effectiveness_score != null) ?
+                        '<div style="margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:8px;">'
+                        + '<span style="font-size:11px;font-weight:700;color:' + (oc.effectiveness === '有效' ? '#22c55e' : oc.effectiveness === '无效' ? '#ef4444' : '#f59e0b') + ';">📊 实际效果 ' + oc.effectiveness + ' · ' + oc.effectiveness_score + '分</span>'
+                        + '<span style="font-size:10px;color:rgba(226,232,240,0.5);margin-left:8px;">核销率' + (oc.actual_redemption_rate != null ? oc.actual_redemption_rate + '%' : '-') + ' / 营收¥' + (oc.actual && oc.actual.revenue_fen != null ? Math.round(oc.actual.revenue_fen / 100) : '-') + ' / 达成' + (oc.achievement != null ? Math.round(oc.achievement * 100) + '%' : '-') + '</span>'
+                        + '</div>' : '';
                     var draftPreview = '<div style="margin-top:6px;padding:8px 10px;background:rgba(14,165,233,0.04);border:1px solid rgba(14,165,233,0.12);border-radius:8px;font-size:11px;">'
                         + '<div style="display:flex;gap:8px;flex-wrap:wrap;color:var(--rep-muted);">'
-                        + '<span>门店 ' + (x.store_id || '-') + (confidence ? ' <span style="font-size:10px;padding:1px 6px;border-radius:999px;background:' + confidenceColor + '22;color:' + confidenceColor + ';">' + confidence + '</span>' : '') + '</span>'
+                        + '<span>门店 ' + escapeHtml(growthStoreName(x.store_id) || '-') + (confidence ? ' <span style="font-size:10px;padding:1px 6px;border-radius:999px;background:' + confidenceColor + '22;color:' + confidenceColor + ';">' + confidence + '</span>' : '') + '</span>'
                         + '<span>目标 ' + (payload.target_audience || payload.audience || '活跃客群') + '</span>'
-                        + (payload.budget_fen ? '<span>预算 ¥' + Math.round(Number(payload.budget_fen) / 100) + '</span>' : '')
+                        + (payload.execution_time ? '<span>🕐 ' + escapeHtml(payload.execution_time) + '</span>' : '')
+                        + (payload.cost_estimate ? '<span>' + escapeHtml(payload.cost_estimate) + '</span>' : (payload.budget_fen ? '<span>预算 ¥' + Math.round(Number(payload.budget_fen) / 100) + '</span>' : ''))
                         + '<span style="color:rgba(226,232,240,0.4);">' + (x.executed_at ? String(x.executed_at).slice(0, 16) : x.created_at ? String(x.created_at).slice(0, 10) : '') + '</span>'
                         + '</div>'
-                        + '<div style="margin-top:4px;color:rgba(226,232,240,0.6);line-height:1.5;">' + (payload.execution_action || (x.detail || '').slice(0, 120)) + '</div>'
+                        + kpiHtml
+                        + readyCopyHtml
+                        + (readyCopy ? '' : '<div style="margin-top:4px;color:rgba(226,232,240,0.6);line-height:1.5;">' + (payload.execution_action || (x.detail || '').slice(0, 120)) + '</div>')
+                        + ocHtml
                         + '</div>';
                     var posterHtml;
                     if (posterUrl) {
@@ -55836,15 +55860,33 @@ ${body}
                     } else {
                         posterHtml = '';
                     }
-                    var actionButtons = !isFinal ?
-                        '<button onclick="executeGrowthAction(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">批准执行</button>'
-                        + '<button onclick="openEditExecuteForm(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(14,165,233,0.12);color:#38bdf8;cursor:pointer;font-size:11px;font-weight:600;">修改后执行</button>'
-                        + '<button onclick="ignoreGrowthAction(\'' + key + '\')" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">忽略</button>'
-                        : '';
+                    // LLM建议=纯人工看板：采纳(不自动发)→执行后回填结果→自动打分；非LLM动作保留原执行链路
+                    var isLlm = (payload.source === 'llm_campaign_autopilot') || !!payload.expected_kpi || !!payload.confidence_level;
+                    var actionButtons;
+                    if (isLlm) {
+                        if (x.status === 'proposed') {
+                            actionButtons = '<button onclick="adoptGrowthSuggestion(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">✅ 采纳·我要执行</button>'
+                                + '<button onclick="ignoreGrowthAction(\'' + key + '\')" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">忽略</button>';
+                        } else if (x.status === 'executing' || x.status === 'adopted') {
+                            actionButtons = '<button onclick="openResultFeedbackForm(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(245,158,11,0.15);color:#f59e0b;cursor:pointer;font-size:11px;font-weight:700;">⏳ 回填活动结果</button>';
+                        } else if (x.status === 'measured') {
+                            actionButtons = '<button onclick="openResultFeedbackForm(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(255,255,255,0.06);color:rgba(226,232,240,0.7);cursor:pointer;font-size:11px;">✏️ 修正结果</button>';
+                        } else {
+                            actionButtons = '';
+                        }
+                    } else {
+                        actionButtons = !isFinal ?
+                            '<button onclick="executeGrowthAction(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">批准执行</button>'
+                            + '<button onclick="openEditExecuteForm(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(14,165,233,0.12);color:#38bdf8;cursor:pointer;font-size:11px;font-weight:600;">修改后执行</button>'
+                            + '<button onclick="ignoreGrowthAction(\'' + key + '\')" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">忽略</button>'
+                            : '';
+                    }
+                    var statusBadge = x.status === 'executed' ? '✅ 已执行' : x.status === 'ignored' ? '⛔ 已忽略' : x.status === 'proposed' ? '⚡ 可执行' : x.status === 'executing' || x.status === 'adopted' ? '⏳ 执行中·待回填' : x.status === 'measured' ? '📊 已测评' : x.status || '-';
+                    var statusBadgeStyle = x.status === 'executed' || x.status === 'measured' ? 'background:rgba(34,197,94,0.15);color:#22c55e' : x.status === 'ignored' ? 'background:rgba(239,68,68,0.12);color:#ef4444' : 'background:rgba(245,158,11,0.15);color:#f59e0b';
                     return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
                         + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'
                         + '<div style="flex:1;min-width:0;cursor:pointer;" onclick="openActionDetailModal(\'' + key + '\')"><span style="font-weight:700;color:#fff;font-size:14px;">' + typeLabel + ' ' + (x.title || '-') + '</span>'
-                        + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;' + (x.status === 'executed' ? 'background:rgba(34,197,94,0.15);color:#22c55e' : x.status === 'ignored' ? 'background:rgba(239,68,68,0.12);color:#ef4444' : 'background:rgba(245,158,11,0.15);color:#f59e0b') + ';font-weight:600;">' + (x.status === 'executed' ? '✅ 已执行' : x.status === 'ignored' ? '⛔ 已忽略' : x.status === 'proposed' ? '⚡ 可执行' : x.status || '-') + '</span>'
+                        + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;' + statusBadgeStyle + ';font-weight:600;">' + statusBadge + '</span>'
                         + '</div>'
                         + '<div style="font-size:11px;padding:2px 10px;border-radius:999px;background:' + channelColor + '18;color:' + channelColor + ';font-weight:600;flex-shrink:0;">' + channelLabel + '</div>'
                         + '</div>'
@@ -55869,7 +55911,7 @@ ${body}
             if (!x) { showNotification('动作数据未缓存', 'warning'); return; }
             __execConfirmData = { actionKey: actionKey, mode: mode || 'execute', action: x };
             var payload = x.payload || {};
-            var channelLabels = { 'miniprogram': '小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'dianping': '大众点评', 'waimai': '美团' };
+            var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团' };
             var channel = payload.channel || 'wecom';
             var channelLabel = channelLabels[channel] || channel;
             var audienceLabels = { 'all': '全部客户', 'new': '新客', 'loyal': '老客/忠诚', 'churn': '流失预警', 'birthday': '生日月客户' };
@@ -55880,7 +55922,7 @@ ${body}
             var body = document.getElementById('exec-confirm-body');
             var posterUrl = payload.poster_url || payload.output_url || '';
 
-            var channelColors = { 'wecom': '#22c55e', 'miniprogram': '#38bdf8', 'xiaohongshu': '#ef4444', 'douyin': '#f59e0b', 'dianping': '#a78bfa', 'waimai': '#f97316' };
+            var channelColors = { 'wecom': '#22c55e', 'miniprogram': '#38bdf8', 'xiaohongshu': '#ef4444', 'douyin': '#f59e0b', 'pengyouquan': '#06b6d4', 'dianping': '#a78bfa', 'waimai': '#f97316' };
             var cc = channelColors[channel] || '#94a3b8';
 
             var matchStatus = '';
@@ -55905,7 +55947,7 @@ ${body}
                 '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">'
                 + '<div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;"><span style="color:rgba(226,232,240,0.5);">发送渠道</span><div style="color:' + cc + ';font-weight:700;margin-top:4px;font-size:14px;">📡 ' + channelLabel + '</div></div>'
                 + '<div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;"><span style="color:rgba(226,232,240,0.5);">目标人群</span><div style="color:#fff;font-weight:600;margin-top:4px;font-size:14px;">' + (audienceLabels[audience] || audience) + '</div></div>'
-                + '<div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;"><span style="color:rgba(226,232,240,0.5);">门店</span><div style="color:#fff;margin-top:4px;font-size:14px;">' + (x.store_id || '-') + '</div></div>'
+                + '<div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;"><span style="color:rgba(226,232,240,0.5);">门店</span><div style="color:#fff;margin-top:4px;font-size:14px;">' + escapeHtml(growthStoreName(x.store_id) || '-') + '</div></div>'
                 + '<div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;"><span style="color:rgba(226,232,240,0.5);">执行动作</span><div style="color:#fff;margin-top:4px;font-size:13px;">' + (payload.execution_action || x.detail || x.title || '-') + '</div></div>'
                 + '</div>'
                 + (couponValue ? '<div style="padding:12px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.15);border-radius:10px;margin-top:10px;"><span style="color:rgba(226,232,240,0.5);font-size:12px;">优惠券</span><div style="color:#22c55e;font-weight:700;margin-top:4px;">🎫 ¥' + (Math.round(couponValue / 100)) + ' · 有效期 ' + validDays + ' 天</div></div>' : '')
@@ -55957,6 +55999,87 @@ ${body}
 
         async function requestActionFeedback(actionKey) { return; }
 
+        // 复制成品文案到剪贴板
+        function copyReadyCopy(btn) {
+            var txt = btn.getAttribute('data-copy') || '';
+            try {
+                navigator.clipboard.writeText(txt);
+                var old = btn.textContent; btn.textContent = '✅ 已复制';
+                setTimeout(function() { btn.textContent = old; }, 1500);
+            } catch (e) { showNotification('复制失败，请手动选择', 'warning'); }
+        }
+
+        // 采纳建议（纯人工：只标记执行中，不自动群发；执行后回填结果）
+        async function adoptGrowthSuggestion(actionKey) {
+            if (!confirm('采纳此方案？\n\n系统只记录「执行中」，不会自动群发。请你按文案在对应平台人工执行，执行完后回到这里「回填活动结果」。')) return;
+            try {
+                const r = await fetch('/api/growth/actions/' + encodeURIComponent(actionKey) + '/feedback', {
+                    method: 'POST', headers: growthAuthHeaders(),
+                    body: JSON.stringify({ status: 'executing', note: '已采纳，人工执行中' })
+                });
+                const data = await r.json();
+                if (!data.ok) throw new Error(data.error || 'adopt_failed');
+                showNotification('已采纳·执行中。执行后请回填活动结果以优化AI建议', 'success');
+                loadGrowthActionBoard();
+            } catch (e) { showNotification('采纳失败：' + (e?.message || e), 'error'); }
+        }
+
+        // 结果回填表单（动态模态）
+        function openResultFeedbackForm(actionKey) {
+            var actions = JSON.parse(document.getElementById('__growth_actions_cache')?.textContent || '[]');
+            var x = actions.find(function(a) { return a.action_key === actionKey; });
+            if (!x) { showNotification('动作数据未缓存', 'warning'); return; }
+            var payload = x.payload || {};
+            var kpi = payload.expected_kpi || {};
+            var oc = payload.outcome_summary || {};
+            var ac = oc.actual || {};
+            var ov = document.createElement('div');
+            ov.id = 'result-feedback-overlay';
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;';
+            ov.innerHTML =
+                '<div style="background:#0f172a;border:1px solid rgba(255,255,255,0.1);border-radius:14px;max-width:420px;width:100%;padding:18px;max-height:90vh;overflow:auto;">'
+                + '<div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:4px;">📊 回填活动结果</div>'
+                + '<div style="font-size:12px;color:rgba(226,232,240,0.55);margin-bottom:6px;">' + escapeHtml(x.title || '') + '</div>'
+                + '<div style="font-size:11px;color:#a5b4fc;background:rgba(99,102,241,0.1);border-radius:8px;padding:8px 10px;margin-bottom:12px;">预计目标：核销率 ' + (kpi.redemption_rate || 0) + '% · 营收 ¥' + Math.round(Number(kpi.revenue_fen || 0) / 100) + ' · 触达 ' + (kpi.reach || 0) + '人</div>'
+                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);display:block;margin-bottom:4px;">实际触达人数</label>'
+                + '<input id="rf-reach" type="number" min="0" value="' + (ac.reach != null ? ac.reach : '') + '" placeholder="如 47" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);display:block;margin-bottom:4px;">实际核销/到店数</label>'
+                + '<input id="rf-redemptions" type="number" min="0" value="' + (ac.redemptions != null ? ac.redemptions : '') + '" placeholder="如 6" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);display:block;margin-bottom:4px;">带来营收（元）</label>'
+                + '<input id="rf-revenue" type="number" min="0" value="' + (ac.revenue_fen != null ? Math.round(ac.revenue_fen / 100) : '') + '" placeholder="如 2800" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);display:block;margin-bottom:4px;">备注（可选）</label>'
+                + '<textarea id="rf-note" rows="2" placeholder="执行情况/复盘" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:14px;box-sizing:border-box;resize:vertical;">' + escapeHtml(payload.feedback_note || '') + '</textarea>'
+                + '<div style="display:flex;gap:8px;">'
+                + '<button onclick="submitResultFeedback(\'' + actionKey + '\')" style="flex:1;padding:10px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-weight:700;cursor:pointer;">提交并打分</button>'
+                + '<button onclick="document.getElementById(\'result-feedback-overlay\').remove()" style="padding:10px 16px;border:none;border-radius:10px;background:rgba(255,255,255,0.08);color:#fff;cursor:pointer;">取消</button>'
+                + '</div></div>';
+            ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+            document.body.appendChild(ov);
+        }
+
+        async function submitResultFeedback(actionKey) {
+            var reach = document.getElementById('rf-reach').value;
+            var redemptions = document.getElementById('rf-redemptions').value;
+            var revenue = document.getElementById('rf-revenue').value;
+            var note = document.getElementById('rf-note').value;
+            if (reach === '' && redemptions === '' && revenue === '') { showNotification('请至少填写一项实际结果', 'warning'); return; }
+            var body = { status: 'measured', note: note };
+            if (reach !== '') body.actual_reach = Number(reach);
+            if (redemptions !== '') body.actual_redemptions = Number(redemptions);
+            if (revenue !== '') body.actual_revenue_fen = Math.round(Number(revenue) * 100);
+            try {
+                const r = await fetch('/api/growth/actions/' + encodeURIComponent(actionKey) + '/feedback', {
+                    method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify(body)
+                });
+                const data = await r.json();
+                if (!data.ok) throw new Error(data.error || 'feedback_failed');
+                var s = data.score;
+                document.getElementById('result-feedback-overlay')?.remove();
+                showNotification(s && s.effectiveness_score != null ? ('已记录·自动评分：' + s.effectiveness + ' ' + s.effectiveness_score + '分（已沉淀经验库）') : '结果已记录', 'success');
+                loadGrowthActionBoard();
+            } catch (e) { showNotification('回填失败：' + (e?.message || e), 'error'); }
+        }
+
         /** 独立营销草稿执行页：全屏模态 */
         function openActionDetailModal(actionKey) {
             var actions = JSON.parse(document.getElementById('__growth_actions_cache')?.textContent || '[]');
@@ -55965,8 +56088,8 @@ ${body}
             var payload = x.payload || {};
             var key = x.action_key || '';
             var actionType = x.action_type || '';
-            var channelLabels = { 'miniprogram': '小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'dianping': '大众点评', 'waimai': '美团' };
-            var channelColors = { 'wecom': '#22c55e', 'miniprogram': '#38bdf8', 'xiaohongshu': '#ef4444', 'douyin': '#f59e0b', 'dianping': '#a78bfa', 'waimai': '#f97316' };
+            var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团' };
+            var channelColors = { 'wecom': '#22c55e', 'miniprogram': '#38bdf8', 'xiaohongshu': '#ef4444', 'douyin': '#f59e0b', 'pengyouquan': '#06b6d4', 'dianping': '#a78bfa', 'waimai': '#f97316' };
             var channel = payload.channel || '';
             var channelLabel = channelLabels[channel] || channel || '-';
             var channelColor = channelColors[channel] || '#94a3b8';
@@ -55985,7 +56108,7 @@ ${body}
                 + '</div>'
                 + '<div style="display:flex;flex-direction:column;gap:8px;">'
                 + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
-                + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">门店</span><div style="color:#fff;font-weight:600;margin-top:2px;">' + (x.store_id || '-') + '</div></div>'
+                + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">门店</span><div style="color:#fff;font-weight:600;margin-top:2px;">' + escapeHtml(growthStoreName(x.store_id) || '-') + '</div></div>'
                 + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">状态</span><div style="color:' + (x.status === 'executed' ? '#22c55e' : x.status === 'ignored' ? '#ef4444' : '#f59e0b') + ';font-weight:600;margin-top:2px;">' + (x.status === 'executed' ? '✅ 已执行' : x.status === 'ignored' ? '⛔ 已忽略' : x.status === 'proposed' ? '⚡ 可一键执行' : x.status || '-') + '</div></div>'
                 + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">渠道</span><div style="color:' + channelColor + ';margin-top:2px;font-weight:600;">' + channelLabel + '</div></div>'
                 + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">预算</span><div style="color:#fff;margin-top:2px;">' + (payload.budget_fen ? '¥' + Math.round(Number(payload.budget_fen) / 100) : '-') + '</div></div>'
@@ -56000,13 +56123,34 @@ ${body}
             } else if (x.status === 'proposed' && (actionType === 'send_voucher' || actionType === 'campaign_activate')) {
                 host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(245,158,11,0.06);border:1px dashed rgba(245,158,11,0.3);border-radius:10px;font-size:12px;color:#f59e0b;cursor:pointer;" onclick="closeActionDetailModal();openPosterPicker(\'' + key + '\')">🖼️ 尚未绑定海报 — 点击选择海报</div>';
             }
-            document.getElementById('growth-action-detail-execute').style.display = x.status === 'executed' || x.status === 'ignored' ? 'none' : '';
-            document.getElementById('growth-action-detail-execute').textContent = '✅ 批准执行';
-            document.getElementById('growth-action-detail-execute').setAttribute('onclick', "closeActionDetailModal();executeGrowthAction('" + key + "')");
-            document.getElementById('growth-action-detail-edit').style.display = x.status === 'executed' || x.status === 'ignored' ? 'none' : '';
-            document.getElementById('growth-action-detail-edit').setAttribute('onclick', "closeActionDetailModal();openEditExecuteForm('" + key + "')");
-            document.getElementById('growth-action-detail-ignore').style.display = x.status === 'executed' || x.status === 'ignored' ? 'none' : '';
-            document.getElementById('growth-action-detail-ignore').setAttribute('onclick', "closeActionDetailModal();ignoreGrowthAction('" + key + "')");
+            var detailIsLlm = (payload.source === 'llm_campaign_autopilot') || !!payload.expected_kpi || !!payload.confidence_level;
+            var execBtn = document.getElementById('growth-action-detail-execute');
+            var editBtn = document.getElementById('growth-action-detail-edit');
+            var ignoreBtn = document.getElementById('growth-action-detail-ignore');
+            if (detailIsLlm) {
+                // 纯人工：采纳(不自动发) / 回填结果；隐藏「修改后执行」
+                editBtn.style.display = 'none';
+                if (x.status === 'proposed') {
+                    execBtn.style.display = ''; execBtn.textContent = '✅ 采纳·我要执行';
+                    execBtn.setAttribute('onclick', "closeActionDetailModal();adoptGrowthSuggestion('" + key + "')");
+                    ignoreBtn.style.display = '';
+                    ignoreBtn.setAttribute('onclick', "closeActionDetailModal();ignoreGrowthAction('" + key + "')");
+                } else if (x.status === 'executing' || x.status === 'adopted' || x.status === 'measured') {
+                    execBtn.style.display = ''; execBtn.textContent = '📊 回填活动结果';
+                    execBtn.setAttribute('onclick', "closeActionDetailModal();openResultFeedbackForm('" + key + "')");
+                    ignoreBtn.style.display = 'none';
+                } else {
+                    execBtn.style.display = 'none'; ignoreBtn.style.display = 'none';
+                }
+            } else {
+                execBtn.style.display = x.status === 'executed' || x.status === 'ignored' ? 'none' : '';
+                execBtn.textContent = '✅ 批准执行';
+                execBtn.setAttribute('onclick', "closeActionDetailModal();executeGrowthAction('" + key + "')");
+                editBtn.style.display = x.status === 'executed' || x.status === 'ignored' ? 'none' : '';
+                editBtn.setAttribute('onclick', "closeActionDetailModal();openEditExecuteForm('" + key + "')");
+                ignoreBtn.style.display = x.status === 'executed' || x.status === 'ignored' ? 'none' : '';
+                ignoreBtn.setAttribute('onclick', "closeActionDetailModal();ignoreGrowthAction('" + key + "')");
+            }
         }
         function closeActionDetailModal() {
             document.getElementById('growth-action-detail-modal').classList.add('hidden');
