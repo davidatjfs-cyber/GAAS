@@ -17441,6 +17441,10 @@ app.post('/api/knowledge', authRequired, knowledgeUpload.single('file'), async (
           /^video\//i.test(mime0) ||
           declaredType === 'video' ||
           /\.(mp4|mov|webm|avi)$/i.test(origName);
+        const looksLikeDoc =
+          /^application\/(vnd\.openxmlformats-officedocument\.wordprocessingml|msword)/i.test(mime0) ||
+          declaredType === 'doc' ||
+          /\.(docx?|odt)$/i.test(origName);
         let parseSuccess = false;
 
         if (looksLikeImage) {
@@ -17609,6 +17613,26 @@ app.post('/api/knowledge', authRequired, knowledgeUpload.single('file'), async (
             const reason = String(pdfErr?.message || pdfErr);
             console.warn('[knowledge] PDF parse error:', reason);
             void notifyAdminsOcrFailed(itemTitle, 'PDF', reason);
+          }
+        }
+
+        // Word (.docx/.doc) — extract text with mammoth, then use LLM for structure if needed
+        if (looksLikeDoc) {
+          try {
+            const mammoth = require('mammoth');
+            const docResult = await mammoth.extractRawText({ path: localPath });
+            const docText = String(docResult?.value || '').trim();
+            if (docText) {
+              await pool.query('UPDATE knowledge_base SET content = $1, updated_at = now() WHERE id = $2', [docText, inserted.id]);
+              parseSuccess = true;
+            } else {
+              console.warn('[knowledge] Word document returned empty text:', itemTitle);
+              void notifyAdminsOcrFailed(itemTitle, 'Word文档', 'mammoth提取文本为空');
+            }
+          } catch (docErr) {
+            const reason = String(docErr?.message || docErr);
+            console.warn('[knowledge] Word document parse error:', reason);
+            void notifyAdminsOcrFailed(itemTitle, 'Word文档', reason);
           }
         }
       }

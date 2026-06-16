@@ -8,5 +8,8 @@
   "scripts": {
     "start": "npm --workspace server run start",
     "migrate": "npm --workspace server run migrate"
+  },
+  "dependencies": {
+    "mammoth": "^1.12.0"
   }
 }
