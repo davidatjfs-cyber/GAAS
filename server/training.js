@@ -1503,16 +1503,28 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
         return res.json({ success: false, error: 'no_content', message: '此文章暂无文字内容，无法生成AI解析' });
       }
 
-      const isSopContent = /SOP|标准操作|工序|步骤\s*\d|操作动作|质量标准|常见失败|补救/.test(rawContent);
       const fileType = (row.file_type || '').toLowerCase();
       const isMediaFile = /video|image|mp4|mov|jpg|jpeg|png|gif/.test(fileType);
+
+      // 手册/教材类：多章节综合文档，不能套单一SOP模板
+      const titleAndHead = row.title + rawContent.slice(0, 800);
+      const isHandbook = /体系手册|培训手册|培训教材|培训体系|操作手册|培训大纲|岗位手册|综合.*培训/.test(titleAndHead);
+
+      // 真正的单操作SOP：内容含SOP结构词，且不是综合手册
+      const isSopContent = !isHandbook && /SOP|标准操作|工序|步骤\s*\d|操作动作|质量标准|常见失败|补救/.test(rawContent);
+
+      // 超长文档截断：单次LLM输入建议不超过25000字
+      const MAX_CONTENT = 25000;
+      const contentForPrompt = rawContent.length > MAX_CONTENT
+        ? rawContent.slice(0, MAX_CONTENT) + `\n\n【注：原文共${rawContent.length}字，以上为前${MAX_CONTENT}字节选，请基于已有内容完整生成解析】`
+        : rawContent;
 
       let prompt;
       if (isSopContent || isMediaFile) {
         prompt = `你是一名餐饮培训标准制定专家，请根据以下原始内容，输出严格对齐厨房SOP格式的标准培训解析。
 
 【原始SOP内容】
-${rawContent}
+${contentForPrompt}
 
 请严格按以下结构输出（保留 ## 标题符号），每步必须包含：操作动作、质量标准、常见失败、补救措施、是否为关键步骤：
 
@@ -1544,13 +1556,47 @@ ${rawContent}
 用"到岗→操作→复核"格式的口诀，帮助员工快速记住核心流程。
 
 输出语言：简体中文。不要添加任何开场白或结尾语，直接从"## 🍳 工序"开始输出。`;
+      } else if (isHandbook) {
+        prompt = `你是一名餐饮人力资源培训专家，正在为管理层和员工制作综合培训手册解析。
+
+【文件标题】${row.title}
+
+【原始内容】
+${contentForPrompt}
+
+这是一份涵盖多个岗位/多个章节的综合培训手册，不是单一工序SOP。请按以下结构生成解析，必须忠实原文内容，不得虚构或替换：
+
+## 📌 手册定位
+用2-3句话说清楚：这份手册面向谁？覆盖哪些岗位？核心目标是什么？
+
+## 🗂️ 内容框架
+按原文章节结构，列出各章节/各岗位的培训模块，每条注明：模块名称 → 核心培训内容（1行概括）
+
+## 📖 各岗位/章节详细解析
+严格按原文每个章节/岗位逐一展开，格式如下：
+
+### [章节/岗位名称]
+**培训目标**：…
+**核心技能/知识点**：列出原文要求的具体内容（含数字、标准、时限等）
+**考核标准**：原文中的考核/验收要求
+**晋升路径**（如有）：原文中的晋升条件
+
+（按章节数量重复以上格式，不限章节数量，有几个写几个）
+
+## ⚠️ 重要制度 & 红线
+原文中的纪律要求、不合格标准、强制性规定（用"- "列出，不得自行添加）
+
+## ✅ 使用指南
+这份手册如何配合日常培训使用？新员工/管理者分别应关注哪几章？
+
+输出语言：简体中文。忠实原文，不虚构内容，不要添加开场白，直接从"## 📌 手册定位"开始输出。`;
       } else {
         prompt = `你是一名经验丰富的餐饮培训导师，正在为餐厅一线员工制作培训材料。
 
 【培训文章标题】${row.title}
 
 【原始内容】
-${rawContent}
+${contentForPrompt}
 
 请根据以上内容，生成一份**结构清晰、内容完整、实用性强**的培训解析。核心要求：
 - ⚠️ 原始内容中所有的具体数字、温度、时间、百分比、克重等量化数据**必须完整保留**，不得省略或模糊化（如"烧鹅出成65-70%"必须写出来，"中火180℃→大火220℃"必须写出来）
