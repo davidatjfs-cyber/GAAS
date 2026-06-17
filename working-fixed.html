@@ -55807,7 +55807,7 @@ ${body}
                 const rows = actionsData?.actions || [];
                 try { document.getElementById('__growth_actions_cache').textContent = JSON.stringify(rows); } catch (e) {}
                 var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团' };
-                var actionTypeLabels = { 'send_voucher': '🎫 发券', 'campaign_activate': '🚀 激活活动', 'create_content': '📝 创建内容', 'promo_task': '📋 推广任务', 'generate_poster': '🖼️ 生成海报' };
+                var actionTypeLabels = { 'send_voucher': '🎫 发券', 'campaign_activate': '🚀 激活活动', 'create_content': '📝 创建内容', 'promo_task': '📋 推广任务', 'generate_poster': '🖼️ 生成海报', 'pllm_task': '🤖 PLLM任务' };
                 host.innerHTML = rows.length ? rows.map(function(x) {
                     const key = x.action_key || '';
                     var payload = x.payload || {};
@@ -56097,6 +56097,7 @@ ${body}
             if (actionType === 'send_voucher' || actionType === 'campaign_activate') actionTypeLabel = '🎫 发券/激活活动 — 将创建券记录+计划';
             else if (actionType === 'create_content' || actionType === 'promo_task') actionTypeLabel = '📝 创建内容 — 将写入内容日历';
             else if (actionType === 'generate_poster') actionTypeLabel = '🖼️ 生成海报 — 将创建海报任务';
+            else if (actionType === 'pllm_task') actionTypeLabel = '🤖 PLLM任务 — AI检测异常后自动生成的营销方案，人工执行后回填结果';
             else actionTypeLabel = '✅ 触达动作';
             document.getElementById('growth-action-detail-modal').classList.remove('hidden');
             document.getElementById('growth-action-detail-modal').style.display = 'flex';
