@@ -222,14 +222,14 @@ async function lookupLearnings(pool, context) {
   const variable = cleanText(context?.variable || '', 120);
   if (!channel || !variable) return [];
   const r = await pool.query(
-    `SELECT winning_value, losing_value, effect_desc, sample_size, confidence, variable, audience_tag, scene
+    `SELECT winning_value, losing_value, effect_desc, sample_size, confidence, variable, audience_tag, scene, is_verified
        FROM growth_learnings
       WHERE channel = $1
         AND (scene = $2 OR scene IS NULL OR $2 IS NULL)
         AND (audience_tag = $3 OR audience_tag IS NULL OR $3 IS NULL)
         AND variable = $4
         AND (valid_until IS NULL OR valid_until > CURRENT_DATE)
-      ORDER BY sample_size DESC, confidence DESC
+      ORDER BY is_verified DESC, sample_size DESC, confidence DESC
       LIMIT 3`,
     [channel, scene, audienceTag, variable]
   );
@@ -626,8 +626,8 @@ async function maybeWriteAbLearning(pool, taskRow, outcome, winner, winnerLift) 
   await pool.query(
     `INSERT INTO growth_learnings (
        source_type, source_id, store_code, channel, scene, audience_tag, variable,
-       winning_value, losing_value, effect_desc, sample_size, confidence, valid_until
-     ) VALUES ('ab_test',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified
+     ) VALUES ('ab_test',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true)
      ON CONFLICT DO NOTHING`,
     [
       String(taskRow.id),
@@ -835,10 +835,12 @@ async function generateWeeklyContentSuggestion(pool, storeCode, weekStart, opera
   let smsA = top ? `荔枝木${top.dish_name}本周热卖，今晚来尝尝，限时优惠已备好` : '今晚来店，专属优惠已为您准备';
   let smsB = top ? `{姓名}，${top.dish_name}这周很受欢迎，给你留了一张优惠券，3天内有效` : '{姓名}，给你准备了一张限时优惠券，3天内有效';
   let smsCite = '';
-  if (bestSmsLearning) {
-    // The winning copy style becomes the primary variant; challenger is the baseline
+  if (bestSmsLearning && bestSmsLearning.is_verified) {
+    // Only auto-adopt when backed by real execution data (is_verified=true)
     smsA = cleanText(bestSmsLearning.winning_value, 255) || smsA;
-    smsCite = `根据上次测试（${cleanText(bestSmsLearning.effect_desc || '', 80)}），已自动采用胜出风格`;
+    smsCite = `根据已验证经验（${cleanText(bestSmsLearning.effect_desc || '', 80)}），已自动采用胜出风格`;
+  } else if (bestSmsLearning) {
+    smsCite = `参考经验库（待验证）：${cleanText(bestSmsLearning.effect_desc || '', 80)}`;
   }
 
   const items = [
@@ -1356,6 +1358,8 @@ export async function ensurePhaseTables(pool) {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_growth_learnings_source
     ON growth_learnings (source_type, source_id)
     WHERE source_id IS NOT NULL AND source_id <> ''`);
+  // Phase 6b: verified flag — manual/seed data defaults false; real execution results are true
+  await pool.query(`ALTER TABLE growth_learnings ADD COLUMN IF NOT EXISTS is_verified BOOLEAN NOT NULL DEFAULT false`);
 
   // Phase 7a: churn predictions
   await pool.query(`

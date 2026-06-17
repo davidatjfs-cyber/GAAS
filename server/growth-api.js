@@ -1349,6 +1349,107 @@ async function backfillRedemptionAmounts(pool) {
   return r.rows.length;
 }
 
+// T+7 SMS自动回填：找已发送7天以上且无outcome_summary的短信AI建议，
+// 按customer_id+store_id+7天窗口匹配核销数据，自动打分写回并沉淀经验库(is_verified=true)。
+async function autoBackfillSmsActions(pool) {
+  const candidates = await pool.query(`
+    SELECT a.action_key, a.store_id, a.payload
+    FROM growth_actions a
+    WHERE a.payload->>'channel' = 'sms'
+      AND (a.payload->'outcome_summary') IS NULL
+      AND a.updated_at <= NOW() - INTERVAL '7 days'
+      AND EXISTS (
+        SELECT 1 FROM growth_delivery_logs dl
+        WHERE dl.action_key = a.action_key AND dl.status = 'sent'
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM growth_learnings gl
+        WHERE gl.source_type = 'ai_suggestion' AND gl.source_id = a.action_key
+      )
+    LIMIT 50
+  `);
+  let count = 0;
+  for (const action of candidates.rows) {
+    try {
+      const { action_key, store_id, payload } = action;
+      const reachR = await pool.query(
+        `SELECT COUNT(*)::int AS reach, MIN(created_at) AS first_sent
+         FROM growth_delivery_logs WHERE action_key=$1 AND status='sent'`,
+        [action_key]
+      );
+      const reach = reachR.rows[0]?.reach || 0;
+      const firstSent = reachR.rows[0]?.first_sent;
+      if (reach === 0 || !firstSent) continue;
+
+      const redR = await pool.query(
+        `SELECT COUNT(*)::int AS redemptions, COALESCE(SUM(gr.amount_fen),0)::bigint AS revenue_fen
+         FROM growth_redemptions gr
+         WHERE gr.customer_id IN (
+           SELECT customer_id FROM growth_delivery_logs WHERE action_key=$1 AND status='sent' AND customer_id IS NOT NULL
+         )
+         AND gr.store_id = $2
+         AND gr.redeemed_at BETWEEN $3::timestamptz AND $3::timestamptz + INTERVAL '7 days'`,
+        [action_key, store_id, firstSent]
+      );
+      const redemptions = redR.rows[0]?.redemptions || 0;
+      const revenue_fen = Number(redR.rows[0]?.revenue_fen || 0);
+
+      const expected = (payload.expected_kpi && typeof payload.expected_kpi === 'object') ? payload.expected_kpi : {};
+      const parts = [];
+      if (Number(expected.reach) > 0) parts.push(Math.min(2, reach / Number(expected.reach)));
+      const actualRate = reach > 0 ? (redemptions / reach) * 100 : 0;
+      if (Number(expected.redemption_rate) > 0) parts.push(Math.min(2, actualRate / Number(expected.redemption_rate)));
+      if (Number(expected.revenue_fen) > 0) parts.push(Math.min(2, revenue_fen / Number(expected.revenue_fen)));
+      const achievement = parts.length ? parts.reduce((a, c) => a + c, 0) / parts.length : null;
+      const score = achievement != null ? Math.round(Math.min(100, achievement * 80)) : null;
+      const effectiveness = score == null ? '已回填' : score >= 70 ? '有效' : score >= 40 ? '部分有效' : '无效';
+
+      const scorePayload = {
+        actual: { reach, redemptions, revenue_fen },
+        actual_redemption_rate: reach > 0 ? Number((redemptions / reach * 100).toFixed(1)) : 0,
+        achievement: achievement != null ? Number(achievement.toFixed(2)) : null,
+        effectiveness_score: score,
+        effectiveness,
+        scored_at: new Date().toISOString(),
+        auto_backfill: true
+      };
+      await pool.query(
+        `UPDATE growth_actions SET payload = COALESCE(payload,'{}') || $2::jsonb, updated_at=NOW() WHERE action_key=$1`,
+        [action_key, JSON.stringify({ outcome_summary: scorePayload })]
+      );
+
+      const approach = cleanText(payload.ready_copy || payload.execution_action || '', 500);
+      if (approach) {
+        const isWin = score != null && score >= 70;
+        const effectDesc = cleanText(
+          `${effectiveness}｜核销率${Number(actualRate.toFixed(1))}%，实收¥${Math.round(revenue_fen / 100)}，达成${achievement != null ? Math.round(achievement * 100) + '%' : '-'}(自动回填)`,
+          255
+        );
+        await pool.query(
+          `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified)
+           VALUES ('ai_suggestion',$1,$2,'sms',NULL,$3,'AI建议方案有效性',$4,$5,$6,$7,$8,$9,true)
+           ON CONFLICT DO NOTHING`,
+          [
+            action_key,
+            cleanText(store_id, 128),
+            cleanText(payload.target_audience || '', 120) || null,
+            isWin ? approach : '换其它方向（避免重复）',
+            isWin ? null : approach,
+            effectDesc,
+            Math.min(reach, 99999),
+            reach >= 100 ? 'high' : reach >= 30 ? 'medium' : 'low',
+            new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10)
+          ]
+        ).catch(() => {});
+      }
+      count++;
+    } catch (e) {
+      console.warn('[sms-backfill] error for', action.action_key, e?.message);
+    }
+  }
+  return count;
+}
+
 async function appendExecutionLog(pool, payload) {
   await pool.query(
     `INSERT INTO growth_execution_logs (
@@ -3902,6 +4003,16 @@ export function registerGrowthRoutes(app, pool) {
     }, 30000);
   }
 
+  // T+7 SMS自动回填：每天跑一次；启动后延迟60s首跑（等DB连接稳定）
+  if (!globalThis.__smsBackfillTimer) {
+    globalThis.__smsBackfillTimer = setInterval(() => {
+      autoBackfillSmsActions(pool).then((n) => { if (n > 0) console.log(`[sms-backfill] auto-backfilled ${n} actions`); }).catch((e) => console.warn('[sms-backfill] failed:', e?.message));
+    }, 24 * 60 * 60 * 1000);
+    setTimeout(() => {
+      autoBackfillSmsActions(pool).then((n) => { if (n > 0) console.log(`[sms-backfill] initial run: backfilled ${n} actions`); }).catch((e) => console.warn('[sms-backfill] initial failed:', e?.message));
+    }, 60000);
+  }
+
   app.post('/api/miniprogram/events', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
 
@@ -5330,8 +5441,8 @@ export function registerGrowthRoutes(app, pool) {
       );
       const sample = actual.reach || 0;
       await pool.query(
-        `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, valid_until)
-         VALUES ('ai_suggestion',$1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11)
+        `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified)
+         VALUES ('ai_suggestion',$1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,true)
          ON CONFLICT DO NOTHING`,
         [
           actionKey,
