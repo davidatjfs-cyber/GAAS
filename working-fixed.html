@@ -16797,6 +16797,8 @@
                                     style="padding:8px 18px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.7);">📊 进度看板</button>
                                 <button id="training-tab-pending" type="button" onclick="switchTrainingAdminTab('pending')"
                                     style="padding:8px 18px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.7);">⏳ 待审核</button>
+                                <button id="training-tab-promoreq" type="button" onclick="switchTrainingAdminTab('promoreq')"
+                                    style="padding:8px 18px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.7);">🎯 晋升认证要求</button>
                             </div>
                         </div>
 
@@ -16851,6 +16853,47 @@
                         <div id="training-pending-panel" class="card" style="display:none;padding:16px;">
                             <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:14px;">⏳ 待审核实操</div>
                             <div id="training-pending-list"></div>
+                        </div>
+
+                        <!-- 晋升认证要求矩阵 -->
+                        <div id="training-promoreq-panel" class="card" style="display:none;padding:16px;">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
+                                <span style="font-size:15px;font-weight:700;color:#fff;">🎯 晋升认证要求设置</span>
+                            </div>
+                            <div style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:14px;">选择岗位和级别后，勾选/取消该级别晋升所需通过的知识点。保存后，员工申请晋升时系统将自动派发已勾选的知识点培训任务。</div>
+                            <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+                                <select id="promoreq-position" onchange="loadPromoReqTopics()" style="flex:1;min-width:140px;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.12);color:#fff;font-size:14px;">
+                                    <option value="">选择岗位</option>
+                                    <option value="打荷">打荷</option>
+                                    <option value="汤档/煲仔">汤档/煲仔</option>
+                                    <option value="刺身">刺身</option>
+                                    <option value="烧味/卤水">烧味/卤水</option>
+                                    <option value="砧板">砧板</option>
+                                    <option value="炒锅">炒锅</option>
+                                    <option value="出品经理">出品经理</option>
+                                    <option value="洗碗">洗碗</option>
+                                    <option value="传菜">传菜</option>
+                                    <option value="服务员">服务员</option>
+                                    <option value="水吧">水吧</option>
+                                    <option value="收银员">收银员</option>
+                                    <option value="主管">主管</option>
+                                    <option value="前厅经理">前厅经理</option>
+                                    <option value="门店店长">门店店长</option>
+                                </select>
+                                <select id="promoreq-level" onchange="loadPromoReqTopics()" style="flex:1;min-width:130px;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.12);color:#fff;font-size:14px;">
+                                    <option value="">选择级别</option>
+                                    <option value="L1">L1</option>
+                                    <option value="L2">L2</option>
+                                    <option value="L3">L3</option>
+                                    <option value="T1">T1 合格</option>
+                                    <option value="T2">T2 师傅</option>
+                                    <option value="T3">T3 厨师长</option>
+                                    <option value="M1">M1 主管</option>
+                                    <option value="M2">M2 经理</option>
+                                    <option value="M3">M3 店长</option>
+                                </select>
+                            </div>
+                            <div id="promoreq-body"></div>
                         </div>
                     </div>
 
@@ -30413,7 +30456,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
         }
 
         function switchTrainingAdminTab(tab) {
-            ['topics', 'assignments', 'dashboard', 'pending'].forEach(t => {
+            ['topics', 'assignments', 'dashboard', 'pending', 'promoreq'].forEach(t => {
                 const btn = document.getElementById('training-tab-' + t);
                 const panel = document.getElementById('training-' + t + '-panel');
                 if (btn) {
@@ -30428,6 +30471,114 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             if (tab === 'assignments') loadTrainingAssignments();
             if (tab === 'dashboard') loadTrainingDashboard();
             if (tab === 'pending') loadPendingCertifications();
+            if (tab === 'promoreq') loadPromoReqTopics();
+        }
+
+        // ── 晋升认证要求矩阵 ──────────────────────────────────────────
+        async function loadPromoReqTopics() {
+            const position = document.getElementById('promoreq-position')?.value || '';
+            const level = document.getElementById('promoreq-level')?.value || '';
+            const body = document.getElementById('promoreq-body');
+            if (!body) return;
+            if (!position || !level) {
+                body.innerHTML = '<div style="text-align:center;padding:32px;color:rgba(255,255,255,0.4);font-size:13px;">请先选择岗位和级别</div>';
+                return;
+            }
+            body.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.4);font-size:13px;">加载中…</div>';
+            try {
+                const resp = await fetch('/api/training/topics?position=' + encodeURIComponent(position), {
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }
+                });
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || '加载失败');
+
+                // 只展示该岗位 + 该级别的知识点
+                const topics = (data.topics || []).filter(t => {
+                    const posArr = (t.position || '').split(',').map(s => s.trim());
+                    return posArr.includes(position) && t.level === level;
+                });
+
+                if (!topics.length) {
+                    body.innerHTML = `<div style="text-align:center;padding:32px;color:rgba(255,255,255,0.4);font-size:13px;">该岗位/级别下暂无知识点<br><span style="font-size:11px;opacity:.6">请先在「知识点」标签里创建知识点并设置对应岗位和级别</span></div>`;
+                    return;
+                }
+
+                const reqCount = topics.filter(t => t.promotion_required).length;
+                let html = `
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                    <div style="font-size:13px;color:rgba(255,255,255,0.6);">
+                        共 <b style="color:#fff">${topics.length}</b> 个知识点，
+                        当前 <b style="color:#a5b4fc">${reqCount}</b> 个设为晋升必须认证
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <button onclick="promoReqSelectAll(true)" style="padding:6px 12px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;cursor:pointer;">全选</button>
+                        <button onclick="promoReqSelectAll(false)" style="padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;">全不选</button>
+                        <button onclick="savePromoReqTopics()" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
+                    </div>
+                </div>
+                <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-bottom:12px;">✓ 勾选 = 员工晋升到「${position} ${level}」时必须通过此知识点认证；取消勾选 = 不强制要求</div>
+                <div id="promoreq-checklist" style="display:flex;flex-direction:column;gap:6px;">`;
+
+                topics.forEach(t => {
+                    const checked = t.promotion_required ? 'checked' : '';
+                    const stageM = /^(.+?)[：:]/.exec(t.title || '');
+                    const stage = stageM ? `<span style="font-size:10px;color:rgba(255,255,255,0.35);margin-right:4px;">[${stageM[1]}]</span>` : '';
+                    const title = stageM ? t.title.slice(stageM[0].length) : t.title;
+                    html += `
+                    <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);cursor:pointer;transition:background .15s;"
+                           onmouseover="this.style.background='rgba(99,102,241,0.08)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'">
+                        <input type="checkbox" data-id="${t.id}" ${checked} style="width:16px;height:16px;accent-color:#6366f1;flex-shrink:0;margin-top:2px;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:13px;color:#fff;line-height:1.4;">${stage}${escapeHtml(title)}</div>
+                            <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px;">有效期 ${t.validity_days || 180} 天${t.practice_task ? ' · 含实操' : ''}</div>
+                        </div>
+                        <span style="font-size:11px;padding:2px 8px;border-radius:20px;flex-shrink:0;${t.promotion_required ? 'background:rgba(99,102,241,0.2);color:#a5b4fc;' : 'background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.35);'}">${t.promotion_required ? '必须认证' : '不要求'}</span>
+                    </label>`;
+                });
+
+                html += `</div>
+                <div style="margin-top:14px;text-align:right;">
+                    <button onclick="savePromoReqTopics()" style="padding:8px 20px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">💾 保存晋升认证要求</button>
+                </div>`;
+
+                body.innerHTML = html;
+            } catch (e) {
+                body.innerHTML = `<div style="text-align:center;padding:24px;color:#f87171;font-size:13px;">${e.message}</div>`;
+            }
+        }
+
+        function promoReqSelectAll(val) {
+            document.querySelectorAll('#promoreq-checklist input[type=checkbox]').forEach(cb => {
+                cb.checked = val;
+                const badge = cb.closest('label')?.querySelector('span[style*="border-radius:20px"]');
+                if (badge) {
+                    badge.textContent = val ? '必须认证' : '不要求';
+                    badge.style.background = val ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.06)';
+                    badge.style.color = val ? '#a5b4fc' : 'rgba(255,255,255,0.35)';
+                }
+            });
+        }
+
+        async function savePromoReqTopics() {
+            const position = document.getElementById('promoreq-position')?.value || '';
+            const level = document.getElementById('promoreq-level')?.value || '';
+            if (!position || !level) return showNotification('请先选择岗位和级别', 'error');
+            const checkboxes = document.querySelectorAll('#promoreq-checklist input[type=checkbox]');
+            const required_ids = [];
+            checkboxes.forEach(cb => { if (cb.checked) required_ids.push(Number(cb.dataset.id)); });
+            try {
+                const resp = await fetch('/api/training/topics/set-promotion-requirements', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token'), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ position, level, required_ids })
+                });
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || '保存失败');
+                showNotification(`已更新：${required_ids.length} 项设为必须认证，共 ${data.updated} 项知识点`, 'success');
+                loadPromoReqTopics(); // 刷新显示最新状态
+            } catch (e) {
+                showNotification('保存失败：' + e.message, 'error');
+            }
         }
 
         async function loadTrainingTopics() {

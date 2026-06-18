@@ -482,6 +482,43 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
     }
   });
 
+  // POST /api/training/topics/set-promotion-requirements
+  // 管理员批量设置某岗位+级别的晋升认证要求：
+  // required_ids 里的 topic 设为 promotion_required=true；同岗位+级别其余 topic 设为 false。
+  app.post('/api/training/topics/set-promotion-requirements', authMiddleware, async (req, res) => {
+    try {
+      if (!['admin', 'hq_manager'].includes(req.user?.role)) {
+        return res.status(403).json({ error: '仅管理员和总部营运可修改晋升认证要求' });
+      }
+      const position = String(req.body?.position || '').trim();
+      const level = String(req.body?.level || '').trim();
+      const requiredIds = Array.isArray(req.body?.required_ids)
+        ? req.body.required_ids.map(Number).filter(n => Number.isFinite(n) && n > 0)
+        : [];
+      if (!position || !level) return res.status(400).json({ error: '必须指定 position 和 level' });
+
+      // 取该岗位+级别的所有 topic id（position 字段是逗号分隔，用 LIKE 匹配）
+      const allR = await pool().query(
+        `SELECT id FROM training_topics WHERE is_active = true AND level = $1
+           AND (position = $2 OR position LIKE $3 OR position LIKE $4 OR position LIKE $5)`,
+        [level, position, `${position},%`, `%,${position}`, `%,${position},%`]
+      );
+      const allIds = allR.rows.map(r => r.id);
+      if (!allIds.length) return res.json({ success: true, updated: 0 });
+
+      const reqSet = new Set(requiredIds);
+      // 批量 update：用 CASE 一次搞定
+      await pool().query(
+        `UPDATE training_topics SET promotion_required = (id = ANY($1::int[]))
+         WHERE id = ANY($2::int[])`,
+        [requiredIds, allIds]
+      );
+      return res.json({ success: true, updated: allIds.length, required_count: requiredIds.length });
+    } catch (e) {
+      return res.status(500).json({ error: e?.message });
+    }
+  });
+
   // GET /api/training/my-development-map - 我的发展地图（档案首页）
   app.get('/api/training/my-development-map', authMiddleware, async (req, res) => {
     try {
