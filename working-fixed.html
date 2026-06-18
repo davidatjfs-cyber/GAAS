@@ -16797,6 +16797,8 @@
                                     style="padding:8px 18px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.7);">📊 进度看板</button>
                                 <button id="training-tab-pending" type="button" onclick="switchTrainingAdminTab('pending')"
                                     style="padding:8px 18px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.7);">⏳ 待审核</button>
+                                <button id="training-tab-progress" type="button" onclick="switchTrainingAdminTab('progress')"
+                                    style="padding:8px 18px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.7);">📊 晋升进度</button>
                                 <button id="training-tab-promoreq" type="button" onclick="switchTrainingAdminTab('promoreq')"
                                     style="padding:8px 18px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.7);">🎯 晋升认证要求</button>
                             </div>
@@ -16856,6 +16858,16 @@
                         </div>
 
                         <!-- 晋升认证要求矩阵 -->
+                        <div id="training-progress-panel" class="card" style="display:none;padding:16px;">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+                                <div>
+                                    <div style="font-size:15px;font-weight:700;color:#fff;">晋升进度跟踪</div>
+                                    <div style="font-size:12px;color:rgba(255,255,255,0.45);margin-top:2px;">显示所有在途晋升培训的逐项完成状态</div>
+                                </div>
+                                <button onclick="loadPromoProgress()" style="padding:6px 14px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;cursor:pointer;">刷新</button>
+                            </div>
+                            <div id="promo-progress-body"></div>
+                        </div>
                         <div id="training-promoreq-panel" class="card" style="display:none;padding:16px;">
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
                                 <span style="font-size:15px;font-weight:700;color:#fff;">🎯 晋升认证要求设置</span>
@@ -19714,6 +19726,14 @@
                                     <label class="form-label">晋升申请理由</label>
                                     <textarea id="promo-qualification-reason" class="form-input form-textarea" placeholder="请说明你的成长、业绩、晋升动机"></textarea>
                                 </div>
+                                <div class="form-group" style="margin-top:10px;">
+                                    <label class="form-label">晋升层次</label>
+                                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                                        <button type="button" id="promo-tier-level" onclick="promoSetTier('level_promotion')" class="btn" style="font-size:13px;padding:9px 8px;">📈 级别晋升</button>
+                                        <button type="button" id="promo-tier-skill" onclick="promoSetTier('skill_bump')" class="btn btn-secondary" style="font-size:13px;padding:9px 8px;">🔧 技能提升</button>
+                                    </div>
+                                    <div id="promo-tier-hint" style="font-size:11px;margin-top:6px;color:rgba(200,215,230,0.55);">级别晋升：目标级别全套认证，通过后升级 &nbsp;·&nbsp; 技能提升：自选技能认证，仅涨工资不升级</div>
+                                </div>
                                 <div class="form-group" style="margin-top: 10px;">
                                     <label class="form-label">晋升申请类型</label>
                                     <select id="promo-qualification-type" class="form-input" onchange="promoOnQualificationTypeChange()">
@@ -19725,12 +19745,12 @@
                                     <label class="form-label">具体岗位选择</label>
                                     <select id="promo-target-position" class="form-input" onchange="promoOnTargetPositionChange()"></select>
                                 </div>
-                                <div class="form-group" style="margin-top: 10px;">
+                                <div id="promo-target-level-group" class="form-group" style="margin-top: 10px;">
                                     <label class="form-label">挑战级别（自动计算）</label>
                                     <input id="promo-target-level" class="form-input" readonly>
                                 </div>
                                 <div class="form-group" style="margin-top: 10px;">
-                                    <label class="form-label">目标岗位能力要求</label>
+                                    <label id="promo-capability-label" class="form-label">目标岗位能力要求（系统自动）</label>
                                     <div id="promo-capability-list" style="background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:10px; font-size:12px; color:rgba(226,232,240,0.9);"></div>
                                 </div>
                                 <div class="form-group" style="margin-top: 10px;">
@@ -30456,7 +30476,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
         }
 
         function switchTrainingAdminTab(tab) {
-            ['topics', 'assignments', 'dashboard', 'pending', 'promoreq'].forEach(t => {
+            ['topics', 'assignments', 'dashboard', 'pending', 'progress', 'promoreq'].forEach(t => {
                 const btn = document.getElementById('training-tab-' + t);
                 const panel = document.getElementById('training-' + t + '-panel');
                 if (btn) {
@@ -30471,7 +30491,72 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             if (tab === 'assignments') loadTrainingAssignments();
             if (tab === 'dashboard') loadTrainingDashboard();
             if (tab === 'pending') loadPendingCertifications();
+            if (tab === 'progress') loadPromoProgress();
             if (tab === 'promoreq') loadPromoReqTopics();
+        }
+
+        // ── 晋升进度跟踪面板 ────────────────────────────────────────
+        async function loadPromoProgress() {
+            const body = document.getElementById('promo-progress-body');
+            if (!body) return;
+            body.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.4);font-size:13px;">加载中…</div>';
+            try {
+                const resp = await fetch('/api/promotion/tracks', {
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }
+                });
+                const data = await resp.json();
+                const tracks = (data.items || []).filter(t => String(t?.status || '') === 'qualification_approved' && !t?.formalApplied);
+                if (!tracks.length) {
+                    body.innerHTML = '<div style="text-align:center;padding:32px;color:rgba(255,255,255,0.4);font-size:13px;">目前没有在途晋升培训</div>';
+                    return;
+                }
+                const tierLabel = t => t?.promoTier === 'skill_bump' ? '<span style="font-size:10px;background:rgba(251,191,36,0.2);color:#fbbf24;border-radius:4px;padding:1px 6px;">技能提升</span>' : '<span style="font-size:10px;background:rgba(99,102,241,0.2);color:#a5b4fc;border-radius:4px;padding:1px 6px;">级别晋升</span>';
+                let html = '';
+                for (const tr of tracks) {
+                    const items = Array.isArray(tr.trainingProgress?.items) ? tr.trainingProgress.items : [];
+                    const total = items.length;
+                    const passed = items.filter(i => i.certified).length;
+                    const pct = total ? Math.round(passed / total * 100) : 0;
+                    const barColor = pct === 100 ? '#34d399' : pct >= 60 ? '#60a5fa' : '#f87171';
+                    const dueDate = tr.trainingDueDate || '';
+                    const today = new Date().toISOString().slice(0, 10);
+                    const overdue = dueDate && dueDate < today && pct < 100;
+
+                    html += `<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,${overdue ? '0.25' : '0.08'});border-radius:12px;padding:14px 16px;margin-bottom:10px;">
+                        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                            <div>
+                                <span style="font-size:14px;font-weight:700;color:#fff;">${escapeHtml(tr.applicantName || tr.applicantUsername)}</span>
+                                ${tierLabel(tr)}
+                                ${overdue ? '<span style="font-size:10px;background:rgba(248,113,113,0.2);color:#f87171;border-radius:4px;padding:1px 6px;margin-left:4px;">已逾期</span>' : ''}
+                            </div>
+                            <div style="text-align:right;font-size:12px;color:rgba(255,255,255,0.45);">
+                                ${escapeHtml(tr.targetPosition || '')}${tr.targetLevel ? ' / ' + escapeHtml(tr.targetLevel) : ''}
+                                ${dueDate ? '<br>截止 ' + escapeHtml(dueDate) : ''}
+                            </div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                            <div style="flex:1;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+                                <div style="width:${pct}%;height:100%;background:${barColor};border-radius:3px;transition:width .3s;"></div>
+                            </div>
+                            <span style="font-size:12px;color:${barColor};font-weight:700;min-width:38px;text-align:right;">${passed}/${total}</span>
+                        </div>`;
+
+                    if (items.length) {
+                        html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+                        items.forEach(it => {
+                            const c = it.certified;
+                            html += `<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:${c ? 'rgba(52,211,153,0.15)' : 'rgba(255,255,255,0.06)'};color:${c ? '#34d399' : 'rgba(255,255,255,0.5)'};border:1px solid ${c ? 'rgba(52,211,153,0.3)' : 'rgba(255,255,255,0.1)'};">${c ? '✓ ' : ''}${escapeHtml(it.title || '')}</span>`;
+                        });
+                        html += '</div>';
+                    } else {
+                        html += '<div style="font-size:12px;color:rgba(255,255,255,0.35);">暂无技能项</div>';
+                    }
+                    html += '</div>';
+                }
+                body.innerHTML = `<div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:10px;">共 ${tracks.length} 人在途晋升培训</div>` + html;
+            } catch (e) {
+                body.innerHTML = `<div style="text-align:center;padding:24px;color:#f87171;font-size:13px;">${escapeHtml(e.message)}</div>`;
+            }
         }
 
         // ── 晋升认证要求矩阵 ──────────────────────────────────────────
@@ -36566,6 +36651,22 @@ ${knowledgeContent.slice(0, 30000)}`;
         let __PROMOTION_APPROVALS = [];
         let __PROMOTION_TRACKS = [];
         let __PROMOTION_TAB = 'qualification';
+        let __PROMO_TIER = 'level_promotion'; // 'level_promotion' | 'skill_bump'
+
+        function promoSetTier(tier) {
+            __PROMO_TIER = tier;
+            const lvBtn = document.getElementById('promo-tier-level');
+            const skBtn = document.getElementById('promo-tier-skill');
+            if (lvBtn) lvBtn.className = tier === 'level_promotion' ? 'btn' : 'btn btn-secondary';
+            if (skBtn) skBtn.className = tier === 'skill_bump' ? 'btn' : 'btn btn-secondary';
+            const lvGroup = document.getElementById('promo-target-level-group');
+            if (lvGroup) lvGroup.style.display = tier === 'level_promotion' ? '' : 'none';
+            const typeGroup = document.getElementById('promo-qualification-type')?.closest('.form-group');
+            if (typeGroup) typeGroup.style.display = tier === 'level_promotion' ? '' : 'none';
+            const capLabel = document.getElementById('promo-capability-label');
+            if (capLabel) capLabel.textContent = tier === 'level_promotion' ? '目标岗位能力要求（系统自动）' : '选择要提升的技能项（可多选）';
+            promoOnTargetPositionChange();
+        }
 
         function promoGetCurrentProfile() {
             const uname = String(currentUser?.username || '').trim().toLowerCase();
@@ -36660,6 +36761,43 @@ ${knowledgeContent.slice(0, 30000)}`;
             const targetPosition = String(document.getElementById('promo-target-position')?.value || '').trim();
             const levelEl = document.getElementById('promo-target-level');
             const abilityEl = document.getElementById('promo-capability-list');
+
+            if (__PROMO_TIER === 'skill_bump') {
+                // 技能提升：展示该岗位所有可选技能（checkbox 多选），不自动计算级别
+                if (levelEl) levelEl.value = profile.level || '';
+                if (!targetPosition) { if (abilityEl) abilityEl.innerHTML = '<span style="color:rgba(200,215,230,0.6)">请先选择岗位</span>'; return; }
+                if (abilityEl) abilityEl.innerHTML = '<span style="color:rgba(200,215,230,0.5)">加载中…</span>';
+                try {
+                    const resp = await fetch('/api/training/topics?position=' + encodeURIComponent(targetPosition), {
+                        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }
+                    });
+                    const data = await resp.json();
+                    const allTopics = (data.topics || []).filter(t => {
+                        const posArr = (t.position || '').split(',').map(s => s.trim());
+                        return posArr.includes(targetPosition);
+                    });
+                    __PROMO_TARGET_TOPICS = allTopics;
+                    if (!allTopics.length) {
+                        if (abilityEl) abilityEl.innerHTML = '<span style="color:rgba(200,215,230,0.6)">该岗位暂无知识点，请先在「培训认证 → 知识点管理」中创建。</span>';
+                        return;
+                    }
+                    if (abilityEl) {
+                        abilityEl.innerHTML = allTopics.map(t => {
+                            const badge = t.promotion_required ? '<span style="font-size:10px;background:rgba(99,102,241,0.25);color:#a5b4fc;border-radius:4px;padding:1px 5px;margin-left:4px;">晋升必须</span>' : '';
+                            return `<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;cursor:pointer;border-radius:6px;"
+                                onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background=''">
+                                <input type="checkbox" data-id="${t.id}" ${t.promotion_required ? 'checked' : ''} style="width:15px;height:15px;accent-color:#6366f1;flex-shrink:0;">
+                                <span style="flex:1;">${escapeHtml(String(t.title || ''))}${badge}</span>
+                            </label>`;
+                        }).join('');
+                    }
+                } catch (e) {
+                    if (abilityEl) abilityEl.innerHTML = '<span style="color:#f87171;">加载失败：' + escapeHtml(e.message) + '</span>';
+                }
+                return;
+            }
+
+            // 级别晋升：原有逻辑
             const levelMap = promoDefaultLevelsMap();
             let targetLevel = '';
             if (type === 'same') {
@@ -36722,7 +36860,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             if (reasonEl) reasonEl.value = '';
             if (confirmEl) confirmEl.checked = false;
             if (typeEl) typeEl.value = 'same';
-            promoOnQualificationTypeChange();
+            promoSetTier('level_promotion');
         }
 
         function promoRenderFormalTracks() {
@@ -36751,19 +36889,33 @@ ${knowledgeContent.slice(0, 30000)}`;
             const profile = promoGetCurrentProfile();
             const promotionType = String(document.getElementById('promo-qualification-type')?.value || '').trim();
             const targetPosition = String(document.getElementById('promo-target-position')?.value || '').trim();
-            const targetLevel = String(document.getElementById('promo-target-level')?.value || '').trim();
+            const targetLevel = __PROMO_TIER === 'skill_bump'
+                ? (profile.level || '')
+                : String(document.getElementById('promo-target-level')?.value || '').trim();
             const reason = String(document.getElementById('promo-qualification-reason')?.value || '').trim();
             const agreed = !!document.getElementById('promo-qualification-confirm')?.checked;
-            const reqs = Array.isArray(__PROMO_TARGET_TOPICS) ? __PROMO_TARGET_TOPICS.map(t => String(t?.title || '').trim()).filter(Boolean) : [];
-            if (!promotionType) return showNotification('请选择晋升申请类型', 'warning');
+
             if (!targetPosition) return showNotification('请选择目标岗位', 'warning');
-            if (!targetLevel) return showNotification('目标级别不能为空', 'warning');
+            if (__PROMO_TIER === 'level_promotion' && !targetLevel) return showNotification('目标级别不能为空', 'warning');
             if (!reason) return showNotification('请填写晋升申请理由', 'warning');
             if (!agreed) return showNotification('请勾选培训与考核承诺', 'warning');
 
+            // 技能提升：收集勾选的 topic id
+            let selectedTopicIds = [];
+            if (__PROMO_TIER === 'skill_bump') {
+                document.querySelectorAll('#promo-capability-list input[type=checkbox]:checked').forEach(cb => {
+                    const id = Number(cb.dataset.id);
+                    if (id > 0) selectedTopicIds.push(id);
+                });
+                if (!selectedTopicIds.length) return showNotification('请至少选择一项技能', 'warning');
+            }
+
+            const reqs = Array.isArray(__PROMO_TARGET_TOPICS) ? __PROMO_TARGET_TOPICS.map(t => String(t?.title || '').trim()).filter(Boolean) : [];
             const payload = {
                 promotionStage: 'qualification',
-                promotionType,
+                promotionType: __PROMO_TIER === 'skill_bump' ? 'same' : (promotionType || 'same'),
+                promoTier: __PROMO_TIER,
+                ...__PROMO_TIER === 'skill_bump' ? { selectedTopicIds } : {},
                 store: profile.store,
                 department: profile.department,
                 currentLevel: profile.level,

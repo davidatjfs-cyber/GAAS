@@ -3746,6 +3746,8 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
         let state = state0;
 
         if (finalApproved && stage === 'formal') {
+          const formalPromoTier = String(updated.payload?.promoTier || 'level_promotion').trim();
+          const isSkillBump = formalPromoTier === 'skill_bump';
           const newLevel = String(updated.payload?.newLevel || updated.payload?.level || '').trim();
           const newPosition = String(updated.payload?.newPosition || updated.payload?.position || '').trim();
           const promoReason = String(updated.payload?.reason || '').trim();
@@ -3754,6 +3756,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           const oldSalary = findUserSalary(state, applicantUser);
 
           // Update employee level/position and add promotion record
+          // skill_bump: 只涨工资，级别/岗位不变
           const employees = Array.isArray(state.employees) ? state.employees : [];
           const empIdx = employees.findIndex(e => String(e?.username || '').toLowerCase() === applicantUser.toLowerCase());
           let oldLevel = '', oldPosition = '';
@@ -3764,9 +3767,10 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             const promoRecord = {
               date: hrmsNowISO().slice(0, 10),
               fromLevel: oldLevel,
-              toLevel: newLevel || oldLevel,
+              toLevel: isSkillBump ? oldLevel : (newLevel || oldLevel),
               fromPosition: oldPosition,
-              toPosition: newPosition || oldPosition,
+              toPosition: isSkillBump ? oldPosition : (newPosition || oldPosition),
+              promoTier: formalPromoTier,
               reason: promoReason,
               approvalId: String(updated.id || '')
             };
@@ -3774,8 +3778,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             history.push(promoRecord);
             nextEmployees[empIdx] = {
               ...nextEmployees[empIdx],
-              level: newLevel || nextEmployees[empIdx].level,
-              position: newPosition || nextEmployees[empIdx].position,
+              ...(isSkillBump ? {} : { level: newLevel || nextEmployees[empIdx].level, position: newPosition || nextEmployees[empIdx].position }),
               ...(hasPromotedSalary ? { salary: Number(promotedSalary.toFixed(2)) } : {}),
               promotionHistory: history
             };
@@ -3820,7 +3823,8 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             tracks[trackIdx] = { ...tracks[trackIdx], status: 'promoted', updatedAt: hrmsNowISO() };
           }
 
-          if (newPosition) {
+          // skill_bump 不升级，不需要新岗位培训任务
+          if (!isSkillBump && newPosition) {
             const newPosTopics = await getPromotionRequiredTopics(newPosition, newLevel);
             if (newPosTopics.length) {
               const progress = await getPromotionTrackProgress(applicantUser, newPosTopics.map(t => t.id));
@@ -3867,7 +3871,22 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           const trainingPeriods = normalizePromotionTrainingPeriods(updated.payload?.trainingPeriods);
 
           // 培训-晋升单一渠道：能力要求 = 培训知识库中标记了该岗位「晋升要求」的知识点
-          const requiredTopics = await getPromotionRequiredTopics(targetPosition, targetLevel);
+          // skill_bump: 申请人自选技能项（不升级，只涨工资）；level_promotion: 由系统按目标岗位+级别自动取全套
+          const promoTier = String(updated.payload?.promoTier || 'level_promotion').trim();
+          let requiredTopics;
+          if (promoTier === 'skill_bump') {
+            const selIds = Array.isArray(updated.payload?.selectedTopicIds)
+              ? updated.payload.selectedTopicIds.map(Number).filter(n => Number.isFinite(n) && n > 0)
+              : [];
+            if (selIds.length) {
+              const sr = await pool.query('SELECT * FROM training_topics WHERE id = ANY($1::int[]) AND is_active = true ORDER BY sort_order, id', [selIds]);
+              requiredTopics = sr.rows;
+            } else {
+              requiredTopics = [];
+            }
+          } else {
+            requiredTopics = await getPromotionRequiredTopics(targetPosition, targetLevel);
+          }
 
           let trainingDueDate = trainingStartDate;
           if (trainingPeriods.length) {
@@ -3892,6 +3911,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             targetPosition,
             targetLevel,
             promotionType: String(updated.payload?.promotionType || '').trim(),
+            promoTier,
             mentorUsername,
             mentorName,
             requiredTopicIds: requiredTopics.map(t => t.id),
