@@ -3950,6 +3950,22 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           const msg = `${applicantName}，你的${stageLabel}申请因为${note || '相关原因'}没有审批通过。`;
           const recipients = uniqUsernames([applicantUser, applicantManager].filter(Boolean));
           await appendNotifications(recipients.map((u) => makeNotif(u, '晋升申请未通过', msg, { type: 'promotion_result', approvalId: updated.id })));
+
+          // P3: 正式晋升被拒 → 标记 track 为 formal_rejected 并重置 formalApplied，允许修改后重申
+          if (stage === 'formal') {
+            const formalTrackId = String(updated.payload?.promotionTrackId || '').trim();
+            if (formalTrackId) {
+              try {
+                const stF = (await getSharedState()) || {};
+                const tracksF = Array.isArray(stF.promotionTracks) ? stF.promotionTracks.slice() : [];
+                const tIdx = tracksF.findIndex(t => String(t?.id || '').trim() === formalTrackId);
+                if (tIdx >= 0) {
+                  tracksF[tIdx] = { ...tracksF[tIdx], status: 'formal_rejected', formalApplied: false, updatedAt: hrmsNowISO() };
+                  await mergeSharedStateFields({ promotionTracks: tracksF }, { promotionTracks: 'id' });
+                }
+              } catch (p3e) { console.warn('[promotion-p3] track update failed:', p3e?.message); }
+            }
+          }
         }
 
         // Intermediate step: notify next approver
@@ -20869,47 +20885,90 @@ setInterval(() => {
         console.error('[offboarding-cron] account gate batch failed:', eGate?.message || eGate);
       }
 
-      // Promotion training reminder: one day before session date
+      // P1/P2/P5: 晋升进度每日扫描
+      // P4: 替换旧的 trainingSessions 死代码（新版培训任务存 DB，promotionTrack 无 trainingSessions 字段）
       try {
         let state2 = (await getSharedState()) || {};
-        const tracks = Array.isArray(state2.promotionTracks) ? state2.promotionTracks.slice() : [];
-        if (tracks.length) {
-          const nowDay = new Date(dateOnly + 'T00:00:00').getTime();
+        let allTracks = Array.isArray(state2.promotionTracks) ? state2.promotionTracks.slice() : [];
+        if (allTracks.length) {
           let changedTrack = false;
-          for (let i = 0; i < tracks.length; i += 1) {
-            const tr = tracks[i] || {};
-            const sessions = Array.isArray(tr.trainingSessions) ? tr.trainingSessions.slice() : [];
-            let sessionChanged = false;
-            for (let j = 0; j < sessions.length; j += 1) {
-              const s = sessions[j] || {};
-              const sDate = safeDateOnly(s?.date);
-              if (!sDate) continue;
-              const sTs = new Date(sDate + 'T00:00:00').getTime();
-              const diffDays = Math.round((sTs - nowDay) / 86400000);
-              if (diffDays !== 1) continue;
-              if (String(s?.status || '') === 'completed') continue;
-              if (s?.reminderSentAt) continue;
-              const recipients = await getPromotionTrackRecipients(state2, tr);
-              const title = '晋升培训提醒（提前1天）';
-              const msg = `${String(tr?.applicantName || tr?.applicantUsername || '').trim() || '员工'} 的培训「${String(s?.title || '').trim() || '课程'}」将在 ${sDate} 开始，请提前准备。`;
-              for (const u of recipients) {
-                state2 = addStateNotification(state2, makeNotif(u, title, msg, { type: 'promotion_training_reminder', trackId: String(tr?.id || ''), sessionId: String(s?.id || '') }));
-              }
-              sessions[j] = { ...s, reminderSentAt: hrmsNowISO() };
-              sessionChanged = true;
+
+          // P5: 归档超过90天的已完成/已拒绝 track，防止 state 无限膨胀
+          const cutoff90 = Date.now() - 90 * 86400000;
+          const freshTracks = allTracks.filter(tr => {
+            const s = String(tr?.status || '');
+            if (s === 'promoted' || s === 'formal_rejected') {
+              const ts = tr?.updatedAt ? new Date(tr.updatedAt).getTime() : 0;
+              return ts > cutoff90;
             }
-            if (sessionChanged) {
-              tracks[i] = { ...tr, trainingSessions: sessions, updatedAt: hrmsNowISO() };
+            return true;
+          });
+          if (freshTracks.length < allTracks.length) {
+            state2 = { ...state2, promotionTracks: freshTracks };
+            allTracks = freshTracks;
+            changedTrack = true;
+          }
+
+          // P1/P2: 扫描进行中的 track
+          const activeTracks = allTracks.filter(tr =>
+            String(tr?.status || '') === 'qualification_approved' && !tr?.formalApplied
+          );
+          for (const tr of activeTracks) {
+            const trackId = String(tr?.id || '');
+            const applicantUsername = String(tr?.applicantUsername || '');
+            if (!trackId || !applicantUsername) continue;
+            const requiredTopicIds = Array.isArray(tr.requiredTopicIds) ? tr.requiredTopicIds : [];
+            const progress = requiredTopicIds.length ? await getPromotionTrackProgress(applicantUsername, requiredTopicIds) : null;
+
+            // P1: 全部认证通过 → 推"可申请正式晋升"通知（仅推一次）
+            if (progress?.passed && !tr.readyNotifiedAt) {
+              const recipients = await getPromotionTrackRecipients(state2, tr);
+              const name = String(tr?.applicantName || applicantUsername);
+              const pos = String(tr?.targetPosition || '');
+              for (const u of recipients) {
+                state2 = addStateNotification(state2, makeNotif(u, '晋升培训已完成，可申请正式晋升',
+                  `${name}，你的晋升能力培训全部通过认证，已具备申请「${pos}」正式晋升的条件，请尽快提交正式晋升申请。`,
+                  { type: 'promotion_training_completed', trackId }
+                ));
+              }
+              const idx2 = state2.promotionTracks.findIndex(t => String(t?.id || '') === trackId);
+              if (idx2 >= 0) {
+                const updated2 = state2.promotionTracks.slice();
+                updated2[idx2] = { ...updated2[idx2], readyNotifiedAt: hrmsNowISO() };
+                state2 = { ...state2, promotionTracks: updated2 };
+              }
               changedTrack = true;
             }
+
+            // P2: 截止日逾期且未通过 → 每天推一次逾期提醒（最多3次）
+            if (!progress?.passed && tr.trainingDueDate && tr.trainingDueDate < dateOnly) {
+              const lastDate = String(tr?.lastOverdueReminderAt || '').slice(0, 10);
+              const overdueCount = Number(tr?.overdueReminderCount || 0);
+              if (lastDate !== dateOnly && overdueCount < 3) {
+                const daysOverdue = Math.round((new Date(dateOnly + 'T00:00:00').getTime() - new Date(tr.trainingDueDate + 'T00:00:00').getTime()) / 86400000);
+                const recipients = await getPromotionTrackRecipients(state2, tr);
+                const name = String(tr?.applicantName || applicantUsername);
+                for (const u of recipients) {
+                  state2 = addStateNotification(state2, makeNotif(u, '晋升培训进度逾期提醒',
+                    `${name} 的晋升培训已超截止日 ${daysOverdue} 天（截止：${tr.trainingDueDate}），仍有知识点未完成认证，请尽快推进。`,
+                    { type: 'promotion_training_overdue', trackId }
+                  ));
+                }
+                const idx2 = state2.promotionTracks.findIndex(t => String(t?.id || '') === trackId);
+                if (idx2 >= 0) {
+                  const updated2 = state2.promotionTracks.slice();
+                  updated2[idx2] = { ...updated2[idx2], lastOverdueReminderAt: hrmsNowISO(), overdueReminderCount: overdueCount + 1 };
+                  state2 = { ...state2, promotionTracks: updated2 };
+                }
+                changedTrack = true;
+              }
+            }
           }
-          if (changedTrack) {
-            state2 = { ...state2, promotionTracks: tracks };
-            await saveSharedState(state2);
-          }
+
+          if (changedTrack) await saveSharedState(state2);
         }
       } catch (e) {
-        console.log('promotion reminder job failed:', e?.message || e);
+        console.log('[promotion-sweep] failed:', e?.message || e);
       }
 
       for (const it of items) {
