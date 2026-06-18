@@ -3551,7 +3551,7 @@ export function registerGrowthRoutes(app, pool) {
         `UPDATE growth_campaign_jobs SET status='running', updated_at=now()
           WHERE id = (SELECT id FROM growth_campaign_jobs
                        WHERE kind <> 'stored_value_remind'
-                         AND (status='pending' OR (status='running' AND updated_at < now() - interval '3 minutes'))
+                         AND (status='pending' OR status='partial' OR (status='running' AND updated_at < now() - interval '3 minutes'))
                        ORDER BY created_at ASC LIMIT 1)
           RETURNING id, campaign_id, store_id, kind, value_yuan, valid_days, targets, result`
       );
