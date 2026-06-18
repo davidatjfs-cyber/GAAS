@@ -55818,6 +55818,7 @@ ${body}
                     var channelLabel = channelLabels[channel] || channel || '-';
                     var channelColor = channel === 'wecom' ? '#22c55e' : channel === 'miniprogram' ? '#38bdf8' : channel === 'xiaohongshu' ? '#ef4444' : '#94a3b8';
                     var typeLabel = actionTypeLabels[x.action_type] || '✅ 触达';
+                    var isPllm = x.action_type === 'pllm_task';
                     var isFinal = x.status === 'executed' || x.status === 'ignored';
                     var kpi = payload.expected_kpi || {};
                     var kpiHtml = (kpi && (kpi.redemption_rate || kpi.revenue_fen || kpi.reach)) ?
@@ -55845,11 +55846,11 @@ ${body}
                         + '<span>目标 ' + (payload.target_audience || payload.audience || '活跃客群') + '</span>'
                         + (payload.execution_time ? '<span>🕐 ' + escapeHtml(payload.execution_time) + '</span>' : '')
                         + (payload.cost_estimate ? '<span>' + escapeHtml(payload.cost_estimate) + '</span>' : (payload.budget_fen ? '<span>预算 ¥' + Math.round(Number(payload.budget_fen) / 100) + '</span>' : ''))
-                        + '<span style="color:rgba(226,232,240,0.4);">' + (x.executed_at ? String(x.executed_at).slice(0, 16) : x.created_at ? String(x.created_at).slice(0, 10) : '') + '</span>'
+                        + '<span style="color:rgba(226,232,240,0.4);">' + (function(ts){ try { return new Date(ts).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); } catch(e){ return String(ts).slice(0,16); } })(x.executed_at || x.created_at) + '</span>'
                         + '</div>'
                         + kpiHtml
                         + readyCopyHtml
-                        + (readyCopy ? '' : '<div style="margin-top:4px;color:rgba(226,232,240,0.6);line-height:1.5;">' + (payload.execution_action || (x.detail || '').slice(0, 120)) + '</div>')
+                        + (readyCopy ? '' : (function(){ var fullText = payload.execution_action || x.detail || ''; var eid = 'exp-' + key.replace(/[^a-z0-9]/gi,'_'); var isLong = fullText.length > 150; var preview = isLong ? fullText.slice(0,150) + '…' : fullText; return '<div style="margin-top:4px;color:rgba(226,232,240,0.6);line-height:1.6;">' + '<span id="' + eid + '-txt" style="white-space:pre-wrap;">' + escapeHtml(preview) + '</span>' + (isLong ? '<span id="' + eid + '-full" style="white-space:pre-wrap;display:none;">' + escapeHtml(fullText) + '</span>' + '<button onclick="event.stopPropagation();var t=document.getElementById(\'' + eid + '-txt\'),f=document.getElementById(\'' + eid + '-full\'),b=this;if(f.style.display===\'none\'){t.style.display=\'none\';f.style.display=\'\';b.textContent=\'收起\';}else{t.style.display=\'\';f.style.display=\'none\';b.textContent=\'展开全文\';}" style="margin-left:6px;padding:1px 8px;border:none;border-radius:6px;background:rgba(167,139,250,0.15);color:#a78bfa;font-size:10px;cursor:pointer;">展开全文</button>' : '') + '</div>'; })())
                         + ocHtml
                         + '</div>';
                     var posterHtml;
@@ -55861,7 +55862,7 @@ ${body}
                         posterHtml = '';
                     }
                     // LLM建议=纯人工看板：采纳(不自动发)→执行后回填结果→自动打分；非LLM动作保留原执行链路
-                    var isLlm = (payload.source === 'llm_campaign_autopilot') || !!payload.expected_kpi || !!payload.confidence_level;
+                    var isLlm = isPllm || (payload.source === 'llm_campaign_autopilot') || !!payload.expected_kpi || !!payload.confidence_level;
                     var actionButtons;
                     if (isLlm) {
                         if (x.status === 'proposed') {
@@ -55883,9 +55884,11 @@ ${body}
                     }
                     var statusBadge = x.status === 'executed' ? '✅ 已执行' : x.status === 'ignored' ? '⛔ 已忽略' : x.status === 'proposed' ? '⚡ 可执行' : x.status === 'executing' || x.status === 'adopted' ? '⏳ 执行中·待回填' : x.status === 'measured' ? '📊 已测评' : x.status || '-';
                     var statusBadgeStyle = x.status === 'executed' || x.status === 'measured' ? 'background:rgba(34,197,94,0.15);color:#22c55e' : x.status === 'ignored' ? 'background:rgba(239,68,68,0.12);color:#ef4444' : 'background:rgba(245,158,11,0.15);color:#f59e0b';
-                    return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
+                    return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);' + (isPllm ? 'border-left:3px solid #a78bfa;padding-left:10px;' : '') + '">'
                         + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'
-                        + '<div style="flex:1;min-width:0;cursor:pointer;" onclick="openActionDetailModal(\'' + key + '\')"><span style="font-weight:700;color:#fff;font-size:14px;">' + typeLabel + ' ' + (x.title || '-') + '</span>'
+                        + '<div style="flex:1;min-width:0;cursor:pointer;" onclick="openActionDetailModal(\'' + key + '\')">'
+                        + (isPllm ? '<span style="display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(167,139,250,0.18);color:#a78bfa;font-weight:700;margin-right:6px;vertical-align:middle;">🤖 PLLM智能检测</span>' : '')
+                        + '<span style="font-weight:700;color:#fff;font-size:14px;">' + (isPllm ? '' : typeLabel + ' ') + (x.title || '-') + '</span>'
                         + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;' + statusBadgeStyle + ';font-weight:600;">' + statusBadge + '</span>'
                         + '</div>'
                         + '<div style="font-size:11px;padding:2px 10px;border-radius:999px;background:' + channelColor + '18;color:' + channelColor + ';font-weight:600;flex-shrink:0;">' + channelLabel + '</div>'
