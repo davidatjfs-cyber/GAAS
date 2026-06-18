@@ -3570,7 +3570,10 @@ export function registerGrowthRoutes(app, pool) {
       if (!jobId) return res.status(400).json({ ok: false, error: 'missing_job_id' });
       const sentN = Math.max(0, Math.floor(Number(b.sent) || 0));
       const failedN = Math.max(0, Math.floor(Number(b.failed) || 0));
-      const computedStatus = sentN === 0 && failedN > 0 ? 'failed' : sentN > 0 && failedN > 0 ? 'partial' : 'done';
+      // 优先尊重小程序的 finished 信号(status='done'): processed>=total 时即使有失败也算完成。
+      // 若小程序未报告 done，则按 sent/failed 推导：全失败=failed，混合=partial，全成功=done。
+      const miniDone = cleanText(b.status || '', 20) === 'done';
+      const computedStatus = miniDone ? 'done' : (sentN === 0 && failedN > 0 ? 'failed' : sentN > 0 && failedN > 0 ? 'partial' : 'done');
       await pool.query(
         `UPDATE growth_campaign_jobs SET sent=$2, failed=$3, status=$4, result=$5::jsonb, updated_at=now() WHERE id=$1`,
         [jobId, sentN, failedN, computedStatus, JSON.stringify(b.result || {})]
