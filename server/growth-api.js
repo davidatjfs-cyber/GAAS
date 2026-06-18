@@ -69,6 +69,8 @@ function parseOccurredAt(value) {
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from './sms.js';
+import { getStoreSmsEnvSuffix, storeNameToId as _storeNameToIdFromConfig, STORE_ID_TO_NAME, STORES as _ALL_STORES } from './brands-config.js';
+const _storeId = (brandName) => _ALL_STORES.find(s => s.brandName === brandName)?.storeId || '';
 
 // 订阅消息推送网关（方案B）：HRMS 自己没有小程序 access_token，发不了订阅消息，
 // 改为 POST 到云函数 growthSubscribePush（云开发 HTTP 访问服务暴露的 URL），
@@ -1672,35 +1674,26 @@ function buildActionMessage(actionRow, payload) {
 }
 
 // 门店→已报备短信模板（每店一个独立模板，模板正文里写死了对应门店名，绝不能发错店）。
-// store_id 为 POS 门店号：51866138=马己仙，64822111=洪潮（与 growth-phases.js 一致）。
-// 模板 CODE 从环境变量读取，便于后续增改门店而不动代码。
+// 模板 CODE 从环境变量读取；后缀映射在 brands-config.js 维护，增改门店不动此处代码。
 function pickSmsTemplateByStore(storeId) {
-  const sid = String(storeId || '').trim();
+  const sfx = getStoreSmsEnvSuffix(storeId);
   const def = String(process.env.ALIYUN_SMS_TEMPLATE_DEFAULT || '').trim();
-  if (sid === '64822111') return String(process.env.ALIYUN_SMS_TEMPLATE_HONGCHAO || '').trim() || def; // 洪潮
-  if (sid === '51866138') return String(process.env.ALIYUN_SMS_TEMPLATE_MAJIXIAN || '').trim() || def; // 马己仙
-  return def;
+  return String(process.env[`ALIYUN_SMS_TEMPLATE_${sfx}`] || '').trim() || def;
 }
 
 // 沉睡客召回券「现金抵用券」新模板（变量 name/value/date/code，含券码到店报码核销）。
-// 与上面旧模板分开独立环境变量，避免新旧模板变量不一致互相串扰。
-// store_id：51866138=马己仙，64822111=洪潮。
 function pickWinbackTemplateByStore(storeId) {
-  const sid = String(storeId || '').trim();
+  const sfx = getStoreSmsEnvSuffix(storeId);
   const def = String(process.env.ALIYUN_SMS_WINBACK_TEMPLATE_DEFAULT || '').trim();
-  if (sid === '64822111') return String(process.env.ALIYUN_SMS_WINBACK_TEMPLATE_HONGCHAO || '').trim() || def; // 洪潮
-  if (sid === '51866138') return String(process.env.ALIYUN_SMS_WINBACK_TEMPLATE_MAJIXIAN || '').trim() || def; // 马己仙
-  return def;
+  return String(process.env[`ALIYUN_SMS_WINBACK_TEMPLATE_${sfx}`] || '').trim() || def;
 }
 
 // 储值余额提醒模板（变量仅 balance；无券无码，提醒客人用余额+推荐菜促复购）。
-// store_id：51866138=马己仙，64822111=洪潮。可被规则/任务里的 sms_template_code 覆盖。
+// 可被规则/任务里的 sms_template_code 覆盖。
 function pickBalanceTemplateByStore(storeId) {
-  const sid = String(storeId || '').trim();
+  const sfx = getStoreSmsEnvSuffix(storeId);
   const def = String(process.env.ALIYUN_SMS_BALANCE_TEMPLATE_DEFAULT || '').trim();
-  if (sid === '64822111') return String(process.env.ALIYUN_SMS_BALANCE_TEMPLATE_HONGCHAO || '').trim() || def; // 洪潮
-  if (sid === '51866138') return String(process.env.ALIYUN_SMS_BALANCE_TEMPLATE_MAJIXIAN || '').trim() || def; // 马己仙
-  return def;
+  return String(process.env[`ALIYUN_SMS_BALANCE_TEMPLATE_${sfx}`] || '').trim() || def;
 }
 
 // 通用「营销发券一键发起」段配置。所有带券码段统一走召回任务管道：
@@ -1744,11 +1737,9 @@ function pickCampaignTemplate(campaignKey, storeId) {
   const cfg = CAMPAIGN_TYPES[campaignKey];
   if (!cfg) return '';
   const pfx = cfg.tplPrefix;
-  const sid = String(storeId || '').trim();
+  const sfx = getStoreSmsEnvSuffix(storeId);
   const def = String(process.env[`ALIYUN_SMS_${pfx}_DEFAULT`] || '').trim();
-  if (sid === '64822111') return String(process.env[`ALIYUN_SMS_${pfx}_HONGCHAO`] || '').trim() || def; // 洪潮
-  if (sid === '51866138') return String(process.env[`ALIYUN_SMS_${pfx}_MAJIXIAN`] || '').trim() || def; // 马己仙
-  return def;
+  return String(process.env[`ALIYUN_SMS_${pfx}_${sfx}`] || '').trim() || def;
 }
 
 // 解析「天数」类环境变量：未配置(缺省/空串)用默认值；显式填 0 表示「关闭频控」。
@@ -1884,11 +1875,9 @@ const ABC_STEP_TPL_PREFIX = {
 function pickAbcTemplate(step, storeId) {
   const pfx = ABC_STEP_TPL_PREFIX[step];
   if (!pfx) return '';
-  const sid = String(storeId || '').trim();
+  const sfx = getStoreSmsEnvSuffix(storeId);
   const def = String(process.env[`ALIYUN_SMS_${pfx}_DEFAULT`] || '').trim();
-  if (sid === '64822111') return String(process.env[`ALIYUN_SMS_${pfx}_HONGCHAO`] || '').trim() || def; // 洪潮
-  if (sid === '51866138') return String(process.env[`ALIYUN_SMS_${pfx}_MAJIXIAN`] || '').trim() || def; // 马己仙
-  return def;
+  return String(process.env[`ALIYUN_SMS_${pfx}_${sfx}`] || '').trim() || def;
 }
 
 // 按"该手机号在本活动下累计成功发送次数"纯推导当前应发的模板步骤+降频阶梯天数。
@@ -2009,10 +1998,7 @@ function buildCampaignTargetQuery(opts) {
 
 // 门店名 → POS门店号(储值客户表里的开卡/交易门店是中文名)
 function mapStoreNameToId(name) {
-  const s = String(name || '');
-  if (s.includes('洪潮')) return '64822111';
-  if (s.includes('马己仙')) return '51866138';
-  return '';
+  return _storeNameToIdFromConfig(name);
 }
 // 飞书多维表字段值解析(文本/数字/日期/电话)
 function bitText(v) {
@@ -2707,18 +2693,20 @@ async function recomputeDiningSegments(pool) {
   const hj = `LEFT JOIN cn_holiday_calendar h ON h.day=(order_time ${BJ})::date AND h.day_type='holiday'
               LEFT JOIN cn_holiday_calendar w ON w.day=(order_time ${BJ})::date AND w.day_type='workday'`;
   const eff = `((extract(dow from order_time ${BJ}) BETWEEN 1 AND 5 AND h.day IS NULL) OR w.day IS NOT NULL)`;
+  const mjSid = _storeId('马己仙');
+  const hcSid = _storeId('洪潮');
   await pool.query(`DELETE FROM growth_segment_members WHERE segment_key='mj_dinner_weekend_repeat'`);
   const mj = await pool.query(`INSERT INTO growth_segment_members(phone,segment_key,store_id)
-    SELECT phone,'mj_dinner_weekend_repeat','51866138' FROM (
+    SELECT phone,'mj_dinner_weekend_repeat','${mjSid}' FROM (
       SELECT phone,
         count(*) FILTER (WHERE extract(hour from order_time ${BJ})>=16) dinner,
         count(*) FILTER (WHERE extract(dow from order_time ${BJ}) IN (0,6)) weekend
-      FROM pos_orders WHERE store_id='51866138' AND order_time IS NOT NULL AND phone<>'' GROUP BY phone
+      FROM pos_orders WHERE store_id='${mjSid}' AND order_time IS NOT NULL AND phone<>'' GROUP BY phone
     ) t WHERE dinner>=2 OR weekend>=2 ON CONFLICT DO NOTHING`);
   await pool.query(`DELETE FROM growth_segment_members WHERE segment_key='hc_weekday_lunch'`);
   const hc = await pool.query(`INSERT INTO growth_segment_members(phone,segment_key,store_id)
-    SELECT DISTINCT phone,'hc_weekday_lunch','64822111' FROM (
-      SELECT phone FROM pos_orders ${hj} WHERE store_id='64822111' AND order_time IS NOT NULL AND phone<>''
+    SELECT DISTINCT phone,'hc_weekday_lunch','${hcSid}' FROM (
+      SELECT phone FROM pos_orders ${hj} WHERE store_id='${hcSid}' AND order_time IS NOT NULL AND phone<>''
         AND ${eff} AND extract(hour from order_time ${BJ}) BETWEEN 10 AND 15
     ) t ON CONFLICT DO NOTHING`);
   return { mj_dinner_weekend_repeat: mj.rowCount, hc_weekday_lunch: hc.rowCount };
@@ -3066,12 +3054,8 @@ function shiftDate(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
-// 门店编号（企微/POS code）→ 门店名称。映射源见 growth-phases.js 摄取逻辑（洪潮/马己仙归一化）。
-// 增长日报需展示门店名称而非编号。
-const GROWTH_STORE_CODE_TO_NAME = {
-  '51866138': '马己仙上海音乐广场店',
-  '64822111': '洪潮大宁久光店'
-};
+// 门店编号（企微/POS code）→ 门店名称。映射源见 brands-config.js。
+const GROWTH_STORE_CODE_TO_NAME = STORE_ID_TO_NAME;
 function growthStoreName(storeCode) {
   const k = String(storeCode || '').trim();
   return GROWTH_STORE_CODE_TO_NAME[k] || k;

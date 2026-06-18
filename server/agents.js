@@ -90,6 +90,12 @@ import {
   setCallLLMBridge,
   logExecutorEvent
 } from './data-executor.js';
+import {
+  inferBrandFromStoreName as _inferBrandFromStoreNameImpl,
+  STORE_CANONICAL_MAP as _STORE_CANONICAL_MAP_IMPL,
+  ALL_STORE_NAMES,
+  STORE_ID_TO_NAME as _STORE_ID_TO_NAME_IMPL,
+} from './brands-config.js';
 
 // ─────────────────────────────────────────────
 // 0. Config
@@ -3973,10 +3979,7 @@ export function getStoresFromState(state) {
 }
 
 export function inferBrandFromStoreName(storeName) {
-  const s = String(storeName || '').trim();
-  if (s.includes('马己仙')) return '马己仙';
-  if (s.includes('洪潮')) return '洪潮';
-  return '';
+  return _inferBrandFromStoreNameImpl(storeName);
 }
 
 function resolveBrand(state, store) {
@@ -4055,13 +4058,8 @@ function normalizeStoreLike(v) {
   return `%${normalizeStoreKey(v)}%`;
 }
 
-// 将飞书/外部门店名变体统一为系统标准名称
-const STORE_CANONICAL_MAP = [
-  { keywords: ['洪潮', 'hongchao'], canonical: '洪潮大宁久光店' },
-  { keywords: ['马己仙大宁', 'majixian.*daning', '马己仙.*大宁'], canonical: '马己仙大宁店' },
-  { keywords: ['马己仙.*音乐', '马己仙.*广场', 'majixian.*music'], canonical: '马己仙上海音乐广场店' },
-  { keywords: ['马己仙'], canonical: '马己仙大宁店' },
-];
+// 将飞书/外部门店名变体统一为系统标准名称（映射维护在 brands-config.js）
+const STORE_CANONICAL_MAP = _STORE_CANONICAL_MAP_IMPL;
 function normalizeCanonicalStoreName(store) {
   if (!store) return store;
   const s = store.trim();
@@ -12966,7 +12964,7 @@ async function getRecentAuditCount(storeName, days) {
 
 // 13. Weekly BI Report Scheduler (Monday 10am CST)
 /** 种子店名（与 DB 中实际名称可能不一致时，仍会与库中 DISTINCT 店名合并） */
-const REPORT_STORES_SEED = ['洪潮大宁久光店', '马己仙上海音乐广场店'];
+const REPORT_STORES_SEED = ALL_STORE_NAMES;
 
 async function getReportStoresForBiReports() {
   const seed = REPORT_STORES_SEED.slice();
