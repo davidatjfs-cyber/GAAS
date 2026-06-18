@@ -1777,20 +1777,20 @@ async function globalSmsCapped(pool, phone) {
   return r.rows.length ? days : 0;
 }
 
-// 禁发时段：北京时间 21:30 — 次日 09:00 不下发营销短信（任务保持 pending，窗口外自动续跑）。
-// 在任务认领层（pending-jobs 拉取 + 储值提醒 worker）统一拦截，覆盖全部自动发送路径。
+// 允许发送时段：SMS_SEND_WINDOWS（逗号分隔多段，格式 HH:MM-HH:MM，北京时间）。
+// 默认两个窗口：午市前 10:30-12:00 + 晚市前 17:00-20:30。
+// 窗口外均为禁发时段，任务保持 pending，窗口内自动续跑。
 function inSmsQuietHours(now = new Date()) {
-  const start = cleanText(process.env.SMS_QUIET_HOURS_START || '21:30', 10);
-  const end = cleanText(process.env.SMS_QUIET_HOURS_END || '09:00', 10);
-  const toMins = (s) => { const [h, m] = s.split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+  const toMins = (s) => { const [h, m] = (s || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
   const bjMins = (() => {
     const p = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(now);
     const h = Number((p.find((x) => x.type === 'hour') || {}).value || 0);
     const m = Number((p.find((x) => x.type === 'minute') || {}).value || 0);
     return h * 60 + m;
   })();
-  const s = toMins(start), e = toMins(end);
-  return s > e ? (bjMins >= s || bjMins < e) : (bjMins >= s && bjMins < e);
+  const raw = cleanText(process.env.SMS_SEND_WINDOWS || '10:30-12:00,17:00-20:30', 200);
+  const windows = raw.split(',').map((w) => { const [s, e] = w.trim().split('-'); return [toMins(s), toMins(e)]; });
+  return !windows.some(([s, e]) => bjMins >= s && bjMins < e);
 }
 
 // 永久性失败判别 → 入抑制名单，后续一切营销短信跳过。
