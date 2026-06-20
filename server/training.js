@@ -1063,7 +1063,8 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
         return res.status(403).json({ error: '无权限访问' });
       }
       const name = (req.query.name || '').trim();
-      const params = [];
+      const tenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
+      const params = [tenantId];
       let sql = `
         SELECT a.*, t.title, t.position,
                s.status AS session_status, s.quiz_passed, s.quiz_score,
@@ -1091,7 +1092,7 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
         JOIN training_topics t ON t.id = a.topic_id
         LEFT JOIN training_sessions s ON s.topic_id = a.topic_id AND s.employee_username = a.employee_username
         LEFT JOIN employees e ON e.username = a.employee_username
-        WHERE 1=1
+        WHERE a.tenant_id = $1
       `;
       // 非管理员/总部营运只能看自己指派的任务
       if (!['admin', 'hq_manager'].includes(role)) {
