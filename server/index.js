@@ -4801,10 +4801,10 @@ app.post('/api/checkin', authRequired, async (req, res) => {
     if (!faceMatch && status === 'normal') status = 'face_fail';
 
     const r = await pool.query(
-      `insert into checkin_records (username, store, type, check_time, latitude, longitude, distance_meters, face_match, face_score, photo_url, status)
-       values ($1, $2, $3, now(), $4, $5, $6, $7, $8, $9, $10)
+      `insert into checkin_records (username, store, type, check_time, latitude, longitude, distance_meters, face_match, face_score, photo_url, status, tenant_id)
+       values ($1, $2, $3, now(), $4, $5, $6, $7, $8, $9, $10, $11)
        returning *`,
-      [username, storeName || null, type, lat, lng, distMeters, faceMatch, faceScore, photoUrl, status]
+      [username, storeName || null, type, lat, lng, distMeters, faceMatch, faceScore, photoUrl, status, req.tenantId || req.user?.tenant_id || 'default']
     );
     const inserted = r.rows[0];
     upsertEmployeeAttendanceMirrorFromCheckinRow(inserted, req.tenantId || req.user?.tenant_id || 'default').catch((e) => {
@@ -7726,12 +7726,13 @@ function mergeDailyReportItemWithPgRow(existingItem, pgRow) {
 }
 
 /** 重算当月各日报行的 wechat_month_total（按日 running sum，修复「累计=当日」及补录后不一致） */
-async function recalcWechatMonthTotalsForStoreMonth(pool, store, anchorDate) {
+async function recalcWechatMonthTotalsForStoreMonth(pool, store, anchorDate, tenantId) {
   const st = String(store || '').trim();
   const ymd = String(anchorDate || '').slice(0, 10);
   if (!st || ymd.length < 10) return;
   // 按自然月分区：[monthStart, nextMonth)；跨月后 anchor 落在下月即从下月 1 号重算，累计从 0 重新累加。
   const monthStart = `${ymd.slice(0, 7)}-01`;
+  const tid = String(tenantId || '').trim() || 'default';
   try {
     await pool.query(
       `WITH sums AS (
@@ -7741,12 +7742,13 @@ async function recalcWechatMonthTotalsForStoreMonth(pool, store, anchorDate) {
          WHERE TRIM(store) = TRIM($1::text)
            AND date >= $2::date
            AND date < ($2::date + INTERVAL '1 month')
+           AND tenant_id = $3
        )
        UPDATE daily_reports dr
        SET wechat_month_total = LEAST(2147483647, GREATEST(0, sums.cum))::int
        FROM sums
-       WHERE TRIM(dr.store) = TRIM($1::text) AND dr.date::date = sums.d`,
-      [st, monthStart]
+       WHERE TRIM(dr.store) = TRIM($1::text) AND dr.date::date = sums.d AND dr.tenant_id = $3`,
+      [st, monthStart, tid]
     );
   } catch (e) {
     console.error('[wechat_month_total recalc]', e?.message);
@@ -7757,7 +7759,7 @@ async function recalcWechatMonthTotalsForStoreMonth(pool, store, anchorDate) {
  * 从 hrms_state 中的日报条目 UPSERT 到 PostgreSQL daily_reports（与 POST /api/daily-reports 正式提交双写字段一致）。
  * 供 admin 在「state 已提交但 PG 缺行」时补数，不修改 hrms_state。
  */
-async function upsertDailyReportPgFromStateReport(dr) {
+async function upsertDailyReportPgFromStateReport(dr, tenantId) {
   const payload = dr?.data && typeof dr.data === 'object' ? dr.data : {};
   const store = String(dr?.store || '').trim();
   const date = safeDateOnly(dr?.date);
@@ -7806,7 +7808,7 @@ async function upsertDailyReportPgFromStateReport(dr) {
             pre_discount_revenue, total_discount, dine_orders, dine_revenue, dine_traffic, efficiency, labor_total, gross_profit, budget, budget_rate,
             delivery_actual, delivery_orders, delivery_pre_revenue, delivery_bad_reviews, private_room_uses, operational_anomaly_note,
             recharge_count, recharge_amount,
-            weather, segments, discount_dine, discount_delivery, categories, delivery_detail, bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch)
+            weather, segments, discount_dine, discount_delivery, categories, delivery_detail, bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch, tenant_id)
           VALUES ($1::text, $2::text, $3::date, $4, $5, $6, $7,
             COALESCE((
               SELECT SUM(dr.new_wechat_members)::bigint
@@ -7814,11 +7816,12 @@ async function upsertDailyReportPgFromStateReport(dr) {
               WHERE TRIM(dr.store) = TRIM($1::text)
                 AND dr.date >= date_trunc('month', $3::date)::date
                 AND dr.date < $3::date
+                AND dr.tenant_id = $38
             ), 0) + $8::bigint,
             true, NOW(),
             $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
             $19, $20, $21, $22, $23, $24, $25, $26,
-            $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+            $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
           ON CONFLICT (store, date)
           DO UPDATE SET 
             actual_revenue = EXCLUDED.actual_revenue,
@@ -7894,10 +7897,11 @@ async function upsertDailyReportPgFromStateReport(dr) {
       staff,
       scheduleNextDay,
       photos,
-      holidaySwitch
+      holidaySwitch,
+      tenantId || 'default'
     ]
   );
-  await recalcWechatMonthTotalsForStoreMonth(pool, store, date);
+  await recalcWechatMonthTotalsForStoreMonth(pool, store, date, tenantId);
   try {
     await reconcileDailyReportAttendanceRegister(pool, {
       store,
@@ -7905,7 +7909,7 @@ async function upsertDailyReportPgFromStateReport(dr) {
       reportDate: date,
       staffPayload: payload?.staff || {},
       laborTotal: laborTotalVal,
-      tenantId: req.tenantId || req.user?.tenant_id || 'default'
+      tenantId: tenantId || 'default'
     });
   } catch (re) {
     console.warn('[daily_report_attendance_register]', store, date, re?.message);
@@ -7923,13 +7927,15 @@ app.get('/api/daily-reports/private-room-month-total', authRequired, async (req,
     const labels = [...new Set(expandAgentStoreLabels(store).map((s) => String(s || '').trim()).filter(Boolean))];
     const patterns = labels.map((s) => `%${s.replace(/%/g, '')}%`);
 
+    const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
     // 先按规范店名/别名做精确匹配，再退化到 ILIKE ANY，兼容洪潮门店双轨写法。
     let r = await pool.query(
       `SELECT COALESCE(SUM(private_room_uses), 0)::int AS total
        FROM daily_reports
        WHERE TO_CHAR(date::date,'YYYY-MM') = $1
-         AND TRIM(store) = ANY($2::text[])`,
-      [month, labels]
+         AND TRIM(store) = ANY($2::text[])
+         AND tenant_id = $3`,
+      [month, labels, tenantIdQ]
     );
     let total = parseInt(r.rows?.[0]?.total || 0, 10);
     if (!total) {
@@ -7937,8 +7943,9 @@ app.get('/api/daily-reports/private-room-month-total', authRequired, async (req,
         `SELECT COALESCE(SUM(private_room_uses), 0)::int AS total
          FROM daily_reports
          WHERE TO_CHAR(date::date,'YYYY-MM') = $1
-           AND TRIM(store) ILIKE ANY($2::text[])`,
-        [month, patterns]
+           AND TRIM(store) ILIKE ANY($2::text[])
+           AND tenant_id = $3`,
+        [month, patterns, tenantIdQ]
       );
       total = parseInt(r.rows?.[0]?.total || 0, 10);
     }
@@ -8035,6 +8042,8 @@ app.get('/api/daily-reports', authRequired, async (req, res) => {
           sql += ` AND TRIM(store) = TRIM($3::text)`;
           args.push(String(store).trim());
         }
+        args.push(req.tenantId || req.user?.tenant_id || 'default');
+        sql += ` AND tenant_id = $${args.length}`;
         const pgR = await pool.query(sql, args);
         for (const row of pgR.rows) {
           const k = dailyReportMergeKey(row.store, row.date);
@@ -8063,6 +8072,8 @@ app.get('/api/daily-reports', authRequired, async (req, res) => {
           sql += ` AND TRIM(store) = TRIM($1::text)`;
           args.push(String(store).trim());
         }
+        args.push(req.tenantId || req.user?.tenant_id || 'default');
+        sql += ` AND tenant_id = $${args.length}`;
         sql += ` ORDER BY date DESC, updated_at DESC NULLS LAST LIMIT $${args.length + 1}::int`;
         args.push(pgMergeLatestLimit);
         const pgR = await pool.query(sql, args);
@@ -8105,8 +8116,9 @@ app.get('/api/daily-reports', authRequired, async (req, res) => {
             `SELECT dr.store, dr.date, dr.dianping_rating, dr.new_wechat_members, dr.wechat_month_total, dr.operational_anomaly_note
              FROM daily_reports dr
              INNER JOIN (SELECT * FROM unnest($1::text[], $2::text[]) AS t(store, ymd)) pairs
-               ON TRIM(dr.store) = TRIM(pairs.store) AND dr.date = pairs.ymd::date`,
-            [pairStores, pairDates]
+               ON TRIM(dr.store) = TRIM(pairs.store) AND dr.date = pairs.ymd::date
+             WHERE dr.tenant_id = $3`,
+            [pairStores, pairDates, req.tenantId || req.user?.tenant_id || 'default']
           );
           for (const row of dbResult.rows) {
             dbMap.set(dailyReportMergeKey(row.store, row.date), row);
@@ -8159,8 +8171,9 @@ app.get('/api/daily-reports', authRequired, async (req, res) => {
            WHERE TRIM(store) = TRIM($1::text)
              AND date >= $2::date
              AND date < ($2::date + INTERVAL '1 month')
-             AND date <> $3::date`,
-          [store, monthStart, date]
+             AND date <> $3::date
+             AND tenant_id = $4`,
+          [store, monthStart, date, req.tenantId || req.user?.tenant_id || 'default']
         );
         wechat_month_base = Number(baseR.rows?.[0]?.base || 0);
       } catch (_e) {}
@@ -8279,7 +8292,7 @@ app.post('/api/daily-reports', authRequired, async (req, res) => {
             pre_discount_revenue, total_discount, dine_orders, dine_revenue, dine_traffic, efficiency, labor_total, gross_profit, budget, budget_rate,
             delivery_actual, delivery_orders, delivery_pre_revenue, delivery_bad_reviews, private_room_uses, operational_anomaly_note,
             recharge_count, recharge_amount,
-            weather, segments, discount_dine, discount_delivery, categories, delivery_detail, bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch)
+            weather, segments, discount_dine, discount_delivery, categories, delivery_detail, bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch, tenant_id)
           /* $1/$2/$3 显式类型：避免 PG 对「VALUES 首列 varchar」与子查询中 $1::text 推断不一致 → inconsistent types for parameter $1 */
           VALUES ($1::text, $2::text, $3::date, $4, $5, $6, $7,
             COALESCE((
@@ -8288,13 +8301,14 @@ app.post('/api/daily-reports', authRequired, async (req, res) => {
               WHERE TRIM(dr.store) = TRIM($1::text)
                 AND dr.date >= date_trunc('month', $3::date)::date
                 AND dr.date < $3::date
+                AND dr.tenant_id = $38
             ), 0) + $8::bigint,
             true, NOW(),
             $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
             $19, $20, $21, $22, $23, $24, $25, $26,
-            $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+            $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
           ON CONFLICT (store, date)
-          DO UPDATE SET 
+          DO UPDATE SET
             actual_revenue = EXCLUDED.actual_revenue,
             actual_margin = EXCLUDED.actual_margin,
             dianping_rating = EXCLUDED.dianping_rating,
@@ -8331,9 +8345,9 @@ app.post('/api/daily-reports', authRequired, async (req, res) => {
             holiday_switch = EXCLUDED.holiday_switch,
             updated_at = NOW()
         `, [
-          store, brand, date, 
+          store, brand, date,
           payload?.actual || 0,
-          payload?.margin || null, 
+          payload?.margin || null,
           payload?.dianping_rating || null,
           todayWechat,
           todayWechat,
@@ -8344,9 +8358,10 @@ app.post('/api/daily-reports', authRequired, async (req, res) => {
           operationalAnomalyNote || null,
           rechargeCount, rechargeAmount,
           weather, segments, discountDine, discountDelivery, categories, deliveryDetail, badReviewsDianping, staff, scheduleNextDay, photos,
-          holidaySwitch
+          holidaySwitch,
+          req.tenantId || req.user?.tenant_id || 'default'
         ]);
-        await recalcWechatMonthTotalsForStoreMonth(pool, store, date);
+        await recalcWechatMonthTotalsForStoreMonth(pool, store, date, req.tenantId || req.user?.tenant_id || 'default');
         try {
           await reconcileDailyReportAttendanceRegister(pool, {
             store,
@@ -8431,7 +8446,7 @@ app.post('/api/daily-reports', authRequired, async (req, res) => {
             pre_discount_revenue, total_discount, dine_orders, dine_revenue, dine_traffic, efficiency, labor_total, gross_profit, budget, budget_rate,
             delivery_actual, delivery_orders, delivery_pre_revenue, delivery_bad_reviews, private_room_uses, operational_anomaly_note,
             recharge_count, recharge_amount,
-            weather, segments, discount_dine, discount_delivery, categories, delivery_detail, bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch)
+            weather, segments, discount_dine, discount_delivery, categories, delivery_detail, bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch, tenant_id)
           /* $1/$2/$3 显式类型：避免 PG 对「VALUES 首列 varchar」与子查询中 $1::text 推断不一致 → inconsistent types for parameter $1 */
           VALUES ($1::text, $2::text, $3::date, $4, $5, $6, $7,
             COALESCE((
@@ -8440,11 +8455,12 @@ app.post('/api/daily-reports', authRequired, async (req, res) => {
               WHERE TRIM(dr.store) = TRIM($1::text)
                 AND dr.date >= date_trunc('month', $3::date)::date
                 AND dr.date < $3::date
+                AND dr.tenant_id = $38
             ), 0) + $8::bigint,
             true, NOW(),
             $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
             $19, $20, $21, $22, $23, $24, $25, $26,
-            $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+            $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
           ON CONFLICT (store, date)
           DO UPDATE SET
             actual_revenue = EXCLUDED.actual_revenue,
@@ -8498,9 +8514,10 @@ app.post('/api/daily-reports', authRequired, async (req, res) => {
           operationalAnomalyNote || null,
           rechargeCount, rechargeAmount,
           weather, segments, discountDine, discountDelivery, categories, deliveryDetail, badReviewsDianping, staff, scheduleNextDay, photos,
-          holidaySwitch
+          holidaySwitch,
+          req.tenantId || req.user?.tenant_id || 'default'
         ]);
-        await recalcWechatMonthTotalsForStoreMonth(pool, store, date);
+        await recalcWechatMonthTotalsForStoreMonth(pool, store, date, req.tenantId || req.user?.tenant_id || 'default');
         try {
           await reconcileDailyReportAttendanceRegister(pool, {
             store,
@@ -8661,7 +8678,7 @@ app.post('/api/admin/sync-submitted-daily-reports-pg', authRequired, async (req,
       const submitted = !!(dr?.submittedAt || dr?.submitted_at || dr?.submitted);
       if (!submitted) continue;
       try {
-        await upsertDailyReportPgFromStateReport(dr);
+        await upsertDailyReportPgFromStateReport(dr, req.tenantId || req.user?.tenant_id || 'default');
         results.push({ store: st, date: d, ok: true });
       } catch (e) {
         const msg = String(e?.message || e);
@@ -11226,6 +11243,8 @@ app.get('/api/reports/attendance', authRequired, async (req, res) => {
       let params = [start, end];
       let idx = 3;
       if (store) { conditions.push(`c.store = $${idx}`); params.push(store); idx++; }
+      params.push(req.tenantId || req.user?.tenant_id || 'default');
+      conditions.push(`c.tenant_id = $${idx}`);
       const where = 'where ' + conditions.join(' and ');
       const sql = `select c.username, c.store, c.check_time, c.status, c.type, c.confirmed_by, c.confirmed_at from checkin_records c ${where} order by c.check_time desc limit 5000`;
       const cr = await pool.query(sql, params);
@@ -11514,6 +11533,8 @@ app.get('/api/reports/payroll', authRequired, async (req, res) => {
         params.push(store);
         idx++;
       }
+      params.push(req.tenantId || req.user?.tenant_id || 'default');
+      conditions.push(`tenant_id = $${idx}`);
       const where = 'where ' + conditions.join(' and ');
       const checkinSql = `select username, store, check_time, status from checkin_records ${where} order by check_time desc`;
       const checkinRows = await pool.query(checkinSql, params);
@@ -14286,8 +14307,9 @@ async function computeAttendanceMissingClockPenalties(month, store, tenantId) {
       FROM checkin_records
       WHERE (timezone('Asia/Shanghai', check_time))::date >= $1::date
         AND (timezone('Asia/Shanghai', check_time))::date <= $2::date
+        AND tenant_id = $3
       GROUP BY 1, 2`;
-    const ciRows = (await pool.query(ciSql, [effStart, monthEnd])).rows || [];
+    const ciRows = (await pool.query(ciSql, [effStart, monthEnd, tenantId || 'default'])).rows || [];
     const ciMap = new Map();
     for (const r of ciRows) ciMap.set(`${r.u}||${r.d}`, { has_in: r.has_in === true, has_out: r.has_out === true });
 
@@ -20281,6 +20303,7 @@ app.get('/api/checkin/records', authRequired, async (req, res) => {
     if (start) { conditions.push(`check_time::date >= $${idx}::date`); params.push(start); idx++; }
     if (end) { conditions.push(`check_time::date <= $${idx}::date`); params.push(end); idx++; }
     if (filterStatus) { conditions.push(`status = $${idx}`); params.push(filterStatus); idx++; }
+    conditions.push(`tenant_id = $${idx}`); params.push(req.tenantId || req.user?.tenant_id || 'default'); idx++;
 
     const where = conditions.length ? 'where ' + conditions.join(' and ') : '';
     const r = await pool.query(
@@ -20352,6 +20375,7 @@ app.get('/api/checkin/summary', authRequired, async (req, res) => {
     } else {
       conditions.push(`lower(username) = lower($${idx})`); params.push(username); idx++;
     }
+    conditions.push(`tenant_id = $${idx}`); params.push(req.tenantId || req.user?.tenant_id || 'default'); idx++;
 
     const where = conditions.join(' and ');
     const r = await pool.query(
