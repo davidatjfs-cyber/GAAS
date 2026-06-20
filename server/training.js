@@ -1279,6 +1279,7 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
                AND a2.topic_id = c.topic_id
                AND lower(a2.assigned_by) = lower('${username.replace(/'/g, "''")}')
            )`;
+      const tenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
       const result = await pool().query(`
         SELECT c.*, t.title, t.position, s.employee_username,
                e.name AS employee_name
@@ -1286,10 +1287,10 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
         JOIN training_sessions s ON s.id = c.session_id
         JOIN training_topics t ON t.id = c.topic_id
         LEFT JOIN employees e ON e.username = c.employee_username
-        WHERE c.manager_verdict IS NULL
+        WHERE c.manager_verdict IS NULL AND c.tenant_id = $1
         ${assignerClause}
         ORDER BY c.created_at DESC
-      `);
+      `, [tenantId]);
       res.json({ success: true, pending: result.rows });
     } catch (e) {
       res.json({ success: false, error: e?.message });
@@ -1695,6 +1696,7 @@ ${contentForPrompt}
     try {
       const username = req.user?.username;
       if (!username) return res.status(401).json({ error: '未登录' });
+      const tenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
       const result = await pool().query(`
         SELECT c.id, c.session_id, c.topic_id, c.media_url, c.media_type,
                c.ai_verdict, c.ai_feedback, c.ai_total_score, c.ai_step_scores,
@@ -1705,9 +1707,9 @@ ${contentForPrompt}
         FROM training_certifications c
         JOIN training_topics t ON t.id = c.topic_id
         JOIN training_sessions s ON s.id = c.session_id
-        WHERE c.employee_username = $1
+        WHERE c.employee_username = $1 AND c.tenant_id = $2
         ORDER BY c.created_at DESC
-      `, [username]);
+      `, [username, tenantId]);
       res.json({ success: true, certifications: result.rows });
     } catch (e) {
       res.json({ success: false, error: e?.message });
