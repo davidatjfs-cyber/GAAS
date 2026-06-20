@@ -392,14 +392,14 @@ export async function listStationDishes({ store }) {
   }
 }
 
-export async function listStationEmployees({ store, station }) {
+export async function listStationEmployees({ store, station, tenantId }) {
   try {
     const r = await pool().query(
       `SELECT username, name, position, store
        FROM employees
-       WHERE status='active' AND store=$1
+       WHERE status='active' AND store=$1 AND tenant_id=$2
        ORDER BY name ASC, username ASC`,
-      [store]
+      [store, tenantId || 'default']
     );
     const rows = r.rows.filter((row) => normalizeStation(row.position) === normalizeStation(station));
     return { success: true, rows };
@@ -651,7 +651,7 @@ export function registerKitchenExecutionRoutes(app, authMiddleware) {
     const store = req.query.store || req.user?.store || '';
     const station = req.query.station || '';
     if (!store || !station) return res.status(400).json({ error: 'store and station required' });
-    res.json(await listStationEmployees({ store, station }));
+    res.json(await listStationEmployees({ store, station, tenantId: req.tenantId || req.user?.tenant_id || 'default' }));
   });
 
   // 管理员：停用菜品岗位映射

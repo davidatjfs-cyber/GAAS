@@ -117,7 +117,7 @@ export function filterDailyRegisterRowsByEmployee(rows, employeeRaw) {
   return out;
 }
 
-async function resolveNamesToUsernames(pool, store, nameList) {
+async function resolveNamesToUsernames(pool, store, nameList, tenantId) {
   const names = [...new Set(nameList.map((n) => String(n || '').trim()).filter(Boolean))];
   const m = new Map();
   if (!names.length || !store) return m;
@@ -125,8 +125,9 @@ async function resolveNamesToUsernames(pool, store, nameList) {
     const q = await pool.query(
       `SELECT LOWER(TRIM(username)) AS u, TRIM(name) AS name FROM employees
        WHERE TRIM(COALESCE(store, '')) ILIKE '%' || $1 || '%'
-         AND TRIM(name) = ANY($2::text[])`,
-      [store, names]
+         AND TRIM(name) = ANY($2::text[])
+         AND tenant_id = $3`,
+      [store, names, tenantId || 'default']
     );
     for (const row of q.rows || []) {
       const nm = String(row.name || '').trim();
@@ -139,7 +140,7 @@ async function resolveNamesToUsernames(pool, store, nameList) {
 }
 
 /** 门店在职员工名册（与日报门店名模糊匹配），用于「未列入出勤/休息」缺勤核对 */
-async function fetchStoreActiveEmployeesUsernames(pool, store) {
+async function fetchStoreActiveEmployeesUsernames(pool, store, tenantId) {
   const st = String(store || '').trim();
   if (!st) return [];
   try {
@@ -155,8 +156,9 @@ async function fetchStoreActiveEmployeesUsernames(pool, store) {
            OR LOWER(BTRIM(status)) NOT IN ('inactive', 'disabled', '离职', '禁用', '停用', 'left', 'resigned')
          )
          AND NOT COALESCE((extra_json->>'offboardingApproved')::boolean, false)
+         AND tenant_id = $2
        ORDER BY LOWER(TRIM(username))`,
-      [st]
+      [st, tenantId || 'default']
     );
     return (q.rows || []).map((r) => ({
       u: String(r.u || '').trim(),
@@ -197,7 +199,8 @@ export async function reconcileDailyReportAttendanceRegister(pool, opts) {
     const n = String(e?.name || '').trim();
     if (!u && n) nameNeedResolve.push(n);
   }
-  const nameMap = await resolveNamesToUsernames(pool, store, nameNeedResolve);
+  const tenantId = String(opts.tenantId || '').trim() || 'default';
+  const nameMap = await resolveNamesToUsernames(pool, store, nameNeedResolve, tenantId);
 
   function resolveUser(e) {
     const raw = String(e?.user || e?.username || '').trim();
@@ -220,7 +223,7 @@ export async function reconcileDailyReportAttendanceRegister(pool, opts) {
     if (n) nameKeysOnReport.add(n);
   }
 
-  const rosterRows = await fetchStoreActiveEmployeesUsernames(pool, store);
+  const rosterRows = await fetchStoreActiveEmployeesUsernames(pool, store, tenantId);
   const rosterUsernames = [...new Set(rosterRows.map((r) => r.u).filter(Boolean))];
 
   const uniqUsers = [...new Set([...onReportUsernames, ...rosterUsernames])];
@@ -483,7 +486,8 @@ export async function backfillDailyAttendanceRegisterMissing(pool, opts = {}) {
         brand: String(row.brand || '').trim(),
         reportDate: String(row.report_date || '').slice(0, 10),
         staffPayload,
-        laborTotal: row.labor_total
+        laborTotal: row.labor_total,
+        tenantId: opts.tenantId
       });
       reconciled++;
     } catch (e) {

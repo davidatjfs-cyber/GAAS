@@ -1978,6 +1978,10 @@ app.get('/api/approvals', authRequired, async (req, res) => {
 
   const clauses = [];
   const params = [];
+  {
+    params.push(req.tenantId || req.user?.tenant_id || 'default');
+    clauses.push(`tenant_id = $${params.length}`);
+  }
   if (view === 'assigned') {
     params.push(username);
     clauses.push(`(lower(current_assignee_username) = lower($${params.length}) OR (status = 'pending' AND EXISTS (SELECT 1 FROM jsonb_array_elements(chain) elem WHERE lower(elem->>'assignee') = lower($${params.length}) AND elem->>'status' = 'pending')))`);
@@ -2461,8 +2465,8 @@ app.get('/api/points/records', authRequired, async (req, res) => {
       }
       list.sort((a, b) => String(b?.approvedAt || '').localeCompare(String(a?.approvedAt || '')));
     } else {
-      const params2 = [];
-      const where2 = [`type = 'points'`];
+      const params2 = [req.tenantId || req.user?.tenant_id || 'default'];
+      const where2 = [`type = 'points'`, `tenant_id = $1`];
       if (recordStatus === 'pending') {
         where2.push(`lower(status) = 'pending'`);
       }
@@ -2631,6 +2635,8 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
     }
     const catPlaceholders = uniqueCats.map((_, i) => `$${params.length + i + 1}`).join(',');
     params.push(...uniqueCats);
+    params.push(req.tenantId || req.user?.tenant_id || 'default');
+    const tenantClause = ` and tenant_id = $${params.length}`;
 
     const r = await pool.query(
       `select status, coalesce(sum(nullif(payload->>'amount','')::numeric), 0)::float as amt
@@ -2641,6 +2647,7 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
          and lower(payload->>'category') in (${catPlaceholders})
          and substring(payload->>'date', 1, 7) = $2
          ${excludeClause}
+         ${tenantClause}
        group by status`,
       params
     );
@@ -2714,8 +2721,8 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
       const empUser = String((payload?.employee?.username) || '').trim().toLowerCase();
       if (empUser) {
         const existing = await pool.query(
-          `select id from approval_requests where type = 'onboarding' and status = 'pending' and lower(payload->'employee'->>'username') = $1 limit 1`,
-          [empUser]
+          `select id from approval_requests where type = 'onboarding' and status = 'pending' and lower(payload->'employee'->>'username') = $1 and tenant_id = $2 limit 1`,
+          [empUser, req.tenantId || req.user?.tenant_id || 'default']
         );
         if ((existing.rows || []).length) {
           return res.status(409).json({ error: 'duplicate_pending', id: existing.rows[0].id });
@@ -2723,8 +2730,8 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
       }
     } else if (type !== 'payment' && type !== 'points' && type !== 'reward_punishment') {
       const existing = await pool.query(
-        'select id from approval_requests where lower(applicant_username) = lower($1) and type = $2 and status = $3 limit 1',
-        [username, type, 'pending']
+        'select id from approval_requests where lower(applicant_username) = lower($1) and type = $2 and status = $3 and tenant_id = $4 limit 1',
+        [username, type, 'pending', req.tenantId || req.user?.tenant_id || 'default']
       );
       if ((existing.rows || []).length) {
         return res.status(409).json({ error: 'duplicate_pending', id: existing.rows[0].id });
@@ -2852,8 +2859,9 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
                AND left(trim(both from coalesce(payload->>'date', payload->>'applyDate', payload->>'requestDate','')), 10) = $3::text
                AND (nullif(replace(trim(both from coalesce(payload->>'amount','')), ',', ''), '')::numeric) = $4::numeric
                AND trim(both from coalesce(payload->>'category', payload->>'project','')) = trim(both from $5::text)
+               AND tenant_id = $6
              LIMIT 1`,
-            [username, store, date, amount, category]
+            [username, store, date, amount, category, req.tenantId || req.user?.tenant_id || 'default']
           );
           if ((dupPay.rows || []).length) {
             return res.status(409).json({ error: 'duplicate_pending', id: dupPay.rows[0].id });
@@ -2908,8 +2916,9 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
                AND created_at >= CURRENT_DATE
                AND status != 'returned'
                AND (payload->>'resubmittedAt') IS NULL
+               AND tenant_id = $2
              LIMIT 1`,
-            [username]
+            [username, req.tenantId || req.user?.tenant_id || 'default']
           );
           if (dupCheck.rows?.length > 0) {
             return res.status(400).json({ error: 'daily_limit', message: '每天只能提交1次积分申请，今天已提交过' });
@@ -3100,10 +3109,10 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
     const currentAssignee = chain[0]?.assignee || null;
 
     const r = await pool.query(
-      `insert into approval_requests (type, status, applicant_username, current_assignee_username, chain, payload, created_at, updated_at)
-       values ($1,$2,$3,$4,$5::jsonb,$6::jsonb, now(), now())
+      `insert into approval_requests (type, status, applicant_username, current_assignee_username, chain, payload, tenant_id, created_at, updated_at)
+       values ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7, now(), now())
        returning id, type, status, applicant_username, current_assignee_username, chain, payload, effective_date, executed_at, created_at, updated_at`,
-      [type, 'pending', username, currentAssignee, JSON.stringify(chain), JSON.stringify(payload)]
+      [type, 'pending', username, currentAssignee, JSON.stringify(chain), JSON.stringify(payload), req.tenantId || req.user?.tenant_id || 'default']
     );
     const item = r.rows?.[0] || null;
 
@@ -4638,8 +4647,9 @@ app.get('/api/payments/export', authRequired, async (req, res) => {
        where type = 'payment'
          and (payload->>'date') >= $1
          and (payload->>'date') <= $2
+         and tenant_id = $3
        order by (payload->>'date') desc, created_at desc`,
-      [start, end]
+      [start, end, req.tenantId || req.user?.tenant_id || 'default']
     );
     const rows = r.rows || [];
 
@@ -4863,8 +4873,9 @@ app.get('/api/unread-counts', authRequired, async (req, res) => {
          on ur.username = $1 and ur.module = 'approval' and ur.item_key = ar.id::text
        where ar.status = 'pending'
          and lower(ar.current_assignee_username) = lower($1)
+         and ar.tenant_id = $2
          and ur.item_key is null`,
-      [username]
+      [username, req.tenantId || req.user?.tenant_id || 'default']
     );
     const approvals = approvalsUnreadR.rows?.[0]?.cnt || 0;
 
@@ -4963,8 +4974,9 @@ app.get('/api/unread-counts', authRequired, async (req, res) => {
          WHERE ar.type = 'reward_punishment'
            AND ar.status IN ('approved','paid')
            AND (ar.payload->>'targetUser' = $1 OR ar.submitted_by = $1)
+           AND ar.tenant_id = $2
            AND ur.item_key IS NULL`,
-        [username]
+        [username, req.tenantId || req.user?.tenant_id || 'default']
       );
       rewards = rwR.rows?.[0]?.cnt || 0;
     } catch (e) {}
@@ -4980,8 +4992,9 @@ app.get('/api/unread-counts', authRequired, async (req, res) => {
          WHERE ar.type = 'payment'
            AND ar.status = 'pending'
            AND (lower(ar.current_assignee_username) = lower($1) OR lower(ar.submitted_by) = lower($1))
+           AND ar.tenant_id = $2
            AND ur.item_key IS NULL`,
-        [username]
+        [username, req.tenantId || req.user?.tenant_id || 'default']
       );
       payment = pmR.rows?.[0]?.cnt || 0;
     } catch (e) {}
@@ -6445,7 +6458,7 @@ async function dbFindEmployeeRecord(username) {
   }
 }
 
-async function dbListEmployeesForReports({ store, includeInactive }) {
+async function dbListEmployeesForReports({ store, includeInactive, tenantId }) {
   try {
     const params = [];
     const where = [];
@@ -6461,6 +6474,8 @@ async function dbListEmployeesForReports({ store, includeInactive }) {
     if (!includeInactive) {
       where.push(`coalesce(status, '') not in ('inactive', '离职')`);
     }
+    params.push(String(tenantId || 'default'));
+    where.push(`tenant_id = $${params.length}`);
     const sql = `select username, name, role, store, department, position, status,
                         join_date as "joinDate", created_at as "createdAt",
                         extra_json->>'offboardingDate' as "offboardingDate",
@@ -7885,7 +7900,8 @@ async function upsertDailyReportPgFromStateReport(dr) {
       brand,
       reportDate: date,
       staffPayload: payload?.staff || {},
-      laborTotal: laborTotalVal
+      laborTotal: laborTotalVal,
+      tenantId: req.tenantId || req.user?.tenant_id || 'default'
     });
   } catch (re) {
     console.warn('[daily_report_attendance_register]', store, date, re?.message);
@@ -8333,7 +8349,8 @@ app.post('/api/daily-reports', authRequired, async (req, res) => {
             brand,
             reportDate: date,
             staffPayload: payload?.staff || {},
-            laborTotal: laborTotalVal
+            laborTotal: laborTotalVal,
+            tenantId: req.tenantId || req.user?.tenant_id || 'default'
           });
         } catch (re) {
           console.warn('[daily_report_attendance_register]', store, date, re?.message);
@@ -8486,7 +8503,8 @@ app.post('/api/daily-reports', authRequired, async (req, res) => {
             brand: String(payload?.brand || '').trim(),
             reportDate: date,
             staffPayload: payload?.staff || {},
-            laborTotal: laborTotalVal
+            laborTotal: laborTotalVal,
+            tenantId: req.tenantId || req.user?.tenant_id || 'default'
           });
         } catch (re) {
           console.warn('[daily_report_attendance_register]', store, date, re?.message);
@@ -10598,6 +10616,8 @@ app.get('/api/reports/business', authRequired, async (req, res) => {
         const usageParams = store ? [store, ym] : [ym];
         const storeClause = store ? "(payload->>'store') = $1 AND" : '';
         const monthParam = store ? '$2' : '$1';
+        usageParams.push(req.tenantId || req.user?.tenant_id || 'default');
+        const tenantParam = `$${usageParams.length}`;
         const usageResult = await pool.query(
           `SELECT (payload->>'category') as category,
                   COALESCE(SUM(NULLIF(payload->>'amount','')::numeric), 0)::float as used
@@ -10606,6 +10626,7 @@ app.get('/api/reports/business', authRequired, async (req, res) => {
              AND status IN ('approved','paid')
              AND ${storeClause}
              substring(payload->>'date', 1, 7) = ${monthParam}
+             AND tenant_id = ${tenantParam}
            GROUP BY (payload->>'category')`,
           usageParams
         );
@@ -10734,7 +10755,7 @@ app.get('/api/reports/turnover', authRequired, async (req, res) => {
       : storeQ;
 
     let allEmployees = Array.isArray(state0.employees) ? state0.employees : [];
-    const dbEmps = await dbListEmployeesForReports({ store: store || '', includeInactive: true });
+    const dbEmps = await dbListEmployeesForReports({ store: store || '', includeInactive: true, tenantId: req.tenantId || req.user?.tenant_id || 'default' });
     if (dbEmps.length) {
       const stateEmpByLower = new Map(allEmployees.map(e => [String(e?.username || '').trim().toLowerCase(), e]));
       const merged = [];
@@ -10791,8 +10812,9 @@ app.get('/api/reports/turnover', authRequired, async (req, res) => {
              payload->>'resignDate', payload->>'date', payload->>'resignationDate',
              created_at::text
            ), 1, 7) = $1
+           AND tenant_id = $2
          ORDER BY created_at DESC`,
-        [month]
+        [month, req.tenantId || req.user?.tenant_id || 'default']
       );
       for (const ob of (obRes.rows || [])) {
         const p = typeof ob.payload === 'string' ? JSON.parse(ob.payload) : (ob.payload || {});
@@ -11079,6 +11101,8 @@ app.get('/api/reports/leave-owed', authRequired, async (req, res) => {
         if (!includeInactive) {
           where.push(`(coalesce(status, '') not in ('inactive', '离职') AND NOT COALESCE((extra_json->>'offboardingApproved')::boolean, false))`);
         }
+        params.push(req.tenantId || req.user?.tenant_id || 'default');
+        where.push(`tenant_id = $${params.length}`);
         const sql = `select username, name, role, store, department, position, status,
                             join_date as "joinDate", created_at as "createdAt"
                        from employees
@@ -11217,7 +11241,7 @@ app.get('/api/reports/attendance', authRequired, async (req, res) => {
           nameByLower.set(u, String(e?.name || '').trim() || String(e?.username || '').trim());
         }
       } else {
-        const dbEmps = await dbListEmployeesForReports({ store, includeInactive: false });
+        const dbEmps = await dbListEmployeesForReports({ store, includeInactive: false, tenantId: req.tenantId || req.user?.tenant_id || 'default' });
         nameByLower = new Map();
         for (const e of dbEmps) {
           const u = String(e?.username || '').trim().toLowerCase();
@@ -11235,7 +11259,7 @@ app.get('/api/reports/attendance', authRequired, async (req, res) => {
           if (u && s && !storeByLower.has(u)) storeByLower.set(u, s);
         }
       } else {
-        const dbEmps2 = await dbListEmployeesForReports({ store: null, includeInactive: false });
+        const dbEmps2 = await dbListEmployeesForReports({ store: null, includeInactive: false, tenantId: req.tenantId || req.user?.tenant_id || 'default' });
         storeByLower = new Map();
         for (const e of dbEmps2) {
           const u = String(e?.username || '').trim().toLowerCase();
@@ -11360,7 +11384,8 @@ app.post('/api/admin/reconcile-daily-attendance-register-from-pg', authRequired,
       start,
       end,
       store,
-      refreshExisting
+      refreshExisting,
+      tenantId: req.tenantId || req.user?.tenant_id || 'default'
     });
     return res.json({ ok: true, refreshExisting, ...out });
   } catch (e) {
@@ -11457,7 +11482,7 @@ app.get('/api/reports/payroll', authRequired, async (req, res) => {
     // If hrms_state snapshot is empty (common on some installs), fall back to employees table
     // so payroll/attendance-related reports don't silently drop everyone.
     if (!peopleByLower.size) {
-      const dbEmps = await dbListEmployeesForReports({ store, includeInactive: false });
+      const dbEmps = await dbListEmployeesForReports({ store, includeInactive: false, tenantId: req.tenantId || req.user?.tenant_id || 'default' });
       for (const p of dbEmps) {
         const uRaw = String(p?.username || '').trim();
         const u = uRaw.toLowerCase();
@@ -11528,7 +11553,8 @@ app.get('/api/reports/payroll', authRequired, async (req, res) => {
     try {
       const arRows = await pool.query(
         `SELECT id::text AS id, to_char(COALESCE(effective_date, created_at::date), 'YYYY-MM') AS ym
-         FROM approval_requests WHERE type = 'reward_punishment'`
+         FROM approval_requests WHERE type = 'reward_punishment' AND tenant_id = $1`,
+        [req.tenantId || req.user?.tenant_id || 'default']
       );
       for (const r of (arRows.rows || [])) approvalMonthById.set(String(r.id), String(r.ym || ''));
     } catch (e) {
@@ -11823,8 +11849,10 @@ app.get('/api/reports/salary-changes', authRequired, async (req, res) => {
        where type = 'promotion'
          and status = 'approved'
          and lower(coalesce(payload->>'promotionStage','')) = 'formal'
+         and tenant_id = $1
        order by updated_at desc
-       limit 2000`
+       limit 2000`,
+      [req.tenantId || req.user?.tenant_id || 'default']
     );
     const legacyRows = (legacyR.rows || []).map((r) => {
       const payload = r?.payload && typeof r.payload === 'object' ? r.payload : {};
@@ -11902,9 +11930,10 @@ app.get('/api/reports/promotion-records', authRequired, async (req, res) => {
        where type = 'promotion'
          and status = 'approved'
          and lower(coalesce(payload->>'promotionStage','')) = 'formal'
+         and tenant_id = $2
        order by updated_at desc
        limit $1`,
-      [limit]
+      [limit, req.tenantId || req.user?.tenant_id || 'default']
     );
 
     let items = [];
@@ -19310,7 +19339,7 @@ app.listen(PORT, HOST, async () => {
 
     // 启动时员工信息反向同步：employees DB → hrms_state.employees（防 state 丢失）
     try {
-      const dbEmp = await pool.query(`SELECT id, username, name, role, store, department, position, status, gender, phone, email, join_date, birthday, salary, manager_username, id_card_number, bank_card, extra_json, created_at, updated_at FROM employees ORDER BY username`);
+      const dbEmp = await pool.query(`SELECT id, username, name, role, store, department, position, status, gender, phone, email, join_date, birthday, salary, manager_username, id_card_number, bank_card, extra_json, created_at, updated_at FROM employees WHERE tenant_id = 'default' ORDER BY username`);
       const dbEmpItems = dbEmp.rows.map(r => ({
         id: r.id,
         username: String(r.username || '').trim(),
@@ -20725,8 +20754,8 @@ app.post('/api/checkin/monthly-confirm', authRequired, async (req, res) => {
     if (chain.length > 0) {
       try {
         await pool.query(
-          `INSERT INTO approval_requests (type, applicant_username, payload, status, approval_chain, current_step, store)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          `INSERT INTO approval_requests (type, applicant_username, payload, status, approval_chain, current_step, store, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [
             'monthly_confirm',
             username,
@@ -20734,7 +20763,8 @@ app.post('/api/checkin/monthly-confirm', authRequired, async (req, res) => {
             'pending',
             JSON.stringify(chain),
             0,
-            store || null
+            store || null,
+            req.tenantId || req.user?.tenant_id || 'default'
           ]
         );
       } catch (dbErr) {

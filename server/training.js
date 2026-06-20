@@ -995,7 +995,7 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
         const userStore = await getUserStore(req.user?.username);
         if (userStore) return res.json({ success: true, stores: [userStore] });
       }
-      const result = await pool().query(`SELECT DISTINCT store FROM employees WHERE store != '' AND status != 'inactive' ORDER BY store`);
+      const result = await pool().query(`SELECT DISTINCT store FROM employees WHERE store != '' AND status != 'inactive' AND tenant_id = $1 ORDER BY store`, [req.tenantId || req.user?.tenant_id || 'default']);
       res.json({ success: true, stores: result.rows.map(r => r.store) });
     } catch (e) {
       res.json({ success: false, error: e?.message });
@@ -1016,6 +1016,8 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
 
       const clauses = [`status != 'inactive'`];
       const params = [];
+      params.push(req.tenantId || req.user?.tenant_id || 'default');
+      clauses.push(`tenant_id = $${params.length}`);
 
       // 角色过滤
       if (assignableRoles !== null) {
