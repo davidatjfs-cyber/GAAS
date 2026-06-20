@@ -2439,6 +2439,8 @@ app.get('/api/points/records', authRequired, async (req, res) => {
         params.push(`%${name}%`);
         where.push(`(lower(coalesce(name, '')) LIKE $${params.length} OR lower(coalesce(username, '')) LIKE $${params.length})`);
       }
+      params.push(req.tenantId || req.user?.tenant_id || 'default');
+      where.push(`tenant_id = $${params.length}`);
       const sql = `
       SELECT id::text, approval_id, username, name, store, item_name, reason, points, amount, approved_at, approved_by
       FROM point_records
@@ -2536,8 +2538,9 @@ app.get('/api/points/ranking', authRequired, async (req, res) => {
        FROM point_records
        WHERE approved_at >= $1::date
          AND approved_at < ($1::date + interval '1 month')
+         AND tenant_id = $2
        ORDER BY approved_at DESC NULLS LAST, created_at DESC`,
-      [monthStart]
+      [monthStart, req.tenantId || req.user?.tenant_id || 'default']
     );
     let list = (pointRows.rows || []).map((r) => ({
       username: r.username || '',
@@ -4061,15 +4064,16 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           // 双写：奖惩记录同步到 hrms_reward_punishment_records 表
           try {
             await pool.query(
-              `INSERT INTO hrms_reward_punishment_records (id, username, name, store, brand, type, category, points, amount, reason, source, approval_id, status, created_by)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'approval',$11,'active',$12)
+              `INSERT INTO hrms_reward_punishment_records (id, username, name, store, brand, type, category, points, amount, reason, source, approval_id, status, created_by, tenant_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'approval',$11,'active',$12,$13)
                ON CONFLICT (id) DO UPDATE SET
                  status='active', amount=$9, reason=$10`,
               [salaryAdj.id, targetUsername || applicantUser, targetName,
                String(targetRec?.store || '').trim(), String(targetRec?.brand || '').trim(),
                isReward ? 'reward' : 'punishment', rpType,
                isReward ? Math.abs(amount || 0) : -Math.abs(amount || 0),
-               Math.abs(amount || 0), rpReason, updated.id, applicantUser]
+               Math.abs(amount || 0), rpReason, updated.id, applicantUser,
+               req.tenantId || req.user?.tenant_id || 'default']
             );
           } catch (e) {
             console.error('[reward_punishment_records] dual-write failed:', e?.message);
@@ -4193,8 +4197,8 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
               for (const rec of newRecords) {
                 const approvedAtVal = (rec.approvedAt && rec.approvedAt !== '') ? rec.approvedAt : null;
                 await pool.query(
-                  `INSERT INTO point_records (id, approval_id, username, name, store, item_name, reason, points, amount, approved_at, approved_by)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                  `INSERT INTO point_records (id, approval_id, username, name, store, item_name, reason, points, amount, approved_at, approved_by, tenant_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                    ON CONFLICT (id) DO UPDATE SET
                      approval_id=EXCLUDED.approval_id, username=EXCLUDED.username, name=EXCLUDED.name,
                      store=EXCLUDED.store, item_name=EXCLUDED.item_name, reason=EXCLUDED.reason,
@@ -4202,7 +4206,8 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
                      approved_by=EXCLUDED.approved_by, updated_at=NOW()`,
                   [rec.id, rec.approvalId || null, rec.username || '', rec.name || '', rec.store || '',
                    rec.itemName || '积分事项', rec.reason || '', Number(rec.points) || 0,
-                   Number(rec.amount) || 0, approvedAtVal, rec.approvedBy || '']
+                   Number(rec.amount) || 0, approvedAtVal, rec.approvedBy || '',
+                   req.tenantId || req.user?.tenant_id || 'default']
                 );
               }
             } catch (e2) {
