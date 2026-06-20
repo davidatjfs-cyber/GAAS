@@ -1843,8 +1843,8 @@ export function registerPhaseRoutes(app, pool) {
         execution_action: '手动激活活动计划'
       };
       await pool.query(
-        `INSERT INTO growth_actions (action_key, action_type, status, store_id, campaign_id, title, detail, payload, created_by)
-         VALUES ($1,'campaign_activate','proposed',$2,$3,$4,$5,$6::jsonb,$7)`,
+        `INSERT INTO growth_actions (action_key, action_type, status, store_id, campaign_id, title, detail, payload, created_by, tenant_id)
+         VALUES ($1,'campaign_activate','proposed',$2,$3,$4,$5,$6::jsonb,$7,$8)`,
         [
           actionKey,
           previous.store_id || '',
@@ -1852,7 +1852,8 @@ export function registerPhaseRoutes(app, pool) {
           previous.title || '手动激活活动',
           `活动 ${previous.title || previous.campaign_id || previous.plan_id || id} 已手动激活`,
           JSON.stringify(payload),
-          auth.user?.username || previous.created_by || 'admin'
+          auth.user?.username || previous.created_by || 'admin',
+          getPhaseApiTenantId(req)
         ]
       );
       const actionRow = {
@@ -2604,15 +2605,16 @@ export function registerPhaseRoutes(app, pool) {
            test_name, store_code, test_type, target_metric, target_kind, target_rule_key,
            mode, channel, template_key, metrics_schema,
            variant_a, variant_b, rotation_config, start_date, end_date,
-           min_sample_size, created_by, status
-         ) VALUES ($1,$2,$3,$4,$5,$6,'bound',$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15,$16,'running')
+           min_sample_size, created_by, status, tenant_id
+         ) VALUES ($1,$2,$3,$4,$5,$6,'bound',$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15,$16,'running',$17)
          RETURNING *`,
         [
           testName, storeCode, testType, targetMetric, targetKind, targetRuleKey,
           cleanText(template.channel, 80), template.key, JSON.stringify(metricsSchema),
           JSON.stringify(variantA), JSON.stringify(variantB),
           JSON.stringify({ method: 'manual' }), startDate, endDate,
-          minSample, cleanText(auth.user?.username || 'system', 80)
+          minSample, cleanText(auth.user?.username || 'system', 80),
+          getPhaseApiTenantId(req)
         ]
       );
       return res.json({ ok: true, task: created.rows[0] });
@@ -2636,15 +2638,16 @@ export function registerPhaseRoutes(app, pool) {
          test_name, store_code, test_type, target_metric,
          mode, channel, template_key, metrics_schema,
          variant_a, variant_b, rotation_config, start_date, end_date,
-         min_sample_size, created_by, status
-       ) VALUES ($1,$2,$3,$4,'channel',$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,$13,$14,'running')
+         min_sample_size, created_by, status, tenant_id
+       ) VALUES ($1,$2,$3,$4,'channel',$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,$13,$14,'running',$15)
        RETURNING *`,
       [
         testName, storeCode, variable, targetMetric,
         channel, template.key, JSON.stringify(metricsSchema),
         JSON.stringify(variantA), JSON.stringify(variantB),
         JSON.stringify({ method: 'manual' }), startDate, endDate,
-        minSample, cleanText(auth.user?.username || 'system', 80)
+        minSample, cleanText(auth.user?.username || 'system', 80),
+        getPhaseApiTenantId(req)
       ]
     );
     return res.json({ ok: true, task: created.rows[0] });
@@ -3126,14 +3129,16 @@ export function registerPhaseRoutes(app, pool) {
     if (!authPhaseApi(req).ok) return res.status(401).json({ ok: false, error: 'unauthorized' });
     const storeCode = cleanText(req.query.store_code || '', 128);
     const status = cleanText(req.query.status || '', 40);
+    const priceTestsTenantId = getPhaseApiTenantId(req);
     const r = await pool.query(
       `SELECT * FROM ab_test_tasks
         WHERE test_type IN ('price_test', 'price_bundle')
+          AND tenant_id = $3
           AND ($1 = '' OR store_code = $1)
           AND ($2 = '' OR status = $2)
         ORDER BY created_at DESC
         LIMIT 100`,
-      [storeCode, status]
+      [storeCode, status, priceTestsTenantId]
     );
     const tasks = [];
     for (const row of r.rows || []) {
@@ -3160,8 +3165,8 @@ export function registerPhaseRoutes(app, pool) {
       `INSERT INTO ab_test_tasks (
          test_name, store_code, test_type, target_metric,
          variant_a, variant_b, rotation_config, start_date, end_date,
-         min_sample_size, created_by, status
-       ) VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9,$10,$11,'running')
+         min_sample_size, created_by, status, tenant_id
+       ) VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9,$10,$11,'running',$12)
        RETURNING *`,
       [
         testName, storeCode, testType, targetMetric,
@@ -3170,7 +3175,8 @@ export function registerPhaseRoutes(app, pool) {
         JSON.stringify(b.rotation_config || { method: 'store', note: '不同门店或不同日期轮换' }),
         startDate, endDate,
         Math.max(1, Math.floor(Number(b.min_sample_size) || 50)),
-        cleanText(auth.user?.username || 'system', 80)
+        cleanText(auth.user?.username || 'system', 80),
+        getPhaseApiTenantId(req)
       ]
     );
     return res.json({ ok: true, task: r.rows[0] });

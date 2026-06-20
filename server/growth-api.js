@@ -2874,6 +2874,7 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey, c
 }
 
 async function runTouchRuleEngine(pool, options = {}) {
+  const ruleEngineTenantId = String(options.tenantId || 'default').trim() || 'default';
   // 第三层防护：POS数据新鲜度闸门。数据滞后会让全员被误判为临界/流失，
   // 进而乱发券。滞后超阈值时停止自动触达，改为告警人工核查。
   const freshRes = await pool.query(`SELECT MAX(biz_date) AS latest, (CURRENT_DATE - MAX(biz_date))::int AS lag_days FROM pos_orders`);
@@ -3003,8 +3004,8 @@ async function runTouchRuleEngine(pool, options = {}) {
       });
       const actionKey = buildRuleActionKey(rule.rule_key, row.customer_id, buildRulePeriodKey(rule.rule_key, row));
       const insert = await pool.query(
-        `INSERT INTO growth_actions (action_key, action_type, status, store_id, title, detail, payload, created_by)
-         VALUES ($1,$2,'proposed',NULLIF($3,''),$4,$5,$6::jsonb,'rule_engine')
+        `INSERT INTO growth_actions (action_key, action_type, status, store_id, title, detail, payload, created_by, tenant_id)
+         VALUES ($1,$2,'proposed',NULLIF($3,''),$4,$5,$6::jsonb,'rule_engine',$7)
          ON CONFLICT (action_key) DO NOTHING
          RETURNING *`,
         [
@@ -3013,7 +3014,8 @@ async function runTouchRuleEngine(pool, options = {}) {
           cleanText(row.store_id, 128),
           interpolateTemplate(cleanText(actionPayload.title_template || rule.name, 500), actionPayload),
           interpolateTemplate(cleanText(actionPayload.content_template || rule.name, 2000), actionPayload),
-          JSON.stringify(actionPayload)
+          JSON.stringify(actionPayload),
+          ruleEngineTenantId
         ]
       );
       if (!insert.rows.length) continue;
@@ -4725,7 +4727,7 @@ export function registerGrowthRoutes(app, pool) {
 
   app.post('/api/growth/rule-engine/run', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    const result = await runTouchRuleEngine(pool, req.body || {});
+    const result = await runTouchRuleEngine(pool, { ...(req.body || {}), tenantId: getGrowthTenantId(req) });
     return res.json({ ok: true, result });
   });
 
@@ -4805,12 +4807,13 @@ export function registerGrowthRoutes(app, pool) {
   app.post('/api/growth/actions', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const b = req.body || {};
+    const actionsTenantId = getGrowthTenantId(req);
     const r = await pool.query(
-      `INSERT INTO growth_actions (action_key, action_type, status, store_id, campaign_id, title, detail, payload, created_by)
-       VALUES (NULLIF($1,''),$2,COALESCE(NULLIF($3,''),'proposed'),NULLIF($4,''),NULLIF($5,''),$6,$7,$8::jsonb,COALESCE(NULLIF($9,''),'agent_v2'))
+      `INSERT INTO growth_actions (action_key, action_type, status, store_id, campaign_id, title, detail, payload, created_by, tenant_id)
+       VALUES (NULLIF($1,''),$2,COALESCE(NULLIF($3,''),'proposed'),NULLIF($4,''),NULLIF($5,''),$6,$7,$8::jsonb,COALESCE(NULLIF($9,''),'agent_v2'),$10)
        ON CONFLICT (action_key) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, payload = EXCLUDED.payload, updated_at = NOW()
        RETURNING *`,
-      [cleanText(b.action_key, 255), cleanText(b.action_type, 80), cleanText(b.status, 40), cleanText(b.store_id, 128), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.detail, 4000), JSON.stringify(b.payload || {}), cleanText(b.created_by, 80)]
+      [cleanText(b.action_key, 255), cleanText(b.action_type, 80), cleanText(b.status, 40), cleanText(b.store_id, 128), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.detail, 4000), JSON.stringify(b.payload || {}), cleanText(b.created_by, 80), actionsTenantId]
     );
     return res.json({ ok: true, action: r.rows[0] });
   });
@@ -5670,6 +5673,7 @@ export function registerGrowthRoutes(app, pool) {
   app.post('/api/growth/repurchase-trigger', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const storeId = cleanText(req.body.store_id || '', 128);
+    const repurchaseTenantId = getGrowthTenantId(req);
     const r = await pool.query(
       `SELECT cp.customer_id, cp.phone, cp.store_id, cp.lifecycle_stage, cp.next_visit_probability,
               cp.best_contact_window, cp.response_to_discount, cp.price_sensitivity
@@ -5684,13 +5688,14 @@ export function registerGrowthRoutes(app, pool) {
       const actionKey = `repurchase:${row.customer_id}:${Date.now()}`;
       const useCoupon = Number(row.response_to_discount) > 0.4;
       await pool.query(
-        `INSERT INTO growth_actions (action_key, action_type, status, store_id, title, detail, payload, created_by)
-         VALUES ($1,'send_voucher','proposed',NULLIF($2,''),$3,$4,$5::jsonb,'agent_v2')
+        `INSERT INTO growth_actions (action_key, action_type, status, store_id, title, detail, payload, created_by, tenant_id)
+         VALUES ($1,'send_voucher','proposed',NULLIF($2,''),$3,$4,$5::jsonb,'agent_v2',$6)
          ON CONFLICT (action_key) DO NOTHING`,
         [actionKey, row.store_id,
          `复购唤醒-客户#${row.customer_id}`,
          `客户${row.phone}已${row.lifecycle_stage === 'churned' ? '流失' : '临近复购临界期'}，${useCoupon ? '建议发送优惠券' : '建议内容触达'}。最佳触达时间:${row.best_contact_window || '未设定'}`,
-         JSON.stringify({ customer_id: row.customer_id, phone: row.phone, use_coupon: useCoupon, channel: 'wecom', strategy_key: 'repurchase_auto' })
+         JSON.stringify({ customer_id: row.customer_id, phone: row.phone, use_coupon: useCoupon, channel: 'wecom', strategy_key: 'repurchase_auto' }),
+         repurchaseTenantId
         ]
       );
       created++;
