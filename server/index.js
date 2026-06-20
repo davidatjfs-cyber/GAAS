@@ -5868,14 +5868,19 @@ function cleanupLegacyTestState(state0) {
   return { state, changed };
 }
 
-async function getSharedState() {
-  const r = await pool.query('select data from hrms_state where key = $1 limit 1', ['default']);
+// tenantId 默认 'default'，与现有调用方(未传参)行为完全一致，零风险。
+// 仅当未来调用方显式传入其他租户key时才会读取该租户独立的state行。
+async function getSharedState(tenantId = 'default') {
+  const key = String(tenantId || 'default').trim() || 'default';
+  const r = await pool.query('select data from hrms_state where key = $1 limit 1', [key]);
   const row = r.rows?.[0] || null;
   return row?.data && typeof row.data === 'object' ? row.data : null;
 }
 
-async function saveSharedState(nextData) {
+// tenantId 默认 'default'，与现有调用方(未传参)行为完全一致，零风险。
+async function saveSharedState(nextData, tenantId = 'default') {
   if (!nextData || typeof nextData !== 'object' || !Object.keys(nextData).length) return;
+  const key = String(tenantId || 'default').trim() || 'default';
 
   // 使用显式事务 + FOR UPDATE + 乐观锁，避免调用方传入陈旧 state 覆盖并发修改
   // （与 mergeSharedStateFields 一致的事务保护模式）
@@ -5884,7 +5889,7 @@ async function saveSharedState(nextData) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const r = await client.query('SELECT data, updated_at FROM hrms_state WHERE key = $1 FOR UPDATE', ['default']);
+      const r = await client.query('SELECT data, updated_at FROM hrms_state WHERE key = $1 FOR UPDATE', [key]);
       const current = (r.rows?.[0]?.data && typeof r.rows[0].data === 'object') ? r.rows[0].data : {};
       const prevUpdatedAt = r.rows?.[0]?.updated_at;
 
@@ -5894,7 +5899,7 @@ async function saveSharedState(nextData) {
 
       const result = await client.query(
         `UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1 AND updated_at = $3`,
-        ['default', JSON.stringify(merged), prevUpdatedAt]
+        [key, JSON.stringify(merged), prevUpdatedAt]
       );
       if (result.rowCount > 0) {
         await client.query('COMMIT');
@@ -5925,8 +5930,10 @@ async function saveSharedState(nextData) {
  * @param {Object} patches  key→value 映射；value 可以是数组（追加/更新）、对象（merge）或原始值（覆盖）
  * @param {Object} [arrayIdFields]  对 array 字段指定去重 key，如 { pointRecords: 'id', dailyReports: ['store','date'] }
  */
-async function mergeSharedStateFields(patches, arrayIdFields = {}) {
+// tenantId 默认 'default'，与现有调用方(未传参)行为完全一致，零风险。
+async function mergeSharedStateFields(patches, arrayIdFields = {}, tenantId = 'default') {
   if (!patches || typeof patches !== 'object' || !Object.keys(patches).length) return;
+  const key = String(tenantId || 'default').trim() || 'default';
 
   // 原子合并 hrms_state：使用显式事务 + FOR UPDATE + 乐观锁（updated_at）
   // 避免 auto-commit 模式下 FOR UPDATE 锁在 SELECT 后即释放导致的丢失更新竞态
@@ -5935,7 +5942,7 @@ async function mergeSharedStateFields(patches, arrayIdFields = {}) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const r = await client.query('SELECT data, updated_at FROM hrms_state WHERE key = $1 FOR UPDATE', ['default']);
+      const r = await client.query('SELECT data, updated_at FROM hrms_state WHERE key = $1 FOR UPDATE', [key]);
       const row = r.rows?.[0];
       const current = (row?.data && typeof row.data === 'object') ? row.data : {};
       const prevUpdatedAt = row?.updated_at;
@@ -5972,7 +5979,7 @@ async function mergeSharedStateFields(patches, arrayIdFields = {}) {
       // 乐观锁：仅当 updated_at 未被其他事务修改时写入
       const updateResult = await client.query(
         `UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1 AND updated_at = $3`,
-        ['default', JSON.stringify(next), prevUpdatedAt]
+        [key, JSON.stringify(next), prevUpdatedAt]
       );
       if (updateResult.rowCount > 0) {
         await client.query('COMMIT');
