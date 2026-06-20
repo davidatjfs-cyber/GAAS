@@ -86,6 +86,7 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = String(process.env.HOST || '0.0.0.0');
 const DATABASE_URL = process.env.DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET;
+const PLATFORM_ADMIN_SECRET = process.env.PLATFORM_ADMIN_SECRET;
 const STARTED_AT = new Date().toISOString();
 const APP_ENV = getAppEnv();
 
@@ -14598,6 +14599,19 @@ function requireEnv() {
   return missing;
 }
 
+// 租户开通是平台级操作(跨租户),不应由任何单租户的admin角色触发，
+// 故单独用环境变量配置的密钥网关,与租户内的users.role='admin'权限体系完全分离。
+function platformAdminRequired(req, res, next) {
+  if (!PLATFORM_ADMIN_SECRET) {
+    return res.status(500).json({ error: 'server_config_error', message: 'PLATFORM_ADMIN_SECRET 未配置' });
+  }
+  const provided = String(req.headers['x-platform-admin-secret'] || '').trim();
+  if (!provided || provided !== PLATFORM_ADMIN_SECRET) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  next();
+}
+
 async function authRequired(req, res, next) {
   // 企业微信「接收消息」回调为无 token 公开端点（靠签名+AES 解密自证），放行
   if (String(req.originalUrl || '').split('?')[0] === '/api/wecom/callback') return next();
@@ -15113,6 +15127,128 @@ app.get('/api/state', authRequired, async (req, res) => {
     return res.json({ data: payload });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+  }
+});
+
+// ─── 租户开通(平台级) ───
+// 鉴权见 platformAdminRequired：与租户内部的 role==='admin' 完全分离，因为
+// 创建租户本身是跨租户操作，任何单租户管理员都不应有权限创建别的租户。
+app.post('/api/admin/tenants', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.body?.tenant_id || '').trim();
+  const name = String(req.body?.name || '').trim();
+  if (!tenantId || !/^[a-zA-Z0-9_-]{1,80}$/.test(tenantId)) {
+    return res.status(400).json({ error: 'invalid_tenant_id', message: 'tenant_id 仅支持字母/数字/下划线/短横线' });
+  }
+  if (!name) return res.status(400).json({ error: 'missing_name' });
+  const mode = String(req.body?.mode || 'managed').trim() || 'managed';
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const exists = await client.query('SELECT 1 FROM tenants WHERE tenant_id = $1', [tenantId]);
+    if (exists.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'tenant_exists' });
+    }
+    await client.query(
+      `INSERT INTO tenants (tenant_id, name, mode, status) VALUES ($1, $2, $3, 'active')`,
+      [tenantId, name, mode]
+    );
+
+    let createdAdmin = null;
+    const adminReq = req.body?.create_admin;
+    if (adminReq && adminReq.username && adminReq.password) {
+      const adminUsername = String(adminReq.username).trim();
+      const hash = await bcrypt.hash(String(adminReq.password), 10);
+      await client.query(
+        `INSERT INTO users (id, username, password_hash, real_name, role, is_active, tenant_id)
+         VALUES (gen_random_uuid(), $1, $2, $3, 'admin', TRUE, $4)`,
+        [adminUsername, hash, String(adminReq.real_name || adminUsername), tenantId]
+      );
+      createdAdmin = { username: adminUsername };
+    }
+
+    let issuedLicense = null;
+    const licenseReq = req.body?.license;
+    if (licenseReq && licenseReq.expires_at) {
+      const licenseKey = randomUUID();
+      const allowedFeatures = Array.isArray(licenseReq.allowed_features) ? licenseReq.allowed_features : [];
+      const lr = await client.query(
+        `INSERT INTO licenses (tenant_id, license_key, expires_at, allowed_features)
+         VALUES ($1, $2, $3, $4) RETURNING license_key, expires_at, status`,
+        [tenantId, licenseKey, licenseReq.expires_at, JSON.stringify(allowedFeatures)]
+      );
+      issuedLicense = lr.rows[0];
+    }
+
+    await client.query('COMMIT');
+    return res.json({ ok: true, tenant: { tenant_id: tenantId, name, mode, status: 'active' }, admin: createdAdmin, license: issuedLicense });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/admin/tenants', platformAdminRequired, async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT t.tenant_id, t.name, t.mode, t.status, t.created_at,
+             l.license_key, l.expires_at AS license_expires_at, l.status AS license_status
+      FROM tenants t
+      LEFT JOIN LATERAL (
+        SELECT license_key, expires_at, status FROM licenses
+        WHERE licenses.tenant_id = t.tenant_id
+        ORDER BY created_at DESC LIMIT 1
+      ) l ON true
+      ORDER BY t.created_at DESC
+    `);
+    return res.json({ items: r.rows });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+  }
+});
+
+app.patch('/api/admin/tenants/:tenantId', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  const status = req.body?.status ? String(req.body.status).trim() : null;
+  const name = req.body?.name ? String(req.body.name).trim() : null;
+  if (!status && !name) return res.status(400).json({ error: 'nothing_to_update' });
+  try {
+    const r = await pool.query(
+      `UPDATE tenants SET
+         status = COALESCE($2, status),
+         name = COALESCE($3, name),
+         updated_at = NOW()
+       WHERE tenant_id = $1
+       RETURNING tenant_id, name, mode, status`,
+      [tenantId, status, name]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true, tenant: r.rows[0] });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+  }
+});
+
+app.post('/api/admin/tenants/:tenantId/license', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  const expiresAt = req.body?.expires_at;
+  if (!expiresAt) return res.status(400).json({ error: 'missing_expires_at' });
+  const allowedFeatures = Array.isArray(req.body?.allowed_features) ? req.body.allowed_features : [];
+  try {
+    const exists = await pool.query('SELECT 1 FROM tenants WHERE tenant_id = $1', [tenantId]);
+    if (!exists.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
+    const licenseKey = randomUUID();
+    const r = await pool.query(
+      `INSERT INTO licenses (tenant_id, license_key, expires_at, allowed_features)
+       VALUES ($1, $2, $3, $4) RETURNING license_key, expires_at, status`,
+      [tenantId, licenseKey, expiresAt, JSON.stringify(allowedFeatures)]
+    );
+    return res.json({ ok: true, license: r.rows[0] });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
   }
 });
 
