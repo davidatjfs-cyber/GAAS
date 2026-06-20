@@ -122,7 +122,7 @@ export class AgentAutonomousScheduler {
   /**
    * 判断任务是否应该执行
    * 支持标准5字段cron：minute hour dayOfMonth month dayOfWeek
-   * 例：'*/30 * * * *'  '0 8 * * *'  '0 1 * * 1'
+   * 例：'* /30 * * * *'（每30分钟）  '0 8 * * *'  '0 1 * * 1'
    */
   shouldRunTask(task, now) {
     if (!task.lastRun) return true;

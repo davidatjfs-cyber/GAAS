@@ -2739,7 +2739,7 @@ async function recomputeDiningSegments(pool, tenantId = 'default') {
   await pool.query(`DELETE FROM growth_segment_members WHERE segment_key='hc_weekday_lunch' AND tenant_id=$1`, [tenantId]);
   const hc = await pool.query(`INSERT INTO growth_segment_members(phone,segment_key,store_id,tenant_id)
     SELECT DISTINCT phone,'hc_weekday_lunch','${hcSid}',$1 FROM (
-      SELECT phone FROM pos_orders ${hj} WHERE store_id='${hcSid}' AND order_time IS NOT NULL AND phone<>'' AND tenant_id=$1
+      SELECT phone FROM pos_orders ${hj} WHERE store_id='${hcSid}' AND order_time IS NOT NULL AND phone<>'' AND pos_orders.tenant_id=$1
         AND ${eff} AND extract(hour from order_time ${BJ}) BETWEEN 10 AND 15
     ) t ON CONFLICT DO NOTHING`, [tenantId]);
   return { mj_dinner_weekend_repeat: mj.rowCount, hc_weekday_lunch: hc.rowCount };
