@@ -935,6 +935,21 @@ function authPhaseApi(req) {
   return { ok: false, status: 401, error: 'unauthorized' };
 }
 
+// authPhaseApi走小程序同步密钥/可选JWT，不经过用户认证中间件，
+// req.tenantId不会自动有值。这里复用Bearer token(若带了)解出tenant_id，
+// 取不到则归default——与现网单租户行为一致，零风险。
+function getPhaseApiTenantId(req) {
+  const auth = cleanText(req.headers.authorization || '', 500);
+  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
+  if (!bearer || !process.env.JWT_SECRET) return 'default';
+  try {
+    const decoded = jwt.verify(bearer, process.env.JWT_SECRET);
+    return cleanText(decoded.tenant_id || 'default', 80) || 'default';
+  } catch (_) {
+    return 'default';
+  }
+}
+
 // ── Phase 7a: Churn prediction (rule-based scoring) ───────────────────────────
 async function computeChurnScores(pool, storeCode) {
   const store = cleanText(storeCode, 128);
@@ -2525,13 +2540,15 @@ export function registerPhaseRoutes(app, pool) {
     if (!authPhaseApi(req).ok) return res.status(401).json({ ok: false, error: 'unauthorized' });
     const storeCode = cleanText(req.query.store_code || '', 128);
     const status = cleanText(req.query.status || '', 40);
+    const tenantId = getPhaseApiTenantId(req);
     const r = await pool.query(
       `SELECT * FROM ab_test_tasks
-        WHERE ($1 = '' OR store_code = $1)
+        WHERE tenant_id = $3
+          AND ($1 = '' OR store_code = $1)
           AND ($2 = '' OR status = $2)
         ORDER BY created_at DESC
         LIMIT 100`,
-      [storeCode, status]
+      [storeCode, status, tenantId]
     );
     const tasks = [];
     for (const row of r.rows || []) {
