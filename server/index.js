@@ -10898,6 +10898,8 @@ app.get('/api/reports/turnover', authRequired, async (req, res) => {
         erParams.push(labels);
         erSql += ` AND trim(store) = ANY($${erParams.length}::text[])`;
       }
+      erParams.push(req.tenantId || req.user?.tenant_id || 'default');
+      erSql += ` AND tenant_id = $${erParams.length}`;
       erSql += ` ORDER BY lower(trim(employee_username)), action_date DESC`;
       const erRes = await pool.query(erSql, erParams);
       for (const row of erRes.rows || []) {
@@ -15832,9 +15834,10 @@ app.get('/api/exam-results', authRequired, async (req, res) => {
       const r = await pool.query(
         `select id, assignment_id, user_key, created_at, started_at, submitted_at, time_used_seconds, auto_submitted, set_index, total, correct, score, answers
          from exam_results
+         where tenant_id = $2
          order by created_at desc
          limit $1`,
-        [limit]
+        [limit, req.tenantId || req.user?.tenant_id || 'default']
       );
       return res.json({ items: r.rows || [] });
     }
@@ -15874,8 +15877,8 @@ app.post('/api/exam-results', authRequired, async (req, res) => {
 
   try {
     const r = await pool.query(
-      `insert into exam_results (assignment_id, user_key, started_at, submitted_at, time_used_seconds, auto_submitted, set_index, total, correct, score, answers)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `insert into exam_results (assignment_id, user_key, started_at, submitted_at, time_used_seconds, auto_submitted, set_index, total, correct, score, answers, tenant_id)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        returning id, assignment_id, user_key, created_at, started_at, submitted_at, time_used_seconds, auto_submitted, set_index, total, correct, score, answers`,
       [
         assignmentId || null,
@@ -15888,7 +15891,8 @@ app.post('/api/exam-results', authRequired, async (req, res) => {
         Number.isFinite(total) ? Math.max(0, Math.floor(total)) : null,
         Number.isFinite(correct) ? Math.max(0, Math.floor(correct)) : null,
         Number.isFinite(score) ? Math.max(0, Math.floor(score)) : null,
-        JSON.stringify(answers || [])
+        JSON.stringify(answers || []),
+        req.tenantId || req.user?.tenant_id || 'default'
       ]
     );
     return res.json({ item: r.rows?.[0] || null });
