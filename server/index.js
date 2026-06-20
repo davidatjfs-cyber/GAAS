@@ -14532,6 +14532,8 @@ async function authRequired(req, res, next) {
   try {
     const payload = jwt.verify(token, JWT_SECRET);
     req.user = payload;
+    // 旧token(改造前签发)没有tenant_id字段，兜底归入default租户，保持现有行为不变。
+    req.tenantId = String(payload.tenant_id || 'default').trim() || 'default';
 
     // Single-device login: validate session nonce
     const nonce = String(payload.sn || '').trim();
@@ -16030,7 +16032,7 @@ async function handleLogin(req, res) {
   if (DATABASE_URL) {
     try {
       const r = await pool.query(
-        'select id, username, password_hash, real_name, role, is_active from users where lower(username) = lower($1) limit 1',
+        'select id, username, password_hash, real_name, role, is_active, tenant_id from users where lower(username) = lower($1) limit 1',
         [username]
       );
       const u = r.rows?.[0];
@@ -16078,7 +16080,7 @@ async function handleLogin(req, res) {
           });
         }
         const token = jwt.sign(
-          { id: u.id, username: u.username, name: finalName, role: finalRole, sn },
+          { id: u.id, username: u.username, name: finalName, role: finalRole, sn, tenant_id: String(u.tenant_id || 'default').trim() || 'default' },
           JWT_SECRET,
           { expiresIn: '7d' }
         );
@@ -16129,7 +16131,7 @@ async function handleLogin(req, res) {
               '无法写入登录会话（请确认数据库可写且已建表 user_sessions；生产需 ENABLE_DB_WRITE=true）。'
           });
         }
-        const token = jwt.sign({ id, username: canonicalUsername, name, role, sn }, JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ id, username: canonicalUsername, name, role, sn, tenant_id: 'default' }, JWT_SECRET, { expiresIn: '7d' });
         recordLogin(canonicalUsername, sn, req);
         const loginUser = await buildLoginUserPayload({
           id,
@@ -16376,7 +16378,7 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
     if (!persisted) return res.status(503).json({ error: 'session_persist_failed' });
 
     const token = jwt.sign(
-      { id: targetId, username: targetUsernameNorm, name: finalName, role: finalRole, sn, loginAs: true, loginAsBy: adminUsername },
+      { id: targetId, username: targetUsernameNorm, name: finalName, role: finalRole, sn, loginAs: true, loginAsBy: adminUsername, tenant_id: 'default' },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
