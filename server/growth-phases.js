@@ -276,12 +276,12 @@ async function listAbAudienceForSendDate(pool, storeCode, sendDate, lookbackDays
   return r.rows || [];
 }
 
-async function upsertAbTaskResult(pool, row) {
+async function upsertAbTaskResult(pool, row, tenantId = 'default') {
   await pool.query(
     `INSERT INTO ab_test_results (
        test_id, result_date, variant, sent, impressions, clicks,
-       orders, redemptions, revenue, conversion_rate
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       orders, redemptions, revenue, conversion_rate, tenant_id
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      ON CONFLICT (test_id, result_date, variant) DO UPDATE SET
        sent = EXCLUDED.sent,
        impressions = EXCLUDED.impressions,
@@ -301,20 +301,21 @@ async function upsertAbTaskResult(pool, row) {
       Math.max(0, Math.floor(Number(row.orders) || 0)),
       Math.max(0, Math.floor(Number(row.redemptions) || 0)),
       Number(Number(row.revenue || 0).toFixed(2)),
-      Number(Number(row.conversion_rate || 0).toFixed(4))
+      Number(Number(row.conversion_rate || 0).toFixed(4)),
+      tenantId
     ]
   );
 }
 
 // 模板化结果写入：把一组任意字段(metrics_json)按 (test_id,result_date,variant) upsert。
 // 同时把通用字段(sent/redemptions/clicks/revenue 若存在)回填固定列，便于旧报表/兼容。
-async function upsertAbTaskMetrics(pool, testId, resultDate, variant, metrics) {
+async function upsertAbTaskMetrics(pool, testId, resultDate, variant, metrics, tenantId = 'default') {
   const m = (metrics && typeof metrics === 'object') ? metrics : {};
   const num = (k) => Math.max(0, Number(m[k]) || 0);
   await pool.query(
     `INSERT INTO ab_test_results (
-       test_id, result_date, variant, sent, clicks, redemptions, revenue, metrics_json
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+       test_id, result_date, variant, sent, clicks, redemptions, revenue, metrics_json, tenant_id
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
      ON CONFLICT (test_id, result_date, variant) DO UPDATE SET
        sent = EXCLUDED.sent,
        clicks = EXCLUDED.clicks,
@@ -328,7 +329,8 @@ async function upsertAbTaskMetrics(pool, testId, resultDate, variant, metrics) {
       Math.floor(num('clicks') || num('interactions')),
       Math.floor(num('redemptions') || num('arrivals') || num('sold')),
       Number((num('revenue')).toFixed(2)),
-      JSON.stringify(m)
+      JSON.stringify(m),
+      tenantId
     ]
   );
 }
@@ -373,7 +375,7 @@ async function loadAbBoundRule(pool, kind, ruleKey) {
   };
 }
 
-async function queueAbSmsAssignments(pool, taskRow, audienceRows, opts = {}) {
+async function queueAbSmsAssignments(pool, taskRow, audienceRows, opts = {}, tenantId = 'default') {
   const taskId = Number(taskRow?.id || 0);
   if (!taskId || !Array.isArray(audienceRows) || !audienceRows.length) return { created: 0, audience: 0 };
   const storeCode = cleanText(taskRow?.store_code, 128);
@@ -405,8 +407,8 @@ async function queueAbSmsAssignments(pool, taskRow, audienceRows, opts = {}) {
     const ins = await pool.query(
       `INSERT INTO growth_delivery_logs (
          delivery_key, action_key, rule_key, customer_id, store_id, channel,
-         status, payload, result, created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,'sms','sent',$6::jsonb,$7::jsonb,$8::timestamptz,$8::timestamptz)
+         status, payload, result, created_at, updated_at, tenant_id
+       ) VALUES ($1,$2,$3,$4,$5,'sms','sent',$6::jsonb,$7::jsonb,$8::timestamptz,$8::timestamptz,$9)
        ON CONFLICT (delivery_key) DO NOTHING
        RETURNING id`,
       [
@@ -417,7 +419,8 @@ async function queueAbSmsAssignments(pool, taskRow, audienceRows, opts = {}) {
         storeCode,
         JSON.stringify(payload),
         JSON.stringify({ provider: 'internal_auto_seed', sent: true }),
-        `${sendDate}T10:00:00+08:00`
+        `${sendDate}T10:00:00+08:00`,
+        tenantId
       ]
     );
     if (ins.rows?.length) created += 1;
@@ -425,7 +428,7 @@ async function queueAbSmsAssignments(pool, taskRow, audienceRows, opts = {}) {
   return { created, audience: audienceRows.length };
 }
 
-async function refreshAbTestResults(pool, taskRow) {
+async function refreshAbTestResults(pool, taskRow, tenantId = 'default') {
   const taskId = Number(taskRow?.id || 0);
   const storeCode = cleanText(taskRow?.store_code, 128);
   const startDate = safeDateOnly(taskRow?.start_date);
@@ -440,8 +443,9 @@ async function refreshAbTestResults(pool, taskRow) {
             payload->>'send_date' AS send_date
        FROM growth_delivery_logs
       WHERE channel = 'sms'
-        AND payload->>'ab_test_id' = $1`,
-    [String(taskId)]
+        AND payload->>'ab_test_id' = $1
+        AND tenant_id = $2`,
+    [String(taskId), tenantId]
   );
   const assignments = deliveries.rows || [];
   const sendCount = { A: 0, B: 0 };
@@ -501,19 +505,19 @@ async function refreshAbTestResults(pool, taskRow) {
   });
 
   for (const row of byDateVariant.values()) {
-    await upsertAbTaskResult(pool, row);
+    await upsertAbTaskResult(pool, row, tenantId);
   }
 
   return { sendCount, assignments: assignments.length };
 }
 
 // 模板化测试结果聚合：从 metrics_json 累加各字段，按 schema 的 primary/extra 公式求值。
-async function computeSchemaOutcome(pool, taskRow, schema) {
+async function computeSchemaOutcome(pool, taskRow, schema, tenantId = 'default') {
   const taskId = Number(taskRow?.id || 0);
   const rows = await pool.query(
     `SELECT result_date, variant, metrics_json
-       FROM ab_test_results WHERE test_id = $1 ORDER BY result_date ASC, variant ASC`,
-    [taskId]
+       FROM ab_test_results WHERE test_id = $1 AND tenant_id = $2 ORDER BY result_date ASC, variant ASC`,
+    [taskId, tenantId]
   );
   const fields = Array.isArray(schema.fields) ? schema.fields : [];
   const agg = { A: {}, B: {} };
@@ -541,13 +545,13 @@ async function computeSchemaOutcome(pool, taskRow, schema) {
   return { schema: { fields, primary, extra }, byVariant, daily: rows.rows || [] };
 }
 
-async function computeAbTestOutcome(pool, taskRow) {
+async function computeAbTestOutcome(pool, taskRow, tenantId = 'default') {
   const taskId = Number(taskRow?.id || 0);
   if (!taskId) return null;
   // 模板化测试：有 metrics_schema → 走通用字段聚合 + 公式求值。
   const schema = (taskRow.metrics_schema && typeof taskRow.metrics_schema === 'object') ? taskRow.metrics_schema : null;
   if (schema && Array.isArray(schema.fields) && schema.fields.length) {
-    return computeSchemaOutcome(pool, taskRow, schema);
+    return computeSchemaOutcome(pool, taskRow, schema, tenantId);
   }
   // 绑定模式（target_rule_key 存在）：所有指标(含 sent)均来自手动录入的 ab_test_results，不查 POS / 投放日志。
   // 非绑定模式（price_test 等）：保留旧逻辑——sent 由 SMS 投放日志推导，核销/营收由 POS 归因写入 ab_test_results。
@@ -557,8 +561,8 @@ async function computeAbTestOutcome(pool, taskRow) {
     const deliveries = await pool.query(
       `SELECT customer_id, payload->>'variant' AS variant
          FROM growth_delivery_logs
-        WHERE channel='sms' AND payload->>'ab_test_id' = $1`,
-      [String(taskId)]
+        WHERE channel='sms' AND payload->>'ab_test_id' = $1 AND tenant_id = $2`,
+      [String(taskId), tenantId]
     );
     (deliveries.rows || []).forEach((a) => {
       const v = cleanText(a.variant, 8) === 'B' ? 'B' : 'A';
@@ -568,9 +572,9 @@ async function computeAbTestOutcome(pool, taskRow) {
   const rows = await pool.query(
     `SELECT result_date, variant, sent, impressions, clicks, orders, redemptions, revenue, conversion_rate
        FROM ab_test_results
-      WHERE test_id = $1
+      WHERE test_id = $1 AND tenant_id = $2
       ORDER BY result_date ASC, variant ASC`,
-    [taskId]
+    [taskId, tenantId]
   );
   const byVariant = {
     A: { sent: sendCount.A, impressions: 0, clicks: 0, orders: 0, redemptions: 0, revenue: 0 },
@@ -663,8 +667,8 @@ function abMetricValue(v, metric) {
   }
 }
 
-async function evaluateAbTask(pool, taskRow) {
-  const outcome = await computeAbTestOutcome(pool, taskRow);
+async function evaluateAbTask(pool, taskRow, tenantId = 'default') {
+  const outcome = await computeAbTestOutcome(pool, taskRow, tenantId);
   if (!outcome) return null;
   const a = outcome.byVariant.A || {};
   const b = outcome.byVariant.B || {};
@@ -709,7 +713,7 @@ async function evaluateAbTask(pool, taskRow) {
 
 // 闭环关键回路：A/B 胜出变体 → 写回正式规则并直接生效（approved_at=NOW()）。
 // 供 promote 端点（人工点击）与定时任务（测试到期后自动执行）共用。
-async function promoteAbWinner(pool, task, operatorName) {
+async function promoteAbWinner(pool, task, operatorName, tenantId = 'default') {
   const winner = String(task.winner || '').toUpperCase();
   if (winner !== 'A' && winner !== 'B') return { ok: false, error: 'no_winner_yet', message: '该测试尚无明确赢家：需先录入结果并判定 A/B 胜负后才能采用。' };
   const winnerDef = (winner === 'A' ? task.variant_a : task.variant_b) || {};
@@ -723,7 +727,7 @@ async function promoteAbWinner(pool, task, operatorName) {
       return { ok: true, rule_key: targetRuleKey, winner, kept_current: true, message: 'A组(当前版本)胜出，规则维持不变。' };
     }
     if (targetKind === 'touch_rule') {
-      const ruleRes = await pool.query(`SELECT * FROM growth_touch_rules WHERE rule_key = $1 LIMIT 1`, [targetRuleKey]);
+      const ruleRes = await pool.query(`SELECT * FROM growth_touch_rules WHERE rule_key = $1 AND tenant_id = $2 LIMIT 1`, [targetRuleKey, tenantId]);
       if (!ruleRes.rows?.length) return { ok: false, error: 'target_rule_not_found' };
       const row = ruleRes.rows[0];
       const ap = (row.action_payload && typeof row.action_payload === 'object') ? Object.assign({}, row.action_payload) : {};
@@ -738,11 +742,12 @@ async function promoteAbWinner(pool, task, operatorName) {
             SET action_payload = $2::jsonb,
                 approved_by = $3, approved_at = NOW(),
                 note = $4, updated_at = NOW()
-          WHERE rule_key = $1
+          WHERE rule_key = $1 AND tenant_id = $5
           RETURNING *`,
         [targetRuleKey, JSON.stringify(ap),
          operator,
-         cleanText(`A/B #${task.id}「${task.test_name}」B组胜出(+${Number(task.winner_lift || 0)}%)，已采用为当前版本（经办人:${operator}）`, 1000)]
+         cleanText(`A/B #${task.id}「${task.test_name}」B组胜出(+${Number(task.winner_lift || 0)}%)，已采用为当前版本（经办人:${operator}）`, 1000),
+         tenantId]
       );
       await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
       return { ok: true, rule: upd.rows[0], rule_key: targetRuleKey, winner, kind: targetKind };
@@ -767,7 +772,7 @@ async function promoteAbWinner(pool, task, operatorName) {
 
   // 渠道模式：无内部规则可回写 → 把胜者沉淀到经验库(growth_learnings)，供内容建议引擎与未来活动复用。
   if (cleanText(task.mode, 20) === 'channel') {
-    const outcome = await computeAbTestOutcome(pool, task).catch(() => null);
+    const outcome = await computeAbTestOutcome(pool, task, tenantId).catch(() => null);
     await maybeWriteAbLearning(pool, task, outcome, winner, Number(task.winner_lift || 0));
     await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, 'learning:' + task.id]).catch(() => {});
     return { ok: true, winner, channel: task.channel, learned: true, message: `已将「${task.channel}」胜出版本沉淀到经验库，供内容建议复用。` };
@@ -952,7 +957,7 @@ function getPhaseApiTenantId(req) {
 }
 
 // ── Phase 7a: Churn prediction (rule-based scoring) ───────────────────────────
-async function computeChurnScores(pool, storeCode) {
+async function computeChurnScores(pool, storeCode, tenantId = 'default') {
   const store = cleanText(storeCode, 128);
   const today = todayShanghaiYmd();
 
@@ -974,12 +979,13 @@ async function computeChurnScores(pool, storeCode) {
          COUNT(po.id) FILTER (WHERE po.biz_date >= CURRENT_DATE - INTERVAL '30 day')::int AS visits_30d,
          COUNT(po.id) FILTER (WHERE po.biz_date >= CURRENT_DATE - INTERVAL '60 day' AND po.biz_date < CURRENT_DATE - INTERVAL '30 day')::int AS visits_30_60d
        FROM growth_customers gc
-       LEFT JOIN growth_customer_profiles gcp ON gcp.customer_id = gc.id
+       LEFT JOIN growth_customer_profiles gcp ON gcp.customer_id = gc.id AND gcp.tenant_id = $2
        LEFT JOIN pos_orders po
          ON (po.customer_id = gc.id OR (po.customer_id IS NULL AND po.phone = gc.phone))
        WHERE ($1 = '' OR COALESCE(gcp.store_id, gc.last_store_id, '') = $1)
          AND gc.phone IS NOT NULL AND gc.phone <> ''
          AND po.biz_date IS NOT NULL
+         AND gc.tenant_id = $2
        GROUP BY gc.id, gc.phone, customer_name, store_code
        HAVING COUNT(po.id) >= 2
      )
@@ -992,7 +998,7 @@ async function computeChurnScores(pool, storeCode) {
          )
          ELSE 30 END AS avg_cycle_days
      FROM customer_visits`,
-    [store]
+    [store, tenantId]
   );
 
   const predictions = [];
@@ -1077,7 +1083,7 @@ async function computeChurnScores(pool, storeCode) {
 }
 
 // ── Phase 7b: Menu health report ─────────────────────────────────────────────
-async function generateMenuHealthReport(pool, storeCode, reportMonth) {
+async function generateMenuHealthReport(pool, storeCode, reportMonth, tenantId = 'default') {
   const store = cleanText(storeCode, 128);
   const month = safeMonthOnly(reportMonth) || todayShanghaiYmd().slice(0, 7);
   const prevMonth = (() => {
@@ -1178,12 +1184,12 @@ async function generateMenuHealthReport(pool, storeCode, reportMonth) {
   };
 
   const saved = await pool.query(
-    `INSERT INTO growth_menu_health_reports (report_month, store_code, report_json, generated_by)
-     VALUES ($1, $2, $3::jsonb, 'system')
+    `INSERT INTO growth_menu_health_reports (report_month, store_code, report_json, generated_by, tenant_id)
+     VALUES ($1, $2, $3::jsonb, 'system', $4)
      ON CONFLICT (report_month, store_code)
      DO UPDATE SET report_json = EXCLUDED.report_json, created_at = NOW()
      RETURNING *`,
-    [month, store || '', JSON.stringify(report)]
+    [month, store || '', JSON.stringify(report), tenantId]
   );
   return saved.rows[0] || null;
 }
@@ -2557,8 +2563,8 @@ export function registerPhaseRoutes(app, pool) {
     );
     const tasks = [];
     for (const row of r.rows || []) {
-      const outcome = await computeAbTestOutcome(pool, row).catch(() => null);
-      const daily = await pool.query(`SELECT * FROM ab_test_results WHERE test_id = $1 ORDER BY result_date ASC, variant ASC`, [row.id]).catch(() => ({ rows: [] }));
+      const outcome = await computeAbTestOutcome(pool, row, tenantId).catch(() => null);
+      const daily = await pool.query(`SELECT * FROM ab_test_results WHERE test_id = $1 AND tenant_id = $2 ORDER BY result_date ASC, variant ASC`, [row.id, tenantId]).catch(() => ({ rows: [] }));
       tasks.push({ ...row, metrics: outcome?.byVariant || {}, results: daily.rows || [] });
     }
     return res.json({ ok: true, tasks });
@@ -2664,7 +2670,8 @@ export function registerPhaseRoutes(app, pool) {
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error || 'unauthorized' });
     const id = Number(req.params.id || 0);
     if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
-    const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 LIMIT 1`, [id]);
+    const tenantId = getPhaseApiTenantId(req);
+    const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tenantId]);
     if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
     const task = taskRes.rows[0];
     const b = req.body || {};
@@ -2681,7 +2688,7 @@ export function registerPhaseRoutes(app, pool) {
       for (const [variant, data] of groups) {
         const metrics = {};
         schema.fields.forEach((f) => { metrics[f.key] = Math.max(0, Number((data || {})[f.key]) || 0); });
-        await upsertAbTaskMetrics(pool, id, resultDate, variant, metrics);
+        await upsertAbTaskMetrics(pool, id, resultDate, variant, metrics, tenantId);
       }
     } else {
       // 兼容旧固定字段路径。
@@ -2695,11 +2702,11 @@ export function registerPhaseRoutes(app, pool) {
           orders: Math.max(0, Math.floor(Number(g.orders) || g.redemptions || 0)),
           redemptions, revenue: Number(g.revenue || 0),
           conversion_rate: sent > 0 ? redemptions / sent : 0
-        });
+        }, tenantId);
       }
     }
-    const evaluated = await evaluateAbTask(pool, task);
-    const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1`, [id]);
+    const evaluated = await evaluateAbTask(pool, task, tenantId);
+    const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
     return res.json({ ok: true, task: latest.rows[0], evaluated });
   });
 
@@ -2708,14 +2715,15 @@ export function registerPhaseRoutes(app, pool) {
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error || 'unauthorized' });
     const id = Number(req.params.id || 0);
     if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
-    const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 LIMIT 1`, [id]);
+    const tenantId = getPhaseApiTenantId(req);
+    const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tenantId]);
     if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
     const task = taskRes.rows[0];
     // 手动录入类(绑定模式 或 任何模板测试)不做 POS 归因刷新；仅旧的 price_test 走 refreshAbTestResults。
     const manualInput = !!cleanText(task.target_rule_key, 200) || !!(task.metrics_schema && typeof task.metrics_schema === 'object');
-    const refreshed = manualInput ? null : await refreshAbTestResults(pool, task);
-    const evaluated = (manualInput || safeDateOnly(task.end_date) <= todayShanghaiYmd()) ? await evaluateAbTask(pool, task) : null;
-    const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1`, [id]);
+    const refreshed = manualInput ? null : await refreshAbTestResults(pool, task, tenantId);
+    const evaluated = (manualInput || safeDateOnly(task.end_date) <= todayShanghaiYmd()) ? await evaluateAbTask(pool, task, tenantId) : null;
+    const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
     return res.json({ ok: true, task: latest.rows[0], refreshed, evaluated });
   });
 
@@ -2727,11 +2735,12 @@ export function registerPhaseRoutes(app, pool) {
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error || 'unauthorized' });
     const id = Number(req.params.id || 0);
     if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
-    const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 LIMIT 1`, [id]);
+    const tenantId = getPhaseApiTenantId(req);
+    const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tenantId]);
     if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
     const task = taskRes.rows[0];
 
-    const result = await promoteAbWinner(pool, task, auth.user?.username);
+    const result = await promoteAbWinner(pool, task, auth.user?.username, tenantId);
     if (!result.ok) {
       const status = result.error === 'target_rule_not_found' ? 404 : 400;
       return res.status(status).json(result);
@@ -3083,7 +3092,7 @@ export function registerPhaseRoutes(app, pool) {
     const auth = authPhaseApi(req);
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error });
     const storeCode = cleanText(req.body?.store_code || req.query?.store_code || '', 128);
-    const result = await computeChurnScores(pool, storeCode);
+    const result = await computeChurnScores(pool, storeCode, getPhaseApiTenantId(req));
     return res.json({ ok: true, ...result });
   });
 
@@ -3125,7 +3134,7 @@ export function registerPhaseRoutes(app, pool) {
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error });
     const storeCode = cleanText(req.body?.store_code || req.query?.store_code || '', 128);
     const reportMonth = safeMonthOnly(req.body?.report_month || req.query?.report_month || todayShanghaiYmd().slice(0, 7));
-    const report = await generateMenuHealthReport(pool, storeCode, reportMonth);
+    const report = await generateMenuHealthReport(pool, storeCode, reportMonth, getPhaseApiTenantId(req));
     return res.json({ ok: true, report });
   });
 
@@ -3147,7 +3156,7 @@ export function registerPhaseRoutes(app, pool) {
     );
     const tasks = [];
     for (const row of r.rows || []) {
-      const outcome = await computeAbTestOutcome(pool, row).catch(() => null);
+      const outcome = await computeAbTestOutcome(pool, row, priceTestsTenantId).catch(() => null);
       tasks.push({ ...row, metrics: outcome?.byVariant || {} });
     }
     return res.json({ ok: true, tasks });
@@ -3199,17 +3208,18 @@ export function registerPhaseRoutes(app, pool) {
       try {
         const running = await pool.query(`SELECT * FROM ab_test_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 20`);
         for (const task of running.rows || []) {
+          const taskTenantId = await resolveTenantIdForStore(pool, task.store_code);
           // 手动录入类(绑定模式 或 任何模板测试)跳过 POS 归因刷新；仅旧的 price_test 走自动归因。
           const manualInput = !!cleanText(task.target_rule_key, 200) || !!(task.metrics_schema && typeof task.metrics_schema === 'object');
-          if (!manualInput) await refreshAbTestResults(pool, task).catch(() => null);
+          if (!manualInput) await refreshAbTestResults(pool, task, taskTenantId).catch(() => null);
           if (safeDateOnly(task.end_date) <= nowYmd) {
-            const evaluated = await evaluateAbTask(pool, task).catch(() => null);
+            const evaluated = await evaluateAbTask(pool, task, taskTenantId).catch(() => null);
             const evTask = evaluated?.task;
             // 测试期已满+判出明确赢家+尚未采用 → 自动写回正式规则并生效，闭环不再需要人工点击。
             if (evaluated?.finalized && evTask && evTask.status === 'completed' && !evTask.promoted_rule_key) {
               const w = String(evTask.winner || '').toUpperCase();
               if (w === 'A' || w === 'B') {
-                await promoteAbWinner(pool, evTask, 'auto').catch((e) => console.warn('[growth-phase4] ab auto-promote failed:', e?.message));
+                await promoteAbWinner(pool, evTask, 'auto', taskTenantId).catch((e) => console.warn('[growth-phase4] ab auto-promote failed:', e?.message));
               }
             }
           }
@@ -3225,7 +3235,8 @@ export function registerPhaseRoutes(app, pool) {
           __growthContentCronLast = nowYmd;
           const stores = await pool.query(`SELECT DISTINCT store_code FROM pos_order_items WHERE biz_date >= CURRENT_DATE - INTERVAL '30 days' AND store_code IS NOT NULL AND store_code <> '' LIMIT 20`);
           for (const row of stores.rows || []) {
-            const suggestion = await generateWeeklyContentSuggestion(pool, cleanText(row.store_code, 128), nowYmd, 'weekly_cron').catch(() => null);
+            const storeTenantId = await resolveTenantIdForStore(pool, row.store_code);
+            const suggestion = await generateWeeklyContentSuggestion(pool, cleanText(row.store_code, 128), nowYmd, 'weekly_cron', storeTenantId).catch(() => null);
             if (suggestion) await pushWeeklySuggestionToFeishu(pool, suggestion).catch(() => null);
           }
         }
@@ -3250,7 +3261,8 @@ export function registerPhaseRoutes(app, pool) {
               LIMIT 20`
           );
           for (const row of storeRows.rows || []) {
-            await computeChurnScores(pool, cleanText(row.store_code, 128)).catch(() => null);
+            const storeTenantId = await resolveTenantIdForStore(pool, row.store_code);
+            await computeChurnScores(pool, cleanText(row.store_code, 128), storeTenantId).catch(() => null);
           }
           console.log(`[growth-phase7a] weekly churn scores computed for ${storeRows.rows.length} stores`);
         }
@@ -3272,7 +3284,8 @@ export function registerPhaseRoutes(app, pool) {
               LIMIT 20`
           );
           for (const row of storeRows.rows || []) {
-            await generateMenuHealthReport(pool, cleanText(row.store_code, 128), curMonth).catch(() => null);
+            const storeTenantId = await resolveTenantIdForStore(pool, row.store_code);
+            await generateMenuHealthReport(pool, cleanText(row.store_code, 128), curMonth, storeTenantId).catch(() => null);
           }
           console.log(`[growth-phase7b] monthly menu health reports generated for ${storeRows.rows.length} stores`);
         }

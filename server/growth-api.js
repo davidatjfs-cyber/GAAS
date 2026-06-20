@@ -1022,7 +1022,7 @@ export async function ensureGrowthTables(pool) {
   );
 }
 
-async function upsertCustomer(pool, payload) {
+async function upsertCustomer(pool, payload, tenantId = 'default') {
   const phone = cleanPhone(payload.phone);
   const openid = cleanText(payload.openid, 128);
   const externalUserId = cleanText(payload.external_userid, 128);
@@ -1033,18 +1033,18 @@ async function upsertCustomer(pool, payload) {
 
   let existing = null;
   if (phone) {
-    const r = await pool.query('SELECT * FROM growth_customers WHERE phone = $1 LIMIT 1', [phone]);
+    const r = await pool.query('SELECT * FROM growth_customers WHERE phone = $1 AND tenant_id = $2 LIMIT 1', [phone, tenantId]);
     existing = r.rows[0] || null;
   }
   if (!existing && openid) {
-    const r = await pool.query('SELECT * FROM growth_customers WHERE openid = $1 LIMIT 1', [openid]);
+    const r = await pool.query('SELECT * FROM growth_customers WHERE openid = $1 AND tenant_id = $2 LIMIT 1', [openid, tenantId]);
     existing = r.rows[0] || null;
   }
 
   // 若按手机号匹配到的记录将把 openid 改写为另一条记录已占用的值（同一 openid 此前绑定在不同/无手机号的记录上），
   // 先释放该记录的 openid，避免下面的 UPDATE 触发 uq_growth_customers_openid 冲突。
   if (existing && openid && existing.openid !== openid) {
-    const conflict = await pool.query('SELECT id FROM growth_customers WHERE openid = $1 LIMIT 1', [openid]);
+    const conflict = await pool.query('SELECT id FROM growth_customers WHERE openid = $1 AND tenant_id = $2 LIMIT 1', [openid, tenantId]);
     const conflictId = conflict.rows[0]?.id;
     if (conflictId && conflictId !== existing.id) {
       await pool.query('UPDATE growth_customers SET openid = NULL, updated_at = NOW() WHERE id = $1', [conflictId]);
@@ -1068,8 +1068,8 @@ async function upsertCustomer(pool, payload) {
     existing = r.rows[0];
   } else {
     const r = await pool.query(
-      `INSERT INTO growth_customers (phone, openid, external_userid, first_store_id, last_store_id, meta)
-       VALUES (NULLIF($1,''), NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($4,''), $5::jsonb)
+      `INSERT INTO growth_customers (phone, openid, external_userid, first_store_id, last_store_id, meta, tenant_id)
+       VALUES (NULLIF($1,''), NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($4,''), $5::jsonb, $6)
        ON CONFLICT (openid) WHERE openid IS NOT NULL AND openid <> '' DO UPDATE SET
          phone = COALESCE(growth_customers.phone, EXCLUDED.phone),
          external_userid = COALESCE(EXCLUDED.external_userid, growth_customers.external_userid),
@@ -1078,7 +1078,7 @@ async function upsertCustomer(pool, payload) {
          meta = COALESCE(growth_customers.meta, '{}'::jsonb) || EXCLUDED.meta,
          updated_at = NOW()
        RETURNING *`,
-      [phone, openid, externalUserId, storeId, JSON.stringify(meta)]
+      [phone, openid, externalUserId, storeId, JSON.stringify(meta), tenantId]
     );
     existing = r.rows[0];
   }
@@ -1090,24 +1090,24 @@ async function upsertCustomer(pool, payload) {
   ].filter(([, value]) => value);
   for (const [type, value] of identities) {
     await pool.query(
-      `INSERT INTO customer_identities (customer_id, identity_type, identity_value, source)
-       VALUES ($1,$2,$3,'miniprogram')
+      `INSERT INTO customer_identities (customer_id, identity_type, identity_value, source, tenant_id)
+       VALUES ($1,$2,$3,'miniprogram',$4)
        ON CONFLICT (identity_type, identity_value)
        DO UPDATE SET customer_id = EXCLUDED.customer_id, updated_at = NOW()`,
-      [existing.id, type, value]
+      [existing.id, type, value, tenantId]
     );
   }
 
   return existing;
 }
 
-async function recomputeCustomerProfiles(pool, days = 90) {
+async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') {
   const safeDays = Math.min(Math.max(Number(days) || 90, 7), 365);
   // 将所有留过手机号的POS消费客自动建档进会员表，使散客也纳入分类（不再只统计小程序会员）。
   // 幂等：已存在的手机号 DO NOTHING，不覆盖会员既有信息；门店取其首单/末单所在门店。
   await pool.query(`
-    INSERT INTO growth_customers (phone, first_store_id, last_store_id, first_seen_at, last_seen_at, meta)
-    SELECT s.phone, s.first_store, s.last_store, s.first_at, s.last_at, '{"source":"pos_auto"}'::jsonb
+    INSERT INTO growth_customers (phone, first_store_id, last_store_id, first_seen_at, last_seen_at, meta, tenant_id)
+    SELECT s.phone, s.first_store, s.last_store, s.first_at, s.last_at, '{"source":"pos_auto"}'::jsonb, $1
     FROM (
       SELECT phone,
              (ARRAY_AGG(NULLIF(store_id,'') ORDER BY biz_date ASC) FILTER (WHERE NULLIF(store_id,'') IS NOT NULL))[1] AS first_store,
@@ -1115,11 +1115,11 @@ async function recomputeCustomerProfiles(pool, days = 90) {
              MIN(biz_date)::timestamptz AS first_at,
              MAX(biz_date)::timestamptz AS last_at
       FROM pos_orders
-      WHERE phone IS NOT NULL AND phone <> ''
+      WHERE phone IS NOT NULL AND phone <> '' AND tenant_id = $1
       GROUP BY phone
     ) s
     ON CONFLICT (phone) WHERE phone IS NOT NULL AND phone <> '' DO NOTHING
-  `);
+  `, [tenantId]);
   await pool.query(
     `WITH event_base AS (
        SELECT
@@ -1141,6 +1141,7 @@ async function recomputeCustomerProfiles(pool, days = 90) {
        FROM growth_customers c
        LEFT JOIN growth_events e ON e.customer_id = c.id
          AND e.occurred_at >= CURRENT_DATE - ($1::int || ' days')::interval
+       WHERE c.tenant_id = $2
        GROUP BY c.id, c.phone, c.openid, COALESCE(c.last_store_id, c.first_store_id, '')
      ), signal_base AS (
        SELECT
@@ -1171,6 +1172,7 @@ async function recomputeCustomerProfiles(pool, days = 90) {
         FROM growth_customers gc
         INNER JOIN pos_orders po ON gc.phone = po.phone AND po.phone <> ''
         LEFT JOIN pos_order_items poi ON poi.order_no = po.order_no AND poi.category IS NOT NULL AND poi.category <> '-'
+        WHERE gc.tenant_id = $2
         GROUP BY gc.id
       )
       INSERT INTO growth_customer_profiles (
@@ -1181,7 +1183,7 @@ async function recomputeCustomerProfiles(pool, days = 90) {
         occasion_date_score, occasion_family_score, occasion_business_score,
         occasion_solo_score, occasion_friends_score,
         favorite_dishes, semantic_tags, source_signals, last_profiled_at, updated_at,
-        pos_order_count, pos_total_spend, avg_check, pos_dine_in_ratio, pos_last_order_at
+        pos_order_count, pos_total_spend, avg_check, pos_dine_in_ratio, pos_last_order_at, tenant_id
       )
      SELECT
        e.customer_id,
@@ -1248,7 +1250,8 @@ async function recomputeCustomerProfiles(pool, days = 90) {
         COALESCE(p.pos_total_spend, 0),
         COALESCE(p.avg_check, ROUND(e.avg_party_size, 2)),
         p.pos_dine_in_ratio,
-        p.pos_last_order_at
+        p.pos_last_order_at,
+        $2
       FROM event_base e
       LEFT JOIN signal_base s ON s.customer_id = e.customer_id
       LEFT JOIN pos_base p ON p.customer_id = e.customer_id
@@ -1281,7 +1284,7 @@ async function recomputeCustomerProfiles(pool, days = 90) {
         pos_last_order_at = EXCLUDED.pos_last_order_at,
         last_profiled_at = NOW(),
         updated_at = NOW()`,
-    [safeDays]
+    [safeDays, tenantId]
   );
 
   // 价值分级：按门店内消费额分位，前15%为vip、30%-85%为regular、其余low
@@ -1508,13 +1511,13 @@ function interpolateTemplate(template, context) {
   });
 }
 
-async function insertGrowthEvent(pool, payload) {
+async function insertGrowthEvent(pool, payload, tenantId = 'default') {
   const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
   await pool.query(
     `INSERT INTO growth_events (
        event_type, customer_id, phone, openid, external_userid, store_id, campaign_id, channel,
-       coupon_id, order_id, amount_fen, idempotency_key, metadata, occurred_at
-     ) VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),$11,NULLIF($12,''),$13::jsonb,$14)
+       coupon_id, order_id, amount_fen, idempotency_key, metadata, occurred_at, tenant_id
+     ) VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),$11,NULLIF($12,''),$13::jsonb,$14,$15)
      ON CONFLICT (idempotency_key) DO NOTHING`,
     [
       cleanText(payload.event_type, 80),
@@ -1530,17 +1533,18 @@ async function insertGrowthEvent(pool, payload) {
       Math.max(0, Math.floor(Number(payload.amount_fen) || 0)),
       cleanText(payload.idempotency_key, 255),
       JSON.stringify(metadata),
-      parseOccurredAt(payload.occurred_at)
+      parseOccurredAt(payload.occurred_at),
+      tenantId
     ]
   );
 }
 
-async function upsertDeliveryLog(pool, payload) {
+async function upsertDeliveryLog(pool, payload, tenantId = 'default') {
   const r = await pool.query(
     `INSERT INTO growth_delivery_logs (
        delivery_key, action_key, rule_key, customer_id, store_id, channel,
-       external_userid, provider_msg_id, status, payload, result, error_message, updated_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,NOW())
+       external_userid, provider_msg_id, status, payload, result, error_message, updated_at, tenant_id
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,NOW(),$13)
      ON CONFLICT (delivery_key) DO UPDATE SET
        provider_msg_id = COALESCE(NULLIF(EXCLUDED.provider_msg_id,''), growth_delivery_logs.provider_msg_id),
        status = EXCLUDED.status,
@@ -1560,7 +1564,8 @@ async function upsertDeliveryLog(pool, payload) {
       cleanText(payload.status || 'pending', 40),
       JSON.stringify(payload.payload || {}),
       JSON.stringify(payload.result || {}),
-      cleanText(payload.error_message, 2000)
+      cleanText(payload.error_message, 2000),
+      tenantId
     ]
   );
   return r.rows[0] || null;
@@ -1774,7 +1779,7 @@ function freqDaysEnv(name, def) {
 // 全局短信总闸：同一手机号 N 天内最多收 1 条「任意类型」营销短信，跨所有触达段叠加防骚扰。
 // 默认 7 天(每周最多 1 条)，由 ALIYUN_SMS_GLOBAL_FREQUENCY_DAYS 配置，设 0 关闭。
 // 只统计真正发出(status='sent')的记录；命中返回 days(>0)，未命中返回 0。
-async function globalSmsCapped(pool, phone) {
+async function globalSmsCapped(pool, phone, tenantId = 'default') {
   const days = freqDaysEnv('ALIYUN_SMS_GLOBAL_FREQUENCY_DAYS', 7);
   const p = String(phone || '').trim();
   if (days <= 0 || !p) return 0;
@@ -1782,8 +1787,9 @@ async function globalSmsCapped(pool, phone) {
     `SELECT 1 FROM growth_delivery_logs
        WHERE channel = 'sms' AND status = 'sent' AND payload->>'phone' = $1
          AND created_at > now() - ($2 || ' days')::interval
+         AND tenant_id = $3
        LIMIT 1`,
-    [p, String(days)]
+    [p, String(days), tenantId]
   );
   return r.rows.length ? days : 0;
 }
@@ -1812,23 +1818,23 @@ const SMS_PERMANENT_FAIL_RE = /空号|黑名单|号码状态错误|MOBILE_NUMBER
 // 账户级故障判别：余额不足 → 写 growth_alerts 高优告警（前台已有告警展示）。
 const SMS_BALANCE_FAIL_RE = /余额不足|AMOUNT_NOT_ENOUGH|OUT_OF_SERVICE/i;
 
-async function isPhoneSuppressed(pool, phone) {
+async function isPhoneSuppressed(pool, phone, tenantId = 'default') {
   const p = String(phone || '').trim();
   if (!p) return false;
-  const r = await pool.query(`SELECT 1 FROM growth_sms_suppression WHERE phone = $1 LIMIT 1`, [p]);
+  const r = await pool.query(`SELECT 1 FROM growth_sms_suppression WHERE phone = $1 AND tenant_id = $2 LIMIT 1`, [p, tenantId]);
   return r.rows.length > 0;
 }
 
 // 发送失败后调用：永久性失败入抑制名单；余额不足写告警。容错（自身失败不影响主流程）。
-async function handleSmsFailure(pool, phone, errMsg) {
+async function handleSmsFailure(pool, phone, errMsg, tenantId = 'default') {
   const msg = String(errMsg || '');
   try {
     const p = String(phone || '').trim();
     if (p && SMS_PERMANENT_FAIL_RE.test(msg)) {
       await pool.query(
-        `INSERT INTO growth_sms_suppression (phone, reason, error_message) VALUES ($1, 'permanent_failure', $2)
+        `INSERT INTO growth_sms_suppression (phone, reason, error_message, tenant_id) VALUES ($1, 'permanent_failure', $2, $3)
          ON CONFLICT (phone) DO UPDATE SET error_message = EXCLUDED.error_message, updated_at = NOW()`,
-        [p, msg.slice(0, 500)]
+        [p, msg.slice(0, 500), tenantId]
       );
     }
     if (SMS_BALANCE_FAIL_RE.test(msg)) {
@@ -1845,13 +1851,13 @@ async function handleSmsFailure(pool, phone, errMsg) {
 
 // 触达上限：同一手机号同一活动累计成功发送 N 次（默认3）仍未回店则永久停发该活动，
 // 防止对明确不响应的客人无限期发券。回店后 days_since 重置、自然脱离人群，不受此限影响。
-async function campaignTouchCapped(pool, campaignKey, phone) {
+async function campaignTouchCapped(pool, campaignKey, phone, tenantId = 'default') {
   const cap = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_CAMPAIGN_MAX_TOUCHES) || 3));
   if (cap <= 0) return false;
   const r = await pool.query(
     `SELECT count(*)::int n FROM growth_delivery_logs
-      WHERE channel='sms' AND status='sent' AND rule_key = $1 AND payload->>'phone' = $2`,
-    [campaignKey, String(phone || '').trim()]
+      WHERE channel='sms' AND status='sent' AND rule_key = $1 AND payload->>'phone' = $2 AND tenant_id = $3`,
+    [campaignKey, String(phone || '').trim(), tenantId]
   );
   return (Number(r.rows[0]?.n) || 0) >= cap;
 }
@@ -1921,15 +1927,15 @@ function deriveAbcStep(campaignKey, totalSent) {
 // 这样自循环段(VIP客户维护/活跃客经营)里每次回头消费都会让轮换从头开始、不会把忠诚回头客
 // 误推进降频阶梯/红名单；而真正不回头的客户发送数持续累积，照常走阶梯并最终入红名单。
 // 从未到店(pos_last_order_at 为空)的潜客则统计全部发送数(无到店可清零)。
-async function countCampaignSent(pool, campaignKey, phone) {
+async function countCampaignSent(pool, campaignKey, phone, tenantId = 'default') {
   const p = String(phone || '').trim();
   const r = await pool.query(
     `SELECT count(*)::int n FROM growth_delivery_logs
-      WHERE channel='sms' AND status='sent' AND rule_key = $1 AND payload->>'phone' = $2
+      WHERE channel='sms' AND status='sent' AND rule_key = $1 AND payload->>'phone' = $2 AND tenant_id = $3
         AND created_at > COALESCE(
-          (SELECT MAX(pos_last_order_at) FROM growth_customer_profiles WHERE phone = $2),
+          (SELECT MAX(pos_last_order_at) FROM growth_customer_profiles WHERE phone = $2 AND tenant_id = $3),
           '1970-01-01'::timestamptz)`,
-    [campaignKey, p]
+    [campaignKey, p, tenantId]
   );
   return Number(r.rows[0]?.n) || 0;
 }
@@ -1946,7 +1952,7 @@ function marketingFatigueWindowDays() {
   const v = Number(process.env.MARKETING_FATIGUE_WINDOW_DAYS);
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : 90;
 }
-async function marketingFatigueCapped(pool, phone) {
+async function marketingFatigueCapped(pool, phone, tenantId = 'default') {
   const p = String(phone || '').trim();
   if (!p) return false;
   const max = marketingFatigueMax();
@@ -1955,10 +1961,11 @@ async function marketingFatigueCapped(pool, phone) {
     `SELECT count(*)::int n FROM growth_delivery_logs
       WHERE channel='sms' AND status='sent' AND payload->>'phone' = $1
         AND created_at > now() - ($2 || ' days')::interval
+        AND tenant_id = $3
         AND created_at > COALESCE(
-          (SELECT MAX(pos_last_order_at) FROM growth_customer_profiles WHERE phone = $1),
+          (SELECT MAX(pos_last_order_at) FROM growth_customer_profiles WHERE phone = $1 AND tenant_id = $3),
           '1970-01-01'::timestamptz)`,
-    [p, String(win)]
+    [p, String(win), tenantId]
   );
   return (Number(r.rows[0]?.n) || 0) >= max;
 }
@@ -2074,6 +2081,7 @@ async function readStoredValueBitableRecords() {
 }
 
 export async function executeGrowthActionRecord(pool, before, operator, extraPayload = {}, reason = '') {
+  const tenantId = String(before.tenant_id || 'default').trim() || 'default';
   const basePayload = before.payload && typeof before.payload === 'object' ? before.payload : {};
   const payload = Object.assign({}, basePayload, extraPayload || {});
   const storeId = cleanText(before.store_id || payload.store_id, 128);
@@ -2090,11 +2098,11 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
       const sourceTemplateId = payload.source_template_id ? Number(payload.source_template_id) : null;
       const recommendedPosterId = payload.recommended_poster_id ? Number(payload.recommended_poster_id) : null;
       const planResult = await pool.query(
-        `INSERT INTO growth_campaign_plans (plan_id, store_id, campaign_id, title, channel, status, planned_start, planned_end, created_by, source_template_id, recommended_poster_id)
-         VALUES ($1,$2,$3,$4,$5,'active',NOW(),NOW() + ($6::int || ' days')::interval,$7,$8,$9)
+        `INSERT INTO growth_campaign_plans (plan_id, store_id, campaign_id, title, channel, status, planned_start, planned_end, created_by, source_template_id, recommended_poster_id, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,'active',NOW(),NOW() + ($6::int || ' days')::interval,$7,$8,$9,$10)
          ON CONFLICT (plan_id) DO UPDATE SET status='active', updated_at=NOW()
          RETURNING plan_id, status`,
-        [planId, storeId, campaignId || `camp_${Date.now()}`, title, channel, Math.max(1, Math.floor(Number(payload.valid_days) || 7)), operator.username, sourceTemplateId, recommendedPosterId]
+        [planId, storeId, campaignId || `camp_${Date.now()}`, title, channel, Math.max(1, Math.floor(Number(payload.valid_days) || 7)), operator.username, sourceTemplateId, recommendedPosterId, tenantId]
       );
       executionResults.real_executions.push({ type: 'campaign_plan', plan_id: planResult.rows[0]?.plan_id, status: 'active' });
       if (sourceTemplateId) {
@@ -2102,17 +2110,17 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
       }
       if (campaignId) {
         await pool.query(
-          `INSERT INTO growth_campaigns (campaign_id, name, channel, store_id, status)
-           VALUES ($1,$2,$3,$4,'active')
+          `INSERT INTO growth_campaigns (campaign_id, name, channel, store_id, status, tenant_id)
+           VALUES ($1,$2,$3,$4,'active',$5)
            ON CONFLICT (campaign_id) DO UPDATE SET status='active', updated_at=NOW()`,
-          [campaignId, title, channel, storeId]
+          [campaignId, title, channel, storeId, tenantId]
         );
         executionResults.real_executions.push({ type: 'campaign', campaign_id: campaignId, status: 'active' });
       }
       const couponId = payload.coupon_id ? cleanText(payload.coupon_id, 128) : `exec_coupon_${Date.now()}`;
       await pool.query(
-        `INSERT INTO growth_coupons (coupon_id, name, type, value_fen, valid_days, usage_rule, store_id, is_active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)
+        `INSERT INTO growth_coupons (coupon_id, name, type, value_fen, valid_days, usage_rule, store_id, is_active, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8)
          ON CONFLICT (coupon_id) DO UPDATE SET name=EXCLUDED.name, value_fen=EXCLUDED.value_fen, valid_days=EXCLUDED.valid_days, usage_rule=EXCLUDED.usage_rule, is_active=TRUE, updated_at=NOW()`,
         [
           couponId,
@@ -2121,7 +2129,8 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           Math.max(0, Math.floor(Number(payload.coupon_value_fen || payload.value_fen) || 1000)),
           Math.max(1, Math.floor(Number(payload.valid_days) || 7)),
           cleanText(payload.usage_rule || '规则引擎自动触达', 1000),
-          storeId
+          storeId,
+          tenantId
         ]
       );
       payload.coupon_id = couponId;
@@ -2130,10 +2139,10 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
       const itemId = `exec_content_${Date.now()}`;
       const channel = cleanText(payload.channel || 'miniprogram', 80);
       const contentResult = await pool.query(
-        `INSERT INTO growth_content_calendar (item_id, store_id, channel, publish_date, title, content_brief, copy_text, status)
-         VALUES ($1,$2,$3,CURRENT_DATE,$4,$5,$6,'planned')
+        `INSERT INTO growth_content_calendar (item_id, store_id, channel, publish_date, title, content_brief, copy_text, status, tenant_id)
+         VALUES ($1,$2,$3,CURRENT_DATE,$4,$5,$6,'planned',$7)
          RETURNING item_id`,
-        [itemId, storeId, channel, cleanText(before.title, 500), cleanText(payload.content_brief || payload.detail, 2000), cleanText(before.detail, 4000)]
+        [itemId, storeId, channel, cleanText(before.title, 500), cleanText(payload.content_brief || payload.detail, 2000), cleanText(before.detail, 4000), tenantId]
       );
       executionResults.real_executions.push({ type: 'content_calendar', item_id: contentResult.rows[0]?.item_id });
     } else if (actionType === 'generate_poster') {
@@ -2173,7 +2182,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           status: 'sent',
           payload: { content: messageContent },
           result: sent.raw || {}
-        });
+        }, tenantId);
         await insertGrowthEvent(pool, {
           event_type: 'marketing_triggered',
           customer_id: payload.customer_id,
@@ -2191,7 +2200,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
             provider_msg_id: sent.provider_msg_id,
             content: messageContent
           }
-        });
+        }, tenantId);
         executionResults.real_executions.push({ type: 'wecom_message', provider_msg_id: sent.provider_msg_id || deliveryKey, status: 'sent' });
       } catch (deliveryErr) {
         executionResults.delivery_error = deliveryErr?.message || 'wecom_send_failed';
@@ -2207,7 +2216,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           payload: { content: messageContent },
           result: {},
           error_message: deliveryErr?.message || 'wecom_send_failed'
-        });
+        }, tenantId);
       }
     } else if (cleanText(payload.channel || '', 80) === 'sms' && cleanPhone(payload.phone)) {
       const smsPhone = cleanPhone(payload.phone);
@@ -2267,9 +2276,9 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
       }
 
       // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
-      if (!skipReason && await globalSmsCapped(pool, smsPhone)) skipReason = 'global_capped';
+      if (!skipReason && await globalSmsCapped(pool, smsPhone, tenantId)) skipReason = 'global_capped';
       // 永久抑制名单：停机/空号/黑名单号码不再发送
-      if (!skipReason && await isPhoneSuppressed(pool, smsPhone)) skipReason = 'suppressed';
+      if (!skipReason && await isPhoneSuppressed(pool, smsPhone, tenantId)) skipReason = 'suppressed';
 
       if (skipReason) {
         executionResults.delivery_error = `sms_skipped_${skipReason}`;
@@ -2289,7 +2298,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
             : skipReason === 'global_capped'
             ? `该号码近期已收过短信，触发全局短信总闸(每周最多1条)，已跳过发送`
             : `无优惠券面额，模板 ${smsTemplateCode || 'default'} 需要 value 变量，已跳过发送`
-        });
+        }, tenantId);
       } else {
       try {
         const sent = await sendAliyunSms({
@@ -2314,7 +2323,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
             ? { phone: smsPhone, template_param: templateParam, coupon_code: generatedCode }
             : { phone: smsPhone, template_param: templateParam },
           result: sent.raw || {}
-        });
+        }, tenantId);
         await insertGrowthEvent(pool, {
           event_type: 'marketing_triggered',
           customer_id: payload.customer_id,
@@ -2333,7 +2342,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
             template_param: templateParam,
             ...(generatedCode ? { short_code: generatedCode } : {})
           }
-        });
+        }, tenantId);
         executionResults.real_executions.push({ type: 'sms_message', provider_msg_id: sent.provider_msg_id || deliveryKey, status: 'sent' });
       } catch (deliveryErr) {
         executionResults.delivery_error = deliveryErr?.message || 'sms_send_failed';
@@ -2349,8 +2358,8 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           payload: { phone: smsPhone, template_param: templateParam },
           result: {},
           error_message: deliveryErr?.message || 'sms_send_failed'
-        });
-        await handleSmsFailure(pool, smsPhone, deliveryErr?.message);
+        }, tenantId);
+        await handleSmsFailure(pool, smsPhone, deliveryErr?.message, tenantId);
       }
       }
     } else if (cleanText(payload.channel || '', 80) === 'subscribe' && (cleanPhone(payload.phone) || cleanText(payload.openid || '', 128))) {
@@ -2379,7 +2388,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           payload: { phone: subPhone, openid: subOpenid, template_type: templateType },
           result: {},
           error_message: '未配置 HRMS_SUBSCRIBE_PUSH_URL / MINIPROGRAM_SYNC_SECRET，已跳过订阅消息发送'
-        });
+        }, tenantId);
       } else {
         try {
           const pushResp = await postSubscribePush({
@@ -2406,7 +2415,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
             payload: { phone: subPhone, openid: subOpenid, template_type: templateType, template_data: templateData },
             result: pushResp.body || {},
             error_message: ok ? null : ((pushResp.body && pushResp.body.error) || `subscribe_push_http_${pushResp.httpStatus}`)
-          });
+          }, tenantId);
           if (ok) {
             await insertGrowthEvent(pool, {
               event_type: 'marketing_triggered',
@@ -2424,7 +2433,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
                 delivery_key: deliveryKey,
                 template_type: templateType
               }
-            });
+            }, tenantId);
             executionResults.real_executions.push({ type: 'subscribe_message', provider_msg_id: String(providerMsgId), status: 'sent' });
           } else {
             executionResults.delivery_error = (pushResp.body && pushResp.body.error) || `subscribe_push_http_${pushResp.httpStatus}`;
@@ -2443,7 +2452,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
             payload: { phone: subPhone, openid: subOpenid, template_type: templateType },
             result: {},
             error_message: deliveryErr?.message || 'subscribe_send_failed'
-          });
+          }, tenantId);
         }
       }
     } else if (cleanText(payload.channel || '', 80) === 'member' && (cleanPhone(payload.phone) || cleanText(payload.openid || '', 128))) {
@@ -2470,7 +2479,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
           error_message: !memberTemplateId
             ? '规则未配置 member_template_id（小程序券模板ID），已跳过站内推券'
             : '未配置 HRMS_MEMBER_COUPON_PUSH_URL / MINIPROGRAM_SYNC_SECRET，已跳过站内推券'
-        });
+        }, tenantId);
       } else {
         try {
           const pushResp = await postMemberCouponPush({
@@ -2496,7 +2505,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
             payload: { phone: memPhone, openid: memOpenid, template_id: memberTemplateId },
             result: pushResp.body || {},
             error_message: ok ? null : ((pushResp.body && pushResp.body.error) || `member_coupon_http_${pushResp.httpStatus}`)
-          });
+          }, tenantId);
           if (ok) {
             await insertGrowthEvent(pool, {
               event_type: 'marketing_triggered',
@@ -2515,7 +2524,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
                 template_id: memberTemplateId,
                 voucher_id: String(providerMsgId)
               }
-            });
+            }, tenantId);
             executionResults.real_executions.push({ type: 'member_coupon', provider_msg_id: String(providerMsgId), status: 'sent' });
           } else {
             executionResults.delivery_error = (pushResp.body && pushResp.body.error) || `member_coupon_http_${pushResp.httpStatus}`;
@@ -2534,7 +2543,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
             payload: { phone: memPhone, openid: memOpenid, template_id: memberTemplateId },
             result: {},
             error_message: deliveryErr?.message || 'member_coupon_send_failed'
-          });
+          }, tenantId);
         }
       }
     }
@@ -2590,7 +2599,7 @@ async function createChurnAlert(pool, rule, row) {
   );
 }
 
-async function loadRuleCandidates(pool, rule) {
+async function loadRuleCandidates(pool, rule, tenantId = 'default') {
   if (rule.rule_key === 'loyal_birthday_month') {
     const r = await pool.query(
       `SELECT cp.customer_id, cp.store_id, cp.phone, cp.pos_order_count, cp.pos_last_order_at, cp.visit_interval_days,
@@ -2600,9 +2609,11 @@ async function loadRuleCandidates(pool, rule) {
        FROM growth_customer_profiles cp
        JOIN growth_customers gc ON gc.id = cp.customer_id
        LEFT JOIN wechat_work_customers ww ON ww.bind_customer_id = cp.customer_id
-       WHERE COALESCE(ww.external_userid, gc.external_userid) IS NOT NULL
-          OR (cp.phone IS NOT NULL AND cp.phone <> '')
-       LIMIT 500`
+       WHERE cp.tenant_id = $1 AND gc.tenant_id = $1
+         AND (COALESCE(ww.external_userid, gc.external_userid) IS NOT NULL
+          OR (cp.phone IS NOT NULL AND cp.phone <> ''))
+       LIMIT 500`,
+      [tenantId]
     );
     const currentMonth = fmtYm(new Date()).slice(5, 7);
     return r.rows.filter((row) => {
@@ -2611,15 +2622,15 @@ async function loadRuleCandidates(pool, rule) {
       return deriveBirthdayMonth(row.customer_meta || {}) === currentMonth && visits >= 3 && Number.isFinite(interval) && interval <= 10;
     });
   }
-  const rows = await fetchGenericRuleCandidates(pool);
-  const segmentSet = await loadSegmentPhoneSet(pool, (rule.criteria || {}).segment_key);
+  const rows = await fetchGenericRuleCandidates(pool, tenantId);
+  const segmentSet = await loadSegmentPhoneSet(pool, (rule.criteria || {}).segment_key, tenantId);
   return filterGenericRuleCandidates(rows, rule, segmentSet);
 }
 
 // 通用候选集扫描：除生日规则(loyal_birthday_month)外所有规则共用同一份 profiles 扫描结果。
 // 抽离为独立函数，使 audience 端点可「一次扫描、内存复用」，避免 19 条规则各扫一遍 13k 行
 // （旧实现导致自动营销页加载约 30 秒）。
-async function fetchGenericRuleCandidates(pool) {
+async function fetchGenericRuleCandidates(pool, tenantId = 'default') {
   const r = await pool.query(
     `SELECT cp.customer_id, cp.store_id, cp.phone, cp.price_sensitivity, cp.response_to_discount,
             cp.lifecycle_stage, cp.value_tier, cp.price_sensitive,
@@ -2632,17 +2643,19 @@ async function fetchGenericRuleCandidates(pool) {
      FROM growth_customer_profiles cp
      JOIN growth_customers gc ON gc.id = cp.customer_id
      LEFT JOIN wechat_work_customers ww ON ww.bind_customer_id = cp.customer_id
-     WHERE COALESCE(ww.external_userid, gc.external_userid) IS NOT NULL
-        OR (cp.phone IS NOT NULL AND cp.phone <> '')
-     LIMIT 50000`
+     WHERE cp.tenant_id = $1 AND gc.tenant_id = $1
+       AND (COALESCE(ww.external_userid, gc.external_userid) IS NOT NULL
+        OR (cp.phone IS NOT NULL AND cp.phone <> ''))
+     LIMIT 50000`,
+    [tenantId]
   );
   return r.rows;
 }
 
 // 就餐时段标签成员(growth_segment_members)按 segment_key 取手机号集合，供 criteria.segment_key 命中。
-async function loadSegmentPhoneSet(pool, segmentKey) {
+async function loadSegmentPhoneSet(pool, segmentKey, tenantId = 'default') {
   if (!segmentKey) return null;
-  const r = await pool.query(`SELECT phone FROM growth_segment_members WHERE segment_key = $1`, [segmentKey]);
+  const r = await pool.query(`SELECT phone FROM growth_segment_members WHERE segment_key = $1 AND tenant_id = $2`, [segmentKey, tenantId]);
   return new Set((r.rows || []).map((x) => String(x.phone || '')));
 }
 
@@ -2708,27 +2721,27 @@ function buildRulePeriodKey(ruleKey, row) {
 // 随 POS 数据更新需定期重算(每日)。口径：
 //  - mj_dinner_weekend_repeat: 马己仙 晚市(≥16点)≥2次 或 周末(周六日)≥2次 的复购客；
 //  - hc_weekday_lunch:        洪潮 平日(排除周末+法定节假日,含调休补班) 午市(10-15点) ≥1次。
-async function recomputeDiningSegments(pool) {
+async function recomputeDiningSegments(pool, tenantId = 'default') {
   const BJ = "AT TIME ZONE 'Asia/Shanghai'";
   const hj = `LEFT JOIN cn_holiday_calendar h ON h.day=(order_time ${BJ})::date AND h.day_type='holiday'
               LEFT JOIN cn_holiday_calendar w ON w.day=(order_time ${BJ})::date AND w.day_type='workday'`;
   const eff = `((extract(dow from order_time ${BJ}) BETWEEN 1 AND 5 AND h.day IS NULL) OR w.day IS NOT NULL)`;
   const mjSid = _storeId('马己仙');
   const hcSid = _storeId('洪潮');
-  await pool.query(`DELETE FROM growth_segment_members WHERE segment_key='mj_dinner_weekend_repeat'`);
-  const mj = await pool.query(`INSERT INTO growth_segment_members(phone,segment_key,store_id)
-    SELECT phone,'mj_dinner_weekend_repeat','${mjSid}' FROM (
+  await pool.query(`DELETE FROM growth_segment_members WHERE segment_key='mj_dinner_weekend_repeat' AND tenant_id=$1`, [tenantId]);
+  const mj = await pool.query(`INSERT INTO growth_segment_members(phone,segment_key,store_id,tenant_id)
+    SELECT phone,'mj_dinner_weekend_repeat','${mjSid}',$1 FROM (
       SELECT phone,
         count(*) FILTER (WHERE extract(hour from order_time ${BJ})>=16) dinner,
         count(*) FILTER (WHERE extract(dow from order_time ${BJ}) IN (0,6)) weekend
-      FROM pos_orders WHERE store_id='${mjSid}' AND order_time IS NOT NULL AND phone<>'' GROUP BY phone
-    ) t WHERE dinner>=2 OR weekend>=2 ON CONFLICT DO NOTHING`);
-  await pool.query(`DELETE FROM growth_segment_members WHERE segment_key='hc_weekday_lunch'`);
-  const hc = await pool.query(`INSERT INTO growth_segment_members(phone,segment_key,store_id)
-    SELECT DISTINCT phone,'hc_weekday_lunch','${hcSid}' FROM (
-      SELECT phone FROM pos_orders ${hj} WHERE store_id='${hcSid}' AND order_time IS NOT NULL AND phone<>''
+      FROM pos_orders WHERE store_id='${mjSid}' AND order_time IS NOT NULL AND phone<>'' AND tenant_id=$1 GROUP BY phone
+    ) t WHERE dinner>=2 OR weekend>=2 ON CONFLICT DO NOTHING`, [tenantId]);
+  await pool.query(`DELETE FROM growth_segment_members WHERE segment_key='hc_weekday_lunch' AND tenant_id=$1`, [tenantId]);
+  const hc = await pool.query(`INSERT INTO growth_segment_members(phone,segment_key,store_id,tenant_id)
+    SELECT DISTINCT phone,'hc_weekday_lunch','${hcSid}',$1 FROM (
+      SELECT phone FROM pos_orders ${hj} WHERE store_id='${hcSid}' AND order_time IS NOT NULL AND phone<>'' AND tenant_id=$1
         AND ${eff} AND extract(hour from order_time ${BJ}) BETWEEN 10 AND 15
-    ) t ON CONFLICT DO NOTHING`);
+    ) t ON CONFLICT DO NOTHING`, [tenantId]);
   return { mj_dinner_weekend_repeat: mj.rowCount, hc_weekday_lunch: hc.rowCount };
 }
 
@@ -2917,7 +2930,7 @@ async function runTouchRuleEngine(pool, options = {}) {
     return { created: 0, skipped: true, reason: 'pos_data_stale', lag_days: Number.isFinite(lagDays) ? lagDays : null };
   }
   const limitPerRule = Math.min(Math.max(Number(options.limit_per_rule) || 100, 1), 5000);
-  const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules WHERE enabled = TRUE ORDER BY priority ASC, rule_key ASC LIMIT 20`);
+  const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules WHERE enabled = TRUE AND tenant_id = $1 ORDER BY priority ASC, rule_key ASC LIMIT 20`, [ruleEngineTenantId]);
   const createdActions = [];
   // 跨活动单触达：同一手机号本轮只进入一个活动(按 priority 高者先占)，杜绝一个客人因同时命中
   // 多个段(如就餐时段标签×召回段)在同一轮被多条活动各发一条短信。发送端 globalSmsCapped 再兜底。
@@ -2926,7 +2939,7 @@ async function runTouchRuleEngine(pool, options = {}) {
     // 储值余额提醒规则(channel='balance')：不走逐人触达引擎，由独立触发器
     // enqueueAutoStoredValueReminds 按门店每日冻结余额提醒任务。此处直接跳过。
     if (String((rule.action_payload || {}).channel || '') === 'balance') continue;
-    const candidates = (await loadRuleCandidates(pool, rule)).slice(0, limitPerRule);
+    const candidates = (await loadRuleCandidates(pool, rule, ruleEngineTenantId)).slice(0, limitPerRule);
     // 活动制规则(action_payload.campaign_key)：不逐人直发，改为聚合候选→冻结发券任务(可核销可归因)。
     const ruleCampaignKey = cleanText((rule.action_payload || {}).campaign_key || '', 64);
     if (ruleCampaignKey && CAMPAIGN_TYPES[ruleCampaignKey]) {
@@ -3309,6 +3322,7 @@ export function registerGrowthRoutes(app, pool) {
       const validUntil = cleanText(b.valid_until || b.date, 40); // 如「6月20日」或「2026-06-20」
       const campaignId = cleanText(b.campaign_id || b.scene, 128);
       const idempotencyKey = cleanText(b.idempotency_key, 255) || (code ? `winback_sms:${code}` : '');
+      const tenantId = await resolveTenantIdForStore(pool, storeId);
 
       if (!phone) return res.status(400).json({ ok: false, error: 'missing_phone' });
       if (!code) return res.status(400).json({ ok: false, error: 'missing_coupon_code' });
@@ -3341,10 +3355,10 @@ export function registerGrowthRoutes(app, pool) {
         }
       }
       // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
-      const gCap = await globalSmsCapped(pool, phone);
+      const gCap = await globalSmsCapped(pool, phone, tenantId);
       if (gCap) return res.json({ ok: true, skipped: true, reason: 'global_frequency_capped', frequency_days: gCap });
       // 永久抑制名单：停机/空号/黑名单号码不再发送
-      if (await isPhoneSuppressed(pool, phone)) return res.json({ ok: true, skipped: true, reason: 'suppressed' });
+      if (await isPhoneSuppressed(pool, phone, tenantId)) return res.json({ ok: true, skipped: true, reason: 'suppressed' });
       const deliveryKey = idempotencyKey || `winback_sms:${phone}:${Date.now()}`;
       // 已报备模板仅 3 个变量 value/date/code（无 name，避免超 3 变量报备失败）。
       // 务必与模板严格一致，多传 name 会被阿里云判「参数不匹配」拒收。
@@ -3353,14 +3367,14 @@ export function registerGrowthRoutes(app, pool) {
       try {
         const sent = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
         // 解析/登记客户，使发送日志与触达事件都带 customer_id，核销时可按人归因
-        const winbackCustomer = await upsertCustomer(pool, { phone, store_id: storeId }).catch(() => null);
+        const winbackCustomer = await upsertCustomer(pool, { phone, store_id: storeId }, tenantId).catch(() => null);
         await upsertDeliveryLog(pool, {
           delivery_key: deliveryKey, action_key: campaignId || 'winback', rule_key: 'winback_sms',
           customer_id: winbackCustomer?.id || null, store_id: storeId, channel: 'sms', external_userid: '',
           provider_msg_id: sent.provider_msg_id, status: 'sent',
           payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId },
           result: sent.raw || {}
-        });
+        }, tenantId);
         // 写 marketing_triggered 事件：让日指标按活动统计「发送量」，与后续 coupon_redeemed 配对算核销率/ROI。
         // 幂等键带短码，云函数重试不会重复计数。
         await insertGrowthEvent(pool, {
@@ -3381,7 +3395,7 @@ export function registerGrowthRoutes(app, pool) {
             coupon_value_fen: valueYuan * 100,
             template_code: templateCode
           }
-        });
+        }, tenantId);
         return res.json({ ok: true, provider_msg_id: sent.provider_msg_id });
       } catch (deliveryErr) {
         await upsertDeliveryLog(pool, {
@@ -3389,8 +3403,8 @@ export function registerGrowthRoutes(app, pool) {
           customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'failed',
           payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId },
           result: {}, error_message: deliveryErr?.message || 'sms_send_failed'
-        });
-        await handleSmsFailure(pool, phone, deliveryErr?.message);
+        }, tenantId);
+        await handleSmsFailure(pool, phone, deliveryErr?.message, tenantId);
         return res.status(502).json({ ok: false, error: deliveryErr?.message || 'sms_send_failed' });
       }
     } catch (e) {
@@ -3715,6 +3729,7 @@ export function registerGrowthRoutes(app, pool) {
       const validUntil = cleanText(b.valid_until || b.date, 40) || formatSmsValidDate(b.valid_days);
       const campaignId = cleanText(b.campaign_id || b.scene, 128);
       const idempotencyKey = cleanText(b.idempotency_key, 255) || (code ? `${campaignKey}:${code}` : '');
+      const tenantId = await resolveTenantIdForStore(pool, storeId);
 
       if (!phone) return res.status(400).json({ ok: false, error: 'missing_phone' });
 
@@ -3725,7 +3740,7 @@ export function registerGrowthRoutes(app, pool) {
       let abcFreqDaysOverride = null;
       let abcStep = null;
       if (abcOrder) {
-        const totalSent = await countCampaignSent(pool, campaignKey, phone);
+        const totalSent = await countCampaignSent(pool, campaignKey, phone, tenantId);
         const derived = deriveAbcStep(campaignKey, totalSent);
         if (derived.blacklisted) return res.json({ ok: true, skipped: true, reason: 'abc_blacklisted' });
         abcStep = derived.step;
@@ -3758,15 +3773,15 @@ export function registerGrowthRoutes(app, pool) {
         if (recent.rows.length) return res.json({ ok: true, skipped: true, reason: 'frequency_capped', frequency_days: freqDays });
       }
       // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
-      const gCap = await globalSmsCapped(pool, phone);
+      const gCap = await globalSmsCapped(pool, phone, tenantId);
       if (gCap) return res.json({ ok: true, skipped: true, reason: 'global_frequency_capped', frequency_days: gCap });
       // 永久抑制名单：停机/空号/黑名单号码不再发送
-      if (await isPhoneSuppressed(pool, phone)) return res.json({ ok: true, skipped: true, reason: 'suppressed' });
+      if (await isPhoneSuppressed(pool, phone, tenantId)) return res.json({ ok: true, skipped: true, reason: 'suppressed' });
       // 跨活动疲劳总闸：近90天最近到店后累计收满8条任意活动短信仍未回店 → 暂停所有营销
-      if (await marketingFatigueCapped(pool, phone)) return res.json({ ok: true, skipped: true, reason: 'marketing_fatigue' });
+      if (await marketingFatigueCapped(pool, phone, tenantId)) return res.json({ ok: true, skipped: true, reason: 'marketing_fatigue' });
       // 触达上限：同活动累计发满 N 次(默认3)仍未回店 → 停发本活动。ABC 轮换自带 15/30/45/60天
       // 降频阶梯+红名单机制，不再叠加此上限。
-      if (!abcOrder && await campaignTouchCapped(pool, campaignKey, phone)) return res.json({ ok: true, skipped: true, reason: 'touch_capped' });
+      if (!abcOrder && await campaignTouchCapped(pool, campaignKey, phone, tenantId)) return res.json({ ok: true, skipped: true, reason: 'touch_capped' });
       const deliveryKey = idempotencyKey || `${campaignKey}:${phone}:${Date.now()}`;
       // 严格按 vars 拼模板参数：缺/多变量阿里云都判「参数不匹配」整批拒收。
       const templateParam = {};
@@ -3776,14 +3791,14 @@ export function registerGrowthRoutes(app, pool) {
 
       try {
         const sent = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
-        const camCustomer = await upsertCustomer(pool, { phone, store_id: storeId }).catch(() => null);
+        const camCustomer = await upsertCustomer(pool, { phone, store_id: storeId }, tenantId).catch(() => null);
         await upsertDeliveryLog(pool, {
           delivery_key: deliveryKey, action_key: campaignId || campaignKey, rule_key: campaignKey,
           customer_id: camCustomer?.id || null, store_id: storeId, channel: 'sms', external_userid: '',
           provider_msg_id: sent.provider_msg_id, status: 'sent',
           payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId, campaign_key: campaignKey },
           result: sent.raw || {}
-        });
+        }, tenantId);
         await insertGrowthEvent(pool, {
           event_type: 'marketing_triggered',
           customer_id: camCustomer?.id || null, phone, external_userid: null, store_id: storeId,
@@ -3793,7 +3808,7 @@ export function registerGrowthRoutes(app, pool) {
             rule_key: campaignKey, delivery_key: deliveryKey, provider_msg_id: sent.provider_msg_id,
             short_code: code, coupon_value_fen: valueYuan * 100, template_code: templateCode
           }
-        });
+        }, tenantId);
         return res.json({ ok: true, provider_msg_id: sent.provider_msg_id });
       } catch (deliveryErr) {
         await upsertDeliveryLog(pool, {
@@ -3801,8 +3816,8 @@ export function registerGrowthRoutes(app, pool) {
           customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'failed',
           payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId, campaign_key: campaignKey },
           result: {}, error_message: deliveryErr?.message || 'sms_send_failed'
-        });
-        await handleSmsFailure(pool, phone, deliveryErr?.message);
+        }, tenantId);
+        await handleSmsFailure(pool, phone, deliveryErr?.message, tenantId);
         return res.status(502).json({ ok: false, error: deliveryErr?.message || 'sms_send_failed' });
       }
     } catch (e) {
@@ -3890,6 +3905,7 @@ export function registerGrowthRoutes(app, pool) {
     const job = claim.rows[0];
     if (!job) return;
     const storeId = cleanText(job.store_id, 128);
+    const tenantId = await resolveTenantIdForStore(pool, storeId);
     const templateCode = cleanText(job.result?.template_code, 64) || pickBalanceTemplateByStore(storeId);
     const targets = Array.isArray(job.targets) ? job.targets : [];
     let sent = 0, failed = 0;
@@ -3905,33 +3921,33 @@ export function registerGrowthRoutes(app, pool) {
       const deliveryKey = `svremind:${job.id}:${phone}`;
       const templateParam = { balance: String(balanceYuan) };
       // 永久抑制名单：停机/空号/黑名单号码不再发送
-      if (await isPhoneSuppressed(pool, phone)) continue;
+      if (await isPhoneSuppressed(pool, phone, tenantId)) continue;
       // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
-      const gCap = await globalSmsCapped(pool, phone);
+      const gCap = await globalSmsCapped(pool, phone, tenantId);
       if (gCap) {
         await upsertDeliveryLog(pool, {
           delivery_key: deliveryKey, action_key: job.campaign_id || 'svremind', rule_key: 'stored_value_remind',
           customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'skipped',
           payload: { phone, template_param: templateParam, campaign_id: job.campaign_id, reason: 'global_capped' },
           result: {}, error_message: '触发全局短信总闸(每周最多1条)，已跳过'
-        }).catch(() => null);
+        }, tenantId).catch(() => null);
         continue;
       }
       try {
         const result = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
-        const cust = await upsertCustomer(pool, { phone, store_id: storeId }).catch(() => null);
+        const cust = await upsertCustomer(pool, { phone, store_id: storeId }, tenantId).catch(() => null);
         await upsertDeliveryLog(pool, {
           delivery_key: deliveryKey, action_key: job.campaign_id || 'svremind', rule_key: 'stored_value_remind',
           customer_id: cust?.id || null, store_id: storeId, channel: 'sms', external_userid: '',
           provider_msg_id: result.provider_msg_id, status: 'sent',
           payload: { phone, template_param: templateParam, campaign_id: job.campaign_id }, result: result.raw || {}
-        });
+        }, tenantId);
         await insertGrowthEvent(pool, {
           event_type: 'marketing_triggered', customer_id: cust?.id || null, phone, external_userid: null,
           store_id: storeId, campaign_id: job.campaign_id, channel: 'sms', coupon_id: null,
           idempotency_key: `marketing_triggered:svremind:${job.id}:${phone}`,
           metadata: { rule_key: 'stored_value_remind', delivery_key: deliveryKey, provider_msg_id: result.provider_msg_id, template_code: templateCode, template_param: templateParam }
-        });
+        }, tenantId);
         sent++;
       } catch (err) {
         await upsertDeliveryLog(pool, {
@@ -3939,8 +3955,8 @@ export function registerGrowthRoutes(app, pool) {
           customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'failed',
           payload: { phone, template_param: templateParam, campaign_id: job.campaign_id }, result: {},
           error_message: err?.message || 'sms_send_failed'
-        }).catch(() => null);
-        await handleSmsFailure(pool, phone, err?.message);
+        }, tenantId).catch(() => null);
+        await handleSmsFailure(pool, phone, err?.message, tenantId);
         failed++;
       }
     }
@@ -4012,7 +4028,7 @@ export function registerGrowthRoutes(app, pool) {
   app.post('/api/growth/segments/recompute', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     try {
-      const result = await recomputeDiningSegments(pool);
+      const result = await recomputeDiningSegments(pool, getGrowthTenantId(req));
       return res.json({ ok: true, result });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -4047,9 +4063,10 @@ export function registerGrowthRoutes(app, pool) {
         return res.status(400).json({ ok: false, error: 'invalid_event_type' });
       }
 
-      const customer = await upsertCustomer(pool, body);
-      const campaignId = cleanText(body.campaign_id || body.scene, 128);
       const storeId = cleanText(body.store_id, 128);
+      const tenantId = await resolveTenantIdForStore(pool, storeId);
+      const customer = await upsertCustomer(pool, body, tenantId);
+      const campaignId = cleanText(body.campaign_id || body.scene, 128);
       const channel = cleanText(body.channel, 80);
       const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
       const amountFen = Math.max(0, Math.floor(Number(body.amount_fen) || 0));
@@ -4592,7 +4609,7 @@ export function registerGrowthRoutes(app, pool) {
     if (!ruleRes.rows.length) return res.status(404).json({ ok: false, error: 'rule_not_found' });
     const rule = ruleRes.rows[0];
 
-    const candidates = (await loadRuleCandidates(pool, rule)).slice(0, 500);
+    const candidates = (await loadRuleCandidates(pool, rule, getGrowthTenantId(req))).slice(0, 500);
     const phones = [...new Set(candidates.map((c) => cleanPhone(c.phone)).filter(Boolean))];
     const sentCounts = phones.length ? await pool.query(
       // 「到店即清零」：与发送端同口径，只统计最近一次到店(pos_last_order_at)之后的成功发送数。
@@ -4952,7 +4969,7 @@ export function registerGrowthRoutes(app, pool) {
 
   app.post('/api/growth/customer-profiles/recompute', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    const days = await recomputeCustomerProfiles(pool, req.body?.days || 90);
+    const days = await recomputeCustomerProfiles(pool, req.body?.days || 90, getGrowthTenantId(req));
     return res.json({ ok: true, days });
   });
 
@@ -4964,9 +4981,10 @@ export function registerGrowthRoutes(app, pool) {
       `SELECT * FROM growth_profile_signals
        WHERE ($1::bigint = 0 OR customer_id = $1)
          AND ($2::text = '' OR signal_type = $2)
+         AND tenant_id = $3
        ORDER BY occurred_at DESC
        LIMIT 300`,
-      [customerId, signalType]
+      [customerId, signalType, getGrowthTenantId(req)]
     );
     return res.json({ ok: true, signals: r.rows });
   });
@@ -4981,12 +4999,13 @@ export function registerGrowthRoutes(app, pool) {
       store_id: b.store_id,
       customer_meta: {}
     };
-    const customer = b.customer_id ? { id: Number(b.customer_id) } : await upsertCustomer(pool, payload);
+    const tenantId = getGrowthTenantId(req);
+    const customer = b.customer_id ? { id: Number(b.customer_id) } : await upsertCustomer(pool, payload, tenantId);
     const signal = await pool.query(
       `INSERT INTO growth_profile_signals (
         customer_id, signal_type, signal_key, signal_value, signal_score,
-        source, store_id, campaign_id, occurred_at, meta
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+        source, store_id, campaign_id, occurred_at, meta, tenant_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
       RETURNING *`,
       [
         customer?.id || null,
@@ -4998,7 +5017,8 @@ export function registerGrowthRoutes(app, pool) {
         cleanText(b.store_id, 128),
         cleanText(b.campaign_id, 128),
         parseOccurredAt(b.occurred_at),
-        JSON.stringify(b.meta || {})
+        JSON.stringify(b.meta || {}),
+        tenantId
       ]
     );
     return res.json({ ok: true, signal: signal.rows[0] });
@@ -5532,19 +5552,20 @@ export function registerGrowthRoutes(app, pool) {
     const tasteTags = Array.isArray(b.taste_tags) ? b.taste_tags.map(t => cleanText(String(t), 80)).filter(Boolean) : [];
     const priceHint = b.price_sensitivity_hint == null ? null : Number(b.price_sensitivity_hint);
     const returnIntent = !!b.return_intent;
+    const tenantId = getGrowthTenantId(req);
     await pool.query(
       `UPDATE growth_customer_profiles
        SET semantic_tags = COALESCE(semantic_tags,'[]'::jsonb) || $2::jsonb,
            favorite_dishes = CASE WHEN $3::jsonb <> '[]'::jsonb THEN COALESCE(favorite_dishes,'[]'::jsonb) || $3::jsonb ELSE favorite_dishes END,
            price_sensitivity = COALESCE($4, price_sensitivity),
            updated_at = NOW()
-       WHERE customer_id = $1`,
-      [customerId, JSON.stringify(tags), JSON.stringify(tasteTags), priceHint]
+       WHERE customer_id = $1 AND tenant_id = $5`,
+      [customerId, JSON.stringify(tags), JSON.stringify(tasteTags), priceHint, tenantId]
     );
     await pool.query(
-      `INSERT INTO growth_profile_signals (customer_id, signal_type, signal_key, signal_value, signal_score, source)
-       VALUES ($1,'semantic_tag','semantic_parse',NULLIF($2,''),NULL,$3)`,
-      [customerId, tags.slice(0, 5).join(','), 'agent_parse']
+      `INSERT INTO growth_profile_signals (customer_id, signal_type, signal_key, signal_value, signal_score, source, tenant_id)
+       VALUES ($1,'semantic_tag','semantic_parse',NULLIF($2,''),NULL,$3,$4)`,
+      [customerId, tags.slice(0, 5).join(','), 'agent_parse', tenantId]
     );
     return res.json({ ok: true, customer_id: customerId, tags_written: tags.concat(tasteTags), return_intent: returnIntent });
   });
@@ -5772,6 +5793,7 @@ export function registerGrowthRoutes(app, pool) {
       redeemed: 'wecom_coupon_redeemed'
     };
     const newStatus = statusMap[eventType] || 'received';
+    const callbackTenantId = String(row.tenant_id || 'default').trim() || 'default';
     await upsertDeliveryLog(pool, {
       delivery_key: row.delivery_key,
       action_key: row.action_key,
@@ -5784,7 +5806,7 @@ export function registerGrowthRoutes(app, pool) {
       status: newStatus,
       payload: row.payload || {},
       result: Object.assign({}, row.result || {}, b)
-    });
+    }, callbackTenantId);
     if (eventMap[eventType]) {
       await insertGrowthEvent(pool, {
         event_type: eventMap[eventType],
@@ -5796,7 +5818,7 @@ export function registerGrowthRoutes(app, pool) {
         coupon_id: cleanText((row.payload || {}).coupon_id, 128),
         idempotency_key: `${eventMap[eventType]}:${providerMsgId}`,
         metadata: { provider_msg_id: providerMsgId, action_key: row.action_key, callback: b }
-      });
+      }, callbackTenantId);
     }
     return res.json({ ok: true, status: newStatus });
   });
