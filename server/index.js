@@ -8,6 +8,7 @@ import { statfs } from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID, createDecipheriv, createHash } from 'crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import multer from 'multer';
 import https from 'https';
 import { execFileSync, execSync } from 'child_process';
@@ -3272,7 +3273,8 @@ app.delete('/api/approvals/:id', authRequired, async (req, res) => {
       } catch (e2) { console.error('[delete approval] cascade hrms_leave_records:', e2?.message); }
 
       try {
-        const sr = await pool.query("select data from hrms_state where key = 'default' limit 1");
+        const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
+        const sr = await pool.query("select data from hrms_state where key = $1 limit 1", [tenantIdQ]);
         const sd = sr.rows?.[0]?.data;
         if (sd && Array.isArray(sd.leaveRecords)) {
           const before = sd.leaveRecords.length;
@@ -3282,7 +3284,7 @@ app.delete('/api/approvals/:id', authRequired, async (req, res) => {
             return true;
           });
           if (sd.leaveRecords.length < before) {
-            await pool.query("update hrms_state set data = $1 where key = 'default'", [sd]);
+            await pool.query("update hrms_state set data = $1 where key = $2", [sd, tenantIdQ]);
           }
         }
       } catch (e3) { console.error('[delete approval] cascade state.leaveRecords:', e3?.message); }
@@ -4776,7 +4778,7 @@ app.post('/api/checkin', authRequired, async (req, res) => {
     if (storeName) {
       // Look up store location
       try {
-        const sr = await pool.query("select data from hrms_state where key = 'default' limit 1");
+        const sr = await pool.query("select data from hrms_state where key = $1 limit 1", [req.tenantId || req.user?.tenant_id || 'default']);
         const state = sr.rows?.[0]?.data || {};
         const stores = Array.isArray(state.stores) ? state.stores : [];
         const store = stores.find(s => String(s?.name || '') === storeName);
@@ -5889,19 +5891,24 @@ function cleanupLegacyTestState(state0) {
   return { state, changed };
 }
 
-// tenantId 默认 'default'，与现有调用方(未传参)行为完全一致，零风险。
-// 仅当未来调用方显式传入其他租户key时才会读取该租户独立的state行。
-async function getSharedState(tenantId = 'default') {
-  const key = String(tenantId || 'default').trim() || 'default';
+// 大量历史调用点(getSharedState()/saveSharedState()/mergeSharedStateFields())未显式传tenantId。
+// 用 AsyncLocalStorage 在 authRequired 里按请求设置租户上下文，作为这些调用点的默认值兜底，
+// 这样无需逐一修改150+处调用，未登录/无上下文(后台任务)的调用仍落回'default'，行为不变。
+const tenantContext = new AsyncLocalStorage();
+function resolveTenantIdDefault(tenantId) {
+  return String(tenantId || tenantContext.getStore() || 'default').trim() || 'default';
+}
+
+async function getSharedState(tenantId) {
+  const key = resolveTenantIdDefault(tenantId);
   const r = await pool.query('select data from hrms_state where key = $1 limit 1', [key]);
   const row = r.rows?.[0] || null;
   return row?.data && typeof row.data === 'object' ? row.data : null;
 }
 
-// tenantId 默认 'default'，与现有调用方(未传参)行为完全一致，零风险。
-async function saveSharedState(nextData, tenantId = 'default') {
+async function saveSharedState(nextData, tenantId) {
   if (!nextData || typeof nextData !== 'object' || !Object.keys(nextData).length) return;
-  const key = String(tenantId || 'default').trim() || 'default';
+  const key = resolveTenantIdDefault(tenantId);
 
   // 使用显式事务 + FOR UPDATE + 乐观锁，避免调用方传入陈旧 state 覆盖并发修改
   // （与 mergeSharedStateFields 一致的事务保护模式）
@@ -5952,9 +5959,9 @@ async function saveSharedState(nextData, tenantId = 'default') {
  * @param {Object} [arrayIdFields]  对 array 字段指定去重 key，如 { pointRecords: 'id', dailyReports: ['store','date'] }
  */
 // tenantId 默认 'default'，与现有调用方(未传参)行为完全一致，零风险。
-async function mergeSharedStateFields(patches, arrayIdFields = {}, tenantId = 'default') {
+async function mergeSharedStateFields(patches, arrayIdFields = {}, tenantId) {
   if (!patches || typeof patches !== 'object' || !Object.keys(patches).length) return;
-  const key = String(tenantId || 'default').trim() || 'default';
+  const key = resolveTenantIdDefault(tenantId);
 
   // 原子合并 hrms_state：使用显式事务 + FOR UPDATE + 乐观锁（updated_at）
   // 避免 auto-commit 模式下 FOR UPDATE 锁在 SELECT 后即释放导致的丢失更新竞态
@@ -14612,6 +14619,9 @@ async function authRequired(req, res, next) {
     // 旧token(改造前签发)没有tenant_id字段，兜底归入default租户，保持现有行为不变。
     req.tenantId = String(payload.tenant_id || 'default').trim() || 'default';
 
+    // 用 AsyncLocalStorage 把租户上下文挂到本次请求的整条异步调用链上，
+    // 让 getSharedState()/saveSharedState() 等未显式传tenantId的历史调用点也能拿到正确租户。
+    return await tenantContext.run(req.tenantId, async () => {
     // Single-device login: validate session nonce
     const nonce = String(payload.sn || '').trim();
     const uname = String(payload.username || '').trim();
@@ -14662,6 +14672,7 @@ async function authRequired(req, res, next) {
     }
 
     next();
+    });
   } catch (e) {
     return res.status(401).json({ error: 'unauthorized' });
   }
@@ -14682,6 +14693,8 @@ async function authRequiredOrQueryToken(req, res, next) {
   try {
     const payload = jwt.verify(token, JWT_SECRET);
     req.user = payload;
+    req.tenantId = String(payload.tenant_id || 'default').trim() || 'default';
+    return await tenantContext.run(req.tenantId, async () => {
     const nonce = String(payload.sn || '').trim();
     const uname = String(payload.username || '').trim();
     if (nonce && uname) {
@@ -14728,6 +14741,7 @@ async function authRequiredOrQueryToken(req, res, next) {
       req.user = payload;
     }
     return next();
+    });
   } catch (e) {
     return res.status(401).json({ error: 'unauthorized' });
   }
@@ -15072,7 +15086,8 @@ async function applyStatePeopleVisibilityForRole(data, role, username, fullState
 
 app.get('/api/state', authRequired, async (req, res) => {
   try {
-    const r = await pool.query('select data from hrms_state where key = $1 limit 1', ['default']);
+    const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
+    const r = await pool.query('select data from hrms_state where key = $1 limit 1', [tenantIdQ]);
     const row = r.rows?.[0] || null;
     if (!row) return res.status(404).json({ error: 'not_found' });
     const data = row.data;
@@ -15085,7 +15100,7 @@ app.get('/api/state', authRequired, async (req, res) => {
       try {
         await pool.query(
           `update hrms_state set data = $1::jsonb, updated_at = now() where key = $2`,
-          [repairedJson, 'default']
+          [repairedJson, tenantIdQ]
         );
       } catch (saveErr) {
         console.error('[state] Failed to persist repaired state:', saveErr?.message || saveErr);
@@ -15109,7 +15124,7 @@ app.get('/api/admin/employee-password/:username', authRequired, async (req, res)
   const un = String(req.params.username || '').trim().toLowerCase();
   if (!un) return res.status(400).json({ error: 'missing_username' });
   try {
-    const state = (await getSharedState()) || {};
+    const state = (await getSharedState(req.tenantId || req.user?.tenant_id || 'default')) || {};
     const employees = Array.isArray(state.employees) ? state.employees : [];
     const users = Array.isArray(state.users) ? state.users : [];
     const emp = employees.find((e) => String(e?.username || '').trim().toLowerCase() === un);
@@ -16134,7 +16149,7 @@ async function handleLogin(req, res) {
         let finalName = u.real_name;
         let stateStore = '';
         try {
-          const sr = await pool.query('select data from hrms_state where key = $1 limit 1', ['default']);
+          const sr = await pool.query('select data from hrms_state where key = $1 limit 1', [String(u.tenant_id || 'default').trim() || 'default']);
           const sd = sr.rows?.[0]?.data;
           if (sd && typeof sd === 'object') {
             // employees first – real users live there
@@ -16185,6 +16200,8 @@ async function handleLogin(req, res) {
   }
 
   // Fallback to server-side saved state (hrms_state), so newly created employees can login.
+  // Legacy path: tenant is unknown until a username match is found, so this only ever
+  // searches the 'default' tenant's blob (non-default tenants have no legacy users here).
   try {
     const r = await pool.query('select data from hrms_state where key = $1 limit 1', ['default']);
     const data = r.rows?.[0]?.data;
@@ -16388,19 +16405,24 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
 
     // 1) Try users table first
     const r = await pool.query(
-      'SELECT id, username, real_name, role, is_active FROM users WHERE lower(username) = lower($1) LIMIT 1',
+      'SELECT id, username, real_name, role, is_active, tenant_id FROM users WHERE lower(username) = lower($1) LIMIT 1',
       [targetUsername]
     );
     const u = r.rows?.[0];
+    let targetTenantId = req.tenantId || req.user?.tenant_id || 'default';
 
     if (u) {
+      const uTenantId = String(u.tenant_id || 'default').trim() || 'default';
+      if (uTenantId !== targetTenantId) {
+        return res.status(404).json({ error: 'user_not_found', message: '目标用户不存在' });
+      }
       targetId = String(u.id || u.username);
       targetUsernameNorm = String(u.username).trim();
       finalRole = normalizeRoleForJwt(u.role);
       finalName = u.real_name || u.username;
     } else {
       // 2) Fallback: find in hrms_state.employees / users
-      const sr = await pool.query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', ['default']);
+      const sr = await pool.query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', [targetTenantId]);
       const sd = sr.rows?.[0]?.data;
       if (!sd || typeof sd !== 'object') return res.status(404).json({ error: 'user_not_found', message: '目标用户不存在' });
 
@@ -16418,10 +16440,10 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
         const empPassword = String(stateUser.password || '123456');
         const hash = await bcrypt.hash(empPassword, 10);
         await pool.query(
-          `INSERT INTO users (id, username, password_hash, real_name, role, is_active)
-           VALUES ($1, $2, $3, $4, $5, TRUE)
+          `INSERT INTO users (id, username, password_hash, real_name, role, is_active, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, TRUE, $6)
            ON CONFLICT (lower(username)) DO UPDATE SET is_active = TRUE, password_hash = EXCLUDED.password_hash, updated_at = NOW()`,
-          [targetId, targetUsernameNorm, hash, finalName, finalRole]
+          [targetId, targetUsernameNorm, hash, finalName, finalRole, targetTenantId]
         );
       } catch (createErr) {
         console.error('[login-as] create user failed:', createErr?.message || createErr);
@@ -16439,7 +16461,7 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
     // 3) Merge role/name from state (authoritative) regardless of source
     if (!needCreateUser) {
       try {
-        const sr = await pool.query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', ['default']);
+        const sr = await pool.query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', [targetTenantId]);
         const sd = sr.rows?.[0]?.data;
         if (sd && typeof sd === 'object') {
           const allState = (Array.isArray(sd.employees) ? sd.employees : []).concat(Array.isArray(sd.users) ? sd.users : []);
@@ -16460,7 +16482,7 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
     if (!persisted) return res.status(503).json({ error: 'session_persist_failed' });
 
     const token = jwt.sign(
-      { id: targetId, username: targetUsernameNorm, name: finalName, role: finalRole, sn, loginAs: true, loginAsBy: adminUsername, tenant_id: 'default' },
+      { id: targetId, username: targetUsernameNorm, name: finalName, role: finalRole, sn, loginAs: true, loginAsBy: adminUsername, tenant_id: targetTenantId },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -16476,7 +16498,7 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
 app.get('/api/stores', authRequired, async (req, res) => {
   try {
     // Read from hrms_state table (where actual data is stored)
-    const r = await pool.query('select data from hrms_state where key = $1 limit 1', ['default']);
+    const r = await pool.query('select data from hrms_state where key = $1 limit 1', [req.tenantId || req.user?.tenant_id || 'default']);
     const row = r.rows?.[0] || null;
     if (!row || !row.data) {
       return res.json({ items: [] });
