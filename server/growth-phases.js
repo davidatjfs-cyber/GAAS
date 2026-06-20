@@ -882,11 +882,11 @@ async function generateWeeklyContentSuggestion(pool, storeCode, weekStart, opera
   ];
   const summaryText = `【本周内容建议 · ${store || '全部门店'}】\n① ${items[0].theme}：${items[0].reason}\n② ${items[1].theme}：${items[1].reason}\n③ ${items[2].theme}：${items[2].reason}`;
   const saved = await pool.query(
-    `INSERT INTO growth_content_suggestions (suggestion_key, week_start, store_code, summary_json, generated_by)
-     VALUES ($1,$2,$3,$4::jsonb,$5)
+    `INSERT INTO growth_content_suggestions (suggestion_key, week_start, store_code, summary_json, generated_by, tenant_id)
+     VALUES ($1,$2,$3,$4::jsonb,$5,$6)
      ON CONFLICT (suggestion_key) DO UPDATE SET summary_json = EXCLUDED.summary_json, generated_by = EXCLUDED.generated_by, updated_at = NOW()
      RETURNING *`,
-    [`weekly_${store || 'all'}_${start}`, start, store, JSON.stringify({ store_code: store, week_start: start, items, summary_text: summaryText }), cleanText(operator, 80)]
+    [`weekly_${store || 'all'}_${start}`, start, store, JSON.stringify({ store_code: store, week_start: start, items, summary_text: summaryText }), cleanText(operator, 80), tid]
   );
   return saved.rows[0] || null;
 }
@@ -2861,11 +2861,12 @@ export function registerPhaseRoutes(app, pool) {
     const weekStart = safeDateOnly(req.query.week_start || '');
     const r = await pool.query(
       `SELECT * FROM growth_content_suggestions
-        WHERE ($1 = '' OR store_code = $1)
+        WHERE tenant_id = $3
+          AND ($1 = '' OR store_code = $1)
           AND ($2 = '' OR week_start = $2::date)
         ORDER BY week_start DESC, created_at DESC
         LIMIT 50`,
-      [storeCode, weekStart]
+      [storeCode, weekStart, getPhaseApiTenantId(req)]
     );
     return res.json({ ok: true, suggestions: r.rows });
   });
