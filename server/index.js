@@ -5225,8 +5225,8 @@ app.get('/api/dedup/stats', authRequired, async (req, res) => {
     // agent_messages duplicates
     const am = await pool.query(`SELECT count(*) as cnt FROM (
       SELECT record_id, content_type, count(*) as c FROM agent_messages
-      WHERE record_id IS NOT NULL AND record_id != ''
-      GROUP BY record_id, content_type HAVING count(*) > 1) t`);
+      WHERE record_id IS NOT NULL AND record_id != '' AND tenant_id = $1
+      GROUP BY record_id, content_type HAVING count(*) > 1) t`, [req.tenantId || req.user?.tenant_id || 'default']);
     tables.agent_messages_dup_groups = Number(am.rows[0]?.cnt || 0);
     // feishu_generic_records total
     const fg = await pool.query(`SELECT count(*) as cnt FROM feishu_generic_records`);
@@ -5252,7 +5252,8 @@ app.post('/api/dedup/cleanup', authRequired, async (req, res) => {
       DELETE FROM agent_messages a USING agent_messages b
       WHERE a.record_id IS NOT NULL AND a.record_id != ''
         AND a.record_id = b.record_id AND a.content_type = b.content_type
-        AND (a.created_at < b.created_at OR (a.created_at = b.created_at AND a.id < b.id))`);
+        AND a.tenant_id = b.tenant_id AND a.tenant_id = $1
+        AND (a.created_at < b.created_at OR (a.created_at = b.created_at AND a.id < b.id))`, [req.tenantId || req.user?.tenant_id || 'default']);
     return res.json({ ok: true, deleted: del.rowCount || 0 });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });

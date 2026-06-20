@@ -328,12 +328,12 @@ function generateTaskId() {
 }
 
 // 记录事件日志
-async function emitEvent(taskId, eventType, fromAgent, toAgent, statusBefore, statusAfter, payload = {}) {
+async function emitEvent(taskId, eventType, fromAgent, toAgent, statusBefore, statusAfter, payload = {}, tenantId = 'default') {
   try {
     await pool().query(
-      `INSERT INTO master_events (task_id, event_type, from_agent, to_agent, status_before, status_after, payload)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-      [taskId, eventType, fromAgent, toAgent, statusBefore, statusAfter, JSON.stringify(payload)]
+      `INSERT INTO master_events (task_id, event_type, from_agent, to_agent, status_before, status_after, payload, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+      [taskId, eventType, fromAgent, toAgent, statusBefore, statusAfter, JSON.stringify(payload), tenantId]
     );
   } catch (e) {
     console.error('[master] emitEvent failed:', e?.message);
@@ -341,9 +341,9 @@ async function emitEvent(taskId, eventType, fromAgent, toAgent, statusBefore, st
 }
 
 // 状态转换：验证合法性 + 更新任务 + 记录事件
-async function transitionTask(taskId, newStatus, agentName, data = {}) {
+async function transitionTask(taskId, newStatus, agentName, data = {}, tenantId = 'default') {
   try {
-    const r = await pool().query(`SELECT * FROM master_tasks WHERE task_id = $1`, [taskId]);
+    const r = await pool().query(`SELECT * FROM master_tasks WHERE task_id = $1 AND tenant_id = $2`, [taskId, tenantId]);
     const task = r.rows?.[0];
     if (!task) { console.error('[master] task not found:', taskId); return null; }
 
@@ -380,7 +380,7 @@ async function transitionTask(taskId, newStatus, agentName, data = {}) {
     if (newStatus === 'settled')      sets.push(`settled_at = NOW()`);
     if (newStatus === 'closed')       sets.push(`closed_at = NOW()`);
 
-    await pool().query(`UPDATE master_tasks SET ${sets.join(', ')} WHERE task_id = $1`, params);
+    await pool().query(`UPDATE master_tasks SET ${sets.join(', ')} WHERE task_id = $1 AND tenant_id = $${params.length + 1}`, [...params, tenantId]);
 
     // BI 异常：飞书任务结案后，将对应 anomaly_triggers 从 open 标为 closed（与列表展示一致；食安走总部单独判罚不归此路径）
     if (['closed', 'resolved', 'settled', 'completed'].includes(newStatus) && String(task.source || '').trim() === 'bi_anomaly') {
@@ -412,7 +412,7 @@ async function transitionTask(taskId, newStatus, agentName, data = {}) {
     }
 
     // 记录事件
-    await emitEvent(taskId, `status_${newStatus}`, agentName, STATUS_FLOW[newStatus]?.agent || null, currentStatus, newStatus, data);
+    await emitEvent(taskId, `status_${newStatus}`, agentName, STATUS_FLOW[newStatus]?.agent || null, currentStatus, newStatus, data, tenantId);
 
     console.log(`[master] ${taskId}: ${currentStatus} → ${newStatus} (by ${agentName})`);
     return { ...task, status: newStatus };
@@ -427,16 +427,16 @@ async function transitionTask(taskId, newStatus, agentName, data = {}) {
 // ─────────────────────────────────────────────
 
 // 创建新任务（由 Data Auditor 发现异常时调用）
-async function createTask({ source, sourceRef, category, severity, store, brand, title, detail, sourceData }) {
+async function createTask({ source, sourceRef, category, severity, store, brand, title, detail, sourceData }, tenantId = 'default') {
   const taskId = generateTaskId();
   try {
     await pool().query(
-      `INSERT INTO master_tasks (task_id, status, source, source_ref, current_agent, category, severity, store, brand, title, detail, source_data)
-       VALUES ($1, 'pending_dispatch', $2, $3, 'master', $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+      `INSERT INTO master_tasks (task_id, status, source, source_ref, current_agent, category, severity, store, brand, title, detail, source_data, tenant_id)
+       VALUES ($1, 'pending_dispatch', $2, $3, 'master', $4, $5, $6, $7, $8, $9, $10::jsonb, $11)`,
       [taskId, source || 'scheduled_audit', sourceRef || '', category, severity || 'medium',
-       store, brand, title, detail, JSON.stringify(sourceData || {})]
+       store, brand, title, detail, JSON.stringify(sourceData || {}), tenantId]
     );
-    await emitEvent(taskId, 'task_created', 'data_auditor', 'master', null, 'pending_dispatch', { category, severity, store });
+    await emitEvent(taskId, 'task_created', 'data_auditor', 'master', null, 'pending_dispatch', { category, severity, store }, tenantId);
     // 知识图谱: 写入异常→门店关系
     try { await extractAnomalyRelations({ task_id: taskId, category, severity, store, brand, title, detail, created_at: new Date() }); } catch (e) {}
     console.log(`[master] Task created: ${taskId} [${category}] ${store}`);
@@ -554,7 +554,7 @@ async function resolveAssignee(category, store, existingAssignee, sourceData) {
 // ─────────────────────────────────────────────
 
 /** 将 data_auditor 新写入的 agent_issues 同步为 master_tasks（供 Master 监听与周审计后调用） */
-export async function syncDataAuditorIssuesToMasterTasks(newIssueIds) {
+export async function syncDataAuditorIssuesToMasterTasks(newIssueIds, tenantId = 'default') {
   if (!newIssueIds?.length) return 0;
   const disabledLegacyBiCategories = [
     '实收营收异常',
@@ -570,8 +570,8 @@ export async function syncDataAuditorIssuesToMasterTasks(newIssueIds) {
   for (const issueId of newIssueIds) {
     try {
       const ir = await pool().query(
-        `SELECT * FROM agent_issues WHERE id = $1 LIMIT 1`,
-        [String(issueId)]
+        `SELECT * FROM agent_issues WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+        [String(issueId), tenantId]
       );
       const issue = ir.rows?.[0];
       if (!issue) continue;
@@ -593,8 +593,8 @@ export async function syncDataAuditorIssuesToMasterTasks(newIssueIds) {
       }
 
       const dup = await pool().query(
-        `SELECT id FROM master_tasks WHERE source_ref = $1 AND source = 'data_auditor' LIMIT 1`,
-        [String(issueId)]
+        `SELECT id FROM master_tasks WHERE source_ref = $1 AND source = 'data_auditor' AND tenant_id = $2 LIMIT 1`,
+        [String(issueId), tenantId]
       );
       if (dup.rows?.length) continue;
 
@@ -608,7 +608,7 @@ export async function syncDataAuditorIssuesToMasterTasks(newIssueIds) {
         title: issue.title,
         detail: issue.detail,
         sourceData: issue.data
-      });
+      }, tenantId);
       if (taskId) created++;
     } catch (e) {
       console.error('[master:data_auditor] Failed to sync issue to master_tasks:', e?.message);
@@ -636,7 +636,8 @@ async function masterIssuesListener() {
   try {
     // 扫描 agent_issues_reports 表中的新问题
     const r = await pool().query(
-      `SELECT * FROM agent_issues_reports WHERE status = 'pending' ORDER BY created_at ASC LIMIT 10`
+      `SELECT * FROM agent_issues_reports WHERE status = 'pending' AND tenant_id = $1 ORDER BY created_at ASC LIMIT 10`,
+      ['default']
     );
     
     for (const issue of r.rows) {
@@ -664,7 +665,8 @@ async function masterOptimizationCoordinator() {
   try {
     // 扫描待审核的优化方案
     const r = await pool().query(
-      `SELECT * FROM agent_issues_reports WHERE status = 'optimization_proposed' ORDER BY created_at ASC LIMIT 5`
+      `SELECT * FROM agent_issues_reports WHERE status = 'optimization_proposed' AND tenant_id = $1 ORDER BY created_at ASC LIMIT 5`,
+      ['default']
     );
     
     for (const issue of r.rows) {
@@ -700,7 +702,9 @@ async function masterDispatcher() {
       `SELECT * FROM master_tasks
        WHERE status = 'pending_dispatch'
          AND COALESCE(source, '') <> 'hrms_task_board'
-       ORDER BY created_at ASC LIMIT 10`
+         AND tenant_id = $1
+       ORDER BY created_at ASC LIMIT 10`,
+      ['default']
     );
     if (!r.rows?.length) return 0;
 
@@ -718,7 +722,7 @@ async function masterDispatcher() {
         assignee_username: assignee.username,
         assignee_role: assignee.role,
         dispatch_data: { assignee, dispatchedBy: 'master', reason: task.category }
-      });
+      }, 'default');
       if (updated) dispatched++;
     }
     return dispatched;
@@ -740,7 +744,8 @@ async function opsAgentListener() {
   // ── Part 1: 发送飞书通知 ──
   try {
     const r = await pool().query(
-      `SELECT * FROM master_tasks WHERE status = 'dispatched' ORDER BY created_at ASC LIMIT 10`
+      `SELECT * FROM master_tasks WHERE status = 'dispatched' AND tenant_id = $1 ORDER BY created_at ASC LIMIT 10`,
+      ['default']
     );
     for (const task of (r.rows || [])) {
       // Write task to Bitable only once (prevent duplicate writes every cycle)
@@ -752,8 +757,8 @@ async function opsAgentListener() {
               `UPDATE master_tasks
                SET source_data = COALESCE(source_data, '{}'::jsonb) || $1::jsonb,
                    updated_at = NOW()
-               WHERE task_id = $2`,
-              [JSON.stringify({ task_response_record_id: bitableRecord.record_id }), task.task_id]
+               WHERE task_id = $2 AND tenant_id = $3`,
+              [JSON.stringify({ task_response_record_id: bitableRecord.record_id }), task.task_id, 'default']
             );
           } catch (e) {
             console.error('[master:ops] persist task_response_record_id failed:', e?.message);
@@ -776,7 +781,7 @@ async function opsAgentListener() {
           console.warn(`[master:ops] Forcing ${task.task_id} to pending_response (no Feishu user after ${retries} retries)`);
           await transitionTask(task.task_id, 'pending_response', 'ops_supervisor', {
             note: `Auto-transitioned: no Feishu user found for ${task.assignee_username}`
-          });
+          }, 'default');
           _dispatchRetryCount.delete(task.task_id);
           actions++;
         }
@@ -790,8 +795,8 @@ async function opsAgentListener() {
       let isFirstDispatch = true;
       try {
         const evR = await pool().query(
-          `SELECT COUNT(*) as cnt FROM master_events WHERE task_id = $1 AND event_type = 'status_change' AND status_after = 'dispatched'`,
-          [task.task_id]
+          `SELECT COUNT(*) as cnt FROM master_events WHERE task_id = $1 AND event_type = 'status_change' AND status_after = 'dispatched' AND tenant_id = $2`,
+          [task.task_id, 'default']
         );
         isFirstDispatch = (parseInt(evR.rows[0]?.cnt || '0') === 0);
       } catch (e) {}
@@ -808,14 +813,14 @@ async function opsAgentListener() {
         console.log('[master:ops] extracted message_id:', msgId);
         await transitionTask(task.task_id, 'pending_response', 'ops_supervisor', {
           feishu_msg_id: msgId
-        });
+        }, 'default');
 
         // 记录 outbound 消息
         try {
           await pool().query(
-            `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, routed_to, content_type, content)
-             VALUES ('out','feishu',$1,'system','Master Agent','ops_supervisor','card',$2)`,
-            [fu.open_id, `异常通知卡片 [${task.task_id}] - 回复表单已发送`]
+            `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, routed_to, content_type, content, tenant_id)
+             VALUES ('out','feishu',$1,'system','Master Agent','ops_supervisor','card',$2,$3)`,
+            [fu.open_id, `异常通知卡片 [${task.task_id}] - 回复表单已发送`, 'default']
           );
         } catch (e) {}
         actions++;
@@ -828,7 +833,8 @@ async function opsAgentListener() {
   // ── Part 2: 审核反馈 ──
   try {
     const r = await pool().query(
-      `SELECT * FROM master_tasks WHERE status = 'pending_review' ORDER BY responded_at ASC LIMIT 5`
+      `SELECT * FROM master_tasks WHERE status = 'pending_review' AND tenant_id = $1 ORDER BY responded_at ASC LIMIT 5`,
+      ['default']
     );
     for (const task of (r.rows || [])) {
       const responseText = task.response_text || '';
@@ -919,7 +925,7 @@ async function opsAgentListener() {
           notes: reviewNotes.trim(),
           reviewedAt: new Date().toISOString()
         }
-      });
+      }, 'default');
 
       if (result) {
         // 通知责任人审核结果（专业格式，含判断依据）
@@ -962,13 +968,14 @@ async function opsAgentListener() {
 async function masterPostResolution() {
   try {
     const r = await pool().query(
-      `SELECT * FROM master_tasks WHERE status = 'resolved' ORDER BY resolved_at ASC LIMIT 10`
+      `SELECT * FROM master_tasks WHERE status = 'resolved' AND tenant_id = $1 ORDER BY resolved_at ASC LIMIT 10`,
+      ['default']
     );
     if (!r.rows?.length) return 0;
 
     let count = 0;
     for (const task of r.rows) {
-      const updated = await transitionTask(task.task_id, 'pending_settlement', 'master', {});
+      const updated = await transitionTask(task.task_id, 'pending_settlement', 'master', {}, 'default');
       if (updated) count++;
     }
     return count;
@@ -986,14 +993,16 @@ async function masterHandleRejected() {
       `SELECT * FROM master_tasks
        WHERE status = 'rejected'
          AND COALESCE(source, '') <> 'hrms_task_board'
-       ORDER BY resolved_at ASC LIMIT 10`
+         AND tenant_id = $1
+       ORDER BY resolved_at ASC LIMIT 10`,
+      ['default']
     );
     if (!r.rows?.length) return 0;
 
     let count = 0;
     for (const task of r.rows) {
       // 重新分派
-      const updated = await transitionTask(task.task_id, 'pending_dispatch', 'master', {});
+      const updated = await transitionTask(task.task_id, 'pending_dispatch', 'master', {}, 'default');
       if (updated) count++;
     }
     return count;
@@ -1008,7 +1017,8 @@ async function masterHandleRejected() {
 async function chiefEvaluatorListener() {
   try {
     const r = await pool().query(
-      `SELECT * FROM master_tasks WHERE status = 'pending_settlement' ORDER BY resolved_at ASC LIMIT 10`
+      `SELECT * FROM master_tasks WHERE status = 'pending_settlement' AND tenant_id = $1 ORDER BY resolved_at ASC LIMIT 10`,
+      ['default']
     );
     if (!r.rows?.length) return 0;
 
@@ -1028,7 +1038,7 @@ async function chiefEvaluatorListener() {
           settledAt: new Date().toISOString()
         },
         score_impact: 0
-      });
+      }, 'default');
 
       if (updated) {
         count++;
@@ -1218,7 +1228,8 @@ async function trainAgentListener() {
 async function masterFinalNotification() {
   try {
     const r = await pool().query(
-      `SELECT * FROM master_tasks WHERE status = 'settled' ORDER BY settled_at ASC LIMIT 10`
+      `SELECT * FROM master_tasks WHERE status = 'settled' AND tenant_id = $1 ORDER BY settled_at ASC LIMIT 10`,
+      ['default']
     );
     if (!r.rows?.length) return 0;
 
@@ -1232,7 +1243,7 @@ async function masterFinalNotification() {
         }
       }
 
-      await transitionTask(task.task_id, 'closed', 'master', {});
+      await transitionTask(task.task_id, 'closed', 'master', {}, 'default');
       count++;
     }
     return count;
@@ -1257,25 +1268,27 @@ export async function handleTaskResponse(username, text, imageUrls, parentMessag
         `SELECT * FROM master_tasks
          WHERE assignee_username = $1 AND status = 'pending_response'
          AND feishu_msg_ids ? $2
+         AND tenant_id = $3
          ORDER BY dispatched_at ASC LIMIT 1`,
-        [username, parentMessageId]
+        [username, parentMessageId, 'default']
       );
       task = r.rows?.[0];
       console.log(`[master] Task lookup by parent_message_id: ${parentMessageId}, found: ${task?.task_id || 'none'}`);
     }
-    
+
     // 降级1：通过 parentMessageId 查找但忽略 feishu_msg_ids 检查（处理空数组情况）
     if (!task && parentMessageId) {
       const r = await pool().query(
         `SELECT * FROM master_tasks
          WHERE assignee_username = $1 AND status = 'pending_response'
+         AND tenant_id = $2
          ORDER BY dispatched_at DESC LIMIT 1`,
-        [username]
+        [username, 'default']
       );
       task = r.rows?.[0];
       console.log(`[master] Task lookup fallback (has parent_id): found: ${task?.task_id || 'none'}`);
     }
-    
+
     // 降级2：无 parentMessageId 时，只处理明确的回复关键词
     if (!task && !parentMessageId) {
       const hasReplyKeyword = /(已处理|已完成|已整改|已解决|处理完|整改完毕|情况说明|原因如下|马上处理|正在处理|立即处理)/.test(String(text || '').trim());
@@ -1283,14 +1296,15 @@ export async function handleTaskResponse(username, text, imageUrls, parentMessag
         const r = await pool().query(
           `SELECT * FROM master_tasks
            WHERE assignee_username = $1 AND status = 'pending_response'
+           AND tenant_id = $2
            ORDER BY dispatched_at DESC LIMIT 1`,
-          [username]
+          [username, 'default']
         );
         task = r.rows?.[0];
         console.log(`[master] Task lookup by keyword/image: found: ${task?.task_id || 'none'}`);
       }
     }
-    
+
     if (!task) return null; // 不是任务回复，走正常agent路由
 
     // 记录反馈并推进状态
@@ -1298,7 +1312,7 @@ export async function handleTaskResponse(username, text, imageUrls, parentMessag
       response_text: text || '',
       response_images: Array.isArray(imageUrls) ? imageUrls : [],
       parent_message_id: parentMessageId // 记录关联关系
-    });
+    }, 'default');
 
     if (updated) {
       console.log(`[master] Task ${task.task_id} response received from ${username} via reply`);
@@ -1367,8 +1381,9 @@ async function calculateWeeklyScore(username) {
        FROM master_tasks
        WHERE assignee_username = $1
          AND status IN ('settled', 'closed')
-         AND created_at > NOW() - INTERVAL '7 days'`,
-      [username]
+         AND created_at > NOW() - INTERVAL '7 days'
+         AND tenant_id = $2`,
+      [username, 'default']
     );
     const totalImpact = Number(r.rows?.[0]?.total_impact || 0);
     return Math.max(0, Math.min(100, 100 + totalImpact));
@@ -1391,7 +1406,7 @@ export function startMasterAgent() {
   // 初始化任务序号
   (async () => {
     try {
-      const r = await pool().query(`SELECT MAX(id) as maxid FROM master_tasks`);
+      const r = await pool().query(`SELECT MAX(id) as maxid FROM master_tasks WHERE tenant_id = $1`, ['default']);
       _taskSeq = Number(r.rows?.[0]?.maxid || 0);
     } catch (e) {}
   })();
@@ -1404,12 +1419,14 @@ export function startMasterAgent() {
       
       // 新增：处理手动创建的 pending_audit 任务（如营销活动）
       const manualTasks = await pool().query(
-        `SELECT * FROM master_tasks 
-         WHERE status = 'pending_audit' 
+        `SELECT * FROM master_tasks
+         WHERE status = 'pending_audit'
          AND source IN ('manual_campaign', 'manual', 'hq_planning')
-         ORDER BY created_at ASC LIMIT 5`
+         AND tenant_id = $1
+         ORDER BY created_at ASC LIMIT 5`,
+        ['default']
       );
-      
+
       for (const task of (manualTasks.rows || [])) {
         // 自动推进到 pending_dispatch 状态
         await transitionTask(task.task_id, 'pending_dispatch', 'data_auditor', {
@@ -1418,7 +1435,7 @@ export function startMasterAgent() {
             reason: '手动创建任务自动通过审计',
             timestamp: new Date().toISOString()
           }
-        });
+        }, 'default');
         console.log(`[master:audit] Auto-approved manual task ${task.task_id}`);
       }
     } catch (e) {
@@ -1431,14 +1448,14 @@ export function startMasterAgent() {
     try {
       // 新增：动态调整任务优先级（超时任务自动升级）
       await pool().query(`
-        UPDATE master_tasks 
-        SET severity = CASE 
+        UPDATE master_tasks
+        SET severity = CASE
           WHEN severity = 'low' THEN 'medium'
           WHEN severity = 'medium' THEN 'high'
           ELSE severity
         END,
         escalation_level = escalation_level + 1,
-        escalation_history = COALESCE(escalation_history, '[]'::jsonb) || 
+        escalation_history = COALESCE(escalation_history, '[]'::jsonb) ||
           jsonb_build_object(
             'timestamp', NOW()::text,
             'from', severity,
@@ -1446,10 +1463,11 @@ export function startMasterAgent() {
             'reason', '任务超时自动升级'
           )::jsonb
         WHERE status IN ('pending_dispatch', 'dispatched', 'pending_response')
-        AND timeout_at IS NOT NULL 
+        AND timeout_at IS NOT NULL
         AND timeout_at < NOW()
         AND escalation_level < 3
-      `);
+        AND tenant_id = $1
+      `, ['default']);
       
       const d = await masterDispatcher();
       if (d > 0) console.log(`[master:tick] Dispatched ${d} tasks`);
@@ -1658,15 +1676,17 @@ export function registerMasterRoutes(app, authRequired) {
     const role = String(req.user?.role || '').trim();
     if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
     try {
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
       const [tasksR, eventsR] = await Promise.all([
         pool().query(`
-          SELECT status, COUNT(*) as cnt, 
+          SELECT status, COUNT(*) as cnt,
                  COUNT(*) FILTER (WHERE severity='high') as high_cnt
-          FROM master_tasks 
+          FROM master_tasks
           WHERE created_at > NOW() - INTERVAL '30 days'
+            AND tenant_id = $1
           GROUP BY status ORDER BY status
-        `),
-        pool().query(`SELECT COUNT(*) as total FROM master_events WHERE created_at > NOW() - INTERVAL '7 days'`)
+        `, [tenantIdQ]),
+        pool().query(`SELECT COUNT(*) as total FROM master_events WHERE created_at > NOW() - INTERVAL '7 days' AND tenant_id = $1`, [tenantIdQ])
       ]);
 
       const statusCounts = {};
@@ -1698,6 +1718,7 @@ export function registerMasterRoutes(app, authRequired) {
         where.push(`assignee_username = ${push(username)}`);
       }
       if (status && status !== 'all') where.push(`status = ${push(status)}`);
+      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
 
       const r = await pool().query(
         `SELECT * FROM master_tasks WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ${push(limit)}`,
@@ -1713,14 +1734,16 @@ export function registerMasterRoutes(app, authRequired) {
     if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
     const hours = Math.max(1, Math.min(24 * 30, Number(req.query?.hours) || 24));
     const tables = ['daily_reports', 'sales_raw', 'table_visit_records', 'master_tasks'];
+    const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
     try {
       const tableCounts = [];
       for (const table of tables) {
+        const tenantClause = table === 'master_tasks' ? ' AND tenant_id = $2' : '';
         const r = await pool().query(
           `SELECT COUNT(*)::int AS cnt, MAX(created_at) AS latest
              FROM ${table}
-            WHERE created_at >= NOW() - ($1::text || ' hours')::interval`,
-          [String(hours)]
+            WHERE created_at >= NOW() - ($1::text || ' hours')::interval${tenantClause}`,
+          tenantClause ? [String(hours), tenantIdQ] : [String(hours)]
         );
         tableCounts.push({
           table,
@@ -1739,10 +1762,11 @@ export function registerMasterRoutes(app, authRequired) {
          FROM agent_issues_reports
          WHERE issue_type = 'DATA_SOURCE_INSUFFICIENT'
            AND created_at >= NOW() - ($1::text || ' hours')::interval
+           AND tenant_id = $2
          GROUP BY COALESCE(details::jsonb->>'dataSourceType', 'unknown'), COALESCE(context->>'store', '')
          ORDER BY issue_count DESC, data_source ASC, store ASC
          LIMIT 200`,
-        [String(hours)]
+        [String(hours), tenantIdQ]
       );
 
       return res.json({
@@ -1764,9 +1788,10 @@ export function registerMasterRoutes(app, authRequired) {
     const eventLimit = Math.max(1, Math.min(50000, Number(req.query?.eventLimit) || 10000));
     const format = String(req.query?.format || 'json').trim().toLowerCase();
     try {
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
       const [tasksR, eventsR] = await Promise.all([
-        pool().query(`SELECT * FROM master_tasks ORDER BY created_at DESC LIMIT $1`, [taskLimit]),
-        pool().query(`SELECT * FROM master_events ORDER BY created_at DESC LIMIT $1`, [eventLimit])
+        pool().query(`SELECT * FROM master_tasks WHERE tenant_id = $2 ORDER BY created_at DESC LIMIT $1`, [taskLimit, tenantIdQ]),
+        pool().query(`SELECT * FROM master_events WHERE tenant_id = $2 ORDER BY created_at DESC LIMIT $1`, [eventLimit, tenantIdQ])
       ]);
 
       const tasks = tasksR.rows || [];
@@ -1821,9 +1846,10 @@ export function registerMasterRoutes(app, authRequired) {
     const taskId = String(req.params?.taskId || '').trim();
     if (!taskId) return res.status(400).json({ error: 'missing_task_id' });
     try {
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
       const [taskR, eventsR] = await Promise.all([
-        pool().query(`SELECT * FROM master_tasks WHERE task_id = $1`, [taskId]),
-        pool().query(`SELECT * FROM master_events WHERE task_id = $1 ORDER BY created_at ASC`, [taskId])
+        pool().query(`SELECT * FROM master_tasks WHERE task_id = $1 AND tenant_id = $2`, [taskId, tenantIdQ]),
+        pool().query(`SELECT * FROM master_events WHERE task_id = $1 AND tenant_id = $2 ORDER BY created_at ASC`, [taskId, tenantIdQ])
       ]);
       if (!taskR.rows?.length) return res.status(404).json({ error: 'not_found' });
       return res.json({ task: taskR.rows[0], events: eventsR.rows || [] });
@@ -1837,7 +1863,7 @@ export function registerMasterRoutes(app, authRequired) {
     const limit = Math.max(1, Math.min(200, Number(req.query?.limit) || 50));
     try {
       const r = await pool().query(
-        `SELECT * FROM master_events ORDER BY created_at DESC LIMIT $1`, [limit]
+        `SELECT * FROM master_events WHERE tenant_id = $2 ORDER BY created_at DESC LIMIT $1`, [limit, req.tenantId || req.user?.tenant_id || 'default']
       );
       return res.json({ items: r.rows || [] });
     } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
@@ -1858,7 +1884,7 @@ export function registerMasterRoutes(app, authRequired) {
         store, brand: brand || inferBrandFromStoreName(store),
         title, detail: detail || '',
         sourceData: { createdBy: req.user?.username }
-      });
+      }, req.tenantId || req.user?.tenant_id || 'default');
       return res.json({ ok: true, taskId });
     } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
   });

@@ -252,7 +252,7 @@ async function callLLMTiered(messages, role, options = {}) {
 // 1. Strategy Planner (策略生成)
 // ─────────────────────────────────────────────
 
-export async function generateActionPlan({ store, goal, role, createdBy, daysBack = 30 }) {
+export async function generateActionPlan({ store, goal, role, createdBy, daysBack = 30, tenantId = 'default' }) {
   if (!isHqRole(role)) {
     return { ok: false, error: 'forbidden', message: '仅总部角色可生成行动计划' };
   }
@@ -272,9 +272,9 @@ export async function generateActionPlan({ store, goal, role, createdBy, daysBac
     // Step 2: 收集最近异常任务
     const recentTasks = await pool().query(
       `SELECT task_id, category, severity, title, status, score_impact, created_at
-       FROM master_tasks WHERE store = $1 AND created_at > NOW() - ($2::int * INTERVAL '1 day')
+       FROM master_tasks WHERE store = $1 AND created_at > NOW() - ($2::int * INTERVAL '1 day') AND tenant_id = $3
        ORDER BY created_at DESC LIMIT 20`,
-      [store, windowDays]
+      [store, windowDays, tenantId]
     );
 
     const tasksSummary = (recentTasks.rows || []).map(t =>
@@ -284,9 +284,9 @@ export async function generateActionPlan({ store, goal, role, createdBy, daysBac
     // Step 3: 收集最近绩效数据
     const recentScores = await pool().query(
       `SELECT username, role, total_score, period, summary
-       FROM agent_scores WHERE store = $1 AND created_at > NOW() - ($2::int * INTERVAL '1 day')
+       FROM agent_scores WHERE store = $1 AND created_at > NOW() - ($2::int * INTERVAL '1 day') AND tenant_id = $3
        ORDER BY created_at DESC LIMIT 10`,
-      [store, Math.max(windowDays, 60)]
+      [store, Math.max(windowDays, 60), tenantId]
     );
 
     const scoresSummary = (recentScores.rows || []).map(s =>
@@ -737,7 +737,7 @@ export function registerHqPlannerRoutes(app, authRequired) {
     if (!isHqRole(role)) return res.status(403).json({ error: 'forbidden' });
     const { store, goal } = req.body || {};
     if (!store) return res.status(400).json({ error: 'missing_store' });
-    const result = await generateActionPlan({ store, goal, role, createdBy: req.user?.username });
+    const result = await generateActionPlan({ store, goal, role, createdBy: req.user?.username, tenantId: req.tenantId || req.user?.tenant_id || 'default' });
     return res.json(result);
   });
 

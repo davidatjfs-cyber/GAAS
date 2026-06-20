@@ -7513,7 +7513,7 @@ async function fetchRechargeFromDailyReportsPg(storeName, reportDate) {
   }
 }
 
-export async function runDataAuditor(checkMode = 'daily') {
+export async function runDataAuditor(checkMode = 'daily', tenantId = 'default') {
   await refreshBiAgentRuntimeConfig();
   const state = await getSharedState();
   const reports = Array.isArray(state?.dailyReports) ? state.dailyReports : [];
@@ -7811,8 +7811,9 @@ export async function runDataAuditor(checkMode = 'daily') {
              ($3 <> '' AND created_at > NOW() - INTERVAL '7 days')
              OR ($3 = '' AND created_at > NOW() - INTERVAL '24 hours')
            )
+           AND tenant_id = $5
          LIMIT 1`,
-        [issue.store, issue.category, issueDate, auditeeRole]
+        [issue.store, issue.category, issueDate, auditeeRole, tenantId]
       );
       if (existing.rows?.length) continue;
 
@@ -7842,18 +7843,18 @@ export async function runDataAuditor(checkMode = 'daily') {
         assignee = await findStoreManager(state, issue.store);
       }
       const r = await pool().query(
-        `INSERT INTO agent_issues (agent, brand, store, category, severity, title, detail, data, assignee_username)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9) RETURNING id`,
+        `INSERT INTO agent_issues (agent, brand, store, category, severity, title, detail, data, assignee_username, tenant_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10) RETURNING id`,
         [issue.agent, issue.brand, issue.store, issue.category, issue.severity,
-         issue.title, issue.detail, JSON.stringify(issue.data), assignee]
+         issue.title, issue.detail, JSON.stringify(issue.data), assignee, tenantId]
       );
 
       // 同步输出标准化 KPI 雷达报警 JSON 给 Master Agent（用于编排调度）
       const radarPayload = buildKpiRadarAlertJson(issue);
       await pool().query(
-        `INSERT INTO agent_messages (direction, channel, sender_name, routed_to, content_type, content, agent_data)
-         VALUES ('out', 'system', 'BI Radar', 'master', 'kpi_radar_alert', $1, $2::jsonb)`,
-        [JSON.stringify(radarPayload), JSON.stringify({ route: 'master', kpiRadar: true, payload: radarPayload })]
+        `INSERT INTO agent_messages (direction, channel, sender_name, routed_to, content_type, content, agent_data, tenant_id)
+         VALUES ('out', 'system', 'BI Radar', 'master', 'kpi_radar_alert', $1, $2::jsonb, $3)`,
+        [JSON.stringify(radarPayload), JSON.stringify({ route: 'master', kpiRadar: true, payload: radarPayload }), tenantId]
       );
 
       created++;
@@ -8305,7 +8306,7 @@ async function getStoresForBrand(brandName) {
   return stores.filter(s => s.brand === brandName);
 }
 
-export async function runChiefEvaluator(period) {
+export async function runChiefEvaluator(period, tenantId = 'default') {
   const p = String(period || '').trim();
   if (!p) return { error: 'missing_period' };
   // 旧 HRMS 周评（2026-W03 这类）已被 anomaly_rollups_v2 取代。
@@ -8371,12 +8372,12 @@ export async function runChiefEvaluator(period) {
 
       try {
         await pool().query(
-          `INSERT INTO agent_scores (brand, store, username, name, role, period, score_model, total_score, breakdown, deductions, summary)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11)
+          `INSERT INTO agent_scores (brand, store, username, name, role, period, score_model, total_score, breakdown, deductions, summary, tenant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12)
            ON CONFLICT (brand, store, username, period)
            DO UPDATE SET name=EXCLUDED.name, total_score=EXCLUDED.total_score, breakdown=EXCLUDED.breakdown, deductions=EXCLUDED.deductions, summary=EXCLUDED.summary, feishu_notified=FALSE, updated_at=NOW()`,
           [brand, storeName, username, mgrName, role, p, 'new_model', totalScore,
-           JSON.stringify(breakdown), JSON.stringify(deductions), summary]
+           JSON.stringify(breakdown), JSON.stringify(deductions), summary, tenantId]
         );
       } catch (e) { console.error('[HR] upsert score failed:', e?.message); }
 
@@ -11559,7 +11560,7 @@ export function clearAgentCache() {
   console.log('[agents] Cache cleared');
 }
 
-async function runAgentEvalSuite({ createdBy = '', suiteName = 'default' } = {}) {
+async function runAgentEvalSuite({ createdBy = '', suiteName = 'default', tenantId = 'default' } = {}) {
   const rows = [];
   for (const c of AGENT_EVAL_CASES) {
     let routed = 'general';
@@ -11600,9 +11601,9 @@ async function runAgentEvalSuite({ createdBy = '', suiteName = 'default' } = {})
 
   try {
     await pool().query(
-      `INSERT INTO agent_eval_runs (suite_name, summary, created_by)
-       VALUES ($1, $2::jsonb, $3)`,
-      [String(suiteName || 'default'), JSON.stringify(summary), String(createdBy || '')]
+      `INSERT INTO agent_eval_runs (suite_name, summary, created_by, tenant_id)
+       VALUES ($1, $2::jsonb, $3, $4)`,
+      [String(suiteName || 'default'), JSON.stringify(summary), String(createdBy || ''), tenantId]
     );
   } catch (e) {
     console.error('[agents] runAgentEvalSuite persist failed:', e?.message || e);
@@ -11648,11 +11649,12 @@ export function registerAgentRoutes(app, authRequired) {
       return res.status(403).json({ error: 'forbidden' });
     }
     try {
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
       const [issuesR, scoresR, auditsR, messagesR, usersR, genericR] = await Promise.all([
-        pool().query(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status='open') as open, COUNT(*) FILTER (WHERE severity='high' AND status='open') as high_open FROM agent_issues`),
-        pool().query(`SELECT COUNT(*) as total, ROUND(AVG(total_score)::numeric, 1) as avg_score FROM agent_scores WHERE created_at > NOW() - INTERVAL '30 days'`),
-        pool().query(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE result='fail') as failed, COUNT(*) FILTER (WHERE duplicate_of IS NOT NULL) as duplicates FROM agent_visual_audits WHERE created_at > NOW() - INTERVAL '30 days'`),
-        pool().query(`SELECT COUNT(*) as total FROM agent_messages WHERE created_at > NOW() - INTERVAL '7 days'`),
+        pool().query(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status='open') as open, COUNT(*) FILTER (WHERE severity='high' AND status='open') as high_open FROM agent_issues WHERE tenant_id = $1`, [tenantIdQ]),
+        pool().query(`SELECT COUNT(*) as total, ROUND(AVG(total_score)::numeric, 1) as avg_score FROM agent_scores WHERE created_at > NOW() - INTERVAL '30 days' AND tenant_id = $1`, [tenantIdQ]),
+        pool().query(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE result='fail') as failed, COUNT(*) FILTER (WHERE duplicate_of IS NOT NULL) as duplicates FROM agent_visual_audits WHERE created_at > NOW() - INTERVAL '30 days' AND tenant_id = $1`, [tenantIdQ]),
+        pool().query(`SELECT COUNT(*) as total FROM agent_messages WHERE created_at > NOW() - INTERVAL '7 days' AND tenant_id = $1`, [tenantIdQ]),
         pool().query(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE registered=TRUE) as registered FROM feishu_users`),
         pool().query(`SELECT COUNT(*) as total FROM feishu_generic_records`)
       ]);
@@ -11694,6 +11696,7 @@ export function registerAgentRoutes(app, authRequired) {
     const shToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
     const actPick = String(req.query?.activityDate || '').trim();
     const summaryYmd = /^\d{4}-\d{2}-\d{2}$/.test(actPick) ? actPick : shToday;
+    const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
     const p = pool();
     try {
       const [
@@ -11711,8 +11714,10 @@ export function registerAgentRoutes(app, authRequired) {
           .query(
             `SELECT id, priority, alert_type, title, LEFT(body, 400) AS body_preview, sent_at
              FROM agent_admin_alert_log
+             WHERE tenant_id = $1
              ORDER BY sent_at DESC
-             LIMIT 35`
+             LIMIT 35`,
+            [tenantIdQ]
           )
           .catch(() => ({ rows: [] })),
         p
@@ -11735,15 +11740,17 @@ export function registerAgentRoutes(app, authRequired) {
           .query(
             `SELECT job_key, run_ymd, ok, LEFT(COALESCE(error,''), 200) AS error_preview, created_at
              FROM agent_v2_cron_runs
+             WHERE tenant_id = $1
              ORDER BY created_at DESC
-             LIMIT 45`
+             LIMIT 45`,
+            [tenantIdQ]
           )
           .catch(() => ({ rows: [] })),
         p
           .query(
             `SELECT COUNT(*)::int AS c FROM agent_task_logs
-             WHERE (created_at AT TIME ZONE 'Asia/Shanghai')::date = $1::date`,
-            [summaryYmd]
+             WHERE (created_at AT TIME ZONE 'Asia/Shanghai')::date = $1::date AND tenant_id = $2`,
+            [summaryYmd, tenantIdQ]
           )
           .catch(() => ({ rows: [{ c: 0 }] })),
         p
@@ -11757,8 +11764,8 @@ export function registerAgentRoutes(app, authRequired) {
         p
           .query(
             `SELECT COUNT(*)::int AS c FROM agent_admin_alert_log
-             WHERE DATE(timezone('Asia/Shanghai', sent_at)) = $1::date`,
-            [summaryYmd]
+             WHERE DATE(timezone('Asia/Shanghai', sent_at)) = $1::date AND tenant_id = $2`,
+            [summaryYmd, tenantIdQ]
           )
           .catch(() => ({ rows: [{ c: 0 }] })),
         p
@@ -11778,7 +11785,9 @@ export function registerAgentRoutes(app, authRequired) {
              FROM agent_scores
              WHERE score_model = 'anomaly_rollups_v2'
                AND COALESCE(is_invalidated, false) = false
-               AND updated_at > NOW() - INTERVAL '14 days'`
+               AND updated_at > NOW() - INTERVAL '14 days'
+               AND tenant_id = $1`,
+            [tenantIdQ]
           )
           .catch(() => ({ rows: [{ avg_bi: null, rollup_rows: 0 }] }))
       ]);
@@ -11821,6 +11830,7 @@ export function registerAgentRoutes(app, authRequired) {
       return res.status(403).json({ error: 'forbidden' });
     }
     const date = String(req.query?.date || '').trim() || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
+    const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
     const p = pool();
     try {
       const [taskR, rhythmR, anomalyR, mtR] = await Promise.all([
@@ -11838,9 +11848,10 @@ export function registerAgentRoutes(app, authRequired) {
                LIMIT 1
              ) fu ON true
              WHERE (t.created_at AT TIME ZONE 'Asia/Shanghai')::date = $1::date
+               AND t.tenant_id = $2
              ORDER BY t.created_at DESC
              LIMIT 80`,
-            [date]
+            [date, tenantIdQ]
           )
           .catch(() => ({ rows: [] })),
         p
@@ -11879,11 +11890,12 @@ export function registerAgentRoutes(app, authRequired) {
                ORDER BY updated_at DESC NULLS LAST
                LIMIT 1
              ) fu ON true
-             WHERE (timezone('Asia/Shanghai', COALESCE(m.dispatched_at, m.created_at)))::date = $1::date
-                OR (m.resolved_at IS NOT NULL AND (m.resolved_at AT TIME ZONE 'Asia/Shanghai')::date = $1::date)
+             WHERE ((timezone('Asia/Shanghai', COALESCE(m.dispatched_at, m.created_at)))::date = $1::date
+                OR (m.resolved_at IS NOT NULL AND (m.resolved_at AT TIME ZONE 'Asia/Shanghai')::date = $1::date))
+               AND m.tenant_id = $2
              ORDER BY m.created_at DESC
              LIMIT 50`,
-            [date]
+            [date, tenantIdQ]
           )
           .catch(() => ({ rows: [] }))
       ]);
@@ -11983,9 +11995,10 @@ export function registerAgentRoutes(app, authRequired) {
                   updated_at, store, role
            FROM agent_scores
            WHERE LOWER(TRIM(username)) = LOWER(TRIM($1))
+             AND tenant_id = $3
            ORDER BY updated_at DESC
            LIMIT $2`,
-          [resolvedUsername, lim]
+          [resolvedUsername, lim, req.tenantId || req.user?.tenant_id || 'default']
         )
         .catch(() => ({ rows: [] }));
       let notif = { rows: [] };
@@ -12129,6 +12142,7 @@ export function registerAgentRoutes(app, authRequired) {
         return bd && typeof bd === 'object' ? bd : {};
       };
 
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
       const monthRollupWhere = `LOWER(TRIM(username)) = LOWER(TRIM($1))
        AND score_model = 'anomaly_rollups_v2'
        AND COALESCE(is_invalidated, false) = false
@@ -12139,7 +12153,8 @@ export function registerAgentRoutes(app, authRequired) {
            AND substring(period from 6 for 10)::date <= $3::date)
          OR
          (POSITION('__' IN period) > 0 AND split_part(period, '__', 2) = $4)
-       )`;
+       )
+       AND tenant_id = $5`;
 
       const latestRollupInMonth = await p
         .query(
@@ -12148,7 +12163,7 @@ export function registerAgentRoutes(app, authRequired) {
            WHERE ${monthRollupWhere}
            ORDER BY updated_at DESC NULLS LAST
            LIMIT 1`,
-          [resolvedUsername, monthStart, monthEnd, monthKey]
+          [resolvedUsername, monthStart, monthEnd, monthKey, tenantIdQ]
         )
         .catch(() => ({ rows: [] }));
 
@@ -12163,7 +12178,7 @@ export function registerAgentRoutes(app, authRequired) {
         const allWeeks = await p
           .query(
             `SELECT breakdown FROM agent_scores WHERE ${monthRollupWhere} ORDER BY period ASC`,
-            [resolvedUsername, monthStart, monthEnd, monthKey]
+            [resolvedUsername, monthStart, monthEnd, monthKey, tenantIdQ]
           )
           .catch(() => ({ rows: [] }));
         let sumWeek = 0;
@@ -12196,9 +12211,10 @@ export function registerAgentRoutes(app, authRequired) {
            WHERE LOWER(TRIM(username)) = LOWER(TRIM($1))
              AND score_model = 'anomaly_rollups_v2'
              AND period LIKE 'week_%'
+             AND tenant_id = $2
            ORDER BY updated_at DESC NULLS LAST
            LIMIT 1`,
-          [resolvedUsername]
+          [resolvedUsername, tenantIdQ]
         )
         .catch(() => ({ rows: [] }));
 
@@ -12251,7 +12267,7 @@ export function registerAgentRoutes(app, authRequired) {
     if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
     try {
       const suiteName = String(req.body?.suiteName || 'default').trim() || 'default';
-      const result = await runAgentEvalSuite({ createdBy: String(req.user?.username || ''), suiteName });
+      const result = await runAgentEvalSuite({ createdBy: String(req.user?.username || ''), suiteName, tenantId: req.tenantId || req.user?.tenant_id || 'default' });
       return res.json({ ok: true, result });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -12266,9 +12282,10 @@ export function registerAgentRoutes(app, authRequired) {
       const r = await pool().query(
         `SELECT id, suite_name, summary, created_by, created_at
          FROM agent_eval_runs
+         WHERE tenant_id = $2
          ORDER BY created_at DESC
          LIMIT $1`,
-        [limit]
+        [limit, req.tenantId || req.user?.tenant_id || 'default']
       );
       return res.json({ items: r.rows || [] });
     } catch (e) {
@@ -12289,6 +12306,7 @@ export function registerAgentRoutes(app, authRequired) {
       if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) {
         where.push(`(owner_username = ${push(username)} OR requester_username = ${push(username)})`);
       }
+      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
       const r = await pool().query(
         `SELECT id, task_type, status, store, brand, requester_username, route, reason, owner_username, notify_count, due_at, created_at, updated_at
@@ -12311,7 +12329,8 @@ export function registerAgentRoutes(app, authRequired) {
     const username = String(req.user?.username || '').trim();
     const note = String(req.body?.note || '').trim();
     try {
-      const owned = await pool().query(`SELECT owner_username, requester_username FROM agent_autonomous_tasks WHERE id = $1 LIMIT 1`, [id]);
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
+      const owned = await pool().query(`SELECT owner_username, requester_username FROM agent_autonomous_tasks WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tenantIdQ]);
       const row = owned.rows?.[0] || {};
       const allowed = ['admin', 'hq_manager', 'hr_manager'].includes(role)
         || String(row.owner_username || '') === username
@@ -12323,8 +12342,8 @@ export function registerAgentRoutes(app, authRequired) {
          SET status = 'resolved',
              action_plan = jsonb_set(COALESCE(action_plan, '{}'::jsonb), '{resolutionNote}', to_jsonb($1::text), true),
              updated_at = NOW()
-         WHERE id = $2`,
-        [note || 'resolved', id]
+         WHERE id = $2 AND tenant_id = $3`,
+        [note || 'resolved', id, tenantIdQ]
       );
       return res.json({ ok: true });
     } catch (e) {
@@ -12342,6 +12361,7 @@ export function registerAgentRoutes(app, authRequired) {
       const push = (v) => { params.push(v); return `$${params.length}`; };
       const where = [];
       if (route) where.push(`route = ${push(route)}`);
+      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
       const r = await pool().query(
         `SELECT id, route, username, query_text, passed, rewrite_count, created_at
@@ -12390,6 +12410,7 @@ export function registerAgentRoutes(app, authRequired) {
       const push = v => { params.push(v); return `$${params.length}`; };
       if (role === 'store_manager' || role === 'store_production_manager') where.push(`assignee_username = ${push(username)}`);
       if (status && status !== 'all') where.push(`status = ${push(status)}`);
+      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
       const r = await pool().query(`SELECT * FROM agent_issues WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ${push(limit)}`, params);
       return res.json({ items: r.rows || [] });
     } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
@@ -12401,7 +12422,7 @@ export function registerAgentRoutes(app, authRequired) {
     const resolution = String(req.body?.resolution || '').trim();
     if (!id) return res.status(400).json({ error: 'missing_id' });
     try {
-      await pool().query(`UPDATE agent_issues SET status='resolved', resolution=$1, resolved_at=NOW(), updated_at=NOW() WHERE id=$2`, [resolution, id]);
+      await pool().query(`UPDATE agent_issues SET status='resolved', resolution=$1, resolved_at=NOW(), updated_at=NOW() WHERE id=$2 AND tenant_id=$3`, [resolution, id, req.tenantId || req.user?.tenant_id || 'default']);
       return res.json({ ok: true });
     } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
   });
@@ -12460,10 +12481,11 @@ export function registerAgentRoutes(app, authRequired) {
         `SELECT total_score, breakdown, summary, period, brand, store
          FROM agent_scores
          WHERE lower(username) = lower($1) AND period = $2 AND period ~ '^[0-9]{4}-[0-9]{2}$'
+           AND tenant_id = $3
          ORDER BY CASE WHEN score_model = 'new_model_monthly' THEN 0 ELSE 1 END,
                   updated_at DESC NULLS LAST
          LIMIT 1`,
-        [scoresUsername, personalPeriod]
+        [scoresUsername, personalPeriod, req.tenantId || req.user?.tenant_id || 'default']
       ).catch(() => ({ rows: [] }));
 
       const rowM = asMonth.rows?.[0];
@@ -12567,6 +12589,7 @@ export function registerAgentRoutes(app, authRequired) {
       let where = ['1=1'], params = [];
       const push = v => { params.push(v); return `$${params.length}`; };
       if (role === 'store_manager' || role === 'store_production_manager') where.push(`username = ${push(username)}`);
+      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
       const r = await pool().query(`SELECT * FROM agent_scores WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ${push(limit)}`, params);
       return res.json({ items: r.rows || [] });
     } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
@@ -12581,6 +12604,7 @@ export function registerAgentRoutes(app, authRequired) {
       let where = ['1=1'], params = [];
       const push = v => { params.push(v); return `$${params.length}`; };
       if (role === 'store_manager' || role === 'store_production_manager') where.push(`username = ${push(username)}`);
+      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
       const r = await pool().query(`SELECT * FROM agent_visual_audits WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ${push(limit)}`, params);
       return res.json({ items: r.rows || [] });
     } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
@@ -12592,7 +12616,7 @@ export function registerAgentRoutes(app, authRequired) {
     const reason = String(req.body?.reason || '').trim();
     if (!username || !reason) return res.status(400).json({ error: 'missing_params' });
     try {
-      const r = await pool().query(`INSERT INTO agent_appeals (username, reason) VALUES ($1,$2) RETURNING id`, [username, reason]);
+      const r = await pool().query(`INSERT INTO agent_appeals (username, reason, tenant_id) VALUES ($1,$2,$3) RETURNING id`, [username, reason, req.tenantId || req.user?.tenant_id || 'default']);
       return res.json({ ok: true, id: r.rows?.[0]?.id });
     } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
   });
@@ -12605,6 +12629,7 @@ export function registerAgentRoutes(app, authRequired) {
       let where = ['1=1'], params = [];
       const push = v => { params.push(v); return `$${params.length}`; };
       if (role === 'store_manager' || role === 'store_production_manager') where.push(`username = ${push(username)}`);
+      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
       const r = await pool().query(`SELECT * FROM agent_appeals WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ${push(limit)}`, params);
       return res.json({ items: r.rows || [] });
     } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
@@ -12620,6 +12645,7 @@ export function registerAgentRoutes(app, authRequired) {
       if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) {
         where.push(`sender_username = ${push(req.user?.username || '')}`);
       }
+      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
       const r = await pool().query(
         `SELECT id, direction, channel, sender_username, sender_name, routed_to, content_type, content, agent_response, created_at
          FROM agent_messages WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ${push(limit)}`, params);
@@ -12656,19 +12682,20 @@ export function registerAgentRoutes(app, authRequired) {
     if (role !== 'admin' && role !== 'hq_manager') return res.status(403).json({ error: 'forbidden' });
     try {
       const mode = String(req.body?.mode || 'full').trim().toLowerCase();
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
       let issuesCreated = 0;
       let newIssueIds = [];
       if (mode === 'daily') {
-        const r = await runDataAuditor('daily');
+        const r = await runDataAuditor('daily', tenantIdQ);
         issuesCreated = r.issuesCreated;
         newIssueIds = r.newIssueIds || [];
       } else if (mode === 'weekly') {
-        const r = await runDataAuditor('weekly');
+        const r = await runDataAuditor('weekly', tenantIdQ);
         issuesCreated = r.issuesCreated;
         newIssueIds = r.newIssueIds || [];
       } else {
-        const d = await runDataAuditor('daily');
-        const w = await runDataAuditor('weekly');
+        const d = await runDataAuditor('daily', tenantIdQ);
+        const w = await runDataAuditor('weekly', tenantIdQ);
         issuesCreated = d.issuesCreated + w.issuesCreated;
         newIssueIds = [...(d.newIssueIds || []), ...(w.newIssueIds || [])];
       }
@@ -12731,7 +12758,7 @@ export function registerAgentRoutes(app, authRequired) {
     const period = String(req.body?.period || '').trim();
     if (!period) return res.status(400).json({ error: 'missing_period' });
     try {
-      const result = await runChiefEvaluator(period);
+      const result = await runChiefEvaluator(period, req.tenantId || req.user?.tenant_id || 'default');
       const pushed = await pushScoresToFeishu();
       return res.json({ ...result, feishuPushed: pushed });
     } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }

@@ -239,6 +239,8 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
         weeklyWhere += ` AND LOWER(TRIM(username)) = LOWER(TRIM($${weeklyParams.length + 1}))`;
         weeklyParams.push(username);
       }
+      weeklyWhere += ` AND tenant_id = $${weeklyParams.length + 1}`;
+      weeklyParams.push(req.tenantId || req.user?.tenant_id || 'default');
       const weekEnd = period.includes('-') ? `${period}-${String(new Date(Number(period.split('-')[0]), Number(period.split('-')[1]), 0).getDate()).padStart(2, '0')}` : period;
       const monthKey = period.replace('-', '');
       if (period.match(/^\d{4}-\d{2}$/)) {
@@ -271,6 +273,8 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
         mtWhere += ` AND LOWER(TRIM(COALESCE(mt.assignee_username, ''))) = LOWER(TRIM($${mtParams.length + 1}))`;
         mtParams.push(username);
       }
+      mtWhere += ` AND mt.tenant_id = $${mtParams.length + 1}`;
+      mtParams.push(req.tenantId || req.user?.tenant_id || 'default');
 
       const filings = await p.query(
         `SELECT mt.task_id, mt.store, mt.assignee_username, mt.assignee_role, mt.source, mt.category, mt.title, mt.detail,
@@ -362,6 +366,7 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
     }
 
     const adminUser = String(req.user?.username || '').trim();
+    const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
     const p = pool();
 
     try {
@@ -378,8 +383,8 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
       let createdAt;
       if (source_type === 'agent_scores_weekly') {
         const chk = await p.query(
-          `SELECT id, created_at FROM agent_scores WHERE id::text = $1 LIMIT 1`,
-          [String(source_id)]
+          `SELECT id, created_at FROM agent_scores WHERE id::text = $1 AND tenant_id = $2 LIMIT 1`,
+          [String(source_id), tenantIdQ]
         );
         if (!chk.rows?.length) {
           await p.query('ROLLBACK');
@@ -392,8 +397,8 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
         }
       } else if (source_type === 'master_tasks_filing') {
         const chk = await p.query(
-          `SELECT task_id, dispatched_at FROM master_tasks WHERE task_id = $1 LIMIT 1`,
-          [String(source_id)]
+          `SELECT task_id, dispatched_at FROM master_tasks WHERE task_id = $1 AND tenant_id = $2 LIMIT 1`,
+          [String(source_id), tenantIdQ]
         );
         if (!chk.rows?.length) {
           await p.query('ROLLBACK');
@@ -444,8 +449,8 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
       // Mark invalidation
       if (source_type === 'agent_scores_weekly') {
         await p.query(
-          `UPDATE agent_scores SET is_invalidated = TRUE, invalidated_at = NOW() WHERE id::text = $1`,
-          [String(source_id)]
+          `UPDATE agent_scores SET is_invalidated = TRUE, invalidated_at = NOW() WHERE id::text = $1 AND tenant_id = $2`,
+          [String(source_id), tenantIdQ]
         );
       }
 
@@ -637,8 +642,8 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
         let recordSummary = '';
         try {
           const wk = await p.query(
-            `SELECT summary, deductions FROM agent_scores WHERE id::text = $1 LIMIT 1`,
-            [String(source_id)]
+            `SELECT summary, deductions FROM agent_scores WHERE id::text = $1 AND tenant_id = $2 LIMIT 1`,
+            [String(source_id), tenantIdQ]
           );
           const wr = wk.rows?.[0];
           if (wr) {

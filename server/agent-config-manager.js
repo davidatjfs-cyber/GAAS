@@ -675,8 +675,9 @@ export function registerAgentConfigRoutes(app, authRequired) {
         from agent_configs c
         left join agent_prompt_templates t on c.prompt_template_id = t.id
         left join agent_reply_templates rt on c.reply_template_id = rt.id
+        where c.tenant_id = $1
         order by c.agent_id
-      `);
+      `, [req.tenantId || req.user?.tenant_id || 'default']);
       res.json({ configs: r.rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -688,12 +689,15 @@ export function registerAgentConfigRoutes(app, authRequired) {
     try {
       if (agentId) {
         const r = await pool().query(
-          `select * from agent_reply_templates where agent_id = $1 order by is_builtin desc, updated_at desc`,
-          [agentId]
+          `select * from agent_reply_templates where agent_id = $1 and tenant_id = $2 order by is_builtin desc, updated_at desc`,
+          [agentId, req.tenantId || req.user?.tenant_id || 'default']
         );
         return res.json({ templates: r.rows });
       }
-      const r = await pool().query('select * from agent_reply_templates order by agent_id, is_builtin desc, updated_at desc');
+      const r = await pool().query(
+        'select * from agent_reply_templates where tenant_id = $1 order by agent_id, is_builtin desc, updated_at desc',
+        [req.tenantId || req.user?.tenant_id || 'default']
+      );
       return res.json({ templates: r.rows });
     } catch (e) {
       return res.status(500).json({ error: e.message });
@@ -710,10 +714,10 @@ export function registerAgentConfigRoutes(app, authRequired) {
     try {
       const key = `custom_reply_${agentId}_${Date.now()}`;
       const r = await pool().query(
-        `insert into agent_reply_templates (template_key, agent_id, name, content, enabled, is_builtin)
-         values ($1, $2, $3, $4, $5, false)
+        `insert into agent_reply_templates (template_key, agent_id, name, content, enabled, is_builtin, tenant_id)
+         values ($1, $2, $3, $4, $5, false, $6)
          returning *`,
-        [key, agentId, name, content, enabled]
+        [key, agentId, name, content, enabled, req.tenantId || req.user?.tenant_id || 'default']
       );
       return res.json({ template: r.rows[0] });
     } catch (e) {
@@ -726,15 +730,16 @@ export function registerAgentConfigRoutes(app, authRequired) {
     const id = String(req.params?.id || '').trim();
     if (!id) return res.status(400).json({ error: 'missing_id' });
     try {
-      const old = await pool().query('select * from agent_reply_templates where id = $1 limit 1', [id]);
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
+      const old = await pool().query('select * from agent_reply_templates where id = $1 and tenant_id = $2 limit 1', [id, tenantIdQ]);
       if (!old.rows?.length) return res.status(404).json({ error: 'not_found' });
       const row = old.rows[0];
       if (row.is_builtin) {
         const enabled2 = req.body?.enabled === undefined ? row.enabled : !!req.body.enabled;
         const name2 = String(req.body?.name || row.name).trim() || row.name;
         const r = await pool().query(
-          `update agent_reply_templates set name = $1, enabled = $2, updated_at = now() where id = $3 returning *`,
-          [name2, enabled2, id]
+          `update agent_reply_templates set name = $1, enabled = $2, updated_at = now() where id = $3 and tenant_id = $4 returning *`,
+          [name2, enabled2, id, tenantIdQ]
         );
         return res.json({ template: r.rows[0], locked_content: true });
       }
@@ -742,8 +747,8 @@ export function registerAgentConfigRoutes(app, authRequired) {
       const content2 = String(req.body?.content || row.content).trim() || row.content;
       const enabled2 = req.body?.enabled === undefined ? row.enabled : !!req.body.enabled;
       const r = await pool().query(
-        `update agent_reply_templates set name = $1, content = $2, enabled = $3, updated_at = now() where id = $4 returning *`,
-        [name2, content2, enabled2, id]
+        `update agent_reply_templates set name = $1, content = $2, enabled = $3, updated_at = now() where id = $4 and tenant_id = $5 returning *`,
+        [name2, content2, enabled2, id, tenantIdQ]
       );
       return res.json({ template: r.rows[0] });
     } catch (e) {
@@ -756,12 +761,13 @@ export function registerAgentConfigRoutes(app, authRequired) {
     const id = String(req.params?.id || '').trim();
     if (!id) return res.status(400).json({ error: 'missing_id' });
     try {
-      const old = await pool().query('select * from agent_reply_templates where id = $1 limit 1', [id]);
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
+      const old = await pool().query('select * from agent_reply_templates where id = $1 and tenant_id = $2 limit 1', [id, tenantIdQ]);
       if (!old.rows?.length) return res.status(404).json({ error: 'not_found' });
       if (old.rows[0].is_builtin) return res.status(400).json({ error: 'builtin_template_cannot_delete' });
-      const used = await pool().query('select count(*)::int as c from agent_configs where reply_template_id = $1', [id]);
+      const used = await pool().query('select count(*)::int as c from agent_configs where reply_template_id = $1 and tenant_id = $2', [id, tenantIdQ]);
       if (Number(used.rows?.[0]?.c || 0) > 0) return res.status(400).json({ error: 'template_in_use' });
-      await pool().query('delete from agent_reply_templates where id = $1', [id]);
+      await pool().query('delete from agent_reply_templates where id = $1 and tenant_id = $2', [id, tenantIdQ]);
       return res.json({ ok: true });
     } catch (e) {
       return res.status(500).json({ error: e.message });
@@ -778,11 +784,12 @@ export function registerAgentConfigRoutes(app, authRequired) {
     const hasReplyTemplateField = Object.prototype.hasOwnProperty.call(body, 'reply_template_id');
     const replyTemplateId = hasReplyTemplateField ? String(body.reply_template_id || '').trim() : null;
     try {
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
       let nextPrompt = String(system_prompt || '').trim();
       if (hasTemplateField && promptTemplateId) {
         const t = await pool().query(
-          `select id, content from agent_prompt_templates where id = $1 and enabled = true limit 1`,
-          [promptTemplateId]
+          `select id, content from agent_prompt_templates where id = $1 and enabled = true and tenant_id = $2 limit 1`,
+          [promptTemplateId, tenantIdQ]
         );
         if (!t.rows?.length) return res.status(400).json({ error: 'invalid_prompt_template_id' });
         nextPrompt = String(t.rows[0].content || '').trim();
@@ -790,8 +797,8 @@ export function registerAgentConfigRoutes(app, authRequired) {
 
       if (hasReplyTemplateField && replyTemplateId) {
         const rt = await pool().query(
-          `select id from agent_reply_templates where id = $1 and enabled = true limit 1`,
-          [replyTemplateId]
+          `select id from agent_reply_templates where id = $1 and enabled = true and tenant_id = $2 limit 1`,
+          [replyTemplateId, tenantIdQ]
         );
         if (!rt.rows?.length) return res.status(400).json({ error: 'invalid_reply_template_id' });
       }
@@ -806,8 +813,8 @@ export function registerAgentConfigRoutes(app, authRequired) {
             prompt_template_id = case when $6 then nullif($7, '')::uuid else prompt_template_id end,
             reply_template_id = case when $8 then nullif($9, '')::uuid else reply_template_id end,
             updated_at = now()
-        where agent_id = $10 returning *
-      `, [nextPrompt, nextModelName, temperature, enabled, schedule_interval, hasTemplateField, promptTemplateId, hasReplyTemplateField, replyTemplateId, agentId]);
+        where agent_id = $10 and tenant_id = $11 returning *
+      `, [nextPrompt, nextModelName, temperature, enabled, schedule_interval, hasTemplateField, promptTemplateId, hasReplyTemplateField, replyTemplateId, agentId, tenantIdQ]);
       clearAgentConfigCache();
       res.json({ config: r.rows[0] });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -820,12 +827,15 @@ export function registerAgentConfigRoutes(app, authRequired) {
     try {
       if (agentId) {
         const r = await pool().query(
-          `select * from agent_prompt_templates where agent_id = $1 order by is_builtin desc, updated_at desc`,
-          [agentId]
+          `select * from agent_prompt_templates where agent_id = $1 and tenant_id = $2 order by is_builtin desc, updated_at desc`,
+          [agentId, req.tenantId || req.user?.tenant_id || 'default']
         );
         return res.json({ templates: r.rows });
       }
-      const r = await pool().query('select * from agent_prompt_templates order by agent_id, is_builtin desc, updated_at desc');
+      const r = await pool().query(
+        'select * from agent_prompt_templates where tenant_id = $1 order by agent_id, is_builtin desc, updated_at desc',
+        [req.tenantId || req.user?.tenant_id || 'default']
+      );
       return res.json({ templates: r.rows });
     } catch (e) {
       return res.status(500).json({ error: e.message });
@@ -842,10 +852,10 @@ export function registerAgentConfigRoutes(app, authRequired) {
     try {
       const key = `custom_${agentId}_${Date.now()}`;
       const r = await pool().query(
-        `insert into agent_prompt_templates (template_key, agent_id, name, content, enabled, is_builtin)
-         values ($1, $2, $3, $4, $5, false)
+        `insert into agent_prompt_templates (template_key, agent_id, name, content, enabled, is_builtin, tenant_id)
+         values ($1, $2, $3, $4, $5, false, $6)
          returning *`,
-        [key, agentId, name, content, enabled]
+        [key, agentId, name, content, enabled, req.tenantId || req.user?.tenant_id || 'default']
       );
       return res.json({ template: r.rows[0] });
     } catch (e) {
@@ -858,7 +868,8 @@ export function registerAgentConfigRoutes(app, authRequired) {
     const id = String(req.params?.id || '').trim();
     if (!id) return res.status(400).json({ error: 'missing_id' });
     try {
-      const old = await pool().query('select * from agent_prompt_templates where id = $1 limit 1', [id]);
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
+      const old = await pool().query('select * from agent_prompt_templates where id = $1 and tenant_id = $2 limit 1', [id, tenantIdQ]);
       if (!old.rows?.length) return res.status(404).json({ error: 'not_found' });
       const row = old.rows[0];
 
@@ -866,8 +877,8 @@ export function registerAgentConfigRoutes(app, authRequired) {
         const enabled2 = req.body?.enabled === undefined ? row.enabled : !!req.body.enabled;
         const name2 = String(req.body?.name || row.name).trim() || row.name;
         const r = await pool().query(
-          `update agent_prompt_templates set name = $1, enabled = $2, updated_at = now() where id = $3 returning *`,
-          [name2, enabled2, id]
+          `update agent_prompt_templates set name = $1, enabled = $2, updated_at = now() where id = $3 and tenant_id = $4 returning *`,
+          [name2, enabled2, id, tenantIdQ]
         );
         return res.json({ template: r.rows[0], locked_content: true });
       }
@@ -876,8 +887,8 @@ export function registerAgentConfigRoutes(app, authRequired) {
       const content2 = String(req.body?.content || row.content).trim() || row.content;
       const enabled2 = req.body?.enabled === undefined ? row.enabled : !!req.body.enabled;
       const r = await pool().query(
-        `update agent_prompt_templates set name = $1, content = $2, enabled = $3, updated_at = now() where id = $4 returning *`,
-        [name2, content2, enabled2, id]
+        `update agent_prompt_templates set name = $1, content = $2, enabled = $3, updated_at = now() where id = $4 and tenant_id = $5 returning *`,
+        [name2, content2, enabled2, id, tenantIdQ]
       );
       return res.json({ template: r.rows[0] });
     } catch (e) {
@@ -890,14 +901,15 @@ export function registerAgentConfigRoutes(app, authRequired) {
     const id = String(req.params?.id || '').trim();
     if (!id) return res.status(400).json({ error: 'missing_id' });
     try {
-      const old = await pool().query('select * from agent_prompt_templates where id = $1 limit 1', [id]);
+      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
+      const old = await pool().query('select * from agent_prompt_templates where id = $1 and tenant_id = $2 limit 1', [id, tenantIdQ]);
       if (!old.rows?.length) return res.status(404).json({ error: 'not_found' });
       if (old.rows[0].is_builtin) return res.status(400).json({ error: 'builtin_template_cannot_delete' });
 
-      const used = await pool().query('select count(*)::int as c from agent_configs where prompt_template_id = $1', [id]);
+      const used = await pool().query('select count(*)::int as c from agent_configs where prompt_template_id = $1 and tenant_id = $2', [id, tenantIdQ]);
       if (Number(used.rows?.[0]?.c || 0) > 0) return res.status(400).json({ error: 'template_in_use' });
 
-      await pool().query('delete from agent_prompt_templates where id = $1', [id]);
+      await pool().query('delete from agent_prompt_templates where id = $1 and tenant_id = $2', [id, tenantIdQ]);
       return res.json({ ok: true });
     } catch (e) {
       return res.status(500).json({ error: e.message });
@@ -1037,7 +1049,10 @@ export function registerAgentConfigRoutes(app, authRequired) {
   app.get('/api/admin/agents/rules', authRequired, async (req, res) => {
     if (!assertAdmin(req, res)) return;
     try {
-      const r = await pool().query('select * from agent_rules order by enabled desc, updated_at desc');
+      const r = await pool().query(
+        'select * from agent_rules where tenant_id = $1 order by enabled desc, updated_at desc',
+        [req.tenantId || req.user?.tenant_id || 'default']
+      );
       res.json({ rules: r.rows });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -1052,8 +1067,8 @@ export function registerAgentConfigRoutes(app, authRequired) {
       const r = await pool().query(`
         update agent_rules
         set category = $1, assignee_role = $2, normal_deduction = $3, major_deduction = $4, enabled = $5, updated_at = now()
-        where id = $6 returning *
-      `, [category, assignee_role, normal_deduction, major_deduction, enabled, id]);
+        where id = $6 and tenant_id = $7 returning *
+      `, [category, assignee_role, normal_deduction, major_deduction, enabled, id, req.tenantId || req.user?.tenant_id || 'default']);
       clearAgentRuleCache();
       res.json({ rule: r.rows[0] });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1064,9 +1079,9 @@ export function registerAgentConfigRoutes(app, authRequired) {
     const { category, assignee_role, normal_deduction, major_deduction, enabled } = req.body;
     try {
       const r = await pool().query(`
-        insert into agent_rules (category, assignee_role, normal_deduction, major_deduction, enabled)
-        values ($1, $2, $3, $4, $5) returning *
-      `, [category, assignee_role, normal_deduction, major_deduction, enabled !== false]);
+        insert into agent_rules (category, assignee_role, normal_deduction, major_deduction, enabled, tenant_id)
+        values ($1, $2, $3, $4, $5, $6) returning *
+      `, [category, assignee_role, normal_deduction, major_deduction, enabled !== false, req.tenantId || req.user?.tenant_id || 'default']);
       clearAgentRuleCache();
       res.json({ rule: r.rows[0] });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1076,7 +1091,7 @@ export function registerAgentConfigRoutes(app, authRequired) {
     if (!assertAdmin(req, res)) return;
     const id = req.params.id;
     try {
-      await pool().query('delete from agent_rules where id = $1', [id]);
+      await pool().query('delete from agent_rules where id = $1 and tenant_id = $2', [id, req.tenantId || req.user?.tenant_id || 'default']);
       clearAgentRuleCache();
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
