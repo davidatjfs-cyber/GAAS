@@ -14,9 +14,10 @@ export default function strategyExperimentRoutes(pool, authRequired) {
 r.get('/api/strategy-experiments', authRequired, async (req, res) => {
   try {
     const { status, store, limit, offset } = req.query;
-    const conditions = [];
-    const params = [];
-    let idx = 1;
+    const tenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
+    const conditions = [`e.tenant_id = $1`];
+    const params = [tenantId];
+    let idx = 2;
 
     if (status) {
       conditions.push(`e.status = $${idx++}`);
