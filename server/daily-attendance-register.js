@@ -253,8 +253,9 @@ export async function reconcileDailyReportAttendanceRegister(pool, opts) {
          WHERE status = 'approved'
            AND start_date <= $1::date AND end_date >= $1::date
            AND LOWER(TRIM(username)) = ANY($2::text[])
+           AND tenant_id = $3
          GROUP BY LOWER(TRIM(username))`,
-        [reportDate, uniqUsers]
+        [reportDate, uniqUsers, tenantId]
       );
       for (const row of lr.rows || []) leaveMap.set(String(row.u || '').trim(), Number(row.c || 0));
     } catch {
@@ -371,11 +372,11 @@ export async function reconcileDailyReportAttendanceRegister(pool, opts) {
     `INSERT INTO daily_report_attendance_register (
        store, brand, report_date, labor_total,
        front_person_days, kitchen_person_days, rest_person_days,
-       staff_snapshot, line_details, overall_status, anomaly_count, updated_at
+       staff_snapshot, line_details, overall_status, anomaly_count, updated_at, tenant_id
      ) VALUES (
        $1::text, $2::text, $3::date, $4,
        $5, $6, $7,
-       $8::jsonb, $9::jsonb, $10, $11, NOW()
+       $8::jsonb, $9::jsonb, $10, $11, NOW(), $12
      )
      ON CONFLICT (store, report_date) DO UPDATE SET
        brand = EXCLUDED.brand,
@@ -399,7 +400,8 @@ export async function reconcileDailyReportAttendanceRegister(pool, opts) {
       JSON.stringify(staffObj),
       JSON.stringify(lineDetails),
       overallStatus,
-      anomalyCount
+      anomalyCount,
+      tenantId
     ]
   );
 

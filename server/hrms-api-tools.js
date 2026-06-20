@@ -130,6 +130,7 @@ export async function getAttendance(filters = {}) {
   if (filters.startDate) { conds.push(`record_date>=$${idx++}`); vals.push(filters.startDate); }
   if (filters.endDate) { conds.push(`record_date<=$${idx++}`); vals.push(filters.endDate); }
   if (filters.status) { conds.push(`status=$${idx++}`); vals.push(filters.status); }
+  conds.push(`tenant_id=$${idx++}`); vals.push(filters.tenantId || 'default');
   const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
   try {
     const r = await pool().query(`SELECT * FROM attendance_records ${where} ORDER BY record_date DESC LIMIT $${idx}`, [...vals, filters.limit||50]);
@@ -140,8 +141,8 @@ export async function getAttendance(filters = {}) {
 export async function recordAttendance(data) {
   try {
     const r = await pool().query(
-      `INSERT INTO attendance_records (employee_username,employee_name,store,record_date,clock_in,clock_out,status,late_minutes,early_leave_minutes,overtime_minutes,notes,source)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO attendance_records (employee_username,employee_name,store,record_date,clock_in,clock_out,status,late_minutes,early_leave_minutes,overtime_minutes,notes,source,tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        ON CONFLICT (employee_username,record_date) DO UPDATE SET
          clock_out=COALESCE(EXCLUDED.clock_out,attendance_records.clock_out),
          status=EXCLUDED.status, late_minutes=EXCLUDED.late_minutes,
@@ -151,14 +152,14 @@ export async function recordAttendance(data) {
       [data.employeeUsername, data.employeeName||null, data.store||null, data.recordDate,
        data.clockIn||null, data.clockOut||null, data.status||'normal',
        data.lateMinutes||0, data.earlyLeaveMinutes||0, data.overtimeMinutes||0,
-       data.notes||null, data.source||'system']
+       data.notes||null, data.source||'system', data.tenantId || 'default']
     );
     return { success: true, record: r.rows[0] };
   } catch (e) { return { success: false, error: e?.message }; }
 }
 
 // ─── 考勤统计（HR 薪资计算用） ───
-export async function getAttendanceSummary(store, month) {
+export async function getAttendanceSummary(store, month, tenantId) {
   try {
     const startDate = `${month}-01`;
     const endDate = `${month}-31`;
@@ -171,9 +172,9 @@ export async function getAttendanceSummary(store, month) {
               SUM(overtime_minutes)::int as total_overtime_min,
               SUM(late_minutes)::int as total_late_min
        FROM attendance_records
-       WHERE store=$1 AND record_date BETWEEN $2 AND $3
+       WHERE store=$1 AND record_date BETWEEN $2 AND $3 AND tenant_id=$4
        GROUP BY employee_username, employee_name`,
-      [store, startDate, endDate]
+      [store, startDate, endDate, tenantId || 'default']
     );
     return { success: true, summary: r.rows };
   } catch (e) { return { success: false, error: e?.message }; }
@@ -277,14 +278,14 @@ export function registerHRMSApiRoutes(app, authMiddleware) {
 
   // 考勤
   app.get('/api/hrms/attendance', auth, async (req, res) => {
-    res.json(await getAttendance({ store: req.query.store, employee: req.query.employee, startDate: req.query.start_date, endDate: req.query.end_date, status: req.query.status }));
+    res.json(await getAttendance({ store: req.query.store, employee: req.query.employee, startDate: req.query.start_date, endDate: req.query.end_date, status: req.query.status, tenantId: req.tenantId || req.user?.tenant_id || 'default' }));
   });
   app.post('/api/hrms/attendance', auth, async (req, res) => {
-    res.json(await recordAttendance(req.body));
+    res.json(await recordAttendance({ ...req.body, tenantId: req.tenantId || req.user?.tenant_id || 'default' }));
   });
   app.get('/api/hrms/attendance/summary', auth, async (req, res) => {
     if (!req.query.store || !req.query.month) return res.status(400).json({ error: 'store and month required' });
-    res.json(await getAttendanceSummary(req.query.store, req.query.month));
+    res.json(await getAttendanceSummary(req.query.store, req.query.month, req.tenantId || req.user?.tenant_id || 'default'));
   });
 
   // 入离职

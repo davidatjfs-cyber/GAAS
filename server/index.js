@@ -3638,14 +3638,15 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           // 双写：休假记录同步到 hrms_leave_records 表
           try {
             await pool.query(
-              `INSERT INTO hrms_leave_records (id, username, name, store, brand, start_date, end_date, days, type, reason, status, approval_id, approved_by, approved_at, submitted_by)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'approved',$11,$12,$13,$14)
+              `INSERT INTO hrms_leave_records (id, username, name, store, brand, start_date, end_date, days, type, reason, status, approval_id, approved_by, approved_at, submitted_by, tenant_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'approved',$11,$12,$13,$14,$15)
                ON CONFLICT (id) DO UPDATE SET
                  status='approved', approved_by=$12, approved_at=$13, days=$8`,
               [rec.id, String(applicant?.username || '').trim(), String(applicantName || '').trim(),
                String(applicant?.store || '').trim(), String(applicant?.brand || '').trim(),
                startDate, endDate, days == null ? 0 : days, String(updated.payload?.type || 'leave').trim(),
-               reason, updated.id, username, new Date(hrmsNowISO()), username]
+               reason, updated.id, username, new Date(hrmsNowISO()), username,
+               req.tenantId || req.user?.tenant_id || 'default']
             );
           } catch (e) {
             console.error('[leave_records] dual-write failed:', e?.message);
@@ -4804,7 +4805,7 @@ app.post('/api/checkin', authRequired, async (req, res) => {
       [username, storeName || null, type, lat, lng, distMeters, faceMatch, faceScore, photoUrl, status]
     );
     const inserted = r.rows[0];
-    upsertEmployeeAttendanceMirrorFromCheckinRow(inserted).catch((e) => {
+    upsertEmployeeAttendanceMirrorFromCheckinRow(inserted, req.tenantId || req.user?.tenant_id || 'default').catch((e) => {
       console.error('[employee_attendance_records] dual-write failed (non-fatal):', e?.message);
       void notifyAdminsDualWriteFailure('employee_attendance_records（打卡写入镜像）', e);
     });
@@ -6378,14 +6379,14 @@ function scheduleLeaveDomainSync() {
 }
 
 /** 打卡记录写入 employee_attendance_records（与 checkin_records 同 id） */
-async function upsertEmployeeAttendanceMirrorFromCheckinRow(rec) {
+async function upsertEmployeeAttendanceMirrorFromCheckinRow(rec, tenantId) {
   if (!rec?.id) return;
   await pool.query(
     `INSERT INTO employee_attendance_records (
        id, username, store, type, check_time, latitude, longitude, distance_meters,
-       face_match, face_score, photo_url, status, note, confirmed_by, confirmed_at, created_at, synced_at
+       face_match, face_score, photo_url, status, note, confirmed_by, confirmed_at, created_at, synced_at, tenant_id
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,COALESCE($16::timestamptz, NOW()), NOW()
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,COALESCE($16::timestamptz, NOW()), NOW(), $17
      )
      ON CONFLICT (id) DO UPDATE SET
        username = EXCLUDED.username,
@@ -6419,7 +6420,8 @@ async function upsertEmployeeAttendanceMirrorFromCheckinRow(rec) {
       rec.note,
       rec.confirmed_by,
       rec.confirmed_at,
-      rec.created_at
+      rec.created_at,
+      tenantId || 'default'
     ]
   );
 }
@@ -11123,7 +11125,7 @@ app.get('/api/reports/leave-owed', authRequired, async (req, res) => {
       });
     }
 
-    const penaltyMap = await computeAttendanceMissingClockPenalties(month, store);
+    const penaltyMap = await computeAttendanceMissingClockPenalties(month, store, req.tenantId || req.user?.tenant_id || 'default');
     const rows = people.map((p) => {
       const penalty = penaltyMap.get(String(p?.username || '').trim().toLowerCase());
       const bal = calcEmployeeMonthlyLeaveBalance(state0, p, month, { penalty }) || {
@@ -11288,6 +11290,8 @@ app.get('/api/reports/attendance', authRequired, async (req, res) => {
         registerSql += ` AND TRIM(store) = TRIM($3::text)`;
         args.push(store);
       }
+      args.push(req.tenantId || req.user?.tenant_id || 'default');
+      registerSql += ` AND tenant_id = $${args.length}`;
       registerSql += ` ORDER BY report_date DESC, store ASC`;
       const rr = await pool.query(registerSql, args);
       registerRows = Array.isArray(rr.rows) ? rr.rows : [];
@@ -11345,6 +11349,8 @@ app.get('/api/reports/daily-attendance-register', authRequired, async (req, res)
       sql += ` AND TRIM(store) = TRIM($3::text)`;
       args.push(storeQ);
     }
+    args.push(req.tenantId || req.user?.tenant_id || 'default');
+    sql += ` AND tenant_id = $${args.length}`;
     sql += ` ORDER BY report_date DESC, store ASC`;
     const r = await pool.query(sql, args);
     let rows = r.rows || [];
@@ -14247,7 +14253,7 @@ const ATTENDANCE_PENALTY_START_DATE = '2026-06-01';
  * 每缺勤 1 天扣 1 天休假。返回 Map<usernameLower, { days, details:[{date,days,type,source}] }>。
  * store 仅用于圈定日报台账范围；打卡按 用户+日期 全局匹配（员工打卡归属其本人）。
  */
-async function computeAttendanceMissingClockPenalties(month, store) {
+async function computeAttendanceMissingClockPenalties(month, store, tenantId) {
   const m = safeMonthOnly(month);
   const out = new Map();
   if (!m) return out;
@@ -14260,11 +14266,13 @@ async function computeAttendanceMissingClockPenalties(month, store) {
     const wArgs = [effStart, monthEnd];
     let storeClause = '';
     if (store) { wArgs.push(store); storeClause = ` AND TRIM(store) = TRIM($3::text)`; }
+    wArgs.push(tenantId || 'default');
     const workSql = `
       SELECT DISTINCT lower(trim(ld->>'username')) AS u, report_date::text AS d
       FROM daily_report_attendance_register, LATERAL jsonb_array_elements(line_details) ld
       WHERE report_date >= $1::date AND report_date <= $2::date${storeClause}
-        AND ld->>'kind' = 'work' AND coalesce(ld->>'username','') <> ''`;
+        AND ld->>'kind' = 'work' AND coalesce(ld->>'username','') <> ''
+        AND tenant_id = $${wArgs.length}`;
     const workRows = (await pool.query(workSql, wArgs)).rows || [];
     if (!workRows.length) return out;
 
@@ -20306,7 +20314,7 @@ app.post('/api/checkin/:id/confirm', authRequired, async (req, res) => {
     );
     if (!r.rows?.length) return res.status(404).json({ error: 'not_found' });
     const updated = r.rows[0];
-    upsertEmployeeAttendanceMirrorFromCheckinRow(updated).catch((e) => {
+    upsertEmployeeAttendanceMirrorFromCheckinRow(updated, req.tenantId || req.user?.tenant_id || 'default').catch((e) => {
       console.error('[employee_attendance_records] confirm sync failed (non-fatal):', e?.message);
       void notifyAdminsDualWriteFailure('employee_attendance_records（打卡确认同步镜像）', e);
     });
@@ -20567,7 +20575,7 @@ app.get('/api/profile/attendance-overview', authRequired, async (req, res) => {
       if (Number.isFinite(n) && n > 0) restDays += n;
     });
     restDays = Number(restDays.toFixed(2));
-    const _penaltyMap = await computeAttendanceMissingClockPenalties(month, myStore);
+    const _penaltyMap = await computeAttendanceMissingClockPenalties(month, myStore, req.tenantId || req.user?.tenant_id || 'default');
     const leaveBalance = calcEmployeeMonthlyLeaveBalance(state, me, month, {
       penalty: _penaltyMap.get(String(me?.username || '').trim().toLowerCase())
     });
