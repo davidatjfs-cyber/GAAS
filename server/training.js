@@ -181,16 +181,17 @@ export async function getCrossTrackTechnicianStatus(username) {
 }
 
 // 创建一条培训指派（统一入口：管理员手动指派 / 异常触发 / 晋升要求 / 到期复训均走此函数）
-export async function createTrainingAssignment({ employeeUsername, topicId, assignedBy, dueDate, note, requirePractice, source, relatedTrackId }) {
+export async function createTrainingAssignment({ employeeUsername, topicId, assignedBy, dueDate, note, requirePractice, source, relatedTrackId, tenantId }) {
   const username = String(employeeUsername || '').trim();
   if (!username || !topicId) return null;
   const topicRes = await pool().query(`SELECT title FROM training_topics WHERE id = $1`, [topicId]);
   const topicTitle = topicRes.rows[0]?.title || '培训任务';
+  const tid = String(tenantId || 'default').trim() || 'default';
   const r = await pool().query(
-    `INSERT INTO training_assignments (employee_username, topic_id, assigned_by, due_date, note, require_practice, source, related_track_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO training_assignments (employee_username, topic_id, assigned_by, due_date, note, require_practice, source, related_track_id, tenant_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
-    [username, topicId, String(assignedBy || '').trim() || null, dueDate || null, note || '', !!requirePractice, String(source || 'manual'), relatedTrackId ? String(relatedTrackId) : null]
+    [username, topicId, String(assignedBy || '').trim() || null, dueDate || null, note || '', !!requirePractice, String(source || 'manual'), relatedTrackId ? String(relatedTrackId) : null, tid]
   );
   const row = r.rows[0];
   if (!row) return null;
@@ -600,11 +601,12 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
       const promotionRequired = promotion_required === true || promotion_required === 'true';
       const validityDays = Math.max(1, Number(validity_days) || 180);
       const levelVal = String(level || '').trim();
+      const tenantIdForInsert = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
       const result = await pool().query(
-        `INSERT INTO training_topics (title, position, description, key_points, practice_task, sort_order, created_by, kb_article_ids, store, promotion_required, validity_days, level)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `INSERT INTO training_topics (title, position, description, key_points, practice_task, sort_order, created_by, kb_article_ids, store, promotion_required, validity_days, level, tenant_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *`,
-        [title, posStr, description || '', JSON.stringify(key_points || []), practice_task || '', sort_order || 0, req.user?.username, kbIds, storeVal, promotionRequired, validityDays, levelVal]
+        [title, posStr, description || '', JSON.stringify(key_points || []), practice_task || '', sort_order || 0, req.user?.username, kbIds, storeVal, promotionRequired, validityDays, levelVal, tenantIdForInsert]
       );
       res.json({ success: true, topic: result.rows[0] });
     } catch (e) {
@@ -1146,7 +1148,8 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
           dueDate: due_date || null,
           note: note || '',
           requirePractice,
-          source: 'manual'
+          source: 'manual',
+          tenantId: req.tenantId || req.user?.tenant_id
         });
         if (row) created.push(row);
       }
@@ -2152,11 +2155,12 @@ verdict说明：passed=合格，review=需人工复核，failed=不合格需重�
       }
 
       // 保存认证记录（图谱评分始终设为 pending review，等派发人确认）
+      const certTenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
       const certResult = await pool().query(
-        `INSERT INTO training_certifications (session_id, employee_username, topic_id, media_url, media_type, ai_verdict, ai_feedback, ai_raw_response, ai_step_scores, ai_total_score, review_status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+        `INSERT INTO training_certifications (session_id, employee_username, topic_id, media_url, media_type, ai_verdict, ai_feedback, ai_raw_response, ai_step_scores, ai_total_score, review_status, tenant_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)
          RETURNING *`,
-        [id, username, session.topic_id, mediaUrl, mediaType, aiVerdict, aiFeedback || '', aiRawResponse, JSON.stringify(aiStepScores), aiTotalScore]
+        [id, username, session.topic_id, mediaUrl, mediaType, aiVerdict, aiFeedback || '', aiRawResponse, JSON.stringify(aiStepScores), aiTotalScore, certTenantId]
       );
 
       res.json({
@@ -2312,7 +2316,7 @@ export async function runCertificationExpirySweep() {
 
   try {
     const result = await pool().query(`
-      SELECT c.id, c.employee_username, c.topic_id, c.valid_until, c.certified_at, c.status, t.title
+      SELECT c.id, c.employee_username, c.topic_id, c.valid_until, c.certified_at, c.status, c.tenant_id, t.title
       FROM training_certifications c
       JOIN training_topics t ON t.id = c.topic_id
       WHERE c.manager_verdict = 'passed'
@@ -2348,7 +2352,8 @@ export async function runCertificationExpirySweep() {
         dueDate: row.valid_until,
         note: `认证「${row.title}」即将于 ${String(row.valid_until).slice(0, 10)} 到期，请完成复训重新认证。`,
         requirePractice: true,
-        source: 'recert'
+        source: 'recert',
+        tenantId: row.tenant_id
       });
       recertAssigned++;
     }

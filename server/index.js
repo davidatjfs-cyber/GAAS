@@ -3838,7 +3838,8 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
                   note: `晋升至「${newPosition}」后的岗位培训`,
                   requirePractice: true,
                   source: 'promotion_formal',
-                  relatedTrackId: trackId || null
+                  relatedTrackId: trackId || null,
+                  tenantId: req.tenantId || req.user?.tenant_id
                 });
               }
             }
@@ -3937,7 +3938,8 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
               note: `晋升至「${targetPosition}」的能力要求培训`,
               requirePractice: true,
               source: 'promotion_qualification',
-              relatedTrackId: trackId
+              relatedTrackId: trackId,
+              tenantId: req.tenantId || req.user?.tenant_id
             });
           }
 
