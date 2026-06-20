@@ -554,8 +554,9 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
         return res.status(403).json({ error: '无权限访问' });
       }
       const position = req.query.position || '';
-      const params = [];
-      let sql = `SELECT * FROM training_topics WHERE is_active = true`;
+      const tenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
+      const params = [tenantId];
+      let sql = `SELECT * FROM training_topics WHERE is_active = true AND tenant_id = $1`;
       // 门店过滤：店长/出品经理只看自己门店（或全部门店的知识点）
       const userRole = req.user?.role;
       const userStore = ['store_manager', 'store_production_manager'].includes(userRole)
