@@ -813,16 +813,17 @@ async function generateDishTrendSummary(pool, storeCode) {
   };
 }
 
-async function generateWeeklyContentSuggestion(pool, storeCode, weekStart, operator = 'system') {
+async function generateWeeklyContentSuggestion(pool, storeCode, weekStart, operator = 'system', tenantId = 'default') {
   const store = cleanText(storeCode, 128);
   const start = safeDateOnly(weekStart) || todayShanghaiYmd();
+  const tid = String(tenantId || 'default').trim() || 'default';
   const trends = await generateDishTrendSummary(pool, store);
 
   // Phase 6: Context-specific lookups before generating content
   const [smsLearnings, xhsLearnings, abRes] = await Promise.all([
     lookupLearnings(pool, { channel: 'sms', scene: '晚市', audience_tag: '7日未到店', variable: '文案风格' }),
     lookupLearnings(pool, { channel: 'xiaohongshu', variable: '内容策略' }),
-    pool.query(`SELECT * FROM ab_test_tasks WHERE ($1 = '' OR store_code = $1) AND winner IS NOT NULL ORDER BY created_at DESC LIMIT 10`, [store])
+    pool.query(`SELECT * FROM ab_test_tasks WHERE tenant_id = $2 AND ($1 = '' OR store_code = $1) AND winner IS NOT NULL ORDER BY created_at DESC LIMIT 10`, [store, tid])
   ]);
 
   const top = trends.topGrowers[0] || null;
@@ -2874,7 +2875,7 @@ export function registerPhaseRoutes(app, pool) {
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error || 'unauthorized' });
     const storeCode = cleanText(req.body?.store_code || req.query?.store_code || '51866138', 128);
     const weekStart = safeDateOnly(req.body?.week_start || req.query?.week_start || todayShanghaiYmd());
-    const suggestion = await generateWeeklyContentSuggestion(pool, storeCode, weekStart, auth.user?.username || 'system');
+    const suggestion = await generateWeeklyContentSuggestion(pool, storeCode, weekStart, auth.user?.username || 'system', getPhaseApiTenantId(req));
     const pushed = await pushWeeklySuggestionToFeishu(pool, suggestion).catch(() => ({ pushed: 0 }));
     return res.json({ ok: true, suggestion, pushed });
   });
