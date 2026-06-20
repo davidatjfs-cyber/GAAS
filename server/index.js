@@ -2267,6 +2267,8 @@ app.get('/api/agent/feishu-table-data', authRequired, async (req, res) => {
       params.push(`%${q}%`);
       where.push(`fields::text ilike $${params.length}`);
     }
+    params.push(req.tenantId || req.user?.tenant_id || 'default');
+    where.push(`tenant_id = $${params.length}`);
 
     const whereSql = where.length ? `where ${where.join(' and ')}` : '';
 
@@ -3504,10 +3506,10 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           try {
             const hash = await bcrypt.hash(empPassword, 10);
             await pool.query(
-              `INSERT INTO users (username, password_hash, real_name, role, department, position, is_active)
-               VALUES ($1, $2, $3, $4, $5, $6, true)
+              `INSERT INTO users (username, password_hash, real_name, role, department, position, is_active, tenant_id)
+               VALUES ($1, $2, $3, $4, $5, $6, true, $7)
                ON CONFLICT (username) DO UPDATE SET password_hash = $2, real_name = $3, role = $4, department = $5, position = $6, is_active = true`,
-              [newUsername, hash, empName, nextEmp.role, nextEmp.department || '', nextEmp.position || '']
+              [newUsername, hash, empName, nextEmp.role, nextEmp.department || '', nextEmp.position || '', req.tenantId || req.user?.tenant_id || 'default']
             );
             console.log('[approval/onboarding] users account created:', newUsername);
             decideExtras.userAccountCreated = true;
@@ -3520,10 +3522,10 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           }
           try {
             await pool.query(
-              `INSERT INTO feishu_users (username, name, store, role, registered)
-               VALUES ($1, $2, $3, $4, FALSE)
+              `INSERT INTO feishu_users (username, name, store, role, registered, tenant_id)
+               VALUES ($1, $2, $3, $4, FALSE, $5)
                ON CONFLICT (username) DO UPDATE SET name = $2, store = $3, role = $4`,
-              [newUsername, empName, nextEmp.store || '', nextEmp.role || '']
+              [newUsername, empName, nextEmp.store || '', nextEmp.role || '', req.tenantId || req.user?.tenant_id || 'default']
             );
             console.log('[approval/onboarding] feishu_users record created:', newUsername);
             decideExtras.feishuUsersCreated = true;
@@ -15422,7 +15424,10 @@ app.get('/api/agents/bitable-sync', authRequired, async (req, res) => {
   const role = String(req.user?.role || '').trim();
   if (!['admin', 'hq_manager', 'hr_manager', 'store_manager', 'front_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
   try {
-    const r = await pool.query(`SELECT table_id, COUNT(*) as cnt, MAX(updated_at) as last_sync FROM feishu_generic_records GROUP BY table_id ORDER BY last_sync DESC`);
+    const r = await pool.query(
+      `SELECT table_id, COUNT(*) as cnt, MAX(updated_at) as last_sync FROM feishu_generic_records WHERE tenant_id = $1 GROUP BY table_id ORDER BY last_sync DESC`,
+      [req.tenantId || req.user?.tenant_id || 'default']
+    );
     const items = (r.rows || []).map(row => ({
       tableId: row.table_id,
       name: bitableSyncDisplayName(row.table_id),
