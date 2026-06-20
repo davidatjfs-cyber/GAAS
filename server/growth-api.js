@@ -1580,6 +1580,26 @@ async function getStoreWecomConfig(pool, storeId) {
   return r.rows[0] || null;
 }
 
+// 企微小程序/webhook 等无 JWT 上下文的入口，通过 store 反查其所属租户（employees.store → tenant_id）。
+// 查不到（如全新门店尚无员工档案）时回退 'default'，与全库其它表的默认行为一致。
+let __storeTenantCache = {};
+let __storeTenantCacheAt = 0;
+export async function resolveTenantIdForStore(pool, storeId) {
+  const sid = String(storeId || '').trim();
+  if (!sid) return 'default';
+  const now = Date.now();
+  if (now - __storeTenantCacheAt > 300000) { __storeTenantCache = {}; __storeTenantCacheAt = now; }
+  if (__storeTenantCache[sid]) return __storeTenantCache[sid];
+  try {
+    const r = await pool.query('SELECT tenant_id FROM employees WHERE store = $1 AND tenant_id IS NOT NULL LIMIT 1', [sid]);
+    const tid = String(r.rows?.[0]?.tenant_id || '').trim() || 'default';
+    __storeTenantCache[sid] = tid;
+    return tid;
+  } catch (_e) {
+    return 'default';
+  }
+}
+
 async function getAllStoreWecomConfigs(pool) {
   const r = await pool.query('SELECT * FROM store_wecom_configs ORDER BY store_id');
   return r.rows;
@@ -5797,14 +5817,15 @@ export function registerGrowthRoutes(app, pool) {
     const agentId = cleanText(b.agent_id, 64);
     const senderUserId = cleanText(b.sender_userid, 128);
     if (!storeId || !corpId || !corpSecret) return res.status(400).json({ ok: false, error: 'missing store_id/corp_id/corp_secret' });
+    const tenantId = await resolveTenantIdForStore(pool, storeId);
     await pool.query(
-      `INSERT INTO store_wecom_configs (store_id, corp_id, corp_secret, agent_id, sender_userid)
-       VALUES ($1,$2,$3,$4,$5)
+      `INSERT INTO store_wecom_configs (store_id, corp_id, corp_secret, agent_id, sender_userid, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (store_id) DO UPDATE SET
          corp_id = EXCLUDED.corp_id, corp_secret = EXCLUDED.corp_secret,
          agent_id = EXCLUDED.agent_id, sender_userid = EXCLUDED.sender_userid,
          updated_at = NOW()`,
-      [storeId, corpId, corpSecret, agentId, senderUserId]
+      [storeId, corpId, corpSecret, agentId, senderUserId, tenantId]
     );
     delete __storeWecomTokenCaches[storeId];
     return res.json({ ok: true });
@@ -5830,6 +5851,7 @@ export function registerGrowthRoutes(app, pool) {
         return 0;
       }
       const eids = listData.external_userid.filter(Boolean);
+      const tenantId = await resolveTenantIdForStore(pool, storeId);
       let synced = 0;
       for (const eid of eids) {
         const detailResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/externalcontact/get?access_token=${encodeURIComponent(token)}&external_userid=${encodeURIComponent(eid)}`, { method: 'GET' });
@@ -5854,14 +5876,14 @@ export function registerGrowthRoutes(app, pool) {
           if (wc) contactPhone = wc.phone;
         }
         await pool.query(
-          `INSERT INTO wechat_work_customers (external_userid, name, phone, store_id, bind_customer_id)
-           VALUES ($1,$2,NULLIF($3,''),$4,NULL)
+          `INSERT INTO wechat_work_customers (external_userid, name, phone, store_id, bind_customer_id, tenant_id)
+           VALUES ($1,$2,NULLIF($3,''),$4,NULL,$5)
            ON CONFLICT (external_userid) WHERE external_userid IS NOT NULL AND external_userid <> '' DO UPDATE SET
              name = COALESCE(NULLIF(EXCLUDED.name,''), wechat_work_customers.name),
              phone = COALESCE(NULLIF(EXCLUDED.phone,''), wechat_work_customers.phone),
              store_id = COALESCE(NULLIF(EXCLUDED.store_id,''), wechat_work_customers.store_id),
              updated_at = NOW()`,
-          [externalUserid, name, contactPhone, storeId]
+          [externalUserid, name, contactPhone, storeId, tenantId]
         );
         if (contactPhone) {
           await pool.query(

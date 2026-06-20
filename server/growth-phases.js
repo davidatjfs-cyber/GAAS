@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { executeGrowthActionRecord } from './growth-api.js';
+import { executeGrowthActionRecord, resolveTenantIdForStore } from './growth-api.js';
 import { callLLM, sendLarkMessage } from './agents.js';
 
 const PHASE_EVENT_TYPES = new Set([
@@ -1702,8 +1702,9 @@ export function registerPhaseRoutes(app, pool) {
         const sid = cleanText(f.store_id||f.门店||'',128);
         const note = cleanText(f.note||f.备注||'',500);
         if (phone||eid) {
-          const ins = await pool.query('INSERT INTO wechat_work_customers(external_userid,name,phone,store_id,note,import_batch) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id',
-            [eid,name,phone,sid,note,batch]);
+          const tenantId = await resolveTenantIdForStore(pool, sid);
+          const ins = await pool.query('INSERT INTO wechat_work_customers(external_userid,name,phone,store_id,note,import_batch,tenant_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING RETURNING id',
+            [eid,name,phone,sid,note,batch,tenantId]);
           if (ins.rows.length) imported++;
         }
       }
@@ -1723,8 +1724,10 @@ export function registerPhaseRoutes(app, pool) {
     for (const c of customers) {
       const phone = cleanPhone(c.phone||'');
       if (phone) {
-        await pool.query('INSERT INTO wechat_work_customers(external_userid,name,phone,store_id,note,import_batch) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING',
-          [cleanText(c.external_userid,128),cleanText(c.name,200),phone,cleanText(c.store_id,128),cleanText(c.note,500),batch]);
+        const sid = cleanText(c.store_id,128);
+        const tenantId = await resolveTenantIdForStore(pool, sid);
+        await pool.query('INSERT INTO wechat_work_customers(external_userid,name,phone,store_id,note,import_batch,tenant_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING',
+          [cleanText(c.external_userid,128),cleanText(c.name,200),phone,sid,cleanText(c.note,500),batch,tenantId]);
         imported++;
       }
     }
