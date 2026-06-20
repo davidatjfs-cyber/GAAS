@@ -3213,6 +3213,21 @@ export function registerGrowthRoutes(app, pool) {
     }
   }
 
+  // 增长接口走小程序同步密钥鉴权(authMiniProgramSync)，不经过用户JWT中间件，
+  // 故req.tenantId不会自动有值。这里复用Bearer token(若管理端带了)解出tenant_id，
+  // 取不到则归default——与现网单租户行为一致，零风险。
+  function getGrowthTenantId(req) {
+    const auth = cleanText(req.headers.authorization || '', 500);
+    const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
+    if (!bearer || !process.env.JWT_SECRET) return 'default';
+    try {
+      const decoded = jwt.verify(bearer, process.env.JWT_SECRET);
+      return cleanText(decoded.tenant_id || 'default', 80) || 'default';
+    } catch (_) {
+      return 'default';
+    }
+  }
+
   async function recomputeDailyMetrics(days = 7) {
     const safeDays = Math.min(Math.max(Number(days) || 7, 1), 90);
     await pool.query(
@@ -4719,18 +4734,19 @@ export function registerGrowthRoutes(app, pool) {
     const status = cleanText(req.query.status || '', 40);
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
-    let sql = `SELECT * FROM growth_actions`;
-    const params = [];
+    const tenantId = getGrowthTenantId(req);
+    let sql = `SELECT * FROM growth_actions WHERE tenant_id = $1`;
+    const params = [tenantId];
     if (status) {
-      sql += ` WHERE status = $1`;
+      sql += ` AND status = $${params.length + 1}`;
       params.push(status);
     }
     sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
     const r = await pool.query(sql, params);
-    let countSql = `SELECT COUNT(*) as total FROM growth_actions`;
-    const countParams = [];
-    if (status) { countSql += ` WHERE status = $1`; countParams.push(status); }
+    let countSql = `SELECT COUNT(*) as total FROM growth_actions WHERE tenant_id = $1`;
+    const countParams = [tenantId];
+    if (status) { countSql += ` AND status = $2`; countParams.push(status); }
     const c = await pool.query(countSql, countParams);
     return res.json({ ok: true, actions: r.rows, total: Number(c.rows[0]?.total || 0), limit, offset });
   });
