@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { pool } from './utils/database.js';
+import { pool, resolveTenantIdDefault } from './utils/database.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -92,8 +92,8 @@ export async function createFileRecord(fileData, uploaderInfo = {}) {
       file_id, original_name, stored_name, file_type, file_size, checksum,
       source, store, brand, date_range_start, date_range_end,
       tags, metadata, uploader_username, uploader_name, upload_ip, upload_note,
-      related_task_id, validation_status
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19)
+      related_task_id, validation_status, tenant_id
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20)
     RETURNING *`,
     [
       fileId, originalName, storedName, fileType, fileSize, checksum,
@@ -103,19 +103,19 @@ export async function createFileRecord(fileData, uploaderInfo = {}) {
       JSON.stringify(metadata || {}),
       uploaderInfo.username, uploaderInfo.name, uploaderInfo.ip,
       uploadNote, relatedTaskId,
-      'pending'
+      'pending', resolveTenantIdDefault()
     ]
   );
-  
+
   return result.rows[0];
 }
 
 // 记录文件访问日志
 export async function logFileAccess(fileId, action, userInfo = {}) {
   await pool().query(
-    `INSERT INTO file_access_logs (file_id, action, username, ip_address, user_agent)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [fileId, action, userInfo.username, userInfo.ip, userInfo.userAgent]
+    `INSERT INTO file_access_logs (file_id, action, username, ip_address, user_agent, tenant_id)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [fileId, action, userInfo.username, userInfo.ip, userInfo.userAgent, resolveTenantIdDefault()]
   );
 }
 

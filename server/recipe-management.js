@@ -12,7 +12,7 @@
  *           员工端无任何配方访问途径
  */
 
-import { pool as getPool } from './utils/database.js';
+import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
 import XLSX from 'xlsx';
 function pool() { return getPool(); }
 
@@ -187,6 +187,7 @@ async function getFullRecipe(id) {
 // ─── 保存配方（新建 or 更新）─────────────────────────────────
 // components: [{ name, notes, ingredients:[{...}], steps:[{...}] }]
 async function saveRecipe({ id, dishName, brand, store, station, version, status, notes, components, username }) {
+  const tenantId = resolveTenantIdDefault();
   const client = await pool().connect();
   try {
     await client.query('BEGIN');
@@ -205,14 +206,14 @@ async function saveRecipe({ id, dishName, brand, store, station, version, status
       await client.query(`DELETE FROM recipe_components WHERE recipe_id=$1`, [recipeId]);
     } else {
       const res = await client.query(
-        `INSERT INTO recipes (dish_name, brand, store, station, version, status, notes, created_by, updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
-         ON CONFLICT (dish_name, store, version) DO UPDATE
+        `INSERT INTO recipes (dish_name, brand, store, station, version, status, notes, created_by, updated_by, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9)
+         ON CONFLICT (dish_name, store, version, tenant_id) DO UPDATE
            SET brand=EXCLUDED.brand, status=EXCLUDED.status, notes=EXCLUDED.notes,
                updated_by=EXCLUDED.updated_by, updated_at=NOW()
          RETURNING id`,
         [dishName, brand || null, store || '*', station || null, version || '1.0',
-         status || 'draft', notes || null, username]
+         status || 'draft', notes || null, username, tenantId]
       );
       recipeId = res.rows[0].id;
       await client.query(`DELETE FROM recipe_components WHERE recipe_id=$1`, [recipeId]);
@@ -224,9 +225,9 @@ async function saveRecipe({ id, dishName, brand, store, station, version, status
       if (!comp.name?.trim()) continue;
 
       const cr = await client.query(
-        `INSERT INTO recipe_components (recipe_id, name, notes, sort_order)
-         VALUES ($1,$2,$3,$4) RETURNING id`,
-        [recipeId, comp.name.trim(), comp.notes?.trim() || null, ci]
+        `INSERT INTO recipe_components (recipe_id, name, notes, sort_order, tenant_id)
+         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [recipeId, comp.name.trim(), comp.notes?.trim() || null, ci, tenantId]
       );
       const compId = cr.rows[0].id;
 
@@ -236,11 +237,11 @@ async function saveRecipe({ id, dishName, brand, store, station, version, status
         if (!ing.ingredient_name?.trim()) continue;
         await client.query(
           `INSERT INTO recipe_component_ingredients
-             (component_id, ingredient_name, quantity, unit, is_pack, notes, sort_order)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+             (component_id, ingredient_name, quantity, unit, is_pack, notes, sort_order, tenant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
           [compId, ing.ingredient_name.trim(),
            ing.quantity || null, ing.unit?.trim() || null,
-           !!ing.is_pack, ing.notes?.trim() || null, ii]
+           !!ing.is_pack, ing.notes?.trim() || null, ii, tenantId]
         );
       }
 
@@ -250,11 +251,11 @@ async function saveRecipe({ id, dishName, brand, store, station, version, status
         if (!step.instruction?.trim()) continue;
         await client.query(
           `INSERT INTO recipe_component_steps
-             (component_id, step_seq, instruction, notes, sort_order, media_url, media_type)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+             (component_id, step_seq, instruction, notes, sort_order, media_url, media_type, tenant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
           [compId, si + 1, step.instruction.trim(),
            step.notes?.trim() || null, si,
-           step.media_url?.trim() || null, step.media_type?.trim() || null]
+           step.media_url?.trim() || null, step.media_type?.trim() || null, tenantId]
         );
       }
     }

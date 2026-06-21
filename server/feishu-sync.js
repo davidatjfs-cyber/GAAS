@@ -6,6 +6,7 @@
 import { pool } from './utils/database.js';
 import { inferBrandFromStoreName } from './agents.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
+import { resolveTenantIdForStore } from './growth-api.js';
 
 let _feishuSyncFailureNotifier = null;
 /** 由 index 注册：飞书→PG 定时/按表同步失败时立刻通知 admin */
@@ -433,12 +434,13 @@ export async function syncKitchenReports(tableConfig, accessToken, reportType) {
       const brand = inferBrandFromStoreName(store);
       
       // 保存到数据库
+      const kitchenTenantId = await resolveTenantIdForStore(pool(), store);
       await pool().query(`
-        INSERT INTO kitchen_reports 
-        (store, brand, report_date, report_type, station, reporter, report_data, feishu_record_id, submitted, submit_time)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        ON CONFLICT (store, report_date, report_type, station)
-        DO UPDATE SET 
+        INSERT INTO kitchen_reports
+        (store, brand, report_date, report_type, station, reporter, report_data, feishu_record_id, submitted, submit_time, tenant_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT (store, report_date, report_type, station, tenant_id)
+        DO UPDATE SET
           reporter = EXCLUDED.reporter,
           report_data = EXCLUDED.report_data,
           feishu_record_id = EXCLUDED.feishu_record_id,
@@ -447,8 +449,8 @@ export async function syncKitchenReports(tableConfig, accessToken, reportType) {
           updated_at = NOW()
       `, [
         store, brand, new Date(date), reportType, station, responsible,
-        JSON.stringify(extractedFields), record.record_id, 
-        !!submit_time, submit_time ? new Date(submit_time) : null
+        JSON.stringify(extractedFields), record.record_id,
+        !!submit_time, submit_time ? new Date(submit_time) : null, kitchenTenantId
       ]);
       
       syncedCount++;
@@ -481,12 +483,13 @@ export async function syncMeetingReports(tableConfig, accessToken) {
       
       const brand = inferBrandFromStoreName(store);
       
+      const meetingTenantId = await resolveTenantIdForStore(pool(), store);
       await pool().query(`
-        INSERT INTO store_meeting_reports 
-        (store, brand, meeting_date, reporter, meeting_content, meeting_score, report_data, feishu_record_id, submitted, submit_time)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        ON CONFLICT (store, meeting_date)
-        DO UPDATE SET 
+        INSERT INTO store_meeting_reports
+        (store, brand, meeting_date, reporter, meeting_content, meeting_score, report_data, feishu_record_id, submitted, submit_time, tenant_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT (store, meeting_date, tenant_id)
+        DO UPDATE SET
           reporter = EXCLUDED.reporter,
           meeting_content = EXCLUDED.meeting_content,
           meeting_score = EXCLUDED.meeting_score,
@@ -498,7 +501,7 @@ export async function syncMeetingReports(tableConfig, accessToken) {
       `, [
         store, brand, new Date(date), reporter, meeting_content,
         meeting_score, JSON.stringify(extractedFields), record.record_id,
-        !!submit_time, submit_time ? new Date(submit_time) : null
+        !!submit_time, submit_time ? new Date(submit_time) : null, meetingTenantId
       ]);
       
       syncedCount++;
@@ -529,12 +532,13 @@ export async function syncMaterialReports(tableConfig, accessToken, brand) {
         continue;
       }
       
+      const materialTenantId = await resolveTenantIdForStore(pool(), store);
       await pool().query(`
-        INSERT INTO material_receiving_reports 
-        (store, brand, report_date, receiver, report_data, feishu_record_id, submitted, submit_time)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (store, brand, report_date)
-        DO UPDATE SET 
+        INSERT INTO material_receiving_reports
+        (store, brand, report_date, receiver, report_data, feishu_record_id, submitted, submit_time, tenant_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (store, brand, report_date, tenant_id)
+        DO UPDATE SET
           receiver = EXCLUDED.receiver,
           report_data = EXCLUDED.report_data,
           feishu_record_id = EXCLUDED.feishu_record_id,
@@ -544,7 +548,7 @@ export async function syncMaterialReports(tableConfig, accessToken, brand) {
       `, [
         store, brand, new Date(date), receiver,
         JSON.stringify(extractedFields), record.record_id,
-        !!submit_time, submit_time ? new Date(submit_time) : null
+        !!submit_time, submit_time ? new Date(submit_time) : null, materialTenantId
       ]);
       
       syncedCount++;
