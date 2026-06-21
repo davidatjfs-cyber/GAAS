@@ -4,6 +4,7 @@
  */
 
 import { pool } from './master-agent.js';
+import { tenantContext } from './utils/database.js';
 
 // 关键函数保护清单 - 这些函数是Agent系统的核心，必须存在且正常工作
 export const CRITICAL_FUNCTIONS = [
@@ -226,11 +227,14 @@ export class RegressionDetector {
   async saveCheckResult(results) {
     try {
       const db = pool();
-      await db.query(
-        `INSERT INTO regression_check_results (check_data, passed, created_at)
-         VALUES ($1, $2, NOW())`,
-        [JSON.stringify(results), results.passed]
-      );
+      // 代码健康检查是全局系统级任务，不属于任何租户，固定写tenant_id='default'
+      await tenantContext.run('default', async () => {
+        await db.query(
+          `INSERT INTO regression_check_results (check_data, passed, created_at, tenant_id)
+           VALUES ($1, $2, NOW(), 'default')`,
+          [JSON.stringify(results), results.passed]
+        );
+      });
     } catch (e) {
       console.error('[RegressionDetector] Error saving check result:', e);
     }
