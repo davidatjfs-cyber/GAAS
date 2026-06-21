@@ -17,6 +17,7 @@ import {
   sendLarkCard,
   inferBrandFromStoreName
 } from './agents.js';
+import { getActiveTenantIds } from './utils/database.js';
 import { calculateStoreRating, calculateEmployeeScore } from './new-scoring-model.js';
 import {
   dailyReportIlikePatterns,
@@ -329,13 +330,13 @@ function dishBrandToken(s) {
     || (t.includes('洪潮') ? '洪潮' : (t.includes('马己仙') ? '马己仙' : ''));
 }
 
-async function loadDishCostsForStores(storeNames) {
+async function loadDishCostsForStores(storeNames, tenantId = 'default') {
   const brands = [...new Set((storeNames || []).map(dishBrandToken).filter(Boolean))];
   const r = await pool().query(
     `SELECT brand, biz_type, dish_name, unit_cost
      FROM dish_library_costs
-     WHERE enabled = true${brands.length ? ` AND (brand = ANY($1) OR brand = '*')` : ''}`,
-    brands.length ? [brands] : []
+     WHERE enabled = true AND tenant_id = $1${brands.length ? ` AND (brand = ANY($2) OR brand = '*')` : ''}`,
+    brands.length ? [tenantId, brands] : [tenantId]
   );
   const m = new Map();
   for (const row of r.rows || []) {
@@ -436,19 +437,19 @@ function formatQuadrantBlock(titleZh, list, q) {
   return `**${titleZh}**\n${lines}\n\n${g}\n`;
 }
 
-function buildDishOptimizationMarkdown({ start, end, reportTitle }) {
+function buildDishOptimizationMarkdown({ start, end, reportTitle, tenantId = 'default' }) {
   return (async () => {
     const agg = await pool().query(
       `SELECT store, biz_type, dish_name,
               SUM(qty)::numeric AS qty,
               SUM(revenue)::numeric AS revenue
        FROM sales_raw
-       WHERE date >= $1::date AND date <= $2::date AND COALESCE(dish_name,'') <> ''
+       WHERE date >= $1::date AND date <= $2::date AND COALESCE(dish_name,'') <> '' AND tenant_id = $3
        GROUP BY store, biz_type, dish_name`,
-      [start, end]
+      [start, end, tenantId]
     );
     const stores = [...new Set((agg.rows || []).map((r) => r.store).filter(Boolean))];
-    const costMap = await loadDishCostsForStores(stores);
+    const costMap = await loadDishCostsForStores(stores, tenantId);
     const items = [];
     for (const r of agg.rows || []) {
       const qty = Number(r.qty || 0);
@@ -527,9 +528,10 @@ function splitMarkdownChunks(md, maxLen = 3400) {
   return out;
 }
 
-async function sendDishReportCardsToHq(fullMd, cardHeaderTitle) {
+async function sendDishReportCardsToHq(fullMd, cardHeaderTitle, tenantId = 'default') {
   const hq = await pool().query(
-    `SELECT username FROM feishu_users WHERE registered = true AND role IN ('admin','hq_manager') AND open_id NOT LIKE '%probe%'`
+    `SELECT username FROM feishu_users WHERE registered = true AND role IN ('admin','hq_manager') AND open_id NOT LIKE '%probe%' AND tenant_id = $1`,
+    [tenantId]
   );
   const chunks = splitMarkdownChunks(fullMd, 3400);
   const n = chunks.length;
@@ -565,27 +567,27 @@ async function sendDishReportCardsToHq(fullMd, cardHeaderTitle) {
   }
 }
 
-export async function sendMonthlyDishOptimizationReport(period) {
+export async function sendMonthlyDishOptimizationReport(period, tenantId = 'default') {
   const { start, end } = monthDateRange(period);
   const title = `🍽 ${period} 菜品优化月报`;
   try {
     const modUrl = new URL('../../agents-service-v2/src/services/dish-optimization-report.js', import.meta.url);
     const mod = await import(modUrl.href);
     if (typeof mod.buildDishOptimizationMarkdown === 'function') {
-      const md = await mod.buildDishOptimizationMarkdown({ start, end, reportTitle: title });
-      await sendDishReportCardsToHq(md, title);
+      const md = await mod.buildDishOptimizationMarkdown({ start, end, reportTitle: title, tenantId });
+      await sendDishReportCardsToHq(md, title, tenantId);
       console.log('[perf-jobs] dish MONTHLY (agents builder)', period);
       return;
     }
   } catch (e) {
     console.warn('[perf-jobs] agents dish-optimization import failed, fallback:', e?.message || e);
   }
-  const md = await buildDishOptimizationMarkdown({ start, end, reportTitle: title });
-  await sendDishReportCardsToHq(md, title);
+  const md = await buildDishOptimizationMarkdown({ start, end, reportTitle: title, tenantId });
+  await sendDishReportCardsToHq(md, title, tenantId);
   console.log('[perf-jobs] dish MONTHLY cards sent for', period);
 }
 
-export async function sendWeeklyDishOptimizationReport(weekStart, weekEnd) {
+export async function sendWeeklyDishOptimizationReport(weekStart, weekEnd, tenantId = 'default') {
   const title = `🍽 菜品优化周报（${weekStart}～${weekEnd}）`;
   try {
     const modUrl = new URL('../../agents-service-v2/src/services/dish-optimization-report.js', import.meta.url);
@@ -594,9 +596,10 @@ export async function sendWeeklyDishOptimizationReport(weekStart, weekEnd) {
       const md = await mod.buildDishOptimizationMarkdown({
         start: weekStart,
         end: weekEnd,
-        reportTitle: title
+        reportTitle: title,
+        tenantId
       });
-      await sendDishReportCardsToHq(md, `🍽 菜品优化周报 ${weekStart}～${weekEnd}`);
+      await sendDishReportCardsToHq(md, `🍽 菜品优化周报 ${weekStart}～${weekEnd}`, tenantId);
       console.log('[perf-jobs] dish WEEKLY (agents builder)', weekStart, weekEnd);
       return;
     }
@@ -606,9 +609,10 @@ export async function sendWeeklyDishOptimizationReport(weekStart, weekEnd) {
   const md = await buildDishOptimizationMarkdown({
     start: weekStart,
     end: weekEnd,
-    reportTitle: title
+    reportTitle: title,
+    tenantId
   });
-  await sendDishReportCardsToHq(md, `🍽 菜品优化周报 ${weekStart}～${weekEnd}`);
+  await sendDishReportCardsToHq(md, `🍽 菜品优化周报 ${weekStart}～${weekEnd}`, tenantId);
   console.log('[perf-jobs] dish WEEKLY cards sent (local fallback)', weekStart, weekEnd);
 }
 
@@ -639,11 +643,13 @@ export function startHrmsPerformanceJobs(options = {}) {
           if (_slotDishMonthlyDay1 !== moKey) {
             _slotDishMonthlyDay1 = moKey;
             const period = prevMonthPeriod(cal);
-            try {
-              await sendMonthlyDishOptimizationReport(period);
-            } catch (e) {
-              console.error('[perf-jobs] monthly dish report failed', e?.message || e);
-              await notifyHrmsPerfAdmins(`菜品优化月报（每月1日·${period}）`, e);
+            for (const tenantId of await getActiveTenantIds(pool())) {
+              try {
+                await sendMonthlyDishOptimizationReport(period, tenantId);
+              } catch (e) {
+                console.error('[perf-jobs] monthly dish report failed', e?.message || e);
+                await notifyHrmsPerfAdmins(`菜品优化月报（每月1日·${period}·${tenantId}）`, e);
+              }
             }
           }
         }
@@ -656,11 +662,13 @@ export function startHrmsPerformanceJobs(options = {}) {
           if (_slotDishWeekly !== daySlot) {
             _slotDishWeekly = daySlot;
             const { start: wkStart, end: wkEnd } = lastWeekMonSunYmd(cal.ymd);
-            try {
-              await sendWeeklyDishOptimizationReport(wkStart, wkEnd);
-            } catch (e) {
-              console.error('[perf-jobs] weekly dish report failed', e?.message || e);
-              await notifyHrmsPerfAdmins(`菜品优化周报（${wkStart}～${wkEnd}）`, e);
+            for (const tenantId of await getActiveTenantIds(pool())) {
+              try {
+                await sendWeeklyDishOptimizationReport(wkStart, wkEnd, tenantId);
+              } catch (e) {
+                console.error('[perf-jobs] weekly dish report failed', e?.message || e);
+                await notifyHrmsPerfAdmins(`菜品优化周报（${wkStart}～${wkEnd}·${tenantId}）`, e);
+              }
             }
           }
         }

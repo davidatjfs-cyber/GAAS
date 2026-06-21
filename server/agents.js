@@ -31,7 +31,7 @@ import {
   AgentCommunicationSystem, 
   AgentCommunicationHelper 
 } from './agent-communication-system.js';
-import { pool as agentPool, setPool as setUnifiedAgentPool } from './utils/database.js';
+import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds } from './utils/database.js';
 import { getBrandConfigSync, getBrandForStoreSync, getAllBrandNamesSync } from './utils/brand-config-loader.js';
 import {
   pgGetMonthlyExecutionFilingCount,
@@ -3966,8 +3966,9 @@ export async function queryAgentData(agent, query, limit = 10, options = {}) {
 // 3. Shared State Helpers
 // ─────────────────────────────────────────────
 
-export async function getSharedState() {
-  const r = await pool().query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', ['default']);
+export async function getSharedState(tenantId = 'default') {
+  const key = String(tenantId || '').trim() || 'default';
+  const r = await pool().query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', [key]);
   return r.rows?.[0]?.data && typeof r.rows[0].data === 'object' ? r.rows[0].data : {};
 }
 
@@ -7299,9 +7300,9 @@ export async function lookupFeishuUserByUsername(username) {
 
 // 推送督办消息给责任人；仅高优先级异常才抄送总部营运和管理员
 // H6-FIX: 合并为单次 getSharedState 调用，避免批量场景下的DB过载
-async function pushIssueToAssignee(issue, message) {
+async function pushIssueToAssignee(issue, message, tenantId = 'default') {
   const recipients = [];
-  
+
   // 1. 发送给直接责任人（店长/出品经理）
   if (issue.assignee_username) {
     const assignee = await lookupFeishuUserByUsername(issue.assignee_username);
@@ -7309,12 +7310,13 @@ async function pushIssueToAssignee(issue, message) {
       recipients.push({ openId: assignee.open_id, role: 'assignee', username: issue.assignee_username });
     }
   }
-  
+
   // 2+3. 仅高优先级异常才抄送总部营运和管理员（避免通知泛滥）
+  // 必须按issue所属租户取hq_manager/admin名单，否则会把A租户的异常抄送给B租户的管理员。
   const isHighSeverity = String(issue.severity || '').toLowerCase() === 'high';
   if (isHighSeverity) {
     try {
-      const state = await getSharedState();
+      const state = await getSharedState(tenantId);
       const allUsers = [
         ...(Array.isArray(state?.employees) ? state.employees : []),
         ...(Array.isArray(state?.users) ? state.users : [])
@@ -7529,7 +7531,7 @@ async function fetchRechargeFromDailyReportsPg(storeName, reportDate) {
 
 export async function runDataAuditor(checkMode = 'daily', tenantId = 'default') {
   await refreshBiAgentRuntimeConfig();
-  const state = await getSharedState();
+  const state = await getSharedState(tenantId);
   const reports = Array.isArray(state?.dailyReports) ? state.dailyReports : [];
   const stores = getStoresFromState(state);
   const issues = [];
@@ -11099,14 +11101,16 @@ export async function onFeishuEvent(body) {
 // ─────────────────────────────────────────────
 
 // Push new issues to their assignees via Feishu
-async function pushIssuesToFeishu() {
+async function pushIssuesToFeishu(tenantId = 'default') {
   try {
     const r = await pool().query(
       `SELECT ai.id, ai.title, ai.detail, ai.severity, ai.store, ai.category, ai.assignee_username
        FROM agent_issues ai
        WHERE ai.feishu_notified = FALSE AND ai.assignee_username IS NOT NULL
          AND COALESCE(ai.agent, '') <> 'data_auditor'
-       ORDER BY ai.created_at DESC LIMIT 20`
+         AND ai.tenant_id = $1
+       ORDER BY ai.created_at DESC LIMIT 20`,
+      [tenantId]
     );
     if (!r.rows?.length) return 0;
 
@@ -11368,43 +11372,47 @@ export function startAgentScheduler() {
 
   // Daily audit (充值异常 only) every 30 minutes
   const auditTick = async () => {
-    try {
-      const result = await runDataAuditor('daily');
-      if (result.issuesCreated > 0) {
-        console.log(`[scheduler] Data Auditor(daily): ${result.issuesCreated} new issues`);
-      }
+    for (const tenantId of await getActiveTenantIds(pool())) {
       try {
-        const { syncDataAuditorIssuesToMasterTasks } = await import('./master-agent.js');
-        const n = await syncDataAuditorIssuesToMasterTasks(result.newIssueIds || []);
-        if (n > 0) console.log(`[scheduler] Data Auditor(daily): synced ${n} to master_tasks`);
+        const result = await runDataAuditor('daily', tenantId);
+        if (result.issuesCreated > 0) {
+          console.log(`[scheduler] Data Auditor(daily,${tenantId}): ${result.issuesCreated} new issues`);
+        }
+        try {
+          const { syncDataAuditorIssuesToMasterTasks } = await import('./master-agent.js');
+          const n = await syncDataAuditorIssuesToMasterTasks(result.newIssueIds || [], tenantId);
+          if (n > 0) console.log(`[scheduler] Data Auditor(daily,${tenantId}): synced ${n} to master_tasks`);
+        } catch (e) {
+          console.error('[scheduler] daily master sync:', e?.message);
+        }
+        const pushed = await pushIssuesToFeishu(tenantId);
+        if (pushed > 0) console.log(`[scheduler] Pushed(${tenantId}) ${pushed} issues to Feishu`);
       } catch (e) {
-        console.error('[scheduler] daily master sync:', e?.message);
+        console.error(`[scheduler] audit tick error (tenant=${tenantId}):`, e?.message);
       }
-      const pushed = await pushIssuesToFeishu();
-      if (pushed > 0) console.log(`[scheduler] Pushed ${pushed} issues to Feishu`);
-    } catch (e) {
-      console.error('[scheduler] audit tick error:', e?.message);
     }
   };
 
   // Weekly audit: Mon 00:00 CST
   const weeklyAuditTick = async () => {
-    try {
-      const c = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Shanghai'}));
-      if (c.getDay()===1 && c.getHours()===0) {
-        console.log('[scheduler] Weekly audit running...');
-        const r = await runDataAuditor('weekly');
-        console.log(`[scheduler] Weekly audit: ${r.issuesCreated} issues`);
-        await pushIssuesToFeishu();
-        try {
-          const { syncDataAuditorIssuesToMasterTasks } = await import('./master-agent.js');
-          const n = await syncDataAuditorIssuesToMasterTasks(r.newIssueIds || []);
-          if (n > 0) console.log(`[scheduler] Weekly audit: synced ${n} issues to master_tasks`);
-        } catch (e) {
-          console.error('[scheduler] weekly master sync:', e?.message);
+    for (const tenantId of await getActiveTenantIds(pool())) {
+      try {
+        const c = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Shanghai'}));
+        if (c.getDay()===1 && c.getHours()===0) {
+          console.log(`[scheduler] Weekly audit(${tenantId}) running...`);
+          const r = await runDataAuditor('weekly', tenantId);
+          console.log(`[scheduler] Weekly audit(${tenantId}): ${r.issuesCreated} issues`);
+          await pushIssuesToFeishu(tenantId);
+          try {
+            const { syncDataAuditorIssuesToMasterTasks } = await import('./master-agent.js');
+            const n = await syncDataAuditorIssuesToMasterTasks(r.newIssueIds || [], tenantId);
+            if (n > 0) console.log(`[scheduler] Weekly audit(${tenantId}): synced ${n} issues to master_tasks`);
+          } catch (e) {
+            console.error('[scheduler] weekly master sync:', e?.message);
+          }
         }
-      }
-    } catch(e){ console.error('[scheduler] weekly audit err:', e?.message); }
+      } catch(e){ console.error(`[scheduler] weekly audit err (tenant=${tenantId}):`, e?.message); }
+    }
   };
 
   // Legacy weekly evaluation (Monday 9am) — 已停用。
@@ -11423,122 +11431,131 @@ export function startAgentScheduler() {
 
   // OP Agent: 每周一早上10点督办周异常（实收营收、人效值、桌访产品、桌访占比、产品/服务差评）
   const weeklyOpsTick = async () => {
-    try {
-      const now = new Date();
-      // 周一且10点执行
-      if (now.getDay() === 1 && now.getHours() === 10 && now.getMinutes() < 5) {
-        console.log('[scheduler] OP Agent: 开始督办周异常...');
-        
-        // 查询过去7天的周异常（未解决的）
-        const weeklyCategories = [
-          '实收营收异常',
-          '人效值异常', 
-          '桌访产品异常',
-          '桌访占比异常',
-          '产品差评异常',
-          '服务差评异常'
-        ];
-        
-        const result = await pool().query(
-          `SELECT * FROM agent_issues 
-           WHERE category = ANY($1) 
-             AND status != 'resolved'
-             AND created_at >= NOW() - INTERVAL '7 days'
-           ORDER BY store, category`,
-          [weeklyCategories]
-        );
-        
-        if (result.rows?.length > 0) {
-          console.log(`[scheduler] OP Agent: 发现 ${result.rows.length} 条周异常待督办`);
-          
-          // 按门店分组并发送督办通知
-          const byStore = {};
-          for (const issue of result.rows) {
-            if (!byStore[issue.store]) byStore[issue.store] = [];
-            byStore[issue.store].push(issue);
-          }
-          
-          for (const [store, issues] of Object.entries(byStore)) {
-            const issueList = issues.map(i => `• ${i.category}(${i.severity}): ${i.title}`).join('\n');
-            const message = `【OP周督办 - ${store}】\n\n门店本周有以下异常需整改：\n\n${issueList}\n\n请在今日内提交整改方案。`;
-            
-            // 发送给店长/出品经理
-            for (const issue of issues) {
-              try {
-                await pushIssueToAssignee(issue, message);
-              } catch (e) {
-                console.error(`[scheduler] OP周督办推送失败: ${issue.assignee_username}`, e?.message);
+    for (const tenantId of await getActiveTenantIds(pool())) {
+      try {
+        const now = new Date();
+        // 周一且10点执行
+        if (now.getDay() === 1 && now.getHours() === 10 && now.getMinutes() < 5) {
+          console.log(`[scheduler] OP Agent(${tenantId}): 开始督办周异常...`);
+
+          // 查询过去7天的周异常（未解决的）
+          const weeklyCategories = [
+            '实收营收异常',
+            '人效值异常',
+            '桌访产品异常',
+            '桌访占比异常',
+            '产品差评异常',
+            '服务差评异常'
+          ];
+
+          const result = await pool().query(
+            `SELECT * FROM agent_issues
+             WHERE category = ANY($1)
+               AND status != 'resolved'
+               AND created_at >= NOW() - INTERVAL '7 days'
+               AND tenant_id = $2
+             ORDER BY store, category`,
+            [weeklyCategories, tenantId]
+          );
+
+          if (result.rows?.length > 0) {
+            console.log(`[scheduler] OP Agent(${tenantId}): 发现 ${result.rows.length} 条周异常待督办`);
+
+            // 按门店分组并发送督办通知
+            const byStore = {};
+            for (const issue of result.rows) {
+              if (!byStore[issue.store]) byStore[issue.store] = [];
+              byStore[issue.store].push(issue);
+            }
+
+            for (const [store, issues] of Object.entries(byStore)) {
+              const issueList = issues.map(i => `• ${i.category}(${i.severity}): ${i.title}`).join('\n');
+              const message = `【OP周督办 - ${store}】\n\n门店本周有以下异常需整改：\n\n${issueList}\n\n请在今日内提交整改方案。`;
+
+              // 发送给店长/出品经理
+              for (const issue of issues) {
+                try {
+                  await pushIssueToAssignee(issue, message, tenantId);
+                } catch (e) {
+                  console.error(`[scheduler] OP周督办推送失败: ${issue.assignee_username}`, e?.message);
+                }
               }
             }
+          } else {
+            console.log(`[scheduler] OP Agent(${tenantId}): 本周无周异常需督办`);
           }
-        } else {
-          console.log('[scheduler] OP Agent: 本周无周异常需督办');
         }
+      } catch (e) {
+        console.error(`[scheduler] OP周督办 tick error (tenant=${tenantId}):`, e?.message);
       }
-    } catch (e) {
-      console.error('[scheduler] OP周督办 tick error:', e?.message);
     }
   };
 
   // OP Agent: 每天早上10点督办充值异常
   const dailyRechargeTick = async () => {
-    try {
-      const now = new Date();
-      // 每天10点执行（分钟数<5避免重复执行）
-      if (now.getHours() === 10 && now.getMinutes() < 5) {
-        console.log('[scheduler] OP Agent: 开始督办充值异常...');
-        
-        // 查询过去24小时的充值异常（未解决的）
-        const result = await pool().query(
-          `SELECT * FROM agent_issues 
-           WHERE category = '充值异常'
-             AND status != 'resolved'
-             AND created_at >= NOW() - INTERVAL '24 hours'
-           ORDER BY store`
-        );
-        
-        if (result.rows?.length > 0) {
-          console.log(`[scheduler] OP Agent: 发现 ${result.rows.length} 条充值异常待督办`);
-          
-          // 按门店分组
-          const byStore = {};
-          for (const issue of result.rows) {
-            if (!byStore[issue.store]) byStore[issue.store] = [];
-            byStore[issue.store].push(issue);
-          }
-          
-          for (const [store, issues] of Object.entries(byStore)) {
-            const highCount = issues.filter(i => i.severity === 'high').length;
-            const mediumCount = issues.filter(i => i.severity === 'medium').length;
-            const message = `【OP日督办 - ${store}】\n\n门店今日充值异常：\n• 高风险: ${highCount} 条\n• 中风险: ${mediumCount} 条\n\n请立即检查充值系统并提交整改方案。`;
-            
-            // 发送给店长
-            for (const issue of issues) {
-              try {
-                await pushIssueToAssignee(issue, message);
-              } catch (e) {
-                console.error(`[scheduler] OP日督办推送失败: ${issue.assignee_username}`, e?.message);
+    for (const tenantId of await getActiveTenantIds(pool())) {
+      try {
+        const now = new Date();
+        // 每天10点执行（分钟数<5避免重复执行）
+        if (now.getHours() === 10 && now.getMinutes() < 5) {
+          console.log(`[scheduler] OP Agent(${tenantId}): 开始督办充值异常...`);
+
+          // 查询过去24小时的充值异常（未解决的）
+          const result = await pool().query(
+            `SELECT * FROM agent_issues
+             WHERE category = '充值异常'
+               AND status != 'resolved'
+               AND created_at >= NOW() - INTERVAL '24 hours'
+               AND tenant_id = $1
+             ORDER BY store`,
+            [tenantId]
+          );
+
+          if (result.rows?.length > 0) {
+            console.log(`[scheduler] OP Agent(${tenantId}): 发现 ${result.rows.length} 条充值异常待督办`);
+
+            // 按门店分组
+            const byStore = {};
+            for (const issue of result.rows) {
+              if (!byStore[issue.store]) byStore[issue.store] = [];
+              byStore[issue.store].push(issue);
+            }
+
+            for (const [store, issues] of Object.entries(byStore)) {
+              const highCount = issues.filter(i => i.severity === 'high').length;
+              const mediumCount = issues.filter(i => i.severity === 'medium').length;
+              const message = `【OP日督办 - ${store}】\n\n门店今日充值异常：\n• 高风险: ${highCount} 条\n• 中风险: ${mediumCount} 条\n\n请立即检查充值系统并提交整改方案。`;
+
+              // 发送给店长
+              for (const issue of issues) {
+                try {
+                  await pushIssueToAssignee(issue, message, tenantId);
+                } catch (e) {
+                  console.error(`[scheduler] OP日督办推送失败: ${issue.assignee_username}`, e?.message);
+                }
               }
             }
+          } else {
+            console.log(`[scheduler] OP Agent(${tenantId}): 今日无充值异常需督办`);
           }
-        } else {
-          console.log('[scheduler] OP Agent: 今日无充值异常需督办');
         }
+      } catch (e) {
+        console.error(`[scheduler] OP日督办 tick error (tenant=${tenantId}):`, e?.message);
       }
-    } catch (e) {
-      console.error('[scheduler] OP日督办 tick error:', e?.message);
     }
   };
 
   // Retry pushing un-notified items every 5 minutes
   const pushTick = async () => {
-    try {
-      const pushedIssues = await pushIssuesToFeishu();
-      const pushedScores = await pushScoresToFeishu();
-      if (pushedIssues || pushedScores) {
-        console.log(`[scheduler] Push retry: ${pushedIssues} issues, ${pushedScores} scores`);
-      }
-    } catch (e) {}
+    for (const tenantId of await getActiveTenantIds(pool())) {
+      try {
+        const pushedIssues = await pushIssuesToFeishu(tenantId);
+        const pushedScores = await pushScoresToFeishu();
+        if (pushedIssues || pushedScores) {
+          console.log(`[scheduler] Push retry(${tenantId}): ${pushedIssues} issues, ${pushedScores} scores`);
+        }
+      } catch (e) {}
+    }
   };
 
   // Initial run after 15 seconds
@@ -13011,18 +13028,18 @@ async function getRecentAuditCount(storeName, days) {
 /** 种子店名（与 DB 中实际名称可能不一致时，仍会与库中 DISTINCT 店名合并） */
 const REPORT_STORES_SEED = ALL_STORE_NAMES;
 
-async function getReportStoresForBiReports() {
+async function getReportStoresForBiReports(tenantId = 'default') {
   const seed = REPORT_STORES_SEED.slice();
   try {
     const r = await agentPool.query(`
       SELECT DISTINCT TRIM(store) AS store FROM sales_raw
       WHERE date >= (CURRENT_DATE - INTERVAL '120 days')
-        AND TRIM(COALESCE(store, '')) <> ''
+        AND TRIM(COALESCE(store, '')) <> '' AND tenant_id = $1
       UNION
       SELECT DISTINCT TRIM(store) AS store FROM daily_reports
       WHERE date >= (CURRENT_DATE - INTERVAL '120 days')
-        AND TRIM(COALESCE(store, '')) <> ''
-    `);
+        AND TRIM(COALESCE(store, '')) <> '' AND tenant_id = $1
+    `, [tenantId]);
     const fromDb = (r.rows || []).map((x) => String(x.store || '').trim()).filter(Boolean);
     const set = new Set([...seed, ...fromDb]);
     return Array.from(set).sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
@@ -13129,13 +13146,13 @@ async function sendBiReportToAdmins({ admins, title, note, md, cardTemplate = 'b
   }
 }
 
-export async function sendWeeklyReports() {
-  console.log('[bi-report] generating weekly reports...');
+export async function sendWeeklyReports(tenantId = 'default') {
+  console.log(`[bi-report] generating weekly reports (tenant=${tenantId})...`);
   const { wsS, weS } = calendarLastCompletedWeekMonSunShanghai();
-  const state = await getSharedState();
+  const state = await getSharedState(tenantId);
   const adminsRaw = [...(state?.employees||[]),...(state?.users||[])].filter(u => ['admin','hq_manager'].includes(u?.role));
   const admins = uniqBiReportRecipients(adminsRaw);
-  const stores = await getReportStoresForBiReports();
+  const stores = await getReportStoresForBiReports(tenantId);
   for (const store of stores) {
     try {
       const r = await generateWeeklyReport(store, wsS, weS);
@@ -13152,13 +13169,13 @@ export async function sendWeeklyReports() {
   }
 }
 
-export async function sendMonthlyReports() {
-  console.log('[bi-report] generating monthly reports...');
+export async function sendMonthlyReports(tenantId = 'default') {
+  console.log(`[bi-report] generating monthly reports (tenant=${tenantId})...`);
   const { msS, meS } = calendarPreviousMonthRangeShanghai();
-  const state = await getSharedState();
+  const state = await getSharedState(tenantId);
   const adminsRaw2 = [...(state?.employees || []), ...(state?.users || [])].filter(u => ['admin','hq_manager'].includes(u?.role));
   const baseRecipients = uniqBiReportRecipients(adminsRaw2);
-  const stores = await getReportStoresForBiReports();
+  const stores = await getReportStoresForBiReports(tenantId);
   for (const store of stores) {
     try {
       const r = await generateMonthlyReport(store, msS, meS);
@@ -13177,7 +13194,7 @@ export async function sendMonthlyReports() {
   }
 }
 
-export async function sendTestReportsToUser(targetUsername) {
+export async function sendTestReportsToUser(targetUsername, tenantId = 'default') {
   console.log('[bi-report] test send to user:', targetUsername);
   const fu = await lookupFeishuUserByUsername(targetUsername);
   if (!fu?.open_id) {
@@ -13189,7 +13206,7 @@ export async function sendTestReportsToUser(targetUsername) {
 
   // 周报：上一完整自然周（上海历）
   const { wsS, weS } = calendarLastCompletedWeekMonSunShanghai();
-  const stores = await getReportStoresForBiReports();
+  const stores = await getReportStoresForBiReports(tenantId);
   for (const store of stores) {
     try {
       const r = await generateWeeklyReport(store, wsS, weS);

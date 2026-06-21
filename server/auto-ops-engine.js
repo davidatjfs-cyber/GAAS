@@ -123,7 +123,7 @@ const AGENTS_V2_REMINDER_SOURCES = new Set([
   'scheduled_checklist'
 ]);
 
-export async function inspectionClosedLoopTick() {
+export async function inspectionClosedLoopTick(tenantId = 'default') {
   let actions = 0;
   const reminderEscalationOn = isInspectionClosedLoopReminderEnabled();
 
@@ -131,7 +131,7 @@ export async function inspectionClosedLoopTick() {
   if (reminderEscalationOn) {
   try {
     const r = await pool().query(
-      `SELECT t.*, 
+      `SELECT t.*,
               EXTRACT(EPOCH FROM (NOW() - t.dispatched_at))/3600 as hours_waiting,
               GREATEST(
                 COALESCE(t.remind_count, 0),
@@ -140,7 +140,9 @@ export async function inspectionClosedLoopTick() {
        FROM master_tasks t
        WHERE t.status = 'pending_response'
          AND t.dispatched_at < NOW() - INTERVAL '${REMINDER_HOURS} hours'
-       ORDER BY t.dispatched_at ASC LIMIT 10`
+         AND t.tenant_id = $1
+       ORDER BY t.dispatched_at ASC LIMIT 10`,
+      [tenantId]
     );
 
     for (const task of (r.rows || [])) {
@@ -157,7 +159,7 @@ export async function inspectionClosedLoopTick() {
 
       // ── 升级: 超过4小时未回复 → 通知上级 ──
       if (hoursWaiting >= ESCALATE_HOURS && reminderCount >= 1) {
-        await escalateTask(task, hoursWaiting);
+        await escalateTask(task, hoursWaiting, tenantId);
         actions++;
         continue;
       }
@@ -176,7 +178,7 @@ export async function inspectionClosedLoopTick() {
     console.log('[auto-ops] 巡检催办/任务升级已关闭（未设置 HRMS_ENABLE_INSPECTION_CLOSED_LOOP=true）');
   }
 
-  // ── 1b. 自动验收跟踪: 任务resolved后记录闭环时间 ──
+  // ── 1b. 自动验收跟踪: 任务resolved后记录闭环时间（纯按行更新元数据，不跨租户聚合，不需要按租户过滤）──
   try {
     const resolved = await pool().query(
       `SELECT task_id, dispatched_at, responded_at,
@@ -232,7 +234,7 @@ async function sendReminder(task, reminderNum, hoursWaiting) {
   }
 }
 
-async function escalateTask(task, hoursWaiting) {
+async function escalateTask(task, hoursWaiting, tenantId = 'default') {
   if (!_sendLarkCard) return;
 
   let prevSd = task?.source_data;
@@ -246,6 +248,7 @@ async function escalateTask(task, hoursWaiting) {
   if (prevSd && typeof prevSd === 'object' && prevSd.escalated === true) return;
 
   // 产品口径：超时升级仅通知「系统管理员」飞书账号，由管理员决定是否再下发门店；不向店长/出品/原责任人推送，避免多人收到混淆文案（如 OPS-* / 遗留任务）。
+  // 必须按task所属租户过滤admin，否则会把A租户的任务升级通知发给B租户的管理员。
   let escalateTo = null;
   try {
     const admR = await pool().query(
@@ -255,8 +258,10 @@ async function escalateTask(task, hoursWaiting) {
        WHERE u.role = 'admin' AND u.is_active = true
          AND f.registered = true AND f.open_id IS NOT NULL AND trim(f.open_id) <> ''
          AND f.open_id NOT LIKE '%probe%'
+         AND u.tenant_id = $1
        ORDER BY f.updated_at DESC
-       LIMIT 1`
+       LIMIT 1`,
+      [tenantId]
     );
     if (admR.rows?.length) {
       escalateTo = {
@@ -321,11 +326,11 @@ const BI_PUSH_THRESHOLDS = {
   inspection_fail_rate: 30,   // 巡检不合格率 > 30%
 };
 
-export async function biProactivePushTick() {
+export async function biProactivePushTick(tenantId = 'default') {
   const now = new Date();
   const cstHour = (now.getUTCHours() + 8) % 24;
   const reportDate = cstDateString(now, -1);
-  const runKey = `daily:${reportDate}`;
+  const runKey = `daily:${reportDate}:${tenantId}`;
 
   // 仅在 CST 10:00-23:59 执行 (一天只执行一次，通过dedup防重)
   if (cstHour < 10) return 0;
@@ -341,7 +346,8 @@ export async function biProactivePushTick() {
   try {
     // 获取所有门店
     const storesR = await pool().query(
-      `SELECT DISTINCT store FROM feishu_users WHERE store IS NOT NULL AND store != '' AND store != '总部'`
+      `SELECT DISTINCT store FROM feishu_users WHERE store IS NOT NULL AND store != '' AND store != '总部' AND tenant_id = $1`,
+      [tenantId]
     );
     const stores = (storesR.rows || []).map(r => r.store);
 
@@ -351,9 +357,9 @@ export async function biProactivePushTick() {
       const badAllR = await pool().query(
         `SELECT fields->>'差评门店' as store_name, COUNT(*) as cnt
          FROM feishu_generic_records
-         WHERE config_key = 'bad_review' AND created_at::date = $1::date
+         WHERE config_key = 'bad_review' AND created_at::date = $1::date AND tenant_id = $2
          GROUP BY fields->>'差评门店'`,
-        [yesterday]
+        [yesterday, tenantId]
       );
       for (const row of (badAllR.rows || [])) {
         badReviewByStore[row.store_name] = parseInt(row.cnt || 0);
@@ -391,8 +397,8 @@ export async function biProactivePushTick() {
           `SELECT COUNT(*) as cnt FROM feishu_generic_records
            WHERE config_key = 'raw_material_orders' AND (fields->>'门店' = $1 OR fields->>'store' = $1)
              AND fields->>'异常' IS NOT NULL AND fields->>'异常' != ''
-             AND created_at::date = $2::date`,
-          [storeName, yesterday]
+             AND created_at::date = $2::date AND tenant_id = $3`,
+          [storeName, yesterday, tenantId]
         );
         const matCount = parseInt(matR.rows?.[0]?.cnt || 0);
         if (matCount >= BI_PUSH_THRESHOLDS.material_anomaly_count) {
@@ -404,8 +410,8 @@ export async function biProactivePushTick() {
       try {
         const taskR = await pool().query(
           `SELECT COUNT(*) as cnt FROM master_tasks
-           WHERE store = $1 AND severity = 'high' AND status NOT IN ('closed', 'settled', 'resolved')`,
-          [storeName]
+           WHERE store = $1 AND severity = 'high' AND status NOT IN ('closed', 'settled', 'resolved') AND tenant_id = $2`,
+          [storeName, tenantId]
         );
         const openHigh = parseInt(taskR.rows?.[0]?.cnt || 0);
         if (openHigh > 0) {
@@ -421,8 +427,8 @@ export async function biProactivePushTick() {
              COUNT(*) as total
            FROM feishu_generic_records
            WHERE config_key = 'ops_checklists' AND (fields->>'store' = $1 OR fields->>'门店' = $1)
-             AND created_at > NOW() - INTERVAL '7 days'`,
-          [storeName]
+             AND created_at > NOW() - INTERVAL '7 days' AND tenant_id = $2`,
+          [storeName, tenantId]
         );
         const total = parseInt(inspR.rows?.[0]?.total || 0);
         const failCnt = parseInt(inspR.rows?.[0]?.fail_cnt || 0);
@@ -460,7 +466,8 @@ export async function biProactivePushTick() {
     if (hqSummaries.length > 0) {
       try {
         const hqR = await pool().query(
-          `SELECT f.open_id FROM feishu_users f JOIN users u ON f.username = u.username WHERE u.role = 'admin' AND u.is_active = true AND f.registered = true AND f.open_id IS NOT NULL AND trim(f.open_id) <> '' AND f.open_id NOT LIKE '%probe%' ORDER BY f.updated_at DESC LIMIT 1`
+          `SELECT f.open_id FROM feishu_users f JOIN users u ON f.username = u.username WHERE u.role = 'admin' AND u.is_active = true AND f.registered = true AND f.open_id IS NOT NULL AND trim(f.open_id) <> '' AND f.open_id NOT LIKE '%probe%' AND u.tenant_id = $1 ORDER BY f.updated_at DESC LIMIT 1`,
+          [tenantId]
         );
         if (hqR.rows?.[0]?.open_id) {
           const hqMsg = `📊 昨日经营预警汇总（${yesterday}）\n\n${hqSummaries.join('\n\n')}`;
@@ -488,11 +495,11 @@ export async function biProactivePushTick() {
 // 3. 排班与人效自动建议 (每周一09:00)
 // ─────────────────────────────────────────────
 
-export async function laborEfficiencyTick() {
+export async function laborEfficiencyTick(tenantId = 'default') {
   const now = new Date();
   const cstHour = (now.getUTCHours() + 8) % 24;
   const cstDay = new Date(now.getTime() + 8 * 3600000).getDay(); // 0=Sunday
-  const runKey = `weekly:${cstDateString(now, 0)}`;
+  const runKey = `weekly:${cstDateString(now, 0)}:${tenantId}`;
 
   // 仅在周一 CST 09:00-09:14 执行
   if (cstDay !== 1 || cstHour !== 9 || now.getMinutes() > 14) return 0;
@@ -505,7 +512,8 @@ export async function laborEfficiencyTick() {
 
   try {
     const storesR = await pool().query(
-      `SELECT DISTINCT store FROM feishu_users WHERE store IS NOT NULL AND store != '' AND store != '总部'`
+      `SELECT DISTINCT store FROM feishu_users WHERE store IS NOT NULL AND store != '' AND store != '总部' AND tenant_id = $1`,
+      [tenantId]
     );
 
     for (const row of (storesR.rows || [])) {
@@ -519,8 +527,8 @@ export async function laborEfficiencyTick() {
              COUNT(*) FILTER (WHERE severity = 'high') as high_tasks,
              AVG(EXTRACT(EPOCH FROM (COALESCE(responded_at, NOW()) - dispatched_at))/3600) as avg_response_hours
            FROM master_tasks
-           WHERE store = $1 AND created_at > NOW() - INTERVAL '7 days'`,
-          [storeName]
+           WHERE store = $1 AND created_at > NOW() - INTERVAL '7 days' AND tenant_id = $2`,
+          [storeName, tenantId]
         ),
         pool().query(
           `SELECT
@@ -528,8 +536,8 @@ export async function laborEfficiencyTick() {
              COUNT(*) FILTER (WHERE fields->>'status' = 'fail') as fail_cnt
            FROM feishu_generic_records
            WHERE config_key = 'ops_checklists' AND (fields->>'store' = $1)
-             AND created_at > NOW() - INTERVAL '7 days'`,
-          [storeName]
+             AND created_at > NOW() - INTERVAL '7 days' AND tenant_id = $2`,
+          [storeName, tenantId]
         )
       ]);
 
@@ -595,10 +603,10 @@ export async function laborEfficiencyTick() {
 const TRAINING_ANOMALY_THRESHOLD = 3; // 7天内同类异常 >= 3次 → 触发培训
 const TRAINING_LOOKBACK_DAYS = 7;
 
-export async function trainingClosedLoopTick() {
+export async function trainingClosedLoopTick(tenantId = 'default') {
   const now = new Date();
   const cstHour = (now.getUTCHours() + 8) % 24;
-  const runKey = `daily:${cstDateString(now, 0)}`;
+  const runKey = `daily:${cstDateString(now, 0)}:${tenantId}`;
 
   // 每天 CST 11:00-11:14 执行
   if (cstHour !== 11 || now.getMinutes() > 14) return 0;
@@ -617,10 +625,11 @@ export async function trainingClosedLoopTick() {
        FROM master_tasks
        WHERE created_at > NOW() - INTERVAL '${TRAINING_LOOKBACK_DAYS} days'
          AND status NOT IN ('closed')
+         AND tenant_id = $1
        GROUP BY store, category
-       HAVING COUNT(*) >= $1
+       HAVING COUNT(*) >= $2
        ORDER BY cnt DESC LIMIT 20`,
-      [TRAINING_ANOMALY_THRESHOLD]
+      [tenantId, TRAINING_ANOMALY_THRESHOLD]
     );
 
     for (const row of (anomalyR.rows || [])) {
@@ -633,8 +642,9 @@ export async function trainingClosedLoopTick() {
          WHERE store = $1 AND type = $2
            AND status NOT IN ('completed', 'cancelled')
            AND created_at > NOW() - INTERVAL '14 days'
+           AND tenant_id = $3
          LIMIT 1`,
-        [store, category]
+        [store, category, tenantId]
       );
       if (existingR.rows?.length) continue;
 
@@ -660,15 +670,16 @@ export async function trainingClosedLoopTick() {
       try {
         const taskId = `TRAIN-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
         await pool().query(
-          `INSERT INTO training_tasks (task_id, title, type, store, assignee_username, status, progress_data, created_at)
-           VALUES ($1, $2, $3, $4, $5, 'pending', $6::jsonb, NOW())`,
+          `INSERT INTO training_tasks (task_id, title, type, store, assignee_username, status, progress_data, created_at, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, 'pending', $6::jsonb, NOW(), $7)`,
           [
             taskId,
             `【自动培训】${category} 专项培训 — ${store}`,
             category,
             store,
             mgr.username,
-            JSON.stringify({ source: 'auto_anomaly', content: trainingContent, anomaly_count: parseInt(cnt) })
+            JSON.stringify({ source: 'auto_anomaly', content: trainingContent, anomaly_count: parseInt(cnt) }),
+            tenantId
           ]
         );
         created++;
@@ -704,7 +715,9 @@ export async function trainingClosedLoopTick() {
            AND progress_data->>'source' = 'auto_anomaly'
            AND created_at < NOW() - INTERVAL '3 days'
            AND (progress_data->>'reminder_sent')::boolean IS NOT TRUE
-         LIMIT 5`
+           AND tenant_id = $1
+         LIMIT 5`,
+        [tenantId]
       );
 
       for (const task of (overdueR.rows || [])) {

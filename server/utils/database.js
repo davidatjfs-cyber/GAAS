@@ -10,6 +10,26 @@ export function pool() {
   return _pool; 
 }
 
+// 多租户后台任务用：取所有激活租户的tenant_id列表。
+// 查询失败时兜底返回['default']而不是空数组——避免数据库瞬时抖动导致某次tick
+// 一个租户都不处理；这样最差情况下退化为"只处理default"，即改造前的行为，不会更差。
+const ACTIVE_TENANTS_CACHE_MS = 60 * 1000;
+let _activeTenantIds = ['default'];
+let _activeTenantIdsLoadedAt = 0;
+export async function getActiveTenantIds(p) {
+  if (Date.now() - _activeTenantIdsLoadedAt < ACTIVE_TENANTS_CACHE_MS) return _activeTenantIds;
+  try {
+    const r = await (p || pool()).query("SELECT tenant_id FROM tenants WHERE status = 'active' ORDER BY tenant_id");
+    if (r.rows?.length) {
+      _activeTenantIds = r.rows.map((row) => row.tenant_id);
+      _activeTenantIdsLoadedAt = Date.now();
+    }
+  } catch (e) {
+    console.error('[database] getActiveTenantIds failed, fallback to previous/[default]:', e?.message || e);
+  }
+  return _activeTenantIds;
+}
+
 // 安全的数据库查询包装
 export async function safeQuery(query, params = []) {
   try {

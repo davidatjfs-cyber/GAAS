@@ -534,19 +534,20 @@ export async function getGraphStats() {
 // 5. 实体健康度快照（每日刷新）
 // ─────────────────────────────────────────────
 
-export async function refreshEntityHealthSnapshots() {
+export async function refreshEntityHealthSnapshots(tenantId = 'default') {
   try {
     const today = new Date().toISOString().slice(0, 10);
     // 获取所有活跃门店
     const storesR = await pool().query(
-      `SELECT DISTINCT target_id as store FROM business_entity_relations WHERE target_type='store' AND date >= CURRENT_DATE - 30`
+      `SELECT DISTINCT target_id as store FROM business_entity_relations WHERE target_type='store' AND date >= CURRENT_DATE - 30 AND tenant_id = $1`,
+      [tenantId]
     );
     let updated = 0;
     for (const row of (storesR.rows || [])) {
       const overview = await getStoreHealthOverview(row.store, 30);
       await pool().query(
-        `INSERT INTO entity_health_snapshot (entity_type, entity_id, entity_label, health_score, dimensions, snapshot_date)
-         VALUES ('store', $1, $1, $2, $3::jsonb, $4::date)
+        `INSERT INTO entity_health_snapshot (entity_type, entity_id, entity_label, health_score, dimensions, snapshot_date, tenant_id)
+         VALUES ('store', $1, $1, $2, $3::jsonb, $4::date, $5)
          ON CONFLICT ON CONSTRAINT uq_entity_health_day DO UPDATE SET
            health_score = EXCLUDED.health_score, dimensions = EXCLUDED.dimensions`,
         [row.store, overview.healthScore, JSON.stringify({
@@ -554,7 +555,7 @@ export async function refreshEntityHealthSnapshots() {
           complaintCount: overview.complaints.length,
           materialIssueCount: overview.materialIssues.length,
           inspectionFailRate: overview.inspections.total > 0 ? overview.inspections.failed / overview.inspections.total : 0
-        }), today]
+        }), today, tenantId]
       );
       updated++;
     }
