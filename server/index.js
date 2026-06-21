@@ -19859,16 +19859,20 @@ app.listen(PORT, HOST, async () => {
       console.error('[monitor] heartbeat table init error:', e?.message);
     }
 
-    // 辅助：写心跳
+    // 辅助：写心跳。task_name是全局单例系统任务(cache_purge/critical_data_reconcile/sales_raw_check)，
+    // 不属于任何具体租户，固定写tenant_id='default'并在同一上下文里设置会话变量，
+    // 避免RLS的WITH CHECK因为会话变量(无上下文时是哨兵值)跟列默认值'default'不一致而静默拒绝写入。
     async function beatHeartbeat(taskName) {
       try {
-        await pool.query(
-          `INSERT INTO scheduler_heartbeat (task_name, last_beat, run_count)
-           VALUES ($1, NOW(), 1)
-           ON CONFLICT (task_name)
-           DO UPDATE SET last_beat = NOW(), run_count = scheduler_heartbeat.run_count + 1`,
-          [taskName]
-        );
+        await tenantContext.run('default', async () => {
+          await pool.query(
+            `INSERT INTO scheduler_heartbeat (task_name, last_beat, run_count, tenant_id)
+             VALUES ($1, NOW(), 1, 'default')
+             ON CONFLICT (task_name)
+             DO UPDATE SET last_beat = NOW(), run_count = scheduler_heartbeat.run_count + 1`,
+            [taskName]
+          );
+        });
       } catch (_) {}
     }
 
