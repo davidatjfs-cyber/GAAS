@@ -1,5 +1,5 @@
 // SOP 动态分发 API + 阅读回执 + 小测验 (TRAIN 接入)
-import { pool as getPool } from './utils/database.js';
+import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
 function pool() { return getPool(); }
 
 export async function ensureSOPDistributionSchema() {
@@ -71,11 +71,11 @@ export async function createSOPVersion(data) {
     const vr = await pool().query(`SELECT COALESCE(MAX(version),0)+1 as next_ver FROM sop_versions WHERE sop_id=$1`, [data.sopId]);
     const nextVer = vr.rows[0]?.next_ver || 1;
     const r = await pool().query(
-      `INSERT INTO sop_versions (sop_id,title,content,version,category,brand,store,target_roles,status,published_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      `INSERT INTO sop_versions (sop_id,title,content,version,category,brand,store,target_roles,status,published_by,tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [data.sopId, data.title, data.content||'', nextVer, data.category||null,
        data.brand||null, data.store||null, data.targetRoles||['store_staff','store_manager','store_production_manager'],
-       data.status||'draft', data.publishedBy||null]
+       data.status||'draft', data.publishedBy||null, resolveTenantIdDefault()]
     );
     return { success: true, sopVersion: r.rows[0] };
   } catch (e) { return { success: false, error: e?.message }; }
@@ -103,12 +103,12 @@ export async function distributeSOP(sopVersionId, employees, sendMessageFn) {
     try {
       // 创建分发记录
       const dr = await pool().query(
-        `INSERT INTO sop_distributions (sop_version_id,employee_username,employee_name,store)
-         VALUES ($1,$2,$3,$4)
-         ON CONFLICT (sop_version_id,employee_username) DO UPDATE SET
+        `INSERT INTO sop_distributions (sop_version_id,employee_username,employee_name,store,tenant_id)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (sop_version_id,employee_username,tenant_id) DO UPDATE SET
            distributed_at=NOW(), status='sent', reminder_count=0
          RETURNING *`,
-        [sopVersionId, emp.username, emp.name||null, emp.store||null]
+        [sopVersionId, emp.username, emp.name||null, emp.store||null, resolveTenantIdDefault()]
       );
 
       // 通过飞书推送
@@ -208,9 +208,9 @@ export async function submitQuizAnswers(distributionId, employeeUsername, answer
 export async function addQuizQuestion(data) {
   try {
     const r = await pool().query(
-      `INSERT INTO sop_quiz_questions (sop_id,question,options,correct_answer,explanation,difficulty)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [data.sopId, data.question, JSON.stringify(data.options||[]), data.correctAnswer, data.explanation||null, data.difficulty||'easy']
+      `INSERT INTO sop_quiz_questions (sop_id,question,options,correct_answer,explanation,difficulty,tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [data.sopId, data.question, JSON.stringify(data.options||[]), data.correctAnswer, data.explanation||null, data.difficulty||'easy', resolveTenantIdDefault()]
     );
     return { success: true, question: r.rows[0] };
   } catch (e) { return { success: false, error: e?.message }; }

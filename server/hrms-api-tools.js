@@ -1,5 +1,5 @@
 // HRMS 排班/打卡/入离职 API 工具 (HR & OP 接入)
-import { pool as getPool } from './utils/database.js';
+import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
 function pool() { return getPool(); }
 
 // ─── 确保表结构 ───
@@ -107,15 +107,15 @@ export async function getSchedule(store, startDate, endDate) {
 export async function upsertSchedule(data) {
   try {
     const r = await pool().query(
-      `INSERT INTO schedules (store,employee_username,employee_name,shift_date,shift_type,start_time,end_time,is_rest,notes,created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (store,employee_username,shift_date) DO UPDATE SET
+      `INSERT INTO schedules (store,employee_username,employee_name,shift_date,shift_type,start_time,end_time,is_rest,notes,created_by,tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (store,employee_username,shift_date,tenant_id) DO UPDATE SET
          shift_type=EXCLUDED.shift_type, start_time=EXCLUDED.start_time, end_time=EXCLUDED.end_time,
          is_rest=EXCLUDED.is_rest, notes=EXCLUDED.notes, updated_at=NOW()
        RETURNING *`,
       [data.store, data.employeeUsername, data.employeeName||null, data.shiftDate,
        data.shiftType||'normal', data.startTime||null, data.endTime||null,
-       data.isRest||false, data.notes||null, data.createdBy||null]
+       data.isRest||false, data.notes||null, data.createdBy||null, resolveTenantIdDefault()]
     );
     return { success: true, schedule: r.rows[0] };
   } catch (e) { return { success: false, error: e?.message }; }
@@ -143,7 +143,7 @@ export async function recordAttendance(data) {
     const r = await pool().query(
       `INSERT INTO attendance_records (employee_username,employee_name,store,record_date,clock_in,clock_out,status,late_minutes,early_leave_minutes,overtime_minutes,notes,source,tenant_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT (employee_username,record_date) DO UPDATE SET
+       ON CONFLICT (employee_username,record_date,tenant_id) DO UPDATE SET
          clock_out=COALESCE(EXCLUDED.clock_out,attendance_records.clock_out),
          status=EXCLUDED.status, late_minutes=EXCLUDED.late_minutes,
          early_leave_minutes=EXCLUDED.early_leave_minutes, overtime_minutes=EXCLUDED.overtime_minutes,
@@ -152,7 +152,7 @@ export async function recordAttendance(data) {
       [data.employeeUsername, data.employeeName||null, data.store||null, data.recordDate,
        data.clockIn||null, data.clockOut||null, data.status||'normal',
        data.lateMinutes||0, data.earlyLeaveMinutes||0, data.overtimeMinutes||0,
-       data.notes||null, data.source||'system', data.tenantId || 'default']
+       data.notes||null, data.source||'system', data.tenantId || resolveTenantIdDefault()]
     );
     return { success: true, record: r.rows[0] };
   } catch (e) { return { success: false, error: e?.message }; }
@@ -184,12 +184,12 @@ export async function getAttendanceSummary(store, month, tenantId) {
 export async function createEmploymentRecord(data) {
   try {
     const r = await pool().query(
-      `INSERT INTO employment_records (employee_username,employee_name,store,brand,action_type,action_date,position,department,reason,handover_to,salary_info,created_by,status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      `INSERT INTO employment_records (employee_username,employee_name,store,brand,action_type,action_date,position,department,reason,handover_to,salary_info,created_by,status,tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
       [data.employeeUsername, data.employeeName||null, data.store||null, data.brand||null,
        data.actionType, data.actionDate, data.position||null, data.department||null,
        data.reason||null, data.handoverTo||null, JSON.stringify(data.salaryInfo||{}),
-       data.createdBy||null, data.status||'pending']
+       data.createdBy||null, data.status||'pending', resolveTenantIdDefault()]
     );
     return { success: true, record: r.rows[0] };
   } catch (e) { return { success: false, error: e?.message }; }
@@ -241,10 +241,10 @@ export async function getTurnoverRate(store, months = 3) {
 export async function createTempStaffingRequest(data) {
   try {
     const r = await pool().query(
-      `INSERT INTO temp_staffing_requests (store,brand,requested_by,request_date,needed_count,shift_type,reason,priority)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      `INSERT INTO temp_staffing_requests (store,brand,requested_by,request_date,needed_count,shift_type,reason,priority,tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [data.store, data.brand||null, data.requestedBy, data.requestDate||new Date().toISOString().slice(0,10),
-       data.neededCount||1, data.shiftType||null, data.reason||null, data.priority||'normal']
+       data.neededCount||1, data.shiftType||null, data.reason||null, data.priority||'normal', resolveTenantIdDefault()]
     );
     return { success: true, request: r.rows[0] };
   } catch (e) { return { success: false, error: e?.message }; }
