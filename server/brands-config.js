@@ -3,6 +3,7 @@
 // The STORES array below is kept only as a fallback for when the DB cache is empty.
 
 import { getBrandForStoreSync } from './utils/brand-config-loader.js';
+import { resolveTenantIdDefault } from './utils/database.js';
 
 export const STORES = [
   { storeId: '51866138', name: '马己仙上海音乐广场店', brandName: '马己仙', smsSuffix: 'MAJIXIAN' },
@@ -15,25 +16,25 @@ export const ALL_STORE_NAMES  = STORES.map(s => s.name);
 
 // Returns env-var suffix for SMS templates: 'HONGCHAO', 'MAJIXIAN', or 'DEFAULT'
 export function getStoreSmsEnvSuffix(storeId) {
-  return getBrandForStoreSync(storeId)?.smsSuffix || STORE_BY_ID[String(storeId || '').trim()]?.smsSuffix || 'DEFAULT';
+  return getBrandForStoreSync(storeId, resolveTenantIdDefault())?.smsSuffix || STORE_BY_ID[String(storeId || '').trim()]?.smsSuffix || 'DEFAULT';
 }
 
 // Partial store/brand name → POS store_id
 export function storeNameToId(name) {
   const s = String(name || '');
-  return getBrandForStoreSync(s)?.storeId || STORES.find(st => s.includes(st.brandName))?.storeId || '';
+  return getBrandForStoreSync(s, resolveTenantIdDefault())?.storeId || STORES.find(st => s.includes(st.brandName))?.storeId || '';
 }
 
 // POS store_id → canonical store name
 export function storeIdToName(storeId) {
   const s = String(storeId || '').trim();
-  return getBrandForStoreSync(s)?.storeName || STORE_BY_ID[s]?.name || s;
+  return getBrandForStoreSync(s, resolveTenantIdDefault())?.storeName || STORE_BY_ID[s]?.name || s;
 }
 
 // Infer brand name from any store/brand text
 export function inferBrandFromStoreName(storeName) {
   const s = String(storeName || '').trim();
-  return getBrandForStoreSync(s)?.brandName || STORES.find(st => s.includes(st.brandName))?.brandName || '';
+  return getBrandForStoreSync(s, resolveTenantIdDefault())?.brandName || STORES.find(st => s.includes(st.brandName))?.brandName || '';
 }
 
 // Normalize variant store name spellings → canonical DB name

@@ -8,7 +8,7 @@
  * - 工作能力：出品 = `monthly_margins` 实收毛利率 vs 目标；店长 = 营业日报 **每月 9 日** `dianping_rating`（与 agents 店长能力一致）。
  */
 
-import { pool } from './utils/database.js';
+import { pool, resolveTenantIdDefault } from './utils/database.js';
 import { inferBrandFromStoreName } from './agents.js';
 import { getBrandConfigSync } from './utils/brand-config-loader.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
@@ -864,7 +864,7 @@ const LABOR_EFFICIENCY_THRESHOLDS = {
 };
 
 function getLaborEfficiencyThresholds(brandZh) {
-  return getBrandConfigSync(brandZh)?.laborEfficiencyThresholds || LABOR_EFFICIENCY_THRESHOLDS[brandZh];
+  return getBrandConfigSync(brandZh, resolveTenantIdDefault())?.laborEfficiencyThresholds || LABOR_EFFICIENCY_THRESHOLDS[brandZh];
 }
 
 function inferBrandFromStore(store) {

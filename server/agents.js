@@ -31,7 +31,7 @@ import {
   AgentCommunicationSystem, 
   AgentCommunicationHelper 
 } from './agent-communication-system.js';
-import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds } from './utils/database.js';
+import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault } from './utils/database.js';
 import { getBrandConfigSync, getBrandForStoreSync, getAllBrandNamesSync } from './utils/brand-config-loader.js';
 import {
   pgGetMonthlyExecutionFilingCount,
@@ -2802,7 +2802,7 @@ function fallbackBrandConfigByName(brandName) {
   const name = String(brandName || '').trim();
   const brandKey = name.includes('马己仙') ? '马己仙' : '洪潮';
   const literal = BRAND_CONFIG[brandKey];
-  const dbChecklist = getBrandConfigSync(brandKey)?.checklist;
+  const dbChecklist = getBrandConfigSync(brandKey, resolveTenantIdDefault())?.checklist;
   if (!dbChecklist) return literal;
   return {
     name: literal.name,
@@ -4418,7 +4418,7 @@ async function estimateMarginMetricsForRange({ state, store, startDate, endDate 
   const profileMap = buildGrossProfileMap(profiles, store);
   try {
     // 按品牌过滤成本，避免两品牌同名菜成本互相污染（品牌从门店名前缀推断；'*' 通用兜底）。
-    const dlBrand = getBrandForStoreSync(store)?.brandName
+    const dlBrand = getBrandForStoreSync(store, resolveTenantIdDefault())?.brandName
       || (String(store||'').includes('洪潮') ? '洪潮' : (String(store||'').includes('马己仙') ? '马己仙' : ''));
     const dlParams = [normalizeStoreKey(store)];
     let dlBrandClause = '';
@@ -8182,7 +8182,7 @@ export async function getOpsKnowledgeSupport(query, context = {}) {
     const llmResult = await callLLM([
       {
         role: 'system',
-        content: `你是小年，年年有喜餐饮集团AI助理，精通${getAllBrandNamesSync().join('和') || '本集团'}品牌标准。当前门店：${store}（${brand}）。请提供专业、可操作的建议。`
+        content: `你是小年，年年有喜餐饮集团AI助理，精通${getAllBrandNamesSync(resolveTenantIdDefault()).join('和') || '本集团'}品牌标准。当前门店：${store}（${brand}）。请提供专业、可操作的建议。`
       },
       { role: 'user', content: query }
     ], { model: getOpsReasoningModel() });
@@ -9291,7 +9291,7 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
           let checklistResponse = '';
           
           if (text.includes('开市') || text.includes('开档')) {
-            const dbChecklist = (brand === '洪潮' || brand === '马己仙') ? getBrandConfigSync(brand)?.checklist : null;
+            const dbChecklist = (brand === '洪潮' || brand === '马己仙') ? getBrandConfigSync(brand, resolveTenantIdDefault())?.checklist : null;
             const items = dbChecklist?.opening
               || (brand === '洪潮'
                 ? ['地面清洁无积水', '所有设备正常开启', '食材新鲜度检查', '餐具消毒完成', '灯光亮度适中', '背景音乐开启', '空调温度设置合适', '员工仪容仪表检查']
@@ -9300,7 +9300,7 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
                 : ['地面清洁', '设备开启', '食材准备', '餐具消毒']);
             checklistResponse = `📋 开市检查表（${brand} · ${store}）\n\n检查项目：\n${items.map((item, i) => `${i + 1}. ${item}`).join('\n')}\n\n请逐项完成后拍照发送至本对话。`;
           } else if (text.includes('收档') || text.includes('闭市') || text.includes('收市')) {
-            const dbChecklist = (brand === '洪潮' || brand === '马己仙') ? getBrandConfigSync(brand)?.checklist : null;
+            const dbChecklist = (brand === '洪潮' || brand === '马己仙') ? getBrandConfigSync(brand, resolveTenantIdDefault())?.checklist : null;
             const items = dbChecklist?.closing
               || (brand === '洪潮'
                 ? ['食材封存', '设备关闭', '垃圾清理', '安全检查', '门窗锁好']

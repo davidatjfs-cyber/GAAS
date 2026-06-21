@@ -1,5 +1,6 @@
 import { dailyReportIlikePatterns } from './v2-store-alignment.js';
 import { getStoreHasTakeawaySync } from './utils/brand-config-loader.js';
+import { resolveTenantIdDefault } from './utils/database.js';
 
 let _pool = null;
 export function setReportPool(p) { _pool = p; }
@@ -858,7 +859,8 @@ async function generatePeriodReport(store, startDate, endDate, reportType = 'wee
     reportType,
     sections: {}
   };
-  const dbHasTakeaway = getStoreHasTakeawaySync(store) ?? getStoreHasTakeawaySync(storeKey);
+  const tid = resolveTenantIdDefault();
+  const dbHasTakeaway = getStoreHasTakeawaySync(store, tid) ?? getStoreHasTakeawaySync(storeKey, tid);
   const hasTakeaway = dbHasTakeaway !== null
     ? dbHasTakeaway
     : (!STORE_NO_TAKEAWAY.has(store) && !STORE_NO_TAKEAWAY.has(storeKey));

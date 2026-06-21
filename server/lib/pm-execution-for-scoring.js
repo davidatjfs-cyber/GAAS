@@ -2,7 +2,7 @@
  * 出品经理开档/收档/原料收货、马己仙例会 — 按业务日统计，数据仅来自 `agent_messages`（与 agents `pm-execution-report-coverage.js` 同源）。
  * 洪潮店长企微仍用营业日报，不在此文件。
  */
-import { pool } from '../utils/database.js';
+import { pool, resolveTenantIdDefault } from '../utils/database.js';
 import { expandAgentStoreLabels, normalizeAgentMaterialBrand } from '../v2-store-alignment.js';
 import { getBrandConfigSync } from '../utils/brand-config-loader.js';
 
@@ -132,7 +132,7 @@ const KITCHEN_STATIONS_HONGCHAO = Object.freeze(['煲仔', '水吧', '炒锅', '
 
 function expectedKitchenStationsForBrand(brandZh) {
   const b = String(brandZh || '').trim();
-  const dbStations = getBrandConfigSync(b)?.kitchenStations;
+  const dbStations = getBrandConfigSync(b, resolveTenantIdDefault())?.kitchenStations;
   if (Array.isArray(dbStations) && dbStations.length) return [...dbStations];
   if (b === '洪潮') return [...KITCHEN_STATIONS_HONGCHAO];
   return [...KITCHEN_STATIONS_MAJIXIAN];

@@ -17,7 +17,7 @@ import {
   sendLarkCard,
   inferBrandFromStoreName
 } from './agents.js';
-import { getActiveTenantIds } from './utils/database.js';
+import { getActiveTenantIds, resolveTenantIdDefault } from './utils/database.js';
 import { calculateStoreRating, calculateEmployeeScore } from './new-scoring-model.js';
 import {
   dailyReportIlikePatterns,
@@ -324,9 +324,9 @@ async function sendFeishuPerformanceDigest(period) {
 }
 
 // 成本按「品牌」归集（品牌从门店名前缀洪潮/马己仙推断），避免跨品牌同名菜成本污染；'*' 为通用兜底。
-function dishBrandToken(s) {
+function dishBrandToken(s, tenantId) {
   const t = String(s || '');
-  return getBrandForStoreSync(t)?.brandName
+  return getBrandForStoreSync(t, tenantId || resolveTenantIdDefault())?.brandName
     || (t.includes('洪潮') ? '洪潮' : (t.includes('马己仙') ? '马己仙' : ''));
 }
 
@@ -351,8 +351,8 @@ async function loadDishCostsForStores(storeNames, tenantId = 'default') {
   return m;
 }
 
-function costFor(m, store, bizRaw, dish) {
-  const bk = dishBrandToken(store);
+function costFor(m, store, bizRaw, dish, tenantId) {
+  const bk = dishBrandToken(store, tenantId);
   const biz = String(bizRaw || '').trim().toLowerCase();
   const dk = normDish(dish);
   if (bk) {
@@ -455,7 +455,7 @@ function buildDishOptimizationMarkdown({ start, end, reportTitle, tenantId = 'de
       const qty = Number(r.qty || 0);
       const revenue = Number(r.revenue || 0);
       if (qty <= 0 || revenue <= 0) continue;
-      const uc = costFor(costMap, r.store, r.biz_type, r.dish_name);
+      const uc = costFor(costMap, r.store, r.biz_type, r.dish_name, tenantId);
       if (uc == null || !Number.isFinite(uc)) continue;
       const profit = revenue - qty * uc;
       if (!Number.isFinite(profit)) continue;

@@ -2,6 +2,17 @@
  * 数据库工具模块
  * 统一数据库连接和基础操作
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+// 跨文件共享的租户上下文：index.js的authRequired中间件按请求设置(tenantContext.run)，
+// agents.js/performance-jobs.js等没有HTTP req对象的深层工具函数靠resolveTenantIdDefault()
+// 读取这个上下文，不用给这些函数的所有调用点都加tenantId参数。未登录/无上下文(后台任务)
+// 时落回'default'，行为不变。必须放在index.js/agents.js都能import的共享模块里，
+// 否则两边各自new一个AsyncLocalStorage会变成互不相通的两份上下文。
+export const tenantContext = new AsyncLocalStorage();
+export function resolveTenantIdDefault(tenantId) {
+  return String(tenantId || tenantContext.getStore() || 'default').trim() || 'default';
+}
 
 let _pool = null;
 export function setPool(p) { _pool = p; }

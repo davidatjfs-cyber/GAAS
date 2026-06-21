@@ -8,7 +8,7 @@ import { statfs } from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID, createDecipheriv, createHash } from 'crypto';
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { tenantContext, resolveTenantIdDefault } from './utils/database.js';
 import multer from 'multer';
 import https from 'https';
 import { execFileSync, execSync } from 'child_process';
@@ -1170,8 +1170,11 @@ const STORE_FORECAST_CONFIG = {
 
 function getStoreForecastConfig(store) {
   const s = String(store || '').trim();
-  const brandKey = getBrandForStoreSync(s)?.brandKey;
-  const dbCfg = brandKey ? getBrandConfigSync(brandKey)?.forecast : null;
+  // resolveTenantIdDefault读AsyncLocalStorage里authRequired设置的租户上下文，
+  // 不需要给这个函数的所有调用点都加tenantId参数。
+  const tid = resolveTenantIdDefault();
+  const brandKey = getBrandForStoreSync(s, tid)?.brandKey;
+  const dbCfg = brandKey ? getBrandConfigSync(brandKey, tid)?.forecast : null;
   if (dbCfg) return dbCfg;
   if (STORE_FORECAST_CONFIG[s]) return STORE_FORECAST_CONFIG[s];
   // Partial name match for abbreviated store names
@@ -5898,13 +5901,8 @@ function cleanupLegacyTestState(state0) {
   return { state, changed };
 }
 
-// 大量历史调用点(getSharedState()/saveSharedState()/mergeSharedStateFields())未显式传tenantId。
-// 用 AsyncLocalStorage 在 authRequired 里按请求设置租户上下文，作为这些调用点的默认值兜底，
-// 这样无需逐一修改150+处调用，未登录/无上下文(后台任务)的调用仍落回'default'，行为不变。
-const tenantContext = new AsyncLocalStorage();
-function resolveTenantIdDefault(tenantId) {
-  return String(tenantId || tenantContext.getStore() || 'default').trim() || 'default';
-}
+// tenantContext/resolveTenantIdDefault现在是utils/database.js里的共享实例(见该文件注释)，
+// 这样agents.js/performance-jobs.js等同一进程内的其它文件也能读到authRequired设置的租户上下文。
 
 async function getSharedState(tenantId) {
   const key = resolveTenantIdDefault(tenantId);
@@ -8739,7 +8737,7 @@ function normalizeForecastBizType(input) {
 // 从品牌名/门店名推断品牌 token（洪潮/马己仙），用于按品牌过滤菜品库成本，避免跨品牌成本污染。
 function forecastBrandToken(input) {
   const t = String(input || '');
-  const dbBrand = getBrandForStoreSync(t)?.brandName;
+  const dbBrand = getBrandForStoreSync(t, resolveTenantIdDefault())?.brandName;
   if (dbBrand) return dbBrand;
   if (t.includes('洪潮')) return '洪潮';
   if (t.includes('马己仙')) return '马己仙';
@@ -8757,8 +8755,9 @@ const STORE_SLOT_CONFIG = {
 
 function getStoreSlotConfig(store) {
   const s = String(store || '').trim();
-  const brandKey = getBrandForStoreSync(s)?.brandKey;
-  const dbCfg = brandKey ? getBrandConfigSync(brandKey)?.slotConfig : null;
+  const tid = resolveTenantIdDefault();
+  const brandKey = getBrandForStoreSync(s, tid)?.brandKey;
+  const dbCfg = brandKey ? getBrandConfigSync(brandKey, tid)?.slotConfig : null;
   if (dbCfg) return dbCfg;
   if (STORE_SLOT_CONFIG[s]) return STORE_SLOT_CONFIG[s];
   const key = Object.keys(STORE_SLOT_CONFIG).find(k => k !== '_default' && (s.includes(k) || k.includes(s)));
@@ -14064,7 +14063,7 @@ function hrmsDateKeyInShanghai(d) {
  */
 function hrmsAttendanceWindowMinutesForStore(storeRaw) {
   const s = String(storeRaw || '').trim();
-  const db = getBrandForStoreSync(s);
+  const db = getBrandForStoreSync(s, resolveTenantIdDefault());
   if (db && Number.isFinite(db.punchStartMinutes) && Number.isFinite(db.punchEndMinutes)) {
     return { startMinutes: db.punchStartMinutes, endMinutes: db.punchEndMinutes };
   }
