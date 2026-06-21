@@ -1,4 +1,5 @@
 import { dailyReportIlikePatterns } from './v2-store-alignment.js';
+import { getStoreHasTakeawaySync } from './utils/brand-config-loader.js';
 
 let _pool = null;
 export function setReportPool(p) { _pool = p; }
@@ -17,7 +18,8 @@ const BIZ_CN = { dinein: '堂食', takeaway: '外卖' };
 const SLOT_TYPES = ['lunch', 'afternoon', 'dinner'];
 const SLOT_CN = { lunch: '午市', afternoon: '下午茶', dinner: '晚市', other: '其他时段' };
 
-// 门店级配置：哪些门店没有外卖业务
+// 门店级配置兜底：哪些门店没有外卖业务（与 store_brands.has_takeaway 内容一致，
+// 仅在DB缓存未就绪/查不到该门店时使用）
 const STORE_NO_TAKEAWAY = new Set(['洪潮大宁久光店']);
 
 const BIZ_NORMALIZE_SQL = `
@@ -856,7 +858,10 @@ async function generatePeriodReport(store, startDate, endDate, reportType = 'wee
     reportType,
     sections: {}
   };
-  const hasTakeaway = !STORE_NO_TAKEAWAY.has(store) && !STORE_NO_TAKEAWAY.has(storeKey);
+  const dbHasTakeaway = getStoreHasTakeawaySync(store) ?? getStoreHasTakeawaySync(storeKey);
+  const hasTakeaway = dbHasTakeaway !== null
+    ? dbHasTakeaway
+    : (!STORE_NO_TAKEAWAY.has(store) && !STORE_NO_TAKEAWAY.has(storeKey));
   report.hasTakeaway = hasTakeaway;
 
   // 0) 检测实际数据日期范围 + 数据质量

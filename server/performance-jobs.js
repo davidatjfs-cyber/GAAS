@@ -23,6 +23,7 @@ import {
   feishuStoreSearchPatterns,
   resolveAgentCanonicalStore
 } from './v2-store-alignment.js';
+import { getBrandForStoreSync } from './utils/brand-config-loader.js';
 
 function roleLabelZh(r) {
   const x = String(r || '').trim();
@@ -324,9 +325,8 @@ async function sendFeishuPerformanceDigest(period) {
 // 成本按「品牌」归集（品牌从门店名前缀洪潮/马己仙推断），避免跨品牌同名菜成本污染；'*' 为通用兜底。
 function dishBrandToken(s) {
   const t = String(s || '');
-  if (t.includes('洪潮')) return '洪潮';
-  if (t.includes('马己仙')) return '马己仙';
-  return '';
+  return getBrandForStoreSync(t)?.brandName
+    || (t.includes('洪潮') ? '洪潮' : (t.includes('马己仙') ? '马己仙' : ''));
 }
 
 async function loadDishCostsForStores(storeNames) {

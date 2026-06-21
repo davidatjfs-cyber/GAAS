@@ -18,8 +18,8 @@ const REFRESH_MS = 5 * 60 * 1000;
 // 兜底值：与重构前agents.js/brands-config.js等文件里的硬编码原值保持一致，
 // 仅在进程刚启动、尚未完成第一次DB读取时使用。
 const BOOTSTRAP_STORE_BRANDS = [
-  { store_id: '51866138', store_name: '马己仙上海音乐广场店', brand_key: 'majixian', brand_name: '马己仙', sms_suffix: 'MAJIXIAN' },
-  { store_id: '64822111', store_name: '洪潮大宁久光店', brand_key: 'hongchao', brand_name: '洪潮', sms_suffix: 'HONGCHAO' }
+  { store_id: '51866138', store_name: '马己仙上海音乐广场店', brand_key: 'majixian', brand_name: '马己仙', sms_suffix: 'MAJIXIAN', has_takeaway: true },
+  { store_id: '64822111', store_name: '洪潮大宁久光店', brand_key: 'hongchao', brand_name: '洪潮', sms_suffix: 'HONGCHAO', has_takeaway: false }
 ];
 const BOOTSTRAP_BRAND_CONFIGS = [
   { brand_key: 'hongchao', brand_name: '洪潮', config_json: {} },
@@ -36,7 +36,7 @@ async function refresh() {
   _loadingPromise = (async () => {
     try {
       const [storesRes, configsRes] = await Promise.all([
-        pool().query('SELECT store_id, store_name, brand_key, brand_name, sms_suffix FROM store_brands'),
+        pool().query('SELECT store_id, store_name, brand_key, brand_name, sms_suffix, has_takeaway FROM store_brands'),
         pool().query('SELECT brand_key, brand_name, config_json FROM brand_configs')
       ]);
       if (storesRes.rows?.length) _storeBrands = storesRes.rows;
@@ -69,7 +69,7 @@ export function getBrandForStoreSync(storeIdOrText) {
   let row = _storeBrands.find((r) => r.store_id === s || r.store_name === s);
   if (!row) row = _storeBrands.find((r) => s.includes(r.brand_name));
   if (!row) return null;
-  return { brandKey: row.brand_key, brandName: row.brand_name, storeId: row.store_id, storeName: row.store_name, smsSuffix: row.sms_suffix };
+  return { brandKey: row.brand_key, brandName: row.brand_name, storeId: row.store_id, storeName: row.store_name, smsSuffix: row.sms_suffix, hasTakeaway: row.has_takeaway !== false };
 }
 
 /** 按brand_key或品牌中文名取该品牌的config_json(已展开)。查不到返回null——调用方需自行决定安全默认值，不要静默归并到某个具体品牌。 */
@@ -80,6 +80,15 @@ export function getBrandConfigSync(brandKeyOrName) {
   const row = _brandConfigs.find((r) => r.brand_key === k || r.brand_name === k);
   if (!row) return null;
   return { brandKey: row.brand_key, brandName: row.brand_name, ...(row.config_json || {}) };
+}
+
+/** 仅做精确门店名/ID匹配(不做品牌名子串兜底)；查不到返回null，调用方应自行决定默认值。 */
+export function getStoreHasTakeawaySync(storeNameOrId) {
+  maybeBackgroundRefresh();
+  const s = String(storeNameOrId || '').trim();
+  if (!s) return null;
+  const row = _storeBrands.find((r) => r.store_id === s || r.store_name === s);
+  return row ? row.has_takeaway !== false : null;
 }
 
 export function getAllBrandKeysSync() {
