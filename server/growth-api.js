@@ -70,6 +70,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from './sms.js';
 import { getStoreSmsEnvSuffix, storeNameToId as _storeNameToIdFromConfig, STORE_ID_TO_NAME, STORES as _ALL_STORES } from './brands-config.js';
+import { tenantContext } from './utils/database.js';
 const _storeId = (brandName) => _ALL_STORES.find(s => s.brandName === brandName)?.storeId || '';
 
 // 订阅消息推送网关（方案B）：HRMS 自己没有小程序 access_token，发不了订阅消息，
@@ -4925,7 +4926,9 @@ export function registerGrowthRoutes(app, pool) {
 
   app.get('/api/growth/store-profiles', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    const r = await pool.query(`SELECT * FROM store_marketing_profiles ORDER BY updated_at DESC LIMIT 300`);
+    const r = await tenantContext.run(getGrowthTenantId(req), () =>
+      pool.query(`SELECT * FROM store_marketing_profiles ORDER BY updated_at DESC LIMIT 300`)
+    );
     return res.json({ ok: true, profiles: r.rows });
   });
 
@@ -4934,20 +4937,23 @@ export function registerGrowthRoutes(app, pool) {
     const b = req.body || {};
     const storeId = cleanText(b.store_id, 128);
     if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
-    const r = await pool.query(
-      `INSERT INTO store_marketing_profiles (store_id, brand, avg_ticket_fen, primary_audience, peak_hours, suitable_offers, unsuitable_offers, notes)
-       VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8)
-       ON CONFLICT (store_id) DO UPDATE SET
-         brand = EXCLUDED.brand,
-         avg_ticket_fen = EXCLUDED.avg_ticket_fen,
-         primary_audience = EXCLUDED.primary_audience,
-         peak_hours = EXCLUDED.peak_hours,
-         suitable_offers = EXCLUDED.suitable_offers,
-         unsuitable_offers = EXCLUDED.unsuitable_offers,
-         notes = EXCLUDED.notes,
-         updated_at = NOW()
-       RETURNING *`,
-      [storeId, cleanText(b.brand, 128), Math.max(0, Math.floor(Number(b.avg_ticket_fen) || 0)), cleanText(b.primary_audience, 500), JSON.stringify(b.peak_hours || []), JSON.stringify(b.suitable_offers || []), JSON.stringify(b.unsuitable_offers || []), cleanText(b.notes, 4000)]
+    const tenantId = getGrowthTenantId(req);
+    const r = await tenantContext.run(tenantId, () =>
+      pool.query(
+        `INSERT INTO store_marketing_profiles (store_id, brand, avg_ticket_fen, primary_audience, peak_hours, suitable_offers, unsuitable_offers, notes, tenant_id)
+         VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9)
+         ON CONFLICT (store_id, tenant_id) DO UPDATE SET
+           brand = EXCLUDED.brand,
+           avg_ticket_fen = EXCLUDED.avg_ticket_fen,
+           primary_audience = EXCLUDED.primary_audience,
+           peak_hours = EXCLUDED.peak_hours,
+           suitable_offers = EXCLUDED.suitable_offers,
+           unsuitable_offers = EXCLUDED.unsuitable_offers,
+           notes = EXCLUDED.notes,
+           updated_at = NOW()
+         RETURNING *`,
+        [storeId, cleanText(b.brand, 128), Math.max(0, Math.floor(Number(b.avg_ticket_fen) || 0)), cleanText(b.primary_audience, 500), JSON.stringify(b.peak_hours || []), JSON.stringify(b.suitable_offers || []), JSON.stringify(b.unsuitable_offers || []), cleanText(b.notes, 4000), tenantId]
+      )
     );
     return res.json({ ok: true, profile: r.rows[0] });
   });
@@ -5167,12 +5173,14 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/creative-assets', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const storeId = cleanText(req.query.store_id || '', 128);
-    const r = await pool.query(
-      `SELECT * FROM creative_assets
-       WHERE enabled = TRUE AND ($1::text = '' OR store_id = $1)
-       ORDER BY created_at DESC
-       LIMIT 300`,
-      [storeId]
+    const r = await tenantContext.run(getGrowthTenantId(req), () =>
+      pool.query(
+        `SELECT * FROM creative_assets
+         WHERE enabled = TRUE AND ($1::text = '' OR store_id = $1)
+         ORDER BY created_at DESC
+         LIMIT 300`,
+        [storeId]
+      )
     );
     return res.json({ ok: true, assets: r.rows });
   });
@@ -5180,20 +5188,23 @@ export function registerGrowthRoutes(app, pool) {
   app.post('/api/growth/creative-assets', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const b = req.body || {};
-    const r = await pool.query(
-      `INSERT INTO creative_assets (asset_key, store_id, asset_type, name, url, tags, meta, enabled)
-       VALUES (NULLIF($1,''),NULLIF($2,''),$3,$4,$5,$6::jsonb,$7::jsonb,COALESCE($8, TRUE))
-       ON CONFLICT (asset_key) DO UPDATE SET
-         store_id = EXCLUDED.store_id,
-         asset_type = EXCLUDED.asset_type,
-         name = EXCLUDED.name,
-         url = EXCLUDED.url,
-         tags = EXCLUDED.tags,
-         meta = EXCLUDED.meta,
-         enabled = EXCLUDED.enabled,
-         updated_at = NOW()
-       RETURNING *`,
-      [cleanText(b.asset_key, 255), cleanText(b.store_id, 128), cleanText(b.asset_type, 80), cleanText(b.name, 300), cleanText(b.url, 1000), JSON.stringify(b.tags || []), JSON.stringify(b.meta || {}), b.enabled !== false]
+    const tenantId = getGrowthTenantId(req);
+    const r = await tenantContext.run(tenantId, () =>
+      pool.query(
+        `INSERT INTO creative_assets (asset_key, store_id, asset_type, name, url, tags, meta, enabled, tenant_id)
+         VALUES (NULLIF($1,''),NULLIF($2,''),$3,$4,$5,$6::jsonb,$7::jsonb,COALESCE($8, TRUE),$9)
+         ON CONFLICT (asset_key, tenant_id) DO UPDATE SET
+           store_id = EXCLUDED.store_id,
+           asset_type = EXCLUDED.asset_type,
+           name = EXCLUDED.name,
+           url = EXCLUDED.url,
+           tags = EXCLUDED.tags,
+           meta = EXCLUDED.meta,
+           enabled = EXCLUDED.enabled,
+           updated_at = NOW()
+         RETURNING *`,
+        [cleanText(b.asset_key, 255), cleanText(b.store_id, 128), cleanText(b.asset_type, 80), cleanText(b.name, 300), cleanText(b.url, 1000), JSON.stringify(b.tags || []), JSON.stringify(b.meta || {}), b.enabled !== false, tenantId]
+      )
     );
     return res.json({ ok: true, asset: r.rows[0] });
   });
@@ -5875,6 +5886,7 @@ export function registerGrowthRoutes(app, pool) {
       const eids = listData.external_userid.filter(Boolean);
       const tenantId = await resolveTenantIdForStore(pool, storeId);
       let synced = 0;
+      await tenantContext.run(tenantId, async () => {
       for (const eid of eids) {
         const detailResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/externalcontact/get?access_token=${encodeURIComponent(token)}&external_userid=${encodeURIComponent(eid)}`, { method: 'GET' });
         const detailData = await detailResp.json();
@@ -5900,7 +5912,7 @@ export function registerGrowthRoutes(app, pool) {
         await pool.query(
           `INSERT INTO wechat_work_customers (external_userid, name, phone, store_id, bind_customer_id, tenant_id)
            VALUES ($1,$2,NULLIF($3,''),$4,NULL,$5)
-           ON CONFLICT (external_userid) WHERE external_userid IS NOT NULL AND external_userid <> '' DO UPDATE SET
+           ON CONFLICT (external_userid, tenant_id) WHERE external_userid IS NOT NULL AND external_userid <> '' DO UPDATE SET
              name = COALESCE(NULLIF(EXCLUDED.name,''), wechat_work_customers.name),
              phone = COALESCE(NULLIF(EXCLUDED.phone,''), wechat_work_customers.phone),
              store_id = COALESCE(NULLIF(EXCLUDED.store_id,''), wechat_work_customers.store_id),
@@ -5918,6 +5930,7 @@ export function registerGrowthRoutes(app, pool) {
         }
         synced++;
       }
+      });
       return synced;
     } catch (e) {
       console.warn(`[wecom] sync contacts failed for store=${storeConfig.store_id}:`, e?.message);

@@ -1702,6 +1702,7 @@ export function registerPhaseRoutes(app, pool) {
       let records = [];
       try { const data = await getFeishuBitableData(appToken, tableId, b.access_token || ''); records = data?.data?.items || data?.data?.records || data?.items || []; } catch (e) { records = []; }
       let imported = 0;
+      let lastTenantId = 'default';
       for (const rec of records) {
         const f = rec.fields || rec;
         const phone = cleanPhone(f.phone||f.手机号||f.mobile||'');
@@ -1711,14 +1712,20 @@ export function registerPhaseRoutes(app, pool) {
         const note = cleanText(f.note||f.备注||'',500);
         if (phone||eid) {
           const tenantId = await resolveTenantIdForStore(pool, sid);
-          const ins = await pool.query('INSERT INTO wechat_work_customers(external_userid,name,phone,store_id,note,import_batch,tenant_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING RETURNING id',
-            [eid,name,phone,sid,note,batch,tenantId]);
+          lastTenantId = tenantId;
+          const ins = await tenantContext.run(tenantId, () =>
+            pool.query('INSERT INTO wechat_work_customers(external_userid,name,phone,store_id,note,import_batch,tenant_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING RETURNING id',
+              [eid,name,phone,sid,note,batch,tenantId])
+          );
           if (ins.rows.length) imported++;
         }
       }
-      const matched = await pool.query(
-        `UPDATE wechat_work_customers w SET bind_customer_id=g.id,updated_at=NOW()
-         FROM growth_customers g WHERE w.phone=g.phone AND w.bind_customer_id IS NULL AND w.import_batch=$1`,[batch]);
+      // 整批导入通常来自同一门店/租户；用最后解析到的tenantId做匹配收尾(空批次时退回default，安全)
+      const matched = await tenantContext.run(lastTenantId, () =>
+        pool.query(
+          `UPDATE wechat_work_customers w SET bind_customer_id=g.id,updated_at=NOW()
+           FROM growth_customers g WHERE w.phone=g.phone AND w.bind_customer_id IS NULL AND w.import_batch=$1`,[batch])
+      );
       res.json({ok:true,imported,matched:matched.rowCount||0,batch});
     } catch (e) { res.status(500).json({ok:false,error:e?.message||'import_failed'}); }
   });
@@ -1729,28 +1736,36 @@ export function registerPhaseRoutes(app, pool) {
     const batch = `manual_${Date.now()}`;
     const customers = Array.isArray(b.customers) ? b.customers : [b];
     let imported = 0;
+    let lastTenantId = 'default';
     for (const c of customers) {
       const phone = cleanPhone(c.phone||'');
       if (phone) {
         const sid = cleanText(c.store_id,128);
         const tenantId = await resolveTenantIdForStore(pool, sid);
-        await pool.query('INSERT INTO wechat_work_customers(external_userid,name,phone,store_id,note,import_batch,tenant_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING',
-          [cleanText(c.external_userid,128),cleanText(c.name,200),phone,sid,cleanText(c.note,500),batch,tenantId]);
+        lastTenantId = tenantId;
+        await tenantContext.run(tenantId, () =>
+          pool.query('INSERT INTO wechat_work_customers(external_userid,name,phone,store_id,note,import_batch,tenant_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING',
+            [cleanText(c.external_userid,128),cleanText(c.name,200),phone,sid,cleanText(c.note,500),batch,tenantId])
+        );
         imported++;
       }
     }
-    const matched = await pool.query(
-      `UPDATE wechat_work_customers w SET bind_customer_id=g.id,updated_at=NOW()
-       FROM growth_customers g WHERE w.phone=g.phone AND w.bind_customer_id IS NULL AND w.import_batch=$1`,[batch]);
+    const matched = await tenantContext.run(lastTenantId, () =>
+      pool.query(
+        `UPDATE wechat_work_customers w SET bind_customer_id=g.id,updated_at=NOW()
+         FROM growth_customers g WHERE w.phone=g.phone AND w.bind_customer_id IS NULL AND w.import_batch=$1`,[batch])
+    );
     res.json({ok:true,imported,matched:matched.rowCount||0,batch});
   });
 
   app.get('/api/growth/wechat-work/customers', async (req, res) => {
     if (!rqa(req, res)) return;
     const sid = cleanText(req.query.store_id||'',128);
-    const r = await pool.query(
-      `SELECT w.*,g.openid bound_openid,g.phone bound_phone FROM wechat_work_customers w LEFT JOIN growth_customers g ON w.bind_customer_id=g.id
-       WHERE ($1='' OR w.store_id=$1) ORDER BY w.created_at DESC LIMIT 500`,[sid]);
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () =>
+      pool.query(
+        `SELECT w.*,g.openid bound_openid,g.phone bound_phone FROM wechat_work_customers w LEFT JOIN growth_customers g ON w.bind_customer_id=g.id
+         WHERE ($1='' OR w.store_id=$1) ORDER BY w.created_at DESC LIMIT 500`,[sid])
+    );
     const total = r.rows.length;
     const bound = r.rows.filter(x=>x.bind_customer_id).length;
     res.json({ok:true,total,bound,unbound:total-bound,customers:r.rows});
@@ -1758,10 +1773,12 @@ export function registerPhaseRoutes(app, pool) {
 
   app.get('/api/growth/wechat-work/stats', async (req, res) => {
     if (!rqa(req, res)) return;
-    const r = await pool.query(`SELECT store_id,COUNT(*)::int total,
-      COUNT(*) FILTER(WHERE bind_customer_id IS NOT NULL)::int bound,
-      COUNT(*) FILTER(WHERE bind_customer_id IS NULL)::int unbound
-      FROM wechat_work_customers GROUP BY store_id ORDER BY store_id`);
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () =>
+      pool.query(`SELECT store_id,COUNT(*)::int total,
+        COUNT(*) FILTER(WHERE bind_customer_id IS NOT NULL)::int bound,
+        COUNT(*) FILTER(WHERE bind_customer_id IS NULL)::int unbound
+        FROM wechat_work_customers GROUP BY store_id ORDER BY store_id`)
+    );
     res.json({ok:true,stats:r.rows});
   });
 

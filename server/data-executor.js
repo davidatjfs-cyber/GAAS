@@ -20,6 +20,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { resolveTenantIdForStore } from './growth-api.js';
 
 let _pool = null;
 export function setDataExecutorPool(p) { _pool = p; }
@@ -91,14 +92,15 @@ async function getCachedResult(taskId, metricId, timeRange, store) {
 async function setCachedResult(taskId, metricId, timeRange, store, result, metricVersion, ttlMinutes) {
   const ttl = (ttlMinutes && ttlMinutes > 0) ? `${ttlMinutes} minutes` : '120 minutes';
   try {
+    const tenantId = await resolveTenantIdForStore(pool(), store);
     await pool().query(
       `INSERT INTO agent_metric_cache
-         (task_id, metric_id, time_range, store, result, metric_version, created_at, expires_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, NOW(), NOW() + $7::interval)
-       ON CONFLICT (task_id, metric_id, time_range, store)
+         (task_id, metric_id, time_range, store, result, metric_version, created_at, expires_at, tenant_id)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, NOW(), NOW() + $7::interval, $8)
+       ON CONFLICT (task_id, metric_id, time_range, store, tenant_id)
        DO UPDATE SET result = EXCLUDED.result, metric_version = EXCLUDED.metric_version,
                      expires_at = NOW() + $7::interval`,
-      [taskId, metricId, timeRange, store || '', JSON.stringify(result), metricVersion || 1, ttl]
+      [taskId, metricId, timeRange, store || '', JSON.stringify(result), metricVersion || 1, ttl, tenantId]
     );
   } catch (e) {
     console.error('[data-executor] setCachedResult error:', e?.message);
@@ -943,10 +945,11 @@ ${JSON.stringify(dataSummary, null, 2)}
 
     // P1B: 写入 diagnosis_feedback 表供质量监控
     try {
+      const diagTenantId = await resolveTenantIdForStore(pool(), execResult.store);
       await pool().query(
         `INSERT INTO diagnosis_feedback
-           (task_id, user_key, store, time_range, metrics_used, diagnosis, char_count, metric_count, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, NOW(), NOW())
+           (task_id, user_key, store, time_range, metrics_used, diagnosis, char_count, metric_count, created_at, updated_at, tenant_id)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, NOW(), NOW(), $9)
          ON CONFLICT DO NOTHING`,
         [
           taskId,
@@ -956,7 +959,8 @@ ${JSON.stringify(dataSummary, null, 2)}
           JSON.stringify(availableMetrics),
           diagnosisText.slice(0, 2000),
           diagnosisText.length,
-          availableMetrics.length
+          availableMetrics.length,
+          diagTenantId
         ]
       );
     } catch (fe) {
