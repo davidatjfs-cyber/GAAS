@@ -2,8 +2,9 @@
  * 毛利率消息接收处理模块
  */
 
-import { pool } from './utils/database.js';
+import { pool, tenantContext } from './utils/database.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
+import { resolveTenantIdForStore } from './growth-api.js';
 
 // ─────────────────────────────────────────────
 // 毛利率消息解析
@@ -47,15 +48,16 @@ export async function saveMarginData(marginData) {
       brand = '马己仙';
     }
     
-    // 保存到monthly_margins表
-    await pool().query(`
-      INSERT INTO monthly_margins (store, brand, period, actual_margin, source)
-      VALUES ($1, $2, $3, $4, 'feishu')
-      ON CONFLICT (store, brand, period)
-      DO UPDATE SET 
+    // 保存到monthly_margins表（飞书消息无ALS上下文，按门店反查真实租户）
+    const tenantId = await resolveTenantIdForStore(pool(), store);
+    await tenantContext.run(tenantId, () => pool().query(`
+      INSERT INTO monthly_margins (store, brand, period, actual_margin, source, tenant_id)
+      VALUES ($1, $2, $3, $4, 'feishu', $5)
+      ON CONFLICT (store, brand, period, tenant_id)
+      DO UPDATE SET
         actual_margin = EXCLUDED.actual_margin,
         updated_at = NOW()
-    `, [store, brand, period, actual_margin]);
+    `, [store, brand, period, actual_margin, tenantId]));
     
     console.log(`[margin] 已保存毛利率数据: ${store} ${period} ${actual_margin}%`);
     

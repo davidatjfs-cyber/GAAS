@@ -592,12 +592,12 @@ async function saveStoreRating(store, brand, period, actualRevenue, targetRevenu
 // 保存员工评分
 async function saveEmployeeScore(store, username, role, period, scoreData) {
   await pool().query(`
-    INSERT INTO employee_scores 
-    (store, brand, username, name, role, period, base_score, exception_bonus, exception_deduction, 
-     total_score, execution_rating, attitude_rating, ability_rating, execution_data, attitude_data, ability_data)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-    ON CONFLICT (store, username, role, period)
-    DO UPDATE SET 
+    INSERT INTO employee_scores
+    (store, brand, username, name, role, period, base_score, exception_bonus, exception_deduction,
+     total_score, execution_rating, attitude_rating, ability_rating, execution_data, attitude_data, ability_data, tenant_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+    ON CONFLICT (store, username, role, period, tenant_id)
+    DO UPDATE SET
       base_score = EXCLUDED.base_score,
       exception_bonus = EXCLUDED.exception_bonus,
       exception_deduction = EXCLUDED.exception_deduction,
@@ -613,7 +613,8 @@ async function saveEmployeeScore(store, username, role, period, scoreData) {
     store, inferBrandFromStoreName(store), username, null, role, period,
     scoreData.base_score, scoreData.exception_bonus, scoreData.exception_deduction,
     scoreData.total_score, scoreData.execution_rating, scoreData.attitude_rating, scoreData.ability_rating,
-    JSON.stringify(scoreData.execution_data || {}), JSON.stringify(scoreData.attitude_data || {}), JSON.stringify(scoreData.ability_data || {})
+    JSON.stringify(scoreData.execution_data || {}), JSON.stringify(scoreData.attitude_data || {}), JSON.stringify(scoreData.ability_data || {}),
+    resolveTenantIdDefault()
   ]);
 }
 

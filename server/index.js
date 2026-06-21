@@ -6264,8 +6264,8 @@ async function dualWriteStateToDB(state) {
       const rpType = String(sa?.type || '').trim();
       const isReward = rpType === '奖励' || rpType === 'reward';
       await pool.query(
-        `INSERT INTO hrms_reward_punishment_records (id, username, name, store, brand, type, category, amount, reason, source, approval_id, status, created_by, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approval',$10,$11,$12,$13)
+        `INSERT INTO hrms_reward_punishment_records (id, username, name, store, brand, type, category, amount, reason, source, approval_id, status, created_by, created_at, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approval',$10,$11,$12,$13,$14)
          ON CONFLICT (id) DO UPDATE SET
            username=EXCLUDED.username, name=EXCLUDED.name, type=EXCLUDED.type,
            amount=EXCLUDED.amount, reason=EXCLUDED.reason, status=EXCLUDED.status, updated_at=NOW()`,
@@ -6274,7 +6274,8 @@ async function dualWriteStateToDB(state) {
          Math.abs(Number(sa?.amount) || 0), String(sa?.reason || '').trim(),
          String(sa?.approvalId || ''), String(sa?.status || 'active').trim(),
          String(sa?.applicantUsername || '').trim(),
-         String(sa?.createdAt || '').trim() || hrmsNowISO()]
+         String(sa?.createdAt || '').trim() || hrmsNowISO(),
+         resolveTenantIdDefault()]
       );
     }
 
@@ -19772,14 +19773,15 @@ app.listen(PORT, HOST, async () => {
           const rpType = String(sa?.type || '').trim();
           const isReward = rpType === '奖励' || rpType === 'reward';
           await pool.query(
-            `INSERT INTO hrms_reward_punishment_records (id, username, name, store, brand, type, category, amount, reason, source, approval_id, status, created_by, created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approval',$10,'active',$11,$12)
+            `INSERT INTO hrms_reward_punishment_records (id, username, name, store, brand, type, category, amount, reason, source, approval_id, status, created_by, created_at, tenant_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approval',$10,'active',$11,$12,$13)
              ON CONFLICT (id) DO NOTHING`,
             [rid, String(sa?.targetUsername || '').trim(), String(sa?.targetName || '').trim(),
              '', '', isReward ? 'reward' : 'punishment', rpType,
              Math.abs(Number(sa?.amount) || 0), String(sa?.reason || '').trim(),
              String(sa?.approvalId || ''), String(sa?.applicantUsername || '').trim(),
-             String(sa?.createdAt || '').trim() || hrmsNowISO()]
+             String(sa?.createdAt || '').trim() || hrmsNowISO(),
+             resolveTenantIdDefault()]
           );
           backfillCount++;
         }

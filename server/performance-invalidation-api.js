@@ -455,10 +455,10 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
       }
 
       await p.query(
-        `INSERT INTO performance_invalidation_records (source_type, source_id, username, store, period, invalidated_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (source_type, source_id) DO NOTHING`,
-        [source_type, String(source_id), username, store || null, period, adminUser]
+        `INSERT INTO performance_invalidation_records (source_type, source_id, username, store, period, invalidated_by, tenant_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (source_type, source_id, tenant_id) DO NOTHING`,
+        [source_type, String(source_id), username, store || null, period, adminUser, tenantIdQ]
       );
 
       // Resolve employee store / role / 展示姓名

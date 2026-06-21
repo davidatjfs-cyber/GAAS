@@ -18,7 +18,8 @@
 //   - Compliance Guard 温度为0，零容忍审查
 // ─────────────────────────────────────────────────────────────────
 
-import { pool as getUnifiedPool } from './utils/database.js';
+import { pool as getUnifiedPool, getActiveTenantIds, tenantContext } from './utils/database.js';
+import { resolveTenantIdForStore } from './growth-api.js';
 import axios from 'axios';
 import {
   traceCausalChain,
@@ -380,8 +381,8 @@ ${scoresSummary || '(无绩效数据)'}
     // Step 6: 存入 action_plans
     const status = complianceResult.passed ? 'pending_review' : 'compliance_rejected';
     await pool().query(
-      `INSERT INTO action_plans (plan_id, title, goal, store, brand, status, plan_data, compliance_result, graph_context, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10)`,
+      `INSERT INTO action_plans (plan_id, title, goal, store, brand, status, plan_data, compliance_result, graph_context, created_by, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)`,
       [
         planId,
         planData.title || `${store} 改善计划`,
@@ -392,7 +393,8 @@ ${scoresSummary || '(无绩效数据)'}
         JSON.stringify(planData),
         JSON.stringify(complianceResult),
         JSON.stringify({ healthScore: storeHealth.healthScore, causalChainLength: causalChain.length }),
-        createdBy || 'system'
+        createdBy || 'system',
+        tenantId
       ]
     );
 
@@ -489,14 +491,27 @@ ${JSON.stringify(planData, null, 2)}
 // 3. Plan Lifecycle Management
 // ─────────────────────────────────────────────
 
+// action_plans开了FORCE RLS。审批/驳回从HTTP路由(已有ALS)和机器人消息(没有)两种
+// 路径调用，plan_id所属租户调用方未必知道——逐个active租户找到这条计划所在的租户，
+// 后续操作都在那个租户的上下文里做。
+async function findActionPlanTenant(planId) {
+  for (const tenantId of await getActiveTenantIds(pool())) {
+    const r = await tenantContext.run(tenantId, () =>
+      pool().query(`SELECT * FROM action_plans WHERE plan_id = $1`, [planId])
+    );
+    if (r.rows?.length) return { tenantId, plan: r.rows[0] };
+  }
+  return { tenantId: null, plan: null };
+}
+
 // 审批通过 → 拆解为 OP 任务
 export async function approvePlan(planId, approvedBy) {
   try {
-    const r = await pool().query(`SELECT * FROM action_plans WHERE plan_id = $1`, [planId]);
-    const plan = r.rows?.[0];
+    const { tenantId, plan } = await findActionPlanTenant(planId);
     if (!plan) return { ok: false, error: 'not_found' };
     if (plan.status !== 'pending_review') return { ok: false, error: `invalid_status: ${plan.status}` };
 
+    return await tenantContext.run(tenantId, async () => {
     await pool().query(
       `UPDATE action_plans SET status = 'approved', approved_by = $1, updated_at = NOW() WHERE plan_id = $2`,
       [approvedBy, planId]
@@ -531,6 +546,7 @@ export async function approvePlan(planId, approvedBy) {
 
     console.log(`[hq-planner] Plan ${planId} approved, created ${createdTasks} tasks`);
     return { ok: true, planId, createdTasks };
+    });
   } catch (e) {
     console.error('[hq-planner] approvePlan error:', e?.message);
     return { ok: false, error: e?.message };
@@ -540,11 +556,15 @@ export async function approvePlan(planId, approvedBy) {
 // 驳回计划
 export async function rejectPlan(planId, rejectedBy, reason) {
   try {
-    await pool().query(
-      `UPDATE action_plans SET status = 'rejected', updated_at = NOW(),
-       compliance_result = compliance_result || $1::jsonb
-       WHERE plan_id = $2`,
-      [JSON.stringify({ rejectedBy, rejectionReason: reason, rejectedAt: new Date().toISOString() }), planId]
+    const { tenantId, plan } = await findActionPlanTenant(planId);
+    if (!plan) return { ok: false, error: 'not_found' };
+    await tenantContext.run(tenantId, () =>
+      pool().query(
+        `UPDATE action_plans SET status = 'rejected', updated_at = NOW(),
+         compliance_result = compliance_result || $1::jsonb
+         WHERE plan_id = $2`,
+        [JSON.stringify({ rejectedBy, rejectionReason: reason, rejectedAt: new Date().toISOString() }), planId]
+      )
     );
     return { ok: true };
   } catch (e) {
@@ -607,6 +627,11 @@ export async function handleHqBrainMessage({ text, role, username, store }) {
   if (!isHqRole(role)) {
     return null; // 非 HQ 角色不处理
   }
+
+  // 飞书机器人消息没有JWT/ALS上下文，按门店反查真实租户，整段包裹，
+  // 避免fuzzyMatchStoreName/listPlans等内部查询在FORCE RLS下读不到数据。
+  const hqTenantId = await resolveTenantIdForStore(pool(), store);
+  return await tenantContext.run(hqTenantId, async () => {
 
   const t = String(text || '').trim();
 
@@ -723,6 +748,7 @@ export async function handleHqBrainMessage({ text, role, username, store }) {
 
   // 未匹配 HQ 专属意图，返回 null 继续走常规流程
   return null;
+  });
 }
 
 // ─────────────────────────────────────────────
