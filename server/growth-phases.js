@@ -2,7 +2,7 @@ import axios from 'axios';
 import { executeGrowthActionRecord, resolveTenantIdForStore } from './growth-api.js';
 import { callLLM, sendLarkMessage } from './agents.js';
 import { getBrandForStoreSync } from './utils/brand-config-loader.js';
-import { resolveTenantIdDefault } from './utils/database.js';
+import { tenantContext } from './utils/database.js';
 
 const PHASE_EVENT_TYPES = new Set([
   'campaign_scan', 'phone_authorized', 'coupon_claimed',
@@ -2366,6 +2366,7 @@ export function registerPhaseRoutes(app, pool) {
   });
 
   app.post('/api/growth/pos-feishu-sync', async (req, res) => {
+    await tenantContext.run(getPhaseApiTenantId(req), async () => {
     if (!rqa(req, res)) return;
     const b = req.body || {};
     const override = b.config || null;
@@ -2459,7 +2460,7 @@ export function registerPhaseRoutes(app, pool) {
               cleanText(o.member_name || '', 100), phone,
               cleanText(o.order_type || '', 40), cleanText(o.table_no || '', 40),
               Number(o.diners) || null, cleanText(o.duration || '', 40),
-               cleanText(o.store_name || '', 200), (function() { var sn = cleanText(o.store_name || '', 200); var sid = storeId || cleanText(o.store_id || '', 128); var dbId = getBrandForStoreSync(sn, resolveTenantIdDefault(req.tenantId))?.storeId; if (dbId) return dbId; if (sn && sn.includes('洪潮')) return '64822111'; if (sn && sn.includes('马己仙')) return '51866138'; return sid; })()
+               cleanText(o.store_name || '', 200), (function() { var sn = cleanText(o.store_name || '', 200); var sid = storeId || cleanText(o.store_id || '', 128); var dbId = getBrandForStoreSync(sn, getPhaseApiTenantId(req))?.storeId; if (dbId) return dbId; if (sn && sn.includes('洪潮')) return '64822111'; if (sn && sn.includes('马己仙')) return '51866138'; return sid; })()
             ]);
             totalOrders++;
           } catch (e) { console.error('[pos-feishu-sync] order upsert error:', e.message, o.order_no); }
@@ -2512,7 +2513,7 @@ export function registerPhaseRoutes(app, pool) {
               VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
               ON CONFLICT DO NOTHING
             `, [
-              itemBizDate || null, cleanText(it.store_name || '', 200), (function() { var sn = cleanText(it.store_name || '', 200); var dbId = getBrandForStoreSync(sn, resolveTenantIdDefault(req.tenantId))?.storeId; if (dbId) return dbId; if (sn && sn.includes('洪潮')) return '64822111'; if (sn && sn.includes('马己仙')) return '51866138'; return cleanText(it.store_code || '', 64); })(),
+              itemBizDate || null, cleanText(it.store_name || '', 200), (function() { var sn = cleanText(it.store_name || '', 200); var dbId = getBrandForStoreSync(sn, getPhaseApiTenantId(req))?.storeId; if (dbId) return dbId; if (sn && sn.includes('洪潮')) return '64822111'; if (sn && sn.includes('马己仙')) return '51866138'; return cleanText(it.store_code || '', 64); })(),
               cleanText(it.order_no || '', 128), cleanText(it.sku || '', 64), cleanText(it.dish_name || '', 300),
               cleanText(it.department || '', 100), cleanText(it.table_name || '', 100), cleanText(it.table_area || '', 100),
               cleanText(it.sale_type || '', 40),
@@ -2532,6 +2533,7 @@ export function registerPhaseRoutes(app, pool) {
     totalLinked = await linkPosOrdersToCustomers(pool);
     const snapshotRows = await refreshSalesGrowthSnapshot(pool, 7).catch(e => { console.error('[pos-feishu-sync] snapshot refresh error:', e.message); return 0; });
     res.json({ok:true, orders_synced: totalOrders, items_synced: totalItems, customers_linked: totalLinked, snapshot_rows: snapshotRows});
+  });
   });
 
   // ── Snapshot refresh (manual trigger) ────────────────────────────

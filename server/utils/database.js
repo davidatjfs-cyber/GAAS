@@ -14,11 +14,95 @@ export function resolveTenantIdDefault(tenantId) {
   return String(tenantId || tenantContext.getStore() || 'default').trim() || 'default';
 }
 
+// RLS专用、故意跟resolveTenantIdDefault分开的严格版本：读不到明确的租户身份(既没有
+// 显式tenantId参数也没有ALS上下文)时，返回一个保证不会匹配任何真实tenant_id的哨兵值，
+// 而不是退回'default'。
+//
+// 为什么不能跟resolveTenantIdDefault共用：那个函数是给app层"找不到就按default处理"
+// 这种业务兜底用的，今晚到处都在用它保证"零行为变化"。如果RLS的会话变量也读同一个
+// 函数，那么app层任何一个忘记正确传租户身份的bug，会同时让RLS也悄悄退回'default'——
+// 等于数据库这层完全没有提供任何app代码bug之外的额外保护，RLS就白做了。
+// 用一个独立、严格的函数，才能保证：哪怕app层某处疏忽，数据库这层依然会因为
+// 查不到匹配的tenant_id而返回空，而不是把数据算给错误的租户。
+const RLS_NO_TENANT_SENTINEL = '__rls_no_tenant_context__';
+export function resolveTenantIdStrict(tenantId) {
+  const v = String(tenantId || tenantContext.getStore() || '').trim();
+  return v || RLS_NO_TENANT_SENTINEL;
+}
+
 let _pool = null;
-export function setPool(p) { _pool = p; }
-export function pool() { 
-  if (!_pool) throw new Error('database: pool not set'); 
-  return _pool; 
+export function setPool(p) {
+  _pool = p;
+  wrapPoolForTenantContext(p);
+}
+export function pool() {
+  if (!_pool) throw new Error('database: pool not set');
+  return _pool;
+}
+
+/**
+ * RLS(行级安全)上线的前置基础设施：原地包装传入的pg.Pool实例，让全代码库现有的
+ * pool().query(...)/pool().connect()写法不用改一行，就能自动把当前请求/cron的租户身份
+ * 通过 SET 告诉数据库会话(走 set_config，参数化传值，不拼字符串，没有SQL注入风险)。
+ *
+ * 设计取舍——用session级set_config(...,false)而不是事务级SET LOCAL：
+ * 后台到处是 client.query('BEGIN')...COMMIT 这种显式多语句事务(safeTransaction等)，
+ * 也到处是单次pool.query()自动单语句提交；用SET LOCAL只在显式BEGIN之后才生效，
+ * 单次查询场景就要额外包一层事务，开销更大且要侵入式检测调用方是否已经BEGIN过。
+ * 改用session级设置：每次从池子checkout连接时设一次(覆盖checkout期间的所有查询，
+ * 不管调用方是单次查询还是手动BEGIN/COMMIT)，release前清空——清空是安全网，
+ * 防止这条连接被池子复用给别的请求时还带着上一个请求的租户身份。
+ *
+ * 这一步本身只是给会话设置一个GUC变量，在任何表实际打开RLS策略之前是完全无害的
+ * (没有策略读它，等于没设)。真正的隔离生效在Phase1给具体表加CREATE POLICY之后。
+ */
+function wrapPoolForTenantContext(rawPool) {
+  if (!rawPool || rawPool.__tenantContextWrapped) return;
+  rawPool.__tenantContextWrapped = true;
+
+  const originalConnect = rawPool.connect.bind(rawPool);
+  const originalQuery = rawPool.query.bind(rawPool);
+
+  async function setSessionTenant(client, tenantId) {
+    await client.query('SELECT set_config($1, $2, false)', ['app.tenant_id', tenantId]);
+  }
+  async function clearSessionTenant(client) {
+    try {
+      await client.query("SELECT set_config('app.tenant_id', '', false)");
+    } catch (_e) {
+      // 清空失败不应该阻止连接归还池子；最坏情况下这条连接下次被复用前还带着旧租户标记，
+      // 但下次checkout时setSessionTenant会立刻覆盖掉，窗口期极短且只发生在清空报错这种边缘情况。
+    }
+  }
+
+  rawPool.connect = async function (...args) {
+    const tenantId = resolveTenantIdStrict();
+    const client = await originalConnect(...args);
+    await setSessionTenant(client, tenantId);
+    const originalRelease = client.release.bind(client);
+    client.release = async (...releaseArgs) => {
+      await clearSessionTenant(client);
+      return originalRelease(...releaseArgs);
+    };
+    return client;
+  };
+
+  rawPool.query = async function (text, params) {
+    const tenantId = resolveTenantIdStrict();
+    const client = await originalConnect();
+    try {
+      await setSessionTenant(client, tenantId);
+      return await client.query(text, params);
+    } finally {
+      await clearSessionTenant(client);
+      client.release();
+    }
+  };
+
+  // 保留逃生通道：极少数确实需要绕开这层包装、直接用原始pool方法的场景(目前没有已知调用方，
+  // 留着是为了排障方便，比如怀疑包装本身有问题时可以临时切回来对比)。
+  rawPool.__unwrappedConnect = originalConnect;
+  rawPool.__unwrappedQuery = originalQuery;
 }
 
 // 多租户后台任务用：取所有激活租户的tenant_id列表。

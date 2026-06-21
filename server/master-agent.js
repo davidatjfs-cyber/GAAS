@@ -46,7 +46,7 @@ import {
   pollTaskResponseBitable
 } from './agents.js';
 import { AgentCommunicationSystem } from './agent-communication-system.js';
-import { pool as masterPool, setPool as setUnifiedMasterPool, getActiveTenantIds } from './utils/database.js';
+import { pool as masterPool, setPool as setUnifiedMasterPool, getActiveTenantIds, tenantContext } from './utils/database.js';
 import { extractAnomalyRelations, refreshEntityHealthSnapshots, ensureKnowledgeGraphTables, setKGPool } from './knowledge-graph.js';
 import { registerHqPlannerRoutes, setHqPlannerPool, setHqPlannerLLM } from './hq-planner-agent.js';
 import {
@@ -1423,6 +1423,7 @@ export function startMasterAgent() {
   // 对现有洪潮/马己仙行为是零变化——和改造前对'default'硬编码执行的内容逐字节相同。
   const auditTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const created = await dataAuditorListener(tenantId);
         if (created > 0) console.log(`[master:tick] Data Auditor(${tenantId}) created ${created} tasks`);
@@ -1451,12 +1452,14 @@ export function startMasterAgent() {
       } catch (e) {
         console.error(`[master:tick] audit error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 2: Master Dispatcher (每15秒扫描一次) ──
   const dispatchTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         // 新增：动态调整任务优先级（超时任务自动升级）
         await pool().query(`
@@ -1486,24 +1489,28 @@ export function startMasterAgent() {
       } catch (e) {
         console.error(`[master:tick] dispatch error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 3: Ops Agent (每20秒扫描一次) ──
   const opsTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const a = await opsAgentListener(tenantId);
         if (a > 0) console.log(`[master:tick] Ops(${tenantId}) processed ${a} tasks`);
       } catch (e) {
         console.error(`[master:tick] ops error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 4: Master Post-Resolution + Rejected (每20秒) ──
   const postResTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const resolved = await masterPostResolution(tenantId);
         const rejected = await masterHandleRejected(tenantId);
@@ -1512,76 +1519,89 @@ export function startMasterAgent() {
       } catch (e) {
         console.error(`[master:tick] post-res error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 5: Chief Evaluator (每30秒) ──
   const evalTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const s = await chiefEvaluatorListener(tenantId);
         if (s > 0) console.log(`[master:tick] Evaluator(${tenantId}) settled ${s} tasks`);
       } catch (e) {
         console.error(`[master:tick] eval error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 6: Master Final Notification (每30秒) ──
   const finalTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const c = await masterFinalNotification(tenantId);
         if (c > 0) console.log(`[master:tick] Closed(${tenantId}) ${c} tasks`);
       } catch (e) {
         console.error(`[master:tick] final error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 7: Train Agent (每60秒扫描详细差评) ──
   const trainTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const a = await trainAgentListener(tenantId);
         if (a > 0) console.log(`[master:tick] Train(${tenantId}) processed ${a} cases`);
       } catch (e) { console.error(`trainTick (tenant=${tenantId}):`, e); }
+    });
     }
   };
 
   // ── Tick 8: 部门问题/知识库纠错分配 (每30秒) ──
   const issuesTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const i = await masterIssuesListener(tenantId);
         if (i > 0) console.log(`[master:tick] Issues coordinator(${tenantId}) processed ${i} issues`);
       } catch (e) {
         console.error(`[master:tick] issues error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 9: Master Optimization Coordinator (每60秒) ──
   const optimizationTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const o = await masterOptimizationCoordinator(tenantId);
         if (o > 0) console.log(`[master:tick] Optimization coordinator(${tenantId}) processed ${o} proposals`);
       } catch (e) {
         console.error(`[master:tick] optimization error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 10: Train Task Dispatcher (每10分钟) ──
   const trainDispatchTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const d = await trainTaskDispatcher(tenantId);
         if (d > 0) console.log(`[master:tick] Train task dispatcher(${tenantId}) sent ${d} tasks`);
       } catch (e) {
         console.error(`[master:tick] train dispatch error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
@@ -1599,60 +1619,70 @@ export function startMasterAgent() {
   // ── Tick 12: Knowledge Graph Health Snapshot (每6小时刷新) ──
   const kgHealthTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const updated = await refreshEntityHealthSnapshots(tenantId);
         if (updated > 0) console.log(`[master:tick] KG health snapshots(${tenantId}) refreshed for ${updated} stores`);
       } catch (e) {
         console.error(`[master:tick] KG health error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 13: 巡检闭环自动化 (每15分钟: 催办 + 升级) ──
   const inspectionLoopTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const a = await inspectionClosedLoopTick(tenantId);
         if (a > 0) console.log(`[master:tick] Inspection closed loop(${tenantId}): ${a} actions`);
       } catch (e) {
         console.error(`[master:tick] inspection loop error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 14: BI主动推送 (每15分钟检查, 仅CST 10:00执行) ──
   const biPushTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const p = await biProactivePushTick(tenantId);
         if (p > 0) console.log(`[master:tick] BI proactive push(${tenantId}): ${p} alerts`);
       } catch (e) {
         console.error(`[master:tick] BI push error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 15: 排班人效建议 (每15分钟检查, 仅周一CST 09:00执行) ──
   const laborTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const p = await laborEfficiencyTick(tenantId);
         if (p > 0) console.log(`[master:tick] Labor efficiency(${tenantId}): ${p} suggestions`);
       } catch (e) {
         console.error(`[master:tick] labor efficiency error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // ── Tick 16: 培训闭环 (每15分钟检查, 仅CST 11:00执行) ──
   const trainingLoopTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const c = await trainingClosedLoopTick(tenantId);
         if (c > 0) console.log(`[master:tick] Training closed loop(${tenantId}): ${c} tasks created`);
       } catch (e) {
         console.error(`[master:tick] training loop error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 

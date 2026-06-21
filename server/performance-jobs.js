@@ -17,7 +17,7 @@ import {
   sendLarkCard,
   inferBrandFromStoreName
 } from './agents.js';
-import { getActiveTenantIds, resolveTenantIdDefault } from './utils/database.js';
+import { getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js';
 import { calculateStoreRating, calculateEmployeeScore } from './new-scoring-model.js';
 import {
   dailyReportIlikePatterns,
@@ -644,12 +644,14 @@ export function startHrmsPerformanceJobs(options = {}) {
             _slotDishMonthlyDay1 = moKey;
             const period = prevMonthPeriod(cal);
             for (const tenantId of await getActiveTenantIds(pool())) {
+              await tenantContext.run(tenantId, async () => {
               try {
                 await sendMonthlyDishOptimizationReport(period, tenantId);
               } catch (e) {
                 console.error('[perf-jobs] monthly dish report failed', e?.message || e);
                 await notifyHrmsPerfAdmins(`菜品优化月报（每月1日·${period}·${tenantId}）`, e);
               }
+            });
             }
           }
         }
@@ -663,12 +665,14 @@ export function startHrmsPerformanceJobs(options = {}) {
             _slotDishWeekly = daySlot;
             const { start: wkStart, end: wkEnd } = lastWeekMonSunYmd(cal.ymd);
             for (const tenantId of await getActiveTenantIds(pool())) {
+              await tenantContext.run(tenantId, async () => {
               try {
                 await sendWeeklyDishOptimizationReport(wkStart, wkEnd, tenantId);
               } catch (e) {
                 console.error('[perf-jobs] weekly dish report failed', e?.message || e);
                 await notifyHrmsPerfAdmins(`菜品优化周报（${wkStart}～${wkEnd}·${tenantId}）`, e);
               }
+            });
             }
           }
         }

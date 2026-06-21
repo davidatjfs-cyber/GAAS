@@ -31,7 +31,7 @@ import {
   AgentCommunicationSystem, 
   AgentCommunicationHelper 
 } from './agent-communication-system.js';
-import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault } from './utils/database.js';
+import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js';
 import { getBrandConfigSync, getBrandForStoreSync, getAllBrandNamesSync } from './utils/brand-config-loader.js';
 import {
   pgGetMonthlyExecutionFilingCount,
@@ -11373,6 +11373,7 @@ export function startAgentScheduler() {
   // Daily audit (充值异常 only) every 30 minutes
   const auditTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const result = await runDataAuditor('daily', tenantId);
         if (result.issuesCreated > 0) {
@@ -11390,12 +11391,14 @@ export function startAgentScheduler() {
       } catch (e) {
         console.error(`[scheduler] audit tick error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // Weekly audit: Mon 00:00 CST
   const weeklyAuditTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const c = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Shanghai'}));
         if (c.getDay()===1 && c.getHours()===0) {
@@ -11412,6 +11415,7 @@ export function startAgentScheduler() {
           }
         }
       } catch(e){ console.error(`[scheduler] weekly audit err (tenant=${tenantId}):`, e?.message); }
+    });
     }
   };
 
@@ -11432,6 +11436,7 @@ export function startAgentScheduler() {
   // OP Agent: 每周一早上10点督办周异常（实收营收、人效值、桌访产品、桌访占比、产品/服务差评）
   const weeklyOpsTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const now = new Date();
         // 周一且10点执行
@@ -11488,12 +11493,14 @@ export function startAgentScheduler() {
       } catch (e) {
         console.error(`[scheduler] OP周督办 tick error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // OP Agent: 每天早上10点督办充值异常
   const dailyRechargeTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const now = new Date();
         // 每天10点执行（分钟数<5避免重复执行）
@@ -11542,12 +11549,14 @@ export function startAgentScheduler() {
       } catch (e) {
         console.error(`[scheduler] OP日督办 tick error (tenant=${tenantId}):`, e?.message);
       }
+    });
     }
   };
 
   // Retry pushing un-notified items every 5 minutes
   const pushTick = async () => {
     for (const tenantId of await getActiveTenantIds(pool())) {
+      await tenantContext.run(tenantId, async () => {
       try {
         const pushedIssues = await pushIssuesToFeishu(tenantId);
         const pushedScores = await pushScoresToFeishu();
@@ -11555,6 +11564,7 @@ export function startAgentScheduler() {
           console.log(`[scheduler] Push retry(${tenantId}): ${pushedIssues} issues, ${pushedScores} scores`);
         }
       } catch (e) {}
+    });
     }
   };
 
