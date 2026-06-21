@@ -32,7 +32,7 @@ import {
   AgentCommunicationHelper 
 } from './agent-communication-system.js';
 import { pool as agentPool, setPool as setUnifiedAgentPool } from './utils/database.js';
-import { getBrandConfigSync, getBrandForStoreSync } from './utils/brand-config-loader.js';
+import { getBrandConfigSync, getBrandForStoreSync, getAllBrandNamesSync } from './utils/brand-config-loader.js';
 import {
   pgGetMonthlyExecutionFilingCount,
   pgGetMonthlyAttitudeFilingCount
@@ -8178,9 +8178,9 @@ export async function getOpsKnowledgeSupport(query, context = {}) {
   // 使用LLM生成专业建议
   try {
     const llmResult = await callLLM([
-      { 
-        role: 'system', 
-        content: `你是小年，年年有喜餐饮集团AI助理，精通洪潮和马己仙品牌标准。当前门店：${store}（${brand}）。请提供专业、可操作的建议。` 
+      {
+        role: 'system',
+        content: `你是小年，年年有喜餐饮集团AI助理，精通${getAllBrandNamesSync().join('和') || '本集团'}品牌标准。当前门店：${store}（${brand}）。请提供专业、可操作的建议。`
       },
       { role: 'user', content: query }
     ], { model: getOpsReasoningModel() });

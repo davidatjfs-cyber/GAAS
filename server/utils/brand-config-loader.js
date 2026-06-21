@@ -10,10 +10,18 @@
  *
  * 启动后第一次DB查询完成前的极短窗口里，用与原硬编码完全一致的值兜底，
  * 确保"数据库还没就绪"不会导致和现在不一样的结果。
+ *
+ * 存储位置：数据存在已有的通用 tenant_config 表(tenant_key/config_key/config_value)里，
+ * 不用专门的品牌表——config_key='store_brands'存门店清单，
+ * config_key='brand_config_<brand_key>'存该品牌的config_json。
+ * 当前生产只有一个租户(tenant_key='default')，新客户接入即新增一个tenant_key
+ * 的这两类config_key，不用改代码；真正的多租户并发隔离(按req.tenantId切换缓存)
+ * 留作后续扩展，本次只解决"加新品牌/新客户不用碰代码"这一步。
  */
 import { pool } from './database.js';
 
 const REFRESH_MS = 5 * 60 * 1000;
+const TENANT_KEY = 'default';
 
 // 兜底值：与重构前agents.js/brands-config.js等文件里的硬编码原值保持一致，
 // 仅在进程刚启动、尚未完成第一次DB读取时使用。
@@ -35,12 +43,22 @@ async function refresh() {
   if (_loadingPromise) return _loadingPromise;
   _loadingPromise = (async () => {
     try {
-      const [storesRes, configsRes] = await Promise.all([
-        pool().query('SELECT store_id, store_name, brand_key, brand_name, sms_suffix, has_takeaway, punch_start_minutes, punch_end_minutes FROM store_brands'),
-        pool().query('SELECT brand_key, brand_name, config_json FROM brand_configs')
-      ]);
-      if (storesRes.rows?.length) _storeBrands = storesRes.rows;
-      if (configsRes.rows?.length) _brandConfigs = configsRes.rows;
+      const res = await pool().query(
+        "SELECT config_key, config_value FROM tenant_config WHERE tenant_key = $1 AND (config_key = 'store_brands' OR config_key LIKE 'brand_config_%')",
+        [TENANT_KEY]
+      );
+      const storeBrandsRow = res.rows.find((r) => r.config_key === 'store_brands');
+      const brandConfigRows = res.rows.filter((r) => r.config_key.startsWith('brand_config_'));
+      if (Array.isArray(storeBrandsRow?.config_value) && storeBrandsRow.config_value.length) {
+        _storeBrands = storeBrandsRow.config_value;
+      }
+      if (brandConfigRows.length) {
+        _brandConfigs = brandConfigRows.map((r) => {
+          const brandKey = r.config_key.slice('brand_config_'.length);
+          const { brandName, ...configJson } = r.config_value || {};
+          return { brand_key: brandKey, brand_name: brandName, config_json: configJson };
+        });
+      }
       _lastLoadAt = Date.now();
     } catch (e) {
       console.error('[brand-config-loader] refresh failed, keep using previous cache:', e?.message || e);
@@ -99,6 +117,11 @@ export function getStoreHasTakeawaySync(storeNameOrId) {
 export function getAllBrandKeysSync() {
   maybeBackgroundRefresh();
   return _brandConfigs.map((r) => r.brand_key);
+}
+
+export function getAllBrandNamesSync() {
+  maybeBackgroundRefresh();
+  return _brandConfigs.map((r) => r.brand_name).filter(Boolean);
 }
 
 /** 仅供测试/迁移脚本使用：强制下一次访问立刻重新拉取。 */
