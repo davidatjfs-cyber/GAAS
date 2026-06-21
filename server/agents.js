@@ -10895,6 +10895,11 @@ export async function onFeishuEvent(body) {
     } catch (_e) { console.error('[feishu] status check error:', _e?.message); }
 
     // ── User is registered, process message ──
+    // feishuUser的租户已知，但lookupFeishuUser内部的tenantContext.run作用域在返回时已结束，
+    // 下面这一整段(agent_messages/handleAgentMessage及其内部各agent_*写入)在飞书webhook调用链
+    // 上完全没有ALS上下文，需要按已知的feishuUser.tenant_id重新包裹，否则FORCE RLS后写入
+    // 会落到sentinel/default而不是真实租户。
+    return await tenantContext.run(feishuUser.tenant_id || 'default', async () => {
     let text = '';
     let imageUrls = [];
 
@@ -11121,6 +11126,7 @@ export async function onFeishuEvent(body) {
     } catch (e) {}
 
     return { ok: true, route: result.route, responded: !!result.response };
+    });
   }
 
   return { ok: true, unhandled: eventType };
