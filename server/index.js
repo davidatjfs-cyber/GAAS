@@ -5551,8 +5551,8 @@ app.post('/api/employees/:empId/attachments', authRequired, upload.single('file'
     const description = String(req.body?.description || '').slice(0, 200);
     const uploadedBy = String(req.user?.username || '');
     const r = await pool.query(
-      'insert into employee_attachments(employee_id,filename,original_name,url,description,uploaded_by) values($1,$2,$3,$4,$5,$6) returning *',
-      [empId, file.filename, originalName, url, description, uploadedBy]
+      'insert into employee_attachments(employee_id,filename,original_name,url,description,uploaded_by,tenant_id) values($1,$2,$3,$4,$5,$6,$7) returning *',
+      [empId, file.filename, originalName, url, description, uploadedBy, resolveTenantIdDefault()]
     );
     return res.json(r.rows[0]);
   } catch (e) {
@@ -12589,12 +12589,12 @@ app.post('/api/reports/sales-raw/dish-aliases', authRequired, async (req, res) =
     const canonicalName = String(req.body?.canonicalName || '').trim();
     if (!aliasName || !canonicalName) return res.status(400).json({ error: 'missing_params', message: 'aliasName/canonicalName 必填' });
     const r = await pool.query(
-      `INSERT INTO dish_name_aliases (store, biz_type, alias_name, canonical_name, enabled, created_by, updated_by, updated_at)
-       VALUES ($1,$2,$3,$4,TRUE,$5,$5,NOW())
-       ON CONFLICT (store, biz_type, alias_name)
+      `INSERT INTO dish_name_aliases (store, biz_type, alias_name, canonical_name, enabled, created_by, updated_by, updated_at, tenant_id)
+       VALUES ($1,$2,$3,$4,TRUE,$5,$5,NOW(),$6)
+       ON CONFLICT (store, biz_type, alias_name, tenant_id)
        DO UPDATE SET canonical_name = EXCLUDED.canonical_name, enabled = TRUE, updated_by = EXCLUDED.updated_by, updated_at = NOW()
        RETURNING id, store, biz_type, alias_name, canonical_name, enabled, updated_at`,
-      [store, bizType, aliasName, canonicalName, username]
+      [store, bizType, aliasName, canonicalName, username, resolveTenantIdDefault()]
     );
     return res.json({ ok: true, item: r.rows?.[0] || null });
   } catch (e) {
@@ -18094,16 +18094,20 @@ app.post('/api/webhook/feishu', express.raw({ type: 'application/json' }), async
     
     // 处理业务数据变更事件
     if (data.header?.event_type === 'bitable.record.changed') {
+      // 这个webhook靠飞书签名/加密payload自证身份，没有JWT/ALS租户上下文。
+      // feishu_sync_logs是同步审计日志，固定走'default'，并用tenantContext.run()包裹
+      // 整段(包括下面的setImmediate异步处理)，让会话变量跟显式写的列值保持一致。
+      return await tenantContext.run('default', async () => {
       const event = data.event;
       const logId = randomUUID();
-      
+
       // 记录同步日志
       await pool.query(
-        `insert into feishu_sync_logs (id, event_type, table_id, record_id, data, sync_status) 
-         values ($1, $2, $3, $4, $5, 'pending')`,
-        [logId, data.header.event_type, event.app_token, event.record_id, event]
+        `insert into feishu_sync_logs (id, event_type, table_id, record_id, data, sync_status, tenant_id)
+         values ($1, $2, $3, $4, $5, 'pending', $6)`,
+        [logId, data.header.event_type, event.app_token, event.record_id, event, 'default']
       );
-      
+
       // 异步处理数据同步
       setImmediate(async () => {
         try {
@@ -18117,8 +18121,9 @@ app.post('/api/webhook/feishu', express.raw({ type: 'application/json' }), async
           void notifyAdminsDualWriteFailure('飞书 Webhook → DB（bitable.record.changed 异步处理失败）', error);
         }
       });
-      
+
       return res.json({ code: 0, message: 'success' });
+      });
     }
 
     // Forward all non-bitable events to agents handler (bot replies, card actions, etc.)
@@ -19037,8 +19042,8 @@ app.post('/api/training/tasks/batch', authRequired, async (req, res) => {
       for (const t of targets) {
         const trainingTaskId = `TR-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6)}`;
         await client.query(
-          `INSERT INTO training_tasks (task_id, type, title, target_role, assignee_username, store, brand, status, due_date)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)`,
+          `INSERT INTO training_tasks (task_id, type, title, target_role, assignee_username, store, brand, status, due_date, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)`,
           [
             trainingTaskId,
             type,
@@ -19047,7 +19052,8 @@ app.post('/api/training/tasks/batch', authRequired, async (req, res) => {
             t.username,
             t.store || '总部',
             t.brand || '',
-            due_date || null
+            due_date || null,
+            resolveTenantIdDefault()
           ]
         );
         inserted++;
@@ -21734,9 +21740,9 @@ app.post('/api/attention-scores', authRequired, async (req, res) => {
 
     const id = 'attn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     await pool.query(
-      `INSERT INTO attention_scores (id, username, name, store, material_id, material_title, score, duration_seconds, total_samples, attentive_samples, avg_score)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [id, username, name, store, materialId, materialTitle, score, durationSeconds, totalSamples, attentiveSamples, avgScore]
+      `INSERT INTO attention_scores (id, username, name, store, material_id, material_title, score, duration_seconds, total_samples, attentive_samples, avg_score, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [id, username, name, store, materialId, materialTitle, score, durationSeconds, totalSamples, attentiveSamples, avgScore, resolveTenantIdDefault()]
     );
 
     res.json({ ok: true, id, score });
