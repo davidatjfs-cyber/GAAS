@@ -1,6 +1,7 @@
 // 厨房备料执行模块
 // 功能：岗位菜品映射 + 每日备料确认 + SOP步骤打点卡 + 完成率看板
-import { pool as getPool } from './utils/database.js';
+import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
+import { resolveTenantIdForStore } from './growth-api.js';
 function pool() { return getPool(); }
 
 function normalizeStation(value) {
@@ -226,10 +227,10 @@ export async function confirmTask({ store, station, dishName, username, employee
     const normalizedScheduleTime = parseScheduleTimes([scheduleTime || ''])[0] || '';
     await pool().query(
       `INSERT INTO kitchen_exec_logs
-         (store, station, dish_name, schedule_time, employee_username, employee_name, task_date, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (store, station, dish_name, employee_username, task_date, schedule_time) DO NOTHING`,
-      [store, station, dishName, normalizedScheduleTime, username, employeeName || null, taskDate, note || null]
+         (store, station, dish_name, schedule_time, employee_username, employee_name, task_date, note, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (store, station, dish_name, employee_username, task_date, schedule_time, tenant_id) DO NOTHING`,
+      [store, station, dishName, normalizedScheduleTime, username, employeeName || null, taskDate, note || null, resolveTenantIdDefault()]
     );
     return { success: true };
   } catch (e) {
@@ -332,9 +333,9 @@ export async function addStationDish({ store, station, dishNames, isPrep, critic
     for (const dishName of normalizedDishes) {
       const r = await pool().query(
         `INSERT INTO dish_station_mapping
-           (store, station, dish_name, assignee_username, assignee_name, scheduled_times, is_prep, critical_step_name, sop_id, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10)
-         ON CONFLICT (store, station, dish_name, assignee_username) DO UPDATE SET
+           (store, station, dish_name, assignee_username, assignee_name, scheduled_times, is_prep, critical_step_name, sop_id, created_by, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11)
+         ON CONFLICT (store, station, dish_name, assignee_username, tenant_id) DO UPDATE SET
            assignee_name=EXCLUDED.assignee_name,
            scheduled_times=EXCLUDED.scheduled_times,
            is_prep=EXCLUDED.is_prep,
@@ -342,7 +343,7 @@ export async function addStationDish({ store, station, dishNames, isPrep, critic
            sop_id=EXCLUDED.sop_id,
            enabled=TRUE
          RETURNING *`,
-        [store, station, dishName, String(assigneeUsername || '').trim(), String(assigneeName || '').trim(), JSON.stringify(normalizedTimes), !!isPrep, criticalStepName || null, sopId || null, createdBy || null]
+        [store, station, dishName, String(assigneeUsername || '').trim(), String(assigneeName || '').trim(), JSON.stringify(normalizedTimes), !!isPrep, criticalStepName || null, sopId || null, createdBy || null, resolveTenantIdDefault()]
       );
       inserted.push(r.rows[0]);
     }
@@ -473,12 +474,13 @@ export async function punchStep({ store, station, dishName, stepSeq, stepAction,
   try {
     const taskDate = new Date().toISOString().slice(0, 10);
     const normalizedScheduleTime = parseScheduleTimes([scheduleTime || ''])[0] || '';
+    const tenantId = resolveTenantIdDefault();
     await pool().query(
       `INSERT INTO kitchen_step_logs
-         (store, station, dish_name, schedule_time, step_seq, step_action, employee_username, employee_name, task_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (store, dish_name, step_seq, employee_username, task_date, schedule_time) DO NOTHING`,
-      [store, station, dishName, normalizedScheduleTime, stepSeq, stepAction || null, username, employeeName || null, taskDate]
+         (store, station, dish_name, schedule_time, step_seq, step_action, employee_username, employee_name, task_date, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (store, dish_name, step_seq, employee_username, task_date, schedule_time, tenant_id) DO NOTHING`,
+      [store, station, dishName, normalizedScheduleTime, stepSeq, stepAction || null, username, employeeName || null, taskDate, tenantId]
     );
 
     // 如果该菜品所有步骤都打完了，自动写入整菜确认（kitchen_exec_logs）
@@ -497,10 +499,10 @@ export async function punchStep({ store, station, dishName, stepSeq, stepAction,
     if (allDone) {
       await pool().query(
         `INSERT INTO kitchen_exec_logs
-           (store, station, dish_name, schedule_time, employee_username, employee_name, task_date, note)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'步骤全部打点完成自动确认')
-         ON CONFLICT (store, station, dish_name, employee_username, task_date, schedule_time) DO NOTHING`,
-        [store, station, dishName, normalizedScheduleTime, username, employeeName || null, taskDate]
+           (store, station, dish_name, schedule_time, employee_username, employee_name, task_date, note, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'步骤全部打点完成自动确认',$8)
+         ON CONFLICT (store, station, dish_name, employee_username, task_date, schedule_time, tenant_id) DO NOTHING`,
+        [store, station, dishName, normalizedScheduleTime, username, employeeName || null, taskDate, tenantId]
       );
     }
 
@@ -516,12 +518,13 @@ export async function upsertSopSteps(rows) {
   //           quality_standard, common_failure, failure_action, is_critical, feishu_record_id }]
   let upserted = 0;
   for (const r of rows) {
+    const tenantId = await resolveTenantIdForStore(pool(), r.store);
     await pool().query(
       `INSERT INTO kitchen_sop_steps
          (dish_name, store, station, step_seq, action, time_limit_seconds,
-          quality_standard, common_failure, failure_action, is_critical, feishu_record_id, synced_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
-       ON CONFLICT (dish_name, store, step_seq) DO UPDATE SET
+          quality_standard, common_failure, failure_action, is_critical, feishu_record_id, synced_at, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12)
+       ON CONFLICT (dish_name, store, step_seq, tenant_id) DO UPDATE SET
          station=EXCLUDED.station,
          action=EXCLUDED.action,
          time_limit_seconds=EXCLUDED.time_limit_seconds,
@@ -535,7 +538,7 @@ export async function upsertSopSteps(rows) {
       [r.dish_name, r.store||'*', r.station, r.step_seq, r.action,
        r.time_limit_seconds||null, r.quality_standard||null,
        r.common_failure||null, r.failure_action||null,
-       !!r.is_critical, r.feishu_record_id||null]
+       !!r.is_critical, r.feishu_record_id||null, tenantId]
     );
     upserted++;
   }

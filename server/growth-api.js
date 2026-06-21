@@ -4372,7 +4372,9 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/payment-rules', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     try {
-      const r = await pool.query(`SELECT * FROM marketing_payment_rules ORDER BY store_id ASC, priority ASC, rule_key ASC LIMIT 200`);
+      const r = await tenantContext.run(getGrowthTenantId(req), () =>
+        pool.query(`SELECT * FROM marketing_payment_rules ORDER BY store_id ASC, priority ASC, rule_key ASC LIMIT 200`)
+      );
       return res.json({ ok: true, rules: r.rows });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -4399,24 +4401,27 @@ export function registerGrowthRoutes(app, pool) {
       const dailyUserLimit = b.daily_user_limit === '' || b.daily_user_limit == null ? null : Math.max(0, Math.floor(Number(b.daily_user_limit) || 0));
       const globalDailyLimit = b.global_daily_limit === '' || b.global_daily_limit == null ? null : Math.max(0, Math.floor(Number(b.global_daily_limit) || 0));
 
-      const r = await pool.query(
-        `INSERT INTO marketing_payment_rules
-           (rule_key, store_id, name, active, priority, target_tags, trigger_value, member_template_id, daily_user_limit, global_daily_limit, created_by)
-         VALUES ($1,$2,$3,COALESCE($4,TRUE),$5,$6::jsonb,$7,$8,$9,$10,NULLIF($11,''))
-         ON CONFLICT (rule_key) DO UPDATE SET
-           store_id = EXCLUDED.store_id,
-           name = EXCLUDED.name,
-           active = EXCLUDED.active,
-           priority = EXCLUDED.priority,
-           target_tags = EXCLUDED.target_tags,
-           trigger_value = EXCLUDED.trigger_value,
-           member_template_id = EXCLUDED.member_template_id,
-           daily_user_limit = EXCLUDED.daily_user_limit,
-           global_daily_limit = EXCLUDED.global_daily_limit,
-           updated_at = NOW()
-         RETURNING *`,
-        [ruleKey, storeId, name, b.active !== false, priority, JSON.stringify(tags), triggerValue,
-         memberTemplateId, dailyUserLimit, globalDailyLimit, operator.username || '']
+      const ruleTenantId = getGrowthTenantId(req);
+      const r = await tenantContext.run(ruleTenantId, () =>
+        pool.query(
+          `INSERT INTO marketing_payment_rules
+             (rule_key, store_id, name, active, priority, target_tags, trigger_value, member_template_id, daily_user_limit, global_daily_limit, created_by, tenant_id)
+           VALUES ($1,$2,$3,COALESCE($4,TRUE),$5,$6::jsonb,$7,$8,$9,$10,NULLIF($11,''),$12)
+           ON CONFLICT (rule_key) DO UPDATE SET
+             store_id = EXCLUDED.store_id,
+             name = EXCLUDED.name,
+             active = EXCLUDED.active,
+             priority = EXCLUDED.priority,
+             target_tags = EXCLUDED.target_tags,
+             trigger_value = EXCLUDED.trigger_value,
+             member_template_id = EXCLUDED.member_template_id,
+             daily_user_limit = EXCLUDED.daily_user_limit,
+             global_daily_limit = EXCLUDED.global_daily_limit,
+             updated_at = NOW()
+           RETURNING *`,
+          [ruleKey, storeId, name, b.active !== false, priority, JSON.stringify(tags), triggerValue,
+           memberTemplateId, dailyUserLimit, globalDailyLimit, operator.username || '', ruleTenantId]
+        )
       );
       return res.json({ ok: true, rule: r.rows[0] });
     } catch (e) {
@@ -4440,7 +4445,9 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/payment-rules/sync', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     try {
-      const r = await pool.query(`SELECT * FROM marketing_payment_rules ORDER BY priority ASC, rule_key ASC LIMIT 500`);
+      const r = await tenantContext.run(getGrowthTenantId(req), () =>
+        pool.query(`SELECT * FROM marketing_payment_rules ORDER BY priority ASC, rule_key ASC LIMIT 500`)
+      );
       const allKeys = r.rows.map(x => x.rule_key);
       const rules = r.rows.filter(x => x.active).map(paymentRuleToSync);
       return res.json({ ok: true, rules, all_rule_keys: allKeys });

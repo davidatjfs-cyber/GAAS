@@ -500,10 +500,10 @@ export function registerRecipeRoutes(app, authMiddleware) {
       const { name, sort_order } = req.body;
       if (!name?.trim()) return res.json({ success: false, error: '分类名称必填' });
       const result = await pool().query(
-        `INSERT INTO ingredient_categories (name, sort_order) VALUES ($1,$2)
-         ON CONFLICT (name) DO UPDATE SET sort_order=EXCLUDED.sort_order
+        `INSERT INTO ingredient_categories (name, sort_order, tenant_id) VALUES ($1,$2,$3)
+         ON CONFLICT (name, tenant_id) DO UPDATE SET sort_order=EXCLUDED.sort_order
          RETURNING id`,
-        [name.trim(), Number(sort_order) || 0]
+        [name.trim(), Number(sort_order) || 0, resolveTenantIdDefault()]
       );
       res.json({ success: true, id: result.rows[0].id });
     } catch (e) {
@@ -540,15 +540,15 @@ export function registerRecipeRoutes(app, authMiddleware) {
       const { name, category, brand, spec, default_unit, notes } = req.body;
       if (!name?.trim()) return res.json({ success: false, error: '原料名称必填' });
       const result = await pool().query(
-        `INSERT INTO ingredient_library (name, category, brand, spec, default_unit, notes, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT (name) DO UPDATE
+        `INSERT INTO ingredient_library (name, category, brand, spec, default_unit, notes, created_by, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (name, tenant_id) DO UPDATE
            SET category=EXCLUDED.category, brand=EXCLUDED.brand, spec=EXCLUDED.spec,
                default_unit=EXCLUDED.default_unit, notes=EXCLUDED.notes
          RETURNING id`,
         [name.trim(), category?.trim() || null, brand?.trim() || null,
          spec?.trim() || null, default_unit?.trim() || null,
-         notes?.trim() || null, req.user?.username]
+         notes?.trim() || null, req.user?.username, resolveTenantIdDefault()]
       );
       res.json({ success: true, id: result.rows[0].id });
     } catch (e) {

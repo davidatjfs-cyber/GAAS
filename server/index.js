@@ -3221,9 +3221,9 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
           const ymSh = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 7);
           const snap = JSON.parse(JSON.stringify(payload));
           await pool.query(
-            `insert into recurring_reward_templates (active, created_by, frequency, payload, last_generated_ym, updated_at)
-             values (true, $1, 'monthly', $2::jsonb, $3, now())`,
-            [username, JSON.stringify(snap), ymSh]
+            `insert into recurring_reward_templates (active, created_by, frequency, payload, last_generated_ym, updated_at, tenant_id)
+             values (true, $1, 'monthly', $2::jsonb, $3, now(), $4)`,
+            [username, JSON.stringify(snap), ymSh, resolveTenantIdDefault()]
           );
           console.log('[recurring-reward] saved monthly template for applicant', username);
         } catch (re) {
@@ -7110,20 +7110,26 @@ async function runMonthlyRecurringRewardTemplatesJob() {
   _lastRecurringRewardJobSlot = slotKey;
 
   const ym = `${cal.y}-${String(cal.m).padStart(2, '0')}`;
-  let rows;
+  // recurring_reward_templates开了FORCE RLS，这个cron不是per-tenant循环调用的，
+  // 需要自己遍历active租户分别查，否则在没有任何租户上下文时只会读到0行。
+  let rows = [];
   try {
-    const r = await pool.query(
-      `select * from recurring_reward_templates where active = true and frequency = 'monthly'`
-    );
-    rows = r.rows || [];
+    for (const tid of await getActiveTenantIds(pool)) {
+      const r = await tenantContext.run(tid, () =>
+        pool.query(`select * from recurring_reward_templates where active = true and frequency = 'monthly'`)
+      );
+      rows.push(...(r.rows || []));
+    }
   } catch (e) {
     return;
   }
 
   for (const tpl of rows) {
-    if (String(tpl.last_generated_ym || '') === ym) continue;
+    const tplTenantId = String(tpl.tenant_id || 'default').trim() || 'default';
+    await tenantContext.run(tplTenantId, async () => {
+    if (String(tpl.last_generated_ym || '') === ym) return;
     const applicantUsername = String(tpl.created_by || '').trim();
-    if (!applicantUsername) continue;
+    if (!applicantUsername) return;
     const base = tpl.payload && typeof tpl.payload === 'object' ? tpl.payload : {};
     const genPayload = {
       ...base,
@@ -7145,7 +7151,7 @@ async function runMonthlyRecurringRewardTemplatesJob() {
           `update recurring_reward_templates set last_generated_ym=$1, updated_at=now() where id=$2`,
           [ym, tpl.id]
         );
-        continue;
+        return;
       }
       const { item, currentAssignee, state, applicant } = await insertRewardPunishmentApprovalFromTemplate(
         applicantUsername,
@@ -7191,6 +7197,7 @@ async function runMonthlyRecurringRewardTemplatesJob() {
     } catch (e) {
       console.error('[recurring-reward] template', tpl.id, e?.message || e);
     }
+    });
   }
 }
 
