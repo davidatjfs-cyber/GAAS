@@ -4,6 +4,7 @@
  */
 
 import { pool } from './master-agent.js';
+import { tenantContext } from './utils/database.js';
 import AgentCommunicationSystem from './agent-communication-system.js';
 
 // Agent 自主任务类型
@@ -201,12 +202,15 @@ export class AgentAutonomousScheduler {
    */
   async logTaskExecution(taskId, status, result) {
     try {
-      const db = pool();
-      await db.query(
-        `INSERT INTO agent_autonomous_logs (task_id, status, result, created_at) 
-         VALUES ($1, $2, $3, NOW())`,
-        [taskId, status, JSON.stringify(result)]
-      );
+      // 自主任务调度器检查的是全局数据源/master_tasks，不属于任何租户，固定tenant_id='default'
+      await tenantContext.run('default', async () => {
+        const db = pool();
+        await db.query(
+          `INSERT INTO agent_autonomous_logs (task_id, status, result, created_at, tenant_id)
+           VALUES ($1, $2, $3, NOW(), 'default')`,
+          [taskId, status, JSON.stringify(result)]
+        );
+      });
     } catch (e) {
       console.error('[AgentAutonomousScheduler] Error logging task execution:', e);
     }

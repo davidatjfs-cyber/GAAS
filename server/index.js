@@ -5715,28 +5715,33 @@ async function ensureLoginLogTable() {
   }
 }
 
-async function recordLogin(username, sessionNonce, req) {
+async function recordLogin(username, sessionNonce, req, tenantId = 'default') {
   const key = String(username || '').trim().toLowerCase();
   if (!key) return;
   const ip = String(req.headers?.['x-forwarded-for'] || req.headers?.['x-real-ip'] || req.ip || '').split(',')[0].trim().slice(0, 45);
   const ua = String(req.headers?.['user-agent'] || '').slice(0, 500);
-  let client;
-  try {
-    client = await pool.connect();
-    await client.query('SET default_transaction_read_only = OFF');
-    await client.query(
-      `update user_login_log set logout_at = now() where lower(username) = $1 and logout_at is null`,
-      [key]
-    );
-    await client.query(
-      `insert into user_login_log (username, login_at, session_nonce, ip_address, user_agent) values ($1, now(), $2, $3, $4)`,
-      [key, sessionNonce, ip, ua]
-    );
-  } catch (e) {
-    console.error('recordLogin failed:', e?.message || e);
-  } finally {
-    try { if (client) client.release(); } catch (_e) { /* ignore */ }
-  }
+  const tid = String(tenantId || 'default').trim() || 'default';
+  // 登录这一刻还没有JWT/ALS上下文(还没发token)，靠调用方传入刚查到的用户租户身份，
+  // 自己用tenantContext.run()包裹，不依赖外部上下文。
+  await tenantContext.run(tid, async () => {
+    let client;
+    try {
+      client = await pool.connect();
+      await client.query('SET default_transaction_read_only = OFF');
+      await client.query(
+        `update user_login_log set logout_at = now() where lower(username) = $1 and logout_at is null`,
+        [key]
+      );
+      await client.query(
+        `insert into user_login_log (username, login_at, session_nonce, ip_address, user_agent, tenant_id) values ($1, now(), $2, $3, $4, $5)`,
+        [key, sessionNonce, ip, ua, tid]
+      );
+    } catch (e) {
+      console.error('recordLogin failed:', e?.message || e);
+    } finally {
+      try { if (client) client.release(); } catch (_e) { /* ignore */ }
+    }
+  });
 }
 
 async function recordLogout(username) {
@@ -16331,7 +16336,7 @@ async function handleLogin(req, res) {
           JWT_SECRET,
           { expiresIn: '7d' }
         );
-        recordLogin(u.username, sn, req);
+        recordLogin(u.username, sn, req, u.tenant_id);
         const loginUser = await buildLoginUserPayload({
           id: u.id,
           username: u.username,
@@ -16636,7 +16641,7 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
       JWT_SECRET,
       { expiresIn: '7d' }
     );
-    recordLogin(targetUsernameNorm, sn, req);
+    recordLogin(targetUsernameNorm, sn, req, targetTenantId);
     console.log(`[login-as] admin=${adminUsername} logged in as ${targetUsernameNorm} (reason: ${reason})`);
     return res.json({ token, user: { id: targetId, username: targetUsernameNorm, name: finalName, role: finalRole }, loginAs: true, loginAsBy: adminUsername });
   } catch (e) {
