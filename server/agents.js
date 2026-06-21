@@ -7202,10 +7202,18 @@ async function replyLarkMessage(messageId, text) {
 // 5. Feishu ↔ HRMS User Mapping
 // ─────────────────────────────────────────────
 
+// open_id所属租户在绑定前是未知的(经典多租户webhook鸡生蛋问题)：飞书机器人消息没有
+// JWT/ALS上下文，但feishu_users开了FORCE RLS按租户隔离。逐个active租户的上下文里试查，
+// open_id在实践中每个飞书企业自己的open_id空间内是唯一的，跨租户重名概率为零。
 async function lookupFeishuUser(openId) {
   try {
-    const r = await pool().query('SELECT * FROM feishu_users WHERE open_id = $1 LIMIT 1', [openId]);
-    return r.rows?.[0] || null;
+    for (const tenantId of await getActiveTenantIds(pool())) {
+      const r = await tenantContext.run(tenantId, () =>
+        pool().query('SELECT * FROM feishu_users WHERE open_id = $1 LIMIT 1', [openId])
+      );
+      if (r.rows?.length) return r.rows[0];
+    }
+    return null;
   } catch (e) { return null; }
 }
 
@@ -7382,19 +7390,29 @@ async function registerFeishuUser(openId, username) {
   const role = String(user.role || '').trim();
 
   try {
-    await pool().query(
-      `UPDATE feishu_users
-       SET registered = FALSE, updated_at = NOW()
-       WHERE username = $1 AND open_id <> $2`,
-      [uname, openId]
-    );
+    // 飞书机器人消息webhook没有JWT/ALS上下文，按username反查users表得到真实租户，
+    // 整段用tenantContext.run()包裹，避免会话变量跟下面显式写的tenant_id列值不一致。
+    let tenantId = 'default';
+    try {
+      const tr = await pool().query('SELECT tenant_id FROM users WHERE lower(username) = lower($1) LIMIT 1', [uname]);
+      tenantId = String(tr.rows?.[0]?.tenant_id || '').trim() || 'default';
+    } catch (_e) {}
 
-    await pool().query(
-      `INSERT INTO feishu_users (open_id, username, name, store, role, registered)
-       VALUES ($1, $2, $3, $4, $5, TRUE)
-       ON CONFLICT (open_id) DO UPDATE SET username = $2, name = $3, store = $4, role = $5, registered = TRUE, updated_at = NOW()`,
-      [openId, uname, name, store, role]
-    );
+    await tenantContext.run(tenantId, async () => {
+      await pool().query(
+        `UPDATE feishu_users
+         SET registered = FALSE, updated_at = NOW()
+         WHERE username = $1 AND open_id <> $2`,
+        [uname, openId]
+      );
+
+      await pool().query(
+        `INSERT INTO feishu_users (open_id, username, name, store, role, registered, tenant_id)
+         VALUES ($1, $2, $3, $4, $5, TRUE, $6)
+         ON CONFLICT (open_id) DO UPDATE SET username = $2, name = $3, store = $4, role = $5, registered = TRUE, updated_at = NOW()`,
+        [openId, uname, name, store, role, tenantId]
+      );
+    });
     return { ok: true, user: { username: uname, name, store, role, brandId: brandCtx.brandId, brandName: brandCtx.brandName } };
   } catch (e) {
     console.error('[feishu] register user failed:', e?.message);
@@ -10825,8 +10843,12 @@ export async function onFeishuEvent(body) {
 
         // Step 3: Save unregistered user record and ask for username
         try {
-          await pool().query(
-            `INSERT INTO feishu_users (open_id, registered) VALUES ($1, FALSE) ON CONFLICT (open_id) DO NOTHING`, [openId]
+          // 此时还不知道用户名，无法解析真实租户；占位行先落default，等用户输入用户名
+          // 绑定成功后(registerFeishuUser)会用真实租户覆盖
+          await tenantContext.run('default', () =>
+            pool().query(
+              `INSERT INTO feishu_users (open_id, registered, tenant_id) VALUES ($1, FALSE, 'default') ON CONFLICT (open_id) DO NOTHING`, [openId]
+            )
           );
         } catch (e) {}
 
@@ -10837,8 +10859,12 @@ export async function onFeishuEvent(body) {
       } else {
         // No text (image/audio etc) and auto-bind failed
         try {
-          await pool().query(
-            `INSERT INTO feishu_users (open_id, registered) VALUES ($1, FALSE) ON CONFLICT (open_id) DO NOTHING`, [openId]
+          // 此时还不知道用户名，无法解析真实租户；占位行先落default，等用户输入用户名
+          // 绑定成功后(registerFeishuUser)会用真实租户覆盖
+          await tenantContext.run('default', () =>
+            pool().query(
+              `INSERT INTO feishu_users (open_id, registered, tenant_id) VALUES ($1, FALSE, 'default') ON CONFLICT (open_id) DO NOTHING`, [openId]
+            )
           );
         } catch (e) {}
 
@@ -10859,7 +10885,11 @@ export async function onFeishuEvent(body) {
       if (!_empRec || _inactive.includes(String(_empRec.status || '').trim().toLowerCase())) {
         const _msg = !_empRec ? '⚠️ 您的账号已从系统中移除，无法使用智能助理。' : '⚠️ 您的账号已离职，无法使用智能助理。';
         await sendLarkMessage(openId, _msg);
-        try { await pool().query('UPDATE feishu_users SET registered=FALSE WHERE open_id=$1', [openId]); } catch(_e) {}
+        try {
+          await tenantContext.run(feishuUser.tenant_id || 'default', () =>
+            pool().query('UPDATE feishu_users SET registered=FALSE WHERE open_id=$1', [openId])
+          );
+        } catch(_e) {}
         return { ok: true, blocked: !_empRec ? 'deleted' : 'inactive' };
       }
     } catch (_e) { console.error('[feishu] status check error:', _e?.message); }

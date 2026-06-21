@@ -14874,6 +14874,14 @@ async function applyHrmsUserAccountGateFromEmployee(emp) {
   if (!uname || !DATABASE_URL) return;
   const disable = employeeAccountShouldDisable(emp);
   try {
+    // 调用方有HTTP路由(已有ALS)也有定时任务(没有)，函数内部自己反查真实租户并
+    // tenantContext.run()包裹，不依赖调用方是否已设好上下文。
+    let tenantId = 'default';
+    try {
+      const tr = await pool.query('SELECT tenant_id FROM users WHERE lower(username) = lower($1) LIMIT 1', [uname]);
+      tenantId = String(tr.rows?.[0]?.tenant_id || '').trim() || 'default';
+    } catch (_e) {}
+    await tenantContext.run(tenantId, async () => {
     if (disable) {
       await pool.query(
         'UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE lower(username) = lower($1)',
@@ -14901,6 +14909,7 @@ async function applyHrmsUserAccountGateFromEmployee(emp) {
         [uname, String(emp.role || ''), String(emp.store || ''), String(emp.name || '')]
       );
     }
+    });
   } catch (e) {
     console.error('[account-gate]', uname, disable ? 'disable' : 'enable', e?.message || e);
   }
