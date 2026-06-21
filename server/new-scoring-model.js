@@ -10,6 +10,7 @@
 
 import { pool } from './utils/database.js';
 import { inferBrandFromStoreName } from './agents.js';
+import { getBrandConfigSync } from './utils/brand-config-loader.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
 import {
   countFullyCompliantPMDaysInRange,
@@ -856,10 +857,15 @@ const DEDUCTION_RULES = {
   '总实收毛利率异常': { high: 40, medium: 20, low: 0, frequency: 'monthly' },
 };
 
+// 兜底值，仅在 brand_configs.config_json 里查不到 laborEfficiencyThresholds 时使用
 const LABOR_EFFICIENCY_THRESHOLDS = {
   '洪潮': { high: { below: 1000, points: 20 }, medium: { below: 1100, points: 10 } },
   '马己仙': { high: { below: 1400, points: 20 }, medium: { below: 1500, points: 10 } },
 };
+
+function getLaborEfficiencyThresholds(brandZh) {
+  return getBrandConfigSync(brandZh)?.laborEfficiencyThresholds || LABOR_EFFICIENCY_THRESHOLDS[brandZh];
+}
 
 function inferBrandFromStore(store) {
   if (/洪潮/.test(store)) return '洪潮';
@@ -876,7 +882,7 @@ async function getLaborEfficiencyDeduction(store, period) {
   const avgEff = parseFloat(result.rows[0]?.avg_eff || 0);
   if (!avgEff) return { deduction: 0, severity: null, avgEff: 0 };
   const brand = inferBrandFromStore(store);
-  const thresholds = LABOR_EFFICIENCY_THRESHOLDS[brand];
+  const thresholds = getLaborEfficiencyThresholds(brand);
   if (!thresholds) return { deduction: 0, severity: null, avgEff: Math.round(avgEff) };
   if (avgEff < thresholds.high.below) return { deduction: thresholds.high.points, severity: 'high', avgEff: Math.round(avgEff) };
   if (avgEff < thresholds.medium.below) return { deduction: thresholds.medium.points, severity: 'medium', avgEff: Math.round(avgEff) };

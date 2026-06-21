@@ -4,6 +4,7 @@
  */
 import { pool } from '../utils/database.js';
 import { expandAgentStoreLabels, normalizeAgentMaterialBrand } from '../v2-store-alignment.js';
+import { getBrandConfigSync } from '../utils/brand-config-loader.js';
 
 const CREATED_AT_PAD_BEFORE_MONTH = 45;
 const CREATED_AT_PAD_AFTER_MONTH = 45;
@@ -125,11 +126,14 @@ function materialBrandMatches(agentData, brandZh) {
   return nb === brandZh;
 }
 
+// 兜底值，仅在 brand_configs.config_json 里查不到 kitchenStations 时使用
 const KITCHEN_STATIONS_MAJIXIAN = Object.freeze(['煲仔', '水吧', '炒锅', '烧味', '砧板']);
 const KITCHEN_STATIONS_HONGCHAO = Object.freeze(['煲仔', '水吧', '炒锅', '卤水', '砧板', '刺身']);
 
 function expectedKitchenStationsForBrand(brandZh) {
   const b = String(brandZh || '').trim();
+  const dbStations = getBrandConfigSync(b)?.kitchenStations;
+  if (Array.isArray(dbStations) && dbStations.length) return [...dbStations];
   if (b === '洪潮') return [...KITCHEN_STATIONS_HONGCHAO];
   return [...KITCHEN_STATIONS_MAJIXIAN];
 }
