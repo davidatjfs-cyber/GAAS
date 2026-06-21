@@ -1,5 +1,8 @@
 // Single source of truth for brand/store configuration.
-// To add a new brand: add one entry to STORES. Everything else derives from it.
+// To add a new brand: add one row to the store_brands DB table (see utils/brand-config-loader.js).
+// The STORES array below is kept only as a fallback for when the DB cache is empty.
+
+import { getBrandForStoreSync } from './utils/brand-config-loader.js';
 
 export const STORES = [
   { storeId: '51866138', name: '马己仙上海音乐广场店', brandName: '马己仙', smsSuffix: 'MAJIXIAN' },
@@ -12,25 +15,25 @@ export const ALL_STORE_NAMES  = STORES.map(s => s.name);
 
 // Returns env-var suffix for SMS templates: 'HONGCHAO', 'MAJIXIAN', or 'DEFAULT'
 export function getStoreSmsEnvSuffix(storeId) {
-  return STORE_BY_ID[String(storeId || '').trim()]?.smsSuffix || 'DEFAULT';
+  return getBrandForStoreSync(storeId)?.smsSuffix || STORE_BY_ID[String(storeId || '').trim()]?.smsSuffix || 'DEFAULT';
 }
 
 // Partial store/brand name → POS store_id
 export function storeNameToId(name) {
   const s = String(name || '');
-  return STORES.find(st => s.includes(st.brandName))?.storeId || '';
+  return getBrandForStoreSync(s)?.storeId || STORES.find(st => s.includes(st.brandName))?.storeId || '';
 }
 
 // POS store_id → canonical store name
 export function storeIdToName(storeId) {
   const s = String(storeId || '').trim();
-  return STORE_BY_ID[s]?.name || s;
+  return getBrandForStoreSync(s)?.storeName || STORE_BY_ID[s]?.name || s;
 }
 
 // Infer brand name from any store/brand text
 export function inferBrandFromStoreName(storeName) {
   const s = String(storeName || '').trim();
-  return STORES.find(st => s.includes(st.brandName))?.brandName || '';
+  return getBrandForStoreSync(s)?.brandName || STORES.find(st => s.includes(st.brandName))?.brandName || '';
 }
 
 // Normalize variant store name spellings → canonical DB name

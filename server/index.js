@@ -31,7 +31,7 @@ import XLSX from 'xlsx';
 import axios from 'axios';
 import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM } from './agents.js';
 import { ensureAgentConfigTables, registerAgentConfigRoutes } from "./agent-config-manager.js";
-import { initBrandConfigCache } from './utils/brand-config-loader.js';
+import { initBrandConfigCache, getBrandForStoreSync, getBrandConfigSync } from './utils/brand-config-loader.js';
 
 import { setMasterPool, ensureMasterTables, startMasterAgent, registerMasterRoutes, handleTaskResponse } from './master-agent.js';
 import { setReportPool, generateWeeklyReport, formatReportMarkdown } from './bi-weekly-report.js';
@@ -1170,6 +1170,9 @@ const STORE_FORECAST_CONFIG = {
 
 function getStoreForecastConfig(store) {
   const s = String(store || '').trim();
+  const brandKey = getBrandForStoreSync(s)?.brandKey;
+  const dbCfg = brandKey ? getBrandConfigSync(brandKey)?.forecast : null;
+  if (dbCfg) return dbCfg;
   if (STORE_FORECAST_CONFIG[s]) return STORE_FORECAST_CONFIG[s];
   // Partial name match for abbreviated store names
   const key = Object.keys(STORE_FORECAST_CONFIG).find(k => k !== '_default' && (s.includes(k) || k.includes(s)));
@@ -8736,6 +8739,8 @@ function normalizeForecastBizType(input) {
 // 从品牌名/门店名推断品牌 token（洪潮/马己仙），用于按品牌过滤菜品库成本，避免跨品牌成本污染。
 function forecastBrandToken(input) {
   const t = String(input || '');
+  const dbBrand = getBrandForStoreSync(t)?.brandName;
+  if (dbBrand) return dbBrand;
   if (t.includes('洪潮')) return '洪潮';
   if (t.includes('马己仙')) return '马己仙';
   return '';
@@ -8752,6 +8757,9 @@ const STORE_SLOT_CONFIG = {
 
 function getStoreSlotConfig(store) {
   const s = String(store || '').trim();
+  const brandKey = getBrandForStoreSync(s)?.brandKey;
+  const dbCfg = brandKey ? getBrandConfigSync(brandKey)?.slotConfig : null;
+  if (dbCfg) return dbCfg;
   if (STORE_SLOT_CONFIG[s]) return STORE_SLOT_CONFIG[s];
   const key = Object.keys(STORE_SLOT_CONFIG).find(k => k !== '_default' && (s.includes(k) || k.includes(s)));
   return (key ? STORE_SLOT_CONFIG[key] : null) || STORE_SLOT_CONFIG['_default'];
@@ -14056,6 +14064,10 @@ function hrmsDateKeyInShanghai(d) {
  */
 function hrmsAttendanceWindowMinutesForStore(storeRaw) {
   const s = String(storeRaw || '').trim();
+  const db = getBrandForStoreSync(s);
+  if (db && Number.isFinite(db.punchStartMinutes) && Number.isFinite(db.punchEndMinutes)) {
+    return { startMinutes: db.punchStartMinutes, endMinutes: db.punchEndMinutes };
+  }
   const hongJiuguang = s.includes('洪潮大宁久光')
     || (s.includes('洪潮') && (s.includes('久光') || s.includes('大宁')));
   if (hongJiuguang) return { startMinutes: 9 * 60 + 15, endMinutes: 21 * 60 };
