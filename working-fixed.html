@@ -25927,6 +25927,10 @@ th { background: #f5f5f5; font-weight: 700; }
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN;
             }
+            if (page === 'diagnosis') {
+                const r = String(role == null ? currentUser?.role : role || '').trim();
+                return r === ROLES.ADMIN;
+            }
             if (page === 'strategy') {
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN || r === ROLES.HQ_MANAGER || r === ROLES.STORE_MANAGER || r === ROLES.PRODUCTION_MANAGER;
@@ -53346,6 +53350,7 @@ ${body}
                 { icon:'🎓', label:'培训认证', page:'training' },
                 { icon:'📊', label:'数据中心', page:'agents', roles:['admin'] },
                 { icon:'📈', label:'增长看板', page:'growth', roles:['admin'] },
+                { icon:'🩺', label:'经营诊断', page:'diagnosis', roles:['admin'] },
                 { icon:'🧪', label:'门店营销策略', page:'strategy', roles:['admin','hq_manager','store_manager','store_production_manager'] },
                 { icon:'🧭', label:'Agent任务', page:'agent-tasks', roles:['admin','hq_manager','hr_manager'] },
                 // 考试测评已停用
