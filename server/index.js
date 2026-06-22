@@ -19760,7 +19760,11 @@ app.listen(PORT, HOST, async () => {
     }
 
     // 回填：hrms_state.salaryAdjustments → hrms_reward_punishment_records
+    // 该表已开FORCE RLS；这段跑在app.listen启动回调里，没有HTTP请求/ALS上下文，
+    // 必须显式包裹tenantContext.run，否则resolveTenantIdDefault()返回'default'但
+    // session变量是fail-closed的sentinel，写入会被WITH CHECK拒绝。
     try {
+      await tenantContext.run('default', async () => {
       const stateSA = (await getSharedState()) || {};
       const saList = Array.isArray(stateSA.salaryAdjustments) ? stateSA.salaryAdjustments : [];
       if (saList.length > 0) {
@@ -19787,6 +19791,7 @@ app.listen(PORT, HOST, async () => {
         }
         if (backfillCount > 0) console.log(`[startup] 奖惩记录回填：${backfillCount} 条 state → hrms_reward_punishment_records`);
       }
+      });
     } catch (e) {
       console.error('[startup] 奖惩记录回填失败（非致命）:', e?.message);
     }

@@ -3435,8 +3435,8 @@ async function setAgentLongMemory(userKey, memoryKey, value) {
 async function recordAgentQualityAudit({ route, username, queryText, responseText, auditResult, passed, rewriteCount = 0 }) {
   try {
     await pool().query(
-      `INSERT INTO agent_quality_audits (route, username, query_text, response_text, audit_result, passed, rewrite_count)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
+      `INSERT INTO agent_quality_audits (route, username, query_text, response_text, audit_result, passed, rewrite_count, tenant_id)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)`,
       [
         String(route || '').trim(),
         String(username || '').trim(),
@@ -3444,7 +3444,8 @@ async function recordAgentQualityAudit({ route, username, queryText, responseTex
         String(responseText || '').slice(0, 4000),
         JSON.stringify(auditResult || {}),
         passed === true,
-        Math.max(0, Number(rewriteCount) || 0)
+        Math.max(0, Number(rewriteCount) || 0),
+        resolveTenantIdDefault()
       ]
     );
   } catch (e) { console.error('[agents] recordAgentQualityAudit failed:', e?.message || e); }
@@ -3472,13 +3473,13 @@ async function createOrUpdateAutonomousDataTask({
     const r = await pool().query(
       `INSERT INTO agent_autonomous_tasks (
          fingerprint, task_type, status, store, brand, requester_username, route,
-         query_text, reason, evidence, action_plan, owner_username, notify_count, due_at, created_at, updated_at
+         query_text, reason, evidence, action_plan, owner_username, notify_count, due_at, created_at, updated_at, tenant_id
        )
        VALUES (
          $1, $2, 'open', $3, $4, $5, $6,
-         $7, $8, $9::jsonb, $10::jsonb, $11, 0, NOW() + make_interval(hours => $12), NOW(), NOW()
+         $7, $8, $9::jsonb, $10::jsonb, $11, 0, NOW() + make_interval(hours => $12), NOW(), NOW(), $13
        )
-       ON CONFLICT (fingerprint)
+       ON CONFLICT (fingerprint, tenant_id)
        DO UPDATE SET
          reason = EXCLUDED.reason,
          evidence = EXCLUDED.evidence,
@@ -3497,7 +3498,8 @@ async function createOrUpdateAutonomousDataTask({
         JSON.stringify(evidence || {}),
         JSON.stringify({ suggestedAction: '同步/补齐数据源后自动回访用户', createdBy: 'agent_autonomy' }),
         String(ownerUsername || '').trim(),
-        Math.max(1, Math.min(72, Number(dueHours) || 8))
+        Math.max(1, Math.min(72, Number(dueHours) || 8)),
+        resolveTenantIdDefault()
       ]
     );
     markQualityMetric('autonomousTasks', 1);
@@ -8125,10 +8127,10 @@ JSON回复：{"result":"pass/fail/unclear","confidence":0.0-1.0,"findings":"具�
   let auditId = null;
   try {
     const r = await pool().query(
-      `INSERT INTO agent_visual_audits (store, brand, username, image_url, audit_type, result, confidence, findings, image_hash, duplicate_of, agent_raw)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb) RETURNING id`,
+      `INSERT INTO agent_visual_audits (store, brand, username, image_url, audit_type, result, confidence, findings, image_hash, duplicate_of, agent_raw, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12) RETURNING id`,
       [store, brand, username, imageUrl, auditType || 'general', result, confidence,
-       findings, imageHash || null, duplicateOf || null, JSON.stringify(agentRaw)]
+       findings, imageHash || null, duplicateOf || null, JSON.stringify(agentRaw), resolveTenantIdDefault()]
     );
     auditId = r.rows?.[0]?.id || null;
   } catch (e) { console.error('[ops_supervisor] insert audit failed:', e?.message); }
@@ -8408,7 +8410,7 @@ export async function runChiefEvaluator(period, tenantId = 'default') {
         await pool().query(
           `INSERT INTO agent_scores (brand, store, username, name, role, period, score_model, total_score, breakdown, deductions, summary, tenant_id)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12)
-           ON CONFLICT (brand, store, username, period)
+           ON CONFLICT (brand, store, username, period, tenant_id)
            DO UPDATE SET name=EXCLUDED.name, total_score=EXCLUDED.total_score, breakdown=EXCLUDED.breakdown, deductions=EXCLUDED.deductions, summary=EXCLUDED.summary, feishu_notified=FALSE, updated_at=NOW()`,
           [brand, storeName, username, mgrName, role, p, 'new_model', totalScore,
            JSON.stringify(breakdown), JSON.stringify(deductions), summary, tenantId]

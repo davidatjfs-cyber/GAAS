@@ -5,6 +5,7 @@
 
 // 使用现有的数据库连接
 import { pool } from './master-agent.js';
+import { resolveTenantIdDefault } from './utils/database.js';
 
 // ─────────────────────────────────────────────
 // 1. 问题类型定义
@@ -121,8 +122,8 @@ export class AgentCommunicationSystem {
       await pool().query(`
         INSERT INTO agent_issues_reports (
           issue_id, agent_type, issue_type, details, context,
-          status, severity, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5::jsonb, 'pending', $6, $7, $7)
+          status, severity, created_at, updated_at, tenant_id
+        ) VALUES ($1, $2, $3, $4, $5::jsonb, 'pending', $6, $7, $7, $8)
       `, [
         issueId,
         agentType,
@@ -130,21 +131,22 @@ export class AgentCommunicationSystem {
         JSON.stringify(details),
         JSON.stringify(context),
         AGENT_ISSUE_TYPES[issueType].severity,
-        timestamp
+        timestamp,
+        resolveTenantIdDefault()
       ]);
       
       // 发送事件通知 Master
       try {
         // 直接记录到 master_events 表
         await pool().query(
-          `INSERT INTO master_events (task_id, event_type, from_agent, to_agent, status_before, status_after, payload)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+          `INSERT INTO master_events (task_id, event_type, from_agent, to_agent, status_before, status_after, payload, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
           [issueId, 'agent_issue_reported', agentType, 'master', null, 'pending', JSON.stringify({
             issueType,
             details,
             context,
             severity: AGENT_ISSUE_TYPES[issueType].severity
-          })]
+          }), resolveTenantIdDefault()]
         );
       } catch (e) {
         console.error('[communication] Failed to emit event:', e?.message);
@@ -212,9 +214,9 @@ export class AgentCommunicationSystem {
       try {
         // 直接记录到 master_events 表
         await pool().query(
-          `INSERT INTO master_events (task_id, event_type, from_agent, to_agent, status_before, status_after, payload)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-          [issueId, 'issue_status_updated', agentType, 'master', status, status, JSON.stringify(updateDetails)]
+          `INSERT INTO master_events (task_id, event_type, from_agent, to_agent, status_before, status_after, payload, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+          [issueId, 'issue_status_updated', agentType, 'master', status, status, JSON.stringify(updateDetails), resolveTenantIdDefault()]
         );
       } catch (e) {
         console.error('[communication] Failed to emit event:', e?.message);
@@ -353,9 +355,9 @@ export class AgentCommunicationSystem {
       // 记录通知到数据库
       await pool().query(`
         INSERT INTO agent_notifications (
-          agent_type, notification_type, content, created_at, read_status
-        ) VALUES ($1, $2, $3::jsonb, NOW(), false)
-      `, [agentType, notification.type, JSON.stringify(notification)]);
+          agent_type, notification_type, content, created_at, read_status, tenant_id
+        ) VALUES ($1, $2, $3::jsonb, NOW(), false, $4)
+      `, [agentType, notification.type, JSON.stringify(notification), resolveTenantIdDefault()]);
       
       // 如果是飞书用户，发送飞书通知
       if (agentType === 'ops_supervisor' || agentType === 'data_auditor') {

@@ -464,23 +464,26 @@ export class AgentCollaborationOrchestrator {
     if (!collaboration) return;
 
     try {
-      const db = pool();
-      await db.query(
-        `INSERT INTO agent_collaboration_archives 
-         (session_id, topic, initiator, participants, messages, summary, created_at, ended_at) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          sessionId,
-          collaboration.topic,
-          collaboration.initiator,
-          JSON.stringify(Array.from(collaboration.participants)),
-          JSON.stringify(collaboration.messages),
-          collaboration.summary,
-          collaboration.createdAt,
-          collaboration.endedAt || new Date()
-        ]
-      );
-      
+      // 全局Agent间协作编排，不属于任何租户，固定tenant_id='default'（与本文件logTaskExecution一致）
+      await tenantContext.run('default', async () => {
+        const db = pool();
+        await db.query(
+          `INSERT INTO agent_collaboration_archives
+           (session_id, topic, initiator, participants, messages, summary, created_at, ended_at, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'default')`,
+          [
+            sessionId,
+            collaboration.topic,
+            collaboration.initiator,
+            JSON.stringify(Array.from(collaboration.participants)),
+            JSON.stringify(collaboration.messages),
+            collaboration.summary,
+            collaboration.createdAt,
+            collaboration.endedAt || new Date()
+          ]
+        );
+      });
+
       this.activeCollaborations.delete(sessionId);
     } catch (e) {
       console.error('[AgentCollaboration] Error archiving collaboration:', e);
