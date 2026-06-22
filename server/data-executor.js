@@ -21,6 +21,7 @@
 
 import { randomUUID } from 'crypto';
 import { resolveTenantIdForStore } from './growth-api.js';
+import { resolveTenantIdDefault } from './utils/database.js';
 
 let _pool = null;
 export function setDataExecutorPool(p) { _pool = p; }
@@ -670,11 +671,11 @@ export async function setSessionState(username, state) {
   };
   try {
     await pool().query(
-      `INSERT INTO agent_long_memory (user_key, memory_key, memory_value, created_at, updated_at)
-       VALUES ($1, 'session_state', $2::jsonb, NOW(), NOW())
-       ON CONFLICT (user_key, memory_key)
+      `INSERT INTO agent_long_memory (user_key, memory_key, memory_value, created_at, updated_at, tenant_id)
+       VALUES ($1, 'session_state', $2::jsonb, NOW(), NOW(), $3)
+       ON CONFLICT (user_key, memory_key, tenant_id)
        DO UPDATE SET memory_value = EXCLUDED.memory_value, updated_at = NOW()`,
-      [u, JSON.stringify(payload)]
+      [u, JSON.stringify(payload), resolveTenantIdDefault()]
     );
   } catch (e) {
     console.error('[data-executor] setSessionState error:', e?.message);

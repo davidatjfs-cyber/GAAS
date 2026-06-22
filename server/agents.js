@@ -3421,11 +3421,11 @@ async function setAgentLongMemory(userKey, memoryKey, value) {
   const payload = value && typeof value === 'object' ? value : { value: String(value || '') };
   try {
     await pool().query(
-      `INSERT INTO agent_long_memory (user_key, memory_key, memory_value, created_at, updated_at)
-       VALUES ($1, $2, $3::jsonb, NOW(), NOW())
-       ON CONFLICT (user_key, memory_key)
+      `INSERT INTO agent_long_memory (user_key, memory_key, memory_value, created_at, updated_at, tenant_id)
+       VALUES ($1, $2, $3::jsonb, NOW(), NOW(), $4)
+       ON CONFLICT (user_key, memory_key, tenant_id)
        DO UPDATE SET memory_value = EXCLUDED.memory_value, updated_at = NOW()`,
-      [u, k, JSON.stringify(payload)]
+      [u, k, JSON.stringify(payload), resolveTenantIdDefault()]
     );
   } catch (e) {
     console.error('[agents] setAgentLongMemory failed:', e?.message || e);
