@@ -9389,7 +9389,8 @@
         }
 
         /* ── 待审批：Glass Aurora ── */
-        .content[data-active-page="approvals"] {
+        .content[data-active-page="approvals"],
+        .content[data-active-page="diagnosis"] {
             background: transparent !important;
             box-shadow: none !important;
             padding: 0 !important;
@@ -10901,6 +10902,118 @@
             #reports-page .rep-grid {
                 grid-template-columns: 1fr;
             }
+        }
+
+        /* ── 门店经营诊断：Glass Aurora（复用待审批视觉语言） ── */
+        #diagnosis-page {
+            --dx-iris: #6D7CFF;
+            --dx-mint: #5EEAD4;
+            --dx-coral: #FF7A90;
+            --dx-amber: #FFC46B;
+            --dx-text: #EEF1FA;
+            --dx-dim: #9AA3C7;
+            --dx-faint: #5B6597;
+            --dx-stroke: rgba(255,255,255,0.08);
+            background: #0B0F1E;
+            min-height: 100vh;
+            color: var(--dx-text);
+            font-family: 'Noto Sans SC', system-ui, sans-serif;
+            position: relative;
+        }
+        #diagnosis-page .dx-shell { position: relative; z-index: 1; max-width: 760px; margin: 0 auto; padding: 24px 16px 100px; }
+        #diagnosis-page .dx-page-head { margin-bottom: 20px; }
+        #diagnosis-page .dx-eyebrow {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+            color: var(--dx-faint); text-transform: uppercase; margin-bottom: 10px;
+        }
+        #diagnosis-page .dx-eyebrow::before {
+            content: ''; width: 7px; height: 7px; border-radius: 50%;
+            background: var(--dx-iris); box-shadow: 0 0 10px var(--dx-iris); flex-shrink: 0;
+        }
+        #diagnosis-page .dx-page-head h2 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; color: #fff; }
+        #diagnosis-page .dx-sub { margin: 6px 0 0; font-size: 13px; color: var(--dx-dim); line-height: 1.5; }
+        #diagnosis-page .dx-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 20px; }
+        #diagnosis-page .dx-filters input[type="date"] {
+            height: 38px; padding: 0 10px; border-radius: 10px;
+            border: 1px solid var(--dx-stroke); background: rgba(255,255,255,0.05);
+            color: var(--dx-text); font-size: 13px; font-family: inherit; outline: none;
+        }
+        #diagnosis-page .dx-filters .ga-btn { height: 38px; }
+        #diagnosis-page .dx-cards { display: flex; flex-direction: column; gap: 14px; }
+        #diagnosis-page .dx-card {
+            position: relative; padding: 20px; border-radius: 20px;
+            background: rgba(20,26,48,0.55);
+            backdrop-filter: blur(20px) saturate(1.4); -webkit-backdrop-filter: blur(20px) saturate(1.4);
+            border: 1px solid var(--dx-stroke);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 4px 24px rgba(0,0,0,0.35);
+            cursor: pointer; transition: border-color 0.15s;
+        }
+        #diagnosis-page .dx-card:active { transform: scale(0.995); }
+        #diagnosis-page .dx-card--decline {
+            border-color: rgba(255,122,144,0.3);
+            box-shadow: inset 0 1px 0 rgba(255,122,144,0.10), 0 0 0 1px rgba(255,122,144,0.08), 0 4px 24px rgba(255,122,144,0.12);
+        }
+        #diagnosis-page .dx-card__top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+        #diagnosis-page .dx-card__store { font-size: 16px; font-weight: 700; color: #fff; line-height: 1.3; }
+        #diagnosis-page .dx-pill {
+            display: inline-flex; align-items: center; flex-shrink: 0;
+            padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 600;
+        }
+        #diagnosis-page .dx-pill--ok { background: rgba(94,234,212,0.15); color: var(--dx-mint); }
+        #diagnosis-page .dx-pill--bad { background: rgba(255,122,144,0.15); color: var(--dx-coral); }
+        #diagnosis-page .dx-headline { font-size: 13px; color: var(--dx-dim); margin-bottom: 14px; line-height: 1.55; }
+        #diagnosis-page .dx-metrics { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 14px; }
+        #diagnosis-page .dx-metric { background: rgba(255,255,255,0.04); border-radius: 10px; padding: 10px 4px; text-align: center; }
+        #diagnosis-page .dx-metric .v {
+            font-size: 14px; font-weight: 700; color: #fff;
+            font-family: 'Geist Mono', 'SF Mono', monospace;
+        }
+        #diagnosis-page .dx-metric .l { font-size: 10px; color: var(--dx-faint); margin-top: 3px; }
+        #diagnosis-page .dx-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+        #diagnosis-page .dx-chip { font-size: 11px; padding: 4px 10px; border-radius: 8px; font-weight: 600; line-height: 1.4; }
+        #diagnosis-page .dx-chip--good { background: rgba(94,234,212,0.12); color: var(--dx-mint); }
+        #diagnosis-page .dx-chip--bad { background: rgba(255,122,144,0.12); color: var(--dx-coral); }
+        #diagnosis-page .dx-section-label {
+            font-size: 11px; color: var(--dx-faint); text-transform: uppercase;
+            letter-spacing: 0.06em; margin: 14px 0 6px; font-weight: 600;
+        }
+        #diagnosis-page .dx-rec { display: flex; gap: 8px; padding: 7px 0; font-size: 13px; color: var(--dx-text); border-top: 1px solid rgba(255,255,255,0.06); line-height: 1.4; }
+        #diagnosis-page .dx-rec:first-child { border-top: none; }
+        #diagnosis-page .dx-more { text-align: center; font-size: 12px; color: var(--dx-iris); margin-top: 10px; font-weight: 600; }
+        #diagnosis-page .dx-empty { text-align: center; padding: 60px 20px; color: var(--dx-dim); font-size: 14px; }
+        .dx-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 8999; }
+        .dx-backdrop.show { display: block; }
+        .dx-detail-panel {
+            display: none; position: fixed; top: 0; right: 0; width: 100%; height: 100vh;
+            background: #0B0F1E; color: var(--dx-text); overflow-y: auto; z-index: 9000;
+            padding: 28px 16px 80px; font-family: 'Noto Sans SC', system-ui, sans-serif;
+        }
+        .dx-detail-panel.show { display: block; }
+        .dx-panel-close {
+            position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.08);
+            border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 18px;
+            color: #fff; cursor: pointer; z-index: 1;
+        }
+        .dx-detail-panel .dx-d-section { margin-bottom: 22px; }
+        .dx-detail-panel .dx-d-section h4 {
+            font-size: 11px; color: var(--dx-faint); text-transform: uppercase;
+            letter-spacing: 0.06em; margin-bottom: 10px; font-weight: 600;
+        }
+        .dx-detail-panel .dx-d-contrib {
+            display: flex; justify-content: space-between; align-items: baseline;
+            padding: 8px 12px; background: rgba(255,255,255,0.04); border-radius: 10px; margin-bottom: 6px;
+        }
+        .dx-detail-panel .dx-d-contrib .factor { font-size: 13px; color: var(--dx-text); }
+        .dx-detail-panel .dx-d-contrib .impact { font-size: 13px; font-weight: 700; font-family: 'Geist Mono', 'SF Mono', monospace; }
+        .dx-detail-panel .dx-d-detail { font-size: 11px; color: var(--dx-dim); padding: 0 12px 8px; margin-top: -4px; }
+        .dx-detail-panel .dx-d-anomaly { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.06); }
+        .dx-detail-panel .dx-d-anomaly:first-child { border-top: none; }
+        .dx-detail-panel .dx-d-anomaly .sev { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .dx-detail-panel .dx-d-people { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+        .dx-detail-panel .dx-d-tag { padding: 2px 8px; border-radius: 6px; font-size: 11px; background: rgba(255,255,255,0.06); color: var(--dx-dim); }
+        @media (min-width: 768px) {
+            .dx-detail-panel { width: 480px; box-shadow: -8px 0 40px rgba(0,0,0,0.5); }
         }
 
         /* ── 分析报表：移动端排版增强（参考待审批模块） ── */
@@ -13904,6 +14017,11 @@
                 <div class="nav-item" data-page="growth">
                     <a href="#" class="nav-link growth-nav-link" onclick="showPage('growth')" style="display:none;">
                         <i>📈</i> <span>增长看板</span>
+                    </a>
+                </div>
+                <div class="nav-item" data-page="diagnosis">
+                    <a href="#" class="nav-link growth-nav-link" onclick="showPage('diagnosis')" style="display:none;">
+                        <i>🩺</i> <span>经营诊断</span>
                     </a>
                 </div>
                 <div class="nav-item" data-page="strategy" id="strategy-nav-item" style="display:none;">
@@ -18800,6 +18918,34 @@
                 <button class="btn btn-secondary" id="btn-agents-monitor-main" style="display:none;" onclick="openAgentMonitorModal()">Agent监控</button>
                 <button class="btn" id="btn-agents-config-main" style="display:none;" onclick="openAgentConfigModal()">Agent配置中心</button>
                 <button class="btn" id="btn-agents-config-card" style="display:none;" onclick="openAgentConfigModal()">打开配置中心</button>
+            </div>
+
+            <div id="diagnosis-page" class="hidden">
+              <div class="ap-grain"></div>
+              <div class="ap-aurora">
+                <div class="ap-aurora__blob ap-aurora__blob--1"></div>
+                <div class="ap-aurora__blob ap-aurora__blob--2"></div>
+                <div class="ap-aurora__blob ap-aurora__blob--3"></div>
+              </div>
+              <div class="dx-shell">
+                <header class="dx-page-head">
+                  <span class="dx-eyebrow">STORE DIAGNOSIS</span>
+                  <h2>门店经营诊断</h2>
+                  <p class="dx-sub">从营业额/差评/离职等结果反推原因，自动关联在岗人员与培训缺口，给出可执行的行动建议</p>
+                </header>
+                <div class="dx-filters">
+                  <input id="dx-start-date" type="date">
+                  <span style="color:var(--dx-dim);font-size:13px">至</span>
+                  <input id="dx-end-date" type="date">
+                  <button class="ga-btn ga-btn--primary ga-btn--sm" type="button" onclick="loadDiagnosisData()">刷新</button>
+                </div>
+                <div id="dx-cards-container" class="dx-cards"><div class="dx-empty">⏳ 正在加载诊断数据...</div></div>
+              </div>
+            </div>
+            <div class="dx-backdrop" id="dx-backdrop" onclick="closeDiagnosisDetail()"></div>
+            <div class="dx-detail-panel" id="dx-detail-panel">
+              <button class="dx-panel-close" type="button" onclick="closeDiagnosisDetail()">×</button>
+              <div id="dx-detail-content"></div>
             </div>
 
             <div id="growth-page" class="hidden">
@@ -26691,6 +26837,14 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 }
             }
 
+            if (pageName === 'diagnosis') {
+                const canAccess = currentUser && currentUser.role === ROLES.ADMIN;
+                if (!canAccess) {
+                    showNotification('经营诊断仅系统管理员可访问', 'warning');
+                    pageName = getHomePageName();
+                }
+            }
+
             if (pageName === 'strategy') {
                 const canAccess = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER || currentUser.role === ROLES.STORE_MANAGER || currentUser.role === ROLES.STORE_PRODUCTION_MANAGER);
                 if (!canAccess) {
@@ -26743,10 +26897,10 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 targetPage.classList.remove('hidden');
             }
 
-            // 待审批页面：让父容器 .content 透明，露出极光背景
+            // 待审批/经营诊断页面：让父容器 .content 透明，露出极光背景
             if (contentRoot) {
-                if (pageName === 'approvals') {
-                    contentRoot.setAttribute('data-active-page', 'approvals');
+                if (pageName === 'approvals' || pageName === 'diagnosis') {
+                    contentRoot.setAttribute('data-active-page', pageName);
                     contentRoot.style.setProperty('background', 'transparent', 'important');
                     contentRoot.style.setProperty('box-shadow', 'none', 'important');
                     contentRoot.style.setProperty('padding', '0', 'important');
@@ -26808,6 +26962,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         files: '文件中心',
                         agents: '数据中心',
                         growth: '增长看板',
+                        diagnosis: '经营诊断',
                         'agent-tasks': 'Agent任务',
                         strategy: '门店营销策略',
                         flashcards: '自我测验',
@@ -26933,6 +27088,9 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                     break;
                 case 'agent-tasks':
                     loadAgentTaskBoard();
+                    break;
+                case 'diagnosis':
+                    loadDiagnosisData();
                     break;
                 case 'strategy':
                     loadStrategyPage();
@@ -54422,6 +54580,179 @@ ${body}
         function closeUploadFileDialog() {
             const dialog = document.getElementById('upload-file-dialog');
             if (dialog) dialog.remove();
+        }
+
+        // ── 门店经营诊断 ──
+        function dxToken() {
+            return (window.HRMS_API && typeof HRMS_API.token === 'function') ? HRMS_API.token() : (localStorage.getItem('hrms_token') || '');
+        }
+
+        function dxIsGoodFactor(factor) {
+            if (/增长|提升|上升/.test(factor)) return true;
+            if (factor === '差评下降' || factor === '桌访问题产品下降') return true;
+            return false;
+        }
+
+        function dxDefaultDateRange() {
+            const end = new Date();
+            const start = new Date(end.getTime() - 6 * 86400000);
+            const fmt = d => d.toISOString().slice(0, 10);
+            return { start: fmt(start), end: fmt(end) };
+        }
+
+        async function loadDiagnosisData() {
+            const container = document.getElementById('dx-cards-container');
+            if (!container) return;
+            const startEl = document.getElementById('dx-start-date');
+            const endEl = document.getElementById('dx-end-date');
+            if (startEl && !startEl.value) { const r = dxDefaultDateRange(); startEl.value = r.start; if (endEl) endEl.value = r.end; }
+            const start = startEl?.value;
+            const end = endEl?.value;
+            container.innerHTML = '<div class="dx-empty">⏳ 正在加载诊断数据...</div>';
+            try {
+                const res = await fetch(`/api/diagnosis/overview?start=${start}&end=${end}`, {
+                    headers: { 'Authorization': 'Bearer ' + dxToken() }
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'unknown');
+                dxRenderCards(data.stores, start, end);
+            } catch (e) {
+                container.innerHTML = `<div class="dx-empty">❌ 加载失败: ${escapeHtml(e.message)}<br><br><button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="loadDiagnosisData()">重试</button></div>`;
+            }
+        }
+
+        function dxRenderCards(stores, start, end) {
+            const container = document.getElementById('dx-cards-container');
+            if (!container) return;
+            if (!stores || stores.length === 0) {
+                container.innerHTML = '<div class="dx-empty">暂无诊断数据</div>';
+                return;
+            }
+            container.innerHTML = stores.map(s => {
+                const isDecline = !!s.revenue.is_decline;
+                const changePct = Number(s.revenue.change_pct || 0);
+                const changeSign = changePct >= 0 ? '+' : '';
+                const topAnomalies = (s.anomalies || []).slice(0, 4).map(a =>
+                    `<span class="dx-chip dx-chip--bad">${escapeHtml(a.type)}</span>`
+                ).join('');
+                const topRecs = (s.recommendations || []).slice(0, 2).map(r =>
+                    `<div class="dx-rec"><span>${r.priority === 'high' ? '🔴' : '🟡'}</span><span>${escapeHtml(r.title)}</span></div>`
+                ).join('');
+                const moreRecs = (s.recommendations || []).length > 2 ? `<div class="dx-more">还有${s.recommendations.length - 2}条建议，点击查看完整报告 →</div>` : (s.recommendations || []).length > 0 ? `<div class="dx-more">点击查看完整诊断报告 →</div>` : '';
+                return `<div class="dx-card ${isDecline ? 'dx-card--decline' : ''}" onclick="openDiagnosisDetail('${encodeURIComponent(s.store)}', '${start}', '${end}')">
+                  <div class="dx-card__top">
+                    <span class="dx-card__store">${escapeHtml(s.store)}</span>
+                    <span class="dx-pill ${isDecline ? 'dx-pill--bad' : 'dx-pill--ok'}">${isDecline ? '营收下降' : '营收正常'}</span>
+                  </div>
+                  <div class="dx-headline">${escapeHtml(s.summary?.headline || '')}</div>
+                  <div class="dx-metrics">
+                    <div class="dx-metric"><div class="v">¥${Math.round(s.revenue.total || 0).toLocaleString()}</div><div class="l">本期营收 ${changeSign}${changePct}%</div></div>
+                    <div class="dx-metric"><div class="v">${s.summary?.new_customer_ratio || '-'}</div><div class="l">新客占比</div></div>
+                    <div class="dx-metric"><div class="v">${s.anomalies.length}</div><div class="l">异常项</div></div>
+                    <div class="dx-metric"><div class="v">${s.recommendations.length}</div><div class="l">建议项</div></div>
+                  </div>
+                  <div class="dx-chips">${topAnomalies}</div>
+                  ${topRecs}
+                  ${moreRecs}
+                </div>`;
+            }).join('');
+        }
+
+        async function openDiagnosisDetail(storeEncoded, start, end) {
+            const store = decodeURIComponent(storeEncoded);
+            document.getElementById('dx-backdrop')?.classList.add('show');
+            document.getElementById('dx-detail-panel')?.classList.add('show');
+            const content = document.getElementById('dx-detail-content');
+            if (content) content.innerHTML = '<div class="dx-empty">⏳ 加载详情...</div>';
+            try {
+                const res = await fetch(`/api/diagnosis/store/${storeEncoded}?start=${start}&end=${end}`, {
+                    headers: { 'Authorization': 'Bearer ' + dxToken() }
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'unknown');
+                dxRenderDetail(data.diagnosis);
+            } catch (e) {
+                if (content) content.innerHTML = `<div class="dx-empty">❌ 加载失败: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function closeDiagnosisDetail() {
+            document.getElementById('dx-backdrop')?.classList.remove('show');
+            document.getElementById('dx-detail-panel')?.classList.remove('show');
+        }
+
+        function dxRenderDetail(d) {
+            const content = document.getElementById('dx-detail-content');
+            if (!content) return;
+
+            const contribHTML = (d.revenue.contributions || []).length > 0
+                ? `<div class="dx-d-section"><h4>📊 贡献度分析（全维度环比）</h4>${d.revenue.contributions.map(c => {
+                    const good = dxIsGoodFactor(c.factor);
+                    return `<div class="dx-d-contrib"><span class="factor">${escapeHtml(c.factor)}</span><span class="impact" style="color:${good ? '#5EEAD4' : '#FF7A90'}">${escapeHtml(c.impact)}</span></div><div class="dx-d-detail">${escapeHtml(c.detail || '')}</div>`;
+                  }).join('')}</div>`
+                : '';
+
+            const catHTML = (d.revenue.categories || []).length > 0
+                ? `<div class="dx-d-section"><h4>🍽️ 品类营收</h4>${d.revenue.categories.slice(0, 6).map(c =>
+                    `<div class="dx-d-contrib"><span class="factor">${escapeHtml(c.name)}</span><span class="impact" style="color:#EEF1FA">¥${Math.round(c.avg_daily).toLocaleString()}/天</span></div>`
+                  ).join('')}</div>`
+                : '';
+
+            const anomHTML = (d.anomalies || []).map(a =>
+                `<div class="dx-d-anomaly"><span class="sev" style="background:${a.severity === 'high' ? '#FF7A90' : '#FFC46B'}"></span><span style="flex:1">${escapeHtml(a.type)}</span><span style="color:#9AA3C7;font-size:11px">${escapeHtml(a.detail || '')}</span></div>`
+            ).join('');
+
+            const recHTML = (d.recommendations || []).map(r =>
+                `<div class="dx-rec"><span>${r.priority === 'high' ? '🔴' : '🟡'}</span><div>
+                  <div style="font-weight:600;margin-bottom:2px">${escapeHtml(r.title)}</div>
+                  <div style="color:#9AA3C7;font-size:11px">${escapeHtml(r.detail || '')}</div>
+                  ${r.target_users && r.target_users.length ? `<div class="dx-d-people">${r.target_users.map(() => '').join('')}</div>` : ''}
+                </div></div>`
+            ).join('');
+
+            const staffAreas = Object.entries(d.staffing?.by_area || {}).map(([area, people]) =>
+                `<div style="margin-bottom:8px"><div style="font-size:12px;font-weight:600;color:#9AA3C7;margin-bottom:4px">${escapeHtml(area)}</div><div class="dx-d-people">${(people || []).map(p => `<span class="dx-d-tag">${escapeHtml(p.name)}</span>`).join('')}</div></div>`
+            ).join('');
+
+            content.innerHTML = `
+                <h2 style="font-size:18px;margin-bottom:6px;color:#fff">${escapeHtml(d.store)}</h2>
+                <div style="color:#9AA3C7;font-size:13px;margin-bottom:20px;line-height:1.5">${escapeHtml(d.summary?.headline || '')}</div>
+
+                <div class="dx-d-section">
+                  <h4>💰 营业指标</h4>
+                  <div class="dx-metrics" style="margin-bottom:0">
+                    <div class="dx-metric"><div class="v">¥${Math.round(d.revenue.total).toLocaleString()}</div><div class="l">本期营收 ${d.revenue.change_pct >= 0 ? '+' : ''}${d.revenue.change_pct}%</div></div>
+                    <div class="dx-metric"><div class="v">¥${Math.round(d.revenue.avg_order_value).toLocaleString()}</div><div class="l">客单价</div></div>
+                    <div class="dx-metric"><div class="v">¥${Math.round(d.revenue.avg_efficiency).toLocaleString()}</div><div class="l">人效（元/人）</div></div>
+                    <div class="dx-metric"><div class="v">${d.customer?.new_ratio || 0}%</div><div class="l">新客占比</div></div>
+                  </div>
+                </div>
+
+                ${contribHTML}
+                ${catHTML}
+
+                <div class="dx-d-section">
+                  <h4>🔴 本周异常（${d.anomalies.length}项）</h4>
+                  ${anomHTML || '<div style="color:#9AA3C7;font-size:13px">无异常</div>'}
+                </div>
+
+                <div class="dx-d-section">
+                  <h4>👥 最新排班（${d.staffing?.latest_date || '-'}）</h4>
+                  ${staffAreas || '<div style="color:#9AA3C7;font-size:13px">无排班数据</div>'}
+                </div>
+
+                <div class="dx-d-section">
+                  <h4>💡 建议行动（${d.recommendations.length}项）</h4>
+                  ${recHTML || '<div style="color:#9AA3C7;font-size:13px">暂无建议</div>'}
+                </div>
+
+                <div class="dx-d-section">
+                  <h4>👤 未培训员工（${d.training?.employees_without_training?.length || 0}人）</h4>
+                  <div class="dx-d-people">${(d.training?.employees_without_training || []).map(e => `<span class="dx-d-tag">${escapeHtml(e.name)} (${escapeHtml(e.position || '-')}${e.is_new ? ' · 新' : ''})</span>`).join('')}</div>
+                </div>
+            `;
         }
 
         async function submitFileUpload() {
