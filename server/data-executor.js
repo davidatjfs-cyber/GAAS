@@ -129,8 +129,8 @@ export async function updateMetricVersion(metricId, changes, changedBy) {
          SET version = $1,
              metadata = jsonb_set(COALESCE(metadata,'{}'), '{change_log}', $2::jsonb),
              updated_at = NOW()
-       WHERE metric_id = $3`,
-      [newVersion, JSON.stringify(newLog), metricId]
+       WHERE metric_id = $3 AND tenant_id = $4`,
+      [newVersion, JSON.stringify(newLog), metricId, resolveTenantIdDefault()]
     );
     // 清理该指标所有缓存（版本变更，旧缓存全部失效）
     const deleted = await pool().query(

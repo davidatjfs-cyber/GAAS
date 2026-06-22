@@ -1,5 +1,6 @@
 import { pool } from './agents.js';
 import { isHrmsAgentV1Enabled } from './safety.js';
+import { resolveTenantIdDefault } from './utils/database.js';
 
 // ─── Feature Flags（降级开关）────────────────────────────────
 // 通过环境变量覆盖，例如 FEATURE_DISABLE_METRIC_DICTIONARY=true
@@ -563,12 +564,12 @@ export async function ensureAgentConfigTables() {
     const templateIdMap = {};
     for (const tpl of DEFAULT_PROMPT_TEMPLATES) {
       const tr = await pool().query(
-        `insert into agent_prompt_templates (template_key, agent_id, name, content, enabled, is_builtin)
-         values ($1, $2, $3, $4, $5, $6)
+        `insert into agent_prompt_templates (template_key, agent_id, name, content, enabled, is_builtin, tenant_id)
+         values ($1, $2, $3, $4, $5, $6, $7)
          on conflict (template_key)
          do update set name = excluded.name, content = excluded.content, enabled = excluded.enabled, updated_at = now()
          returning id, template_key`,
-        [tpl.template_key, tpl.agent_id, tpl.name, tpl.content, tpl.enabled !== false, tpl.is_builtin === true]
+        [tpl.template_key, tpl.agent_id, tpl.name, tpl.content, tpl.enabled !== false, tpl.is_builtin === true, resolveTenantIdDefault()]
       );
       const row = tr.rows?.[0];
       if (row?.template_key && row?.id) templateIdMap[row.template_key] = row.id;
@@ -577,12 +578,12 @@ export async function ensureAgentConfigTables() {
     const replyTemplateIdMap = {};
     for (const tpl of DEFAULT_REPLY_TEMPLATES) {
       const tr = await pool().query(
-        `insert into agent_reply_templates (template_key, agent_id, name, content, enabled, is_builtin)
-         values ($1, $2, $3, $4, $5, $6)
+        `insert into agent_reply_templates (template_key, agent_id, name, content, enabled, is_builtin, tenant_id)
+         values ($1, $2, $3, $4, $5, $6, $7)
          on conflict (template_key)
          do update set name = excluded.name, content = excluded.content, enabled = excluded.enabled, updated_at = now()
          returning id, template_key`,
-        [tpl.template_key, tpl.agent_id, tpl.name, tpl.content, tpl.enabled !== false, tpl.is_builtin === true]
+        [tpl.template_key, tpl.agent_id, tpl.name, tpl.content, tpl.enabled !== false, tpl.is_builtin === true, resolveTenantIdDefault()]
       );
       const row = tr.rows?.[0];
       if (row?.template_key && row?.id) replyTemplateIdMap[row.template_key] = row.id;
@@ -595,21 +596,21 @@ export async function ensureAgentConfigTables() {
       const defaultReplyTpl = DEFAULT_REPLY_TEMPLATES.find((x) => x.agent_id === agent.agent_id);
       const replyTemplateId = defaultReplyTpl ? (replyTemplateIdMap[defaultReplyTpl.template_key] || null) : null;
       await pool().query(`
-        insert into agent_configs (agent_id, name, description, system_prompt, model_name, temperature, enabled, schedule_interval, prompt_template_id, reply_template_id)
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        insert into agent_configs (agent_id, name, description, system_prompt, model_name, temperature, enabled, schedule_interval, prompt_template_id, reply_template_id, tenant_id)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         on conflict (agent_id) do nothing
-      `, [agent.agent_id, agent.name, agent.description, agent.system_prompt, agent.model_name, agent.temperature, agent.enabled, agent.schedule_interval, promptTemplateId, replyTemplateId]);
+      `, [agent.agent_id, agent.name, agent.description, agent.system_prompt, agent.model_name, agent.temperature, agent.enabled, agent.schedule_interval, promptTemplateId, replyTemplateId, resolveTenantIdDefault()]);
 
       if (promptTemplateId) {
         await pool().query(
-          `update agent_configs set prompt_template_id = coalesce(prompt_template_id, $1) where agent_id = $2`,
-          [promptTemplateId, agent.agent_id]
+          `update agent_configs set prompt_template_id = coalesce(prompt_template_id, $1) where agent_id = $2 and tenant_id = $3`,
+          [promptTemplateId, agent.agent_id, resolveTenantIdDefault()]
         );
       }
       if (replyTemplateId) {
         await pool().query(
-          `update agent_configs set reply_template_id = coalesce(reply_template_id, $1) where agent_id = $2`,
-          [replyTemplateId, agent.agent_id]
+          `update agent_configs set reply_template_id = coalesce(reply_template_id, $1) where agent_id = $2 and tenant_id = $3`,
+          [replyTemplateId, agent.agent_id, resolveTenantIdDefault()]
         );
       }
     }
@@ -623,31 +624,31 @@ export async function ensureAgentConfigTables() {
     // 初始化默认 Rule 数据
     for (const rule of DEFAULT_RULES) {
       await pool().query(`
-        insert into agent_rules (category, assignee_role, normal_deduction, major_deduction)
-        values ($1, $2, $3, $4)
+        insert into agent_rules (category, assignee_role, normal_deduction, major_deduction, tenant_id)
+        values ($1, $2, $3, $4, $5)
         on conflict (category) do nothing
-      `, [rule.category, rule.assignee_role, rule.normal_deduction, rule.major_deduction]);
+      `, [rule.category, rule.assignee_role, rule.normal_deduction, rule.major_deduction, resolveTenantIdDefault()]);
     }
 
     await pool().query(
-      `insert into hr_rating_configs (config_key, config, enabled)
-       values ('employee_rating', $1::jsonb, true)
-       on conflict (config_key) do nothing`,
-      [JSON.stringify(DEFAULT_EMPLOYEE_RATING_CONFIG)]
+      `insert into hr_rating_configs (config_key, config, enabled, tenant_id)
+       values ('employee_rating', $1::jsonb, true, $2)
+       on conflict (config_key, tenant_id) do nothing`,
+      [JSON.stringify(DEFAULT_EMPLOYEE_RATING_CONFIG), resolveTenantIdDefault()]
     );
 
     await pool().query(
-      `insert into hr_rating_configs (config_key, config, enabled)
-       values ('ops_agent', $1::jsonb, true)
-       on conflict (config_key) do nothing`,
-      [JSON.stringify(DEFAULT_OPS_AGENT_CONFIG)]
+      `insert into hr_rating_configs (config_key, config, enabled, tenant_id)
+       values ('ops_agent', $1::jsonb, true, $2)
+       on conflict (config_key, tenant_id) do nothing`,
+      [JSON.stringify(DEFAULT_OPS_AGENT_CONFIG), resolveTenantIdDefault()]
     );
 
     await pool().query(
-      `insert into hr_rating_configs (config_key, config, enabled)
-       values ('bi_agent', $1::jsonb, true)
-       on conflict (config_key) do nothing`,
-      [JSON.stringify(DEFAULT_BI_AGENT_CONFIG)]
+      `insert into hr_rating_configs (config_key, config, enabled, tenant_id)
+       values ('bi_agent', $1::jsonb, true, $2)
+       on conflict (config_key, tenant_id) do nothing`,
+      [JSON.stringify(DEFAULT_BI_AGENT_CONFIG), resolveTenantIdDefault()]
     );
     
     console.log('[AgentConfig] Tables ensured and default data seeded.');
@@ -942,12 +943,12 @@ export function registerAgentConfigRoutes(app, authRequired) {
     const normalizedConfig = normalizeEmployeeRatingConfig(config);
     try {
       const r = await pool().query(
-        `insert into hr_rating_configs (config_key, config, enabled, updated_at)
-         values ('employee_rating', $1::jsonb, $2, now())
-         on conflict (config_key)
+        `insert into hr_rating_configs (config_key, config, enabled, updated_at, tenant_id)
+         values ('employee_rating', $1::jsonb, $2, now(), $3)
+         on conflict (config_key, tenant_id)
          do update set config = excluded.config, enabled = excluded.enabled, updated_at = now()
          returning config, enabled, updated_at`,
-        [JSON.stringify(normalizedConfig), enabled2]
+        [JSON.stringify(normalizedConfig), enabled2, resolveTenantIdDefault()]
       );
       clearEmployeeRatingConfigCache();
       return res.json({ ok: true, config: toJson(r.rows?.[0]?.config, normalizedConfig), enabled: r.rows?.[0]?.enabled !== false });
@@ -981,12 +982,12 @@ export function registerAgentConfigRoutes(app, authRequired) {
     if (!config || typeof config !== 'object') return res.status(400).json({ error: 'invalid_config' });
     try {
       const r = await pool().query(
-        `insert into hr_rating_configs (config_key, config, enabled, updated_at)
-         values ('bi_agent', $1::jsonb, $2, now())
-         on conflict (config_key)
+        `insert into hr_rating_configs (config_key, config, enabled, updated_at, tenant_id)
+         values ('bi_agent', $1::jsonb, $2, now(), $3)
+         on conflict (config_key, tenant_id)
          do update set config = excluded.config, enabled = excluded.enabled, updated_at = now()
          returning config, enabled, updated_at`,
-        [JSON.stringify(config), enabled2]
+        [JSON.stringify(config), enabled2, resolveTenantIdDefault()]
       );
       clearBiAgentConfigCache();
       return res.json({ config: r.rows[0].config, enabled: r.rows[0].enabled, updated_at: r.rows[0].updated_at });
@@ -1020,12 +1021,12 @@ export function registerAgentConfigRoutes(app, authRequired) {
     if (!config || typeof config !== 'object') return res.status(400).json({ error: 'invalid_config' });
     try {
       const r = await pool().query(
-        `insert into hr_rating_configs (config_key, config, enabled, updated_at)
-         values ('ops_agent', $1::jsonb, $2, now())
-         on conflict (config_key)
+        `insert into hr_rating_configs (config_key, config, enabled, updated_at, tenant_id)
+         values ('ops_agent', $1::jsonb, $2, now(), $3)
+         on conflict (config_key, tenant_id)
          do update set config = excluded.config, enabled = excluded.enabled, updated_at = now()
          returning config, enabled, updated_at`,
-        [JSON.stringify(config), enabled2]
+        [JSON.stringify(config), enabled2, resolveTenantIdDefault()]
       );
       clearOpsAgentConfigCache();
       if (isHrmsAgentV1Enabled()) {
@@ -1127,12 +1128,12 @@ export function registerAgentConfigRoutes(app, authRequired) {
     if (!config || typeof config !== 'object') return res.status(400).json({ error: 'invalid_config' });
     try {
       const r = await pool().query(
-        `INSERT INTO hr_rating_configs (config_key, config, enabled, updated_at)
-         VALUES ('role_module_config', $1::jsonb, true, now())
-         ON CONFLICT (config_key)
+        `INSERT INTO hr_rating_configs (config_key, config, enabled, updated_at, tenant_id)
+         VALUES ('role_module_config', $1::jsonb, true, now(), $2)
+         ON CONFLICT (config_key, tenant_id)
          DO UPDATE SET config = excluded.config, enabled = true, updated_at = now()
          RETURNING config, updated_at`,
-        [JSON.stringify(config)]
+        [JSON.stringify(config), resolveTenantIdDefault()]
       );
       return res.json({ config: r.rows[0].config, updated_at: r.rows[0].updated_at });
     } catch (e) {

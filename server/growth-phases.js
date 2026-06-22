@@ -1830,13 +1830,13 @@ export function registerPhaseRoutes(app, pool) {
     if (!rqa(req, res)) return;
     const b = req.body || {};
     const r = await pool.query(
-      `INSERT INTO marketing_templates(name,category,description,actions,expected_roi,budget_range,duration_days,success_rate,channel,target_audience,payload_template)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      `INSERT INTO marketing_templates(name,category,description,actions,expected_roi,budget_range,duration_days,success_rate,channel,target_audience,payload_template,tenant_id)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [cleanText(b.name,200),cleanText(b.category,80),cleanText(b.description,1000),
        JSON.stringify(b.actions||[]),Number(b.expected_roi)||0,cleanText(b.budget_range,100),
        Math.max(1,Math.floor(Number(b.duration_days)||7)),Number(b.success_rate)||0,
        cleanText(b.channel,80),cleanText(b.target_audience||'all',200),
-       JSON.stringify(b.payload_template||{})]
+       JSON.stringify(b.payload_template||{}),getPhaseApiTenantId(req)]
     );
     res.json({ok:true,template:r.rows[0]});
   });

@@ -1193,8 +1193,8 @@ async function trainAgentListener(tenantId = 'default') {
       // 发布到事件门店的店长和总部营运
       // TODO: 需要获取总部营运的飞书账号
       await pool().query(
-        `UPDATE sop_cases SET status = 'published', published_at = NOW() WHERE id = $1`,
-        [sopCase.id]
+        `UPDATE sop_cases SET status = 'published', published_at = NOW() WHERE id = $1 AND tenant_id = $2`,
+        [sopCase.id, tenantId]
       );
 
       // 更新知识库

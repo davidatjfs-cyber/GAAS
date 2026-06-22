@@ -4,7 +4,7 @@
 
 import { calculateStoreRating, calculateEmployeeScore } from './new-scoring-model.js';
 import { inferBrandFromStoreName } from './agents.js';
-import { pool } from './utils/database.js';
+import { pool, resolveTenantIdDefault } from './utils/database.js';
 import { safeExecute } from './utils/error-handler.js';
 
 // ─────────────────────────────────────────────
@@ -216,11 +216,11 @@ export function registerNewScoringRoutes(app) {
       }
       
       await pool().query(`
-        INSERT INTO revenue_targets (store, brand, period, target_revenue)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (store, brand, period)
+        INSERT INTO revenue_targets (store, brand, period, target_revenue, tenant_id)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (store, brand, period, tenant_id)
         DO UPDATE SET target_revenue = EXCLUDED.target_revenue
-      `, [store, brand, period, target_revenue]);
+      `, [store, brand, period, target_revenue, resolveTenantIdDefault()]);
       
       res.json({
         success: true,
@@ -249,11 +249,11 @@ export function registerNewScoringRoutes(app) {
       }
       
       await pool().query(`
-        INSERT INTO margin_targets (store, brand, period, target_margin)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (store, brand, period)
+        INSERT INTO margin_targets (store, brand, period, target_margin, tenant_id)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (store, brand, period, tenant_id)
         DO UPDATE SET target_margin = EXCLUDED.target_margin
-      `, [store, brand, period, target_margin]);
+      `, [store, brand, period, target_margin, resolveTenantIdDefault()]);
       
       res.json({
         success: true,

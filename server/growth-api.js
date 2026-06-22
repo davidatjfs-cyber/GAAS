@@ -2112,7 +2112,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
       );
       executionResults.real_executions.push({ type: 'campaign_plan', plan_id: planResult.rows[0]?.plan_id, status: 'active' });
       if (sourceTemplateId) {
-        pool.query('UPDATE marketing_templates SET use_count = use_count + 1 WHERE id = $1', [sourceTemplateId]).catch(() => {});
+        pool.query('UPDATE marketing_templates SET use_count = use_count + 1 WHERE id = $1 AND tenant_id = $2', [sourceTemplateId, tenantId]).catch(() => {});
       }
       if (campaignId) {
         await pool.query(
@@ -5123,14 +5123,15 @@ export function registerGrowthRoutes(app, pool) {
     const b = req.body || {};
     const storeId = cleanText(b.store_id, 128);
     if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
+    const constraintTenantId = await resolveTenantIdForStore(pool, storeId);
     const r = await pool.query(
       `INSERT INTO store_marketing_constraints (
         store_id, brand, min_discount_rate, max_coupon_value_fen, monthly_budget_fen,
         max_touch_per_72h, cooldown_hours_after_payment, allowed_channels,
         disallowed_campaign_types, disallowed_dishes, preferred_channels,
-        brand_voice_style, execution_notes, active
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12,$13,$14)
-      ON CONFLICT (store_id) DO UPDATE SET
+        brand_voice_style, execution_notes, active, tenant_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12,$13,$14,$15)
+      ON CONFLICT (store_id, tenant_id) DO UPDATE SET
         brand = EXCLUDED.brand,
         min_discount_rate = EXCLUDED.min_discount_rate,
         max_coupon_value_fen = EXCLUDED.max_coupon_value_fen,
@@ -5160,7 +5161,8 @@ export function registerGrowthRoutes(app, pool) {
         JSON.stringify(b.preferred_channels || []),
         cleanText(b.brand_voice_style, 200),
         cleanText(b.execution_notes, 4000),
-        b.active !== false
+        b.active !== false,
+        constraintTenantId
       ]
     );
     return res.json({ ok: true, constraint: r.rows[0] });
@@ -5203,9 +5205,9 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const b = req.body || {};
     const r = await pool.query(
-      `INSERT INTO public_channels (channel_key, name, platform, store_id, owner_username, meta, enabled)
-       VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6::jsonb,COALESCE($7, TRUE))
-       ON CONFLICT (channel_key) DO UPDATE SET
+      `INSERT INTO public_channels (channel_key, name, platform, store_id, owner_username, meta, enabled, tenant_id)
+       VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6::jsonb,COALESCE($7, TRUE),$8)
+       ON CONFLICT (channel_key, tenant_id) DO UPDATE SET
          name = EXCLUDED.name,
          platform = EXCLUDED.platform,
          store_id = EXCLUDED.store_id,
@@ -5214,7 +5216,7 @@ export function registerGrowthRoutes(app, pool) {
          enabled = EXCLUDED.enabled,
          updated_at = NOW()
        RETURNING *`,
-      [cleanText(b.channel_key, 128), cleanText(b.name, 200), cleanText(b.platform, 80), cleanText(b.store_id, 128), cleanText(b.owner_username, 128), JSON.stringify(b.meta || {}), b.enabled !== false]
+      [cleanText(b.channel_key, 128), cleanText(b.name, 200), cleanText(b.platform, 80), cleanText(b.store_id, 128), cleanText(b.owner_username, 128), JSON.stringify(b.meta || {}), b.enabled !== false, resolveTenantIdDefault()]
     );
     return res.json({ ok: true, channel: r.rows[0] });
   });
@@ -5296,9 +5298,9 @@ export function registerGrowthRoutes(app, pool) {
     const purposes = Array.isArray(b.purposes) ? b.purposes.filter(Boolean) : [];
     const channels = Array.isArray(b.channels) ? b.channels.filter(Boolean) : [];
     const r = await pool.query(
-      `INSERT INTO poster_templates (template_key, name, category, channel, aspect_ratio, layout, style_guide, image_url, enabled, purposes, channels)
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,COALESCE($9, TRUE),$10,$11)
-       ON CONFLICT (template_key) DO UPDATE SET
+      `INSERT INTO poster_templates (template_key, name, category, channel, aspect_ratio, layout, style_guide, image_url, enabled, purposes, channels, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,COALESCE($9, TRUE),$10,$11,$12)
+       ON CONFLICT (template_key, tenant_id) DO UPDATE SET
          name = EXCLUDED.name,
          category = EXCLUDED.category,
          channel = EXCLUDED.channel,
@@ -5311,7 +5313,7 @@ export function registerGrowthRoutes(app, pool) {
          channels = EXCLUDED.channels,
          updated_at = NOW()
        RETURNING *`,
-      [cleanText(b.template_key, 128), cleanText(b.name, 300), cleanText(b.category, 80), cleanText(b.channel, 80), cleanText(b.aspect_ratio, 40), JSON.stringify(b.layout || {}), JSON.stringify(b.style_guide || {}), cleanText(b.image_url, 1000), b.enabled !== false, purposes, channels]
+      [cleanText(b.template_key, 128), cleanText(b.name, 300), cleanText(b.category, 80), cleanText(b.channel, 80), cleanText(b.aspect_ratio, 40), JSON.stringify(b.layout || {}), JSON.stringify(b.style_guide || {}), cleanText(b.image_url, 1000), b.enabled !== false, purposes, channels, resolveTenantIdDefault()]
     );
     return res.json({ ok: true, template: r.rows[0] });
   });
