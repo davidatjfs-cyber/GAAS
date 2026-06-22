@@ -3176,9 +3176,9 @@ async function handleOpsChecklistCardAction(event) {
 
     try {
       await pool().query(
-        `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data)
-         VALUES ('in','feishu',$1,$2,$3,$4,'ops_supervisor','card_action',$5,$6::jsonb)`,
-        [openId, feishuUser.username, feishuUser.name || feishuUser.username, feishuUser.role || '', `${typeLabel}异常项提交：${itemName}`, JSON.stringify(structured)]
+        `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data, tenant_id)
+         VALUES ('in','feishu',$1,$2,$3,$4,'ops_supervisor','card_action',$5,$6::jsonb,$7)`,
+        [openId, feishuUser.username, feishuUser.name || feishuUser.username, feishuUser.role || '', `${typeLabel}异常项提交：${itemName}`, JSON.stringify(structured), resolveTenantIdDefault()]
       );
     } catch (e) {
       console.error('[ops] save checklist abnormal item failed:', e?.message);
@@ -3223,9 +3223,9 @@ async function handleOpsChecklistCardAction(event) {
 
     try {
       await pool().query(
-        `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data)
-         VALUES ('in','feishu',$1,$2,$3,$4,'ops_supervisor','card_action',$5,$6::jsonb)`,
-        [openId, feishuUser.username, feishuUser.name || feishuUser.username, feishuUser.role || '', `${typeLabel}检查表提交（异常${abnormalCount}项）`, JSON.stringify(standardized)]
+        `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data, tenant_id)
+         VALUES ('in','feishu',$1,$2,$3,$4,'ops_supervisor','card_action',$5,$6::jsonb,$7)`,
+        [openId, feishuUser.username, feishuUser.name || feishuUser.username, feishuUser.role || '', `${typeLabel}检查表提交（异常${abnormalCount}项）`, JSON.stringify(standardized), resolveTenantIdDefault()]
       );
     } catch (e) {
       console.error('[ops] save checklist card action failed:', e?.message);
@@ -4908,8 +4908,8 @@ async function processTableVisitData(records) {
     // 存储到数据库
     try {
       await pool().query(`
-        INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data, record_id)
-        VALUES ('in','feishu',$1,$2,$3,$4,'ops_supervisor','table_visit',$5,$6::jsonb,$7)
+        INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data, record_id, tenant_id)
+        VALUES ('in','feishu',$1,$2,$3,$4,'ops_supervisor','table_visit',$5,$6::jsonb,$7,$8)
         ON CONFLICT (record_id, content_type) WHERE record_id IS NOT NULL AND record_id != ''
         DO UPDATE SET content = EXCLUDED.content, agent_data = EXCLUDED.agent_data, updated_at = NOW()
       `, [
@@ -4919,7 +4919,8 @@ async function processTableVisitData(records) {
         'table_visit_submitter',
         `桌访数据提交 - ${tableVisitData.store} 桌${tableVisitData.tableNumber}`,
         JSON.stringify(tableVisitData),
-        tableVisitData.recordId
+        tableVisitData.recordId,
+        resolveTenantIdDefault()
       ]);
       
       console.log(`[table_visit] saved record: ${tableVisitData.recordId}`);
@@ -5009,15 +5010,17 @@ async function processBadReviewData(records) {
               updated_at = CURRENT_TIMESTAMP
           WHERE record_id = $3
             AND content_type = 'negative_review'
+            AND tenant_id = $4
           RETURNING id
         )
-        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id)
-        SELECT 'in','feishu','negative_review',$1,$2::jsonb,$3
+        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id, tenant_id)
+        SELECT 'in','feishu','negative_review',$1,$2::jsonb,$3,$4
         WHERE NOT EXISTS (SELECT 1 FROM updated)
       `, [
         `差评记录 - ${tableData.store}`,
         JSON.stringify(tableData),
-        recordId
+        recordId,
+        resolveTenantIdDefault()
       ]);
     } catch(e) {
       console.error('[bitable] bad review process error:', e?.message);
@@ -5074,15 +5077,17 @@ async function processGenericData(records, configKey) {
               updated_at = NOW()
           WHERE record_id = $3
             AND content_type = 'generic_bitable'
+            AND tenant_id = $4
           RETURNING id
         )
-        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id)
-        SELECT 'in','feishu','generic_bitable',$1,$2::jsonb,$3
+        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id, tenant_id)
+        SELECT 'in','feishu','generic_bitable',$1,$2::jsonb,$3,$4
         WHERE NOT EXISTS (SELECT 1 FROM updated)
       `, [
         `通用数据 - ${configKey}`,
         JSON.stringify({ configKey, recordId: record.record_id, fields: record.fields }),
-        record.record_id
+        record.record_id,
+        resolveTenantIdDefault()
       ]);
     } catch (e) {
       console.error(`[bitable][${configKey}] save generic record failed:`, e?.message);
@@ -5105,10 +5110,11 @@ async function processClosingReportData(records) {
               updated_at = CURRENT_TIMESTAMP
           WHERE record_id = $3
             AND content_type = 'closing_report'
+            AND tenant_id = $4
           RETURNING id
         )
-        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id)
-        SELECT 'in','feishu','closing_report',$1,$2::jsonb,$3
+        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id, tenant_id)
+        SELECT 'in','feishu','closing_report',$1,$2::jsonb,$3,$4
         WHERE NOT EXISTS (SELECT 1 FROM updated)
       `, [
         '收档报告',
@@ -5131,7 +5137,8 @@ async function processClosingReportData(records) {
             submit_time: fields['提交时间']
           }
         }),
-        record.record_id
+        record.record_id,
+        resolveTenantIdDefault()
       ]);
     } catch (e) {
       console.error(`[bitable] save closing report record failed:`, e?.message);
@@ -5154,10 +5161,11 @@ async function processOpeningReportData(records) {
               updated_at = CURRENT_TIMESTAMP
           WHERE record_id = $3
             AND content_type = 'opening_report'
+            AND tenant_id = $4
           RETURNING id
         )
-        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id)
-        SELECT 'in','feishu','opening_report',$1,$2::jsonb,$3
+        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id, tenant_id)
+        SELECT 'in','feishu','opening_report',$1,$2::jsonb,$3,$4
         WHERE NOT EXISTS (SELECT 1 FROM updated)
       `, [
         '开档报告',
@@ -5179,7 +5187,8 @@ async function processOpeningReportData(records) {
             submit_time: fields['提交时间']
           }
         }),
-        record.record_id
+        record.record_id,
+        resolveTenantIdDefault()
       ]);
     } catch (e) {
       console.error(`[bitable] save opening report record failed:`, e?.message);
@@ -5202,10 +5211,11 @@ async function processMeetingReportData(records) {
               updated_at = CURRENT_TIMESTAMP
           WHERE record_id = $3
             AND content_type = 'meeting_report'
+            AND tenant_id = $4
           RETURNING id
         )
-        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id)
-        SELECT 'in','feishu','meeting_report',$1,$2::jsonb,$3
+        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id, tenant_id)
+        SELECT 'in','feishu','meeting_report',$1,$2::jsonb,$3,$4
         WHERE NOT EXISTS (SELECT 1 FROM updated)
       `, [
         '例会报告',
@@ -5227,7 +5237,8 @@ async function processMeetingReportData(records) {
             submit_time: fields['提交时间']
           }
         }),
-        record.record_id
+        record.record_id,
+        resolveTenantIdDefault()
       ]);
     } catch (e) {
       console.error(`[bitable] save meeting report record failed:`, e?.message);
@@ -5250,10 +5261,11 @@ async function processMaterialReportData(records, brand) {
               updated_at = CURRENT_TIMESTAMP
           WHERE record_id = $3
             AND content_type = 'material_report'
+            AND tenant_id = $4
           RETURNING id
         )
-        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id)
-        SELECT 'in','feishu','material_report',$1,$2::jsonb,$3
+        INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id, tenant_id)
+        SELECT 'in','feishu','material_report',$1,$2::jsonb,$3,$4
         WHERE NOT EXISTS (SELECT 1 FROM updated)
       `, [
         `${brand}原料收货日报`,
@@ -5278,7 +5290,8 @@ async function processMaterialReportData(records, brand) {
             submit_time: fields['提交时间']
           }
         }),
-        record.record_id
+        record.record_id,
+        resolveTenantIdDefault()
       ]);
     } catch (e) {
       console.error(`[bitable] save material report record failed:`, e?.message);
@@ -5679,10 +5692,10 @@ export async function pollBitableSubmissions(configKey = 'ops_checklist') {
             console.log('[bitable] vision analysis message deduplicated');
           } else {
             await pool().query(
-              `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data)
-               VALUES ('out','feishu',$1,$2,$3,$4,'ops_supervisor','vision_analysis',$5,$6::jsonb)`,
-              [sub.submitter.id, sub.submitter.name || sub.submitter.id, sub.submitter.name || sub.submitter.id, '', 
-               `${sub.checkType}图片识别分析`, JSON.stringify({ recordId: sub.recordId, visionResults, photoValidationResults, avgScore: visionResults.reduce((sum, r) => sum + r.score, 0) / visionResults.length })]
+              `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data, tenant_id)
+               VALUES ('out','feishu',$1,$2,$3,$4,'ops_supervisor','vision_analysis',$5,$6::jsonb,$7)`,
+              [sub.submitter.id, sub.submitter.name || sub.submitter.id, sub.submitter.name || sub.submitter.id, '',
+               `${sub.checkType}图片识别分析`, JSON.stringify({ recordId: sub.recordId, visionResults, photoValidationResults, avgScore: visionResults.reduce((sum, r) => sum + r.score, 0) / visionResults.length }), resolveTenantIdDefault()]
             );
           }
         } catch (e) {}
@@ -5690,12 +5703,12 @@ export async function pollBitableSubmissions(configKey = 'ops_checklist') {
         // 6. 存储结构化数据到本地数据库（含 record_id 去重）
         try {
           await pool().query(
-            `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data, record_id)
-             VALUES ('in','feishu',$1,$2,$3,$4,'ops_supervisor','bitable_submission',$5,$6::jsonb,$7)
+            `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data, record_id, tenant_id)
+             VALUES ('in','feishu',$1,$2,$3,$4,'ops_supervisor','bitable_submission',$5,$6::jsonb,$7,$8)
              ON CONFLICT (record_id, content_type) WHERE record_id IS NOT NULL AND record_id != ''
              DO UPDATE SET content = EXCLUDED.content, agent_data = EXCLUDED.agent_data, updated_at = NOW()`,
-            [sub.submitter.id, sub.submitter.name || sub.submitter.id, sub.submitter.name || sub.submitter.id, '', 
-             `${sub.checkType}提交（Bitable）`, JSON.stringify(submission), sub.recordId || '']
+            [sub.submitter.id, sub.submitter.name || sub.submitter.id, sub.submitter.name || sub.submitter.id, '',
+             `${sub.checkType}提交（Bitable）`, JSON.stringify(submission), sub.recordId || '', resolveTenantIdDefault()]
           );
         } catch (e) {}
         
@@ -6732,9 +6745,9 @@ async function handleTaskEscalation(taskId, assignee, taskType, overdueMinutes) 
     // 标记绩效问题
     try {
       await pool().query(
-        `INSERT INTO agent_messages (direction, channel, content_type, content, agent_data)
-         VALUES ('system','feishu','performance_issue',$1,$2::jsonb)`,
-        [`任务响应迟缓 - ${taskType}`, JSON.stringify({ taskId, assignee, overdueMinutes })]
+        `INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, tenant_id)
+         VALUES ('system','feishu','performance_issue',$1,$2::jsonb,$3)`,
+        [`任务响应迟缓 - ${taskType}`, JSON.stringify({ taskId, assignee, overdueMinutes }), resolveTenantIdDefault()]
       );
     } catch (e) {}
     
@@ -11024,9 +11037,9 @@ export async function onFeishuEvent(body) {
 
       try {
         await pool().query(
-          `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data)
-           VALUES ('out','feishu',$1,$2,$3,$4,'ops_supervisor','bitable_form',$5,$6::jsonb)`,
-          [openId, feishuUser.username, feishuUser.name || feishuUser.username, feishuUser.role || '', `${typeLabel}检查表（Bitable表单）`, JSON.stringify({ checklistType, via: 'bitable_form', formUrl })]
+          `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, routed_to, content_type, content, agent_data, tenant_id)
+           VALUES ('out','feishu',$1,$2,$3,$4,'ops_supervisor','bitable_form',$5,$6::jsonb,$7)`,
+          [openId, feishuUser.username, feishuUser.name || feishuUser.username, feishuUser.role || '', `${typeLabel}检查表（Bitable表单）`, JSON.stringify({ checklistType, via: 'bitable_form', formUrl }), resolveTenantIdDefault()]
         );
       } catch (e) {}
 
@@ -11037,11 +11050,11 @@ export async function onFeishuEvent(body) {
     let msgDbId = null;
     try {
       const r = await pool().query(
-        `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, content_type, content, image_urls, feishu_message_id)
-         VALUES ('in','feishu',$1,$2,$3,$4,$5,$6,$7::jsonb,$8) RETURNING id`,
+        `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, sender_role, content_type, content, image_urls, feishu_message_id, tenant_id)
+         VALUES ('in','feishu',$1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9) RETURNING id`,
         [openId, feishuUser.username, feishuUser.name, feishuUser.role,
          imageUrls.length ? 'image' : 'text', text || '',
-         JSON.stringify(imageUrls), messageId]
+         JSON.stringify(imageUrls), messageId, resolveTenantIdDefault()]
       );
       msgDbId = r.rows?.[0]?.id;
     } catch (e) {}
@@ -11184,9 +11197,9 @@ async function pushIssuesToFeishu(tenantId = 'default') {
         // Log outbound message
         try {
           await pool().query(
-            `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, routed_to, content_type, content)
-             VALUES ('out','feishu',$1,$2,$3,'data_auditor','text',$4)`,
-            [fu.open_id, 'system', 'HRMS Agent', `${sev} 异常通知: ${issue.title}`]
+            `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, routed_to, content_type, content, tenant_id)
+             VALUES ('out','feishu',$1,$2,$3,'data_auditor','text',$4,$5)`,
+            [fu.open_id, 'system', 'HRMS Agent', `${sev} 异常通知: ${issue.title}`, resolveTenantIdDefault()]
           );
         } catch (e) {}
       }

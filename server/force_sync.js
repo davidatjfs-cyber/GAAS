@@ -33,9 +33,10 @@ async function test() {
         for (const item of res.data.data.items) {
           if (name === 'table_visit') {
             await pool.query(`
-              INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id)
-              VALUES ('in','feishu','table_visit',$1,$2::jsonb,$3)
-              ON CONFLICT (record_id) DO UPDATE SET agent_data = EXCLUDED.agent_data, updated_at = CURRENT_TIMESTAMP
+              INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id, tenant_id)
+              VALUES ('in','feishu','table_visit',$1,$2::jsonb,$3,$4)
+              ON CONFLICT (record_id, content_type) WHERE record_id IS NOT NULL AND record_id != ''
+              DO UPDATE SET agent_data = EXCLUDED.agent_data, updated_at = CURRENT_TIMESTAMP
             `, [
               `桌访数据提交 - ${item.fields['所属门店']} 桌${item.fields['桌号']}`,
               JSON.stringify({
@@ -44,14 +45,16 @@ async function test() {
                 store: item.fields['所属门店'],
                 tableNumber: item.fields['桌号']
               }),
-              item.record_id
+              item.record_id,
+              'default'
             ]);
           } else if (name === 'bad_reviews') {
             let dateVal = item.fields['差评日期'] || item.fields['创建日期'];
             await pool.query(`
-              INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id)
-              VALUES ('in','feishu','negative_review',$1,$2::jsonb,$3)
-              ON CONFLICT (record_id) DO UPDATE SET agent_data = EXCLUDED.agent_data, updated_at = CURRENT_TIMESTAMP
+              INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, record_id, tenant_id)
+              VALUES ('in','feishu','negative_review',$1,$2::jsonb,$3,$4)
+              ON CONFLICT (record_id, content_type) WHERE record_id IS NOT NULL AND record_id != ''
+              DO UPDATE SET agent_data = EXCLUDED.agent_data, updated_at = CURRENT_TIMESTAMP
             `, [
               `差评记录 - ${item.fields['差评门店']}`,
               JSON.stringify({
@@ -59,7 +62,8 @@ async function test() {
                 date: dateVal,
                 store: item.fields['差评门店']
               }),
-              item.record_id
+              item.record_id,
+              'default'
             ]);
           }
         }
