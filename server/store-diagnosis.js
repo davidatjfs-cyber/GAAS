@@ -29,29 +29,31 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     [storeName, startDate, endDate]
   );
 
-  // 2. 拉取该门店日报数据（含staff/segments/categories）
+  // 2. 拉取该门店日报数据（含staff/segments/categories/评分/转化）
   const reports = await pool.query(
     `SELECT date, store, actual_revenue, budget_rate, dine_traffic, dine_orders,
             delivery_actual, efficiency, pre_discount_revenue, recharge_count,
             segments, categories, delivery_detail, staff, schedule_next_day,
-            bad_reviews_dianping
+            bad_reviews_dianping, dianping_rating
      FROM daily_reports
      WHERE store = $1 AND date >= $2 AND date <= $3
      ORDER BY date DESC`,
     [storeName, startDate, endDate]
   );
 
-  // 3. 周对比（上周同天 vs 本周同天）
+  // 3. 周对比（上周同期 vs 本周同期）
   const weekAgoStart = new Date(new Date(startDate).getTime() - 7 * 86400000).toISOString().slice(0, 10);
+  const weekAgoEnd = new Date(new Date(startDate).getTime() - 86400000).toISOString().slice(0, 10);
   const prevReports = await pool.query(
-    `SELECT date, actual_revenue, dine_traffic, dine_orders, efficiency
+    `SELECT date, actual_revenue, dine_traffic, dine_orders, efficiency,
+            bad_reviews_dianping, dianping_rating
      FROM daily_reports
      WHERE store = $1 AND date >= $2 AND date <= $3
      ORDER BY date DESC`,
-    [storeName, weekAgoStart, new Date(new Date(startDate).getTime() - 86400000).toISOString().slice(0, 10)]
+    [storeName, weekAgoStart, weekAgoEnd]
   );
 
-  // 4. 新客 vs 老客分析（通过 pos_orders）
+  // 4. 新客 vs 老客分析（通过 pos_orders），同时取上周同期做环比
   const customerAnalysis = await pool.query(
     `WITH orders AS (
        SELECT o.biz_date, o.order_no, o.phone, o.customer_id,
@@ -69,18 +71,33 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
      GROUP BY biz_date ORDER BY biz_date`,
     [storeName, startDate, endDate]
   );
+  const prevCustomerAnalysis = await pool.query(
+    `WITH orders AS (
+       SELECT o.biz_date,
+              CASE WHEN gc.first_seen_at::date = o.biz_date THEN 'new' ELSE 'returning' END AS customer_type
+       FROM pos_orders o
+       LEFT JOIN growth_customers gc ON o.customer_id = gc.id
+       WHERE o.store_id = (CASE WHEN $1 LIKE '%马己仙%' THEN '51866138' WHEN $1 LIKE '%洪潮%' THEN '64822111' ELSE '' END)
+         AND o.biz_date >= $2 AND o.biz_date <= $3
+     )
+     SELECT COUNT(*) FILTER (WHERE customer_type = 'new') AS new_customers,
+            COUNT(*) AS total_orders
+     FROM orders`,
+    [storeName, weekAgoStart, weekAgoEnd]
+  );
 
-  // 5. 获取员工列表
+  // 5. 获取在职员工列表（排除已离职/停用，避免离职员工混入培训/排班统计）
+  const ACTIVE_STATUS_FILTER = `coalesce(status, '') not in ('inactive','disabled','disable','off','0','resigned','leave','left','离职','禁用','停用')`;
   const employees = await pool.query(
     `SELECT username, name, store, position, status, join_date,
             extra_json
      FROM employees
-     WHERE store ILIKE '%' || $1 || '%' OR $1 = ''
+     WHERE (store ILIKE '%' || $1 || '%' OR $1 = '') AND ${ACTIVE_STATUS_FILTER}
      ORDER BY position, name`,
     [storeName.includes('马己仙') ? '马己仙' : (storeName.includes('洪潮') ? '洪潮' : storeName)]
   );
 
-  // 6. 培训完成状态
+  // 6. 培训完成状态（同样只看在职员工）
   const trainingStatus = await pool.query(
     `SELECT ta.employee_username, ta.topic_id, ta.source AS assignment_status,
             tt.title AS topic_title, tt.position AS topic_position,
@@ -89,7 +106,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
      LEFT JOIN training_topics tt ON ta.topic_id = tt.id
      LEFT JOIN training_certifications tc ON ta.employee_username = tc.employee_username AND ta.topic_id = tc.topic_id
      WHERE ta.employee_username = ANY(
-       SELECT e.username FROM employees e WHERE e.store ILIKE '%' || $1 || '%'
+       SELECT e.username FROM employees e WHERE e.store ILIKE '%' || $1 || '%' AND ${ACTIVE_STATUS_FILTER}
      )`,
     [storeName.includes('马己仙') ? '马己仙' : (storeName.includes('洪潮') ? '洪潮' : storeName)]
   );
@@ -175,6 +192,50 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       });
     }
 
+    // 到店转化率（订单数/客流，反映收银下单成功率）
+    const ratedDays = reports.rows.filter(r => Number(r.dine_traffic) > 0);
+    const prevRatedDays = prevReports.rows.filter(r => Number(r.dine_traffic) > 0);
+    if (ratedDays.length > 0 && prevRatedDays.length > 0) {
+      const conv = ratedDays.reduce((s, r) => s + Number(r.dine_orders || 0) / Number(r.dine_traffic), 0) / ratedDays.length;
+      const prevConv = prevRatedDays.reduce((s, r) => s + Number(r.dine_orders || 0) / Number(r.dine_traffic), 0) / prevRatedDays.length;
+      const convChange = prevConv > 0 ? ((conv - prevConv) / prevConv * 100).toFixed(1) : 0;
+      if (Number(convChange) <= -5) {
+        contributions.push({
+          factor: '到店转化率下降',
+          impact: `${Math.abs(convChange)}%`,
+          detail: `到店转化率（下单/客流）从${(prevConv * 100).toFixed(1)}%降至${(conv * 100).toFixed(1)}%，建议复核收银引导与点单话术`,
+        });
+      }
+    }
+
+    // 服务评分（大众点评）
+    const ratingDays = reports.rows.filter(r => Number(r.dianping_rating) > 0);
+    const prevRatingDays = prevReports.rows.filter(r => Number(r.dianping_rating) > 0);
+    if (ratingDays.length > 0 && prevRatingDays.length > 0) {
+      const avgRating = ratingDays.reduce((s, r) => s + Number(r.dianping_rating), 0) / ratingDays.length;
+      const prevAvgRating = prevRatingDays.reduce((s, r) => s + Number(r.dianping_rating), 0) / prevRatingDays.length;
+      const ratingChange = prevAvgRating > 0 ? ((avgRating - prevAvgRating) / prevAvgRating * 100).toFixed(1) : 0;
+      result.revenue.rating_change_pct = Number(ratingChange);
+      result.revenue.avg_rating = Number(avgRating.toFixed(2));
+      if (Number(ratingChange) <= -3) {
+        contributions.push({
+          factor: '服务评分下降',
+          impact: `${Math.abs(ratingChange)}%`,
+          detail: `大众点评评分从${prevAvgRating.toFixed(2)}降至${avgRating.toFixed(2)}`,
+        });
+      }
+    }
+    const totalBadReviews = reports.rows.reduce((s, r) => s + Number(r.bad_reviews_dianping || 0), 0);
+    const prevTotalBadReviews = prevReports.rows.reduce((s, r) => s + Number(r.bad_reviews_dianping || 0), 0);
+    if (totalBadReviews > prevTotalBadReviews) {
+      contributions.push({
+        factor: '差评增加',
+        impact: `+${totalBadReviews - prevTotalBadReviews}条`,
+        detail: `大众点评差评从${prevTotalBadReviews}条增至${totalBadReviews}条`,
+      });
+    }
+
+    contributions.sort((a, b) => parseFloat(b.impact) - parseFloat(a.impact) || 0);
     result.revenue.contributions = contributions;
   }
 
@@ -201,14 +262,30 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       })),
     };
 
-    if (Number(newRatio) < 20) {
-      result.revenue.contributions = result.revenue.contributions || [];
+    const prevNewN = Number(prevCustomerAnalysis.rows[0]?.new_customers || 0);
+    const prevTotalN = Number(prevCustomerAnalysis.rows[0]?.total_orders || 0);
+    const prevNewRatio = prevTotalN > 0 ? (prevNewN / prevTotalN * 100) : null;
+    result.revenue.contributions = result.revenue.contributions || [];
+
+    if (prevNewRatio !== null && prevNewRatio > 0) {
+      const newRatioChangePct = ((Number(newRatio) - prevNewRatio) / prevNewRatio * 100).toFixed(1);
+      result.customer.prev_new_ratio = Number(prevNewRatio.toFixed(1));
+      result.customer.new_ratio_change_pct = Number(newRatioChangePct);
+      if (Number(newRatioChangePct) <= -10) {
+        result.revenue.contributions.push({
+          factor: '新客占比下降',
+          impact: `${Math.abs(newRatioChangePct)}%`,
+          detail: `新客占比从${prevNewRatio.toFixed(1)}%降至${newRatio}%，可能私域引流不足或门店获客能力下降`,
+        });
+      }
+    } else if (Number(newRatio) < 20) {
       result.revenue.contributions.push({
         factor: '新客占比低',
         impact: `${newRatio}%`,
         detail: `本周新客比例仅${newRatio}%，可能私域引流不足或门店获客能力下降`,
       });
     }
+    result.revenue.contributions.sort((a, b) => parseFloat(b.impact) - parseFloat(a.impact) || 0);
   }
 
   // ── D. 异常分析 ──
@@ -240,6 +317,24 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     detail: g.detail || getAnomalyDescription(g.key),
   }));
 
+  // 若评分本期下降明显，且异常引擎尚未记录该差评异常，直接由真实评分数据补一条，
+  // 这样下方"差评→定位在岗员工→培训建议"链路不依赖异常引擎是否已触发
+  if (Number(result.revenue?.rating_change_pct) <= -3 && !result.anomalies.some(a => a.key === 'bad_review_service')) {
+    const worstDay = reports.rows
+      .filter(r => Number(r.dianping_rating) > 0)
+      .sort((a, b) => Number(a.dianping_rating) - Number(b.dianping_rating))[0];
+    if (worstDay) {
+      result.anomalies.push({
+        type: mapAnomalyType('bad_review_service'),
+        key: 'bad_review_service',
+        severity: 'high',
+        count: 1,
+        latest_date: worstDay.date,
+        detail: `服务评分较上周下降${Math.abs(result.revenue.rating_change_pct)}%（${worstDay.date}评分${Number(worstDay.dianping_rating).toFixed(2)}最低）`,
+      });
+    }
+  }
+
   // ── E. 排班/在岗分析 ──
   if (reports.rows.length > 0) {
     const latestReport = reports.rows[0];
@@ -258,7 +353,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     // 排班不足检测
     const totalStaff = onDuty.length;
     const frontStaff = (staffByArea.front || []).length;
-    const kitchenStaff = (staffByArea.kitchen || staffByArea.rest || []).length;
+    const kitchenStaff = (staffByArea.kitchen || staffByArea.restStaff || []).length;
 
     result.staffing = {
       latest_date: latestReport.date,
@@ -270,15 +365,18 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       issues: [],
     };
 
-    // 晚班排班不足检测
-    const segments = latestReport.segments || [];
-    if (segments.length > 0) {
-      const dinnerSegments = segments.filter(s => {
-        const label = String(s.label || s.slot || s.name || '').toLowerCase();
-        return label.includes('晚') || label.includes('dinner') || label.includes('night');
-      });
-      if (dinnerSegments.length > 0 && frontStaff < 3) {
-        result.staffing.issues.push('晚班前厅人手不足，可能影响服务响应速度');
+    // 晚班排班不足检测：segments 是各时段营收(noon/afternoon/night)，
+    // 用晚市营收占比 vs 前厅人手数交叉判断，而非营收绝对值
+    const segments = latestReport.segments || {};
+    const noonRev = Number(segments.noon || 0);
+    const afternoonRev = Number(segments.afternoon || 0);
+    const nightRev = Number(segments.night || 0);
+    const segTotal = noonRev + afternoonRev + nightRev;
+    if (segTotal > 0) {
+      const nightShare = nightRev / segTotal;
+      result.staffing.night_revenue_share = Number((nightShare * 100).toFixed(1));
+      if (nightShare >= 0.45 && frontStaff < 3) {
+        result.staffing.issues.push(`晚市营收占比${(nightShare * 100).toFixed(0)}%但前厅仅${frontStaff}人在岗，晚班前厅人手不足`);
       }
     }
 
@@ -363,18 +461,26 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     reports: reports.rows,
   });
 
-  // ── I. 摘要 ──
+  // ── I. 摘要：把贡献度分析拼成一句"为什么下降"的因果说明 ──
   const topAnomaly = result.anomalies.find(a => a.severity === 'high') || result.anomalies[0];
-  const revenueDetail = result.revenue.is_decline
-    ? `本周营业额${result.revenue.change_pct}%（vs 上周）`
-    : `本周营业额稳定`;
-  const popularityDetail = result.customer.new_ratio < 20
-    ? `新客占比仅${result.customer.new_ratio}%`
-    : '';
+  const topContributions = (result.revenue.contributions || []).slice(0, 3);
+
+  let headline;
+  if (result.revenue.is_decline) {
+    const reasonText = topContributions.length > 0
+      ? topContributions.map(c => `${c.factor}${c.impact}`).join('、')
+      : '';
+    headline = reasonText
+      ? `本周营业额下降${Math.abs(result.revenue.change_pct)}%，主要受${reasonText}影响`
+      : `本周营业额下降${Math.abs(result.revenue.change_pct)}%`;
+  } else {
+    headline = `本周营业额稳定（${result.revenue.change_pct >= 0 ? '+' : ''}${result.revenue.change_pct}%）`;
+  }
 
   result.summary = {
-    headline: revenueDetail,
+    headline,
     top_issue: topAnomaly ? topAnomaly.type : '无明显异常',
+    top_contributions: topContributions,
     revenue_decline: result.revenue.is_decline ? `${result.revenue.change_pct}%` : null,
     new_customer_ratio: result.customer.new_ratio ? `${result.customer.new_ratio}%` : null,
     anomaly_count: result.anomalies.length,
@@ -481,7 +587,11 @@ async function generateRecommendations(ctx) {
     // 获取差评发生当天的在岗员工
     for (const anomaly of badAnomalies) {
       const anomalyDate = anomaly.latest_date;
-      const reportForDate = reports.find(r => r.date === anomalyDate || r.date === anomalyDate.toISOString?.().slice(0, 10));
+      const anomalyDateStr = anomalyDate instanceof Date ? anomalyDate.toISOString().slice(0, 10) : String(anomalyDate).slice(0, 10);
+      const reportForDate = reports.find(r => {
+        const rDateStr = r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).slice(0, 10);
+        return rDateStr === anomalyDateStr;
+      });
       if (!reportForDate || !reportForDate.staff) continue;
 
       const staff = reportForDate.staff;
@@ -499,8 +609,8 @@ async function generateRecommendations(ctx) {
       // 按异常类型筛选相关岗位的在岗员工
       // 产品差评→厨房人员，服务差评→前厅人员
       const relevantAreas = anomaly.key === 'bad_review_product'
-        ? new Set(['kitchen', 'kitchen_area', 'rest', '后厨', '出品', '烧味', '点心', '打荷', '上什'])
-        : new Set(['front', '前厅', 'service']);
+        ? new Set(['kitchen', 'kitchen_area', 'restStaff', 'kitchenSupport', '后厨', '出品', '烧味', '点心', '打荷', '上什'])
+        : new Set(['front', 'frontSupport', 'frontRestStaff', '前厅', 'service']);
       const relevantStaff = onDutyNames.filter(s => relevantAreas.has(s.area));
 
       // 匹配培训主题
@@ -557,22 +667,52 @@ async function generateRecommendations(ctx) {
     }
   }
 
-  // 5. 新客占比低 → 会员营销培训
-  if (customer.new_ratio > 0 && customer.new_ratio < 20) {
+  // 5. 新客占比低/下降 → 会员营销技巧培训
+  const newRatioDeclined = Number(customer.new_ratio_change_pct) <= -10;
+  const newRatioLow = customer.new_ratio > 0 && customer.new_ratio < 20;
+  if (newRatioDeclined || newRatioLow) {
     // 找店长
     const manager = employees.find(e =>
       e.position?.includes('店长') || e.position?.includes('manager')
     );
     const managerName = manager?.name || '店长';
+    const reasonDetail = newRatioDeclined
+      ? `新客占比从${customer.prev_new_ratio}%降至${customer.new_ratio}%（环比下降${Math.abs(customer.new_ratio_change_pct)}%）`
+      : `新客占比仅${customer.new_ratio}%，低于行业基准20%`;
     recs.push({
       type: 'training',
-      priority: 'medium',
-      title: `建议给${managerName}补《营销培训》培训`,
-      detail: `新客占比仅${customer.new_ratio}%，低于行业基准20%。建议通过《营销培训》提升门店获客能力`,
+      priority: 'high',
+      title: `建议给${managerName}补《会员营销技巧》培训`,
+      detail: `${reasonDetail}。建议通过《会员营销技巧》培训提升门店获客与会员转化能力`,
       target: managerName,
       target_users: manager ? [manager.username] : [],
-      topic_title: '营销培训',
+      topic_title: '会员营销技巧',
     });
+  }
+
+  // 5b. 到店转化率下降 → 前厅收银引导培训
+  const convContribution = (revenue.contributions || []).find(c => c.factor === '到店转化率下降');
+  if (convContribution && reports.length > 0) {
+    const latestStaff = reports[0].staff || {};
+    const frontNames = [];
+    for (const area of ['front', 'frontRestStaff']) {
+      for (const p of (latestStaff[area] || [])) {
+        if (p.name && p.user) frontNames.push({ name: p.name, user: p.user });
+      }
+    }
+    if (frontNames.length > 0) {
+      const names = frontNames.slice(0, 5).map(s => s.name).join('、');
+      recs.push({
+        type: 'training',
+        priority: 'medium',
+        title: `建议给${names}补《收银引导与点单话术》培训`,
+        detail: `${convContribution.detail}，当前在岗前厅人员建议加强收银转化话术训练`,
+        target: '前厅',
+        target_users: frontNames.map(s => s.user),
+        topic_title: '收银引导与点单话术',
+        related_anomaly: null,
+      });
+    }
   }
 
   // 6. 无充值记录 → 储值推广建议

@@ -17,6 +17,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .store-card:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.12)}
 .store-card h3{font-size:16px;margin-bottom:12px;color:#1a1a2e;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
 .store-card h3 .badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500}
+.store-card .headline{font-size:13px;color:#555;margin-bottom:14px;line-height:1.5}
 .badge-green{background:#e8f8e8;color:#2d8a3e}
 .badge-red{background:#fde8e8;color:#c0392b}
 .badge-yellow{background:#fef3e4;color:#e67e22}
@@ -185,6 +186,7 @@ function renderStores(stores, start, end) {
 
     return `<div class="store-card" onclick="openDetail('${encodeURIComponent(s.store)}', '${start}', '${end}')">
       <h3>${s.store} <span class="badge ${declineClass}">${declineClass === 'badge-red' ? '营收下降' : '营收正常'}</span></h3>
+      <div class="headline">${s.summary.headline || ''}</div>
       <div class="metrics">
         <div class="metric"><div class="value">¥${(s.revenue.total || 0).toLocaleString()}</div><div class="label">本期营收 <span class="${changeClass}">${changeSign}${s.revenue.change_pct}%</span></div></div>
         <div class="metric"><div class="value">${s.summary.new_customer_ratio || '-'}</div><div class="label">新客占比</div></div>
