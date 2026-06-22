@@ -111,6 +111,50 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     [storeName.includes('马己仙') ? '马己仙' : (storeName.includes('洪潮') ? '洪潮' : storeName)]
   );
 
+  // 7. 桌访问题产品（dissatisfaction_dish 非空记录数 + 最常见菜品），本期 vs 上期
+  const brandKey = storeName.includes('马己仙') ? '马己仙' : (storeName.includes('洪潮') ? '洪潮' : storeName);
+  const tableVisitCurrent = await pool.query(
+    `SELECT COUNT(*) AS total_visits,
+            COUNT(*) FILTER (WHERE coalesce(trim(dissatisfaction_dish), '') <> '') AS issue_count,
+            MAX(date) FILTER (WHERE coalesce(trim(dissatisfaction_dish), '') <> '') AS latest_issue_date
+     FROM table_visit_records
+     WHERE store ILIKE '%' || $1 || '%' AND date >= $2 AND date <= $3`,
+    [brandKey, startDate, endDate]
+  );
+  const tableVisitPrev = await pool.query(
+    `SELECT COUNT(*) AS total_visits,
+            COUNT(*) FILTER (WHERE coalesce(trim(dissatisfaction_dish), '') <> '') AS issue_count
+     FROM table_visit_records
+     WHERE store ILIKE '%' || $1 || '%' AND date >= $2 AND date <= $3`,
+    [brandKey, weekAgoStart, weekAgoEnd]
+  );
+  const topDissatisfiedDish = await pool.query(
+    `SELECT trim(dissatisfaction_dish) AS dish, COUNT(*) AS n
+     FROM table_visit_records
+     WHERE store ILIKE '%' || $1 || '%' AND date >= $2 AND date <= $3
+       AND coalesce(trim(dissatisfaction_dish), '') <> ''
+     GROUP BY trim(dissatisfaction_dish) ORDER BY n DESC LIMIT 1`,
+    [brandKey, startDate, endDate]
+  );
+
+  // 8. 会员消费占比（pos_orders 中 customer_id 非空订单的实收 / 总实收），本期 vs 上期
+  const memberRevenueCurrent = await pool.query(
+    `SELECT SUM(amount_after_discount) FILTER (WHERE customer_id IS NOT NULL) AS member_rev,
+            SUM(amount_after_discount) AS total_rev
+     FROM pos_orders
+     WHERE store_id = (CASE WHEN $1 LIKE '%马己仙%' THEN '51866138' WHEN $1 LIKE '%洪潮%' THEN '64822111' ELSE '' END)
+       AND biz_date >= $2 AND biz_date <= $3`,
+    [storeName, startDate, endDate]
+  );
+  const memberRevenuePrev = await pool.query(
+    `SELECT SUM(amount_after_discount) FILTER (WHERE customer_id IS NOT NULL) AS member_rev,
+            SUM(amount_after_discount) AS total_rev
+     FROM pos_orders
+     WHERE store_id = (CASE WHEN $1 LIKE '%马己仙%' THEN '51866138' WHEN $1 LIKE '%洪潮%' THEN '64822111' ELSE '' END)
+       AND biz_date >= $2 AND biz_date <= $3`,
+    [storeName, weekAgoStart, weekAgoEnd]
+  );
+
   // === 开始组装诊断结果 ===
 
   const result = {
@@ -161,35 +205,43 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       is_decline: Number(revenueChange) < 0,
     };
 
-    // ── B. 贡献度分析 ──
+    // ── B. 贡献度分析（数据存在且变化≥1%才纳入，方向不限，全面反映本期经营情况） ──
     const contributions = [];
-    if (Number(trafficChange) < 0) {
+    if (prevTotalTraffic > 0 && Math.abs(Number(trafficChange)) >= 1) {
+      const isUp = Number(trafficChange) > 0;
       contributions.push({
-        factor: '客流下降',
+        factor: isUp ? '客流量增长' : '客流量下降',
         impact: `${Math.abs(trafficChange)}%`,
-        detail: `到店客流从${prevTotalTraffic}降至${totalTraffic}，减少${prevTotalTraffic - totalTraffic}人次`,
+        detail: `到店客流从${prevTotalTraffic}${isUp ? '增至' : '降至'}${totalTraffic}人次，${isUp ? '增加' : '减少'}${Math.abs(totalTraffic - prevTotalTraffic)}人次`,
       });
     }
-    if (Number(ordersChange) < 0) {
+    if (prevTotalOrders > 0 && Math.abs(Number(ordersChange)) >= 1) {
+      const isUp = Number(ordersChange) > 0;
       contributions.push({
-        factor: '订单量下降',
+        factor: isUp ? '订单量增长' : '订单量下降',
         impact: `${Math.abs(ordersChange)}%`,
-        detail: `日均订单从${Math.round(prevTotalOrders / (prevReports.rows.length || 1))}降至${Math.round(totalOrders / reports.rows.length)}`,
+        detail: `日均订单从${Math.round(prevTotalOrders / (prevReports.rows.length || 1))}${isUp ? '增至' : '降至'}${Math.round(totalOrders / reports.rows.length)}`,
       });
     }
-    if (Number(efficiencyChange) < 0) {
+    if (prevAvgEfficiency > 0 && Math.abs(Number(efficiencyChange)) >= 1) {
+      const isUp = Number(efficiencyChange) > 0;
       contributions.push({
-        factor: '人效下降',
+        factor: isUp ? '人效提升' : '人效下降',
         impact: `${Math.abs(efficiencyChange)}%`,
-        detail: `人效从${Math.round(prevAvgEfficiency)}元/人降至${Math.round(avgEfficiency)}元/人`,
+        detail: `人效从${Math.round(prevAvgEfficiency)}元/人${isUp ? '增至' : '降至'}${Math.round(avgEfficiency)}元/人`,
       });
     }
-    if (Number(revenueChange) < 0 && Number(trafficChange) >= 0) {
-      contributions.push({
-        factor: '客单价下降',
-        impact: `${Math.abs(revenueChange)}%`,
-        detail: `营收下降但客流未降，可能是折扣加大或菜品结构变化`,
-      });
+    const prevAvgOrderValue = prevTotalOrders > 0 ? prevTotalRevenue / prevTotalOrders : 0;
+    if (prevAvgOrderValue > 0) {
+      const orderValueChange = ((avgOrderValue - prevAvgOrderValue) / prevAvgOrderValue * 100).toFixed(1);
+      if (Math.abs(Number(orderValueChange)) >= 1) {
+        const isUp = Number(orderValueChange) > 0;
+        contributions.push({
+          factor: isUp ? '客单价提升' : '客单价下降',
+          impact: `${Math.abs(orderValueChange)}%`,
+          detail: `客单价从¥${Math.round(prevAvgOrderValue)}${isUp ? '增至' : '降至'}¥${Math.round(avgOrderValue)}，可能与折扣力度或菜品结构变化有关`,
+        });
+      }
     }
 
     // 到店转化率（订单数/客流，反映收银下单成功率）
@@ -227,12 +279,54 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     }
     const totalBadReviews = reports.rows.reduce((s, r) => s + Number(r.bad_reviews_dianping || 0), 0);
     const prevTotalBadReviews = prevReports.rows.reduce((s, r) => s + Number(r.bad_reviews_dianping || 0), 0);
-    if (totalBadReviews > prevTotalBadReviews) {
+    if (totalBadReviews !== prevTotalBadReviews) {
+      const isUp = totalBadReviews > prevTotalBadReviews;
+      const badReviewPct = prevTotalBadReviews > 0
+        ? ((totalBadReviews - prevTotalBadReviews) / prevTotalBadReviews * 100).toFixed(1)
+        : null;
       contributions.push({
-        factor: '差评增加',
-        impact: `+${totalBadReviews - prevTotalBadReviews}条`,
-        detail: `大众点评差评从${prevTotalBadReviews}条增至${totalBadReviews}条`,
+        factor: isUp ? '差评增加' : '差评下降',
+        impact: badReviewPct !== null ? `${Math.abs(badReviewPct)}%` : `${isUp ? '+' : '-'}${Math.abs(totalBadReviews - prevTotalBadReviews)}条`,
+        detail: `大众点评差评从${prevTotalBadReviews}条${isUp ? '增至' : '降至'}${totalBadReviews}条`,
       });
+    }
+
+    // 桌访问题产品数量变化
+    const tvCurTotal = Number(tableVisitCurrent.rows[0]?.total_visits || 0);
+    const tvCurIssue = Number(tableVisitCurrent.rows[0]?.issue_count || 0);
+    const tvPrevTotal = Number(tableVisitPrev.rows[0]?.total_visits || 0);
+    const tvPrevIssue = Number(tableVisitPrev.rows[0]?.issue_count || 0);
+    result.revenue.table_visit = { current_issue_count: tvCurIssue, current_total: tvCurTotal, prev_issue_count: tvPrevIssue, prev_total: tvPrevTotal, latest_issue_date: tableVisitCurrent.rows[0]?.latest_issue_date || null };
+    if (tvCurIssue !== tvPrevIssue && (tvCurTotal > 0 || tvPrevTotal > 0)) {
+      const isUp = tvCurIssue > tvPrevIssue;
+      const tvPct = tvPrevIssue > 0 ? ((tvCurIssue - tvPrevIssue) / tvPrevIssue * 100).toFixed(1) : null;
+      const dishHint = topDissatisfiedDish.rows[0]?.dish ? `，本期最多被反馈的菜品是「${topDissatisfiedDish.rows[0].dish.slice(0, 12)}」` : '';
+      contributions.push({
+        factor: isUp ? '桌访问题产品增加' : '桌访问题产品下降',
+        impact: tvPct !== null ? `${Math.abs(tvPct)}%` : `${isUp ? '+' : '-'}${Math.abs(tvCurIssue - tvPrevIssue)}单`,
+        detail: `桌访反馈不满意菜品从${tvPrevIssue}单${isUp ? '增至' : '降至'}${tvCurIssue}单（共${tvCurTotal}次桌访）${dishHint}`,
+      });
+    }
+
+    // 会员消费占比变化
+    const memberRev = Number(memberRevenueCurrent.rows[0]?.member_rev || 0);
+    const totalRev = Number(memberRevenueCurrent.rows[0]?.total_rev || 0);
+    const prevMemberRev = Number(memberRevenuePrev.rows[0]?.member_rev || 0);
+    const prevTotalRev = Number(memberRevenuePrev.rows[0]?.total_rev || 0);
+    if (totalRev > 0 && prevTotalRev > 0) {
+      const memberRatio = memberRev / totalRev * 100;
+      const prevMemberRatio = prevMemberRev / prevTotalRev * 100;
+      result.revenue.member_revenue_ratio = Number(memberRatio.toFixed(1));
+      result.revenue.prev_member_revenue_ratio = Number(prevMemberRatio.toFixed(1));
+      const ratioDiff = memberRatio - prevMemberRatio;
+      if (Math.abs(ratioDiff) >= 2) {
+        const isUp = ratioDiff > 0;
+        contributions.push({
+          factor: isUp ? '会员消费占比上升' : '会员消费占比下降',
+          impact: `${Math.abs(ratioDiff).toFixed(1)}个百分点`,
+          detail: `会员消费占比从${prevMemberRatio.toFixed(1)}%${isUp ? '升至' : '降至'}${memberRatio.toFixed(1)}%`,
+        });
+      }
     }
 
     contributions.sort((a, b) => parseFloat(b.impact) - parseFloat(a.impact) || 0);
@@ -331,6 +425,26 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
         count: 1,
         latest_date: worstDay.date,
         detail: `服务评分较上周下降${Math.abs(result.revenue.rating_change_pct)}%（${worstDay.date}评分${Number(worstDay.dianping_rating).toFixed(2)}最低）`,
+      });
+    }
+  }
+
+  // 桌访产品问题：用真实桌访数据补充/覆盖异常详情，并在引擎未触发时直接补一条，
+  // 确保"差评菜品→厨房在岗→培训"链路有真实数据支撑
+  const tv = result.revenue?.table_visit;
+  if (tv && tv.current_issue_count > 0) {
+    const tvDetailText = `本期桌访反馈不满意菜品${tv.current_issue_count}单（上期${tv.prev_issue_count}单，共${tv.current_total}次桌访）`;
+    const existingTvAnomaly = result.anomalies.find(a => a.key === 'table_visit_product');
+    if (existingTvAnomaly) {
+      existingTvAnomaly.detail = tvDetailText;
+    } else if (tv.current_issue_count > tv.prev_issue_count) {
+      result.anomalies.push({
+        type: mapAnomalyType('table_visit_product'),
+        key: 'table_visit_product',
+        severity: 'medium',
+        count: tv.current_issue_count,
+        latest_date: tv.latest_issue_date || reports.rows[0]?.date || endDate,
+        detail: tvDetailText,
       });
     }
   }
@@ -537,12 +651,12 @@ async function generateRecommendations(ctx) {
   // 1. 营业额下降 + 客流下降 → 新客引流建议
   if (revenue.is_decline && Number(revenue.change_pct) < -5) {
     for (const c of (revenue.contributions || [])) {
-      if (c.factor === '客流下降') {
+      if (c.factor === '客流量下降') {
         recs.push({
           type: 'marketing',
           priority: 'high',
           title: '加强新客引流',
-          detail: `客流下降${c.impact}，建议增加私域引流活动（扫码领券、社群裂变）`,
+          detail: `客流量下降${c.impact}，建议增加私域引流活动（扫码领券、社群裂变）`,
           target: '店长',
           related_anomaly: 'revenue_achievement',
         });

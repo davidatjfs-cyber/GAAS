@@ -177,6 +177,11 @@ function renderStores(stores, start, end) {
       `<span class="issue-tag ${a.severity === 'high' ? 'issue-high' : 'issue-medium'}">${a.type}</span>`
     ).join('');
 
+    const contribChips = (s.revenue.contributions || []).slice(0, 6).map(c => {
+      const good = isGoodFactor(c.factor);
+      return `<span class="issue-tag" style="background:${good ? '#e8f8e8' : '#fde8e8'};color:${good ? '#2d8a3e' : '#c0392b'}">${c.factor} ${c.impact}</span>`;
+    }).join('');
+
     const recs = s.recommendations.slice(0, 3).map(r =>
       `<div class="rec-item">
         <span class="rec-icon">${r.priority === 'high' ? '🔴' : '🟡'}</span>
@@ -193,6 +198,7 @@ function renderStores(stores, start, end) {
         <div class="metric"><div class="value">${s.anomalies.length}</div><div class="label">异常项</div></div>
         <div class="metric"><div class="value">${s.recommendations.length}</div><div class="label">建议项</div></div>
       </div>
+      <div class="issues">${contribChips}</div>
       <div class="issues">${anomalyTags}</div>
       <div class="recommendations">${recs}</div>
     </div>`;
@@ -218,12 +224,19 @@ async function openDetail(storeEncoded, start, end) {
   }
 }
 
+function isGoodFactor(factor) {
+  if (/增长|提升|上升/.test(factor)) return true;
+  if (factor === '差评下降' || factor === '桌访问题产品下降') return true;
+  return false;
+}
+
 function renderDetail(d) {
   const contribHTML = (d.revenue.contributions || []).length > 0
     ? `<div class="section">
-        <h4>📊 贡献度分析</h4>
+        <h4>📊 贡献度分析（全维度环比）</h4>
         <ul class="contrib-list">${d.revenue.contributions.map(c =>
-          `<li class="contrib-item"><span>${c.factor}</span><span class="impact">${c.impact}</span></li>`
+          `<li class="contrib-item"><span>${c.factor}</span><span class="impact" style="color:${isGoodFactor(c.factor) ? '#2d8a3e' : '#c0392b'}">${c.impact}</span></li>
+           <li style="font-size:11px;color:#999;padding:0 12px 6px;margin-top:-6px">${c.detail}</li>`
         ).join('')}</ul>
       </div>`
     : '';
