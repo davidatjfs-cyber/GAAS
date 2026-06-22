@@ -70,7 +70,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from './sms.js';
 import { getStoreSmsEnvSuffix, storeNameToId as _storeNameToIdFromConfig, STORE_ID_TO_NAME, STORES as _ALL_STORES } from './brands-config.js';
-import { tenantContext } from './utils/database.js';
+import { tenantContext, resolveTenantIdDefault } from './utils/database.js';
 const _storeId = (brandName) => _ALL_STORES.find(s => s.brandName === brandName)?.storeId || '';
 
 // 订阅消息推送网关（方案B）：HRMS 自己没有小程序 access_token，发不了订阅消息，
@@ -998,29 +998,32 @@ export async function ensureGrowthTables(pool) {
       action_payload: { channel: 'sms', campaign_key: 'prospect_recall', valid_days: 14 }
     }
   ];
-  for (const rule of defaultTouchRules) {
+  // 启动期默认规则种子，无HTTP请求上下文，固定按default租户播种
+  await tenantContext.run('default', async () => {
+    for (const rule of defaultTouchRules) {
+      await pool.query(
+        // 仅作首次默认种子：已存在则保留运营在 HRMS UI 上的编辑（渠道/短信模板/券额/频次/审批），
+        // 避免每次进程重启用代码默认值覆盖用户配置。
+        `INSERT INTO growth_touch_rules (rule_key, name, enabled, priority, auto_execute, criteria, action_type, action_payload, tenant_id)
+         VALUES ($1,$2,TRUE,$3,$4,$5::jsonb,$6,$7::jsonb,'default')
+         ON CONFLICT (rule_key, tenant_id) DO NOTHING`,
+        [
+          rule.rule_key,
+          rule.name,
+          rule.priority,
+          rule.auto_execute !== false,
+          JSON.stringify(rule.criteria || {}),
+          rule.action_type,
+          JSON.stringify(rule.action_payload || {})
+        ]
+      );
+    }
     await pool.query(
-      // 仅作首次默认种子：已存在则保留运营在 HRMS UI 上的编辑（渠道/短信模板/券额/频次/审批），
-      // 避免每次进程重启用代码默认值覆盖用户配置。
-      `INSERT INTO growth_touch_rules (rule_key, name, enabled, priority, auto_execute, criteria, action_type, action_payload)
-       VALUES ($1,$2,TRUE,$3,$4,$5::jsonb,$6,$7::jsonb)
-       ON CONFLICT (rule_key) DO NOTHING`,
-      [
-        rule.rule_key,
-        rule.name,
-        rule.priority,
-        rule.auto_execute !== false,
-        JSON.stringify(rule.criteria || {}),
-        rule.action_type,
-        JSON.stringify(rule.action_payload || {})
-      ]
+      `DELETE FROM growth_touch_rules WHERE rule_key = ANY($1::text[])`,
+      [['churn_21_return_coupon', 'churn_45_return_coupon', 'birthday_month_touch', 'high_frequency_upgrade',
+        'high_risk_churn_voucher', 'lost_customer_miss_you', 'silent_new_customer_activate']]
     );
-  }
-  await pool.query(
-    `DELETE FROM growth_touch_rules WHERE rule_key = ANY($1::text[])`,
-    [['churn_21_return_coupon', 'churn_45_return_coupon', 'birthday_month_touch', 'high_frequency_upgrade',
-      'high_risk_churn_voucher', 'lost_customer_miss_you', 'silent_new_customer_activate']]
-  );
+  });
 }
 
 async function upsertCustomer(pool, payload, tenantId = 'default') {
@@ -1071,7 +1074,7 @@ async function upsertCustomer(pool, payload, tenantId = 'default') {
     const r = await pool.query(
       `INSERT INTO growth_customers (phone, openid, external_userid, first_store_id, last_store_id, meta, tenant_id)
        VALUES (NULLIF($1,''), NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($4,''), $5::jsonb, $6)
-       ON CONFLICT (openid) WHERE openid IS NOT NULL AND openid <> '' DO UPDATE SET
+       ON CONFLICT (openid, tenant_id) WHERE openid IS NOT NULL AND openid <> '' DO UPDATE SET
          phone = COALESCE(growth_customers.phone, EXCLUDED.phone),
          external_userid = COALESCE(EXCLUDED.external_userid, growth_customers.external_userid),
          last_store_id = COALESCE(EXCLUDED.last_store_id, growth_customers.last_store_id),
@@ -1119,7 +1122,7 @@ async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') 
       WHERE phone IS NOT NULL AND phone <> '' AND tenant_id = $1
       GROUP BY phone
     ) s
-    ON CONFLICT (phone) WHERE phone IS NOT NULL AND phone <> '' DO NOTHING
+    ON CONFLICT (phone, tenant_id) WHERE phone IS NOT NULL AND phone <> '' DO NOTHING
   `, [tenantId]);
   await pool.query(
     `WITH event_base AS (
@@ -1256,7 +1259,7 @@ async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') 
       FROM event_base e
       LEFT JOIN signal_base s ON s.customer_id = e.customer_id
       LEFT JOIN pos_base p ON p.customer_id = e.customer_id
-      ON CONFLICT (customer_id) DO UPDATE SET
+      ON CONFLICT (customer_id, tenant_id) DO UPDATE SET
         phone = EXCLUDED.phone,
         openid = EXCLUDED.openid,
         store_id = EXCLUDED.store_id,
@@ -1432,8 +1435,8 @@ async function autoBackfillSmsActions(pool) {
           255
         );
         await pool.query(
-          `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified)
-           VALUES ('ai_suggestion',$1,$2,'sms',NULL,$3,'AI建议方案有效性',$4,$5,$6,$7,$8,$9,true)
+          `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified, tenant_id)
+           VALUES ('ai_suggestion',$1,$2,'sms',NULL,$3,'AI建议方案有效性',$4,$5,$6,$7,$8,$9,true,$10)
            ON CONFLICT DO NOTHING`,
           [
             action_key,
@@ -1444,7 +1447,8 @@ async function autoBackfillSmsActions(pool) {
             effectDesc,
             Math.min(reach, 99999),
             reach >= 100 ? 'high' : reach >= 30 ? 'medium' : 'low',
-            new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10)
+            new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10),
+            resolveTenantIdDefault()
           ]
         ).catch(() => {});
       }
@@ -1461,8 +1465,8 @@ async function appendExecutionLog(pool, payload) {
     `INSERT INTO growth_execution_logs (
       action_key, strategy_key, store_id, action_type, decision,
       operator_username, operator_role, before_payload, after_payload,
-      decision_reason, result_summary
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11)`,
+      decision_reason, result_summary, tenant_id
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12)`,
     [
       cleanText(payload.action_key, 255),
       cleanText(payload.strategy_key, 255),
@@ -1474,7 +1478,8 @@ async function appendExecutionLog(pool, payload) {
       JSON.stringify(payload.before_payload || {}),
       JSON.stringify(payload.after_payload || {}),
       cleanText(payload.decision_reason, 2000),
-      cleanText(payload.result_summary, 2000)
+      cleanText(payload.result_summary, 2000),
+      resolveTenantIdDefault()
     ]
   );
 }
@@ -1519,7 +1524,7 @@ async function insertGrowthEvent(pool, payload, tenantId = 'default') {
        event_type, customer_id, phone, openid, external_userid, store_id, campaign_id, channel,
        coupon_id, order_id, amount_fen, idempotency_key, metadata, occurred_at, tenant_id
      ) VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),$11,NULLIF($12,''),$13::jsonb,$14,$15)
-     ON CONFLICT (idempotency_key) DO NOTHING`,
+     ON CONFLICT (idempotency_key, tenant_id) DO NOTHING`,
     [
       cleanText(payload.event_type, 80),
       payload.customer_id ? Number(payload.customer_id) : null,
@@ -1546,7 +1551,7 @@ async function upsertDeliveryLog(pool, payload, tenantId = 'default') {
        delivery_key, action_key, rule_key, customer_id, store_id, channel,
        external_userid, provider_msg_id, status, payload, result, error_message, updated_at, tenant_id
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,NOW(),$13)
-     ON CONFLICT (delivery_key) DO UPDATE SET
+     ON CONFLICT (delivery_key, tenant_id) DO UPDATE SET
        provider_msg_id = COALESCE(NULLIF(EXCLUDED.provider_msg_id,''), growth_delivery_logs.provider_msg_id),
        status = EXCLUDED.status,
        result = EXCLUDED.result,
@@ -1834,17 +1839,17 @@ async function handleSmsFailure(pool, phone, errMsg, tenantId = 'default') {
     if (p && SMS_PERMANENT_FAIL_RE.test(msg)) {
       await pool.query(
         `INSERT INTO growth_sms_suppression (phone, reason, error_message, tenant_id) VALUES ($1, 'permanent_failure', $2, $3)
-         ON CONFLICT (phone) DO UPDATE SET error_message = EXCLUDED.error_message, updated_at = NOW()`,
+         ON CONFLICT (phone, tenant_id) DO UPDATE SET error_message = EXCLUDED.error_message, updated_at = NOW()`,
         [p, msg.slice(0, 500), tenantId]
       );
     }
     if (SMS_BALANCE_FAIL_RE.test(msg)) {
       const alertKey = `sms_account_balance:${new Date().toISOString().slice(0, 10)}`;
       await pool.query(
-        `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, title, message, suggested_action, metrics)
-         VALUES ($1,'sms_account','high','','阿里云短信账户余额不足，发送已失败','短信发送返回「${msg.slice(0, 120)}」。在余额恢复前所有营销短信都会失败。','前往阿里云控制台为短信账户充值，并核对今日失败记录是否需要补发',$2::jsonb)
-         ON CONFLICT (alert_key) DO UPDATE SET message = EXCLUDED.message, status = 'open', updated_at = NOW()`,
-        [alertKey, JSON.stringify({ error: msg.slice(0, 200) })]
+        `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, title, message, suggested_action, metrics, tenant_id)
+         VALUES ($1,'sms_account','high','','阿里云短信账户余额不足，发送已失败','短信发送返回「${msg.slice(0, 120)}」。在余额恢复前所有营销短信都会失败。','前往阿里云控制台为短信账户充值，并核对今日失败记录是否需要补发',$2::jsonb,$3)
+         ON CONFLICT (alert_key, tenant_id) DO UPDATE SET message = EXCLUDED.message, status = 'open', updated_at = NOW()`,
+        [alertKey, JSON.stringify({ error: msg.slice(0, 200) }), tenantId]
       );
     }
   } catch (e) { console.warn('[growth] handleSmsFailure error:', e?.message); }
@@ -2101,7 +2106,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
       const planResult = await pool.query(
         `INSERT INTO growth_campaign_plans (plan_id, store_id, campaign_id, title, channel, status, planned_start, planned_end, created_by, source_template_id, recommended_poster_id, tenant_id)
          VALUES ($1,$2,$3,$4,$5,'active',NOW(),NOW() + ($6::int || ' days')::interval,$7,$8,$9,$10)
-         ON CONFLICT (plan_id) DO UPDATE SET status='active', updated_at=NOW()
+         ON CONFLICT (plan_id, tenant_id) DO UPDATE SET status='active', updated_at=NOW()
          RETURNING plan_id, status`,
         [planId, storeId, campaignId || `camp_${Date.now()}`, title, channel, Math.max(1, Math.floor(Number(payload.valid_days) || 7)), operator.username, sourceTemplateId, recommendedPosterId, tenantId]
       );
@@ -2113,7 +2118,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
         await pool.query(
           `INSERT INTO growth_campaigns (campaign_id, name, channel, store_id, status, tenant_id)
            VALUES ($1,$2,$3,$4,'active',$5)
-           ON CONFLICT (campaign_id) DO UPDATE SET status='active', updated_at=NOW()`,
+           ON CONFLICT (campaign_id, tenant_id) DO UPDATE SET status='active', updated_at=NOW()`,
           [campaignId, title, channel, storeId, tenantId]
         );
         executionResults.real_executions.push({ type: 'campaign', campaign_id: campaignId, status: 'active' });
@@ -2122,7 +2127,7 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
       await pool.query(
         `INSERT INTO growth_coupons (coupon_id, name, type, value_fen, valid_days, usage_rule, store_id, is_active, tenant_id)
          VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8)
-         ON CONFLICT (coupon_id) DO UPDATE SET name=EXCLUDED.name, value_fen=EXCLUDED.value_fen, valid_days=EXCLUDED.valid_days, usage_rule=EXCLUDED.usage_rule, is_active=TRUE, updated_at=NOW()`,
+         ON CONFLICT (coupon_id, tenant_id) DO UPDATE SET name=EXCLUDED.name, value_fen=EXCLUDED.value_fen, valid_days=EXCLUDED.valid_days, usage_rule=EXCLUDED.usage_rule, is_active=TRUE, updated_at=NOW()`,
         [
           couponId,
           cleanText(payload.coupon_name || before.title, 300),
@@ -2586,16 +2591,17 @@ async function createChurnAlert(pool, rule, row) {
   const days = Math.max(0, Math.floor(Number(row.days_since_last_visit) || 0));
   const alertKey = `churn:${cleanText(rule.rule_key, 128)}:${Number(row.customer_id) || 0}:${fmtYmd(row.last_visit_at)}`;
   await pool.query(
-    `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, title, message, suggested_action, metrics)
-     VALUES ($1,'churn','medium',$2,$3,$4,$5,$6::jsonb)
-     ON CONFLICT (alert_key) DO UPDATE SET message = EXCLUDED.message, metrics = EXCLUDED.metrics, status = 'open', updated_at = NOW()`,
+    `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, title, message, suggested_action, metrics, tenant_id)
+     VALUES ($1,'churn','medium',$2,$3,$4,$5,$6::jsonb,$7)
+     ON CONFLICT (alert_key, tenant_id) DO UPDATE SET message = EXCLUDED.message, metrics = EXCLUDED.metrics, status = 'open', updated_at = NOW()`,
     [
       alertKey,
       cleanText(row.store_id, 128),
       `${days}天未到店流失预警`,
       `${cleanText(row.customer_name || row.phone || `客户#${row.customer_id}`, 120)} 已${days}天未到店，系统已自动触发回流触达。`,
       '已由规则引擎自动发送回流触达',
-      JSON.stringify({ customer_id: row.customer_id, days_since_last_visit: days, rule_key: rule.rule_key })
+      JSON.stringify({ customer_id: row.customer_id, days_since_last_visit: days, rule_key: rule.rule_key }),
+      resolveTenantIdDefault()
     ]
   );
 }
@@ -2871,9 +2877,9 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey, c
     if (hPct > 0 && phoneHashPct(phone) < hPct) {
       heldOut++;
       await pool.query(
-        `INSERT INTO growth_holdout_members (phone, campaign_key, store_id) VALUES ($1,$2,$3)
-         ON CONFLICT (phone, campaign_key) DO NOTHING`,
-        [phone, campaignKey, sid]
+        `INSERT INTO growth_holdout_members (phone, campaign_key, store_id, tenant_id) VALUES ($1,$2,$3,$4)
+         ON CONFLICT (phone, campaign_key, tenant_id) DO NOTHING`,
+        [phone, campaignKey, sid, resolveTenantIdDefault()]
       ).catch(() => {});
       continue;
     }
@@ -2898,9 +2904,9 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey, c
     if (g.variant.suffix) result.variant = g.variant.suffix.slice(1);
     if (g.abcStep) result.abc_step = g.abcStep;
     await pool.query(
-      `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result)
-       VALUES ($1,$2,$3,$4,0,0,$5::jsonb,$6,'pending',$7,$8,$9::jsonb)`,
-      [campaignId, g.sid, g.variant.valueYuan, validDays, JSON.stringify(g.targets), g.targets.length, campaignKey, `rule_engine:${rule.rule_key}`, JSON.stringify(result)]
+      `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result, tenant_id)
+       VALUES ($1,$2,$3,$4,0,0,$5::jsonb,$6,'pending',$7,$8,$9::jsonb,$10)`,
+      [campaignId, g.sid, g.variant.valueYuan, validDays, JSON.stringify(g.targets), g.targets.length, campaignKey, `rule_engine:${rule.rule_key}`, JSON.stringify(result), resolveTenantIdDefault()]
     );
     enqueued += g.targets.length;
   }
@@ -2917,15 +2923,16 @@ async function runTouchRuleEngine(pool, options = {}) {
     const latest = freshRes.rows?.[0]?.latest || null;
     const alertKey = `pos_stale_guard:${new Date().toISOString().slice(0, 10)}`;
     await pool.query(
-      `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, title, message, suggested_action, metrics)
-       VALUES ($1,'data_freshness','high','',$2,$3,$4,$5::jsonb)
-       ON CONFLICT (alert_key) DO UPDATE SET message = EXCLUDED.message, metrics = EXCLUDED.metrics, status = 'open', updated_at = NOW()`,
+      `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, title, message, suggested_action, metrics, tenant_id)
+       VALUES ($1,'data_freshness','high','',$2,$3,$4,$5::jsonb,$6)
+       ON CONFLICT (alert_key, tenant_id) DO UPDATE SET message = EXCLUDED.message, metrics = EXCLUDED.metrics, status = 'open', updated_at = NOW()`,
       [
         alertKey,
         'POS数据滞后，已暂停自动营销触达',
         `POS最新数据为 ${latest || '无'}，滞后 ${Number.isFinite(lagDays) ? lagDays : '未知'} 天（阈值${POS_STALE_DAYS}天）。为避免基于过期数据误发券，规则引擎本次跳过。请尽快上传最新POS数据到飞书。`,
         '上传最新POS数据到飞书并触发 POST /api/growth/pos-feishu-sync',
-        JSON.stringify({ latest_biz_date: latest, lag_days: Number.isFinite(lagDays) ? lagDays : null, threshold_days: POS_STALE_DAYS })
+        JSON.stringify({ latest_biz_date: latest, lag_days: Number.isFinite(lagDays) ? lagDays : null, threshold_days: POS_STALE_DAYS }),
+        ruleEngineTenantId
       ]
     );
     return { created: 0, skipped: true, reason: 'pos_data_stale', lag_days: Number.isFinite(lagDays) ? lagDays : null };
@@ -3040,7 +3047,7 @@ async function runTouchRuleEngine(pool, options = {}) {
       const insert = await pool.query(
         `INSERT INTO growth_actions (action_key, action_type, status, store_id, title, detail, payload, created_by, tenant_id)
          VALUES ($1,$2,'proposed',NULLIF($3,''),$4,$5,$6::jsonb,'rule_engine',$7)
-         ON CONFLICT (action_key) DO NOTHING
+         ON CONFLICT (action_key, tenant_id) DO NOTHING
          RETURNING *`,
         [
           actionKey,
@@ -3271,7 +3278,7 @@ export function registerGrowthRoutes(app, pool) {
          metric_date, store_id, campaign_id, channel,
          scan_count, authorized_count,
          coupon_claimed_count, coupon_purchased_count, marketing_triggered_count,
-         coupon_redeemed_count, payment_count, revenue_fen, roi, updated_at
+         coupon_redeemed_count, payment_count, revenue_fen, roi, updated_at, tenant_id
        )
        SELECT
          occurred_at::date AS metric_date,
@@ -3289,11 +3296,12 @@ export function registerGrowthRoutes(app, pool) {
           CASE WHEN COUNT(*) FILTER (WHERE event_type = 'campaign_scan') > 0
             THEN ROUND(COALESCE(SUM(amount_fen) FILTER (WHERE event_type IN ('payment_success','coupon_redeemed')), 0)::numeric / COUNT(*) FILTER (WHERE event_type = 'campaign_scan'), 4)
             ELSE NULL END AS roi,
-          NOW()
+          NOW(),
+          current_setting('app.tenant_id', true)
        FROM growth_events
        WHERE occurred_at >= CURRENT_DATE - ($1::int || ' days')::interval
        GROUP BY 1,2,3,4
-       ON CONFLICT (metric_date, store_id, campaign_id, channel)
+       ON CONFLICT (metric_date, store_id, campaign_id, channel, tenant_id)
        DO UPDATE SET
          scan_count = EXCLUDED.scan_count,
          authorized_count = EXCLUDED.authorized_count,
@@ -3333,6 +3341,7 @@ export function registerGrowthRoutes(app, pool) {
       const templateCode = pickWinbackTemplateByStore(storeId);
       if (!templateCode) return res.status(503).json({ ok: false, error: 'winback_template_not_configured' });
 
+      return await tenantContext.run(tenantId, async () => {
       // 幂等：同一券码已发过 → 不重复发（防小程序重试导致客人收多条）
       if (idempotencyKey) {
         const dup = await pool.query(`SELECT status FROM growth_delivery_logs WHERE delivery_key = $1 LIMIT 1`, [idempotencyKey]);
@@ -3408,6 +3417,7 @@ export function registerGrowthRoutes(app, pool) {
         await handleSmsFailure(pool, phone, deliveryErr?.message, tenantId);
         return res.status(502).json({ ok: false, error: deliveryErr?.message || 'sms_send_failed' });
       }
+      });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
@@ -3442,23 +3452,27 @@ export function registerGrowthRoutes(app, pool) {
         if (/充值|储值$/.test(type) && od > cur.rechargeMs) cur.rechargeMs = od;
         byCard.set(card, cur);
       }
-      let upserted = 0;
-      for (const m of byCard.values()) {
-        await pool.query(
-          `INSERT INTO growth_stored_value_members
-             (card_no, member_name, phone, level, tags, store_id, balance_fen, last_consume_date, last_recharge_date, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
-           ON CONFLICT (card_no) DO UPDATE SET
-             member_name=EXCLUDED.member_name, phone=EXCLUDED.phone, level=EXCLUDED.level,
-             tags=EXCLUDED.tags, store_id=EXCLUDED.store_id, balance_fen=EXCLUDED.balance_fen,
-             last_consume_date=EXCLUDED.last_consume_date, last_recharge_date=EXCLUDED.last_recharge_date, updated_at=NOW()`,
-          [m.card, m.member_name || null, m.phone || null, m.level || null, m.tags || null, m.store_id || null,
-           m.balance_fen || 0,
-           m.consumeMs > 0 ? new Date(m.consumeMs) : null,
-           m.rechargeMs > 0 ? new Date(m.rechargeMs) : null]
-        );
-        upserted++;
-      }
+      const upserted = await tenantContext.run(getGrowthTenantId(req), async () => {
+        let upsertedCount = 0;
+        for (const m of byCard.values()) {
+          await pool.query(
+            `INSERT INTO growth_stored_value_members
+               (card_no, member_name, phone, level, tags, store_id, balance_fen, last_consume_date, last_recharge_date, updated_at, tenant_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),$10)
+             ON CONFLICT (card_no, tenant_id) DO UPDATE SET
+               member_name=EXCLUDED.member_name, phone=EXCLUDED.phone, level=EXCLUDED.level,
+               tags=EXCLUDED.tags, store_id=EXCLUDED.store_id, balance_fen=EXCLUDED.balance_fen,
+               last_consume_date=EXCLUDED.last_consume_date, last_recharge_date=EXCLUDED.last_recharge_date, updated_at=NOW()`,
+            [m.card, m.member_name || null, m.phone || null, m.level || null, m.tags || null, m.store_id || null,
+             m.balance_fen || 0,
+             m.consumeMs > 0 ? new Date(m.consumeMs) : null,
+             m.rechargeMs > 0 ? new Date(m.rechargeMs) : null,
+             resolveTenantIdDefault()]
+          );
+          upsertedCount++;
+        }
+        return upsertedCount;
+      });
       return res.json({ ok: true, records: records.length, members: byCard.size, upserted });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -3478,13 +3492,13 @@ export function registerGrowthRoutes(app, pool) {
         `(last_consume_date IS NULL OR last_consume_date <= (CURRENT_DATE - ${dormantDays}))`];
       if (storeId) { params.push(storeId); clauses.push(`store_id = $${params.length}`); }
       params.push(limit);
-      const r = await pool.query(
+      const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
         `SELECT card_no, member_name, phone, level, tags, store_id, balance_fen, last_consume_date
            FROM growth_stored_value_members
           WHERE ${clauses.join(' AND ')}
           ORDER BY balance_fen DESC LIMIT $${params.length}`,
         params
-      );
+      ));
       return res.json({ ok: true, count: r.rows.length, targets: r.rows });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -3503,7 +3517,7 @@ export function registerGrowthRoutes(app, pool) {
       const clauses = ["m.phone IS NOT NULL AND m.phone <> ''", `m.balance_fen >= ${minBalanceFen}`,
         `(m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))`];
       if (storeId) { params.push(storeId); clauses.push(`m.store_id = $${params.length}`); }
-      const r = await pool.query(
+      const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
         `SELECT m.card_no, m.member_name, m.phone, m.balance_fen, m.last_consume_date,
                 (NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
                    WHERE d.channel='sms' AND d.rule_key='winback_sms' AND d.status='sent'
@@ -3512,7 +3526,7 @@ export function registerGrowthRoutes(app, pool) {
           WHERE ${clauses.join(' AND ')}
           ORDER BY m.balance_fen DESC LIMIT 5000`,
         params
-      );
+      ));
       const matchCount = r.rows.length;
       const sendable = r.rows.filter((x) => x.sendable);
       const sample = sendable.slice(0, 10).map((x) => ({
@@ -3547,25 +3561,28 @@ export function registerGrowthRoutes(app, pool) {
       const freqDays = freqDaysEnv('ALIYUN_SMS_WINBACK_FREQUENCY_DAYS', 30);
       if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
       if (valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
-      const r = await pool.query(
-        `SELECT card_no, member_name, phone FROM growth_stored_value_members m
-          WHERE m.phone IS NOT NULL AND m.phone <> '' AND m.store_id = $2 AND m.balance_fen >= $3
-            AND (m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))
-            AND NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
-              WHERE d.channel='sms' AND d.rule_key='winback_sms' AND d.status='sent'
-                AND d.payload->>'phone' = m.phone AND d.created_at > now() - ($1 || ' days')::interval)
-          ORDER BY m.balance_fen DESC LIMIT ${maxTargets}`,
-        [String(freqDays), storeId, minBalanceFen]
-      );
-      const targets = r.rows.map((x) => ({ phone: x.phone, name: x.member_name || '', card_no: x.card_no }));
-      if (!targets.length) return res.json({ ok: true, job_id: null, target_count: 0, message: '没有符合条件的对象(余额/沉睡/频控筛选后为空)' });
-      const campaignId = cleanText(b.campaign_id, 128) || ('winback_' + storeId + '_' + Date.now());
-      const ins = await pool.query(
-        `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,'pending',$9) RETURNING id`,
-        [campaignId, storeId, valueYuan, validDays, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, cleanText(b.operator, 128) || 'hrms_admin']
-      );
-      return res.json({ ok: true, job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length });
+      const launchResult = await tenantContext.run(getGrowthTenantId(req), async () => {
+        const r = await pool.query(
+          `SELECT card_no, member_name, phone FROM growth_stored_value_members m
+            WHERE m.phone IS NOT NULL AND m.phone <> '' AND m.store_id = $2 AND m.balance_fen >= $3
+              AND (m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))
+              AND NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
+                WHERE d.channel='sms' AND d.rule_key='winback_sms' AND d.status='sent'
+                  AND d.payload->>'phone' = m.phone AND d.created_at > now() - ($1 || ' days')::interval)
+            ORDER BY m.balance_fen DESC LIMIT ${maxTargets}`,
+          [String(freqDays), storeId, minBalanceFen]
+        );
+        const targets = r.rows.map((x) => ({ phone: x.phone, name: x.member_name || '', card_no: x.card_no }));
+        if (!targets.length) return { job_id: null, target_count: 0, message: '没有符合条件的对象(余额/沉睡/频控筛选后为空)' };
+        const campaignId = cleanText(b.campaign_id, 128) || ('winback_' + storeId + '_' + Date.now());
+        const ins = await pool.query(
+          `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, created_by, tenant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,'pending',$9,$10) RETURNING id`,
+          [campaignId, storeId, valueYuan, validDays, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, cleanText(b.operator, 128) || 'hrms_admin', resolveTenantIdDefault()]
+        );
+        return { job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length };
+      });
+      return res.json({ ok: true, ...launchResult });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
@@ -3583,14 +3600,14 @@ export function registerGrowthRoutes(app, pool) {
       // 认领待执行任务：pending 优先；另回收「卡死的 running」——小程序断点续跑会把未发完的
       // 任务置回 pending，但若其执行中崩溃/超时来不及回写，任务会滞留 running。超过 3 分钟未更新
       // 即视为僵死，重新认领续跑（已发出的人受 7 天频控保护不会重复发，按 result.processed 续跑不重复建券）。
-      const r = await pool.query(
+      const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
         `UPDATE growth_campaign_jobs SET status='running', updated_at=now()
           WHERE id = (SELECT id FROM growth_campaign_jobs
                        WHERE kind <> 'stored_value_remind'
                          AND (status='pending' OR status='partial' OR (status='running' AND updated_at < now() - interval '3 minutes'))
                        ORDER BY created_at ASC LIMIT 1)
           RETURNING id, campaign_id, store_id, kind, value_yuan, valid_days, targets, result`
-      );
+      ));
       return res.json({ ok: true, job: r.rows[0] || null });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -3610,10 +3627,10 @@ export function registerGrowthRoutes(app, pool) {
       // 若小程序未报告 done，则按 sent/failed 推导：全失败=failed，混合=partial，全成功=done。
       const miniDone = cleanText(b.status || '', 20) === 'done';
       const computedStatus = miniDone ? 'done' : (sentN === 0 && failedN > 0 ? 'failed' : sentN > 0 && failedN > 0 ? 'partial' : 'done');
-      await pool.query(
+      await tenantContext.run(getGrowthTenantId(req), () => pool.query(
         `UPDATE growth_campaign_jobs SET sent=$2, failed=$3, status=$4, result=$5::jsonb, updated_at=now() WHERE id=$1`,
         [jobId, sentN, failedN, computedStatus, JSON.stringify(b.result || {})]
-      );
+      ));
       return res.json({ ok: true });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -3625,10 +3642,10 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     try {
       const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
-      const r = await pool.query(
+      const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
         `SELECT id, campaign_id, store_id, kind, value_yuan, valid_days, dormant_days, total, sent, failed, status, created_by, created_at, updated_at
            FROM growth_campaign_jobs ORDER BY created_at DESC LIMIT ${limit}`
-      );
+      ));
       return res.json({ ok: true, jobs: r.rows });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -3660,7 +3677,7 @@ export function registerGrowthRoutes(app, pool) {
       const freqDays = Math.max(0, Math.floor(Number(b.freq_days != null ? b.freq_days : (process.env.ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS || 30))));
       const q = buildCampaignTargetQuery({ ...c, ruleKey: campaignKey, freqDays, limit: 5000 });
       if (!q) return res.status(400).json({ ok: false, error: 'need_audience_filter' });
-      const r = await pool.query(q.sql, q.params);
+      const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(q.sql, q.params));
       const sendable = r.rows.filter((x) => x.sendable);
       const sample = sendable.slice(0, 10).map((x) => ({
         phone: x.phone ? (String(x.phone).slice(0, 3) + '****' + String(x.phone).slice(-4)) : '',
@@ -3696,17 +3713,20 @@ export function registerGrowthRoutes(app, pool) {
       const freqDays = freqDaysEnv('ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS', 30);
       const q = buildCampaignTargetQuery({ ...c, ruleKey: campaignKey, freqDays, limit: maxTargets });
       if (!q) return res.status(400).json({ ok: false, error: 'need_audience_filter' });
-      const r = await pool.query(q.sql, q.params);
-      const targets = r.rows.filter((x) => x.sendable).map((x) => ({ phone: x.phone, name: x.name || '' }));
-      if (!targets.length) return res.json({ ok: true, job_id: null, target_count: 0, message: '没有符合条件的对象(人群/频控筛选后为空)' });
-      const campaignId = cleanText(b.campaign_id, 128) || (campaignKey + '_' + c.storeId + '_' + Date.now());
-      const result = { campaign_key: campaignKey, coupon_count: cfg.coupon_count };
-      const ins = await pool.query(
-        `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result)
-         VALUES ($1,$2,$3,$4,0,0,$5::jsonb,$6,'pending',$7,$8,$9::jsonb) RETURNING id`,
-        [campaignId, c.storeId, valueYuan, validDays, JSON.stringify(targets), targets.length, campaignKey, cleanText(b.operator, 128) || 'hrms_admin', JSON.stringify(result)]
-      );
-      return res.json({ ok: true, job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length, coupon_count: cfg.coupon_count });
+      const launchResult = await tenantContext.run(getGrowthTenantId(req), async () => {
+        const r = await pool.query(q.sql, q.params);
+        const targets = r.rows.filter((x) => x.sendable).map((x) => ({ phone: x.phone, name: x.name || '' }));
+        if (!targets.length) return { job_id: null, target_count: 0, message: '没有符合条件的对象(人群/频控筛选后为空)' };
+        const campaignId = cleanText(b.campaign_id, 128) || (campaignKey + '_' + c.storeId + '_' + Date.now());
+        const result = { campaign_key: campaignKey, coupon_count: cfg.coupon_count };
+        const ins = await pool.query(
+          `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result, tenant_id)
+           VALUES ($1,$2,$3,$4,0,0,$5::jsonb,$6,'pending',$7,$8,$9::jsonb,$10) RETURNING id`,
+          [campaignId, c.storeId, valueYuan, validDays, JSON.stringify(targets), targets.length, campaignKey, cleanText(b.operator, 128) || 'hrms_admin', JSON.stringify(result), resolveTenantIdDefault()]
+        );
+        return { job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length, coupon_count: cfg.coupon_count };
+      });
+      return res.json({ ok: true, ...launchResult });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
@@ -3734,6 +3754,7 @@ export function registerGrowthRoutes(app, pool) {
 
       if (!phone) return res.status(400).json({ ok: false, error: 'missing_phone' });
 
+      return await tenantContext.run(tenantId, async () => {
       // ABC 6模板滚动：按该手机号在本活动下累计成功发送次数推导当前应发的模板步骤+降频阶梯天数。
       const abcOrder = ABC_ROTATION_ORDER[campaignKey];
       let effectiveVars = cfg.vars;
@@ -3821,6 +3842,7 @@ export function registerGrowthRoutes(app, pool) {
         await handleSmsFailure(pool, phone, deliveryErr?.message, tenantId);
         return res.status(502).json({ ok: false, error: deliveryErr?.message || 'sms_send_failed' });
       }
+      });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
@@ -3854,7 +3876,7 @@ export function registerGrowthRoutes(app, pool) {
       const freqDays = freqDaysEnv('ALIYUN_SMS_REMIND_FREQUENCY_DAYS', 30);
       if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
       const q = buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets);
-      const r = await pool.query(q.sql, q.params);
+      const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(q.sql, q.params));
       return res.json({
         ok: true,
         target_count: r.rows.length,
@@ -3878,17 +3900,20 @@ export function registerGrowthRoutes(app, pool) {
       if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
       if (!templateCode) return res.status(503).json({ ok: false, error: 'balance_template_not_configured' });
       const q = buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets);
-      const r = await pool.query(q.sql, q.params);
-      // 冻结目标(含发起时点余额快照)，发送时直接用，无需重查。
-      const targets = r.rows.map((x) => ({ phone: x.phone, name: x.member_name || '', card_no: x.card_no, balance_yuan: Math.round((x.balance_fen || 0) / 100) }));
-      if (!targets.length) return res.json({ ok: true, job_id: null, target_count: 0, message: '没有符合条件的对象(余额/沉睡/频控筛选后为空)' });
-      const campaignId = cleanText(b.campaign_id, 128) || ('svremind_' + storeId + '_' + Date.now());
-      const ins = await pool.query(
-        `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result)
-         VALUES ($1,$2,0,0,$3,$4,$5::jsonb,$6,'pending','stored_value_remind',$7,$8::jsonb) RETURNING id`,
-        [campaignId, storeId, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, cleanText(b.operator, 128) || 'hrms_admin', JSON.stringify({ template_code: templateCode })]
-      );
-      return res.json({ ok: true, job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length });
+      const launchResult = await tenantContext.run(getGrowthTenantId(req), async () => {
+        const r = await pool.query(q.sql, q.params);
+        // 冻结目标(含发起时点余额快照)，发送时直接用，无需重查。
+        const targets = r.rows.map((x) => ({ phone: x.phone, name: x.member_name || '', card_no: x.card_no, balance_yuan: Math.round((x.balance_fen || 0) / 100) }));
+        if (!targets.length) return { job_id: null, target_count: 0, message: '没有符合条件的对象(余额/沉睡/频控筛选后为空)' };
+        const campaignId = cleanText(b.campaign_id, 128) || ('svremind_' + storeId + '_' + Date.now());
+        const ins = await pool.query(
+          `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result, tenant_id)
+           VALUES ($1,$2,0,0,$3,$4,$5::jsonb,$6,'pending','stored_value_remind',$7,$8::jsonb,$9) RETURNING id`,
+          [campaignId, storeId, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, cleanText(b.operator, 128) || 'hrms_admin', JSON.stringify({ template_code: templateCode }), resolveTenantIdDefault()]
+        );
+        return { job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length };
+      });
+      return res.json({ ok: true, ...launchResult });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
@@ -3966,7 +3991,8 @@ export function registerGrowthRoutes(app, pool) {
   }
   if (!globalThis.__growthRemindWorker) {
     globalThis.__growthRemindWorker = true;
-    setInterval(() => { processOneRemindJob().catch((e) => console.warn('[svremind] worker failed:', e?.message)); }, 30 * 1000);
+    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
+    setInterval(() => { tenantContext.run('default', () => processOneRemindJob()).catch((e) => console.warn('[svremind] worker failed:', e?.message)); }, 30 * 1000);
   }
 
   // 储值余额提醒·定时自动触发器：每日为每个有储值客的门店自动冻结一条 remind 任务，
@@ -4008,20 +4034,21 @@ export function registerGrowthRoutes(app, pool) {
       const targets = r.rows.map((x) => ({ phone: x.phone, name: x.member_name || '', card_no: x.card_no, balance_yuan: Math.round((x.balance_fen || 0) / 100) }));
       if (!targets.length) continue;
       await pool.query(
-        `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result)
-         VALUES ($1,$2,0,0,$3,$4,$5::jsonb,$6,'pending','stored_value_remind',$7,$8::jsonb)`,
-        [campaignId, storeId, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, 'auto_scheduler', JSON.stringify({ template_code: templateCode })]
+        `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result, tenant_id)
+         VALUES ($1,$2,0,0,$3,$4,$5::jsonb,$6,'pending','stored_value_remind',$7,$8::jsonb,$9)`,
+        [campaignId, storeId, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, 'auto_scheduler', JSON.stringify({ template_code: templateCode }), resolveTenantIdDefault()]
       );
       enqueued += targets.length;
     }
     return { enqueued };
   }
   if (!globalThis.__growthRemindAutoTimer) {
+    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
     globalThis.__growthRemindAutoTimer = setInterval(() => {
-      enqueueAutoStoredValueReminds().catch((e) => console.warn('[svremind] auto enqueue failed:', e?.message));
+      tenantContext.run('default', () => enqueueAutoStoredValueReminds()).catch((e) => console.warn('[svremind] auto enqueue failed:', e?.message));
     }, 60 * 60 * 1000);
     setTimeout(() => {
-      enqueueAutoStoredValueReminds().catch((e) => console.warn('[svremind] initial auto enqueue failed:', e?.message));
+      tenantContext.run('default', () => enqueueAutoStoredValueReminds()).catch((e) => console.warn('[svremind] initial auto enqueue failed:', e?.message));
     }, 20000);
   }
 
@@ -4029,28 +4056,31 @@ export function registerGrowthRoutes(app, pool) {
   app.post('/api/growth/segments/recompute', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     try {
-      const result = await recomputeDiningSegments(pool, getGrowthTenantId(req));
+      const segmentTenantId = getGrowthTenantId(req);
+      const result = await tenantContext.run(segmentTenantId, () => recomputeDiningSegments(pool, segmentTenantId));
       return res.json({ ok: true, result });
     } catch (e) {
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
   if (!globalThis.__growthSegmentTimer) {
+    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
     globalThis.__growthSegmentTimer = setInterval(() => {
-      recomputeDiningSegments(pool).catch((e) => console.warn('[segments] recompute failed:', e?.message));
+      tenantContext.run('default', () => recomputeDiningSegments(pool)).catch((e) => console.warn('[segments] recompute failed:', e?.message));
     }, 24 * 60 * 60 * 1000);
     setTimeout(() => {
-      recomputeDiningSegments(pool).catch((e) => console.warn('[segments] initial recompute failed:', e?.message));
+      tenantContext.run('default', () => recomputeDiningSegments(pool)).catch((e) => console.warn('[segments] initial recompute failed:', e?.message));
     }, 30000);
   }
 
   // T+7 SMS自动回填：每天跑一次；启动后延迟60s首跑（等DB连接稳定）
   if (!globalThis.__smsBackfillTimer) {
+    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
     globalThis.__smsBackfillTimer = setInterval(() => {
-      autoBackfillSmsActions(pool).then((n) => { if (n > 0) console.log(`[sms-backfill] auto-backfilled ${n} actions`); }).catch((e) => console.warn('[sms-backfill] failed:', e?.message));
+      tenantContext.run('default', () => autoBackfillSmsActions(pool)).then((n) => { if (n > 0) console.log(`[sms-backfill] auto-backfilled ${n} actions`); }).catch((e) => console.warn('[sms-backfill] failed:', e?.message));
     }, 24 * 60 * 60 * 1000);
     setTimeout(() => {
-      autoBackfillSmsActions(pool).then((n) => { if (n > 0) console.log(`[sms-backfill] initial run: backfilled ${n} actions`); }).catch((e) => console.warn('[sms-backfill] initial failed:', e?.message));
+      tenantContext.run('default', () => autoBackfillSmsActions(pool)).then((n) => { if (n > 0) console.log(`[sms-backfill] initial run: backfilled ${n} actions`); }).catch((e) => console.warn('[sms-backfill] initial failed:', e?.message));
     }, 60000);
   }
 
@@ -4066,92 +4096,97 @@ export function registerGrowthRoutes(app, pool) {
 
       const storeId = cleanText(body.store_id, 128);
       const tenantId = await resolveTenantIdForStore(pool, storeId);
-      const customer = await upsertCustomer(pool, body, tenantId);
-      const campaignId = cleanText(body.campaign_id || body.scene, 128);
-      const channel = cleanText(body.channel, 80);
-      const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
-      const amountFen = Math.max(0, Math.floor(Number(body.amount_fen) || 0));
-      const occurredAt = parseOccurredAt(body.occurred_at);
-      const idempotencyKey = cleanText(body.idempotency_key, 255) || null;
+      const result = await tenantContext.run(tenantId, async () => {
+        const customer = await upsertCustomer(pool, body, tenantId);
+        const campaignId = cleanText(body.campaign_id || body.scene, 128);
+        const channel = cleanText(body.channel, 80);
+        const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
+        const amountFen = Math.max(0, Math.floor(Number(body.amount_fen) || 0));
+        const occurredAt = parseOccurredAt(body.occurred_at);
+        const idempotencyKey = cleanText(body.idempotency_key, 255) || null;
 
-      if (campaignId) {
-        await pool.query(
-          `INSERT INTO growth_campaigns (campaign_id, channel, store_id, meta)
-           VALUES ($1, NULLIF($2,''), NULLIF($3,''), $4::jsonb)
-           ON CONFLICT (campaign_id) DO UPDATE SET
-             channel = COALESCE(growth_campaigns.channel, EXCLUDED.channel),
-             store_id = COALESCE(growth_campaigns.store_id, EXCLUDED.store_id),
-             updated_at = NOW()`,
-          [campaignId, channel, storeId, JSON.stringify({ first_event_type: eventType })]
-        );
-      }
-
-      const inserted = await pool.query(
-        `INSERT INTO growth_events (
-           event_type, customer_id, phone, openid, external_userid, store_id, campaign_id, channel,
-           coupon_id, order_id, amount_fen, idempotency_key, metadata, occurred_at
-         ) VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),$11,$12,$13::jsonb,$14)
-         ON CONFLICT (idempotency_key) DO NOTHING
-         RETURNING id`,
-        [
-          eventType,
-          customer?.id || null,
-          cleanPhone(body.phone),
-          cleanText(body.openid, 128),
-          cleanText(body.external_userid, 128),
-          storeId,
-          campaignId,
-          channel,
-          cleanText(body.coupon_id, 128),
-          cleanText(body.order_id, 128),
-          amountFen,
-          idempotencyKey,
-          JSON.stringify(metadata),
-          occurredAt
-        ]
-      );
-
-      if (eventType === 'coupon_redeemed' && inserted.rows.length) {
-        await pool.query(
-          `INSERT INTO growth_redemptions (customer_id, coupon_id, campaign_id, store_id, amount_fen, metadata, redeemed_at)
-           VALUES ($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6::jsonb,$7)
-           ON CONFLICT DO NOTHING`,
-          [customer?.id || null, cleanText(body.coupon_id, 128), campaignId, storeId, amountFen, JSON.stringify(metadata), occurredAt]
-        );
-        // 闭环回写：按核销回传的短码，把对应「已发送」短信日志翻成「已核销」，
-        // 使 growth_delivery_logs 单表即可查「发→核销」全过程（核销率 = redeemed / sent）。
-        const redeemShortCode = cleanText(metadata.short_code || '', 64);
-        if (redeemShortCode) {
+        if (campaignId) {
           await pool.query(
-            `UPDATE growth_delivery_logs
-                SET status = 'redeemed', updated_at = NOW()
-              WHERE channel = 'sms'
-                AND status = 'sent'
-                AND payload->>'coupon_code' = $1`,
-            [redeemShortCode]
-          ).catch((e) => console.warn('[growth] delivery redeem flip failed:', e?.message));
-        }
-      }
-
-      // Phase 2: 授权手机号/匹配检查时，反查 wechat_work_customers 并绑定
-      const matchPhone = cleanPhone(body.phone);
-      if ((eventType === 'phone_authorized' || eventType === 'wechat_match_check') && matchPhone) {
-        try {
-          const wwMatch = await pool.query(
-            `UPDATE wechat_work_customers SET bind_customer_id = $1, updated_at = NOW()
-             WHERE phone = $2 AND bind_customer_id IS NULL
-             RETURNING id, store_id`,
-            [customer?.id, matchPhone]
+            `INSERT INTO growth_campaigns (campaign_id, channel, store_id, meta, tenant_id)
+             VALUES ($1, NULLIF($2,''), NULLIF($3,''), $4::jsonb, $5)
+             ON CONFLICT (campaign_id, tenant_id) DO UPDATE SET
+               channel = COALESCE(growth_campaigns.channel, EXCLUDED.channel),
+               store_id = COALESCE(growth_campaigns.store_id, EXCLUDED.store_id),
+               updated_at = NOW()`,
+            [campaignId, channel, storeId, JSON.stringify({ first_event_type: eventType }), tenantId]
           );
-          if (wwMatch.rows.length) {
-            console.log(`[growth] wechat_work customer matched: phone=${matchPhone}, customer_id=${customer?.id}`);
-          }
-        } catch (e) {
-          console.warn('[growth] wechat_work match failed:', e?.message);
         }
-      }
 
-      return res.json({ ok: true, inserted: inserted.rows.length > 0, customer_id: customer?.id || null });
+        const inserted = await pool.query(
+          `INSERT INTO growth_events (
+             event_type, customer_id, phone, openid, external_userid, store_id, campaign_id, channel,
+             coupon_id, order_id, amount_fen, idempotency_key, metadata, occurred_at, tenant_id
+           ) VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),$11,$12,$13::jsonb,$14,$15)
+           ON CONFLICT (idempotency_key, tenant_id) DO NOTHING
+           RETURNING id`,
+          [
+            eventType,
+            customer?.id || null,
+            cleanPhone(body.phone),
+            cleanText(body.openid, 128),
+            cleanText(body.external_userid, 128),
+            storeId,
+            campaignId,
+            channel,
+            cleanText(body.coupon_id, 128),
+            cleanText(body.order_id, 128),
+            amountFen,
+            idempotencyKey,
+            JSON.stringify(metadata),
+            occurredAt,
+            tenantId
+          ]
+        );
+
+        if (eventType === 'coupon_redeemed' && inserted.rows.length) {
+          await pool.query(
+            `INSERT INTO growth_redemptions (customer_id, coupon_id, campaign_id, store_id, amount_fen, metadata, redeemed_at, tenant_id)
+             VALUES ($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6::jsonb,$7,$8)
+             ON CONFLICT DO NOTHING`,
+            [customer?.id || null, cleanText(body.coupon_id, 128), campaignId, storeId, amountFen, JSON.stringify(metadata), occurredAt, tenantId]
+          );
+          // 闭环回写：按核销回传的短码，把对应「已发送」短信日志翻成「已核销」，
+          // 使 growth_delivery_logs 单表即可查「发→核销」全过程（核销率 = redeemed / sent）。
+          const redeemShortCode = cleanText(metadata.short_code || '', 64);
+          if (redeemShortCode) {
+            await pool.query(
+              `UPDATE growth_delivery_logs
+                  SET status = 'redeemed', updated_at = NOW()
+                WHERE channel = 'sms'
+                  AND status = 'sent'
+                  AND payload->>'coupon_code' = $1`,
+              [redeemShortCode]
+            ).catch((e) => console.warn('[growth] delivery redeem flip failed:', e?.message));
+          }
+        }
+
+        // Phase 2: 授权手机号/匹配检查时，反查 wechat_work_customers 并绑定
+        const matchPhone = cleanPhone(body.phone);
+        if ((eventType === 'phone_authorized' || eventType === 'wechat_match_check') && matchPhone) {
+          try {
+            const wwMatch = await pool.query(
+              `UPDATE wechat_work_customers SET bind_customer_id = $1, updated_at = NOW()
+               WHERE phone = $2 AND bind_customer_id IS NULL
+               RETURNING id, store_id`,
+              [customer?.id, matchPhone]
+            );
+            if (wwMatch.rows.length) {
+              console.log(`[growth] wechat_work customer matched: phone=${matchPhone}, customer_id=${customer?.id}`);
+            }
+          } catch (e) {
+            console.warn('[growth] wechat_work match failed:', e?.message);
+          }
+        }
+
+        return { inserted: inserted.rows.length > 0, customer_id: customer?.id || null };
+      });
+
+      return res.json({ ok: true, inserted: result.inserted, customer_id: result.customer_id });
     } catch (e) {
       console.error('[growth] miniprogram event failed:', e?.message || e);
       return res.status(500).json({ ok: false, error: 'server_error' });
@@ -4161,20 +4196,20 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/campaigns/:campaignId/funnel', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const campaignId = cleanText(req.params.campaignId, 128);
-    const r = await pool.query(
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       `SELECT event_type, COUNT(*)::int AS count
        FROM growth_events
        WHERE campaign_id = $1
        GROUP BY event_type
        ORDER BY event_type`,
       [campaignId]
-    );
+    ));
     return res.json({ ok: true, campaign_id: campaignId, counts: r.rows });
   });
 
   app.post('/api/growth/metrics/recompute', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    const days = await recomputeDailyMetrics(req.body?.days || 7);
+    const days = await tenantContext.run(getGrowthTenantId(req), () => recomputeDailyMetrics(req.body?.days || 7));
     return res.json({ ok: true, days });
   });
 
@@ -4220,28 +4255,30 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/metrics', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 365);
-    if (req.query.recompute === '1' || req.query.recompute === 'true') {
-      await recomputeDailyMetrics(days);
-    }
-    const r = await pool.query(
-      `SELECT * FROM growth_daily_metrics
-       WHERE metric_date >= CURRENT_DATE - ($1::int || ' days')::interval
-         AND ($2::text = '' OR store_id = $2)
-         AND ($3::text = '' OR campaign_id = $3)
-       ORDER BY metric_date DESC, store_id, campaign_id, channel
-       LIMIT 1000`,
-      [days, cleanText(req.query.store_id || '', 128), cleanText(req.query.campaign_id || '', 128)]
-    );
+    const r = await tenantContext.run(getGrowthTenantId(req), async () => {
+      if (req.query.recompute === '1' || req.query.recompute === 'true') {
+        await recomputeDailyMetrics(days);
+      }
+      return pool.query(
+        `SELECT * FROM growth_daily_metrics
+         WHERE metric_date >= CURRENT_DATE - ($1::int || ' days')::interval
+           AND ($2::text = '' OR store_id = $2)
+           AND ($3::text = '' OR campaign_id = $3)
+         ORDER BY metric_date DESC, store_id, campaign_id, channel
+         LIMIT 1000`,
+        [days, cleanText(req.query.store_id || '', 128), cleanText(req.query.campaign_id || '', 128)]
+      );
+    });
     return res.json({ ok: true, rows: r.rows });
   });
 
   app.get('/api/growth/alerts', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const status = cleanText(req.query.status || 'open', 40);
-    const r = await pool.query(
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       `SELECT * FROM growth_alerts WHERE ($1::text = '' OR status = $1) ORDER BY created_at DESC LIMIT 200`,
       [status]
-    );
+    ));
     return res.json({ ok: true, alerts: r.rows });
   });
 
@@ -4249,10 +4286,11 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const b = req.body || {};
     const alertKey = cleanText(b.alert_key || `${b.alert_type || 'growth'}:${b.store_id || ''}:${b.campaign_id || ''}:${new Date().toISOString().slice(0, 10)}`, 255);
-    const r = await pool.query(
-      `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, campaign_id, title, message, suggested_action, metrics)
-       VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,$7,$8,$9::jsonb)
-       ON CONFLICT (alert_key) DO UPDATE SET
+    const alertsTenantId = getGrowthTenantId(req);
+    const r = await tenantContext.run(alertsTenantId, () => pool.query(
+      `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, campaign_id, title, message, suggested_action, metrics, tenant_id)
+       VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,$7,$8,$9::jsonb,$10)
+       ON CONFLICT (alert_key, tenant_id) DO UPDATE SET
          severity = EXCLUDED.severity,
          title = EXCLUDED.title,
          message = EXCLUDED.message,
@@ -4261,8 +4299,8 @@ export function registerGrowthRoutes(app, pool) {
          status = 'open',
          updated_at = NOW()
        RETURNING *`,
-      [alertKey, cleanText(b.alert_type, 80), cleanText(b.severity || 'medium', 40), cleanText(b.store_id, 128), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.message, 2000), cleanText(b.suggested_action, 2000), JSON.stringify(b.metrics || {})]
-    );
+      [alertKey, cleanText(b.alert_type, 80), cleanText(b.severity || 'medium', 40), cleanText(b.store_id, 128), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.message, 2000), cleanText(b.suggested_action, 2000), JSON.stringify(b.metrics || {}), alertsTenantId]
+    ));
     return res.json({ ok: true, alert: r.rows[0] });
   });
 
@@ -4271,18 +4309,18 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const alertKey = cleanText(req.params.alertKey, 255);
     const operator = getGrowthOperator(req);
-    const r = await pool.query(
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       `UPDATE growth_alerts SET status = 'resolved', resolved_by = $2, resolved_at = NOW(), updated_at = NOW()
        WHERE alert_key = $1 RETURNING *`,
       [alertKey, operator.username || 'system']
-    );
+    ));
     if (!r.rows.length) return res.status(404).json({ ok: false, error: 'alert_not_found' });
     return res.json({ ok: true, alert: r.rows[0] });
   });
 
   app.get('/api/growth/touch-rules', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    const r = await pool.query(`SELECT * FROM growth_touch_rules ORDER BY priority ASC, rule_key ASC LIMIT 100`);
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(`SELECT * FROM growth_touch_rules ORDER BY priority ASC, rule_key ASC LIMIT 100`));
     return res.json({ ok: true, rules: r.rows });
   });
 
@@ -4294,49 +4332,53 @@ export function registerGrowthRoutes(app, pool) {
     const criteriaStr = JSON.stringify(b.criteria || {});
     const payloadStr = JSON.stringify(b.action_payload || {});
     const actionType = cleanText(b.action_type || 'send_message', 80);
-    // 改了「目标人群/券额文案/动作类型」就要重新审核——避免审过的规则被人偷偷改条件后继续自动群发。
-    const existing = await pool.query(`SELECT criteria, action_payload, action_type FROM growth_touch_rules WHERE rule_key = $1 LIMIT 1`, [ruleKey]);
-    let keepApproval = false;
-    let criteriaChanged = true;
-    if (existing.rows.length) {
-      const ex = existing.rows[0];
-      criteriaChanged = JSON.stringify(ex.criteria || {}) !== criteriaStr;
-      keepApproval =
-        !criteriaChanged &&
-        JSON.stringify(ex.action_payload || {}) === payloadStr &&
-        (ex.action_type || '') === actionType;
-    }
-    const r = await pool.query(
-      `INSERT INTO growth_touch_rules (rule_key, name, enabled, priority, auto_execute, criteria, action_type, action_payload, owner, note)
-       VALUES ($1,$2,COALESCE($3,TRUE),$4,COALESCE($5,TRUE),$6::jsonb,$7,$8::jsonb,NULLIF($9,''),NULLIF($10,''))
-       ON CONFLICT (rule_key) DO UPDATE SET
-         name = EXCLUDED.name,
-         enabled = EXCLUDED.enabled,
-         priority = EXCLUDED.priority,
-         auto_execute = EXCLUDED.auto_execute,
-         criteria = EXCLUDED.criteria,
-         action_type = EXCLUDED.action_type,
-         action_payload = EXCLUDED.action_payload,
-         owner = COALESCE(EXCLUDED.owner, growth_touch_rules.owner),
-         note = COALESCE(EXCLUDED.note, growth_touch_rules.note),
-         approved_by = CASE WHEN $11 THEN growth_touch_rules.approved_by ELSE NULL END,
-         approved_at = CASE WHEN $11 THEN growth_touch_rules.approved_at ELSE NULL END,
-         updated_at = NOW()
-       RETURNING *`,
-      [
-        ruleKey,
-        cleanText(b.name || ruleKey, 255),
-        b.enabled !== false,
-        Math.max(1, Math.floor(Number(b.priority) || 100)),
-        b.auto_execute !== false,
-        criteriaStr,
-        actionType,
-        payloadStr,
-        cleanText(b.owner || '', 128),
-        cleanText(b.note || '', 1000),
-        keepApproval
-      ]
-    );
+    const { r, criteriaChanged } = await tenantContext.run(getGrowthTenantId(req), async () => {
+      // 改了「目标人群/券额文案/动作类型」就要重新审核——避免审过的规则被人偷偷改条件后继续自动群发。
+      const existing = await pool.query(`SELECT criteria, action_payload, action_type FROM growth_touch_rules WHERE rule_key = $1 LIMIT 1`, [ruleKey]);
+      let keepApproval = false;
+      let criteriaChangedInner = true;
+      if (existing.rows.length) {
+        const ex = existing.rows[0];
+        criteriaChangedInner = JSON.stringify(ex.criteria || {}) !== criteriaStr;
+        keepApproval =
+          !criteriaChangedInner &&
+          JSON.stringify(ex.action_payload || {}) === payloadStr &&
+          (ex.action_type || '') === actionType;
+      }
+      const rRes = await pool.query(
+        `INSERT INTO growth_touch_rules (rule_key, name, enabled, priority, auto_execute, criteria, action_type, action_payload, owner, note, tenant_id)
+         VALUES ($1,$2,COALESCE($3,TRUE),$4,COALESCE($5,TRUE),$6::jsonb,$7,$8::jsonb,NULLIF($9,''),NULLIF($10,''),$12)
+         ON CONFLICT (rule_key, tenant_id) DO UPDATE SET
+           name = EXCLUDED.name,
+           enabled = EXCLUDED.enabled,
+           priority = EXCLUDED.priority,
+           auto_execute = EXCLUDED.auto_execute,
+           criteria = EXCLUDED.criteria,
+           action_type = EXCLUDED.action_type,
+           action_payload = EXCLUDED.action_payload,
+           owner = COALESCE(EXCLUDED.owner, growth_touch_rules.owner),
+           note = COALESCE(EXCLUDED.note, growth_touch_rules.note),
+           approved_by = CASE WHEN $11 THEN growth_touch_rules.approved_by ELSE NULL END,
+           approved_at = CASE WHEN $11 THEN growth_touch_rules.approved_at ELSE NULL END,
+           updated_at = NOW()
+         RETURNING *`,
+        [
+          ruleKey,
+          cleanText(b.name || ruleKey, 255),
+          b.enabled !== false,
+          Math.max(1, Math.floor(Number(b.priority) || 100)),
+          b.auto_execute !== false,
+          criteriaStr,
+          actionType,
+          payloadStr,
+          cleanText(b.owner || '', 128),
+          cleanText(b.note || '', 1000),
+          keepApproval,
+          getGrowthTenantId(req)
+        ]
+      );
+      return { r: rRes, criteriaChanged: criteriaChangedInner };
+    });
     // 人群定向(criteria)变了才需重算覆盖人数；后台重算，不清空缓存、不阻塞本次保存，
     // 避免保存请求与5秒全表扫描抢连接池而卡住。频率/券面额/文案变更不影响覆盖人数。
     if (criteriaChanged && typeof globalThis.__refreshGrowthAudience === 'function') globalThis.__refreshGrowthAudience();
@@ -4407,7 +4449,7 @@ export function registerGrowthRoutes(app, pool) {
           `INSERT INTO marketing_payment_rules
              (rule_key, store_id, name, active, priority, target_tags, trigger_value, member_template_id, daily_user_limit, global_daily_limit, created_by, tenant_id)
            VALUES ($1,$2,$3,COALESCE($4,TRUE),$5,$6::jsonb,$7,$8,$9,$10,NULLIF($11,''),$12)
-           ON CONFLICT (rule_key) DO UPDATE SET
+           ON CONFLICT (rule_key, tenant_id) DO UPDATE SET
              store_id = EXCLUDED.store_id,
              name = EXCLUDED.name,
              active = EXCLUDED.active,
@@ -4462,7 +4504,7 @@ export function registerGrowthRoutes(app, pool) {
     const ruleKey = cleanText(req.params.ruleKey, 128);
     const operator = getGrowthOperator(req);
     const owner = cleanText(req.body?.owner || '', 128);
-    const r = await pool.query(
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       `UPDATE growth_touch_rules
          SET approved_by = $2, approved_at = NOW(),
              owner = COALESCE(NULLIF($3,''), owner),
@@ -4470,7 +4512,7 @@ export function registerGrowthRoutes(app, pool) {
        WHERE rule_key = $1
        RETURNING *`,
       [ruleKey, operator.username || 'system', owner]
-    );
+    ));
     if (!r.rows.length) return res.status(404).json({ ok: false, error: 'rule_not_found' });
     return res.json({ ok: true, rule: r.rows[0] });
   });
@@ -4479,10 +4521,10 @@ export function registerGrowthRoutes(app, pool) {
   app.post('/api/growth/touch-rules/:ruleKey/unapprove', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const ruleKey = cleanText(req.params.ruleKey, 128);
-    const r = await pool.query(
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       `UPDATE growth_touch_rules SET approved_by = NULL, approved_at = NULL, updated_at = NOW() WHERE rule_key = $1 RETURNING *`,
       [ruleKey]
-    );
+    ));
     if (!r.rows.length) return res.status(404).json({ ok: false, error: 'rule_not_found' });
     return res.json({ ok: true, rule: r.rows[0] });
   });
@@ -4491,7 +4533,7 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/touch-rules/stats', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
-    const r = await pool.query(
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       // 注：核销成功后 Fix3 会把投递日志 status 由 'sent' 翻成 'redeemed'，
       // 故发送数须把已触达的各终态都计入，否则被核销的那条会从发送数里漏掉。
       // 归因键修正：投递日志的 rule_key 实际存的是 campaign_key（活动制规则），核销事件
@@ -4525,7 +4567,7 @@ export function registerGrowthRoutes(app, pool) {
        LEFT JOIN sent s ON s.akey = COALESCE(NULLIF(tr.action_payload->>'campaign_key',''), tr.rule_key)
        LEFT JOIN redeemed rd ON rd.akey = COALESCE(NULLIF(tr.action_payload->>'campaign_key',''), tr.rule_key)`,
       [days]
-    );
+    ));
     // 单条短信成本 0.05 元（5 分）；订阅消息 / 小程序渠道成本为 0。
     // ROI = 带来的营收 ÷ 投入成本；据此打分排序并给运营建议（不自动改投放，仅供决策）。
     const SMS_COST_FEN = 5;
@@ -4610,45 +4652,49 @@ export function registerGrowthRoutes(app, pool) {
     const campaignKey = cleanText(req.params.campaignKey, 64);
     const order = ABC_ROTATION_ORDER[campaignKey];
     if (!order) return res.json({ ok: true, enabled: false });
-    const ruleRes = await pool.query(
-      `SELECT * FROM growth_touch_rules WHERE action_payload->>'campaign_key' = $1 LIMIT 1`,
-      [campaignKey]
-    );
-    if (!ruleRes.rows.length) return res.status(404).json({ ok: false, error: 'rule_not_found' });
-    const rule = ruleRes.rows[0];
+    const result = await tenantContext.run(getGrowthTenantId(req), async () => {
+      const ruleRes = await pool.query(
+        `SELECT * FROM growth_touch_rules WHERE action_payload->>'campaign_key' = $1 LIMIT 1`,
+        [campaignKey]
+      );
+      if (!ruleRes.rows.length) return null;
+      const rule = ruleRes.rows[0];
 
-    const candidates = (await loadRuleCandidates(pool, rule, getGrowthTenantId(req))).slice(0, 500);
-    const phones = [...new Set(candidates.map((c) => cleanPhone(c.phone)).filter(Boolean))];
-    const sentCounts = phones.length ? await pool.query(
-      // 「到店即清零」：与发送端同口径，只统计最近一次到店(pos_last_order_at)之后的成功发送数。
-      `WITH lastvisit AS (
-         SELECT phone, MAX(pos_last_order_at) AS lv FROM growth_customer_profiles
-          WHERE phone = ANY($2::text[]) GROUP BY phone
-       )
-       SELECT dl.payload->>'phone' AS phone, count(*)::int n FROM growth_delivery_logs dl
-         LEFT JOIN lastvisit lv ON lv.phone = dl.payload->>'phone'
-        WHERE dl.channel='sms' AND dl.status = 'sent' AND dl.rule_key = $1
-          AND dl.payload->>'phone' = ANY($2::text[])
-          AND dl.created_at > COALESCE(lv.lv, '1970-01-01'::timestamptz)
-        GROUP BY 1`,
-      [campaignKey, phones]
-    ) : { rows: [] };
-    const sentByPhone = new Map(sentCounts.rows.map((r) => [r.phone, Number(r.n)]));
+      const candidates = (await loadRuleCandidates(pool, rule, getGrowthTenantId(req))).slice(0, 500);
+      const phones = [...new Set(candidates.map((c) => cleanPhone(c.phone)).filter(Boolean))];
+      const sentCounts = phones.length ? await pool.query(
+        // 「到店即清零」：与发送端同口径，只统计最近一次到店(pos_last_order_at)之后的成功发送数。
+        `WITH lastvisit AS (
+           SELECT phone, MAX(pos_last_order_at) AS lv FROM growth_customer_profiles
+            WHERE phone = ANY($2::text[]) GROUP BY phone
+         )
+         SELECT dl.payload->>'phone' AS phone, count(*)::int n FROM growth_delivery_logs dl
+           LEFT JOIN lastvisit lv ON lv.phone = dl.payload->>'phone'
+          WHERE dl.channel='sms' AND dl.status = 'sent' AND dl.rule_key = $1
+            AND dl.payload->>'phone' = ANY($2::text[])
+            AND dl.created_at > COALESCE(lv.lv, '1970-01-01'::timestamptz)
+          GROUP BY 1`,
+        [campaignKey, phones]
+      ) : { rows: [] };
+      const sentByPhone = new Map(sentCounts.rows.map((r) => [r.phone, Number(r.n)]));
 
-    const dist = {};
-    for (const step of order) dist[step] = 0;
-    let cycling = 0; // 已走完至少一轮、进入更慢降频轮次(第2轮及以后)的人数
-    let blacklisted = 0;
-    for (const c of candidates) {
-      const phone = cleanPhone(c.phone);
-      if (!phone) continue;
-      const totalSent = sentByPhone.get(phone) || 0;
-      const { step, blacklisted: bl } = deriveAbcStep(campaignKey, totalSent);
-      if (bl) { blacklisted++; continue; }
-      dist[step] = (dist[step] || 0) + 1;
-      if (totalSent >= order.length) cycling++; // 超过一轮(perCycle)即已进入降频后续轮次
-    }
-    return res.json({ ok: true, enabled: true, total: candidates.length, step_distribution: dist, cycling, blacklisted });
+      const dist = {};
+      for (const step of order) dist[step] = 0;
+      let cycling = 0; // 已走完至少一轮、进入更慢降频轮次(第2轮及以后)的人数
+      let blacklisted = 0;
+      for (const c of candidates) {
+        const phone = cleanPhone(c.phone);
+        if (!phone) continue;
+        const totalSent = sentByPhone.get(phone) || 0;
+        const { step, blacklisted: bl } = deriveAbcStep(campaignKey, totalSent);
+        if (bl) { blacklisted++; continue; }
+        dist[step] = (dist[step] || 0) + 1;
+        if (totalSent >= order.length) cycling++; // 超过一轮(perCycle)即已进入降频后续轮次
+      }
+      return { total: candidates.length, step_distribution: dist, cycling, blacklisted };
+    });
+    if (!result) return res.status(404).json({ ok: false, error: 'rule_not_found' });
+    return res.json({ ok: true, enabled: true, ...result });
   });
 
   // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
@@ -4725,21 +4771,24 @@ export function registerGrowthRoutes(app, pool) {
   // 暴露给 POST 规则改动后触发后台重算（见 /api/growth/touch-rules）。
   globalThis.__refreshGrowthAudience = () => { refreshTouchRulesAudienceCache().catch(() => {}); };
   // 服务启动后预热一次，并每 10 分钟后台刷新，确保 HTTP 请求始终命中缓存、不阻塞。
+  // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
   if (!globalThis.__growthAudienceTimer) {
-    setTimeout(() => refreshTouchRulesAudienceCache().catch(() => {}), 15000);
-    globalThis.__growthAudienceTimer = setInterval(() => { refreshTouchRulesAudienceCache().catch(() => {}); }, 10 * 60 * 1000);
+    setTimeout(() => tenantContext.run('default', () => refreshTouchRulesAudienceCache()).catch(() => {}), 15000);
+    globalThis.__growthAudienceTimer = setInterval(() => { tenantContext.run('default', () => refreshTouchRulesAudienceCache()).catch(() => {}); }, 10 * 60 * 1000);
   }
   // 客户画像（生命周期/价值分级等，决定"涉及会员"人数）每日自动重算，避免依赖人工触发而过期；
   // 重算后顺带刷新人群缓存，使"涉及会员"数据始终与画像同步。
+  // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
   if (!globalThis.__growthProfileTimer) {
-    const runProfileRecompute = () => recomputeCustomerProfiles(pool, 90)
-      .then(() => refreshTouchRulesAudienceCache())
+    const runProfileRecompute = () => tenantContext.run('default', () => recomputeCustomerProfiles(pool, 90)
+      .then(() => refreshTouchRulesAudienceCache()))
       .catch((e) => console.warn('[profiles] recompute failed:', e?.message));
     setTimeout(runProfileRecompute, 20000);
     globalThis.__growthProfileTimer = setInterval(runProfileRecompute, 24 * 60 * 60 * 1000);
   }
   // 核销消费金额每天凌晨2点(北京时间)批量补算一次：POS数据是按天同步的，核销当时大概率查不到，
   // 等次日POS数据到位后统一回填近7天内仍为0的核销记录。
+  // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
   if (!globalThis.__growthRedemptionBackfillTimer) {
     let __growthRedemptionBackfillLastYmd = '';
     const runBackfill = () => {
@@ -4747,7 +4796,7 @@ export function registerGrowthRoutes(app, pool) {
       const ymd = nowCst.toISOString().slice(0, 10);
       if (nowCst.getUTCHours() < 2 || __growthRedemptionBackfillLastYmd === ymd) return;
       __growthRedemptionBackfillLastYmd = ymd;
-      backfillRedemptionAmounts(pool)
+      tenantContext.run('default', () => backfillRedemptionAmounts(pool))
         .then((n) => console.log(`[growth] redemption amount backfill: ${n} rows updated`))
         .catch((e) => console.warn('[growth] redemption amount backfill failed:', e?.message));
     };
@@ -4755,15 +4804,16 @@ export function registerGrowthRoutes(app, pool) {
   }
   app.get('/api/growth/touch-rules/audience', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
+    const audienceTenantId = getGrowthTenantId(req);
     // 有缓存就直接返回（即便略旧）；超过3分钟则后台刷新，但本次请求不等待。
     if (__touchRulesAudienceCache.data) {
       const stale = Date.now() - __touchRulesAudienceCache.at > 180000;
-      if (stale) refreshTouchRulesAudienceCache().catch(() => {});
+      if (stale) tenantContext.run(audienceTenantId, () => refreshTouchRulesAudienceCache()).catch(() => {});
       return res.json({ ok: true, audience: __touchRulesAudienceCache.data, cached: true, stale });
     }
     // 冷启动、缓存还空：兜底同步算一次（全局唯一一次会阻塞的路径）。
     try {
-      const a = await refreshTouchRulesAudienceCache();
+      const a = await tenantContext.run(audienceTenantId, () => refreshTouchRulesAudienceCache());
       return res.json({ ok: true, audience: a });
     } catch (e) {
       return res.status(500).json({ ok: false, error: e?.message || 'audience_failed' });
@@ -4772,7 +4822,8 @@ export function registerGrowthRoutes(app, pool) {
 
   app.post('/api/growth/rule-engine/run', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    const result = await runTouchRuleEngine(pool, { ...(req.body || {}), tenantId: getGrowthTenantId(req) });
+    const ruleEngineTenantId = getGrowthTenantId(req);
+    const result = await tenantContext.run(ruleEngineTenantId, () => runTouchRuleEngine(pool, { ...(req.body || {}), tenantId: ruleEngineTenantId }));
     return res.json({ ok: true, result });
   });
 
@@ -4782,19 +4833,22 @@ export function registerGrowthRoutes(app, pool) {
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
     const tenantId = getGrowthTenantId(req);
-    let sql = `SELECT * FROM growth_actions WHERE tenant_id = $1`;
-    const params = [tenantId];
-    if (status) {
-      sql += ` AND status = $${params.length + 1}`;
-      params.push(status);
-    }
-    sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(limit, offset);
-    const r = await pool.query(sql, params);
-    let countSql = `SELECT COUNT(*) as total FROM growth_actions WHERE tenant_id = $1`;
-    const countParams = [tenantId];
-    if (status) { countSql += ` AND status = $2`; countParams.push(status); }
-    const c = await pool.query(countSql, countParams);
+    const { r, c } = await tenantContext.run(tenantId, async () => {
+      let sql = `SELECT * FROM growth_actions WHERE tenant_id = $1`;
+      const params = [tenantId];
+      if (status) {
+        sql += ` AND status = $${params.length + 1}`;
+        params.push(status);
+      }
+      sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+      params.push(limit, offset);
+      const rRes = await pool.query(sql, params);
+      let countSql = `SELECT COUNT(*) as total FROM growth_actions WHERE tenant_id = $1`;
+      const countParams = [tenantId];
+      if (status) { countSql += ` AND status = $2`; countParams.push(status); }
+      const cRes = await pool.query(countSql, countParams);
+      return { r: rRes, c: cRes };
+    });
     return res.json({ ok: true, actions: r.rows, total: Number(c.rows[0]?.total || 0), limit, offset });
   });
 
@@ -4835,7 +4889,7 @@ export function registerGrowthRoutes(app, pool) {
     if (conds.length) sql += ` WHERE ` + conds.join(' AND ');
     sql += ` ORDER BY el.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
-    const r = await pool.query(sql, params);
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(sql, params));
     const logs = r.rows.map((l) => {
       let reach = 'na';
       if (l.decision === 'ignored') reach = 'ignored';
@@ -4853,13 +4907,13 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const b = req.body || {};
     const actionsTenantId = getGrowthTenantId(req);
-    const r = await pool.query(
+    const r = await tenantContext.run(actionsTenantId, () => pool.query(
       `INSERT INTO growth_actions (action_key, action_type, status, store_id, campaign_id, title, detail, payload, created_by, tenant_id)
        VALUES (NULLIF($1,''),$2,COALESCE(NULLIF($3,''),'proposed'),NULLIF($4,''),NULLIF($5,''),$6,$7,$8::jsonb,COALESCE(NULLIF($9,''),'agent_v2'),$10)
-       ON CONFLICT (action_key) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, payload = EXCLUDED.payload, updated_at = NOW()
+       ON CONFLICT (action_key, tenant_id) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, payload = EXCLUDED.payload, updated_at = NOW()
        RETURNING *`,
       [cleanText(b.action_key, 255), cleanText(b.action_type, 80), cleanText(b.status, 40), cleanText(b.store_id, 128), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.detail, 4000), JSON.stringify(b.payload || {}), cleanText(b.created_by, 80), actionsTenantId]
-    );
+    ));
     return res.json({ ok: true, action: r.rows[0] });
   });
 
@@ -4867,10 +4921,13 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const actionKey = cleanText(req.params.actionKey, 255);
     const operator = getGrowthOperator(req);
-    const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
-    if (!current.rows.length) return res.status(404).json({ ok: false, error: 'action_not_found' });
-    const before = current.rows[0];
-    const executed = await executeGrowthActionRecord(pool, before, operator, req.body?.payload || {}, req.body?.reason || '');
+    const executed = await tenantContext.run(getGrowthTenantId(req), async () => {
+      const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
+      if (!current.rows.length) return null;
+      const before = current.rows[0];
+      return executeGrowthActionRecord(pool, before, operator, req.body?.payload || {}, req.body?.reason || '');
+    });
+    if (!executed) return res.status(404).json({ ok: false, error: 'action_not_found' });
     return res.json({ ok: true, action: executed.action, execution: executed.execution });
   });
 
@@ -4878,57 +4935,65 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const actionKey = cleanText(req.params.actionKey, 255);
     const operator = getGrowthOperator(req);
-    const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
-    if (!current.rows.length) return res.status(404).json({ ok: false, error: 'action_not_found' });
-    const before = current.rows[0];
-    const result = await pool.query(
-      `UPDATE growth_actions SET status = 'ignored', updated_at = NOW() WHERE action_key = $1 RETURNING *`,
-      [actionKey]
-    );
-    await appendExecutionLog(pool, {
-      action_key: actionKey,
-      strategy_key: cleanText(before.payload?.strategy_key || '', 255),
-      store_id: before.store_id,
-      action_type: before.action_type,
-      decision: 'ignored',
-      operator_username: operator.username,
-      operator_role: operator.role,
-      before_payload: before.payload || {},
-      after_payload: result.rows[0].payload || {},
-      decision_reason: cleanText(req.body?.reason || '', 2000),
-      result_summary: '动作被忽略'
+    const outcome = await tenantContext.run(getGrowthTenantId(req), async () => {
+      const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
+      if (!current.rows.length) return null;
+      const before = current.rows[0];
+      const result = await pool.query(
+        `UPDATE growth_actions SET status = 'ignored', updated_at = NOW() WHERE action_key = $1 RETURNING *`,
+        [actionKey]
+      );
+      await appendExecutionLog(pool, {
+        action_key: actionKey,
+        strategy_key: cleanText(before.payload?.strategy_key || '', 255),
+        store_id: before.store_id,
+        action_type: before.action_type,
+        decision: 'ignored',
+        operator_username: operator.username,
+        operator_role: operator.role,
+        before_payload: before.payload || {},
+        after_payload: result.rows[0].payload || {},
+        decision_reason: cleanText(req.body?.reason || '', 2000),
+        result_summary: '动作被忽略'
+      });
+      return result.rows[0];
     });
-    return res.json({ ok: true, action: result.rows[0] });
+    if (!outcome) return res.status(404).json({ ok: false, error: 'action_not_found' });
+    return res.json({ ok: true, action: outcome });
   });
 
   app.post('/api/growth/actions/:actionKey/edit-and-execute', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const actionKey = cleanText(req.params.actionKey, 255);
     const operator = getGrowthOperator(req);
-    const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
-    if (!current.rows.length) return res.status(404).json({ ok: false, error: 'action_not_found' });
-    const before = current.rows[0];
-    const patch = req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : {};
-    const result = await pool.query(
-      `UPDATE growth_actions
-       SET status = 'executed', payload = COALESCE(payload,'{}'::jsonb) || $2::jsonb, updated_at = NOW(), executed_at = NOW()
-       WHERE action_key = $1 RETURNING *`,
-      [actionKey, JSON.stringify(patch)]
-    );
-    await appendExecutionLog(pool, {
-      action_key: actionKey,
-      strategy_key: cleanText(before.payload?.strategy_key || '', 255),
-      store_id: before.store_id,
-      action_type: before.action_type,
-      decision: 'edited_then_executed',
-      operator_username: operator.username,
-      operator_role: operator.role,
-      before_payload: before.payload || {},
-      after_payload: result.rows[0].payload || {},
-      decision_reason: cleanText(req.body?.reason || '', 2000),
-      result_summary: '动作修改后执行'
+    const outcome = await tenantContext.run(getGrowthTenantId(req), async () => {
+      const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
+      if (!current.rows.length) return null;
+      const before = current.rows[0];
+      const patch = req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : {};
+      const result = await pool.query(
+        `UPDATE growth_actions
+         SET status = 'executed', payload = COALESCE(payload,'{}'::jsonb) || $2::jsonb, updated_at = NOW(), executed_at = NOW()
+         WHERE action_key = $1 RETURNING *`,
+        [actionKey, JSON.stringify(patch)]
+      );
+      await appendExecutionLog(pool, {
+        action_key: actionKey,
+        strategy_key: cleanText(before.payload?.strategy_key || '', 255),
+        store_id: before.store_id,
+        action_type: before.action_type,
+        decision: 'edited_then_executed',
+        operator_username: operator.username,
+        operator_role: operator.role,
+        before_payload: before.payload || {},
+        after_payload: result.rows[0].payload || {},
+        decision_reason: cleanText(req.body?.reason || '', 2000),
+        result_summary: '动作修改后执行'
+      });
+      return result.rows[0];
     });
-    return res.json({ ok: true, action: result.rows[0] });
+    if (!outcome) return res.status(404).json({ ok: false, error: 'action_not_found' });
+    return res.json({ ok: true, action: outcome });
   });
 
   app.get('/api/growth/store-profiles', async (req, res) => {
@@ -4969,20 +5034,21 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const storeId = cleanText(req.query.store_id || '', 128);
     const lifecycle = cleanText(req.query.lifecycle_stage || '', 40);
-    const r = await pool.query(
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       `SELECT * FROM growth_customer_profiles
        WHERE ($1::text = '' OR store_id = $1)
          AND ($2::text = '' OR lifecycle_stage = $2)
        ORDER BY updated_at DESC
        LIMIT 300`,
       [storeId, lifecycle]
-    );
+    ));
     return res.json({ ok: true, profiles: r.rows });
   });
 
   app.post('/api/growth/customer-profiles/recompute', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    const days = await recomputeCustomerProfiles(pool, req.body?.days || 90, getGrowthTenantId(req));
+    const recomputeTenantId = getGrowthTenantId(req);
+    const days = await tenantContext.run(recomputeTenantId, () => recomputeCustomerProfiles(pool, req.body?.days || 90, recomputeTenantId));
     return res.json({ ok: true, days });
   });
 
@@ -4990,7 +5056,7 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const customerId = Number(req.query.customer_id) || 0;
     const signalType = cleanText(req.query.signal_type || '', 80);
-    const r = await pool.query(
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       `SELECT * FROM growth_profile_signals
        WHERE ($1::bigint = 0 OR customer_id = $1)
          AND ($2::text = '' OR signal_type = $2)
@@ -4998,7 +5064,7 @@ export function registerGrowthRoutes(app, pool) {
        ORDER BY occurred_at DESC
        LIMIT 300`,
       [customerId, signalType, getGrowthTenantId(req)]
-    );
+    ));
     return res.json({ ok: true, signals: r.rows });
   });
 
@@ -5013,27 +5079,29 @@ export function registerGrowthRoutes(app, pool) {
       customer_meta: {}
     };
     const tenantId = getGrowthTenantId(req);
-    const customer = b.customer_id ? { id: Number(b.customer_id) } : await upsertCustomer(pool, payload, tenantId);
-    const signal = await pool.query(
-      `INSERT INTO growth_profile_signals (
-        customer_id, signal_type, signal_key, signal_value, signal_score,
-        source, store_id, campaign_id, occurred_at, meta, tenant_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
-      RETURNING *`,
-      [
-        customer?.id || null,
-        cleanText(b.signal_type, 80),
-        cleanText(b.signal_key, 80),
-        cleanText(b.signal_value, 500),
-        b.signal_score == null ? null : Number(b.signal_score),
-        cleanText(b.source, 80),
-        cleanText(b.store_id, 128),
-        cleanText(b.campaign_id, 128),
-        parseOccurredAt(b.occurred_at),
-        JSON.stringify(b.meta || {}),
-        tenantId
-      ]
-    );
+    const signal = await tenantContext.run(tenantId, async () => {
+      const customer = b.customer_id ? { id: Number(b.customer_id) } : await upsertCustomer(pool, payload, tenantId);
+      return pool.query(
+        `INSERT INTO growth_profile_signals (
+          customer_id, signal_type, signal_key, signal_value, signal_score,
+          source, store_id, campaign_id, occurred_at, meta, tenant_id
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+        RETURNING *`,
+        [
+          customer?.id || null,
+          cleanText(b.signal_type, 80),
+          cleanText(b.signal_key, 80),
+          cleanText(b.signal_value, 500),
+          b.signal_score == null ? null : Number(b.signal_score),
+          cleanText(b.source, 80),
+          cleanText(b.store_id, 128),
+          cleanText(b.campaign_id, 128),
+          parseOccurredAt(b.occurred_at),
+          JSON.stringify(b.meta || {}),
+          tenantId
+        ]
+      );
+    });
     return res.json({ ok: true, signal: signal.rows[0] });
   });
 
@@ -5332,7 +5400,9 @@ export function registerGrowthRoutes(app, pool) {
     if (openid) { conditions.push(`openid = $${idx++}`); params.push(openid); }
     if (store_id) { conditions.push(`(first_store_id = $${idx} OR last_store_id = $${idx})`); params.push(store_id); idx++; }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-    const r = await pool.query(`SELECT id, phone, openid, external_userid, first_store_id, last_store_id, first_seen_at, last_seen_at, meta, created_at FROM growth_customers ${where} ORDER BY last_seen_at DESC NULLS LAST LIMIT $${idx++} OFFSET $${idx}`, [...params, limit, offset]);
+    const r = await tenantContext.run(getGrowthTenantId(req), () =>
+      pool.query(`SELECT id, phone, openid, external_userid, first_store_id, last_store_id, first_seen_at, last_seen_at, meta, created_at FROM growth_customers ${where} ORDER BY last_seen_at DESC NULLS LAST LIMIT $${idx++} OFFSET $${idx}`, [...params, limit, offset])
+    );
     return res.json({ ok: true, customers: r.rows });
   });
 
@@ -5350,7 +5420,9 @@ export function registerGrowthRoutes(app, pool) {
     if (store_id) { conditions.push(`store_id = $${idx++}`); params.push(store_id); }
     if (campaign_id) { conditions.push(`campaign_id = $${idx++}`); params.push(campaign_id); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-    const r = await pool.query(`SELECT id, event_type, customer_id, phone, openid, store_id, campaign_id, channel, coupon_id, order_id, amount_fen, occurred_at FROM growth_events ${where} ORDER BY occurred_at DESC LIMIT $${idx++} OFFSET $${idx}`, [...params, limit, offset]);
+    const r = await tenantContext.run(getGrowthTenantId(req), () =>
+      pool.query(`SELECT id, event_type, customer_id, phone, openid, store_id, campaign_id, channel, coupon_id, order_id, amount_fen, occurred_at FROM growth_events ${where} ORDER BY occurred_at DESC LIMIT $${idx++} OFFSET $${idx}`, [...params, limit, offset])
+    );
     return res.json({ ok: true, events: r.rows });
   });
 
@@ -5364,7 +5436,9 @@ export function registerGrowthRoutes(app, pool) {
     if (store_id) { conditions.push(`store_id = $${idx++}`); params.push(store_id); }
     if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-    const r = await pool.query(`SELECT * FROM growth_campaigns ${where} ORDER BY created_at DESC`, params);
+    const r = await tenantContext.run(getGrowthTenantId(req), () =>
+      pool.query(`SELECT * FROM growth_campaigns ${where} ORDER BY created_at DESC`, params)
+    );
     return res.json({ ok: true, campaigns: r.rows });
   });
 
@@ -5381,14 +5455,14 @@ export function registerGrowthRoutes(app, pool) {
     if (store_id) { conditions.push(`r.store_id = $${idx++}`); params.push(store_id); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     // 关联活动中文名（campaign_id → growth_campaigns.name），并回传 metadata 供前台兜底取活动/规则名
-    const r = await pool.query(
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       `SELECT r.id, r.customer_id, r.coupon_id, r.campaign_id, r.store_id, r.amount_fen, r.redeemed_at, r.metadata,
               c.name AS campaign_name
        FROM growth_redemptions r
        LEFT JOIN growth_campaigns c ON c.campaign_id = r.campaign_id
        ${where} ORDER BY r.redeemed_at DESC LIMIT $${idx++} OFFSET $${idx}`,
       [...params, limit, offset]
-    );
+    ));
     return res.json({ ok: true, redemptions: r.rows });
   });
 
@@ -5402,6 +5476,8 @@ export function registerGrowthRoutes(app, pool) {
     const decision = cleanText(b.decision || '', 80);
     if (!actionKey || !decision) return res.status(400).json({ ok: false, error: 'missing_action_key_or_decision' });
     try {
+      // 飞书卡片回调走密钥鉴权，没有 JWT 可解出 tenant_id；现网单租户，暂用default兜底
+      return await tenantContext.run('default', async () => {
       const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
       if (!current.rows.length) return res.status(404).json({ ok: false, error: 'action_not_found' });
       const before = current.rows[0];
@@ -5426,6 +5502,7 @@ export function registerGrowthRoutes(app, pool) {
         return res.json({ ok: true, action: 'feedback_submitted' });
       }
       return res.status(400).json({ ok: false, error: 'invalid_decision' });
+      });
     } catch (e) { return res.status(500).json({ ok: false, error: e?.message || 'callback_error' }); }
   });
 
@@ -5436,6 +5513,7 @@ export function registerGrowthRoutes(app, pool) {
     const actionKey = cleanText(req.params.actionKey, 255);
     const b = req.body || {};
     const operator = getGrowthOperator(req);
+    return tenantContext.run(getGrowthTenantId(req), async () => {
 
     // 先取动作，拿到 expected_kpi / 渠道 / 文案，用于打分与经验沉淀
     const cur = await pool.query('SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1', [actionKey]);
@@ -5505,8 +5583,8 @@ export function registerGrowthRoutes(app, pool) {
       );
       const sample = actual.reach || 0;
       await pool.query(
-        `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified)
-         VALUES ('ai_suggestion',$1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,true)
+        `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified, tenant_id)
+         VALUES ('ai_suggestion',$1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,true,$12)
          ON CONFLICT DO NOTHING`,
         [
           actionKey,
@@ -5519,13 +5597,15 @@ export function registerGrowthRoutes(app, pool) {
           effectDesc,
           sample,
           sample >= 100 ? 'high' : sample >= 30 ? 'medium' : 'low',
-          new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10)
+          new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10),
+          resolveTenantIdDefault()
         ]
       ).catch((e) => { console.warn('[growth] deposit learning failed:', e?.message || e); });
     }
 
     await appendExecutionLog(pool, { action_key: actionKey, store_id: r.rows[0].store_id, action_type: r.rows[0].action_type, decision: 'feedback', operator_username: operator.username, operator_role: operator.role, after_payload: r.rows[0].payload, decision_reason: cleanText(b.note, 2000), result_summary: scorePayload ? `回填打分：${scorePayload.effectiveness}(${scorePayload.effectiveness_score}分)` : (b.note || '执行回填完成') });
     return res.json({ ok: true, action: r.rows[0], score: scorePayload });
+    });
   });
 
   // ── Phase 5: Semantic write-back to profiles ──
@@ -5571,20 +5651,22 @@ export function registerGrowthRoutes(app, pool) {
     const priceHint = b.price_sensitivity_hint == null ? null : Number(b.price_sensitivity_hint);
     const returnIntent = !!b.return_intent;
     const tenantId = getGrowthTenantId(req);
-    await pool.query(
-      `UPDATE growth_customer_profiles
-       SET semantic_tags = COALESCE(semantic_tags,'[]'::jsonb) || $2::jsonb,
-           favorite_dishes = CASE WHEN $3::jsonb <> '[]'::jsonb THEN COALESCE(favorite_dishes,'[]'::jsonb) || $3::jsonb ELSE favorite_dishes END,
-           price_sensitivity = COALESCE($4, price_sensitivity),
-           updated_at = NOW()
-       WHERE customer_id = $1 AND tenant_id = $5`,
-      [customerId, JSON.stringify(tags), JSON.stringify(tasteTags), priceHint, tenantId]
-    );
-    await pool.query(
-      `INSERT INTO growth_profile_signals (customer_id, signal_type, signal_key, signal_value, signal_score, source, tenant_id)
-       VALUES ($1,'semantic_tag','semantic_parse',NULLIF($2,''),NULL,$3,$4)`,
-      [customerId, tags.slice(0, 5).join(','), 'agent_parse', tenantId]
-    );
+    await tenantContext.run(tenantId, async () => {
+      await pool.query(
+        `UPDATE growth_customer_profiles
+         SET semantic_tags = COALESCE(semantic_tags,'[]'::jsonb) || $2::jsonb,
+             favorite_dishes = CASE WHEN $3::jsonb <> '[]'::jsonb THEN COALESCE(favorite_dishes,'[]'::jsonb) || $3::jsonb ELSE favorite_dishes END,
+             price_sensitivity = COALESCE($4, price_sensitivity),
+             updated_at = NOW()
+         WHERE customer_id = $1 AND tenant_id = $5`,
+        [customerId, JSON.stringify(tags), JSON.stringify(tasteTags), priceHint, tenantId]
+      );
+      await pool.query(
+        `INSERT INTO growth_profile_signals (customer_id, signal_type, signal_key, signal_value, signal_score, source, tenant_id)
+         VALUES ($1,'semantic_tag','semantic_parse',NULLIF($2,''),NULL,$3,$4)`,
+        [customerId, tags.slice(0, 5).join(','), 'agent_parse', tenantId]
+      );
+    });
     return res.json({ ok: true, customer_id: customerId, tags_written: tags.concat(tasteTags), return_intent: returnIntent });
   });
 
@@ -5652,52 +5734,54 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/active-window', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const storeId = cleanText(req.query.store_id || '', 128);
-    const timePatterns = await pool.query(
-      `SELECT
-         COUNT(*)::int as event_count,
-         CASE
-           WHEN EXTRACT(HOUR FROM occurred_at) BETWEEN 6 AND 10 THEN '早餐(6-10点)'
-           WHEN EXTRACT(HOUR FROM occurred_at) BETWEEN 10 AND 14 THEN '午市(10-14点)'
-           WHEN EXTRACT(HOUR FROM occurred_at) BETWEEN 14 AND 17 THEN '下午茶(14-17点)'
-           WHEN EXTRACT(HOUR FROM occurred_at) BETWEEN 17 AND 21 THEN '晚市(17-21点)'
-           ELSE '夜间(21-6点)'
-         END AS time_segment,
-         EXTRACT(DOW FROM occurred_at)::int AS weekday,
-         CASE WHEN EXTRACT(DOW FROM occurred_at) IN (0,6) THEN '周末' ELSE '工作日' END AS day_type,
-         COUNT(*) FILTER (WHERE event_type IN ('payment_success','coupon_redeemed'))::int AS conversion_count
-       FROM growth_events
-       WHERE ($1='' OR store_id=$1) AND occurred_at >= CURRENT_DATE - 90
-       GROUP BY 2, 3, 4
-       ORDER BY event_count DESC
-       LIMIT 10`,
-      [storeId]
-    );
-    const profileSegments = await pool.query(
-      `SELECT lifecycle_stage, COUNT(*)::int as cnt,
-              MODE() WITHIN GROUP (ORDER BY best_contact_window) AS top_window,
-              ROUND(AVG(price_sensitivity)::numeric, 2) AS avg_price_sens,
-              ROUND(AVG(response_to_discount)::numeric, 2) AS avg_discount_resp
-       FROM growth_customer_profiles
-       WHERE ($1='' OR store_id=$1) GROUP BY lifecycle_stage ORDER BY cnt DESC`,
-       [storeId]
-     );
-    const repurchaseRisk = await pool.query(
-      `SELECT COUNT(*)::int as at_risk_count, store_id
-       FROM growth_customer_profiles
-       WHERE lifecycle_stage IN ('at_risk','dormant','churned')
-         AND ($1='' OR store_id=$1)
-       GROUP BY store_id`,
-      [storeId]
-    );
-    // 价值分级分布 + VIP沉睡客（最值得优先召回）+ 客户流失率，喂给AI策略推荐
-    const valueTierSeg = await pool.query(
-      `SELECT value_tier, COUNT(*)::int AS cnt,
-              COUNT(*) FILTER (WHERE lifecycle_stage = 'dormant')::int AS dormant_cnt
-       FROM growth_customer_profiles
-       WHERE ($1='' OR store_id=$1) AND COALESCE(pos_total_spend,0) > 0
-       GROUP BY value_tier`,
-      [storeId]
-    );
+    const [timePatterns, profileSegments, repurchaseRisk, valueTierSeg] = await tenantContext.run(getGrowthTenantId(req), () => Promise.all([
+      pool.query(
+        `SELECT
+           COUNT(*)::int as event_count,
+           CASE
+             WHEN EXTRACT(HOUR FROM occurred_at) BETWEEN 6 AND 10 THEN '早餐(6-10点)'
+             WHEN EXTRACT(HOUR FROM occurred_at) BETWEEN 10 AND 14 THEN '午市(10-14点)'
+             WHEN EXTRACT(HOUR FROM occurred_at) BETWEEN 14 AND 17 THEN '下午茶(14-17点)'
+             WHEN EXTRACT(HOUR FROM occurred_at) BETWEEN 17 AND 21 THEN '晚市(17-21点)'
+             ELSE '夜间(21-6点)'
+           END AS time_segment,
+           EXTRACT(DOW FROM occurred_at)::int AS weekday,
+           CASE WHEN EXTRACT(DOW FROM occurred_at) IN (0,6) THEN '周末' ELSE '工作日' END AS day_type,
+           COUNT(*) FILTER (WHERE event_type IN ('payment_success','coupon_redeemed'))::int AS conversion_count
+         FROM growth_events
+         WHERE ($1='' OR store_id=$1) AND occurred_at >= CURRENT_DATE - 90
+         GROUP BY 2, 3, 4
+         ORDER BY event_count DESC
+         LIMIT 10`,
+        [storeId]
+      ),
+      pool.query(
+        `SELECT lifecycle_stage, COUNT(*)::int as cnt,
+                MODE() WITHIN GROUP (ORDER BY best_contact_window) AS top_window,
+                ROUND(AVG(price_sensitivity)::numeric, 2) AS avg_price_sens,
+                ROUND(AVG(response_to_discount)::numeric, 2) AS avg_discount_resp
+         FROM growth_customer_profiles
+         WHERE ($1='' OR store_id=$1) GROUP BY lifecycle_stage ORDER BY cnt DESC`,
+         [storeId]
+       ),
+      pool.query(
+        `SELECT COUNT(*)::int as at_risk_count, store_id
+         FROM growth_customer_profiles
+         WHERE lifecycle_stage IN ('at_risk','dormant','churned')
+           AND ($1='' OR store_id=$1)
+         GROUP BY store_id`,
+        [storeId]
+      ),
+      // 价值分级分布 + VIP沉睡客（最值得优先召回）+ 客户流失率，喂给AI策略推荐
+      pool.query(
+        `SELECT value_tier, COUNT(*)::int AS cnt,
+                COUNT(*) FILTER (WHERE lifecycle_stage = 'dormant')::int AS dormant_cnt
+         FROM growth_customer_profiles
+         WHERE ($1='' OR store_id=$1) AND COALESCE(pos_total_spend,0) > 0
+         GROUP BY value_tier`,
+        [storeId]
+      )
+    ]));
     const vipRow = valueTierSeg.rows.find(r => r.value_tier === 'vip') || { cnt: 0, dormant_cnt: 0 };
     const engagedTotal = valueTierSeg.rows.reduce((s, r) => s + Number(r.cnt || 0), 0);
     const lostTotal = profileSegments.rows
@@ -5733,33 +5817,36 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const storeId = cleanText(req.body.store_id || '', 128);
     const repurchaseTenantId = getGrowthTenantId(req);
-    const r = await pool.query(
-      `SELECT cp.customer_id, cp.phone, cp.store_id, cp.lifecycle_stage, cp.next_visit_probability,
-              cp.best_contact_window, cp.response_to_discount, cp.price_sensitivity
-       FROM growth_customer_profiles cp
-       WHERE ($1='' OR cp.store_id=$1) AND cp.lifecycle_stage IN ('at_risk','churned')
-         AND cp.phone IS NOT NULL
-       LIMIT 50`,
-      [storeId]
-    );
-    let created = 0;
-    for (const row of r.rows) {
-      const actionKey = `repurchase:${row.customer_id}:${Date.now()}`;
-      const useCoupon = Number(row.response_to_discount) > 0.4;
-      await pool.query(
-        `INSERT INTO growth_actions (action_key, action_type, status, store_id, title, detail, payload, created_by, tenant_id)
-         VALUES ($1,'send_voucher','proposed',NULLIF($2,''),$3,$4,$5::jsonb,'agent_v2',$6)
-         ON CONFLICT (action_key) DO NOTHING`,
-        [actionKey, row.store_id,
-         `复购唤醒-客户#${row.customer_id}`,
-         `客户${row.phone}已${row.lifecycle_stage === 'churned' ? '流失' : '临近复购临界期'}，${useCoupon ? '建议发送优惠券' : '建议内容触达'}。最佳触达时间:${row.best_contact_window || '未设定'}`,
-         JSON.stringify({ customer_id: row.customer_id, phone: row.phone, use_coupon: useCoupon, channel: 'wecom', strategy_key: 'repurchase_auto' }),
-         repurchaseTenantId
-        ]
+    const created = await tenantContext.run(repurchaseTenantId, async () => {
+      const r = await pool.query(
+        `SELECT cp.customer_id, cp.phone, cp.store_id, cp.lifecycle_stage, cp.next_visit_probability,
+                cp.best_contact_window, cp.response_to_discount, cp.price_sensitivity
+         FROM growth_customer_profiles cp
+         WHERE ($1='' OR cp.store_id=$1) AND cp.lifecycle_stage IN ('at_risk','churned')
+           AND cp.phone IS NOT NULL
+         LIMIT 50`,
+        [storeId]
       );
-      created++;
-    }
-    return res.json({ ok: true, triggered: created, total_at_risk: r.rows.length });
+      let createdCount = 0;
+      for (const row of r.rows) {
+        const actionKey = `repurchase:${row.customer_id}:${Date.now()}`;
+        const useCoupon = Number(row.response_to_discount) > 0.4;
+        await pool.query(
+          `INSERT INTO growth_actions (action_key, action_type, status, store_id, title, detail, payload, created_by, tenant_id)
+           VALUES ($1,'send_voucher','proposed',NULLIF($2,''),$3,$4,$5::jsonb,'agent_v2',$6)
+           ON CONFLICT (action_key, tenant_id) DO NOTHING`,
+          [actionKey, row.store_id,
+           `复购唤醒-客户#${row.customer_id}`,
+           `客户${row.phone}已${row.lifecycle_stage === 'churned' ? '流失' : '临近复购临界期'}，${useCoupon ? '建议发送优惠券' : '建议内容触达'}。最佳触达时间:${row.best_contact_window || '未设定'}`,
+           JSON.stringify({ customer_id: row.customer_id, phone: row.phone, use_coupon: useCoupon, channel: 'wecom', strategy_key: 'repurchase_auto' }),
+           repurchaseTenantId
+          ]
+        );
+        createdCount++;
+      }
+      return { createdCount, total: r.rows.length };
+    });
+    return res.json({ ok: true, triggered: created.createdCount, total_at_risk: created.total });
   });
 
   app.get('/api/growth/wecom-config', async (req, res) => {
@@ -5812,32 +5899,34 @@ export function registerGrowthRoutes(app, pool) {
     };
     const newStatus = statusMap[eventType] || 'received';
     const callbackTenantId = String(row.tenant_id || 'default').trim() || 'default';
-    await upsertDeliveryLog(pool, {
-      delivery_key: row.delivery_key,
-      action_key: row.action_key,
-      rule_key: row.rule_key,
-      customer_id: row.customer_id,
-      store_id: row.store_id,
-      channel: row.channel,
-      external_userid: row.external_userid,
-      provider_msg_id: providerMsgId,
-      status: newStatus,
-      payload: row.payload || {},
-      result: Object.assign({}, row.result || {}, b)
-    }, callbackTenantId);
-    if (eventMap[eventType]) {
-      await insertGrowthEvent(pool, {
-        event_type: eventMap[eventType],
+    await tenantContext.run(callbackTenantId, async () => {
+      await upsertDeliveryLog(pool, {
+        delivery_key: row.delivery_key,
+        action_key: row.action_key,
+        rule_key: row.rule_key,
         customer_id: row.customer_id,
-        external_userid: row.external_userid,
         store_id: row.store_id,
         channel: row.channel,
-        campaign_id: cleanText((row.payload || {}).campaign_id, 128),
-        coupon_id: cleanText((row.payload || {}).coupon_id, 128),
-        idempotency_key: `${eventMap[eventType]}:${providerMsgId}`,
-        metadata: { provider_msg_id: providerMsgId, action_key: row.action_key, callback: b }
+        external_userid: row.external_userid,
+        provider_msg_id: providerMsgId,
+        status: newStatus,
+        payload: row.payload || {},
+        result: Object.assign({}, row.result || {}, b)
       }, callbackTenantId);
-    }
+      if (eventMap[eventType]) {
+        await insertGrowthEvent(pool, {
+          event_type: eventMap[eventType],
+          customer_id: row.customer_id,
+          external_userid: row.external_userid,
+          store_id: row.store_id,
+          channel: row.channel,
+          campaign_id: cleanText((row.payload || {}).campaign_id, 128),
+          coupon_id: cleanText((row.payload || {}).coupon_id, 128),
+          idempotency_key: `${eventMap[eventType]}:${providerMsgId}`,
+          metadata: { provider_msg_id: providerMsgId, action_key: row.action_key, callback: b }
+        }, callbackTenantId);
+      }
+    });
     return res.json({ ok: true, status: newStatus });
   });
 
@@ -5989,7 +6078,7 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/user-clusters', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const storeId = cleanText(req.query.store_id || '', 128);
-    const r = await pool.query(
+    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       `SELECT lifecycle_stage,
          ROUND(AVG(price_sensitivity)::numeric, 2) AS avg_price_sens,
          ROUND(AVG(response_to_discount)::numeric, 2) AS avg_discount_resp,
@@ -6002,36 +6091,42 @@ export function registerGrowthRoutes(app, pool) {
        ORDER BY user_count DESC
        LIMIT 20`,
       [storeId]
-    );
+    ));
     return res.json({ ok: true, clusters: r.rows, total: r.rows.reduce((s, r) => s + Number(r.user_count), 0) });
   });
 
   if (!globalThis.__growthTouchRuleTimer) {
+    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
     globalThis.__growthTouchRuleTimer = setInterval(() => {
-      runTouchRuleEngine(pool, { limit_per_rule: 5000 }).catch((e) => console.warn('[growth] rule engine run failed:', e?.message));
+      tenantContext.run('default', () => runTouchRuleEngine(pool, { limit_per_rule: 5000 })).catch((e) => console.warn('[growth] rule engine run failed:', e?.message));
     }, 15 * 60 * 1000);
     setTimeout(() => {
-      runTouchRuleEngine(pool, { limit_per_rule: 5000 }).catch((e) => console.warn('[growth] initial rule engine run failed:', e?.message));
+      tenantContext.run('default', () => runTouchRuleEngine(pool, { limit_per_rule: 5000 })).catch((e) => console.warn('[growth] initial rule engine run failed:', e?.message));
     }, 10000);
   }
 
   if (!globalThis.__wecomContactSyncTimer) {
+    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
     globalThis.__wecomContactSyncTimer = setInterval(async () => {
       try {
-        const configs = await getAllStoreWecomConfigs(pool);
-        for (const cfg of configs) {
-          await syncWecomContactsForStore(pool, cfg);
-        }
+        await tenantContext.run('default', async () => {
+          const configs = await getAllStoreWecomConfigs(pool);
+          for (const cfg of configs) {
+            await syncWecomContactsForStore(pool, cfg);
+          }
+        });
       } catch (e) {
         console.warn('[growth] wecom contact sync failed:', e?.message);
       }
     }, 6 * 60 * 60 * 1000);
     setTimeout(async () => {
       try {
-        const configs = await getAllStoreWecomConfigs(pool);
-        for (const cfg of configs) {
-          await syncWecomContactsForStore(pool, cfg);
-        }
+        await tenantContext.run('default', async () => {
+          const configs = await getAllStoreWecomConfigs(pool);
+          for (const cfg of configs) {
+            await syncWecomContactsForStore(pool, cfg);
+          }
+        });
       } catch (e) {
         console.warn('[growth] initial wecom contact sync failed:', e?.message);
       }
@@ -6058,7 +6153,7 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     try {
       const targetDate = cleanText(req.body?.date || '', 20) || null;
-      const msg = await buildGrowthDailyReport(pool, targetDate);
+      const msg = await tenantContext.run(getGrowthTenantId(req), () => buildGrowthDailyReport(pool, targetDate));
       if (_sendGrowthAlert) {
         const result = await _sendGrowthAlert(msg, 'growth_daily_report');
         return res.json({ ok: true, report: msg, feishu: result });
@@ -6074,7 +6169,7 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     try {
       const targetDate = cleanText(req.query?.date || '', 20) || null;
-      const msg = await buildGrowthDailyReport(pool, targetDate);
+      const msg = await tenantContext.run(getGrowthTenantId(req), () => buildGrowthDailyReport(pool, targetDate));
       return res.json({ ok: true, report: msg });
     } catch (e) {
       return res.status(500).json({ ok: false, error: e?.message });
@@ -6139,7 +6234,8 @@ export function registerGrowthRoutes(app, pool) {
       globalThis.__growthDailyReportTimer = setTimeout(async () => {
         try {
           if (_sendGrowthAlert) {
-            const msg = await buildGrowthDailyReport(pool);
+            // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
+            const msg = await tenantContext.run('default', () => buildGrowthDailyReport(pool));
             await _sendGrowthAlert(msg, 'growth_daily_report');
           }
         } catch (e) {

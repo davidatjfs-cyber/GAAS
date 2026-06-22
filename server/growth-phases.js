@@ -411,7 +411,7 @@ async function queueAbSmsAssignments(pool, taskRow, audienceRows, opts = {}, ten
          delivery_key, action_key, rule_key, customer_id, store_id, channel,
          status, payload, result, created_at, updated_at, tenant_id
        ) VALUES ($1,$2,$3,$4,$5,'sms','sent',$6::jsonb,$7::jsonb,$8::timestamptz,$8::timestamptz,$9)
-       ON CONFLICT (delivery_key) DO NOTHING
+       ON CONFLICT (delivery_key, tenant_id) DO NOTHING
        RETURNING id`,
       [
         deliveryKey,
@@ -632,8 +632,8 @@ async function maybeWriteAbLearning(pool, taskRow, outcome, winner, winnerLift) 
   await pool.query(
     `INSERT INTO growth_learnings (
        source_type, source_id, store_code, channel, scene, audience_tag, variable,
-       winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified
-     ) VALUES ('ab_test',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true)
+       winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified, tenant_id
+     ) VALUES ('ab_test',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13)
      ON CONFLICT DO NOTHING`,
     [
       String(taskRow.id),
@@ -647,7 +647,8 @@ async function maybeWriteAbLearning(pool, taskRow, outcome, winner, winnerLift) 
       cleanText(`${metricLabel}+${Number(winnerLift || 0).toFixed(2)}%`, 255),
       sample,
       sample >= 100 ? 'high' : 'medium',
-      ymdAddDays(todayShanghaiYmd(), 90)
+      ymdAddDays(todayShanghaiYmd(), 90),
+      resolveTenantIdDefault()
     ]
   ).catch(() => {});
 }
@@ -891,7 +892,7 @@ async function generateWeeklyContentSuggestion(pool, storeCode, weekStart, opera
   const saved = await pool.query(
     `INSERT INTO growth_content_suggestions (suggestion_key, week_start, store_code, summary_json, generated_by, tenant_id)
      VALUES ($1,$2,$3,$4::jsonb,$5,$6)
-     ON CONFLICT (suggestion_key) DO UPDATE SET summary_json = EXCLUDED.summary_json, generated_by = EXCLUDED.generated_by, updated_at = NOW()
+     ON CONFLICT (suggestion_key, tenant_id) DO UPDATE SET summary_json = EXCLUDED.summary_json, generated_by = EXCLUDED.generated_by, updated_at = NOW()
      RETURNING *`,
     [`weekly_${store || 'all'}_${start}`, start, store, JSON.stringify({ store_code: store, week_start: start, items, summary_text: summaryText }), cleanText(operator, 80), tid]
   );
@@ -1065,9 +1066,9 @@ async function computeChurnScores(pool, storeCode, tenantId = 'default') {
       `INSERT INTO growth_churn_predictions
          (prediction_date, store_code, customer_id, phone, customer_name,
           churn_score, risk_level, factors, last_visit_days, avg_visit_cycle_days,
-          spend_trend_pct, visit_trend)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12)
-       ON CONFLICT (prediction_date, store_code, customer_id)
+          spend_trend_pct, visit_trend, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13)
+       ON CONFLICT (prediction_date, store_code, customer_id, tenant_id)
        DO UPDATE SET
          churn_score = EXCLUDED.churn_score,
          risk_level = EXCLUDED.risk_level,
@@ -1077,7 +1078,7 @@ async function computeChurnScores(pool, storeCode, tenantId = 'default') {
          visit_trend = EXCLUDED.visit_trend`,
       [p.prediction_date, p.store_code, p.customer_id, p.phone, p.customer_name,
        p.churn_score, p.risk_level, p.factors, p.last_visit_days,
-       p.avg_visit_cycle_days, p.spend_trend_pct, p.visit_trend]
+       p.avg_visit_cycle_days, p.spend_trend_pct, p.visit_trend, tenantId]
     ).catch(() => {});
     saved++;
   }
@@ -1188,7 +1189,7 @@ async function generateMenuHealthReport(pool, storeCode, reportMonth, tenantId =
   const saved = await pool.query(
     `INSERT INTO growth_menu_health_reports (report_month, store_code, report_json, generated_by, tenant_id)
      VALUES ($1, $2, $3::jsonb, 'system', $4)
-     ON CONFLICT (report_month, store_code)
+     ON CONFLICT (report_month, store_code, tenant_id)
      DO UPDATE SET report_json = EXCLUDED.report_json, created_at = NOW()
      RETURNING *`,
     [month, store || '', JSON.stringify(report), tenantId]
@@ -1657,20 +1658,21 @@ export function registerPhaseRoutes(app, pool) {
   app.post('/api/growth/coupons', async (req, res) => {
     if (!rqa(req, res)) return;
     const b = req.body || {};
-    const r = await pool.query(
-      `INSERT INTO growth_coupons (coupon_id,name,type,value_fen,price_fen,valid_days,stock,usage_rule,dish_name,is_active,store_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       ON CONFLICT (coupon_id) DO UPDATE SET name=EXCLUDED.name,is_active=EXCLUDED.is_active,updated_at=NOW() RETURNING *`,
+    const couponTenantId = getPhaseApiTenantId(req);
+    const r = await tenantContext.run(couponTenantId, () => pool.query(
+      `INSERT INTO growth_coupons (coupon_id,name,type,value_fen,price_fen,valid_days,stock,usage_rule,dish_name,is_active,store_id,tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (coupon_id, tenant_id) DO UPDATE SET name=EXCLUDED.name,is_active=EXCLUDED.is_active,updated_at=NOW() RETURNING *`,
       [cleanText(b.coupon_id,128),cleanText(b.name,300),cleanText(b.type||'cash',40),
        Math.max(0,Math.floor(Number(b.value_fen)||0)),Math.max(0,Math.floor(Number(b.price_fen)||0)),
        Math.max(1,Math.floor(Number(b.valid_days)||30)),Math.floor(Number(b.stock)!=null?Number(b.stock):-1),
-       cleanText(b.usage_rule,500),cleanText(b.dish_name,500),b.is_active!==false,cleanText(b.store_id,128)]
-    );
+       cleanText(b.usage_rule,500),cleanText(b.dish_name,500),b.is_active!==false,cleanText(b.store_id,128),couponTenantId]
+    ));
     res.json({ok:true,coupon:r.rows[0]});
   });
   app.get('/api/growth/coupons', async (req, res) => {
     if (!rqa(req, res)) return;
-    const r = await pool.query('SELECT * FROM growth_coupons ORDER BY created_at DESC LIMIT 300');
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query('SELECT * FROM growth_coupons ORDER BY created_at DESC LIMIT 300'));
     res.json({ok:true,coupons:r.rows});
   });
 
@@ -1678,13 +1680,14 @@ export function registerPhaseRoutes(app, pool) {
   app.post('/api/growth/sync-failures', async (req, res) => {
     if (!rqa(req, res)) return;
     const b = req.body || {};
-    await pool.query('INSERT INTO growth_sync_failures (source,event_type,payload,error_message) VALUES ($1,$2,$3::jsonb,$4)',
-      [cleanText(b.source,80),cleanText(b.event_type,80),JSON.stringify(b.payload||{}),cleanText(b.error_message,2000)]);
+    const syncFailTenantId = getPhaseApiTenantId(req);
+    await tenantContext.run(syncFailTenantId, () => pool.query('INSERT INTO growth_sync_failures (source,event_type,payload,error_message,tenant_id) VALUES ($1,$2,$3::jsonb,$4,$5)',
+      [cleanText(b.source,80),cleanText(b.event_type,80),JSON.stringify(b.payload||{}),cleanText(b.error_message,2000),syncFailTenantId]));
     res.json({ok:true});
   });
   app.get('/api/growth/sync-failures', async (req, res) => {
     if (!rqa(req, res)) return;
-    const r = await pool.query('SELECT * FROM growth_sync_failures ORDER BY created_at DESC LIMIT 100');
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query('SELECT * FROM growth_sync_failures ORDER BY created_at DESC LIMIT 100'));
     res.json({ok:true,failures:r.rows});
   });
 
@@ -1786,21 +1789,26 @@ export function registerPhaseRoutes(app, pool) {
   app.post('/api/growth/campaign-plans', async (req, res) => {
     if (!rqa(req, res)) return;
     const b = req.body || {};
-    const r = await pool.query(
-      `INSERT INTO growth_campaign_plans(plan_id,store_id,campaign_id,title,channel,voucher_template_id,target_audience,coupon_value_fen,budget_fen,status,planned_start,planned_end,created_by,source_template_id,recommended_poster_id)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-       ON CONFLICT(plan_id) DO UPDATE SET title=EXCLUDED.title,status=EXCLUDED.status,channel=EXCLUDED.channel,target_audience=EXCLUDED.target_audience,coupon_value_fen=EXCLUDED.coupon_value_fen,budget_fen=EXCLUDED.budget_fen,source_template_id=EXCLUDED.source_template_id,recommended_poster_id=EXCLUDED.recommended_poster_id,updated_at=NOW() RETURNING *`,
-      [cleanText(b.plan_id,128),cleanText(b.store_id,128),cleanText(b.campaign_id,128),cleanText(b.title,500),
-       cleanText(b.channel,80),cleanText(b.voucher_template_id,128),cleanText(b.target_audience||'all',200),
-       Math.max(0,Math.floor(Number(b.coupon_value_fen)||0)),Math.max(0,Math.floor(Number(b.budget_fen)||0)),cleanText(b.status||'draft',40),
-       b.planned_start?parseOccurredAt(b.planned_start):null,b.planned_end?parseOccurredAt(b.planned_end):null,
-       cleanText(b.created_by||'admin',80),
-       b.source_template_id?Number(b.source_template_id):null,
-       b.recommended_poster_id?Number(b.recommended_poster_id):null]
-    );
-    if (b.source_template_id) {
-      pool.query('UPDATE marketing_templates SET use_count = use_count + 1 WHERE id = $1', [Number(b.source_template_id)]).catch(() => {});
-    }
+    const cpTenantId = getPhaseApiTenantId(req);
+    const r = await tenantContext.run(cpTenantId, async () => {
+      const r = await pool.query(
+        `INSERT INTO growth_campaign_plans(plan_id,store_id,campaign_id,title,channel,voucher_template_id,target_audience,coupon_value_fen,budget_fen,status,planned_start,planned_end,created_by,source_template_id,recommended_poster_id,tenant_id)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         ON CONFLICT(plan_id, tenant_id) DO UPDATE SET title=EXCLUDED.title,status=EXCLUDED.status,channel=EXCLUDED.channel,target_audience=EXCLUDED.target_audience,coupon_value_fen=EXCLUDED.coupon_value_fen,budget_fen=EXCLUDED.budget_fen,source_template_id=EXCLUDED.source_template_id,recommended_poster_id=EXCLUDED.recommended_poster_id,updated_at=NOW() RETURNING *`,
+        [cleanText(b.plan_id,128),cleanText(b.store_id,128),cleanText(b.campaign_id,128),cleanText(b.title,500),
+         cleanText(b.channel,80),cleanText(b.voucher_template_id,128),cleanText(b.target_audience||'all',200),
+         Math.max(0,Math.floor(Number(b.coupon_value_fen)||0)),Math.max(0,Math.floor(Number(b.budget_fen)||0)),cleanText(b.status||'draft',40),
+         b.planned_start?parseOccurredAt(b.planned_start):null,b.planned_end?parseOccurredAt(b.planned_end):null,
+         cleanText(b.created_by||'admin',80),
+         b.source_template_id?Number(b.source_template_id):null,
+         b.recommended_poster_id?Number(b.recommended_poster_id):null,
+         cpTenantId]
+      );
+      if (b.source_template_id) {
+        pool.query('UPDATE marketing_templates SET use_count = use_count + 1 WHERE id = $1', [Number(b.source_template_id)]).catch(() => {});
+      }
+      return r;
+    });
     res.json({ok:true,plan:r.rows[0]});
   });
 
@@ -1808,7 +1816,7 @@ export function registerPhaseRoutes(app, pool) {
     if (!rqa(req, res)) return;
     const sid = cleanText(req.query.store_id||'',128);
     const st = cleanText(req.query.status||'',40);
-    const r = await pool.query(`SELECT * FROM growth_campaign_plans WHERE ($1='' OR store_id=$1) AND ($2='' OR status=$2) ORDER BY created_at DESC LIMIT 200`,[sid,st]);
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(`SELECT * FROM growth_campaign_plans WHERE ($1='' OR store_id=$1) AND ($2='' OR status=$2) ORDER BY created_at DESC LIMIT 200`,[sid,st]));
     res.json({ok:true,plans:r.rows});
   });
 
@@ -1841,11 +1849,13 @@ export function registerPhaseRoutes(app, pool) {
     if (!['draft','active','completed','cancelled'].includes(status)) {
       return res.status(400).json({ ok: false, error: 'invalid_status' });
     }
+    const tenantId = getPhaseApiTenantId(req);
+    const { notFound, plan, execution } = await tenantContext.run(tenantId, async () => {
     const before = await pool.query(
       `SELECT * FROM growth_campaign_plans WHERE (plan_id=$1 OR campaign_id=$1) LIMIT 1`,
       [id]
     );
-    if (!before.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
+    if (!before.rows.length) return { notFound: true };
     const r = await pool.query(
       `UPDATE growth_campaign_plans SET status=$1, updated_at=NOW() WHERE (plan_id=$2 OR campaign_id=$2) RETURNING *`,
       [status, id]
@@ -1882,7 +1892,7 @@ export function registerPhaseRoutes(app, pool) {
           `活动 ${previous.title || previous.campaign_id || previous.plan_id || id} 已手动激活`,
           JSON.stringify(payload),
           auth.user?.username || previous.created_by || 'admin',
-          getPhaseApiTenantId(req)
+          tenantId
         ]
       );
       const actionRow = {
@@ -1899,6 +1909,9 @@ export function registerPhaseRoutes(app, pool) {
         role: auth.user?.role || 'admin'
       }, {}, '手动激活活动');
     }
+    return { plan, execution };
+    });
+    if (notFound) return res.status(404).json({ ok: false, error: 'not_found' });
     res.json({ ok: true, plan, execution });
   });
 
@@ -1911,13 +1924,13 @@ export function registerPhaseRoutes(app, pool) {
   app.get('/api/growth/store-rankings', async (req, res) => {
     if (!rqa(req, res)) return;
     const days = Math.min(Math.max(Number(req.query.days)||7,1),90);
-    const r = await pool.query(
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(
       `SELECT dm.store_id,SUM(dm.scan_count)::int scan_count,SUM(dm.authorized_count)::int auth_count,
               SUM(dm.coupon_issued_count)::int issued_count,SUM(dm.coupon_redeemed_count)::int redeemed_count,
               SUM(dm.payment_count)::int payment_count,SUM(dm.revenue_fen)::int revenue_fen,
               COUNT(DISTINCT dm.campaign_id)::int active_campaigns
        FROM growth_daily_metrics dm WHERE dm.metric_date>=CURRENT_DATE-($1::int||' days')::interval
-       GROUP BY dm.store_id ORDER BY revenue_fen DESC,scan_count DESC LIMIT 200`,[days]);
+       GROUP BY dm.store_id ORDER BY revenue_fen DESC,scan_count DESC LIMIT 200`,[days]));
     res.json({ok:true,rankings:r.rows.map((row,i)=>({rank:i+1,...row}))});
   });
 
@@ -1925,15 +1938,17 @@ export function registerPhaseRoutes(app, pool) {
   app.post('/api/growth/content-calendar', async (req, res) => {
     if (!rqa(req, res)) return;
     const b = req.body || {};
-    const r = await pool.query(
-      `INSERT INTO growth_content_calendar(item_id,store_id,channel,publish_date,title,content_brief,copy_text,image_url,campaign_id,qr_scene,status,assignee_username)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       ON CONFLICT(item_id) DO UPDATE SET title=EXCLUDED.title,copy_text=EXCLUDED.copy_text,status=EXCLUDED.status,updated_at=NOW() RETURNING *`,
+    const ccTenantId = getPhaseApiTenantId(req);
+    const r = await tenantContext.run(ccTenantId, () => pool.query(
+      `INSERT INTO growth_content_calendar(item_id,store_id,channel,publish_date,title,content_brief,copy_text,image_url,campaign_id,qr_scene,status,assignee_username,tenant_id)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT(item_id, tenant_id) DO UPDATE SET title=EXCLUDED.title,copy_text=EXCLUDED.copy_text,status=EXCLUDED.status,updated_at=NOW() RETURNING *`,
       [cleanText(b.item_id,128),cleanText(b.store_id,128),cleanText(b.channel,80),
        b.publish_date?b.publish_date.slice(0,10):new Date().toISOString().slice(0,10),cleanText(b.title,500),
        cleanText(b.content_brief,2000),cleanText(b.copy_text,4000),cleanText(b.image_url,1000),
-       cleanText(b.campaign_id,128),cleanText(b.qr_scene,255),cleanText(b.status||'draft',40),cleanText(b.assignee_username,128)]
-    );
+       cleanText(b.campaign_id,128),cleanText(b.qr_scene,255),cleanText(b.status||'draft',40),cleanText(b.assignee_username,128),
+       ccTenantId]
+    ));
     res.json({ok:true,item:r.rows[0]});
   });
 
@@ -1941,27 +1956,27 @@ export function registerPhaseRoutes(app, pool) {
     if (!rqa(req, res)) return;
     const sid = cleanText(req.query.store_id||'',128);
     const ch = cleanText(req.query.channel||'',80);
-    const r = await pool.query(`SELECT * FROM growth_content_calendar WHERE ($1='' OR store_id=$1) AND ($2='' OR channel=$2) ORDER BY publish_date DESC LIMIT 300`,[sid,ch]);
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(`SELECT * FROM growth_content_calendar WHERE ($1='' OR store_id=$1) AND ($2='' OR channel=$2) ORDER BY publish_date DESC LIMIT 300`,[sid,ch]));
     res.json({ok:true,items:r.rows});
   });
 
   app.get('/api/growth/content-calendar/upcoming', async (req, res) => {
     if (!rqa(req, res)) return;
     const sid = cleanText(req.query.store_id||'',128);
-    const r = await pool.query(`SELECT * FROM growth_content_calendar WHERE publish_date>=CURRENT_DATE AND ($1='' OR store_id=$1) ORDER BY publish_date ASC LIMIT 30`,[sid]);
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(`SELECT * FROM growth_content_calendar WHERE publish_date>=CURRENT_DATE AND ($1='' OR store_id=$1) ORDER BY publish_date ASC LIMIT 30`,[sid]));
     res.json({ok:true,items:r.rows});
   });
 
   app.get('/api/growth/channel-effects', async (req, res) => {
     if (!rqa(req, res)) return;
     const days = Math.min(Math.max(Number(req.query.days)||30,1),365);
-    const r = await pool.query(
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(
       `SELECT gc.channel,COUNT(*)::int total_items,
               COUNT(*) FILTER(WHERE gc.status='published')::int published,
               SUM(gc.result_scan_count)::int total_scans,
               SUM(gc.result_revenue_fen)::int total_revenue_fen
        FROM growth_content_calendar gc WHERE gc.publish_date>=CURRENT_DATE-($1::int||' days')::interval
-       GROUP BY gc.channel ORDER BY total_revenue_fen DESC`,[days]);
+       GROUP BY gc.channel ORDER BY total_revenue_fen DESC`,[days]));
     res.json({ok:true,effects:r.rows});
   });
 
@@ -1976,6 +1991,7 @@ export function registerPhaseRoutes(app, pool) {
     const storeId = cleanText(b.store_id || '', 128);
     let ordersUpserted = 0, itemsUpserted = 0;
 
+    return await tenantContext.run(getPhaseApiTenantId(req), async () => {
     if (orders.length) {
       for (const o of orders) {
             const phone = parseKeruyunPhone(o.phone || o.member_phone || '');
@@ -2040,6 +2056,7 @@ export function registerPhaseRoutes(app, pool) {
 
     const linked = await linkPosOrdersToCustomers(pool);
     res.json({ok:true, orders_upserted: ordersUpserted, items_upserted: itemsUpserted, customers_linked: linked});
+    });
   });
 
   app.get('/api/growth/pos-orders', async (req, res) => {
@@ -2088,7 +2105,7 @@ export function registerPhaseRoutes(app, pool) {
     if (!rqa(req, res)) return;
     const sid = cleanText(req.query.store_id || '', 128);
     const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
-    const r = await pool.query(`
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(`
       SELECT po.phone, gc.id AS customer_id, gc.openid, gcp.lifecycle_stage, gcp.price_sensitivity,
              COUNT(*)::int AS order_count, SUM(po.amount_after_discount) AS total_revenue,
              MIN(po.biz_date) AS first_order, MAX(po.biz_date) AS last_order
@@ -2099,13 +2116,13 @@ export function registerPhaseRoutes(app, pool) {
         AND ($2='' OR po.store_id=$2)
       GROUP BY po.phone, gc.id, gc.openid, gcp.lifecycle_stage, gcp.price_sensitivity
       ORDER BY total_revenue DESC NULLS LAST LIMIT 200
-    `, [days, sid]);
+    `, [days, sid]));
     res.json({ok:true, linked: r.rows});
   });
 
   app.post('/api/growth/pos-link-customers', async (req, res) => {
     if (!rqa(req, res)) return;
-    const linked = await linkPosOrdersToCustomers(pool);
+    const linked = await tenantContext.run(getPhaseApiTenantId(req), () => linkPosOrdersToCustomers(pool));
     res.json({ok:true, customers_linked: linked});
   });
 
@@ -2120,6 +2137,7 @@ export function registerPhaseRoutes(app, pool) {
     const profCond = sid ? `store_id = $1` : `$1::text = ''`;
     const statsParams = [sid, days];
 
+    return await tenantContext.run(getPhaseApiTenantId(req), async () => {
     const [
       summaryR, storeR, hourR, payR, dishR, repeatR
     ] = await Promise.all([
@@ -2350,6 +2368,7 @@ export function registerPhaseRoutes(app, pool) {
       byOrderSource: byOrderSourceR.rows,
       byDept: byDeptR.rows
     });
+    });
   });
 
   // ── Phase 9: Feishu bitable sync config for POS orders ──
@@ -2573,21 +2592,24 @@ export function registerPhaseRoutes(app, pool) {
     const storeCode = cleanText(req.query.store_code || '', 128);
     const status = cleanText(req.query.status || '', 40);
     const tenantId = getPhaseApiTenantId(req);
-    const r = await pool.query(
-      `SELECT * FROM ab_test_tasks
-        WHERE tenant_id = $3
-          AND ($1 = '' OR store_code = $1)
-          AND ($2 = '' OR status = $2)
-        ORDER BY created_at DESC
-        LIMIT 100`,
-      [storeCode, status, tenantId]
-    );
-    const tasks = [];
-    for (const row of r.rows || []) {
-      const outcome = await computeAbTestOutcome(pool, row, tenantId).catch(() => null);
-      const daily = await pool.query(`SELECT * FROM ab_test_results WHERE test_id = $1 AND tenant_id = $2 ORDER BY result_date ASC, variant ASC`, [row.id, tenantId]).catch(() => ({ rows: [] }));
-      tasks.push({ ...row, metrics: outcome?.byVariant || {}, results: daily.rows || [] });
-    }
+    const tasks = await tenantContext.run(tenantId, async () => {
+      const r = await pool.query(
+        `SELECT * FROM ab_test_tasks
+          WHERE tenant_id = $3
+            AND ($1 = '' OR store_code = $1)
+            AND ($2 = '' OR status = $2)
+          ORDER BY created_at DESC
+          LIMIT 100`,
+        [storeCode, status, tenantId]
+      );
+      const tasks = [];
+      for (const row of r.rows || []) {
+        const outcome = await computeAbTestOutcome(pool, row, tenantId).catch(() => null);
+        const daily = await pool.query(`SELECT * FROM ab_test_results WHERE test_id = $1 AND tenant_id = $2 ORDER BY result_date ASC, variant ASC`, [row.id, tenantId]).catch(() => ({ rows: [] }));
+        tasks.push({ ...row, metrics: outcome?.byVariant || {}, results: daily.rows || [] });
+      }
+      return tasks;
+    });
     return res.json({ ok: true, tasks });
   });
 
@@ -2692,6 +2714,7 @@ export function registerPhaseRoutes(app, pool) {
     const id = Number(req.params.id || 0);
     if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
     const tenantId = getPhaseApiTenantId(req);
+    return await tenantContext.run(tenantId, async () => {
     const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tenantId]);
     if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
     const task = taskRes.rows[0];
@@ -2729,6 +2752,7 @@ export function registerPhaseRoutes(app, pool) {
     const evaluated = await evaluateAbTask(pool, task, tenantId);
     const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
     return res.json({ ok: true, task: latest.rows[0], evaluated });
+    });
   });
 
   app.post('/api/growth/ab-tests/:id/refresh', async (req, res) => {
@@ -2737,6 +2761,7 @@ export function registerPhaseRoutes(app, pool) {
     const id = Number(req.params.id || 0);
     if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
     const tenantId = getPhaseApiTenantId(req);
+    return await tenantContext.run(tenantId, async () => {
     const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tenantId]);
     if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
     const task = taskRes.rows[0];
@@ -2746,6 +2771,7 @@ export function registerPhaseRoutes(app, pool) {
     const evaluated = (manualInput || safeDateOnly(task.end_date) <= todayShanghaiYmd()) ? await evaluateAbTask(pool, task, tenantId) : null;
     const latest = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
     return res.json({ ok: true, task: latest.rows[0], refreshed, evaluated });
+    });
   });
 
   // ── 闭环关键回路：A/B 胜出变体 → 一键提升为「自动营销」规则 ──
@@ -2757,6 +2783,7 @@ export function registerPhaseRoutes(app, pool) {
     const id = Number(req.params.id || 0);
     if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
     const tenantId = getPhaseApiTenantId(req);
+    return await tenantContext.run(tenantId, async () => {
     const taskRes = await pool.query(`SELECT * FROM ab_test_tasks WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tenantId]);
     if (!taskRes.rows?.length) return res.status(404).json({ ok: false, error: 'task_not_found' });
     const task = taskRes.rows[0];
@@ -2767,20 +2794,21 @@ export function registerPhaseRoutes(app, pool) {
       return res.status(status).json(result);
     }
     return res.json(result);
+    });
   });
 
   app.get('/api/growth/learnings', async (req, res) => {
     if (!authPhaseApi(req).ok) return res.status(401).json({ ok: false, error: 'unauthorized' });
     const storeCode = cleanText(req.query.store_code || '', 128);
     const channel = cleanText(req.query.channel || '', 80);
-    const r = await pool.query(
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(
       `SELECT * FROM growth_learnings
         WHERE ($1 = '' OR store_code = $1)
           AND ($2 = '' OR channel = $2)
         ORDER BY created_at DESC
         LIMIT 200`,
       [storeCode, channel]
-    );
+    ));
     return res.json({ ok: true, learnings: r.rows });
   });
 
@@ -2795,11 +2823,11 @@ export function registerPhaseRoutes(app, pool) {
     if (!channel || !variable || !winningValue) {
       return res.status(400).json({ ok: false, error: 'missing channel, variable, or winning_value' });
     }
-    const r = await pool.query(
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(
       `INSERT INTO growth_learnings (
          source_type, source_id, store_code, channel, scene, audience_tag, variable,
-         winning_value, losing_value, effect_desc, sample_size, confidence, valid_until
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, tenant_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT DO NOTHING
        RETURNING *`,
       [
@@ -2815,9 +2843,10 @@ export function registerPhaseRoutes(app, pool) {
         b.effect_desc ? cleanText(b.effect_desc, 255) : null,
         Math.max(0, Math.floor(Number(b.sample_size) || 0)),
         cleanText(b.confidence || 'medium', 20),
-        b.valid_until ? safeDateOnly(b.valid_until) : ymdAddDays(todayShanghaiYmd(), 90)
+        b.valid_until ? safeDateOnly(b.valid_until) : ymdAddDays(todayShanghaiYmd(), 90),
+        getPhaseApiTenantId(req)
       ]
-    );
+    ));
     return res.json({ ok: true, learning: r.rows[0] || null });
   });
 
@@ -2870,21 +2899,24 @@ export function registerPhaseRoutes(app, pool) {
       ['manual','seed_time_03','51866138','xiaohongshu',null,null,'发帖时间','周四晚20:00（周末预热）','周一早09:00','互动量+38%',1650,'high'],
     ];
     let inserted = 0;
-    for (const [srcType, srcId, storeCode, channel, scene, audienceTag, variable,
-                 winVal, loseVal, effectDesc, sampleSize, confidence] of seeds) {
-      await pool.query(
-        `INSERT INTO growth_learnings (
-           source_type, source_id, store_code, channel, scene, audience_tag, variable,
-           winning_value, losing_value, effect_desc, sample_size, confidence, valid_until
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-         ON CONFLICT DO NOTHING`,
-        [srcType, srcId, storeCode, channel, scene, audienceTag, variable,
-         winVal, loseVal, effectDesc, sampleSize, confidence, validUntil]
-      ).catch(() => {});
-      inserted++;
-    }
-    const count = await pool.query(`SELECT COUNT(*)::int AS cnt FROM growth_learnings`);
-    return res.json({ ok: true, seeded: inserted, total: count.rows[0]?.cnt || 0 });
+    const total = await tenantContext.run(getPhaseApiTenantId(req), async () => {
+      for (const [srcType, srcId, storeCode, channel, scene, audienceTag, variable,
+                   winVal, loseVal, effectDesc, sampleSize, confidence] of seeds) {
+        await pool.query(
+          `INSERT INTO growth_learnings (
+             source_type, source_id, store_code, channel, scene, audience_tag, variable,
+             winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, tenant_id
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+           ON CONFLICT DO NOTHING`,
+          [srcType, srcId, storeCode, channel, scene, audienceTag, variable,
+           winVal, loseVal, effectDesc, sampleSize, confidence, validUntil, resolveTenantIdDefault()]
+        ).catch(() => {});
+        inserted++;
+      }
+      const count = await pool.query(`SELECT COUNT(*)::int AS cnt FROM growth_learnings`);
+      return count.rows[0]?.cnt || 0;
+    });
+    return res.json({ ok: true, seeded: inserted, total });
   });
 
   // ── Phase 5: content system ───────────────────────────────────────
@@ -2909,8 +2941,12 @@ export function registerPhaseRoutes(app, pool) {
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error || 'unauthorized' });
     const storeCode = cleanText(req.body?.store_code || req.query?.store_code || '51866138', 128);
     const weekStart = safeDateOnly(req.body?.week_start || req.query?.week_start || todayShanghaiYmd());
-    const suggestion = await generateWeeklyContentSuggestion(pool, storeCode, weekStart, auth.user?.username || 'system', getPhaseApiTenantId(req));
-    const pushed = await pushWeeklySuggestionToFeishu(pool, suggestion).catch(() => ({ pushed: 0 }));
+    const tenantId = getPhaseApiTenantId(req);
+    const { suggestion, pushed } = await tenantContext.run(tenantId, async () => {
+      const suggestion = await generateWeeklyContentSuggestion(pool, storeCode, weekStart, auth.user?.username || 'system', tenantId);
+      const pushed = await pushWeeklySuggestionToFeishu(pool, suggestion).catch(() => ({ pushed: 0 }));
+      return { suggestion, pushed };
+    });
     return res.json({ ok: true, suggestion, pushed });
   });
 
@@ -2934,6 +2970,7 @@ export function registerPhaseRoutes(app, pool) {
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error || 'unauthorized' });
     const b = req.body || {};
     const contentKey = cleanText(b.content_key || `cp_${Date.now()}`, 255);
+    const perf = await tenantContext.run(getPhaseApiTenantId(req), async () => {
     const row = await pool.query(
       `INSERT INTO content_performance (
          content_key, suggestion_id, store_code, channel, scene, audience_tag, variable,
@@ -2982,8 +3019,8 @@ export function registerPhaseRoutes(app, pool) {
       await pool.query(
         `INSERT INTO growth_learnings (
            source_type, source_id, store_code, channel, scene, audience_tag, variable,
-           winning_value, losing_value, effect_desc, sample_size, confidence, valid_until
-         ) VALUES ('campaign',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+           winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, tenant_id
+         ) VALUES ('campaign',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           String(perf.id),
           cleanText(perf.store_code, 128),
@@ -2996,10 +3033,13 @@ export function registerPhaseRoutes(app, pool) {
           cleanText(`核销率${effectPct}%`, 255),
           impressions,
           impressions >= 100 ? 'high' : 'medium',
-          ymdAddDays(todayShanghaiYmd(), 90)
+          ymdAddDays(todayShanghaiYmd(), 90),
+          getPhaseApiTenantId(req)
         ]
       ).catch(() => {});
     }
+    return perf;
+    });
     return res.json({ ok: true, item: perf });
   });
 
@@ -3023,6 +3063,7 @@ export function registerPhaseRoutes(app, pool) {
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error || 'unauthorized' });
     const b = req.body || {};
     const contentKey = cleanText(b.content_key || `cp_${Date.now()}`, 255);
+    const perf = await tenantContext.run(getPhaseApiTenantId(req), async () => {
     const row = await pool.query(
       `INSERT INTO content_performance (
          content_key, suggestion_id, content_date, store_code, store_id, channel, platform,
@@ -3067,8 +3108,8 @@ export function registerPhaseRoutes(app, pool) {
       await pool.query(
         `INSERT INTO growth_learnings (
            source_type, source_id, store_code, channel, scene, audience_tag, variable,
-           winning_value, losing_value, effect_desc, sample_size, confidence, valid_until
-         ) VALUES ('campaign',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+           winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, tenant_id
+         ) VALUES ('campaign',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           String(perf.id),
           cleanText(perf.store_code, 128),
@@ -3081,10 +3122,13 @@ export function registerPhaseRoutes(app, pool) {
           cleanText(`核销率${effectPct}%`, 255),
           impressions,
           impressions >= 100 ? 'high' : 'medium',
-          ymdAddDays(todayShanghaiYmd(), 90)
+          ymdAddDays(todayShanghaiYmd(), 90),
+          getPhaseApiTenantId(req)
         ]
       ).catch(() => {});
     }
+    return perf;
+    });
     return res.json({ ok: true, item: perf });
   });
 
@@ -3095,7 +3139,7 @@ export function registerPhaseRoutes(app, pool) {
     const riskLevel = cleanText(req.query.risk_level || '', 20);
     const predDate = safeDateOnly(req.query.prediction_date || '');
     const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
-    const r = await pool.query(
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(
       `SELECT * FROM growth_churn_predictions
         WHERE ($1 = '' OR store_code = $1)
           AND ($2 = '' OR risk_level = $2)
@@ -3103,7 +3147,7 @@ export function registerPhaseRoutes(app, pool) {
         ORDER BY prediction_date DESC, churn_score ASC
         LIMIT $4`,
       [storeCode, riskLevel, predDate, limit]
-    );
+    ));
     const summary = { total: r.rows.length, high: 0, medium: 0, low: 0 };
     r.rows.forEach(x => { if (summary[x.risk_level] !== undefined) summary[x.risk_level]++; });
     return res.json({ ok: true, predictions: r.rows, summary });
@@ -3113,7 +3157,7 @@ export function registerPhaseRoutes(app, pool) {
     const auth = authPhaseApi(req);
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error });
     const storeCode = cleanText(req.body?.store_code || req.query?.store_code || '', 128);
-    const result = await computeChurnScores(pool, storeCode, getPhaseApiTenantId(req));
+    const result = await tenantContext.run(getPhaseApiTenantId(req), () => computeChurnScores(pool, storeCode, getPhaseApiTenantId(req)));
     return res.json({ ok: true, ...result });
   });
 
@@ -3122,7 +3166,7 @@ export function registerPhaseRoutes(app, pool) {
     if (!authPhaseApi(req).ok) return res.status(401).json({ ok: false, error: 'unauthorized' });
     const storeCode = cleanText(req.query.store_code || '', 128);
     const reportMonth = safeMonthOnly(req.query.report_month || '');
-    const r = await pool.query(
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(
       `SELECT id, report_month, store_code, generated_by, created_at,
               report_json->'summary' AS summary,
               report_json->'recommendations' AS recommendations
@@ -3132,7 +3176,7 @@ export function registerPhaseRoutes(app, pool) {
         ORDER BY report_month DESC, created_at DESC
         LIMIT 50`,
       [storeCode, reportMonth]
-    );
+    ));
     return res.json({ ok: true, reports: r.rows });
   });
 
@@ -3141,12 +3185,12 @@ export function registerPhaseRoutes(app, pool) {
     const month = safeMonthOnly(req.params.month || '');
     const storeCode = cleanText(req.query.store_code || '', 128);
     if (!month) return res.status(400).json({ ok: false, error: 'invalid_month' });
-    const r = await pool.query(
+    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(
       `SELECT * FROM growth_menu_health_reports
         WHERE report_month = $1 AND ($2 = '' OR store_code = $2)
         LIMIT 10`,
       [month, storeCode]
-    );
+    ));
     return res.json({ ok: true, reports: r.rows });
   });
 
@@ -3155,7 +3199,8 @@ export function registerPhaseRoutes(app, pool) {
     if (!auth.ok) return res.status(auth.status || 401).json({ ok: false, error: auth.error });
     const storeCode = cleanText(req.body?.store_code || req.query?.store_code || '', 128);
     const reportMonth = safeMonthOnly(req.body?.report_month || req.query?.report_month || todayShanghaiYmd().slice(0, 7));
-    const report = await generateMenuHealthReport(pool, storeCode, reportMonth, getPhaseApiTenantId(req));
+    const tenantId = getPhaseApiTenantId(req);
+    const report = await tenantContext.run(tenantId, () => generateMenuHealthReport(pool, storeCode, reportMonth, tenantId));
     return res.json({ ok: true, report });
   });
 
@@ -3165,21 +3210,24 @@ export function registerPhaseRoutes(app, pool) {
     const storeCode = cleanText(req.query.store_code || '', 128);
     const status = cleanText(req.query.status || '', 40);
     const priceTestsTenantId = getPhaseApiTenantId(req);
-    const r = await pool.query(
-      `SELECT * FROM ab_test_tasks
-        WHERE test_type IN ('price_test', 'price_bundle')
-          AND tenant_id = $3
-          AND ($1 = '' OR store_code = $1)
-          AND ($2 = '' OR status = $2)
-        ORDER BY created_at DESC
-        LIMIT 100`,
-      [storeCode, status, priceTestsTenantId]
-    );
-    const tasks = [];
-    for (const row of r.rows || []) {
-      const outcome = await computeAbTestOutcome(pool, row, priceTestsTenantId).catch(() => null);
-      tasks.push({ ...row, metrics: outcome?.byVariant || {} });
-    }
+    const tasks = await tenantContext.run(priceTestsTenantId, async () => {
+      const r = await pool.query(
+        `SELECT * FROM ab_test_tasks
+          WHERE test_type IN ('price_test', 'price_bundle')
+            AND tenant_id = $3
+            AND ($1 = '' OR store_code = $1)
+            AND ($2 = '' OR status = $2)
+          ORDER BY created_at DESC
+          LIMIT 100`,
+        [storeCode, status, priceTestsTenantId]
+      );
+      const tasks = [];
+      for (const row of r.rows || []) {
+        const outcome = await computeAbTestOutcome(pool, row, priceTestsTenantId).catch(() => null);
+        tasks.push({ ...row, metrics: outcome?.byVariant || {} });
+      }
+      return tasks;
+    });
     return res.json({ ok: true, tasks });
   });
 
@@ -3227,23 +3275,26 @@ export function registerPhaseRoutes(app, pool) {
     setInterval(async () => {
       const nowYmd = todayShanghaiYmd();
       try {
-        const running = await pool.query(`SELECT * FROM ab_test_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 20`);
+        // 跨租户扫描任务列表，系统级定时任务无单一租户上下文，暂用default兜底
+        const running = await tenantContext.run('default', () => pool.query(`SELECT * FROM ab_test_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 20`));
         for (const task of running.rows || []) {
           const taskTenantId = await resolveTenantIdForStore(pool, task.store_code);
-          // 手动录入类(绑定模式 或 任何模板测试)跳过 POS 归因刷新；仅旧的 price_test 走自动归因。
-          const manualInput = !!cleanText(task.target_rule_key, 200) || !!(task.metrics_schema && typeof task.metrics_schema === 'object');
-          if (!manualInput) await refreshAbTestResults(pool, task, taskTenantId).catch(() => null);
-          if (safeDateOnly(task.end_date) <= nowYmd) {
-            const evaluated = await evaluateAbTask(pool, task, taskTenantId).catch(() => null);
-            const evTask = evaluated?.task;
-            // 测试期已满+判出明确赢家+尚未采用 → 自动写回正式规则并生效，闭环不再需要人工点击。
-            if (evaluated?.finalized && evTask && evTask.status === 'completed' && !evTask.promoted_rule_key) {
-              const w = String(evTask.winner || '').toUpperCase();
-              if (w === 'A' || w === 'B') {
-                await promoteAbWinner(pool, evTask, 'auto', taskTenantId).catch((e) => console.warn('[growth-phase4] ab auto-promote failed:', e?.message));
+          await tenantContext.run(taskTenantId, async () => {
+            // 手动录入类(绑定模式 或 任何模板测试)跳过 POS 归因刷新；仅旧的 price_test 走自动归因。
+            const manualInput = !!cleanText(task.target_rule_key, 200) || !!(task.metrics_schema && typeof task.metrics_schema === 'object');
+            if (!manualInput) await refreshAbTestResults(pool, task, taskTenantId).catch(() => null);
+            if (safeDateOnly(task.end_date) <= nowYmd) {
+              const evaluated = await evaluateAbTask(pool, task, taskTenantId).catch(() => null);
+              const evTask = evaluated?.task;
+              // 测试期已满+判出明确赢家+尚未采用 → 自动写回正式规则并生效，闭环不再需要人工点击。
+              if (evaluated?.finalized && evTask && evTask.status === 'completed' && !evTask.promoted_rule_key) {
+                const w = String(evTask.winner || '').toUpperCase();
+                if (w === 'A' || w === 'B') {
+                  await promoteAbWinner(pool, evTask, 'auto', taskTenantId).catch((e) => console.warn('[growth-phase4] ab auto-promote failed:', e?.message));
+                }
               }
             }
-          }
+          });
         }
       } catch (e) {
         console.warn('[growth-phase4] ab cron failed:', e?.message);
@@ -3257,8 +3308,10 @@ export function registerPhaseRoutes(app, pool) {
           const stores = await pool.query(`SELECT DISTINCT store_code FROM pos_order_items WHERE biz_date >= CURRENT_DATE - INTERVAL '30 days' AND store_code IS NOT NULL AND store_code <> '' LIMIT 20`);
           for (const row of stores.rows || []) {
             const storeTenantId = await resolveTenantIdForStore(pool, row.store_code);
-            const suggestion = await generateWeeklyContentSuggestion(pool, cleanText(row.store_code, 128), nowYmd, 'weekly_cron', storeTenantId).catch(() => null);
-            if (suggestion) await pushWeeklySuggestionToFeishu(pool, suggestion).catch(() => null);
+            await tenantContext.run(storeTenantId, async () => {
+              const suggestion = await generateWeeklyContentSuggestion(pool, cleanText(row.store_code, 128), nowYmd, 'weekly_cron', storeTenantId).catch(() => null);
+              if (suggestion) await pushWeeklySuggestionToFeishu(pool, suggestion).catch(() => null);
+            });
           }
         }
       } catch (e) {
@@ -3271,7 +3324,8 @@ export function registerPhaseRoutes(app, pool) {
         const hour = now.getUTCHours();
         if (weekday === 1 && hour >= 18 && __growthChurnCronLast !== nowYmd) {
           __growthChurnCronLast = nowYmd;
-          const storeRows = await pool.query(
+          // 跨租户扫描门店列表，系统级定时任务无单一租户上下文，暂用default兜底
+          const storeRows = await tenantContext.run('default', () => pool.query(
             `SELECT DISTINCT store_code FROM growth_churn_predictions
               WHERE prediction_date >= CURRENT_DATE - INTERVAL '30 days'
              UNION
@@ -3280,10 +3334,10 @@ export function registerPhaseRoutes(app, pool) {
                FULL JOIN growth_customers gc ON gc.id = gcp.customer_id
               WHERE COALESCE(gcp.store_id, gc.last_store_id, '') <> ''
               LIMIT 20`
-          );
+          ));
           for (const row of storeRows.rows || []) {
             const storeTenantId = await resolveTenantIdForStore(pool, row.store_code);
-            await computeChurnScores(pool, cleanText(row.store_code, 128), storeTenantId).catch(() => null);
+            await tenantContext.run(storeTenantId, () => computeChurnScores(pool, cleanText(row.store_code, 128), storeTenantId)).catch(() => null);
           }
           console.log(`[growth-phase7a] weekly churn scores computed for ${storeRows.rows.length} stores`);
         }
@@ -3306,7 +3360,7 @@ export function registerPhaseRoutes(app, pool) {
           );
           for (const row of storeRows.rows || []) {
             const storeTenantId = await resolveTenantIdForStore(pool, row.store_code);
-            await generateMenuHealthReport(pool, cleanText(row.store_code, 128), curMonth, storeTenantId).catch(() => null);
+            await tenantContext.run(storeTenantId, () => generateMenuHealthReport(pool, cleanText(row.store_code, 128), curMonth, storeTenantId)).catch(() => null);
           }
           console.log(`[growth-phase7b] monthly menu health reports generated for ${storeRows.rows.length} stores`);
         }
@@ -3356,12 +3410,15 @@ export function registerPhaseRoutes(app, pool) {
     } catch (e) {
       console.error('[pos-sync-cron] Failed:', e.message);
       try {
-        await pool.query(`INSERT INTO growth_sync_failures (source, event_type, payload, error_message) VALUES ($1,$2,$3,$4)`,
-          [POS_SYNC_CRON_KEY, 'daily_sync_failed', '{}', e.message || String(e)]);
-        await pool.query(`INSERT INTO growth_alerts (alert_key, alert_type, severity, title, message, suggested_action, status)
-          VALUES ($1,$2,$3,$4,$5,$6,'open')
-          ON CONFLICT (alert_key) DO UPDATE SET severity=EXCLUDED.severity, message=EXCLUDED.message, suggested_action=EXCLUDED.suggested_action, status='open', updated_at=NOW()`,
-          ['pos_sync_failed', 'pos_sync_failed', 'high', 'POS数据同步失败', '每日凌晨POS飞书同步失败：' + (e.message || String(e)).slice(0, 200), '检查飞书应用权限、表字段、网络连接；手动调 POST /api/growth/pos-feishu-sync 重试']);
+        // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
+        await tenantContext.run('default', async () => {
+          await pool.query(`INSERT INTO growth_sync_failures (source, event_type, payload, error_message, tenant_id) VALUES ($1,$2,$3,$4,'default')`,
+            [POS_SYNC_CRON_KEY, 'daily_sync_failed', '{}', e.message || String(e)]);
+          await pool.query(`INSERT INTO growth_alerts (alert_key, alert_type, severity, title, message, suggested_action, status, tenant_id)
+            VALUES ($1,$2,$3,$4,$5,$6,'open','default')
+            ON CONFLICT (alert_key, tenant_id) DO UPDATE SET severity=EXCLUDED.severity, message=EXCLUDED.message, suggested_action=EXCLUDED.suggested_action, status='open', updated_at=NOW()`,
+            ['pos_sync_failed', 'pos_sync_failed', 'high', 'POS数据同步失败', '每日凌晨POS飞书同步失败：' + (e.message || String(e)).slice(0, 200), '检查飞书应用权限、表字段、网络连接；手动调 POST /api/growth/pos-feishu-sync 重试']);
+        });
       } catch (_) {}
     }
   }, 60 * 1000);
