@@ -8,7 +8,7 @@ import { statfs } from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID, createDecipheriv, createHash } from 'crypto';
-import { tenantContext, resolveTenantIdDefault } from './utils/database.js';
+import { tenantContext, resolveTenantIdDefault, runWithBootstrapTenantContext } from './utils/database.js';
 import multer from 'multer';
 import https from 'https';
 import { execFileSync, execSync } from 'child_process';
@@ -504,9 +504,10 @@ async function ensureOpsTasksTable() {
         feedback_score int,
         feedback_text text,
         source varchar(60) not null default 'ops_agent',
+        tenant_id varchar(80) not null default 'default',
         created_at timestamp default current_timestamp,
         updated_at timestamp default current_timestamp,
-        constraint uq_ops_tasks_dedupe unique (dedupe_key)
+        constraint uq_ops_tasks_dedupe unique (dedupe_key, tenant_id)
       )`
     );
     await pool.query(`create index if not exists idx_ops_tasks_assignee_status on ops_tasks (assignee_username, status)`);
@@ -3522,7 +3523,13 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             await pool.query(
               `INSERT INTO users (username, password_hash, real_name, role, department, position, is_active, tenant_id)
                VALUES ($1, $2, $3, $4, $5, $6, true, $7)
-               ON CONFLICT (username) DO UPDATE SET password_hash = $2, real_name = $3, role = $4, department = $5, position = $6, is_active = true`,
+               ON CONFLICT (username, tenant_id) DO UPDATE
+               SET password_hash = EXCLUDED.password_hash,
+                   real_name = EXCLUDED.real_name,
+                   role = EXCLUDED.role,
+                   department = EXCLUDED.department,
+                   position = EXCLUDED.position,
+                   is_active = true`,
               [newUsername, hash, empName, nextEmp.role, nextEmp.department || '', nextEmp.position || '', req.tenantId || req.user?.tenant_id || 'default']
             );
             console.log('[approval/onboarding] users account created:', newUsername);
@@ -3536,9 +3543,20 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           }
           try {
             await pool.query(
-              `INSERT INTO feishu_users (username, name, store, role, registered, tenant_id)
-               VALUES ($1, $2, $3, $4, FALSE, $5)
-               ON CONFLICT (username) DO UPDATE SET name = $2, store = $3, role = $4`,
+              `WITH updated AS (
+                 UPDATE feishu_users
+                    SET name = $2,
+                        store = $3,
+                        role = $4,
+                        registered = FALSE,
+                        updated_at = NOW()
+                  WHERE username = $1
+                    AND tenant_id = $5
+                  RETURNING 1
+               )
+               INSERT INTO feishu_users (username, name, store, role, registered, tenant_id)
+               SELECT $1, $2, $3, $4, FALSE, $5
+               WHERE NOT EXISTS (SELECT 1 FROM updated)`,
               [newUsername, empName, nextEmp.store || '', nextEmp.role || '', req.tenantId || req.user?.tenant_id || 'default']
             );
             console.log('[approval/onboarding] feishu_users record created:', newUsername);
@@ -5151,14 +5169,14 @@ app.post('/api/admin/store-duty-bindings', authRequired, async (req, res) => {
           username, store, access_level, is_primary_store,
           can_receive_ops, can_receive_performance, can_receive_food_safety, can_receive_approval,
           can_handle_ops, can_handle_food_safety, can_approve_hrms, can_view_employees,
-          enabled, effective_from, effective_to, metadata, updated_at
+          enabled, effective_from, effective_to, metadata, updated_at, tenant_id
         ) VALUES (
           $1, $2, $3, $4,
           $5, $6, $7, $8,
           $9, $10, $11, $12,
-          $13, NULLIF($14,'')::timestamptz, NULLIF($15,'')::timestamptz, $16::jsonb, now()
+          $13, NULLIF($14,'')::timestamptz, NULLIF($15,'')::timestamptz, $16::jsonb, now(), $17
         )
-        ON CONFLICT (username, store) DO UPDATE SET
+        ON CONFLICT (username, store, tenant_id) DO UPDATE SET
           access_level = EXCLUDED.access_level,
           is_primary_store = EXCLUDED.is_primary_store,
           can_receive_ops = EXCLUDED.can_receive_ops,
@@ -5191,7 +5209,8 @@ app.post('/api/admin/store-duty-bindings', authRequired, async (req, res) => {
         body.enabled !== false,
         String(body.effective_from || '').trim(),
         String(body.effective_to || '').trim(),
-        JSON.stringify(metadata)
+        JSON.stringify(metadata),
+        req.tenantId || req.user?.tenant_id || 'default'
       ]
     );
     if (bool('is_primary_store')) {
@@ -5199,8 +5218,9 @@ app.post('/api/admin/store-duty-bindings', authRequired, async (req, res) => {
         `UPDATE store_duty_bindings
             SET is_primary_store = false, updated_at = now()
           WHERE lower(trim(username)) = lower(trim($1))
-            AND lower(trim(store)) <> lower(trim($2))`,
-        [username, store]
+            AND lower(trim(store)) <> lower(trim($2))
+            AND tenant_id = $3`,
+        [username, store, req.tenantId || req.user?.tenant_id || 'default']
       );
     }
     return res.json({ item: result.rows?.[0] || null });
@@ -6214,9 +6234,9 @@ async function dualWriteStateToDB(state) {
       await pool.query(
          `INSERT INTO employees (id, username, name, role, store, department, position, status,
             gender, phone, email, join_date, birthday, salary, password_hash, manager_username,
-            id_card_number, bank_card, extra_json, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-         ON CONFLICT (username) DO UPDATE SET
+            id_card_number, bank_card, extra_json, created_at, updated_at, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+         ON CONFLICT (username, tenant_id) DO UPDATE SET
            name=EXCLUDED.name, role=EXCLUDED.role, store=EXCLUDED.store,
            department=EXCLUDED.department, position=EXCLUDED.position, status=EXCLUDED.status,
            gender=EXCLUDED.gender, phone=EXCLUDED.phone, email=EXCLUDED.email,
@@ -6230,7 +6250,7 @@ async function dualWriteStateToDB(state) {
          String(salary || ''), String(password || ''), String(managerUsername || ''),
          String(idCardNumber || ''), String(bankCard || ''), JSON.stringify(rest),
          createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
-         new Date().toISOString()]
+         new Date().toISOString(), resolveTenantIdDefault()]
       );
     }
 
@@ -10272,10 +10292,10 @@ async function createOpsTaskIfAbsent(input) {
     `insert into ops_tasks (
       biz_date, store, brand, task_type, schedule_key, dedupe_key,
       title, instructions, checklist, required_photos,
-      assignee_username, assignee_role, due_at, source
+      assignee_username, assignee_role, due_at, source, tenant_id
     )
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14)
-    on conflict (dedupe_key) do nothing`,
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15)
+    on conflict (dedupe_key, tenant_id) do nothing`,
     [
       input.bizDate,
       input.store,
@@ -10290,7 +10310,8 @@ async function createOpsTaskIfAbsent(input) {
       input.assigneeUsername,
       normalizeOpsRole(input.assigneeRole),
       input.dueAt,
-      'ops_agent'
+      'ops_agent',
+      resolveTenantIdDefault()
     ]
   );
 }
@@ -10357,15 +10378,17 @@ function buildOpsFeedback(task, completedAt, photoCount, options) {
 let __OPS_TASK_SCHEDULER_STARTED = false;
 async function runOpsTaskSchedulerTick() {
   try {
-    await ensureOpsTasksTable();
-    const today = opsDateOnly(new Date());
-    await ensureOpsTasksForDate(today);
-    await pool.query(
-      `update ops_tasks
-       set status = 'overdue', updated_at = now()
-       where status = 'open'
-         and due_at < now()`
-    );
+    await runWithBootstrapTenantContext(async () => {
+      await ensureOpsTasksTable();
+      const today = opsDateOnly(new Date());
+      await ensureOpsTasksForDate(today);
+      await pool.query(
+        `update ops_tasks
+         set status = 'overdue', updated_at = now()
+         where status = 'open'
+           and due_at < now()`
+      );
+    });
   } catch (e) {
     console.error('[ops scheduler] tick failed:', e?.message || e);
   }
@@ -15515,9 +15538,9 @@ app.put('/api/state', authRequired, async (req, res) => {
           await pool.query(
             `INSERT INTO employees (id, username, name, role, store, department, position, status,
                gender, phone, email, join_date, birthday, salary, password_hash, manager_username,
-               id_card_number, bank_card, extra_json, created_at, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-             ON CONFLICT (username) DO UPDATE SET
+               id_card_number, bank_card, extra_json, created_at, updated_at, tenant_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+             ON CONFLICT (username, tenant_id) DO UPDATE SET
                name=EXCLUDED.name, role=EXCLUDED.role, store=EXCLUDED.store,
                department=EXCLUDED.department, position=EXCLUDED.position, status=EXCLUDED.status,
                gender=EXCLUDED.gender, phone=EXCLUDED.phone, email=EXCLUDED.email,
@@ -15532,7 +15555,7 @@ app.put('/api/state', authRequired, async (req, res) => {
              String(salary || ''), String(password || ''), String(managerUsername || ''),
              String(idCardNumber || ''), String(bankCard || ''), JSON.stringify(rest),
              createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
-             new Date().toISOString()]
+             new Date().toISOString(), resolveTenantIdDefault()]
           ).catch((e) => {
             console.error('[employees] dual-write error:', e?.message);
             if (!alertedEmployeesDualWrite) {
@@ -19136,29 +19159,30 @@ app.listen(PORT, HOST, async () => {
 
   // Initialize multi-agent system
   try {
-    // 登录会话表：必须在 ALLOW_SCHEMA_CHANGES 之外也能创建，否则 INSERT 失败 + 仍签发 JWT → 全站 session 校验失败
-    await ensureUserSessionsTable();
-    await ensureGrowthTables(pool).catch(e => console.warn('[growth] ensure tables:', e?.message));
-    await ensurePhaseTables(pool).catch(e => console.warn('[growth-phases] ensure tables:', e?.message));
-    // Runtime migration: 企微会员新增字段（避免旧库缺字段导致评分数据源为空）
-    await pool.query(`ALTER TABLE daily_reports ADD COLUMN IF NOT EXISTS new_wechat_members INTEGER DEFAULT 0`);
-    // Runtime migration: 知识库文件版本号
-    await pool.query(`ALTER TABLE knowledge_base ADD COLUMN IF NOT EXISTS version VARCHAR(50) DEFAULT NULL`);
-    // 知识库分发范围（门店/岗位/全员），JSON：{ type, store?, position? }
-    await pool.query(
-      `ALTER TABLE knowledge_base ADD COLUMN IF NOT EXISTS audience JSONB DEFAULT '{"type":"all"}'::jsonb`
-    ).catch((e) => console.warn('[migration] knowledge_base.audience:', e?.message));
-    // 知识库项目组名称：独立于文件标题，避免“组名=第一份文件名”
-    await pool.query(
-      `ALTER TABLE knowledge_base ADD COLUMN IF NOT EXISTS group_name VARCHAR(120) DEFAULT NULL`
-    ).catch((e) => console.warn('[migration] knowledge_base.group_name:', e?.message));
-    await pool.query(
-      `UPDATE knowledge_base
-       SET group_name = COALESCE(NULLIF(group_name, ''), title)
-       WHERE COALESCE(group_name, '') = ''`
-    ).catch((e) => console.warn('[migration] knowledge_base.group_name.backfill:', e?.message));
-    // Runtime migration: 文件管理系统表
-    await pool.query(`
+    await runWithBootstrapTenantContext(async () => {
+      // 登录会话表：必须在 ALLOW_SCHEMA_CHANGES 之外也能创建，否则 INSERT 失败 + 仍签发 JWT → 全站 session 校验失败
+      await ensureUserSessionsTable();
+      await ensureGrowthTables(pool).catch(e => console.warn('[growth] ensure tables:', e?.message));
+      await ensurePhaseTables(pool).catch(e => console.warn('[growth-phases] ensure tables:', e?.message));
+      // Runtime migration: 企微会员新增字段（避免旧库缺字段导致评分数据源为空）
+      await pool.query(`ALTER TABLE daily_reports ADD COLUMN IF NOT EXISTS new_wechat_members INTEGER DEFAULT 0`);
+      // Runtime migration: 知识库文件版本号
+      await pool.query(`ALTER TABLE knowledge_base ADD COLUMN IF NOT EXISTS version VARCHAR(50) DEFAULT NULL`);
+      // 知识库分发范围（门店/岗位/全员），JSON：{ type, store?, position? }
+      await pool.query(
+        `ALTER TABLE knowledge_base ADD COLUMN IF NOT EXISTS audience JSONB DEFAULT '{"type":"all"}'::jsonb`
+      ).catch((e) => console.warn('[migration] knowledge_base.audience:', e?.message));
+      // 知识库项目组名称：独立于文件标题，避免“组名=第一份文件名”
+      await pool.query(
+        `ALTER TABLE knowledge_base ADD COLUMN IF NOT EXISTS group_name VARCHAR(120) DEFAULT NULL`
+      ).catch((e) => console.warn('[migration] knowledge_base.group_name:', e?.message));
+      await pool.query(
+        `UPDATE knowledge_base
+         SET group_name = COALESCE(NULLIF(group_name, ''), title)
+         WHERE COALESCE(group_name, '') = ''`
+      ).catch((e) => console.warn('[migration] knowledge_base.group_name.backfill:', e?.message));
+      // Runtime migration: 文件管理系统表
+      await pool.query(`
       CREATE TABLE IF NOT EXISTS files (
         id SERIAL PRIMARY KEY,
         file_id VARCHAR(50) UNIQUE NOT NULL,
@@ -19187,8 +19211,8 @@ app.listen(PORT, HOST, async () => {
         deleted_at TIMESTAMP,
         deleted_by VARCHAR(50)
       )
-    `).catch(e => console.warn('[migration] files table:', e?.message));
-    await pool.query(`
+      `).catch(e => console.warn('[migration] files table:', e?.message));
+      await pool.query(`
       CREATE TABLE IF NOT EXISTS file_access_logs (
         id SERIAL PRIMARY KEY,
         file_id VARCHAR(50) NOT NULL,
@@ -19198,18 +19222,18 @@ app.listen(PORT, HOST, async () => {
         user_agent TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `).catch(e => console.warn('[migration] file_access_logs table:', e?.message));
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_file_id ON files(file_id)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_type ON files(file_type)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_store ON files(store)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_created_at ON files(created_at DESC)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_deleted_at ON files(deleted_at)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_file_access_logs_file_id ON file_access_logs(file_id)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_file_access_logs_created_at ON file_access_logs(created_at DESC)`).catch(() => {});
-    await ensureDataGovernanceTables();
-    await ensureAgentTables();
-    // Runtime migration: 公司通知表（V2 Agent 写入，HRMS 前端读取，确保表存在）
-    await pool.query(`
+      `).catch(e => console.warn('[migration] file_access_logs table:', e?.message));
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_file_id ON files(file_id)`).catch(() => {});
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_type ON files(file_type)`).catch(() => {});
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_store ON files(store)`).catch(() => {});
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_created_at ON files(created_at DESC)`).catch(() => {});
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_deleted_at ON files(deleted_at)`).catch(() => {});
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_file_access_logs_file_id ON file_access_logs(file_id)`).catch(() => {});
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_file_access_logs_created_at ON file_access_logs(created_at DESC)`).catch(() => {});
+      await ensureDataGovernanceTables();
+      await ensureAgentTables();
+      // Runtime migration: 公司通知表（V2 Agent 写入，HRMS 前端读取，确保表存在）
+      await pool.query(`
       CREATE TABLE IF NOT EXISTS hrms_user_notifications (
         id BIGSERIAL PRIMARY KEY,
         target_username TEXT NOT NULL,
@@ -19219,11 +19243,11 @@ app.listen(PORT, HOST, async () => {
         meta JSONB DEFAULT '{}'::jsonb,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
-    `).catch(e => console.warn('[migration] hrms_user_notifications table:', e?.message));
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_hrms_notif_user_created ON hrms_user_notifications (target_username, created_at DESC)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_hrms_notif_task_id ON hrms_user_notifications ((meta->>'task_id'))`).catch(() => {});
-    // Runtime migration: hrms_state 定时快照（整包 JSONB，供灾难恢复/对账；不依赖 ALLOW_SCHEMA_CHANGES）
-    await pool.query(`
+      `).catch(e => console.warn('[migration] hrms_user_notifications table:', e?.message));
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_hrms_notif_user_created ON hrms_user_notifications (target_username, created_at DESC)`).catch(() => {});
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_hrms_notif_task_id ON hrms_user_notifications ((meta->>'task_id'))`).catch(() => {});
+      // Runtime migration: hrms_state 定时快照（整包 JSONB，供灾难恢复/对账；不依赖 ALLOW_SCHEMA_CHANGES）
+      await pool.query(`
       CREATE TABLE IF NOT EXISTS hrms_state_snapshots (
         id BIGSERIAL PRIMARY KEY,
         state_key TEXT NOT NULL DEFAULT 'default',
@@ -19232,15 +19256,16 @@ app.listen(PORT, HOST, async () => {
         source TEXT NOT NULL DEFAULT 'scheduled',
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
-    `).catch(e => console.warn('[migration] hrms_state_snapshots table:', e?.message));
-    await pool.query(
-      `CREATE INDEX IF NOT EXISTS idx_hrms_state_snapshots_key_created ON hrms_state_snapshots (state_key, created_at DESC)`
-    ).catch(() => {});
-    // Runtime migration: dedup unique index on agent_messages(record_id, content_type)
-    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_messages_record_content_uniq ON agent_messages (record_id, content_type) WHERE record_id IS NOT NULL AND record_id != ''`).catch(e => console.warn('[migration] dedup index:', e?.message));
-    assertCriticalFunctions();
-    await ensureFeishuGenericRecordsTable();
-    await ensureFeishuGenericRecordsNotifyTrigger();
+      `).catch(e => console.warn('[migration] hrms_state_snapshots table:', e?.message));
+      await pool.query(
+        `CREATE INDEX IF NOT EXISTS idx_hrms_state_snapshots_key_created ON hrms_state_snapshots (state_key, created_at DESC)`
+      ).catch(() => {});
+      // Runtime migration: dedup unique index on agent_messages(record_id, content_type)
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_messages_record_content_uniq ON agent_messages (record_id, content_type) WHERE record_id IS NOT NULL AND record_id != ''`).catch(e => console.warn('[migration] dedup index:', e?.message));
+      assertCriticalFunctions();
+      await ensureFeishuGenericRecordsTable();
+      await ensureFeishuGenericRecordsNotifyTrigger();
+    });
     // LLM健康检查 — 启动时验证所有大模型API可用，失败时飞书通知管理员
     verifyLLMHealth().then(h => {
       if (!h.allOk) console.error('[STARTUP] ⚠️ LLM health check FAILED — agents may be brainless!');
@@ -19264,25 +19289,26 @@ app.listen(PORT, HOST, async () => {
     setSalesRawPool(pool);
     setDataExecutorPool(pool);
     setTaskResponseHook(handleTaskResponse);
-    await ensureMasterTables();
+    await runWithBootstrapTenantContext(async () => {
+      await ensureMasterTables();
 
-    // Run intelligence upgrade migration (idempotent)
-    try {
-      const migSql = await import('fs').then(f => f.promises.readFile(new URL('./migrations/008_agent_intelligence_upgrade.sql', import.meta.url), 'utf8'));
-      await pool.query(migSql);
-      console.log('[intelligence] Migration 008 applied: metric_dictionary + analysis_rules + agent_metric_cache');
-    } catch (e) {
-      console.error('[intelligence] Migration 008 error (non-fatal):', e?.message);
-    }
+      // Run intelligence upgrade migration (idempotent)
+      try {
+        const migSql = await import('fs').then(f => f.promises.readFile(new URL('./migrations/008_agent_intelligence_upgrade.sql', import.meta.url), 'utf8'));
+        await pool.query(migSql);
+        console.log('[intelligence] Migration 008 applied: metric_dictionary + analysis_rules + agent_metric_cache');
+      } catch (e) {
+        console.error('[intelligence] Migration 008 error (non-fatal):', e?.message);
+      }
 
-    // Run improvements migration 009 (idempotent)
-    try {
-      const mig009 = await import('fs').then(f => f.promises.readFile(new URL('./migrations/009_agent_improvements.sql', import.meta.url), 'utf8'));
-      await pool.query(mig009);
-      console.log('[intelligence] Migration 009 applied: cache_ttl_minutes + diagnosis_feedback');
-    } catch (e) {
-      console.error('[intelligence] Migration 009 error (non-fatal):', e?.message);
-    }
+      // Run improvements migration 009 (idempotent)
+      try {
+        const mig009 = await import('fs').then(f => f.promises.readFile(new URL('./migrations/009_agent_improvements.sql', import.meta.url), 'utf8'));
+        await pool.query(mig009);
+        console.log('[intelligence] Migration 009 applied: cache_ttl_minutes + diagnosis_feedback');
+      } catch (e) {
+        console.error('[intelligence] Migration 009 error (non-fatal):', e?.message);
+      }
 
     // Run migration 012: metric_dictionary 分析字段 + agent_experience（idempotent）
     try {
@@ -19310,7 +19336,9 @@ app.listen(PORT, HOST, async () => {
     }
 
     // 020-024: HRMS 全量字段 + 独立表迁移
-    for (const name of ['020_daily_reports_all_fields', '021_hrms_leave_records', '022_hrms_reward_punishment_records', '023_approval_requests_migration', '024_employees_table_migration', '025_daily_reports_holiday_switch', '027_backfill_hrms_leave_from_approvals', '030_daily_report_attendance_register', '031_growth_miniprogram_events']) {
+    // 081: tenant-aware unique / ON CONFLICT 约束收尾批，修复 employees / report-delivery / daily_reports 等
+    // 旧版本库如果缺这些约束，会在 PUT /api/state 与部分通知投递里触发 ON CONFLICT 失败。
+    for (const name of ['020_daily_reports_all_fields', '021_hrms_leave_records', '022_hrms_reward_punishment_records', '023_approval_requests_migration', '024_employees_table_migration', '025_daily_reports_holiday_switch', '027_backfill_hrms_leave_from_approvals', '030_daily_report_attendance_register', '031_growth_miniprogram_events', '081_unique_constraints_tenant_id_batch9']) {
       try {
         const mig = await import('fs').then(f => f.promises.readFile(new URL(`./migrations/${name}.sql`, import.meta.url), 'utf8'));
         await pool.query(mig);
@@ -19320,18 +19348,18 @@ app.listen(PORT, HOST, async () => {
       }
     }
 
-    try {
-      await ensureLeaveDomainTable();
-      console.log('[startup] hrms_leave_domain table ready');
-    } catch (e) {
-      console.error('[startup] hrms_leave_domain table init failed (non-fatal):', e?.message);
-    }
+      try {
+        await ensureLeaveDomainTable();
+        console.log('[startup] hrms_leave_domain table ready');
+      } catch (e) {
+        console.error('[startup] hrms_leave_domain table init failed (non-fatal):', e?.message);
+      }
 
     // 启动时权威重建：每次启动都从 daily_reports 表完整重建 hrms_state.dailyReports
     // 策略：DB 是基础字段（营收/订单等）的权威来源；但明细字段（segments/categories/staff/photos/schedule_next_day/weather/discount/bad_reviews）
     //       DB 从未写入过，必须从 state 保留，否则每次重启明细数据全部丢失。
     // 修复历史：raw row_to_json 写入导致 data.actual=0，pg date 时区偏移导致日期差1天
-    try {
+      try {
       const pgAll = await pool.query(`
         SELECT store, date, brand, actual_revenue, pre_discount_revenue, total_discount,
                dine_orders, dine_revenue, dine_traffic, efficiency, labor_total,
@@ -19393,13 +19421,13 @@ app.listen(PORT, HOST, async () => {
         client2.release();
       }
       console.log(`[startup] 日报权威重建：DB ${dbItems.length} 条 + 草稿 ${stateOnlyItems.length} 条 = 共 ${finalMerged.length} 条`);
-    } catch (e) {
-      console.error('[startup] 日报权威重建失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 日报权威重建失败（非致命，不影响启动）:', e?.message);
+      }
 
     // 启动时权威重建：从 point_records 表完整重建 hrms_state.pointRecords
     // 策略：DB 表是唯一权威，覆盖 state 里所有同 id 的条目，保留 state 里没有 id 的孤立记录
-    try {
+      try {
       const prRows = await pool.query(`
         SELECT id::text, approval_id, username, name, store, item_name, reason,
                points, amount, approved_at, approved_by
@@ -19441,12 +19469,12 @@ app.listen(PORT, HOST, async () => {
         client3.release();
       }
       console.log(`[startup] 积分记录权威重建：DB ${dbPrItems.length} 条 + 孤立 ${stateOnlyPr.length} 条 = 共 ${mergedPr.length} 条`);
-    } catch (e) {
-      console.error('[startup] 积分记录权威重建失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 积分记录权威重建失败（非致命，不影响启动）:', e?.message);
+      }
 
     // 考勤双表互备：checkin_records ↔ employee_attendance_records 补缺（防单表损坏）
-    try {
+      try {
       const insToMirror = await pool.query(`
         INSERT INTO employee_attendance_records (
           id, username, store, type, check_time, latitude, longitude, distance_meters,
@@ -19471,12 +19499,12 @@ app.listen(PORT, HOST, async () => {
       console.log(
         `[startup] 考勤双表同步：→镜像 ${insToMirror.rowCount || 0} 条，→checkin ${insToCheckin.rowCount || 0} 条`
       );
-    } catch (e) {
-      console.error('[startup] 考勤双表同步失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 考勤双表同步失败（非致命，不影响启动）:', e?.message);
+      }
 
     // 薪资域双备：state 某字段空则从 hrms_payroll_domain 回灌，再写回独立表
-    try {
+      try {
       const domainR = await pool.query(`SELECT * FROM hrms_payroll_domain WHERE id = $1`, ['default']);
       const row = domainR.rows?.[0];
       if (row) {
@@ -19506,12 +19534,12 @@ app.listen(PORT, HOST, async () => {
       }
       const freshState = (await getSharedState()) || {};
       await upsertPayrollDomainFromState(freshState);
-    } catch (e) {
-      console.error('[startup] 薪资域互备同步失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 薪资域互备同步失败（非致命，不影响启动）:', e?.message);
+      }
 
     // 欠休/累计假域双备：state 某字段空则从 hrms_leave_domain 回灌，再写回独立表
-    try {
+      try {
       const leaveDomainR = await pool.query(`SELECT * FROM hrms_leave_domain WHERE id = $1`, ['default']);
       const row = leaveDomainR.rows?.[0];
       if (row) {
@@ -19540,13 +19568,13 @@ app.listen(PORT, HOST, async () => {
       }
       const freshLeaveState = (await getSharedState()) || {};
       await upsertLeaveDomainFromState(freshLeaveState);
-    } catch (e) {
-      console.error('[startup] 欠休域互备同步失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 欠休域互备同步失败（非致命，不影响启动）:', e?.message);
+      }
 
     // 启动时同步员工信息：把 hrms_state.employees 同步到 employees 独立表
     // 策略：state 是员工信息的权威来源（用户通过 PUT /api/state 管理），只做单向备份
-    try {
+      try {
       const stateEmp = (await getSharedState()) || {};
       const empArr = Array.isArray(stateEmp.employees) ? stateEmp.employees : [];
       let syncCount = 0;
@@ -19559,9 +19587,9 @@ app.listen(PORT, HOST, async () => {
         await pool.query(
           `INSERT INTO employees (id, username, name, role, store, department, position, status,
              gender, phone, email, join_date, birthday, salary, password_hash, manager_username,
-             id_card_number, bank_card, extra_json, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-           ON CONFLICT (username) DO UPDATE SET
+             id_card_number, bank_card, extra_json, created_at, updated_at, tenant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+           ON CONFLICT (username, tenant_id) DO UPDATE SET
              name=EXCLUDED.name, role=EXCLUDED.role, store=EXCLUDED.store,
              department=EXCLUDED.department, position=EXCLUDED.position, status=EXCLUDED.status,
              gender=EXCLUDED.gender, phone=EXCLUDED.phone, email=EXCLUDED.email,
@@ -19576,17 +19604,17 @@ app.listen(PORT, HOST, async () => {
            String(salary || ''), String(password || ''), String(managerUsername || ''),
            String(idCardNumber || ''), String(bankCard || ''), JSON.stringify(rest),
            createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
-           new Date().toISOString()]
+           new Date().toISOString(), resolveTenantIdDefault()]
         );
         syncCount++;
       }
       console.log(`[startup] 员工信息同步：${syncCount} 条 → employees 表`);
-    } catch (e) {
-      console.error('[startup] 员工信息同步失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 员工信息同步失败（非致命，不影响启动）:', e?.message);
+      }
 
     // 启动时员工信息反向同步：employees DB → hrms_state.employees（防 state 丢失）
-    try {
+      try {
       const dbEmp = await pool.query(`SELECT id, username, name, role, store, department, position, status, gender, phone, email, join_date, birthday, salary, manager_username, id_card_number, bank_card, extra_json, created_at, updated_at FROM employees WHERE tenant_id = 'default' ORDER BY username`);
       const dbEmpItems = dbEmp.rows.map(r => ({
         id: r.id,
@@ -19620,12 +19648,12 @@ app.listen(PORT, HOST, async () => {
           console.log(`[startup] 员工信息从 employees 表回灌：${newEmps.length} 条 → hrms_state.employees`);
         }
       }
-    } catch (e) {
-      console.error('[startup] 员工信息反向同步失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 员工信息反向同步失败（非致命，不影响启动）:', e?.message);
+      }
 
     // 启动时休假记录重建：hrms_leave_records DB → hrms_state.leaveRecords
-    try {
+      try {
       const dbLeave = await pool.query(`SELECT * FROM hrms_leave_records ORDER BY start_date DESC`);
       const dbLeaveItems = dbLeave.rows.map(r => ({
         id: String(r.id || ''),
@@ -19654,12 +19682,12 @@ app.listen(PORT, HOST, async () => {
         await pool.query(`UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`, ['default', JSON.stringify(stateLeave)]);
       }
       console.log(`[startup] 休假记录重建：DB ${dbLeaveItems.length} 条 + 草稿 ${stateOnlyLeave.length} 条 = 共 ${mergedLeave.length} 条`);
-    } catch (e) {
-      console.error('[startup] 休假记录重建失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 休假记录重建失败（非致命，不影响启动）:', e?.message);
+      }
 
     // 启动时奖惩记录重建：hrms_reward_punishment_records DB → hrms_state.salaryAdjustments
-    try {
+      try {
       const dbRP = await pool.query(`SELECT * FROM hrms_reward_punishment_records WHERE status = 'active' ORDER BY created_at DESC`);
       const dbRPItems = dbRP.rows.map(r => ({
         id: String(r.id || ''),
@@ -19686,23 +19714,23 @@ app.listen(PORT, HOST, async () => {
         await pool.query(`UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`, ['default', JSON.stringify(stateRP)]);
       }
       console.log(`[startup] 奖惩记录重建：DB ${dbRPItems.length} 条 + 孤立 ${stateOnlyRP.length} 条 = 共 ${mergedRP.length} 条`);
-    } catch (e) {
-      console.error('[startup] 奖惩记录重建失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 奖惩记录重建失败（非致命，不影响启动）:', e?.message);
+      }
 
     // 启动时审批记录重建：approval_requests DB 已是权威，无需回灌 state（审批本身就是独立表）
     // 但确认表存在
-    try {
+      try {
       const arCheck = await pool.query(`SELECT COUNT(*) as cnt FROM approval_requests`);
       console.log(`[startup] 审批记录表：${arCheck.rows[0]?.cnt || 0} 条`);
-    } catch (e) {
-      console.error('[startup] 审批记录表检查失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 审批记录表检查失败（非致命，不影响启动）:', e?.message);
+      }
 
     // 启动时公司通知重建：hrms_user_notifications DB → hrms_state.notifications
     // V2 Agent 直接写 DB，HRMS 前端从 state 读取，需要回灌
     // 注意：前端按 targetUser 字段过滤，必须使用 targetUser 而非 targetUsername
-    try {
+      try {
       const dbNotif = await pool.query(`SELECT * FROM hrms_user_notifications ORDER BY created_at DESC LIMIT 500`);
       const dbNotifItems = dbNotif.rows.map(r => ({
         id: String(r.id || ''),
@@ -19725,14 +19753,14 @@ app.listen(PORT, HOST, async () => {
         }
         console.log(`[startup] 公司通知重建：DB ${dbNotifItems.length} 条 + 孤立 ${stateOnlyNotifs.length} 条 = 共 ${mergedNotifs.length} 条`);
       }
-    } catch (e) {
-      console.error('[startup] 公司通知重建失败（非致命，不影响启动）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 公司通知重建失败（非致命，不影响启动）:', e?.message);
+      }
 
     // ── 历史数据回填（state → DB，一次性补缺） ──
 
     // 回填：hrms_state.leaveRecords → hrms_leave_records
-    try {
+      try {
       const stateLR = (await getSharedState()) || {};
       const lrList = Array.isArray(stateLR.leaveRecords) ? stateLR.leaveRecords : [];
       if (lrList.length > 0) {
@@ -19759,15 +19787,15 @@ app.listen(PORT, HOST, async () => {
         }
         if (backfillCount > 0) console.log(`[startup] 休假记录回填：${backfillCount} 条 state → hrms_leave_records`);
       }
-    } catch (e) {
-      console.error('[startup] 休假记录回填失败（非致命）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 休假记录回填失败（非致命）:', e?.message);
+      }
 
     // 回填：hrms_state.salaryAdjustments → hrms_reward_punishment_records
     // 该表已开FORCE RLS；这段跑在app.listen启动回调里，没有HTTP请求/ALS上下文，
     // 必须显式包裹tenantContext.run，否则resolveTenantIdDefault()返回'default'但
     // session变量是fail-closed的sentinel，写入会被WITH CHECK拒绝。
-    try {
+      try {
       await tenantContext.run('default', async () => {
       const stateSA = (await getSharedState()) || {};
       const saList = Array.isArray(stateSA.salaryAdjustments) ? stateSA.salaryAdjustments : [];
@@ -19796,12 +19824,12 @@ app.listen(PORT, HOST, async () => {
         if (backfillCount > 0) console.log(`[startup] 奖惩记录回填：${backfillCount} 条 state → hrms_reward_punishment_records`);
       }
       });
-    } catch (e) {
-      console.error('[startup] 奖惩记录回填失败（非致命）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 奖惩记录回填失败（非致命）:', e?.message);
+      }
 
     // 回填：hrms_state.dailyReports → daily_reports 表（补充缺失的明细字段）
-    try {
+      try {
       const stateDR = (await getSharedState()) || {};
       const drList = Array.isArray(stateDR.dailyReports) ? stateDR.dailyReports : [];
       if (drList.length > 0) {
@@ -19849,38 +19877,38 @@ app.listen(PORT, HOST, async () => {
         }
         if (backfillCount > 0) console.log(`[startup] 营业日报明细回填：${backfillCount} 条 state → daily_reports`);
       }
-    } catch (e) {
-      console.error('[startup] 营业日报明细回填失败（非致命）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 营业日报明细回填失败（非致命）:', e?.message);
+      }
 
     // 补缺：daily_reports 已有但 daily_report_attendance_register 缺失（功能上线前提交的双写）
-    try {
+      try {
       const bf = await backfillDailyAttendanceRegisterMissing(pool, { maxRows: 2500 });
       if (bf.reconciled > 0) {
         console.log(`[startup] 出勤台账补缺：扫描 ${bf.scanned} 条，写入 ${bf.reconciled} 条`);
       }
-    } catch (e) {
-      console.error('[startup] 出勤台账补缺失败（非致命）:', e?.message);
-    }
+      } catch (e) {
+        console.error('[startup] 出勤台账补缺失败（非致命）:', e?.message);
+      }
 
-    await dedupeGlobalSocialMediaPointRules();
-    await ensureGlobalSocialMediaPointRule();
-
-    // Purge expired metric cache every 2 hours
-    setInterval(() => purgeExpiredCache().catch(() => {}), 2 * 60 * 60 * 1000);
+      await dedupeGlobalSocialMediaPointRules();
+      await ensureGlobalSocialMediaPointRule();
+    });
 
     // P0B: Purge expired session states every hour
     setInterval(async () => {
-      try {
-        const r = await pool.query(
-          `DELETE FROM agent_long_memory
-           WHERE memory_key = 'session_state'
-             AND updated_at < NOW() - INTERVAL '2 hours'`
-        );
-        if (r.rowCount > 0) console.log(`[intelligence] Purged ${r.rowCount} expired session states`);
-      } catch (e) {
-        console.error('[intelligence] Session state purge error:', e?.message);
-      }
+      await runWithBootstrapTenantContext(async () => {
+        try {
+          const r = await pool.query(
+            `DELETE FROM agent_long_memory
+             WHERE memory_key = 'session_state'
+               AND updated_at < NOW() - INTERVAL '2 hours'`
+          );
+          if (r.rowCount > 0) console.log(`[intelligence] Purged ${r.rowCount} expired session states`);
+        } catch (e) {
+          console.error('[intelligence] Session state purge error:', e?.message);
+        }
+      });
     }, 60 * 60 * 1000);
 
     // ── P0-3: 定时任务心跳表初始化 ──────────────────────────────
@@ -19935,55 +19963,62 @@ app.listen(PORT, HOST, async () => {
 
     // 带心跳的缓存清理（覆盖原 setInterval）
     setInterval(async () => {
-      await purgeExpiredCache().catch(() => {});
-      await beatHeartbeat('cache_purge');
+      await runWithBootstrapTenantContext(async () => {
+        await purgeExpiredCache().catch(() => {});
+        await beatHeartbeat('cache_purge');
+      });
     }, 2 * 60 * 60 * 1000);
     // 启动即执行一次并写心跳，避免重启后首个 2 小时窗口误判为“任务停摆”
     setTimeout(async () => {
-      await purgeExpiredCache().catch(() => {});
-      await beatHeartbeat('cache_purge');
+      await runWithBootstrapTenantContext(async () => {
+        await purgeExpiredCache().catch(() => {});
+        await beatHeartbeat('cache_purge');
+      });
     }, 15 * 1000);
 
     // ── P0-3: 每 30 分钟检查心跳是否存活 ────────────────────────
     setInterval(async () => {
-      try {
-        const r = await pool.query(`
-          SELECT task_name,
-                 EXTRACT(EPOCH FROM (NOW() - last_beat)) / 60 AS minutes_ago
-          FROM scheduler_heartbeat
-        `);
-        const staleRows = (r.rows || []).filter((row) => {
-          const name = String(row?.task_name || '').trim();
-          const mins = Number(row?.minutes_ago || 0);
-          const th = Number(HEARTBEAT_ALERT_THRESHOLDS_MIN[name] || HEARTBEAT_ALERT_THRESHOLDS_MIN.default);
-          return Number.isFinite(mins) && mins >= th;
-        });
-        if (staleRows.length > 0) {
-          const dead = staleRows
-            .map(row => `${row.task_name}（${Math.floor(Number(row.minutes_ago || 0))}分钟前）`)
-            .join('、');
-          const dedupeKey = staleRows
-            .map((row) => `${row.task_name}:${Math.floor(Number(row.minutes_ago || 0) / 30)}`)
-            .join('|');
-          const lastSent = Number(heartbeatAlertDedup.get(dedupeKey) || 0);
-          if (Date.now() - lastSent < 2 * 60 * 60 * 1000) return;
-          heartbeatAlertDedup.set(dedupeKey, Date.now());
-          const msg = `🚨 [HRMS] 定时任务心跳异常\n停止任务：${dead}\n请登录服务器检查：\nsystemctl status hrms.service`;
-          console.error('[monitor] Dead tasks:', dead);
-          await sendSystemAlert(msg);
+      await runWithBootstrapTenantContext(async () => {
+        try {
+          const r = await pool.query(`
+            SELECT task_name,
+                   EXTRACT(EPOCH FROM (NOW() - last_beat)) / 60 AS minutes_ago
+            FROM scheduler_heartbeat
+          `);
+          const staleRows = (r.rows || []).filter((row) => {
+            const name = String(row?.task_name || '').trim();
+            const mins = Number(row?.minutes_ago || 0);
+            const th = Number(HEARTBEAT_ALERT_THRESHOLDS_MIN[name] || HEARTBEAT_ALERT_THRESHOLDS_MIN.default);
+            return Number.isFinite(mins) && mins >= th;
+          });
+          if (staleRows.length > 0) {
+            const dead = staleRows
+              .map(row => `${row.task_name}（${Math.floor(Number(row.minutes_ago || 0))}分钟前）`)
+              .join('、');
+            const dedupeKey = staleRows
+              .map((row) => `${row.task_name}:${Math.floor(Number(row.minutes_ago || 0) / 30)}`)
+              .join('|');
+            const lastSent = Number(heartbeatAlertDedup.get(dedupeKey) || 0);
+            if (Date.now() - lastSent < 2 * 60 * 60 * 1000) return;
+            heartbeatAlertDedup.set(dedupeKey, Date.now());
+            const msg = `🚨 [HRMS] 定时任务心跳异常\n停止任务：${dead}\n请登录服务器检查：\nsystemctl status hrms.service`;
+            console.error('[monitor] Dead tasks:', dead);
+            await sendSystemAlert(msg);
+          }
+        } catch (e) {
+          console.error('[monitor] heartbeat check error:', e?.message);
         }
-      } catch (e) {
-        console.error('[monitor] heartbeat check error:', e?.message);
-      }
+      });
     }, 30 * 60 * 1000);
 
     let _perfMonthlyMissingAlertKey = '';
 
     // 核心数据每 10 分钟自愈回灌一次：即使 hrms_state 被旧快照污染，也会从权威表/独立域自动拉回
     setInterval(async () => {
-      try {
-        await beatHeartbeat('critical_data_reconcile');
-        const stateNow = (await getSharedState()) || {};
+      await runWithBootstrapTenantContext(async () => {
+        try {
+          await beatHeartbeat('critical_data_reconcile');
+          const stateNow = (await getSharedState()) || {};
 
         // 1) 营业日报：若 state 最新日期落后于表最新日期，则整段重建
         const drLatestR = await pool.query(`SELECT MAX(date)::text AS latest FROM daily_reports`);
@@ -20089,117 +20124,124 @@ app.listen(PORT, HOST, async () => {
         }
 
         // 4) 欠休域 / 5) 薪资域：确保独立域始终跟随当前 state
-        await upsertLeaveDomainFromState((await getSharedState()) || {});
-        await upsertPayrollDomainFromState((await getSharedState()) || {});
-      } catch (e) {
-        console.error('[monitor] critical data reconcile error:', e?.message);
-      }
+          await upsertLeaveDomainFromState((await getSharedState()) || {});
+          await upsertPayrollDomainFromState((await getSharedState()) || {});
+        } catch (e) {
+          console.error('[monitor] critical data reconcile error:', e?.message);
+        }
+      });
     }, 10 * 60 * 1000);
 
     // ── P0-2: 每天 23:30 检查 sales_raw 数据完整性 ──────────────
     // 用 setInterval 每5分钟检查时间窗口
     let _salesCheckFired = false;
     setInterval(async () => {
-      const now = new Date();
-      const h = now.getHours(), m = now.getMinutes();
-      // 每天 23:30~23:35 触发一次
-      if (h !== 23 || m < 30 || m > 34) return;
-      if (_salesCheckFired && now.getDate() === _salesCheckFired) return;
-      _salesCheckFired = now.getDate();
+      await runWithBootstrapTenantContext(async () => {
+        const now = new Date();
+        const h = now.getHours(), m = now.getMinutes();
+        // 每天 23:30~23:35 触发一次
+        if (h !== 23 || m < 30 || m > 34) return;
+        if (_salesCheckFired && now.getDate() === _salesCheckFired) return;
+        _salesCheckFired = now.getDate();
 
-      try {
-        // 获取昨天日期（sales_raw 一般T+1检查）
-        const yesterday = new Date(now - 86400000).toISOString().split('T')[0];
-        const r = await pool.query(
-          `SELECT DISTINCT store FROM sales_raw WHERE date = $1`,
-          [yesterday]
-        );
-        const presentStores = r.rows.map(row => String(row.store || '').trim());
+        try {
+          // 获取昨天日期（sales_raw 一般T+1检查）
+          const yesterday = new Date(now - 86400000).toISOString().split('T')[0];
+          const r = await pool.query(
+            `SELECT DISTINCT store FROM sales_raw WHERE date = $1`,
+            [yesterday]
+          );
+          const presentStores = r.rows.map(row => String(row.store || '').trim());
 
-        // 预期门店列表（从 users 表取 store_manager 角色的门店）
-        const storeR = await pool.query(
-          `SELECT DISTINCT store FROM users WHERE role = 'store_manager' AND status = 'active' AND store IS NOT NULL AND store != ''`
-        );
-        const expectedStores = storeR.rows.map(row => String(row.store || '').trim()).filter(Boolean);
+          // 预期门店列表（从 users 表取 store_manager 角色的门店）
+          const storeR = await pool.query(
+            `SELECT DISTINCT store FROM users WHERE role = 'store_manager' AND status = 'active' AND store IS NOT NULL AND store != ''`
+          );
+          const expectedStores = storeR.rows.map(row => String(row.store || '').trim()).filter(Boolean);
 
-        const missing = expectedStores.filter(es =>
-          !presentStores.some(ps => ps.includes(es.slice(0, 4)) || es.includes(ps.slice(0, 4)))
-        );
+          const missing = expectedStores.filter(es =>
+            !presentStores.some(ps => ps.includes(es.slice(0, 4)) || es.includes(ps.slice(0, 4)))
+          );
 
-        await beatHeartbeat('sales_raw_check');
+          await beatHeartbeat('sales_raw_check');
 
-        if (missing.length > 0) {
-          const msg = [
-            `⚠️ [HRMS] 销售数据缺失告警`,
-            `检查日期：${yesterday}`,
-            `缺失门店：${missing.join('、')}`,
-            `已有数据：${presentStores.join('、') || '无'}`,
-            `请尽快上传 Excel，否则明日销售指标将全部失效。`,
-            `上传入口：系统后台 → 数据上传 → 销售日报`,
-            `或：服务器配置 SALES_RAW_IMPORT_DIR 后将 Excel 放入该目录（可 rsync 自本地 HRMS 文件夹），详见服务日志 [sales-raw-folder]`
-          ].join('\n');
-          console.error('[monitor] sales_raw missing stores:', missing);
-          await sendSystemAlert(msg);
-        } else {
-          console.log(`[monitor] sales_raw check OK for ${yesterday}: ${presentStores.join('、')}`);
+          if (missing.length > 0) {
+            const msg = [
+              `⚠️ [HRMS] 销售数据缺失告警`,
+              `检查日期：${yesterday}`,
+              `缺失门店：${missing.join('、')}`,
+              `已有数据：${presentStores.join('、') || '无'}`,
+              `请尽快上传 Excel，否则明日销售指标将全部失效。`,
+              `上传入口：系统后台 → 数据上传 → 销售日报`,
+              `或：服务器配置 SALES_RAW_IMPORT_DIR 后将 Excel 放入该目录（可 rsync 自本地 HRMS 文件夹），详见服务日志 [sales-raw-folder]`
+            ].join('\n');
+            console.error('[monitor] sales_raw missing stores:', missing);
+            await sendSystemAlert(msg);
+          } else {
+            console.log(`[monitor] sales_raw check OK for ${yesterday}: ${presentStores.join('、')}`);
+          }
+        } catch (e) {
+          console.error('[monitor] sales_raw check error:', e?.message);
         }
-      } catch (e) {
-        console.error('[monitor] sales_raw check error:', e?.message);
-      }
+      });
     }, 5 * 60 * 1000);
 
     // ── 上月末「累计假期」池快照：上海时间每月 1 日 06:00–06:14 写入，供当月展示与公式解耦 ──
     let _leaveCumulativeSnapshotDoneCurYm = '';
     setInterval(async () => {
-      try {
-        const partsFmt = new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Asia/Shanghai',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        });
-        const p = partsFmt.formatToParts(new Date());
-        const gv = (t) => p.find(x => x.type === t)?.value || '';
-        const y = gv('year');
-        const mo = gv('month');
-        const d = gv('day');
-        const h = Number(gv('hour'));
-        const mi = Number(gv('minute'));
-        if (d !== '01' || h !== 6 || mi >= 15) return;
-        const curYm = `${y}-${mo}`;
-        if (_leaveCumulativeSnapshotDoneCurYm === curYm) return;
-        const closedMonth = shiftMonth(curYm, -1);
-        if (!closedMonth) return;
-        const r = await runLeaveCumulativeCloseSnapshotForClosedMonth(closedMonth);
-        if (r?.ok) {
-          _leaveCumulativeSnapshotDoneCurYm = curYm;
-          console.log('[leave-cumulative-snapshot] locked closedMonth=', r.closedMonth, 'employees=', r.employees);
-        } else {
-          await sendSystemAlert([
-            '🔴 [HRMS] 上月累计假期自动快照失败',
-            `闭合月：${closedMonth}`,
-            `当前上海月：${curYm}`,
-            `原因：${String(r?.error || 'unknown')}`,
-            '请检查服务日志 [leave-cumulative-snapshot] 与 state 持久化；窗口内将每分钟重试。'
-          ].join('\n'));
-        }
-      } catch (e) {
-        console.error('[leave-cumulative-snapshot] tick:', e?.message || e);
+      await runWithBootstrapTenantContext(async () => {
         try {
-          await sendSystemAlert([
-            '🔴 [HRMS] 上月累计假期快照任务异常',
-            `错误：${String(e?.message || e)}`,
-            '请检查 hrms-service 日志与数据库/共享状态写入。'
-          ].join('\n'));
-        } catch (_) {}
-      }
+          const partsFmt = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Shanghai',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          });
+          const p = partsFmt.formatToParts(new Date());
+          const gv = (t) => p.find(x => x.type === t)?.value || '';
+          const y = gv('year');
+          const mo = gv('month');
+          const d = gv('day');
+          const h = Number(gv('hour'));
+          const mi = Number(gv('minute'));
+          if (d !== '01' || h !== 6 || mi >= 15) return;
+          const curYm = `${y}-${mo}`;
+          if (_leaveCumulativeSnapshotDoneCurYm === curYm) return;
+          const closedMonth = shiftMonth(curYm, -1);
+          if (!closedMonth) return;
+          const r = await runLeaveCumulativeCloseSnapshotForClosedMonth(closedMonth);
+          if (r?.ok) {
+            _leaveCumulativeSnapshotDoneCurYm = curYm;
+            console.log('[leave-cumulative-snapshot] locked closedMonth=', r.closedMonth, 'employees=', r.employees);
+          } else {
+            await sendSystemAlert([
+              '🔴 [HRMS] 上月累计假期自动快照失败',
+              `闭合月：${closedMonth}`,
+              `当前上海月：${curYm}`,
+              `原因：${String(r?.error || 'unknown')}`,
+              '请检查服务日志 [leave-cumulative-snapshot] 与 state 持久化；窗口内将每分钟重试。'
+            ].join('\n'));
+          }
+        } catch (e) {
+          console.error('[leave-cumulative-snapshot] tick:', e?.message || e);
+          try {
+            await sendSystemAlert([
+              '🔴 [HRMS] 上月累计假期快照任务异常',
+              `错误：${String(e?.message || e)}`,
+              '请检查 hrms-service 日志与数据库/共享状态写入。'
+            ].join('\n'));
+          } catch (_) {}
+        }
+      });
     }, 60 * 1000);
 
     setInterval(() => {
-      runMonthlyRecurringRewardTemplatesJob().catch((e) =>
+      void runWithBootstrapTenantContext(async () => {
+        await runMonthlyRecurringRewardTemplatesJob();
+      }).catch((e) =>
         console.error('[recurring-reward] tick error:', e?.message || e)
       );
     }, 5 * 60 * 1000);
@@ -20274,8 +20316,16 @@ app.listen(PORT, HOST, async () => {
       });
     };
     if (String(process.env.HRMS_STATE_SNAPSHOT_DISABLED || '').toLowerCase() !== 'true') {
-      setTimeout(runHrmsStateSnapshot, 120_000);
-      setInterval(runHrmsStateSnapshot, snapIntervalMin * 60 * 1000);
+      setTimeout(() => {
+        void runWithBootstrapTenantContext(runHrmsStateSnapshot).catch((e) => {
+          console.error('[hrms_state_snapshot] bootstrap tick:', e?.message || e);
+        });
+      }, 120_000);
+      setInterval(() => {
+        void runWithBootstrapTenantContext(runHrmsStateSnapshot).catch((e) => {
+          console.error('[hrms_state_snapshot] interval tick:', e?.message || e);
+        });
+      }, snapIntervalMin * 60 * 1000);
       console.log(
         '[hrms_state_snapshot] scheduler on, interval_min=',
         snapIntervalMin,
@@ -21114,24 +21164,26 @@ app.use((err, req, res, next) => {
 });
 
 if (__ALLOW_SCHEMA_CHANGES__) {
-  ensureExamResultsTable();
-  ensureHrmsStateTable();
-  ensureApprovalTables();
-  ensureUserReadsTable();
-  ensureUserSessionsTable();
-  ensureLoginLogTable();
-  ensureAgentConfigTables();
+  void runWithBootstrapTenantContext(async () => {
+    await ensureExamResultsTable();
+    await ensureHrmsStateTable();
+    await ensureApprovalTables();
+    await ensureUserReadsTable();
+    await ensureUserSessionsTable();
+    await ensureLoginLogTable();
+    await ensureAgentConfigTables();
 
-  ensureCheckinTable();
-  ensureSalesRawIndex();
-  ensureOpsTasksTable();
-  ensureFeishuSyncTable();
-  ensureFeishuGenericRecordsTable();
-  ensureFeishuGenericRecordsNotifyTrigger().catch((e) =>
-    console.error('[startup] ensureFeishuGenericRecordsNotifyTrigger:', e?.message || e)
+    await ensureCheckinTable();
+    await ensureSalesRawIndex();
+    await ensureOpsTasksTable();
+    await ensureFeishuSyncTable();
+    await ensureFeishuGenericRecordsTable();
+    await ensureFeishuGenericRecordsNotifyTrigger();
+    await ensureTableVisitRecordsTable();
+    await ensureDedupIndexes();
+  }).catch((e) =>
+    console.error('[startup/bootstrap-schema]', e?.message || e)
   );
-  ensureTableVisitRecordsTable();
-  ensureDedupIndexes();
   startOpsTaskScheduler();
 } else {
   console.warn(`[safety] APP_ENV=${APP_ENV}: skip auto schema/ensure tables (ALLOW_SCHEMA_CHANGES!=true)`);
@@ -21139,7 +21191,8 @@ if (__ALLOW_SCHEMA_CHANGES__) {
 
 setInterval(() => {
   (async () => {
-    try {
+    await runWithBootstrapTenantContext(async () => {
+      try {
       await ensureApprovalTables();
       const today = new Date();
       const y = today.getFullYear();
@@ -21292,14 +21345,15 @@ setInterval(() => {
         console.log('[promotion-sweep] failed:', e?.message || e);
       }
 
-      for (const it of items) {
-        try {
-          await pool.query('update approval_requests set executed_at = now(), updated_at = now() where id = $1', [it.id]);
-        } catch (e) {}
+        for (const it of items) {
+          try {
+            await pool.query('update approval_requests set executed_at = now(), updated_at = now() where id = $1', [it.id]);
+          } catch (e) {}
+        }
+      } catch (e) {
+        console.log('offboarding auto-disable job failed:', e?.message || e);
       }
-    } catch (e) {
-      console.log('offboarding auto-disable job failed:', e?.message || e);
-    }
+    });
   })();
 }, 30 * 60 * 1000);
 
@@ -21335,7 +21389,8 @@ function isEndOfMonth(today) {
 // 生日祝福定时任务 - 每小时检查一次
 setInterval(() => {
   (async () => {
-    try {
+    await runWithBootstrapTenantContext(async () => {
+      try {
       const now = new Date();
       const todayMonth = now.getMonth() + 1;
       const todayDay = now.getDate();
@@ -21473,17 +21528,18 @@ setInterval(() => {
         }
       }
 
-      // 保存状态
-      if (changed) {
-        state.birthdayGreetingsSent = birthdayGreetingsSent;
-        state.birthdayRemindersSent = birthdayRemindersSent;
-        state.monthlyRemindersSent = monthlyRemindersSent;
-        await saveSharedState(state);
-      }
+        // 保存状态
+        if (changed) {
+          state.birthdayGreetingsSent = birthdayGreetingsSent;
+          state.birthdayRemindersSent = birthdayRemindersSent;
+          state.monthlyRemindersSent = monthlyRemindersSent;
+          await saveSharedState(state);
+        }
 
-    } catch (e) {
-      console.log('birthday greeting job failed:', e?.message || e);
-    }
+      } catch (e) {
+        console.log('birthday greeting job failed:', e?.message || e);
+      }
+    });
   })();
 }, 60 * 60 * 1000); // 每小时检查一次
 
@@ -21714,27 +21770,29 @@ app.get('/api/birthday/upcoming', authRequired, async (req, res) => {
 // 创建 attention_scores 表（如果不存在）
 (async () => {
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS attention_scores (
-        id TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        name TEXT DEFAULT '',
-        store TEXT DEFAULT '',
-        material_id TEXT NOT NULL,
-        material_title TEXT DEFAULT '',
-        score INTEGER DEFAULT 0,
-        duration_seconds INTEGER DEFAULT 0,
-        total_samples INTEGER DEFAULT 0,
-        attentive_samples INTEGER DEFAULT 0,
-        avg_score INTEGER DEFAULT 0,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    try {
-      await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_username ON attention_scores(username)');
-      await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_material ON attention_scores(material_id)');
-      await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_created ON attention_scores(created_at)');
-    } catch (e) {}
+    await runWithBootstrapTenantContext(async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS attention_scores (
+          id TEXT PRIMARY KEY,
+          username TEXT NOT NULL,
+          name TEXT DEFAULT '',
+          store TEXT DEFAULT '',
+          material_id TEXT NOT NULL,
+          material_title TEXT DEFAULT '',
+          score INTEGER DEFAULT 0,
+          duration_seconds INTEGER DEFAULT 0,
+          total_samples INTEGER DEFAULT 0,
+          attentive_samples INTEGER DEFAULT 0,
+          avg_score INTEGER DEFAULT 0,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+      try {
+        await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_username ON attention_scores(username)');
+        await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_material ON attention_scores(material_id)');
+        await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_created ON attention_scores(created_at)');
+      } catch (e) {}
+    });
   } catch (e) {
     console.log('attention_scores table init:', e?.message || e);
   }
@@ -21942,7 +22000,9 @@ process.on('unhandledRejection', (reason, promise) => {
 async function cleanupOldNotifications() {
   let deleted = 0;
   try {
-    const r = await pool.query(`DELETE FROM hrms_user_notifications WHERE created_at < now() - interval '3 days' AND id NOT IN (SELECT id FROM hrms_user_notifications ORDER BY created_at DESC LIMIT 50)`);
+    const r = await runWithBootstrapTenantContext(() =>
+      pool.query(`DELETE FROM hrms_user_notifications WHERE created_at < now() - interval '3 days' AND id NOT IN (SELECT id FROM hrms_user_notifications ORDER BY created_at DESC LIMIT 50)`)
+    );
     deleted = r.rowCount ?? 0;
   } catch (e) {
     console.error('[cleanup] hrms_user_notifications error:', e?.message);

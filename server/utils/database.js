@@ -10,6 +10,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 // 时落回'default'，行为不变。必须放在index.js/agents.js都能import的共享模块里，
 // 否则两边各自new一个AsyncLocalStorage会变成互不相通的两份上下文。
 export const tenantContext = new AsyncLocalStorage();
+export const SYSTEM_TENANT_ID = '__system__';
+export const BOOTSTRAP_TENANT_ID = 'default';
 export function resolveTenantIdDefault(tenantId) {
   return String(tenantId || tenantContext.getStore() || 'default').trim() || 'default';
 }
@@ -28,6 +30,18 @@ const RLS_NO_TENANT_SENTINEL = '__rls_no_tenant_context__';
 export function resolveTenantIdStrict(tenantId) {
   const v = String(tenantId || tenantContext.getStore() || '').trim();
   return v || RLS_NO_TENANT_SENTINEL;
+}
+
+// 平台级表(tenants/licenses/全局参考表)可用 system context 包裹，避免误落入某个租户。
+export async function runWithSystemTenantContext(fn) {
+  return await tenantContext.run(SYSTEM_TENANT_ID, fn);
+}
+
+// 启动迁移 / seed / bootstrap 写入 tenant-owned RLS 表时，必须明确钉到一个真实租户；
+// 当前历史数据与宿主初始化统一落在 default 租户。不要用 system tenant 去写 RLS 业务表，
+// 否则 WITH CHECK 会因为 tenant_id 不匹配而被拒绝。
+export async function runWithBootstrapTenantContext(fn, tenantId = BOOTSTRAP_TENANT_ID) {
+  return await tenantContext.run(resolveTenantIdDefault(tenantId), fn);
 }
 
 let _pool = null;

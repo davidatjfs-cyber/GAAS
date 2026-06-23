@@ -566,7 +566,7 @@ export async function ensureAgentConfigTables() {
       const tr = await pool().query(
         `insert into agent_prompt_templates (template_key, agent_id, name, content, enabled, is_builtin, tenant_id)
          values ($1, $2, $3, $4, $5, $6, $7)
-         on conflict (template_key)
+         on conflict (template_key, tenant_id)
          do update set name = excluded.name, content = excluded.content, enabled = excluded.enabled, updated_at = now()
          returning id, template_key`,
         [tpl.template_key, tpl.agent_id, tpl.name, tpl.content, tpl.enabled !== false, tpl.is_builtin === true, resolveTenantIdDefault()]
@@ -580,7 +580,7 @@ export async function ensureAgentConfigTables() {
       const tr = await pool().query(
         `insert into agent_reply_templates (template_key, agent_id, name, content, enabled, is_builtin, tenant_id)
          values ($1, $2, $3, $4, $5, $6, $7)
-         on conflict (template_key)
+         on conflict (template_key, tenant_id)
          do update set name = excluded.name, content = excluded.content, enabled = excluded.enabled, updated_at = now()
          returning id, template_key`,
         [tpl.template_key, tpl.agent_id, tpl.name, tpl.content, tpl.enabled !== false, tpl.is_builtin === true, resolveTenantIdDefault()]
@@ -598,7 +598,7 @@ export async function ensureAgentConfigTables() {
       await pool().query(`
         insert into agent_configs (agent_id, name, description, system_prompt, model_name, temperature, enabled, schedule_interval, prompt_template_id, reply_template_id, tenant_id)
         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        on conflict (agent_id) do nothing
+        on conflict (agent_id, tenant_id) do nothing
       `, [agent.agent_id, agent.name, agent.description, agent.system_prompt, agent.model_name, agent.temperature, agent.enabled, agent.schedule_interval, promptTemplateId, replyTemplateId, resolveTenantIdDefault()]);
 
       if (promptTemplateId) {
