@@ -378,7 +378,7 @@ export async function reconcileDailyReportAttendanceRegister(pool, opts) {
        $5, $6, $7,
        $8::jsonb, $9::jsonb, $10, $11, NOW(), $12
      )
-     ON CONFLICT (store, report_date) DO UPDATE SET
+     ON CONFLICT (store, report_date, tenant_id) DO UPDATE SET
        brand = EXCLUDED.brand,
        labor_total = EXCLUDED.labor_total,
        front_person_days = EXCLUDED.front_person_days,

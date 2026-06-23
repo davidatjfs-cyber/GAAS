@@ -15,7 +15,7 @@
 //   - 培训闭环: 仅生成培训内容时消耗1次LLM
 // ─────────────────────────────────────────────────────────────────
 
-import { pool as getUnifiedPool } from './utils/database.js';
+import { pool as getUnifiedPool, resolveTenantIdDefault, tenantContext } from './utils/database.js';
 
 let _pool = null;
 let _sendLarkMessage = null;
@@ -87,10 +87,13 @@ async function markAutoOpsRun(jobKey, runKey, payload = {}) {
 }
 
 async function appendAutoOpsEvent(eventType, taskId, payload = {}) {
-  await pool().query(
-    `INSERT INTO master_events (task_id, event_type, from_agent, payload)
-     VALUES ($1,$2,'auto_ops',$3::jsonb)`,
-    [taskId, eventType, JSON.stringify(payload || {})]
+  const tenantId = resolveTenantIdDefault(payload?.tenant_id || payload?.tenantId);
+  await tenantContext.run(tenantId, () =>
+    pool().query(
+      `INSERT INTO master_events (task_id, event_type, from_agent, payload, tenant_id)
+       VALUES ($1,$2,'auto_ops',$3::jsonb,$4)`,
+      [taskId, eventType, JSON.stringify(payload || {}), tenantId]
+    )
   );
 }
 

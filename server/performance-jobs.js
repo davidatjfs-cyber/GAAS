@@ -256,9 +256,9 @@ export async function runMonthlyPerformanceClose() {
     const summary = `月度自动评分（${period}）：执行力 ${es.execution_rating || '—'}，态度 ${es.attitude_rating || '—'}，能力 ${es.ability_rating || '—'}，门店 ${fmtStoreLevelLabel(storeRating)}。`;
     try {
       await pool().query(
-          `INSERT INTO agent_scores (brand, store, username, name, role, period, score_model, base_score, total_score, breakdown, deductions, summary)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12)
-           ON CONFLICT (brand, store, username, period)
+          `INSERT INTO agent_scores (brand, store, username, name, role, period, score_model, base_score, total_score, breakdown, deductions, summary, tenant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13)
+           ON CONFLICT (brand, store, username, period, tenant_id)
            DO UPDATE SET
              name = EXCLUDED.name,
              base_score = EXCLUDED.base_score,
@@ -280,7 +280,8 @@ export async function runMonthlyPerformanceClose() {
             es.total_score,
             JSON.stringify(breakdown),
             JSON.stringify(deductions),
-            summary
+            summary,
+            tenantId
           ]
         );
     } catch (e) {

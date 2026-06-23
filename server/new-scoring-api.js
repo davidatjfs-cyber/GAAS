@@ -286,17 +286,18 @@ export function registerNewScoringRoutes(app) {
         });
       }
       
+      const tenantId = resolveTenantIdDefault(req.tenantId);
       await pool().query(`
         INSERT INTO daily_reports (store, brand, date, actual_revenue, actual_margin, dianping_rating, new_wechat_members, wechat_month_total, submitted, submitted_at,
           pre_discount_revenue, total_discount, dine_orders, dine_revenue, dine_traffic, efficiency, labor_total, gross_profit, budget, budget_rate,
           delivery_actual, delivery_orders, delivery_pre_revenue, delivery_bad_reviews, private_room_uses, operational_anomaly_note,
           recharge_count, recharge_amount,
-          weather, segments, discount_dine, discount_delivery, categories, delivery_detail, bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch)
+          weather, segments, discount_dine, discount_delivery, categories, delivery_detail, bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch, tenant_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, NOW(),
           $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
           $19, $20, $21, $22, $23, $24, $25, $26,
-          $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
-        ON CONFLICT (store, date)
+          $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+        ON CONFLICT (store, date, tenant_id)
         DO UPDATE SET 
           actual_revenue = EXCLUDED.actual_revenue,
           actual_margin = EXCLUDED.actual_margin,
@@ -342,7 +343,7 @@ export function registerNewScoringRoutes(app) {
         weather || null, segments ? JSON.stringify(segments) : null, discount_dine || 0, discount_delivery || 0,
         categories ? JSON.stringify(categories) : null, delivery_detail ? JSON.stringify(delivery_detail) : null,
         bad_reviews_dianping || 0, staff ? JSON.stringify(staff) : null, schedule_next_day ? JSON.stringify(schedule_next_day) : null,
-        photos ? JSON.stringify(photos) : null, !!holiday_switch]);
+        photos ? JSON.stringify(photos) : null, !!holiday_switch, tenantId]);
 
       // Sync to hrms_state.dailyReports to prevent V1 self-healing from detecting lag
       try {

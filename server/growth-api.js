@@ -1096,7 +1096,7 @@ async function upsertCustomer(pool, payload, tenantId = 'default') {
     await pool.query(
       `INSERT INTO customer_identities (customer_id, identity_type, identity_value, source, tenant_id)
        VALUES ($1,$2,$3,'miniprogram',$4)
-       ON CONFLICT (identity_type, identity_value)
+       ON CONFLICT (identity_type, identity_value, tenant_id)
        DO UPDATE SET customer_id = EXCLUDED.customer_id, updated_at = NOW()`,
       [existing.id, type, value, tenantId]
     );
@@ -2154,10 +2154,10 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
     } else if (actionType === 'generate_poster') {
       const posterKey = `exec_poster_${Date.now()}`;
       const posterResult = await pool.query(
-        `INSERT INTO generated_posters (poster_key, campaign_id, store_id, title, status)
-         VALUES ($1,$2,$3,$4,'generated')
+        `INSERT INTO generated_posters (poster_key, campaign_id, store_id, title, status, tenant_id)
+         VALUES ($1,$2,$3,$4,'generated',$5)
          RETURNING poster_key`,
-        [posterKey, campaignId, storeId, cleanText(before.title, 500)]
+        [posterKey, campaignId, storeId, cleanText(before.title, 500), tenantId]
       );
       executionResults.real_executions.push({ type: 'poster', poster_key: posterResult.rows[0]?.poster_key });
     } else {
@@ -5237,12 +5237,13 @@ export function registerGrowthRoutes(app, pool) {
   app.post('/api/growth/public-promo-tasks', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const b = req.body || {};
+    const tenantId = await resolveTenantIdForStore(pool, cleanText(b.store_id, 128));
     const r = await pool.query(
-      `INSERT INTO public_promo_tasks (task_key, store_id, channel_key, campaign_id, title, content_brief, copy_text, poster_url, qr_scene, status, assignee_username, due_at)
-       VALUES (NULLIF($1,''),NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,COALESCE(NULLIF($10,''),'planned'),NULLIF($11,''),$12)
-       ON CONFLICT (task_key) DO UPDATE SET status = EXCLUDED.status, copy_text = EXCLUDED.copy_text, poster_url = EXCLUDED.poster_url, updated_at = NOW()
+      `INSERT INTO public_promo_tasks (task_key, store_id, channel_key, campaign_id, title, content_brief, copy_text, poster_url, qr_scene, status, assignee_username, due_at, tenant_id)
+       VALUES (NULLIF($1,''),NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,COALESCE(NULLIF($10,''),'planned'),NULLIF($11,''),$12,$13)
+       ON CONFLICT (task_key, tenant_id) DO UPDATE SET status = EXCLUDED.status, copy_text = EXCLUDED.copy_text, poster_url = EXCLUDED.poster_url, updated_at = NOW()
        RETURNING *`,
-      [cleanText(b.task_key, 255), cleanText(b.store_id, 128), cleanText(b.channel_key, 80), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.content_brief, 2000), cleanText(b.copy_text, 4000), cleanText(b.poster_url, 1000), cleanText(b.qr_scene, 255), cleanText(b.status, 40), cleanText(b.assignee_username, 128), b.due_at ? parseOccurredAt(b.due_at) : null]
+      [cleanText(b.task_key, 255), cleanText(b.store_id, 128), cleanText(b.channel_key, 80), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.content_brief, 2000), cleanText(b.copy_text, 4000), cleanText(b.poster_url, 1000), cleanText(b.qr_scene, 255), cleanText(b.status, 40), cleanText(b.assignee_username, 128), b.due_at ? parseOccurredAt(b.due_at) : null, tenantId]
     );
     return res.json({ ok: true, task: r.rows[0] });
   });
@@ -5350,12 +5351,13 @@ export function registerGrowthRoutes(app, pool) {
   app.post('/api/growth/generated-posters', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const b = req.body || {};
+    const tenantId = await resolveTenantIdForStore(pool, cleanText(b.store_id, 128));
     const r = await pool.query(
-      `INSERT INTO generated_posters (poster_key, campaign_id, store_id, template_key, title, subtitle, cta, image_url, output_url, purposes, channels, status, meta)
-       VALUES (NULLIF($1,''),NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,COALESCE(NULLIF($12,''),'draft'),$13::jsonb)
-       ON CONFLICT (poster_key) DO UPDATE SET title = EXCLUDED.title, subtitle = EXCLUDED.subtitle, cta = EXCLUDED.cta, output_url = EXCLUDED.output_url, purposes = EXCLUDED.purposes, channels = EXCLUDED.channels, status = EXCLUDED.status, meta = EXCLUDED.meta, updated_at = NOW()
+      `INSERT INTO generated_posters (poster_key, campaign_id, store_id, template_key, title, subtitle, cta, image_url, output_url, purposes, channels, status, meta, tenant_id)
+       VALUES (NULLIF($1,''),NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,COALESCE(NULLIF($12,''),'draft'),$13::jsonb,$14)
+       ON CONFLICT (poster_key, tenant_id) DO UPDATE SET title = EXCLUDED.title, subtitle = EXCLUDED.subtitle, cta = EXCLUDED.cta, output_url = EXCLUDED.output_url, purposes = EXCLUDED.purposes, channels = EXCLUDED.channels, status = EXCLUDED.status, meta = EXCLUDED.meta, updated_at = NOW()
        RETURNING *`,
-      [cleanText(b.poster_key, 255), cleanText(b.campaign_id, 128), cleanText(b.store_id, 128), cleanText(b.template_key, 128), cleanText(b.title, 500), cleanText(b.subtitle, 1000), cleanText(b.cta, 500), cleanText(b.image_url, 1000), cleanText(b.output_url, 1000), Array.isArray(b.purposes) ? b.purposes.filter(Boolean) : [], Array.isArray(b.channels) ? b.channels.filter(Boolean) : [], cleanText(b.status, 40), JSON.stringify(b.meta || {})]
+      [cleanText(b.poster_key, 255), cleanText(b.campaign_id, 128), cleanText(b.store_id, 128), cleanText(b.template_key, 128), cleanText(b.title, 500), cleanText(b.subtitle, 1000), cleanText(b.cta, 500), cleanText(b.image_url, 1000), cleanText(b.output_url, 1000), Array.isArray(b.purposes) ? b.purposes.filter(Boolean) : [], Array.isArray(b.channels) ? b.channels.filter(Boolean) : [], cleanText(b.status, 40), JSON.stringify(b.meta || {}), tenantId]
     );
     return res.json({ ok: true, poster: r.rows[0] });
   });
@@ -5952,7 +5954,7 @@ export function registerGrowthRoutes(app, pool) {
     await pool.query(
       `INSERT INTO store_wecom_configs (store_id, corp_id, corp_secret, agent_id, sender_userid, tenant_id)
        VALUES ($1,$2,$3,$4,$5,$6)
-       ON CONFLICT (store_id) DO UPDATE SET
+       ON CONFLICT (store_id, tenant_id) DO UPDATE SET
          corp_id = EXCLUDED.corp_id, corp_secret = EXCLUDED.corp_secret,
          agent_id = EXCLUDED.agent_id, sender_userid = EXCLUDED.sender_userid,
          updated_at = NOW()`,

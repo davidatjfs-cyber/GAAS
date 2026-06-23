@@ -21,9 +21,10 @@ function safeDateOnly(x) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
 }
 
-async function recalcWechatMonthTotalsForStoreMonth(pool, store, anchorDate) {
+async function recalcWechatMonthTotalsForStoreMonth(pool, store, anchorDate, tenantId = 'default') {
   const st = String(store || '').trim();
   const ymd = String(anchorDate || '').slice(0, 10);
+  const tid = String(tenantId || 'default').trim() || 'default';
   if (!st || ymd.length < 10) return;
   const monthStart = `${ymd.slice(0, 7)}-01`;
   try {
@@ -35,12 +36,13 @@ async function recalcWechatMonthTotalsForStoreMonth(pool, store, anchorDate) {
          WHERE TRIM(store) = TRIM($1::text)
            AND date >= $2::date
            AND date < ($2::date + INTERVAL '1 month')
+           AND tenant_id = $3
        )
        UPDATE daily_reports dr
        SET wechat_month_total = LEAST(2147483647, GREATEST(0, sums.cum))::int
        FROM sums
-       WHERE TRIM(dr.store) = TRIM($1::text) AND dr.date::date = sums.d`,
-      [st, monthStart]
+       WHERE TRIM(dr.store) = TRIM($1::text) AND dr.date::date = sums.d AND dr.tenant_id = $3`,
+      [st, monthStart, tid]
     );
   } catch (e) {
     console.error('[wechat_month_total recalc]', e?.message);
@@ -51,6 +53,7 @@ async function upsertDailyReportPgFromStateReport(pool, dr) {
   const payload = dr?.data && typeof dr.data === 'object' ? dr.data : {};
   const store = String(dr?.store || '').trim();
   const date = safeDateOnly(dr?.date);
+  const tenantId = String(dr?.tenant_id || payload?.tenant_id || 'default').trim() || 'default';
   if (!store || !date) throw new Error('missing_store_or_date');
   const operationalAnomalyNote = String(
     payload?.operational_anomaly_note ?? payload?.operationalAnomalyNote ?? ''
@@ -100,7 +103,7 @@ async function upsertDailyReportPgFromStateReport(pool, dr) {
             pre_discount_revenue, total_discount, dine_orders, dine_revenue, dine_traffic, efficiency, labor_total, gross_profit, budget, budget_rate,
             delivery_actual, delivery_orders, delivery_pre_revenue, delivery_bad_reviews, private_room_uses, operational_anomaly_note,
             recharge_count, recharge_amount,
-            weather, segments, discount_dine, discount_delivery, categories, delivery_detail, bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch)
+            weather, segments, discount_dine, discount_delivery, categories, delivery_detail, bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch, tenant_id)
           VALUES ($1::text, $2::text, $3::date, $4, $5, $6, $7,
             COALESCE((
               SELECT SUM(dr.new_wechat_members)::bigint
@@ -108,12 +111,13 @@ async function upsertDailyReportPgFromStateReport(pool, dr) {
               WHERE TRIM(dr.store) = TRIM($1::text)
                 AND dr.date >= date_trunc('month', $3::date)::date
                 AND dr.date < $3::date
+                AND dr.tenant_id = $38
             ), 0) + $8::bigint,
             true, NOW(),
             $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
             $19, $20, $21, $22, $23, $24, $25, $26,
-            $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
-          ON CONFLICT (store, date)
+            $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
+          ON CONFLICT (store, date, tenant_id)
           DO UPDATE SET 
             actual_revenue = EXCLUDED.actual_revenue,
             actual_margin = EXCLUDED.actual_margin,
@@ -188,10 +192,11 @@ async function upsertDailyReportPgFromStateReport(pool, dr) {
       staff,
       scheduleNextDay,
       photos,
-      holidaySwitch
+      holidaySwitch,
+      tenantId
     ]
   );
-  await recalcWechatMonthTotalsForStoreMonth(pool, store, date);
+  await recalcWechatMonthTotalsForStoreMonth(pool, store, date, tenantId);
 }
 
 async function main() {

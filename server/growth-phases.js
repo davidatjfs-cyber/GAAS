@@ -2,7 +2,7 @@ import axios from 'axios';
 import { executeGrowthActionRecord, resolveTenantIdForStore } from './growth-api.js';
 import { callLLM, sendLarkMessage } from './agents.js';
 import { getBrandForStoreSync } from './utils/brand-config-loader.js';
-import { tenantContext } from './utils/database.js';
+import { resolveTenantIdDefault, tenantContext } from './utils/database.js';
 
 const PHASE_EVENT_TYPES = new Set([
   'campaign_scan', 'phone_authorized', 'coupon_claimed',
@@ -1577,9 +1577,10 @@ function parseNum(val) {
 }
 
 async function refreshSalesGrowthSnapshot(pool, days = 3) {
+  const tenantId = resolveTenantIdDefault();
   const r = await pool.query(`
     INSERT INTO sales_growth_snapshot
-      (snapshot_date, store_code, dish_name, category, order_count, qty, revenue, avg_unit_price, lunch_qty, dinner_qty, updated_at)
+      (snapshot_date, store_code, dish_name, category, order_count, qty, revenue, avg_unit_price, lunch_qty, dinner_qty, updated_at, tenant_id)
     SELECT
       i.biz_date                                        AS snapshot_date,
       COALESCE(i.store_code, '')                        AS store_code,
@@ -1595,14 +1596,16 @@ async function refreshSalesGrowthSnapshot(pool, days = 3) {
                THEN i.qty ELSE 0 END)::INTEGER          AS lunch_qty,
       SUM(CASE WHEN EXTRACT(HOUR FROM i.order_time AT TIME ZONE 'Asia/Shanghai') BETWEEN 16 AND 20
                THEN i.qty ELSE 0 END)::INTEGER          AS dinner_qty,
-      NOW()                                             AS updated_at
+      NOW()                                             AS updated_at,
+      $2                                                AS tenant_id
     FROM pos_order_items i
     WHERE i.biz_date >= CURRENT_DATE - ($1 || ' days')::INTERVAL
       AND i.biz_date <= CURRENT_DATE
       AND i.dish_name IS NOT NULL AND i.dish_name <> ''
       AND i.store_code IS NOT NULL AND i.store_code <> ''
+      AND i.tenant_id = $2
     GROUP BY i.biz_date, i.store_code, i.dish_name
-    ON CONFLICT (snapshot_date, store_code, dish_name)
+    ON CONFLICT (snapshot_date, store_code, dish_name, tenant_id)
     DO UPDATE SET
       category       = EXCLUDED.category,
       order_count    = EXCLUDED.order_count,
@@ -1612,7 +1615,7 @@ async function refreshSalesGrowthSnapshot(pool, days = 3) {
       lunch_qty      = EXCLUDED.lunch_qty,
       dinner_qty     = EXCLUDED.dinner_qty,
       updated_at     = NOW()
-  `, [days]);
+  `, [days, tenantId]);
   return r.rowCount;
 }
 
@@ -1991,15 +1994,16 @@ export function registerPhaseRoutes(app, pool) {
     const storeId = cleanText(b.store_id || '', 128);
     let ordersUpserted = 0, itemsUpserted = 0;
 
-    return await tenantContext.run(getPhaseApiTenantId(req), async () => {
+    const tenantId = getPhaseApiTenantId(req);
+    return await tenantContext.run(tenantId, async () => {
     if (orders.length) {
       for (const o of orders) {
             const phone = parseKeruyunPhone(o.phone || o.member_phone || '');
            const bizDate = cnDate(o.biz_date);
         await pool.query(`
-          INSERT INTO pos_orders(seq_no,order_no,order_source,biz_date,order_time,checkout_time,order_status,amount_before_discount,total_discount,amount_after_discount,payment_method,payment_count,member_name,phone,order_type,table_no,diners,duration,store_name,store_id)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-          ON CONFLICT(order_no) DO UPDATE SET
+          INSERT INTO pos_orders(seq_no,order_no,order_source,biz_date,order_time,checkout_time,order_status,amount_before_discount,total_discount,amount_after_discount,payment_method,payment_count,member_name,phone,order_type,table_no,diners,duration,store_name,store_id,tenant_id)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+          ON CONFLICT(order_no, tenant_id) DO UPDATE SET
             order_source=EXCLUDED.order_source,
             checkout_time=COALESCE(EXCLUDED.checkout_time,pos_orders.checkout_time),
             order_status=COALESCE(EXCLUDED.order_status,pos_orders.order_status),
@@ -2025,7 +2029,7 @@ export function registerPhaseRoutes(app, pool) {
           cleanText(o.member_name || '', 100), phone,
           cleanText(o.order_type || '', 40), cleanText(o.table_no || '', 40),
           Number(o.diners) || null, cleanText(o.duration || '', 40),
-          cleanText(o.store_name || '', 200), storeId || cleanText(o.store_id || '', 128)
+          cleanText(o.store_name || '', 200), storeId || cleanText(o.store_id || '', 128), tenantId
         ]);
         ordersUpserted++;
       }
@@ -2035,8 +2039,8 @@ export function registerPhaseRoutes(app, pool) {
        for (const it of items) {
          const itemBizDate = cnDate(it.biz_date);
              await pool.query(`
-              INSERT INTO pos_order_items(biz_date,store_name,store_code,order_no,sku,dish_name,department,table_name,table_area,sale_type,category_mid,category,spec,unit,order_type,order_source,qty,amount_before_discount,discount,service_fee,amount_after_discount,order_time,checkout_time)
-              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+              INSERT INTO pos_order_items(biz_date,store_name,store_code,order_no,sku,dish_name,department,table_name,table_area,sale_type,category_mid,category,spec,unit,order_type,order_source,qty,amount_before_discount,discount,service_fee,amount_after_discount,order_time,checkout_time,tenant_id)
+              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
               ON CONFLICT DO NOTHING
             `, [
               itemBizDate || null, cleanText(it.store_name || '', 200), cleanText(it.store_code || '', 64),
@@ -2048,7 +2052,7 @@ export function registerPhaseRoutes(app, pool) {
               cleanText(it.order_type || '', 40), cleanText(it.order_source || '', 200),
               parseNum(it.qty), parseNum(it.amount_before_discount),
               parseNum(it.discount), parseNum(it.service_fee), parseNum(it.amount_after_discount),
-              parseKeruyunDateTime(it.order_time), parseKeruyunDateTime(it.checkout_time)
+              parseKeruyunDateTime(it.order_time), parseKeruyunDateTime(it.checkout_time), tenantId
             ]);
         itemsUpserted++;
       }
@@ -2406,6 +2410,7 @@ export function registerPhaseRoutes(app, pool) {
     if (!rqa(req, res)) return;
     const b = req.body || {};
     const override = b.config || null;
+    const tenantId = getPhaseApiTenantId(req);
 
     let config = override;
     if (!config) {
@@ -2468,9 +2473,9 @@ export function registerPhaseRoutes(app, pool) {
           const bizDate = cnDate(o.biz_date);
           try {
             await pool.query(`
-              INSERT INTO pos_orders(seq_no,order_no,order_source,biz_date,order_time,checkout_time,order_status,amount_before_discount,total_discount,amount_after_discount,payment_method,payment_count,member_name,phone,order_type,table_no,diners,duration,store_name,store_id)
-              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-              ON CONFLICT(order_no) DO UPDATE SET
+              INSERT INTO pos_orders(seq_no,order_no,order_source,biz_date,order_time,checkout_time,order_status,amount_before_discount,total_discount,amount_after_discount,payment_method,payment_count,member_name,phone,order_type,table_no,diners,duration,store_name,store_id,tenant_id)
+              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+              ON CONFLICT(order_no, tenant_id) DO UPDATE SET
                 order_source=EXCLUDED.order_source,
                 checkout_time=COALESCE(EXCLUDED.checkout_time,pos_orders.checkout_time),
                 order_status=COALESCE(EXCLUDED.order_status,pos_orders.order_status),
@@ -2496,7 +2501,7 @@ export function registerPhaseRoutes(app, pool) {
               cleanText(o.member_name || '', 100), phone,
               cleanText(o.order_type || '', 40), cleanText(o.table_no || '', 40),
               Number(o.diners) || null, cleanText(o.duration || '', 40),
-               cleanText(o.store_name || '', 200), (function() { var sn = cleanText(o.store_name || '', 200); var sid = storeId || cleanText(o.store_id || '', 128); var dbId = getBrandForStoreSync(sn, getPhaseApiTenantId(req))?.storeId; if (dbId) return dbId; if (sn && sn.includes('洪潮')) return '64822111'; if (sn && sn.includes('马己仙')) return '51866138'; return sid; })()
+               cleanText(o.store_name || '', 200), (function() { var sn = cleanText(o.store_name || '', 200); var sid = storeId || cleanText(o.store_id || '', 128); var dbId = getBrandForStoreSync(sn, getPhaseApiTenantId(req))?.storeId; if (dbId) return dbId; if (sn && sn.includes('洪潮')) return '64822111'; if (sn && sn.includes('马己仙')) return '51866138'; return sid; })(), tenantId
             ]);
             totalOrders++;
           } catch (e) { console.error('[pos-feishu-sync] order upsert error:', e.message, o.order_no); }
@@ -2545,8 +2550,8 @@ export function registerPhaseRoutes(app, pool) {
             const itemBizDate = cnDate(it.biz_date);
            try {
              await pool.query(`
-              INSERT INTO pos_order_items(biz_date,store_name,store_code,order_no,sku,dish_name,department,table_name,table_area,sale_type,category_mid,category,spec,unit,order_type,order_source,qty,amount_before_discount,discount,service_fee,amount_after_discount,order_time,checkout_time)
-              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+              INSERT INTO pos_order_items(biz_date,store_name,store_code,order_no,sku,dish_name,department,table_name,table_area,sale_type,category_mid,category,spec,unit,order_type,order_source,qty,amount_before_discount,discount,service_fee,amount_after_discount,order_time,checkout_time,tenant_id)
+              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
               ON CONFLICT DO NOTHING
             `, [
               itemBizDate || null, cleanText(it.store_name || '', 200), (function() { var sn = cleanText(it.store_name || '', 200); var dbId = getBrandForStoreSync(sn, getPhaseApiTenantId(req))?.storeId; if (dbId) return dbId; if (sn && sn.includes('洪潮')) return '64822111'; if (sn && sn.includes('马己仙')) return '51866138'; return cleanText(it.store_code || '', 64); })(),
@@ -2558,7 +2563,7 @@ export function registerPhaseRoutes(app, pool) {
               cleanText(it.order_type || '', 40), cleanText(it.order_source || '', 200),
               parseNum(it.qty), parseNum(it.amount_before_discount),
               parseNum(it.discount), parseNum(it.service_fee), parseNum(it.amount_after_discount),
-              parseKeruyunDateTime(it.order_time), parseKeruyunDateTime(it.checkout_time)
+              parseKeruyunDateTime(it.order_time), parseKeruyunDateTime(it.checkout_time), tenantId
             ]);
             totalItems++;
           } catch (e) { console.error('[pos-feishu-sync] item upsert error:', e.message, it.order_no); }

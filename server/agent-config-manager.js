@@ -626,7 +626,7 @@ export async function ensureAgentConfigTables() {
       await pool().query(`
         insert into agent_rules (category, assignee_role, normal_deduction, major_deduction, tenant_id)
         values ($1, $2, $3, $4, $5)
-        on conflict (category) do nothing
+        on conflict (category, tenant_id) do nothing
       `, [rule.category, rule.assignee_role, rule.normal_deduction, rule.major_deduction, resolveTenantIdDefault()]);
     }
 

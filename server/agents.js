@@ -4938,13 +4938,13 @@ async function processTableVisitData(records) {
             date, store, brand, table_number, guest_count, amount,
             has_reservation, dissatisfaction_dish, unsatisfied_items, feedback,
             rush_dish_content,
-            feishu_record_id, updated_at
+            feishu_record_id, updated_at, tenant_id
           ) VALUES (
             $1::date,$2,$3,$4,$5,$6,
             $7,$8,$9,$10,
-            $11,$12,NOW()
+            $11,$12,NOW(),$13
           )
-          ON CONFLICT (feishu_record_id) DO UPDATE SET
+          ON CONFLICT (feishu_record_id, tenant_id) DO UPDATE SET
             date = EXCLUDED.date,
             store = EXCLUDED.store,
             brand = EXCLUDED.brand,
@@ -4969,7 +4969,8 @@ async function processTableVisitData(records) {
             extractDissatisfactionReasonFromFields(fields),
             String(fields['备注'] || '').trim(),
             rushText || null,
-            String(record.record_id || '').trim()
+            String(record.record_id || '').trim(),
+            resolveTenantIdDefault()
           ]
         );
       }
@@ -5568,16 +5569,17 @@ export async function pollBitableSubmissions(configKey = 'ops_checklist') {
     for (const record of newRecords) {
       try {
         await pool().query(
-          `INSERT INTO feishu_generic_records (app_token, table_id, record_id, fields, raw, created_at, updated_at)
-           VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, NOW(), NOW())
-           ON CONFLICT (app_token, table_id, record_id) DO UPDATE SET
+          `INSERT INTO feishu_generic_records (app_token, table_id, record_id, fields, raw, created_at, updated_at, tenant_id)
+           VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, NOW(), NOW(), $6)
+           ON CONFLICT (app_token, table_id, record_id, tenant_id) DO UPDATE SET
              fields = EXCLUDED.fields, raw = EXCLUDED.raw, updated_at = NOW()`,
           [
             config?.appToken || '',
             config?.tableId || '',
             record.record_id,
             JSON.stringify(record.fields || {}),
-            JSON.stringify(record)
+            JSON.stringify(record),
+            resolveTenantIdDefault()
           ]
         );
       } catch (e) {
@@ -7429,7 +7431,7 @@ async function registerFeishuUser(openId, username) {
       await pool().query(
         `INSERT INTO feishu_users (open_id, username, name, store, role, registered, tenant_id)
          VALUES ($1, $2, $3, $4, $5, TRUE, $6)
-         ON CONFLICT (open_id) DO UPDATE SET username = $2, name = $3, store = $4, role = $5, registered = TRUE, updated_at = NOW()`,
+         ON CONFLICT (open_id, tenant_id) DO UPDATE SET username = $2, name = $3, store = $4, role = $5, registered = TRUE, updated_at = NOW()`,
         [openId, uname, name, store, role, tenantId]
       );
     });
@@ -10867,7 +10869,7 @@ export async function onFeishuEvent(body) {
           // 绑定成功后(registerFeishuUser)会用真实租户覆盖
           await tenantContext.run('default', () =>
             pool().query(
-              `INSERT INTO feishu_users (open_id, registered, tenant_id) VALUES ($1, FALSE, 'default') ON CONFLICT (open_id) DO NOTHING`, [openId]
+              `INSERT INTO feishu_users (open_id, registered, tenant_id) VALUES ($1, FALSE, 'default') ON CONFLICT (open_id, tenant_id) DO NOTHING`, [openId]
             )
           );
         } catch (e) {}
@@ -10883,7 +10885,7 @@ export async function onFeishuEvent(body) {
           // 绑定成功后(registerFeishuUser)会用真实租户覆盖
           await tenantContext.run('default', () =>
             pool().query(
-              `INSERT INTO feishu_users (open_id, registered, tenant_id) VALUES ($1, FALSE, 'default') ON CONFLICT (open_id) DO NOTHING`, [openId]
+              `INSERT INTO feishu_users (open_id, registered, tenant_id) VALUES ($1, FALSE, 'default') ON CONFLICT (open_id, tenant_id) DO NOTHING`, [openId]
             )
           );
         } catch (e) {}

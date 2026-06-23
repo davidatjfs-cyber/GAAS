@@ -576,17 +576,18 @@ async function getMonthlyTargetRevenueByBrand(brand, period, canonStore) {
 
 // 保存门店评级
 async function saveStoreRating(store, brand, period, actualRevenue, targetRevenue, achievementRate, rating) {
+  const tenantId = resolveTenantIdDefault();
   await pool().query(`
     INSERT INTO store_ratings 
-    (store, brand, period, actual_revenue, target_revenue, achievement_rate, rating)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
-    ON CONFLICT (store, brand, period)
+    (store, brand, period, actual_revenue, target_revenue, achievement_rate, rating, tenant_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (store, brand, period, tenant_id)
     DO UPDATE SET 
       actual_revenue = EXCLUDED.actual_revenue,
       target_revenue = EXCLUDED.target_revenue,
       achievement_rate = EXCLUDED.achievement_rate,
       rating = EXCLUDED.rating
-  `, [store, brand, period, actualRevenue, targetRevenue, achievementRate, rating]);
+  `, [store, brand, period, actualRevenue, targetRevenue, achievementRate, rating, tenantId]);
 }
 
 // 保存员工评分

@@ -622,11 +622,12 @@ export async function syncDishLibraryCosts() {
           forceBizType: tableConfig.force_biz_type
         });
         for (const row of rows) {
+          const tenantId = await resolveTenantIdForStore(row.store || row.brand || '');
           await pool().query(
             `INSERT INTO dish_library_costs
-              (store, brand, biz_type, dish_name, dish_price, unit_cost, source_data, source_record_id, enabled, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,NOW())
-             ON CONFLICT (brand, biz_type, dish_name)
+              (store, brand, biz_type, dish_name, dish_price, unit_cost, source_data, source_record_id, enabled, updated_at, tenant_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,NOW(),$9)
+             ON CONFLICT (brand, biz_type, dish_name, tenant_id)
              DO UPDATE SET
                store = EXCLUDED.store,
                dish_price = EXCLUDED.dish_price,
@@ -643,7 +644,8 @@ export async function syncDishLibraryCosts() {
               row.dish_price,
               row.unit_cost,
               JSON.stringify(row.source_data || {}),
-              row.feishu_record_id
+              row.feishu_record_id,
+              tenantId
             ]
           );
           upserted++;
