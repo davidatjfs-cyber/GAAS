@@ -5041,26 +5041,31 @@ export async function processBitableData(configKey, records) {
     console.error(`[bitable] invalid config key: ${configKey}`);
     return;
   }
-  
-  switch (config.type) {
-    case 'checklist':
-      return await processChecklistData(records);
-    case 'table_visit':
-      return await processTableVisitData(records);
-    case 'bad_review':
-      return await processBadReviewData(records);
-    case 'closing_report':
-      return await processClosingReportData(records);
-    case 'opening_report':
-      return await processOpeningReportData(records);
-    case 'meeting_report':
-      return await processMeetingReportData(records);
-    case 'material_report':
-      return await processMaterialReportData(records, config.brand);
-    default:
-      console.log(`[bitable][${configKey}] unknown type: ${config.type}, processing as generic`);
-      return await processGenericData(records, configKey);
-  }
+
+  // 此函数是PG LISTEN/NOTIFY、catchup、回退轮询三条路径的唯一公共入口，
+  // 但调用方均未建立ALS——导致内部写agent_messages时tenant_id列值('default')
+  // 与会话变量(空sentinel)不一致，被严格RLS的WITH CHECK拒绝。这里统一建ALS。
+  return await tenantContext.run('default', async () => {
+    switch (config.type) {
+      case 'checklist':
+        return await processChecklistData(records);
+      case 'table_visit':
+        return await processTableVisitData(records);
+      case 'bad_review':
+        return await processBadReviewData(records);
+      case 'closing_report':
+        return await processClosingReportData(records);
+      case 'opening_report':
+        return await processOpeningReportData(records);
+      case 'meeting_report':
+        return await processMeetingReportData(records);
+      case 'material_report':
+        return await processMaterialReportData(records, config.brand);
+      default:
+        console.log(`[bitable][${configKey}] unknown type: ${config.type}, processing as generic`);
+        return await processGenericData(records, configKey);
+    }
+  });
 }
 
 // 通用数据处理
