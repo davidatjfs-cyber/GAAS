@@ -51,13 +51,20 @@ async function ensureAutoOpsSchema() {
       id BIGSERIAL PRIMARY KEY,
       job_key TEXT NOT NULL,
       run_key TEXT NOT NULL,
+      tenant_id VARCHAR(80) NOT NULL DEFAULT 'default',
       status TEXT NOT NULL DEFAULT 'completed',
       payload JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE(job_key, run_key)
+      UNIQUE(job_key, run_key, tenant_id)
     )
   `);
+  await pool().query(`ALTER TABLE auto_ops_runs ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default'`);
+  await pool().query(`UPDATE auto_ops_runs SET tenant_id = 'default' WHERE tenant_id IS NULL OR trim(tenant_id) = ''`);
+  await pool().query(`CREATE INDEX IF NOT EXISTS idx_auto_ops_runs_tenant ON auto_ops_runs(tenant_id)`);
+  await pool().query(`ALTER TABLE auto_ops_runs DROP CONSTRAINT IF EXISTS auto_ops_runs_job_key_run_key_key`);
+  await pool().query(`ALTER TABLE auto_ops_runs DROP CONSTRAINT IF EXISTS auto_ops_runs_job_key_run_key_tenant_key`);
+  await pool().query(`ALTER TABLE auto_ops_runs ADD CONSTRAINT auto_ops_runs_job_key_run_key_tenant_key UNIQUE (job_key, run_key, tenant_id)`);
   _autoOpsSchemaEnsured = true;
 }
 
@@ -66,24 +73,26 @@ function cstDateString(baseDate = new Date(), dayOffset = 0) {
   return shifted.toISOString().slice(0, 10);
 }
 
-async function hasAutoOpsRun(jobKey, runKey) {
+async function hasAutoOpsRun(jobKey, runKey, tenantId = resolveTenantIdDefault()) {
   await ensureAutoOpsSchema();
-  const r = await pool().query(
-    `SELECT 1 FROM auto_ops_runs WHERE job_key=$1 AND run_key=$2 AND status='completed' LIMIT 1`,
-    [jobKey, runKey]
-  );
+  const effectiveTenantId = resolveTenantIdDefault(tenantId);
+  const r = await tenantContext.run(effectiveTenantId, () => pool().query(
+    `SELECT 1 FROM auto_ops_runs WHERE job_key=$1 AND run_key=$2 AND tenant_id=$3 AND status='completed' LIMIT 1`,
+    [jobKey, runKey, effectiveTenantId]
+  ));
   return !!r.rows?.length;
 }
 
-async function markAutoOpsRun(jobKey, runKey, payload = {}) {
+async function markAutoOpsRun(jobKey, runKey, payload = {}, tenantId = resolveTenantIdDefault(payload?.tenant_id || payload?.tenantId)) {
   await ensureAutoOpsSchema();
-  await pool().query(
-    `INSERT INTO auto_ops_runs (job_key, run_key, status, payload, created_at, updated_at)
-     VALUES ($1,$2,'completed',$3::jsonb,NOW(),NOW())
-     ON CONFLICT (job_key, run_key)
+  const effectiveTenantId = resolveTenantIdDefault(tenantId);
+  await tenantContext.run(effectiveTenantId, () => pool().query(
+    `INSERT INTO auto_ops_runs (job_key, run_key, tenant_id, status, payload, created_at, updated_at)
+     VALUES ($1,$2,$3,'completed',$4::jsonb,NOW(),NOW())
+     ON CONFLICT (job_key, run_key, tenant_id)
      DO UPDATE SET status='completed', payload=EXCLUDED.payload, updated_at=NOW()`,
-    [jobKey, runKey, JSON.stringify(payload || {})]
-  );
+    [jobKey, runKey, effectiveTenantId, JSON.stringify(payload || {})]
+  ));
 }
 
 async function appendAutoOpsEvent(eventType, taskId, payload = {}) {
@@ -339,7 +348,7 @@ export async function biProactivePushTick(tenantId = 'default') {
   if (cstHour < 10) return 0;
 
   try {
-    if (await hasAutoOpsRun('bi_proactive_push', runKey)) return 0;
+    if (await hasAutoOpsRun('bi_proactive_push', runKey, tenantId)) return 0;
   } catch (e) {}
 
   let pushed = 0;
@@ -484,7 +493,7 @@ export async function biProactivePushTick(tenantId = 'default') {
 
     // 记录推送事件
     await appendAutoOpsEvent('bi_proactive_push', `BI-PUSH-${yesterday}`, { date: yesterday, storesChecked: stores.length, alertsPushed: pushed, hqSummaryCount: hqSummaries.length });
-    await markAutoOpsRun('bi_proactive_push', runKey, { date: yesterday, storesChecked: stores.length, alertsPushed: pushed, hqSummaryCount: hqSummaries.length });
+    await markAutoOpsRun('bi_proactive_push', runKey, { date: yesterday, storesChecked: stores.length, alertsPushed: pushed, hqSummaryCount: hqSummaries.length, tenant_id: tenantId }, tenantId);
     console.log(`[auto-ops] BI proactive push: ${stores.length} stores checked, ${pushed} alerts pushed`);
   } catch (e) {
     console.error('[auto-ops] BI push error:', e?.message);
@@ -508,7 +517,7 @@ export async function laborEfficiencyTick(tenantId = 'default') {
   if (cstDay !== 1 || cstHour !== 9 || now.getMinutes() > 14) return 0;
 
   try {
-    if (await hasAutoOpsRun('labor_efficiency_push', runKey)) return 0;
+    if (await hasAutoOpsRun('labor_efficiency_push', runKey, tenantId)) return 0;
   } catch (e) {}
 
   let pushed = 0;
@@ -589,7 +598,7 @@ export async function laborEfficiencyTick(tenantId = 'default') {
     if (pushed > 0) {
       await appendAutoOpsEvent('labor_efficiency_push', `LABOR-${cstDateString(now, 0)}`, { pushed });
     }
-    await markAutoOpsRun('labor_efficiency_push', runKey, { pushed });
+    await markAutoOpsRun('labor_efficiency_push', runKey, { pushed, tenant_id: tenantId }, tenantId);
     console.log(`[auto-ops] labor efficiency: ${pushed} suggestions pushed`);
   } catch (e) {
     console.error('[auto-ops] labor efficiency error:', e?.message);
@@ -615,7 +624,7 @@ export async function trainingClosedLoopTick(tenantId = 'default') {
   if (cstHour !== 11 || now.getMinutes() > 14) return 0;
 
   try {
-    if (await hasAutoOpsRun('training_closed_loop', runKey)) return 0;
+    if (await hasAutoOpsRun('training_closed_loop', runKey, tenantId)) return 0;
   } catch (e) {}
 
   let created = 0;
@@ -739,7 +748,7 @@ export async function trainingClosedLoopTick(tenantId = 'default') {
     if (created > 0) {
       await appendAutoOpsEvent('training_closed_loop', `TRAIN-${cstDateString(now, 0)}`, { created });
     }
-    await markAutoOpsRun('training_closed_loop', runKey, { created });
+    await markAutoOpsRun('training_closed_loop', runKey, { created, tenant_id: tenantId }, tenantId);
     console.log(`[auto-ops] training closed loop: ${created} training tasks created`);
   } catch (e) {
     console.error('[auto-ops] training closed loop error:', e?.message);

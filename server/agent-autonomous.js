@@ -4,7 +4,7 @@
  */
 
 import { pool } from './master-agent.js';
-import { tenantContext } from './utils/database.js';
+import { getActiveTenantIds, tenantContext } from './utils/database.js';
 import AgentCommunicationSystem from './agent-communication-system.js';
 
 // Agent 自主任务类型
@@ -672,44 +672,64 @@ export function initializeAutonomousTasks() {
   autonomousScheduler.registerTask(AUTONOMOUS_TASK_TYPES.DATA_QUALITY_CHECK, async () => {
     const db = pool();
     const sources = ['daily_reports', 'table_visit_records', 'sales_raw', 'master_tasks'];
+    const tenantIds = await getActiveTenantIds(db);
+    let checkedSources = 0;
     
-    for (const source of sources) {
-      try {
-        const result = await db.query(`SELECT COUNT(*) as cnt FROM ${source} WHERE created_at > NOW() - INTERVAL '24h'`);
-        const count = parseInt(result.rows?.[0]?.cnt || 0);
-        
-        if (count === 0) {
-          await AgentCommunicationSystem.reportDataSourceIssue(source, 'no_recent_data', {
-            severity: 'high',
-            last24hRecords: 0
-          });
+    for (const tenantId of tenantIds) {
+      await tenantContext.run(tenantId, async () => {
+        for (const source of sources) {
+          try {
+            const result = await db.query(`SELECT COUNT(*) as cnt FROM ${source} WHERE created_at > NOW() - INTERVAL '24h'`);
+            const count = parseInt(result.rows?.[0]?.cnt || 0);
+            checkedSources++;
+            
+            if (count === 0) {
+              await AgentCommunicationSystem.reportDataSourceIssue(source, 'no_recent_data', {
+                severity: 'high',
+                last24hRecords: 0,
+                tenant_id: tenantId
+              });
+            }
+          } catch (e) {
+            console.error(`[AutonomousTask] Error checking ${source} (tenant=${tenantId}):`, e);
+          }
         }
-      } catch (e) {
-        console.error(`[AutonomousTask] Error checking ${source}:`, e);
-      }
+      });
     }
     
-    return { checkedSources: sources.length };
+    return { checkedSources, tenantCount: tenantIds.length };
   });
 
   // 异常检测任务
   autonomousScheduler.registerTask(AUTONOMOUS_TASK_TYPES.ANOMALY_DETECTION, async () => {
     // 检查master_tasks中的异常任务
     const db = pool();
-    const result = await db.query(
-      `SELECT * FROM master_tasks 
-       WHERE status IN ('pending', 'pending_response') 
-       AND created_at < NOW() - INTERVAL '2h'`
-    );
-    
-    if (result.rows?.length > 10) {
-      await AgentCommunicationSystem.reportTaskExecutionIssue('task_dispatch', 'bottleneck', {
-        pendingCount: result.rows.length,
-        severity: result.rows.length > 20 ? 'high' : 'medium'
+    const tenantIds = await getActiveTenantIds(db);
+    let pendingTasks = 0;
+
+    for (const tenantId of tenantIds) {
+      await tenantContext.run(tenantId, async () => {
+        const result = await db.query(
+          `SELECT * FROM master_tasks 
+           WHERE status IN ('pending', 'pending_response') 
+           AND created_at < NOW() - INTERVAL '2h'`
+        );
+
+        pendingTasks += result.rows?.length || 0;
+
+        if (result.rows?.length > 10) {
+          await AgentCommunicationSystem.reportTaskExecutionIssue('task_dispatch', 'bottleneck', {
+            pendingCount: result.rows.length,
+            severity: result.rows.length > 20 ? 'high' : 'medium',
+            tenant_id: tenantId
+          });
+        }
+      }).catch((e) => {
+        console.error(`[AutonomousTask] Error checking pending tasks (tenant=${tenantId}):`, e);
       });
     }
     
-    return { pendingTasks: result.rows?.length || 0 };
+    return { pendingTasks, tenantCount: tenantIds.length };
   });
 
   // 启动调度器

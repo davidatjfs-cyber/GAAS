@@ -5,7 +5,7 @@
 
 // 使用现有的数据库连接
 import { pool } from './master-agent.js';
-import { resolveTenantIdDefault } from './utils/database.js';
+import { resolveTenantIdDefault, tenantContext } from './utils/database.js';
 
 // ─────────────────────────────────────────────
 // 1. 问题类型定义
@@ -103,6 +103,14 @@ export const AGENT_ISSUE_TYPES = {
 // 2. Agent 沟通接口
 // ─────────────────────────────────────────────
 export class AgentCommunicationSystem {
+  static resolveIssueTenantId(details = {}, context = {}) {
+    return resolveTenantIdDefault(
+      context?.tenant_id ||
+      context?.tenantId ||
+      details?.tenant_id ||
+      details?.tenantId
+    );
+  }
   
   /**
    * Agent 向 Master 报告问题
@@ -116,41 +124,44 @@ export class AgentCommunicationSystem {
 
     const issueId = this.generateIssueId();
     const timestamp = new Date().toISOString();
+    const tenantId = this.resolveIssueTenantId(details, context);
 
     try {
-      // 记录问题到数据库
-      await pool().query(`
-        INSERT INTO agent_issues_reports (
-          issue_id, agent_type, issue_type, details, context,
-          status, severity, created_at, updated_at, tenant_id
-        ) VALUES ($1, $2, $3, $4, $5::jsonb, 'pending', $6, $7, $7, $8)
-      `, [
-        issueId,
-        agentType,
-        issueType,
-        JSON.stringify(details),
-        JSON.stringify(context),
-        AGENT_ISSUE_TYPES[issueType].severity,
-        timestamp,
-        resolveTenantIdDefault()
-      ]);
-      
-      // 发送事件通知 Master
-      try {
-        // 直接记录到 master_events 表
-        await pool().query(
-          `INSERT INTO master_events (task_id, event_type, from_agent, to_agent, status_before, status_after, payload, tenant_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
-          [issueId, 'agent_issue_reported', agentType, 'master', null, 'pending', JSON.stringify({
-            issueType,
-            details,
-            context,
-            severity: AGENT_ISSUE_TYPES[issueType].severity
-          }), resolveTenantIdDefault()]
-        );
-      } catch (e) {
-        console.error('[communication] Failed to emit event:', e?.message);
-      }
+      await tenantContext.run(tenantId, async () => {
+        // 记录问题到数据库
+        await pool().query(`
+          INSERT INTO agent_issues_reports (
+            issue_id, agent_type, issue_type, details, context,
+            status, severity, created_at, updated_at, tenant_id
+          ) VALUES ($1, $2, $3, $4, $5::jsonb, 'pending', $6, $7, $7, $8)
+        `, [
+          issueId,
+          agentType,
+          issueType,
+          JSON.stringify(details),
+          JSON.stringify(context),
+          AGENT_ISSUE_TYPES[issueType].severity,
+          timestamp,
+          tenantId
+        ]);
+        
+        // 发送事件通知 Master
+        try {
+          // 直接记录到 master_events 表
+          await pool().query(
+            `INSERT INTO master_events (task_id, event_type, from_agent, to_agent, status_before, status_after, payload, tenant_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+            [issueId, 'agent_issue_reported', agentType, 'master', null, 'pending', JSON.stringify({
+              issueType,
+              details,
+              context,
+              severity: AGENT_ISSUE_TYPES[issueType].severity
+            }), tenantId]
+          );
+        } catch (e) {
+          console.error('[communication] Failed to emit event:', e?.message);
+        }
+      });
       
       console.log(`[communication] ${agentType} reported issue: ${issueType} (${issueId})`);
       
@@ -487,22 +498,28 @@ export class AgentCommunicationHelper {
   static async reportDataSourceIssue(dataSourceType, problem, impact, suggestedFix) {
     const source = String(dataSourceType || '').trim();
     const store = String((impact && typeof impact === 'object' ? impact.store : '') || '').trim();
+    const tenantId = AgentCommunicationSystem.resolveIssueTenantId(
+      impact && typeof impact === 'object' ? impact : {},
+      { tenant_id: impact && typeof impact === 'object' ? (impact.tenant_id || impact.tenantId) : '' }
+    );
 
     // 限流：同一数据源 + 同一门店（门店未知则按全局）24小时内仅报告一次
     try {
-      const dedup = await pool().query(
-        `SELECT issue_id, created_at
-           FROM agent_issues_reports
-          WHERE agent_type = 'data_auditor'
-            AND issue_type = 'DATA_SOURCE_INSUFFICIENT'
-            AND COALESCE(details::jsonb->>'dataSourceType', '') = $1
-            AND COALESCE(context->>'store', '') = $2
-            AND created_at >= NOW() - INTERVAL '24 hours'
-          ORDER BY created_at DESC
-          LIMIT 1`,
-        [source, store]
-      );
-      const existing = dedup.rows?.[0];
+      const existing = await tenantContext.run(tenantId, async () => {
+        const dedup = await pool().query(
+          `SELECT issue_id, created_at
+             FROM agent_issues_reports
+            WHERE agent_type = 'data_auditor'
+              AND issue_type = 'DATA_SOURCE_INSUFFICIENT'
+              AND COALESCE(details::jsonb->>'dataSourceType', '') = $1
+              AND COALESCE(context->>'store', '') = $2
+              AND created_at >= NOW() - INTERVAL '24 hours'
+            ORDER BY created_at DESC
+            LIMIT 1`,
+          [source, store]
+        );
+        return dedup.rows?.[0];
+      });
       if (existing) {
         return {
           success: true,
@@ -517,7 +534,7 @@ export class AgentCommunicationHelper {
       // 限流检查失败不阻断主流程
     }
 
-    const currentStatus = await this.getDataSourceStatus(source);  // await async method
+    const currentStatus = await tenantContext.run(tenantId, () => this.getDataSourceStatus(source));  // await async method
     return await AgentCommunicationSystem.reportIssue(
       'data_auditor',
       'DATA_SOURCE_INSUFFICIENT',
@@ -541,7 +558,8 @@ export class AgentCommunicationHelper {
    * Ops Agent 报告任务执行问题
    */
   static async reportTaskExecutionIssue(taskType, bottleneck, failureRate, suggestedImprovement) {
-    const currentMetrics = await this.getTaskExecutionMetrics(taskType);
+    const tenantId = resolveTenantIdDefault();
+    const currentMetrics = await tenantContext.run(tenantId, () => this.getTaskExecutionMetrics(taskType));
     return await AgentCommunicationSystem.reportIssue(
       'ops_supervisor',
       'TASK_EXECUTION_BOTTLENECK',
@@ -554,7 +572,8 @@ export class AgentCommunicationHelper {
    * Train Agent 报告知识库问题
    */
   static async reportKnowledgeBaseIssue(knowledgeArea, missingTopics, outdatedContent, suggestedUpdates) {
-    const currentCoverage = await this.getKnowledgeCoverage(knowledgeArea);
+    const tenantId = resolveTenantIdDefault();
+    const currentCoverage = await tenantContext.run(tenantId, () => this.getKnowledgeCoverage(knowledgeArea));
     return await AgentCommunicationSystem.reportIssue(
       'train_advisor',
       'KNOWLEDGE_BASE_OUTDATED',
@@ -567,7 +586,8 @@ export class AgentCommunicationHelper {
    * Chief Evaluator 报告评分规则问题
    */
   static async reportScoringRuleIssue(ruleType, conflict, incompleteness, suggestedRules) {
-    const currentRules = await this.getCurrentScoringRules(ruleType);
+    const tenantId = resolveTenantIdDefault();
+    const currentRules = await tenantContext.run(tenantId, () => this.getCurrentScoringRules(ruleType));
     return await AgentCommunicationSystem.reportIssue(
       'chief_evaluator',
       'SCORING_RULE_INCOMPLETE',

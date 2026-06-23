@@ -2,7 +2,7 @@ import axios from 'axios';
 import { executeGrowthActionRecord, resolveTenantIdForStore } from './growth-api.js';
 import { callLLM, sendLarkMessage } from './agents.js';
 import { getBrandForStoreSync } from './utils/brand-config-loader.js';
-import { resolveTenantIdDefault, tenantContext } from './utils/database.js';
+import { getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js';
 
 const PHASE_EVENT_TYPES = new Set([
   'campaign_scan', 'phone_authorized', 'coupon_claimed',
@@ -1576,8 +1576,8 @@ function parseNum(val) {
   return Number.isFinite(n) ? n : 0;
 }
 
-async function refreshSalesGrowthSnapshot(pool, days = 3) {
-  const tenantId = resolveTenantIdDefault();
+async function refreshSalesGrowthSnapshot(pool, days = 3, tenantId = resolveTenantIdDefault()) {
+  const effectiveTenantId = resolveTenantIdDefault(tenantId);
   const r = await pool.query(`
     INSERT INTO sales_growth_snapshot
       (snapshot_date, store_code, dish_name, category, order_count, qty, revenue, avg_unit_price, lunch_qty, dinner_qty, updated_at, tenant_id)
@@ -1597,13 +1597,13 @@ async function refreshSalesGrowthSnapshot(pool, days = 3) {
       SUM(CASE WHEN EXTRACT(HOUR FROM i.order_time AT TIME ZONE 'Asia/Shanghai') BETWEEN 16 AND 20
                THEN i.qty ELSE 0 END)::INTEGER          AS dinner_qty,
       NOW()                                             AS updated_at,
-      $2                                                AS tenant_id
+      $2::varchar(80)                                   AS tenant_id
     FROM pos_order_items i
-    WHERE i.biz_date >= CURRENT_DATE - ($1 || ' days')::INTERVAL
+    WHERE i.biz_date >= CURRENT_DATE - ($1::int * INTERVAL '1 day')
       AND i.biz_date <= CURRENT_DATE
       AND i.dish_name IS NOT NULL AND i.dish_name <> ''
       AND i.store_code IS NOT NULL AND i.store_code <> ''
-      AND i.tenant_id = $2
+      AND i.tenant_id = $2::varchar(80)
     GROUP BY i.biz_date, i.store_code, i.dish_name
     ON CONFLICT (snapshot_date, store_code, dish_name, tenant_id)
     DO UPDATE SET
@@ -1615,7 +1615,7 @@ async function refreshSalesGrowthSnapshot(pool, days = 3) {
       lunch_qty      = EXCLUDED.lunch_qty,
       dinner_qty     = EXCLUDED.dinner_qty,
       updated_at     = NOW()
-  `, [days, tenantId]);
+  `, [Number(days || 0), effectiveTenantId]);
   return r.rowCount;
 }
 
@@ -3378,8 +3378,15 @@ export function registerPhaseRoutes(app, pool) {
         const hour = now.getUTCHours();
         if (hour >= 18 && __growthSnapshotCronLast !== nowYmd) {
           __growthSnapshotCronLast = nowYmd;
-          const rows = await refreshSalesGrowthSnapshot(pool, 3).catch(e => { console.error('[growth-snapshot] cron error:', e.message); return 0; });
-          console.log(`[growth-snapshot] daily refresh: ${rows} rows upserted`);
+          let totalRows = 0;
+          for (const tenantId of await getActiveTenantIds(pool)) {
+            const rows = await tenantContext.run(tenantId, () => refreshSalesGrowthSnapshot(pool, 3, tenantId)).catch(e => {
+              console.error(`[growth-snapshot] cron error (tenant=${tenantId}):`, e.message);
+              return 0;
+            });
+            totalRows += rows;
+          }
+          console.log(`[growth-snapshot] daily refresh: ${totalRows} rows upserted`);
         }
       } catch (e) {
         console.warn('[growth-snapshot] cron failed:', e?.message);
