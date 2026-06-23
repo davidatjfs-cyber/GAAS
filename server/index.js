@@ -6289,12 +6289,13 @@ async function dualWriteStateToDB(state) {
       if (!target) continue;
       const nType = String(n?.type || 'system_notice').trim();
       await pool.query(
-        `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6)
+        `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT DO NOTHING`,
         [target, String(n?.title || '').trim(), String(n?.message || '').trim(),
          nType, JSON.stringify(n?.meta || n?.data || {}),
-         n?.createdAt ? new Date(n.createdAt).toISOString() : hrmsNowISO()]
+         n?.createdAt ? new Date(n.createdAt).toISOString() : hrmsNowISO(),
+         resolveTenantIdDefault()]
       );
     }
   } catch (e) {
@@ -6808,15 +6809,16 @@ async function insertHrmsUserNotifications(notifs) {
     const target = String(n?.targetUser || n?.targetUsername || n?.to || '').trim();
     if (!target) continue;
     await pool.query(
-      `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
+      `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [
         target,
         String(n?.title || '').trim() || '通知',
         String(n?.message || '').trim(),
         String(n?.type || 'system_notice').trim(),
         JSON.stringify(n?.meta || n?.data || {}),
-        n?.createdAt ? new Date(n.createdAt).toISOString() : hrmsNowISO()
+        n?.createdAt ? new Date(n.createdAt).toISOString() : hrmsNowISO(),
+        resolveTenantIdDefault()
       ]
     );
   }
@@ -17213,9 +17215,9 @@ app.put('/api/knowledge/:id/explanation', authRequired, async (req, res) => {
     // 手动保存同时设置锁定，防止后续自动生成覆盖管理员精修的内容
     await pool.query('UPDATE knowledge_base SET ai_explanation = $1, ai_explanation_locked = true, updated_at = NOW() WHERE id = $2::uuid', [explanation, id]);
     await pool.query(
-      `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role)
-       VALUES ($1::uuid, 'ai_explanation', $2, $3, $4, $5)`,
-      [id, oldVal, explanation, req.user?.username || null, req.user?.role || null]
+      `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role, tenant_id)
+       VALUES ($1::uuid, 'ai_explanation', $2, $3, $4, $5, $6)`,
+      [id, oldVal, explanation, req.user?.username || null, req.user?.role || null, resolveTenantIdDefault()]
     ).catch((e) => console.error('[knowledge] edit-history(explanation) failed:', e?.message));
     res.json({ success: true, locked: true });
   } catch (e) {
@@ -17252,9 +17254,9 @@ ${oldVal.slice(0, 20000)}` }
     // 重新整理排版后同样维持锁定（整理=精修行为，锁定不变）
     await pool.query('UPDATE knowledge_base SET ai_explanation = $1, ai_explanation_locked = true, updated_at = NOW() WHERE id = $2::uuid', [reformatted, id]);
     await pool.query(
-      `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role)
-       VALUES ($1::uuid, 'ai_explanation', $2, $3, $4, $5)`,
-      [id, oldVal, reformatted, req.user?.username || null, req.user?.role || null]
+      `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role, tenant_id)
+       VALUES ($1::uuid, 'ai_explanation', $2, $3, $4, $5, $6)`,
+      [id, oldVal, reformatted, req.user?.username || null, req.user?.role || null, resolveTenantIdDefault()]
     ).catch((e) => console.error('[knowledge] edit-history(reformat) failed:', e?.message));
     res.json({ success: true, explanation: reformatted });
   } catch (e) {
@@ -17471,9 +17473,9 @@ app.put('/api/knowledge/:id', authRequired, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'not_found' });
     if (content !== undefined) {
       await pool.query(
-        `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role)
-         VALUES ($1::uuid, 'content', $2, $3, $4, $5)`,
-        [id, oldContent, content, req.user?.username || null, req.user?.role || null]
+        `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role, tenant_id)
+         VALUES ($1::uuid, 'content', $2, $3, $4, $5, $6)`,
+        [id, oldContent, content, req.user?.username || null, req.user?.role || null, resolveTenantIdDefault()]
       ).catch((e) => console.error('[knowledge] edit-history(content) failed:', e?.message));
     }
     if (targetGroupId && groupName) {
@@ -17547,10 +17549,10 @@ app.post('/api/knowledge/batch', authRequired, knowledgeUpload.array('files', 10
 
     try {
       const r = await pool.query(
-        `insert into knowledge_base (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::uuid,$15)
+        `insert into knowledge_base (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name, tenant_id)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::uuid,$15,$16)
          returning id, title, category, tags, scope, file_path, file_type, file_size, access_roles, access_departments, created_by, version, created_at, updated_at, audience, group_id, group_name`,
-        [fileTitle, '', category || null, tags, filePath, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName]
+        [fileTitle, '', category || null, tags, filePath, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName, resolveTenantIdDefault()]
       );
       results.push(r.rows?.[0] || null);
 
@@ -17724,10 +17726,10 @@ app.post('/api/knowledge/direct', authRequired, async (req, res) => {
     if (!useGroupId) useGroupId = randomUUID();
     const useGroupName = await resolveKnowledgeGroupName(useGroupId, requestedGroupName, title || category || '未命名项目组');
     const r = await pool.query(
-      `insert into knowledge_base (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::uuid,$15)
+      `insert into knowledge_base (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name, tenant_id)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::uuid,$15,$16)
        returning id, title, category, tags, scope, file_path, file_type, file_size, access_roles, access_departments, created_by, version, created_at, updated_at, audience, group_id, group_name`,
-      [title, videoSummary, category || null, tags, filePath, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName]
+      [title, videoSummary, category || null, tags, filePath, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName, resolveTenantIdDefault()]
     );
     return res.json({ item: r.rows?.[0] || null });
   } catch (e) {
@@ -17771,10 +17773,10 @@ app.post('/api/knowledge', authRequired, knowledgeUpload.single('file'), async (
     if (!useGroupId) useGroupId = randomUUID();
     const useGroupName = await resolveKnowledgeGroupName(useGroupId, requestedGroupName, title || category || '未命名项目组');
     const r = await pool.query(
-      `insert into knowledge_base (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::uuid,$15)
+      `insert into knowledge_base (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name, tenant_id)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::uuid,$15,$16)
        returning id, title, category, tags, scope, file_path, file_type, file_size, access_roles, access_departments, created_by, version, created_at, updated_at, audience, group_id, group_name`,
-      [title, videoSummary, category || null, tags, `uploads/${req.file.filename}`, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName]
+      [title, videoSummary, category || null, tags, `uploads/${req.file.filename}`, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName, resolveTenantIdDefault()]
     );
     inserted = r.rows?.[0] || null;
   } catch (e) {
@@ -21982,9 +21984,9 @@ app.post('/api/notifications/batch', authRequired, async (req, res) => {
       const meta   = (n.meta && typeof n.meta === 'object') ? n.meta : {};
       if (!target || !title) continue;
       const r = await pool.query(
-        `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta)
-         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [target, title, msg, type, meta]
+        `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [target, title, msg, type, meta, resolveTenantIdDefault()]
       );
       ids.push(r.rows[0]?.id);
     }

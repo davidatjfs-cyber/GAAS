@@ -6,7 +6,7 @@
  *       员工端（所有登录用户）
  */
 
-import { pool as getPool } from './utils/database.js';
+import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
 import { callLLM, callVisionLLM, callVisionLLMVideo, lookupFeishuUserByUsername, sendLarkMessage } from './agents.js';
 import multer from 'multer';
 import path from 'path';
@@ -108,14 +108,15 @@ function parseReminderMeta(raw) {
 async function createTrainingUserNotification(targetUsername, title, message, meta) {
   try {
     await pool().query(
-      `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
+      `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, NOW(), $6)`,
       [
         targetUsername,
         title,
         message,
         'training_assignment',
-        JSON.stringify(meta || {})
+        JSON.stringify(meta || {}),
+        resolveTenantIdDefault()
       ]
     );
   } catch (_) {}
@@ -771,10 +772,10 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
 
       await pool().query(`UPDATE knowledge_base SET step_rubric = $1 WHERE id = $2`, [JSON.stringify(rubric), id]);
       await pool().query(
-        `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role)
-         VALUES ($1::uuid, 'step_rubric', $2, $3, $4, $5)`,
+        `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role, tenant_id)
+         VALUES ($1::uuid, 'step_rubric', $2, $3, $4, $5, $6)`,
         [id, article.step_rubric ? JSON.stringify(article.step_rubric) : null, JSON.stringify(rubric),
-         req.user?.username || null, req.user?.role || null]
+         req.user?.username || null, req.user?.role || null, resolveTenantIdDefault()]
       ).catch((e) => console.error('[Training] edit-history(rubric) failed:', e?.message));
       res.json({ success: true, rubric });
     } catch (e) {

@@ -545,8 +545,8 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
 
         try {
           await p.query(
-            `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta)
-             VALUES ($1, $2, $3, $4, $5::jsonb)`,
+            `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
             [
               username,
               `工作态度备案已取消｜${taskIdStr}`,
@@ -560,7 +560,8 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
                 dispatched_date_zh: ymdZh,
                 display_name: empName,
                 store: empStore
-              })
+              }),
+              tenantIdQ
             ]
           );
         } catch (e) {
@@ -588,8 +589,8 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
 
         try {
           await p.query(
-            `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta)
-             VALUES ($1, $2, $3, $4, $5::jsonb)`,
+            `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
             [
               adminUser,
               `抄送｜工作态度备案已取消｜${taskIdStr}→${username}`,
@@ -604,7 +605,8 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
                 attitude_filing_count_after: countAfter,
                 display_name: empName,
                 store: empStore
-              })
+              }),
+              tenantIdQ
             ]
           );
         } catch (e) {
@@ -681,14 +683,15 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
         if (hasChange) {
           try {
             await p.query(
-              `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta)
-               VALUES ($1, $2, $3, $4, $5::jsonb)`,
+              `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+               VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
               [
                 username,
                 `周度扣分记录已失效｜${period}`,
                 wPlainA,
                 'performance_invalidation_change',
-                JSON.stringify({ period, source_type, source_id: String(source_id), before: beforeData, after: safeAfter })
+                JSON.stringify({ period, source_type, source_id: String(source_id), before: beforeData, after: safeAfter }),
+                tenantIdQ
               ]
             );
           } catch (e) {
@@ -723,14 +726,15 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
 
         try {
           await p.query(
-            `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta)
-             VALUES ($1, $2, $3, $4, $5::jsonb)`,
+            `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
             [
               adminUser,
               `抄送｜周度扣分已失效｜${source_id}→${username}`,
               wPlainAd,
               'agent_scores_weekly_invalidation_admin_cc',
-              JSON.stringify({ period, source_id: String(source_id), assignee_username: username, operator: adminUser })
+              JSON.stringify({ period, source_id: String(source_id), assignee_username: username, operator: adminUser }),
+              tenantIdQ
             ]
           );
         } catch (e) {
@@ -765,14 +769,15 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
         const empName = nameRow.rows?.[0]?.name || username;
 
         await p.query(
-          `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta)
-           VALUES ($1, $2, $3, $4, $5::jsonb)`,
+          `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
           [
             username,
             `绩效数据变更通知｜${period}`,
             `您的${period}月绩效数据已变更。绩效得分：${beforeData.total_score ?? '—'} → ${safeAfter.total_score ?? '—'}；执行力：${beforeData.execution_rating ?? '—'} → ${safeAfter.execution_rating ?? '—'}；态度：${beforeData.attitude_rating ?? '—'} → ${safeAfter.attitude_rating ?? '—'}；能力：${beforeData.ability_rating ?? '—'} → ${safeAfter.ability_rating ?? '—'}`,
             'performance_invalidation_change',
-            JSON.stringify({ period, source_type, source_id: String(source_id), before: beforeData, after: safeAfter })
+            JSON.stringify({ period, source_type, source_id: String(source_id), before: beforeData, after: safeAfter }),
+            tenantIdQ
           ]
         );
 
