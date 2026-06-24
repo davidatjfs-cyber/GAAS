@@ -3563,31 +3563,39 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
               err: String(userErr?.message || userErr)
             });
           }
-          try {
-            await pool.query(
-              `WITH updated AS (
-                 UPDATE feishu_users
-                    SET name = $2,
-                        store = $3,
-                        role = $4,
-                        registered = FALSE,
-                        updated_at = NOW()
-                  WHERE username = $1
-                    AND tenant_id = $5
-                  RETURNING 1
-               )
-               INSERT INTO feishu_users (username, name, store, role, registered, tenant_id)
-               SELECT $1, $2, $3, $4, FALSE, $5
-               WHERE NOT EXISTS (SELECT 1 FROM updated)`,
-              [newUsername, empName, nextEmp.store || '', nextEmp.role || '', req.tenantId || req.user?.tenant_id || 'default']
-            );
-            console.log('[approval/onboarding] feishu_users record created:', newUsername);
-            decideExtras.feishuUsersCreated = true;
-          } catch (feishuErr) {
-            console.error('[approval/onboarding] 创建 feishu_users 记录失败', {
+          const onboardingOpenId = toNullableUuid(emp?.open_id || emp?.openId || emp?.feishuOpenId);
+          if (onboardingOpenId) {
+            try {
+              await pool.query(
+                `WITH updated AS (
+                   UPDATE feishu_users
+                      SET name = $2,
+                          store = $3,
+                          role = $4,
+                          registered = FALSE,
+                          updated_at = NOW()
+                    WHERE username = $1
+                      AND tenant_id = $5
+                    RETURNING 1
+                 )
+                 INSERT INTO feishu_users (open_id, username, name, store, role, registered, tenant_id)
+                 SELECT $6, $1, $2, $3, $4, FALSE, $5
+                 WHERE NOT EXISTS (SELECT 1 FROM updated)`,
+                [newUsername, empName, nextEmp.store || '', nextEmp.role || '', req.tenantId || req.user?.tenant_id || 'default', onboardingOpenId]
+              );
+              console.log('[approval/onboarding] feishu_users record created:', newUsername);
+              decideExtras.feishuUsersCreated = true;
+            } catch (feishuErr) {
+              console.error('[approval/onboarding] 创建 feishu_users 记录失败', {
+                approvalId: updated.id,
+                username: newUsername,
+                err: String(feishuErr?.message || feishuErr)
+              });
+            }
+          } else {
+            console.info('[approval/onboarding] 跳过 feishu_users 创建：缺少 open_id', {
               approvalId: updated.id,
-              username: newUsername,
-              err: String(feishuErr?.message || feishuErr)
+              username: newUsername
             });
           }
         }
@@ -6316,7 +6324,7 @@ async function dualWriteStateToDB(state) {
         [rid, String(sa?.targetUsername || '').trim(), String(sa?.targetName || '').trim(),
          '', '', isReward ? 'reward' : 'punishment', rpType,
          Math.abs(Number(sa?.amount) || 0), String(sa?.reason || '').trim(),
-         String(sa?.approvalId || ''), String(sa?.status || 'active').trim(),
+         toNullableUuid(sa?.approvalId), String(sa?.status || 'active').trim(),
          String(sa?.applicantUsername || '').trim(),
          String(sa?.createdAt || '').trim() || hrmsNowISO(),
          resolveTenantIdDefault()]
@@ -6824,6 +6832,11 @@ function canApplyPointsByRole(roleInput) {
 function safeNumber(input) {
   const n = Number(input);
   return Number.isFinite(n) ? n : null;
+}
+
+function toNullableUuid(input) {
+  const value = String(input || '').trim();
+  return value ? value : null;
 }
 
 function addStateNotification(state, notif) {
@@ -20126,7 +20139,7 @@ app.listen(PORT, HOST, async () => {
             [rid, String(sa?.targetUsername || '').trim(), String(sa?.targetName || '').trim(),
              '', '', isReward ? 'reward' : 'punishment', rpType,
              Math.abs(Number(sa?.amount) || 0), String(sa?.reason || '').trim(),
-             String(sa?.approvalId || ''), String(sa?.applicantUsername || '').trim(),
+             toNullableUuid(sa?.approvalId), String(sa?.applicantUsername || '').trim(),
              String(sa?.createdAt || '').trim() || hrmsNowISO(),
              resolveTenantIdDefault()]
           );
