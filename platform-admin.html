@@ -45,6 +45,11 @@
       gap: 10px;
       margin-top: 14px;
     }
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
     .stat {
       border: 1px solid rgba(120,104,85,.18);
       background: linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,250,242,.96));
@@ -124,6 +129,10 @@
     .detail-grid .v { margin-top: 4px; font-weight: 700; word-break: break-word; }
     .section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .small { font-size: 12px; color: var(--muted); }
+    .section-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+    .section-nav button { background: #eadcc6; color: var(--ink); }
+    .section-nav button.active { background: var(--accent); color: #fff; }
+    .ops-section { scroll-margin-top: 16px; }
     .logo-preview {
       width: 68px;
       height: 68px;
@@ -143,11 +152,11 @@
       <section class="card">
         <div class="title-row">
           <div>
-            <h1>平台租户控制台</h1>
-            <div class="sub">nnyx.cc 上的租户控制台：开通、续期、隔离、验收、飞书接入、品牌外观，一处完成。</div>
+            <h1>平台租户运营控制台</h1>
+            <div class="sub">nnyx.cc 上的租户运营控制台：总览、账单、告警、验收、飞书接入、品牌外观，一处完成。</div>
           </div>
           <div class="toolbar">
-          <a href="/agents-admin/" target="_blank" rel="noreferrer" class="pill ok" style="text-decoration:none;">打开代理控制台</a>
+          <a href="/agents-admin/" target="_blank" rel="noreferrer" class="pill ok" style="text-decoration:none;">打开 Agent 控制台</a>
           <a href="/api/health" target="_blank" rel="noreferrer" class="pill" style="text-decoration:none;">查看健康检查</a>
           </div>
         </div>
@@ -173,6 +182,21 @@
         </div>
         <div class="small">提示：浏览器只临时缓存，真正生效的是服务器环境变量里的 <span class="mono">PLATFORM_ADMIN_SECRET</span>。</div>
       </section>
+    </div>
+
+    <div class="card stack" style="margin-bottom:18px">
+      <div class="section-title">
+        <strong>运营总览</strong>
+        <span class="small">账单 / 告警 / 验收 / 动作汇总</span>
+      </div>
+      <div class="section-nav" id="opsNav">
+        <button type="button" class="active" data-scroll-target="opsSummary">总览</button>
+        <button type="button" data-scroll-target="billingSection">账单中心</button>
+        <button type="button" data-scroll-target="alertsSection">告警中心</button>
+        <button type="button" data-scroll-target="acceptanceSection">验收报告</button>
+        <button type="button" data-scroll-target="tenantManageSection">租户管理</button>
+      </div>
+      <div id="opsOverview"></div>
     </div>
 
     <div class="grid">
@@ -312,7 +336,7 @@
 
       <section class="card stack">
         <div class="toolbar">
-          <span class="pill">租户总览</span>
+          <span class="pill">租户管理</span>
           <span id="tenantCount" class="pill">0 个租户</span>
           <span id="tenantFilterState" class="pill">全部</span>
         </div>
@@ -345,7 +369,7 @@
     const secretKey = 'hrms_platform_secret';
     const agentTenantKey = 'agent_admin_tenant_id';
     const agentSecretKey = 'platform_admin_secret';
-    const state = { tenants: [], selectedTenantId: '', detail: null };
+    const state = { tenants: [], selectedTenantId: '', detail: null, overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] } };
 
     const log = (msg) => {
       $('log').textContent = `[${new Date().toLocaleString()}] ${msg}\n` + $('log').textContent;
@@ -446,6 +470,161 @@
       $('statActive').textContent = String(items.filter((x) => String(x.status || '') === 'active').length);
       $('statFeishu').textContent = String(items.filter((x) => x.integrations?.feishu_bitable?.configured).length);
       $('statLicense').textContent = String(items.filter((x) => Number.isFinite(Number(x.license_countdown_days)) && Number(x.license_countdown_days) <= 30).length);
+    }
+
+    function formatBillingText(billing = {}) {
+      const parts = [];
+      if (billing.plan_name) parts.push(billing.plan_name);
+      if (billing.billing_cycle) parts.push(billing.billing_cycle);
+      if (billing.billing_contact) parts.push(`联系人：${billing.billing_contact}`);
+      return parts.length ? parts.join(' · ') : '未配置';
+    }
+
+    function formatChecksSummary(checks = []) {
+      const list = Array.isArray(checks) ? checks : [];
+      if (!list.length) return '暂无检查项';
+      return list.map((item) => `${item.ok ? '✓' : '✗'}${item.key}`).join(' · ');
+    }
+
+    function renderAlertLevel(level) {
+      const s = String(level || 'info').trim();
+      if (s === 'error') return '<span class="pill bad">严重</span>';
+      if (s === 'warn') return '<span class="pill">提醒</span>';
+      return '<span class="pill">信息</span>';
+    }
+
+    function scrollToOpsSection(id) {
+      const elTarget = document.getElementById(id);
+      if (elTarget) elTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.querySelectorAll('#opsNav button').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.scrollTarget === id);
+      });
+    }
+
+    function renderOperationsOverview() {
+      const wrap = el('div', { className: 'stack' });
+      const summary = state.overview.summary || {};
+      const summaryGrid = el('div', { className: 'overview-grid' });
+      summaryGrid.appendChild(stat(summary.total ?? 0, '租户总数', 'text-indigo-600'));
+      summaryGrid.appendChild(stat(summary.active ?? 0, '已激活', 'text-emerald-600'));
+      summaryGrid.appendChild(stat(summary.feishu_configured ?? 0, '已配置飞书', 'text-blue-600'));
+      summaryGrid.appendChild(stat(summary.license_expiring_30d ?? 0, '30 天内到期', 'text-orange-600'));
+      summaryGrid.appendChild(stat(summary.alerts_total ?? 0, '告警总数', summary.alerts_error > 0 ? 'text-red-600' : 'text-amber-600'));
+      summaryGrid.appendChild(stat(summary.acceptance_failed ?? 0, '验收失败', summary.acceptance_failed > 0 ? 'text-red-600' : 'text-emerald-600'));
+
+      wrap.appendChild(el('div', { id: 'opsSummary', className: 'ops-section' }, [
+        card('平台运营总览', [
+          summaryGrid,
+          el('div', { className: 'detail-grid', style: 'margin-top:12px' }, [
+            el('div', { className: 'field' }, [
+              el('div', { className: 'k' }, '账单已配置'),
+              el('div', { className: 'v' }, String(summary.billing_configured ?? 0))
+            ]),
+            el('div', { className: 'field' }, [
+              el('div', { className: 'k' }, '平台模式'),
+              el('div', { className: 'v' }, `托管租赁 ${summary.managed ?? 0} · 自部署 ${summary.self_hosted ?? 0}`)
+            ]),
+          ])
+        ])
+      ]));
+
+      const billing = Array.isArray(state.overview.billing) ? state.overview.billing : [];
+      wrap.appendChild(el('div', { id: 'billingSection', className: 'ops-section' }, [
+        card('账单中心', (() => {
+          const body = el('div');
+          body.appendChild(el('div', { className: 'small', style: 'margin-bottom:10px' }, '展示每个租户的账单计划、周期、联系人和许可证到期状态。'));
+          const tbl = el('table');
+          tbl.innerHTML = '<thead><tr><th>租户</th><th>账单计划</th><th>许可证到期</th><th>联系人</th><th>状态</th><th>操作</th></tr></thead>';
+          const tbody = el('tbody');
+          billing.forEach((row) => {
+            const tr = el('tr');
+            tr.appendChild(el('td', {}, [el('div', { style: 'font-weight:700' }, row.tenant_name || row.tenant_id), el('div', { className: 'mono' }, row.tenant_id)]));
+            tr.appendChild(el('td', {}, `${row.plan_name || '未配置'} · ${row.billing_cycle || '未配置'}`));
+            tr.appendChild(el('td', {}, [el('div', { className: 'mono' }, row.license_expires_at || '-'), el('div', { className: 'small' }, formatCountdown(row.license_countdown_days))]));
+            tr.appendChild(el('td', {}, row.billing_contact || '未配置'));
+            tr.appendChild(el('td', {}, [el('span', { className: `pill ${row.status === 'active' ? 'ok' : 'bad'}` }, formatStatus(row.status))]));
+            const actions = el('div', { className: 'tenant-actions compact' }, [
+              btnGhost('选中', () => window.selectTenant(row.tenant_id)),
+              btnGhost('续期', () => window.promptIssueLicense(row.tenant_id)),
+              btnGhost('查看', () => window.loadProfile(row.tenant_id))
+            ]);
+            tr.appendChild(el('td', {}, actions));
+            tbody.appendChild(tr);
+          });
+          tbl.appendChild(tbody);
+          body.appendChild(tbl);
+          return body;
+        })())
+      ]));
+
+      const alerts = Array.isArray(state.overview.alerts) ? state.overview.alerts : [];
+      wrap.appendChild(el('div', { id: 'alertsSection', className: 'ops-section' }, [
+        card('告警中心', (() => {
+          const body = el('div');
+          body.appendChild(el('div', { className: 'small', style: 'margin-bottom:10px' }, '汇总许可证、飞书、品牌外观和激活状态告警，便于平台先处理高风险租户。'));
+          const tbl = el('table');
+          tbl.innerHTML = '<thead><tr><th>级别</th><th>租户</th><th>告警项</th><th>说明</th><th>操作</th></tr></thead>';
+          const tbody = el('tbody');
+          if (!alerts.length) {
+            const tr = el('tr');
+            tr.appendChild(el('td', { colSpan: 5 }, '暂无告警'));
+            tbody.appendChild(tr);
+          } else {
+            alerts.forEach((item) => {
+              const tr = el('tr');
+              tr.appendChild(el('td', {}, [el('div', { innerHTML: renderAlertLevel(item.level) })]));
+              tr.appendChild(el('td', {}, [el('div', { style: 'font-weight:700' }, item.tenant_name || item.tenant_id), el('div', { className: 'mono' }, item.tenant_id)]));
+              tr.appendChild(el('td', {}, item.title || '-'));
+              tr.appendChild(el('td', {}, item.detail || '-'));
+              tr.appendChild(el('td', {}, el('div', { className: 'tenant-actions compact' }, [
+                btnGhost('打开', () => window.selectTenant(item.tenant_id)),
+                btnGhost('修复', () => window.repairTenant(item.tenant_id)),
+                btnGhost('验收', () => window.acceptTenant(item.tenant_id))
+              ])));
+              tbody.appendChild(tr);
+            });
+          }
+          tbl.appendChild(tbody);
+          body.appendChild(tbl);
+          return body;
+        })())
+      ]));
+
+      const acceptance = Array.isArray(state.overview.acceptance) ? state.overview.acceptance : [];
+      wrap.appendChild(el('div', { id: 'acceptanceSection', className: 'ops-section' }, [
+        card('新租户自动验收报告', (() => {
+          const body = el('div');
+          body.appendChild(el('div', { className: 'small', style: 'margin-bottom:10px' }, '这里汇总每个租户最新的自动验收结果，方便你快速判断是否可以交付使用。'));
+          const tbl = el('table');
+          tbl.innerHTML = '<thead><tr><th>租户</th><th>验收结果</th><th>最近验收</th><th>检查摘要</th><th>操作</th></tr></thead>';
+          const tbody = el('tbody');
+          acceptance.forEach((item) => {
+            const report = item.acceptance_report || {};
+            const tr = el('tr');
+            tr.appendChild(el('td', {}, [el('div', { style: 'font-weight:700' }, item.tenant_name || item.tenant_id), el('div', { className: 'mono' }, item.tenant_id)]));
+            tr.appendChild(el('td', {}, [el('span', { className: `pill ${item.accepted_ok ? 'ok' : 'bad'}` }, item.accepted_ok ? '通过' : (item.accepted_ok === false ? '未通过' : '未验收'))]));
+            tr.appendChild(el('td', {}, [el('div', { className: 'mono' }, item.checked_at || '-'), el('div', { className: 'small' }, item.acceptance_action || 'acceptance')]));
+            tr.appendChild(el('td', {}, formatChecksSummary(item.checks)));
+            tr.appendChild(el('td', {}, el('div', { className: 'tenant-actions compact' }, [
+              btnGhost('重新验收', () => window.acceptTenant(item.tenant_id)),
+              btnGhost('一键初始化', () => window.bootstrapTenant(item.tenant_id)),
+              btnGhost('详情', () => window.selectTenant(item.tenant_id))
+            ])));
+            tbody.appendChild(tr);
+          });
+          tbl.appendChild(tbody);
+          body.appendChild(tbl);
+          return body;
+        })())
+      ]));
+
+      wrap.appendChild(el('div', { id: 'tenantManageSection', className: 'ops-section' }, [
+        card('租户管理入口', [
+          el('div', { className: 'small' }, '下面右侧保留原来的租户管理面板，适合逐个租户做品牌、飞书和初始化操作。')
+        ])
+      ]));
+
+      return wrap;
     }
 
     function applyProfileToForm(profile) {
@@ -597,7 +776,7 @@
     }
 
     async function loadTenants() {
-      const data = await api('/api/admin/tenants');
+      const data = await api('/api/admin/tenants/overview');
       const filter = normalizeTenantSearch($('tenantFilter').value);
       const items = (data.items || []).filter((item) => {
         if (!filter) return true;
@@ -616,7 +795,16 @@
         ].join(' ').toLowerCase();
         return hay.includes(filter);
       });
+      state.overview = {
+        summary: data.summary || {},
+        items: data.items || [],
+        alerts: data.alerts || [],
+        billing: data.billing || [],
+        acceptance: data.acceptance || []
+      };
       state.tenants = data.items || [];
+      $('opsOverview').innerHTML = '';
+      $('opsOverview').appendChild(renderOperationsOverview());
       $('tenantCount').textContent = `${items.length} 个租户`;
       $('tenantFilterState').textContent = filter ? `搜索：${$('tenantFilter').value.trim()}` : '全部';
       updateStats(data.items || []);
@@ -676,6 +864,11 @@
 
     $('reloadBtn').onclick = () => loadTenants().catch((e) => log(`刷新失败：${e.message}`));
     $('tenantFilter').oninput = () => loadTenants().catch((e) => log(`搜索失败：${e.message}`));
+    $('opsNav').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-scroll-target]');
+      if (!btn) return;
+      scrollToOpsSection(btn.dataset.scrollTarget);
+    });
 
     $('createTenantBtn').onclick = async () => {
       try {
