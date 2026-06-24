@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Ops Admin</title>
+  <style>
+    :root{
+      --bg:#f5f7fb;
+      --panel:#ffffff;
+      --panel-2:#f8fafc;
+      --line:#dbe3ef;
+      --ink:#162033;
+      --muted:#64748b;
+      --accent:#4f46e5;
+      --accent-2:#0f766e;
+      --warn:#c2410c;
+      --danger:#b91c1c;
+      --shadow:0 18px 40px rgba(15,23,42,.08);
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%}
+    body{
+      font-family:"PingFang SC","Noto Sans SC",system-ui,-apple-system,sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(79,70,229,.10), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(15,118,110,.08), transparent 30%),
+        var(--bg);
+      color:var(--ink);
+    }
+    a{color:inherit}
+    button,input,textarea,select{font:inherit}
+    .shell{
+      display:grid;
+      grid-template-columns: 320px minmax(0,1fr);
+      min-height:100vh;
+    }
+    .sidebar{
+      position:sticky; top:0; align-self:start;
+      min-height:100vh;
+      border-right:1px solid var(--line);
+      background:linear-gradient(180deg, rgba(255,255,255,.94), rgba(248,250,252,.96));
+      padding:18px 16px;
+      box-shadow:inset -1px 0 0 rgba(255,255,255,.7);
+    }
+    .brand{
+      display:flex; align-items:center; gap:12px;
+      padding-bottom:14px; margin-bottom:14px;
+      border-bottom:1px solid var(--line);
+    }
+    .brand-badge{
+      width:44px;height:44px;border-radius:14px;
+      display:grid;place-items:center;
+      background:linear-gradient(135deg,#4f46e5,#06b6d4);
+      color:#fff;font-size:22px;font-weight:800;
+      box-shadow:0 10px 22px rgba(79,70,229,.24);
+    }
+    .brand h1{font-size:20px;margin:0 0 4px}
+    .brand .sub{font-size:12px;color:var(--muted);line-height:1.45}
+    .stack{display:grid;gap:12px}
+    .card{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:18px;
+      box-shadow:var(--shadow);
+    }
+    .card.pad{padding:16px}
+    .section-title{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      margin-bottom:12px;
+    }
+    .section-title h2,.section-title h3{margin:0}
+    .section-title h2{font-size:18px}
+    .section-title h3{font-size:16px}
+    .small{font-size:12px;color:var(--muted);line-height:1.5}
+    .toolbar{display:flex;flex-wrap:wrap;gap:8px}
+    button{
+      border:0;border-radius:999px;padding:10px 15px;
+      background:var(--accent);color:#fff;font-weight:700;cursor:pointer;
+    }
+    button.secondary{background:#e2e8f0;color:var(--ink)}
+    button.warn{background:var(--warn)}
+    button.danger{background:var(--danger)}
+    .pill{
+      display:inline-flex;align-items:center;gap:6px;
+      border-radius:999px;padding:4px 10px;font-size:12px;
+      background:#eef2ff;color:#3730a3;
+    }
+    .pill.ok{background:rgba(15,118,110,.12);color:var(--accent-2)}
+    .pill.bad{background:rgba(185,28,28,.12);color:var(--danger)}
+    .pill.info{background:#e2e8f0;color:#475569}
+    input,textarea,select{
+      width:100%;padding:10px 12px;border-radius:12px;
+      border:1px solid var(--line);background:#fff;color:var(--ink);
+      outline:none;
+    }
+    textarea{min-height:110px;resize:vertical}
+    label{display:grid;gap:6px;font-size:13px;color:var(--muted)}
+    .sidebar .search{margin-bottom:12px}
+    .nav{
+      display:grid;gap:8px;
+    }
+    .nav button{
+      width:100%;
+      text-align:left;
+      background:#eef2ff;color:#334155;
+      border:1px solid transparent;
+      padding:11px 14px;
+    }
+    .nav button.active{
+      background:linear-gradient(135deg,#4f46e5,#4338ca);
+      color:#fff; box-shadow:0 10px 24px rgba(79,70,229,.18);
+    }
+    .tenant-list{
+      display:grid; gap:8px; max-height:48vh; overflow:auto; padding-right:4px;
+    }
+    .tenant-item{
+      padding:12px 14px;border:1px solid var(--line);border-radius:14px;
+      background:#fff;cursor:pointer;
+    }
+    .tenant-item.active{
+      border-color:rgba(79,70,229,.55);
+      box-shadow:0 0 0 3px rgba(79,70,229,.10);
+    }
+    .tenant-item .name{font-weight:800}
+    .tenant-item .meta{font-size:12px;color:var(--muted);margin-top:4px}
+    .main{
+      padding:20px 20px 34px;
+      min-width:0;
+    }
+    .topbar{
+      display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;
+      margin-bottom:16px;
+    }
+    .headline{
+      display:grid;gap:6px;
+    }
+    .headline h1{margin:0;font-size:28px}
+    .headline .sub{color:var(--muted);font-size:13px;line-height:1.6;max-width:900px}
+    .overview{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:12px;
+    }
+    .metric{
+      background:linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.98));
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:14px;
+    }
+    .metric .k{font-size:12px;color:var(--muted)}
+    .metric .v{font-size:26px;font-weight:900;margin-top:6px}
+    .metric .s{font-size:12px;color:var(--muted);margin-top:6px}
+    .content{
+      display:grid;
+      gap:16px;
+      margin-top:16px;
+    }
+    .layout-2{
+      display:grid;
+      grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);
+      gap:16px;
+    }
+    .layout-2 .card{height:100%}
+    .agent-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+      gap:14px;
+    }
+    .agent-card{
+      border:1px solid var(--line); border-radius:16px; background:var(--panel-2);
+      padding:14px; display:grid; gap:10px;
+    }
+    .agent-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+    .agent-name{font-weight:900;font-size:16px}
+    .agent-id{font-size:12px;color:var(--muted)}
+    .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .fields .span-2{grid-column:1 / -1}
+    .template-list{display:grid;gap:10px}
+    .template-item{
+      border:1px solid var(--line);border-radius:14px;background:#fff;padding:12px 14px;
+      display:flex;justify-content:space-between;gap:12px;align-items:flex-start;
+    }
+    .template-item .title{font-weight:800}
+    .template-item .meta{font-size:12px;color:var(--muted);margin-top:4px}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:11px 10px;border-bottom:1px solid rgba(148,163,184,.24);text-align:left;vertical-align:top}
+    th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+    .log{
+      white-space:pre-wrap; background:#0f172a; color:#dbeafe; border-radius:14px; padding:12px;
+      min-height:120px; max-height:320px; overflow:auto;
+    }
+    .anchor{scroll-margin-top:20px}
+    .muted{color:var(--muted)}
+    .empty{
+      padding:18px;border:1px dashed var(--line);border-radius:16px;background:#fff;color:var(--muted);text-align:center
+    }
+    .split{
+      display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;
+    }
+    .link-row{display:flex;gap:8px;flex-wrap:wrap}
+    .link-row a{text-decoration:none}
+    @media (max-width: 1100px){
+      .shell{grid-template-columns:1fr}
+      .sidebar{position:relative;min-height:auto}
+      .overview{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .layout-2,.split{grid-template-columns:1fr}
+    }
+    @media (max-width: 640px){
+      .main{padding:14px}
+      .overview{grid-template-columns:1fr}
+      .fields{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-badge">🤖</div>
+        <div>
+          <h1>Agent Ops Admin</h1>
+          <div class="sub">独立的租户 Agent 控制台：模型、模板、调度、验收与修复。</div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="card pad">
+          <div class="section-title">
+            <h3>入口</h3>
+            <span class="pill info">平台级</span>
+          </div>
+          <div class="link-row">
+            <a href="/platform-admin/" class="pill ok" style="text-decoration:none;">返回平台后台</a>
+            <a href="/api/health" target="_blank" rel="noreferrer" class="pill" style="text-decoration:none;">健康检查</a>
+          </div>
+        </div>
+
+        <div class="card pad">
+          <div class="section-title">
+            <h3>平台密钥</h3>
+            <span class="pill info">只在本机缓存</span>
+          </div>
+          <label>平台密钥
+            <input id="platformSecret" type="password" placeholder="PLATFORM_ADMIN_SECRET">
+          </label>
+          <div class="toolbar" style="margin-top:10px">
+            <button id="saveSecretBtn" class="secondary">保存密钥</button>
+            <button id="reloadBtn">刷新租户</button>
+          </div>
+        </div>
+
+        <div class="card pad">
+          <div class="section-title">
+            <h3>租户搜索</h3>
+            <span class="pill info">选择后自动加载</span>
+          </div>
+          <label class="search">搜索租户
+            <input id="tenantSearch" placeholder="输入租户 ID / 名称 / 状态">
+          </label>
+          <div id="tenantList" class="tenant-list"></div>
+        </div>
+
+        <div class="card pad">
+          <div class="section-title">
+            <h3>页面导航</h3>
+            <span class="pill info">左侧锚点</span>
+          </div>
+          <div class="nav" id="nav">
+            <button class="active" data-target="overviewSection">总览</button>
+            <button data-target="agentSection">基础配置</button>
+            <button data-target="templateSection">模板库</button>
+            <button data-target="acceptanceSection">验收 / 修复</button>
+            <button data-target="logSection">操作日志</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="headline">
+          <h1>租户 Agent 配置中心</h1>
+          <div class="sub">
+            这里是租户 A、租户 B……每个客户自己的 Agent 设置入口。你可以在这里调模型、模板、轮询、启用状态，并直接运行验收或修复。
+          </div>
+        </div>
+        <div class="toolbar">
+          <span id="currentTenantBadge" class="pill">未选择租户</span>
+          <button id="openPlatformBtn" class="secondary">打开平台后台</button>
+        </div>
+      </div>
+
+      <section id="overviewSection" class="card pad anchor">
+        <div class="section-title">
+          <h2>租户总览</h2>
+          <span id="tenantHint" class="pill info">等待加载</span>
+        </div>
+        <div class="overview">
+          <div class="metric"><div class="k">Agent 数量</div><div id="mAgentTotal" class="v">0</div><div class="s">租户级 Agent 配置</div></div>
+          <div class="metric"><div class="k">已启用</div><div id="mAgentEnabled" class="v">0</div><div class="s">当前启用中的 Agent</div></div>
+          <div class="metric"><div class="k">提示词模板</div><div id="mPromptTemplates" class="v">0</div><div class="s">租户可自定义</div></div>
+          <div class="metric"><div class="k">回复模板</div><div id="mReplyTemplates" class="v">0</div><div class="s">卡片 / 文本回复</div></div>
+        </div>
+      </section>
+
+      <div class="content">
+        <section class="layout-2">
+          <div class="card pad anchor" id="agentSection">
+            <div class="section-title">
+              <h2>基础配置</h2>
+              <div class="toolbar">
+                <button id="runAcceptanceInlineBtn" class="secondary">运行验收</button>
+                <button id="bootstrapInlineBtn" class="warn">一键初始化</button>
+                <button id="repairInlineBtn" class="warn">失败修复</button>
+              </div>
+            </div>
+            <div id="agentContainer" class="stack">
+              <div class="empty">请先选择一个租户。</div>
+            </div>
+          </div>
+
+          <div class="card pad">
+            <div class="section-title">
+              <h2>租户信息</h2>
+              <span id="tenantStatusBadge" class="pill info">-</span>
+            </div>
+            <div id="tenantMeta" class="stack">
+              <div class="empty">暂无租户信息。</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card pad anchor" id="templateSection">
+          <div class="section-title">
+            <h2>模板库</h2>
+            <span class="pill info">租户级模板</span>
+          </div>
+          <div class="split">
+            <div>
+              <div class="section-title">
+                <h3>提示词模板</h3>
+                <span class="small">创建、绑定、删除</span>
+              </div>
+              <div id="promptTemplateBox" class="template-list"><div class="empty">暂无模板。</div></div>
+              <div class="card pad" style="margin-top:12px;background:#fafafa">
+                <div class="section-title">
+                  <h3>新建提示词模板</h3>
+                  <span class="small">租户级</span>
+                </div>
+                <div class="fields">
+                  <label>Agent
+                    <select id="newPromptAgent"></select>
+                  </label>
+                  <label>模板名称
+                    <input id="newPromptName" placeholder="例如：Master 简洁版">
+                  </label>
+                  <label class="span-2">模板内容
+                    <textarea id="newPromptContent" placeholder="输入系统提示词模板"></textarea>
+                  </label>
+                </div>
+                <div class="toolbar" style="margin-top:10px">
+                  <button id="createPromptBtn">新建提示词模板</button>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="section-title">
+                <h3>回复模板</h3>
+                <span class="small">创建、绑定、删除</span>
+              </div>
+              <div id="replyTemplateBox" class="template-list"><div class="empty">暂无模板。</div></div>
+              <div class="card pad" style="margin-top:12px;background:#fafafa">
+                <div class="section-title">
+                  <h3>新建回复模板</h3>
+                  <span class="small">租户级</span>
+                </div>
+                <div class="fields">
+                  <label>Agent
+                    <select id="newReplyAgent"></select>
+                  </label>
+                  <label>模板名称
+                    <input id="newReplyName" placeholder="例如：异常卡片回复">
+                  </label>
+                  <label class="span-2">模板内容
+                    <textarea id="newReplyContent" placeholder="输入回复模板"></textarea>
+                  </label>
+                </div>
+                <div class="toolbar" style="margin-top:10px">
+                  <button id="createReplyBtn">新建回复模板</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card pad anchor" id="acceptanceSection">
+          <div class="section-title">
+            <h2>验收 / 修复</h2>
+            <span class="pill info">一键操作</span>
+          </div>
+          <div class="split">
+            <div class="card pad" style="background:#fafafa">
+              <div class="section-title">
+                <h3>自动验收报告</h3>
+                <span id="acceptanceBadge" class="pill info">未执行</span>
+              </div>
+              <div id="acceptanceBox" class="stack">
+                <div class="empty">暂无自动验收报告。</div>
+              </div>
+            </div>
+            <div class="card pad" style="background:#fafafa">
+              <div class="section-title">
+                <h3>系统告警</h3>
+                <span id="alertBadge" class="pill info">0</span>
+              </div>
+              <div id="alertBox" class="stack">
+                <div class="empty">暂无告警。</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card pad anchor" id="logSection">
+          <div class="section-title">
+            <h2>操作日志</h2>
+            <span class="pill info">平台级操作</span>
+          </div>
+          <div id="log" class="log">等待操作…</div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const secretKey = 'hrms_platform_secret';
+    const tenantKey = 'agent_admin_tenant_id';
+    const state = { tenants: [], selectedTenantId: '', overview: null, center: null, profile: null };
+    const AGENT_LABELS = {
+      master: 'Master 调度中枢',
+      data_auditor: '数据审计',
+      ops_supervisor: '营运督导',
+      sop_advisor: 'SOP 顾问',
+      chief_evaluator: '绩效考核',
+      appeal_handler: '申诉处理',
+    };
+
+    const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    })[ch]);
+
+    const log = (msg) => {
+      const stamp = new Date().toLocaleString();
+      $('log').textContent = `[${stamp}] ${msg}\n` + ($('log').textContent || '');
+    };
+
+    function agentLabel(agentId) {
+      return AGENT_LABELS[String(agentId || '').trim()] || String(agentId || '').trim() || '-';
+    }
+
+    function agentDomKey(agentId) {
+      return String(agentId || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    }
+
+    function formatMode(mode) {
+      return String(mode || '').trim() === 'self_hosted' ? '自部署' : '托管租赁';
+    }
+
+    function formatStatus(status) {
+      const s = String(status || '').trim();
+      if (s === 'active') return '正常';
+      if (s === 'provisioning') return '初始化中';
+      if (s === 'suspended') return '已暂停';
+      return s || '未知';
+    }
+
+    function formatCountdown(days) {
+      if (days === null || days === undefined || days === '') return '-';
+      const n = Number(days);
+      if (!Number.isFinite(n)) return '-';
+      if (n < 0) return `已过期 ${Math.abs(n)} 天`;
+      if (n === 0) return '今天到期';
+      return `${n} 天`;
+    }
+
+    function headers(extra = {}) {
+      const secret = $('platformSecret').value.trim();
+      if (!secret) throw new Error('请先填写平台密钥');
+      return {
+        'Content-Type': 'application/json',
+        'x-platform-admin-secret': secret,
+        ...extra,
+      };
+    }
+
+    async function api(url, opts = {}) {
+      const res = await fetch(url, {
+        credentials: 'same-origin',
+        headers: headers(opts.headers || {}),
+        ...opts
+      });
+      const text = await res.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+      if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+      return data;
+    }
+
+    function setCurrentTenant(id) {
+      $('currentTenantBadge').textContent = id ? `当前租户：${id}` : '未选择租户';
+      $('tenantHint').textContent = id ? `已选择 ${id}` : '等待选择';
+      localStorage.setItem(tenantKey, id || '');
+    }
+
+    function selectedTenant() {
+      return state.tenants.find((x) => x.tenant_id === state.selectedTenantId) || state.tenants[0] || null;
+    }
+
+    function templateSelectOptions(agentId, templates, selectedId) {
+      const list = Array.isArray(templates) ? templates : [];
+      const filtered = list.filter((tpl) => String(tpl.agent_id || '').trim() === String(agentId || '').trim());
+      const source = filtered.length ? filtered : list;
+      return [
+        '<option value="">（不绑定）</option>',
+        ...source.map((tpl) => {
+          const label = `${tpl.name || tpl.template_key || '-'}${tpl.is_builtin ? ' · 内置' : ' · 自定义'}`;
+          const selected = String(selectedId || '') === String(tpl.id || '') ? 'selected' : '';
+          return `<option value="${esc(tpl.id)}" ${selected}>${esc(label)}</option>`;
+        })
+      ].join('');
+    }
+
+    function renderTenantList(items) {
+      const list = $('tenantList');
+      if (!items.length) {
+        list.innerHTML = '<div class="empty">没有可用租户。</div>';
+        return;
+      }
+      list.innerHTML = items.map((item) => {
+        const profile = item.platform_profile || {};
+        const active = item.tenant_id === state.selectedTenantId ? 'active' : '';
+        return `
+          <div class="tenant-item ${active}" data-tenant-id="${esc(item.tenant_id)}">
+            <div class="name">${esc(profile.system_name || item.name || item.tenant_id)}</div>
+            <div class="meta">
+              <span class="pill ${item.status === 'active' ? 'ok' : 'bad'}">${esc(formatStatus(item.status))}</span>
+              <span class="pill">${esc(item.tenant_id)}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      list.querySelectorAll('.tenant-item').forEach((node) => {
+        node.addEventListener('click', () => selectTenant(node.dataset.tenantId));
+      });
+    }
+
+    function renderTenantMeta(detail) {
+      const el = $('tenantMeta');
+      if (!detail) {
+        el.innerHTML = '<div class="empty">暂无租户信息。</div>';
+        $('tenantStatusBadge').textContent = '-';
+        return;
+      }
+      const tenant = detail.tenant || detail;
+      const profile = detail.profile || tenant.platform_profile || {};
+      const acceptance = detail.acceptance_report || null;
+      const alerts = Array.isArray(detail.alerts) ? detail.alerts : [];
+      $('tenantStatusBadge').innerHTML = `<span class="pill ${tenant.status === 'active' ? 'ok' : 'bad'}">${esc(formatStatus(tenant.status))}</span>`;
+      el.innerHTML = `
+        <div class="stack">
+          <div><strong>${esc(profile.system_name || tenant.name || tenant.tenant_id)}</strong></div>
+          <div class="muted mono">${esc(tenant.tenant_id)}</div>
+          <div class="toolbar">
+            <span class="pill">${esc(formatMode(tenant.mode))}</span>
+            <span class="pill">${esc(profile.billing?.plan_name || '未配置账单')}</span>
+            <span class="pill">${esc(profile.billing?.billing_cycle || '未配置周期')}</span>
+          </div>
+          <div class="split">
+            <div class="card pad" style="background:#fafafa">
+              <div class="small">许可证</div>
+              <div><strong>${esc(tenant.license_status || '缺失')}</strong></div>
+              <div class="small mono">${esc(tenant.license_expires_at || '-')}</div>
+              <div class="small">剩余：${esc(formatCountdown(tenant.license_countdown_days))}</div>
+            </div>
+            <div class="card pad" style="background:#fafafa">
+              <div class="small">飞书</div>
+              <div><strong>${esc(detail.integrations?.feishu_bitable?.configured ? '已配置' : '未配置')}</strong></div>
+              <div class="small mono">${esc(detail.integrations?.feishu_bitable?.app_id || '-')}</div>
+            </div>
+          </div>
+          <div class="small">告警：${esc(String(alerts.length))} 条</div>
+          ${acceptance ? `
+            <div class="card pad" style="background:#fafafa">
+              <div class="small">最近验收</div>
+              <div><strong>${acceptance.ok ? '通过' : '未通过'}</strong> · ${esc(acceptance.action || 'acceptance')}</div>
+              <div class="small mono">${esc(acceptance.checked_at || acceptance.checkedAt || '-')}</div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderAcceptance(report) {
+      if (!report) return '<div class="empty">暂无自动验收报告。</div>';
+      const checks = Array.isArray(report.checks) ? report.checks : [];
+      const okCount = checks.filter((item) => item && item.ok).length;
+      const failCount = checks.length - okCount;
+      return `
+        <div class="fields">
+          <div class="card pad" style="background:#fafafa">
+            <div class="small">结果</div>
+            <div><strong>${report.ok ? '通过' : '未通过'}</strong></div>
+            <div class="small">通过 ${okCount} / 失败 ${failCount}</div>
+          </div>
+          <div class="card pad" style="background:#fafafa">
+            <div class="small">动作</div>
+            <div><strong>${esc(report.action || 'acceptance')}</strong></div>
+            <div class="small mono">${esc(report.checked_at || report.checkedAt || '-')}</div>
+          </div>
+          <div class="card pad span-2" style="background:#fafafa">
+            <div class="small">说明</div>
+            <div>${esc(report.message || '-')}</div>
+          </div>
+        </div>
+        <div class="template-list" style="margin-top:12px">
+          ${checks.length ? checks.map((item) => `
+            <div class="template-item">
+              <div>
+                <div class="title">${esc(item.key || '-')}</div>
+                <div class="meta">${item.ok ? '✅' : '❌'} ${esc(item.detail || '')}</div>
+              </div>
+            </div>
+          `).join('') : '<div class="empty">无检查项</div>'}
+        </div>
+      `;
+    }
+
+    function renderAlerts(alerts) {
+      const box = $('alertBox');
+      $('alertBadge').textContent = String(alerts.length || 0);
+      if (!alerts.length) {
+        box.innerHTML = '<div class="empty">暂无告警。</div>';
+        return;
+      }
+      box.innerHTML = alerts.map((item) => `
+        <div class="template-item">
+          <div>
+            <div class="title">${esc(item.title || '-')}</div>
+            <div class="meta">${esc(item.detail || '-')}</div>
+          </div>
+          <div class="pill ${String(item.level || 'info') === 'error' ? 'bad' : 'info'}">${esc(item.level || 'info')}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderOverview(center) {
+      const configs = Array.isArray(center?.configs) ? center.configs : [];
+      const promptTemplates = Array.isArray(center?.prompt_templates) ? center.prompt_templates : [];
+      const replyTemplates = Array.isArray(center?.reply_templates) ? center.reply_templates : [];
+      $('mAgentTotal').textContent = String(configs.length);
+      $('mAgentEnabled').textContent = String(configs.filter((x) => x.enabled !== false).length);
+      $('mPromptTemplates').textContent = String(promptTemplates.length);
+      $('mReplyTemplates').textContent = String(replyTemplates.length);
+    }
+
+    function renderAgentSection(center) {
+      const container = $('agentContainer');
+      const configs = Array.isArray(center?.configs) ? center.configs : [];
+      const promptTemplates = Array.isArray(center?.prompt_templates) ? center.prompt_templates : [];
+      const replyTemplates = Array.isArray(center?.reply_templates) ? center.reply_templates : [];
+      if (!configs.length) {
+        container.innerHTML = '<div class="empty">暂无 Agent 配置，请先让系统完成初始化。</div>';
+        return;
+      }
+      const promptByAgent = {};
+      const replyByAgent = {};
+      promptTemplates.forEach((tpl) => {
+        const aid = String(tpl.agent_id || '').trim();
+        (promptByAgent[aid] ||= []).push(tpl);
+      });
+      replyTemplates.forEach((tpl) => {
+        const aid = String(tpl.agent_id || '').trim();
+        (replyByAgent[aid] ||= []).push(tpl);
+      });
+      container.innerHTML = configs.map((cfg) => {
+        const safe = agentDomKey(cfg.agent_id);
+        return `
+          <div class="agent-card">
+            <div class="agent-head">
+              <div>
+                <div class="agent-name">${esc(agentLabel(cfg.agent_id))}</div>
+                <div class="agent-id mono">${esc(cfg.agent_id)}</div>
+              </div>
+              <span class="pill ${cfg.enabled === false ? 'bad' : 'ok'}">${cfg.enabled === false ? '停用' : '启用'}</span>
+            </div>
+            <div class="fields">
+              <label>启用
+                <input id="ac_${safe}_enabled" type="checkbox" ${cfg.enabled === false ? '' : 'checked'}>
+              </label>
+              <label>模型
+                <input id="ac_${safe}_model" value="${esc(cfg.model_name || '')}" placeholder="qwen-plus / deepseek / doubao">
+              </label>
+              <label>温度
+                <input id="ac_${safe}_temperature" type="number" step="0.01" min="0" max="2" value="${cfg.temperature ?? 0.1}">
+              </label>
+              <label>轮询间隔(分)
+                <input id="ac_${safe}_schedule_interval" type="number" step="1" min="0" value="${cfg.schedule_interval ?? 30}">
+              </label>
+              <label class="span-2">提示词模板
+                <select id="ac_${safe}_prompt_template_id">${templateSelectOptions(cfg.agent_id, promptTemplates, cfg.prompt_template_id)}</select>
+              </label>
+              <label class="span-2">回复模板
+                <select id="ac_${safe}_reply_template_id">${templateSelectOptions(cfg.agent_id, replyTemplates, cfg.reply_template_id)}</select>
+              </label>
+              <label class="span-2">系统提示词
+                <textarea id="ac_${safe}_system_prompt">${esc(cfg.system_prompt || '')}</textarea>
+              </label>
+            </div>
+            <div class="toolbar">
+              <button onclick="saveAgentConfig('${esc(cfg.agent_id)}')">保存</button>
+              <button class="secondary" onclick="resetAgentConfig('${esc(cfg.agent_id)}')">回填当前值</button>
+            </div>
+            <div class="small">当前绑定：提示词 ${esc(cfg.prompt_template_name || '未绑定')} · 回复 ${esc(cfg.reply_template_name || '未绑定')}</div>
+          </div>
+        `;
+      }).join('');
+
+      const pickList = configs.map((cfg) => `<option value="${esc(cfg.agent_id)}">${esc(agentLabel(cfg.agent_id))}</option>`).join('');
+      $('newPromptAgent').innerHTML = pickList;
+      $('newReplyAgent').innerHTML = pickList;
+    }
+
+    function renderTemplateBlocks(center) {
+      const promptTemplates = Array.isArray(center?.prompt_templates) ? center.prompt_templates : [];
+      const replyTemplates = Array.isArray(center?.reply_templates) ? center.reply_templates : [];
+      const render = (kind, list) => {
+        if (!list.length) return '<div class="empty">暂无模板。</div>';
+        return list.map((tpl) => `
+          <div class="template-item">
+            <div>
+              <div class="title">${esc(tpl.name || tpl.template_key || '-')}</div>
+              <div class="meta">Agent：${esc(agentLabel(tpl.agent_id))} · ${tpl.is_builtin ? '内置' : '自定义'} · ${tpl.enabled === false ? '关闭' : '开启'}</div>
+              <div class="meta mono">${esc(tpl.template_key || '-')}</div>
+            </div>
+            <div class="toolbar">
+              <button class="secondary" onclick="bindTemplate('${kind}', '${esc(tpl.id)}')">绑定</button>
+              ${tpl.is_builtin ? '' : `<button class="danger" onclick="deleteTemplate('${kind}', '${esc(tpl.id)}')">删除</button>`}
+            </div>
+          </div>
+        `).join('');
+      };
+      $('promptTemplateBox').innerHTML = render('prompt', promptTemplates);
+      $('replyTemplateBox').innerHTML = render('reply', replyTemplates);
+    }
+
+    async function loadTenants() {
+      const data = await api('/api/admin/tenants/overview');
+      const filter = String($('tenantSearch').value || '').trim().toLowerCase();
+      const items = (data.items || []).filter((item) => {
+        if (!filter) return true;
+        const profile = item.platform_profile || {};
+        const hay = [
+          item.tenant_id,
+          item.name,
+          item.mode,
+          item.status,
+          profile.system_name,
+          profile.page_title,
+          profile.billing?.plan_name,
+        ].join(' ').toLowerCase();
+        return hay.includes(filter);
+      });
+      state.overview = data;
+      state.tenants = data.items || [];
+      renderTenantList(items);
+      if (!state.selectedTenantId) {
+        const fromQuery = new URL(location.href).searchParams.get('tenant_id') || localStorage.getItem(tenantKey) || '';
+        const match = items.find((x) => x.tenant_id === fromQuery) || items[0] || null;
+        if (match) await selectTenant(match.tenant_id);
+        else renderMain(null);
+      } else {
+        const current = items.find((x) => x.tenant_id === state.selectedTenantId) || selectedTenant();
+        if (current) await selectTenant(current.tenant_id, true);
+      }
+      log(`已加载 ${items.length} 个租户。`);
+    }
+
+    async function loadTenantDetail(tenantId) {
+      const [center, profile] = await Promise.all([
+        api(`/api/admin/tenants/${encodeURIComponent(tenantId)}/agent-center`),
+        api(`/api/admin/tenants/${encodeURIComponent(tenantId)}/profile`),
+      ]);
+      state.center = center;
+      state.profile = profile;
+      return { center, profile };
+    }
+
+    function renderMain(tenant) {
+      const overview = state.center;
+      renderOverview(overview);
+      renderAgentSection(overview);
+      renderTemplateBlocks(overview);
+      if (!tenant || !state.profile) {
+        renderTenantMeta(null);
+        $('acceptanceBox').innerHTML = '<div class="empty">暂无自动验收报告。</div>';
+        $('alertBox').innerHTML = '<div class="empty">暂无告警。</div>';
+        $('tenantStatusBadge').textContent = '-';
+        return;
+      }
+      renderTenantMeta(state.profile);
+      renderAcceptance(state.profile.acceptance_report || overview?.profile?.acceptance_report || null);
+      renderAlerts(state.profile.alerts || []);
+      $('acceptanceBadge').textContent = state.profile.acceptance_report ? (state.profile.acceptance_report.ok ? '通过' : '未通过') : '未执行';
+      $('currentTenantBadge').textContent = `当前租户：${tenant.tenant_id}`;
+      $('tenantHint').textContent = `${tenant.tenant_id} · ${tenant.name || tenant.tenant_id}`;
+      if (overview?.tenant?.tenant_id) {
+        $('tenantHint').textContent = `${overview.tenant.tenant_id} · ${overview.tenant.name || overview.tenant.tenant_id}`;
+      }
+    }
+
+    async function selectTenant(tenantId, silent = false) {
+      if (!tenantId) return;
+      const tenant = state.tenants.find((x) => x.tenant_id === tenantId) || null;
+      state.selectedTenantId = tenantId;
+      setCurrentTenant(tenantId);
+      renderTenantList(state.tenants.filter((x) => {
+        const filter = String($('tenantSearch').value || '').trim().toLowerCase();
+        if (!filter) return true;
+        const profile = x.platform_profile || {};
+        const hay = [
+          x.tenant_id,
+          x.name,
+          x.mode,
+          x.status,
+          profile.system_name,
+          profile.page_title,
+          profile.billing?.plan_name,
+        ].join(' ').toLowerCase();
+        return hay.includes(filter);
+      }));
+      $('tenantSearch').value = $('tenantSearch').value; // keep browser state stable
+      try {
+        await loadTenantDetail(tenantId);
+        renderMain(tenant);
+        if (!silent) log(`已切换到租户 ${tenantId}`);
+      } catch (e) {
+        log(`加载租户失败：${e.message}`);
+      }
+    }
+
+    async function saveAgentConfig(agentId) {
+      const tenantId = state.selectedTenantId;
+      if (!tenantId) {
+        log('请先选择租户');
+        return;
+      }
+      const safe = agentDomKey(agentId);
+      const payload = {
+        enabled: $(`ac_${safe}_enabled`)?.checked ?? true,
+        model_name: $(`ac_${safe}_model`)?.value?.trim() || '',
+        temperature: $(`ac_${safe}_temperature`)?.value,
+        schedule_interval: $(`ac_${safe}_schedule_interval`)?.value,
+        prompt_template_id: $(`ac_${safe}_prompt_template_id`)?.value || null,
+        reply_template_id: $(`ac_${safe}_reply_template_id`)?.value || null,
+        system_prompt: $(`ac_${safe}_system_prompt`)?.value || ''
+      };
+      try {
+        await api(`/api/admin/tenants/${encodeURIComponent(tenantId)}/agent-center/configs/${encodeURIComponent(agentId)}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+        log(`已保存 ${agentLabel(agentId)} 配置`);
+        await loadTenantDetail(tenantId);
+        renderMain(selectedTenant());
+      } catch (e) {
+        log(`保存失败：${e.message}`);
+      }
+    }
+
+    async function resetAgentConfig(agentId) {
+      const cfg = (state.center?.configs || []).find((item) => String(item.agent_id || '') === String(agentId || ''));
+      if (!cfg) return;
+      const safe = agentDomKey(agentId);
+      if ($(`ac_${safe}_enabled`)) $(`ac_${safe}_enabled`).checked = cfg.enabled !== false;
+      if ($(`ac_${safe}_model`)) $(`ac_${safe}_model`).value = cfg.model_name || '';
+      if ($(`ac_${safe}_temperature`)) $(`ac_${safe}_temperature`).value = cfg.temperature ?? 0.1;
+      if ($(`ac_${safe}_schedule_interval`)) $(`ac_${safe}_schedule_interval`).value = cfg.schedule_interval ?? 30;
+      if ($(`ac_${safe}_prompt_template_id`)) $(`ac_${safe}_prompt_template_id`).value = cfg.prompt_template_id || '';
+      if ($(`ac_${safe}_reply_template_id`)) $(`ac_${safe}_reply_template_id`).value = cfg.reply_template_id || '';
+      if ($(`ac_${safe}_system_prompt`)) $(`ac_${safe}_system_prompt`).value = cfg.system_prompt || '';
+      log(`已回填 ${agentLabel(agentId)} 当前值`);
+    }
+
+    async function createTemplate(kind) {
+      const tenantId = state.selectedTenantId;
+      if (!tenantId) return log('请先选择租户');
+      const prefix = kind === 'reply' ? 'newReply' : 'newPrompt';
+      const agentId = $(`${prefix}Agent`)?.value?.trim();
+      const name = $(`${prefix}Name`)?.value?.trim();
+      const content = $(`${prefix}Content`)?.value || '';
+      try {
+        await api(`/api/admin/tenants/${encodeURIComponent(tenantId)}/agent-center/templates/${kind === 'reply' ? 'reply' : 'prompt'}`, {
+          method: 'POST',
+          body: JSON.stringify({ agent_id: agentId, name, content, enabled: true })
+        });
+        log(`已创建${kind === 'reply' ? '回复' : '提示词'}模板`);
+        await loadTenantDetail(tenantId);
+        renderMain(selectedTenant());
+      } catch (e) {
+        log(`创建模板失败：${e.message}`);
+      }
+    }
+
+    async function bindTemplate(kind, templateId) {
+      const tenantId = state.selectedTenantId;
+      if (!tenantId) return log('请先选择租户');
+      const list = kind === 'reply' ? (state.center?.reply_templates || []) : (state.center?.prompt_templates || []);
+      const tpl = list.find((item) => String(item.id) === String(templateId));
+      if (!tpl) return log('模板不存在');
+      const agentId = String(tpl.agent_id || '').trim();
+      const safe = agentDomKey(agentId);
+      const select = kind === 'reply' ? $(`ac_${safe}_reply_template_id`) : $(`ac_${safe}_prompt_template_id`);
+      if (select) select.value = String(templateId);
+      await saveAgentConfig(agentId);
+    }
+
+    async function deleteTemplate(kind, templateId) {
+      const tenantId = state.selectedTenantId;
+      if (!tenantId) return log('请先选择租户');
+      if (!confirm('确定删除该模板？')) return;
+      try {
+        await api(`/api/admin/tenants/${encodeURIComponent(tenantId)}/agent-center/templates/${kind === 'reply' ? 'reply' : 'prompt'}/${encodeURIComponent(templateId)}`, {
+          method: 'DELETE'
+        });
+        log('模板已删除');
+        await loadTenantDetail(tenantId);
+        renderMain(selectedTenant());
+      } catch (e) {
+        log(`删除模板失败：${e.message}`);
+      }
+    }
+
+    async function runAction(kind) {
+      const tenantId = state.selectedTenantId;
+      if (!tenantId) return log('请先选择租户');
+      try {
+        const route = kind === 'bootstrap' ? 'bootstrap' : kind === 'repair' ? 'repair' : 'acceptance';
+        const data = await api(`/api/admin/tenants/${encodeURIComponent(tenantId)}/${route}`, {
+          method: 'POST',
+          body: JSON.stringify({ activate: true })
+        });
+        log(`${kind === 'bootstrap' ? '一键初始化' : kind === 'repair' ? '失败修复' : '自动验收'}：${data.message || (data.ok ? '完成' : '已执行')}`);
+        await loadTenantDetail(tenantId);
+        renderMain(selectedTenant());
+      } catch (e) {
+        log(`${kind} 失败：${e.message}`);
+      }
+    }
+
+    $('saveSecretBtn').addEventListener('click', () => {
+      localStorage.setItem(secretKey, $('platformSecret').value.trim());
+      log('平台密钥已保存');
+    });
+
+    $('reloadBtn').addEventListener('click', () => loadTenants().catch((e) => log(`刷新失败：${e.message}`)));
+    $('tenantSearch').addEventListener('input', () => renderTenantList(state.tenants.filter((x) => {
+      const filter = String($('tenantSearch').value || '').trim().toLowerCase();
+      if (!filter) return true;
+      const profile = x.platform_profile || {};
+      const hay = [
+        x.tenant_id,
+        x.name,
+        x.mode,
+        x.status,
+        profile.system_name,
+        profile.page_title,
+        profile.billing?.plan_name,
+      ].join(' ').toLowerCase();
+      return hay.includes(filter);
+    })));
+    $('openPlatformBtn').addEventListener('click', () => window.open('/platform-admin/', '_blank', 'noopener'));
+    $('createPromptBtn').addEventListener('click', () => createTemplate('prompt'));
+    $('createReplyBtn').addEventListener('click', () => createTemplate('reply'));
+    $('runAcceptanceInlineBtn').addEventListener('click', () => runAction('acceptance'));
+    $('bootstrapInlineBtn').addEventListener('click', () => runAction('bootstrap'));
+    $('repairInlineBtn').addEventListener('click', () => runAction('repair'));
+    $('nav').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-target]');
+      if (!btn) return;
+      document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b === btn));
+      const el = document.getElementById(btn.dataset.target);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    window.saveAgentConfig = saveAgentConfig;
+    window.resetAgentConfig = resetAgentConfig;
+    window.bindTemplate = bindTemplate;
+    window.deleteTemplate = deleteTemplate;
+
+    async function boot() {
+      $('platformSecret').value = localStorage.getItem(secretKey) || '';
+      const fromQuery = new URL(location.href).searchParams.get('tenant_id') || localStorage.getItem(tenantKey) || '';
+      try {
+        await loadTenants();
+        if (fromQuery) {
+          const target = state.tenants.find((x) => x.tenant_id === fromQuery);
+          if (target) await selectTenant(target.tenant_id, true);
+        }
+      } catch (e) {
+        log(`初始化失败：${e.message}`);
+      }
+    }
+
+    boot();
+  </script>
+</body>
+</html>

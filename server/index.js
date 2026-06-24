@@ -15796,6 +15796,10 @@ app.get(['/platform-admin', '/platform-admin/'], (req, res) => {
   return res.sendFile(path.join(__dirname, '../platform-admin.html'));
 });
 
+app.get(['/agents-admin', '/agents-admin/'], (req, res) => {
+  return res.sendFile(path.join(__dirname, '../agents-admin.html'));
+});
+
 app.get('/api/admin/tenants/:tenantId/profile', platformAdminRequired, async (req, res) => {
   const tenantId = String(req.params.tenantId || '').trim();
   if (!tenantId) return res.status(400).json({ error: 'missing_tenant_id' });
