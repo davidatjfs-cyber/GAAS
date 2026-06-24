@@ -15925,6 +15925,8 @@ app.post('/api/admin/tenants/:tenantId/bootstrap', platformAdminRequired, async 
       },
     }, tenantId);
     await saveTenantPlatformProfile(pool, tenantId, next);
+    await ensureTenantAgentCenterSeed(tenantId, exists.rows[0].name);
+    clearAgentConfigCache();
     const report = await runTenantAcceptance(tenantId);
     await saveTenantPlatformAcceptanceReport(pool, tenantId, {
       ...report,
@@ -16116,6 +16118,12 @@ const PLATFORM_AGENT_REPLY_TEMPLATES = [
   { template_key: 'reply_chief_evaluator_default_v1', agent_id: 'chief_evaluator', name: '考核结果回复', content: '本期考核已完成，分数与扣分项已同步，可在绩效页面查看详情。', enabled: true, is_builtin: true }
 ];
 
+const PLATFORM_AGENT_DEFAULT_COUNTS = {
+  configs: PLATFORM_AGENT_DEFAULTS.length,
+  prompt_templates: PLATFORM_AGENT_PROMPT_TEMPLATES.length,
+  reply_templates: PLATFORM_AGENT_REPLY_TEMPLATES.length
+};
+
 async function ensureTenantAgentCenterSeed(tenantId, tenantName = '') {
   const seededAt = new Date().toISOString();
   const promptTemplateIds = new Map();
@@ -16218,13 +16226,27 @@ async function loadTenantAgentCenterData(tenantId) {
   };
 }
 
+async function ensureTenantAgentCenterReady(tenantId, tenantName = '') {
+  const current = await loadTenantAgentCenterData(tenantId);
+  const shouldSeed =
+    current.configs.length < PLATFORM_AGENT_DEFAULT_COUNTS.configs
+    || current.prompt_templates.length < PLATFORM_AGENT_DEFAULT_COUNTS.prompt_templates
+    || current.reply_templates.length < PLATFORM_AGENT_DEFAULT_COUNTS.reply_templates;
+  if (!shouldSeed) {
+    return { ...current, seeded: false };
+  }
+  await ensureTenantAgentCenterSeed(tenantId, tenantName);
+  const reloaded = await loadTenantAgentCenterData(tenantId);
+  return { ...reloaded, seeded: true };
+}
+
 app.get('/api/admin/tenants/:tenantId/agent-center', platformAdminRequired, async (req, res) => {
   const tenantId = String(req.params.tenantId || '').trim();
   if (!tenantId) return res.status(400).json({ error: 'missing_tenant_id' });
   try {
     const exists = await pool.query('SELECT tenant_id, name FROM tenants WHERE tenant_id = $1 LIMIT 1', [tenantId]);
     if (!exists.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
-    const data = await loadTenantAgentCenterData(tenantId);
+    const data = await ensureTenantAgentCenterReady(tenantId, exists.rows[0].name);
     return res.json({
       ok: true,
       tenant: exists.rows[0],
