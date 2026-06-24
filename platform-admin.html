@@ -369,7 +369,15 @@
     const secretKey = 'hrms_platform_secret';
     const agentTenantKey = 'agent_admin_tenant_id';
     const agentSecretKey = 'platform_admin_secret';
-    const state = { tenants: [], selectedTenantId: '', detail: null, overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] } };
+    const state = { tenants: [], selectedTenantId: '', detail: null, agentCenter: null, overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] } };
+    const AGENT_LABELS = {
+      master: 'Master调度中枢',
+      data_auditor: '数据审计',
+      ops_supervisor: '营运督导',
+      sop_advisor: 'SOP顾问',
+      chief_evaluator: '绩效考核',
+      appeal_handler: '申诉处理',
+    };
 
     const log = (msg) => {
       $('log').textContent = `[${new Date().toLocaleString()}] ${msg}\n` + $('log').textContent;
@@ -440,6 +448,77 @@
       return `${n} 天`;
     }
 
+    function agentCenterTenantId() {
+      return String($('cfgTenantId').value || state.selectedTenantId || '').trim();
+    }
+
+    function agentLabel(agentId) {
+      return AGENT_LABELS[String(agentId || '').trim()] || String(agentId || '').trim();
+    }
+
+    function agentDomKey(agentId) {
+      return String(agentId || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    }
+
+    function templateSelectOptions(agentId, templates, selectedId, kind) {
+      const list = Array.isArray(templates) ? templates : [];
+      const matched = list.filter((t) => String(t.agent_id || '').trim() === String(agentId || '').trim());
+      const any = list.filter((t) => !String(t.agent_id || '').trim() || String(t.agent_id || '').trim() === String(agentId || '').trim());
+      const source = any.length ? any : list;
+      const opts = [
+        `<option value="">（不绑定）</option>`,
+        ...source.map((tpl) => {
+          const label = `${tpl.name || tpl.template_key || '-'}${tpl.is_builtin ? ' · 内置' : ' · 自定义'}`;
+          const sel = String(selectedId || '') === String(tpl.id || '') ? 'selected' : '';
+          return `<option value="${tpl.id}" ${sel}>${label}</option>`;
+        })
+      ];
+      if (!matched.length && list.length) {
+        opts.push(`<option disabled>—— 该租户暂无 ${kind === 'reply' ? '回复' : '提示词'} 模板 ——</option>`);
+      }
+      return opts.join('');
+    }
+
+    function renderTemplateList(kind, templates) {
+      const list = Array.isArray(templates) ? templates : [];
+      const label = kind === 'reply' ? '回复模板' : '提示词模板';
+      if (!list.length) {
+        return `<div class="small">暂无${label}。</div>`;
+      }
+      return `
+        <table>
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>关联 Agent</th>
+              <th>类型</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${list.map((tpl) => `
+              <tr>
+                <td>
+                  <div style="font-weight:700">${tpl.name || tpl.template_key || '-'}</div>
+                  <div class="mono">${tpl.template_key || '-'}</div>
+                </td>
+                <td>${agentLabel(tpl.agent_id)}</td>
+                <td>${tpl.is_builtin ? '内置' : '自定义'}</td>
+                <td>${tpl.enabled === false ? '关闭' : '开启'}</td>
+                <td>
+                  <div class="tenant-actions compact">
+                    <button class="secondary" onclick="window.pickAgentTemplate('${kind}', '${tpl.id}')">绑定到当前 Agent</button>
+                    ${tpl.is_builtin ? '' : `<button class="danger" onclick="window.deleteAgentTemplate('${kind}', '${tpl.id}')">删除</button>`}
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
     function renderAcceptanceReport(report) {
       if (!report) return '<div class="small">暂无自动验收报告。</div>';
       const checks = Array.isArray(report.checks) ? report.checks : [];
@@ -491,6 +570,140 @@
       if (s === 'error') return '<span class="pill bad">严重</span>';
       if (s === 'warn') return '<span class="pill">提醒</span>';
       return '<span class="pill">信息</span>';
+    }
+
+    function renderAgentCenterMarkup() {
+      const center = state.agentCenter || { configs: [], prompt_templates: [], reply_templates: [], role_modules: null, summary: {} };
+      const configs = Array.isArray(center.configs) ? center.configs : [];
+      const promptTemplates = Array.isArray(center.prompt_templates) ? center.prompt_templates : [];
+      const replyTemplates = Array.isArray(center.reply_templates) ? center.reply_templates : [];
+      const summary = center.summary || {};
+      const promptByAgent = {};
+      const replyByAgent = {};
+      promptTemplates.forEach((tpl) => {
+        const aid = String(tpl.agent_id || '').trim();
+        if (!promptByAgent[aid]) promptByAgent[aid] = [];
+        promptByAgent[aid].push(tpl);
+      });
+      replyTemplates.forEach((tpl) => {
+        const aid = String(tpl.agent_id || '').trim();
+        if (!replyByAgent[aid]) replyByAgent[aid] = [];
+        replyByAgent[aid].push(tpl);
+      });
+      const currentTenant = agentCenterTenantId();
+      if (!currentTenant) {
+        return '<div class="small">请先选择一个租户，再配置该租户的 Agent 需求。</div>';
+      }
+
+      const renderAgentRow = (cfg) => {
+        const agentId = cfg.agent_id || '';
+        const safe = agentDomKey(agentId);
+        const pt = promptByAgent[agentId] || promptTemplates;
+        const rt = replyByAgent[agentId] || replyTemplates;
+        return `
+          <div class="detail-grid" style="margin-top:10px">
+            <div class="field" style="grid-column:1 / -1">
+              <div class="k">Agent</div>
+              <div class="v">${agentLabel(agentId)} <span class="small mono">(${agentId})</span></div>
+            </div>
+            <label class="field">启用
+              <input id="ac_${safe}_enabled" type="checkbox" ${cfg.enabled === false ? '' : 'checked'}>
+            </label>
+            <label class="field">模型
+              <input id="ac_${safe}_model" value="${cfg.model_name || ''}" placeholder="qwen-plus / deepseek / doubao">
+            </label>
+            <label class="field">温度
+              <input id="ac_${safe}_temperature" type="number" step="0.01" min="0" max="2" value="${cfg.temperature ?? 0.1}">
+            </label>
+            <label class="field">轮询间隔(分)
+              <input id="ac_${safe}_schedule_interval" type="number" step="1" min="0" value="${cfg.schedule_interval ?? 30}">
+            </label>
+            <label class="field">提示词模板
+              <select id="ac_${safe}_prompt_template_id">${templateSelectOptions(agentId, promptTemplates, cfg.prompt_template_id, 'prompt')}</select>
+            </label>
+            <label class="field">回复模板
+              <select id="ac_${safe}_reply_template_id">${templateSelectOptions(agentId, replyTemplates, cfg.reply_template_id, 'reply')}</select>
+            </label>
+            <label class="field" style="grid-column:1 / -1">系统提示词
+              <textarea id="ac_${safe}_system_prompt" style="min-height:120px">${cfg.system_prompt || ''}</textarea>
+            </label>
+            <div class="field" style="grid-column:1 / -1">
+              <div class="tenant-actions compact">
+                <button onclick="window.saveAgentConfig('${agentId}')">保存 ${agentLabel(agentId)}</button>
+                <button class="secondary" onclick="window.resetAgentConfig('${agentId}')">回填当前值</button>
+              </div>
+            </div>
+            <div class="field" style="grid-column:1 / -1">
+              <div class="k">当前绑定</div>
+              <div class="v">提示词模板：${cfg.prompt_template_name || '未绑定'} · 回复模板：${cfg.reply_template_name || '未绑定'}</div>
+            </div>
+          </div>
+        `;
+      };
+
+      return `
+        <div class="detail-grid">
+          <div class="field"><div class="k">Agent 数量</div><div class="v">${summary.configs ?? configs.length}</div></div>
+          <div class="field"><div class="k">已启用</div><div class="v">${summary.enabled_configs ?? configs.filter((x) => x.enabled !== false).length}</div></div>
+          <div class="field"><div class="k">提示词模板</div><div class="v">${summary.prompt_templates ?? promptTemplates.length}</div></div>
+          <div class="field"><div class="k">回复模板</div><div class="v">${summary.reply_templates ?? replyTemplates.length}</div></div>
+        </div>
+        <div class="stack" style="margin-top:12px">
+          ${configs.length ? configs.map(renderAgentRow).join('') : '<div class="small">暂无 Agent 配置，请确认数据库已完成初始化。</div>'}
+        </div>
+        <div class="detail-grid" style="margin-top:14px">
+          <div class="field" style="grid-column:1 / -1">
+            <div class="section-title">
+              <strong>提示词模板库</strong>
+              <span class="small">租户级可创建</span>
+            </div>
+            <div class="detail-grid" style="margin-top:10px">
+              <label class="field">Agent
+                <select id="newPromptAgent">
+                  ${configs.map((cfg) => `<option value="${cfg.agent_id}">${agentLabel(cfg.agent_id)}</option>`).join('')}
+                </select>
+              </label>
+              <label class="field">模板名称
+                <input id="newPromptName" placeholder="例如：Master 简洁版">
+              </label>
+              <label class="field" style="grid-column:1 / -1">模板内容
+                <textarea id="newPromptContent" style="min-height:120px" placeholder="输入新的系统提示词模板"></textarea>
+              </label>
+              <div class="field" style="grid-column:1 / -1">
+                <div class="tenant-actions compact">
+                  <button onclick="window.createAgentTemplate('prompt')">新建提示词模板</button>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:10px">${renderTemplateList('prompt', promptTemplates)}</div>
+          </div>
+          <div class="field" style="grid-column:1 / -1">
+            <div class="section-title">
+              <strong>回复模板库</strong>
+              <span class="small">租户级可创建</span>
+            </div>
+            <div class="detail-grid" style="margin-top:10px">
+              <label class="field">Agent
+                <select id="newReplyAgent">
+                  ${configs.map((cfg) => `<option value="${cfg.agent_id}">${agentLabel(cfg.agent_id)}</option>`).join('')}
+                </select>
+              </label>
+              <label class="field">模板名称
+                <input id="newReplyName" placeholder="例如：异常卡片回复">
+              </label>
+              <label class="field" style="grid-column:1 / -1">模板内容
+                <textarea id="newReplyContent" style="min-height:120px" placeholder="输入新的回复模板"></textarea>
+              </label>
+              <div class="field" style="grid-column:1 / -1">
+                <div class="tenant-actions compact">
+                  <button onclick="window.createAgentTemplate('reply')">新建回复模板</button>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:10px">${renderTemplateList('reply', replyTemplates)}</div>
+          </div>
+        </div>
+      `;
     }
 
     function scrollToOpsSection(id) {
@@ -747,6 +960,11 @@
           <strong>自动验收报告</strong>
           <div class="field" style="grid-column:1 / -1">${renderAcceptanceReport(acceptanceReport)}</div>
         </div>
+        <div class="stack" style="margin-top:12px">
+          <strong>租户 Agent 配置中心</strong>
+          <div class="small">这里配置该租户的 Agent 模型、提示词、回复模板和轮询频率。</div>
+          <div class="field" style="grid-column:1 / -1" id="agentCenterHost"><div class="small">加载中…</div></div>
+        </div>
         <div class="tenant-actions compact" style="margin-top:12px">
           <button class="secondary" onclick="window.prefillTenant('${tenant.tenant_id}')">加载飞书配置</button>
           <button class="secondary" onclick="window.loadProfile('${tenant.tenant_id}')">载入平台配置</button>
@@ -769,9 +987,20 @@
       state.selectedTenantId = id;
       applyProfileToForm(data.profile || {});
       renderDetail(data);
+      await loadAgentCenter(id).catch((e) => log(`读取 Agent 配置失败：${e.message}`));
       const feishu = data.integrations?.feishu_bitable || {};
       if (feishu.app_id) $('cfgAppId').value = feishu.app_id;
       log(`已载入 ${id} 的平台配置。`);
+      return data;
+    }
+
+    async function loadAgentCenter(tenantId) {
+      const id = String(tenantId || $('cfgTenantId').value || '').trim();
+      if (!id) return null;
+      const data = await api(`/api/admin/tenants/${id}/agent-center`);
+      state.agentCenter = data;
+      const host = $('agentCenterHost');
+      if (host) host.innerHTML = renderAgentCenterMarkup();
       return data;
     }
 
@@ -1035,6 +1264,108 @@
         await loadTenants();
       } catch (e) {
         log(`发放许可证失败：${e.message}`);
+      }
+    };
+
+    window.saveAgentConfig = async (agentId) => {
+      try {
+        const tenantId = agentCenterTenantId();
+        if (!tenantId) throw new Error('请先选择租户');
+        const safe = agentDomKey(agentId);
+        const payload = {
+          enabled: $(`ac_${safe}_enabled`)?.checked ?? true,
+          model_name: $(`ac_${safe}_model`)?.value?.trim() || '',
+          temperature: $(`ac_${safe}_temperature`)?.value,
+          schedule_interval: $(`ac_${safe}_schedule_interval`)?.value,
+          prompt_template_id: $(`ac_${safe}_prompt_template_id`)?.value || null,
+          reply_template_id: $(`ac_${safe}_reply_template_id`)?.value || null,
+          system_prompt: $(`ac_${safe}_system_prompt`)?.value || ''
+        };
+        const data = await api(`/api/admin/tenants/${tenantId}/agent-center/configs/${encodeURIComponent(agentId)}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+        log(`已保存 ${agentLabel(agentId)} 的 Agent 配置。`);
+        state.agentCenter = state.agentCenter || {};
+        await loadAgentCenter(tenantId);
+        await loadTenants();
+        return data;
+      } catch (e) {
+        log(`保存 Agent 配置失败：${e.message}`);
+      }
+    };
+
+    window.resetAgentConfig = async (agentId) => {
+      try {
+        const current = (state.agentCenter?.configs || []).find((x) => String(x.agent_id || '') === String(agentId || ''));
+        if (!current) return;
+        const safe = agentDomKey(agentId);
+        if ($(`ac_${safe}_enabled`)) $(`ac_${safe}_enabled`).checked = current.enabled !== false;
+        if ($(`ac_${safe}_model`)) $(`ac_${safe}_model`).value = current.model_name || '';
+        if ($(`ac_${safe}_temperature`)) $(`ac_${safe}_temperature`).value = current.temperature ?? 0.1;
+        if ($(`ac_${safe}_schedule_interval`)) $(`ac_${safe}_schedule_interval`).value = current.schedule_interval ?? 30;
+        if ($(`ac_${safe}_prompt_template_id`)) $(`ac_${safe}_prompt_template_id`).value = current.prompt_template_id || '';
+        if ($(`ac_${safe}_reply_template_id`)) $(`ac_${safe}_reply_template_id`).value = current.reply_template_id || '';
+        if ($(`ac_${safe}_system_prompt`)) $(`ac_${safe}_system_prompt`).value = current.system_prompt || '';
+        msg(`已回填 ${agentLabel(agentId)} 当前值`);
+      } catch (e) {
+        log(`回填 Agent 配置失败：${e.message}`);
+      }
+    };
+
+    window.createAgentTemplate = async (kind) => {
+      try {
+        const tenantId = agentCenterTenantId();
+        if (!tenantId) throw new Error('请先选择租户');
+        const prefix = kind === 'reply' ? 'newReply' : 'newPrompt';
+        const payload = {
+          agent_id: $(`${prefix}Agent`)?.value?.trim(),
+          name: $(`${prefix}Name`)?.value?.trim(),
+          content: $(`${prefix}Content`)?.value || '',
+          enabled: true
+        };
+        const data = await api(`/api/admin/tenants/${tenantId}/agent-center/templates/${kind === 'reply' ? 'reply' : 'prompt'}`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        log(`已创建${kind === 'reply' ? '回复' : '提示词'}模板：${data.template?.name || ''}`);
+        await loadAgentCenter(tenantId);
+        return data;
+      } catch (e) {
+        log(`创建模板失败：${e.message}`);
+      }
+    };
+
+    window.pickAgentTemplate = async (kind, templateId) => {
+      try {
+        const tenantId = agentCenterTenantId();
+        if (!tenantId) throw new Error('请先选择租户');
+        const current = (kind === 'reply' ? state.agentCenter?.reply_templates : state.agentCenter?.prompt_templates) || [];
+        const tpl = current.find((x) => String(x.id) === String(templateId));
+        if (!tpl) throw new Error('模板不存在');
+        const agentId = String(tpl.agent_id || '').trim();
+        const safe = agentDomKey(agentId);
+        const selectId = kind === 'reply' ? `ac_${safe}_reply_template_id` : `ac_${safe}_prompt_template_id`;
+        const select = $(selectId);
+        if (select) select.value = String(templateId);
+        msg(`已绑定到 ${agentLabel(agentId)}，记得点击保存 Agent 配置`);
+      } catch (e) {
+        log(`绑定模板失败：${e.message}`);
+      }
+    };
+
+    window.deleteAgentTemplate = async (kind, templateId) => {
+      try {
+        const tenantId = agentCenterTenantId();
+        if (!tenantId) throw new Error('请先选择租户');
+        if (!window.confirm('确定删除该模板？')) return;
+        await api(`/api/admin/tenants/${tenantId}/agent-center/templates/${kind === 'reply' ? 'reply' : 'prompt'}/${encodeURIComponent(templateId)}`, {
+          method: 'DELETE'
+        });
+        log(`模板已删除`);
+        await loadAgentCenter(tenantId);
+      } catch (e) {
+        log(`删除模板失败：${e.message}`);
       }
     };
 

@@ -88,6 +88,7 @@ import {
   buildConfiguredApprovalAssignees,
   resolveStoreApprovalRoleUsername,
 } from './approval-assignee-resolution.js';
+import { clearAgentConfigCache } from './agent-config-manager.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = String(process.env.HOST || '0.0.0.0');
@@ -16016,6 +16017,421 @@ app.post('/api/admin/tenants/:tenantId/acceptance', platformAdminRequired, async
     return res.json({ ok: report.ok, report });
   } catch (e) {
     return res.status(500).json({ error: e?.message || 'internal_error' });
+  }
+});
+
+function normalizeAgentModelName(v, fallback = 'qwen-plus') {
+  const model = String(v || '').trim();
+  if (!model) return fallback;
+  return model;
+}
+
+function normalizeAgentTemperature(v, fallback = 0.1) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(2, Math.round(n * 100) / 100));
+}
+
+function normalizeAgentScheduleInterval(v, fallback = 30) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.floor(n));
+}
+
+const PLATFORM_AGENT_DEFAULTS = [
+  {
+    agent_id: 'master',
+    name: 'Master Agent (调度中枢)',
+    description: '负责消息路由、任务状态流转和全局上下文管理',
+    system_prompt: '你是 HRMS 系统的 Master Agent，负责调度和任务流转。',
+    model_name: 'qwen-max',
+    temperature: 0.1,
+    enabled: true,
+    schedule_interval: 1
+  },
+  {
+    agent_id: 'data_auditor',
+    name: 'Data Auditor Agent (数据审计)',
+    description: '核对来源数据，对异常情况触发预警',
+    system_prompt: '你是数据审计 Agent，负责从业务报表和客诉数据中发现异常。',
+    model_name: 'qwen-max',
+    temperature: 0.1,
+    enabled: true,
+    schedule_interval: 30
+  },
+  {
+    agent_id: 'ops_supervisor',
+    name: 'Ops Agent (营运督导)',
+    description: '负责任务分派、到点提醒、以及图片审核',
+    system_prompt: '你是营运督导 Agent，负责跟进异常任务的整改并审核照片。',
+    model_name: 'qwen-max',
+    temperature: 0.2,
+    enabled: true,
+    schedule_interval: 1
+  },
+  {
+    agent_id: 'sop_advisor',
+    name: 'SOP Agent (标准库)',
+    description: '管理所有运营标准，提供知识检索',
+    system_prompt: '你是 SOP 顾问 Agent，负责解答运营标准相关问题。',
+    model_name: 'qwen-max',
+    temperature: 0.1,
+    enabled: true,
+    schedule_interval: 0
+  },
+  {
+    agent_id: 'chief_evaluator',
+    name: 'Chief Evaluator (绩效考核)',
+    description: '自动计算奖金、评分、评级',
+    system_prompt: '你是绩效考核 Agent，负责根据任务解决情况进行扣分和结算。',
+    model_name: 'qwen-max',
+    temperature: 0.1,
+    enabled: true,
+    schedule_interval: 60
+  },
+  {
+    agent_id: 'appeal_handler',
+    name: 'Appeal Agent (申诉处理)',
+    description: '处理员工反馈，核实证据，并支持人工仲裁',
+    system_prompt: '你是申诉处理 Agent，负责处理员工对扣分或处罚的异议。',
+    model_name: 'qwen-max',
+    temperature: 0.2,
+    enabled: true,
+    schedule_interval: 0
+  }
+];
+
+const PLATFORM_AGENT_PROMPT_TEMPLATES = [
+  { template_key: 'master_default_v1', agent_id: 'master', name: 'Master 默认模板', content: '你是 HRMS 系统的 Master Agent，负责调度和任务流转。', enabled: true, is_builtin: true },
+  { template_key: 'data_auditor_default_v1', agent_id: 'data_auditor', name: 'BI 默认模板', content: '你是数据审计 Agent，负责从业务报表和客诉数据中发现异常。', enabled: true, is_builtin: true },
+  { template_key: 'ops_supervisor_default_v1', agent_id: 'ops_supervisor', name: 'OP 默认模板', content: '你是营运督导 Agent，负责跟进异常任务的整改并审核照片。', enabled: true, is_builtin: true },
+  { template_key: 'sop_advisor_default_v1', agent_id: 'sop_advisor', name: 'SOP 默认模板', content: '你是 SOP 顾问 Agent，负责解答运营标准相关问题。', enabled: true, is_builtin: true },
+  { template_key: 'appeal_handler_default_v1', agent_id: 'appeal_handler', name: '申诉 默认模板', content: '你是申诉处理 Agent，负责处理员工对扣分或处罚的异议。', enabled: true, is_builtin: true }
+];
+
+const PLATFORM_AGENT_REPLY_TEMPLATES = [
+  { template_key: 'reply_master_default_v1', agent_id: 'master', name: 'Master 标准回复', content: '收到，我会立即按优先级分派并跟进处理进度。', enabled: true, is_builtin: true },
+  { template_key: 'reply_data_auditor_default_v1', agent_id: 'data_auditor', name: 'BI 异常回复', content: '检测到异常，已生成问题卡片并推送责任人，请在规定时限内整改。', enabled: true, is_builtin: true },
+  { template_key: 'reply_ops_supervisor_default_v1', agent_id: 'ops_supervisor', name: 'OP 巡检回复', content: '巡检任务已下发，请按清单逐项完成并回传证明材料。', enabled: true, is_builtin: true },
+  { template_key: 'reply_chief_evaluator_default_v1', agent_id: 'chief_evaluator', name: '考核结果回复', content: '本期考核已完成，分数与扣分项已同步，可在绩效页面查看详情。', enabled: true, is_builtin: true }
+];
+
+async function ensureTenantAgentCenterSeed(tenantId, tenantName = '') {
+  const seededAt = new Date().toISOString();
+  const promptTemplateIds = new Map();
+  for (const tpl of PLATFORM_AGENT_PROMPT_TEMPLATES) {
+    const r = await pool.query(
+      `INSERT INTO agent_prompt_templates (template_key, agent_id, name, content, enabled, is_builtin, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (template_key, tenant_id)
+       DO UPDATE SET name = EXCLUDED.name, content = EXCLUDED.content, enabled = EXCLUDED.enabled, updated_at = NOW()
+       RETURNING id, template_key`,
+      [tpl.template_key, tpl.agent_id, tpl.name, tpl.content, tpl.enabled !== false, tpl.is_builtin === true, tenantId]
+    );
+    if (r.rows?.[0]?.template_key && r.rows?.[0]?.id) promptTemplateIds.set(r.rows[0].template_key, r.rows[0].id);
+  }
+
+  const replyTemplateIds = new Map();
+  for (const tpl of PLATFORM_AGENT_REPLY_TEMPLATES) {
+    const r = await pool.query(
+      `INSERT INTO agent_reply_templates (template_key, agent_id, name, content, enabled, is_builtin, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (template_key, tenant_id)
+       DO UPDATE SET name = EXCLUDED.name, content = EXCLUDED.content, enabled = EXCLUDED.enabled, updated_at = NOW()
+       RETURNING id, template_key`,
+      [tpl.template_key, tpl.agent_id, tpl.name, tpl.content, tpl.enabled !== false, tpl.is_builtin === true, tenantId]
+    );
+    if (r.rows?.[0]?.template_key && r.rows?.[0]?.id) replyTemplateIds.set(r.rows[0].template_key, r.rows[0].id);
+  }
+
+  for (const agent of PLATFORM_AGENT_DEFAULTS) {
+    const defaultPrompt = PLATFORM_AGENT_PROMPT_TEMPLATES.find((x) => x.agent_id === agent.agent_id);
+    const defaultReply = PLATFORM_AGENT_REPLY_TEMPLATES.find((x) => x.agent_id === agent.agent_id);
+    const promptTemplateId = defaultPrompt ? (promptTemplateIds.get(defaultPrompt.template_key) || null) : null;
+    const replyTemplateId = defaultReply ? (replyTemplateIds.get(defaultReply.template_key) || null) : null;
+    await pool.query(
+      `INSERT INTO agent_configs (agent_id, name, description, system_prompt, model_name, temperature, enabled, schedule_interval, prompt_template_id, reply_template_id, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (agent_id, tenant_id)
+       DO UPDATE SET
+         name = EXCLUDED.name,
+         description = EXCLUDED.description,
+         system_prompt = COALESCE(agent_configs.system_prompt, EXCLUDED.system_prompt),
+         model_name = COALESCE(agent_configs.model_name, EXCLUDED.model_name),
+         temperature = COALESCE(agent_configs.temperature, EXCLUDED.temperature),
+         enabled = COALESCE(agent_configs.enabled, EXCLUDED.enabled),
+         schedule_interval = COALESCE(agent_configs.schedule_interval, EXCLUDED.schedule_interval),
+         prompt_template_id = COALESCE(agent_configs.prompt_template_id, EXCLUDED.prompt_template_id),
+         reply_template_id = COALESCE(agent_configs.reply_template_id, EXCLUDED.reply_template_id),
+         updated_at = NOW()`,
+      [agent.agent_id, agent.name, agent.description, agent.system_prompt, agent.model_name, agent.temperature, agent.enabled, agent.schedule_interval, promptTemplateId, replyTemplateId, tenantId]
+    );
+  }
+
+  await pool.query(
+    `INSERT INTO tenant_config (tenant_key, config_key, config_value)
+     VALUES ($1, 'platform_agent_center_seed', $2::jsonb)
+     ON CONFLICT (tenant_key, config_key)
+     DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = NOW()`,
+    [tenantId, JSON.stringify({ tenant_id: tenantId, tenant_name: tenantName || tenantId, seeded_at: seededAt })]
+  );
+}
+
+async function loadTenantAgentCenterData(tenantId) {
+  const configs = await pool.query(
+    `SELECT c.*, t.name AS prompt_template_name, rt.name AS reply_template_name
+       FROM agent_configs c
+  LEFT JOIN agent_prompt_templates t ON c.prompt_template_id = t.id
+  LEFT JOIN agent_reply_templates rt ON c.reply_template_id = rt.id
+      WHERE c.tenant_id = $1
+      ORDER BY c.agent_id`,
+    [tenantId]
+  );
+  const promptTemplates = await pool.query(
+    `SELECT *
+       FROM agent_prompt_templates
+      WHERE tenant_id = $1
+      ORDER BY agent_id, is_builtin DESC, updated_at DESC`,
+    [tenantId]
+  );
+  const replyTemplates = await pool.query(
+    `SELECT *
+       FROM agent_reply_templates
+      WHERE tenant_id = $1
+      ORDER BY agent_id, is_builtin DESC, updated_at DESC`,
+    [tenantId]
+  );
+  const roleModules = await pool.query(
+    `SELECT config
+       FROM hr_rating_configs
+      WHERE config_key = 'role_module_config'
+        AND tenant_id = $1
+        AND enabled = true
+      LIMIT 1`,
+    [tenantId]
+  ).catch(() => ({ rows: [] }));
+  return {
+    configs: configs.rows || [],
+    prompt_templates: promptTemplates.rows || [],
+    reply_templates: replyTemplates.rows || [],
+    role_modules: roleModules.rows?.[0]?.config || null
+  };
+}
+
+app.get('/api/admin/tenants/:tenantId/agent-center', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  if (!tenantId) return res.status(400).json({ error: 'missing_tenant_id' });
+  try {
+    const exists = await pool.query('SELECT tenant_id, name FROM tenants WHERE tenant_id = $1 LIMIT 1', [tenantId]);
+    if (!exists.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
+    const data = await loadTenantAgentCenterData(tenantId);
+    return res.json({
+      ok: true,
+      tenant: exists.rows[0],
+      ...data,
+      summary: {
+        configs: data.configs.length,
+        prompt_templates: data.prompt_templates.length,
+        reply_templates: data.reply_templates.length,
+        enabled_configs: data.configs.filter((row) => row.enabled !== false).length,
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+  }
+});
+
+app.put('/api/admin/tenants/:tenantId/agent-center/configs/:agentId', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  const agentId = String(req.params.agentId || '').trim();
+  if (!tenantId || !agentId) return res.status(400).json({ error: 'missing_params' });
+  try {
+    const existing = await pool.query(
+      `SELECT *
+         FROM agent_configs
+        WHERE tenant_id = $1 AND agent_id = $2
+        LIMIT 1`,
+      [tenantId, agentId]
+    );
+    if (!existing.rows.length) return res.status(404).json({ error: 'config_not_found' });
+    const body = req.body || {};
+    const nextSystemPrompt = Object.prototype.hasOwnProperty.call(body, 'system_prompt')
+      ? String(body.system_prompt || '').trim()
+      : existing.rows[0].system_prompt || '';
+    const hasPromptTemplateId = Object.prototype.hasOwnProperty.call(body, 'prompt_template_id');
+    const hasReplyTemplateId = Object.prototype.hasOwnProperty.call(body, 'reply_template_id');
+    const promptTemplateId = hasPromptTemplateId ? (String(body.prompt_template_id || '').trim() || null) : existing.rows[0].prompt_template_id || null;
+    const replyTemplateId = hasReplyTemplateId ? (String(body.reply_template_id || '').trim() || null) : existing.rows[0].reply_template_id || null;
+    const r = await pool.query(
+      `UPDATE agent_configs
+          SET system_prompt = $1,
+              model_name = $2,
+              temperature = $3,
+              enabled = $4,
+              schedule_interval = $5,
+              prompt_template_id = $6,
+              reply_template_id = $7,
+              updated_at = NOW()
+        WHERE tenant_id = $8 AND agent_id = $9
+        RETURNING *`,
+      [
+        nextSystemPrompt,
+        normalizeAgentModelName(body.model_name, existing.rows[0].model_name || 'qwen-plus'),
+        normalizeAgentTemperature(body.temperature, Number(existing.rows[0].temperature ?? 0.1)),
+        body.enabled === undefined ? !!existing.rows[0].enabled : !!body.enabled,
+        normalizeAgentScheduleInterval(body.schedule_interval, Number(existing.rows[0].schedule_interval ?? 30)),
+        promptTemplateId,
+        replyTemplateId,
+        tenantId,
+        agentId
+      ]
+    );
+    clearAgentConfigCache();
+    return res.json({ ok: true, config: r.rows[0] });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+  }
+});
+
+async function createTenantAgentTemplate(kind, tenantId, body) {
+  const agentId = String(body?.agent_id || '').trim();
+  const name = String(body?.name || '').trim();
+  const content = String(body?.content || '').trim();
+  const enabled = body?.enabled !== false;
+  if (!agentId || !name || !content) {
+    const err = new Error('missing_params');
+    err.statusCode = 400;
+    throw err;
+  }
+  const keyPrefix = kind === 'reply' ? 'tenant_reply' : 'tenant_prompt';
+  const table = kind === 'reply' ? 'agent_reply_templates' : 'agent_prompt_templates';
+  const key = `${keyPrefix}_${agentId}_${Date.now()}`;
+  const r = await pool.query(
+    `INSERT INTO ${table} (template_key, agent_id, name, content, enabled, is_builtin, tenant_id)
+     VALUES ($1, $2, $3, $4, $5, false, $6)
+     RETURNING *`,
+    [key, agentId, name, content, enabled, tenantId]
+  );
+  return r.rows[0];
+}
+
+async function updateTenantAgentTemplate(kind, tenantId, id, body) {
+  const table = kind === 'reply' ? 'agent_reply_templates' : 'agent_prompt_templates';
+  const old = await pool.query(`SELECT * FROM ${table} WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tenantId]);
+  if (!old.rows?.length) {
+    const err = new Error('template_not_found');
+    err.statusCode = 404;
+    throw err;
+  }
+  const row = old.rows[0];
+  const name = String(body?.name ?? row.name).trim() || row.name;
+  const enabled = body?.enabled === undefined ? !!row.enabled : !!body.enabled;
+  if (row.is_builtin) {
+    const r = await pool.query(
+      `UPDATE ${table} SET name = $1, enabled = $2, updated_at = NOW() WHERE id = $3 AND tenant_id = $4 RETURNING *`,
+      [name, enabled, id, tenantId]
+    );
+    return { template: r.rows[0], locked_content: true };
+  }
+  const content = String(body?.content ?? row.content).trim() || row.content;
+  const r = await pool.query(
+    `UPDATE ${table} SET name = $1, content = $2, enabled = $3, updated_at = NOW() WHERE id = $4 AND tenant_id = $5 RETURNING *`,
+    [name, content, enabled, id, tenantId]
+  );
+  return { template: r.rows[0] };
+}
+
+async function deleteTenantAgentTemplate(kind, tenantId, id) {
+  const table = kind === 'reply' ? 'agent_reply_templates' : 'agent_prompt_templates';
+  const old = await pool.query(`SELECT * FROM ${table} WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tenantId]);
+  if (!old.rows?.length) {
+    const err = new Error('template_not_found');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (old.rows[0].is_builtin) {
+    const err = new Error('builtin_template_cannot_delete');
+    err.statusCode = 400;
+    throw err;
+  }
+  const usedTable = kind === 'reply' ? 'reply_template_id' : 'prompt_template_id';
+  const used = await pool.query(`SELECT COUNT(*)::int AS c FROM agent_configs WHERE ${usedTable} = $1 AND tenant_id = $2`, [id, tenantId]);
+  if (Number(used.rows?.[0]?.c || 0) > 0) {
+    const err = new Error('template_in_use');
+    err.statusCode = 400;
+    throw err;
+  }
+  await pool.query(`DELETE FROM ${table} WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+  return { ok: true };
+}
+
+app.post('/api/admin/tenants/:tenantId/agent-center/templates/prompt', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  try {
+    const template = await createTenantAgentTemplate('prompt', tenantId, req.body || {});
+    clearAgentConfigCache();
+    return res.json({ ok: true, template });
+  } catch (e) {
+    return res.status(e.statusCode || 500).json({ error: e.message || 'internal_error' });
+  }
+});
+
+app.put('/api/admin/tenants/:tenantId/agent-center/templates/prompt/:id', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  const id = String(req.params.id || '').trim();
+  try {
+    const result = await updateTenantAgentTemplate('prompt', tenantId, id, req.body || {});
+    clearAgentConfigCache();
+    return res.json({ ok: true, ...result });
+  } catch (e) {
+    return res.status(e.statusCode || 500).json({ error: e.message || 'internal_error' });
+  }
+});
+
+app.delete('/api/admin/tenants/:tenantId/agent-center/templates/prompt/:id', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  const id = String(req.params.id || '').trim();
+  try {
+    const result = await deleteTenantAgentTemplate('prompt', tenantId, id);
+    clearAgentConfigCache();
+    return res.json(result);
+  } catch (e) {
+    return res.status(e.statusCode || 500).json({ error: e.message || 'internal_error' });
+  }
+});
+
+app.post('/api/admin/tenants/:tenantId/agent-center/templates/reply', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  try {
+    const template = await createTenantAgentTemplate('reply', tenantId, req.body || {});
+    clearAgentConfigCache();
+    return res.json({ ok: true, template });
+  } catch (e) {
+    return res.status(e.statusCode || 500).json({ error: e.message || 'internal_error' });
+  }
+});
+
+app.put('/api/admin/tenants/:tenantId/agent-center/templates/reply/:id', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  const id = String(req.params.id || '').trim();
+  try {
+    const result = await updateTenantAgentTemplate('reply', tenantId, id, req.body || {});
+    clearAgentConfigCache();
+    return res.json({ ok: true, ...result });
+  } catch (e) {
+    return res.status(e.statusCode || 500).json({ error: e.message || 'internal_error' });
+  }
+});
+
+app.delete('/api/admin/tenants/:tenantId/agent-center/templates/reply/:id', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  const id = String(req.params.id || '').trim();
+  try {
+    const result = await deleteTenantAgentTemplate('reply', tenantId, id);
+    clearAgentConfigCache();
+    return res.json(result);
+  } catch (e) {
+    return res.status(e.statusCode || 500).json({ error: e.message || 'internal_error' });
   }
 });
 
