@@ -804,6 +804,40 @@
       });
     }
 
+    function el(tag, attrs = {}, children = []) {
+      const node = document.createElement(tag);
+      if (attrs) Object.entries(attrs).forEach(([k, v]) => {
+        if (k === 'className') node.className = v;
+        else if (k === 'innerHTML') node.innerHTML = v;
+        else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
+        else if (k === 'colSpan') node.setAttribute('colspan', v);
+        else if (k.startsWith('on')) node.addEventListener(k.slice(2).toLowerCase(), v);
+        else node.setAttribute(k, v);
+      });
+      const kids = Array.isArray(children) ? children : [children];
+      kids.forEach((c) => { if (c instanceof Node) node.appendChild(c); else if (c != null) node.appendChild(document.createTextNode(String(c))); });
+      return node;
+    }
+
+    function stat(value, label, cls = '') {
+      return el('div', { className: 'stat-card ' + cls }, [
+        el('div', { className: 'stat-value' }, String(value ?? 0)),
+        el('div', { className: 'stat-label' }, String(label || ''))
+      ]);
+    }
+
+    function card(title, body) {
+      const header = el('div', { className: 'card-header' }, el('h3', {}, title));
+      const bd = Array.isArray(body) ? el('div', { className: 'card-body' }, body) : body;
+      return el('div', { className: 'card' }, [header, bd]);
+    }
+
+    function btnGhost(text, onClick) {
+      const btn = el('button', { className: 'secondary' }, text);
+      btn.addEventListener('click', (e) => { e.preventDefault(); try { onClick(); } catch(err) { console.error(err); } });
+      return btn;
+    }
+
     function renderOperationsOverview() {
       const wrap = el('div', { className: 'stack' });
       const summary = state.overview.summary || {};
