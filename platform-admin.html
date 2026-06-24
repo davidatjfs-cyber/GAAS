@@ -397,6 +397,31 @@
       return `${n} 天`;
     }
 
+    function renderAcceptanceReport(report) {
+      if (!report) return '<div class="small">暂无自动验收报告。</div>';
+      const checks = Array.isArray(report.checks) ? report.checks : [];
+      const checkedAt = report.checked_at || report.checkedAt || '';
+      const action = report.action || 'acceptance';
+      const okCount = checks.filter((x) => x && x.ok).length;
+      const failCount = checks.length - okCount;
+      return `
+        <div class="detail-grid">
+          <div class="field"><div class="k">最近验收时间</div><div class="v">${checkedAt || '-'}</div></div>
+          <div class="field"><div class="k">验收动作</div><div class="v">${action}</div></div>
+          <div class="field"><div class="k">结果</div><div class="v">${report.ok ? '通过' : '未通过'} · 通过 ${okCount} / 失败 ${failCount}</div></div>
+          <div class="field"><div class="k">说明</div><div class="v">${report.message || '-'}</div></div>
+        </div>
+        <div class="detail-grid" style="margin-top:10px">
+          ${checks.length ? checks.map((item) => `
+            <div class="field">
+              <div class="k">${item.key}</div>
+              <div class="v">${item.ok ? '✅' : '❌'} ${item.detail || ''}</div>
+            </div>
+          `).join('') : '<div class="field" style="grid-column:1 / -1"><div class="v">无检查项</div></div>'}
+        </div>
+      `;
+    }
+
     function updateStats(items) {
       $('statTotal').textContent = String(items.length);
       $('statActive').textContent = String(items.filter((x) => String(x.status || '') === 'active').length);
@@ -475,6 +500,7 @@
       }
       const tenant = detail.tenant || detail;
       const profile = detail.profile || tenant.platform_profile || {};
+      const acceptanceReport = detail.acceptance_report || detail.profile?.acceptance_report || null;
       const feishu = detail.integrations?.feishu_bitable || tenant.integrations?.feishu_bitable || {};
       const alerts = Array.isArray(detail.alerts) ? detail.alerts : [];
       const tables = Array.isArray(feishu.tables) ? feishu.tables : [];
@@ -518,6 +544,10 @@
               </div>
             `).join('') : '<div class="field" style="grid-column:1 / -1"><div class="v">暂无告警</div></div>'}
           </div>
+        </div>
+        <div class="stack" style="margin-top:12px">
+          <strong>自动验收报告</strong>
+          <div class="field" style="grid-column:1 / -1">${renderAcceptanceReport(acceptanceReport)}</div>
         </div>
         <div class="tenant-actions compact" style="margin-top:12px">
           <button class="secondary" onclick="window.prefillTenant('${tenant.tenant_id}')">加载飞书配置</button>

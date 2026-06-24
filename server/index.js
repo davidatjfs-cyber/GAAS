@@ -14816,6 +14816,28 @@ async function saveTenantPlatformProfile(db, tenantId, profile) {
   return normalized;
 }
 
+async function getTenantPlatformAcceptanceReport(db, tenantId) {
+  const r = await db.query(
+    `SELECT config_value
+       FROM tenant_config
+      WHERE tenant_key = $1 AND config_key = 'platform_acceptance_report'
+      LIMIT 1`,
+    [tenantId]
+  );
+  return r.rows?.[0]?.config_value || null;
+}
+
+async function saveTenantPlatformAcceptanceReport(db, tenantId, report) {
+  await db.query(
+    `INSERT INTO tenant_config (tenant_key, config_key, config_value)
+     VALUES ($1, 'platform_acceptance_report', $2::jsonb)
+     ON CONFLICT (tenant_key, config_key)
+     DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = NOW()`,
+    [tenantId, JSON.stringify(report)]
+  );
+  return report;
+}
+
 function computeLicenseCountdown(expiresAt) {
   if (!expiresAt) return null;
   const dt = new Date(expiresAt);
@@ -15692,6 +15714,7 @@ app.get('/api/admin/tenants/:tenantId/profile', platformAdminRequired, async (re
         license_countdown_days: computeLicenseCountdown(tenantRow.rows[0].license_expires_at),
       },
       profile,
+      acceptance_report: await getTenantPlatformAcceptanceReport(pool, tenantId),
       integrations: { feishu_bitable: feishu },
       alerts: buildTenantAlerts(tenantRow.rows[0], tenantRow.rows[0], profile, feishu),
     });
@@ -15783,6 +15806,11 @@ app.post('/api/admin/tenants/:tenantId/bootstrap', platformAdminRequired, async 
     }, tenantId);
     await saveTenantPlatformProfile(pool, tenantId, next);
     const report = await runTenantAcceptance(tenantId);
+    await saveTenantPlatformAcceptanceReport(pool, tenantId, {
+      ...report,
+      checked_at: new Date().toISOString(),
+      action: 'bootstrap',
+    });
     return res.json({
       ok: true,
       profile: next,
@@ -15802,6 +15830,11 @@ app.post('/api/admin/tenants/:tenantId/repair', platformAdminRequired, async (re
     const profile = await getTenantPlatformProfile(pool, tenantId);
     await saveTenantPlatformProfile(pool, tenantId, profile);
     const report = await runTenantAcceptance(tenantId);
+    await saveTenantPlatformAcceptanceReport(pool, tenantId, {
+      ...report,
+      checked_at: new Date().toISOString(),
+      action: 'repair',
+    });
     return res.json({
       ok: report.ok,
       report,
@@ -15856,6 +15889,11 @@ app.post('/api/admin/tenants/:tenantId/acceptance', platformAdminRequired, async
       await pool.query(`UPDATE tenants SET status = 'provisioning', updated_at = NOW() WHERE tenant_id = $1`, [tenantId]);
       report.tenant = { ...(report.tenant || {}), status: 'provisioning' };
     }
+    await saveTenantPlatformAcceptanceReport(pool, tenantId, {
+      ...report,
+      checked_at: new Date().toISOString(),
+      action: 'acceptance',
+    });
     return res.json({ ok: report.ok, report });
   } catch (e) {
     return res.status(500).json({ error: e?.message || 'internal_error' });
