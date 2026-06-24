@@ -1087,7 +1087,10 @@
         <div class="stack" style="margin-top:12px">
           <strong>租户 Agent 配置中心</strong>
           <div class="small">这里配置该租户的 Agent 模型、提示词、回复模板和轮询频率。</div>
-          <div class="field" style="grid-column:1 / -1" id="agentCenterHost"><div class="small">加载中…</div></div>
+          <div class="field" style="grid-column:1 / -1">
+            <h3>Agent 控制台</h3>
+            <iframe id="agentCenterFrame" src="" style="width:100%;height:70vh;border:1px solid #d7c6ac;border-radius:8px;background:#fff" title="Agent控制台"></iframe>
+          </div>
         </div>
         <div class="tenant-actions compact" style="margin-top:12px">
           <button class="secondary" onclick="window.prefillTenant('${tenant.tenant_id}')">加载飞书配置</button>
@@ -1111,7 +1114,8 @@
       state.selectedTenantId = id;
       applyProfileToForm(data.profile || {});
       renderDetail(data);
-      await loadAgentCenter(id).catch((e) => log(`读取 Agent 配置失败：${e.message}`));
+      const frame = $('agentCenterFrame');
+      if (frame) frame.src = `/agents-admin/?tenant_id=${encodeURIComponent(id)}`;
       const feishu = data.integrations?.feishu_bitable || {};
       if (feishu.app_id) $('cfgAppId').value = feishu.app_id;
       log(`已载入 ${id} 的平台配置。`);
@@ -1410,8 +1414,6 @@
           body: JSON.stringify(payload)
         });
         log(`已保存 ${agentLabel(agentId)} 的 Agent 配置。`);
-        state.agentCenter = state.agentCenter || {};
-        await loadAgentCenter(tenantId);
         await loadTenants();
         return data;
       } catch (e) {
@@ -1453,7 +1455,6 @@
           body: JSON.stringify(payload)
         });
         log(`已创建${kind === 'reply' ? '回复' : '提示词'}模板：${data.template?.name || ''}`);
-        await loadAgentCenter(tenantId);
         return data;
       } catch (e) {
         log(`创建模板失败：${e.message}`);
@@ -1487,7 +1488,6 @@
           method: 'DELETE'
         });
         log(`模板已删除`);
-        await loadAgentCenter(tenantId);
       } catch (e) {
         log(`删除模板失败：${e.message}`);
       }
