@@ -29,6 +29,31 @@
     h1 { margin: 0 0 12px; font-size: 34px; }
     .sub { color: var(--muted); margin-bottom: 20px; }
     .grid { display: grid; grid-template-columns: 340px 1fr; gap: 18px; }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .hero .card { min-height: 100%; }
+    .title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .hero h1 { font-size: 36px; letter-spacing: .02em; }
+    .hero-copy { color: var(--muted); line-height: 1.7; }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .stat {
+      border: 1px solid rgba(120,104,85,.18);
+      background: linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,250,242,.96));
+      border-radius: 16px;
+      padding: 12px 14px;
+    }
+    .stat .label { font-size: 12px; color: var(--muted); }
+    .stat .value { font-size: 24px; font-weight: 800; margin-top: 6px; }
+    .stat .sub { margin: 6px 0 0; font-size: 12px; }
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -79,17 +104,57 @@
     th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
     tr:hover td { background: rgba(13,122,95,.04); }
     .tenant-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tenant-actions.compact button { padding: 7px 11px; font-size: 12px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .log { white-space: pre-wrap; background: #fff; border-radius: 12px; border: 1px solid var(--line); padding: 12px; min-height: 72px; }
+    .detail {
+      border: 1px solid rgba(120,104,85,.18);
+      background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,248,235,.92));
+      border-radius: 18px;
+      padding: 16px;
+    }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+    .detail-grid .field {
+      border: 1px dashed rgba(120,104,85,.2);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,.7);
+    }
+    .detail-grid .k { font-size: 12px; color: var(--muted); }
+    .detail-grid .v { margin-top: 4px; font-weight: 700; word-break: break-word; }
+    .section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .small { font-size: 12px; color: var(--muted); }
     @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 1100px) { .hero { grid-template-columns: 1fr; } .hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Platform Admin</h1>
-    <div class="sub">租户开通、飞书配置、自动验收，一页完成。</div>
-    <div class="grid">
+    <div class="hero">
+      <section class="card">
+        <div class="title-row">
+          <div>
+            <h1>Tenant Control Tower</h1>
+            <div class="sub">nnyx.cc 上的租户控制台：开通、续期、隔离、验收、飞书接入，一处完成。</div>
+          </div>
+          <div class="toolbar">
+            <a href="/agents-admin/" target="_blank" rel="noreferrer" class="pill ok" style="text-decoration:none;">打开 agents 控制台</a>
+            <a href="/api/health" target="_blank" rel="noreferrer" class="pill" style="text-decoration:none;">查看健康检查</a>
+          </div>
+        </div>
+        <p class="hero-copy">
+          这个页面是平台级控制面，不是租户内页面。它只管理 tenants / licenses / integrations / acceptance，
+          不直接操作租户内部业务数据，方便你以后给更多公司开账号时，把边界锁死。
+        </p>
+        <div class="hero-grid">
+          <div class="stat"><div class="label">租户总数</div><div id="statTotal" class="value">0</div><div class="sub">全部可见租户</div></div>
+          <div class="stat"><div class="label">已激活</div><div id="statActive" class="value">0</div><div class="sub">在线可登录</div></div>
+          <div class="stat"><div class="label">已配置飞书</div><div id="statFeishu" class="value">0</div><div class="sub">含 Bitable 集成</div></div>
+          <div class="stat"><div class="label">有许可证</div><div id="statLicense" class="value">0</div><div class="sub">已发 license</div></div>
+        </div>
+      </section>
       <section class="card stack">
+        <strong>平台密钥与部署入口</strong>
         <label>平台密钥
           <input id="platformSecret" type="password" placeholder="PLATFORM_ADMIN_SECRET">
         </label>
@@ -97,9 +162,17 @@
           <button id="saveSecretBtn" class="secondary">保存密钥</button>
           <button id="reloadBtn">刷新租户列表</button>
         </div>
-        <hr style="border:none;border-top:1px solid var(--line);width:100%">
+        <div class="small">提示：浏览器仅临时缓存，真正生效的是服务器环境变量里的 `PLATFORM_ADMIN_SECRET`。</div>
+      </section>
+    </div>
+
+    <div class="grid">
+      <section class="card stack">
+        <div class="section-title">
+          <strong>租户创建</strong>
+          <span class="small">新客户开通入口</span>
+        </div>
         <div class="stack">
-          <strong>创建新租户</strong>
           <label>tenant_id
             <input id="tenantId" placeholder="demo_brand_a">
           </label>
@@ -128,7 +201,10 @@
         </div>
         <hr style="border:none;border-top:1px solid var(--line);width:100%">
         <div class="stack">
-          <strong>飞书配置</strong>
+          <div class="section-title">
+            <strong>飞书配置</strong>
+            <span class="small">租户级独立 Bitable 绑定</span>
+          </div>
           <label>目标 tenant_id
             <input id="cfgTenantId" placeholder="先点右侧“配置飞书”自动带入">
           </label>
@@ -167,7 +243,11 @@
         <div class="toolbar">
           <span class="pill">租户总览</span>
           <span id="tenantCount" class="pill">0 tenants</span>
+          <span id="tenantFilterState" class="pill">全部</span>
         </div>
+        <label>搜索租户
+          <input id="tenantFilter" placeholder="输入 tenant_id / 名称 / 模式 / 状态">
+        </label>
         <table>
           <thead>
             <tr>
@@ -180,6 +260,7 @@
           </thead>
           <tbody id="tenantTableBody"></tbody>
         </table>
+        <div id="tenantDetail" class="detail"></div>
         <strong>操作日志</strong>
         <div id="log" class="log"></div>
       </section>
@@ -192,6 +273,7 @@
       $('log').textContent = `[${new Date().toLocaleString()}] ${msg}\n` + $('log').textContent;
     };
     const secretKey = 'hrms_platform_secret';
+    const state = { tenants: [], selectedTenantId: '' };
     $('platformSecret').value = sessionStorage.getItem(secretKey) || '';
 
     function headers(extra = {}) {
@@ -212,10 +294,64 @@
       log('平台密钥已保存到本次浏览会话。');
     };
 
+    function normalizeTenantSearch(v) {
+      return String(v || '').trim().toLowerCase();
+    }
+
+    function selectedTenant() {
+      return state.tenants.find((item) => item.tenant_id === state.selectedTenantId) || state.tenants[0] || null;
+    }
+
+    function updateStats(items) {
+      $('statTotal').textContent = String(items.length);
+      $('statActive').textContent = String(items.filter((x) => String(x.status || '') === 'active').length);
+      $('statFeishu').textContent = String(items.filter((x) => x.integrations?.feishu_bitable?.configured).length);
+      $('statLicense').textContent = String(items.filter((x) => x.license_status && x.license_status !== 'missing').length);
+    }
+
+    function renderDetail(item) {
+      if (!item) {
+        $('tenantDetail').innerHTML = '<div class="small">未选择租户。请先在列表中点击“查看详情”。</div>';
+        return;
+      }
+      const feishu = item.integrations?.feishu_bitable || {};
+      const tables = Array.isArray(feishu.tables) ? feishu.tables : [];
+      $('tenantDetail').innerHTML = `
+        <div class="section-title">
+          <strong>租户详情</strong>
+          <span class="pill ${item.status === 'active' ? 'ok' : 'bad'}">${item.status}</span>
+        </div>
+        <div style="margin-top:8px"><strong>${item.name}</strong> <span class="mono">${item.tenant_id}</span></div>
+        <div class="detail-grid">
+          <div class="field"><div class="k">模式</div><div class="v">${item.mode || '-'}</div></div>
+          <div class="field"><div class="k">创建时间</div><div class="v">${item.created_at || '-'}</div></div>
+          <div class="field"><div class="k">许可证状态</div><div class="v">${item.license_status || 'missing'}</div></div>
+          <div class="field"><div class="k">许可证到期</div><div class="v mono">${item.license_expires_at || '-'}</div></div>
+          <div class="field"><div class="k">飞书配置</div><div class="v">${feishu.configured ? '已配置' : '未配置'}</div></div>
+          <div class="field"><div class="k">Bitable App ID</div><div class="v mono">${feishu.app_id || '-'}</div></div>
+          <div class="field" style="grid-column:1 / -1"><div class="k">表清单</div><div class="v">${tables.length ? tables.join(' · ') : '—'}</div></div>
+        </div>
+        <div class="tenant-actions compact" style="margin-top:12px">
+          <button class="secondary" onclick="window.prefillTenant('${item.tenant_id}')">加载飞书配置</button>
+          <button onclick="window.acceptTenant('${item.tenant_id}')">运行验收</button>
+          <button class="warn" onclick="window.promptIssueLicense('${item.tenant_id}')">续期 / 发放 License</button>
+          <button class="secondary" onclick="window.toggleTenantStatus('${item.tenant_id}', '${item.status === 'active' ? 'suspended' : 'active'}')">${item.status === 'active' ? '暂停租户' : '恢复租户'}</button>
+        </div>
+      `;
+    }
+
     async function loadTenants() {
       const data = await api('/api/admin/tenants');
-      const items = data.items || [];
+      const filter = normalizeTenantSearch($('tenantFilter').value);
+      const items = (data.items || []).filter((item) => {
+        if (!filter) return true;
+        const hay = [item.tenant_id, item.name, item.mode, item.status, item.license_status, item.license_expires_at, item.integrations?.feishu_bitable?.app_id, ...(item.integrations?.feishu_bitable?.tables || [])].join(' ').toLowerCase();
+        return hay.includes(filter);
+      });
+      state.tenants = data.items || [];
       $('tenantCount').textContent = `${items.length} tenants`;
+      $('tenantFilterState').textContent = filter ? `搜索：${$('tenantFilter').value.trim()}` : '全部';
+      updateStats(data.items || []);
       $('tenantTableBody').innerHTML = items.map((item) => {
         const feishu = item.integrations?.feishu_bitable || {};
         return `
@@ -236,7 +372,8 @@
               <div class="mono">${feishu.app_id || ''}</div>
             </td>
             <td>
-              <div class="tenant-actions">
+              <div class="tenant-actions compact">
+                <button class="secondary" onclick="window.selectTenant('${item.tenant_id}')">查看详情</button>
                 <button class="secondary" onclick="window.prefillTenant('${item.tenant_id}')">配置飞书</button>
                 <button onclick="window.acceptTenant('${item.tenant_id}')">自动验收</button>
               </div>
@@ -244,10 +381,13 @@
           </tr>
         `;
       }).join('');
+      if (!state.selectedTenantId && items[0]) state.selectedTenantId = items[0].tenant_id;
+      renderDetail(selectedTenant());
       log(`已加载 ${items.length} 个租户。`);
     }
 
     $('reloadBtn').onclick = () => loadTenants().catch((e) => log(`刷新失败：${e.message}`));
+    $('tenantFilter').oninput = () => loadTenants().catch((e) => log(`搜索失败：${e.message}`));
 
     $('createTenantBtn').onclick = async () => {
       const payload = {
@@ -266,33 +406,55 @@
       const data = await api('/api/admin/tenants', { method: 'POST', body: JSON.stringify(payload) });
       log(`租户创建成功：${data.tenant.tenant_id}`);
       $('cfgTenantId').value = data.tenant.tenant_id;
+      state.selectedTenantId = data.tenant.tenant_id;
       await loadTenants();
+    };
+
+    window.selectTenant = async (tenantId) => {
+      state.selectedTenantId = tenantId;
+      $('cfgTenantId').value = tenantId;
+      const item = state.tenants.find((x) => x.tenant_id === tenantId) || null;
+      renderDetail(item);
+      try {
+        const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`);
+        log(`已打开 ${tenantId} 的详情和飞书摘要。`);
+        if (data.integration?.app_id) $('cfgAppId').value = data.integration.app_id;
+      } catch (e) {
+        log(`读取租户详情失败：${e.message}`);
+      }
     };
 
     window.prefillTenant = async (tenantId) => {
       $('cfgTenantId').value = tenantId;
+      state.selectedTenantId = tenantId;
       try {
         const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`);
         log(`已加载 ${tenantId} 的飞书配置摘要。`);
-        if (data.integration?.app_id) $('cfgAppId').placeholder = `当前：${data.integration.app_id}`;
+        if (data.integration?.app_id) $('cfgAppId').value = data.integration.app_id;
+        renderDetail(state.tenants.find((x) => x.tenant_id === tenantId) || selectedTenant());
       } catch (e) {
         log(`读取飞书摘要失败：${e.message}`);
       }
     };
 
     $('saveFeishuBtn').onclick = async () => {
-      const tenantId = $('cfgTenantId').value.trim();
-      const payload = {
-        app_id: $('cfgAppId').value.trim(),
-        app_secret: $('cfgAppSecret').value.trim(),
-        tables: JSON.parse($('cfgTables').value)
-      };
-      const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`, {
-        method: 'PUT',
-        body: JSON.stringify(payload)
-      });
-      log(`飞书配置已保存：${tenantId}，表=${(data.integration?.tables || []).join(', ')}`);
-      await loadTenants();
+      try {
+        const tenantId = $('cfgTenantId').value.trim();
+        const payload = {
+          app_id: $('cfgAppId').value.trim(),
+          app_secret: $('cfgAppSecret').value.trim(),
+          tables: JSON.parse($('cfgTables').value)
+        };
+        const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+        log(`飞书配置已保存：${tenantId}，表=${(data.integration?.tables || []).join(', ')}`);
+        renderDetail(state.tenants.find((x) => x.tenant_id === tenantId) || selectedTenant());
+        await loadTenants();
+      } catch (e) {
+        log(`保存飞书配置失败：${e.message}`);
+      }
     };
 
     window.acceptTenant = async (tenantId) => {
@@ -301,7 +463,39 @@
         body: JSON.stringify({ activate: true })
       });
       log(`自动验收 ${tenantId}：${data.ok ? '通过' : '失败'}；${data.report.checks.map((x) => `${x.key}=${x.ok}`).join(', ')}`);
+      renderDetail(state.tenants.find((x) => x.tenant_id === tenantId) || selectedTenant());
       await loadTenants();
+    };
+
+    window.toggleTenantStatus = async (tenantId, nextStatus) => {
+      const data = await api(`/api/admin/tenants/${tenantId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: nextStatus })
+      });
+      log(`租户 ${tenantId} 状态已更新为 ${data.tenant.status}`);
+      await loadTenants();
+    };
+
+    window.promptIssueLicense = async (tenantId) => {
+      try {
+        const expires = prompt(`请输入 ${tenantId} 的许可证到期时间（ISO 或可被 Date 解析的字符串）`, new Date(Date.now() + 90 * 86400000).toISOString());
+        if (!expires) return;
+        const allowed = prompt('允许的功能（逗号分隔）', 'hrms,agent_v2,feishu,mini_program');
+        const allowed_features = String(allowed || '').split(',').map((s) => s.trim()).filter(Boolean);
+        const dt = new Date(expires);
+        if (!Number.isFinite(dt.getTime())) {
+          log('许可证到期时间格式不合法');
+          return;
+        }
+        const data = await api(`/api/admin/tenants/${tenantId}/license`, {
+          method: 'POST',
+          body: JSON.stringify({ expires_at: dt.toISOString(), allowed_features })
+        });
+        log(`License 已发放：${tenantId} / ${data.license.license_key}`);
+        await loadTenants();
+      } catch (e) {
+        log(`发放 License 失败：${e.message}`);
+      }
     };
 
     $('runAcceptanceBtn').onclick = async () => {

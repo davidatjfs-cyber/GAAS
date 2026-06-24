@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hrms-pwa-20260615b-swr';
+const CACHE_NAME = 'hrms-pwa-20260624a-swr';
 const PRECACHE_URLS = [
   '/manifest.json',
   '/pwa-icon.svg'
@@ -56,6 +56,7 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   if (isApiRequest(url)) return;
   if (url.pathname.startsWith('/agents-admin/')) return;
+  if (url.pathname.startsWith('/platform-admin/')) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(

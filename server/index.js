@@ -15499,7 +15499,7 @@ app.get('/api/admin/tenants', platformAdminRequired, async (req, res) => {
   }
 });
 
-app.get('/platform-admin', (req, res) => {
+app.get(['/platform-admin', '/platform-admin/'], (req, res) => {
   return res.sendFile(path.join(__dirname, '../platform-admin.html'));
 });
 
