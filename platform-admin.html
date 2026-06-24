@@ -408,6 +408,96 @@
       log(`已打开租户 ${id} 的 Agent 控制台`);
     };
 
+    window.selectTenant = async (tenantId) => {
+      try {
+        state.selectedTenantId = tenantId;
+        $('cfgTenantId').value = tenantId;
+        await loadProfile(tenantId);
+      } catch (e) {
+        log(`读取租户详情失败：${e.message}`);
+      }
+    };
+
+    window.loadProfile = async (tenantId) => {
+      try {
+        await loadProfile(tenantId);
+      } catch (e) {
+        log(`加载租户配置失败：${e.message}`);
+      }
+    };
+
+    window.prefillTenant = async (tenantId) => {
+      $('cfgTenantId').value = tenantId;
+      state.selectedTenantId = tenantId;
+      try {
+        const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`);
+        log(`已加载 ${tenantId} 的飞书配置摘要。`);
+        if (data.integration?.app_id) $('cfgAppId').value = data.integration.app_id;
+        const current = state.tenants.find((x) => x.tenant_id === tenantId) || selectedTenant();
+        renderDetail(state.detail || { tenant: current, profile: current?.platform_profile || {}, integrations: { feishu_bitable: data.integration }, alerts: [] });
+      } catch (e) {
+        log(`读取飞书摘要失败：${e.message}`);
+      }
+    };
+
+    window.acceptTenant = async (tenantId) => {
+      try {
+        const data = await api(`/api/admin/tenants/${tenantId}/acceptance`, {
+          method: 'POST',
+          body: JSON.stringify({ activate: true })
+        });
+        log(`自动验收 ${tenantId}：${data.ok ? '通过' : '失败'}`);
+        await loadTenants();
+      } catch (e) {
+        log(`自动验收失败：${e.message}`);
+      }
+    };
+
+    window.bootstrapTenant = async (tenantId) => {
+      $('cfgTenantId').value = tenantId;
+      await $('bootstrapTenantBtn').onclick();
+    };
+
+    window.repairTenant = async (tenantId) => {
+      $('cfgTenantId').value = tenantId;
+      await $('repairTenantBtn').onclick();
+    };
+
+    window.toggleTenantStatus = async (tenantId, nextStatus) => {
+      try {
+        const data = await api(`/api/admin/tenants/${tenantId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: nextStatus })
+        });
+        log(`租户 ${tenantId} 状态已更新为 ${formatStatus(data.tenant.status)}`);
+        await loadTenants();
+      } catch (e) {
+        log(`更新租户状态失败：${e.message}`);
+      }
+    };
+
+    window.promptIssueLicense = async (tenantId) => {
+      try {
+        const expires = prompt(`请输入 ${tenantId} 的许可证到期时间（ISO 或可被 Date 解析的字符串）`, new Date(Date.now() + 90 * 86400000).toISOString());
+        if (!expires) return;
+        const allowed = prompt('允许的功能（逗号分隔）', 'hrms,agent_v2,feishu,mini_program');
+        const allowed_features = String(allowed || '').split(',').map((s) => s.trim()).filter(Boolean);
+        const dt = new Date(expires);
+        if (!Number.isFinite(dt.getTime())) {
+          log('许可证到期时间格式不合法');
+          return;
+        }
+        const data = await api(`/api/admin/tenants/${tenantId}/license`, {
+          method: 'POST',
+          body: JSON.stringify({ expires_at: dt.toISOString(), allowed_features })
+        });
+        log(`许可证已发放：${tenantId} / ${data.license.license_key}`);
+        await loadTenants();
+      } catch (e) {
+        log(`发放许可证失败：${e.message}`);
+      }
+    };
+
     async function api(url, options = {}) {
       const resp = await fetch(url, { ...options, headers: headers(options.headers || {}) });
       const data = await resp.json().catch(() => ({}));
