@@ -70,7 +70,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from './sms.js';
 import { getStoreSmsEnvSuffix, storeNameToId as _storeNameToIdFromConfig, STORE_ID_TO_NAME, STORES as _ALL_STORES } from './brands-config.js';
-import { tenantContext, resolveTenantIdDefault } from './utils/database.js';
+import { runForActiveTenants, tenantContext, resolveTenantIdDefault } from './utils/database.js';
 const _storeId = (brandName) => _ALL_STORES.find(s => s.brandName === brandName)?.storeId || '';
 
 // 订阅消息推送网关（方案B）：HRMS 自己没有小程序 access_token，发不了订阅消息，
@@ -3991,8 +3991,10 @@ export function registerGrowthRoutes(app, pool) {
   }
   if (!globalThis.__growthRemindWorker) {
     globalThis.__growthRemindWorker = true;
-    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
-    setInterval(() => { tenantContext.run('default', () => processOneRemindJob()).catch((e) => console.warn('[svremind] worker failed:', e?.message)); }, 30 * 1000);
+    setInterval(() => {
+      runForActiveTenants(() => processOneRemindJob())
+        .catch((e) => console.warn('[svremind] worker failed:', e?.message));
+    }, 30 * 1000);
   }
 
   // 储值余额提醒·定时自动触发器：每日为每个有储值客的门店自动冻结一条 remind 任务，
@@ -4043,12 +4045,11 @@ export function registerGrowthRoutes(app, pool) {
     return { enqueued };
   }
   if (!globalThis.__growthRemindAutoTimer) {
-    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
     globalThis.__growthRemindAutoTimer = setInterval(() => {
-      tenantContext.run('default', () => enqueueAutoStoredValueReminds()).catch((e) => console.warn('[svremind] auto enqueue failed:', e?.message));
+      runForActiveTenants(() => enqueueAutoStoredValueReminds()).catch((e) => console.warn('[svremind] auto enqueue failed:', e?.message));
     }, 60 * 60 * 1000);
     setTimeout(() => {
-      tenantContext.run('default', () => enqueueAutoStoredValueReminds()).catch((e) => console.warn('[svremind] initial auto enqueue failed:', e?.message));
+      runForActiveTenants(() => enqueueAutoStoredValueReminds()).catch((e) => console.warn('[svremind] initial auto enqueue failed:', e?.message));
     }, 20000);
   }
 
@@ -4064,23 +4065,27 @@ export function registerGrowthRoutes(app, pool) {
     }
   });
   if (!globalThis.__growthSegmentTimer) {
-    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
     globalThis.__growthSegmentTimer = setInterval(() => {
-      tenantContext.run('default', () => recomputeDiningSegments(pool)).catch((e) => console.warn('[segments] recompute failed:', e?.message));
+      runForActiveTenants(() => recomputeDiningSegments(pool)).catch((e) => console.warn('[segments] recompute failed:', e?.message));
     }, 24 * 60 * 60 * 1000);
     setTimeout(() => {
-      tenantContext.run('default', () => recomputeDiningSegments(pool)).catch((e) => console.warn('[segments] initial recompute failed:', e?.message));
+      runForActiveTenants(() => recomputeDiningSegments(pool)).catch((e) => console.warn('[segments] initial recompute failed:', e?.message));
     }, 30000);
   }
 
   // T+7 SMS自动回填：每天跑一次；启动后延迟60s首跑（等DB连接稳定）
   if (!globalThis.__smsBackfillTimer) {
-    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
     globalThis.__smsBackfillTimer = setInterval(() => {
-      tenantContext.run('default', () => autoBackfillSmsActions(pool)).then((n) => { if (n > 0) console.log(`[sms-backfill] auto-backfilled ${n} actions`); }).catch((e) => console.warn('[sms-backfill] failed:', e?.message));
+      runForActiveTenants(() => autoBackfillSmsActions(pool)).then((rows) => {
+        const n = rows.reduce((sum, value) => sum + (Number(value) || 0), 0);
+        if (n > 0) console.log(`[sms-backfill] auto-backfilled ${n} actions`);
+      }).catch((e) => console.warn('[sms-backfill] failed:', e?.message));
     }, 24 * 60 * 60 * 1000);
     setTimeout(() => {
-      tenantContext.run('default', () => autoBackfillSmsActions(pool)).then((n) => { if (n > 0) console.log(`[sms-backfill] initial run: backfilled ${n} actions`); }).catch((e) => console.warn('[sms-backfill] initial failed:', e?.message));
+      runForActiveTenants(() => autoBackfillSmsActions(pool)).then((rows) => {
+        const n = rows.reduce((sum, value) => sum + (Number(value) || 0), 0);
+        if (n > 0) console.log(`[sms-backfill] initial run: backfilled ${n} actions`);
+      }).catch((e) => console.warn('[sms-backfill] initial failed:', e?.message));
     }, 60000);
   }
 
@@ -4704,8 +4709,8 @@ export function registerGrowthRoutes(app, pool) {
   // 用户请求(尤其是"保存规则")的同步路径上——否则该扫描会和保存抢连接池，让保存也卡5秒，
   // 表现为"一改发送频率/有效期就死机"。因此这里改为：后台定时刷新缓存，HTTP 请求只读缓存、
   // 永不同步触发重算(仅服务刚启动、缓存还空时兜底算一次)。
-  let __touchRulesAudienceCache = { data: null, at: 0 };
-  let __touchRulesAudienceComputing = null; // 进行中的重算 Promise，去重并发
+  const __touchRulesAudienceCache = new Map();
+  const __touchRulesAudienceComputing = new Map();
   async function computeTouchRulesAudience() {
     const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules ORDER BY rule_key ASC`);
     const audience = {};
@@ -4761,34 +4766,40 @@ export function registerGrowthRoutes(app, pool) {
     return audience;
   }
   // 后台刷新缓存（去重并发；不抛错给调用方，由 .catch 兜底）。
-  function refreshTouchRulesAudienceCache() {
-    if (__touchRulesAudienceComputing) return __touchRulesAudienceComputing;
-    __touchRulesAudienceComputing = computeTouchRulesAudience()
-      .then((a) => { __touchRulesAudienceCache = { data: a, at: Date.now() }; return a; })
-      .finally(() => { __touchRulesAudienceComputing = null; });
-    return __touchRulesAudienceComputing;
+  function refreshTouchRulesAudienceCache(tenantId = resolveTenantIdDefault()) {
+    const effectiveTenantId = resolveTenantIdDefault(tenantId);
+    if (__touchRulesAudienceComputing.has(effectiveTenantId)) return __touchRulesAudienceComputing.get(effectiveTenantId);
+    const pending = computeTouchRulesAudience()
+      .then((a) => {
+        __touchRulesAudienceCache.set(effectiveTenantId, { data: a, at: Date.now() });
+        return a;
+      })
+      .finally(() => { __touchRulesAudienceComputing.delete(effectiveTenantId); });
+    __touchRulesAudienceComputing.set(effectiveTenantId, pending);
+    return pending;
   }
   // 暴露给 POST 规则改动后触发后台重算（见 /api/growth/touch-rules）。
-  globalThis.__refreshGrowthAudience = () => { refreshTouchRulesAudienceCache().catch(() => {}); };
+  globalThis.__refreshGrowthAudience = (tenantId) => {
+    tenantContext.run(resolveTenantIdDefault(tenantId), () => refreshTouchRulesAudienceCache(tenantId)).catch(() => {});
+  };
   // 服务启动后预热一次，并每 10 分钟后台刷新，确保 HTTP 请求始终命中缓存、不阻塞。
-  // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
   if (!globalThis.__growthAudienceTimer) {
-    setTimeout(() => tenantContext.run('default', () => refreshTouchRulesAudienceCache()).catch(() => {}), 15000);
-    globalThis.__growthAudienceTimer = setInterval(() => { tenantContext.run('default', () => refreshTouchRulesAudienceCache()).catch(() => {}); }, 10 * 60 * 1000);
+    setTimeout(() => runForActiveTenants((tenantId) => refreshTouchRulesAudienceCache(tenantId)).catch(() => {}), 15000);
+    globalThis.__growthAudienceTimer = setInterval(() => {
+      runForActiveTenants((tenantId) => refreshTouchRulesAudienceCache(tenantId)).catch(() => {});
+    }, 10 * 60 * 1000);
   }
   // 客户画像（生命周期/价值分级等，决定"涉及会员"人数）每日自动重算，避免依赖人工触发而过期；
   // 重算后顺带刷新人群缓存，使"涉及会员"数据始终与画像同步。
-  // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
   if (!globalThis.__growthProfileTimer) {
-    const runProfileRecompute = () => tenantContext.run('default', () => recomputeCustomerProfiles(pool, 90)
-      .then(() => refreshTouchRulesAudienceCache()))
+    const runProfileRecompute = () => runForActiveTenants((tenantId) => recomputeCustomerProfiles(pool, 90)
+      .then(() => refreshTouchRulesAudienceCache(tenantId)))
       .catch((e) => console.warn('[profiles] recompute failed:', e?.message));
     setTimeout(runProfileRecompute, 20000);
     globalThis.__growthProfileTimer = setInterval(runProfileRecompute, 24 * 60 * 60 * 1000);
   }
   // 核销消费金额每天凌晨2点(北京时间)批量补算一次：POS数据是按天同步的，核销当时大概率查不到，
   // 等次日POS数据到位后统一回填近7天内仍为0的核销记录。
-  // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
   if (!globalThis.__growthRedemptionBackfillTimer) {
     let __growthRedemptionBackfillLastYmd = '';
     const runBackfill = () => {
@@ -4796,8 +4807,8 @@ export function registerGrowthRoutes(app, pool) {
       const ymd = nowCst.toISOString().slice(0, 10);
       if (nowCst.getUTCHours() < 2 || __growthRedemptionBackfillLastYmd === ymd) return;
       __growthRedemptionBackfillLastYmd = ymd;
-      tenantContext.run('default', () => backfillRedemptionAmounts(pool))
-        .then((n) => console.log(`[growth] redemption amount backfill: ${n} rows updated`))
+      runForActiveTenants(() => backfillRedemptionAmounts(pool))
+        .then((rows) => console.log(`[growth] redemption amount backfill: ${rows.reduce((sum, value) => sum + (Number(value) || 0), 0)} rows updated`))
         .catch((e) => console.warn('[growth] redemption amount backfill failed:', e?.message));
     };
     globalThis.__growthRedemptionBackfillTimer = setInterval(runBackfill, 10 * 60 * 1000);
@@ -4806,14 +4817,15 @@ export function registerGrowthRoutes(app, pool) {
     if (!requireGrowthAuth(req, res)) return;
     const audienceTenantId = getGrowthTenantId(req);
     // 有缓存就直接返回（即便略旧）；超过3分钟则后台刷新，但本次请求不等待。
-    if (__touchRulesAudienceCache.data) {
-      const stale = Date.now() - __touchRulesAudienceCache.at > 180000;
-      if (stale) tenantContext.run(audienceTenantId, () => refreshTouchRulesAudienceCache()).catch(() => {});
-      return res.json({ ok: true, audience: __touchRulesAudienceCache.data, cached: true, stale });
+    const cachedAudience = __touchRulesAudienceCache.get(audienceTenantId);
+    if (cachedAudience?.data) {
+      const stale = Date.now() - cachedAudience.at > 180000;
+      if (stale) tenantContext.run(audienceTenantId, () => refreshTouchRulesAudienceCache(audienceTenantId)).catch(() => {});
+      return res.json({ ok: true, audience: cachedAudience.data, cached: true, stale });
     }
     // 冷启动、缓存还空：兜底同步算一次（全局唯一一次会阻塞的路径）。
     try {
-      const a = await tenantContext.run(audienceTenantId, () => refreshTouchRulesAudienceCache());
+      const a = await tenantContext.run(audienceTenantId, () => refreshTouchRulesAudienceCache(audienceTenantId));
       return res.json({ ok: true, audience: a });
     } catch (e) {
       return res.status(500).json({ ok: false, error: e?.message || 'audience_failed' });
@@ -5480,33 +5492,40 @@ export function registerGrowthRoutes(app, pool) {
     const decision = cleanText(b.decision || '', 80);
     if (!actionKey || !decision) return res.status(400).json({ ok: false, error: 'missing_action_key_or_decision' });
     try {
-      // 飞书卡片回调走密钥鉴权，没有 JWT 可解出 tenant_id；现网单租户，暂用default兜底
-      return await tenantContext.run('default', async () => {
-      const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
-      if (!current.rows.length) return res.status(404).json({ ok: false, error: 'action_not_found' });
-      const before = current.rows[0];
-      if (decision === 'execute') {
-        await pool.query(`UPDATE growth_actions SET status='executed', executed_at=NOW(), updated_at=NOW() WHERE action_key=$1`, [actionKey]);
-        await appendExecutionLog(pool, { action_key: actionKey, store_id: before.store_id, action_type: before.action_type, decision: 'executed', operator_username: 'feishu_callback', operator_role: 'admin', decision_reason: b.reason || '飞书卡片执行', result_summary: '从飞书卡片执行' });
-        return res.json({ ok: true, action: 'executed' });
-      } else if (decision === 'ignore') {
-        await pool.query(`UPDATE growth_actions SET status='ignored', updated_at=NOW() WHERE action_key=$1`, [actionKey]);
-        await appendExecutionLog(pool, { action_key: actionKey, store_id: before.store_id, action_type: before.action_type, decision: 'ignored', operator_username: 'feishu_callback', operator_role: 'admin', decision_reason: b.reason || '飞书卡片忽略', result_summary: '从飞书卡片忽略' });
-        return res.json({ ok: true, action: 'ignored' });
-      } else if (decision === 'feedback') {
-        // 允许从飞书卡片提交简短执行反馈
-        const note = cleanText(b.reason || b.note || '', 2000);
-        await pool.query(
-          `UPDATE growth_actions
-           SET status = 'executed', payload = COALESCE(payload,'{}'::jsonb) || $2::jsonb, updated_at = NOW(), executed_at = COALESCE(executed_at, NOW())
-           WHERE action_key = $1`,
-          [actionKey, JSON.stringify({ feishu_feedback_note: note, feedback_source: 'feishu_card' })]
-        );
-        await appendExecutionLog(pool, { action_key: actionKey, store_id: before.store_id, action_type: before.action_type, decision: 'feedback', operator_username: 'feishu_callback', operator_role: 'admin', decision_reason: note || '飞书卡片执行回填', result_summary: note || '从飞书卡片回填' });
-        return res.json({ ok: true, action: 'feedback_submitted' });
+      for (const tenantId of await getActiveTenantIds(pool)) {
+        const handled = await tenantContext.run(tenantId, async () => {
+          const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
+          if (!current.rows.length) return null;
+          const before = current.rows[0];
+          if (decision === 'execute') {
+            await pool.query(`UPDATE growth_actions SET status='executed', executed_at=NOW(), updated_at=NOW() WHERE action_key=$1`, [actionKey]);
+            await appendExecutionLog(pool, { action_key: actionKey, store_id: before.store_id, action_type: before.action_type, decision: 'executed', operator_username: 'feishu_callback', operator_role: 'admin', decision_reason: b.reason || '飞书卡片执行', result_summary: '从飞书卡片执行' });
+            return { ok: true, action: 'executed', tenantId };
+          }
+          if (decision === 'ignore') {
+            await pool.query(`UPDATE growth_actions SET status='ignored', updated_at=NOW() WHERE action_key=$1`, [actionKey]);
+            await appendExecutionLog(pool, { action_key: actionKey, store_id: before.store_id, action_type: before.action_type, decision: 'ignored', operator_username: 'feishu_callback', operator_role: 'admin', decision_reason: b.reason || '飞书卡片忽略', result_summary: '从飞书卡片忽略' });
+            return { ok: true, action: 'ignored', tenantId };
+          }
+          if (decision === 'feedback') {
+            const note = cleanText(b.reason || b.note || '', 2000);
+            await pool.query(
+              `UPDATE growth_actions
+               SET status = 'executed', payload = COALESCE(payload,'{}'::jsonb) || $2::jsonb, updated_at = NOW(), executed_at = COALESCE(executed_at, NOW())
+               WHERE action_key = $1`,
+              [actionKey, JSON.stringify({ feishu_feedback_note: note, feedback_source: 'feishu_card' })]
+            );
+            await appendExecutionLog(pool, { action_key: actionKey, store_id: before.store_id, action_type: before.action_type, decision: 'feedback', operator_username: 'feishu_callback', operator_role: 'admin', decision_reason: note || '飞书卡片执行回填', result_summary: note || '从飞书卡片回填' });
+            return { ok: true, action: 'feedback_submitted', tenantId };
+          }
+          return { ok: false, error: 'invalid_decision' };
+        });
+        if (handled?.ok) return res.json(handled);
+        if (handled?.error === 'invalid_decision') {
+          return res.status(400).json({ ok: false, error: 'invalid_decision' });
+        }
       }
-      return res.status(400).json({ ok: false, error: 'invalid_decision' });
-      });
+      return res.status(404).json({ ok: false, error: 'action_not_found' });
     } catch (e) { return res.status(500).json({ ok: false, error: e?.message || 'callback_error' }); }
   });
 
@@ -6100,20 +6119,20 @@ export function registerGrowthRoutes(app, pool) {
   });
 
   if (!globalThis.__growthTouchRuleTimer) {
-    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
     globalThis.__growthTouchRuleTimer = setInterval(() => {
-      tenantContext.run('default', () => runTouchRuleEngine(pool, { limit_per_rule: 5000 })).catch((e) => console.warn('[growth] rule engine run failed:', e?.message));
+      runForActiveTenants((tenantId) => runTouchRuleEngine(pool, { limit_per_rule: 5000, tenantId }))
+        .catch((e) => console.warn('[growth] rule engine run failed:', e?.message));
     }, 15 * 60 * 1000);
     setTimeout(() => {
-      tenantContext.run('default', () => runTouchRuleEngine(pool, { limit_per_rule: 5000 })).catch((e) => console.warn('[growth] initial rule engine run failed:', e?.message));
+      runForActiveTenants((tenantId) => runTouchRuleEngine(pool, { limit_per_rule: 5000, tenantId }))
+        .catch((e) => console.warn('[growth] initial rule engine run failed:', e?.message));
     }, 10000);
   }
 
   if (!globalThis.__wecomContactSyncTimer) {
-    // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
     globalThis.__wecomContactSyncTimer = setInterval(async () => {
       try {
-        await tenantContext.run('default', async () => {
+        await runForActiveTenants(async () => {
           const configs = await getAllStoreWecomConfigs(pool);
           for (const cfg of configs) {
             await syncWecomContactsForStore(pool, cfg);
@@ -6125,7 +6144,7 @@ export function registerGrowthRoutes(app, pool) {
     }, 6 * 60 * 60 * 1000);
     setTimeout(async () => {
       try {
-        await tenantContext.run('default', async () => {
+        await runForActiveTenants(async () => {
           const configs = await getAllStoreWecomConfigs(pool);
           for (const cfg of configs) {
             await syncWecomContactsForStore(pool, cfg);
@@ -6238,9 +6257,21 @@ export function registerGrowthRoutes(app, pool) {
       globalThis.__growthDailyReportTimer = setTimeout(async () => {
         try {
           if (_sendGrowthAlert) {
-            // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
-            const msg = await tenantContext.run('default', () => buildGrowthDailyReport(pool));
-            await _sendGrowthAlert(msg, 'growth_daily_report');
+            const reportRuns = await runForActiveTenants(
+              async (tenantId) => ({
+                tenantId,
+                message: await buildGrowthDailyReport(pool)
+              }),
+              {
+                continueOnError: true,
+                onError: ({ tenantId, error }) => {
+                  console.warn(`[growth] daily report failed (tenant=${tenantId}):`, error?.message || error);
+                }
+              }
+            );
+            for (const row of reportRuns.results || []) {
+              await _sendGrowthAlert(`[租户 ${row.tenantId}]\n${row.value.message}`, 'growth_daily_report');
+            }
           }
         } catch (e) {
           console.warn('[growth] daily report failed:', e?.message);

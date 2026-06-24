@@ -3,10 +3,10 @@
  * 负责同步开档报告、收档报告、例会报告、原料收货日报
  */
 
-import { pool } from './utils/database.js';
+import { pool, resolveTenantIdDefault, runForActiveTenants } from './utils/database.js';
 import { inferBrandFromStoreName } from './agents.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
-import { resolveTenantIdForStore } from './growth-api.js';
+import { getTenantFeishuIntegration, saveTenantFeishuIntegration } from './tenant-integrations.js';
 
 let _feishuSyncFailureNotifier = null;
 /** 由 index 注册：飞书→PG 定时/按表同步失败时立刻通知 admin */
@@ -50,81 +50,62 @@ function notifyFeishuSyncFailure(label, error) {
 // ─────────────────────────────────────────────
 // 1. 飞书应用配置
 // ─────────────────────────────────────────────
-export const FEISHU_APP_CONFIG = {
-  app_id: 'cli_a9fc0d13c838dcd6',
-  app_secret: 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
-  base_url: 'https://open.feishu.cn'
+const LEGACY_FEISHU_TABLE_DEFAULTS = {
+  closing_reports: { app_token: 'PTWrbUdcbarCshst0QncMoY7nKe', table_id: 'tblXYfSBRrgNGohN', view_id: 'vewYvZudua', name: '收档报告DB', type: 'kitchen_report', report_type: 'closing' },
+  opening_reports: { app_token: 'PTWrbUdcbarCshst0QncMoY7nKe', table_id: 'tbl32E6d0CyvLvfi', view_id: 'vewUZZmWnZ', name: '开档报告', type: 'kitchen_report', report_type: 'opening' },
+  meeting_reports: { app_token: 'PTWrbUdcbarCshst0QncMoY7nKe', table_id: 'tblZXgaU0LpSye2m', view_id: 'vewq7G0SpU', name: '例会报告', type: 'store_meeting' },
+  dish_library: { app_token: 'PTWrbUdcbarCshst0QncMoY7nKe', table_id: 'tbltSvY7SBTr3Sw8', view_id: 'vewva7M4SZ', name: '菜品库', type: 'dish_library' },
+  dish_library_majixian_takeaway: { app_token: 'PTWrbUdcbarCshst0QncMoY7nKe', table_id: 'tbltaVzb2nei9NwO', view_id: '', name: '马己仙外卖菜品库', type: 'dish_library', force_biz_type: 'takeaway' },
+  sop_steps: { app_token: 'PTWrbUdcbarCshst0QncMoY7nKe', table_id: 'tblQTKrYjHT5VldI', view_id: 'vewLKxLzbY', name: '厨房SOP步骤库', type: 'sop_steps' },
+  material_majixian: { app_token: 'PTWrbUdcbarCshst0QncMoY7nKe', table_id: 'tblz4kW1cY22XRlL', view_id: 'vewyyTyKf6', name: '马己仙原料收货日报', brand: 'majixian' },
+  material_hongchao: { app_token: 'PTWrbUdcbarCshst0QncMoY7nKe', table_id: 'tbllcV1evqTJyzlN', view_id: 'vewyyTyKf6', name: '洪潮原料收货日报', brand: 'hongchao' }
 };
 
-// ─────────────────────────────────────────────
-// 2. 表格配置
-// ─────────────────────────────────────────────
-export const FEISHU_TABLE_CONFIG = {
-  // 共用表格（所有品牌）
-  closing_reports: {
-    app_token: 'PTWrbUdcbarCshst0QncMoY7nKe',
-    table_id: 'tblXYfSBRrgNGohN',
-    view_id: 'vewYvZudua',
-    name: '收档报告DB',
-    type: 'kitchen_report',
-    report_type: 'closing'
-  },
-  opening_reports: {
-    app_token: 'PTWrbUdcbarCshst0QncMoY7nKe',
-    table_id: 'tbl32E6d0CyvLvfi',
-    view_id: 'vewUZZmWnZ',
-    name: '开档报告',
-    type: 'kitchen_report',
-    report_type: 'opening'
-  },
-  meeting_reports: {
-    app_token: 'PTWrbUdcbarCshst0QncMoY7nKe',
-    table_id: 'tblZXgaU0LpSye2m',
-    view_id: 'vewq7G0SpU',
-    name: '例会报告',
-    type: 'store_meeting'
-  },
-  dish_library: {
-    app_token: 'PTWrbUdcbarCshst0QncMoY7nKe',
-    table_id: 'tbltSvY7SBTr3Sw8',
-    view_id: 'vewva7M4SZ',
-    name: '菜品库',
-    type: 'dish_library'
-  },
-  dish_library_majixian_takeaway: {
-    app_token: 'PTWrbUdcbarCshst0QncMoY7nKe',
-    table_id: 'tbltaVzb2nei9NwO',
-    view_id: '',
-    name: '马己仙外卖菜品库',
-    type: 'dish_library',
-    force_biz_type: 'takeaway'
-  },
-  sop_steps: {
-    app_token: 'PTWrbUdcbarCshst0QncMoY7nKe',
-    table_id: 'tblQTKrYjHT5VldI',
-    view_id:  'vewLKxLzbY',
-    name: '厨房SOP步骤库',
-    type: 'sop_steps'
-  },
-  
-  // 品牌专属表格
-  material_reports: {
-    majixian: {
-      app_token: 'PTWrbUdcbarCshst0QncMoY7nKe',
-      table_id: 'tblz4kW1cY22XRlL',
-      view_id: 'vewyyTyKf6',
-      name: '马己仙原料收货日报',
-      brand: 'majixian'
-    },
-    hongchao: {
-      app_token: 'PTWrbUdcbarCshst0QncMoY7nKe',
-      table_id: 'tbllcV1evqTJyzlN',
-      view_id: 'vewyyTyKf6',
-      name: '洪潮原料收货日报',
-      brand: 'hongchao'
-    }
-  }
-};
+// 兼容旧调用方（如 index.js 的 webhook/table 映射逻辑）：
+// 新逻辑的真实凭证与表 ID 以 tenant_integrations 为准，这里只保留历史静态映射用于“通过 app_token+table_id 反查 configKey”。
+export const FEISHU_TABLE_CONFIG = LEGACY_FEISHU_TABLE_DEFAULTS;
+
+function feishuIntegrationEncryptionKey() {
+  return String(process.env.TENANT_INTEGRATION_ENCRYPTION_KEY || '').trim();
+}
+
+function buildLegacyDefaultFeishuIntegration() {
+  const app_id = String(process.env.FEISHU_APP_ID || process.env.LARK_APP_ID || '').trim();
+  const app_secret = String(process.env.FEISHU_APP_SECRET || process.env.LARK_APP_SECRET || '').trim();
+  if (!app_id || !app_secret) return null;
+  return {
+    app_id,
+    app_secret,
+    tables: Object.fromEntries(Object.entries(LEGACY_FEISHU_TABLE_DEFAULTS).map(([key, value]) => [key, {
+      app_token: String(value.app_token || '').trim(),
+      table_id: String(value.table_id || '').trim(),
+      view_id: String(value.view_id || '').trim()
+    }]))
+  };
+}
+
+function withTableMeta(tableKey, row) {
+  const meta = LEGACY_FEISHU_TABLE_DEFAULTS[tableKey] || {};
+  return {
+    ...meta,
+    ...(row || {}),
+    app_token: String(row?.app_token || meta.app_token || '').trim(),
+    table_id: String(row?.table_id || meta.table_id || '').trim(),
+    view_id: String(row?.view_id || meta.view_id || '').trim(),
+  };
+}
+
+async function loadTenantFeishuConfig(tenantId) {
+  const key = feishuIntegrationEncryptionKey();
+  if (!key) return null;
+  const configured = await getTenantFeishuIntegration(pool(), tenantId, key);
+  if (configured) return configured;
+  if (tenantId !== 'default') return null;
+  const legacy = buildLegacyDefaultFeishuIntegration();
+  if (!legacy) return null;
+  await saveTenantFeishuIntegration(pool(), tenantId, legacy, key);
+  return legacy;
+}
 
 function extractFieldText(value) {
   if (value === null || value === undefined) return '';
@@ -317,15 +298,15 @@ export function extractMaterialReportFields(fields) {
 // ─────────────────────────────────────────────
 
 // 获取飞书访问令牌
-export async function getFeishuAccessToken() {
+export async function getFeishuAccessToken(config) {
   const response = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      app_id: FEISHU_APP_CONFIG.app_id,
-      app_secret: FEISHU_APP_CONFIG.app_secret
+      app_id: config.app_id,
+      app_secret: config.app_secret
     })
   });
   
@@ -410,7 +391,7 @@ export async function fetchTableRecords(tableConfig, accessToken) {
 // ─────────────────────────────────────────────
 
 // 厨房报告同步函数
-export async function syncKitchenReports(tableConfig, accessToken, reportType) {
+export async function syncKitchenReports(tableConfig, accessToken, reportType, tenantId) {
   try {
     const records = await fetchTableRecords(tableConfig, accessToken);
     let syncedCount = 0;
@@ -432,9 +413,6 @@ export async function syncKitchenReports(tableConfig, accessToken, reportType) {
       
       // 推断品牌
       const brand = inferBrandFromStoreName(store);
-      
-      // 保存到数据库
-      const kitchenTenantId = await resolveTenantIdForStore(pool(), store);
       await pool().query(`
         INSERT INTO kitchen_reports
         (store, brand, report_date, report_type, station, reporter, report_data, feishu_record_id, submitted, submit_time, tenant_id)
@@ -450,7 +428,7 @@ export async function syncKitchenReports(tableConfig, accessToken, reportType) {
       `, [
         store, brand, new Date(date), reportType, station, responsible,
         JSON.stringify(extractedFields), record.record_id,
-        !!submit_time, submit_time ? new Date(submit_time) : null, kitchenTenantId
+        !!submit_time, submit_time ? new Date(submit_time) : null, tenantId
       ]);
       
       syncedCount++;
@@ -465,7 +443,7 @@ export async function syncKitchenReports(tableConfig, accessToken, reportType) {
 }
 
 // 例会报告同步函数
-export async function syncMeetingReports(tableConfig, accessToken) {
+export async function syncMeetingReports(tableConfig, accessToken, tenantId) {
   try {
     const records = await fetchTableRecords(tableConfig, accessToken);
     let syncedCount = 0;
@@ -482,8 +460,6 @@ export async function syncMeetingReports(tableConfig, accessToken) {
       }
       
       const brand = inferBrandFromStoreName(store);
-      
-      const meetingTenantId = await resolveTenantIdForStore(pool(), store);
       await pool().query(`
         INSERT INTO store_meeting_reports
         (store, brand, meeting_date, reporter, meeting_content, meeting_score, report_data, feishu_record_id, submitted, submit_time, tenant_id)
@@ -501,7 +477,7 @@ export async function syncMeetingReports(tableConfig, accessToken) {
       `, [
         store, brand, new Date(date), reporter, meeting_content,
         meeting_score, JSON.stringify(extractedFields), record.record_id,
-        !!submit_time, submit_time ? new Date(submit_time) : null, meetingTenantId
+        !!submit_time, submit_time ? new Date(submit_time) : null, tenantId
       ]);
       
       syncedCount++;
@@ -516,7 +492,7 @@ export async function syncMeetingReports(tableConfig, accessToken) {
 }
 
 // 原料收货日报同步函数
-export async function syncMaterialReports(tableConfig, accessToken, brand) {
+export async function syncMaterialReports(tableConfig, accessToken, brand, tenantId) {
   try {
     const records = await fetchTableRecords(tableConfig, accessToken);
     let syncedCount = 0;
@@ -532,7 +508,6 @@ export async function syncMaterialReports(tableConfig, accessToken, brand) {
         continue;
       }
       
-      const materialTenantId = await resolveTenantIdForStore(pool(), store);
       await pool().query(`
         INSERT INTO material_receiving_reports
         (store, brand, report_date, receiver, report_data, feishu_record_id, submitted, submit_time, tenant_id)
@@ -548,7 +523,7 @@ export async function syncMaterialReports(tableConfig, accessToken, brand) {
       `, [
         store, brand, new Date(date), receiver,
         JSON.stringify(extractedFields), record.record_id,
-        !!submit_time, submit_time ? new Date(submit_time) : null, materialTenantId
+        !!submit_time, submit_time ? new Date(submit_time) : null, tenantId
       ]);
       
       syncedCount++;
@@ -601,18 +576,22 @@ async function ensureDishLibraryTable() {
   await pool().query(`CREATE INDEX IF NOT EXISTS idx_dish_library_costs_brand_lookup ON dish_library_costs (brand, biz_type, dish_name) WHERE enabled = TRUE`);
 }
 
-export async function syncDishLibraryCosts() {
+export async function syncDishLibraryCosts(tenantId = resolveTenantIdDefault()) {
   try {
     console.log('[sync] 开始同步菜品库...');
     await ensureDishLibraryTable();
-
-    const accessToken = await getFeishuAccessToken();
+    const integration = await loadTenantFeishuConfig(tenantId);
+    if (!integration) {
+      console.warn(`[sync] skip dish library for tenant=${tenantId}: missing integration`);
+      return { ok: false, skipped: 'integration_not_configured' };
+    }
+    const accessToken = await getFeishuAccessToken(integration);
     let upserted = 0;
     let recordCount = 0;
     const syncTargets = [
-      FEISHU_TABLE_CONFIG.dish_library,
-      FEISHU_TABLE_CONFIG.dish_library_majixian_takeaway
-    ].filter(Boolean);
+      withTableMeta('dish_library', integration.tables?.dish_library),
+      withTableMeta('dish_library_majixian_takeaway', integration.tables?.dish_library_majixian_takeaway)
+    ].filter((row) => row.app_token && row.table_id);
 
     for (const tableConfig of syncTargets) {
       const records = await fetchTableRecords(tableConfig, accessToken);
@@ -622,7 +601,6 @@ export async function syncDishLibraryCosts() {
           forceBizType: tableConfig.force_biz_type
         });
         for (const row of rows) {
-          const tenantId = await resolveTenantIdForStore(row.store || row.brand || '');
           await pool().query(
             `INSERT INTO dish_library_costs
               (store, brand, biz_type, dish_name, dish_price, unit_cost, source_data, source_record_id, enabled, updated_at, tenant_id)
@@ -701,11 +679,16 @@ function extractSopStepFields(fields, recordId) {
   };
 }
 
-export async function syncSopSteps() {
+export async function syncSopSteps(tenantId = resolveTenantIdDefault()) {
   try {
     console.log('[sync] 开始同步SOP步骤库...');
-    const accessToken = await getFeishuAccessToken();
-    const records = await fetchTableRecords(FEISHU_TABLE_CONFIG.sop_steps, accessToken);
+    const integration = await loadTenantFeishuConfig(tenantId);
+    if (!integration) {
+      console.warn(`[sync] skip sop steps for tenant=${tenantId}: missing integration`);
+      return { ok: false, skipped: 'integration_not_configured' };
+    }
+    const accessToken = await getFeishuAccessToken(integration);
+    const records = await fetchTableRecords(withTableMeta('sop_steps', integration.tables?.sop_steps), accessToken);
 
     let upserted = 0, skipped = 0;
     for (const record of records) {
@@ -716,9 +699,9 @@ export async function syncSopSteps() {
         `INSERT INTO kitchen_sop_steps
            (dish_name, store, station, step_seq, action, time_limit_seconds,
             quality_standard, common_failure, failure_action, is_critical,
-            feishu_record_id, enabled, synced_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,NOW())
-         ON CONFLICT (dish_name, store, step_seq) DO UPDATE SET
+           feishu_record_id, enabled, synced_at, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,NOW(),$12)
+         ON CONFLICT (dish_name, store, step_seq, tenant_id) DO UPDATE SET
            station             = EXCLUDED.station,
            action              = EXCLUDED.action,
            time_limit_seconds  = EXCLUDED.time_limit_seconds,
@@ -732,7 +715,7 @@ export async function syncSopSteps() {
         [
           row.dish_name, row.store, row.station, row.step_seq, row.action,
           row.time_limit_seconds, row.quality_standard, row.common_failure,
-          row.failure_action, row.is_critical, row.feishu_record_id
+          row.failure_action, row.is_critical, row.feishu_record_id, tenantId
         ]
       );
       upserted++;
@@ -751,29 +734,34 @@ export async function syncSopSteps() {
 // 6. 主同步函数
 // ─────────────────────────────────────────────
 
-export async function syncAllFeishuTables() {
+export async function syncAllFeishuTables(tenantId = resolveTenantIdDefault()) {
   try {
     console.log('[sync] 开始同步飞书表格数据...');
-    
-    const accessToken = await getFeishuAccessToken();
+    const integration = await loadTenantFeishuConfig(tenantId);
+    if (!integration) {
+      console.warn(`[sync] skip tenant ${tenantId}: feishu integration is not configured`);
+      return { ok: false, skipped: 'integration_not_configured' };
+    }
+    const accessToken = await getFeishuAccessToken(integration);
+    const tables = integration.tables || {};
     
     // 1. 同步收档报告
-    await syncKitchenReports(FEISHU_TABLE_CONFIG.closing_reports, accessToken, 'closing');
+    await syncKitchenReports(withTableMeta('closing_reports', tables.closing_reports), accessToken, 'closing', tenantId);
     
     // 2. 同步开档报告
-    await syncKitchenReports(FEISHU_TABLE_CONFIG.opening_reports, accessToken, 'opening');
+    await syncKitchenReports(withTableMeta('opening_reports', tables.opening_reports), accessToken, 'opening', tenantId);
     
     // 3. 同步例会报告
-    await syncMeetingReports(FEISHU_TABLE_CONFIG.meeting_reports, accessToken);
+    await syncMeetingReports(withTableMeta('meeting_reports', tables.meeting_reports), accessToken, tenantId);
     
     // 4. 同步马己仙原料收货日报
-    await syncMaterialReports(FEISHU_TABLE_CONFIG.material_reports.majixian, accessToken, 'majixian');
+    await syncMaterialReports(withTableMeta('material_majixian', tables.material_majixian), accessToken, 'majixian', tenantId);
     
     // 5. 同步洪潮原料收货日报
-    await syncMaterialReports(FEISHU_TABLE_CONFIG.material_reports.hongchao, accessToken, 'hongchao');
+    await syncMaterialReports(withTableMeta('material_hongchao', tables.material_hongchao), accessToken, 'hongchao', tenantId);
 
     // 6. 同步SOP步骤库（厨房打点卡数据源）
-    await syncSopSteps();
+    await syncSopSteps(tenantId);
 
     console.log('[sync] 飞书表格数据同步完成');
     
@@ -801,7 +789,7 @@ export function startDailyFeishuSync() {
     
     setTimeout(async () => {
       try {
-        await syncAllFeishuTables();
+        await runForActiveTenants((tenantId) => syncAllFeishuTables(tenantId));
         console.log('[scheduler] 每日同步完成');
       } catch (error) {
         console.error('[scheduler] 每日同步失败:', error);
@@ -828,8 +816,9 @@ export function startDailyFeishuSync() {
         const runKey = localDateKey(nowSh);
         if (runKey !== lastWeeklyDishSyncKey) {
           lastWeeklyDishSyncKey = runKey;
-          const dishR = await syncDishLibraryCosts();
-          if (dishR?.ok) {
+          const dishRows = await runForActiveTenants((tenantId) => syncDishLibraryCosts(tenantId));
+          const dishOk = dishRows.every((row) => row?.ok);
+          if (dishOk) {
             console.log('[scheduler] 每周菜品库同步完成');
           }
           // 失败时已在 syncDishLibraryCosts 内 notifyFeishuSyncFailure

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HRMS Platform Admin</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: #fffaf2;
+      --line: #d7c6ac;
+      --ink: #2e2418;
+      --muted: #786855;
+      --accent: #0d7a5f;
+      --accent-2: #c96b2c;
+      --danger: #b63f31;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Noto Sans SC", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(201,107,44,.16), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(13,122,95,.16), transparent 28%),
+        var(--bg);
+      color: var(--ink);
+    }
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 18px 40px; }
+    h1 { margin: 0 0 12px; font-size: 34px; }
+    .sub { color: var(--muted); margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: 340px 1fr; gap: 18px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 12px 30px rgba(78, 56, 28, 0.08);
+    }
+    .stack { display: grid; gap: 12px; }
+    label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+    }
+    button.secondary { background: #eadcc6; color: var(--ink); }
+    button.warn { background: var(--accent-2); }
+    button.danger { background: var(--danger); }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      background: #efe5d5;
+      color: var(--muted);
+    }
+    .pill.ok { background: rgba(13,122,95,.12); color: var(--accent); }
+    .pill.bad { background: rgba(182,63,49,.12); color: var(--danger); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px 10px; border-bottom: 1px solid rgba(120,104,85,.18); text-align: left; vertical-align: top; }
+    th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    tr:hover td { background: rgba(13,122,95,.04); }
+    .tenant-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .log { white-space: pre-wrap; background: #fff; border-radius: 12px; border: 1px solid var(--line); padding: 12px; min-height: 72px; }
+    @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Platform Admin</h1>
+    <div class="sub">租户开通、飞书配置、自动验收，一页完成。</div>
+    <div class="grid">
+      <section class="card stack">
+        <label>平台密钥
+          <input id="platformSecret" type="password" placeholder="PLATFORM_ADMIN_SECRET">
+        </label>
+        <div class="toolbar">
+          <button id="saveSecretBtn" class="secondary">保存密钥</button>
+          <button id="reloadBtn">刷新租户列表</button>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--line);width:100%">
+        <div class="stack">
+          <strong>创建新租户</strong>
+          <label>tenant_id
+            <input id="tenantId" placeholder="demo_brand_a">
+          </label>
+          <label>租户名称
+            <input id="tenantName" placeholder="示例品牌 A">
+          </label>
+          <label>模式
+            <select id="tenantMode">
+              <option value="managed">managed</option>
+              <option value="self_hosted">self_hosted</option>
+            </select>
+          </label>
+          <label>管理员账号
+            <input id="adminUsername" placeholder="admin_demo">
+          </label>
+          <label>管理员姓名
+            <input id="adminRealName" placeholder="品牌管理员">
+          </label>
+          <label>管理员密码
+            <input id="adminPassword" type="password" placeholder="至少 6 位">
+          </label>
+          <label>许可证到期时间
+            <input id="licenseExpiresAt" type="datetime-local">
+          </label>
+          <button id="createTenantBtn">创建租户</button>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--line);width:100%">
+        <div class="stack">
+          <strong>飞书配置</strong>
+          <label>目标 tenant_id
+            <input id="cfgTenantId" placeholder="先点右侧“配置飞书”自动带入">
+          </label>
+          <label>App ID
+            <input id="cfgAppId">
+          </label>
+          <label>App Secret
+            <input id="cfgAppSecret" type="password">
+          </label>
+          <label>表配置(JSON)
+            <textarea id="cfgTables">{
+  "ops_checklist": { "app_token": "", "table_id": "", "view_id": "" },
+  "table_visit": { "app_token": "", "table_id": "", "view_id": "" },
+  "bad_review": { "app_token": "", "table_id": "", "view_id": "" },
+  "closing_reports": { "app_token": "", "table_id": "", "view_id": "" },
+  "opening_reports": { "app_token": "", "table_id": "", "view_id": "" },
+  "meeting_reports": { "app_token": "", "table_id": "", "view_id": "" },
+  "material_majixian": { "app_token": "", "table_id": "", "view_id": "" },
+  "material_hongchao": { "app_token": "", "table_id": "", "view_id": "" },
+  "dish_library": { "app_token": "", "table_id": "", "view_id": "" },
+  "dish_library_majixian_takeaway": { "app_token": "", "table_id": "", "view_id": "" },
+  "loss_report": { "app_token": "", "table_id": "", "view_id": "" },
+  "task_responses": { "app_token": "", "table_id": "", "view_id": "" },
+  "actual_gross_margin": { "app_token": "", "table_id": "", "view_id": "" },
+  "sop_steps": { "app_token": "", "table_id": "", "view_id": "" }
+}</textarea>
+          </label>
+          <div class="toolbar">
+            <button id="saveFeishuBtn" class="warn">保存飞书配置</button>
+            <button id="runAcceptanceBtn">运行自动验收</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card stack">
+        <div class="toolbar">
+          <span class="pill">租户总览</span>
+          <span id="tenantCount" class="pill">0 tenants</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>租户</th>
+              <th>状态</th>
+              <th>许可证</th>
+              <th>飞书</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="tenantTableBody"></tbody>
+        </table>
+        <strong>操作日志</strong>
+        <div id="log" class="log"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const log = (msg) => {
+      $('log').textContent = `[${new Date().toLocaleString()}] ${msg}\n` + $('log').textContent;
+    };
+    const secretKey = 'hrms_platform_secret';
+    $('platformSecret').value = sessionStorage.getItem(secretKey) || '';
+
+    function headers(extra = {}) {
+      const secret = $('platformSecret').value.trim();
+      if (!secret) throw new Error('请先填写平台密钥');
+      return { 'Content-Type': 'application/json', 'x-platform-admin-secret': secret, ...extra };
+    }
+
+    async function api(url, options = {}) {
+      const resp = await fetch(url, { ...options, headers: headers(options.headers || {}) });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.message || data.error || `${resp.status}`);
+      return data;
+    }
+
+    $('saveSecretBtn').onclick = () => {
+      sessionStorage.setItem(secretKey, $('platformSecret').value.trim());
+      log('平台密钥已保存到本次浏览会话。');
+    };
+
+    async function loadTenants() {
+      const data = await api('/api/admin/tenants');
+      const items = data.items || [];
+      $('tenantCount').textContent = `${items.length} tenants`;
+      $('tenantTableBody').innerHTML = items.map((item) => {
+        const feishu = item.integrations?.feishu_bitable || {};
+        return `
+          <tr>
+            <td>
+              <div><strong>${item.name}</strong></div>
+              <div class="mono">${item.tenant_id}</div>
+            </td>
+            <td>
+              <span class="pill ${item.status === 'active' ? 'ok' : 'bad'}">${item.status}</span>
+            </td>
+            <td>
+              <div>${item.license_status || 'missing'}</div>
+              <div class="mono">${item.license_expires_at || ''}</div>
+            </td>
+            <td>
+              <span class="pill ${feishu.configured ? 'ok' : 'bad'}">${feishu.configured ? 'configured' : 'missing'}</span>
+              <div class="mono">${feishu.app_id || ''}</div>
+            </td>
+            <td>
+              <div class="tenant-actions">
+                <button class="secondary" onclick="window.prefillTenant('${item.tenant_id}')">配置飞书</button>
+                <button onclick="window.acceptTenant('${item.tenant_id}')">自动验收</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+      log(`已加载 ${items.length} 个租户。`);
+    }
+
+    $('reloadBtn').onclick = () => loadTenants().catch((e) => log(`刷新失败：${e.message}`));
+
+    $('createTenantBtn').onclick = async () => {
+      const payload = {
+        tenant_id: $('tenantId').value.trim(),
+        name: $('tenantName').value.trim(),
+        mode: $('tenantMode').value,
+        create_admin: {
+          username: $('adminUsername').value.trim(),
+          real_name: $('adminRealName').value.trim(),
+          password: $('adminPassword').value
+        },
+        license: $('licenseExpiresAt').value
+          ? { expires_at: new Date($('licenseExpiresAt').value).toISOString(), allowed_features: ['hrms', 'agent_v2', 'feishu', 'mini_program'] }
+          : undefined
+      };
+      const data = await api('/api/admin/tenants', { method: 'POST', body: JSON.stringify(payload) });
+      log(`租户创建成功：${data.tenant.tenant_id}`);
+      $('cfgTenantId').value = data.tenant.tenant_id;
+      await loadTenants();
+    };
+
+    window.prefillTenant = async (tenantId) => {
+      $('cfgTenantId').value = tenantId;
+      try {
+        const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`);
+        log(`已加载 ${tenantId} 的飞书配置摘要。`);
+        if (data.integration?.app_id) $('cfgAppId').placeholder = `当前：${data.integration.app_id}`;
+      } catch (e) {
+        log(`读取飞书摘要失败：${e.message}`);
+      }
+    };
+
+    $('saveFeishuBtn').onclick = async () => {
+      const tenantId = $('cfgTenantId').value.trim();
+      const payload = {
+        app_id: $('cfgAppId').value.trim(),
+        app_secret: $('cfgAppSecret').value.trim(),
+        tables: JSON.parse($('cfgTables').value)
+      };
+      const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      log(`飞书配置已保存：${tenantId}，表=${(data.integration?.tables || []).join(', ')}`);
+      await loadTenants();
+    };
+
+    window.acceptTenant = async (tenantId) => {
+      const data = await api(`/api/admin/tenants/${tenantId}/acceptance`, {
+        method: 'POST',
+        body: JSON.stringify({ activate: true })
+      });
+      log(`自动验收 ${tenantId}：${data.ok ? '通过' : '失败'}；${data.report.checks.map((x) => `${x.key}=${x.ok}`).join(', ')}`);
+      await loadTenants();
+    };
+
+    $('runAcceptanceBtn').onclick = async () => {
+      const tenantId = $('cfgTenantId').value.trim();
+      await window.acceptTenant(tenantId);
+    };
+
+    loadTenants().catch((e) => log(`初始化加载失败：${e.message}`));
+  </script>
+</body>
+</html>

@@ -53,7 +53,17 @@ ALTER TABLE hrms_leave_balance_overrides ADD CONSTRAINT hrms_leave_balance_overr
 ALTER TABLE hrms_payroll_history DROP CONSTRAINT IF EXISTS hrms_payroll_history_idempotency_key_key;
 ALTER TABLE hrms_payroll_history ADD CONSTRAINT hrms_payroll_history_idempotency_key_key UNIQUE (idempotency_key, tenant_id);
 
-ALTER TABLE master_tasks ADD CONSTRAINT master_tasks_task_id_tenant_id_key UNIQUE (task_id, tenant_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname = 'master_tasks_task_id_tenant_id_key'
+  ) THEN
+    ALTER TABLE master_tasks
+      ADD CONSTRAINT master_tasks_task_id_tenant_id_key UNIQUE (task_id, tenant_id);
+  END IF;
+END $$;
 
 DROP INDEX IF EXISTS idx_pos_orders_no;
 CREATE UNIQUE INDEX idx_pos_orders_no ON pos_orders (order_no, tenant_id);

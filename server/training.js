@@ -6,7 +6,7 @@
  *       员工端（所有登录用户）
  */
 
-import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
+import { pool as getPool, resolveTenantIdDefault, runForActiveTenants } from './utils/database.js';
 import { callLLM, callVisionLLM, callVisionLLMVideo, lookupFeishuUserByUsername, sendLarkMessage } from './agents.js';
 import multer from 'multer';
 import path from 'path';
@@ -2376,11 +2376,27 @@ export function startTrainingReminderScheduler() {
   _trainingReminderSchedulerStarted = true;
 
   const tick = () => {
-    runTrainingReminderSweep().catch((e) => {
-      console.error('[Training] reminder scheduler tick error:', e?.message || e);
+    runForActiveTenants(
+      (tenantId) => runTrainingReminderSweep().then((value) => ({ tenantId, ...value })),
+      {
+        continueOnError: true,
+        onError: ({ tenantId, error }) => {
+          console.error(`[Training] reminder scheduler tick error (tenant=${tenantId}):`, error?.message || error);
+        }
+      }
+    ).catch((e) => {
+      console.error('[Training] reminder scheduler bootstrap error:', e?.message || e);
     });
-    runCertificationExpirySweep().catch((e) => {
-      console.error('[Training] certification expiry scheduler tick error:', e?.message || e);
+    runForActiveTenants(
+      (tenantId) => runCertificationExpirySweep().then((value) => ({ tenantId, ...value })),
+      {
+        continueOnError: true,
+        onError: ({ tenantId, error }) => {
+          console.error(`[Training] certification expiry scheduler tick error (tenant=${tenantId}):`, error?.message || error);
+        }
+      }
+    ).catch((e) => {
+      console.error('[Training] certification expiry scheduler bootstrap error:', e?.message || e);
     });
   };
 

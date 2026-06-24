@@ -2470,7 +2470,7 @@ function getLLMClientConfig(modelName, options = {}) {
 
 const _isProd = String(process.env.NODE_ENV || '').trim() === 'production';
 const LARK_APP_ID = process.env.LARK_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : '');
-const LARK_APP_SECRET = process.env.LARK_APP_SECRET || (!_isProd ? 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN' : '');
+const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
 const LARK_ENCRYPT_KEY = process.env.LARK_ENCRYPT_KEY || '';
 const LARK_VERIFICATION_TOKEN = process.env.LARK_VERIFICATION_TOKEN || '';
 
@@ -2478,7 +2478,7 @@ const LARK_VERIFICATION_TOKEN = process.env.LARK_VERIFICATION_TOKEN || '';
 const BITABLE_CONFIGS = {
   'ops_checklist': {
     appId: process.env.BITABLE_OPS_APP_ID || 'cli_a91dae9f9578dcb1',
-    appSecret: process.env.BITABLE_OPS_APP_SECRET || 'sjpAzPwu4KixvhbAOD7w4ee1oEKRRBQF',
+    appSecret: process.env.BITABLE_OPS_APP_SECRET || '',
     appToken: process.env.BITABLE_OPS_APP_TOKEN || 'PtVObRtoPaMAP3stIIFc8DnJngd',
     tableId: process.env.BITABLE_OPS_TABLE_ID || 'tblxHI9ZAKONOTpp',
     name: '运营检查表(含开收档)',
@@ -2488,7 +2488,7 @@ const BITABLE_CONFIGS = {
   },
   'table_visit': {
     appId: process.env.BITABLE_TABLEVISIT_APP_ID || 'cli_a9fc0d13c838dcd6',
-    appSecret: process.env.BITABLE_TABLEVISIT_APP_SECRET || 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+    appSecret: process.env.BITABLE_TABLEVISIT_APP_SECRET || '',
     appToken: process.env.BITABLE_TABLEVISIT_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_TABLEVISIT_TABLE_ID || 'tblpx5Efqc6eHo3L',
     name: '桌访表',
@@ -2498,7 +2498,7 @@ const BITABLE_CONFIGS = {
   },
   'bad_reviews': {
     appId: process.env.BITABLE_TABLEVISIT_APP_ID || 'cli_a9fc0d13c838dcd6',
-    appSecret: process.env.BITABLE_TABLEVISIT_APP_SECRET || 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+    appSecret: process.env.BITABLE_TABLEVISIT_APP_SECRET || '',
     appToken: process.env.BITABLE_TABLEVISIT_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: 'tblgReexNjWJOJB6',
     name: '差评报告DB',
@@ -2508,7 +2508,7 @@ const BITABLE_CONFIGS = {
   },
   'closing_reports': {
     appId: process.env.BITABLE_CLOSING_APP_ID || 'cli_a9fc0d13c838dcd6',
-    appSecret: process.env.BITABLE_CLOSING_APP_SECRET || 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+    appSecret: process.env.BITABLE_CLOSING_APP_SECRET || '',
     appToken: process.env.BITABLE_CLOSING_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_CLOSING_TABLE_ID || 'tblXYfSBRrgNGohN',
     name: '收档报告DB',
@@ -2518,7 +2518,7 @@ const BITABLE_CONFIGS = {
   },
   'opening_reports': {
     appId: process.env.BITABLE_OPENING_APP_ID || 'cli_a9fc0d13c838dcd6',
-    appSecret: process.env.BITABLE_OPENING_APP_SECRET || 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+    appSecret: process.env.BITABLE_OPENING_APP_SECRET || '',
     appToken: process.env.BITABLE_OPENING_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_OPENING_TABLE_ID || 'tbl32E6d0CyvLvfi',
     name: '开档报告',
@@ -2528,7 +2528,7 @@ const BITABLE_CONFIGS = {
   },
   'meeting_reports': {
     appId: process.env.BITABLE_MEETING_APP_ID || 'cli_a9fc0d13c838dcd6',
-    appSecret: process.env.BITABLE_MEETING_APP_SECRET || 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+    appSecret: process.env.BITABLE_MEETING_APP_SECRET || '',
     appToken: process.env.BITABLE_MEETING_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_MEETING_TABLE_ID || 'tblZXgaU0LpSye2m',
     name: '例会报告',
@@ -2538,7 +2538,7 @@ const BITABLE_CONFIGS = {
   },
   'material_majixian': {
     appId: process.env.BITABLE_MATERIAL_MJX_APP_ID || 'cli_a9fc0d13c838dcd6',
-    appSecret: process.env.BITABLE_MATERIAL_MJX_APP_SECRET || 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+    appSecret: process.env.BITABLE_MATERIAL_MJX_APP_SECRET || '',
     appToken: process.env.BITABLE_MATERIAL_MJX_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_MATERIAL_MJX_TABLE_ID || 'tblz4kW1cY22XRlL',
     name: '马己仙原料收货日报',
@@ -2549,7 +2549,7 @@ const BITABLE_CONFIGS = {
   },
   'material_hongchao': {
     appId: process.env.BITABLE_MATERIAL_HC_APP_ID || 'cli_a9fc0d13c838dcd6',
-    appSecret: process.env.BITABLE_MATERIAL_HC_APP_SECRET || 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+    appSecret: process.env.BITABLE_MATERIAL_HC_APP_SECRET || '',
     appToken: process.env.BITABLE_MATERIAL_HC_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_MATERIAL_HC_TABLE_ID || 'tbllcV1evqTJyzlN',
     name: '洪潮原料收货日报',
@@ -2560,7 +2560,7 @@ const BITABLE_CONFIGS = {
   },
   'loss_reports': {
     appId: process.env.BITABLE_LOSS_APP_ID || 'cli_a9fc0d13c838dcd6',
-    appSecret: process.env.BITABLE_LOSS_APP_SECRET || 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+    appSecret: process.env.BITABLE_LOSS_APP_SECRET || '',
     appToken: process.env.BITABLE_LOSS_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_LOSS_TABLE_ID || 'tblLCxLO0ZbV7uyo',
     name: '报损单',
@@ -2576,7 +2576,7 @@ const BITABLE_CONFIGS = {
     appSecret:
       process.env.BITABLE_TASK_RESP_APP_SECRET ||
       process.env.BITABLE_TABLEVISIT_APP_SECRET ||
-      'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+      '',
     appToken: process.env.BITABLE_TASK_RESP_APP_TOKEN || 'BTAjbflrlaMRHesADUfc8usznqh',
     tableId: process.env.BITABLE_TASK_RESP_TABLE_ID || 'tblT86H1uuTJydne',
     name: '异常任务回复',

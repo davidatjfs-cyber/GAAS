@@ -3280,11 +3280,10 @@ export function registerPhaseRoutes(app, pool) {
     setInterval(async () => {
       const nowYmd = todayShanghaiYmd();
       try {
-        // 跨租户扫描任务列表，系统级定时任务无单一租户上下文，暂用default兜底
-        const running = await tenantContext.run('default', () => pool.query(`SELECT * FROM ab_test_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 20`));
-        for (const task of running.rows || []) {
-          const taskTenantId = await resolveTenantIdForStore(pool, task.store_code);
+        for (const taskTenantId of await getActiveTenantIds(pool)) {
           await tenantContext.run(taskTenantId, async () => {
+            const running = await pool.query(`SELECT * FROM ab_test_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 20`);
+            for (const task of running.rows || []) {
             // 手动录入类(绑定模式 或 任何模板测试)跳过 POS 归因刷新；仅旧的 price_test 走自动归因。
             const manualInput = !!cleanText(task.target_rule_key, 200) || !!(task.metrics_schema && typeof task.metrics_schema === 'object');
             if (!manualInput) await refreshAbTestResults(pool, task, taskTenantId).catch(() => null);
@@ -3299,6 +3298,7 @@ export function registerPhaseRoutes(app, pool) {
                 }
               }
             }
+            }
           });
         }
       } catch (e) {
@@ -3310,12 +3310,13 @@ export function registerPhaseRoutes(app, pool) {
         const hour = now.getUTCHours();
         if (weekday === 1 && hour >= 1 && __growthContentCronLast !== nowYmd) {
           __growthContentCronLast = nowYmd;
-          const stores = await pool.query(`SELECT DISTINCT store_code FROM pos_order_items WHERE biz_date >= CURRENT_DATE - INTERVAL '30 days' AND store_code IS NOT NULL AND store_code <> '' LIMIT 20`);
-          for (const row of stores.rows || []) {
-            const storeTenantId = await resolveTenantIdForStore(pool, row.store_code);
+          for (const storeTenantId of await getActiveTenantIds(pool)) {
             await tenantContext.run(storeTenantId, async () => {
+              const stores = await pool.query(`SELECT DISTINCT store_code FROM pos_order_items WHERE biz_date >= CURRENT_DATE - INTERVAL '30 days' AND store_code IS NOT NULL AND store_code <> '' LIMIT 20`);
+              for (const row of stores.rows || []) {
               const suggestion = await generateWeeklyContentSuggestion(pool, cleanText(row.store_code, 128), nowYmd, 'weekly_cron', storeTenantId).catch(() => null);
               if (suggestion) await pushWeeklySuggestionToFeishu(pool, suggestion).catch(() => null);
+              }
             });
           }
         }
@@ -3329,22 +3330,26 @@ export function registerPhaseRoutes(app, pool) {
         const hour = now.getUTCHours();
         if (weekday === 1 && hour >= 18 && __growthChurnCronLast !== nowYmd) {
           __growthChurnCronLast = nowYmd;
-          // 跨租户扫描门店列表，系统级定时任务无单一租户上下文，暂用default兜底
-          const storeRows = await tenantContext.run('default', () => pool.query(
-            `SELECT DISTINCT store_code FROM growth_churn_predictions
-              WHERE prediction_date >= CURRENT_DATE - INTERVAL '30 days'
-             UNION
-             SELECT DISTINCT COALESCE(gcp.store_id, gc.last_store_id, '') AS store_code
-               FROM growth_customer_profiles gcp
-               FULL JOIN growth_customers gc ON gc.id = gcp.customer_id
-              WHERE COALESCE(gcp.store_id, gc.last_store_id, '') <> ''
-              LIMIT 20`
-          ));
-          for (const row of storeRows.rows || []) {
-            const storeTenantId = await resolveTenantIdForStore(pool, row.store_code);
-            await tenantContext.run(storeTenantId, () => computeChurnScores(pool, cleanText(row.store_code, 128), storeTenantId)).catch(() => null);
+          let totalStores = 0;
+          for (const storeTenantId of await getActiveTenantIds(pool)) {
+            await tenantContext.run(storeTenantId, async () => {
+              const storeRows = await pool.query(
+                `SELECT DISTINCT store_code FROM growth_churn_predictions
+                  WHERE prediction_date >= CURRENT_DATE - INTERVAL '30 days'
+                 UNION
+                 SELECT DISTINCT COALESCE(gcp.store_id, gc.last_store_id, '') AS store_code
+                   FROM growth_customer_profiles gcp
+                   FULL JOIN growth_customers gc ON gc.id = gcp.customer_id
+                  WHERE COALESCE(gcp.store_id, gc.last_store_id, '') <> ''
+                  LIMIT 20`
+              );
+              totalStores += storeRows.rows.length;
+              for (const row of storeRows.rows || []) {
+                await computeChurnScores(pool, cleanText(row.store_code, 128), storeTenantId).catch(() => null);
+              }
+            }).catch(() => null);
           }
-          console.log(`[growth-phase7a] weekly churn scores computed for ${storeRows.rows.length} stores`);
+          console.log(`[growth-phase7a] weekly churn scores computed for ${totalStores} stores`);
         }
       } catch (e) {
         console.warn('[growth-phase7a] churn cron failed:', e?.message);
@@ -3357,17 +3362,22 @@ export function registerPhaseRoutes(app, pool) {
         const curMonth = nowYmd.slice(0, 7);
         if (dayOfMonth === 1 && hour >= 19 && __growthMenuCronLast !== curMonth) {
           __growthMenuCronLast = curMonth;
-          const storeRows = await pool.query(
-            `SELECT DISTINCT store_code FROM pos_order_items
-              WHERE biz_date >= CURRENT_DATE - INTERVAL '60 days'
-                AND store_code IS NOT NULL AND store_code <> ''
-              LIMIT 20`
-          );
-          for (const row of storeRows.rows || []) {
-            const storeTenantId = await resolveTenantIdForStore(pool, row.store_code);
-            await tenantContext.run(storeTenantId, () => generateMenuHealthReport(pool, cleanText(row.store_code, 128), curMonth, storeTenantId)).catch(() => null);
+          let totalStores = 0;
+          for (const storeTenantId of await getActiveTenantIds(pool)) {
+            await tenantContext.run(storeTenantId, async () => {
+              const storeRows = await pool.query(
+                `SELECT DISTINCT store_code FROM pos_order_items
+                  WHERE biz_date >= CURRENT_DATE - INTERVAL '60 days'
+                    AND store_code IS NOT NULL AND store_code <> ''
+                  LIMIT 20`
+              );
+              totalStores += storeRows.rows.length;
+              for (const row of storeRows.rows || []) {
+                await generateMenuHealthReport(pool, cleanText(row.store_code, 128), curMonth, storeTenantId).catch(() => null);
+              }
+            }).catch(() => null);
           }
-          console.log(`[growth-phase7b] monthly menu health reports generated for ${storeRows.rows.length} stores`);
+          console.log(`[growth-phase7b] monthly menu health reports generated for ${totalStores} stores`);
         }
       } catch (e) {
         console.warn('[growth-phase7b] menu health cron failed:', e?.message);
@@ -3409,28 +3419,36 @@ export function registerPhaseRoutes(app, pool) {
     lastPosSyncDate = now.toISOString().slice(0, 10);
     console.log(`[pos-sync-cron] Starting daily POS Feishu sync at ${now.toISOString()}`);
     try {
-      const resp = await axios.post(`http://127.0.0.1:${process.env.PORT || 3000}/api/growth/pos-feishu-sync`, {}, {
-        headers: {'Authorization': 'Bearer ' + (process.env.MINIPROGRAM_SYNC_SECRET || ''), 'Content-Type': 'application/json'},
-        timeout: 300000
-      });
-      const data = resp.data;
-      if (data && data.ok) {
-        console.log(`[pos-sync-cron] Success: ${data.orders_synced} orders, ${data.items_synced} items, ${data.customers_linked} linked`);
-      } else {
-        throw new Error(data?.error || 'unknown_error');
+      for (const tenantId of await getActiveTenantIds(pool)) {
+        const resp = await axios.post(`http://127.0.0.1:${process.env.PORT || 3000}/api/growth/pos-feishu-sync`, {}, {
+          headers: {
+            'Authorization': 'Bearer ' + (process.env.MINIPROGRAM_SYNC_SECRET || ''),
+            'Content-Type': 'application/json',
+            'x-tenant-id': tenantId
+          },
+          timeout: 300000
+        });
+        const data = resp.data;
+        if (data && data.ok) {
+          console.log(`[pos-sync-cron] Success tenant=${tenantId}: ${data.orders_synced} orders, ${data.items_synced} items, ${data.customers_linked} linked`);
+          continue;
+        }
+        throw new Error(`tenant=${tenantId} ${data?.error || 'unknown_error'}`);
       }
     } catch (e) {
       console.error('[pos-sync-cron] Failed:', e.message);
       try {
-        // 系统级定时任务，无请求上下文，单租户生产暂用default兜底
-        await tenantContext.run('default', async () => {
-          await pool.query(`INSERT INTO growth_sync_failures (source, event_type, payload, error_message, tenant_id) VALUES ($1,$2,$3,$4,'default')`,
-            [POS_SYNC_CRON_KEY, 'daily_sync_failed', '{}', e.message || String(e)]);
-          await pool.query(`INSERT INTO growth_alerts (alert_key, alert_type, severity, title, message, suggested_action, status, tenant_id)
-            VALUES ($1,$2,$3,$4,$5,$6,'open','default')
-            ON CONFLICT (alert_key, tenant_id) DO UPDATE SET severity=EXCLUDED.severity, message=EXCLUDED.message, suggested_action=EXCLUDED.suggested_action, status='open', updated_at=NOW()`,
-            ['pos_sync_failed', 'pos_sync_failed', 'high', 'POS数据同步失败', '每日凌晨POS飞书同步失败：' + (e.message || String(e)).slice(0, 200), '检查飞书应用权限、表字段、网络连接；手动调 POST /api/growth/pos-feishu-sync 重试']);
-        });
+        const failedTenant = String((e.message || '').match(/tenant=([A-Za-z0-9_-]+)/)?.[1] || '').trim();
+        if (failedTenant) {
+          await tenantContext.run(failedTenant, async () => {
+            await pool.query(`INSERT INTO growth_sync_failures (source, event_type, payload, error_message, tenant_id) VALUES ($1,$2,$3,$4,$5)`,
+              [POS_SYNC_CRON_KEY, 'daily_sync_failed', '{}', e.message || String(e), failedTenant]);
+            await pool.query(`INSERT INTO growth_alerts (alert_key, alert_type, severity, title, message, suggested_action, status, tenant_id)
+              VALUES ($1,$2,$3,$4,$5,$6,'open',$7)
+              ON CONFLICT (alert_key, tenant_id) DO UPDATE SET severity=EXCLUDED.severity, message=EXCLUDED.message, suggested_action=EXCLUDED.suggested_action, status='open', updated_at=NOW()`,
+              [`pos_sync_failed_${failedTenant}`, 'pos_sync_failed', 'high', 'POS数据同步失败', '每日凌晨POS飞书同步失败：' + (e.message || String(e)).slice(0, 200), '检查飞书应用权限、表字段、网络连接；手动调 POST /api/growth/pos-feishu-sync 重试', failedTenant]);
+          });
+        }
       } catch (_) {}
     }
   }, 60 * 1000);

@@ -7,7 +7,7 @@ let content = fs.readFileSync(filePath, 'utf8');
 const newConfig = `const BITABLE_CONFIGS = {
   'ops_checklist': {
     appId: process.env.BITABLE_OPS_APP_ID || 'cli_a91dae9f9578dcb1',
-    appSecret: process.env.BITABLE_OPS_APP_SECRET || 'sjpAzPwu4KixvhbAOD7w4ee1oEKRRBQF',
+    appSecret: process.env.BITABLE_OPS_APP_SECRET || '',
     appToken: process.env.BITABLE_OPS_APP_TOKEN || 'PtVObRtoPaMAP3stIIFc8DnJngd',
     tableId: process.env.BITABLE_OPS_TABLE_ID || 'tblxHI9ZAKONOTpp',
     name: '运营检查表(含开收档)',
@@ -17,7 +17,7 @@ const newConfig = `const BITABLE_CONFIGS = {
   },
   'table_visit': {
     appId: process.env.BITABLE_TABLEVISIT_APP_ID || 'cli_a9fc0d13c838dcd6',
-    appSecret: process.env.BITABLE_TABLEVISIT_APP_SECRET || 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+    appSecret: process.env.BITABLE_TABLEVISIT_APP_SECRET || '',
     appToken: process.env.BITABLE_TABLEVISIT_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_TABLEVISIT_TABLE_ID || 'tblpx5Efqc6eHo3L',
     name: '桌访表',
@@ -27,7 +27,7 @@ const newConfig = `const BITABLE_CONFIGS = {
   },
   'bad_reviews': {
     appId: process.env.BITABLE_TABLEVISIT_APP_ID || 'cli_a9fc0d13c838dcd6',
-    appSecret: process.env.BITABLE_TABLEVISIT_APP_SECRET || 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN',
+    appSecret: process.env.BITABLE_TABLEVISIT_APP_SECRET || '',
     appToken: process.env.BITABLE_TABLEVISIT_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: 'tblgReexNjWJOJB6',
     name: '差评报告DB',

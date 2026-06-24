@@ -3,7 +3,7 @@ import axios from 'axios';
 dotenv.config();
 
 const appId = process.env.BITABLE_OPS_APP_ID || 'cli_a91dae9f9578dcb1';
-const appSecret = process.env.BITABLE_OPS_APP_SECRET || 'sjpAzPwu4KixvhbAOD7w4ee1oEKRRBQF';
+const appSecret = process.env.BITABLE_OPS_APP_SECRET || '';
 const appToken = process.env.BITABLE_OPS_APP_TOKEN || 'PtVObRtoPaMAP3stIIFc8DnJngd';
 const tableId = 'tblxHI9ZAKONOTpp';
 

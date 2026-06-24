@@ -123,7 +123,7 @@ function wrapPoolForTenantContext(rawPool) {
 // 查询失败时兜底返回['default']而不是空数组——避免数据库瞬时抖动导致某次tick
 // 一个租户都不处理；这样最差情况下退化为"只处理default"，即改造前的行为，不会更差。
 const ACTIVE_TENANTS_CACHE_MS = 60 * 1000;
-let _activeTenantIds = ['default'];
+let _activeTenantIds = [];
 let _activeTenantIdsLoadedAt = 0;
 export async function getActiveTenantIds(p) {
   if (Date.now() - _activeTenantIdsLoadedAt < ACTIVE_TENANTS_CACHE_MS) return _activeTenantIds;
@@ -134,9 +134,53 @@ export async function getActiveTenantIds(p) {
       _activeTenantIdsLoadedAt = Date.now();
     }
   } catch (e) {
-    console.error('[database] getActiveTenantIds failed, fallback to previous/[default]:', e?.message || e);
+    // A tenant-owned background job must never quietly process `default` when
+    // tenant discovery is unavailable. Keep the last confirmed list; at cold
+    // start it is empty and callers must fail closed.
+    console.error('[database] getActiveTenantIds failed, retaining previous tenant list:', e?.message || e);
   }
   return _activeTenantIds;
+}
+
+/** Runs one tenant-owned background operation per active tenant, sequentially.
+ * Sequential execution avoids context bleed and prevents a large tenant from
+ * starving connection-pool capacity for the others. */
+export async function runForActiveTenants(
+  work,
+  {
+    p,
+    getTenantIds = getActiveTenantIds,
+    continueOnError = false,
+    onError = null,
+  } = {}
+) {
+  const tenantIds = await getTenantIds(p);
+  if (!Array.isArray(tenantIds) || tenantIds.length === 0) {
+    throw new Error('no_active_tenants');
+  }
+  const results = [];
+  const errors = [];
+  for (const tenantId of tenantIds) {
+    try {
+      const value = await tenantContext.run(tenantId, () => work(tenantId));
+      if (continueOnError) {
+        results.push({ tenantId, ok: true, value });
+      } else {
+        results.push(value);
+      }
+    } catch (error) {
+      if (!continueOnError) throw error;
+      const detail = { tenantId, ok: false, error };
+      errors.push(detail);
+      try {
+        await onError?.(detail);
+      } catch (_handlerError) {
+        // Avoid an alert hook failure masking the original tenant job failure.
+      }
+    }
+  }
+  if (continueOnError) return { results, errors };
+  return results;
 }
 
 // 安全的数据库查询包装

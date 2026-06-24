@@ -15,7 +15,7 @@ const configs = {
 async function test() {
   const resp = await axios.post('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
     app_id: 'cli_a9fc0d13c838dcd6',
-    app_secret: 'pRVuBmiWc0hzqP1YzZDqzGUPFlaProDN'
+    app_secret: process.env.FEISHU_APP_SECRET || ''
   });
   const token = resp.data.tenant_access_token;
   

@@ -8,7 +8,12 @@ import { statfs } from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID, createDecipheriv, createHash } from 'crypto';
-import { tenantContext, resolveTenantIdDefault, runWithBootstrapTenantContext } from './utils/database.js';
+import { getActiveTenantIds, tenantContext, resolveTenantIdDefault, runWithBootstrapTenantContext, runForActiveTenants } from './utils/database.js';
+import { createEmptyTenantState, resolveLoginTenantId } from './tenant-login.js';
+import {
+  getTenantIntegrationSummary,
+  saveTenantFeishuIntegration,
+} from './tenant-integrations.js';
 import multer from 'multer';
 import https from 'https';
 import { execFileSync, execSync } from 'child_process';
@@ -89,6 +94,23 @@ const HOST = String(process.env.HOST || '0.0.0.0');
 const DATABASE_URL = process.env.DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET;
 const PLATFORM_ADMIN_SECRET = process.env.PLATFORM_ADMIN_SECRET;
+const TENANT_INTEGRATION_ENCRYPTION_KEY = process.env.TENANT_INTEGRATION_ENCRYPTION_KEY || '';
+const REQUIRED_TENANT_FEISHU_TABLE_KEYS = [
+  'ops_checklist',
+  'table_visit',
+  'bad_review',
+  'closing_reports',
+  'opening_reports',
+  'meeting_reports',
+  'material_majixian',
+  'material_hongchao',
+  'dish_library',
+  'dish_library_majixian_takeaway',
+  'loss_report',
+  'task_responses',
+  'actual_gross_margin',
+  'sop_steps'
+];
 const STARTED_AT = new Date().toISOString();
 const APP_ENV = getAppEnv();
 
@@ -14666,6 +14688,134 @@ function platformAdminRequired(req, res, next) {
   next();
 }
 
+function requireTenantIntegrationKey() {
+  if (!TENANT_INTEGRATION_ENCRYPTION_KEY) {
+    const error = new Error('tenant_integration_encryption_key_missing');
+    error.statusCode = 500;
+    throw error;
+  }
+  return TENANT_INTEGRATION_ENCRYPTION_KEY;
+}
+
+async function runTenantAcceptance(tenantId) {
+  const tenant = await pool.query(
+    `SELECT tenant_id, name, mode, status
+       FROM tenants
+      WHERE tenant_id = $1
+      LIMIT 1`,
+    [tenantId]
+  );
+  if (!tenant.rows.length) {
+    return { ok: false, tenant_id: tenantId, checks: [{ key: 'tenant_exists', ok: false, detail: 'tenant_not_found' }] };
+  }
+
+  const checks = [];
+  const stateRow = await tenantContext.run(tenantId, () => pool.query(`SELECT 1 FROM hrms_state WHERE key = $1 LIMIT 1`, [tenantId]));
+  checks.push({ key: 'state_seeded', ok: !!stateRow.rows.length, detail: stateRow.rows.length ? 'ok' : 'missing_hrms_state' });
+
+  const adminRow = await tenantContext.run(tenantId, () => pool.query(
+    `SELECT COUNT(*)::int AS count
+       FROM users
+      WHERE role = 'admin' AND is_active = TRUE`,
+    []
+  ));
+  checks.push({
+    key: 'admin_ready',
+    ok: Number(adminRow.rows?.[0]?.count || 0) > 0,
+    detail: `active_admins=${Number(adminRow.rows?.[0]?.count || 0)}`
+  });
+
+  const licenseRow = await pool.query(
+    `SELECT status, expires_at
+       FROM licenses
+      WHERE tenant_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [tenantId]
+  );
+  if (!licenseRow.rows.length) {
+    checks.push({ key: 'license_present', ok: false, detail: 'missing_license' });
+  } else {
+    const license = licenseRow.rows[0];
+    const licenseStatus = String(license.status || '').trim().toLowerCase();
+    const expiresAt = license.expires_at ? new Date(license.expires_at) : null;
+    checks.push({
+      key: 'license_present',
+      ok: ['active', 'trial'].includes(licenseStatus),
+      detail: `status=${licenseStatus || 'unknown'}`
+    });
+    checks.push({
+      key: 'license_not_expired',
+      ok: !expiresAt || !Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() >= Date.now(),
+      detail: license.expires_at || 'no_expiry'
+    });
+  }
+
+  if (TENANT_INTEGRATION_ENCRYPTION_KEY) {
+    const integration = await tenantContext.run(
+      tenantId,
+      () => getTenantIntegrationSummary(pool, tenantId, 'feishu_bitable', TENANT_INTEGRATION_ENCRYPTION_KEY)
+    );
+    const configuredTables = Array.isArray(integration.tables) ? integration.tables : [];
+    const missingTables = REQUIRED_TENANT_FEISHU_TABLE_KEYS.filter((key) => !configuredTables.includes(key));
+    checks.push({
+      key: 'feishu_configured',
+      ok: !!integration.configured,
+      detail: integration.configured ? `tables=${configuredTables.join(',')}` : 'missing_feishu_bitable'
+    });
+    checks.push({
+      key: 'feishu_required_tables',
+      ok: !!integration.configured && missingTables.length === 0,
+      detail: missingTables.length ? `missing=${missingTables.join(',')}` : 'ok'
+    });
+  }
+
+  return {
+    ok: checks.every((item) => item.ok),
+    tenant_id: tenantId,
+    tenant: tenant.rows[0],
+    checks
+  };
+}
+
+async function loadTenantRuntimeStatus(tenantId) {
+  const tenantR = await pool.query(
+    'SELECT tenant_id, status FROM tenants WHERE tenant_id = $1 LIMIT 1',
+    [tenantId]
+  );
+  const tenant = tenantR.rows?.[0] || null;
+  if (!tenant) {
+    return { exists: false, loginAllowed: false, reason: 'tenant_not_found' };
+  }
+
+  const status = String(tenant.status || '').trim().toLowerCase();
+  if (status !== 'active') {
+    return { exists: true, loginAllowed: false, reason: 'tenant_inactive', status };
+  }
+
+  const licenseR = await pool.query(
+    `SELECT status, expires_at
+       FROM licenses
+      WHERE tenant_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [tenantId]
+  );
+  const license = licenseR.rows?.[0] || null;
+  if (license) {
+    const licenseStatus = String(license.status || '').trim().toLowerCase();
+    const expiresAt = license.expires_at ? new Date(license.expires_at) : null;
+    if (licenseStatus && !['active', 'trial'].includes(licenseStatus)) {
+      return { exists: true, loginAllowed: false, reason: 'license_inactive', status, licenseStatus };
+    }
+    if (expiresAt && Number.isFinite(expiresAt.getTime()) && expiresAt.getTime() < Date.now()) {
+      return { exists: true, loginAllowed: false, reason: 'license_expired', status, expiresAt: license.expires_at };
+    }
+  }
+
+  return { exists: true, loginAllowed: true, status, license };
+}
+
 async function authRequired(req, res, next) {
   // 企业微信「接收消息」回调为无 token 公开端点（靠签名+AES 解密自证），放行
   if (String(req.originalUrl || '').split('?')[0] === '/api/wecom/callback') return next();
@@ -14695,7 +14845,10 @@ async function authRequired(req, res, next) {
     const uname = String(payload.username || '').trim();
     if (nonce && uname) {
       try {
-        const r = await pool.query('select session_nonce from user_sessions where lower(username) = lower($1) limit 1', [uname]);
+        const r = await pool.query(
+          'select session_nonce from user_sessions where lower(username) = lower($1) and tenant_id = $2 limit 1',
+          [uname, req.tenantId]
+        );
         const stored = String(r.rows?.[0]?.session_nonce || '').trim();
         if (stored && stored !== nonce) {
           return res.status(401).json({ error: 'session_replaced', message: '您的账号已在其他设备登录，当前会话已失效' });
@@ -14716,7 +14869,10 @@ async function authRequired(req, res, next) {
     try {
       let effectiveRole = String(payload.role || '').trim();
       try {
-        const dbRoleRow = await pool.query('SELECT role FROM users WHERE lower(username) = lower($1) LIMIT 1', [uname]);
+        const dbRoleRow = await pool.query(
+          'SELECT role FROM users WHERE lower(username) = lower($1) AND tenant_id = $2 LIMIT 1',
+          [uname, req.tenantId]
+        );
         const dbRole = String(dbRoleRow.rows?.[0]?.role || '').trim();
         if (dbRole) effectiveRole = dbRole;
       } catch (_e) {}
@@ -14767,7 +14923,10 @@ async function authRequiredOrQueryToken(req, res, next) {
     const uname = String(payload.username || '').trim();
     if (nonce && uname) {
       try {
-        const r = await pool.query('select session_nonce from user_sessions where lower(username) = lower($1) limit 1', [uname]);
+        const r = await pool.query(
+          'select session_nonce from user_sessions where lower(username) = lower($1) and tenant_id = $2 limit 1',
+          [uname, req.tenantId]
+        );
         const stored = String(r.rows?.[0]?.session_nonce || '').trim();
         if (stored && stored !== nonce) {
           return res.status(401).json({ error: 'session_replaced', message: '您的账号已在其他设备登录，当前会话已失效' });
@@ -14786,7 +14945,10 @@ async function authRequiredOrQueryToken(req, res, next) {
     try {
       let effectiveRole = String(payload.role || '').trim();
       try {
-        const dbRoleRow = await pool.query('SELECT role FROM users WHERE lower(username) = lower($1) LIMIT 1', [uname]);
+        const dbRoleRow = await pool.query(
+          'SELECT role FROM users WHERE lower(username) = lower($1) AND tenant_id = $2 LIMIT 1',
+          [uname, req.tenantId]
+        );
         const dbRole = String(dbRoleRow.rows?.[0]?.role || '').trim();
         if (dbRole) effectiveRole = dbRole;
       } catch (_e) {}
@@ -15204,7 +15366,12 @@ app.post('/api/admin/tenants', platformAdminRequired, async (req, res) => {
   }
   if (!name) return res.status(400).json({ error: 'missing_name' });
   const mode = String(req.body?.mode || 'managed').trim() || 'managed';
+  const adminReq = req.body?.create_admin;
+  if (!adminReq?.username || !adminReq?.password) {
+    return res.status(400).json({ error: 'missing_admin', message: 'create_admin.username 和 create_admin.password 必填' });
+  }
 
+  return tenantContext.run(tenantId, async () => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -15214,22 +15381,43 @@ app.post('/api/admin/tenants', platformAdminRequired, async (req, res) => {
       return res.status(409).json({ error: 'tenant_exists' });
     }
     await client.query(
-      `INSERT INTO tenants (tenant_id, name, mode, status) VALUES ($1, $2, $3, 'active')`,
+      `INSERT INTO tenants (tenant_id, name, mode, status) VALUES ($1, $2, $3, 'provisioning')`,
       [tenantId, name, mode]
     );
-
     let createdAdmin = null;
-    const adminReq = req.body?.create_admin;
-    if (adminReq && adminReq.username && adminReq.password) {
-      const adminUsername = String(adminReq.username).trim();
-      const hash = await bcrypt.hash(String(adminReq.password), 10);
-      await client.query(
-        `INSERT INTO users (id, username, password_hash, real_name, role, is_active, tenant_id)
-         VALUES (gen_random_uuid(), $1, $2, $3, 'admin', TRUE, $4)`,
-        [adminUsername, hash, String(adminReq.real_name || adminUsername), tenantId]
-      );
-      createdAdmin = { username: adminUsername };
+    const adminUsername = String(adminReq.username).trim();
+    const hash = await bcrypt.hash(String(adminReq.password), 10);
+    await client.query(
+      `INSERT INTO users (id, username, password_hash, real_name, role, is_active, tenant_id)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'admin', TRUE, $4)`,
+      [adminUsername, hash, String(adminReq.real_name || adminUsername), tenantId]
+    );
+    createdAdmin = { username: adminUsername };
+
+    await client.query(
+      `INSERT INTO hrms_state (key, data, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key) DO NOTHING`,
+      [tenantId, JSON.stringify(createEmptyTenantState({
+        tenantId,
+        tenantName: name,
+        adminUsername: createdAdmin?.username || '',
+        adminName: String(adminReq?.real_name || createdAdmin?.username || ''),
+      }))]
+    );
+
+    // Provisioning acceptance gate: the tenant is not activated until its own
+    // context can read the seeded admin and state row.
+    const smoke = await client.query(
+      `SELECT
+         EXISTS (SELECT 1 FROM users WHERE tenant_id = $1 AND lower(username) = lower($2)) AS has_admin,
+         EXISTS (SELECT 1 FROM hrms_state WHERE key = $1) AS has_state`,
+      [tenantId, createdAdmin.username]
+    );
+    if (!smoke.rows?.[0]?.has_state || !smoke.rows?.[0]?.has_admin) {
+      throw new Error('tenant_provisioning_smoke_failed');
     }
+    await client.query(`UPDATE tenants SET status = 'active', updated_at = NOW() WHERE tenant_id = $1`, [tenantId]);
 
     let issuedLicense = null;
     const licenseReq = req.body?.license;
@@ -15252,6 +15440,7 @@ app.post('/api/admin/tenants', platformAdminRequired, async (req, res) => {
   } finally {
     client.release();
   }
+  });
 });
 
 app.get('/api/admin/tenants', platformAdminRequired, async (req, res) => {
@@ -15267,10 +15456,38 @@ app.get('/api/admin/tenants', platformAdminRequired, async (req, res) => {
       ) l ON true
       ORDER BY t.created_at DESC
     `);
-    return res.json({ items: r.rows });
+    const items = r.rows || [];
+    let integrationByTenant = new Map();
+    if (TENANT_INTEGRATION_ENCRYPTION_KEY && items.length) {
+      const summaries = await Promise.all(
+        items.map((row) => tenantContext.run(
+          row.tenant_id,
+          () => getTenantIntegrationSummary(pool, row.tenant_id, 'feishu_bitable', TENANT_INTEGRATION_ENCRYPTION_KEY)
+        ))
+      );
+      integrationByTenant = new Map(summaries.map((row) => [row.tenant_id, row]));
+    }
+    return res.json({
+      items: items.map((row) => ({
+        ...row,
+        integrations: {
+          feishu_bitable: integrationByTenant.get(row.tenant_id) || {
+            tenant_id: row.tenant_id,
+            integration_key: 'feishu_bitable',
+            configured: false,
+            app_id: '',
+            tables: [],
+          }
+        }
+      }))
+    });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
   }
+});
+
+app.get('/platform-admin', (req, res) => {
+  return res.sendFile(path.join(__dirname, '../platform-admin.html'));
 });
 
 app.patch('/api/admin/tenants/:tenantId', platformAdminRequired, async (req, res) => {
@@ -15312,6 +15529,56 @@ app.post('/api/admin/tenants/:tenantId/license', platformAdminRequired, async (r
     return res.json({ ok: true, license: r.rows[0] });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+  }
+});
+
+app.get('/api/admin/tenants/:tenantId/integrations/feishu_bitable', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  try {
+    const key = requireTenantIntegrationKey();
+    const summary = await tenantContext.run(
+      tenantId,
+      () => getTenantIntegrationSummary(pool, tenantId, 'feishu_bitable', key)
+    );
+    return res.json({ ok: true, integration: summary });
+  } catch (e) {
+    return res.status(e?.statusCode || 500).json({ error: e?.message || 'internal_error' });
+  }
+});
+
+app.put('/api/admin/tenants/:tenantId/integrations/feishu_bitable', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  try {
+    const key = requireTenantIntegrationKey();
+    const saved = await tenantContext.run(
+      tenantId,
+      () => saveTenantFeishuIntegration(pool, tenantId, req.body || {}, key)
+    );
+    const summary = await tenantContext.run(
+      tenantId,
+      () => getTenantIntegrationSummary(pool, tenantId, 'feishu_bitable', key)
+    );
+    return res.json({ ok: true, saved, integration: summary });
+  } catch (e) {
+    return res.status(e?.statusCode || 500).json({ error: e?.message || 'internal_error' });
+  }
+});
+
+app.post('/api/admin/tenants/:tenantId/acceptance', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  try {
+    const report = await runTenantAcceptance(tenantId);
+    const currentStatus = String(report?.tenant?.status || '').trim().toLowerCase();
+    if (report.ok && req.body?.activate !== false) {
+      await pool.query(`UPDATE tenants SET status = 'active', updated_at = NOW() WHERE tenant_id = $1`, [tenantId]);
+      report.tenant = { ...(report.tenant || {}), status: 'active' };
+    } else if (!report.ok && currentStatus !== 'active') {
+      await pool.query(`UPDATE tenants SET status = 'provisioning', updated_at = NOW() WHERE tenant_id = $1`, [tenantId]);
+      report.tenant = { ...(report.tenant || {}), status: 'provisioning' };
+    }
+    return res.json({ ok: report.ok, report });
+  } catch (e) {
+    return res.status(500).json({ error: e?.message || 'internal_error' });
   }
 });
 
@@ -16272,8 +16539,9 @@ const LOCAL_TEST_ACCOUNTS = [
 ];
 
 /** @returns {Promise<boolean>} 是否已成功持久化（失败时不得签发 JWT，否则 sn 与库不一致 → 全站 401/session_replaced） */
-async function storeSessionNonce(uname, nonce) {
+async function storeSessionNonce(uname, nonce, tenantId) {
   const key = String(uname || '').trim().toLowerCase();
+  const effectiveTenantId = resolveTenantIdDefault(tenantId);
   if (!key) return false;
   let client;
   try {
@@ -16282,10 +16550,10 @@ async function storeSessionNonce(uname, nonce) {
     // 会话 nonce 必须写入，否则新 token 与库中旧 sn 不一致 → 立刻 401（表现为「登录不了/一进系统就掉线」）。
     await client.query('SET default_transaction_read_only = OFF');
     await client.query(
-      `insert into user_sessions (username, session_nonce, updated_at)
-       values ($1, $2, now())
-       on conflict (username) do update set session_nonce = $2, updated_at = now()`,
-      [key, nonce]
+      `insert into user_sessions (username, session_nonce, tenant_id, updated_at)
+       values ($1, $2, $3, now())
+       on conflict (username, tenant_id) do update set session_nonce = $2, updated_at = now()`,
+      [key, nonce, effectiveTenantId]
     );
     return true;
   } catch (e) {
@@ -16318,18 +16586,40 @@ async function buildLoginUserPayload({ id, username, name, role, stateStore }) {
 }
 
 async function handleLogin(req, res) {
+  let tenantId;
+  try {
+    tenantId = resolveLoginTenantId(req);
+  } catch (e) {
+    return res.status(400).json({ error: 'invalid_tenant_id' });
+  }
+  return tenantContext.run(tenantId, () => handleLoginInTenant(req, res, tenantId));
+}
+
+async function handleLoginInTenant(req, res, tenantId) {
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '').trim();
   if (!username || !password) return res.status(400).json({ error: 'missing_credentials' });
 
   const sn = randomUUID().replace(/-/g, '').slice(0, 16);
 
+  try {
+    const tenantStatus = await loadTenantRuntimeStatus(tenantId);
+    if (!tenantStatus.loginAllowed) {
+      return res.status(403).json({ error: tenantStatus.reason || 'tenant_unavailable' });
+    }
+  } catch (e) {
+    return res.status(500).json({ error: 'tenant_status_check_failed' });
+  }
+
   // 数据库账号校验：仅依赖 DATABASE_URL；JWT_SECRET 仅在签发 token 时必需（勿与 requireEnv 绑死，否则缺 JWT 时整段 DB 校验被跳过 → 全员 401）
   if (DATABASE_URL) {
     try {
       const r = await pool.query(
-        'select id, username, password_hash, real_name, role, is_active, tenant_id from users where lower(username) = lower($1) limit 1',
-        [username]
+        `select id, username, password_hash, real_name, role, is_active, tenant_id
+           from users
+          where lower(username) = lower($1) and tenant_id = $2
+          limit 1`,
+        [username, tenantId]
       );
       const u = r.rows?.[0];
       if (u) {
@@ -16367,7 +16657,7 @@ async function handleLogin(req, res) {
           }
         } catch (syncErr) {}
 
-        const persisted = await storeSessionNonce(u.username, sn);
+        const persisted = await storeSessionNonce(u.username, sn, tenantId);
         if (!persisted) {
           return res.status(503).json({
             error: 'session_persist_failed',
@@ -16402,7 +16692,7 @@ async function handleLogin(req, res) {
   // Legacy path: tenant is unknown until a username match is found, so this only ever
   // searches the 'default' tenant's blob (non-default tenants have no legacy users here).
   try {
-    const r = await pool.query('select data from hrms_state where key = $1 limit 1', ['default']);
+    const r = await pool.query('select data from hrms_state where key = $1 limit 1', [tenantId]);
     const data = r.rows?.[0]?.data;
     if (data && typeof data === 'object') {
       const users = Array.isArray(data.users) ? data.users : [];
@@ -16421,7 +16711,7 @@ async function handleLogin(req, res) {
         const name = String(found.name || found.real_name || found.realName || canonicalUsername);
         const stateStore = String(found.store || '').trim();
         if (!JWT_SECRET) return res.status(500).json({ error: 'server_config_error' });
-        const persistedState = await storeSessionNonce(canonicalUsername, sn);
+        const persistedState = await storeSessionNonce(canonicalUsername, sn, tenantId);
         if (!persistedState) {
           return res.status(503).json({
             error: 'session_persist_failed',
@@ -16429,8 +16719,8 @@ async function handleLogin(req, res) {
               '无法写入登录会话（请确认数据库可写且已建表 user_sessions；生产需 ENABLE_DB_WRITE=true）。'
           });
         }
-        const token = jwt.sign({ id, username: canonicalUsername, name, role, sn, tenant_id: 'default' }, JWT_SECRET, { expiresIn: '7d' });
-        recordLogin(canonicalUsername, sn, req);
+        const token = jwt.sign({ id, username: canonicalUsername, name, role, sn, tenant_id: tenantId }, JWT_SECRET, { expiresIn: '7d' });
+        recordLogin(canonicalUsername, sn, req, tenantId);
         const loginUser = await buildLoginUserPayload({
           id,
           username: canonicalUsername,
@@ -16450,12 +16740,12 @@ async function handleLogin(req, res) {
     const localUser = LOCAL_TEST_ACCOUNTS.find(u => u.username === username && u.password === password);
     if (localUser) {
       if (!JWT_SECRET) return res.status(500).json({ error: 'server_config_error' });
-      const persistedLocal = await storeSessionNonce(localUser.username, sn);
+      const persistedLocal = await storeSessionNonce(localUser.username, sn, tenantId);
       if (!persistedLocal) {
         return res.status(503).json({ error: 'session_persist_failed', message: '无法写入登录会话' });
       }
       const token = jwt.sign(
-        { id: localUser.id, username: localUser.username, name: localUser.name, role: localUser.role, sn },
+        { id: localUser.id, username: localUser.username, name: localUser.name, role: localUser.role, sn, tenant_id: tenantId },
         JWT_SECRET,
         { expiresIn: '7d' }
       );
@@ -16529,6 +16819,7 @@ app.post('/api/auth/switch-store', authRequired, async (req, res) => {
 
 app.post('/api/auth/change-password', authRequired, async (req, res) => {
   const username = String(req.user?.username || '').trim();
+  const tenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
   const oldPassword = String(req.body?.oldPassword || '').trim();
   const newPassword = String(req.body?.newPassword || '').trim();
   if (!username) return res.status(400).json({ error: 'missing_user' });
@@ -16537,12 +16828,12 @@ app.post('/api/auth/change-password', authRequired, async (req, res) => {
 
   try {
     const dbUser = await pool.query(
-      'select id, username, password_hash from users where lower(username) = lower($1) limit 1',
-      [username]
+      'select id, username, password_hash from users where lower(username) = lower($1) and tenant_id = $2 limit 1',
+      [username, tenantId]
     );
     const row = dbUser.rows?.[0] || null;
 
-    let state = (await getSharedState()) || {};
+    let state = (await getSharedState(tenantId)) || {};
     const users = Array.isArray(state.users) ? state.users.slice() : [];
     const employees = Array.isArray(state.employees) ? state.employees.slice() : [];
 
@@ -16550,7 +16841,7 @@ app.post('/api/auth/change-password', authRequired, async (req, res) => {
       const ok = await bcrypt.compare(oldPassword, String(row.password_hash || ''));
       if (!ok) return res.status(400).json({ error: 'old_password_invalid', message: '原密码不正确' });
       const hash = await bcrypt.hash(newPassword, 10);
-      await pool.query('update users set password_hash = $2 where id = $1', [row.id, hash]);
+      await pool.query('update users set password_hash = $2 where id = $1 and tenant_id = $3', [row.id, hash, tenantId]);
 
       const upd = (arr) => arr.map(it =>
         String(it?.username || '').trim().toLowerCase() === String(username).toLowerCase()
@@ -16558,7 +16849,7 @@ app.post('/api/auth/change-password', authRequired, async (req, res) => {
           : it
       );
       state = { ...state, users: upd(users), employees: upd(employees) };
-      await saveSharedState(state);
+      await saveSharedState(state, tenantId);
       return res.json({ ok: true, mode: 'db' });
     }
 
@@ -16576,7 +16867,7 @@ app.post('/api/auth/change-password', authRequired, async (req, res) => {
         : it
     );
     state = { ...state, users: upd(users), employees: upd(employees) };
-    await saveSharedState(state);
+    await saveSharedState(state, tenantId);
     return res.json({ ok: true, mode: 'state' });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
@@ -16604,8 +16895,8 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
 
     // 1) Try users table first
     const r = await pool.query(
-      'SELECT id, username, real_name, role, is_active, tenant_id FROM users WHERE lower(username) = lower($1) LIMIT 1',
-      [targetUsername]
+      'SELECT id, username, real_name, role, is_active, tenant_id FROM users WHERE lower(username) = lower($1) AND tenant_id = $2 LIMIT 1',
+      [targetUsername, req.tenantId || req.user?.tenant_id || 'default']
     );
     const u = r.rows?.[0];
     let targetTenantId = req.tenantId || req.user?.tenant_id || 'default';
@@ -16641,7 +16932,7 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
         await pool.query(
           `INSERT INTO users (id, username, password_hash, real_name, role, is_active, tenant_id)
            VALUES ($1, $2, $3, $4, $5, TRUE, $6)
-           ON CONFLICT (lower(username)) DO UPDATE SET is_active = TRUE, password_hash = EXCLUDED.password_hash, updated_at = NOW()`,
+           ON CONFLICT (username, tenant_id) DO UPDATE SET is_active = TRUE, password_hash = EXCLUDED.password_hash, updated_at = NOW()`,
           [targetId, targetUsernameNorm, hash, finalName, finalRole, targetTenantId]
         );
       } catch (createErr) {
@@ -16649,8 +16940,8 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
         // If create fails, try to just reactivate
         try {
           await pool.query(
-            `UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE lower(username) = lower($1)`,
-            [targetUsernameNorm]
+            `UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE lower(username) = lower($1) AND tenant_id = $2`,
+            [targetUsernameNorm, targetTenantId]
           );
         } catch (e2) {}
       }
@@ -16675,9 +16966,12 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
     }
 
     // 4) Ensure user is active for login
-    await pool.query('UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE lower(username) = lower($1)', [targetUsernameNorm]);
+    await pool.query(
+      'UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE lower(username) = lower($1) AND tenant_id = $2',
+      [targetUsernameNorm, targetTenantId]
+    );
 
-    const persisted = await storeSessionNonce(targetUsernameNorm, sn);
+    const persisted = await storeSessionNonce(targetUsernameNorm, sn, targetTenantId);
     if (!persisted) return res.status(503).json({ error: 'session_persist_failed' });
 
     const token = jwt.sign(
@@ -19572,84 +19866,101 @@ app.listen(PORT, HOST, async () => {
         console.error('[startup] 欠休域互备同步失败（非致命，不影响启动）:', e?.message);
       }
 
-    // 启动时同步员工信息：把 hrms_state.employees 同步到 employees 独立表
-    // 策略：state 是员工信息的权威来源（用户通过 PUT /api/state 管理），只做单向备份
+    // 启动时同步员工信息：把各租户 hrms_state.employees 同步到 employees 独立表，
+    // 同时把 employees 中新增的账号反向回灌各自的 hrms_state，避免多租户登录链路断裂。
       try {
-      const stateEmp = (await getSharedState()) || {};
-      const empArr = Array.isArray(stateEmp.employees) ? stateEmp.employees : [];
-      let syncCount = 0;
-      for (const emp of empArr) {
-        const username = String(emp?.username || '').trim();
-        if (!username) continue;
-        const { id, name, role, store, department, position, status, gender, phone, email,
-                joinDate, birthday, salary, password, managerUsername, idCardNumber, bankCard,
-                createdAt, updatedAt, ...rest } = emp;
-        await pool.query(
-          `INSERT INTO employees (id, username, name, role, store, department, position, status,
-             gender, phone, email, join_date, birthday, salary, password_hash, manager_username,
-             id_card_number, bank_card, extra_json, created_at, updated_at, tenant_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-           ON CONFLICT (username, tenant_id) DO UPDATE SET
-             name=EXCLUDED.name, role=EXCLUDED.role, store=EXCLUDED.store,
-             department=EXCLUDED.department, position=EXCLUDED.position, status=EXCLUDED.status,
-             gender=EXCLUDED.gender, phone=EXCLUDED.phone, email=EXCLUDED.email,
-             join_date=EXCLUDED.join_date, birthday=EXCLUDED.birthday, salary=EXCLUDED.salary,
-             password_hash=EXCLUDED.password_hash, manager_username=EXCLUDED.manager_username,
-             id_card_number=EXCLUDED.id_card_number, bank_card=EXCLUDED.bank_card,
-             extra_json=EXCLUDED.extra_json, updated_at=NOW()`,
-          [String(id || username), username,
-           String(name || ''), String(role || ''), String(store || ''), String(department || ''),
-           String(position || ''), String(status || 'active'), String(gender || ''),
-           String(phone || ''), String(email || ''), String(joinDate || ''), String(birthday || ''),
-           String(salary || ''), String(password || ''), String(managerUsername || ''),
-           String(idCardNumber || ''), String(bankCard || ''), JSON.stringify(rest),
-           createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
-           new Date().toISOString(), resolveTenantIdDefault()]
-        );
-        syncCount++;
-      }
-      console.log(`[startup] 员工信息同步：${syncCount} 条 → employees 表`);
-      } catch (e) {
-        console.error('[startup] 员工信息同步失败（非致命，不影响启动）:', e?.message);
-      }
+      const employeeSyncSummary = await runForActiveTenants(async (tenantId) => {
+        return await tenantContext.run(tenantId, async () => {
+          const stateEmp = (await getSharedState(tenantId)) || {};
+          const empArr = Array.isArray(stateEmp.employees) ? stateEmp.employees : [];
+          let syncedToTable = 0;
+          for (const emp of empArr) {
+            const username = String(emp?.username || '').trim();
+            if (!username) continue;
+            const { id, name, role, store, department, position, status, gender, phone, email,
+                    joinDate, birthday, salary, password, managerUsername, idCardNumber, bankCard,
+                    createdAt, updatedAt, ...rest } = emp;
+            await pool.query(
+              `INSERT INTO employees (id, username, name, role, store, department, position, status,
+                 gender, phone, email, join_date, birthday, salary, password_hash, manager_username,
+                 id_card_number, bank_card, extra_json, created_at, updated_at, tenant_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+               ON CONFLICT (username, tenant_id) DO UPDATE SET
+                 name=EXCLUDED.name, role=EXCLUDED.role, store=EXCLUDED.store,
+                 department=EXCLUDED.department, position=EXCLUDED.position, status=EXCLUDED.status,
+                 gender=EXCLUDED.gender, phone=EXCLUDED.phone, email=EXCLUDED.email,
+                 join_date=EXCLUDED.join_date, birthday=EXCLUDED.birthday, salary=EXCLUDED.salary,
+                 password_hash=EXCLUDED.password_hash, manager_username=EXCLUDED.manager_username,
+                 id_card_number=EXCLUDED.id_card_number, bank_card=EXCLUDED.bank_card,
+                 extra_json=EXCLUDED.extra_json, updated_at=NOW()`,
+              [String(id || username), username,
+               String(name || ''), String(role || ''), String(store || ''), String(department || ''),
+               String(position || ''), String(status || 'active'), String(gender || ''),
+               String(phone || ''), String(email || ''), String(joinDate || ''), String(birthday || ''),
+               String(salary || ''), String(password || ''), String(managerUsername || ''),
+               String(idCardNumber || ''), String(bankCard || ''), JSON.stringify(rest),
+               createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
+               new Date().toISOString(), tenantId]
+            );
+            syncedToTable++;
+          }
 
-    // 启动时员工信息反向同步：employees DB → hrms_state.employees（防 state 丢失）
-      try {
-      const dbEmp = await pool.query(`SELECT id, username, name, role, store, department, position, status, gender, phone, email, join_date, birthday, salary, manager_username, id_card_number, bank_card, extra_json, created_at, updated_at FROM employees WHERE tenant_id = 'default' ORDER BY username`);
-      const dbEmpItems = dbEmp.rows.map(r => ({
-        id: r.id,
-        username: String(r.username || '').trim(),
-        name: String(r.name || '').trim(),
-        role: String(r.role || '').trim(),
-        store: String(r.store || '').trim(),
-        department: String(r.department || '').trim(),
-        position: String(r.position || '').trim(),
-        status: String(r.status || 'active').trim(),
-        gender: String(r.gender || '').trim(),
-        phone: String(r.phone || '').trim(),
-        email: String(r.email || '').trim(),
-        joinDate: String(r.join_date || '').trim(),
-        birthday: String(r.birthday || '').trim(),
-        salary: String(r.salary || '').trim(),
-        managerUsername: String(r.manager_username || '').trim(),
-        idCardNumber: String(r.id_card_number || '').trim(),
-        bankCard: String(r.bank_card || '').trim(),
-        createdAt: r.created_at ? String(r.created_at) : '',
-        updatedAt: r.updated_at ? String(r.updated_at) : '',
-        ...(r.extra_json && typeof r.extra_json === 'object' ? r.extra_json : {})
-      }));
-      if (dbEmpItems.length > 0) {
-        let stateEmp = (await getSharedState()) || {};
-        const existingUsernames = new Set((Array.isArray(stateEmp.employees) ? stateEmp.employees : []).map(e => String(e?.username || '').trim().toLowerCase()));
-        const newEmps = dbEmpItems.filter(e => e.username && !existingUsernames.has(e.username.toLowerCase()));
-        if (newEmps.length > 0) {
-          stateEmp = { ...stateEmp, employees: [...(Array.isArray(stateEmp.employees) ? stateEmp.employees : []), ...newEmps] };
-          await pool.query(`UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`, ['default', JSON.stringify(stateEmp)]);
-          console.log(`[startup] 员工信息从 employees 表回灌：${newEmps.length} 条 → hrms_state.employees`);
+          const dbEmp = await pool.query(
+            `SELECT id, username, name, role, store, department, position, status, gender, phone, email,
+                    join_date, birthday, salary, manager_username, id_card_number, bank_card, extra_json, created_at, updated_at
+               FROM employees
+              WHERE tenant_id = $1
+              ORDER BY username`,
+            [tenantId]
+          );
+          const dbEmpItems = dbEmp.rows.map(r => ({
+            id: r.id,
+            username: String(r.username || '').trim(),
+            name: String(r.name || '').trim(),
+            role: String(r.role || '').trim(),
+            store: String(r.store || '').trim(),
+            department: String(r.department || '').trim(),
+            position: String(r.position || '').trim(),
+            status: String(r.status || 'active').trim(),
+            gender: String(r.gender || '').trim(),
+            phone: String(r.phone || '').trim(),
+            email: String(r.email || '').trim(),
+            joinDate: String(r.join_date || '').trim(),
+            birthday: String(r.birthday || '').trim(),
+            salary: String(r.salary || '').trim(),
+            managerUsername: String(r.manager_username || '').trim(),
+            idCardNumber: String(r.id_card_number || '').trim(),
+            bankCard: String(r.bank_card || '').trim(),
+            createdAt: r.created_at ? String(r.created_at) : '',
+            updatedAt: r.updated_at ? String(r.updated_at) : '',
+            ...(r.extra_json && typeof r.extra_json === 'object' ? r.extra_json : {})
+          }));
+
+          let backfilledToState = 0;
+          if (dbEmpItems.length > 0) {
+            const existingEmployees = Array.isArray(stateEmp.employees) ? stateEmp.employees : [];
+            const existingUsernames = new Set(existingEmployees.map(e => String(e?.username || '').trim().toLowerCase()));
+            const newEmps = dbEmpItems.filter(e => e.username && !existingUsernames.has(e.username.toLowerCase()));
+            if (newEmps.length > 0) {
+              await saveSharedState({ employees: [...existingEmployees, ...newEmps] }, tenantId);
+              backfilledToState = newEmps.length;
+            }
+          }
+
+          console.log(`[startup][${tenantId}] 员工信息同步：${syncedToTable} 条 → employees 表；回灌 ${backfilledToState} 条 → hrms_state.employees`);
+          return { tenantId, syncedToTable, backfilledToState };
+        });
+      }, {
+        continueOnError: true,
+        onError: (error, tenantId) => {
+          console.error(`[startup][${tenantId}] 员工信息同步失败（非致命）:`, error?.message);
         }
-      }
+      });
+      const okCount = Array.isArray(employeeSyncSummary?.results) ? employeeSyncSummary.results.length : 0;
+      const errCount = Array.isArray(employeeSyncSummary?.errors) ? employeeSyncSummary.errors.length : 0;
+      console.log(`[startup] 多租户员工同步完成：成功 ${okCount} 个租户，失败 ${errCount} 个租户`);
       } catch (e) {
-        console.error('[startup] 员工信息反向同步失败（非致命，不影响启动）:', e?.message);
+        console.error('[startup] 多租户员工同步失败（非致命，不影响启动）:', e?.message);
       }
 
     // 启动时休假记录重建：hrms_leave_records DB → hrms_state.leaveRecords
