@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HRMS Platform Admin</title>
+  <title>年年有喜平台控制台</title>
   <style>
     :root {
       --bg: #f4efe6;
@@ -124,6 +124,15 @@
     .detail-grid .v { margin-top: 4px; font-weight: 700; word-break: break-word; }
     .section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .small { font-size: 12px; color: var(--muted); }
+    .logo-preview {
+      width: 68px;
+      height: 68px;
+      object-fit: cover;
+      border-radius: 16px;
+      border: 1px solid rgba(120,104,85,.22);
+      background: #fff;
+      display: block;
+    }
     @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
     @media (max-width: 1100px) { .hero { grid-template-columns: 1fr; } .hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   </style>
@@ -134,46 +143,46 @@
       <section class="card">
         <div class="title-row">
           <div>
-            <h1>Tenant Control Tower</h1>
-            <div class="sub">nnyx.cc 上的租户控制台：开通、续期、隔离、验收、飞书接入，一处完成。</div>
+            <h1>平台租户控制台</h1>
+            <div class="sub">nnyx.cc 上的租户控制台：开通、续期、隔离、验收、飞书接入、品牌外观，一处完成。</div>
           </div>
           <div class="toolbar">
-            <a href="/agents-admin/" target="_blank" rel="noreferrer" class="pill ok" style="text-decoration:none;">打开 agents 控制台</a>
-            <a href="/api/health" target="_blank" rel="noreferrer" class="pill" style="text-decoration:none;">查看健康检查</a>
+          <a href="/agents-admin/" target="_blank" rel="noreferrer" class="pill ok" style="text-decoration:none;">打开代理控制台</a>
+          <a href="/api/health" target="_blank" rel="noreferrer" class="pill" style="text-decoration:none;">查看健康检查</a>
           </div>
         </div>
         <p class="hero-copy">
-          这个页面是平台级控制面，不是租户内页面。它只管理 tenants / licenses / integrations / acceptance，
+          这个页面是平台级控制面，不是租户内页面。它只管理租户、许可证、飞书接入、平台外观、自动验收与告警，
           不直接操作租户内部业务数据，方便你以后给更多公司开账号时，把边界锁死。
         </p>
         <div class="hero-grid">
           <div class="stat"><div class="label">租户总数</div><div id="statTotal" class="value">0</div><div class="sub">全部可见租户</div></div>
           <div class="stat"><div class="label">已激活</div><div id="statActive" class="value">0</div><div class="sub">在线可登录</div></div>
-          <div class="stat"><div class="label">已配置飞书</div><div id="statFeishu" class="value">0</div><div class="sub">含 Bitable 集成</div></div>
-          <div class="stat"><div class="label">有许可证</div><div id="statLicense" class="value">0</div><div class="sub">已发 license</div></div>
+          <div class="stat"><div class="label">已配置飞书</div><div id="statFeishu" class="value">0</div><div class="sub">含多表绑定</div></div>
+          <div class="stat"><div class="label">30 天内到期</div><div id="statLicense" class="value">0</div><div class="sub">需要关注续期</div></div>
         </div>
       </section>
       <section class="card stack">
-        <strong>平台密钥与部署入口</strong>
+        <strong>平台密钥</strong>
         <label>平台密钥
-          <input id="platformSecret" type="password" placeholder="PLATFORM_ADMIN_SECRET">
+          <input id="platformSecret" type="password" placeholder="服务器环境变量 PLATFORM_ADMIN_SECRET">
         </label>
         <div class="toolbar">
           <button id="saveSecretBtn" class="secondary">保存密钥</button>
           <button id="reloadBtn">刷新租户列表</button>
         </div>
-        <div class="small">提示：浏览器仅临时缓存，真正生效的是服务器环境变量里的 `PLATFORM_ADMIN_SECRET`。</div>
+        <div class="small">提示：浏览器只临时缓存，真正生效的是服务器环境变量里的 <span class="mono">PLATFORM_ADMIN_SECRET</span>。</div>
       </section>
     </div>
 
     <div class="grid">
       <section class="card stack">
         <div class="section-title">
-          <strong>租户创建</strong>
+          <strong>新租户开通</strong>
           <span class="small">新客户开通入口</span>
         </div>
         <div class="stack">
-          <label>tenant_id
+          <label>租户 ID
             <input id="tenantId" placeholder="demo_brand_a">
           </label>
           <label>租户名称
@@ -181,8 +190,8 @@
           </label>
           <label>模式
             <select id="tenantMode">
-              <option value="managed">managed</option>
-              <option value="self_hosted">self_hosted</option>
+              <option value="managed">托管租赁</option>
+              <option value="self_hosted">自部署</option>
             </select>
           </label>
           <label>管理员账号
@@ -197,24 +206,86 @@
           <label>许可证到期时间
             <input id="licenseExpiresAt" type="datetime-local">
           </label>
-          <button id="createTenantBtn">创建租户</button>
+          <button id="createTenantBtn">创建租户并初始化</button>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--line);width:100%">
+        <div class="stack">
+          <div class="section-title">
+            <strong>租户品牌与外观</strong>
+            <span class="small">系统名称 / Logo / 颜色 / 开关</span>
+          </div>
+          <div class="small">先在上方选择租户 ID，再保存这一块的配置。</div>
+          <label>系统名称
+            <input id="profileSystemName" placeholder="年年有喜管理系统">
+          </label>
+          <label>页面标题
+            <input id="profilePageTitle" placeholder="平台租户控制台">
+          </label>
+          <label>Logo 地址
+            <input id="profileLogoUrl" placeholder="https://.../logo.png">
+          </label>
+          <label>网站图标地址
+            <input id="profileFaviconUrl" placeholder="https://.../favicon.ico">
+          </label>
+          <label>品牌主色
+            <input id="profileBrandColor" type="color" value="#0d7a5f">
+          </label>
+          <label>平台说明
+            <textarea id="profileTagline" style="min-height:72px">统一管理租户开通、外观配置、飞书接入、自动验收与告警。</textarea>
+          </label>
+          <div class="detail-grid">
+            <div class="field"><div class="k">统一模板</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchUnifiedTemplate" type="checkbox" checked> 开启</label></div></div>
+            <div class="field"><div class="k">自动验收</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchAutoAcceptance" type="checkbox" checked> 开启</label></div></div>
+            <div class="field"><div class="k">失败修复</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchFailureRepair" type="checkbox" checked> 开启</label></div></div>
+            <div class="field"><div class="k">租户告警</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchTenantAlerts" type="checkbox" checked> 开启</label></div></div>
+            <div class="field"><div class="k">账单模块</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchBilling" type="checkbox" checked> 开启</label></div></div>
+            <div class="field"><div class="k">到期倒计时</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchCountdown" type="checkbox" checked> 开启</label></div></div>
+          </div>
+          <div class="detail-grid">
+            <div class="field"><div class="k">HRMS 模板</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="tplHrms" type="checkbox" checked> 开启</label></div></div>
+            <div class="field"><div class="k">Agent V2 模板</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="tplAgentV2" type="checkbox" checked> 开启</label></div></div>
+            <div class="field"><div class="k">小程序模板</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="tplMiniProgram" type="checkbox" checked> 开启</label></div></div>
+            <div class="field"><div class="k">飞书模板</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="tplFeishu" type="checkbox" checked> 开启</label></div></div>
+          </div>
+          <div class="detail-grid">
+            <label class="field">账单计划
+              <input id="billingPlan" placeholder="标准版 / 旗舰版 / 定制版">
+            </label>
+            <label class="field">账单周期
+              <input id="billingCycle" placeholder="按月 / 按年">
+            </label>
+            <label class="field">下次开票时间
+              <input id="billingNextInvoiceAt" type="datetime-local">
+            </label>
+            <label class="field">账单联系人
+              <input id="billingContact" placeholder="财务联系人">
+            </label>
+          </div>
+          <label>平台备注
+            <textarea id="profileNotes" style="min-height:72px" placeholder="仅平台运营可见"></textarea>
+          </label>
+          <div class="toolbar">
+            <button id="saveProfileBtn">保存平台配置</button>
+            <button id="bootstrapTenantBtn" class="secondary">一键初始化</button>
+            <button id="repairTenantBtn" class="warn">失败修复</button>
+          </div>
         </div>
         <hr style="border:none;border-top:1px solid var(--line);width:100%">
         <div class="stack">
           <div class="section-title">
             <strong>飞书配置</strong>
-            <span class="small">租户级独立 Bitable 绑定</span>
+            <span class="small">租户级独立多维表格绑定</span>
           </div>
-          <label>目标 tenant_id
-            <input id="cfgTenantId" placeholder="先点右侧“配置飞书”自动带入">
+          <label>当前租户 ID
+            <input id="cfgTenantId" placeholder="先在右侧租户列表点“配置飞书”或“查看详情”自动带入">
           </label>
-          <label>App ID
+          <label>飞书应用 ID
             <input id="cfgAppId">
           </label>
-          <label>App Secret
+          <label>飞书应用密钥
             <input id="cfgAppSecret" type="password">
           </label>
-          <label>表配置(JSON)
+          <label>表配置（JSON）
             <textarea id="cfgTables">{
   "ops_checklist": { "app_token": "", "table_id": "", "view_id": "" },
   "table_visit": { "app_token": "", "table_id": "", "view_id": "" },
@@ -242,11 +313,11 @@
       <section class="card stack">
         <div class="toolbar">
           <span class="pill">租户总览</span>
-          <span id="tenantCount" class="pill">0 tenants</span>
+          <span id="tenantCount" class="pill">0 个租户</span>
           <span id="tenantFilterState" class="pill">全部</span>
         </div>
         <label>搜索租户
-          <input id="tenantFilter" placeholder="输入 tenant_id / 名称 / 模式 / 状态">
+          <input id="tenantFilter" placeholder="输入 租户ID / 名称 / 模式 / 状态">
         </label>
         <table>
           <thead>
@@ -254,7 +325,9 @@
               <th>租户</th>
               <th>状态</th>
               <th>许可证</th>
+              <th>到期</th>
               <th>飞书</th>
+              <th>外观</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -269,11 +342,13 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
+    const secretKey = 'hrms_platform_secret';
+    const state = { tenants: [], selectedTenantId: '', detail: null };
+
     const log = (msg) => {
       $('log').textContent = `[${new Date().toLocaleString()}] ${msg}\n` + $('log').textContent;
     };
-    const secretKey = 'hrms_platform_secret';
-    const state = { tenants: [], selectedTenantId: '' };
+
     $('platformSecret').value = sessionStorage.getItem(secretKey) || '';
 
     function headers(extra = {}) {
@@ -289,11 +364,6 @@
       return data;
     }
 
-    $('saveSecretBtn').onclick = () => {
-      sessionStorage.setItem(secretKey, $('platformSecret').value.trim());
-      log('平台密钥已保存到本次浏览会话。');
-    };
-
     function normalizeTenantSearch(v) {
       return String(v || '').trim().toLowerCase();
     }
@@ -302,42 +372,178 @@
       return state.tenants.find((item) => item.tenant_id === state.selectedTenantId) || state.tenants[0] || null;
     }
 
+    function formatBool(v) {
+      return v ? '开启' : '关闭';
+    }
+
+    function formatMode(v) {
+      return String(v || '').trim() === 'self_hosted' ? '自部署' : '托管租赁';
+    }
+
+    function formatStatus(v) {
+      const s = String(v || '').trim();
+      if (s === 'active') return '正常';
+      if (s === 'provisioning') return '初始化中';
+      if (s === 'suspended') return '已暂停';
+      return s || '未知';
+    }
+
+    function formatCountdown(days) {
+      if (days === null || days === undefined || days === '') return '-';
+      const n = Number(days);
+      if (!Number.isFinite(n)) return '-';
+      if (n < 0) return `已过期 ${Math.abs(n)} 天`;
+      if (n === 0) return '今天到期';
+      return `${n} 天`;
+    }
+
     function updateStats(items) {
       $('statTotal').textContent = String(items.length);
       $('statActive').textContent = String(items.filter((x) => String(x.status || '') === 'active').length);
       $('statFeishu').textContent = String(items.filter((x) => x.integrations?.feishu_bitable?.configured).length);
-      $('statLicense').textContent = String(items.filter((x) => x.license_status && x.license_status !== 'missing').length);
+      $('statLicense').textContent = String(items.filter((x) => Number.isFinite(Number(x.license_countdown_days)) && Number(x.license_countdown_days) <= 30).length);
     }
 
-    function renderDetail(item) {
-      if (!item) {
+    function applyProfileToForm(profile) {
+      const p = profile || {};
+      $('profileSystemName').value = p.system_name || '';
+      $('profilePageTitle').value = p.page_title || '';
+      $('profileLogoUrl').value = p.logo_url || '';
+      $('profileFaviconUrl').value = p.favicon_url || '';
+      $('profileBrandColor').value = p.brand_color || '#0d7a5f';
+      $('profileTagline').value = p.tagline || '';
+      $('switchUnifiedTemplate').checked = !!p.feature_switches?.unified_template;
+      $('switchAutoAcceptance').checked = !!p.feature_switches?.auto_acceptance;
+      $('switchFailureRepair').checked = !!p.feature_switches?.failure_repair;
+      $('switchTenantAlerts').checked = !!p.feature_switches?.tenant_alerts;
+      $('switchBilling').checked = !!p.feature_switches?.billing;
+      $('switchCountdown').checked = !!p.feature_switches?.countdown;
+      $('tplHrms').checked = !!p.template_switches?.hrms;
+      $('tplAgentV2').checked = !!p.template_switches?.agent_v2;
+      $('tplMiniProgram').checked = !!p.template_switches?.mini_program;
+      $('tplFeishu').checked = !!p.template_switches?.feishu;
+      $('billingPlan').value = p.billing?.plan_name || '';
+      $('billingCycle').value = p.billing?.billing_cycle || '';
+      $('billingContact').value = p.billing?.billing_contact || '';
+      $('billingNextInvoiceAt').value = p.billing?.next_invoice_at ? String(p.billing.next_invoice_at).slice(0, 16) : '';
+      $('profileNotes').value = p.notes || '';
+    }
+
+    function readProfileFromForm() {
+      return {
+        system_name: $('profileSystemName').value.trim(),
+        page_title: $('profilePageTitle').value.trim(),
+        logo_url: $('profileLogoUrl').value.trim(),
+        favicon_url: $('profileFaviconUrl').value.trim(),
+        brand_color: $('profileBrandColor').value.trim() || '#0d7a5f',
+        tagline: $('profileTagline').value.trim(),
+        feature_switches: {
+          unified_template: $('switchUnifiedTemplate').checked,
+          auto_acceptance: $('switchAutoAcceptance').checked,
+          failure_repair: $('switchFailureRepair').checked,
+          tenant_alerts: $('switchTenantAlerts').checked,
+          billing: $('switchBilling').checked,
+          countdown: $('switchCountdown').checked,
+        },
+        template_switches: {
+          hrms: $('tplHrms').checked,
+          agent_v2: $('tplAgentV2').checked,
+          mini_program: $('tplMiniProgram').checked,
+          feishu: $('tplFeishu').checked,
+        },
+        billing: {
+          plan_name: $('billingPlan').value.trim(),
+          billing_cycle: $('billingCycle').value.trim(),
+          next_invoice_at: $('billingNextInvoiceAt').value ? new Date($('billingNextInvoiceAt').value).toISOString() : '',
+          billing_contact: $('billingContact').value.trim(),
+          notes: '',
+        },
+        alerts: {
+          notify_days_before_expiry: 30,
+          feishu_chat: '',
+          contact: '',
+          notes: '',
+        },
+        notes: $('profileNotes').value.trim(),
+      };
+    }
+
+    function renderDetail(detail) {
+      if (!detail) {
         $('tenantDetail').innerHTML = '<div class="small">未选择租户。请先在列表中点击“查看详情”。</div>';
         return;
       }
-      const feishu = item.integrations?.feishu_bitable || {};
+      const tenant = detail.tenant || detail;
+      const profile = detail.profile || tenant.platform_profile || {};
+      const feishu = detail.integrations?.feishu_bitable || tenant.integrations?.feishu_bitable || {};
+      const alerts = Array.isArray(detail.alerts) ? detail.alerts : [];
       const tables = Array.isArray(feishu.tables) ? feishu.tables : [];
+      const featureSwitches = profile.feature_switches || {};
+      const templateSwitches = profile.template_switches || {};
+
       $('tenantDetail').innerHTML = `
         <div class="section-title">
           <strong>租户详情</strong>
-          <span class="pill ${item.status === 'active' ? 'ok' : 'bad'}">${item.status}</span>
+          <span class="pill ${tenant.status === 'active' ? 'ok' : 'bad'}">${formatStatus(tenant.status)}</span>
         </div>
-        <div style="margin-top:8px"><strong>${item.name}</strong> <span class="mono">${item.tenant_id}</span></div>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          ${profile.logo_url ? `<img class="logo-preview" src="${profile.logo_url}" alt="logo">` : '<div class="logo-preview" style="display:grid;place-items:center;color:var(--muted);font-size:12px;">无 Logo</div>'}
+          <div>
+            <div style="font-weight:800;font-size:18px">${profile.system_name || tenant.name || '-'}</div>
+            <div class="mono">${tenant.tenant_id}</div>
+            <div class="small">${profile.tagline || ''}</div>
+          </div>
+        </div>
         <div class="detail-grid">
-          <div class="field"><div class="k">模式</div><div class="v">${item.mode || '-'}</div></div>
-          <div class="field"><div class="k">创建时间</div><div class="v">${item.created_at || '-'}</div></div>
-          <div class="field"><div class="k">许可证状态</div><div class="v">${item.license_status || 'missing'}</div></div>
-          <div class="field"><div class="k">许可证到期</div><div class="v mono">${item.license_expires_at || '-'}</div></div>
+          <div class="field"><div class="k">模式</div><div class="v">${formatMode(tenant.mode)}</div></div>
+          <div class="field"><div class="k">创建时间</div><div class="v">${tenant.created_at || '-'}</div></div>
+          <div class="field"><div class="k">许可证状态</div><div class="v">${tenant.license_status || '缺失'}</div></div>
+          <div class="field"><div class="k">到期倒计时</div><div class="v">${formatCountdown(tenant.license_countdown_days)}</div></div>
           <div class="field"><div class="k">飞书配置</div><div class="v">${feishu.configured ? '已配置' : '未配置'}</div></div>
-          <div class="field"><div class="k">Bitable App ID</div><div class="v mono">${feishu.app_id || '-'}</div></div>
+          <div class="field"><div class="k">飞书应用 ID</div><div class="v mono">${feishu.app_id || '-'}</div></div>
+          <div class="field"><div class="k">品牌主色</div><div class="v mono">${profile.brand_color || '-'}</div></div>
+          <div class="field"><div class="k">页面标题</div><div class="v">${profile.page_title || '-'}</div></div>
+          <div class="field" style="grid-column:1 / -1"><div class="k">模板开关</div><div class="v">${Object.entries(templateSwitches).map(([k, v]) => `${k}:${formatBool(v)}`).join(' · ') || '—'}</div></div>
+          <div class="field" style="grid-column:1 / -1"><div class="k">功能开关</div><div class="v">${Object.entries(featureSwitches).map(([k, v]) => `${k}:${formatBool(v)}`).join(' · ') || '—'}</div></div>
+          <div class="field" style="grid-column:1 / -1"><div class="k">账单信息</div><div class="v">${profile.billing?.plan_name || '未配置'} · ${profile.billing?.billing_cycle || '未配置'} · ${profile.billing?.billing_contact || '未配置'}</div></div>
           <div class="field" style="grid-column:1 / -1"><div class="k">表清单</div><div class="v">${tables.length ? tables.join(' · ') : '—'}</div></div>
         </div>
+        <div class="stack" style="margin-top:12px">
+          <strong>系统告警</strong>
+          <div class="detail-grid">
+            ${alerts.length ? alerts.map((item) => `
+              <div class="field">
+                <div class="k">${item.title}</div>
+                <div class="v">${item.detail || '-'}</div>
+              </div>
+            `).join('') : '<div class="field" style="grid-column:1 / -1"><div class="v">暂无告警</div></div>'}
+          </div>
+        </div>
         <div class="tenant-actions compact" style="margin-top:12px">
-          <button class="secondary" onclick="window.prefillTenant('${item.tenant_id}')">加载飞书配置</button>
-          <button onclick="window.acceptTenant('${item.tenant_id}')">运行验收</button>
-          <button class="warn" onclick="window.promptIssueLicense('${item.tenant_id}')">续期 / 发放 License</button>
-          <button class="secondary" onclick="window.toggleTenantStatus('${item.tenant_id}', '${item.status === 'active' ? 'suspended' : 'active'}')">${item.status === 'active' ? '暂停租户' : '恢复租户'}</button>
+          <button class="secondary" onclick="window.prefillTenant('${tenant.tenant_id}')">加载飞书配置</button>
+          <button class="secondary" onclick="window.loadProfile('${tenant.tenant_id}')">载入平台配置</button>
+          <button onclick="window.acceptTenant('${tenant.tenant_id}')">运行验收</button>
+          <button class="warn" onclick="window.bootstrapTenant('${tenant.tenant_id}')">一键初始化</button>
+          <button class="warn" onclick="window.repairTenant('${tenant.tenant_id}')">失败修复</button>
+          <button class="secondary" onclick="window.toggleTenantStatus('${tenant.tenant_id}', '${tenant.status === 'active' ? 'suspended' : 'active'}')">${tenant.status === 'active' ? '暂停租户' : '恢复租户'}</button>
+          <button class="warn" onclick="window.promptIssueLicense('${tenant.tenant_id}')">续期 / 发放许可证</button>
         </div>
       `;
+    }
+
+    async function loadProfile(tenantId) {
+      const id = String(tenantId || $('cfgTenantId').value || '').trim();
+      if (!id) return;
+      $('cfgTenantId').value = id;
+      const data = await api(`/api/admin/tenants/${id}/profile`);
+      state.detail = data;
+      state.selectedTenantId = id;
+      applyProfileToForm(data.profile || {});
+      renderDetail(data);
+      const feishu = data.integrations?.feishu_bitable || {};
+      if (feishu.app_id) $('cfgAppId').value = feishu.app_id;
+      log(`已载入 ${id} 的平台配置。`);
+      return data;
     }
 
     async function loadTenants() {
@@ -345,80 +551,111 @@
       const filter = normalizeTenantSearch($('tenantFilter').value);
       const items = (data.items || []).filter((item) => {
         if (!filter) return true;
-        const hay = [item.tenant_id, item.name, item.mode, item.status, item.license_status, item.license_expires_at, item.integrations?.feishu_bitable?.app_id, ...(item.integrations?.feishu_bitable?.tables || [])].join(' ').toLowerCase();
+        const profile = item.platform_profile || {};
+        const hay = [
+          item.tenant_id,
+          item.name,
+          item.mode,
+          item.status,
+          item.license_status,
+          item.license_expires_at,
+          item.integrations?.feishu_bitable?.app_id,
+          profile.system_name,
+          profile.page_title,
+          ...(item.integrations?.feishu_bitable?.tables || [])
+        ].join(' ').toLowerCase();
         return hay.includes(filter);
       });
       state.tenants = data.items || [];
-      $('tenantCount').textContent = `${items.length} tenants`;
+      $('tenantCount').textContent = `${items.length} 个租户`;
       $('tenantFilterState').textContent = filter ? `搜索：${$('tenantFilter').value.trim()}` : '全部';
       updateStats(data.items || []);
       $('tenantTableBody').innerHTML = items.map((item) => {
         const feishu = item.integrations?.feishu_bitable || {};
+        const profile = item.platform_profile || {};
+        const countdown = formatCountdown(item.license_countdown_days);
         return `
           <tr>
             <td>
-              <div><strong>${item.name}</strong></div>
+              <div><strong>${profile.system_name || item.name}</strong></div>
               <div class="mono">${item.tenant_id}</div>
             </td>
             <td>
-              <span class="pill ${item.status === 'active' ? 'ok' : 'bad'}">${item.status}</span>
+              <span class="pill ${item.status === 'active' ? 'ok' : 'bad'}">${formatStatus(item.status)}</span>
             </td>
             <td>
-              <div>${item.license_status || 'missing'}</div>
+              <div>${item.license_status || '缺失'}</div>
+            </td>
+            <td>
               <div class="mono">${item.license_expires_at || ''}</div>
+              <div class="small">${countdown}</div>
             </td>
             <td>
-              <span class="pill ${feishu.configured ? 'ok' : 'bad'}">${feishu.configured ? 'configured' : 'missing'}</span>
+              <span class="pill ${feishu.configured ? 'ok' : 'bad'}">${feishu.configured ? '已配置' : '未配置'}</span>
               <div class="mono">${feishu.app_id || ''}</div>
+            </td>
+            <td>
+              <span class="pill ${profile.logo_url ? 'ok' : 'bad'}">${profile.logo_url ? '已配置' : '未配置'}</span>
+              <div class="mono">${profile.brand_color || ''}</div>
             </td>
             <td>
               <div class="tenant-actions compact">
                 <button class="secondary" onclick="window.selectTenant('${item.tenant_id}')">查看详情</button>
                 <button class="secondary" onclick="window.prefillTenant('${item.tenant_id}')">配置飞书</button>
-                <button onclick="window.acceptTenant('${item.tenant_id}')">自动验收</button>
+                <button class="secondary" onclick="window.loadProfile('${item.tenant_id}')">平台配置</button>
               </div>
             </td>
           </tr>
         `;
       }).join('');
       if (!state.selectedTenantId && items[0]) state.selectedTenantId = items[0].tenant_id;
-      renderDetail(selectedTenant());
+      const current = selectedTenant();
+      if (current) {
+        await loadProfile(current.tenant_id).catch((e) => log(`载入平台配置失败：${e.message}`));
+      } else {
+        renderDetail(null);
+      }
       log(`已加载 ${items.length} 个租户。`);
     }
+
+    $('saveSecretBtn').onclick = () => {
+      sessionStorage.setItem(secretKey, $('platformSecret').value.trim());
+      log('平台密钥已保存到本次浏览会话。');
+    };
 
     $('reloadBtn').onclick = () => loadTenants().catch((e) => log(`刷新失败：${e.message}`));
     $('tenantFilter').oninput = () => loadTenants().catch((e) => log(`搜索失败：${e.message}`));
 
     $('createTenantBtn').onclick = async () => {
-      const payload = {
-        tenant_id: $('tenantId').value.trim(),
-        name: $('tenantName').value.trim(),
-        mode: $('tenantMode').value,
-        create_admin: {
-          username: $('adminUsername').value.trim(),
-          real_name: $('adminRealName').value.trim(),
-          password: $('adminPassword').value
-        },
-        license: $('licenseExpiresAt').value
-          ? { expires_at: new Date($('licenseExpiresAt').value).toISOString(), allowed_features: ['hrms', 'agent_v2', 'feishu', 'mini_program'] }
-          : undefined
-      };
-      const data = await api('/api/admin/tenants', { method: 'POST', body: JSON.stringify(payload) });
-      log(`租户创建成功：${data.tenant.tenant_id}`);
-      $('cfgTenantId').value = data.tenant.tenant_id;
-      state.selectedTenantId = data.tenant.tenant_id;
-      await loadTenants();
+      try {
+        const payload = {
+          tenant_id: $('tenantId').value.trim(),
+          name: $('tenantName').value.trim(),
+          mode: $('tenantMode').value,
+          create_admin: {
+            username: $('adminUsername').value.trim(),
+            real_name: $('adminRealName').value.trim(),
+            password: $('adminPassword').value
+          },
+          license: $('licenseExpiresAt').value
+            ? { expires_at: new Date($('licenseExpiresAt').value).toISOString(), allowed_features: ['hrms', 'agent_v2', 'feishu', 'mini_program'] }
+            : undefined
+        };
+        const data = await api('/api/admin/tenants', { method: 'POST', body: JSON.stringify(payload) });
+        log(`租户创建成功：${data.tenant.tenant_id}`);
+        $('cfgTenantId').value = data.tenant.tenant_id;
+        state.selectedTenantId = data.tenant.tenant_id;
+        await loadTenants();
+      } catch (e) {
+        log(`创建租户失败：${e.message}`);
+      }
     };
 
     window.selectTenant = async (tenantId) => {
-      state.selectedTenantId = tenantId;
-      $('cfgTenantId').value = tenantId;
-      const item = state.tenants.find((x) => x.tenant_id === tenantId) || null;
-      renderDetail(item);
       try {
-        const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`);
-        log(`已打开 ${tenantId} 的详情和飞书摘要。`);
-        if (data.integration?.app_id) $('cfgAppId').value = data.integration.app_id;
+        state.selectedTenantId = tenantId;
+        $('cfgTenantId').value = tenantId;
+        await loadProfile(tenantId);
       } catch (e) {
         log(`读取租户详情失败：${e.message}`);
       }
@@ -431,9 +668,51 @@
         const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`);
         log(`已加载 ${tenantId} 的飞书配置摘要。`);
         if (data.integration?.app_id) $('cfgAppId').value = data.integration.app_id;
-        renderDetail(state.tenants.find((x) => x.tenant_id === tenantId) || selectedTenant());
+        const current = state.tenants.find((x) => x.tenant_id === tenantId) || selectedTenant();
+        renderDetail(state.detail || { tenant: current, profile: current?.platform_profile || {}, integrations: { feishu_bitable: data.integration }, alerts: [] });
       } catch (e) {
         log(`读取飞书摘要失败：${e.message}`);
+      }
+    };
+
+    $('saveProfileBtn').onclick = async () => {
+      try {
+        const tenantId = $('cfgTenantId').value.trim();
+        if (!tenantId) throw new Error('请先选择要保存的平台租户 ID');
+        const profile = readProfileFromForm();
+        const data = await api(`/api/admin/tenants/${tenantId}/profile`, {
+          method: 'PUT',
+          body: JSON.stringify({ profile })
+        });
+        state.detail = { ...(state.detail || {}), profile: data.profile };
+        log(`平台配置已保存：${tenantId}。`);
+        await loadTenants();
+      } catch (e) {
+        log(`保存平台配置失败：${e.message}`);
+      }
+    };
+
+    $('bootstrapTenantBtn').onclick = async () => {
+      try {
+        const tenantId = $('cfgTenantId').value.trim();
+        if (!tenantId) throw new Error('请先选择租户');
+        const data = await api(`/api/admin/tenants/${tenantId}/bootstrap`, { method: 'POST', body: JSON.stringify({}) });
+        log(`${tenantId} 一键初始化完成：${data.message}`);
+        await loadTenants();
+      } catch (e) {
+        log(`一键初始化失败：${e.message}`);
+      }
+    };
+
+    $('repairTenantBtn').onclick = async () => {
+      try {
+        const tenantId = $('cfgTenantId').value.trim();
+        if (!tenantId) throw new Error('请先选择租户');
+        const data = await api(`/api/admin/tenants/${tenantId}/repair`, { method: 'POST', body: JSON.stringify({}) });
+        log(`${tenantId} 失败修复完成：${data.message}`);
+        await loadTenants();
+      } catch (e) {
+        log(`失败修复按钮执行失败：${e.message}`);
       }
     };
 
@@ -449,8 +728,8 @@
           method: 'PUT',
           body: JSON.stringify(payload)
         });
-        log(`飞书配置已保存：${tenantId}，表=${(data.integration?.tables || []).join(', ')}`);
-        renderDetail(state.tenants.find((x) => x.tenant_id === tenantId) || selectedTenant());
+        log(`飞书配置已保存：${tenantId}，表=${(data.integration?.tables || []).join('、')}`);
+        await loadProfile(tenantId);
         await loadTenants();
       } catch (e) {
         log(`保存飞书配置失败：${e.message}`);
@@ -458,22 +737,39 @@
     };
 
     window.acceptTenant = async (tenantId) => {
-      const data = await api(`/api/admin/tenants/${tenantId}/acceptance`, {
-        method: 'POST',
-        body: JSON.stringify({ activate: true })
-      });
-      log(`自动验收 ${tenantId}：${data.ok ? '通过' : '失败'}；${data.report.checks.map((x) => `${x.key}=${x.ok}`).join(', ')}`);
-      renderDetail(state.tenants.find((x) => x.tenant_id === tenantId) || selectedTenant());
-      await loadTenants();
+      try {
+        const data = await api(`/api/admin/tenants/${tenantId}/acceptance`, {
+          method: 'POST',
+          body: JSON.stringify({ activate: true })
+        });
+        log(`自动验收 ${tenantId}：${data.ok ? '通过' : '失败'}；${data.report.checks.map((x) => `${x.key}=${x.ok}`).join('，')}`);
+        await loadTenants();
+      } catch (e) {
+        log(`自动验收失败：${e.message}`);
+      }
+    };
+
+    window.bootstrapTenant = async (tenantId) => {
+      $('cfgTenantId').value = tenantId;
+      await $('bootstrapTenantBtn').onclick();
+    };
+
+    window.repairTenant = async (tenantId) => {
+      $('cfgTenantId').value = tenantId;
+      await $('repairTenantBtn').onclick();
     };
 
     window.toggleTenantStatus = async (tenantId, nextStatus) => {
-      const data = await api(`/api/admin/tenants/${tenantId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: nextStatus })
-      });
-      log(`租户 ${tenantId} 状态已更新为 ${data.tenant.status}`);
-      await loadTenants();
+      try {
+        const data = await api(`/api/admin/tenants/${tenantId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: nextStatus })
+        });
+        log(`租户 ${tenantId} 状态已更新为 ${formatStatus(data.tenant.status)}`);
+        await loadTenants();
+      } catch (e) {
+        log(`更新租户状态失败：${e.message}`);
+      }
     };
 
     window.promptIssueLicense = async (tenantId) => {
@@ -491,16 +787,21 @@
           method: 'POST',
           body: JSON.stringify({ expires_at: dt.toISOString(), allowed_features })
         });
-        log(`License 已发放：${tenantId} / ${data.license.license_key}`);
+        log(`许可证已发放：${tenantId} / ${data.license.license_key}`);
         await loadTenants();
       } catch (e) {
-        log(`发放 License 失败：${e.message}`);
+        log(`发放许可证失败：${e.message}`);
       }
     };
 
     $('runAcceptanceBtn').onclick = async () => {
-      const tenantId = $('cfgTenantId').value.trim();
-      await window.acceptTenant(tenantId);
+      try {
+        const tenantId = $('cfgTenantId').value.trim();
+        if (!tenantId) throw new Error('请先输入租户 ID');
+        await window.acceptTenant(tenantId);
+      } catch (e) {
+        log(`运行自动验收失败：${e.message}`);
+      }
     };
 
     loadTenants().catch((e) => log(`初始化加载失败：${e.message}`));

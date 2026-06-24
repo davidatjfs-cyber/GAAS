@@ -14710,6 +14710,144 @@ function requireTenantIntegrationKey() {
   return TENANT_INTEGRATION_ENCRYPTION_KEY;
 }
 
+const DEFAULT_PLATFORM_PROFILE = {
+  system_name: '年年有喜管理系统',
+  page_title: '平台租户控制台',
+  logo_url: '',
+  favicon_url: '',
+  brand_color: '#0d7a5f',
+  tagline: '统一管理租户开通、外观配置、飞书接入、自动验收与告警。',
+  feature_switches: {
+    unified_template: true,
+    auto_acceptance: true,
+    failure_repair: true,
+    tenant_alerts: true,
+    billing: true,
+    countdown: true,
+  },
+  billing: {
+    plan_name: '',
+    billing_cycle: '',
+    next_invoice_at: '',
+    billing_contact: '',
+    notes: '',
+  },
+  alerts: {
+    notify_days_before_expiry: 30,
+    feishu_chat: '',
+    contact: '',
+    notes: '',
+  },
+  template_switches: {
+    hrms: true,
+    agent_v2: true,
+    mini_program: true,
+    feishu: true,
+  },
+  notes: '',
+};
+
+function mergePlatformProfile(value, fallbackName = '') {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const featureSwitches = input.feature_switches && typeof input.feature_switches === 'object' && !Array.isArray(input.feature_switches) ? input.feature_switches : {};
+  const billing = input.billing && typeof input.billing === 'object' && !Array.isArray(input.billing) ? input.billing : {};
+  const alerts = input.alerts && typeof input.alerts === 'object' && !Array.isArray(input.alerts) ? input.alerts : {};
+  const templateSwitches = input.template_switches && typeof input.template_switches === 'object' && !Array.isArray(input.template_switches) ? input.template_switches : {};
+  return {
+    ...DEFAULT_PLATFORM_PROFILE,
+    ...input,
+    system_name: String(input.system_name || fallbackName || DEFAULT_PLATFORM_PROFILE.system_name).trim() || DEFAULT_PLATFORM_PROFILE.system_name,
+    page_title: String(input.page_title || DEFAULT_PLATFORM_PROFILE.page_title).trim() || DEFAULT_PLATFORM_PROFILE.page_title,
+    logo_url: String(input.logo_url || '').trim(),
+    favicon_url: String(input.favicon_url || '').trim(),
+    brand_color: String(input.brand_color || DEFAULT_PLATFORM_PROFILE.brand_color).trim() || DEFAULT_PLATFORM_PROFILE.brand_color,
+    tagline: String(input.tagline || DEFAULT_PLATFORM_PROFILE.tagline).trim() || DEFAULT_PLATFORM_PROFILE.tagline,
+    notes: String(input.notes || '').trim(),
+    feature_switches: {
+      ...DEFAULT_PLATFORM_PROFILE.feature_switches,
+      ...featureSwitches,
+    },
+    billing: {
+      ...DEFAULT_PLATFORM_PROFILE.billing,
+      ...billing,
+      plan_name: String(billing.plan_name || '').trim(),
+      billing_cycle: String(billing.billing_cycle || '').trim(),
+      next_invoice_at: String(billing.next_invoice_at || '').trim(),
+      billing_contact: String(billing.billing_contact || '').trim(),
+      notes: String(billing.notes || '').trim(),
+    },
+    alerts: {
+      ...DEFAULT_PLATFORM_PROFILE.alerts,
+      ...alerts,
+      notify_days_before_expiry: Number.isFinite(Number(alerts.notify_days_before_expiry))
+        ? Math.max(1, Math.floor(Number(alerts.notify_days_before_expiry)))
+        : DEFAULT_PLATFORM_PROFILE.alerts.notify_days_before_expiry,
+      feishu_chat: String(alerts.feishu_chat || '').trim(),
+      contact: String(alerts.contact || '').trim(),
+      notes: String(alerts.notes || '').trim(),
+    },
+    template_switches: {
+      ...DEFAULT_PLATFORM_PROFILE.template_switches,
+      ...templateSwitches,
+    },
+  };
+}
+
+async function getTenantPlatformProfile(db, tenantId, fallbackName = '') {
+  const r = await db.query(
+    `SELECT config_value
+       FROM tenant_config
+      WHERE tenant_key = $1 AND config_key = 'platform_profile'
+      LIMIT 1`,
+    [tenantId]
+  );
+  return mergePlatformProfile(r.rows?.[0]?.config_value || {}, fallbackName || tenantId);
+}
+
+async function saveTenantPlatformProfile(db, tenantId, profile) {
+  const normalized = mergePlatformProfile(profile, tenantId);
+  await db.query(
+    `INSERT INTO tenant_config (tenant_key, config_key, config_value)
+     VALUES ($1, 'platform_profile', $2::jsonb)
+     ON CONFLICT (tenant_key, config_key)
+     DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = NOW()`,
+    [tenantId, JSON.stringify(normalized)]
+  );
+  return normalized;
+}
+
+function computeLicenseCountdown(expiresAt) {
+  if (!expiresAt) return null;
+  const dt = new Date(expiresAt);
+  if (!Number.isFinite(dt.getTime())) return null;
+  return Math.ceil((dt.getTime() - Date.now()) / 86400000);
+}
+
+function buildTenantAlerts(tenantRow, licenseRow, profile, feishuSummary) {
+  const alerts = [];
+  const countdown = computeLicenseCountdown(licenseRow?.license_expires_at || licenseRow?.expires_at);
+  if (!licenseRow) {
+    alerts.push({ level: 'warn', key: 'license_missing', title: '许可证缺失', detail: '尚未发放许可证。' });
+  } else if (Number.isFinite(countdown) && countdown !== null && countdown <= 30) {
+    alerts.push({
+      level: countdown < 0 ? 'error' : 'warn',
+      key: 'license_expiring',
+      title: '许可证即将到期',
+      detail: countdown < 0 ? '许可证已过期，请立即续期。' : `剩余 ${countdown} 天`,
+    });
+  }
+  if (!feishuSummary?.configured) {
+    alerts.push({ level: 'warn', key: 'feishu_missing', title: '飞书未配置', detail: '未绑定独立飞书 Bitable。' });
+  }
+  if (!String(profile?.system_name || '').trim()) {
+    alerts.push({ level: 'warn', key: 'branding_missing', title: '品牌信息未完善', detail: '建议先补系统名称与 Logo。' });
+  }
+  if (tenantRow?.status !== 'active') {
+    alerts.push({ level: 'warn', key: 'tenant_inactive', title: '租户未激活', detail: `当前状态：${tenantRow?.status || '-'}` });
+  }
+  return alerts;
+}
+
 async function runTenantAcceptance(tenantId) {
   const tenant = await pool.query(
     `SELECT tenant_id, name, mode, status
@@ -15419,6 +15557,13 @@ app.post('/api/admin/tenants', platformAdminRequired, async (req, res) => {
       }))]
     );
 
+    await saveTenantPlatformProfile(client, tenantId, {
+      ...DEFAULT_PLATFORM_PROFILE,
+      system_name: name,
+      page_title: `${name} 平台控制台`,
+      notes: `由平台控制台在 ${new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ')} 初始化`,
+    });
+
     // Provisioning acceptance gate: the tenant is not activated until its own
     // context can read the seeded admin and state row.
     const smoke = await client.query(
@@ -15470,6 +15615,10 @@ app.get('/api/admin/tenants', platformAdminRequired, async (req, res) => {
       ORDER BY t.created_at DESC
     `);
     const items = r.rows || [];
+    const profileRows = await pool.query(`SELECT tenant_key, config_value FROM tenant_config WHERE config_key = 'platform_profile'`);
+    const profileByTenant = new Map(
+      profileRows.rows.map((row) => [row.tenant_key, mergePlatformProfile(row.config_value || {}, row.tenant_key)])
+    );
     let integrationByTenant = new Map();
     if (TENANT_INTEGRATION_ENCRYPTION_KEY && items.length) {
       const summaries = await Promise.all(
@@ -15491,7 +15640,9 @@ app.get('/api/admin/tenants', platformAdminRequired, async (req, res) => {
             app_id: '',
             tables: [],
           }
-        }
+        },
+        platform_profile: profileByTenant.get(row.tenant_id) || mergePlatformProfile({}, row.name || row.tenant_id),
+        license_countdown_days: computeLicenseCountdown(row.license_expires_at),
       }))
     });
   } catch (e) {
@@ -15501,6 +15652,52 @@ app.get('/api/admin/tenants', platformAdminRequired, async (req, res) => {
 
 app.get(['/platform-admin', '/platform-admin/'], (req, res) => {
   return res.sendFile(path.join(__dirname, '../platform-admin.html'));
+});
+
+app.get('/api/admin/tenants/:tenantId/profile', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  if (!tenantId) return res.status(400).json({ error: 'missing_tenant_id' });
+  try {
+    const tenantRow = await pool.query(`
+      SELECT t.tenant_id, t.name, t.mode, t.status, t.created_at,
+             l.license_key, l.expires_at AS license_expires_at, l.status AS license_status
+      FROM tenants t
+      LEFT JOIN LATERAL (
+        SELECT license_key, expires_at, status FROM licenses
+        WHERE licenses.tenant_id = t.tenant_id
+        ORDER BY created_at DESC LIMIT 1
+      ) l ON true
+      WHERE t.tenant_id = $1
+      LIMIT 1
+    `, [tenantId]);
+    if (!tenantRow.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
+    const profile = await getTenantPlatformProfile(pool, tenantId, tenantRow.rows[0].name);
+    let feishu = {
+      tenant_id: tenantId,
+      integration_key: 'feishu_bitable',
+      configured: false,
+      app_id: '',
+      tables: [],
+    };
+    if (TENANT_INTEGRATION_ENCRYPTION_KEY) {
+      feishu = await tenantContext.run(
+        tenantId,
+        () => getTenantIntegrationSummary(pool, tenantId, 'feishu_bitable', TENANT_INTEGRATION_ENCRYPTION_KEY)
+      );
+    }
+    return res.json({
+      ok: true,
+      tenant: {
+        ...tenantRow.rows[0],
+        license_countdown_days: computeLicenseCountdown(tenantRow.rows[0].license_expires_at),
+      },
+      profile,
+      integrations: { feishu_bitable: feishu },
+      alerts: buildTenantAlerts(tenantRow.rows[0], tenantRow.rows[0], profile, feishu),
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+  }
 });
 
 app.patch('/api/admin/tenants/:tenantId', platformAdminRequired, async (req, res) => {
@@ -15525,6 +15722,18 @@ app.patch('/api/admin/tenants/:tenantId', platformAdminRequired, async (req, res
   }
 });
 
+app.put('/api/admin/tenants/:tenantId/profile', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  try {
+    const exists = await pool.query('SELECT tenant_id FROM tenants WHERE tenant_id = $1 LIMIT 1', [tenantId]);
+    if (!exists.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
+    const saved = await saveTenantPlatformProfile(pool, tenantId, req.body?.profile || req.body || {});
+    return res.json({ ok: true, profile: saved });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+  }
+});
+
 app.post('/api/admin/tenants/:tenantId/license', platformAdminRequired, async (req, res) => {
   const tenantId = String(req.params.tenantId || '').trim();
   const expiresAt = req.body?.expires_at;
@@ -15540,6 +15749,64 @@ app.post('/api/admin/tenants/:tenantId/license', platformAdminRequired, async (r
       [tenantId, licenseKey, expiresAt, JSON.stringify(allowedFeatures)]
     );
     return res.json({ ok: true, license: r.rows[0] });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+  }
+});
+
+app.post('/api/admin/tenants/:tenantId/bootstrap', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  try {
+    const exists = await pool.query('SELECT tenant_id, name FROM tenants WHERE tenant_id = $1 LIMIT 1', [tenantId]);
+    if (!exists.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
+    const current = await getTenantPlatformProfile(pool, tenantId, exists.rows[0].name);
+    const next = mergePlatformProfile({
+      ...current,
+      system_name: current.system_name || exists.rows[0].name,
+      page_title: current.page_title || `${exists.rows[0].name} 平台控制台`,
+      feature_switches: {
+        ...current.feature_switches,
+        unified_template: true,
+        auto_acceptance: true,
+        failure_repair: true,
+        tenant_alerts: true,
+        billing: true,
+        countdown: true,
+      },
+      template_switches: {
+        ...current.template_switches,
+        hrms: true,
+        agent_v2: true,
+        mini_program: true,
+        feishu: true,
+      },
+    }, tenantId);
+    await saveTenantPlatformProfile(pool, tenantId, next);
+    const report = await runTenantAcceptance(tenantId);
+    return res.json({
+      ok: true,
+      profile: next,
+      report,
+      message: report.ok ? '初始化完成' : '初始化完成，但部分检查项仍失败',
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+  }
+});
+
+app.post('/api/admin/tenants/:tenantId/repair', platformAdminRequired, async (req, res) => {
+  const tenantId = String(req.params.tenantId || '').trim();
+  try {
+    const exists = await pool.query('SELECT tenant_id FROM tenants WHERE tenant_id = $1 LIMIT 1', [tenantId]);
+    if (!exists.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
+    const profile = await getTenantPlatformProfile(pool, tenantId);
+    await saveTenantPlatformProfile(pool, tenantId, profile);
+    const report = await runTenantAcceptance(tenantId);
+    return res.json({
+      ok: report.ok,
+      report,
+      message: report.ok ? '修复校验通过' : '修复校验完成，但仍有检查项失败',
+    });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
   }
