@@ -343,19 +343,38 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const secretKey = 'hrms_platform_secret';
+    const agentTenantKey = 'agent_admin_tenant_id';
+    const agentSecretKey = 'platform_admin_secret';
     const state = { tenants: [], selectedTenantId: '', detail: null };
 
     const log = (msg) => {
       $('log').textContent = `[${new Date().toLocaleString()}] ${msg}\n` + $('log').textContent;
     };
 
-    $('platformSecret').value = sessionStorage.getItem(secretKey) || '';
+    $('platformSecret').value = localStorage.getItem(secretKey) || sessionStorage.getItem(secretKey) || '';
 
     function headers(extra = {}) {
       const secret = $('platformSecret').value.trim();
       if (!secret) throw new Error('请先填写平台密钥');
       return { 'Content-Type': 'application/json', 'x-platform-admin-secret': secret, ...extra };
     }
+
+    function rememberPlatformSecret(secret) {
+      localStorage.setItem(secretKey, secret);
+      sessionStorage.setItem(secretKey, secret);
+    }
+
+    window.openAgentConsoleForTenant = (tenantId) => {
+      const id = String(tenantId || '').trim();
+      const secret = $('platformSecret').value.trim();
+      if (!id) throw new Error('请先选择租户');
+      if (!secret) throw new Error('请先填写平台密钥');
+      localStorage.setItem(agentTenantKey, id);
+      localStorage.setItem(agentSecretKey, secret);
+      rememberPlatformSecret(secret);
+      window.open(`/agents-admin/?tenant_id=${encodeURIComponent(id)}`, '_blank', 'noopener');
+      log(`已打开租户 ${id} 的 Agent 控制台`);
+    };
 
     async function api(url, options = {}) {
       const resp = await fetch(url, { ...options, headers: headers(options.headers || {}) });
@@ -552,6 +571,7 @@
         <div class="tenant-actions compact" style="margin-top:12px">
           <button class="secondary" onclick="window.prefillTenant('${tenant.tenant_id}')">加载飞书配置</button>
           <button class="secondary" onclick="window.loadProfile('${tenant.tenant_id}')">载入平台配置</button>
+          <button class="secondary" onclick="window.openAgentConsoleForTenant('${tenant.tenant_id}')">打开 Agent 控制台</button>
           <button onclick="window.acceptTenant('${tenant.tenant_id}')">运行验收</button>
           <button class="warn" onclick="window.bootstrapTenant('${tenant.tenant_id}')">一键初始化</button>
           <button class="warn" onclick="window.repairTenant('${tenant.tenant_id}')">失败修复</button>
@@ -633,6 +653,7 @@
                 <button class="secondary" onclick="window.selectTenant('${item.tenant_id}')">查看详情</button>
                 <button class="secondary" onclick="window.prefillTenant('${item.tenant_id}')">配置飞书</button>
                 <button class="secondary" onclick="window.loadProfile('${item.tenant_id}')">平台配置</button>
+                <button class="secondary" onclick="window.openAgentConsoleForTenant('${item.tenant_id}')">Agent 控制台</button>
               </div>
             </td>
           </tr>
@@ -649,7 +670,7 @@
     }
 
     $('saveSecretBtn').onclick = () => {
-      sessionStorage.setItem(secretKey, $('platformSecret').value.trim());
+      rememberPlatformSecret($('platformSecret').value.trim());
       log('平台密钥已保存到本次浏览会话。');
     };
 
