@@ -3188,6 +3188,19 @@
                 overflow-y: hidden !important;
             }
 
+            /* 请款基础配置/预算/流程/审批详情这几个modal用的是.pay-dict-panel自己的
+               overflow-y:auto做内部滚动，不是.ui-form-grid那套——上面那条.ui-modal
+               .modal-content{overflow-y:hidden}把它们的滚动也锁死了，内容超出90dvh
+               后下半部分完全摸不到、看起来像被前面内容挡住/不能移动。这里用ID选择器
+               (优先级高于上面的两个class选择器)针对这几个modal专门解锁。 */
+            #payment-basic-modal.modal .modal-content,
+            #payment-budget-modal.modal .modal-content,
+            #payment-flow-modal.modal .modal-content,
+            #approval-detail-modal.modal .modal-content {
+                overflow-y: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+            }
+
             .ui-modal .ui-form-grid {
                 flex: 1;
                 overflow-y: auto;
@@ -11681,6 +11694,12 @@
         #profile-page .pf-notif-badge--announcement { background: rgba(109,124,255,0.15); color: var(--iris); }
         #profile-page .pf-notif-badge--warning { background: rgba(255,122,144,0.15); color: var(--coral); }
         #profile-page .pf-notif-badge--info { background: rgba(94,234,212,0.12); color: var(--mint); }
+        #profile-page .pf-notif-badge--urgent { background: #ef4444; color: #fff; font-weight: 800; animation: pfNotifUrgentPulse 1.6s ease-in-out infinite; }
+        @keyframes pfNotifUrgentPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.55); } 50% { box-shadow: 0 0 0 5px rgba(239,68,68,0); } }
+        #profile-page .pf-notif-card--unread { border-color: rgba(99,102,241,0.55); background: rgba(99,102,241,0.06); }
+        #profile-page .pf-notif-card--urgent { border-color: rgba(239,68,68,0.6); background: rgba(239,68,68,0.07); }
+        #profile-page .pf-notif-unread-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#6366f1; flex-shrink:0; margin-right:2px; }
+        #profile-page .pf-notif-card--urgent .pf-notif-unread-dot { background:#ef4444; }
         /* profile 待审批卡片（内嵌） */
         #profile-page .pf-approval-item {
             display: flex; align-items: center; gap: 10px;
@@ -21753,6 +21772,20 @@
                     <label style="color: #666; font-size: 12px;">选择门店</label>
                     <select id="announcement-scope-store" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;"></select>
                 </div>
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label style="color: #666; font-size: 12px;">重要级别</label>
+                    <select id="announcement-level" onchange="syncAnnouncementAckField()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                        <option value="normal" selected>普通</option>
+                        <option value="important">重要</option>
+                        <option value="urgent">紧急</option>
+                    </select>
+                </div>
+                <div class="form-group" id="announcement-ack-box" style="margin-bottom: 12px; display:none;">
+                    <label style="display:flex; align-items:center; gap: 6px; cursor:pointer;">
+                        <input type="checkbox" id="announcement-require-ack" style="accent-color:#ef4444; width:16px; height:16px;">
+                        <span style="color:#666; font-size:12px;">强制要求员工确认已读（未确认前打开APP会弹窗拦截，必须点击"我已阅读"才能关闭）</span>
+                    </label>
+                </div>
                 <div class="form-group" style="margin-bottom: 12px; display:flex; align-items:center; gap: 12px; flex-wrap: wrap;">
                     <label style="display:flex; align-items:center; gap: 6px; cursor:pointer;">
                         <input type="checkbox" id="announcement-pinned" onchange="syncAnnouncementPinFields()" style="accent-color:#f59e0b; width:16px; height:16px;">
@@ -21767,6 +21800,35 @@
                     <button class="btn btn-secondary" type="button" onclick="closeAnnouncementModal()">取消</button>
                     <button class="btn" type="button" onclick="confirmAnnouncementPublish()">发布</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 重要公告强制确认弹窗：未点"我已阅读"无法关闭，没有×也没有点遮罩关闭 -->
+    <div id="ack-announcement-modal" class="modal">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header" id="ack-announcement-header" style="background:linear-gradient(135deg,#ef4444,#dc2626);">
+                <h3 id="ack-announcement-title" style="color:#fff;">🚨 重要公告</h3>
+            </div>
+            <div class="modal-body">
+                <div id="ack-announcement-meta" style="color:#999; font-size:12px; margin-bottom:10px;"></div>
+                <div id="ack-announcement-content" style="white-space:pre-wrap; line-height:1.7; max-height: 50vh; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
+                <div style="display:flex; justify-content:center; margin-top:18px;">
+                    <button class="btn" type="button" onclick="ackAndCloseAnnouncement()" style="background:linear-gradient(135deg,#ef4444,#dc2626); width:100%; padding:14px; font-size:15px; font-weight:700;">我已阅读并知晓</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 公告已读情况（管理员查看） -->
+    <div id="announcement-receipts-modal" class="modal">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3>已读情况</h3>
+                <button class="modal-close" onclick="closeAnnouncementReceiptsModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="announcement-receipts-body" style="font-size:13px; line-height:1.8;">加载中…</div>
             </div>
         </div>
     </div>
@@ -28589,12 +28651,17 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             const scopeType = document.getElementById('announcement-scope-type');
             const pinnedCb = document.getElementById('announcement-pinned');
             const pinUntil = document.getElementById('announcement-pin-until');
+            const levelSel = document.getElementById('announcement-level');
+            const ackCb = document.getElementById('announcement-require-ack');
             if (title) title.value = '';
             if (content) content.value = '';
             if (scopeType) scopeType.value = 'all';
             if (pinnedCb) pinnedCb.checked = false;
             if (pinUntil) pinUntil.value = '';
+            if (levelSel) levelSel.value = 'normal';
+            if (ackCb) ackCb.checked = false;
             syncAnnouncementPinFields();
+            syncAnnouncementAckField();
 
             populateAnnouncementStores();
             syncAnnouncementScopeFields();
@@ -28633,6 +28700,16 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             if (box) box.style.display = pinned ? '' : 'none';
         }
 
+        function syncAnnouncementAckField() {
+            const level = String(document.getElementById('announcement-level')?.value || 'normal').trim();
+            const box = document.getElementById('announcement-ack-box');
+            if (box) box.style.display = level === 'normal' ? 'none' : '';
+            if (level === 'normal') {
+                const ackCb = document.getElementById('announcement-require-ack');
+                if (ackCb) ackCb.checked = false;
+            }
+        }
+
         async function confirmAnnouncementPublish() {
             if (!isAdminUser()) {
                 showNotification('仅管理员可发布公告', 'warning');
@@ -28662,12 +28739,17 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 return;
             }
 
+            const level = String(document.getElementById('announcement-level')?.value || 'normal').trim();
+            const requireAck = level !== 'normal' && (document.getElementById('announcement-require-ack')?.checked || false);
+
             const data = HRMS_STORE.ensure();
             data.announcements = Array.isArray(data.announcements) ? data.announcements : [];
             const ann = {
                 id: 'ANN' + Date.now(),
                 title,
-                level: 'important',
+                level,
+                requireAck,
+                readBy: {},
                 content,
                 scope: scopeType === 'store' ? { type: 'store', store } : { type: scopeType },
                 createdAt: hrmsNowISO(),
@@ -36892,14 +36974,18 @@ ${knowledgeContent.slice(0, 30000)}`;
         function promoDefaultLevelsMap() {
             return {
                 '打荷': ['L1', 'L2', 'L3'],
+                '汤档/煲仔': ['T1', 'T2'],
                 '砧板': ['三砧', '二砧', '头砧'],
                 '炒锅': ['见习镬', '二镬', '头镬'],
                 '烧味/卤水': ['学徒', '师', '主管'],
                 '刺身': ['L1', 'L2', 'L3', '主管'],
+                '洗碗': ['T1'],
+                '水吧': ['L1', 'L2', 'L3'],
                 '传菜': ['L1'],
                 '服务员': ['L2'],
                 '主管': ['L3', 'L4'],
                 '前厅经理': ['L5'],
+                '门店店长': ['M3'],
                 '出纳': ['L1', 'L2'],
                 '出品经理': ['储备', '正式']
             };
@@ -46249,6 +46335,14 @@ tr:nth-child(even) td { background: #fafafa; }
                 return String(b?.createdAt || '').localeCompare(String(a?.createdAt || ''));
             });
 
+            // 强制确认队列：重要/紧急 + requireAck + 我还没读过的公告，登录后挨个弹窗拦截
+            const ackQueue = anns.filter(a => a?.requireAck && String(a?.level || '') !== 'normal'
+                && !(a?.readBy && a.readBy[myUsername]));
+            if (ackQueue.length) {
+                ackQueue.sort((a, b) => (String(a.level) === 'urgent' ? -1 : 0) - (String(b.level) === 'urgent' ? -1 : 0));
+                setTimeout(() => showForcedAnnouncementAck(ackQueue), 400);
+            }
+
             // Update header badge & subtitle
             const todayDate = new Date().toISOString().slice(0, 10);
             const todayCount = visible.filter(a => String(a?.createdAt || '').slice(0, 10) === todayDate).length;
@@ -46289,16 +46383,21 @@ tr:nth-child(even) td { background: #fafafa; }
                 const isSys = a._src === 'notification' || a._src === 'db_notification';
                 const notifDate = String(a?.createdAt || '').slice(0, 10);
                 const isToday = notifDate === todayDate;
-                const isImportant = String(a?.level || '') === 'important';
+                const annLevel = String(a?.level || 'normal');
+                const isUrgent = annLevel === 'urgent';
+                const isImportant = annLevel === 'important' || isUrgent;
+                const isRead = isSys ? true : !!(a?.readBy && a.readBy[myUsername]);
 
-                let typeIcon = isSys ? '🔔' : isToday ? '🆕' : isImportant ? '🔴' : '📣';
+                let typeIcon = isSys ? '🔔' : isToday ? '🆕' : isUrgent ? '🚨' : isImportant ? '🔴' : '📣';
                 if (String(a?.title || '').includes('排班')) typeIcon = '📅';
-                if (isImportant) typeIcon = '🔴';
+                if (isUrgent) typeIcon = '🚨'; else if (isImportant) typeIcon = '🔴';
 
                 const nowISO = new Date().toISOString();
                 const isPinned = a?.pinned && (!a?.pin_until || a.pin_until >= nowISO);
                 let badge = '';
-                if (isPinned) {
+                if (isUrgent) {
+                    badge = '<span class="pf-notif-badge pf-notif-badge--urgent">🚨 紧急</span>';
+                } else if (isPinned) {
                     badge = '<span class="pf-notif-badge pf-notif-badge--announcement">📌 置顶</span>';
                 } else if (isToday) {
                     badge = '<span class="pf-notif-badge pf-notif-badge--warning">NEW</span>';
@@ -46307,28 +46406,34 @@ tr:nth-child(even) td { background: #fafafa; }
                 } else if (!isSys) {
                     badge = '<span class="pf-notif-badge pf-notif-badge--announcement">公告</span>';
                 }
+                const unreadDot = (!isSys && !isRead) ? '<span class="pf-notif-unread-dot" title="未读"></span>' : '';
 
                 const srcId = a._src + '|' + a._id;
                 const delBtn = isAdmin
                     ? '<button type="button" onclick="event.stopPropagation();deleteProfileNotification(\'' + srcId + '\')" class="ga-btn ga-btn--danger ga-btn--sm" style="height:26px;font-size:11px;">删除</button>'
                     : '';
+                const receiptBtn = (isAdmin && !isSys && a._id)
+                    ? '<button type="button" onclick="event.stopPropagation();showAnnouncementReceipts(\'' + escapeHtml(String(a._id)) + '\')" class="ga-btn ga-btn--sm" style="height:26px;font-size:11px;">已读情况</button>'
+                    : '';
 
                 const isLong = rawMsg.length > 80;
                 const preview = isLong ? escapeHtml(rawMsg.slice(0, 80)) + '…' : msg;
 
-                return '<div class="pf-notif-card"' + (isLong ? ' onclick="this.querySelector(\'.notif-full-msg\').classList.toggle(\'notif-msg-show\')"' : '') + '>'
+                const cardCls = 'pf-notif-card' + (isUrgent ? ' pf-notif-card--urgent' : '') + (!isSys && !isRead ? ' pf-notif-card--unread' : '');
+                return '<div class="' + cardCls + '"' + (isLong ? ' onclick="this.querySelector(\'.notif-full-msg\').classList.toggle(\'notif-msg-show\')"' : '') + '>'
                     + '<div class="pf-notif-head">'
                     +   '<div class="pf-notif-main">'
                     +     '<span class="pf-notif-icon">' + typeIcon + '</span>'
                     +     '<div class="pf-notif-copy">'
                     +       '<div class="pf-notif-title-row">'
+                    +         unreadDot
                     +         '<span class="pf-notif-title">' + title + '</span>'
                     +         badge
                     +       '</div>'
                     +       '<div class="pf-notif-meta">' + escapeHtml(relTime) + ' · ' + escapeHtml(fullDt) + '</div>'
                     +     '</div>'
                     +   '</div>'
-                    +   delBtn
+                    +   '<div style="display:flex;gap:6px;flex-shrink:0;">' + receiptBtn + delBtn + '</div>'
                     + '</div>'
                     + '<div class="pf-notif-body">' + preview + '</div>'
                     + (isLong ? '<div class="notif-full-msg pf-notif-full" style="display:none;">' + msg + '</div><div class="pf-notif-expand-hint">点击展开全文</div>' : '')
@@ -46351,6 +46456,77 @@ tr:nth-child(even) td { background: #fafafa; }
                 }
             }
             box.innerHTML = html;
+        }
+
+        // 重要公告强制确认队列：一个一个弹，点"我已阅读"才关掉当前这个并弹下一个
+        let __ackAnnouncementQueue = [];
+        function showForcedAnnouncementAck(queue) {
+            __ackAnnouncementQueue = Array.isArray(queue) ? queue.slice() : [];
+            __showNextForcedAnnouncement();
+        }
+        function __showNextForcedAnnouncement() {
+            const modal = document.getElementById('ack-announcement-modal');
+            if (!modal) return;
+            if (!__ackAnnouncementQueue.length) { modal.classList.remove('show'); return; }
+            const a = __ackAnnouncementQueue[0];
+            const isUrgent = String(a?.level || '') === 'urgent';
+            const header = document.getElementById('ack-announcement-header');
+            const titleEl = document.getElementById('ack-announcement-title');
+            const metaEl = document.getElementById('ack-announcement-meta');
+            const contentEl = document.getElementById('ack-announcement-content');
+            if (header) header.style.background = isUrgent ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)';
+            if (titleEl) titleEl.textContent = (isUrgent ? '🚨 紧急公告：' : '🔴 重要公告：') + String(a?.title || '');
+            if (metaEl) metaEl.textContent = '发布人：' + String(a?.createdByName || a?.createdBy || '管理员') + ' · ' + String(a?.createdAt || '').slice(0, 16).replace('T', ' ') + '（需要确认已读才能关闭）';
+            if (contentEl) contentEl.textContent = String(a?.content || '');
+            modal.classList.add('show');
+        }
+        async function ackAndCloseAnnouncement() {
+            const a = __ackAnnouncementQueue[0];
+            if (!a) { document.getElementById('ack-announcement-modal')?.classList.remove('show'); return; }
+            try {
+                await HRMS_API.request('/api/announcements/' + encodeURIComponent(String(a.id || a._id)) + '/ack', { method: 'POST' });
+            } catch (e) { console.warn('ack announcement failed', e); }
+            __ackAnnouncementQueue.shift();
+            if (__ackAnnouncementQueue.length) {
+                __showNextForcedAnnouncement();
+            } else {
+                document.getElementById('ack-announcement-modal')?.classList.remove('show');
+                try { renderProfileNotifications(); } catch (e) {}
+            }
+        }
+
+        // 管理员查看某条公告的已读情况
+        async function showAnnouncementReceipts(annId) {
+            const modal = document.getElementById('announcement-receipts-modal');
+            const body = document.getElementById('announcement-receipts-body');
+            if (!modal || !body) return;
+            body.innerHTML = '加载中…';
+            modal.classList.add('show');
+            try {
+                const data = await HRMS_API.request('/api/announcements/' + encodeURIComponent(annId) + '/receipts');
+                const total = data.total || 0;
+                const readCount = data.readCount || 0;
+                const unread = Array.isArray(data.unread) ? data.unread : [];
+                const pct = total ? Math.round((readCount / total) * 100) : 0;
+                let html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
+                    + '<div style="font-size:28px;font-weight:800;color:' + (pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444') + ';">' + pct + '%</div>'
+                    + '<div style="color:#666;font-size:12px;">已读 ' + readCount + ' / 共 ' + total + ' 人</div>'
+                    + '</div>';
+                if (unread.length) {
+                    html += '<div style="font-weight:700;margin-bottom:6px;">未读名单（' + unread.length + '人）</div>';
+                    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + unread.map(u =>
+                        '<span style="background:rgba(239,68,68,0.1);color:#ef4444;padding:4px 10px;border-radius:8px;font-size:12px;">' + escapeHtml(u.name || u.username) + (u.store ? '（' + escapeHtml(u.store) + '）' : '') + '</span>'
+                    ).join('') + '</div>';
+                } else {
+                    html += '<div style="color:#10b981;">🎉 全员已读</div>';
+                }
+                body.innerHTML = html;
+            } catch (e) {
+                body.innerHTML = '<span style="color:#ef4444;">加载失败：' + escapeHtml(e.message || '') + '</span>';
+            }
+        }
+        function closeAnnouncementReceiptsModal() {
+            document.getElementById('announcement-receipts-modal')?.classList.remove('show');
         }
 
         function toggleProfileNotifications() {

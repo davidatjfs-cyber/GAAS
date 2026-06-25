@@ -550,11 +550,13 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
   });
 
   // GET /api/training/topics - 列出知识点
+  // 注意：员工提交晋升资格申请(技能提升)时，前端要按目标岗位查知识点供自选，
+  // 调用方是申请人本人(store_employee)而非管理者——之前这里要求isManager()，
+  // 普通员工调用必得403，前端又把{error:...}误判成{topics:[]}显示"该岗位暂无知识点"，
+  // 导致所有非管理者角色提交同岗位晋升申请时永远看不到任何知识点可选。
+  // 知识点标题/要点本身不是敏感数据(本来就是员工要学的内容)，放开给所有登录用户只读查询。
   app.get('/api/training/topics', authMiddleware, async (req, res) => {
     try {
-      if (!isManager(req.user?.role)) {
-        return res.status(403).json({ error: '无权限访问' });
-      }
       const position = req.query.position || '';
       const tenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
       const params = [tenantId];
