@@ -95,6 +95,10 @@ const HOST = String(process.env.HOST || '0.0.0.0');
 const DATABASE_URL = process.env.DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET;
 const PLATFORM_ADMIN_SECRET = process.env.PLATFORM_ADMIN_SECRET;
+// 平台管理员JWT用独立密钥签发/校验，与租户内普通用户登录的JWT_SECRET隔离，
+// 避免任一边密钥轮换/泄露时影响范围扩大到另一边。agents-service-v2需配置同一个值
+// 才能让同一份platform_admin token跨两个服务通用（参见该服务middleware/auth.js）。
+const PLATFORM_ADMIN_JWT_SECRET = process.env.PLATFORM_ADMIN_JWT_SECRET || JWT_SECRET;
 const TENANT_INTEGRATION_ENCRYPTION_KEY = process.env.TENANT_INTEGRATION_ENCRYPTION_KEY || '';
 const REQUIRED_TENANT_FEISHU_TABLE_KEYS = [
   'ops_checklist',
@@ -5087,27 +5091,92 @@ app.get('/api/unread-counts', authRequired, async (req, res) => {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
   }
 });
-app.use('/uploads', express.static(uploadsDir));
+// 2026-06-25 文件存储租户隔离：/uploads 之前用express.static公开裸露，任何人拿到URL
+// (哪怕是员工身份证照片)不用登录就能直接看，且没有租户边界。改为鉴权路由按文件归属
+// 租户校验后才流式返回。URL路径不变(/uploads/<...>)，老链接不受影响，只是访问方式变了。
+app.get('/uploads/*', authRequired, async (req, res) => {
+  try {
+    const rawRel = String(req.params[0] || '').replace(/^\/+/, '');
+    const normalizedRel = path.normalize(rawRel);
+    if (!rawRel || normalizedRel.startsWith('..') || path.isAbsolute(normalizedRel)) {
+      return res.status(400).json({ error: 'invalid_path' });
+    }
+    const fullPath = path.join(uploadsDir, normalizedRel);
+    if (!fullPath.startsWith(uploadsDir)) return res.status(400).json({ error: 'invalid_path' });
+    if (!fs.existsSync(fullPath)) return res.status(404).json({ error: 'not_found' });
+
+    const filename = path.basename(normalizedRel);
+    const reqTenantId = String(req.tenantId || 'default').trim() || 'default';
+    const role = String(req.user?.role || '').trim();
+    if (role !== 'admin') {
+      let ownerTenantId = 'default';
+      try {
+        const r = await pool.query(`SELECT tenant_id FROM upload_file_owners WHERE filename = $1 LIMIT 1`, [filename]);
+        ownerTenantId = r.rows?.[0]?.tenant_id || 'default';
+      } catch (_) { /* 查询失败：保守按default处理，不放行非default租户 */ }
+      if (ownerTenantId !== reqTenantId) return res.status(403).json({ error: 'forbidden' });
+    }
+    return res.sendFile(fullPath);
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+  }
+});
+
+// 上传成功后记录文件归属租户，供上面的鉴权下载路由做校验
+async function recordUploadOwnership(filenames, tenantId, uploadedBy) {
+  const list = (Array.isArray(filenames) ? filenames : [filenames]).filter(Boolean);
+  if (!list.length) return;
+  try {
+    for (const filename of list) {
+      await pool.query(
+        `INSERT INTO upload_file_owners (filename, tenant_id, uploaded_by) VALUES ($1,$2,$3)
+         ON CONFLICT (filename) DO NOTHING`,
+        [filename, tenantId || 'default', uploadedBy || null]
+      );
+    }
+  } catch (e) {
+    console.warn('[uploads] recordUploadOwnership failed:', e?.message);
+  }
+}
 
 const webRootDir = path.resolve(__dirname, '..');
-app.use(
-  express.static(webRootDir, {
-    index: false,
-    extensions: ['html'],
-    setHeaders: (res, filePath) => {
-      const lp = String(filePath || '').toLowerCase();
-      if (lp.endsWith('.html')) {
-        res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        // no-cache（非 no-store）：浏览器可缓存，但每次用前必须带 ETag 回源校验；
-        // 内容未变回 304（几乎0流量并复用缓存），改版后 ETag 变化即拉新版，不会读到过期页面。
-        res.setHeader('Cache-Control', 'no-cache');
-      } else if (lp.endsWith('sw.js')) {
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-      }
+// 2026-06-25 安全修复(严重)：原来 express.static(webRootDir) 不分青红皂白地把整个项目根目录
+// 公开对外，包括 server/ 全部后端源码、migrations/ 全部SQL、docs/、*.md报告、database.sql、
+// db-check*.js等——任何人访问 https://nnyx.cc/server/index.js 都能直接下载完整后端源码。
+// 实测确认(curl https://nnyx.cc/server/index.js → 200，返回完整源码)。
+// 改为白名单：只放行前端确实需要公开访问的具体文件/目录，其余一律不经过这个静态服务器，
+// 落到下面的具体路由处理（未匹配的最终会进Express默认404，不会再暴露文件系统）。
+const STATIC_ALLOWED_ROOT_FILES = new Set([
+  'working-fixed.html', 'agents-admin.html', 'platform-admin.html', 'campaign.html',
+  'forecast.html', 'index.html', 'member-agreement.html', 'mobile-nav-production.html',
+  'svremind.html', 'winback.html', 'manifest.json', 'pwa-icon.svg', 'sw.js', 'script.js',
+  'styles.css', 'role-modules-ui.js'
+]);
+const STATIC_ALLOWED_DIR_PREFIXES = ['assets/', 'dist/'];
+const staticServeWebRoot = express.static(webRootDir, {
+  index: false,
+  extensions: ['html'],
+  setHeaders: (res, filePath) => {
+    const lp = String(filePath || '').toLowerCase();
+    if (lp.endsWith('.html')) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      // no-cache（非 no-store）：浏览器可缓存，但每次用前必须带 ETag 回源校验；
+      // 内容未变回 304（几乎0流量并复用缓存），改版后 ETag 变化即拉新版，不会读到过期页面。
+      res.setHeader('Cache-Control', 'no-cache');
+    } else if (lp.endsWith('sw.js')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
     }
-  })
-);
+  }
+});
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const reqPath = decodeURIComponent(String(req.path || '')).replace(/^\/+/, '');
+  const isAllowedDir = STATIC_ALLOWED_DIR_PREFIXES.some((pre) => reqPath.startsWith(pre));
+  const isAllowedFile = STATIC_ALLOWED_ROOT_FILES.has(reqPath) || reqPath === '';
+  if (!isAllowedDir && !isAllowedFile) return next();
+  return staticServeWebRoot(req, res, next);
+});
 
 // ─── Role-Modules Config API ─────────────────────────────────────────────────
 app.get('/api/role-modules', authRequired, async (req, res) => {
@@ -5442,6 +5511,7 @@ app.post('/api/recipes/upload-step-media', authRequired, recipeMediaUpload.singl
   }
   try {
     if (!req.file?.filename) return res.status(400).json({ error: 'missing_file' });
+    await recordUploadOwnership(req.file.filename, req.tenantId, req.user?.username);
     const ext = path.extname(req.file.filename).toLowerCase();
     const videoExts = new Set(['.mp4','.mov','.webm']);
     const mediaType = videoExts.has(ext) ? 'video' : 'image';
@@ -5489,6 +5559,7 @@ app.post('/api/uploads/daily-report', authRequired, upload.array('files', 9), as
   try {
     const files = Array.isArray(req.files) ? req.files : [];
     if (!files.length) return res.status(400).json({ error: 'missing_file' });
+    await recordUploadOwnership(files.map(f => f?.filename), req.tenantId, req.user?.username);
     const urls = files
       .map(f => (f && f.filename ? `/uploads/${f.filename}` : ''))
       .filter(Boolean);
@@ -5509,6 +5580,7 @@ app.post('/api/uploads/employee-idcard', authRequired, upload.fields([{ name: 'f
     const front = Array.isArray(files.front) ? files.front[0] : null;
     const back = Array.isArray(files.back) ? files.back[0] : null;
     if (!front && !back) return res.status(400).json({ error: 'missing_file' });
+    await recordUploadOwnership([front?.filename, back?.filename], req.tenantId, req.user?.username);
     const frontUrl = front?.filename ? `/uploads/${front.filename}` : '';
     const backUrl = back?.filename ? `/uploads/${back.filename}` : '';
     return res.json({ frontUrl, backUrl });
@@ -5523,6 +5595,7 @@ app.post('/api/uploads/points-evidence', authRequired, upload.array('files', 6),
   try {
     const files = Array.isArray(req.files) ? req.files : [];
     if (!files.length) return res.status(400).json({ error: 'missing_file' });
+    await recordUploadOwnership(files.map(f => f?.filename), req.tenantId, req.user?.username);
     const urls = files
       .map(f => (f && f.filename ? `/uploads/${f.filename}` : ''))
       .filter(Boolean);
@@ -5549,6 +5622,7 @@ app.use(strategyExperimentRoutes(pool, authRequired));
 app.post('/api/growth/upload', authRequired, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ ok: false, error: 'no_file' });
+    await recordUploadOwnership(req.file.filename, req.tenantId, req.user?.username);
     const url = `/uploads/${req.file.filename}`;
     return res.json({ ok: true, url, filename: req.file.filename, size: req.file.size });
   } catch (e) {
@@ -5599,6 +5673,7 @@ app.post('/api/employees/:empId/attachments', authRequired, upload.single('file'
     const file = req.file;
     if (!file) return res.status(400).json({ error: 'missing_file' });
     if (file.size > 20 * 1024 * 1024) return res.status(400).json({ error: 'file_too_large' });
+    await recordUploadOwnership(file.filename, req.tenantId, req.user?.username);
     const url = `/uploads/${file.filename}`;
     const originalName = String(file.originalname || file.filename);
     const description = String(req.body?.description || '').slice(0, 200);
@@ -10513,6 +10588,7 @@ app.post('/api/uploads/agent-task-evidence', authRequired, upload.array('files',
   try {
     const files = Array.isArray(req.files) ? req.files : [];
     if (!files.length) return res.status(400).json({ error: 'missing_file' });
+    await recordUploadOwnership(files.map(f => f?.filename), req.tenantId, req.user?.username);
     const urls = files.map(f => (f && f.filename ? `/uploads/${f.filename}` : '')).filter(Boolean);
     return res.json({ urls });
   } catch (e) {
@@ -10526,6 +10602,7 @@ app.post('/api/uploads/ops-task-evidence', authRequired, upload.array('files', 9
   try {
     const files = Array.isArray(req.files) ? req.files : [];
     if (!files.length) return res.status(400).json({ error: 'missing_file' });
+    await recordUploadOwnership(files.map(f => f?.filename), req.tenantId, username);
     const urls = files.map(f => (f && f.filename ? `/uploads/${f.filename}` : '')).filter(Boolean);
     return res.json({ urls });
   } catch (e) {
@@ -14690,17 +14767,136 @@ function requireEnv() {
 }
 
 // 租户开通是平台级操作(跨租户),不应由任何单租户的admin角色触发，
-// 故单独用环境变量配置的密钥网关,与租户内的users.role='admin'权限体系完全分离。
-function platformAdminRequired(req, res, next) {
-  if (!PLATFORM_ADMIN_SECRET) {
-    return res.status(500).json({ error: 'server_config_error', message: 'PLATFORM_ADMIN_SECRET 未配置' });
-  }
-  const provided = String(req.headers['x-platform-admin-secret'] || '').trim();
-  if (!provided || provided !== PLATFORM_ADMIN_SECRET) {
+// 故单独用平台管理员账号体系网关,与租户内的users.role='admin'权限体系完全分离。
+// 2026-06-25 由单一共享密钥升级为账号+JWT+审计日志：共享密钥一旦泄露=对全部租户的
+// 完全控制权，且无法追溯谁做了什么操作；账号体系下每次非GET操作都落库审计。
+async function platformAdminRequired(req, res, next) {
+  const token = String(req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return res.status(401).json({ error: 'unauthorized' });
+  let payload;
+  try {
+    payload = jwt.verify(token, PLATFORM_ADMIN_JWT_SECRET);
+  } catch (e) {
     return res.status(401).json({ error: 'unauthorized' });
+  }
+  if (payload?.role !== 'platform_admin' || !payload?.username) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  req.platformAdmin = { username: payload.username };
+  if (req.method !== 'GET') {
+    const targetTenantId = req.params?.tenantId || req.body?.tenant_id || req.body?.tenantId || null;
+    let detail = {};
+    try { detail = JSON.parse(JSON.stringify(req.body || {})); } catch (_) {}
+    if (detail && typeof detail === 'object') {
+      for (const k of Object.keys(detail)) {
+        if (/secret|password|key|token/i.test(k)) detail[k] = '***';
+      }
+    }
+    pool.query(
+      `INSERT INTO platform_admin_audit_log (admin_username, method, path, target_tenant_id, detail, ip)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [payload.username, req.method, req.originalUrl, targetTenantId, JSON.stringify(detail).slice(0, 4000), req.ip || '']
+    ).catch((e) => console.warn('[platform-admin] audit log write failed:', e?.message));
   }
   next();
 }
+
+// ── 平台管理员账号：登录 / 一次性bootstrap创建首个账号 / 已登录后创建更多账号 ──
+app.post('/api/admin/auth/bootstrap', async (req, res) => {
+  try {
+    if (!PLATFORM_ADMIN_SECRET) {
+      return res.status(500).json({ error: 'server_config_error', message: 'PLATFORM_ADMIN_SECRET 未配置，无法bootstrap' });
+    }
+    const provided = String(req.headers['x-platform-admin-secret'] || '').trim();
+    if (!provided || provided !== PLATFORM_ADMIN_SECRET) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    const existing = await pool.query(`SELECT 1 FROM platform_admins LIMIT 1`);
+    if (existing.rows.length > 0) {
+      return res.status(403).json({ error: 'already_bootstrapped', message: '已存在平台管理员账号，bootstrap接口已永久失效，请用账号密码登录' });
+    }
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '').trim();
+    const realName = String(req.body?.real_name || '').trim() || username;
+    if (!username || password.length < 8) {
+      return res.status(400).json({ error: 'invalid_input', message: 'username必填，password至少8位' });
+    }
+    const hash = await bcrypt.hash(password, 10);
+    await pool.query(
+      `INSERT INTO platform_admins (username, password_hash, real_name) VALUES ($1,$2,$3)`,
+      [username, hash, realName]
+    );
+    return res.json({ ok: true, message: '首个平台管理员账号已创建，请用账号密码登录' });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message });
+  }
+});
+
+app.post('/api/admin/auth/login', async (req, res) => {
+  try {
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '').trim();
+    if (!username || !password) return res.status(400).json({ error: 'missing_credentials' });
+    const r = await pool.query(
+      `SELECT id, username, password_hash, real_name, status FROM platform_admins WHERE lower(username) = lower($1) LIMIT 1`,
+      [username]
+    );
+    const acc = r.rows?.[0];
+    if (!acc || acc.status !== 'active') return res.status(401).json({ error: 'invalid_credentials' });
+    const ok = await bcrypt.compare(password, String(acc.password_hash || ''));
+    if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
+    const token = jwt.sign({ username: acc.username, role: 'platform_admin' }, PLATFORM_ADMIN_JWT_SECRET, { expiresIn: '12h' });
+    await pool.query(`UPDATE platform_admins SET last_login_at = NOW() WHERE id = $1`, [acc.id]).catch(() => {});
+    return res.json({ ok: true, token, admin: { username: acc.username, real_name: acc.real_name } });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message });
+  }
+});
+
+app.post('/api/admin/auth/accounts', platformAdminRequired, async (req, res) => {
+  try {
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '').trim();
+    const realName = String(req.body?.real_name || '').trim() || username;
+    if (!username || password.length < 8) {
+      return res.status(400).json({ error: 'invalid_input', message: 'username必填，password至少8位' });
+    }
+    const hash = await bcrypt.hash(password, 10);
+    await pool.query(
+      `INSERT INTO platform_admins (username, password_hash, real_name) VALUES ($1,$2,$3)`,
+      [username, hash, realName]
+    );
+    return res.json({ ok: true });
+  } catch (e) {
+    if (String(e?.message || '').includes('duplicate')) {
+      return res.status(409).json({ error: 'username_taken' });
+    }
+    return res.status(500).json({ error: 'server_error', message: e?.message });
+  }
+});
+
+app.get('/api/admin/auth/accounts', platformAdminRequired, async (req, res) => {
+  try {
+    const r = await pool.query(`SELECT username, real_name, status, created_at, last_login_at FROM platform_admins ORDER BY created_at`);
+    return res.json({ ok: true, accounts: r.rows });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message });
+  }
+});
+
+app.get('/api/admin/auth/audit-log', platformAdminRequired, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query?.limit) || 200, 1000);
+    const r = await pool.query(
+      `SELECT admin_username, method, path, target_tenant_id, detail, ip, created_at
+       FROM platform_admin_audit_log ORDER BY created_at DESC LIMIT $1`,
+      [limit]
+    );
+    return res.json({ ok: true, items: r.rows });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message });
+  }
+});
 
 function requireTenantIntegrationKey() {
   if (!TENANT_INTEGRATION_ENCRYPTION_KEY) {
@@ -18751,12 +18947,14 @@ app.post('/api/knowledge/batch', authRequired, knowledgeUpload.array('files', 10
         [fileTitle, '', category || null, tags, filePath, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName, resolveTenantIdDefault()]
       );
       results.push(r.rows?.[0] || null);
+      await recordUploadOwnership(f.filename, req.tenantId, req.user?.username);
 
       (async (insertedId, localPath, originalName, mimeType) => {
         try {
           if (!localPath || !insertedId) return;
           const ext = path.extname(originalName).slice(0, 16);
-          const objectKey = `hrms/knowledge/${randomUUID()}${ext}`;
+          const tenantForKey = String(req.tenantId || 'default').trim() || 'default';
+          const objectKey = `hrms/knowledge/${tenantForKey}/${randomUUID()}${ext}`;
           const contentType = inferContentType({ declaredType: req.body?.type, originalName, mimeType });
           let finalUrl = '';
           const cos = getCosClient();
@@ -18858,7 +19056,8 @@ app.post('/api/knowledge/presign', authRequired, async (req, res) => {
 
   try {
     const ext = path.extname(originalName).slice(0, 16);
-    const objectKey = `hrms/knowledge/${randomUUID()}${ext}`;
+    const tenantForKey = String(req.tenantId || 'default').trim() || 'default';
+    const objectKey = `hrms/knowledge/${tenantForKey}/${randomUUID()}${ext}`;
     const contentType = inferContentType({ declaredType, originalName, mimeType });
     const disposition = buildInlineContentDisposition(originalName);
 
@@ -18975,6 +19174,7 @@ app.post('/api/knowledge', authRequired, knowledgeUpload.single('file'), async (
       [title, videoSummary, category || null, tags, `uploads/${req.file.filename}`, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName, resolveTenantIdDefault()]
     );
     inserted = r.rows?.[0] || null;
+    await recordUploadOwnership(req.file.filename, req.tenantId, req.user?.username);
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
   }
@@ -19202,7 +19402,8 @@ app.post('/api/knowledge', authRequired, knowledgeUpload.single('file'), async (
       if (!localPath || !inserted?.id) return;
       const orig = String(req.file?.originalname || 'file');
       const ext = path.extname(orig).slice(0, 16);
-      const objectKey = `hrms/knowledge/${randomUUID()}${ext}`;
+      const tenantForKey = String(req.tenantId || 'default').trim() || 'default';
+      const objectKey = `hrms/knowledge/${tenantForKey}/${randomUUID()}${ext}`;
       const contentType = inferContentType({
         declaredType: req.body?.type,
         originalName: orig,

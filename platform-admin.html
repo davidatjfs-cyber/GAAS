@@ -1433,7 +1433,7 @@
         if ($(`ac_${safe}_prompt_template_id`)) $(`ac_${safe}_prompt_template_id`).value = current.prompt_template_id || '';
         if ($(`ac_${safe}_reply_template_id`)) $(`ac_${safe}_reply_template_id`).value = current.reply_template_id || '';
         if ($(`ac_${safe}_system_prompt`)) $(`ac_${safe}_system_prompt`).value = current.system_prompt || '';
-        msg(`已回填 ${agentLabel(agentId)} 当前值`);
+        log(`已回填 ${agentLabel(agentId)} 当前值`);
       } catch (e) {
         log(`回填 Agent 配置失败：${e.message}`);
       }
@@ -1473,7 +1473,7 @@
         const selectId = kind === 'reply' ? `ac_${safe}_reply_template_id` : `ac_${safe}_prompt_template_id`;
         const select = $(selectId);
         if (select) select.value = String(templateId);
-        msg(`已绑定到 ${agentLabel(agentId)}，记得点击保存 Agent 配置`);
+        log(`已绑定到 ${agentLabel(agentId)}，记得点击保存 Agent 配置`);
       } catch (e) {
         log(`绑定模板失败：${e.message}`);
       }

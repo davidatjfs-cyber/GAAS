@@ -2024,6 +2024,12 @@ ${contentForPrompt}
       const filePath = req.file.path;
       const fileName = req.file.filename;
       const mediaUrl = `/uploads/training/${fileName}`;
+      // /uploads现在是鉴权路由，按文件归属租户校验后才放行，这里记录归属
+      await pool().query(
+        `INSERT INTO upload_file_owners (filename, tenant_id, uploaded_by) VALUES ($1,$2,$3)
+         ON CONFLICT (filename) DO NOTHING`,
+        [fileName, req.tenantId || 'default', username || null]
+      ).catch((e) => console.warn('[training] recordUploadOwnership failed:', e?.message));
       const originalExt = path.extname(req.file.originalname).toLowerCase();
       const mediaType = ['.mp4', '.mov', '.webm'].includes(originalExt) ? 'video' : 'image';
       const baseUrl = process.env.SERVER_BASE_URL || 'https://nnyx.cc';
