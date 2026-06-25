@@ -3201,6 +3201,46 @@
                 -webkit-overflow-scrolling: touch !important;
             }
 
+            /* modal-content现在自己也能滚动了(上面那条)，但header/分段tab栏跟内容
+               是同一个flex列里的兄弟节点，会跟着一起滚走、被下面滚上来的列表内容盖住。
+               这里把header和tab栏钉在滚动容器顶部，不管实际是哪一层在滚，标题和
+               "科目/收款方/紧急程度"切换栏永远露在最上面，不会被内容糊住。 */
+            #payment-basic-modal.modal .modal-header,
+            #payment-budget-modal.modal .modal-header,
+            #payment-flow-modal.modal .modal-header,
+            #approval-detail-modal.modal .modal-header {
+                position: sticky;
+                top: 0;
+                z-index: 6;
+                background: rgba(44, 44, 46, 0.98);
+            }
+            #payment-basic-modal .pay-dict-toolbar,
+            #payment-budget-modal .pay-dict-toolbar,
+            #payment-flow-modal .pay-dict-toolbar,
+            #approval-detail-modal .pay-dict-toolbar,
+            #payment-basic-modal .pay-dict-seg,
+            #payment-budget-modal .pay-dict-seg,
+            #payment-flow-modal .pay-dict-seg,
+            #approval-detail-modal .pay-dict-seg {
+                position: sticky;
+                z-index: 5;
+                background: rgba(16, 16, 18, 0.98);
+                padding-top: 6px;
+                padding-bottom: 6px;
+            }
+            #payment-basic-modal .pay-dict-toolbar,
+            #payment-budget-modal .pay-dict-toolbar,
+            #payment-flow-modal .pay-dict-toolbar,
+            #approval-detail-modal .pay-dict-toolbar {
+                top: 0;
+            }
+            #payment-basic-modal .pay-dict-seg,
+            #payment-budget-modal .pay-dict-seg,
+            #payment-flow-modal .pay-dict-seg,
+            #approval-detail-modal .pay-dict-seg {
+                top: 38px;
+            }
+
             .ui-modal .ui-form-grid {
                 flex: 1;
                 overflow-y: auto;
