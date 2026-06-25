@@ -142,8 +142,38 @@
       background: #fff;
       display: block;
     }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -2px; }
+    .table-scroll table { min-width: 560px; }
     @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
     @media (max-width: 1100px) { .hero { grid-template-columns: 1fr; } .hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+    /* 手机端整体排版优化：更窄的留白、更大的点击区域、表单输入16px避免iOS自动放大、网格降到单列 */
+    @media (max-width: 640px) {
+      .wrap { padding: 14px 10px 28px; }
+      h1 { font-size: 26px; }
+      .hero h1 { font-size: 24px; }
+      .hero-copy { font-size: 13px; line-height: 1.6; }
+      .card { padding: 14px; border-radius: 14px; }
+      .hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .stat { padding: 10px 12px; }
+      .stat .value { font-size: 20px; }
+      .detail-grid { grid-template-columns: 1fr; }
+      input, textarea, select { font-size: 16px; padding: 11px 12px; }
+      button { width: 100%; padding: 12px 16px; font-size: 15px; }
+      .toolbar { flex-direction: column; align-items: stretch; }
+      .toolbar > a, .toolbar > button, .toolbar > span.pill { width: 100%; text-align: center; }
+      .tenant-actions { flex-direction: column; }
+      .tenant-actions button { width: 100%; }
+      .tenant-actions.compact { flex-direction: row; flex-wrap: wrap; }
+      .tenant-actions.compact button { width: auto; flex: 1 1 auto; min-width: 80px; }
+      .section-nav { gap: 6px; }
+      .section-nav button { flex: 1 1 calc(50% - 6px); padding: 10px 8px; font-size: 13px; width: auto; }
+      table { min-width: 0; }
+      th, td { padding: 9px 8px; font-size: 13px; }
+      .logo-preview { width: 56px; height: 56px; }
+      label > div[style*="display:flex"] { flex-wrap: wrap; }
+    }
   </style>
 </head>
 <body>
@@ -431,20 +461,22 @@
         <label>搜索租户
           <input id="tenantFilter" placeholder="输入 租户ID / 名称 / 模式 / 状态">
         </label>
-        <table>
-          <thead>
-            <tr>
-              <th>租户</th>
-              <th>状态</th>
-              <th>许可证</th>
-              <th>到期</th>
-              <th>飞书</th>
-              <th>外观</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="tenantTableBody"></tbody>
-        </table>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>租户</th>
+                <th>状态</th>
+                <th>许可证</th>
+                <th>到期</th>
+                <th>飞书</th>
+                <th>外观</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="tenantTableBody"></tbody>
+          </table>
+        </div>
         <div id="tenantDetail" class="detail"></div>
         <strong>操作日志</strong>
         <div id="log" class="log"></div>
@@ -686,6 +718,7 @@
         return `<div class="small">暂无${label}。</div>`;
       }
       return `
+        <div class="table-scroll">
         <table>
           <thead>
             <tr>
@@ -716,6 +749,7 @@
             `).join('')}
           </tbody>
         </table>
+        </div>
       `;
     }
 
@@ -929,6 +963,10 @@
       return node;
     }
 
+    function wrapScroll(node) {
+      return el('div', { className: 'table-scroll' }, node);
+    }
+
     function stat(value, label, cls = '') {
       return el('div', { className: 'stat-card ' + cls }, [
         el('div', { className: 'stat-value' }, String(value ?? 0)),
@@ -999,7 +1037,7 @@
             tbody.appendChild(tr);
           });
           tbl.appendChild(tbody);
-          body.appendChild(tbl);
+          body.appendChild(wrapScroll(tbl));
           return body;
         })())
       ]));
@@ -1032,7 +1070,7 @@
             });
           }
           tbl.appendChild(tbody);
-          body.appendChild(tbl);
+          body.appendChild(wrapScroll(tbl));
           return body;
         })())
       ]));
@@ -1060,7 +1098,7 @@
             tbody.appendChild(tr);
           });
           tbl.appendChild(tbody);
-          body.appendChild(tbl);
+          body.appendChild(wrapScroll(tbl));
           return body;
         })())
       ]));

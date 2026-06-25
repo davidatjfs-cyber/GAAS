@@ -5174,7 +5174,10 @@ app.use((req, res, next) => {
   const reqPath = decodeURIComponent(String(req.path || '')).replace(/^\/+/, '');
   const isAllowedDir = STATIC_ALLOWED_DIR_PREFIXES.some((pre) => reqPath.startsWith(pre));
   const isAllowedFile = STATIC_ALLOWED_ROOT_FILES.has(reqPath) || reqPath === '';
-  if (!isAllowedDir && !isAllowedFile) return next();
+  // build-shell.mjs生成的内容哈希资源(app.<hash>.js/.css)，生产环境nginx会先拦截直接served，
+  // 这里放行只是为了本地/没走nginx时也不404，与白名单其余条目同等安全(内容是构建产物，不是源码)
+  const isHashedAsset = /^app\.[0-9a-f]+\.(js|css)$/.test(reqPath);
+  if (!isAllowedDir && !isAllowedFile && !isHashedAsset) return next();
   return staticServeWebRoot(req, res, next);
 });
 
