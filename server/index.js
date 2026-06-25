@@ -14927,6 +14927,7 @@ const DEFAULT_PLATFORM_PROFILE = {
     billing_cycle: '',
     next_invoice_at: '',
     billing_contact: '',
+    billing_contact_method: '',
     notes: '',
   },
   alerts: {
@@ -14971,6 +14972,7 @@ function mergePlatformProfile(value, fallbackName = '') {
       billing_cycle: String(billing.billing_cycle || '').trim(),
       next_invoice_at: String(billing.next_invoice_at || '').trim(),
       billing_contact: String(billing.billing_contact || '').trim(),
+      billing_contact_method: String(billing.billing_contact_method || '').trim(),
       notes: String(billing.notes || '').trim(),
     },
     alerts: {

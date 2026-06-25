@@ -13910,8 +13910,9 @@
         <div class="login-rep-noise" aria-hidden="true"></div>
         <div class="login-rep-shell">
             <header class="login-rep-head">
+                <img id="login-tenant-logo" src="" alt="logo" style="display:none;width:48px;height:48px;object-fit:cover;border-radius:12px;margin-bottom:10px;">
                 <span class="login-rep-eyebrow">数据报表</span>
-                <h1 class="login-rep-title">年年有喜管理系统</h1>
+                <h1 class="login-rep-title" id="login-tenant-title">年年有喜管理系统</h1>
                 <p class="login-rep-sub">与分析报表一致的内台视觉 · 安全登录</p>
             </header>
             <div class="login-rep-card">
@@ -21776,7 +21777,40 @@
 
     <script>
         console.log('=== 年年有喜管理系统启动 ===');
-        
+
+        // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
+        // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
+        (function applyTenantBranding() {
+            try {
+                const params = new URLSearchParams(location.search);
+                const tenantId = params.get('tenant_id') || localStorage.getItem('hrms_tenant_id') || 'default';
+                fetch(`/api/tenant/branding?tenant_id=${encodeURIComponent(tenantId)}`)
+                    .then((r) => r.json())
+                    .then((data) => {
+                        if (!data) return;
+                        if (data.system_name) {
+                            document.title = data.system_name;
+                            const titleEl = document.getElementById('login-tenant-title');
+                            if (titleEl) titleEl.textContent = data.system_name;
+                        }
+                        if (data.logo_url) {
+                            const logoEl = document.getElementById('login-tenant-logo');
+                            if (logoEl) { logoEl.src = data.logo_url; logoEl.style.display = ''; }
+                        }
+                        if (data.favicon_url) {
+                            let link = document.querySelector('link[rel="icon"]');
+                            if (!link) {
+                                link = document.createElement('link');
+                                link.rel = 'icon';
+                                document.head.appendChild(link);
+                            }
+                            link.href = data.favicon_url;
+                        }
+                    })
+                    .catch(() => {});
+            } catch (e) {}
+        })();
+
         let isLoggedIn = false;
         let currentPage = 'profile';
         let currentUser = null;

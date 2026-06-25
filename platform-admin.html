@@ -248,11 +248,17 @@
           <span class="small">新客户开通入口</span>
         </div>
         <div class="stack">
-          <label>租户 ID
-            <input id="tenantId" placeholder="demo_brand_a">
-          </label>
           <label>租户名称
             <input id="tenantName" placeholder="示例品牌 A">
+          </label>
+          <label>租户 ID
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="tenantId" placeholder="自动生成，无需手填" readonly style="flex:1">
+              <button type="button" id="regenTenantIdBtn" class="secondary" style="white-space:nowrap;padding:8px 12px">重新生成</button>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12px;color:var(--muted);font-weight:400">
+              <input type="checkbox" id="manualTenantIdToggle" style="width:auto"> 我要手动指定 ID（不推荐，容易和已有租户撞名/格式不一致）
+            </label>
           </label>
           <label>模式
             <select id="tenantMode">
@@ -321,16 +327,44 @@
           </div>
           <div class="detail-grid">
             <label class="field">账单计划
-              <input id="billingPlan" placeholder="标准版 / 旗舰版 / 定制版">
+              <select id="billingPlan">
+                <option value="">未配置</option>
+                <option value="标准版">标准版</option>
+                <option value="旗舰版">旗舰版</option>
+                <option value="定制版">定制版</option>
+              </select>
             </label>
             <label class="field">账单周期
-              <input id="billingCycle" placeholder="按月 / 按年">
+              <select id="billingCycle">
+                <option value="">未配置</option>
+                <option value="按月">按月</option>
+                <option value="按季">按季</option>
+                <option value="按年">按年</option>
+              </select>
             </label>
             <label class="field">下次开票时间
               <input id="billingNextInvoiceAt" type="datetime-local">
             </label>
             <label class="field">账单联系人
-              <input id="billingContact" placeholder="财务联系人">
+              <input id="billingContact" placeholder="财务联系人姓名">
+            </label>
+            <label class="field">联系方式
+              <input id="billingContactMethod" placeholder="手机 / 微信 / 邮箱">
+            </label>
+          </div>
+          <div class="section-title" style="margin-top:14px">
+            <strong>告警接收设置</strong>
+            <span class="small">许可证到期等提醒发给谁</span>
+          </div>
+          <div class="detail-grid">
+            <label class="field">提前提醒天数
+              <input id="alertsNotifyDays" type="number" min="1" value="30">
+            </label>
+            <label class="field">告警接收人
+              <input id="alertsContact" placeholder="姓名 / 联系方式">
+            </label>
+            <label class="field" style="grid-column:1 / -1">飞书告警群（webhook 或群 ID，可留空）
+              <input id="alertsFeishuChat" placeholder="可留空">
             </label>
           </div>
           <label>平台备注
@@ -348,6 +382,12 @@
             <strong>飞书配置</strong>
             <span class="small">租户级独立多维表格绑定</span>
           </div>
+          <div class="small" style="line-height:1.6">
+            这一块是给<strong>该租户自己公司</strong>绑定他们自己的飞书多维表格(Bitable)数据源——
+            每家公司的营运数据(检查表/桌访记录/差评/收档报告/SOP步骤等)都存在自己的飞书空间里，
+            这里填的飞书应用ID/密钥和下面每张表的app_token/table_id/view_id，就是告诉系统"去这家公司自己的哪张表抓数据"。
+            不填的话该租户的飞书相关功能(自动同步检查表、桌访提醒等)不会工作，但租户管理/账单/Agent配置等其它功能不受影响。
+          </div>
           <label>当前租户 ID
             <input id="cfgTenantId" placeholder="先在右侧租户列表点“配置飞书”或“查看详情”自动带入">
           </label>
@@ -357,7 +397,7 @@
           <label>飞书应用密钥
             <input id="cfgAppSecret" type="password">
           </label>
-          <label>表配置（JSON）
+          <label>各业务模块对应的飞书表（JSON，按需填写，不用的模块留空即可）
             <textarea id="cfgTables">{
   "ops_checklist": { "app_token": "", "table_id": "", "view_id": "" },
   "table_visit": { "app_token": "", "table_id": "", "view_id": "" },
@@ -1057,7 +1097,11 @@
       $('billingPlan').value = p.billing?.plan_name || '';
       $('billingCycle').value = p.billing?.billing_cycle || '';
       $('billingContact').value = p.billing?.billing_contact || '';
+      $('billingContactMethod').value = p.billing?.billing_contact_method || '';
       $('billingNextInvoiceAt').value = p.billing?.next_invoice_at ? String(p.billing.next_invoice_at).slice(0, 16) : '';
+      $('alertsNotifyDays').value = p.alerts?.notify_days_before_expiry || 30;
+      $('alertsContact').value = p.alerts?.contact || '';
+      $('alertsFeishuChat').value = p.alerts?.feishu_chat || '';
       $('profileNotes').value = p.notes || '';
     }
 
@@ -1088,12 +1132,13 @@
           billing_cycle: $('billingCycle').value.trim(),
           next_invoice_at: $('billingNextInvoiceAt').value ? new Date($('billingNextInvoiceAt').value).toISOString() : '',
           billing_contact: $('billingContact').value.trim(),
+          billing_contact_method: $('billingContactMethod').value.trim(),
           notes: '',
         },
         alerts: {
-          notify_days_before_expiry: 30,
-          feishu_chat: '',
-          contact: '',
+          notify_days_before_expiry: Number($('alertsNotifyDays').value) || 30,
+          feishu_chat: $('alertsFeishuChat').value.trim(),
+          contact: $('alertsContact').value.trim(),
           notes: '',
         },
         notes: $('profileNotes').value.trim(),
@@ -1413,6 +1458,26 @@
       if (!btn) return;
       scrollToOpsSection(btn.dataset.scrollTarget);
     });
+
+    function generateTenantId() {
+      const rand = Math.random().toString(36).slice(2, 8);
+      return `tenant_${rand}${Date.now().toString(36).slice(-4)}`;
+    }
+
+    function refreshAutoTenantId() {
+      if ($('manualTenantIdToggle').checked) return;
+      $('tenantId').value = generateTenantId();
+    }
+
+    $('regenTenantIdBtn').onclick = () => refreshAutoTenantId();
+    $('manualTenantIdToggle').onchange = () => {
+      const manual = $('manualTenantIdToggle').checked;
+      $('tenantId').readOnly = !manual;
+      $('regenTenantIdBtn').style.display = manual ? 'none' : '';
+      if (manual) { $('tenantId').value = ''; $('tenantId').placeholder = '自己输入，仅限字母/数字/下划线/短横线'; }
+      else refreshAutoTenantId();
+    };
+    refreshAutoTenantId();
 
     $('createTenantBtn').onclick = async () => {
       try {
