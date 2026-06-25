@@ -171,17 +171,59 @@
           <div class="stat"><div class="label">30 天内到期</div><div id="statLicense" class="value">0</div><div class="sub">需要关注续期</div></div>
         </div>
       </section>
-      <section class="card stack">
-        <strong>平台密钥</strong>
-        <label>平台密钥
-          <input id="platformSecret" type="password" placeholder="服务器环境变量 PLATFORM_ADMIN_SECRET">
-        </label>
-        <div class="toolbar">
-          <button id="saveSecretBtn" class="secondary">保存密钥</button>
-          <button id="reloadBtn">刷新租户列表</button>
+      <section class="card stack" id="authCard">
+        <div id="loginPane" class="stack">
+          <strong>平台管理员登录</strong>
+          <label>账号
+            <input id="loginUsername" placeholder="平台管理员账号" autocomplete="username">
+          </label>
+          <label>密码
+            <input id="loginPassword" type="password" placeholder="密码" autocomplete="current-password">
+          </label>
+          <div class="toolbar">
+            <button id="loginBtn">登录</button>
+          </div>
+          <div class="small">首次使用且还没有账号？联系已有的平台管理员用下方"账号管理"创建，或用部署时的 bootstrap 流程创建第一个账号。</div>
         </div>
-        <div class="small">提示：浏览器只临时缓存，真正生效的是服务器环境变量里的 <span class="mono">PLATFORM_ADMIN_SECRET</span>。</div>
+        <div id="accountPane" class="stack" style="display:none">
+          <strong>已登录</strong>
+          <div id="currentAccountLabel" class="small"></div>
+          <div class="toolbar">
+            <button id="reloadBtn">刷新租户列表</button>
+            <button id="manageAccountsBtn" class="secondary">账号管理</button>
+            <button id="logoutBtn" class="danger">退出登录</button>
+          </div>
+        </div>
       </section>
+    </div>
+
+    <div id="accountsPanel" class="card stack" style="margin-bottom:18px;display:none">
+      <div class="section-title">
+        <strong>平台管理员账号</strong>
+        <span class="small">每个人用自己的账号登录，操作会落审计日志</span>
+      </div>
+      <div id="accountsList" class="small">加载中…</div>
+      <hr style="border:none;border-top:1px solid var(--line);width:100%">
+      <div class="detail-grid">
+        <label class="field">新账号用户名
+          <input id="newAccountUsername" placeholder="例如：zhang_sales">
+        </label>
+        <label class="field">姓名
+          <input id="newAccountRealName" placeholder="显示名称">
+        </label>
+        <label class="field">初始密码
+          <input id="newAccountPassword" type="password" placeholder="至少8位">
+        </label>
+      </div>
+      <div class="toolbar">
+        <button id="createAccountBtn">创建账号</button>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--line);width:100%">
+      <div class="section-title">
+        <strong>最近操作审计日志</strong>
+        <span class="small">最近200条非只读操作</span>
+      </div>
+      <div id="auditLogList" class="small">未加载</div>
     </div>
 
     <div class="card stack" style="margin-bottom:18px">
@@ -245,8 +287,14 @@
           <label>页面标题
             <input id="profilePageTitle" placeholder="平台租户控制台">
           </label>
-          <label>Logo 地址
-            <input id="profileLogoUrl" placeholder="https://.../logo.png">
+          <label>Logo
+            <div style="display:flex;align-items:center;gap:10px">
+              <img id="logoUploadPreview" class="logo-preview" src="" alt="logo预览" style="display:none">
+              <div style="flex:1">
+                <input id="profileLogoUrl" placeholder="https://.../logo.png（也可以直接点下面上传图片自动填）">
+                <input id="logoUploadFile" type="file" accept="image/*" style="margin-top:6px">
+              </div>
+            </div>
           </label>
           <label>网站图标地址
             <input id="profileFaviconUrl" placeholder="https://.../favicon.ico">
@@ -366,9 +414,9 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const secretKey = 'hrms_platform_secret';
+    const tokenKey = 'platform_admin_token';
+    const accountKey = 'platform_admin_account';
     const agentTenantKey = 'agent_admin_tenant_id';
-    const agentSecretKey = 'platform_admin_secret';
     const state = { tenants: [], selectedTenantId: '', detail: null, agentCenter: null, overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] } };
     const AGENT_LABELS = {
       master: 'Master调度中枢',
@@ -383,27 +431,49 @@
       $('log').textContent = `[${new Date().toLocaleString()}] ${msg}\n` + $('log').textContent;
     };
 
-    $('platformSecret').value = localStorage.getItem(secretKey) || sessionStorage.getItem(secretKey) || '';
-
-    function headers(extra = {}) {
-      const secret = $('platformSecret').value.trim();
-      if (!secret) throw new Error('请先填写平台密钥');
-      return { 'Content-Type': 'application/json', 'x-platform-admin-secret': secret, ...extra };
+    function getToken() {
+      return localStorage.getItem(tokenKey) || '';
     }
 
-    function rememberPlatformSecret(secret) {
-      localStorage.setItem(secretKey, secret);
-      sessionStorage.setItem(secretKey, secret);
+    function getAccount() {
+      try { return JSON.parse(localStorage.getItem(accountKey) || 'null'); } catch (e) { return null; }
+    }
+
+    function setSession(token, account) {
+      localStorage.setItem(tokenKey, token);
+      localStorage.setItem(accountKey, JSON.stringify(account || {}));
+    }
+
+    function clearSession() {
+      localStorage.removeItem(tokenKey);
+      localStorage.removeItem(accountKey);
+    }
+
+    function isLoggedIn() {
+      return !!getToken();
+    }
+
+    function renderAuthUI() {
+      const loggedIn = isLoggedIn();
+      $('loginPane').style.display = loggedIn ? 'none' : '';
+      $('accountPane').style.display = loggedIn ? '' : 'none';
+      if (loggedIn) {
+        const acc = getAccount();
+        $('currentAccountLabel').textContent = `${acc?.real_name || acc?.username || '管理员'}（${acc?.username || ''}）`;
+      }
+    }
+
+    function headers(extra = {}) {
+      const token = getToken();
+      if (!token) throw new Error('请先登录');
+      return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...extra };
     }
 
     window.openAgentConsoleForTenant = (tenantId) => {
       const id = String(tenantId || '').trim();
-      const secret = $('platformSecret').value.trim();
       if (!id) throw new Error('请先选择租户');
-      if (!secret) throw new Error('请先填写平台密钥');
+      if (!isLoggedIn()) throw new Error('请先登录');
       localStorage.setItem(agentTenantKey, id);
-      localStorage.setItem(agentSecretKey, secret);
-      rememberPlatformSecret(secret);
       window.open(`/agents-admin/?tenant_id=${encodeURIComponent(id)}`, '_blank', 'noopener');
       log(`已打开租户 ${id} 的 Agent 控制台`);
     };
@@ -969,6 +1039,8 @@
       $('profileSystemName').value = p.system_name || '';
       $('profilePageTitle').value = p.page_title || '';
       $('profileLogoUrl').value = p.logo_url || '';
+      $('logoUploadPreview').src = p.logo_url || '';
+      $('logoUploadPreview').style.display = p.logo_url ? '' : 'none';
       $('profileFaviconUrl').value = p.favicon_url || '';
       $('profileBrandColor').value = p.brand_color || '#0d7a5f';
       $('profileTagline').value = p.tagline || '';
@@ -1214,10 +1286,125 @@
       log(`已加载 ${items.length} 个租户。`);
     }
 
-    $('saveSecretBtn').onclick = () => {
-      rememberPlatformSecret($('platformSecret').value.trim());
-      log('平台密钥已保存到本次浏览会话。');
+    $('loginBtn').onclick = async () => {
+      try {
+        const username = $('loginUsername').value.trim();
+        const password = $('loginPassword').value;
+        if (!username || !password) throw new Error('请输入账号和密码');
+        const resp = await fetch('/api/admin/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.message || data.error || `登录失败(${resp.status})`);
+        setSession(data.token, data.admin);
+        renderAuthUI();
+        log(`登录成功：${data.admin?.username}`);
+        await loadTenants();
+      } catch (e) {
+        log(`登录失败：${e.message}`);
+      }
     };
+
+    $('logoutBtn').onclick = () => {
+      clearSession();
+      renderAuthUI();
+      log('已退出登录。');
+    };
+
+    $('manageAccountsBtn').onclick = async () => {
+      const panel = $('accountsPanel');
+      const show = panel.style.display === 'none';
+      panel.style.display = show ? '' : 'none';
+      if (show) await loadAccountsPanel();
+    };
+
+    $('createAccountBtn').onclick = async () => {
+      try {
+        const username = $('newAccountUsername').value.trim();
+        const real_name = $('newAccountRealName').value.trim();
+        const password = $('newAccountPassword').value;
+        if (!username || password.length < 8) throw new Error('用户名必填，密码至少8位');
+        await api('/api/admin/auth/accounts', { method: 'POST', body: JSON.stringify({ username, real_name, password }) });
+        log(`已创建账号：${username}`);
+        $('newAccountUsername').value = '';
+        $('newAccountRealName').value = '';
+        $('newAccountPassword').value = '';
+        await loadAccountsPanel();
+      } catch (e) {
+        log(`创建账号失败：${e.message}`);
+      }
+    };
+
+    async function loadAccountsPanel() {
+      try {
+        const data = await api('/api/admin/auth/accounts');
+        const accounts = data.accounts || [];
+        $('accountsList').innerHTML = accounts.length ? `
+          <table>
+            <thead><tr><th>账号</th><th>姓名</th><th>状态</th><th>创建时间</th><th>最近登录</th></tr></thead>
+            <tbody>${accounts.map((a) => `
+              <tr>
+                <td class="mono">${a.username}</td>
+                <td>${a.real_name || '-'}</td>
+                <td><span class="pill ${a.status === 'active' ? 'ok' : 'bad'}">${a.status}</span></td>
+                <td class="small">${a.created_at || '-'}</td>
+                <td class="small">${a.last_login_at || '从未登录'}</td>
+              </tr>
+            `).join('')}</tbody>
+          </table>
+        ` : '<div class="small">暂无账号。</div>';
+        const auditData = await api('/api/admin/auth/audit-log?limit=200');
+        const items = auditData.items || [];
+        $('auditLogList').innerHTML = items.length ? `
+          <table>
+            <thead><tr><th>时间</th><th>操作人</th><th>方法</th><th>路径</th><th>目标租户</th></tr></thead>
+            <tbody>${items.map((it) => `
+              <tr>
+                <td class="small mono">${it.created_at || '-'}</td>
+                <td>${it.admin_username || '-'}</td>
+                <td class="mono">${it.method}</td>
+                <td class="mono small">${it.path}</td>
+                <td class="mono">${it.target_tenant_id || '-'}</td>
+              </tr>
+            `).join('')}</tbody>
+          </table>
+        ` : '<div class="small">暂无审计记录。</div>';
+      } catch (e) {
+        log(`加载账号/审计日志失败：${e.message}`);
+      }
+    }
+
+    $('logoUploadFile').onchange = async () => {
+      try {
+        const tenantId = $('cfgTenantId').value.trim();
+        if (!tenantId) throw new Error('请先选择要保存配置的租户 ID');
+        const file = $('logoUploadFile').files?.[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('file', file);
+        const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tenantId)}/logo`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${getToken()}` },
+          body: fd
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.message || data.error || `上传失败(${resp.status})`);
+        $('profileLogoUrl').value = data.url;
+        $('logoUploadPreview').src = data.url;
+        $('logoUploadPreview').style.display = '';
+        log(`Logo 已上传：${data.url}，记得点击"保存平台配置"才会真正生效`);
+      } catch (e) {
+        log(`Logo 上传失败：${e.message}`);
+      }
+    };
+
+    $('profileLogoUrl').addEventListener('input', () => {
+      const v = $('profileLogoUrl').value.trim();
+      $('logoUploadPreview').src = v;
+      $('logoUploadPreview').style.display = v ? '' : 'none';
+    });
 
     $('reloadBtn').onclick = () => loadTenants().catch((e) => log(`刷新失败：${e.message}`));
     $('tenantFilter').oninput = () => loadTenants().catch((e) => log(`搜索失败：${e.message}`));
@@ -1503,7 +1690,10 @@
       }
     };
 
-    loadTenants().catch((e) => log(`初始化加载失败：${e.message}`));
+    renderAuthUI();
+    if (isLoggedIn()) {
+      loadTenants().catch((e) => log(`初始化加载失败：${e.message}`));
+    }
   </script>
 </body>
 </html>

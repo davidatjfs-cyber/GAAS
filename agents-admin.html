@@ -238,14 +238,11 @@
 
         <div class="card pad">
           <div class="section-title">
-            <h3>平台密钥</h3>
-            <span class="pill info">只在本机缓存</span>
+            <h3>登录状态</h3>
+            <span class="pill info" id="loginStatusPill">检查中…</span>
           </div>
-          <label>平台密钥
-            <input id="platformSecret" type="password" placeholder="PLATFORM_ADMIN_SECRET">
-          </label>
+          <div id="loginStatusHint" class="small"></div>
           <div class="toolbar" style="margin-top:10px">
-            <button id="saveSecretBtn" class="secondary">保存密钥</button>
             <button id="reloadBtn">刷新租户</button>
           </div>
         </div>
@@ -434,7 +431,7 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const secretKey = 'hrms_platform_secret';
+    const tokenKey = 'platform_admin_token';
     const tenantKey = 'agent_admin_tenant_id';
     const state = { tenants: [], selectedTenantId: '', overview: null, center: null, profile: null };
     const AGENT_LABELS = {
@@ -489,11 +486,11 @@
     }
 
     function headers(extra = {}) {
-      const secret = $('platformSecret').value.trim();
-      if (!secret) throw new Error('请先填写平台密钥');
+      const token = localStorage.getItem(tokenKey) || '';
+      if (!token) throw new Error('请先在 /platform-admin/ 登录');
       return {
         'Content-Type': 'application/json',
-        'x-platform-admin-secret': secret,
+        'Authorization': `Bearer ${token}`,
         ...extra,
       };
     }
@@ -963,11 +960,6 @@
       }
     }
 
-    $('saveSecretBtn').addEventListener('click', () => {
-      localStorage.setItem(secretKey, $('platformSecret').value.trim());
-      log('平台密钥已保存');
-    });
-
     $('reloadBtn').addEventListener('click', () => loadTenants().catch((e) => log(`刷新失败：${e.message}`)));
     $('tenantSearch').addEventListener('input', () => renderTenantList(state.tenants.filter((x) => {
       const filter = String($('tenantSearch').value || '').trim().toLowerCase();
@@ -1004,7 +996,13 @@
     window.deleteTemplate = deleteTemplate;
 
     async function boot() {
-      $('platformSecret').value = localStorage.getItem(secretKey) || '';
+      const hasToken = !!localStorage.getItem(tokenKey);
+      $('loginStatusPill').textContent = hasToken ? '已登录' : '未登录';
+      $('loginStatusPill').className = `pill ${hasToken ? 'ok' : 'bad'}`;
+      $('loginStatusHint').textContent = hasToken
+        ? '复用 /platform-admin/ 的登录态，无需重复登录。'
+        : '尚未登录，请先打开 /platform-admin/ 登录后再回到这个页面（同一浏览器即可共享登录态）。';
+      if (!hasToken) return;
       const fromQuery = new URL(location.href).searchParams.get('tenant_id') || localStorage.getItem(tenantKey) || '';
       try {
         await loadTenants();
