@@ -46414,8 +46414,10 @@ tr:nth-child(even) td { background: #fafafa; }
                 return String(b?.createdAt || '').localeCompare(String(a?.createdAt || ''));
             });
 
-            // 强制确认队列：所有公司公告（不区分级别/是否勾选强制确认），我还没读过的，登录后挨个弹窗拦截
-            const ackQueue = anns.filter(a => !(a?.readBy && a.readBy[myUsername]));
+            // 强制确认队列：只对"强制确认上线之后"新发布的公告生效（不区分级别/是否勾选），
+            // 之前已存在的历史公告不会突然弹窗骚扰所有员工；我还没读过的，登录后挨个弹窗拦截
+            const ackQueue = anns.filter(a => !(a?.readBy && a.readBy[myUsername])
+                && String(a?.createdAt || '') >= ANNOUNCEMENT_FORCE_ACK_SINCE);
             if (ackQueue.length) {
                 ackQueue.sort((a, b) => (String(a.level) === 'urgent' ? -1 : 0) - (String(b.level) === 'urgent' ? -1 : 0));
                 setTimeout(() => showForcedAnnouncementAck(ackQueue), 400);
@@ -46537,6 +46539,8 @@ tr:nth-child(even) td { background: #fafafa; }
         }
 
         // 重要公告强制确认队列：一个一个弹，点"我已阅读"才关掉当前这个并弹下一个
+        // 强制确认上线时间：只有这个时间之后发布的公告才会强制弹窗，历史公告不受影响
+        const ANNOUNCEMENT_FORCE_ACK_SINCE = '2026-06-26T00:00:00.000Z';
         let __ackAnnouncementQueue = [];
         function showForcedAnnouncementAck(queue) {
             __ackAnnouncementQueue = Array.isArray(queue) ? queue.slice() : [];
@@ -46561,9 +46565,24 @@ tr:nth-child(even) td { background: #fafafa; }
         async function ackAndCloseAnnouncement() {
             const a = __ackAnnouncementQueue[0];
             if (!a) { document.getElementById('ack-announcement-modal')?.classList.remove('show'); return; }
+            const annId = String(a.id || a._id || '');
             try {
-                await HRMS_API.request('/api/announcements/' + encodeURIComponent(String(a.id || a._id)) + '/ack', { method: 'POST' });
+                await HRMS_API.request('/api/announcements/' + encodeURIComponent(annId) + '/ack', { method: 'POST' });
             } catch (e) { console.warn('ack announcement failed', e); }
+            // 本地同步标记已读：renderProfileNotifications 用的是本地缓存的 data.announcements，
+            // 不写回的话下次重渲染还是查到 readBy 缺失，又被判定成未读重新塞回强制队列，弹窗消不掉。
+            try {
+                const localData = HRMS_STORE.ensure();
+                const myUsername = String(currentUser?.username || currentUser?.id || '').trim().toLowerCase();
+                const ann = (Array.isArray(localData.announcements) ? localData.announcements : []).find(x => String(x?.id || '') === annId);
+                if (ann) {
+                    if (!ann.readBy || typeof ann.readBy !== 'object' || Array.isArray(ann.readBy)) ann.readBy = {};
+                    ann.readBy[myUsername] = new Date().toISOString();
+                    // HRMS_STORE.get()/ensure() 每次都从 localStorage 重新读取解析，不是同一个对象引用，
+                    // 只改内存对象不会持久化，必须显式 set() 写回 localStorage 才能让下次 ensure() 看到。
+                    HRMS_STORE.set(localData);
+                }
+            } catch (e) {}
             __ackAnnouncementQueue.shift();
             if (__ackAnnouncementQueue.length) {
                 __showNextForcedAnnouncement();
