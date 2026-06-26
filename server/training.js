@@ -159,10 +159,10 @@ export async function getPromotionRequiredTopics(position, level) {
 // 厨师长晋升阶段一前提："任一专业线达最高技师级 + 第二条线达L2"
 // 各专业线的最高级 / L2级 命名（与该 position 下 training_topics.level 对应）
 const KITCHEN_TRACK_LEVELS = {
-  '炒锅': { top: '头镬', l2: '二镬' },
-  '砧板': { top: '头砧', l2: '二砧' },
-  '烧味/卤水': { top: '主管', l2: '师' },
-  '刺身': { top: '主管', l2: 'L2' },
+  '炒锅': { top: 'T2', l2: 'T1' },
+  '砧板': { top: 'T2', l2: 'T1' },
+  '烧味/卤水': { top: 'T2', l2: 'T1' },
+  '刺身': { top: 'T2', l2: 'T1' },
 };
 
 export async function getCrossTrackTechnicianStatus(username) {

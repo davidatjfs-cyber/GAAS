@@ -1280,6 +1280,20 @@
             -webkit-appearance: none;
             appearance: none;
         }
+        /* .form-group input 是通配选择器，会把.form-group内任何input都重置成文本框外观——
+           包含晋升页"技能提升"自选知识点的checkbox，appearance:none+min-height把它变成
+           一个看不出勾选状态的灰色圆角块，看起来像"无法选择"。这里恢复成正常checkbox外观。 */
+        .form-group input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            min-height: 0;
+            padding: 0;
+            border-radius: 4px;
+            background: transparent;
+            -webkit-appearance: checkbox;
+            appearance: checkbox;
+            accent-color: #6366f1;
+        }
         .form-group select {
             width: 100%;
             padding: var(--input-padding);
@@ -37012,22 +37026,25 @@ ${knowledgeContent.slice(0, 30000)}`;
         }
 
         function promoDefaultLevelsMap() {
+            // 注意：这里的级别码必须与 training_topics.level 实际存的值一致
+            // (T1/T2/T3 厨房线，L1-L3 前厅一线，M1-M3 管理线)，否则按目标级别
+            // 匹配培训知识点时会查不到任何记录，导致晋升通过后不会派发培训任务。
             return {
-                '打荷': ['L1', 'L2', 'L3'],
+                '打荷': ['T1', 'T2'],
                 '汤档/煲仔': ['T1', 'T2'],
-                '砧板': ['三砧', '二砧', '头砧'],
-                '炒锅': ['见习镬', '二镬', '头镬'],
-                '烧味/卤水': ['学徒', '师', '主管'],
-                '刺身': ['L1', 'L2', 'L3', '主管'],
+                '砧板': ['T1', 'T2'],
+                '炒锅': ['T1', 'T2'],
+                '烧味/卤水': ['T1', 'T2'],
+                '刺身': ['T1', 'T2'],
                 '洗碗': ['T1'],
                 '水吧': ['L1', 'L2', 'L3'],
                 '传菜': ['L1'],
                 '服务员': ['L2'],
-                '主管': ['L3', 'L4'],
-                '前厅经理': ['L5'],
+                '主管': ['M1'],
+                '前厅经理': ['M2'],
                 '门店店长': ['M3'],
                 '出纳': ['L1', 'L2'],
-                '出品经理': ['储备', '正式']
+                '出品经理': ['T2', 'T3']
             };
         }
 
