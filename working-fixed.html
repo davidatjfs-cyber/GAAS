@@ -46422,8 +46422,16 @@ tr:nth-child(even) td { background: #fafafa; }
             const sysAckKey = 'hrms_acked_sys_notifs_' + myUsername;
             let ackedSysIds = [];
             try { ackedSysIds = JSON.parse(localStorage.getItem(sysAckKey) || '[]'); } catch (e) { ackedSysIds = []; }
+            // 注意：系统通知(db_notification)的createdAt来自后端timestamptz自定义解析，格式是
+            // "2026-06-26 19:22:24"(空格分隔，不带T/Z)；公告(announcement)的createdAt是前端
+            // hrmsNowISO()生成的标准ISO("...T...Z")。两种格式直接用字符串>=比较会踩坑——空格
+            // 的ASCII码比'T'小，导致"空格格式"的时间永远被判定"小于"ISO格式的cutoff，不管
+            // 实际多新都会被排除在强制队列外。这里统一转成Date时间戳再比较，规避格式差异。
+            const forceAckCutoffMs = new Date(ANNOUNCEMENT_FORCE_ACK_SINCE).getTime();
             const ackQueue = visible.filter(a => {
-                if (!a || String(a?.createdAt || '') < ANNOUNCEMENT_FORCE_ACK_SINCE) return false;
+                if (!a) return false;
+                const createdMs = new Date(a?.createdAt || 0).getTime();
+                if (!Number.isFinite(createdMs) || createdMs < forceAckCutoffMs) return false;
                 if (a._src === 'announcement') return !(a?.readBy && a.readBy[myUsername]);
                 if (a._src === 'db_notification') return !ackedSysIds.includes(String(a._id || ''));
                 return false;
