@@ -4535,22 +4535,28 @@ export function registerGrowthRoutes(app, pool) {
   });
 
   // 规则维度闭环统计：本规则累计 已发送 / 已核销 / 核销率（delivery_logs + redemptions 经 action_key/rule_key 关联）。
+  // days=0（或 all）= 全量累计，不按时间截断；否则为近 N 天窗口统计。
   app.get('/api/growth/touch-rules/stats', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+    const rawDays = String(req.query.days ?? '0').trim().toLowerCase();
+    const days = (rawDays === '0' || rawDays === 'all' || rawDays === 'lifetime')
+      ? 0
+      : Math.min(Math.max(Number(req.query.days) || 0, 1), 365);
     const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
       // 注：核销成功后 Fix3 会把投递日志 status 由 'sent' 翻成 'redeemed'，
       // 故发送数须把已触达的各终态都计入，否则被核销的那条会从发送数里漏掉。
       // 归因键修正：投递日志的 rule_key 实际存的是 campaign_key（活动制规则），核销事件
       // metadata 里也是 campaign_key。故统一按「归因键 akey = COALESCE(campaign_key, rule_key)」
       // 聚合并 JOIN，否则活动制规则(主力)发送/核销全部漏算成 0（旧实现的真实 bug）。
+      // 兼容旧数据：部分早期日志 rule_key 存的是 touch_rules.rule_key 而非 campaign_key，
+      // 故按 rule 汇总时同时匹配 rule_key 与 campaign_key 并求和（不同键各计一次，不重复）。
       `WITH sent AS (
          SELECT rule_key AS akey,
                 COUNT(*)::int AS sent_count,
                 COUNT(*) FILTER (WHERE channel = 'sms')::int AS sms_sent_count
          FROM growth_delivery_logs
          WHERE status IN ('sent','delivered','read','clicked','redeemed')
-           AND created_at >= NOW() - ($1::int || ' days')::interval
+           AND ($1::int <= 0 OR created_at >= NOW() - ($1::int || ' days')::interval)
          GROUP BY rule_key
        ),
        redeemed AS (
@@ -4558,7 +4564,8 @@ export function registerGrowthRoutes(app, pool) {
                 COUNT(*)::int AS redeemed_count,
                 COALESCE(SUM(amount_fen), 0)::bigint AS revenue_fen
          FROM growth_events
-         WHERE event_type = 'coupon_redeemed' AND created_at >= NOW() - ($1::int || ' days')::interval
+         WHERE event_type = 'coupon_redeemed'
+           AND ($1::int <= 0 OR created_at >= NOW() - ($1::int || ' days')::interval)
            AND COALESCE(NULLIF(metadata->>'campaign_key',''), NULLIF(metadata->>'rule_key','')) IS NOT NULL
          GROUP BY 1
        )
@@ -4569,8 +4576,20 @@ export function registerGrowthRoutes(app, pool) {
               COALESCE(rd.redeemed_count, 0) AS redeemed_count,
               COALESCE(rd.revenue_fen, 0) AS revenue_fen
        FROM growth_touch_rules tr
-       LEFT JOIN sent s ON s.akey = COALESCE(NULLIF(tr.action_payload->>'campaign_key',''), tr.rule_key)
-       LEFT JOIN redeemed rd ON rd.akey = COALESCE(NULLIF(tr.action_payload->>'campaign_key',''), tr.rule_key)`,
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(s.sent_count), 0)::int AS sent_count,
+                COALESCE(SUM(s.sms_sent_count), 0)::int AS sms_sent_count
+         FROM sent s
+         WHERE s.akey = tr.rule_key
+            OR s.akey = COALESCE(NULLIF(tr.action_payload->>'campaign_key',''), tr.rule_key)
+       ) s ON true
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(rd.redeemed_count), 0)::int AS redeemed_count,
+                COALESCE(SUM(rd.revenue_fen), 0)::bigint AS revenue_fen
+         FROM redeemed rd
+         WHERE rd.akey = tr.rule_key
+            OR rd.akey = COALESCE(NULLIF(tr.action_payload->>'campaign_key',''), tr.rule_key)
+       ) rd ON true`,
       [days]
     ));
     // 单条短信成本 0.05 元（5 分）；订阅消息 / 小程序渠道成本为 0。
@@ -4646,7 +4665,7 @@ export function registerGrowthRoutes(app, pool) {
     for (const k of Object.keys(byKind)) {
       byKind[k].redeem_rate = byKind[k].sent > 0 ? Math.round(byKind[k].redeemed / byKind[k].sent * 10000) / 100 : null;
     }
-    return res.json({ ok: true, days, stats, coupon_kind_summary: byKind });
+    return res.json({ ok: true, days, cumulative: days <= 0, stats, coupon_kind_summary: byKind });
   });
 
   // ABC 6模板滚动分布：该活动当前命中人群中，各模板步骤(赠菜A/B/C+赠券30/50/2X50)×

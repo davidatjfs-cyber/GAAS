@@ -19671,13 +19671,14 @@
                         <div class="rep-filters" style="margin-bottom:14px;">
                             <div class="rep-filters__eyebrow">闭环看板</div>
                             <div class="rep-filters__title">自动营销闭环</div>
-                            <p style="color:rgba(226,232,240,0.6);font-size:12px;margin:4px 0 12px;">管理员审核后的规则才会被引擎（每15分钟）自动执行。未审核的规则只生成待发建议，需在「AI建议」标签人工确认。每条规则下方展示累计发送 / 核销 / 核销率 / 营收 / 成本（短信 0.05 元·条，订阅与小程序为 0）/ ROI / 评分，并给出优化建议；列表按效果评分从高到低排序，供下一轮决策参考。</p>
+                            <p style="color:rgba(226,232,240,0.6);font-size:12px;margin:4px 0 12px;">管理员审核后的规则才会被引擎（每15分钟）自动执行。未审核的规则只生成待发建议，需在「AI建议」标签人工确认。每条规则下方展示<strong>累计</strong>发送 / 核销 / 核销率 / 营收 / 成本（短信 0.05 元·条，订阅与小程序为 0）/ ROI / 评分，并给出优化建议；可通过右侧下拉切换为「近 N 天」窗口统计。列表按效果评分从高到低排序，供下一轮决策参考。</p>
                             <div class="rep-seg" style="margin-bottom:14px;">
                                 <button onclick="loadAutoMarketing()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">刷新</button>
                                 <select id="am-stats-days" onchange="loadAutoMarketing()" style="flex:1;min-width:100px;border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;background:rgba(0,0,0,0.35);color:var(--rep-text);">
+                                    <option value="0" selected>累计(全部)</option>
                                     <option value="1">今日</option>
                                     <option value="7">近7天</option>
-                                    <option value="30" selected>近30天</option>
+                                    <option value="30">近30天</option>
                                     <option value="90">近90天</option>
                                     <option value="365">近一年</option>
                                 </select>
@@ -57577,10 +57578,17 @@ ${body}
             return (window.__GROWTH_STORE_MAP && __GROWTH_STORE_MAP[storeId]) || ('门店 ' + storeId);
         }
 
+        function amStatsPeriodLabel(days) {
+            var d = String(days == null ? '0' : days);
+            if (d === '0') return '累计';
+            if (d === '1') return '今日';
+            return '近' + d + '天';
+        }
+
         async function loadAutoMarketing() {
             if (!canAccessGrowthModule()) { document.getElementById('growth-page').style.display = 'none'; return; }
             var host = document.getElementById('am-rules-list');
-            var days = document.getElementById('am-stats-days')?.value || '30';
+            var days = document.getElementById('am-stats-days')?.value || '0';
             if (document.getElementById('am-sub-fields') && !document.querySelector('#am-sub-fields [data-sub-field]')) amRenderSubFields();
             amRenderGlossary();
             host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">加载中…</div>';
@@ -57607,7 +57615,8 @@ ${body}
 
         function amRenderRulesList(allRules, statRows, audienceMap) {
             var host = document.getElementById('am-rules-list');
-            var days = document.getElementById('am-stats-days')?.value || '30';
+            var days = document.getElementById('am-stats-days')?.value || '0';
+            var periodLabel = amStatsPeriodLabel(days);
             var statMap = {};
             statRows.forEach(function(s){ statMap[s.rule_key] = s; });
 
@@ -57644,8 +57653,8 @@ ${body}
                 var rate = totalSent > 0 ? ((totalRedeemed / totalSent) * 100).toFixed(1) : '0.0';
                 var summary = document.getElementById('am-summary');
                 function card(k, v){ return '<div class="rep-metric"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
-                summary.innerHTML = card('近' + days + '天发送', totalSent)
-                    + card('已核销', totalRedeemed)
+                summary.innerHTML = card(periodLabel + '发送', totalSent)
+                    + card(periodLabel + '核销', totalRedeemed)
                     + card('核销率', rate + '%')
                     + card('自动执行中', autoLiveCount + ' / ' + rules.length);
 
@@ -57794,6 +57803,7 @@ ${body}
                           + '</div>'))
                         // —— 效果统计 ——
                         + '<div class="amr-sec">'
+                        +   '<div class="amr-sec-title" style="margin-bottom:8px;">📊 活动数据（' + periodLabel + '）</div>'
                         +   '<div class="amr-stats">'
                         +     '<div class="amr-stat"><span class="amr-stat-k">发送</span><span class="amr-stat-v">' + sent + '</span></div>'
                         +     '<div class="amr-stat"><span class="amr-stat-k">核销</span><span class="amr-stat-v" style="color:#22c55e;">' + red + '</span></div>'
