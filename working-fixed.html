@@ -17143,7 +17143,7 @@
                                 <div id="training-content-articles" style="height:100%;overflow-y:auto;"></div>
                             </div>
                             <!-- 开始测验按钮 -->
-                            <button id="training-start-quiz-btn" onclick="startTrainingQuiz()" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(234,179,8,0.9),rgba(245,158,11,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.5px;">✍️ 完成阅读，开始测验</button>
+                            <button id="training-start-quiz-btn" onclick="startTrainingQuiz()" disabled style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(234,179,8,0.9),rgba(245,158,11,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.5px;">✍️ 完成阅读，开始考试认证</button>
                         </div>
 
                         <!-- 测验界面 -->
@@ -32398,6 +32398,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     <div style="font-size:36px;margin-bottom:10px;">📄</div>
                     <div>暂无培训资料</div>
                 </div>`;
+                enableTrainingQuizBtn();
             } else {
                 // Build article tabs if more than one article
                 if (tabsDiv) {
@@ -32433,6 +32434,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
 
                 // AI 解析作为主培训内容直接渲染（缓存后全员共用，无需查看原文件）
                 window.loadTrainingAiExplanation = async function(articleId, container) {
+                    disableTrainingQuizBtn();
                     container.innerHTML = '<div style="text-align:center;padding:52px 0;color:rgba(255,255,255,0.4);"><div style="font-size:34px;margin-bottom:14px;opacity:0.7;">✨</div><div style="font-size:13px;">AI 正在整理培训内容，请稍候…</div></div>';
 
                     try {
@@ -32454,6 +32456,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     } catch (e) {
                         container.innerHTML = '<div style="text-align:center;padding:44px 0;"><div style="font-size:32px;margin-bottom:12px;">📡</div><div style="color:rgba(255,255,255,0.45);font-size:13px;">网络错误，请检查连接后重试</div></div>';
                     }
+                    enableTrainingQuizBtn();
                 };
 
                 showTrainingArticle(0);
@@ -32461,6 +32464,25 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
 
             const area = document.getElementById('training-content-area');
             if (area) area.scrollTop = 0;
+        }
+
+        let _learnBtnWaitTimer = null;
+        function disableTrainingQuizBtn() {
+            const btn = document.getElementById('training-start-quiz-btn');
+            if (!btn) return;
+            btn.disabled = true;
+            let waitSec = 0;
+            if (_learnBtnWaitTimer) clearInterval(_learnBtnWaitTimer);
+            btn.textContent = '⏳ AI 正在整理培训内容…';
+            _learnBtnWaitTimer = setInterval(() => {
+                waitSec++;
+                btn.textContent = `⏳ AI 正在整理培训内容…(${waitSec}s)`;
+            }, 1000);
+        }
+        function enableTrainingQuizBtn() {
+            if (_learnBtnWaitTimer) { clearInterval(_learnBtnWaitTimer); _learnBtnWaitTimer = null; }
+            const btn = document.getElementById('training-start-quiz-btn');
+            if (btn) { btn.disabled = false; btn.textContent = '✍️ 完成阅读，开始考试认证'; }
         }
 
         let _quizLoadingTimer = null;
@@ -32513,7 +32535,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 backToTrainingStudy();
             } finally {
                 if (_quizLoadingTimer) { clearInterval(_quizLoadingTimer); _quizLoadingTimer = null; }
-                if (btn) { btn.disabled = false; btn.textContent = '✍️ 完成阅读，开始测验'; }
+                if (btn) { btn.disabled = false; btn.textContent = '✍️ 完成阅读，开始考试认证'; }
             }
         }
 
@@ -37125,7 +37147,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                             const badge = t.promotion_required ? '<span style="font-size:10px;background:rgba(99,102,241,0.25);color:#a5b4fc;border-radius:4px;padding:1px 5px;margin-left:4px;">晋升必须</span>' : '';
                             return `<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;cursor:pointer;border-radius:6px;"
                                 onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background=''">
-                                <input type="checkbox" data-id="${t.id}" ${t.promotion_required ? 'checked' : ''} style="width:15px;height:15px;accent-color:#6366f1;flex-shrink:0;">
+                                <input type="checkbox" data-id="${t.id}" style="width:15px;height:15px;accent-color:#6366f1;flex-shrink:0;">
                                 <span style="flex:1;">${escapeHtml(String(t.title || ''))}${badge}</span>
                             </label>`;
                         }).join('');
@@ -46392,9 +46414,8 @@ tr:nth-child(even) td { background: #fafafa; }
                 return String(b?.createdAt || '').localeCompare(String(a?.createdAt || ''));
             });
 
-            // 强制确认队列：重要/紧急 + requireAck + 我还没读过的公告，登录后挨个弹窗拦截
-            const ackQueue = anns.filter(a => a?.requireAck && String(a?.level || '') !== 'normal'
-                && !(a?.readBy && a.readBy[myUsername]));
+            // 强制确认队列：所有公司公告（不区分级别/是否勾选强制确认），我还没读过的，登录后挨个弹窗拦截
+            const ackQueue = anns.filter(a => !(a?.readBy && a.readBy[myUsername]));
             if (ackQueue.length) {
                 ackQueue.sort((a, b) => (String(a.level) === 'urgent' ? -1 : 0) - (String(b.level) === 'urgent' ? -1 : 0));
                 setTimeout(() => showForcedAnnouncementAck(ackQueue), 400);
