@@ -555,7 +555,7 @@
       try {
         state.selectedTenantId = tenantId;
         $('cfgTenantId').value = tenantId;
-        await loadProfile(tenantId);
+        await loadTenantProfile(tenantId);
       } catch (e) {
         log(`读取租户详情失败：${e.message}`);
       }
@@ -563,7 +563,7 @@
 
     window.loadProfile = async (tenantId) => {
       try {
-        await loadProfile(tenantId);
+        await loadTenantProfile(tenantId);
       } catch (e) {
         log(`加载租户配置失败：${e.message}`);
       }
@@ -1261,7 +1261,7 @@
       `;
     }
 
-    async function loadProfile(tenantId) {
+    async function loadTenantProfile(tenantId) {
       const id = String(tenantId || $('cfgTenantId').value || '').trim();
       if (!id) return;
       $('cfgTenantId').value = id;
@@ -1363,7 +1363,7 @@
       if (!state.selectedTenantId && items[0]) state.selectedTenantId = items[0].tenant_id;
       const current = selectedTenant();
       if (current) {
-        await loadProfile(current.tenant_id).catch((e) => log(`载入平台配置失败：${e.message}`));
+        await loadTenantProfile(current.tenant_id).catch((e) => log(`载入平台配置失败：${e.message}`));
       } else {
         renderDetail(null);
       }
@@ -1547,7 +1547,7 @@
       try {
         state.selectedTenantId = tenantId;
         $('cfgTenantId').value = tenantId;
-        await loadProfile(tenantId);
+        await loadTenantProfile(tenantId);
       } catch (e) {
         log(`读取租户详情失败：${e.message}`);
       }
@@ -1621,7 +1621,7 @@
           body: JSON.stringify(payload)
         });
         log(`飞书配置已保存：${tenantId}，表=${(data.integration?.tables || []).join('、')}`);
-        await loadProfile(tenantId);
+        await loadTenantProfile(tenantId);
         await loadTenants();
       } catch (e) {
         log(`保存飞书配置失败：${e.message}`);

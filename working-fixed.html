@@ -14,6 +14,32 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
     <title>年年有喜管理系统</title>
+    <script>
+    (function () {
+        try {
+            var params = new URLSearchParams(location.search);
+            var tenantId = String(params.get('tenant_id') || localStorage.getItem('hrms_tenant_id') || '').trim();
+            if (!tenantId || tenantId === 'default') return;
+            try { localStorage.setItem('hrms_tenant_id', tenantId); } catch (e) {}
+            document.documentElement.setAttribute('data-tenant-id', tenantId);
+            document.title = '加载中…';
+            fetch('/api/tenant/branding?tenant_id=' + encodeURIComponent(tenantId))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data || !data.system_name) return;
+                    document.title = data.system_name;
+                    try { sessionStorage.setItem('hrms_brand_name', data.system_name); } catch (e) {}
+                    var el = document.getElementById('login-tenant-title');
+                    if (el) {
+                        el.textContent = data.system_name;
+                        el.style.visibility = 'visible';
+                    }
+                })
+                .catch(function () {});
+        } catch (e) {}
+    })();
+    </script>
+    <style>html[data-tenant-id] #login-tenant-title { visibility: hidden; }</style>
     <style>
         /* Premium International UI Design */
         * {
@@ -13977,6 +14003,21 @@
     </style>
 </head>
 <body>
+    <script>
+    (function () {
+        try {
+            var name = sessionStorage.getItem('hrms_brand_name');
+            if (!name) return;
+            document.addEventListener('DOMContentLoaded', function () {
+                var el = document.getElementById('login-tenant-title');
+                if (el) {
+                    el.textContent = name;
+                    el.style.visibility = 'visible';
+                }
+            });
+        } catch (e) {}
+    })();
+    </script>
     
     <!-- 登录界面：分析报表系简约布局 -->
     <div id="login" class="container login-rep">
@@ -21897,18 +21938,44 @@
 
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
-        (function applyTenantBranding() {
+        function resolveHrmsLoginTenantId() {
             try {
                 const params = new URLSearchParams(location.search);
-                const tenantId = params.get('tenant_id') || localStorage.getItem('hrms_tenant_id') || 'default';
+                const fromUrl = String(params.get('tenant_id') || '').trim();
+                if (fromUrl) {
+                    try { localStorage.setItem('hrms_tenant_id', fromUrl); } catch (e) {}
+                    return fromUrl;
+                }
+                const stored = String(localStorage.getItem('hrms_tenant_id') || '').trim();
+                if (stored && stored !== 'default') {
+                    try {
+                        params.set('tenant_id', stored);
+                        const qs = params.toString();
+                        history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+                    } catch (e) {}
+                    return stored;
+                }
+                return 'default';
+            } catch (e) {
+                return 'default';
+            }
+        }
+
+        (function applyTenantBranding() {
+            try {
+                const tenantId = resolveHrmsLoginTenantId();
                 fetch(`/api/tenant/branding?tenant_id=${encodeURIComponent(tenantId)}`)
                     .then((r) => r.json())
                     .then((data) => {
                         if (!data) return;
                         if (data.system_name) {
                             document.title = data.system_name;
+                            try { sessionStorage.setItem('hrms_brand_name', data.system_name); } catch (e) {}
                             const titleEl = document.getElementById('login-tenant-title');
-                            if (titleEl) titleEl.textContent = data.system_name;
+                            if (titleEl) {
+                                titleEl.textContent = data.system_name;
+                                titleEl.style.visibility = 'visible';
+                            }
                         }
                         if (data.logo_url) {
                             const logoEl = document.getElementById('login-tenant-logo');
@@ -22871,10 +22938,14 @@
                 return data;
             },
             async login(username, password) {
+                const tenant_id = resolveHrmsLoginTenantId();
                 const data = await this.request('/api/auth/login', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password }),
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Tenant-Id': tenant_id
+                    },
+                    body: JSON.stringify({ username, password, tenant_id }),
                     skipAuth: true
                 });
                 try {
@@ -26342,10 +26413,11 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
         async function doLogin(event) {
             event.preventDefault();
             
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
+            const username = String(document.getElementById('username').value || '').trim();
+            const password = String(document.getElementById('password').value || '');
+            const tenantId = resolveHrmsLoginTenantId();
             
-            console.log('尝试登录:', { username, password });
+            console.log('尝试登录:', { username, tenantId });
 
             try {
                 const resp = await HRMS_API.login(username, password);
@@ -26389,6 +26461,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 try {
                     localStorage.setItem('HRMS_AUTO_USER', username);
                     localStorage.setItem('HRMS_AUTO_PASS', password);
+                    localStorage.setItem('HRMS_AUTO_TENANT', tenantId);
                 } catch (e) {}
                 // 先显示主界面，不阻塞
                 document.getElementById('login').classList.add('hidden');
@@ -26415,8 +26488,8 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
             } catch (e) {
                 console.error(e);
                 const msg = String(e?.message || e);
-                showNotification('登录失败：' + msg, 'error');
-                updateDebug('登录失败：' + msg);
+                showNotification('登录失败：' + msg + '（租户：' + tenantId + '）', 'error');
+                updateDebug('登录失败：' + msg + ' tenant=' + tenantId);
             }
         }
 
@@ -54482,7 +54555,9 @@ ${body}
                     // 尝试自动登录（如果有保存的凭据）
                     const savedU = localStorage.getItem('HRMS_AUTO_USER');
                     const savedP = localStorage.getItem('HRMS_AUTO_PASS');
-                    if (savedU && savedP) {
+                    const savedTenant = localStorage.getItem('HRMS_AUTO_TENANT') || '';
+                    const currentTenant = resolveHrmsLoginTenantId();
+                    if (savedU && savedP && (!savedTenant || savedTenant === currentTenant)) {
                         try {
                             document.getElementById('username').value = savedU;
                             document.getElementById('password').value = savedP;

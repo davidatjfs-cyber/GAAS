@@ -16362,6 +16362,10 @@ const PLATFORM_AGENT_DEFAULT_COUNTS = {
 };
 
 async function ensureTenantAgentCenterSeed(tenantId, tenantName = '') {
+  return tenantContext.run(tenantId, async () => ensureTenantAgentCenterSeedInContext(tenantId, tenantName));
+}
+
+async function ensureTenantAgentCenterSeedInContext(tenantId, tenantName = '') {
   const seededAt = new Date().toISOString();
   const promptTemplateIds = new Map();
   for (const tpl of PLATFORM_AGENT_PROMPT_TEMPLATES) {
@@ -16423,6 +16427,10 @@ async function ensureTenantAgentCenterSeed(tenantId, tenantName = '') {
 }
 
 async function loadTenantAgentCenterData(tenantId) {
+  return tenantContext.run(tenantId, async () => loadTenantAgentCenterDataInContext(tenantId));
+}
+
+async function loadTenantAgentCenterDataInContext(tenantId) {
   const configs = await pool.query(
     `SELECT c.*, t.name AS prompt_template_name, rt.name AS reply_template_name
        FROM agent_configs c
