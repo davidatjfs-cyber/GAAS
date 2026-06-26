@@ -197,7 +197,11 @@ export async function createTrainingAssignment({ employeeUsername, topicId, assi
   const row = r.rows[0];
   if (!row) return null;
 
-  const assignerName = String(assignedBy || '').trim() || '系统';
+  let assignerName = String(assignedBy || '').trim() || '系统';
+  if (assignerName && assignerName !== '系统') {
+    const ar = await pool().query(`SELECT name FROM employees WHERE username = $1 LIMIT 1`, [assignerName]);
+    if (ar.rows[0]?.name) assignerName = ar.rows[0].name;
+  }
   await createTrainingUserNotification(
     username,
     '你有新的培训任务',
