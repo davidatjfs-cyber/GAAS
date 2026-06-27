@@ -14,8 +14,12 @@
       --accent: #0d7a5f;
       --accent-2: #c96b2c;
       --danger: #b63f31;
+      --nav-h: 62px;
+      --header-h: auto;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
     * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
     body {
       margin: 0;
       font-family: "PingFang SC", "Noto Sans SC", sans-serif;
@@ -24,47 +28,18 @@
         radial-gradient(circle at bottom right, rgba(13,122,95,.16), transparent 28%),
         var(--bg);
       color: var(--ink);
+      padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px);
     }
-    .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 18px 40px; }
-    h1 { margin: 0 0 12px; font-size: 34px; }
-    .sub { color: var(--muted); margin-bottom: 20px; }
-    .grid { display: grid; grid-template-columns: 340px 1fr; gap: 18px; }
-    .hero {
-      display: grid;
-      grid-template-columns: 1.6fr 1fr;
-      gap: 14px;
-      margin-bottom: 18px;
-    }
-    .hero .card { min-height: 100%; }
-    .title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-    .hero h1 { font-size: 36px; letter-spacing: .02em; }
-    .hero-copy { color: var(--muted); line-height: 1.7; }
-    .hero-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-      margin-top: 14px;
-    }
-    .overview-grid {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 10px;
-    }
-    .stat {
-      border: 1px solid rgba(120,104,85,.18);
-      background: linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,250,242,.96));
-      border-radius: 16px;
-      padding: 12px 14px;
-    }
-    .stat .label { font-size: 12px; color: var(--muted); }
-    .stat .value { font-size: 24px; font-weight: 800; margin-top: 6px; }
-    .stat .sub { margin: 6px 0 0; font-size: 12px; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 12px 12px 8px; }
+    h1 { margin: 0; font-size: 22px; line-height: 1.3; }
+    h2 { margin: 0 0 8px; font-size: 17px; }
+    .sub { color: var(--muted); font-size: 13px; line-height: 1.55; }
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: 0 12px 30px rgba(78, 56, 28, 0.08);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 8px 24px rgba(78, 56, 28, 0.06);
     }
     .stack { display: grid; gap: 12px; }
     label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
@@ -74,24 +49,29 @@
       background: #fff;
       color: var(--ink);
       border-radius: 12px;
-      padding: 10px 12px;
+      padding: 11px 12px;
       font: inherit;
+      font-size: 16px;
     }
     textarea { min-height: 88px; resize: vertical; }
     button {
       border: 0;
-      border-radius: 999px;
-      padding: 10px 16px;
+      border-radius: 12px;
+      padding: 11px 14px;
       font: inherit;
       font-weight: 700;
+      font-size: 14px;
       cursor: pointer;
       background: var(--accent);
       color: #fff;
+      touch-action: manipulation;
     }
     button.secondary { background: #eadcc6; color: var(--ink); }
     button.warn { background: var(--accent-2); }
     button.danger { background: var(--danger); }
-    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
+    button.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .pill {
       display: inline-flex;
       align-items: center;
@@ -101,60 +81,15 @@
       font-size: 12px;
       background: #efe5d5;
       color: var(--muted);
+      white-space: nowrap;
     }
     .pill.ok { background: rgba(13,122,95,.12); color: var(--accent); }
     .pill.bad { background: rgba(182,63,49,.12); color: var(--danger); }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 12px 10px; border-bottom: 1px solid rgba(120,104,85,.18); text-align: left; vertical-align: top; }
-    th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-    tr:hover td { background: rgba(13,122,95,.04); }
-    .tenant-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .tenant-actions.compact button { padding: 7px 11px; font-size: 12px; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-    .log { white-space: pre-wrap; background: #fff; border-radius: 12px; border: 1px solid var(--line); padding: 12px; min-height: 72px; }
-    .login-access-card {
-      border: 2px solid var(--accent);
-      border-radius: 16px;
-      padding: 16px;
-      background: linear-gradient(180deg, rgba(13,122,95,.08), rgba(255,255,255,.96));
-    }
-    .login-access-card.hidden { display: none; }
-    .login-access-card .title { font-weight: 800; font-size: 16px; margin-bottom: 4px; }
-    .login-access-grid {
-      display: grid;
-      grid-template-columns: 88px 1fr auto;
-      gap: 8px 12px;
-      align-items: center;
-      margin-top: 12px;
-      font-size: 13px;
-    }
-    .login-access-grid .k { color: var(--muted); }
-    .login-access-grid .v { word-break: break-all; }
-    .login-access-inline {
-      border: 1px dashed rgba(13,122,95,.35);
-      border-radius: 12px;
-      padding: 12px;
-      background: rgba(13,122,95,.04);
-    }
-    .login-access-inline .login-access-grid { margin-top: 8px; }
-    .copy-btn {
-      border: 1px solid var(--line);
-      background: #fff;
-      color: var(--ink);
-      border-radius: 8px;
-      padding: 4px 10px;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .detail {
-      border: 1px solid rgba(120,104,85,.18);
-      background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,248,235,.92));
-      border-radius: 18px;
-      padding: 16px;
-    }
-    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
-    .detail-grid .field {
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; }
+    .small { font-size: 12px; color: var(--muted); line-height: 1.55; }
+    .section-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .detail-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .detail-grid .field, label.field {
       border: 1px dashed rgba(120,104,85,.2);
       border-radius: 12px;
       padding: 10px 12px;
@@ -162,309 +97,387 @@
     }
     .detail-grid .k { font-size: 12px; color: var(--muted); }
     .detail-grid .v { margin-top: 4px; font-weight: 700; word-break: break-word; }
-    .section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-    .small { font-size: 12px; color: var(--muted); }
-    .section-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
-    .section-nav button { background: #eadcc6; color: var(--ink); }
-    .section-nav button.active { background: var(--accent); color: #fff; }
-    .ops-section { scroll-margin-top: 16px; }
-    .logo-preview {
-      width: 68px;
-      height: 68px;
-      object-fit: cover;
+    .detail {
+      border: 1px solid rgba(120,104,85,.18);
+      background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,248,235,.92));
       border-radius: 16px;
-      border: 1px solid rgba(120,104,85,.22);
-      background: #fff;
-      display: block;
+      padding: 14px;
     }
-    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -2px; }
-    .table-scroll table { min-width: 560px; }
-    @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
-    @media (max-width: 1100px) { .hero { grid-template-columns: 1fr; } .hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 8px; border-bottom: 1px solid rgba(120,104,85,.18); text-align: left; vertical-align: top; font-size: 13px; }
+    th { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .table-scroll table { min-width: 640px; }
+    .tenant-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tenant-actions.compact button { padding: 8px 10px; font-size: 12px; border-radius: 10px; }
+    .logo-preview {
+      width: 56px; height: 56px; object-fit: cover; border-radius: 14px;
+      border: 1px solid rgba(120,104,85,.22); background: #fff;
+    }
+    .log {
+      white-space: pre-wrap; background: #fff; border-radius: 12px;
+      border: 1px solid var(--line); padding: 12px; min-height: 120px;
+      max-height: 50vh; overflow: auto; font-size: 12px;
+    }
+    .login-access-card {
+      border: 2px solid var(--accent); border-radius: 16px; padding: 14px;
+      background: linear-gradient(180deg, rgba(13,122,95,.08), rgba(255,255,255,.96));
+    }
+    .login-access-card.hidden { display: none; }
+    .login-access-card .title { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+    .login-access-grid {
+      display: grid; grid-template-columns: 72px 1fr auto; gap: 8px 10px;
+      align-items: center; margin-top: 10px; font-size: 13px;
+    }
+    .login-access-grid .k { color: var(--muted); }
+    .login-access-grid .v { word-break: break-all; }
+    .login-access-inline {
+      border: 1px dashed rgba(13,122,95,.35); border-radius: 12px;
+      padding: 12px; background: rgba(13,122,95,.04);
+    }
+    .copy-btn {
+      border: 1px solid var(--line); background: #fff; color: var(--ink);
+      border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+    }
 
-    /* 手机端整体排版优化：更窄的留白、更大的点击区域、表单输入16px避免iOS自动放大、网格降到单列 */
-    @media (max-width: 640px) {
-      .wrap { padding: 14px 10px 28px; }
-      h1 { font-size: 26px; }
-      .hero h1 { font-size: 24px; }
-      .hero-copy { font-size: 13px; line-height: 1.6; }
-      .card { padding: 14px; border-radius: 14px; }
-      .hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-      .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .stat { padding: 10px 12px; }
-      .stat .value { font-size: 20px; }
-      .detail-grid { grid-template-columns: 1fr; }
-      input, textarea, select { font-size: 16px; padding: 11px 12px; }
-      button { width: 100%; padding: 12px 16px; font-size: 15px; }
+    /* App shell */
+    .app-header {
+      display: grid; gap: 12px; margin-bottom: 12px;
+    }
+    .header-top {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    }
+    .header-links { display: flex; gap: 6px; flex-wrap: wrap; }
+    .header-links a {
+      text-decoration: none; font-size: 11px; padding: 5px 8px;
+      border-radius: 999px; background: #efe5d5; color: var(--muted);
+    }
+    .stats-row {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+    }
+    .stat {
+      border: 1px solid rgba(120,104,85,.18);
+      background: linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,250,242,.96));
+      border-radius: 14px; padding: 10px 12px;
+    }
+    .stat .label { font-size: 11px; color: var(--muted); }
+    .stat .value { font-size: 22px; font-weight: 800; margin-top: 4px; }
+    .stat .sub { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+
+    .selected-bar {
+      display: none; position: sticky; top: 0; z-index: 20;
+      margin-bottom: 10px; padding: 10px 12px;
+      background: rgba(255,250,242,.96); backdrop-filter: blur(8px);
+      border: 1px solid var(--accent); border-radius: 14px;
+    }
+    .selected-bar.visible { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .selected-bar strong { font-size: 14px; }
+    .selected-bar .mono { font-size: 11px; color: var(--muted); }
+
+    .top-tabs {
+      display: none; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;
+    }
+    .top-tabs button {
+      background: #eadcc6; color: var(--ink); border-radius: 999px; padding: 8px 14px; font-size: 13px;
+    }
+    .top-tabs button.active { background: var(--accent); color: #fff; }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .bottom-nav {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+      display: grid; grid-template-columns: repeat(5, 1fr);
+      background: rgba(255,250,242,.98); backdrop-filter: blur(10px);
+      border-top: 1px solid var(--line);
+      padding: 6px 4px calc(6px + var(--safe-bottom));
+      box-shadow: 0 -4px 20px rgba(78,56,28,.08);
+    }
+    .bottom-nav button {
+      background: transparent; color: var(--muted); border-radius: 10px;
+      padding: 8px 4px; font-size: 11px; font-weight: 600; line-height: 1.2;
+      display: grid; gap: 2px; justify-items: center;
+    }
+    .bottom-nav button.active { background: rgba(13,122,95,.12); color: var(--accent); }
+    .bottom-nav .nav-icon { font-size: 18px; line-height: 1; }
+
+    .config-subnav {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px;
+    }
+    .config-subnav button {
+      background: #eadcc6; color: var(--ink); font-size: 12px; padding: 9px 6px; border-radius: 10px;
+    }
+    .config-subnav button.active { background: var(--accent); color: #fff; }
+    .config-pane { display: none; }
+    .config-pane.active { display: block; }
+
+    .glossary {
+      display: grid; gap: 8px;
+    }
+    .glossary-item {
+      border: 1px solid rgba(120,104,85,.15); border-radius: 12px;
+      padding: 10px 12px; background: rgba(255,255,255,.75);
+    }
+    .glossary-item strong { font-size: 13px; color: var(--accent); }
+    .glossary-item p { margin: 4px 0 0; font-size: 12px; color: var(--muted); line-height: 1.55; }
+
+    .action-hint {
+      font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.45;
+    }
+    .hint-box {
+      border-left: 3px solid var(--accent-2); padding: 8px 10px;
+      background: rgba(201,107,44,.08); border-radius: 0 10px 10px 0;
+      font-size: 12px; color: var(--muted); line-height: 1.55;
+    }
+
+    .tenant-card-list { display: grid; gap: 10px; }
+    .tenant-card {
+      border: 1px solid rgba(120,104,85,.2); border-radius: 14px;
+      padding: 12px; background: #fff;
+    }
+    .tenant-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(13,122,95,.15); }
+    .tenant-card-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .tenant-card-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0; font-size: 12px; }
+    .tenant-card-meta div { background: rgba(244,239,230,.6); border-radius: 8px; padding: 6px 8px; }
+    .tenant-card-meta .k { color: var(--muted); font-size: 10px; }
+    .desktop-only { display: none; }
+    .mobile-only { display: block; }
+
+    .overview-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .stat-card .stat-value { font-size: 22px; font-weight: 800; }
+    .stat-card .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .card-header h3 { margin: 0 0 10px; font-size: 15px; }
+    .card-body { display: grid; gap: 10px; }
+    .ops-section { margin-bottom: 14px; }
+    .ops-section .card { padding: 0; overflow: hidden; }
+    .ops-section .card-header { padding: 12px 14px 0; }
+    .ops-section .card-body { padding: 0 14px 14px; }
+
+    .list-card {
+      border: 1px solid rgba(120,104,85,.15); border-radius: 12px;
+      padding: 12px; background: #fff; display: grid; gap: 8px;
+    }
+    .list-card-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .list-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .list-card-actions button { flex: 1 1 auto; min-width: 72px; font-size: 12px; padding: 8px 10px; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: calc(var(--nav-h) + var(--safe-bottom) + 16px);
+      transform: translateX(-50%) translateY(20px); opacity: 0; pointer-events: none;
+      background: rgba(46,36,24,.92); color: #fff; padding: 10px 16px; border-radius: 999px;
+      font-size: 13px; z-index: 60; transition: .25s ease; max-width: calc(100vw - 32px); text-align: center;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+    .section-nav button.active { background: var(--accent); color: #fff; }
+    .section-nav button { font-size: 12px; padding: 8px 12px; }
+
+    @media (min-width: 768px) {
+      body { padding-bottom: 20px; }
+      .wrap { padding: 20px 18px; }
+      h1 { font-size: 28px; }
+      .stats-row { grid-template-columns: repeat(4, 1fr); }
+      .detail-grid { grid-template-columns: repeat(2, 1fr); }
+      .bottom-nav { display: none; }
+      .top-tabs { display: flex; }
+      .desktop-only { display: block; }
+      .mobile-only { display: none; }
+      .login-access-grid { grid-template-columns: 88px 1fr auto; }
+      .tenant-actions.compact button { width: auto; }
+      button { width: auto; }
+      .toolbar button { width: auto; }
+      .list-card-actions button { flex: 0 1 auto; }
+    }
+
+    @media (max-width: 767px) {
       .toolbar { flex-direction: column; align-items: stretch; }
-      .toolbar > a, .toolbar > button, .toolbar > span.pill { width: 100%; text-align: center; }
+      .toolbar > button, .toolbar > a { width: 100%; text-align: center; }
       .tenant-actions { flex-direction: column; }
       .tenant-actions button { width: 100%; }
-      .tenant-actions.compact { flex-direction: row; flex-wrap: wrap; }
-      .tenant-actions.compact button { width: auto; flex: 1 1 auto; min-width: 80px; }
-      .section-title { flex-direction: column; align-items: flex-start; gap: 4px; }
-      .section-nav { gap: 6px; flex-direction: column; }
-      .section-nav button { width: 100%; padding: 10px 8px; font-size: 13px; }
-      table { min-width: 0; }
-      th, td { padding: 9px 8px; font-size: 13px; }
-      .logo-preview { width: 56px; height: 56px; }
-      label > div[style*="display:flex"] { flex-wrap: wrap; }
+      .login-access-grid { grid-template-columns: 1fr; }
+      .login-access-grid .k { font-weight: 700; color: var(--ink); }
+      .config-subnav { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
+  <div id="toast" class="toast"></div>
   <div class="wrap">
-    <div class="hero">
-      <section class="card">
-        <div class="title-row">
-          <div>
-            <h1>平台租户运营控制台</h1>
-            <div class="sub">nnyx.cc 上的租户运营控制台：总览、账单、告警、验收、飞书接入、品牌外观，一处完成。</div>
-          </div>
-          <div class="toolbar">
-          <a href="/agents-admin/" target="_blank" rel="noreferrer" class="pill ok" style="text-decoration:none;">打开独立 Agent 控制台</a>
-          <a href="/api/health" target="_blank" rel="noreferrer" class="pill" style="text-decoration:none;">查看健康检查</a>
-          </div>
+    <header class="app-header card">
+      <div class="header-top">
+        <div>
+          <h1>平台租户控制台</h1>
+          <div class="sub">管理租户开通、许可证、飞书、品牌外观与自动验收</div>
         </div>
-        <p class="hero-copy">
-          这个页面是平台级控制面，不是租户内页面。它只管理租户、许可证、飞书接入、平台外观、自动验收与告警，
-          不直接操作租户内部业务数据，方便你以后给更多公司开账号时，把边界锁死。
-        </p>
-        <div class="hero-grid">
-          <div class="stat"><div class="label">租户总数</div><div id="statTotal" class="value">0</div><div class="sub">全部可见租户</div></div>
-          <div class="stat"><div class="label">已激活</div><div id="statActive" class="value">0</div><div class="sub">在线可登录</div></div>
-          <div class="stat"><div class="label">已配置飞书</div><div id="statFeishu" class="value">0</div><div class="sub">含多表绑定</div></div>
-          <div class="stat"><div class="label">30 天内到期</div><div id="statLicense" class="value">0</div><div class="sub">需要关注续期</div></div>
+        <div class="header-links">
+          <a href="/agents-admin/" target="_blank" rel="noreferrer">Agent</a>
+          <a href="/api/health" target="_blank" rel="noreferrer">健康</a>
         </div>
-      </section>
-      <section class="card stack" id="authCard">
+      </div>
+      <div class="stats-row">
+        <div class="stat"><div class="label">租户总数</div><div id="statTotal" class="value">0</div></div>
+        <div class="stat"><div class="label">已激活</div><div id="statActive" class="value">0</div></div>
+        <div class="stat"><div class="label">已配置飞书</div><div id="statFeishu" class="value">0</div></div>
+        <div class="stat"><div class="label">30天内到期</div><div id="statLicense" class="value">0</div></div>
+      </div>
+      <section class="auth-compact stack" id="authCard">
         <div id="loginPane" class="stack">
           <strong>平台管理员登录</strong>
-          <label>账号
-            <input id="loginUsername" placeholder="平台管理员账号" autocomplete="username">
-          </label>
-          <label>密码
-            <input id="loginPassword" type="password" placeholder="密码" autocomplete="current-password">
-          </label>
-          <div class="toolbar">
-            <button id="loginBtn">登录</button>
-          </div>
-          <div class="small">首次使用且还没有账号？联系已有的平台管理员用下方"账号管理"创建，或用部署时的 bootstrap 流程创建第一个账号。</div>
+          <label>账号<input id="loginUsername" placeholder="平台管理员账号" autocomplete="username"></label>
+          <label>密码<input id="loginPassword" type="password" placeholder="密码" autocomplete="current-password"></label>
+          <div class="toolbar"><button id="loginBtn">登录</button></div>
         </div>
         <div id="accountPane" class="stack" style="display:none">
           <strong>已登录</strong>
           <div id="currentAccountLabel" class="small"></div>
           <div class="toolbar">
-            <button id="reloadBtn">刷新租户列表</button>
+            <button id="reloadBtn">刷新数据</button>
             <button id="manageAccountsBtn" class="secondary">账号管理</button>
-            <button id="logoutBtn" class="danger">退出登录</button>
+            <button id="logoutBtn" class="danger">退出</button>
           </div>
         </div>
       </section>
-    </div>
+    </header>
 
-    <div id="accountsPanel" class="card stack" style="margin-bottom:18px;display:none">
-      <div class="section-title">
-        <strong>平台管理员账号</strong>
-        <span class="small">每个人用自己的账号登录，操作会落审计日志</span>
-      </div>
-      <div id="accountsList" class="small">加载中…</div>
-      <hr style="border:none;border-top:1px solid var(--line);width:100%">
-      <div class="detail-grid">
-        <label class="field">新账号用户名
-          <input id="newAccountUsername" placeholder="例如：zhang_sales">
-        </label>
-        <label class="field">姓名
-          <input id="newAccountRealName" placeholder="显示名称">
-        </label>
-        <label class="field">初始密码
-          <input id="newAccountPassword" type="password" placeholder="至少8位">
-        </label>
+    <div id="selectedTenantBar" class="selected-bar card">
+      <div>
+        <strong id="selectedTenantName">未选择租户</strong>
+        <div class="mono" id="selectedTenantIdLabel">—</div>
       </div>
       <div class="toolbar">
-        <button id="createAccountBtn">创建账号</button>
+        <button type="button" class="secondary" id="goConfigBtn">去配置</button>
+        <button type="button" class="ghost" id="clearTenantBtn">取消选中</button>
       </div>
-      <hr style="border:none;border-top:1px solid var(--line);width:100%">
-      <div class="section-title">
-        <strong>最近操作审计日志</strong>
-        <span class="small">最近200条非只读操作</span>
-      </div>
-      <div id="auditLogList" class="small">未加载</div>
     </div>
 
-    <div class="card stack" style="margin-bottom:18px">
-      <div class="section-title">
-        <strong>运营总览</strong>
-        <span class="small">账单 / 告警 / 验收 / 动作汇总</span>
-      </div>
-      <div class="section-nav" id="opsNav">
-        <button type="button" class="active" data-scroll-target="opsSummary">总览</button>
-        <button type="button" data-scroll-target="billingSection">账单中心</button>
-        <button type="button" data-scroll-target="alertsSection">告警中心</button>
-        <button type="button" data-scroll-target="acceptanceSection">验收报告</button>
-        <button type="button" data-scroll-target="tenantManageSection">租户管理</button>
-      </div>
-      <div id="opsOverview"></div>
-    </div>
+    <nav class="top-tabs" id="topTabs">
+      <button type="button" class="active" data-panel="overview">总览</button>
+      <button type="button" data-panel="tenants">租户</button>
+      <button type="button" data-panel="create">开通</button>
+      <button type="button" data-panel="config">配置</button>
+      <button type="button" data-panel="log">日志</button>
+    </nav>
 
-    <div class="grid">
-      <section class="card stack">
+    <section id="panel-overview" class="panel active stack">
+      <div class="card stack">
         <div class="section-title">
-          <strong>新租户开通</strong>
-          <span class="small">新客户开通入口</span>
+          <strong>运营总览</strong>
+          <span class="small">账单 / 告警 / 验收</span>
         </div>
-        <div class="stack">
-          <label>租户名称
-            <input id="tenantName" placeholder="示例品牌 A">
-          </label>
-          <label>租户 ID
-            <div style="display:flex;gap:8px;align-items:center">
-              <input id="tenantId" placeholder="自动生成，无需手填" readonly style="flex:1">
-              <button type="button" id="regenTenantIdBtn" class="secondary" style="white-space:nowrap;padding:8px 12px">重新生成</button>
-            </div>
-            <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12px;color:var(--muted);font-weight:400">
-              <input type="checkbox" id="manualTenantIdToggle" style="width:auto"> 我要手动指定 ID（不推荐，容易和已有租户撞名/格式不一致）
-            </label>
-          </label>
-          <label>模式
-            <select id="tenantMode">
-              <option value="managed">托管租赁</option>
-              <option value="self_hosted">自部署</option>
-            </select>
-          </label>
-          <label>管理员账号
-            <input id="adminUsername" placeholder="admin_demo">
-          </label>
-          <label>管理员姓名
-            <input id="adminRealName" placeholder="品牌管理员">
-          </label>
-          <label>管理员密码
-            <input id="adminPassword" type="password" placeholder="至少 6 位">
-          </label>
-          <label>许可证到期时间
-            <input id="licenseExpiresAt" type="datetime-local">
-          </label>
-          <button id="createTenantBtn">创建租户并初始化</button>
+        <div class="section-nav toolbar" id="opsNav">
+          <button type="button" class="secondary active" data-scroll-target="opsSummary">总览</button>
+          <button type="button" class="secondary" data-scroll-target="billingSection">账单</button>
+          <button type="button" class="secondary" data-scroll-target="alertsSection">告警</button>
+          <button type="button" class="secondary" data-scroll-target="acceptanceSection">验收</button>
         </div>
-        <hr style="border:none;border-top:1px solid var(--line);width:100%">
-        <div class="stack">
-          <div class="section-title">
-            <strong>租户品牌与外观</strong>
-            <span class="small">系统名称 / Logo / 颜色 / 开关</span>
+        <div id="opsOverview"></div>
+      </div>
+      <div class="card stack">
+        <strong>功能说明</strong>
+        <div class="glossary" id="actionGlossary"></div>
+      </div>
+    </section>
+
+    <section id="panel-tenants" class="panel stack">
+      <div class="card stack">
+        <div class="toolbar">
+          <span class="pill">租户列表</span>
+          <span id="tenantCount" class="pill">0 个</span>
+          <span id="tenantFilterState" class="pill">全部</span>
+        </div>
+        <label>搜索<input id="tenantFilter" placeholder="租户ID / 名称 / 状态"></label>
+        <div id="tenantCardList" class="tenant-card-list mobile-only"></div>
+        <div class="table-scroll desktop-only">
+          <table>
+            <thead><tr><th>租户</th><th>状态</th><th>许可证</th><th>到期</th><th>飞书</th><th>外观</th><th>操作</th></tr></thead>
+            <tbody id="tenantTableBody"></tbody>
+          </table>
+        </div>
+        <div id="tenantDetail" class="detail"></div>
+      </div>
+    </section>
+
+    <section id="panel-create" class="panel stack">
+      <div class="card stack">
+        <div class="section-title"><strong>新租户开通</strong><span class="small">创建后请立即保存登录信息</span></div>
+        <div class="hint-box">创建成功后会自动跳转到「日志」页展示 HRMS 登录网址、用户名和密码（密码仅展示一次）。</div>
+        <label>租户名称<input id="tenantName" placeholder="示例品牌 A"></label>
+        <label>租户 ID
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="tenantId" placeholder="自动生成" readonly style="flex:1">
+            <button type="button" id="regenTenantIdBtn" class="secondary" style="white-space:nowrap;padding:8px 12px;width:auto">重新生成</button>
           </div>
-          <div class="small">先在上方选择租户 ID，再保存这一块的配置。</div>
-          <label>系统名称
-            <input id="profileSystemName" placeholder="年年有喜管理系统">
+          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12px;color:var(--muted);font-weight:400">
+            <input type="checkbox" id="manualTenantIdToggle" style="width:auto"> 手动指定 ID
           </label>
-          <label>页面标题
-            <input id="profilePageTitle" placeholder="平台租户控制台">
-          </label>
+        </label>
+        <label>模式<select id="tenantMode"><option value="managed">托管租赁</option><option value="self_hosted">自部署</option></select></label>
+        <label>管理员账号<input id="adminUsername" placeholder="admin_demo"></label>
+        <label>管理员姓名<input id="adminRealName" placeholder="品牌管理员"></label>
+        <label>管理员密码<input id="adminPassword" type="password" placeholder="至少 6 位"></label>
+        <label>许可证到期<input id="licenseExpiresAt" type="datetime-local"></label>
+        <button id="createTenantBtn">创建租户</button>
+      </div>
+    </section>
+
+    <section id="panel-config" class="panel stack">
+      <div class="card stack">
+        <div class="section-title"><strong>租户配置</strong><span class="small">先选中租户再编辑</span></div>
+        <label>当前租户 ID<input id="cfgTenantId" placeholder="在「租户」页点击选中"></label>
+        <div class="config-subnav" id="configSubnav">
+          <button type="button" class="active" data-config-pane="profilePane">品牌外观</button>
+          <button type="button" data-config-pane="feishuPane">飞书接入</button>
+          <button type="button" data-config-pane="opsPane">运维操作</button>
+        </div>
+
+        <div id="profilePane" class="config-pane active stack">
+          <label>系统名称<input id="profileSystemName" placeholder="年年有喜管理系统"></label>
+          <label>页面标题<input id="profilePageTitle" placeholder="平台租户控制台"></label>
           <label>Logo
-            <div style="display:flex;align-items:center;gap:10px">
-              <img id="logoUploadPreview" class="logo-preview" src="" alt="logo预览" style="display:none">
-              <div style="flex:1">
-                <input id="profileLogoUrl" placeholder="https://.../logo.png（也可以直接点下面上传图片自动填）">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <img id="logoUploadPreview" class="logo-preview" src="" alt="logo" style="display:none">
+              <div style="flex:1;min-width:200px">
+                <input id="profileLogoUrl" placeholder="Logo URL 或上传图片">
                 <input id="logoUploadFile" type="file" accept="image/*" style="margin-top:6px">
               </div>
             </div>
           </label>
-          <label>网站图标地址
-            <input id="profileFaviconUrl" placeholder="https://.../favicon.ico">
-          </label>
-          <label>品牌主色
-            <input id="profileBrandColor" type="color" value="#0d7a5f">
-          </label>
-          <label>平台说明
-            <textarea id="profileTagline" style="min-height:72px">统一管理租户开通、外观配置、飞书接入、自动验收与告警。</textarea>
-          </label>
+          <label>网站图标<input id="profileFaviconUrl" placeholder="favicon.ico"></label>
+          <label>品牌主色<input id="profileBrandColor" type="color" value="#0d7a5f"></label>
+          <label>平台说明<textarea id="profileTagline" style="min-height:72px">统一管理租户开通、外观配置、飞书接入、自动验收与告警。</textarea></label>
           <div class="detail-grid">
-            <div class="field"><div class="k">统一模板</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchUnifiedTemplate" type="checkbox" checked> 开启</label></div></div>
-            <div class="field"><div class="k">自动验收</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchAutoAcceptance" type="checkbox" checked> 开启</label></div></div>
-            <div class="field"><div class="k">失败修复</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchFailureRepair" type="checkbox" checked> 开启</label></div></div>
-            <div class="field"><div class="k">租户告警</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchTenantAlerts" type="checkbox" checked> 开启</label></div></div>
-            <div class="field"><div class="k">账单模块</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchBilling" type="checkbox" checked> 开启</label></div></div>
-            <div class="field"><div class="k">到期倒计时</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="switchCountdown" type="checkbox" checked> 开启</label></div></div>
+            <div class="field"><div class="k">统一模板</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="switchUnifiedTemplate" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">自动验收</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="switchAutoAcceptance" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">失败修复</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="switchFailureRepair" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">租户告警</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="switchTenantAlerts" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">账单模块</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="switchBilling" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">到期倒计时</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="switchCountdown" type="checkbox" checked> 开启</label></div>
           </div>
           <div class="detail-grid">
-            <div class="field"><div class="k">HRMS 模板</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="tplHrms" type="checkbox" checked> 开启</label></div></div>
-            <div class="field"><div class="k">Agent V2 模板</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="tplAgentV2" type="checkbox" checked> 开启</label></div></div>
-            <div class="field"><div class="k">小程序模板</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="tplMiniProgram" type="checkbox" checked> 开启</label></div></div>
-            <div class="field"><div class="k">飞书模板</div><div class="v"><label style="display:flex;align-items:center;gap:8px;margin:0;color:inherit;"><input id="tplFeishu" type="checkbox" checked> 开启</label></div></div>
+            <div class="field"><div class="k">HRMS</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplHrms" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">Agent V2</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplAgentV2" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">小程序</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplMiniProgram" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">飞书</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplFeishu" type="checkbox" checked> 开启</label></div>
           </div>
           <div class="detail-grid">
-            <label class="field">账单计划
-              <select id="billingPlan">
-                <option value="">未配置</option>
-                <option value="标准版">标准版</option>
-                <option value="旗舰版">旗舰版</option>
-                <option value="定制版">定制版</option>
-              </select>
-            </label>
-            <label class="field">账单周期
-              <select id="billingCycle">
-                <option value="">未配置</option>
-                <option value="按月">按月</option>
-                <option value="按季">按季</option>
-                <option value="按年">按年</option>
-              </select>
-            </label>
-            <label class="field">下次开票时间
-              <input id="billingNextInvoiceAt" type="datetime-local">
-            </label>
-            <label class="field">账单联系人
-              <input id="billingContact" placeholder="财务联系人姓名">
-            </label>
-            <label class="field">联系方式
-              <input id="billingContactMethod" placeholder="手机 / 微信 / 邮箱">
-            </label>
+            <label class="field">账单计划<select id="billingPlan"><option value="">未配置</option><option value="标准版">标准版</option><option value="旗舰版">旗舰版</option><option value="定制版">定制版</option></select></label>
+            <label class="field">账单周期<select id="billingCycle"><option value="">未配置</option><option value="按月">按月</option><option value="按季">按季</option><option value="按年">按年</option></select></label>
+            <label class="field">下次开票<input id="billingNextInvoiceAt" type="datetime-local"></label>
+            <label class="field">账单联系人<input id="billingContact" placeholder="财务联系人"></label>
+            <label class="field">联系方式<input id="billingContactMethod" placeholder="手机/微信/邮箱"></label>
+            <label class="field">提前提醒(天)<input id="alertsNotifyDays" type="number" min="1" value="30"></label>
+            <label class="field">告警接收人<input id="alertsContact" placeholder="姓名/联系方式"></label>
+            <label class="field" style="grid-column:1/-1">飞书告警群<input id="alertsFeishuChat" placeholder="可留空"></label>
           </div>
-          <div class="section-title" style="margin-top:14px">
-            <strong>告警接收设置</strong>
-            <span class="small">许可证到期等提醒发给谁</span>
-          </div>
-          <div class="detail-grid">
-            <label class="field">提前提醒天数
-              <input id="alertsNotifyDays" type="number" min="1" value="30">
-            </label>
-            <label class="field">告警接收人
-              <input id="alertsContact" placeholder="姓名 / 联系方式">
-            </label>
-            <label class="field" style="grid-column:1 / -1">飞书告警群（webhook 或群 ID，可留空）
-              <input id="alertsFeishuChat" placeholder="可留空">
-            </label>
-          </div>
-          <label>平台备注
-            <textarea id="profileNotes" style="min-height:72px" placeholder="仅平台运营可见"></textarea>
-          </label>
-          <div class="toolbar">
-            <button id="saveProfileBtn">保存平台配置</button>
-            <button id="bootstrapTenantBtn" class="secondary">一键初始化</button>
-            <button id="repairTenantBtn" class="warn">失败修复</button>
-          </div>
+          <label>平台备注<textarea id="profileNotes" style="min-height:72px" placeholder="仅平台运营可见"></textarea></label>
+          <button id="saveProfileBtn">保存平台配置</button>
         </div>
-        <hr style="border:none;border-top:1px solid var(--line);width:100%">
-        <div class="stack">
-          <div class="section-title">
-            <strong>飞书配置</strong>
-            <span class="small">租户级独立多维表格绑定</span>
-          </div>
-          <div class="small" style="line-height:1.6">
-            这一块是给<strong>该租户自己公司</strong>绑定他们自己的飞书多维表格(Bitable)数据源——
-            每家公司的营运数据(检查表/桌访记录/差评/收档报告/SOP步骤等)都存在自己的飞书空间里，
-            这里填的飞书应用ID/密钥和下面每张表的app_token/table_id/view_id，就是告诉系统"去这家公司自己的哪张表抓数据"。
-            不填的话该租户的飞书相关功能(自动同步检查表、桌访提醒等)不会工作，但租户管理/账单/Agent配置等其它功能不受影响。
-          </div>
-          <label>当前租户 ID
-            <input id="cfgTenantId" placeholder="先在右侧租户列表点“配置飞书”或“查看详情”自动带入">
-          </label>
-          <label>飞书应用 ID
-            <input id="cfgAppId">
-          </label>
-          <label>飞书应用密钥
-            <input id="cfgAppSecret" type="password">
-          </label>
-          <label>各业务模块对应的飞书表（JSON，按需填写，不用的模块留空即可）
-            <textarea id="cfgTables">{
+
+        <div id="feishuPane" class="config-pane stack">
+          <div class="hint-box">绑定该租户自己的飞书多维表格。不填则飞书同步相关功能不工作，其它功能不受影响。</div>
+          <label>飞书应用 ID<input id="cfgAppId"></label>
+          <label>飞书应用密钥<input id="cfgAppSecret" type="password"></label>
+          <label>各业务表 JSON<textarea id="cfgTables">{
   "ops_checklist": { "app_token": "", "table_id": "", "view_id": "" },
   "table_visit": { "app_token": "", "table_id": "", "view_id": "" },
   "bad_review": { "app_token": "", "table_id": "", "view_id": "" },
@@ -479,54 +492,217 @@
   "task_responses": { "app_token": "", "table_id": "", "view_id": "" },
   "actual_gross_margin": { "app_token": "", "table_id": "", "view_id": "" },
   "sop_steps": { "app_token": "", "table_id": "", "view_id": "" }
-}</textarea>
-          </label>
+}</textarea></label>
           <div class="toolbar">
             <button id="saveFeishuBtn" class="warn">保存飞书配置</button>
-            <button id="runAcceptanceBtn">运行自动验收</button>
+            <button id="runAcceptanceBtn" class="secondary">运行验收</button>
           </div>
         </div>
-      </section>
 
-      <section class="card stack">
-        <div class="toolbar">
-          <span class="pill">租户管理</span>
-          <span id="tenantCount" class="pill">0 个租户</span>
-          <span id="tenantFilterState" class="pill">全部</span>
+        <div id="opsPane" class="config-pane stack">
+          <div class="glossary-item"><strong>一键初始化</strong><p>写入默认模板开关、种子 Agent 配置并运行自动验收。新租户创建后建议执行一次。</p><button id="bootstrapTenantBtn" class="secondary">一键初始化</button></div>
+          <div class="glossary-item"><strong>失败修复</strong><p>重新保存平台配置并重跑验收，用于验收未通过时的快速修复尝试。</p><button id="repairTenantBtn" class="warn">失败修复</button></div>
+          <div class="glossary-item"><strong>续期 / 发放许可证</strong><p>延长租户许可证到期时间，到期后租户将无法登录 HRMS。</p><button type="button" class="secondary" id="issueLicenseBtn">续期 / 发放许可证</button></div>
         </div>
-        <label>搜索租户
-          <input id="tenantFilter" placeholder="输入 租户ID / 名称 / 模式 / 状态">
-        </label>
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>租户</th>
-                <th>状态</th>
-                <th>许可证</th>
-                <th>到期</th>
-                <th>飞书</th>
-                <th>外观</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="tenantTableBody"></tbody>
-          </table>
-        </div>
-        <div id="tenantDetail" class="detail"></div>
-        <div id="tenantLoginAccess" class="login-access-card hidden"></div>
+      </div>
+    </section>
+
+    <section id="panel-log" class="panel stack">
+      <div id="tenantLoginAccess" class="login-access-card hidden"></div>
+      <div class="card stack">
         <strong>操作日志</strong>
         <div id="log" class="log"></div>
-      </section>
+      </div>
+    </section>
+
+    <div id="accountsPanel" class="card stack" style="display:none">
+      <div class="section-title"><strong>平台管理员账号</strong><span class="small">操作落审计日志</span></div>
+      <div id="accountsList" class="small">加载中…</div>
+      <div class="detail-grid">
+        <label class="field">新账号<input id="newAccountUsername" placeholder="zhang_sales"></label>
+        <label class="field">姓名<input id="newAccountRealName" placeholder="显示名称"></label>
+        <label class="field">初始密码<input id="newAccountPassword" type="password" placeholder="至少8位"></label>
+      </div>
+      <button id="createAccountBtn">创建账号</button>
+      <strong style="margin-top:8px">审计日志</strong>
+      <div id="auditLogList" class="small">未加载</div>
     </div>
   </div>
+
+  <nav class="bottom-nav" id="bottomNav">
+    <button type="button" class="active" data-panel="overview"><span class="nav-icon">📊</span>总览</button>
+    <button type="button" data-panel="tenants"><span class="nav-icon">🏢</span>租户</button>
+    <button type="button" data-panel="create"><span class="nav-icon">➕</span>开通</button>
+    <button type="button" data-panel="config"><span class="nav-icon">⚙️</span>配置</button>
+    <button type="button" data-panel="log"><span class="nav-icon">📋</span>日志</button>
+  </nav>
 
   <script>
     const $ = (id) => document.getElementById(id);
     const tokenKey = 'platform_admin_token';
     const accountKey = 'platform_admin_account';
     const agentTenantKey = 'agent_admin_tenant_id';
-    const state = { tenants: [], selectedTenantId: '', detail: null, agentCenter: null, overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] } };
+    const state = { tenants: [], selectedTenantId: '', detail: null, agentCenter: null, activePanel: 'overview', overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] } };
+    const ACTION_GLOSSARY = [
+      { term: '选中', desc: '将该租户设为当前操作对象。选中后顶部会显示租户条，「配置」页表单自动带入该租户 ID。' },
+      { term: '查看 / 详情', desc: '跳转到「租户」页，加载该租户的详情、登录入口和验收报告。' },
+      { term: '平台配置', desc: '跳转到「配置 → 品牌外观」，编辑系统名称、Logo、功能开关和账单信息。' },
+      { term: '配置飞书', desc: '跳转到「配置 → 飞书接入」，填写该租户的多维表格绑定。' },
+      { term: '续期', desc: '为该租户发放或延长许可证。到期后租户员工将无法登录 HRMS。' },
+      { term: '验收', desc: '自动检查管理员账号、飞书、品牌外观等是否就绪，判断能否交付客户使用。' },
+      { term: '一键初始化', desc: '写入默认模板开关、种子 Agent 配置并运行验收。新租户创建后建议执行。' },
+      { term: '失败修复', desc: '重新保存平台配置并重跑验收，用于验收未通过时的快速修复。' },
+      { term: '刷新数据', desc: '重新从服务器拉取租户列表、账单、告警和验收汇总。' },
+    ];
+
+    const log = (msg) => {
+      $('log').textContent = `[${new Date().toLocaleString()}] ${msg}\n` + $('log').textContent;
+    };
+
+    let toastTimer = null;
+    function toast(msg) {
+      const node = $('toast');
+      if (!node) return;
+      node.textContent = String(msg || '');
+      node.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => node.classList.remove('show'), 2600);
+    }
+
+    function switchPanel(name) {
+      state.activePanel = name;
+      document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+      const panel = $(`panel-${name}`);
+      if (panel) panel.classList.add('active');
+      document.querySelectorAll('#topTabs button, #bottomNav button').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.panel === name);
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function switchConfigPane(paneId) {
+      document.querySelectorAll('.config-pane').forEach((p) => p.classList.remove('active'));
+      const pane = $(paneId);
+      if (pane) pane.classList.add('active');
+      document.querySelectorAll('#configSubnav button').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.configPane === paneId);
+      });
+    }
+
+    function updateSelectedTenantBar() {
+      const bar = $('selectedTenantBar');
+      const id = String(state.selectedTenantId || $('cfgTenantId')?.value || '').trim();
+      if (!bar) return;
+      if (!id) {
+        bar.classList.remove('visible');
+        $('selectedTenantName').textContent = '未选择租户';
+        $('selectedTenantIdLabel').textContent = '—';
+        return;
+      }
+      const item = state.tenants.find((x) => x.tenant_id === id) || state.detail?.tenant || {};
+      const profile = item.platform_profile || state.detail?.profile || {};
+      bar.classList.add('visible');
+      $('selectedTenantName').textContent = profile.system_name || item.name || id;
+      $('selectedTenantIdLabel').textContent = id;
+    }
+
+    function renderActionGlossary() {
+      const host = $('actionGlossary');
+      if (!host) return;
+      host.innerHTML = ACTION_GLOSSARY.map((item) => `
+        <div class="glossary-item"><strong>${item.term}</strong><p>${item.desc}</p></div>
+      `).join('');
+    }
+
+    function renderTenantCardList(items) {
+      const host = $('tenantCardList');
+      if (!host) return;
+      if (!items.length) {
+        host.innerHTML = '<div class="small">暂无租户，请先在「开通」页创建。</div>';
+        return;
+      }
+      host.innerHTML = items.map((item) => {
+        const feishu = item.integrations?.feishu_bitable || {};
+        const profile = item.platform_profile || {};
+        const selected = item.tenant_id === state.selectedTenantId;
+        const countdown = formatCountdown(item.license_countdown_days);
+        return `
+          <div class="tenant-card ${selected ? 'selected' : ''}" data-tenant-id="${item.tenant_id}">
+            <div class="tenant-card-head">
+              <div>
+                <strong>${profile.system_name || item.name}</strong>
+                <div class="mono">${item.tenant_id}</div>
+              </div>
+              <span class="pill ${item.status === 'active' ? 'ok' : 'bad'}">${formatStatus(item.status)}</span>
+            </div>
+            <div class="tenant-card-meta">
+              <div><div class="k">许可证</div>${item.license_status || '缺失'}</div>
+              <div><div class="k">到期</div>${countdown}</div>
+              <div><div class="k">飞书</div>${feishu.configured ? '已配置' : '未配置'}</div>
+              <div><div class="k">外观</div>${profile.logo_url ? '已配置' : '未配置'}</div>
+            </div>
+            <div class="list-card-actions">
+              <button type="button" class="secondary" data-action="select">选中</button>
+              <button type="button" class="secondary" data-action="config">配置</button>
+              <button type="button" class="secondary" data-action="feishu">飞书</button>
+              <button type="button" class="ghost" data-action="agent">Agent</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+      host.querySelectorAll('.tenant-card [data-action]').forEach((btn) => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const card = btn.closest('.tenant-card');
+          const id = card?.dataset.tenantId;
+          if (!id) return;
+          const action = btn.dataset.action;
+          if (action === 'select') window.selectTenant(id);
+          else if (action === 'config') window.loadProfile(id);
+          else if (action === 'feishu') window.prefillTenant(id);
+          else if (action === 'agent') window.openAgentConsoleForTenant(id);
+        };
+      });
+      host.querySelectorAll('.tenant-card').forEach((card) => {
+        card.onclick = () => window.selectTenant(card.dataset.tenantId);
+      });
+    }
+
+    function setupNavListeners() {
+      document.querySelectorAll('#topTabs button, #bottomNav button').forEach((btn) => {
+        btn.onclick = () => switchPanel(btn.dataset.panel);
+      });
+      $('configSubnav')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-config-pane]');
+        if (!btn) return;
+        switchConfigPane(btn.dataset.configPane);
+      });
+      $('goConfigBtn').onclick = () => {
+        if (!state.selectedTenantId) { toast('请先选择租户'); return; }
+        switchPanel('config');
+      };
+      $('clearTenantBtn').onclick = () => {
+        state.selectedTenantId = '';
+        $('cfgTenantId').value = '';
+        updateSelectedTenantBar();
+        renderDetail(null);
+        const filter = normalizeTenantSearch($('tenantFilter').value);
+        const items = (state.tenants || []).filter((item) => {
+          if (!filter) return true;
+          const profile = item.platform_profile || {};
+          const hay = [item.tenant_id, item.name, item.mode, item.status, profile.system_name].join(' ').toLowerCase();
+          return hay.includes(filter);
+        });
+        renderTenantCardList(items);
+        toast('已取消选中');
+      };
+      $('issueLicenseBtn').onclick = () => {
+        const id = String($('cfgTenantId').value || state.selectedTenantId || '').trim();
+        if (!id) { toast('请先在「租户」页选中一个租户'); return; }
+        window.promptIssueLicense(id);
+      };
+    }
+
     const AGENT_LABELS = {
       master: 'Master调度中枢',
       data_auditor: '数据审计',
@@ -534,10 +710,6 @@
       sop_advisor: 'SOP顾问',
       chief_evaluator: '绩效考核',
       appeal_handler: '申诉处理',
-    };
-
-    const log = (msg) => {
-      $('log').textContent = `[${new Date().toLocaleString()}] ${msg}\n` + $('log').textContent;
     };
 
     function buildClientLoginUrl(tenantId) {
@@ -611,7 +783,10 @@
         host.querySelectorAll('[data-copy-value]').forEach((btn) => {
           btn.onclick = () => copyText(btn.dataset.copyLabel || '内容', btn.dataset.copyValue || '');
         });
-        if (highlight) host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        if (highlight) {
+          switchPanel('log');
+          host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
       }
       if (silentLog) return;
       const pwdLog = password ? `密码：${password}` : '密码：见创建时设置（系统不存明文）';
@@ -680,57 +855,144 @@
 
     window.selectTenant = async (tenantId) => {
       try {
-        state.selectedTenantId = tenantId;
-        $('cfgTenantId').value = tenantId;
-        await loadTenantProfile(tenantId);
+        if (!isLoggedIn()) throw new Error('请先登录');
+        const id = String(tenantId || '').trim();
+        if (!id) throw new Error('缺少租户 ID');
+        state.selectedTenantId = id;
+        $('cfgTenantId').value = id;
+        switchPanel('tenants');
+        updateSelectedTenantBar();
+        await loadTenantProfile(id);
+        const filter = normalizeTenantSearch($('tenantFilter').value);
+        const items = (state.tenants || []).filter((item) => {
+          if (!filter) return true;
+          const profile = item.platform_profile || {};
+          const hay = [item.tenant_id, item.name, item.mode, item.status, profile.system_name].join(' ').toLowerCase();
+          return hay.includes(filter);
+        });
+        renderTenantCardList(items);
+        toast(`已选中：${id}`);
       } catch (e) {
+        toast(e.message);
         log(`读取租户详情失败：${e.message}`);
       }
     };
 
     window.loadProfile = async (tenantId) => {
       try {
-        await loadTenantProfile(tenantId);
+        if (!isLoggedIn()) throw new Error('请先登录');
+        const id = String(tenantId || state.selectedTenantId || '').trim();
+        if (!id) throw new Error('请先选择租户');
+        state.selectedTenantId = id;
+        $('cfgTenantId').value = id;
+        switchPanel('config');
+        switchConfigPane('profilePane');
+        updateSelectedTenantBar();
+        await loadTenantProfile(id);
+        toast(`已打开配置：${id}`);
       } catch (e) {
+        toast(e.message);
         log(`加载租户配置失败：${e.message}`);
       }
     };
 
     window.prefillTenant = async (tenantId) => {
-      $('cfgTenantId').value = tenantId;
-      state.selectedTenantId = tenantId;
       try {
-        const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`);
-        log(`已加载 ${tenantId} 的飞书配置摘要。`);
+        if (!isLoggedIn()) throw new Error('请先登录');
+        const id = String(tenantId || '').trim();
+        $('cfgTenantId').value = id;
+        state.selectedTenantId = id;
+        switchPanel('config');
+        switchConfigPane('feishuPane');
+        updateSelectedTenantBar();
+        const data = await api(`/api/admin/tenants/${id}/integrations/feishu_bitable`);
+        log(`已加载 ${id} 的飞书配置摘要。`);
         if (data.integration?.app_id) $('cfgAppId').value = data.integration.app_id;
-        const current = state.tenants.find((x) => x.tenant_id === tenantId) || selectedTenant();
+        const current = state.tenants.find((x) => x.tenant_id === id) || selectedTenant();
         renderDetail(state.detail || { tenant: current, profile: current?.platform_profile || {}, integrations: { feishu_bitable: data.integration }, alerts: [] });
+        toast(`飞书配置：${id}`);
       } catch (e) {
+        toast(e.message);
         log(`读取飞书摘要失败：${e.message}`);
       }
     };
 
     window.acceptTenant = async (tenantId) => {
       try {
+        if (!isLoggedIn()) throw new Error('请先登录');
         const data = await api(`/api/admin/tenants/${tenantId}/acceptance`, {
           method: 'POST',
           body: JSON.stringify({ activate: true })
         });
-        log(`自动验收 ${tenantId}：${data.ok ? '通过' : '失败'}`);
+        log(`自动验收 ${tenantId}：${data.ok ? '通过' : '失败'}${data.report?.checks ? '；' + data.report.checks.map((x) => `${x.key}=${x.ok}`).join('，') : ''}`);
         await loadTenants();
+        toast(data.ok ? '验收通过' : '验收未通过');
       } catch (e) {
+        toast(e.message);
         log(`自动验收失败：${e.message}`);
       }
     };
 
+    async function runBootstrap(tenantId) {
+      const id = String(tenantId || $('cfgTenantId').value || state.selectedTenantId || '').trim();
+      if (!id) throw new Error('请先选择租户');
+      $('cfgTenantId').value = id;
+      state.selectedTenantId = id;
+      const data = await api(`/api/admin/tenants/${id}/bootstrap`, { method: 'POST', body: JSON.stringify({}) });
+      log(`${id} 一键初始化完成：${data.message}`);
+      if (data.login_access) {
+        const cached = getCachedTenantCredentials(id);
+        showTenantLoginAccess({
+          ...data.login_access,
+          password: cached?.password || data.login_access.password,
+        }, { highlight: true });
+      }
+      await loadTenants();
+      await loadTenantProfile(id).catch(() => {});
+      toast(`初始化完成：${id}`);
+      return data;
+    }
+
+    async function runRepair(tenantId) {
+      const id = String(tenantId || $('cfgTenantId').value || state.selectedTenantId || '').trim();
+      if (!id) throw new Error('请先选择租户');
+      $('cfgTenantId').value = id;
+      state.selectedTenantId = id;
+      const data = await api(`/api/admin/tenants/${id}/repair`, { method: 'POST', body: JSON.stringify({}) });
+      log(`${id} 失败修复完成：${data.message}`);
+      await loadTenants();
+      toast(data.ok ? '修复校验通过' : '修复完成，仍有检查项失败');
+      return data;
+    }
+
     window.bootstrapTenant = async (tenantId) => {
-      $('cfgTenantId').value = tenantId;
-      await $('bootstrapTenantBtn').onclick();
+      try {
+        if (!isLoggedIn()) throw new Error('请先登录');
+        const id = String(tenantId || '').trim();
+        if (id) { $('cfgTenantId').value = id; state.selectedTenantId = id; }
+        switchPanel('config');
+        switchConfigPane('opsPane');
+        updateSelectedTenantBar();
+        await runBootstrap(id);
+      } catch (e) {
+        toast(e.message);
+        log(`一键初始化失败：${e.message}`);
+      }
     };
 
     window.repairTenant = async (tenantId) => {
-      $('cfgTenantId').value = tenantId;
-      await $('repairTenantBtn').onclick();
+      try {
+        if (!isLoggedIn()) throw new Error('请先登录');
+        const id = String(tenantId || '').trim();
+        if (id) { $('cfgTenantId').value = id; state.selectedTenantId = id; }
+        switchPanel('config');
+        switchConfigPane('opsPane');
+        updateSelectedTenantBar();
+        await runRepair(id);
+      } catch (e) {
+        toast(e.message);
+        log(`失败修复失败：${e.message}`);
+      }
     };
 
     window.toggleTenantStatus = async (tenantId, nextStatus) => {
@@ -1069,8 +1331,11 @@
     }
 
     function scrollToOpsSection(id) {
-      const elTarget = document.getElementById(id);
-      if (elTarget) elTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      switchPanel('overview');
+      setTimeout(() => {
+        const elTarget = document.getElementById(id);
+        if (elTarget) elTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 80);
       document.querySelectorAll('#opsNav button').forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.scrollTarget === id);
       });
@@ -1092,7 +1357,7 @@
     }
 
     function wrapScroll(node) {
-      return el('div', { className: 'table-scroll' }, node);
+      return el('div', { className: 'table-scroll desktop-only' }, node);
     }
 
     function stat(value, label, cls = '') {
@@ -1110,8 +1375,26 @@
 
     function btnGhost(text, onClick) {
       const btn = el('button', { className: 'secondary' }, text);
-      btn.addEventListener('click', (e) => { e.preventDefault(); try { onClick(); } catch(err) { console.error(err); } });
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        try { await onClick(); } catch (err) {
+          toast(err?.message || '操作失败');
+          log(`操作失败：${err?.message || err}`);
+        }
+      });
       return btn;
+    }
+
+    function listCard(title, sub, meta, actions) {
+      const card = el('div', { className: 'list-card mobile-only' });
+      card.appendChild(el('div', { className: 'list-card-head' }, [
+        el('div', {}, [el('div', { style: 'font-weight:700' }, title), el('div', { className: 'mono' }, sub)]),
+      ]));
+      if (meta) card.appendChild(el('div', { className: 'small' }, meta));
+      const row = el('div', { className: 'list-card-actions' });
+      actions.forEach((a) => row.appendChild(a));
+      card.appendChild(row);
+      return card;
     }
 
     function renderOperationsOverview() {
@@ -1166,6 +1449,18 @@
           });
           tbl.appendChild(tbody);
           body.appendChild(wrapScroll(tbl));
+          billing.forEach((row) => {
+            body.appendChild(listCard(
+              row.tenant_name || row.tenant_id,
+              row.tenant_id,
+              `${row.plan_name || '未配置'} · ${row.billing_cycle || '未配置'} · ${formatCountdown(row.license_countdown_days)}`,
+              [
+                btnGhost('选中', () => window.selectTenant(row.tenant_id)),
+                btnGhost('续期', () => window.promptIssueLicense(row.tenant_id)),
+                btnGhost('查看', () => window.loadProfile(row.tenant_id)),
+              ]
+            ));
+          });
           return body;
         })())
       ]));
@@ -1199,6 +1494,19 @@
           }
           tbl.appendChild(tbody);
           body.appendChild(wrapScroll(tbl));
+          alerts.forEach((item) => {
+            body.appendChild(listCard(
+              item.tenant_name || item.tenant_id,
+              item.tenant_id,
+              `${item.title || '告警'} · ${item.detail || ''}`,
+              [
+                btnGhost('打开', () => window.selectTenant(item.tenant_id)),
+                btnGhost('修复', () => window.repairTenant(item.tenant_id)),
+                btnGhost('验收', () => window.acceptTenant(item.tenant_id)),
+              ]
+            ));
+          });
+          if (!alerts.length) body.appendChild(el('div', { className: 'small mobile-only' }, '暂无告警'));
           return body;
         })())
       ]));
@@ -1227,13 +1535,29 @@
           });
           tbl.appendChild(tbody);
           body.appendChild(wrapScroll(tbl));
+          acceptance.forEach((item) => {
+            body.appendChild(listCard(
+              item.tenant_name || item.tenant_id,
+              item.tenant_id,
+              `${item.accepted_ok ? '通过' : (item.accepted_ok === false ? '未通过' : '未验收')} · ${formatChecksSummary(item.checks)}`,
+              [
+                btnGhost('重新验收', () => window.acceptTenant(item.tenant_id)),
+                btnGhost('初始化', () => window.bootstrapTenant(item.tenant_id)),
+                btnGhost('详情', () => window.selectTenant(item.tenant_id)),
+              ]
+            ));
+          });
           return body;
         })())
       ]));
 
       wrap.appendChild(el('div', { id: 'tenantManageSection', className: 'ops-section' }, [
-        card('租户管理入口', [
-          el('div', { className: 'small' }, '下面右侧保留原来的租户管理面板，适合逐个租户做品牌、飞书和初始化操作。')
+        card('快捷入口', [
+          el('div', { className: 'small', style: 'margin-bottom:10px' }, '在「租户」页管理列表与详情；在「配置」页编辑品牌、飞书和运维操作。'),
+          el('div', { className: 'list-card-actions' }, [
+            btnGhost('打开租户列表', () => switchPanel('tenants')),
+            btnGhost('新租户开通', () => switchPanel('create')),
+          ])
         ])
       ]));
 
@@ -1381,7 +1705,7 @@
           <div class="small">这里配置该租户的 Agent 模型、提示词、回复模板和轮询频率。</div>
           <div class="field" style="grid-column:1 / -1">
             <h3>Agent 控制台</h3>
-            <iframe id="agentCenterFrame" src="" style="width:100%;height:70vh;border:1px solid #d7c6ac;border-radius:8px;background:#fff" title="Agent控制台"></iframe>
+            <iframe id="agentCenterFrame" src="" style="width:100%;height:min(50vh,420px);border:1px solid #d7c6ac;border-radius:8px;background:#fff" title="Agent控制台"></iframe>
           </div>
         </div>
         <div class="tenant-actions compact" style="margin-top:12px">
@@ -1409,6 +1733,7 @@
       state.selectedTenantId = id;
       applyProfileToForm(data.profile || {});
       renderDetail(data);
+      updateSelectedTenantBar();
       showTenantLoginAccess(data.login_access, { silentLog: true });
       const frame = $('agentCenterFrame');
       if (frame) frame.src = `/agents-admin/?tenant_id=${encodeURIComponent(id)}`;
@@ -1461,6 +1786,8 @@
       $('tenantCount').textContent = `${items.length} 个租户`;
       $('tenantFilterState').textContent = filter ? `搜索：${$('tenantFilter').value.trim()}` : '全部';
       updateStats(data.items || []);
+      renderTenantCardList(items);
+      updateSelectedTenantBar();
       $('tenantTableBody').innerHTML = items.map((item) => {
         const feishu = item.integrations?.feishu_bitable || {};
         const profile = item.platform_profile || {};
@@ -1524,7 +1851,9 @@
         if (!resp.ok) throw new Error(data.message || data.error || `登录失败(${resp.status})`);
         setSession(data.token, data.admin);
         renderAuthUI();
+        toast(`登录成功：${data.admin?.username}`);
         log(`登录成功：${data.admin?.username}`);
+        switchPanel('overview');
         await loadTenants();
       } catch (e) {
         log(`登录失败：${e.message}`);
@@ -1540,8 +1869,13 @@
     $('manageAccountsBtn').onclick = async () => {
       const panel = $('accountsPanel');
       const show = panel.style.display === 'none';
-      panel.style.display = show ? '' : 'none';
-      if (show) await loadAccountsPanel();
+      if (show) {
+        switchPanel('log');
+        panel.style.display = '';
+        await loadAccountsPanel();
+      } else {
+        panel.style.display = 'none';
+      }
     };
 
     $('createAccountBtn').onclick = async () => {
@@ -1630,7 +1964,17 @@
       $('logoUploadPreview').style.display = v ? '' : 'none';
     });
 
-    $('reloadBtn').onclick = () => loadTenants().catch((e) => log(`刷新失败：${e.message}`));
+    $('reloadBtn').onclick = async () => {
+      try {
+        if (!isLoggedIn()) throw new Error('请先登录');
+        toast('正在刷新…');
+        await loadTenants();
+        toast('数据已刷新');
+      } catch (e) {
+        toast(e.message);
+        log(`刷新失败：${e.message}`);
+      }
+    };
     $('tenantFilter').oninput = () => loadTenants().catch((e) => log(`搜索失败：${e.message}`));
     $('opsNav').addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-scroll-target]');
@@ -1684,36 +2028,16 @@
         cacheTenantCredentials(data.tenant.tenant_id, loginAccess.username, adminPassword);
         log(`租户创建成功：${data.tenant.tenant_id}`);
         showTenantLoginAccess(loginAccess, { highlight: true });
+        switchPanel('log');
         $('cfgTenantId').value = data.tenant.tenant_id;
         state.selectedTenantId = data.tenant.tenant_id;
+        updateSelectedTenantBar();
         await loadTenants();
         await loadTenantProfile(data.tenant.tenant_id).catch(() => {});
+        toast(`租户已创建：${data.tenant.tenant_id}`);
       } catch (e) {
+        toast(e.message);
         log(`创建租户失败：${e.message}`);
-      }
-    };
-
-    window.selectTenant = async (tenantId) => {
-      try {
-        state.selectedTenantId = tenantId;
-        $('cfgTenantId').value = tenantId;
-        await loadTenantProfile(tenantId);
-      } catch (e) {
-        log(`读取租户详情失败：${e.message}`);
-      }
-    };
-
-    window.prefillTenant = async (tenantId) => {
-      $('cfgTenantId').value = tenantId;
-      state.selectedTenantId = tenantId;
-      try {
-        const data = await api(`/api/admin/tenants/${tenantId}/integrations/feishu_bitable`);
-        log(`已加载 ${tenantId} 的飞书配置摘要。`);
-        if (data.integration?.app_id) $('cfgAppId').value = data.integration.app_id;
-        const current = state.tenants.find((x) => x.tenant_id === tenantId) || selectedTenant();
-        renderDetail(state.detail || { tenant: current, profile: current?.platform_profile || {}, integrations: { feishu_bitable: data.integration }, alerts: [] });
-      } catch (e) {
-        log(`读取飞书摘要失败：${e.message}`);
       }
     };
 
@@ -1736,32 +2060,18 @@
 
     $('bootstrapTenantBtn').onclick = async () => {
       try {
-        const tenantId = $('cfgTenantId').value.trim();
-        if (!tenantId) throw new Error('请先选择租户');
-        const data = await api(`/api/admin/tenants/${tenantId}/bootstrap`, { method: 'POST', body: JSON.stringify({}) });
-        log(`${tenantId} 一键初始化完成：${data.message}`);
-        if (data.login_access) {
-          const cached = getCachedTenantCredentials(tenantId);
-          showTenantLoginAccess({
-            ...data.login_access,
-            password: cached?.password || data.login_access.password,
-          }, { highlight: true });
-        }
-        await loadTenants();
-        await loadTenantProfile(tenantId).catch(() => {});
+        await runBootstrap();
       } catch (e) {
+        toast(e.message);
         log(`一键初始化失败：${e.message}`);
       }
     };
 
     $('repairTenantBtn').onclick = async () => {
       try {
-        const tenantId = $('cfgTenantId').value.trim();
-        if (!tenantId) throw new Error('请先选择租户');
-        const data = await api(`/api/admin/tenants/${tenantId}/repair`, { method: 'POST', body: JSON.stringify({}) });
-        log(`${tenantId} 失败修复完成：${data.message}`);
-        await loadTenants();
+        await runRepair();
       } catch (e) {
+        toast(e.message);
         log(`失败修复按钮执行失败：${e.message}`);
       }
     };
@@ -1783,64 +2093,6 @@
         await loadTenants();
       } catch (e) {
         log(`保存飞书配置失败：${e.message}`);
-      }
-    };
-
-    window.acceptTenant = async (tenantId) => {
-      try {
-        const data = await api(`/api/admin/tenants/${tenantId}/acceptance`, {
-          method: 'POST',
-          body: JSON.stringify({ activate: true })
-        });
-        log(`自动验收 ${tenantId}：${data.ok ? '通过' : '失败'}；${data.report.checks.map((x) => `${x.key}=${x.ok}`).join('，')}`);
-        await loadTenants();
-      } catch (e) {
-        log(`自动验收失败：${e.message}`);
-      }
-    };
-
-    window.bootstrapTenant = async (tenantId) => {
-      $('cfgTenantId').value = tenantId;
-      await $('bootstrapTenantBtn').onclick();
-    };
-
-    window.repairTenant = async (tenantId) => {
-      $('cfgTenantId').value = tenantId;
-      await $('repairTenantBtn').onclick();
-    };
-
-    window.toggleTenantStatus = async (tenantId, nextStatus) => {
-      try {
-        const data = await api(`/api/admin/tenants/${tenantId}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ status: nextStatus })
-        });
-        log(`租户 ${tenantId} 状态已更新为 ${formatStatus(data.tenant.status)}`);
-        await loadTenants();
-      } catch (e) {
-        log(`更新租户状态失败：${e.message}`);
-      }
-    };
-
-    window.promptIssueLicense = async (tenantId) => {
-      try {
-        const expires = prompt(`请输入 ${tenantId} 的许可证到期时间（ISO 或可被 Date 解析的字符串）`, new Date(Date.now() + 90 * 86400000).toISOString());
-        if (!expires) return;
-        const allowed = prompt('允许的功能（逗号分隔）', 'hrms,agent_v2,feishu,mini_program');
-        const allowed_features = String(allowed || '').split(',').map((s) => s.trim()).filter(Boolean);
-        const dt = new Date(expires);
-        if (!Number.isFinite(dt.getTime())) {
-          log('许可证到期时间格式不合法');
-          return;
-        }
-        const data = await api(`/api/admin/tenants/${tenantId}/license`, {
-          method: 'POST',
-          body: JSON.stringify({ expires_at: dt.toISOString(), allowed_features })
-        });
-        log(`许可证已发放：${tenantId} / ${data.license.license_key}`);
-        await loadTenants();
-      } catch (e) {
-        log(`发放许可证失败：${e.message}`);
       }
     };
 
@@ -1952,9 +2204,11 @@
       }
     };
 
+    renderActionGlossary();
+    setupNavListeners();
     renderAuthUI();
     if (isLoggedIn()) {
-      loadTenants().catch((e) => log(`初始化加载失败：${e.message}`));
+      loadTenants().catch((e) => { toast(e.message); log(`初始化加载失败：${e.message}`); });
     }
   </script>
 </body>
