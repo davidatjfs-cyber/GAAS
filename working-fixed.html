@@ -26517,7 +26517,8 @@ th { background: #f5f5f5; font-weight: 700; }
         }
 
         function hrmsIsAlwaysAllowedPage(pageName) {
-            return ['profile', 'attendance', 'exam', 'points'].includes(String(pageName || '').trim());
+            // 考试测评已被培训认证取代，不再单独保留；培训认证改为所有人永远可见
+            return ['profile', 'attendance', 'training', 'points'].includes(String(pageName || '').trim());
         }
 
         // 服务端加载的角色模块配置（登录后从API获取）
