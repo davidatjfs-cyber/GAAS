@@ -6822,12 +6822,21 @@ function pickStoreRoleUsernameByStore(state, storeName, roleList) {
   const users = Array.isArray(state?.users) ? state.users : [];
   const employees = Array.isArray(state?.employees) ? state.employees : [];
   const all = employees.concat(users);
-  const found = all.find(x => {
+  const matches = all.filter(x => {
     const st = String(x?.store || '').trim();
     const rl = String(x?.role || '').trim();
     const status = String(x?.status || '').trim();
     return st === store && roles.includes(rl) && status !== '离职' && status !== 'inactive';
   });
+  if (!matches.length) return '';
+  if (roles.includes('store_production_manager')) {
+    const byTitle = matches.find(x => /出品经理|厨师长/.test(String(x?.position || '')));
+    if (byTitle?.username) return String(byTitle.username).trim();
+    const lineCookPos = /(炒锅|砧板|打荷|刺身|烧味|卤水|汤档|煲仔)/;
+    const nonLine = matches.find(x => !lineCookPos.test(String(x?.position || '')));
+    if (nonLine?.username) return String(nonLine.username).trim();
+  }
+  const found = matches[0];
   return found?.username ? String(found.username).trim() : '';
 }
 

@@ -96,6 +96,243 @@ function parseScoringJson(jsonText) {
   }
 }
 
+function stripJsonCodeFence(text) {
+  return String(text || '')
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+}
+
+function repairJsonText(text) {
+  let s = stripJsonCodeFence(text);
+  s = s.replace(/[\u201c\u201d]/g, '"').replace(/[\u2018\u2019]/g, "'");
+  s = s.replace(/,\s*([}\]])/g, '$1');
+  return s;
+}
+
+function tryParseQuizJsonFromLLM(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+
+  const candidates = new Set();
+  candidates.add(raw);
+  candidates.add(stripJsonCodeFence(raw));
+  candidates.add(repairJsonText(raw));
+
+  const objectMatch = raw.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    candidates.add(objectMatch[0]);
+    candidates.add(repairJsonText(objectMatch[0]));
+  }
+
+  const arrayMatch = raw.match(/"questions"\s*:\s*(\[[\s\S]*)/);
+  if (arrayMatch) {
+    const arrayChunk = arrayMatch[1];
+    for (const suffix of [']}', ']}]}', '"]}', '""}]}']) {
+      candidates.add(repairJsonText(`{"questions":${arrayChunk}${suffix}`));
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch (_) {}
+  }
+
+  // 外层 JSON 损坏时，尝试逐题提取完整对象
+  const objectPattern = /\{[^{}]*"(?:q|question)"\s*:\s*"[\s\S]*?"options"\s*:\s*\[[^\]]*\][\s\S]*?\}/g;
+  const matches = raw.match(objectPattern) || [];
+  if (matches.length >= 5) {
+    const questions = [];
+    for (const m of matches) {
+      try {
+        questions.push(JSON.parse(repairJsonText(m)));
+      } catch (_) {}
+    }
+    if (questions.length >= 5) return { questions };
+  }
+
+  return null;
+}
+
+function normalizeQuizAnswerIndex(answerRaw, options) {
+  const opts = Array.isArray(options) ? options.map(o => String(o || '').trim()).filter(Boolean) : [];
+  if (!opts.length) return -1;
+
+  if (typeof answerRaw === 'number' && Number.isInteger(answerRaw) && answerRaw >= 0 && answerRaw < opts.length) {
+    return answerRaw;
+  }
+
+  const s = String(answerRaw ?? '').trim();
+  if (!s) return 0;
+
+  const letterMap = { A: 0, B: 1, C: 2, D: 3, E: 4, F: 5 };
+  const letter = s.toUpperCase();
+  if (letter in letterMap && letterMap[letter] < opts.length) return letterMap[letter];
+
+  const num = Number(s);
+  if (Number.isInteger(num) && num >= 0 && num < opts.length) return num;
+
+  const exactIdx = opts.findIndex(o => o === s);
+  if (exactIdx >= 0) return exactIdx;
+
+  const partialIdx = opts.findIndex(o => o.includes(s) || s.includes(o));
+  if (partialIdx >= 0) return partialIdx;
+
+  return 0;
+}
+
+function normalizeQuizQuestion(raw) {
+  const qText = String(raw?.q || raw?.question || raw?.title || raw?.stem || '').trim();
+  let options = Array.isArray(raw?.options)
+    ? raw.options.map(o => String(o || '').trim()).filter(Boolean)
+    : [];
+
+  if (!options.length && raw?.options && typeof raw.options === 'object' && !Array.isArray(raw.options)) {
+    options = Object.values(raw.options).map(o => String(o || '').trim()).filter(Boolean);
+  }
+
+  if (!qText || options.length < 2) return null;
+
+  while (options.length < 4) options.push(`选项${String.fromCharCode(65 + options.length)}`);
+  options = options.slice(0, 4);
+
+  const answer = normalizeQuizAnswerIndex(raw?.answer ?? raw?.correct ?? raw?.correctIndex ?? raw?.correct_answer, options);
+  const explanation = String(raw?.explanation || raw?.explain || raw?.analysis || '').trim();
+
+  return {
+    q: qText,
+    options,
+    answer: answer >= 0 ? answer : 0,
+    explanation
+  };
+}
+
+function normalizeQuizQuestionsPayload(parsed) {
+  let list = [];
+  if (Array.isArray(parsed)) list = parsed;
+  else if (Array.isArray(parsed?.questions)) list = parsed.questions;
+  else if (Array.isArray(parsed?.data?.questions)) list = parsed.data.questions;
+  return list.map(normalizeQuizQuestion).filter(Boolean);
+}
+
+function shuffleQuizOptions(q) {
+  if (!Array.isArray(q?.options) || q.options.length < 2) return q;
+  const idx = Math.max(0, Math.min(q.options.length - 1, Number(q.answer) || 0));
+  const correctAnswer = q.options[idx];
+  if (correctAnswer == null) return q;
+  const shuffled = [...q.options].sort(() => Math.random() - 0.5);
+  const newAnswerIdx = shuffled.indexOf(correctAnswer);
+  return { ...q, options: shuffled, answer: newAnswerIdx >= 0 ? newAnswerIdx : idx };
+}
+
+function buildRuleBasedQuizQuestions({ topicTitle, keyPoints, kbContext, count = 20 }) {
+  const lines = [];
+  if (Array.isArray(keyPoints)) {
+    keyPoints.forEach((kp) => {
+      const t = String(kp || '').trim();
+      if (t.length >= 8) lines.push(t);
+    });
+  }
+  String(kbContext || '').split(/\n+/).forEach((line) => {
+    const t = line.replace(/^[-*#\d.]+\s*/, '').trim();
+    if (t.length >= 12 && !/^【/.test(t) && !/参考资料/.test(t)) lines.push(t);
+  });
+
+  const unique = [...new Set(lines)].slice(0, 80);
+  const title = String(topicTitle || '本培训').trim() || '本培训';
+  if (unique.length < 5) {
+    unique.push(`${title}是岗位必须掌握的核心能力`);
+    unique.push(`${title}要求员工严格按照标准操作流程执行`);
+    unique.push(`在${title}相关工作中，质量标准和卫生安全同等重要`);
+    unique.push(`完成${title}认证后，方可独立承担相应工作职责`);
+    unique.push(`${title}的关键在于理解标准而非单纯记忆`);
+  }
+
+  const target = Math.max(5, Math.min(Number(count) || 20, 20));
+  const questions = [];
+  const templates = [
+    `关于${title}，以下哪项描述是正确的？`,
+    `根据培训内容，以下哪项属于必须掌握的要点？`,
+    `在${title}相关工作中，以下哪项做法符合标准要求？`,
+    `以下关于${title}的陈述，哪一项是正确的？`,
+  ];
+
+  for (let i = 0; i < target; i++) {
+    const correctLine = unique[i % unique.length];
+    const wrongPool = unique.filter(l => l !== correctLine);
+    const wrongs = [];
+    for (let j = 0; j < 3; j++) {
+      wrongs.push(wrongPool[(i + j + 1) % wrongPool.length] || `${title}无关的干扰项${j + 1}`);
+    }
+    const options = [correctLine.slice(0, 120), ...wrongs.map(w => w.slice(0, 120))];
+    const correctText = options[0];
+    for (let k = options.length - 1; k > 0; k--) {
+      const r = Math.floor(Math.random() * (k + 1));
+      [options[k], options[r]] = [options[r], options[k]];
+    }
+    const answer = options.indexOf(correctText);
+    questions.push({
+      q: templates[i % templates.length],
+      options,
+      answer: answer >= 0 ? answer : 0,
+      explanation: `正确内容：${correctLine.slice(0, 200)}`
+    });
+  }
+  return questions;
+}
+
+async function generateQuizQuestionsForSession({ topic, username, kbQuizContext, prevQuestionsSection }) {
+  const kpSection = Array.isArray(topic.key_points) && topic.key_points.length > 0
+    ? `\n核心要点：${JSON.stringify(topic.key_points)}` : '';
+  const randomSeed = Math.random().toString(36).slice(2, 8);
+  const quizPrompt = `根据以下培训内容，为员工[${username}]生成20道单选题，JSON格式返回（随机种子:${randomSeed}）：
+{"questions":[{"q":"题目","options":["选项A","选项B","选项C","选项D"],"answer":2,"explanation":"解析"}]}
+重要要求：
+1. answer 为正确选项的 index（0-3），每道题的正确答案位置必须随机分布，不能总是0或固定位置。
+2. 20道题中正确答案在选项0、1、2、3位置各约5道，随机打散。
+3. 题目要贴近实际操作场景，测试真实理解，避免纯记忆题。
+4. 从培训内容的不同角度、不同知识点出题，确保题目多样性。
+5. 只返回JSON，不要markdown代码块，不要任何解释文字。
+培训主题：${topic.title}（岗位：${topic.position}）${kpSection}${kbQuizContext}${prevQuestionsSection}`;
+
+  const systemPrompt = '你是一个专业的餐饮培训出题专家。请严格只返回JSON对象，不要添加markdown代码块或其他文字。确保每道题正确答案的位置（answer字段）在0-3之间均匀随机分布。';
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const aiResponse = await callLLM([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: quizPrompt }
+      ], { max_tokens: 4000, temperature: attempt === 0 ? 0.5 : 0.2, skipCache: true });
+
+      const quizText = aiResponse?.content || '';
+      const parsed = tryParseQuizJsonFromLLM(quizText);
+      const questions = normalizeQuizQuestionsPayload(parsed);
+      if (questions.length >= 5) {
+        return { questions, source: 'ai', attempt: attempt + 1 };
+      }
+      console.warn('[Training] Quiz AI parse attempt failed:', {
+        attempt: attempt + 1,
+        ok: aiResponse?.ok,
+        preview: quizText.slice(0, 400),
+        parsedCount: questions.length
+      });
+    } catch (e) {
+      console.warn('[Training] Quiz AI call failed:', e?.message);
+    }
+  }
+
+  const fallback = buildRuleBasedQuizQuestions({
+    topicTitle: topic.title,
+    keyPoints: topic.key_points,
+    kbContext: kbQuizContext,
+    count: 20
+  });
+  return { questions: fallback, source: 'rule', attempt: 0 };
+}
+
 function getShanghaiDateTimeText(date = new Date()) {
   return date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 }
@@ -1860,60 +2097,38 @@ ${contentForPrompt}
       }
 
       // 生成测验题目（key_points 为空时纯靠知识库内容出题）
-      const kpSection = Array.isArray(topic.key_points) && topic.key_points.length > 0
-        ? `\n核心要点：${JSON.stringify(topic.key_points)}` : '';
-      const randomSeed = Math.random().toString(36).slice(2, 8);
-      // 用 username + seed 双重保证多人同时考试题目不同
-      const quizPrompt = `根据以下培训内容，为员工[${username}]生成20道单选题，JSON格式返回（随机种子:${randomSeed}）：
-{"questions":[{"q":"题目","options":["选项A","选项B","选项C","选项D"],"answer":2,"explanation":"解析"}]}
-重要要求：
-1. answer 为正确选项的 index（0-3），每道题的正确答案位置必须随机分布，不能总是0或固定位置。
-2. 20道题中正确答案在选项0、1、2、3位置各约5道，随机打散。
-3. 题目要贴近实际操作场景，测试真实理解，避免纯记忆题。
-4. 从培训内容的不同角度、不同知识点出题，确保题目多样性。
-培训主题：${topic.title}（岗位：${topic.position}）${kpSection}${kbQuizContext}${prevQuestionsSection}`;
+      const genResult = await generateQuizQuestionsForSession({
+        topic: {
+          title: topic.title,
+          position: session.position,
+          key_points: topic.key_points
+        },
+        username,
+        kbQuizContext,
+        prevQuestionsSection
+      });
 
-      const aiResponse = await callLLM([
-        { role: 'system', content: '你是一个专业的餐饮培训出题专家。请严格按照JSON格式返回题目，不要添加任何其他文字。确保每道题正确答案的位置（answer字段）在0-3之间均匀随机分布。' },
-        { role: 'user', content: quizPrompt }
-      ], { max_tokens: 4000, temperature: 0.7 });
-
-      let quizText = aiResponse?.content || '';
-      // 提取 JSON
-      const jsonMatch = quizText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return res.json({ success: false, error: 'AI 生成题目失败，请重试' });
-      }
-
-      let questions;
-      try {
-        questions = JSON.parse(jsonMatch[0]);
-      } catch (parseErr) {
-        return res.json({ success: false, error: '题目格式错误，请重试' });
-      }
-
-      if (!questions.questions || !Array.isArray(questions.questions) || questions.questions.length < 5) {
+      let questionList = Array.isArray(genResult.questions) ? genResult.questions : [];
+      if (questionList.length < 5) {
+        console.error('[Training] Quiz generation failed completely:', genResult);
         return res.json({ success: false, error: '题目数量不足，请重试' });
       }
 
-      // 对每道题的选项进行随机洗牌，防止答案位置固定
-      function shuffleQuizOptions(q) {
-        const correctAnswer = q.options[q.answer];
-        const shuffled = [...q.options].sort(() => Math.random() - 0.5);
-        const newAnswerIdx = shuffled.indexOf(correctAnswer);
-        return { ...q, options: shuffled, answer: newAnswerIdx };
+      if (genResult.source === 'rule') {
+        console.warn('[Training] Quiz used rule-based fallback for session', id);
       }
-      questions.questions = questions.questions.map(shuffleQuizOptions);
+
+      questionList = questionList.map(shuffleQuizOptions);
 
       // 保存题目（不含答案）
-      const questionsForClient = questions.questions.map(q => ({
+      const questionsForClient = questionList.map(q => ({
         q: q.q,
         options: q.options
       }));
 
       await pool().query(
         `UPDATE training_sessions SET quiz_questions = $1, status = 'quiz' WHERE id = $2`,
-        [JSON.stringify(questions.questions), id]
+        [JSON.stringify(questionList), id]
       );
 
       res.json({ success: true, questions: questionsForClient });
