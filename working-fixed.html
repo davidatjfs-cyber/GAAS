@@ -21127,7 +21127,7 @@
                             <div class="settings-rep-sec__no">09</div>
                             <div>
                                 <h3 class="settings-rep-sec__title">岗位（权限组）</h3>
-                                <p class="settings-rep-sec__lede">不受8种系统角色数量限制，可自由新建任意数量、任意名字的岗位。每个岗位包含：可见模块、动作权限(审批/查看员工)、默认门店范围(全部/按品牌/按区域/按店多选)。未分配岗位的员工不受影响，继续按角色默认权限——对洪潮、马己仙现有数据零影响。</p>
+                                <p class="settings-rep-sec__lede">真正自定义角色/岗位：不受8种系统角色限制，可自由新建任意数量、任意名字的岗位，每个岗位完整定义可见模块、底部导航、动作权限(审批/查看员工)、默认门店范围(全部/按品牌/按区域/按店多选)，分配后完全取代角色默认逻辑(仅"用户/门店/系统设置"这几个系统管理页面仍只认底层admin身份，作为安全底线)。未分配岗位的员工不受影响，继续按角色默认权限——对洪潮、马己仙现有数据零影响。</p>
                             </div>
                         </div>
                         <div class="settings-rep-sec__body">
@@ -21158,6 +21158,10 @@
                                         <label><input type="checkbox" id="pg-edit-action-approve"> 可审批 HRMS</label>
                                         <label><input type="checkbox" id="pg-edit-action-view-emp"> 可查看员工</label>
                                     </div>
+                                </div>
+                                <div style="margin-top:10px;">
+                                    <label class="settings-label">手机端底部导航（最多4个，从上面"可见模块"里选key，逗号分隔，留空=跟系统角色默认一样）</label>
+                                    <input id="pg-edit-bottom-nav" class="settings-input" type="text" placeholder="例如：profile,attendance,payment,approvals">
                                 </div>
                                 <div style="margin-top:10px;">
                                     <label class="settings-label">默认门店范围</label>
@@ -26502,6 +26506,8 @@ th { background: #f5f5f5; font-weight: 700; }
             const viewEmpEl = document.getElementById('pg-edit-action-view-emp');
             if (approveEl) approveEl.checked = !!actions.can_approve_hrms;
             if (viewEmpEl) viewEmpEl.checked = !!actions.can_view_employees;
+            const bottomNavEl = document.getElementById('pg-edit-bottom-nav');
+            if (bottomNavEl) bottomNavEl.value = (g && Array.isArray(g.bottomNav)) ? g.bottomNav.join(',') : '';
 
             const scope = (g && g.storeScope && typeof g.storeScope === 'object') ? g.storeScope : { mode: 'legacy' };
             const scopeMode = String(scope.mode || 'legacy');
@@ -26531,6 +26537,8 @@ th { background: #f5f5f5; font-weight: 700; }
                 can_approve_hrms: !!document.getElementById('pg-edit-action-approve')?.checked,
                 can_view_employees: !!document.getElementById('pg-edit-action-view-emp')?.checked
             };
+            const bottomNav = String(document.getElementById('pg-edit-bottom-nav')?.value || '')
+                .split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
             const scopeModeEl = document.querySelector('input[name="pg-edit-scope-mode"]:checked');
             const scopeMode = scopeModeEl ? scopeModeEl.value : 'legacy';
             const storeScope = { mode: scopeMode };
@@ -26541,9 +26549,9 @@ th { background: #f5f5f5; font-weight: 700; }
             const groups = Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups.slice() : [];
             if (id) {
                 const idx = groups.findIndex(g => String(g.id) === id);
-                if (idx >= 0) groups[idx] = { ...groups[idx], name, baseRole, modules, actions, storeScope };
+                if (idx >= 0) groups[idx] = { ...groups[idx], name, baseRole, modules, actions, bottomNav, storeScope };
             } else {
-                groups.push({ id: 'pg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, baseRole, modules, actions, storeScope });
+                groups.push({ id: 'pg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, baseRole, modules, actions, bottomNav, storeScope });
             }
             try {
                 const tok = localStorage.getItem('hrms_token') || '';
@@ -26652,13 +26660,29 @@ th { background: #f5f5f5; font-weight: 700; }
             const page = String(pageName || '').trim();
             if (!currentUser && page !== 'profile') return false;
             if (hrmsIsAlwaysAllowedPage(page)) return true;
+
+            // 系统管理类页面(用户/门店/角色/系统设置)是真正的硬安全边界，任何自定义岗位
+            // 都不能绕过——只认最底层系统角色是不是 admin，避免把某个岗位配置成"伪admin"
+            // 拿到用户管理/系统设置的权限。这是唯一一条排在岗位覆盖之前的判断。
+            if (page === 'users' || page === 'stores' || page === 'roles' || page === 'settings') {
+                return hrmsIsRoleAdmin(role == null ? currentUser?.role : role);
+            }
+
+            // 自定义岗位（权限组）覆盖：分配了岗位的员工，模块可见范围完全以岗位里勾选的
+            // 模块为准，取代下面所有按系统角色硬编码的特殊判断（知识库/增长/异常诊断/
+            // Agent任务/策略/日报/审批等）——这样岗位才是真正能自由定义的"自定义角色"，
+            // 不是只能在角色默认列表上打补丁。未分配岗位的员工完全不受影响，继续走角色
+            // 硬编码逻辑，对洪潮/马己仙现有数据零影响。
+            if (role == null && currentUser?.permissionGroupId) {
+                const grp = (Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups : [])
+                    .find(g => String(g?.id || '') === String(currentUser.permissionGroupId));
+                if (grp) return Array.isArray(grp.modules) && grp.modules.includes(page);
+            }
+
             // 知识库仅 admin 可访问（用于上传培训资料，其他角色不可见）
             if (page === 'knowledge') {
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN;
-            }
-            if (page === 'users' || page === 'stores' || page === 'roles' || page === 'settings') {
-                return hrmsIsRoleAdmin(role == null ? currentUser?.role : role);
             }
             if (page === 'forecast' || page === 'agents') {
                 return hrmsCanAccessSmartAssistant(role == null ? currentUser?.role : role);
@@ -26688,14 +26712,6 @@ th { background: #f5f5f5; font-weight: 700; }
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 if (r === ROLES.PRODUCTION_MANAGER) return true;
             }
-            // 权限组覆盖：管理员把某个员工分配了自定义权限组后，该员工的模块可见范围
-            // 以权限组里勾选的模块为准，不再看角色默认列表——同一岗位/角色的不同员工
-            // 由此可以配出不一样的权限。未分配权限组的员工完全不受影响（走原有角色逻辑）。
-            if (role == null && currentUser?.permissionGroupId) {
-                const grp = (Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups : [])
-                    .find(g => String(g?.id || '') === String(currentUser.permissionGroupId));
-                if (grp) return Array.isArray(grp.modules) && grp.modules.includes(page);
-            }
             const pages = getRoleModulePages(role == null ? currentUser?.role : role);
             if (pages === null) return true;
             return Array.isArray(pages) && pages.includes(page);
@@ -26703,6 +26719,13 @@ th { background: #f5f5f5; font-weight: 700; }
 
         function getRoleBottomNavPages(role) {
             const r = String(role || '').trim();
+            // 自定义岗位优先：分配了岗位且岗位设置了底部导航的话，以岗位为准——
+            // 这样自定义岗位才算真正意义上的"自定义角色"，不被角色写死的导航栏限制。
+            if (currentUser?.permissionGroupId && r === String(currentUser?.role || '').trim()) {
+                const grp = (Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups : [])
+                    .find(g => String(g?.id || '') === String(currentUser.permissionGroupId));
+                if (grp && Array.isArray(grp.bottomNav) && grp.bottomNav.length) return grp.bottomNav;
+            }
             if (r === ROLES.ADMIN) return ['profile', 'growth', 'reports', 'agent-tasks'];
             if (r === ROLES.STORE_MANAGER) return ['profile', 'attendance', 'payment', 'approvals'];
             if (r === ROLES.PRODUCTION_MANAGER) return ['profile', 'attendance', 'kitchen', 'training'];

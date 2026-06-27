@@ -10395,6 +10395,16 @@ async function getUserStoreAccessContext(username, role, opts = {}) {
     } catch (e) {
       dutyRows = [];
     }
+    // 岗位的"动作权限"(可审批HRMS/可查看员工)跟门店范围是否自定义无关，即使门店范围
+    // 还是走原有跨店绑定(legacy)，岗位给的动作权限也要叠加生效——用OR不用覆盖，
+    // 避免削弱跨店绑定表里已经手动勾好的权限。
+    if (scopeActions && (scopeActions.can_approve_hrms || scopeActions.can_view_employees)) {
+      dutyRows = dutyRows.map((row) => ({
+        ...row,
+        can_approve_hrms: !!(row.can_approve_hrms || scopeActions.can_approve_hrms),
+        can_view_employees: !!(row.can_view_employees || scopeActions.can_view_employees),
+      }));
+    }
   }
 
   return buildStoreAccessContext({
