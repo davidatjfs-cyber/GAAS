@@ -4283,6 +4283,61 @@
             transform: translateY(-1px);
         }
 
+        #settings-page .settings-card-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        @media (max-width: 640px) {
+            #settings-page .settings-card-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        #settings-page .settings-card {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+            min-height: 88px;
+            padding: 14px 14px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(15, 15, 18, 0.85);
+            color: #fff;
+            text-align: left;
+            cursor: pointer;
+            transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+        }
+
+        #settings-page .settings-card:hover,
+        #settings-page .settings-card:active {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(251, 191, 36, 0.5);
+            transform: translateY(-1px);
+        }
+
+        #settings-page .settings-card__no {
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-size: 11px;
+            font-weight: 700;
+            color: #fbbf24;
+        }
+
+        #settings-page .settings-card__title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        #settings-page .settings-card__lede {
+            font-size: 11px;
+            line-height: 1.4;
+            color: rgba(200, 215, 230, 0.6);
+        }
+
         #settings-page .settings-rep-stack {
             display: flex;
             flex-direction: column;
@@ -20957,24 +21012,63 @@
             <!-- 系统设置页面 · 分析报表式分区 -->
             <div id="settings-page" class="hidden">
                 <div class="settings-report-shell">
+                    <div id="settings-overview">
                     <header class="settings-rep-head">
                         <div class="settings-rep-head__eyebrow">SYSTEM · CONFIG</div>
                         <h2 class="settings-rep-head__title">系统设置</h2>
-                        <p class="settings-rep-head__desc">主数据与业务参数分区陈列；手机端顶部可横向滑动目录，底部为快捷跳转条。</p>
+                        <p class="settings-rep-head__desc">点击下面任意一张卡片，单独进入该分区设置；其余分区会先收起，不用在一整页里来回滚动查找。</p>
                     </header>
-                    <nav class="settings-rep-toc" aria-label="设置分区">
-                        <a class="settings-rep-toc__link" href="#llm-settings-card">01 AI</a>
-                        <a class="settings-rep-toc__link" href="#org-dict-settings-card">02 字典</a>
-                        <a class="settings-rep-toc__link" href="#stores-settings-card">03 门店</a>
-                        <a class="settings-rep-toc__link" href="#brands-settings-card">04 品牌</a>
-                        <a class="settings-rep-toc__link" href="#monthly-target-settings-card">05 目标</a>
-                        <a class="settings-rep-toc__link" href="#approval-flow-settings-card">06 审批</a>
-                        <a class="settings-rep-toc__link" href="#points-rule-settings-card">07 积分</a>
-                        <a class="settings-rep-toc__link" href="#store-duty-settings-card">08 职责</a>
-                        <a class="settings-rep-toc__link" href="#permission-groups-settings-card">09 权限组</a>
-                    </nav>
+                    <div class="settings-card-grid" aria-label="设置分区">
+                        <button type="button" class="settings-card" onclick="showSettingsCard('llm-settings-card')">
+                            <span class="settings-card__no">01</span>
+                            <span class="settings-card__title">AI 配置</span>
+                            <span class="settings-card__lede">多模型与功能调用配对</span>
+                        </button>
+                        <button type="button" class="settings-card" onclick="showSettingsCard('org-dict-settings-card')">
+                            <span class="settings-card__no">02</span>
+                            <span class="settings-card__title">组织字典</span>
+                            <span class="settings-card__lede">部门/岗位/级别等主数据</span>
+                        </button>
+                        <button type="button" class="settings-card" onclick="showSettingsCard('stores-settings-card')">
+                            <span class="settings-card__no">03</span>
+                            <span class="settings-card__title">门店</span>
+                            <span class="settings-card__lede">门店档案与营业状态</span>
+                        </button>
+                        <button type="button" class="settings-card" onclick="showSettingsCard('brands-settings-card')">
+                            <span class="settings-card__no">04</span>
+                            <span class="settings-card__title">品牌</span>
+                            <span class="settings-card__lede">品牌主档与绩效权重</span>
+                        </button>
+                        <button type="button" class="settings-card" onclick="showSettingsCard('monthly-target-settings-card')">
+                            <span class="settings-card__no">05</span>
+                            <span class="settings-card__title">目标管理</span>
+                            <span class="settings-card__lede">每月实收/充值/堂食/外卖目标</span>
+                        </button>
+                        <button type="button" class="settings-card" onclick="showSettingsCard('approval-flow-settings-card')">
+                            <span class="settings-card__no">06</span>
+                            <span class="settings-card__title">审批流程</span>
+                            <span class="settings-card__lede">按申请类型配置审批链路</span>
+                        </button>
+                        <button type="button" class="settings-card" onclick="showSettingsCard('points-rule-settings-card')">
+                            <span class="settings-card__no">07</span>
+                            <span class="settings-card__title">积分事项</span>
+                            <span class="settings-card__lede">杰出表现事项与分值</span>
+                        </button>
+                        <button type="button" class="settings-card" onclick="showSettingsCard('store-duty-settings-card')">
+                            <span class="settings-card__no">08</span>
+                            <span class="settings-card__title">跨店职责绑定</span>
+                            <span class="settings-card__lede">代理店长/跨店监管/审批边界</span>
+                        </button>
+                        <button type="button" class="settings-card" onclick="showSettingsCard('permission-groups-settings-card')">
+                            <span class="settings-card__no">09</span>
+                            <span class="settings-card__title">岗位（权限组）</span>
+                            <span class="settings-card__lede">自定义岗位、模块与门店范围</span>
+                        </button>
+                    </div>
+                    </div>
+                    <button type="button" id="settings-back-btn" class="btn btn-secondary" style="display:none;margin-bottom:14px;" onclick="backToSettingsOverview()">← 返回设置总览</button>
                     <div class="settings-rep-stack">
-                    <section id="llm-settings-card" class="settings-rep-sec">
+                    <section id="llm-settings-card" class="settings-rep-sec" style="display:none;">
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">01</div>
                             <div>
@@ -21079,7 +21173,7 @@
                         </div>
                     </div>
 
-                    <section id="org-dict-settings-card" class="settings-rep-sec">
+                    <section id="org-dict-settings-card" class="settings-rep-sec" style="display:none;">
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">02</div>
                             <div>
@@ -21094,7 +21188,7 @@
                         </div>
                     </section>
 
-                    <section id="stores-settings-card" class="settings-rep-sec">
+                    <section id="stores-settings-card" class="settings-rep-sec" style="display:none;">
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">03</div>
                             <div>
@@ -21109,7 +21203,7 @@
                         </div>
                     </section>
 
-                    <section id="brands-settings-card" class="settings-rep-sec">
+                    <section id="brands-settings-card" class="settings-rep-sec" style="display:none;">
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">04</div>
                             <div>
@@ -21125,7 +21219,7 @@
                         </div>
                     </section>
 
-                    <section id="monthly-target-settings-card" class="settings-rep-sec">
+                    <section id="monthly-target-settings-card" class="settings-rep-sec" style="display:none;">
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">05</div>
                             <div>
@@ -21140,7 +21234,7 @@
                         </div>
                     </section>
 
-                    <section id="approval-flow-settings-card" class="settings-rep-sec">
+                    <section id="approval-flow-settings-card" class="settings-rep-sec" style="display:none;">
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">06</div>
                             <div>
@@ -21156,7 +21250,7 @@
                         </div>
                     </section>
 
-                    <section id="points-rule-settings-card" class="settings-rep-sec">
+                    <section id="points-rule-settings-card" class="settings-rep-sec" style="display:none;">
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">07</div>
                             <div>
@@ -21187,7 +21281,7 @@
                         </div>
                     </section>
 
-                    <section id="store-duty-settings-card" class="settings-rep-sec">
+                    <section id="store-duty-settings-card" class="settings-rep-sec" style="display:none;">
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">08</div>
                             <div>
@@ -21246,7 +21340,7 @@
                         </div>
                     </section>
 
-                    <section id="permission-groups-settings-card" class="settings-rep-sec">
+                    <section id="permission-groups-settings-card" class="settings-rep-sec" style="display:none;">
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">09</div>
                             <div>
@@ -26511,6 +26605,37 @@ th { background: #f5f5f5; font-weight: 700; }
                 const r = await fetch('/api/permission-groups', { credentials: 'include', headers });
                 if (r.ok) { const d = await r.json(); _serverPermissionGroups = Array.isArray(d?.groups) ? d.groups : []; }
             } catch (e) { console.warn('[permission-groups] load failed:', e); }
+        }
+
+        // 系统设置改成"9个卡片"形式：点卡片只显示对应一个分区，其余收起；返回按钮回总览。
+        // 几个分区本来就有"仅admin可见"的二次门槛(在系统设置页init时设置display:none)，
+        // 这里维护同一份名单，点卡片时复查一次，避免直接把display强制设成''盖过权限隐藏。
+        const SETTINGS_ADMIN_ONLY_CARDS = [
+            'org-dict-settings-card', 'monthly-target-settings-card', 'approval-flow-settings-card',
+            'points-rule-settings-card', 'brands-settings-card', 'store-duty-settings-card',
+            'permission-groups-settings-card'
+        ];
+        function showSettingsCard(cardId) {
+            if (SETTINGS_ADMIN_ONLY_CARDS.includes(cardId) && !isAdminUser()) {
+                showNotification('您没有该分区的查看权限', 'warning');
+                return;
+            }
+            const overview = document.getElementById('settings-overview');
+            if (overview) overview.style.display = 'none';
+            document.querySelectorAll('#settings-page .settings-rep-sec').forEach((el) => { el.style.display = 'none'; });
+            const target = document.getElementById(cardId);
+            if (target) target.style.display = '';
+            const backBtn = document.getElementById('settings-back-btn');
+            if (backBtn) backBtn.style.display = '';
+            window.scrollTo(0, 0);
+        }
+        function backToSettingsOverview() {
+            document.querySelectorAll('#settings-page .settings-rep-sec').forEach((el) => { el.style.display = 'none'; });
+            const backBtn = document.getElementById('settings-back-btn');
+            if (backBtn) backBtn.style.display = 'none';
+            const overview = document.getElementById('settings-overview');
+            if (overview) overview.style.display = '';
+            window.scrollTo(0, 0);
         }
 
         async function loadPermissionGroupsForSettings() {
@@ -40673,6 +40798,7 @@ ${knowledgeContent.slice(0, 30000)}`;
         
         // 加载设置数据
         function loadSettingsData() {
+            backToSettingsOverview();
             const settings = HRMS_STORE.getSettings();
             renderAiConfigPanel();
 
