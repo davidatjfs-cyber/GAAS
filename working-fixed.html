@@ -6455,37 +6455,6 @@
         }
 
         /* 月度目标弹窗 · 分步导航（手机优先） */
-        .mt-step-nav {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 6px;
-            padding: 8px 12px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        }
-        .mt-step-nav button {
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            background: rgba(255, 255, 255, 0.04);
-            color: rgba(200, 215, 230, 0.75);
-            border-radius: 10px;
-            padding: 10px 8px;
-            font-size: 13px;
-            font-weight: 700;
-            cursor: pointer;
-            min-height: 46px;
-        }
-        .mt-step-nav button.active {
-            background: rgba(245, 158, 11, 0.15);
-            border-color: rgba(251, 191, 36, 0.45);
-            color: #fbbf24;
-        }
-        .mt-step-pane { display: none; }
-        .mt-step-pane.active { display: block; }
-        @media (min-width: 720px) {
-            .mt-step-pane { display: block !important; }
-            .mt-step-nav { display: none; }
-            #mt-step-prev, #mt-step-next { display: none !important; }
-        }
-
         /* 月度目标弹窗 · 报表分区 */
         #monthly-targets-modal .modal-content.mt-modal-content {
             max-width: min(640px, 96vw);
@@ -16140,17 +16109,12 @@
                     <div class="modal-header">
                         <div>
                             <h3 class="ui-modal-title">目标管理</h3>
-                            <div class="ui-modal-desc">分步操作：先选月份与门店，再编辑目标项，最后保存。</div>
+                            <div class="ui-modal-desc">报表式分区：先锁定「月份 × 门店」，再编辑目标项，底部统一保存。</div>
                         </div>
                         <button class="modal-close" onclick="closeMonthlyTargetsModal()">×</button>
                     </div>
-                    <nav class="mt-step-nav" id="mt-step-nav" aria-label="目标管理步骤">
-                        <button type="button" class="active" data-mt-step="params" onclick="mtSwitchStep('params')">① 筛选</button>
-                        <button type="button" data-mt-step="edit" onclick="mtSwitchStep('edit')">② 编辑</button>
-                        <button type="button" data-mt-step="registry" onclick="mtSwitchStep('registry')">③ 登记</button>
-                    </nav>
                     <div class="modal-body mt-modal-body">
-                        <section class="mt-slab mt-slab--params mt-step-pane active" data-mt-step="params">
+                        <section class="mt-slab mt-slab--params">
                             <div class="mt-slab__head">
                                 <span class="mt-slab__no">A</span>
                                 <div>
@@ -16173,7 +16137,7 @@
                             </div>
                         </section>
 
-                        <section class="mt-slab mt-slab--edit mt-step-pane" data-mt-step="edit">
+                        <section class="mt-slab mt-slab--edit">
                             <div class="mt-slab__head">
                                 <span class="mt-slab__no">B</span>
                                 <div>
@@ -16191,7 +16155,7 @@
                             <div id="mt-no-fields" class="mt-empty">请从上方下拉选择目标项，点击「加入」添加到编辑区。</div>
                         </section>
 
-                        <section class="mt-slab mt-slab--registry mt-step-pane" data-mt-step="registry">
+                        <section class="mt-slab mt-slab--registry">
                             <div class="mt-slab__head">
                                 <span class="mt-slab__no">C</span>
                                 <div>
@@ -16204,8 +16168,6 @@
                     </div>
                     <div class="mt-modal-actions">
                         <button class="btn btn-secondary" type="button" onclick="closeMonthlyTargetsModal()">关闭</button>
-                        <button class="btn btn-secondary" type="button" id="mt-step-prev" onclick="mtStepPrev()">上一步</button>
-                        <button class="btn btn-secondary" type="button" id="mt-step-next" onclick="mtStepNext()">下一步</button>
                         <button class="btn" type="button" onclick="saveMonthlyTargets()">保存目标</button>
                     </div>
                 </div>
@@ -16221,14 +16183,27 @@
                         <button type="button" class="modal-close" onclick="closeAiModelModal()">×</button>
                     </div>
                     <div class="modal-body">
-                        <div class="settings-form" style="padding: 0 4px;">
-                            <label class="settings-label">显示名称<input id="ai-model-name" type="text" class="settings-input" placeholder="例如：通义千问 / DeepSeek"></label>
-                            <label class="settings-label">Base URL<input id="ai-model-base-url" type="text" class="settings-input" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"></label>
-                            <label class="settings-label">Model<input id="ai-model-model" type="text" class="settings-input" placeholder="qwen-turbo"></label>
-                            <label class="settings-label">API Key<input id="ai-model-api-key" type="password" class="settings-input" placeholder="sk-..."></label>
-                            <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:rgba(226,232,240,0.88);">
-                                <input id="ai-model-enabled" type="checkbox" checked style="width:auto"> 启用此模型
-                            </label>
+                        <div class="ui-form-grid">
+                            <div class="ui-form-group full-width">
+                                <label class="ui-label">显示名称</label>
+                                <input id="ai-model-name" type="text" placeholder="例如：通义千问 / DeepSeek">
+                            </div>
+                            <div class="ui-form-group full-width">
+                                <label class="ui-label">Base URL</label>
+                                <input id="ai-model-base-url" type="text" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1">
+                            </div>
+                            <div class="ui-form-group">
+                                <label class="ui-label">Model</label>
+                                <input id="ai-model-model" type="text" placeholder="qwen-turbo">
+                            </div>
+                            <div class="ui-form-group">
+                                <label class="ui-label">API Key</label>
+                                <input id="ai-model-api-key" type="password" placeholder="sk-...">
+                            </div>
+                            <div class="ui-form-group full-width" style="flex-direction:row;align-items:center;gap:8px;">
+                                <input id="ai-model-enabled" type="checkbox" checked style="width:auto">
+                                <label class="ui-label" style="margin:0;">启用此模型</label>
+                            </div>
                         </div>
                     </div>
                     <div class="ui-modal-footer mt-modal-actions" style="margin:0;border-radius:0 0 18px 18px;">
@@ -41744,7 +41719,6 @@ ${knowledgeContent.slice(0, 30000)}`;
             mtRenderDynamicFields();
             mtPopulateFieldSelect();
             mtRenderList();
-            mtSwitchStep('params');
             modal.classList.add('show');
         }
 
@@ -41977,8 +41951,6 @@ ${knowledgeContent.slice(0, 30000)}`;
 
         let __AI_MODELS_WORKING = { models: [], bindings: {} };
         let __AI_MODEL_EDIT_ID = null;
-        let __MT_ACTIVE_STEP = 'params';
-        const __MT_STEP_ORDER = ['params', 'edit', 'registry'];
 
         function newAiModelId() {
             return 'ai_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
@@ -42210,31 +42182,6 @@ ${knowledgeContent.slice(0, 30000)}`;
                 showNotification('连接失败：' + String(e?.message || e), 'error');
                 if (errBox) errBox.value = `Exception\nBaseURL: ${baseUrl}\nModel: ${model}\n\n${String(e?.message || e)}`;
             }
-        }
-
-        function mtSwitchStep(step) {
-            __MT_ACTIVE_STEP = String(step || 'params');
-            document.querySelectorAll('#mt-step-nav button').forEach((btn) => {
-                btn.classList.toggle('active', btn.dataset.mtStep === __MT_ACTIVE_STEP);
-            });
-            document.querySelectorAll('#monthly-targets-modal .mt-step-pane').forEach((pane) => {
-                pane.classList.toggle('active', pane.dataset.mtStep === __MT_ACTIVE_STEP);
-            });
-            const idx = __MT_STEP_ORDER.indexOf(__MT_ACTIVE_STEP);
-            const prev = document.getElementById('mt-step-prev');
-            const next = document.getElementById('mt-step-next');
-            if (prev) prev.style.display = idx <= 0 ? 'none' : '';
-            if (next) next.style.display = idx >= __MT_STEP_ORDER.length - 1 ? 'none' : '';
-        }
-
-        function mtStepPrev() {
-            const idx = __MT_STEP_ORDER.indexOf(__MT_ACTIVE_STEP);
-            if (idx > 0) mtSwitchStep(__MT_STEP_ORDER[idx - 1]);
-        }
-
-        function mtStepNext() {
-            const idx = __MT_STEP_ORDER.indexOf(__MT_ACTIVE_STEP);
-            if (idx < __MT_STEP_ORDER.length - 1) mtSwitchStep(__MT_STEP_ORDER[idx + 1]);
         }
 
         function saveLlmSettings() {
