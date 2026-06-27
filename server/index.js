@@ -291,6 +291,39 @@ function getStoreNamesByBrand(state0, brandIdInput) {
     .filter(Boolean);
 }
 
+function getStoreNamesByRegion(state0, regionInput) {
+  const state = state0 && typeof state0 === 'object' ? state0 : {};
+  const region = String(regionInput || '').trim();
+  if (!region) return [];
+  const stores = Array.isArray(state?.stores) ? state.stores : [];
+  return stores
+    .filter((s) => String(s?.region || '').trim() === region)
+    .map((s) => String(s?.name || '').trim())
+    .filter(Boolean);
+}
+
+// 权限组/岗位的"门店范围"统一解析：全部/按品牌/按区域/按店多选 → 门店名称数组。
+// 返回 null 表示这个权限组没有设置门店范围（caller 应该回退到原有的跨店绑定逻辑），
+// 返回数组(可以是空数组)表示按这个范围来，不再看跨店绑定表——对没用到权限组的现有
+// 租户(洪潮/马己仙)完全没有影响，因为他们的员工没有 permissionGroupId。
+function resolveStoreScopeStores(state0, scope) {
+  if (!scope || typeof scope !== 'object') return null;
+  const mode = String(scope.mode || '').trim();
+  if (!mode || mode === 'legacy') return null;
+  const state = state0 && typeof state0 === 'object' ? state0 : {};
+  if (mode === 'all') {
+    return (Array.isArray(state?.stores) ? state.stores : [])
+      .map((s) => String(s?.name || '').trim())
+      .filter(Boolean);
+  }
+  if (mode === 'brand') return getStoreNamesByBrand(state, scope.brand);
+  if (mode === 'region') return getStoreNamesByRegion(state, scope.region);
+  if (mode === 'stores') {
+    return Array.isArray(scope.stores) ? scope.stores.map((s) => String(s || '').trim()).filter(Boolean) : [];
+  }
+  return null;
+}
+
 function buildKnowledgeBrandScopeTag(input) {
   const raw = String(input || '').trim();
   if (!raw || raw === 'all') return 'brand:all';
@@ -5211,17 +5244,29 @@ app.post('/api/permission-groups/assign', authRequired, async (req, res) => {
   const role = String(req.user?.role || '').trim();
   if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
   try {
-    const groupId = String(req.body?.groupId || '').trim();
+    // groupId / storeScopeOverride 都是可选的——不传(字段缺省)就不动那个字段，
+    // 这样可以单独"只改门店范围、不改权限组分配"（同一岗位的督导各管不同门店）。
+    const hasGroupId = Object.prototype.hasOwnProperty.call(req.body || {}, 'groupId');
+    const groupId = hasGroupId ? String(req.body?.groupId || '').trim() : undefined;
+    const hasStoreScope = Object.prototype.hasOwnProperty.call(req.body || {}, 'storeScopeOverride');
+    const storeScopeOverride = hasStoreScope
+      ? (req.body?.storeScopeOverride && typeof req.body.storeScopeOverride === 'object' ? req.body.storeScopeOverride : null)
+      : undefined;
     const usernames = Array.isArray(req.body?.usernames)
       ? req.body.usernames.map(u => String(u || '').trim().toLowerCase()).filter(Boolean)
       : [];
     if (!usernames.length) return res.status(400).json({ error: 'missing_usernames' });
+    if (!hasGroupId && !hasStoreScope) return res.status(400).json({ error: 'nothing_to_update' });
     const state = (await getSharedState(req.tenantId)) || {};
     const employees = Array.isArray(state.employees) ? state.employees : [];
     const updates = [];
     for (const uname of usernames) {
       const emp = employees.find(e => String(e?.username || '').trim().toLowerCase() === uname);
-      if (emp) updates.push({ ...emp, permissionGroupId: groupId || null });
+      if (!emp) continue;
+      const next = { ...emp };
+      if (hasGroupId) next.permissionGroupId = groupId || null;
+      if (hasStoreScope) next.storeScopeOverride = storeScopeOverride;
+      updates.push(next);
     }
     if (updates.length) {
       await mergeSharedStateFields({ employees: updates }, { employees: 'username' }, req.tenantId);
@@ -10306,7 +10351,44 @@ async function getUserStoreAccessContext(username, role, opts = {}) {
   const requestedStore = String(opts?.requestedStore || '').trim();
   const stateStore = String(opts?.stateStore || '').trim();
   let dutyRows = [];
+
+  // 权限组/岗位的门店范围（全部/按品牌/按区域/按店多选）优先于跨店绑定表生效；
+  // 员工身上有 storeScopeOverride 就优先用它，否则用所在权限组的 storeScope。
+  // 员工没分配权限组、或权限组没设门店范围时 resolveStoreScopeStores 返回 null，
+  // 直接落到下面 else 分支走原有的跨店绑定查询——对洪潮/马己仙现有数据零影响。
+  let scopeStores = null;
+  let scopeActions = null;
   if (normalizedUsername) {
+    try {
+      const tenantId = resolveTenantIdDefault();
+      const state = (await getSharedState(tenantId)) || {};
+      const employees = Array.isArray(state.employees) ? state.employees : [];
+      const emp = employees.find((e) => String(e?.username || '').trim().toLowerCase() === normalizedUsername.toLowerCase());
+      const groupId = String(emp?.permissionGroupId || '').trim();
+      const group = groupId
+        ? (Array.isArray(state.permissionGroups) ? state.permissionGroups : []).find((g) => String(g?.id || '') === groupId)
+        : null;
+      const effectiveScope = (emp?.storeScopeOverride && typeof emp.storeScopeOverride === 'object')
+        ? emp.storeScopeOverride
+        : (group?.storeScope || null);
+      scopeStores = resolveStoreScopeStores(state, effectiveScope);
+      scopeActions = group?.actions && typeof group.actions === 'object' ? group.actions : null;
+    } catch (e) {
+      scopeStores = null;
+    }
+  }
+
+  if (Array.isArray(scopeStores)) {
+    const primary = stateStore && scopeStores.includes(stateStore) ? stateStore : (scopeStores[0] || '');
+    dutyRows = scopeStores.map((store) => ({
+      username: normalizedUsername,
+      store,
+      access_level: store === primary ? 'primary' : 'support',
+      is_primary_store: store === primary,
+      can_approve_hrms: !!scopeActions?.can_approve_hrms,
+      can_view_employees: !!scopeActions?.can_view_employees,
+    }));
+  } else if (normalizedUsername) {
     try {
       await ensureStoreDutyBindingsReady();
       dutyRows = await loadActiveDutyRowsForUser(pool, normalizedUsername);
@@ -10314,6 +10396,7 @@ async function getUserStoreAccessContext(username, role, opts = {}) {
       dutyRows = [];
     }
   }
+
   return buildStoreAccessContext({
     role: normalizedRole,
     stateStore,
@@ -15781,6 +15864,40 @@ app.get('/api/state', authRequired, async (req, res) => {
   }
 });
 
+function buildTenantLoginUrl(req, tenantId) {
+  const proto = String(req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+  const host = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+  const id = encodeURIComponent(String(tenantId || '').trim());
+  if (!host) return `/working-fixed.html?tenant_id=${id}`;
+  return `${proto}://${host}/working-fixed.html?tenant_id=${id}`;
+}
+
+async function getTenantPrimaryAdminUsername(poolOrClient, tenantId) {
+  const r = await poolOrClient.query(
+    `SELECT username FROM users
+     WHERE tenant_id = $1 AND role = 'admin' AND is_active = TRUE
+     ORDER BY created_at ASC NULLS LAST
+     LIMIT 1`,
+    [tenantId]
+  );
+  return String(r.rows[0]?.username || '').trim();
+}
+
+async function buildTenantLoginAccess(poolOrClient, req, tenantId, { password } = {}) {
+  const username = await getTenantPrimaryAdminUsername(poolOrClient, tenantId);
+  const access = {
+    login_url: buildTenantLoginUrl(req, tenantId),
+    tenant_id: tenantId,
+    username,
+  };
+  if (password != null && String(password).length) {
+    access.password = String(password);
+  } else {
+    access.password_hint = '密码为创建租户时设置的值，系统仅存储哈希，无法再次查看';
+  }
+  return access;
+}
+
 // ─── 租户开通(平台级) ───
 // 鉴权见 platformAdminRequired：与租户内部的 role==='admin' 完全分离，因为
 // 创建租户本身是跨租户操作，任何单租户管理员都不应有权限创建别的租户。
@@ -15866,7 +15983,8 @@ app.post('/api/admin/tenants', platformAdminRequired, async (req, res) => {
     }
 
     await client.query('COMMIT');
-    return res.json({ ok: true, tenant: { tenant_id: tenantId, name, mode, status: 'active' }, admin: createdAdmin, license: issuedLicense });
+    const login_access = await buildTenantLoginAccess(pool, req, tenantId, { password: adminReq.password });
+    return res.json({ ok: true, tenant: { tenant_id: tenantId, name, mode, status: 'active' }, admin: createdAdmin, license: issuedLicense, login_access });
   } catch (e) {
     await client.query('ROLLBACK');
     return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
@@ -16083,6 +16201,7 @@ app.get('/api/admin/tenants/:tenantId/profile', platformAdminRequired, async (re
         () => getTenantIntegrationSummary(pool, tenantId, 'feishu_bitable', TENANT_INTEGRATION_ENCRYPTION_KEY)
       );
     }
+    const login_access = await buildTenantLoginAccess(pool, req, tenantId);
     return res.json({
       ok: true,
       tenant: {
@@ -16093,6 +16212,7 @@ app.get('/api/admin/tenants/:tenantId/profile', platformAdminRequired, async (re
       acceptance_report: await getTenantPlatformAcceptanceReport(pool, tenantId),
       integrations: { feishu_bitable: feishu },
       alerts: buildTenantAlerts(tenantRow.rows[0], tenantRow.rows[0], profile, feishu),
+      login_access,
     });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
@@ -16221,11 +16341,13 @@ app.post('/api/admin/tenants/:tenantId/bootstrap', platformAdminRequired, async 
       checked_at: new Date().toISOString(),
       action: 'bootstrap',
     });
+    const login_access = await buildTenantLoginAccess(pool, req, tenantId);
     return res.json({
       ok: true,
       profile: next,
       report,
       message: report.ok ? '初始化完成' : '初始化完成，但部分检查项仍失败',
+      login_access,
     });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
@@ -17669,6 +17791,7 @@ app.put('/api/stores/:id', authRequired, async (req, res) => {
   const brandName = String(req.body?.brand || req.body?.brandName || '').trim();
   const brandId = normalizeBrandId(req.body?.brandId || brandName);
   const isActive = req.body?.status ? String(req.body.status) === 'active' : true;
+  const region = String(req.body?.region || '').trim();
 
   try {
     const state0 = (await getSharedState()) || {};
@@ -17691,6 +17814,7 @@ app.put('/api/stores/:id', authRequired, async (req, res) => {
       brand: brandName,
       brandName,
       brandId,
+      region,
       updatedAt: hrmsNowISO()
     };
     const nextState = { ...state0, stores };
@@ -18198,6 +18322,7 @@ app.get('/api/stores', authRequired, async (req, res) => {
       brand: s.brand || s.brandName || '',
       brandName: s.brand || s.brandName || '',
       brandId: normalizeBrandId(s.brandId || s.brand || s.brandName),
+      region: s.region || '',
       status: String(s.status || 'active') === 'active' ? 'active' : 'inactive',
       is_active: String(s.status || 'active') === 'active'
     }));
@@ -18223,6 +18348,7 @@ app.post('/api/stores', authRequired, async (req, res) => {
   const brandName = String(req.body?.brand || req.body?.brandName || '').trim();
   const brandId = normalizeBrandId(req.body?.brandId || brandName);
   const isActive = req.body?.status ? String(req.body.status) === 'active' : true;
+  const region = String(req.body?.region || '').trim();
 
   try {
     const state0 = (await getSharedState()) || {};
@@ -18241,6 +18367,7 @@ app.post('/api/stores', authRequired, async (req, res) => {
       brand: brandName,
       brandName,
       brandId,
+      region,
       createdAt: hrmsNowISO(),
       updatedAt: hrmsNowISO()
     };

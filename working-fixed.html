@@ -20784,6 +20784,10 @@
                                 <select id="store-form-brand-id"></select>
                             </div>
                             <div class="ui-form-group">
+                                <label class="ui-label">所属区域</label>
+                                <input id="store-form-region" type="text" placeholder="如：华东区（用于权限组按区域批量授权）">
+                            </div>
+                            <div class="ui-form-group">
                                 <label class="ui-label">联系电话</label>
                                 <input id="store-form-phone" type="text" placeholder="13800000000">
                             </div>
@@ -21122,22 +21126,22 @@
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">09</div>
                             <div>
-                                <h3 class="settings-rep-sec__title">权限组</h3>
-                                <p class="settings-rep-sec__lede">同一角色/岗位的不同员工可以分配不同的模块权限。未分配权限组的员工不受影响，继续按角色默认权限。</p>
+                                <h3 class="settings-rep-sec__title">岗位（权限组）</h3>
+                                <p class="settings-rep-sec__lede">不受8种系统角色数量限制，可自由新建任意数量、任意名字的岗位。每个岗位包含：可见模块、动作权限(审批/查看员工)、默认门店范围(全部/按品牌/按区域/按店多选)。未分配岗位的员工不受影响，继续按角色默认权限——对洪潮、马己仙现有数据零影响。</p>
                             </div>
                         </div>
                         <div class="settings-rep-sec__body">
                             <div id="permission-groups-list" style="margin-bottom:14px;"></div>
                             <div class="settings-actions" style="margin-bottom:14px;">
-                                <button class="btn" type="button" onclick="openPermissionGroupEditor()">+ 新建权限组</button>
+                                <button class="btn" type="button" onclick="openPermissionGroupEditor()">+ 新建岗位</button>
                             </div>
 
                             <div id="permission-group-editor" style="display:none;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:14px;margin-bottom:18px;background:rgba(255,255,255,0.03);">
                                 <input type="hidden" id="pg-edit-id">
                                 <div class="settings-form" style="grid-template-columns:repeat(2,minmax(0,1fr));">
                                     <div>
-                                        <label class="settings-label">权限组名称</label>
-                                        <input id="pg-edit-name" class="settings-input" type="text" placeholder="例如：店长(无薪资权限)">
+                                        <label class="settings-label">岗位名称</label>
+                                        <input id="pg-edit-name" class="settings-input" type="text" placeholder="例如：区域督导(华东)">
                                     </div>
                                     <div>
                                         <label class="settings-label">基线角色（仅作分类标签，不影响实际权限）</label>
@@ -21148,17 +21152,43 @@
                                     <label class="settings-label">可见模块（勾选的才能看到）</label>
                                     <div id="pg-edit-modules" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px 14px;color:rgba(226,232,240,0.88);font-size:13px;margin-top:6px;"></div>
                                 </div>
+                                <div style="margin-top:10px;">
+                                    <label class="settings-label">动作权限</label>
+                                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px 14px;color:rgba(226,232,240,0.88);font-size:13px;margin-top:6px;">
+                                        <label><input type="checkbox" id="pg-edit-action-approve"> 可审批 HRMS</label>
+                                        <label><input type="checkbox" id="pg-edit-action-view-emp"> 可查看员工</label>
+                                    </div>
+                                </div>
+                                <div style="margin-top:10px;">
+                                    <label class="settings-label">默认门店范围</label>
+                                    <div id="pg-edit-scope-mode" style="display:flex;gap:14px;color:rgba(226,232,240,0.88);font-size:13px;margin-top:6px;flex-wrap:wrap;">
+                                        <label><input type="radio" name="pg-edit-scope-mode" value="legacy" checked> 跟随跨店绑定(默认/不改变现有逻辑)</label>
+                                        <label><input type="radio" name="pg-edit-scope-mode" value="all"> 全部门店</label>
+                                        <label><input type="radio" name="pg-edit-scope-mode" value="brand"> 按品牌</label>
+                                        <label><input type="radio" name="pg-edit-scope-mode" value="region"> 按区域</label>
+                                        <label><input type="radio" name="pg-edit-scope-mode" value="stores"> 按店多选</label>
+                                    </div>
+                                    <div id="pg-edit-scope-brand-wrap" style="display:none;margin-top:8px;">
+                                        <select id="pg-edit-scope-brand" class="settings-input"></select>
+                                    </div>
+                                    <div id="pg-edit-scope-region-wrap" style="display:none;margin-top:8px;">
+                                        <input id="pg-edit-scope-region" class="settings-input" type="text" placeholder="跟门店「所属区域」字段完全一致，如：华东区">
+                                    </div>
+                                    <div id="pg-edit-scope-stores-wrap" style="display:none;margin-top:8px;">
+                                        <div id="pg-edit-scope-stores" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:4px 14px;color:rgba(226,232,240,0.88);font-size:13px;max-height:220px;overflow-y:auto;"></div>
+                                    </div>
+                                </div>
                                 <div class="settings-actions" style="margin-top:12px;">
-                                    <button class="btn" type="button" onclick="savePermissionGroup()">保存权限组</button>
+                                    <button class="btn" type="button" onclick="savePermissionGroup()">保存岗位</button>
                                     <button class="btn btn-secondary" type="button" onclick="closePermissionGroupEditor()">取消</button>
                                 </div>
                             </div>
 
                             <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:14px;">
-                                <label class="settings-label">把员工分配到权限组</label>
+                                <label class="settings-label">把员工分配到岗位</label>
                                 <div class="settings-form" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:6px;">
                                     <div>
-                                        <label class="settings-label">目标权限组</label>
+                                        <label class="settings-label">目标岗位</label>
                                         <select id="pg-assign-group" class="settings-input"></select>
                                     </div>
                                     <div class="settings-form-full" style="grid-column:span 2;">
@@ -21168,9 +21198,39 @@
                                 </div>
                                 <div class="settings-actions" style="margin-top:10px;">
                                     <button class="btn" type="button" onclick="assignEmployeesToPermissionGroup()">分配</button>
-                                    <span style="margin-left:8px;color:rgba(255,255,255,0.5);font-size:12px;">分配组留空 = 取消分配，恢复角色默认权限</span>
+                                    <span style="margin-left:8px;color:rgba(255,255,255,0.5);font-size:12px;">岗位留空 = 取消分配，恢复角色默认权限</span>
                                 </div>
                                 <div id="pg-assign-status" class="settings-hint" style="margin-top:8px;"></div>
+                            </div>
+
+                            <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:14px;margin-top:14px;">
+                                <label class="settings-label">单独覆盖某个员工的门店范围（同岗位的督导各管不同门店时用）</label>
+                                <div class="settings-form" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:6px;">
+                                    <div class="settings-form-full">
+                                        <label class="settings-label">员工（用户名，逗号分隔）</label>
+                                        <input id="pg-override-usernames" class="settings-input" type="text" placeholder="NNYXYF26">
+                                    </div>
+                                </div>
+                                <div id="pg-override-scope-mode" style="display:flex;gap:14px;color:rgba(226,232,240,0.88);font-size:13px;margin-top:8px;flex-wrap:wrap;">
+                                    <label><input type="radio" name="pg-override-scope-mode" value="" checked> 跟随岗位默认(清除单独覆盖)</label>
+                                    <label><input type="radio" name="pg-override-scope-mode" value="all"> 全部门店</label>
+                                    <label><input type="radio" name="pg-override-scope-mode" value="brand"> 按品牌</label>
+                                    <label><input type="radio" name="pg-override-scope-mode" value="region"> 按区域</label>
+                                    <label><input type="radio" name="pg-override-scope-mode" value="stores"> 按店多选</label>
+                                </div>
+                                <div id="pg-override-scope-brand-wrap" style="display:none;margin-top:8px;">
+                                    <select id="pg-override-scope-brand" class="settings-input"></select>
+                                </div>
+                                <div id="pg-override-scope-region-wrap" style="display:none;margin-top:8px;">
+                                    <input id="pg-override-scope-region" class="settings-input" type="text" placeholder="如：华东区">
+                                </div>
+                                <div id="pg-override-scope-stores-wrap" style="display:none;margin-top:8px;">
+                                    <div id="pg-override-scope-stores" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:4px 14px;color:rgba(226,232,240,0.88);font-size:13px;max-height:220px;overflow-y:auto;"></div>
+                                </div>
+                                <div class="settings-actions" style="margin-top:10px;">
+                                    <button class="btn" type="button" onclick="overrideEmployeeStoreScope()">设置门店范围</button>
+                                </div>
+                                <div id="pg-override-status" class="settings-hint" style="margin-top:8px;"></div>
                             </div>
                         </div>
                     </section>
@@ -26324,6 +26384,58 @@ th { background: #f5f5f5; font-weight: 700; }
             await loadPermissionGroupsFromServer();
             renderPermissionGroupsList();
             renderPermissionGroupAssignSelect();
+            __pgWireScopeModeRadios('pg-edit-scope-mode', 'pg-edit');
+            __pgWireScopeModeRadios('pg-override-scope-mode', 'pg-override');
+            __pgPopulateBrandSelect(document.getElementById('pg-override-scope-brand'));
+            __pgRenderStoreCheckboxes(document.getElementById('pg-override-scope-stores'));
+        }
+
+        // ── 岗位"门店范围"选择器的共用小工具 ──────────────────────────────
+        function __pgAllStoreNames() {
+            const stores = (HRMS_STORE.getStores ? HRMS_STORE.getStores() : []) || [];
+            return stores.map(s => String(s?.name || '').trim()).filter(Boolean);
+        }
+        function __pgAllRegions() {
+            const stores = (HRMS_STORE.getStores ? HRMS_STORE.getStores() : []) || [];
+            const set = new Set(stores.map(s => String(s?.region || '').trim()).filter(Boolean));
+            return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+        }
+        function __pgPopulateBrandSelect(selectEl, selectedId) {
+            if (!selectEl) return;
+            const brands = Array.isArray(__BRANDS_CACHE) ? __BRANDS_CACHE : [];
+            selectEl.innerHTML = brands.map(b => '<option value="' + escapeHtml(String(b.id)) + '">' + escapeHtml(String(b.name || b.id)) + '</option>').join('');
+            if (selectedId) selectEl.value = selectedId;
+        }
+        function __pgRenderStoreCheckboxes(containerEl, checkedList) {
+            if (!containerEl) return;
+            const names = __pgAllStoreNames();
+            const checked = Array.isArray(checkedList) ? checkedList : [];
+            containerEl.innerHTML = names.map(name =>
+                '<label><input type="checkbox" value="' + escapeHtml(name) + '" ' + (checked.includes(name) ? 'checked' : '') + '> ' + escapeHtml(name) + '</label>'
+            ).join('');
+        }
+        function __pgApplyScopeModeVisibility(prefix, mode) {
+            const brandWrap = document.getElementById(prefix + '-scope-brand-wrap');
+            const regionWrap = document.getElementById(prefix + '-scope-region-wrap');
+            const storesWrap = document.getElementById(prefix + '-scope-stores-wrap');
+            if (brandWrap) brandWrap.style.display = mode === 'brand' ? '' : 'none';
+            if (regionWrap) regionWrap.style.display = mode === 'region' ? '' : 'none';
+            if (storesWrap) storesWrap.style.display = mode === 'stores' ? '' : 'none';
+        }
+        function __pgWireScopeModeRadios(radioName, prefix) {
+            document.querySelectorAll('input[name="' + radioName + '"]').forEach(r => {
+                r.onchange = function () { __pgApplyScopeModeVisibility(prefix, this.value); };
+            });
+        }
+        function __pgScopeSummary(scope) {
+            if (!scope || typeof scope !== 'object') return '跟随跨店绑定';
+            const mode = String(scope.mode || 'legacy');
+            if (mode === 'legacy') return '跟随跨店绑定';
+            if (mode === 'all') return '全部门店';
+            if (mode === 'brand') return '品牌：' + (scope.brand || '-');
+            if (mode === 'region') return '区域：' + (scope.region || '-');
+            if (mode === 'stores') return '指定' + (Array.isArray(scope.stores) ? scope.stores.length : 0) + '家门店';
+            return '跟随跨店绑定';
         }
 
         function renderPermissionGroupsList() {
@@ -26335,9 +26447,10 @@ th { background: #f5f5f5; font-weight: 700; }
                 return;
             }
             box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
-                '<thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6)">名称</th>' +
+                '<thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6)">岗位名称</th>' +
                 '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6)">基线角色</th>' +
                 '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6)">模块数</th>' +
+                '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6)">门店范围</th>' +
                 '<th style="text-align:right;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6)">操作</th></tr></thead><tbody>' +
                 groups.map(g => {
                     const roleLabel = (_edRoles.find(r => r.c === g.baseRole) || {}).l || g.baseRole || '-';
@@ -26345,6 +26458,7 @@ th { background: #f5f5f5; font-weight: 700; }
                         '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + escapeHtml(String(g.name || '')) + '</td>' +
                         '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + escapeHtml(roleLabel) + '</td>' +
                         '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + (Array.isArray(g.modules) ? g.modules.length : 0) + '</td>' +
+                        '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + escapeHtml(__pgScopeSummary(g.storeScope)) + '</td>' +
                         '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);text-align:right;">' +
                             '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" onclick="openPermissionGroupEditor(\'' + escapeHtml(String(g.id)) + '\')">编辑</button> ' +
                             '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" onclick="deletePermissionGroup(\'' + escapeHtml(String(g.id)) + '\')">删除</button>' +
@@ -26383,6 +26497,21 @@ th { background: #f5f5f5; font-weight: 700; }
                     '<label><input type="checkbox" value="' + escapeHtml(m.p) + '" ' + (checked.includes(m.p) ? 'checked' : '') + '> ' + escapeHtml(m.l) + '</label>'
                 ).join('');
             }
+            const actions = (g && g.actions && typeof g.actions === 'object') ? g.actions : {};
+            const approveEl = document.getElementById('pg-edit-action-approve');
+            const viewEmpEl = document.getElementById('pg-edit-action-view-emp');
+            if (approveEl) approveEl.checked = !!actions.can_approve_hrms;
+            if (viewEmpEl) viewEmpEl.checked = !!actions.can_view_employees;
+
+            const scope = (g && g.storeScope && typeof g.storeScope === 'object') ? g.storeScope : { mode: 'legacy' };
+            const scopeMode = String(scope.mode || 'legacy');
+            document.querySelectorAll('input[name="pg-edit-scope-mode"]').forEach(r => { r.checked = (r.value === scopeMode); });
+            __pgPopulateBrandSelect(document.getElementById('pg-edit-scope-brand'), scope.brand);
+            const regionInput = document.getElementById('pg-edit-scope-region');
+            if (regionInput) regionInput.value = scope.region || '';
+            __pgRenderStoreCheckboxes(document.getElementById('pg-edit-scope-stores'), scope.stores);
+            __pgApplyScopeModeVisibility('pg-edit', scopeMode);
+
             editor.style.display = '';
             editor.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
@@ -26395,15 +26524,26 @@ th { background: #f5f5f5; font-weight: 700; }
         async function savePermissionGroup() {
             const id = String(document.getElementById('pg-edit-id')?.value || '').trim();
             const name = String(document.getElementById('pg-edit-name')?.value || '').trim();
-            if (!name) { showNotification('请填写权限组名称', 'warning'); return; }
+            if (!name) { showNotification('请填写岗位名称', 'warning'); return; }
             const baseRole = String(document.getElementById('pg-edit-base-role')?.value || '').trim();
             const modules = Array.from(document.querySelectorAll('#pg-edit-modules input[type=checkbox]:checked')).map(cb => cb.value);
+            const actions = {
+                can_approve_hrms: !!document.getElementById('pg-edit-action-approve')?.checked,
+                can_view_employees: !!document.getElementById('pg-edit-action-view-emp')?.checked
+            };
+            const scopeModeEl = document.querySelector('input[name="pg-edit-scope-mode"]:checked');
+            const scopeMode = scopeModeEl ? scopeModeEl.value : 'legacy';
+            const storeScope = { mode: scopeMode };
+            if (scopeMode === 'brand') storeScope.brand = String(document.getElementById('pg-edit-scope-brand')?.value || '').trim();
+            if (scopeMode === 'region') storeScope.region = String(document.getElementById('pg-edit-scope-region')?.value || '').trim();
+            if (scopeMode === 'stores') storeScope.stores = Array.from(document.querySelectorAll('#pg-edit-scope-stores input[type=checkbox]:checked')).map(cb => cb.value);
+
             const groups = Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups.slice() : [];
             if (id) {
                 const idx = groups.findIndex(g => String(g.id) === id);
-                if (idx >= 0) groups[idx] = { ...groups[idx], name, baseRole, modules };
+                if (idx >= 0) groups[idx] = { ...groups[idx], name, baseRole, modules, actions, storeScope };
             } else {
-                groups.push({ id: 'pg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, baseRole, modules });
+                groups.push({ id: 'pg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, baseRole, modules, actions, storeScope });
             }
             try {
                 const tok = localStorage.getItem('hrms_token') || '';
@@ -26417,7 +26557,7 @@ th { background: #f5f5f5; font-weight: 700; }
                 renderPermissionGroupsList();
                 renderPermissionGroupAssignSelect();
                 closePermissionGroupEditor();
-                showNotification('权限组已保存', 'success');
+                showNotification('岗位已保存', 'success');
             } catch (e) {
                 showNotification('保存失败：' + (e?.message || e), 'error');
             }
@@ -26464,6 +26604,38 @@ th { background: #f5f5f5; font-weight: 700; }
             } catch (e) {
                 if (statusEl) statusEl.textContent = '分配失败：' + (e?.message || e);
                 showNotification('分配失败：' + (e?.message || e), 'error');
+            }
+        }
+
+        // 单独覆盖某个员工的门店范围——同一个岗位下，不同员工可以管不同的门店/品牌/区域
+        async function overrideEmployeeStoreScope() {
+            const raw = String(document.getElementById('pg-override-usernames')?.value || '').trim();
+            const usernames = raw.split(',').map(s => s.trim()).filter(Boolean);
+            const statusEl = document.getElementById('pg-override-status');
+            if (!usernames.length) { showNotification('请填写至少一个用户名', 'warning'); return; }
+            const modeEl = document.querySelector('input[name="pg-override-scope-mode"]:checked');
+            const mode = modeEl ? modeEl.value : '';
+            let storeScopeOverride = null;
+            if (mode) {
+                storeScopeOverride = { mode };
+                if (mode === 'brand') storeScopeOverride.brand = String(document.getElementById('pg-override-scope-brand')?.value || '').trim();
+                if (mode === 'region') storeScopeOverride.region = String(document.getElementById('pg-override-scope-region')?.value || '').trim();
+                if (mode === 'stores') storeScopeOverride.stores = Array.from(document.querySelectorAll('#pg-override-scope-stores input[type=checkbox]:checked')).map(cb => cb.value);
+            }
+            try {
+                const tok = localStorage.getItem('hrms_token') || '';
+                const r = await fetch('/api/permission-groups/assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+                    body: JSON.stringify({ usernames, storeScopeOverride })
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d?.error || ('HTTP ' + r.status));
+                if (statusEl) statusEl.textContent = '已更新 ' + (d.updated || 0) + ' 名员工的门店范围';
+                showNotification('设置完成', 'success');
+            } catch (e) {
+                if (statusEl) statusEl.textContent = '设置失败：' + (e?.message || e);
+                showNotification('设置失败：' + (e?.message || e), 'error');
             }
         }
 
@@ -40026,6 +40198,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             const managerEl = document.getElementById('store-form-manager');
             const phoneEl = document.getElementById('store-form-phone');
             const brandEl = document.getElementById('store-form-brand-id');
+            const regionEl = document.getElementById('store-form-region');
             const openDateEl = document.getElementById('store-form-open-date');
             const statusEl = document.getElementById('store-form-status');
             const saveBtn = document.getElementById('store-form-save-btn');
@@ -40045,13 +40218,14 @@ ${knowledgeContent.slice(0, 30000)}`;
             if (floorEl) floorEl.value = m === 'create' ? '' : String(store?.floor || '');
             if (managerEl) managerEl.value = m === 'create' ? '' : String(store?.managerName || store?.manager_name || '');
             if (phoneEl) phoneEl.value = m === 'create' ? '' : String(store?.phone || '');
+            if (regionEl) regionEl.value = m === 'create' ? '' : String(store?.region || '');
             if (openDateEl) openDateEl.value = m === 'create' ? '' : String(store?.openDate || store?.open_date || '');
             if (statusEl) statusEl.value = store?.status ? String(store.status) : (store?.is_active === false ? 'inactive' : 'active');
             populateStoreBrandSelect(m === 'create' ? '' : String(store?.brandId || store?.brand || store?.brandName || ''));
 
             const readOnly = m === 'view';
             try {
-                [nameEl, addressEl, cityEl, floorEl, managerEl, phoneEl, openDateEl, brandEl].forEach(el => {
+                [nameEl, addressEl, cityEl, floorEl, managerEl, phoneEl, openDateEl, brandEl, regionEl].forEach(el => {
                     if (el) el.disabled = readOnly;
                 });
             } catch (e) {}
@@ -40086,6 +40260,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             const phone = (document.getElementById('store-form-phone')?.value || '').trim();
             const brandId = normalizeBrandIdInput(document.getElementById('store-form-brand-id')?.value || '');
             const brandName = getBrandNameById(brandId);
+            const region = (document.getElementById('store-form-region')?.value || '').trim();
             const openDate = (document.getElementById('store-form-open-date')?.value || '').trim();
             const status = String(document.getElementById('store-form-status')?.value || 'active');
 
@@ -40111,7 +40286,8 @@ ${knowledgeContent.slice(0, 30000)}`;
                     status,
                     brandId,
                     brandName,
-                    brand: brandName
+                    brand: brandName,
+                    region
                 };
                 if (mode === 'edit') {
                     await HRMS_API.updateStore(id, payload);
@@ -40337,11 +40513,15 @@ ${knowledgeContent.slice(0, 30000)}`;
             const dutyCard = document.getElementById('store-duty-settings-card');
             if (dutyCard) dutyCard.style.display = isAdminUser() ? '' : 'none';
 
+            const pgCard = document.getElementById('permission-groups-settings-card');
+            if (pgCard) pgCard.style.display = isAdminUser() ? '' : 'none';
+
             refreshBrandsCache(true).then(() => {
                 const s = document.getElementById('brands-settings-summary');
                 if (s) {
                     s.textContent = `当前品牌数：${(__BRANDS_CACHE || []).length}（${(__BRANDS_CACHE || []).map((b) => b.name).join(' / ') || '-' }）`;
                 }
+                if (isAdminUser()) loadPermissionGroupsForSettings();
             });
 
             if (isAdminUser()) renderApprovalFlowSummary();
