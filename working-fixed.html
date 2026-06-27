@@ -1838,7 +1838,7 @@
         .modal-content {
             background: rgba(44, 44, 46, 0.98) !important;
             border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 
+            box-shadow:
                 0 50px 100px -30px rgba(0, 0, 0, 0.8),
                 0 0 0 1px rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(50px) saturate(1.8);
@@ -11721,6 +11721,135 @@
                 inset 0 1px 0 rgba(255,255,255,0.22),
                 0 10px 28px rgba(7,10,20,0.24);
         }
+        /* 强制确认弹窗：系统通知 / 重要公告 */
+        #ack-announcement-modal.modal {
+            backdrop-filter: blur(12px) saturate(1.2);
+            -webkit-backdrop-filter: blur(12px) saturate(1.2);
+        }
+        #ack-announcement-modal .ack-shell {
+            max-width: 420px;
+            width: calc(100% - 32px);
+            padding: 0;
+            overflow: hidden;
+            border-radius: 22px;
+            border: 1px solid rgba(255,255,255,0.10);
+            background: linear-gradient(165deg, rgba(28,32,44,0.98), rgba(18,20,28,0.99));
+            box-shadow: 0 24px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+        #ack-announcement-modal .ack-top {
+            padding: 22px 22px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        #ack-announcement-modal .ack-top--urgent { background: linear-gradient(180deg, rgba(239,68,68,0.14), transparent); }
+        #ack-announcement-modal .ack-top--warn { background: linear-gradient(180deg, rgba(245,158,11,0.12), transparent); }
+        #ack-announcement-modal .ack-top--info { background: linear-gradient(180deg, rgba(99,102,241,0.12), transparent); }
+        #ack-announcement-modal .ack-badge-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        #ack-announcement-modal .ack-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        #ack-announcement-modal .ack-badge--urgent { background: rgba(239,68,68,0.18); color: #fca5a5; border: 1px solid rgba(239,68,68,0.28); }
+        #ack-announcement-modal .ack-badge--warn { background: rgba(245,158,11,0.16); color: #fcd34d; border: 1px solid rgba(245,158,11,0.24); }
+        #ack-announcement-modal .ack-badge--info { background: rgba(99,102,241,0.16); color: #c7d2fe; border: 1px solid rgba(99,102,241,0.24); }
+        #ack-announcement-modal .ack-title {
+            margin: 0;
+            font-size: 17px;
+            font-weight: 700;
+            line-height: 1.35;
+            letter-spacing: -0.02em;
+            color: rgba(248,250,252,0.96);
+        }
+        #ack-announcement-modal .ack-meta {
+            margin-top: 8px;
+            font-size: 11px;
+            color: rgba(148,163,184,0.92);
+            line-height: 1.5;
+        }
+        #ack-announcement-modal .ack-body {
+            padding: 16px 22px 8px;
+            max-height: min(46vh, 360px);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        #ack-announcement-modal .ack-summary {
+            font-size: 14px;
+            line-height: 1.65;
+            color: rgba(226,232,240,0.92);
+            margin-bottom: 12px;
+        }
+        #ack-announcement-modal .ack-kv {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        #ack-announcement-modal .ack-kv-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.05);
+            font-size: 12px;
+        }
+        #ack-announcement-modal .ack-kv-k { color: rgba(148,163,184,0.88); flex-shrink: 0; }
+        #ack-announcement-modal .ack-kv-v { color: rgba(226,232,240,0.94); text-align: right; word-break: break-all; }
+        #ack-announcement-modal .ack-details {
+            margin-top: 4px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.06);
+            background: rgba(0,0,0,0.18);
+            overflow: hidden;
+        }
+        #ack-announcement-modal .ack-details summary {
+            cursor: pointer;
+            padding: 10px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: rgba(165,180,252,0.95);
+            list-style: none;
+        }
+        #ack-announcement-modal .ack-details summary::-webkit-details-marker { display: none; }
+        #ack-announcement-modal .ack-details-body {
+            padding: 0 12px 12px;
+            font-size: 11px;
+            line-height: 1.6;
+            color: rgba(148,163,184,0.92);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        #ack-announcement-modal .ack-foot {
+            padding: 14px 22px 20px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+        }
+        #ack-announcement-modal .ack-btn {
+            width: 100%;
+            padding: 13px 16px;
+            border: none;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+            color: #fff;
+            background: linear-gradient(135deg, rgba(99,102,241,0.95), rgba(79,70,229,0.95));
+            box-shadow: 0 10px 28px rgba(79,70,229,0.35);
+        }
+        #ack-announcement-modal .ack-btn--urgent {
+            background: linear-gradient(135deg, rgba(239,68,68,0.96), rgba(220,38,38,0.96));
+            box-shadow: 0 10px 28px rgba(220,38,38,0.32);
+        }
         #profile-page .pf-points-banner {
             padding: 13px 14px;
             border-radius: 18px;
@@ -20708,6 +20837,7 @@
                         <a class="settings-rep-toc__link" href="#approval-flow-settings-card">06 审批</a>
                         <a class="settings-rep-toc__link" href="#points-rule-settings-card">07 积分</a>
                         <a class="settings-rep-toc__link" href="#store-duty-settings-card">08 职责</a>
+                        <a class="settings-rep-toc__link" href="#permission-groups-settings-card">09 权限组</a>
                     </nav>
                     <div class="settings-rep-stack">
                     <section id="llm-settings-card" class="settings-rep-sec">
@@ -20985,6 +21115,63 @@
                             </div>
                             <div id="store-duty-bindings-status" class="settings-hint" style="margin-top:10px;"></div>
                             <div id="store-duty-bindings-list" style="margin-top:14px;"></div>
+                        </div>
+                    </section>
+
+                    <section id="permission-groups-settings-card" class="settings-rep-sec">
+                        <div class="settings-rep-sec__bar">
+                            <div class="settings-rep-sec__no">09</div>
+                            <div>
+                                <h3 class="settings-rep-sec__title">权限组</h3>
+                                <p class="settings-rep-sec__lede">同一角色/岗位的不同员工可以分配不同的模块权限。未分配权限组的员工不受影响，继续按角色默认权限。</p>
+                            </div>
+                        </div>
+                        <div class="settings-rep-sec__body">
+                            <div id="permission-groups-list" style="margin-bottom:14px;"></div>
+                            <div class="settings-actions" style="margin-bottom:14px;">
+                                <button class="btn" type="button" onclick="openPermissionGroupEditor()">+ 新建权限组</button>
+                            </div>
+
+                            <div id="permission-group-editor" style="display:none;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:14px;margin-bottom:18px;background:rgba(255,255,255,0.03);">
+                                <input type="hidden" id="pg-edit-id">
+                                <div class="settings-form" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+                                    <div>
+                                        <label class="settings-label">权限组名称</label>
+                                        <input id="pg-edit-name" class="settings-input" type="text" placeholder="例如：店长(无薪资权限)">
+                                    </div>
+                                    <div>
+                                        <label class="settings-label">基线角色（仅作分类标签，不影响实际权限）</label>
+                                        <select id="pg-edit-base-role" class="settings-input"></select>
+                                    </div>
+                                </div>
+                                <div style="margin-top:10px;">
+                                    <label class="settings-label">可见模块（勾选的才能看到）</label>
+                                    <div id="pg-edit-modules" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px 14px;color:rgba(226,232,240,0.88);font-size:13px;margin-top:6px;"></div>
+                                </div>
+                                <div class="settings-actions" style="margin-top:12px;">
+                                    <button class="btn" type="button" onclick="savePermissionGroup()">保存权限组</button>
+                                    <button class="btn btn-secondary" type="button" onclick="closePermissionGroupEditor()">取消</button>
+                                </div>
+                            </div>
+
+                            <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:14px;">
+                                <label class="settings-label">把员工分配到权限组</label>
+                                <div class="settings-form" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:6px;">
+                                    <div>
+                                        <label class="settings-label">目标权限组</label>
+                                        <select id="pg-assign-group" class="settings-input"></select>
+                                    </div>
+                                    <div class="settings-form-full" style="grid-column:span 2;">
+                                        <label class="settings-label">员工（用户名，逗号分隔，例如 NNYXYF26,NNYXLRY04）</label>
+                                        <input id="pg-assign-usernames" class="settings-input" type="text" placeholder="NNYXYF26,NNYXLRY04">
+                                    </div>
+                                </div>
+                                <div class="settings-actions" style="margin-top:10px;">
+                                    <button class="btn" type="button" onclick="assignEmployeesToPermissionGroup()">分配</button>
+                                    <span style="margin-left:8px;color:rgba(255,255,255,0.5);font-size:12px;">分配组留空 = 取消分配，恢复角色默认权限</span>
+                                </div>
+                                <div id="pg-assign-status" class="settings-hint" style="margin-top:8px;"></div>
+                            </div>
                         </div>
                     </section>
                     </div>
@@ -21900,18 +22087,20 @@
         </div>
     </div>
 
-    <!-- 重要公告强制确认弹窗：未点"我已阅读"无法关闭，没有×也没有点遮罩关闭 -->
+    <!-- 重要公告 / 系统通知强制确认弹窗 -->
     <div id="ack-announcement-modal" class="modal">
-        <div class="modal-content" style="max-width: 480px;">
-            <div class="modal-header" id="ack-announcement-header" style="background:linear-gradient(135deg,#ef4444,#dc2626);">
-                <h3 id="ack-announcement-title" style="color:#fff;">🚨 重要公告</h3>
-            </div>
-            <div class="modal-body">
-                <div id="ack-announcement-meta" style="color:#999; font-size:12px; margin-bottom:10px;"></div>
-                <div id="ack-announcement-content" style="white-space:pre-wrap; line-height:1.7; max-height: 50vh; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
-                <div style="display:flex; justify-content:center; margin-top:18px;">
-                    <button class="btn" type="button" onclick="ackAndCloseAnnouncement()" style="background:linear-gradient(135deg,#ef4444,#dc2626); width:100%; padding:14px; font-size:15px; font-weight:700;">我已阅读并知晓</button>
+        <div class="modal-content ack-shell">
+            <div id="ack-announcement-top" class="ack-top ack-top--info">
+                <div class="ack-badge-row">
+                    <span id="ack-announcement-badge" class="ack-badge ack-badge--info">系统通知</span>
+                    <span id="ack-announcement-queue" class="ack-meta" style="margin:0;"></span>
                 </div>
+                <h3 id="ack-announcement-title" class="ack-title">通知</h3>
+                <div id="ack-announcement-meta" class="ack-meta"></div>
+            </div>
+            <div id="ack-announcement-content" class="ack-body"></div>
+            <div class="ack-foot">
+                <button id="ack-announcement-btn" class="ack-btn" type="button" onclick="ackAndCloseAnnouncement()">我已阅读并知晓</button>
             </div>
         </div>
     </div>
@@ -26025,6 +26214,7 @@ th { background: #f5f5f5; font-weight: 700; }
                     try { if (!document.getElementById('employees-page')?.classList.contains('hidden')) loadEmployeesData(); } catch (e) {}
                 }).catch(() => {});
                 loadRoleModulesFromServer().catch(() => {});
+                loadPermissionGroupsFromServer().catch(() => {});
                 try { refreshUnreadBadges(); } catch (e) {}
 
                 return true;
@@ -26117,6 +26307,166 @@ th { background: #f5f5f5; font-weight: 700; }
                 if (r.ok) { const d = await r.json(); if (d?.config) _serverRoleModules = d.config; }
             } catch (e) { console.warn('[role-modules] load failed:', e); }
         }
+
+        // 权限组：同角色/岗位的员工可按租户自定义不同模块权限（与角色默认模块互不影响）
+        let _serverPermissionGroups = [];
+        async function loadPermissionGroupsFromServer() {
+            try {
+                const headers = {};
+                const tok = (HRMS_API && typeof HRMS_API.token === 'function') ? HRMS_API.token() : (localStorage.getItem('hrms_token') || localStorage.getItem('HRMS_API_TOKEN') || '');
+                if (tok) headers['Authorization'] = 'Bearer ' + tok;
+                const r = await fetch('/api/permission-groups', { credentials: 'include', headers });
+                if (r.ok) { const d = await r.json(); _serverPermissionGroups = Array.isArray(d?.groups) ? d.groups : []; }
+            } catch (e) { console.warn('[permission-groups] load failed:', e); }
+        }
+
+        async function loadPermissionGroupsForSettings() {
+            await loadPermissionGroupsFromServer();
+            renderPermissionGroupsList();
+            renderPermissionGroupAssignSelect();
+        }
+
+        function renderPermissionGroupsList() {
+            const box = document.getElementById('permission-groups-list');
+            if (!box) return;
+            const groups = Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups : [];
+            if (!groups.length) {
+                box.innerHTML = '<div class="settings-hint">还没有自定义权限组，员工都按角色默认权限。</div>';
+                return;
+            }
+            box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+                '<thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6)">名称</th>' +
+                '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6)">基线角色</th>' +
+                '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6)">模块数</th>' +
+                '<th style="text-align:right;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6)">操作</th></tr></thead><tbody>' +
+                groups.map(g => {
+                    const roleLabel = (_edRoles.find(r => r.c === g.baseRole) || {}).l || g.baseRole || '-';
+                    return '<tr>' +
+                        '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + escapeHtml(String(g.name || '')) + '</td>' +
+                        '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + escapeHtml(roleLabel) + '</td>' +
+                        '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + (Array.isArray(g.modules) ? g.modules.length : 0) + '</td>' +
+                        '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);text-align:right;">' +
+                            '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" onclick="openPermissionGroupEditor(\'' + escapeHtml(String(g.id)) + '\')">编辑</button> ' +
+                            '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" onclick="deletePermissionGroup(\'' + escapeHtml(String(g.id)) + '\')">删除</button>' +
+                        '</td>' +
+                    '</tr>';
+                }).join('') +
+                '</tbody></table>';
+        }
+
+        function renderPermissionGroupAssignSelect() {
+            const sel = document.getElementById('pg-assign-group');
+            if (!sel) return;
+            const groups = Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups : [];
+            sel.innerHTML = '<option value="">（取消分配，恢复角色默认）</option>' +
+                groups.map(g => '<option value="' + escapeHtml(String(g.id)) + '">' + escapeHtml(String(g.name || g.id)) + '</option>').join('');
+        }
+
+        function openPermissionGroupEditor(groupId) {
+            const editor = document.getElementById('permission-group-editor');
+            if (!editor) return;
+            const groups = Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups : [];
+            const g = groupId ? groups.find(x => String(x.id) === String(groupId)) : null;
+            const idEl = document.getElementById('pg-edit-id');
+            const nameEl = document.getElementById('pg-edit-name');
+            if (idEl) idEl.value = g ? String(g.id) : '';
+            if (nameEl) nameEl.value = g ? String(g.name || '') : '';
+            const roleSel = document.getElementById('pg-edit-base-role');
+            if (roleSel) {
+                roleSel.innerHTML = _edRoles.map(r => '<option value="' + escapeHtml(r.c) + '">' + escapeHtml(r.l) + '</option>').join('');
+                roleSel.value = g ? String(g.baseRole || '') : (_edRoles[0] ? _edRoles[0].c : '');
+            }
+            const modsBox = document.getElementById('pg-edit-modules');
+            if (modsBox) {
+                const checked = g && Array.isArray(g.modules) ? g.modules : [];
+                modsBox.innerHTML = _allMods.map(m =>
+                    '<label><input type="checkbox" value="' + escapeHtml(m.p) + '" ' + (checked.includes(m.p) ? 'checked' : '') + '> ' + escapeHtml(m.l) + '</label>'
+                ).join('');
+            }
+            editor.style.display = '';
+            editor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function closePermissionGroupEditor() {
+            const editor = document.getElementById('permission-group-editor');
+            if (editor) editor.style.display = 'none';
+        }
+
+        async function savePermissionGroup() {
+            const id = String(document.getElementById('pg-edit-id')?.value || '').trim();
+            const name = String(document.getElementById('pg-edit-name')?.value || '').trim();
+            if (!name) { showNotification('请填写权限组名称', 'warning'); return; }
+            const baseRole = String(document.getElementById('pg-edit-base-role')?.value || '').trim();
+            const modules = Array.from(document.querySelectorAll('#pg-edit-modules input[type=checkbox]:checked')).map(cb => cb.value);
+            const groups = Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups.slice() : [];
+            if (id) {
+                const idx = groups.findIndex(g => String(g.id) === id);
+                if (idx >= 0) groups[idx] = { ...groups[idx], name, baseRole, modules };
+            } else {
+                groups.push({ id: 'pg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, baseRole, modules });
+            }
+            try {
+                const tok = localStorage.getItem('hrms_token') || '';
+                const r = await fetch('/api/permission-groups', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+                    body: JSON.stringify({ groups })
+                });
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                _serverPermissionGroups = groups;
+                renderPermissionGroupsList();
+                renderPermissionGroupAssignSelect();
+                closePermissionGroupEditor();
+                showNotification('权限组已保存', 'success');
+            } catch (e) {
+                showNotification('保存失败：' + (e?.message || e), 'error');
+            }
+        }
+
+        async function deletePermissionGroup(groupId) {
+            const ok = await hrmsConfirm({ title: '删除权限组', message: '确定删除这个权限组？已分配到这个组的员工会恢复角色默认权限。', okText: '确认删除', icon: '🗑️' });
+            if (!ok) return;
+            const groups = (Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups : []).filter(g => String(g.id) !== String(groupId));
+            try {
+                const tok = localStorage.getItem('hrms_token') || '';
+                const r = await fetch('/api/permission-groups', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+                    body: JSON.stringify({ groups })
+                });
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                _serverPermissionGroups = groups;
+                renderPermissionGroupsList();
+                renderPermissionGroupAssignSelect();
+                showNotification('已删除', 'success');
+            } catch (e) {
+                showNotification('删除失败：' + (e?.message || e), 'error');
+            }
+        }
+
+        async function assignEmployeesToPermissionGroup() {
+            const groupId = String(document.getElementById('pg-assign-group')?.value || '').trim();
+            const raw = String(document.getElementById('pg-assign-usernames')?.value || '').trim();
+            const usernames = raw.split(',').map(s => s.trim()).filter(Boolean);
+            const statusEl = document.getElementById('pg-assign-status');
+            if (!usernames.length) { showNotification('请填写至少一个用户名', 'warning'); return; }
+            try {
+                const tok = localStorage.getItem('hrms_token') || '';
+                const r = await fetch('/api/permission-groups/assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+                    body: JSON.stringify({ groupId, usernames })
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d?.error || ('HTTP ' + r.status));
+                if (statusEl) statusEl.textContent = '已更新 ' + (d.updated || 0) + ' 名员工（' + usernames.length + ' 个用户名中）';
+                showNotification('分配完成', 'success');
+            } catch (e) {
+                if (statusEl) statusEl.textContent = '分配失败：' + (e?.message || e);
+                showNotification('分配失败：' + (e?.message || e), 'error');
+            }
+        }
+
         function getRoleModulePages(role) {
             const r = String(role || '').trim();
             if (r === ROLES.ADMIN) return null; // null means all modules
@@ -26165,6 +26515,14 @@ th { background: #f5f5f5; font-weight: 700; }
             if (page === 'approvals') {
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 if (r === ROLES.PRODUCTION_MANAGER) return true;
+            }
+            // 权限组覆盖：管理员把某个员工分配了自定义权限组后，该员工的模块可见范围
+            // 以权限组里勾选的模块为准，不再看角色默认列表——同一岗位/角色的不同员工
+            // 由此可以配出不一样的权限。未分配权限组的员工完全不受影响（走原有角色逻辑）。
+            if (role == null && currentUser?.permissionGroupId) {
+                const grp = (Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups : [])
+                    .find(g => String(g?.id || '') === String(currentUser.permissionGroupId));
+                if (grp) return Array.isArray(grp.modules) && grp.modules.includes(page);
             }
             const pages = getRoleModulePages(role == null ? currentUser?.role : role);
             if (pages === null) return true;
@@ -26220,6 +26578,7 @@ th { background: #f5f5f5; font-weight: 700; }
                 managerUsername,
                 managerName: String(managerRec.name || empInfo.managerName || u.managerName || '').trim(),
                 status: 'active',
+                permissionGroupId: String(u.permission_group_id || empInfo.permissionGroupId || '').trim() || null,
                 _loginPassword: fallbackPassword || currentUser?._loginPassword || ''
             };
         }
@@ -26484,6 +26843,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 try { hrmsNotifyDiskPressureIfNeeded(); } catch (e) {}
                 // 非阻塞加载角色模块和刷新
                 loadRoleModulesFromServer().catch(() => {});
+                loadPermissionGroupsFromServer().catch(() => {});
                 try { refreshUnreadBadges(); } catch (e) {}
             } catch (e) {
                 console.error(e);
@@ -46459,7 +46819,15 @@ tr:nth-child(even) td { background: #fafafa; }
             // DB 通知（从 hrms_user_notifications 表来，全部通知均写入 DB）
             const dbSysNotifs = dbNotifs
                 .filter(n => n && !String(n.type || '').trim().endsWith('_request'))
-                .map(n => ({ title: n.title || '公司通知', content: n.message || '', createdAt: n.createdAt || '', level: 'system', _src: 'db_notification', _id: 'db-' + n.id }));
+                .map(n => ({
+                    title: n.title || '公司通知',
+                    content: n.message || '',
+                    createdAt: n.createdAt || '',
+                    level: (n.meta && n.meta.priority === 'A') ? 'urgent' : 'system',
+                    meta: n.meta || {},
+                    _src: 'db_notification',
+                    _id: 'db-' + n.id
+                }));
 
             const anns = (Array.isArray(data.announcements) ? data.announcements : [])
                 .filter(a => {
@@ -46633,6 +47001,45 @@ tr:nth-child(even) td { background: #fafafa; }
         // 强制确认上线时间：只有这个时间之后发布的公告才会强制弹窗，历史公告不受影响
         const ANNOUNCEMENT_FORCE_ACK_SINCE = '2026-06-26T00:00:00.000Z';
         let __ackAnnouncementQueue = [];
+        function formatAckAnnouncementHtml(item) {
+            const raw = String(item?.content || '').trim();
+            const title = String(item?.title || '').replace(/^【[^】]+】/, '').trim();
+            const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+            const kv = [];
+            let summary = '';
+            let details = [];
+            let inTips = false;
+            for (const line of lines) {
+                if (/^【排查建议】/.test(line)) { inTips = true; details.push(line); continue; }
+                if (/^【去重】/.test(line)) { details.push(line); continue; }
+                if (inTips) { details.push(line); continue; }
+                if (/^—+$/.test(line)) continue;
+                const m = line.match(/^([^：:]+)[：:]\s*(.+)$/);
+                if (m && /^(时间|问题类型|级别|配置键|表名|app_token|table_id|错误摘要)/.test(m[1])) {
+                    kv.push({ k: m[1], v: m[2] });
+                    continue;
+                }
+                if (!summary && !/^🔴|^🟠|^🟡/.test(line) && line !== title) summary = line;
+            }
+            if (!summary && kv.length) {
+                const err = kv.find((x) => x.k === '错误摘要');
+                summary = err ? ('同步失败：' + err.v) : ('「' + (title || '系统通知') + '」需要您确认已读。');
+            }
+            if (!summary) summary = raw.slice(0, 280) || '请阅读以下内容并确认。';
+            summary = summary.replace(/^🔴\s*【数据异常告警·[^】]+】/,'').trim();
+
+            let html = '<div class="ack-summary">' + escapeHtml(summary) + '</div>';
+            if (kv.length) {
+                html += '<div class="ack-kv">' + kv.slice(0, 6).map(function(row) {
+                    return '<div class="ack-kv-row"><span class="ack-kv-k">' + escapeHtml(row.k) + '</span><span class="ack-kv-v">' + escapeHtml(row.v) + '</span></div>';
+                }).join('') + '</div>';
+            }
+            const rest = details.length ? details.join('\n') : raw;
+            if (rest && rest.length > summary.length + 20) {
+                html += '<details class="ack-details"><summary>技术详情与排查建议</summary><div class="ack-details-body">' + escapeHtml(rest) + '</div></details>';
+            }
+            return html;
+        }
         function showForcedAnnouncementAck(queue) {
             __ackAnnouncementQueue = Array.isArray(queue) ? queue.slice() : [];
             __showNextForcedAnnouncement();
@@ -46643,17 +47050,33 @@ tr:nth-child(even) td { background: #fafafa; }
             if (!__ackAnnouncementQueue.length) { modal.classList.remove('show'); return; }
             const a = __ackAnnouncementQueue[0];
             const isSysNotif = a?._src === 'db_notification';
-            const isUrgent = String(a?.level || '') === 'urgent';
-            const header = document.getElementById('ack-announcement-header');
+            const isUrgent = String(a?.level || '') === 'urgent' || /A级·紧急|【A级/.test(String(a?.title || ''));
+            const top = document.getElementById('ack-announcement-top');
+            const badge = document.getElementById('ack-announcement-badge');
+            const queueEl = document.getElementById('ack-announcement-queue');
             const titleEl = document.getElementById('ack-announcement-title');
             const metaEl = document.getElementById('ack-announcement-meta');
             const contentEl = document.getElementById('ack-announcement-content');
-            if (header) header.style.background = isUrgent ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)';
-            const titlePrefix = isSysNotif ? '🔔 系统通知：' : (isUrgent ? '🚨 紧急公告：' : '🔴 重要公告：');
-            if (titleEl) titleEl.textContent = titlePrefix + String(a?.title || '');
-            const metaPrefix = isSysNotif ? '系统自动发送' : '发布人：' + String(a?.createdByName || a?.createdBy || '管理员');
-            if (metaEl) metaEl.textContent = metaPrefix + ' · ' + String(a?.createdAt || '').slice(0, 16).replace('T', ' ') + '（需要确认已读才能关闭）';
-            if (contentEl) contentEl.textContent = String(a?.content || '');
+            const btn = document.getElementById('ack-announcement-btn');
+            const tone = isUrgent ? 'urgent' : (isSysNotif ? 'warn' : 'info');
+            if (top) top.className = 'ack-top ack-top--' + tone;
+            if (badge) {
+                badge.className = 'ack-badge ack-badge--' + tone;
+                badge.textContent = isSysNotif ? (isUrgent ? '紧急告警' : '系统通知') : (isUrgent ? '紧急公告' : '重要公告');
+            }
+            if (queueEl) {
+                const n = __ackAnnouncementQueue.length;
+                queueEl.textContent = n > 1 ? ('待确认 ' + n + ' 条') : '';
+            }
+            const cleanTitle = String(a?.title || '通知').replace(/^【[^】]+】/, '').trim();
+            if (titleEl) titleEl.textContent = cleanTitle || '通知';
+            const metaPrefix = isSysNotif ? '系统自动发送' : ('发布人：' + String(a?.createdByName || a?.createdBy || '管理员'));
+            const when = String(a?.createdAt || '').slice(0, 16).replace('T', ' ');
+            if (metaEl) metaEl.textContent = metaPrefix + ' · ' + when;
+            if (contentEl) {
+                contentEl.innerHTML = isSysNotif ? formatAckAnnouncementHtml(a) : ('<div class="ack-summary">' + escapeHtml(String(a?.content || '')) + '</div>');
+            }
+            if (btn) btn.className = 'ack-btn' + (isUrgent ? ' ack-btn--urgent' : '');
             modal.classList.add('show');
         }
         async function ackAndCloseAnnouncement() {

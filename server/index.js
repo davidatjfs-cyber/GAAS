@@ -5181,6 +5181,57 @@ app.use((req, res, next) => {
   return staticServeWebRoot(req, res, next);
 });
 
+// ─── 权限组 API：同一角色/岗位下不同员工可分配不同模块权限（按租户隔离） ──────────
+app.get('/api/permission-groups', authRequired, async (req, res) => {
+  try {
+    const state = (await getSharedState(req.tenantId)) || {};
+    return res.json({ groups: Array.isArray(state.permissionGroups) ? state.permissionGroups : [] });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+  }
+});
+
+app.put('/api/permission-groups', authRequired, async (req, res) => {
+  const role = String(req.user?.role || '').trim();
+  if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
+  try {
+    const groups = req.body?.groups;
+    if (!Array.isArray(groups)) return res.status(400).json({ error: 'invalid_groups' });
+    const state = (await getSharedState(req.tenantId)) || {};
+    state.permissionGroups = groups;
+    await saveSharedState(state, req.tenantId);
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+  }
+});
+
+// 把一批员工分配到某个权限组（groupId 传空字符串=取消分配，回退到角色默认权限）
+app.post('/api/permission-groups/assign', authRequired, async (req, res) => {
+  const role = String(req.user?.role || '').trim();
+  if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
+  try {
+    const groupId = String(req.body?.groupId || '').trim();
+    const usernames = Array.isArray(req.body?.usernames)
+      ? req.body.usernames.map(u => String(u || '').trim().toLowerCase()).filter(Boolean)
+      : [];
+    if (!usernames.length) return res.status(400).json({ error: 'missing_usernames' });
+    const state = (await getSharedState(req.tenantId)) || {};
+    const employees = Array.isArray(state.employees) ? state.employees : [];
+    const updates = [];
+    for (const uname of usernames) {
+      const emp = employees.find(e => String(e?.username || '').trim().toLowerCase() === uname);
+      if (emp) updates.push({ ...emp, permissionGroupId: groupId || null });
+    }
+    if (updates.length) {
+      await mergeSharedStateFields({ employees: updates }, { employees: 'username' }, req.tenantId);
+    }
+    return res.json({ ok: true, updated: updates.length });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+  }
+});
+
 // ─── Role-Modules Config API ─────────────────────────────────────────────────
 app.get('/api/role-modules', authRequired, async (req, res) => {
   try {
@@ -17688,7 +17739,7 @@ async function storeSessionNonce(uname, nonce, tenantId) {
   }
 }
 
-async function buildLoginUserPayload({ id, username, name, role, stateStore }) {
+async function buildLoginUserPayload({ id, username, name, role, stateStore, permissionGroupId }) {
   const ctx = await getUserStoreAccessContext(username, role, {
     requestedStore: stateStore,
     stateStore
@@ -17701,7 +17752,9 @@ async function buildLoginUserPayload({ id, username, name, role, stateStore }) {
     store: stateStore,
     primary_store: ctx.primaryStore,
     current_store: ctx.currentStore,
-    allowed_stores: ctx.allowedStores
+    allowed_stores: ctx.allowedStores,
+    // 未分配时为 null，前端回退到角色默认权限——对现有租户零影响
+    permission_group_id: permissionGroupId || null
   };
 }
 
@@ -17757,6 +17810,7 @@ async function handleLoginInTenant(req, res, tenantId) {
         let finalRole = normalizeRoleForJwt(u.role);
         let finalName = u.real_name;
         let stateStore = '';
+        let permissionGroupId = null;
         try {
           const sr = await pool.query('select data from hrms_state where key = $1 limit 1', [String(u.tenant_id || 'default').trim() || 'default']);
           const sd = sr.rows?.[0]?.data;
@@ -17773,6 +17827,7 @@ async function handleLoginInTenant(req, res, tenantId) {
               else if (stateRole) finalRole = stateRole;
               if (stateUser.name) finalName = String(stateUser.name).trim() || finalName;
               stateStore = String(stateUser.store || '').trim();
+              permissionGroupId = String(stateUser.permissionGroupId || '').trim() || null;
             }
           }
         } catch (syncErr) {}
@@ -17796,7 +17851,8 @@ async function handleLoginInTenant(req, res, tenantId) {
           username: u.username,
           name: finalName,
           role: finalRole,
-          stateStore
+          stateStore,
+          permissionGroupId
         });
         return res.json({
           token,
@@ -17846,7 +17902,8 @@ async function handleLoginInTenant(req, res, tenantId) {
           username: canonicalUsername,
           name,
           role,
-          stateStore
+          stateStore,
+          permissionGroupId: String(found.permissionGroupId || '').trim() || null
         });
         return res.json({ token, user: loginUser });
       }
@@ -17894,11 +17951,21 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
     requestedStore: stateStore,
     stateStore,
   }).catch(() => null);
+  // 权限组不在JWT里(避免长期token里存陈旧分组)，每次/me都从最新state读取，
+  // 管理员改了分配不用等7天token过期/重新登录就能生效
+  let permissionGroupId = null;
+  try {
+    const state = (await getSharedState(req.tenantId)) || {};
+    const allEmp = (Array.isArray(state.employees) ? state.employees : []).concat(Array.isArray(state.users) ? state.users : []);
+    const stateUser = allEmp.find(x => String(x?.username || '').trim().toLowerCase() === username.toLowerCase());
+    permissionGroupId = String(stateUser?.permissionGroupId || '').trim() || null;
+  } catch (e) {}
   const user = {
     ...req.user,
     primary_store: ctx?.primaryStore || req.user?.primary_store,
     current_store: ctx?.currentStore || req.user?.current_store,
     allowed_stores: ctx?.allowedStores?.length ? ctx.allowedStores : (req.user?.allowed_stores || []),
+    permission_group_id: permissionGroupId
   };
   return res.json({ user });
 });
