@@ -554,7 +554,17 @@ async function getMonthlyTargetRevenue(store, period) {
     LIMIT 1
   `, [period, pats]);
   
-  return Number(result.rows[0]?.target_revenue || 0);
+  const direct = Number(result.rows[0]?.target_revenue || 0);
+  if (direct > 0) return direct;
+
+  // 当月目标未录入时，回落到该门店不晚于当月的最近一期目标（避免评级任务因缺行而跳过）
+  const fallback = await pool().query(`
+    SELECT target_revenue FROM revenue_targets
+    WHERE period <= $1 AND store ILIKE ANY($2::text[])
+    ORDER BY period DESC NULLS LAST, LENGTH(store) DESC NULLS LAST
+    LIMIT 1
+  `, [period, pats]);
+  return Number(fallback.rows[0]?.target_revenue || 0);
 }
 
 /** revenue_targets 仅按品牌维护一行或简称与规范店名不一致时的兜底 */

@@ -6943,10 +6943,48 @@ async function fetchStoreRatingForProfileDisplay(storeLabel, lockedPeriodYm = nu
      LIMIT 1`,
     [wantYm, patSets]
   );
-  if (r.rows?.[0]?.rating) return { rating: r.rows[0].rating, period: r.rows[0].period };
+  if (r.rows?.[0]?.rating) return { rating: r.rows[0].rating, period: r.rows[0].period, requestedPeriod: wantYm, isFallback: false };
 
   if (strictPeriod) {
-    return { rating: null, period: wantYm };
+    // 展示月尚无闭合评级：回落到该门店「不晚于展示月」的最近一期（同店，不跨店）
+    for (const key of keys) {
+      r = await pool().query(
+        `SELECT rating, period FROM store_ratings
+         WHERE store = $1 AND period <= $2
+         ORDER BY period DESC NULLS LAST
+         LIMIT 1`,
+        [key, wantYm]
+      );
+      if (r.rows?.[0]?.rating) {
+        const row = r.rows[0];
+        return {
+          rating: row.rating,
+          period: row.period,
+          requestedPeriod: wantYm,
+          isFallback: row.period !== wantYm
+        };
+      }
+    }
+    r = await pool().query(
+      `SELECT rating, period FROM store_ratings
+       WHERE store ILIKE ANY($1::text[]) AND period <= $2
+       ORDER BY period DESC NULLS LAST,
+         (actual_revenue > 0) DESC,
+         actual_revenue DESC NULLS LAST,
+         LENGTH(store) DESC NULLS LAST
+       LIMIT 1`,
+      [patSets, wantYm]
+    );
+    if (r.rows?.[0]?.rating) {
+      const row = r.rows[0];
+      return {
+        rating: row.rating,
+        period: row.period,
+        requestedPeriod: wantYm,
+        isFallback: row.period !== wantYm
+      };
+    }
+    return { rating: null, period: wantYm, requestedPeriod: wantYm, isFallback: false };
   }
 
   for (const key of keys) {
@@ -6991,7 +7029,7 @@ async function fetchStoreRatingForProfileDisplay(storeLabel, lockedPeriodYm = nu
     [patSets]
   );
   const row = r.rows?.[0];
-  return { rating: row?.rating || null, period: row?.period || null };
+  return { rating: row?.rating || null, period: row?.period || null, requestedPeriod: wantYm, isFallback: !!(row?.period && row.period !== wantYm) };
 }
 
 function feishuOpenIdResolveDeps() {
@@ -12598,10 +12636,21 @@ export function registerAgentRoutes(app, authRequired) {
 
       let store_rating = null;
       let store_rating_period = null;
+      let store_rating_is_fallback = false;
       if (store) {
-        const srInfo = await fetchStoreRatingForProfileDisplay(store, storePeriod);
+        let srInfo = await fetchStoreRatingForProfileDisplay(store, storePeriod);
         store_rating = srInfo.rating;
         store_rating_period = srInfo.period;
+        store_rating_is_fallback = !!srInfo.isFallback;
+        if (!store_rating) {
+          try {
+            await calculateStoreRating(store, brand || inferBrandFromStoreName(store), storePeriod);
+            srInfo = await fetchStoreRatingForProfileDisplay(store, storePeriod);
+            store_rating = srInfo.rating;
+            store_rating_period = srInfo.period;
+            store_rating_is_fallback = !!srInfo.isFallback;
+          } catch (_srCalc) {}
+        }
       }
 
       let rawBd = rowM?.breakdown;
@@ -12632,8 +12681,11 @@ export function registerAgentRoutes(app, authRequired) {
       const summary = rowM?.summary || null;
       const period = personalPeriod;
       const displayPeriod = personalPeriod;
-      const storeRatingPeriodNote =
-        `门店级别对应「${storePeriod}」月闭合结果；每月 1 日（上海）起随自然月切换为上月。`;
+      const storeRatingPeriodNote = store_rating
+        ? (store_rating_is_fallback
+          ? `门店级别展示「${store_rating_period}」月闭合结果（「${storePeriod}」月评级尚未生成，暂用最近一期）；每月 1 日（上海）起切换展示上月。`
+          : `门店级别对应「${storePeriod}」月闭合结果；每月 1 日（上海）起随自然月切换为上月。`)
+        : `「${storePeriod}」月门店级别尚未生成；每月 1 日（上海）起展示上月闭合结果。`;
       const personalPerformanceNote =
         `个人绩效（得分与执行力/态度/能力）对应「${personalPeriod}」月闭合；每月 10 日（上海）起更新为上月的整月结果，10 日前仍展示上一闭合月，期间不变。`;
       const displayPeriodNote = `${storeRatingPeriodNote} ${personalPerformanceNote}`;
@@ -12656,6 +12708,7 @@ export function registerAgentRoutes(app, authRequired) {
         ability_rating,
         store_rating: store_rating_out,
         store_rating_period,
+        store_rating_is_fallback,
         store_rating_matches_display_period: !!(store_rating_period && store_rating_period === storePeriod),
         store_rating_is_prev_month: !!(store_rating_period && store_rating_period === shanghaiPrevCalendarYm())
       });
