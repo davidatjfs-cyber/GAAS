@@ -6454,6 +6454,38 @@
             accent-color: #f59e0b;
         }
 
+        /* 月度目标弹窗 · 分步导航（手机优先） */
+        .mt-step-nav {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            padding: 8px 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .mt-step-nav button {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.04);
+            color: rgba(200, 215, 230, 0.75);
+            border-radius: 10px;
+            padding: 10px 6px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            min-height: 44px;
+        }
+        .mt-step-nav button.active {
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(251, 191, 36, 0.45);
+            color: #fbbf24;
+        }
+        .mt-step-pane { display: none; }
+        .mt-step-pane.active { display: block; }
+        @media (min-width: 720px) {
+            .mt-step-pane { display: block !important; }
+            .mt-step-nav { display: none; }
+            #mt-step-prev, #mt-step-next { display: none !important; }
+        }
+
         /* 月度目标弹窗 · 报表分区 */
         #monthly-targets-modal .modal-content.mt-modal-content {
             max-width: min(640px, 96vw);
@@ -6733,6 +6765,113 @@
         .mt-modal-actions .btn-secondary {
             min-width: 108px;
             justify-content: center;
+        }
+
+        .mt-step-nav {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            padding: 8px 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .mt-step-nav button {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.04);
+            color: rgba(200, 215, 230, 0.75);
+            border-radius: 10px;
+            padding: 10px 6px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            min-height: 44px;
+        }
+        .mt-step-nav button.active {
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(251, 191, 36, 0.45);
+            color: #fbbf24;
+        }
+        .mt-step-pane { display: none; }
+        .mt-step-pane.active { display: block; }
+        @media (min-width: 720px) {
+            .mt-step-nav { display: none; }
+            .mt-step-pane { display: block !important; }
+            #mt-step-prev, #mt-step-next { display: none !important; }
+        }
+
+        /* AI 配置 · 多模型列表 */
+        .ai-models-list { display: grid; gap: 10px; margin-bottom: 12px; }
+        .ai-model-card {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            padding: 12px 14px;
+            background: rgba(255, 255, 255, 0.04);
+            display: grid;
+            gap: 8px;
+        }
+        .ai-model-card.is-disabled { opacity: 0.55; }
+        .ai-model-card__head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+        .ai-model-card__name { font-weight: 800; font-size: 14px; color: rgba(248, 250, 252, 0.96); }
+        .ai-model-card__meta { font-size: 11px; color: rgba(200, 215, 230, 0.62); font-family: 'IBM Plex Mono', ui-monospace, monospace; word-break: break-all; }
+        .ai-model-card__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .ai-model-card__actions .btn,
+        .ai-model-card__actions .btn-secondary { font-size: 12px; padding: 8px 12px; min-height: 40px; }
+        .ai-bindings-block { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+        .ai-bindings-block__title { font-size: 13px; font-weight: 800; color: rgba(248, 250, 252, 0.92); margin: 0 0 4px; }
+        .ai-bindings-block__lede { font-size: 11px; color: rgba(200, 215, 230, 0.58); margin: 0 0 12px; line-height: 1.45; }
+        .ai-bindings-grid { display: grid; gap: 10px; }
+        .ai-binding-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 6px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(18, 18, 22, 0.5);
+        }
+        @media (min-width: 520px) {
+            .ai-binding-row { grid-template-columns: 1.2fr 1fr; align-items: center; }
+        }
+        .ai-binding-row__label { font-size: 12px; font-weight: 700; color: rgba(226, 232, 240, 0.9); }
+        .ai-binding-row__desc { font-size: 10px; color: rgba(200, 215, 230, 0.52); margin-top: 2px; }
+        #llm-model-modal .ai-model-modal { max-width: min(520px, 96vw); width: 100%; }
+
+        @media (max-width: 640px) {
+            #monthly-targets-modal.ui-modal.show { align-items: flex-end; padding: 0; }
+            #monthly-targets-modal .mt-modal-content {
+                max-width: 100%;
+                width: 100%;
+                max-height: 94dvh;
+                border-radius: 18px 18px 0 0;
+                margin: 0;
+            }
+            #monthly-targets-modal .modal-header {
+                position: sticky;
+                top: 0;
+                z-index: 4;
+                background: rgba(22, 30, 49, 0.98);
+            }
+            #monthly-targets-modal .mt-modal-actions {
+                position: sticky;
+                bottom: 0;
+                z-index: 4;
+                padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+            }
+            #monthly-targets-modal .mt-modal-body { padding-bottom: 8px; }
+            #llm-model-modal.ui-modal.show { align-items: flex-end; }
+            #llm-model-modal .modal-content {
+                width: 100%;
+                max-width: 100%;
+                border-radius: 18px 18px 0 0;
+                max-height: 92dvh;
+            }
+            #llm-model-modal .ui-modal-footer {
+                position: sticky;
+                bottom: 0;
+                background: rgba(22, 30, 49, 0.98);
+                padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+            }
+            .ai-model-card__actions .btn,
+            .ai-model-card__actions .btn-secondary { flex: 1 1 auto; min-width: 0; }
         }
 
         @media (max-width: 420px) {
@@ -16019,12 +16158,17 @@
                     <div class="modal-header">
                         <div>
                             <h3 class="ui-modal-title">目标管理</h3>
-                            <div class="ui-modal-desc">报表式分区：先锁定「月份 × 门店」，再编辑目标项，底部统一保存。</div>
+                            <div class="ui-modal-desc">分步操作：先选月份与门店，再编辑目标项，最后保存。</div>
                         </div>
                         <button class="modal-close" onclick="closeMonthlyTargetsModal()">×</button>
                     </div>
+                    <nav class="mt-step-nav" id="mt-step-nav" aria-label="目标管理步骤">
+                        <button type="button" class="active" data-mt-step="params" onclick="mtSwitchStep('params')">① 筛选</button>
+                        <button type="button" data-mt-step="edit" onclick="mtSwitchStep('edit')">② 编辑</button>
+                        <button type="button" data-mt-step="registry" onclick="mtSwitchStep('registry')">③ 登记</button>
+                    </nav>
                     <div class="modal-body mt-modal-body">
-                        <section class="mt-slab mt-slab--params">
+                        <section class="mt-slab mt-slab--params mt-step-pane active" data-mt-step="params">
                             <div class="mt-slab__head">
                                 <span class="mt-slab__no">A</span>
                                 <div>
@@ -16047,7 +16191,7 @@
                             </div>
                         </section>
 
-                        <section class="mt-slab mt-slab--edit">
+                        <section class="mt-slab mt-slab--edit mt-step-pane" data-mt-step="edit">
                             <div class="mt-slab__head">
                                 <span class="mt-slab__no">B</span>
                                 <div>
@@ -16065,7 +16209,7 @@
                             <div id="mt-no-fields" class="mt-empty">请从上方下拉选择目标项，点击「加入」添加到编辑区。</div>
                         </section>
 
-                        <section class="mt-slab mt-slab--registry">
+                        <section class="mt-slab mt-slab--registry mt-step-pane" data-mt-step="registry">
                             <div class="mt-slab__head">
                                 <span class="mt-slab__no">C</span>
                                 <div>
@@ -16078,7 +16222,36 @@
                     </div>
                     <div class="mt-modal-actions">
                         <button class="btn btn-secondary" type="button" onclick="closeMonthlyTargetsModal()">关闭</button>
+                        <button class="btn btn-secondary" type="button" id="mt-step-prev" onclick="mtStepPrev()">上一步</button>
+                        <button class="btn btn-secondary" type="button" id="mt-step-next" onclick="mtStepNext()">下一步</button>
                         <button class="btn" type="button" onclick="saveMonthlyTargets()">保存目标</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="llm-model-modal" class="modal ui-modal">
+                <div class="modal-content ai-model-modal">
+                    <div class="modal-header">
+                        <div>
+                            <h3 class="ui-modal-title" id="ai-model-modal-title">添加 AI 模型</h3>
+                            <div class="ui-modal-desc">OpenAI 兼容接口：Base URL、Model 名称与 API Key。</div>
+                        </div>
+                        <button type="button" class="modal-close" onclick="closeAiModelModal()">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="settings-form" style="padding: 0 4px;">
+                            <label class="settings-label">显示名称<input id="ai-model-name" type="text" class="settings-input" placeholder="例如：通义千问 / DeepSeek"></label>
+                            <label class="settings-label">Base URL<input id="ai-model-base-url" type="text" class="settings-input" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"></label>
+                            <label class="settings-label">Model<input id="ai-model-model" type="text" class="settings-input" placeholder="qwen-turbo"></label>
+                            <label class="settings-label">API Key<input id="ai-model-api-key" type="password" class="settings-input" placeholder="sk-..."></label>
+                            <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:rgba(226,232,240,0.88);">
+                                <input id="ai-model-enabled" type="checkbox" checked style="width:auto"> 启用此模型
+                            </label>
+                        </div>
+                    </div>
+                    <div class="ui-modal-footer mt-modal-actions" style="margin:0;border-radius:0 0 18px 18px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeAiModelModal()">取消</button>
+                        <button type="button" class="btn" onclick="saveAiModelFromModal()">保存模型</button>
                     </div>
                 </div>
             </div>
@@ -20848,30 +21021,24 @@
                         <div class="settings-rep-sec__bar">
                             <div class="settings-rep-sec__no">01</div>
                             <div>
-                                <h3 class="settings-rep-sec__title">AI 出题配置</h3>
-                                <p class="settings-rep-sec__lede">大模型 Base URL / Model / Key，与连接自检、错误日志。</p>
+                                <h3 class="settings-rep-sec__title">AI 配置</h3>
+                                <p class="settings-rep-sec__lede">可添加多个大模型，并为考试出题、培训助手、闪卡生成等功能分别指定调用模型。</p>
                             </div>
                         </div>
                         <div class="settings-rep-sec__body">
                         <div class="settings-form">
-                            <div>
-                                <label class="settings-label">Base URL</label>
-                                <input id="llm-base-url" type="text" class="settings-input" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1">
+                            <div id="ai-models-list" class="ai-models-list"></div>
+                            <div class="settings-actions">
+                                <button type="button" class="btn btn-secondary" onclick="openAiModelModal()">＋ 添加模型</button>
                             </div>
-                            <div>
-                                <label class="settings-label">Model</label>
-                                <input id="llm-model" type="text" class="settings-input" placeholder="qwen-turbo">
-                            </div>
-                            <div class="settings-form-full">
-                                <label class="settings-label">API Key</label>
-                                <input id="llm-api-key" type="password" class="settings-input" placeholder="sk-...">
-                            </div>
-                            <div class="settings-hint">
-                                示例：BaseURL 填 <code>https://dashscope.aliyuncs.com/compatible-mode/v1</code>，Model 填 <code>qwen-turbo</code>
+                            <div class="ai-bindings-block">
+                                <div class="ai-bindings-block__title">功能调用配对</div>
+                                <p class="ai-bindings-block__lede">为各业务场景选择上方已添加的模型；未配置时相关 AI 功能不可用。</p>
+                                <div id="ai-bindings-grid" class="ai-bindings-grid"></div>
                             </div>
                             <div class="settings-actions">
-                                <button class="btn" onclick="saveLlmSettings()">保存配置</button>
-                                <button class="btn btn-secondary" onclick="testLlmConnection()">连接校验</button>
+                                <button type="button" class="btn" onclick="saveAiConfigSettings()">保存配置</button>
+                                <button type="button" class="btn btn-secondary" onclick="testAiConnection()">连接校验</button>
                             </div>
                             <div class="settings-form-full" style="margin-top: 8px;">
                                 <label class="settings-label">最近错误日志</label>
@@ -21160,8 +21327,12 @@
                                     </div>
                                 </div>
                                 <div style="margin-top:10px;">
-                                    <label class="settings-label">手机端底部导航（最多4个，从上面"可见模块"里选key，逗号分隔，留空=跟系统角色默认一样）</label>
-                                    <input id="pg-edit-bottom-nav" class="settings-input" type="text" placeholder="例如：profile,attendance,payment,approvals">
+                                    <label class="settings-label">手机端底部导航（按点击顺序排列，最多4个；留空=跟系统角色默认一样）</label>
+                                    <input id="pg-edit-bottom-nav" class="settings-input" type="text" placeholder="点击下面的模块按钮自动按顺序添加" readonly>
+                                    <div id="pg-edit-bottom-nav-picker" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
+                                    <div class="settings-actions" style="margin-top:8px;">
+                                        <button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" onclick="clearPgBottomNav()">清空</button>
+                                    </div>
                                 </div>
                                 <div style="margin-top:10px;">
                                     <label class="settings-label">默认门店范围</label>
@@ -26442,6 +26613,49 @@ th { background: #f5f5f5; font-weight: 700; }
             return '跟随跨店绑定';
         }
 
+        // 底部导航选择器：点击模块按钮按点击顺序加入(最多4个)，再点一次就移除——
+        // 比手填逗号字符串好用，不用记key的拼写，也不会拼错。
+        let __pgBottomNavSelection = [];
+        function __pgBottomNavLabel(key) {
+            if (key === 'profile') return '我的档案';
+            const m = _allMods.find(x => x.p === key);
+            return m ? m.l : key;
+        }
+        function __pgRenderBottomNavPicker() {
+            const box = document.getElementById('pg-edit-bottom-nav-picker');
+            const inputEl = document.getElementById('pg-edit-bottom-nav');
+            if (inputEl) {
+                inputEl.value = __pgBottomNavSelection.length
+                    ? __pgBottomNavSelection.map((k, i) => (i + 1) + '.' + __pgBottomNavLabel(k)).join('  ')
+                    : '';
+            }
+            if (!box) return;
+            const candidates = [{ p: 'profile', l: '我的档案' }].concat(_allMods);
+            box.innerHTML = candidates.map(m => {
+                const idx = __pgBottomNavSelection.indexOf(m.p);
+                const picked = idx >= 0;
+                const bg = picked ? 'background:#f59e0b;color:#1c1c1e;border-color:#f59e0b;' : 'background:rgba(255,255,255,0.06);color:rgba(226,232,240,0.85);border-color:rgba(255,255,255,0.15);';
+                const tag = picked ? ('(' + (idx + 1) + ') ') : '';
+                return '<button type="button" onclick="pgToggleBottomNavItem(\'' + escapeHtml(m.p) + '\')" ' +
+                    'style="padding:4px 10px;font-size:12px;border-radius:14px;border:1px solid;cursor:pointer;' + bg + '">' +
+                    escapeHtml(tag + m.l) + '</button>';
+            }).join('');
+        }
+        function pgToggleBottomNavItem(key) {
+            const idx = __pgBottomNavSelection.indexOf(key);
+            if (idx >= 0) {
+                __pgBottomNavSelection.splice(idx, 1);
+            } else {
+                if (__pgBottomNavSelection.length >= 4) { showNotification('底部导航最多4个', 'warning'); return; }
+                __pgBottomNavSelection.push(key);
+            }
+            __pgRenderBottomNavPicker();
+        }
+        function clearPgBottomNav() {
+            __pgBottomNavSelection = [];
+            __pgRenderBottomNavPicker();
+        }
+
         function renderPermissionGroupsList() {
             const box = document.getElementById('permission-groups-list');
             if (!box) return;
@@ -26506,8 +26720,8 @@ th { background: #f5f5f5; font-weight: 700; }
             const viewEmpEl = document.getElementById('pg-edit-action-view-emp');
             if (approveEl) approveEl.checked = !!actions.can_approve_hrms;
             if (viewEmpEl) viewEmpEl.checked = !!actions.can_view_employees;
-            const bottomNavEl = document.getElementById('pg-edit-bottom-nav');
-            if (bottomNavEl) bottomNavEl.value = (g && Array.isArray(g.bottomNav)) ? g.bottomNav.join(',') : '';
+            __pgBottomNavSelection = (g && Array.isArray(g.bottomNav)) ? g.bottomNav.slice(0, 4) : [];
+            __pgRenderBottomNavPicker();
 
             const scope = (g && g.storeScope && typeof g.storeScope === 'object') ? g.storeScope : { mode: 'legacy' };
             const scopeMode = String(scope.mode || 'legacy');
@@ -26537,8 +26751,7 @@ th { background: #f5f5f5; font-weight: 700; }
                 can_approve_hrms: !!document.getElementById('pg-edit-action-approve')?.checked,
                 can_view_employees: !!document.getElementById('pg-edit-action-view-emp')?.checked
             };
-            const bottomNav = String(document.getElementById('pg-edit-bottom-nav')?.value || '')
-                .split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
+            const bottomNav = __pgBottomNavSelection.slice(0, 4);
             const scopeModeEl = document.querySelector('input[name="pg-edit-scope-mode"]:checked');
             const scopeMode = scopeModeEl ? scopeModeEl.value : 'legacy';
             const storeScope = { mode: scopeMode };
@@ -26848,7 +27061,15 @@ th { background: #f5f5f5; font-weight: 700; }
           {p:'payment',l:'请款'},
           {p:'knowledge',l:'知识库'},
           {p:'rewards',l:'奖惩管理'},
-          {p:'reports',l:'分析报表'}
+          {p:'reports',l:'分析报表'},
+          {p:'training',l:'培训认证'},
+          {p:'kitchen',l:'厨房执行'},
+          {p:'agents',l:'数据中心/智能助手'},
+          {p:'forecast',l:'智能助手(预测)'},
+          {p:'growth',l:'增长看板'},
+          {p:'diagnosis',l:'经营诊断'},
+          {p:'strategy',l:'门店营销策略'},
+          {p:'agent-tasks',l:'Agent任务'}
         ];
         var _edRoles=[
           {c:ROLES.STORE_MANAGER,l:'店长'},
@@ -35053,7 +35274,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                 ...history.slice(-10)
             ];
             try {
-                const data = await callLlmViaServer(messages, { max_tokens: 2200, temperature: 0.35 });
+                const data = await callLlmViaServer(messages, { max_tokens: 2200, temperature: 0.35, feature: 'kb_chat' });
                 return data.choices?.[0]?.message?.content || '无法获取回复';
             } catch (e) {
                 console.error('AI API调用失败:', e);
@@ -37237,7 +37458,8 @@ ${knowledgeContent.slice(0, 30000)}`;
             try {
                 data = await callLlmViaServer([{ role: 'user', content: prompt }], {
                     max_tokens: 2200,
-                    temperature: 0.25
+                    temperature: 0.25,
+                    feature: 'flashcard_generate',
                 });
             } catch (e) {
                 console.error('AI flashcards error:', e);
@@ -40494,14 +40716,7 @@ ${knowledgeContent.slice(0, 30000)}`;
         // 加载设置数据
         function loadSettingsData() {
             const settings = HRMS_STORE.getSettings();
-            // 使用有效配置（优先用户配置，否则系统预设）
-            const llm = getEffectiveLlmConfig();
-            const baseUrlInput = document.getElementById('llm-base-url');
-            const modelInput = document.getElementById('llm-model');
-            const keyInput = document.getElementById('llm-api-key');
-            if (baseUrlInput) baseUrlInput.value = llm.baseUrl || '';
-            if (modelInput) modelInput.value = llm.model || '';
-            if (keyInput) keyInput.value = llm.apiKey || '';
+            renderAiConfigPanel();
 
             const basic = settings.basic || {};
             const sec = settings.security || {};
@@ -41546,6 +41761,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             mtRenderDynamicFields();
             mtPopulateFieldSelect();
             mtRenderList();
+            mtSwitchStep('params');
             modal.classList.add('show');
         }
 
@@ -41769,45 +41985,310 @@ ${knowledgeContent.slice(0, 30000)}`;
             showNotification('安全设置已保存', 'success');
         }
 
-        function saveLlmSettings() {
-            const baseUrl = (document.getElementById('llm-base-url')?.value || '').trim();
-            const model = normalizeLlmModelName((document.getElementById('llm-model')?.value || '').trim());
-            const apiKey = (document.getElementById('llm-api-key')?.value || '').trim();
+        const HRMS_AI_FEATURE_DEFS = [
+            { key: 'exam_generate', label: '考试 AI 出题', desc: '培训考试模块根据资料自动生成客观题' },
+            { key: 'flashcard_generate', label: '闪卡 AI 生成', desc: '知识库资料一键生成闪卡练习题' },
+            { key: 'kb_chat', label: '培训 AI 助手', desc: '知识库对话框基于所选资料问答' },
+            { key: 'default', label: '默认 / 其它', desc: '未单独指定的功能使用此模型；连接校验亦用此模型' },
+        ];
 
-            HRMS_STORE.updateSettings({
-                llm: { baseUrl, model, apiKey }
-            });
-            showNotification('AI配置已保存', 'success');
+        let __AI_MODELS_WORKING = { models: [], bindings: {} };
+        let __AI_MODEL_EDIT_ID = null;
+        let __MT_ACTIVE_STEP = 'params';
+        const __MT_STEP_ORDER = ['params', 'edit', 'registry'];
+
+        function newAiModelId() {
+            return 'ai_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
         }
 
-        // ========== 系统预设LLM配置（所有用户自动共享） ==========
-        // 管理员可在此处配置默认的AI服务，所有用户无需手动配置即可使用
+        function normalizeAiLlmSettings(raw) {
+            const llm = raw && typeof raw === 'object' ? raw : {};
+            if (Array.isArray(llm.models) && llm.models.length) {
+                const models = llm.models.map((m, i) => ({
+                    id: String(m?.id || `ai_${i}`),
+                    name: String(m?.name || m?.model || '未命名模型'),
+                    baseUrl: String(m?.baseUrl || ''),
+                    model: normalizeLlmModelName(String(m?.model || '')),
+                    apiKey: String(m?.apiKey || ''),
+                    enabled: m?.enabled !== false,
+                }));
+                const bindings = { ...(llm.bindings || {}) };
+                HRMS_AI_FEATURE_DEFS.forEach((f) => {
+                    if (!bindings[f.key] && models[0]) bindings[f.key] = models[0].id;
+                });
+                return { models, bindings };
+            }
+            const legacyKey = String(llm.apiKey || '').trim();
+            if (legacyKey || llm.baseUrl || llm.model) {
+                const id = 'legacy_default';
+                const one = {
+                    id,
+                    name: '默认模型',
+                    baseUrl: String(llm.baseUrl || ''),
+                    model: normalizeLlmModelName(String(llm.model || '')),
+                    apiKey: legacyKey,
+                    enabled: true,
+                };
+                const bindings = {};
+                HRMS_AI_FEATURE_DEFS.forEach((f) => { bindings[f.key] = id; });
+                return { models: [one], bindings };
+            }
+            return { models: [], bindings: {} };
+        }
+
+        function syncAiWorkingFromStore() {
+            __AI_MODELS_WORKING = JSON.parse(JSON.stringify(normalizeAiLlmSettings(HRMS_STORE.getSettings().llm)));
+        }
+
+        function renderAiConfigPanel() {
+            syncAiWorkingFromStore();
+            const listEl = document.getElementById('ai-models-list');
+            const bindEl = document.getElementById('ai-bindings-grid');
+            if (!listEl || !bindEl) return;
+
+            const models = __AI_MODELS_WORKING.models || [];
+            if (!models.length) {
+                listEl.innerHTML = '<div class="settings-hint">尚未添加模型。点击「添加模型」配置租户专属 API（不再使用硬编码密钥）。</div>';
+            } else {
+                listEl.innerHTML = models.map((m) => `
+                    <div class="ai-model-card ${m.enabled === false ? 'is-disabled' : ''}">
+                        <div class="ai-model-card__head">
+                            <div>
+                                <div class="ai-model-card__name">${escapeHtml(m.name || m.model || '未命名')}</div>
+                                <div class="ai-model-card__meta">${escapeHtml(m.model || '')} · ${escapeHtml(m.baseUrl || '')}</div>
+                            </div>
+                            <span class="pill ${m.enabled !== false ? 'ok' : 'bad'}">${m.enabled !== false ? '启用' : '停用'}</span>
+                        </div>
+                        <div class="ai-model-card__actions">
+                            <button type="button" class="btn btn-secondary" onclick="openAiModelModal('${escapeHtml(m.id)}')">编辑</button>
+                            <button type="button" class="btn btn-secondary" onclick="testAiModelById('${escapeHtml(m.id)}')">测试</button>
+                            <button type="button" class="btn btn-secondary" onclick="deleteAiModel('${escapeHtml(m.id)}')">删除</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            const opts = models.filter((m) => m.enabled !== false).map((m) =>
+                `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name || m.model)}</option>`
+            ).join('');
+            bindEl.innerHTML = HRMS_AI_FEATURE_DEFS.map((f) => {
+                const cur = String(__AI_MODELS_WORKING.bindings?.[f.key] || '');
+                return `
+                    <div class="ai-binding-row">
+                        <div>
+                            <div class="ai-binding-row__label">${escapeHtml(f.label)}</div>
+                            <div class="ai-binding-row__desc">${escapeHtml(f.desc)}</div>
+                        </div>
+                        <select id="ai-bind-${f.key}" class="settings-input" ${models.length ? '' : 'disabled'}>
+                            <option value="">未指定</option>
+                            ${opts}
+                        </select>
+                    </div>
+                `;
+            }).join('');
+            HRMS_AI_FEATURE_DEFS.forEach((f) => {
+                const sel = document.getElementById(`ai-bind-${f.key}`);
+                if (sel) sel.value = String(__AI_MODELS_WORKING.bindings?.[f.key] || '');
+            });
+        }
+
+        function readAiBindingsFromDom() {
+            const bindings = { ...(__AI_MODELS_WORKING.bindings || {}) };
+            HRMS_AI_FEATURE_DEFS.forEach((f) => {
+                const sel = document.getElementById(`ai-bind-${f.key}`);
+                if (sel) bindings[f.key] = String(sel.value || '').trim();
+            });
+            __AI_MODELS_WORKING.bindings = bindings;
+        }
+
+        function saveAiConfigSettings() {
+            if (!isAdminUser()) {
+                showNotification('仅管理员可保存系统设置', 'warning');
+                return;
+            }
+            readAiBindingsFromDom();
+            HRMS_STORE.updateSettings({ llm: __AI_MODELS_WORKING });
+            showNotification('AI 配置已保存', 'success');
+        }
+
+        function openAiModelModal(modelId) {
+            if (!isAdminUser()) {
+                showNotification('仅管理员可配置 AI', 'warning');
+                return;
+            }
+            syncAiWorkingFromStore();
+            __AI_MODEL_EDIT_ID = modelId ? String(modelId) : null;
+            const modal = document.getElementById('llm-model-modal');
+            const title = document.getElementById('ai-model-modal-title');
+            const m = __AI_MODEL_EDIT_ID
+                ? (__AI_MODELS_WORKING.models || []).find((x) => x.id === __AI_MODEL_EDIT_ID)
+                : null;
+            if (title) title.textContent = m ? '编辑 AI 模型' : '添加 AI 模型';
+            const nameEl = document.getElementById('ai-model-name');
+            const baseEl = document.getElementById('ai-model-base-url');
+            const modelEl = document.getElementById('ai-model-model');
+            const keyEl = document.getElementById('ai-model-api-key');
+            const enabledEl = document.getElementById('ai-model-enabled');
+            if (nameEl) nameEl.value = m?.name || '';
+            if (baseEl) baseEl.value = m?.baseUrl || '';
+            if (modelEl) modelEl.value = m?.model || '';
+            if (keyEl) keyEl.value = m?.apiKey || '';
+            if (enabledEl) enabledEl.checked = m ? m.enabled !== false : true;
+            if (modal) modal.classList.add('show');
+        }
+
+        function closeAiModelModal() {
+            const modal = document.getElementById('llm-model-modal');
+            if (modal) modal.classList.remove('show');
+            __AI_MODEL_EDIT_ID = null;
+        }
+
+        function saveAiModelFromModal() {
+            if (!isAdminUser()) return;
+            const name = String(document.getElementById('ai-model-name')?.value || '').trim();
+            const baseUrl = String(document.getElementById('ai-model-base-url')?.value || '').trim();
+            const model = normalizeLlmModelName(String(document.getElementById('ai-model-model')?.value || '').trim());
+            const apiKey = String(document.getElementById('ai-model-api-key')?.value || '').trim();
+            const enabled = !!document.getElementById('ai-model-enabled')?.checked;
+            if (!name || !baseUrl || !model || !apiKey) {
+                showNotification('请填写名称、Base URL、Model 和 API Key', 'warning');
+                return;
+            }
+            syncAiWorkingFromStore();
+            const payload = { id: __AI_MODEL_EDIT_ID || newAiModelId(), name, baseUrl, model, apiKey, enabled };
+            const idx = (__AI_MODELS_WORKING.models || []).findIndex((x) => x.id === payload.id);
+            if (idx >= 0) __AI_MODELS_WORKING.models[idx] = payload;
+            else __AI_MODELS_WORKING.models.push(payload);
+            HRMS_AI_FEATURE_DEFS.forEach((f) => {
+                if (!__AI_MODELS_WORKING.bindings?.[f.key]) {
+                    __AI_MODELS_WORKING.bindings = __AI_MODELS_WORKING.bindings || {};
+                    __AI_MODELS_WORKING.bindings[f.key] = payload.id;
+                }
+            });
+            HRMS_STORE.updateSettings({ llm: __AI_MODELS_WORKING });
+            closeAiModelModal();
+            renderAiConfigPanel();
+            showNotification('模型已保存', 'success');
+        }
+
+        async function deleteAiModel(modelId) {
+            if (!isAdminUser()) return;
+            const id = String(modelId || '').trim();
+            if (!id) return;
+            const _ok = await hrmsConfirm({ title: '删除模型', message: '确定删除该 AI 模型？相关功能配对将清空。', okText: '删除', icon: '🤖' });
+            if (!_ok) return;
+            syncAiWorkingFromStore();
+            __AI_MODELS_WORKING.models = (__AI_MODELS_WORKING.models || []).filter((m) => m.id !== id);
+            Object.keys(__AI_MODELS_WORKING.bindings || {}).forEach((k) => {
+                if (__AI_MODELS_WORKING.bindings[k] === id) __AI_MODELS_WORKING.bindings[k] = '';
+            });
+            HRMS_STORE.updateSettings({ llm: __AI_MODELS_WORKING });
+            renderAiConfigPanel();
+            showNotification('已删除', 'success');
+        }
+
+        async function testAiModelById(modelId) {
+            const id = String(modelId || '').trim();
+            syncAiWorkingFromStore();
+            const m = (__AI_MODELS_WORKING.models || []).find((x) => x.id === id);
+            if (!m) return;
+            await testAiConnectionWithConfig(normalizeLlmConfig(m));
+        }
+
+        async function testAiConnection() {
+            const feature = 'default';
+            try {
+                const cfg = getEffectiveLlmConfig(feature);
+                await testAiConnectionWithConfig(cfg);
+            } catch (e) {
+                showNotification(String(e?.message || e), 'warning');
+            }
+        }
+
+        async function testAiConnectionWithConfig(cfg) {
+            const baseUrl = normalizeOpenAiBaseUrl(cfg?.baseUrl);
+            const apiKey = String(cfg?.apiKey || '').trim();
+            const model = normalizeLlmModelName(cfg?.model);
+            const errBox = document.getElementById('llm-last-error');
+            if (errBox) errBox.value = '';
+            if (!isUsableLlmConfig({ baseUrl, apiKey, model })) {
+                showNotification('请先配置有效的模型', 'warning');
+                return;
+            }
+            try {
+                await callLlmViaServer([{ role: 'user', content: 'hello' }], {
+                    max_tokens: 10,
+                    temperature: 0,
+                    feature: 'default',
+                    llmConfig: { baseUrl, apiKey, model },
+                });
+                showNotification('连接成功', 'success');
+            } catch (e) {
+                showNotification('连接失败：' + String(e?.message || e), 'error');
+                if (errBox) errBox.value = `Exception\nBaseURL: ${baseUrl}\nModel: ${model}\n\n${String(e?.message || e)}`;
+            }
+        }
+
+        function mtSwitchStep(step) {
+            __MT_ACTIVE_STEP = String(step || 'params');
+            document.querySelectorAll('#mt-step-nav button').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.mtStep === __MT_ACTIVE_STEP);
+            });
+            document.querySelectorAll('#monthly-targets-modal .mt-step-pane').forEach((pane) => {
+                pane.classList.toggle('active', pane.dataset.mtStep === __MT_ACTIVE_STEP);
+            });
+            const idx = __MT_STEP_ORDER.indexOf(__MT_ACTIVE_STEP);
+            const prev = document.getElementById('mt-step-prev');
+            const next = document.getElementById('mt-step-next');
+            if (prev) prev.style.display = idx <= 0 ? 'none' : '';
+            if (next) next.style.display = idx >= __MT_STEP_ORDER.length - 1 ? 'none' : '';
+        }
+
+        function mtStepPrev() {
+            const idx = __MT_STEP_ORDER.indexOf(__MT_ACTIVE_STEP);
+            if (idx > 0) mtSwitchStep(__MT_STEP_ORDER[idx - 1]);
+        }
+
+        function mtStepNext() {
+            const idx = __MT_STEP_ORDER.indexOf(__MT_ACTIVE_STEP);
+            if (idx < __MT_STEP_ORDER.length - 1) mtSwitchStep(__MT_STEP_ORDER[idx + 1]);
+        }
+
+        function saveLlmSettings() {
+            saveAiConfigSettings();
+        }
+
+        // 租户级 LLM：不再硬编码默认密钥，需在「AI 配置」中添加模型
         const DEFAULT_LLM_CONFIG = {
-            baseUrl: 'https://api.deepseek.com',  // DeepSeek OpenAI-compatible endpoint
-            model: 'DeepSeek-V3.2',  // normalizeLlmModelName -> deepseek-chat
-            apiKey: 'sk-b69ac2ab32154440aa26be7e7ecdf312'  // 系统预设API Key
+            baseUrl: '',
+            model: '',
+            apiKey: ''
         };
 
-        // 获取有效的LLM配置（优先使用用户配置，否则使用系统预设）
-        function getEffectiveLlmConfig() {
-            const settings = HRMS_STORE.getSettings();
-            const userLlm = settings.llm || {};
-            
-            // 如果用户配置了API Key，使用用户配置
-            if (userLlm.apiKey && userLlm.apiKey.trim()) {
+        function getEffectiveLlmConfig(featureKey = 'default') {
+            const { models, bindings } = normalizeAiLlmSettings(HRMS_STORE.getSettings().llm);
+            const key = String(featureKey || 'default').trim() || 'default';
+            const boundId = String(bindings?.[key] || bindings?.default || '').trim();
+            let m = models.find((x) => x.id === boundId && x.enabled !== false);
+            if (!m) m = models.find((x) => x.enabled !== false);
+            if (m && String(m.apiKey || '').trim()) {
                 return {
-                    baseUrl: normalizeOpenAiBaseUrl(userLlm.baseUrl || DEFAULT_LLM_CONFIG.baseUrl),
-                    model: userLlm.model || DEFAULT_LLM_CONFIG.model,
-                    apiKey: userLlm.apiKey
+                    baseUrl: normalizeOpenAiBaseUrl(m.baseUrl),
+                    model: normalizeLlmModelName(m.model),
+                    apiKey: String(m.apiKey || '').trim(),
+                    modelId: m.id,
+                    modelName: m.name,
                 };
             }
-            
-            // 否则使用系统预设配置
-            return {
-                baseUrl: normalizeOpenAiBaseUrl(DEFAULT_LLM_CONFIG.baseUrl),
-                model: DEFAULT_LLM_CONFIG.model,
-                apiKey: DEFAULT_LLM_CONFIG.apiKey
-            };
+            const legacy = normalizeAiLlmSettings(HRMS_STORE.getSettings().llm);
+            if (!legacy.models.length && DEFAULT_LLM_CONFIG.apiKey) {
+                return {
+                    baseUrl: normalizeOpenAiBaseUrl(DEFAULT_LLM_CONFIG.baseUrl),
+                    model: normalizeLlmModelName(DEFAULT_LLM_CONFIG.model),
+                    apiKey: DEFAULT_LLM_CONFIG.apiKey,
+                };
+            }
+            return { baseUrl: '', model: '', apiKey: '' };
         }
 
         function normalizeOpenAiBaseUrl(baseUrl) {
