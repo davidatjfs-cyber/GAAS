@@ -6467,11 +6467,11 @@
             background: rgba(255, 255, 255, 0.04);
             color: rgba(200, 215, 230, 0.75);
             border-radius: 10px;
-            padding: 10px 6px;
-            font-size: 12px;
+            padding: 10px 8px;
+            font-size: 13px;
             font-weight: 700;
             cursor: pointer;
-            min-height: 44px;
+            min-height: 46px;
         }
         .mt-step-nav button.active {
             background: rgba(245, 158, 11, 0.15);
@@ -6580,12 +6580,13 @@
         .mt-input {
             width: 100%;
             box-sizing: border-box;
-            padding: 10px 11px;
+            min-height: 46px;
+            padding: 12px 14px;
             border-radius: 10px;
             border: 1px solid rgba(255, 255, 255, 0.12);
             background: rgba(255, 255, 255, 0.05);
             color: rgba(248, 250, 252, 0.95);
-            font-size: 14px;
+            font-size: 15px;
         }
 
         .mt-params-actions {
@@ -6606,12 +6607,13 @@
         .mt-addbar select {
             flex: 1 1 160px;
             min-width: 0;
-            padding: 10px 11px;
+            min-height: 46px;
+            padding: 12px 14px;
             border-radius: 10px;
             border: 1px solid rgba(255, 255, 255, 0.12);
             background: rgba(255, 255, 255, 0.05);
             color: rgba(248, 250, 252, 0.92);
-            font-size: 13px;
+            font-size: 14px;
         }
 
         .mt-addbar .btn-secondary {
@@ -6657,12 +6659,13 @@
         .mt-field-row__input {
             width: 112px;
             flex-shrink: 0;
-            padding: 9px 10px;
+            min-height: 44px;
+            padding: 10px 12px;
             border-radius: 10px;
             border: 1px solid rgba(255, 255, 255, 0.12);
             background: rgba(255, 255, 255, 0.06);
             color: rgba(248, 250, 252, 0.95);
-            font-size: 14px;
+            font-size: 15px;
             font-weight: 700;
             text-align: right;
         }
@@ -6673,7 +6676,12 @@
             border: none;
             cursor: pointer;
             color: rgba(239, 68, 68, 0.75);
-            font-size: 16px;
+            font-size: 18px;
+            min-width: 40px;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             padding: 6px 8px;
             border-radius: 8px;
         }
@@ -6740,7 +6748,12 @@
             border: none;
             cursor: pointer;
             color: rgba(239, 68, 68, 0.65);
-            font-size: 15px;
+            font-size: 17px;
+            min-width: 40px;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             padding: 4px 6px;
         }
 
@@ -6765,37 +6778,6 @@
         .mt-modal-actions .btn-secondary {
             min-width: 108px;
             justify-content: center;
-        }
-
-        .mt-step-nav {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 6px;
-            padding: 8px 12px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        }
-        .mt-step-nav button {
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            background: rgba(255, 255, 255, 0.04);
-            color: rgba(200, 215, 230, 0.75);
-            border-radius: 10px;
-            padding: 10px 6px;
-            font-size: 12px;
-            font-weight: 700;
-            cursor: pointer;
-            min-height: 44px;
-        }
-        .mt-step-nav button.active {
-            background: rgba(245, 158, 11, 0.15);
-            border-color: rgba(251, 191, 36, 0.45);
-            color: #fbbf24;
-        }
-        .mt-step-pane { display: none; }
-        .mt-step-pane.active { display: block; }
-        @media (min-width: 720px) {
-            .mt-step-nav { display: none; }
-            .mt-step-pane { display: block !important; }
-            #mt-step-prev, #mt-step-next { display: none !important; }
         }
 
         /* AI 配置 · 多模型列表 */
