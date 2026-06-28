@@ -1,8 +1,17 @@
-const CACHE_NAME = 'hrms-pwa-20260624a-swr';
+const CACHE_NAME = 'hrms-pwa-20260628c';
 const PRECACHE_URLS = [
   '/manifest.json',
   '/pwa-icon.svg'
 ];
+
+function isHtmlDocument(url) {
+  const p = url.pathname || '';
+  return p === '/' || p.endsWith('.html') || p.includes('working-fixed');
+}
+
+function isHashedAsset(url) {
+  return /^\/app\.[0-9a-f]+\.(js|css)$/.test(url.pathname || '');
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -12,9 +21,7 @@ self.addEventListener('install', (event) => {
         await cache.addAll(PRECACHE_URLS);
       } catch (e) {
         for (const u of PRECACHE_URLS) {
-          try {
-            await cache.add(u);
-          } catch (e2) {}
+          try { await cache.add(u); } catch (e2) {}
         }
       }
       self.skipWaiting();
@@ -26,7 +33,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())));
+      await Promise.all(keys.map((k) => caches.delete(k)));
       self.clients.claim();
     })()
   );
@@ -58,24 +65,21 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/agents-admin/')) return;
   if (url.pathname.startsWith('/platform-admin/')) return;
 
-  if (req.mode === 'navigate') {
+  // HTML 壳页永不进 SW 缓存，避免用户长期停留在旧版整页 JS。
+  if (req.mode === 'navigate' || isHtmlDocument(url)) {
+    event.respondWith(fetch(req));
+    return;
+  }
+
+  // 内容哈希外链：网络优先，离线才读缓存。
+  if (isHashedAsset(url)) {
     event.respondWith(
       (async () => {
         try {
-          // 走 HTTP 缓存校验（ETag/Last-Modified）：内容未变服务端回 304，浏览器复用已缓存 HTML，
-          // 避免每次导航都重下整页；变了才回 200 全量。比 no-store 快很多且不会读到过期内容。
-          const fresh = await fetch(req);
-          const cache = await caches.open(CACHE_NAME);
-          try {
-            await cache.put(req, fresh.clone());
-          } catch (e) {}
-          return fresh;
+          return await fetch(req);
         } catch (e) {
           const cached = await caches.match(req);
-          if (cached) return cached;
-          const cachedRoot = await caches.match('/');
-          if (cachedRoot) return cachedRoot;
-          return new Response('离线：无法加载页面', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+          return cached || new Response('', { status: 504 });
         }
       })()
     );
@@ -84,16 +88,13 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     (async () => {
-      const cached = await caches.match(req);
-      if (cached) return cached;
       try {
         const fresh = await fetch(req);
         const cache = await caches.open(CACHE_NAME);
-        try {
-          await cache.put(req, fresh.clone());
-        } catch (e) {}
+        try { await cache.put(req, fresh.clone()); } catch (e) {}
         return fresh;
       } catch (e) {
+        const cached = await caches.match(req);
         return cached || new Response('', { status: 504 });
       }
     })()

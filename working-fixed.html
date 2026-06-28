@@ -55767,6 +55767,12 @@ ${body}
 
             try {
                 if ('serviceWorker' in navigator) {
+                    let swReloading = false;
+                    navigator.serviceWorker.addEventListener('controllerchange', () => {
+                        if (swReloading) return;
+                        swReloading = true;
+                        window.location.reload();
+                    });
                     navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((reg) => {
                         if (reg.waiting) { reg.waiting.postMessage({ type: 'SKIP_WAITING' }); }
                         reg.addEventListener('updatefound', () => {
