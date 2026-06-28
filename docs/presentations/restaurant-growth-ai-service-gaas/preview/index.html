@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>餐厅增长 AI 操作系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
+    <style>
+      :root {
+        --bg: #0b0f14;
+        --fg: #ffffff;
+        --dim: rgba(255,255,255,.68);
+        --faint: rgba(255,255,255,.36);
+        --card: rgba(255,255,255,.05);
+        --card2: rgba(255,255,255,.03);
+        --line: rgba(255,255,255,.08);
+        --blue: #8fd3ff;
+        --purple: #7c5cff;
+        --green: #49d18c;
+        --amber: #ffc46b;
+        --rose: #ff7a90;
+      }
+      html, body { width: 100%; height: 100%; margin: 0; background: var(--bg); color: var(--fg); overflow: hidden; }
+      body {
+        font-family: Inter, "Noto Sans SC", system-ui, -apple-system, sans-serif;
+        background:
+          radial-gradient(900px 520px at 18% 18%, rgba(124,92,255,.20), transparent 58%),
+          radial-gradient(840px 460px at 78% 14%, rgba(143,211,255,.12), transparent 52%),
+          radial-gradient(900px 540px at 64% 86%, rgba(73,209,140,.12), transparent 56%),
+          linear-gradient(180deg, #081018 0%, #0b0f14 42%, #091018 100%);
+      }
+      #root { width: 100%; height: 100%; }
+      .slide-shell {
+        width: 1280px;
+        height: 720px;
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
+        border-radius: 28px;
+        border: 1px solid rgba(255,255,255,.06);
+        box-shadow: 0 24px 120px rgba(0,0,0,.45);
+      }
+      .slide-shell::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: .04;
+        background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,.65) 1px, transparent 0);
+        background-size: 28px 28px;
+      }
+      .content {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        height: 100%;
+        padding: 44px 52px 38px;
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: rgba(255,255,255,.56);
+        letter-spacing: .16em;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .eyebrow::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--blue);
+        box-shadow: 0 0 14px rgba(143,211,255,.8);
+      }
+      .title {
+        margin: 14px 0 0;
+        font-size: 58px;
+        line-height: 1.04;
+        letter-spacing: -.04em;
+        font-weight: 800;
+        color: #fff;
+        white-space: pre-line;
+      }
+      .sub {
+        margin-top: 18px;
+        font-size: 20px;
+        line-height: 1.55;
+        color: var(--dim);
+        white-space: pre-line;
+      }
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        backdrop-filter: blur(22px) saturate(1.4);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+      }
+      .panel-soft {
+        background: var(--card2);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+      }
+      .kicker {
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        color: rgba(255,255,255,.4);
+      }
+      .section-title {
+        font-size: 40px;
+        line-height: 1.08;
+        font-weight: 800;
+        letter-spacing: -.03em;
+        white-space: pre-line;
+      }
+      .body {
+        color: var(--dim);
+        line-height: 1.6;
+        font-size: 18px;
+      }
+      .metric {
+        border: 1px solid rgba(255,255,255,.08);
+        background: rgba(255,255,255,.04);
+        border-radius: 18px;
+        padding: 16px 16px 14px;
+      }
+      .metric .k { color: rgba(255,255,255,.48); font-size: 12px; font-weight: 700; letter-spacing: .03em; }
+      .metric .v { margin-top: 6px; color: #fff; font-size: 22px; font-weight: 800; line-height: 1.15; }
+      .metric .s { margin-top: 6px; color: rgba(255,255,255,.55); font-size: 12px; line-height: 1.45; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        color: rgba(255,255,255,.86);
+        border: 1px solid rgba(255,255,255,.10);
+        background: rgba(255,255,255,.05);
+      }
+      .pill.blue { background: rgba(143,211,255,.12); color: #d6f0ff; border-color: rgba(143,211,255,.20); }
+      .pill.purple { background: rgba(124,92,255,.14); color: #e5ddff; border-color: rgba(124,92,255,.25); }
+      .pill.green { background: rgba(73,209,140,.12); color: #d6f7e4; border-color: rgba(73,209,140,.22); }
+      .pill.amber { background: rgba(255,196,107,.12); color: #fff0d0; border-color: rgba(255,196,107,.20); }
+      .pill.rose { background: rgba(255,122,144,.12); color: #ffd7de; border-color: rgba(255,122,144,.20); }
+      .shot {
+        position: relative;
+        overflow: hidden;
+        border-radius: 24px;
+        border: 1px solid rgba(255,255,255,.12);
+        background: rgba(8, 10, 18, .85);
+        box-shadow:
+          0 30px 70px rgba(0,0,0,.45),
+          inset 0 1px 0 rgba(255,255,255,.06);
+      }
+      .shot img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .shot .fallback {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 28px;
+        text-align: center;
+        color: rgba(255,255,255,.52);
+        font-size: 18px;
+        line-height: 1.5;
+      }
+      .glow {
+        position: absolute;
+        inset: auto;
+        border-radius: 999px;
+        filter: blur(30px);
+        opacity: .55;
+        pointer-events: none;
+      }
+      .nav {
+        position: absolute;
+        right: 24px;
+        bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        z-index: 4;
+      }
+      .nav button {
+        height: 36px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,.10);
+        background: rgba(255,255,255,.06);
+        color: rgba(255,255,255,.86);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .nav .page {
+        font-size: 12px;
+        color: rgba(255,255,255,.5);
+        letter-spacing: .08em;
+      }
+      .footnote {
+        color: rgba(255,255,255,.44);
+        font-size: 12px;
+      }
+      .screen-grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 20px;
+        height: 100%;
+      }
+      .fade-in { animation: fadeUp .65s ease both; }
+      @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+      .no-export .nav { display: flex; }
+      .export .nav { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import { slides, screenshots, brand, slideCount } from '../data.mjs';
+
+      const html = htm.bind(React.createElement);
+      const { useEffect, useMemo, useState } = React;
+
+      const fmtQuery = () => {
+        const url = new URL(window.location.href);
+        const slide = Math.max(1, Math.min(slideCount(), Number(url.searchParams.get('slide') || '1') || 1));
+        return {
+          slide,
+          exportMode: url.searchParams.get('export') === '1',
+        };
+      };
+
+      function App() {
+        const initial = useMemo(fmtQuery, []);
+        const [index, setIndex] = useState(initial.slide - 1);
+        const [exportMode, setExportMode] = useState(initial.exportMode);
+
+        useEffect(() => {
+          const sync = () => {
+            const next = fmtQuery();
+            setIndex(next.slide - 1);
+            setExportMode(next.exportMode);
+          };
+          window.addEventListener('popstate', sync);
+          const onKey = (e) => {
+            if (e.key === 'ArrowRight') goto(index + 1);
+            if (e.key === 'ArrowLeft') goto(index - 1);
+            if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+          };
+          window.addEventListener('keydown', onKey);
+          return () => {
+            window.removeEventListener('popstate', sync);
+            window.removeEventListener('keydown', onKey);
+          };
+        }, [index]);
+
+        const goto = (next) => {
+          const clamped = Math.max(0, Math.min(slides.length - 1, next));
+          setIndex(clamped);
+          const url = new URL(window.location.href);
+          url.searchParams.set('slide', String(clamped + 1));
+          history.replaceState({}, '', url);
+        };
+
+        const toggleFullscreen = async () => {
+          if (!document.fullscreenElement) {
+            await document.documentElement.requestFullscreen?.();
+          } else {
+            await document.exitFullscreen?.();
+          }
+        };
+
+        const slide = slides[index];
+
+        return html`
+          <div className=${exportMode ? 'export' : 'no-export'} style=${{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="slide-shell fade-in">
+              ${renderSlide(slide)}
+              <div className="nav">
+                <div className="page">${String(index + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')}</div>
+                <button onClick=${() => goto(index - 1)}>← 上一页</button>
+                <button onClick=${toggleFullscreen}>全屏</button>
+                <button onClick=${() => goto(index + 1)}>下一页 →</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function SectionHeader(eyebrow, title, subtitle) {
+        return html`
+          <div>
+            ${eyebrow ? html`<div className="eyebrow">${eyebrow}</div>` : null}
+            <h1 className="title">${title}</h1>
+            ${subtitle ? html`<p className="sub">${subtitle}</p>` : null}
+          </div>
+        `;
+      }
+
+      function Card({ title, text, accent = 'blue' }) {
+        return html`
+          <div className="panel p-5">
+            <div className=${`pill ${accent} mb-4`}>${title}</div>
+            <div className="body text-[17px]">${text}</div>
+          </div>
+        `;
+      }
+
+      function Shot({ src, label, wide = false, height = 430, crop = 'center center' }) {
+        return html`
+          <div className="shot" style=${{ height: `${height}px` }}>
+            ${src ? html`<img src=${src} alt=${label || 'screenshot'} style=${{ objectPosition: crop }} />` : null}
+            ${!src ? html`<div className="fallback">${label || '截图占位'}</div>` : null}
+          </div>
+        `;
+      }
+
+      function renderSlide(slide) {
+        switch (slide.kind) {
+          case 'cover':
+            return coverSlide(slide);
+          case 'statement':
+            return statementSlide(slide);
+          case 'problem':
+            return problemSlide(slide);
+          case 'comparison':
+            return comparisonSlide(slide);
+          case 'flow':
+            return flowSlide(slide);
+          case 'pillars':
+            return pillarsSlide(slide);
+          case 'screenshot-copy':
+            return screenshotCopySlide(slide);
+          case 'timeline':
+            return timelineSlide(slide);
+          case 'profile':
+            return profileSlide(slide);
+          case 'training':
+            return trainingSlide(slide);
+          case 'ladder':
+            return ladderSlide(slide);
+          case 'task':
+            return taskSlide(slide);
+          case 'agent':
+            return agentSlide(slide);
+          case 'loop':
+            return loopSlide(slide);
+          case 'roles':
+            return rolesSlide(slide);
+          case 'architecture':
+            return architectureSlide(slide);
+          case 'proof':
+            return proofSlide(slide);
+          case 'gallery':
+            return gallerySlide(slide);
+          case 'scenarios':
+            return cardsSlide(slide, '适用场景');
+          case 'keywords':
+            return keywordsSlide(slide);
+          case 'timeline-steps':
+            return stepsSlide(slide);
+          case 'service':
+            return serviceSlide(slide);
+          case 'pricing':
+            return pricingSlide(slide);
+          case 'vision':
+            return visionSlide(slide);
+          case 'closing':
+            return closingSlide(slide);
+          default:
+            return html`<div className="content">${slide.title}</div>`;
+        }
+      }
+
+      function coverSlide(slide) {
+        return html`
+          <div className="content">
+            <div className="screen-grid items-start">
+              <div className="col-span-6 flex h-full flex-col justify-between">
+                <div>
+                  ${SectionHeader(slide.eyebrow, slide.title, slide.subtitle)}
+                </div>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    ${slide.footer.map((t, i) => html`<span className=${`pill ${i % 3 === 0 ? 'blue' : i % 3 === 1 ? 'purple' : 'green'}`}>${t}</span>`)}
+                  </div>
+                  <div className="footnote">面向餐饮老板 · 连锁品牌 · 运营负责人 · 投资人</div>
+                </div>
+              </div>
+              <div className="col-span-6 relative h-full">
+                <div className="glow" style=${{ width: '320px', height: '320px', right: '12px', top: '18px', background: 'rgba(124,92,255,.22)' }}></div>
+                <div className="glow" style=${{ width: '260px', height: '260px', left: '24px', bottom: '28px', background: 'rgba(73,209,140,.18)' }}></div>
+                <div className="absolute right-4 top-5 w-[88%] -rotate-2">
+                  ${Shot({ src: slide.collage[0], label: '首页 Dashboard 截图', height: 220, crop: 'center top' })}
+                </div>
+                <div className="absolute left-4 top-36 w-[68%] rotate-6">
+                  ${Shot({ src: slide.collage[1], label: '自动营销截图', height: 230, crop: 'center center' })}
+                </div>
+                <div className="absolute right-8 bottom-8 w-[64%] -rotate-3">
+                  ${Shot({ src: slide.collage[2], label: 'Agent 控制台截图', height: 204, crop: 'center center' })}
+                </div>
+                <div className="absolute left-20 bottom-2 w-[40%] rotate-1">
+                  ${Shot({ src: slide.collage[3], label: '平台管理截图', height: 150, crop: 'center center' })}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function statementSlide(slide) {
+        return html`
+          <div className="content flex h-full flex-col justify-between">
+            <div className="eyebrow">${slide.eyebrow || ''}</div>
+            <div className="grid h-full items-center">
+              <div className="mx-auto max-w-[980px] text-center">
+                <h1 className="text-[54px] font-black leading-[1.04] tracking-[-0.04em] text-white whitespace-pre-line">${slide.title}</h1>
+                ${slide.subtitle ? html`<p className="mt-6 text-[22px] leading-[1.65] text-white/68 whitespace-pre-line">${slide.subtitle}</p>` : null}
+                ${slide.footer ? html`<div className="mt-8 inline-flex rounded-full border border-white/10 bg-white/5 px-5 py-3 text-[18px] font-semibold text-white/80">${slide.footer}</div>` : null}
+              </div>
+            </div>
+            ${slide.bottom ? html`<div className="text-center text-[18px] text-white/58">${slide.bottom}</div>` : null}
+          </div>
+        `;
+      }
+
+      function gallerySlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader(slide.eyebrow || '真实产品截图', slide.title, slide.subtitle)}
+            <div className="mt-5 grid grid-cols-2 gap-4 h-[450px]">
+              ${slide.gallery.map((item, i) => html`
+                <div className="panel p-4 flex flex-col gap-2">
+                  ${Shot({ src: item.src, label: item.label, height: 145, crop: item.crop || 'center center' })}
+                  <div className="flex items-center justify-between">
+                    <div className="text-[17px] font-bold text-white">${item.label}</div>
+                    <span className=${`pill ${i % 4 === 0 ? 'blue' : i % 4 === 1 ? 'purple' : i % 4 === 2 ? 'green' : 'amber'}`}>${item.tag}</span>
+                  </div>
+                  <div className="body text-[14px]">${item.text}</div>
+                </div>
+              `)}
+            </div>
+          </div>
+        `;
+      }
+
+      function problemSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('餐饮老板真正的难题', slide.title)}
+            <div className="mt-8 grid grid-cols-3 gap-4">
+              ${slide.bullets.map((t, i) => html`
+                <div className="metric h-[118px]">
+                  <div className="k">问题 ${String(i + 1).padStart(2, '0')}</div>
+                  <div className="v text-[18px] leading-snug">${t}</div>
+                </div>
+              `)}
+            </div>
+            <div className="mt-6 panel p-6">
+              <div className="text-[22px] font-bold text-white leading-tight">${slide.punch}</div>
+            </div>
+          </div>
+        `;
+      }
+
+      function comparisonSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('传统系统的局限', slide.title)}
+            <div className="mt-7 grid grid-cols-2 gap-5 h-[530px]">
+              <div className="panel p-6">
+                <div className="kicker">${slide.leftTitle}</div>
+                <div className="mt-4 space-y-3">
+                  ${slide.leftItems.map(([k, v]) => html`
+                    <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3">
+                      <div className="text-[18px] font-bold text-white">${k}</div>
+                      <div className="text-[16px] text-white/60">${v}</div>
+                    </div>
+                  `)}
+                </div>
+              </div>
+              <div className="panel p-6">
+                <div className="kicker">${slide.rightTitle}</div>
+                <div className="mt-4 flex h-[86%] flex-col justify-between">
+                  ${slide.rightItems.map((t, idx) => html`
+                    <div className=${`metric ${idx === 0 ? 'border-white/10 bg-white/5' : ''}`}>
+                      <div className="v text-[20px]">${t}</div>
+                    </div>
+                  `)}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function flowSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('新一代餐厅经营方式', slide.title)}
+            <div className="mt-8 grid grid-cols-12 gap-4 h-[510px] items-center">
+              <div className="col-span-4 panel p-5 space-y-3">
+                ${slide.leftNodes.map((t, i) => html`<div className="pill ${i % 3 === 0 ? 'blue' : i % 3 === 1 ? 'purple' : 'green'} w-full justify-center">${t}</div>`)}
+              </div>
+              <div className="col-span-4 flex items-center justify-center">
+                <div className="relative">
+                  <div className="glow" style=${{ width: '240px', height: '240px', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', background: 'rgba(124,92,255,.22)' }}></div>
+                  <div className="panel flex h-[170px] w-[250px] items-center justify-center text-center text-[34px] font-black leading-tight">${slide.center}</div>
+                </div>
+              </div>
+              <div className="col-span-4 panel p-5 space-y-3">
+                ${slide.rightNodes.map((t, i) => html`<div className="pill ${i % 2 === 0 ? 'green' : 'amber'} w-full justify-center">${t}</div>`)}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function pillarsSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('产品定位', slide.title)}
+            <div className="mt-8 grid grid-cols-3 gap-4 h-[470px]">
+              ${slide.pillars.map((p, idx) => html`
+                <div className="panel p-6 flex flex-col justify-between">
+                  <div>
+                    <div className=${`pill ${idx === 0 ? 'blue' : idx === 1 ? 'purple' : 'green'}`}>0${idx + 1}</div>
+                    <h3 className="mt-4 text-[28px] font-black leading-tight text-white">${p.title}</h3>
+                  </div>
+                  <p className="body mt-6">${p.text}</p>
+                </div>
+              `)}
+            </div>
+            <div className="mt-5 text-[19px] text-white/80">${slide.footer}</div>
+          </div>
+        `;
+      }
+
+      function screenshotCopySlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('真实系统截图', slide.title)}
+            <div className="mt-6 grid grid-cols-12 gap-5 items-stretch">
+              <div className="col-span-7">
+                <div className="relative">
+                  <div className="absolute -inset-4 rounded-[32px] bg-white/4 blur-2xl"></div>
+                  ${Shot({ src: slide.screenshot, label: slide.screenshotLabel, height: 512, crop: 'center center' })}
+                </div>
+              </div>
+              <div className="col-span-5 flex h-full flex-col justify-between">
+                <div className="panel p-5">
+                  <div className="kicker">页面重点</div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    ${slide.callouts.map((t, i) => html`<span className=${`pill ${i % 4 === 0 ? 'blue' : i % 4 === 1 ? 'purple' : i % 4 === 2 ? 'green' : 'amber'}`}>${t}</span>`)}
+                  </div>
+                </div>
+                ${slide.actions ? html`
+                  <div className="grid grid-cols-1 gap-3">
+                    ${slide.actions.map((action, i) => html`
+                      <div className="panel p-5">
+                        <div className=${`pill ${i === 0 ? 'purple' : 'green'} mb-3`}>${action.title}</div>
+                        <div className="body text-[16px]">${action.text}</div>
+                      </div>
+                    `)}
+                  </div>
+                ` : null}
+                <div className="panel-soft p-6">
+                  <div className="text-[24px] font-black leading-tight text-white">${slide.note}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function timelineSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('客户生命周期营销', slide.title)}
+            <div className="mt-8 grid grid-cols-6 gap-4">
+              ${slide.timeline.map(([a, b], i) => html`
+                <div className="panel p-5">
+                  <div className=${`pill ${i % 3 === 0 ? 'blue' : i % 3 === 1 ? 'purple' : 'green'}`}>0${i + 1}</div>
+                  <div className="mt-4 text-[22px] font-black text-white leading-tight">${a}</div>
+                  <div className="mt-3 text-[14px] text-white/58">${b}</div>
+                </div>
+              `)}
+            </div>
+            <div className="mt-6 flex items-center justify-between">
+              <div className="text-[18px] text-white/72">${slide.badge}</div>
+              <div className="text-[18px] text-white/48">首次到店 → 180 天老客召回</div>
+            </div>
+          </div>
+        `;
+      }
+
+      function profileSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('会员画像', slide.title)}
+            <div className="mt-7 grid grid-cols-12 gap-5 h-[520px]">
+              <div className="col-span-6 panel p-6">
+                <div className="kicker">画像字段</div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  ${slide.metrics.map((t, i) => html`
+                    <div className="metric">
+                      <div className="v text-[18px]">${t}</div>
+                      <div className="s">系统自动识别</div>
+                    </div>
+                  `)}
+                </div>
+                <div className="mt-5 text-[18px] text-white/70">${slide.note}</div>
+              </div>
+              <div className="col-span-6">
+                <div className="shot h-[520px]">
+                  <div className="fallback text-[22px]">${slide.placeholder}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function trainingSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('核心能力三：人才培养', slide.title)}
+            <div className="mt-7 grid grid-cols-12 gap-5 h-[510px]">
+              <div className="col-span-5 panel p-6">
+                <div className="kicker">能力拆解</div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  ${slide.blocks.map((t, i) => html`<div className=${`metric ${i % 4 === 0 ? 'border-white/10 bg-white/5' : ''}`}><div className="v text-[18px]">${t}</div></div>`)}
+                </div>
+                <div className="mt-5 text-[18px] text-white/72">${slide.note}</div>
+              </div>
+              <div className="col-span-7">
+                ${slide.screenshot ? html`
+                  ${Shot({ src: slide.screenshot, label: slide.screenshotLabel, height: 510, crop: 'center center' })}
+                ` : html`
+                  <div className="shot h-[510px]">
+                    <div className="fallback text-[22px]">${slide.placeholder}</div>
+                  </div>
+                `}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function ladderSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('员工成长路径', slide.title)}
+            <div className="mt-8 flex h-[485px] items-end gap-4">
+              ${slide.ladder.map(([title, text], idx) => html`
+                <div className="panel flex-1 p-5" style=${{ height: `${210 + idx * 40}px` }}>
+                  <div className="text-[15px] font-bold text-white/55">0${idx + 1}</div>
+                  <div className="mt-3 text-[24px] font-black leading-tight text-white">${title}</div>
+                  <div className="mt-3 text-[15px] text-white/62">${text}</div>
+                </div>
+              `)}
+            </div>
+            <div className="mt-4 text-[18px] text-white/72">${slide.footer}</div>
+          </div>
+        `;
+      }
+
+      function taskSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('任务执行系统', slide.title)}
+            <div className="mt-7 grid grid-cols-12 gap-5 h-[510px]">
+              <div className="col-span-5 panel p-6">
+                <div className="kicker">执行链路</div>
+                <div className="mt-4 space-y-3">
+                  ${slide.steps.map((t, i) => html`
+                    <div className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3">
+                      <div className=${`pill ${i % 3 === 0 ? 'blue' : i % 3 === 1 ? 'purple' : 'green'}`}>0${i + 1}</div>
+                      <div className="text-[18px] font-bold text-white">${t}</div>
+                    </div>
+                  `)}
+                </div>
+                <div className="mt-5 text-[18px] text-white/72">${slide.note}</div>
+              </div>
+              <div className="col-span-7">
+                ${slide.screenshot ? html`
+                  ${Shot({ src: slide.screenshot, label: slide.screenshotLabel, height: 510, crop: 'center center' })}
+                ` : html`
+                  <div className="shot h-[510px]">
+                    <div className="fallback text-[22px]">${slide.placeholder}</div>
+                  </div>
+                `}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function agentSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('AI Agent 矩阵', slide.title)}
+            <div className="mt-7 grid grid-cols-12 gap-5 h-[520px]">
+              <div className="col-span-7 relative panel p-5 overflow-hidden">
+                <div className="absolute left-1/2 top-1/2 h-40 w-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/5 blur-2xl"></div>
+                <div className="absolute left-1/2 top-1/2 flex h-28 w-28 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/14 bg-white/6 text-center text-[20px] font-black">${slide.center}</div>
+                ${slide.agents.map((t, i) => {
+                  const pos = [
+                    [18, 20], [50, 8], [76, 18], [84, 45], [76, 72], [48, 82], [18, 74], [10, 44]
+                  ][i];
+                  return html`
+                    <div className="absolute w-[150px]" style=${{ left: `${pos[0]}%`, top: `${pos[1]}%`, transform: 'translate(-50%,-50%)' }}>
+                      <div className="metric text-center">
+                        <div className="v text-[16px]">${t}</div>
+                      </div>
+                    </div>
+                  `;
+                })}
+              </div>
+              <div className="col-span-5">
+                <div className="shot h-[520px]">
+                  <img src=${slide.screenshot} alt="Agent 控制台截图" />
+                  <div className="absolute left-4 top-4">${html`<span className="pill blue">${slide.screenshotLabel}</span>`}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function loopSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('餐厅增长闭环', slide.title)}
+            <div className="mt-10 flex items-center justify-between gap-3">
+              ${slide.loop.map((t, i) => html`
+                ${i > 0 ? html`<div className="h-[2px] flex-1 bg-white/14"></div>` : null}
+                <div className="panel px-4 py-3 text-[18px] font-bold text-white whitespace-nowrap">${t}</div>
+              `)}
+            </div>
+            <div className="mt-8 panel p-6">
+              <div className="text-[24px] font-black text-white leading-tight">${slide.footer}</div>
+            </div>
+          </div>
+        `;
+      }
+
+      function rolesSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('多角色工作台', slide.title)}
+            <div className="mt-7 grid grid-cols-3 gap-4 h-[510px]">
+              ${slide.roles.map((r, i) => html`
+                <div className="panel p-6">
+                  <div className=${`pill ${i % 3 === 0 ? 'blue' : i % 3 === 1 ? 'purple' : 'green'}`}>${r.name}</div>
+                  <div className="mt-4 space-y-3">
+                    ${r.items.map((t) => html`<div className="metric"><div className="v text-[18px]">${t}</div></div>`)}
+                  </div>
+                  <div className="mt-4 text-[12px] text-white/42">${slide.screenshots[i]}</div>
+                </div>
+              `)}
+            </div>
+          </div>
+        `;
+      }
+
+      function architectureSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('系统连接能力', slide.title)}
+            <div className="mt-8 grid grid-cols-12 gap-4 h-[500px] items-center">
+              <div className="col-span-4 space-y-3">
+                ${slide.nodes.slice(0, 4).map((t, i) => html`<div className=${`pill ${i % 2 === 0 ? 'blue' : 'purple'} w-full justify-center`}>${t}</div>`)}
+              </div>
+              <div className="col-span-4 flex justify-center">
+                <div className="panel flex h-[190px] w-[260px] items-center justify-center text-center text-[28px] font-black leading-tight">${slide.center}</div>
+              </div>
+              <div className="col-span-4 space-y-3">
+                ${slide.nodes.slice(4).map((t, i) => html`<div className=${`pill ${i % 2 === 0 ? 'green' : 'amber'} w-full justify-center`}>${t}</div>`)}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function proofSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('自营餐厅验证', slide.title)}
+            <div className="mt-7 grid grid-cols-12 gap-5 h-[500px]">
+              <div className="col-span-5 panel p-6 flex flex-col justify-between">
+                <div>
+                  <div className="kicker">真实门店</div>
+                  <div className="mt-4 space-y-3">
+                    ${slide.cases.map((c, i) => html`<div className="metric"><div className="v">${c}</div></div>`)}
+                  </div>
+                </div>
+                <div className="mt-6 flex flex-wrap gap-2">
+                  ${slide.proof.map((t, i) => html`<span className=${`pill ${i % 3 === 0 ? 'blue' : i % 3 === 1 ? 'purple' : 'green'}`}>${t}</span>`)}
+                </div>
+              </div>
+              <div className="col-span-7 panel p-6 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-[22px] font-black text-white/70">真实系统内容来自：</div>
+                  <div className="mt-4 text-[28px] font-black text-white">诊断页 · 营销页 · Agent 控制台 · 平台配置</div>
+                  <div className="mt-4 text-[18px] text-white/58">${slide.note}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function cardsSlide(slide, label) {
+        return html`
+          <div className="content">
+            ${SectionHeader(label, slide.title)}
+            <div className="mt-8 grid grid-cols-3 gap-4">
+              ${slide.cards.map((t, i) => html`
+                <div className="metric h-[128px]">
+                  <div className="k">场景 ${String(i + 1).padStart(2, '0')}</div>
+                  <div className="v text-[18px] leading-snug">${t}</div>
+                </div>
+              `)}
+            </div>
+          </div>
+        `;
+      }
+
+      function keywordsSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('为什么选择我们', slide.title)}
+            <div className="mt-8 grid grid-cols-3 gap-4 h-[360px]">
+              ${slide.keywords.map((t, i) => html`
+                <div className="panel flex items-center justify-center p-6 text-center text-[30px] font-black leading-tight">${t}</div>
+              `)}
+            </div>
+            <div className="mt-6 text-[22px] font-black text-white/80">${slide.footer}</div>
+          </div>
+        `;
+      }
+
+      function stepsSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('部署流程', slide.title)}
+            <div className="mt-8 grid grid-cols-6 gap-4">
+              ${slide.steps.map((t, i) => html`
+                <div className="panel p-5">
+                  <div className=${`pill ${i % 3 === 0 ? 'blue' : i % 3 === 1 ? 'purple' : 'green'}`}>0${i + 1}</div>
+                  <div className="mt-4 text-[24px] font-black text-white leading-tight">${t}</div>
+                </div>
+              `)}
+            </div>
+          </div>
+        `;
+      }
+
+      function serviceSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('服务方式', slide.title)}
+            <div className="mt-8 grid grid-cols-7 gap-3">
+              ${slide.services.map((t, i) => html`
+                <div className="metric flex h-[300px] items-center justify-center text-center">
+                  <div className="v text-[22px] leading-snug">${t}</div>
+                </div>
+              `)}
+            </div>
+            <div className="mt-6 text-[22px] font-black text-white/78">${slide.footer}</div>
+          </div>
+        `;
+      }
+
+      function pricingSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('套餐与价格', slide.title)}
+            <div className="mt-7 grid grid-cols-3 gap-5 h-[500px]">
+              ${slide.prices.map((p, i) => html`
+                <div className=${`panel p-6 flex flex-col justify-between ${p.highlight ? 'border-white/18 bg-white/6' : ''}`}>
+                  <div>
+                    <div className=${`pill ${i === 0 ? 'blue' : i === 1 ? 'purple' : 'green'}`}>${p.audience}</div>
+                    <div className="mt-4 text-[30px] font-black text-white">${p.name}</div>
+                    <div className="mt-2 text-[16px] text-white/58">${p.audience}</div>
+                    <div className="mt-5 space-y-2">
+                      ${p.items.map((t) => html`<div className="flex items-center gap-2 text-[17px] text-white/78"><span className="h-2 w-2 rounded-full bg-white/35"></span><span>${t}</span></div>`)}
+                    </div>
+                  </div>
+                  <div className="mt-6 text-[24px] font-black text-white">${p.price}</div>
+                </div>
+              `)}
+            </div>
+          </div>
+        `;
+      }
+
+      function visionSlide(slide) {
+        return html`
+          <div className="content">
+            ${SectionHeader('未来愿景', slide.title)}
+            <div className="mt-8 grid grid-cols-12 gap-5 h-[500px] items-center">
+              <div className="col-span-5">
+                <div className="panel p-6 space-y-3">
+                  ${slide.lines.map((t, i) => html`<div className=${`pill ${i % 3 === 0 ? 'blue' : i % 3 === 1 ? 'purple' : 'green'} w-full justify-center py-3 text-[15px]`}>${t}</div>`)}
+                </div>
+              </div>
+              <div className="col-span-7 relative flex h-full items-center justify-center">
+                <div className="glow" style=${{ width: '340px', height: '340px', background: 'rgba(143,211,255,.18)' }}></div>
+                <div className="panel flex h-[240px] w-[400px] items-center justify-center text-center text-[30px] font-black leading-tight">${slide.footer}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function closingSlide(slide) {
+        return html`
+          <div className="content flex h-full flex-col justify-between">
+            <div>
+              <div className="eyebrow">THANK YOU</div>
+            </div>
+            <div className="text-center">
+              <div className="text-[52px] font-black leading-tight text-white whitespace-pre-line">${slide.title}</div>
+              <div className="mt-5 text-[20px] text-white/68">${slide.subtitle}</div>
+            </div>
+            <div className="panel mx-auto w-[520px] p-5 text-center text-[18px] text-white/70">${slide.footer}</div>
+          </div>
+        `;
+      }
+
+      function cardsGrid(title, items) {
+        return html`
+          <div className="content">
+            ${SectionHeader(title, '')}
+          </div>
+        `;
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(html`<${App} />`);
+    </script>
+  </body>
+</html>
