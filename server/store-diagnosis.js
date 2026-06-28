@@ -10,6 +10,67 @@ function cleanText(value, max = 255) {
 
 const normalizeStore = s => String(s || '').trim();
 
+function inferActionSource(actionType, createdBy) {
+  const t = String(actionType || '').toLowerCase();
+  const c = String(createdBy || '').toLowerCase();
+  if (t === 'pllm_task' || c.includes('pllm')) return 'PLLM';
+  if (t === 'ai_suggestion' || t.includes('ai') || c.includes('ai')) return 'AI';
+  return '规则建议';
+}
+
+async function loadActionSuggestions(pool, storeName, startDate, endDate) {
+  const conditions = [];
+  const params = [];
+  let idx = 1;
+  conditions.push(`created_at::date >= $${idx++}`);
+  params.push(startDate);
+  conditions.push(`created_at::date <= $${idx++}`);
+  params.push(endDate);
+  if (storeName) {
+    conditions.push(`(
+      store_id ILIKE $${idx}
+      OR title ILIKE $${idx}
+      OR detail ILIKE $${idx}
+      OR payload::text ILIKE $${idx}
+    )`);
+    params.push(`%${storeName}%`);
+    idx += 1;
+  }
+  conditions.push(`action_type IN ('pllm_task', 'ai_suggestion', 'manual_campaign', 'campaign_activate', 'send_voucher', 'create_content', 'promo_task')`);
+  conditions.push(`status IN ('proposed', 'pending', 'active', 'executed')`);
+
+  const r = await pool.query(
+    `SELECT action_key, action_type, status, store_id, title, detail, payload, created_by, created_at, executed_at
+     FROM growth_actions
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY created_at DESC
+     LIMIT 8`,
+    params
+  );
+
+  return (r.rows || []).map((row) => {
+    const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
+    const source = inferActionSource(row.action_type, row.created_by);
+    const priority = /high|urgent|critical/.test(String(row.status || '').toLowerCase()) ? 'high' : 'medium';
+    return {
+      action_key: row.action_key,
+      source,
+      action_type: row.action_type,
+      status: row.status,
+      title: cleanText(row.title || payload.title || 'AI建议行动', 120),
+      detail: cleanText(row.detail || payload.description || payload.note || '', 360),
+      created_at: row.created_at,
+      executed_at: row.executed_at,
+      priority,
+      target_metric: cleanText(payload.target_metric || '', 80),
+      target_value: payload.target_value != null ? payload.target_value : null,
+      budget_amount: payload.budget_amount != null ? payload.budget_amount : null,
+      duration_days: payload.duration_days != null ? payload.duration_days : null,
+      actions: Array.isArray(payload.actions) ? payload.actions.slice(0, 4) : [],
+    };
+  });
+}
+
 /**
  * 获取门店诊断结果
  * 数据源：anomaly_triggers + daily_reports + pos_orders + employees + training
@@ -178,30 +239,40 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     const totalOrders = reports.rows.reduce((s, r) => s + Number(r.dine_orders || 0), 0);
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
     const avgEfficiency = reports.rows.reduce((s, r) => s + Number(r.efficiency || 0), 0) / reports.rows.length;
+    const totalDeliveryRevenue = reports.rows.reduce((s, r) => s + Number(r.delivery_actual || 0), 0);
+    const avgDeliveryShare = totalRevenue > 0 ? (totalDeliveryRevenue / totalRevenue) * 100 : 0;
 
     let prevTotalRevenue = 0, prevTotalTraffic = 0, prevTotalOrders = 0, prevAvgEfficiency = 0;
+    let prevTotalDeliveryRevenue = 0;
     if (prevReports.rows.length > 0) {
       prevTotalRevenue = prevReports.rows.reduce((s, r) => s + Number(r.actual_revenue || 0), 0);
       prevTotalTraffic = prevReports.rows.reduce((s, r) => s + Number(r.dine_traffic || 0), 0);
       prevTotalOrders = prevReports.rows.reduce((s, r) => s + Number(r.dine_orders || 0), 0);
       prevAvgEfficiency = prevReports.rows.reduce((s, r) => s + Number(r.efficiency || 0), 0) / prevReports.rows.length;
+      prevTotalDeliveryRevenue = prevReports.rows.reduce((s, r) => s + Number(r.delivery_actual || 0), 0);
     }
 
     const revenueChange = prevTotalRevenue > 0 ? ((totalRevenue - prevTotalRevenue) / prevTotalRevenue * 100).toFixed(1) : 0;
     const trafficChange = prevTotalTraffic > 0 ? ((totalTraffic - prevTotalTraffic) / prevTotalTraffic * 100).toFixed(1) : 0;
     const ordersChange = prevTotalOrders > 0 ? ((totalOrders - prevTotalOrders) / prevTotalOrders * 100).toFixed(1) : 0;
     const efficiencyChange = prevAvgEfficiency > 0 ? ((avgEfficiency - prevAvgEfficiency) / prevAvgEfficiency * 100).toFixed(1) : 0;
+    const deliveryChange = prevTotalDeliveryRevenue > 0 ? ((totalDeliveryRevenue - prevTotalDeliveryRevenue) / prevTotalDeliveryRevenue * 100).toFixed(1) : 0;
 
     result.revenue = {
       total: Math.round(totalRevenue),
       avg_daily: Math.round(avgDailyRevenue),
       avg_order_value: Math.round(avgOrderValue),
       avg_efficiency: Math.round(avgEfficiency),
+      total_traffic: Math.round(totalTraffic),
+      avg_daily_traffic: Math.round(avgDailyTraffic),
+      total_delivery_revenue: Math.round(totalDeliveryRevenue),
+      delivery_share_pct: Number(avgDeliveryShare.toFixed(1)),
       prev_total: Math.round(prevTotalRevenue),
       change_pct: Number(revenueChange),
       traffic_change_pct: Number(trafficChange),
       orders_change_pct: Number(ordersChange),
       efficiency_change_pct: Number(efficiencyChange),
+      delivery_change_pct: Number(deliveryChange),
       is_decline: Number(revenueChange) < 0,
     };
 
@@ -240,6 +311,21 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
           factor: isUp ? '客单价提升' : '客单价下降',
           impact: `${Math.abs(orderValueChange)}%`,
           detail: `客单价从¥${Math.round(prevAvgOrderValue)}${isUp ? '增至' : '降至'}¥${Math.round(avgOrderValue)}，可能与折扣力度或菜品结构变化有关`,
+        });
+      }
+    }
+
+    if (prevTotalDeliveryRevenue > 0) {
+      const deliveryShare = totalRevenue > 0 ? (totalDeliveryRevenue / totalRevenue) * 100 : 0;
+      const prevDeliveryShare = prevTotalRevenue > 0 ? (prevTotalDeliveryRevenue / prevTotalRevenue) * 100 : 0;
+      const deliveryShareChange = deliveryShare - prevDeliveryShare;
+      result.revenue.delivery_share_change_pct = Number(deliveryShareChange.toFixed(1));
+      if (Math.abs(deliveryShareChange) >= 2) {
+        const isUp = deliveryShareChange > 0;
+        contributions.push({
+          factor: isUp ? '外卖占比上升' : '外卖占比下降',
+          impact: `${Math.abs(deliveryShareChange).toFixed(1)}个百分点`,
+          detail: `外卖收入占比从${prevDeliveryShare.toFixed(1)}%${isUp ? '升至' : '降至'}${deliveryShare.toFixed(1)}%`,
         });
       }
     }
@@ -575,6 +661,9 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     reports: reports.rows,
   });
 
+  result.action_suggestions = await loadActionSuggestions(pool, storeName, startDate, endDate).catch(() => []);
+  result.action_suggestions_count = result.action_suggestions.length;
+
   // ── I. 摘要：把贡献度分析拼成一句"为什么下降"的因果说明 ──
   const topAnomaly = result.anomalies.find(a => a.severity === 'high') || result.anomalies[0];
   const topContributions = (result.revenue.contributions || []).slice(0, 3);
@@ -600,6 +689,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     anomaly_count: result.anomalies.length,
     staffing_issue: result.staffing.issues?.[0] || null,
     recommendation_count: result.recommendations.length,
+    action_suggestion_count: result.action_suggestions.length,
   };
 
   return result;
@@ -654,6 +744,7 @@ async function generateRecommendations(ctx) {
       if (c.factor === '客流量下降') {
         recs.push({
           type: 'marketing',
+          source: 'rule_engine',
           priority: 'high',
           title: '加强新客引流',
           detail: `客流量下降${c.impact}，建议增加私域引流活动（扫码领券、社群裂变）`,
@@ -669,6 +760,7 @@ async function generateRecommendations(ctx) {
     const underDuty = (staffing.total_on_duty || 0);
     recs.push({
       type: 'staffing',
+      source: 'rule_engine',
       priority: 'medium',
       title: '优化排班结构',
       detail: `人效下降${Math.abs(revenue.efficiency_change_pct)}%，当前在岗${underDuty}人。建议核对排班与客流高峰时段是否匹配`,
@@ -683,6 +775,7 @@ async function generateRecommendations(ctx) {
       if (issue.includes('晚班')) {
         recs.push({
           type: 'staffing',
+          source: 'rule_engine',
           priority: 'high',
           title: '增加晚班前厅人手',
           detail: issue,
@@ -757,6 +850,7 @@ async function generateRecommendations(ctx) {
           const more = untrainedStaff.length > 5 ? `等${untrainedStaff.length}名${topicTarget}人员` : '';
           recs.push({
             type: 'training',
+            source: 'rule_engine',
             priority: 'high',
             title: `建议给${names}${more}补《${topicTitle}》培训`,
             detail: `${anomalyDate}出现${anomaly.type}（${anomaly.detail || ''}），上述${topicTarget}人员当天在岗且未完成《${topicTitle}》认证`,
@@ -769,6 +863,7 @@ async function generateRecommendations(ctx) {
           const names = relevantStaff.slice(0, 3).map(s => s.name).join('、');
           recs.push({
             type: 'training',
+            source: 'rule_engine',
             priority: 'medium',
             title: `建议复核${names}等${topicTarget}人员的SOP执行`,
             detail: `${anomalyDate}出现${anomaly.type}，${topicTarget}人员当天在岗且已有培训认证，建议复核实际执行情况`,
@@ -795,6 +890,7 @@ async function generateRecommendations(ctx) {
       : `新客占比仅${customer.new_ratio}%，低于行业基准20%`;
     recs.push({
       type: 'training',
+      source: 'rule_engine',
       priority: 'high',
       title: `建议给${managerName}补《会员营销技巧》培训`,
       detail: `${reasonDetail}。建议通过《会员营销技巧》培训提升门店获客与会员转化能力`,
@@ -818,6 +914,7 @@ async function generateRecommendations(ctx) {
       const names = frontNames.slice(0, 5).map(s => s.name).join('、');
       recs.push({
         type: 'training',
+        source: 'rule_engine',
         priority: 'medium',
         title: `建议给${names}补《收银引导与点单话术》培训`,
         detail: `${convContribution.detail}，当前在岗前厅人员建议加强收银转化话术训练`,
@@ -834,6 +931,7 @@ async function generateRecommendations(ctx) {
   if (rechargeAnomaly) {
     recs.push({
       type: 'marketing',
+      source: 'rule_engine',
       priority: 'high',
       title: '启动储值卡推广活动',
       detail: `连续多日无会员充值记录，建议推出储值优惠（充500送50）并培训前厅话术`,
@@ -847,6 +945,7 @@ async function generateRecommendations(ctx) {
   if (trendAnomaly && trendAnomaly.detail) {
     recs.push({
       type: 'strategy',
+      source: 'rule_engine',
       priority: 'high',
       title: '周同比持续下降需结构性调整',
       detail: trendAnomaly.detail,
@@ -861,6 +960,7 @@ async function generateRecommendations(ctx) {
     const names = newEmployees.map(e => e.name).join('、');
     recs.push({
       type: 'training',
+      source: 'rule_engine',
       priority: 'medium',
       title: `新员工${names}尚未完成入职培训`,
       detail: `${names}入职未满90天且无培训记录，建议立即安排入职SOP培训`,
@@ -894,12 +994,20 @@ export async function getAllStoresDiagnosis(pool, dateRange) {
         summary: diag.summary,
         revenue: {
           total: diag.revenue.total,
+          avg_order_value: diag.revenue.avg_order_value,
+          avg_daily_traffic: diag.revenue.avg_daily_traffic,
+          avg_efficiency: diag.revenue.avg_efficiency,
+          delivery_share_pct: diag.revenue.delivery_share_pct,
           change_pct: diag.revenue.change_pct,
           is_decline: diag.revenue.is_decline,
           contributions: diag.revenue.contributions,
         },
         anomalies: diag.anomalies.map(a => ({ type: a.type, severity: a.severity, count: a.count })),
-        recommendations: diag.recommendations.map(r => ({ type: r.type, title: r.title, priority: r.priority })),
+        recommendations: [
+          ...diag.recommendations.map(r => ({ type: r.type, title: r.title, priority: r.priority, source: r.source || 'rule_engine', detail: r.detail })),
+          ...(diag.action_suggestions || []).map(a => ({ type: a.action_type || 'pllm_task', title: a.title, priority: a.priority || 'medium', source: a.source || 'AI', detail: a.detail }))
+        ].slice(0, 8),
+        action_suggestion_count: diag.action_suggestions?.length || 0,
       });
     } catch (e) {
       console.error(`[diagnosis] store ${s.store} failed:`, e?.message || e);
