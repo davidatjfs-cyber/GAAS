@@ -66,7 +66,7 @@ async function loadActionSuggestions(pool, storeName, startDate, endDate) {
       target_value: payload.target_value != null ? payload.target_value : null,
       budget_amount: payload.budget_amount != null ? payload.budget_amount : null,
       duration_days: payload.duration_days != null ? payload.duration_days : null,
-      actions: Array.isArray(payload.actions) ? payload.actions.slice(0, 4) : [],
+      actions: Array.isArray(payload.actions) ? payload.actions : [],
     };
   });
 }
@@ -473,19 +473,29 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
   for (const a of anomalies.rows) {
     const key = a.anomaly_key;
     if (!anomalyGroups[key]) {
-      anomalyGroups[key] = { key, severity: a.severity, count: 0, latest_date: a.trigger_date, detail: '' };
+      anomalyGroups[key] = { key, severity: a.severity, count: 0, latest_date: a.trigger_date, detail: '', records: [] };
     }
     anomalyGroups[key].count++;
     if (a.trigger_date > anomalyGroups[key].latest_date) {
       anomalyGroups[key].latest_date = a.trigger_date;
     }
+    let parsedValue = {};
     if (a.trigger_value) {
       try {
-        const v = typeof a.trigger_value === 'string' ? JSON.parse(a.trigger_value) : a.trigger_value;
-        if (v.detail) anomalyGroups[key].detail = v.detail;
-        if (v.consecutiveDown) anomalyGroups[key].detail = `连续${v.consecutiveDown}周下降(${v.changePct}%)`;
+        parsedValue = typeof a.trigger_value === 'string' ? JSON.parse(a.trigger_value) : a.trigger_value;
+        if (parsedValue.detail) anomalyGroups[key].detail = parsedValue.detail;
+        if (parsedValue.consecutiveDown) anomalyGroups[key].detail = `连续${parsedValue.consecutiveDown}周下降(${parsedValue.changePct}%)`;
       } catch (_) {}
     }
+    anomalyGroups[key].records.push({
+      date: a.trigger_date,
+      severity: a.severity,
+      status: a.status || '',
+      assigned_role: a.assigned_role || '',
+      threshold_value: a.threshold_value,
+      trigger_value: parsedValue,
+      detail: parsedValue.detail || '',
+    });
   }
 
   result.anomalies = Object.values(anomalyGroups).map(g => ({
@@ -495,6 +505,8 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     count: g.count,
     latest_date: g.latest_date,
     detail: g.detail || getAnomalyDescription(g.key),
+    description: getAnomalyDescription(g.key),
+    records: (g.records || []).slice(0, 20),
   }));
 
   // 若评分本期下降明显，且异常引擎尚未记录该差评异常，直接由真实评分数据补一条，
@@ -625,6 +637,8 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     total_assignments: trainingStatus.rows.length,
     by_employee: Object.values(trainingByEmployee),
     employees_without_training: employeesWithoutTraining,
+    scope_label: `截至 ${endDate}，在职且从未被指派任何培训任务`,
+    empty_label: '全员均已指派培训任务，无漏培人员',
   };
 
   // ── G. 品类分析（categories） ──
