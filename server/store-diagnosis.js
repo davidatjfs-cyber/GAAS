@@ -44,6 +44,19 @@ function normalizeReportCategories(raw) {
   return [];
 }
 
+function contributionItem(factor, magnitude, unit, detail, direction) {
+  const mag = String(magnitude);
+  let impact;
+  if (direction === 'up') impact = `+${mag}${unit}`;
+  else if (direction === 'down') impact = `-${mag}${unit}`;
+  else impact = `${mag}${unit}`;
+  return { factor, impact, detail, direction: direction || null };
+}
+
+function sortContributions(list) {
+  list.sort((a, b) => Math.abs(parseFloat(b.impact) || 0) - Math.abs(parseFloat(a.impact) || 0) || 0);
+}
+
 function inferActionSource(actionType, createdBy) {
   const t = String(actionType || '').toLowerCase();
   const c = String(createdBy || '').toLowerCase();
@@ -314,38 +327,42 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     const contributions = [];
     if (prevTotalTraffic > 0 && Math.abs(Number(trafficChange)) >= 1) {
       const isUp = Number(trafficChange) > 0;
-      contributions.push({
-        factor: isUp ? '客流量增长' : '客流量下降',
-        impact: `${Math.abs(trafficChange)}%`,
-        detail: `到店客流从${prevTotalTraffic}${isUp ? '增至' : '降至'}${totalTraffic}人次，${isUp ? '增加' : '减少'}${Math.abs(totalTraffic - prevTotalTraffic)}人次`,
-      });
+      contributions.push(contributionItem(
+        isUp ? '客流量增长' : '客流量下降',
+        Math.abs(trafficChange), '%',
+        `到店客流从${prevTotalTraffic}${isUp ? '增至' : '降至'}${totalTraffic}人次，${isUp ? '增加' : '减少'}${Math.abs(totalTraffic - prevTotalTraffic)}人次`,
+        isUp ? 'up' : 'down',
+      ));
     }
     if (prevTotalOrders > 0 && Math.abs(Number(ordersChange)) >= 1) {
       const isUp = Number(ordersChange) > 0;
-      contributions.push({
-        factor: isUp ? '订单量增长' : '订单量下降',
-        impact: `${Math.abs(ordersChange)}%`,
-        detail: `日均订单从${Math.round(prevTotalOrders / (prevReports.rows.length || 1))}${isUp ? '增至' : '降至'}${Math.round(totalOrders / reports.rows.length)}`,
-      });
+      contributions.push(contributionItem(
+        isUp ? '订单量增长' : '订单量下降',
+        Math.abs(ordersChange), '%',
+        `日均订单从${Math.round(prevTotalOrders / (prevReports.rows.length || 1))}${isUp ? '增至' : '降至'}${Math.round(totalOrders / reports.rows.length)}`,
+        isUp ? 'up' : 'down',
+      ));
     }
     if (prevAvgEfficiency > 0 && Math.abs(Number(efficiencyChange)) >= 1) {
       const isUp = Number(efficiencyChange) > 0;
-      contributions.push({
-        factor: isUp ? '人效提升' : '人效下降',
-        impact: `${Math.abs(efficiencyChange)}%`,
-        detail: `人效从${Math.round(prevAvgEfficiency)}元/人${isUp ? '增至' : '降至'}${Math.round(avgEfficiency)}元/人`,
-      });
+      contributions.push(contributionItem(
+        isUp ? '人效提升' : '人效下降',
+        Math.abs(efficiencyChange), '%',
+        `人效从${Math.round(prevAvgEfficiency)}元/人${isUp ? '增至' : '降至'}${Math.round(avgEfficiency)}元/人`,
+        isUp ? 'up' : 'down',
+      ));
     }
     const prevAvgOrderValue = prevTotalOrders > 0 ? prevTotalRevenue / prevTotalOrders : 0;
     if (prevAvgOrderValue > 0) {
       const orderValueChange = ((avgOrderValue - prevAvgOrderValue) / prevAvgOrderValue * 100).toFixed(1);
       if (Math.abs(Number(orderValueChange)) >= 1) {
         const isUp = Number(orderValueChange) > 0;
-        contributions.push({
-          factor: isUp ? '客单价提升' : '客单价下降',
-          impact: `${Math.abs(orderValueChange)}%`,
-          detail: `客单价从¥${Math.round(prevAvgOrderValue)}${isUp ? '增至' : '降至'}¥${Math.round(avgOrderValue)}，可能与折扣力度或菜品结构变化有关`,
-        });
+        contributions.push(contributionItem(
+          isUp ? '客单价提升' : '客单价下降',
+          Math.abs(orderValueChange), '%',
+          `客单价从¥${Math.round(prevAvgOrderValue)}${isUp ? '增至' : '降至'}¥${Math.round(avgOrderValue)}，可能与折扣力度或菜品结构变化有关`,
+          isUp ? 'up' : 'down',
+        ));
       }
     }
 
@@ -356,11 +373,12 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       result.revenue.delivery_share_change_pct = Number(deliveryShareChange.toFixed(1));
       if (Math.abs(deliveryShareChange) >= 2) {
         const isUp = deliveryShareChange > 0;
-        contributions.push({
-          factor: isUp ? '外卖占比上升' : '外卖占比下降',
-          impact: `${Math.abs(deliveryShareChange).toFixed(1)}个百分点`,
-          detail: `外卖收入占比从${prevDeliveryShare.toFixed(1)}%${isUp ? '升至' : '降至'}${deliveryShare.toFixed(1)}%`,
-        });
+        contributions.push(contributionItem(
+          isUp ? '外卖占比上升' : '外卖占比下降',
+          Math.abs(deliveryShareChange).toFixed(1), '个百分点',
+          `外卖收入占比从${prevDeliveryShare.toFixed(1)}%${isUp ? '升至' : '降至'}${deliveryShare.toFixed(1)}%`,
+          isUp ? 'up' : 'down',
+        ));
       }
     }
 
@@ -372,11 +390,12 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       const prevConv = prevRatedDays.reduce((s, r) => s + Number(r.dine_orders || 0) / Number(r.dine_traffic), 0) / prevRatedDays.length;
       const convChange = prevConv > 0 ? ((conv - prevConv) / prevConv * 100).toFixed(1) : 0;
       if (Number(convChange) <= -5) {
-        contributions.push({
-          factor: '到店转化率下降',
-          impact: `${Math.abs(convChange)}%`,
-          detail: `到店转化率（下单/客流）从${(prevConv * 100).toFixed(1)}%降至${(conv * 100).toFixed(1)}%，建议复核收银引导与点单话术`,
-        });
+        contributions.push(contributionItem(
+          '到店转化率下降',
+          Math.abs(convChange), '%',
+          `到店转化率（下单/客流）从${(prevConv * 100).toFixed(1)}%降至${(conv * 100).toFixed(1)}%，建议复核收银引导与点单话术`,
+          'down',
+        ));
       }
     }
 
@@ -390,11 +409,12 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       result.revenue.rating_change_pct = Number(ratingChange);
       result.revenue.avg_rating = Number(avgRating.toFixed(2));
       if (Number(ratingChange) <= -3) {
-        contributions.push({
-          factor: '服务评分下降',
-          impact: `${Math.abs(ratingChange)}%`,
-          detail: `大众点评评分从${prevAvgRating.toFixed(2)}降至${avgRating.toFixed(2)}`,
-        });
+        contributions.push(contributionItem(
+          '服务评分下降',
+          Math.abs(ratingChange), '%',
+          `大众点评评分从${prevAvgRating.toFixed(2)}降至${avgRating.toFixed(2)}`,
+          'down',
+        ));
       }
     }
     const totalBadReviews = reports.rows.reduce((s, r) => s + Number(r.bad_reviews_dianping || 0), 0);
@@ -404,11 +424,13 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       const badReviewPct = prevTotalBadReviews > 0
         ? ((totalBadReviews - prevTotalBadReviews) / prevTotalBadReviews * 100).toFixed(1)
         : null;
-      contributions.push({
-        factor: isUp ? '差评增加' : '差评下降',
-        impact: badReviewPct !== null ? `${Math.abs(badReviewPct)}%` : `${isUp ? '+' : '-'}${Math.abs(totalBadReviews - prevTotalBadReviews)}条`,
-        detail: `大众点评差评从${prevTotalBadReviews}条${isUp ? '增至' : '降至'}${totalBadReviews}条`,
-      });
+      contributions.push(contributionItem(
+        isUp ? '差评增加' : '差评下降',
+        badReviewPct !== null ? Math.abs(badReviewPct) : Math.abs(totalBadReviews - prevTotalBadReviews),
+        badReviewPct !== null ? '%' : '条',
+        `大众点评差评从${prevTotalBadReviews}条${isUp ? '增至' : '降至'}${totalBadReviews}条`,
+        isUp ? 'up' : 'down',
+      ));
     }
 
     // 桌访问题产品数量变化
@@ -421,11 +443,13 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       const isUp = tvCurIssue > tvPrevIssue;
       const tvPct = tvPrevIssue > 0 ? ((tvCurIssue - tvPrevIssue) / tvPrevIssue * 100).toFixed(1) : null;
       const dishHint = topDissatisfiedDish.rows[0]?.dish ? `，本期最多被反馈的菜品是「${topDissatisfiedDish.rows[0].dish.slice(0, 12)}」` : '';
-      contributions.push({
-        factor: isUp ? '桌访问题产品增加' : '桌访问题产品下降',
-        impact: tvPct !== null ? `${Math.abs(tvPct)}%` : `${isUp ? '+' : '-'}${Math.abs(tvCurIssue - tvPrevIssue)}单`,
-        detail: `桌访反馈不满意菜品从${tvPrevIssue}单${isUp ? '增至' : '降至'}${tvCurIssue}单（共${tvCurTotal}次桌访）${dishHint}`,
-      });
+      contributions.push(contributionItem(
+        isUp ? '桌访问题产品增加' : '桌访问题产品下降',
+        tvPct !== null ? Math.abs(tvPct) : Math.abs(tvCurIssue - tvPrevIssue),
+        tvPct !== null ? '%' : '单',
+        `桌访反馈不满意菜品从${tvPrevIssue}单${isUp ? '增至' : '降至'}${tvCurIssue}单（共${tvCurTotal}次桌访）${dishHint}`,
+        isUp ? 'up' : 'down',
+      ));
     }
 
     // 会员消费占比变化
@@ -441,15 +465,16 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       const ratioDiff = memberRatio - prevMemberRatio;
       if (Math.abs(ratioDiff) >= 2) {
         const isUp = ratioDiff > 0;
-        contributions.push({
-          factor: isUp ? '会员消费占比上升' : '会员消费占比下降',
-          impact: `${Math.abs(ratioDiff).toFixed(1)}个百分点`,
-          detail: `会员消费占比从${prevMemberRatio.toFixed(1)}%${isUp ? '升至' : '降至'}${memberRatio.toFixed(1)}%`,
-        });
+        contributions.push(contributionItem(
+          isUp ? '会员消费占比上升' : '会员消费占比下降',
+          Math.abs(ratioDiff).toFixed(1), '个百分点',
+          `会员消费占比从${prevMemberRatio.toFixed(1)}%${isUp ? '升至' : '降至'}${memberRatio.toFixed(1)}%`,
+          isUp ? 'up' : 'down',
+        ));
       }
     }
 
-    contributions.sort((a, b) => parseFloat(b.impact) - parseFloat(a.impact) || 0);
+    sortContributions(contributions);
     result.revenue.contributions = contributions;
   }
 
@@ -486,20 +511,22 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       result.customer.prev_new_ratio = Number(prevNewRatio.toFixed(1));
       result.customer.new_ratio_change_pct = Number(newRatioChangePct);
       if (Number(newRatioChangePct) <= -10) {
-        result.revenue.contributions.push({
-          factor: '新客占比下降',
-          impact: `${Math.abs(newRatioChangePct)}%`,
-          detail: `新客占比从${prevNewRatio.toFixed(1)}%降至${newRatio}%，可能私域引流不足或门店获客能力下降`,
-        });
+        result.revenue.contributions.push(contributionItem(
+          '新客占比下降',
+          Math.abs(newRatioChangePct), '%',
+          `新客占比从${prevNewRatio.toFixed(1)}%降至${newRatio}%，可能私域引流不足或门店获客能力下降`,
+          'down',
+        ));
       }
     } else if (Number(newRatio) < 20) {
-      result.revenue.contributions.push({
-        factor: '新客占比低',
-        impact: `${newRatio}%`,
-        detail: `本周新客比例仅${newRatio}%，可能私域引流不足或门店获客能力下降`,
-      });
+      result.revenue.contributions.push(contributionItem(
+        '新客占比低',
+        newRatio, '%',
+        `本周新客比例仅${newRatio}%，可能私域引流不足或门店获客能力下降`,
+        null,
+      ));
     }
-    result.revenue.contributions.sort((a, b) => parseFloat(b.impact) - parseFloat(a.impact) || 0);
+    sortContributions(result.revenue.contributions);
   }
 
   // ── D. 异常分析 ──
@@ -696,6 +723,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
         if (c.amt > 0 || c.qty > 0) categoryData[c.key].days++;
       }
     }
+    const storeTotalRevenue = Number(result.revenue.total || 0);
     const categories = Object.values(categoryData)
       .filter(c => c.total > 0 || c.qty_total > 0)
       .sort((a, b) => b.total - a.total)
@@ -703,6 +731,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
         ...c,
         avg_daily: Math.round(c.total / Math.max(c.days, 1)),
         avg_qty_daily: Math.round(c.qty_total / Math.max(c.days, 1)),
+        share_pct: storeTotalRevenue > 0 ? Number((c.total / storeTotalRevenue * 100).toFixed(1)) : 0,
       }));
     if (categories.length) result.revenue.categories = categories;
   }

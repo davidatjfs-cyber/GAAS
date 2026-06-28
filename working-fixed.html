@@ -11231,6 +11231,7 @@
         #diagnosis-page .dx-metric-card .k { font-size: 11px; color: var(--dx-faint); }
         #diagnosis-page .dx-metric-card .v { margin-top: 4px; font-size: 18px; font-weight: 800; font-family: 'Geist Mono', 'SF Mono', monospace; color: #fff; }
         #diagnosis-page .dx-metric-card .s { margin-top: 4px; font-size: 10px; color: var(--dx-dim); line-height: 1.3; }
+        #diagnosis-page .dx-cat-share { margin-left: 6px; font-size: 13px; font-weight: 800; }
         #diagnosis-page .dx-action-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
         #diagnosis-page .dx-detail-hero {
             padding: 18px; border-radius: 18px; margin-bottom: 14px;
@@ -11327,6 +11328,7 @@
         .dx-detail-panel .dx-metric-card .k { font-size: 11px; color: var(--dx-faint); }
         .dx-detail-panel .dx-metric-card .v { margin-top: 4px; font-size: 18px; font-weight: 800; font-family: 'Geist Mono', 'SF Mono', monospace; color: #fff; }
         .dx-detail-panel .dx-metric-card .s { margin-top: 4px; font-size: 10px; color: var(--dx-dim); line-height: 1.3; }
+        .dx-detail-panel .dx-cat-share { margin-left: 6px; font-size: 13px; font-weight: 800; }
         .dx-detail-panel .dx-metric { background: rgba(255,255,255,0.04); border-radius: 12px; padding: 10px 8px; text-align: center; border: 1px solid rgba(255,255,255,0.06); }
         .dx-detail-panel .dx-metric .v { font-size: 14px; font-weight: 700; color: #fff; font-family: 'Geist Mono', 'SF Mono', monospace; }
         .dx-detail-panel .dx-metric .l { font-size: 10px; color: var(--dx-faint); margin-top: 3px; }
@@ -56381,7 +56383,9 @@ ${body}
             return (window.HRMS_API && typeof HRMS_API.token === 'function') ? HRMS_API.token() : (localStorage.getItem('hrms_token') || '');
         }
 
-        function dxIsGoodFactor(factor) {
+        function dxIsGoodFactor(factor, direction) {
+            if (direction === 'up') return true;
+            if (direction === 'down') return false;
             if (/增长|提升|上升/.test(factor)) return true;
             if (factor === '差评下降' || factor === '桌访问题产品下降') return true;
             return false;
@@ -56744,16 +56748,18 @@ ${body}
             ];
 
             const contribHTML = (revenue.contributions || []).length > 0
-                ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">📊 贡献度分析</div><div class="dx-board__meta">按因素拆解本期波动来源</div></div></div><div class="dx-section-grid dx-section-grid--2">${revenue.contributions.map(c => {
-                    const good = dxIsGoodFactor(c.factor);
-                    return `<div class="dx-metric-card"><div class="k">${escapeHtml(c.factor)}</div><div class="v" style="color:${good ? '#5EEAD4' : '#FF7A90'}">${escapeHtml(c.impact)}</div><div class="s">${escapeHtml(c.detail || '')}</div></div>`;
+                ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">📊 贡献度分析</div><div class="dx-board__meta">提升/增加为 +，下降/减少为 -</div></div></div><div class="dx-section-grid dx-section-grid--2">${revenue.contributions.map(c => {
+                    const good = dxIsGoodFactor(c.factor, c.direction);
+                    return `<div class="dx-metric-card"><div class="k">${escapeHtml(c.factor)}</div><div class="v" style="color:${good ? '#5EEAD4' : '#FF7A90'}">${escapeHtml(c.impact || '-')}</div><div class="s">${escapeHtml(c.detail || '')}</div></div>`;
                   }).join('')}</div></div>`
                 : '<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">📊 贡献度分析</div><div class="dx-board__meta">按因素拆解本期波动来源</div></div></div><div class="dx-empty dx-empty--compact">暂无贡献度数据</div></div>';
 
             const catHTML = (revenue.categories || []).length > 0
-                ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🍽️ 品类营收</div><div class="dx-board__meta">各档口销售金额与制作量（本期汇总）</div></div></div><div class="dx-section-grid dx-section-grid--2">${revenue.categories.slice(0, 6).map(c =>
-                    `<div class="dx-metric-card"><div class="k">${escapeHtml(c.name)}</div><div class="v" style="font-size:16px;">${dxFmtMoney(c.avg_daily || 0)}</div><div class="s">日均营收 · 本期合计 ${dxFmtMoney(c.total || 0)}${c.qty_total != null ? ' · ' + Number(c.qty_total).toLocaleString('zh-CN') + '份' : ''}</div></div>`
-                  ).join('')}</div></div>`
+                ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🍽️ 品类营收</div><div class="dx-board__meta">各档口销售金额、占比与制作量（本期汇总）</div></div></div><div class="dx-section-grid dx-section-grid--2">${revenue.categories.slice(0, 6).map(c => {
+                    const sharePct = Number(c.share_pct || 0);
+                    const shareColor = sharePct >= 25 ? '#5EEAD4' : (sharePct >= 15 ? '#FFC46B' : '#FF7A90');
+                    return `<div class="dx-metric-card"><div class="k">${escapeHtml(c.name)}</div><div class="v" style="font-size:16px;">${dxFmtMoney(c.avg_daily || 0)} <span class="dx-cat-share" style="color:${shareColor}">${sharePct.toFixed(1)}%</span></div><div class="s">占全部营收 ${sharePct.toFixed(1)}% · 本期合计 ${dxFmtMoney(c.total || 0)}${c.qty_total != null ? ' · ' + Number(c.qty_total).toLocaleString('zh-CN') + '份' : ''}</div></div>`;
+                  }).join('')}</div></div>`
                 : '<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🍽️ 品类营收</div><div class="dx-board__meta">各档口销售金额与制作量（本期汇总）</div></div></div><div class="dx-empty dx-empty--compact">本期日报未填写品类销售数据</div></div>';
 
             const anomHTML = anomalies.length
