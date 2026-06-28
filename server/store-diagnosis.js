@@ -10,6 +10,40 @@ function cleanText(value, max = 255) {
 
 const normalizeStore = s => String(s || '').trim();
 
+const CATEGORY_LABELS = {
+  water: '水吧',
+  soup: '汤品',
+  roast: '烧腊/卤水',
+  wok: '炒锅',
+  sashimi: '刺身',
+};
+
+function normalizeReportCategories(raw) {
+  let data = raw;
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data); } catch (_) { return []; }
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter(c => c && (c.name || c.key))
+      .map(c => ({
+        key: String(c.key || c.name || '').trim(),
+        name: String(c.name || CATEGORY_LABELS[c.key] || c.key || '').trim(),
+        amt: Number(c.amt ?? c.sales ?? c.revenue ?? c.amount ?? 0),
+        qty: Number(c.qty ?? c.quantity ?? 0),
+      }));
+  }
+  if (data && typeof data === 'object') {
+    return Object.entries(data).map(([key, val]) => ({
+      key,
+      name: CATEGORY_LABELS[key] || key,
+      amt: Number(val?.amt ?? val?.amount ?? val?.sales ?? 0),
+      qty: Number(val?.qty ?? val?.quantity ?? 0),
+    }));
+  }
+  return [];
+}
+
 function inferActionSource(actionType, createdBy) {
   const t = String(actionType || '').toLowerCase();
   const c = String(createdBy || '').toLowerCase();
@@ -492,7 +526,13 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       severity: a.severity,
       status: a.status || '',
       assigned_role: a.assigned_role || '',
-      threshold_value: a.threshold_value,
+      threshold_value: (() => {
+        let v = a.threshold_value;
+        if (typeof v === 'string') {
+          try { v = JSON.parse(v); } catch (_) {}
+        }
+        return v;
+      })(),
       trigger_value: parsedValue,
       detail: parsedValue.detail || '',
     });
@@ -645,22 +685,26 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
   if (reports.rows.length > 0) {
     const categoryData = {};
     for (const r of reports.rows) {
-      const cats = r.categories || [];
-      if (Array.isArray(cats)) {
-        for (const c of cats) {
-          if (!c || !c.name) continue;
-          if (!categoryData[c.name]) categoryData[c.name] = { name: c.name, total: 0, days: 0 };
-          categoryData[c.name].total += Number(c.sales || c.revenue || c.amount || 0);
-          categoryData[c.name].days++;
+      const cats = normalizeReportCategories(r.categories);
+      for (const c of cats) {
+        if (!c.name) continue;
+        if (!categoryData[c.key]) {
+          categoryData[c.key] = { key: c.key, name: c.name, total: 0, qty_total: 0, days: 0 };
         }
+        categoryData[c.key].total += c.amt;
+        categoryData[c.key].qty_total += c.qty;
+        if (c.amt > 0 || c.qty > 0) categoryData[c.key].days++;
       }
     }
-    if (Object.keys(categoryData).length > 0) {
-      const categories = Object.values(categoryData)
-        .sort((a, b) => b.total - a.total)
-        .map(c => ({ ...c, avg_daily: Math.round(c.total / (c.days || 1)) }));
-      result.revenue.categories = categories;
-    }
+    const categories = Object.values(categoryData)
+      .filter(c => c.total > 0 || c.qty_total > 0)
+      .sort((a, b) => b.total - a.total)
+      .map(c => ({
+        ...c,
+        avg_daily: Math.round(c.total / Math.max(c.days, 1)),
+        avg_qty_daily: Math.round(c.qty_total / Math.max(c.days, 1)),
+      }));
+    if (categories.length) result.revenue.categories = categories;
   }
 
   // ── H. 生成个人级建议（核心） ──

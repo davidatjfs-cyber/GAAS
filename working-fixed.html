@@ -11398,6 +11398,17 @@
             background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
             font-size: 12px; line-height: 1.5; color: #C7D2FE;
         }
+        .dx-anomaly-record__head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; color: #fff; }
+        .dx-anomaly-record__line { margin-top: 4px; color: #EEF1FA; line-height: 1.55; }
+        .dx-anomaly-record__meta { margin-top: 4px; color: #9AA3C7; font-size: 11px; line-height: 1.45; }
+        .dx-anomaly-kv { margin-top: 8px; }
+        .dx-anomaly-kv__label { font-size: 11px; color: #5B6597; font-weight: 700; margin-bottom: 4px; letter-spacing: 0.04em; }
+        .dx-anomaly-evidence {
+            padding: 8px 10px; border-radius: 8px; margin-top: 6px;
+            background: rgba(109,124,255,0.08); border: 1px solid rgba(109,124,255,0.16);
+            color: #EEF1FA; line-height: 1.55;
+        }
+        .dx-anomaly-evidence__meta { margin-top: 4px; color: #9AA3C7; font-size: 11px; }
         .dx-panel-close {
             position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.08);
             border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 18px;
@@ -56464,6 +56475,118 @@ ${body}
             document.getElementById('dx-anomaly-modal')?.classList.remove('show');
         }
 
+        function dxFmtAnomalyValue(v) {
+            if (v == null || v === '') return '';
+            if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
+            if (Array.isArray(v)) return v.map(dxFmtAnomalyValue).filter(Boolean).join('、');
+            if (typeof v === 'object') {
+                const entries = Object.entries(v).filter(([, val]) => val != null && val !== '');
+                if (!entries.length) return '';
+                return entries.map(([k, val]) => `${k}: ${dxFmtAnomalyValue(val)}`).join('；');
+            }
+            return String(v);
+        }
+
+        function dxFmtAnomalyThreshold(val) {
+            if (val == null || val === '') return '';
+            if (typeof val === 'object') {
+                if (val.value != null) return String(val.value);
+                if (val.threshold != null) return String(val.threshold);
+                const text = dxFmtAnomalyValue(val);
+                return text === '{}' ? '' : text;
+            }
+            return String(val);
+        }
+
+        function dxAnomalyRoleLabel(role) {
+            const map = {
+                kitchen_manager: '出品经理',
+                hq_manager: '总部营运',
+                store_manager: '店长',
+                store_production_manager: '出品经理',
+                hr_manager: '人事经理',
+            };
+            return map[role] || role || '';
+        }
+
+        function dxAnomalyStatusLabel(status) {
+            const map = { closed: '已关闭', open: '进行中', pending: '待处理', active: '生效中' };
+            return map[status] || status || '';
+        }
+
+        function dxRenderAnomalyTriggerValue(tv) {
+            if (!tv || typeof tv !== 'object') return '';
+            const parts = [];
+
+            if (Array.isArray(tv.products) && tv.products.length) {
+                parts.push(`<div class="dx-anomaly-kv"><div class="dx-anomaly-kv__label">涉及菜品</div>${tv.products.map((p) => {
+                    const dish = p.complaint || p.product || p.name || p.dish || '-';
+                    const cnt = p.cnt != null ? ` ×${p.cnt}` : '';
+                    const tier = p.tier ? `（${p.tier}）` : '';
+                    const pts = p.deduction_points != null ? `，扣${p.deduction_points}分` : '';
+                    return `<div class="dx-anomaly-evidence">${escapeHtml('• ' + dish + cnt + tier + pts)}</div>`;
+                }).join('')}</div>`);
+            }
+
+            if (Array.isArray(tv.evidence) && tv.evidence.length) {
+                parts.push(`<div class="dx-anomaly-kv"><div class="dx-anomaly-kv__label">证据摘录</div>${tv.evidence.map((ev) => {
+                    const excerpt = ev.excerpt || ev.text || ev.content || '';
+                    const label = ev.source_label || ev.source_kind || '';
+                    const date = ev.record_date || '';
+                    const kw = Array.isArray(ev.matched_keywords) ? ev.matched_keywords.join('、') : '';
+                    return `<div class="dx-anomaly-evidence">
+                        <div>${escapeHtml(excerpt || '-')}</div>
+                        ${label || date ? `<div class="dx-anomaly-evidence__meta">${escapeHtml([label, date].filter(Boolean).join(' · '))}</div>` : ''}
+                        ${kw ? `<div class="dx-anomaly-evidence__meta">关键词：${escapeHtml(kw)}</div>` : ''}
+                    </div>`;
+                }).join('')}</div>`);
+            }
+
+            const scalarFields = [
+                ['window', '统计窗口'],
+                ['weekStart', '周起始'],
+                ['weekEnd', '周结束'],
+                ['scanDate', '扫描日期'],
+                ['source', '来源'],
+                ['dataSource', '数据来源'],
+                ['deduction_points_total', '合计扣分'],
+            ];
+            scalarFields.forEach(([key, label]) => {
+                if (tv[key] != null && tv[key] !== '') {
+                    parts.push(`<div class="dx-anomaly-record__meta">${escapeHtml(label)}：${escapeHtml(dxFmtAnomalyValue(tv[key]))}</div>`);
+                }
+            });
+
+            if (Array.isArray(tv.matchedKeywords) && tv.matchedKeywords.length) {
+                parts.push(`<div class="dx-anomaly-record__meta">命中关键词：${escapeHtml(tv.matchedKeywords.join('、'))}</div>`);
+            }
+            if (tv.consecutiveDown != null) {
+                parts.push(`<div class="dx-anomaly-record__meta">连续下降：${escapeHtml(String(tv.consecutiveDown))}周${tv.changePct != null ? `（${tv.changePct}%）` : ''}</div>`);
+            }
+
+            return parts.join('');
+        }
+
+        function dxRenderAnomalyRecord(r, sevLabel) {
+            const tv = r.trigger_value && typeof r.trigger_value === 'object' ? r.trigger_value : {};
+            const statusText = dxAnomalyStatusLabel(r.status);
+            const roleText = dxAnomalyRoleLabel(r.assigned_role);
+            const threshold = dxFmtAnomalyThreshold(r.threshold_value);
+            const detailHtml = dxRenderAnomalyTriggerValue(tv);
+            const summaryLine = r.detail && r.detail !== detailHtml ? r.detail : '';
+
+            return `<div class="dx-anomaly-modal__record">
+                <div class="dx-anomaly-record__head">
+                    <strong>${escapeHtml(String(r.date || '-'))}</strong>
+                    <span>${escapeHtml(sevLabel)}${statusText ? ' · ' + escapeHtml(statusText) : ''}</span>
+                </div>
+                ${summaryLine ? `<div class="dx-anomaly-record__line">${escapeHtml(summaryLine)}</div>` : ''}
+                ${roleText ? `<div class="dx-anomaly-record__meta">责任岗位：${escapeHtml(roleText)}</div>` : ''}
+                ${threshold ? `<div class="dx-anomaly-record__meta">阈值：${escapeHtml(threshold)}</div>` : ''}
+                ${detailHtml}
+            </div>`;
+        }
+
         function dxShowAnomalyDetail(idx) {
             const list = window.__DX_CURRENT_ANOMALIES || [];
             const a = list[idx];
@@ -56475,20 +56598,7 @@ ${body}
             const sevLabel = a.severity === 'high' ? '高' : (a.severity === 'medium' ? '中' : '低');
             const records = Array.isArray(a.records) ? a.records : [];
             const recordHTML = records.length
-                ? records.map((r, i) => {
-                    const tv = r.trigger_value && typeof r.trigger_value === 'object' ? r.trigger_value : {};
-                    const extras = Object.entries(tv)
-                        .filter(([k]) => !['detail'].includes(k))
-                        .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
-                        .join('；');
-                    return `<div class="dx-anomaly-modal__record">
-                        <div><strong>${escapeHtml(String(r.date || '-'))}</strong> · 严重度 ${escapeHtml(sevLabel)}${r.status ? ' · ' + escapeHtml(r.status) : ''}</div>
-                        ${r.detail ? `<div style="margin-top:4px;">${escapeHtml(r.detail)}</div>` : ''}
-                        ${r.assigned_role ? `<div style="margin-top:4px;color:#9AA3C7;">责任岗位：${escapeHtml(r.assigned_role)}</div>` : ''}
-                        ${r.threshold_value != null && r.threshold_value !== '' ? `<div style="margin-top:4px;color:#9AA3C7;">阈值：${escapeHtml(String(r.threshold_value))}</div>` : ''}
-                        ${extras ? `<div style="margin-top:4px;color:#9AA3C7;">${escapeHtml(extras)}</div>` : ''}
-                    </div>`;
-                }).join('')
+                ? records.map((r) => dxRenderAnomalyRecord(r, sevLabel)).join('')
                 : '<div class="dx-anomaly-modal__text">暂无逐条触发记录，以下为汇总说明。</div>';
             bodyEl.innerHTML = `
                 <div class="dx-anomaly-modal__section">
@@ -56641,10 +56751,10 @@ ${body}
                 : '<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">📊 贡献度分析</div><div class="dx-board__meta">按因素拆解本期波动来源</div></div></div><div class="dx-empty dx-empty--compact">暂无贡献度数据</div></div>';
 
             const catHTML = (revenue.categories || []).length > 0
-                ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🍽️ 品类营收</div><div class="dx-board__meta">查看高日销品类结构</div></div></div><div class="dx-section-grid dx-section-grid--2">${revenue.categories.slice(0, 6).map(c =>
-                    `<div class="dx-metric-card"><div class="k">${escapeHtml(c.name)}</div><div class="v" style="font-size:16px;">${dxFmtMoney(c.avg_daily || 0)}</div><div class="s">日均营收</div></div>`
+                ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🍽️ 品类营收</div><div class="dx-board__meta">各档口销售金额与制作量（本期汇总）</div></div></div><div class="dx-section-grid dx-section-grid--2">${revenue.categories.slice(0, 6).map(c =>
+                    `<div class="dx-metric-card"><div class="k">${escapeHtml(c.name)}</div><div class="v" style="font-size:16px;">${dxFmtMoney(c.avg_daily || 0)}</div><div class="s">日均营收 · 本期合计 ${dxFmtMoney(c.total || 0)}${c.qty_total != null ? ' · ' + Number(c.qty_total).toLocaleString('zh-CN') + '份' : ''}</div></div>`
                   ).join('')}</div></div>`
-                : '<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🍽️ 品类营收</div><div class="dx-board__meta">查看高日销品类结构</div></div></div><div class="dx-empty dx-empty--compact">暂无品类数据</div></div>';
+                : '<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🍽️ 品类营收</div><div class="dx-board__meta">各档口销售金额与制作量（本期汇总）</div></div></div><div class="dx-empty dx-empty--compact">本期日报未填写品类销售数据</div></div>';
 
             const anomHTML = anomalies.length
                 ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🔴 本周异常（${anomalies.length}项）</div><div class="dx-board__meta">点击查看每条异常的基础信息与触发记录</div></div></div><div class="dx-section-grid dx-section-grid--2">${anomalies.map((a, idx) =>
