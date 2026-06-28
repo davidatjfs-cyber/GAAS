@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import PptxGenJS from "/Users/xieding/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/.pnpm/pptxgenjs@4.0.1/node_modules/pptxgenjs/dist/pptxgen.es.js";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PREVIEW_URL = pathToFileURL(path.join(ROOT, "preview", "index.html")).href;
+const PREVIEW_URL = "http://127.0.0.1:4173/preview/index.html";
 const PLAYWRIGHT = "/Library/Frameworks/Python.framework/Versions/3.11/bin/playwright";
 const OUT_DIR = path.join(ROOT, "outputs");
 const ASSET_DIR = path.join(ROOT, "assets");
@@ -16,6 +17,20 @@ const SLIDE_COUNT = 26;
 
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
+}
+
+async function waitForServer(url, timeoutMs = 30000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const res = await fetch(url, { method: "GET" });
+      if (res.ok) return;
+    } catch {
+      // retry
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`Timed out waiting for preview server: ${url}`);
 }
 
 function slidePath(index) {
@@ -81,13 +96,33 @@ async function buildPptx(slideImages) {
 async function main() {
   await ensureDir(OUT_DIR);
 
-  const slideImages = [];
-  for (let i = 1; i <= SLIDE_COUNT; i += 1) {
-    slideImages.push(renderSlideScreenshot(i));
-  }
+  const server = spawn("python3", ["-m", "http.server", "4173", "--directory", ROOT], {
+    cwd: ROOT,
+    stdio: "ignore",
+    detached: true,
+  });
 
-  await buildPptx(slideImages);
-  console.log(`PPTX written to ${PPTX_PATH}`);
+  try {
+    await waitForServer("http://127.0.0.1:4173/preview/index.html");
+
+    const slideImages = [];
+    for (let i = 1; i <= SLIDE_COUNT; i += 1) {
+      slideImages.push(renderSlideScreenshot(i));
+    }
+
+    await buildPptx(slideImages);
+    console.log(`PPTX written to ${PPTX_PATH}`);
+  } finally {
+    try {
+      process.kill(-server.pid);
+    } catch {
+      try {
+        server.kill();
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 main().catch((error) => {
