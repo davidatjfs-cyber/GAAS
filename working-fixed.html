@@ -11285,11 +11285,79 @@
         .dx-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 8999; }
         .dx-backdrop.show { display: block; }
         .dx-detail-panel {
+            --dx-iris: #6D7CFF;
+            --dx-mint: #5EEAD4;
+            --dx-coral: #FF7A90;
+            --dx-amber: #FFC46B;
+            --dx-text: #EEF1FA;
+            --dx-dim: #9AA3C7;
+            --dx-faint: #5B6597;
+            --dx-stroke: rgba(255,255,255,0.08);
             display: none; position: fixed; top: 0; right: 0; width: 100%; height: 100vh;
             background: #0B0F1E; color: var(--dx-text); overflow-y: auto; z-index: 9000;
             padding: 28px 16px 80px; font-family: 'Noto Sans SC', system-ui, sans-serif;
         }
         .dx-detail-panel.show { display: block; }
+        /* 详情抽屉在 #diagnosis-page 外，必须单独挂样式（否则只有裸 HTML 无卡片布局） */
+        .dx-detail-panel .dx-detail-hero {
+            padding: 18px; border-radius: 18px; margin-bottom: 14px;
+            background:
+                radial-gradient(120% 120% at 0% 0%, rgba(109,124,255,0.20), transparent 48%),
+                radial-gradient(120% 120% at 100% 0%, rgba(94,234,212,0.10), transparent 45%),
+                rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .dx-detail-panel .dx-detail-hero__title { font-size: 18px; font-weight: 800; color: #fff; line-height: 1.25; margin: 0; }
+        .dx-detail-panel .dx-detail-hero__desc { margin: 8px 0 12px; color: var(--dx-dim); font-size: 13px; line-height: 1.5; }
+        .dx-detail-panel .dx-detail-hero__metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+        .dx-detail-panel .dx-detail-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 12px; margin-bottom: 12px; }
+        .dx-detail-panel .dx-detail-stack { display: grid; gap: 12px; }
+        .dx-detail-panel .dx-section-grid { display: grid; gap: 12px; }
+        .dx-detail-panel .dx-section-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .dx-detail-panel .dx-section-grid--1 { grid-template-columns: minmax(0, 1fr); }
+        .dx-detail-panel .dx-board {
+            padding: 16px; border-radius: 16px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03));
+            border: 1px solid rgba(255,255,255,0.07);
+        }
+        .dx-detail-panel .dx-board__head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+        .dx-detail-panel .dx-board__title { margin: 0; font-size: 13px; font-weight: 800; color: #fff; letter-spacing: 0.01em; }
+        .dx-detail-panel .dx-board__meta { font-size: 11px; color: var(--dx-dim); line-height: 1.4; text-align: right; }
+        .dx-detail-panel .dx-metric-card { padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); }
+        .dx-detail-panel .dx-metric-card .k { font-size: 11px; color: var(--dx-faint); }
+        .dx-detail-panel .dx-metric-card .v { margin-top: 4px; font-size: 18px; font-weight: 800; font-family: 'Geist Mono', 'SF Mono', monospace; color: #fff; }
+        .dx-detail-panel .dx-metric-card .s { margin-top: 4px; font-size: 10px; color: var(--dx-dim); line-height: 1.3; }
+        .dx-detail-panel .dx-metric { background: rgba(255,255,255,0.04); border-radius: 12px; padding: 10px 8px; text-align: center; border: 1px solid rgba(255,255,255,0.06); }
+        .dx-detail-panel .dx-metric .v { font-size: 14px; font-weight: 700; color: #fff; font-family: 'Geist Mono', 'SF Mono', monospace; }
+        .dx-detail-panel .dx-metric .l { font-size: 10px; color: var(--dx-faint); margin-top: 3px; }
+        .dx-detail-panel .dx-metric--revenue .v { color: #EEF1FA; }
+        .dx-detail-panel .dx-metric--traffic .v { color: var(--dx-mint); }
+        .dx-detail-panel .dx-metric--ticket .v { color: #FFC46B; }
+        .dx-detail-panel .dx-metric--takeout .v { color: #A78BFA; }
+        .dx-detail-panel .dx-metric--efficiency .v { color: #7DD3FC; }
+        .dx-detail-panel .dx-metric__delta { display: block; margin-top: 4px; font-size: 10px; line-height: 1.2; color: var(--dx-faint); }
+        .dx-detail-panel .dx-action-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .dx-detail-panel .dx-action-card { padding: 14px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); }
+        .dx-detail-panel .dx-action-card__top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+        .dx-detail-panel .dx-action-card__title { font-size: 14px; font-weight: 700; color: #fff; line-height: 1.4; }
+        .dx-detail-panel .dx-action-card__meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .dx-detail-panel .dx-action-card__detail { font-size: 12px; color: var(--dx-dim); line-height: 1.55; margin-top: 6px; }
+        .dx-detail-panel .dx-action-card--pllm { border-color: rgba(167,139,250,0.26); }
+        .dx-detail-panel .dx-action-card--ai { border-color: rgba(96,165,250,0.22); }
+        .dx-detail-panel .dx-action-card--rule { border-color: rgba(94,234,212,0.18); }
+        .dx-detail-panel .dx-source {
+            display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
+            border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+            background: rgba(255,255,255,0.06); color: var(--dx-dim);
+        }
+        .dx-detail-panel .dx-source--pllm { background: rgba(167,139,250,0.15); color: #C4B5FD; }
+        .dx-detail-panel .dx-source--ai { background: rgba(96,165,250,0.14); color: #93C5FD; }
+        .dx-detail-panel .dx-source--rule { background: rgba(94,234,212,0.12); color: var(--dx-mint); }
+        .dx-detail-panel .dx-source--manual { background: rgba(255,196,107,0.15); color: #FBBF24; }
+        .dx-detail-panel .dx-chip { font-size: 11px; padding: 4px 10px; border-radius: 8px; font-weight: 600; line-height: 1.4; }
+        .dx-detail-panel .dx-chip--info { background: rgba(109,124,255,0.12); color: var(--dx-iris); }
+        .dx-detail-panel .dx-empty { text-align: center; padding: 60px 20px; color: var(--dx-dim); font-size: 14px; }
+        .dx-detail-panel .dx-empty--compact { padding: 18px 12px; }
         .dx-panel-close {
             position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.08);
             border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 18px;
@@ -11319,11 +11387,16 @@
             #diagnosis-page .dx-detail-layout,
             #diagnosis-page .dx-detail-hero__metrics,
             #diagnosis-page .dx-action-grid,
-            #diagnosis-page .dx-section-grid--2 { grid-template-columns: 1fr; }
+            #diagnosis-page .dx-section-grid--2,
+            .dx-detail-panel .dx-detail-layout,
+            .dx-detail-panel .dx-detail-hero__metrics,
+            .dx-detail-panel .dx-action-grid,
+            .dx-detail-panel .dx-section-grid--2 { grid-template-columns: 1fr; }
             #diagnosis-page .dx-metrics--five,
             #diagnosis-page .dx-grid--2,
             #diagnosis-page .dx-grid--3,
-            #diagnosis-page .dx-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            #diagnosis-page .dx-grid--4,
+            .dx-detail-panel .dx-detail-hero__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
 
         /* ── 分析报表：移动端排版增强（参考待审批模块） ── */
