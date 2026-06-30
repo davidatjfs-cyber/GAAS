@@ -3493,6 +3493,19 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           return res.status(400).json({ error: 'missing_mentor', message: '店长审批时必须指定带教人' });
         }
         if (mentorUsernameRaw) {
+          // Defense-in-depth: even though the frontend now uses a picker (no more free-text typing),
+          // reject mentor usernames that don't correspond to a real account to prevent silently
+          // misrouted training assignments (see incident: NNYXLYR04 mistyped as nnyxlry04).
+          const mentorExists = await pool.query(
+            `select 1 from users where lower(username) = lower($1)
+             union all
+             select 1 from employees where lower(username) = lower($1)
+             limit 1`,
+            [mentorUsernameRaw]
+          );
+          if (!mentorExists.rows?.length) {
+            return res.status(400).json({ error: 'mentor_not_found', message: '带教人账号不存在，请重新选择' });
+          }
           updatedPayload.mentorUsername = mentorUsernameRaw;
           if (mentorNameRaw) updatedPayload.mentorName = mentorNameRaw;
           updatedPayload.mentorAssignedBy = username;

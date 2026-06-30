@@ -25658,12 +25658,12 @@ const role = String(currentUser?.role || '').trim();
                         <div style="font-weight:900; font-size:13px; color:rgba(226,232,240,0.95); margin-bottom:8px;">店长审批通过时，请指定带教人与培训周期</div>
                         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px;">
                             <div>
-                                <div style="font-size:12px; color:rgba(200,215,230,0.78); margin-bottom:4px;">带教人账号 *</div>
-                                <input id="promotion-mentor-username-input" class="form-input" placeholder="请输入带教人账号" value="${escapeHtml(String(payload?.mentorUsername || ''))}">
+                                <div style="font-size:12px; color:rgba(200,215,230,0.78); margin-bottom:4px;">带教人 *</div>
+                                <select id="promotion-mentor-username-input" class="form-input" data-selected="${escapeHtml(String(payload?.mentorUsername || ''))}"><option value="">请选择带教人</option></select>
                             </div>
                             <div>
                                 <div style="font-size:12px; color:rgba(200,215,230,0.78); margin-bottom:4px;">带教人姓名</div>
-                                <input id="promotion-mentor-name-input" class="form-input" placeholder="可选" value="${escapeHtml(String(payload?.mentorName || ''))}">
+                                <input id="promotion-mentor-name-input" class="form-input" placeholder="选择带教人后自动填充" value="${escapeHtml(String(payload?.mentorName || ''))}" readonly>
                             </div>
                             <div>
                                 <div style="font-size:12px; color:rgba(200,215,230,0.78); margin-bottom:4px;">培训开始日期 *</div>
@@ -26011,6 +26011,7 @@ const role = String(currentUser?.role || '').trim();
                 promoMentorBox.style.display = needMentorByStoreMgr ? '' : 'none';
                 if (needMentorByStoreMgr) {
                     promoRenderTrainingPeriodsEditor(Array.isArray(payload?.trainingPeriods) ? payload.trainingPeriods : []);
+                    promoPopulateMentorSelect(item);
                 }
             }
             const promoSalaryBox = document.getElementById('promotion-salary-box');
@@ -35165,6 +35166,73 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     || employees.find(x => String(x?.username || '').trim().toLowerCase() === uLower)
                     || null;
             } catch (e) { return null; }
+        }
+
+        // Populate the promotion-approval "带教人" select with active employees from the applicant's store,
+        // preferring production-manager/management roles. Falls back to all active employees of the store
+        // if no role match is found, so the store manager is never left with an empty list.
+        function promoPopulateMentorSelect(item) {
+            const sel = document.getElementById('promotion-mentor-username-input');
+            const nameInput = document.getElementById('promotion-mentor-name-input');
+            if (!sel) return;
+            try {
+                const applicantRec = hrmsLookupUserRecord(item?.applicant_username);
+                const applicantStore = String(applicantRec?.store || item?.payload?.store || '').trim();
+                const applicantUsername = String(item?.applicant_username || '').trim().toLowerCase();
+
+                const employeesAll = HRMS_STORE.getEmployees() || [];
+                const usersAll = (HRMS_STORE.getUsers ? HRMS_STORE.getUsers() : []) || [];
+                const seen = new Set();
+                const candidates = [];
+                const addCandidate = (x) => {
+                    const u = String(x?.username || '').trim();
+                    if (!u || seen.has(u.toLowerCase())) return;
+                    if (u.toLowerCase() === applicantUsername) return; // can't mentor yourself
+                    const status = String(x?.status || 'active').trim().toLowerCase();
+                    if (status && status !== 'active') return;
+                    seen.add(u.toLowerCase());
+                    candidates.push({
+                        username: u,
+                        name: String(x?.name || '').trim(),
+                        store: String(x?.store || '').trim(),
+                        role: hrmsNormalizeRoleCode(x?.role)
+                    });
+                };
+                employeesAll.forEach(addCandidate);
+                usersAll.forEach(addCandidate);
+
+                const sameStore = applicantStore ? candidates.filter(c => c.store === applicantStore) : candidates.slice();
+                const managementRoles = new Set([ROLES.PRODUCTION_MANAGER, ROLES.STORE_MANAGER, ROLES.FRONT_MANAGER, ROLES.FRONT_SUPERVISOR, ROLES.HQ_MANAGER, ROLES.ADMIN]);
+                let pool = sameStore.filter(c => managementRoles.has(c.role));
+                if (!pool.length) pool = sameStore.length ? sameStore : candidates;
+
+                pool.sort((a, b) => (a.name || a.username).localeCompare(b.name || b.username, 'zh-CN'));
+
+                const selectedUsername = String(sel.dataset.selected || '').trim();
+                sel.innerHTML = '<option value="">请选择带教人</option>' + pool.map(c => {
+                    const label = c.name ? `${c.name}（${c.username}）` : c.username;
+                    const isSelected = selectedUsername && c.username.toLowerCase() === selectedUsername.toLowerCase();
+                    return `<option value="${c.username.replace(/"/g, '&quot;')}" data-name="${(c.name || '').replace(/"/g, '&quot;')}"${isSelected ? ' selected' : ''}>${label}</option>`;
+                }).join('');
+
+                if (selectedUsername && !pool.some(c => c.username.toLowerCase() === selectedUsername.toLowerCase())) {
+                    // Preserve a previously-saved mentor even if they fall outside the computed pool (e.g. different store)
+                    const existingName = String(nameInput?.value || '').trim();
+                    const opt = document.createElement('option');
+                    opt.value = selectedUsername;
+                    opt.dataset.name = existingName;
+                    opt.selected = true;
+                    opt.textContent = existingName ? `${existingName}（${selectedUsername}）` : selectedUsername;
+                    sel.appendChild(opt);
+                }
+
+                const syncMentorName = () => {
+                    const opt = sel.options[sel.selectedIndex];
+                    if (nameInput) nameInput.value = opt ? (opt.dataset.name || '') : '';
+                };
+                sel.onchange = syncMentorName;
+                syncMentorName();
+            } catch (e) {}
         }
 
         function escapeJsString(str) {
