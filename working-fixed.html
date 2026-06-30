@@ -33443,8 +33443,8 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     const deadline = getTrainingDeadlineState(t);
                     const isDone = st === 'certified';
                     const isPending = st === 'practice';
-                    const btnLabel = isDone ? '✅ 已完成' : isPending ? '⏳ 等待审核' : '开始学习 →';
-                    const btnDisabled = isDone || isPending;
+                    const btnLabel = isDone ? '✅ 已完成' : isPending ? '📤 提交实操材料 →' : '开始学习 →';
+                    const btnDisabled = isDone;
                     const practiceTag = t.require_practice === false ? '<span style="font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(96,165,250,0.12);color:#60a5fa;margin-left:6px;">无需实操</span>' : '';
                     const statusBg = deadline.isOverdue ? 'rgba(239,68,68,0.12)' : sBg[st];
                     const statusBorder = deadline.isOverdue ? 'rgba(239,68,68,0.3)' : sBorder[st];

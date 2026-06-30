@@ -4089,6 +4089,12 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             notifications.push(...recipients.map((u) => makeNotif(u, '晋升培训任务已生成', planMsg, { type: 'promotion_training_plan', approvalId: updated.id })));
           }
           await appendNotifications(notifications);
+
+          // 原子合并，避免 saveSharedState 全量写回与并发请求互相覆盖
+          await mergeSharedStateFields(
+            { promotionTracks: tracks },
+            { promotionTracks: 'id' }
+          );
         }
 
         if (finalRejected) {
