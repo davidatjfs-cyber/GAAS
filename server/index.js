@@ -16450,7 +16450,7 @@ app.put('/api/admin/tenants/:tenantId/integrations/feishu_bitable', platformAdmi
 });
 
 // 通用集成配置（飞书对话/小程序/定时任务覆盖）— 复用 tenant_integrations 表，按 integration_key 区分
-const GENERIC_INTEGRATION_KEYS = new Set(['feishu_chat', 'mini_program', 'cron_overrides']);
+const GENERIC_INTEGRATION_KEYS = new Set(['feishu_chat', 'cron_overrides']);
 
 app.get('/api/admin/tenants/:tenantId/integrations/:integKey', platformAdminRequired, async (req, res) => {
   const { tenantId, integKey } = req.params;
