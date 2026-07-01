@@ -15832,7 +15832,10 @@ async function applyStatePeopleVisibilityForRole(data, role, username, fullState
     // Always include the current user's own record regardless of store scope
     if (String(row?.username || '').trim().toLowerCase() === un) return true;
     const rowStore = hrmsNormStoreName(row?.store);
-    if (allowedStores && allowedStores.size > 0) return allowedStores.has(rowStore) && (!storeScope || rowStore === storeScope);
+    // 多店兼管（如洪潮店长同时"监管"马己仙门店的 duty binding）时 allowedStores 已包含全部
+    // 授权门店；此前额外要求 rowStore === storeScope(主店) 会把非主店的授权门店过滤掉，
+    // 导致兼管者在带教人下拉等场景里完全看不到自己有权限的另一家店的员工。
+    if (allowedStores && allowedStores.size > 0) return allowedStores.has(rowStore);
     if (storeScope) return rowStore === storeScope;
     return true;
   };
