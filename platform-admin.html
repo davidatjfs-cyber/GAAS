@@ -538,12 +538,13 @@
         <!-- AI模型设定 -->
         <div id="aiModelPane" class="config-pane stack">
           <div class="hint-box">配置后，该租户的实操评分/库存预测/AI Agent（评分、异常检测、对话）三处调用都会改用租户自己的 API Key 计费，不再走平台默认的 API；不填则沿用系统默认（当前只有 default 租户如此）。评分标准、提示词、判定阈值仍固定写死在系统里，不受此项影响，保证不同租户的输出质量一致。</div>
-          <div class="detail-grid">
-            <label class="field">Base URL（OpenAI 兼容）<input id="aiModelBaseUrl" placeholder="https://api.deepseek.com/v1"></label>
-            <label class="field">Model<input id="aiModelModel" placeholder="deepseek-chat"></label>
-          </div>
           <label>API Key<input id="aiModelApiKey" type="password" placeholder="租户自己的 API Key"></label>
-          <div class="hint-box" style="margin-top:8px">要求是 OpenAI 兼容的 /chat/completions 接口（DeepSeek、Qwen、Kimi、豆包等均可）。视频类实操评分暂不支持自定义端点，会自动降级为抽帧图片评分。</div>
+          <label>Base URL（OpenAI 兼容）<input id="aiModelBaseUrl" placeholder="https://api.deepseek.com/v1"></label>
+          <div class="detail-grid">
+            <label class="field">文本模型（对话/异常检测/评分逻辑）<input id="aiModelTextModel" placeholder="deepseek-chat"></label>
+            <label class="field">视觉模型（实操拍照/抽帧评分，必须是支持图片输入的模型）<input id="aiModelVisionModel" placeholder="不填则退回用文本模型（如不支持视觉会调用失败）"></label>
+          </div>
+          <div class="hint-box" style="margin-top:8px">不是所有模型都支持视觉：DeepSeek 目前无视觉模型，Qwen 用 qwen-vl-max/qwen-vl-plus，豆包用 doubao-vision 系列，需要单独在「视觉模型」里填一个真正支持图片输入的模型名，否则实操评分会调用失败。要求是 OpenAI 兼容的 /chat/completions 接口。视频类实操评分暂不支持自定义端点，会自动降级为抽帧图片评分（走视觉模型）。</div>
           <button id="saveAiModelBtn" class="warn">保存AI模型配置</button>
         </div>
 
@@ -1806,7 +1807,8 @@
         api(`/api/admin/tenants/${id}/integrations/ai_model`).then((d) => {
           const c = d.integration || {};
           if ($('aiModelBaseUrl')) $('aiModelBaseUrl').value = c.base_url || '';
-          if ($('aiModelModel')) $('aiModelModel').value = c.model || '';
+          if ($('aiModelTextModel')) $('aiModelTextModel').value = c.text_model || '';
+          if ($('aiModelVisionModel')) $('aiModelVisionModel').value = c.vision_model || '';
           if ($('aiModelApiKey')) $('aiModelApiKey').value = c.api_key || '';
         })
       ]);
@@ -2210,7 +2212,8 @@
         if (!tenantId) { toast('请先选择租户'); return; }
         const payload = {
           base_url: $('aiModelBaseUrl').value.trim(),
-          model: $('aiModelModel').value.trim(),
+          text_model: $('aiModelTextModel').value.trim(),
+          vision_model: $('aiModelVisionModel').value.trim(),
           api_key: $('aiModelApiKey').value.trim()
         };
         await api(`/api/admin/tenants/${tenantId}/integrations/ai_model`, { method: 'PUT', body: JSON.stringify(payload) });

@@ -2456,10 +2456,11 @@ async function loadTenantAiConfig() {
     if (!key) return null;
     const cfg = await getTenantIntegrationConfig(agentPool, tenantId, 'ai_model', key);
     if (!cfg?.api_key || !cfg?.base_url) return null;
+    const textModel = String(cfg.text_model || cfg.model || '').trim() || 'gpt-3.5-turbo';
     return {
       apiKey: String(cfg.api_key).trim(),
       baseUrl: String(cfg.base_url).trim().replace(/\/$/, ''),
-      model: String(cfg.model || '').trim() || 'gpt-3.5-turbo'
+      model: String(cfg.vision_model || '').trim() || textModel
     };
   } catch (e) {
     console.warn('[agents] loadTenantAiConfig failed, falling back to platform config:', e?.message);

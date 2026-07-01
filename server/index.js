@@ -9739,17 +9739,18 @@ function normalizeOpenAiCompatibleBaseUrl(input) {
  * 租户自带 AI API（tenant_integrations 'ai_model'）优先级最高，跟下面这套
  * 环境变量/aiConfig 兜底逻辑（default 租户用）是两条独立路径。
  */
-async function loadTenantAiConfigForForecast() {
+async function loadTenantAiConfigForForecast(preferVision) {
   try {
     const tenantId = resolveTenantIdDefault();
     if (!tenantId || tenantId === 'default') return null;
     const key = requireTenantIntegrationKey();
     const cfg = await getTenantIntegrationConfig(pool, tenantId, 'ai_model', key);
     if (!cfg?.api_key || !cfg?.base_url) return null;
+    const textModel = String(cfg.text_model || cfg.model || '').trim() || 'gpt-3.5-turbo';
     return {
       apiKey: String(cfg.api_key).trim(),
       baseUrl: String(cfg.base_url).trim().replace(/\/$/, ''),
-      model: String(cfg.model || '').trim() || 'gpt-3.5-turbo'
+      model: preferVision ? (String(cfg.vision_model || '').trim() || textModel) : textModel
     };
   } catch (e) {
     return null;
@@ -9757,7 +9758,7 @@ async function loadTenantAiConfigForForecast() {
 }
 
 async function resolveForecastArkConfig(state0, opts = {}) {
-  const tenantCfg = await loadTenantAiConfigForForecast();
+  const tenantCfg = await loadTenantAiConfigForForecast(!!opts.preferVision);
   if (tenantCfg) return tenantCfg;
 
   const preferVision = !!opts.preferVision;
