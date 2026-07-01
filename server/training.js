@@ -1519,14 +1519,27 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
       const username = String(req.user?.username || '').trim();
       const role = String(req.user?.role || '').trim();
       const isAdminOrHQ = role === 'admin' || role === 'hq_manager';
-      // 谁派发谁审核：非管理员/总部只能看到自己派发的任务的认证
+      // 谁派发谁审核：非管理员/总部只能看到自己派发的任务的认证。
+      // assigned_by 为空（如到期复训自动派发未回填指派人的历史脏数据）时，
+      // 兜底给该员工所在门店的店长/出品经理，避免记录永远无人能审。
       const assignerClause = isAdminOrHQ
         ? ''
         : `AND EXISTS (
              SELECT 1 FROM training_assignments a2
              WHERE a2.employee_username = c.employee_username
                AND a2.topic_id = c.topic_id
-               AND lower(a2.assigned_by) = lower('${username.replace(/'/g, "''")}')
+               AND (
+                 lower(a2.assigned_by) = lower('${username.replace(/'/g, "''")}')
+                 OR (
+                   a2.assigned_by IS NULL
+                   AND EXISTS (
+                     SELECT 1 FROM employees ce
+                     JOIN employees re ON re.store = ce.store AND lower(re.username) = lower('${username.replace(/'/g, "''")}')
+                     WHERE lower(ce.username) = lower(c.employee_username)
+                       AND re.role IN ('store_production_manager','store_manager')
+                   )
+                 )
+               )
            )`;
       const tenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
       const result = await pool().query(`
@@ -2575,10 +2588,35 @@ export async function runCertificationExpirySweep() {
       );
       if (existing.rows.length) continue;
 
+      // assigned_by 不能留空：审核队列按「谁派发谁审核」过滤，assigned_by=NULL 时
+      // 非admin/hq_manager角色永远查不到这条待审——复训通知发了但没人能审核确认。
+      // 这里回填为该员工所在门店的出品经理/店长（跟晋升派发同一套解法）。
+      let recertAssignedBy = null;
+      try {
+        const empRow = await pool().query(
+          `SELECT store FROM employees WHERE username = $1 AND tenant_id = $2 LIMIT 1`,
+          [row.employee_username, row.tenant_id]
+        );
+        const store = String(empRow.rows[0]?.store || '').trim();
+        if (store) {
+          const mgrRow = await pool().query(
+            `SELECT username, position FROM employees
+             WHERE store = $1 AND tenant_id = $2 AND role IN ('store_production_manager','store_manager')
+               AND COALESCE(status, '') NOT IN ('离职', 'inactive')
+             ORDER BY CASE WHEN position ~ '出品经理|厨师长' THEN 0 ELSE 1 END
+             LIMIT 1`,
+            [store, row.tenant_id]
+          );
+          recertAssignedBy = mgrRow.rows[0]?.username || null;
+        }
+      } catch (e) {
+        console.warn('[Training] recert assignedBy lookup failed:', e?.message);
+      }
+
       await createTrainingAssignment({
         employeeUsername: row.employee_username,
         topicId: row.topic_id,
-        assignedBy: null,
+        assignedBy: recertAssignedBy,
         dueDate: row.valid_until,
         note: `认证「${row.title}」即将于 ${String(row.valid_until).slice(0, 10)} 到期，请完成复训重新认证。`,
         requirePractice: true,
