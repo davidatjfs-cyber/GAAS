@@ -9735,7 +9735,31 @@ function normalizeOpenAiCompatibleBaseUrl(input) {
   return `${noSlash}/v1`;
 }
 
-function resolveForecastArkConfig(state0, opts = {}) {
+/**
+ * 租户自带 AI API（tenant_integrations 'ai_model'）优先级最高，跟下面这套
+ * 环境变量/aiConfig 兜底逻辑（default 租户用）是两条独立路径。
+ */
+async function loadTenantAiConfigForForecast() {
+  try {
+    const tenantId = resolveTenantIdDefault();
+    if (!tenantId || tenantId === 'default') return null;
+    const key = requireTenantIntegrationKey();
+    const cfg = await getTenantIntegrationConfig(pool, tenantId, 'ai_model', key);
+    if (!cfg?.api_key || !cfg?.base_url) return null;
+    return {
+      apiKey: String(cfg.api_key).trim(),
+      baseUrl: String(cfg.base_url).trim().replace(/\/$/, ''),
+      model: String(cfg.model || '').trim() || 'gpt-3.5-turbo'
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function resolveForecastArkConfig(state0, opts = {}) {
+  const tenantCfg = await loadTenantAiConfigForForecast();
+  if (tenantCfg) return tenantCfg;
+
   const preferVision = !!opts.preferVision;
   const llm = state0?.settings?.llm && typeof state0.settings.llm === 'object' ? state0.settings.llm : {};
   const aiConfig = state0?.aiConfig && typeof state0.aiConfig === 'object' ? state0.aiConfig : {};
@@ -9983,7 +10007,7 @@ function computeSlotRevenueShare(allHistoryRows, store, bizType, slot, date) {
 }
 
 async function buildForecastByAI({ historyRows, target, topN, state0 }) {
-  const cfg = resolveForecastArkConfig(state0 || {}, { preferVision: false });
+  const cfg = await resolveForecastArkConfig(state0 || {}, { preferVision: false });
   const apiKey = cfg.apiKey;
   if (!apiKey) return null;
 
@@ -16453,7 +16477,7 @@ app.put('/api/admin/tenants/:tenantId/integrations/feishu_bitable', platformAdmi
 });
 
 // 通用集成配置（飞书对话/小程序/定时任务覆盖）— 复用 tenant_integrations 表，按 integration_key 区分
-const GENERIC_INTEGRATION_KEYS = new Set(['feishu_chat', 'cron_overrides']);
+const GENERIC_INTEGRATION_KEYS = new Set(['feishu_chat', 'cron_overrides', 'ai_model']);
 
 app.get('/api/admin/tenants/:tenantId/integrations/:integKey', platformAdminRequired, async (req, res) => {
   const { tenantId, integKey } = req.params;

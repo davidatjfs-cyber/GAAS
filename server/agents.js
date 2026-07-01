@@ -32,6 +32,7 @@ import {
   AgentCommunicationHelper 
 } from './agent-communication-system.js';
 import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js';
+import { getTenantIntegrationConfig } from './tenant-integrations.js';
 import { getBrandConfigSync, getBrandForStoreSync, getAllBrandNamesSync } from './utils/brand-config-loader.js';
 import {
   pgGetMonthlyExecutionFilingCount,
@@ -2442,6 +2443,30 @@ function resolveModelProvider(modelName, forceProvider) {
   return 'deepseek';
 }
 
+/**
+ * 租户自带 AI API：与下方多厂商固定配置(QWEN_API_KEY等环境变量)是两条独立路径。
+ * 配了租户自己的 api_key/base_url/model 就用租户的，未配置（如现有 default 租户）
+ * 完全不受影响，走原有环境变量配置。
+ */
+async function loadTenantAiConfig() {
+  try {
+    const tenantId = resolveTenantIdDefault();
+    if (!tenantId || tenantId === 'default') return null;
+    const key = String(process.env.TENANT_INTEGRATION_ENCRYPTION_KEY || '').trim();
+    if (!key) return null;
+    const cfg = await getTenantIntegrationConfig(agentPool, tenantId, 'ai_model', key);
+    if (!cfg?.api_key || !cfg?.base_url) return null;
+    return {
+      apiKey: String(cfg.api_key).trim(),
+      baseUrl: String(cfg.base_url).trim().replace(/\/$/, ''),
+      model: String(cfg.model || '').trim() || 'gpt-3.5-turbo'
+    };
+  } catch (e) {
+    console.warn('[agents] loadTenantAiConfig failed, falling back to platform config:', e?.message);
+    return null;
+  }
+}
+
 function getLLMClientConfig(modelName, options = {}) {
   const provider = resolveModelProvider(modelName, options.forceProvider || '');
   if (provider === 'qwen') {
@@ -3689,8 +3714,9 @@ export async function callLLM(messages, options = {}) {
 }
 
 export async function callVisionLLM(imageUrl, prompt, opts = {}) {
-  const model = getOpsVisionModel();
-  const cfg = getLLMClientConfig(model, { forceProvider: 'doubao' });
+  const tenantCfg = await loadTenantAiConfig();
+  const model = tenantCfg ? tenantCfg.model : getOpsVisionModel();
+  const cfg = tenantCfg || getLLMClientConfig(model, { forceProvider: 'doubao' });
   const apiKey = cfg.apiKey;
   if (!apiKey) return { ok: false, error: 'no_api_key', content: '' };
   const maxTokens = Math.max(256, Math.min(16384, Number(opts.maxTokens ?? opts.max_tokens ?? 1500)));
@@ -3762,6 +3788,11 @@ export async function callVisionLLM(imageUrl, prompt, opts = {}) {
 }
 
 export async function callVisionLLMVideo(videoUrl, prompt, opts = {}) {
+  // 租户自带 AI（通用 OpenAI 兼容端点）不支持 DashScope 专有的原生视频分析格式；
+  // 直接跳过，让调用方走已有的"抽帧再走 callVisionLLM"回退路径（那条路径已接入租户配置）。
+  if (await loadTenantAiConfig()) {
+    return { ok: false, error: 'tenant_custom_ai_no_native_video', content: '' };
+  }
   const apiKey = process.env.QWEN_API_KEY;
   if (!apiKey) {
     return { ok: false, error: 'no_qwen_api_key', content: '' };
