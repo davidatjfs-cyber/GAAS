@@ -32,7 +32,6 @@ import {
   AgentCommunicationHelper 
 } from './agent-communication-system.js';
 import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js';
-import { getTenantIntegrationConfig } from './tenant-integrations.js';
 import { getBrandConfigSync, getBrandForStoreSync, getAllBrandNamesSync } from './utils/brand-config-loader.js';
 import {
   pgGetMonthlyExecutionFilingCount,
@@ -2443,24 +2442,49 @@ function resolveModelProvider(modelName, forceProvider) {
   return 'deepseek';
 }
 
+function normalizeOpenAiCompatibleBaseUrlForTenant(raw) {
+  const trimmed = String(raw || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  if (/ark\.cn-beijing\.volces\.com/i.test(trimmed)) {
+    if (/\/api\/v3$/i.test(trimmed)) return trimmed;
+    if (/\/v1$/i.test(trimmed)) return trimmed.replace(/\/v1$/i, '/api/v3');
+    return `${trimmed}/api/v3`;
+  }
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+}
+
 /**
- * 租户自带 AI API：与下方多厂商固定配置(QWEN_API_KEY等环境变量)是两条独立路径。
- * 配了租户自己的 api_key/base_url/model 就用租户的，未配置（如现有 default 租户）
- * 完全不受影响，走原有环境变量配置。
+ * 从租户自己在 HRMS「系统设置 → AI 配置」里填的模型/绑定（hrms_state.settings.llm）解析出
+ * 某个功能（featureKey）应该用哪个模型。跟下方多厂商固定配置(QWEN_API_KEY等环境变量)是
+ * 两条独立路径：租户配了自己的 key 就用租户的，未配置（如现有 default 租户）完全不受影响。
  */
-async function loadTenantAiConfig() {
+async function loadTenantAiConfig(featureKey = 'default') {
   try {
     const tenantId = resolveTenantIdDefault();
     if (!tenantId || tenantId === 'default') return null;
-    const key = String(process.env.TENANT_INTEGRATION_ENCRYPTION_KEY || '').trim();
-    if (!key) return null;
-    const cfg = await getTenantIntegrationConfig(agentPool, tenantId, 'ai_model', key);
-    if (!cfg?.api_key || !cfg?.base_url) return null;
-    const textModel = String(cfg.text_model || cfg.model || '').trim() || 'gpt-3.5-turbo';
+    const r = await agentPool.query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', [tenantId]);
+    const llm = r.rows?.[0]?.data?.settings?.llm;
+    if (!llm || typeof llm !== 'object') return null;
+
+    let models = Array.isArray(llm.models) ? llm.models : [];
+    let bindings = { ...(llm.bindings || {}) };
+    if (!models.length) {
+      const legacyKey = String(llm.apiKey || '').trim();
+      if (!legacyKey && !llm.baseUrl && !llm.model) return null;
+      models = [{ id: 'legacy_default', baseUrl: llm.baseUrl, model: llm.model, apiKey: legacyKey, enabled: true }];
+      bindings = { default: 'legacy_default' };
+    }
+
+    const key = String(featureKey || 'default').trim() || 'default';
+    const boundId = String(bindings?.[key] || bindings?.default || '').trim();
+    let m = models.find((x) => x?.id === boundId && x?.enabled !== false);
+    if (!m) m = models.find((x) => x?.enabled !== false);
+    if (!m?.apiKey || !m?.baseUrl || !m?.model) return null;
+
     return {
-      apiKey: String(cfg.api_key).trim(),
-      baseUrl: String(cfg.base_url).trim().replace(/\/$/, ''),
-      model: String(cfg.vision_model || '').trim() || textModel
+      apiKey: String(m.apiKey).trim(),
+      baseUrl: normalizeOpenAiCompatibleBaseUrlForTenant(m.baseUrl),
+      model: String(m.model).trim()
     };
   } catch (e) {
     console.warn('[agents] loadTenantAiConfig failed, falling back to platform config:', e?.message);
@@ -3715,7 +3739,7 @@ export async function callLLM(messages, options = {}) {
 }
 
 export async function callVisionLLM(imageUrl, prompt, opts = {}) {
-  const tenantCfg = await loadTenantAiConfig();
+  const tenantCfg = await loadTenantAiConfig('vision_scoring');
   const model = tenantCfg ? tenantCfg.model : getOpsVisionModel();
   const cfg = tenantCfg || getLLMClientConfig(model, { forceProvider: 'doubao' });
   const apiKey = cfg.apiKey;
@@ -3791,7 +3815,7 @@ export async function callVisionLLM(imageUrl, prompt, opts = {}) {
 export async function callVisionLLMVideo(videoUrl, prompt, opts = {}) {
   // 租户自带 AI（通用 OpenAI 兼容端点）不支持 DashScope 专有的原生视频分析格式；
   // 直接跳过，让调用方走已有的"抽帧再走 callVisionLLM"回退路径（那条路径已接入租户配置）。
-  if (await loadTenantAiConfig()) {
+  if (await loadTenantAiConfig('vision_scoring')) {
     return { ok: false, error: 'tenant_custom_ai_no_native_video', content: '' };
   }
   const apiKey = process.env.QWEN_API_KEY;

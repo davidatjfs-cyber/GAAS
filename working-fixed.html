@@ -42347,6 +42347,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             { key: 'exam_generate', label: '考试 AI 出题', desc: '培训考试模块根据资料自动生成客观题' },
             { key: 'flashcard_generate', label: '闪卡 AI 生成', desc: '知识库资料一键生成闪卡练习题' },
             { key: 'kb_chat', label: '培训 AI 助手', desc: '知识库对话框基于所选资料问答' },
+            { key: 'vision_scoring', label: '实操评分（视觉）', desc: '员工拍照/视频抽帧提交实操内容，AI 自动打分；必须选一个支持图片输入的模型（如 qwen-vl-max、doubao-vision 系列），不支持视觉的模型（如 DeepSeek）会调用失败' },
             { key: 'default', label: '默认 / 其它', desc: '未单独指定的功能使用此模型；连接校验亦用此模型' },
         ];
 
@@ -42674,8 +42675,11 @@ ${knowledgeContent.slice(0, 30000)}`;
         }
 
         async function callLlmViaServer(messages, options = {}) {
+            // 按 options.feature（如 kb_chat/flashcard_generate/exam_generate）取该功能在
+            // 「AI配置」里绑定的具体模型；未单独绑定则退回 default 绑定的模型。
+            const featureCfg = getEffectiveLlmConfig(options?.feature || 'default');
             const settings = HRMS_STORE.getSettings();
-            const userCfg = normalizeLlmConfig(settings?.llm || {});
+            const userCfg = isUsableLlmConfig(featureCfg) ? featureCfg : normalizeLlmConfig(settings?.llm || {});
             const defaultCfg = normalizeLlmConfig(DEFAULT_LLM_CONFIG);
             const primaryCfg = isUsableLlmConfig(userCfg) ? userCfg : defaultCfg;
             const fallbackCfg = (isUsableLlmConfig(userCfg) && !isSameLlmConfig(userCfg, defaultCfg) && isUsableLlmConfig(defaultCfg))
@@ -43963,20 +43967,60 @@ ${knowledgeContent.slice(0, 30000)}`;
             return questions.map(q => ({ ...q }));
         }
 
+        async function aiGenerateExamQuestions(text, cfg) {
+            const allow = (cfg?.questionTypes && cfg.questionTypes.length ? cfg.questionTypes : ['single', 'tf']).map(x => String(x || '').trim());
+            const count = Math.min(40, Math.max(3, Number(cfg?.count || 8)));
+            const typeDesc = {
+                single: 'single（单选，4个选项，answer 为其中一个选项的完整文本）',
+                multi: 'multi（多选，4个选项，answer 为数组，包含2-3个正确选项的完整文本）',
+                tf: 'tf（判断题，options 固定为 ["正确","错误"]，answer 为其中一个）',
+                blank: 'blank（填空题，options 为空数组，answer 为简短标准答案）'
+            };
+            const allowedDesc = allow.map(t => typeDesc[t] || t).join('；');
+            const prompt = `你是企业内训考试出题老师。请严格基于给定培训资料内容出题，用于员工考试。
+
+出题要求（非常重要）：
+- 只能使用资料中明确出现的信息出题与作答；禁止编造或引入资料外知识。
+- 题干必须是通顺完整的中文书面句，禁止在汉字之间插入空格。
+- 允许的题型：${allowedDesc}
+- 一共出 ${count} 道题，题型从允许列表中合理搭配。
+
+输出格式要求：
+- 只输出严格 JSON 数组，不要输出多余文字
+- 每项字段：type,question,options,answer
+
+资料正文：
+${String(text || '').slice(0, 9000)}`;
+
+            const data = await callLlmViaServer([{ role: 'user', content: prompt }], {
+                max_tokens: 2600,
+                temperature: 0.25,
+                feature: 'exam_generate',
+            });
+            const content = data?.choices?.[0]?.message?.content || '';
+            const extracted = extractJsonArrayFromText(content);
+            const parsed = hrmsSafeParseJson(extracted);
+            const arr = Array.isArray(parsed) ? parsed : [];
+            if (!arr.length) throw new Error('AI 未返回有效题目');
+
+            return arr.map((q, i) => {
+                let type = String(q?.type || 'single').trim();
+                if (!allow.includes(type)) type = allow[0] || 'single';
+                const question = String(q?.question || q?.q || '').trim();
+                const options = Array.isArray(q?.options) ? q.options.map(x => String(x || '').trim()).filter(Boolean) : [];
+                const answer = type === 'multi'
+                    ? (Array.isArray(q?.answer) ? q.answer.map(x => String(x || '').trim()) : [String(q?.answer || '').trim()])
+                    : String(q?.answer || '').trim();
+                return { id: 'q_ai_' + Date.now() + '_' + i, type, question, options, answer };
+            }).filter(q => q.question);
+        }
+
         async function generateQuestionsForExam(text, cfg) {
-            // 尝试使用AI生成题目，如果失败则使用规则生成
+            // 优先真实调用 AI 出题（跟闪卡/培训助手一致，走 feature: 'exam_generate' 绑定的模型）；
+            // 未配置 AI 或调用失败时才回退到规则生成（保证考试模块始终可用）。
             try {
-                const aiConfig = HRMS_STORE.getAIConfig() || {};
-                const apiKey = aiConfig.apiKey || '';
-                const apiUrl = aiConfig.apiUrl || '';
-                
-                if (!apiKey || !apiUrl) {
-                    // 没有配置AI，使用规则生成
-                    return applyQuestionConfig(ruleBasedGenerateQuestions(text, cfg), cfg);
-                }
-                
-                // 这里可以添加真正的AI调用逻辑
-                // 目前先使用规则生成作为fallback
+                const aiQuestions = await aiGenerateExamQuestions(text, cfg);
+                if (aiQuestions.length) return applyQuestionConfig(aiQuestions, cfg);
                 return applyQuestionConfig(ruleBasedGenerateQuestions(text, cfg), cfg);
             } catch (e) {
                 console.error('generateQuestionsForExam error:', e);

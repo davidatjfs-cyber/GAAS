@@ -9736,29 +9736,26 @@ function normalizeOpenAiCompatibleBaseUrl(input) {
 }
 
 /**
- * 租户自带 AI API（tenant_integrations 'ai_model'）优先级最高，跟下面这套
- * 环境变量/aiConfig 兜底逻辑（default 租户用）是两条独立路径。
+ * 从租户自己在 HRMS「系统设置 → AI 配置」里填的模型/绑定（state0.settings.llm，多模型+
+ * 按功能绑定的新格式）解析出应该用哪个模型；跟下面这套环境变量/aiConfig 兜底逻辑
+ * （default 租户目前用的旧单模型格式）是两条独立路径，新格式没配置时完全走旧逻辑。
  */
-async function loadTenantAiConfigForForecast(preferVision) {
-  try {
-    const tenantId = resolveTenantIdDefault();
-    if (!tenantId || tenantId === 'default') return null;
-    const key = requireTenantIntegrationKey();
-    const cfg = await getTenantIntegrationConfig(pool, tenantId, 'ai_model', key);
-    if (!cfg?.api_key || !cfg?.base_url) return null;
-    const textModel = String(cfg.text_model || cfg.model || '').trim() || 'gpt-3.5-turbo';
-    return {
-      apiKey: String(cfg.api_key).trim(),
-      baseUrl: String(cfg.base_url).trim().replace(/\/$/, ''),
-      model: preferVision ? (String(cfg.vision_model || '').trim() || textModel) : textModel
-    };
-  } catch (e) {
-    return null;
-  }
+function resolveTenantAiConfigFromState(state0, featureKey = 'default') {
+  const llm = state0?.settings?.llm;
+  if (!llm || typeof llm !== 'object') return null;
+  const models = Array.isArray(llm.models) ? llm.models : [];
+  if (!models.length) return null; // 旧单模型格式走下面现有兜底链，不在这里处理
+  const bindings = llm.bindings || {};
+  const key = String(featureKey || 'default').trim() || 'default';
+  const boundId = String(bindings?.[key] || bindings?.default || '').trim();
+  let m = models.find((x) => x?.id === boundId && x?.enabled !== false);
+  if (!m) m = models.find((x) => x?.enabled !== false);
+  if (!m?.apiKey || !m?.baseUrl || !m?.model) return null;
+  return { apiKey: String(m.apiKey).trim(), baseUrl: normalizeArkBaseUrl(m.baseUrl), model: String(m.model).trim() };
 }
 
 async function resolveForecastArkConfig(state0, opts = {}) {
-  const tenantCfg = await loadTenantAiConfigForForecast(!!opts.preferVision);
+  const tenantCfg = resolveTenantAiConfigFromState(state0, opts.preferVision ? 'vision_scoring' : 'default');
   if (tenantCfg) return tenantCfg;
 
   const preferVision = !!opts.preferVision;
@@ -16478,7 +16475,7 @@ app.put('/api/admin/tenants/:tenantId/integrations/feishu_bitable', platformAdmi
 });
 
 // 通用集成配置（飞书对话/小程序/定时任务覆盖）— 复用 tenant_integrations 表，按 integration_key 区分
-const GENERIC_INTEGRATION_KEYS = new Set(['feishu_chat', 'cron_overrides', 'ai_model']);
+const GENERIC_INTEGRATION_KEYS = new Set(['feishu_chat', 'cron_overrides']);
 
 app.get('/api/admin/tenants/:tenantId/integrations/:integKey', platformAdminRequired, async (req, res) => {
   const { tenantId, integKey } = req.params;
