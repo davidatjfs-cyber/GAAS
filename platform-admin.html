@@ -426,7 +426,10 @@
         <label>当前租户 ID<input id="cfgTenantId" placeholder="在「租户」页点击选中"></label>
         <div class="config-subnav" id="configSubnav">
           <button type="button" class="active" data-config-pane="profilePane">品牌外观</button>
-          <button type="button" data-config-pane="feishuPane">飞书接入</button>
+          <button type="button" data-config-pane="feishuPane">飞书多维表</button>
+          <button type="button" data-config-pane="feishuChatPane">飞书对话</button>
+          <button type="button" data-config-pane="miniProgramPane">小程序</button>
+          <button type="button" data-config-pane="cronPane">定时任务</button>
           <button type="button" data-config-pane="opsPane">运维操作</button>
         </div>
 
@@ -497,6 +500,62 @@
             <button id="saveFeishuBtn" class="warn">保存飞书配置</button>
             <button id="runAcceptanceBtn" class="secondary">运行验收</button>
           </div>
+        </div>
+
+        <!-- 飞书对话设定 -->
+        <div id="feishuChatPane" class="config-pane stack">
+          <div class="hint-box">配置飞书 Bot 的对话频道。填写后 Agent 可向指定群/会话推送报告和通知；不填则沿用系统默认频道。</div>
+          <label>Bot 应用 ID<input id="chatAppId" placeholder="cli_xxxxxxxxxxxxxxxx（飞书开放平台 App ID）"></label>
+          <label>Bot 应用密钥<input id="chatAppSecret" type="password" placeholder="飞书应用 App Secret"></label>
+          <label>告警群 Chat ID<input id="chatAlertGroupId" placeholder="oc_xxxxxxxx（飞书群聊 Chat ID，可选）"></label>
+          <label>日报推送 Chat ID<input id="chatDailyReportGroupId" placeholder="oc_xxxxxxxx（不填则发给个人）"></label>
+          <label>周报推送 Chat ID<input id="chatWeeklyReportGroupId" placeholder="oc_xxxxxxxx（不填则发给个人）"></label>
+          <label>管理员 Open ID<input id="chatAdminOpenId" placeholder="ou_xxxxxxxx（飞书管理员个人 Open ID）"></label>
+          <div class="hint-box" style="margin-top:8px">Chat ID 获取方式：飞书开放平台 → 事件订阅 → 消息接收，或让 Bot 进群后触发 im.message.receive_v1 事件获取 chat_id。</div>
+          <button id="saveFeishuChatBtn" class="warn">保存飞书对话配置</button>
+        </div>
+
+        <!-- 小程序设定 -->
+        <div id="miniProgramPane" class="config-pane stack">
+          <div class="hint-box">配置该租户接入的企业微信或飞书小程序凭证。不填则小程序相关功能不启用。</div>
+          <div class="detail-grid">
+            <label class="field">平台类型<select id="mpPlatform"><option value="wecom">企业微信</option><option value="feishu">飞书</option></select></label>
+            <label class="field">AppID<input id="mpAppId" placeholder="wx... 或 cli_..."></label>
+          </div>
+          <label>AppSecret<input id="mpAppSecret" type="password" placeholder="小程序密钥"></label>
+          <label>企业 CorpID（企微）<input id="mpCorpId" placeholder="ww... (仅企业微信需要)"></label>
+          <label>AgentID（企微）<input id="mpAgentId" placeholder="1000001 (仅企业微信需要)"></label>
+          <label>Token（企微消息校验）<input id="mpToken" placeholder="自定义消息校验 Token，可选"></label>
+          <label>EncodingAESKey<input id="mpAesKey" placeholder="43位消息加解密 Key，可选"></label>
+          <div class="detail-grid">
+            <label class="field">回调 URL<input id="mpCallbackUrl" placeholder="https://your-domain/api/wecom/callback"></label>
+            <label class="field">环境<select id="mpEnv"><option value="prod">生产</option><option value="dev">开发</option></select></label>
+          </div>
+          <button id="saveMiniProgramBtn" class="warn">保存小程序配置</button>
+        </div>
+
+        <!-- 定时任务设定 -->
+        <div id="cronPane" class="config-pane stack">
+          <div class="hint-box">个性化该租户的定时任务时刻（上海时间）。留空字段将沿用系统默认值。修改后次日起生效（当前运行的定时器不会中断）。</div>
+          <div class="detail-grid">
+            <label class="field">不满意产品日报时刻<input id="cronDissatisfiedHour" type="number" min="0" max="23" placeholder="22（默认22:00）"></label>
+            <label class="field">营业日报时刻<input id="cronDailyReportHour" type="number" min="0" max="23" placeholder="22（默认22:05）"></label>
+          </div>
+          <div class="detail-grid">
+            <label class="field">考勤日报时刻<input id="cronAttendanceHour" type="number" min="0" max="23" placeholder="22（默认22:30）"></label>
+            <label class="field">晨报时刻<input id="cronMorningHour" type="number" min="0" max="23" placeholder="7（默认07:40）"></label>
+          </div>
+          <div class="detail-grid">
+            <label class="field">周报发送日（0=日 1=一…6=六）<input id="cronWeeklyDay" type="number" min="0" max="6" placeholder="1（默认周一）"></label>
+            <label class="field">月报发送日（每月几号）<input id="cronMonthlyDay" type="number" min="1" max="28" placeholder="1（默认1号）"></label>
+          </div>
+          <div class="detail-grid">
+            <label class="field"><input id="cronEnableDailyReport" type="checkbox" checked> 每日营业日报</label>
+            <label class="field"><input id="cronEnableWeeklyReport" type="checkbox" checked> 每周周报</label>
+            <label class="field"><input id="cronEnableMonthlyReport" type="checkbox" checked> 每月月报</label>
+            <label class="field"><input id="cronEnableDissatisfied" type="checkbox" checked> 不满意产品日报</label>
+          </div>
+          <button id="saveCronBtn" class="warn">保存定时任务配置</button>
         </div>
 
         <div id="opsPane" class="config-pane stack">
@@ -1739,6 +1798,44 @@
       if (frame) frame.src = `/agents-admin/?tenant_id=${encodeURIComponent(id)}`;
       const feishu = data.integrations?.feishu_bitable || {};
       if (feishu.app_id) $('cfgAppId').value = feishu.app_id;
+      // Load extra integration configs in background (non-blocking)
+      Promise.allSettled([
+        api(`/api/admin/tenants/${id}/integrations/feishu_chat`).then((d) => {
+          const c = d.integration || {};
+          $('chatAppId').value = c.app_id || '';
+          $('chatAppSecret').value = c.app_secret || '';
+          $('chatAlertGroupId').value = c.alert_group_id || '';
+          $('chatDailyReportGroupId').value = c.daily_report_group_id || '';
+          $('chatWeeklyReportGroupId').value = c.weekly_report_group_id || '';
+          $('chatAdminOpenId').value = c.admin_open_id || '';
+        }),
+        api(`/api/admin/tenants/${id}/integrations/mini_program`).then((d) => {
+          const c = d.integration || {};
+          if (c.platform) $('mpPlatform').value = c.platform;
+          $('mpAppId').value = c.app_id || '';
+          $('mpAppSecret').value = c.app_secret || '';
+          $('mpCorpId').value = c.corp_id || '';
+          $('mpAgentId').value = c.agent_id || '';
+          $('mpToken').value = c.token || '';
+          $('mpAesKey').value = c.aes_key || '';
+          $('mpCallbackUrl').value = c.callback_url || '';
+          if (c.env) $('mpEnv').value = c.env;
+        }),
+        api(`/api/admin/tenants/${id}/integrations/cron_overrides`).then((d) => {
+          const c = d.integration || {};
+          const setNum = (id2, v) => { if ($(id2)) $(id2).value = v != null ? v : ''; };
+          setNum('cronDissatisfiedHour', c.dissatisfied_hour);
+          setNum('cronDailyReportHour', c.daily_report_hour);
+          setNum('cronAttendanceHour', c.attendance_hour);
+          setNum('cronMorningHour', c.morning_hour);
+          setNum('cronWeeklyDay', c.weekly_day);
+          setNum('cronMonthlyDay', c.monthly_day);
+          if ($('cronEnableDailyReport')) $('cronEnableDailyReport').checked = c.enable_daily_report !== false;
+          if ($('cronEnableWeeklyReport')) $('cronEnableWeeklyReport').checked = c.enable_weekly_report !== false;
+          if ($('cronEnableMonthlyReport')) $('cronEnableMonthlyReport').checked = c.enable_monthly_report !== false;
+          if ($('cronEnableDissatisfied')) $('cronEnableDissatisfied').checked = c.enable_dissatisfied !== false;
+        })
+      ]);
       log(`已载入 ${id} 的平台配置。`);
       return data;
     }
@@ -2094,6 +2191,68 @@
       } catch (e) {
         log(`保存飞书配置失败：${e.message}`);
       }
+    };
+
+    $('saveFeishuChatBtn').onclick = async () => {
+      try {
+        const tenantId = $('cfgTenantId').value.trim();
+        if (!tenantId) { toast('请先选择租户'); return; }
+        const payload = {
+          app_id: $('chatAppId').value.trim(),
+          app_secret: $('chatAppSecret').value.trim(),
+          alert_group_id: $('chatAlertGroupId').value.trim(),
+          daily_report_group_id: $('chatDailyReportGroupId').value.trim(),
+          weekly_report_group_id: $('chatWeeklyReportGroupId').value.trim(),
+          admin_open_id: $('chatAdminOpenId').value.trim()
+        };
+        await api(`/api/admin/tenants/${tenantId}/integrations/feishu_chat`, { method: 'PUT', body: JSON.stringify(payload) });
+        log(`飞书对话配置已保存：${tenantId}`);
+        toast('飞书对话配置已保存');
+      } catch (e) { log(`保存飞书对话配置失败：${e.message}`); toast(e.message); }
+    };
+
+    $('saveMiniProgramBtn').onclick = async () => {
+      try {
+        const tenantId = $('cfgTenantId').value.trim();
+        if (!tenantId) { toast('请先选择租户'); return; }
+        const payload = {
+          platform: $('mpPlatform').value,
+          app_id: $('mpAppId').value.trim(),
+          app_secret: $('mpAppSecret').value.trim(),
+          corp_id: $('mpCorpId').value.trim(),
+          agent_id: $('mpAgentId').value.trim(),
+          token: $('mpToken').value.trim(),
+          aes_key: $('mpAesKey').value.trim(),
+          callback_url: $('mpCallbackUrl').value.trim(),
+          env: $('mpEnv').value
+        };
+        await api(`/api/admin/tenants/${tenantId}/integrations/mini_program`, { method: 'PUT', body: JSON.stringify(payload) });
+        log(`小程序配置已保存：${tenantId}`);
+        toast('小程序配置已保存');
+      } catch (e) { log(`保存小程序配置失败：${e.message}`); toast(e.message); }
+    };
+
+    $('saveCronBtn').onclick = async () => {
+      try {
+        const tenantId = $('cfgTenantId').value.trim();
+        if (!tenantId) { toast('请先选择租户'); return; }
+        const num = (id) => { const v = $(id).value.trim(); return v === '' ? null : Number(v); };
+        const payload = {
+          dissatisfied_hour: num('cronDissatisfiedHour'),
+          daily_report_hour: num('cronDailyReportHour'),
+          attendance_hour: num('cronAttendanceHour'),
+          morning_hour: num('cronMorningHour'),
+          weekly_day: num('cronWeeklyDay'),
+          monthly_day: num('cronMonthlyDay'),
+          enable_daily_report: $('cronEnableDailyReport').checked,
+          enable_weekly_report: $('cronEnableWeeklyReport').checked,
+          enable_monthly_report: $('cronEnableMonthlyReport').checked,
+          enable_dissatisfied: $('cronEnableDissatisfied').checked
+        };
+        await api(`/api/admin/tenants/${tenantId}/integrations/cron_overrides`, { method: 'PUT', body: JSON.stringify(payload) });
+        log(`定时任务配置已保存：${tenantId}`);
+        toast('定时任务配置已保存');
+      } catch (e) { log(`保存定时任务配置失败：${e.message}`); toast(e.message); }
     };
 
     window.saveAgentConfig = async (agentId) => {

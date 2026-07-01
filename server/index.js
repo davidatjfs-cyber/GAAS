@@ -13,6 +13,8 @@ import { createEmptyTenantState, resolveLoginTenantId } from './tenant-login.js'
 import {
   getTenantIntegrationSummary,
   saveTenantFeishuIntegration,
+  getTenantIntegrationConfig,
+  saveTenantIntegrationConfig,
 } from './tenant-integrations.js';
 import multer from 'multer';
 import https from 'https';
@@ -16444,6 +16446,34 @@ app.put('/api/admin/tenants/:tenantId/integrations/feishu_bitable', platformAdmi
     return res.json({ ok: true, saved, integration: summary });
   } catch (e) {
     return res.status(e?.statusCode || 500).json({ error: e?.message || 'internal_error' });
+  }
+});
+
+// 通用集成配置（飞书对话/小程序/定时任务覆盖）— 复用 tenant_integrations 表，按 integration_key 区分
+const GENERIC_INTEGRATION_KEYS = new Set(['feishu_chat', 'mini_program', 'cron_overrides']);
+
+app.get('/api/admin/tenants/:tenantId/integrations/:integKey', platformAdminRequired, async (req, res) => {
+  const { tenantId, integKey } = req.params;
+  if (!GENERIC_INTEGRATION_KEYS.has(integKey)) return res.status(404).json({ error: 'unsupported_integration_key' });
+  try {
+    const key = requireTenantIntegrationKey();
+    const config = await tenantContext.run(tenantId, () => getTenantIntegrationConfig(pool, tenantId, integKey, key));
+    return res.json({ ok: true, integration: { configured: !!config, ...(config || {}) } });
+  } catch (e) {
+    return res.status(500).json({ error: e?.message || 'internal_error' });
+  }
+});
+
+app.put('/api/admin/tenants/:tenantId/integrations/:integKey', platformAdminRequired, async (req, res) => {
+  const { tenantId, integKey } = req.params;
+  if (!GENERIC_INTEGRATION_KEYS.has(integKey)) return res.status(404).json({ error: 'unsupported_integration_key' });
+  try {
+    const key = requireTenantIntegrationKey();
+    await tenantContext.run(tenantId, () => saveTenantIntegrationConfig(pool, tenantId, integKey, req.body || {}, key));
+    const config = await tenantContext.run(tenantId, () => getTenantIntegrationConfig(pool, tenantId, integKey, key));
+    return res.json({ ok: true, integration: { configured: !!config, ...(config || {}) } });
+  } catch (e) {
+    return res.status(500).json({ error: e?.message || 'internal_error' });
   }
 });
 
