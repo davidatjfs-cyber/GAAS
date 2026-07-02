@@ -70,6 +70,7 @@ import { enforceRuntimeSafetyOrExit, configureDbSessionSafety, isSchemaChangeAll
 import { expandAgentStoreLabels, resolveAgentCanonicalStore } from './v2-store-alignment.js';
 import { ensureGrowthTables, registerGrowthRoutes, setSendGrowthAlert } from './growth-api.js';
 import { registerDiagnosisRoutes } from './store-diagnosis.js';
+import { ensureGrowthSolutionsSchema, registerGrowthSolutionRoutes, setSolutionNotifier, setSolutionLLM, setTrainingAssigner, startSolutionSweepScheduler } from './growth-solutions.js';
 import strategyExperimentRoutes from './strategy-experiment-api.js';
 import { ensurePhaseTables, registerPhaseRoutes } from './growth-phases.js';
 import {
@@ -5736,6 +5737,16 @@ setSendGrowthAlert(async (msg) => {
   const GROWTH_REPORT_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
   return sendLarkMessage(GROWTH_REPORT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
 });
+registerGrowthSolutionRoutes(app, authRequired);
+setSolutionNotifier(async (msg) => {
+  const GROWTH_REPORT_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
+  return sendLarkMessage(GROWTH_REPORT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+});
+setSolutionLLM(async (prompt) => {
+  const r = await callLLM([{ role: 'user', content: prompt }], { purpose: 'reasoning' });
+  return r?.ok ? r.content : '';
+});
+setTrainingAssigner(createTrainingAssignment);
 registerPhaseRoutes(app, pool);
 app.use(strategyExperimentRoutes(pool, authRequired));
 
@@ -22006,6 +22017,9 @@ app.listen(PORT, HOST, async () => {
     await ensureTrainingSchema();
     console.log('[modules] RAG + TaskBoard + HRMS-API + SOP-Distribution + KitchenExec + Recipe + Training initialized');
     startTrainingReminderScheduler();
+    await ensureGrowthSolutionsSchema();
+    startSolutionSweepScheduler();
+    console.log('[modules] GrowthSolutions initialized');
 
 
     // 飞书表格→PG 与 sales_raw 目录入库：失败第一时间通知 admin（见 notifyAdminsDualWriteFailure 注释）

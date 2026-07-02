@@ -11411,6 +11411,60 @@
             color: #EEF1FA; line-height: 1.55;
         }
         .dx-anomaly-evidence__meta { margin-top: 4px; color: #9AA3C7; font-size: 11px; }
+        /* ── 六大增长方案 ── */
+        .gs-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 28px 0 14px; flex-wrap: wrap; }
+        .gs-head h3 { margin: 0; font-size: 16px; font-weight: 800; color: var(--dx-text, #EEF1FA); }
+        .gs-head .gs-sub { font-size: 12px; color: var(--dx-dim, #9AA3C7); margin-top: 2px; }
+        .gs-store-select { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #EEF1FA; border-radius: 10px; padding: 7px 12px; font-size: 13px; }
+        .gs-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+        .gs-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.09); border-radius: 14px; padding: 14px 16px; cursor: pointer; transition: border-color .15s, transform .15s; }
+        .gs-card:hover { border-color: rgba(109,124,255,0.45); transform: translateY(-2px); }
+        .gs-card__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .gs-card__title { font-size: 14px; font-weight: 700; color: #fff; }
+        .gs-badge { font-size: 11px; padding: 2px 9px; border-radius: 10px; font-weight: 700; white-space: nowrap; }
+        .gs-badge--idle { background: rgba(255,255,255,0.08); color: #9AA3C7; }
+        .gs-badge--active { background: rgba(109,124,255,0.18); color: #A5B0FF; }
+        .gs-badge--observing { background: rgba(232,184,90,0.16); color: #E8B85A; }
+        .gs-badge--reviewing { background: rgba(255,138,122,0.16); color: #FF8A7A; }
+        .gs-badge--capped { background: rgba(62,217,166,0.14); color: #3ED9A6; }
+        .gs-card__metric { font-size: 11px; color: #5B6597; margin-top: 10px; letter-spacing: .04em; }
+        .gs-card__value { font-size: 22px; font-weight: 800; color: #fff; font-family: 'Geist Mono','SF Mono',monospace; margin-top: 2px; }
+        .gs-card__value small { font-size: 11px; color: #9AA3C7; font-weight: 400; }
+        .gs-card__target { font-size: 12px; color: #A5B0FF; margin-top: 6px; }
+        .gs-card__sum { font-size: 11px; color: #9AA3C7; margin-top: 4px; line-height: 1.5; }
+        .gs-modal { display: none; position: fixed; inset: 0; z-index: 9100; background: rgba(0,0,0,0.65); padding: 20px 16px 80px; overflow-y: auto; }
+        .gs-modal.show { display: block; }
+        .gs-modal__box { max-width: 760px; margin: 0 auto; padding: 20px; border-radius: 16px; background: #12182B; border: 1px solid rgba(255,255,255,0.1); color: #EEF1FA; font-family: 'Noto Sans SC', system-ui, sans-serif; }
+        .gs-stage { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch; margin: 14px 0; }
+        .gs-stage__cell { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px 14px; text-align: center; }
+        .gs-stage__cell--target { background: rgba(109,124,255,0.1); border-color: rgba(109,124,255,0.3); }
+        .gs-stage__label { font-size: 11px; color: #5B6597; font-weight: 700; letter-spacing: .05em; }
+        .gs-stage__value { font-size: 24px; font-weight: 800; font-family: 'Geist Mono','SF Mono',monospace; margin-top: 4px; color: #fff; }
+        .gs-stage__hint { font-size: 11px; color: #9AA3C7; margin-top: 4px; }
+        .gs-stage__arrow { display: flex; align-items: center; font-size: 20px; color: #5B6597; }
+        .gs-task { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); margin-bottom: 8px; }
+        .gs-task__num { width: 22px; height: 22px; border-radius: 50%; background: rgba(109,124,255,0.18); color: #A5B0FF; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+        .gs-task__body { flex: 1; min-width: 0; }
+        .gs-task__title { font-size: 13px; font-weight: 700; color: #fff; }
+        .gs-task__desc { font-size: 12px; color: #9AA3C7; margin-top: 2px; line-height: 1.5; }
+        .gs-task__meta { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+        .gs-task__meta select, .gs-task__meta input[type="date"] { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #EEF1FA; border-radius: 8px; padding: 5px 8px; font-size: 12px; }
+        .gs-task__meta select.gs-missing { border-color: rgba(255,138,122,0.6); }
+        .gs-task__phase { font-size: 11px; color: #5B6597; }
+        .gs-task__status { font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 700; }
+        .gs-task__status--done { background: rgba(62,217,166,0.14); color: #3ED9A6; }
+        .gs-task__status--pending { background: rgba(232,184,90,0.14); color: #E8B85A; }
+        .gs-dishtable { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+        .gs-dishtable th, .gs-dishtable td { padding: 5px 8px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); color: #C7D2FE; }
+        .gs-dishtable th { color: #5B6597; font-size: 11px; font-weight: 700; }
+        .gs-quad-tabs { display: flex; gap: 8px; margin: 10px 0 6px; flex-wrap: wrap; }
+        .gs-quad-tab { font-size: 12px; padding: 4px 12px; border-radius: 10px; background: rgba(255,255,255,0.06); color: #9AA3C7; cursor: pointer; border: 1px solid transparent; }
+        .gs-quad-tab.on { background: rgba(109,124,255,0.16); color: #A5B0FF; border-color: rgba(109,124,255,0.3); }
+        .gs-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+        .gs-report { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px; margin-top: 10px; font-size: 13px; line-height: 1.6; color: #C7D2FE; }
+        .gs-rate { font-size: 30px; font-weight: 800; font-family: 'Geist Mono','SF Mono',monospace; }
+        .gs-rate--ok { color: #3ED9A6; } .gs-rate--bad { color: #FF8A7A; }
+        @media (max-width: 700px) { .gs-stage { grid-template-columns: 1fr; } .gs-stage__arrow { justify-content: center; transform: rotate(90deg); } }
         .dx-panel-close {
             position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.08);
             border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 18px;
@@ -19567,6 +19621,33 @@
                   <button class="ga-btn ga-btn--primary ga-btn--sm" type="button" onclick="loadDiagnosisData()">刷新</button>
                 </div>
                 <div id="dx-cards-container" class="dx-cards"><div class="dx-empty">⏳ 正在加载诊断数据...</div></div>
+                <div class="gs-head">
+                  <div>
+                    <h3>六大增长方案</h3>
+                    <div class="gs-sub">现状(真实数据) → 阶梯目标 → 任务方案 · 达成率=实际/目标,≥90%进入下一轮</div>
+                  </div>
+                  <select id="gs-store-select" class="gs-store-select" onchange="gsLoadCards()"></select>
+                </div>
+                <div id="gs-cards" class="gs-cards"><div class="dx-empty">选择门店后加载方案</div></div>
+                <div class="gs-head" style="margin-top:20px;">
+                  <div>
+                    <h3>目前遇到的问题是什么?</h3>
+                    <div class="gs-sub">描述你的经营问题,AI 结合门店真实数据生成完整解决方案(同样按阶梯目标+任务闭环执行)</div>
+                  </div>
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                  <input id="gs-custom-q" type="text" placeholder="例如:最近外卖差评变多,出餐越来越慢…" style="flex:1;min-width:240px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#EEF1FA;border-radius:10px;padding:9px 14px;font-size:13px;" onkeydown="if(event.key==='Enter')gsAnalyzeCustom()">
+                  <button class="ga-btn ga-btn--primary" type="button" onclick="gsAnalyzeCustom()">AI 生成方案</button>
+                </div>
+              </div>
+            </div>
+            <div class="gs-modal" id="gs-modal" onclick="if(event.target===this)gsCloseModal()">
+              <div class="gs-modal__box">
+                <div class="dx-anomaly-modal__head">
+                  <h3 class="dx-anomaly-modal__title" id="gs-modal-title">增长方案</h3>
+                  <button type="button" class="dx-anomaly-modal__close" onclick="gsCloseModal()">×</button>
+                </div>
+                <div id="gs-modal-body"></div>
               </div>
             </div>
             <div class="dx-backdrop" id="dx-backdrop" onclick="closeDiagnosisDetail()"></div>
@@ -56764,9 +56845,324 @@ ${body}
                 const data = await res.json();
                 if (!data.ok) throw new Error(data.error || 'unknown');
                 dxRenderCards(data.stores, start, end);
+                gsInitStores((data.stores || []).map(s => s.store));
             } catch (e) {
                 container.innerHTML = `<div class="dx-empty">❌ 加载失败: ${escapeHtml(e.message)}<br><br><button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="loadDiagnosisData()">重试</button></div>`;
             }
+        }
+
+        // ── 六大增长方案 ─────────────────────────────────────
+        const GS_PROBLEM_ICONS = { staff_efficiency: '👥', revenue: '📈', kitchen_standard: '👨‍🍳', menu_optimization: '🍽️', gross_margin: '💰', training_replication: '🎓' };
+        const GS_STATUS_LABEL = { active: '执行中', observing: '观察期', reviewing: '待复盘确认' };
+        let gsCurrentDetail = null;
+
+        function gsInitStores(stores) {
+            const sel = document.getElementById('gs-store-select');
+            if (!sel || !stores || !stores.length) return;
+            const prev = sel.value;
+            sel.innerHTML = stores.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+            if (prev && stores.includes(prev)) sel.value = prev;
+            gsLoadCards();
+        }
+
+        async function gsLoadCards() {
+            const sel = document.getElementById('gs-store-select');
+            const container = document.getElementById('gs-cards');
+            if (!sel || !container || !sel.value) return;
+            container.innerHTML = '<div class="dx-empty">⏳ 正在计算六大问题现状数据...</div>';
+            try {
+                const res = await fetch(`/api/diagnosis/solutions/overview?store=${encodeURIComponent(sel.value)}`, { headers: { 'Authorization': 'Bearer ' + dxToken() } });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
+                container.innerHTML = data.cards.map(c => {
+                    let badge = '<span class="gs-badge gs-badge--idle">未启动</span>';
+                    if (c.round) badge = `<span class="gs-badge gs-badge--${escapeHtml(c.round.status)}">${GS_STATUS_LABEL[c.round.status] || c.round.status} 第${c.round.round_no}轮</span>`;
+                    else if (c.capped) badge = '<span class="gs-badge gs-badge--capped">已封顶</span>';
+                    const val = c.current_value != null ? Number(c.current_value).toLocaleString('zh-CN') : '—';
+                    let targetLine = '';
+                    if (c.round) targetLine = `本轮目标 ${Number(c.round.target_value).toLocaleString('zh-CN')}${escapeHtml(c.unit)} · 任务 ${c.round.tasks_done}/${c.round.tasks_total}`;
+                    else if (c.next_target != null) targetLine = `建议目标 ${Number(c.next_target).toLocaleString('zh-CN')}${escapeHtml(c.unit)} →`;
+                    return `<div class="gs-card" onclick="gsOpenDetail('${escapeHtml(c.problem_key)}')">
+                      <div class="gs-card__top"><span class="gs-card__title">${GS_PROBLEM_ICONS[c.problem_key] || ''} ${escapeHtml(c.title)}</span>${badge}</div>
+                      <div class="gs-card__metric">${escapeHtml(c.metric)}</div>
+                      <div class="gs-card__value">${val} <small>${escapeHtml(c.unit)}</small></div>
+                      ${targetLine ? `<div class="gs-card__target">${targetLine}</div>` : ''}
+                      <div class="gs-card__sum">${escapeHtml(c.summary || '')}</div>
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                container.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsLoadCards()">重试</button></div>`;
+            }
+        }
+
+        function gsCloseModal() { document.getElementById('gs-modal')?.classList.remove('show'); }
+
+        async function gsOpenDetail(key) {
+            const store = document.getElementById('gs-store-select')?.value;
+            if (!store) return;
+            const modal = document.getElementById('gs-modal');
+            const body = document.getElementById('gs-modal-body');
+            const title = document.getElementById('gs-modal-title');
+            modal.classList.add('show');
+            body.innerHTML = '<div class="dx-empty">⏳ 加载方案详情...</div>';
+            try {
+                const res = await fetch(`/api/diagnosis/solutions/${encodeURIComponent(key)}?store=${encodeURIComponent(store)}`, { headers: { 'Authorization': 'Bearer ' + dxToken() } });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
+                gsCurrentDetail = data;
+                title.textContent = `${GS_PROBLEM_ICONS[key] || ''} ${data.title} · ${store}`;
+                body.innerHTML = data.open_round ? gsRenderRound(data) : gsRenderPlan(data);
+            } catch (e) {
+                body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function gsFmtVal(v, unit) { return v == null ? '—' : `${Number(v).toLocaleString('zh-CN')}<small style="font-size:12px;color:#9AA3C7"> ${escapeHtml(unit)}</small>`; }
+
+        function gsStageHtml(baseline, target, unit, baselineHint, targetHint) {
+            return `<div class="gs-stage">
+              <div class="gs-stage__cell"><div class="gs-stage__label">现状 · 真实数据</div><div class="gs-stage__value">${gsFmtVal(baseline, unit)}</div><div class="gs-stage__hint">${escapeHtml(baselineHint || '近30天')}</div></div>
+              <div class="gs-stage__arrow">→</div>
+              <div class="gs-stage__cell gs-stage__cell--target"><div class="gs-stage__label">本轮目标</div><div class="gs-stage__value">${gsFmtVal(target, unit)}</div><div class="gs-stage__hint">${escapeHtml(targetHint || '达成率=实际/目标,≥90%达成')}</div></div>
+            </div>`;
+        }
+
+        function gsMenuDetailHtml(detail) {
+            if (!detail) return '';
+            let html = '';
+            const cds = detail.complaint_dishes || [];
+            if (cds.length) {
+                html += `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">高投诉菜品(桌访不满意,近30天)</div>
+                  <table class="gs-dishtable"><tr><th>菜品</th><th>投诉次数</th></tr>
+                  ${cds.slice(0, 10).map(c => `<tr><td>${escapeHtml(c.dish)}</td><td>${c.count}</td></tr>`).join('')}</table></div>`;
+            }
+            const q = detail.quadrants || {};
+            const quadNames = { star: '⭐ 明星(高销高利)', traffic: '🚪 引流(高销低利)', potential: '💎 潜力(低销高利)', eliminate: '⚠️ 淘汰(低销低利)' };
+            for (const [ch, chName] of [['dinein', '堂食'], ['takeaway', '外卖']]) {
+                const qq = q[ch];
+                if (!qq || !qq.matched) continue;
+                html += `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">${chName}菜品四象限(已匹配成本 ${qq.matched} 道)</div>`;
+                for (const [bucket, bName] of Object.entries(quadNames)) {
+                    const items = qq[bucket] || [];
+                    if (!items.length) continue;
+                    html += `<div style="font-size:12px;font-weight:700;color:#C7D2FE;margin:8px 0 2px;">${bName}</div>
+                      <table class="gs-dishtable"><tr><th>菜品</th><th>销量</th><th>利润额</th><th>毛利率</th></tr>
+                      ${items.slice(0, 5).map(d => `<tr><td>${escapeHtml(d.dish)}</td><td>${d.qty}</td><td>¥${Number(d.profit).toLocaleString('zh-CN')}</td><td>${d.margin != null ? d.margin + '%' : '—'}</td></tr>`).join('')}</table>`;
+                }
+                html += '</div>';
+            }
+            return html;
+        }
+
+        function gsExtraDetailHtml(data) {
+            const d = data.current?.detail || {};
+            if (data.problem_key === 'menu_optimization') return gsMenuDetailHtml(d);
+            if (data.problem_key === 'gross_margin' && Array.isArray(d.low_margin_top) && d.low_margin_top.length) {
+                return `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">低毛利菜品 TOP10</div>
+                  <table class="gs-dishtable"><tr><th>菜品</th><th>渠道</th><th>销量</th><th>毛利率</th></tr>
+                  ${d.low_margin_top.map(x => `<tr><td>${escapeHtml(x.dish)}</td><td>${x.biz === 'takeaway' ? '外卖' : '堂食'}</td><td>${x.qty}</td><td>${x.margin != null ? x.margin + '%' : '—'}</td></tr>`).join('')}</table></div>`;
+            }
+            if (data.problem_key === 'training_replication' && Array.isArray(d.gaps) && d.gaps.length) {
+                return `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">认证缺口(前20)</div>
+                  <table class="gs-dishtable"><tr><th>员工</th><th>岗位</th><th>缺认证</th></tr>
+                  ${d.gaps.slice(0, 20).map(g => `<tr><td>${escapeHtml(g.name || g.username)}</td><td>${escapeHtml(g.position || '')}</td><td>${escapeHtml(g.topic)}</td></tr>`).join('')}</table></div>`;
+            }
+            return '';
+        }
+
+        function gsRenderPlan(data) {
+            if (data.capped) {
+                return gsStageHtml(data.current?.value, null, data.unit, '', '已达封顶,无需新轮次') + gsExtraDetailHtml(data) + '<div class="gs-report">该指标已达阶梯封顶 🎉 保持当前水平即可。</div>';
+            }
+            const plan = data.plan || [];
+            const tasks = plan.map((t, i) => {
+                const opts = (t.suggested_assignees || []).map(a => `<option value="${escapeHtml(a.username)}" data-name="${escapeHtml(a.name)}">${escapeHtml(a.name)}(${escapeHtml(a.position)})</option>`).join('');
+                const defDue = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+                return `<div class="gs-task" data-idx="${i}">
+                  <div class="gs-task__num">${i + 1}</div>
+                  <div class="gs-task__body">
+                    <div class="gs-task__title">${escapeHtml(t.title)}</div>
+                    <div class="gs-task__desc">${escapeHtml(t.description || '')}</div>
+                    <div class="gs-task__meta">
+                      <span class="gs-task__phase">${escapeHtml(t.phase || '')}</span>
+                      <select class="gs-assignee ${opts ? '' : 'gs-missing'}" data-idx="${i}">${opts || '<option value="">⚠️ 无候选人,请补员工岗位</option>'}</select>
+                      <input type="date" class="gs-due" data-idx="${i}" value="${defDue}">
+                    </div>
+                  </div>
+                </div>`;
+            }).join('');
+            const histHtml = (data.history || []).length ? `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">历史轮次</div>${data.history.map(h => `<div class="dx-anomaly-modal__text">第${h.round_no}轮:基线 ${h.baseline} → 目标 ${h.target},实际 ${h.actual ?? '—'},达成率 ${h.achievement_rate != null ? (h.achievement_rate * 100).toFixed(1) + '%' : '—'}(${h.decision === 'advance' ? '达成进阶' : '重跑'})</div>`).join('')}</div>` : '';
+            return gsStageHtml(data.current?.value, data.suggested_target, data.unit, `${data.metric}`, '') + gsExtraDetailHtml(data) + histHtml +
+              `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">任务方案(每项必须指定责任人)</div>${tasks}</div>
+               <div class="gs-actions"><button class="ga-btn ga-btn--primary" onclick="gsDispatch('${escapeHtml(data.problem_key)}')">一键下发全部任务</button></div>`;
+        }
+
+        function gsRenderRound(data) {
+            const r = data.open_round;
+            const tasks = (r.tasks || []).map((t, i) => `<div class="gs-task">
+              <div class="gs-task__num">${i + 1}</div>
+              <div class="gs-task__body">
+                <div class="gs-task__title">${escapeHtml(t.title)}</div>
+                <div class="gs-task__desc">${escapeHtml(t.description || '')}</div>
+                <div class="gs-task__meta">
+                  <span class="dx-d-tag">👤 ${escapeHtml(t.assignee_name || t.assignee_username)}</span>
+                  ${t.due_date ? `<span class="gs-task__phase">截止 ${String(t.due_date).slice(0, 10)}</span>` : ''}
+                  <span class="gs-task__status gs-task__status--${t.status === 'done' ? 'done' : 'pending'}">${t.status === 'done' ? '✓ 已完成' : (t.due_date && String(t.due_date).slice(0, 10) < new Date().toISOString().slice(0, 10) ? '⚠️ 已逾期' : '进行中')}</span>
+                  ${Number(t.reminder_count) > 0 ? `<span class="gs-task__phase" style="color:#FF8A7A;">已催促 ${t.reminder_count} 次</span>` : ''}
+                  ${t.status !== 'done' && r.status === 'active' ? `<button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsCompleteTask(${r.id},${t.id})">标记完成</button>` : ''}
+                </div>
+              </div>
+            </div>`).join('');
+            let stateHtml = '';
+            if (r.status === 'active') {
+                const todayYmd = new Date().toISOString().slice(0, 10);
+                const hasOverdue = (r.tasks || []).some(t => t.status !== 'done' && t.due_date && String(t.due_date).slice(0, 10) < todayYmd);
+                if (hasOverdue) {
+                    stateHtml = `<div class="gs-report" style="border-color:rgba(255,138,122,0.35);">⚠️ 存在逾期未完成任务,系统每日自动催促并记录次数。若持续无进展,可直接强制复盘——报告将如实点名未完成任务与催促次数。
+                      <div class="gs-actions"><button class="ga-btn ga-btn--ghost" onclick="gsForceReview(${r.id})">强制复盘(点名未执行)</button></div></div>`;
+                }
+            } else if (r.status === 'observing') {
+                stateHtml = `<div class="gs-report">✅ 任务已全部完成,处于观察期,<b>${escapeHtml(String(r.measure_end_date).slice(0, 10))}</b> 自动复盘(观察期实际值以最后30天数据计算)。</div>`;
+            } else if (r.status === 'reviewing' && r.review_report) {
+                const rp = typeof r.review_report === 'string' ? JSON.parse(r.review_report) : r.review_report;
+                const ok = rp.success;
+                const ex = rp.execution || null;
+                let execHtml = '';
+                if (ex) {
+                    const findings = (ex.findings || []).map(f => `<div style="padding:6px 10px;border-radius:8px;background:rgba(255,138,122,0.08);border:1px solid rgba(255,138,122,0.2);margin-top:6px;color:#FFB4A8;font-size:12px;line-height:1.5;">⚠️ ${escapeHtml(f)}</div>`).join('');
+                    const personRows = (ex.per_person || []).map(p => `<tr><td>${escapeHtml(p.assignee)}</td><td>${p.done}/${p.total}</td><td>${p.on_time}</td><td>${p.late}${p.max_days_late ? `(最长${p.max_days_late}天)` : ''}</td><td>${p.undone}</td><td>${p.reminders}</td></tr>`).join('');
+                    execHtml = `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">执行力问责(按时完成率 ${ex.on_time_rate}%)</div>
+                      <div style="font-size:13px;color:#EEF1FA;line-height:1.6;">${escapeHtml(ex.verdict || '')}</div>
+                      ${findings || '<div style="font-size:12px;color:#3ED9A6;margin-top:6px;">✓ 无执行问题,全部按时完成</div>'}
+                      <table class="gs-dishtable" style="margin-top:10px;"><tr><th>责任人</th><th>完成</th><th>按时</th><th>逾期</th><th>未完成</th><th>被催促</th></tr>${personRows}</table>
+                    </div>`;
+                }
+                stateHtml = `<div class="gs-report">
+                  <div style="display:flex;gap:18px;align-items:baseline;flex-wrap:wrap;">
+                    <span class="gs-rate ${ok ? 'gs-rate--ok' : 'gs-rate--bad'}">${rp.achievement_rate}%</span>
+                    <span>目标 ${rp.target}${escapeHtml(rp.unit)} / 实际 ${rp.actual}${escapeHtml(rp.unit)}(基线 ${rp.baseline})</span>
+                  </div>
+                  ${execHtml}
+                  <div style="margin-top:10px;">${escapeHtml(rp.attribution || '')}</div>
+                  <div style="margin-top:8px;color:#9AA3C7;">${escapeHtml(rp.suggestion || '')}</div>
+                  <div class="gs-actions">
+                    ${ok ? `<button class="ga-btn ga-btn--primary" onclick="gsConfirm(${r.id},'advance')">确认达成,进入下一轮</button>` : ''}
+                    <button class="ga-btn ga-btn--ghost" onclick="gsConfirm(${r.id},'retry')">同目标重跑一轮</button>
+                  </div>
+                </div>`;
+            }
+            return `<div class="dx-anomaly-modal__text">第 ${r.round_no} 轮 · ${GS_STATUS_LABEL[r.status] || r.status}</div>` +
+              gsStageHtml(r.baseline_value, r.target_value, r.unit, '开轮时冻结', '') +
+              `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">任务执行(${(r.tasks || []).filter(t => t.status === 'done').length}/${(r.tasks || []).length})</div>${tasks}</div>` + stateHtml;
+        }
+
+        async function gsDispatch(key) {
+            const store = document.getElementById('gs-store-select')?.value;
+            const plan = gsCurrentDetail?.plan || [];
+            const body = document.getElementById('gs-modal-body');
+            const tasks = [];
+            let missing = 0;
+            plan.forEach((t, i) => {
+                const sel = body.querySelector(`select.gs-assignee[data-idx="${i}"]`);
+                const due = body.querySelector(`input.gs-due[data-idx="${i}"]`);
+                const username = sel?.value || '';
+                if (!username) { missing++; sel?.classList.add('gs-missing'); return; }
+                tasks.push({
+                    template_code: t.template_code, title: t.title, description: t.description, phase: t.phase,
+                    assignee_username: username,
+                    assignee_name: sel.selectedOptions[0]?.dataset?.name || '',
+                    due_date: due?.value || null,
+                });
+            });
+            if (missing > 0) { showNotification(`还有 ${missing} 项任务未指定责任人,不能下发`, 'warning'); return; }
+            if (!confirm(`确认下发 ${tasks.length} 项任务?目标 ${gsCurrentDetail.suggested_target}${gsCurrentDetail.unit}(基线将以当前值冻结)`)) return;
+            try {
+                const payload = { store, tasks };
+                if (key.startsWith('custom:')) {
+                    payload.custom_title = gsCurrentDetail.title;
+                    payload.metric_key = gsCurrentDetail.metric_key;
+                }
+                const res = await fetch(`/api/diagnosis/solutions/${encodeURIComponent(key)}/rounds`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dxToken() },
+                    body: JSON.stringify({ store, ...payload }),
+                });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
+                showNotification(`第${data.round_no}轮已启动:基线 ${data.baseline} → 目标 ${data.target}`, 'success');
+                gsOpenDetail(key); gsLoadCards();
+            } catch (e) { showNotification('下发失败: ' + e.message, 'error'); }
+        }
+
+        async function gsCompleteTask(roundId, taskId) {
+            try {
+                const res = await fetch(`/api/diagnosis/solutions/rounds/${roundId}/tasks/${taskId}/complete`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dxToken() }, body: '{}',
+                });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
+                gsOpenDetail(gsCurrentDetail.problem_key); gsLoadCards();
+            } catch (e) { showNotification('操作失败: ' + e.message, 'error'); }
+        }
+
+        async function gsForceReview(roundId) {
+            if (!confirm('确认强制复盘?未完成的任务将在报告中被如实点名(含逾期天数与催促次数),且本轮只能以"未达成"处理。')) return;
+            try {
+                const res = await fetch(`/api/diagnosis/solutions/rounds/${roundId}/force-review`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dxToken() }, body: '{}',
+                });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
+                showNotification('已生成复盘报告', 'success');
+                gsOpenDetail(gsCurrentDetail.problem_key); gsLoadCards();
+            } catch (e) { showNotification('操作失败: ' + e.message, 'error'); }
+        }
+
+        async function gsAnalyzeCustom() {
+            const store = document.getElementById('gs-store-select')?.value;
+            const q = document.getElementById('gs-custom-q')?.value?.trim();
+            if (!store) { showNotification('请先选择门店', 'warning'); return; }
+            if (!q) { showNotification('请先描述你遇到的问题', 'warning'); return; }
+            const modal = document.getElementById('gs-modal');
+            const body = document.getElementById('gs-modal-body');
+            const title = document.getElementById('gs-modal-title');
+            modal.classList.add('show');
+            title.textContent = '🤖 AI 正在分析';
+            body.innerHTML = '<div class="dx-empty">⏳ 结合门店数据生成方案中,约需10-30秒...</div>';
+            try {
+                const res = await fetch('/api/diagnosis/solutions/custom/analyze', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dxToken() },
+                    body: JSON.stringify({ store, question: q }),
+                });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
+                if (data.mode === 'existing') {
+                    showNotification(`该问题属于「${data.problem_key}」标准方案:${data.reason || ''}`, 'info');
+                    gsOpenDetail(data.problem_key);
+                    return;
+                }
+                gsCurrentDetail = data;
+                title.textContent = `🤖 ${data.title} · ${store}`;
+                const scopeNote = data.out_of_scope ? `<div class="gs-report" style="border-color:rgba(232,184,90,0.35);">⚠️ 能力范围说明:${escapeHtml(data.out_of_scope)}</div>` : '';
+                const reasonNote = data.reason ? `<div class="dx-anomaly-modal__text">考核指标:${escapeHtml(data.metric)} — ${escapeHtml(data.reason)}</div>` : '';
+                body.innerHTML = reasonNote + scopeNote + gsRenderPlan(data);
+            } catch (e) {
+                body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsAnalyzeCustom()">重试</button></div>`;
+            }
+        }
+
+        async function gsConfirm(roundId, decision) {
+            if (!confirm(decision === 'advance' ? '确认本轮达成,关闭轮次?下一轮将以本轮实际值为新基线。' : '确认同目标重跑?本轮关闭后可重新生成任务方案。')) return;
+            try {
+                const res = await fetch(`/api/diagnosis/solutions/rounds/${roundId}/confirm`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dxToken() },
+                    body: JSON.stringify({ decision }),
+                });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
+                showNotification('轮次已关闭', 'success');
+                gsOpenDetail(gsCurrentDetail.problem_key); gsLoadCards();
+            } catch (e) { showNotification('操作失败: ' + e.message, 'error'); }
         }
 
         function dxRenderCards(stores, start, end) {
