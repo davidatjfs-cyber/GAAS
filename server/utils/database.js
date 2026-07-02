@@ -128,7 +128,11 @@ let _activeTenantIdsLoadedAt = 0;
 export async function getActiveTenantIds(p) {
   if (Date.now() - _activeTenantIdsLoadedAt < ACTIVE_TENANTS_CACHE_MS) return _activeTenantIds;
   try {
-    const r = await (p || pool()).query("SELECT tenant_id FROM tenants WHERE status = 'active' ORDER BY tenant_id");
+    // tenants表开启RLS后，必须用__system__上下文才能跨租户读全量列表；
+    // 不用resolveTenantIdDefault兜底'default'——那样RLS上线后只能看到default租户自己的行。
+    const r = await runWithSystemTenantContext(() =>
+      (p || pool()).query("SELECT tenant_id FROM tenants WHERE status = 'active' ORDER BY tenant_id")
+    );
     if (r.rows?.length) {
       _activeTenantIds = r.rows.map((row) => row.tenant_id);
       _activeTenantIdsLoadedAt = Date.now();
