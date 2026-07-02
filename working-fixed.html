@@ -11464,7 +11464,28 @@
         .gs-report { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px; margin-top: 10px; font-size: 13px; line-height: 1.6; color: #C7D2FE; }
         .gs-rate { font-size: 30px; font-weight: 800; font-family: 'Geist Mono','SF Mono',monospace; }
         .gs-rate--ok { color: #3ED9A6; } .gs-rate--bad { color: #FF8A7A; }
-        @media (max-width: 700px) { .gs-stage { grid-template-columns: 1fr; } .gs-stage__arrow { justify-content: center; transform: rotate(90deg); } }
+        @media (max-width: 700px) {
+            .gs-stage { grid-template-columns: 1fr; gap: 8px; margin: 12px 0; }
+            .gs-stage__arrow { justify-content: center; transform: rotate(90deg); font-size: 16px; }
+            .gs-stage__value { font-size: 20px; }
+            .gs-cards { grid-template-columns: 1fr; gap: 10px; }
+            .gs-head { flex-direction: column; align-items: stretch; gap: 8px; margin: 22px 0 12px; }
+            .gs-store-select { width: 100%; }
+            .gs-modal { padding: 10px 8px 60px; }
+            .gs-modal__box { padding: 14px 12px; border-radius: 14px; }
+            .gs-task { padding: 10px; gap: 8px; }
+            .gs-task__meta { flex-direction: column; align-items: stretch; gap: 6px; }
+            .gs-task__meta select, .gs-task__meta input[type="date"] { width: 100%; box-sizing: border-box; min-height: 40px; }
+            .gs-task__meta .gs-task__phase { order: -1; }
+            .gs-task__meta button { width: 100%; min-height: 40px; }
+            .gs-actions { flex-direction: column; }
+            .gs-actions button { width: 100%; min-height: 44px; }
+            .gs-dishtable { display: block; overflow-x: auto; white-space: nowrap; }
+            .gs-rate { font-size: 24px; }
+            .gs-card__value { font-size: 20px; }
+            #gs-custom-q { min-height: 42px; width: 100%; box-sizing: border-box; }
+            .gs-custom-btn { width: 100%; min-height: 44px; }
+        }
         .dx-panel-close {
             position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.08);
             border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 18px;
@@ -19637,7 +19658,7 @@
                 </div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;">
                   <input id="gs-custom-q" type="text" placeholder="例如:最近外卖差评变多,出餐越来越慢…" style="flex:1;min-width:240px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#EEF1FA;border-radius:10px;padding:9px 14px;font-size:13px;" onkeydown="if(event.key==='Enter')gsAnalyzeCustom()">
-                  <button class="ga-btn ga-btn--primary" type="button" onclick="gsAnalyzeCustom()">AI 生成方案</button>
+                  <button class="ga-btn ga-btn--primary gs-custom-btn" type="button" onclick="gsAnalyzeCustom()">AI 生成方案</button>
                 </div>
               </div>
             </div>

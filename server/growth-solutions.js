@@ -66,15 +66,15 @@ const TASK_TEMPLATE_SEED = [
   { problem_key: 'staff_efficiency', code: 'launch_points_incentive', title: '上线积分现金激励规则', description: '配置标准动作→当日积分规则,积分可兑现金券,排行榜公示', assignee_role: 'store_manager', phase: '第1-2周', sort: 2 },
   { problem_key: 'staff_efficiency', code: 'assign_cert_training', title: '为缺认证员工指派必修培训', description: '按岗位晋升要求,为缺认证员工批量指派培训任务', assignee_role: 'production_manager', phase: '第2-4周', sort: 3 },
   { problem_key: 'staff_efficiency', code: 'weekly_efficiency_review', title: '每周对比人效曲线与目标线', description: '每周复盘人效走势,识别排班与客流错配', assignee_role: 'store_manager', phase: '持续', sort: 4 },
-  // 营业额
-  { problem_key: 'revenue', code: 'review_churn_list', title: '审核高流失风险客户名单', description: 'AI已按流失风险排好优先级,确认本批召回名单', assignee_role: 'store_manager', phase: '第1周', sort: 1 },
-  { problem_key: 'revenue', code: 'launch_recall_campaign', title: '分批发起沉睡客户召回', description: '按名单发起企微召回活动(AI生成文案+匹配优惠券)', assignee_role: 'store_manager', phase: '第1-2周', sort: 2 },
-  { problem_key: 'revenue', code: 'track_redemption', title: '跟踪核销与到店回访', description: '记录召回客户到店与核销情况,桌访收集反馈', assignee_role: 'front_staff', phase: '第2-4周', sort: 3 },
-  { problem_key: 'revenue', code: 'weekly_revenue_review', title: '每周复盘营收与召回效果', description: '对比营收曲线与召回批次,沉淀有效方案', assignee_role: 'store_manager', phase: '持续', sort: 4 },
+  // 营业额:自动营销 + PLLM 双引擎(对营业额最有效的组合)
+  { problem_key: 'revenue', code: 'enable_auto_marketing', title: '开启营销自动驾驶', description: 'AI每日结合营收环比与节假日自动生成召回/促销活动,店长只需确认发送', assignee_role: 'store_manager', phase: '第1周', sort: 1 },
+  { problem_key: 'revenue', code: 'launch_recall_campaign', title: '沉睡客户分批召回', description: '按流失风险分批召回(高风险先行),AI生成文案+匹配优惠券,企微触达', assignee_role: 'store_manager', phase: '第1-3周', sort: 2 },
+  { problem_key: 'revenue', code: 'execute_pllm_actions', title: '执行PLLM经营诊断建议', description: '每日经营异常(客流/客单/差评/售罄)由PLLM生成整改建议,当天安排执行', assignee_role: 'store_manager', phase: '持续', sort: 3 },
+  { problem_key: 'revenue', code: 'weekly_revenue_review', title: '每周复盘营收与召回效果', description: '对比营收曲线与召回批次、核销率,沉淀有效方案供下轮复用', assignee_role: 'store_manager', phase: '持续', sort: 4 },
   // 出品标准化
   { problem_key: 'kitchen_standard', code: 'config_station_mapping', title: '配置岗位×菜品打点计划', description: '在厨房执行模块配置岗位菜品映射与每日打点时间', assignee_role: 'production_manager', phase: '第1周', sort: 1 },
   { problem_key: 'kitchen_standard', code: 'enable_punch_card', title: 'SOP打点卡上线并培训', description: '关键岗位学会使用打点卡,明确漏打点提醒规则', assignee_role: 'production_manager', phase: '第1-2周', sort: 2 },
-  { problem_key: 'kitchen_standard', code: 'daily_punch', title: '每日按计划完成SOP打点', description: '各岗位按时完成打点,漏打点当日整改', assignee_role: 'kitchen_staff', phase: '持续', sort: 3 },
+  { problem_key: 'kitchen_standard', code: 'daily_punch', title: '每日按计划完成SOP打点', description: '出品经理督导各岗位按时打点,漏打点当日整改', assignee_role: 'production_manager', phase: '持续', sort: 3 },
   { problem_key: 'kitchen_standard', code: 'review_timeout', title: '每周复盘出餐超时与漏打点', description: '结合出餐超时报告与打点看板,定位问题岗位', assignee_role: 'production_manager', phase: '每周', sort: 4 },
   // 菜单优化
   { problem_key: 'menu_optimization', code: 'review_complaint_dishes', title: '审核高投诉菜品清单', description: '核对桌访不满意菜品与差评,确认问题菜品名单', assignee_role: 'production_manager', phase: '第1周', sort: 1 },
@@ -89,7 +89,7 @@ const TASK_TEMPLATE_SEED = [
   // 培训复制
   { problem_key: 'training_replication', code: 'mount_materials', title: '为知识点挂载教材', description: '为必修知识点补齐视频/文档教材', assignee_role: 'production_manager', phase: '第1-2周', sort: 1 },
   { problem_key: 'training_replication', code: 'batch_assign', title: '批量指派岗位必修培训', description: '按岗位晋升要求为在职员工批量指派培训', assignee_role: 'store_manager', phase: '第1周', sort: 2 },
-  { problem_key: 'training_replication', code: 'ai_exam', title: '员工完成AI陪练与考试', description: '员工在移动端完成AI陪练对话与随堂考试', assignee_role: 'kitchen_staff', phase: '第2-4周', sort: 3 },
+  { problem_key: 'training_replication', code: 'ai_exam', title: '员工完成AI陪练与考试', description: '出品经理督导员工在移动端完成AI陪练对话与随堂考试', assignee_role: 'production_manager', phase: '第2-4周', sort: 3 },
   { problem_key: 'training_replication', code: 'cert_review', title: '认证审核与到期复审', description: '管理端审核实操认证,到期自动复审', assignee_role: 'production_manager', phase: '持续', sort: 4 },
 ];
 
@@ -163,15 +163,24 @@ export async function ensureGrowthSolutionsSchema() {
   `);
   await pool().query(`ALTER TABLE growth_solution_tasks ADD COLUMN IF NOT EXISTS reminder_count INT NOT NULL DEFAULT 0`);
   await pool().query(`ALTER TABLE growth_solution_tasks ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMPTZ`);
-  // 种子模板:存在则跳过
+  // 种子模板:以代码为准覆盖更新;不在种子里的旧模板停用
   for (const t of TASK_TEMPLATE_SEED) {
     await pool().query(
       `INSERT INTO growth_task_templates (problem_key, code, title, description, assignee_role, phase, sort)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (problem_key, code) DO NOTHING`,
+       ON CONFLICT (problem_key, code) DO UPDATE
+         SET title=EXCLUDED.title, description=EXCLUDED.description,
+             assignee_role=EXCLUDED.assignee_role, phase=EXCLUDED.phase,
+             sort=EXCLUDED.sort, enabled=TRUE`,
       [t.problem_key, t.code, t.title, t.description, t.assignee_role, t.phase, t.sort]
     );
   }
+  const seedKeys = TASK_TEMPLATE_SEED.map((t) => `${t.problem_key}/${t.code}`);
+  await pool().query(
+    `UPDATE growth_task_templates SET enabled = FALSE
+     WHERE problem_key = ANY($1) AND problem_key || '/' || code <> ALL($2)`,
+    [Object.keys(PROBLEMS), seedKeys]
+  );
 }
 
 // ─── 工具 ───────────────────────────────────────────────
@@ -225,17 +234,29 @@ async function metricRevenue(store, startDate, endDate) {
     [store, startDate, endDate]
   );
   const storeCode = store.includes('马己仙') ? '51866138' : (store.includes('洪潮') ? '64822111' : '');
-  let sleeping = 0;
+  let sleepingHigh = 0, sleepingMedium = 0;
   if (storeCode) {
     const c = await pool().query(
-      `SELECT COUNT(*) AS n FROM growth_churn_predictions
-       WHERE store_code = $1 AND risk_level IN ('high','critical','高','极高')
-         AND prediction_date = (SELECT MAX(prediction_date) FROM growth_churn_predictions WHERE store_code = $1)`,
+      `SELECT risk_level, COUNT(*) AS n FROM growth_churn_predictions
+       WHERE store_code = $1 AND risk_level IN ('high','critical','medium','高','极高','中')
+         AND prediction_date = (SELECT MAX(prediction_date) FROM growth_churn_predictions WHERE store_code = $1)
+       GROUP BY risk_level`,
       [storeCode]
     );
-    sleeping = Number(c.rows[0]?.n || 0);
+    for (const row of c.rows) {
+      if (/high|critical|高/.test(row.risk_level)) sleepingHigh += Number(row.n);
+      else sleepingMedium += Number(row.n);
+    }
   }
-  return { value: round2(r.rows[0]?.rev), detail: { days: Number(r.rows[0]?.days || 0), sleeping_customers: sleeping } };
+  return {
+    value: round2(r.rows[0]?.rev),
+    detail: {
+      days: Number(r.rows[0]?.days || 0),
+      sleeping_customers: sleepingHigh + sleepingMedium,
+      sleeping_high: sleepingHigh,
+      sleeping_medium: sleepingMedium,
+    },
+  };
 }
 
 async function metricKitchenStandard(store, startDate, endDate) {
@@ -302,10 +323,11 @@ function lookupCost(costMap, biz, key) {
 
 async function dishAggregates(store, startDate, endDate) {
   const brand = brandKeyOf(store);
+  // 数据源:pos_sales_detail(pos_order_items 视图,POS实时同步);sales_raw 已停更,勿用
   const r = await pool().query(
     `SELECT dish_name, category, biz_type,
             SUM(qty) AS qty, SUM(revenue) AS revenue
-     FROM sales_raw
+     FROM pos_sales_detail
      WHERE store ILIKE '%' || $1 || '%' AND date >= $2 AND date <= $3
        AND coalesce(trim(dish_name), '') <> ''
      GROUP BY dish_name, category, biz_type`,
@@ -480,7 +502,12 @@ async function suggestAssignees(store, role) {
      ORDER BY position, name LIMIT 20`,
     [brand, ...positions]
   );
-  return r.rows;
+  // 按角色岗位优先级排序(如 店长 优先于 主管/前厅经理)
+  const prio = (p) => {
+    const idx = positions.findIndex((kw) => String(p || '').includes(kw));
+    return idx === -1 ? 999 : idx;
+  };
+  return r.rows.sort((a, b) => prio(a.position) - prio(b.position));
 }
 
 // ─── 方案生成(模板 + 真实数据缺口 → 任务清单) ─────────────
@@ -498,8 +525,8 @@ async function buildPlan(problemKey, store, currentDetail) {
       const gapCount = currentDetail?.gap_count;
       if (gapCount > 0) description += `(当前共 ${gapCount} 项认证缺口)`;
     }
-    if (t.code === 'review_churn_list' && currentDetail?.sleeping_customers > 0) {
-      description += `(当前高风险流失客户 ${currentDetail.sleeping_customers} 位)`;
+    if (t.code === 'launch_recall_campaign' && currentDetail?.sleeping_customers > 0) {
+      description += `(可召回沉睡池 ${currentDetail.sleeping_customers} 位:高风险 ${currentDetail.sleeping_high || 0} + 中风险 ${currentDetail.sleeping_medium || 0})`;
     }
     if (t.code === 'complete_cost_library' && currentDetail?.unmatched_dishes > 0) {
       description += `(当前 ${currentDetail.unmatched_dishes} 道在售菜品缺成本)`;
@@ -823,7 +850,8 @@ ${templateList}
 1. 如果老板的问题本质上属于六大标准问题之一,输出 {"mode":"existing","problem_key":"<key>","reason":"一句话说明"}
 2. 否则输出自定义方案:
 {"mode":"custom","title":"方案标题(10字内)","metric_key":"<从六大问题key中选一个最能衡量该问题的指标>","reason":"选择该指标的原因",
- "tasks":[{"code":"<模板code,可选>","title":"任务标题","description":"任务说明","assignee_role":"store_manager|production_manager|kitchen_staff|front_staff|hr","phase":"第1周"}],
+ "tasks":[{"code":"<模板code,可选>","title":"任务标题","description":"任务说明","assignee_role":"store_manager|production_manager|hr","phase":"第1周"}],
+任务责任人规则:厨房相关任务一律 production_manager(出品经理),前厅/营销/复盘任务一律 store_manager(店长)。
  "out_of_scope":"如果问题中有系统能力覆盖不了的部分,在此如实说明;没有则为空字符串"}
 任务3-5项,循序渐进,必须能落到系统功能上。`;
 
@@ -1066,7 +1094,7 @@ function summarizeCard(key, current) {
   const d = current.detail || {};
   switch (key) {
     case 'staff_efficiency': return `折前营收 ¥${d.pre_discount_revenue ?? 0} / ${d.person_days ?? 0} 人天`;
-    case 'revenue': return `高风险流失客户 ${d.sleeping_customers ?? 0} 位可召回`;
+    case 'revenue': return `可召回沉睡池 ${d.sleeping_customers ?? 0} 位(高 ${d.sleeping_high ?? 0}/中 ${d.sleeping_medium ?? 0})`;
     case 'kitchen_standard': return `应打点 ${d.expected ?? 0} 次,实际 ${d.confirmed ?? 0} 次`;
     case 'menu_optimization': return `高投诉 ${Array.isArray(d.complaint_dishes) ? d.complaint_dishes.length : 0} 道,淘汰象限见详情`;
     case 'gross_margin': return `已匹配成本 ${d.matched_dishes ?? 0} 道,缺成本 ${d.unmatched_dishes ?? 0} 道`;
