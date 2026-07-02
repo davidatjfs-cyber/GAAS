@@ -13,37 +13,37 @@ const SUCCESS_RATE = 0.9;      // 达成率≥90%算成功
 // ─── 六大问题定义:指标口径 + 阶梯规则 ─────────────────────
 export const PROBLEMS = {
   staff_efficiency: {
-    title: '员工效率',
+    title: '提升员工效率',
     metric: '人效(折前营业额/人天)',
     unit: '元/人天',
     ladder: { type: 'pct', step: 0.10, cap: 0.30 },
   },
   revenue: {
-    title: '营业额',
+    title: '提升营业额',
     metric: '近30天营业额',
     unit: '元',
     ladder: { type: 'pct', step: 0.05, cap: 0.20 },
   },
   kitchen_standard: {
-    title: '出品标准化',
+    title: '提升出品标准',
     metric: 'SOP打点完成率',
     unit: '%',
     ladder: { type: 'ladder', steps: [80, 90, 95] },
   },
   menu_optimization: {
-    title: '菜单优化',
+    title: '提升菜单质量',
     metric: '本轮处理问题菜品数',
     unit: '道',
     ladder: { type: 'count', perRound: 5 },
   },
   gross_margin: {
-    title: '门店毛利',
+    title: '提升菜品毛利率',
     metric: '综合毛利率(已匹配成本菜品)',
     unit: '%',
     ladder: { type: 'pp', step: 1, cap: 3 },
   },
   training_replication: {
-    title: '培训复制',
+    title: '复制培养人才',
     metric: '关键岗位必修认证覆盖率',
     unit: '%',
     ladder: { type: 'ladder', steps: [50, 80, 100] },
