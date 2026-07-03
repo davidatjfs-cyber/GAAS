@@ -1576,18 +1576,8 @@ async function ensureDataGovernanceTables() {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_dish_name_aliases_lookup ON dish_name_aliases (store, biz_type, alias_name) WHERE enabled = TRUE`);
-  try {
-    await pool.query(`ALTER TABLE sales_raw ADD COLUMN IF NOT EXISTS dish_code VARCHAR(120)`);
-    await pool.query(`ALTER TABLE sales_raw ADD COLUMN IF NOT EXISTS category VARCHAR(200)`);
-    await pool.query(`ALTER TABLE sales_raw ADD COLUMN IF NOT EXISTS category_code VARCHAR(120)`);
-  } catch (e) {
-    const msg = String(e?.message || e);
-    if (/must be owner|permission denied|not owner/i.test(msg)) {
-      console.warn('[governance] skip schema alter for sales_raw columns:', msg);
-      return;
-    }
-    throw e;
-  }
+  // sales_raw已于2026-07-03下线，pos_sales_detail视图已直接提供dish_code(sku别名)/category列，
+  // category_code该视图固定为NULL，不需要再对sales_raw做列补齐。
 }
 
 function estimateGrossMarginByHistory({ historyRows, profiles, startDate, endDate, bizType, storeScope, aliasLookup }) {
@@ -5481,9 +5471,9 @@ app.get('/api/dedup/stats', authRequired, async (req, res) => {
     // feishu_generic_records total
     const fg = await pool.query(`SELECT count(*) as cnt FROM feishu_generic_records`);
     tables.feishu_generic_records = Number(fg.rows[0]?.cnt || 0);
-    // sales_raw total
-    const sr = await pool.query(`SELECT count(*) as cnt FROM sales_raw`);
-    tables.sales_raw = Number(sr.rows[0]?.cnt || 0);
+    // pos_sales_detail total(sales_raw已下线)
+    const sr = await pool.query(`SELECT count(*) as cnt FROM pos_sales_detail`);
+    tables.pos_sales_detail = Number(sr.rows[0]?.cnt || 0);
     // table_visit_records total
     const tv = await pool.query(`SELECT count(*) as cnt FROM table_visit_records`);
     tables.table_visit_records = Number(tv.rows[0]?.cnt || 0);
@@ -6051,14 +6041,6 @@ async function ensureCheckinTable() {
     await pool.query(`create index if not exists idx_checkin_time on checkin_records (check_time)`);
   } catch (e) {
     console.error('ensureCheckinTable failed:', e);
-  }
-}
-
-async function ensureSalesRawIndex() {
-  try {
-    await pool.query(`create index if not exists idx_sales_raw_lookup on sales_raw (store, date, biz_type, slot, dish_name)`);
-  } catch (e) {
-    console.error('ensureSalesRawIndex failed:', e);
   }
 }
 
@@ -9699,7 +9681,7 @@ async function loadInventoryForecastHistoryFromSalesRaw({ storeScope, bizType, s
         actualRevenue: 0,
         totalDiscount: 0,
         productQuantities: {},
-        source: 'sales_raw',
+        source: 'pos_sales_detail',
         createdAt: `${date}T00:00:00.000Z`,
         updatedAt: `${date}T23:59:59.000Z`
       });
@@ -10699,21 +10681,26 @@ function buildOpsFeedback(task, completedAt, photoCount, options) {
 }
 
 let __OPS_TASK_SCHEDULER_STARTED = false;
+// ops_tasks是真实业务数据(带RLS)，原只在default租户上下文里生成/关账，改为遍历活跃租户各自处理
 async function runOpsTaskSchedulerTick() {
   try {
-    await runWithBootstrapTenantContext(async () => {
-      await ensureOpsTasksTable();
-      const today = opsDateOnly(new Date());
-      await ensureOpsTasksForDate(today);
-      await pool.query(
-        `update ops_tasks
-         set status = 'overdue', updated_at = now()
-         where status = 'open'
-           and due_at < now()`
-      );
-    });
+    await runForActiveTenants(async (tenantId) => {
+      try {
+        await ensureOpsTasksTable();
+        const today = opsDateOnly(new Date());
+        await ensureOpsTasksForDate(today);
+        await pool.query(
+          `update ops_tasks
+           set status = 'overdue', updated_at = now()
+           where status = 'open'
+             and due_at < now()`
+        );
+      } catch (e) {
+        console.error('[ops scheduler] tick failed:', tenantId, e?.message || e);
+      }
+    }, { continueOnError: true });
   } catch (e) {
-    console.error('[ops scheduler] tick failed:', e?.message || e);
+    console.error('[ops scheduler] runForActiveTenants error:', e?.message || e);
   }
 }
 
@@ -12434,7 +12421,7 @@ app.get('/api/reports/inventory-forecast/history', authRequired, async (req, res
       store,
       bizType: bizType || '',
       slot: slot || '',
-      storageSource: salesRawItems.length ? 'sales_raw' : 'inventoryForecastHistory',
+      storageSource: salesRawItems.length ? 'pos_sales_detail' : 'inventoryForecastHistory',
       items
     });
   } catch (e) {
@@ -21589,19 +21576,24 @@ app.listen(PORT, HOST, async () => {
     });
 
     // P0B: Purge expired session states every hour
+    // 原用runWithBootstrapTenantContext只清default租户，agent_long_memory开了RLS，改为遍历活跃租户各自清理
     setInterval(async () => {
-      await runWithBootstrapTenantContext(async () => {
-        try {
-          const r = await pool.query(
-            `DELETE FROM agent_long_memory
-             WHERE memory_key = 'session_state'
-               AND updated_at < NOW() - INTERVAL '2 hours'`
-          );
-          if (r.rowCount > 0) console.log(`[intelligence] Purged ${r.rowCount} expired session states`);
-        } catch (e) {
-          console.error('[intelligence] Session state purge error:', e?.message);
-        }
-      });
+      try {
+        await runForActiveTenants(async (tenantId) => {
+          try {
+            const r = await pool.query(
+              `DELETE FROM agent_long_memory
+               WHERE memory_key = 'session_state'
+                 AND updated_at < NOW() - INTERVAL '2 hours'`
+            );
+            if (r.rowCount > 0) console.log(`[intelligence] Purged ${r.rowCount} expired session states, tenant=${tenantId}`);
+          } catch (e) {
+            console.error('[intelligence] Session state purge error:', tenantId, e?.message);
+          }
+        }, { continueOnError: true });
+      } catch (e) {
+        console.error('[intelligence] Session state purge runForActiveTenants error:', e?.message || e);
+      }
     }, 60 * 60 * 1000);
 
     // ── P0-3: 定时任务心跳表初始化 ──────────────────────────────
@@ -21655,19 +21647,19 @@ app.listen(PORT, HOST, async () => {
     const heartbeatAlertDedup = new Map();
 
     // 带心跳的缓存清理（覆盖原 setInterval）
-    setInterval(async () => {
-      await runWithBootstrapTenantContext(async () => {
-        await purgeExpiredCache().catch(() => {});
-        await beatHeartbeat('cache_purge');
-      });
-    }, 2 * 60 * 60 * 1000);
+    // agent_metric_cache 带tenant_id/RLS，原只清default租户会导致其他租户缓存堆积不过期；改为遍历活跃租户。
+    // 心跳(beatHeartbeat)本身是系统级监控，不依赖租户上下文，仍在租户循环外单独打一次。
+    const runCachePurge = async () => {
+      try {
+        await runForActiveTenants(() => purgeExpiredCache().catch(() => {}), { continueOnError: true });
+      } catch (e) {
+        console.error('[cache_purge] runForActiveTenants error:', e?.message || e);
+      }
+      await beatHeartbeat('cache_purge');
+    };
+    setInterval(runCachePurge, 2 * 60 * 60 * 1000);
     // 启动即执行一次并写心跳，避免重启后首个 2 小时窗口误判为“任务停摆”
-    setTimeout(async () => {
-      await runWithBootstrapTenantContext(async () => {
-        await purgeExpiredCache().catch(() => {});
-        await beatHeartbeat('cache_purge');
-      });
-    }, 15 * 1000);
+    setTimeout(runCachePurge, 15 * 1000);
 
     // ── P0-3: 每 30 分钟检查心跳是否存活 ────────────────────────
     setInterval(async () => {
@@ -21704,14 +21696,19 @@ app.listen(PORT, HOST, async () => {
       });
     }, 30 * 60 * 1000);
 
-    let _perfMonthlyMissingAlertKey = '';
+    // 原为单一字符串，改为按租户区分的Map，避免A租户的告警状态误挡住B租户
+    const _perfMonthlyMissingAlertKey = new Map();
 
     // 核心数据每 10 分钟自愈回灌一次：即使 hrms_state 被旧快照污染，也会从权威表/独立域自动拉回
+    // 原用 runWithBootstrapTenantContext 只处理default租户；daily_reports/point_records等查询本身
+    // 靠pool的RLS会话变量自动按租户过滤，但getSharedState()/hrms_state.key='default'是硬编码的，
+    // 改为遍历活跃租户各自处理各自的hrms_state.key。
     setInterval(async () => {
-      await runWithBootstrapTenantContext(async () => {
+      try {
+      await runForActiveTenants(async (tenantId) => {
         try {
           await beatHeartbeat('critical_data_reconcile');
-          const stateNow = (await getSharedState()) || {};
+          const stateNow = (await getSharedState(tenantId)) || {};
 
         // 1) 营业日报：若 state 最新日期落后于表最新日期，则整段重建
         const drLatestR = await pool.query(`SELECT MAX(date)::text AS latest FROM daily_reports`);
@@ -21745,10 +21742,10 @@ app.listen(PORT, HOST, async () => {
           const finalItems = [...dbItems, ...stateOnlyItems];
           // 直接 UPDATE hrms_state 的 dailyReports 字段，不经过 mergeSharedStateFields（避免与用户提交抢乐观锁）
           await pool.query(
-            `UPDATE hrms_state SET data = jsonb_set(COALESCE(data, '{}'), '{dailyReports}', $1::jsonb), updated_at = NOW() WHERE key = 'default'`,
-            [JSON.stringify(finalItems)]
+            `UPDATE hrms_state SET data = jsonb_set(COALESCE(data, '{}'), '{dailyReports}', $1::jsonb), updated_at = NOW() WHERE key = $2`,
+            [JSON.stringify(finalItems), tenantId]
           );
-          await sendSystemAlert(`⚠️ [HRMS] 核心数据自愈：营业日报 state 最新日期 ${stateDrLatest || '无'} 落后于表 ${drLatest}，已自动回灌。`);
+          await sendSystemAlert(`⚠️ [HRMS] 核心数据自愈：租户${tenantId} 营业日报 state 最新日期 ${stateDrLatest || '无'} 落后于表 ${drLatest}，已自动回灌。`);
         }
 
         // 2) 积分：若 point_records 数量大于 state.pointRecords，则自动重建
@@ -21799,10 +21796,11 @@ app.listen(PORT, HOST, async () => {
             const actualCount = Number(perfCountR.rows?.[0]?.c || 0);
             const minimumExpected = Math.max(1, Math.floor(eligibleCount * 0.8));
             const alertKey = `${period}:${eligibleCount}:${actualCount}`;
-            if (actualCount < minimumExpected && _perfMonthlyMissingAlertKey !== alertKey) {
-              _perfMonthlyMissingAlertKey = alertKey;
+            if (actualCount < minimumExpected && _perfMonthlyMissingAlertKey.get(tenantId) !== alertKey) {
+              _perfMonthlyMissingAlertKey.set(tenantId, alertKey);
               await sendSystemAlert([
                 '🚨 [HRMS] 月度绩效结果缺失告警',
+                `租户：${tenantId}`,
                 `周期：${period}`,
                 `应有人员（估算）：${eligibleCount}`,
                 `已写入结果：${actualCount}`,
@@ -21811,37 +21809,43 @@ app.listen(PORT, HOST, async () => {
               ].join('\n'));
             }
             if (actualCount >= minimumExpected) {
-              _perfMonthlyMissingAlertKey = '';
+              _perfMonthlyMissingAlertKey.delete(tenantId);
             }
           }
         }
 
         // 4) 欠休域 / 5) 薪资域：确保独立域始终跟随当前 state
-          await upsertLeaveDomainFromState((await getSharedState()) || {});
-          await upsertPayrollDomainFromState((await getSharedState()) || {});
+          await upsertLeaveDomainFromState((await getSharedState(tenantId)) || {});
+          await upsertPayrollDomainFromState((await getSharedState(tenantId)) || {});
         } catch (e) {
-          console.error('[monitor] critical data reconcile error:', e?.message);
+          console.error('[monitor] critical data reconcile error:', tenantId, e?.message);
         }
-      });
+      }, { continueOnError: true });
+      } catch (e) {
+        console.error('[monitor] critical data reconcile runForActiveTenants error:', e?.message || e);
+      }
     }, 10 * 60 * 1000);
 
-    // ── P0-2: 每天 23:30 检查 sales_raw 数据完整性 ──────────────
+    // ── P0-2: 每天 23:30 检查销售数据完整性 ──────────────
     // 用 setInterval 每5分钟检查时间窗口
-    let _salesCheckFired = false;
+    // 原用 runWithBootstrapTenantContext 只处理default租户，改为遍历活跃租户各自检查；
+    // 去重标记也从单一值改为按租户区分的 Map。
+    const _salesCheckFiredDate = new Map();
     setInterval(async () => {
-      await runWithBootstrapTenantContext(async () => {
+      try {
+      await runForActiveTenants(async (tenantId) => {
         const now = new Date();
         const h = now.getHours(), m = now.getMinutes();
         // 每天 23:30~23:35 触发一次
         if (h !== 23 || m < 30 || m > 34) return;
-        if (_salesCheckFired && now.getDate() === _salesCheckFired) return;
-        _salesCheckFired = now.getDate();
+        if (_salesCheckFiredDate.get(tenantId) === now.getDate()) return;
+        _salesCheckFiredDate.set(tenantId, now.getDate());
 
         try {
-          // 获取昨天日期（sales_raw 一般T+1检查）
+          // 获取昨天日期（sales_raw已下线，改查pos_sales_detail视图，一般T+1检查）
           const yesterday = new Date(now - 86400000).toISOString().split('T')[0];
           const r = await pool.query(
-            `SELECT DISTINCT store FROM sales_raw WHERE date = $1`,
+            `SELECT DISTINCT store FROM pos_sales_detail WHERE date = $1`,
             [yesterday]
           );
           const presentStores = r.rows.map(row => String(row.store || '').trim());
@@ -21861,74 +21865,84 @@ app.listen(PORT, HOST, async () => {
           if (missing.length > 0) {
             const msg = [
               `⚠️ [HRMS] 销售数据缺失告警`,
+              `租户：${tenantId}`,
               `检查日期：${yesterday}`,
               `缺失门店：${missing.join('、')}`,
               `已有数据：${presentStores.join('、') || '无'}`,
-              `请尽快上传 Excel，否则明日销售指标将全部失效。`,
-              `上传入口：系统后台 → 数据上传 → 销售日报`,
-              `或：服务器配置 SALES_RAW_IMPORT_DIR 后将 Excel 放入该目录（可 rsync 自本地 HRMS 文件夹），详见服务日志 [sales-raw-folder]`
+              `销售明细已改为自动同步（pos_order_items），如持续缺失请检查该门店的POS同步是否中断。`
             ].join('\n');
-            console.error('[monitor] sales_raw missing stores:', missing);
+            console.error('[monitor] pos_sales_detail missing stores:', tenantId, missing);
             await sendSystemAlert(msg);
           } else {
-            console.log(`[monitor] sales_raw check OK for ${yesterday}: ${presentStores.join('、')}`);
+            console.log(`[monitor] sales check OK for tenant=${tenantId} ${yesterday}: ${presentStores.join('、')}`);
           }
         } catch (e) {
-          console.error('[monitor] sales_raw check error:', e?.message);
+          console.error('[monitor] sales check error:', tenantId, e?.message);
         }
-      });
+      }, { continueOnError: true });
+      } catch (e) {
+        console.error('[monitor] sales check runForActiveTenants error:', e?.message || e);
+      }
     }, 5 * 60 * 1000);
 
     // ── 上月末「累计假期」池快照：上海时间每月 1 日 06:00–06:14 写入，供当月展示与公式解耦 ──
-    let _leaveCumulativeSnapshotDoneCurYm = '';
+    // 原用 runWithBootstrapTenantContext 只处理 default 租户；改为遍历全部活跃租户，
+    // 去重标记也从单一字符串改为按租户区分的 Map，避免A租户跑完误挡住B租户。
+    const _leaveCumulativeSnapshotDoneCurYm = new Map();
     setInterval(async () => {
-      await runWithBootstrapTenantContext(async () => {
-        try {
-          const partsFmt = new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'Asia/Shanghai',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          });
-          const p = partsFmt.formatToParts(new Date());
-          const gv = (t) => p.find(x => x.type === t)?.value || '';
-          const y = gv('year');
-          const mo = gv('month');
-          const d = gv('day');
-          const h = Number(gv('hour'));
-          const mi = Number(gv('minute'));
-          if (d !== '01' || h !== 6 || mi >= 15) return;
-          const curYm = `${y}-${mo}`;
-          if (_leaveCumulativeSnapshotDoneCurYm === curYm) return;
-          const closedMonth = shiftMonth(curYm, -1);
-          if (!closedMonth) return;
-          const r = await runLeaveCumulativeCloseSnapshotForClosedMonth(closedMonth);
-          if (r?.ok) {
-            _leaveCumulativeSnapshotDoneCurYm = curYm;
-            console.log('[leave-cumulative-snapshot] locked closedMonth=', r.closedMonth, 'employees=', r.employees);
-          } else {
-            await sendSystemAlert([
-              '🔴 [HRMS] 上月累计假期自动快照失败',
-              `闭合月：${closedMonth}`,
-              `当前上海月：${curYm}`,
-              `原因：${String(r?.error || 'unknown')}`,
-              '请检查服务日志 [leave-cumulative-snapshot] 与 state 持久化；窗口内将每分钟重试。'
-            ].join('\n'));
-          }
-        } catch (e) {
-          console.error('[leave-cumulative-snapshot] tick:', e?.message || e);
+      try {
+        await runForActiveTenants(async (tenantId) => {
           try {
-            await sendSystemAlert([
-              '🔴 [HRMS] 上月累计假期快照任务异常',
-              `错误：${String(e?.message || e)}`,
-              '请检查 hrms-service 日志与数据库/共享状态写入。'
-            ].join('\n'));
-          } catch (_) {}
-        }
-      });
+            const partsFmt = new Intl.DateTimeFormat('en-CA', {
+              timeZone: 'Asia/Shanghai',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            });
+            const p = partsFmt.formatToParts(new Date());
+            const gv = (t) => p.find(x => x.type === t)?.value || '';
+            const y = gv('year');
+            const mo = gv('month');
+            const d = gv('day');
+            const h = Number(gv('hour'));
+            const mi = Number(gv('minute'));
+            if (d !== '01' || h !== 6 || mi >= 15) return;
+            const curYm = `${y}-${mo}`;
+            if (_leaveCumulativeSnapshotDoneCurYm.get(tenantId) === curYm) return;
+            const closedMonth = shiftMonth(curYm, -1);
+            if (!closedMonth) return;
+            const r = await runLeaveCumulativeCloseSnapshotForClosedMonth(closedMonth);
+            if (r?.ok) {
+              _leaveCumulativeSnapshotDoneCurYm.set(tenantId, curYm);
+              console.log('[leave-cumulative-snapshot] locked tenant=', tenantId, 'closedMonth=', r.closedMonth, 'employees=', r.employees);
+            } else {
+              await sendSystemAlert([
+                '🔴 [HRMS] 上月累计假期自动快照失败',
+                `租户：${tenantId}`,
+                `闭合月：${closedMonth}`,
+                `当前上海月：${curYm}`,
+                `原因：${String(r?.error || 'unknown')}`,
+                '请检查服务日志 [leave-cumulative-snapshot] 与 state 持久化；窗口内将每分钟重试。'
+              ].join('\n'));
+            }
+          } catch (e) {
+            console.error('[leave-cumulative-snapshot] tick:', tenantId, e?.message || e);
+            try {
+              await sendSystemAlert([
+                '🔴 [HRMS] 上月累计假期快照任务异常',
+                `租户：${tenantId}`,
+                `错误：${String(e?.message || e)}`,
+                '请检查 hrms-service 日志与数据库/共享状态写入。'
+              ].join('\n'));
+            } catch (_) {}
+          }
+        }, { continueOnError: true });
+      } catch (e) {
+        console.error('[leave-cumulative-snapshot] runForActiveTenants error:', e?.message || e);
+      }
     }, 60 * 1000);
 
     setInterval(() => {
@@ -22005,22 +22019,26 @@ app.listen(PORT, HOST, async () => {
 
     // hrms_state → 快照表（定时 INSERT；环境变量：HRMS_STATE_SNAPSHOT_INTERVAL_MINUTES / _MAX_ROWS / _RETAIN_DAYS / HRMS_STATE_SNAPSHOT_DISABLED）
     const snapIntervalMin = Math.max(5, Math.min(24 * 60, Number(process.env.HRMS_STATE_SNAPSHOT_INTERVAL_MINUTES || 15)));
+    // hrms_state.key 本身就是租户标识（如 'default'、未来新租户的 tenant_id），
+    // captureHrmsStateSnapshotToDb 原来固定只快照 stateKey='default'，遍历租户改为每个租户各自快照自己的 key。
     const runHrmsStateSnapshot = () => {
-      captureHrmsStateSnapshotToDb({ source: 'scheduled' }).catch((e) => {
+      void runForActiveTenants(
+        (tenantId) => captureHrmsStateSnapshotToDb({ source: 'scheduled', stateKey: tenantId }),
+        { continueOnError: true, onError: ({ tenantId, error }) => {
+          console.error('[hrms_state_snapshot] tick:', tenantId, error?.message || error);
+          void notifyAdminsDualWriteFailure(`hrms_state 定时快照（hrms_state_snapshots）租户=${tenantId}`, error);
+        } }
+      ).catch((e) => {
         console.error('[hrms_state_snapshot] tick:', e?.message || e);
         void notifyAdminsDualWriteFailure('hrms_state 定时快照（hrms_state_snapshots）', e);
       });
     };
     if (String(process.env.HRMS_STATE_SNAPSHOT_DISABLED || '').toLowerCase() !== 'true') {
       setTimeout(() => {
-        void runWithBootstrapTenantContext(runHrmsStateSnapshot).catch((e) => {
-          console.error('[hrms_state_snapshot] bootstrap tick:', e?.message || e);
-        });
+        runHrmsStateSnapshot();
       }, 120_000);
       setInterval(() => {
-        void runWithBootstrapTenantContext(runHrmsStateSnapshot).catch((e) => {
-          console.error('[hrms_state_snapshot] interval tick:', e?.message || e);
-        });
+        runHrmsStateSnapshot();
       }, snapIntervalMin * 60 * 1000);
       console.log(
         '[hrms_state_snapshot] scheduler on, interval_min=',
@@ -22870,7 +22888,6 @@ if (__ALLOW_SCHEMA_CHANGES__) {
     await ensureAgentConfigTables();
 
     await ensureCheckinTable();
-    await ensureSalesRawIndex();
     await ensureOpsTasksTable();
     await ensureFeishuSyncTable();
     await ensureFeishuGenericRecordsTable();
@@ -22885,9 +22902,11 @@ if (__ALLOW_SCHEMA_CHANGES__) {
   console.warn(`[safety] APP_ENV=${APP_ENV}: skip auto schema/ensure tables (ALLOW_SCHEMA_CHANGES!=true)`);
 }
 
+// 原用runWithBootstrapTenantContext只处理default租户的离职自动化+晋升进度扫描；改为遍历活跃租户
 setInterval(() => {
   (async () => {
-    await runWithBootstrapTenantContext(async () => {
+    try {
+    await runForActiveTenants(async (tenantId) => {
       try {
       await ensureApprovalTables();
       const today = new Date();
@@ -22911,7 +22930,7 @@ setInterval(() => {
       const items = r.rows || [];
       if (!items.length) return;
 
-      const state = (await getSharedState()) || {};
+      const state = (await getSharedState(tenantId)) || {};
       const employees = Array.isArray(state.employees) ? state.employees : [];
       let changed = false;
       for (const it of items) {
@@ -22934,10 +22953,10 @@ setInterval(() => {
       }
 
       if (changed) {
-        await saveSharedState({ ...state, employees });
+        await saveSharedState({ ...state, employees }, tenantId);
       }
       try {
-        const stAfter = (await getSharedState()) || {};
+        const stAfter = (await getSharedState(tenantId)) || {};
         const emList = Array.isArray(stAfter.employees) ? stAfter.employees : [];
         for (const it of items) {
           const empUsername = String(it?.payload?.username || it?.payload?.employeeUsername || it?.payload?.applicant || it?.applicant_username || '').trim();
@@ -22947,18 +22966,18 @@ setInterval(() => {
             try {
               await applyHrmsUserAccountGateFromEmployee(rec2);
             } catch (ge) {
-              console.error('[offboarding-cron][account-gate]', empUsername, ge?.message || ge);
+              console.error('[offboarding-cron][account-gate]', tenantId, empUsername, ge?.message || ge);
             }
           }
         }
       } catch (eGate) {
-        console.error('[offboarding-cron] account gate batch failed:', eGate?.message || eGate);
+        console.error('[offboarding-cron] account gate batch failed:', tenantId, eGate?.message || eGate);
       }
 
       // P1/P2/P5: 晋升进度每日扫描
       // P4: 替换旧的 trainingSessions 死代码（新版培训任务存 DB，promotionTrack 无 trainingSessions 字段）
       try {
-        let state2 = (await getSharedState()) || {};
+        let state2 = (await getSharedState(tenantId)) || {};
         let allTracks = Array.isArray(state2.promotionTracks) ? state2.promotionTracks.slice() : [];
         if (allTracks.length) {
           let changedTrack = false;
@@ -23035,10 +23054,10 @@ setInterval(() => {
             }
           }
 
-          if (changedTrack) await saveSharedState(state2);
+          if (changedTrack) await saveSharedState(state2, tenantId);
         }
       } catch (e) {
-        console.log('[promotion-sweep] failed:', e?.message || e);
+        console.log('[promotion-sweep] failed:', tenantId, e?.message || e);
       }
 
         for (const it of items) {
@@ -23047,9 +23066,12 @@ setInterval(() => {
           } catch (e) {}
         }
       } catch (e) {
-        console.log('offboarding auto-disable job failed:', e?.message || e);
+        console.log('offboarding auto-disable job failed:', tenantId, e?.message || e);
       }
-    });
+    }, { continueOnError: true });
+    } catch (e) {
+      console.error('[offboarding-cron] runForActiveTenants error:', e?.message || e);
+    }
   })();
 }, 30 * 60 * 1000);
 
@@ -23083,9 +23105,11 @@ function isEndOfMonth(today) {
 }
 
 // 生日祝福定时任务 - 每小时检查一次
+// 原用runWithBootstrapTenantContext只处理default租户的员工生日；改为遍历活跃租户各自处理各自员工
 setInterval(() => {
   (async () => {
-    await runWithBootstrapTenantContext(async () => {
+    try {
+    await runForActiveTenants(async (tenantId) => {
       try {
       const now = new Date();
       const todayMonth = now.getMonth() + 1;
@@ -23093,7 +23117,7 @@ setInterval(() => {
       const todayStr = `${now.getFullYear()}-${String(todayMonth).padStart(2, '0')}-${String(todayDay).padStart(2, '0')}`;
       const hour = now.getHours();
 
-      let state = (await getSharedState()) || {};
+      let state = (await getSharedState(tenantId)) || {};
       const employees = Array.isArray(state.employees) ? state.employees : [];
       const activeEmployees = employees.filter(e => !isInactiveStatus(String(e?.status || '').trim()) && !employeeAccountShouldDisable(e));
 
@@ -23229,13 +23253,16 @@ setInterval(() => {
           state.birthdayGreetingsSent = birthdayGreetingsSent;
           state.birthdayRemindersSent = birthdayRemindersSent;
           state.monthlyRemindersSent = monthlyRemindersSent;
-          await saveSharedState(state);
+          await saveSharedState(state, tenantId);
         }
 
       } catch (e) {
-        console.log('birthday greeting job failed:', e?.message || e);
+        console.log('birthday greeting job failed:', tenantId, e?.message || e);
       }
-    });
+    }, { continueOnError: true });
+    } catch (e) {
+      console.error('[birthday-greeting] runForActiveTenants error:', e?.message || e);
+    }
   })();
 }, 60 * 60 * 1000); // 每小时检查一次
 
@@ -23693,13 +23720,14 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // ── Scheduled cleanup: retain 2 months of notifications ────
+// hrms_user_notifications带RLS，原只清default租户；改为遍历活跃租户各自清理
 async function cleanupOldNotifications() {
   let deleted = 0;
   try {
-    const r = await runWithBootstrapTenantContext(() =>
-      pool.query(`DELETE FROM hrms_user_notifications WHERE created_at < now() - interval '3 days' AND id NOT IN (SELECT id FROM hrms_user_notifications ORDER BY created_at DESC LIMIT 50)`)
-    );
-    deleted = r.rowCount ?? 0;
+    await runForActiveTenants(async () => {
+      const r = await pool.query(`DELETE FROM hrms_user_notifications WHERE created_at < now() - interval '3 days' AND id NOT IN (SELECT id FROM hrms_user_notifications ORDER BY created_at DESC LIMIT 50)`);
+      deleted += r.rowCount ?? 0;
+    }, { continueOnError: true });
   } catch (e) {
     console.error('[cleanup] hrms_user_notifications error:', e?.message);
   }
