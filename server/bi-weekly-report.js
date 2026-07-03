@@ -184,13 +184,13 @@ function normStoreKey(s) {
 }
 
 /**
- * 将配置/展示用店名对齐到 sales_raw ∪ daily_reports 中的实际 store 字符串
+ * 将配置/展示用店名对齐到 pos_sales_detail ∪ daily_reports 中的实际 store 字符串
  */
 export async function resolveStoreKeyForReports(requested) {
   const want = String(requested || '').trim();
   const r = await pool().query(`
     SELECT store FROM (
-      SELECT DISTINCT TRIM(store) AS store FROM sales_raw WHERE TRIM(COALESCE(store, '')) <> ''
+      SELECT DISTINCT TRIM(store) AS store FROM pos_sales_detail WHERE TRIM(COALESCE(store, '')) <> ''
       UNION
       SELECT DISTINCT TRIM(store) AS store FROM daily_reports WHERE TRIM(COALESCE(store, '')) <> ''
     ) u
@@ -232,7 +232,7 @@ export async function resolveStoreKeyForReports(requested) {
   return {
     useStore: want,
     note:
-      `**【需确认】** 在 sales_raw / daily_reports 中**未找到**与「${want}」匹配的店名。请核对上传销售与营业日报中的门店字段。库中店名示例：${all.slice(0, 18).join('、')}${all.length > 18 ? '…' : ''}`,
+      `**【需确认】** 在 pos_sales_detail / daily_reports 中**未找到**与「${want}」匹配的店名。请核对上传销售与营业日报中的门店字段。库中店名示例：${all.slice(0, 18).join('、')}${all.length > 18 ? '…' : ''}`,
     candidates: all.slice(0, 40)
   };
 }
@@ -295,7 +295,7 @@ function buildAnalysisSummary(report) {
   return insights.slice(0, 6);
 }
 
-/** 与 generatePeriodReport 相同 SQL 口径：sales_raw + 别名 + dish_library_costs，仅统计命中成本的行。 */
+/** 与 generatePeriodReport 相同 SQL 口径：pos_sales_detail + 别名 + dish_library_costs，仅统计命中成本的行。 */
 export async function queryMarginByBiz(store, startDate, endDate) {
   const rows = await pool().query(`
     WITH sales AS (
@@ -308,7 +308,7 @@ export async function queryMarginByBiz(store, startDate, endDate) {
         SUM(COALESCE(s.revenue, 0)) AS revenue,
         SUM(COALESCE(s.discount, 0)) AS recorded_discount,
         SUM(GREATEST(COALESCE(s.sales_amount, 0) - COALESCE(s.revenue, 0), 0)) AS derived_discount
-      FROM sales_raw s
+      FROM pos_sales_detail s
       WHERE TRIM(s.store) = TRIM($1)
         AND s.date BETWEEN $2 AND $3
       GROUP BY s.store, s.biz_type, s.dish_name
@@ -432,7 +432,7 @@ async function queryMarginBySlot(store, startDate, endDate) {
         SUM(COALESCE(s.revenue, 0)) AS revenue,
         SUM(COALESCE(s.discount, 0)) AS recorded_discount,
         SUM(GREATEST(COALESCE(s.sales_amount, 0) - COALESCE(s.revenue, 0), 0)) AS derived_discount
-      FROM sales_raw s
+      FROM pos_sales_detail s
       WHERE TRIM(s.store) = TRIM($1)
         AND s.date BETWEEN $2 AND $3
       GROUP BY s.store, slot, biz_type, s.dish_name
@@ -555,7 +555,7 @@ export async function queryCostCoverageDiagnostics(store, startDate, endDate, un
         SUM(COALESCE(s.qty, 0)) AS qty,
         SUM(COALESCE(s.sales_amount, 0)) AS sales_amount,
         SUM(COALESCE(s.revenue, 0)) AS revenue
-      FROM sales_raw s
+      FROM pos_sales_detail s
       WHERE TRIM(s.store) = TRIM($1)
         AND s.date BETWEEN $2 AND $3
       GROUP BY s.store, s.biz_type, s.dish_name
@@ -631,7 +631,7 @@ export async function queryCostCoverageDiagnostics(store, startDate, endDate, un
         SUM(COALESCE(s.qty, 0)) AS qty,
         SUM(COALESCE(s.sales_amount, 0)) AS sales_amount,
         SUM(COALESCE(s.revenue, 0)) AS revenue
-      FROM sales_raw s
+      FROM pos_sales_detail s
       WHERE TRIM(s.store) = TRIM($1)
         AND s.date BETWEEN $2 AND $3
       GROUP BY s.store, s.biz_type, s.dish_name
@@ -750,7 +750,7 @@ export async function queryCostCoverageDiagnostics(store, startDate, endDate, un
   };
 }
 
-/** sales_raw 全渠道折前/实收（不参与成本库过滤；用于与「堂食+外卖」对账） */
+/** pos_sales_detail 全渠道折前/实收（不参与成本库过滤；用于与「堂食+外卖」对账） */
 export async function querySalesRawTotals(storeKey, startDate, endDate) {
   const r = await pool().query(
     `
@@ -759,7 +759,7 @@ export async function querySalesRawTotals(storeKey, startDate, endDate) {
       ROUND(COALESCE(SUM(s.revenue), 0)::numeric, 2) AS net,
       COUNT(*)::bigint AS row_count,
       COUNT(DISTINCT s.date)::int AS data_days
-    FROM sales_raw s
+    FROM pos_sales_detail s
     WHERE TRIM(s.store) = TRIM($1) AND s.date BETWEEN $2 AND $3
     `,
     [storeKey, startDate, endDate]
@@ -781,7 +781,7 @@ export async function querySalesRawTotalsDinein(storeKey, startDate, endDate) {
       ROUND(COALESCE(SUM(s.sales_amount), 0)::numeric, 2) AS gross,
       ROUND(COALESCE(SUM(s.revenue), 0)::numeric, 2) AS net,
       COUNT(*)::bigint AS row_count
-    FROM sales_raw s
+    FROM pos_sales_detail s
     WHERE TRIM(s.store) = TRIM($1) AND s.date BETWEEN $2 AND $3
       AND (${BIZ_NORMALIZE_SQL}) = 'dinein'
     `,
@@ -803,7 +803,7 @@ export async function querySalesRawTotalsTakeaway(storeKey, startDate, endDate) 
       ROUND(COALESCE(SUM(s.sales_amount), 0)::numeric, 2) AS gross,
       ROUND(COALESCE(SUM(s.revenue), 0)::numeric, 2) AS net,
       COUNT(*)::bigint AS row_count
-    FROM sales_raw s
+    FROM pos_sales_detail s
     WHERE TRIM(s.store) = TRIM($1) AND s.date BETWEEN $2 AND $3
       AND (${BIZ_NORMALIZE_SQL}) = 'takeaway'
     `,
@@ -825,7 +825,7 @@ export async function querySalesRawTotalsBySlot(storeKey, startDate, endDate) {
       (${SLOT_NORMALIZE_SQL}) AS slot,
       ROUND(COALESCE(SUM(s.sales_amount), 0)::numeric, 2) AS gross,
       ROUND(COALESCE(SUM(s.revenue), 0)::numeric, 2) AS net
-    FROM sales_raw s
+    FROM pos_sales_detail s
     WHERE TRIM(s.store) = TRIM($1) AND s.date BETWEEN $2 AND $3
       AND (${BIZ_NORMALIZE_SQL}) = 'dinein'
     GROUP BY 1
@@ -873,7 +873,7 @@ async function generatePeriodReport(store, startDate, endDate, reportType = 'wee
       COUNT(*) AS total_rows,
       COUNT(CASE WHEN COALESCE(revenue,0)=0 AND COALESCE(sales_amount,0)>0 THEN 1 END) AS missing_revenue_rows,
       COUNT(CASE WHEN COALESCE(sales_amount,0)>0 THEN 1 END) AS valid_sales_rows
-    FROM sales_raw WHERE TRIM(store)=TRIM($1) AND date BETWEEN $2 AND $3`, p);
+    FROM pos_sales_detail WHERE TRIM(store)=TRIM($1) AND date BETWEEN $2 AND $3`, p);
   const rng = rangeQ.rows[0] || {};
   report.actualDateRange = { start: rng.actual_start || startDate, end: rng.actual_end || endDate, dataDays: Number(rng.data_days || 0) };
   const missingRevRows = Number(rng.missing_revenue_rows || 0);
@@ -884,7 +884,7 @@ async function generatePeriodReport(store, startDate, endDate, reportType = 'wee
     report.dataQualityWarnings.push(`${missingRevRows}/${validSalesRows} 行(${missingRevPct.toFixed(0)}%)的实收(revenue)为0，可能影响实收营业额和实收毛利率的准确性。请检查数据导入是否完整。`);
   }
 
-  // 0b) 营业日报兜底（店名与 sales_raw 略不一致时 ILIKE 多别名，避免营业额严重偏低）
+  // 0b) 营业日报兜底（店名与 pos_sales_detail 略不一致时 ILIKE 多别名，避免营业额严重偏低）
   try {
     const drPats = [...new Set([
       ...dailyReportIlikePatterns(store),
@@ -933,7 +933,7 @@ async function generatePeriodReport(store, startDate, endDate, reportType = 'wee
   if (Number(rng.data_days || 0) === 0) {
     report.dataQualityWarnings = report.dataQualityWarnings || [];
     report.dataQualityWarnings.push(
-      `**【需确认】** 统计周期内 sales_raw **零行**。若你已在其它系统上传销售，请核对「门店」字段是否与库中一致（当前用于查询：**${storeKey}**）。`
+      `**【需确认】** 统计周期内 pos_sales_detail **零行**。若你已在其它系统上传销售，请核对「门店」字段是否与库中一致（当前用于查询：**${storeKey}**）。`
     );
   }
 
@@ -942,7 +942,7 @@ async function generatePeriodReport(store, startDate, endDate, reportType = 'wee
     SELECT slot,
       ROUND(AVG(EXTRACT(EPOCH FROM (checkout_time - order_time))/60)::numeric, 1) as avg_min,
       COUNT(*) as cnt
-    FROM sales_raw
+    FROM pos_sales_detail
     WHERE TRIM(store)=TRIM($1) AND date BETWEEN $2 AND $3
       AND biz_type='dinein' AND order_time IS NOT NULL AND checkout_time IS NOT NULL
       AND checkout_time > order_time
@@ -952,7 +952,7 @@ async function generatePeriodReport(store, startDate, endDate, reportType = 'wee
   // b) TOP10 / Bottom10 per biz (过滤赠品/饮品/指定菜品 + 过滤0金额)
   const rankingRaw = await pool().query(`
     SELECT biz_type, dish_name, SUM(qty) as total_qty, SUM(sales_amount) as total_sales
-    FROM sales_raw
+    FROM pos_sales_detail
     WHERE TRIM(store)=TRIM($1) AND date BETWEEN $2 AND $3
       AND biz_type IN ('dinein','takeaway')
       AND dish_name IS NOT NULL
@@ -983,7 +983,7 @@ async function generatePeriodReport(store, startDate, endDate, reportType = 'wee
     SELECT weekday, biz_type,
       COUNT(DISTINCT order_time) as order_cnt,
       SUM(sales_amount) as total_sales
-    FROM sales_raw
+    FROM pos_sales_detail
     WHERE TRIM(store)=TRIM($1) AND date BETWEEN $2 AND $3
     GROUP BY weekday, biz_type ORDER BY weekday`, p);
   report.sections.weekdayRatios = wk.rows;
@@ -991,12 +991,12 @@ async function generatePeriodReport(store, startDate, endDate, reportType = 'wee
   // d) 每小时订单量 per weekday
   const hr = await pool().query(`
     SELECT weekday, EXTRACT(HOUR FROM order_time)::int as hour, biz_type, COUNT(*) as cnt
-    FROM sales_raw
+    FROM pos_sales_detail
     WHERE TRIM(store)=TRIM($1) AND date BETWEEN $2 AND $3 AND order_time IS NOT NULL
     GROUP BY weekday, hour, biz_type ORDER BY weekday, hour`, p);
   report.sections.hourlyOrders = hr.rows;
 
-  // e) 堂食/全渠道 sales_raw + 理论毛利率（成本命中子集）+ 时段
+  // e) 堂食/全渠道 pos_sales_detail + 理论毛利率（成本命中子集）+ 时段
   const [
     currentMargin,
     salesRawTotals,
@@ -1038,7 +1038,7 @@ async function generatePeriodReport(store, startDate, endDate, reportType = 'wee
     report.dataQualityWarnings.push(`堂食成本覆盖率仅 ${dineinCoverage.toFixed(1)}%，低于${COST_COVERAGE_WARN_THRESHOLD_PCT}%门槛，本期堂食毛利可信度较低。`);
   }
 
-  // f) 环比（上一周期）：折前/实收/折扣按 sales_raw 全量，毛利率仍按成本命中子集
+  // f) 环比（上一周期）：折前/实收/折扣按 pos_sales_detail 全量，毛利率仍按成本命中子集
   const periodDays = daysBetweenInclusive(startDate, endDate);
   const prev = shiftRangeBackward(startDate, endDate, periodDays);
   const [previousMargin, previousRaw, previousDinein] = await Promise.all([
@@ -1122,9 +1122,9 @@ export function formatReportMarkdown(r) {
     md += `> 数据查询门店：**${r.storeDbKey}**（与展示名不一致时已自动/提示对齐）\n`;
   }
   md += `**${periodLabel}经营分析报告**\n`;
-  md += `${actualStart} ~ ${actualEnd}（共${dataDays}天 sales_raw 有数据）\n`;
+  md += `${actualStart} ~ ${actualEnd}（共${dataDays}天 pos_sales_detail 有数据）\n`;
   if (actualStart !== r.weekStart || actualEnd !== r.weekEnd) {
-    md += `> 注：统计周期 ${r.weekStart}~${r.weekEnd}，sales_raw 实际有数据 ${dataDays} 天\n`;
+    md += `> 注：统计周期 ${r.weekStart}~${r.weekEnd}，pos_sales_detail 实际有数据 ${dataDays} 天\n`;
   }
 
   // ── 数据质量警告 ──
@@ -1141,7 +1141,7 @@ export function formatReportMarkdown(r) {
   const fbDailyDays = fb && fb.current ? Number(fb.current.days || 0) : 0;
   const fbHasNumbers = fb && fb.current && (toNum(fb.current.revenue) > 0 || toNum(fb.current.orders) > 0);
   if (fb && fb.current && fbHasNumbers) {
-    md += `**营业日报兜底（daily_reports）** — sales_raw 缺数时仍可对账\n\n`;
+    md += `**营业日报兜底（daily_reports）** — pos_sales_detail 缺数时仍可对账\n\n`;
     md += `| 指标 | 本期 | 环比 |\n|:--|--:|--:|\n`;
     const asp = fb.current.orders > 0 ? fb.current.revenue / fb.current.orders : null;
     const aspPrev = fb.previous && toNum(fb.previous.orders) > 0 ? toNum(fb.previous.revenue) / toNum(fb.previous.orders) : null;
@@ -1151,9 +1151,9 @@ export function formatReportMarkdown(r) {
     md += `| 客单价(估) | **${asp != null ? fmtMoney(asp) : '—'}** | ${fmtSignedPct(aspWow)} |\n\n`;
   } else if (dataDays === 0) {
     if (fbDailyDays > 0) {
-      md += `**【需确认】** **sales_raw** 本周期无行；**daily_reports** 有 **${fbDailyDays}** 天记录但营业额/订单合计为 0，请核对日报是否未填报或字段映射（actual_revenue / dine_orders）。\n\n`;
+      md += `**【需确认】** **pos_sales_detail** 本周期无行；**daily_reports** 有 **${fbDailyDays}** 天记录但营业额/订单合计为 0，请核对日报是否未填报或字段映射（actual_revenue / dine_orders）。\n\n`;
     } else {
-      md += `**【需确认】** 本周期在 **sales_raw** 与 **daily_reports** 均未拉到有效数据，请检查店名是否与数据库一致、是否未上传销售/日报。\n\n`;
+      md += `**【需确认】** 本周期在 **pos_sales_detail** 与 **daily_reports** 均未拉到有效数据，请检查店名是否与数据库一致、是否未上传销售/日报。\n\n`;
     }
   }
 
@@ -1167,15 +1167,15 @@ export function formatReportMarkdown(r) {
   const rawDiscExec = Math.max(0, grossHeadline - netHeadline);
   md += `**经营主指标（与营业日报 / 堂食 POS 可对账）**\n\n`;
   md += `| 指标 | 本期 | 环比 |\n|:--|--:|--:|\n`;
-  md += `| 折前营业额（堂食 sales_raw） | **${fmtMoney(grossHeadline)}** | ${fmtSignedPct(wowSec.salesWowPct)} |\n`;
-  md += `| 实收营业额${useDailyH ? '（营业日报）' : '（sales_raw 全渠道）'} | **${fmtMoney(netHeadline)}** | ${fmtSignedPct(wowSec.revenueWowPct)} |\n`;
+  md += `| 折前营业额（堂食 pos_sales_detail） | **${fmtMoney(grossHeadline)}** | ${fmtSignedPct(wowSec.salesWowPct)} |\n`;
+  md += `| 实收营业额${useDailyH ? '（营业日报）' : '（pos_sales_detail 全渠道）'} | **${fmtMoney(netHeadline)}** | ${fmtSignedPct(wowSec.revenueWowPct)} |\n`;
   md += `| 折扣(堂食折前−上列实收) | ${fmtMoney(rawDiscExec)} | ${fmtSignedPct(wowSec.discountWowPct)} |\n`;
   md += `| 实收毛利率（仅成本命中子集） | **${fmtPct(m.totalNetMarginPct)}** | ${fmtSignedPct(wowSec.netMarginWowPct)} |\n`;
   if (hasTakeaway && toNum(twRaw.gross) > 0) {
-    md += `| 外卖（sales_raw 另计） | 折前 **${fmtMoney(twRaw.gross)}** / 实收 **${fmtMoney(twRaw.net)}** | — |\n`;
+    md += `| 外卖（pos_sales_detail 另计） | 折前 **${fmtMoney(twRaw.gross)}** / 实收 **${fmtMoney(twRaw.net)}** | — |\n`;
   }
-  md += `| 全渠道 sales_raw 参考 | 折前 ${fmtMoney(allRaw.gross)} / 实收 ${fmtMoney(allRaw.net)} | — |\n`;
-  md += `\n> 说明：此前误用「全渠道 sales_raw」作主表，会与日报实收严重偏离（有外卖门店尤甚）。「实收毛利率」仍来自下方理论毛利表（**dish_library_costs** 命中子集）。\n\n`;
+  md += `| 全渠道 pos_sales_detail 参考 | 折前 ${fmtMoney(allRaw.gross)} / 实收 ${fmtMoney(allRaw.net)} | — |\n`;
+  md += `\n> 说明：此前误用「全渠道 pos_sales_detail」作主表，会与日报实收严重偏离（有外卖门店尤甚）。「实收毛利率」仍来自下方理论毛利表（**dish_library_costs** 命中子集）。\n\n`;
 
   // ── 二、毛利分析 ──
   md += `\n${sep}\n`;
@@ -1209,7 +1209,7 @@ export function formatReportMarkdown(r) {
   // ── 三、时段经营维度 ──
   md += `\n${sep}\n`;
   md += `**三、时段经营**（午市/下午茶/晚市，**仅堂食**）\n\n`;
-  md += `> 每时段 **折前/实收** 为 **堂食 sales_raw** 按 slot/下单时刻分档，加总应与主表「折前（堂食）」一致；**成本与毛利率** 仍仅统计已匹配成本的明细。\n\n`;
+  md += `> 每时段 **折前/实收** 为 **堂食 pos_sales_detail** 按 slot/下单时刻分档，加总应与主表「折前（堂食）」一致；**成本与毛利率** 仍仅统计已匹配成本的明细。\n\n`;
   const slotMargins = r.sections.slotMargins || {};
   const slotRawTotals = r.sections.slotRawTotals || {};
   let slotAny = false;
@@ -1247,7 +1247,7 @@ export function formatReportMarkdown(r) {
     md += `> **校验提醒**：各时段折前合计 **¥${sumSlotGross.toFixed(2)}** 与主表堂食折前 **¥${grossHeadline.toFixed(2)}** 不一致，请排查时段字段或分档规则。\n\n`;
   }
   if (!slotAny) {
-    md += `**【需说明】** 本周期无可用时段拆分销售（多为 sales_raw 无行或各时段销售额为 0）。\n\n`;
+    md += `**【需说明】** 本周期无可用时段拆分销售（多为 pos_sales_detail 无行或各时段销售额为 0）。\n\n`;
   }
 
   // ── 四、用餐时长 ──

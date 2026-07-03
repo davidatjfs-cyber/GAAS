@@ -67,10 +67,11 @@ export const CRITICAL_FUNCTIONS = [
 ];
 
 // 关键数据表清单
+// sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图(pos_order_items的同构视图)
 export const CRITICAL_TABLES = [
   { name: 'daily_reports', required: true, minRecords: 100 },
   { name: 'table_visit_records', required: true, minRecords: 10 },
-  { name: 'sales_raw', required: true, minRecords: 100 },
+  { name: 'pos_sales_detail', required: true, minRecords: 100 },
   { name: 'master_tasks', required: true, minRecords: 0 },
   { name: 'feishu_generic_records', required: true, minRecords: 10 }
 ];

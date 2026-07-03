@@ -42,7 +42,7 @@ import { initBrandConfigCache, getBrandForStoreSync, getBrandConfigSync } from '
 
 import { setMasterPool, ensureMasterTables, startMasterAgent, registerMasterRoutes, handleTaskResponse } from './master-agent.js';
 import { setReportPool, generateWeeklyReport, formatReportMarkdown } from './bi-weekly-report.js';
-import { setSalesRawPool, parseSalesRawRows, insertSalesRawRows, evaluateSalesRawUploadQuality } from './sales-raw-upload.js';
+import { setSalesRawPool } from './sales-raw-upload.js';
 import { startSalesRawFolderImporter, runSalesRawFolderImportOnce, setSalesRawFolderImportFailureNotifier } from './sales-raw-folder-importer.js';
 import {
   startHrmsPerformanceJobs,
@@ -12836,56 +12836,13 @@ app.post('/api/reports/sales-raw/upload', authRequired, upload.single('file'), a
   const role = String(req.user?.role || '').trim();
   if (!username) return res.status(400).json({ error: 'missing_user' });
   if (!canAccessAnalyticsReports(role)) return res.status(403).json({ error: 'forbidden' });
+  // sales_raw表已于2026-07-03下线，手工上传销售明细的流程被pos_order_items自动同步取代，
+  // 不再需要人工上传。
   try {
-    const qStore = String(req.body?.store || '').trim();
-    if (!qStore) return res.status(400).json({ error: 'missing_store', message: '请指定门店名称' });
-    const selBiz = normalizeForecastBizType(req.body?.bizType) || '';
-    if (!selBiz) return res.status(400).json({ error: 'invalid_biz_type', message: '请选择业务类型（外卖/堂食）' });
-    const file = req.file || null;
-    if (!file?.path) return res.status(400).json({ error: 'missing_file' });
-    const fallbackDate = inferForecastUploadDateFromFilename(String(file.originalname || ''));
-    let parsed = [];
-    const wb = XLSX.readFile(file.path, { raw: false });
-    for (const sn of (wb.SheetNames || [])) {
-      const ws = wb.Sheets[sn]; if (!ws) continue;
-      const mx = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
-      console.log(`[sales-raw] sheet "${sn}" ${mx.length} rows`);
-      const out = parseSalesRawRows(mx, selBiz, qStore, { fallbackDate });
-      if (out.length) { parsed = out; break; }
-    }
-    if (!parsed.length) return res.status(400).json({ error: 'no_valid_rows', message: '未识别到有效销售明细，请确保包含菜品名称、销售数量等列' });
-    parsed.forEach(r => { r.biz_type = selBiz; r.store = qStore; });
-
-    const quality = await evaluateSalesRawUploadQuality(parsed, qStore, selBiz);
-    const qualityWarnings = [];
-    if (Number(quality?.skuCompletenessPct || 0) < Number(quality?.skuCompletenessWarnPct || 70)) {
-      qualityWarnings.push(`SKU编码完整率 ${Number(quality?.skuCompletenessPct || 0).toFixed(1)}%，低于建议门槛 ${Number(quality?.skuCompletenessWarnPct || 70)}%。建议在原始表增加SKU编码列以提升主数据稳定性。`);
-    }
-    const forceUpload = String(req.body?.force || '') === 'true' && role === 'admin';
-    if (!quality.pass && !forceUpload) {
-      void notifyAdminsDualWriteFailure(
-        'sales_raw（上传被成本覆盖率拦截）',
-        new Error(
-          `门店=${qStore} 业务=${selBiz} 覆盖率=${Number(quality?.salesCoveragePct || 0).toFixed(1)}% 门槛=${Number(quality?.thresholdPct || 0)}% 操作人=${username}`
-        )
-      );
-      return res.status(422).json({
-        error: 'low_cost_coverage',
-        message: `成本覆盖率 ${Number(quality?.salesCoveragePct || 0).toFixed(1)}% 低于门槛 ${Number(quality?.thresholdPct || 0)}%，已阻止导入。请先补齐成本库或菜名别名。`,
-        quality,
-        qualityWarnings
-      });
-    }
-
-    const dates = [...new Set(parsed.map(r => r.date).filter(Boolean))].sort();
-    const ret = await insertSalesRawRows(parsed, qStore, selBiz, dates[0], dates[dates.length - 1]);
-    return res.json({ ok: true, store: qStore, bizType: selBiz, dateRange: `${dates[0]}~${dates[dates.length-1]}`, rows: parsed.length, quality, qualityWarnings, ...ret });
-  } catch (e) {
-    void notifyAdminsDualWriteFailure(
-      `sales_raw（Excel 上传入库异常·${String(req.body?.store || '').trim() || '?'}）`,
-      e
-    );
-    return res.status(500).json({ error: 'server_error', message: 'internal_error'.slice(0, 300) });
+    return res.status(410).json({
+      error: 'sales_raw_retired',
+      message: '销售明细已改为自动同步（pos_order_items/pos_sales_detail），不再需要手工上传销售明细文件。'
+    });
   } finally {
     try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch (e) {}
   }

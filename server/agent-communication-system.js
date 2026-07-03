@@ -600,18 +600,21 @@ export class AgentCommunicationHelper {
    * 获取数据源状态（查近24h记录数）
    */
   static async getDataSourceStatus(dataSourceType) {
-    // 白名单防止注入
+    // 白名单防止注入。sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图
+    // (pos_order_items的同构视图)，该视图无created_at列，用checkout_time代替。
     const ALLOWED_TABLES = {
       daily_reports: 'daily_reports',
       table_visit_records: 'table_visit_records',
-      sales_raw: 'sales_raw',
+      sales_raw: 'pos_sales_detail',
       master_tasks: 'master_tasks',
     };
+    const TIME_COLUMNS = { pos_sales_detail: 'checkout_time' };
     const table = ALLOWED_TABLES[dataSourceType];
     if (!table) return { status: 'unknown', dataSourceType };
+    const timeCol = TIME_COLUMNS[table] || 'created_at';
     try {
       const r = await pool().query(
-        `SELECT COUNT(*) AS cnt, MAX(created_at) AS last_record FROM ${table} WHERE created_at > NOW() - INTERVAL '24 hours'`
+        `SELECT COUNT(*) AS cnt, MAX(${timeCol}) AS last_record FROM ${table} WHERE ${timeCol} > NOW() - INTERVAL '24 hours'`
       );
       const row = r.rows?.[0];
       return {

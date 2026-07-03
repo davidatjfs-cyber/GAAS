@@ -590,7 +590,7 @@ function resolveToolPeriod(args = {}, fallbackDays = 30, originalQuery = '') {
 
 async function execBiToolSalesRanking(store, args = {}, originalQuery = '') {
   const targetStore = String(store || '').trim();
-  if (!targetStore) return { ok: false, text: '当前账号未绑定门店，无法查询销售排行。', source: 'sales_raw' };
+  if (!targetStore) return { ok: false, text: '当前账号未绑定门店，无法查询销售排行。', source: 'pos_sales_detail' };
 
   const period = resolveToolPeriod(args, 30, originalQuery);
   const limit = clampInt(args.limit, 1, 20, 10);
@@ -618,7 +618,7 @@ async function execBiToolSalesRanking(store, args = {}, originalQuery = '') {
          ROUND(SUM(COALESCE(s.qty,0))::numeric, 2) AS total_qty,
          ROUND(SUM(COALESCE(s.sales_amount,0))::numeric, 2) AS total_sales,
          ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS total_revenue
-       FROM sales_raw s
+       FROM pos_sales_detail s
        WHERE lower(regexp_replace(COALESCE(s.store,''), '\\s+', '', 'g')) LIKE $1
          AND s.date BETWEEN $2 AND $3
          ${bizSql}
@@ -635,7 +635,7 @@ async function execBiToolSalesRanking(store, args = {}, originalQuery = '') {
       // Fallback: check available data range and use most recent data
       try {
         const rangeR = await pool().query(
-          `SELECT MAX(date)::text as max_d, MIN(date)::text as min_d FROM sales_raw WHERE lower(regexp_replace(COALESCE(store,''), '\\s+', '', 'g')) LIKE $1`,
+          `SELECT MAX(date)::text as max_d, MIN(date)::text as min_d FROM pos_sales_detail WHERE lower(regexp_replace(COALESCE(store,''), '\\s+', '', 'g')) LIKE $1`,
           [normalizeStoreLike(targetStore)]
         );
         const maxDate = rangeR.rows?.[0]?.max_d;
@@ -646,7 +646,7 @@ async function execBiToolSalesRanking(store, args = {}, originalQuery = '') {
           const fbStart = fbStartD.toISOString().slice(0,10);
           const fbR = await pool().query(
             `SELECT s.dish_name, ROUND(SUM(COALESCE(s.qty,0))::numeric,2) AS total_qty, ROUND(SUM(COALESCE(s.sales_amount,0))::numeric,2) AS total_sales, ROUND(SUM(COALESCE(s.revenue,0))::numeric,2) AS total_revenue
-             FROM sales_raw s WHERE lower(regexp_replace(COALESCE(s.store,''), '\\s+', '', 'g')) LIKE $1 AND s.date BETWEEN $2 AND $3 ${bizSql} AND COALESCE(s.dish_name,'') <> ''
+             FROM pos_sales_detail s WHERE lower(regexp_replace(COALESCE(s.store,''), '\\s+', '', 'g')) LIKE $1 AND s.date BETWEEN $2 AND $3 ${bizSql} AND COALESCE(s.dish_name,'') <> ''
              GROUP BY s.dish_name HAVING SUM(COALESCE(s.qty,0)) > 0 ORDER BY ${metricSql} ${sortOrder} LIMIT ${limit}`,
             [normalizeStoreLike(targetStore), fbStart, fbEnd]
           );
@@ -660,12 +660,12 @@ async function execBiToolSalesRanking(store, args = {}, originalQuery = '') {
               lines.push(`${i + 1}. ${x.dish_name}｜折前¥${Number(x.total_sales || 0).toFixed(0)}｜实收¥${Number(x.total_revenue || 0).toFixed(0)}｜销量${Number(x.total_qty || 0).toFixed(0)}份`);
             });
             lines.push(`> ⚠️ 销售数据最新截至 ${maxDate}，请上传最新销售数据`);
-            return { ok: true, source: 'sales_raw', text: lines.join('\n') };
+            return { ok: true, source: 'pos_sales_detail', text: lines.join('\n') };
           }
-          return { ok: true, source: 'sales_raw', text: `📦 ${period.label}销售数据（${targetStore}）：暂无可用销售明细。\n⚠️ 销售数据最新截至 ${maxDate}，请上传最新数据。` };
+          return { ok: true, source: 'pos_sales_detail', text: `📦 ${period.label}销售数据（${targetStore}）：暂无可用销售明细。\n⚠️ 销售数据最新截至 ${maxDate}，请上传最新数据。` };
         }
       } catch (_e) {}
-      return { ok: true, source: 'sales_raw', text: `📦 ${period.label}销售数据（${targetStore}）：暂无可用销售明细。` };
+      return { ok: true, source: 'pos_sales_detail', text: `📦 ${period.label}销售数据（${targetStore}）：暂无可用销售明细。` };
     }
 
     const title = sortOrder === 'ASC' ? `销售倒数${limit}` : `销售TOP${limit}`;
@@ -675,10 +675,10 @@ async function execBiToolSalesRanking(store, args = {}, originalQuery = '') {
     rows.forEach((x, i) => {
       lines.push(`${i + 1}. ${x.dish_name}｜折前¥${Number(x.total_sales || 0).toFixed(0)}｜实收¥${Number(x.total_revenue || 0).toFixed(0)}｜销量${Number(x.total_qty || 0).toFixed(0)}份`);
     });
-    lines.push('> 数据源：sales_raw（门店销售明细）');
-    return { ok: true, source: 'sales_raw', text: lines.join('\n') };
+    lines.push('> 数据源：pos_sales_detail（门店销售明细）');
+    return { ok: true, source: 'pos_sales_detail', text: lines.join('\n') };
   } catch (e) {
-    return { ok: false, source: 'sales_raw', text: `销售排行查询失败：${e?.message || '未知错误'}` };
+    return { ok: false, source: 'pos_sales_detail', text: `销售排行查询失败：${e?.message || '未知错误'}` };
   }
 }
 
@@ -806,7 +806,7 @@ async function execBiToolRevenueSummary(store, args = {}, originalQuery = '') {
     const salesR = await pool().query(
       `SELECT s.date::text AS date, ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS day_revenue,
               ROUND(SUM(COALESCE(s.sales_amount,0))::numeric, 2) AS day_sales
-       FROM sales_raw s
+       FROM pos_sales_detail s
        WHERE lower(regexp_replace(coalesce(s.store,''), '\\s+', '', 'g')) LIKE $1
          AND s.date BETWEEN $2 AND $3
        GROUP BY s.date
@@ -823,8 +823,8 @@ async function execBiToolRevenueSummary(store, args = {}, originalQuery = '') {
     const sLines = [`📊 营业汇总（${targetStore}·${period.label}）`, `- 统计天数：${salesRows.length}天`, `- 累计实收：¥${totalSalesRevenue.toFixed(0)}`];
     if (totalSalesAmount > 0) sLines.push(`- 累计折前：¥${totalSalesAmount.toFixed(0)}`);
     sLines.push(`- 日均实收：¥${(totalSalesRevenue / salesRows.length).toFixed(0)}`);
-    sLines.push('> 数据源：sales_raw（销售明细按日汇总，营业日报暂无数据）');
-    return { ok: true, source: 'sales_raw', text: sLines.join('\n') };
+    sLines.push('> 数据源：pos_sales_detail（销售明细按日汇总，营业日报暂无数据）');
+    return { ok: true, source: 'pos_sales_detail', text: sLines.join('\n') };
   } catch (e) {
     return { ok: false, source: 'daily_reports', text: `营业汇总查询失败：${e?.message || '未知错误'}` };
   }
@@ -893,7 +893,7 @@ async function execBiToolRevenueForecastNextDay(store, args = {}) {
     // 回退到 sales_raw 的按日实收汇总
     const salesR = await pool().query(
       `SELECT s.date, ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS day_revenue
-       FROM sales_raw s
+       FROM pos_sales_detail s
        WHERE lower(regexp_replace(coalesce(s.store,''), '\\s+', '', 'g')) LIKE $1
          AND s.date BETWEEN $2 AND $3
        GROUP BY s.date
@@ -906,7 +906,7 @@ async function execBiToolRevenueForecastNextDay(store, args = {}) {
       // 兜底：扩大窗口到近60天，给出低置信预测，避免“等于没回答”
       const longR = await pool().query(
         `SELECT s.date, ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS day_revenue
-         FROM sales_raw s
+         FROM pos_sales_detail s
          WHERE lower(regexp_replace(coalesce(s.store,''), '\\s+', '', 'g')) LIKE $1
            AND s.date BETWEEN $2 AND $3
          GROUP BY s.date
@@ -924,8 +924,8 @@ async function execBiToolRevenueForecastNextDay(store, args = {}) {
       const longMax = lf.max;
       return {
         ok: true,
-        source: 'sales_raw',
-        text: `📈 明日营业额预测（${targetStore}）\n- 预测日期：${tomorrowText}（${'日一二三四五六'[tomorrowDow]}）\n- 预测值：¥${longPred.toFixed(0)}\n- 参考区间：¥${longMin.toFixed(0)} ~ ¥${longMax.toFixed(0)}\n- 同星期样本：${lf.sameDow}天（权重×4）\n- 依据样本：近60天销售明细按日汇总（${longRows.length}天有效样本）\n- 置信度：较低（近期样本不足，已启用长窗口兜底）\n> 算法：星期相似度加权+时间衰减，数据源：sales_raw`
+        source: 'pos_sales_detail',
+        text: `📈 明日营业额预测（${targetStore}）\n- 预测日期：${tomorrowText}（${'日一二三四五六'[tomorrowDow]}）\n- 预测值：¥${longPred.toFixed(0)}\n- 参考区间：¥${longMin.toFixed(0)} ~ ¥${longMax.toFixed(0)}\n- 同星期样本：${lf.sameDow}天（权重×4）\n- 依据样本：近60天销售明细按日汇总（${longRows.length}天有效样本）\n- 置信度：较低（近期样本不足，已启用长窗口兜底）\n> 算法：星期相似度加权+时间衰减，数据源：pos_sales_detail`
       };
     }
     const sf = scoredForecast(salesRows, 'day_revenue');
@@ -934,8 +934,8 @@ async function execBiToolRevenueForecastNextDay(store, args = {}) {
     const maxV = sf.max;
     return {
       ok: true,
-      source: 'sales_raw',
-      text: `📈 明日营业额预测（${targetStore}）\n- 预测日期：${tomorrowText}（${'日一二三四五六'[tomorrowDow]}）\n- 预测值：¥${pred.toFixed(0)}\n- 参考区间：¥${minV.toFixed(0)} ~ ¥${maxV.toFixed(0)}\n- 同星期样本：${sf.sameDow}天（权重×4）\n- 依据样本：近${lookbackDays}天销售明细按日汇总（${salesRows.length}天有效样本）\n> 算法：星期相似度加权+时间衰减，数据源：sales_raw`
+      source: 'pos_sales_detail',
+      text: `📈 明日营业额预测（${targetStore}）\n- 预测日期：${tomorrowText}（${'日一二三四五六'[tomorrowDow]}）\n- 预测值：¥${pred.toFixed(0)}\n- 参考区间：¥${minV.toFixed(0)} ~ ¥${maxV.toFixed(0)}\n- 同星期样本：${sf.sameDow}天（权重×4）\n- 依据样本：近${lookbackDays}天销售明细按日汇总（${salesRows.length}天有效样本）\n> 算法：星期相似度加权+时间衰减，数据源：pos_sales_detail`
     };
   } catch (e) {
     return { ok: false, source: 'daily_reports', text: `营业额预测查询失败：${e?.message || '未知错误'}` };
@@ -1078,11 +1078,11 @@ async function tryHandleBiByFunctionCalling({ text, store, brand, senderRole, se
   const textStr = String(text || '');
   try {
     if (/马己仙/.test(textStr)) {
-      const r = await pool().query(`SELECT store FROM sales_raw WHERE store LIKE '%马己仙%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
+      const r = await pool().query(`SELECT store FROM pos_sales_detail WHERE store LIKE '%马己仙%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
       const extracted = String(r.rows?.[0]?.store || '').trim();
       if (extracted) { safeStore = extracted; }
     } else if (/洪潮/.test(textStr)) {
-      const r = await pool().query(`SELECT store FROM sales_raw WHERE store LIKE '%洪潮%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
+      const r = await pool().query(`SELECT store FROM pos_sales_detail WHERE store LIKE '%洪潮%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
       const extracted = String(r.rows?.[0]?.store || '').trim();
       if (extracted) { safeStore = extracted; }
     }
@@ -1163,21 +1163,21 @@ async function tryHandleBiByFunctionCalling({ text, store, brand, senderRole, se
       // 1. 查询门店近30天TOP10销售产品
       const salesRes = await pool().query(
         `SELECT dish_name, SUM(qty) AS total_qty, SUM(revenue) AS total_revenue, COUNT(DISTINCT date) AS sale_days
-         FROM sales_raw WHERE store = $1 AND date >= CURRENT_DATE - INTERVAL '30 days'
+         FROM pos_sales_detail WHERE store = $1 AND date >= CURRENT_DATE - INTERVAL '30 days'
          GROUP BY dish_name ORDER BY total_revenue DESC LIMIT 10`,
         [safeStore]
       );
       // 2. 查询近30天日均营收
       const revenueRes = await pool().query(
         `SELECT ROUND(AVG(daily_rev)::numeric, 0) AS avg_rev, ROUND(MAX(daily_rev)::numeric, 0) AS max_rev, ROUND(MIN(daily_rev)::numeric, 0) AS min_rev
-         FROM (SELECT date, SUM(revenue) AS daily_rev FROM sales_raw WHERE store = $1 AND date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY date) t`,
+         FROM (SELECT date, SUM(revenue) AS daily_rev FROM pos_sales_detail WHERE store = $1 AND date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY date) t`,
         [safeStore]
       );
       // 3. 若有产品名，查该产品近30天销量
       let productSalesText = '';
       if (productName) {
         const pRes = await pool().query(
-          `SELECT SUM(qty) AS total_qty, SUM(revenue) AS total_revenue FROM sales_raw WHERE store = $1 AND dish_name LIKE $2 AND date >= CURRENT_DATE - INTERVAL '30 days'`,
+          `SELECT SUM(qty) AS total_qty, SUM(revenue) AS total_revenue FROM pos_sales_detail WHERE store = $1 AND dish_name LIKE $2 AND date >= CURRENT_DATE - INTERVAL '30 days'`,
           [safeStore, `%${productName}%`]
         );
         const pRow = pRes.rows[0];
@@ -1533,7 +1533,7 @@ async function buildBiFactSourceAudit(store, text) {
     },
     sales_raw: {
       label: '销售明细（sales_raw）',
-      sql: `SELECT COUNT(*)::int AS c, MAX(date)::text AS latest FROM sales_raw WHERE lower(regexp_replace(coalesce(store,''), '\\s+', '', 'g')) LIKE $1`,
+      sql: `SELECT COUNT(*)::int AS c, MAX(date)::text AS latest FROM pos_sales_detail WHERE lower(regexp_replace(coalesce(store,''), '\\s+', '', 'g')) LIKE $1`,
       params: [normalizeStoreLike(store)]
     }
   };
@@ -1956,7 +1956,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
         const salesR = await pool().query(
           `SELECT s.date::text AS date, ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS day_revenue,
                   ROUND(SUM(COALESCE(s.sales_amount,0))::numeric, 2) AS day_sales
-           FROM sales_raw s
+           FROM pos_sales_detail s
            WHERE lower(regexp_replace(coalesce(s.store,''), '\\s+', '', 'g')) = $1
              AND s.date BETWEEN $2 AND $3
            GROUP BY s.date ORDER BY s.date DESC LIMIT 60`,
@@ -1970,7 +1970,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
           sLines.push(`\n- **实收营业额**: ${tRev.toFixed(2)} (已扣优惠)`);
           if (tSales > 0) sLines.push(`- **折前营业额**: ${tSales.toFixed(1)} (含优惠前金额)`);
           if (tSales > 0 && tRev > 0) sLines.push(`- **总折扣金额**: ${(tSales - tRev).toFixed(2)} (含优惠前金额)`);
-          sLines.push(`\n> 数据源：sales_raw（销售明细按日汇总，共${sRows.length}天）`);
+          sLines.push(`\n> 数据源：pos_sales_detail（销售明细按日汇总，共${sRows.length}天）`);
           return sLines.join('\n');
         }
       } catch (_e) {}
@@ -2062,7 +2062,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
             `SELECT COALESCE(s.biz_type, '') AS biz_type,
                     ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS total_revenue,
                     ROUND(SUM(COALESCE(s.qty,0))::numeric, 0) AS total_qty
-             FROM sales_raw s
+             FROM pos_sales_detail s
              WHERE lower(regexp_replace(COALESCE(s.store,''), '\\s+', '', 'g')) LIKE $1
                AND s.date = $2
              GROUP BY s.biz_type`,
@@ -2136,7 +2136,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
            COUNT(DISTINCT s.date) AS days,
            ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS total_revenue,
            ROUND(SUM(COALESCE(s.qty,0))::numeric, 0) AS total_qty
-         FROM sales_raw s
+         FROM pos_sales_detail s
          WHERE lower(regexp_replace(COALESCE(s.store,''), '\\s+', '', 'g')) LIKE $1
            AND s.date BETWEEN $2 AND $3
          GROUP BY s.biz_type`,
@@ -2199,7 +2199,7 @@ async function buildBiDeterministicSalesRawTopReply(store, text) {
          ROUND(SUM(COALESCE(s.qty,0))::numeric, 2) AS total_qty,
          ROUND(SUM(COALESCE(s.sales_amount,0))::numeric, 2) AS total_sales,
          ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS total_revenue
-       FROM sales_raw s
+       FROM pos_sales_detail s
        WHERE lower(regexp_replace(COALESCE(s.store,''), '\\s+', '', 'g')) = $1
          AND s.date BETWEEN $2 AND $3
          ${bizSql}
@@ -2230,7 +2230,7 @@ async function buildBiDeterministicSalesRawTopReply(store, text) {
         `SELECT COALESCE(s.slot, '未知') AS slot,
                 ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS total_revenue,
                 ROUND(SUM(COALESCE(s.qty,0))::numeric, 0) AS total_qty
-         FROM sales_raw s
+         FROM pos_sales_detail s
          WHERE lower(regexp_replace(COALESCE(s.store,''), '\\s+', '', 'g')) = $1
            AND s.date BETWEEN $2 AND $3
            ${bizSql}
@@ -2263,7 +2263,7 @@ async function buildBiDeterministicSalesRawTopReply(store, text) {
       }
     } catch (_e) {}
 
-    lines.push('> 数据源：sales_raw（门店销售明细）');
+    lines.push('> 数据源：pos_sales_detail（门店销售明细）');
     return lines.join('\n');
   } catch (e) {
     return `销售排行查询失败：${e?.message || '未知错误'}`;
@@ -4575,7 +4575,7 @@ async function resolveTrustedNetMarginForAuditorIssue(storeName, startDate, endD
             COALESCE(SUM(COALESCE(revenue,0)),0)::numeric AS sum_rev,
             COUNT(*) FILTER (WHERE COALESCE(revenue,0)=0 AND COALESCE(sales_amount,0)>0)::int AS missing_rev_rows,
             COUNT(*) FILTER (WHERE COALESCE(sales_amount,0)>0)::int AS valid_sales_rows
-     FROM sales_raw
+     FROM pos_sales_detail
      WHERE store = $1 AND date >= $2::date AND date <= $3::date`,
     [storeDbKey, startDate, endDate]
   );
@@ -4593,7 +4593,7 @@ async function resolveTrustedNetMarginForAuditorIssue(storeName, startDate, endD
         reason: 'sales_raw_incomplete_revenue',
         storeDbKey,
         alignNote: align?.note || null,
-        message: `sales_raw 中 ${missingRevRows}/${validSalesRows} 行(${missingRevPct.toFixed(1)}%)实收(revenue)为0，超过审计允许上限 ${maxMissingRevPct}%，不触发毛利率异常（请先修正导入）。`
+        message: `pos_sales_detail 中 ${missingRevRows}/${validSalesRows} 行(${missingRevPct.toFixed(1)}%)实收(revenue)为0，超过审计允许上限 ${maxMissingRevPct}%，不触发毛利率异常（请先修正导入）。`
       };
     }
     let cov;
@@ -4617,7 +4617,7 @@ async function resolveTrustedNetMarginForAuditorIssue(storeName, startDate, endD
     }
     const netPct = marginPack?.margins?.totalNetMarginPct;
     if (netPct == null || !Number.isFinite(netPct)) {
-      return { ok: false, reason: 'no_margin', storeDbKey, message: 'sales_raw 有数据但无法计算总实收毛利率（请检查销售额与成本匹配）。' };
+      return { ok: false, reason: 'no_margin', storeDbKey, message: 'pos_sales_detail 有数据但无法计算总实收毛利率（请检查销售额与成本匹配）。' };
     }
     return {
       ok: true,
@@ -4628,7 +4628,7 @@ async function resolveTrustedNetMarginForAuditorIssue(storeName, startDate, endD
       coverage: cov.total,
       storeDbKey,
       alignNote: align?.note || null,
-      summary: `数据源：sales_raw + dish_library_costs（与经营周报一致）；门店库键「${storeDbKey}」；成本覆盖实收 ${Number(revCov).toFixed(1)}%。${align?.note ? ` ${align.note}` : ''}`
+      summary: `数据源：pos_sales_detail + dish_library_costs（与经营周报一致）；门店库键「${storeDbKey}」；成本覆盖实收 ${Number(revCov).toFixed(1)}%。${align?.note ? ` ${align.note}` : ''}`
     };
   }
 
@@ -4665,7 +4665,7 @@ async function resolveTrustedNetMarginForAuditorIssue(storeName, startDate, endD
     reason: 'no_trusted_source',
     storeDbKey,
     alignNote: align?.note || null,
-    message: '周期内无可用 sales_raw 实收，且 daily_reports 无有效 actual_margin，不触发「总实收毛利率异常」（避免不可核实数据）。'
+    message: '周期内无可用 pos_sales_detail 实收，且 daily_reports 无有效 actual_margin，不触发「总实收毛利率异常」（避免不可核实数据）。'
   };
 }
 
@@ -9101,10 +9101,10 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
           if (!resolvedStore || resolvedStore === '总部') {
             try {
               if (/洪潮/.test(text)) {
-                const r = await pool().query(`SELECT store FROM sales_raw WHERE store LIKE '%洪潮%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
+                const r = await pool().query(`SELECT store FROM pos_sales_detail WHERE store LIKE '%洪潮%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
                 resolvedStore = r.rows?.[0]?.store || resolvedStore;
               } else if (/马己仙/.test(text)) {
-                const r = await pool().query(`SELECT store FROM sales_raw WHERE store LIKE '%马己仙%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
+                const r = await pool().query(`SELECT store FROM pos_sales_detail WHERE store LIKE '%马己仙%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
                 resolvedStore = r.rows?.[0]?.store || resolvedStore;
               }
             } catch (_e) {}
@@ -9131,7 +9131,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
               if (!userSpecifiedTime && execStore && execStore !== '总部') {
                 try {
                   const latestDateRes = await pool().query(
-                    `SELECT MAX(date) as latest FROM sales_raw WHERE store = $1`, [execStore]
+                    `SELECT MAX(date) as latest FROM pos_sales_detail WHERE store = $1`, [execStore]
                   );
                   const latestDate = latestDateRes.rows?.[0]?.latest;
                   if (latestDate) {
@@ -9247,7 +9247,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
         const deterministicSalesRawTopReply = await buildBiDeterministicSalesRawTopReply(resolvedStore, text);
         if (deterministicSalesRawTopReply) {
           response = deterministicSalesRawTopReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'sales_raw' };
+          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'pos_sales_detail' };
           break;
         }
 
@@ -13209,7 +13209,7 @@ async function getReportStoresForBiReports(tenantId = 'default') {
   const seed = REPORT_STORES_SEED.slice();
   try {
     const r = await agentPool.query(`
-      SELECT DISTINCT TRIM(store) AS store FROM sales_raw
+      SELECT DISTINCT TRIM(store) AS store FROM pos_sales_detail
       WHERE date >= (CURRENT_DATE - INTERVAL '120 days')
         AND TRIM(COALESCE(store, '')) <> '' AND tenant_id = $1
       UNION

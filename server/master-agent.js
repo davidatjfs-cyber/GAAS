@@ -1804,16 +1804,20 @@ export function registerMasterRoutes(app, authRequired) {
     const role = String(req.user?.role || '').trim();
     if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
     const hours = Math.max(1, Math.min(24 * 30, Number(req.query?.hours) || 24));
-    const tables = ['daily_reports', 'sales_raw', 'table_visit_records', 'master_tasks'];
+    // sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图(pos_order_items的同构视图)，
+    // 该视图无created_at列，用checkout_time代替。
+    const tables = ['daily_reports', 'pos_sales_detail', 'table_visit_records', 'master_tasks'];
+    const TIME_COLUMNS = { pos_sales_detail: 'checkout_time' };
     const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
     try {
       const tableCounts = [];
       for (const table of tables) {
+        const timeCol = TIME_COLUMNS[table] || 'created_at';
         const tenantClause = table === 'master_tasks' ? ' AND tenant_id = $2' : '';
         const r = await pool().query(
-          `SELECT COUNT(*)::int AS cnt, MAX(created_at) AS latest
+          `SELECT COUNT(*)::int AS cnt, MAX(${timeCol}) AS latest
              FROM ${table}
-            WHERE created_at >= NOW() - ($1::text || ' hours')::interval${tenantClause}`,
+            WHERE ${timeCol} >= NOW() - ($1::text || ' hours')::interval${tenantClause}`,
           tenantClause ? [String(hours), tenantIdQ] : [String(hours)]
         );
         tableCounts.push({

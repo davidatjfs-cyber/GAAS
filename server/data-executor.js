@@ -398,7 +398,8 @@ async function queryFeishuGenericRecords(def, start, end, store) {
   return null;
 }
 
-// ── 7. 子查询：sales_raw ──────────────────────────────────────
+// ── 7. 子查询：sales_raw（表已下线2026-07-03，实际查pos_sales_detail视图，
+//      metric_dictionary.data_source字段沿用'sales_raw'这个类型标签不变） ──
 
 // 列名兼容映射：处理 formula 中可能存在的旧名/错误名
 const SALES_RAW_COLUMN_ALIASES = {
@@ -420,7 +421,7 @@ async function querySalesRaw(def, start, end, store) {
     const colA = fixSalesRawColumnName(diffMatch[1]);
     const colB = fixSalesRawColumnName(diffMatch[2]);
     const params = [start, end];
-    let sql = `SELECT COALESCE(SUM(${colA} - ${colB}), 0)::numeric(12,2) AS val FROM sales_raw WHERE date BETWEEN $1 AND $2`;
+    let sql = `SELECT COALESCE(SUM(${colA} - ${colB}), 0)::numeric(12,2) AS val FROM pos_sales_detail WHERE date BETWEEN $1 AND $2`;
     if (store) {
       const n = normalizeStore(store);
       sql += ` AND lower(regexp_replace(coalesce(store,''), '\\s+', '', 'g')) LIKE $3`;
@@ -436,7 +437,7 @@ async function querySalesRaw(def, start, end, store) {
   const field = fixSalesRawColumnName(fieldMatch[1]);
 
   const params = [start, end];
-  let sql = `SELECT COALESCE(SUM(${field}), 0)::numeric(12,2) AS val FROM sales_raw WHERE date BETWEEN $1 AND $2`;
+  let sql = `SELECT COALESCE(SUM(${field}), 0)::numeric(12,2) AS val FROM pos_sales_detail WHERE date BETWEEN $1 AND $2`;
   if (store) {
     const n = normalizeStore(store);
     sql += ` AND lower(regexp_replace(coalesce(store,''), '\\s+', '', 'g')) LIKE $3`;

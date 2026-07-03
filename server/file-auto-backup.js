@@ -97,12 +97,14 @@ export async function backupPOSSalesData(store, startDate, endDate) {
   try {
     console.log(`[file-backup] Starting POS backup: ${store}, ${startDate} to ${endDate}`);
     
+    // sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图(pos_order_items的同构视图)。
+    // 原ORDER BY引用的'time'列在sales_raw里本就不存在，一并修正为order_time。
     const result = await pool().query(
-      `SELECT * FROM sales_raw 
-       WHERE store = $1 
-       AND date >= $2 
+      `SELECT * FROM pos_sales_detail
+       WHERE store = $1
+       AND date >= $2
        AND date <= $3
-       ORDER BY date DESC, time DESC`,
+       ORDER BY date DESC, order_time DESC`,
       [store, startDate, endDate]
     );
     

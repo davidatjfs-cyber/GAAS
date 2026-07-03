@@ -441,9 +441,10 @@ export async function getStoreHealthOverview(store, daysBack = 30) {
       [sinceStr, ...likePatterns]
     ).catch(() => ({ rows: [{ total: 0, with_complaints: 0, unique_complaints: 0 }] })),
     pool().query(
+      // sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图(pos_order_items的同构视图)
       `SELECT COUNT(DISTINCT date) as days, ROUND(SUM(revenue)::numeric, 0) as total_rev,
               ROUND(AVG(revenue)::numeric, 0) as avg_daily_rev
-       FROM (SELECT date, SUM(COALESCE(revenue,0)) as revenue FROM sales_raw
+       FROM (SELECT date, SUM(COALESCE(revenue,0)) as revenue FROM pos_sales_detail
              WHERE lower(regexp_replace(coalesce(store,''), '\\s+', '', 'g')) = $1
                AND date >= $2::date GROUP BY date) sub`,
       [storeKey, sinceStr]

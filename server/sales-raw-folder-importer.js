@@ -15,11 +15,6 @@
 import fs from 'fs';
 import path from 'path';
 import XLSX from 'xlsx';
-import {
-  parseSalesRawRows,
-  insertSalesRawRows,
-  evaluateSalesRawUploadQuality
-} from './sales-raw-upload.js';
 
 const LOCK = { running: false };
 
@@ -101,125 +96,9 @@ async function collectExcelFiles(baseDir, recursive) {
 }
 
 export async function runSalesRawFolderImportOnce() {
-  const dir = String(process.env.SALES_RAW_IMPORT_DIR || '').trim();
-  if (!dir) return { skipped: true, reason: 'no_dir' };
-  if (LOCK.running) return { skipped: true, reason: 'busy' };
-  LOCK.running = true;
-  try {
-    const stat = await fs.promises.stat(dir).catch(() => null);
-    if (!stat?.isDirectory()) return { ok: false, error: 'not_a_directory', dir };
-
-    const force = String(process.env.SALES_RAW_IMPORT_FORCE || '').toLowerCase() === 'true';
-    const defStore = String(process.env.SALES_RAW_IMPORT_DEFAULT_STORE || '').trim();
-    const recursive = String(process.env.SALES_RAW_IMPORT_RECURSIVE || '').toLowerCase() === 'true';
-
-    const importedDir = path.join(dir, 'imported');
-    const failedDir = path.join(dir, 'failed');
-    await fs.promises.mkdir(importedDir, { recursive: true });
-    await fs.promises.mkdir(failedDir, { recursive: true });
-
-    const files = await collectExcelFiles(dir, recursive);
-    const results = [];
-
-    for (const filePath of files) {
-      const base = path.basename(filePath);
-      const fallbackDate = inferDateFromFilename(base);
-      try {
-        const wb = XLSX.readFile(filePath, { raw: false });
-        let parsed = [];
-        for (const sn of wb.SheetNames || []) {
-          const ws = wb.Sheets[sn];
-          if (!ws) continue;
-          const mx = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
-          const out = parseSalesRawRows(mx, 'dinein', defStore, { fallbackDate });
-          if (out.length) {
-            parsed = out;
-            break;
-          }
-        }
-
-        if (!parsed.length) {
-          await moveUnder(failedDir, filePath, 'novalid');
-          results.push({ file: base, ok: false, error: 'no_valid_rows' });
-          continue;
-        }
-
-        if (defStore) {
-          for (const r of parsed) {
-            if (!String(r.store || '').trim()) r.store = defStore;
-          }
-        }
-
-        const missingStore = parsed.some((r) => !String(r.store || '').trim());
-        if (missingStore) {
-          await moveUnder(failedDir, filePath, 'nostore');
-          results.push({
-            file: base,
-            ok: false,
-            error: 'missing_store',
-            hint: '请在表内提供「门店」列，或设置 SALES_RAW_IMPORT_DEFAULT_STORE'
-          });
-          continue;
-        }
-
-        const groups = new Map();
-        for (const r of parsed) {
-          const k = `${String(r.store).trim()}||${r.biz_type}`;
-          if (!groups.has(k)) groups.set(k, []);
-          groups.get(k).push(r);
-        }
-
-        let blocked = null;
-        const details = [];
-        for (const [k, rows] of groups) {
-          const [store, biz] = k.split('||');
-          const dates = [...new Set(rows.map((r) => r.date).filter(Boolean))].sort();
-          if (!dates.length) continue;
-          const quality = await evaluateSalesRawUploadQuality(rows, store, biz);
-          if (!quality.pass && !force) {
-            blocked = { store, biz, quality };
-            break;
-          }
-          const ret = await insertSalesRawRows(rows, store, biz, dates[0], dates[dates.length - 1]);
-          details.push({ store, biz, inserted: ret.inserted, deleted: ret.deleted, quality });
-        }
-
-        if (blocked) {
-          await moveUnder(failedDir, filePath, 'lowcost');
-          results.push({ file: base, ok: false, error: 'low_cost_coverage', blocked });
-          continue;
-        }
-
-        await moveUnder(importedDir, filePath, 'ok');
-        results.push({ file: base, ok: true, details });
-      } catch (e) {
-        try {
-          await moveUnder(failedDir, filePath, 'err');
-        } catch (_e2) {}
-        results.push({ file: base, ok: false, error: String(e?.message || e) });
-      }
-    }
-
-    const okN = results.filter((r) => r.ok).length;
-    if (files.length) {
-      console.log('[sales-raw-folder] scan', dir, 'files', files.length, 'imported_ok', okN);
-    }
-    const bad = results.filter((r) => !r.ok);
-    if (bad.length && _importFailureNotifier) {
-      const summary = bad
-        .map((r) => `${r.file}: ${String(r.error || r.hint || '').slice(0, 120)}`)
-        .join(' | ')
-        .slice(0, 480);
-      try {
-        void _importFailureNotifier(new Error(summary), { dir, failedCount: bad.length, processed: files.length });
-      } catch (_e) {
-        /* ignore */
-      }
-    }
-    return { ok: true, dir, processed: files.length, results };
-  } finally {
-    LOCK.running = false;
-  }
+  // sales_raw表已于2026-07-03下线，销售明细改由pos_order_items自动同步，
+  // 此目录导入流程不再需要写入任何表，直接跳过。
+  return { skipped: true, reason: 'sales_raw_retired' };
 }
 
 export function startSalesRawFolderImporter() {

@@ -15,7 +15,8 @@ export function registerUploadStatusRoute(app, opts) {
       out.push({ key:'kb', label:'知识库文件', count:+(kb?.c||0), latest:kb?.l||null });
       const fh = Array.isArray(s.inventoryForecastHistory) ? s.inventoryForecastHistory : [];
       out.push({ key:'fh', label:'备货预测历史', count:fh.length });
-      const sr = await q(`SELECT COUNT(*) c FROM sales_raw`);
+      // sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图(pos_order_items的同构视图)
+      const sr = await q(`SELECT COUNT(*) c FROM pos_sales_detail`);
       out.push({ key:'sr', label:'销售明细', count:+(sr?.c||0) });
       const dl = await q(`SELECT COUNT(*) c, MAX(updated_at) l FROM dish_library_costs WHERE enabled=TRUE`);
       out.push({ key:'dl', label:'菜品成本库', count:+(dl?.c||0), latest:dl?.l||null });

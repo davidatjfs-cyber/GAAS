@@ -440,11 +440,12 @@ function formatQuadrantBlock(titleZh, list, q) {
 
 function buildDishOptimizationMarkdown({ start, end, reportTitle, tenantId = 'default' }) {
   return (async () => {
+    // sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图(pos_order_items的同构视图)
     const agg = await pool().query(
       `SELECT store, biz_type, dish_name,
               SUM(qty)::numeric AS qty,
               SUM(revenue)::numeric AS revenue
-       FROM sales_raw
+       FROM pos_sales_detail
        WHERE date >= $1::date AND date <= $2::date AND COALESCE(dish_name,'') <> '' AND tenant_id = $3
        GROUP BY store, biz_type, dish_name`,
       [start, end, tenantId]
@@ -504,7 +505,7 @@ function buildDishOptimizationMarkdown({ start, end, reportTitle, tenantId = 'de
 
     if (keys.length === 0) {
       md +=
-        '⚠️ **本周期无「销售明细 × 菜品库成本」可对齐的数据。**\n请确认已导入 `sales_raw`，且 `dish_library_costs` 已同步飞书菜品库/外卖菜品库成本。\n';
+        '⚠️ **本周期无「销售明细 × 菜品库成本」可对齐的数据。**\n请确认 `pos_sales_detail` 有数据，且 `dish_library_costs` 已同步飞书菜品库/外卖菜品库成本。\n';
     }
 
     return md.trimEnd();
@@ -556,7 +557,7 @@ async function sendDishReportCardsToHq(fullMd, cardHeaderTitle, tenantId = 'defa
             tag: 'div',
             text: {
               tag: 'lark_md',
-              content: '_数据来源：`sales_raw` + `dish_library_costs`（飞书菜品库/外卖库成本）_'
+              content: '_数据来源：`pos_sales_detail` + `dish_library_costs`（飞书菜品库/外卖库成本）_'
             }
           }
         ]

@@ -344,14 +344,18 @@ export class AgentCollaborationOrchestrator {
     const dataSource = message?.metadata?.dataSource || message?.content;
     if (!dataSource) return;
 
-    const ALLOWED = ['daily_reports','table_visit_records','sales_raw','master_tasks'];
-    const table = ALLOWED.find(t => t === String(dataSource).trim());
+    // sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图(pos_order_items的同构视图)，
+    // 外部调用方仍可能传'sales_raw'这个key，保留兼容映射到新表；该视图无created_at列，用checkout_time代替。
+    const TABLE_MAP = { daily_reports: 'daily_reports', table_visit_records: 'table_visit_records', sales_raw: 'pos_sales_detail', master_tasks: 'master_tasks' };
+    const TIME_COLUMNS = { pos_sales_detail: 'checkout_time' };
+    const table = TABLE_MAP[String(dataSource).trim()];
     if (!table) return;
+    const timeCol = TIME_COLUMNS[table] || 'created_at';
 
     try {
       const db = pool();
       const r = await db.query(
-        `SELECT COUNT(*) AS cnt FROM ${table} WHERE created_at > NOW() - INTERVAL '24 hours'`
+        `SELECT COUNT(*) AS cnt FROM ${table} WHERE ${timeCol} > NOW() - INTERVAL '24 hours'`
       );
       const count = parseInt(r.rows?.[0]?.cnt || 0);
       await this.sendMessage(sessionId, 'data_auditor', 'master',
@@ -671,15 +675,19 @@ export function initializeAutonomousTasks() {
   // 数据质量检查任务
   autonomousScheduler.registerTask(AUTONOMOUS_TASK_TYPES.DATA_QUALITY_CHECK, async () => {
     const db = pool();
-    const sources = ['daily_reports', 'table_visit_records', 'sales_raw', 'master_tasks'];
+    // sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图(pos_order_items的同构视图)，
+    // 该视图无created_at列，用checkout_time代替。
+    const sources = ['daily_reports', 'table_visit_records', 'pos_sales_detail', 'master_tasks'];
+    const TIME_COLUMNS = { pos_sales_detail: 'checkout_time' };
     const tenantIds = await getActiveTenantIds(db);
     let checkedSources = 0;
-    
+
     for (const tenantId of tenantIds) {
       await tenantContext.run(tenantId, async () => {
         for (const source of sources) {
           try {
-            const result = await db.query(`SELECT COUNT(*) as cnt FROM ${source} WHERE created_at > NOW() - INTERVAL '24h'`);
+            const timeCol = TIME_COLUMNS[source] || 'created_at';
+            const result = await db.query(`SELECT COUNT(*) as cnt FROM ${source} WHERE ${timeCol} > NOW() - INTERVAL '24h'`);
             const count = parseInt(result.rows?.[0]?.cnt || 0);
             checkedSources++;
             
