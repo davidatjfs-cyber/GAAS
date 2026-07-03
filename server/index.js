@@ -70,6 +70,7 @@ import { enforceRuntimeSafetyOrExit, configureDbSessionSafety, isSchemaChangeAll
 import { expandAgentStoreLabels, resolveAgentCanonicalStore } from './v2-store-alignment.js';
 import { ensureGrowthTables, registerGrowthRoutes, setSendGrowthAlert } from './growth-api.js';
 import { registerDiagnosisRoutes } from './store-diagnosis.js';
+import { registerOntologyRoutes } from './ontology/routes.js';
 import { ensureGrowthSolutionsSchema, registerGrowthSolutionRoutes, setSolutionNotifier, setSolutionLLM, setTrainingAssigner, startSolutionSweepScheduler } from './growth-solutions.js';
 import strategyExperimentRoutes from './strategy-experiment-api.js';
 import { ensurePhaseTables, registerPhaseRoutes } from './growth-phases.js';
@@ -5733,6 +5734,7 @@ configureDbSessionSafety(pool, { serviceName: 'hrms-server' });
 const __ALLOW_SCHEMA_CHANGES__ = isSchemaChangeAllowed();
 registerGrowthRoutes(app, pool);
 registerDiagnosisRoutes(app, pool, authRequired);
+registerOntologyRoutes(app, pool, authRequired);
 setSendGrowthAlert(async (msg) => {
   const GROWTH_REPORT_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
   return sendLarkMessage(GROWTH_REPORT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));

@@ -34,6 +34,7 @@ import {
   trackLLMCall,
   isHqRole
 } from './hq-brain-config.js';
+import { checkPlanGrounding } from './ontology/plan-grounding-check.js';
 
 let _pool = null;
 let _callLLM = null;
@@ -373,10 +374,26 @@ ${scoresSummary || '(无绩效数据)'}
       rawContent: planResult.content
     });
 
-    // Step 5: 合规审查
-    const complianceResult = await runComplianceCheck(planData, {
-      store, storeHealth, graphContext, tasksSummary, scoresSummary, role
-    });
+    // Step 5a: 程序化数字校验（非LLM）——历史上4/8个计划都是因为LLM在rootCauses/summary
+    // 里编造了真实数据中不存在的"N分"/"N次"，靠合规LLM去抓不够可靠，这里先用确定性比对拦一道。
+    const groundingResult = checkPlanGrounding(planData, storeHealth);
+
+    // Step 5b: 合规审查——程序化校验没过直接判定不合规，不再消耗一次LLM调用
+    const complianceResult = groundingResult.passed
+      ? await runComplianceCheck(planData, { store, storeHealth, graphContext, tasksSummary, scoresSummary, role })
+      : {
+          passed: false,
+          checks: {
+            dataAccuracy: {
+              passed: false,
+              issues: groundingResult.unverifiedClaims.map(
+                c => `${c.field} 中的"${c.raw}"未能在真实数据中找到依据，疑似编造`
+              )
+            }
+          },
+          overallComment: '程序化数字校验未通过（未提交LLM合规审查）：' +
+            groundingResult.unverifiedClaims.map(c => c.raw).join('、')
+        };
 
     // Step 6: 存入 action_plans
     const status = complianceResult.passed ? 'pending_review' : 'compliance_rejected';
