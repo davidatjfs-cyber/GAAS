@@ -23,7 +23,7 @@ export const OBJECT_REGISTRY = {
   employee: {
     table: 'employees',
     keyField: 'username',
-    tenantScoped: false, // employees 表当前无 tenant_id 列
+    tenantScoped: true, // migration 038 补了 tenant_id + RLS，registry此前是旧结论
     links: {
       store: { to: 'store', via: 'store' },
     },
@@ -38,8 +38,10 @@ export const OBJECT_REGISTRY = {
   task: {
     table: 'master_tasks',
     keyField: 'task_id',
-    tenantScoped: false, // master_tasks 当前无 tenant_id 列
+    tenantScoped: true, // migration 042/082 补了 tenant_id + FORCE RLS，registry此前是旧结论
     identityNote: '按 store 文本字段关联门店，非外键',
+    filterableFields: ['store'],
+    dateField: 'created_at',
     links: {
       store: { to: 'store', via: 'store' },
     },

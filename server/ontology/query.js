@@ -17,8 +17,12 @@ export function clampLimit(limit) {
   return Math.min(MAX_LIMIT, Math.floor(n));
 }
 
-/** 构造安全的 SELECT 语句，不做任何字符串拼接以外的输入直接进 SQL */
-export function buildObjectQuery(type, { id, limit } = {}) {
+/**
+ * 构造安全的 SELECT 语句，不做任何字符串拼接以外的输入直接进 SQL。
+ * filters 的 key 必须在 def.filterableFields 白名单里，否则直接抛错——
+ * 绝不把调用方传来的字段名直接拼进 SQL。
+ */
+export function buildObjectQuery(type, { id, limit, filters, sinceDays } = {}) {
   const def = getObject(type); // 未知 type 直接抛错，白名单校验
   const safeLimit = clampLimit(limit);
 
@@ -28,9 +32,30 @@ export function buildObjectQuery(type, { id, limit } = {}) {
       params: [id, safeLimit],
     };
   }
+
+  const where = [];
+  const params = [];
+  for (const [field, value] of Object.entries(filters || {})) {
+    if (!(def.filterableFields || []).includes(field)) {
+      throw new Error(`ontology: "${field}" is not a filterable field on object type "${type}"`);
+    }
+    params.push(value);
+    where.push(`${field} = $${params.length}`);
+  }
+  if (sinceDays !== undefined && sinceDays !== null) {
+    if (!def.dateField) {
+      throw new Error(`ontology: object type "${type}" has no dateField configured for sinceDays filtering`);
+    }
+    params.push(Math.max(1, Math.floor(Number(sinceDays) || 0)));
+    where.push(`${def.dateField} > NOW() - ($${params.length}::int * INTERVAL '1 day')`);
+  }
+
+  params.push(safeLimit);
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')} ` : '';
+  const orderSql = def.dateField ? `ORDER BY ${def.dateField} DESC ` : '';
   return {
-    sql: `SELECT * FROM ${def.table} LIMIT $1`,
-    params: [safeLimit],
+    sql: `SELECT * FROM ${def.table} ${whereSql}${orderSql}LIMIT $${params.length}`,
+    params,
   };
 }
 

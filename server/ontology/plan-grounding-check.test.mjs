@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { checkPlanGrounding, flattenKnownNumbers } from './plan-grounding-check.js';
+import { checkPlanGrounding, flattenKnownNumbers, checkTextGrounding } from './plan-grounding-check.js';
 
 const realStoreHealth = {
   healthScore: 30,
@@ -57,4 +57,20 @@ test('ignores non-claim numbers like deadlines (not 分/次 suffixed)', () => {
 test('handles missing/empty planData and storeHealth without throwing', () => {
   assert.deepEqual(checkPlanGrounding({}, {}), { passed: true, unverifiedClaims: [] });
   assert.deepEqual(checkPlanGrounding(undefined, undefined), { passed: true, unverifiedClaims: [] });
+});
+
+test('checkTextGrounding: passes when every claim traces to the known-numbers set (A/B summary use case)', () => {
+  const result = checkTextGrounding('A组发送120人核销45次表现更好，建议推广', [120, 45, 30]);
+  assert.deepEqual(result, { passed: true, unverifiedClaims: [] });
+});
+
+test('checkTextGrounding: rejects a fabricated claim not present in known numbers', () => {
+  const result = checkTextGrounding('B组核销率提升了99次，表现优于A组', [120, 45, 30]);
+  assert.equal(result.passed, false);
+  assert.equal(result.unverifiedClaims[0].raw, '99次');
+});
+
+test('checkTextGrounding: accepts a plain array in addition to a Set', () => {
+  assert.equal(checkTextGrounding('扣10分', [10]).passed, true);
+  assert.equal(checkTextGrounding('扣10分', new Set([10])).passed, true);
 });

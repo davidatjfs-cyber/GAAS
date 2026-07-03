@@ -35,6 +35,7 @@ import {
   isHqRole
 } from './hq-brain-config.js';
 import { checkPlanGrounding } from './ontology/plan-grounding-check.js';
+import { queryObject } from './ontology/query.js';
 
 let _pool = null;
 let _callLLM = null;
@@ -271,15 +272,15 @@ export async function generateActionPlan({ store, goal, role, createdBy, daysBac
 
     const graphContext = formatGraphContextForLLM(causalChain, 40);
 
-    // Step 2: 收集最近异常任务
-    const recentTasks = await pool().query(
-      `SELECT task_id, category, severity, title, status, score_impact, created_at
-       FROM master_tasks WHERE store = $1 AND created_at > NOW() - ($2::int * INTERVAL '1 day') AND tenant_id = $3
-       ORDER BY created_at DESC LIMIT 20`,
-      [store, windowDays, tenantId]
-    );
+    // Step 2: 收集最近异常任务 —— 第一个走本体统一查询API(queryObject)的生产读路径，
+    // 而不是直连SQL；租户隔离交给master_tasks上的FORCE RLS(见migration 082)。
+    const recentTasks = await queryObject(pool(), 'task', {
+      filters: { store },
+      sinceDays: windowDays,
+      limit: 20
+    });
 
-    const tasksSummary = (recentTasks.rows || []).map(t =>
+    const tasksSummary = recentTasks.map(t =>
       `[${t.task_id}] ${t.category}(${t.severity}) - ${t.title} - 状态:${t.status} 扣分:${t.score_impact || 0}`
     ).join('\n');
 
@@ -414,6 +415,23 @@ ${scoresSummary || '(无绩效数据)'}
         tenantId
       ]
     );
+
+    // decision_log是Palantir式Action审计表，建好后一直没有代码写入过——这里补上，
+    // 让每次自动生成的行动计划都留下可追溯记录（含是否通过程序化/LLM合规审查）。
+    await pool().query(
+      `INSERT INTO decision_log (store, brand, decision_type, title, content, agent, source_task_id, created_by, status, tenant_id)
+       VALUES ($1, $2, 'action_plan', $3, $4, 'hq-planner-agent', $5, $6, $7, $8)`,
+      [
+        store,
+        inferBrand(store),
+        planData.title || `${store} 改善计划`,
+        planData.summary || '',
+        planId,
+        createdBy || 'system',
+        status === 'pending_review' ? 'active' : 'rejected',
+        tenantId
+      ]
+    ).catch(e => console.error('[hq-planner] decision_log write failed:', e?.message));
 
     console.log(`[hq-planner] Plan ${planId} created for ${store}, status: ${status}`);
     return {

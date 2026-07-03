@@ -73,3 +73,19 @@ export function checkPlanGrounding(planData, storeHealth) {
 
   return { passed: unverified.length === 0, unverifiedClaims: unverified };
 }
+
+/**
+ * 通用版：任意一段LLM生成文本 + 一个"可信数字"集合，校验文本里的"N分"/"N次"声称
+ * 是否都能在可信集合里找到依据。用于hq-planner-agent以外的其它LLM总结生成场景
+ * （如A/B测试结果总结），复用同一条"确定性数字比对"防线，避免LLM在总结时编造。
+ * @param {string} text
+ * @param {Set<number>|number[]} knownNumbers
+ * @returns {{ passed: boolean, unverifiedClaims: Array<{ raw: string, field: string }> }}
+ */
+export function checkTextGrounding(text, knownNumbers) {
+  const known = knownNumbers instanceof Set ? knownNumbers : new Set(knownNumbers || []);
+  const unverified = extractClaims(text)
+    .filter(claim => !known.has(claim.value))
+    .map(claim => ({ raw: claim.raw, field: 'text' }));
+  return { passed: unverified.length === 0, unverifiedClaims: unverified };
+}

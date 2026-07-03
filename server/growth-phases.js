@@ -3,6 +3,7 @@ import { executeGrowthActionRecord, resolveTenantIdForStore } from './growth-api
 import { callLLM, sendLarkMessage } from './agents.js';
 import { getBrandForStoreSync } from './utils/brand-config-loader.js';
 import { getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js';
+import { checkTextGrounding } from './ontology/plan-grounding-check.js';
 
 const PHASE_EVENT_TYPES = new Set([
   'campaign_scan', 'phone_authorized', 'coupon_claimed',
@@ -605,7 +606,13 @@ async function buildAbAiSummary(taskRow, outcome) {
   const prompt = `你是餐饮增长分析助手。请用简洁中文总结一次A/B测试结果，输出1段话，不要分点，不超过180字。\n测试名：${taskRow.test_name}\n目标指标：${taskRow.target_metric}\nA组发送${a.sent || 0}人，核销/回流${a.redemptions || 0}，核销率${formatPercent((a.redemption_rate || 0) * 100)}，营收${a.revenue || 0}元。\nB组发送${b.sent || 0}人，核销/回流${b.redemptions || 0}，核销率${formatPercent((b.redemption_rate || 0) * 100)}，营收${b.revenue || 0}元。`;
   try {
     const llm = await callLLM([{ role: 'user', content: prompt }], { purpose: 'data_analysis', temperature: 0.2, max_tokens: 220 });
-    if (llm?.ok && llm.content) return cleanText(llm.content, 1800);
+    if (llm?.ok && llm.content) {
+      // 结果会写入ab_test_tasks.ai_summary并可能被promoteAbWinner自动采用为规则，
+      // 复用hq-planner-agent同款程序化数字校验，拦截LLM编造总结里不存在的"N分/N次"声称。
+      const known = [a.sent, a.redemptions, b.sent, b.redemptions].map(Number).filter(Number.isFinite);
+      const grounding = checkTextGrounding(llm.content, known);
+      if (grounding.passed) return cleanText(llm.content, 1800);
+    }
   } catch (_) {}
   const winner = (a.redemption_rate || 0) > (b.redemption_rate || 0) ? 'A' : (a.redemption_rate || 0) < (b.redemption_rate || 0) ? 'B' : 'tie';
   return cleanText(`测试完成：A组核销率${formatPercent((a.redemption_rate || 0) * 100)}，B组核销率${formatPercent((b.redemption_rate || 0) * 100)}，${winner === 'tie' ? '两组差异不明显，建议继续积累样本。' : `${winner}组表现更好，建议将该版本作为下轮默认文案。`}`, 1800);
@@ -723,10 +730,18 @@ async function promoteAbWinner(pool, task, operatorName, tenantId = 'default') {
   const operator = cleanText(operatorName || 'system', 80);
   const targetKind = cleanText(task.target_kind || '', 40);
   const targetRuleKey = cleanText(task.target_rule_key || '', 200);
+  // 每次A/B胜出变体自动生效都是一次真实的自动化决策，写入decision_log留痕，
+  // 与hq-planner-agent的action_plans审计同一张表，方便统一追溯。
+  const logAbDecision = (content) => pool.query(
+    `INSERT INTO decision_log (store, brand, decision_type, title, content, agent, source_task_id, created_by, status, tenant_id)
+     VALUES ($1, NULL, 'ab_test_promotion', $2, $3, 'growth-phases', $4, $5, 'active', $6)`,
+    [cleanText(task.store_code, 200) || 'unknown', cleanText(task.test_name || 'A/B测试', 500), content, String(task.id), operator, tenantId]
+  ).catch(e => console.error('[growth-phases] decision_log write failed:', e?.message));
 
   if (targetRuleKey && (targetKind === 'touch_rule' || targetKind === 'payment_rule')) {
     if (winner === 'A') {
       await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
+      await logAbDecision(`A组(当前版本)胜出，规则${targetRuleKey}维持不变。`);
       return { ok: true, rule_key: targetRuleKey, winner, kept_current: true, message: 'A组(当前版本)胜出，规则维持不变。' };
     }
     if (targetKind === 'touch_rule') {
@@ -753,6 +768,7 @@ async function promoteAbWinner(pool, task, operatorName, tenantId = 'default') {
          tenantId]
       );
       await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
+      await logAbDecision(`B组胜出(+${Number(task.winner_lift || 0)}%)，已采用为触达规则${targetRuleKey}的当前版本。`);
       return { ok: true, rule: upd.rows[0], rule_key: targetRuleKey, winner, kind: targetKind };
     }
     // payment_rule
@@ -770,6 +786,7 @@ async function promoteAbWinner(pool, task, operatorName, tenantId = 'default') {
       [targetRuleKey, templateId, triggerValue]
     );
     await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, targetRuleKey]).catch(() => {});
+    await logAbDecision(`B组胜出，已采用为支付规则${targetRuleKey}的当前版本。`);
     return { ok: true, rule: upd.rows[0], rule_key: targetRuleKey, winner, kind: targetKind };
   }
 
@@ -778,6 +795,7 @@ async function promoteAbWinner(pool, task, operatorName, tenantId = 'default') {
     const outcome = await computeAbTestOutcome(pool, task, tenantId).catch(() => null);
     await maybeWriteAbLearning(pool, task, outcome, winner, Number(task.winner_lift || 0));
     await pool.query(`UPDATE ab_test_tasks SET promoted_rule_key = $2 WHERE id = $1`, [task.id, 'learning:' + task.id]).catch(() => {});
+    await logAbDecision(`「${task.channel}」渠道${winner}组胜出，已沉淀到经验库(growth_learnings)。`);
     return { ok: true, winner, channel: task.channel, learned: true, message: `已将「${task.channel}」胜出版本沉淀到经验库，供内容建议复用。` };
   }
 
