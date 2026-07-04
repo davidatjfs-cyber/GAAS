@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { pool as getUnifiedPool } from './utils/database.js';
+import { getStoreAliasSetSync } from './utils/store-alias-cache.js';
 
 let _pool = null;
 export function setKGPool(p) { _pool = p; }
@@ -23,36 +24,13 @@ function pool() {
 
 // ─────────────────────────────────────────────
 // 门店名称规范化映射（解决不同数据源名称不一致问题）
+// 2026-07-04：此前硬编码在这里的STORE_NAME_ALIASES已收口进store_name_aliases表
+// (migration 096)，改为租户可配置，见utils/store-alias-cache.js的设计说明。
 // ─────────────────────────────────────────────
-const STORE_NAME_ALIASES = {
-  // 洪潮：master_tasks 用 "洪潮大宁久光店"，Bitable 用 "洪潮久光店"
-  '洪潮大宁久光店': ['洪潮大宁久光店', '洪潮久光店', '洪潮'],
-  '洪潮久光店': ['洪潮大宁久光店', '洪潮久光店', '洪潮'],
-  // 马己仙：master_tasks 用 "马己仙上海音乐广场店"，Bitable 用 "马己仙大宁店"
-  '马己仙上海音乐广场店': ['马己仙上海音乐广场店', '马己仙大宁店', '马己仙'],
-  '马己仙大宁店': ['马己仙上海音乐广场店', '马己仙大宁店', '马己仙'],
-};
 
 // 规范化门店名称，返回所有可能的别名（用于 LIKE 匹配）
 function getStoreAliases(storeName) {
-  if (!storeName) return [];
-  const key = String(storeName).trim();
-  // 直接匹配别名表
-  if (STORE_NAME_ALIASES[key]) {
-    return STORE_NAME_ALIASES[key].map(s => s.toLowerCase().replace(/\s+/g, ''));
-  }
-  // 模糊匹配：检查是否包含品牌关键词
-  const lowerKey = key.toLowerCase().replace(/\s+/g, '');
-  for (const [canonical, aliases] of Object.entries(STORE_NAME_ALIASES)) {
-    if (lowerKey.includes('洪潮') && canonical.includes('洪潮')) {
-      return aliases.map(s => s.toLowerCase().replace(/\s+/g, ''));
-    }
-    if (lowerKey.includes('马己仙') && canonical.includes('马己仙')) {
-      return aliases.map(s => s.toLowerCase().replace(/\s+/g, ''));
-    }
-  }
-  // 兜底：返回原名称
-  return [lowerKey];
+  return getStoreAliasSetSync(storeName);
 }
 
 // ─────────────────────────────────────────────

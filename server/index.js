@@ -39,6 +39,7 @@ import axios from 'axios';
 import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM } from './agents.js';
 import { ensureAgentConfigTables, registerAgentConfigRoutes } from "./agent-config-manager.js";
 import { initBrandConfigCache, getBrandForStoreSync, getBrandConfigSync } from './utils/brand-config-loader.js';
+import { initStoreAliasCache } from './utils/store-alias-cache.js';
 
 import { setMasterPool, ensureMasterTables, startMasterAgent, registerMasterRoutes, handleTaskResponse } from './master-agent.js';
 import { setReportPool, generateWeeklyReport, formatReportMarkdown } from './bi-weekly-report.js';
@@ -5722,6 +5723,7 @@ app.post('/api/uploads/points-evidence', authRequired, upload.array('files', 6),
 const pool = new Pool({ connectionString: DATABASE_URL });
 setAgentPool(pool);
 initBrandConfigCache().catch((e) => console.error('initBrandConfigCache failed:', e?.message || e));
+initStoreAliasCache().catch((e) => console.error('initStoreAliasCache failed:', e?.message || e));
 configureDbSessionSafety(pool, { serviceName: 'hrms-server' });
 const __ALLOW_SCHEMA_CHANGES__ = isSchemaChangeAllowed();
 registerGrowthRoutes(app, pool);

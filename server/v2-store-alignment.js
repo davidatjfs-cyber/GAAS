@@ -3,43 +3,21 @@
  * - `daily_reports` / 内存日报：`anomaly-engine.js` 的 `dailyReportIlikePatterns`（expandAgentStoreLabels → %…%）
  * - 桌访/飞书多维表字段：`utils/store-sql-patterns.js` 的 `feishuStoreSearchPatterns`
  *
- * 店名双轨（HR 全称 vs 飞书简称）不必改全库：在此维护 STORE_TO_FEISHU，并保证
- * HRMS `new-scoring-model` / agents `store-mapping` 等与之一致。新店若存在双名，
- * 二选一作规范名写入员工主数据，另一写法补一行映射。
+ * 2026-07-04：门店名双轨映射已收口进store_name_aliases表(migration 096)，此文件此前
+ * 用STORE_TO_FEISHU手工维护、并靠注释人工保证与agents-service-v2/store-mapping.js一致——
+ * 是同一份逻辑的第5处独立硬编码副本。现在改为读同一张表的缓存，见utils/store-alias-cache.js。
  */
-const STORE_TO_FEISHU = {
-  洪潮大宁久光店: '洪潮久光店',
-  马己仙上海音乐广场店: '马己仙大宁店'
-};
-
-const FEISHU_TO_STORE = {};
-for (const [k, v] of Object.entries(STORE_TO_FEISHU)) {
-  FEISHU_TO_STORE[v] = k;
-}
-
-function normKey(v) {
-  return String(v || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '');
-}
+import {
+  resolveCanonicalStoreNameFuzzySync,
+  resolveAliasBySourceSync,
+} from './utils/store-alias-cache.js';
 
 export function resolveAgentCanonicalStore(input) {
-  const s = String(input || '').trim();
-  if (!s) return s;
-  if (/洪潮|洪潮门店|大宁久光/.test(s)) return '洪潮大宁久光店';
-  if (/马己仙|马己仙门店|音乐广场/.test(s)) return '马己仙上海音乐广场店';
-  const k = normKey(s);
-  for (const dr of Object.keys(STORE_TO_FEISHU)) {
-    if (normKey(dr) === k) return dr;
-    const fs = STORE_TO_FEISHU[dr];
-    if (normKey(fs) === k) return dr;
-  }
-  return s;
+  return resolveCanonicalStoreNameFuzzySync(input);
 }
 
 export function toFeishuStoreName(storeName) {
-  return STORE_TO_FEISHU[storeName] || storeName;
+  return resolveAliasBySourceSync(storeName, 'feishu');
 }
 
 /** 与 agents `store-mapping.normalizeAgentMaterialBrand` 一致 */
@@ -60,12 +38,6 @@ export function expandAgentStoreLabels(input) {
   if (f1) out.add(f1);
   const f2 = toFeishuStoreName(raw);
   if (f2) out.add(f2);
-  for (const [dr, fs] of Object.entries(STORE_TO_FEISHU)) {
-    if (canon === dr) {
-      out.add(dr);
-      out.add(fs);
-    }
-  }
   return [...out];
 }
 
