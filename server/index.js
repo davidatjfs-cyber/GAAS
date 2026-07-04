@@ -77,6 +77,7 @@ import { FRESHNESS_SOURCES } from './ontology/freshness-config.js';
 import { ensureGrowthSolutionsSchema, registerGrowthSolutionRoutes, setSolutionNotifier, setSolutionLLM, setTrainingAssigner, startSolutionSweepScheduler } from './growth-solutions.js';
 import strategyExperimentRoutes from './strategy-experiment-api.js';
 import { ensurePhaseTables, registerPhaseRoutes } from './growth-phases.js';
+import { ensureCustomerOpsTables, registerCustomerOpsRoutes } from './customer-ops.js';
 import {
   reconcileDailyReportAttendanceRegister,
   backfillDailyAttendanceRegisterMissing,
@@ -5744,6 +5745,7 @@ setSolutionLLM(async (prompt) => {
 });
 setTrainingAssigner(createTrainingAssignment);
 registerPhaseRoutes(app, pool);
+registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership);
 app.use(strategyExperimentRoutes(pool, authRequired));
 
 app.post('/api/growth/upload', authRequired, upload.single('file'), async (req, res) => {
@@ -20837,6 +20839,7 @@ app.listen(PORT, HOST, async () => {
       await ensureUserSessionsTable();
       await ensureGrowthTables(pool).catch(e => console.warn('[growth] ensure tables:', e?.message));
       await ensurePhaseTables(pool).catch(e => console.warn('[growth-phases] ensure tables:', e?.message));
+      await ensureCustomerOpsTables(pool).catch(e => console.warn('[customer-ops] ensure tables:', e?.message));
       // Runtime migration: 企微会员新增字段（避免旧库缺字段导致评分数据源为空）
       await pool.query(`ALTER TABLE daily_reports ADD COLUMN IF NOT EXISTS new_wechat_members INTEGER DEFAULT 0`);
       // Runtime migration: 知识库文件版本号

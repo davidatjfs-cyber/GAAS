@@ -19873,17 +19873,57 @@
                     <div id="growth-profiles-content" style="display:none;">
                         <div class="rep-filters">
                             <div class="rep-filters__eyebrow">PROFILES</div>
-                            <div class="rep-filters__title">用户画像</div>
+                            <div class="rep-filters__title">360客人档案</div>
                             <div class="rep-seg" style="margin-bottom:14px;">
-                                <button onclick="loadGrowthProfiles()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">刷新画像</button>
+                                <button onclick="loadGrowthProfiles()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">刷新档案</button>
                                 <button onclick="recomputeGrowthProfiles()" class="rep-seg-btn" style="flex:1;">重算画像</button>
                             </div>
+                            <div id="custops-profile-summary" style="margin-bottom:12px;"></div>
                             <div id="growth-profiles-list" style="max-height:50vh;overflow-y:auto;"></div>
                         </div>
                         <div class="rep-filters" style="margin-top:14px;">
                             <div class="rep-filters__eyebrow">SEGMENTS</div>
                             <div class="rep-filters__title">📊 生命周期分群</div>
                             <div id="growth-clusters" style="min-height:80px;position:relative;"></div>
+                        </div>
+                    </div>
+                    <div id="growth-posdiagnosis-content" style="display:none;">
+                        <div class="rep-filters">
+                            <div class="rep-filters__eyebrow">CUSTOMER OPS DIAGNOSIS</div>
+                            <div class="rep-filters__title">POS Excel 清洗与客户经营诊断</div>
+                            <div class="rep-filters__grid" style="display:grid;grid-template-columns:1.2fr 1fr;gap:10px;position:relative;">
+                                <div class="rep-field">
+                                    <label>门店名称（可选，留空自动识别）</label>
+                                    <input id="custops-store-name" class="dr-store-select" placeholder="如 A公司南京西路店" style="padding:10px;color:var(--rep-text);">
+                                </div>
+                                <div class="rep-field">
+                                    <label>POS Excel 文件</label>
+                                    <input id="custops-pos-file" type="file" accept=".xlsx,.xls,.csv" class="dr-store-select" style="padding:8px;color:var(--rep-text);">
+                                </div>
+                            </div>
+                            <div class="rep-seg" style="margin-top:12px;">
+                                <button onclick="uploadCustomerOpsDiagnosis()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">上传并生成诊断</button>
+                                <button onclick="loadCustomerOpsLatest()" class="rep-seg-btn" style="flex:1;">加载最近诊断</button>
+                                <button onclick="exportCustomerOpsPdf()" class="rep-seg-btn" style="flex:1;">导出专业PDF</button>
+                            </div>
+                            <div id="custops-diagnosis-result" style="margin-top:14px;"></div>
+                        </div>
+                    </div>
+                    <div id="growth-maintenance-content" style="display:none;">
+                        <div class="rep-filters">
+                            <div class="rep-filters__eyebrow">CUSTOMER MAINTENANCE COCKPIT</div>
+                            <div class="rep-filters__title">客人维护导航舱</div>
+                            <div class="rep-filters__grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;position:relative;margin-bottom:12px;">
+                                <div class="rep-field"><label>今日新品/主推菜</label><input id="custops-new-dish" class="dr-store-select" placeholder="如 龙虾新品" style="padding:10px;color:var(--rep-text);"></div>
+                                <div class="rep-field"><label>久未到店阈值</label><input id="custops-days-threshold" type="number" value="30" class="dr-store-select" style="padding:10px;color:var(--rep-text);"></div>
+                                <div class="rep-field"><label>操作</label><button onclick="generateCustomerOpsDecisions()" class="rep-seg-btn rep-seg-btn--active" style="width:100%;height:38px;">生成AI自动决策</button></div>
+                            </div>
+                            <div id="custops-cockpit-kpis" style="margin-bottom:12px;"></div>
+                            <div id="custops-maintenance-list" style="min-height:120px;"></div>
+                            <div class="rep-filters__title" style="margin-top:18px;font-size:15px;">AI自动决策</div>
+                            <div id="custops-decisions-list" style="min-height:120px;"></div>
+                            <div class="rep-filters__title" style="margin-top:18px;font-size:15px;">跨店/VIP到店服务雷达</div>
+                            <div id="custops-service-radar" style="min-height:100px;"></div>
                         </div>
                     </div>
                     <div id="growth-constraints-content" style="display:none;">
@@ -57474,20 +57514,20 @@ ${body}
         // ── 增长模块 6 大分组（14→6 重组，零DOM搬迁：内容区按 id 显示/隐藏）──
         var GROWTH_GROUPS = [
             { key: 'dashboard', label: '看板', members: ['dashboard'] },
-            { key: 'audience', label: '客群洞察', members: ['profiles', 'pos', 'wecom'] },
+            { key: 'audience', label: '客群洞察', members: ['posdiagnosis', 'profiles', 'maintenance', 'pos', 'wecom'] },
             { key: 'engine', label: '自动营销', members: ['automarketing', 'abtests', 'paymentrules'] },
             { key: 'content', label: '海报创意', members: ['posters'] },
             { key: 'execution', label: '执行中心', members: ['actions', 'exec-logs'] },
             { key: 'settings', label: '设置治理', members: ['wecomconfig', 'constraints'] }
         ];
         var GROWTH_MEMBER_LABEL = {
-            dashboard: '看板', profiles: '用户画像', pos: 'POS消费', wecom: '企微客户',
+            dashboard: '看板', posdiagnosis: 'POS诊断导入', profiles: '360客人档案', maintenance: '维护导航舱', pos: 'POS消费', wecom: '企微客户',
             automarketing: '规则引擎', abtests: 'A/B测试', paymentrules: '支付发券',
             campaigns: '活动管理', posters: '海报创意', public: '公域品宣', contentsys: '内容系统',
             actions: 'AI建议', 'exec-logs': '执行记录',
             wecomconfig: '企微配置', constraints: '营销约束'
         };
-        var GROWTH_ALL_MEMBERS = ['dashboard', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'constraints', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing', 'paymentrules'];
+        var GROWTH_ALL_MEMBERS = ['dashboard', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'posdiagnosis', 'maintenance', 'constraints', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing', 'paymentrules'];
         var __growthActiveSub = {}; // group.key -> 最近激活的成员
 
         function growthGroupOf(member) {
@@ -57501,6 +57541,8 @@ ${body}
             if (member === 'wecom') { loadWechatWorkStats(); loadWechatWorkCustomers(); }
             else if (member === 'campaigns') { loadCampaignPlans(); loadContentCalendar(); }
             else if (member === 'profiles') { loadGrowthProfiles(); }
+            else if (member === 'posdiagnosis') { loadCustomerOpsLatest(); }
+            else if (member === 'maintenance') { loadCustomerOpsMaintenance(); }
             else if (member === 'constraints') { loadGrowthConstraints(); }
             else if (member === 'actions') { loadGrowthActionBoard(); }
             else if (member === 'abtests') { loadGrowthAbTests(); loadAbTemplates(); }
@@ -58373,6 +58415,42 @@ ${body}
                 const data = await r.json();
                 const rows = data?.profiles || [];
                 const host = document.getElementById('growth-profiles-list');
+                try {
+                    var qs = __custopsDiagnosisId ? ('?diagnosis_id=' + encodeURIComponent(__custopsDiagnosisId)) : '';
+                    var opsRes = await fetch('/api/customer-ops/customers' + qs, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                    var opsData = await opsRes.json();
+                    var opsRows = opsData?.customers || [];
+                    if (opsRows.length) {
+                        var ps = document.getElementById('custops-profile-summary');
+                        if (ps) {
+                            var vip = opsRows.filter(function(c){ return c.value_tier === 'vip'; }).length;
+                            var risk = opsRows.filter(function(c){ return (c.scene_tags || []).indexOf('risk') >= 0 || c.lifecycle_stage === 'at_risk' || c.lifecycle_stage === 'dormant'; }).length;
+                            var biz = opsRows.filter(function(c){ return (c.scene_tags || []).indexOf('business') >= 0; }).length;
+                            var reachable = opsRows.filter(function(c){ return !!c.phone; }).length;
+                            ps.innerHTML = '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">'
+                                + custopsMiniMetric('客户资产', opsRows.length + '人', '来自最近POS清洗', '#fff')
+                                + custopsMiniMetric('VIP客户', vip + '人', '高消费/高价值', '#facc15')
+                                + custopsMiniMetric('待维护风险', risk + '人', '濒临流失/沉睡', '#fb7185')
+                                + custopsMiniMetric('可触达客户', reachable + '人', '手机号可用，商务客' + biz + '人', '#22c55e')
+                                + '</div>';
+                        }
+                        host.innerHTML = '<div style="font-size:12px;color:rgba(226,232,240,0.55);margin-bottom:8px;">来自最近POS清洗诊断 · 点击查看360档案</div>' + opsRows.slice(0, 80).map(function(c) {
+                            var tags = (c.scene_tags || []).map(custSceneLabel).join('、') || custStageLabel(c.lifecycle_stage);
+                            return '<div onclick=\'openCustomer360(' + JSON.stringify(c).replace(/'/g, '&#39;') + ')\' style="cursor:pointer;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
+                                + '<div style="display:flex;justify-content:space-between;gap:12px;">'
+                                + '<div style="color:#fff;font-weight:700;">' + escapeHtml(c.customer_id || '-') + ' · ' + escapeHtml(c.phone || '-') + '</div>'
+                                + '<div style="color:#38bdf8;">' + escapeHtml(tags) + '</div>'
+                                + '</div>'
+                                + '<div style="color:rgba(226,232,240,0.62);margin-top:5px;">累计' + fmtCustMoney(c.total_spend) + ' · ' + (c.order_count || 0) + '次 · 均客' + fmtCustMoney(c.avg_check) + ' · 最近' + (c.days_since_last_visit || 0) + '天前 · 常来' + escapeHtml(c.preferred_visit_time || '-') + '</div>'
+                                + '<div style="color:rgba(226,232,240,0.45);margin-top:3px;">喜好：' + escapeHtml((c.favorite_dishes || []).slice(0, 5).join('、') || '-') + ' · 下一步：' + escapeHtml(c.next_best_action || '-') + '</div>'
+                                + '</div>';
+                        }).join('');
+                        renderGrowthClusters({ total: opsRows.length, clusters: Object.entries(opsRows.reduce(function(acc, c){ acc[c.lifecycle_stage || 'unknown'] = (acc[c.lifecycle_stage || 'unknown'] || 0) + 1; return acc; }, {})).map(function(kv){ return { lifecycle_stage: kv[0], user_count: kv[1] }; }) });
+                        return;
+                    }
+                } catch (_) {}
+                var fallbackSummary = document.getElementById('custops-profile-summary');
+                if (fallbackSummary) fallbackSummary.innerHTML = '<div class="rep-pay-empty" style="margin-bottom:10px;">尚未导入POS诊断，当前显示旧画像数据。要形成360客人档案，请先上传客户POS Excel。</div>';
                 host.innerHTML = rows.length ? rows.map(function(x) {
                     var posInfo = '';
                     if (x.pos_order_count > 0) {
@@ -58414,6 +58492,335 @@ ${body}
             } catch (e) {
                 showNotification('重算画像失败：' + (e?.message || e), 'error');
             }
+        }
+
+        var __custopsDiagnosisId = null;
+        function fmtCustMoney(n) {
+            n = Number(n || 0);
+            if (!Number.isFinite(n)) n = 0;
+            return '¥' + Math.round(n).toLocaleString();
+        }
+        function pctCust(n) {
+            n = Number(n || 0);
+            if (!Number.isFinite(n)) n = 0;
+            return (n * 100).toFixed(1) + '%';
+        }
+        function custStageLabel(s) {
+            return ({ regular:'常来客', one_time:'来一次客', occasional:'偶尔来', at_risk:'濒临流失', dormant:'沉睡客' })[s] || s || '-';
+        }
+        function custSceneLabel(s) {
+            return ({ high_value:'高消费客', business:'商务客', family:'家庭客', risk:'流失风险' })[s] || s || '-';
+        }
+        function custopsMiniMetric(label, value, sub, color) {
+            return '<div class="rep-metric" style="text-align:left;min-height:86px;">'
+                + '<div class="k">' + escapeHtml(label) + '</div>'
+                + '<div class="v" style="font-size:22px;color:' + (color || 'var(--rep-text)') + ';">' + value + '</div>'
+                + '<div class="s">' + escapeHtml(sub || '') + '</div>'
+                + '</div>';
+        }
+        function renderCustomerOpsCleaning(q) {
+            var c = (q && q.cleaning) || {};
+            var sheets = c.sheets || [];
+            if (!sheets.length) return '';
+            var missing = (c.missing_required || []).join('、') || '无';
+            var warning = (c.warnings || []).join('；');
+            var sheetHtml = sheets.slice(0, 3).map(function(s) {
+                var mp = s.mapping || {};
+                var fields = ['phone','bizDate','amount','dish','orderNo','store'].map(function(f) {
+                    var m = mp[f];
+                    var label = ({ phone:'手机号', bizDate:'日期', amount:'金额', dish:'菜品', orderNo:'订单号', store:'门店' })[f];
+                    return '<span style="display:inline-flex;align-items:center;gap:5px;margin:4px 6px 0 0;padding:4px 8px;border-radius:999px;background:' + (m ? 'rgba(34,197,94,.12);color:#86efac;' : 'rgba(148,163,184,.1);color:rgba(226,232,240,.45);') + 'font-size:11px;">'
+                        + label + (m ? (' · ' + escapeHtml(m.source_header || '-') + ' ' + (m.confidence || 0) + '%') : ' · 未识别') + '</span>';
+                }).join('');
+                return '<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06);"><div style="font-size:12px;color:#fff;font-weight:800;">' + escapeHtml(s.sheet_name || '-') + ' · 表头第' + (s.header_row || 1) + '行 · ' + (s.rows || 0) + '行</div><div>' + fields + '</div></div>';
+            }).join('');
+            return '<div class="rep-metric" style="text-align:left;margin-top:12px;">'
+                + '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div class="k">POS智能清洗质量</div><div class="v" style="font-size:20px;">' + (c.confidence_score || 0) + '/100</div></div><div style="text-align:right;font-size:12px;color:var(--rep-muted);">缺失关键字段<br><b style="color:' + ((c.missing_required || []).length ? '#f59e0b' : '#22c55e') + ';">' + escapeHtml(missing) + '</b></div></div>'
+                + sheetHtml
+                + (warning ? '<div style="margin-top:8px;font-size:12px;color:#fbbf24;line-height:1.55;">' + escapeHtml(warning) + '</div>' : '')
+                + '</div>';
+        }
+        function renderCustomerOpsDiagnosis(report, id) {
+            __custopsDiagnosisId = id || __custopsDiagnosisId;
+            var host = document.getElementById('custops-diagnosis-result');
+            if (!host) return;
+            if (!report) {
+                host.innerHTML = '<div class="rep-pay-empty">暂无POS诊断记录。上传客户POS Excel后生成客户经营诊断。</div>';
+                return;
+            }
+            var b = report.business || {};
+            var q = report.input_quality || {};
+            var lifecycle = (report.customer_mix && report.customer_mix.lifecycle) || {};
+            var scene = (report.customer_mix && report.customer_mix.scene) || {};
+            var lp = Object.keys(lifecycle).map(function(k) {
+                var total = Number(q.customers || 0) || 1;
+                return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.05);padding:6px 0;"><span>' + custStageLabel(k) + '</span><b>' + lifecycle[k] + ' · ' + Math.round(lifecycle[k] / total * 100) + '%</b></div>';
+            }).join('');
+            var sp = Object.keys(scene).map(function(k) {
+                return '<span style="display:inline-block;margin:4px 6px 0 0;padding:4px 9px;border-radius:999px;background:rgba(56,189,248,0.12);color:#7dd3fc;font-size:12px;">' + custSceneLabel(k) + ' ' + scene[k] + '</span>';
+            }).join('');
+            host.innerHTML = ''
+                + '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">'
+                + '<div class="rep-metric"><div class="k">营业额</div><div class="v">' + fmtCustMoney(b.revenue) + '</div><div class="s">有效订单 ' + (q.valid_orders || 0) + '</div></div>'
+                + '<div class="rep-metric"><div class="k">客户数</div><div class="v">' + (q.customers || 0) + '</div><div class="s">' + escapeHtml(q.date_start || '-') + ' ~ ' + escapeHtml(q.date_end || '-') + '</div></div>'
+                + '<div class="rep-metric"><div class="k">平均客单</div><div class="v">' + fmtCustMoney(b.avg_check) + '</div><div class="s">按订单实收估算</div></div>'
+                + '<div class="rep-metric"><div class="k">复购客户占比</div><div class="v">' + pctCust(b.customer_repeat_rate) + '</div><div class="s">客户维护基础盘</div></div>'
+                + '</div>'
+                + '<div class="rep-grid" style="grid-template-columns:1fr 1fr;margin-top:12px;">'
+                + '<div class="rep-metric" style="text-align:left;"><div class="k">客群结构</div><div style="margin-top:8px;font-size:13px;color:var(--rep-text);">' + (lp || '暂无') + '</div></div>'
+                + '<div class="rep-metric" style="text-align:left;"><div class="k">场景标签</div><div style="margin-top:8px;">' + (sp || '<span style="color:var(--rep-muted);font-size:12px;">暂无明显场景</span>') + '</div>'
+                + '<div style="margin-top:12px;color:var(--rep-muted);font-size:12px;">午市占比 ' + pctCust(((b.daypart || {}).lunch || {}).revenue / Math.max(1, b.revenue || 0)) + ' · 晚市占比 ' + pctCust(((b.daypart || {}).dinner || {}).revenue / Math.max(1, b.revenue || 0)) + ' · 周末占比 ' + pctCust(((b.weekday || {}).weekend || {}).revenue / Math.max(1, b.revenue || 0)) + '</div></div>'
+                + '</div>'
+                + renderCustomerOpsCleaning(q);
+        }
+        async function uploadCustomerOpsDiagnosis() {
+            var file = document.getElementById('custops-pos-file')?.files?.[0];
+            if (!file) { showNotification('请先选择POS Excel文件', 'warning'); return; }
+            var fd = new FormData();
+            fd.append('file', file);
+            fd.append('store_name', document.getElementById('custops-store-name')?.value || '');
+            var host = document.getElementById('custops-diagnosis-result');
+            if (host) host.innerHTML = '<div class="rep-pay-empty">正在清洗POS数据并生成诊断...</div>';
+            try {
+                var r = await fetch('/api/customer-ops/diagnosis/upload', { method:'POST', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }, body: fd });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'upload_failed');
+                __custopsDiagnosisId = d.diagnosis_id;
+                renderCustomerOpsDiagnosis(d.report, d.diagnosis_id);
+                showNotification('客户经营诊断已生成', 'success');
+            } catch (e) {
+                if (host) host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">生成失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+        }
+        async function loadCustomerOpsLatest() {
+            var host = document.getElementById('custops-diagnosis-result');
+            if (!host) return;
+            try {
+                var r = await fetch('/api/customer-ops/diagnosis/latest', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'load_failed');
+                if (!d.diagnosis) { renderCustomerOpsDiagnosis(null); return; }
+                __custopsDiagnosisId = d.diagnosis.id;
+                renderCustomerOpsDiagnosis(d.diagnosis.report_json, d.diagnosis.id);
+            } catch (e) {
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+        }
+        async function exportCustomerOpsPdf() {
+            if (!__custopsDiagnosisId) { showNotification('请先上传或加载一份诊断', 'warning'); return; }
+            try {
+                var r = await fetch('/api/customer-ops/diagnosis/' + encodeURIComponent(__custopsDiagnosisId) + '/pdf', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'pdf_failed');
+                window.open(d.url, '_blank');
+            } catch (e) { showNotification('PDF导出失败：' + (e?.message || e), 'error'); }
+        }
+        async function loadCustomerOpsMaintenance() {
+            var host = document.getElementById('custops-maintenance-list');
+            if (!host) return;
+            host.innerHTML = '<div class="rep-pay-empty">正在加载维护机会...</div>';
+            try {
+                var qs = __custopsDiagnosisId ? ('?diagnosis_id=' + encodeURIComponent(__custopsDiagnosisId)) : '';
+                var r = await fetch('/api/customer-ops/maintenance-cockpit' + qs, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'load_failed');
+                var ops = d.opportunities || [];
+                var kpiHost = document.getElementById('custops-cockpit-kpis');
+                var cp = d.cockpit || {};
+                var ds = cp.decision_summary || {};
+                if (kpiHost) {
+                    kpiHost.innerHTML = '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">'
+                        + custopsMiniMetric('可维护客户', (cp.actionable_customers || 0) + '人', '由POS诊断自动识别', '#fff')
+                        + custopsMiniMetric('VIP流失风险', (cp.vip_risk || 0) + '人', '优先店长/企微维护', '#facc15')
+                        + custopsMiniMetric('新客二访池', (cp.second_visit_pool || 0) + '人', '首购后7-45天', '#38bdf8')
+                        + custopsMiniMetric('结果证明', fmtCustMoney(cp.actual_revenue || 0), '预计' + fmtCustMoney(cp.expected_revenue || 0) + ' · 已决策' + (ds.total || 0) + '条', '#22c55e')
+                        + '</div>'
+                        + '<div class="rep-metric" style="text-align:left;margin-top:12px;">'
+                        + '<div class="k">维护闭环进度</div>'
+                        + '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:9px;font-size:12px;">'
+                        + '<div style="padding:8px;border-radius:10px;background:rgba(255,255,255,.04);"><b style="color:#fff;">' + (ds.proposed || 0) + '</b><br><span style="color:var(--rep-muted);">待创建动作</span></div>'
+                        + '<div style="padding:8px;border-radius:10px;background:rgba(255,255,255,.04);"><b style="color:#fff;">' + (ds.action_created || 0) + '</b><br><span style="color:var(--rep-muted);">已生成动作</span></div>'
+                        + '<div style="padding:8px;border-radius:10px;background:rgba(255,255,255,.04);"><b style="color:#fff;">' + (ds.followed || 0) + '</b><br><span style="color:var(--rep-muted);">已跟进</span></div>'
+                        + '<div style="padding:8px;border-radius:10px;background:rgba(34,197,94,.08);"><b style="color:#22c55e;">' + (ds.measured || 0) + '</b><br><span style="color:var(--rep-muted);">已证明结果</span></div>'
+                        + '</div></div>';
+                }
+                host.innerHTML = ops.length ? ops.map(function(op) {
+                    var samples = (op.sample_customers || []).slice(0, 3).map(function(c) {
+                        return '<div style="font-size:12px;color:rgba(226,232,240,0.68);line-height:1.55;border-top:1px solid rgba(255,255,255,0.06);padding-top:7px;margin-top:7px;">'
+                            + '<b style="color:#fff;">' + escapeHtml(c.customer_id || '-') + '</b> · ' + escapeHtml(c.phone || '-') + ' · ' + (c.days_since_last_visit || 0) + '天未到店<br>'
+                            + escapeHtml(c.recommended_action || '') + '</div>';
+                    }).join('');
+                    return '<div class="rep-metric" style="text-align:left;margin-bottom:10px;">'
+                        + '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;"><div><div class="k">维护场景</div><div class="v" style="font-size:20px;">' + escapeHtml(op.title || '-') + '</div></div>'
+                        + '<div style="text-align:right;"><div style="font-size:24px;font-weight:900;color:#22c55e;">' + (op.target_count || 0) + '</div><div style="font-size:11px;color:var(--rep-muted);">目标客户</div></div></div>'
+                        + '<div style="margin-top:8px;color:var(--rep-muted);font-size:12px;">推荐渠道：' + (op.channels || []).join(' / ') + ' · 预计可带动 ' + fmtCustMoney(op.expected_revenue) + '</div>'
+                        + samples
+                        + '<div style="display:flex;gap:8px;margin-top:10px;"><button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" onclick="showNotification(\'已生成维护任务草稿，后续可接入短信/企微/小程序执行\', \'success\')">生成维护任务</button><button class="rep-seg-btn" style="flex:1;" onclick="showNotification(\'公域渠道建议作为内容任务执行\', \'info\')">内容渠道建议</button></div>'
+                        + '</div>';
+                }).join('') : '<div class="rep-pay-empty">暂无明确维护机会，请先上传POS诊断或补充手机号/菜品明细。</div>';
+            } catch (e) {
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+            loadCustomerOpsDecisions();
+            loadCustomerOpsServiceRadar();
+        }
+        function custopsHeadersJson() {
+            return { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token'), 'Content-Type': 'application/json' };
+        }
+        async function generateCustomerOpsDecisions() {
+            if (!__custopsDiagnosisId) { await loadCustomerOpsLatest(); }
+            try {
+                var body = {
+                    diagnosis_id: __custopsDiagnosisId,
+                    new_dish: document.getElementById('custops-new-dish')?.value || '',
+                    days_threshold: Number(document.getElementById('custops-days-threshold')?.value || 30)
+                };
+                var r = await fetch('/api/customer-ops/decisions/generate', { method:'POST', headers:custopsHeadersJson(), body: JSON.stringify(body) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'generate_failed');
+                showNotification('已生成 ' + d.generated + ' 条AI维护决策', 'success');
+                loadCustomerOpsDecisions();
+                loadCustomerOpsServiceRadar();
+            } catch (e) { showNotification('生成失败：' + (e?.message || e), 'error'); }
+        }
+        function decisionStatusLabel(s) {
+            return ({ proposed:'待创建动作', action_created:'已生成动作', followed:'已跟进', measured:'已回填结果' })[s] || s || '-';
+        }
+        function decisionChannelLabel(c) {
+            return ({ sms:'短信', wecom:'企微', miniprogram:'小程序', service:'到店服务提醒', manual:'人工维护', xiaohongshu:'小红书', dianping:'大众点评', douyin:'抖音' })[c] || c || '-';
+        }
+        async function loadCustomerOpsDecisions() {
+            var host = document.getElementById('custops-decisions-list');
+            if (!host) return;
+            try {
+                var qs = __custopsDiagnosisId ? ('?diagnosis_id=' + encodeURIComponent(__custopsDiagnosisId)) : '';
+                var r = await fetch('/api/customer-ops/decisions' + qs, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'load_failed');
+                var rows = d.decisions || [];
+                host.innerHTML = rows.length ? rows.map(function(x) {
+                    var result = x.result_json || {};
+                    var resultLine = x.status === 'measured' || x.status === 'followed'
+                        ? '<div style="font-size:12px;color:#22c55e;margin-top:7px;">结果：' + (result.arrived ? '已到店 ' : '') + (result.reserved ? '已预约 ' : '') + (result.actual_revenue ? ('收入' + fmtCustMoney(result.actual_revenue) + ' ') : '') + escapeHtml(result.note || '') + '</div>'
+                        : '';
+                    return '<div class="rep-metric" style="text-align:left;margin-bottom:10px;">'
+                        + '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="k">' + decisionChannelLabel(x.channel) + ' · ' + decisionStatusLabel(x.status) + '</div><div class="v" style="font-size:18px;">' + escapeHtml(x.title || '-') + '</div></div><div style="font-size:18px;color:#22c55e;font-weight:900;">' + fmtCustMoney(x.expected_revenue) + '</div></div>'
+                        + '<div style="font-size:12px;color:rgba(226,232,240,0.62);line-height:1.55;margin-top:7px;">' + escapeHtml(x.reason || '') + '</div>'
+                        + (x.copy_text ? '<div style="font-size:12px;color:rgba(226,232,240,0.82);line-height:1.65;margin-top:8px;padding:9px;border-radius:9px;background:rgba(255,255,255,0.04);">文案：' + escapeHtml(x.copy_text) + '</div>' : '')
+                        + (x.service_tip ? '<div style="font-size:12px;color:#fbbf24;line-height:1.55;margin-top:7px;">服务提醒：' + escapeHtml(x.service_tip) + '</div>' : '')
+                        + resultLine
+                        + '<div style="display:flex;gap:8px;margin-top:10px;">'
+                        + '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" onclick="createCustomerOpsAction(' + x.id + ')">生成执行动作</button>'
+                        + '<button class="rep-seg-btn" style="flex:1;" onclick="openCustomerOpsResult(' + x.id + ')">回填结果</button>'
+                        + '</div></div>';
+                }).join('') : '<div class="rep-pay-empty">暂无AI决策。填写今日新品/主推菜后点击“生成AI自动决策”。</div>';
+            } catch (e) {
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载AI决策失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+        }
+        async function createCustomerOpsAction(id) {
+            try {
+                var r = await fetch('/api/customer-ops/decisions/' + encodeURIComponent(id) + '/create-action', { method:'POST', headers:custopsHeadersJson(), body:'{}' });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'create_action_failed');
+                showNotification('已生成执行动作：' + d.action_key + '，可到执行中心查看', 'success');
+                loadCustomerOpsDecisions();
+            } catch (e) { showNotification('生成动作失败：' + (e?.message || e), 'error'); }
+        }
+        function openCustomerOpsResult(id) {
+            var ov = document.createElement('div');
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.62);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+            ov.innerHTML = '<div style="background:#0f172a;border:1px solid rgba(255,255,255,0.12);border-radius:14px;max-width:420px;width:100%;padding:18px;">'
+                + '<div style="font-size:16px;font-weight:900;color:#fff;margin-bottom:12px;">回填维护结果</div>'
+                + '<label style="display:block;color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:6px;"><input id="cod-reserved" type="checkbox"> 已预约</label>'
+                + '<label style="display:block;color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:10px;"><input id="cod-arrived" type="checkbox"> 已到店</label>'
+                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);">实际收入（元）</label><input id="cod-revenue" type="number" min="0" class="dr-store-select" style="width:100%;padding:9px;color:#fff;margin:5px 0 10px;">'
+                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);">备注</label><textarea id="cod-note" class="dr-store-select" style="width:100%;min-height:70px;padding:9px;color:#fff;resize:vertical;margin-top:5px;"></textarea>'
+                + '<div style="display:flex;gap:8px;margin-top:12px;"><button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" onclick="submitCustomerOpsResult(' + id + ')">提交</button><button class="rep-seg-btn" style="flex:1;" onclick="this.closest(\'div[style*=fixed]\').remove()">取消</button></div>'
+                + '</div>';
+            ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+            document.body.appendChild(ov);
+        }
+        async function submitCustomerOpsResult(id) {
+            try {
+                var body = {
+                    reserved: !!document.getElementById('cod-reserved')?.checked,
+                    arrived: !!document.getElementById('cod-arrived')?.checked,
+                    actual_revenue: Number(document.getElementById('cod-revenue')?.value || 0),
+                    note: document.getElementById('cod-note')?.value || ''
+                };
+                var r = await fetch('/api/customer-ops/decisions/' + encodeURIComponent(id) + '/result', { method:'POST', headers:custopsHeadersJson(), body: JSON.stringify(body) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'result_failed');
+                document.querySelector('div[style*="position:fixed"][style*="z-index:9999"]')?.remove();
+                showNotification('维护结果已记录', 'success');
+                loadCustomerOpsDecisions();
+            } catch (e) { showNotification('提交失败：' + (e?.message || e), 'error'); }
+        }
+        async function loadCustomerOpsServiceRadar() {
+            var host = document.getElementById('custops-service-radar');
+            if (!host) return;
+            try {
+                var qs = __custopsDiagnosisId ? ('?diagnosis_id=' + encodeURIComponent(__custopsDiagnosisId)) : '';
+                var r = await fetch('/api/customer-ops/service-radar' + qs, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'radar_failed');
+                var rows = d.customers || [];
+                host.innerHTML = rows.length ? rows.slice(0, 20).map(function(c) {
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
+                        + '<div style="display:flex;justify-content:space-between;gap:10px;"><b style="color:#fff;">' + escapeHtml(c.customer_id || '-') + ' · ' + escapeHtml(c.phone || '-') + '</b><span style="color:#38bdf8;">均客' + fmtCustMoney(c.avg_check) + '</span></div>'
+                        + '<div style="color:#fbbf24;margin-top:5px;line-height:1.55;">' + escapeHtml(c.service_tip || '') + '</div>'
+                        + '<div style="color:rgba(226,232,240,0.45);margin-top:3px;">跨店：' + escapeHtml((c.stores || []).join('、') || '-') + ' · 偏好：' + escapeHtml((c.favorite_dishes || []).join('、') || '-') + '</div>'
+                        + '</div>';
+                }).join('') : '<div class="rep-pay-empty">暂无跨店/VIP服务提醒。导入更多客户消费记录后会自动识别。</div>';
+            } catch (e) {
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">服务雷达加载失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+        }
+        function openCustomer360(c) {
+            var ov = document.createElement('div');
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.62);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+            var tags = (c.scene_tags || []).map(custSceneLabel).join('、') || custStageLabel(c.lifecycle_stage);
+            var channels = c.channel_readiness || {};
+            var channelHtml = ['sms','wecom','miniprogram','xiaohongshu','dianping','douyin'].map(function(k) {
+                var label = decisionChannelLabel(k);
+                var on = !!channels[k];
+                return '<span style="display:inline-block;margin:4px 6px 0 0;padding:5px 9px;border-radius:999px;background:' + (on ? 'rgba(34,197,94,.12);color:#86efac;' : 'rgba(148,163,184,.10);color:rgba(226,232,240,.45);') + 'font-size:12px;">' + label + (on ? '可用' : '待补') + '</span>';
+            }).join('');
+            var timeline = (c.last_orders || []).slice(0, 6).map(function(o) {
+                return '<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
+                    + '<div style="display:flex;justify-content:space-between;gap:10px;"><b style="color:#fff;">' + escapeHtml(o.date || '-') + ' · ' + escapeHtml(o.store || c.primary_store || '-') + '</b><span style="color:#22c55e;">' + fmtCustMoney(o.amount) + '</span></div>'
+                    + '<div style="color:rgba(226,232,240,.58);">人数' + (o.diners || '-') + ' · ' + escapeHtml(o.order_type || '-') + ' · 菜品：' + escapeHtml((o.dishes || []).join('、') || '-') + '</div>'
+                    + '</div>';
+            }).join('');
+            var touchPlan = (c.touch_plan || []).map(function(x) {
+                return '<li style="margin:4px 0;color:rgba(226,232,240,.78);">' + escapeHtml(x) + '</li>';
+            }).join('');
+            ov.innerHTML = '<div style="width:min(560px,100%);max-height:90vh;overflow:auto;background:#0f172a;border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:18px;">'
+                + '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div style="font-size:12px;color:#38bdf8;font-weight:800;">360 CUSTOMER PROFILE</div><div style="font-size:22px;color:#fff;font-weight:900;margin-top:4px;">' + escapeHtml(c.customer_id || '-') + '</div></div><button onclick="this.closest(\'div[style*=fixed]\').remove()" style="border:none;background:rgba(255,255,255,0.08);color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;">关闭</button></div>'
+                + '<div class="rep-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px;">'
+                + '<div class="rep-metric"><div class="k">手机号</div><div class="v" style="font-size:18px;">' + escapeHtml(c.phone || '-') + '</div></div>'
+                + '<div class="rep-metric"><div class="k">企微</div><div class="v" style="font-size:18px;">' + escapeHtml(c.external_userid || '-') + '</div></div>'
+                + '<div class="rep-metric"><div class="k">累计消费</div><div class="v">' + fmtCustMoney(c.total_spend) + '</div></div>'
+                + '<div class="rep-metric"><div class="k">消费次数</div><div class="v">' + (c.order_count || 0) + '次</div></div>'
+                + '<div class="rep-metric"><div class="k">最近消费</div><div class="v">' + (c.days_since_last_visit || 0) + '天前</div></div>'
+                + '<div class="rep-metric"><div class="k">平均客单</div><div class="v">' + fmtCustMoney(c.avg_check) + '</div></div>'
+                + '</div>'
+                + '<div style="margin-top:12px;padding:12px;border-radius:12px;background:rgba(255,255,255,0.04);color:rgba(226,232,240,0.82);font-size:13px;line-height:1.8;">'
+                + '<b style="color:#fff;">最喜欢：</b>' + escapeHtml((c.favorite_dishes || []).join('、') || '-') + '<br>'
+                + '<b style="color:#fff;">常去门店：</b>' + escapeHtml(c.primary_store || (c.stores || []).join('、') || '-') + '<br>'
+                + '<b style="color:#fff;">常来时段：</b>' + escapeHtml(c.preferred_visit_time || '-') + '<br>'
+                + '<b style="color:#fff;">员工评价：</b>' + escapeHtml(c.staff_note || tags || '-') + '<br>'
+                + '<b style="color:#fff;">营销记录：</b>' + escapeHtml(c.last_marketing || '暂无') + '<br>'
+                + '<b style="color:#fff;">是否到店：</b>' + escapeHtml(c.visit_status || '-') + '<br>'
+                + '<b style="color:#fff;">AI建议：</b>' + escapeHtml(c.next_best_action || ((c.value_tier === 'vip' && c.days_since_last_visit >= 30) ? '高价值客久未到店，优先企微/短信发专属新品邀请，到店后提醒店长重点接待。' : '按当前客群标签进入对应维护节奏。'))
+                + '</div>'
+                + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">可触达渠道</div><div style="margin-top:8px;">' + channelHtml + '</div></div>'
+                + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">维护动作建议</div><ul style="padding-left:18px;margin:8px 0 0;font-size:13px;line-height:1.6;">' + (touchPlan || '<li style="color:var(--rep-muted);">暂无</li>') + '</ul></div>'
+                + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">最近消费时间线</div>' + (timeline || '<div style="color:var(--rep-muted);font-size:12px;margin-top:8px;">暂无消费明细</div>') + '</div>'
+                + '</div>';
+            ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+            document.body.appendChild(ov);
         }
 
         function renderGrowthClusters(data) {
