@@ -609,7 +609,7 @@ async function buildAbAiSummary(taskRow, outcome) {
     if (llm?.ok && llm.content) {
       // 结果会写入ab_test_tasks.ai_summary并可能被promoteAbWinner自动采用为规则，
       // 复用hq-planner-agent同款程序化数字校验，拦截LLM编造总结里不存在的"N分/N次"声称。
-      const known = [a.sent, a.redemptions, b.sent, b.redemptions].map(Number).filter(Number.isFinite);
+      const known = [a.sent, a.redemptions, b.sent, b.redemptions, a.revenue, b.revenue].map(Number).filter(Number.isFinite);
       const grounding = checkTextGrounding(llm.content, known);
       if (grounding.passed) return cleanText(llm.content, 1800);
     }

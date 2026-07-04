@@ -671,7 +671,8 @@ async function generateReview(round) {
   if (_llm) {
     try {
       const prompt = `你是餐厅经营分析师。请基于以下事实,用中文写一段150字以内的归因分析,要求:客观、直截了当、不留情面也不夸大。`
-        + `必须明确回答:结果与目标的差异,多大程度是执行力问题(逾期/催促无果/未完成),多大程度是方案本身问题。有执行问题就点名说清,没有就明说执行到位。\n`
+        + `必须明确回答:结果与目标的差异,多大程度是执行力问题(逾期/催促无果/未完成),多大程度是方案本身问题。有执行问题就点名说清,没有就明说执行到位。`
+        + `⚠️ 归因只能基于下方传入的执行数据,禁止引入任何传入数据以外的推测原因（如节假日影响、天气因素、竞争对手等）。\n`
         + `问题:${round.problem_title};指标:${round.metric_label};基线:${round.baseline_value}${round.unit};目标:${round.target_value}${round.unit};实际:${actual}${round.unit};达成率:${(rate * 100).toFixed(1)}%\n`
         + `任务执行明细:${JSON.stringify(taskRows)}\n执行问题清单:${JSON.stringify(execFindings)}`;
       const llmText = await _llm(prompt);
@@ -853,7 +854,9 @@ ${templateList}
  "tasks":[{"code":"<模板code,可选>","title":"任务标题","description":"任务说明","assignee_role":"store_manager|production_manager|hr","phase":"第1周"}],
 任务责任人规则:厨房相关任务一律 production_manager(出品经理),前厅/营销/复盘任务一律 store_manager(店长)。
  "out_of_scope":"如果问题中有系统能力覆盖不了的部分,在此如实说明;没有则为空字符串"}
-任务3-5项,循序渐进,必须能落到系统功能上。`;
+任务3-5项,循序渐进,必须能落到系统功能上。
+
+⚠️ 任务description硬性要求:禁止提及具体菜品名称、价格数字或SOP操作细节（这些由执行人员在具体执行时确定）；description只描述"做什么动作/目标"，不描述"如何具体操作"。`;
 
       const raw = await _llm(prompt);
       let parsed = null;
