@@ -52,7 +52,7 @@ import {
   getExpectedMonthlyPerformancePeriodShanghai,
   countEligibleMonthlyPerformanceUsers
 } from './performance-jobs.js';
-import { startDailyFeishuSync, syncDishLibraryCosts, syncSopSteps, setFeishuSyncFailureNotifier } from './feishu-sync.js';
+import { startDailyFeishuSync, syncDishLibraryCosts, syncSopSteps, setFeishuSyncFailureNotifier, resolveWebhookTenantId, loadTenantFeishuBitableConfig, getFeishuAccessToken as getFeishuTokenByConfig } from './feishu-sync.js';
 import { calculateStoreRating, calculateEmployeeScore } from './new-scoring-model.js';
 import { registerNewScoringRoutes } from './new-scoring-api.js';
 import { registerPerformanceInvalidationRoutes } from './performance-invalidation-api.js';
@@ -19805,18 +19805,18 @@ app.post('/api/webhook/feishu', express.raw({ type: 'application/json' }), async
     
     // 处理业务数据变更事件
     if (data.header?.event_type === 'bitable.record.changed') {
-      // 这个webhook靠飞书签名/加密payload自证身份，没有JWT/ALS租户上下文。
-      // feishu_sync_logs是同步审计日志，固定走'default'，并用tenantContext.run()包裹
-      // 整段(包括下面的setImmediate异步处理)，让会话变量跟显式写的列值保持一致。
-      return await tenantContext.run('default', async () => {
+      // webhook 无 JWT/ALS 租户上下文，通过 app_token 反查 tenant_id（5分钟缓存）。
+      // 新租户只需在 tenant_integrations 配置 feishu_bitable，无需改代码。
       const event = data.event;
+      const webhookTenantId = await resolveWebhookTenantId(event?.app_token).catch(() => 'default');
+      return await tenantContext.run(webhookTenantId, async () => {
       const logId = randomUUID();
 
       // 记录同步日志
       await pool.query(
         `insert into feishu_sync_logs (id, event_type, table_id, record_id, data, sync_status, tenant_id)
          values ($1, $2, $3, $4, $5, 'pending', $6)`,
-        [logId, data.header.event_type, event.app_token, event.record_id, event, 'default']
+        [logId, data.header.event_type, event.app_token, event.record_id, event, webhookTenantId]
       );
 
       // 异步处理数据同步
@@ -19859,15 +19859,21 @@ app.post('/api/webhook/feishu', express.raw({ type: 'application/json' }), async
 // 处理飞书数据变更
 async function processFeishuDataChange(event, logId) {
   try {
-    const accessToken = await getFeishuAccessToken();
+    // 租户感知：tenant 由外层 tenantContext.run(webhookTenantId, ...) 设置。
+    const tenantId = resolveTenantIdDefault();
+    const tenantCfg = await loadTenantFeishuBitableConfig(tenantId).catch(() => null);
+    // 优先用租户专属凭证，无租户配置时回退到全局环境变量（兜底'default'）。
+    const accessToken = tenantCfg?.app_id
+      ? await getFeishuTokenByConfig({ app_id: tenantCfg.app_id, app_secret: tenantCfg.app_secret }).catch(() => getFeishuAccessToken())
+      : await getFeishuAccessToken();
     const appToken = event.app_token;
     const tableId = event.table_id;
     const recordId = event.record_id;
-    
+
     // 获取记录详情
     const recordData = await getFeishuBitableData(appToken, tableId, accessToken);
     const record = recordData.items?.find(item => item.record_id === recordId);
-    
+
     if (!record) {
       throw new Error('Record not found in Feishu');
     }
@@ -19884,9 +19890,9 @@ async function processFeishuDataChange(event, logId) {
       );
     }
 
-    // Only “桌访表” writes into structured table
-    const TABLE_VISIT_TABLE_ID = 'tblpx5Efqc6eHo3L';
-    const isTableVisit = String(tableId || '').trim() === TABLE_VISIT_TABLE_ID;
+    // 桌访表：从租户配置取 table_id，回退到默认值（默认租户历史值）。
+    const tableVisitTableId = tenantCfg?.tables?.table_visit?.table_id || 'tblpx5Efqc6eHo3L';
+    const isTableVisit = String(tableId || '').trim() === tableVisitTableId;
     if (!isTableVisit) {
       await pool.query(
         'update feishu_sync_logs set sync_status = $1, processed_at = now() where id = $2',

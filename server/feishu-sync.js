@@ -107,6 +107,46 @@ async function loadTenantFeishuConfig(tenantId) {
   return legacy;
 }
 
+/** 供 index.js webhook 处理器获取租户飞书配置，用于 per-tenant access token 和表 ID 查找。 */
+export { loadTenantFeishuConfig as loadTenantFeishuBitableConfig };
+
+// ── Webhook 租户路由：通过 app_token 反查 tenant_id ──
+let _appTokenTenantCache = new Map(); // appToken -> tenantId
+let _appTokenTenantCacheAt = 0;
+
+/**
+ * 根据飞书 app_token 找出对应租户 ID，供 webhook 路由使用。
+ * 缓存 5 分钟，避免每次 webhook 都全量解密 tenant_integrations。
+ * 查不到则返回 'default'（兜底向后兼容）。
+ */
+export async function resolveWebhookTenantId(appToken) {
+  if (!appToken) return 'default';
+  const now = Date.now();
+  if (now - _appTokenTenantCacheAt > 5 * 60 * 1000) {
+    try {
+      const rows = await pool().query(
+        `SELECT DISTINCT tenant_id FROM tenant_integrations
+         WHERE integration_key = $1 AND status = 'active'`,
+        ['feishu_bitable']
+      );
+      const newMap = new Map();
+      for (const { tenant_id } of rows.rows) {
+        const cfg = await loadTenantFeishuConfig(tenant_id).catch(() => null);
+        if (!cfg?.tables) continue;
+        for (const row of Object.values(cfg.tables)) {
+          const t = String(row.app_token || '').trim();
+          if (t) newMap.set(t, tenant_id);
+        }
+      }
+      _appTokenTenantCache = newMap;
+      _appTokenTenantCacheAt = now;
+    } catch (e) {
+      console.error('[feishu-sync] resolveWebhookTenantId cache build failed:', e?.message);
+    }
+  }
+  return _appTokenTenantCache.get(String(appToken).trim()) || 'default';
+}
+
 function extractFieldText(value) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
