@@ -19897,10 +19897,13 @@
                                     <input id="custops-store-name" class="dr-store-select" placeholder="如 A公司南京西路店" style="padding:10px;color:var(--rep-text);">
                                 </div>
                                 <div class="rep-field">
-                                    <label>POS Excel 文件</label>
-                                    <input id="custops-pos-file" type="file" accept=".xlsx,.xls,.csv" class="dr-store-select" style="padding:8px;color:var(--rep-text);">
+                                    <label>客户数据文件（POS/会员消费/储值，可多选）</label>
+                                    <input id="custops-pos-file" type="file" accept=".xlsx,.xls,.csv" multiple class="dr-store-select" style="padding:8px;color:var(--rep-text);">
                                 </div>
                             </div>
+                            <label style="display:flex;align-items:center;gap:8px;margin-top:10px;color:rgba(226,232,240,0.68);font-size:12px;">
+                                <input id="custops-merge-previous" type="checkbox" checked> 与历史已导入客户源记录合并后重新诊断
+                            </label>
                             <div class="rep-seg" style="margin-top:12px;">
                                 <button onclick="uploadCustomerOpsDiagnosis()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">上传并生成诊断</button>
                                 <button onclick="loadCustomerOpsLatest()" class="rep-seg-btn" style="flex:1;">加载最近诊断</button>
@@ -58428,11 +58431,12 @@ ${body}
                             var risk = opsRows.filter(function(c){ return (c.scene_tags || []).indexOf('risk') >= 0 || c.lifecycle_stage === 'at_risk' || c.lifecycle_stage === 'dormant'; }).length;
                             var biz = opsRows.filter(function(c){ return (c.scene_tags || []).indexOf('business') >= 0; }).length;
                             var reachable = opsRows.filter(function(c){ return !!c.phone; }).length;
+                            var stored = opsRows.filter(function(c){ return Number(c.stored_value_count || 0) > 0; }).length;
                             ps.innerHTML = '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">'
                                 + custopsMiniMetric('客户资产', opsRows.length + '人', '来自最近POS清洗', '#fff')
                                 + custopsMiniMetric('VIP客户', vip + '人', '高消费/高价值', '#facc15')
                                 + custopsMiniMetric('待维护风险', risk + '人', '濒临流失/沉睡', '#fb7185')
-                                + custopsMiniMetric('可触达客户', reachable + '人', '手机号可用，商务客' + biz + '人', '#22c55e')
+                                + custopsMiniMetric('可触达客户', reachable + '人', '手机号可用，商务客' + biz + '人，储值客' + stored + '人', '#22c55e')
                                 + '</div>';
                         }
                         host.innerHTML = '<div style="font-size:12px;color:rgba(226,232,240,0.55);margin-bottom:8px;">来自最近POS清洗诊断 · 点击查看360档案</div>' + opsRows.slice(0, 80).map(function(c) {
@@ -58442,7 +58446,7 @@ ${body}
                                 + '<div style="color:#fff;font-weight:700;">' + escapeHtml(c.customer_id || '-') + ' · ' + escapeHtml(c.phone || '-') + '</div>'
                                 + '<div style="color:#38bdf8;">' + escapeHtml(tags) + '</div>'
                                 + '</div>'
-                                + '<div style="color:rgba(226,232,240,0.62);margin-top:5px;">累计' + fmtCustMoney(c.total_spend) + ' · ' + (c.order_count || 0) + '次 · 均客' + fmtCustMoney(c.avg_check) + ' · 最近' + (c.days_since_last_visit || 0) + '天前 · 常来' + escapeHtml(c.preferred_visit_time || '-') + '</div>'
+                                + '<div style="color:rgba(226,232,240,0.62);margin-top:5px;">累计' + fmtCustMoney(c.total_spend) + ' · ' + (c.order_count || 0) + '次 · 均客' + fmtCustMoney(c.avg_check) + ' · 储值余额' + fmtCustMoney(c.stored_value_balance) + ' · 最近' + (c.days_since_last_visit || 0) + '天前</div>'
                                 + '<div style="color:rgba(226,232,240,0.45);margin-top:3px;">喜好：' + escapeHtml((c.favorite_dishes || []).slice(0, 5).join('、') || '-') + ' · 下一步：' + escapeHtml(c.next_best_action || '-') + '</div>'
                                 + '</div>';
                         }).join('');
@@ -58537,6 +58541,8 @@ ${body}
             }).join('');
             return '<div class="rep-metric" style="text-align:left;margin-top:12px;">'
                 + '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div class="k">POS智能清洗质量</div><div class="v" style="font-size:20px;">' + (c.confidence_score || 0) + '/100</div></div><div style="text-align:right;font-size:12px;color:var(--rep-muted);">缺失关键字段<br><b style="color:' + ((c.missing_required || []).length ? '#f59e0b' : '#22c55e') + ';">' + escapeHtml(missing) + '</b></div></div>'
+                + '<div style="margin-top:8px;font-size:12px;color:rgba(226,232,240,.62);">本批记录 ' + (c.batch_records || 0) + ' 条 · 历史合并 ' + (c.historical_records || 0) + ' 条 · 合并后 ' + (c.total_records_after_merge || 0) + ' 条 · 文件 ' + escapeHtml((c.batch_files || c.files || []).join('、') || '-') + '</div>'
+                + '<div style="margin-top:8px;font-size:12px;color:rgba(226,232,240,.62);">记录类型：' + escapeHtml(Object.entries(c.record_types || {}).map(function(kv){ return kv[0] + ' ' + kv[1]; }).join(' / ') || '-') + '</div>'
                 + sheetHtml
                 + (warning ? '<div style="margin-top:8px;font-size:12px;color:#fbbf24;line-height:1.55;">' + escapeHtml(warning) + '</div>' : '')
                 + '</div>';
@@ -58551,6 +58557,7 @@ ${body}
             }
             var b = report.business || {};
             var q = report.input_quality || {};
+            var sv = b.stored_value || {};
             var lifecycle = (report.customer_mix && report.customer_mix.lifecycle) || {};
             var scene = (report.customer_mix && report.customer_mix.scene) || {};
             var lp = Object.keys(lifecycle).map(function(k) {
@@ -58572,23 +58579,30 @@ ${body}
                 + '<div class="rep-metric" style="text-align:left;"><div class="k">场景标签</div><div style="margin-top:8px;">' + (sp || '<span style="color:var(--rep-muted);font-size:12px;">暂无明显场景</span>') + '</div>'
                 + '<div style="margin-top:12px;color:var(--rep-muted);font-size:12px;">午市占比 ' + pctCust(((b.daypart || {}).lunch || {}).revenue / Math.max(1, b.revenue || 0)) + ' · 晚市占比 ' + pctCust(((b.daypart || {}).dinner || {}).revenue / Math.max(1, b.revenue || 0)) + ' · 周末占比 ' + pctCust(((b.weekday || {}).weekend || {}).revenue / Math.max(1, b.revenue || 0)) + '</div></div>'
                 + '</div>'
+                + '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-top:12px;">'
+                + custopsMiniMetric('储值客户', (sv.customers || 0) + '人', '来自储值/会员文件', '#38bdf8')
+                + custopsMiniMetric('充值金额', fmtCustMoney(sv.recharge), '不计入营业额', '#22c55e')
+                + custopsMiniMetric('赠送金额', fmtCustMoney(sv.gift), '会员权益成本', '#facc15')
+                + custopsMiniMetric('储值余额', fmtCustMoney(sv.balance), '客户预付资产', '#fb7185')
+                + '</div>'
                 + renderCustomerOpsCleaning(q);
         }
         async function uploadCustomerOpsDiagnosis() {
-            var file = document.getElementById('custops-pos-file')?.files?.[0];
-            if (!file) { showNotification('请先选择POS Excel文件', 'warning'); return; }
+            var files = Array.prototype.slice.call(document.getElementById('custops-pos-file')?.files || []);
+            if (!files.length) { showNotification('请先选择客户数据Excel文件', 'warning'); return; }
             var fd = new FormData();
-            fd.append('file', file);
+            files.forEach(function(file){ fd.append('files', file); });
             fd.append('store_name', document.getElementById('custops-store-name')?.value || '');
+            fd.append('merge_previous', document.getElementById('custops-merge-previous')?.checked ? 'true' : 'false');
             var host = document.getElementById('custops-diagnosis-result');
-            if (host) host.innerHTML = '<div class="rep-pay-empty">正在清洗POS数据并生成诊断...</div>';
+            if (host) host.innerHTML = '<div class="rep-pay-empty">正在自动识别字段、清洗多文件客户数据并生成诊断...</div>';
             try {
                 var r = await fetch('/api/customer-ops/diagnosis/upload', { method:'POST', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }, body: fd });
                 var d = await r.json();
                 if (!d.ok) throw new Error(d.error || 'upload_failed');
                 __custopsDiagnosisId = d.diagnosis_id;
                 renderCustomerOpsDiagnosis(d.report, d.diagnosis_id);
-                showNotification('客户经营诊断已生成', 'success');
+                showNotification('客户经营诊断已生成：本批' + (d.imported_records || 0) + '条，合并后' + (d.merged_records || 0) + '条', 'success');
             } catch (e) {
                 if (host) host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">生成失败：' + escapeHtml(e?.message || e) + '</div>';
             }
@@ -58794,6 +58808,12 @@ ${body}
                     + '<div style="color:rgba(226,232,240,.58);">人数' + (o.diners || '-') + ' · ' + escapeHtml(o.order_type || '-') + ' · 菜品：' + escapeHtml((o.dishes || []).join('、') || '-') + '</div>'
                     + '</div>';
             }).join('');
+            var storedTimeline = (c.stored_value_timeline || []).slice(0, 6).map(function(o) {
+                return '<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
+                    + '<div style="display:flex;justify-content:space-between;gap:10px;"><b style="color:#fff;">' + escapeHtml(o.date || '-') + ' · ' + escapeHtml(o.store || c.primary_store || '-') + '</b><span style="color:#38bdf8;">余额' + fmtCustMoney(o.balance) + '</span></div>'
+                    + '<div style="color:rgba(226,232,240,.58);">充值' + fmtCustMoney(o.recharge_amount) + ' · 赠送' + fmtCustMoney(o.gift_amount) + ' · 积分' + (o.points || 0) + ' · ' + escapeHtml(o.order_type || '') + '</div>'
+                    + '</div>';
+            }).join('');
             var touchPlan = (c.touch_plan || []).map(function(x) {
                 return '<li style="margin:4px 0;color:rgba(226,232,240,.78);">' + escapeHtml(x) + '</li>';
             }).join('');
@@ -58801,11 +58821,13 @@ ${body}
                 + '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div style="font-size:12px;color:#38bdf8;font-weight:800;">360 CUSTOMER PROFILE</div><div style="font-size:22px;color:#fff;font-weight:900;margin-top:4px;">' + escapeHtml(c.customer_id || '-') + '</div></div><button onclick="this.closest(\'div[style*=fixed]\').remove()" style="border:none;background:rgba(255,255,255,0.08);color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;">关闭</button></div>'
                 + '<div class="rep-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px;">'
                 + '<div class="rep-metric"><div class="k">手机号</div><div class="v" style="font-size:18px;">' + escapeHtml(c.phone || '-') + '</div></div>'
-                + '<div class="rep-metric"><div class="k">企微</div><div class="v" style="font-size:18px;">' + escapeHtml(c.external_userid || '-') + '</div></div>'
+                + '<div class="rep-metric"><div class="k">会员号/企微</div><div class="v" style="font-size:18px;">' + escapeHtml(c.member_no || c.external_userid || '-') + '</div></div>'
                 + '<div class="rep-metric"><div class="k">累计消费</div><div class="v">' + fmtCustMoney(c.total_spend) + '</div></div>'
                 + '<div class="rep-metric"><div class="k">消费次数</div><div class="v">' + (c.order_count || 0) + '次</div></div>'
                 + '<div class="rep-metric"><div class="k">最近消费</div><div class="v">' + (c.days_since_last_visit || 0) + '天前</div></div>'
                 + '<div class="rep-metric"><div class="k">平均客单</div><div class="v">' + fmtCustMoney(c.avg_check) + '</div></div>'
+                + '<div class="rep-metric"><div class="k">累计充值</div><div class="v">' + fmtCustMoney(c.total_recharge) + '</div></div>'
+                + '<div class="rep-metric"><div class="k">储值余额</div><div class="v">' + fmtCustMoney(c.stored_value_balance) + '</div></div>'
                 + '</div>'
                 + '<div style="margin-top:12px;padding:12px;border-radius:12px;background:rgba(255,255,255,0.04);color:rgba(226,232,240,0.82);font-size:13px;line-height:1.8;">'
                 + '<b style="color:#fff;">最喜欢：</b>' + escapeHtml((c.favorite_dishes || []).join('、') || '-') + '<br>'
@@ -58819,6 +58841,7 @@ ${body}
                 + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">可触达渠道</div><div style="margin-top:8px;">' + channelHtml + '</div></div>'
                 + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">维护动作建议</div><ul style="padding-left:18px;margin:8px 0 0;font-size:13px;line-height:1.6;">' + (touchPlan || '<li style="color:var(--rep-muted);">暂无</li>') + '</ul></div>'
                 + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">最近消费时间线</div>' + (timeline || '<div style="color:var(--rep-muted);font-size:12px;margin-top:8px;">暂无消费明细</div>') + '</div>'
+                + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">储值/会员资金时间线</div>' + (storedTimeline || '<div style="color:var(--rep-muted);font-size:12px;margin-top:8px;">暂无储值记录</div>') + '</div>'
                 + '</div>';
             ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
             document.body.appendChild(ov);
