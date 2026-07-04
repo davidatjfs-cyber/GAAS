@@ -4861,26 +4861,73 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/actions', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const status = cleanText(req.query.status || '', 40);
-    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+    const channel = cleanText(req.query.channel || '', 40);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
     const tenantId = getGrowthTenantId(req);
-    const { r, c } = await tenantContext.run(tenantId, async () => {
+
+    const actions = await tenantContext.run(tenantId, async () => {
+      // --- growth_actions ---
+      const PLATFORM_CHANNELS = ['wecom', 'xiaohongshu', 'dianping', 'miniprogram', 'douyin', 'pengyouquan'];
       let sql = `SELECT * FROM growth_actions WHERE tenant_id = $1`;
       const params = [tenantId];
-      if (status) {
-        sql += ` AND status = $${params.length + 1}`;
-        params.push(status);
+      if (status) { sql += ` AND status = $${params.length + 1}`; params.push(status); }
+      if (channel === 'pllm') {
+        sql += ` AND action_type = 'pllm_task'`;
+      } else if (channel === 'rule') {
+        sql += ` AND (payload->>'source' IS NULL OR payload->>'source' = '')`;
+      } else if (PLATFORM_CHANNELS.includes(channel)) {
+        sql += ` AND payload->>'channel' = $${params.length + 1}`; params.push(channel);
       }
-      sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-      params.push(limit, offset);
-      const rRes = await pool.query(sql, params);
-      let countSql = `SELECT COUNT(*) as total FROM growth_actions WHERE tenant_id = $1`;
-      const countParams = [tenantId];
-      if (status) { countSql += ` AND status = $2`; countParams.push(status); }
-      const cRes = await pool.query(countSql, countParams);
-      return { r: rRes, c: cRes };
+      sql += ` ORDER BY created_at DESC LIMIT 500`;
+      const gaRows = (await pool.query(sql, params)).rows;
+
+      // --- strategy_experiments (PLLM方案A/B卡片) ---
+      // 只在不按具体渠道过滤时包含（PLLM实验没有平台渠道概念）
+      let expRows = [];
+      const excludeExperiments = PLATFORM_CHANNELS.includes(channel) || channel === 'rule';
+      if (!excludeExperiments) {
+        const onlyProposed = !status || status === 'proposed';
+        if (onlyProposed) {
+          const expSql = `
+            SELECT se.experiment_code, se.title, se.goal, se.anomaly_type, se.status AS exp_status, se.created_at, se.updated_at, se.tenant_id,
+                   sv_a.label AS va_label, sv_a.action AS va_action, sv_a.execution_guide AS va_guide, sv_a.store AS va_store,
+                   sv_b.label AS vb_label, sv_b.action AS vb_action, sv_b.execution_guide AS vb_guide, sv_b.store AS vb_store
+            FROM strategy_experiments se
+            LEFT JOIN strategy_variants sv_a ON sv_a.experiment_id = se.id AND sv_a.variant_code = 'A'
+            LEFT JOIN strategy_variants sv_b ON sv_b.experiment_id = se.id AND sv_b.variant_code = 'B'
+            WHERE se.tenant_id = $1 AND se.created_by = 'pllm' AND se.status = 'pending_approval'
+            ORDER BY se.created_at DESC LIMIT 200`;
+          expRows = (await pool.query(expSql, [tenantId])).rows.map((e) => ({
+            action_key: `pllm_exp_${e.experiment_code}`,
+            action_type: 'pllm_experiment',
+            status: 'proposed',
+            store_id: e.va_store || '',
+            title: e.title,
+            detail: e.goal || '',
+            payload: {
+              source: 'pllm_experiment',
+              channel: 'pllm',
+              experiment_code: e.experiment_code,
+              anomaly_type: e.anomaly_type || '',
+              variant_a: e.va_action ? { label: e.va_label || '方案A', action: e.va_action, execution_guide: e.va_guide || '' } : null,
+              variant_b: e.vb_action ? { label: e.vb_label || '方案B', action: e.vb_action, execution_guide: e.vb_guide || '' } : null,
+            },
+            created_by: 'pllm',
+            created_at: e.created_at,
+            updated_at: e.updated_at,
+            executed_at: null,
+            tenant_id: e.tenant_id,
+          }));
+        }
+      }
+
+      // 合并并按创建时间降序
+      const combined = [...gaRows, ...expRows].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      return combined.slice(offset, offset + limit);
     });
-    return res.json({ ok: true, actions: r.rows, total: Number(c.rows[0]?.total || 0), limit, offset });
+
+    return res.json({ ok: true, actions, total: actions.length, limit, offset });
   });
 
   app.get('/api/growth/execution-logs', async (req, res) => {

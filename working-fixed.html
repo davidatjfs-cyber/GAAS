@@ -20304,6 +20304,16 @@
                                     <option value="executed">已执行</option>
                                     <option value="ignored">已忽略</option>
                                 </select>
+                                <select id="growth-action-channel-filter" onchange="loadGrowthActionBoard()" style="flex:1;min-width:100px;border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;background:rgba(0,0,0,0.35);color:var(--rep-text);">
+                                    <option value="">全部渠道</option>
+                                    <option value="pllm">🤖 PLLM</option>
+                                    <option value="wecom">企微</option>
+                                    <option value="miniprogram">会员小程序</option>
+                                    <option value="dianping">大众点评</option>
+                                    <option value="xiaohongshu">小红书</option>
+                                    <option value="douyin">抖音</option>
+                                    <option value="pengyouquan">朋友圈</option>
+                                </select>
                             </div>
                             <div id="growth-action-board" class="rep-action-board"></div>
                             <pre id="__growth_actions_cache" style="display:none;"></pre>
@@ -59064,18 +59074,59 @@ ${body}
                 if (!host) { console.error('loadGrowthActionBoard: growth-action-board element not found'); return; }
                 host.innerHTML = '<div style="color:rgba(226,232,240,0.3);padding:10px 0;">加载中...</div>';
                 var statusFilter = document.getElementById('growth-action-status-filter')?.value || '';
+                var channelFilter = document.getElementById('growth-action-channel-filter')?.value || '';
                 var url = '/api/growth/actions?limit=200';
                 if (statusFilter) url += '&status=' + encodeURIComponent(statusFilter);
+                if (channelFilter) url += '&channel=' + encodeURIComponent(channelFilter);
                 const r = await fetch(url, { headers: growthAuthHeaders() });
                 const actionsData = await r.json();
                 if (!actionsData.ok) throw new Error(actionsData.error || 'api_error');
                 const rows = actionsData?.actions || [];
                 try { document.getElementById('__growth_actions_cache').textContent = JSON.stringify(rows); } catch (e) {}
                 var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团' };
-                var actionTypeLabels = { 'send_voucher': '🎫 发券', 'campaign_activate': '🚀 激活活动', 'create_content': '📝 创建内容', 'promo_task': '📋 推广任务', 'generate_poster': '🖼️ 生成海报', 'pllm_task': '🤖 PLLM任务' };
+                var actionTypeLabels = { 'send_voucher': '🎫 发券', 'campaign_activate': '🚀 激活活动', 'create_content': '📝 创建内容', 'promo_task': '📋 推广任务', 'generate_poster': '🖼️ 生成海报', 'pllm_task': '🤖 PLLM任务', 'pllm_experiment': '🧭 PLLM策略实验' };
                 host.innerHTML = rows.length ? rows.map(function(x) {
                     const key = x.action_key || '';
                     var payload = x.payload || {};
+
+                    // --- pllm_experiment: 方案A/B卡片专属渲染 ---
+                    if (x.action_type === 'pllm_experiment') {
+                        var va = payload.variant_a;
+                        var vb = payload.variant_b;
+                        var expCode = payload.experiment_code || '';
+                        var anomaly = payload.anomaly_type || '';
+                        var variantHtml = '';
+                        if (va) {
+                            variantHtml += '<div style="margin-top:8px;padding:8px 10px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.2);border-radius:8px;">'
+                                + '<div style="font-size:10px;color:#22c55e;font-weight:700;margin-bottom:4px;">方案A — ' + escapeHtml(va.label || '') + '</div>'
+                                + '<div style="font-size:11px;color:rgba(226,232,240,0.85);line-height:1.55;white-space:pre-wrap;">' + escapeHtml(va.action || '') + '</div>'
+                                + (va.execution_guide ? '<div style="font-size:10px;color:rgba(226,232,240,0.45);margin-top:4px;line-height:1.5;white-space:pre-wrap;">' + escapeHtml(va.execution_guide) + '</div>' : '')
+                                + '</div>';
+                        }
+                        if (vb) {
+                            variantHtml += '<div style="margin-top:6px;padding:8px 10px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.2);border-radius:8px;">'
+                                + '<div style="font-size:10px;color:#818cf8;font-weight:700;margin-bottom:4px;">方案B — ' + escapeHtml(vb.label || '') + '</div>'
+                                + '<div style="font-size:11px;color:rgba(226,232,240,0.85);line-height:1.55;white-space:pre-wrap;">' + escapeHtml(vb.action || '') + '</div>'
+                                + (vb.execution_guide ? '<div style="font-size:10px;color:rgba(226,232,240,0.45);margin-top:4px;line-height:1.5;white-space:pre-wrap;">' + escapeHtml(vb.execution_guide) + '</div>' : '')
+                                + '</div>';
+                        }
+                        var ts = (function(d){ try { return new Date(d).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); } catch(e){ return String(d).slice(0,16); } })(x.created_at);
+                        return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);border-left:3px solid #a78bfa;padding-left:10px;">'
+                            + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+                            + '<div style="flex:1;min-width:0;">'
+                            + '<span style="display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(167,139,250,0.18);color:#a78bfa;font-weight:700;margin-right:6px;vertical-align:middle;">🧭 PLLM策略实验</span>'
+                            + (anomaly ? '<span style="font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:600;margin-right:6px;vertical-align:middle;">' + escapeHtml(anomaly) + '</span>' : '')
+                            + '<span style="font-weight:700;color:#fff;font-size:14px;">' + escapeHtml(x.title || '-') + '</span>'
+                            + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:600;">⚡ 待审批</span>'
+                            + '</div>'
+                            + '<div style="font-size:11px;padding:2px 10px;border-radius:999px;background:rgba(167,139,250,0.12);color:#a78bfa;font-weight:600;flex-shrink:0;">PLLM</div>'
+                            + '</div>'
+                            + '<div style="font-size:11px;color:rgba(226,232,240,0.45);margin-top:4px;">' + ts + (expCode ? ' · ' + expCode : '') + '</div>'
+                            + (x.detail ? '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:6px;line-height:1.5;">' + escapeHtml(x.detail) + '</div>' : '')
+                            + variantHtml
+                            + '</div>';
+                    }
+
                     var posterUrl = payload.poster_url || payload.output_url || '';
                     var confidence = payload.confidence_level || '';
                     var confidenceColor = confidence === '高置信' ? '#22c55e' : confidence === '试验性' ? '#f59e0b' : confidence === '需人工判断' ? '#ef4444' : '#64748b';
