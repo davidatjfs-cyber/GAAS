@@ -58828,13 +58828,16 @@ ${body}
                 + '<div class="rep-metric"><div class="k">平均客单</div><div class="v">' + fmtCustMoney(c.avg_check) + '</div></div>'
                 + '<div class="rep-metric"><div class="k">累计充值</div><div class="v">' + fmtCustMoney(c.total_recharge) + '</div></div>'
                 + '<div class="rep-metric"><div class="k">储值余额</div><div class="v">' + fmtCustMoney(c.stored_value_balance) + '</div></div>'
+                + '<div class="rep-metric"><div class="k">近90天消费</div><div class="v">' + fmtCustMoney(c.spend_90d) + '</div></div>'
+                + '<div class="rep-metric"><div class="k">最高单次</div><div class="v">' + fmtCustMoney(c.max_single_spend) + '</div></div>'
+                + '<div class="rep-metric"><div class="k">午市占比</div><div class="v">' + Math.round((c.lunch_pct || 0) * 100) + '%</div></div>'
+                + '<div class="rep-metric"><div class="k">周末占比</div><div class="v">' + Math.round((c.weekend_pct || 0) * 100) + '%</div></div>'
                 + '</div>'
                 + '<div style="margin-top:12px;padding:12px;border-radius:12px;background:rgba(255,255,255,0.04);color:rgba(226,232,240,0.82);font-size:13px;line-height:1.8;">'
                 + '<b style="color:#fff;">最喜欢：</b>' + escapeHtml((c.favorite_dishes || []).join('、') || '-') + '<br>'
                 + '<b style="color:#fff;">常去门店：</b>' + escapeHtml(c.primary_store || (c.stores || []).join('、') || '-') + '<br>'
                 + '<b style="color:#fff;">常来时段：</b>' + escapeHtml(c.preferred_visit_time || '-') + '<br>'
                 + '<b style="color:#fff;">员工评价：</b>' + escapeHtml(c.staff_note || tags || '-') + '<br>'
-                + '<b style="color:#fff;">营销记录：</b>' + escapeHtml(c.last_marketing || '暂无') + '<br>'
                 + '<b style="color:#fff;">是否到店：</b>' + escapeHtml(c.visit_status || '-') + '<br>'
                 + '<b style="color:#fff;">AI建议：</b>' + escapeHtml(c.next_best_action || ((c.value_tier === 'vip' && c.days_since_last_visit >= 30) ? '高价值客久未到店，优先企微/短信发专属新品邀请，到店后提醒店长重点接待。' : '按当前客群标签进入对应维护节奏。'))
                 + '</div>'
@@ -58842,9 +58845,37 @@ ${body}
                 + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">维护动作建议</div><ul style="padding-left:18px;margin:8px 0 0;font-size:13px;line-height:1.6;">' + (touchPlan || '<li style="color:var(--rep-muted);">暂无</li>') + '</ul></div>'
                 + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">最近消费时间线</div>' + (timeline || '<div style="color:var(--rep-muted);font-size:12px;margin-top:8px;">暂无消费明细</div>') + '</div>'
                 + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">储值/会员资金时间线</div>' + (storedTimeline || '<div style="color:var(--rep-muted);font-size:12px;margin-top:8px;">暂无储值记录</div>') + '</div>'
+                + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">营销记录</div><div id="custops-mlog-' + escapeHtml(c.customer_id) + '" style="color:var(--rep-muted);font-size:12px;margin-top:8px;">加载中…</div></div>'
                 + '</div>';
             ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
             document.body.appendChild(ov);
+            loadCustomerMarketingLog(c.customer_id);
+        }
+
+        async function loadCustomerMarketingLog(customerId) {
+            var el = document.getElementById('custops-mlog-' + customerId);
+            if (!el) return;
+            try {
+                var r = await fetch('/api/customer-ops/customers/' + encodeURIComponent(customerId) + '/marketing-log', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                var data = await r.json();
+                var log = data.log || [];
+                if (!log.length) { el.innerHTML = '<span style="color:var(--rep-muted);">暂无营销记录</span>'; return; }
+                var channelLabel = { wecom:'企微', miniprogram:'小程序', sms:'短信', manual:'人工', service:'到店服务' };
+                var statusLabel = { sent:'已发送', arrived:'已到店', measured:'已记录结果' };
+                el.innerHTML = log.map(function(m) {
+                    var ch = channelLabel[m.channel] || m.channel || '-';
+                    var st = statusLabel[m.status] || m.status || '-';
+                    var rev = Number(m.actual_revenue || 0);
+                    return '<div style="padding:8px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;">'
+                        + '<b style="color:#fff;">' + escapeHtml((m.created_at || '').slice(0,10)) + ' · ' + ch + '</b>'
+                        + '<span style="color:' + (m.arrived ? '#22c55e' : '#94a3b8') + ';">' + st + (rev > 0 ? ' · ¥' + rev : '') + '</span>'
+                        + '</div>'
+                        + (m.decision_title ? '<div style="color:rgba(226,232,240,.58);">' + escapeHtml(m.decision_title) + '</div>' : '')
+                        + (m.note ? '<div style="color:rgba(226,232,240,.45);">' + escapeHtml(m.note) + '</div>' : '')
+                        + '</div>';
+                }).join('');
+            } catch(e) { el.innerHTML = '<span style="color:var(--rep-muted);">加载失败</span>'; }
         }
 
         function renderGrowthClusters(data) {

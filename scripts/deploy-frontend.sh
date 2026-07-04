@@ -34,7 +34,7 @@ echo "=== 4. 再传 shell HTML ==="
 scp "$SHELL_FILE" "$SERVER:$REMOTE_DIR/working-fixed.html"
 
 echo "=== 5. 验证 ==="
-HTTP=$(ssh "$SERVER" "curl -s -o /dev/null -w '%{http_code}' https://127.0.0.1/$JS_HASH -H 'Host: nnyx.cc'")
+HTTP=$(ssh "$SERVER" "curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1/$JS_HASH -H 'Host: nnyx.cc'")
 if [ "$HTTP" = "200" ]; then
   echo "✅ 部署成功：$JS_HASH 返回 $HTTP"
 else

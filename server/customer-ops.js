@@ -384,6 +384,12 @@ function analyzeOrders(orders, opts = {}) {
       return acc;
     }, {});
     const preferredVisitTime = Object.entries(hourBuckets).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
+    const lunchPct = Math.round((hourBuckets['午市'] || 0) / Math.max(c.orders.length, 1) * 100) / 100;
+    const weekendCount = c.orders.filter((o) => { const d = o.bizDate ? new Date(`${o.bizDate}T00:00:00Z`) : null; return d && [0, 6].includes(d.getUTCDay()); }).length;
+    const weekendPct = Math.round(weekendCount / Math.max(c.orders.length, 1) * 100) / 100;
+    const cutoff90d = nowTs - 90 * 86400000;
+    const spend90d = Math.round(c.orders.filter((o) => o.bizDate && new Date(`${o.bizDate}T00:00:00Z`).getTime() >= cutoff90d).reduce((s, o) => s + Number(o.amount || 0), 0) * 100) / 100;
+    const maxSingleSpend = Math.round(c.orders.reduce((mx, o) => Math.max(mx, Number(o.amount || 0)), 0) * 100) / 100;
     const storeVisits = c.orders.reduce((acc, o) => {
       const key = o.store || '未知门店';
       acc[key] = (acc[key] || 0) + 1;
@@ -437,11 +443,15 @@ function analyzeOrders(orders, opts = {}) {
       days_since_last_visit: cls.daysSince,
       favorite_dishes: favorite,
       preferred_visit_time: preferredVisitTime,
+      lunch_pct: lunchPct,
+      weekend_pct: weekendPct,
+      spend_90d: spend90d,
+      max_single_spend: maxSingleSpend,
       last_orders: lastOrders,
       stored_value_timeline: storedValueTimeline,
       lifecycle_stage: cls.lifecycle,
       value_tier: avgCheck >= 800 || c.totalSpend >= 10000 ? 'vip' : (avgCheck >= 300 || c.orders.length >= 4 ? 'regular' : 'general'),
-      scene_tags: cls.tags,
+      scene_tags: avgCheck < 200 && c.orders.length <= 3 && !c.totalRecharge ? [...cls.tags, 'price_sensitive'] : cls.tags,
       staff_note: cls.tags.includes('business') ? '商务客户' : (cls.tags.includes('family') ? '家庭聚餐客户' : ''),
       last_marketing: '',
       visit_status: cls.daysSince <= 14 ? '已到店' : '待维护',
@@ -628,11 +638,30 @@ async function ensureCustomerOpsTables(pool) {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_ops_decisions_diag ON customer_ops_decisions (tenant_id, diagnosis_id, status, created_at DESC)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_ops_marketing_log (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_id VARCHAR(80) NOT NULL DEFAULT 'default',
+      customer_key TEXT NOT NULL,
+      customer_id TEXT,
+      phone TEXT,
+      decision_id BIGINT,
+      channel TEXT,
+      action_key TEXT,
+      status TEXT NOT NULL DEFAULT 'sent',
+      arrived BOOLEAN DEFAULT FALSE,
+      actual_revenue NUMERIC DEFAULT 0,
+      note TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_custops_mlog_key ON customer_ops_marketing_log (tenant_id, customer_key, created_at DESC)`);
 }
 
 function chooseChannel(c) {
   if (c.external_userid) return 'wecom';
-  if (c.phone) return 'sms';
+  if (c.phone) return 'miniprogram';
   return 'manual';
 }
 
@@ -882,6 +911,30 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     }
   });
 
+  app.get('/api/customer-ops/customers/:customerId/marketing-log', authRequired, async (req, res) => {
+    try {
+      await ensureCustomerOpsTables(pool);
+      const tenantId = req.tenantId || 'default';
+      const profileR = await pool.query(
+        `SELECT customer_key FROM customer_ops_profiles WHERE tenant_id=$1 AND customer_id=$2 ORDER BY id DESC LIMIT 1`,
+        [tenantId, req.params.customerId]
+      );
+      if (!profileR.rows.length) return res.json({ ok: true, log: [] });
+      const customerKey = profileR.rows[0].customer_key;
+      const r = await pool.query(
+        `SELECT ml.*, d.decision_type, d.title AS decision_title, d.copy_text
+           FROM customer_ops_marketing_log ml
+           LEFT JOIN customer_ops_decisions d ON d.id = ml.decision_id
+          WHERE ml.tenant_id=$1 AND ml.customer_key=$2
+          ORDER BY ml.created_at DESC LIMIT 20`,
+        [tenantId, customerKey]
+      );
+      res.json({ ok: true, log: r.rows });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
   app.get('/api/customer-ops/maintenance-cockpit', authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
@@ -1006,6 +1059,13 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
         [actionKey, actionType, d.title, d.reason, JSON.stringify(payload), req.user?.username || 'customer_ops', tenantId]
       );
       await pool.query(`UPDATE customer_ops_decisions SET status='action_created', updated_at=NOW() WHERE id=$1`, [d.id]);
+      const profileR = await pool.query(`SELECT customer_key FROM customer_ops_profiles WHERE tenant_id=$1 AND customer_id=$2 ORDER BY id DESC LIMIT 1`, [tenantId, d.customer_id]);
+      const customerKey = profileR.rows[0]?.customer_key || d.customer_id;
+      await pool.query(
+        `INSERT INTO customer_ops_marketing_log (tenant_id, customer_key, customer_id, phone, decision_id, channel, action_key, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'sent')`,
+        [tenantId, customerKey, d.customer_id, d.phone, d.id, d.channel, actionKey]
+      );
       res.json({ ok: true, action_key: actionKey });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message || 'create_action_failed' });
@@ -1027,6 +1087,11 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
         [status, JSON.stringify(result), req.params.id, req.tenantId || 'default']
       );
       if (!r.rows.length) return res.status(404).json({ ok: false, error: 'decision_not_found' });
+      await pool.query(
+        `UPDATE customer_ops_marketing_log SET status=$1, arrived=$2, actual_revenue=$3, note=$4, updated_at=NOW()
+          WHERE tenant_id=$5 AND decision_id=$6`,
+        [status, arrived, actualRevenue, note, req.tenantId || 'default', req.params.id]
+      );
       res.json({ ok: true, decision: r.rows[0] });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message || 'result_failed' });
