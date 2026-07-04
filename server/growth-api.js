@@ -4930,6 +4930,33 @@ export function registerGrowthRoutes(app, pool) {
     return res.json({ ok: true, actions, total: actions.length, limit, offset });
   });
 
+  // PLLM策略实验审批（approve=采纳执行中 / reject=不适合）
+  app.post('/api/growth/pllm-experiment/:code/approve', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    const code = cleanText(req.params.code, 100);
+    const tenantId = getGrowthTenantId(req);
+    await tenantContext.run(tenantId, async () => {
+      await pool.query(
+        `UPDATE strategy_experiments SET status = 'approved', updated_at = NOW() WHERE experiment_code = $1 AND tenant_id = $2`,
+        [code, tenantId]
+      );
+    });
+    return res.json({ ok: true });
+  });
+
+  app.post('/api/growth/pllm-experiment/:code/reject', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    const code = cleanText(req.params.code, 100);
+    const tenantId = getGrowthTenantId(req);
+    await tenantContext.run(tenantId, async () => {
+      await pool.query(
+        `UPDATE strategy_experiments SET status = 'rejected', updated_at = NOW() WHERE experiment_code = $1 AND tenant_id = $2`,
+        [code, tenantId]
+      );
+    });
+    return res.json({ ok: true });
+  });
+
   app.get('/api/growth/execution-logs', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);

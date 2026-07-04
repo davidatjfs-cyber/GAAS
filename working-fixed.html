@@ -59124,6 +59124,10 @@ ${body}
                             + '<div style="font-size:11px;color:rgba(226,232,240,0.45);margin-top:4px;">' + ts + (expCode ? ' · ' + expCode : '') + '</div>'
                             + (x.detail ? '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:6px;line-height:1.5;">' + escapeHtml(x.detail) + '</div>' : '')
                             + variantHtml
+                            + '<div style="display:flex;gap:8px;margin-top:10px;">'
+                            + '<button onclick="approvePllmExp(\'' + expCode + '\')" style="flex:1;padding:7px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">✅ 采纳·我要执行</button>'
+                            + '<button onclick="rejectPllmExp(\'' + expCode + '\')" style="flex-shrink:0;padding:7px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">不适合</button>'
+                            + '</div>'
                             + '</div>';
                     }
 
@@ -59733,6 +59737,32 @@ ${body}
         }
 
         async function feedbackGrowthAction(actionKey) { return; }
+
+        async function approvePllmExp(experimentCode) {
+            if (!confirm('采纳此PLLM策略实验方案？\n\n请人工按方案执行，系统记录为已采纳。')) return;
+            try {
+                const r = await fetch('/api/growth/pllm-experiment/' + encodeURIComponent(experimentCode) + '/approve', {
+                    method: 'POST', headers: growthAuthHeaders()
+                });
+                const data = await r.json();
+                if (!data.ok) throw new Error(data.error || 'approve_failed');
+                showNotification('已采纳，请按方案执行', 'success');
+                loadGrowthActionBoard();
+            } catch (e) { showNotification('采纳失败：' + (e?.message || e), 'error'); }
+        }
+
+        async function rejectPllmExp(experimentCode) {
+            if (!confirm('标记为不适合执行？该实验将从待审批列表中移除。')) return;
+            try {
+                const r = await fetch('/api/growth/pllm-experiment/' + encodeURIComponent(experimentCode) + '/reject', {
+                    method: 'POST', headers: growthAuthHeaders()
+                });
+                const data = await r.json();
+                if (!data.ok) throw new Error(data.error || 'reject_failed');
+                showNotification('已标记为不适合', 'info');
+                loadGrowthActionBoard();
+            } catch (e) { showNotification('操作失败：' + (e?.message || e), 'error'); }
+        }
 
         // ── 自动营销治理 + 闭环统计 ──
         // 人群字典（与 HRMS 客户标签/分级口径统一，后端 growth_customer_profiles 自动派生）：
