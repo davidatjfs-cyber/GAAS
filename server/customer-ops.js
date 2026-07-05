@@ -424,6 +424,108 @@ function runPdfGenerator(report, outputPath) {
   });
 }
 
+function runCampaignReportPdfGenerator(payload, outputPath) {
+  const script = path.join(path.dirname(new URL(import.meta.url).pathname), 'scripts', 'campaign_report_pdf.py');
+  return new Promise((resolve, reject) => {
+    const child = spawn(PYTHON_BIN, [script, outputPath], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let err = '';
+    child.stderr.on('data', (d) => { err += d.toString(); });
+    child.on('close', (code) => code === 0 ? resolve() : reject(new Error(err || `pdf_failed_${code}`)));
+    child.stdin.write(JSON.stringify(payload));
+    child.stdin.end();
+  });
+}
+
+// 自动营销发送(growth_delivery_logs)按 规则+日期 聚合生成一条营销活动台账记录，
+// 标注 source='auto'，让维护导航舱能看到系统自动执行的常态化触达，而不只是手动策划的活动。
+async function syncAutoCampaignsFromDeliveryLogs(pool, tenantId) {
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS rule_key TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_marketing_campaigns_auto ON marketing_campaigns (tenant_id, rule_key, planned_date) WHERE source='auto' AND rule_key IS NOT NULL`);
+  await pool.query(`ALTER TABLE marketing_campaign_results ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual'`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_marketing_campaign_results_auto ON marketing_campaign_results (campaign_id, store_id) WHERE source='auto'`);
+
+  const since = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+  const grouped = await pool.query(
+    `SELECT dl.rule_key, tr.name AS rule_name, dl.created_at::date AS day,
+            COUNT(*) AS send_count,
+            array_agg(DISTINCT dl.store_id) FILTER (WHERE dl.store_id IS NOT NULL AND dl.store_id <> '') AS store_ids,
+            MAX(dl.channel) AS channel,
+            MAX(dl.payload->>'message') AS sample_message
+       FROM growth_delivery_logs dl
+       LEFT JOIN growth_touch_rules tr ON tr.rule_key = dl.rule_key
+      WHERE dl.tenant_id = $1 AND dl.status = 'sent' AND dl.rule_key IS NOT NULL AND dl.rule_key <> ''
+        AND dl.created_at >= $2::date
+      GROUP BY dl.rule_key, tr.name, dl.created_at::date`,
+    [tenantId, since]
+  ).catch(() => ({ rows: [] }));
+
+  for (const row of grouped.rows) {
+    const storeIds = row.store_ids || [];
+    const campaignRes = await pool.query(
+      `INSERT INTO marketing_campaigns (tenant_id, title, channel, campaign_type, status, planned_date, planned_end_date, store_ids, target_audience, target_count, content, goal, source, rule_key, created_by)
+       VALUES ($1,$2,$3,'自动营销','completed',$4,$4,$5::jsonb,'系统规则自动圈选',$6,$7,'系统按预设规则自动执行的常态化营销触达','auto',$8,'system')
+       ON CONFLICT (tenant_id, rule_key, planned_date) WHERE source='auto' DO UPDATE SET
+         store_ids = EXCLUDED.store_ids, target_count = EXCLUDED.target_count, content = EXCLUDED.content, updated_at = NOW()
+       RETURNING id`,
+      [tenantId, row.rule_name || row.rule_key, row.channel || 'wecom', row.day, JSON.stringify(storeIds), Number(row.send_count || 0), row.sample_message || '', row.rule_key]
+    );
+    const campaignId = campaignRes.rows[0].id;
+
+    const perStore = await pool.query(
+      `SELECT COALESCE(NULLIF(dl.store_id, ''), '') AS store_id, COUNT(*) AS send_count
+         FROM growth_delivery_logs dl
+        WHERE dl.tenant_id = $1 AND dl.status = 'sent' AND dl.rule_key = $2 AND dl.created_at::date = $3::date
+        GROUP BY dl.store_id`,
+      [tenantId, row.rule_key, row.day]
+    );
+    for (const sr of perStore.rows) {
+      await pool.query(
+        `INSERT INTO marketing_campaign_results (tenant_id, campaign_id, store_id, store_name, actual_send_count, source, recorded_by)
+         VALUES ($1,$2,$3,$3,$4,'auto','system')
+         ON CONFLICT (campaign_id, store_id) WHERE source='auto' DO UPDATE SET
+           actual_send_count = EXCLUDED.actual_send_count, updated_at = NOW()`,
+        [tenantId, campaignId, sr.store_id, Number(sr.send_count || 0)]
+      );
+    }
+  }
+}
+
+// 把已评级的活动复盘结果沉淀到经验库(growth_learnings)，供AI内容建议引擎下一轮复用。
+async function saveCampaignResultAsLearning(pool, tenantId, campaign, result) {
+  if (!campaign || !result || !result.effect_rating) return;
+  const send = Number(result.actual_send_count || 0);
+  const redeem = Number(result.actual_redemption_count || 0);
+  const revenue = Number(result.actual_revenue || 0);
+  const cost = Number(result.actual_cost || 0);
+  const rate = send > 0 ? `${(redeem / send * 100).toFixed(1)}%` : '-';
+  const roi = cost > 0 ? ((revenue - cost) / cost).toFixed(2) : '-';
+  const effectLabel = { excellent: '优秀', meets: '达标', below: '不达标', blacklist: '黑名单(不建议再用)' }[result.effect_rating] || result.effect_rating;
+  const confidence = result.effect_rating === 'excellent' ? 'high' : result.effect_rating === 'blacklist' ? 'high' : 'medium';
+  const effectDesc = `活动「${campaign.title}」(${campaign.campaign_type || '其他'}/${campaign.channel || '-'})：`
+    + `发送${send}人，核销${redeem}单(核销率${rate})，带动收入¥${revenue.toFixed(0)}，成本¥${cost.toFixed(0)}，ROI ${roi}。`
+    + `效果评级：${effectLabel}。${result.result_note ? '备注：' + cleanText(result.result_note, 300) : ''}`;
+  await pool.query(
+    `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, is_verified, tenant_id)
+     VALUES ('marketing_campaign', $1, $2, $3, $4, $5, $6, $7, '', $8, $9, $10, true, $11)
+     ON CONFLICT (source_type, source_id, tenant_id) WHERE source_id IS NOT NULL AND source_id <> '' DO UPDATE SET
+       store_code = EXCLUDED.store_code, channel = EXCLUDED.channel, effect_desc = EXCLUDED.effect_desc,
+       sample_size = EXCLUDED.sample_size, confidence = EXCLUDED.confidence, updated_at = NOW()`,
+    [
+      String(campaign.id),
+      cleanText(result.store_name || result.store_id || '', 80),
+      cleanText(campaign.channel || '', 40),
+      cleanText(campaign.campaign_type || '', 40),
+      cleanText(campaign.target_audience || '', 200),
+      `活动类型:${campaign.campaign_type || '其他'}`,
+      cleanText(campaign.title || '', 200),
+      effectDesc,
+      send,
+      confidence,
+      tenantId,
+    ]
+  ).catch((e) => console.warn('[customer-ops] save learning failed:', e?.message));
+}
+
 async function generateDiagnosisNarrative(report, callLLM) {
   const b = report.business || {};
   const mix = report.customer_mix || {};
@@ -533,16 +635,18 @@ function applySegmentCriteria(profiles, criteria) {
   });
 }
 
-export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM) {
+export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM, opts = {}) {
+  const basePath = opts.basePath || '/api/customer-ops';
+  const getTenantId = opts.getTenantId || ((req) => req.tenantId || 'default');
   // ── 模块1：快速诊断 ──────────────────────────────────────────────
 
-  app.post('/api/customer-ops/diagnosis/upload', authRequired, upload.fields([{ name: 'files', maxCount: 20 }, { name: 'file', maxCount: 1 }]), async (req, res) => {
+  app.post(`${basePath}/diagnosis/upload`, authRequired, upload.fields([{ name: 'files', maxCount: 20 }, { name: 'file', maxCount: 1 }]), async (req, res) => {
     try {
       const files = [...(req.files?.files || []), ...(req.files?.file || [])].filter(Boolean);
       if (!files.length) return res.status(400).json({ ok: false, error: 'no_file' });
       await ensureCustomerOpsTables(pool);
-      await recordUploadOwnership(files.map((f) => f.filename), req.tenantId, req.user?.username);
-      const tenantId = req.tenantId || 'default';
+      await recordUploadOwnership(files.map((f) => f.filename), getTenantId(req), req.user?.username);
+      const tenantId = getTenantId(req);
       const parsed = files.map((file) => normalizeWorkbook(file.path, { sourceFile: file.originalname || file.filename }));
       const batchRecords = dedupeRecords(parsed.flatMap((x) => x.orders || []));
       const mergePrevious = String(req.body?.merge_previous ?? 'true') !== 'false';
@@ -577,20 +681,20 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     }
   });
 
-  app.get('/api/customer-ops/diagnosis/latest', authRequired, async (req, res) => {
+  app.get(`${basePath}/diagnosis/latest`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const r = await pool.query(`SELECT id, store_name, source_filename, report_json, created_at FROM customer_ops_diagnoses WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`, [req.tenantId || 'default']);
+      const r = await pool.query(`SELECT id, store_name, source_filename, report_json, created_at FROM customer_ops_diagnoses WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`, [getTenantId(req)]);
       res.json({ ok: true, diagnosis: r.rows[0] || null });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
   });
 
-  app.get('/api/customer-ops/diagnosis/:id/pdf', authRequired, async (req, res) => {
+  app.get(`${basePath}/diagnosis/:id/pdf`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const r = await pool.query(`SELECT * FROM customer_ops_diagnoses WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId || 'default']);
+      const r = await pool.query(`SELECT * FROM customer_ops_diagnoses WHERE id = $1 AND tenant_id = $2`, [req.params.id, getTenantId(req)]);
       if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
       const report = r.rows[0].report_json;
       // 生成AI诊断叙述（失败不阻塞PDF生成）
@@ -599,7 +703,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       const filename = `customer_ops_report_${req.params.id}.pdf`;
       const outputPath = path.join(uploadsDir, filename);
       await runPdfGenerator(reportWithNarrative, outputPath);
-      await recordUploadOwnership(filename, req.tenantId, req.user?.username);
+      await recordUploadOwnership(filename, getTenantId(req), req.user?.username);
       res.json({ ok: true, url: `/uploads/${filename}` });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message || 'pdf_failed' });
@@ -608,10 +712,10 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
 
   // ── 模块2：360度客人档案 ─────────────────────────────────────────
 
-  app.get('/api/customer-ops/customers', authRequired, async (req, res) => {
+  app.get(`${basePath}/customers`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
+      const tenantId = getTenantId(req);
       const diagnosisId = Number(req.query.diagnosis_id || 0);
       const limit = Math.min(500, Number(req.query.limit || 200));
       const params = [tenantId];
@@ -624,10 +728,10 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     }
   });
 
-  app.get('/api/customer-ops/customers/dashboard', authRequired, async (req, res) => {
+  app.get(`${basePath}/customers/dashboard`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
+      const tenantId = getTenantId(req);
       const diagnosisId = Number(req.query.diagnosis_id || 0);
       const params = [tenantId];
       let where = 'tenant_id = $1';
@@ -662,10 +766,10 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     }
   });
 
-  app.post('/api/customer-ops/customers/filter', authRequired, async (req, res) => {
+  app.post(`${basePath}/customers/filter`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
+      const tenantId = getTenantId(req);
       const criteria = req.body?.criteria || {};
       const diagnosisId = Number(req.body?.diagnosis_id || 0);
       const params = [tenantId];
@@ -684,10 +788,10 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     }
   });
 
-  app.get('/api/customer-ops/customers/:customerId', authRequired, async (req, res) => {
+  app.get(`${basePath}/customers/:customerId`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const r = await pool.query(`SELECT profile_json FROM customer_ops_profiles WHERE tenant_id = $1 AND customer_id = $2 ORDER BY diagnosis_id DESC LIMIT 1`, [req.tenantId || 'default', req.params.customerId]);
+      const r = await pool.query(`SELECT profile_json FROM customer_ops_profiles WHERE tenant_id = $1 AND customer_id = $2 ORDER BY diagnosis_id DESC LIMIT 1`, [getTenantId(req), req.params.customerId]);
       if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
       res.json({ ok: true, customer: r.rows[0].profile_json });
     } catch (e) {
@@ -696,33 +800,33 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
   });
 
   // 保存自定义客群分层
-  app.get('/api/customer-ops/segments', authRequired, async (req, res) => {
+  app.get(`${basePath}/segments`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const r = await pool.query(`SELECT * FROM customer_segments WHERE tenant_id=$1 ORDER BY created_at DESC`, [req.tenantId || 'default']);
+      const r = await pool.query(`SELECT * FROM customer_segments WHERE tenant_id=$1 ORDER BY created_at DESC`, [getTenantId(req)]);
       res.json({ ok: true, segments: r.rows });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
   });
 
-  app.post('/api/customer-ops/segments', authRequired, async (req, res) => {
+  app.post(`${basePath}/segments`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
       const name = cleanText(req.body?.name || '', 80);
       const criteria = req.body?.criteria || {};
       if (!name) return res.status(400).json({ ok: false, error: 'name_required' });
-      const r = await pool.query(`INSERT INTO customer_segments (tenant_id, name, criteria_json, created_by) VALUES ($1,$2,$3::jsonb,$4) RETURNING *`, [req.tenantId || 'default', name, JSON.stringify(criteria), req.user?.username || '']);
+      const r = await pool.query(`INSERT INTO customer_segments (tenant_id, name, criteria_json, created_by) VALUES ($1,$2,$3::jsonb,$4) RETURNING *`, [getTenantId(req), name, JSON.stringify(criteria), req.user?.username || '']);
       res.json({ ok: true, segment: r.rows[0] });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
   });
 
-  app.delete('/api/customer-ops/segments/:id', authRequired, async (req, res) => {
+  app.delete(`${basePath}/segments/:id`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      await pool.query(`DELETE FROM customer_segments WHERE id=$1 AND tenant_id=$2`, [req.params.id, req.tenantId || 'default']);
+      await pool.query(`DELETE FROM customer_segments WHERE id=$1 AND tenant_id=$2`, [req.params.id, getTenantId(req)]);
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
@@ -731,14 +835,21 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
 
   // ── 模块3：营销活动台账 ──────────────────────────────────────────
 
-  app.get('/api/customer-ops/campaigns', authRequired, async (req, res) => {
+  app.get(`${basePath}/campaigns`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
+      const tenantId = getTenantId(req);
+      await syncAutoCampaignsFromDeliveryLogs(pool, tenantId).catch((e) => console.warn('[customer-ops] auto campaign sync failed:', e?.message));
       const status = cleanText(req.query.status || '', 20);
+      const dateFrom = cleanText(req.query.date_from || '', 20);
+      const dateTo = cleanText(req.query.date_to || '', 20);
+      const storeId = cleanText(req.query.store_id || '', 80);
       const params = [tenantId];
       let where = 'c.tenant_id=$1';
       if (status) { params.push(status); where += ` AND c.status=$${params.length}`; }
+      if (dateFrom) { params.push(dateFrom); where += ` AND c.planned_date >= $${params.length}::date`; }
+      if (dateTo) { params.push(dateTo); where += ` AND c.planned_date <= $${params.length}::date`; }
+      if (storeId) { params.push(JSON.stringify([storeId])); where += ` AND (c.store_ids = '[]'::jsonb OR c.store_ids @> $${params.length}::jsonb)`; }
       const r = await pool.query(
         `SELECT c.*, COALESCE(json_agg(r ORDER BY r.created_at) FILTER (WHERE r.id IS NOT NULL), '[]') AS results
            FROM marketing_campaigns c
@@ -752,10 +863,46 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     }
   });
 
-  app.post('/api/customer-ops/campaigns', authRequired, async (req, res) => {
+  // PDF导出：指定时间/门店范围内的营销活动执行报告（供租户证明行动内容）
+  app.get(`${basePath}/campaigns/report-pdf`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
+      const tenantId = getTenantId(req);
+      await syncAutoCampaignsFromDeliveryLogs(pool, tenantId).catch(() => {});
+      const dateFrom = cleanText(req.query.date_from || '', 20) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+      const dateTo = cleanText(req.query.date_to || '', 20) || new Date().toISOString().slice(0, 10);
+      const storeId = cleanText(req.query.store_id || '', 80);
+      const params = [tenantId, dateFrom, dateTo];
+      let where = 'c.tenant_id=$1 AND c.planned_date >= $2::date AND c.planned_date <= $3::date';
+      if (storeId) { params.push(JSON.stringify([storeId])); where += ` AND (c.store_ids = '[]'::jsonb OR c.store_ids @> $${params.length}::jsonb)`; }
+      const r = await pool.query(
+        `SELECT c.*, COALESCE(json_agg(r ORDER BY r.created_at) FILTER (WHERE r.id IS NOT NULL), '[]') AS results
+           FROM marketing_campaigns c
+           LEFT JOIN marketing_campaign_results r ON r.campaign_id=c.id AND r.tenant_id=c.tenant_id
+          WHERE ${where} GROUP BY c.id ORDER BY c.planned_date ASC NULLS LAST, c.created_at ASC LIMIT 500`,
+        params
+      );
+      const payload = {
+        campaigns: r.rows,
+        date_from: dateFrom,
+        date_to: dateTo,
+        store_filter: storeId || '全部门店',
+        generated_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
+      };
+      const filename = `campaign_report_${tenantId}_${dateFrom}_${dateTo}.pdf`;
+      const outputPath = path.join(uploadsDir, filename);
+      await runCampaignReportPdfGenerator(payload, outputPath);
+      await recordUploadOwnership(filename, tenantId, req.user?.username || req.platformAdmin?.username);
+      res.json({ ok: true, url: `/uploads/${filename}` });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message || 'pdf_failed' });
+    }
+  });
+
+  app.post(`${basePath}/campaigns`, authRequired, async (req, res) => {
+    try {
+      await ensureCustomerOpsTables(pool);
+      const tenantId = getTenantId(req);
       const b = req.body || {};
       const title = cleanText(b.title || '', 200);
       if (!title) return res.status(400).json({ ok: false, error: 'title_required' });
@@ -770,10 +917,10 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     }
   });
 
-  app.put('/api/customer-ops/campaigns/:id', authRequired, async (req, res) => {
+  app.put(`${basePath}/campaigns/:id`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
+      const tenantId = getTenantId(req);
       const b = req.body || {};
       const r = await pool.query(
         `UPDATE marketing_campaigns SET title=$1, channel=$2, campaign_type=$3, status=$4, planned_date=$5, planned_end_date=$6, store_ids=$7::jsonb, target_audience=$8, target_count=$9, content=$10, goal=$11, budget=$12, reminder_date=$13, updated_at=NOW()
@@ -787,10 +934,10 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     }
   });
 
-  app.delete('/api/customer-ops/campaigns/:id', authRequired, async (req, res) => {
+  app.delete(`${basePath}/campaigns/:id`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      await pool.query(`DELETE FROM marketing_campaigns WHERE id=$1 AND tenant_id=$2`, [req.params.id, req.tenantId || 'default']);
+      await pool.query(`DELETE FROM marketing_campaigns WHERE id=$1 AND tenant_id=$2`, [req.params.id, getTenantId(req)]);
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
@@ -798,26 +945,28 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
   });
 
   // 门店复盘结果
-  app.post('/api/customer-ops/campaigns/:id/results', authRequired, async (req, res) => {
+  app.post(`${basePath}/campaigns/:id/results`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
+      const tenantId = getTenantId(req);
       const b = req.body || {};
       const r = await pool.query(
         `INSERT INTO marketing_campaign_results (tenant_id, campaign_id, store_id, store_name, actual_send_count, actual_reach_count, actual_conversion_count, actual_revenue, actual_exposure_count, actual_redemption_count, actual_cost, effect_rating, result_note, recorded_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
         [tenantId, req.params.id, cleanText(b.store_id || '', 80), cleanText(b.store_name || '', 120), Number(b.actual_send_count || 0), Number(b.actual_reach_count || 0), Number(b.actual_conversion_count || 0), Number(b.actual_revenue || 0), Number(b.actual_exposure_count || 0), Number(b.actual_redemption_count || 0), Number(b.actual_cost || 0), cleanText(b.effect_rating || '', 20), cleanText(b.result_note || '', 2000), req.user?.username || '']
       );
+      const campaignRow = await pool.query(`SELECT * FROM marketing_campaigns WHERE id=$1 AND tenant_id=$2`, [req.params.id, tenantId]);
+      await saveCampaignResultAsLearning(pool, tenantId, campaignRow.rows[0], r.rows[0]);
       res.json({ ok: true, result: r.rows[0] });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
   });
 
-  app.put('/api/customer-ops/campaigns/:id/results/:resultId', authRequired, async (req, res) => {
+  app.put(`${basePath}/campaigns/:id/results/:resultId`, authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
+      const tenantId = getTenantId(req);
       const b = req.body || {};
       const r = await pool.query(
         `UPDATE marketing_campaign_results SET store_id=$1, store_name=$2, actual_send_count=$3, actual_reach_count=$4, actual_conversion_count=$5, actual_revenue=$6, actual_exposure_count=$7, actual_redemption_count=$8, actual_cost=$9, effect_rating=$10, result_note=$11, updated_at=NOW()
@@ -825,6 +974,8 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
         [cleanText(b.store_id || '', 80), cleanText(b.store_name || '', 120), Number(b.actual_send_count || 0), Number(b.actual_reach_count || 0), Number(b.actual_conversion_count || 0), Number(b.actual_revenue || 0), Number(b.actual_exposure_count || 0), Number(b.actual_redemption_count || 0), Number(b.actual_cost || 0), cleanText(b.effect_rating || '', 20), cleanText(b.result_note || '', 2000), req.params.resultId, req.params.id, tenantId]
       );
       if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
+      const campaignRow = await pool.query(`SELECT * FROM marketing_campaigns WHERE id=$1 AND tenant_id=$2`, [req.params.id, tenantId]);
+      await saveCampaignResultAsLearning(pool, tenantId, campaignRow.rows[0], r.rows[0]);
       res.json({ ok: true, result: r.rows[0] });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
@@ -832,9 +983,9 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
   });
 
   // 自动营销发送汇总（从现有delivery_logs聚合）
-  app.get('/api/customer-ops/auto-marketing-summary', authRequired, async (req, res) => {
+  app.get(`${basePath}/auto-marketing-summary`, authRequired, async (req, res) => {
     try {
-      const tenantId = req.tenantId || 'default';
+      const tenantId = getTenantId(req);
       const dateFrom = cleanText(req.query.date_from || '', 20) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
       const dateTo = cleanText(req.query.date_to || '', 20) || new Date().toISOString().slice(0, 10);
       // 尝试从 growth_delivery_logs 聚合（表可能不存在，失败返回空）

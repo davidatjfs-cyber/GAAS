@@ -5746,6 +5746,12 @@ setSolutionLLM(async (prompt) => {
 setTrainingAssigner(createTrainingAssignment);
 registerPhaseRoutes(app, pool);
 registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM);
+// 托管控制台（内部 Agent Ops 使用，不对租户开放）：复用同一套业务逻辑，
+// 仅换成平台管理员鉴权 + URL 中的 :tenantId 决定操作对象。
+registerCustomerOpsRoutes(app, pool, platformAdminRequired, upload, uploadsDir, recordUploadOwnership, callLLM, {
+  basePath: '/api/admin/tenants/:tenantId/customer-ops',
+  getTenantId: (req) => req.params.tenantId || 'default',
+});
 app.use(strategyExperimentRoutes(pool, authRequired));
 
 app.post('/api/growth/upload', authRequired, upload.single('file'), async (req, res) => {
@@ -18388,6 +18394,19 @@ app.get('/api/stores', authRequired, async (req, res) => {
   } catch (e) {
     console.error('[/api/stores] Error:', e?.message || e);
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+  }
+});
+
+// 托管控制台（agents-admin）专用：按 tenantId 路径参数读取门店列表，不依赖登录租户的 JWT。
+app.get('/api/admin/tenants/:tenantId/stores', platformAdminRequired, async (req, res) => {
+  try {
+    const r = await pool.query('select data from hrms_state where key = $1 limit 1', [req.params.tenantId || 'default']);
+    const row = r.rows?.[0] || null;
+    const stateStores = Array.isArray(row?.data?.stores) ? row.data.stores : [];
+    const items = stateStores.map(s => ({ id: s.id || s.name, name: s.name }));
+    return res.json({ items });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', message: e?.message });
   }
 });
 

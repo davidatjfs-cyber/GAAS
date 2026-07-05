@@ -133,7 +133,6 @@ def make_styles(font_name):
 
 def hdr_style(colWidths, bgColor=C_SLATE):
     return [
-        ("FONTNAME", (0, 0), (-1, -1), None),  # 占位，下面 Paragraph 自带字体
         ("BACKGROUND", (0, 0), (-1, 0), bgColor),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_BG]),
         ("GRID", (0, 0), (-1, -1), 0.3, C_LINE),
