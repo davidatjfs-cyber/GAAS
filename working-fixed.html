@@ -58447,7 +58447,7 @@ ${body}
                             var stored = opsRows.filter(function(c){ return Number(c.stored_value_count || 0) > 0; }).length;
                             ps.innerHTML = '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">'
                                 + custopsMiniMetric('客户资产', opsRows.length + '人', '来自最近POS清洗', '#fff')
-                                + custopsMiniMetric('VIP客户', vip + '人', '高消费/高价值', '#facc15')
+                                + custopsMiniMetric('VIP客户', vip + '人', '折前人均消费前15%', '#facc15')
                                 + custopsMiniMetric('待维护风险', risk + '人', '濒临流失/沉睡', '#fb7185')
                                 + custopsMiniMetric('可触达客户', reachable + '人', '手机号可用，商务客' + biz + '人，储值客' + stored + '人', '#22c55e')
                                 + '</div>';
@@ -60492,6 +60492,7 @@ ${body}
             lost_180: { name: '流失客(6-12月)', tip: '180–365 天未到店（导入老客，试召回）' },
             lost_365: { name: '流失客(1年+)', tip: '365 天以上未到店（导入老客，试召回）' }
         };
+        // 价值分层（与 growth_customer_profiles.value_tier 一致：VIP=折前人均消费金额 avg_check 门店内排名前15%）
         var AM_VALUE_TIER = {
             vip:     { name: 'VIP客',   tip: '折前人均消费金额排名前 15%（与自动营销统一）' },
             regular: { name: '普通客',  tip: '折前人均消费 15–50 分位' },
@@ -61789,10 +61790,12 @@ ${body}
             }
 
             var lifecycle = pi.lifecycle || {};
+            var statDays = Number(pi.stats_days || 0);
+            var statDaysLabel = statDays > 0 ? ('近' + statDays + '天') : '统计期';
             var lifecycleLabels = { prospect: '潜在新客', new: '新客', active: '活跃', at_risk: '临界客', dormant: '沉睡老客', churned: '流失客', lost_90: '流失客(3-6月)', lost_180: '流失客(6-12月)', lost_365: '流失客(1年+)' };
             var totalLc = totalOf(lifecycle);
             var lcColors = { prospect: '#94a3b8', new: '#38bdf8', active: '#22c55e', at_risk: '#f59e0b', dormant: '#ef4444', churned: '#6b7280', lost_90: '#a855f7', lost_180: '#7c3aed', lost_365: '#4c1d95' };
-            var lcHtml = '<div style="margin-bottom:12px;"><div style="font-size:12px;color:rgba(226,232,240,0.88);font-weight:700;margin-bottom:8px;">客户生命周期</div>'
+            var lcHtml = '<div style="margin-bottom:12px;"><div style="font-size:12px;color:rgba(226,232,240,0.88);font-weight:700;margin-bottom:8px;">客户生命周期 <span style="font-weight:500;color:rgba(226,232,240,0.45);">（' + statDaysLabel + ' POS消费客户）</span></div>'
                 + '<div style="display:flex;gap:0;height:22px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,0.04);">';
             var lifecycleDefs = {
                 prospect: '扫码/被触达但从未下单',
@@ -61919,19 +61922,18 @@ ${body}
 
             var cm = pi.customer_metrics || {};
             var cmCards = [
-                { label: '客户总数', value: Number(cm.total_customers || 0), color: '#38bdf8', sub: '统计期有消费手机号' },
-                { label: '潜在新客', value: Number(lifecycle.prospect || 0), color: '#94a3b8', sub: '扫码/触达未下单' },
-                { label: '新客', value: Number(cm.new_count || nvr.new_count || 0), color: '#0ea5e9', sub: '统计期内首次消费' },
-                { label: '回头客', value: Number(cm.returning_count || nvr.returning_count || 0), color: '#6366f1', sub: '统计期内复访老客' },
-                { label: '活跃客', value: Number(cm.active_count || lifecycle.active || 0), color: '#22c55e', sub: '累计≥2单·近14天到店' },
-                { label: '临界客', value: Number(lifecycle.at_risk || 0), color: '#f59e0b', sub: '14-30天未到店' },
-                { label: '沉睡老客', value: Number(lifecycle.dormant || 0), color: '#ef4444', sub: '30天+未到·曾≥2单' },
-                { label: '流失客', value: Number(lifecycle.churned || 0), color: '#9ca3af', sub: '30天+未到·仅1单' },
-                { label: 'VIP人数', value: Number(cm.vip_count || 0), color: '#fbbf24', sub: '折前人均消费前15%' },
-                { label: '流失率', value: Number(cm.churn_rate || 0) + '%', color: '#f87171', sub: '沉睡+流失占比' },
-                { label: '复购率', value: Number(cm.repurchase_rate || 0) + '%', color: '#a78bfa', sub: '30天内≥2次' }
+                { label: '客户总数', value: Number(cm.total_customers || 0), color: '#38bdf8', sub: statDaysLabel + '有消费手机号' },
+                { label: '新客', value: Number(cm.new_count || nvr.new_count || 0), color: '#0ea5e9', sub: statDaysLabel + '内首次消费' },
+                { label: '回头客', value: Number(cm.returning_count || nvr.returning_count || 0), color: '#6366f1', sub: statDaysLabel + '内复访老客' },
+                { label: '活跃客', value: Number(cm.active_count || lifecycle.active || 0), color: '#22c55e', sub: statDaysLabel + '消费·近14天活跃' },
+                { label: '临界客', value: Number(cm.at_risk_count || lifecycle.at_risk || 0), color: '#f59e0b', sub: statDaysLabel + '消费·14-30天未到' },
+                { label: '沉睡老客', value: Number(cm.dormant_count || lifecycle.dormant || 0), color: '#ef4444', sub: statDaysLabel + '消费·30天+未到' },
+                { label: '流失客', value: Number(cm.churned_count || lifecycle.churned || 0), color: '#9ca3af', sub: statDaysLabel + '消费·低频流失' },
+                { label: 'VIP人数', value: Number(cm.vip_count || 0), color: '#fbbf24', sub: statDaysLabel + '折前人均消费前15%' },
+                { label: '流失率', value: Number(cm.churn_rate || 0) + '%', color: '#f87171', sub: statDaysLabel + '消费客中沉睡+流失' },
+                { label: '复购率', value: Number(cm.repurchase_rate || 0) + '%', color: '#a78bfa', sub: statDaysLabel + '内下单≥2次占比' }
             ];
-            var cmHtml = '<div style="margin-bottom:12px;"><div style="font-size:13px;color:#fff;font-weight:800;margin-bottom:8px;">📊 核心客户指标</div>'
+            var cmHtml = '<div style="margin-bottom:12px;"><div style="font-size:13px;color:#fff;font-weight:800;margin-bottom:8px;">📊 核心客户指标 <span style="font-size:11px;color:rgba(226,232,240,0.45);font-weight:500;">（' + statDaysLabel + ' POS消费客户）</span></div>'
                 + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;">'
                 + cmCards.map(function(c) {
                     return '<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:10px 8px;text-align:center;">'

@@ -2355,7 +2355,7 @@ export function registerPhaseRoutes(app, pool) {
           AND date >= CURRENT_DATE - ($2::int || ' days')::interval`, statsParams)
     ]);
 
-    const [byOrderTypeR, byOrderSourceR, byDeptR, lifecycleR, spendDistR, visitR, dishCatR, highValueR, custOrderTypeR, custOrderSourceR, custDeptR, valueTierR, repurchase30R, customerMetricsR] = await Promise.all([
+    const [byOrderTypeR, byOrderSourceR, byDeptR, periodProfileR, spendDistR, visitR, dishCatR, custOrderTypeR, custOrderSourceR, custDeptR] = await Promise.all([
       // cnt 必须是「订单数」（按 order_no 去重），不能用菜品明细行数，
       // 否则客单价=明细行均价（堂食¥51/外卖¥29），与真实客单价（堂食¥342/外卖¥55）严重不符。
       pool.query(`SELECT order_type, COUNT(DISTINCT order_no)::int AS cnt,
@@ -2381,12 +2381,94 @@ export function registerPhaseRoutes(app, pool) {
           AND biz_date >= CURRENT_DATE - ($2::int || ' days')::interval
           AND department IS NOT NULL AND department <> ''
         GROUP BY department ORDER BY revenue DESC`, statsParams),
-      // 权威生命周期分布：直接取 growth_customer_profiles 的新6阶段（不按时间窗过滤，
-      // 否则流失/沉睡客因近期无订单会被结构性漏掉，看不到真实流失情况）
-      pool.query(`SELECT lifecycle_stage, COUNT(*)::int AS cnt
-        FROM growth_customer_profiles
-        WHERE ${profCond}
-        GROUP BY lifecycle_stage ORDER BY cnt DESC`, [sid]),
+      // 统计期内 POS 消费客户画像（生命周期/价值分层/VIP/复购均随 days 参数变化，不再读全量 profiles）
+      pool.query(`WITH period_orders AS (
+          SELECT phone, biz_date, amount_before_discount,
+                 COALESCE(NULLIF(diners, 0), 1)::numeric AS diners
+          FROM pos_orders
+          WHERE phone IS NOT NULL AND phone <> ''
+            AND ${posCond}
+            AND biz_date >= CURRENT_DATE - ($2::int || ' days')::interval
+        ), period_stats AS (
+          SELECT
+            phone,
+            COUNT(*)::int AS orders_in_period,
+            ROUND(SUM(amount_before_discount) / NULLIF(SUM(diners), 0), 2) AS avg_check_period,
+            MIN(biz_date) AS first_in_period,
+            MAX(biz_date) AS last_in_period
+          FROM period_orders
+          GROUP BY phone
+        ), lifetime_stats AS (
+          SELECT
+            ps.phone,
+            ps.orders_in_period,
+            ps.avg_check_period,
+            MIN(po.biz_date) AS lifetime_first,
+            MAX(po.biz_date) AS lifetime_last,
+            COUNT(DISTINCT po.order_no)::int AS lifetime_orders
+          FROM period_stats ps
+          JOIN pos_orders po
+            ON po.phone = ps.phone
+           AND po.phone IS NOT NULL AND po.phone <> ''
+           AND ${posCond}
+          GROUP BY ps.phone, ps.orders_in_period, ps.avg_check_period
+        ), classified AS (
+          SELECT
+            ls.*,
+            CASE
+              WHEN ls.lifetime_last >= CURRENT_DATE - INTERVAL '14 days'
+                   AND ls.lifetime_orders = 1 THEN 'new'
+              WHEN ls.lifetime_last >= CURRENT_DATE - INTERVAL '14 days'
+                   AND ls.lifetime_orders >= 2 THEN 'active'
+              WHEN ls.lifetime_last >= CURRENT_DATE - INTERVAL '30 days' THEN 'at_risk'
+              WHEN ls.lifetime_last < CURRENT_DATE - INTERVAL '365 days' THEN 'lost_365'
+              WHEN ls.lifetime_last < CURRENT_DATE - INTERVAL '180 days' THEN 'lost_180'
+              WHEN ls.lifetime_last < CURRENT_DATE - INTERVAL '90 days' THEN 'lost_90'
+              WHEN ls.lifetime_orders >= 2 THEN 'dormant'
+              ELSE 'churned'
+            END AS lifecycle_stage
+          FROM lifetime_stats ls
+        ), ranked AS (
+          SELECT
+            phone,
+            PERCENT_RANK() OVER (
+              ORDER BY COALESCE(avg_check_period, 0) DESC, phone
+            ) AS spend_pct
+          FROM classified
+          WHERE COALESCE(avg_check_period, 0) > 0
+        ), with_tier AS (
+          SELECT
+            c.*,
+            CASE
+              WHEN COALESCE(c.avg_check_period, 0) <= 0 THEN 'low'
+              WHEN rk.spend_pct <= 0.15 THEN 'vip'
+              WHEN rk.spend_pct <= 0.50 THEN 'regular'
+              ELSE 'low'
+            END AS value_tier
+          FROM classified c
+          LEFT JOIN ranked rk ON rk.phone = c.phone
+        ), lc AS (
+          SELECT lifecycle_stage, COUNT(*)::int AS cnt FROM with_tier GROUP BY lifecycle_stage
+        ), vt AS (
+          SELECT value_tier, COUNT(*)::int AS cnt FROM with_tier GROUP BY value_tier
+        )
+        SELECT
+          (SELECT COUNT(*)::int FROM with_tier) AS total_customers,
+          (SELECT COUNT(*)::int FROM with_tier
+            WHERE lifetime_first >= CURRENT_DATE - ($2::int || ' days')::interval) AS new_count,
+          (SELECT COUNT(*)::int FROM with_tier
+            WHERE lifetime_first < CURRENT_DATE - ($2::int || ' days')::interval) AS returning_count,
+          (SELECT COUNT(*)::int FROM with_tier WHERE lifecycle_stage = 'active') AS active_count,
+          (SELECT COUNT(*)::int FROM with_tier WHERE lifecycle_stage = 'at_risk') AS at_risk_count,
+          (SELECT COUNT(*)::int FROM with_tier WHERE lifecycle_stage = 'dormant') AS dormant_count,
+          (SELECT COUNT(*)::int FROM with_tier WHERE lifecycle_stage = 'churned') AS churned_count,
+          (SELECT COUNT(*)::int FROM with_tier WHERE value_tier = 'vip') AS vip_count,
+          (SELECT COUNT(*)::int FROM with_tier WHERE orders_in_period >= 2) AS repurchasers,
+          (SELECT COALESCE(jsonb_object_agg(lifecycle_stage, cnt), '{}'::jsonb) FROM lc) AS lifecycle_json,
+          (SELECT COALESCE(jsonb_object_agg(value_tier, cnt), '{}'::jsonb) FROM vt) AS value_tier_json,
+          (SELECT COUNT(*)::int FROM with_tier) AS high_value_count,
+          (SELECT ROUND(AVG(avg_check_period)::numeric, 2) FROM with_tier WHERE value_tier = 'vip') AS vip_avg_check,
+          (SELECT ROUND(AVG(orders_in_period)::numeric, 1) FROM with_tier) AS avg_orders`, statsParams),
       pool.query(`SELECT CASE
           WHEN amount_before_discount < 200 THEN '0-200'
           WHEN amount_before_discount < 400 THEN '200-400'
@@ -2414,10 +2496,6 @@ export function registerPhaseRoutes(app, pool) {
             AND ${posCond}
             AND biz_date >= CURRENT_DATE - ($2::int || ' days')::interval
         ) AND category IS NOT NULL AND category <> '-' GROUP BY category ORDER BY total_qty DESC LIMIT 5`, statsParams),
-      pool.query(`SELECT COUNT(*)::int AS count, ROUND(AVG(pos_total_spend)::numeric, 2) AS avg_spending, ROUND(AVG(pos_order_count)::numeric, 1) AS avg_orders
-        FROM growth_customer_profiles
-        WHERE pos_total_spend > 0
-          AND ${profCond}`, [sid]),
       pool.query(`SELECT order_type, COUNT(*)::int AS cnt
         FROM pos_order_items WHERE order_no IN (
           SELECT order_no FROM pos_orders
@@ -2441,56 +2519,24 @@ export function registerPhaseRoutes(app, pool) {
             AND ${posCond}
             AND biz_date >= CURRENT_DATE - ($2::int || ' days')::interval
         ) AND department IS NOT NULL AND department <> ''
-        GROUP BY department ORDER BY total_qty DESC`, statsParams),
-      // 价值分级分布（VIP/regular/low），用于看板展示 VIP 维度
-      pool.query(`SELECT value_tier, COUNT(*)::int AS cnt
-        FROM growth_customer_profiles
-        WHERE ${profCond}
-        GROUP BY value_tier ORDER BY cnt DESC`, [sid]),
-      // 复购率：固定30天窗口内，下单≥2次的客户占比（不受看板时间筛选影响）
-      pool.query(`SELECT
-          COUNT(*) FILTER (WHERE order_cnt >= 2)::int AS repurchasers,
-          COUNT(*)::int AS total_with_orders
-        FROM (
-          SELECT phone, COUNT(*)::int AS order_cnt
-          FROM pos_orders
-          WHERE phone IS NOT NULL AND phone <> ''
-            AND ${posCond}
-            AND biz_date >= CURRENT_DATE - INTERVAL '30 days'
-          GROUP BY phone
-        ) sub`, [sid])
-      ,
-      pool.query(`SELECT
-          COUNT(*) FILTER (WHERE order_cnt >= 2)::int AS repurchasers_30d,
-          COUNT(*)::int AS total_with_orders_30d
-        FROM (
-          SELECT phone, COUNT(*)::int AS order_cnt
-          FROM pos_orders
-          WHERE phone IS NOT NULL AND phone <> ''
-            AND ${posCond}
-            AND biz_date >= CURRENT_DATE - INTERVAL '30 days'
-          GROUP BY phone
-        ) sub`, [sid])
+        GROUP BY department ORDER BY total_qty DESC`, statsParams)
     ]);
 
-    // 客户流失率 = (沉睡老客 + 流失低频客) / 曾消费客户总数（排除从未下单的潜在新客）
-    const lcCounts = Object.fromEntries(lifecycleR.rows.map(r => [r.lifecycle_stage, r.cnt]));
-    const everEngaged = (lcCounts.new || 0) + (lcCounts.active || 0) + (lcCounts.at_risk || 0) + (lcCounts.dormant || 0) + (lcCounts.churned || 0);
-    const lostCount = (lcCounts.dormant || 0) + (lcCounts.churned || 0);
+    const periodRow = periodProfileR.rows[0] || {};
+    const lcCounts = periodRow.lifecycle_json || {};
+    const tierCounts = periodRow.value_tier_json || {};
+    const everEngaged = (lcCounts.new || 0) + (lcCounts.active || 0) + (lcCounts.at_risk || 0)
+      + (lcCounts.dormant || 0) + (lcCounts.churned || 0)
+      + (lcCounts.lost_90 || 0) + (lcCounts.lost_180 || 0) + (lcCounts.lost_365 || 0);
+    const lostCount = (lcCounts.dormant || 0) + (lcCounts.churned || 0)
+      + (lcCounts.lost_90 || 0) + (lcCounts.lost_180 || 0) + (lcCounts.lost_365 || 0);
     const churnRate = everEngaged ? Math.round((lostCount / everEngaged) * 1000) / 10 : 0;
 
-    const tierCounts = Object.fromEntries(valueTierR.rows.map(r => [r.value_tier, r.cnt]));
-    // 复购率（30天内下单≥2次客户占比）
-    const rep30 = repurchase30R.rows[0] || {};
-    const posCustomerMetrics = customerMetricsR.rows[0] || {};
-    const repurchasers = Number(posCustomerMetrics.repurchasers_30d ?? rep30.repurchasers ?? 0);
-    const totalWithOrders30 = Number(posCustomerMetrics.total_with_orders_30d ?? rep30.total_with_orders ?? 0);
-    const repurchaseRate = totalWithOrders30 ? Math.round((repurchasers / totalWithOrders30) * 1000) / 10 : 0;
-
-    const newReturning = repeatR.rows[0] || {};
-    const recentCustomers = Number(newReturning.total_customers || 0);
-    const newCustomerCount = Number(newReturning.new_customers || 0);
-    const returningCustomerCount = Number(newReturning.returning_customers || 0);
+    const recentCustomers = Number(periodRow.total_customers || 0);
+    const newCustomerCount = Number(periodRow.new_count || 0);
+    const returningCustomerCount = Number(periodRow.returning_count || 0);
+    const repurchasers = Number(periodRow.repurchasers || 0);
+    const repurchaseRate = recentCustomers ? Math.round((repurchasers / recentCustomers) * 1000) / 10 : 0;
 
     const rawSummary = summaryR.rows[0] || {};
     const reportSummary = reportSummaryR.rows[0] || {};
@@ -2529,24 +2575,32 @@ export function registerPhaseRoutes(app, pool) {
     const profileInsights = {
       lifecycle: lcCounts,
       value_tier: tierCounts,
+      stats_days: days,
       churn_rate: churnRate,
       churn_detail: { lost: lostCount, ever_engaged: everEngaged, dormant: lcCounts.dormant || 0, churned: lcCounts.churned || 0 },
-      // 统一核心客户指标看板（新客/回头客与 new_vs_returning 同口径；VIP/活跃/流失与画像表一致）
+      // 核心客户指标：均限定为统计期内有 POS 消费的手机号
       customer_metrics: {
         total_customers: recentCustomers,
         new_count: newCustomerCount,
         returning_count: returningCustomerCount,
-        active_count: Number(lcCounts.active || 0),
-        vip_count: Number(tierCounts.vip || 0),
+        active_count: Number(periodRow.active_count || 0),
+        at_risk_count: Number(periodRow.at_risk_count || 0),
+        dormant_count: Number(periodRow.dormant_count || 0),
+        churned_count: Number(periodRow.churned_count || 0),
+        vip_count: Number(periodRow.vip_count || 0),
         churn_rate: churnRate,
         repurchase_rate: repurchaseRate,
-        repurchase_detail: { repurchasers, total_with_orders_30d: totalWithOrders30 }
+        repurchase_detail: { repurchasers, total_with_orders: recentCustomers }
       },
       avg_spend_dist: Object.fromEntries(spendDistR.rows.map(r => [r.spend_tier, r.cnt])),
       avg_table_spend: mergedSummary.avg_table_spend,
       top_visit_times: Object.fromEntries(visitR.rows.map(r => [r.visit_time, r.cnt])),
       top_dish_categories: Object.fromEntries(dishCatR.rows.map(r => [r.category, r.total_qty])),
-      high_value_customers: highValueR.rows[0] || {},
+      high_value_customers: {
+        count: Number(periodRow.high_value_count || 0),
+        avg_spending: periodRow.vip_avg_check,
+        avg_orders: periodRow.avg_orders
+      },
       new_vs_returning: {
         new_count: newCustomerCount,
         returning_count: returningCustomerCount,
