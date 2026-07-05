@@ -153,7 +153,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
   const weekAgoStart = new Date(new Date(startDate).getTime() - 7 * 86400000).toISOString().slice(0, 10);
   const weekAgoEnd = new Date(new Date(startDate).getTime() - 86400000).toISOString().slice(0, 10);
   const prevReports = await pool.query(
-    `SELECT date, actual_revenue, dine_traffic, dine_orders, efficiency,
+    `SELECT date, actual_revenue, pre_discount_revenue, dine_traffic, dine_orders, efficiency,
             bad_reviews_dianping, dianping_rating
      FROM daily_reports
      WHERE store = $1 AND date >= $2 AND date <= $3
@@ -164,33 +164,43 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
   // 4. 新客 vs 老客分析（通过 pos_orders），同时取上周同期做环比
   const customerAnalysis = await pool.query(
     `WITH orders AS (
-       SELECT o.biz_date, o.order_no, o.phone, o.customer_id,
-              CASE WHEN gc.first_seen_at::date = o.biz_date THEN 'new' ELSE 'returning' END AS customer_type
+       SELECT o.biz_date, o.order_no, o.phone,
+              CASE
+                WHEN NULLIF(o.phone, '') IS NOT NULL
+                 AND MIN(o.biz_date) OVER (PARTITION BY o.store_id, o.phone) >= $2
+                THEN 'new'
+                ELSE 'returning'
+              END AS customer_type
        FROM pos_orders o
-       LEFT JOIN growth_customers gc ON o.customer_id = gc.id
        WHERE o.store_id = (CASE WHEN $1 LIKE '%马己仙%' THEN '51866138' WHEN $1 LIKE '%洪潮%' THEN '64822111' ELSE '' END)
-         AND o.biz_date >= $2 AND o.biz_date <= $3
+         AND NULLIF(o.phone, '') IS NOT NULL
      )
      SELECT biz_date,
             COUNT(*) FILTER (WHERE customer_type = 'new') AS new_customers,
             COUNT(*) FILTER (WHERE customer_type = 'returning') AS returning_customers,
             COUNT(*) AS total_orders
      FROM orders
+     WHERE biz_date >= $2 AND biz_date <= $3
      GROUP BY biz_date ORDER BY biz_date`,
     [storeName, startDate, endDate]
   );
   const prevCustomerAnalysis = await pool.query(
     `WITH orders AS (
        SELECT o.biz_date,
-              CASE WHEN gc.first_seen_at::date = o.biz_date THEN 'new' ELSE 'returning' END AS customer_type
+              CASE
+                WHEN NULLIF(o.phone, '') IS NOT NULL
+                 AND MIN(o.biz_date) OVER (PARTITION BY o.store_id, o.phone) >= $2
+                THEN 'new'
+                ELSE 'returning'
+              END AS customer_type
        FROM pos_orders o
-       LEFT JOIN growth_customers gc ON o.customer_id = gc.id
        WHERE o.store_id = (CASE WHEN $1 LIKE '%马己仙%' THEN '51866138' WHEN $1 LIKE '%洪潮%' THEN '64822111' ELSE '' END)
-         AND o.biz_date >= $2 AND o.biz_date <= $3
+         AND NULLIF(o.phone, '') IS NOT NULL
      )
      SELECT COUNT(*) FILTER (WHERE customer_type = 'new') AS new_customers,
             COUNT(*) AS total_orders
-     FROM orders`,
+     FROM orders
+     WHERE biz_date >= $2 AND biz_date <= $3`,
     [storeName, weekAgoStart, weekAgoEnd]
   );
 
@@ -280,19 +290,21 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
   // ── A. 营业额分析 ──
   if (reports.rows.length > 0) {
     const totalRevenue = reports.rows.reduce((s, r) => s + Number(r.actual_revenue || 0), 0);
+    const totalPreDiscountRevenue = reports.rows.reduce((s, r) => s + Number(r.pre_discount_revenue || 0), 0);
     const avgDailyRevenue = totalRevenue / reports.rows.length;
     const totalTraffic = reports.rows.reduce((s, r) => s + Number(r.dine_traffic || 0), 0);
     const avgDailyTraffic = totalTraffic / reports.rows.length;
     const totalOrders = reports.rows.reduce((s, r) => s + Number(r.dine_orders || 0), 0);
-    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    const avgOrderValue = totalTraffic > 0 ? totalPreDiscountRevenue / totalTraffic : 0;
     const avgEfficiency = reports.rows.reduce((s, r) => s + Number(r.efficiency || 0), 0) / reports.rows.length;
     const totalDeliveryRevenue = reports.rows.reduce((s, r) => s + Number(r.delivery_actual || 0), 0);
     const avgDeliveryShare = totalRevenue > 0 ? (totalDeliveryRevenue / totalRevenue) * 100 : 0;
 
-    let prevTotalRevenue = 0, prevTotalTraffic = 0, prevTotalOrders = 0, prevAvgEfficiency = 0;
+    let prevTotalRevenue = 0, prevTotalPreDiscountRevenue = 0, prevTotalTraffic = 0, prevTotalOrders = 0, prevAvgEfficiency = 0;
     let prevTotalDeliveryRevenue = 0;
     if (prevReports.rows.length > 0) {
       prevTotalRevenue = prevReports.rows.reduce((s, r) => s + Number(r.actual_revenue || 0), 0);
+      prevTotalPreDiscountRevenue = prevReports.rows.reduce((s, r) => s + Number(r.pre_discount_revenue || 0), 0);
       prevTotalTraffic = prevReports.rows.reduce((s, r) => s + Number(r.dine_traffic || 0), 0);
       prevTotalOrders = prevReports.rows.reduce((s, r) => s + Number(r.dine_orders || 0), 0);
       prevAvgEfficiency = prevReports.rows.reduce((s, r) => s + Number(r.efficiency || 0), 0) / prevReports.rows.length;
@@ -307,6 +319,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
 
     result.revenue = {
       total: Math.round(totalRevenue),
+      total_pre_discount_revenue: Math.round(totalPreDiscountRevenue),
       avg_daily: Math.round(avgDailyRevenue),
       avg_order_value: Math.round(avgOrderValue),
       avg_efficiency: Math.round(avgEfficiency),
@@ -352,7 +365,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
         isUp ? 'up' : 'down',
       ));
     }
-    const prevAvgOrderValue = prevTotalOrders > 0 ? prevTotalRevenue / prevTotalOrders : 0;
+    const prevAvgOrderValue = prevTotalTraffic > 0 ? prevTotalPreDiscountRevenue / prevTotalTraffic : 0;
     if (prevAvgOrderValue > 0) {
       const orderValueChange = ((avgOrderValue - prevAvgOrderValue) / prevAvgOrderValue * 100).toFixed(1);
       if (Math.abs(Number(orderValueChange)) >= 1) {
@@ -360,7 +373,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
         contributions.push(contributionItem(
           isUp ? '客单价提升' : '客单价下降',
           Math.abs(orderValueChange), '%',
-          `客单价从¥${Math.round(prevAvgOrderValue)}${isUp ? '增至' : '降至'}¥${Math.round(avgOrderValue)}，可能与折扣力度或菜品结构变化有关`,
+          `客单价从¥${Math.round(prevAvgOrderValue)}${isUp ? '增至' : '降至'}¥${Math.round(avgOrderValue)}（折前营业额/客流量），可能与折扣力度或菜品结构变化有关`,
           isUp ? 'up' : 'down',
         ));
       }
@@ -1081,9 +1094,12 @@ export async function getAllStoresDiagnosis(pool, dateRange) {
         summary: diag.summary,
         revenue: {
           total: diag.revenue.total,
+          total_pre_discount_revenue: diag.revenue.total_pre_discount_revenue,
           avg_order_value: diag.revenue.avg_order_value,
           avg_daily_traffic: diag.revenue.avg_daily_traffic,
+          total_traffic: diag.revenue.total_traffic,
           avg_efficiency: diag.revenue.avg_efficiency,
+          total_delivery_revenue: diag.revenue.total_delivery_revenue,
           delivery_share_pct: diag.revenue.delivery_share_pct,
           change_pct: diag.revenue.change_pct,
           is_decline: diag.revenue.is_decline,

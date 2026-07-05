@@ -2142,6 +2142,17 @@ export function registerPhaseRoutes(app, pool) {
     res.json({ok:true, linked: r.rows});
   });
 
+  app.get('/api/growth/stores', async (req, res) => {
+    if (!rqa(req, res)) return;
+    res.json({
+      ok: true,
+      stores: [
+        { store_id: '64822111', store_name: '洪潮大宁久光店' },
+        { store_id: '51866138', store_name: '马己仙上海音乐广场店' }
+      ]
+    });
+  });
+
   app.post('/api/growth/pos-link-customers', async (req, res) => {
     if (!rqa(req, res)) return;
     const linked = await tenantContext.run(getPhaseApiTenantId(req), () => linkPosOrdersToCustomers(pool));
@@ -2152,21 +2163,106 @@ export function registerPhaseRoutes(app, pool) {
   app.get('/api/growth/pos-stats', async (req, res) => {
     if (!rqa(req, res)) return;
     const sid = cleanText(req.query.store_id || req.query.store_name || '', 200);
+    const campaignId = cleanText(req.query.campaign_id || '', 128);
     const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
     const byName = /[\u4e00-\u9fff\uff08\uff09【】]/.test(sid);
     const posCond = sid ? (byName ? `store_name = $1` : `store_id = $1`) : `$1::text = ''`;
     const itemsCond = sid ? (byName ? `store_name = $1` : `store_code = $1`) : `$1::text = ''`;
     const profCond = sid ? `store_id = $1` : `$1::text = ''`;
     const statsParams = [sid, days];
+    const reportStoreCond = sid
+      ? (byName
+        ? `store = $1`
+        : `(CASE WHEN $1 = '51866138' THEN store ILIKE '%马己仙%' WHEN $1 = '64822111' THEN store ILIKE '%洪潮%' ELSE store = $1 END)`)
+      : `$1::text = ''`;
+
+    if (campaignId) {
+      return await tenantContext.run(getPhaseApiTenantId(req), async () => {
+        const params = [sid, days, campaignId];
+        const campaignPosWhere = `
+          FROM pos_orders po
+          JOIN (
+            SELECT DISTINCT phone FROM growth_events
+            WHERE campaign_id = $3 AND phone IS NOT NULL AND phone <> ''
+          ) cp ON cp.phone = po.phone
+          WHERE ${sid ? (byName ? `po.store_name = $1` : `po.store_id = $1`) : `$1::text = ''`}
+            AND po.biz_date >= CURRENT_DATE - ($2::int || ' days')::interval
+        `;
+        const [summaryR, distR, byStoreR] = await Promise.all([
+          pool.query(`SELECT COUNT(*)::int AS total_orders,
+              COALESCE(SUM(po.amount_after_discount),0)::numeric AS total_revenue,
+              COALESCE(SUM(po.amount_before_discount),0)::numeric AS total_before_revenue,
+              COUNT(*) FILTER (WHERE po.order_type = '堂食')::int AS dine_pos_orders,
+              COALESCE(SUM(po.amount_before_discount) FILTER (WHERE po.order_type = '堂食'),0)::numeric AS dine_pos_before_revenue,
+              ROUND(COALESCE(SUM(po.amount_before_discount) FILTER (WHERE po.order_type = '堂食'),0) / NULLIF(COUNT(*) FILTER (WHERE po.order_type = '堂食'),0),2) AS avg_table_spend,
+              COUNT(DISTINCT NULLIF(po.phone,''))::int AS distinct_phones
+            ${campaignPosWhere}`, params),
+          pool.query(`SELECT CASE
+              WHEN po.amount_before_discount < 200 THEN '0-200'
+              WHEN po.amount_before_discount < 400 THEN '200-400'
+              WHEN po.amount_before_discount < 600 THEN '400-600'
+              WHEN po.amount_before_discount < 800 THEN '600-800'
+              ELSE '800+' END AS spend_tier,
+              COUNT(*)::int AS cnt
+            ${campaignPosWhere}
+              AND po.order_type = '堂食'
+            GROUP BY 1 ORDER BY 1`, params),
+          pool.query(`SELECT po.store_id, po.store_name, COUNT(*)::int AS orders,
+              ROUND(AVG(po.amount_after_discount),2) AS avg_check,
+              COALESCE(SUM(po.amount_after_discount),0)::numeric AS total_revenue
+            ${campaignPosWhere}
+            GROUP BY po.store_id, po.store_name ORDER BY total_revenue DESC`, params)
+        ]);
+        const summary = {
+          ...(summaryR.rows[0] || {}),
+          data_source: 'campaign_pos_orders',
+          report_days: 0
+        };
+        const totalCustomers = Number(summary.distinct_phones || 0);
+        const profileInsights = {
+          lifecycle: {},
+          value_tier: {},
+          avg_spend_dist: Object.fromEntries(distR.rows.map(r => [r.spend_tier, r.cnt])),
+          avg_table_spend: summary.avg_table_spend || 0,
+          customer_metrics: { total_customers: totalCustomers, new_count: 0, active_count: 0, vip_count: 0, churn_rate: 0, repurchase_rate: 0, repurchase_detail: { repurchasers: 0, total_with_orders_30d: totalCustomers } },
+          new_vs_returning: { new_count: 0, returning_count: 0, total_customers: totalCustomers, new_pct: 0, returning_pct: 0 },
+          top_visit_times: {},
+          top_dish_categories: {},
+          high_value_customers: { count: totalCustomers },
+          cust_order_type: {},
+          cust_order_source: {},
+          cust_dept: {}
+        };
+        return res.json({
+          ok: true,
+          summary,
+          byStore: byStoreR.rows,
+          hourDist: [],
+          payDist: [],
+          topDishes: [],
+          repeatStats: {},
+          profileInsights,
+          byOrderType: [],
+          byOrderSource: [],
+          byDept: []
+        });
+      });
+    }
 
     return await tenantContext.run(getPhaseApiTenantId(req), async () => {
     const [
-      summaryR, storeR, hourR, payR, dishR, repeatR
+      summaryR, storeR, hourR, payR, dishR, repeatR, reportSummaryR
     ] = await Promise.all([
       pool.query(`SELECT COUNT(*)::int AS total_orders,
         COALESCE(SUM(amount_after_discount),0)::numeric AS total_revenue,
+        COALESCE(SUM(amount_before_discount),0)::numeric AS total_before_revenue,
+        COALESCE(SUM(COALESCE(NULLIF(diners,0),1)),0)::int AS total_diners,
+        ROUND(COALESCE(SUM(amount_before_discount),0) / NULLIF(SUM(COALESCE(NULLIF(diners,0),1)),0),2) AS avg_spend_per_person,
+        COUNT(*) FILTER (WHERE order_type = '堂食')::int AS dine_pos_orders,
+        COALESCE(SUM(amount_before_discount) FILTER (WHERE order_type = '堂食'),0)::numeric AS dine_pos_before_revenue,
+        ROUND(COALESCE(SUM(amount_before_discount) FILTER (WHERE order_type = '堂食'),0) / NULLIF(COUNT(*) FILTER (WHERE order_type = '堂食'),0),2) AS avg_table_spend,
         ROUND(AVG(amount_after_discount),2) AS avg_check,
-        COUNT(DISTINCT phone) AS distinct_phones,
+        COUNT(DISTINCT NULLIF(phone, '')) AS distinct_phones,
         COUNT(*) FILTER (WHERE phone IS NOT NULL AND phone <> '')::int AS identified_orders
         FROM pos_orders
         WHERE ${posCond}
@@ -2211,22 +2307,54 @@ export function registerPhaseRoutes(app, pool) {
         ) AND category IS NOT NULL AND category <> '-'
         GROUP BY category, dish_name
         ORDER BY revenue DESC LIMIT 15`, statsParams),
-      pool.query(`SELECT
-        COUNT(*) FILTER (WHERE order_cnt = 1)::int AS one_timer,
-        COUNT(*) FILTER (WHERE order_cnt = 2)::int AS two_timer,
-        COUNT(*) FILTER (WHERE order_cnt >= 3)::int AS repeat_3plus,
-        COUNT(*)::int AS total_customers
-        FROM (
-          SELECT phone, COUNT(*)::int AS order_cnt
+      pool.query(`WITH customer_window AS (
+          SELECT
+            phone,
+            COUNT(*)::int AS order_cnt,
+            MIN(biz_date) AS first_order_date
           FROM pos_orders
           WHERE phone IS NOT NULL AND phone <> ''
             AND ${posCond}
             AND biz_date >= CURRENT_DATE - ($2::int || ' days')::interval
           GROUP BY phone
+        ), customer_life AS (
+          SELECT cw.*, MIN(po.biz_date) AS lifetime_first_order_date
+          FROM customer_window cw
+          JOIN pos_orders po ON po.phone = cw.phone
+            AND po.phone IS NOT NULL AND po.phone <> ''
+            AND ${posCond}
+          GROUP BY cw.phone, cw.order_cnt, cw.first_order_date
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE order_cnt = 1)::int AS one_timer,
+          COUNT(*) FILTER (WHERE order_cnt = 2)::int AS two_timer,
+          COUNT(*) FILTER (WHERE order_cnt >= 3)::int AS repeat_3plus,
+          COUNT(*) FILTER (WHERE lifetime_first_order_date >= CURRENT_DATE - ($2::int || ' days')::interval)::int AS new_customers,
+          COUNT(*) FILTER (WHERE lifetime_first_order_date < CURRENT_DATE - ($2::int || ' days')::interval)::int AS returning_customers,
+          COUNT(*) FILTER (WHERE order_cnt >= 2)::int AS repeat_customers,
+          COUNT(*)::int AS total_customers
+        FROM (
+          SELECT * FROM customer_life
         ) sub`, statsParams)
+      ,
+      pool.query(`SELECT
+          COUNT(*)::int AS report_days,
+          COALESCE(SUM(actual_revenue),0)::numeric AS report_total_revenue,
+          COALESCE(SUM(pre_discount_revenue),0)::numeric AS report_total_before_revenue,
+          COALESCE(SUM(dine_traffic),0)::int AS report_total_diners,
+          COALESCE(SUM(dine_orders),0)::int AS report_dine_orders,
+          COALESCE(SUM(delivery_actual),0)::numeric AS report_delivery_revenue,
+          COALESCE(SUM(
+            COALESCE((delivery_detail->'eleme'->>'orders')::numeric, 0)
+            + COALESCE((delivery_detail->'meituan'->>'orders')::numeric, 0)
+          ),0)::int AS report_delivery_orders,
+          ROUND(COALESCE(SUM(pre_discount_revenue),0) / NULLIF(SUM(dine_traffic),0),2) AS report_avg_spend_per_person
+        FROM daily_reports
+        WHERE ${reportStoreCond}
+          AND date >= CURRENT_DATE - ($2::int || ' days')::interval`, statsParams)
     ]);
 
-    const [byOrderTypeR, byOrderSourceR, byDeptR, lifecycleR, spendDistR, visitR, dishCatR, highValueR, custOrderTypeR, custOrderSourceR, custDeptR, valueTierR, repurchase30R] = await Promise.all([
+    const [byOrderTypeR, byOrderSourceR, byDeptR, lifecycleR, spendDistR, visitR, dishCatR, highValueR, custOrderTypeR, custOrderSourceR, custDeptR, valueTierR, repurchase30R, customerMetricsR] = await Promise.all([
       // cnt 必须是「订单数」（按 order_no 去重），不能用菜品明细行数，
       // 否则客单价=明细行均价（堂食¥51/外卖¥29），与真实客单价（堂食¥342/外卖¥55）严重不符。
       pool.query(`SELECT order_type, COUNT(DISTINCT order_no)::int AS cnt,
@@ -2259,19 +2387,15 @@ export function registerPhaseRoutes(app, pool) {
         WHERE ${profCond}
         GROUP BY lifecycle_stage ORDER BY cnt DESC`, [sid]),
       pool.query(`SELECT CASE
-          WHEN avg_check < 200 THEN '0-200'
-          WHEN avg_check < 400 THEN '200-400'
-          WHEN avg_check < 600 THEN '400-600'
-          WHEN avg_check < 800 THEN '600-800'
+          WHEN amount_before_discount < 200 THEN '0-200'
+          WHEN amount_before_discount < 400 THEN '200-400'
+          WHEN amount_before_discount < 600 THEN '400-600'
+          WHEN amount_before_discount < 800 THEN '600-800'
           ELSE '800+' END AS spend_tier, COUNT(*)::int AS cnt
-        FROM (
-          SELECT phone, AVG(amount_after_discount) AS avg_check
-          FROM pos_orders
-          WHERE phone IS NOT NULL AND phone <> ''
-            AND ${posCond}
-            AND biz_date >= CURRENT_DATE - ($2::int || ' days')::interval
-          GROUP BY phone
-        ) sub
+        FROM pos_orders
+        WHERE order_type = '堂食'
+          AND ${posCond}
+          AND biz_date >= CURRENT_DATE - ($2::int || ' days')::interval
         GROUP BY 1 ORDER BY 1`, statsParams),
       pool.query(`SELECT CASE
           WHEN EXTRACT(HOUR FROM order_time) BETWEEN 10 AND 14 THEN '午市(10-14点)'
@@ -2334,6 +2458,40 @@ export function registerPhaseRoutes(app, pool) {
             AND biz_date >= CURRENT_DATE - INTERVAL '30 days'
           GROUP BY phone
         ) sub`, [sid])
+      ,
+      pool.query(`WITH customer_life AS (
+          SELECT
+            store_id,
+            phone,
+            COUNT(*)::int AS lifetime_orders,
+            MIN(biz_date) AS first_order_date,
+            MAX(biz_date) AS last_order_date,
+            COUNT(*) FILTER (WHERE biz_date >= CURRENT_DATE - INTERVAL '30 days')::int AS orders_30d,
+            SUM(amount_before_discount) FILTER (WHERE biz_date >= CURRENT_DATE - INTERVAL '30 days') AS before_spend_30d,
+            SUM(COALESCE(NULLIF(diners,0),1)) FILTER (WHERE biz_date >= CURRENT_DATE - INTERVAL '30 days') AS diners_30d
+          FROM pos_orders
+          WHERE phone IS NOT NULL AND phone <> ''
+            AND ${posCond}
+          GROUP BY store_id, phone
+        ), classified AS (
+          SELECT *,
+            CASE
+              WHEN store_id = '64822111' THEN 130::numeric
+              WHEN store_id = '51866138' THEN 100::numeric
+              ELSE NULL
+            END AS vip_threshold
+          FROM customer_life
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE lifetime_orders > 0)::int AS total_customers,
+          COUNT(*) FILTER (WHERE orders_30d > 0 AND first_order_date >= CURRENT_DATE - INTERVAL '30 days')::int AS new_count,
+          COUNT(*) FILTER (WHERE lifetime_orders >= 2 AND last_order_date >= CURRENT_DATE - INTERVAL '14 days')::int AS active_count,
+          COUNT(*) FILTER (WHERE orders_30d > 0 AND before_spend_30d / NULLIF(diners_30d,0) >= vip_threshold)::int AS vip_count,
+          COUNT(*) FILTER (WHERE orders_30d >= 2)::int AS repurchasers_30d,
+          COUNT(*) FILTER (WHERE orders_30d > 0)::int AS total_with_orders_30d,
+          COUNT(*) FILTER (WHERE lifetime_orders >= 2 AND last_order_date < CURRENT_DATE - INTERVAL '30 days')::int AS dormant,
+          COUNT(*) FILTER (WHERE lifetime_orders = 1 AND last_order_date < CURRENT_DATE - INTERVAL '30 days')::int AS churned
+        FROM classified`, [sid])
     ]);
 
     // 客户流失率 = (沉睡老客 + 流失低频客) / 曾消费客户总数（排除从未下单的潜在新客）
@@ -2345,9 +2503,41 @@ export function registerPhaseRoutes(app, pool) {
     const tierCounts = Object.fromEntries(valueTierR.rows.map(r => [r.value_tier, r.cnt]));
     // 复购率（30天内下单≥2次客户占比）
     const rep30 = repurchase30R.rows[0] || {};
-    const repurchasers = Number(rep30.repurchasers || 0);
-    const totalWithOrders30 = Number(rep30.total_with_orders || 0);
+    const posCustomerMetrics = customerMetricsR.rows[0] || {};
+    const repurchasers = Number(posCustomerMetrics.repurchasers_30d ?? rep30.repurchasers ?? 0);
+    const totalWithOrders30 = Number(posCustomerMetrics.total_with_orders_30d ?? rep30.total_with_orders ?? 0);
     const repurchaseRate = totalWithOrders30 ? Math.round((repurchasers / totalWithOrders30) * 1000) / 10 : 0;
+    const posDormant = Number(posCustomerMetrics.dormant || 0);
+    const posChurned = Number(posCustomerMetrics.churned || 0);
+    const posTotalCustomers = Number(posCustomerMetrics.total_customers || everEngaged || 0);
+    const posChurnRate = posTotalCustomers ? Math.round(((posDormant + posChurned) / posTotalCustomers) * 1000) / 10 : churnRate;
+
+    const newReturning = repeatR.rows[0] || {};
+    const recentCustomers = Number(newReturning.total_customers || 0);
+    const newCustomerCount = Number(newReturning.new_customers || 0);
+    const returningCustomerCount = Number(newReturning.returning_customers || 0);
+
+    const rawSummary = summaryR.rows[0] || {};
+    const reportSummary = reportSummaryR.rows[0] || {};
+    const reportDays = Number(reportSummary.report_days || 0);
+    const mergedSummary = {
+      ...rawSummary,
+      total_orders: reportDays > 0
+        ? Number(reportSummary.report_dine_orders || 0) + Number(reportSummary.report_delivery_orders || 0)
+        : rawSummary.total_orders,
+      total_revenue: reportDays > 0 ? reportSummary.report_total_revenue : rawSummary.total_revenue,
+      total_before_revenue: reportDays > 0 ? reportSummary.report_total_before_revenue : rawSummary.total_before_revenue,
+      total_diners: reportDays > 0 ? Number(reportSummary.report_total_diners || 0) : rawSummary.total_diners,
+      avg_spend_per_person: reportDays > 0 ? reportSummary.report_avg_spend_per_person : rawSummary.avg_spend_per_person,
+      dine_pos_orders: Number(rawSummary.dine_pos_orders || 0),
+      dine_pos_before_revenue: rawSummary.dine_pos_before_revenue || 0,
+      avg_table_spend: rawSummary.avg_table_spend || 0,
+      dine_orders: reportDays > 0 ? Number(reportSummary.report_dine_orders || 0) : null,
+      delivery_orders: reportDays > 0 ? Number(reportSummary.report_delivery_orders || 0) : null,
+      delivery_revenue: reportDays > 0 ? reportSummary.report_delivery_revenue : null,
+      report_days: reportDays,
+      data_source: reportDays > 0 ? 'daily_reports' : 'pos_orders'
+    };
 
     const profileInsights = {
       lifecycle: lcCounts,
@@ -2356,21 +2546,25 @@ export function registerPhaseRoutes(app, pool) {
       churn_detail: { lost: lostCount, ever_engaged: everEngaged, dormant: lcCounts.dormant || 0, churned: lcCounts.churned || 0 },
       // 统一核心客户指标看板
       customer_metrics: {
-        total_customers: everEngaged,
-        new_count: lcCounts.new || 0,
-        active_count: lcCounts.active || 0,
-        vip_count: tierCounts.vip || 0,
-        churn_rate: churnRate,
+        total_customers: recentCustomers,
+        new_count: Number(posCustomerMetrics.new_count || 0),
+        active_count: Number(posCustomerMetrics.active_count || 0),
+        vip_count: Number(posCustomerMetrics.vip_count || 0),
+        churn_rate: posChurnRate,
         repurchase_rate: repurchaseRate,
         repurchase_detail: { repurchasers, total_with_orders_30d: totalWithOrders30 }
       },
       avg_spend_dist: Object.fromEntries(spendDistR.rows.map(r => [r.spend_tier, r.cnt])),
+      avg_table_spend: mergedSummary.avg_table_spend,
       top_visit_times: Object.fromEntries(visitR.rows.map(r => [r.visit_time, r.cnt])),
       top_dish_categories: Object.fromEntries(dishCatR.rows.map(r => [r.category, r.total_qty])),
       high_value_customers: highValueR.rows[0] || {},
       new_vs_returning: {
-        new_pct: repeatR.rows[0] ? Math.round((repeatR.rows[0].one_timer / (repeatR.rows[0].total_customers || 1)) * 1000) / 10 : 0,
-        returning_pct: repeatR.rows[0] ? Math.round(((repeatR.rows[0].two_timer + repeatR.rows[0].repeat_3plus) / (repeatR.rows[0].total_customers || 1)) * 1000) / 10 : 0
+        new_count: newCustomerCount,
+        returning_count: returningCustomerCount,
+        total_customers: recentCustomers,
+        new_pct: recentCustomers ? Math.round((newCustomerCount / recentCustomers) * 1000) / 10 : 0,
+        returning_pct: recentCustomers ? Math.round((returningCustomerCount / recentCustomers) * 1000) / 10 : 0
       },
       cust_order_type: Object.fromEntries(custOrderTypeR.rows.map(r => [r.order_type, r.cnt])),
       cust_order_source: Object.fromEntries(custOrderSourceR.rows.map(r => [r.order_source, r.cnt])),
@@ -2379,7 +2573,7 @@ export function registerPhaseRoutes(app, pool) {
 
     res.json({
       ok: true,
-      summary: summaryR.rows[0] || {},
+      summary: mergedSummary,
       byStore: storeR.rows,
       hourDist: hourR.rows,
       payDist: payR.rows,

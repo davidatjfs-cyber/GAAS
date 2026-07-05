@@ -451,7 +451,7 @@ export async function ensureGrowthTables(pool) {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_customer_profiles_store ON growth_customer_profiles (store_id, lifecycle_stage)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_customer_profiles_updated ON growth_customer_profiles (updated_at DESC)`);
-  // 叠加标签：价值分级（vip/regular/low，按门店消费额前15%取vip）+ 价格敏感标记
+  // 叠加标签：价值分级（vip/regular/low，按品牌折前人均阈值取vip）+ 价格敏感标记
   await pool.query(`ALTER TABLE growth_customer_profiles ADD COLUMN IF NOT EXISTS value_tier TEXT DEFAULT 'low'`);
   await pool.query(`ALTER TABLE growth_customer_profiles ADD COLUMN IF NOT EXISTS price_sensitive BOOLEAN DEFAULT FALSE`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_customer_profiles_tier ON growth_customer_profiles (store_id, value_tier)`);
@@ -1164,20 +1164,35 @@ async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') 
         FROM growth_profile_signals s
         WHERE s.occurred_at >= CURRENT_DATE - ($1::int || ' days')::interval
         GROUP BY s.customer_id
-      ), pos_base AS (
+      ), pos_order_base AS (
         SELECT
           gc.id AS customer_id,
-          COUNT(po.order_no)::int AS pos_order_count,
+          COUNT(DISTINCT po.order_no)::int AS pos_order_count,
           COALESCE(SUM(po.amount_after_discount), 0) AS pos_total_spend,
-          ROUND(AVG(po.amount_after_discount), 2) AS avg_check,
+          COALESCE(SUM(po.amount_before_discount), 0) AS pos_total_before_spend,
+          COALESCE(SUM(COALESCE(NULLIF(po.diners, 0), 1)), 0) AS pos_total_diners,
+          ROUND(SUM(po.amount_before_discount) / NULLIF(SUM(COALESCE(NULLIF(po.diners, 0), 1)), 0), 2) AS avg_check,
           COUNT(*) FILTER (WHERE po.order_type = '堂食')::numeric / NULLIF(COUNT(*)::numeric, 0) AS pos_dine_in_ratio,
-          MAX(po.biz_date) AS pos_last_order_at,
+          MAX(po.biz_date) AS pos_last_order_at
+        FROM growth_customers gc
+        INNER JOIN pos_orders po ON gc.phone = po.phone AND po.phone <> ''
+        WHERE gc.tenant_id = $2
+        GROUP BY gc.id
+      ), pos_dish_base AS (
+        SELECT
+          gc.id AS customer_id,
           ARRAY_REMOVE(ARRAY_AGG(DISTINCT poi.dish_name) FILTER (WHERE poi.dish_name IS NOT NULL AND poi.dish_name <> '-' AND poi.category <> '-'), NULL) AS pos_favorite_dishes
         FROM growth_customers gc
         INNER JOIN pos_orders po ON gc.phone = po.phone AND po.phone <> ''
-        LEFT JOIN pos_order_items poi ON poi.order_no = po.order_no AND poi.category IS NOT NULL AND poi.category <> '-'
+        INNER JOIN pos_order_items poi ON poi.order_no = po.order_no AND poi.category IS NOT NULL AND poi.category <> '-'
         WHERE gc.tenant_id = $2
         GROUP BY gc.id
+      ), pos_base AS (
+        SELECT
+          pob.*,
+          COALESCE(pdb.pos_favorite_dishes, '{}') AS pos_favorite_dishes
+        FROM pos_order_base pob
+        LEFT JOIN pos_dish_base pdb ON pdb.customer_id = pob.customer_id
       )
       INSERT INTO growth_customer_profiles (
         customer_id, phone, openid, store_id, lifecycle_stage,
@@ -1247,6 +1262,8 @@ async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') 
           'discount_convert_count', e.discount_convert_count,
           'pos_order_count', COALESCE(p.pos_order_count, 0),
           'pos_total_spend', COALESCE(p.pos_total_spend, 0),
+          'pos_total_before_spend', COALESCE(p.pos_total_before_spend, 0),
+          'pos_total_diners', COALESCE(p.pos_total_diners, 0),
           'source_days', $1
         ),
         NOW(), NOW(),
@@ -1291,26 +1308,37 @@ async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') 
     [safeDays, tenantId]
   );
 
-  // 价值分级：按门店内消费额分位，前15%为vip、30%-85%为regular、其余low
-  // 冷启动期门店人数少时分位会有噪声，属预期内——先让分层有人、规则能跑
+  // 价值分级：VIP 改为「近似品牌人均阈值」口径。
+  // 洪潮：折前人均 >= 130；马己仙：折前人均 >= 100。其余门店使用该店折前人均 * 1.2 作为兜底阈值。
   await pool.query(`
-    WITH ranked AS (
+    WITH store_thresholds AS (
+      SELECT
+        store_id,
+        CASE
+          WHEN store_id = '64822111' THEN 130::numeric
+          WHEN store_id = '51866138' THEN 100::numeric
+          ELSE ROUND(SUM(COALESCE(amount_before_discount, 0)) / NULLIF(SUM(COALESCE(NULLIF(diners, 0), 1)), 0) * 1.2, 2)
+        END AS threshold
+      FROM pos_orders
+      WHERE store_id IS NOT NULL AND store_id <> ''
+      GROUP BY store_id
+    ), customer_avg AS (
       SELECT customer_id,
-             PERCENT_RANK() OVER (
-               PARTITION BY COALESCE(NULLIF(store_id, ''), '*')
-               ORDER BY COALESCE(pos_total_spend, 0)
-             ) AS pct
+             COALESCE(NULLIF(store_id, ''), '*') AS store_id,
+             COALESCE((source_signals ->> 'pos_total_before_spend')::numeric, pos_total_spend) /
+               NULLIF(COALESCE((source_signals ->> 'pos_total_diners')::numeric, pos_order_count), 0) AS avg_spend_per_person
       FROM growth_customer_profiles
       WHERE COALESCE(pos_total_spend, 0) > 0
     )
     UPDATE growth_customer_profiles p
-    SET value_tier = CASE
-          WHEN r.pct >= 0.85 THEN 'vip'
-          WHEN r.pct >= 0.30 THEN 'regular'
+      SET value_tier = CASE
+          WHEN ca.avg_spend_per_person >= COALESCE(st.threshold, 0) THEN 'vip'
+          WHEN ca.avg_spend_per_person >= COALESCE(st.threshold, 0) * 0.6 THEN 'regular'
           ELSE 'low'
         END
-    FROM ranked r
-    WHERE p.customer_id = r.customer_id
+    FROM customer_avg ca
+    LEFT JOIN store_thresholds st ON st.store_id = ca.store_id
+    WHERE p.customer_id = ca.customer_id
   `);
   // 未消费客户（潜在新客）固定为 low
   await pool.query(`UPDATE growth_customer_profiles SET value_tier = 'low' WHERE COALESCE(pos_total_spend, 0) = 0`);

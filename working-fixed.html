@@ -57281,7 +57281,7 @@ ${body}
                   <div class="dx-headline">${escapeHtml(s.summary?.headline || '')}</div>
                   <div class="dx-metrics dx-metrics--five">
                     <div class="dx-metric dx-metric--revenue"><div class="v">${dxFmtMoney(revenue.total || 0)}</div><div class="l">本期营收</div><span class="dx-metric__delta">${changeSign}${changePct.toFixed(1)}%</span></div>
-                    <div class="dx-metric dx-metric--traffic"><div class="v">${Number(revenue.avg_daily_traffic || 0).toLocaleString('zh-CN')}</div><div class="l">客流量</div><span class="dx-metric__delta">总客流 ${Number(revenue.total_traffic || 0).toLocaleString('zh-CN')}</span></div>
+                    <div class="dx-metric dx-metric--traffic"><div class="v">${Number(revenue.total_traffic || 0).toLocaleString('zh-CN')}</div><div class="l">客流量</div><span class="dx-metric__delta">日均 ${Number(revenue.avg_daily_traffic || 0).toLocaleString('zh-CN')}</span></div>
                     <div class="dx-metric dx-metric--ticket"><div class="v">${dxFmtMoney(revenue.avg_order_value || 0)}</div><div class="l">客单价</div><span class="dx-metric__delta">新客 ${s.summary?.new_customer_ratio || '-'}</span></div>
                     <div class="dx-metric dx-metric--takeout"><div class="v">${Number(revenue.delivery_share_pct || 0).toFixed(1)}%</div><div class="l">外卖占比</div><span class="dx-metric__delta">${dxFmtMoney(revenue.total_delivery_revenue || 0)}</span></div>
                     <div class="dx-metric dx-metric--efficiency"><div class="v">${dxFmtMoney(revenue.avg_efficiency || 0)}</div><div class="l">人效值</div><span class="dx-metric__delta">${s.action_suggestion_count || 0} 条行动</span></div>
@@ -57343,7 +57343,7 @@ ${body}
             });
             const heroMetrics = [
                 { key: '本期营收', value: dxFmtMoney(revenue.total || 0), delta: dxFmtPct(revenue.change_pct || 0), cls: 'dx-metric--revenue' },
-                { key: '客流量', value: Number(revenue.avg_daily_traffic || 0).toLocaleString('zh-CN'), delta: '总客流 ' + Number(revenue.total_traffic || 0).toLocaleString('zh-CN'), cls: 'dx-metric--traffic' },
+                { key: '客流量', value: Number(revenue.total_traffic || 0).toLocaleString('zh-CN'), delta: '日均 ' + Number(revenue.avg_daily_traffic || 0).toLocaleString('zh-CN'), cls: 'dx-metric--traffic' },
                 { key: '客单价', value: dxFmtMoney(revenue.avg_order_value || 0), delta: '新客 ' + (customer.new_ratio != null ? customer.new_ratio + '%' : '-'), cls: 'dx-metric--ticket' },
                 { key: '外卖占比', value: Number(revenue.delivery_share_pct || 0).toFixed(1) + '%', delta: dxFmtMoney(revenue.total_delivery_revenue || 0), cls: 'dx-metric--takeout' },
                 { key: '人效值', value: dxFmtMoney(revenue.avg_efficiency || 0), delta: (d.summary?.action_suggestion_count || 0) + ' 条行动建议', cls: 'dx-metric--efficiency' }
@@ -61319,7 +61319,9 @@ ${body}
 
                 // A链：POS数据
                 try {
-                    var posRes = await fetch('/api/growth/pos-stats?days=' + daysFilter + '&store_id=' + encodeURIComponent(storeFilter), { headers: gh });
+                    var posUrl = '/api/growth/pos-stats?days=' + daysFilter + '&store_id=' + encodeURIComponent(storeFilter);
+                    if (campaignFilter) posUrl += '&campaign_id=' + encodeURIComponent(campaignFilter);
+                    var posRes = await fetch(posUrl, { headers: gh });
                     var posData = await posRes.json();
                     renderGrowthPosMetricsCards(posData);
                 } catch (e) {
@@ -61417,46 +61419,37 @@ ${body}
             } catch (e) { /* ignore */ }
         }
 
+         function renderGrowthStoreOptions(stores) {
+             var sel = document.getElementById('growth-store-filter');
+             if (!sel) return;
+             var current = sel.value || '';
+             sel.innerHTML = '<option value="">全部门店</option>';
+             stores.forEach(function(s) {
+                 var sid = s.store_id || '';
+                 var sname = s.store_name || __GROWTH_STORE_MAP[sid] || sid;
+                 if (!sid || !sname) return;
+                 var opt = document.createElement('option');
+                 opt.value = sid;
+                 opt.textContent = sname;
+                 __GROWTH_STORE_MAP[sid] = sname;
+                 sel.appendChild(opt);
+             });
+             if (current && Array.prototype.some.call(sel.options, function(o) { return o.value === current; })) {
+                 sel.value = current;
+             }
+         }
+
          async function loadGrowthStoreOptions() {
+             renderGrowthStoreOptions(Object.keys(__GROWTH_STORE_MAP).map(function(k) {
+                 return { store_id: k, store_name: __GROWTH_STORE_MAP[k] };
+             }));
              try {
                  var gh = { 'Authorization': 'Bearer ' + (HRMS_API.token() || '') };
-                 var r = await fetch('/api/growth/pos-stats?days=30', { headers: gh });
+                 var r = await fetch('/api/growth/stores', { headers: gh });
                  var d = await r.json();
-                 var sel = document.getElementById('growth-store-filter');
-                 if (!sel) return;
-                 sel.innerHTML = '<option value="">全部门店</option>';
-                 var stores = Array.isArray(d?.byStore) ? d.byStore : [];
-                 if (stores.length > 0) {
-                     stores.forEach(function(s) {
-                         var opt = document.createElement('option');
-                         var sid = s.store_id || '';
-                         var sname = s.store_name || '-';
-                         if (!sid) { sid = Object.keys(__GROWTH_STORE_MAP).find(function(k) { return __GROWTH_STORE_MAP[k] === sname; }) || sname; }
-                         opt.value = sid;
-                         opt.textContent = sname;
-                         if (!__GROWTH_STORE_MAP[sid]) __GROWTH_STORE_MAP[sid] = sname;
-                         sel.appendChild(opt);
-                     });
-                 } else {
-                     Object.keys(__GROWTH_STORE_MAP).forEach(function(k) {
-                         var opt = document.createElement('option');
-                         opt.value = k;
-                         opt.textContent = __GROWTH_STORE_MAP[k];
-                         sel.appendChild(opt);
-                     });
-                 }
-             } catch (e) {
-                 var sel = document.getElementById('growth-store-filter');
-                 if (sel) {
-                     sel.innerHTML = '<option value="">全部门店</option>';
-                     Object.keys(__GROWTH_STORE_MAP).forEach(function(k) {
-                         var opt = document.createElement('option');
-                         opt.value = k;
-                         opt.textContent = __GROWTH_STORE_MAP[k];
-                         sel.appendChild(opt);
-                     });
-                 }
-             }
+                 var stores = Array.isArray(d?.stores) ? d.stores : [];
+                 if (stores.length > 0) renderGrowthStoreOptions(stores);
+             } catch (e) { /* keep local fallback options */ }
          }
 
         function renderCampaignFunnelDetail(campaignId, counts, dailyMetrics) {
@@ -61507,21 +61500,22 @@ ${body}
             var s = posData.summary || {};
             var takeaway = (posData.byOrderType || []).find(function(t) { return t.order_type === '平台外卖'; });
             var dineIn = (posData.byOrderType || []).find(function(t) { return t.order_type === '堂食'; });
-            var takeawayOrders = takeaway ? takeaway.cnt : 0;
-            var takeawayRevenue = takeaway ? Number(takeaway.revenue) : 0;
+            var takeawayOrders = s.delivery_orders != null ? Number(s.delivery_orders || 0) : (takeaway ? takeaway.cnt : 0);
+            var takeawayRevenue = s.delivery_revenue != null ? Number(s.delivery_revenue || 0) : (takeaway ? Number(takeaway.revenue) : 0);
             var dineInOrders = dineIn ? dineIn.cnt : 0;
             var dineInRevenue = dineIn ? Number(dineIn.revenue) : 0;
-            var allOrders = (s.total_orders || 0) + takeawayOrders;
-            var allRevenue = Number(s.total_revenue || 0) + takeawayRevenue;
+            var avgTableSpend = Number(s.avg_table_spend || 0);
+            var allOrders = Number(s.total_orders || 0);
+            var allRevenue = Number(s.total_revenue || 0);
             var cards = [
                 { label: '总订单', value: allOrders, tag: '订单', source: 'POS系统导入' },
-                { label: '堂食均消', value: (dineInOrders > 0 ? (dineInRevenue / dineInOrders).toFixed(2) : '0.00'), tag: '堂食均消', source: '仅堂食订单' },
+                { label: '堂食桌均', value: (avgTableSpend > 0 ? avgTableSpend.toFixed(2) : (dineInOrders > 0 ? (dineInRevenue / dineInOrders).toFixed(2) : '0.00')), tag: '桌均', source: '堂食折前营业额 / 堂食订单数' },
                 { label: '外卖均消', value: (takeawayOrders > 0 ? (takeawayRevenue / takeawayOrders).toFixed(2) : '0.00'), tag: '外卖均消', source: '仅外卖订单' },
                 { label: '识别客户', value: s.distinct_phones || 0, tag: '手机号', source: 'POS系统导入' },
                 { label: '外卖订单', value: takeawayOrders, tag: '外卖', source: 'POS系统导入' },
-                { label: '新客率', value: (posData.profileInsights && posData.profileInsights.new_vs_returning ? posData.profileInsights.new_vs_returning.new_pct : '-') + '%', tag: '新客', source: '首次出现手机号占比' }
+                { label: '新客率', value: (posData.profileInsights && posData.profileInsights.new_vs_returning ? posData.profileInsights.new_vs_returning.new_pct : '-') + '%', tag: '新客', source: '统计期内首次消费手机号占比' }
             ];
-            document.getElementById('growth-pos-metrics-cards').innerHTML = '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:8px;"> 新客率 = 统计期内首次出现手机号数 / 总识别手机号数（基于POS订单手机号去重）</div>'
+            document.getElementById('growth-pos-metrics-cards').innerHTML = '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:8px;"> 新客率 = 统计期内历史首次消费手机号数 / 总识别手机号数（基于POS订单手机号去重）</div>'
                 + cards.map(function(c) {
                 return '<div class="rep-metric" style="text-align:center;">'
                     + '<div class="k" style="text-align:center;">' + c.tag + '</div>'
@@ -61564,25 +61558,29 @@ ${body}
         async function loadPosStats() {
             var days = document.getElementById('pos-stats-days')?.value || '30';
             var storeFilter = document.getElementById('growth-store-filter')?.value || '';
+            var campaignFilter = document.getElementById('growth-campaign-filter')?.value || '';
             try {
                 var loadingEl = document.getElementById('pos-stats-loading');
                 if (loadingEl) loadingEl.style.display = 'block';
-                var r = await fetch('/api/growth/pos-stats?days=' + days + '&store_id=' + encodeURIComponent(storeFilter), { headers: growthAuthHeaders() });
+                var posUrl = '/api/growth/pos-stats?days=' + days + '&store_id=' + encodeURIComponent(storeFilter);
+                if (campaignFilter) posUrl += '&campaign_id=' + encodeURIComponent(campaignFilter);
+                var r = await fetch(posUrl, { headers: growthAuthHeaders() });
                 var d = await r.json();
                 if (!d.ok) throw new Error(d.error || 'api_error');
                 if (!d.summary) throw new Error('empty_response');
 
                 var s = d.summary;
                 var takeaway = (d.byOrderType || []).find(function(t) { return t.order_type === '平台外卖'; });
-                var takeawayOrders = takeaway ? takeaway.cnt : 0;
-                var takeawayRevenue = takeaway ? Number(takeaway.revenue) : 0;
-                var allOrders = (s.total_orders || 0) + takeawayOrders;
-                var allRevenue = Number(s.total_revenue || 0) + takeawayRevenue;
+                var takeawayOrders = s.delivery_orders != null ? Number(s.delivery_orders || 0) : (takeaway ? takeaway.cnt : 0);
+                var takeawayRevenue = s.delivery_revenue != null ? Number(s.delivery_revenue || 0) : (takeaway ? Number(takeaway.revenue) : 0);
+                var allOrders = Number(s.total_orders || 0);
+                var allRevenue = Number(s.total_revenue || 0);
+                var avgTableSpend = Number(s.avg_table_spend || 0);
                 var kpisEl = document.getElementById('pos-stats-kpis');
                 if (kpisEl) kpisEl.innerHTML = [
                     { label: '总订单', value: allOrders, tag: '订单' },
                     { label: '总收入(元)', value: allRevenue.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}), tag: '收入' },
-                    { label: '客单价(元)', value: (allOrders > 0 ? (allRevenue / allOrders).toFixed(2) : '0.00'), tag: '均消' },
+                    { label: '堂食桌均(元)', value: (avgTableSpend > 0 ? avgTableSpend.toFixed(2) : '0.00'), tag: '桌均' },
                     { label: '外卖订单', value: takeawayOrders, tag: '外卖' },
                     { label: '外卖收入', value: '¥' + takeawayRevenue.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}), tag: '外卖收' },
                     { label: '识别客户', value: s.distinct_phones || 0, tag: '手机号' },
@@ -61655,7 +61653,7 @@ ${body}
                 }).join('') + '</tbody></table></div>';
         }
 
-        var __GROWTH_STORE_MAP = { '51866138': '马己仙广东小馆·荔枝木烧鹅', '64822111': '洪潮传统潮汕菜' };
+        var __GROWTH_STORE_MAP = { '64822111': '洪潮大宁久光店', '51866138': '马己仙上海音乐广场店' };
         var __CONTENT_PURPOSE_TAGS = ['品宣','促销','拉新','召回','节日','会员日','新品','限时特惠'];
         var __CONTENT_CHANNEL_TAGS = ['朋友圈','小红书','美团','大众点评','企微','门店','抖音','公众号'];
         var __TEMPLATE_CATEGORY_OPTIONS = ['拉新','召回','节日','品宣','促销','会员日','新品','通用'];
@@ -61886,14 +61884,14 @@ ${body}
                 + '<div style="background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(226,232,240,0.6);">新客占比</div><div style="font-size:22px;font-weight:800;color:#38bdf8;">' + (nvr.new_pct || 0) + '%</div></div>'
                 + '<div style="background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(226,232,240,0.6);">回头客占比</div><div style="font-size:22px;font-weight:800;color:#22c55e;">' + (nvr.returning_pct || 0) + '%</div></div>'
                 + '<div style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(226,232,240,0.6);">POS消费客户</div><div style="font-size:22px;font-weight:800;color:#f59e0b;">' + Number(hv.count || 0) + '</div></div>'
-                + '<div style="background:rgba(167,139,250,0.10);border:1px solid rgba(167,139,250,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(226,232,240,0.6);">人均消费</div><div style="font-size:22px;font-weight:800;color:#a78bfa;">¥' + (hv.avg_spending || '0') + '</div></div>'
+                + '<div style="background:rgba(167,139,250,0.10);border:1px solid rgba(167,139,250,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(226,232,240,0.6);">堂食桌均</div><div style="font-size:22px;font-weight:800;color:#a78bfa;">¥' + (pi.avg_table_spend || '0') + '</div></div>'
                 + '</div>';
 
-            var spendHtml = renderMiniBars('客单价分布', pi.avg_spend_dist || {}, {
+            var spendHtml = renderMiniBars('堂食桌均分布', pi.avg_spend_dist || {}, {
                 '0-200': '#38bdf8', '200-400': '#22c55e', '400-600': '#f59e0b', '600-800': '#ef4444', '800+': '#a78bfa'
             }, {
                 '0-200': '0-200元', '200-400': '200-400元', '400-600': '400-600元', '600-800': '600-800元', '800+': '800元+'
-            }, '人');
+            }, '单');
 
             var visitHtml = renderMiniBars('到店时段偏好', pi.top_visit_times || {}, {
                 '午市(10-14点)': '#f59e0b', '晚市(17-21点)': '#38bdf8', '其他时段': '#94a3b8'
@@ -61919,14 +61917,14 @@ ${body}
 
             var cm = pi.customer_metrics || {};
             var cmCards = [
-                { label: '客户总数', value: Number(cm.total_customers || 0), color: '#38bdf8', sub: '曾消费客户' },
+                { label: '客户总数', value: Number(cm.total_customers || 0), color: '#38bdf8', sub: '统计期识别客户' },
                 { label: '潜在新客', value: Number(lifecycle.prospect || 0), color: '#94a3b8', sub: '扫码/触达未下单' },
                 { label: '新客', value: Number(cm.new_count || 0), color: '#0ea5e9', sub: '累计1单·近14天到店' },
                 { label: '活跃客', value: Number(cm.active_count || 0), color: '#22c55e', sub: '累计≥2单·近14天到店' },
                 { label: '临界客', value: Number(lifecycle.at_risk || 0), color: '#f59e0b', sub: '14-30天未到店' },
                 { label: '沉睡老客', value: Number(lifecycle.dormant || 0), color: '#ef4444', sub: '30天+未到·曾≥2单' },
                 { label: '流失客', value: Number(lifecycle.churned || 0), color: '#9ca3af', sub: '30天+未到·仅1单' },
-                { label: 'VIP人数', value: Number(cm.vip_count || 0), color: '#fbbf24', sub: '消费额前15%' },
+                { label: 'VIP人数', value: Number(cm.vip_count || 0), color: '#fbbf24', sub: '折前人均达标' },
                 { label: '流失率', value: Number(cm.churn_rate || 0) + '%', color: '#f87171', sub: '沉睡+流失占比' },
                 { label: '复购率', value: Number(cm.repurchase_rate || 0) + '%', color: '#a78bfa', sub: '30天内≥2次' }
             ];
