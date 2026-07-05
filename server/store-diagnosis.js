@@ -10,6 +10,82 @@ function cleanText(value, max = 255) {
 
 const normalizeStore = s => String(s || '').trim();
 
+function storeNameToId(storeName) {
+  const s = String(storeName || '');
+  if (s.includes('马己仙')) return '51866138';
+  if (s.includes('洪潮')) return '64822111';
+  return '';
+}
+
+/** 与增长看板 /api/growth/pos-stats 对齐的门店客户指标（同一数据源、同一口径） */
+async function fetchAlignedGrowthMetrics(pool, storeName, startDate, endDate) {
+  const storeId = storeNameToId(storeName);
+  const [reportR, posR, nvrR] = await Promise.all([
+    pool.query(`
+      SELECT COUNT(*)::int AS report_days,
+        COALESCE(SUM(dine_traffic),0)::int AS total_traffic,
+        COALESCE(SUM(pre_discount_revenue),0)::numeric AS total_pre_discount_revenue,
+        ROUND(COALESCE(SUM(pre_discount_revenue),0) / NULLIF(SUM(dine_traffic),0), 2) AS avg_spend_per_person
+      FROM daily_reports
+      WHERE store = $1 AND date >= $2 AND date <= $3
+    `, [storeName, startDate, endDate]),
+    storeId
+      ? pool.query(`
+          SELECT COUNT(*) FILTER (WHERE order_type = '堂食')::int AS dine_pos_orders,
+            ROUND(COALESCE(SUM(amount_before_discount) FILTER (WHERE order_type = '堂食'),0)
+              / NULLIF(COUNT(*) FILTER (WHERE order_type = '堂食'),0), 2) AS avg_table_spend
+          FROM pos_orders
+          WHERE store_id = $1 AND biz_date >= $2 AND biz_date <= $3
+        `, [storeId, startDate, endDate])
+      : Promise.resolve({ rows: [{}] }),
+    storeId
+      ? pool.query(`
+          WITH customer_window AS (
+            SELECT phone, COUNT(*)::int AS order_cnt
+            FROM pos_orders
+            WHERE phone IS NOT NULL AND phone <> '' AND store_id = $1
+              AND biz_date >= $2 AND biz_date <= $3
+            GROUP BY phone
+          ), customer_life AS (
+            SELECT cw.phone,
+              MIN(po.biz_date) AS lifetime_first_order_date
+            FROM customer_window cw
+            JOIN pos_orders po ON po.phone = cw.phone AND po.phone IS NOT NULL AND po.phone <> ''
+              AND po.store_id = $1
+            GROUP BY cw.phone
+          )
+          SELECT
+            COUNT(*) FILTER (WHERE lifetime_first_order_date >= $2::date)::int AS new_customers,
+            COUNT(*) FILTER (WHERE lifetime_first_order_date < $2::date)::int AS returning_customers,
+            COUNT(*)::int AS total_customers
+          FROM customer_life
+        `, [storeId, startDate, endDate])
+      : Promise.resolve({ rows: [{}] }),
+  ]);
+
+  const report = reportR.rows[0] || {};
+  const pos = posR.rows[0] || {};
+  const nvr = nvrR.rows[0] || {};
+  const reportDays = Number(report.report_days || 0);
+  const totalTraffic = Number(report.total_traffic || 0);
+  const totalCustomers = Number(nvr.total_customers || 0);
+  const newCount = Number(nvr.new_customers || 0);
+
+  return {
+    report_days: reportDays,
+    total_traffic: totalTraffic,
+    avg_daily_traffic: reportDays > 0 ? Math.round(totalTraffic / reportDays) : 0,
+    avg_spend_per_person: Number(report.avg_spend_per_person || 0),
+    avg_table_spend: Number(pos.avg_table_spend || 0),
+    dine_pos_orders: Number(pos.dine_pos_orders || 0),
+    new_customers: newCount,
+    returning_customers: Number(nvr.returning_customers || 0),
+    total_customers: totalCustomers,
+    new_pct: totalCustomers > 0 ? Math.round((newCount / totalCustomers) * 1000) / 10 : 0,
+    returning_pct: totalCustomers > 0 ? Math.round((Number(nvr.returning_customers || 0) / totalCustomers) * 1000) / 10 : 0,
+  };
+}
+
 const CATEGORY_LABELS = {
   water: '水吧',
   soup: '汤品',
@@ -125,7 +201,7 @@ async function loadActionSuggestions(pool, storeName, startDate, endDate) {
 export async function getStoreDiagnosis(pool, store, dateRange) {
   const storeName = normalizeStore(store);
   const endDate = dateRange?.end || new Date().toISOString().slice(0, 10);
-  const startDate = dateRange?.start || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const startDate = dateRange?.start || new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
 
   // 1. 拉取该门店最近异常
   const anomalies = await pool.query(
@@ -287,25 +363,32 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     recommendations: [],
   };
 
+  const alignedMetrics = await fetchAlignedGrowthMetrics(pool, storeName, startDate, endDate);
+  const prevAlignedMetrics = await fetchAlignedGrowthMetrics(pool, storeName, weekAgoStart, weekAgoEnd);
+
   // ── A. 营业额分析 ──
   if (reports.rows.length > 0) {
     const totalRevenue = reports.rows.reduce((s, r) => s + Number(r.actual_revenue || 0), 0);
     const totalPreDiscountRevenue = reports.rows.reduce((s, r) => s + Number(r.pre_discount_revenue || 0), 0);
     const avgDailyRevenue = totalRevenue / reports.rows.length;
-    const totalTraffic = reports.rows.reduce((s, r) => s + Number(r.dine_traffic || 0), 0);
-    const avgDailyTraffic = totalTraffic / reports.rows.length;
+    const totalTraffic = alignedMetrics.total_traffic || reports.rows.reduce((s, r) => s + Number(r.dine_traffic || 0), 0);
+    const avgDailyTraffic = alignedMetrics.avg_daily_traffic || (totalTraffic / reports.rows.length);
     const totalOrders = reports.rows.reduce((s, r) => s + Number(r.dine_orders || 0), 0);
-    const avgOrderValue = totalTraffic > 0 ? totalPreDiscountRevenue / totalTraffic : 0;
+    const avgSpendPerPerson = alignedMetrics.avg_spend_per_person || (totalTraffic > 0 ? totalPreDiscountRevenue / totalTraffic : 0);
+    const avgTableSpend = alignedMetrics.avg_table_spend || 0;
+    const avgOrderValue = avgTableSpend;
     const avgEfficiency = reports.rows.reduce((s, r) => s + Number(r.efficiency || 0), 0) / reports.rows.length;
     const totalDeliveryRevenue = reports.rows.reduce((s, r) => s + Number(r.delivery_actual || 0), 0);
     const avgDeliveryShare = totalRevenue > 0 ? (totalDeliveryRevenue / totalRevenue) * 100 : 0;
 
     let prevTotalRevenue = 0, prevTotalPreDiscountRevenue = 0, prevTotalTraffic = 0, prevTotalOrders = 0, prevAvgEfficiency = 0;
     let prevTotalDeliveryRevenue = 0;
+    let prevAvgTableSpend = 0;
     if (prevReports.rows.length > 0) {
       prevTotalRevenue = prevReports.rows.reduce((s, r) => s + Number(r.actual_revenue || 0), 0);
       prevTotalPreDiscountRevenue = prevReports.rows.reduce((s, r) => s + Number(r.pre_discount_revenue || 0), 0);
-      prevTotalTraffic = prevReports.rows.reduce((s, r) => s + Number(r.dine_traffic || 0), 0);
+      prevTotalTraffic = prevAlignedMetrics.total_traffic || prevReports.rows.reduce((s, r) => s + Number(r.dine_traffic || 0), 0);
+      prevAvgTableSpend = prevAlignedMetrics.avg_table_spend || 0;
       prevTotalOrders = prevReports.rows.reduce((s, r) => s + Number(r.dine_orders || 0), 0);
       prevAvgEfficiency = prevReports.rows.reduce((s, r) => s + Number(r.efficiency || 0), 0) / prevReports.rows.length;
       prevTotalDeliveryRevenue = prevReports.rows.reduce((s, r) => s + Number(r.delivery_actual || 0), 0);
@@ -322,9 +405,12 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       total_pre_discount_revenue: Math.round(totalPreDiscountRevenue),
       avg_daily: Math.round(avgDailyRevenue),
       avg_order_value: Math.round(avgOrderValue),
+      avg_table_spend: Math.round(avgTableSpend),
+      avg_spend_per_person: Math.round(avgSpendPerPerson),
       avg_efficiency: Math.round(avgEfficiency),
       total_traffic: Math.round(totalTraffic),
       avg_daily_traffic: Math.round(avgDailyTraffic),
+      report_days: alignedMetrics.report_days,
       total_delivery_revenue: Math.round(totalDeliveryRevenue),
       delivery_share_pct: Number(avgDeliveryShare.toFixed(1)),
       prev_total: Math.round(prevTotalRevenue),
@@ -365,15 +451,28 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
         isUp ? 'up' : 'down',
       ));
     }
-    const prevAvgOrderValue = prevTotalTraffic > 0 ? prevTotalPreDiscountRevenue / prevTotalTraffic : 0;
-    if (prevAvgOrderValue > 0) {
-      const orderValueChange = ((avgOrderValue - prevAvgOrderValue) / prevAvgOrderValue * 100).toFixed(1);
-      if (Math.abs(Number(orderValueChange)) >= 1) {
-        const isUp = Number(orderValueChange) > 0;
+    if (prevAvgTableSpend > 0 && avgTableSpend > 0) {
+      const tableSpendChange = ((avgTableSpend - prevAvgTableSpend) / prevAvgTableSpend * 100).toFixed(1);
+      if (Math.abs(Number(tableSpendChange)) >= 1) {
+        const isUp = Number(tableSpendChange) > 0;
         contributions.push(contributionItem(
-          isUp ? '客单价提升' : '客单价下降',
-          Math.abs(orderValueChange), '%',
-          `客单价从¥${Math.round(prevAvgOrderValue)}${isUp ? '增至' : '降至'}¥${Math.round(avgOrderValue)}（折前营业额/客流量），可能与折扣力度或菜品结构变化有关`,
+          isUp ? '堂食桌均提升' : '堂食桌均下降',
+          Math.abs(tableSpendChange), '%',
+          `堂食桌均从¥${Math.round(prevAvgTableSpend)}${isUp ? '增至' : '降至'}¥${Math.round(avgTableSpend)}（堂食折前营业额/堂食订单数），可能与折扣力度或菜品结构变化有关`,
+          isUp ? 'up' : 'down',
+        ));
+      }
+    }
+    const prevAvgSpendPerPerson = prevAlignedMetrics.avg_spend_per_person
+      || (prevTotalTraffic > 0 ? prevTotalPreDiscountRevenue / prevTotalTraffic : 0);
+    if (prevAvgSpendPerPerson > 0 && avgSpendPerPerson > 0) {
+      const personSpendChange = ((avgSpendPerPerson - prevAvgSpendPerPerson) / prevAvgSpendPerPerson * 100).toFixed(1);
+      if (Math.abs(Number(personSpendChange)) >= 1) {
+        const isUp = Number(personSpendChange) > 0;
+        contributions.push(contributionItem(
+          isUp ? '堂食人均提升' : '堂食人均下降',
+          Math.abs(personSpendChange), '%',
+          `堂食人均从¥${Math.round(prevAvgSpendPerPerson)}${isUp ? '增至' : '降至'}¥${Math.round(avgSpendPerPerson)}（折前营业额/堂食客流），可能与客流结构或套餐选择变化有关`,
           isUp ? 'up' : 'down',
         ));
       }
@@ -491,21 +590,19 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     result.revenue.contributions = contributions;
   }
 
-  // ── C. 新客 vs 老客分析 ──
-  if (customerAnalysis.rows.length > 0) {
-    let totalNew = 0, totalReturning = 0, totalOrders = 0;
-    for (const r of customerAnalysis.rows) {
-      totalNew += Number(r.new_customers || 0);
-      totalReturning += Number(r.returning_customers || 0);
-      totalOrders += Number(r.total_orders || 0);
-    }
-    const newRatio = totalOrders > 0 ? (totalNew / totalOrders * 100).toFixed(1) : 0;
+  // ── C. 新客 vs 老客分析（与增长看板 pos-stats new_vs_returning 同口径） ──
+  if (alignedMetrics.total_customers > 0 || customerAnalysis.rows.length > 0) {
+    const totalNew = alignedMetrics.new_customers || 0;
+    const totalReturning = alignedMetrics.returning_customers || 0;
+    const totalOrders = alignedMetrics.total_customers || 0;
+    const newRatio = alignedMetrics.new_pct || 0;
 
     result.customer = {
       new_customers: totalNew,
       returning_customers: totalReturning,
       total_orders: totalOrders,
       new_ratio: Number(newRatio),
+      returning_ratio: alignedMetrics.returning_pct || 0,
       daily: customerAnalysis.rows.map(r => ({
         date: r.biz_date,
         new: Number(r.new_customers || 0),
@@ -514,9 +611,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       })),
     };
 
-    const prevNewN = Number(prevCustomerAnalysis.rows[0]?.new_customers || 0);
-    const prevTotalN = Number(prevCustomerAnalysis.rows[0]?.total_orders || 0);
-    const prevNewRatio = prevTotalN > 0 ? (prevNewN / prevTotalN * 100) : null;
+    const prevNewRatio = prevAlignedMetrics.total_customers > 0 ? prevAlignedMetrics.new_pct : null;
     result.revenue.contributions = result.revenue.contributions || [];
 
     if (prevNewRatio !== null && prevNewRatio > 0) {
@@ -1078,7 +1173,7 @@ async function generateRecommendations(ctx) {
  */
 export async function getAllStoresDiagnosis(pool, dateRange) {
   const endDate = dateRange?.end || new Date().toISOString().slice(0, 10);
-  const startDate = dateRange?.start || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const startDate = dateRange?.start || new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
 
   const stores = await pool.query(
     `SELECT DISTINCT store FROM daily_reports WHERE date >= $1 AND date <= $2 AND store IS NOT NULL AND store <> '' ORDER BY store`,
@@ -1096,8 +1191,11 @@ export async function getAllStoresDiagnosis(pool, dateRange) {
           total: diag.revenue.total,
           total_pre_discount_revenue: diag.revenue.total_pre_discount_revenue,
           avg_order_value: diag.revenue.avg_order_value,
+          avg_table_spend: diag.revenue.avg_table_spend,
+          avg_spend_per_person: diag.revenue.avg_spend_per_person,
           avg_daily_traffic: diag.revenue.avg_daily_traffic,
           total_traffic: diag.revenue.total_traffic,
+          report_days: diag.revenue.report_days,
           avg_efficiency: diag.revenue.avg_efficiency,
           total_delivery_revenue: diag.revenue.total_delivery_revenue,
           delivery_share_pct: diag.revenue.delivery_share_pct,
