@@ -60493,9 +60493,9 @@ ${body}
             lost_365: { name: '流失客(1年+)', tip: '365 天以上未到店（导入老客，试召回）' }
         };
         var AM_VALUE_TIER = {
-            vip:     { name: 'VIP客',   tip: '消费额排名前 15%（≥85 分位）' },
-            regular: { name: '普通客',  tip: '消费额 30–85 分位' },
-            low:     { name: '低价值客', tip: '消费额 <30 分位 或 未消费' }
+            vip:     { name: 'VIP客',   tip: '折前人均消费金额排名前 15%（与自动营销统一）' },
+            regular: { name: '普通客',  tip: '折前人均消费 15–50 分位' },
+            low:     { name: '低价值客', tip: '折前人均消费后 50% 或 未消费' }
         };
         // 可用投放渠道（与引擎 deliverViaChannel 分支一致）。企微为旧规则保留项。
         var AM_CHANNELS = {
@@ -61919,14 +61919,15 @@ ${body}
 
             var cm = pi.customer_metrics || {};
             var cmCards = [
-                { label: '客户总数', value: Number(cm.total_customers || 0), color: '#38bdf8', sub: '统计期识别客户' },
+                { label: '客户总数', value: Number(cm.total_customers || 0), color: '#38bdf8', sub: '统计期有消费手机号' },
                 { label: '潜在新客', value: Number(lifecycle.prospect || 0), color: '#94a3b8', sub: '扫码/触达未下单' },
-                { label: '新客', value: Number(cm.new_count || 0), color: '#0ea5e9', sub: '累计1单·近14天到店' },
-                { label: '活跃客', value: Number(cm.active_count || 0), color: '#22c55e', sub: '累计≥2单·近14天到店' },
+                { label: '新客', value: Number(cm.new_count || nvr.new_count || 0), color: '#0ea5e9', sub: '统计期内首次消费' },
+                { label: '回头客', value: Number(cm.returning_count || nvr.returning_count || 0), color: '#6366f1', sub: '统计期内复访老客' },
+                { label: '活跃客', value: Number(cm.active_count || lifecycle.active || 0), color: '#22c55e', sub: '累计≥2单·近14天到店' },
                 { label: '临界客', value: Number(lifecycle.at_risk || 0), color: '#f59e0b', sub: '14-30天未到店' },
                 { label: '沉睡老客', value: Number(lifecycle.dormant || 0), color: '#ef4444', sub: '30天+未到·曾≥2单' },
                 { label: '流失客', value: Number(lifecycle.churned || 0), color: '#9ca3af', sub: '30天+未到·仅1单' },
-                { label: 'VIP人数', value: Number(cm.vip_count || 0), color: '#fbbf24', sub: '折前人均达标' },
+                { label: 'VIP人数', value: Number(cm.vip_count || 0), color: '#fbbf24', sub: '折前人均消费前15%' },
                 { label: '流失率', value: Number(cm.churn_rate || 0) + '%', color: '#f87171', sub: '沉睡+流失占比' },
                 { label: '复购率', value: Number(cm.repurchase_rate || 0) + '%', color: '#a78bfa', sub: '30天内≥2次' }
             ];

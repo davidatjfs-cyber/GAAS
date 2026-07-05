@@ -1308,37 +1308,37 @@ async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') 
     [safeDays, tenantId]
   );
 
-  // 价值分级：VIP 改为「近似品牌人均阈值」口径。
-  // 洪潮：折前人均 >= 130；马己仙：折前人均 >= 100。其余门店使用该店折前人均 * 1.2 作为兜底阈值。
+  // 价值分级：VIP = 各门店折前人均消费金额排名前 15%（avg_check = 折前营业额/客流量，与自动营销统一）
   await pool.query(`
-    WITH store_thresholds AS (
+    WITH customer_avg AS (
       SELECT
-        store_id,
-        CASE
-          WHEN store_id = '64822111' THEN 130::numeric
-          WHEN store_id = '51866138' THEN 100::numeric
-          ELSE ROUND(SUM(COALESCE(amount_before_discount, 0)) / NULLIF(SUM(COALESCE(NULLIF(diners, 0), 1)), 0) * 1.2, 2)
-        END AS threshold
-      FROM pos_orders
-      WHERE store_id IS NOT NULL AND store_id <> ''
-      GROUP BY store_id
-    ), customer_avg AS (
-      SELECT customer_id,
-             COALESCE(NULLIF(store_id, ''), '*') AS store_id,
-             COALESCE((source_signals ->> 'pos_total_before_spend')::numeric, pos_total_spend) /
-               NULLIF(COALESCE((source_signals ->> 'pos_total_diners')::numeric, pos_order_count), 0) AS avg_spend_per_person
+        customer_id,
+        COALESCE(NULLIF(store_id, ''), '*') AS store_id,
+        COALESCE(
+          NULLIF(avg_check, 0),
+          COALESCE((source_signals ->> 'pos_total_before_spend')::numeric, pos_total_spend)
+            / NULLIF(COALESCE((source_signals ->> 'pos_total_diners')::numeric, 0), 0)
+        ) AS avg_spend_per_person
       FROM growth_customer_profiles
       WHERE COALESCE(pos_total_spend, 0) > 0
+    ), ranked AS (
+      SELECT
+        customer_id,
+        PERCENT_RANK() OVER (
+          PARTITION BY store_id
+          ORDER BY avg_spend_per_person DESC, customer_id
+        ) AS spend_pct
+      FROM customer_avg
+      WHERE avg_spend_per_person IS NOT NULL AND avg_spend_per_person > 0
     )
     UPDATE growth_customer_profiles p
       SET value_tier = CASE
-          WHEN ca.avg_spend_per_person >= COALESCE(st.threshold, 0) THEN 'vip'
-          WHEN ca.avg_spend_per_person >= COALESCE(st.threshold, 0) * 0.6 THEN 'regular'
+          WHEN r.spend_pct <= 0.15 THEN 'vip'
+          WHEN r.spend_pct <= 0.50 THEN 'regular'
           ELSE 'low'
         END
-    FROM customer_avg ca
-    LEFT JOIN store_thresholds st ON st.store_id = ca.store_id
-    WHERE p.customer_id = ca.customer_id
+    FROM ranked r
+    WHERE p.customer_id = r.customer_id
   `);
   // 未消费客户（潜在新客）固定为 low
   await pool.query(`UPDATE growth_customer_profiles SET value_tier = 'low' WHERE COALESCE(pos_total_spend, 0) = 0`);

@@ -344,7 +344,10 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
     const avgSpendPerPerson = dineMetrics.avg_spend_per_person;
     const avgTableSpend = dineMetrics.avg_table_spend;
     const avgOrderValue = avgTableSpend;
-    const avgEfficiency = reports.rows.reduce((s, r) => s + Number(r.efficiency || 0), 0) / reports.rows.length;
+    const effRows = reports.rows.filter(r => Number(r.efficiency) > 0);
+    const avgEfficiency = effRows.length > 0
+      ? effRows.reduce((s, r) => s + Number(r.efficiency), 0) / effRows.length
+      : 0;
     const totalDeliveryRevenue = reports.rows.reduce((s, r) => s + Number(r.delivery_actual || 0), 0);
     const avgDeliveryShare = totalRevenue > 0 ? (totalDeliveryRevenue / totalRevenue) * 100 : 0;
 
@@ -357,7 +360,10 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       prevTotalTraffic = prevDineMetrics.dine_traffic;
       prevAvgTableSpend = prevDineMetrics.avg_table_spend;
       prevTotalOrders = prevDineMetrics.dine_orders;
-      prevAvgEfficiency = prevReports.rows.reduce((s, r) => s + Number(r.efficiency || 0), 0) / prevReports.rows.length;
+      const prevEffRows = prevReports.rows.filter(r => Number(r.efficiency) > 0);
+      prevAvgEfficiency = prevEffRows.length > 0
+        ? prevEffRows.reduce((s, r) => s + Number(r.efficiency), 0) / prevEffRows.length
+        : 0;
       prevTotalDeliveryRevenue = prevReports.rows.reduce((s, r) => s + Number(r.delivery_actual || 0), 0);
     }
 
