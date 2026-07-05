@@ -310,7 +310,7 @@
           <div class="sub">管理租户开通、许可证、飞书、品牌外观与自动验收</div>
         </div>
         <div class="header-links">
-          <a href="/agents-admin/" target="_blank" rel="noreferrer">Agent</a>
+          <a href="/agents-admin/" onclick="event.preventDefault(); window.open(agentsAdminBase() + '/agents-admin/', '_blank', 'noopener')" target="_blank" rel="noreferrer">Agent</a>
           <a href="/api/health" target="_blank" rel="noreferrer">健康</a>
         </div>
       </div>
@@ -577,6 +577,13 @@
     const tokenKey = 'platform_admin_token';
     const accountKey = 'platform_admin_account';
     const agentTenantKey = 'agent_admin_tenant_id';
+    // 生产(nnyx.cc)靠nginx把/agents-admin/反代到agents-service-v2(3101)，同源相对路径即可；
+    // demo(8.153.95.62)没有这层nginx代理，hrms-service(3000)自己也挂了一个早已废弃的同名
+    // 静态页，相对路径会命中3000上的死文件。只在明确访问的是3000端口时才改走3101，
+    // 生产环境location.port为空('')不受影响，行为不变。
+    function agentsAdminBase() {
+      return location.port === '3000' ? `${location.protocol}//${location.hostname}:3101` : '';
+    }
     const state = { tenants: [], selectedTenantId: '', detail: null, agentCenter: null, activePanel: 'overview', overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] } };
     const ACTION_GLOSSARY = [
       { term: '选中', desc: '将该租户设为当前操作对象。选中后顶部会显示租户条，「配置」页表单自动带入该租户 ID。' },
@@ -884,7 +891,7 @@
       if (!id) throw new Error('请先选择租户');
       if (!isLoggedIn()) throw new Error('请先登录');
       localStorage.setItem(agentTenantKey, id);
-      window.open(`/agents-admin/?tenant_id=${encodeURIComponent(id)}`, '_blank', 'noopener');
+      window.open(`${agentsAdminBase()}/agents-admin/?tenant_id=${encodeURIComponent(id)}`, '_blank', 'noopener');
       log(`已打开租户 ${id} 的 Agent 控制台`);
     };
 
@@ -1771,7 +1778,7 @@
       updateSelectedTenantBar();
       showTenantLoginAccess(data.login_access, { silentLog: true });
       const frame = $('agentCenterFrame');
-      if (frame) frame.src = `/agents-admin/?tenant_id=${encodeURIComponent(id)}`;
+      if (frame) frame.src = `${agentsAdminBase()}/agents-admin/?tenant_id=${encodeURIComponent(id)}`;
       const feishu = data.integrations?.feishu_bitable || {};
       if (feishu.app_id) $('cfgAppId').value = feishu.app_id;
       // Load extra integration configs in background (non-blocking)
