@@ -57282,7 +57282,7 @@ ${body}
                   <div class="dx-metrics dx-metrics--five">
                     <div class="dx-metric dx-metric--revenue"><div class="v">${dxFmtMoney(revenue.total || 0)}</div><div class="l">本期营收</div><span class="dx-metric__delta">${changeSign}${changePct.toFixed(1)}%</span></div>
                     <div class="dx-metric dx-metric--traffic"><div class="v">${Number(revenue.total_traffic || 0).toLocaleString('zh-CN')}</div><div class="l">堂食总客流</div><span class="dx-metric__delta">日均 ${Number(revenue.avg_daily_traffic || 0).toLocaleString('zh-CN')} 人</span></div>
-                    <div class="dx-metric dx-metric--ticket"><div class="v">${dxFmtMoney(revenue.avg_table_spend || revenue.avg_order_value || 0)}</div><div class="l">堂食桌均</div><span class="dx-metric__delta">堂食人均 ${dxFmtMoney(revenue.avg_spend_per_person || 0)} · 新客 ${s.summary?.new_customer_ratio || '-'}</span></div>
+                    <div class="dx-metric dx-metric--ticket"><div class="v">${dxFmtMoney(revenue.avg_table_spend || revenue.avg_order_value || 0)}</div><div class="l">堂食桌均(折前)</div><span class="dx-metric__delta">折前堂食人均 ${dxFmtMoney(revenue.avg_spend_per_person || 0)} · 新客 ${s.summary?.new_customer_ratio || '-'}</span></div>
                     <div class="dx-metric dx-metric--takeout"><div class="v">${Number(revenue.delivery_share_pct || 0).toFixed(1)}%</div><div class="l">外卖占比</div><span class="dx-metric__delta">${dxFmtMoney(revenue.total_delivery_revenue || 0)}</span></div>
                     <div class="dx-metric dx-metric--efficiency"><div class="v">${dxFmtMoney(revenue.avg_efficiency || 0)}</div><div class="l">人效值</div><span class="dx-metric__delta">${s.action_suggestion_count || 0} 条行动</span></div>
                   </div>
@@ -57344,7 +57344,7 @@ ${body}
             const heroMetrics = [
                 { key: '本期营收', value: dxFmtMoney(revenue.total || 0), delta: dxFmtPct(revenue.change_pct || 0), cls: 'dx-metric--revenue' },
                 { key: '堂食总客流', value: Number(revenue.total_traffic || 0).toLocaleString('zh-CN'), delta: '日均 ' + Number(revenue.avg_daily_traffic || 0).toLocaleString('zh-CN') + ' 人', cls: 'dx-metric--traffic' },
-                { key: '堂食桌均', value: dxFmtMoney(revenue.avg_table_spend || revenue.avg_order_value || 0), delta: '堂食人均 ' + dxFmtMoney(revenue.avg_spend_per_person || 0) + ' · 新客 ' + (customer.new_ratio != null ? customer.new_ratio + '%' : '-'), cls: 'dx-metric--ticket' },
+                { key: '堂食桌均(折前)', value: dxFmtMoney(revenue.avg_table_spend || revenue.avg_order_value || 0), delta: '折前堂食人均 ' + dxFmtMoney(revenue.avg_spend_per_person || 0) + ' · 新客 ' + (customer.new_ratio != null ? customer.new_ratio + '%' : '-'), cls: 'dx-metric--ticket' },
                 { key: '外卖占比', value: Number(revenue.delivery_share_pct || 0).toFixed(1) + '%', delta: dxFmtMoney(revenue.total_delivery_revenue || 0), cls: 'dx-metric--takeout' },
                 { key: '人效值', value: dxFmtMoney(revenue.avg_efficiency || 0), delta: (d.summary?.action_suggestion_count || 0) + ' 条行动建议', cls: 'dx-metric--efficiency' }
             ];

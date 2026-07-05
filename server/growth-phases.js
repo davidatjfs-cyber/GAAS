@@ -4,6 +4,7 @@ import { callLLM, sendLarkMessage } from './agents.js';
 import { getBrandForStoreSync } from './utils/brand-config-loader.js';
 import { getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js';
 import { checkTextGrounding } from './ontology/plan-grounding-check.js';
+import { fetchDineMetricsForDays, resolveStoreCanonicalName } from './utils/dine-metrics.js';
 
 const PHASE_EVENT_TYPES = new Set([
   'campaign_scan', 'phone_authorized', 'coupon_claimed',
@@ -2538,6 +2539,18 @@ export function registerPhaseRoutes(app, pool) {
       report_days: reportDays,
       data_source: reportDays > 0 ? 'daily_reports' : 'pos_orders'
     };
+
+    const metricsStoreName = resolveStoreCanonicalName(sid);
+    if (metricsStoreName) {
+      const dine = await fetchDineMetricsForDays(pool, metricsStoreName, days);
+      mergedSummary.total_diners = dine.dine_traffic;
+      mergedSummary.dine_orders = dine.dine_orders;
+      mergedSummary.dine_before_revenue = dine.dine_before_revenue;
+      mergedSummary.avg_table_spend = dine.avg_table_spend;
+      mergedSummary.avg_spend_per_person = dine.avg_spend_per_person;
+      mergedSummary.dine_data_source = dine.data_source;
+      mergedSummary.data_source = dine.data_source;
+    }
 
     const profileInsights = {
       lifecycle: lcCounts,
