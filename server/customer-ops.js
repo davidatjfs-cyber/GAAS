@@ -83,14 +83,8 @@ function valueScore(field, value) {
   if (field === 'phone') return cleanPhone(raw).length === 11 ? 4 : 0;
   if (field === 'bizDate') return dateOnly(value) ? 3 : 0;
   if (field === 'checkoutRaw') return hourOf(value) != null ? 2 : 0;
-  if (field === 'amount') {
-    const n = num(value);
-    return n > 0 && n < 1000000 ? 3 : 0;
-  }
-  if (field === 'diners' || field === 'qty') {
-    const n = num(value);
-    return n > 0 && n < 200 && String(raw).length <= 8 ? 2 : 0;
-  }
+  if (field === 'amount') { const n = num(value); return n > 0 && n < 1000000 ? 3 : 0; }
+  if (field === 'diners' || field === 'qty') { const n = num(value); return n > 0 && n < 200 && String(raw).length <= 8 ? 2 : 0; }
   if (field === 'dish') return /[菜饭面汤酒虾蟹鱼肉牛鸡鸭鹅豆茶奶咖啡包点]|[a-z]{3,}/i.test(raw) && raw.length <= 80 ? 1.5 : 0;
   if (field === 'orderNo') return /[a-z0-9-]{5,}/i.test(raw) && raw.length <= 80 ? 1 : 0;
   return raw ? 0.5 : 0;
@@ -124,10 +118,7 @@ function inferMapping(headers, sampleRows) {
   }
   for (const field of ['phone', 'bizDate', 'checkoutRaw', 'balance', 'rechargeAmount', 'giftAmount', 'points', 'amount', 'orderNo', 'memberNo', 'dish', 'store', 'diners', 'orderType', 'memberName', 'tableNo', 'qty', 'category']) {
     const cand = (fieldScores[field] || []).find((x) => x.score >= (['phone', 'amount', 'bizDate'].includes(field) ? 2.5 : 1.2) && !used.has(x.col));
-    if (cand) {
-      mapping[field] = cand;
-      used.add(cand.col);
-    }
+    if (cand) { mapping[field] = cand; used.add(cand.col); }
   }
   return { mapping, fieldScores };
 }
@@ -185,8 +176,6 @@ function classifyCustomer(c, nowTs) {
   const visits = c.orders.length;
   const daysSince = c.lastDate ? Math.floor((nowTs - new Date(`${c.lastDate}T00:00:00Z`).getTime()) / 86400000) : 999;
   const avg = c.totalSpend / Math.max(visits, 1);
-  const businessScore = c.businessSignals;
-  const familyScore = c.familySignals;
   const tags = [];
   let lifecycle = 'occasional';
   if (visits <= 1) lifecycle = 'one_time';
@@ -194,8 +183,8 @@ function classifyCustomer(c, nowTs) {
   else if (daysSince > 45) lifecycle = 'at_risk';
   if (daysSince > 90) lifecycle = 'dormant';
   if (avg >= 800 || c.totalSpend >= 10000) tags.push('high_value');
-  if (businessScore >= 2 || avg >= 800) tags.push('business');
-  if (familyScore >= 2) tags.push('family');
+  if (c.businessSignals >= 2 || avg >= 800) tags.push('business');
+  if (c.familySignals >= 2) tags.push('family');
   if (daysSince >= Math.max(30, c.avgInterval * 1.8)) tags.push('risk');
   return { lifecycle, tags, daysSince };
 }
@@ -209,18 +198,7 @@ function normalizeWorkbook(filePath, opts = {}) {
     const { sheetName, headerRow, mapping, dataRows } = table;
     const sheetKind = inferSheetKind(mapping, sheetName);
     const present = Object.fromEntries(Object.keys(FIELD_DEFS).map((f) => [f, !!mapping[f]]));
-    diagnostics.sheets.push({
-      sheet_name: sheetName,
-      inferred_type: sheetKind,
-      header_row: headerRow,
-      rows: dataRows.length,
-      mapping: Object.fromEntries(Object.entries(mapping).map(([field, m]) => [field, {
-        label: FIELD_DEFS[field]?.label || field,
-        source_header: m.header,
-        confidence: Math.min(100, Math.round(m.score * 9))
-      }])),
-      present
-    });
+    diagnostics.sheets.push({ sheet_name: sheetName, inferred_type: sheetKind, header_row: headerRow, rows: dataRows.length, mapping: Object.fromEntries(Object.entries(mapping).map(([field, m]) => [field, { label: FIELD_DEFS[field]?.label || field, source_header: m.header, confidence: Math.min(100, Math.round(m.score * 9)) }])), present });
     for (const row of dataRows) {
       const orderNo = cleanText(cell(row, mapping, 'orderNo'), 120);
       const memberNo = cleanText(cell(row, mapping, 'memberNo'), 120);
@@ -242,7 +220,6 @@ function normalizeWorkbook(filePath, opts = {}) {
       const rowKind = rechargeRaw || balance || /储值|充值|余额|充卡/.test(orderType) ? 'stored_value' : sheetKind;
       const amount = rowKind === 'stored_value' ? 0 : amountRaw;
       const rechargeAmount = rowKind === 'stored_value' ? (rechargeRaw || amountRaw) : rechargeRaw;
-
       if (dish && (orderNo || phone || bizDate)) {
         const itemKey = orderNo || `${phone || 'unknown'}:${bizDate}:${amount || rechargeAmount}`;
         const list = itemsByOrder.get(itemKey) || [];
@@ -254,41 +231,15 @@ function normalizeWorkbook(filePath, opts = {}) {
       if (!hasOrderSignal && dish) continue;
       const key = orderNo || `${rowKind}:${phone || memberNo || 'unknown'}:${bizDate}:${amount || rechargeAmount || balance}:${orders.size}`;
       const prev = orders.get(key) || {};
-      const record = {
-        orderNo: key,
-        memberNo: memberNo || prev.memberNo || '',
-        kind: rowKind || 'unknown',
-        sourceFile: opts.sourceFile || path.basename(filePath),
-        sourceSheet: sheetName,
-        phone: phone || prev.phone || '',
-        memberName: memberName || prev.memberName || '',
-        store: store || prev.store || '',
-        bizDate: bizDate || prev.bizDate || '',
-        hour: hourOf(checkoutRaw) ?? prev.hour ?? null,
-        amount: amount || prev.amount || 0,
-        rechargeAmount: rechargeAmount || prev.rechargeAmount || 0,
-        giftAmount: giftAmount || prev.giftAmount || 0,
-        balance: balance || prev.balance || 0,
-        points: points || prev.points || 0,
-        diners: diners || prev.diners || 0,
-        orderType: orderType || prev.orderType || '',
-        tableNo: tableNo || prev.tableNo || ''
-      };
+      const record = { orderNo: key, memberNo: memberNo || prev.memberNo || '', kind: rowKind || 'unknown', sourceFile: opts.sourceFile || path.basename(filePath), sourceSheet: sheetName, phone: phone || prev.phone || '', memberName: memberName || prev.memberName || '', store: store || prev.store || '', bizDate: bizDate || prev.bizDate || '', hour: hourOf(checkoutRaw) ?? prev.hour ?? null, amount: amount || prev.amount || 0, rechargeAmount: rechargeAmount || prev.rechargeAmount || 0, giftAmount: giftAmount || prev.giftAmount || 0, balance: balance || prev.balance || 0, points: points || prev.points || 0, diners: diners || prev.diners || 0, orderType: orderType || prev.orderType || '', tableNo: tableNo || prev.tableNo || '' };
       record.recordKey = recordKeyOf(record);
       orders.set(key, record);
     }
   }
-  for (const [orderNo, items] of itemsByOrder.entries()) {
-    const order = orders.get(orderNo);
-    if (order) order.items = items;
-  }
+  for (const [orderNo, items] of itemsByOrder.entries()) { const order = orders.get(orderNo); if (order) order.items = items; }
   const normalized = Array.from(orders.values()).filter((o) => o.bizDate || o.amount || o.rechargeAmount || o.balance || o.phone || o.memberNo);
   for (const r of normalized) diagnostics.record_types[r.kind || 'unknown'] = (diagnostics.record_types[r.kind || 'unknown'] || 0) + 1;
-  const totals = diagnostics.sheets.reduce((acc, s) => {
-    acc.rows += s.rows || 0;
-    for (const f of ['phone', 'bizDate', 'amount', 'dish']) if (s.present?.[f]) acc[f] += 1;
-    return acc;
-  }, { rows: 0, phone: 0, bizDate: 0, amount: 0, dish: 0 });
+  const totals = diagnostics.sheets.reduce((acc, s) => { acc.rows += s.rows || 0; for (const f of ['phone', 'bizDate', 'amount', 'dish']) if (s.present?.[f]) acc[f] += 1; return acc; }, { rows: 0, phone: 0, bizDate: 0, amount: 0, dish: 0 });
   diagnostics.missing_required = ['phone', 'bizDate', 'amount'].filter((f) => !totals[f]).map((f) => FIELD_DEFS[f].label);
   if (!totals.dish) diagnostics.warnings.push('未识别到菜品字段，360档案中的偏好菜和新品匹配会较弱');
   if (!totals.phone) diagnostics.warnings.push('未识别到手机号字段，只能做匿名订单诊断，无法沉淀可触达客户');
@@ -320,24 +271,7 @@ function analyzeOrders(orders, opts = {}) {
       part.revenue += o.amount; part.orders += 1;
     }
     const id = o.phone || o.memberNo || `anonymous:${o.orderNo}`;
-    const c = customers.get(id) || {
-      customerId: id,
-      phone: o.phone,
-      memberNo: o.memberNo || '',
-      name: o.memberName,
-      stores: new Set(),
-      orders: [],
-      records: [],
-      storedValueRecords: [],
-      totalSpend: 0,
-      totalRecharge: 0,
-      totalGift: 0,
-      latestBalance: 0,
-      latestPoints: 0,
-      favorite: new Map(),
-      businessSignals: 0,
-      familySignals: 0
-    };
+    const c = customers.get(id) || { customerId: id, phone: o.phone, memberNo: o.memberNo || '', name: o.memberName, stores: new Set(), orders: [], records: [], storedValueRecords: [], totalSpend: 0, totalRecharge: 0, totalGift: 0, latestBalance: 0, latestPoints: 0, favorite: new Map(), businessSignals: 0, familySignals: 0 };
     if (o.phone && !c.phone) c.phone = o.phone;
     if (o.memberNo && !c.memberNo) c.memberNo = o.memberNo;
     if (o.memberName && !c.name) c.name = o.memberName;
@@ -380,97 +314,49 @@ function analyzeOrders(orders, opts = {}) {
     const avgCheck = c.totalSpend / Math.max(c.orders.length, 1);
     const hourBuckets = c.orders.reduce((acc, o) => {
       const key = o.hour >= 11 && o.hour < 14 ? '午市' : (o.hour >= 17 && o.hour < 21 ? '晚市' : '其他');
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
+      acc[key] = (acc[key] || 0) + 1; return acc;
     }, {});
     const preferredVisitTime = Object.entries(hourBuckets).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
     const lunchPct = Math.round((hourBuckets['午市'] || 0) / Math.max(c.orders.length, 1) * 100) / 100;
     const weekendCount = c.orders.filter((o) => { const d = o.bizDate ? new Date(`${o.bizDate}T00:00:00Z`) : null; return d && [0, 6].includes(d.getUTCDay()); }).length;
     const weekendPct = Math.round(weekendCount / Math.max(c.orders.length, 1) * 100) / 100;
     const cutoff90d = nowTs - 90 * 86400000;
+    const cutoff30d = nowTs - 30 * 86400000;
     const spend90d = Math.round(c.orders.filter((o) => o.bizDate && new Date(`${o.bizDate}T00:00:00Z`).getTime() >= cutoff90d).reduce((s, o) => s + Number(o.amount || 0), 0) * 100) / 100;
     const maxSingleSpend = Math.round(c.orders.reduce((mx, o) => Math.max(mx, Number(o.amount || 0)), 0) * 100) / 100;
-    const storeVisits = c.orders.reduce((acc, o) => {
-      const key = o.store || '未知门店';
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
+    const orders30d = c.orders.filter((o) => o.bizDate && new Date(`${o.bizDate}T00:00:00Z`).getTime() >= cutoff30d).length;
+    const maxSingleDiners = c.orders.reduce((mx, o) => Math.max(mx, Number(o.diners || 0)), 0);
+    const storeVisits = c.orders.reduce((acc, o) => { const key = o.store || '未知门店'; acc[key] = (acc[key] || 0) + 1; return acc; }, {});
     const primaryStore = Object.entries(storeVisits).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
-    const lastOrders = c.orders.slice(-8).reverse().map((o) => ({
-      date: o.bizDate || '',
-      store: o.store || '',
-      amount: Math.round(Number(o.amount || 0) * 100) / 100,
-      diners: o.diners || 0,
-      order_type: o.orderType || '',
-      table_no: o.tableNo || '',
-      dishes: (o.items || []).slice(0, 6).map((it) => it.dish).filter(Boolean)
-    }));
-    const storedValueTimeline = c.storedValueRecords.slice(-8).reverse().map((o) => ({
-      date: o.bizDate || '',
-      store: o.store || '',
-      recharge_amount: Math.round(Number(o.rechargeAmount || 0) * 100) / 100,
-      gift_amount: Math.round(Number(o.giftAmount || 0) * 100) / 100,
-      balance: Math.round(Number(o.balance || 0) * 100) / 100,
-      points: Math.round(Number(o.points || 0) * 100) / 100,
-      order_type: o.orderType || ''
-    }));
-    const touchPlan = cls.tags.includes('business')
-      ? ['企微一对一维护', '预约/包房服务提醒', '新品或商务套餐邀请']
-      : cls.tags.includes('family')
-        ? ['周四/周五短信提醒', '小程序套餐券', '大众点评/小红书内容种草']
-        : ['短信召回', '小程序权益', '门店到店识别'];
+    const lastOrders = c.orders.slice(-8).reverse().map((o) => ({ date: o.bizDate || '', store: o.store || '', amount: Math.round(Number(o.amount || 0) * 100) / 100, diners: o.diners || 0, order_type: o.orderType || '', table_no: o.tableNo || '', dishes: (o.items || []).slice(0, 6).map((it) => it.dish).filter(Boolean) }));
+    const storedValueTimeline = c.storedValueRecords.slice(-8).reverse().map((o) => ({ date: o.bizDate || '', store: o.store || '', recharge_amount: Math.round(Number(o.rechargeAmount || 0) * 100) / 100, gift_amount: Math.round(Number(o.giftAmount || 0) * 100) / 100, balance: Math.round(Number(o.balance || 0) * 100) / 100, points: Math.round(Number(o.points || 0) * 100) / 100, order_type: o.orderType || '' }));
     return {
       customer_id: `C${String(idx + 1).padStart(6, '0')}`,
       customer_key: c.customerId,
-      phone: c.phone,
-      member_no: c.memberNo || '',
-      name: c.name || '',
-      external_userid: '',
-      stores: Array.from(c.stores),
-      primary_store: primaryStore,
-      store_visits: storeVisits,
+      phone: c.phone, member_no: c.memberNo || '', name: c.name || '',
+      stores: Array.from(c.stores), primary_store: primaryStore, store_visits: storeVisits,
       total_spend: Math.round(c.totalSpend * 100) / 100,
       total_recharge: Math.round(c.totalRecharge * 100) / 100,
       total_gift: Math.round(c.totalGift * 100) / 100,
       stored_value_balance: Math.round(c.latestBalance * 100) / 100,
       points_balance: Math.round(c.latestPoints * 100) / 100,
-      order_count: c.orders.length,
-      source_record_count: c.records.length,
-      stored_value_count: c.storedValueRecords.length,
+      order_count: c.orders.length, source_record_count: c.records.length, stored_value_count: c.storedValueRecords.length,
       avg_check: Math.round(avgCheck * 100) / 100,
-      first_visit: firstDate,
-      last_visit: lastDate,
-      days_since_last_visit: cls.daysSince,
-      favorite_dishes: favorite,
-      preferred_visit_time: preferredVisitTime,
-      lunch_pct: lunchPct,
-      weekend_pct: weekendPct,
-      spend_90d: spend90d,
-      max_single_spend: maxSingleSpend,
-      last_orders: lastOrders,
-      stored_value_timeline: storedValueTimeline,
+      first_visit: firstDate, last_visit: lastDate, days_since_last_visit: cls.daysSince,
+      favorite_dishes: favorite, preferred_visit_time: preferredVisitTime,
+      lunch_pct: lunchPct, weekend_pct: weekendPct, spend_90d: spend90d,
+      max_single_spend: maxSingleSpend, orders_30d: orders30d, max_single_diners: maxSingleDiners,
+      last_orders: lastOrders, stored_value_timeline: storedValueTimeline,
       lifecycle_stage: cls.lifecycle,
       value_tier: avgCheck >= 800 || c.totalSpend >= 10000 ? 'vip' : (avgCheck >= 300 || c.orders.length >= 4 ? 'regular' : 'general'),
       scene_tags: avgCheck < 200 && c.orders.length <= 3 && !c.totalRecharge ? [...cls.tags, 'price_sensitive'] : cls.tags,
       staff_note: cls.tags.includes('business') ? '商务客户' : (cls.tags.includes('family') ? '家庭聚餐客户' : ''),
-      last_marketing: '',
       visit_status: cls.daysSince <= 14 ? '已到店' : '待维护',
-      channel_readiness: {
-        sms: !!c.phone,
-        wecom: false,
-        miniprogram: !!c.phone,
-        xiaohongshu: true,
-        dianping: true,
-        douyin: true
-      },
+      channel_readiness: { sms: !!c.phone, wecom: false, miniprogram: !!c.phone, xiaohongshu: true, dianping: true, douyin: true },
       next_best_action: cls.lifecycle === 'one_time'
         ? `首购${cls.daysSince}天未复购，建议用「${favorite[0] || '招牌菜'}」做二次到店邀请。`
-        : cls.tags.includes('business')
-          ? `商务/高客单客户，建议由店长企微维护，提前安排座位并推荐「${favorite[0] || '招牌菜'}」。`
-          : cls.daysSince >= 30
-            ? `已${cls.daysSince}天未到店，建议短信/企微召回并绑定到店服务提醒。`
-            : '维持常规会员触达，避免过度打扰。',
-      touch_plan: touchPlan
+        : cls.tags.includes('business') ? `商务/高客单客户，建议由店长维护，提前安排座位并推荐「${favorite[0] || '招牌菜'}」。`
+          : cls.daysSince >= 30 ? `已${cls.daysSince}天未到店，建议短信/企微召回。` : '维持常规会员触达，避免过度打扰。'
     };
   }).sort((a, b) => b.total_spend - a.total_spend);
   const byLifecycle = {};
@@ -483,241 +369,38 @@ function analyzeOrders(orders, opts = {}) {
   const avgDaily = dailyVals.length ? dailyVals.reduce((s, x) => s + x, 0) / dailyVals.length : 0;
   const variance = dailyVals.length ? dailyVals.reduce((s, x) => s + Math.pow(x - avgDaily, 2), 0) / dailyVals.length : 0;
   const stability = avgDaily > 0 ? Math.max(0, 100 - Math.sqrt(variance) / avgDaily * 100) : 0;
-  const opportunities = buildMaintenance(customerRows, storeName);
   return {
-    store_name: storeName,
-    generated_at: new Date().toISOString(),
-    input_quality: {
-      rows: orders.length,
-      valid_orders: valid.length,
-      customers: customerRows.length,
-      date_start: dates[0] || '',
-      date_end: dates[dates.length - 1] || '',
-      cleaning: opts.diagnostics || {}
-    },
-    business: {
-      revenue: Math.round(totalRevenue * 100) / 100,
-      orders: consumption.length,
-      customers: customerRows.length,
-      avg_check: consumption.length ? Math.round(totalRevenue / consumption.length * 100) / 100 : 0,
-      customer_repeat_rate: customerRows.length ? customerRows.filter((c) => c.order_count > 1).length / customerRows.length : 0,
-      revenue_stability_score: Math.round(stability),
-      stored_value: {
-        recharge: Math.round(customerRows.reduce((s, c) => s + Number(c.total_recharge || 0), 0) * 100) / 100,
-        gift: Math.round(customerRows.reduce((s, c) => s + Number(c.total_gift || 0), 0) * 100) / 100,
-        balance: Math.round(customerRows.reduce((s, c) => s + Number(c.stored_value_balance || 0), 0) * 100) / 100,
-        customers: customerRows.filter((c) => Number(c.stored_value_count || 0) > 0).length
-      },
-      daypart,
-      weekday
-    },
+    store_name: storeName, generated_at: new Date().toISOString(),
+    input_quality: { rows: orders.length, valid_orders: valid.length, customers: customerRows.length, date_start: dates[0] || '', date_end: dates[dates.length - 1] || '', cleaning: opts.diagnostics || {} },
+    business: { revenue: Math.round(totalRevenue * 100) / 100, orders: consumption.length, customers: customerRows.length, avg_check: consumption.length ? Math.round(totalRevenue / consumption.length * 100) / 100 : 0, customer_repeat_rate: customerRows.length ? customerRows.filter((c) => c.order_count > 1).length / customerRows.length : 0, revenue_stability_score: Math.round(stability), stored_value: { recharge: Math.round(customerRows.reduce((s, c) => s + Number(c.total_recharge || 0), 0) * 100) / 100, gift: Math.round(customerRows.reduce((s, c) => s + Number(c.total_gift || 0), 0) * 100) / 100, balance: Math.round(customerRows.reduce((s, c) => s + Number(c.stored_value_balance || 0), 0) * 100) / 100, customers: customerRows.filter((c) => Number(c.stored_value_count || 0) > 0).length }, daypart, weekday },
     customer_mix: { lifecycle: byLifecycle, scene: byScene, top_customers: customerRows.slice(0, 20) },
-    opportunities,
     customers: customerRows
   };
 }
 
-function buildMaintenance(customers, storeName) {
-  const groups = [
-    {
-      key: 'vip_winback',
-      title: 'VIP久未到店唤回',
-      channels: ['wecom', 'sms', 'miniprogram'],
-      filter: (c) => c.value_tier === 'vip' && c.days_since_last_visit >= 30,
-      action: (c) => `邀请${c.name || '老顾客'}回店，结合其偏好「${c.favorite_dishes[0] || '招牌菜'}」提供专属到店权益。`
-    },
-    {
-      key: 'new_second_visit',
-      title: '新客二次到店',
-      channels: ['sms', 'miniprogram', 'wecom'],
-      filter: (c) => c.order_count === 1 && c.days_since_last_visit >= 7 && c.days_since_last_visit <= 45,
-      action: (c) => `发送二次到店邀请，主推上次消费相关菜品「${c.favorite_dishes[0] || '门店招牌'}」。`
-    },
-    {
-      key: 'business_guest_care',
-      title: '商务客重点维护',
-      channels: ['wecom', 'sms'],
-      filter: (c) => c.scene_tags.includes('business'),
-      action: () => '由店长/客户经理维护，推荐包房、安静座位、商务套餐和新品。'
-    },
-    {
-      key: 'family_weekend',
-      title: '家庭客周末激活',
-      channels: ['sms', 'miniprogram', 'dianping'],
-      filter: (c) => c.scene_tags.includes('family'),
-      action: () => '周四/周五触达周末家庭聚餐套餐，突出儿童友好、招牌菜和停车便利。'
-    }
-  ];
-  return groups.map((g) => {
-    const matched = customers.filter(g.filter);
-    const expectedRevenue = matched.reduce((s, c) => s + c.avg_check, 0) * 0.12;
-    return {
-      key: g.key,
-      title: g.title,
-      store_name: storeName,
-      target_count: matched.length,
-      channels: g.channels,
-      expected_revenue: Math.round(expectedRevenue),
-      sample_customers: matched.slice(0, 8).map((c) => ({
-        customer_id: c.customer_id,
-        phone: c.phone,
-        value_tier: c.value_tier,
-        days_since_last_visit: c.days_since_last_visit,
-        favorite_dishes: c.favorite_dishes,
-        recommended_action: g.action(c)
-      }))
-    };
-  }).filter((g) => g.target_count > 0);
-}
-
 async function ensureCustomerOpsTables(pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS customer_ops_diagnoses (
-      id BIGSERIAL PRIMARY KEY,
-      tenant_id VARCHAR(80) NOT NULL DEFAULT 'default',
-      store_name TEXT,
-      source_filename TEXT,
-      report_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_by TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
+  await pool.query(`CREATE TABLE IF NOT EXISTS customer_ops_diagnoses (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', store_name TEXT, source_filename TEXT, report_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_ops_diag_tenant_created ON customer_ops_diagnoses (tenant_id, created_at DESC)`);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS customer_ops_profiles (
-      id BIGSERIAL PRIMARY KEY,
-      tenant_id VARCHAR(80) NOT NULL DEFAULT 'default',
-      diagnosis_id BIGINT REFERENCES customer_ops_diagnoses(id) ON DELETE CASCADE,
-      customer_id TEXT,
-      customer_key TEXT,
-      phone TEXT,
-      profile_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
+  await pool.query(`CREATE TABLE IF NOT EXISTS customer_ops_profiles (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', diagnosis_id BIGINT REFERENCES customer_ops_diagnoses(id) ON DELETE CASCADE, customer_id TEXT, customer_key TEXT, phone TEXT, profile_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_ops_profiles_diag ON customer_ops_profiles (tenant_id, diagnosis_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_ops_profiles_phone ON customer_ops_profiles (tenant_id, phone) WHERE phone IS NOT NULL AND phone <> ''`);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS customer_ops_source_records (
-      id BIGSERIAL PRIMARY KEY,
-      tenant_id VARCHAR(80) NOT NULL DEFAULT 'default',
-      diagnosis_id BIGINT REFERENCES customer_ops_diagnoses(id) ON DELETE CASCADE,
-      source_filename TEXT,
-      record_key TEXT NOT NULL,
-      phone TEXT,
-      member_no TEXT,
-      record_kind TEXT,
-      record_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE (tenant_id, record_key)
-    )
-  `);
+  await pool.query(`CREATE TABLE IF NOT EXISTS customer_ops_source_records (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', diagnosis_id BIGINT REFERENCES customer_ops_diagnoses(id) ON DELETE CASCADE, source_filename TEXT, record_key TEXT NOT NULL, phone TEXT, member_no TEXT, record_kind TEXT, record_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE (tenant_id, record_key))`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_ops_source_tenant_kind ON customer_ops_source_records (tenant_id, record_kind, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_ops_source_phone ON customer_ops_source_records (tenant_id, phone) WHERE phone IS NOT NULL AND phone <> ''`);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS customer_ops_decisions (
-      id BIGSERIAL PRIMARY KEY,
-      tenant_id VARCHAR(80) NOT NULL DEFAULT 'default',
-      diagnosis_id BIGINT REFERENCES customer_ops_diagnoses(id) ON DELETE CASCADE,
-      decision_key TEXT NOT NULL,
-      customer_id TEXT,
-      phone TEXT,
-      decision_type TEXT NOT NULL,
-      channel TEXT NOT NULL,
-      title TEXT,
-      reason TEXT,
-      copy_text TEXT,
-      service_tip TEXT,
-      expected_revenue NUMERIC DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'proposed',
-      result_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_by TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE (decision_key, tenant_id)
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_ops_decisions_diag ON customer_ops_decisions (tenant_id, diagnosis_id, status, created_at DESC)`);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS customer_ops_marketing_log (
-      id BIGSERIAL PRIMARY KEY,
-      tenant_id VARCHAR(80) NOT NULL DEFAULT 'default',
-      customer_key TEXT NOT NULL,
-      customer_id TEXT,
-      phone TEXT,
-      decision_id BIGINT,
-      channel TEXT,
-      action_key TEXT,
-      status TEXT NOT NULL DEFAULT 'sent',
-      arrived BOOLEAN DEFAULT FALSE,
-      actual_revenue NUMERIC DEFAULT 0,
-      note TEXT DEFAULT '',
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_custops_mlog_key ON customer_ops_marketing_log (tenant_id, customer_key, created_at DESC)`);
-}
 
-function chooseChannel(c) {
-  if (c.external_userid) return 'wecom';
-  if (c.phone) return 'miniprogram';
-  return 'manual';
-}
+  // 模块2：自定义客群分层
+  await pool.query(`CREATE TABLE IF NOT EXISTS customer_segments (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', name TEXT NOT NULL, criteria_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_segments_tenant ON customer_segments (tenant_id, created_at DESC)`);
 
-function buildInviteCopy(c, storeName, context = {}) {
-  const dish = cleanText(context.new_dish || context.feature_dish || c.favorite_dishes?.[0] || '招牌菜', 80);
-  const name = cleanText(c.name || '老顾客', 40);
-  if (context.new_dish) {
-    return `${name}您好，${storeName}本周上新「${dish}」。记得您之前偏爱这类菜品，给您预留了一份到店专属邀请，方便的话这两天来尝鲜。`;
-  }
-  if (c.scene_tags?.includes('business')) {
-    return `${name}您好，近期如有商务宴请，${storeName}可为您提前安排安静座位，并推荐「${dish}」等招牌菜。需要我帮您预留吗？`;
-  }
-  return `${name}您好，您有一阵子没来${storeName}了。店里近期推荐「${dish}」，欢迎这周回店用餐，我们为老顾客准备了到店提醒。`;
-}
-
-function decisionForCustomer(c, storeName, context = {}) {
-  const decisions = [];
-  const favorite = c.favorite_dishes?.[0] || '';
-  const isVip = c.value_tier === 'vip' || c.scene_tags?.includes('high_value');
-  const longAway = Number(c.days_since_last_visit || 0) >= Number(context.days_threshold || 30);
-  const newDish = cleanText(context.new_dish || '', 80);
-  const newDishMatches = newDish && (!favorite || favorite.includes(newDish) || newDish.includes(favorite) || c.scene_tags?.includes('business'));
-  if (isVip && longAway && (newDishMatches || c.scene_tags?.includes('business'))) {
-    decisions.push({
-      decision_type: 'vip_new_dish_invite',
-      channel: chooseChannel(c),
-      title: `VIP新品邀请：${c.customer_id}`,
-      reason: `高价值客户${c.days_since_last_visit}天未到店，偏好${favorite || '高客单菜品'}${newDish ? `，当前有新品${newDish}` : ''}`,
-      copy_text: buildInviteCopy(c, storeName, context),
-      service_tip: `若客户预约/到店：安排安静或靠窗座位，店长打招呼，优先推荐${newDish || favorite || '新品/招牌菜'}。`,
-      expected_revenue: Math.round(Number(c.avg_check || 0) * 0.35)
-    });
-  }
-  if (c.order_count === 1 && Number(c.days_since_last_visit || 0) >= 7 && Number(c.days_since_last_visit || 0) <= 45) {
-    decisions.push({
-      decision_type: 'new_second_visit',
-      channel: chooseChannel(c),
-      title: `新客二次到店：${c.customer_id}`,
-      reason: `首购后${c.days_since_last_visit}天未复购，适合用偏好菜品做二次邀请`,
-      copy_text: buildInviteCopy(c, storeName, context),
-      service_tip: `若客户到店：推荐上次点过的${favorite || '招牌菜'}，并引导加入企微/小程序会员。`,
-      expected_revenue: Math.round(Number(c.avg_check || 0) * 0.18)
-    });
-  }
-  if ((c.stores || []).length > 1 || c.scene_tags?.includes('business')) {
-    decisions.push({
-      decision_type: 'cross_store_service',
-      channel: 'service',
-      title: `跨店/VIP服务提醒：${c.customer_id}`,
-      reason: (c.stores || []).length > 1 ? `客户跨店消费：${(c.stores || []).join('、')}` : '商务客户需要更强现场服务',
-      copy_text: '',
-      service_tip: `到店识别后提醒服务员：${c.staff_note || '重点客户'}，偏好${favorite || '招牌菜'}，平均客单${Math.round(Number(c.avg_check || 0))}元。`,
-      expected_revenue: Math.round(Number(c.avg_check || 0) * 0.12)
-    });
-  }
-  return decisions;
+  // 模块3：营销活动台账
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketing_campaigns (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', title TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'offline', campaign_type TEXT DEFAULT '其他', status TEXT NOT NULL DEFAULT 'planned', planned_date DATE, planned_end_date DATE, store_ids JSONB DEFAULT '[]'::jsonb, target_audience TEXT DEFAULT '', target_count INT DEFAULT 0, content TEXT DEFAULT '', goal TEXT DEFAULT '', budget NUMERIC DEFAULT 0, reminder_date DATE, source TEXT DEFAULT 'manual', created_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_tenant ON marketing_campaigns (tenant_id, planned_date DESC)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketing_campaign_results (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', campaign_id BIGINT REFERENCES marketing_campaigns(id) ON DELETE CASCADE, store_id TEXT NOT NULL DEFAULT '', store_name TEXT DEFAULT '', actual_send_count INT DEFAULT 0, actual_reach_count INT DEFAULT 0, actual_conversion_count INT DEFAULT 0, actual_revenue NUMERIC DEFAULT 0, result_note TEXT DEFAULT '', recorded_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_mkt_campaign_results ON marketing_campaign_results (tenant_id, campaign_id)`);
+  await pool.query(`ALTER TABLE marketing_campaign_results ADD COLUMN IF NOT EXISTS actual_exposure_count INT DEFAULT 0`);
+  await pool.query(`ALTER TABLE marketing_campaign_results ADD COLUMN IF NOT EXISTS actual_redemption_count INT DEFAULT 0`);
+  await pool.query(`ALTER TABLE marketing_campaign_results ADD COLUMN IF NOT EXISTS actual_cost NUMERIC DEFAULT 0`);
+  await pool.query(`ALTER TABLE marketing_campaign_results ADD COLUMN IF NOT EXISTS effect_rating TEXT DEFAULT ''`);
 }
 
 async function latestDiagnosis(pool, tenantId, diagnosisId = 0) {
@@ -727,21 +410,6 @@ async function latestDiagnosis(pool, tenantId, diagnosisId = 0) {
   }
   const r = await pool.query(`SELECT * FROM customer_ops_diagnoses WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`, [tenantId]);
   return r.rows[0] || null;
-}
-
-async function upsertDecision(pool, tenantId, diagnosisId, c, d, operator) {
-  const decisionKey = `custops:${diagnosisId}:${c.customer_id}:${d.decision_type}`;
-  const r = await pool.query(
-    `INSERT INTO customer_ops_decisions
-       (tenant_id, diagnosis_id, decision_key, customer_id, phone, decision_type, channel, title, reason, copy_text, service_tip, expected_revenue, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-     ON CONFLICT (decision_key, tenant_id) DO UPDATE SET
-       channel=EXCLUDED.channel, title=EXCLUDED.title, reason=EXCLUDED.reason, copy_text=EXCLUDED.copy_text,
-       service_tip=EXCLUDED.service_tip, expected_revenue=EXCLUDED.expected_revenue, updated_at=NOW()
-     RETURNING *`,
-    [tenantId, diagnosisId, decisionKey, c.customer_id, c.phone || '', d.decision_type, d.channel, d.title, d.reason, d.copy_text, d.service_tip, d.expected_revenue, operator || '']
-  );
-  return r.rows[0];
 }
 
 function runPdfGenerator(report, outputPath) {
@@ -756,6 +424,57 @@ function runPdfGenerator(report, outputPath) {
   });
 }
 
+async function generateDiagnosisNarrative(report, callLLM) {
+  const b = report.business || {};
+  const mix = report.customer_mix || {};
+  const lifecycle = mix.lifecycle || {};
+  const total = Math.max(b.customers || 1, 1);
+  const dormantPct = Math.round((lifecycle.dormant || 0) / total * 100);
+  const oneTimePct = Math.round((lifecycle.one_time || 0) / total * 100);
+  const repeatRate = Math.round((b.customer_repeat_rate || 0) * 100);
+  const lunchRevPct = Math.round((b.daypart?.lunch?.revenue || 0) / Math.max(b.revenue || 1, 1) * 100);
+  const dinnerRevPct = Math.round((b.daypart?.dinner?.revenue || 0) / Math.max(b.revenue || 1, 1) * 100);
+  const weekendOrders = b.weekday?.weekend?.orders || 0;
+  const weekdayOrders = b.weekday?.weekday?.orders || 0;
+
+  const prompt = `你是一位有15年经验的餐饮行业经营顾问。以下是${report.store_name}的POS数据分析结果，请生成专业的诊断报告文字内容，语气专业但老板能看懂，每条发现必须有具体数字支撑。
+
+经营数据：
+- 分析周期：${report.input_quality?.date_start || '-'} 至 ${report.input_quality?.date_end || '-'}
+- 总营业额：¥${(b.revenue || 0).toLocaleString()}，日均营业额：¥${Math.round((b.revenue || 0) / Math.max(1, (() => { try { const d1 = new Date(report.input_quality?.date_start); const d2 = new Date(report.input_quality?.date_end); return Math.max(1, Math.round((d2 - d1) / 86400000)); } catch { return 30; } })())).toLocaleString()}
+- 总客户数：${b.customers}人 | 复购客户占比：${repeatRate}% | 平均客单：¥${b.avg_check}
+- 客群结构：常来客${lifecycle.regular || 0}人 / 偶尔来${lifecycle.occasional || 0}人 / 首次来${lifecycle.one_time || 0}人(${oneTimePct}%) / 沉睡客${lifecycle.dormant || 0}人(${dormantPct}%)
+- 餐次分布：午市营业额占${lunchRevPct}% / 晚市营业额占${dinnerRevPct}%
+- 周期分布：工作日${weekdayOrders}单 / 周末${weekendOrders}单
+- 储值客：${b.stored_value?.customers || 0}人，在手余额：¥${(b.stored_value?.balance || 0).toLocaleString()}
+- 客流稳定性评分：${b.revenue_stability_score}/100
+
+请直接输出JSON，不要有其他文字：
+{
+  "executive_summary": "2-3句话，指出最突出的亮点和最紧迫的问题",
+  "findings": [
+    {"title": "发现标题（10字内）", "data": "具体数据说明", "assessment": "问题定性和对生意的影响（30-50字）"},
+    {"title": "...", "data": "...", "assessment": "..."},
+    {"title": "...", "data": "...", "assessment": "..."}
+  ],
+  "recommendations": [
+    {"action": "具体可执行的建议（20字内）", "expected_result": "预期效果（20字内）"},
+    {"action": "...", "expected_result": "..."},
+    {"action": "...", "expected_result": "..."}
+  ]
+}`;
+
+  try {
+    const result = await callLLM([{ role: 'user', content: prompt }], { purpose: 'reasoning', max_tokens: 1200, temperature: 0.3 });
+    if (!result.ok) return null;
+    const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    return JSON.parse(jsonMatch[0]);
+  } catch {
+    return null;
+  }
+}
+
 function mergeDiagnostics(parts) {
   const merged = { files: [], sheets: [], missing_required: [], warnings: [], confidence_score: 0, record_types: {} };
   for (const d of parts || []) {
@@ -765,10 +484,7 @@ function mergeDiagnostics(parts) {
     for (const w of d.warnings || []) if (!merged.warnings.includes(w)) merged.warnings.push(w);
     for (const [k, v] of Object.entries(d.record_types || {})) merged.record_types[k] = (merged.record_types[k] || 0) + Number(v || 0);
   }
-  const present = merged.sheets.reduce((acc, s) => {
-    for (const f of ['phone', 'bizDate', 'amount', 'dish', 'rechargeAmount', 'balance']) if (s.present?.[f]) acc[f] = true;
-    return acc;
-  }, {});
+  const present = merged.sheets.reduce((acc, s) => { for (const f of ['phone', 'bizDate', 'amount', 'dish', 'rechargeAmount', 'balance']) if (s.present?.[f]) acc[f] = true; return acc; }, {});
   merged.missing_required = ['phone', 'bizDate'].filter((f) => !present[f]).map((f) => FIELD_DEFS[f].label);
   if (!present.amount && !present.rechargeAmount && !present.balance) merged.missing_required.push('消费/储值金额');
   if (!present.dish) merged.warnings.push('未识别到菜品字段，菜品偏好和新品匹配会较弱');
@@ -780,23 +496,46 @@ function mergeDiagnostics(parts) {
 
 function dedupeRecords(records) {
   const map = new Map();
-  for (const r of records || []) {
-    const key = r.recordKey || recordKeyOf(r);
-    if (!key) continue;
-    map.set(key, { ...r, recordKey: key });
-  }
+  for (const r of records || []) { const key = r.recordKey || recordKeyOf(r); if (!key) continue; map.set(key, { ...r, recordKey: key }); }
   return Array.from(map.values());
 }
 
 async function loadExistingSourceRecords(pool, tenantId) {
-  const r = await pool.query(
-    `SELECT record_json FROM customer_ops_source_records WHERE tenant_id=$1 ORDER BY id ASC LIMIT 120000`,
-    [tenantId]
-  );
+  const r = await pool.query(`SELECT record_json FROM customer_ops_source_records WHERE tenant_id=$1 ORDER BY id ASC LIMIT 120000`, [tenantId]);
   return (r.rows || []).map((x) => x.record_json || {});
 }
 
-export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership) {
+// 模块2：根据criteria_json过滤客户
+function applySegmentCriteria(profiles, criteria) {
+  return profiles.filter((c) => {
+    if (criteria.lifecycle_stage && c.lifecycle_stage !== criteria.lifecycle_stage) return false;
+    if (criteria.value_tier && c.value_tier !== criteria.value_tier) return false;
+    if (criteria.scene_tag && !(c.scene_tags || []).includes(criteria.scene_tag)) return false;
+    if (criteria.min_order_count != null && c.order_count < Number(criteria.min_order_count)) return false;
+    if (criteria.max_order_count != null && c.order_count > Number(criteria.max_order_count)) return false;
+    if (criteria.min_orders_30d != null && (c.orders_30d || 0) < Number(criteria.min_orders_30d)) return false;
+    if (criteria.max_days_since != null && c.days_since_last_visit > Number(criteria.max_days_since)) return false;
+    if (criteria.min_days_since != null && c.days_since_last_visit < Number(criteria.min_days_since)) return false;
+    if (criteria.min_avg_check != null && c.avg_check < Number(criteria.min_avg_check)) return false;
+    if (criteria.max_avg_check != null && c.avg_check > Number(criteria.max_avg_check)) return false;
+    if (criteria.min_total_spend != null && c.total_spend < Number(criteria.min_total_spend)) return false;
+    if (criteria.min_spend_90d != null && (c.spend_90d || 0) < Number(criteria.min_spend_90d)) return false;
+    if (criteria.min_max_single_spend != null && (c.max_single_spend || 0) < Number(criteria.min_max_single_spend)) return false;
+    if (criteria.min_max_single_diners != null && (c.max_single_diners || 0) < Number(criteria.min_max_single_diners)) return false;
+    if (criteria.min_stored_value_balance != null && c.stored_value_balance < Number(criteria.min_stored_value_balance)) return false;
+    if (criteria.preferred_visit_time && c.preferred_visit_time !== criteria.preferred_visit_time) return false;
+    if (criteria.primary_store && c.primary_store !== criteria.primary_store) return false;
+    if (criteria.favorite_dish_keyword) {
+      const kw = String(criteria.favorite_dish_keyword).toLowerCase();
+      if (!(c.favorite_dishes || []).some((d) => String(d).toLowerCase().includes(kw))) return false;
+    }
+    return true;
+  });
+}
+
+export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM) {
+  // ── 模块1：快速诊断 ──────────────────────────────────────────────
+
   app.post('/api/customer-ops/diagnosis/upload', authRequired, upload.fields([{ name: 'files', maxCount: 20 }, { name: 'file', maxCount: 1 }]), async (req, res) => {
     try {
       const files = [...(req.files?.files || []), ...(req.files?.file || [])].filter(Boolean);
@@ -816,30 +555,19 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       diagnostics.total_records_after_merge = orders.length;
       const report = analyzeOrders(orders, { storeName: req.body?.store_name || '', diagnostics });
       const ins = await pool.query(
-        `INSERT INTO customer_ops_diagnoses (tenant_id, store_name, source_filename, report_json, created_by)
-         VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING id, created_at`,
+        `INSERT INTO customer_ops_diagnoses (tenant_id, store_name, source_filename, report_json, created_by) VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING id, created_at`,
         [tenantId, report.store_name, files.map((f) => f.originalname || f.filename).join('、'), JSON.stringify(report), req.user?.username || '']
       );
       const diagnosisId = ins.rows[0].id;
       for (const r of batchRecords) {
         await pool.query(
-          `INSERT INTO customer_ops_source_records
-             (tenant_id, diagnosis_id, source_filename, record_key, phone, member_no, record_kind, record_json)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
-           ON CONFLICT (tenant_id, record_key) DO UPDATE SET
-             diagnosis_id=EXCLUDED.diagnosis_id,
-             source_filename=EXCLUDED.source_filename,
-             phone=EXCLUDED.phone,
-             member_no=EXCLUDED.member_no,
-             record_kind=EXCLUDED.record_kind,
-             record_json=EXCLUDED.record_json`,
+          `INSERT INTO customer_ops_source_records (tenant_id, diagnosis_id, source_filename, record_key, phone, member_no, record_kind, record_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) ON CONFLICT (tenant_id, record_key) DO UPDATE SET diagnosis_id=EXCLUDED.diagnosis_id, source_filename=EXCLUDED.source_filename, phone=EXCLUDED.phone, member_no=EXCLUDED.member_no, record_kind=EXCLUDED.record_kind, record_json=EXCLUDED.record_json`,
           [tenantId, diagnosisId, r.sourceFile || '', r.recordKey || recordKeyOf(r), r.phone || '', r.memberNo || '', r.kind || 'unknown', JSON.stringify(r)]
         );
       }
       for (const c of report.customers) {
         await pool.query(
-          `INSERT INTO customer_ops_profiles (tenant_id, diagnosis_id, customer_id, customer_key, phone, profile_json)
-           VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
+          `INSERT INTO customer_ops_profiles (tenant_id, diagnosis_id, customer_id, customer_key, phone, profile_json) VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
           [tenantId, diagnosisId, c.customer_id, c.customer_key, c.phone || '', JSON.stringify(c)]
         );
       }
@@ -852,11 +580,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
   app.get('/api/customer-ops/diagnosis/latest', authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const r = await pool.query(
-        `SELECT id, store_name, source_filename, report_json, created_at
-           FROM customer_ops_diagnoses WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`,
-        [req.tenantId || 'default']
-      );
+      const r = await pool.query(`SELECT id, store_name, source_filename, report_json, created_at FROM customer_ops_diagnoses WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`, [req.tenantId || 'default']);
       res.json({ ok: true, diagnosis: r.rows[0] || null });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
@@ -868,9 +592,13 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       await ensureCustomerOpsTables(pool);
       const r = await pool.query(`SELECT * FROM customer_ops_diagnoses WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId || 'default']);
       if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
+      const report = r.rows[0].report_json;
+      // 生成AI诊断叙述（失败不阻塞PDF生成）
+      const narrative = callLLM ? await generateDiagnosisNarrative(report, callLLM).catch(() => null) : null;
+      const reportWithNarrative = narrative ? { ...report, narrative } : report;
       const filename = `customer_ops_report_${req.params.id}.pdf`;
       const outputPath = path.join(uploadsDir, filename);
-      await runPdfGenerator(r.rows[0].report_json, outputPath);
+      await runPdfGenerator(reportWithNarrative, outputPath);
       await recordUploadOwnership(filename, req.tenantId, req.user?.username);
       res.json({ ok: true, url: `/uploads/${filename}` });
     } catch (e) {
@@ -878,19 +606,79 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     }
   });
 
+  // ── 模块2：360度客人档案 ─────────────────────────────────────────
+
   app.get('/api/customer-ops/customers', authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
+      const tenantId = req.tenantId || 'default';
       const diagnosisId = Number(req.query.diagnosis_id || 0);
-      const params = [req.tenantId || 'default'];
+      const limit = Math.min(500, Number(req.query.limit || 200));
+      const params = [tenantId];
       let where = 'tenant_id = $1';
       if (diagnosisId) { params.push(diagnosisId); where += ` AND diagnosis_id = $${params.length}`; }
-      const r = await pool.query(
-        `SELECT customer_id, phone, profile_json FROM customer_ops_profiles
-          WHERE ${where} ORDER BY (profile_json->>'total_spend')::numeric DESC NULLS LAST LIMIT 200`,
-        params
-      );
+      const r = await pool.query(`SELECT profile_json FROM customer_ops_profiles WHERE ${where} ORDER BY (profile_json->>'total_spend')::numeric DESC NULLS LAST LIMIT ${limit}`, params);
       res.json({ ok: true, customers: r.rows.map((x) => x.profile_json) });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  app.get('/api/customer-ops/customers/dashboard', authRequired, async (req, res) => {
+    try {
+      await ensureCustomerOpsTables(pool);
+      const tenantId = req.tenantId || 'default';
+      const diagnosisId = Number(req.query.diagnosis_id || 0);
+      const params = [tenantId];
+      let where = 'tenant_id = $1';
+      if (diagnosisId) { params.push(diagnosisId); where += ` AND diagnosis_id = $${params.length}`; }
+      // 只取最新一个diagnosis的所有profile
+      if (!diagnosisId) {
+        const latest = await pool.query(`SELECT id FROM customer_ops_diagnoses WHERE tenant_id=$1 ORDER BY id DESC LIMIT 1`, [tenantId]);
+        if (latest.rows.length) { params.push(latest.rows[0].id); where += ` AND diagnosis_id = $${params.length}`; }
+      }
+      const r = await pool.query(`SELECT profile_json FROM customer_ops_profiles WHERE ${where}`, params);
+      const profiles = r.rows.map((x) => x.profile_json || {});
+      const total = profiles.length;
+      const byLifecycle = {};
+      const byValueTier = {};
+      const byScene = {};
+      let totalSpend = 0;
+      let totalVip = 0;
+      let totalDormant = 0;
+      let totalWithPhone = 0;
+      for (const c of profiles) {
+        byLifecycle[c.lifecycle_stage] = (byLifecycle[c.lifecycle_stage] || 0) + 1;
+        byValueTier[c.value_tier] = (byValueTier[c.value_tier] || 0) + 1;
+        for (const tag of c.scene_tags || []) byScene[tag] = (byScene[tag] || 0) + 1;
+        totalSpend += Number(c.total_spend || 0);
+        if (c.value_tier === 'vip') totalVip++;
+        if (c.lifecycle_stage === 'dormant') totalDormant++;
+        if (c.phone) totalWithPhone++;
+      }
+      res.json({ ok: true, total, total_spend: Math.round(totalSpend), vip_count: totalVip, dormant_count: totalDormant, reachable_count: totalWithPhone, by_lifecycle: byLifecycle, by_value_tier: byValueTier, by_scene: byScene });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  app.post('/api/customer-ops/customers/filter', authRequired, async (req, res) => {
+    try {
+      await ensureCustomerOpsTables(pool);
+      const tenantId = req.tenantId || 'default';
+      const criteria = req.body?.criteria || {};
+      const diagnosisId = Number(req.body?.diagnosis_id || 0);
+      const params = [tenantId];
+      let where = 'tenant_id = $1';
+      if (diagnosisId) { params.push(diagnosisId); where += ` AND diagnosis_id = $${params.length}`; }
+      else {
+        const latest = await pool.query(`SELECT id FROM customer_ops_diagnoses WHERE tenant_id=$1 ORDER BY id DESC LIMIT 1`, [tenantId]);
+        if (latest.rows.length) { params.push(latest.rows[0].id); where += ` AND diagnosis_id = $${params.length}`; }
+      }
+      const r = await pool.query(`SELECT profile_json FROM customer_ops_profiles WHERE ${where}`, params);
+      const all = r.rows.map((x) => x.profile_json || {});
+      const matched = applySegmentCriteria(all, criteria);
+      res.json({ ok: true, total: all.length, matched: matched.length, customers: matched.slice(0, 200) });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
@@ -899,11 +687,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
   app.get('/api/customer-ops/customers/:customerId', authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const r = await pool.query(
-        `SELECT profile_json FROM customer_ops_profiles
-          WHERE tenant_id = $1 AND customer_id = $2 ORDER BY diagnosis_id DESC LIMIT 1`,
-        [req.tenantId || 'default', req.params.customerId]
-      );
+      const r = await pool.query(`SELECT profile_json FROM customer_ops_profiles WHERE tenant_id = $1 AND customer_id = $2 ORDER BY diagnosis_id DESC LIMIT 1`, [req.tenantId || 'default', req.params.customerId]);
       if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
       res.json({ ok: true, customer: r.rows[0].profile_json });
     } catch (e) {
@@ -911,215 +695,162 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     }
   });
 
-  app.get('/api/customer-ops/customers/:customerId/marketing-log', authRequired, async (req, res) => {
+  // 保存自定义客群分层
+  app.get('/api/customer-ops/segments', authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
-      const profileR = await pool.query(
-        `SELECT customer_key FROM customer_ops_profiles WHERE tenant_id=$1 AND customer_id=$2 ORDER BY id DESC LIMIT 1`,
-        [tenantId, req.params.customerId]
-      );
-      if (!profileR.rows.length) return res.json({ ok: true, log: [] });
-      const customerKey = profileR.rows[0].customer_key;
-      const r = await pool.query(
-        `SELECT ml.*, d.decision_type, d.title AS decision_title, d.copy_text
-           FROM customer_ops_marketing_log ml
-           LEFT JOIN customer_ops_decisions d ON d.id = ml.decision_id
-          WHERE ml.tenant_id=$1 AND ml.customer_key=$2
-          ORDER BY ml.created_at DESC LIMIT 20`,
-        [tenantId, customerKey]
-      );
-      res.json({ ok: true, log: r.rows });
+      const r = await pool.query(`SELECT * FROM customer_segments WHERE tenant_id=$1 ORDER BY created_at DESC`, [req.tenantId || 'default']);
+      res.json({ ok: true, segments: r.rows });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
   });
 
-  app.get('/api/customer-ops/maintenance-cockpit', authRequired, async (req, res) => {
+  app.post('/api/customer-ops/segments', authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
-      const diagnosisId = Number(req.query.diagnosis_id || 0);
-      let row = null;
-      let resolvedDiagnosisId = diagnosisId;
-      if (diagnosisId) {
-        const r = await pool.query(`SELECT id, report_json FROM customer_ops_diagnoses WHERE id = $1 AND tenant_id = $2`, [diagnosisId, tenantId]);
-        row = r.rows[0];
-      } else {
-        const r = await pool.query(`SELECT id, report_json FROM customer_ops_diagnoses WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`, [tenantId]);
-        row = r.rows[0];
-        resolvedDiagnosisId = row?.id || 0;
-      }
-      const report = row?.report_json || {};
-      let decisionSummary = { total: 0, proposed: 0, action_created: 0, followed: 0, measured: 0, expected_revenue: 0, actual_revenue: 0 };
-      if (resolvedDiagnosisId) {
-        const dr = await pool.query(
-          `SELECT status, COALESCE(SUM(expected_revenue),0)::float AS expected_revenue,
-                  COALESCE(SUM((result_json->>'actual_revenue')::numeric),0)::float AS actual_revenue,
-                  COUNT(*)::int AS count
-             FROM customer_ops_decisions
-            WHERE tenant_id=$1 AND diagnosis_id=$2
-            GROUP BY status`,
-          [tenantId, resolvedDiagnosisId]
-        );
-        for (const x of dr.rows || []) {
-          decisionSummary.total += Number(x.count || 0);
-          decisionSummary[x.status] = Number(x.count || 0);
-          decisionSummary.expected_revenue += Number(x.expected_revenue || 0);
-          decisionSummary.actual_revenue += Number(x.actual_revenue || 0);
-        }
-      }
-      const customers = report.customers || [];
-      const cockpit = {
-        actionable_customers: (report.opportunities || []).reduce((s, x) => s + Number(x.target_count || 0), 0),
-        vip_risk: customers.filter((c) => c.value_tier === 'vip' && Number(c.days_since_last_visit || 0) >= 30).length,
-        second_visit_pool: customers.filter((c) => c.order_count === 1 && Number(c.days_since_last_visit || 0) >= 7 && Number(c.days_since_last_visit || 0) <= 45).length,
-        business_guests: customers.filter((c) => (c.scene_tags || []).includes('business')).length,
-        expected_revenue: Math.round((report.opportunities || []).reduce((s, x) => s + Number(x.expected_revenue || 0), 0) + decisionSummary.expected_revenue),
-        actual_revenue: Math.round(decisionSummary.actual_revenue),
-        decision_summary: decisionSummary
-      };
-      res.json({ ok: true, diagnosis_id: resolvedDiagnosisId, cockpit, opportunities: report.opportunities || [], business: report.business || {}, customer_mix: report.customer_mix || {}, input_quality: report.input_quality || {} });
+      const name = cleanText(req.body?.name || '', 80);
+      const criteria = req.body?.criteria || {};
+      if (!name) return res.status(400).json({ ok: false, error: 'name_required' });
+      const r = await pool.query(`INSERT INTO customer_segments (tenant_id, name, criteria_json, created_by) VALUES ($1,$2,$3::jsonb,$4) RETURNING *`, [req.tenantId || 'default', name, JSON.stringify(criteria), req.user?.username || '']);
+      res.json({ ok: true, segment: r.rows[0] });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
   });
 
-  app.post('/api/customer-ops/decisions/generate', authRequired, async (req, res) => {
+  app.delete('/api/customer-ops/segments/:id', authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
-      const diag = await latestDiagnosis(pool, tenantId, Number(req.body?.diagnosis_id || 0));
-      if (!diag) return res.status(404).json({ ok: false, error: 'diagnosis_not_found' });
-      const profiles = await pool.query(
-        `SELECT profile_json FROM customer_ops_profiles WHERE tenant_id = $1 AND diagnosis_id = $2 ORDER BY (profile_json->>'total_spend')::numeric DESC NULLS LAST LIMIT 500`,
-        [tenantId, diag.id]
-      );
-      const context = {
-        new_dish: cleanText(req.body?.new_dish || '', 80),
-        feature_dish: cleanText(req.body?.feature_dish || '', 80),
-        days_threshold: Number(req.body?.days_threshold || 30)
-      };
-      const rows = [];
-      for (const row of profiles.rows || []) {
-        const c = row.profile_json || {};
-        for (const d of decisionForCustomer(c, diag.store_name || c.stores?.[0] || '门店', context).slice(0, 3)) {
-          rows.push(await upsertDecision(pool, tenantId, diag.id, c, d, req.user?.username || ''));
-        }
-      }
-      res.json({ ok: true, diagnosis_id: diag.id, generated: rows.length, decisions: rows });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message || 'generate_failed' });
-    }
-  });
-
-  app.get('/api/customer-ops/decisions', authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const tenantId = req.tenantId || 'default';
-      const diag = await latestDiagnosis(pool, tenantId, Number(req.query.diagnosis_id || 0));
-      if (!diag) return res.json({ ok: true, decisions: [] });
-      const r = await pool.query(
-        `SELECT * FROM customer_ops_decisions WHERE tenant_id = $1 AND diagnosis_id = $2 ORDER BY expected_revenue DESC NULLS LAST, id DESC LIMIT 200`,
-        [tenantId, diag.id]
-      );
-      res.json({ ok: true, diagnosis_id: diag.id, decisions: r.rows });
+      await pool.query(`DELETE FROM customer_segments WHERE id=$1 AND tenant_id=$2`, [req.params.id, req.tenantId || 'default']);
+      res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
   });
 
-  app.post('/api/customer-ops/decisions/:id/create-action', authRequired, async (req, res) => {
+  // ── 模块3：营销活动台账 ──────────────────────────────────────────
+
+  app.get('/api/customer-ops/campaigns', authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
       const tenantId = req.tenantId || 'default';
-      const r = await pool.query(`SELECT * FROM customer_ops_decisions WHERE id = $1 AND tenant_id = $2`, [req.params.id, tenantId]);
-      if (!r.rows.length) return res.status(404).json({ ok: false, error: 'decision_not_found' });
-      const d = r.rows[0];
-      const actionKey = `custops_decision:${d.id}`;
-      const actionType = d.channel === 'service' ? 'service_reminder' : (d.channel === 'sms' || d.channel === 'wecom' || d.channel === 'miniprogram' ? 'send_message' : 'promo_task');
-      const payload = {
-        source: 'customer_ops_ai_decision',
-        decision_id: d.id,
-        customer_id: d.customer_id,
-        phone: d.phone,
-        channel: d.channel,
-        ready_copy: d.copy_text,
-        service_tip: d.service_tip,
-        expected_kpi: { revenue_fen: Math.round(Number(d.expected_revenue || 0) * 100), reach: d.channel === 'service' ? 1 : 1, redemption_rate: 0 },
-        execution_action: d.channel === 'service' ? d.service_tip : d.copy_text
-      };
-      await pool.query(
-        `INSERT INTO growth_actions (action_key, action_type, status, store_id, title, detail, payload, created_by, tenant_id)
-         VALUES ($1,$2,'proposed','',$3,$4,$5::jsonb,$6,$7)
-         ON CONFLICT (action_key, tenant_id) DO UPDATE SET
-           action_type=EXCLUDED.action_type, status='proposed', title=EXCLUDED.title, detail=EXCLUDED.detail,
-           payload=EXCLUDED.payload, updated_at=NOW()
-         RETURNING *`,
-        [actionKey, actionType, d.title, d.reason, JSON.stringify(payload), req.user?.username || 'customer_ops', tenantId]
-      );
-      await pool.query(`UPDATE customer_ops_decisions SET status='action_created', updated_at=NOW() WHERE id=$1`, [d.id]);
-      const profileR = await pool.query(`SELECT customer_key FROM customer_ops_profiles WHERE tenant_id=$1 AND customer_id=$2 ORDER BY id DESC LIMIT 1`, [tenantId, d.customer_id]);
-      const customerKey = profileR.rows[0]?.customer_key || d.customer_id;
-      await pool.query(
-        `INSERT INTO customer_ops_marketing_log (tenant_id, customer_key, customer_id, phone, decision_id, channel, action_key, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'sent')`,
-        [tenantId, customerKey, d.customer_id, d.phone, d.id, d.channel, actionKey]
-      );
-      res.json({ ok: true, action_key: actionKey });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message || 'create_action_failed' });
-    }
-  });
-
-  app.post('/api/customer-ops/decisions/:id/result', authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const actualRevenue = Math.max(0, Number(req.body?.actual_revenue || 0));
-      const arrived = !!req.body?.arrived;
-      const reserved = !!req.body?.reserved;
-      const note = cleanText(req.body?.note || '', 1000);
-      const result = { arrived, reserved, actual_revenue: actualRevenue, note, recorded_at: new Date().toISOString(), recorded_by: req.user?.username || '' };
-      const status = actualRevenue > 0 || arrived || reserved ? 'measured' : 'followed';
+      const status = cleanText(req.query.status || '', 20);
+      const params = [tenantId];
+      let where = 'c.tenant_id=$1';
+      if (status) { params.push(status); where += ` AND c.status=$${params.length}`; }
       const r = await pool.query(
-        `UPDATE customer_ops_decisions SET status=$1, result_json=$2::jsonb, updated_at=NOW()
-          WHERE id=$3 AND tenant_id=$4 RETURNING *`,
-        [status, JSON.stringify(result), req.params.id, req.tenantId || 'default']
+        `SELECT c.*, COALESCE(json_agg(r ORDER BY r.created_at) FILTER (WHERE r.id IS NOT NULL), '[]') AS results
+           FROM marketing_campaigns c
+           LEFT JOIN marketing_campaign_results r ON r.campaign_id=c.id AND r.tenant_id=c.tenant_id
+          WHERE ${where} GROUP BY c.id ORDER BY c.planned_date DESC NULLS LAST, c.created_at DESC LIMIT 200`,
+        params
       );
-      if (!r.rows.length) return res.status(404).json({ ok: false, error: 'decision_not_found' });
-      await pool.query(
-        `UPDATE customer_ops_marketing_log SET status=$1, arrived=$2, actual_revenue=$3, note=$4, updated_at=NOW()
-          WHERE tenant_id=$5 AND decision_id=$6`,
-        [status, arrived, actualRevenue, note, req.tenantId || 'default', req.params.id]
-      );
-      res.json({ ok: true, decision: r.rows[0] });
+      res.json({ ok: true, campaigns: r.rows });
     } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message || 'result_failed' });
+      res.status(500).json({ ok: false, error: e?.message });
     }
   });
 
-  app.get('/api/customer-ops/service-radar', authRequired, async (req, res) => {
+  app.post('/api/customer-ops/campaigns', authRequired, async (req, res) => {
     try {
       await ensureCustomerOpsTables(pool);
       const tenantId = req.tenantId || 'default';
-      const diag = await latestDiagnosis(pool, tenantId, Number(req.query.diagnosis_id || 0));
-      if (!diag) return res.json({ ok: true, customers: [] });
+      const b = req.body || {};
+      const title = cleanText(b.title || '', 200);
+      if (!title) return res.status(400).json({ ok: false, error: 'title_required' });
       const r = await pool.query(
-        `SELECT profile_json FROM customer_ops_profiles WHERE tenant_id=$1 AND diagnosis_id=$2 ORDER BY (profile_json->>'avg_check')::numeric DESC NULLS LAST LIMIT 200`,
-        [tenantId, diag.id]
+        `INSERT INTO marketing_campaigns (tenant_id, title, channel, campaign_type, status, planned_date, planned_end_date, store_ids, target_audience, target_count, content, goal, budget, reminder_date, source, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+        [tenantId, title, cleanText(b.channel || 'offline', 40), cleanText(b.campaign_type || '其他', 40), cleanText(b.status || 'planned', 20), b.planned_date || null, b.planned_end_date || null, JSON.stringify(b.store_ids || []), cleanText(b.target_audience || '', 500), Number(b.target_count || 0), cleanText(b.content || '', 2000), cleanText(b.goal || '', 500), Number(b.budget || 0), b.reminder_date || null, cleanText(b.source || 'manual', 40), req.user?.username || '']
       );
-      const customers = (r.rows || []).map((x) => x.profile_json || {}).filter((c) =>
-        c.value_tier === 'vip' || (c.scene_tags || []).includes('business') || (c.stores || []).length > 1
-      ).slice(0, 80).map((c) => ({
-        customer_id: c.customer_id,
-        phone: c.phone,
-        stores: c.stores || [],
-        avg_check: c.avg_check,
-        total_spend: c.total_spend,
-        favorite_dishes: c.favorite_dishes || [],
-        service_tip: `重点客人：${c.staff_note || '高价值/跨店客户'}；偏好${(c.favorite_dishes || [])[0] || '招牌菜'}；建议提前安排合适座位并由负责人问候。`
-      }));
-      res.json({ ok: true, diagnosis_id: diag.id, customers });
+      res.json({ ok: true, campaign: r.rows[0] });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  app.put('/api/customer-ops/campaigns/:id', authRequired, async (req, res) => {
+    try {
+      await ensureCustomerOpsTables(pool);
+      const tenantId = req.tenantId || 'default';
+      const b = req.body || {};
+      const r = await pool.query(
+        `UPDATE marketing_campaigns SET title=$1, channel=$2, campaign_type=$3, status=$4, planned_date=$5, planned_end_date=$6, store_ids=$7::jsonb, target_audience=$8, target_count=$9, content=$10, goal=$11, budget=$12, reminder_date=$13, updated_at=NOW()
+         WHERE id=$14 AND tenant_id=$15 RETURNING *`,
+        [cleanText(b.title || '', 200), cleanText(b.channel || 'offline', 40), cleanText(b.campaign_type || '其他', 40), cleanText(b.status || 'planned', 20), b.planned_date || null, b.planned_end_date || null, JSON.stringify(b.store_ids || []), cleanText(b.target_audience || '', 500), Number(b.target_count || 0), cleanText(b.content || '', 2000), cleanText(b.goal || '', 500), Number(b.budget || 0), b.reminder_date || null, req.params.id, tenantId]
+      );
+      if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
+      res.json({ ok: true, campaign: r.rows[0] });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  app.delete('/api/customer-ops/campaigns/:id', authRequired, async (req, res) => {
+    try {
+      await ensureCustomerOpsTables(pool);
+      await pool.query(`DELETE FROM marketing_campaigns WHERE id=$1 AND tenant_id=$2`, [req.params.id, req.tenantId || 'default']);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 门店复盘结果
+  app.post('/api/customer-ops/campaigns/:id/results', authRequired, async (req, res) => {
+    try {
+      await ensureCustomerOpsTables(pool);
+      const tenantId = req.tenantId || 'default';
+      const b = req.body || {};
+      const r = await pool.query(
+        `INSERT INTO marketing_campaign_results (tenant_id, campaign_id, store_id, store_name, actual_send_count, actual_reach_count, actual_conversion_count, actual_revenue, actual_exposure_count, actual_redemption_count, actual_cost, effect_rating, result_note, recorded_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+        [tenantId, req.params.id, cleanText(b.store_id || '', 80), cleanText(b.store_name || '', 120), Number(b.actual_send_count || 0), Number(b.actual_reach_count || 0), Number(b.actual_conversion_count || 0), Number(b.actual_revenue || 0), Number(b.actual_exposure_count || 0), Number(b.actual_redemption_count || 0), Number(b.actual_cost || 0), cleanText(b.effect_rating || '', 20), cleanText(b.result_note || '', 2000), req.user?.username || '']
+      );
+      res.json({ ok: true, result: r.rows[0] });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  app.put('/api/customer-ops/campaigns/:id/results/:resultId', authRequired, async (req, res) => {
+    try {
+      await ensureCustomerOpsTables(pool);
+      const tenantId = req.tenantId || 'default';
+      const b = req.body || {};
+      const r = await pool.query(
+        `UPDATE marketing_campaign_results SET store_id=$1, store_name=$2, actual_send_count=$3, actual_reach_count=$4, actual_conversion_count=$5, actual_revenue=$6, actual_exposure_count=$7, actual_redemption_count=$8, actual_cost=$9, effect_rating=$10, result_note=$11, updated_at=NOW()
+         WHERE id=$12 AND campaign_id=$13 AND tenant_id=$14 RETURNING *`,
+        [cleanText(b.store_id || '', 80), cleanText(b.store_name || '', 120), Number(b.actual_send_count || 0), Number(b.actual_reach_count || 0), Number(b.actual_conversion_count || 0), Number(b.actual_revenue || 0), Number(b.actual_exposure_count || 0), Number(b.actual_redemption_count || 0), Number(b.actual_cost || 0), cleanText(b.effect_rating || '', 20), cleanText(b.result_note || '', 2000), req.params.resultId, req.params.id, tenantId]
+      );
+      if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
+      res.json({ ok: true, result: r.rows[0] });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 自动营销发送汇总（从现有delivery_logs聚合）
+  app.get('/api/customer-ops/auto-marketing-summary', authRequired, async (req, res) => {
+    try {
+      const tenantId = req.tenantId || 'default';
+      const dateFrom = cleanText(req.query.date_from || '', 20) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+      const dateTo = cleanText(req.query.date_to || '', 20) || new Date().toISOString().slice(0, 10);
+      // 尝试从 growth_delivery_logs 聚合（表可能不存在，失败返回空）
+      const r = await pool.query(
+        `SELECT dl.rule_key, tr.name AS rule_name, COUNT(*) AS send_count, COUNT(DISTINCT dl.phone) AS unique_phones,
+                MAX(dl.created_at)::date AS last_sent_date,
+                MAX(dl.message_text) AS sample_message
+           FROM growth_delivery_logs dl
+           LEFT JOIN growth_touch_rules tr ON tr.rule_key = dl.rule_key AND tr.tenant_id = dl.tenant_id
+          WHERE dl.tenant_id = $1 AND dl.status = 'sent'
+            AND dl.created_at >= $2::date AND dl.created_at < ($3::date + INTERVAL '1 day')
+          GROUP BY dl.rule_key, tr.name
+          ORDER BY send_count DESC LIMIT 50`,
+        [tenantId, dateFrom, dateTo]
+      ).catch(() => ({ rows: [] }));
+      res.json({ ok: true, date_from: dateFrom, date_to: dateTo, rules: r.rows });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }

@@ -19727,7 +19727,7 @@
                 </div>
                 <nav class="rep-tabs" style="margin-bottom:10px;">
                   <button class="rep-tab rep-tab--active" onclick="showGrowthTab('dashboard')" id="growth-tab-dashboard">看板</button>
-                  <button class="rep-tab" onclick="showGrowthTab('audience')" id="growth-tab-audience">客群洞察</button>
+                  <button class="rep-tab" onclick="showGrowthTab('audience')" id="growth-tab-audience">托管控制台</button>
                   <button class="rep-tab" onclick="showGrowthTab('engine')" id="growth-tab-engine">⚙️ 自动营销（自动台）</button>
                   <button class="rep-tab" onclick="showGrowthTab('content')" id="growth-tab-content">海报创意</button>
                   <button class="rep-tab" onclick="showGrowthTab('execution')" id="growth-tab-execution">执行中心</button>
@@ -19914,19 +19914,32 @@
                     </div>
                     <div id="growth-maintenance-content" style="display:none;">
                         <div class="rep-filters">
-                            <div class="rep-filters__eyebrow">CUSTOMER MAINTENANCE COCKPIT</div>
-                            <div class="rep-filters__title">客人维护导航舱</div>
-                            <div class="rep-filters__grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;position:relative;margin-bottom:12px;">
-                                <div class="rep-field"><label>今日新品/主推菜</label><input id="custops-new-dish" class="dr-store-select" placeholder="如 龙虾新品" style="padding:10px;color:var(--rep-text);"></div>
-                                <div class="rep-field"><label>久未到店阈值</label><input id="custops-days-threshold" type="number" value="30" class="dr-store-select" style="padding:10px;color:var(--rep-text);"></div>
-                                <div class="rep-field"><label>操作</label><button onclick="generateCustomerOpsDecisions()" class="rep-seg-btn rep-seg-btn--active" style="width:100%;height:38px;">生成AI自动决策</button></div>
+                            <div class="rep-filters__eyebrow">CAMPAIGN LOG</div>
+                            <div class="rep-filters__title" style="display:flex;justify-content:space-between;align-items:center;">
+                                <span>营销活动台账</span>
+                                <button class="rep-seg-btn rep-seg-btn--active" style="padding:8px 16px;" onclick="openCreateCampaignModal()">+ 新建活动</button>
                             </div>
-                            <div id="custops-cockpit-kpis" style="margin-bottom:12px;"></div>
-                            <div id="custops-maintenance-list" style="min-height:120px;"></div>
-                            <div class="rep-filters__title" style="margin-top:18px;font-size:15px;">AI自动决策</div>
-                            <div id="custops-decisions-list" style="min-height:120px;"></div>
-                            <div class="rep-filters__title" style="margin-top:18px;font-size:15px;">跨店/VIP到店服务雷达</div>
-                            <div id="custops-service-radar" style="min-height:100px;"></div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;">
+                                <select id="campaign-status-filter" class="dr-store-select" style="max-width:160px;" onchange="loadCampaignLog()">
+                                    <option value="">全部状态</option>
+                                    <option value="planned">计划中</option>
+                                    <option value="in_progress">进行中</option>
+                                    <option value="completed">已完成</option>
+                                    <option value="cancelled">已取消</option>
+                                </select>
+                                <button class="rep-seg-btn" onclick="loadCampaignLog()">刷新</button>
+                            </div>
+                            <div id="custops-campaign-list" style="min-height:200px;"></div>
+                        </div>
+                        <div class="rep-filters" style="margin-top:14px;">
+                            <div class="rep-filters__eyebrow">AUTO-MARKETING SUMMARY</div>
+                            <div class="rep-filters__title">自动营销发送汇总</div>
+                            <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+                                <input id="ams-date-from" type="date" class="dr-store-select" style="padding:8px;color:var(--rep-text);max-width:150px;">
+                                <input id="ams-date-to" type="date" class="dr-store-select" style="padding:8px;color:var(--rep-text);max-width:150px;">
+                                <button class="rep-seg-btn" onclick="loadAutoMarketingSummary()">查询</button>
+                            </div>
+                            <div id="custops-ams-list" style="min-height:80px;"></div>
                         </div>
                     </div>
                     <div id="growth-constraints-content" style="display:none;">
@@ -57518,7 +57531,7 @@ ${body}
         // ── 增长模块 6 大分组（14→6 重组，零DOM搬迁：内容区按 id 显示/隐藏）──
         var GROWTH_GROUPS = [
             { key: 'dashboard', label: '看板', members: ['dashboard'] },
-            { key: 'audience', label: '客群洞察', members: ['posdiagnosis', 'profiles', 'maintenance', 'pos', 'wecom'] },
+            { key: 'audience', label: '托管控制台', members: ['posdiagnosis', 'profiles', 'maintenance', 'pos', 'wecom'] },
             { key: 'engine', label: '自动营销', members: ['automarketing', 'abtests', 'paymentrules'] },
             { key: 'content', label: '海报创意', members: ['posters'] },
             { key: 'execution', label: '执行中心', members: ['actions', 'exec-logs'] },
@@ -57546,7 +57559,7 @@ ${body}
             else if (member === 'campaigns') { loadCampaignPlans(); loadContentCalendar(); }
             else if (member === 'profiles') { loadGrowthProfiles(); }
             else if (member === 'posdiagnosis') { loadCustomerOpsLatest(); }
-            else if (member === 'maintenance') { loadCustomerOpsMaintenance(); }
+            else if (member === 'maintenance') { loadCampaignLog(); loadAutoMarketingSummary(); }
             else if (member === 'constraints') { loadGrowthConstraints(); }
             else if (member === 'actions') { loadGrowthActionBoard(); }
             else if (member === 'abtests') { loadGrowthAbTests(); loadAbTemplates(); }
@@ -58630,166 +58643,433 @@ ${body}
                 window.open(d.url, '_blank');
             } catch (e) { showNotification('PDF导出失败：' + (e?.message || e), 'error'); }
         }
-        async function loadCustomerOpsMaintenance() {
-            var host = document.getElementById('custops-maintenance-list');
-            if (!host) return;
-            host.innerHTML = '<div class="rep-pay-empty">正在加载维护机会...</div>';
-            try {
-                var qs = __custopsDiagnosisId ? ('?diagnosis_id=' + encodeURIComponent(__custopsDiagnosisId)) : '';
-                var r = await fetch('/api/customer-ops/maintenance-cockpit' + qs, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
-                var d = await r.json();
-                if (!d.ok) throw new Error(d.error || 'load_failed');
-                var ops = d.opportunities || [];
-                var kpiHost = document.getElementById('custops-cockpit-kpis');
-                var cp = d.cockpit || {};
-                var ds = cp.decision_summary || {};
-                if (kpiHost) {
-                    kpiHost.innerHTML = '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">'
-                        + custopsMiniMetric('可维护客户', (cp.actionable_customers || 0) + '人', '由POS诊断自动识别', '#fff')
-                        + custopsMiniMetric('VIP流失风险', (cp.vip_risk || 0) + '人', '优先店长/企微维护', '#facc15')
-                        + custopsMiniMetric('新客二访池', (cp.second_visit_pool || 0) + '人', '首购后7-45天', '#38bdf8')
-                        + custopsMiniMetric('结果证明', fmtCustMoney(cp.actual_revenue || 0), '预计' + fmtCustMoney(cp.expected_revenue || 0) + ' · 已决策' + (ds.total || 0) + '条', '#22c55e')
-                        + '</div>'
-                        + '<div class="rep-metric" style="text-align:left;margin-top:12px;">'
-                        + '<div class="k">维护闭环进度</div>'
-                        + '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:9px;font-size:12px;">'
-                        + '<div style="padding:8px;border-radius:10px;background:rgba(255,255,255,.04);"><b style="color:#fff;">' + (ds.proposed || 0) + '</b><br><span style="color:var(--rep-muted);">待创建动作</span></div>'
-                        + '<div style="padding:8px;border-radius:10px;background:rgba(255,255,255,.04);"><b style="color:#fff;">' + (ds.action_created || 0) + '</b><br><span style="color:var(--rep-muted);">已生成动作</span></div>'
-                        + '<div style="padding:8px;border-radius:10px;background:rgba(255,255,255,.04);"><b style="color:#fff;">' + (ds.followed || 0) + '</b><br><span style="color:var(--rep-muted);">已跟进</span></div>'
-                        + '<div style="padding:8px;border-radius:10px;background:rgba(34,197,94,.08);"><b style="color:#22c55e;">' + (ds.measured || 0) + '</b><br><span style="color:var(--rep-muted);">已证明结果</span></div>'
-                        + '</div></div>';
-                }
-                host.innerHTML = ops.length ? ops.map(function(op) {
-                    var samples = (op.sample_customers || []).slice(0, 3).map(function(c) {
-                        return '<div style="font-size:12px;color:rgba(226,232,240,0.68);line-height:1.55;border-top:1px solid rgba(255,255,255,0.06);padding-top:7px;margin-top:7px;">'
-                            + '<b style="color:#fff;">' + escapeHtml(c.customer_id || '-') + '</b> · ' + escapeHtml(c.phone || '-') + ' · ' + (c.days_since_last_visit || 0) + '天未到店<br>'
-                            + escapeHtml(c.recommended_action || '') + '</div>';
-                    }).join('');
-                    return '<div class="rep-metric" style="text-align:left;margin-bottom:10px;">'
-                        + '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;"><div><div class="k">维护场景</div><div class="v" style="font-size:20px;">' + escapeHtml(op.title || '-') + '</div></div>'
-                        + '<div style="text-align:right;"><div style="font-size:24px;font-weight:900;color:#22c55e;">' + (op.target_count || 0) + '</div><div style="font-size:11px;color:var(--rep-muted);">目标客户</div></div></div>'
-                        + '<div style="margin-top:8px;color:var(--rep-muted);font-size:12px;">推荐渠道：' + (op.channels || []).join(' / ') + ' · 预计可带动 ' + fmtCustMoney(op.expected_revenue) + '</div>'
-                        + samples
-                        + '<div style="display:flex;gap:8px;margin-top:10px;"><button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" onclick="showNotification(\'已生成维护任务草稿，后续可接入短信/企微/小程序执行\', \'success\')">生成维护任务</button><button class="rep-seg-btn" style="flex:1;" onclick="showNotification(\'公域渠道建议作为内容任务执行\', \'info\')">内容渠道建议</button></div>'
-                        + '</div>';
-                }).join('') : '<div class="rep-pay-empty">暂无明确维护机会，请先上传POS诊断或补充手机号/菜品明细。</div>';
-            } catch (e) {
-                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
-            }
-            loadCustomerOpsDecisions();
-            loadCustomerOpsServiceRadar();
-        }
         function custopsHeadersJson() {
             return { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token'), 'Content-Type': 'application/json' };
         }
-        async function generateCustomerOpsDecisions() {
-            if (!__custopsDiagnosisId) { await loadCustomerOpsLatest(); }
+
+        // ── 模块3：营销活动台账 ─────────────────────────────────────────
+        var CAMPAIGN_CHANNEL_LABELS = { xiaohongshu:'小红书', wecom:'企微群发', sms:'短信', dianping:'大众点评', douyin:'抖音', offline:'线下活动', pos:'POS促销', other:'其他' };
+        var CAMPAIGN_EFFECT_LABELS = { excellent:'优秀', meets:'达标', below:'不达标', blacklist:'黑名单（禁用）' };
+        var CAMPAIGN_EFFECT_COLORS = { excellent:'#22c55e', meets:'#38bdf8', below:'#f59e0b', blacklist:'#ef4444' };
+        var CAMPAIGN_STATUS_LABELS = { planned:'计划中', in_progress:'进行中', active:'进行中', completed:'已完成', paused:'已暂停', cancelled:'已取消' };
+        var CAMPAIGN_STATUS_COLORS = { planned:'#38bdf8', in_progress:'#facc15', active:'#facc15', completed:'#22c55e', paused:'#f59e0b', cancelled:'rgba(148,163,184,0.5)' };
+        var CAMPAIGN_TYPE_OPTIONS = ['充值活动','沉睡召回','新客激活','节日营销','新品推广','积分兑换','会员日','媒体投放','竞品反击','店庆活动','其他'];
+        var CAMPAIGN_AUDIENCE_PRESETS = [
+            { value:'dormant', label:'沉睡客（90天+未到店）' },
+            { value:'at_risk', label:'预警流失（30-90天未到）' },
+            { value:'one_time', label:'一次性客（未复购）' },
+            { value:'vip', label:'高价值客户（VIP）' },
+            { value:'business', label:'商务客户' },
+            { value:'stored_value', label:'储值余额客户' },
+            { value:'custom', label:'自定义说明...' },
+        ];
+        var __campaignStores = null;
+        var __campaignsCache = [];
+
+        async function loadCampaignStores() {
+            if (__campaignStores) return __campaignStores;
             try {
-                var body = {
-                    diagnosis_id: __custopsDiagnosisId,
-                    new_dish: document.getElementById('custops-new-dish')?.value || '',
-                    days_threshold: Number(document.getElementById('custops-days-threshold')?.value || 30)
-                };
-                var r = await fetch('/api/customer-ops/decisions/generate', { method:'POST', headers:custopsHeadersJson(), body: JSON.stringify(body) });
+                var r = await fetch('/api/stores', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
                 var d = await r.json();
-                if (!d.ok) throw new Error(d.error || 'generate_failed');
-                showNotification('已生成 ' + d.generated + ' 条AI维护决策', 'success');
-                loadCustomerOpsDecisions();
-                loadCustomerOpsServiceRadar();
-            } catch (e) { showNotification('生成失败：' + (e?.message || e), 'error'); }
+                __campaignStores = (d.items || d.stores || d || []).map(function(s){ return typeof s === 'string' ? { name: s, id: s } : { name: s.name || s.store_name || s.id, id: String(s.id || s.store_id || s.name) }; });
+            } catch { __campaignStores = []; }
+            return __campaignStores;
         }
-        function decisionStatusLabel(s) {
-            return ({ proposed:'待创建动作', action_created:'已生成动作', followed:'已跟进', measured:'已回填结果' })[s] || s || '-';
-        }
-        function decisionChannelLabel(c) {
-            return ({ sms:'短信', wecom:'企微', miniprogram:'小程序', service:'到店服务提醒', manual:'人工维护', xiaohongshu:'小红书', dianping:'大众点评', douyin:'抖音' })[c] || c || '-';
-        }
-        async function loadCustomerOpsDecisions() {
-            var host = document.getElementById('custops-decisions-list');
+
+        async function loadCampaignLog() {
+            var host = document.getElementById('custops-campaign-list');
             if (!host) return;
+            host.innerHTML = '<div class="rep-pay-empty">加载中…</div>';
             try {
-                var qs = __custopsDiagnosisId ? ('?diagnosis_id=' + encodeURIComponent(__custopsDiagnosisId)) : '';
-                var r = await fetch('/api/customer-ops/decisions' + qs, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                var status = document.getElementById('campaign-status-filter')?.value || '';
+                var qs = status ? '?status=' + encodeURIComponent(status) : '';
+                var r = await fetch('/api/customer-ops/campaigns' + qs, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
                 var d = await r.json();
                 if (!d.ok) throw new Error(d.error || 'load_failed');
-                var rows = d.decisions || [];
-                host.innerHTML = rows.length ? rows.map(function(x) {
-                    var result = x.result_json || {};
-                    var resultLine = x.status === 'measured' || x.status === 'followed'
-                        ? '<div style="font-size:12px;color:#22c55e;margin-top:7px;">结果：' + (result.arrived ? '已到店 ' : '') + (result.reserved ? '已预约 ' : '') + (result.actual_revenue ? ('收入' + fmtCustMoney(result.actual_revenue) + ' ') : '') + escapeHtml(result.note || '') + '</div>'
-                        : '';
-                    return '<div class="rep-metric" style="text-align:left;margin-bottom:10px;">'
-                        + '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="k">' + decisionChannelLabel(x.channel) + ' · ' + decisionStatusLabel(x.status) + '</div><div class="v" style="font-size:18px;">' + escapeHtml(x.title || '-') + '</div></div><div style="font-size:18px;color:#22c55e;font-weight:900;">' + fmtCustMoney(x.expected_revenue) + '</div></div>'
-                        + '<div style="font-size:12px;color:rgba(226,232,240,0.62);line-height:1.55;margin-top:7px;">' + escapeHtml(x.reason || '') + '</div>'
-                        + (x.copy_text ? '<div style="font-size:12px;color:rgba(226,232,240,0.82);line-height:1.65;margin-top:8px;padding:9px;border-radius:9px;background:rgba(255,255,255,0.04);">文案：' + escapeHtml(x.copy_text) + '</div>' : '')
-                        + (x.service_tip ? '<div style="font-size:12px;color:#fbbf24;line-height:1.55;margin-top:7px;">服务提醒：' + escapeHtml(x.service_tip) + '</div>' : '')
-                        + resultLine
-                        + '<div style="display:flex;gap:8px;margin-top:10px;">'
-                        + '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" onclick="createCustomerOpsAction(' + x.id + ')">生成执行动作</button>'
-                        + '<button class="rep-seg-btn" style="flex:1;" onclick="openCustomerOpsResult(' + x.id + ')">回填结果</button>'
-                        + '</div></div>';
-                }).join('') : '<div class="rep-pay-empty">暂无AI决策。填写今日新品/主推菜后点击“生成AI自动决策”。</div>';
+                var campaigns = d.campaigns || [];
+                __campaignsCache = campaigns;
+                if (!campaigns.length) { host.innerHTML = '<div class="rep-pay-empty" style="padding:32px 0;text-align:center;">暂无活动记录<br><span style="font-size:12px;color:var(--rep-muted);">点击右上角「+ 新建活动」开始规划</span></div>'; return; }
+                host.innerHTML = campaigns.map(function(c) {
+                    var results = c.results || [];
+                    var totalRevenue = results.reduce(function(s, x){ return s + Number(x.actual_revenue || 0); }, 0);
+                    var totalConv = results.reduce(function(s, x){ return s + Number(x.actual_conversion_count || 0); }, 0);
+                    var color = CAMPAIGN_STATUS_COLORS[c.status] || '#94a3b8';
+                    var statusLabel = CAMPAIGN_STATUS_LABELS[c.status] || c.status;
+                    var channelLabel = CAMPAIGN_CHANNEL_LABELS[c.channel] || c.channel;
+                    var storeIds = [];
+                    try { storeIds = Array.isArray(c.store_ids) ? c.store_ids : JSON.parse(c.store_ids || '[]'); } catch {}
+                    var dateStr = c.planned_date ? c.planned_date.slice(0, 10) + (c.planned_end_date ? ' → ' + c.planned_end_date.slice(0, 10) : '') : '';
+                    var resultsHtml = results.length ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);">'
+                        + '<div style="font-size:11px;color:var(--rep-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">门店复盘</div>'
+                        + results.map(function(res) {
+                            var effColor = CAMPAIGN_EFFECT_COLORS[res.effect_rating] || '#94a3b8';
+                            var effLabel = CAMPAIGN_EFFECT_LABELS[res.effect_rating] || '';
+                            return '<div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px;margin-bottom:6px;">'
+                                + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+                                + '<span style="color:#fff;font-weight:600;font-size:13px;">' + escapeHtml(res.store_name || res.store_id || '-') + (effLabel ? ' <span style="font-size:10px;font-weight:700;color:' + effColor + ';background:rgba(255,255,255,.06);border-radius:5px;padding:2px 6px;margin-left:4px;">' + effLabel + '</span>' : '') + '</span>'
+                                + '<button onclick="openCampaignResultModal(' + c.id + ',' + res.id + ',\'' + escapeHtml(res.store_id || '') + '\',\'' + escapeHtml(res.store_name || '') + '\')" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.8);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">编辑</button>'
+                                + '</div>'
+                                + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;">'
+                                + '<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#38bdf8;">' + (res.actual_conversion_count || 0) + '</div><div style="font-size:10px;color:var(--rep-muted);">到店</div></div>'
+                                + '<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#22c55e;">' + fmtCustMoney(res.actual_revenue) + '</div><div style="font-size:10px;color:var(--rep-muted);">带动收入</div></div>'
+                                + '<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#f59e0b;">' + (res.actual_send_count || 0) + '</div><div style="font-size:10px;color:var(--rep-muted);">发送量</div></div>'
+                                + '</div>'
+                                + (res.result_note ? '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:6px;line-height:1.5;">' + escapeHtml(res.result_note) + '</div>' : '')
+                                + '</div>';
+                        }).join('')
+                        + '</div>' : '';
+                    return '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px;margin-bottom:10px;">'
+                        + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">'
+                        + '<div style="flex:1;min-width:0;">'
+                        + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">'
+                        + '<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(255,255,255,.06);color:' + color + ';">' + statusLabel + '</span>'
+                        + '<span style="font-size:11px;color:var(--rep-muted);background:rgba(255,255,255,.04);padding:3px 8px;border-radius:6px;">' + escapeHtml(channelLabel) + '</span>'
+                        + '<span style="font-size:11px;color:var(--rep-muted);">' + escapeHtml(c.campaign_type || '') + '</span>'
+                        + '</div>'
+                        + '<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.3;word-break:break-all;">' + escapeHtml(c.title) + '</div>'
+                        + '<div style="font-size:12px;color:var(--rep-muted);margin-top:5px;">📅 执行时间：' + (dateStr || '未设置') + '</div>'
+                        + '<div style="font-size:12px;color:var(--rep-muted);margin-top:3px;">🏪 ' + (storeIds.length ? escapeHtml(storeIds.join('、')) : '全部门店') + (c.target_count ? '  👥 目标 ' + c.target_count + ' 人' : '') + '</div>'
+                        + (c.goal ? '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:4px;line-height:1.4;">🎯 ' + escapeHtml(c.goal) + '</div>' : '')
+                        + (results.length ? '<div style="font-size:12px;color:#22c55e;margin-top:4px;">✅ ' + results.length + ' 家门店已复盘' + (totalRevenue ? '  ·  总收入 ' + fmtCustMoney(totalRevenue) : '') + (totalConv ? '  ·  总到店 ' + totalConv + ' 人' : '') + '</div>' : '')
+                        + '</div>'
+                        + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">'
+                        + '<button onclick="openCreateCampaignModal(' + JSON.stringify(c).replace(/\\/g,'\\\\').replace(/'/g,'&#39;').replace(/"/g,'&quot;') + ')" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.9);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">✏️ 编辑</button>'
+                        + '<button onclick="openCampaignResultModal(' + c.id + ')" style="border:none;background:rgba(56,189,248,.15);color:#38bdf8;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📊 复盘</button>'
+                        + ((c.status === 'completed' && results.length) ? '<button onclick="openCampaignReportModal(' + c.id + ')" style="border:none;background:rgba(250,204,21,.15);color:#facc15;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📄 评估报告</button>' : '')
+                        + '</div>'
+                        + '</div>'
+                        + resultsHtml
+                        + '</div>';
+                }).join('');
             } catch (e) {
-                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载AI决策失败：' + escapeHtml(e?.message || e) + '</div>';
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
             }
         }
-        async function createCustomerOpsAction(id) {
-            try {
-                var r = await fetch('/api/customer-ops/decisions/' + encodeURIComponent(id) + '/create-action', { method:'POST', headers:custopsHeadersJson(), body:'{}' });
-                var d = await r.json();
-                if (!d.ok) throw new Error(d.error || 'create_action_failed');
-                showNotification('已生成执行动作：' + d.action_key + '，可到执行中心查看', 'success');
-                loadCustomerOpsDecisions();
-            } catch (e) { showNotification('生成动作失败：' + (e?.message || e), 'error'); }
-        }
-        function openCustomerOpsResult(id) {
+
+        async function openCreateCampaignModal(existing) {
+            var isEdit = !!(existing && existing.id);
+            var c = typeof existing === 'string' ? JSON.parse(existing) : (existing || {});
+            var storeIds = [];
+            try { storeIds = Array.isArray(c.store_ids) ? c.store_ids : JSON.parse(c.store_ids || '[]'); } catch {}
+            var stores = await loadCampaignStores();
+            // 预选客群（多选）：把已存字符串按 '+' 拆分，匹配到的预设标签打勾，其余留在自定义框
+            var audienceParts = c.target_audience ? String(c.target_audience).split('+').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+            var audiencePresetList = CAMPAIGN_AUDIENCE_PRESETS.filter(function(p){ return p.value !== 'custom'; });
+            var checkedPresetValues = audiencePresetList.filter(function(p){ return audienceParts.indexOf(p.label) >= 0; }).map(function(p){ return p.value; });
+            var audienceCustom = audienceParts.filter(function(part){ return !audiencePresetList.some(function(p){ return p.label === part; }); }).join('+');
+            var storeCheckboxes = stores.length
+                ? stores.map(function(s){ return '<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.04);cursor:pointer;"><input type="checkbox" name="cpm-store" value="' + escapeHtml(s.id) + '"' + (storeIds.indexOf(s.id) >= 0 || storeIds.indexOf(s.name) >= 0 ? ' checked' : '') + ' style="width:18px;height:18px;accent-color:#0d9488;"> <span style="color:#fff;font-size:14px;">' + escapeHtml(s.name) + '</span></label>'; }).join('')
+                : '<div style="color:var(--rep-muted);font-size:13px;padding:8px 0;">无法加载门店列表，留空表示全部门店</div>';
+            var statusOpts = [['planned','计划中'],['in_progress','进行中'],['completed','已完成'],['paused','已暂停'],['cancelled','已取消']];
             var ov = document.createElement('div');
-            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.62);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
-            ov.innerHTML = '<div style="background:#0f172a;border:1px solid rgba(255,255,255,0.12);border-radius:14px;max-width:420px;width:100%;padding:18px;">'
-                + '<div style="font-size:16px;font-weight:900;color:#fff;margin-bottom:12px;">回填维护结果</div>'
-                + '<label style="display:block;color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:6px;"><input id="cod-reserved" type="checkbox"> 已预约</label>'
-                + '<label style="display:block;color:rgba(226,232,240,0.7);font-size:12px;margin-bottom:10px;"><input id="cod-arrived" type="checkbox"> 已到店</label>'
-                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);">实际收入（元）</label><input id="cod-revenue" type="number" min="0" class="dr-store-select" style="width:100%;padding:9px;color:#fff;margin:5px 0 10px;">'
-                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);">备注</label><textarea id="cod-note" class="dr-store-select" style="width:100%;min-height:70px;padding:9px;color:#fff;resize:vertical;margin-top:5px;"></textarea>'
-                + '<div style="display:flex;gap:8px;margin-top:12px;"><button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" onclick="submitCustomerOpsResult(' + id + ')">提交</button><button class="rep-seg-btn" style="flex:1;" onclick="this.closest(\'div[style*=fixed]\').remove()">取消</button></div>'
+            ov.id = 'campaign-modal-overlay';
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center;';
+            ov.innerHTML = '<div style="width:100%;max-width:600px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding:0 0 env(safe-area-inset-bottom,0);">'
+                + '<div style="position:sticky;top:0;background:#0f172a;border-bottom:1px solid rgba(255,255,255,.08);padding:16px 16px 12px;z-index:1;display:flex;justify-content:space-between;align-items:center;">'
+                + '<div style="font-size:17px;font-weight:900;color:#fff;">' + (isEdit ? '编辑活动' : '新建营销活动') + '</div>'
+                + '<button onclick="document.getElementById(\'campaign-modal-overlay\').remove()" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '</div>'
+                + '<div style="padding:16px;">'
+                // 活动名称
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">活动名称 *</div><input id="cpm-title" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:15px;box-sizing:border-box;" placeholder="如：国庆储值送好礼" value="' + escapeHtml(c.title || '') + '"></div>'
+                // 渠道
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">活动渠道</div><div style="display:flex;flex-wrap:wrap;gap:8px;">'
+                + Object.entries(CAMPAIGN_CHANNEL_LABELS).map(function(kv){ return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (c.channel === kv[0] ? '#0d9488' : 'rgba(255,255,255,.12)') + ';background:' + (c.channel === kv[0] ? 'rgba(13,148,136,.2)' : 'rgba(255,255,255,.04)') + ';cursor:pointer;"><input type="radio" name="cpm-channel" value="' + kv[0] + '"' + (c.channel === kv[0] || (!c.channel && kv[0] === 'offline') ? ' checked' : '') + ' style="accent-color:#0d9488;"> <span style="color:#fff;font-size:13px;">' + kv[1] + '</span></label>'; }).join('')
+                + '</div></div>'
+                // 活动类型
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">活动类型</div><div style="display:flex;flex-wrap:wrap;gap:8px;">'
+                + CAMPAIGN_TYPE_OPTIONS.map(function(t){ return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (c.campaign_type === t ? '#0d9488' : 'rgba(255,255,255,.12)') + ';background:' + (c.campaign_type === t ? 'rgba(13,148,136,.2)' : 'rgba(255,255,255,.04)') + ';cursor:pointer;"><input type="radio" name="cpm-type" value="' + t + '"' + (c.campaign_type === t ? ' checked' : '') + ' style="accent-color:#0d9488;"> <span style="color:#fff;font-size:13px;">' + t + '</span></label>'; }).join('')
+                + '</div></div>'
+                // 状态
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">当前状态</div><div style="display:flex;flex-wrap:wrap;gap:8px;">'
+                + statusOpts.map(function(kv){ var sel = c.status === kv[0] || (!c.status && kv[0] === 'planned'); return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (sel ? '#0d9488' : 'rgba(255,255,255,.12)') + ';background:' + (sel ? 'rgba(13,148,136,.2)' : 'rgba(255,255,255,.04)') + ';cursor:pointer;"><input type="radio" name="cpm-status" value="' + kv[0] + '"' + (sel ? ' checked' : '') + ' style="accent-color:#0d9488;"> <span style="color:#fff;font-size:13px;">' + kv[1] + '</span></label>'; }).join('')
+                + '</div></div>'
+                // 日期
+                + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">计划开始</div><input id="cpm-date" type="date" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + escapeHtml(c.planned_date || '') + '"></div>'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">计划结束</div><input id="cpm-date-end" type="date" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + escapeHtml(c.planned_end_date || '') + '"></div>'
+                + '</div>'
+                // 覆盖门店
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">覆盖门店（不选=全部）</div><div style="display:flex;flex-direction:column;gap:6px;">' + storeCheckboxes + '</div></div>'
+                // 目标客群（多选）
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">目标客群（可多选）</div><div style="display:flex;flex-direction:column;gap:6px;">'
+                + audiencePresetList.map(function(p){ var sel = checkedPresetValues.indexOf(p.value) >= 0; return '<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;border:1.5px solid ' + (sel ? '#0d9488' : 'rgba(255,255,255,.08)') + ';background:' + (sel ? 'rgba(13,148,136,.12)' : 'rgba(255,255,255,.03)') + ';cursor:pointer;"><input type="checkbox" name="cpm-audience-preset" value="' + escapeHtml(p.value) + '"' + (sel ? ' checked' : '') + ' style="accent-color:#0d9488;width:18px;height:18px;"> <span style="color:#fff;font-size:13px;">' + escapeHtml(p.label) + '</span></label>'; }).join('')
+                + '</div>'
+                + '<div style="margin-top:8px;"><div style="font-size:11px;color:var(--rep-muted);margin-bottom:4px;">其他补充说明（可选）</div><input id="cpm-audience-custom" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 14px;color:#fff;font-size:14px;box-sizing:border-box;" placeholder="如 储值余额50元以上" value="' + escapeHtml(audienceCustom) + '"></div>'
+                + '</div>'
+                // 目标人数 / 预算
+                + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">目标人数</div><input id="cpm-target" type="number" min="0" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + (c.target_count || '') + '" placeholder="0"></div>'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">预算（元）</div><input id="cpm-budget" type="number" min="0" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + (c.budget || '') + '" placeholder="0"></div>'
+                + '</div>'
+                // 提醒日期
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">提醒日期（可选）</div><input id="cpm-reminder" type="date" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + escapeHtml(c.reminder_date || '') + '"></div>'
+                // 活动内容/文案
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">活动内容 / 文案</div><textarea id="cpm-content" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:14px;min-height:80px;resize:vertical;box-sizing:border-box;" placeholder="活动内容、推广语、短信文案等…">' + escapeHtml(c.content || '') + '</textarea></div>'
+                // 活动目标
+                + '<div style="margin-bottom:20px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">活动目标 / 预期效果</div><input id="cpm-goal" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:14px;box-sizing:border-box;" placeholder="如：带动复购50人 / 储值增加10万" value="' + escapeHtml(c.goal || '') + '"></div>'
+                // 底部按钮
+                + '<div style="display:flex;gap:10px;padding-bottom:16px;">'
+                + '<button onclick="submitCampaignForm(' + (isEdit ? c.id : 'null') + ')" style="flex:1;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">保存活动</button>'
+                + (isEdit ? '<button onclick="deleteCampaign(' + c.id + ')" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:14px 18px;font-size:14px;cursor:pointer;">删除</button>' : '')
+                + '</div>'
+                + '</div>'
+                + '</div>';
+            ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+            document.body.appendChild(ov);
+            // 动态样式：radio 组点击后更新视觉选中态
+            ov.querySelectorAll('input[type=radio]').forEach(function(radio) {
+                radio.addEventListener('change', function() {
+                    var name = this.name;
+                    ov.querySelectorAll('input[name="' + name + '"]').forEach(function(r) {
+                        var lbl = r.closest('label');
+                        if (!lbl) return;
+                        if (r.checked) { lbl.style.borderColor = '#0d9488'; lbl.style.background = 'rgba(13,148,136,.2)'; }
+                        else { lbl.style.borderColor = 'rgba(255,255,255,.12)'; lbl.style.background = 'rgba(255,255,255,.04)'; }
+                    });
+                });
+            });
+        }
+
+        async function submitCampaignForm(id) {
+            try {
+                var ov = document.getElementById('campaign-modal-overlay');
+                var channelRadio = ov?.querySelector('input[name="cpm-channel"]:checked');
+                var typeRadio = ov?.querySelector('input[name="cpm-type"]:checked');
+                var statusRadio = ov?.querySelector('input[name="cpm-status"]:checked');
+                var audienceChecks = Array.from(ov?.querySelectorAll('input[name="cpm-audience-preset"]:checked') || []).map(function(cb){ return cb.value; });
+                var audienceLabels = audienceChecks.map(function(v){ return CAMPAIGN_AUDIENCE_PRESETS.find(function(p){ return p.value === v; })?.label; }).filter(Boolean);
+                var audienceCustomVal = (document.getElementById('cpm-audience-custom')?.value || '').trim();
+                if (audienceCustomVal) audienceLabels.push(audienceCustomVal);
+                var audienceText = audienceLabels.length ? audienceLabels.join('+') : '全部客户';
+                var storeChecks = Array.from(ov?.querySelectorAll('input[name="cpm-store"]:checked') || []).map(function(cb){ return cb.value; });
+                var body = {
+                    title: document.getElementById('cpm-title')?.value?.trim() || '',
+                    channel: channelRadio?.value || 'offline',
+                    campaign_type: typeRadio?.value || '其他',
+                    status: statusRadio?.value || 'planned',
+                    planned_date: document.getElementById('cpm-date')?.value || null,
+                    planned_end_date: document.getElementById('cpm-date-end')?.value || null,
+                    store_ids: storeChecks,
+                    target_audience: audienceText,
+                    target_count: Number(document.getElementById('cpm-target')?.value || 0),
+                    content: document.getElementById('cpm-content')?.value || '',
+                    goal: document.getElementById('cpm-goal')?.value || '',
+                    budget: Number(document.getElementById('cpm-budget')?.value || 0),
+                    reminder_date: document.getElementById('cpm-reminder')?.value || null,
+                };
+                if (!body.title) { showNotification('活动名称不能为空', 'warning'); return; }
+                var url = id ? '/api/customer-ops/campaigns/' + id : '/api/customer-ops/campaigns';
+                var method = id ? 'PUT' : 'POST';
+                var r = await fetch(url, { method, headers: custopsHeadersJson(), body: JSON.stringify(body) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'save_failed');
+                document.getElementById('campaign-modal-overlay')?.remove();
+                showNotification(id ? '活动已更新' : '活动已创建', 'success');
+                loadCampaignLog();
+            } catch (e) { showNotification('保存失败：' + (e?.message || e), 'error'); }
+        }
+
+        async function deleteCampaign(id) {
+            if (!confirm('确认删除该活动？此操作不可撤销。')) return;
+            try {
+                await fetch('/api/customer-ops/campaigns/' + id, { method: 'DELETE', headers: custopsHeadersJson() });
+                document.getElementById('campaign-modal-overlay')?.remove();
+                showNotification('活动已删除', 'success');
+                loadCampaignLog();
+            } catch (e) { showNotification('删除失败', 'error'); }
+        }
+
+        async function openCampaignResultModal(campaignId, resultId, storeId, storeName) {
+            var isEdit = !!resultId;
+            var stores = await loadCampaignStores();
+            var campaign = __campaignsCache.find(function(c){ return c.id === campaignId; }) || {};
+            var existing = isEdit ? (campaign.results || []).find(function(r){ return r.id === resultId; }) || {} : {};
+            var storeOpts = stores.map(function(s){ return '<option value="' + escapeHtml(s.id) + '"' + ((existing.store_id || storeId) === s.id || (existing.store_name || storeName) === s.name ? ' selected' : '') + '>' + escapeHtml(s.name) + '</option>'; }).join('');
+            var ov = document.createElement('div');
+            ov.id = 'result-modal-overlay';
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center;';
+            var iStyle = 'width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:15px;box-sizing:border-box;';
+            var effectOpts = Object.entries(CAMPAIGN_EFFECT_LABELS).map(function(kv){ return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (existing.effect_rating === kv[0] ? CAMPAIGN_EFFECT_COLORS[kv[0]] : 'rgba(255,255,255,.12)') + ';background:' + (existing.effect_rating === kv[0] ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.04)') + ';cursor:pointer;"><input type="radio" name="crm-effect" value="' + kv[0] + '"' + (existing.effect_rating === kv[0] ? ' checked' : '') + ' style="accent-color:' + CAMPAIGN_EFFECT_COLORS[kv[0]] + ';"> <span style="color:#fff;font-size:13px;">' + kv[1] + '</span></label>'; }).join('');
+            ov.innerHTML = '<div style="width:100%;max-width:520px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom,0);">'
+                + '<div style="position:sticky;top:0;background:#0f172a;padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;z-index:1;">'
+                + '<div style="font-size:16px;font-weight:900;color:#fff;">' + (isEdit ? '编辑复盘' : '+ 添加门店复盘') + '</div>'
+                + '<button onclick="document.getElementById(\'result-modal-overlay\').remove()" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '</div>'
+                + '<div style="padding:16px;">'
+                + (campaign.goal ? '<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:#facc15;">🎯 活动目标：' + escapeHtml(campaign.goal) + '</div>' : '')
+                + '<div style="margin-bottom:12px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">选择门店</div><select id="crm-store-sel" style="' + iStyle + '">' + '<option value="">全部门店</option>' + storeOpts + '</select></div>'
+                + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">曝光人数</div><input id="crm-exposure" type="number" min="0" style="' + iStyle + '" value="' + (existing.actual_exposure_count || '') + '" placeholder="0"></div>'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">发送人数</div><input id="crm-send" type="number" min="0" style="' + iStyle + '" value="' + (existing.actual_send_count || '') + '" placeholder="0"></div>'
+                + '</div>'
+                + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">核销单数</div><input id="crm-redeem" type="number" min="0" style="' + iStyle + '" value="' + (existing.actual_redemption_count || '') + '" placeholder="0"></div>'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">到店/转化人数</div><input id="crm-conv" type="number" min="0" style="' + iStyle + '" value="' + (existing.actual_conversion_count || '') + '" placeholder="0"></div>'
+                + '</div>'
+                + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">带动收入（元）</div><input id="crm-revenue" type="number" min="0" style="' + iStyle + '" value="' + (existing.actual_revenue || '') + '" placeholder="0"></div>'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">活动成本（元）</div><input id="crm-cost" type="number" min="0" style="' + iStyle + '" value="' + (existing.actual_cost || '') + '" placeholder="0"></div>'
+                + '</div>'
+                + '<div id="crm-derived" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;background:rgba(255,255,255,.03);border-radius:10px;padding:10px;">'
+                + '<div style="text-align:center;"><div id="crm-derived-rate" style="font-size:18px;font-weight:800;color:#38bdf8;">-</div><div style="font-size:10px;color:var(--rep-muted);">核销率</div></div>'
+                + '<div style="text-align:center;"><div id="crm-derived-roi" style="font-size:18px;font-weight:800;color:#22c55e;">-</div><div style="font-size:10px;color:var(--rep-muted);">ROI</div></div>'
+                + '</div>'
+                + '<div style="margin-bottom:16px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;">活动效果评级</div><div style="display:flex;flex-wrap:wrap;gap:8px;">' + effectOpts + '</div></div>'
+                + '<div style="margin-bottom:16px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">复盘备注</div><textarea id="crm-note" style="' + iStyle + 'min-height:80px;resize:vertical;" placeholder="执行情况、问题点、改进建议…">' + escapeHtml(existing.result_note || '') + '</textarea></div>'
+                + '<button onclick="submitCampaignResult(' + campaignId + ',' + (resultId || 'null') + ')" style="width:100%;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;">保存复盘结果</button>'
+                + '</div>'
+                + '</div>';
+            ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+            document.body.appendChild(ov);
+            function updateDerived() {
+                var send = Number(document.getElementById('crm-send')?.value || 0);
+                var redeem = Number(document.getElementById('crm-redeem')?.value || 0);
+                var revenue = Number(document.getElementById('crm-revenue')?.value || 0);
+                var cost = Number(document.getElementById('crm-cost')?.value || 0);
+                document.getElementById('crm-derived-rate').textContent = send > 0 ? (redeem / send * 100).toFixed(1) + '%' : '-';
+                document.getElementById('crm-derived-roi').textContent = cost > 0 ? ((revenue - cost) / cost).toFixed(2) : '-';
+            }
+            ['crm-send', 'crm-redeem', 'crm-revenue', 'crm-cost'].forEach(function(id) {
+                document.getElementById(id)?.addEventListener('input', updateDerived);
+            });
+            updateDerived();
+            ov.querySelectorAll('input[name="crm-effect"]').forEach(function(radio) {
+                radio.addEventListener('change', function() {
+                    ov.querySelectorAll('input[name="crm-effect"]').forEach(function(r) {
+                        var lbl = r.closest('label');
+                        if (!lbl) return;
+                        if (r.checked) { lbl.style.borderColor = CAMPAIGN_EFFECT_COLORS[r.value]; lbl.style.background = 'rgba(255,255,255,.08)'; }
+                        else { lbl.style.borderColor = 'rgba(255,255,255,.12)'; lbl.style.background = 'rgba(255,255,255,.04)'; }
+                    });
+                });
+            });
+        }
+
+        async function submitCampaignResult(campaignId, resultId) {
+            try {
+                var ov = document.getElementById('result-modal-overlay');
+                var sel = document.getElementById('crm-store-sel');
+                var storeId = sel?.value || '';
+                var storeName = sel?.options[sel.selectedIndex]?.text || '';
+                if (storeName === '全部门店') storeName = '';
+                var effectRadio = ov?.querySelector('input[name="crm-effect"]:checked');
+                var body = {
+                    store_id: storeId,
+                    store_name: storeName,
+                    actual_exposure_count: Number(document.getElementById('crm-exposure')?.value || 0),
+                    actual_send_count: Number(document.getElementById('crm-send')?.value || 0),
+                    actual_reach_count: 0,
+                    actual_redemption_count: Number(document.getElementById('crm-redeem')?.value || 0),
+                    actual_conversion_count: Number(document.getElementById('crm-conv')?.value || 0),
+                    actual_revenue: Number(document.getElementById('crm-revenue')?.value || 0),
+                    actual_cost: Number(document.getElementById('crm-cost')?.value || 0),
+                    effect_rating: effectRadio?.value || '',
+                    result_note: document.getElementById('crm-note')?.value || '',
+                };
+                var url = resultId
+                    ? '/api/customer-ops/campaigns/' + campaignId + '/results/' + resultId
+                    : '/api/customer-ops/campaigns/' + campaignId + '/results';
+                var method = resultId ? 'PUT' : 'POST';
+                var r = await fetch(url, { method, headers: custopsHeadersJson(), body: JSON.stringify(body) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'save_failed');
+                document.getElementById('result-modal-overlay')?.remove();
+                showNotification('复盘已保存', 'success');
+                loadCampaignLog();
+            } catch (e) { showNotification('保存失败：' + (e?.message || e), 'error'); }
+        }
+
+        function openCampaignReportModal(campaignId) {
+            var c = __campaignsCache.find(function(x){ return x.id === campaignId; });
+            if (!c) return;
+            var results = c.results || [];
+            var totalExposure = results.reduce(function(s, r){ return s + Number(r.actual_exposure_count || 0); }, 0);
+            var totalSend = results.reduce(function(s, r){ return s + Number(r.actual_send_count || 0); }, 0);
+            var totalRedeem = results.reduce(function(s, r){ return s + Number(r.actual_redemption_count || 0); }, 0);
+            var totalConv = results.reduce(function(s, r){ return s + Number(r.actual_conversion_count || 0); }, 0);
+            var totalRevenue = results.reduce(function(s, r){ return s + Number(r.actual_revenue || 0); }, 0);
+            var totalCost = results.reduce(function(s, r){ return s + Number(r.actual_cost || 0); }, 0);
+            var redeemRate = totalSend > 0 ? (totalRedeem / totalSend * 100).toFixed(1) + '%' : '-';
+            var roi = totalCost > 0 ? ((totalRevenue - totalCost) / totalCost).toFixed(2) : '-';
+            var dateStr = c.planned_date ? c.planned_date.slice(0, 10) + (c.planned_end_date ? ' → ' + c.planned_end_date.slice(0, 10) : '') : '未设置';
+            var kpiCard = function(label, value, color) {
+                return '<div style="background:rgba(255,255,255,.04);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:20px;font-weight:800;color:' + color + ';">' + value + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">' + label + '</div></div>';
+            };
+            var ov = document.createElement('div');
+            ov.id = 'report-modal-overlay';
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:flex-end;justify-content:center;';
+            ov.innerHTML = '<div style="width:100%;max-width:600px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom,0);">'
+                + '<div style="position:sticky;top:0;background:#0f172a;padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;z-index:1;">'
+                + '<div style="font-size:17px;font-weight:900;color:#fff;">活动评估报告</div>'
+                + '<button onclick="document.getElementById(\'report-modal-overlay\').remove()" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '</div>'
+                + '<div style="padding:16px;">'
+                + '<div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:4px;">' + escapeHtml(c.title) + '</div>'
+                + '<div style="font-size:12px;color:var(--rep-muted);margin-bottom:2px;">📅 执行时间：' + dateStr + '</div>'
+                + (c.goal ? '<div style="font-size:12px;color:#facc15;margin-bottom:14px;">🎯 活动目标：' + escapeHtml(c.goal) + '</div>' : '<div style="margin-bottom:14px;"></div>')
+                + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">'
+                + kpiCard('曝光人数', totalExposure, '#a78bfa')
+                + kpiCard('发送人数', totalSend, '#38bdf8')
+                + kpiCard('核销单数', totalRedeem, '#facc15')
+                + '</div>'
+                + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">'
+                + kpiCard('核销率', redeemRate, '#facc15')
+                + kpiCard('到店/转化', totalConv, '#38bdf8')
+                + kpiCard('带动收入', fmtCustMoney(totalRevenue), '#22c55e')
+                + '</div>'
+                + '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px;">'
+                + kpiCard('活动成本', fmtCustMoney(totalCost), '#f87171')
+                + kpiCard('ROI', roi, '#22c55e')
+                + '</div>'
+                + '<div style="font-size:12px;color:var(--rep-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">各门店明细</div>'
+                + results.map(function(res) {
+                    var effColor = CAMPAIGN_EFFECT_COLORS[res.effect_rating] || '#94a3b8';
+                    var effLabel = CAMPAIGN_EFFECT_LABELS[res.effect_rating] || '未评级';
+                    var rRate = Number(res.actual_send_count) > 0 ? (Number(res.actual_redemption_count || 0) / Number(res.actual_send_count) * 100).toFixed(1) + '%' : '-';
+                    var rRoi = Number(res.actual_cost) > 0 ? ((Number(res.actual_revenue || 0) - Number(res.actual_cost)) / Number(res.actual_cost)).toFixed(2) : '-';
+                    return '<div style="background:rgba(255,255,255,.04);border-radius:10px;padding:12px;margin-bottom:8px;">'
+                        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+                        + '<span style="color:#fff;font-weight:700;font-size:14px;">' + escapeHtml(res.store_name || res.store_id || '-') + '</span>'
+                        + '<span style="font-size:11px;font-weight:700;color:' + effColor + ';background:rgba(255,255,255,.06);border-radius:6px;padding:3px 8px;">' + effLabel + '</span>'
+                        + '</div>'
+                        + '<div style="font-size:12px;color:rgba(226,232,240,.7);line-height:1.8;">曝光 ' + (res.actual_exposure_count || 0) + ' · 发送 ' + (res.actual_send_count || 0) + ' · 核销 ' + (res.actual_redemption_count || 0) + '（' + rRate + '）· 到店 ' + (res.actual_conversion_count || 0) + '<br>收入 ' + fmtCustMoney(res.actual_revenue) + ' · 成本 ' + fmtCustMoney(res.actual_cost) + ' · ROI ' + rRoi + '</div>'
+                        + (res.result_note ? '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:6px;line-height:1.5;">' + escapeHtml(res.result_note) + '</div>' : '')
+                        + '</div>';
+                }).join('')
+                + '</div>'
                 + '</div>';
             ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
             document.body.appendChild(ov);
         }
-        async function submitCustomerOpsResult(id) {
-            try {
-                var body = {
-                    reserved: !!document.getElementById('cod-reserved')?.checked,
-                    arrived: !!document.getElementById('cod-arrived')?.checked,
-                    actual_revenue: Number(document.getElementById('cod-revenue')?.value || 0),
-                    note: document.getElementById('cod-note')?.value || ''
-                };
-                var r = await fetch('/api/customer-ops/decisions/' + encodeURIComponent(id) + '/result', { method:'POST', headers:custopsHeadersJson(), body: JSON.stringify(body) });
-                var d = await r.json();
-                if (!d.ok) throw new Error(d.error || 'result_failed');
-                document.querySelector('div[style*="position:fixed"][style*="z-index:9999"]')?.remove();
-                showNotification('维护结果已记录', 'success');
-                loadCustomerOpsDecisions();
-            } catch (e) { showNotification('提交失败：' + (e?.message || e), 'error'); }
-        }
-        async function loadCustomerOpsServiceRadar() {
-            var host = document.getElementById('custops-service-radar');
+
+        async function loadAutoMarketingSummary() {
+            var host = document.getElementById('custops-ams-list');
             if (!host) return;
+            host.innerHTML = '<div class="rep-pay-empty">加载中…</div>';
             try {
-                var qs = __custopsDiagnosisId ? ('?diagnosis_id=' + encodeURIComponent(__custopsDiagnosisId)) : '';
-                var r = await fetch('/api/customer-ops/service-radar' + qs, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                var from = document.getElementById('ams-date-from')?.value || '';
+                var to = document.getElementById('ams-date-to')?.value || '';
+                var qs = (from ? '?date_from=' + from : '') + (to ? (from ? '&' : '?') + 'date_to=' + to : '');
+                var r = await fetch('/api/customer-ops/auto-marketing-summary' + qs, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
                 var d = await r.json();
-                if (!d.ok) throw new Error(d.error || 'radar_failed');
-                var rows = d.customers || [];
-                host.innerHTML = rows.length ? rows.slice(0, 20).map(function(c) {
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
-                        + '<div style="display:flex;justify-content:space-between;gap:10px;"><b style="color:#fff;">' + escapeHtml(c.customer_id || '-') + ' · ' + escapeHtml(c.phone || '-') + '</b><span style="color:#38bdf8;">均客' + fmtCustMoney(c.avg_check) + '</span></div>'
-                        + '<div style="color:#fbbf24;margin-top:5px;line-height:1.55;">' + escapeHtml(c.service_tip || '') + '</div>'
-                        + '<div style="color:rgba(226,232,240,0.45);margin-top:3px;">跨店：' + escapeHtml((c.stores || []).join('、') || '-') + ' · 偏好：' + escapeHtml((c.favorite_dishes || []).join('、') || '-') + '</div>'
-                        + '</div>';
-                }).join('') : '<div class="rep-pay-empty">暂无跨店/VIP服务提醒。导入更多客户消费记录后会自动识别。</div>';
+                if (!d.ok) throw new Error(d.error || 'load_failed');
+                var rules = d.rules || [];
+                host.innerHTML = rules.length
+                    ? '<div style="font-size:12px;color:var(--rep-muted);margin-bottom:10px;">' + escapeHtml(d.date_from || '') + ' 至 ' + escapeHtml(d.date_to || '') + '</div>'
+                    + rules.map(function(x) {
+                        return '<div style="background:rgba(255,255,255,.04);border-radius:10px;padding:12px;margin-bottom:8px;">'
+                            + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+                            + '<div style="color:#fff;font-weight:700;font-size:14px;">' + escapeHtml(x.rule_name || x.rule_key || '-') + '</div>'
+                            + '<div style="font-size:13px;color:#22c55e;font-weight:700;">发 ' + (x.send_count || 0) + ' 人</div>'
+                            + '</div>'
+                            + (x.sample_message ? '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:6px;line-height:1.55;background:rgba(255,255,255,.03);border-radius:6px;padding:8px;">样本：' + escapeHtml(String(x.sample_message).slice(0, 150)) + '</div>' : '')
+                            + '<div style="font-size:11px;color:var(--rep-muted);margin-top:5px;">最近发送：' + escapeHtml(x.last_sent_date || '-') + '</div>'
+                            + '</div>';
+                    }).join('')
+                    : '<div class="rep-pay-empty">该时段无自动营销发送记录</div>';
             } catch (e) {
-                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">服务雷达加载失败：' + escapeHtml(e?.message || e) + '</div>';
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
             }
         }
         function openCustomer360(c) {
@@ -58798,7 +59078,7 @@ ${body}
             var tags = (c.scene_tags || []).map(custSceneLabel).join('、') || custStageLabel(c.lifecycle_stage);
             var channels = c.channel_readiness || {};
             var channelHtml = ['sms','wecom','miniprogram','xiaohongshu','dianping','douyin'].map(function(k) {
-                var label = decisionChannelLabel(k);
+                var label = CAMPAIGN_CHANNEL_LABELS[k] || k;
                 var on = !!channels[k];
                 return '<span style="display:inline-block;margin:4px 6px 0 0;padding:5px 9px;border-radius:999px;background:' + (on ? 'rgba(34,197,94,.12);color:#86efac;' : 'rgba(148,163,184,.10);color:rgba(226,232,240,.45);') + 'font-size:12px;">' + label + (on ? '可用' : '待补') + '</span>';
             }).join('');
@@ -58845,37 +59125,9 @@ ${body}
                 + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">维护动作建议</div><ul style="padding-left:18px;margin:8px 0 0;font-size:13px;line-height:1.6;">' + (touchPlan || '<li style="color:var(--rep-muted);">暂无</li>') + '</ul></div>'
                 + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">最近消费时间线</div>' + (timeline || '<div style="color:var(--rep-muted);font-size:12px;margin-top:8px;">暂无消费明细</div>') + '</div>'
                 + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">储值/会员资金时间线</div>' + (storedTimeline || '<div style="color:var(--rep-muted);font-size:12px;margin-top:8px;">暂无储值记录</div>') + '</div>'
-                + '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">营销记录</div><div id="custops-mlog-' + escapeHtml(c.customer_id) + '" style="color:var(--rep-muted);font-size:12px;margin-top:8px;">加载中…</div></div>'
                 + '</div>';
             ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
             document.body.appendChild(ov);
-            loadCustomerMarketingLog(c.customer_id);
-        }
-
-        async function loadCustomerMarketingLog(customerId) {
-            var el = document.getElementById('custops-mlog-' + customerId);
-            if (!el) return;
-            try {
-                var r = await fetch('/api/customer-ops/customers/' + encodeURIComponent(customerId) + '/marketing-log', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
-                var data = await r.json();
-                var log = data.log || [];
-                if (!log.length) { el.innerHTML = '<span style="color:var(--rep-muted);">暂无营销记录</span>'; return; }
-                var channelLabel = { wecom:'企微', miniprogram:'小程序', sms:'短信', manual:'人工', service:'到店服务' };
-                var statusLabel = { sent:'已发送', arrived:'已到店', measured:'已记录结果' };
-                el.innerHTML = log.map(function(m) {
-                    var ch = channelLabel[m.channel] || m.channel || '-';
-                    var st = statusLabel[m.status] || m.status || '-';
-                    var rev = Number(m.actual_revenue || 0);
-                    return '<div style="padding:8px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
-                        + '<div style="display:flex;justify-content:space-between;gap:8px;">'
-                        + '<b style="color:#fff;">' + escapeHtml((m.created_at || '').slice(0,10)) + ' · ' + ch + '</b>'
-                        + '<span style="color:' + (m.arrived ? '#22c55e' : '#94a3b8') + ';">' + st + (rev > 0 ? ' · ¥' + rev : '') + '</span>'
-                        + '</div>'
-                        + (m.decision_title ? '<div style="color:rgba(226,232,240,.58);">' + escapeHtml(m.decision_title) + '</div>' : '')
-                        + (m.note ? '<div style="color:rgba(226,232,240,.45);">' + escapeHtml(m.note) + '</div>' : '')
-                        + '</div>';
-                }).join('');
-            } catch(e) { el.innerHTML = '<span style="color:var(--rep-muted);">加载失败</span>'; }
         }
 
         function renderGrowthClusters(data) {

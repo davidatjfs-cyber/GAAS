@@ -5745,7 +5745,7 @@ setSolutionLLM(async (prompt) => {
 });
 setTrainingAssigner(createTrainingAssignment);
 registerPhaseRoutes(app, pool);
-registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership);
+registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM);
 app.use(strategyExperimentRoutes(pool, authRequired));
 
 app.post('/api/growth/upload', authRequired, upload.single('file'), async (req, res) => {

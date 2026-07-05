@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
+"""
+餐厅经营诊断报告 PDF 生成器
+目标读者：餐厅老板（非技术决策者）
+风格：专业顾问报告，有 AI 叙述段落
+"""
 import json
 import sys
 from pathlib import Path
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
@@ -12,22 +17,39 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    PageBreak, HRFlowable, KeepTogether
 )
 
+W, H = A4
 
-def pct(v):
+# ─── 颜色 ───────────────────────────────────────────────────────────
+C_NAVY  = colors.HexColor("#0f172a")   # 深蓝
+C_TEAL  = colors.HexColor("#0d9488")   # 品牌绿
+C_AMBER = colors.HexColor("#d97706")   # 警告橙
+C_RED   = colors.HexColor("#dc2626")   # 危险红
+C_SLATE = colors.HexColor("#334155")   # 深灰标题
+C_MUTED = colors.HexColor("#64748b")   # 浅灰注释
+C_BG    = colors.HexColor("#f8fafc")   # 卡片背景
+C_LINE  = colors.HexColor("#e2e8f0")   # 分割线
+C_WHITE = colors.white
+
+
+def pct(v, mul=100):
     try:
-        return f"{float(v) * 100:.1f}%"
+        return f"{float(v) * mul:.1f}%"
     except Exception:
         return "-"
 
 
-def money(v):
+def money(v, unit="¥"):
     try:
-        return f"RMB {float(v):,.0f}"
+        f = float(v)
+        if f >= 10000:
+            return f"{unit}{f / 10000:.1f}万"
+        return f"{unit}{f:,.0f}"
     except Exception:
-        return "RMB 0"
+        return f"{unit}0"
 
 
 def count(v):
@@ -39,20 +61,21 @@ def count(v):
 
 def label_stage(k):
     return {
-        "regular": "常来客",
-        "one_time": "来一次客",
-        "occasional": "偶尔来",
-        "at_risk": "濒临流失",
-        "dormant": "沉睡客",
+        "regular":    "忠诚常客",
+        "one_time":   "一次性客",
+        "occasional": "偶尔来客",
+        "at_risk":    "预警流失",
+        "dormant":    "沉睡客户",
     }.get(str(k), str(k))
 
 
 def label_scene(k):
     return {
-        "high_value": "高消费客",
-        "business": "商务客",
-        "family": "家庭客",
-        "risk": "流失风险",
+        "high_value":     "高消费客",
+        "business":       "商务客",
+        "family":         "家庭客",
+        "risk":           "流失风险",
+        "price_sensitive": "价格敏感",
     }.get(str(k), str(k))
 
 
@@ -60,13 +83,71 @@ def para(text, style):
     return Paragraph(str(text or "").replace("\n", "<br/>"), style)
 
 
-def main():
-    if len(sys.argv) < 2:
-        raise SystemExit("usage: customer_ops_pdf.py output.pdf")
-    out = Path(sys.argv[1])
-    data = json.loads(sys.stdin.read() or "{}")
+def divider(color=C_LINE, thickness=0.6, spaceB=4, spaceA=4):
+    return HRFlowable(width="100%", thickness=thickness, color=color, spaceAfter=spaceA, spaceBefore=spaceB)
+
+
+def make_styles(font_name):
+    base = ParagraphStyle("Base", fontName=font_name, fontSize=9.5, leading=15,
+                          textColor=C_NAVY, alignment=TA_LEFT)
+    return {
+        "cover_title": ParagraphStyle("CoverTitle", parent=base, fontSize=28, leading=36,
+                                      alignment=TA_CENTER, textColor=C_WHITE, spaceAfter=4),
+        "cover_sub":   ParagraphStyle("CoverSub",   parent=base, fontSize=13, leading=20,
+                                      alignment=TA_CENTER, textColor=colors.HexColor("#cbd5e1"), spaceAfter=0),
+        "cover_date":  ParagraphStyle("CoverDate",  parent=base, fontSize=10, leading=14,
+                                      alignment=TA_CENTER, textColor=colors.HexColor("#94a3b8"), spaceAfter=0),
+        "section_h":   ParagraphStyle("SectionH",   parent=base, fontSize=14, leading=20,
+                                      textColor=C_TEAL, spaceBefore=14, spaceAfter=6,
+                                      borderPadding=(0, 0, 3, 0)),
+        "card_label":  ParagraphStyle("CardLabel",  parent=base, fontSize=8.5, leading=12,
+                                      textColor=C_MUTED),
+        "card_value":  ParagraphStyle("CardValue",  parent=base, fontSize=22, leading=28,
+                                      textColor=C_NAVY),
+        "card_unit":   ParagraphStyle("CardUnit",   parent=base, fontSize=10, leading=14,
+                                      textColor=C_MUTED),
+        "body":        ParagraphStyle("Body",       parent=base, fontSize=9.5, leading=15,
+                                      alignment=TA_JUSTIFY),
+        "body_bold":   ParagraphStyle("BodyBold",   parent=base, fontSize=9.5, leading=15,
+                                      textColor=C_SLATE),
+        "caption":     ParagraphStyle("Caption",    parent=base, fontSize=8, leading=12,
+                                      textColor=C_MUTED),
+        "exec_box":    ParagraphStyle("ExecBox",    parent=base, fontSize=10, leading=16,
+                                      textColor=C_NAVY, alignment=TA_JUSTIFY),
+        "finding_h":   ParagraphStyle("FindingH",   parent=base, fontSize=10.5, leading=15,
+                                      textColor=C_SLATE),
+        "finding_b":   ParagraphStyle("FindingB",   parent=base, fontSize=9.5, leading=14,
+                                      textColor=C_MUTED, spaceBefore=2),
+        "rec_h":       ParagraphStyle("RecH",       parent=base, fontSize=9.5, leading=14,
+                                      textColor=C_TEAL),
+        "rec_b":       ParagraphStyle("RecB",       parent=base, fontSize=9, leading=13,
+                                      textColor=C_MUTED, spaceBefore=2),
+        "table_hdr":   ParagraphStyle("TableHdr",   parent=base, fontSize=8.5, leading=12,
+                                      textColor=C_WHITE, alignment=TA_CENTER),
+        "table_cell":  ParagraphStyle("TableCell",  parent=base, fontSize=8.5, leading=12,
+                                      textColor=C_NAVY),
+        "small":       ParagraphStyle("Small",      parent=base, fontSize=8, leading=12,
+                                      textColor=C_MUTED),
+    }
+
+
+def hdr_style(colWidths, bgColor=C_SLATE):
+    return [
+        ("FONTNAME", (0, 0), (-1, -1), None),  # 占位，下面 Paragraph 自带字体
+        ("BACKGROUND", (0, 0), (-1, 0), bgColor),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_BG]),
+        ("GRID", (0, 0), (-1, -1), 0.3, C_LINE),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+    ]
+
+
+def register_font():
     font_name = "CustomerOpsCN"
-    font_candidates = [
+    candidates = [
         ("/System/Library/Fonts/STHeiti Light.ttc", 0),
         ("/System/Library/Fonts/STHeiti Medium.ttc", 0),
         ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 0),
@@ -74,185 +155,411 @@ def main():
         ("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", 0),
         ("/usr/share/fonts/truetype/arphic/uming.ttc", 0),
     ]
-    registered = False
-    for font_path, subfont in font_candidates:
-        if not Path(font_path).exists():
+    for path, idx in candidates:
+        if not Path(path).exists():
             continue
         try:
-            if subfont is None:
-                pdfmetrics.registerFont(TTFont(font_name, font_path))
+            if idx is None:
+                pdfmetrics.registerFont(TTFont(font_name, path))
             else:
-                pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=subfont))
-            registered = True
-            break
+                pdfmetrics.registerFont(TTFont(font_name, path, subfontIndex=idx))
+            return font_name
         except Exception:
             continue
-    if not registered:
-        font_name = "STSong-Light"
-        pdfmetrics.registerFont(UnicodeCIDFont(font_name))
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    return "STSong-Light"
 
-    styles = getSampleStyleSheet()
-    title = ParagraphStyle(
-        "TitleCN", parent=styles["Title"], fontName=font_name,
-        fontSize=22, leading=28, alignment=TA_CENTER, textColor=colors.HexColor("#111827")
-    )
-    h2 = ParagraphStyle(
-        "H2CN", parent=styles["Heading2"], fontName=font_name,
-        fontSize=14, leading=18, textColor=colors.HexColor("#0f766e"), spaceBefore=8, spaceAfter=6
-    )
-    body = ParagraphStyle(
-        "BodyCN", parent=styles["BodyText"], fontName=font_name,
-        fontSize=9.5, leading=14, alignment=TA_LEFT, textColor=colors.HexColor("#1f2937")
-    )
-    small = ParagraphStyle(
-        "SmallCN", parent=body, fontSize=8, leading=11, textColor=colors.HexColor("#6b7280")
-    )
 
+class CoverCanvas:
+    """封面页背景绘制回调"""
+    def __init__(self, store_name, date_range, font_name):
+        self.store = store_name
+        self.date_range = date_range
+        self.fn = font_name
+
+    def __call__(self, canvas, doc):
+        canvas.saveState()
+        # 深色背景
+        canvas.setFillColor(C_NAVY)
+        canvas.rect(0, 0, W, H, fill=1, stroke=0)
+        # 品牌绿色竖条
+        canvas.setFillColor(C_TEAL)
+        canvas.rect(0, H * 0.42, W, 6, fill=1, stroke=0)
+        # 顶部装饰线
+        canvas.setFillColor(colors.HexColor("#1e293b"))
+        canvas.rect(0, H - 12 * mm, W, 12 * mm, fill=1, stroke=0)
+        # 标题
+        canvas.setFillColor(C_WHITE)
+        canvas.setFont(self.fn, 30)
+        canvas.drawCentredString(W / 2, H * 0.58, f"{self.store}")
+        canvas.setFont(self.fn, 16)
+        canvas.setFillColor(colors.HexColor("#94a3b8"))
+        canvas.drawCentredString(W / 2, H * 0.52, "客户经营诊断报告")
+        canvas.setFont(self.fn, 10)
+        canvas.setFillColor(colors.HexColor("#64748b"))
+        canvas.drawCentredString(W / 2, H * 0.46, self.date_range)
+        # 底部 logo 区
+        canvas.setFillColor(colors.HexColor("#1e293b"))
+        canvas.rect(0, 0, W, 22 * mm, fill=1, stroke=0)
+        canvas.setFillColor(C_TEAL)
+        canvas.setFont(self.fn, 9)
+        canvas.drawCentredString(W / 2, 9 * mm, "本报告由 HRMS 客户资产管理系统自动生成 · 仅供内部决策参考")
+        canvas.restoreState()
+
+
+def normal_page(canvas, doc):
+    """正文页页眉页脚"""
+    canvas.saveState()
+    canvas.setFillColor(C_TEAL)
+    canvas.rect(0, H - 8 * mm, W, 8 * mm, fill=1, stroke=0)
+    canvas.setFillColor(C_WHITE)
+    canvas.setFont("CustomerOpsCN" if "CustomerOpsCN" in pdfmetrics.getRegisteredFontNames() else "STSong-Light", 8)
+    canvas.drawString(16 * mm, H - 5.5 * mm, "HRMS 客户经营诊断报告")
+    canvas.drawRightString(W - 16 * mm, H - 5.5 * mm, f"第 {doc.page - 1} 页")
+    canvas.setFillColor(C_LINE)
+    canvas.rect(0, 0, W, 5 * mm, fill=1, stroke=0)
+    canvas.restoreState()
+
+
+def build_kpi_row(labels_values, s, colW=42 * mm):
+    """生成一行 KPI 卡片，labels_values = [(label, value, unit_or_None)]"""
+    n = len(labels_values)
+    cells = []
+    for label, value, unit in labels_values:
+        inner = [
+            [para(label, s["card_label"])],
+            [para(value, s["card_value"])],
+        ]
+        if unit:
+            inner.append([para(unit, s["card_unit"])])
+        t = Table(inner, colWidths=[colW - 4 * mm])
+        t.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                                ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+        cells.append(t)
+    outer = Table([cells], colWidths=[colW] * n)
+    outer.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), C_BG),
+        ("BOX", (0, 0), (-1, -1), 0.5, C_LINE),
+        ("INNERGRID", (0, 0), (-1, -1), 0.3, C_LINE),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return outer
+
+
+def build_exec_box(text, s, accent=C_TEAL):
+    """带左色条的执行摘要卡片"""
+    inner = Table([[para(text, s["exec_box"])]], colWidths=[148 * mm])
+    inner.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f0fdfa")),
+    ]))
+    stripe = Table([[""]], colWidths=[4 * mm])
+    stripe.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), accent),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    outer = Table([[stripe, inner]], colWidths=[4 * mm, 148 * mm])
+    outer.setStyle(TableStyle([
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("BOX", (0, 0), (-1, -1), 0.4, C_LINE),
+    ]))
+    return outer
+
+
+def main():
+    if len(sys.argv) < 2:
+        raise SystemExit("usage: customer_ops_pdf.py output.pdf")
+    out = Path(sys.argv[1])
+    data = json.loads(sys.stdin.read() or "{}")
+
+    font_name = register_font()
+    s = make_styles(font_name)
+
+    b    = data.get("business", {})
+    q    = data.get("input_quality", {})
+    mix  = data.get("customer_mix", {})
+    lc   = mix.get("lifecycle") or {}
+    sc   = mix.get("scene") or {}
+    narr = data.get("narrative") or {}
+    store = str(data.get("store_name") or "未命名门店")
+    date_start = str(q.get("date_start") or "-")
+    date_end   = str(q.get("date_end")   or "-")
+    date_range = f"数据周期：{date_start} 至 {date_end}"
+
+    # ── 文档 ─────────────────────────────────────────────────────────
     doc = SimpleDocTemplate(
-        str(out), pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm,
-        topMargin=15 * mm, bottomMargin=14 * mm
+        str(out), pagesize=A4,
+        rightMargin=16 * mm, leftMargin=16 * mm,
+        topMargin=12 * mm, bottomMargin=12 * mm,
     )
     story = []
 
-    store = data.get("store_name") or "未命名门店"
-    story.append(para(f"{store} 客户经营诊断报告", title))
-    q = data.get("input_quality", {})
-    story.append(para(f"数据范围：{q.get('date_start') or '-'} 至 {q.get('date_end') or '-'} · 有效订单 {count(q.get('valid_orders'))} · 客户 {count(q.get('customers'))}", small))
+    # ── 封面（整页，无页眉） ──────────────────────────────────────────
+    story.append(PageBreak())   # 封面用特殊 onPage；先用 PageBreak 触发，通过 doc.build 的 onFirstPage
+    # reportlab 没有 onFirstPage slot in story；改用 cover_page 后接普通 PageBreak
+
+    # ── 第1页：封面 ──────────────────────────────────────────────────
+    # 用一个占位 Spacer 占满整页，封面内容通过 onFirstPage 绘制
+    # 但 SimpleDocTemplate 不提供 onFirstPage；所以在 story 里用一个大表格做封面
+
+    cover_bg = Table(
+        [[para(f"{store}", ParagraphStyle("ct", fontName=font_name, fontSize=28, leading=36, alignment=TA_CENTER, textColor=C_WHITE))],
+         [para("客户经营诊断报告", ParagraphStyle("cs", fontName=font_name, fontSize=16, leading=24, alignment=TA_CENTER, textColor=colors.HexColor("#94a3b8")))],
+         [Spacer(1, 8 * mm)],
+         [para(date_range, ParagraphStyle("cd", fontName=font_name, fontSize=10, leading=14, alignment=TA_CENTER, textColor=colors.HexColor("#64748b")))],
+         [para(f"有效订单 {count(q.get('valid_orders'))}  ·  客户数 {count(q.get('customers'))}", ParagraphStyle("ci", fontName=font_name, fontSize=9, leading=13, alignment=TA_CENTER, textColor=colors.HexColor("#64748b")))],
+         [Spacer(1, 55 * mm)],
+         [para("本报告由 HRMS 客户资产管理系统自动生成 · 仅供内部决策参考",
+               ParagraphStyle("cf", fontName=font_name, fontSize=8, leading=12, alignment=TA_CENTER, textColor=colors.HexColor("#64748b")))]],
+        colWidths=[W - 32 * mm],
+    )
+    cover_bg.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), C_NAVY),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING", (0, 0), (-1, -1), 16 * mm),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 16 * mm),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [C_NAVY]),
+        # 装饰色条在第 0 行上方
+        ("TOPPADDING", (0, 0), (0, 0), 50 * mm),
+        ("BOTTOMPADDING", (0, 2), (0, 2), 6 * mm),
+    ]))
+    story.append(cover_bg)
+    story.append(PageBreak())
+
+    # ── 第2页起：正文（带页眉） ───────────────────────────────────────
+
+    # ── 执行摘要 ──────────────────────────────────────────────────────
+    story.append(para("执行摘要", s["section_h"]))
+    story.append(divider(C_TEAL, 1.5))
+    exec_text = narr.get("executive_summary") or (
+        f"本次分析覆盖{date_start}至{date_end}，共 {count(q.get('customers'))} 名客户、"
+        f"{count(q.get('valid_orders'))} 笔有效订单。"
+        f"整体复购率为 {pct(b.get('customer_repeat_rate'))}，"
+        f"平均客单价 {money(b.get('avg_check'))}。"
+    )
+    story.append(Spacer(1, 4))
+    story.append(build_exec_box(exec_text, s))
     story.append(Spacer(1, 8))
 
-    b = data.get("business", {})
-    metrics = [
-        ["营业额", money(b.get("revenue")), "订单数", count(b.get("orders"))],
-        ["客户数", count(b.get("customers")), "平均客单", money(b.get("avg_check"))],
-        ["复购客户占比", pct(b.get("customer_repeat_rate")), "客流稳定性", f"{count(b.get('revenue_stability_score'))}/100"],
+    # ── KPI 卡片 ──────────────────────────────────────────────────────
+    story.append(para("核心经营指标", s["section_h"]))
+    story.append(divider())
+    total_rev = float(b.get("revenue") or 0)
+    kpis = [
+        ("总营业额", money(total_rev), None),
+        ("平均客单价", money(b.get("avg_check")), ""),
+        ("复购率", pct(b.get("customer_repeat_rate")), ""),
+        ("客流稳定性", f"{count(b.get('revenue_stability_score'))}", "/100分"),
     ]
-    t = Table(metrics, colWidths=[30 * mm, 48 * mm, 30 * mm, 48 * mm])
-    t.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#111827")),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e5e7eb")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("LEFTPADDING", (0, 0), (-1, -1), 7),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-    ]))
-    story.append(t)
+    story.append(build_kpi_row(kpis, s, colW=41.5 * mm))
+    story.append(Spacer(1, 6))
+    kpis2 = [
+        ("总客户数", count(q.get("customers")), "人"),
+        ("储值客户", count(b.get("stored_value", {}).get("customers")), "人"),
+        ("储值在手余额", money(b.get("stored_value", {}).get("balance")), None),
+        ("订单量", count(b.get("orders")), "笔"),
+    ]
+    story.append(build_kpi_row(kpis2, s, colW=41.5 * mm))
+    story.append(Spacer(1, 10))
 
-    cleaning = (q.get("cleaning") or {})
-    story.append(para("POS数据清洗可信度", h2))
-    missing = "、".join(cleaning.get("missing_required") or []) or "无"
-    warnings = "；".join(cleaning.get("warnings") or []) or "无"
-    story.append(para(f"系统清洗置信度：{cleaning.get('confidence_score', 0)}/100 · 缺失关键字段：{missing} · 提醒：{warnings}", small))
-    sheet_rows = [["Sheet", "表头行", "数据行", "手机号", "日期", "金额", "菜品"]]
-    for s in (cleaning.get("sheets") or [])[:5]:
-        mp = s.get("mapping") or {}
-        def src(k):
-            m = mp.get(k) or {}
-            return f"{m.get('source_header') or '-'} {m.get('confidence') or 0}%"
-        sheet_rows.append([s.get("sheet_name") or "-", count(s.get("header_row") or 1), count(s.get("rows") or 0), src("phone"), src("bizDate"), src("amount"), src("dish")])
-    if len(sheet_rows) == 1:
-        sheet_rows.append(["-", "-", "-", "-", "-", "-", "-"])
-    story.append(Table(sheet_rows, colWidths=[26 * mm, 18 * mm, 18 * mm, 28 * mm, 28 * mm, 28 * mm, 28 * mm], style=[
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#334155")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d1d5db")),
-        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
+    # ── 诊断发现 ──────────────────────────────────────────────────────
+    findings = narr.get("findings") or []
+    if findings:
+        story.append(para("诊断发现", s["section_h"]))
+        story.append(divider())
+        for i, f in enumerate(findings[:4]):
+            num_label = f"发现 {i + 1}"
+            title_text = f.get("title") or num_label
+            data_text  = f.get("data") or ""
+            assess_text = f.get("assessment") or ""
+            badge_color = [C_TEAL, C_AMBER, C_RED, C_SLATE][i % 4]
+            badge = Table([[para(f" {num_label} ", ParagraphStyle("badge", fontName=font_name, fontSize=8, leading=12, textColor=C_WHITE))]],
+                          colWidths=[16 * mm])
+            badge.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), badge_color),
+                ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            content = Table(
+                [[para(f"<b>{title_text}</b>", s["finding_h"])],
+                 [para(data_text, s["finding_b"])],
+                 [para(assess_text, s["body"])]],
+                colWidths=[145 * mm]
+            )
+            content.setStyle(TableStyle([
+                ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            row = Table([[badge, content]], colWidths=[18 * mm, 145 * mm])
+            row.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("BACKGROUND", (0, 0), (-1, -1), C_BG if i % 2 == 0 else C_WHITE),
+                ("BOX", (0, 0), (-1, -1), 0.3, C_LINE),
+            ]))
+            story.append(KeepTogether(row))
+            story.append(Spacer(1, 4))
 
-    story.append(para("一、客人资产结构", h2))
-    mix = data.get("customer_mix", {})
-    lifecycle = mix.get("lifecycle") or {}
-    scene = mix.get("scene") or {}
-    rows = [["客群", "人数", "占比"]]
-    total_c = max(1, int(q.get("customers") or sum(lifecycle.values() or [0]) or 1))
-    for k, v in lifecycle.items():
-        rows.append([label_stage(k), count(v), pct(float(v) / total_c)])
-    if len(rows) == 1:
-        rows.append(["暂无可识别客群", "0", "-"])
-    story.append(Table(rows, colWidths=[60 * mm, 40 * mm, 50 * mm], style=[
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#d1d5db")),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]))
-
-    story.append(para("二、经营结构", h2))
-    daypart = b.get("daypart") or {}
-    weekday = b.get("weekday") or {}
-    rows = [["维度", "营业额", "订单数", "占营业额"]]
-    total_rev = max(1.0, float(b.get("revenue") or 0) or 1.0)
-    for key, name in [("lunch", "午市"), ("dinner", "晚市"), ("other", "其他时段")]:
-        x = daypart.get(key) or {}
-        rows.append([name, money(x.get("revenue")), count(x.get("orders")), pct(float(x.get("revenue") or 0) / total_rev)])
-    for key, name in [("weekday", "平日"), ("weekend", "周末")]:
-        x = weekday.get(key) or {}
-        rows.append([name, money(x.get("revenue")), count(x.get("orders")), pct(float(x.get("revenue") or 0) / total_rev)])
-    story.append(Table(rows, colWidths=[45 * mm, 45 * mm, 30 * mm, 35 * mm], style=[
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#d1d5db")),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]))
-
-    story.append(para("三、建议优先维护动作", h2))
-    ops = data.get("opportunities") or []
-    if not ops:
-        story.append(para("本次数据暂未识别出足够明确的自动维护人群。建议补充手机号、订单明细、商品明细后重新导入。", body))
-    else:
-        rows = [["维护场景", "目标人数", "推荐渠道", "预计收入"]]
-        for op in ops[:8]:
-            rows.append([op.get("title"), count(op.get("target_count")), " / ".join(op.get("channels") or []), money(op.get("expected_revenue"))])
-        story.append(Table(rows, colWidths=[58 * mm, 25 * mm, 45 * mm, 32 * mm], style=[
-            ("FONTNAME", (0, 0), (-1, -1), font_name),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#7c2d12")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#d1d5db")),
-            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]))
+    # ── 优先行动建议 ──────────────────────────────────────────────────
+    recs = narr.get("recommendations") or []
+    if recs:
+        story.append(Spacer(1, 4))
+        story.append(para("优先行动建议", s["section_h"]))
+        story.append(divider(C_AMBER, 1.5))
+        for i, r in enumerate(recs[:4]):
+            action = r.get("action") or "-"
+            result = r.get("expected_result") or ""
+            idx_label = ["①", "②", "③", "④"][i]
+            row_data = [[
+                para(f"<b>{idx_label} {action}</b>", s["rec_h"]),
+                para(f"→ {result}", s["rec_b"]),
+            ]]
+            rt = Table(row_data, colWidths=[88 * mm, 72 * mm])
+            rt.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fffbeb") if i % 2 == 0 else C_WHITE),
+                ("BOX", (0, 0), (-1, -1), 0.3, C_LINE),
+                ("LINEAFTER", (0, 0), (0, -1), 0.3, C_LINE),
+            ]))
+            story.append(rt)
+            story.append(Spacer(1, 3))
 
     story.append(PageBreak())
-    story.append(para("四、重点客人样本", h2))
-    top = (mix.get("top_customers") or [])[:20]
-    rows = [["客户ID", "手机号", "消费次数", "累计消费", "最近消费", "偏好", "标签"]]
-    for c in top:
-        rows.append([
-            c.get("customer_id"), c.get("phone") or "-",
-            count(c.get("order_count")), money(c.get("total_spend")),
-            f"{count(c.get('days_since_last_visit'))}天前",
-            "、".join((c.get("favorite_dishes") or [])[:2]) or "-",
-            "、".join([label_scene(x) for x in (c.get("scene_tags") or [])]) or label_stage(c.get("lifecycle_stage"))
+
+    # ── 第3页：客群结构 ───────────────────────────────────────────────
+    story.append(para("一、客群结构", s["section_h"]))
+    story.append(divider())
+    total_c = max(1, sum(lc.values() or [0]) or 1)
+
+    lc_rows = [[para("客群类型", s["table_hdr"]), para("人数", s["table_hdr"]), para("占比", s["table_hdr"]), para("说明", s["table_hdr"])]]
+    explanations = {
+        "regular":    "近期持续到访，是门店最核心的营收支柱",
+        "occasional": "偶尔光顾，有进一步培养成常客的潜力",
+        "one_time":   "仅消费一次，转化为回头客的关键机会",
+        "at_risk":    "消费间隔超出正常周期，需优先触达挽留",
+        "dormant":    "90天以上未到访，召回成本高但价值高",
+    }
+    for k, v in sorted(lc.items(), key=lambda x: -x[1]):
+        lc_rows.append([
+            para(label_stage(k), s["table_cell"]),
+            para(count(v), s["table_cell"]),
+            para(pct(float(v) / total_c), s["table_cell"]),
+            para(explanations.get(k, ""), s["small"]),
         ])
-    if len(rows) == 1:
-        rows.append(["-", "-", "-", "-", "-", "-", "-"])
-    story.append(Table(rows, colWidths=[20 * mm, 26 * mm, 20 * mm, 27 * mm, 22 * mm, 35 * mm, 34 * mm], repeatRows=1, style=[
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#374151")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d1d5db")),
-        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
+    if len(lc_rows) == 1:
+        lc_rows.append([para("-", s["table_cell"]), para("0", s["table_cell"]), para("-", s["table_cell"]), para("-", s["table_cell"])])
+    lc_t = Table(lc_rows, colWidths=[38 * mm, 25 * mm, 25 * mm, 74 * mm])
+    lc_t.setStyle(TableStyle(hdr_style(None, C_TEAL)))
+    story.append(lc_t)
+    story.append(Spacer(1, 8))
 
+    # 场景标签
+    if sc:
+        story.append(para("消费场景分布", s["section_h"]))
+        story.append(divider())
+        sc_rows = [[para("场景标签", s["table_hdr"]), para("客户数", s["table_hdr"]), para("占总客户比", s["table_hdr"])]]
+        for k, v in sorted(sc.items(), key=lambda x: -x[1]):
+            sc_rows.append([para(label_scene(k), s["table_cell"]), para(count(v), s["table_cell"]), para(pct(float(v) / total_c), s["table_cell"])])
+        sc_t = Table(sc_rows, colWidths=[60 * mm, 40 * mm, 62 * mm])
+        sc_t.setStyle(TableStyle(hdr_style(None, C_SLATE)))
+        story.append(sc_t)
+
+    story.append(PageBreak())
+
+    # ── 第4页：经营结构 ───────────────────────────────────────────────
+    story.append(para("二、经营时段结构", s["section_h"]))
+    story.append(divider())
+    dp = b.get("daypart") or {}
+    wd = b.get("weekday") or {}
+    total_rev_f = max(1.0, float(b.get("revenue") or 0) or 1.0)
+
+    dp_rows = [[para("时段", s["table_hdr"]), para("营业额", s["table_hdr"]), para("订单数", s["table_hdr"]), para("占比", s["table_hdr"]), para("诊断提示", s["table_hdr"])]]
+    dp_hints = {
+        "午市": "午市占比过低可考虑推出商务套餐或限时优惠",
+        "晚市": "晚市是主力餐次，重点保障翻台率和出品稳定",
+        "其他时段": "下午茶及宵夜时段，可作为差异化增量",
+    }
+    for key, name in [("lunch", "午市"), ("dinner", "晚市"), ("other", "其他时段")]:
+        x = dp.get(key) or {}
+        rev = float(x.get("revenue") or 0)
+        dp_rows.append([
+            para(name, s["table_cell"]),
+            para(money(rev), s["table_cell"]),
+            para(count(x.get("orders")), s["table_cell"]),
+            para(pct(rev / total_rev_f), s["table_cell"]),
+            para(dp_hints.get(name, ""), s["small"]),
+        ])
+    dp_t = Table(dp_rows, colWidths=[25 * mm, 35 * mm, 25 * mm, 22 * mm, 55 * mm])
+    dp_t.setStyle(TableStyle(hdr_style(None, C_SLATE)))
+    story.append(dp_t)
     story.append(Spacer(1, 10))
-    story.append(para("说明：本报告基于客户提供的POS Excel数据自动清洗生成。若原始表缺少手机号、菜品明细或门店字段，对应画像和偏好判断会降低置信度。", small))
 
-    doc.build(story)
+    wd_rows = [[para("日期类型", s["table_hdr"]), para("营业额", s["table_hdr"]), para("订单数", s["table_hdr"]), para("占比", s["table_hdr"])]]
+    for key, name in [("weekday", "工作日"), ("weekend", "周末")]:
+        x = wd.get(key) or {}
+        rev = float(x.get("revenue") or 0)
+        wd_rows.append([para(name, s["table_cell"]), para(money(rev), s["table_cell"]), para(count(x.get("orders")), s["table_cell"]), para(pct(rev / total_rev_f), s["table_cell"])])
+    wd_t = Table(wd_rows, colWidths=[40 * mm, 45 * mm, 35 * mm, 42 * mm])
+    wd_t.setStyle(TableStyle(hdr_style(None, C_SLATE)))
+    story.append(para("工作日与周末分布", s["section_h"]))
+    story.append(divider())
+    story.append(wd_t)
+    story.append(PageBreak())
+
+    # ── 第5页：重点客户样本 ───────────────────────────────────────────
+    story.append(para("三、重点客户样本（前20名）", s["section_h"]))
+    story.append(divider())
+    top = (mix.get("top_customers") or [])[:20]
+    top_rows = [[
+        para("客户ID", s["table_hdr"]),
+        para("手机号", s["table_hdr"]),
+        para("消费次数", s["table_hdr"]),
+        para("累计消费", s["table_hdr"]),
+        para("距上次(天)", s["table_hdr"]),
+        para("偏好菜品", s["table_hdr"]),
+        para("标签", s["table_hdr"]),
+    ]]
+    for c in top:
+        tags = [label_scene(x) for x in (c.get("scene_tags") or [])]
+        if not tags:
+            tags = [label_stage(c.get("lifecycle_stage") or "")]
+        top_rows.append([
+            para(c.get("customer_id") or "-", s["table_cell"]),
+            para(c.get("phone") or "-", s["table_cell"]),
+            para(count(c.get("order_count")), s["table_cell"]),
+            para(money(c.get("total_spend")), s["table_cell"]),
+            para(count(c.get("days_since_last_visit")), s["table_cell"]),
+            para("、".join((c.get("favorite_dishes") or [])[:2]) or "-", s["small"]),
+            para("、".join(tags), s["small"]),
+        ])
+    if len(top_rows) == 1:
+        top_rows.append([para("-", s["table_cell"])] * 7)
+    top_t = Table(top_rows, colWidths=[20 * mm, 26 * mm, 18 * mm, 23 * mm, 18 * mm, 36 * mm, 21 * mm],
+                  repeatRows=1)
+    top_t.setStyle(TableStyle(hdr_style(None, colors.HexColor("#374151"))))
+    story.append(top_t)
+    story.append(Spacer(1, 10))
+    story.append(divider())
+    story.append(Spacer(1, 4))
+    story.append(para(
+        "说明：本报告基于客户提供的 POS Excel 数据自动清洗与分析生成。"
+        "若原始数据缺少手机号、菜品明细或门店字段，对应画像和建议的置信度会相应降低。"
+        "本报告中所有建议仅供参考，请结合实际经营情况综合判断。",
+        s["small"]
+    ))
+
+    doc.build(story, onLaterPages=normal_page)
 
 
 if __name__ == "__main__":
