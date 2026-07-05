@@ -348,6 +348,7 @@ function analyzeOrders(orders, opts = {}) {
       max_single_spend: maxSingleSpend, orders_30d: orders30d, max_single_diners: maxSingleDiners,
       last_orders: lastOrders, stored_value_timeline: storedValueTimeline,
       lifecycle_stage: cls.lifecycle,
+      // 以下为客维运营页本地启发式分层；权威 VIP 口径见 growth_customer_profiles.value_tier（折前人均消费金额门店内前15%）
       value_tier: avgCheck >= 800 || c.totalSpend >= 10000 ? 'vip' : (avgCheck >= 300 || c.orders.length >= 4 ? 'regular' : 'general'),
       scene_tags: avgCheck < 200 && c.orders.length <= 3 && !c.totalRecharge ? [...cls.tags, 'price_sensitive'] : cls.tags,
       staff_note: cls.tags.includes('business') ? '商务客户' : (cls.tags.includes('family') ? '家庭聚餐客户' : ''),

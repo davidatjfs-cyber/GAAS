@@ -60694,7 +60694,10 @@ ${body}
                 // 涉及会员（人群覆盖）单独异步获取：全表扫描较慢(冷缓存约5秒)，不阻塞规则列表先行展示。
                 // 拿到后只就地更新每条规则的"涉及会员/分渠道覆盖"两处文字（不整列表重渲染，避免
                 // 在手机上重建大 DOM 造成卡顿、也避免清掉用户正在编辑的输入框）。
-                fetch('/api/growth/touch-rules/audience', { headers: hdr }).then(function(r){return r.json();}).then(function(d){
+                var storeFilter = document.getElementById('growth-store-filter')?.value || '';
+                var audQs = [];
+                if (storeFilter) audQs.push('store_id=' + encodeURIComponent(storeFilter));
+                fetch('/api/growth/touch-rules/audience' + (audQs.length ? ('?' + audQs.join('&')) : ''), { headers: hdr }).then(function(r){return r.json();}).then(function(d){
                     amApplyAudience((d && d.audience) || {});
                 }).catch(function(){});
             } catch (e) {
@@ -60823,6 +60826,7 @@ ${body}
                         +   '<div class="amr-info">目标人群：' + escapeHtml(isBalance ? '有储值余额且久未消费的会员' : amDescribeCriteria(rule.criteria)) + '</div>'
                         +   (isBalance ? '<div class="amr-info amr-info--sub">判定口径：余额≥下限（默认1元）且超过设定天数未消费</div>' : (critTip ? '<div class="amr-info amr-info--sub">判定口径：' + escapeHtml(critTip) + '</div>' : ''))
                         +   '<div class="amr-info">涉及会员：<span id="am-reach-' + rk + '">' + (reach == null ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>' : ('<strong>' + reach + '</strong> 人（命中人群且可触达）')) + '</span></div>'
+                        +   '<div class="amr-info amr-info--sub">统计范围：' + escapeHtml(storeFilter ? (amStoreName(storeFilter) + ' · 按上方门店筛选') : (storeNm + ' · 全部门店')) + '；与「近N天发送/核销」统计周期无关</div>'
                         +   '<div class="amr-info amr-info--sub">分渠道覆盖：<span id="am-cov-' + rk + '">' + covLine + '</span></div>'
                         +   '<div class="amr-info">触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
                         + '</div>'

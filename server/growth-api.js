@@ -451,7 +451,7 @@ export async function ensureGrowthTables(pool) {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_customer_profiles_store ON growth_customer_profiles (store_id, lifecycle_stage)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_customer_profiles_updated ON growth_customer_profiles (updated_at DESC)`);
-  // 叠加标签：价值分级（vip/regular/low，按品牌折前人均阈值取vip）+ 价格敏感标记
+  // 叠加标签：价值分级 vip/regular/low（VIP=各门店折前人均消费金额排名前15%，见 recomputeCustomerProfiles）+ 价格敏感
   await pool.query(`ALTER TABLE growth_customer_profiles ADD COLUMN IF NOT EXISTS value_tier TEXT DEFAULT 'low'`);
   await pool.query(`ALTER TABLE growth_customer_profiles ADD COLUMN IF NOT EXISTS price_sensitive BOOLEAN DEFAULT FALSE`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_customer_profiles_tier ON growth_customer_profiles (store_id, value_tier)`);
@@ -730,6 +730,7 @@ export async function ensureGrowthTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_content_performance_date ON content_performance (content_date DESC, store_code)`);
 
   // 营销矩阵：生命周期阶段 × 价值分级 → 差异化动作
+  // value_tier 口径：VIP=各门店折前人均消费金额(avg_check)排名前15%；regular=15–50分位；low=后50%或未消费
   // VIP 走「专属感/大钩子」不打折，普通/低频走「券」，潜在新客仅轻触达
   const defaultTouchRules = [
     {
@@ -1106,6 +1107,7 @@ async function upsertCustomer(pool, payload, tenantId = 'default') {
 }
 
 async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') {
+  // 画像重算含 value_tier：VIP=各门店折前人均消费金额(avg_check)排名前15%，regular=15–50分位，low=后50%或未消费
   const safeDays = Math.min(Math.max(Number(days) || 90, 7), 365);
   // 将所有留过手机号的POS消费客自动建档进会员表，使散客也纳入分类（不再只统计小程序会员）。
   // 幂等：已存在的手机号 DO NOTHING，不覆盖会员既有信息；门店取其首单/末单所在门店。
@@ -1171,7 +1173,7 @@ async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') 
           COALESCE(SUM(po.amount_after_discount), 0) AS pos_total_spend,
           COALESCE(SUM(po.amount_before_discount), 0) AS pos_total_before_spend,
           COALESCE(SUM(COALESCE(NULLIF(po.diners, 0), 1)), 0) AS pos_total_diners,
-          ROUND(SUM(po.amount_before_discount) / NULLIF(SUM(COALESCE(NULLIF(po.diners, 0), 1)), 0), 2) AS avg_check,
+          ROUND(SUM(po.amount_before_discount) / NULLIF(SUM(COALESCE(NULLIF(po.diners, 0), 1)), 0), 2) AS avg_check, -- 折前人均消费金额，VIP 排名依据
           COUNT(*) FILTER (WHERE po.order_type = '堂食')::numeric / NULLIF(COUNT(*)::numeric, 0) AS pos_dine_in_ratio,
           MAX(po.biz_date) AS pos_last_order_at
         FROM growth_customers gc
@@ -2694,11 +2696,20 @@ async function loadSegmentPhoneSet(pool, segmentKey, tenantId = 'default') {
   return new Set((r.rows || []).map((x) => String(x.phone || '')));
 }
 
+// 规则所属门店：criteria 与 action_payload 均可能携带 store_id
+function resolveRuleStoreId(rule) {
+  const criteria = rule?.criteria || {};
+  const payload = rule?.action_payload || {};
+  return cleanText(criteria.store_id || payload.store_id || '', 128);
+}
+
 // 在内存中按规则 criteria 过滤通用候选集（与 loadRuleCandidates 同口径，供 audience 批量复用）。
 // segmentSet: 当 criteria.segment_key 存在时，传入该标签的手机号集合(loadSegmentPhoneSet)，否则 null。
-function filterGenericRuleCandidates(rows, rule, segmentSet) {
+function filterGenericRuleCandidates(rows, rule, segmentSet, storeFilterOverride = '') {
   // 旧版基于访问/天数的规则（企微分支保留），先于生命周期匹配处理
   const criteria = rule.criteria || {};
+  const ruleStoreId = resolveRuleStoreId(rule);
+  const effectiveStoreId = cleanText(storeFilterOverride || ruleStoreId || '', 128);
   return rows.filter((row) => {
     const days = Math.max(0, Math.floor(Number(row.days_since_last_visit) || 0));
     const visits = Math.max(0, Math.floor(Number(row.pos_order_count) || 0));
@@ -2708,8 +2719,8 @@ function filterGenericRuleCandidates(rows, rule, segmentSet) {
     // 新分类规则：按生命周期阶段 + 价值分级筛选候选人，对齐营销矩阵
     const stage = row.lifecycle_stage || '';
     const tier = row.value_tier || 'low';
-    // 门店限定：规则带 store_id 时只命中本店客户，避免跨店误发（订阅规则必带门店）
-    if (criteria.store_id && String(row.store_id || '') !== String(criteria.store_id)) return false;
+    // 门店限定：规则自带 store_id 时只命中本店；UI 选了门店范围时进一步收窄到该店
+    if (effectiveStoreId && String(row.store_id || '') !== String(effectiveStoreId)) return false;
     if (criteria.lifecycle_stage && stage !== criteria.lifecycle_stage) return false;
     if (criteria.lifecycle_stage_not && stage === criteria.lifecycle_stage_not) return false;
     if (criteria.value_tier && tier !== criteria.value_tier) return false;
@@ -4758,7 +4769,20 @@ export function registerGrowthRoutes(app, pool) {
   // 永不同步触发重算(仅服务刚启动、缓存还空时兜底算一次)。
   const __touchRulesAudienceCache = new Map();
   const __touchRulesAudienceComputing = new Map();
-  async function computeTouchRulesAudience() {
+
+  function audienceCacheKey(tenantId, storeId = '') {
+    return `${resolveTenantIdDefault(tenantId)}::${cleanText(storeId, 128) || 'ALL'}`;
+  }
+
+  function invalidateTouchRulesAudienceCache(tenantId = resolveTenantIdDefault()) {
+    const prefix = `${resolveTenantIdDefault(tenantId)}::`;
+    for (const key of __touchRulesAudienceCache.keys()) {
+      if (key.startsWith(prefix)) __touchRulesAudienceCache.delete(key);
+    }
+  }
+
+  async function computeTouchRulesAudience(options = {}) {
+    const storeFilter = cleanText(options.storeId || '', 128);
     const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules ORDER BY rule_key ASC`);
     const audience = {};
     // 性能：通用人群表只扫一次，19 条规则在内存复用过滤，避免逐规则各扫 13k 行(旧版~30s)。
@@ -4796,7 +4820,7 @@ export function registerGrowthRoutes(app, pool) {
             if (!segmentCache.has(segKey)) segmentCache.set(segKey, await loadSegmentPhoneSet(pool, segKey));
             segSet = segmentCache.get(segKey);
           }
-          candidates = filterGenericRuleCandidates(genericRows, rule, segSet);
+          candidates = filterGenericRuleCandidates(genericRows, rule, segSet, storeFilter);
         }
         // 分渠道覆盖：短信=有手机号；订阅消息/小程序站内券=有 openid（上限，订阅另受授权限制）；企微=有外部联系人。
         let sms = 0, subscribe = 0, member = 0, wecom = 0;
@@ -4812,21 +4836,23 @@ export function registerGrowthRoutes(app, pool) {
     }
     return audience;
   }
-  // 后台刷新缓存（去重并发；不抛错给调用方，由 .catch 兜底）。
-  function refreshTouchRulesAudienceCache(tenantId = resolveTenantIdDefault()) {
+  // 后台刷新缓存（去重并发；按 tenant+store 分桶，避免切换门店仍命中全店缓存）。
+  function refreshTouchRulesAudienceCache(tenantId = resolveTenantIdDefault(), storeId = '') {
     const effectiveTenantId = resolveTenantIdDefault(tenantId);
-    if (__touchRulesAudienceComputing.has(effectiveTenantId)) return __touchRulesAudienceComputing.get(effectiveTenantId);
-    const pending = computeTouchRulesAudience()
+    const cacheKey = audienceCacheKey(effectiveTenantId, storeId);
+    if (__touchRulesAudienceComputing.has(cacheKey)) return __touchRulesAudienceComputing.get(cacheKey);
+    const pending = computeTouchRulesAudience({ storeId })
       .then((a) => {
-        __touchRulesAudienceCache.set(effectiveTenantId, { data: a, at: Date.now() });
+        __touchRulesAudienceCache.set(cacheKey, { data: a, at: Date.now() });
         return a;
       })
-      .finally(() => { __touchRulesAudienceComputing.delete(effectiveTenantId); });
-    __touchRulesAudienceComputing.set(effectiveTenantId, pending);
+      .finally(() => { __touchRulesAudienceComputing.delete(cacheKey); });
+    __touchRulesAudienceComputing.set(cacheKey, pending);
     return pending;
   }
   // 暴露给 POST 规则改动后触发后台重算（见 /api/growth/touch-rules）。
   globalThis.__refreshGrowthAudience = (tenantId) => {
+    invalidateTouchRulesAudienceCache(tenantId);
     tenantContext.run(resolveTenantIdDefault(tenantId), () => refreshTouchRulesAudienceCache(tenantId)).catch(() => {});
   };
   // 服务启动后预热一次，并每 10 分钟后台刷新，确保 HTTP 请求始终命中缓存、不阻塞。
@@ -4837,6 +4863,7 @@ export function registerGrowthRoutes(app, pool) {
     }, 10 * 60 * 1000);
   }
   // 客户画像（生命周期/价值分级等，决定"涉及会员"人数）每日自动重算，避免依赖人工触发而过期；
+  // 价值分级 VIP 口径：各门店折前人均消费金额(avg_check=折前营业额÷客流量) PERCENT_RANK 前15%
   // 重算后顺带刷新人群缓存，使"涉及会员"数据始终与画像同步。
   if (!globalThis.__growthProfileTimer) {
     const runProfileRecompute = () => runForActiveTenants((tenantId) => recomputeCustomerProfiles(pool, 90)
@@ -4863,17 +4890,18 @@ export function registerGrowthRoutes(app, pool) {
   app.get('/api/growth/touch-rules/audience', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const audienceTenantId = getGrowthTenantId(req);
-    // 有缓存就直接返回（即便略旧）；超过3分钟则后台刷新，但本次请求不等待。
-    const cachedAudience = __touchRulesAudienceCache.get(audienceTenantId);
-    if (cachedAudience?.data) {
+    const storeId = cleanText(req.query.store_id || '', 128);
+    const forceRefresh = String(req.query.refresh || '') === '1';
+    const cacheKey = audienceCacheKey(audienceTenantId, storeId);
+    const cachedAudience = __touchRulesAudienceCache.get(cacheKey);
+    if (!forceRefresh && cachedAudience?.data) {
       const stale = Date.now() - cachedAudience.at > 180000;
-      if (stale) tenantContext.run(audienceTenantId, () => refreshTouchRulesAudienceCache(audienceTenantId)).catch(() => {});
-      return res.json({ ok: true, audience: cachedAudience.data, cached: true, stale });
+      if (stale) tenantContext.run(audienceTenantId, () => refreshTouchRulesAudienceCache(audienceTenantId, storeId)).catch(() => {});
+      return res.json({ ok: true, audience: cachedAudience.data, cached: true, stale, store_id: storeId || null });
     }
-    // 冷启动、缓存还空：兜底同步算一次（全局唯一一次会阻塞的路径）。
     try {
-      const a = await tenantContext.run(audienceTenantId, () => refreshTouchRulesAudienceCache(audienceTenantId));
-      return res.json({ ok: true, audience: a });
+      const a = await tenantContext.run(audienceTenantId, () => refreshTouchRulesAudienceCache(audienceTenantId, storeId));
+      return res.json({ ok: true, audience: a, store_id: storeId || null });
     } catch (e) {
       return res.status(500).json({ ok: false, error: e?.message || 'audience_failed' });
     }
