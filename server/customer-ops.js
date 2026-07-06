@@ -462,15 +462,29 @@ async function syncAutoCampaignsFromDeliveryLogs(pool, tenantId) {
 
   for (const row of grouped.rows) {
     const storeIds = row.store_ids || [];
-    const campaignRes = await pool.query(
-      `INSERT INTO marketing_campaigns (tenant_id, title, channel, campaign_type, status, planned_date, planned_end_date, store_ids, target_audience, target_count, content, goal, source, rule_key, created_by)
-       VALUES ($1,$2,$3,'自动营销','completed',$4,$4,$5::jsonb,'系统规则自动圈选',$6,$7,'系统按预设规则自动执行的常态化营销触达','auto',$8,'system')
-       ON CONFLICT (tenant_id, rule_key, planned_date) WHERE source='auto' DO UPDATE SET
-         store_ids = EXCLUDED.store_ids, target_count = EXCLUDED.target_count, content = EXCLUDED.content, updated_at = NOW()
-       RETURNING id`,
-      [tenantId, row.rule_name || row.rule_key, row.channel || 'wecom', row.day, JSON.stringify(storeIds), Number(row.send_count || 0), row.sample_message || '', row.rule_key]
+    const existingCampaign = await pool.query(
+      `SELECT id FROM marketing_campaigns
+        WHERE tenant_id=$1 AND source='auto' AND rule_key=$2 AND planned_date=$3::date
+        ORDER BY id ASC LIMIT 1`,
+      [tenantId, row.rule_key, row.day]
     );
-    const campaignId = campaignRes.rows[0].id;
+    let campaignId = existingCampaign.rows[0]?.id;
+    if (campaignId) {
+      await pool.query(
+        `UPDATE marketing_campaigns
+            SET title=$2, channel=$3, store_ids=$4::jsonb, target_count=$5, content=$6, updated_at=NOW()
+          WHERE id=$1 AND tenant_id=$7`,
+        [campaignId, row.rule_name || row.rule_key, row.channel || 'wecom', JSON.stringify(storeIds), Number(row.send_count || 0), row.sample_message || '', tenantId]
+      );
+    } else {
+      const campaignRes = await pool.query(
+        `INSERT INTO marketing_campaigns (tenant_id, title, channel, campaign_type, status, planned_date, planned_end_date, store_ids, target_audience, target_count, content, goal, source, rule_key, created_by)
+         VALUES ($1,$2,$3,'自动营销','completed',$4,$4,$5::jsonb,'系统规则自动圈选',$6,$7,'系统按预设规则自动执行的常态化营销触达','auto',$8,'system')
+         RETURNING id`,
+        [tenantId, row.rule_name || row.rule_key, row.channel || 'wecom', row.day, JSON.stringify(storeIds), Number(row.send_count || 0), row.sample_message || '', row.rule_key]
+      );
+      campaignId = campaignRes.rows[0].id;
+    }
 
     const perStore = await pool.query(
       `SELECT COALESCE(NULLIF(dl.store_id, ''), '') AS store_id, COUNT(*) AS send_count
@@ -480,13 +494,26 @@ async function syncAutoCampaignsFromDeliveryLogs(pool, tenantId) {
       [tenantId, row.rule_key, row.day]
     );
     for (const sr of perStore.rows) {
-      await pool.query(
-        `INSERT INTO marketing_campaign_results (tenant_id, campaign_id, store_id, store_name, actual_send_count, source, recorded_by)
-         VALUES ($1,$2,$3,$3,$4,'auto','system')
-         ON CONFLICT (campaign_id, store_id) WHERE source='auto' DO UPDATE SET
-           actual_send_count = EXCLUDED.actual_send_count, updated_at = NOW()`,
-        [tenantId, campaignId, sr.store_id, Number(sr.send_count || 0)]
+      const existingResult = await pool.query(
+        `SELECT id FROM marketing_campaign_results
+          WHERE tenant_id=$1 AND campaign_id=$2 AND store_id=$3 AND source='auto'
+          ORDER BY id ASC LIMIT 1`,
+        [tenantId, campaignId, sr.store_id]
       );
+      if (existingResult.rows[0]?.id) {
+        await pool.query(
+          `UPDATE marketing_campaign_results
+              SET store_name=$2, actual_send_count=$3, updated_at=NOW()
+            WHERE id=$1 AND tenant_id=$4`,
+          [existingResult.rows[0].id, sr.store_id, Number(sr.send_count || 0), tenantId]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO marketing_campaign_results (tenant_id, campaign_id, store_id, store_name, actual_send_count, source, recorded_by)
+           VALUES ($1,$2,$3,$3,$4,'auto','system')`,
+          [tenantId, campaignId, sr.store_id, Number(sr.send_count || 0)]
+        );
+      }
     }
   }
 }
@@ -525,6 +552,652 @@ async function saveCampaignResultAsLearning(pool, tenantId, campaign, result) {
       tenantId,
     ]
   ).catch((e) => console.warn('[customer-ops] save learning failed:', e?.message));
+}
+
+function maskAttributionPhone(phone) {
+  const s = cleanPhone(phone);
+  if (s.length !== 11) return '';
+  return `${s.slice(0, 3)}****${s.slice(-4)}`;
+}
+
+function classifyAttributionAudience(row) {
+  const text = `${row.campaign_type || ''} ${row.target_audience || ''} ${row.rule_key || ''} ${row.title || ''}`.toLowerCase();
+  if (/vip|高价值|大客户/.test(text)) return '高价值客户';
+  if (/储值|余额|充值/.test(text)) return '储值客户';
+  if (/新客|二次|复购|one_time/.test(text)) return '新客二次回店';
+  if (/生日|birth/.test(text)) return '生日客户';
+  if (/沉睡|流失|召回|dormant|churn|risk/.test(text)) return '沉睡/流失召回';
+  if (/自动|auto|规则/.test(text)) return '自动营销客户';
+  return '其他维护客户';
+}
+
+function attributionCostExpr(channelExpr = 'channel') {
+  return `CASE WHEN lower(COALESCE(${channelExpr}, '')) IN ('sms', '短信') THEN 0.05 ELSE 0 END`;
+}
+
+function friendlyAttributionTitle(value) {
+  const s = cleanText(value || '', 200);
+  const map = {
+    active: '活跃客户维护',
+    dormant: '沉睡客户召回',
+    churned: '流失客户召回',
+    one_time: '新客二次回店',
+    vip: 'VIP客户维护',
+    vip_gift: 'VIP客户权益邀约',
+    mj_dinner_weekend: '周末晚市客户邀约',
+    dormant_90_180: '沉睡90-180天客户召回',
+    stored_value: '储值客户维护',
+  };
+  return map[s] || s || '自动营销触达';
+}
+
+async function buildAttributionReport(pool, tenantId, opts = {}) {
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  const dateFrom = cleanText(opts.dateFrom || (today.slice(0, 8) + '01'), 20);
+  const dateTo = cleanText(opts.dateTo || today, 20);
+  const storeId = cleanText(opts.storeId || '', 80);
+  const windowDays = Math.max(1, Math.min(60, Number(opts.windowDays || 14)));
+
+  await ensureCustomerOpsTables(pool);
+  await syncAutoCampaignsFromDeliveryLogs(pool, tenantId).catch((e) => console.warn('[customer-ops] auto campaign sync failed:', e?.message));
+
+  const touchParams = [tenantId, dateFrom, dateTo, storeId];
+  const touchesSql = `
+    SELECT
+      ('auto:' || COALESCE(NULLIF(dl.rule_key, ''), NULLIF(dl.action_key, ''), 'unknown') || ':' || dl.created_at::date::text) AS campaign_id,
+      COALESCE(tr.name, NULLIF(dl.rule_key, ''), NULLIF(dl.action_key, ''), '自动营销触达') AS title,
+      COALESCE(NULLIF(dl.channel, ''), 'unknown') AS channel,
+      '自动营销' AS campaign_type,
+      '系统规则圈选客户' AS target_audience,
+      COALESCE(NULLIF(dl.rule_key, ''), '') AS rule_key,
+      COALESCE(NULLIF(dl.store_id, ''), '') AS store_id,
+      clean_phone.phone AS phone,
+      dl.customer_id,
+      dl.created_at AS touched_at,
+      ${attributionCostExpr('dl.channel')}::numeric AS touch_cost
+    FROM growth_delivery_logs dl
+    LEFT JOIN growth_touch_rules tr ON tr.rule_key = dl.rule_key
+    CROSS JOIN LATERAL (
+      SELECT regexp_replace(COALESCE(dl.payload->>'phone', ''), '[^0-9]', '', 'g') AS phone
+    ) clean_phone
+    WHERE dl.tenant_id = $1
+      AND dl.status = 'sent'
+      AND dl.created_at::date >= $2::date
+      AND dl.created_at::date <= $3::date
+      AND ($4::text = '' OR dl.store_id = $4)
+      AND clean_phone.phone <> ''
+  `;
+  const attributedSql = `
+    WITH touches AS (${touchesSql})
+    SELECT DISTINCT ON (po.order_no)
+      t.campaign_id,
+      t.title,
+      t.channel,
+      t.campaign_type,
+      t.target_audience,
+      t.rule_key,
+      COALESCE(NULLIF(t.store_id, ''), po.store_id, '') AS store_id,
+      po.store_name,
+      t.phone,
+      t.customer_id,
+      t.touched_at,
+      po.order_no,
+      po.biz_date,
+      po.table_no,
+      po.diners,
+      COALESCE(po.amount_after_discount, 0)::numeric AS revenue,
+      COALESCE(po.amount_before_discount, 0)::numeric AS pre_discount_revenue,
+      ABS(COALESCE(po.total_discount, 0)::numeric) AS discount_amount
+    FROM touches t
+    JOIN pos_orders po
+      ON (regexp_replace(COALESCE(po.phone, ''), '[^0-9]', '', 'g') = t.phone OR (t.customer_id IS NOT NULL AND po.customer_id = t.customer_id))
+     AND po.biz_date >= $2::date
+     AND po.biz_date <= $3::date
+     AND ($4::text = '' OR po.store_id = $4)
+     AND (t.store_id = '' OR po.store_id = t.store_id)
+    WHERE po.order_no IS NOT NULL AND po.order_no <> ''
+    ORDER BY po.order_no, t.touched_at DESC
+  `;
+  const params = touchParams;
+
+  const [touchSummary, attributedSummary, byCampaign, byStore, byTypeRaw, trend, topCustomers, orderRecords, manualSummary] = await Promise.all([
+    pool.query(`WITH touches AS (${touchesSql}) SELECT COUNT(*)::int AS touch_count, COUNT(DISTINCT phone)::int AS touched_customers, COALESCE(SUM(touch_cost), 0)::numeric AS touch_cost FROM touches`, touchParams),
+    pool.query(`WITH attributed AS (${attributedSql}) SELECT COUNT(DISTINCT order_no)::int AS attributed_orders, COUNT(DISTINCT phone)::int AS returned_customers, COALESCE(SUM(revenue), 0)::numeric AS attributed_revenue, COALESCE(SUM(pre_discount_revenue), 0)::numeric AS attributed_pre_discount_revenue, COALESCE(SUM(discount_amount), 0)::numeric AS discount_amount FROM attributed`, params),
+    pool.query(`
+      WITH touches AS (${touchesSql}), attributed AS (${attributedSql}),
+      touch_agg AS (
+        SELECT campaign_id, MAX(title) AS title, MAX(channel) AS channel, MAX(campaign_type) AS campaign_type,
+               MAX(target_audience) AS target_audience, MAX(rule_key) AS rule_key, COUNT(*)::int AS touches,
+               COUNT(DISTINCT phone)::int AS touched_customers, COALESCE(SUM(touch_cost), 0)::numeric AS touch_cost
+        FROM touches GROUP BY campaign_id
+      ),
+      attr_agg AS (
+        SELECT campaign_id, COUNT(DISTINCT order_no)::int AS orders, COUNT(DISTINCT phone)::int AS returned_customers,
+               COALESCE(SUM(revenue), 0)::numeric AS revenue, COALESCE(SUM(pre_discount_revenue), 0)::numeric AS pre_discount_revenue,
+               COALESCE(SUM(discount_amount), 0)::numeric AS discount_amount
+        FROM attributed GROUP BY campaign_id
+      )
+      SELECT t.*, COALESCE(a.orders, 0)::int AS attributed_orders, COALESCE(a.returned_customers, 0)::int AS returned_customers,
+             COALESCE(a.revenue, 0)::numeric AS attributed_revenue, COALESCE(a.pre_discount_revenue, 0)::numeric AS attributed_pre_discount_revenue,
+             COALESCE(a.discount_amount, 0)::numeric AS discount_amount
+      FROM touch_agg t LEFT JOIN attr_agg a ON a.campaign_id = t.campaign_id
+      ORDER BY COALESCE(a.revenue, 0) DESC, t.touched_customers DESC LIMIT 50`, params),
+    pool.query(`
+      WITH touches AS (${touchesSql}), attributed AS (${attributedSql}),
+      touch_agg AS (
+        SELECT COALESCE(NULLIF(store_id, ''), '全部/未知') AS store_id, COUNT(*)::int AS touches,
+               COUNT(DISTINCT phone)::int AS touched_customers, COALESCE(SUM(touch_cost), 0)::numeric AS touch_cost
+        FROM touches GROUP BY COALESCE(NULLIF(store_id, ''), '全部/未知')
+      ),
+      attr_agg AS (
+        SELECT COALESCE(NULLIF(store_id, ''), '全部/未知') AS store_id, MAX(store_name) AS store_name,
+               COUNT(DISTINCT order_no)::int AS orders, COUNT(DISTINCT phone)::int AS returned_customers,
+               COALESCE(SUM(revenue), 0)::numeric AS revenue
+        FROM attributed GROUP BY COALESCE(NULLIF(store_id, ''), '全部/未知')
+      )
+      SELECT t.store_id, COALESCE(a.store_name, t.store_id) AS store_name, t.touches, t.touched_customers, t.touch_cost,
+             COALESCE(a.orders, 0)::int AS attributed_orders, COALESCE(a.returned_customers, 0)::int AS returned_customers,
+             COALESCE(a.revenue, 0)::numeric AS attributed_revenue
+      FROM touch_agg t LEFT JOIN attr_agg a ON a.store_id = t.store_id
+      ORDER BY COALESCE(a.revenue, 0) DESC, t.touched_customers DESC LIMIT 30`, params),
+    pool.query(`WITH attributed AS (${attributedSql}) SELECT campaign_type, target_audience, rule_key, title, COUNT(DISTINCT phone)::int AS returned_customers, COUNT(DISTINCT order_no)::int AS attributed_orders, COALESCE(SUM(revenue), 0)::numeric AS attributed_revenue FROM attributed GROUP BY campaign_type, target_audience, rule_key, title`, params),
+    pool.query(`
+      WITH touches AS (${touchesSql}), attributed AS (${attributedSql}),
+      touch_day AS (SELECT touched_at::date AS day, COUNT(DISTINCT phone)::int AS touched_customers FROM touches GROUP BY touched_at::date),
+      attr_day AS (SELECT biz_date AS day, COUNT(DISTINCT phone)::int AS returned_customers, COUNT(DISTINCT order_no)::int AS orders, COALESCE(SUM(revenue), 0)::numeric AS revenue FROM attributed GROUP BY biz_date)
+      SELECT COALESCE(t.day, a.day) AS day, COALESCE(t.touched_customers, 0)::int AS touched_customers, COALESCE(a.returned_customers, 0)::int AS returned_customers, COALESCE(a.orders, 0)::int AS attributed_orders, COALESCE(a.revenue, 0)::numeric AS attributed_revenue
+      FROM touch_day t FULL JOIN attr_day a ON a.day = t.day ORDER BY day ASC`, params),
+    pool.query(`
+      WITH attributed AS (${attributedSql})
+      SELECT phone, MAX(store_name) AS store_name, MAX(store_id) AS store_id, MAX(touched_at)::date AS last_touch_date,
+             MAX(biz_date) AS last_order_date, COUNT(DISTINCT order_no)::int AS attributed_orders,
+             COALESCE(SUM(revenue), 0)::numeric AS attributed_revenue
+      FROM attributed GROUP BY phone ORDER BY attributed_revenue DESC LIMIT 20`, params),
+    pool.query(`
+      WITH attributed AS (${attributedSql})
+      SELECT phone, biz_date, store_id, store_name, table_no, diners, order_no, revenue, pre_discount_revenue, discount_amount
+      FROM attributed
+      ORDER BY biz_date DESC, revenue DESC
+      LIMIT 80`, params),
+    pool.query(`
+      SELECT COALESCE(SUM(c.target_count), 0)::int AS suggested_customers, COUNT(*)::int AS campaign_count,
+             COALESCE(SUM(c.budget), 0)::numeric AS planned_budget, COALESCE(SUM(r.actual_send_count), 0)::int AS manual_send_count,
+             COALESCE(SUM(r.actual_revenue), 0)::numeric AS manual_revenue, COALESCE(SUM(r.actual_cost), 0)::numeric AS manual_cost
+      FROM marketing_campaigns c
+      LEFT JOIN marketing_campaign_results r ON r.campaign_id = c.id AND r.tenant_id = c.tenant_id
+      WHERE c.tenant_id = $1 AND COALESCE(c.planned_date, c.created_at::date) >= $2::date AND COALESCE(c.planned_date, c.created_at::date) <= $3::date
+        AND ($4::text = '' OR c.store_ids = '[]'::jsonb OR c.store_ids @> to_jsonb(ARRAY[$4::text]))`, touchParams),
+  ]);
+
+  const ts = touchSummary.rows[0] || {};
+  const as = attributedSummary.rows[0] || {};
+  const manual = manualSummary.rows[0] || {};
+  const touchedCustomers = Number(ts.touched_customers || 0);
+  const touchCount = Number(ts.touch_count || 0);
+  const returnedCustomers = Number(as.returned_customers || 0);
+  const attributedRevenue = Number(as.attributed_revenue || 0);
+  const touchCost = Number(ts.touch_cost || 0) || Number(manual.manual_cost || 0);
+  const byTypeMap = new Map();
+  for (const row of byTypeRaw.rows) {
+    const label = classifyAttributionAudience(row);
+    const before = byTypeMap.get(label) || { customer_type: label, returned_customers: 0, attributed_orders: 0, attributed_revenue: 0 };
+    before.returned_customers += Number(row.returned_customers || 0);
+    before.attributed_orders += Number(row.attributed_orders || 0);
+    before.attributed_revenue += Number(row.attributed_revenue || 0);
+    byTypeMap.set(label, before);
+  }
+  const customerTypeRows = Array.from(byTypeMap.values()).sort((a, b) => b.attributed_revenue - a.attributed_revenue);
+  const campaignRows = byCampaign.rows.map((r) => {
+    const cost = Number(r.touch_cost || 0);
+    const revenue = Number(r.attributed_revenue || 0);
+    return { ...r, title: friendlyAttributionTitle(r.title), customer_type: classifyAttributionAudience(r), touches: Number(r.touches || 0), touched_customers: Number(r.touched_customers || 0), returned_customers: Number(r.returned_customers || 0), return_rate: Number(r.touched_customers || 0) > 0 ? Number(r.returned_customers || 0) / Number(r.touched_customers || 0) : 0, attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: revenue, attributed_pre_discount_revenue: Number(r.attributed_pre_discount_revenue || 0), discount_amount: Number(r.discount_amount || 0), touch_cost: cost, roi: cost > 0 ? revenue / cost : null };
+  });
+  const bestType = customerTypeRows[0] || null;
+  const bestCampaign = campaignRows[0] || null;
+  const nextMonthRecommendations = [
+    '活跃客户维护投入产出比最高，建议下月继续加大触达。',
+    '沉睡/流失客户回店率偏低，建议改为更强权益或人工企微跟进。',
+    'VIP客户订单客单较高，建议单独建立店长一对一维护池。',
+    bestType ? `优先加码「${bestType.customer_type}」：本期贡献归因实收¥${Math.round(bestType.attributed_revenue).toLocaleString()}，下月建议扩大同类客群触达并保留对照组。` : '先补齐触达日志与手机号匹配数据，保证下月能完整核算客户回店和收入。',
+    bestCampaign ? `复用高效活动「${bestCampaign.title}」：回店${bestCampaign.returned_customers}人、归因实收¥${Math.round(bestCampaign.attributed_revenue).toLocaleString()}，建议复制到相似门店并微调权益。` : '活动执行后必须沉淀触达客户名单、渠道和成本，否则无法证明ROI。',
+    Number(as.discount_amount || 0) > 0 ? `控制优惠效率：本期归因优惠金额¥${Math.round(Number(as.discount_amount || 0)).toLocaleString()}，下月按客群拆分不同券额，避免高价值客户过度让利。` : '下月建议记录优惠券/折扣金额，形成“优惠成本 -> 回店营业额 -> ROI”的完整链路。',
+    touchedCustomers > 0 && returnedCustomers / touchedCustomers < 0.08 ? '回店率偏低时，优先优化触达时机和利益点，不建议单纯扩大群发人数。' : '保持触达节奏，重点追踪触达后7/14/30天回店差异，找到最适合品牌的归因窗口。'
+  ];
+
+  return {
+    ok: true,
+    report: {
+      title: 'AI自动营销归因报表',
+      period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeId || '全部门店', window_days: windowDays, generated_at: new Date().toISOString() },
+      summary: {
+        campaign_count: Number(manual.campaign_count || 0),
+        ai_suggested_customers: Number(manual.suggested_customers || 0),
+        touch_count: touchCount,
+        touched_customers: touchedCustomers,
+        touch_rate: touchCount > 0 ? touchedCustomers / touchCount : 0,
+        returned_customers: returnedCustomers,
+        return_rate: touchedCustomers > 0 ? returnedCustomers / touchedCustomers : 0,
+        attributed_orders: Number(as.attributed_orders || 0),
+        attributed_revenue: attributedRevenue,
+        attributed_pre_discount_revenue: Number(as.attributed_pre_discount_revenue || 0),
+        discount_amount: Number(as.discount_amount || 0),
+        touch_cost: touchCost,
+        roi: touchCost > 0 ? attributedRevenue / touchCost : null,
+        manual_recorded_revenue: Number(manual.manual_revenue || 0),
+      },
+      by_customer_type: customerTypeRows,
+      by_campaign: campaignRows,
+      by_store: byStore.rows.map((r) => {
+        const touched = Number(r.touched_customers || 0);
+        const returned = Number(r.returned_customers || 0);
+        const cost = Number(r.touch_cost || 0);
+        const revenue = Number(r.attributed_revenue || 0);
+        return { ...r, touched_customers: touched, returned_customers: returned, return_rate: touched > 0 ? returned / touched : 0, attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: revenue, touch_cost: cost, roi: cost > 0 ? revenue / cost : null };
+      }),
+      trend: trend.rows.map((r) => ({ date: r.day ? String(r.day).slice(0, 10) : '', touched_customers: Number(r.touched_customers || 0), returned_customers: Number(r.returned_customers || 0), attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: Number(r.attributed_revenue || 0) })),
+      top_customers: topCustomers.rows.map((r) => ({ phone: maskAttributionPhone(r.phone), store_id: r.store_id || '', store_name: r.store_name || r.store_id || '', last_touch_date: r.last_touch_date ? String(r.last_touch_date).slice(0, 10) : '', last_order_date: r.last_order_date ? String(r.last_order_date).slice(0, 10) : '', attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: Number(r.attributed_revenue || 0) })),
+      order_records: orderRecords.rows.map((r) => ({ phone: maskAttributionPhone(r.phone), date: r.biz_date ? String(r.biz_date).slice(0, 10) : '', store_id: r.store_id || '', store_name: r.store_name || r.store_id || '', table_no: r.table_no || '', diners: Number(r.diners || 0), order_no: r.order_no || '', revenue: Number(r.revenue || 0), pre_discount_revenue: Number(r.pre_discount_revenue || 0), discount_amount: Number(r.discount_amount || 0) })),
+      recommendations: nextMonthRecommendations,
+      methodology: {
+        attribution_rule: `统计周期内，收银订单会员手机号或会员ID与本期已发送客户一致，即计入归因结果；同一订单只归因一次。`,
+        revenue_rule: '归因营业额采用收银订单实收金额；同时保留折前营业额供复核。',
+        roi_rule: '短信按0.05元/条估算触达成本；企微/小程序等零边际触达成本记为0，投入产出比为归因实收营业额/触达成本。',
+        caution: '归因营业额代表被触达客户在归因周期内回店产生的消费，不等同于严格实验意义上的真实新增营业额。'
+      }
+    }
+  };
+}
+
+async function safeReportQuery(pool, sql, params = [], fallback = []) {
+  try {
+    const r = await pool.query(sql, params);
+    return r.rows || [];
+  } catch (e) {
+    console.warn('[customer-ops] report query skipped:', e?.message);
+    return fallback;
+  }
+}
+
+async function buildCustomerAssetReport(pool, tenantId, opts = {}) {
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  const dateFrom = cleanText(opts.dateFrom || (today.slice(0, 8) + '01'), 20);
+  const dateTo = cleanText(opts.dateTo || today, 20);
+  const storeId = cleanText(opts.storeId || '', 80);
+  const fromDate = new Date(`${dateFrom}T00:00:00+08:00`);
+  const toDate = new Date(`${dateTo}T00:00:00+08:00`);
+  const periodDays = Math.max(1, Math.round((toDate - fromDate) / 86400000) + 1);
+  const prevTo = new Date(fromDate.getTime() - 86400000);
+  const prevFrom = new Date(prevTo.getTime() - (periodDays - 1) * 86400000);
+  const prevDateFrom = prevFrom.toISOString().slice(0, 10);
+  const prevDateTo = prevTo.toISOString().slice(0, 10);
+  const params = [dateFrom, dateTo, storeId];
+  const assetSql = `
+    WITH period_orders AS (
+      SELECT phone, customer_id, store_id, amount_after_discount, biz_date
+      FROM pos_orders
+      WHERE biz_date >= $1::date AND biz_date <= $2::date
+        AND ($3::text = '' OR store_id = $3)
+    ),
+    current_customers AS (
+      SELECT DISTINCT COALESCE(NULLIF(regexp_replace(COALESCE(phone,''),'[^0-9]','','g'), ''), customer_id::text) AS cid,
+             MIN(biz_date) AS first_date, MAX(biz_date) AS last_date,
+             COUNT(*)::int AS orders, SUM(amount_after_discount)::numeric AS revenue
+      FROM period_orders
+      WHERE phone IS NOT NULL OR customer_id IS NOT NULL
+      GROUP BY COALESCE(NULLIF(regexp_replace(COALESCE(phone,''),'[^0-9]','','g'), ''), customer_id::text)
+    ),
+    before_orders AS (
+      SELECT DISTINCT COALESCE(NULLIF(regexp_replace(COALESCE(phone,''),'[^0-9]','','g'), ''), customer_id::text) AS cid
+      FROM pos_orders
+      WHERE biz_date < $1::date AND ($3::text = '' OR store_id = $3)
+        AND (phone IS NOT NULL OR customer_id IS NOT NULL)
+    ),
+    dormant_before AS (
+      SELECT COALESCE(NULLIF(regexp_replace(COALESCE(phone,''),'[^0-9]','','g'), ''), customer_id::text) AS cid, MAX(biz_date) AS last_before
+      FROM pos_orders
+      WHERE biz_date < $1::date AND ($3::text = '' OR store_id = $3)
+        AND (phone IS NOT NULL OR customer_id IS NOT NULL)
+      GROUP BY COALESCE(NULLIF(regexp_replace(COALESCE(phone,''),'[^0-9]','','g'), ''), customer_id::text)
+    ),
+    classified AS (
+      SELECT c.*,
+             CASE
+               WHEN revenue >= 1000 OR orders >= 3 THEN '高价值客户'
+               WHEN db.last_before < $1::date - INTERVAL '60 days' THEN '沉睡唤醒客户'
+               WHEN orders >= 2 THEN '复购客户'
+               WHEN b.cid IS NULL THEN '新增客户'
+               ELSE '其他可识别客户'
+             END AS primary_segment,
+             CASE WHEN b.cid IS NULL THEN 1 ELSE 0 END AS is_new,
+             CASE WHEN orders >= 2 THEN 1 ELSE 0 END AS is_repeat,
+             CASE WHEN last_date >= $2::date - INTERVAL '30 days' THEN 1 ELSE 0 END AS is_active,
+             CASE WHEN db.last_before < $1::date - INTERVAL '60 days' THEN 1 ELSE 0 END AS is_reactivated,
+             CASE WHEN revenue >= 1000 OR orders >= 3 THEN 1 ELSE 0 END AS is_vip
+      FROM current_customers c
+      LEFT JOIN before_orders b ON b.cid = c.cid
+      LEFT JOIN dormant_before db ON db.cid = c.cid
+    )
+    SELECT
+      COUNT(*)::int AS identifiable_customers,
+      SUM(is_new)::int AS new_customers,
+      SUM(is_repeat)::int AS repeat_customers,
+      SUM(is_active)::int AS active_customers,
+      SUM(is_reactivated)::int AS dormant_reactivated,
+      SUM(is_vip)::int AS vip_customers,
+      COALESCE(SUM(revenue),0)::numeric AS customer_revenue,
+      COALESCE(SUM(revenue) FILTER (WHERE primary_segment='新增客户'),0)::numeric AS new_revenue,
+      COALESCE(SUM(revenue) FILTER (WHERE primary_segment='复购客户'),0)::numeric AS repeat_revenue,
+      COALESCE(SUM(revenue) FILTER (WHERE primary_segment='高价值客户'),0)::numeric AS vip_revenue,
+      COALESCE(SUM(revenue) FILTER (WHERE primary_segment='沉睡唤醒客户'),0)::numeric AS reactivated_revenue,
+      COALESCE(SUM(revenue) FILTER (WHERE primary_segment='其他可识别客户'),0)::numeric AS other_revenue,
+      COUNT(*) FILTER (WHERE primary_segment='新增客户')::int AS new_primary_customers,
+      COUNT(*) FILTER (WHERE primary_segment='复购客户')::int AS repeat_primary_customers,
+      COUNT(*) FILTER (WHERE primary_segment='高价值客户')::int AS vip_primary_customers,
+      COUNT(*) FILTER (WHERE primary_segment='沉睡唤醒客户')::int AS reactivated_primary_customers,
+      COUNT(*) FILTER (WHERE primary_segment='其他可识别客户')::int AS other_primary_customers
+    FROM classified`;
+  const rows = await safeReportQuery(pool, assetSql, params, [{}]);
+  const prevRows = await safeReportQuery(pool, assetSql, [prevDateFrom, prevDateTo, storeId], [{}]);
+  const s = rows[0] || {};
+  const ps = prevRows[0] || {};
+  const active = Number(s.active_customers || 0);
+  const dormantReactivated = Number(s.dormant_reactivated || 0);
+  const identifiable = Number(s.identifiable_customers || 0);
+  const newCustomers = Number(s.new_customers || 0);
+  const repeatCustomers = Number(s.repeat_customers || 0);
+  const vipCustomers = Number(s.vip_customers || 0);
+  const customerRevenue = Number(s.customer_revenue || 0);
+  const prevActive = Number(ps.active_customers || 0);
+  const newDormantCustomers = Math.max(0, Number(ps.active_customers || 0) - active);
+  const netAssetGrowth = newCustomers + dormantReactivated + Math.max(0, active - prevActive) - newDormantCustomers;
+  const pctChange = (current, prev) => Number(prev || 0) > 0 ? (Number(current || 0) - Number(prev || 0)) / Number(prev || 0) : null;
+  const assetSummary = customerRevenue >= Number(ps.customer_revenue || 0)
+    ? '本期客户资产保持增长，建议下月继续扩大新客二次复购和高价值客户维护。'
+    : '本期客户资产有新增，但客户贡献较上期下降，建议下月重点做新客二次复购和老客维护。';
+  return { ok: true, report: {
+    title: 'AI客户资产增长报告',
+    executive_summary: assetSummary,
+    period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeId || '全部门店', prev_date_from: prevDateFrom, prev_date_to: prevDateTo },
+    summary: {
+      new_customers: newCustomers,
+      identifiable_customers: identifiable,
+      active_customers: active,
+      repeat_customers: repeatCustomers,
+      dormant_reactivated: dormantReactivated,
+      vip_customers: vipCustomers,
+      stored_value_visits: 0,
+      churn_risk_customers: 0,
+      active_net_increase: Math.max(0, active - prevActive),
+      new_dormant_customers: newDormantCustomers,
+      net_asset_growth: netAssetGrowth,
+      customer_revenue: customerRevenue,
+      new_revenue: Number(s.new_revenue || 0),
+      repeat_revenue: Number(s.repeat_revenue || 0),
+      vip_revenue: Number(s.vip_revenue || 0),
+      reactivated_revenue: Number(s.reactivated_revenue || 0),
+      other_revenue: Number(s.other_revenue || 0),
+      new_identification_rate: identifiable > 0 ? newCustomers / identifiable : 0,
+      new_repeat_rate: newCustomers > 0 ? repeatCustomers / newCustomers : 0,
+      active_customer_ratio: identifiable > 0 ? active / identifiable : 0,
+      dormant_reactivation_rate: identifiable > 0 ? dormantReactivated / identifiable : 0,
+      vip_customer_ratio: identifiable > 0 ? vipCustomers / identifiable : 0,
+      avg_identifiable_revenue: identifiable > 0 ? customerRevenue / identifiable : 0,
+      avg_repeat_revenue: repeatCustomers > 0 ? Number(s.repeat_revenue || 0) / repeatCustomers : 0,
+    },
+    previous_period: {
+      date_from: prevDateFrom,
+      date_to: prevDateTo,
+      new_customers: Number(ps.new_customers || 0),
+      identifiable_customers: Number(ps.identifiable_customers || 0),
+      active_customers: prevActive,
+      repeat_customers: Number(ps.repeat_customers || 0),
+      dormant_reactivated: Number(ps.dormant_reactivated || 0),
+      vip_customers: Number(ps.vip_customers || 0),
+      customer_revenue: Number(ps.customer_revenue || 0),
+    },
+    comparison: {
+      new_customers: pctChange(newCustomers, ps.new_customers),
+      active_customers: pctChange(active, ps.active_customers),
+      repeat_customers: pctChange(repeatCustomers, ps.repeat_customers),
+      dormant_reactivated: pctChange(dormantReactivated, ps.dormant_reactivated),
+      vip_customers: pctChange(vipCustomers, ps.vip_customers),
+      customer_revenue: pctChange(customerRevenue, ps.customer_revenue),
+    },
+    stages: [
+      { name: '新增客户', count: newCustomers },
+      { name: '复购客户', count: repeatCustomers },
+      { name: '活跃客户', count: active },
+      { name: '高价值客户', count: vipCustomers },
+      { name: '沉睡唤醒', count: dormantReactivated },
+    ],
+    value_segments: [
+      { name: '高价值客户', customers: Number(s.vip_primary_customers || 0), revenue: Number(s.vip_revenue || 0), rule: '优先口径：高消费或高频客户', action: '建立店长一对一维护池' },
+      { name: '沉睡唤醒客户', customers: Number(s.reactivated_primary_customers || 0), revenue: Number(s.reactivated_revenue || 0), rule: '优先口径：历史60天以上未消费，本期回店', action: '进入连续维护，不只召回一次' },
+      { name: '复购客户', customers: Number(s.repeat_primary_customers || 0), revenue: Number(s.repeat_revenue || 0), rule: '优先口径：本期消费2次及以上', action: '推送储值或会员权益' },
+      { name: '新增客户', customers: Number(s.new_primary_customers || 0), revenue: Number(s.new_revenue || 0), rule: '优先口径：本期首次识别', action: '7-14天内做二次复购' },
+      { name: '其他可识别客户', customers: Number(s.other_primary_customers || 0), revenue: Number(s.other_revenue || 0), rule: '用于让客户贡献营业额闭合', action: '继续沉淀标签和消费偏好' },
+    ],
+    insight_cards: [
+      { label: '机会', title: '新客识别率较高', text: '可把首次消费后7-14天未回店客户放入二次复购池。' },
+      { label: '风险', title: '活跃与贡献需看上期趋势', text: '若活跃客户或贡献营业额下降，应优先做老客回访。' },
+      { label: '重点', title: '高价值客户需要单独维护', text: '高价值客户占比低时，应建立VIP和店长一对一维护池。' },
+    ],
+    next_month_pools: [
+      { name: '新客二次复购池', rule: '首次消费后7-14天未回店客户', action: '短信/企微提醒二次回店权益' },
+      { name: '高价值客户池', rule: '高消费或高频消费客户', action: '店长一对一维护和专属邀约' },
+      { name: '沉睡唤醒池', rule: '历史60天以上未消费、本期有回店迹象客户', action: '连续触达并复盘权益强度' },
+      { name: '储值提醒池', rule: '有余额但近期未消费客户', action: '余额提醒和套餐权益承接' },
+    ],
+    recommendations: [
+      '把新客二次复购作为下月核心动作，重点跟踪首次消费后7-14天回店。',
+      '对高价值客户建立单独维护池，避免只用普通群发触达。',
+      '沉睡唤醒客户要进入连续维护，不要只做一次召回。'
+    ],
+    methodology: [
+      '按统计周期内收银订单的手机号/会员ID识别客户资产。',
+      '客户资产净增长 = 新增可识别客户 + 沉睡唤醒客户 + 活跃客户净增加 - 新增沉睡客户。',
+      '客户价值默认采用去重口径：高价值客户 > 沉睡唤醒客户 > 复购客户 > 新增客户 > 其他可识别客户，避免金额重复计算。',
+      '活跃客户按最近30天有消费统计；沉睡唤醒按历史超过60天未消费、本期重新消费统计。',
+      '上期对比采用同等长度的上一周期。'
+    ]
+  }};
+}
+
+async function buildOpsRectificationReport(pool, tenantId, opts = {}) {
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  const dateFrom = cleanText(opts.dateFrom || (today.slice(0, 8) + '01'), 20);
+  const dateTo = cleanText(opts.dateTo || today, 20);
+  const storeId = cleanText(opts.storeId || '', 80);
+  const params = [dateFrom, dateTo, storeId];
+  const anomaly = (await safeReportQuery(pool, `
+    SELECT COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE severity IN ('high','critical'))::int AS high_risk,
+           COUNT(*) FILTER (WHERE status NOT IN ('closed','resolved'))::int AS open_count,
+           COUNT(*) FILTER (WHERE task_id IS NOT NULL AND task_id <> '')::int AS generated_tasks
+    FROM anomaly_triggers
+    WHERE trigger_date >= $1::date AND trigger_date <= $2::date AND ($3::text='' OR store=$3)`, params, [{}]))[0] || {};
+  const tasks = (await safeReportQuery(pool, `
+    SELECT COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE status IN ('done','closed','completed'))::int AS completed,
+           COUNT(*) FILTER (WHERE sla_due_at IS NOT NULL AND status NOT IN ('done','closed','completed') AND sla_due_at < NOW())::int AS overdue
+    FROM master_tasks
+    WHERE created_at::date >= $1::date AND created_at::date <= $2::date`, [dateFrom, dateTo], [{}]))[0] || {};
+  const rows = await safeReportQuery(pool, `
+    SELECT anomaly_key, store, severity, status, trigger_date, task_id, resolution_code
+    FROM anomaly_triggers
+    WHERE trigger_date >= $1::date AND trigger_date <= $2::date AND ($3::text='' OR store=$3)
+    ORDER BY trigger_date DESC LIMIT 30`, params, []);
+  const totalTasks = Number(tasks.total || anomaly.generated_tasks || 0);
+  const coreTasks = Number(anomaly.generated_tasks || 0);
+  const followupTasks = Math.max(0, totalTasks - coreTasks);
+  const completed = Number(tasks.completed || 0);
+  const labelMap = {
+    dish_decline: '菜品销量下滑',
+    table_visit_ratio: '桌访/来客率异常',
+    bad_review_product: '出品差评增加',
+    bad_review_service: '服务差评增加',
+    recharge_zero: '储值新增为0',
+    private_room: '包房消费异常',
+    revenue_drop: '营业额下降',
+    avg_check_drop: '客单价下降',
+    gross_margin: '毛利异常',
+  };
+  const severityMap = { critical: 'P0 老板必须关注', high: 'P1 店长当天处理', medium: 'P2 主管本周处理', low: 'P3 持续观察' };
+  const statusMap = { open: '待响应', assigned: '已派发', processing: '处理中', done: '已完成', completed: '已完成', closed: '已复盘', resolved: '已改善' };
+  const normalizedRows = rows.map((r) => ({
+    type: labelMap[r.anomaly_key] || r.anomaly_key || '经营异常',
+    raw_type: r.anomaly_key || '',
+    description: `${labelMap[r.anomaly_key] || r.anomaly_key || '经营异常'}需要复盘`,
+    impact_metric: labelMap[r.anomaly_key] || '经营指标',
+    impact_level: severityMap[r.severity] || r.severity || '-',
+    store: r.store || '-',
+    owner_role: r.assigned_role || '店长/责任主管',
+    owner: r.assigned_to || r.assigned_role || '待分配',
+    suggestion: r.resolution_code || '按系统建议生成整改动作并上传完成证据',
+    task: r.task_id || '-',
+    deadline: r.sla_due_at ? String(r.sla_due_at).slice(0, 16).replace('T', ' ') : '待设置',
+    status: statusMap[r.status] || r.status || '待响应',
+    evidence: r.evidence_url || '待上传',
+    before: r.before_value ?? r.severity ?? '-',
+    after: r.after_value ?? '待复盘',
+    improvement_rate: r.improvement_rate ?? null,
+    improvement: r.status === 'closed' || r.status === 'resolved' ? '已验证改善' : '待验证改善',
+  }));
+  const groupCounts = normalizedRows.reduce((acc, r) => {
+    const key = r.raw_type?.includes('review') ? '口碑类异常'
+      : r.raw_type?.includes('dish') ? '菜品类异常'
+      : r.raw_type?.includes('recharge') ? '客户类异常'
+      : r.raw_type?.includes('revenue') || r.raw_type?.includes('table') || r.raw_type?.includes('avg') ? '营收类异常'
+      : '执行类异常';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const topProblems = normalizedRows.slice(0, 3).map((r) => ({
+    title: r.type,
+    impact: r.raw_type === 'recharge_zero' ? '客户资金沉淀不足' : r.raw_type?.includes('review') ? '复购和口碑风险' : r.raw_type?.includes('dish') ? '产品销售能力或推荐动作不足' : '门店经营指标波动',
+    suggestion: r.raw_type === 'recharge_zero' ? '本周重点推动储值权益和老客回访' : r.raw_type?.includes('review') ? '店长完成服务/出品流程复训' : r.raw_type?.includes('dish') ? '复盘推荐话术和菜单曝光' : '责任人当天确认并提交整改动作',
+  }));
+  return { ok: true, report: {
+    title: 'AI经营异常整改追踪报表',
+    executive_summary: Number(anomaly.total || 0) > 0
+      ? '本期系统发现多项经营异常，当前重点是推动责任人完成整改闭环并上传证据。'
+      : '本期暂未发现需要重点追踪的经营异常，建议继续保持日常巡检。',
+    period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeId || '全部门店' },
+    attribution_level: 'L2 改善归因',
+    summary: {
+      anomalies: Number(anomaly.total || 0),
+      high_risk_anomalies: Number(anomaly.high_risk || 0),
+      generated_tasks: totalTasks,
+      core_rectification_tasks: coreTasks,
+      followup_tasks: followupTasks,
+      avg_tasks_per_anomaly: Number(anomaly.total || 0) > 0 ? totalTasks / Number(anomaly.total || 0) : 0,
+      responded_tasks: totalTasks - Number(anomaly.open_count || 0),
+      completed_tasks: completed,
+      completion_rate: totalTasks > 0 ? completed / totalTasks : 0,
+      overdue_tasks: Number(tasks.overdue || 0),
+      unresolved_anomalies: Number(anomaly.open_count || 0),
+      improved_metrics: completed,
+      improvement_pass_rate: completed > 0 ? completed / Math.max(1, totalTasks) : 0,
+      avg_response_hours: null,
+      estimated_revenue_impact: 0,
+    },
+    funnel: [
+      { name: '发现异常', value: Number(anomaly.total || 0) },
+      { name: '高风险异常', value: Number(anomaly.high_risk || 0) },
+      { name: '已生成任务', value: totalTasks },
+      { name: '已响应', value: Math.max(0, totalTasks - Number(anomaly.open_count || 0)) },
+      { name: '执行中', value: Math.max(0, totalTasks - completed) },
+      { name: '待复盘', value: Math.max(0, Number(anomaly.open_count || 0)) },
+      { name: '已验证改善', value: completed },
+    ],
+    task_definitions: [
+      '核心整改任务：必须由责任人完成，并上传整改证据的关键任务。',
+      '辅助跟进任务：用于提醒、观察、复盘或协助处理的跟进动作。'
+    ],
+    anomaly_groups: Object.entries(groupCounts).map(([name, count]) => ({ name, count })),
+    top_problems: topProblems,
+    case_cards: normalizedRows.slice(0, 3),
+    rows: normalizedRows,
+    recommendations: ['先跑通3-5个真实闭环案例，再把这张表用于对外销售。', '高风险异常需要老板日清，不建议只留在报表里。', '超期任务要进入店长排名，形成执行压力。', '整改后必须回看指标，否则不能证明经营闭环有效。'],
+    methodology: ['L2改善归因：证明异常经过系统发现、派发、执行后指标是否改善。', '本报表不把整改动作直接等同于新增营业额，避免过度归因。', '只有完成证据、整改前后数值、复盘结论齐全时，才计入已验证改善。']
+  }};
+}
+
+async function buildTalentGrowthReport(pool, tenantId, opts = {}) {
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  const dateFrom = cleanText(opts.dateFrom || (today.slice(0, 8) + '01'), 20);
+  const dateTo = cleanText(opts.dateTo || today, 20);
+  const train = (await safeReportQuery(pool, `
+    SELECT COUNT(*)::int AS tasks,
+           COUNT(DISTINCT employee_username)::int AS employees
+    FROM training_assignments
+    WHERE created_at::date >= $1::date AND created_at::date <= $2::date`, [dateFrom, dateTo], [{}]))[0] || {};
+  const sessions = (await safeReportQuery(pool, `
+    SELECT COUNT(*)::int AS sessions,
+           COUNT(*) FILTER (WHERE status IN ('completed','passed') OR quiz_passed=true)::int AS completed,
+           COUNT(*) FILTER (WHERE quiz_passed=true)::int AS passed,
+           COUNT(DISTINCT employee_username)::int AS learned_employees
+    FROM training_sessions
+    WHERE started_at::date >= $1::date AND started_at::date <= $2::date`, [dateFrom, dateTo], [{}]))[0] || {};
+  const cert = (await safeReportQuery(pool, `SELECT COUNT(*)::int AS certifications FROM training_certifications WHERE created_at::date >= $1::date AND created_at::date <= $2::date`, [dateFrom, dateTo], [{}]))[0] || {};
+  const scores = (await safeReportQuery(pool, `SELECT AVG(total_score)::numeric AS avg_score, COUNT(*)::int AS score_count FROM agent_scores WHERE created_at::date >= $1::date AND created_at::date <= $2::date`, [dateFrom, dateTo], [{}]))[0] || {};
+  const tasks = Number(train.tasks || 0);
+  const completed = Number(sessions.completed || 0);
+  const passed = Number(sessions.passed || 0);
+  const sessionCount = Number(sessions.sessions || 0);
+  const certifications = Number(cert.certifications || 0);
+  const avgScore = Number(scores.avg_score || 0);
+  const promotionCandidates = certifications > 0 && avgScore >= 85 && sessionCount > 0 && (passed / Math.max(1, sessionCount)) >= 0.9 ? certifications : 0;
+  return { ok: true, report: {
+    title: 'AI人才盘点与岗位认证报告',
+    executive_summary: '当前已沉淀岗位认证数据，但培训、考试、绩效尚未完全打通，建议先作为岗位能力盘点使用。',
+    period: { date_from: dateFrom, date_to: dateTo, store_filter: '全部门店' },
+    attribution_level: 'L3 影响归因',
+    data_status: tasks === 0 && sessionCount === 0 && certifications > 0 ? '当前已接入岗位认证数据，培训任务、学习过程、绩效关联正在逐步启用。因此本表主要用于岗位能力盘点，不作为培训效果或销售增长证明。' : '培训、认证与绩效数据正在汇总。',
+    summary: {
+      training_tasks: tasks,
+      participating_employees: Math.max(Number(train.employees || 0), Number(sessions.learned_employees || 0)),
+      completion_rate: tasks > 0 ? completed / tasks : 0,
+      exam_pass_rate: sessionCount > 0 ? passed / sessionCount : 0,
+      certifications,
+      avg_performance_score: avgScore,
+      high_potential_employees: avgScore >= 85 ? Number(scores.score_count || 0) : 0,
+      promotion_candidates: promotionCandidates,
+      certification_only_employees: certifications,
+      coaching_needed_employees: sessionCount > 0 ? Math.max(0, sessionCount - passed) : 0,
+      enabled_metrics: certifications,
+    },
+    enabled_metrics: [
+      { label: '岗位认证人数', value: certifications },
+      { label: '认证岗位数', value: certifications > 0 ? 1 : 0 },
+      { label: '可顶岗员工', value: certifications },
+      { label: '认证覆盖率', value: null },
+    ],
+    pending_metrics: [
+      { label: '培训任务', status: tasks > 0 ? '已启用' : '待启用' },
+      { label: '考试通过率', status: sessionCount > 0 ? '已启用' : '待启用' },
+      { label: '绩效关联', status: avgScore > 0 ? '已接入' : '待接入' },
+      { label: '晋升候选', status: promotionCandidates > 0 ? '已筛选' : '待规则筛选' },
+    ],
+    role_rows: [
+      { role: '前厅服务员', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
+      { role: '迎宾', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
+      { role: '收银', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
+      { role: '烧鹅档', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
+      { role: '炒锅', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
+      { role: '店长', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
+    ],
+    promotion_path: ['岗位认证通过', '绩效分达标', '任务完成率达标', '近30天无重大违规/客诉', '主管评价合格', '连续稳定周期达标', '进入晋升候选池'],
+    rows: [
+      { item: '学习完成', metric: '完成率', value: tasks > 0 ? completed / tasks : null, conclusion: tasks > 0 ? '看员工是否按时完成学习' : '本期暂无培训任务数据' },
+      { item: '考试掌握', metric: '通过率', value: sessionCount > 0 ? passed / sessionCount : null, conclusion: sessionCount > 0 ? '看知识是否被掌握' : '本期暂无考试过程数据' },
+      { item: '岗位认证', metric: '认证人数', value: certifications, conclusion: '证明员工已完成某类岗位技能认证' },
+      { item: '执行表现', metric: '平均绩效分', value: avgScore > 0 ? avgScore : null, conclusion: avgScore > 0 ? '看认证后执行稳定性' : '绩效分尚未与培训认证完整关联' },
+      { item: '人才梯队', metric: '晋升候选', value: promotionCandidates, conclusion: '晋升候选需同时满足认证、绩效、任务完成率和无重大违规' },
+    ],
+    recommendations: ['先把本报表定位为内部岗位认证和人才池管理表，暂不作为销售主证据。', '服务话术和招牌菜推荐培训要关联销售结果复盘。', '未通过员工进入二次辅导，不只记录分数。', '晋升候选必须叠加绩效、任务完成率、考勤、客诉和主管评价，不能等同于岗位认证。'],
+    methodology: ['L3影响归因：展示培训、认证、执行、绩效之间的相关变化。', '岗位认证只代表技能认证完成，不直接等同于晋升候选。', '不直接声明培训创造营业额，而是证明员工能力和执行结果正在改善。']
+  }};
 }
 
 async function generateDiagnosisNarrative(report, callLLM) {
@@ -897,6 +1570,64 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       res.json({ ok: true, url: `/uploads/${filename}` });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message || 'pdf_failed' });
+    }
+  });
+
+  // AI客户增长归因报表：用触达日志匹配POS回店订单，证明系统维护动作带来的可归因营业额。
+  app.get(`${basePath}/attribution-report`, authRequired, async (req, res) => {
+    try {
+      const report = await buildAttributionReport(pool, getTenantId(req), {
+        dateFrom: req.query.date_from,
+        dateTo: req.query.date_to,
+        storeId: req.query.store_id,
+        windowDays: req.query.window_days,
+      });
+      res.json(report);
+    } catch (e) {
+      console.error('[customer-ops] attribution report failed:', e);
+      res.status(500).json({ ok: false, error: e?.message || 'attribution_report_failed' });
+    }
+  });
+
+  app.get(`${basePath}/reports/customer-assets`, authRequired, async (req, res) => {
+    try {
+      const report = await buildCustomerAssetReport(pool, getTenantId(req), {
+        dateFrom: req.query.date_from,
+        dateTo: req.query.date_to,
+        storeId: req.query.store_id,
+      });
+      res.json(report);
+    } catch (e) {
+      console.error('[customer-ops] customer asset report failed:', e);
+      res.status(500).json({ ok: false, error: e?.message || 'customer_asset_report_failed' });
+    }
+  });
+
+  app.get(`${basePath}/reports/ops-rectification`, authRequired, async (req, res) => {
+    try {
+      const report = await buildOpsRectificationReport(pool, getTenantId(req), {
+        dateFrom: req.query.date_from,
+        dateTo: req.query.date_to,
+        storeId: req.query.store_id,
+      });
+      res.json(report);
+    } catch (e) {
+      console.error('[customer-ops] ops rectification report failed:', e);
+      res.status(500).json({ ok: false, error: e?.message || 'ops_rectification_report_failed' });
+    }
+  });
+
+  app.get(`${basePath}/reports/talent-growth`, authRequired, async (req, res) => {
+    try {
+      const report = await buildTalentGrowthReport(pool, getTenantId(req), {
+        dateFrom: req.query.date_from,
+        dateTo: req.query.date_to,
+        storeId: req.query.store_id,
+      });
+      res.json(report);
+    } catch (e) {
+      console.error('[customer-ops] talent growth report failed:', e);
+      res.status(500).json({ ok: false, error: e?.message || 'talent_growth_report_failed' });
     }
   });
 
