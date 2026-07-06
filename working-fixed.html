@@ -60606,7 +60606,7 @@ ${body}
         // ABC 6模板滚动活动：这些活动的「券面额」按模板步骤固定(赠菜¥0/赠券¥30·¥50·2×¥50)、
         // 「发送频率」由降频阶梯15/30/45/60自动控制，前端这两项设置不生效→渲染时标灰禁用。
         // 与后端 ABC_ROTATION_ORDER 保持一致。
-        var AM_ABC_CAMPAIGNS = ['vip_gift','active','regular_cooling','dormant_90_180','newcomer_recall','dormant_60_90','vip_winback','lost_long','lost_over365','mj_dinner_weekend_gift','mj_dinner_weekend','prospect_recall'];
+        var AM_ABC_CAMPAIGNS = ['vip_gift','active','regular_cooling','dormant_90_180','newcomer_recall','dormant_60_90','vip_winback','lost_long','lost_over365','prospect_recall'];
         // 券模板 id（campaign_<key>_<store> / winback_cash_<store>）→ 活动中文名，用于核销明细标注来源。
         function amCampaignLabelFromTemplate(templateId){
             var t = String(templateId || '');
@@ -60700,6 +60700,10 @@ ${body}
                 fetch('/api/growth/touch-rules/audience' + (audQs.length ? ('?' + audQs.join('&')) : ''), { headers: hdr }).then(function(r){return r.json();}).then(function(d){
                     amApplyAudience((d && d.audience) || {});
                 }).catch(function(){});
+                // 红名单总览：同样异步获取，不阻塞规则列表先行展示。
+                fetch('/api/growth/abc-blacklist-summary', { headers: hdr }).then(function(r){return r.json();}).then(function(d){
+                    amApplyBlacklist((d && d.items) || []);
+                }).catch(function(){});
             } catch (e) {
                 host.innerHTML = '<div style="color:#ef4444;padding:14px 0;">加载自动营销失败：' + escapeHtml(String(e && e.message || e)) + '</div>';
             }
@@ -60749,7 +60753,8 @@ ${body}
                 summary.innerHTML = card(periodLabel + '发送', totalSent)
                     + card(periodLabel + '核销', totalRedeemed)
                     + card('核销率', rate + '%')
-                    + card('自动执行中', autoLiveCount + ' / ' + rules.length);
+                    + card('自动执行中', autoLiveCount + ' / ' + rules.length)
+                    + card('🔴 红名单', '<span id="am-redlist-total">计算中</span>');
 
                 if (!rules.length) { host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">暂无营销规则</div>'; return; }
 
@@ -60826,6 +60831,7 @@ ${body}
                         +   '<div class="amr-info">目标人群：' + escapeHtml(isBalance ? '有储值余额且久未消费的会员' : amDescribeCriteria(rule.criteria)) + '</div>'
                         +   (isBalance ? '<div class="amr-info amr-info--sub">判定口径：余额≥下限（默认1元）且超过设定天数未消费</div>' : (critTip ? '<div class="amr-info amr-info--sub">判定口径：' + escapeHtml(critTip) + '</div>' : ''))
                         +   '<div class="amr-info">涉及会员：<span id="am-reach-' + rk + '">' + (reach == null ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>' : ('<strong>' + reach + '</strong> 人（命中人群且可触达）')) + '</span></div>'
+                        +   (isAbcCampaign ? ('<div class="amr-info">🔴 红名单：<span id="am-redlist-' + rk + '"><span style="color:rgba(226,232,240,0.4);">计算中/未知</span></span></div>') : '')
                         +   '<div class="amr-info amr-info--sub">统计范围：' + escapeHtml(storeFilter ? (amStoreName(storeFilter) + ' · 按上方门店筛选') : (storeNm + ' · 全部门店')) + '；与「近N天发送/核销」统计周期无关</div>'
                         +   '<div class="amr-info amr-info--sub">分渠道覆盖：<span id="am-cov-' + rk + '">' + covLine + '</span></div>'
                         +   '<div class="amr-info">触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
@@ -60947,6 +60953,23 @@ ${body}
                         : '计算中/未知';
                 }
             });
+        }
+
+        // 红名单：ABC滚动活动阶梯走完仍未回应的人数，就地更新每条规则卡片+顶部汇总（不整列表重渲染）。
+        function amApplyBlacklist(items) {
+            if (!Array.isArray(items)) return;
+            var total = 0;
+            items.forEach(function(it){
+                total += Number(it.blacklisted || 0);
+                var rk = (typeof escapeHtml === 'function') ? escapeHtml(it.campaign_key) : it.campaign_key;
+                var el = document.getElementById('am-redlist-' + rk);
+                if (el) {
+                    var n = Number(it.blacklisted || 0);
+                    el.innerHTML = '<strong style="color:' + (n > 0 ? '#ef4444' : '#94a3b8') + ';">' + n + '</strong> 人（阶梯走完仍未回应，本活动不再自动触达）';
+                }
+            });
+            var sumEl = document.getElementById('am-redlist-total');
+            if (sumEl) sumEl.textContent = total;
         }
 
         // 保存「频率/券面额/有效期/文案」后就地把该规则状态徽章改为「待审核」（这类改动会重置审核态），
