@@ -1742,6 +1742,18 @@ function pickSmsTemplateByStore(storeId) {
   return String(process.env[`ALIYUN_SMS_TEMPLATE_${sfx}`] || '').trim() || def;
 }
 
+// 门店→短信签名。2026-07 起 CAMPAIGN_TYPES/ABC 系列新模板按品牌分别报备了短签名
+// (马己仙店签"马己仙"/洪潮店签"连年由喜餐饮")，与旧模板复用的公司名签名
+// (ALIYUN_SMS_SIGN_NAME="上海连年由喜餐饮管理有限")不是同一个，必须按模板类型各自传参，
+// 传错签名会被阿里云判"签名与模板不匹配"整批拒收。仅供 /campaign/send-sms(ABC/CAMPAIGN_TYPES
+// 模板)使用；旧的通用引擎直发路径、winback_sms、储值提醒仍用全局默认签名，不受影响。
+function pickCampaignSmsSign(storeId) {
+  const sfx = getStoreSmsEnvSuffix(storeId);
+  if (sfx === 'MAJIXIAN') return String(process.env.ALIYUN_SMS_SIGN_MAJIXIAN || '马己仙').trim();
+  if (sfx === 'HONGCHAO') return String(process.env.ALIYUN_SMS_SIGN_HONGCHAO || '连年由喜餐饮').trim();
+  return String(process.env.ALIYUN_SMS_SIGN_NAME || '').trim();
+}
+
 // 沉睡客召回券「现金抵用券」新模板（变量 name/value/date/code，含券码到店报码核销）。
 function pickWinbackTemplateByStore(storeId) {
   const sfx = getStoreSmsEnvSuffix(storeId);
@@ -1913,20 +1925,23 @@ const ABC_ROTATION_ORDER = {
   vip_winback:            ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // VIP专属召回61-365天：先券后菜
   lost_long:              ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 长期流失召回181-365天：先券后菜
   lost_over365:           ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 长期流失超1年召回：先券后菜
-  mj_dinner_weekend_gift: ['giftA', 'giftB', 'giftC'],                                       // 马己仙晚市·免费菜组：只赠菜
-  mj_dinner_weekend:      ['coupon30', 'coupon50', 'coupon2x50'],                            // 马己仙晚市·现金券组：只赠券
   prospect_recall:        ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 到店未买单潜客：先券后菜
+  // 马己仙晚市赠菜组/赠券组、洪潮平日午市客唤醒(见 CAMPAIGN_TYPES 的 mj_dinner_weekend_gift/
+  // mj_dinner_weekend/hc_weekday_lunch)固定只用各自单一已报备模板，不参与 ABC 滚动，
+  // 故不在此表中列出——它们走下面 pickCampaignTemplate() 的固定模板分支。
 };
 
 // 6个模板各自的短信变量集合与券面额/张数。2X50=2张50元券(coupon_count:2)，
 // 与现有 lost_long/lost_over365 的「2张/1码核销2次」模式一致。
+// 2026-07 起 coupon30/50/2x50 改用「面额写死在已报备模板正文里」的新模板(阿里云审核更快过)，
+// 不再需要 {value} 变量；仍需 date+code。
 const ABC_STEP_DEFS = {
   giftA:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
   giftB:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
   giftC:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
-  coupon30:   { vars: ['value', 'date', 'code'], coupon_value_fen: 3000, coupon_count: 1 },
-  coupon50:   { vars: ['value', 'date', 'code'], coupon_value_fen: 5000, coupon_count: 1 },
-  coupon2x50: { vars: ['value', 'date', 'code'], coupon_value_fen: 5000, coupon_count: 2 },
+  coupon30:   { vars: ['date', 'code'], coupon_value_fen: 3000, coupon_count: 1 },
+  coupon50:   { vars: ['date', 'code'], coupon_value_fen: 5000, coupon_count: 1 },
+  coupon2x50: { vars: ['date', 'code'], coupon_value_fen: 5000, coupon_count: 2 },
 };
 
 // 按模板步骤+门店解析阿里云模板code：ALIYUN_SMS_ABC<STEP>_<MAJIXIAN|HONGCHAO|DEFAULT>
@@ -3851,7 +3866,7 @@ export function registerGrowthRoutes(app, pool) {
       if (effectiveVars.includes('code')) templateParam.code = code;
 
       try {
-        const sent = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
+        const sent = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam, signName: pickCampaignSmsSign(storeId) });
         const camCustomer = await upsertCustomer(pool, { phone, store_id: storeId }, tenantId).catch(() => null);
         await upsertDeliveryLog(pool, {
           delivery_key: deliveryKey, action_key: campaignId || campaignKey, rule_key: campaignKey,
