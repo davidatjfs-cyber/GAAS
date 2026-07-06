@@ -1356,7 +1356,10 @@ async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') 
 
 // 核销时小程序常未填消费金额（amount_fen=0），且POS数据是按天批量同步、核销当时查不到。
 // 每天凌晨批量补算：按"同门店+同手机号+核销时间前后2小时内最近一单"匹配 pos_orders 回填，
-// 只扫近7天内仍为0的核销记录，匹配不到则保持0（不影响现有数据）。
+// 匹配不到则保持0（不影响现有数据）。
+// 2026-07 起去掉"只扫近7天"的年龄限制：之前发现只要某条核销的匹配POS订单超过7天才同步/
+// 补录，就会被永久跳过、再也不会重扫，导致部分活动的营收/ROI被永久低估。WHERE gr.amount_fen=0
+// 本身已把扫描范围限定在"仍未补上金额"的记录，表体量也小（数百行级），去掉年龄限制不影响性能。
 async function backfillRedemptionAmounts(pool) {
   const r = await pool.query(`
     WITH matched AS (
@@ -1366,7 +1369,6 @@ async function backfillRedemptionAmounts(pool) {
       JOIN pos_orders po ON po.store_id = gr.store_id AND po.phone = gc.phone
         AND po.order_time BETWEEN gr.redeemed_at - INTERVAL '2 hours' AND gr.redeemed_at + INTERVAL '30 minutes'
       WHERE gr.amount_fen = 0
-        AND gr.redeemed_at >= NOW() - INTERVAL '7 days'
         AND NULLIF(gc.phone, '') IS NOT NULL
         AND NULLIF(gr.store_id, '') IS NOT NULL
       ORDER BY gr.id, ABS(EXTRACT(EPOCH FROM (po.order_time - gr.redeemed_at)))
@@ -4724,55 +4726,77 @@ export function registerGrowthRoutes(app, pool) {
 
   // ABC 6模板滚动分布：该活动当前命中人群中，各模板步骤(赠菜A/B/C+赠券30/50/2X50)×
   // 降频阶梯(0=正常频率,1+=第几轮降频)各有多少人、以及已进入「红名单」(阶梯走完未回应，
-  // 本活动不再自动触达)的人数。campaign_key 未配置 ABC 轮换时返回 enabled:false。
+  // 本活动不再自动触达)的人数。campaign_key 未配置 ABC 轮换时返回 null。
+  async function computeAbcDistributionForCampaign(pool, campaignKey, tenantId) {
+    const order = ABC_ROTATION_ORDER[campaignKey];
+    if (!order) return null;
+    const ruleRes = await pool.query(
+      `SELECT * FROM growth_touch_rules WHERE action_payload->>'campaign_key' = $1 LIMIT 1`,
+      [campaignKey]
+    );
+    if (!ruleRes.rows.length) return null;
+    const rule = ruleRes.rows[0];
+
+    const candidates = (await loadRuleCandidates(pool, rule, tenantId)).slice(0, 500);
+    const phones = [...new Set(candidates.map((c) => cleanPhone(c.phone)).filter(Boolean))];
+    const sentCounts = phones.length ? await pool.query(
+      // 「到店即清零」：与发送端同口径，只统计最近一次到店(pos_last_order_at)之后的成功发送数。
+      `WITH lastvisit AS (
+         SELECT phone, MAX(pos_last_order_at) AS lv FROM growth_customer_profiles
+          WHERE phone = ANY($2::text[]) GROUP BY phone
+       )
+       SELECT dl.payload->>'phone' AS phone, count(*)::int n FROM growth_delivery_logs dl
+         LEFT JOIN lastvisit lv ON lv.phone = dl.payload->>'phone'
+        WHERE dl.channel='sms' AND dl.status = 'sent' AND dl.rule_key = $1
+          AND dl.payload->>'phone' = ANY($2::text[])
+          AND dl.created_at > COALESCE(lv.lv, '1970-01-01'::timestamptz)
+        GROUP BY 1`,
+      [campaignKey, phones]
+    ) : { rows: [] };
+    const sentByPhone = new Map(sentCounts.rows.map((r) => [r.phone, Number(r.n)]));
+
+    const dist = {};
+    for (const step of order) dist[step] = 0;
+    let cycling = 0; // 已走完至少一轮、进入更慢降频轮次(第2轮及以后)的人数
+    let blacklisted = 0;
+    for (const c of candidates) {
+      const phone = cleanPhone(c.phone);
+      if (!phone) continue;
+      const totalSent = sentByPhone.get(phone) || 0;
+      const { step, blacklisted: bl } = deriveAbcStep(campaignKey, totalSent);
+      if (bl) { blacklisted++; continue; }
+      dist[step] = (dist[step] || 0) + 1;
+      if (totalSent >= order.length) cycling++; // 超过一轮(perCycle)即已进入降频后续轮次
+    }
+    return { rule_key: rule.rule_key, total: candidates.length, step_distribution: dist, cycling, blacklisted };
+  }
+
   app.get('/api/growth/campaign/:campaignKey/abc-distribution', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const campaignKey = cleanText(req.params.campaignKey, 64);
-    const order = ABC_ROTATION_ORDER[campaignKey];
-    if (!order) return res.json({ ok: true, enabled: false });
-    const result = await tenantContext.run(getGrowthTenantId(req), async () => {
-      const ruleRes = await pool.query(
-        `SELECT * FROM growth_touch_rules WHERE action_payload->>'campaign_key' = $1 LIMIT 1`,
-        [campaignKey]
-      );
-      if (!ruleRes.rows.length) return null;
-      const rule = ruleRes.rows[0];
-
-      const candidates = (await loadRuleCandidates(pool, rule, getGrowthTenantId(req))).slice(0, 500);
-      const phones = [...new Set(candidates.map((c) => cleanPhone(c.phone)).filter(Boolean))];
-      const sentCounts = phones.length ? await pool.query(
-        // 「到店即清零」：与发送端同口径，只统计最近一次到店(pos_last_order_at)之后的成功发送数。
-        `WITH lastvisit AS (
-           SELECT phone, MAX(pos_last_order_at) AS lv FROM growth_customer_profiles
-            WHERE phone = ANY($2::text[]) GROUP BY phone
-         )
-         SELECT dl.payload->>'phone' AS phone, count(*)::int n FROM growth_delivery_logs dl
-           LEFT JOIN lastvisit lv ON lv.phone = dl.payload->>'phone'
-          WHERE dl.channel='sms' AND dl.status = 'sent' AND dl.rule_key = $1
-            AND dl.payload->>'phone' = ANY($2::text[])
-            AND dl.created_at > COALESCE(lv.lv, '1970-01-01'::timestamptz)
-          GROUP BY 1`,
-        [campaignKey, phones]
-      ) : { rows: [] };
-      const sentByPhone = new Map(sentCounts.rows.map((r) => [r.phone, Number(r.n)]));
-
-      const dist = {};
-      for (const step of order) dist[step] = 0;
-      let cycling = 0; // 已走完至少一轮、进入更慢降频轮次(第2轮及以后)的人数
-      let blacklisted = 0;
-      for (const c of candidates) {
-        const phone = cleanPhone(c.phone);
-        if (!phone) continue;
-        const totalSent = sentByPhone.get(phone) || 0;
-        const { step, blacklisted: bl } = deriveAbcStep(campaignKey, totalSent);
-        if (bl) { blacklisted++; continue; }
-        dist[step] = (dist[step] || 0) + 1;
-        if (totalSent >= order.length) cycling++; // 超过一轮(perCycle)即已进入降频后续轮次
-      }
-      return { total: candidates.length, step_distribution: dist, cycling, blacklisted };
-    });
+    if (!ABC_ROTATION_ORDER[campaignKey]) return res.json({ ok: true, enabled: false });
+    const result = await tenantContext.run(getGrowthTenantId(req), () =>
+      computeAbcDistributionForCampaign(pool, campaignKey, getGrowthTenantId(req)));
     if (!result) return res.status(404).json({ ok: false, error: 'rule_not_found' });
     return res.json({ ok: true, enabled: true, ...result });
+  });
+
+  // 红名单总览：汇总所有 ABC 滚动活动(段)已流入红名单(阶梯走完仍未回应，本活动不再自动触达)
+  // 的人数，供决策"什么时候该对这批人另外出营销计划"。按 campaign_key 拆分+给总数。
+  app.get('/api/growth/abc-blacklist-summary', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    const tenantId = getGrowthTenantId(req);
+    const campaignKeys = Object.keys(ABC_ROTATION_ORDER);
+    const items = await tenantContext.run(tenantId, async () => {
+      const out = [];
+      for (const campaignKey of campaignKeys) {
+        const r = await computeAbcDistributionForCampaign(pool, campaignKey, tenantId).catch(() => null);
+        if (r) out.push({ campaign_key: campaignKey, rule_key: r.rule_key, total: r.total, blacklisted: r.blacklisted });
+      }
+      return out;
+    });
+    const totalBlacklisted = items.reduce((sum, it) => sum + it.blacklisted, 0);
+    return res.json({ ok: true, items, total_blacklisted: totalBlacklisted });
   });
 
   // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
