@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import XLSX from 'xlsx';
+import { STORES, storeIdToName, storeNameToId, inferBrandFromStoreName } from './brands-config.js';
 
 const PYTHON_BIN = process.env.CUSTOMER_OPS_PYTHON_BIN || process.env.CODEX_PYTHON_BIN || 'python3';
 
@@ -17,6 +18,94 @@ function num(value) {
   if (value == null || value === '') return 0;
   const n = Number(String(value).replace(/[¥,，\s]/g, ''));
   return Number.isFinite(n) ? n : 0;
+}
+
+function uniqueClean(values, max = 160) {
+  return Array.from(new Set((values || []).map((v) => cleanText(v, max)).filter(Boolean)));
+}
+
+function sqlLikePattern(value) {
+  const s = cleanText(value, 160).replace(/[\\%_]/g, '\\$&');
+  return s ? `%${s}%` : '';
+}
+
+function storeKeywordsFromName(value) {
+  const s = cleanText(value, 160);
+  const words = [];
+  if (!s) return words;
+  for (const store of STORES) {
+    if (s.includes(store.name) || s.includes(store.brandName) || store.name.includes(s) || store.brandName.includes(s)) {
+      words.push(store.name, store.brandName, store.storeId);
+    }
+  }
+  const brand = inferBrandFromStoreName(s);
+  if (brand) words.push(brand);
+  if (s.includes('洪潮')) words.push('洪潮', '64822111', '洪潮大宁久光店');
+  if (s.includes('马己仙')) words.push('马己仙', '51866138', '马己仙上海音乐广场店');
+  return words;
+}
+
+async function resolveCustomerOpsStoreFilter(pool, tenantId, rawStoreId = '') {
+  const raw = cleanText(rawStoreId || '', 120);
+  if (!raw) {
+    return { requested: '', displayName: '全部门店', posStoreIds: [], posStoreNames: [], posStorePatterns: [] };
+  }
+
+  let stateStores = [];
+  try {
+    const r = await pool.query(`SELECT data->'stores' AS stores FROM hrms_state WHERE key = $1 LIMIT 1`, [tenantId || 'default']);
+    stateStores = Array.isArray(r.rows?.[0]?.stores) ? r.rows[0].stores : [];
+  } catch (e) {
+    console.warn('[customer-ops] store state lookup skipped:', e?.message);
+  }
+
+  const stateStore = stateStores.find((s) => cleanText(s?.id, 120) === raw || cleanText(s?.name, 160) === raw || cleanText(s?.brandName || s?.brand, 160) === raw);
+  const configuredId = storeNameToId(raw);
+  const configuredName = configuredId ? storeIdToName(configuredId) : '';
+  const displayName = cleanText(stateStore?.name || configuredName || storeIdToName(raw) || raw, 160);
+  const candidates = uniqueClean([
+    raw,
+    stateStore?.id,
+    stateStore?.name,
+    stateStore?.brandName,
+    stateStore?.brand,
+    configuredId,
+    configuredName,
+    ...storeKeywordsFromName(raw),
+    ...storeKeywordsFromName(stateStore?.name),
+    ...storeKeywordsFromName(stateStore?.brandName || stateStore?.brand),
+  ]);
+  const patterns = uniqueClean(candidates.map(sqlLikePattern));
+
+  let posRows = [];
+  try {
+    const r = await pool.query(`
+      SELECT DISTINCT store_id, store_name
+      FROM pos_orders
+      WHERE store_id = ANY($1::text[])
+         OR store_name = ANY($1::text[])
+         OR store_name ILIKE ANY($2::text[])
+      LIMIT 20`, [candidates, patterns]);
+    posRows = r.rows || [];
+  } catch (e) {
+    console.warn('[customer-ops] POS store lookup skipped:', e?.message);
+  }
+
+  const posStoreIds = uniqueClean([...posRows.map((r) => r.store_id), configuredId, raw]);
+  const posStoreNames = uniqueClean([...posRows.map((r) => r.store_name), stateStore?.name, configuredName]);
+  const posStorePatterns = uniqueClean([...posStoreNames, ...candidates].map(sqlLikePattern));
+  return {
+    requested: raw,
+    displayName: stateStore?.name || configuredName || posRows[0]?.store_name || displayName,
+    posStoreIds,
+    posStoreNames,
+    posStorePatterns,
+  };
+}
+
+function posStoreFilterSql(alias = '') {
+  const p = alias ? `${alias}.` : '';
+  return `($3::text = '' OR ${p}store_id = ANY($4::text[]) OR ${p}store_name = ANY($5::text[]) OR ${p}store_name ILIKE ANY($6::text[]))`;
 }
 
 function dateOnly(value) {
@@ -597,11 +686,12 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
   const dateTo = cleanText(opts.dateTo || today, 20);
   const storeId = cleanText(opts.storeId || '', 80);
   const windowDays = Math.max(1, Math.min(60, Number(opts.windowDays || 14)));
+  const storeFilter = await resolveCustomerOpsStoreFilter(pool, tenantId, storeId);
 
   await ensureCustomerOpsTables(pool);
   await syncAutoCampaignsFromDeliveryLogs(pool, tenantId).catch((e) => console.warn('[customer-ops] auto campaign sync failed:', e?.message));
 
-  const touchParams = [tenantId, dateFrom, dateTo, storeId];
+  const touchParams = [tenantId, dateFrom, dateTo, storeFilter.posStoreIds, storeId];
   const touchesSql = `
     SELECT
       ('auto:' || COALESCE(NULLIF(dl.rule_key, ''), NULLIF(dl.action_key, ''), 'unknown') || ':' || dl.created_at::date::text) AS campaign_id,
@@ -624,7 +714,7 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
       AND dl.status = 'sent'
       AND dl.created_at::date >= $2::date
       AND dl.created_at::date <= $3::date
-      AND ($4::text = '' OR dl.store_id = $4)
+      AND ($5::text = '' OR dl.store_id = $5 OR dl.store_id = ANY($4::text[]))
       AND clean_phone.phone <> ''
   `;
   const attributedSql = `
@@ -653,8 +743,7 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
       ON (regexp_replace(COALESCE(po.phone, ''), '[^0-9]', '', 'g') = t.phone OR (t.customer_id IS NOT NULL AND po.customer_id = t.customer_id))
      AND po.biz_date >= $2::date
      AND po.biz_date <= $3::date
-     AND ($4::text = '' OR po.store_id = $4)
-     AND (t.store_id = '' OR po.store_id = t.store_id)
+     AND ($5::text = '' OR po.store_id = ANY($4::text[]))
     WHERE po.order_no IS NOT NULL AND po.order_no <> ''
     ORDER BY po.order_no, t.touched_at DESC
   `;
@@ -726,7 +815,7 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
       FROM marketing_campaigns c
       LEFT JOIN marketing_campaign_results r ON r.campaign_id = c.id AND r.tenant_id = c.tenant_id
       WHERE c.tenant_id = $1 AND COALESCE(c.planned_date, c.created_at::date) >= $2::date AND COALESCE(c.planned_date, c.created_at::date) <= $3::date
-        AND ($4::text = '' OR c.store_ids = '[]'::jsonb OR c.store_ids @> to_jsonb(ARRAY[$4::text]))`, touchParams),
+        AND ($5::text = '' OR c.store_ids = '[]'::jsonb OR c.store_ids @> to_jsonb(ARRAY[$5::text]) OR c.store_ids ?| $4::text[])`, touchParams),
   ]);
 
   const ts = touchSummary.rows[0] || {};
@@ -768,7 +857,7 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
     ok: true,
     report: {
       title: 'AI自动营销归因报表',
-      period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeId || '全部门店', window_days: windowDays, generated_at: new Date().toISOString() },
+      period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeFilter.displayName, window_days: windowDays, generated_at: new Date().toISOString() },
       summary: {
         campaign_count: Number(manual.campaign_count || 0),
         ai_suggested_customers: Number(manual.suggested_customers || 0),
@@ -830,13 +919,14 @@ async function buildCustomerAssetReport(pool, tenantId, opts = {}) {
   const prevFrom = new Date(prevTo.getTime() - (periodDays - 1) * 86400000);
   const prevDateFrom = prevFrom.toISOString().slice(0, 10);
   const prevDateTo = prevTo.toISOString().slice(0, 10);
-  const params = [dateFrom, dateTo, storeId];
+  const storeFilter = await resolveCustomerOpsStoreFilter(pool, tenantId, storeId);
+  const params = [dateFrom, dateTo, storeId, storeFilter.posStoreIds, storeFilter.posStoreNames, storeFilter.posStorePatterns];
   const assetSql = `
     WITH period_orders AS (
       SELECT phone, customer_id, store_id, amount_after_discount, biz_date
       FROM pos_orders
       WHERE biz_date >= $1::date AND biz_date <= $2::date
-        AND ($3::text = '' OR store_id = $3)
+        AND ${posStoreFilterSql()}
     ),
     current_customers AS (
       SELECT DISTINCT COALESCE(NULLIF(regexp_replace(COALESCE(phone,''),'[^0-9]','','g'), ''), customer_id::text) AS cid,
@@ -849,13 +939,13 @@ async function buildCustomerAssetReport(pool, tenantId, opts = {}) {
     before_orders AS (
       SELECT DISTINCT COALESCE(NULLIF(regexp_replace(COALESCE(phone,''),'[^0-9]','','g'), ''), customer_id::text) AS cid
       FROM pos_orders
-      WHERE biz_date < $1::date AND ($3::text = '' OR store_id = $3)
+      WHERE biz_date < $1::date AND ${posStoreFilterSql()}
         AND (phone IS NOT NULL OR customer_id IS NOT NULL)
     ),
     dormant_before AS (
       SELECT COALESCE(NULLIF(regexp_replace(COALESCE(phone,''),'[^0-9]','','g'), ''), customer_id::text) AS cid, MAX(biz_date) AS last_before
       FROM pos_orders
-      WHERE biz_date < $1::date AND ($3::text = '' OR store_id = $3)
+      WHERE biz_date < $1::date AND ${posStoreFilterSql()}
         AND (phone IS NOT NULL OR customer_id IS NOT NULL)
       GROUP BY COALESCE(NULLIF(regexp_replace(COALESCE(phone,''),'[^0-9]','','g'), ''), customer_id::text)
     ),
@@ -897,7 +987,7 @@ async function buildCustomerAssetReport(pool, tenantId, opts = {}) {
       COUNT(*) FILTER (WHERE primary_segment='其他可识别客户')::int AS other_primary_customers
     FROM classified`;
   const rows = await safeReportQuery(pool, assetSql, params, [{}]);
-  const prevRows = await safeReportQuery(pool, assetSql, [prevDateFrom, prevDateTo, storeId], [{}]);
+  const prevRows = await safeReportQuery(pool, assetSql, [prevDateFrom, prevDateTo, storeId, storeFilter.posStoreIds, storeFilter.posStoreNames, storeFilter.posStorePatterns], [{}]);
   const s = rows[0] || {};
   const ps = prevRows[0] || {};
   const active = Number(s.active_customers || 0);
@@ -917,7 +1007,7 @@ async function buildCustomerAssetReport(pool, tenantId, opts = {}) {
   return { ok: true, report: {
     title: 'AI客户资产增长报告',
     executive_summary: assetSummary,
-    period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeId || '全部门店', prev_date_from: prevDateFrom, prev_date_to: prevDateTo },
+    period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeFilter.displayName, prev_date_from: prevDateFrom, prev_date_to: prevDateTo },
     summary: {
       new_customers: newCustomers,
       identifiable_customers: identifiable,
@@ -1014,14 +1104,16 @@ async function buildOpsRectificationReport(pool, tenantId, opts = {}) {
   const dateFrom = cleanText(opts.dateFrom || (today.slice(0, 8) + '01'), 20);
   const dateTo = cleanText(opts.dateTo || today, 20);
   const storeId = cleanText(opts.storeId || '', 80);
-  const params = [dateFrom, dateTo, storeId];
+  const storeFilter = await resolveCustomerOpsStoreFilter(pool, tenantId, storeId);
+  const params = [dateFrom, dateTo, storeId, storeFilter.posStoreNames, storeFilter.posStorePatterns, storeFilter.posStoreIds];
+  const anomalyStoreSql = `($3::text='' OR store=$3 OR store=ANY($4::text[]) OR store=ANY($6::text[]) OR store ILIKE ANY($5::text[]))`;
   const anomaly = (await safeReportQuery(pool, `
     SELECT COUNT(*)::int AS total,
            COUNT(*) FILTER (WHERE severity IN ('high','critical'))::int AS high_risk,
            COUNT(*) FILTER (WHERE status NOT IN ('closed','resolved'))::int AS open_count,
            COUNT(*) FILTER (WHERE task_id IS NOT NULL AND task_id <> '')::int AS generated_tasks
     FROM anomaly_triggers
-    WHERE trigger_date >= $1::date AND trigger_date <= $2::date AND ($3::text='' OR store=$3)`, params, [{}]))[0] || {};
+    WHERE trigger_date >= $1::date AND trigger_date <= $2::date AND ${anomalyStoreSql}`, params, [{}]))[0] || {};
   const tasks = (await safeReportQuery(pool, `
     SELECT COUNT(*)::int AS total,
            COUNT(*) FILTER (WHERE status IN ('done','closed','completed'))::int AS completed,
@@ -1031,7 +1123,7 @@ async function buildOpsRectificationReport(pool, tenantId, opts = {}) {
   const rows = await safeReportQuery(pool, `
     SELECT anomaly_key, store, severity, status, trigger_date, task_id, resolution_code
     FROM anomaly_triggers
-    WHERE trigger_date >= $1::date AND trigger_date <= $2::date AND ($3::text='' OR store=$3)
+    WHERE trigger_date >= $1::date AND trigger_date <= $2::date AND ${anomalyStoreSql}
     ORDER BY trigger_date DESC LIMIT 30`, params, []);
   const totalTasks = Number(tasks.total || anomaly.generated_tasks || 0);
   const coreTasks = Number(anomaly.generated_tasks || 0);
@@ -1093,7 +1185,7 @@ async function buildOpsRectificationReport(pool, tenantId, opts = {}) {
     executive_summary: Number(anomaly.total || 0) > 0
       ? '本期系统发现多项经营异常，当前重点是推动责任人完成整改闭环并上传证据。'
       : '本期暂未发现需要重点追踪的经营异常，建议继续保持日常巡检。',
-    period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeId || '全部门店' },
+    period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeFilter.displayName },
     attribution_level: 'L2 改善归因',
     summary: {
       anomalies: Number(anomaly.total || 0),
@@ -1144,6 +1236,8 @@ async function buildTalentGrowthReport(pool, tenantId, opts = {}) {
   const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
   const dateFrom = cleanText(opts.dateFrom || (today.slice(0, 8) + '01'), 20);
   const dateTo = cleanText(opts.dateTo || today, 20);
+  const storeId = cleanText(opts.storeId || '', 80);
+  const storeFilter = await resolveCustomerOpsStoreFilter(pool, tenantId, storeId);
   const train = (await safeReportQuery(pool, `
     SELECT COUNT(*)::int AS tasks,
            COUNT(DISTINCT employee_username)::int AS employees
@@ -1168,7 +1262,7 @@ async function buildTalentGrowthReport(pool, tenantId, opts = {}) {
   return { ok: true, report: {
     title: 'AI人才盘点与岗位认证报告',
     executive_summary: '当前已沉淀岗位认证数据，但培训、考试、绩效尚未完全打通，建议先作为岗位能力盘点使用。',
-    period: { date_from: dateFrom, date_to: dateTo, store_filter: '全部门店' },
+    period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeFilter.displayName },
     attribution_level: 'L3 影响归因',
     data_status: tasks === 0 && sessionCount === 0 && certifications > 0 ? '当前已接入岗位认证数据，培训任务、学习过程、绩效关联正在逐步启用。因此本表主要用于岗位能力盘点，不作为培训效果或销售增长证明。' : '培训、认证与绩效数据正在汇总。',
     summary: {
@@ -1206,11 +1300,11 @@ async function buildTalentGrowthReport(pool, tenantId, opts = {}) {
     ],
     promotion_path: ['岗位认证通过', '绩效分达标', '任务完成率达标', '近30天无重大违规/客诉', '主管评价合格', '连续稳定周期达标', '进入晋升候选池'],
     enable_sequence: [
-      { step: '先补齐岗位与员工绑定', owner: 'HR/店长', deadline: '本周内', expected_result: '岗位盘点表从待接入变成可统计' },
-      { step: '选择1个岗位试跑培训任务', owner: '培训负责人', deadline: '7天内', expected_result: '验证培训任务闭环' },
-      { step: '接入考试结果', owner: '培训负责人', deadline: '14天内', expected_result: '形成考试通过率' },
-      { step: '接入任务完成率和绩效', owner: '运营/HR', deadline: '本月内', expected_result: '能判断执行稳定性' },
-      { step: '形成晋升候选规则', owner: 'HR负责人', deadline: '本月内', expected_result: '输出可信晋升候选池' },
+      { step: '先补齐岗位与员工绑定', target: '岗位/员工基础数据', owner: 'HR/店长', deadline: '本周内', expected_result: '岗位盘点表从待接入变成可统计' },
+      { step: '选择1个岗位试跑培训任务', target: '培训任务数据', owner: '培训负责人', deadline: '7天内', expected_result: '验证培训任务闭环' },
+      { step: '接入考试结果', target: '考试与认证数据', owner: '培训负责人', deadline: '14天内', expected_result: '形成考试通过率' },
+      { step: '接入任务完成率和绩效', target: '执行与绩效数据', owner: '运营/HR', deadline: '本月内', expected_result: '能判断执行稳定性' },
+      { step: '形成晋升候选规则', target: '晋升候选规则', owner: 'HR负责人', deadline: '本月内', expected_result: '输出可信晋升候选池' },
     ],
     action_entries: [
       { action: '补齐岗位与员工绑定', target: '全部门店岗位', owner: 'HR/店长', deadline: '本周内', expected_result: '看清岗位缺口和可顶岗人员' },
