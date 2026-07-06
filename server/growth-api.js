@@ -4205,11 +4205,22 @@ export function registerGrowthRoutes(app, pool) {
         );
 
         if (eventType === 'coupon_redeemed' && inserted.rows.length) {
-          await pool.query(
+          // 防重复提交(不是防合法二次核销)：growth_events 的幂等靠调用方传的 idempotency_key，
+          // 若小程序未传或每次生成不同，重试会插出2条 growth_events+growth_redemptions，同一笔
+          // 真实消费的营收被计入2次(实测发现同一券码10秒内被核销2次)。2张/1码券(coupon_count=2)
+          // 允许合法二次核销，但那发生在不同餐次(通常间隔数小时以上)，故只挡"短时间内(5分钟)
+          // 同券码重复提交"，不影响合法二次核销。
+          const couponIdForDup = cleanText(body.coupon_id, 128);
+          const dup = couponIdForDup ? await pool.query(
+            `SELECT 1 FROM growth_redemptions WHERE coupon_id = $1 AND tenant_id = $2
+               AND redeemed_at > $3::timestamptz - INTERVAL '5 minutes' LIMIT 1`,
+            [couponIdForDup, tenantId, occurredAt]
+          ) : { rows: [] };
+          if (!dup.rows.length) await pool.query(
             `INSERT INTO growth_redemptions (customer_id, coupon_id, campaign_id, store_id, amount_fen, metadata, redeemed_at, tenant_id)
              VALUES ($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6::jsonb,$7,$8)
              ON CONFLICT DO NOTHING`,
-            [customer?.id || null, cleanText(body.coupon_id, 128), campaignId, storeId, amountFen, JSON.stringify(metadata), occurredAt, tenantId]
+            [customer?.id || null, couponIdForDup, campaignId, storeId, amountFen, JSON.stringify(metadata), occurredAt, tenantId]
           );
           // 闭环回写：按核销回传的短码，把对应「已发送」短信日志翻成「已核销」，
           // 使 growth_delivery_logs 单表即可查「发→核销」全过程（核销率 = redeemed / sent）。
