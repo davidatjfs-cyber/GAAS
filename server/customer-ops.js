@@ -912,8 +912,8 @@ async function buildCustomerAssetReport(pool, tenantId, opts = {}) {
   const netAssetGrowth = newCustomers + dormantReactivated + Math.max(0, active - prevActive) - newDormantCustomers;
   const pctChange = (current, prev) => Number(prev || 0) > 0 ? (Number(current || 0) - Number(prev || 0)) / Number(prev || 0) : null;
   const assetSummary = customerRevenue >= Number(ps.customer_revenue || 0)
-    ? '本期客户资产保持增长，建议下月继续扩大新客二次复购和高价值客户维护。'
-    : '本期客户资产有新增，但客户贡献较上期下降，建议下月重点做新客二次复购和老客维护。';
+    ? '本期客户资产保持增长，说明客户池正在变厚。下月重点应继续放大新客二次复购和高价值客户维护。'
+    : '本期新增客户不少，但老客活跃和贡献下滑，说明客户资产正在“进得来、留不住”。下月重点应放在新客二次复购和高价值客户维护。';
   return { ok: true, report: {
     title: 'AI客户资产增长报告',
     executive_summary: assetSummary,
@@ -964,11 +964,11 @@ async function buildCustomerAssetReport(pool, tenantId, opts = {}) {
       customer_revenue: pctChange(customerRevenue, ps.customer_revenue),
     },
     stages: [
-      { name: '新增客户', count: newCustomers },
-      { name: '复购客户', count: repeatCustomers },
-      { name: '活跃客户', count: active },
-      { name: '高价值客户', count: vipCustomers },
-      { name: '沉睡唤醒', count: dormantReactivated },
+      { name: '新增客户', count: newCustomers, conversion_label: '二次复购转化率', conversion_rate: newCustomers > 0 ? repeatCustomers / newCustomers : 0 },
+      { name: '二次复购', count: repeatCustomers, conversion_label: '活跃转化率', conversion_rate: repeatCustomers > 0 ? active / repeatCustomers : null },
+      { name: '活跃客户', count: active, conversion_label: '高价值转化率', conversion_rate: active > 0 ? vipCustomers / active : 0 },
+      { name: '高价值客户', count: vipCustomers, conversion_label: 'VIP待转化', conversion_rate: null },
+      { name: '沉睡唤醒', count: dormantReactivated, conversion_label: '重新活跃客户', conversion_rate: identifiable > 0 ? dormantReactivated / identifiable : 0 },
     ],
     value_segments: [
       { name: '高价值客户', customers: Number(s.vip_primary_customers || 0), revenue: Number(s.vip_revenue || 0), rule: '优先口径：高消费或高频客户', action: '建立店长一对一维护池' },
@@ -978,15 +978,21 @@ async function buildCustomerAssetReport(pool, tenantId, opts = {}) {
       { name: '其他可识别客户', customers: Number(s.other_primary_customers || 0), revenue: Number(s.other_revenue || 0), rule: '用于让客户贡献营业额闭合', action: '继续沉淀标签和消费偏好' },
     ],
     insight_cards: [
-      { label: '机会', title: '新客识别率较高', text: '可把首次消费后7-14天未回店客户放入二次复购池。' },
-      { label: '风险', title: '活跃与贡献需看上期趋势', text: '若活跃客户或贡献营业额下降，应优先做老客回访。' },
-      { label: '重点', title: '高价值客户需要单独维护', text: '高价值客户占比低时，应建立VIP和店长一对一维护池。' },
+      { priority: 'P1', label: '风险', title: '活跃与贡献较上期下降', text: '老客维护和高价值客户回访要优先执行。' },
+      { priority: 'P1', label: '机会', title: '新客识别率较高', text: '可把首次消费后7-14天未回店客户放入二次复购池。' },
+      { priority: 'P2', label: '重点', title: '高价值客户需要单独维护', text: '高价值客户占比低时，应建立VIP和店长一对一维护池。' },
     ],
     next_month_pools: [
-      { name: '新客二次复购池', rule: '首次消费后7-14天未回店客户', action: '短信/企微提醒二次回店权益' },
-      { name: '高价值客户池', rule: '高消费或高频消费客户', action: '店长一对一维护和专属邀约' },
-      { name: '沉睡唤醒池', rule: '历史60天以上未消费、本期有回店迹象客户', action: '连续触达并复盘权益强度' },
-      { name: '储值提醒池', rule: '有余额但近期未消费客户', action: '余额提醒和套餐权益承接' },
+      { name: '新客二次复购池', customers: newCustomers, channel: '短信 + 企微提醒', benefit: '二次复购券', action: '对首次消费后7-14天未回店的新客发送二次复购短信，店长同步企微跟进。', owner: '店长/客户运营', deadline: '7天内', target: '7天后看回店率和实收金额' },
+      { name: '高价值客户池', customers: vipCustomers, channel: '店长一对一维护', benefit: '专属邀约/储值权益', action: '建立店长一对一维护池，优先邀约高消费或高频客户。', owner: '店长', deadline: '本月内', target: '提升复购和储值转化' },
+      { name: '沉睡唤醒池', customers: dormantReactivated, channel: '连续触达两轮', benefit: '回店权益', action: '对沉睡唤醒客户连续触达两轮，复盘权益强度。', owner: '客户运营', deadline: '14天内', target: '重新激活并进入活跃池' },
+      { name: '储值提醒池', customers: 0, channel: '余额提醒 + 菜品推荐', benefit: '余额消耗提醒', action: '提醒有余额但近期未消费客户回店消费。', owner: '店长/收银主管', deadline: '本月内', target: '消耗余额并带动复购' },
+    ],
+    action_entries: [
+      { action: '生成下月客户维护计划', target: '四类重点客户池', owner: '客户运营', deadline: '本周内', expected_result: '形成可执行触达节奏和复盘目标' },
+      { action: '生成短信/企微触达名单', target: '新客二次复购池、沉睡唤醒池', owner: '客户运营', deadline: '3天内', expected_result: '完成第一轮触达并记录触达结果' },
+      { action: '生成店长跟进任务', target: '高价值客户池', owner: '店长', deadline: '7天内', expected_result: '完成一对一维护并复盘回店金额' },
+      { action: '导出重点客户清单', target: '可识别客户与高价值客户', owner: '运营负责人', deadline: '今天', expected_result: '给门店形成可落地名单' },
     ],
     recommendations: [
       '把新客二次复购作为下月核心动作，重点跟踪首次消费后7-14天回店。',
@@ -1072,7 +1078,12 @@ async function buildOpsRectificationReport(pool, tenantId, opts = {}) {
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
-  const topProblems = normalizedRows.slice(0, 3).map((r) => ({
+  const dedupedProblems = [];
+  for (const r of normalizedRows) {
+    if (!dedupedProblems.find((x) => x.type === r.type)) dedupedProblems.push(r);
+    if (dedupedProblems.length >= 3) break;
+  }
+  const topProblems = dedupedProblems.map((r) => ({
     title: r.type,
     impact: r.raw_type === 'recharge_zero' ? '客户资金沉淀不足' : r.raw_type?.includes('review') ? '复购和口碑风险' : r.raw_type?.includes('dish') ? '产品销售能力或推荐动作不足' : '门店经营指标波动',
     suggestion: r.raw_type === 'recharge_zero' ? '本周重点推动储值权益和老客回访' : r.raw_type?.includes('review') ? '店长完成服务/出品流程复训' : r.raw_type?.includes('dish') ? '复盘推荐话术和菜单曝光' : '责任人当天确认并提交整改动作',
@@ -1102,13 +1113,14 @@ async function buildOpsRectificationReport(pool, tenantId, opts = {}) {
       estimated_revenue_impact: 0,
     },
     funnel: [
-      { name: '发现异常', value: Number(anomaly.total || 0) },
-      { name: '高风险异常', value: Number(anomaly.high_risk || 0) },
-      { name: '已生成任务', value: totalTasks },
-      { name: '已响应', value: Math.max(0, totalTasks - Number(anomaly.open_count || 0)) },
-      { name: '执行中', value: Math.max(0, totalTasks - completed) },
-      { name: '待复盘', value: Math.max(0, Number(anomaly.open_count || 0)) },
-      { name: '已验证改善', value: completed },
+      { name: '发现异常', value: Number(anomaly.total || 0), note: '系统识别出经营波动' },
+      { name: '高风险异常', value: Number(anomaly.high_risk || 0), note: '需要老板或店长优先关注' },
+      { name: '已生成任务', value: totalTasks, note: '系统已形成任务池' },
+      { name: '已派发任务', value: null, note: '待接入任务派发数据' },
+      { name: '已确认响应', value: Math.max(0, totalTasks - Number(anomaly.open_count || 0)), note: '责任人已收到或开始处理' },
+      { name: '待上传证据', value: null, note: '待接入证据上传数据' },
+      { name: '待复盘验证', value: Math.max(0, Number(anomaly.open_count || 0)), note: '需要查看整改后指标' },
+      { name: '已验证改善', value: completed, note: '系统确认指标改善' },
     ],
     task_definitions: [
       '核心整改任务：必须由责任人完成，并上传整改证据的关键任务。',
@@ -1118,6 +1130,11 @@ async function buildOpsRectificationReport(pool, tenantId, opts = {}) {
     top_problems: topProblems,
     case_cards: normalizedRows.slice(0, 3),
     rows: normalizedRows,
+    action_entries: [
+      { action: '责任人确认异常原因', target: '高风险异常门店', owner: '店长/责任主管', deadline: '24小时内', expected_result: '确认原因并生成第一轮整改动作' },
+      { action: '上传整改证据', target: '已派发整改任务', owner: '任务责任人', deadline: '3天内', expected_result: '形成可复盘证据链' },
+      { action: '复盘整改后指标', target: '待复盘异常', owner: '运营负责人', deadline: '7天后', expected_result: '判断是否已验证改善' },
+    ],
     recommendations: ['先跑通3-5个真实闭环案例，再把这张表用于对外销售。', '高风险异常需要老板日清，不建议只留在报表里。', '超期任务要进入店长排名，形成执行压力。', '整改后必须回看指标，否则不能证明经营闭环有效。'],
     methodology: ['L2改善归因：证明异常经过系统发现、派发、执行后指标是否改善。', '本报表不把整改动作直接等同于新增营业额，避免过度归因。', '只有完成证据、整改前后数值、复盘结论齐全时，才计入已验证改善。']
   }};
@@ -1188,6 +1205,18 @@ async function buildTalentGrowthReport(pool, tenantId, opts = {}) {
       { role: '店长', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
     ],
     promotion_path: ['岗位认证通过', '绩效分达标', '任务完成率达标', '近30天无重大违规/客诉', '主管评价合格', '连续稳定周期达标', '进入晋升候选池'],
+    enable_sequence: [
+      { step: '先补齐岗位与员工绑定', owner: 'HR/店长', deadline: '本周内', expected_result: '岗位盘点表从待接入变成可统计' },
+      { step: '选择1个岗位试跑培训任务', owner: '培训负责人', deadline: '7天内', expected_result: '验证培训任务闭环' },
+      { step: '接入考试结果', owner: '培训负责人', deadline: '14天内', expected_result: '形成考试通过率' },
+      { step: '接入任务完成率和绩效', owner: '运营/HR', deadline: '本月内', expected_result: '能判断执行稳定性' },
+      { step: '形成晋升候选规则', owner: 'HR负责人', deadline: '本月内', expected_result: '输出可信晋升候选池' },
+    ],
+    action_entries: [
+      { action: '补齐岗位与员工绑定', target: '全部门店岗位', owner: 'HR/店长', deadline: '本周内', expected_result: '看清岗位缺口和可顶岗人员' },
+      { action: '试跑一个岗位培训闭环', target: '优先选择前厅服务员或烧鹅档', owner: '培训负责人', deadline: '7天内', expected_result: '验证学习、考试、认证流程' },
+      { action: '建立晋升候选规则', target: '已认证员工', owner: 'HR负责人', deadline: '本月内', expected_result: '输出可解释的后备主管/店长名单' },
+    ],
     rows: [
       { item: '学习完成', metric: '完成率', value: tasks > 0 ? completed / tasks : null, conclusion: tasks > 0 ? '看员工是否按时完成学习' : '本期暂无培训任务数据' },
       { item: '考试掌握', metric: '通过率', value: sessionCount > 0 ? passed / sessionCount : null, conclusion: sessionCount > 0 ? '看知识是否被掌握' : '本期暂无考试过程数据' },
