@@ -1140,13 +1140,24 @@ async function buildOpsRectificationReport(pool, tenantId, opts = {}) {
     avg_check_drop: '客单价下降',
     gross_margin: '毛利异常',
   };
+  const anomalyLabel = (key) => {
+    const raw = cleanText(key || '', 120);
+    if (labelMap[raw]) return labelMap[raw];
+    if (/private_room|包房/i.test(raw)) return '包房消费异常';
+    if (/table|visit|客率|桌访/i.test(raw)) return '桌访/来客率异常';
+    if (/dish|菜品|product/i.test(raw)) return '菜品销量下滑';
+    if (/review|差评|service/i.test(raw)) return '口碑评价异常';
+    if (/recharge|储值/i.test(raw)) return '储值新增异常';
+    if (/revenue|营业额/i.test(raw)) return '营业额异常';
+    return raw ? '经营异常' : '经营异常';
+  };
   const severityMap = { critical: 'P0 老板必须关注', high: 'P1 店长当天处理', medium: 'P2 主管本周处理', low: 'P3 持续观察' };
   const statusMap = { open: '待响应', assigned: '已派发', processing: '处理中', done: '已完成', completed: '已完成', closed: '已复盘', resolved: '已改善' };
   const normalizedRows = rows.map((r) => ({
-    type: labelMap[r.anomaly_key] || r.anomaly_key || '经营异常',
+    type: anomalyLabel(r.anomaly_key),
     raw_type: r.anomaly_key || '',
-    description: `${labelMap[r.anomaly_key] || r.anomaly_key || '经营异常'}需要复盘`,
-    impact_metric: labelMap[r.anomaly_key] || '经营指标',
+    description: `${anomalyLabel(r.anomaly_key)}需要复盘`,
+    impact_metric: anomalyLabel(r.anomaly_key),
     impact_level: severityMap[r.severity] || r.severity || '-',
     store: r.store || '-',
     owner_role: r.assigned_role || '店长/责任主管',
@@ -1259,12 +1270,17 @@ async function buildTalentGrowthReport(pool, tenantId, opts = {}) {
   const certifications = Number(cert.certifications || 0);
   const avgScore = Number(scores.avg_score || 0);
   const promotionCandidates = certifications > 0 && avgScore >= 85 && sessionCount > 0 && (passed / Math.max(1, sessionCount)) >= 0.9 ? certifications : 0;
+  const canStandInEmployees = null;
+  const talentDataStatus = '“待接入”不是系统没跑完，而是当前还没有接入或没有形成对应数据，例如员工岗位绑定、主管确认、任务完成率、绩效、考勤和客诉。后续这些数据进入系统后，本表会自动显示具体人数、比例和岗位风险。';
   return { ok: true, report: {
     title: 'AI人才盘点与岗位认证报告',
     executive_summary: '当前已沉淀岗位认证数据，但培训、考试、绩效尚未完全打通，建议先作为岗位能力盘点使用。',
     period: { date_from: dateFrom, date_to: dateTo, store_id: storeId, store_filter: storeFilter.displayName },
     attribution_level: 'L3 影响归因',
-    data_status: tasks === 0 && sessionCount === 0 && certifications > 0 ? '当前已接入岗位认证数据，培训任务、学习过程、绩效关联正在逐步启用。因此本表主要用于岗位能力盘点，不作为培训效果或销售增长证明。' : '培训、认证与绩效数据正在汇总。',
+    data_status: talentDataStatus,
+    role_health_summary: '当前岗位数据尚未完整接入，建议优先补齐前厅服务员、烧鹅档、店长三个关键岗位的在岗与认证关系。数据完整后，这里会自动判断最大岗位风险、最稳定岗位和优先培养对象。',
+    promotion_blocker: '当前卡点：绩效、任务完成率、考勤、客诉和主管评价尚未完整接入，因此晋升候选只做规则说明，不直接给出候选名单。',
+    stand_in_rule: '可顶岗员工 = 岗位认证通过 + 主管确认 + 近30天无重大异常；仅完成岗位认证不等于可以顶岗。',
     summary: {
       training_tasks: tasks,
       participating_employees: Math.max(Number(train.employees || 0), Number(sessions.learned_employees || 0)),
@@ -1275,14 +1291,15 @@ async function buildTalentGrowthReport(pool, tenantId, opts = {}) {
       high_potential_employees: avgScore >= 85 ? Number(scores.score_count || 0) : 0,
       promotion_candidates: promotionCandidates,
       certification_only_employees: certifications,
+      can_stand_in_employees: canStandInEmployees,
       coaching_needed_employees: sessionCount > 0 ? Math.max(0, sessionCount - passed) : 0,
       enabled_metrics: certifications,
     },
     enabled_metrics: [
-      { label: '岗位认证人数', value: certifications },
-      { label: '认证岗位数', value: certifications > 0 ? 1 : 0 },
-      { label: '可顶岗员工', value: certifications },
-      { label: '认证覆盖率', value: null },
+      { label: '已认证员工', value: certifications, note: '完成岗位认证，不等于可顶岗' },
+      { label: '认证岗位数', value: certifications > 0 ? 1 : 0, note: '按当前已接入认证记录统计' },
+      { label: '可顶岗员工', value: canStandInEmployees, status: '待确认', note: '需主管确认和近30天无重大异常' },
+      { label: '认证覆盖率', value: null, status: '待接入', note: '需岗位在岗人数' },
     ],
     pending_metrics: [
       { label: '培训任务', status: tasks > 0 ? '已启用' : '待启用' },
@@ -1291,20 +1308,20 @@ async function buildTalentGrowthReport(pool, tenantId, opts = {}) {
       { label: '晋升候选', status: promotionCandidates > 0 ? '已筛选' : '待规则筛选' },
     ],
     role_rows: [
-      { role: '前厅服务员', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
-      { role: '迎宾', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
-      { role: '收银', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
-      { role: '烧鹅档', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
-      { role: '炒锅', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
-      { role: '店长', on_duty: null, certified: null, coverage: null, backup: null, gap: null, reserve: '待接入员工岗位数据' },
+      { role: '前厅服务员', on_duty: null, certified: null, stand_in: null, coverage: null, backup: null, gap: null, risk: '待接入', reserve: '待接入员工岗位数据' },
+      { role: '迎宾', on_duty: null, certified: null, stand_in: null, coverage: null, backup: null, gap: null, risk: '待接入', reserve: '待接入员工岗位数据' },
+      { role: '收银', on_duty: null, certified: null, stand_in: null, coverage: null, backup: null, gap: null, risk: '待接入', reserve: '待接入员工岗位数据' },
+      { role: '烧鹅档', on_duty: null, certified: null, stand_in: null, coverage: null, backup: null, gap: null, risk: '待接入', reserve: '待接入员工岗位数据' },
+      { role: '炒锅', on_duty: null, certified: null, stand_in: null, coverage: null, backup: null, gap: null, risk: '待接入', reserve: '待接入员工岗位数据' },
+      { role: '店长', on_duty: null, certified: null, stand_in: null, coverage: null, backup: null, gap: null, risk: '待接入', reserve: '待接入员工岗位数据' },
     ],
     promotion_path: ['岗位认证通过', '绩效分达标', '任务完成率达标', '近30天无重大违规/客诉', '主管评价合格', '连续稳定周期达标', '进入晋升候选池'],
     enable_sequence: [
       { step: '先补齐岗位与员工绑定', target: '岗位/员工基础数据', owner: 'HR/店长', deadline: '本周内', expected_result: '岗位盘点表从待接入变成可统计' },
-      { step: '选择1个岗位试跑培训任务', target: '培训任务数据', owner: '培训负责人', deadline: '7天内', expected_result: '验证培训任务闭环' },
-      { step: '接入考试结果', target: '考试与认证数据', owner: '培训负责人', deadline: '14天内', expected_result: '形成考试通过率' },
-      { step: '接入任务完成率和绩效', target: '执行与绩效数据', owner: '运营/HR', deadline: '本月内', expected_result: '能判断执行稳定性' },
-      { step: '形成晋升候选规则', target: '晋升候选规则', owner: 'HR负责人', deadline: '本月内', expected_result: '输出可信晋升候选池' },
+      { step: '选1个岗位试跑：前厅服务员', target: '前厅服务员岗位', owner: '培训负责人', deadline: '3天内', expected_result: '明确试点员工和训练目标' },
+      { step: '选1个培训主题：招牌菜推荐话术', target: '招牌菜推荐话术', owner: '培训负责人', deadline: '7天内', expected_result: '完成培训内容、考试题和任务标准' },
+      { step: '选10名员工参与试点', target: '前厅服务员10人', owner: '店长/培训负责人', deadline: '7天内', expected_result: '形成可观察的学习和执行样本' },
+      { step: '14天后复盘结果', target: '考试/任务/推荐菜销量', owner: '运营/HR', deadline: '14天后', expected_result: '看考试通过率、任务完成率、推荐菜销量变化' },
     ],
     action_entries: [
       { action: '补齐岗位与员工绑定', target: '全部门店岗位', owner: 'HR/店长', deadline: '本周内', expected_result: '看清岗位缺口和可顶岗人员' },
@@ -1318,8 +1335,8 @@ async function buildTalentGrowthReport(pool, tenantId, opts = {}) {
       { item: '执行表现', metric: '平均绩效分', value: avgScore > 0 ? avgScore : null, conclusion: avgScore > 0 ? '看认证后执行稳定性' : '绩效分尚未与培训认证完整关联' },
       { item: '人才梯队', metric: '晋升候选', value: promotionCandidates, conclusion: '晋升候选需同时满足认证、绩效、任务完成率和无重大违规' },
     ],
-    recommendations: ['先把本报表定位为内部岗位认证和人才池管理表，暂不作为销售主证据。', '服务话术和招牌菜推荐培训要关联销售结果复盘。', '未通过员工进入二次辅导，不只记录分数。', '晋升候选必须叠加绩效、任务完成率、考勤、客诉和主管评价，不能等同于岗位认证。'],
-    methodology: ['L3影响归因：展示培训、认证、执行、绩效之间的相关变化。', '岗位认证只代表技能认证完成，不直接等同于晋升候选。', '不直接声明培训创造营业额，而是证明员工能力和执行结果正在改善。']
+    recommendations: ['先把本报表定位为内部岗位认证和人才池管理表，暂不作为销售主证据。', '从一个岗位、一个培训主题、10名员工、一轮14天复盘开始跑闭环。', '服务话术和招牌菜推荐培训要关联销售结果复盘。', '晋升候选必须叠加绩效、任务完成率、考勤、客诉和主管评价，不能等同于岗位认证。'],
+    methodology: ['L3影响归因：展示培训、认证、执行、绩效之间的相关变化。', '已认证员工只代表岗位认证完成；可顶岗员工必须满足认证通过、主管确认、近30天无重大异常。', '待接入表示对应业务数据尚未进入系统或尚未形成可统计结果；数据完整后会自动显示具体数值。', '不直接声明培训创造营业额，而是证明员工能力和执行结果正在改善。']
   }};
 }
 
