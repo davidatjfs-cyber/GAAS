@@ -490,7 +490,28 @@ async function ensureCustomerOpsTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_segments_tenant ON customer_segments (tenant_id, created_at DESC)`);
 
   // 模块3：营销活动台账
+  // marketing_campaigns在本模块之前就已存在(更早的老版本"维护导航舱"用的是
+  // start_date/target_metric等字段)，CREATE TABLE IF NOT EXISTS对已存在的老表是空操作，
+  // 不会补上下面这些新字段——历史上这个缺口只在生产库上手动ALTER过、未进代码，
+  // 新环境(比如全新客户/demo)首次启动就会在下一行CREATE INDEX时因缺列报错。
+  // 这里显式补齐，保证无论老表(缺列)还是全新库(建表已含全部列)都能正常往下走。
   await pool.query(`CREATE TABLE IF NOT EXISTS marketing_campaigns (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', title TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'offline', campaign_type TEXT DEFAULT '其他', status TEXT NOT NULL DEFAULT 'planned', planned_date DATE, planned_end_date DATE, store_ids JSONB DEFAULT '[]'::jsonb, target_audience TEXT DEFAULT '', target_count INT DEFAULT 0, content TEXT DEFAULT '', goal TEXT DEFAULT '', budget NUMERIC DEFAULT 0, reminder_date DATE, source TEXT DEFAULT 'manual', created_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'offline'`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS campaign_type TEXT DEFAULT '其他'`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS planned_date DATE`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS planned_end_date DATE`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS store_ids JSONB DEFAULT '[]'::jsonb`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS target_audience TEXT DEFAULT ''`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS target_count INT DEFAULT 0`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS content TEXT DEFAULT ''`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS goal TEXT DEFAULT ''`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS budget NUMERIC DEFAULT 0`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS reminder_date DATE`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual'`);
+  // status约束的'in_progress'取值是生产历史上手动加的、从未进过代码；这里用DROP+ADD
+  // 保证幂等，同时覆盖老库(约束缺in_progress)和全新库(约束还不存在)两种情况。
+  await pool.query(`ALTER TABLE marketing_campaigns DROP CONSTRAINT IF EXISTS marketing_campaigns_status_check`);
+  await pool.query(`ALTER TABLE marketing_campaigns ADD CONSTRAINT marketing_campaigns_status_check CHECK (status = ANY (ARRAY['planned'::text, 'active'::text, 'in_progress'::text, 'paused'::text, 'completed'::text, 'cancelled'::text]))`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_tenant ON marketing_campaigns (tenant_id, planned_date DESC)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS marketing_campaign_results (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', campaign_id BIGINT REFERENCES marketing_campaigns(id) ON DELETE CASCADE, store_id TEXT NOT NULL DEFAULT '', store_name TEXT DEFAULT '', actual_send_count INT DEFAULT 0, actual_reach_count INT DEFAULT 0, actual_conversion_count INT DEFAULT 0, actual_revenue NUMERIC DEFAULT 0, result_note TEXT DEFAULT '', recorded_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_mkt_campaign_results ON marketing_campaign_results (tenant_id, campaign_id)`);
