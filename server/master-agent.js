@@ -174,6 +174,8 @@ export async function ensureMasterTables() {
     `);
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_master_tasks_status ON master_tasks (status)`);
+    await client.query(`ALTER TABLE master_tasks ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default'`);
+    await client.query(`ALTER TABLE master_events ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default'`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_master_tasks_store ON master_tasks (store, status)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_master_tasks_assignee ON master_tasks (assignee_username, status)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_master_tasks_task_id ON master_tasks (task_id)`);

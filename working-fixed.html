@@ -58451,6 +58451,11 @@ ${body}
                                 + custopsMiniMetric('待维护风险', risk + '人', '濒临流失/沉睡', '#fb7185')
                                 + custopsMiniMetric('可触达客户', reachable + '人', '手机号可用，商务客' + biz + '人，储值客' + stored + '人', '#22c55e')
                                 + '</div>';
+                            try {
+                                var assetReportRes = await fetch('/api/customer-ops/reports/customer-assets', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                                var assetReportData = await assetReportRes.json();
+                                if (assetReportData && assetReportData.report) ps.innerHTML += renderBusinessOntologySection(assetReportData.report);
+                            } catch (_) {}
                         }
                         host.innerHTML = '<div style="font-size:12px;color:rgba(226,232,240,0.55);margin-bottom:8px;">来自最近POS清洗诊断 · 点击查看360档案</div>' + opsRows.slice(0, 80).map(function(c) {
                             var tags = (c.scene_tags || []).map(custSceneLabel).join('、') || custStageLabel(c.lifecycle_stage);
@@ -58536,6 +58541,70 @@ ${body}
                 + '<div class="s">' + escapeHtml(sub || '') + '</div>'
                 + '</div>';
         }
+        function renderBusinessOntologySection(report) {
+            if (!report) return '';
+            if (report.ontologyStatus === 'insufficient_data') {
+                return '<div class="rep-metric" style="text-align:left;margin-top:12px;"><div class="k">AI经营结论</div><div style="font-size:13px;color:var(--rep-muted);margin-top:8px;">当前数据不足，暂无法生成经营判断。</div></div>';
+            }
+            var insights = report.ontologyInsights || [];
+            var actions = report.actionPlan || [];
+            var drafts = report.taskDrafts || [];
+            var metrics = report.trackingMetrics || [];
+            if (!insights.length && !actions.length && !drafts.length) return '';
+            var issueHtml = insights.slice(0, 4).map(function(x) {
+                return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);">'
+                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.bossLanguageTitle || x.issueName || '-') + '</b><span style="color:' + (x.severity === 'P1' ? '#fb7185' : '#facc15') + ';font-weight:800;">' + escapeHtml(x.severity || '-') + '</span></div>'
+                    + '<div style="font-size:12px;color:rgba(226,232,240,.68);margin-top:4px;">' + escapeHtml(x.issueName || '') + ' · 责任对象：' + escapeHtml((x.responsibleRoles || []).join('、') || '-') + '</div>'
+                    + '<div style="font-size:12px;color:rgba(226,232,240,.5);margin-top:4px;line-height:1.55;">' + escapeHtml((x.evidence || []).join('；') || '-') + '</div>'
+                    + '</div>';
+            }).join('');
+            var actionHtml = actions.slice(0, 5).map(function(a) {
+                return '<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
+                    + '<b style="color:#fff;">' + escapeHtml(a.actionName || '-') + '</b>'
+                    + '<div style="color:rgba(226,232,240,.62);">责任：' + escapeHtml(a.ownerRole || '-') + ' · 优先级：' + escapeHtml(a.priority || '-') + ' · 截止：' + (a.deadlineDays || 3) + '天</div>'
+                    + '<div style="color:rgba(226,232,240,.5);">' + escapeHtml(a.expectedResult || '-') + '</div>'
+                    + '</div>';
+            }).join('');
+            var draftHtml = drafts.slice(0, 5).map(function(t) {
+                var encoded = encodeURIComponent(JSON.stringify(t));
+                return '<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
+                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(t.title || '-') + '</b><span style="color:#38bdf8;">draft</span></div>'
+                    + '<div style="color:rgba(226,232,240,.62);">责任：' + escapeHtml(t.ownerRole || '-') + ' · 到期：' + escapeHtml(String(t.dueDate || '').slice(0, 10)) + '</div>'
+                    + '<div style="color:rgba(226,232,240,.5);">' + escapeHtml(t.expectedResult || '-') + '</div>'
+                    + '<div style="display:flex;gap:8px;margin-top:8px;"><button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" onclick="confirmCreateOntologyTask(decodeURIComponent(\'' + encoded + '\'), this)">确认创建任务</button><button class="rep-seg-btn" style="width:auto;padding:7px 12px;" onclick="this.closest(\'div\').innerHTML=\'<span style=&quot;color:var(--rep-muted)&quot;>已暂不处理</span>\'">暂不处理</button></div>'
+                    + '</div>';
+            }).join('');
+            var review = report.previousActionReview || null;
+            var reviewHtml = review ? '<div style="margin-top:12px;"><div class="k">上期动作复盘</div><div style="font-size:12px;color:rgba(226,232,240,.65);line-height:1.6;margin-top:8px;">' + escapeHtml(review.summary || '上期动作已有记录，但当前追踪数据不足，暂无法判断改善结果。') + '</div></div>' : '';
+            return '<div class="rep-metric" style="text-align:left;margin-top:12px;">'
+                + '<div class="k">AI经营结论</div><div style="font-size:14px;color:#fff;line-height:1.7;margin-top:8px;">' + escapeHtml(report.bossSummary || '-') + '</div>'
+                + '<div class="rep-grid" style="grid-template-columns:1fr 1fr;margin-top:12px;">'
+                + '<div><div class="k">AI识别的问题</div>' + (issueHtml || '<div style="font-size:12px;color:var(--rep-muted);margin-top:8px;">暂无P1/P2问题</div>') + '</div>'
+                + '<div><div class="k">下一步动作</div>' + (actionHtml || '<div style="font-size:12px;color:var(--rep-muted);margin-top:8px;">暂无动作</div>') + '</div>'
+                + '</div>'
+                + '<div style="margin-top:12px;"><div class="k">结果追踪指标</div><div style="margin-top:8px;">' + (metrics.length ? metrics.map(function(m){ return '<span style="display:inline-block;margin:4px 6px 0 0;padding:5px 9px;border-radius:999px;background:rgba(34,197,94,.12);color:#86efac;font-size:12px;">' + escapeHtml(m) + '</span>'; }).join('') : '<span style="color:var(--rep-muted);font-size:12px;">暂无</span>') + '</div></div>'
+                + '<div style="margin-top:12px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="k">任务草稿</div><span style="font-size:12px;color:var(--rep-muted);">生成任务草稿</span></div>' + (draftHtml || '<div style="font-size:12px;color:var(--rep-muted);margin-top:8px;">暂无草稿</div>') + '</div>'
+                + reviewHtml
+                + '</div>';
+        }
+        async function confirmCreateOntologyTask(encodedDraft, btn) {
+            try {
+                var taskDraft = JSON.parse(encodedDraft || '{}');
+                var storeId = document.getElementById('growth-store-filter')?.value || '';
+                var r = await fetch('/api/ontology/business/create-task-from-draft', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token'), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ taskDraft: taskDraft, reportType: 'customer_assets', storeId: storeId })
+                });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'create_failed');
+                var ct = d.createdTask || {};
+                if (btn) btn.closest('div').innerHTML = '<span style="color:#22c55e;">已生成正式任务 · ' + escapeHtml(ct.task_id || '') + ' · ' + escapeHtml(ct.status || 'pending_dispatch') + '</span>';
+                showNotification('已生成正式任务', 'success');
+            } catch (e) {
+                if (btn) btn.closest('div').innerHTML += '<div style="color:#ef4444;margin-top:6px;">创建任务失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+        }
         function renderCustomerOpsCleaning(q) {
             var c = (q && q.cleaning) || {};
             var sheets = c.sheets || [];
@@ -58598,6 +58667,7 @@ ${body}
                 + custopsMiniMetric('赠送金额', fmtCustMoney(sv.gift), '会员权益成本', '#facc15')
                 + custopsMiniMetric('储值余额', fmtCustMoney(sv.balance), '客户预付资产', '#fb7185')
                 + '</div>'
+                + renderBusinessOntologySection(report)
                 + renderCustomerOpsCleaning(q);
         }
         async function uploadCustomerOpsDiagnosis() {
@@ -59055,7 +59125,32 @@ ${body}
                 var d = await r.json();
                 if (!d.ok) throw new Error(d.error || 'load_failed');
                 var rules = d.rules || [];
-                host.innerHTML = rules.length
+                var attributionHtml = '';
+                try {
+                    var ar = await fetch('/api/customer-ops/attribution-report' + qs, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
+                    var ad = await ar.json();
+                    var rep = ad && ad.report;
+                    if (rep && rep.summary) {
+                        var evidence = rep.evidenceDetails || rep.evidence_orders || [];
+                        var evHtml = evidence.length ? '<details style="margin-bottom:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px;"><summary style="cursor:pointer;color:#fff;font-weight:800;">归因证据 · 以下订单为本次营销触达后 7 天内产生的真实消费记录</summary>'
+                            + evidence.slice(0, 20).map(function(e) {
+                                var assisted = e.attributionType === 'assisted' ? '<div style="color:#facc15;margin-top:4px;">辅助归因：客户在触达后窗口内回店，但未使用对应优惠券。</div>' : '';
+                                return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.6;">'
+                                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">客户 ' + escapeHtml(e.customerId || e.phone || '-') + '</b><span style="color:#38bdf8;">' + escapeHtml(e.attributionType || '-') + '</span></div>'
+                                    + '<div style="color:rgba(226,232,240,.65);">触达：' + escapeHtml(String(e.touchTime || e.last_touch_date || '-').slice(0, 16)) + ' · 回店：' + escapeHtml(String(e.orderTime || e.date || '-').slice(0, 16)) + ' · 订单：' + escapeHtml(e.relatedOrderId || e.order_no || '-') + '</div>'
+                                    + '<div style="color:rgba(226,232,240,.55);">金额：' + fmtCustMoney(e.orderAmount || e.revenue) + ' · 用券：' + (e.couponUsed ? '是' : '否') + ' · 券：' + escapeHtml(e.couponId || '-') + '</div>'
+                                    + assisted
+                                    + '</div>';
+                            }).join('') + '</details>' : '';
+                        attributionHtml = '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:12px;">'
+                            + custopsMiniMetric('触达人数', rep.summary.touched_customers || 0, '自动营销触达客户', '#fff')
+                            + custopsMiniMetric('回店人数', rep.summary.returned_customers || 0, '触达窗口内回店', '#22c55e')
+                            + custopsMiniMetric('归因营业额', fmtCustMoney(rep.summary.attributed_revenue), '有订单记录支撑', '#38bdf8')
+                            + custopsMiniMetric('转化率', pctCust(rep.summary.return_rate), '回店/触达', '#facc15')
+                            + '</div>' + evHtml;
+                    }
+                } catch (_) {}
+                host.innerHTML = attributionHtml + (rules.length
                     ? '<div style="font-size:12px;color:var(--rep-muted);margin-bottom:10px;">' + escapeHtml(d.date_from || '') + ' 至 ' + escapeHtml(d.date_to || '') + '</div>'
                     + rules.map(function(x) {
                         return '<div style="background:rgba(255,255,255,.04);border-radius:10px;padding:12px;margin-bottom:8px;">'
@@ -59067,7 +59162,7 @@ ${body}
                             + '<div style="font-size:11px;color:var(--rep-muted);margin-top:5px;">最近发送：' + escapeHtml(x.last_sent_date || '-') + '</div>'
                             + '</div>';
                     }).join('')
-                    : '<div class="rep-pay-empty">该时段无自动营销发送记录</div>';
+                    : '<div class="rep-pay-empty">该时段无自动营销发送记录</div>');
             } catch (e) {
                 host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
             }

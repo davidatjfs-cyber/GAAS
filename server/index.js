@@ -78,6 +78,7 @@ import { ensureGrowthSolutionsSchema, registerGrowthSolutionRoutes, setSolutionN
 import strategyExperimentRoutes from './strategy-experiment-api.js';
 import { ensurePhaseTables, registerPhaseRoutes } from './growth-phases.js';
 import { ensureCustomerOpsTables, registerCustomerOpsRoutes } from './customer-ops.js';
+import { registerMarketingAttributionRoutes } from './marketing/marketing-attribution-routes.js';
 import {
   reconcileDailyReportAttendanceRegister,
   backfillDailyAttendanceRegisterMissing,
@@ -5746,6 +5747,7 @@ setSolutionLLM(async (prompt) => {
 setTrainingAssigner(createTrainingAssignment);
 registerPhaseRoutes(app, pool);
 registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM);
+registerMarketingAttributionRoutes(app, pool, authRequired);
 // 托管控制台（内部 Agent Ops 使用，不对租户开放）：复用同一套业务逻辑，
 // 仅换成平台管理员鉴权 + URL 中的 :tenantId 决定操作对象。
 registerCustomerOpsRoutes(app, pool, platformAdminRequired, upload, uploadsDir, recordUploadOwnership, callLLM, {
@@ -5925,9 +5927,12 @@ async function ensureUserSessionsTable() {
       `create table if not exists user_sessions (
         username varchar(100) primary key,
         session_nonce varchar(64) not null,
+        tenant_id varchar(80) not null default 'default',
         updated_at timestamp default current_timestamp
       )`
     );
+    await client.query(`alter table user_sessions add column if not exists tenant_id varchar(80) not null default 'default'`);
+    await client.query(`create unique index if not exists user_sessions_username_tenant_idx on user_sessions (username, tenant_id)`);
   } catch (e) {
     console.error('ensureUserSessionsTable failed:', e);
   } finally {
@@ -5936,6 +5941,47 @@ async function ensureUserSessionsTable() {
     } catch (_e) {
       /* ignore */
     }
+  }
+}
+
+async function ensureTenantRuntimeTables() {
+  if (!DATABASE_URL) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tenants (
+        id BIGSERIAL PRIMARY KEY,
+        tenant_id TEXT UNIQUE NOT NULL,
+        name TEXT,
+        mode TEXT DEFAULT 'managed',
+        status TEXT DEFAULT 'active',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS licenses (
+        id BIGSERIAL PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        status TEXT DEFAULT 'trial',
+        expires_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tenant_config (
+        id BIGSERIAL PRIMARY KEY,
+        tenant_key TEXT NOT NULL,
+        config_key TEXT NOT NULL,
+        config_value JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (tenant_key, config_key)
+      )`);
+    await pool.query(`
+      INSERT INTO tenants (tenant_id, name, mode, status)
+      VALUES ('default', '本地默认租户', 'managed', 'active')
+      ON CONFLICT (tenant_id) DO UPDATE SET status='active', updated_at=NOW()`);
+  } catch (e) {
+    console.error('ensureTenantRuntimeTables failed:', e?.message || e);
   }
 }
 
@@ -20854,6 +20900,18 @@ app.listen(PORT, HOST, async () => {
   // Initialize multi-agent system
   try {
     await runWithBootstrapTenantContext(async () => {
+      await ensureTenantRuntimeTables();
+    });
+    setMasterPool(pool);
+    setReportPool(pool);
+    setSalesRawPool(pool);
+    setDataExecutorPool(pool);
+    setTaskResponseHook(handleTaskResponse);
+    await runWithBootstrapTenantContext(async () => {
+      await ensureMasterTables();
+    });
+
+    await runWithBootstrapTenantContext(async () => {
       // 登录会话表：必须在 ALLOW_SCHEMA_CHANGES 之外也能创建，否则 INSERT 失败 + 仍签发 JWT → 全站 session 校验失败
       await ensureUserSessionsTable();
       await ensureGrowthTables(pool).catch(e => console.warn('[growth] ensure tables:', e?.message));
@@ -20979,11 +21037,6 @@ app.listen(PORT, HOST, async () => {
     }
 
     // Initialize Master Agent pools (needed for webhook handler even when scheduling disabled)
-    setMasterPool(pool);
-    setReportPool(pool);
-    setSalesRawPool(pool);
-    setDataExecutorPool(pool);
-    setTaskResponseHook(handleTaskResponse);
     await runWithBootstrapTenantContext(async () => {
       await ensureMasterTables();
 

@@ -583,6 +583,11 @@ export async function ensureGrowthTables(pool) {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_delivery_logs_action ON growth_delivery_logs (action_key, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_delivery_logs_msg ON growth_delivery_logs (provider_msg_id, created_at DESC)`);
+  await pool.query(`ALTER TABLE growth_delivery_logs ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default'`);
+  await pool.query(`ALTER TABLE growth_delivery_logs ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
+  await pool.query(`ALTER TABLE growth_delivery_logs ADD COLUMN IF NOT EXISTS coupon_id TEXT`);
+  await pool.query(`ALTER TABLE growth_delivery_logs ADD COLUMN IF NOT EXISTS phone TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_delivery_logs_campaign ON growth_delivery_logs (tenant_id, campaign_id, status, created_at DESC)`);
   // ABC 6模板滚动：按 rule_key(=campaign_key)+手机号统计累计成功发送次数，加速轮换推导。
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_growth_delivery_logs_rule_phone_status ON growth_delivery_logs (rule_key, status, (payload->>'phone'))`);
 

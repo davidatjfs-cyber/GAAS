@@ -1488,6 +1488,9 @@ export async function ensurePhaseTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pos_orders_phone ON pos_orders (phone) WHERE phone IS NOT NULL AND phone <> ''`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pos_orders_date ON pos_orders (biz_date DESC, store_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pos_orders_customer ON pos_orders (customer_id) WHERE customer_id IS NOT NULL`);
+  await pool.query(`ALTER TABLE pos_orders ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default'`);
+  await pool.query(`ALTER TABLE pos_orders ADD COLUMN IF NOT EXISTS coupon_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pos_orders_coupon ON pos_orders (tenant_id, coupon_id) WHERE coupon_id IS NOT NULL AND coupon_id <> ''`);
 
   // Column order matches KeruYun export: 营业日,门店编号,门店名称,订单号,商品编码,商品名称,规格,菜品标签,单价,数量,单位,前折金额,服务费分摊,菜品优惠,折后金额,商品中类,商品大类
   await pool.query(`

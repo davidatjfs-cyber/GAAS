@@ -3,6 +3,13 @@ import path from 'path';
 import { spawn } from 'child_process';
 import XLSX from 'xlsx';
 import { STORES, storeIdToName, storeNameToId, inferBrandFromStoreName } from './brands-config.js';
+import {
+  buildCustomerAssetMetricsInput,
+  buildOperationImprovementMetricsInput,
+  buildTalentDevelopmentMetricsInput,
+  enrichReportForBusinessOntology,
+} from './ontology/report-metrics-adapters.js';
+import { reviewOntologyTaskHistory } from './ontology/ontology-task-adapter.js';
 
 const PYTHON_BIN = process.env.CUSTOMER_OPS_PYTHON_BIN || process.env.CODEX_PYTHON_BIN || 'python3';
 
@@ -491,6 +498,18 @@ async function ensureCustomerOpsTables(pool) {
   await pool.query(`ALTER TABLE marketing_campaign_results ADD COLUMN IF NOT EXISTS actual_redemption_count INT DEFAULT 0`);
   await pool.query(`ALTER TABLE marketing_campaign_results ADD COLUMN IF NOT EXISTS actual_cost NUMERIC DEFAULT 0`);
   await pool.query(`ALTER TABLE marketing_campaign_results ADD COLUMN IF NOT EXISTS effect_rating TEXT DEFAULT ''`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS anomaly_triggers (id SERIAL PRIMARY KEY, anomaly_key TEXT NOT NULL, store TEXT NOT NULL, brand TEXT, severity TEXT NOT NULL DEFAULT 'medium', trigger_date DATE NOT NULL, trigger_value JSONB DEFAULT '{}'::jsonb, threshold_value JSONB DEFAULT '{}'::jsonb, task_id TEXT, status TEXT DEFAULT 'open', assigned_role TEXT, notify_target_role TEXT, evidence_submitted JSONB DEFAULT '[]'::jsonb, resolution_code TEXT, resolved_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_anomaly_triggers_tenant_date ON anomaly_triggers (tenant_id, trigger_date DESC)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS training_assignments (id SERIAL PRIMARY KEY, employee_username VARCHAR(100) NOT NULL, topic_id INTEGER NOT NULL DEFAULT 0, assigned_by VARCHAR(100), due_date DATE, note TEXT, created_at TIMESTAMP DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_training_assignments_tenant_created ON training_assignments (tenant_id, created_at)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS training_sessions (id SERIAL PRIMARY KEY, employee_username VARCHAR(100) NOT NULL, topic_id INTEGER NOT NULL DEFAULT 0, quiz_passed BOOLEAN DEFAULT FALSE, status VARCHAR(20) DEFAULT 'learning', started_at TIMESTAMP DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_training_sessions_tenant_started ON training_sessions (tenant_id, started_at)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS training_certifications (id SERIAL PRIMARY KEY, session_id INTEGER NOT NULL DEFAULT 0, employee_username VARCHAR(100) NOT NULL, topic_id INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_training_certifications_tenant_created ON training_certifications (tenant_id, created_at)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS agent_scores (id SERIAL PRIMARY KEY, username TEXT, total_score NUMERIC DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
+  await pool.query(`ALTER TABLE agent_scores ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_scores_tenant_created ON agent_scores (tenant_id, created_at)`);
 }
 
 async function latestDiagnosis(pool, tenantId, diagnosisId = 0) {
@@ -886,6 +905,20 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
       trend: trend.rows.map((r) => ({ date: r.day ? String(r.day).slice(0, 10) : '', touched_customers: Number(r.touched_customers || 0), returned_customers: Number(r.returned_customers || 0), attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: Number(r.attributed_revenue || 0) })),
       top_customers: topCustomers.rows.map((r) => ({ phone: maskAttributionPhone(r.phone), store_id: r.store_id || '', store_name: r.store_name || r.store_id || '', last_touch_date: r.last_touch_date ? String(r.last_touch_date).slice(0, 10) : '', last_order_date: r.last_order_date ? String(r.last_order_date).slice(0, 10) : '', attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: Number(r.attributed_revenue || 0) })),
       order_records: orderRecords.rows.map((r) => ({ phone: maskAttributionPhone(r.phone), date: r.biz_date ? String(r.biz_date).slice(0, 10) : '', store_id: r.store_id || '', store_name: r.store_name || r.store_id || '', table_no: r.table_no || '', diners: Number(r.diners || 0), order_no: r.order_no || '', revenue: Number(r.revenue || 0), pre_discount_revenue: Number(r.pre_discount_revenue || 0), discount_amount: Number(r.discount_amount || 0) })),
+      evidenceDetails: orderRecords.rows.map((r) => ({
+        customerId: maskAttributionPhone(r.phone),
+        customerName: '',
+        campaignId: '',
+        touchTime: '',
+        channel: '',
+        couponId: '',
+        relatedOrderId: r.order_no || '',
+        orderTime: r.biz_date ? String(r.biz_date).slice(0, 10) : '',
+        orderAmount: Number(r.revenue || 0),
+        attributionType: Number(r.discount_amount || 0) > 0 ? 'coupon' : 'assisted',
+        couponUsed: Number(r.discount_amount || 0) > 0,
+        attributionWindowDays: windowDays,
+      })),
       recommendations: nextMonthRecommendations,
       methodology: {
         attribution_rule: `统计周期内，收银订单会员手机号或会员ID与本期已发送客户一致，即计入归因结果；同一订单只归因一次。`,
@@ -905,6 +938,34 @@ async function safeReportQuery(pool, sql, params = [], fallback = []) {
     console.warn('[customer-ops] report query skipped:', e?.message);
     return fallback;
   }
+}
+
+async function applyReportMetricFacts(pool, tenantId, report, reportType, storeId) {
+  if (!report || !reportType) return report;
+  const rows = await safeReportQuery(pool, `
+    SELECT record_json
+      FROM customer_ops_source_records
+     WHERE tenant_id = $1
+       AND record_kind = 'report_metric_fact'
+       AND record_json->>'reportType' = $2
+       AND COALESCE(record_json->>'storeId', '') = $3
+     ORDER BY id ASC`,
+    [tenantId || 'default', reportType, cleanText(storeId || '', 80)],
+    []
+  );
+  for (const row of rows) {
+    const fact = row.record_json || {};
+    const metrics = fact.metrics && typeof fact.metrics === 'object' ? fact.metrics : {};
+    const period = cleanText(fact.period || 'current', 20);
+    if (period === 'previous') {
+      report.previous_period = { ...(report.previous_period || {}), ...metrics };
+      report.summary = { ...(report.summary || {}) };
+      for (const [key, value] of Object.entries(metrics)) report.summary[`previous_${key}`] = value;
+    } else {
+      report.summary = { ...(report.summary || {}), ...metrics };
+    }
+  }
+  return report;
 }
 
 async function buildCustomerAssetReport(pool, tenantId, opts = {}) {
@@ -1734,9 +1795,12 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       const report = await buildCustomerAssetReport(pool, getTenantId(req), {
         dateFrom: req.query.date_from,
         dateTo: req.query.date_to,
-        storeId: req.query.store_id,
+        storeId: req.query.store_id || req.query.storeId,
       });
-      res.json(report);
+      await applyReportMetricFacts(pool, getTenantId(req), report.report, 'customer_assets', req.query.store_id || req.query.storeId);
+      const enriched = enrichReportForBusinessOntology(report.report, buildCustomerAssetMetricsInput);
+      enriched.previousActionReview = await reviewOntologyTaskHistory(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, reportType: 'customer_assets' }).catch(() => ({ resultReviewStatus: 'insufficient_data', tasksCreated: 0, tasksCompleted: 0, tasks: [], summary: '上期动作已有记录，但当前追踪数据不足，暂无法判断改善结果。' }));
+      res.json({ ...report, report: enriched });
     } catch (e) {
       console.error('[customer-ops] customer asset report failed:', e);
       res.status(500).json({ ok: false, error: e?.message || 'customer_asset_report_failed' });
@@ -1748,9 +1812,12 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       const report = await buildOpsRectificationReport(pool, getTenantId(req), {
         dateFrom: req.query.date_from,
         dateTo: req.query.date_to,
-        storeId: req.query.store_id,
+        storeId: req.query.store_id || req.query.storeId,
       });
-      res.json(report);
+      await applyReportMetricFacts(pool, getTenantId(req), report.report, 'ops_rectification', req.query.store_id || req.query.storeId);
+      const enriched = enrichReportForBusinessOntology(report.report, buildOperationImprovementMetricsInput);
+      enriched.previousActionReview = await reviewOntologyTaskHistory(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, reportType: 'ops_rectification' }).catch(() => ({ resultReviewStatus: 'insufficient_data', tasksCreated: 0, tasksCompleted: 0, tasks: [], summary: '上期动作已有记录，但当前追踪数据不足，暂无法判断改善结果。' }));
+      res.json({ ...report, report: enriched });
     } catch (e) {
       console.error('[customer-ops] ops rectification report failed:', e);
       res.status(500).json({ ok: false, error: e?.message || 'ops_rectification_report_failed' });
@@ -1762,9 +1829,12 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       const report = await buildTalentGrowthReport(pool, getTenantId(req), {
         dateFrom: req.query.date_from,
         dateTo: req.query.date_to,
-        storeId: req.query.store_id,
+        storeId: req.query.store_id || req.query.storeId,
       });
-      res.json(report);
+      await applyReportMetricFacts(pool, getTenantId(req), report.report, 'talent_growth', req.query.store_id || req.query.storeId);
+      const enriched = enrichReportForBusinessOntology(report.report, buildTalentDevelopmentMetricsInput);
+      enriched.previousActionReview = await reviewOntologyTaskHistory(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, reportType: 'talent_growth' }).catch(() => ({ resultReviewStatus: 'insufficient_data', tasksCreated: 0, tasksCompleted: 0, tasks: [], summary: '上期动作已有记录，但当前追踪数据不足，暂无法判断改善结果。' }));
+      res.json({ ...report, report: enriched });
     } catch (e) {
       console.error('[customer-ops] talent growth report failed:', e);
       res.status(500).json({ ok: false, error: e?.message || 'talent_growth_report_failed' });
