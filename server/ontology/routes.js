@@ -237,6 +237,7 @@ export function registerOntologyRoutes(app, pool, authRequired) {
         opportunityId: req.body?.opportunityId || req.body?.opportunity_id || '',
         taskId: req.body?.taskId || req.body?.task_id || '',
         attributionWindowDays: req.body?.attributionWindowDays || req.body?.attribution_window_days || 7,
+        scenario: req.body?.scenario || '',
       });
       return res.json({ ok: true, attribution });
     } catch (e) {

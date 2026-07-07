@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js",
-    "migrate": "node migrate.js"
+    "migrate": "node migrate.js",
+    "seed:growth-demo": "node scripts/seed-growth-demo.js"
   },
   "dependencies": {
     "ali-oss": "^6.22.0",

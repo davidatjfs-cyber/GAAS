@@ -72,6 +72,36 @@ async function employeeStats(pool, { tenantId, storeId }) {
   return { avgScore: num(r.rows[0]?.avg_score), lowCount: num(r.rows[0]?.low_count) };
 }
 
+async function newCustomerSecondVisitStats(pool, { tenantId, storeId, date }) {
+  const r = await pool.query(
+    `WITH first_visit AS (
+       SELECT c.customer_id, c.total_spend, c.tags, c.first_visit_at,
+              count(o.order_id) FILTER (WHERE o.order_time > c.first_visit_at + interval '1 hour') AS later_orders
+         FROM growth_ontology_customers c
+         LEFT JOIN growth_ontology_orders o ON o.tenant_id=c.tenant_id
+          AND o.store_id=c.store_id AND o.customer_id=c.customer_id
+        WHERE c.tenant_id=$1 AND c.store_id=$2
+          AND c.visit_count <= 1
+          AND c.first_visit_at >= ($3::date - interval '14 days')
+          AND c.first_visit_at < ($3::date - interval '7 days')
+        GROUP BY c.customer_id, c.total_spend, c.tags, c.first_visit_at
+      )
+      SELECT count(*)::numeric AS candidates,
+             count(*) FILTER (WHERE later_orders = 0)::numeric AS no_second_visit,
+             count(*) FILTER (WHERE later_orders = 0 AND COALESCE(tags, '[]'::jsonb) ? 'signature_dish')::numeric AS signature_dish_customers,
+             COALESCE(avg(total_spend) FILTER (WHERE later_orders = 0),0)::numeric AS avg_first_spend
+        FROM first_visit`,
+    [tenantId, storeId, date]
+  );
+  const row = r.rows[0] || {};
+  return {
+    candidates: num(row.candidates),
+    noSecondVisit: num(row.no_second_visit),
+    signatureDishCustomers: num(row.signature_dish_customers),
+    avgFirstSpend: num(row.avg_first_spend),
+  };
+}
+
 function issueRow({ tenantId, storeId, issueType, title, description, severity, confidence, evidence, roots, impact }) {
   return {
     issue_id: `issue_${randomUUID()}`,
@@ -105,12 +135,13 @@ export async function runDailyDiagnosis(pool, options = {}) {
   prevEndDate.setDate(prevEndDate.getDate() + 1);
   const prevEnd = prevEndDate.toISOString();
 
-  const [current, prev, repeat, marketing, employee] = await Promise.all([
+  const [current, prev, repeat, marketing, employee, newCustomerSecondVisit] = await Promise.all([
     orderStats(pool, { tenantId, storeId, start: dayStart, end: dayEnd }),
     orderStats(pool, { tenantId, storeId, start: prevStart, end: prevEnd }),
     repeatStats(pool, { tenantId, storeId }),
     marketingStats(pool, { tenantId, storeId }),
     employeeStats(pool, { tenantId, storeId }),
+    newCustomerSecondVisitStats(pool, { tenantId, storeId, date }),
   ]);
 
   const issues = [];
@@ -136,6 +167,21 @@ export async function runDailyDiagnosis(pool, options = {}) {
       severity: 'P2', confidence: 0.76,
       evidence: repeat, roots: ['new_customer_not_followed', 'dormant_customer_not_reactivated'], impact: 0,
     }));
+  }
+  if (newCustomerSecondVisit.noSecondVisit >= 5) {
+    issues.push(issueRow({
+      tenantId,
+      storeId,
+      issueType: 'new_customer_no_second_visit',
+      title: '新客未二次回店',
+      description: '有一批首次消费后的新客已经过了最佳二次转化窗口，但还没有第二次消费。',
+      severity: newCustomerSecondVisit.noSecondVisit >= 30 ? 'P1' : 'P2',
+      confidence: 0.82,
+      evidence: newCustomerSecondVisit,
+      roots: ['new_customer_not_followed', 'second_visit_invitation_missing'],
+      impact: Math.round(newCustomerSecondVisit.noSecondVisit * Math.max(newCustomerSecondVisit.avgFirstSpend, 80) * 0.12),
+    }));
+    console.log('New customer second visit diagnosis generated');
   }
   if (repeat.riskCustomers >= 1) {
     issues.push(issueRow({

@@ -311,7 +311,7 @@ async function seedLiveData(pool) {
     await pool.query(
       `INSERT INTO pos_orders (order_no, order_source, biz_date, order_time, order_status, amount_before_discount, total_discount, amount_after_discount, member_name, phone, store_id, store_name, coupon_id, tenant_id)
        VALUES ($1,'ontology_e2e',$2::date,$3::timestamptz,'已完成',$4,0,$4,'ontology e2e',$5,$6,$6,$7,$8)
-       ON CONFLICT (order_no) DO UPDATE SET biz_date=EXCLUDED.biz_date, order_time=EXCLUDED.order_time, amount_after_discount=EXCLUDED.amount_after_discount, phone=EXCLUDED.phone, coupon_id=EXCLUDED.coupon_id, tenant_id=EXCLUDED.tenant_id`,
+       ON CONFLICT (order_no, tenant_id) DO UPDATE SET biz_date=EXCLUDED.biz_date, order_time=EXCLUDED.order_time, amount_after_discount=EXCLUDED.amount_after_discount, phone=EXCLUDED.phone, coupon_id=EXCLUDED.coupon_id`,
       [orderNo, bizDate, orderTime, amount, phone, TEST_STORE_ID, couponId, TENANT_ID]
     );
   }

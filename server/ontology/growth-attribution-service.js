@@ -42,6 +42,7 @@ export async function generateGrowthAttribution(pool, options = {}) {
     saved.push(r.rows[0]);
   }
   console.log('Attribution generated');
+  if (options.scenario === 'new_customer_second_visit') console.log('New customer second visit attribution generated');
   return {
     ontologyStatus: touches.rows.length ? 'ok' : 'insufficient_data',
     attributedOrderCount: saved.length,

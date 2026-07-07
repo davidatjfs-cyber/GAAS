@@ -13,19 +13,23 @@ export function buildTaskDraftsForOpportunity(opportunity = {}) {
   return base.map((action, idx) => ({
     title: action.actionName || opportunity.title || '经营增长动作',
     description: `${opportunity.title || '经营增长机会'}：${action.actionName || '执行跟进动作'}`,
-    ownerRole: opportunity.opportunity_type === 'staff_execution_improvement' ? '店长' : '营销负责人',
+    ownerRole: opportunity.opportunity_type === 'staff_execution_improvement' || opportunity.opportunity_type === 'new_customer_second_visit' ? '店长' : '营销负责人',
     priority: opportunity.priority || 'P2',
     dueDate: dueDate(idx === 0 ? 3 : 7),
-    expectedResult: opportunity.estimated_revenue_uplift
+    expectedResult: opportunity.opportunity_type === 'new_customer_second_visit'
+      ? '新客二次到店率 >= 12%'
+      : opportunity.estimated_revenue_uplift
       ? `预计带来 ${Number(opportunity.estimated_revenue_uplift).toFixed(0)} 元经营改善`
       : '形成可追踪的回店、复购或执行改善结果',
-    trackingMetrics: ['回店人数', '贡献营业额', '任务完成率'],
+    trackingMetrics: opportunity.opportunity_type === 'new_customer_second_visit'
+      ? ['新客触达人数', '二次回店人数', '二次回店率', '二次消费金额', '优惠成本', '净增量']
+      : ['回店人数', '贡献营业额', '任务完成率'],
     sourceIssueId: opportunity.issue_id || '',
     sourceDomain: 'restaurant_growth',
     sourceReportType: 'growth_closed_loop',
     ontologyInsightId: opportunity.opportunity_id || '',
     opportunityId: opportunity.opportunity_id || '',
-    actionType: opportunity.opportunity_type || '',
+    actionType: opportunity.opportunity_type === 'new_customer_second_visit' ? 'invite_second_visit' : (opportunity.opportunity_type || ''),
     status: 'draft',
   }));
 }
@@ -69,12 +73,13 @@ export async function generateTasksForOpportunity(pool, opportunityId, options =
         opportunityId, opportunity.opportunity_type, draft.priority === 'P1' ? 'high' : 'medium',
         draft.title, draft.description, JSON.stringify(sourceData), draft.ownerRole, ownerUserId,
         opportunity.target_entity_type, '', opportunity.issue_id, opportunityId, draft.ownerRole, ownerUserId,
-        opportunity.opportunity_type, draft.description, draft.priority, draft.dueDate, draft.expectedResult,
+        draft.actionType || opportunity.opportunity_type, draft.description, draft.priority, draft.dueDate, draft.expectedResult,
       ]
     );
     created.push(inserted.rows[0]);
   }
   await pool.query(`UPDATE growth_ontology_opportunities SET status='task_generated', updated_at=now() WHERE opportunity_id=$1`, [opportunityId]);
   console.log('Tasks generated');
+  if (opportunity.opportunity_type === 'new_customer_second_visit') console.log('New customer second visit task generated');
   return { ok: true, taskDrafts: drafts, tasks: created };
 }

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 const OPPORTUNITY_BY_ISSUE = {
   revenue_decline: ['lunch_revenue_recovery', 'low_repeat_dish_optimization'],
   repeat_decline: ['new_customer_second_visit', 'dormant_customer_reactivation'],
+  new_customer_no_second_visit: ['new_customer_second_visit'],
   customer_asset_risk: ['vip_retention', 'stored_value_customer_activation'],
   staff_execution_risk: ['staff_execution_improvement'],
   marketing_ineffective: ['dormant_customer_reactivation', 'vip_retention'],
@@ -11,7 +12,7 @@ const OPPORTUNITY_BY_ISSUE = {
 const ACTIONS = {
   dormant_customer_reactivation: ['导出沉睡客户名单', '安排店长逐批触达', '7天追踪回店和消费'],
   vip_retention: ['筛选高价值未回店客户', '配置专属权益', '店长跟进回访'],
-  new_customer_second_visit: ['筛选首次到店新客', 'D4/D8 二次触达', '追踪二次回店率'],
+  new_customer_second_visit: ['筛选首次到店后未复购新客', '店长完成二次到店邀请', '14天追踪二次回店率和消费金额'],
   stored_value_customer_activation: ['筛选储值未消费客户', '提醒余额权益', '追踪储值消费转化'],
   low_repeat_dish_optimization: ['复盘低复购菜品', '检查出品稳定性', '调整推荐话术'],
   lunch_revenue_recovery: ['拆解午市客群', '设计午市套餐', '追踪午市营业额'],
@@ -38,7 +39,7 @@ export function buildOpportunityFromIssue(issue, opportunityType) {
   const title = TITLES[opportunityType] || '经营增长机会';
   const evidence = issue.evidence_json || issue.evidence || {};
   const estimatedRevenue = Number(evidence.revenueGap || issue.impact_amount_estimate || 0);
-  const estimatedCost = opportunityType.includes('customer') || opportunityType.includes('vip') ? 300 : 0;
+  const estimatedCost = opportunityType.includes('customer') || opportunityType.includes('vip') || opportunityType === 'new_customer_second_visit' ? 300 : 0;
   return {
     opportunity_id: `opp_${randomUUID()}`,
     tenant_id: issue.tenant_id || 'default',
@@ -46,7 +47,9 @@ export function buildOpportunityFromIssue(issue, opportunityType) {
     issue_id: issue.issue_id,
     opportunity_type: opportunityType,
     title,
-    description: `${title}：围绕“${issue.issue_title || issue.issue_type}”生成可执行动作。`,
+    description: opportunityType === 'new_customer_second_visit'
+      ? `系统发现 ${Number(evidence.noSecondVisit || evidence.candidates || 0)} 位新客首次到店后还没有第二次消费，建议由店长本周完成二次到店邀请。`
+      : `${title}：围绕“${issue.issue_title || issue.issue_type}”生成可执行动作。`,
     target_entity_type: opportunityType.includes('dish') ? 'dish' : 'customer_segment',
     target_entity_ids_json: [],
     estimated_revenue_uplift: estimatedRevenue,
