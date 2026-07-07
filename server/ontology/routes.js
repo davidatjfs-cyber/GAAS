@@ -18,8 +18,24 @@ import {
 import { createTaskDraftsFromOntologyInsights } from './task-draft-adapter.js';
 import { buildMarketingAttributionMetricsInput } from '../marketing/marketing-attribution-service.js';
 import { createOntologyTaskFromDraft } from './ontology-task-adapter.js';
+import { ensureGrowthOntologyCore } from './growth-ontology-schema.js';
+import { runDailyDiagnosis, listIssues, listOpportunities } from './diagnosis-tree-service.js';
+import { generateTasksForOpportunity } from './action-plan-service.js';
+import { trackGrowthResults } from './result-tracking-service.js';
+import { generateGrowthAttribution } from './growth-attribution-service.js';
+import { buildClosedLoopReport } from './closed-loop-report-service.js';
 
 export function registerOntologyRoutes(app, pool, authRequired) {
+  const getTenantId = (req) => String(req.tenantId || req.user?.tenant_id || req.query?.tenant_id || req.body?.tenant_id || 'default').trim() || 'default';
+  const ensureGrowth = async () => {
+    try {
+      await ensureGrowthOntologyCore(pool);
+    } catch (e) {
+      console.error('[ontology] growth ontology init error:', e?.message || e);
+      throw e;
+    }
+  };
+
   app.get('/api/ontology/types', authRequired, async (req, res) => {
     return res.json({ ok: true, types: listObjectTypes() });
   });
@@ -118,6 +134,128 @@ export function registerOntologyRoutes(app, pool, authRequired) {
       return res.json({ ok: true, findings: lintMetrics(result.rows || []) });
     } catch (e) {
       console.error('[ontology] metric lint error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.get('/api/ontology/diagnosis/daily', authRequired, async (req, res) => {
+    try {
+      await ensureGrowth();
+      const result = await runDailyDiagnosis(pool, {
+        tenantId: getTenantId(req),
+        storeId: req.query?.store_id || req.query?.storeId || '',
+        date: req.query?.date || '',
+      });
+      return res.json({ ok: true, ...result });
+    } catch (e) {
+      console.error('[ontology] daily diagnosis error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/ontology/diagnosis/run', authRequired, async (req, res) => {
+    try {
+      await ensureGrowth();
+      const result = await runDailyDiagnosis(pool, {
+        tenantId: getTenantId(req),
+        storeId: req.body?.store_id || req.body?.storeId || req.query?.store_id || '',
+        date: req.body?.date || req.query?.date || '',
+      });
+      return res.json({ ok: true, ...result });
+    } catch (e) {
+      console.error('[ontology] diagnosis run error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.get('/api/ontology/issues', authRequired, async (req, res) => {
+    try {
+      await ensureGrowth();
+      const issues = await listIssues(pool, {
+        tenantId: getTenantId(req),
+        storeId: req.query?.store_id || req.query?.storeId || '',
+      });
+      return res.json({ ok: true, issues });
+    } catch (e) {
+      console.error('[ontology] issues list error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.get('/api/ontology/opportunities', authRequired, async (req, res) => {
+    try {
+      await ensureGrowth();
+      const opportunities = await listOpportunities(pool, {
+        tenantId: getTenantId(req),
+        storeId: req.query?.store_id || req.query?.storeId || '',
+      });
+      return res.json({ ok: true, opportunities });
+    } catch (e) {
+      console.error('[ontology] opportunities list error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/ontology/opportunities/:id/generate-tasks', authRequired, async (req, res) => {
+    try {
+      await ensureGrowth();
+      const result = await generateTasksForOpportunity(pool, req.params.id, {
+        tenantId: getTenantId(req),
+        storeId: req.body?.store_id || req.body?.storeId || req.query?.store_id || '',
+        ownerUserId: req.body?.ownerUserId || req.body?.owner_user_id || '',
+      });
+      if (!result.ok) return res.status(404).json(result);
+      return res.json({ ok: true, ...result });
+    } catch (e) {
+      console.error('[ontology] generate opportunity tasks error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/ontology/results/track', authRequired, async (req, res) => {
+    try {
+      await ensureGrowth();
+      const result = await trackGrowthResults(pool, {
+        tenantId: getTenantId(req),
+        storeId: req.body?.store_id || req.body?.storeId || '',
+        opportunityId: req.body?.opportunityId || req.body?.opportunity_id || '',
+      });
+      return res.json({ ok: true, result });
+    } catch (e) {
+      console.error('[ontology] result tracking error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/ontology/attribution/run', authRequired, async (req, res) => {
+    try {
+      await ensureGrowth();
+      const attribution = await generateGrowthAttribution(pool, {
+        tenantId: getTenantId(req),
+        storeId: req.body?.store_id || req.body?.storeId || '',
+        campaignId: req.body?.campaignId || req.body?.campaign_id || '',
+        opportunityId: req.body?.opportunityId || req.body?.opportunity_id || '',
+        taskId: req.body?.taskId || req.body?.task_id || '',
+        attributionWindowDays: req.body?.attributionWindowDays || req.body?.attribution_window_days || 7,
+      });
+      return res.json({ ok: true, attribution });
+    } catch (e) {
+      console.error('[ontology] growth attribution error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.get('/api/ontology/closed-loop-report', authRequired, async (req, res) => {
+    try {
+      await ensureGrowth();
+      const report = await buildClosedLoopReport(pool, {
+        tenantId: getTenantId(req),
+        storeId: req.query?.store_id || req.query?.storeId || '',
+        period: req.query?.period || '30d',
+      });
+      return res.json(report);
+    } catch (e) {
+      console.error('[ontology] closed loop report error:', e?.message || e);
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });

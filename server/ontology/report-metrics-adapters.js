@@ -1,5 +1,6 @@
 import { enrichReportWithOntology } from './business-ontology-engine.js';
 import { createTaskDraftsFromOntologyInsights } from './task-draft-adapter.js';
+import { buildBossReportFields } from './boss-language-service.js';
 
 function num(v) {
   if (v === undefined || v === null || v === '') return null;
@@ -75,6 +76,11 @@ export function buildTalentDevelopmentMetricsInput(reportData = {}) {
 export function enrichReportForBusinessOntology(reportData = {}, buildMetricsInput, options = {}) {
   const metricsInput = buildMetricsInput(reportData);
   if (!Object.keys(metricsInput).length) {
+    const bossFields = buildBossReportFields({
+      title: 'AI经营结论',
+      summary: '当前数据不足，暂无法生成经营判断。',
+      confidenceNote: '缺少可比较的真实经营数据，不会强行推断变化。',
+    });
     return {
       ...reportData,
       ontologyStatus: 'insufficient_data',
@@ -85,13 +91,24 @@ export function enrichReportForBusinessOntology(reportData = {}, buildMetricsInp
       trackingMetrics: [],
       priorityIssues: [],
       taskDrafts: [],
+      ...bossFields,
     };
   }
   const enriched = enrichReportWithOntology(reportData, metricsInput);
+  const taskDrafts = createTaskDraftsFromOntologyInsights(enriched.ontologyInsights);
+  const bossFields = buildBossReportFields({
+    title: 'AI经营结论',
+    summary: enriched.bossSummary,
+    findings: (enriched.priorityIssues || enriched.ontologyInsights || []).slice(0, 4).map(item => item.bossLanguageTitle || item.issueName),
+    actions: (enriched.actionPlan || []).slice(0, 4).map(item => item.actionName || item.expectedResult),
+    riskWarning: (enriched.priorityIssues || []).some(item => item.severity === 'P1') ? '存在 P1 重点问题，需要当天安排负责人跟进。' : '当前问题可按任务优先级推进。',
+    expectedImpact: taskDrafts.length ? '建议先生成任务草稿，完成后用回店、复购、营业额和任务完成率追踪结果。' : '',
+  });
   return {
     ...enriched,
     ontologyStatus: enriched.ontologyInsights.length ? 'ok' : 'no_issue_detected',
     metricsInput,
-    taskDrafts: createTaskDraftsFromOntologyInsights(enriched.ontologyInsights),
+    taskDrafts,
+    ...bossFields,
   };
 }

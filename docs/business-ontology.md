@@ -480,3 +480,162 @@ node --test hr-management-system/server/ontology/*.test.mjs
 - 接入门店、员工、菜品多对象归因
 - 增加内部“经营语义层”调试页面
 - 从规则推理逐步升级为 AI 经营决策引擎
+
+## 餐饮经营增长 Ontology
+
+第三阶段之后，当前 ontology 在原有经营语义层之上补齐了餐饮增长闭环实体，不引入图数据库，也不新建第二套 ontology。
+
+核心表由 `server/migrations/100_growth_ontology_core.sql` 管理，并由 `ensureGrowthOntologyCore()` 在运行期幂等兜底：
+
+- `growth_ontology_customers`：客户资产、生命周期、价值和风险标签。
+- `growth_ontology_stores`：门店实体。
+- `growth_ontology_dishes`：菜品实体。
+- `growth_ontology_orders`：POS 订单和真实消费结果。
+- `growth_ontology_employees`：员工和执行能力。
+- `growth_ontology_campaigns`：营销活动。
+- `growth_ontology_benefits`：权益/券。
+- `growth_ontology_touches`：营销触达记录。
+- `growth_ontology_issues`：经营问题。
+- `growth_ontology_opportunities`：增长机会。
+- `growth_ontology_attributions`：动作/营销结果归因。
+- `growth_ontology_business_results`：经营结果追踪。
+
+`master_tasks` 继续作为正式任务系统，迁移只补齐 `issue_id`、`opportunity_id`、`owner_role`、`action_type`、`expected_result` 等来源字段，不替换现有任务模块。
+
+### 诊断树
+
+新增服务：`server/ontology/diagnosis-tree-service.js`。
+
+支持的问题类型：
+
+- `revenue_decline`
+- `repeat_decline`
+- `customer_asset_risk`
+- `staff_execution_risk`
+- `marketing_ineffective`
+
+输出字段包括 `issue_type`、`issue_title`、`severity`、`confidence_score`、`evidence_json`、`root_cause_candidates_json`、`recommended actions` 和 `boss_language_summary`。数据不足时返回 `insufficient_data`，不会强行编造变化率或结论。
+
+### 增长机会
+
+新增服务：`server/ontology/growth-opportunity-service.js`。
+
+支持机会类型：
+
+- `dormant_customer_reactivation`
+- `vip_retention`
+- `new_customer_second_visit`
+- `stored_value_customer_activation`
+- `low_repeat_dish_optimization`
+- `lunch_revenue_recovery`
+- `negative_review_recovery`
+- `staff_execution_improvement`
+
+机会会保留原始问题证据，并给出可转任务的推荐动作。
+
+### 动作闭环
+
+新增服务：
+
+- `action-plan-service.js`：把增长机会转为正式任务，写入 `master_tasks`。
+- `result-tracking-service.js`：追踪动作前后经营指标变化。
+- `growth-attribution-service.js`：把触达、订单、券使用和任务/机会关联起来。
+- `closed-loop-report-service.js`：生成老板版闭环报告。
+
+任务写入时保留：
+
+- `issue_id`
+- `opportunity_id`
+- `source_data.sourceDomain = restaurant_growth`
+- `source_data.trackingMetrics`
+- `expected_result`
+- `owner_role`
+- `due_at`
+
+### 老板语言字段
+
+新增 `boss-language-service.js`，报告和闭环接口会尽量输出老板端语言：
+
+- `boss_title`
+- `boss_summary`
+- `key_findings_for_owner`
+- `next_actions_for_owner`
+- `risk_warning`
+- `expected_business_impact`
+- `actual_business_impact`
+- `confidence_note`
+
+输出中避免 `ontology`、`metric`、`schema`、`SQL` 这类技术词。若数据不足，显示“当前数据不足，暂无法生成经营判断。”
+
+### 新增 API
+
+```text
+GET  /api/ontology/diagnosis/daily?tenant_id=&store_id=&date=
+POST /api/ontology/diagnosis/run
+GET  /api/ontology/issues
+GET  /api/ontology/opportunities
+POST /api/ontology/opportunities/:id/generate-tasks
+POST /api/ontology/results/track
+POST /api/ontology/attribution/run
+GET  /api/ontology/closed-loop-report?tenant_id=&store_id=&period=
+```
+
+已有调试 API 保持不变：
+
+```text
+GET  /api/ontology/business/domains
+GET  /api/ontology/business/mappings
+POST /api/ontology/business/infer
+POST /api/ontology/business/task-drafts
+POST /api/ontology/business/create-task-from-draft
+GET  /api/ontology/metric-lint
+```
+
+### 前端入口
+
+`working-fixed.html` 的增长模块新增“餐厅增长大脑”子页，展示：
+
+- 客户资产地图
+- 经营问题地图
+- 增长机会列表
+- 动作闭环看板
+- 老板版闭环报告
+- 归因证据
+
+页面按钮“生成任务草稿并确认创建”会调用 `POST /api/ontology/opportunities/:id/generate-tasks`，把增长机会写入现有 `master_tasks`。
+
+### E2E 验收
+
+真实 HTTP 闭环验收脚本：
+
+```bash
+DATABASE_URL='postgres://hrms:***@127.0.0.1:5432/hrms' \
+E2E_BASE_URL=http://localhost:3000 \
+E2E_TOKEN='<token>' \
+node scripts/ontology_growth_closed_loop.e2e.mjs
+```
+
+脚本会输出以下关键日志：
+
+```text
+Growth ontology core initialized
+Daily diagnosis generated
+Issues generated
+Opportunities generated
+Tasks generated
+Results tracked
+Attribution generated
+Closed loop report generated
+Boss language output verified
+E2E ontology growth closed loop PASSED
+```
+
+`E2E_TOKEN` 获取方式：
+
+```bash
+curl -s http://localhost:3000/api/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin123","tenant_id":"default"}'
+```
+
+生产或无本地测试账号时，请使用真实测试账号登录后把返回 token 设置到 `E2E_TOKEN`。
