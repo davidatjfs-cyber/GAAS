@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { recordRuleHit } from './ontology-rule-service.js';
 
 const OPPORTUNITY_BY_ISSUE = {
   revenue_decline: ['lunch_revenue_recovery', 'low_repeat_dish_optimization'],
@@ -35,11 +36,19 @@ export function opportunityTypesForIssue(issueType) {
   return OPPORTUNITY_BY_ISSUE[issueType] || [];
 }
 
+function configuredOpportunityTypes(issue) {
+  const action = issue?.evidence_json?.rule_action || issue?.evidence?.rule_action || {};
+  const configured = [action.generate_opportunity, action.fallback_opportunity].filter(Boolean);
+  return configured.length ? configured : opportunityTypesForIssue(issue.issue_type);
+}
+
 export function buildOpportunityFromIssue(issue, opportunityType) {
   const title = TITLES[opportunityType] || '经营增长机会';
   const evidence = issue.evidence_json || issue.evidence || {};
+  const action = evidence.rule_action || {};
   const estimatedRevenue = Number(evidence.revenueGap || issue.impact_amount_estimate || 0);
   const estimatedCost = opportunityType.includes('customer') || opportunityType.includes('vip') || opportunityType === 'new_customer_second_visit' ? 300 : 0;
+  const configuredActionName = action.generate_opportunity === opportunityType ? action.recommended_action : '';
   return {
     opportunity_id: `opp_${randomUUID()}`,
     tenant_id: issue.tenant_id || 'default',
@@ -56,15 +65,27 @@ export function buildOpportunityFromIssue(issue, opportunityType) {
     estimated_cost: estimatedCost,
     expected_roi: estimatedCost > 0 ? Number((estimatedRevenue / estimatedCost).toFixed(2)) : null,
     priority: issue.severity === 'P1' ? 'P1' : 'P2',
-    evidence_json: evidence,
-    recommended_actions_json: (ACTIONS[opportunityType] || ['生成整改动作', '追踪经营结果']).map((name, idx) => ({ actionName: name, step: idx + 1 })),
+    evidence_json: {
+      ...evidence,
+      rule_id: evidence.rule_id || '',
+      rule_version: evidence.rule_version || '',
+    },
+    recommended_actions_json: (configuredActionName ? [configuredActionName] : (ACTIONS[opportunityType] || ['生成整改动作', '追踪经营结果']))
+      .map((name, idx) => ({
+        actionName: name,
+        step: idx + 1,
+        ownerRole: action.owner_role,
+        deadlineDays: action.deadline_days,
+        expectedResult: action.expected_result,
+        trackingMetrics: action.tracking_metrics,
+      })),
     status: 'open',
   };
 }
 
 export async function createOpportunitiesForIssue(pool, issue) {
   const created = [];
-  for (const type of opportunityTypesForIssue(issue.issue_type)) {
+  for (const type of configuredOpportunityTypes(issue)) {
     const opp = buildOpportunityFromIssue(issue, type);
     const result = await pool.query(
       `INSERT INTO growth_ontology_opportunities (
@@ -81,7 +102,29 @@ export async function createOpportunitiesForIssue(pool, issue) {
         JSON.stringify(opp.evidence_json), JSON.stringify(opp.recommended_actions_json), opp.status,
       ]
     );
-    created.push(result.rows[0]);
+    const saved = result.rows[0];
+    if (saved?.evidence_json?.rule_id) {
+      await recordRuleHit(pool, {
+        tenantId: saved.tenant_id,
+        storeId: saved.store_id,
+        rule: {
+          rule_id: saved.evidence_json.rule_id,
+          version: saved.evidence_json.rule_version,
+          rule_type: 'opportunity',
+          severity: saved.priority,
+        },
+        inputContext: saved.evidence_json,
+        output: {
+          generatedIssueId: saved.issue_id,
+          generatedOpportunityId: saved.opportunity_id,
+          confidenceScore: saved.evidence_json.confidence_score,
+          severity: saved.priority,
+          bossLanguageOutput: saved.description,
+          matchedConditions: saved.evidence_json.matched_conditions || [],
+        },
+      }).catch(e => console.warn('[ontology-rules] opportunity hit failed:', e?.message || e));
+    }
+    created.push(saved);
   }
   return created;
 }

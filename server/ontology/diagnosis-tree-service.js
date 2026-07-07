@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { createOpportunitiesForIssue, listOpportunities } from './growth-opportunity-service.js';
 import { summarizeIssueForBoss } from './boss-language-service.js';
+import {
+  confidenceNoteForRule,
+  evaluateRule,
+  getRuleThreshold,
+  loadEffectiveRules,
+  recordRuleHit,
+  renderBossLanguage,
+} from './ontology-rule-service.js';
 
 function num(v) {
   const n = Number(v);
@@ -72,7 +80,35 @@ async function employeeStats(pool, { tenantId, storeId }) {
   return { avgScore: num(r.rows[0]?.avg_score), lowCount: num(r.rows[0]?.low_count) };
 }
 
-async function newCustomerSecondVisitStats(pool, { tenantId, storeId, date }) {
+async function dormantCustomerStats(pool, { tenantId, storeId, date, daysMin = 90, daysMax = 180, minVisitCount = 2, minTotalSpend = 300 }) {
+  const r = await pool.query(
+    `SELECT count(*)::numeric AS dormant_count,
+            count(*) FILTER (WHERE visit_count >= $5 OR total_spend >= $6)::numeric AS priority_customer_count,
+            COALESCE(max(visit_count), 0)::numeric AS max_visit_count,
+            COALESCE(max(total_spend), 0)::numeric AS max_total_spend,
+            COALESCE(avg(total_spend), 0)::numeric AS avg_total_spend,
+            COALESCE(min(floor(extract(epoch from ($3::date::timestamptz - last_visit_at)) / 86400)), 0)::numeric AS min_last_visit_days
+       FROM growth_ontology_customers
+      WHERE tenant_id=$1 AND store_id=$2
+        AND last_visit_at IS NOT NULL
+        AND last_visit_at < ($3::date::timestamptz - ($4::int * interval '1 day'))
+        AND last_visit_at >= ($3::date::timestamptz - ($7::int * interval '1 day'))`,
+    [tenantId, storeId, date, daysMin, minVisitCount, minTotalSpend, daysMax]
+  );
+  const row = r.rows[0] || {};
+  return {
+    dormantCustomerCount: num(row.dormant_count),
+    priorityCustomerCount: num(row.priority_customer_count),
+    maxVisitCount: num(row.max_visit_count),
+    maxTotalSpend: num(row.max_total_spend),
+    avgTotalSpend: num(row.avg_total_spend),
+    minLastVisitDays: num(row.min_last_visit_days) || Number(daysMin),
+    daysMin: Number(daysMin),
+    daysMax: Number(daysMax),
+  };
+}
+
+async function newCustomerSecondVisitStats(pool, { tenantId, storeId, date, daysMin = 7, daysMax = 14 }) {
   const r = await pool.query(
     `WITH first_visit AS (
        SELECT c.customer_id, c.total_spend, c.tags, c.first_visit_at,
@@ -82,8 +118,8 @@ async function newCustomerSecondVisitStats(pool, { tenantId, storeId, date }) {
           AND o.store_id=c.store_id AND o.customer_id=c.customer_id
         WHERE c.tenant_id=$1 AND c.store_id=$2
           AND c.visit_count <= 1
-          AND c.first_visit_at >= ($3::date - interval '14 days')
-          AND c.first_visit_at < ($3::date - interval '7 days')
+          AND c.first_visit_at >= ($3::date - ($5::int * interval '1 day'))
+          AND c.first_visit_at < ($3::date - ($4::int * interval '1 day'))
         GROUP BY c.customer_id, c.total_spend, c.tags, c.first_visit_at
       )
       SELECT count(*)::numeric AS candidates,
@@ -91,7 +127,7 @@ async function newCustomerSecondVisitStats(pool, { tenantId, storeId, date }) {
              count(*) FILTER (WHERE later_orders = 0 AND COALESCE(tags, '[]'::jsonb) ? 'signature_dish')::numeric AS signature_dish_customers,
              COALESCE(avg(total_spend) FILTER (WHERE later_orders = 0),0)::numeric AS avg_first_spend
         FROM first_visit`,
-    [tenantId, storeId, date]
+    [tenantId, storeId, date, daysMin, daysMax]
   );
   const row = r.rows[0] || {};
   return {
@@ -99,6 +135,43 @@ async function newCustomerSecondVisitStats(pool, { tenantId, storeId, date }) {
     noSecondVisit: num(row.no_second_visit),
     signatureDishCustomers: num(row.signature_dish_customers),
     avgFirstSpend: num(row.avg_first_spend),
+  };
+}
+
+async function loadDiagnosisRulesSafe(pool, { tenantId, storeId }) {
+  try {
+    const rules = await loadEffectiveRules(pool, { tenantId, storeId, ruleType: 'diagnosis' });
+    return { rules, byId: new Map(rules.map(rule => [rule.rule_id, rule])) };
+  } catch (e) {
+    console.warn('[ontology-rules] load failed, fallback to code rules:', e?.message || e);
+    return { rules: [], byId: new Map(), error: e };
+  }
+}
+
+async function thresholdSafe(pool, options) {
+  try {
+    const result = await getRuleThreshold(pool, options);
+    return result?.value ?? options.defaultValue;
+  } catch {
+    return options.defaultValue;
+  }
+}
+
+async function applyRule(pool, rule, inputContext) {
+  if (!rule) return { matched: true, matchedConditions: [] };
+  return evaluateRule(pool, rule, inputContext);
+}
+
+function ruleEvidence(rule, matchedConditions, extra = {}) {
+  if (!rule) return extra;
+  return {
+    ...extra,
+    rule_id: rule.rule_id,
+    rule_version: rule.version,
+    rule_scope: rule.rule_scope || 'system',
+    confidence_note: confidenceNoteForRule(rule),
+    matched_conditions: matchedConditions || [],
+    rule_action: rule.action_json || {},
   };
 }
 
@@ -134,14 +207,23 @@ export async function runDailyDiagnosis(pool, options = {}) {
   const prevEndDate = new Date(previous);
   prevEndDate.setDate(prevEndDate.getDate() + 1);
   const prevEnd = prevEndDate.toISOString();
+  const ruleState = await loadDiagnosisRulesSafe(pool, { tenantId, storeId });
+  const rules = ruleState.byId;
+  const dormantDaysMin = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'days_min', defaultValue: 90 });
+  const dormantDaysMax = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'days_max', defaultValue: 180 });
+  const minHistoricalVisitCount = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'min_historical_visit_count', defaultValue: 2 });
+  const minTotalSpend = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'min_total_spend', defaultValue: 300 });
+  const newFirstVisitDaysMin = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'new_customer_second_visit', thresholdKey: 'first_visit_days_min', defaultValue: 7 });
+  const newFirstVisitDaysMax = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'new_customer_second_visit', thresholdKey: 'first_visit_days_max', defaultValue: 14 });
 
-  const [current, prev, repeat, marketing, employee, newCustomerSecondVisit] = await Promise.all([
+  const [current, prev, repeat, marketing, employee, dormant, newCustomerSecondVisit] = await Promise.all([
     orderStats(pool, { tenantId, storeId, start: dayStart, end: dayEnd }),
     orderStats(pool, { tenantId, storeId, start: prevStart, end: prevEnd }),
     repeatStats(pool, { tenantId, storeId }),
     marketingStats(pool, { tenantId, storeId }),
     employeeStats(pool, { tenantId, storeId }),
-    newCustomerSecondVisitStats(pool, { tenantId, storeId, date }),
+    dormantCustomerStats(pool, { tenantId, storeId, date, daysMin: dormantDaysMin, daysMax: dormantDaysMax, minVisitCount: minHistoricalVisitCount, minTotalSpend }),
+    newCustomerSecondVisitStats(pool, { tenantId, storeId, date, daysMin: newFirstVisitDaysMin, daysMax: newFirstVisitDaysMax }),
   ]);
 
   const issues = [];
@@ -149,47 +231,67 @@ export async function runDailyDiagnosis(pool, options = {}) {
   const prevRevenue = num(prev.revenue);
   if (prevRevenue > 0) {
     const revenueChangeRate = Number((((curRevenue - prevRevenue) / prevRevenue) * 100).toFixed(2));
-    if (revenueChangeRate <= -8) {
+    const rule = rules.get('revenue_decline');
+    const evaluated = await applyRule(pool, rule, { revenueChangeRate, currentRevenue: curRevenue, previousRevenue: prevRevenue });
+    if ((!rule && revenueChangeRate <= -8) || (rule && evaluated.matched)) {
       issues.push(issueRow({
         tenantId, storeId, issueType: 'revenue_decline', title: '营业额下滑',
         description: '本期营业额低于可比周期，需要拆解客流、复购和午市。',
-        severity: severityByDrop(revenueChangeRate), confidence: 0.84,
-        evidence: { currentRevenue: curRevenue, previousRevenue: prevRevenue, changeRate: revenueChangeRate, revenueGap: prevRevenue - curRevenue },
+        severity: rule?.severity || severityByDrop(revenueChangeRate), confidence: Number(rule?.confidence_base || 0.84),
+        evidence: ruleEvidence(rule, evaluated.matchedConditions, { currentRevenue: curRevenue, previousRevenue: prevRevenue, changeRate: revenueChangeRate, revenueGap: prevRevenue - curRevenue }),
         roots: ['traffic_decline', 'repeat_decline', 'lunch_decline'],
         impact: prevRevenue - curRevenue,
       }));
     }
   }
-  if (repeat.repeatRate !== null && repeat.repeatRate < 0.35) {
+  if (repeat.repeatRate !== null) {
+    const rule = rules.get('repeat_rate_low');
+    const evaluated = await applyRule(pool, rule, { repeatRate: repeat.repeatRate, customers: repeat.customers, riskCustomers: repeat.riskCustomers });
+    if ((!rule && repeat.repeatRate < 0.35) || (rule && evaluated.matched)) {
     issues.push(issueRow({
       tenantId, storeId, issueType: 'repeat_decline', title: '复购偏弱',
       description: '复购客户占比偏低，客户维护动作需要进入闭环。',
-      severity: 'P2', confidence: 0.76,
-      evidence: repeat, roots: ['new_customer_not_followed', 'dormant_customer_not_reactivated'], impact: 0,
+      severity: rule?.severity || 'P2', confidence: Number(rule?.confidence_base || 0.76),
+      evidence: ruleEvidence(rule, evaluated.matchedConditions, repeat), roots: ['new_customer_not_followed', 'dormant_customer_not_reactivated'], impact: 0,
     }));
+    }
   }
-  if (newCustomerSecondVisit.noSecondVisit >= 5) {
+  const newRule = rules.get('new_customer_second_visit');
+  const newEvaluated = await applyRule(pool, newRule, {
+    firstVisitDays: newFirstVisitDaysMin,
+    secondVisitCount: newCustomerSecondVisit.noSecondVisit > 0 ? 0 : 1,
+    noSecondVisit: newCustomerSecondVisit.noSecondVisit,
+  });
+  if ((!newRule && newCustomerSecondVisit.noSecondVisit >= 5) || (newRule && newCustomerSecondVisit.noSecondVisit >= 1 && newEvaluated.matched)) {
     issues.push(issueRow({
       tenantId,
       storeId,
       issueType: 'new_customer_no_second_visit',
       title: '新客未二次回店',
       description: '有一批首次消费后的新客已经过了最佳二次转化窗口，但还没有第二次消费。',
-      severity: newCustomerSecondVisit.noSecondVisit >= 30 ? 'P1' : 'P2',
-      confidence: 0.82,
-      evidence: newCustomerSecondVisit,
+      severity: newRule?.severity || (newCustomerSecondVisit.noSecondVisit >= 30 ? 'P1' : 'P2'),
+      confidence: Number(newRule?.confidence_base || 0.82),
+      evidence: ruleEvidence(newRule, newEvaluated.matchedConditions, newCustomerSecondVisit),
       roots: ['new_customer_not_followed', 'second_visit_invitation_missing'],
       impact: Math.round(newCustomerSecondVisit.noSecondVisit * Math.max(newCustomerSecondVisit.avgFirstSpend, 80) * 0.12),
     }));
     console.log('New customer second visit diagnosis generated');
   }
-  if (repeat.riskCustomers >= 1) {
+  const dormantRule = rules.get('dormant_customer_reactivation');
+  const dormantEvaluated = await applyRule(pool, dormantRule, {
+    lastVisitDays: dormant.minLastVisitDays,
+    visitCount: dormant.maxVisitCount,
+    totalSpend: dormant.maxTotalSpend,
+    priorityCustomerCount: dormant.priorityCustomerCount,
+  });
+  if ((!dormantRule && repeat.riskCustomers >= 1) || (dormantRule && dormant.priorityCustomerCount >= 1 && dormantEvaluated.matched)) {
     issues.push(issueRow({
       tenantId, storeId, issueType: 'customer_asset_risk', title: '客户资产流失风险',
       description: '存在沉睡或高风险客户，需要尽快触达维护。',
-      severity: repeat.riskCustomers >= 3 ? 'P1' : 'P2', confidence: 0.8,
-      evidence: repeat, roots: ['vip_churn', 'stored_value_inactive'], impact: 0,
+      severity: dormantRule?.severity || (repeat.riskCustomers >= 3 ? 'P1' : 'P2'), confidence: Number(dormantRule?.confidence_base || 0.8),
+      evidence: ruleEvidence(dormantRule, dormantEvaluated.matchedConditions, { ...repeat, ...dormant }), roots: ['vip_churn', 'stored_value_inactive'], impact: 0,
     }));
+    if (dormantRule) console.log('Dormant customer rule evaluated from config');
   }
   if (employee.lowCount >= 1) {
     issues.push(issueRow({
@@ -199,13 +301,17 @@ export async function runDailyDiagnosis(pool, options = {}) {
       evidence: employee, roots: ['training_not_completed', 'task_overdue'], impact: 0,
     }));
   }
-  if (marketing.touched > 0 && marketing.conversionRate !== null && marketing.conversionRate < 0.25) {
+  if (marketing.touched > 0 && marketing.conversionRate !== null) {
+    const rule = rules.get('marketing_conversion_low');
+    const evaluated = await applyRule(pool, rule, { marketingConversionRate: marketing.conversionRate, touched: marketing.touched, returned: marketing.returned });
+    if ((!rule && marketing.conversionRate < 0.25) || (rule && evaluated.matched)) {
     issues.push(issueRow({
       tenantId, storeId, issueType: 'marketing_ineffective', title: '营销转化不足',
       description: '客户已触达，但回店转化没有起来。',
-      severity: 'P2', confidence: 0.78,
-      evidence: marketing, roots: ['offer_not_attractive', 'segment_not_precise'], impact: 0,
+      severity: rule?.severity || 'P2', confidence: Number(rule?.confidence_base || 0.78),
+      evidence: ruleEvidence(rule, evaluated.matchedConditions, marketing), roots: ['offer_not_attractive', 'segment_not_precise'], impact: 0,
     }));
+    }
   }
 
   const savedIssues = [];
@@ -227,6 +333,38 @@ export async function runDailyDiagnosis(pool, options = {}) {
     );
     const saved = r.rows[0];
     saved.boss_language_summary = summarizeIssueForBoss(saved);
+    const evidence = saved.evidence_json || {};
+    if (evidence.rule_id) {
+      try {
+        const sourceRule = rules.get(evidence.rule_id);
+        const bossLanguageOutput = renderBossLanguage(sourceRule, {
+          ...evidence,
+          days_min: evidence.daysMin || dormantDaysMin,
+          priority_customer_count: evidence.priorityCustomerCount || 0,
+          change_rate: Math.abs(Number(evidence.changeRate || 0)),
+        }) || saved.boss_language_summary;
+        const hit = await recordRuleHit(pool, {
+          tenantId,
+          storeId,
+          rule: sourceRule,
+          inputContext: evidence,
+          output: {
+            generatedIssueId: saved.issue_id,
+            confidenceScore: saved.confidence_score,
+            severity: saved.severity,
+            bossLanguageOutput,
+            matchedConditions: evidence.matched_conditions || [],
+          },
+        });
+        if (hit?.id) {
+          saved.evidence_json = { ...evidence, rule_hit_id: hit.id };
+          await pool.query(`UPDATE growth_ontology_issues SET evidence_json=$2::jsonb WHERE issue_id=$1`, [saved.issue_id, JSON.stringify(saved.evidence_json)]);
+        }
+        saved.boss_language_summary = bossLanguageOutput;
+      } catch (e) {
+        console.warn('[ontology-rules] record hit failed:', e?.message || e);
+      }
+    }
     savedIssues.push(saved);
     opportunities.push(...await createOpportunitiesForIssue(pool, saved));
   }

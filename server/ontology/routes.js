@@ -24,12 +24,19 @@ import { generateTasksForOpportunity } from './action-plan-service.js';
 import { trackGrowthResults } from './result-tracking-service.js';
 import { generateGrowthAttribution } from './growth-attribution-service.js';
 import { buildClosedLoopReport } from './closed-loop-report-service.js';
+import {
+  ensureOntologyRuleConfig,
+  evaluateRules,
+  getRuleThreshold,
+  loadEffectiveRules,
+} from './ontology-rule-service.js';
 
 export function registerOntologyRoutes(app, pool, authRequired) {
   const getTenantId = (req) => String(req.tenantId || req.user?.tenant_id || req.query?.tenant_id || req.body?.tenant_id || 'default').trim() || 'default';
   const ensureGrowth = async () => {
     try {
       await ensureGrowthOntologyCore(pool);
+      await ensureOntologyRuleConfig(pool);
     } catch (e) {
       console.error('[ontology] growth ontology init error:', e?.message || e);
       throw e;
@@ -257,6 +264,199 @@ export function registerOntologyRoutes(app, pool, authRequired) {
       return res.json(report);
     } catch (e) {
       console.error('[ontology] closed loop report error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.get('/api/ontology/rules', authRequired, async (req, res) => {
+    try {
+      await ensureOntologyRuleConfig(pool);
+      const tenantId = getTenantId(req);
+      const storeId = req.query?.store_id || req.query?.storeId || '';
+      const rules = await loadEffectiveRules(pool, {
+        tenantId,
+        storeId,
+        ruleType: req.query?.rule_type || req.query?.ruleType || '',
+        businessDomain: req.query?.business_domain || req.query?.businessDomain || '',
+      });
+      const hits = await pool.query(
+        `SELECT rule_id, count(*)::int AS hit_count
+           FROM ontology_rule_hits
+          WHERE tenant_id=$1 AND ($2::text='' OR store_id=$2)
+            AND hit_at >= now() - interval '30 days'
+          GROUP BY rule_id`,
+        [tenantId, storeId]
+      );
+      const hitMap = new Map((hits.rows || []).map(row => [row.rule_id, Number(row.hit_count || 0)]));
+      const enriched = [];
+      for (const rule of rules) {
+        const thresholdRows = await pool.query(
+          `SELECT threshold_key, threshold_value, threshold_unit, comparator
+             FROM ontology_rule_thresholds
+            WHERE rule_id=$1 AND is_active=true
+              AND ((tenant_id IS NULL AND store_id IS NULL) OR (tenant_id=$2 AND store_id IS NULL) OR (tenant_id=$2 AND store_id=$3))
+            ORDER BY threshold_key, updated_at DESC`,
+          [rule.rule_id, tenantId, storeId]
+        );
+        enriched.push({
+          ...rule,
+          condition_json: undefined,
+          action_json: undefined,
+          thresholds: thresholdRows.rows || [],
+          recentHitCount: hitMap.get(rule.rule_id) || 0,
+        });
+      }
+      return res.json({ ok: true, rules: enriched });
+    } catch (e) {
+      console.error('[ontology] rules list error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  if (typeof app.put === 'function') app.put('/api/ontology/rules/:rule_id', authRequired, async (req, res) => {
+    try {
+      await ensureOntologyRuleConfig(pool);
+      const tenantId = getTenantId(req);
+      const storeId = String(req.body?.store_id || req.body?.storeId || req.query?.store_id || '').trim();
+      const ruleId = req.params.rule_id;
+      const baseRules = await loadEffectiveRules(pool, { tenantId, storeId, ruleType: req.body?.rule_type || 'diagnosis' });
+      const base = baseRules.find(rule => rule.rule_id === ruleId);
+      if (!base) return res.status(404).json({ ok: false, error: 'rule_not_found' });
+      const versionResult = await pool.query(
+        `SELECT COALESCE(max(version),0)::int + 1 AS next_version
+           FROM ontology_rules
+          WHERE rule_id=$1 AND tenant_id=$2 AND COALESCE(store_id,'')=COALESCE($3,'')`,
+        [ruleId, tenantId, storeId || null]
+      );
+      const nextVersion = Number(versionResult.rows?.[0]?.next_version || Number(base.version || 1) + 1);
+      await pool.query(
+        `UPDATE ontology_rules SET is_active=false, updated_at=now()
+          WHERE rule_id=$1 AND tenant_id=$2 AND COALESCE(store_id,'')=COALESCE($3,'')`,
+        [ruleId, tenantId, storeId || null]
+      );
+      const condition = req.body?.condition_json || req.body?.condition || base.condition_json || {};
+      const action = req.body?.action_json || req.body?.action || base.action_json || {};
+      const inserted = await pool.query(
+        `INSERT INTO ontology_rules (
+          rule_id, tenant_id, store_id, rule_type, rule_name, business_domain, target_metric,
+          condition_json, action_json, boss_language_template, severity, priority,
+          confidence_base, version, is_active, created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14,true,$15)
+        RETURNING *`,
+        [
+          ruleId, tenantId, storeId || null, base.rule_type, req.body?.rule_name || base.rule_name,
+          req.body?.business_domain || base.business_domain, req.body?.target_metric || base.target_metric,
+          JSON.stringify(condition), JSON.stringify(action), req.body?.boss_language_template || base.boss_language_template,
+          req.body?.severity || base.severity, req.body?.priority || base.priority,
+          Number(req.body?.confidence_base || base.confidence_base || 0.75), nextVersion, req.user?.username || 'api',
+        ]
+      );
+      const thresholds = req.body?.thresholds || {};
+      for (const [key, value] of Object.entries(thresholds)) {
+        if (value === '' || value == null) continue;
+        const existingDefault = await getRuleThreshold(pool, { tenantId, storeId, ruleId, thresholdKey: key, defaultValue: Number(value) });
+        await pool.query(
+          `INSERT INTO ontology_rule_thresholds (rule_id, tenant_id, store_id, threshold_key, threshold_value, threshold_unit, comparator, description)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           ON CONFLICT (rule_id, threshold_key, COALESCE(tenant_id, ''), COALESCE(store_id, ''))
+           DO UPDATE SET threshold_value=EXCLUDED.threshold_value, updated_at=now(), is_active=true`,
+          [ruleId, tenantId, storeId || null, key, Number(value), req.body?.threshold_units?.[key] || '', req.body?.comparators?.[key] || '', req.body?.descriptions?.[key] || `门店规则阈值 ${existingDefault}`]
+        );
+      }
+      return res.json({ ok: true, rule: inserted.rows[0] });
+    } catch (e) {
+      console.error('[ontology] rule update error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.get('/api/ontology/rule-hits', authRequired, async (req, res) => {
+    try {
+      await ensureOntologyRuleConfig(pool);
+      const tenantId = getTenantId(req);
+      const storeId = String(req.query?.store_id || req.query?.storeId || '').trim();
+      const params = [tenantId, storeId];
+      const where = [`tenant_id=$1`, `($2::text='' OR store_id=$2)`];
+      if (req.query?.rule_id) {
+        params.push(req.query.rule_id);
+        where.push(`rule_id=$${params.length}`);
+      }
+      if (req.query?.from) {
+        params.push(req.query.from);
+        where.push(`hit_at >= $${params.length}::timestamptz`);
+      }
+      if (req.query?.to) {
+        params.push(req.query.to);
+        where.push(`hit_at <= $${params.length}::timestamptz`);
+      }
+      const limit = Math.min(Math.max(Number(req.query?.limit || 50), 1), 200);
+      params.push(limit);
+      const result = await pool.query(
+        `SELECT id, tenant_id, store_id, rule_id, rule_version, rule_type,
+                generated_issue_id, generated_opportunity_id, generated_task_id,
+                confidence_score, severity, boss_language_output, hit_at
+           FROM ontology_rule_hits
+          WHERE ${where.join(' AND ')}
+          ORDER BY hit_at DESC
+          LIMIT $${params.length}`,
+        params
+      );
+      return res.json({ ok: true, hits: result.rows || [] });
+    } catch (e) {
+      console.error('[ontology] rule hits error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/ontology/rules/evaluate', authRequired, async (req, res) => {
+    try {
+      await ensureOntologyRuleConfig(pool);
+      const result = await evaluateRules(pool, {
+        tenantId: getTenantId(req),
+        storeId: req.body?.store_id || req.body?.storeId || '',
+        businessDomain: req.body?.business_domain || req.body?.businessDomain || '',
+        ruleType: req.body?.rule_type || req.body?.ruleType || 'diagnosis',
+        inputContext: req.body?.inputContext || {},
+      });
+      return res.json({ ok: true, ...result });
+    } catch (e) {
+      console.error('[ontology] rule evaluate error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/ontology/rules/:rule_id/disable', authRequired, async (req, res) => {
+    try {
+      await ensureOntologyRuleConfig(pool);
+      const tenantId = getTenantId(req);
+      const storeId = String(req.body?.store_id || req.body?.storeId || req.query?.store_id || '').trim();
+      const ruleId = req.params.rule_id;
+      await pool.query(
+        `UPDATE ontology_rules SET is_active=false, updated_at=now()
+         WHERE rule_id=$1 AND tenant_id=$2 AND COALESCE(store_id,'')=COALESCE($3,'')`,
+        [ruleId, tenantId, storeId || null]
+      );
+      return res.json({ ok: true, ruleId, action: 'disabled' });
+    } catch (e) {
+      console.error('[ontology] rule disable error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/ontology/rules/:rule_id/enable', authRequired, async (req, res) => {
+    try {
+      await ensureOntologyRuleConfig(pool);
+      const tenantId = getTenantId(req);
+      const storeId = String(req.body?.store_id || req.body?.storeId || req.query?.store_id || '').trim();
+      const ruleId = req.params.rule_id;
+      await pool.query(
+        `UPDATE ontology_rules SET is_active=true, updated_at=now()
+         WHERE rule_id=$1 AND tenant_id=$2 AND COALESCE(store_id,'')=COALESCE($3,'')`,
+        [ruleId, tenantId, storeId || null]
+      );
+      return res.json({ ok: true, ruleId, action: 'enabled' });
+    } catch (e) {
+      console.error('[ontology] rule enable error:', e?.message || e);
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });

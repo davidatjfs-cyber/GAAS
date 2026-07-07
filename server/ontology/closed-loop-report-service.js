@@ -28,6 +28,9 @@ export async function buildClosedLoopReport(pool, options = {}) {
   const useSecondVisitSummary = !preferredScenario && Boolean(secondVisitIssue || secondVisitOpp);
   const secondVisitEvidence = secondVisitIssue?.evidence_json || secondVisitOpp?.evidence_json || {};
   const secondVisitResult = (results.rows || []).find(r => r.result_type === 'new_customer_second_visit')?.evidence_json || null;
+  const confidenceNote = firstIssue?.evidence_json?.confidence_note
+    || firstOpp?.evidence_json?.confidence_note
+    || '使用系统默认经营规则判断';
   const dormantAttributions = preferredScenario === 'dormant_customer_reactivation'
     ? (attributions.rows || []).filter(row => !firstOpp?.opportunity_id || row.opportunity_id === firstOpp.opportunity_id)
     : [];
@@ -78,5 +81,6 @@ export async function buildClosedLoopReport(pool, options = {}) {
       reviewStatus: results.rows?.length ? 'improved' : 'insufficient_data',
     },
     ...boss,
+    confidence_note: confidenceNote,
   };
 }

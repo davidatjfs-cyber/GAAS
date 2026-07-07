@@ -19796,6 +19796,20 @@
                             <div id="growth-ontology-brain" style="min-height:180px;position:relative;"></div>
                         </div>
                     </div>
+                    <div id="growth-rules-content" style="display:none;">
+                        <div class="rep-filters">
+                            <div class="rep-filters__eyebrow">OPERATING RULES</div>
+                            <div class="rep-filters__title">经营规则设置</div>
+                            <div style="font-size:12px;color:rgba(226,232,240,.56);line-height:1.6;margin-bottom:12px;">调整系统默认标准、品牌标准或当前门店标准，并查看最近命中记录。</div>
+                            <div class="rep-seg" style="margin-bottom:14px;">
+                                <button onclick="loadGrowthRules()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">刷新规则</button>
+                                <button onclick="saveGrowthRuleThresholds()" class="rep-seg-btn" style="flex:1;">保存当前门店标准</button>
+                            </div>
+                            <div id="growth-rules-list" style="min-height:160px;"></div>
+                            <div style="font-size:13px;font-weight:800;color:#fff;margin:18px 0 10px;">最近命中记录</div>
+                            <div id="growth-rule-hits-list" style="min-height:80px;"></div>
+                        </div>
+                    </div>
                     <div id="growth-wecom-content" style="display:none;">
                         <div class="rep-filters">
                             <div class="rep-filters__eyebrow">WECOM</div>
@@ -57547,16 +57561,16 @@ ${body}
             { key: 'engine', label: '自动营销', members: ['automarketing', 'abtests', 'paymentrules'] },
             { key: 'content', label: '海报创意', members: ['posters'] },
             { key: 'execution', label: '执行中心', members: ['actions', 'exec-logs'] },
-            { key: 'settings', label: '设置治理', members: ['wecomconfig', 'constraints'] }
+            { key: 'settings', label: '设置治理', members: ['wecomconfig', 'constraints', 'rules'] }
         ];
         var GROWTH_MEMBER_LABEL = {
             dashboard: '看板', ontology: '餐厅增长大脑', posdiagnosis: 'POS诊断导入', profiles: '360客人档案', maintenance: '维护导航舱', pos: 'POS消费', wecom: '企微客户',
             automarketing: '规则引擎', abtests: 'A/B测试', paymentrules: '支付发券',
             campaigns: '活动管理', posters: '海报创意', public: '公域品宣', contentsys: '内容系统',
             actions: 'AI建议', 'exec-logs': '执行记录',
-            wecomconfig: '企微配置', constraints: '营销约束'
+            wecomconfig: '企微配置', constraints: '营销约束', rules: '经营规则设置'
         };
-        var GROWTH_ALL_MEMBERS = ['dashboard', 'ontology', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'posdiagnosis', 'maintenance', 'constraints', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing', 'paymentrules'];
+        var GROWTH_ALL_MEMBERS = ['dashboard', 'ontology', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'posdiagnosis', 'maintenance', 'constraints', 'rules', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing', 'paymentrules'];
         var __growthActiveSub = {}; // group.key -> 最近激活的成员
 
         function growthGroupOf(member) {
@@ -57587,6 +57601,7 @@ ${body}
             else if (member === 'pos') { loadPosStats(); }
             else if (member === 'exec-logs') { loadExecutionLogs(); }
             else if (member === 'wecomconfig') { loadStoreWecomConfigs(); }
+            else if (member === 'rules') { loadGrowthRules(); }
             else if (member === 'automarketing') { loadAutoMarketing(); }
             else if (member === 'paymentrules') { loadPaymentRules(); }
             else if (member === 'ontology') { loadGrowthOntologyBrain(); }
@@ -57687,6 +57702,100 @@ ${body}
                     + '</div>';
             } catch (e) {
                 host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+        }
+
+        var __GROWTH_RULES_CACHE = [];
+        var __GROWTH_RULE_THRESHOLD_LABELS = {
+            days_min: '沉睡客户起始天数',
+            days_max: '沉睡客户结束天数',
+            min_historical_visit_count: '优先维护最低消费次数',
+            min_total_spend: '优先维护最低消费金额',
+            first_visit_days_min: '新客二次转化起始天数',
+            first_visit_days_max: '新客二次转化结束天数',
+            revenue_decline_threshold: '营收下降阈值',
+            repeat_rate_threshold: '复购率健康线',
+            marketing_conversion_threshold: '营销转化健康线'
+        };
+        function growthRuleScopeLabel(scope) {
+            if (scope === 'store') return '当前门店标准';
+            if (scope === 'tenant') return '品牌标准';
+            return '系统默认标准';
+        }
+        function growthRuleThresholdMap(rule) {
+            var m = {};
+            (rule.thresholds || []).forEach(function(t) {
+                if (m[t.threshold_key] == null) m[t.threshold_key] = t;
+            });
+            return m;
+        }
+        async function loadGrowthRules() {
+            var list = document.getElementById('growth-rules-list');
+            var hits = document.getElementById('growth-rule-hits-list');
+            if (list) list.innerHTML = '<div class="rep-pay-empty">加载经营规则…</div>';
+            try {
+                var storeId = document.getElementById('growth-store-filter')?.value || '';
+                var qs = storeId ? ('?store_id=' + encodeURIComponent(storeId)) : '';
+                var data = await fetch('/api/ontology/rules' + qs, { headers:growthAuthHeaders() }).then(function(r){ return r.json(); });
+                if (!data.ok) throw new Error(data.error || 'rules_failed');
+                __GROWTH_RULES_CACHE = data.rules || [];
+                var editableKeys = Object.keys(__GROWTH_RULE_THRESHOLD_LABELS);
+                list.innerHTML = __GROWTH_RULES_CACHE.map(function(rule) {
+                    var thresholds = growthRuleThresholdMap(rule);
+                    var editable = editableKeys.filter(function(k){ return thresholds[k]; });
+                    var thresholdHtml = editable.length ? editable.map(function(k) {
+                        var t = thresholds[k];
+                        return '<label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:rgba(226,232,240,.68);">'
+                            + '<span>' + escapeHtml(__GROWTH_RULE_THRESHOLD_LABELS[k]) + '</span>'
+                            + '<input class="dr-store-select growth-rule-threshold" data-rule="' + escapeHtml(rule.rule_id) + '" data-key="' + escapeHtml(k) + '" value="' + escapeHtml(String(t.threshold_value ?? '')) + '" style="height:34px;">'
+                            + '</label>';
+                    }).join('') : '<div style="font-size:12px;color:rgba(226,232,240,.45);">暂无可编辑判断标准</div>';
+                    return '<div style="border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:10px;background:rgba(0,0,0,.20);">'
+                        + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px;">'
+                        + '<div><div style="font-weight:800;color:#fff;">' + escapeHtml(rule.rule_name || '-') + '</div>'
+                        + '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:4px;">' + escapeHtml(rule.business_domain || '-') + ' · ' + escapeHtml(growthRuleScopeLabel(rule.rule_scope)) + '</div></div>'
+                        + '<div style="font-size:12px;color:#38bdf8;font-weight:800;">近30天命中 ' + escapeHtml(String(rule.recentHitCount || 0)) + ' 次</div>'
+                        + '</div>'
+                        + '<div class="rep-filters__grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">' + thresholdHtml + '</div>'
+                        + '</div>';
+                }).join('') || '<div class="rep-pay-empty">暂无经营规则</div>';
+                var hitData = await fetch('/api/ontology/rule-hits' + qs + (qs ? '&' : '?') + 'limit=20', { headers:growthAuthHeaders() }).then(function(r){ return r.json(); }).catch(function(){ return { hits: [] }; });
+                var hitRows = hitData.hits || [];
+                hits.innerHTML = hitRows.map(function(h) {
+                    var rule = (__GROWTH_RULES_CACHE || []).find(function(r){ return r.rule_id === h.rule_id; });
+                    var generated = [h.generated_issue_id ? '问题' : '', h.generated_opportunity_id ? '机会' : '', h.generated_task_id ? '任务' : ''].filter(Boolean).join(' / ') || '记录';
+                    return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.65;">'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(rule?.rule_name || h.rule_id || '-') + '</b><span style="color:#22c55e;">' + escapeHtml(generated) + '</span></div>'
+                        + '<div style="color:rgba(226,232,240,.6);">门店：' + escapeHtml(h.store_id || '全部') + ' · ' + escapeHtml(String(h.hit_at || '').slice(0, 16).replace('T', ' ')) + '</div>'
+                        + '<div style="color:rgba(226,232,240,.75);">' + escapeHtml(h.boss_language_output || '已按经营规则生成判断。') + '</div>'
+                        + '</div>';
+                }).join('') || '<div class="rep-pay-empty">暂无命中记录</div>';
+            } catch (e) {
+                if (list) list.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+        }
+        async function saveGrowthRuleThresholds() {
+            try {
+                var storeId = document.getElementById('growth-store-filter')?.value || '';
+                var grouped = {};
+                document.querySelectorAll('.growth-rule-threshold').forEach(function(input) {
+                    var ruleId = input.getAttribute('data-rule');
+                    var key = input.getAttribute('data-key');
+                    if (!grouped[ruleId]) grouped[ruleId] = {};
+                    grouped[ruleId][key] = input.value;
+                });
+                for (var ruleId in grouped) {
+                    var r = await fetch('/api/ontology/rules/' + encodeURIComponent(ruleId), {
+                        method:'PUT',
+                        headers:growthAuthHeaders(),
+                        body:JSON.stringify({ store_id: storeId, thresholds: grouped[ruleId] })
+                    }).then(function(x){ return x.json(); });
+                    if (!r.ok) throw new Error(r.error || 'save_failed');
+                }
+                showNotification('当前门店经营标准已保存', 'success');
+                await loadGrowthRules();
+            } catch (e) {
+                showNotification('经营规则保存失败：' + (e?.message || e), 'error');
             }
         }
 
