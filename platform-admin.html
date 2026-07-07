@@ -310,7 +310,7 @@
           <div class="sub">管理租户开通、许可证、飞书、品牌外观与自动验收</div>
         </div>
         <div class="header-links">
-          <a href="/agents-admin/" onclick="event.preventDefault(); window.open(agentsAdminBase() + '/agents-admin/', '_blank', 'noopener')" target="_blank" rel="noreferrer">Agent</a>
+          <a href="/agents-admin/" onclick="event.preventDefault(); window.open(withHrmsToken(agentsAdminBase() + '/agents-admin/'), '_blank', 'noopener')" target="_blank" rel="noreferrer">Agent</a>
           <a href="/api/health" target="_blank" rel="noreferrer">健康</a>
         </div>
       </div>
@@ -583,6 +583,16 @@
     // 生产环境location.port为空('')不受影响，行为不变。
     function agentsAdminBase() {
       return location.port === '3000' ? `${location.protocol}//${location.hostname}:3101` : '';
+    }
+    // 跨源(3000→3101)时localStorage不共享，agents-admin读不到本页登录后写入的
+    // platform_admin_token；同源(生产走nginx)时没有这个问题，不需要也不应该把token
+    // 拼进URL(避免不必要地留痕)。只在agentsAdminBase()非空(即将跨源)时才附带token。
+    function withHrmsToken(url) {
+      if (!agentsAdminBase()) return url;
+      const token = localStorage.getItem(tokenKey) || '';
+      if (!token) return url;
+      const sep = url.includes('?') ? '&' : '?';
+      return `${url}${sep}hrms_token=${encodeURIComponent(token)}`;
     }
     const state = { tenants: [], selectedTenantId: '', detail: null, agentCenter: null, activePanel: 'overview', overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] } };
     const ACTION_GLOSSARY = [
@@ -891,7 +901,7 @@
       if (!id) throw new Error('请先选择租户');
       if (!isLoggedIn()) throw new Error('请先登录');
       localStorage.setItem(agentTenantKey, id);
-      window.open(`${agentsAdminBase()}/agents-admin/?tenant_id=${encodeURIComponent(id)}`, '_blank', 'noopener');
+      window.open(withHrmsToken(`${agentsAdminBase()}/agents-admin/?tenant_id=${encodeURIComponent(id)}`), '_blank', 'noopener');
       log(`已打开租户 ${id} 的 Agent 控制台`);
     };
 
@@ -1778,7 +1788,7 @@
       updateSelectedTenantBar();
       showTenantLoginAccess(data.login_access, { silentLog: true });
       const frame = $('agentCenterFrame');
-      if (frame) frame.src = `${agentsAdminBase()}/agents-admin/?tenant_id=${encodeURIComponent(id)}`;
+      if (frame) frame.src = withHrmsToken(`${agentsAdminBase()}/agents-admin/?tenant_id=${encodeURIComponent(id)}`);
       const feishu = data.integrations?.feishu_bitable || {};
       if (feishu.app_id) $('cfgAppId').value = feishu.app_id;
       // Load extra integration configs in background (non-blocking)
