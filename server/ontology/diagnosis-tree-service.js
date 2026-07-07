@@ -199,14 +199,18 @@ export async function runDailyDiagnosis(pool, options = {}) {
   const storeId = options.storeId || options.store_id || '';
   const date = options.date || new Date().toISOString().slice(0, 10);
   if (!storeId) return { ontologyStatus: 'insufficient_data', missingFields: ['store_id'], issues: [], opportunities: [] };
-  const dayStart = `${date}T00:00:00+08:00`;
-  const dayEnd = `${date}T23:59:59+08:00`;
-  const previous = new Date(`${date}T00:00:00+08:00`);
-  previous.setDate(previous.getDate() - 7);
-  const prevStart = previous.toISOString();
-  const prevEndDate = new Date(previous);
-  prevEndDate.setDate(prevEndDate.getDate() + 1);
-  const prevEnd = prevEndDate.toISOString();
+  // 营收对比用"近7天(不含今天) vs 再往前7天"的周环比，不用"今天 vs 7天前那天"的单日对比——
+  // 单日对比在打烊结账前跑诊断会把"今天流水还没同步完"误判成"营收暴跌"（当天0元 vs 历史某天有数据，
+  // 直接算出假的-100%），近7天累计能把"今天不完整"的影响摊薄掉，也更贴近"最近生意怎么样"的实际语义。
+  const todayStart = new Date(`${date}T00:00:00+08:00`);
+  const dayEnd = todayStart.toISOString();
+  const dayStartDate = new Date(todayStart);
+  dayStartDate.setDate(dayStartDate.getDate() - 7);
+  const dayStart = dayStartDate.toISOString();
+  const prevEnd = dayStart;
+  const prevStartDate = new Date(dayStartDate);
+  prevStartDate.setDate(prevStartDate.getDate() - 7);
+  const prevStart = prevStartDate.toISOString();
   const ruleState = await loadDiagnosisRulesSafe(pool, { tenantId, storeId });
   const rules = ruleState.byId;
   const dormantDaysMin = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'days_min', defaultValue: 90 });
@@ -314,6 +318,22 @@ export async function runDailyDiagnosis(pool, options = {}) {
     }
   }
 
+  // 每次跑诊断都是全量重新判断这家店的问题，旧一轮生成的 issue/opportunity 不应该继续以
+  // status='open' 的身份留在库里跟新结果混在一起——之前一直是纯 INSERT，从不关闭旧记录，
+  // 导致 listIssues 把几小时前（甚至用了旧口径算出来）的问题和刚生成的新问题堆在一起返回，
+  // AI 挑"重点问题"时可能挑中过期的那条。这里在插入新一轮结果之前，先把这家店旧的 open
+  // 记录标记为 superseded（保留历史，不删数据），listIssues/listOpportunities 只读 open 的。
+  await pool.query(
+    `UPDATE growth_ontology_issues SET status='superseded', updated_at=now()
+      WHERE tenant_id=$1 AND store_id=$2 AND status='open'`,
+    [tenantId, storeId]
+  );
+  await pool.query(
+    `UPDATE growth_ontology_opportunities SET status='superseded', updated_at=now()
+      WHERE tenant_id=$1 AND store_id=$2 AND status='open'`,
+    [tenantId, storeId]
+  );
+
   const savedIssues = [];
   const opportunities = [];
   for (const issue of issues) {
@@ -383,7 +403,7 @@ export async function listIssues(pool, options = {}) {
   const storeId = String(options.storeId || '').trim();
   const r = await pool.query(
     `SELECT * FROM growth_ontology_issues
-      WHERE tenant_id=$1 AND ($2::text='' OR store_id=$2)
+      WHERE tenant_id=$1 AND ($2::text='' OR store_id=$2) AND status='open'
       ORDER BY created_at DESC LIMIT 100`,
     [tenantId, storeId]
   );

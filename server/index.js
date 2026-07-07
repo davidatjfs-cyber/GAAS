@@ -5729,7 +5729,7 @@ initBrandConfigCache().catch((e) => console.error('initBrandConfigCache failed:'
 configureDbSessionSafety(pool, { serviceName: 'hrms-server' });
 const __ALLOW_SCHEMA_CHANGES__ = isSchemaChangeAllowed();
 registerGrowthRoutes(app, pool);
-registerDiagnosisRoutes(app, pool, authRequired);
+registerDiagnosisRoutes(app, pool, authRequired, callLLM);
 registerOntologyRoutes(app, pool, authRequired);
 setSendGrowthAlert(async (msg) => {
   const GROWTH_REPORT_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
