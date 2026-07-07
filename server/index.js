@@ -79,6 +79,7 @@ import strategyExperimentRoutes from './strategy-experiment-api.js';
 import { ensurePhaseTables, registerPhaseRoutes } from './growth-phases.js';
 import { ensureCustomerOpsTables, registerCustomerOpsRoutes } from './customer-ops.js';
 import { registerMarketingAttributionRoutes } from './marketing/marketing-attribution-routes.js';
+import { ensureBaselineSchemaHealth } from './baseline-schema-health.js';
 import {
   reconcileDailyReportAttendanceRegister,
   backfillDailyAttendanceRegisterMissing,
@@ -5725,7 +5726,6 @@ app.post('/api/uploads/points-evidence', authRequired, upload.array('files', 6),
 const pool = new Pool({ connectionString: DATABASE_URL });
 setAgentPool(pool);
 initBrandConfigCache().catch((e) => console.error('initBrandConfigCache failed:', e?.message || e));
-initStoreAliasCache().catch((e) => console.error('initStoreAliasCache failed:', e?.message || e));
 configureDbSessionSafety(pool, { serviceName: 'hrms-server' });
 const __ALLOW_SCHEMA_CHANGES__ = isSchemaChangeAllowed();
 registerGrowthRoutes(app, pool);
@@ -20912,6 +20912,8 @@ app.listen(PORT, HOST, async () => {
     });
 
     await runWithBootstrapTenantContext(async () => {
+      await ensureBaselineSchemaHealth(pool).catch(e => console.warn('[schema] baseline health:', e?.message || e));
+      await initStoreAliasCache().catch((e) => console.warn('[store-alias-cache] refresh failed after baseline:', e?.message || e));
       // 登录会话表：必须在 ALLOW_SCHEMA_CHANGES 之外也能创建，否则 INSERT 失败 + 仍签发 JWT → 全站 session 校验失败
       await ensureUserSessionsTable();
       await ensureGrowthTables(pool).catch(e => console.warn('[growth] ensure tables:', e?.message));
@@ -22964,6 +22966,7 @@ app.use((err, req, res, next) => {
 
 if (__ALLOW_SCHEMA_CHANGES__) {
   void runWithBootstrapTenantContext(async () => {
+    await ensureBaselineSchemaHealth(pool).catch(e => console.warn('[schema] baseline health:', e?.message || e));
     await ensureExamResultsTable();
     await ensureHrmsStateTable();
     await ensureApprovalTables();

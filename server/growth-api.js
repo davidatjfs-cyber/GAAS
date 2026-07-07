@@ -677,9 +677,6 @@ export async function ensureGrowthTables(pool) {
   await pool.query(`ALTER TABLE poster_templates ADD COLUMN IF NOT EXISTS image_url TEXT`);
   await pool.query(`ALTER TABLE poster_templates ADD COLUMN IF NOT EXISTS purposes TEXT[] DEFAULT '{}'::text[]`);
   await pool.query(`ALTER TABLE poster_templates ADD COLUMN IF NOT EXISTS channels TEXT[] DEFAULT '{}'::text[]`);
-  await pool.query(`ALTER TABLE generated_posters ADD COLUMN IF NOT EXISTS purposes TEXT[] DEFAULT '{}'::text[]`);
-  await pool.query(`ALTER TABLE generated_posters ADD COLUMN IF NOT EXISTS channels TEXT[] DEFAULT '{}'::text[]`);
-
   await pool.query(`
     CREATE TABLE IF NOT EXISTS generated_posters (
       id BIGSERIAL PRIMARY KEY,
@@ -700,6 +697,9 @@ export async function ensureGrowthTables(pool) {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query(`ALTER TABLE generated_posters ADD COLUMN IF NOT EXISTS purposes TEXT[] DEFAULT '{}'::text[]`);
+  await pool.query(`ALTER TABLE generated_posters ADD COLUMN IF NOT EXISTS channels TEXT[] DEFAULT '{}'::text[]`);
+  await pool.query(`ALTER TABLE generated_posters ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default'`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS content_performance (

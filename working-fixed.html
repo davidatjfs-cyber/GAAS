@@ -19784,6 +19784,32 @@
                         <div id="growth-actions" style="min-height:100px;position:relative;"></div>
                     </div>
                     </div>
+                    <div id="growth-ontology-content" style="display:none;">
+                        <div class="rep-filters">
+                            <div class="rep-filters__eyebrow">RESTAURANT GROWTH BRAIN</div>
+                            <div class="rep-filters__title">餐厅增长大脑</div>
+                            <div style="font-size:12px;color:rgba(226,232,240,.56);line-height:1.6;margin-bottom:12px;">客户资产地图 · 经营问题地图 · 增长机会列表 · 动作闭环看板 · 老板版闭环报告</div>
+                            <div class="rep-seg" style="margin-bottom:14px;">
+                                <button onclick="runGrowthOntologyDiagnosis()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">运行今日诊断</button>
+                                <button onclick="loadGrowthOntologyBrain()" class="rep-seg-btn" style="flex:1;">刷新闭环报告</button>
+                            </div>
+                            <div id="growth-ontology-brain" style="min-height:180px;position:relative;"></div>
+                        </div>
+                    </div>
+                    <div id="growth-rules-content" style="display:none;">
+                        <div class="rep-filters">
+                            <div class="rep-filters__eyebrow">OPERATING RULES</div>
+                            <div class="rep-filters__title">经营规则设置</div>
+                            <div style="font-size:12px;color:rgba(226,232,240,.56);line-height:1.6;margin-bottom:12px;">调整系统默认标准、品牌标准或当前门店标准，并查看最近命中记录。</div>
+                            <div class="rep-seg" style="margin-bottom:14px;">
+                                <button onclick="loadGrowthRules()" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">刷新规则</button>
+                                <button onclick="saveGrowthRuleThresholds()" class="rep-seg-btn" style="flex:1;">保存当前门店标准</button>
+                            </div>
+                            <div id="growth-rules-list" style="min-height:160px;"></div>
+                            <div style="font-size:13px;font-weight:800;color:#fff;margin:18px 0 10px;">最近命中记录</div>
+                            <div id="growth-rule-hits-list" style="min-height:80px;"></div>
+                        </div>
+                    </div>
                     <div id="growth-wecom-content" style="display:none;">
                         <div class="rep-filters">
                             <div class="rep-filters__eyebrow">WECOM</div>
@@ -57530,21 +57556,21 @@ ${body}
         }
         // ── 增长模块 6 大分组（14→6 重组，零DOM搬迁：内容区按 id 显示/隐藏）──
         var GROWTH_GROUPS = [
-            { key: 'dashboard', label: '看板', members: ['dashboard'] },
+            { key: 'dashboard', label: '看板', members: ['dashboard', 'ontology'] },
             { key: 'audience', label: '客户数据', members: ['pos', 'wecom'] },
             { key: 'engine', label: '自动营销', members: ['automarketing', 'abtests', 'paymentrules'] },
             { key: 'content', label: '海报创意', members: ['posters'] },
             { key: 'execution', label: '执行中心', members: ['actions', 'exec-logs'] },
-            { key: 'settings', label: '设置治理', members: ['wecomconfig', 'constraints'] }
+            { key: 'settings', label: '设置治理', members: ['wecomconfig', 'constraints', 'rules'] }
         ];
         var GROWTH_MEMBER_LABEL = {
-            dashboard: '看板', posdiagnosis: 'POS诊断导入', profiles: '360客人档案', maintenance: '维护导航舱', pos: 'POS消费', wecom: '企微客户',
+            dashboard: '看板', ontology: '餐厅增长大脑', posdiagnosis: 'POS诊断导入', profiles: '360客人档案', maintenance: '维护导航舱', pos: 'POS消费', wecom: '企微客户',
             automarketing: '规则引擎', abtests: 'A/B测试', paymentrules: '支付发券',
             campaigns: '活动管理', posters: '海报创意', public: '公域品宣', contentsys: '内容系统',
             actions: 'AI建议', 'exec-logs': '执行记录',
-            wecomconfig: '企微配置', constraints: '营销约束'
+            wecomconfig: '企微配置', constraints: '营销约束', rules: '经营规则设置'
         };
-        var GROWTH_ALL_MEMBERS = ['dashboard', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'posdiagnosis', 'maintenance', 'constraints', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing', 'paymentrules'];
+        var GROWTH_ALL_MEMBERS = ['dashboard', 'ontology', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'posdiagnosis', 'maintenance', 'constraints', 'rules', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing', 'paymentrules'];
         var __growthActiveSub = {}; // group.key -> 最近激活的成员
 
         function growthGroupOf(member) {
@@ -57575,9 +57601,202 @@ ${body}
             else if (member === 'pos') { loadPosStats(); }
             else if (member === 'exec-logs') { loadExecutionLogs(); }
             else if (member === 'wecomconfig') { loadStoreWecomConfigs(); }
+            else if (member === 'rules') { loadGrowthRules(); }
             else if (member === 'automarketing') { loadAutoMarketing(); }
             else if (member === 'paymentrules') { loadPaymentRules(); }
+            else if (member === 'ontology') { loadGrowthOntologyBrain(); }
             else { refreshGrowthDashboard(); }
+        }
+
+        function growthOntologyStoreQS() {
+            var storeId = document.getElementById('growth-store-filter')?.value || '';
+            return storeId ? ('?store_id=' + encodeURIComponent(storeId)) : '';
+        }
+        async function runGrowthOntologyDiagnosis() {
+            var host = document.getElementById('growth-ontology-brain');
+            if (host) host.innerHTML = '<div class="rep-pay-empty">正在生成今日诊断…</div>';
+            try {
+                var storeId = document.getElementById('growth-store-filter')?.value || '';
+                var body = { store_id: storeId, date: new Date().toISOString().slice(0, 10) };
+                var r = await fetch('/api/ontology/diagnosis/run', { method:'POST', headers:growthAuthHeaders(), body:JSON.stringify(body) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'diagnosis_failed');
+                await loadGrowthOntologyBrain();
+                showNotification('今日诊断已生成', 'success');
+            } catch (e) {
+                if (host) host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">诊断失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+        }
+        async function generateGrowthOpportunityTasks(oppId, btn) {
+            try {
+                var storeId = document.getElementById('growth-store-filter')?.value || '';
+                var r = await fetch('/api/ontology/opportunities/' + encodeURIComponent(oppId) + '/generate-tasks', { method:'POST', headers:growthAuthHeaders(), body:JSON.stringify({ store_id: storeId }) });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'generate_failed');
+                if (btn) btn.outerHTML = '<span style="color:#22c55e;font-size:12px;">已生成正式任务 ' + (d.tasks || []).length + ' 个</span>';
+                showNotification('已生成正式任务', 'success');
+            } catch (e) {
+                if (btn) btn.insertAdjacentHTML('afterend', '<div style="color:#ef4444;font-size:12px;margin-top:6px;">创建失败：' + escapeHtml(e?.message || e) + '</div>');
+            }
+        }
+        async function loadGrowthOntologyBrain() {
+            var host = document.getElementById('growth-ontology-brain');
+            if (!host) return;
+            host.innerHTML = '<div class="rep-pay-empty">加载中…</div>';
+            try {
+                var qs = growthOntologyStoreQS();
+                var report = await fetch('/api/ontology/closed-loop-report' + qs, { headers:growthAuthHeaders() }).then(function(r){ return r.json(); });
+                var issues = await fetch('/api/ontology/issues' + qs, { headers:growthAuthHeaders() }).then(function(r){ return r.json(); }).catch(function(){ return { issues: [] }; });
+                var opportunities = await fetch('/api/ontology/opportunities' + qs, { headers:growthAuthHeaders() }).then(function(r){ return r.json(); }).catch(function(){ return { opportunities: [] }; });
+                if (report.ontologyStatus === 'insufficient_data') {
+                    host.innerHTML = '<div class="rep-pay-empty">当前数据不足，暂无法生成经营判断。</div>';
+                    return;
+                }
+                var issueRows = issues.issues || report.issues || [];
+                var oppRows = opportunities.opportunities || report.opportunities || [];
+                var evidence = (report.attributionSummary && report.attributionSummary.evidenceDetails) || [];
+                var issueHtml = issueRows.slice(0, 6).map(function(x) {
+                    return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);">'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.boss_language_summary || x.issue_title || '-') + '</b><span style="color:' + (x.severity === 'P1' ? '#fb7185' : '#facc15') + ';font-weight:800;">' + escapeHtml(x.severity || '-') + '</span></div>'
+                        + '<div style="font-size:12px;color:rgba(226,232,240,.56);margin-top:4px;">' + escapeHtml(x.issue_type || '') + ' · 置信度 ' + escapeHtml(String(x.confidence_score || '-')) + '</div>'
+                        + '</div>';
+                }).join('');
+                var oppHtml = oppRows.slice(0, 6).map(function(x) {
+                    return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);">'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.title || '-') + '</b><span style="color:#38bdf8;">' + escapeHtml(x.priority || '-') + '</span></div>'
+                        + '<div style="font-size:12px;color:rgba(226,232,240,.58);margin:4px 0 8px;">' + escapeHtml(x.description || '') + '</div>'
+                        + '<button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" onclick="generateGrowthOpportunityTasks(\'' + escapeHtml(x.opportunity_id || '') + '\', this)">生成任务草稿并确认创建</button>'
+                        + '</div>';
+                }).join('');
+                var taskHtml = (report.tasks || []).slice(0, 8).map(function(t) {
+                    return '<div style="padding:8px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
+                        + '<b style="color:#fff;">' + escapeHtml(t.title || '-') + '</b>'
+                        + '<div style="color:rgba(226,232,240,.58);">状态：' + escapeHtml(t.status || '-') + ' · 负责人：' + escapeHtml(t.assignee_role || t.assignee_username || '-') + ' · 截止：' + escapeHtml(String(t.due_at || '').slice(0, 10) || '-')
+                        + '</div></div>';
+                }).join('');
+                var evHtml = evidence.length ? '<details style="margin-top:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px;"><summary style="cursor:pointer;color:#fff;font-weight:800;">归因证据 · 以下订单为本次营销触达后窗口内产生的真实消费记录</summary>'
+                    + evidence.slice(0, 20).map(function(e) {
+                        var ev = e.evidence || {};
+                        var assisted = e.attributionType === 'assisted' ? '<div style="color:#facc15;margin-top:4px;">辅助归因：客户在触达后窗口内回店，但未使用对应优惠券。</div>' : '';
+                        return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.6;">'
+                            + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">客户 ' + escapeHtml(e.customerId || '-') + '</b><span style="color:#38bdf8;">' + escapeHtml(e.attributionType || '-') + '</span></div>'
+                            + '<div style="color:rgba(226,232,240,.65);">触达：' + escapeHtml(String(ev.touchTime || '-').slice(0, 16)) + ' · 回店：' + escapeHtml(String(ev.conversionTime || '-').slice(0, 16)) + ' · 订单：' + escapeHtml(e.relatedOrderId || '-') + '</div>'
+                            + '<div style="color:rgba(226,232,240,.55);">金额：' + fmtCustMoney(e.orderAmount || 0) + ' · 用券：' + (ev.couponUsed ? '是' : '否') + '</div>'
+                            + assisted + '</div>';
+                    }).join('') + '</details>' : '';
+                host.innerHTML = ''
+                    + '<div class="rep-metric" style="text-align:left;margin-bottom:12px;"><div class="k">AI经营结论</div><div style="font-size:15px;color:#fff;line-height:1.7;margin-top:8px;">' + escapeHtml(report.boss_summary || report.bossSummary || '当前数据不足，暂无法生成经营判断。') + '</div></div>'
+                    + '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:12px;">'
+                    + custopsMiniMetric('经营问题', issueRows.length, '经营问题地图', '#fb7185')
+                    + custopsMiniMetric('增长机会', oppRows.length, '增长机会列表', '#38bdf8')
+                    + custopsMiniMetric('闭环任务', (report.tasks || []).length, '动作闭环看板', '#22c55e')
+                    + custopsMiniMetric('归因营业额', fmtCustMoney(report.attributionSummary?.attributedRevenue || 0), '真实订单支撑', '#facc15')
+                    + '</div>'
+                    + '<div class="rep-dashboard-grid">'
+                    + '<div class="rep-metric" style="text-align:left;"><div class="k">经营问题地图</div>' + (issueHtml || '<div class="rep-pay-empty">暂无经营问题</div>') + '</div>'
+                    + '<div class="rep-metric" style="text-align:left;"><div class="k">增长机会列表</div>' + (oppHtml || '<div class="rep-pay-empty">暂无增长机会</div>') + '</div>'
+                    + '</div>'
+                    + '<div class="rep-dashboard-grid" style="margin-top:12px;">'
+                    + '<div class="rep-metric" style="text-align:left;"><div class="k">动作闭环看板</div>' + (taskHtml || '<div class="rep-pay-empty">暂无任务</div>') + '</div>'
+                    + '<div class="rep-metric" style="text-align:left;"><div class="k">老板版闭环报告</div><div style="font-size:12px;color:rgba(226,232,240,.65);line-height:1.7;margin-top:8px;">' + escapeHtml((report.key_findings_for_owner || []).join('；') || report.confidence_note || '') + '</div>' + evHtml + '</div>'
+                    + '</div>';
+            } catch (e) {
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+        }
+
+        var __GROWTH_RULES_CACHE = [];
+        var __GROWTH_RULE_THRESHOLD_LABELS = {
+            days_min: '沉睡客户起始天数',
+            days_max: '沉睡客户结束天数',
+            min_historical_visit_count: '优先维护最低消费次数',
+            min_total_spend: '优先维护最低消费金额',
+            first_visit_days_min: '新客二次转化起始天数',
+            first_visit_days_max: '新客二次转化结束天数',
+            revenue_decline_threshold: '营收下降阈值',
+            repeat_rate_threshold: '复购率健康线',
+            marketing_conversion_threshold: '营销转化健康线'
+        };
+        function growthRuleScopeLabel(scope) {
+            if (scope === 'store') return '当前门店标准';
+            if (scope === 'tenant') return '品牌标准';
+            return '系统默认标准';
+        }
+        function growthRuleThresholdMap(rule) {
+            var m = {};
+            (rule.thresholds || []).forEach(function(t) {
+                if (m[t.threshold_key] == null) m[t.threshold_key] = t;
+            });
+            return m;
+        }
+        async function loadGrowthRules() {
+            var list = document.getElementById('growth-rules-list');
+            var hits = document.getElementById('growth-rule-hits-list');
+            if (list) list.innerHTML = '<div class="rep-pay-empty">加载经营规则…</div>';
+            try {
+                var storeId = document.getElementById('growth-store-filter')?.value || '';
+                var qs = storeId ? ('?store_id=' + encodeURIComponent(storeId)) : '';
+                var data = await fetch('/api/ontology/rules' + qs, { headers:growthAuthHeaders() }).then(function(r){ return r.json(); });
+                if (!data.ok) throw new Error(data.error || 'rules_failed');
+                __GROWTH_RULES_CACHE = data.rules || [];
+                var editableKeys = Object.keys(__GROWTH_RULE_THRESHOLD_LABELS);
+                list.innerHTML = __GROWTH_RULES_CACHE.map(function(rule) {
+                    var thresholds = growthRuleThresholdMap(rule);
+                    var editable = editableKeys.filter(function(k){ return thresholds[k]; });
+                    var thresholdHtml = editable.length ? editable.map(function(k) {
+                        var t = thresholds[k];
+                        return '<label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:rgba(226,232,240,.68);">'
+                            + '<span>' + escapeHtml(__GROWTH_RULE_THRESHOLD_LABELS[k]) + '</span>'
+                            + '<input class="dr-store-select growth-rule-threshold" data-rule="' + escapeHtml(rule.rule_id) + '" data-key="' + escapeHtml(k) + '" value="' + escapeHtml(String(t.threshold_value ?? '')) + '" style="height:34px;">'
+                            + '</label>';
+                    }).join('') : '<div style="font-size:12px;color:rgba(226,232,240,.45);">暂无可编辑判断标准</div>';
+                    return '<div style="border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:10px;background:rgba(0,0,0,.20);">'
+                        + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px;">'
+                        + '<div><div style="font-weight:800;color:#fff;">' + escapeHtml(rule.rule_name || '-') + '</div>'
+                        + '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:4px;">' + escapeHtml(rule.business_domain || '-') + ' · ' + escapeHtml(growthRuleScopeLabel(rule.rule_scope)) + '</div></div>'
+                        + '<div style="font-size:12px;color:#38bdf8;font-weight:800;">近30天命中 ' + escapeHtml(String(rule.recentHitCount || 0)) + ' 次</div>'
+                        + '</div>'
+                        + '<div class="rep-filters__grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">' + thresholdHtml + '</div>'
+                        + '</div>';
+                }).join('') || '<div class="rep-pay-empty">暂无经营规则</div>';
+                var hitData = await fetch('/api/ontology/rule-hits' + qs + (qs ? '&' : '?') + 'limit=20', { headers:growthAuthHeaders() }).then(function(r){ return r.json(); }).catch(function(){ return { hits: [] }; });
+                var hitRows = hitData.hits || [];
+                hits.innerHTML = hitRows.map(function(h) {
+                    var rule = (__GROWTH_RULES_CACHE || []).find(function(r){ return r.rule_id === h.rule_id; });
+                    var generated = [h.generated_issue_id ? '问题' : '', h.generated_opportunity_id ? '机会' : '', h.generated_task_id ? '任务' : ''].filter(Boolean).join(' / ') || '记录';
+                    return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.65;">'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(rule?.rule_name || h.rule_id || '-') + '</b><span style="color:#22c55e;">' + escapeHtml(generated) + '</span></div>'
+                        + '<div style="color:rgba(226,232,240,.6);">门店：' + escapeHtml(h.store_id || '全部') + ' · ' + escapeHtml(String(h.hit_at || '').slice(0, 16).replace('T', ' ')) + '</div>'
+                        + '<div style="color:rgba(226,232,240,.75);">' + escapeHtml(h.boss_language_output || '已按经营规则生成判断。') + '</div>'
+                        + '</div>';
+                }).join('') || '<div class="rep-pay-empty">暂无命中记录</div>';
+            } catch (e) {
+                if (list) list.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+            }
+        }
+        async function saveGrowthRuleThresholds() {
+            try {
+                var storeId = document.getElementById('growth-store-filter')?.value || '';
+                var grouped = {};
+                document.querySelectorAll('.growth-rule-threshold').forEach(function(input) {
+                    var ruleId = input.getAttribute('data-rule');
+                    var key = input.getAttribute('data-key');
+                    if (!grouped[ruleId]) grouped[ruleId] = {};
+                    grouped[ruleId][key] = input.value;
+                });
+                for (var ruleId in grouped) {
+                    var r = await fetch('/api/ontology/rules/' + encodeURIComponent(ruleId), {
+                        method:'PUT',
+                        headers:growthAuthHeaders(),
+                        body:JSON.stringify({ store_id: storeId, thresholds: grouped[ruleId] })
+                    }).then(function(x){ return x.json(); });
+                    if (!r.ok) throw new Error(r.error || 'save_failed');
+                }
+                showNotification('当前门店经营标准已保存', 'success');
+                await loadGrowthRules();
+            } catch (e) {
+                showNotification('经营规则保存失败：' + (e?.message || e), 'error');
+            }
         }
 
         function renderGrowthSubnav(group, activeMember) {

@@ -333,3 +333,101 @@ pos_orders|0
 
 - 本次 seed 使用 `customer_ops_source_records` 的报告指标事实来驱动三个报告的 ontology adapter，适合验收链路；真实生产口径仍依赖后续接入完整 POS、储值、培训、客诉等源数据。
 - 空库启动仍会打印若干非本次链路的历史模块告警，例如 `agent_prompt_templates.tenant_id`、`daily_reports`、`generated_posters` 等，不影响本次 ontology E2E 通过，但建议另行做全量 schema baseline 校准。
+
+## 餐饮增长 Ontology 闭环真实 HTTP 服务验收
+
+新增脚本：
+
+```bash
+DATABASE_URL='postgres://hrms:***@127.0.0.1:5432/hrms' \
+E2E_BASE_URL=http://localhost:3000 \
+E2E_TOKEN="$TOKEN" \
+node scripts/ontology_growth_closed_loop.e2e.mjs
+```
+
+验收链路：
+
+1. 初始化餐饮增长 ontology 核心表。
+2. seed 测试门店、客户、活动、触达、POS 订单、员工执行数据。
+3. 通过真实 HTTP 调用 `POST /api/ontology/diagnosis/run`。
+4. 通过真实 HTTP 查询 `GET /api/ontology/issues` 和 `GET /api/ontology/opportunities`。
+5. 通过真实 HTTP 调用 `POST /api/ontology/opportunities/:id/generate-tasks`。
+6. 查询数据库确认正式任务真实写入 `master_tasks`。
+7. 通过真实 HTTP 调用 `POST /api/ontology/results/track`。
+8. 通过真实 HTTP 调用 `POST /api/ontology/attribution/run`。
+9. 通过真实 HTTP 调用 `GET /api/ontology/closed-loop-report`。
+10. 校验老板语言字段不暴露技术词。
+
+期望日志：
+
+```text
+Growth ontology core initialized
+Daily diagnosis generated
+Issues generated
+Opportunities generated
+Tasks generated
+Results tracked
+Attribution generated
+Closed loop report generated
+Boss language output verified
+E2E ontology growth closed loop PASSED
+```
+
+归因金额规则：
+
+- 只有带 `relatedOrderId` 的记录计入 `attributedRevenue`。
+- `coupon` 归因优先于普通触达窗口。
+- 未使用券但在触达窗口内回店，标记为 `assisted`。
+- 没有 customerId 的订单不强行归因。
+
+前端验收入口：
+
+- 打开 `http://localhost:3000/working-fixed.html`。
+- 进入“增长看板”。
+- 打开 dashboard 分组下的“餐厅增长大脑”。
+- 可看到“AI经营结论 / 经营问题地图 / 增长机会列表 / 动作闭环看板 / 老板版闭环报告 / 归因证据”。
+
+### 本地实跑结果
+
+运行环境：
+
+- 后端：`http://localhost:3000`
+- 数据库：`postgres://hrms:***@127.0.0.1:5432/hrms`
+- token：通过本地 `/api/login` 测试账号获取
+
+实跑输出：
+
+```text
+Growth ontology core initialized
+Daily diagnosis generated
+Issues generated
+Opportunities generated
+GET issues/opportunities API verified
+Tasks generated
+master_tasks write verified
+Results tracked
+Attribution generated
+Closed loop report generated
+Boss language output verified
+E2E ontology growth closed loop PASSED
+```
+
+同时回归前一阶段真实 HTTP E2E：
+
+```text
+E2E ontology business flow PASSED: 15/15
+```
+
+前端验收：
+
+- Python Playwright 打开 `http://localhost:3000/working-fixed.html` 成功。
+- 页面源码/渲染 DOM 中包含：`餐厅增长大脑`、`客户资产地图`、`经营问题地图`、`增长机会列表`、`动作闭环看板`、`老板版闭环报告`、`归因证据`、`AI经营结论`、`AI识别的问题`、`下一步动作`、`任务草稿`。
+
+启动时仍可见的历史告警：
+
+- `agent_prompt_templates.tenant_id`
+- `generated_posters`
+- `agent_messages`
+- `daily_reports`
+
+这些告警来自非本次 ontology 闭环模块，本次真实 HTTP API 验收未受影响。建议后续单独做全量 schema baseline 修复。
