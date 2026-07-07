@@ -30,6 +30,7 @@ import {
   getRuleThreshold,
   loadEffectiveRules,
 } from './ontology-rule-service.js';
+import { syncOntologyDataFromProduction } from './real-data-sync.js';
 
 export function registerOntologyRoutes(app, pool, authRequired) {
   const getTenantId = (req) => String(req.tenantId || req.user?.tenant_id || req.query?.tenant_id || req.body?.tenant_id || 'default').trim() || 'default';
@@ -148,8 +149,10 @@ export function registerOntologyRoutes(app, pool, authRequired) {
   app.get('/api/ontology/diagnosis/daily', authRequired, async (req, res) => {
     try {
       await ensureGrowth();
+      const tenantId = getTenantId(req);
+      await syncOntologyDataFromProduction(pool, tenantId);
       const result = await runDailyDiagnosis(pool, {
-        tenantId: getTenantId(req),
+        tenantId,
         storeId: req.query?.store_id || req.query?.storeId || '',
         date: req.query?.date || '',
       });
@@ -163,12 +166,14 @@ export function registerOntologyRoutes(app, pool, authRequired) {
   app.post('/api/ontology/diagnosis/run', authRequired, async (req, res) => {
     try {
       await ensureGrowth();
+      const tenantId = getTenantId(req);
+      const syncResult = await syncOntologyDataFromProduction(pool, tenantId);
       const result = await runDailyDiagnosis(pool, {
-        tenantId: getTenantId(req),
+        tenantId,
         storeId: req.body?.store_id || req.body?.storeId || req.query?.store_id || '',
         date: req.body?.date || req.query?.date || '',
       });
-      return res.json({ ok: true, ...result });
+      return res.json({ ok: true, syncResult, ...result });
     } catch (e) {
       console.error('[ontology] diagnosis run error:', e?.message || e);
       return res.status(500).json({ ok: false, error: String(e?.message || e) });

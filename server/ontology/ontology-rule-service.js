@@ -41,7 +41,7 @@ export async function loadEffectiveRules(pool, { tenantId, storeId, ruleType, bu
       ORDER BY rule_id, version DESC
     `;
     const params = [...scope.params, now];
-    const queryFn = pool.__unwrappedQuery || pool.query;
+    const queryFn = pool.__unwrappedQuery || pool.query.bind(pool);
     const r = await queryFn(sql, params).catch(() => ({ rows: [] }));
     for (const row of r.rows || []) {
       allRules.push({ ...row, _scope: scope.label });
@@ -367,7 +367,7 @@ export async function getRuleThreshold(pool, { tenantId, storeId, ruleId, thresh
     `;
     const params = [...scope.params, ruleId, thresholdKey];
     // Use unwrapped query to bypass tenant context wrapping
-    const queryFn = pool.__unwrappedQuery || pool.query;
+    const queryFn = pool.__unwrappedQuery || pool.query.bind(pool);
     const r = await queryFn(sql, params).catch(() => ({ rows: [] }));
     if (r.rows?.[0]) {
       return {
