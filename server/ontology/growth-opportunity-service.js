@@ -134,7 +134,7 @@ export async function listOpportunities(pool, options = {}) {
   const storeId = String(options.storeId || '').trim();
   const result = await pool.query(
     `SELECT * FROM growth_ontology_opportunities
-      WHERE tenant_id=$1 AND ($2::text='' OR store_id=$2)
+      WHERE tenant_id=$1 AND ($2::text='' OR store_id=$2) AND status='open'
       ORDER BY created_at DESC LIMIT 100`,
     [tenantId, storeId]
   );

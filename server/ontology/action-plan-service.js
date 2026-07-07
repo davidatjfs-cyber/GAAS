@@ -8,6 +8,21 @@ function dueDate(days = 7) {
   return d.toISOString();
 }
 
+const OPPORTUNITY_TYPE_DOMAIN = {
+  dormant_customer_reactivation: 'customer_growth',
+  vip_retention: 'customer_growth',
+  new_customer_second_visit: 'customer_growth',
+  stored_value_customer_activation: 'customer_growth',
+  low_repeat_dish_optimization: 'operation_improvement',
+  lunch_revenue_recovery: 'operation_improvement',
+  negative_review_recovery: 'operation_improvement',
+  staff_execution_improvement: 'talent_development',
+};
+
+function opportunityDomain(opportunityType) {
+  return OPPORTUNITY_TYPE_DOMAIN[opportunityType] || 'operation_improvement';
+}
+
 export function buildTaskDraftsForOpportunity(opportunity = {}) {
   const actions = Array.isArray(opportunity.recommended_actions_json) ? opportunity.recommended_actions_json : [];
   const base = actions.length ? actions : [{ actionName: summarizeOpportunityForBoss(opportunity), step: 1 }];
@@ -28,7 +43,7 @@ export function buildTaskDraftsForOpportunity(opportunity = {}) {
       ? ['新客触达人数', '二次回店人数', '二次回店率', '二次消费金额', '优惠成本', '净增量']
       : ['回店人数', '贡献营业额', '任务完成率']),
     sourceIssueId: opportunity.issue_id || '',
-    sourceDomain: 'restaurant_growth',
+    sourceDomain: opportunityDomain(opportunity.opportunity_type),
     sourceReportType: 'growth_closed_loop',
     ontologyInsightId: opportunity.opportunity_id || '',
     opportunityId: opportunity.opportunity_id || '',
@@ -44,21 +59,39 @@ export async function generateTasksForOpportunity(pool, opportunityId, options =
   const tenantId = options.tenantId || 'default';
   const ownerUserId = options.ownerUserId || '';
   const storeId = options.storeId || '';
+  const generatedByAgent = options.generatedByAgent || '';
   const r = await pool.query(
     `SELECT * FROM growth_ontology_opportunities WHERE tenant_id=$1 AND opportunity_id=$2 LIMIT 1`,
     [tenantId, opportunityId]
   );
   const opportunity = r.rows?.[0];
   if (!opportunity) return { ok: false, error: 'opportunity_not_found', tasks: [] };
+
+  const existingTasks = await pool.query(
+    `SELECT task_id, status, source_data
+       FROM master_tasks
+      WHERE tenant_id=$1 AND opportunity_id=$2
+        AND status NOT IN ('cancelled','closed_rejected','archived')
+      ORDER BY created_at DESC LIMIT 1`,
+    [tenantId, opportunityId]
+  );
+  if (existingTasks.rows?.length > 0) {
+    const existing = existingTasks.rows[0];
+    console.log(`[action-plan] skip duplicate task generation for opportunity=${opportunityId}, existing task=${existing.task_id}`);
+    return { ok: true, existing: true, taskId: existing.task_id, tasks: existingTasks.rows };
+  }
+
   const drafts = buildTaskDraftsForOpportunity(opportunity);
   const created = [];
   for (const draft of drafts) {
     const taskId = `GROWTH-${randomUUID()}`;
     const sourceData = {
       ontology: true,
+      source: generatedByAgent ? 'ontology_agent' : (draft.source || 'ontology_growth'),
+      sourceOpportunityId: opportunityId,
       sourceIssueId: draft.sourceIssueId,
       sourceDomain: draft.sourceDomain,
-      sourceReportType: draft.sourceReportType,
+      sourceReportType: generatedByAgent ? 'operation_diagnosis_agent' : draft.sourceReportType,
       ontologyInsightId: draft.ontologyInsightId,
       opportunityId,
       expectedResult: draft.expectedResult,
@@ -67,6 +100,7 @@ export async function generateTasksForOpportunity(pool, opportunityId, options =
       rule_id: draft.ruleId,
       rule_version: draft.ruleVersion,
       rule_hit_id: draft.ruleHitId,
+      generatedByAgent: generatedByAgent || undefined,
     };
     const inserted = await pool.query(
       `INSERT INTO master_tasks (

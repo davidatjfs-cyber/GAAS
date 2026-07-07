@@ -4,7 +4,41 @@
  * 从结果（营业额下降/差评增加/离职增加）出发，
  * 做贡献度分析→根因关联→输出个人级建议
  */
+import jwt from 'jsonwebtoken';
 import { fetchDineMetrics, storeNameToId } from './utils/dine-metrics.js';
+import { runOperationDiagnosisAgent, generateOperationDiagnosisTasks } from './agents/operation-diagnosis-agent.js';
+
+/**
+ * agents-service-v2 的 ontology-client.js 用 PLATFORM_ADMIN_JWT_SECRET 签发服务token调这两个
+ * 接口（payload.platformAdmin='ontology_agent'），跟前端登录用户走的 authRequired(JWT_SECRET)
+ * 不是同一把密钥——这里做一个宽松的二选一：先按服务token验，不通过再走正常的 authRequired，
+ * 不改 authRequired 本身（那是全局共用的重逻辑，不该为了一个服务身份牵动它）。
+ */
+function verifyServiceToken(req) {
+  const hdr = String(req.headers.authorization || '');
+  const token = hdr.startsWith('Bearer ') ? hdr.slice(7).trim() : '';
+  if (!token) return null;
+  const secret = String(process.env.PLATFORM_ADMIN_JWT_SECRET || process.env.JWT_SECRET || '').trim();
+  if (!secret) return null;
+  try {
+    const payload = jwt.verify(token, secret);
+    return payload?.platformAdmin ? payload : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function makeAuthRequiredOrServiceToken(authRequired) {
+  return async function authRequiredOrServiceToken(req, res, next) {
+    const svc = verifyServiceToken(req);
+    if (svc) {
+      req.tenantId = String(svc.tenantId || 'default').trim() || 'default';
+      req.serviceAgent = svc.username || svc.platformAdmin;
+      return next();
+    }
+    return authRequired(req, res, next);
+  };
+}
 
 function cleanText(value, max = 255) {
   return String(value == null ? '' : value).trim().slice(0, max);
@@ -1194,7 +1228,8 @@ export async function getAllStoresDiagnosis(pool, dateRange) {
 /**
  * 注册诊断路由
  */
-export function registerDiagnosisRoutes(app, pool, authRequired) {
+export function registerDiagnosisRoutes(app, pool, authRequired, callLLM = null) {
+  const authRequiredOrServiceToken = makeAuthRequiredOrServiceToken(authRequired);
   app.get('/api/diagnosis/store/:store', authRequired, async (req, res) => {
     try {
       const store = cleanText(req.params.store, 128);
@@ -1219,6 +1254,36 @@ export function registerDiagnosisRoutes(app, pool, authRequired) {
       return res.json({ ok: true, stores: result });
     } catch (e) {
       console.error('[diagnosis] overview error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.get('/api/ai/operation-diagnosis', authRequiredOrServiceToken, async (req, res) => {
+    try {
+      const tenantId = String(req.tenantId || req.user?.tenant_id || req.query?.tenant_id || req.query?.tenantId || 'default').trim() || 'default';
+      const storeId = String(req.query?.store_id || req.query?.storeId || '').trim();
+      const storeName = String(req.query?.store_name || req.query?.storeName || '').trim();
+      const date = req.query?.date || new Date().toISOString().slice(0, 10);
+      const result = await runOperationDiagnosisAgent(pool, { tenantId, storeId, storeName, date }, callLLM);
+      return res.json({ ok: true, ...result });
+    } catch (e) {
+      console.error('[diagnosis] operation-diagnosis error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/ai/operation-diagnosis/generate-tasks', authRequiredOrServiceToken, async (req, res) => {
+    try {
+      const tenantId = String(req.tenantId || req.user?.tenant_id || req.body?.tenant_id || req.body?.tenantId || 'default').trim() || 'default';
+      const storeId = String(req.body?.store_id || req.body?.storeId || '').trim();
+      const ownerUserId = String(req.body?.owner_user_id || req.body?.ownerUserId || req.user?.username || '').trim();
+      const opportunityId = String(req.body?.opportunity_id || req.body?.opportunityId || req.params?.opportunityId || '').trim();
+      if (!opportunityId) return res.status(400).json({ ok: false, error: 'opportunity_id_required' });
+      const result = await generateOperationDiagnosisTasks(pool, { tenantId, storeId, opportunityId, ownerUserId });
+      if (!result.ok) return res.status(400).json(result);
+      return res.json({ ok: true, ...result });
+    } catch (e) {
+      console.error('[diagnosis] generate operation-diagnosis tasks error:', e?.message || e);
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
