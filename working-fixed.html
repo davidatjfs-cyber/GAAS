@@ -57119,7 +57119,7 @@ ${body}
 
         function gsCloseModal() { document.getElementById('gs-modal')?.classList.remove('show'); }
 
-        async function gsOpenDetail(key) {
+        async function gsOpenDetail(key, extraAnalysis) {
             const store = document.getElementById('gs-store-select')?.value;
             if (!store) return;
             const modal = document.getElementById('gs-modal');
@@ -57133,7 +57133,10 @@ ${body}
                 if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
                 gsCurrentDetail = data;
                 title.textContent = `${GS_PROBLEM_ICONS[key] || ''} ${data.title} · ${store}`;
-                body.innerHTML = data.open_round ? gsRenderRound(data) : gsRenderPlan(data);
+                // extraAnalysis：从自定义问题分析(gsAnalyzeCustom)判断出"这属于六大标准问题之一"时，
+                // AI基于真实数据做的分析文字——之前直接跳转详情页会把这段分析丢掉，现在放在最前面。
+                const analysisHtml = extraAnalysis ? `<div class="dx-anomaly-modal__section" style="background:rgba(109,124,255,0.06);border:1px solid rgba(109,124,255,0.18);border-radius:12px;padding:12px;margin-bottom:10px;"><div class="dx-anomaly-modal__label">📋 经营分析</div><div class="dx-anomaly-modal__text" style="white-space:pre-line;line-height:1.7;">${escapeHtml(extraAnalysis)}</div></div>` : '';
+                body.innerHTML = analysisHtml + (data.open_round ? gsRenderRound(data) : gsRenderPlan(data));
             } catch (e) {
                 body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)}</div>`;
             }
@@ -57384,8 +57387,7 @@ ${body}
                 const data = await res.json();
                 if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
                 if (data.mode === 'existing') {
-                    showNotification(`该问题属于「${data.problem_key}」标准方案:${data.reason || ''}`, 'info');
-                    gsOpenDetail(data.problem_key);
+                    gsOpenDetail(data.problem_key, data.analysis);
                     return;
                 }
                 gsCurrentDetail = data;
@@ -57428,38 +57430,18 @@ ${body}
                 if (!data.ok || !(data.history || []).length) { host.innerHTML = ''; return; }
                 host.innerHTML = '<div style="font-size:11px;color:#5B6597;margin-bottom:6px;">最近查询记录(点击直接查看，不用重新输入)</div>' +
                   '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-                  data.history.map(h => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="gsOpenHistoryItem('${escapeHtml(h.id)}')" title="${escapeHtml(h.question)}">${escapeHtml(h.title || h.question)}</button>`).join('') +
+                  data.history.map(h => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="gsRerunFromHistory('${escapeHtml(h.question).replace(/'/g, "\\'")}')" title="${escapeHtml(h.question)}">${escapeHtml(h.title || h.question)}</button>`).join('') +
                   '</div>';
             } catch (e) { host.innerHTML = ''; }
         }
 
-        async function gsOpenHistoryItem(id) {
-            const modal = document.getElementById('gs-modal');
-            const body = document.getElementById('gs-modal-body');
-            const title = document.getElementById('gs-modal-title');
-            const store = document.getElementById('gs-store-select')?.value;
-            modal.classList.add('show');
-            title.textContent = '⏳ 加载历史记录...';
-            body.innerHTML = '<div class="dx-empty">⏳ 加载中...</div>';
-            try {
-                const res = await fetch(`/api/diagnosis/solutions/custom/history/${encodeURIComponent(id)}`, { headers: { 'Authorization': 'Bearer ' + dxToken() } });
-                const payload = await res.json();
-                if (!payload.ok) throw new Error(payload.error || 'HTTP ' + res.status);
-                const data = payload.result;
-                if (data.mode === 'existing') {
-                    gsCloseModal();
-                    gsOpenDetail(data.problem_key);
-                    return;
-                }
-                gsCurrentDetail = data;
-                title.textContent = `🤖 ${data.title} · ${store}`;
-                const scopeNote = data.out_of_scope ? `<div class="gs-report" style="border-color:rgba(232,184,90,0.35);">⚠️ 能力范围说明:${escapeHtml(data.out_of_scope)}</div>` : '';
-                const reasonNote = data.reason ? `<div class="dx-anomaly-modal__text">${data.metric ? `考核指标:${escapeHtml(data.metric)} — ` : ''}${escapeHtml(data.reason)}</div>` : '';
-                const historyBadge = `<div style="font-size:11px;color:#5B6597;margin-bottom:8px;">📌 历史记录 · 原问题:"${escapeHtml(payload.question)}"</div>`;
-                body.innerHTML = historyBadge + reasonNote + scopeNote + gsRenderPlan(data);
-            } catch (e) {
-                body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)}</div>`;
-            }
+        // 历史记录只保留"问过什么问题"，不保留"当时的结果"——点历史记录里的问题，每次都
+        // 重新调用AI生成最新方案，而不是把当时保存的旧结果原样显示出来(旧结果会一直是旧结果，
+        // 数据早就变了，分析也早就过时了，用户点历史记录的目的是"再问一次"而不是"看旧答案")。
+        function gsRerunFromHistory(question) {
+            const q = document.getElementById('gs-custom-q');
+            if (q) q.value = question;
+            gsAnalyzeCustom();
         }
 
         async function gsExportPdf(btn) {

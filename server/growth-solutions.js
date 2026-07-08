@@ -366,22 +366,43 @@ function median(vals) {
 
 function quadrantsForChannel(rows) {
   const matched = rows.filter((r) => r.profit != null);
-  const qtyMed = median(matched.map((r) => r.qty));
-  const profitMed = median(matched.map((r) => r.profit));
-  const buckets = { star: [], traffic: [], potential: [], eliminate: [] };
+  // 之前是拿全渠道所有菜品混在一起算一个中位数——米饭/饮料这类客单价天然低的品类，
+  // 销量再高、利润额也大概率低于主菜的中位数，被系统性地判成"引流"甚至"淘汰"，但这不是
+  // 它们经营得不好，是跟主菜比价格基数完全不同、根本不该放在同一把尺子上比。
+  // 改成按category分组，每个菜品只跟"自己品类里的其他菜品"比中位数，米饭组自己有米饭组的
+  // 中位数，主菜组自己有主菜组的中位数，谁在自己品类里表现好/差才是有意义的判断。
+  const byCategory = new Map();
   for (const r of matched) {
-    const hiQty = r.qty >= qtyMed, hiProfit = r.profit >= profitMed;
-    const item = { dish: r.dish, category: r.category, qty: r.qty, profit: r.profit, margin: r.margin };
-    if (hiQty && hiProfit) buckets.star.push(item);
-    else if (hiQty) buckets.traffic.push(item);
-    else if (hiProfit) buckets.potential.push(item);
-    else buckets.eliminate.push(item);
+    const cat = r.category || '未分类';
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat).push(r);
+  }
+  const buckets = { star: [], traffic: [], potential: [], eliminate: [] };
+  let qtyMedSum = 0, profitMedSum = 0, catCount = 0;
+  for (const [, catRows] of byCategory) {
+    const qtyMed = median(catRows.map((r) => r.qty));
+    const profitMed = median(catRows.map((r) => r.profit));
+    qtyMedSum += qtyMed; profitMedSum += profitMed; catCount += 1;
+    for (const r of catRows) {
+      const hiQty = r.qty >= qtyMed, hiProfit = r.profit >= profitMed;
+      const item = { dish: r.dish, category: r.category, qty: r.qty, profit: r.profit, margin: r.margin };
+      if (hiQty && hiProfit) buckets.star.push(item);
+      else if (hiQty) buckets.traffic.push(item);
+      else if (hiProfit) buckets.potential.push(item);
+      else buckets.eliminate.push(item);
+    }
   }
   for (const k of Object.keys(buckets)) {
     buckets[k].sort((a, b) => b.qty - a.qty);
     buckets[k] = buckets[k].slice(0, 10);
   }
-  return { qty_median: round2(qtyMed), profit_median: round2(profitMed), matched: matched.length, ...buckets };
+  // qty_median/profit_median 这两个汇总值现在只是"各品类中位数的均值"，仅供参考展示，
+  // 真正的分类判断在上面已经是按各自品类的中位数做的。
+  return {
+    qty_median: catCount ? round2(qtyMedSum / catCount) : 0,
+    profit_median: catCount ? round2(profitMedSum / catCount) : 0,
+    matched: matched.length, ...buckets,
+  };
 }
 
 async function metricMenuOptimization(store, startDate, endDate) {
@@ -454,6 +475,32 @@ async function metricTrainingReplication(store) {
   return { value: round2(rate), detail: { required, covered, gaps: gaps.slice(0, 50), gap_count: gaps.length } };
 }
 
+// 把computeMetric()算出来的真实数据摊平成给LLM读的文字摘要，用于existing模式的
+// 二次分析调用——不同problem_key的detail结构不一样，这里按各自最有信息量的字段挑着写。
+function summarizeMetricForAnalysis(problemKey, current) {
+  const p = PROBLEMS[problemKey];
+  const base = `近30天${p.metric}：${current.value}${p.unit}`;
+  const d = current.detail || {};
+  if (problemKey === 'menu_optimization') {
+    const dinein = d.quadrants?.dinein || {};
+    const takeaway = d.quadrants?.takeaway || {};
+    return `${base}（本轮处理问题菜品数）。
+堂食：明星${(dinein.star || []).length}道、引流${(dinein.traffic || []).length}道、潜力${(dinein.potential || []).length}道、淘汰${(dinein.eliminate || []).length}道。
+外卖：明星${(takeaway.star || []).length}道、引流${(takeaway.traffic || []).length}道、潜力${(takeaway.potential || []).length}道、淘汰${(takeaway.eliminate || []).length}道。
+高投诉菜品(近30天桌访反馈)：${(d.complaint_dishes || []).slice(0, 5).map(c => c.dish).join('、') || '无'}。`;
+  }
+  if (problemKey === 'revenue') {
+    return `${base}。统计天数${d.days || 0}天。高流失风险沉睡客户${d.sleeping_customers || 0}人(其中高风险${d.sleeping_high || 0}人)。`;
+  }
+  if (problemKey === 'staff_efficiency') {
+    return `${base}。统计期折前营业额${d.pre_discount_revenue || 0}元，总人天${d.person_days || 0}天，统计天数${d.days || 0}天。`;
+  }
+  if (problemKey === 'training_replication') {
+    return `${base}。应完成认证${d.required || 0}项，已覆盖${d.covered || 0}项，缺口${d.gap_count || 0}项。`;
+  }
+  return `${base}。`;
+}
+
 export async function computeMetric(problemKey, store, startDate, endDate) {
   switch (problemKey) {
     case 'staff_efficiency': return metricStaffEfficiency(store, startDate, endDate);
@@ -516,13 +563,15 @@ async function suggestAssignees(store, role) {
   return r.rows.sort((a, b) => prio(a.position) - prio(b.position));
 }
 
-// ─── 自定义问题分析历史存档(不用每次重新输入问题,可以直接翻历史) ──────
+// ─── 自定义问题分析历史存档——只留"问过什么问题"，不留"当时的结果" ──────
+// 用户明确要求：点历史记录要重新生成，不要回放旧结果，所以这里不再存完整result_json，
+// 只存title(列表展示用)，避免有人以后不小心又把它当"缓存"用。
 async function saveQueryHistory(tenantId, store, question, resultPayload, username) {
   try {
     await pool().query(
       `INSERT INTO growth_custom_query_history (tenant_id, store, question, result_json, created_by)
        VALUES ($1,$2,$3,$4::jsonb,$5)`,
-      [tenantId || 'default', store, question, JSON.stringify(resultPayload), username || null]
+      [tenantId || 'default', store, question, JSON.stringify({ title: resultPayload?.title || question, mode: resultPayload?.mode }), username || null]
     );
   } catch (e) {
     console.error('[growth-solutions] saveQueryHistory failed:', e?.message || e);
@@ -966,7 +1015,28 @@ ${templateList}
       if (!parsed || !parsed.mode) return res.status(502).json({ ok: false, error: 'AI 返回无法解析,请重试' });
 
       if (parsed.mode === 'existing' && PROBLEMS[parsed.problem_key]) {
-        const existingPayload = { ok: true, mode: 'existing', problem_key: parsed.problem_key, reason: parsed.reason || '' };
+        // 之前"existing"模式匹配到六大标准问题后直接跳转详情页，LLM的判断力完全没被用上——
+        // 老板问"核心产品销量下降"，系统认了"这是menu_optimization"就直接跳到菜品四象限表格，
+        // 一句分析都没有。现在补一步：先把该问题真实的现状数据算出来(比如菜品四象限/SOP打点率)，
+        // 再让AI基于这些真实数字做一次有依据的分析，而不是凭空猜"大概会是什么情况"。
+        const existingKey = parsed.problem_key;
+        let existingAnalysis = '';
+        try {
+          const endDate = ymd(new Date());
+          const startDate = daysAgo(METRIC_WINDOW_DAYS - 1);
+          const current = await computeMetric(existingKey, store, startDate, endDate);
+          const realDataSummary = summarizeMetricForAnalysis(existingKey, current);
+          const analysisPrompt = `你是餐厅经营顾问。老板问："${question}"，系统判断这属于"${PROBLEMS[existingKey].title}"这个标准问题。
+
+真实数据现状：
+${realDataSummary}
+
+请基于以上真实数据，写一段150-250字的经营分析，必须包含：①这些真实数字说明了什么问题；②可能的根因；③建议老板重点关注哪个方向。只输出分析文字，不要输出JSON、不要输出标题，直接是一段话。`;
+          existingAnalysis = String(await _llm(analysisPrompt) || '').trim();
+        } catch (e) {
+          console.error('[growth-solutions] existing-mode analysis generation failed:', e?.message || e);
+        }
+        const existingPayload = { ok: true, mode: 'existing', problem_key: existingKey, reason: parsed.reason || '', analysis: existingAnalysis };
         saveQueryHistory(req.tenantId, store, question, existingPayload, req.user?.username);
         return res.json(existingPayload);
       }
@@ -1102,21 +1172,6 @@ ${templateList}
         [username]
       );
       res.json({ ok: true, tasks: r.rows });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  // 取某一条历史记录的完整结果(点历史列表时用,不用重新调LLM)
-  app.get('/api/diagnosis/solutions/custom/history/:id', authRequired, async (req, res) => {
-    try {
-      const tenantId = req.tenantId || 'default';
-      const r = await pool().query(
-        `SELECT question, result_json FROM growth_custom_query_history WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
-        [tenantId, req.params.id]
-      );
-      if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
-      res.json({ ok: true, question: r.rows[0].question, result: r.rows[0].result_json });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
