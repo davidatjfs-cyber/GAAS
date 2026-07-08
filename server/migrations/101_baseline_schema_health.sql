@@ -1148,26 +1148,8 @@ ALTER TABLE recipes ADD COLUMN IF NOT EXISTS updated_by varchar(120);
 CREATE INDEX IF NOT EXISTS idx_recipes_tenant ON recipes (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_recipes_lookup ON recipes (dish_name, store, status);
 
-CREATE TABLE IF NOT EXISTS pos_sales_detail (
-  id bigserial PRIMARY KEY,
-  tenant_id varchar(80) NOT NULL DEFAULT 'default',
-  store text,
-  date date,
-  biz_type text,
-  dish_name text,
-  dish_code text,
-  category text,
-  category_code text,
-  qty numeric DEFAULT 0,
-  sales_amount numeric DEFAULT 0,
-  revenue numeric DEFAULT 0,
-  discount numeric DEFAULT 0,
-  slot text,
-  order_time timestamptz,
-  checkout_time timestamptz,
-  weekday int,
-  created_at timestamptz DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_pos_sales_detail_tenant ON pos_sales_detail (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_pos_sales_detail_date ON pos_sales_detail (date);
+-- pos_sales_detail是pos_order_items的视图(权威POS数据源，sales_raw表已于2026-07-03下线)，
+-- 不是表——上面这段CREATE TABLE/CREATE INDEX是误加的，会在"is not a table or materialized
+-- view"报错，而ensureBaselineSchemaHealth()用单次pool.query()把整份文件当一条隐式事务执行，
+-- 一处失败会导致前面所有已成功的CREATE TABLE/ALTER TABLE全部回滚，等于本文件在任何环境
+-- 都从未真正生效过。已彻底移除，不要再在这里为pos_sales_detail建表/建索引。

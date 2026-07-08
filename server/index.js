@@ -6625,22 +6625,28 @@ function leaveDomainFieldEmpty(v) {
 }
 
 /** 将当前 state 中的薪资相关字段写入独立表 hrms_payroll_domain（双写备份） */
+// id曾经硬编码为'default'常量、tenant_id列全靠DEFAULT带过——在只有一个租户时无害，
+// 但id是单独的PRIMARY KEY(不是id+tenant_id复合键)，多租户下所有租户会共享同一行、
+// 互相覆盖数据；RLS开启的环境(如demo)还会因为写入行的tenant_id(默认'default')与
+// 当前会话的租户上下文不一致而被policy拒绝(new row violates row-level security policy)。
+// 改为用当前租户id同时作为id和tenant_id，天然解决两个问题。
 async function upsertPayrollDomainFromState(state) {
   if (!state || typeof state !== 'object') return;
+  const tid = resolveTenantIdDefault();
   const pa = state.payrollAdjustments && typeof state.payrollAdjustments === 'object' ? state.payrollAdjustments : {};
   const pau = state.payrollAudits && typeof state.payrollAudits === 'object' ? state.payrollAudits : {};
   const sa = Array.isArray(state.salaryAdjustments) ? state.salaryAdjustments : [];
   const mc = Array.isArray(state.monthlyConfirmations) ? state.monthlyConfirmations : [];
   await pool.query(
-    `INSERT INTO hrms_payroll_domain (id, payroll_adjustments, payroll_audits, salary_adjustments, monthly_confirmations, updated_at)
-     VALUES ('default', $1::jsonb, $2::jsonb, $3::jsonb, $4::jsonb, NOW())
+    `INSERT INTO hrms_payroll_domain (id, tenant_id, payroll_adjustments, payroll_audits, salary_adjustments, monthly_confirmations, updated_at)
+     VALUES ($1, $1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, NOW())
      ON CONFLICT (id) DO UPDATE SET
        payroll_adjustments = EXCLUDED.payroll_adjustments,
        payroll_audits = EXCLUDED.payroll_audits,
        salary_adjustments = EXCLUDED.salary_adjustments,
        monthly_confirmations = EXCLUDED.monthly_confirmations,
        updated_at = NOW()`,
-    [JSON.stringify(pa), JSON.stringify(pau), JSON.stringify(sa), JSON.stringify(mc)]
+    [tid, JSON.stringify(pa), JSON.stringify(pau), JSON.stringify(sa), JSON.stringify(mc)]
   );
 }
 
@@ -6656,8 +6662,11 @@ async function ensureLeaveDomainTable() {
   `);
 }
 
+// 同上：id曾经硬编码为'default'、tenant_id全靠列DEFAULT带过，多租户下会互相覆盖数据，
+// RLS开启环境下还会触发policy拒绝。改为用当前租户id同时作为id和tenant_id。
 async function upsertLeaveDomainFromState(state) {
   if (!state || typeof state !== 'object') return;
+  const tid = resolveTenantIdDefault();
   const overrides =
     state.leaveBalanceOverrides && typeof state.leaveBalanceOverrides === 'object'
       ? state.leaveBalanceOverrides
@@ -6669,15 +6678,15 @@ async function upsertLeaveDomainFromState(state) {
       : {};
   await pool.query(
     `INSERT INTO hrms_leave_domain (
-       id, leave_balance_overrides, leave_balance_adjustments, leave_cumulative_close_snapshots, updated_at
+       id, tenant_id, leave_balance_overrides, leave_balance_adjustments, leave_cumulative_close_snapshots, updated_at
      )
-     VALUES ('default', $1::jsonb, $2::jsonb, $3::jsonb, NOW())
+     VALUES ($1, $1, $2::jsonb, $3::jsonb, $4::jsonb, NOW())
      ON CONFLICT (id) DO UPDATE SET
        leave_balance_overrides = EXCLUDED.leave_balance_overrides,
        leave_balance_adjustments = EXCLUDED.leave_balance_adjustments,
        leave_cumulative_close_snapshots = EXCLUDED.leave_cumulative_close_snapshots,
        updated_at = NOW()`,
-    [JSON.stringify(overrides), JSON.stringify(adjustments), JSON.stringify(snapshots)]
+    [tid, JSON.stringify(overrides), JSON.stringify(adjustments), JSON.stringify(snapshots)]
   );
 }
 
