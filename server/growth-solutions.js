@@ -839,6 +839,8 @@ export function registerGrowthSolutionRoutes(app, authRequired) {
       const templateList = templates.rows.map((t) => `${t.problem_key}/${t.code}: ${t.title} — ${t.description}(角色:${t.assignee_role})`).join('\n');
       const prompt = `你是餐厅经营顾问。老板描述了当前遇到的问题,请判断如何处理,只输出JSON,不要其它文字。
 
+当前分析的门店:"${store}"（后续生成的title/reason/tasks都必须只针对这一家店，不要涉及其它门店）
+
 老板的问题:"${question}"
 
 系统现有六大标准问题:
