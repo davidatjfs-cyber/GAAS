@@ -19636,25 +19636,10 @@
                   <p class="dx-sub">从营业额/差评/离职等结果反推原因，自动关联在岗人员与培训缺口，给出可执行的行动建议</p>
                 </header>
                 <div class="dx-filters">
-                  <input id="dx-start-date" type="date">
+                  <input id="dx-start-date" type="date" onchange="loadDiagnosisData()">
                   <span style="color:var(--dx-dim);font-size:13px">至</span>
-                  <input id="dx-end-date" type="date">
+                  <input id="dx-end-date" type="date" onchange="loadDiagnosisData()">
                   <button class="ga-btn ga-btn--primary ga-btn--sm" type="button" onclick="loadDiagnosisData()">刷新</button>
-                </div>
-                <div class="dx-agent-section" style="margin:18px 0;padding:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;">
-                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                    <div>
-                      <h3 style="margin:0 0 4px;font-size:16px;color:#EEF1FA;">AI 经营诊断 Agent</h3>
-                      <p style="margin:0;font-size:12px;color:var(--dx-dim);">先调用 Ontology 识别问题，再生成老板语言诊断与任务草稿</p>
-                    </div>
-                    <button class="ga-btn ga-btn--primary ga-btn--sm" type="button" onclick="loadAgentOperationDiagnosis()">生成诊断</button>
-                  </div>
-                  <div id="dx-agent-store-selector" style="display:flex;gap:10px;align-items:center;margin-bottom:12px;">
-                    <select id="dx-agent-store-select" class="gs-store-select" style="min-width:180px;">
-                      <option value="">选择门店</option>
-                    </select>
-                  </div>
-                  <div id="dx-agent-result"></div>
                 </div>
                 <div id="dx-cards-container" class="dx-cards"><div class="dx-empty">⏳ 正在加载诊断数据...</div></div>
                 <div class="gs-head">
@@ -56980,98 +56965,6 @@ ${body}
             }
         }
 
-        async function loadAgentOperationDiagnosis() {
-            const resultEl = document.getElementById('dx-agent-result');
-            if (!resultEl) return;
-            const storeSel = document.getElementById('dx-agent-store-select');
-            const store = storeSel?.value;
-            if (!store) {
-                resultEl.innerHTML = '<div class="dx-empty">请先选择门店</div>';
-                return;
-            }
-            resultEl.innerHTML = '<div class="dx-empty">⏳ 正在调用 Ontology 生成经营诊断...</div>';
-            try {
-                const date = new Date().toISOString().slice(0, 10);
-                const res = await fetch(`/api/ai/operation-diagnosis?store_id=${encodeURIComponent(store)}&store_name=${encodeURIComponent(store)}&date=${date}`, {
-                    headers: { 'Authorization': 'Bearer ' + dxToken() }
-                });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const data = await res.json();
-                if (!data.ok) throw new Error(data.error || 'unknown');
-                dxRenderAgentOperationDiagnosis(data, resultEl);
-            } catch (e) {
-                resultEl.innerHTML = `<div class="dx-empty">❌ 调用失败: ${escapeHtml(e.message)}<br><br><button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="loadAgentOperationDiagnosis()">重试</button></div>`;
-            }
-        }
-
-        function dxRenderAgentOperationDiagnosis(data, container) {
-            if (!data.topIssues?.length) {
-                container.innerHTML = `<div class="dx-empty">${escapeHtml(data.naturalLanguageAnswer || '当前数据不足，无法形成可靠经营诊断。')}</div>`;
-                return;
-            }
-            let html = `<div style="background:rgba(255,255,255,0.04);border-radius:12px;padding:14px;margin-bottom:14px;">`;
-            html += `<div style="font-size:14px;font-weight:700;color:#EEF1FA;margin-bottom:8px;">老板结论</div>`;
-            html += `<div style="font-size:13px;color:#C7D2FE;line-height:1.6;">${escapeHtml(data.naturalLanguageAnswer || data.bossSummary).replace(/\n/g, '<br>')}</div>`;
-            html += `</div>`;
-
-            html += `<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;color:#EEF1FA;margin-bottom:8px;">重点问题</div>`;
-            html += data.topIssues.slice(0, 3).map(issue => `
-                <div style="margin-bottom:8px;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;border-left:3px solid ${issue.priority === 'P1' ? '#F87171' : '#818CF8'};">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <span style="font-size:13px;color:#EEF1FA;font-weight:600;">${escapeHtml(issue.name)}</span>
-                        <span style="font-size:11px;color:${issue.priority === 'P1' ? '#F87171' : '#818CF8'};font-weight:700;">${escapeHtml(issue.priority)}</span>
-                    </div>
-                    <div style="font-size:12px;color:#9AA3C7;margin-top:4px;">${escapeHtml(issue.reason)}</div>
-                    <div style="font-size:12px;color:#9AA3C7;margin-top:4px;">建议负责人: ${escapeHtml(issue.ownerRole)}</div>
-                </div>
-            `).join('');
-            html += `</div>`;
-
-            if (data.recommendedActions?.length) {
-                html += `<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;color:#EEF1FA;margin-bottom:8px;">建议动作</div>`;
-                html += data.recommendedActions.map(action => `
-                    <div style="margin-bottom:8px;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;">
-                        <div style="font-size:13px;color:#EEF1FA;font-weight:600;">${escapeHtml(action.name)}</div>
-                        <div style="font-size:12px;color:#9AA3C7;margin-top:4px;">负责人: ${escapeHtml(action.ownerRole)} · ${action.deadlineDays}天内 · 追踪: ${escapeHtml((action.trackingMetrics || []).join('、'))}</div>
-                        <div style="font-size:12px;color:#9AA3C7;margin-top:4px;">预期结果: ${escapeHtml(action.expectedResult)}</div>
-                    </div>
-                `).join('');
-                html += `</div>`;
-            }
-
-            if (data.taskDrafts?.length) {
-                html += `<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;color:#EEF1FA;margin-bottom:8px;">任务草稿</div>`;
-                html += data.taskDrafts.map(draft => `
-                    <div style="margin-bottom:8px;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-                        <div style="font-size:13px;color:#EEF1FA;">${escapeHtml(draft.title)}</div>
-                        <button class="ga-btn ga-btn--primary ga-btn--sm" onclick="generateAgentTask('${escapeHtml(draft.sourceOpportunityId)}')">生成正式任务</button>
-                    </div>
-                `).join('');
-                html += `</div>`;
-            }
-
-            container.innerHTML = html;
-        }
-
-        async function generateAgentTask(opportunityId) {
-            if (!opportunityId) return;
-            try {
-                const store = document.getElementById('dx-agent-store-select')?.value;
-                const res = await fetch('/api/ai/operation-diagnosis/generate-tasks', {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + dxToken(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ opportunity_id: opportunityId, store_id: store })
-                });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const data = await res.json();
-                if (!data.ok) throw new Error(data.error || 'unknown');
-                const taskId = data.tasks?.[0]?.task_id || data.taskId || '已存在';
-                alert(`任务已生成: ${taskId}`);
-            } catch (e) {
-                alert('生成任务失败: ' + e.message);
-            }
-        }
-
         // ── 六大增长方案 ─────────────────────────────────────
         const GS_PROBLEM_ICONS = { staff_efficiency: '👥', revenue: '📈', kitchen_standard: '👨‍🍳', menu_optimization: '🍽️', gross_margin: '💰', training_replication: '🎓' };
         const GS_STATUS_LABEL = { active: '执行中', observing: '观察期', reviewing: '待复盘确认' };
@@ -57084,13 +56977,6 @@ ${body}
             sel.innerHTML = stores.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
             if (prev && stores.includes(prev)) sel.value = prev;
             gsLoadCards();
-
-            const agentSel = document.getElementById('dx-agent-store-select');
-            if (agentSel) {
-                const agentPrev = agentSel.value;
-                agentSel.innerHTML = '<option value="">选择门店</option>' + stores.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-                if (agentPrev && stores.includes(agentPrev)) agentSel.value = agentPrev;
-            }
         }
 
         async function gsLoadCards() {
@@ -57347,10 +57233,22 @@ ${body}
         }
 
         async function gsAnalyzeCustom() {
-            const store = document.getElementById('gs-store-select')?.value;
+            const storeSelEl = document.getElementById('gs-store-select');
+            const store = storeSelEl?.value;
             const q = document.getElementById('gs-custom-q')?.value?.trim();
             if (!store) { showNotification('请先选择门店', 'warning'); return; }
             if (!q) { showNotification('请先描述你遇到的问题', 'warning'); return; }
+            // 分析只认门店选择器的值，问题文字里提到的门店名不会被读取——如果两者不一致，
+            // 用户很容易以为"输入里写了哪家店就分析哪家店"，结果分析的其实是选择器上那家，
+            // 之前就出现过"选择器停在洪潮、问题文字写马己仙，结果分析了洪潮"的误用。这里做
+            // 一次防呆：问题文字里如果提到了选择器列表中另一家店，先拦下来让用户确认。
+            const otherStoreNames = Array.from(storeSelEl.options || [])
+                .map(o => o.value).filter(v => v && v !== store);
+            const mentionedOtherStore = otherStoreNames.find(name => q.includes(name));
+            if (mentionedOtherStore) {
+                const proceed = confirm(`当前选择的门店是"${store}"，但问题里提到了"${mentionedOtherStore}"。\n\n分析只会按门店选择器里选的门店来算，不会读取问题文字里提到的门店名。\n\n点"确定"按当前选择器的"${store}"继续分析；点"取消"先去切换门店选择器再重新提交。`);
+                if (!proceed) return;
+            }
             const modal = document.getElementById('gs-modal');
             const body = document.getElementById('gs-modal-body');
             const title = document.getElementById('gs-modal-title');
