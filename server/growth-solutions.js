@@ -169,6 +169,8 @@ export async function ensureGrowthSolutionsSchema() {
   `);
   await pool().query(`ALTER TABLE growth_solution_tasks ADD COLUMN IF NOT EXISTS reminder_count INT NOT NULL DEFAULT 0`);
   await pool().query(`ALTER TABLE growth_solution_tasks ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMPTZ`);
+  await pool().query(`ALTER TABLE growth_solution_tasks ADD COLUMN IF NOT EXISTS why TEXT`);
+  await pool().query(`ALTER TABLE growth_solution_tasks ADD COLUMN IF NOT EXISTS acceptance_criteria TEXT`);
   // 种子模板:以代码为准覆盖更新;不在种子里的旧模板停用
   for (const t of TASK_TEMPLATE_SEED) {
     await pool().query(
@@ -994,13 +996,15 @@ ${templateList}
 {"mode":"custom","title":"方案标题(10字内)","metric_key":"<从六大问题key中选一个最能衡量该问题的指标;如果六大问题里没有一个真正相关,留空字符串>",
  "analysis":"【硬性要求，必填，150-300字的经营分析总结，不是简单复述数字】必须包含三部分：①现状判断——如果上面给了真实数据(差评列表/员工快照)，具体解读这些数据说明了什么(比如差评里反复出现的问题模式、离职率相对什么水平算高)，不能只是把数字抄一遍；②可能原因——基于餐饮行业经验，对着这些现状给出1-3个最可能的根因假设；③这些任务为什么能解决——简要说明下面的任务方案分别针对哪个根因。如果上面完全没有真实数据支撑，则基于餐饮行业通用常识做同样深度的分析，并在开头注明"当前无本店真实数据，以下基于行业经验判断"。",
  "reason":"一句话总结(20字内，用于列表展示，比如"离职率34%明显偏高，主要因新人培养跟不上"这种一句话结论，不是"选了xx指标因为..."这种口径说明)",
- "tasks":[{"code":"<模板code,可选>","title":"任务标题","description":"任务说明","assignee_role":"store_manager|production_manager|hr","phase":"第1周"}],
+ "priority_recommendation":"从下面的tasks里选一项最优先执行的，格式：AI建议优先执行:<任务标题>。原因:<一句话说明为什么这项最该优先做，比如成本最低/见效最快/是其它任务的前提>",
+ "tasks":[{"code":"<模板code,可选>","title":"任务标题","description":"任务说明","why":"这项任务为什么要做(80字内，必须结合上面analysis里的根因，说明这项具体动作解决了哪个根因、不做会有什么后果，不能是空话)","acceptance_criteria":"验收标准(必填，1-2条可量化的完成判断标准，比如\"岗位必修培训完成率≥90%\"、\"AI陪练考试通过率≥80%\"，让责任人和管理者都清楚做到什么程度才算完成，不能写\"完成培训\"这种无法验收的说法)","assignee_role":"store_manager|production_manager|hr","phase":"第1周"}],
 任务责任人规则:厨房相关任务一律 production_manager(出品经理),前厅/营销/复盘任务一律 store_manager(店长)。
  "out_of_scope":"如果问题中有系统能力覆盖不了的部分(含"没有真实数据支撑"这种情况),在此如实说明;如果上面已经给了真实数据(差评列表/员工快照)则此项应为空字符串，不要说"没有数据""}
 任务3-5项,循序渐进,必须能落到系统功能上。
 
 ⚠️ 任务description硬性要求:禁止提及具体菜品名称、价格数字或SOP操作细节（这些由执行人员在具体执行时确定）；description只描述"做什么动作/目标"，不描述"如何具体操作"。
-⚠️ analysis字段是这次输出里最重要的部分，老板就是靠这段话判断你有没有真正读懂问题——绝对不能是"当前XX人，YY人，比例较高"这种数字复述，必须有判断、有推理、有解释。`;
+⚠️ analysis字段是这次输出里最重要的部分，老板就是靠这段话判断你有没有真正读懂问题——绝对不能是"当前XX人，YY人，比例较高"这种数字复述，必须有判断、有推理、有解释。
+⚠️ 任务描述要假设门店可能已经部分做了类似的事(比如积分激励规则、培训制度这类常见管理动作，很多店多少都有一些)，措辞要用"优化/新增XX规则/加强XX"而不是"上线/从零开始建立"这种假设完全没做过的说法，除非老板的问题原文明确说了"没有"或"从来没做过"。`;
 
       const raw = await _llm(prompt);
       let parsed = null;
@@ -1063,6 +1067,7 @@ ${realDataSummary}
         plan.push({
           template_code: t.code || null, title: String(t.title || '').slice(0, 200),
           description: String(t.description || ''), phase: t.phase || '',
+          why: String(t.why || '').trim(), acceptance_criteria: String(t.acceptance_criteria || '').trim(),
           assignee_role: role, suggested_assignees: suggested, default_assignee: suggested[0] || null,
         });
       }
@@ -1100,6 +1105,7 @@ ${realDataSummary}
         // 真实数据时才要求LLM填，导致"有真实数据但AI只是复述数字"这种情况没人管——现在无论
         // 有没有真实数据，都强制要求这段150-300字、含现状判断+根因假设+任务关联的分析总结。
         analysis: String(parsed.analysis || '').trim(),
+        priority_recommendation: String(parsed.priority_recommendation || '').trim(),
         out_of_scope: parsed.out_of_scope || (hasRealData ? '' : '系统六大标准指标及现有数据源均不适用于该问题，以下方案基于经营常识给出，无法结合门店真实数据验证现状。'),
         real_data_evidence: realDataEvidence,
         // capped 只有在真的有匹配指标、且 nextTarget 判定"已达阶梯上限"时才为true；
@@ -1164,7 +1170,7 @@ ${realDataSummary}
       if (!username) return res.status(400).json({ ok: false, error: 'no username' });
       const r = await pool().query(
         `SELECT t.id AS task_id, t.round_id, t.title, t.description, t.phase, t.due_date, t.status,
-                t.reminder_count, t.last_reminded_at,
+                t.reminder_count, t.last_reminded_at, t.why, t.acceptance_criteria,
                 r.store, r.problem_key, r.problem_title, r.round_no
            FROM growth_solution_tasks t
            JOIN growth_solution_rounds r ON r.id = t.round_id
@@ -1335,10 +1341,10 @@ ${realDataSummary}
         sort += 1;
         await pool().query(
           `INSERT INTO growth_solution_tasks
-             (round_id, template_code, title, description, assignee_username, assignee_name, due_date, phase, sort)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+             (round_id, template_code, title, description, assignee_username, assignee_name, due_date, phase, sort, why, acceptance_criteria)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
           [roundId, t.template_code || null, t.title, t.description || '', t.assignee_username,
-           t.assignee_name || '', t.due_date || null, t.phase || '', sort]
+           t.assignee_name || '', t.due_date || null, t.phase || '', sort, t.why || null, t.acceptance_criteria || null]
         );
         // 培训类任务:同步创建真实培训指派
         if ((t.template_code === 'assign_cert_training' || t.template_code === 'batch_assign') && _createTrainingAssignment && Array.isArray(t.training_targets)) {

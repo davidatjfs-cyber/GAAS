@@ -11414,24 +11414,24 @@
         /* ── 六大增长方案 ── */
         /* #diagnosis-page 下之前完全没有 .ga-btn 样式(其它页面各自有一份 #xxx-page .ga-btn)，
            导致这里的按钮(导出PDF/一键下发/刷新等)全部是浏览器默认样式，看起来很粗糙。 */
-        #diagnosis-page .ga-btn {
+        #diagnosis-page .ga-btn, #gs-modal .ga-btn {
             display: inline-flex; align-items: center; justify-content: center; gap: 6px;
             height: 40px; padding: 0 18px; border-radius: 11px; font-size: 13px; font-weight: 700;
             cursor: pointer; border: none; white-space: nowrap; letter-spacing: .01em;
             transition: transform .12s ease, box-shadow .12s ease, background .12s ease, opacity .12s ease;
         }
-        #diagnosis-page .ga-btn:active { transform: scale(0.97); }
-        #diagnosis-page .ga-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-        #diagnosis-page .ga-btn--primary {
+        #diagnosis-page .ga-btn:active, #gs-modal .ga-btn:active { transform: scale(0.97); }
+        #diagnosis-page .ga-btn:disabled, #gs-modal .ga-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+        #diagnosis-page .ga-btn--primary, #gs-modal .ga-btn--primary {
             background: linear-gradient(135deg, #7C89FF, #6D7CFF 55%, #5B6BFF);
             color: #fff; box-shadow: 0 6px 18px rgba(109,124,255,0.38), inset 0 1px 0 rgba(255,255,255,0.18);
         }
-        #diagnosis-page .ga-btn--primary:hover { box-shadow: 0 8px 22px rgba(109,124,255,0.48), inset 0 1px 0 rgba(255,255,255,0.22); }
-        #diagnosis-page .ga-btn--ghost {
+        #diagnosis-page .ga-btn--primary:hover, #gs-modal .ga-btn--primary:hover { box-shadow: 0 8px 22px rgba(109,124,255,0.48), inset 0 1px 0 rgba(255,255,255,0.22); }
+        #diagnosis-page .ga-btn--ghost, #gs-modal .ga-btn--ghost {
             background: rgba(255,255,255,0.06); color: #C7D2FE; border: 1px solid rgba(255,255,255,0.14);
         }
-        #diagnosis-page .ga-btn--ghost:hover { background: rgba(255,255,255,0.11); border-color: rgba(255,255,255,0.22); color: #fff; }
-        #diagnosis-page .ga-btn--sm { height: 34px; padding: 0 13px; font-size: 12px; border-radius: 9px; }
+        #diagnosis-page .ga-btn--ghost:hover, #gs-modal .ga-btn--ghost:hover { background: rgba(255,255,255,0.11); border-color: rgba(255,255,255,0.22); color: #fff; }
+        #diagnosis-page .ga-btn--sm, #gs-modal .ga-btn--sm { height: 34px; padding: 0 13px; font-size: 12px; border-radius: 9px; }
         .gs-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 28px 0 14px; flex-wrap: wrap; }
         .gs-head h3 { margin: 0; font-size: 16px; font-weight: 800; color: var(--dx-text, #EEF1FA); }
         .gs-head .gs-sub { font-size: 12px; color: var(--dx-dim, #9AA3C7); margin-top: 2px; }
@@ -48031,6 +48031,8 @@ tr:nth-child(even) td { background: #fafafa; }
                             <button class="ga-btn ga-btn--primary ga-btn--sm" style="flex-shrink:0;" onclick="profileCompleteMyTask(${t.round_id},${t.task_id},this)">标记完成</button>
                         </div>
                         <div style="font-size:12px;color:rgba(200,215,230,0.55);margin-top:4px;">${escapeHtml(t.description || '')}</div>
+                        ${t.why ? `<div style="font-size:12px;color:#A5B0FF;margin-top:6px;">💡 为什么要做:${escapeHtml(t.why)}</div>` : ''}
+                        ${t.acceptance_criteria ? `<div style="font-size:12px;color:#3ED9A6;margin-top:4px;">✓ 验收标准:${escapeHtml(t.acceptance_criteria)}</div>` : ''}
                         <div style="font-size:11px;margin-top:6px;color:${overdue ? '#FF8A7A' : 'rgba(200,215,230,0.45)'};">${escapeHtml(t.store)} · ${escapeHtml(t.problem_title)}${t.due_date ? ` · 截止 ${String(t.due_date).slice(0, 10)}${overdue ? '(已逾期)' : ''}` : ''}${Number(t.reminder_count) > 0 ? ` · <span style="color:#FF8A7A;">⏰ 已被提醒${t.reminder_count}次</span>` : ''}</div>
                     </div>`;
                 }).join('');
@@ -57244,6 +57246,8 @@ ${body}
                   <div class="gs-task__body">
                     <div class="gs-task__title">${escapeHtml(t.title)}${t.phase ? `<span class="gs-task__phase">${escapeHtml(t.phase)}</span>` : ''}</div>
                     <div class="gs-task__desc">${escapeHtml(t.description || '')}</div>
+                    ${t.why ? `<div style="font-size:12px;color:#A5B0FF;margin-top:6px;">💡 为什么要做:${escapeHtml(t.why)}</div>` : ''}
+                    ${t.acceptance_criteria ? `<div style="font-size:12px;color:#3ED9A6;margin-top:4px;">✓ 验收标准:${escapeHtml(t.acceptance_criteria)}</div>` : ''}
                     <div class="gs-task__meta">
                       <label class="gs-task__field"><span class="gs-task__field-label">责任人</span><select class="gs-assignee ${opts ? '' : 'gs-missing'}" data-idx="${i}">${opts || '<option value="">⚠️ 无候选人,请补员工岗位</option>'}</select></label>
                       <label class="gs-task__field"><span class="gs-task__field-label">截止日期</span><input type="date" class="gs-due" data-idx="${i}" value="${defDue}"></label>
@@ -57255,6 +57259,7 @@ ${body}
             // analysis是这次的核心内容——不管有没有匹配到六大指标，都要求AI给出150-300字的
             // 现状判断+根因假设+任务关联分析，不是简单复述数字。放在最前面、单独一块突出展示。
             const analysisHtml = data.analysis ? `<div class="dx-anomaly-modal__section" style="background:rgba(109,124,255,0.06);border:1px solid rgba(109,124,255,0.18);border-radius:12px;padding:12px;"><div class="dx-anomaly-modal__label">📋 经营分析</div><div class="dx-anomaly-modal__text" style="white-space:pre-line;line-height:1.7;">${escapeHtml(data.analysis)}</div></div>` : '';
+            const priorityHtml = data.priority_recommendation ? `<div class="gs-report" style="border-color:rgba(62,217,166,0.3);background:rgba(62,217,166,0.06);margin-bottom:10px;">🎯 ${escapeHtml(data.priority_recommendation)}</div>` : '';
             // data.metric 为空说明六大指标都不适用，没有"现状/目标"可展示——不硬凑stage box。
             const stageHtml = data.metric ? gsStageHtml(data.current?.value, data.suggested_target, data.unit, data.metric, '') : '';
             // real_data_evidence：差评/员工流动这类新接的真实数据源，跟六大指标是两套东西，
@@ -57265,7 +57270,7 @@ ${body}
                 : '';
               return `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">📊 ${escapeHtml(ev.label)}</div><div class="dx-anomaly-modal__text">${escapeHtml(ev.value)}</div>${detailHtml}</div>`;
             }).join('');
-            return analysisHtml + stageHtml + evidenceHtml + gsExtraDetailHtml(data) + histHtml +
+            return analysisHtml + priorityHtml + stageHtml + evidenceHtml + gsExtraDetailHtml(data) + histHtml +
               `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">任务方案(每项必须指定责任人)</div>${tasks}</div>
                <div class="gs-actions"><button class="ga-btn ga-btn--primary" onclick="gsDispatch('${escapeHtml(data.problem_key)}')">一键下发全部任务</button></div>`;
         }
@@ -57277,6 +57282,8 @@ ${body}
               <div class="gs-task__body">
                 <div class="gs-task__title">${escapeHtml(t.title)}</div>
                 <div class="gs-task__desc">${escapeHtml(t.description || '')}</div>
+                ${t.why ? `<div style="font-size:12px;color:#A5B0FF;margin-top:6px;">💡 为什么要做:${escapeHtml(t.why)}</div>` : ''}
+                ${t.acceptance_criteria ? `<div style="font-size:12px;color:#3ED9A6;margin-top:4px;">✓ 验收标准:${escapeHtml(t.acceptance_criteria)}</div>` : ''}
                 <div class="gs-task__meta">
                   <span class="dx-d-tag">👤 ${escapeHtml(t.assignee_name || t.assignee_username)}</span>
                   ${t.due_date ? `<span class="gs-task__phase">截止 ${String(t.due_date).slice(0, 10)}</span>` : ''}
@@ -57342,6 +57349,7 @@ ${body}
                 if (!username) { missing++; sel?.classList.add('gs-missing'); return; }
                 tasks.push({
                     template_code: t.template_code, title: t.title, description: t.description, phase: t.phase,
+                    why: t.why || '', acceptance_criteria: t.acceptance_criteria || '',
                     assignee_username: username,
                     assignee_name: sel.selectedOptions[0]?.dataset?.name || '',
                     due_date: due?.value || null,
