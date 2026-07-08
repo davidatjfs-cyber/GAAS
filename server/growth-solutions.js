@@ -68,35 +68,35 @@ const ROLE_POSITIONS = {
 // ─── 任务模板库(种子数据) ────────────────────────────────
 const TASK_TEMPLATE_SEED = [
   // 员工效率
-  { problem_key: 'staff_efficiency', code: 'enable_daily_rating', title: '开启每日执行力AI评分', description: '全员纳入每日执行力评分,评分结果次日推送店长', assignee_role: 'store_manager', phase: '第1周', sort: 1 },
-  { problem_key: 'staff_efficiency', code: 'launch_points_incentive', title: '上线积分现金激励规则', description: '配置标准动作→当日积分规则,积分可兑现金券,排行榜公示', assignee_role: 'store_manager', phase: '第1-2周', sort: 2 },
-  { problem_key: 'staff_efficiency', code: 'assign_cert_training', title: '为缺认证员工指派必修培训', description: '按岗位晋升要求,为缺认证员工批量指派培训任务', assignee_role: 'production_manager', phase: '第2-4周', sort: 3 },
-  { problem_key: 'staff_efficiency', code: 'weekly_efficiency_review', title: '每周对比人效曲线与目标线', description: '每周复盘人效走势,识别排班与客流错配', assignee_role: 'store_manager', phase: '持续', sort: 4 },
+  { problem_key: 'staff_efficiency', code: 'enable_daily_rating', title: '开启每日执行力AI评分', description: '全员纳入每日执行力评分,评分结果次日推送店长', why: '人效偏低往往是执行不到位却没有及时发现,每日评分能第一时间暴露问题岗位/时段', acceptance_criteria: '全员评分覆盖率100%;连续7天评分数据可查', assignee_role: 'store_manager', phase: '第1周', sort: 1 },
+  { problem_key: 'staff_efficiency', code: 'launch_points_incentive', title: '上线积分现金激励规则', description: '配置标准动作→当日积分规则,积分可兑现金券,排行榜公示', why: '单靠考核发现问题不够,需要正向激励让员工主动提升效率,积分兑现比单纯说教更有效', acceptance_criteria: '积分规则上线且当周有员工兑现记录;参与率≥80%', assignee_role: 'store_manager', phase: '第1-2周', sort: 2 },
+  { problem_key: 'staff_efficiency', code: 'assign_cert_training', title: '为缺认证员工指派必修培训', description: '按岗位晋升要求,为缺认证员工批量指派培训任务', why: '认证缺口通常直接对应技能短板,是效率提不上去的根源之一', acceptance_criteria: '缺认证员工100%收到培训指派;2周内完成率≥70%', assignee_role: 'production_manager', phase: '第2-4周', sort: 3 },
+  { problem_key: 'staff_efficiency', code: 'weekly_efficiency_review', title: '每周对比人效曲线与目标线', description: '每周复盘人效走势,识别排班与客流错配', why: '前面的动作有没有见效必须靠持续对比数据才能判断,不复盘容易做完就忘', acceptance_criteria: '连续4周有复盘记录;人效曲线较基线提升', assignee_role: 'store_manager', phase: '持续', sort: 4 },
   // 营业额:自动营销 + PLLM 双引擎(对营业额最有效的组合)
-  { problem_key: 'revenue', code: 'enable_auto_marketing', title: '开启营销自动驾驶', description: 'AI每日结合营收环比与节假日自动生成召回/促销活动,店长只需确认发送', assignee_role: 'store_manager', phase: '第1周', sort: 1 },
-  { problem_key: 'revenue', code: 'launch_recall_campaign', title: '沉睡客户分批召回', description: '按流失风险分批召回(高风险先行),AI生成文案+匹配优惠券,企微触达', assignee_role: 'store_manager', phase: '第1-3周', sort: 2 },
-  { problem_key: 'revenue', code: 'execute_pllm_actions', title: '执行PLLM经营诊断建议', description: '每日经营异常(客流/客单/差评/售罄)由PLLM生成整改建议,当天安排执行', assignee_role: 'store_manager', phase: '持续', sort: 3 },
-  { problem_key: 'revenue', code: 'weekly_revenue_review', title: '每周复盘营收与召回效果', description: '对比营收曲线与召回批次、核销率,沉淀有效方案供下轮复用', assignee_role: 'store_manager', phase: '持续', sort: 4 },
+  { problem_key: 'revenue', code: 'enable_auto_marketing', title: '开启营销自动驾驶', description: 'AI每日结合营收环比与节假日自动生成召回/促销活动,店长只需确认发送', why: '营收下滑往往等店长发现时已经晚了,自动化能在苗头出现时就触发应对,减少人为疏漏', acceptance_criteria: '自动营销开关开启;近7天至少生成1次自动活动', assignee_role: 'store_manager', phase: '第1周', sort: 1 },
+  { problem_key: 'revenue', code: 'launch_recall_campaign', title: '沉睡客户分批召回', description: '按流失风险分批召回(高风险先行),AI生成文案+匹配优惠券,企微触达', why: '沉睡客户是最容易被忽视但召回成本最低的营收来源,直接影响客流基本盘', acceptance_criteria: '高风险沉睡客户召回覆盖率≥80%;触达后7天回店率可追踪', assignee_role: 'store_manager', phase: '第1-3周', sort: 2 },
+  { problem_key: 'revenue', code: 'execute_pllm_actions', title: '执行PLLM经营诊断建议', description: '每日经营异常(客流/客单/差评/售罄)由PLLM生成整改建议,当天安排执行', why: '光有诊断不落地等于白诊断,营收问题必须当天响应才能止损', acceptance_criteria: '每日诊断建议当天处理率≥90%', assignee_role: 'store_manager', phase: '持续', sort: 3 },
+  { problem_key: 'revenue', code: 'weekly_revenue_review', title: '每周复盘营收与召回效果', description: '对比营收曲线与召回批次、核销率,沉淀有效方案供下轮复用', why: '需要确认前面的营销动作是不是真的把营收拉回来了,不然就是白忙', acceptance_criteria: '连续4周复盘记录;营收环比改善', assignee_role: 'store_manager', phase: '持续', sort: 4 },
   // 出品标准化
-  { problem_key: 'kitchen_standard', code: 'config_station_mapping', title: '配置岗位×菜品打点计划', description: '在厨房执行模块配置岗位菜品映射与每日打点时间', assignee_role: 'production_manager', phase: '第1周', sort: 1 },
-  { problem_key: 'kitchen_standard', code: 'enable_punch_card', title: 'SOP打点卡上线并培训', description: '关键岗位学会使用打点卡,明确漏打点提醒规则', assignee_role: 'production_manager', phase: '第1-2周', sort: 2 },
-  { problem_key: 'kitchen_standard', code: 'daily_punch', title: '每日按计划完成SOP打点', description: '出品经理督导各岗位按时打点,漏打点当日整改', assignee_role: 'production_manager', phase: '持续', sort: 3 },
-  { problem_key: 'kitchen_standard', code: 'review_timeout', title: '每周复盘出餐超时与漏打点', description: '结合出餐超时报告与打点看板,定位问题岗位', assignee_role: 'production_manager', phase: '每周', sort: 4 },
+  { problem_key: 'kitchen_standard', code: 'config_station_mapping', title: '配置岗位×菜品打点计划', description: '在厨房执行模块配置岗位菜品映射与每日打点时间', why: '出品标准不稳首先要明确"谁负责哪道菜的哪个环节",没有映射就没法追责', acceptance_criteria: '岗位菜品映射覆盖率100%', assignee_role: 'production_manager', phase: '第1周', sort: 1 },
+  { problem_key: 'kitchen_standard', code: 'enable_punch_card', title: 'SOP打点卡上线并培训', description: '关键岗位学会使用打点卡,明确漏打点提醒规则', why: '光有映射没人真的按标准操作也没用,打点卡是把标准落到每个动作上的抓手', acceptance_criteria: '关键岗位打点卡使用率100%;培训完成率100%', assignee_role: 'production_manager', phase: '第1-2周', sort: 2 },
+  { problem_key: 'kitchen_standard', code: 'daily_punch', title: '每日按计划完成SOP打点', description: '出品经理督导各岗位按时打点,漏打点当日整改', why: '出品不稳定的核心就是执行不稳定,每日打点是唯一能验证"标准有没有被真的执行"的方式', acceptance_criteria: 'SOP打点完成率≥80%', assignee_role: 'production_manager', phase: '持续', sort: 3 },
+  { problem_key: 'kitchen_standard', code: 'review_timeout', title: '每周复盘出餐超时与漏打点', description: '结合出餐超时报告与打点看板,定位问题岗位', why: '打点做了不代表问题解决了,需要看超时和漏打点数据才知道哪个岗位/时段还有缺口', acceptance_criteria: '连续4周复盘记录;超时率/漏打点率环比下降', assignee_role: 'production_manager', phase: '每周', sort: 4 },
   // 菜单优化
-  { problem_key: 'menu_optimization', code: 'review_complaint_dishes', title: '审核高投诉菜品清单', description: '核对桌访不满意菜品与差评,确认问题菜品名单', assignee_role: 'production_manager', phase: '第1周', sort: 1 },
-  { problem_key: 'menu_optimization', code: 'decide_elimination', title: '确认淘汰/重做/优化名单', description: '按四象限与淘汰建议,拍板每道问题菜的处理方式', assignee_role: 'store_manager', phase: '第1-2周', sort: 2 },
-  { problem_key: 'menu_optimization', code: 'rework_recipes', title: '重做菜品更新配方与SOP', description: '对重做菜品更新配方、SOP与打点步骤', assignee_role: 'production_manager', phase: '第2-4周', sort: 3 },
-  { problem_key: 'menu_optimization', code: 'next_cycle_review', title: '下周期复盘四象限变化', description: '对比处理前后的四象限与投诉变化', assignee_role: 'store_manager', phase: '持续', sort: 4 },
+  { problem_key: 'menu_optimization', code: 'review_complaint_dishes', title: '审核高投诉菜品清单', description: '核对桌访不满意菜品与差评,确认问题菜品名单', why: '菜单质量问题必须先精准定位到具体是哪几道菜出了问题,不能凭印象处理', acceptance_criteria: '高投诉菜品清单100%核实完成', assignee_role: 'production_manager', phase: '第1周', sort: 1 },
+  { problem_key: 'menu_optimization', code: 'decide_elimination', title: '确认淘汰/重做/优化名单', description: '按四象限与淘汰建议,拍板每道问题菜的处理方式', why: '光知道哪些菜有问题不够,必须明确每道菜的处理方式(留/改/下架)才能推进执行', acceptance_criteria: '问题菜品100%确定处理方式并落实到执行清单', assignee_role: 'store_manager', phase: '第1-2周', sort: 2 },
+  { problem_key: 'menu_optimization', code: 'rework_recipes', title: '重做菜品更新配方与SOP', description: '对重做菜品更新配方、SOP与打点步骤', why: '只拍板"要重做"没用,必须真的把配方和SOP改掉,问题菜才可能真正变好', acceptance_criteria: '重做菜品配方/SOP更新完成率100%', assignee_role: 'production_manager', phase: '第2-4周', sort: 3 },
+  { problem_key: 'menu_optimization', code: 'next_cycle_review', title: '下周期复盘四象限变化', description: '对比处理前后的四象限与投诉变化', why: '需要验证这轮处理是不是真的让菜单结构变好了,投诉是不是真的减少了', acceptance_criteria: '下周期高投诉菜品数量较本轮下降', assignee_role: 'store_manager', phase: '持续', sort: 4 },
   // 门店毛利
-  { problem_key: 'gross_margin', code: 'complete_cost_library', title: '补全菜品成本库', description: '为缺失成本的在售菜品补录单位成本', assignee_role: 'production_manager', phase: '第1-2周', sort: 1 },
-  { problem_key: 'gross_margin', code: 'handle_low_margin', title: '处理低毛利TOP菜品', description: '对低毛利菜逐道决策:提价/换料/缩份/下架', assignee_role: 'store_manager', phase: '第2-3周', sort: 2 },
-  { problem_key: 'gross_margin', code: 'procurement_review', title: '按采购建议核对进货', description: '对高消耗原料核对进货价格与用量', assignee_role: 'production_manager', phase: '持续', sort: 3 },
-  { problem_key: 'gross_margin', code: 'monthly_margin_review', title: '每月复盘综合毛利率', description: '对比毛利率曲线与目标,复盘措施有效性', assignee_role: 'store_manager', phase: '持续', sort: 4 },
+  { problem_key: 'gross_margin', code: 'complete_cost_library', title: '补全菜品成本库', description: '为缺失成本的在售菜品补录单位成本', why: '毛利率问题必须先有准确的成本数据才能算清楚,成本缺失会导致后面所有分析都不准', acceptance_criteria: '在售菜品成本覆盖率≥95%', assignee_role: 'production_manager', phase: '第1-2周', sort: 1 },
+  { problem_key: 'gross_margin', code: 'handle_low_margin', title: '处理低毛利TOP菜品', description: '对低毛利菜逐道决策:提价/换料/缩份/下架', why: '找到问题菜之后必须真的对每一道做出决策,不然毛利率不会自己变好', acceptance_criteria: '低毛利TOP菜品100%完成决策(提价/换料/缩份/下架)并执行', assignee_role: 'store_manager', phase: '第2-3周', sort: 2 },
+  { problem_key: 'gross_margin', code: 'procurement_review', title: '按采购建议核对进货', description: '对高消耗原料核对进货价格与用量', why: '毛利率被拉低经常是采购价格或用量出了问题,需要在源头核实', acceptance_criteria: '高消耗原料采购核对完成率100%', assignee_role: 'production_manager', phase: '持续', sort: 3 },
+  { problem_key: 'gross_margin', code: 'monthly_margin_review', title: '每月复盘综合毛利率', description: '对比毛利率曲线与目标,复盘措施有效性', why: '需要确认前面这些动作是不是真的把毛利率拉回目标线,不然措施就是无效的', acceptance_criteria: '综合毛利率较基线提升;月度复盘记录留存', assignee_role: 'store_manager', phase: '持续', sort: 4 },
   // 培训复制
-  { problem_key: 'training_replication', code: 'mount_materials', title: '为知识点挂载教材', description: '为必修知识点补齐视频/文档教材', assignee_role: 'production_manager', phase: '第1-2周', sort: 1 },
-  { problem_key: 'training_replication', code: 'batch_assign', title: '批量指派岗位必修培训', description: '按岗位晋升要求为在职员工批量指派培训', assignee_role: 'store_manager', phase: '第1周', sort: 2 },
-  { problem_key: 'training_replication', code: 'ai_exam', title: '员工完成AI陪练与考试', description: '出品经理督导员工在移动端完成AI陪练对话与随堂考试', assignee_role: 'production_manager', phase: '第2-4周', sort: 3 },
-  { problem_key: 'training_replication', code: 'cert_review', title: '认证审核与到期复审', description: '管理端审核实操认证,到期自动复审', assignee_role: 'production_manager', phase: '持续', sort: 4 },
+  { problem_key: 'training_replication', code: 'mount_materials', title: '为知识点挂载教材', description: '为必修知识点补齐视频/文档教材', why: '培训体系要能复制,前提是每个必修知识点都有教材可学,不能只靠师傅口传心授', acceptance_criteria: '必修知识点教材覆盖率100%', assignee_role: 'production_manager', phase: '第1-2周', sort: 1 },
+  { problem_key: 'training_replication', code: 'batch_assign', title: '批量指派岗位必修培训', description: '按岗位晋升要求为在职员工批量指派培训', why: '有教材不代表员工会主动学,必须主动指派才能确保覆盖到位', acceptance_criteria: '在职员工必修培训指派覆盖率100%', assignee_role: 'store_manager', phase: '第1周', sort: 2 },
+  { problem_key: 'training_replication', code: 'ai_exam', title: '员工完成AI陪练与考试', description: '出品经理督导员工在移动端完成AI陪练对话与随堂考试', why: '学了不代表真的掌握,考试是验证培训效果的硬指标', acceptance_criteria: '指派培训2周内考试通过率≥80%', assignee_role: 'production_manager', phase: '第2-4周', sort: 3 },
+  { problem_key: 'training_replication', code: 'cert_review', title: '认证审核与到期复审', description: '管理端审核实操认证,到期自动复审', why: '认证是人才梯队可持续的保障,到期不复审会导致技能水平悄悄退化', acceptance_criteria: '到期认证复审完成率100%,无逾期未处理', assignee_role: 'production_manager', phase: '持续', sort: 4 },
 ];
 
 // ─── 建表 ───────────────────────────────────────────────
@@ -115,6 +115,8 @@ export async function ensureGrowthSolutionsSchema() {
       UNIQUE (problem_key, code)
     )
   `);
+  await pool().query(`ALTER TABLE growth_task_templates ADD COLUMN IF NOT EXISTS why TEXT`);
+  await pool().query(`ALTER TABLE growth_task_templates ADD COLUMN IF NOT EXISTS acceptance_criteria TEXT`);
   await pool().query(`
     CREATE TABLE IF NOT EXISTS growth_solution_rounds (
       id BIGSERIAL PRIMARY KEY,
@@ -174,13 +176,13 @@ export async function ensureGrowthSolutionsSchema() {
   // 种子模板:以代码为准覆盖更新;不在种子里的旧模板停用
   for (const t of TASK_TEMPLATE_SEED) {
     await pool().query(
-      `INSERT INTO growth_task_templates (problem_key, code, title, description, assignee_role, phase, sort)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO growth_task_templates (problem_key, code, title, description, assignee_role, phase, sort, why, acceptance_criteria)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (problem_key, code) DO UPDATE
          SET title=EXCLUDED.title, description=EXCLUDED.description,
              assignee_role=EXCLUDED.assignee_role, phase=EXCLUDED.phase,
-             sort=EXCLUDED.sort, enabled=TRUE`,
-      [t.problem_key, t.code, t.title, t.description, t.assignee_role, t.phase, t.sort]
+             sort=EXCLUDED.sort, enabled=TRUE, why=EXCLUDED.why, acceptance_criteria=EXCLUDED.acceptance_criteria`,
+      [t.problem_key, t.code, t.title, t.description, t.assignee_role, t.phase, t.sort, t.why || null, t.acceptance_criteria || null]
     );
   }
   const seedKeys = TASK_TEMPLATE_SEED.map((t) => `${t.problem_key}/${t.code}`);
@@ -625,7 +627,7 @@ async function fetchTurnoverSnapshot(store) {
 // ─── 方案生成(模板 + 真实数据缺口 → 任务清单) ─────────────
 async function buildPlan(problemKey, store, currentDetail) {
   const templates = await pool().query(
-    `SELECT code, title, description, assignee_role, phase, sort
+    `SELECT code, title, description, assignee_role, phase, sort, why, acceptance_criteria
      FROM growth_task_templates WHERE problem_key = $1 AND enabled = TRUE ORDER BY sort`,
     [problemKey]
   );
@@ -653,6 +655,8 @@ async function buildPlan(problemKey, store, currentDetail) {
       title: t.title,
       description,
       phase: t.phase,
+      why: t.why || '',
+      acceptance_criteria: t.acceptance_criteria || '',
       assignee_role: t.assignee_role,
       suggested_assignees: suggested,
       default_assignee: suggested[0] || null,
