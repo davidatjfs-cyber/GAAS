@@ -942,14 +942,16 @@ ${templateList}
 判断规则:
 1. 如果老板的问题严格落在六大标准问题的适用范围内,输出 {"mode":"existing","problem_key":"<key>","reason":"一句话说明"}
 2. 否则(包括服务态度/环境卫生/员工礼仪/员工流失等六大标准问题都不覆盖的情况)输出自定义方案:
-{"mode":"custom","title":"方案标题(10字内)","metric_key":"<从六大问题key中选一个最能衡量该问题的指标;如果六大问题里没有一个真正相关,留空字符串>","reason":"选择该指标的原因(如果上面给了真实数据，reason必须结合真实数据说明现状；如果metric_key为空也要说明为什么六大指标都不适用)",
+{"mode":"custom","title":"方案标题(10字内)","metric_key":"<从六大问题key中选一个最能衡量该问题的指标;如果六大问题里没有一个真正相关,留空字符串>",
+ "analysis":"【硬性要求，必填，150-300字的经营分析总结，不是简单复述数字】必须包含三部分：①现状判断——如果上面给了真实数据(差评列表/员工快照)，具体解读这些数据说明了什么(比如差评里反复出现的问题模式、离职率相对什么水平算高)，不能只是把数字抄一遍；②可能原因——基于餐饮行业经验，对着这些现状给出1-3个最可能的根因假设；③这些任务为什么能解决——简要说明下面的任务方案分别针对哪个根因。如果上面完全没有真实数据支撑，则基于餐饮行业通用常识做同样深度的分析，并在开头注明"当前无本店真实数据，以下基于行业经验判断"。",
+ "reason":"一句话总结(20字内，用于列表展示，比如"离职率34%明显偏高，主要因新人培养跟不上"这种一句话结论，不是"选了xx指标因为..."这种口径说明)",
  "tasks":[{"code":"<模板code,可选>","title":"任务标题","description":"任务说明","assignee_role":"store_manager|production_manager|hr","phase":"第1周"}],
 任务责任人规则:厨房相关任务一律 production_manager(出品经理),前厅/营销/复盘任务一律 store_manager(店长)。
- "out_of_scope":"如果问题中有系统能力覆盖不了的部分(含"没有真实数据支撑"这种情况),在此如实说明;如果上面已经给了真实数据(差评列表/员工快照)则此项应为空字符串，不要说"没有数据"",
- "general_advice":"仅当上面完全没有给真实数据、且metric_key为空时才填写——基于餐饮行业通用经营常识，给出200字以内的通用思路建议(不涉及本店具体数字，只是行业common sense供参考)；如果上面已给了真实数据或metric_key不为空，此项留空字符串"}
+ "out_of_scope":"如果问题中有系统能力覆盖不了的部分(含"没有真实数据支撑"这种情况),在此如实说明;如果上面已经给了真实数据(差评列表/员工快照)则此项应为空字符串，不要说"没有数据""}
 任务3-5项,循序渐进,必须能落到系统功能上。
 
-⚠️ 任务description硬性要求:禁止提及具体菜品名称、价格数字或SOP操作细节（这些由执行人员在具体执行时确定）；description只描述"做什么动作/目标"，不描述"如何具体操作"。`;
+⚠️ 任务description硬性要求:禁止提及具体菜品名称、价格数字或SOP操作细节（这些由执行人员在具体执行时确定）；description只描述"做什么动作/目标"，不描述"如何具体操作"。
+⚠️ analysis字段是这次输出里最重要的部分，老板就是靠这段话判断你有没有真正读懂问题——绝对不能是"当前XX人，YY人，比例较高"这种数字复述，必须有判断、有推理、有解释。`;
 
       const raw = await _llm(prompt);
       let parsed = null;
@@ -1022,8 +1024,11 @@ ${templateList}
         title: String(parsed.title || '自定义方案').slice(0, 60),
         metric_key: metricKey, metric: metricKey ? PROBLEMS[metricKey].metric : null, unit: metricKey ? PROBLEMS[metricKey].unit : null,
         reason: parsed.reason || '',
+        // analysis是这次输出的核心——之前只有一个笼统的general_advice字段，且只在完全没有
+        // 真实数据时才要求LLM填，导致"有真实数据但AI只是复述数字"这种情况没人管——现在无论
+        // 有没有真实数据，都强制要求这段150-300字、含现状判断+根因假设+任务关联的分析总结。
+        analysis: String(parsed.analysis || '').trim(),
         out_of_scope: parsed.out_of_scope || (hasRealData ? '' : '系统六大标准指标及现有数据源均不适用于该问题，以下方案基于经营常识给出，无法结合门店真实数据验证现状。'),
-        general_advice: hasRealData ? '' : String(parsed.general_advice || '').trim(),
         real_data_evidence: realDataEvidence,
         // capped 只有在真的有匹配指标、且 nextTarget 判定"已达阶梯上限"时才为true；
         // metricKey 为 null(六大指标都不适用)不等于"已封顶"，之前 target==null 一刀切
@@ -1052,6 +1057,27 @@ ${templateList}
         [tenantId, store, limit]
       );
       res.json({ ok: true, history: r.rows });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 自定义方案里"进行中的任务/轮次"列表——之前一键下发之后没有任何入口能再找回来，
+  // 用户点了下发看不到有没有成功、更看不到任务进度，这里补上。
+  app.get('/api/diagnosis/solutions/custom/active-rounds', authRequired, async (req, res) => {
+    try {
+      const store = String(req.query?.store || '').trim();
+      if (!store) return res.status(400).json({ ok: false, error: 'store 必填' });
+      const r = await pool().query(
+        `SELECT id, problem_key, problem_title, status, round_no, started_at,
+                (SELECT count(*) FROM growth_solution_tasks WHERE round_id = growth_solution_rounds.id) AS tasks_total,
+                (SELECT count(*) FROM growth_solution_tasks WHERE round_id = growth_solution_rounds.id AND status = 'done') AS tasks_done
+           FROM growth_solution_rounds
+          WHERE store = $1 AND problem_key LIKE 'custom:%' AND status <> 'closed'
+          ORDER BY started_at DESC LIMIT 20`,
+        [store]
+      );
+      res.json({ ok: true, rounds: r.rows });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
