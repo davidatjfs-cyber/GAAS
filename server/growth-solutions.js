@@ -914,7 +914,10 @@ ${templateList}
         title: String(parsed.title || '自定义方案').slice(0, 60),
         metric_key: metricKey, metric: metricKey ? PROBLEMS[metricKey].metric : null, unit: metricKey ? PROBLEMS[metricKey].unit : null,
         reason: parsed.reason || '', out_of_scope: parsed.out_of_scope || (metricKey ? '' : '系统六大标准指标均不适用于该问题，以下方案基于经营常识给出，无法结合门店真实数据验证现状。'),
-        current, suggested_target: target, capped: target == null, plan,
+        // capped 只有在真的有匹配指标、且 nextTarget 判定"已达阶梯上限"时才为true；
+        // metricKey 为 null(六大指标都不适用)不等于"已封顶"，之前 target==null 一刀切
+        // 导致这种情况被误判成"已达封顶🎉"，把AI生成的任务方案整个吞掉不显示，是个真bug。
+        current, suggested_target: target, capped: metricKey ? target == null : false, plan,
       });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
