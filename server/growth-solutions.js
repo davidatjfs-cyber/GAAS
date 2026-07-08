@@ -17,36 +17,42 @@ export const PROBLEMS = {
     metric: '人效(折前营业额/人天)',
     unit: '元/人天',
     ladder: { type: 'pct', step: 0.10, cap: 0.30 },
+    scope: '员工人均产出偏低(排班、人力浪费类问题)，不涉及服务态度或出品质量',
   },
   revenue: {
     title: '提升营业额',
     metric: '近30天营业额',
     unit: '元',
     ladder: { type: 'pct', step: 0.05, cap: 0.20 },
+    scope: '整体营业额/客流/客单下滑，不涉及具体菜品或服务态度问题',
   },
   kitchen_standard: {
     title: '提升出品标准',
     metric: 'SOP打点完成率',
     unit: '%',
     ladder: { type: 'ladder', steps: [80, 90, 95] },
+    scope: '厨房SOP执行/打点纪律问题(出餐流程是否按标准做)，不涉及具体某道菜好不好吃',
   },
   menu_optimization: {
     title: '提升菜单质量',
     metric: '本轮处理问题菜品数',
     unit: '道',
     ladder: { type: 'count', perRound: 5 },
+    scope: '仅限桌访反馈里对具体菜品口味/份量/新鲜度等的不满意；不包括服务态度、上菜速度、员工礼仪、环境卫生、结账效率等非菜品类投诉',
   },
   gross_margin: {
     title: '提升菜品毛利率',
     metric: '综合毛利率(已匹配成本菜品)',
     unit: '%',
     ladder: { type: 'pp', step: 1, cap: 3 },
+    scope: '菜品成本结构/毛利偏低，不涉及服务或出品质量',
   },
   training_replication: {
     title: '复制培养人才',
     metric: '关键岗位必修认证覆盖率',
     unit: '%',
     ladder: { type: 'ladder', steps: [50, 80, 100] },
+    scope: '关键岗位认证覆盖率/人才梯队问题，不涉及日常服务态度好坏',
   },
 };
 
@@ -835,7 +841,7 @@ export function registerGrowthSolutionRoutes(app, authRequired) {
       const templates = await pool().query(
         `SELECT problem_key, code, title, description, assignee_role, phase FROM growth_task_templates WHERE enabled = TRUE ORDER BY problem_key, sort`
       );
-      const problemList = Object.entries(PROBLEMS).map(([k, v]) => `${k}: ${v.title}(指标:${v.metric})`).join('\n');
+      const problemList = Object.entries(PROBLEMS).map(([k, v]) => `${k}: ${v.title}(指标:${v.metric}；适用范围:${v.scope || v.title})`).join('\n');
       const templateList = templates.rows.map((t) => `${t.problem_key}/${t.code}: ${t.title} — ${t.description}(角色:${t.assignee_role})`).join('\n');
       const prompt = `你是餐厅经营顾问。老板描述了当前遇到的问题,请判断如何处理,只输出JSON,不要其它文字。
 
@@ -843,19 +849,22 @@ export function registerGrowthSolutionRoutes(app, authRequired) {
 
 老板的问题:"${question}"
 
-系统现有六大标准问题:
+系统现有六大标准问题(每条后面标注了严格适用范围,只有问题确实落在适用范围内才能匹配,不要因为字面沾边就强行匹配——
+比如menu_optimization只管"菜品本身口味/份量/新鲜度"这类桌访反馈,不包括服务态度、上菜速度、员工礼仪、环境卫生等非菜品类问题):
 ${problemList}
 
 系统任务模板库(problem_key/code: 标题 — 描述):
 ${templateList}
 
+⚠️ 系统当前真实数据现状(如实告知,不要假装有数据):服务态度/上菜速度/员工礼仪/环境卫生类的投诉,系统目前没有任何结构化数据采集(相关字段全部是空的)，只有"桌访不满意菜品"这一项菜品口味类反馈有真实数据。如果老板的问题属于服务态度/环境卫生等非菜品类投诉，必须在custom模式里，reason和out_of_scope中如实说明"系统目前未采集此类数据，以下方案基于经营常识给出，无法结合门店真实数据验证现状"，metric_key留空字符串，不要强行套用某个不相关的指标当作"现状数据"。
+
 判断规则:
-1. 如果老板的问题本质上属于六大标准问题之一,输出 {"mode":"existing","problem_key":"<key>","reason":"一句话说明"}
-2. 否则输出自定义方案:
-{"mode":"custom","title":"方案标题(10字内)","metric_key":"<从六大问题key中选一个最能衡量该问题的指标>","reason":"选择该指标的原因",
+1. 如果老板的问题严格落在六大标准问题的适用范围内,输出 {"mode":"existing","problem_key":"<key>","reason":"一句话说明"}
+2. 否则(包括服务态度/环境卫生/员工礼仪等六大标准问题都不覆盖的情况)输出自定义方案:
+{"mode":"custom","title":"方案标题(10字内)","metric_key":"<从六大问题key中选一个最能衡量该问题的指标;如果六大问题里没有一个真正相关,留空字符串>","reason":"选择该指标的原因,如果metric_key为空必须说明为什么六大指标都不适用",
  "tasks":[{"code":"<模板code,可选>","title":"任务标题","description":"任务说明","assignee_role":"store_manager|production_manager|hr","phase":"第1周"}],
 任务责任人规则:厨房相关任务一律 production_manager(出品经理),前厅/营销/复盘任务一律 store_manager(店长)。
- "out_of_scope":"如果问题中有系统能力覆盖不了的部分,在此如实说明;没有则为空字符串"}
+ "out_of_scope":"如果问题中有系统能力覆盖不了的部分(含"没有真实数据支撑"这种情况),在此如实说明;没有则为空字符串"}
 任务3-5项,循序渐进,必须能落到系统功能上。
 
 ⚠️ 任务description硬性要求:禁止提及具体菜品名称、价格数字或SOP操作细节（这些由执行人员在具体执行时确定）；description只描述"做什么动作/目标"，不描述"如何具体操作"。`;
@@ -874,12 +883,21 @@ ${templateList}
         return res.json({ ok: true, mode: 'existing', problem_key: parsed.problem_key, reason: parsed.reason || '' });
       }
       // 自定义方案:补真实数据(指标现状+建议目标+责任人候选)
-      const metricKey = PROBLEMS[parsed.metric_key] ? parsed.metric_key : 'revenue';
-      const endDate = ymd(new Date());
-      const startDate = daysAgo(METRIC_WINDOW_DAYS - 1);
-      const current = await computeMetric(metricKey, store, startDate, endDate);
+      // metric_key 为空或不在六大指标里,说明这个问题六大指标都套不上(比如服务态度类投诉，
+      // 系统压根没采集这类数据)——之前这里会静默 fallback 到 'revenue'，导致方案挂着一个
+      // 完全不相关的"近30天营业额"当作"现状数据"，看起来像是结合了真实数据、实际上文不对题。
+      // 现在如实返回 metric_key=null，不编造一个不相关的指标现状。
+      const rawMetricKey = String(parsed.metric_key || '').trim();
+      const metricKey = PROBLEMS[rawMetricKey] ? rawMetricKey : null;
       const slug = 'custom:' + Date.now().toString(36);
-      const target = nextTarget(metricKey, current.value, current.value, []);
+      let current = null;
+      let target = null;
+      if (metricKey) {
+        const endDate = ymd(new Date());
+        const startDate = daysAgo(METRIC_WINDOW_DAYS - 1);
+        current = await computeMetric(metricKey, store, startDate, endDate);
+        target = nextTarget(metricKey, current.value, current.value, []);
+      }
       const plan = [];
       for (const t of (Array.isArray(parsed.tasks) ? parsed.tasks.slice(0, 8) : [])) {
         const role = ROLE_POSITIONS[t.assignee_role] ? t.assignee_role : 'store_manager';
@@ -894,8 +912,8 @@ ${templateList}
       res.json({
         ok: true, mode: 'custom', problem_key: slug,
         title: String(parsed.title || '自定义方案').slice(0, 60),
-        metric_key: metricKey, metric: PROBLEMS[metricKey].metric, unit: PROBLEMS[metricKey].unit,
-        reason: parsed.reason || '', out_of_scope: parsed.out_of_scope || '',
+        metric_key: metricKey, metric: metricKey ? PROBLEMS[metricKey].metric : null, unit: metricKey ? PROBLEMS[metricKey].unit : null,
+        reason: parsed.reason || '', out_of_scope: parsed.out_of_scope || (metricKey ? '' : '系统六大标准指标均不适用于该问题，以下方案基于经营常识给出，无法结合门店真实数据验证现状。'),
         current, suggested_target: target, capped: target == null, plan,
       });
     } catch (e) {
