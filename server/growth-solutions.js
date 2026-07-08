@@ -997,19 +997,26 @@ ${templateList}
       // 真实数据证据(差评列表/员工快照)单独返回给前端展示，不管metric_key有没有匹配上——
       // 这是这次新接的两个真实数据源，跟六大指标的current/target是两套东西，分开传更清楚。
       const realDataEvidence = [];
+      // hasRealData 只在真的查到内容时才算数——之前不管reviewsFetched里有没有真实差评，
+      // 只要发起过查询就push进realDataEvidence(哪怕是"0条")，导致hasRealData永远是true，
+      // general_advice(行业通用建议兜底)永远拿不到、被系统当成"已经有真实数据了"。
+      // "0条"这个信息本身还是有用的(告诉用户"查过了，没有")，继续展示，但不能算作hasRealData。
+      let hasFoundRealData = false;
       if (reviewsFetched) {
         realDataEvidence.push({
           label: '近30天真实差评/投诉', value: `${reviewsFetched.length} 条`,
           detail: reviewsFetched.slice(0, 10).map(r => `[${r.date}] ${r.reason}`),
         });
+        if (reviewsFetched.length > 0) hasFoundRealData = true;
       }
       if (turnoverFetched) {
         realDataEvidence.push({
           label: '员工在职/离职快照(全量,非近30天新增)',
           value: `在职 ${turnoverFetched.active} 人 / 离职 ${turnoverFetched.left} 人 / 共建档 ${turnoverFetched.total} 人`,
         });
+        if (turnoverFetched.total > 0) hasFoundRealData = true;
       }
-      const hasRealData = realDataEvidence.length > 0 || !!metricKey;
+      const hasRealData = hasFoundRealData || !!metricKey;
       const customPayload = {
         ok: true, mode: 'custom', problem_key: slug,
         title: String(parsed.title || '自定义方案').slice(0, 60),
@@ -1075,11 +1082,14 @@ ${templateList}
         if (!store) return res.status(400).json({ ok: false, error: 'store required' });
         const openRound = await getOpenRound(store, key);
         if (!openRound) return res.status(404).json({ ok: false, error: '该自定义方案不存在或已关闭' });
-        const mk = openRound.metric_key || 'revenue';
+        // openRound.metric_key 可能是null(没有对应六大指标的自定义问题,比如服务态度/员工流失)——
+        // 之前这里 || 'revenue' 硬塞一个不相关的指标当兜底，会导致baseline/target显示成假的0元。
+        const mk = openRound.metric_key || null;
         return res.json({
           ok: true, problem_key: key, title: openRound.problem_title, metric: openRound.metric_label,
           unit: openRound.unit, store, open_round: openRound, plan: null, history: [],
-          current: { value: Number(openRound.baseline_value), detail: {} }, suggested_target: Number(openRound.target_value),
+          current: { value: openRound.baseline_value != null ? Number(openRound.baseline_value) : null, detail: {} },
+          suggested_target: openRound.target_value != null ? Number(openRound.target_value) : null,
           metric_key: mk, capped: false,
         });
       }
@@ -1118,8 +1128,8 @@ ${templateList}
       const { store, target_value, tasks } = req.body || {};
       const isCustom = key.startsWith('custom:');
       if (!isCustom && !PROBLEMS[key]) return res.status(404).json({ ok: false, error: 'unknown problem' });
-      if (isCustom && (!req.body?.custom_title || !PROBLEMS[req.body?.metric_key])) {
-        return res.status(400).json({ ok: false, error: '自定义方案需提供 custom_title 与有效 metric_key' });
+      if (isCustom && !req.body?.custom_title) {
+        return res.status(400).json({ ok: false, error: '自定义方案需提供 custom_title' });
       }
       if (!store) return res.status(400).json({ ok: false, error: 'store required' });
       if (!Array.isArray(tasks) || !tasks.length) return res.status(400).json({ ok: false, error: '任务清单为空' });
@@ -1130,16 +1140,25 @@ ${templateList}
       const existing = await getOpenRound(store, key);
       if (existing) return res.status(409).json({ ok: false, error: `当前已有第${existing.round_no}轮进行中(${existing.status}),全部完成并复盘关闭前不能开新轮次` });
 
-      const metricKey = isCustom ? req.body.metric_key : key;
+      // custom模式下metric_key可能是null(比如服务态度/员工流失这类六大指标都套不上的问题，
+      // 前面分析阶段已经如实返回metric_key=null)——之前这里强制要求PROBLEMS[metric_key]有效，
+      // 导致这类问题的任务方案永远无法下发(点了确认没反应，本质是400被吞掉没让用户看清)。
+      // 现在允许metric_key为空：不追踪基线/目标这套指标阶梯，只是单纯把任务列表建成正式任务。
+      const metricKey = isCustom ? (PROBLEMS[req.body?.metric_key] ? req.body.metric_key : null) : key;
       const probTitle = isCustom ? String(req.body.custom_title).slice(0, 60) : PROBLEMS[key].title;
-      const endDate = ymd(new Date());
-      const startDate = daysAgo(METRIC_WINDOW_DAYS - 1);
-      const current = await computeMetric(metricKey, store, startDate, endDate);
       const closed = await getClosedRounds(store, key);
-      const originBaseline = closed.length ? Number(closed[0].origin_baseline ?? closed[0].baseline_value) : current.value;
-      const suggested = nextTarget(metricKey, current.value, originBaseline, closed);
-      const target = target_value != null ? Number(target_value) : suggested;
-      if (target == null) return res.status(400).json({ ok: false, error: '该指标已达封顶,无需开新轮次' });
+      let current = { value: null };
+      let originBaseline = null;
+      let target = null;
+      if (metricKey) {
+        const endDate = ymd(new Date());
+        const startDate = daysAgo(METRIC_WINDOW_DAYS - 1);
+        current = await computeMetric(metricKey, store, startDate, endDate);
+        originBaseline = closed.length ? Number(closed[0].origin_baseline ?? closed[0].baseline_value) : current.value;
+        const suggested = nextTarget(metricKey, current.value, originBaseline, closed);
+        target = target_value != null ? Number(target_value) : suggested;
+        if (target == null) return res.status(400).json({ ok: false, error: '该指标已达封顶,无需开新轮次' });
+      }
       const roundNo = closed.length + 1;
 
       const ins = await pool().query(
@@ -1147,7 +1166,7 @@ ${templateList}
            (store, problem_key, problem_title, round_no, metric_label, metric_key, unit,
             baseline_value, origin_baseline, target_value, status, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11) RETURNING id`,
-        [store, key, probTitle, roundNo, PROBLEMS[metricKey].metric, metricKey, PROBLEMS[metricKey].unit,
+        [store, key, probTitle, roundNo, metricKey ? PROBLEMS[metricKey].metric : probTitle, metricKey, metricKey ? PROBLEMS[metricKey].unit : null,
          current.value, originBaseline, target, req.user?.username || '']
       );
       const roundId = ins.rows[0].id;
@@ -1174,7 +1193,8 @@ ${templateList}
           }
         }
       }
-      await notify(`【增长方案·下发】${store}「${probTitle}」第${roundNo}轮启动:基线 ${current.value}${PROBLEMS[metricKey].unit} → 目标 ${target}${PROBLEMS[metricKey].unit},共 ${tasks.length} 项任务已指定责任人。`);
+      const notifyMetricPart = metricKey ? `基线 ${current.value}${PROBLEMS[metricKey].unit} → 目标 ${target}${PROBLEMS[metricKey].unit}` : '无对应量化指标,按任务清单跟踪';
+      await notify(`【增长方案·下发】${store}「${probTitle}」第${roundNo}轮启动:${notifyMetricPart},共 ${tasks.length} 项任务已指定责任人。`);
       res.json({ ok: true, round_id: roundId, round_no: roundNo, baseline: current.value, target });
     } catch (e) {
       if (String(e?.message || '').includes('uq_solution_round_open')) {

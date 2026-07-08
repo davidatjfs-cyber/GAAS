@@ -11412,6 +11412,26 @@
         }
         .dx-anomaly-evidence__meta { margin-top: 4px; color: #9AA3C7; font-size: 11px; }
         /* ── 六大增长方案 ── */
+        /* #diagnosis-page 下之前完全没有 .ga-btn 样式(其它页面各自有一份 #xxx-page .ga-btn)，
+           导致这里的按钮(导出PDF/一键下发/刷新等)全部是浏览器默认样式，看起来很粗糙。 */
+        #diagnosis-page .ga-btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            height: 40px; padding: 0 18px; border-radius: 11px; font-size: 13px; font-weight: 700;
+            cursor: pointer; border: none; white-space: nowrap; letter-spacing: .01em;
+            transition: transform .12s ease, box-shadow .12s ease, background .12s ease, opacity .12s ease;
+        }
+        #diagnosis-page .ga-btn:active { transform: scale(0.97); }
+        #diagnosis-page .ga-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+        #diagnosis-page .ga-btn--primary {
+            background: linear-gradient(135deg, #7C89FF, #6D7CFF 55%, #5B6BFF);
+            color: #fff; box-shadow: 0 6px 18px rgba(109,124,255,0.38), inset 0 1px 0 rgba(255,255,255,0.18);
+        }
+        #diagnosis-page .ga-btn--primary:hover { box-shadow: 0 8px 22px rgba(109,124,255,0.48), inset 0 1px 0 rgba(255,255,255,0.22); }
+        #diagnosis-page .ga-btn--ghost {
+            background: rgba(255,255,255,0.06); color: #C7D2FE; border: 1px solid rgba(255,255,255,0.14);
+        }
+        #diagnosis-page .ga-btn--ghost:hover { background: rgba(255,255,255,0.11); border-color: rgba(255,255,255,0.22); color: #fff; }
+        #diagnosis-page .ga-btn--sm { height: 34px; padding: 0 13px; font-size: 12px; border-radius: 9px; }
         .gs-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 28px 0 14px; flex-wrap: wrap; }
         .gs-head h3 { margin: 0; font-size: 16px; font-weight: 800; color: var(--dx-text, #EEF1FA); }
         .gs-head .gs-sub { font-size: 12px; color: var(--dx-dim, #9AA3C7); margin-top: 2px; }
@@ -11450,7 +11470,17 @@
         .gs-task__meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
         .gs-task__field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
         .gs-task__field-label { font-size: 10px; color: #5B6597; font-weight: 700; letter-spacing: .03em; }
-        .gs-task__meta select, .gs-task__meta input[type="date"] { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #EEF1FA; border-radius: 8px; padding: 7px 8px; font-size: 12px; width: 100%; box-sizing: border-box; min-height: 36px; }
+        .gs-task__meta select, .gs-task__meta input[type="date"] {
+            -webkit-appearance: none; appearance: none;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #EEF1FA;
+            border-radius: 8px; padding: 0 10px; font-size: 12px; width: 100%; box-sizing: border-box;
+            height: 38px; line-height: 36px; font-family: inherit;
+        }
+        .gs-task__meta select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239AA3C7'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 10px center; padding-right: 26px;
+        }
+        .gs-task__meta input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
         .gs-task__meta select.gs-missing { border-color: rgba(255,138,122,0.6); }
         .gs-task__phase { font-size: 10px; color: #A5B0FF; background: rgba(109,124,255,0.14); padding: 2px 8px; border-radius: 6px; font-weight: 700; flex-shrink: 0; white-space: nowrap; }
         .gs-task__status { font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 700; }
@@ -11476,6 +11506,13 @@
             .gs-task__field-label { display: block; }
             .gs-task { break-inside: avoid; border: 1px solid #ddd !important; }
         }
+        /* PDF导出走html2canvas截图，不依赖浏览器打印能力(企微内置浏览器常屏蔽window.print)，
+           gsExportPdf()截图前会给body加这个class，截图完再移除——只隐藏按钮/交互控件，
+           保留方案内容原本的深色配色(截图式导出不需要像@media print那样强制转黑白配色)。 */
+        .gs-printing .gs-no-print { display: none !important; }
+        .gs-printing .gs-task select, .gs-printing .gs-task input[type="date"] { display: none !important; }
+        .gs-printing .gs-task__field-label { display: block; }
+        .gs-printing .gs-modal__box { max-height: none !important; overflow: visible !important; }
         @media (max-width: 700px) {
             .gs-stage { grid-template-columns: 1fr; gap: 8px; margin: 12px 0; }
             .gs-stage__arrow { justify-content: center; transform: rotate(90deg); font-size: 16px; }
@@ -11487,7 +11524,6 @@
             .gs-modal__box { padding: 14px 12px; border-radius: 14px; }
             .gs-task { padding: 10px; gap: 8px; }
             .gs-task__meta { grid-template-columns: 1fr; gap: 8px; }
-            .gs-task__meta select, .gs-task__meta input[type="date"] { width: 100%; box-sizing: border-box; min-height: 40px; }
             .gs-task__meta button { width: 100%; min-height: 40px; }
             .gs-actions { flex-direction: column; }
             .gs-actions button { width: 100%; min-height: 44px; }
@@ -19679,7 +19715,7 @@
                 <div class="dx-anomaly-modal__head">
                   <h3 class="dx-anomaly-modal__title" id="gs-modal-title">增长方案</h3>
                   <div style="display:flex;gap:6px;align-items:center;">
-                    <button type="button" class="ga-btn ga-btn--ghost ga-btn--sm gs-no-print" onclick="gsExportPdf()">导出PDF</button>
+                    <button type="button" class="ga-btn ga-btn--ghost ga-btn--sm gs-no-print" id="gs-export-pdf-btn" onclick="gsExportPdf(this)">导出PDF</button>
                     <button type="button" class="dx-anomaly-modal__close gs-no-print" onclick="gsCloseModal()">×</button>
                   </div>
                 </div>
@@ -22821,6 +22857,8 @@
     </div>
 
     <script src="/assets/vendor/pdfjs/pdf.min.js"></script>
+    <script src="/assets/vendor/html2canvas/html2canvas.min.js"></script>
+    <script src="/assets/vendor/jspdf/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script>if(typeof XLSX==='undefined'){document.write('<scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/scr'+'ipt>')}</script>
 
@@ -57217,7 +57255,8 @@ ${body}
                 });
             });
             if (missing > 0) { showNotification(`还有 ${missing} 项任务未指定责任人,不能下发`, 'warning'); return; }
-            if (!confirm(`确认下发 ${tasks.length} 项任务?目标 ${gsCurrentDetail.suggested_target}${gsCurrentDetail.unit}(基线将以当前值冻结)`)) return;
+            const targetLine = gsCurrentDetail.metric ? `目标 ${gsCurrentDetail.suggested_target}${gsCurrentDetail.unit}(基线将以当前值冻结)` : '该方案没有对应的量化指标，将按任务清单直接跟踪执行情况';
+            if (!confirm(`确认下发 ${tasks.length} 项任务?${targetLine}`)) return;
             try {
                 const payload = { store, tasks };
                 if (key.startsWith('custom:')) {
@@ -57231,7 +57270,7 @@ ${body}
                 });
                 const data = await res.json();
                 if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
-                showNotification(`第${data.round_no}轮已启动:基线 ${data.baseline} → 目标 ${data.target}`, 'success');
+                showNotification(data.target != null ? `第${data.round_no}轮已启动:基线 ${data.baseline} → 目标 ${data.target}` : `第${data.round_no}轮已启动,共${tasks.length}项任务`, 'success');
                 gsOpenDetail(key); gsLoadCards();
             } catch (e) { showNotification('下发失败: ' + e.message, 'error'); }
         }
@@ -57350,10 +57389,47 @@ ${body}
             }
         }
 
-        function gsExportPdf() {
+        async function gsExportPdf(btn) {
+            // window.print()在企业微信/微信内置浏览器里经常被平台静默屏蔽(不报错，就是没反应)，
+            // 改用html2canvas截图+jsPDF打包成文件下载，不依赖浏览器打印能力，中文内容截图式
+            // 生成不存在字体缺失问题，在企微内置浏览器里也能正常触发下载。
+            const box = document.querySelector('#gs-modal .gs-modal__box');
+            if (!box) return;
+            if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
+                showNotification('PDF组件未加载完成，请刷新页面后重试', 'error');
+                return;
+            }
+            const originalText = btn ? btn.textContent : '';
+            if (btn) { btn.textContent = '生成中...'; btn.disabled = true; }
             document.body.classList.add('gs-printing');
-            window.print();
-            setTimeout(() => document.body.classList.remove('gs-printing'), 500);
+            try {
+                await new Promise(r => setTimeout(r, 50)); // 等gs-printing的样式(隐藏按钮)先应用再截图
+                const canvas = await html2canvas(box, { scale: 2, backgroundColor: '#12162b', useCORS: true });
+                const imgData = canvas.toDataURL('image/jpeg', 0.92);
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'pt', 'a4');
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                const pageHeight = pdf.internal.pageSize.getHeight();
+                const imgWidth = pageWidth;
+                const imgHeight = canvas.height * imgWidth / canvas.width;
+                let heightLeft = imgHeight;
+                let position = 0;
+                pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+                while (heightLeft > 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+                const title = (document.getElementById('gs-modal-title')?.textContent || '增长方案').replace(/[^一-龥a-zA-Z0-9]/g, '');
+                pdf.save(`${title}_${new Date().toISOString().slice(0, 10)}.pdf`);
+            } catch (e) {
+                showNotification('PDF导出失败: ' + e.message, 'error');
+            } finally {
+                document.body.classList.remove('gs-printing');
+                if (btn) { btn.textContent = originalText; btn.disabled = false; }
+            }
         }
 
         async function gsConfirm(roundId, decision) {
