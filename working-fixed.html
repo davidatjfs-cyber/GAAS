@@ -11442,15 +11442,17 @@
         .gs-stage__value { font-size: 24px; font-weight: 800; font-family: 'Geist Mono','SF Mono',monospace; margin-top: 4px; color: #fff; }
         .gs-stage__hint { font-size: 11px; color: #9AA3C7; margin-top: 4px; }
         .gs-stage__arrow { display: flex; align-items: center; font-size: 20px; color: #5B6597; }
-        .gs-task { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); margin-bottom: 8px; }
+        .gs-task { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); margin-bottom: 10px; }
         .gs-task__num { width: 22px; height: 22px; border-radius: 50%; background: rgba(109,124,255,0.18); color: #A5B0FF; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
         .gs-task__body { flex: 1; min-width: 0; }
-        .gs-task__title { font-size: 13px; font-weight: 700; color: #fff; }
-        .gs-task__desc { font-size: 12px; color: #9AA3C7; margin-top: 2px; line-height: 1.5; }
-        .gs-task__meta { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-        .gs-task__meta select, .gs-task__meta input[type="date"] { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #EEF1FA; border-radius: 8px; padding: 5px 8px; font-size: 12px; }
+        .gs-task__title { font-size: 13px; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+        .gs-task__desc { font-size: 12px; color: #9AA3C7; margin-top: 4px; line-height: 1.55; }
+        .gs-task__meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        .gs-task__field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .gs-task__field-label { font-size: 10px; color: #5B6597; font-weight: 700; letter-spacing: .03em; }
+        .gs-task__meta select, .gs-task__meta input[type="date"] { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #EEF1FA; border-radius: 8px; padding: 7px 8px; font-size: 12px; width: 100%; box-sizing: border-box; min-height: 36px; }
         .gs-task__meta select.gs-missing { border-color: rgba(255,138,122,0.6); }
-        .gs-task__phase { font-size: 11px; color: #5B6597; }
+        .gs-task__phase { font-size: 10px; color: #A5B0FF; background: rgba(109,124,255,0.14); padding: 2px 8px; border-radius: 6px; font-weight: 700; flex-shrink: 0; white-space: nowrap; }
         .gs-task__status { font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 700; }
         .gs-task__status--done { background: rgba(62,217,166,0.14); color: #3ED9A6; }
         .gs-task__status--pending { background: rgba(232,184,90,0.14); color: #E8B85A; }
@@ -11464,6 +11466,16 @@
         .gs-report { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px; margin-top: 10px; font-size: 13px; line-height: 1.6; color: #C7D2FE; }
         .gs-rate { font-size: 30px; font-weight: 800; font-family: 'Geist Mono','SF Mono',monospace; }
         .gs-rate--ok { color: #3ED9A6; } .gs-rate--bad { color: #FF8A7A; }
+        @media print {
+            body * { visibility: hidden; }
+            .gs-modal, .gs-modal__box, .gs-modal__box * { visibility: visible; }
+            .gs-modal { position: absolute; top: 0; left: 0; width: 100%; height: auto; background: #fff; padding: 0; }
+            .gs-modal__box { position: static; width: 100%; max-width: none; max-height: none; overflow: visible; box-shadow: none; background: #fff; color: #000; border: none; }
+            .gs-modal__box, .gs-modal__box * { color: #000 !important; background: #fff !important; border-color: #ccc !important; }
+            .gs-no-print, .gs-task select, .gs-task input[type="date"] { display: none !important; }
+            .gs-task__field-label { display: block; }
+            .gs-task { break-inside: avoid; border: 1px solid #ddd !important; }
+        }
         @media (max-width: 700px) {
             .gs-stage { grid-template-columns: 1fr; gap: 8px; margin: 12px 0; }
             .gs-stage__arrow { justify-content: center; transform: rotate(90deg); font-size: 16px; }
@@ -11474,9 +11486,8 @@
             .gs-modal { padding: 10px 8px 60px; }
             .gs-modal__box { padding: 14px 12px; border-radius: 14px; }
             .gs-task { padding: 10px; gap: 8px; }
-            .gs-task__meta { flex-direction: column; align-items: stretch; gap: 6px; }
+            .gs-task__meta { grid-template-columns: 1fr; gap: 8px; }
             .gs-task__meta select, .gs-task__meta input[type="date"] { width: 100%; box-sizing: border-box; min-height: 40px; }
-            .gs-task__meta .gs-task__phase { order: -1; }
             .gs-task__meta button { width: 100%; min-height: 40px; }
             .gs-actions { flex-direction: column; }
             .gs-actions button { width: 100%; min-height: 44px; }
@@ -19647,7 +19658,7 @@
                     <h3>六大增长方案</h3>
                     <div class="gs-sub">现状(真实数据) → 阶梯目标 → 任务方案 · 达成率=实际/目标,≥90%进入下一轮</div>
                   </div>
-                  <select id="gs-store-select" class="gs-store-select" onchange="gsLoadCards()"></select>
+                  <select id="gs-store-select" class="gs-store-select" onchange="gsLoadCards();gsLoadCustomHistory();"></select>
                 </div>
                 <div id="gs-cards" class="gs-cards"><div class="dx-empty">选择门店后加载方案</div></div>
                 <div class="gs-head" style="margin-top:20px;">
@@ -19660,13 +19671,17 @@
                   <input id="gs-custom-q" type="text" placeholder="例如:最近外卖差评变多,出餐越来越慢…" style="flex:1;min-width:240px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#EEF1FA;border-radius:10px;padding:9px 14px;font-size:13px;" onkeydown="if(event.key==='Enter')gsAnalyzeCustom()">
                   <button class="ga-btn ga-btn--primary gs-custom-btn" type="button" onclick="gsAnalyzeCustom()">AI 生成方案</button>
                 </div>
+                <div id="gs-custom-history" style="margin-top:12px;"></div>
               </div>
             </div>
             <div class="gs-modal" id="gs-modal" onclick="if(event.target===this)gsCloseModal()">
               <div class="gs-modal__box">
                 <div class="dx-anomaly-modal__head">
                   <h3 class="dx-anomaly-modal__title" id="gs-modal-title">增长方案</h3>
-                  <button type="button" class="dx-anomaly-modal__close" onclick="gsCloseModal()">×</button>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <button type="button" class="ga-btn ga-btn--ghost ga-btn--sm gs-no-print" onclick="gsExportPdf()">导出PDF</button>
+                    <button type="button" class="dx-anomaly-modal__close gs-no-print" onclick="gsCloseModal()">×</button>
+                  </div>
                 </div>
                 <div id="gs-modal-body"></div>
               </div>
@@ -56977,6 +56992,7 @@ ${body}
             sel.innerHTML = stores.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
             if (prev && stores.includes(prev)) sel.value = prev;
             gsLoadCards();
+            gsLoadCustomHistory();
         }
 
         async function gsLoadCards() {
@@ -57095,18 +57111,30 @@ ${body}
                 return `<div class="gs-task" data-idx="${i}">
                   <div class="gs-task__num">${i + 1}</div>
                   <div class="gs-task__body">
-                    <div class="gs-task__title">${escapeHtml(t.title)}</div>
+                    <div class="gs-task__title">${escapeHtml(t.title)}${t.phase ? `<span class="gs-task__phase">${escapeHtml(t.phase)}</span>` : ''}</div>
                     <div class="gs-task__desc">${escapeHtml(t.description || '')}</div>
                     <div class="gs-task__meta">
-                      <span class="gs-task__phase">${escapeHtml(t.phase || '')}</span>
-                      <select class="gs-assignee ${opts ? '' : 'gs-missing'}" data-idx="${i}">${opts || '<option value="">⚠️ 无候选人,请补员工岗位</option>'}</select>
-                      <input type="date" class="gs-due" data-idx="${i}" value="${defDue}">
+                      <label class="gs-task__field"><span class="gs-task__field-label">责任人</span><select class="gs-assignee ${opts ? '' : 'gs-missing'}" data-idx="${i}">${opts || '<option value="">⚠️ 无候选人,请补员工岗位</option>'}</select></label>
+                      <label class="gs-task__field"><span class="gs-task__field-label">截止日期</span><input type="date" class="gs-due" data-idx="${i}" value="${defDue}"></label>
                     </div>
                   </div>
                 </div>`;
             }).join('');
             const histHtml = (data.history || []).length ? `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">历史轮次</div>${data.history.map(h => `<div class="dx-anomaly-modal__text">第${h.round_no}轮:基线 ${h.baseline} → 目标 ${h.target},实际 ${h.actual ?? '—'},达成率 ${h.achievement_rate != null ? (h.achievement_rate * 100).toFixed(1) + '%' : '—'}(${h.decision === 'advance' ? '达成进阶' : '重跑'})</div>`).join('')}</div>` : '';
-            return gsStageHtml(data.current?.value, data.suggested_target, data.unit, `${data.metric}`, '') + gsExtraDetailHtml(data) + histHtml +
+            // data.metric 为空说明六大指标都不适用，没有"现状/目标"可展示——不硬凑stage box，
+            // 改成展示通用行业建议(如果后端给了的话)，比之前那个字面"null"字符串友好。
+            const stageOrAdviceHtml = data.metric
+              ? gsStageHtml(data.current?.value, data.suggested_target, data.unit, data.metric, '')
+              : (data.general_advice ? `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">💡 餐饮行业通用建议(非本店数据，仅供参考思路)</div><div class="dx-anomaly-modal__text" style="white-space:pre-line;">${escapeHtml(data.general_advice)}</div></div>` : '');
+            // real_data_evidence：差评/员工流动这类新接的真实数据源，跟六大指标是两套东西，
+            // 单独渲染成证据卡片，附带明细列表(点开能看到具体差评原文/在职离职人数)。
+            const evidenceHtml = (data.real_data_evidence || []).map(ev => {
+              const detailHtml = Array.isArray(ev.detail) && ev.detail.length
+                ? `<details style="margin-top:6px;"><summary style="cursor:pointer;color:#9AA3C7;font-size:12px;">查看明细</summary><div style="margin-top:6px;">${ev.detail.map(d => `<div class="dx-anomaly-modal__text" style="font-size:12px;padding:4px 0;border-top:1px solid rgba(255,255,255,.06);">${escapeHtml(d)}</div>`).join('')}</div></details>`
+                : '';
+              return `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">📊 ${escapeHtml(ev.label)}</div><div class="dx-anomaly-modal__text">${escapeHtml(ev.value)}</div>${detailHtml}</div>`;
+            }).join('');
+            return stageOrAdviceHtml + evidenceHtml + gsExtraDetailHtml(data) + histHtml +
               `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">任务方案(每项必须指定责任人)</div>${tasks}</div>
                <div class="gs-actions"><button class="ga-btn ga-btn--primary" onclick="gsDispatch('${escapeHtml(data.problem_key)}')">一键下发全部任务</button></div>`;
         }
@@ -57270,11 +57298,62 @@ ${body}
                 gsCurrentDetail = data;
                 title.textContent = `🤖 ${data.title} · ${store}`;
                 const scopeNote = data.out_of_scope ? `<div class="gs-report" style="border-color:rgba(232,184,90,0.35);">⚠️ 能力范围说明:${escapeHtml(data.out_of_scope)}</div>` : '';
-                const reasonNote = data.reason ? `<div class="dx-anomaly-modal__text">考核指标:${escapeHtml(data.metric)} — ${escapeHtml(data.reason)}</div>` : '';
+                const reasonNote = data.reason ? `<div class="dx-anomaly-modal__text">${data.metric ? `考核指标:${escapeHtml(data.metric)} — ` : ''}${escapeHtml(data.reason)}</div>` : '';
                 body.innerHTML = reasonNote + scopeNote + gsRenderPlan(data);
+                gsLoadCustomHistory();
             } catch (e) {
                 body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsAnalyzeCustom()">重试</button></div>`;
             }
+        }
+
+        async function gsLoadCustomHistory() {
+            const host = document.getElementById('gs-custom-history');
+            const store = document.getElementById('gs-store-select')?.value;
+            if (!host || !store) return;
+            try {
+                const res = await fetch(`/api/diagnosis/solutions/custom/history?store=${encodeURIComponent(store)}&limit=10`, { headers: { 'Authorization': 'Bearer ' + dxToken() } });
+                const data = await res.json();
+                if (!data.ok || !(data.history || []).length) { host.innerHTML = ''; return; }
+                host.innerHTML = '<div style="font-size:11px;color:#5B6597;margin-bottom:6px;">最近查询记录(点击直接查看，不用重新输入)</div>' +
+                  '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                  data.history.map(h => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="gsOpenHistoryItem('${escapeHtml(h.id)}')" title="${escapeHtml(h.question)}">${escapeHtml(h.title || h.question)}</button>`).join('') +
+                  '</div>';
+            } catch (e) { host.innerHTML = ''; }
+        }
+
+        async function gsOpenHistoryItem(id) {
+            const modal = document.getElementById('gs-modal');
+            const body = document.getElementById('gs-modal-body');
+            const title = document.getElementById('gs-modal-title');
+            const store = document.getElementById('gs-store-select')?.value;
+            modal.classList.add('show');
+            title.textContent = '⏳ 加载历史记录...';
+            body.innerHTML = '<div class="dx-empty">⏳ 加载中...</div>';
+            try {
+                const res = await fetch(`/api/diagnosis/solutions/custom/history/${encodeURIComponent(id)}`, { headers: { 'Authorization': 'Bearer ' + dxToken() } });
+                const payload = await res.json();
+                if (!payload.ok) throw new Error(payload.error || 'HTTP ' + res.status);
+                const data = payload.result;
+                if (data.mode === 'existing') {
+                    gsCloseModal();
+                    gsOpenDetail(data.problem_key);
+                    return;
+                }
+                gsCurrentDetail = data;
+                title.textContent = `🤖 ${data.title} · ${store}`;
+                const scopeNote = data.out_of_scope ? `<div class="gs-report" style="border-color:rgba(232,184,90,0.35);">⚠️ 能力范围说明:${escapeHtml(data.out_of_scope)}</div>` : '';
+                const reasonNote = data.reason ? `<div class="dx-anomaly-modal__text">${data.metric ? `考核指标:${escapeHtml(data.metric)} — ` : ''}${escapeHtml(data.reason)}</div>` : '';
+                const historyBadge = `<div style="font-size:11px;color:#5B6597;margin-bottom:8px;">📌 历史记录 · 原问题:"${escapeHtml(payload.question)}"</div>`;
+                body.innerHTML = historyBadge + reasonNote + scopeNote + gsRenderPlan(data);
+            } catch (e) {
+                body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function gsExportPdf() {
+            document.body.classList.add('gs-printing');
+            window.print();
+            setTimeout(() => document.body.classList.remove('gs-printing'), 500);
         }
 
         async function gsConfirm(roundId, decision) {

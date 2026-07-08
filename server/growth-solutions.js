@@ -516,6 +516,61 @@ async function suggestAssignees(store, role) {
   return r.rows.sort((a, b) => prio(a.position) - prio(b.position));
 }
 
+// ─── 自定义问题分析历史存档(不用每次重新输入问题,可以直接翻历史) ──────
+async function saveQueryHistory(tenantId, store, question, resultPayload, username) {
+  try {
+    await pool().query(
+      `INSERT INTO growth_custom_query_history (tenant_id, store, question, result_json, created_by)
+       VALUES ($1,$2,$3,$4::jsonb,$5)`,
+      [tenantId || 'default', store, question, JSON.stringify(resultPayload), username || null]
+    );
+  } catch (e) {
+    console.error('[growth-solutions] saveQueryHistory failed:', e?.message || e);
+  }
+}
+
+// ─── 真实差评/投诉数据(大众点评/美团截图，经视觉LLM提取后落在agent_messages) ──
+// bad_reviews表本身是空的(同步链路没跑通)，真正有数据的是agent_messages里
+// content_type='negative_review'的记录，agent_data里带reason/product/rating等结构化字段。
+// 提取环节本身会把"截图里其实不是差评"的情况也存进来(reason里写"不存在符合要求的差评"这类话)，
+// 这里过滤掉，只留真实差评。
+async function fetchRecentComplaints(store, days = 30) {
+  const brand = brandKeyOf(store);
+  const r = await pool().query(
+    `SELECT created_at::date AS date, agent_data->>'reason' AS reason,
+            agent_data->>'product' AS product, agent_data->>'rating' AS rating,
+            agent_data->>'platform' AS platform
+       FROM agent_messages
+      WHERE content_type = 'negative_review'
+        AND agent_data->>'store' ILIKE '%' || $1 || '%'
+        AND created_at > now() - ($2 || ' days')::interval
+        AND coalesce(agent_data->>'reason','') NOT ILIKE '%不存在符合要求%'
+        AND coalesce(agent_data->>'reason','') NOT ILIKE '%无差评%'
+        AND coalesce(agent_data->>'reason','') NOT IN ('无', '', '该评价为好评，不属于差评，无法提取差评原因。')
+      ORDER BY created_at DESC LIMIT 30`,
+    [brand, String(days)]
+  );
+  return r.rows;
+}
+
+// ─── 真实员工流动快照(employees.status，没有离职日期字段，只能给全量在职/离职快照) ──
+async function fetchTurnoverSnapshot(store) {
+  const brand = brandKeyOf(store);
+  const r = await pool().query(
+    `SELECT count(*) FILTER (WHERE coalesce(status,'') NOT IN ('inactive','disabled','resigned','离职','禁用','停用')) AS active,
+            count(*) FILTER (WHERE coalesce(status,'') IN ('inactive','resigned','离职')) AS left_count,
+            count(*) AS total
+       FROM employees WHERE store ILIKE '%' || $1 || '%'`,
+    [brand]
+  );
+  const row = r.rows[0] || {};
+  return {
+    active: Number(row.active || 0),
+    left: Number(row.left_count || 0),
+    total: Number(row.total || 0),
+  };
+}
+
 // ─── 方案生成(模板 + 真实数据缺口 → 任务清单) ─────────────
 async function buildPlan(problemKey, store, currentDetail) {
   const templates = await pool().query(
@@ -843,11 +898,39 @@ export function registerGrowthSolutionRoutes(app, authRequired) {
       );
       const problemList = Object.entries(PROBLEMS).map(([k, v]) => `${k}: ${v.title}(指标:${v.metric}；适用范围:${v.scope || v.title})`).join('\n');
       const templateList = templates.rows.map((t) => `${t.problem_key}/${t.code}: ${t.title} — ${t.description}(角色:${t.assignee_role})`).join('\n');
+
+      // 服务态度/投诉类、员工流失类问题，六大指标都套不上，但系统其实有真实数据——
+      // 差评来自大众点评/美团截图经视觉LLM提取，落在agent_messages(bad_reviews表本身是空的、
+      // 同步链路没接上，别被表名骗了)；员工流失来自employees.status快照(没有离职日期字段，
+      // 只能给"当前在职/离职人数"这种快照，不能给"近30天流失率"这种趋势)。
+      // 按问题文字关键词判断要不要附带这两类真实数据，让AI基于真实证据回答而不是空对空。
+      const wantsReviewData = /差评|投诉|服务|态度|上菜|环境|卫生|评价/.test(question);
+      const wantsTurnoverData = /离职|流失|人员流动|留不住|招聘|人手/.test(question);
+      let extraDataBlock = '';
+      let reviewsFetched = null;
+      let turnoverFetched = null;
+      if (wantsReviewData) {
+        reviewsFetched = await fetchRecentComplaints(store, 30);
+        if (reviewsFetched.length) {
+          extraDataBlock += `\n\n【真实数据·近30天差评/投诉记录(${reviewsFetched.length}条，来自大众点评/美团)】\n` +
+            reviewsFetched.slice(0, 20).map((r, i) => `${i + 1}. [${r.date}] ${r.reason}`).join('\n') +
+            `\n以上是真实差评内容，请通读后自行判断哪些是服务态度类、哪些是菜品类、哪些是环境/效率类，
+在reason和tasks里必须引用这些真实反馈里的具体问题模式(不要照抄原文，但要基于真实内容归纳，不要凭空想象)。`;
+        } else {
+          extraDataBlock += `\n\n【真实数据】近30天没有查到该店的差评/投诉记录(可能是数据同步延迟，也可能是真的没有差评)。`;
+        }
+      }
+      if (wantsTurnoverData) {
+        turnoverFetched = await fetchTurnoverSnapshot(store);
+        extraDataBlock += `\n\n【真实数据·员工在职/离职快照(全量,非近期新增,系统没有离职日期字段无法算近期流失率)】\n当前在职 ${turnoverFetched.active} 人，离职/停用 ${turnoverFetched.left} 人，总建档 ${turnoverFetched.total} 人。`;
+      }
+
       const prompt = `你是餐厅经营顾问。老板描述了当前遇到的问题,请判断如何处理,只输出JSON,不要其它文字。
 
 当前分析的门店:"${store}"（后续生成的title/reason/tasks都必须只针对这一家店，不要涉及其它门店）
 
 老板的问题:"${question}"
+${extraDataBlock}
 
 系统现有六大标准问题(每条后面标注了严格适用范围,只有问题确实落在适用范围内才能匹配,不要因为字面沾边就强行匹配——
 比如menu_optimization只管"菜品本身口味/份量/新鲜度"这类桌访反馈,不包括服务态度、上菜速度、员工礼仪、环境卫生等非菜品类问题):
@@ -856,15 +939,14 @@ ${problemList}
 系统任务模板库(problem_key/code: 标题 — 描述):
 ${templateList}
 
-⚠️ 系统当前真实数据现状(如实告知,不要假装有数据):服务态度/上菜速度/员工礼仪/环境卫生类的投诉,系统目前没有任何结构化数据采集(相关字段全部是空的)，只有"桌访不满意菜品"这一项菜品口味类反馈有真实数据。如果老板的问题属于服务态度/环境卫生等非菜品类投诉，必须在custom模式里，reason和out_of_scope中如实说明"系统目前未采集此类数据，以下方案基于经营常识给出，无法结合门店真实数据验证现状"，metric_key留空字符串，不要强行套用某个不相关的指标当作"现状数据"。
-
 判断规则:
 1. 如果老板的问题严格落在六大标准问题的适用范围内,输出 {"mode":"existing","problem_key":"<key>","reason":"一句话说明"}
-2. 否则(包括服务态度/环境卫生/员工礼仪等六大标准问题都不覆盖的情况)输出自定义方案:
-{"mode":"custom","title":"方案标题(10字内)","metric_key":"<从六大问题key中选一个最能衡量该问题的指标;如果六大问题里没有一个真正相关,留空字符串>","reason":"选择该指标的原因,如果metric_key为空必须说明为什么六大指标都不适用",
+2. 否则(包括服务态度/环境卫生/员工礼仪/员工流失等六大标准问题都不覆盖的情况)输出自定义方案:
+{"mode":"custom","title":"方案标题(10字内)","metric_key":"<从六大问题key中选一个最能衡量该问题的指标;如果六大问题里没有一个真正相关,留空字符串>","reason":"选择该指标的原因(如果上面给了真实数据，reason必须结合真实数据说明现状；如果metric_key为空也要说明为什么六大指标都不适用)",
  "tasks":[{"code":"<模板code,可选>","title":"任务标题","description":"任务说明","assignee_role":"store_manager|production_manager|hr","phase":"第1周"}],
 任务责任人规则:厨房相关任务一律 production_manager(出品经理),前厅/营销/复盘任务一律 store_manager(店长)。
- "out_of_scope":"如果问题中有系统能力覆盖不了的部分(含"没有真实数据支撑"这种情况),在此如实说明;没有则为空字符串"}
+ "out_of_scope":"如果问题中有系统能力覆盖不了的部分(含"没有真实数据支撑"这种情况),在此如实说明;如果上面已经给了真实数据(差评列表/员工快照)则此项应为空字符串，不要说"没有数据"",
+ "general_advice":"仅当上面完全没有给真实数据、且metric_key为空时才填写——基于餐饮行业通用经营常识，给出200字以内的通用思路建议(不涉及本店具体数字，只是行业common sense供参考)；如果上面已给了真实数据或metric_key不为空，此项留空字符串"}
 任务3-5项,循序渐进,必须能落到系统功能上。
 
 ⚠️ 任务description硬性要求:禁止提及具体菜品名称、价格数字或SOP操作细节（这些由执行人员在具体执行时确定）；description只描述"做什么动作/目标"，不描述"如何具体操作"。`;
@@ -880,7 +962,9 @@ ${templateList}
       if (!parsed || !parsed.mode) return res.status(502).json({ ok: false, error: 'AI 返回无法解析,请重试' });
 
       if (parsed.mode === 'existing' && PROBLEMS[parsed.problem_key]) {
-        return res.json({ ok: true, mode: 'existing', problem_key: parsed.problem_key, reason: parsed.reason || '' });
+        const existingPayload = { ok: true, mode: 'existing', problem_key: parsed.problem_key, reason: parsed.reason || '' };
+        saveQueryHistory(req.tenantId, store, question, existingPayload, req.user?.username);
+        return res.json(existingPayload);
       }
       // 自定义方案:补真实数据(指标现状+建议目标+责任人候选)
       // metric_key 为空或不在六大指标里,说明这个问题六大指标都套不上(比如服务态度类投诉，
@@ -909,16 +993,73 @@ ${templateList}
         });
       }
       if (!plan.length) return res.status(502).json({ ok: false, error: 'AI 未生成有效任务,请换个描述重试' });
-      res.json({
+
+      // 真实数据证据(差评列表/员工快照)单独返回给前端展示，不管metric_key有没有匹配上——
+      // 这是这次新接的两个真实数据源，跟六大指标的current/target是两套东西，分开传更清楚。
+      const realDataEvidence = [];
+      if (reviewsFetched) {
+        realDataEvidence.push({
+          label: '近30天真实差评/投诉', value: `${reviewsFetched.length} 条`,
+          detail: reviewsFetched.slice(0, 10).map(r => `[${r.date}] ${r.reason}`),
+        });
+      }
+      if (turnoverFetched) {
+        realDataEvidence.push({
+          label: '员工在职/离职快照(全量,非近30天新增)',
+          value: `在职 ${turnoverFetched.active} 人 / 离职 ${turnoverFetched.left} 人 / 共建档 ${turnoverFetched.total} 人`,
+        });
+      }
+      const hasRealData = realDataEvidence.length > 0 || !!metricKey;
+      const customPayload = {
         ok: true, mode: 'custom', problem_key: slug,
         title: String(parsed.title || '自定义方案').slice(0, 60),
         metric_key: metricKey, metric: metricKey ? PROBLEMS[metricKey].metric : null, unit: metricKey ? PROBLEMS[metricKey].unit : null,
-        reason: parsed.reason || '', out_of_scope: parsed.out_of_scope || (metricKey ? '' : '系统六大标准指标均不适用于该问题，以下方案基于经营常识给出，无法结合门店真实数据验证现状。'),
+        reason: parsed.reason || '',
+        out_of_scope: parsed.out_of_scope || (hasRealData ? '' : '系统六大标准指标及现有数据源均不适用于该问题，以下方案基于经营常识给出，无法结合门店真实数据验证现状。'),
+        general_advice: hasRealData ? '' : String(parsed.general_advice || '').trim(),
+        real_data_evidence: realDataEvidence,
         // capped 只有在真的有匹配指标、且 nextTarget 判定"已达阶梯上限"时才为true；
         // metricKey 为 null(六大指标都不适用)不等于"已封顶"，之前 target==null 一刀切
         // 导致这种情况被误判成"已达封顶🎉"，把AI生成的任务方案整个吞掉不显示，是个真bug。
         current, suggested_target: target, capped: metricKey ? target == null : false, plan,
-      });
+      };
+      saveQueryHistory(req.tenantId, store, question, customPayload, req.user?.username);
+      res.json(customPayload);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 自定义问题分析历史列表:不用每次重新输入问题,可以直接从历史记录里点开之前的结果
+  app.get('/api/diagnosis/solutions/custom/history', authRequired, async (req, res) => {
+    try {
+      const store = String(req.query?.store || '').trim();
+      if (!store) return res.status(400).json({ ok: false, error: 'store 必填' });
+      const tenantId = req.tenantId || 'default';
+      const limit = Math.min(50, Math.max(1, Number(req.query?.limit) || 20));
+      const r = await pool().query(
+        `SELECT id, question, result_json->>'title' AS title, result_json->>'mode' AS mode, created_at
+           FROM growth_custom_query_history
+          WHERE tenant_id = $1 AND store = $2
+          ORDER BY created_at DESC LIMIT $3`,
+        [tenantId, store, limit]
+      );
+      res.json({ ok: true, history: r.rows });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 取某一条历史记录的完整结果(点历史列表时用,不用重新调LLM)
+  app.get('/api/diagnosis/solutions/custom/history/:id', authRequired, async (req, res) => {
+    try {
+      const tenantId = req.tenantId || 'default';
+      const r = await pool().query(
+        `SELECT question, result_json FROM growth_custom_query_history WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
+        [tenantId, req.params.id]
+      );
+      if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
+      res.json({ ok: true, question: r.rows[0].question, result: r.rows[0].result_json });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
