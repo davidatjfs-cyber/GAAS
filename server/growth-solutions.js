@@ -69,7 +69,7 @@ const ROLE_POSITIONS = {
 const TASK_TEMPLATE_SEED = [
   // 员工效率
   { problem_key: 'staff_efficiency', code: 'enable_daily_rating', title: '开启每日执行力AI评分', description: '全员纳入每日执行力评分,评分结果次日推送店长', why: '人效偏低往往是执行不到位却没有及时发现,每日评分能第一时间暴露问题岗位/时段', acceptance_criteria: '全员评分覆盖率100%;连续7天评分数据可查', assignee_role: 'store_manager', phase: '第1周', sort: 1 },
-  { problem_key: 'staff_efficiency', code: 'launch_points_incentive', title: '上线积分现金激励规则', description: '配置标准动作→当日积分规则,积分可兑现金券,排行榜公示', why: '单靠考核发现问题不够,需要正向激励让员工主动提升效率,积分兑现比单纯说教更有效', acceptance_criteria: '积分规则上线且当周有员工兑现记录;参与率≥80%', assignee_role: 'store_manager', phase: '第1-2周', sort: 2 },
+  { problem_key: 'staff_efficiency', code: 'launch_points_incentive', title: '优化积分现金激励规则', description: '配置标准动作→当日积分规则,积分兑现为现金发放,排行榜公示', why: '单靠考核发现问题不够,需要正向激励让员工主动提升效率,积分兑现比单纯说教更有效', acceptance_criteria: '员工实际参与/申报积分制度的人数占比≥90%,积极性明显提升', assignee_role: 'store_manager', phase: '第1-2周', sort: 2 },
   { problem_key: 'staff_efficiency', code: 'assign_cert_training', title: '为缺认证员工指派必修培训', description: '按岗位晋升要求,为缺认证员工批量指派培训任务', why: '认证缺口通常直接对应技能短板,是效率提不上去的根源之一', acceptance_criteria: '缺认证员工100%收到培训指派;2周内完成率≥70%', assignee_role: 'production_manager', phase: '第2-4周', sort: 3 },
   { problem_key: 'staff_efficiency', code: 'weekly_efficiency_review', title: '每周对比人效曲线与目标线', description: '每周复盘人效走势,识别排班与客流错配', why: '前面的动作有没有见效必须靠持续对比数据才能判断,不复盘容易做完就忘', acceptance_criteria: '连续4周有复盘记录;人效曲线较基线提升', assignee_role: 'store_manager', phase: '持续', sort: 4 },
   // 营业额:自动营销 + PLLM 双引擎(对营业额最有效的组合)
@@ -1008,7 +1008,8 @@ ${templateList}
 
 ⚠️ 任务description硬性要求:禁止提及具体菜品名称、价格数字或SOP操作细节（这些由执行人员在具体执行时确定）；description只描述"做什么动作/目标"，不描述"如何具体操作"。
 ⚠️ analysis字段是这次输出里最重要的部分，老板就是靠这段话判断你有没有真正读懂问题——绝对不能是"当前XX人，YY人，比例较高"这种数字复述，必须有判断、有推理、有解释。
-⚠️ 任务描述要假设门店可能已经部分做了类似的事(比如积分激励规则、培训制度这类常见管理动作，很多店多少都有一些)，措辞要用"优化/新增XX规则/加强XX"而不是"上线/从零开始建立"这种假设完全没做过的说法，除非老板的问题原文明确说了"没有"或"从来没做过"。`;
+⚠️ 任务描述要假设门店可能已经部分做了类似的事(比如积分激励规则、培训制度这类常见管理动作，很多店多少都有一些)，措辞要用"优化/新增XX规则/加强XX"而不是"上线/从零开始建立"这种假设完全没做过的说法，除非老板的问题原文明确说了"没有"或"从来没做过"。
+⚠️ 涉及"积分"激励的任务：本系统的积分是直接发放现金，不是代金券/兑换券，不存在"兑换"环节，acceptance_criteria禁止出现"兑换率""兑换记录""满意度"这类不存在或无法核实的指标，应使用可从系统数据核实的客观指标，例如"员工实际参与/申报积分的人数占比≥90%"。`;
 
       const raw = await _llm(prompt);
       let parsed = null;
