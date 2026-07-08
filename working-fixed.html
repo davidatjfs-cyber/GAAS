@@ -22030,6 +22030,15 @@
                     <div id="profile-my-tasks-list"></div>
                 </div>
 
+                <!-- 团队任务(管理层专属)：下属增长方案任务的完成情况总览 -->
+                <div id="profile-team-tasks-section" class="card" style="margin-bottom: 16px; padding: 16px; display:none;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px;">
+                        <div style="font-weight:800; font-size:15px;">👥 团队任务</div>
+                        <span id="profile-team-tasks-count" style="font-size:11px; color:rgba(200,215,230,0.55);"></span>
+                    </div>
+                    <div id="profile-team-tasks-list"></div>
+                </div>
+
                 <!-- 公司通知：多劳多得下方；标题固定，列表区内滚动 -->
                 <div id="profile-notif-section" class="pf-notif-shell" style="margin-bottom: 16px; position: relative;">
                     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; padding: 0 2px;">
@@ -47998,6 +48007,7 @@ tr:nth-child(even) td { background: #fafafa; }
             try { loadProfileLeaveBalance(); } catch (e) {}
             try { loadProfileStoreRating(); } catch (e) {}
             try { loadProfileMyTasks(); } catch (e) {}
+            try { loadProfileTeamTasks(); } catch (e) {}
         }
 
         // 加载我在增长方案里被指派的任务(六大标准问题+自定义问题共用growth_solution_tasks表)
@@ -48021,8 +48031,46 @@ tr:nth-child(even) td { background: #fafafa; }
                             <button class="ga-btn ga-btn--primary ga-btn--sm" style="flex-shrink:0;" onclick="profileCompleteMyTask(${t.round_id},${t.task_id},this)">标记完成</button>
                         </div>
                         <div style="font-size:12px;color:rgba(200,215,230,0.55);margin-top:4px;">${escapeHtml(t.description || '')}</div>
-                        <div style="font-size:11px;margin-top:6px;color:${overdue ? '#FF8A7A' : 'rgba(200,215,230,0.45)'};">${escapeHtml(t.store)} · ${escapeHtml(t.problem_title)}${t.due_date ? ` · 截止 ${String(t.due_date).slice(0, 10)}${overdue ? '(已逾期)' : ''}` : ''}</div>
+                        <div style="font-size:11px;margin-top:6px;color:${overdue ? '#FF8A7A' : 'rgba(200,215,230,0.45)'};">${escapeHtml(t.store)} · ${escapeHtml(t.problem_title)}${t.due_date ? ` · 截止 ${String(t.due_date).slice(0, 10)}${overdue ? '(已逾期)' : ''}` : ''}${Number(t.reminder_count) > 0 ? ` · <span style="color:#FF8A7A;">⏰ 已被提醒${t.reminder_count}次</span>` : ''}</div>
                     </div>`;
+                }).join('');
+            } catch (e) { section.style.display = 'none'; }
+        }
+
+        // 管理层视图：下属增长方案任务完成情况——只有admin/hq_manager/store_manager等管理角色
+        // 才请求这个接口(后端也会校验角色，前端role判断只是避免非管理角色发起无意义请求)。
+        async function loadProfileTeamTasks() {
+            const section = document.getElementById('profile-team-tasks-section');
+            const list = document.getElementById('profile-team-tasks-list');
+            const countEl = document.getElementById('profile-team-tasks-count');
+            if (!section || !list) return;
+            const managementRoles = ['admin', 'hq_manager', 'store_manager', 'front_manager', 'front_supervisor'];
+            if (!managementRoles.includes(currentUser?.role)) { section.style.display = 'none'; return; }
+            try {
+                const res = await fetch('/api/diagnosis/solutions/team-tasks', { headers: { 'Authorization': 'Bearer ' + dxToken() } });
+                const data = await res.json();
+                if (!data.ok || !(data.people || []).length) { section.style.display = 'none'; return; }
+                section.style.display = '';
+                const totalPending = data.people.reduce((s, p) => s + p.tasks.length, 0);
+                const totalOverdue = data.people.reduce((s, p) => s + p.overdue, 0);
+                countEl.textContent = `${data.people.length}人 · ${totalPending}项待办${totalOverdue ? ` · ${totalOverdue}项逾期` : ''}`;
+                list.innerHTML = data.people.map(p => {
+                    const doneRate = p.total ? Math.round((p.done / p.total) * 100) : 0;
+                    const taskRows = p.tasks.map(t => `
+                        <div style="padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                            <div style="min-width:0;">
+                                <div style="font-size:12px;color:#EEF1FA;">${escapeHtml(t.title)}</div>
+                                <div style="font-size:11px;color:${t.overdue ? '#FF8A7A' : 'rgba(200,215,230,0.45)'};margin-top:2px;">${escapeHtml(t.store)} · ${escapeHtml(t.problem_title)}${t.due_date ? ` · 截止${String(t.due_date).slice(0, 10)}${t.overdue ? '(已逾期)' : ''}` : ''}${Number(t.reminder_count) > 0 ? ` · 已提醒${t.reminder_count}次` : ''}</div>
+                            </div>
+                            <button class="ga-btn ga-btn--ghost ga-btn--sm" style="flex-shrink:0;" onclick="gsRemindTask(${t.task_id}, this)">⏰ 提醒</button>
+                        </div>`).join('');
+                    return `<details style="margin-bottom:8px;">
+                        <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid rgba(255,255,255,0.06);">
+                            <span style="font-size:13px;font-weight:700;color:#EEF1FA;">${escapeHtml(p.assignee_name)}</span>
+                            <span style="font-size:11px;color:rgba(200,215,230,0.55);">完成${p.done}/${p.total}(${doneRate}%)${p.overdue ? ` · <span style="color:#FF8A7A;">逾期${p.overdue}</span>` : ''}</span>
+                        </summary>
+                        ${taskRows || '<div style="padding:8px 0;font-size:12px;color:rgba(200,215,230,0.4);">全部任务已完成</div>'}
+                    </details>`;
                 }).join('');
             } catch (e) { section.style.display = 'none'; }
         }
@@ -57161,21 +57209,9 @@ ${body}
                   <table class="gs-dishtable"><tr><th>菜品</th><th>投诉次数</th></tr>
                   ${cds.slice(0, 10).map(c => `<tr><td>${escapeHtml(c.dish)}</td><td>${c.count}</td></tr>`).join('')}</table></div>`;
             }
-            const q = detail.quadrants || {};
-            const quadNames = { star: '⭐ 明星(高销高利)', traffic: '🚪 引流(高销低利)', potential: '💎 潜力(低销高利)', eliminate: '⚠️ 淘汰(低销低利)' };
-            for (const [ch, chName] of [['dinein', '堂食'], ['takeaway', '外卖']]) {
-                const qq = q[ch];
-                if (!qq || !qq.matched) continue;
-                html += `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">${chName}菜品四象限(已匹配成本 ${qq.matched} 道)</div>`;
-                for (const [bucket, bName] of Object.entries(quadNames)) {
-                    const items = qq[bucket] || [];
-                    if (!items.length) continue;
-                    html += `<div style="font-size:12px;font-weight:700;color:#C7D2FE;margin:8px 0 2px;">${bName}</div>
-                      <table class="gs-dishtable"><tr><th>菜品</th><th>销量</th><th>利润额</th><th>毛利率</th></tr>
-                      ${items.slice(0, 5).map(d => `<tr><td>${escapeHtml(d.dish)}</td><td>${d.qty}</td><td>¥${Number(d.profit).toLocaleString('zh-CN')}</td><td>${d.margin != null ? d.margin + '%' : '—'}</td></tr>`).join('')}</table>`;
-                }
-                html += '</div>';
-            }
+            // 菜品四象限(明星/引流/潜力/淘汰)暂时不展示——按品类分组排名后数值本身没问题，
+            // 但用户反馈这个功能整体的呈现质量还不达标，要重新设计判断方法后再上，先隐藏
+            // 不删代码(quadrants数据后端仍在算、仍在返回，只是这里不渲染)。
             return html;
         }
 
@@ -57246,7 +57282,7 @@ ${body}
                   ${t.due_date ? `<span class="gs-task__phase">截止 ${String(t.due_date).slice(0, 10)}</span>` : ''}
                   <span class="gs-task__status gs-task__status--${t.status === 'done' ? 'done' : 'pending'}">${t.status === 'done' ? '✓ 已完成' : (t.due_date && String(t.due_date).slice(0, 10) < new Date().toISOString().slice(0, 10) ? '⚠️ 已逾期' : '进行中')}</span>
                   ${Number(t.reminder_count) > 0 ? `<span class="gs-task__phase" style="color:#FF8A7A;">已催促 ${t.reminder_count} 次</span>` : ''}
-                  ${t.status !== 'done' && r.status === 'active' ? `<button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsCompleteTask(${r.id},${t.id})">标记完成</button>` : ''}
+                  ${t.status !== 'done' && r.status === 'active' ? `<button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsRemindTask(${t.id}, this)">⏰ 提醒</button>` : ''}
                 </div>
               </div>
             </div>`).join('');
@@ -57332,15 +57368,23 @@ ${body}
             } catch (e) { showNotification('下发失败: ' + e.message, 'error'); }
         }
 
-        async function gsCompleteTask(roundId, taskId) {
+        // "标记完成"只应该由任务的责任人在自己"我的档案"里操作(见profileCompleteMyTask)——
+        // 派发人/管理者在这里(诊断页的轮次详情)看别人的任务，能做的是"提醒"，不该代替责任人
+        // 标记完成，所以这个按钮换成了提醒。限流(1小时1次)在后端做，这里失败了就提示错误。
+        async function gsRemindTask(taskId, btn) {
+            if (btn) { btn.disabled = true; }
             try {
-                const res = await fetch(`/api/diagnosis/solutions/rounds/${roundId}/tasks/${taskId}/complete`, {
+                const res = await fetch(`/api/diagnosis/solutions/tasks/${taskId}/remind`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dxToken() }, body: '{}',
                 });
                 const data = await res.json();
                 if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
-                gsOpenDetail(gsCurrentDetail.problem_key); gsLoadCards();
-            } catch (e) { showNotification('操作失败: ' + e.message, 'error'); }
+                showNotification(`已提醒，累计第${data.reminder_count}次`, 'success');
+                gsOpenDetail(gsCurrentDetail.problem_key);
+            } catch (e) {
+                showNotification(e.message, 'warning');
+                if (btn) { btn.disabled = false; }
+            }
         }
 
         async function gsForceReview(roundId) {

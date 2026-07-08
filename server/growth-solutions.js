@@ -1164,6 +1164,7 @@ ${realDataSummary}
       if (!username) return res.status(400).json({ ok: false, error: 'no username' });
       const r = await pool().query(
         `SELECT t.id AS task_id, t.round_id, t.title, t.description, t.phase, t.due_date, t.status,
+                t.reminder_count, t.last_reminded_at,
                 r.store, r.problem_key, r.problem_title, r.round_no
            FROM growth_solution_tasks t
            JOIN growth_solution_rounds r ON r.id = t.round_id
@@ -1172,6 +1173,60 @@ ${realDataSummary}
         [username]
       );
       res.json({ ok: true, tasks: r.rows });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 管理层视图：下属任务与完成情况(不含已完成，只看还没做的+已完成统计)——
+  // admin/hq_manager看全部门店，store_manager只看自己管辖门店的(allowed_stores/current_store，
+  // authRequired里已经按用户角色算好挂在req.user上，这里直接复用，不用重新查一遍权限)。
+  app.get('/api/diagnosis/solutions/team-tasks', authRequired, async (req, res) => {
+    try {
+      const role = String(req.user?.role || '');
+      const managementRoles = ['admin', 'hq_manager', 'store_manager', 'front_manager', 'front_supervisor'];
+      if (!managementRoles.includes(role)) return res.status(403).json({ ok: false, error: '仅管理层可查看' });
+      const isFullAccess = role === 'admin' || role === 'hq_manager';
+      const allowedStores = Array.isArray(req.user?.allowed_stores) ? req.user.allowed_stores : [];
+      const myStore = req.user?.current_store || req.user?.store || '';
+      const storeFilter = isFullAccess ? [] : (allowedStores.length ? allowedStores : (myStore ? [myStore] : []));
+      if (!isFullAccess && !storeFilter.length) return res.json({ ok: true, people: [] });
+
+      const params = [];
+      let whereStore = '';
+      if (!isFullAccess) {
+        params.push(storeFilter);
+        whereStore = `AND r.store = ANY($${params.length})`;
+      }
+      const r = await pool().query(
+        `SELECT t.id AS task_id, t.title, t.due_date, t.status, t.reminder_count, t.assignee_username, t.assignee_name,
+                r.store, r.problem_title, r.round_no
+           FROM growth_solution_tasks t
+           JOIN growth_solution_rounds r ON r.id = t.round_id
+          WHERE r.status = 'active' ${whereStore}
+          ORDER BY t.assignee_name NULLS LAST, t.due_date ASC NULLS LAST`,
+        params
+      );
+      const todayYmd = ymd(new Date());
+      const byPerson = new Map();
+      for (const t of r.rows) {
+        const key = t.assignee_username || t.assignee_name || '未指定';
+        if (!byPerson.has(key)) {
+          byPerson.set(key, { assignee_username: t.assignee_username, assignee_name: t.assignee_name || t.assignee_username, total: 0, done: 0, overdue: 0, tasks: [] });
+        }
+        const p = byPerson.get(key);
+        p.total += 1;
+        if (t.status === 'done') p.done += 1;
+        const isOverdue = t.status !== 'done' && t.due_date && String(t.due_date).slice(0, 10) < todayYmd;
+        if (isOverdue) p.overdue += 1;
+        if (t.status !== 'done') {
+          p.tasks.push({
+            task_id: t.task_id, title: t.title, due_date: t.due_date, store: t.store,
+            problem_title: t.problem_title, round_no: t.round_no, reminder_count: t.reminder_count, overdue: isOverdue,
+          });
+        }
+      }
+      res.json({ ok: true, people: Array.from(byPerson.values()).sort((a, b) => b.overdue - a.overdue) });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
@@ -1322,6 +1377,37 @@ ${realDataSummary}
       if (!r.rows.length) return res.status(404).json({ ok: false, error: '任务不存在或已完成' });
       await runSolutionSweep(); // 立即检查是否全部完成→进观察期
       res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 手动提醒任务责任人：派发人自己点，跟系统每日自动催促(runSolutionSweep)是两条独立限流线，
+  // 这里限制"每个任务1小时内最多提醒1次"防误触，跟自动催促共用同一套reminder_count/
+  // last_reminded_at字段(数字本身不区分是系统催的还是人催的，对责任人来说都是"被提醒了")。
+  app.post('/api/diagnosis/solutions/tasks/:taskId/remind', authRequired, async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const check = await pool().query(
+        `SELECT t.id, t.title, t.assignee_name, t.assignee_username, t.status, t.last_reminded_at, r.store, r.problem_title
+           FROM growth_solution_tasks t JOIN growth_solution_rounds r ON r.id = t.round_id
+          WHERE t.id = $1`,
+        [taskId]
+      );
+      if (!check.rows.length) return res.status(404).json({ ok: false, error: '任务不存在' });
+      const task = check.rows[0];
+      if (task.status === 'done') return res.status(400).json({ ok: false, error: '该任务已完成，无需提醒' });
+      if (task.last_reminded_at && (Date.now() - new Date(task.last_reminded_at).getTime()) < 3600 * 1000) {
+        const waitMin = Math.ceil((3600 * 1000 - (Date.now() - new Date(task.last_reminded_at).getTime())) / 60000);
+        return res.status(429).json({ ok: false, error: `1小时内只能提醒1次，还需等待约${waitMin}分钟` });
+      }
+      const r = await pool().query(
+        `UPDATE growth_solution_tasks SET reminder_count = reminder_count + 1, last_reminded_at = NOW()
+         WHERE id = $1 RETURNING reminder_count`,
+        [taskId]
+      );
+      await notify(`【增长方案·提醒】${task.store}「${task.problem_title}」任务「${task.title}」责任人 ${task.assignee_name || task.assignee_username} 被提醒，第 ${r.rows[0].reminder_count} 次。`);
+      res.json({ ok: true, reminder_count: r.rows[0].reminder_count });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
