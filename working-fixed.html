@@ -22021,6 +22021,15 @@
                     </div>
                 </div>
 
+                <!-- 当前任务：增长方案里指派给我的任务(六大标准问题+自定义问题共用) -->
+                <div id="profile-my-tasks-section" class="card" style="margin-bottom: 16px; padding: 16px; display:none;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 10px;">
+                        <div style="font-weight:800; font-size:15px;">📋 当前任务</div>
+                        <span id="profile-my-tasks-count" style="font-size:11px; color:rgba(200,215,230,0.55);"></span>
+                    </div>
+                    <div id="profile-my-tasks-list"></div>
+                </div>
+
                 <!-- 公司通知：多劳多得下方；标题固定，列表区内滚动 -->
                 <div id="profile-notif-section" class="pf-notif-shell" style="margin-bottom: 16px; position: relative;">
                     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; padding: 0 2px;">
@@ -47988,6 +47997,50 @@ tr:nth-child(even) td { background: #fafafa; }
             try { renderProfileLeaveRecords(); } catch (e) {}
             try { loadProfileLeaveBalance(); } catch (e) {}
             try { loadProfileStoreRating(); } catch (e) {}
+            try { loadProfileMyTasks(); } catch (e) {}
+        }
+
+        // 加载我在增长方案里被指派的任务(六大标准问题+自定义问题共用growth_solution_tasks表)
+        async function loadProfileMyTasks() {
+            const section = document.getElementById('profile-my-tasks-section');
+            const list = document.getElementById('profile-my-tasks-list');
+            const countEl = document.getElementById('profile-my-tasks-count');
+            if (!section || !list) return;
+            try {
+                const res = await fetch('/api/diagnosis/solutions/my-tasks', { headers: { 'Authorization': 'Bearer ' + dxToken() } });
+                const data = await res.json();
+                if (!data.ok || !(data.tasks || []).length) { section.style.display = 'none'; return; }
+                section.style.display = '';
+                countEl.textContent = `${data.tasks.length}项待办`;
+                const todayYmd = new Date().toISOString().slice(0, 10);
+                list.innerHTML = data.tasks.map(t => {
+                    const overdue = t.due_date && String(t.due_date).slice(0, 10) < todayYmd;
+                    return `<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,0.06);">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                            <div style="font-size:13px;font-weight:700;color:#EEF1FA;">${escapeHtml(t.title)}</div>
+                            <button class="ga-btn ga-btn--primary ga-btn--sm" style="flex-shrink:0;" onclick="profileCompleteMyTask(${t.round_id},${t.task_id},this)">标记完成</button>
+                        </div>
+                        <div style="font-size:12px;color:rgba(200,215,230,0.55);margin-top:4px;">${escapeHtml(t.description || '')}</div>
+                        <div style="font-size:11px;margin-top:6px;color:${overdue ? '#FF8A7A' : 'rgba(200,215,230,0.45)'};">${escapeHtml(t.store)} · ${escapeHtml(t.problem_title)}${t.due_date ? ` · 截止 ${String(t.due_date).slice(0, 10)}${overdue ? '(已逾期)' : ''}` : ''}</div>
+                    </div>`;
+                }).join('');
+            } catch (e) { section.style.display = 'none'; }
+        }
+
+        async function profileCompleteMyTask(roundId, taskId, btn) {
+            if (btn) { btn.disabled = true; btn.textContent = '提交中...'; }
+            try {
+                const res = await fetch(`/api/diagnosis/solutions/rounds/${roundId}/tasks/${taskId}/complete`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dxToken() }, body: '{}',
+                });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'HTTP ' + res.status);
+                showNotification('已标记完成', 'success');
+                loadProfileMyTasks();
+            } catch (e) {
+                showNotification('操作失败: ' + e.message, 'error');
+                if (btn) { btn.disabled = false; btn.textContent = '标记完成'; }
+            }
         }
 
         // 加载绩效分与门店级别（来自 HR 评分模型）

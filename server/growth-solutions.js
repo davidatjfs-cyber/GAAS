@@ -960,7 +960,9 @@ ${templateList}
         const start = s.indexOf('{');
         const end = s.lastIndexOf('}');
         if (start >= 0 && end > start) parsed = JSON.parse(s.slice(start, end + 1));
-      } catch { /* fallthrough */ }
+      } catch (parseErr) {
+        console.error('[growth-solutions] custom analyze JSON parse failed:', parseErr?.message, 'raw length:', String(raw || '').length);
+      }
       if (!parsed || !parsed.mode) return res.status(502).json({ ok: false, error: 'AI 返回无法解析,请重试' });
 
       if (parsed.mode === 'existing' && PROBLEMS[parsed.problem_key]) {
@@ -1078,6 +1080,28 @@ ${templateList}
         [store]
       );
       res.json({ ok: true, rounds: r.rows });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 我的增长方案任务(六大标准问题+自定义问题共用一套growth_solution_tasks表)——
+  // 之前分派完任务后责任人自己完全没有入口能看到"我有什么任务要做"，只能靠店长/管理员
+  // 在诊断页里手动点"标记完成"，放在"我的档案"页面供员工自己更新执行进度。
+  app.get('/api/diagnosis/solutions/my-tasks', authRequired, async (req, res) => {
+    try {
+      const username = req.user?.username;
+      if (!username) return res.status(400).json({ ok: false, error: 'no username' });
+      const r = await pool().query(
+        `SELECT t.id AS task_id, t.round_id, t.title, t.description, t.phase, t.due_date, t.status,
+                r.store, r.problem_key, r.problem_title, r.round_no
+           FROM growth_solution_tasks t
+           JOIN growth_solution_rounds r ON r.id = t.round_id
+          WHERE t.assignee_username = $1 AND t.status <> 'done' AND r.status = 'active'
+          ORDER BY t.due_date ASC NULLS LAST, t.id ASC LIMIT 50`,
+        [username]
+      );
+      res.json({ ok: true, tasks: r.rows });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }
