@@ -17,7 +17,7 @@ const RESPONSIBLE_PARTY_LABELS = {
   system_integration: '系统接口',
   customer_success: '客户成功',
 };
-const MODULES = ['经营诊断', '客户资产报告', '自动营销', '营销归因', '任务闭环', '人才盘点', '绩效评估', '老板日报', '月度复盘'];
+const MODULES = ['经营诊断', '客户资产报告', '自动营销', '营销归因', '任务闭环', '人才盘点', '绩效评估', '老板晨报', '月度复盘'];
 
 function ymd(date = new Date()) {
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
@@ -269,7 +269,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
     status: hasStores ? STATUS.ok : STATUS.missing,
     severity: hasStores ? 'P3' : 'P0',
     owner_role: '租户管理员',
-    impact_modules: ['系统基础配置', '老板日报'],
+    impact_modules: ['系统基础配置', '老板晨报'],
     impact_description: hasStores ? '租户已配置门店，系统可以按门店运行。' : '租户没有门店，系统无法按门店生成日报和经营诊断。',
     suggestion: hasStores ? '保持门店主数据维护。' : '请租户管理员先创建门店，并补齐门店编码和名称。',
     evidence: { store_count: stores.length },
@@ -309,7 +309,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
       status: STATUS.pending,
       severity: 'P3',
       owner_role: '实施人员',
-      impact_modules: ['系统基础配置', '老板日报'],
+      impact_modules: ['系统基础配置', '老板晨报'],
       impact_description: '未发现统一营业时间字段，日报时段和复检判断会使用系统默认时段。',
       suggestion: '请在门店配置中补充营业时间或接入门店营业配置表。',
       store,
@@ -358,7 +358,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
     status: !targetR.exists ? STATUS.pending : targetTotal > 0 ? STATUS.ok : STATUS.pending,
     severity: targetTotal > 0 ? 'P3' : 'P3',
     owner_role: '租户管理员',
-    impact_modules: ['经营诊断', '老板日报', '月度复盘'],
+    impact_modules: ['经营诊断', '老板晨报', '月度复盘'],
     impact_description: targetTotal > 0 ? '已配置经营目标，可用于达成率分析。' : '未设置门店目标时，经营诊断只能看趋势，不能判断目标达成。',
     suggestion: '请配置收入、毛利、客流等核心经营目标。',
     evidence: { ...(targetR.evidence || {}), kpi_targets_exists: targetR.exists, target_count: targetTotal },
@@ -481,33 +481,23 @@ async function checkDataIntegration(pool, ctx, stores = []) {
       status: !posR.exists ? STATUS.pending : posTotal > 0 ? STATUS.ok : STATUS.missing,
       severity: !posR.exists ? 'P0' : posTotal > 0 ? 'P3' : 'P0',
       owner_role: '实施人员',
-      impact_modules: ['经营诊断', '老板日报', '营销归因'],
-      impact_description: posTotal > 0 ? 'POS 数据已接入，经营诊断可读取订单明细。' : 'POS 数据未接入会导致经营诊断、老板日报和客户回店归因无法运转。',
+      impact_modules: ['经营诊断', '老板晨报', '营销归因'],
+      impact_description: posTotal > 0 ? 'POS 数据已接入，经营诊断可读取订单明细。' : 'POS 数据未接入会导致经营诊断、老板晨报和客户回店归因无法运转。',
       suggestion: '请检查 POS 接口、pos_order_items 同步任务和租户门店映射。',
       evidence: { ...(posR.evidence || {}), table_exists: posR.exists, total: posTotal },
     }),
-    // POS 同步不是每天实时的，实际是每 3-4 天批量同步一次（租户确认过的正常节奏）。原来这项
-    // 严格要求"昨天"必须有数据，在这种同步节奏下会常年判定为"延迟"，变成永远整改不完的假信号。
-    // 改成按最近同步时间距今天数判断：4天以内算正常，超过4天才是真的延迟。
-    (() => {
-      const latestDateStr = pos.latest_date ? String(pos.latest_date).slice(0, 10) : '';
-      const daysSinceSync = latestDateStr ? Math.floor((new Date(`${yesterday}T00:00:00Z`).getTime() + 86400000 - new Date(`${latestDateStr}T00:00:00Z`).getTime()) / 86400000) : null;
-      const synced = daysSinceSync != null && daysSinceSync <= 4;
-      return issue({
-        category: '数据新鲜度',
-        item_key: 'yesterday_orders_synced',
-        item_name: 'POS 订单数据是否按节奏同步',
-        status: !posR.exists ? STATUS.pending : synced ? STATUS.ok : STATUS.delayed,
-        severity: !posR.exists ? 'P1' : synced ? 'P3' : 'P1',
-        owner_role: '实施人员',
-        impact_modules: ['经营诊断', '老板日报', '营销归因'],
-        impact_description: synced
-          ? `最近一次 POS 数据同步到 ${latestDateStr || '-'}，在正常的 3-4 天同步节奏内。`
-          : `最近一次 POS 数据只同步到 ${latestDateStr || '-'}，已经 ${daysSinceSync ?? '未知'} 天没有新数据，超出正常的 3-4 天同步节奏，需要检查同步任务是否卡住。`,
-        suggestion: '请实施人员检查 POS 同步状态，确认是否卡在某一批次；这项不是要求每天必须有数据，只是超过正常节奏才需要处理。',
-        evidence: { ...(posR.evidence || {}), latest_sync_date: latestDateStr || null, days_since_sync: daysSinceSync, seven_day_avg_order_count: Math.round(posTotal / 7) },
-      });
-    })(),
+    issue({
+      category: '数据新鲜度',
+      item_key: 'yesterday_orders_synced',
+      item_name: '昨日订单数据是否同步',
+      status: !posR.exists ? STATUS.pending : yesterdayTotal > 0 ? STATUS.ok : STATUS.delayed,
+      severity: !posR.exists ? 'P1' : yesterdayTotal > 0 ? 'P3' : 'P1',
+      owner_role: '实施人员',
+      impact_modules: ['经营诊断', '老板晨报', '营销归因'],
+      impact_description: yesterdayTotal > 0 ? '昨日订单已同步，可生成昨日经营判断。' : '昨日 POS 数据未同步，会导致经营诊断无法判断昨日营业额变化，也会影响客户回店订单归因。',
+      suggestion: '请实施人员检查 POS 同步状态，确认同步任务按日执行，或由门店补传昨日订单数据。',
+      evidence: { ...(posR.evidence || {}), yesterday, yesterday_order_count: yesterdayTotal, latest_sync_time: pos.latest_date || null, seven_day_avg_order_count: Math.round(posTotal / 7) },
+    }),
     issue({
       category: '数据接入',
       item_key: 'customer_phone_match_rate',
@@ -546,6 +536,36 @@ async function checkDataIntegration(pool, ctx, stores = []) {
       suggestion: '请导入会员、客户或客户运营原始记录，并保持定期更新。',
       evidence: { ...(customerR.evidence || customerOpsR.evidence || {}), growth_customer_profiles_exists: customerR.exists, customer_ops_exists: customerOpsR.exists, customer_count: customerTotal, customer_updated_7d: n(customers.updated_7d) || n(customerOpsR.rows?.[0]?.updated_7d) },
     }),
+    await (async () => {
+      // 老板晨报 = agents-service-v2 每天07:30（10:30补偿窗口内）推送的飞书晨报卡片，
+      // 送达记录落在 agent_v2_morning_briefing_sends（与本服务共用同一个数据库）。
+      const briefingR = await queryIfTable(
+        pool,
+        'agent_v2_morning_briefing_sends',
+        `SELECT COUNT(*) FILTER (WHERE ok=true AND run_ymd=$2)::int AS today_ok,
+                COUNT(*) FILTER (WHERE ok=true AND run_ymd=$3)::int AS yesterday_ok,
+                MAX(updated_at)::text AS latest_sent_at
+           FROM agent_v2_morning_briefing_sends
+          WHERE tenant_id=$1 AND ($4::text[] IS NULL OR scope = ANY($4::text[]) OR scope ILIKE ANY($5::text[]) OR scope = '__all_stores__')`,
+        [ctx.tenantId, ctx.date, yesterday, storeValues.length ? storeValues : null, storePatterns.length ? storePatterns : null]
+      );
+      const briefing = briefingR.rows?.[0] || {};
+      const sentRecently = n(briefing.today_ok) > 0 || n(briefing.yesterday_ok) > 0;
+      return issue({
+        category: '数据新鲜度',
+        item_key: 'morning_briefing_delivered',
+        item_name: '老板晨报是否按时送达',
+        status: !briefingR.exists ? STATUS.pending : sentRecently ? STATUS.ok : STATUS.delayed,
+        severity: !briefingR.exists ? 'P2' : sentRecently ? 'P3' : 'P1',
+        owner_role: '系统',
+        impact_modules: ['老板晨报'],
+        impact_description: sentRecently
+          ? `老板晨报最近一次成功送达时间：${briefing.latest_sent_at ? String(briefing.latest_sent_at).slice(0, 19) : '-'}。`
+          : '最近两天（含今天）没有查到老板晨报的成功送达记录，飞书07:30定时推送可能没有正常执行。',
+        suggestion: '请检查 agents-service-v2 的每日07:30晨报定时任务是否正常运行，以及收件人飞书账号绑定是否有效。',
+        evidence: { ...(briefingR.evidence || {}), today_ok: n(briefing.today_ok), yesterday_ok: n(briefing.yesterday_ok), latest_sent_at: briefing.latest_sent_at || null },
+      });
+    })(),
   ];
 }
 
@@ -624,7 +644,7 @@ async function checkTaskClosedLoop(pool, ctx, stores = []) {
     issue({ category: '任务闭环', item_key: 'ai_tasks_generated', item_name: 'AI 运营建议是否已生成', status: !taskR.exists ? STATUS.pending : n(t.generated) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.generated) > 0 ? 'P3' : 'P2', owner_role: '系统', impact_modules: ['任务闭环'], impact_description: '没有 AI 运营建议时，系统只能发现问题，不能形成后续跟进记录。', suggestion: '请检查运营建议生成链路和 Agent 调度是否正常。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_generated_count: n(t.generated) } }),
     issue({ category: '任务闭环', item_key: 'manager_confirmed_tasks', item_name: '门店负责人是否确认运营建议', status: !taskR.exists ? STATUS.pending : n(t.confirmed) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.confirmed) > 0 ? 'P3' : 'P2', owner_role: '店长', impact_modules: ['任务闭环'], impact_description: '门店负责人未确认运营建议会导致后续动作没有责任承接。', suggestion: '请租赁方安排门店负责人确认待处理运营建议。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_confirmed_count: n(t.confirmed) } }),
     issue({ category: '任务闭环', item_key: 'employees_executed_tasks', item_name: '员工是否反馈执行结果', status: !taskR.exists ? STATUS.pending : n(t.executed) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.executed) > 0 ? 'P3' : 'P2', owner_role: '员工', impact_modules: ['任务闭环', '绩效评估'], impact_description: '执行结果缺失会影响闭环、复盘和绩效判定。', suggestion: '请租赁方补充执行结果、照片或文字说明。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_executed_count: n(t.executed) } }),
-    issue({ category: '任务闭环', item_key: 'overdue_tasks_exist', item_name: '是否存在逾期未完成事项', status: !taskR.exists ? STATUS.pending : n(t.overdue) > 0 ? STATUS.abnormal : STATUS.ok, severity: n(t.overdue) > 0 ? 'P2' : 'P3', owner_role: '店长', impact_modules: ['任务闭环', '老板日报'], impact_description: '逾期事项会导致系统判断门店动作未完成，影响老板日报和复盘结论。', suggestion: '请租赁方优先处理逾期事项，必要时由我方协助说明处理口径。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_overdue_count: n(t.overdue) } }),
+    issue({ category: '任务闭环', item_key: 'overdue_tasks_exist', item_name: '是否存在逾期未完成事项', status: !taskR.exists ? STATUS.pending : n(t.overdue) > 0 ? STATUS.abnormal : STATUS.ok, severity: n(t.overdue) > 0 ? 'P2' : 'P3', owner_role: '店长', impact_modules: ['任务闭环', '老板晨报'], impact_description: '逾期事项会导致系统判断门店动作未完成，影响老板晨报和复盘结论。', suggestion: '请租赁方优先处理逾期事项，必要时由我方协助说明处理口径。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_overdue_count: n(t.overdue) } }),
     issue({ category: '任务闭环', item_key: 'execution_review_records', item_name: '是否有执行结果和复核记录', status: !taskR.exists ? STATUS.pending : n(t.reviewed) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.reviewed) > 0 ? 'P3' : 'P1', owner_role: '系统', impact_modules: ['任务闭环', '绩效评估'], impact_description: '执行结果未回传会导致事项是否有效无法判断，也影响绩效评估。', suggestion: '请检查执行结果回传、复核流程和运营记录是否完整。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_reviewed_count: n(t.reviewed) } }),
   ];
 }
@@ -763,7 +783,7 @@ function todayPriorities(items, limit = 5) {
     .filter((item) => item.status !== STATUS.ok)
     .map((item) => {
       const modules = item.impact_modules || [];
-      const core = modules.some((m) => ['经营诊断', '客户资产报告', '自动营销', '营销归因', '老板日报'].includes(m));
+      const core = modules.some((m) => ['经营诊断', '客户资产报告', '自动营销', '营销归因', '老板晨报'].includes(m));
       return { item, score: (severityWeight[item.severity] || 0) + modules.length * 8 + (core ? 25 : 0) };
     })
     .sort((a, b) => b.score - a.score)
@@ -797,7 +817,7 @@ function operationStage(items) {
     return {
       operation_stage: 'trial',
       operation_stage_label: '30 天试跑阶段',
-      stage_message: '当前重点是稳定每日数据同步、任务执行和老板日报完整度，让系统连续跑起来。',
+      stage_message: '当前重点是稳定每日数据同步、任务执行和老板晨报完整度，让系统连续跑起来。',
     };
   }
   return {
@@ -811,13 +831,13 @@ function customerSuccessRisk(score, items) {
   const p0p1 = (items || []).filter((item) => item.status !== STATUS.ok && ['P0', 'P1'].includes(item.severity));
   const taskBad = (items || []).some((item) => item.category === '任务闭环' && item.status !== STATUS.ok && ['P1', 'P2'].includes(item.severity));
   const attrBad = (items || []).some((item) => item.category === '营销归因' && item.status !== STATUS.ok && ['P1', 'P2'].includes(item.severity));
-  const dailyBad = (items || []).some((item) => item.impact_modules?.includes('老板日报') && item.status !== STATUS.ok);
+  const dailyBad = (items || []).some((item) => item.impact_modules?.includes('老板晨报') && item.status !== STATUS.ok);
   const reasons = [];
   if (score.health_score != null && score.health_score < 60) reasons.push('健康分连续处于低位风险区间');
   if (p0p1.length) reasons.push(`仍有 ${p0p1.length} 个 P0/P1 阻塞未处理`);
   if (taskBad) reasons.push('任务执行或审核闭环不足');
   if (attrBad) reasons.push('自动营销归因无法稳定生成');
-  if (dailyBad) reasons.push('老板日报依赖的数据或任务结果不完整');
+  if (dailyBad) reasons.push('老板晨报依赖的数据或任务结果不完整');
   const level = p0p1.length >= 2 || (score.health_score != null && score.health_score < 60) ? 'high' : reasons.length ? 'medium' : 'low';
   return { customer_success_risk: level, customer_success_risk_label: level === 'high' ? '高' : level === 'medium' ? '中' : '低', customer_success_risk_reasons: reasons.length ? reasons : ['核心数据和任务闭环当前没有明显托管交付阻塞'] };
 }
@@ -1025,7 +1045,7 @@ export function generateInspectionReport({ tenantId, overview, store_results = [
     system_health: overview?.health_score == null ? '当前租户尚未完成初始化，先不要用 0 分判断经营风险。' : (overview?.health_score ?? 0) >= 75 ? '当前租户系统基本可运转，但仍需处理影响准确性的项目。' : '当前租户系统存在明显运转风险，需要先处理数据和任务闭环问题。',
     blocking_issues: top.map((x) => `${x.title}：${x.suggestion}`),
     stores_missing_actions: worstStores.map((s) => `${s.store_name}：${s.main_risk}`),
-    inaccurate_ai_features: affected.filter((m) => ['经营诊断', '客户资产报告', '自动营销', '营销归因', '老板日报'].includes(m)),
+    inaccurate_ai_features: affected.filter((m) => ['经营诊断', '客户资产报告', '自动营销', '营销归因', '老板晨报'].includes(m)),
     next_actions: [...tenantRectificationItems.map((x) => x.rectification_suggestion), ...platformNotes.map((x) => x.suggestion)].filter(Boolean).slice(0, 5),
   };
 }
