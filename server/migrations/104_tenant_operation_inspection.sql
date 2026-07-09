@@ -63,3 +63,11 @@ CREATE INDEX IF NOT EXISTS idx_toi_items_severity ON tenant_operation_inspection
 CREATE INDEX IF NOT EXISTS idx_toi_items_status ON tenant_operation_inspection_items (status);
 CREATE INDEX IF NOT EXISTS idx_toi_items_key ON tenant_operation_inspection_items (tenant_id, item_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_toi_rules_tenant ON tenant_operation_inspection_rules (tenant_id);
+
+ALTER TABLE tenant_operation_inspection_runs ADD COLUMN IF NOT EXISTS inspection_status TEXT NOT NULL DEFAULT 'completed';
+ALTER TABLE tenant_operation_inspection_runs ADD COLUMN IF NOT EXISTS operation_stage TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE tenant_operation_inspection_runs ADD COLUMN IF NOT EXISTS customer_success_risk TEXT NOT NULL DEFAULT 'low';
+ALTER TABLE tenant_operation_inspection_items ADD COLUMN IF NOT EXISTS responsible_party TEXT NOT NULL DEFAULT 'platform_team';
+CREATE INDEX IF NOT EXISTS idx_toi_runs_status ON tenant_operation_inspection_runs (tenant_id, inspection_status, inspection_date DESC);
+CREATE INDEX IF NOT EXISTS idx_toi_items_responsible ON tenant_operation_inspection_items (tenant_id, responsible_party);
+CREATE INDEX IF NOT EXISTS idx_toi_items_generated_task ON tenant_operation_inspection_items (generated_task_id);

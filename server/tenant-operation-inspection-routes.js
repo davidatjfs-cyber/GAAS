@@ -4,6 +4,8 @@ import {
   listInspectionItems,
   generateInspectionReport,
   generateRecoveryTask,
+  generateRecoveryTasksBatch,
+  getInspectionTrends,
 } from './services/tenant-operation-inspection-service.js';
 import { tenantContext } from './utils/database.js';
 
@@ -110,7 +112,37 @@ function buildHandlers(pool) {
       return res.status(status).json({ ok: false, error: status === 404 ? 'not_found' : 'server_error' });
     }
   };
-  return { overview, run, items, report, generateTask };
+
+  const generateTasksBatch = async (req, res) => {
+    try {
+      const result = await generateRecoveryTasksBatch(pool, {
+        tenantId: tenantIdFrom(req),
+        storeId: req.body?.store_id,
+        severity: req.body?.severity,
+        responsibleParty: req.body?.responsible_party,
+        date: req.body?.date,
+      });
+      return res.json(result);
+    } catch (e) {
+      console.error('[tenant-inspection] generate batch tasks failed:', e?.message || e);
+      return res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  };
+
+  const trends = async (req, res) => {
+    try {
+      const items = await getInspectionTrends(pool, {
+        tenantId: tenantIdFrom(req),
+        storeId: req.query?.store_id,
+        date: req.query?.date,
+      });
+      return res.json({ ok: true, items });
+    } catch (e) {
+      console.error('[tenant-inspection] trends failed:', e?.message || e);
+      return res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  };
+  return { overview, run, items, report, generateTask, generateTasksBatch, trends };
 }
 
 function platformTenantMiddleware(req, _res, next) {
@@ -126,14 +158,18 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
   app.get('/api/tenant-inspection/overview', authRequired, requireTenantInspectionRole, h.overview);
   app.post('/api/tenant-inspection/run', authRequired, requireTenantInspectionRole, h.run);
   app.get('/api/tenant-inspection/items', authRequired, requireTenantInspectionRole, h.items);
+  app.get('/api/tenant-inspection/trends', authRequired, requireTenantInspectionRole, h.trends);
   app.post('/api/tenant-inspection/generate-report', authRequired, requireTenantInspectionRole, h.report);
   app.post('/api/tenant-inspection/items/:id/generate-task', authRequired, requireTenantInspectionRole, h.generateTask);
+  app.post('/api/tenant-inspection/generate-tasks-batch', authRequired, requireTenantInspectionRole, h.generateTasksBatch);
 
   if (platformAdminRequired) {
     app.get('/api/admin/tenants/:tenantId/tenant-inspection/overview', platformAdminRequired, platformTenantMiddleware, h.overview);
     app.post('/api/admin/tenants/:tenantId/tenant-inspection/run', platformAdminRequired, platformTenantMiddleware, h.run);
     app.get('/api/admin/tenants/:tenantId/tenant-inspection/items', platformAdminRequired, platformTenantMiddleware, h.items);
+    app.get('/api/admin/tenants/:tenantId/tenant-inspection/trends', platformAdminRequired, platformTenantMiddleware, h.trends);
     app.post('/api/admin/tenants/:tenantId/tenant-inspection/generate-report', platformAdminRequired, platformTenantMiddleware, h.report);
     app.post('/api/admin/tenants/:tenantId/tenant-inspection/items/:id/generate-task', platformAdminRequired, platformTenantMiddleware, h.generateTask);
+    app.post('/api/admin/tenants/:tenantId/tenant-inspection/generate-tasks-batch', platformAdminRequired, platformTenantMiddleware, h.generateTasksBatch);
   }
 }

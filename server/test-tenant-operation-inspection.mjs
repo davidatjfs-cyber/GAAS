@@ -4,6 +4,8 @@ import {
   runInspection,
   generateInspectionReport,
   generateRecoveryTask,
+  generateRecoveryTasksBatch,
+  getInspectionTrends,
 } from './services/tenant-operation-inspection-service.js';
 
 function makePool(fixtures = {}) {
@@ -14,7 +16,7 @@ function makePool(fixtures = {}) {
       calls.push({ sql: String(sql), params });
       const text = String(sql);
       if (text.includes('information_schema.tables')) {
-        const table = params[1];
+        const table = params[0];
         return { rows: fixtures.missingTables?.includes(table) ? [] : [{ table_name: table }] };
       }
       if (text.includes('information_schema.columns')) {
@@ -24,6 +26,8 @@ function makePool(fixtures = {}) {
       if (text.includes('INSERT INTO tenant_operation_inspection_items')) return { rows: [{ id: 201 }] };
       if (text.includes('UPDATE tenant_operation_inspection_items')) return { rows: [{ id: params[1], generated_task_id: params[0] }] };
       if (text.includes('INSERT INTO master_tasks')) return { rows: [{ task_id: 'TOI-20260709-0001' }] };
+      if (text.includes('SELECT * FROM tenant_operation_inspection_items')) return { rows: fixtures.items ?? [] };
+      if (text.includes('FROM tenant_operation_inspection_runs')) return { rows: fixtures.trends ?? [] };
       if (text.includes('FROM stores')) return { rows: fixtures.stores ?? [{ store_id: 's1', name: '测试门店' }] };
       if (text.includes('FROM employees')) return { rows: fixtures.employees ?? [{ username: 'm1', role: 'store_manager', store: '测试门店', position: '店长' }] };
       if (text.includes('FROM pos_order_items')) return { rows: fixtures.pos ?? [{ total: '10', yesterday_total: '3', latest_date: '2026-07-08', phone_rows: '8', rows_with_phone: '6', dish_rows: '5', categorized_dish_rows: '4' }] };
@@ -57,12 +61,24 @@ function makePool(fixtures = {}) {
   assert.equal(result.items.length, 20);
   assert.ok(result.overview.health_score >= 0);
   assert.ok(Array.isArray(result.overview.top_issues));
+  assert.equal(result.overview.inspection_status, 'completed');
+  assert.ok(Array.isArray(result.overview.feature_availability));
+  assert.ok(result.overview.feature_availability.some((x) => x.feature === '经营诊断'));
+  assert.ok(Array.isArray(result.overview.today_priorities));
+  assert.ok(Array.isArray(result.overview.category_stats));
+  assert.ok(result.overview.operation_stage);
+  assert.ok(result.overview.customer_success_risk);
+  assert.ok(result.items.every((item) => item.responsible_party));
 }
 
 {
-  const result = await runInspection(makePool({ missingTables: ['growth_delivery_logs', 'growth_redemptions'] }), { tenantId: 'default', date: '2026-07-09' });
+  const result = await runInspection(makePool({ missingTables: ['stores', 'growth_ontology_stores', 'pos_order_items', 'growth_customer_profiles', 'customer_ops_source_records', 'growth_delivery_logs', 'growth_redemptions'] }), { tenantId: 'default', date: '2026-07-09' });
   assert.equal(result.items.length, 20);
   assert.ok(result.items.some((item) => item.status === '待配置'));
+  assert.equal(result.overview.inspection_status, 'not_initialized');
+  assert.equal(result.overview.health_score, null);
+  assert.ok(result.overview.initialization_required.length > 0);
+  assert.ok(result.items.some((item) => item.evidence?.table_missing || item.evidence?.table_exists === false));
 }
 
 {
@@ -92,6 +108,30 @@ function makePool(fixtures = {}) {
   });
   assert.equal(task.task_id, 'TOI-20260709-0001');
   assert.ok(pool.calls.some((call) => call.sql.includes('INSERT INTO master_tasks')));
+}
+
+{
+  const pool = makePool({
+    items: [
+      { id: 301, tenant_id: 'default', store_id: 's1', item_name: 'POS 数据是否接入', status: '缺失', severity: 'P0', responsible_party: 'system_integration', can_generate_task: true, generated_task_id: null },
+      { id: 302, tenant_id: 'default', store_id: 's1', item_name: '昨日订单数据是否同步', status: '延迟', severity: 'P1', responsible_party: 'system_integration', can_generate_task: true, generated_task_id: 'TOI-OLD' },
+      { id: 303, tenant_id: 'default', store_id: 's2', item_name: '菜品数据是否完整', status: '异常', severity: 'P3', responsible_party: 'platform_team', can_generate_task: true, generated_task_id: null },
+    ],
+  });
+  const batch = await generateRecoveryTasksBatch(pool, { tenantId: 'default', storeId: 's1', severity: ['P0', 'P1'] });
+  assert.equal(batch.generated_count, 1);
+  assert.equal(batch.skipped_count, 1);
+}
+
+{
+  const trends = await getInspectionTrends(makePool({
+    trends: [
+      { date: '2026-07-09', health_score: 88, p0_count: '0', p1_count: '1', data_completeness: 90, task_completion_rate: 75, attribution_completeness: 60 },
+    ],
+  }), { tenantId: 'default', date: '2026-07-09' });
+  assert.equal(trends.length, 7);
+  assert.equal(trends[6].date, '2026-07-09');
+  assert.equal(trends[6].health_score, 88);
 }
 
 console.log('tenant-operation-inspection tests passed');
