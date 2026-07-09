@@ -893,7 +893,12 @@ export async function markInspectionReportSent(pool, { reportId, tenantId = 'def
       RETURNING id, report_status, sent_at`,
     [reportId, tenantId]
   );
-  return { ok: !!r.rows?.length, report: r.rows?.[0] || null };
+  return {
+    ok: !!r.rows?.length,
+    report: r.rows?.[0] || null,
+    delivery_performed: false,
+    message: '已记录为已发送；当前版本未配置自动发送渠道，请导出报告后自行发送给租赁方。',
+  };
 }
 
 function stripTechnicalText(value) {
