@@ -186,7 +186,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
     severity: hasStores ? 'P3' : 'P0',
     owner_role: '租户管理员',
     impact_modules: ['系统基础配置', '老板日报'],
-    impact_description: hasStores ? '租户已配置门店，系统可以按门店运行。' : '租户没有门店，系统无法生成门店任务、日报和经营诊断。',
+    impact_description: hasStores ? '租户已配置门店，系统可以按门店运行。' : '租户没有门店，系统无法按门店生成日报和经营诊断。',
     suggestion: hasStores ? '保持门店主数据维护。' : '请租户管理员先创建门店，并补齐门店编码和名称。',
     evidence: { store_count: stores.length },
   }));
@@ -226,7 +226,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
       severity: 'P3',
       owner_role: '实施人员',
       impact_modules: ['系统基础配置', '老板日报'],
-      impact_description: '未发现统一营业时间字段，日报和任务 SLA 会使用系统默认时段。',
+      impact_description: '未发现统一营业时间字段，日报时段和复检判断会使用系统默认时段。',
       suggestion: '请在门店配置中补充营业时间或接入门店营业配置表。',
       store,
       evidence: { compatible_reason: 'stores table has no stable business_hours contract' },
@@ -241,7 +241,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
     severity: !empR.exists ? 'P2' : boundCount > 0 ? 'P3' : 'P0',
     owner_role: '租户管理员',
     impact_modules: ['任务闭环', '人才盘点', '绩效评估'],
-    impact_description: boundCount > 0 ? '员工已绑定门店和岗位，任务可分派到责任角色。' : '员工门店或岗位缺失会导致任务无法准确分派，也会影响绩效和人才盘点。',
+    impact_description: boundCount > 0 ? '员工已绑定门店和岗位，人才盘点和绩效评估可以按角色分析。' : '员工门店或岗位缺失会导致人才盘点、绩效评估和整改责任建议不准确。',
     suggestion: '请补齐员工门店、岗位和角色字段。',
     evidence: { ...(empR.evidence || {}), employee_table_exists: empR.exists, employee_count: employees.length, bound_count: boundCount },
   }));
@@ -253,7 +253,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
     severity: !empR.exists ? 'P2' : managerCount > 0 ? 'P3' : 'P0',
     owner_role: '租户管理员',
     impact_modules: ['任务闭环', '系统基础配置'],
-    impact_description: managerCount > 0 ? '已识别店长或管理员角色。' : '没有店长或管理员角色时，门店任务确认和异常升级没有责任人。',
+    impact_description: managerCount > 0 ? '已识别店长或管理员角色。' : '没有店长或管理员角色时，门店问题确认和异常升级没有明确承接人。',
     suggestion: '请为每个门店至少配置一名店长或管理员。',
     evidence: { ...(empR.evidence || {}), manager_count: managerCount },
   }));
@@ -352,13 +352,13 @@ async function checkDataIntegration(pool, ctx) {
     issue({
       category: '数据接入',
       item_key: 'customer_phone_match_rate',
-      item_name: '客户手机号匹配率是否过低',
+      item_name: 'POS 订单客户识别率是否足够',
       status: !posR.exists ? STATUS.pending : phoneRate >= 60 ? STATUS.ok : STATUS.abnormal,
       severity: phoneRate >= 60 ? 'P3' : 'P1',
       owner_role: '实施人员',
       impact_modules: ['客户资产报告', '自动营销', '营销归因'],
-      impact_description: phoneRate >= 60 ? '手机号匹配率可支持基础客户识别。' : '客户手机号匹配率偏低，会导致客户资产分析、短信触达和营销归因不准确。',
-      suggestion: '请核对 POS 会员字段、手机号清洗规则和客户资料导入来源。',
+      impact_description: phoneRate >= 60 ? 'POS 订单里的手机号、会员 ID 或顾客标识可支持基础客户识别。' : '系统根据 POS 订单中的手机号、会员 ID 或顾客标识识别顾客。如果订单缺少这些字段，客户资产分析、复购判断和营销归因会不完整。这不一定是门店错误，需要租赁方确认 POS 是否提供相关字段，或确认门店是否有会员手机号采集流程。',
+      suggestion: '请租赁方确认 POS 导出的订单是否包含手机号、会员 ID 或顾客标识；如 POS 已提供字段，请我方协助核对导入映射。',
       evidence: { ...(posR.evidence || {}), phone_match_rate: phoneRate, rows_with_phone: n(pos.rows_with_phone), phone_rows: n(pos.phone_rows) },
     }),
     issue({
@@ -382,7 +382,7 @@ async function checkDataIntegration(pool, ctx) {
       owner_role: '实施人员',
       impact_modules: ['客户资产报告', '自动营销'],
       impact_description: customerTotal > 0 ? '客户数据已接入，可支持客户资产分析。' : '客户数据为空时，客户资产报告和自动营销无法运转。',
-      suggestion: '请导入会员、客户或 customer_ops 原始记录，并保持定期更新。',
+      suggestion: '请导入会员、客户或客户运营原始记录，并保持定期更新。',
       evidence: { ...(customerR.evidence || customerOpsR.evidence || {}), growth_customer_profiles_exists: customerR.exists, customer_ops_exists: customerOpsR.exists, customer_count: customerTotal, customer_updated_7d: n(customers.updated_7d) || n(customerOpsR.rows?.[0]?.updated_7d) },
     }),
   ];
@@ -403,8 +403,8 @@ async function checkMarketing(pool, ctx) {
     issue({ category: 'AI 可运行度', item_key: 'customer_segments_generatable', item_name: '客户分层是否可生成', status: !profilesR.exists ? STATUS.pending : n(profiles.segmented) > 0 ? STATUS.ok : STATUS.missing, severity: n(profiles.segmented) > 0 ? 'P3' : 'P2', owner_role: '系统', impact_modules: ['客户资产报告', '自动营销'], impact_description: '客户分层决定自动营销能否按价值、流失风险和回店周期生成名单。', suggestion: '请先同步客户画像并运行客户分层。', evidence: { ...(profilesR.evidence || {}), customer_count: n(profiles.total), segmented_count: n(profiles.segmented) } }),
     issue({ category: '营销归因', item_key: 'marketing_list_non_empty', item_name: '营销名单是否为空', status: !profilesR.exists ? STATUS.pending : n(profiles.total) > 0 ? STATUS.ok : STATUS.missing, severity: n(profiles.total) > 0 ? 'P3' : 'P1', owner_role: '实施人员', impact_modules: ['自动营销'], impact_description: '营销名单为空时，自动触达无法发起。', suggestion: '请检查客户画像、营销规则和名单生成条件。', evidence: { ...(profilesR.evidence || {}), customer_count: n(profiles.total) } }),
     issue({ category: '营销归因', item_key: 'sms_wecom_sent', item_name: '短信 / 企微是否有发送记录', status: !deliveryR.exists ? STATUS.pending : n(delivery.sent) > 0 ? STATUS.ok : STATUS.missing, severity: n(delivery.sent) > 0 ? 'P3' : 'P1', owner_role: '实施人员', impact_modules: ['自动营销', '营销归因'], impact_description: '没有发送记录时，系统无法判断触达是否发生，也无法做转化归因。', suggestion: '请检查 growth_delivery_logs、短信和企微发送配置。', evidence: { ...(deliveryR.evidence || {}), delivery_total: n(delivery.total), delivery_sent: n(delivery.sent) } }),
-    issue({ category: '营销归因', item_key: 'coupon_issue_redeem_data', item_name: '优惠券是否有发放和核销数据', status: !redemptionsR.exists ? STATUS.pending : n(redemptions.total) > 0 ? STATUS.ok : STATUS.missing, severity: n(redemptions.total) > 0 ? 'P3' : 'P1', owner_role: '实施人员', impact_modules: ['自动营销', '营销归因'], impact_description: '优惠券核销缺失会导致营销 ROI 和活动复盘不准确。', suggestion: '请检查券发放、核销同步和 campaign_id/coupon_id 写入。', evidence: { ...(redemptionsR.evidence || {}), coupon_writeoff_count: n(redemptions.total) } }),
-    issue({ category: '营销归因', item_key: 'attribution_links_orders', item_name: '营销归因是否能关联订单', status: !attrR.exists ? STATUS.pending : n(attr.linked_orders) > 0 ? STATUS.ok : STATUS.missing, severity: n(attr.linked_orders) > 0 ? 'P3' : 'P1', owner_role: '系统', impact_modules: ['营销归因', '月度复盘'], impact_description: '归因无法关联订单时，系统只能看到触达，无法判断是否带来回店和消费。', suggestion: '请运行 ontology 归因任务，并核对订单 customer_id、campaign_id 和 coupon_id。', evidence: { ...(attrR.evidence || {}), attribution_order_count: n(attr.linked_orders), attribution_total: n(attr.total) } }),
+    issue({ category: '营销归因', item_key: 'coupon_issue_redeem_data', item_name: '优惠券是否有发放和核销数据', status: !redemptionsR.exists ? STATUS.pending : n(redemptions.total) > 0 ? STATUS.ok : STATUS.missing, severity: n(redemptions.total) > 0 ? 'P3' : 'P1', owner_role: '实施人员', impact_modules: ['自动营销', '营销归因'], impact_description: '优惠券核销缺失会导致营销 ROI 和活动复盘不准确。', suggestion: '请检查券发放、核销同步，以及优惠券是否能和营销活动、回店订单对应起来。', evidence: { ...(redemptionsR.evidence || {}), coupon_writeoff_count: n(redemptions.total) } }),
+    issue({ category: '营销归因', item_key: 'attribution_links_orders', item_name: '营销活动是否能识别回店订单', status: !attrR.exists ? STATUS.pending : n(attr.linked_orders) > 0 ? STATUS.ok : STATUS.missing, severity: n(attr.linked_orders) > 0 ? 'P3' : 'P1', owner_role: '系统', impact_modules: ['营销归因', '月度复盘'], impact_description: '系统需要根据营销触达记录、客户识别信息、回店订单和优惠券核销数据，判断营销活动带来了哪些回店消费。当前回店订单识别不足，营销效果和月度复盘中的营销部分会不完整。', suggestion: '请先确认营销触达记录、POS 订单客户识别字段和优惠券核销数据是否完整；数据齐全后可重新计算归因。', evidence: { ...(attrR.evidence || {}), attribution_order_count: n(attr.linked_orders), attribution_total: n(attr.total) } }),
   ];
 }
 
@@ -424,11 +424,11 @@ async function checkTaskClosedLoop(pool, ctx) {
   );
   const t = taskR.rows?.[0] || {};
   return [
-    issue({ category: '任务闭环', item_key: 'ai_tasks_generated', item_name: 'AI 任务是否已生成', status: !taskR.exists ? STATUS.pending : n(t.generated) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.generated) > 0 ? 'P3' : 'P2', owner_role: '系统', impact_modules: ['任务闭环'], impact_description: '没有 AI 任务时，系统只能发现问题，不能推动门店动作。', suggestion: '请检查 master_tasks 生成链路和 Agent 调度。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_generated_count: n(t.generated) } }),
-    issue({ category: '任务闭环', item_key: 'manager_confirmed_tasks', item_name: '店长是否确认任务', status: !taskR.exists ? STATUS.pending : n(t.confirmed) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.confirmed) > 0 ? 'P3' : 'P2', owner_role: '店长', impact_modules: ['任务闭环'], impact_description: '店长未确认任务会导致门店动作没有责任承接。', suggestion: '请提醒店长确认待处理任务。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_confirmed_count: n(t.confirmed) } }),
-    issue({ category: '任务闭环', item_key: 'employees_executed_tasks', item_name: '员工是否执行任务', status: !taskR.exists ? STATUS.pending : n(t.executed) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.executed) > 0 ? 'P3' : 'P2', owner_role: '员工', impact_modules: ['任务闭环', '绩效评估'], impact_description: '员工执行结果缺失会影响闭环、复盘和绩效判定。', suggestion: '请补回任务执行结果、照片或文字说明。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_executed_count: n(t.executed) } }),
-    issue({ category: '任务闭环', item_key: 'overdue_tasks_exist', item_name: '是否存在逾期未完成任务', status: !taskR.exists ? STATUS.pending : n(t.overdue) > 0 ? STATUS.abnormal : STATUS.ok, severity: n(t.overdue) > 0 ? 'P2' : 'P3', owner_role: '店长', impact_modules: ['任务闭环', '老板日报'], impact_description: '逾期任务会导致系统判断门店动作未完成，影响老板日报和复盘结论。', suggestion: '请优先处理逾期任务，必要时升级给托管服务人员。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_overdue_count: n(t.overdue) } }),
-    issue({ category: '任务闭环', item_key: 'execution_review_records', item_name: '是否有执行结果和审核记录', status: !taskR.exists ? STATUS.pending : n(t.reviewed) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.reviewed) > 0 ? 'P3' : 'P1', owner_role: '系统', impact_modules: ['任务闭环', '绩效评估'], impact_description: '执行结果未回传会导致任务是否有效无法判断，也影响绩效评估。', suggestion: '请检查任务回复表、审核流和 master_tasks review_result。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_reviewed_count: n(t.reviewed) } }),
+    issue({ category: '任务闭环', item_key: 'ai_tasks_generated', item_name: 'AI 运营建议是否已生成', status: !taskR.exists ? STATUS.pending : n(t.generated) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.generated) > 0 ? 'P3' : 'P2', owner_role: '系统', impact_modules: ['任务闭环'], impact_description: '没有 AI 运营建议时，系统只能发现问题，不能形成后续跟进记录。', suggestion: '请检查运营建议生成链路和 Agent 调度是否正常。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_generated_count: n(t.generated) } }),
+    issue({ category: '任务闭环', item_key: 'manager_confirmed_tasks', item_name: '门店负责人是否确认运营建议', status: !taskR.exists ? STATUS.pending : n(t.confirmed) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.confirmed) > 0 ? 'P3' : 'P2', owner_role: '店长', impact_modules: ['任务闭环'], impact_description: '门店负责人未确认运营建议会导致后续动作没有责任承接。', suggestion: '请租赁方安排门店负责人确认待处理运营建议。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_confirmed_count: n(t.confirmed) } }),
+    issue({ category: '任务闭环', item_key: 'employees_executed_tasks', item_name: '员工是否反馈执行结果', status: !taskR.exists ? STATUS.pending : n(t.executed) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.executed) > 0 ? 'P3' : 'P2', owner_role: '员工', impact_modules: ['任务闭环', '绩效评估'], impact_description: '执行结果缺失会影响闭环、复盘和绩效判定。', suggestion: '请租赁方补充执行结果、照片或文字说明。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_executed_count: n(t.executed) } }),
+    issue({ category: '任务闭环', item_key: 'overdue_tasks_exist', item_name: '是否存在逾期未完成事项', status: !taskR.exists ? STATUS.pending : n(t.overdue) > 0 ? STATUS.abnormal : STATUS.ok, severity: n(t.overdue) > 0 ? 'P2' : 'P3', owner_role: '店长', impact_modules: ['任务闭环', '老板日报'], impact_description: '逾期事项会导致系统判断门店动作未完成，影响老板日报和复盘结论。', suggestion: '请租赁方优先处理逾期事项，必要时由我方协助说明处理口径。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_overdue_count: n(t.overdue) } }),
+    issue({ category: '任务闭环', item_key: 'execution_review_records', item_name: '是否有执行结果和复核记录', status: !taskR.exists ? STATUS.pending : n(t.reviewed) > 0 ? STATUS.ok : STATUS.missing, severity: n(t.reviewed) > 0 ? 'P3' : 'P1', owner_role: '系统', impact_modules: ['任务闭环', '绩效评估'], impact_description: '执行结果未回传会导致事项是否有效无法判断，也影响绩效评估。', suggestion: '请检查执行结果回传、复核流程和运营记录是否完整。', evidence: { ...(taskR.evidence || {}), task_total: n(t.total), task_reviewed_count: n(t.reviewed) } }),
   ];
 }
 
@@ -516,6 +516,18 @@ function initializationStatus(items, stores) {
 function featureAvailability(items) {
   return MODULES.map((feature) => {
     const blockers = (items || []).filter((item) => item.status !== STATUS.ok && (item.impact_modules || []).includes(feature));
+    if (feature === '月度复盘') {
+      const businessBlocked = blockers.some((item) => ['数据接入', '数据新鲜度'].includes(item.category) && ['P0', 'P1'].includes(item.severity));
+      const attributionBlocked = blockers.some((item) => item.category === '营销归因');
+      const status = businessBlocked ? '暂不可生成' : attributionBlocked ? '部分不完整' : blockers.length ? '部分不完整' : '可用';
+      return {
+        feature,
+        status,
+        blocked_by: blockers.map((item) => ({ id: item.id, item_key: item.item_key, title: item.item_name, severity: item.severity })),
+        reason: status === '部分不完整' ? '月度复盘可以生成经营部分，但营销效果部分暂时不完整。' : status === '暂不可生成' ? '核心经营数据缺失，月度复盘暂不可生成。' : '月度复盘具备当前阶段的基础运行条件。',
+        suggestion: blockers[0]?.suggestion || '保持经营数据、营销数据和任务结果持续同步。',
+      };
+    }
     const hard = blockers.filter((item) => ['P0', 'P1'].includes(item.severity));
     const status = blockers.length === 0 ? '可用' : hard.length ? '不可用' : blockers.some((item) => item.status === STATUS.pending) ? '待配置' : '部分可用';
     const reason = blockers.length
@@ -721,59 +733,57 @@ export function generateInspectionReport({ tenantId, overview, store_results = [
   const top = overview?.top_issues || topIssues(items);
   const affected = Array.from(new Set((items || []).flatMap((item) => item.status !== STATUS.ok ? item.impact_modules || [] : [])));
   const worstStores = (store_results || []).filter((s) => s.health_score < 90).slice(0, 5);
-  const nextActions = [
-    ...top.map((x) => x.suggestion).filter(Boolean),
-    ...(items || []).filter((item) => item.status !== STATUS.ok).map((item) => item.suggestion).filter(Boolean),
-  ].slice(0, 5);
   const scoreText = overview?.health_score == null ? (overview?.risk_level || '初始化未完成') : `健康分 ${overview.health_score} 分`;
   const summary = `当前租户系统${scoreText}。主要问题是${top.map((x) => x.title).join('、') || '暂无关键阻塞'}，会影响${affected.slice(0, 4).join('、') || '核心运营模块'}。`;
+  const badItems = (items || []).filter((item) => item.status !== STATUS.ok);
+  const itemToReport = (item) => ({
+    item_name: item.item_name,
+    store_name: item.store_name || '全部门店',
+    impact_modules: item.impact_modules || [],
+    status: item.status,
+    severity: item.severity,
+    problem_description: item.impact_description || '',
+    suggested_arrangement: item.responsible_party === 'platform_team' || item.responsible_party === 'system_integration' ? '我方系统实施人员协助说明，租赁方配合确认数据来源' : '租赁方安排系统管理员或门店负责人',
+    suggested_deadline: ['P0', 'P1'].includes(item.severity) ? '建议 3 天内完成' : '建议 7 天内完成',
+    rectification_suggestion: item.suggestion || '',
+    include_in_report: true,
+  });
+  const tenantRectificationItems = badItems
+    .filter((item) => !['platform_team', 'system_integration'].includes(item.responsible_party))
+    .map(itemToReport);
+  const platformNotes = badItems
+    .filter((item) => ['platform_team', 'system_integration'].includes(item.responsible_party))
+    .map((item) => ({
+      problem: item.item_name,
+      impact: item.impact_description || '',
+      suggestion: item.suggestion || '',
+      tenant_cooperation: '请租赁方确认数据源、字段导出或业务采集流程是否具备。',
+      impact_modules: item.impact_modules || [],
+    }));
   return {
     tenant_id: tenantId,
+    report_title: '租户运营整改报告',
     summary,
     top_risks: top,
     affected_modules: affected,
+    tenant_rectification_items: tenantRectificationItems,
+    platform_notes: platformNotes,
+    data_gap_impact: badItems
+      .filter((item) => ['数据接入', '数据新鲜度', '营销归因'].includes(item.category))
+      .map((item) => `${item.item_name}会影响${(item.impact_modules || []).join('、') || '相关报告'}，导致对应判断不完整。`),
+    next_recheck_suggestion: '建议租赁方完成以上整改后，在 3 天内重新运行检测。',
     store_status: worstStores.length ? worstStores : store_results,
     ai_conclusion: summary,
     system_health: overview?.health_score == null ? '当前租户尚未完成初始化，先不要用 0 分判断经营风险。' : (overview?.health_score ?? 0) >= 75 ? '当前租户系统基本可运转，但仍需处理影响准确性的项目。' : '当前租户系统存在明显运转风险，需要先处理数据和任务闭环问题。',
     blocking_issues: top.map((x) => `${x.title}：${x.suggestion}`),
     stores_missing_actions: worstStores.map((s) => `${s.store_name}：${s.main_risk}`),
     inaccurate_ai_features: affected.filter((m) => ['经营诊断', '客户资产报告', '自动营销', '营销归因', '老板日报'].includes(m)),
-    next_actions: nextActions,
+    next_actions: [...tenantRectificationItems.map((x) => x.rectification_suggestion), ...platformNotes.map((x) => x.suggestion)].filter(Boolean).slice(0, 5),
   };
 }
 
 export async function generateRecoveryTask(pool, { item, itemId } = {}) {
-  let target = item;
-  if (!target && itemId) {
-    const r = await pool.query(`SELECT * FROM tenant_operation_inspection_items WHERE id=$1 LIMIT 1`, [itemId]);
-    target = r.rows?.[0];
-  }
-  if (!target) throw new Error('inspection_item_not_found');
-  if (target.generated_task_id) return { ok: true, task_id: target.generated_task_id, status: 'already_generated', skipped: true };
-  const suffix = String(Date.now()).slice(-6);
-  const taskId = `TOI-${ymd().replaceAll('-', '')}-${suffix}`;
-  const sourceData = {
-    source_type: 'tenant_operation_inspection',
-    source_item_id: target.id || itemId || null,
-    expected_result: target.suggestion || '',
-    tracking_metrics: target.impact_modules || [],
-    evidence: target.evidence || {},
-    store_id: target.store_id || null,
-  };
-  const title = `补救任务：${target.item_name}`;
-  const detail = `${target.impact_description || ''}\n建议动作：${target.suggestion || ''}`.trim();
-  const r = await pool.query(
-    `INSERT INTO master_tasks
-      (task_id, status, source, source_ref, current_agent, category, severity, store, assignee_role, title, detail, source_data, tenant_id)
-     VALUES ($1,'pending_dispatch','tenant_operation_inspection',$2,'master',$3,$4,$5,$6,$7,$8,$9::jsonb,$10)
-     RETURNING task_id`,
-    [taskId, String(target.id || itemId || ''), target.category || '租户运营检测', target.severity || 'P2', target.store_id || target.store_name || null, target.owner_role || '实施人员', title, detail, JSON.stringify(sourceData), target.tenant_id || 'default']
-  );
-  const savedTaskId = r.rows?.[0]?.task_id || taskId;
-  if (target.id || itemId) {
-    await pool.query(`UPDATE tenant_operation_inspection_items SET generated_task_id=$1, updated_at=NOW() WHERE id=$2`, [savedTaskId, target.id || itemId]).catch(() => {});
-  }
-  return { ok: true, task_id: savedTaskId, status: 'pending_dispatch' };
+  return { ok: false, deprecated: true, message: '当前版本已取消门店任务派发，请使用导出整改报告流程。' };
 }
 
 function normalizeSeverityFilter(value) {
@@ -785,43 +795,7 @@ function normalizeSeverityFilter(value) {
 }
 
 export async function generateRecoveryTasksBatch(pool, opts = {}) {
-  const tenantId = String(opts.tenantId || opts.tenant_id || 'default').trim() || 'default';
-  const storeId = String(opts.storeId || opts.store_id || '').trim();
-  const responsible = String(opts.responsibleParty || opts.responsible_party || '').trim();
-  const severities = normalizeSeverityFilter(opts.severity);
-  const r = await queryIfTable(
-    pool,
-    'tenant_operation_inspection_items',
-    `SELECT * FROM tenant_operation_inspection_items
-      WHERE tenant_id=$1
-        AND status <> $2
-        AND can_generate_task = TRUE
-        AND severity = ANY($3::text[])
-        AND ($4::text='' OR store_id=$4)
-        AND ($5::text='' OR responsible_party=$5)
-      ORDER BY created_at DESC, CASE severity WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 ELSE 3 END, id DESC
-      LIMIT 100`,
-    [tenantId, STATUS.ok, severities, storeId, responsible]
-  );
-  const rows = (r.rows || []).filter((item) => (
-    item.status !== STATUS.ok
-    && item.can_generate_task !== false
-    && severities.includes(String(item.severity || ''))
-    && (!storeId || String(item.store_id || '') === storeId)
-    && (!responsible || String(item.responsible_party || '') === responsible)
-  ));
-  const generated = [];
-  const skipped = [];
-  for (const item of rows) {
-    if (item.generated_task_id) {
-      skipped.push({ item_id: item.id, task_id: item.generated_task_id, reason: 'already_generated' });
-      continue;
-    }
-    const task = await generateRecoveryTask(pool, { item });
-    if (task.skipped) skipped.push({ item_id: item.id, task_id: task.task_id, reason: 'already_generated' });
-    else generated.push({ item_id: item.id, task_id: task.task_id });
-  }
-  return { ok: true, generated_count: generated.length, skipped_count: skipped.length, generated, skipped };
+  return { ok: false, deprecated: true, message: '当前版本已取消门店任务派发，请使用导出整改报告流程。' };
 }
 
 function dateRange7(endDate) {
@@ -873,4 +847,82 @@ export async function getInspectionTrends(pool, opts = {}) {
       attribution_completeness: row.attribution_completeness == null ? null : n(row.attribution_completeness),
     };
   });
+}
+
+export async function saveInspectionReport(pool, { tenantId = 'default', runId = null, report = {} } = {}) {
+  const r = await pool.query(
+    `INSERT INTO tenant_operation_inspection_reports
+      (tenant_id, run_id, report_title, report_status, summary, affected_modules, tenant_rectification_items, platform_notes, next_recheck_suggestion)
+     VALUES ($1,$2,$3,'generated',$4,$5::jsonb,$6::jsonb,$7::jsonb,$8)
+     RETURNING *`,
+    [
+      tenantId,
+      runId,
+      report.report_title || '租户运营整改报告',
+      report.summary || '',
+      JSON.stringify(report.affected_modules || []),
+      JSON.stringify(report.tenant_rectification_items || []),
+      JSON.stringify(report.platform_notes || []),
+      report.next_recheck_suggestion || '建议租赁方完成整改后，在 3 天内重新运行检测。',
+    ]
+  );
+  return { ok: true, report: r.rows?.[0] || null };
+}
+
+export async function listInspectionReports(pool, opts = {}) {
+  const tenantId = String(opts.tenantId || opts.tenant_id || 'default').trim() || 'default';
+  const r = await queryIfTable(
+    pool,
+    'tenant_operation_inspection_reports',
+    `SELECT id, tenant_id, run_id, report_title, report_status, summary, affected_modules,
+            tenant_rectification_items, platform_notes, next_recheck_suggestion, pdf_file_url, sent_at, created_at, updated_at
+       FROM tenant_operation_inspection_reports
+      WHERE tenant_id=$1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 50`,
+    [tenantId]
+  );
+  return r.exists ? r.rows : [];
+}
+
+export async function markInspectionReportSent(pool, { reportId, tenantId = 'default' } = {}) {
+  const r = await pool.query(
+    `UPDATE tenant_operation_inspection_reports
+        SET report_status='sent', sent_at=NOW(), updated_at=NOW()
+      WHERE id=$1 AND tenant_id=$2
+      RETURNING id, report_status, sent_at`,
+    [reportId, tenantId]
+  );
+  return { ok: !!r.rows?.length, report: r.rows?.[0] || null };
+}
+
+function stripTechnicalText(value) {
+  return String(value || '')
+    .replace(/ontology/ig, '归因计算')
+    .replace(/customer_id/ig, '顾客标识')
+    .replace(/campaign_id/ig, '营销活动标识')
+    .replace(/coupon_id/ig, '优惠券标识')
+    .replace(/master_tasks/ig, '系统任务记录')
+    .replace(/generated_task_id/ig, '已生成记录');
+}
+
+export function buildInspectionReportHtml(report = {}, meta = {}) {
+  const esc = (v) => stripTechnicalText(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const rows = (arr, cols) => (arr || []).map((x) => `<tr>${cols.map(([k]) => `<td>${esc(Array.isArray(x[k]) ? x[k].join('、') : x[k] || '-')}</td>`).join('')}</tr>`).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>租户运营整改报告</title><style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;margin:32px;line-height:1.6}
+  h1{font-size:30px;margin:0 0 8px} h2{font-size:18px;margin:28px 0 10px;border-bottom:1px solid #e5e7eb;padding-bottom:6px}
+  .muted{color:#6b7280}.cover{background:#111827;color:white;border-radius:18px;padding:28px;margin-bottom:24px}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.kpi{border:1px solid #e5e7eb;border-radius:12px;padding:12px}
+  table{width:100%;border-collapse:collapse;font-size:12px}td,th{border-bottom:1px solid #e5e7eb;text-align:left;padding:8px;vertical-align:top}th{background:#f9fafb}
+  </style></head><body>
+  <div class="cover"><h1>租户运营整改报告</h1><div>租户：${esc(meta.tenantName || report.tenant_id || '-')}</div><div>检测日期：${esc(meta.date || '')}</div><div>报告生成时间：${esc(new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}))}</div></div>
+  <div class="grid"><div class="kpi"><b>系统运行状态</b><br>${esc(meta.riskLevel || '-')}</div><div class="kpi"><b>健康分</b><br>${esc(meta.healthScore ?? '-')}</div><div class="kpi"><b>报告状态</b><br>${esc(report.report_status || 'generated')}</div><div class="kpi"><b>下次复检</b><br>整改后 3 天内</div></div>
+  <h2>本次检测结论</h2><p>${esc(report.summary || '')}</p>
+  <h2>核心影响</h2><p>${esc((report.affected_modules || []).join('、') || '-')}</p>
+  <h2>需要租赁方安排整改的事项</h2><table><thead><tr><th>整改事项</th><th>涉及门店</th><th>影响功能</th><th>问题说明</th><th>建议安排对象</th><th>建议完成时间</th><th>整改建议</th></tr></thead><tbody>${rows(report.tenant_rectification_items || [], [['item_name'],['store_name'],['impact_modules'],['problem_description'],['suggested_arrangement'],['suggested_deadline'],['rectification_suggestion']])}</tbody></table>
+  <h2>我方说明 / 协助事项</h2><table><thead><tr><th>问题</th><th>影响</th><th>我方建议</th><th>需要租赁方配合什么</th></tr></thead><tbody>${rows(report.platform_notes || [], [['problem'],['impact'],['suggestion'],['tenant_cooperation']])}</tbody></table>
+  <h2>数据缺失造成的影响说明</h2><ul>${(report.data_gap_impact || []).map((x) => `<li>${esc(x)}</li>`).join('') || '<li>-</li>'}</ul>
+  <h2>下次复检建议</h2><p>${esc(report.next_recheck_suggestion || '建议租赁方完成以上整改后，在 3 天内重新运行检测。')}</p>
+  </body></html>`;
 }

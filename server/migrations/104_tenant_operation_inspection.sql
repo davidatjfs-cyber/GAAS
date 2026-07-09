@@ -71,3 +71,23 @@ ALTER TABLE tenant_operation_inspection_items ADD COLUMN IF NOT EXISTS responsib
 CREATE INDEX IF NOT EXISTS idx_toi_runs_status ON tenant_operation_inspection_runs (tenant_id, inspection_status, inspection_date DESC);
 CREATE INDEX IF NOT EXISTS idx_toi_items_responsible ON tenant_operation_inspection_items (tenant_id, responsible_party);
 CREATE INDEX IF NOT EXISTS idx_toi_items_generated_task ON tenant_operation_inspection_items (generated_task_id);
+
+CREATE TABLE IF NOT EXISTS tenant_operation_inspection_reports (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id VARCHAR(80) NOT NULL DEFAULT 'default',
+  run_id BIGINT REFERENCES tenant_operation_inspection_runs(id) ON DELETE SET NULL,
+  report_title TEXT NOT NULL DEFAULT '租户运营整改报告',
+  report_status TEXT NOT NULL DEFAULT 'draft',
+  summary TEXT,
+  affected_modules JSONB NOT NULL DEFAULT '[]'::jsonb,
+  tenant_rectification_items JSONB NOT NULL DEFAULT '[]'::jsonb,
+  platform_notes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  next_recheck_suggestion TEXT,
+  pdf_file_url TEXT,
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_toi_reports_tenant ON tenant_operation_inspection_reports (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_toi_reports_run ON tenant_operation_inspection_reports (run_id);
+CREATE INDEX IF NOT EXISTS idx_toi_reports_status ON tenant_operation_inspection_reports (tenant_id, report_status);

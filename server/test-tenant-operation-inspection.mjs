@@ -6,6 +6,9 @@ import {
   generateRecoveryTask,
   generateRecoveryTasksBatch,
   getInspectionTrends,
+  saveInspectionReport,
+  listInspectionReports,
+  markInspectionReportSent,
 } from './services/tenant-operation-inspection-service.js';
 
 function makePool(fixtures = {}) {
@@ -24,6 +27,9 @@ function makePool(fixtures = {}) {
       }
       if (text.includes('INSERT INTO tenant_operation_inspection_runs')) return { rows: [{ id: 101 }] };
       if (text.includes('INSERT INTO tenant_operation_inspection_items')) return { rows: [{ id: 201 }] };
+      if (text.includes('INSERT INTO tenant_operation_inspection_reports')) return { rows: [{ id: 501, report_title: '租户运营整改报告', report_status: 'generated' }] };
+      if (text.includes('UPDATE tenant_operation_inspection_reports')) return { rows: [{ id: params[0], report_status: 'sent', sent_at: '2026-07-09T00:00:00Z' }] };
+      if (text.includes('FROM tenant_operation_inspection_reports')) return { rows: fixtures.reports ?? [{ id: 501, report_title: '租户运营整改报告', report_status: 'generated' }] };
       if (text.includes('UPDATE tenant_operation_inspection_items')) return { rows: [{ id: params[1], generated_task_id: params[0] }] };
       if (text.includes('INSERT INTO master_tasks')) return { rows: [{ task_id: 'TOI-20260709-0001' }] };
       if (text.includes('SELECT * FROM tenant_operation_inspection_items')) return { rows: fixtures.items ?? [] };
@@ -64,6 +70,8 @@ function makePool(fixtures = {}) {
   assert.equal(result.overview.inspection_status, 'completed');
   assert.ok(Array.isArray(result.overview.feature_availability));
   assert.ok(result.overview.feature_availability.some((x) => x.feature === '经营诊断'));
+  assert.ok(result.items.some((item) => item.item_name === 'POS 订单客户识别率是否足够'));
+  assert.ok(result.items.some((item) => item.item_name === '营销活动是否能识别回店订单'));
   assert.ok(Array.isArray(result.overview.today_priorities));
   assert.ok(Array.isArray(result.overview.category_stats));
   assert.ok(result.overview.operation_stage);
@@ -86,10 +94,14 @@ function makePool(fixtures = {}) {
     tenantId: 'default',
     overview: { health_score: 68, risk_level: '预警', top_issues: [{ title: '昨日 POS 数据未同步', impact_modules: ['经营诊断'] }] },
     store_results: [{ store_name: '测试门店', health_score: 68, main_risk: 'POS 延迟' }],
-    items: [{ item_name: '昨日订单数据是否同步', severity: 'P1', status: '延迟', suggestion: '检查 POS 同步' }],
+    items: [
+      { item_name: '租户是否已创建门店', severity: 'P3', status: '正常', suggestion: '保持配置' },
+      { item_name: '昨日订单数据是否同步', severity: 'P1', status: '延迟', suggestion: '检查 POS 同步', impact_modules: ['经营诊断'], impact_description: '昨日订单缺失会影响日报。' }
+    ],
   });
   assert.ok(report.summary.includes('健康分 68 分'));
-  assert.ok(report.next_actions.length > 0);
+  assert.equal(report.tenant_rectification_items.some((x) => x.item_name === '租户是否已创建门店'), false);
+  assert.equal(/ontology|customer_id|campaign_id|coupon_id|master_tasks|generated_task_id/.test(JSON.stringify(report)), false);
 }
 
 {
@@ -106,8 +118,9 @@ function makePool(fixtures = {}) {
       evidence: { source: 'test' },
     },
   });
-  assert.equal(task.task_id, 'TOI-20260709-0001');
-  assert.ok(pool.calls.some((call) => call.sql.includes('INSERT INTO master_tasks')));
+  assert.equal(task.ok, false);
+  assert.equal(task.deprecated, true);
+  assert.equal(pool.calls.some((call) => call.sql.includes('INSERT INTO master_tasks')), false);
 }
 
 {
@@ -119,8 +132,9 @@ function makePool(fixtures = {}) {
     ],
   });
   const batch = await generateRecoveryTasksBatch(pool, { tenantId: 'default', storeId: 's1', severity: ['P0', 'P1'] });
-  assert.equal(batch.generated_count, 1);
-  assert.equal(batch.skipped_count, 1);
+  assert.equal(batch.ok, false);
+  assert.equal(batch.deprecated, true);
+  assert.equal(pool.calls.some((call) => call.sql.includes('INSERT INTO master_tasks')), false);
 }
 
 {
@@ -132,6 +146,21 @@ function makePool(fixtures = {}) {
   assert.equal(trends.length, 7);
   assert.equal(trends[6].date, '2026-07-09');
   assert.equal(trends[6].health_score, 88);
+}
+
+{
+  const pool = makePool();
+  const result = await runInspection(pool, { tenantId: 'default', date: '2026-07-09' });
+  const saved = await saveInspectionReport(pool, {
+    tenantId: 'default',
+    runId: 101,
+    report: generateInspectionReport({ tenantId: 'default', overview: result.overview, store_results: result.store_results, items: result.items }),
+  });
+  assert.equal(saved.ok, true);
+  const reports = await listInspectionReports(pool, { tenantId: 'default' });
+  assert.equal(reports.length, 1);
+  const sent = await markInspectionReportSent(pool, { reportId: 501, tenantId: 'default' });
+  assert.equal(sent.ok, true);
 }
 
 console.log('tenant-operation-inspection tests passed');
