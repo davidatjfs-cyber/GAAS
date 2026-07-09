@@ -91,3 +91,4 @@ CREATE TABLE IF NOT EXISTS tenant_operation_inspection_reports (
 CREATE INDEX IF NOT EXISTS idx_toi_reports_tenant ON tenant_operation_inspection_reports (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_toi_reports_run ON tenant_operation_inspection_reports (run_id);
 CREATE INDEX IF NOT EXISTS idx_toi_reports_status ON tenant_operation_inspection_reports (tenant_id, report_status);
+ALTER TABLE tenant_operation_inspection_reports ADD COLUMN IF NOT EXISTS store_scope TEXT DEFAULT '全部门店';

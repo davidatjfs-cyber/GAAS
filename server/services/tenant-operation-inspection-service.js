@@ -54,6 +54,24 @@ function normalizeStore(row) {
   };
 }
 
+function likePattern(value) {
+  return `%${String(value || '').replace(/[%_]/g, '\\$&')}%`;
+}
+
+function storeFilterValues(ctx = {}, stores = []) {
+  const values = new Set();
+  if (ctx.storeId) values.add(String(ctx.storeId).trim());
+  for (const store of stores || []) {
+    if (store.store_id) values.add(String(store.store_id).trim());
+    if (store.store_name) values.add(String(store.store_name).trim());
+  }
+  return Array.from(values).filter(Boolean);
+}
+
+function storeFilterPatterns(values = []) {
+  return (values || []).filter(Boolean).map(likePattern);
+}
+
 function responsibleParty(ownerRole = '') {
   const role = String(ownerRole || '').trim();
   if (/租户/.test(role)) return 'tenant_admin';
@@ -165,18 +183,34 @@ async function loadStores(pool, { tenantId, storeId }) {
     );
     const rows = storesR.rows.map(normalizeStore).filter((s) => s.store_id || s.store_name);
     if (rows.length) return rows;
+    if (storeId && (cols.has('name') || cols.has('store_name'))) {
+      const likeParts = [];
+      const likeParams = [tenantId, likePattern(storeId)];
+      if (cols.has('name')) likeParts.push(`name::text ILIKE $2`);
+      if (cols.has('store_name')) likeParts.push(`store_name::text ILIKE $2`);
+      const fuzzyR = await queryIfTable(
+        pool,
+        'stores',
+        `SELECT ${idExpr} AS store_id, ${nameExpr} AS name FROM stores WHERE tenant_id=$1 AND (${likeParts.join(' OR ')}) ORDER BY name`,
+        likeParams
+      );
+      const fuzzyRows = fuzzyR.rows.map(normalizeStore).filter((s) => s.store_id || s.store_name);
+      if (fuzzyRows.length) return fuzzyRows;
+    }
   }
   const storesR = await queryIfTable(
     pool,
     'growth_ontology_stores',
-    `SELECT store_id, name FROM growth_ontology_stores WHERE tenant_id=$1 AND ($2::text='' OR store_id=$2 OR name=$2) ORDER BY name`,
-    [tenantId, storeId || '']
+    `SELECT store_id, name FROM growth_ontology_stores WHERE tenant_id=$1 AND ($2::text='' OR store_id=$2 OR name=$2 OR name ILIKE $3) ORDER BY name`,
+    [tenantId, storeId || '', storeId ? likePattern(storeId) : '%%']
   );
   return storesR.rows.map(normalizeStore).filter((s) => s.store_id || s.store_name);
 }
 
 async function checkBaseConfiguration(pool, ctx, stores) {
   const items = [];
+  const storeValues = storeFilterValues(ctx, stores);
+  const storePatterns = storeFilterPatterns(storeValues);
   const hasStores = stores.length > 0;
   items.push(issue({
     category: '基础配置',
@@ -198,12 +232,12 @@ async function checkBaseConfiguration(pool, ctx, stores) {
     const selectStore = cols.has('store') ? 'store::text AS store' : cols.has('store_name') ? 'store_name::text AS store' : "''::text AS store";
     const whereParts = ['tenant_id=$1'];
     const params = [ctx.tenantId];
-    if (ctx.storeId) {
-      params.push(ctx.storeId);
+    if (storeValues.length) {
+      params.push(storeValues, storePatterns);
       const match = [];
-      if (cols.has('store_id')) match.push(`store_id::text=$${params.length}`);
-      if (cols.has('store')) match.push(`store::text=$${params.length}`);
-      if (cols.has('store_name')) match.push(`store_name::text=$${params.length}`);
+      if (cols.has('store_id')) match.push(`store_id::text = ANY($${params.length - 1}::text[])`);
+      if (cols.has('store')) match.push(`store::text = ANY($${params.length - 1}::text[]) OR store::text ILIKE ANY($${params.length}::text[])`);
+      if (cols.has('store_name')) match.push(`store_name::text = ANY($${params.length - 1}::text[]) OR store_name::text ILIKE ANY($${params.length}::text[])`);
       if (match.length) whereParts.push(`(${match.join(' OR ')})`);
     }
     empR = await queryIfTable(
@@ -261,8 +295,8 @@ async function checkBaseConfiguration(pool, ctx, stores) {
   const targetR = await queryIfTable(
     pool,
     'kpi_targets',
-    `SELECT COUNT(*)::int AS total FROM kpi_targets WHERE tenant_id=$1 AND ($2::text='' OR store=$2)`,
-    [ctx.tenantId, ctx.storeId || '']
+    `SELECT COUNT(*)::int AS total FROM kpi_targets WHERE tenant_id=$1 AND ($2::text[] IS NULL OR store = ANY($2::text[]) OR store ILIKE ANY($3::text[]))`,
+    [ctx.tenantId, storeValues.length ? storeValues : null, storePatterns.length ? storePatterns : null]
   );
   const targetTotal = n(targetR.rows?.[0]?.total);
   items.push(issue({
@@ -280,8 +314,10 @@ async function checkBaseConfiguration(pool, ctx, stores) {
   return items;
 }
 
-async function checkDataIntegration(pool, ctx) {
+async function checkDataIntegration(pool, ctx, stores = []) {
   const yesterday = previousDate(ctx.date);
+  const storeValues = storeFilterValues(ctx, stores);
+  const storePatterns = storeFilterPatterns(storeValues);
   const posR = await queryIfTable(
     pool,
     'pos_order_items',
@@ -293,8 +329,8 @@ async function checkDataIntegration(pool, ctx) {
             COUNT(DISTINCT dish_name)::int AS dish_rows,
             COUNT(DISTINCT dish_name) FILTER (WHERE COALESCE(category,'') <> '')::int AS categorized_dish_rows
        FROM pos_order_items
-      WHERE tenant_id=$1 AND ($2::text='' OR store_code=$2 OR store_name=$2)`,
-    [ctx.tenantId, ctx.storeId || '', yesterday]
+      WHERE tenant_id=$1 AND ($2::text[] IS NULL OR store_code = ANY($2::text[]) OR store_name = ANY($2::text[]) OR store_name ILIKE ANY($4::text[]))`,
+    [ctx.tenantId, storeValues.length ? storeValues : null, yesterday, storePatterns.length ? storePatterns : null]
   );
   const pos = posR.rows?.[0] || {};
   const posTotal = n(pos.total);
@@ -408,7 +444,9 @@ async function checkMarketing(pool, ctx) {
   ];
 }
 
-async function checkTaskClosedLoop(pool, ctx) {
+async function checkTaskClosedLoop(pool, ctx, stores = []) {
+  const storeValues = storeFilterValues(ctx, stores);
+  const storePatterns = storeFilterPatterns(storeValues);
   const taskR = await queryIfTable(
     pool,
     'master_tasks',
@@ -419,8 +457,8 @@ async function checkTaskClosedLoop(pool, ctx) {
             COUNT(*) FILTER (WHERE status NOT IN ('resolved','settled','closed','hr_filed') AND COALESCE(timeout_at, dispatched_at + INTERVAL '1 day') < NOW())::int AS overdue,
             COUNT(*) FILTER (WHERE review_result <> '{}'::jsonb OR status IN ('resolved','settled','closed','hr_filed'))::int AS reviewed
        FROM master_tasks
-      WHERE tenant_id=$1 AND ($2::text='' OR store=$2 OR source_data->>'store_id'=$2)`,
-    [ctx.tenantId, ctx.storeId || '']
+      WHERE tenant_id=$1 AND ($2::text[] IS NULL OR store = ANY($2::text[]) OR store ILIKE ANY($3::text[]) OR source_data->>'store_id' = ANY($2::text[]))`,
+    [ctx.tenantId, storeValues.length ? storeValues : null, storePatterns.length ? storePatterns : null]
   );
   const t = taskR.rows?.[0] || {};
   return [
@@ -693,9 +731,9 @@ export async function runInspection(pool, opts = {}) {
   const stores = await loadStores(pool, ctx);
   let items = [
     ...(await checkBaseConfiguration(pool, ctx, stores)),
-    ...(await checkDataIntegration(pool, ctx)),
+    ...(await checkDataIntegration(pool, ctx, stores)),
     ...(await checkMarketing(pool, ctx)),
-    ...(await checkTaskClosedLoop(pool, ctx)),
+    ...(await checkTaskClosedLoop(pool, ctx, stores)),
   ];
   if (ctx.scope !== '全部') items = items.filter((item) => item.category === ctx.scope);
   const score = calculateHealthScore(items);
@@ -733,12 +771,14 @@ export function generateInspectionReport({ tenantId, overview, store_results = [
   const top = overview?.top_issues || topIssues(items);
   const affected = Array.from(new Set((items || []).flatMap((item) => item.status !== STATUS.ok ? item.impact_modules || [] : [])));
   const worstStores = (store_results || []).filter((s) => s.health_score < 90).slice(0, 5);
+  const storeNames = Array.from(new Set((items || []).map((item) => item.store_name).filter(Boolean)));
+  const storeScope = storeNames.length === 1 ? storeNames[0] : storeNames.length > 1 ? storeNames.join('、') : '全部门店';
   const scoreText = overview?.health_score == null ? (overview?.risk_level || '初始化未完成') : `健康分 ${overview.health_score} 分`;
-  const summary = `当前租户系统${scoreText}。主要问题是${top.map((x) => x.title).join('、') || '暂无关键阻塞'}，会影响${affected.slice(0, 4).join('、') || '核心运营模块'}。`;
+  const summary = `本次检测范围：${storeScope}。当前租户系统${scoreText}。主要问题是${top.map((x) => x.title).join('、') || '暂无关键阻塞'}，会影响${affected.slice(0, 4).join('、') || '核心运营模块'}。`;
   const badItems = (items || []).filter((item) => item.status !== STATUS.ok);
   const itemToReport = (item) => ({
     item_name: item.item_name,
-    store_name: item.store_name || '全部门店',
+    store_name: item.store_name || storeScope || '全部门店',
     impact_modules: item.impact_modules || [],
     status: item.status,
     severity: item.severity,
@@ -746,6 +786,11 @@ export function generateInspectionReport({ tenantId, overview, store_results = [
     suggested_arrangement: item.responsible_party === 'platform_team' || item.responsible_party === 'system_integration' ? '我方系统实施人员协助说明，租赁方配合确认数据来源' : '租赁方安排系统管理员或门店负责人',
     suggested_deadline: ['P0', 'P1'].includes(item.severity) ? '建议 3 天内完成' : '建议 7 天内完成',
     rectification_suggestion: item.suggestion || '',
+    evidence_summary: Object.entries(item.evidence || {})
+      .filter(([k]) => !['table_exists'].includes(k))
+      .slice(0, 6)
+      .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+      .join('；'),
     include_in_report: true,
   });
   const tenantRectificationItems = badItems
@@ -763,6 +808,7 @@ export function generateInspectionReport({ tenantId, overview, store_results = [
   return {
     tenant_id: tenantId,
     report_title: '租户运营整改报告',
+    store_scope: storeScope,
     summary,
     top_risks: top,
     affected_modules: affected,
@@ -852,8 +898,8 @@ export async function getInspectionTrends(pool, opts = {}) {
 export async function saveInspectionReport(pool, { tenantId = 'default', runId = null, report = {} } = {}) {
   const r = await pool.query(
     `INSERT INTO tenant_operation_inspection_reports
-      (tenant_id, run_id, report_title, report_status, summary, affected_modules, tenant_rectification_items, platform_notes, next_recheck_suggestion)
-     VALUES ($1,$2,$3,'generated',$4,$5::jsonb,$6::jsonb,$7::jsonb,$8)
+      (tenant_id, run_id, report_title, report_status, summary, affected_modules, tenant_rectification_items, platform_notes, next_recheck_suggestion, store_scope)
+     VALUES ($1,$2,$3,'generated',$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9)
      RETURNING *`,
     [
       tenantId,
@@ -864,6 +910,7 @@ export async function saveInspectionReport(pool, { tenantId = 'default', runId =
       JSON.stringify(report.tenant_rectification_items || []),
       JSON.stringify(report.platform_notes || []),
       report.next_recheck_suggestion || '建议租赁方完成整改后，在 3 天内重新运行检测。',
+      report.store_scope || '全部门店',
     ]
   );
   return { ok: true, report: r.rows?.[0] || null };
@@ -874,7 +921,7 @@ export async function listInspectionReports(pool, opts = {}) {
   const r = await queryIfTable(
     pool,
     'tenant_operation_inspection_reports',
-    `SELECT id, tenant_id, run_id, report_title, report_status, summary, affected_modules,
+    `SELECT id, tenant_id, run_id, report_title, report_status, summary, affected_modules, store_scope,
             tenant_rectification_items, platform_notes, next_recheck_suggestion, pdf_file_url, sent_at, created_at, updated_at
        FROM tenant_operation_inspection_reports
       WHERE tenant_id=$1
