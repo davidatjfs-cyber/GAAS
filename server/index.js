@@ -79,6 +79,7 @@ import strategyExperimentRoutes from './strategy-experiment-api.js';
 import { ensurePhaseTables, registerPhaseRoutes } from './growth-phases.js';
 import { ensureCustomerOpsTables, registerCustomerOpsRoutes } from './customer-ops.js';
 import { registerMarketingAttributionRoutes } from './marketing/marketing-attribution-routes.js';
+import { registerTenantOperationInspectionRoutes } from './tenant-operation-inspection-routes.js';
 import { ensureBaselineSchemaHealth } from './baseline-schema-health.js';
 import {
   reconcileDailyReportAttendanceRegister,
@@ -5233,6 +5234,11 @@ app.use((req, res, next) => {
   return staticServeWebRoot(req, res, next);
 });
 
+app.get('/agent/tenant-operation-inspection', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(webRootDir, 'agents-admin.html'));
+});
+
 // ─── 权限组 API：同一角色/岗位下不同员工可分配不同模块权限（按租户隔离） ──────────
 app.get('/api/permission-groups', authRequired, async (req, res) => {
   try {
@@ -5748,6 +5754,7 @@ setTrainingAssigner(createTrainingAssignment);
 registerPhaseRoutes(app, pool);
 registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM);
 registerMarketingAttributionRoutes(app, pool, authRequired);
+registerTenantOperationInspectionRoutes(app, pool, authRequired, platformAdminRequired);
 // 托管控制台（内部 Agent Ops 使用，不对租户开放）：复用同一套业务逻辑，
 // 仅换成平台管理员鉴权 + URL 中的 :tenantId 决定操作对象。
 registerCustomerOpsRoutes(app, pool, platformAdminRequired, upload, uploadsDir, recordUploadOwnership, callLLM, {

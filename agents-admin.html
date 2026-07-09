@@ -151,6 +151,21 @@
     .metric .k{font-size:12px;color:var(--muted)}
     .metric .v{font-size:26px;font-weight:900;margin-top:6px}
     .metric .s{font-size:12px;color:var(--muted);margin-top:6px}
+    .inspection-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+    .inspection-grid .metric .v{font-size:24px}
+    .inspection-filters{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;align-items:end}
+    .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fff}
+    table.ops-table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
+    .ops-table th,.ops-table td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    .ops-table th{background:#f8fafc;color:#475569;font-weight:800;white-space:nowrap;text-transform:none;letter-spacing:0}
+    .ops-table tr:last-child td{border-bottom:0}
+    .severity-P0{background:rgba(185,28,28,.12);color:#b91c1c}
+    .severity-P1{background:rgba(194,65,12,.12);color:#c2410c}
+    .severity-P2{background:rgba(217,119,6,.12);color:#a16207}
+    .severity-P3{background:#e2e8f0;color:#475569}
+    .status-正常{background:rgba(15,118,110,.12);color:#0f766e}
+    .status-异常,.status-缺失,.status-延迟{background:rgba(185,28,28,.12);color:#b91c1c}
+    .status-待配置{background:#e2e8f0;color:#475569}
     .content{
       display:grid;
       gap:16px;
@@ -204,11 +219,13 @@
       .shell{grid-template-columns:1fr}
       .sidebar{position:relative;min-height:auto}
       .overview{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .inspection-grid,.inspection-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
       .layout-2,.split{grid-template-columns:1fr}
     }
     @media (max-width: 640px){
       .main{padding:14px}
       .overview{grid-template-columns:1fr}
+      .inspection-grid,.inspection-filters{grid-template-columns:1fr}
       .fields{grid-template-columns:1fr}
     }
   </style>
@@ -265,6 +282,7 @@
           </div>
           <div class="nav" id="nav">
             <button class="active" data-target="overviewSection">总览</button>
+            <button data-target="inspectionSection">租户运营检测中心</button>
             <button data-target="agentSection">基础配置</button>
             <button data-target="templateSection">模板库</button>
             <button data-target="acceptanceSection">验收 / 修复</button>
@@ -302,6 +320,56 @@
       </section>
 
       <div class="content">
+        <section id="inspectionSection" class="card pad anchor">
+          <div class="section-title">
+            <div>
+              <h2>租户运营检测中心</h2>
+              <div class="small">检测租户数据接入、门店执行、AI 报告可用性与增长归因链路，保障托管服务稳定交付。</div>
+            </div>
+            <span id="inspectionRiskBadge" class="pill info">未检测</span>
+          </div>
+          <div class="inspection-filters">
+            <label>租户
+              <input id="inspectionTenant" readonly placeholder="请先选择左侧租户">
+            </label>
+            <label>门店
+              <select id="inspectionStore"><option value="">全部门店</option></select>
+            </label>
+            <label>检测日期
+              <input id="inspectionDate" type="date">
+            </label>
+            <label>检测范围
+              <select id="inspectionScope">
+                <option>全部</option><option>基础配置</option><option>数据接入</option><option>数据新鲜度</option><option>任务闭环</option><option>AI 可运行度</option><option>营销归因</option>
+              </select>
+            </label>
+            <div class="toolbar">
+              <button id="runInspectionBtn">立即检测</button>
+              <button id="generateInspectionReportBtn" class="secondary">生成检测报告</button>
+            </div>
+          </div>
+          <div id="inspectionEmpty" class="empty" style="margin-top:12px">当前暂无检测数据，请点击立即检测。</div>
+          <div id="inspectionContent" class="stack" style="display:none;margin-top:12px">
+            <div class="inspection-grid" id="inspectionMetrics"></div>
+            <div class="card pad" style="background:#fafafa">
+              <div class="section-title"><h3>今日最影响系统运转的 3 个问题</h3><span class="small">按 P0-P3 排序</span></div>
+              <div id="inspectionTopIssues" class="stack"></div>
+            </div>
+            <div>
+              <div class="section-title"><h3>门店检测表</h3><span class="small">按门店聚合</span></div>
+              <div class="table-wrap"><table class="ops-table"><thead><tr><th>门店名称</th><th>健康分</th><th>数据状态</th><th>任务状态</th><th>AI 报告状态</th><th>归因状态</th><th>主要风险</th><th>操作</th></tr></thead><tbody id="inspectionStoreRows"></tbody></table></div>
+            </div>
+            <div>
+              <div class="section-title"><h3>检测明细表</h3><span id="inspectionItemCount" class="small">0 项</span></div>
+              <div class="table-wrap"><table class="ops-table"><thead><tr><th>分类</th><th>检测项</th><th>状态</th><th>等级</th><th>责任对象</th><th>影响模块</th><th>影响说明</th><th>建议动作</th><th>检测时间</th><th>操作</th></tr></thead><tbody id="inspectionItemRows"></tbody></table></div>
+            </div>
+            <div class="card pad" style="background:#fafafa">
+              <div class="section-title"><h3>检测报告</h3><span class="small">老板语言</span></div>
+              <div id="inspectionReport" class="stack"><div class="empty">点击“生成检测报告”后展示。</div></div>
+            </div>
+          </div>
+        </section>
+
         <section class="layout-2">
           <div class="card pad anchor" id="agentSection">
             <div class="section-title">
@@ -433,7 +501,7 @@
     const $ = (id) => document.getElementById(id);
     const tokenKey = 'platform_admin_token';
     const tenantKey = 'agent_admin_tenant_id';
-    const state = { tenants: [], selectedTenantId: '', overview: null, center: null, profile: null };
+    const state = { tenants: [], selectedTenantId: '', overview: null, center: null, profile: null, inspection: null, inspectionReport: null };
     const AGENT_LABELS = {
       master: 'Master 调度中枢',
       data_auditor: '数据审计',
@@ -516,6 +584,172 @@
 
     function selectedTenant() {
       return state.tenants.find((x) => x.tenant_id === state.selectedTenantId) || state.tenants[0] || null;
+    }
+
+    function todayYmd() {
+      return new Date().toLocaleDateString('en-CA');
+    }
+
+    function severityLabel(severity) {
+      const map = { P0: 'P0 严重', P1: 'P1 重要', P2: 'P2 关注', P3: 'P3 优化' };
+      return map[String(severity || '').trim()] || severity || '-';
+    }
+
+    function renderInspectionStoreOptions() {
+      const el = $('inspectionStore');
+      if (!el) return;
+      const current = el.value || '';
+      const stores = [];
+      const detail = state.profile || {};
+      const candidates = [
+        ...(Array.isArray(detail.stores) ? detail.stores : []),
+        ...(Array.isArray(detail.profile?.stores) ? detail.profile.stores : []),
+        ...(Array.isArray(state.inspection?.store_results) ? state.inspection.store_results : []),
+      ];
+      const seen = new Set();
+      candidates.forEach((s) => {
+        const id = String(s.store_id || s.id || s.name || s.store_name || '').trim();
+        const name = String(s.store_name || s.name || s.store || id).trim();
+        if (!id && !name) return;
+        const key = id || name;
+        if (seen.has(key)) return;
+        seen.add(key);
+        stores.push({ id: key, name: name || key });
+      });
+      el.innerHTML = '<option value="">全部门店</option>' + stores.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+      el.value = stores.some((s) => s.id === current) ? current : '';
+    }
+
+    function updateInspectionTenantInputs() {
+      if ($('inspectionTenant')) $('inspectionTenant').value = state.selectedTenantId || '';
+      if ($('inspectionDate') && !$('inspectionDate').value) $('inspectionDate').value = todayYmd();
+      renderInspectionStoreOptions();
+    }
+
+    function inspectionApiBase() {
+      if (!state.selectedTenantId) return '/api/tenant-inspection';
+      return `/api/admin/tenants/${encodeURIComponent(state.selectedTenantId)}/tenant-inspection`;
+    }
+
+    function riskClass(level) {
+      if (level === '健康') return 'ok';
+      if (level === '严重') return 'bad';
+      return 'info';
+    }
+
+    function renderInspection(data) {
+      state.inspection = data || state.inspection;
+      updateInspectionTenantInputs();
+      const current = state.inspection;
+      if (!current || !current.overview) {
+        $('inspectionEmpty').style.display = '';
+        $('inspectionContent').style.display = 'none';
+        $('inspectionRiskBadge').textContent = '未检测';
+        $('inspectionRiskBadge').className = 'pill info';
+        return;
+      }
+      const ov = current.overview || current;
+      $('inspectionEmpty').style.display = 'none';
+      $('inspectionContent').style.display = '';
+      $('inspectionRiskBadge').textContent = ov.risk_level || '未知';
+      $('inspectionRiskBadge').className = `pill ${riskClass(ov.risk_level)}`;
+      const metrics = [
+        ['租户健康分', ov.health_score ?? 0, '0-100 分'],
+        ['数据完整度', `${ov.data_completeness ?? 0}%`, '基础配置与接入'],
+        ['数据新鲜度', `${ov.data_freshness ?? 0}%`, '昨日与近 7 日'],
+        ['任务完成率', `${ov.task_completion_rate ?? 0}%`, '确认、执行、审核'],
+        ['AI 可运行度', `${ov.ai_runnable_rate ?? 0}%`, '报告与分层能力'],
+        ['归因链路完整度', `${ov.attribution_completeness ?? 0}%`, '触达、核销、订单'],
+      ];
+      $('inspectionMetrics').innerHTML = metrics.map(([k, v, s]) => `<div class="metric"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join('');
+      const top = current.top_issues || ov.top_issues || [];
+      $('inspectionTopIssues').innerHTML = top.length ? top.map((x) => `
+        <div class="agent-card">
+          <div class="agent-head">
+            <div><div class="agent-name">${esc(x.title)}</div><div class="agent-id">${esc((x.impact_modules || []).join('、'))}</div></div>
+            <span class="pill severity-${esc(x.severity)}">${esc(severityLabel(x.severity))}</span>
+          </div>
+          <div class="small">责任对象：${esc(x.owner_role || '-')}</div>
+          <div>${esc(x.suggestion || '-')}</div>
+          <div class="toolbar"><span class="pill ${x.can_generate_task ? 'ok' : 'info'}">${x.can_generate_task ? '可生成补救任务' : '无需补救任务'}</span></div>
+        </div>
+      `).join('') : '<div class="empty">暂无关键问题。</div>';
+      const storeRows = current.store_results || [];
+      $('inspectionStoreRows').innerHTML = storeRows.length ? storeRows.map((s) => `
+        <tr>
+          <td>${esc(s.store_name || '-')}</td><td><strong>${esc(s.health_score ?? '-')}</strong></td><td>${esc(s.data_status || '-')}</td><td>${esc(s.task_status || '-')}</td>
+          <td>${esc(s.ai_report_status || '-')}</td><td>${esc(s.attribution_status || '-')}</td><td>${esc(s.main_risk || '-')}</td>
+          <td><button class="secondary" data-inspection-store="${esc(s.store_id || s.store_name || '')}">查看明细</button></td>
+        </tr>
+      `).join('') : '<tr><td colspan="8">暂无门店检测数据。</td></tr>';
+      const items = current.items || [];
+      $('inspectionItemCount').textContent = `${items.length} 项`;
+      $('inspectionItemRows').innerHTML = items.length ? items.map((item) => `
+        <tr>
+          <td>${esc(item.category)}</td><td>${esc(item.item_name)}</td>
+          <td><span class="pill status-${esc(item.status)}">${esc(item.status)}</span></td>
+          <td><span class="pill severity-${esc(item.severity)}">${esc(severityLabel(item.severity))}</span></td>
+          <td>${esc(item.owner_role)}</td><td>${esc((item.impact_modules || []).join('、'))}</td>
+          <td>${esc(item.impact_description || '-')}</td><td>${esc(item.suggestion || '-')}</td><td>${esc(String(item.created_at || '').slice(0, 19))}</td>
+          <td>${item.can_generate_task ? `<button class="secondary" data-generate-task="${esc(item.id || '')}">${item.generated_task_id ? `已生成 ${esc(item.generated_task_id)}` : '生成补救任务'}</button>` : '<span class="small">-</span>'}</td>
+        </tr>
+      `).join('') : '<tr><td colspan="10">当前暂无检测数据，请点击立即检测。</td></tr>';
+      renderInspectionStoreOptions();
+    }
+
+    async function loadInspectionOverview() {
+      if (!state.selectedTenantId) return renderInspection(null);
+      const params = new URLSearchParams({ tenant_id: state.selectedTenantId });
+      const store = $('inspectionStore')?.value || '';
+      const date = $('inspectionDate')?.value || todayYmd();
+      if (store) params.set('store_id', store);
+      if (date) params.set('date', date);
+      const data = await api(`${inspectionApiBase()}/overview?${params.toString()}`);
+      renderInspection({ overview: data, top_issues: data.top_issues || [], items: state.inspection?.items || [], store_results: state.inspection?.store_results || [] });
+    }
+
+    async function runTenantInspection() {
+      if (!state.selectedTenantId) return log('请先选择租户');
+      const data = await api(`${inspectionApiBase()}/run`, {
+        method: 'POST',
+        body: JSON.stringify({
+          tenant_id: state.selectedTenantId,
+          store_id: $('inspectionStore')?.value || '',
+          date: $('inspectionDate')?.value || todayYmd(),
+          scope: $('inspectionScope')?.value || '全部',
+        })
+      });
+      renderInspection(data);
+      log(`租户运营检测完成：健康分 ${data.overview?.health_score ?? '-'}，共 ${data.items?.length || 0} 项。`);
+    }
+
+    async function generateTenantInspectionReport() {
+      if (!state.selectedTenantId) return log('请先选择租户');
+      const data = await api(`${inspectionApiBase()}/generate-report`, {
+        method: 'POST',
+        body: JSON.stringify({
+          tenant_id: state.selectedTenantId,
+          store_id: $('inspectionStore')?.value || '',
+          date: $('inspectionDate')?.value || todayYmd(),
+        })
+      });
+      state.inspectionReport = data;
+      $('inspectionReport').innerHTML = `
+        <div><strong>AI 一句话结论：</strong>${esc(data.ai_conclusion || data.summary || '-')}</div>
+        <div><strong>当前租户系统是否健康：</strong>${esc(data.system_health || '-')}</div>
+        <div><strong>最影响系统运转的问题：</strong>${esc((data.blocking_issues || []).join('；') || '-')}</div>
+        <div><strong>未完成关键动作的门店：</strong>${esc((data.stores_missing_actions || []).join('；') || '-')}</div>
+        <div><strong>可能不准确的 AI 功能：</strong>${esc((data.inaccurate_ai_features || []).join('、') || '-')}</div>
+        <div><strong>下一步优先处理事项：</strong>${esc((data.next_actions || []).join('；') || '-')}</div>
+      `;
+      log('已生成租户运营检测报告。');
+    }
+
+    async function generateInspectionTask(itemId) {
+      if (!itemId) return log('该检测项尚未写入数据库，请先点击立即检测');
+      const data = await api(`${inspectionApiBase()}/items/${encodeURIComponent(itemId)}/generate-task`, { method: 'POST', body: '{}' });
+      log(`已生成补救任务：${data.task_id}`);
+      await runTenantInspection();
     }
 
     function templateSelectOptions(agentId, templates, selectedId) {
@@ -803,6 +1037,7 @@
       renderOverview(overview);
       renderAgentSection(overview);
       renderTemplateBlocks(overview);
+      updateInspectionTenantInputs();
       if (!tenant || !state.profile) {
         renderTenantMeta(null);
         $('acceptanceBox').innerHTML = '<div class="empty">暂无自动验收报告。</div>';
@@ -825,7 +1060,10 @@
       if (!tenantId) return;
       const tenant = state.tenants.find((x) => x.tenant_id === tenantId) || null;
       state.selectedTenantId = tenantId;
+      state.inspection = null;
+      state.inspectionReport = null;
       setCurrentTenant(tenantId);
+      renderInspection(null);
       renderTenantList(state.tenants.filter((x) => {
         const filter = String($('tenantSearch').value || '').trim().toLowerCase();
         if (!filter) return true;
@@ -845,6 +1083,7 @@
       try {
         await loadTenantDetail(tenantId);
         renderMain(tenant);
+        await loadInspectionOverview().catch((e) => log(`检测总览加载失败：${e.message}`));
         if (!silent) log(`已切换到租户 ${tenantId}`);
       } catch (e) {
         log(`加载租户失败：${e.message}`);
@@ -982,6 +1221,20 @@
     $('runAcceptanceInlineBtn').addEventListener('click', () => runAction('acceptance'));
     $('bootstrapInlineBtn').addEventListener('click', () => runAction('bootstrap'));
     $('repairInlineBtn').addEventListener('click', () => runAction('repair'));
+    $('runInspectionBtn').addEventListener('click', () => runTenantInspection().catch((e) => log(`检测失败：${e.message}`)));
+    $('generateInspectionReportBtn').addEventListener('click', () => generateTenantInspectionReport().catch((e) => log(`生成报告失败：${e.message}`)));
+    $('inspectionStore').addEventListener('change', () => loadInspectionOverview().catch((e) => log(`检测总览加载失败：${e.message}`)));
+    $('inspectionDate').addEventListener('change', () => loadInspectionOverview().catch((e) => log(`检测总览加载失败：${e.message}`)));
+    $('inspectionItemRows').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-generate-task]');
+      if (btn) generateInspectionTask(btn.dataset.generateTask).catch((err) => log(`生成补救任务失败：${err.message}`));
+    });
+    $('inspectionStoreRows').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-inspection-store]');
+      if (!btn) return;
+      $('inspectionStore').value = btn.dataset.inspectionStore || '';
+      runTenantInspection().catch((err) => log(`门店明细加载失败：${err.message}`));
+    });
     $('nav').addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-target]');
       if (!btn) return;
