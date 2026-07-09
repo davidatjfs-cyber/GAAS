@@ -102,11 +102,16 @@ function buildHandlers(pool) {
         runId: result.items?.[0]?.run_id || null,
         report,
       });
+      const rawStatus = saved.report?.report_status || 'generated';
+      const statusLabel = { generated: '已生成', pending: '待生成', failed: '生成失败' }[rawStatus] || rawStatus;
       return res.json({
         ok: true,
         ...report,
         report_id: saved.report?.id || null,
-        report_status: saved.report?.report_status || 'generated',
+        health_score: result.overview?.health_score ?? null,
+        risk_level: result.overview?.risk_level || null,
+        report_status: rawStatus,
+        report_status_label: statusLabel,
       });
     } catch (e) {
       console.error('[tenant-inspection] report failed:', e?.message || e);

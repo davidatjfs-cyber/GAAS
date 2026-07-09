@@ -1672,6 +1672,77 @@ async function linkPosOrdersToCustomers(pool) {
   return r.rowCount;
 }
 
+// Shared upsert used by both the direct POS sync route (Feishu bitable) and the
+// customer-ops Excel diagnosis upload (see customer-ops.js), so both paths land
+// in the same pos_orders/pos_order_items tables that report services read from.
+export async function ingestPosOrders(pool, tenantId, { orders = [], items = [], storeId = '' } = {}) {
+  let ordersUpserted = 0, itemsUpserted = 0;
+  if (orders.length) {
+    for (const o of orders) {
+      const phone = parseKeruyunPhone(o.phone || o.member_phone || '');
+      const bizDate = cnDate(o.biz_date);
+      await pool.query(`
+        INSERT INTO pos_orders(seq_no,order_no,order_source,biz_date,order_time,checkout_time,order_status,amount_before_discount,total_discount,amount_after_discount,payment_method,payment_count,member_name,phone,order_type,table_no,diners,duration,store_name,store_id,tenant_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+        ON CONFLICT(order_no, tenant_id) DO UPDATE SET
+          order_source=EXCLUDED.order_source,
+          checkout_time=COALESCE(EXCLUDED.checkout_time,pos_orders.checkout_time),
+          order_status=COALESCE(EXCLUDED.order_status,pos_orders.order_status),
+          amount_before_discount=EXCLUDED.amount_before_discount,total_discount=EXCLUDED.total_discount,
+          amount_after_discount=EXCLUDED.amount_after_discount,
+          payment_method=COALESCE(EXCLUDED.payment_method,pos_orders.payment_method),
+          payment_count=EXCLUDED.payment_count,
+          phone=COALESCE(NULLIF(EXCLUDED.phone,''),pos_orders.phone),
+          member_name=COALESCE(NULLIF(EXCLUDED.member_name,'-'),NULLIF(EXCLUDED.member_name,''),pos_orders.member_name),
+          table_no=COALESCE(NULLIF(EXCLUDED.table_no,''),pos_orders.table_no),
+          diners=COALESCE(EXCLUDED.diners,pos_orders.diners),
+          duration=COALESCE(NULLIF(EXCLUDED.duration,''),pos_orders.duration),
+          store_name=COALESCE(NULLIF(EXCLUDED.store_name,''),pos_orders.store_name),
+          seq_no=COALESCE(NULLIF(EXCLUDED.seq_no,''),pos_orders.seq_no),
+          synced_at=NOW()
+      `, [
+        cleanText(o.seq_no || '', 32), cleanText(o.order_no || '', 64),
+        cleanText(o.order_source || '', 80), bizDate || null,
+        parseKeruyunDateTime(o.order_time), parseKeruyunDateTime(o.checkout_time),
+        cleanText(o.order_status || '', 40), parseNum(o.amount_before_discount), parseNum(o.total_discount),
+        parseNum(o.amount_after_discount),
+        cleanText(o.payment_method || '', 80), Number(o.payment_count) || 0,
+        cleanText(o.member_name || '', 100), phone,
+        cleanText(o.order_type || '', 40), cleanText(o.table_no || '', 40),
+        Number(o.diners) || null, cleanText(o.duration || '', 40),
+        cleanText(o.store_name || '', 200), storeId || cleanText(o.store_id || '', 128), tenantId
+      ]);
+      ordersUpserted++;
+    }
+  }
+
+  if (items.length) {
+    for (const it of items) {
+      const itemBizDate = cnDate(it.biz_date);
+      await pool.query(`
+        INSERT INTO pos_order_items(biz_date,store_name,store_code,order_no,sku,dish_name,department,table_name,table_area,sale_type,category_mid,category,spec,unit,order_type,order_source,qty,amount_before_discount,discount,service_fee,amount_after_discount,order_time,checkout_time,tenant_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+        ON CONFLICT DO NOTHING
+      `, [
+        itemBizDate || null, cleanText(it.store_name || '', 200), cleanText(it.store_code || '', 64),
+        cleanText(it.order_no || '', 128), cleanText(it.sku || '', 64), cleanText(it.dish_name || '', 300),
+        cleanText(it.department || '', 100), cleanText(it.table_name || '', 100), cleanText(it.table_area || '', 100),
+        cleanText(it.sale_type || '', 40),
+        cleanText(it.category_mid || '', 100), cleanText(it.category || '', 100),
+        cleanText(it.spec || '', 100), cleanText(it.unit || '', 20),
+        cleanText(it.order_type || '', 40), cleanText(it.order_source || '', 200),
+        parseNum(it.qty), parseNum(it.amount_before_discount),
+        parseNum(it.discount), parseNum(it.service_fee), parseNum(it.amount_after_discount),
+        parseKeruyunDateTime(it.order_time), parseKeruyunDateTime(it.checkout_time), tenantId
+      ]);
+      itemsUpserted++;
+    }
+  }
+
+  const customersLinked = await linkPosOrdersToCustomers(pool);
+  return { ordersUpserted, itemsUpserted, customersLinked };
+}
+
 export function registerPhaseRoutes(app, pool) {
   function rqa(req, res) {
     const auth = authPhaseApi(req);
@@ -2014,74 +2085,10 @@ export function registerPhaseRoutes(app, pool) {
     if (!orders.length && !items.length) return res.status(400).json({ok:false,error:'missing orders or items'});
 
     const storeId = cleanText(b.store_id || '', 128);
-    let ordersUpserted = 0, itemsUpserted = 0;
-
     const tenantId = getPhaseApiTenantId(req);
     return await tenantContext.run(tenantId, async () => {
-    if (orders.length) {
-      for (const o of orders) {
-            const phone = parseKeruyunPhone(o.phone || o.member_phone || '');
-           const bizDate = cnDate(o.biz_date);
-        await pool.query(`
-          INSERT INTO pos_orders(seq_no,order_no,order_source,biz_date,order_time,checkout_time,order_status,amount_before_discount,total_discount,amount_after_discount,payment_method,payment_count,member_name,phone,order_type,table_no,diners,duration,store_name,store_id,tenant_id)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-          ON CONFLICT(order_no, tenant_id) DO UPDATE SET
-            order_source=EXCLUDED.order_source,
-            checkout_time=COALESCE(EXCLUDED.checkout_time,pos_orders.checkout_time),
-            order_status=COALESCE(EXCLUDED.order_status,pos_orders.order_status),
-            amount_before_discount=EXCLUDED.amount_before_discount,total_discount=EXCLUDED.total_discount,
-            amount_after_discount=EXCLUDED.amount_after_discount,
-            payment_method=COALESCE(EXCLUDED.payment_method,pos_orders.payment_method),
-            payment_count=EXCLUDED.payment_count,
-            phone=COALESCE(NULLIF(EXCLUDED.phone,''),pos_orders.phone),
-            member_name=COALESCE(NULLIF(EXCLUDED.member_name,'-'),NULLIF(EXCLUDED.member_name,''),pos_orders.member_name),
-            table_no=COALESCE(NULLIF(EXCLUDED.table_no,''),pos_orders.table_no),
-            diners=COALESCE(EXCLUDED.diners,pos_orders.diners),
-            duration=COALESCE(NULLIF(EXCLUDED.duration,''),pos_orders.duration),
-            store_name=COALESCE(NULLIF(EXCLUDED.store_name,''),pos_orders.store_name),
-            seq_no=COALESCE(NULLIF(EXCLUDED.seq_no,''),pos_orders.seq_no),
-            synced_at=NOW()
-        `, [
-          cleanText(o.seq_no || '', 32), cleanText(o.order_no || '', 64),
-          cleanText(o.order_source || '', 80), bizDate || null,
-          parseKeruyunDateTime(o.order_time), parseKeruyunDateTime(o.checkout_time),
-          cleanText(o.order_status || '', 40), parseNum(o.amount_before_discount), parseNum(o.total_discount),
-          parseNum(o.amount_after_discount),
-          cleanText(o.payment_method || '', 80), Number(o.payment_count) || 0,
-          cleanText(o.member_name || '', 100), phone,
-          cleanText(o.order_type || '', 40), cleanText(o.table_no || '', 40),
-          Number(o.diners) || null, cleanText(o.duration || '', 40),
-          cleanText(o.store_name || '', 200), storeId || cleanText(o.store_id || '', 128), tenantId
-        ]);
-        ordersUpserted++;
-      }
-    }
-
-      if (items.length) {
-       for (const it of items) {
-         const itemBizDate = cnDate(it.biz_date);
-             await pool.query(`
-              INSERT INTO pos_order_items(biz_date,store_name,store_code,order_no,sku,dish_name,department,table_name,table_area,sale_type,category_mid,category,spec,unit,order_type,order_source,qty,amount_before_discount,discount,service_fee,amount_after_discount,order_time,checkout_time,tenant_id)
-              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
-              ON CONFLICT DO NOTHING
-            `, [
-              itemBizDate || null, cleanText(it.store_name || '', 200), cleanText(it.store_code || '', 64),
-              cleanText(it.order_no || '', 128), cleanText(it.sku || '', 64), cleanText(it.dish_name || '', 300),
-              cleanText(it.department || '', 100), cleanText(it.table_name || '', 100), cleanText(it.table_area || '', 100),
-              cleanText(it.sale_type || '', 40),
-              cleanText(it.category_mid || '', 100), cleanText(it.category || '', 100),
-              cleanText(it.spec || '', 100), cleanText(it.unit || '', 20),
-              cleanText(it.order_type || '', 40), cleanText(it.order_source || '', 200),
-              parseNum(it.qty), parseNum(it.amount_before_discount),
-              parseNum(it.discount), parseNum(it.service_fee), parseNum(it.amount_after_discount),
-              parseKeruyunDateTime(it.order_time), parseKeruyunDateTime(it.checkout_time), tenantId
-            ]);
-        itemsUpserted++;
-      }
-    }
-
-    const linked = await linkPosOrdersToCustomers(pool);
-    res.json({ok:true, orders_upserted: ordersUpserted, items_upserted: itemsUpserted, customers_linked: linked});
+      const result = await ingestPosOrders(pool, tenantId, { orders, items, storeId });
+      res.json({ok:true, orders_upserted: result.ordersUpserted, items_upserted: result.itemsUpserted, customers_linked: result.customersLinked});
     });
   });
 

@@ -10,6 +10,12 @@ import {
   enrichReportForBusinessOntology,
 } from './ontology/report-metrics-adapters.js';
 import { reviewOntologyTaskHistory } from './ontology/ontology-task-adapter.js';
+import { ingestPosOrders } from './growth-phases.js';
+import { recomputeCustomerProfiles } from './growth-api.js';
+import { syncOntologyDataFromProduction } from './ontology/real-data-sync.js';
+import { runDailyDiagnosis } from './ontology/diagnosis-tree-service.js';
+import { ensureGrowthOntologyCore } from './ontology/growth-ontology-schema.js';
+import { tenantContext } from './utils/database.js';
 
 const PYTHON_BIN = process.env.CUSTOMER_OPS_PYTHON_BIN || process.env.CODEX_PYTHON_BIN || 'python3';
 
@@ -327,7 +333,7 @@ function normalizeWorkbook(filePath, opts = {}) {
       if (!hasOrderSignal && dish) continue;
       const key = orderNo || `${rowKind}:${phone || memberNo || 'unknown'}:${bizDate}:${amount || rechargeAmount || balance}:${orders.size}`;
       const prev = orders.get(key) || {};
-      const record = { orderNo: key, memberNo: memberNo || prev.memberNo || '', kind: rowKind || 'unknown', sourceFile: opts.sourceFile || path.basename(filePath), sourceSheet: sheetName, phone: phone || prev.phone || '', memberName: memberName || prev.memberName || '', store: store || prev.store || '', bizDate: bizDate || prev.bizDate || '', hour: hourOf(checkoutRaw) ?? prev.hour ?? null, amount: amount || prev.amount || 0, rechargeAmount: rechargeAmount || prev.rechargeAmount || 0, giftAmount: giftAmount || prev.giftAmount || 0, balance: balance || prev.balance || 0, points: points || prev.points || 0, diners: diners || prev.diners || 0, orderType: orderType || prev.orderType || '', tableNo: tableNo || prev.tableNo || '' };
+      const record = { orderNo: key, hasRealOrderNo: !!orderNo || !!prev.hasRealOrderNo, memberNo: memberNo || prev.memberNo || '', kind: rowKind || 'unknown', sourceFile: opts.sourceFile || path.basename(filePath), sourceSheet: sheetName, phone: phone || prev.phone || '', memberName: memberName || prev.memberName || '', store: store || prev.store || '', bizDate: bizDate || prev.bizDate || '', hour: hourOf(checkoutRaw) ?? prev.hour ?? null, amount: amount || prev.amount || 0, rechargeAmount: rechargeAmount || prev.rechargeAmount || 0, giftAmount: giftAmount || prev.giftAmount || 0, balance: balance || prev.balance || 0, points: points || prev.points || 0, diners: diners || prev.diners || 0, orderType: orderType || prev.orderType || '', tableNo: tableNo || prev.tableNo || '' };
       record.recordKey = recordKeyOf(record);
       orders.set(key, record);
     }
@@ -821,12 +827,12 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
       attr_agg AS (
         SELECT COALESCE(NULLIF(store_id, ''), '全部/未知') AS store_id, MAX(store_name) AS store_name,
                COUNT(DISTINCT order_no)::int AS orders, COUNT(DISTINCT phone)::int AS returned_customers,
-               COALESCE(SUM(revenue), 0)::numeric AS revenue
+               COALESCE(SUM(revenue), 0)::numeric AS revenue, COALESCE(SUM(discount_amount), 0)::numeric AS discount_amount
         FROM attributed GROUP BY COALESCE(NULLIF(store_id, ''), '全部/未知')
       )
       SELECT t.store_id, COALESCE(a.store_name, t.store_id) AS store_name, t.touches, t.touched_customers, t.touch_cost,
              COALESCE(a.orders, 0)::int AS attributed_orders, COALESCE(a.returned_customers, 0)::int AS returned_customers,
-             COALESCE(a.revenue, 0)::numeric AS attributed_revenue
+             COALESCE(a.revenue, 0)::numeric AS attributed_revenue, COALESCE(a.discount_amount, 0)::numeric AS discount_amount
       FROM touch_agg t LEFT JOIN attr_agg a ON a.store_id = t.store_id
       ORDER BY COALESCE(a.revenue, 0) DESC, t.touched_customers DESC LIMIT 30`, params),
     pool.query(`WITH attributed AS (${attributedSql}) SELECT campaign_type, target_audience, rule_key, title, COUNT(DISTINCT phone)::int AS returned_customers, COUNT(DISTINCT order_no)::int AS attributed_orders, COALESCE(SUM(revenue), 0)::numeric AS attributed_revenue FROM attributed GROUP BY campaign_type, target_audience, rule_key, title`, params),
@@ -879,7 +885,8 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
   const campaignRows = byCampaign.rows.map((r) => {
     const cost = Number(r.touch_cost || 0);
     const revenue = Number(r.attributed_revenue || 0);
-    return { ...r, title: friendlyAttributionTitle(r.title), customer_type: classifyAttributionAudience(r), touches: Number(r.touches || 0), touched_customers: Number(r.touched_customers || 0), returned_customers: Number(r.returned_customers || 0), return_rate: Number(r.touched_customers || 0) > 0 ? Number(r.returned_customers || 0) / Number(r.touched_customers || 0) : 0, attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: revenue, attributed_pre_discount_revenue: Number(r.attributed_pre_discount_revenue || 0), discount_amount: Number(r.discount_amount || 0), touch_cost: cost, roi: cost > 0 ? revenue / cost : null };
+    const discountAmt = Number(r.discount_amount || 0);
+    return { ...r, title: friendlyAttributionTitle(r.title), customer_type: classifyAttributionAudience(r), touches: Number(r.touches || 0), touched_customers: Number(r.touched_customers || 0), returned_customers: Number(r.returned_customers || 0), return_rate: Number(r.touched_customers || 0) > 0 ? Number(r.returned_customers || 0) / Number(r.touched_customers || 0) : 0, attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: revenue, attributed_pre_discount_revenue: Number(r.attributed_pre_discount_revenue || 0), discount_amount: discountAmt, touch_cost: cost, roi: (cost + discountAmt) > 0 ? revenue / (cost + discountAmt) : null };
   });
   const bestType = customerTypeRows[0] || null;
   const bestCampaign = campaignRows[0] || null;
@@ -911,7 +918,9 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
         attributed_pre_discount_revenue: Number(as.attributed_pre_discount_revenue || 0),
         discount_amount: Number(as.discount_amount || 0),
         touch_cost: touchCost,
-        roi: touchCost > 0 ? attributedRevenue / touchCost : null,
+        // ROI = 归因营业额 / (短信成本 + 优惠金额)，优惠金额是归因订单的实际让利，不是短信成本的一部分，
+        // 但同属"为了带来这笔营业额而付出的成本"，两者相加才是完整的营销成本口径。
+        roi: (touchCost + Number(as.discount_amount || 0)) > 0 ? attributedRevenue / (touchCost + Number(as.discount_amount || 0)) : null,
         manual_recorded_revenue: Number(manual.manual_revenue || 0),
       },
       by_customer_type: customerTypeRows,
@@ -921,7 +930,8 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
         const returned = Number(r.returned_customers || 0);
         const cost = Number(r.touch_cost || 0);
         const revenue = Number(r.attributed_revenue || 0);
-        return { ...r, touched_customers: touched, returned_customers: returned, return_rate: touched > 0 ? returned / touched : 0, attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: revenue, touch_cost: cost, roi: cost > 0 ? revenue / cost : null };
+        const discountAmt = Number(r.discount_amount || 0);
+        return { ...r, touched_customers: touched, returned_customers: returned, return_rate: touched > 0 ? returned / touched : 0, attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: revenue, discount_amount: discountAmt, touch_cost: cost, roi: (cost + discountAmt) > 0 ? revenue / (cost + discountAmt) : null };
       }),
       trend: trend.rows.map((r) => ({ date: r.day ? String(r.day).slice(0, 10) : '', touched_customers: Number(r.touched_customers || 0), returned_customers: Number(r.returned_customers || 0), attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: Number(r.attributed_revenue || 0) })),
       top_customers: topCustomers.rows.map((r) => ({ phone: maskAttributionPhone(r.phone), store_id: r.store_id || '', store_name: r.store_name || r.store_id || '', last_touch_date: r.last_touch_date ? String(r.last_touch_date).slice(0, 10) : '', last_order_date: r.last_order_date ? String(r.last_order_date).slice(0, 10) : '', attributed_orders: Number(r.attributed_orders || 0), attributed_revenue: Number(r.attributed_revenue || 0) })),
@@ -1473,6 +1483,71 @@ async function generateDiagnosisNarrative(report, callLLM) {
   }
 }
 
+// 优惠策略生成：按 lifecycle_stage x value_tier 做规则映射，不是自由生成——折扣策略涉及真实成本，
+// 用可审计的固定规则比用 LLM 自由发挥更适合报告交付场景。VIP 优先用权益而非折扣，避免过度让利。
+// lifecycle_stage 口径来自 recomputeCustomerProfiles（growth-api.js）实际写入的值：
+// prospect(从未下单) / new(14天内首单) / active(14天内≥2单) / at_risk(14-30天未到店) /
+// dormant(30-90天未到店但曾≥2单) / churned(30-90天未到店且只下过1单) / lost_90 / lost_180 / lost_365。
+const OFFER_STRATEGY_RULES = [
+  { match: (c) => c.value_tier === 'vip' && ['at_risk', 'dormant', 'lost_90', 'lost_180', 'lost_365'].includes(c.lifecycle_stage), strategy_type: 'vip_reactivation_benefit', offer: '专属包厢/招牌菜权益，不建议直接打折', reasoning: 'VIP流失召回优先用体验权益维护身份感，直接大额折扣会拉低客单价预期。' },
+  { match: (c) => c.value_tier === 'vip', strategy_type: 'vip_maintenance_benefit', offer: '生日礼/专属服务权益', reasoning: 'VIP在店活跃，不需要用价格刺激，用权益维护粘性即可。' },
+  { match: (c) => c.lifecycle_stage === 'prospect', strategy_type: 'no_offer_yet', offer: '暂不建议发放优惠', reasoning: '从未产生过消费，缺乏转化基础，优先用到店邀约观察反应，避免优惠成本打水漂。' },
+  { match: (c) => c.lifecycle_stage === 'new', strategy_type: 'second_visit_coupon', offer: '二次到店满减券（满80减15）', reasoning: '新客首次消费后最需要一个明确的二次到店理由，转化窗口在14-30天内最有效。' },
+  { match: (c) => c.lifecycle_stage === 'active', strategy_type: 'loyalty_light_touch', offer: '常规复购小额券或积分权益', reasoning: '活跃客户本身高频到店，不需要大额补贴，小额权益维持习惯即可。' },
+  { match: (c) => c.lifecycle_stage === 'at_risk', strategy_type: 'early_retention_reminder', offer: '轻量提醒+小额到店券（满50减8）', reasoning: '14-30天未到店的临界客户，用小额度及时提醒比等流失后大力度召回更划算。' },
+  { match: (c) => c.lifecycle_stage === 'dormant', strategy_type: 'reactivation_coupon', offer: '满100减20召回券（或等值满赠）', reasoning: '30-90天未到店但历史消费≥2次，说明认可门店，值得投入召回成本。' },
+  { match: (c) => ['lost_90', 'lost_180'].includes(c.lifecycle_stage), strategy_type: 'reactivation_coupon_strong', offer: '满100减25召回券，附加招牌菜权益', reasoning: '90-180天长期流失，需要更明确的让利理由才有机会拉回，但要控制在能覆盖ROI的额度内。' },
+  { match: (c) => c.lifecycle_stage === 'lost_365', strategy_type: 'low_priority_recall', offer: '低成本试探性召回（短信提醒为主，不建议发大额券）', reasoning: '流失超过365天的客户召回成功率通常很低，优先控制成本，不建议投入大额优惠。' },
+  { match: (c) => c.lifecycle_stage === 'churned', strategy_type: 'low_priority_recall', offer: '低成本试探性召回', reasoning: '只消费过1次且已流失，客户粘性未建立，召回投入产出比通常不高，建议轻量触达即可。' },
+];
+function suggestOfferStrategy(customerProfile) {
+  const c = { lifecycle_stage: customerProfile.lifecycle_stage || '', value_tier: customerProfile.value_tier || 'low' };
+  const rule = OFFER_STRATEGY_RULES.find((r) => r.match(c)) || { strategy_type: 'default_light_touch', offer: '常规到店提醒，不建议主动让利', reasoning: '未匹配到明确的流失或召回信号，暂不建议投入优惠成本。' };
+  return { customer_type: c, ...rule };
+}
+
+// 触达文案生成：短信是当前唯一稳定的自动化触达渠道，文案必须满足国内短信合规要求
+// （带签名、可退订），不能直接照搬企微/朋友圈文案风格。
+async function generateOutreachCopy({ segmentLabel, storeName, offerText, signName }, callLLM) {
+  const prompt = `你是餐饮行业的短信营销文案专家。请为「${storeName || '本店'}」给「${segmentLabel || '目标客户'}」这类客户写3条营销短信文案，用于自动召回/维护触达。
+
+背景信息：
+- 目标客群：${segmentLabel || '未指定客群'}
+- 本次权益/优惠：${offerText || '未指定，可写为到店提醒，不强调优惠'}
+- 短信签名：${signName || '【本店】'}（会自动加在文案开头，不要在正文里重复写签名）
+
+硬性要求（国内短信合规）：
+1. 每条正文（不含签名和退订提示）控制在 50 字以内，超过70字会被计成多条短信增加成本。
+2. 不能有夸大宣传或绝对化用语（如"最"、"第一"、"史上最低"）。
+3. 语气要像真人发的邀请，不要用感叹号堆砌。
+4. 不需要写退订提示，系统会自动追加。
+
+请直接输出JSON，不要有其他文字：
+{
+  "variants": [
+    {"copy": "文案1正文", "style": "风格标签，如：直接优惠型"},
+    {"copy": "文案2正文", "style": "风格标签，如：情感邀约型"},
+    {"copy": "文案3正文", "style": "风格标签，如：稀缺紧迫型"}
+  ]
+}`;
+  try {
+    const result = await callLLM([{ role: 'user', content: prompt }], { purpose: 'reasoning', max_tokens: 600, temperature: 0.6 });
+    if (!result.ok) return { ok: false, error: 'llm_failed' };
+    const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { ok: false, error: 'llm_parse_failed' };
+    const parsed = JSON.parse(jsonMatch[0]);
+    const variants = (parsed.variants || []).map((v) => ({
+      copy: cleanText(v.copy, 100),
+      style: cleanText(v.style, 40),
+      char_count: cleanText(v.copy, 100).length,
+      sms_billing_units: Math.ceil(cleanText(v.copy, 100).length / 70) || 1,
+    }));
+    return { ok: true, variants };
+  } catch (e) {
+    return { ok: false, error: e?.message || 'llm_error' };
+  }
+}
+
 function mergeDiagnostics(parts) {
   const merged = { files: [], sheets: [], missing_required: [], warnings: [], confidence_score: 0, record_types: {} };
   for (const d of parts || []) {
@@ -1496,6 +1571,55 @@ function dedupeRecords(records) {
   const map = new Map();
   for (const r of records || []) { const key = r.recordKey || recordKeyOf(r); if (!key) continue; map.set(key, { ...r, recordKey: key }); }
   return Array.from(map.values());
+}
+
+// Converts parsed Excel rows into the pos_orders/pos_order_items shape so the diagnosis
+// upload also feeds tenant-operation-inspection-service / closed-loop-report-service /
+// growth-opportunity-service, which read those tables directly and never see customer_ops_*.
+// Only rows with a real order number and a POS-consumption kind are eligible — synthetic
+// keys (phone/date fallback) aren't real order identifiers and stored_value/member_profile
+// rows aren't orders.
+function toPosOrderPayload(batchRecords) {
+  const orders = [];
+  const items = [];
+  for (const r of batchRecords) {
+    if (r.kind !== 'pos_consumption' || !r.hasRealOrderNo || !(r.amount > 0)) continue;
+    const storeId = storeNameToId(r.store || '') || '';
+    const timeStr = r.bizDate ? `${r.bizDate} ${String(r.hour ?? 0).padStart(2, '0')}:00:00` : '';
+    orders.push({
+      order_no: r.orderNo,
+      order_source: 'customer_ops_excel',
+      biz_date: r.bizDate,
+      order_time: timeStr,
+      checkout_time: timeStr,
+      amount_before_discount: r.amount,
+      total_discount: 0,
+      amount_after_discount: r.amount,
+      member_name: r.memberName,
+      phone: r.phone,
+      order_type: r.orderType,
+      table_no: r.tableNo,
+      diners: r.diners,
+      store_name: r.store,
+      store_id: storeId,
+    });
+    for (const it of r.items || []) {
+      items.push({
+        biz_date: r.bizDate,
+        store_name: r.store,
+        store_code: storeId,
+        order_no: r.orderNo,
+        dish_name: it.dish,
+        category: it.category || '',
+        qty: it.qty || 1,
+        amount_before_discount: it.amount || 0,
+        amount_after_discount: it.amount || 0,
+        order_time: timeStr,
+        checkout_time: timeStr,
+      });
+    }
+  }
+  return { orders, items };
 }
 
 async function loadExistingSourceRecords(pool, tenantId) {
@@ -1571,7 +1695,38 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
           [tenantId, diagnosisId, c.customer_id, c.customer_key, c.phone || '', JSON.stringify(c)]
         );
       }
-      res.json({ ok: true, diagnosis_id: diagnosisId, imported_records: batchRecords.length, merged_records: orders.length, report: { ...report, customers: undefined } });
+      let posSync = { orders_synced: 0, items_synced: 0 };
+      let ontologySync = { profiles_recomputed: false, ontology_synced: false, issues: 0, opportunities: 0, stores_diagnosed: 0 };
+      try {
+        const posPayload = toPosOrderPayload(batchRecords);
+        if (posPayload.orders.length) {
+          const synced = await tenantContext.run(tenantId, () => ingestPosOrders(pool, tenantId, posPayload));
+          posSync = { orders_synced: synced.ordersUpserted, items_synced: synced.itemsUpserted };
+        }
+        // 有新订单落库后，把「pos_orders -> growth_customer_profiles -> growth_ontology_* -> 每日诊断/机会清单」
+        // 这条链路整体跑一遍，否则诊断服务读的表要等到下一次定时任务才会更新，客户上传完看到的仍是空数据。
+        // 归因(generateGrowthAttribution)不在这条链里——它依赖 growth_ontology_touches（触达记录），
+        // POS Excel 里没有这份数据，是本次已知未解决的缺口，见回复里对客户的说明。
+        if (posSync.orders_synced > 0) {
+          await tenantContext.run(tenantId, () => recomputeCustomerProfiles(pool, 90, tenantId));
+          ontologySync.profiles_recomputed = true;
+          await ensureGrowthOntologyCore(pool);
+          await syncOntologyDataFromProduction(pool, tenantId);
+          ontologySync.ontology_synced = true;
+          // runDailyDiagnosis 是按单店跑的（不传 store_id 会直接返回 insufficient_data），
+          // 所以要对本批数据涉及的每个门店各跑一次，而不是整租户跑一次。
+          const storeIds = Array.from(new Set(posPayload.orders.map((o) => o.store_id).filter(Boolean)));
+          for (const storeId of storeIds) {
+            const diagResult = await runDailyDiagnosis(pool, { tenantId, storeId });
+            ontologySync.issues += (diagResult?.issues || []).length;
+            ontologySync.opportunities += (diagResult?.opportunities || []).length;
+          }
+          ontologySync.stores_diagnosed = storeIds.length;
+        }
+      } catch (e) {
+        console.warn('[customer-ops] pos_orders/ontology sync skipped:', e?.message);
+      }
+      res.json({ ok: true, diagnosis_id: diagnosisId, imported_records: batchRecords.length, merged_records: orders.length, pos_sync: posSync, ontology_sync: ontologySync, report: { ...report, customers: undefined } });
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message || 'diagnosis_failed' });
     }
@@ -1724,6 +1879,105 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       await ensureCustomerOpsTables(pool);
       await pool.query(`DELETE FROM customer_segments WHERE id=$1 AND tenant_id=$2`, [req.params.id, getTenantId(req)]);
       res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 可触达/不可触达客户池：短信是当前唯一稳定的自动化触达渠道（企微因域名主体限制在租赁场景
+  // 下无法自动发送），所以“可触达”按有效手机号判断，不再按企微绑定(external_userid)判断。
+  // 同时把 value_tier=vip 的客户单独摘出来，对应“高价值客户人工跟进名单”。
+  app.get(`${basePath}/reachability-pools`, authRequired, async (req, res) => {
+    try {
+      await ensureCustomerOpsTables(pool);
+      const tenantId = getTenantId(req);
+      const limit = Math.min(2000, Number(req.query.limit || 500));
+      const [reachableR, unreachableR, vipR, summaryR] = await Promise.all([
+        pool.query(
+          `SELECT phone, store_id, lifecycle_stage, value_tier, pos_order_count, pos_total_spend, pos_last_order_at
+             FROM growth_customer_profiles
+            WHERE tenant_id=$1 AND COALESCE(phone,'') ~ '^1[0-9]{10}$'
+            ORDER BY updated_at DESC LIMIT $2`,
+          [tenantId, limit]
+        ),
+        pool.query(
+          `SELECT customer_id, store_id, lifecycle_stage, value_tier, pos_order_count, pos_total_spend, pos_last_order_at
+             FROM growth_customer_profiles
+            WHERE tenant_id=$1 AND NOT (COALESCE(phone,'') ~ '^1[0-9]{10}$')
+            ORDER BY updated_at DESC LIMIT $2`,
+          [tenantId, limit]
+        ),
+        pool.query(
+          `SELECT phone, store_id, lifecycle_stage, pos_order_count, pos_total_spend, pos_last_order_at
+             FROM growth_customer_profiles
+            WHERE tenant_id=$1 AND value_tier='vip' AND COALESCE(phone,'') <> ''
+            ORDER BY pos_total_spend DESC NULLS LAST LIMIT $2`,
+          [tenantId, limit]
+        ),
+        pool.query(
+          `SELECT COUNT(*)::int AS total,
+                  COUNT(*) FILTER (WHERE COALESCE(phone,'') ~ '^1[0-9]{10}$')::int AS reachable,
+                  COUNT(*) FILTER (WHERE value_tier='vip')::int AS vip
+             FROM growth_customer_profiles WHERE tenant_id=$1`,
+          [tenantId]
+        ),
+      ]);
+      const summary = summaryR.rows?.[0] || {};
+      res.json({
+        ok: true,
+        summary: {
+          total: Number(summary.total || 0),
+          reachable: Number(summary.reachable || 0),
+          unreachable: Math.max(0, Number(summary.total || 0) - Number(summary.reachable || 0)),
+          vip: Number(summary.vip || 0),
+        },
+        reachable_pool: reachableR.rows,
+        unreachable_pool: unreachableR.rows,
+        vip_manual_followup: vipR.rows,
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 优惠策略生成：按客群（lifecycle_stage x value_tier）汇总现有客户，给出规则化的优惠/权益建议。
+  app.get(`${basePath}/offer-strategy`, authRequired, async (req, res) => {
+    try {
+      await ensureCustomerOpsTables(pool);
+      const tenantId = getTenantId(req);
+      const r = await pool.query(
+        `SELECT lifecycle_stage, value_tier, COUNT(*)::int AS customer_count,
+                COALESCE(SUM(pos_total_spend), 0)::numeric AS total_spend
+           FROM growth_customer_profiles
+          WHERE tenant_id=$1
+          GROUP BY lifecycle_stage, value_tier
+          ORDER BY total_spend DESC`,
+        [tenantId]
+      );
+      const strategies = r.rows.map((row) => ({
+        lifecycle_stage: row.lifecycle_stage,
+        value_tier: row.value_tier,
+        customer_count: Number(row.customer_count || 0),
+        total_spend: Number(row.total_spend || 0),
+        ...suggestOfferStrategy(row),
+      }));
+      res.json({ ok: true, strategies });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // 触达文案生成：给定客群标签和本次权益，用 LLM 生成短信合规文案候选。
+  app.post(`${basePath}/copy/generate`, authRequired, async (req, res) => {
+    try {
+      if (!callLLM) return res.status(503).json({ ok: false, error: 'llm_unavailable' });
+      const segmentLabel = cleanText(req.body?.segment_label || req.body?.lifecycle_stage || '', 80);
+      const offerText = cleanText(req.body?.offer_text || '', 120);
+      const storeName = cleanText(req.body?.store_name || '', 80);
+      const signName = cleanText(req.body?.sign_name || '', 20);
+      const result = await generateOutreachCopy({ segmentLabel, storeName, offerText, signName }, callLLM);
+      if (!result.ok) return res.status(502).json(result);
+      res.json(result);
     } catch (e) {
       res.status(500).json({ ok: false, error: e?.message });
     }

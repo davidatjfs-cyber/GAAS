@@ -1111,7 +1111,7 @@ async function upsertCustomer(pool, payload, tenantId = 'default') {
   return existing;
 }
 
-async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') {
+export async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') {
   // 画像重算含 value_tier：VIP=各门店折前人均消费金额(avg_check)排名前15%，regular=15–50分位，low=后50%或未消费
   const safeDays = Math.min(Math.max(Number(days) || 90, 7), 365);
   // 将所有留过手机号的POS消费客自动建档进会员表，使散客也纳入分类（不再只统计小程序会员）。

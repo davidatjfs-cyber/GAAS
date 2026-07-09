@@ -104,6 +104,8 @@ def make_styles(font_name):
                                       textColor=C_MUTED),
         "card_value":  ParagraphStyle("CardValue",  parent=base, fontSize=22, leading=28,
                                       textColor=C_NAVY),
+        "card_value_accent": ParagraphStyle("CardValueAccent", parent=base, fontSize=22, leading=28,
+                                      textColor=C_TEAL),
         "card_unit":   ParagraphStyle("CardUnit",   parent=base, fontSize=10, leading=14,
                                       textColor=C_MUTED),
         "body":        ParagraphStyle("Body",       parent=base, fontSize=9.5, leading=15,
@@ -170,39 +172,51 @@ def register_font():
 
 
 class CoverCanvas:
-    """封面页背景绘制回调"""
-    def __init__(self, store_name, date_range, font_name):
+    """封面页背景绘制回调（通过 doc.build(onFirstPage=...) 触发，绘制满版背景，
+    不再走 story 里的 Table 拼凑方案——Table 高度只会撑到内容需要的高度，
+    留下大片空白，是之前封面下半页空白的根因）。"""
+    def __init__(self, store_name, date_range, subtitle, font_name):
         self.store = store_name
         self.date_range = date_range
+        self.subtitle = subtitle
         self.fn = font_name
 
     def __call__(self, canvas, doc):
         canvas.saveState()
-        # 深色背景
+        # 深色满版背景
         canvas.setFillColor(C_NAVY)
         canvas.rect(0, 0, W, H, fill=1, stroke=0)
-        # 品牌绿色竖条
+        # 细腻的几何装饰：右上角与左下角描边方框，增加高级感层次
+        canvas.setStrokeColor(colors.HexColor("#1e293b"))
+        canvas.setLineWidth(1)
+        canvas.rect(14 * mm, 14 * mm, W - 28 * mm, H - 28 * mm, fill=0, stroke=1)
+        # 品牌绿色主色条（贯穿全宽的细横线，作为视觉锚点）
         canvas.setFillColor(C_TEAL)
-        canvas.rect(0, H * 0.42, W, 6, fill=1, stroke=0)
-        # 顶部装饰线
-        canvas.setFillColor(colors.HexColor("#1e293b"))
-        canvas.rect(0, H - 12 * mm, W, 12 * mm, fill=1, stroke=0)
-        # 标题
-        canvas.setFillColor(C_WHITE)
-        canvas.setFont(self.fn, 30)
-        canvas.drawCentredString(W / 2, H * 0.58, f"{self.store}")
-        canvas.setFont(self.fn, 16)
-        canvas.setFillColor(colors.HexColor("#94a3b8"))
-        canvas.drawCentredString(W / 2, H * 0.52, "客户经营诊断报告")
+        canvas.rect(0, H * 0.44, W, 2.2, fill=1, stroke=0)
+        # 顶部小标签
+        canvas.setFillColor(C_TEAL)
         canvas.setFont(self.fn, 10)
+        canvas.drawCentredString(W / 2, H * 0.68, "HRMS · 餐厅增长闭环")
+        # 主标题
+        canvas.setFillColor(C_WHITE)
+        canvas.setFont(self.fn, 32)
+        canvas.drawCentredString(W / 2, H * 0.58, f"{self.store}")
+        canvas.setFont(self.fn, 17)
+        canvas.setFillColor(colors.HexColor("#94a3b8"))
+        canvas.drawCentredString(W / 2, H * 0.51, "客户经营诊断报告")
+        canvas.setFont(self.fn, 10.5)
         canvas.setFillColor(colors.HexColor("#64748b"))
-        canvas.drawCentredString(W / 2, H * 0.46, self.date_range)
+        canvas.drawCentredString(W / 2, H * 0.39, self.date_range)
+        if self.subtitle:
+            canvas.setFont(self.fn, 9.5)
+            canvas.setFillColor(colors.HexColor("#94a3b8"))
+            canvas.drawCentredString(W / 2, H * 0.355, self.subtitle)
         # 底部 logo 区
         canvas.setFillColor(colors.HexColor("#1e293b"))
-        canvas.rect(0, 0, W, 22 * mm, fill=1, stroke=0)
+        canvas.rect(0, 0, W, 20 * mm, fill=1, stroke=0)
         canvas.setFillColor(C_TEAL)
         canvas.setFont(self.fn, 9)
-        canvas.drawCentredString(W / 2, 9 * mm, "本报告由 HRMS 客户资产管理系统自动生成 · 仅供内部决策参考")
+        canvas.drawCentredString(W / 2, 8.5 * mm, "本报告由 HRMS 客户资产管理系统自动生成 · 仅供内部决策参考")
         canvas.restoreState()
 
 
@@ -220,14 +234,16 @@ def normal_page(canvas, doc):
     canvas.restoreState()
 
 
-def build_kpi_row(labels_values, s, colW=42 * mm):
-    """生成一行 KPI 卡片，labels_values = [(label, value, unit_or_None)]"""
+def build_kpi_row(labels_values, s, colW=42 * mm, accent_first=False):
+    """生成一行 KPI 卡片，labels_values = [(label, value, unit_or_None)]。
+    accent_first=True 时首个卡片数值用品牌绿高亮，用于突出本组最核心的指标。"""
     n = len(labels_values)
     cells = []
-    for label, value, unit in labels_values:
+    for i, (label, value, unit) in enumerate(labels_values):
+        value_style = s["card_value_accent"] if (accent_first and i == 0) else s["card_value"]
         inner = [
             [para(label, s["card_label"])],
-            [para(value, s["card_value"])],
+            [para(value, value_style)],
         ]
         if unit:
             inner.append([para(unit, s["card_unit"])])
@@ -300,37 +316,11 @@ def main():
     )
     story = []
 
-    # ── 封面（整页，无页眉） ──────────────────────────────────────────
-    story.append(PageBreak())   # 封面用特殊 onPage；先用 PageBreak 触发，通过 doc.build 的 onFirstPage
-    # reportlab 没有 onFirstPage slot in story；改用 cover_page 后接普通 PageBreak
-
     # ── 第1页：封面 ──────────────────────────────────────────────────
-    # 用一个占位 Spacer 占满整页，封面内容通过 onFirstPage 绘制
-    # 但 SimpleDocTemplate 不提供 onFirstPage；所以在 story 里用一个大表格做封面
-
-    cover_bg = Table(
-        [[para(f"{store}", ParagraphStyle("ct", fontName=font_name, fontSize=28, leading=36, alignment=TA_CENTER, textColor=C_WHITE))],
-         [para("客户经营诊断报告", ParagraphStyle("cs", fontName=font_name, fontSize=16, leading=24, alignment=TA_CENTER, textColor=colors.HexColor("#94a3b8")))],
-         [Spacer(1, 8 * mm)],
-         [para(date_range, ParagraphStyle("cd", fontName=font_name, fontSize=10, leading=14, alignment=TA_CENTER, textColor=colors.HexColor("#64748b")))],
-         [para(f"有效订单 {count(q.get('valid_orders'))}  ·  客户数 {count(q.get('customers'))}", ParagraphStyle("ci", fontName=font_name, fontSize=9, leading=13, alignment=TA_CENTER, textColor=colors.HexColor("#64748b")))],
-         [Spacer(1, 55 * mm)],
-         [para("本报告由 HRMS 客户资产管理系统自动生成 · 仅供内部决策参考",
-               ParagraphStyle("cf", fontName=font_name, fontSize=8, leading=12, alignment=TA_CENTER, textColor=colors.HexColor("#64748b")))]],
-        colWidths=[W - 32 * mm],
-    )
-    cover_bg.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), C_NAVY),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("LEFTPADDING", (0, 0), (-1, -1), 16 * mm),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 16 * mm),
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [C_NAVY]),
-        # 装饰色条在第 0 行上方
-        ("TOPPADDING", (0, 0), (0, 0), 50 * mm),
-        ("BOTTOMPADDING", (0, 2), (0, 2), 6 * mm),
-    ]))
-    story.append(cover_bg)
+    # 封面背景通过 doc.build(onFirstPage=CoverCanvas(...)) 在画布上直接绘制满版深色背景，
+    # 这里只需要放一个空的 PageBreak 占位，触发翻到正文页。
+    cover_subtitle = f"有效订单 {count(q.get('valid_orders'))}　·　客户数 {count(q.get('customers'))}"
+    story.append(Spacer(1, 1))
     story.append(PageBreak())
 
     # ── 第2页起：正文（带页眉） ───────────────────────────────────────
@@ -358,7 +348,7 @@ def main():
         ("复购率", pct(b.get("customer_repeat_rate")), ""),
         ("客流稳定性", f"{count(b.get('revenue_stability_score'))}", "/100分"),
     ]
-    story.append(build_kpi_row(kpis, s, colW=41.5 * mm))
+    story.append(build_kpi_row(kpis, s, colW=41.5 * mm, accent_first=True))
     story.append(Spacer(1, 6))
     kpis2 = [
         ("总客户数", count(q.get("customers")), "人"),
@@ -558,7 +548,7 @@ def main():
         s["small"]
     ))
 
-    doc.build(story, onLaterPages=normal_page)
+    doc.build(story, onFirstPage=CoverCanvas(store, date_range, cover_subtitle, font_name), onLaterPages=normal_page)
 
 
 if __name__ == "__main__":

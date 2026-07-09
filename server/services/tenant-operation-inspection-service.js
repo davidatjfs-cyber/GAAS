@@ -182,6 +182,27 @@ async function queryIfTable(pool, table, sql, params = []) {
   }
 }
 
+// “多门店管理”创建门店时生成的是 store_<timestamp> 这种合成ID，只写在 hrms_state.data->'stores'
+// 这个JSON字段里，不落在关系型 stores 表、也不含品牌关键词——loadStores 原来的匹配路径
+// （精确匹配 stores 表 / ILIKE 模糊匹配 / growth_ontology_stores）都查不到这种ID，会导致
+// 后续所有按门店过滤的检查（员工绑定、POS接入等）查出 0 条，被误判成"数据缺失"。
+// 这里补一条兜底：查 hrms_state 拿到该ID对应的真实门店名称，再用真实名称去匹配业务表。
+async function resolveStoreIdFromHrmsState(pool, tenantId, storeId) {
+  if (!storeId) return null;
+  try {
+    const r = await pool.query(`SELECT data->'stores' AS stores FROM hrms_state WHERE key = $1 LIMIT 1`, [tenantId || 'default']);
+    const list = Array.isArray(r.rows?.[0]?.stores) ? r.rows[0].stores : [];
+    const hit = list.find((s) => String(s?.id || '').trim() === storeId || String(s?.name || '').trim() === storeId);
+    if (!hit) return null;
+    const name = String(hit.name || hit.brandName || hit.brand || '').trim();
+    if (!name) return null;
+    return { store_id: storeId, store_name: name };
+  } catch (e) {
+    console.warn('[tenant-operation-inspection] hrms_state store lookup skipped:', e?.message);
+    return null;
+  }
+}
+
 async function loadStores(pool, { tenantId, storeId }) {
   if (await tableExists(pool, 'stores')) {
     const cols = await tableColumns(pool, 'stores');
@@ -227,7 +248,13 @@ async function loadStores(pool, { tenantId, storeId }) {
     `SELECT store_id, name FROM growth_ontology_stores WHERE tenant_id=$1 AND ($2::text='' OR store_id=$2 OR name=$2 OR name ILIKE $3) ORDER BY name`,
     [tenantId, storeId || '', storeId ? likePattern(storeId) : '%%']
   );
-  return storesR.rows.map(normalizeStore).filter((s) => s.store_id || s.store_name);
+  const rows = storesR.rows.map(normalizeStore).filter((s) => s.store_id || s.store_name);
+  if (rows.length) return rows;
+  if (storeId) {
+    const hrmsStateHit = await resolveStoreIdFromHrmsState(pool, tenantId, storeId);
+    if (hrmsStateHit) return [normalizeStore(hrmsStateHit)];
+  }
+  return rows;
 }
 
 async function checkBaseConfiguration(pool, ctx, stores) {
@@ -318,7 +345,9 @@ async function checkBaseConfiguration(pool, ctx, stores) {
   const targetR = await queryIfTable(
     pool,
     'kpi_targets',
-    `SELECT COUNT(*)::int AS total FROM kpi_targets WHERE tenant_id=$1 AND ($2::text[] IS NULL OR store = ANY($2::text[]) OR store ILIKE ANY($3::text[]))`,
+    // kpi_targets 实际是按品牌存目标（store 列基本是空的，品牌名存在 brand 列），
+    // 原查询只查了 store 列，马己仙/洪潮已经配置的经营目标会被查成 0 条——这是真实的字段用错，不是数据缺失。
+    `SELECT COUNT(*)::int AS total FROM kpi_targets WHERE tenant_id=$1 AND ($2::text[] IS NULL OR store = ANY($2::text[]) OR store ILIKE ANY($3::text[]) OR brand = ANY($2::text[]) OR brand ILIKE ANY($3::text[]))`,
     [ctx.tenantId, storeValues.length ? storeValues : null, storePatterns.length ? storePatterns : null]
   );
   const targetTotal = n(targetR.rows?.[0]?.total);
@@ -341,18 +370,21 @@ async function checkDataIntegration(pool, ctx, stores = []) {
   const yesterday = previousDate(ctx.date);
   const storeValues = storeFilterValues(ctx, stores);
   const storePatterns = storeFilterPatterns(storeValues);
+  // 手机号/客户识别率原来是拿 pos_order_items.tags（菜品标签，如"辣"/"招牌"）当代理指标，
+  // 这张表本身没有手机号字段——真实手机号在 pos_orders 上，这里改成按 order_no 关联过去查。
   const posR = await queryIfTable(
     pool,
     'pos_order_items',
     `SELECT COUNT(*)::int AS total,
-            COUNT(*) FILTER (WHERE biz_date=$3::date)::int AS yesterday_total,
-            MAX(biz_date)::text AS latest_date,
-            COUNT(*) FILTER (WHERE COALESCE(tags,'') <> '' OR COALESCE(order_no,'') <> '')::int AS phone_rows,
-            COUNT(*) FILTER (WHERE COALESCE(tags,'') <> '')::int AS rows_with_phone,
-            COUNT(DISTINCT dish_name)::int AS dish_rows,
-            COUNT(DISTINCT dish_name) FILTER (WHERE COALESCE(category,'') <> '')::int AS categorized_dish_rows
-       FROM pos_order_items
-      WHERE tenant_id=$1 AND ($2::text[] IS NULL OR store_code = ANY($2::text[]) OR store_name = ANY($2::text[]) OR store_name ILIKE ANY($4::text[]))`,
+            COUNT(*) FILTER (WHERE poi.biz_date=$3::date)::int AS yesterday_total,
+            MAX(poi.biz_date)::text AS latest_date,
+            COUNT(*)::int AS phone_rows,
+            COUNT(*) FILTER (WHERE COALESCE(po.phone,'') <> '')::int AS rows_with_phone,
+            COUNT(DISTINCT poi.dish_name)::int AS dish_rows,
+            COUNT(DISTINCT poi.dish_name) FILTER (WHERE COALESCE(poi.category,'') <> '')::int AS categorized_dish_rows
+       FROM pos_order_items poi
+       LEFT JOIN pos_orders po ON po.order_no = poi.order_no AND po.tenant_id = poi.tenant_id
+      WHERE poi.tenant_id=$1 AND ($2::text[] IS NULL OR poi.store_code = ANY($2::text[]) OR poi.store_name = ANY($2::text[]) OR poi.store_name ILIKE ANY($4::text[]))`,
     [ctx.tenantId, storeValues.length ? storeValues : null, yesterday, storePatterns.length ? storePatterns : null]
   );
   const pos = posR.rows?.[0] || {};
@@ -383,7 +415,65 @@ async function checkDataIntegration(pool, ctx, stores = []) {
   const customers = customerR.rows?.[0] || {};
   const customerTotal = Math.max(n(customers.total), n(customerOpsR.rows?.[0]?.total));
 
+  // 可归因能力检查：手机号/customer_id/coupon_id 完整率，判断订单数据本身是否具备
+  // 被短信触达、被识别成同一客户、被追踪优惠券使用的前提条件。基数是 pos_orders（订单级），
+  // 不是 pos_order_items（明细级），customer_id/coupon_id 都是挂在订单上的字段。
+  const attributabilityR = await queryIfTable(
+    pool,
+    'pos_orders',
+    `SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE COALESCE(phone,'') <> '')::int AS with_phone,
+            COUNT(*) FILTER (WHERE customer_id IS NOT NULL)::int AS with_customer_id,
+            COUNT(*) FILTER (WHERE COALESCE(coupon_id,'') <> '')::int AS with_coupon_id
+       FROM pos_orders
+      WHERE tenant_id=$1 AND ($2::text[] IS NULL OR store_id = ANY($2::text[]) OR store_name = ANY($2::text[]) OR store_name ILIKE ANY($3::text[]))`,
+    [ctx.tenantId, storeValues.length ? storeValues : null, storePatterns.length ? storePatterns : null]
+  );
+  const attributability = attributabilityR.rows?.[0] || {};
+  const attributabilityTotal = n(attributability.total);
+  const phoneCompleteRate = pct(attributability.with_phone, attributabilityTotal);
+  const customerIdCompleteRate = pct(attributability.with_customer_id, attributabilityTotal);
+  const couponIdCompleteRate = pct(attributability.with_coupon_id, attributabilityTotal);
+
   return [
+    issue({
+      category: '数据接入',
+      item_key: 'order_phone_complete_rate',
+      item_name: '手机号完整率',
+      status: !attributabilityR.exists ? STATUS.pending : attributabilityTotal === 0 ? STATUS.pending : phoneCompleteRate >= 60 ? STATUS.ok : STATUS.abnormal,
+      severity: phoneCompleteRate >= 60 ? 'P3' : 'P1',
+      owner_role: '实施人员',
+      impact_modules: ['自动营销', '客户资产报告'],
+      impact_description: attributabilityTotal === 0 ? '暂无订单数据，无法计算手机号完整率。' : `订单中带手机号的比例为 ${phoneCompleteRate}%，决定了短信自动触达能覆盖多少客户。`,
+      suggestion: '请确认 POS 导出/导入是否包含手机号字段，或门店是否有会员手机号采集流程。',
+      evidence: { ...(attributabilityR.evidence || {}), rate: phoneCompleteRate, with_phone: n(attributability.with_phone), total: attributabilityTotal },
+    }),
+    issue({
+      category: '数据接入',
+      item_key: 'order_customer_id_complete_rate',
+      item_name: '客户身份识别率',
+      // 这是手机号完整率的派生指标（系统按手机号自动关联客户身份），不是可以独立整改的项——
+      // 手机号完整率不受运营影响、由POS本身决定，所以这项也一样，标为系统侧观察项，不派给租户。
+      status: !attributabilityR.exists ? STATUS.pending : attributabilityTotal === 0 ? STATUS.pending : customerIdCompleteRate >= 60 ? STATUS.ok : STATUS.abnormal,
+      severity: customerIdCompleteRate >= 60 ? 'P3' : 'P2',
+      owner_role: '系统',
+      impact_modules: ['客户资产报告', '营销归因'],
+      impact_description: attributabilityTotal === 0 ? '暂无订单数据，暂时无法计算客户身份识别率。' : `订单中能识别出同一位客户身份的比例为 ${customerIdCompleteRate}%，这个比例由手机号完整率决定，不是独立指标。`,
+      suggestion: '这是系统按手机号自动匹配出来的结果，不需要单独整改；手机号完整率提升后这项会同步提升。',
+      evidence: { ...(attributabilityR.evidence || {}), rate: customerIdCompleteRate, with_customer_id: n(attributability.with_customer_id), total: attributabilityTotal },
+    }),
+    issue({
+      category: '数据接入',
+      item_key: 'order_coupon_id_complete_rate',
+      item_name: '优惠券核销关联率',
+      status: !attributabilityR.exists ? STATUS.pending : attributabilityTotal === 0 ? STATUS.pending : STATUS.ok,
+      severity: 'P3',
+      owner_role: '实施人员',
+      impact_modules: ['营销归因'],
+      impact_description: attributabilityTotal === 0 ? '暂无订单数据，暂时无法计算优惠券核销关联率。' : `订单中能关联到优惠券核销记录的比例为 ${couponIdCompleteRate}%，这个比例天然不会接近 100%——多数订单本身不使用优惠券，不代表数据缺失。`,
+      suggestion: '如果实际发放过优惠券但这里比例明显偏低，请检查优惠券核销结果是否有回写到订单记录里。',
+      evidence: { ...(attributabilityR.evidence || {}), rate: couponIdCompleteRate, with_coupon_id: n(attributability.with_coupon_id), total: attributabilityTotal },
+    }),
     issue({
       category: '数据接入',
       item_key: 'pos_data_connected',
@@ -396,18 +486,28 @@ async function checkDataIntegration(pool, ctx, stores = []) {
       suggestion: '请检查 POS 接口、pos_order_items 同步任务和租户门店映射。',
       evidence: { ...(posR.evidence || {}), table_exists: posR.exists, total: posTotal },
     }),
-    issue({
-      category: '数据新鲜度',
-      item_key: 'yesterday_orders_synced',
-      item_name: '昨日订单数据是否同步',
-      status: !posR.exists ? STATUS.pending : yesterdayTotal > 0 ? STATUS.ok : STATUS.delayed,
-      severity: !posR.exists ? 'P1' : yesterdayTotal > 0 ? 'P3' : 'P1',
-      owner_role: '实施人员',
-      impact_modules: ['经营诊断', '老板日报', '营销归因'],
-      impact_description: yesterdayTotal > 0 ? '昨日订单已同步，可生成昨日经营判断。' : '昨日 POS 数据未同步，会导致经营诊断无法判断昨日营业额变化，也会影响客户回店订单归因。',
-      suggestion: '请实施人员检查 POS 同步状态，或由门店补传昨日订单数据。',
-      evidence: { ...(posR.evidence || {}), yesterday, yesterday_order_count: yesterdayTotal, latest_sync_time: pos.latest_date || null, seven_day_avg_order_count: Math.round(posTotal / 7) },
-    }),
+    // POS 同步不是每天实时的，实际是每 3-4 天批量同步一次（租户确认过的正常节奏）。原来这项
+    // 严格要求"昨天"必须有数据，在这种同步节奏下会常年判定为"延迟"，变成永远整改不完的假信号。
+    // 改成按最近同步时间距今天数判断：4天以内算正常，超过4天才是真的延迟。
+    (() => {
+      const latestDateStr = pos.latest_date ? String(pos.latest_date).slice(0, 10) : '';
+      const daysSinceSync = latestDateStr ? Math.floor((new Date(`${yesterday}T00:00:00Z`).getTime() + 86400000 - new Date(`${latestDateStr}T00:00:00Z`).getTime()) / 86400000) : null;
+      const synced = daysSinceSync != null && daysSinceSync <= 4;
+      return issue({
+        category: '数据新鲜度',
+        item_key: 'yesterday_orders_synced',
+        item_name: 'POS 订单数据是否按节奏同步',
+        status: !posR.exists ? STATUS.pending : synced ? STATUS.ok : STATUS.delayed,
+        severity: !posR.exists ? 'P1' : synced ? 'P3' : 'P1',
+        owner_role: '实施人员',
+        impact_modules: ['经营诊断', '老板日报', '营销归因'],
+        impact_description: synced
+          ? `最近一次 POS 数据同步到 ${latestDateStr || '-'}，在正常的 3-4 天同步节奏内。`
+          : `最近一次 POS 数据只同步到 ${latestDateStr || '-'}，已经 ${daysSinceSync ?? '未知'} 天没有新数据，超出正常的 3-4 天同步节奏，需要检查同步任务是否卡住。`,
+        suggestion: '请实施人员检查 POS 同步状态，确认是否卡在某一批次；这项不是要求每天必须有数据，只是超过正常节奏才需要处理。',
+        evidence: { ...(posR.evidence || {}), latest_sync_date: latestDateStr || null, days_since_sync: daysSinceSync, seven_day_avg_order_count: Math.round(posTotal / 7) },
+      });
+    })(),
     issue({
       category: '数据接入',
       item_key: 'customer_phone_match_rate',
@@ -416,8 +516,10 @@ async function checkDataIntegration(pool, ctx, stores = []) {
       severity: phoneRate >= 60 ? 'P3' : 'P1',
       owner_role: '实施人员',
       impact_modules: ['客户资产报告', '自动营销', '营销归因'],
-      impact_description: phoneRate >= 60 ? 'POS 订单里的手机号、会员 ID 或顾客标识可支持基础客户识别。' : '系统根据 POS 订单中的手机号、会员 ID 或顾客标识识别顾客。如果订单缺少这些字段，客户资产分析、复购判断和营销归因会不完整。这不一定是门店错误，需要租赁方确认 POS 是否提供相关字段，或确认门店是否有会员手机号采集流程。',
-      suggestion: '请租赁方确认 POS 导出的订单是否包含手机号、会员 ID 或顾客标识；如 POS 已提供字段，请我方协助核对导入映射。',
+      // 这项本质上由POS系统在收银时是否采集/回传手机号决定，属于POS系统能力和门店收银流程的
+      // 结构性限制，通常不是能靠"整改"短期解决的操作问题——散客/未开卡消费天然没有手机号。
+      impact_description: phoneRate >= 60 ? 'POS 订单里的手机号、会员 ID 或顾客标识可支持基础客户识别。' : `当前 ${phoneRate}% 的订单能识别出客户身份，其余是未留手机号的散客或未开卡消费。这个比例主要由 POS 系统本身是否采集手机号、以及门店收银时是否引导顾客留手机号决定，不是系统数据丢失或运营失误。`,
+      suggestion: '这项通常无法靠系统内操作提升。如果希望提高比例，需要门店在收银环节主动引导顾客留手机号/办会员；如果怀疑 POS 本身有采集但没有导出手机号字段，可以请我方核对导入映射。',
       evidence: { ...(posR.evidence || {}), phone_match_rate: phoneRate, rows_with_phone: n(pos.rows_with_phone), phone_rows: n(pos.phone_rows) },
     }),
     issue({
@@ -450,9 +552,20 @@ async function checkDataIntegration(pool, ctx, stores = []) {
 async function checkMarketing(pool, ctx) {
   const [profilesR, deliveryR, redemptionsR, attrR] = await Promise.all([
     queryIfTable(pool, 'growth_customer_profiles', `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE COALESCE(lifecycle_stage,'')<>'' OR COALESCE(value_tier,'')<>'')::int AS segmented FROM growth_customer_profiles WHERE tenant_id=$1`, [ctx.tenantId]),
-    queryIfTable(pool, 'growth_delivery_logs', `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status IN ('sent','success','delivered'))::int AS sent FROM growth_delivery_logs WHERE tenant_id=$1`, [ctx.tenantId]),
+    queryIfTable(pool, 'growth_delivery_logs', `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status IN ('sent','success','delivered'))::int AS sent, COUNT(*) FILTER (WHERE COALESCE(campaign_id,'') <> '')::int AS with_campaign_id FROM growth_delivery_logs WHERE tenant_id=$1`, [ctx.tenantId]),
     queryIfTable(pool, 'growth_redemptions', `SELECT COUNT(*)::int AS total FROM growth_redemptions WHERE tenant_id=$1`, [ctx.tenantId]),
-    queryIfTable(pool, 'growth_ontology_attributions', `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE COALESCE(related_order_id,'')<>'')::int AS linked_orders FROM growth_ontology_attributions WHERE tenant_id=$1`, [ctx.tenantId]),
+    // 归因是否能落地，看的应该是 customer-ops.js 实际在跑的归因引擎（触达记录关联手机号 -> 匹配POS回店订单），
+    // 不是 growth_ontology_attributions 这张基本没有真实数据写入的旧表——用错表会把"能用的功能"误判成"不可用"。
+    queryIfTable(pool, 'pos_orders', `
+      WITH touches AS (
+        SELECT DISTINCT regexp_replace(COALESCE(payload->>'phone',''), '[^0-9]', '', 'g') AS phone
+          FROM growth_delivery_logs
+         WHERE tenant_id=$1 AND status='sent' AND COALESCE(payload->>'phone','') <> ''
+      )
+      SELECT COUNT(DISTINCT po.order_no)::int AS linked_orders, (SELECT COUNT(*) FROM touches)::int AS total
+        FROM touches t
+        JOIN pos_orders po ON regexp_replace(COALESCE(po.phone,''), '[^0-9]', '', 'g') = t.phone
+       WHERE po.tenant_id=$1`, [ctx.tenantId]),
   ]);
   const profiles = profilesR.rows?.[0] || {};
   const delivery = deliveryR.rows?.[0] || {};
@@ -462,8 +575,31 @@ async function checkMarketing(pool, ctx) {
     issue({ category: 'AI 可运行度', item_key: 'customer_segments_generatable', item_name: '客户分层是否可生成', status: !profilesR.exists ? STATUS.pending : n(profiles.segmented) > 0 ? STATUS.ok : STATUS.missing, severity: n(profiles.segmented) > 0 ? 'P3' : 'P2', owner_role: '系统', impact_modules: ['客户资产报告', '自动营销'], impact_description: '客户分层决定自动营销能否按价值、流失风险和回店周期生成名单。', suggestion: '请先同步客户画像并运行客户分层。', evidence: { ...(profilesR.evidence || {}), customer_count: n(profiles.total), segmented_count: n(profiles.segmented) } }),
     issue({ category: '营销归因', item_key: 'marketing_list_non_empty', item_name: '营销名单是否为空', status: !profilesR.exists ? STATUS.pending : n(profiles.total) > 0 ? STATUS.ok : STATUS.missing, severity: n(profiles.total) > 0 ? 'P3' : 'P1', owner_role: '实施人员', impact_modules: ['自动营销'], impact_description: '营销名单为空时，自动触达无法发起。', suggestion: '请检查客户画像、营销规则和名单生成条件。', evidence: { ...(profilesR.evidence || {}), customer_count: n(profiles.total) } }),
     issue({ category: '营销归因', item_key: 'sms_wecom_sent', item_name: '短信 / 企微是否有发送记录', status: !deliveryR.exists ? STATUS.pending : n(delivery.sent) > 0 ? STATUS.ok : STATUS.missing, severity: n(delivery.sent) > 0 ? 'P3' : 'P1', owner_role: '实施人员', impact_modules: ['自动营销', '营销归因'], impact_description: '没有发送记录时，系统无法判断触达是否发生，也无法做转化归因。', suggestion: '请检查 growth_delivery_logs、短信和企微发送配置。', evidence: { ...(deliveryR.evidence || {}), delivery_total: n(delivery.total), delivery_sent: n(delivery.sent) } }),
+    issue({
+      category: '营销归因',
+      item_key: 'delivery_campaign_id_complete_rate',
+      item_name: '触达记录关联活动的完整率',
+      status: !deliveryR.exists ? STATUS.pending : n(delivery.total) === 0 ? STATUS.pending : pct(delivery.with_campaign_id, delivery.total) >= 60 ? STATUS.ok : STATUS.abnormal,
+      severity: !deliveryR.exists || n(delivery.total) === 0 ? 'P2' : pct(delivery.with_campaign_id, delivery.total) >= 60 ? 'P3' : 'P1',
+      owner_role: '系统',
+      impact_modules: ['营销归因', '月度复盘'],
+      impact_description: n(delivery.total) === 0 ? '暂无触达记录，暂时无法计算这项比例。' : `系统里的触达记录（短信/企微发送）中，能明确对应到"这是哪次营销活动"的比例是 ${pct(delivery.with_campaign_id, delivery.total)}%。比例太低会导致月度复盘时算不清"这次活动到底带来了多少回店和营业额"，因为系统分不清这条发送记录属于哪次活动。`,
+      suggestion: '这是系统内部记录发送时的技术设置问题，不需要租户操作——我方会检查自动触达和手动群发在写入发送记录时，是否都正确关联了对应的活动编号。',
+      evidence: { ...(deliveryR.evidence || {}), rate: pct(delivery.with_campaign_id, delivery.total), with_campaign_id: n(delivery.with_campaign_id), total: n(delivery.total) },
+    }),
     issue({ category: '营销归因', item_key: 'coupon_issue_redeem_data', item_name: '优惠券是否有发放和核销数据', status: !redemptionsR.exists ? STATUS.pending : n(redemptions.total) > 0 ? STATUS.ok : STATUS.missing, severity: n(redemptions.total) > 0 ? 'P3' : 'P1', owner_role: '实施人员', impact_modules: ['自动营销', '营销归因'], impact_description: '优惠券核销缺失会导致营销 ROI 和活动复盘不准确。', suggestion: '请检查券发放、核销同步，以及优惠券是否能和营销活动、回店订单对应起来。', evidence: { ...(redemptionsR.evidence || {}), coupon_writeoff_count: n(redemptions.total) } }),
-    issue({ category: '营销归因', item_key: 'attribution_links_orders', item_name: '营销活动是否能识别回店订单', status: !attrR.exists ? STATUS.pending : n(attr.linked_orders) > 0 ? STATUS.ok : STATUS.missing, severity: n(attr.linked_orders) > 0 ? 'P3' : 'P1', owner_role: '系统', impact_modules: ['营销归因', '月度复盘'], impact_description: '系统需要根据营销触达记录、客户识别信息、回店订单和优惠券核销数据，判断营销活动带来了哪些回店消费。当前回店订单识别不足，营销效果和月度复盘中的营销部分会不完整。', suggestion: '请先确认营销触达记录、POS 订单客户识别字段和优惠券核销数据是否完整；数据齐全后可重新计算归因。', evidence: { ...(attrR.evidence || {}), attribution_order_count: n(attr.linked_orders), attribution_total: n(attr.total) } }),
+    issue({
+      category: '营销归因',
+      item_key: 'attribution_links_orders',
+      item_name: '营销活动是否能识别回店订单',
+      status: !attrR.exists ? STATUS.pending : n(attr.total) === 0 ? STATUS.pending : n(attr.linked_orders) > 0 ? STATUS.ok : STATUS.missing,
+      severity: n(attr.total) === 0 ? 'P2' : n(attr.linked_orders) > 0 ? 'P3' : 'P1',
+      owner_role: '系统',
+      impact_modules: ['营销归因', '月度复盘'],
+      impact_description: n(attr.total) === 0 ? '暂无触达记录可用于匹配回店订单，等有实际发送记录后再评估。' : `已发送触达的客户里，有回店订单能匹配上的比例是 ${pct(attr.linked_orders, attr.total)}%（${n(attr.linked_orders)}/${n(attr.total)}人）。这个数字同时受手机号完整率、触达后客户是否真的回店两个因素影响。`,
+      suggestion: '这项主要看两点：一是这次触达的客户手机号是否完整（不完整会导致匹配不到，属于POS数据限制）；二是触达后客户是否真的回店消费。不需要单独整改系统配置。',
+      evidence: { ...(attrR.evidence || {}), attribution_order_count: n(attr.linked_orders), attribution_total: n(attr.total) },
+    }),
   ];
 }
 
@@ -807,6 +943,36 @@ export async function listInspectionItems(pool, opts = {}) {
   return r.exists ? r.rows : [];
 }
 
+// 证据摘要给租赁方看，不能直接甩英文字段名——这里把 issue() 里用到的 evidence key 统一翻成中文短语。
+const EVIDENCE_LABELS = {
+  total: '总记录数', rate: '完整率', with_phone: '带手机号记录数', with_customer_id: '已识别客户记录数',
+  with_coupon_id: '带优惠券标识记录数', with_campaign_id: '带活动标识记录数', phone_match_rate: '客户识别率',
+  rows_with_phone: '带客户标识行数', phone_rows: '菜品明细总行数', dish_rate: '菜品分类完整率',
+  dish_rows: '菜品种类数', categorized_dish_rows: '已分类菜品种类数', employee_count: '员工数',
+  bound_count: '已绑定门店岗位员工数', manager_count: '店长/管理员人数', target_count: '经营目标数量',
+  kpi_targets_exists: '是否已建目标表', task_total: '任务总数', task_overdue_count: '逾期任务数',
+  yesterday_order_count: '昨日订单数', latest_sync_time: '最近同步时间', seven_day_avg_order_count: '近7日日均订单数',
+  customer_count: '客户数', customer_updated_7d: '近7天更新客户数', growth_customer_profiles_exists: '客户画像表是否存在',
+  customer_ops_exists: '客户运营原始记录是否存在', delivery_total: '触达记录总数', delivery_sent: '已发送触达数',
+  coupon_writeoff_count: '优惠券核销数', attribution_order_count: '已归因订单数', attribution_total: '归因记录总数',
+  store_count: '门店数', segmented_count: '已分层客户数', linked_orders: '已关联订单数',
+  employee_table_exists: '员工表是否存在', customer_segments_generatable: '客户分层是否可生成',
+};
+function formatEvidenceSummary(evidence = {}) {
+  return Object.entries(evidence)
+    .filter(([k]) => !['table_exists', 'table_missing'].includes(k))
+    .slice(0, 6)
+    .map(([k, v]) => {
+      const label = EVIDENCE_LABELS[k] || k;
+      let value = v;
+      if (typeof v === 'boolean') value = v ? '是' : '否';
+      else if (typeof v === 'object' && v !== null) value = JSON.stringify(v);
+      else if (k === 'rate' || /_rate$/.test(k)) value = `${v}%`;
+      return `${label}：${value}`;
+    })
+    .join('，');
+}
+
 export function generateInspectionReport({ tenantId, overview, store_results = [], items = [] }) {
   const top = overview?.top_issues || topIssues(items);
   const affected = Array.from(new Set((items || []).flatMap((item) => item.status !== STATUS.ok ? item.impact_modules || [] : [])));
@@ -826,11 +992,7 @@ export function generateInspectionReport({ tenantId, overview, store_results = [
     suggested_arrangement: item.responsible_party === 'platform_team' || item.responsible_party === 'system_integration' ? '我方系统实施人员协助说明，租赁方配合确认数据来源' : '租赁方安排系统管理员或门店负责人',
     suggested_deadline: ['P0', 'P1'].includes(item.severity) ? '建议 3 天内完成' : '建议 7 天内完成',
     rectification_suggestion: item.suggestion || '',
-    evidence_summary: Object.entries(item.evidence || {})
-      .filter(([k]) => !['table_exists'].includes(k))
-      .slice(0, 6)
-      .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
-      .join('；'),
+    evidence_summary: formatEvidenceSummary(item.evidence || {}),
     include_in_report: true,
   });
   const tenantRectificationItems = badItems
