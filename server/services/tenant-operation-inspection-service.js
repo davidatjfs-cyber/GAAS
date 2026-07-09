@@ -58,6 +58,25 @@ function likePattern(value) {
   return `%${String(value || '').replace(/[%_]/g, '\\$&')}%`;
 }
 
+function normalizeStoreText(value) {
+  return String(value || '')
+    .replace(/[（(].*?[）)]/g, '')
+    .replace(/[·•\-\s_【】\[\]（）()]/g, '')
+    .trim();
+}
+
+function storeSearchTokens(value) {
+  const raw = String(value || '').trim();
+  const normalized = normalizeStoreText(raw);
+  const tokens = new Set([raw, normalized]);
+  const brand = normalized.match(/^[\u4e00-\u9fa5]{2,4}/)?.[0];
+  if (brand) tokens.add(brand);
+  for (const word of ['马己仙', '洪潮', '久光', '音乐广场', '大宁']) {
+    if (raw.includes(word) || normalized.includes(word)) tokens.add(word);
+  }
+  return Array.from(tokens).filter((x) => x && x.length >= 2);
+}
+
 function storeFilterValues(ctx = {}, stores = []) {
   const values = new Set();
   if (ctx.storeId) values.add(String(ctx.storeId).trim());
@@ -69,7 +88,11 @@ function storeFilterValues(ctx = {}, stores = []) {
 }
 
 function storeFilterPatterns(values = []) {
-  return (values || []).filter(Boolean).map(likePattern);
+  const patterns = new Set();
+  for (const value of values || []) {
+    for (const token of storeSearchTokens(value)) patterns.add(likePattern(token));
+  }
+  return Array.from(patterns);
 }
 
 function responsibleParty(ownerRole = '') {
@@ -554,22 +577,39 @@ function initializationStatus(items, stores) {
 function featureAvailability(items) {
   return MODULES.map((feature) => {
     const blockers = (items || []).filter((item) => item.status !== STATUS.ok && (item.impact_modules || []).includes(feature));
+    const criticalKeys = feature === '经营诊断'
+      ? new Set(['tenant_has_stores', 'pos_data_connected'])
+      : ['客户资产报告', '自动营销'].includes(feature)
+        ? new Set(['customer_data_updated'])
+        : feature === '月度复盘'
+          ? new Set(['tenant_has_stores', 'pos_data_connected'])
+          : new Set();
+    const criticalMissing = blockers.filter((item) => criticalKeys.has(item.item_key) && item.status === STATUS.missing && item.severity === 'P0');
+    const pendingConfig = blockers.filter((item) => item.status === STATUS.pending);
+    const p0p1 = blockers.filter((item) => ['P0', 'P1'].includes(item.severity));
     if (feature === '月度复盘') {
-      const businessBlocked = blockers.some((item) => ['数据接入', '数据新鲜度'].includes(item.category) && ['P0', 'P1'].includes(item.severity));
+      const businessBlocked = criticalMissing.some((item) => ['数据接入', '数据新鲜度'].includes(item.category));
       const attributionBlocked = blockers.some((item) => item.category === '营销归因');
-      const status = businessBlocked ? '暂不可生成' : attributionBlocked ? '部分不完整' : blockers.length ? '部分不完整' : '可用';
+      const status = businessBlocked ? '不可用' : attributionBlocked || blockers.length ? '部分可用' : '可用';
       return {
         feature,
         status,
         blocked_by: blockers.map((item) => ({ id: item.id, item_key: item.item_key, title: item.item_name, severity: item.severity })),
-        reason: status === '部分不完整' ? '月度复盘可以生成经营部分，但营销效果部分暂时不完整。' : status === '暂不可生成' ? '核心经营数据缺失，月度复盘暂不可生成。' : '月度复盘具备当前阶段的基础运行条件。',
+        reason: status === '部分可用' ? '月度复盘可以生成经营部分，少量营销效果或任务闭环指标需要结合证据校验。' : status === '不可用' ? '核心经营数据缺失，月度复盘暂不可生成。' : '月度复盘具备当前阶段的基础运行条件。',
         suggestion: blockers[0]?.suggestion || '保持经营数据、营销数据和任务结果持续同步。',
       };
     }
-    const hard = blockers.filter((item) => ['P0', 'P1'].includes(item.severity));
-    const status = blockers.length === 0 ? '可用' : hard.length ? '不可用' : blockers.some((item) => item.status === STATUS.pending) ? '待配置' : '部分可用';
+    const status = blockers.length === 0
+      ? '可用'
+      : criticalMissing.length
+        ? '不可用'
+        : pendingConfig.length && p0p1.length === 0
+          ? '待配置'
+          : '部分可用';
     const reason = blockers.length
-      ? `${feature}受${blockers.slice(0, 2).map((x) => x.item_name).join('、')}影响，老板看到的结果可能不完整或不准确。`
+      ? status === '不可用'
+        ? `${feature}缺少核心数据，当前不能稳定生成。`
+        : `${feature}可以运行，但受${blockers.slice(0, 2).map((x) => x.item_name).join('、')}影响，部分指标需要结合证据校验。`
       : `${feature}具备当前阶段的基础运行条件。`;
     return {
       feature,
