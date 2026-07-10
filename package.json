@@ -8,7 +8,8 @@
   "scripts": {
     "start": "npm --workspace server run start",
     "migrate": "npm --workspace server run migrate",
-    "seed:growth-demo": "npm --workspace server run seed:growth-demo"
+    "seed:growth-demo": "npm --workspace server run seed:growth-demo",
+    "test": "npm --workspace server run test"
   },
   "dependencies": {
     "mammoth": "^1.12.0"

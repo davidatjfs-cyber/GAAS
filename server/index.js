@@ -82,6 +82,8 @@ import { ensurePhaseTables, registerPhaseRoutes } from './growth-phases.js';
 import { ensureCustomerOpsTables, registerCustomerOpsRoutes } from './customer-ops.js';
 import { registerMarketingAttributionRoutes } from './marketing/marketing-attribution-routes.js';
 import { registerTenantOperationInspectionRoutes } from './tenant-operation-inspection-routes.js';
+import { loadTenantRuntimeStatus as loadTenantRuntimeStatusFromModule } from './tenant-runtime-status.js';
+import { registerTenantSubscriptionRoutes } from './tenant-subscription-routes.js';
 import { ensureBaselineSchemaHealth } from './baseline-schema-health.js';
 import {
   reconcileDailyReportAttendanceRegister,
@@ -135,6 +137,14 @@ const APP_ENV = getAppEnv();
 enforceRuntimeSafetyOrExit({ serviceName: 'hrms-server' });
 
 const app = express();
+// H3: request_id for structured logs / client correlation
+app.use((req, res, next) => {
+  const incoming = String(req.headers['x-request-id'] || '').trim();
+  const requestId = incoming || randomUUID();
+  req.requestId = requestId;
+  res.setHeader('X-Request-Id', requestId);
+  next();
+});
 // H3-FIX: 限制CORS来源（生产环境使用白名单，开发环境允许所有）
 const CORS_WHITELIST = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors(CORS_WHITELIST.length > 0 ? {
@@ -5757,6 +5767,7 @@ registerPhaseRoutes(app, pool);
 registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM);
 registerMarketingAttributionRoutes(app, pool, authRequired);
 registerTenantOperationInspectionRoutes(app, pool, authRequired, platformAdminRequired);
+registerTenantSubscriptionRoutes(app, { pool, authRequired });
 // 托管控制台（内部 Agent Ops 使用，不对租户开放）：复用同一套业务逻辑，
 // 仅换成平台管理员鉴权 + URL 中的 :tenantId 决定操作对象。
 registerCustomerOpsRoutes(app, pool, platformAdminRequired, upload, uploadsDir, recordUploadOwnership, callLLM, {
@@ -15385,44 +15396,7 @@ async function runTenantAcceptance(tenantId) {
 }
 
 async function loadTenantRuntimeStatus(tenantId) {
-  const tenantR = await pool.query(
-    'SELECT tenant_id, status FROM tenants WHERE tenant_id = $1 LIMIT 1',
-    [tenantId]
-  );
-  const tenant = tenantR.rows?.[0] || null;
-  if (!tenant) {
-    return { exists: false, loginAllowed: false, reason: 'tenant_not_found' };
-  }
-
-  const status = String(tenant.status || '').trim().toLowerCase();
-  if (status !== 'active') {
-    return { exists: true, loginAllowed: false, reason: 'tenant_inactive', status };
-  }
-
-  const licenseR = await pool.query(
-    `SELECT status, expires_at
-       FROM licenses
-      WHERE tenant_id = $1
-      ORDER BY created_at DESC
-      LIMIT 1`,
-    [tenantId]
-  );
-  const license = licenseR.rows?.[0] || null;
-  if (license) {
-    const licenseStatus = String(license.status || '').trim().toLowerCase();
-    const expiresAt = license.expires_at ? new Date(license.expires_at) : null;
-    if (licenseStatus && !['active', 'trial'].includes(licenseStatus)) {
-      return { exists: true, loginAllowed: false, reason: 'license_inactive', status, licenseStatus };
-    }
-    if (expiresAt && Number.isFinite(expiresAt.getTime()) && expiresAt.getTime() < Date.now()) {
-      return { exists: true, loginAllowed: false, reason: 'license_expired', status, expiresAt: license.expires_at };
-    }
-  } else if (isLicenseEnforced() && !isLicenseExemptTenant(tenantId)) {
-    // multi / LICENSE_ENFORCE：无 license 行拒绝登录；single 默认不强制，现网 default 不受影响
-    return { exists: true, loginAllowed: false, reason: 'license_missing', status };
-  }
-
-  return { exists: true, loginAllowed: true, status, license };
+  return loadTenantRuntimeStatusFromModule(pool, tenantId);
 }
 
 async function authRequired(req, res, next) {
@@ -16070,7 +16044,7 @@ app.post('/api/admin/tenants', platformAdminRequired, async (req, res) => {
     if (!smoke.rows?.[0]?.has_state || !smoke.rows?.[0]?.has_admin) {
       throw new Error('tenant_provisioning_smoke_failed');
     }
-    await client.query(`UPDATE tenants SET status = 'active', updated_at = NOW() WHERE tenant_id = $1`, [tenantId]);
+    // G1: stay provisioning until runTenantAcceptance passes (do not auto-activate)
 
     let issuedLicense = null;
     const licenseReq = req.body?.license;
@@ -16086,8 +16060,35 @@ app.post('/api/admin/tenants', platformAdminRequired, async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    let acceptance = null;
+    let finalStatus = 'provisioning';
+    try {
+      acceptance = await runTenantAcceptance(tenantId);
+      await saveTenantPlatformAcceptanceReport(pool, tenantId, {
+        ...acceptance,
+        checked_at: new Date().toISOString(),
+        action: 'provision',
+      });
+      if (acceptance?.ok) {
+        await pool.query(`UPDATE tenants SET status = 'active', updated_at = NOW() WHERE tenant_id = $1`, [tenantId]);
+        finalStatus = 'active';
+      }
+    } catch (accErr) {
+      console.warn('[provision] acceptance failed (tenant stays provisioning):', accErr?.message || accErr);
+      acceptance = { ok: false, error: accErr?.message || 'acceptance_error' };
+    }
+
     const login_access = await buildTenantLoginAccess(pool, req, tenantId, { password: adminReq.password });
-    return res.json({ ok: true, tenant: { tenant_id: tenantId, name, mode, status: 'active' }, admin: createdAdmin, license: issuedLicense, login_access });
+    return res.json({
+      ok: true,
+      tenant: { tenant_id: tenantId, name, mode, status: finalStatus },
+      admin: createdAdmin,
+      license: issuedLicense,
+      login_access,
+      acceptance,
+      message: finalStatus === 'active' ? '租户已开通并验收通过' : '租户已创建，验收未通过，保持 provisioning（请补齐 license/飞书后重新验收）',
+    });
   } catch (e) {
     await client.query('ROLLBACK');
     return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
@@ -17461,6 +17462,54 @@ app.post('/api/chairman/config', authRequired, async (req, res) => {
     if (r.status < 200 || r.status >= 300) {
       return res.status(r.status || 502).json(r.data || { error: 'chairman_config_proxy_failed' });
     }
+    return res.json(r.data || { ok: true });
+  } catch (e) {
+    return res.status(502).json({ error: 'internal_error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+// 任务和绩效 — 租户自助配置代理（原agents-admin控制台 #performance / #scheduled 的租户前端入口）
+// 复用 /api/chairman/config 同款代理模式：HRMS后端持service token代租户用户调agents-service-v2的
+// 通用配置API，agents-service-v2侧已按tenant_id隔离（当前单租户，行为等价于原全局配置）。
+// ═══════════════════════════════════════════════════════
+const TENANT_SETTINGS_ALLOWED_KEYS = new Set(['performance_eval', 'rhythm_schedule', 'daily_inspections', 'labor_cost_targets']);
+
+function canManageTenantSettings(user) {
+  const role = String(user?.role || '').trim();
+  return role === 'admin' || role === 'hq_manager' || role === 'hr_manager';
+}
+
+app.get('/api/tenant-settings/:key', authRequired, async (req, res) => {
+  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
+  const key = String(req.params.key || '').trim();
+  if (!TENANT_SETTINGS_ALLOWED_KEYS.has(key)) return res.status(400).json({ error: 'unknown_settings_key' });
+  try {
+    const token = await getAgentsServiceAdminToken();
+    const url = getAgentsServiceBaseUrl() + '/api/config/' + encodeURIComponent(key);
+    const r = await axios.get(url, { timeout: 8000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}` } });
+    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'tenant_settings_proxy_failed' });
+    return res.json(r.data || { config_key: key, config_value: null });
+  } catch (e) {
+    return res.status(502).json({ error: 'internal_error' });
+  }
+});
+
+app.put('/api/tenant-settings/:key', authRequired, async (req, res) => {
+  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
+  const key = String(req.params.key || '').trim();
+  if (!TENANT_SETTINGS_ALLOWED_KEYS.has(key)) return res.status(400).json({ error: 'unknown_settings_key' });
+  const { config_value, description } = req.body || {};
+  if (config_value === undefined) return res.status(400).json({ error: 'config_value is required' });
+  try {
+    const token = await getAgentsServiceAdminToken();
+    const url = getAgentsServiceBaseUrl() + '/api/config/' + encodeURIComponent(key);
+    const r = await axios.put(url, { config_value, description }, {
+      timeout: 8000,
+      validateStatus: () => true,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+    });
+    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'tenant_settings_proxy_failed' });
     return res.json(r.data || { ok: true });
   } catch (e) {
     return res.status(502).json({ error: 'internal_error' });
@@ -20951,23 +21000,31 @@ app.listen(PORT, HOST, async () => {
 
   // Initialize multi-agent system
   try {
-    await runWithBootstrapTenantContext(async () => {
-      await ensureTenantRuntimeTables();
-    });
+    if (__ALLOW_SCHEMA_CHANGES__) {
+      await runWithBootstrapTenantContext(async () => {
+        await ensureTenantRuntimeTables();
+      });
+    }
     setMasterPool(pool);
     setReportPool(pool);
     setSalesRawPool(pool);
     setDataExecutorPool(pool);
     setTaskResponseHook(handleTaskResponse);
-    await runWithBootstrapTenantContext(async () => {
-      await ensureMasterTables();
-    });
+    if (__ALLOW_SCHEMA_CHANGES__) {
+      await runWithBootstrapTenantContext(async () => {
+        await ensureMasterTables();
+      });
+    }
 
     await runWithBootstrapTenantContext(async () => {
-      await ensureBaselineSchemaHealth(pool).catch(e => console.warn('[schema] baseline health:', e?.message || e));
-      await initStoreAliasCache().catch((e) => console.warn('[store-alias-cache] refresh failed after baseline:', e?.message || e));
+      await initStoreAliasCache().catch((e) => console.warn('[store-alias-cache] refresh failed:', e?.message || e));
       // 登录会话表：必须在 ALLOW_SCHEMA_CHANGES 之外也能创建，否则 INSERT 失败 + 仍签发 JWT → 全站 session 校验失败
       await ensureUserSessionsTable();
+      if (!__ALLOW_SCHEMA_CHANGES__) {
+        console.warn(`[safety] APP_ENV=${APP_ENV}: skip listen-time schema ensure/DDL (ALLOW_SCHEMA_CHANGES!=true); use node migrate.js`);
+        return;
+      }
+      await ensureBaselineSchemaHealth(pool).catch(e => console.warn('[schema] baseline health:', e?.message || e));
       await ensureGrowthTables(pool).catch(e => console.warn('[growth] ensure tables:', e?.message));
       await ensurePhaseTables(pool).catch(e => console.warn('[growth-phases] ensure tables:', e?.message));
       await ensureCustomerOpsTables(pool).catch(e => console.warn('[customer-ops] ensure tables:', e?.message));
@@ -21091,70 +21148,44 @@ app.listen(PORT, HOST, async () => {
     }
 
     // Initialize Master Agent pools (needed for webhook handler even when scheduling disabled)
+    // Schema DDL / numbered SQL re-runs: only when ALLOW_SCHEMA_CHANGES (prefer `node migrate.js` + schema_migrations)
     await runWithBootstrapTenantContext(async () => {
-      await ensureMasterTables();
+      if (__ALLOW_SCHEMA_CHANGES__) {
+        await ensureMasterTables();
 
-      // Run intelligence upgrade migration (idempotent)
-      try {
-        const migSql = await import('fs').then(f => f.promises.readFile(new URL('./migrations/008_agent_intelligence_upgrade.sql', import.meta.url), 'utf8'));
-        await pool.query(migSql);
-        console.log('[intelligence] Migration 008 applied: metric_dictionary + analysis_rules + agent_metric_cache');
-      } catch (e) {
-        console.error('[intelligence] Migration 008 error (non-fatal):', e?.message);
-      }
+        // Legacy listen-time re-apply of numbered migrations (idempotent). New envs should use migrate.js instead.
+        for (const name of [
+          '008_agent_intelligence_upgrade',
+          '009_agent_improvements',
+          '012_metric_analysis_tree_and_experience',
+          '013_daily_reports_operational_anomaly',
+          '014_employee_attendance_payroll_domain',
+          '020_daily_reports_all_fields',
+          '021_hrms_leave_records',
+          '022_hrms_reward_punishment_records',
+          '023_approval_requests_migration',
+          '024_employees_table_migration',
+          '025_daily_reports_holiday_switch',
+          '027_backfill_hrms_leave_from_approvals',
+          '030_daily_report_attendance_register',
+          '031_growth_miniprogram_events',
+          '081_unique_constraints_tenant_id_batch9',
+        ]) {
+          try {
+            const mig = await import('fs').then(f => f.promises.readFile(new URL(`./migrations/${name}.sql`, import.meta.url), 'utf8'));
+            await pool.query(mig);
+            console.log(`[migration] ${name} applied (listen-time, ALLOW_SCHEMA_CHANGES)`);
+          } catch (e) {
+            console.error(`[migration] ${name} error (non-fatal):`, e?.message);
+          }
+        }
 
-      // Run improvements migration 009 (idempotent)
-      try {
-        const mig009 = await import('fs').then(f => f.promises.readFile(new URL('./migrations/009_agent_improvements.sql', import.meta.url), 'utf8'));
-        await pool.query(mig009);
-        console.log('[intelligence] Migration 009 applied: cache_ttl_minutes + diagnosis_feedback');
-      } catch (e) {
-        console.error('[intelligence] Migration 009 error (non-fatal):', e?.message);
-      }
-
-    // Run migration 012: metric_dictionary 分析字段 + agent_experience（idempotent）
-    try {
-      const mig012 = await import('fs').then(f => f.promises.readFile(new URL('./migrations/012_metric_analysis_tree_and_experience.sql', import.meta.url), 'utf8'));
-      await pool.query(mig012);
-      console.log('[intelligence] Migration 012 applied: analysis_children + agent_experience');
-    } catch (e) {
-      console.error('[intelligence] Migration 012 error (non-fatal):', e?.message);
-    }
-
-    try {
-      const mig013 = await import('fs').then(f => f.promises.readFile(new URL('./migrations/013_daily_reports_operational_anomaly.sql', import.meta.url), 'utf8'));
-      await pool.query(mig013);
-      console.log('[daily_reports] Migration 013 applied: operational_anomaly_note');
-    } catch (e) {
-      console.error('[daily_reports] Migration 013 error (non-fatal):', e?.message);
-    }
-
-    try {
-      const mig014 = await import('fs').then(f => f.promises.readFile(new URL('./migrations/014_employee_attendance_payroll_domain.sql', import.meta.url), 'utf8'));
-      await pool.query(mig014);
-      console.log('[hrms] Migration 014 applied: employee_attendance_records + hrms_payroll_domain');
-    } catch (e) {
-      console.error('[hrms] Migration 014 error (non-fatal):', e?.message);
-    }
-
-    // 020-024: HRMS 全量字段 + 独立表迁移
-    // 081: tenant-aware unique / ON CONFLICT 约束收尾批，修复 employees / report-delivery / daily_reports 等
-    // 旧版本库如果缺这些约束，会在 PUT /api/state 与部分通知投递里触发 ON CONFLICT 失败。
-    for (const name of ['020_daily_reports_all_fields', '021_hrms_leave_records', '022_hrms_reward_punishment_records', '023_approval_requests_migration', '024_employees_table_migration', '025_daily_reports_holiday_switch', '027_backfill_hrms_leave_from_approvals', '030_daily_report_attendance_register', '031_growth_miniprogram_events', '081_unique_constraints_tenant_id_batch9']) {
-      try {
-        const mig = await import('fs').then(f => f.promises.readFile(new URL(`./migrations/${name}.sql`, import.meta.url), 'utf8'));
-        await pool.query(mig);
-        console.log(`[migration] ${name} applied`);
-      } catch (e) {
-        console.error(`[migration] ${name} error (non-fatal):`, e?.message);
-      }
-    }
-
-      try {
-        await ensureLeaveDomainTable();
-        console.log('[startup] hrms_leave_domain table ready');
-      } catch (e) {
-        console.error('[startup] hrms_leave_domain table init failed (non-fatal):', e?.message);
+        try {
+          await ensureLeaveDomainTable();
+          console.log('[startup] hrms_leave_domain table ready');
+        } catch (e) {
+          console.error('[startup] hrms_leave_domain table init failed (non-fatal):', e?.message);
+        }
       }
 
     // 启动时权威重建：每次启动都从 daily_reports 表完整重建 hrms_state.dailyReports
@@ -21736,18 +21767,20 @@ app.listen(PORT, HOST, async () => {
       }
     }, 60 * 60 * 1000);
 
-    // ── P0-3: 定时任务心跳表初始化 ──────────────────────────────
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS scheduler_heartbeat (
-          task_name   TEXT PRIMARY KEY,
-          last_beat   TIMESTAMPTZ DEFAULT NOW(),
-          run_count   BIGINT DEFAULT 0
-        )
-      `);
-      console.log('[monitor] scheduler_heartbeat table ready');
-    } catch (e) {
-      console.error('[monitor] heartbeat table init error:', e?.message);
+    // ── P0-3: 定时任务心跳表（表结构由 migrate / 093 等提供；启动仅在允许 schema 变更时 ensure）──
+    if (__ALLOW_SCHEMA_CHANGES__) {
+      try {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS scheduler_heartbeat (
+            task_name   TEXT PRIMARY KEY,
+            last_beat   TIMESTAMPTZ DEFAULT NOW(),
+            run_count   BIGINT DEFAULT 0
+          )
+        `);
+        console.log('[monitor] scheduler_heartbeat table ready');
+      } catch (e) {
+        console.error('[monitor] heartbeat table init error:', e?.message);
+      }
     }
 
     // 辅助：写心跳。task_name是全局单例系统任务(cache_purge/critical_data_reconcile/sales_raw_check)，
@@ -22998,24 +23031,26 @@ app.post('/api/stores/:name/location', authRequired, async (req, res) => {
 
 app.use((err, req, res, next) => {
   if (!err) return next();
+  const requestId = req.requestId || res.getHeader?.('X-Request-Id') || null;
   try {
     if (err instanceof multer.MulterError) {
       const code = String(err.code || 'multer_error');
       if (code === 'LIMIT_FILE_SIZE') {
-        return res.status(413).json({ error: 'file_too_large' });
+        return res.status(413).json({ error: 'file_too_large', request_id: requestId });
       }
-      return res.status(400).json({ error: 'upload_error', code });
+      return res.status(400).json({ error: 'upload_error', code, request_id: requestId });
     }
   } catch (e) {}
 
   const msg = String(err?.message || err);
   if (/uploads_dir_not_writable/i.test(msg)) {
-    return res.status(500).json({ error: 'uploads_dir_not_writable', message: msg });
+    return res.status(500).json({ error: 'uploads_dir_not_writable', message: msg, request_id: requestId });
   }
   if (/blocked_file_type/i.test(msg)) {
-    return res.status(400).json({ error: 'blocked_file_type', message: msg });
+    return res.status(400).json({ error: 'blocked_file_type', message: msg, request_id: requestId });
   }
-  return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+  console.error('[express]', requestId || '-', msg);
+  return res.status(500).json({ error: 'server_error', message: 'internal_error', request_id: requestId });
 });
 
 if (__ALLOW_SCHEMA_CHANGES__) {

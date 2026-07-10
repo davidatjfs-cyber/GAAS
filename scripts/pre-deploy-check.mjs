@@ -146,16 +146,26 @@ const requiredApis = [
   { name: 'resolved_by字段', check: () => assert(api.includes('resolved_by TEXT')) },
   { name: 'recomputeDailyMetrics', check: () => assert(api.includes('recomputeDailyMetrics')) },
 ];
-requiredApis.forEach(api => {
+requiredApis.forEach(apiCheck => {
   try {
-    api.check();
-    console.log(`   ✓ ${api.name}`);
+    apiCheck.check();
+    console.log(`   ✓ ${apiCheck.name}`);
     passed++;
   } catch (e) {
-    console.log(`   ✗ ${api.name}: ${e.message}`);
+    console.log(`   ✗ ${apiCheck.name}: ${e.message}`);
     failed++;
-    errors.push({ name: api.name, error: e.message });
+    errors.push({ name: apiCheck.name, error: e.message });
   }
+});
+
+// 6. 安全：禁止自动登录后门
+console.log('\n6. 安全门禁');
+test('禁止 HRMS_AUTO_PASS 写入', () => {
+  assert(!/setItem\(['"]HRMS_AUTO_PASS['"]/.test(html), 'must not setItem HRMS_AUTO_PASS');
+  assert(!/HRMS_AUTO_PASS\s*=/.test(html), 'must not assign HRMS_AUTO_PASS');
+});
+test('禁止明文 _loginPassword 持久化写入', () => {
+  assert(!/setItem\([^)]*_loginPassword/.test(html), 'must not persist _loginPassword');
 });
 
 // Summary

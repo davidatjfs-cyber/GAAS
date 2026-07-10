@@ -29,6 +29,12 @@
                     if (!data || !data.system_name) return;
                     document.title = data.system_name;
                     try { sessionStorage.setItem('hrms_brand_name', data.system_name); } catch (e) {}
+                    if (data.brand_color) {
+                        try {
+                            document.documentElement.style.setProperty('--hrms-brand-color', data.brand_color);
+                            document.documentElement.style.setProperty('--hrms-brand', data.brand_color);
+                        } catch (e) {}
+                    }
                     var el = document.getElementById('login-tenant-title');
                     if (el) {
                         el.textContent = data.system_name;
@@ -14622,6 +14628,7 @@
                 <span class="login-rep-eyebrow">数据报表</span>
                 <h1 class="login-rep-title" id="login-tenant-title">年年有喜管理系统</h1>
                 <p class="login-rep-sub">与分析报表一致的内台视觉 · 安全登录</p>
+                <p id="login-subscription-hint" class="login-rep-sub" style="display:none;margin-top:6px;font-size:12px;opacity:.85"></p>
             </header>
             <div class="login-rep-card">
                 <div class="login-rep-card-inner">
@@ -14778,6 +14785,11 @@
                 <div class="nav-item" id="nav-forecast">
                     <a href="/forecast.html" class="nav-link">
                         <i>📦</i> <span>智能助手</span>
+                    </a>
+                </div>
+                <div class="nav-item" data-page="task-performance" id="nav-task-performance">
+                    <a href="#" class="nav-link" onclick="showPage('task-performance')">
+                        <i>📊</i> <span>任务和绩效</span>
                     </a>
                 </div>
                 <div class="nav-item" data-page="settings">
@@ -21462,6 +21474,84 @@
                 <div id="builtin-roles-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px;"></div>
             </div>
 
+            <!-- 任务和绩效 · 租户自助配置（原agents-admin控制台 #performance / #scheduled） -->
+            <div id="task-performance-page" class="hidden">
+                <div class="settings-report-shell">
+                    <header class="settings-rep-head">
+                        <div class="settings-rep-head__eyebrow">TASK &amp; PERFORMANCE</div>
+                        <h2 class="settings-rep-head__title">任务和绩效</h2>
+                        <p class="settings-rep-head__desc">绩效考核规则与定时任务由本店自行设置，保存后Agent按最新配置执行（1分钟内生效）。</p>
+                    </header>
+                    <div style="display:flex; gap:8px; margin:16px 0; border-bottom:1px solid rgba(255,255,255,0.1);">
+                        <button type="button" class="tp-tab-btn active" data-tp-tab="perf" onclick="switchTpTab('perf')" style="padding:10px 18px; background:none; border:none; color:#fff; cursor:pointer; border-bottom:2px solid transparent;">绩效考核规则</button>
+                        <button type="button" class="tp-tab-btn" data-tp-tab="sched" onclick="switchTpTab('sched')" style="padding:10px 18px; background:none; border:none; color:rgba(255,255,255,0.6); cursor:pointer; border-bottom:2px solid transparent;">定时任务</button>
+                    </div>
+
+                    <div id="tp-tab-perf" class="tp-tab-panel">
+                        <div id="tp-perf-loading" style="color:rgba(255,255,255,0.6); padding:12px 0;">加载中…</div>
+                        <div id="tp-perf-form" class="hidden">
+                            <div class="settings-card" style="cursor:default;">
+                                <div class="settings-card__title" style="margin-bottom:12px;">工作态度评级（未完成任务备案次数/月）</div>
+                                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
+                                    <label>A档上限<input type="number" id="tp-attitude-aMax" class="hrms-input"></label>
+                                    <label>B档上限<input type="number" id="tp-attitude-bMax" class="hrms-input"></label>
+                                    <label>C档上限<input type="number" id="tp-attitude-cMax" class="hrms-input"></label>
+                                </div>
+                            </div>
+                            <div class="settings-card" style="cursor:default; margin-top:16px;">
+                                <div class="settings-card__title" style="margin-bottom:12px;">出品经理执行力（月度不合格天数）</div>
+                                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
+                                    <label>A档上限<input type="number" id="tp-pmexec-aMax" class="hrms-input"></label>
+                                    <label>B档上限<input type="number" id="tp-pmexec-bMax" class="hrms-input"></label>
+                                    <label>C档上限<input type="number" id="tp-pmexec-cMax" class="hrms-input"></label>
+                                </div>
+                            </div>
+                            <div class="settings-card" style="cursor:default; margin-top:16px;">
+                                <div class="settings-card__title" style="margin-bottom:12px;">洪潮店长执行力（月度新增企微好友数）</div>
+                                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
+                                    <label>A档下限<input type="number" id="tp-hcmgr-aMin" class="hrms-input"></label>
+                                    <label>B档下限<input type="number" id="tp-hcmgr-bMin" class="hrms-input"></label>
+                                    <label>C档下限<input type="number" id="tp-hcmgr-cMin" class="hrms-input"></label>
+                                </div>
+                            </div>
+                            <div class="settings-card" style="cursor:default; margin-top:16px;">
+                                <div class="settings-card__title" style="margin-bottom:12px;">马己仙店长执行力（月度缺席/不合格次数）</div>
+                                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
+                                    <label>A档上限<input type="number" id="tp-mjmgr-aMax" class="hrms-input"></label>
+                                    <label>B档上限<input type="number" id="tp-mjmgr-bMax" class="hrms-input"></label>
+                                    <label>C档上限<input type="number" id="tp-mjmgr-cMax" class="hrms-input"></label>
+                                </div>
+                            </div>
+                            <div style="margin-top:20px;">
+                                <button type="button" class="btn btn-primary" onclick="saveTpPerformance()">保存绩效考核规则</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="tp-tab-sched" class="tp-tab-panel hidden">
+                        <div id="tp-sched-loading" style="color:rgba(255,255,255,0.6); padding:12px 0;">加载中…</div>
+                        <div id="tp-sched-form" class="hidden">
+                            <div class="settings-card" style="cursor:default;">
+                                <div class="settings-card__title" style="margin-bottom:12px;">人力成本目标（元/人）</div>
+                                <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:12px;">
+                                    <label>洪潮<input type="number" id="tp-labor-hongchao" class="hrms-input"></label>
+                                    <label>马己仙<input type="number" id="tp-labor-majixian" class="hrms-input"></label>
+                                </div>
+                            </div>
+                            <div class="settings-card" style="cursor:default; margin-top:16px;">
+                                <div class="settings-card__title" style="margin-bottom:12px;">每日巡检任务</div>
+                                <div style="color:rgba(255,255,255,0.5); font-size:12px; margin-bottom:8px;">按上海时区每分钟匹配"时间+频率"执行，请填写北京时间</div>
+                                <div id="tp-inspection-list"></div>
+                                <button type="button" class="btn btn-secondary" style="margin-top:8px;" onclick="addTpInspectionItem()">+ 新增巡检任务</button>
+                            </div>
+                            <div style="margin-top:20px;">
+                                <button type="button" class="btn btn-primary" onclick="saveTpScheduled()">保存定时任务设置</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 系统设置页面 · 分析报表式分区 -->
             <div id="settings-page" class="hidden">
                 <div class="settings-report-shell">
@@ -22938,6 +23028,12 @@
                                 document.head.appendChild(link);
                             }
                             link.href = data.favicon_url;
+                        }
+                        if (data.brand_color) {
+                            try {
+                                document.documentElement.style.setProperty('--hrms-brand-color', data.brand_color);
+                                document.documentElement.style.setProperty('--hrms-brand', data.brand_color);
+                            } catch (e) {}
                         }
                     })
                     .catch(() => {});
@@ -27475,6 +27571,10 @@ th { background: #f5f5f5; font-weight: 700; }
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN || r === ROLES.HQ_MANAGER || r === ROLES.HR_MANAGER;
             }
+            if (page === 'task-performance') {
+                const r = String(role == null ? currentUser?.role : role || '').trim();
+                return r === ROLES.ADMIN || r === ROLES.HQ_MANAGER || r === ROLES.HR_MANAGER;
+            }
             if (page === 'growth') {
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN;
@@ -27831,6 +27931,25 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 loadRoleModulesFromServer().catch(() => {});
                 loadPermissionGroupsFromServer().catch(() => {});
                 try { refreshUnreadBadges(); } catch (e) {}
+                // G2: 租户管理员可见 license 到期摘要（只读，不含 key）
+                try {
+                    const role = String(currentUser?.role || '').toLowerCase();
+                    if (role === 'admin' || role === 'hq_admin') {
+                        fetch('/api/tenant/subscription', {
+                            headers: { 'Authorization': 'Bearer ' + (HRMS_API.getToken && HRMS_API.getToken() || '') }
+                        }).then(r => r.json()).then(data => {
+                            const lic = data?.license;
+                            if (!lic?.has_license) return;
+                            const hint = document.getElementById('login-subscription-hint');
+                            const days = lic.days_remaining;
+                            let text = '';
+                            if (lic.expired) text = '订阅已过期，请联系平台续期';
+                            else if (days != null && days <= 30) text = `订阅剩余 ${days} 天（${String(lic.expires_at || '').slice(0, 10)}）`;
+                            if (text && hint) { hint.textContent = text; hint.style.display = ''; }
+                            try { sessionStorage.setItem('hrms_subscription_summary', JSON.stringify({ expires_at: lic.expires_at, days_remaining: days, status: lic.status })); } catch (e) {}
+                        }).catch(() => {});
+                    }
+                } catch (e) {}
             } catch (e) {
                 console.error(e);
                 const msg = String(e?.message || e);
@@ -28325,7 +28444,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 }
             }
 
-            if (['profile', 'attendance', 'daily-report', 'employees', 'approvals', 'payment', 'exam', 'rewards', 'points', 'reports', 'agents', 'agent-tasks', 'knowledge'].includes(pageName)) {
+            if (['profile', 'attendance', 'daily-report', 'employees', 'approvals', 'payment', 'exam', 'rewards', 'points', 'reports', 'agents', 'agent-tasks', 'knowledge', 'task-performance'].includes(pageName)) {
                 if (!canAccessModulePage(pageName)) {
                     showNotification('您没有该模块访问权限', 'warning');
                     pageName = getHomePageName();
@@ -28727,6 +28846,9 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                     break;
                 case 'settings':
                     loadSettingsData();
+                    break;
+                case 'task-performance':
+                    loadTaskPerformanceData();
                     break;
             }
         }
@@ -41265,6 +41387,162 @@ ${knowledgeContent.slice(0, 30000)}`;
                 </div>`;
             });
             grid.innerHTML = html;
+        }
+
+        // ─── 任务和绩效 ───
+        async function tpFetch(key, method, body) {
+            const tok = localStorage.getItem('hrms_token') || '';
+            const r = await fetch('/api/tenant-settings/' + encodeURIComponent(key), {
+                method: method || 'GET',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+                body: body ? JSON.stringify(body) : undefined
+            });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return await r.json();
+        }
+
+        function switchTpTab(tab) {
+            document.querySelectorAll('.tp-tab-btn').forEach(b => {
+                const active = b.dataset.tpTab === tab;
+                b.classList.toggle('active', active);
+                b.style.color = active ? '#fff' : 'rgba(255,255,255,0.6)';
+                b.style.borderBottomColor = active ? '#6366f1' : 'transparent';
+            });
+            document.getElementById('tp-tab-perf').classList.toggle('hidden', tab !== 'perf');
+            document.getElementById('tp-tab-sched').classList.toggle('hidden', tab !== 'sched');
+        }
+
+        let _tpPerfConfig = null;
+        let _tpRhythmItems = [];
+        let _tpInspections = [];
+        const TP_ROLE_LABELS = { store_manager: '店长', production_manager: '出品经理', hq_manager: '总部' };
+
+        async function loadTaskPerformanceData() {
+            try {
+                const perfResp = await tpFetch('performance_eval');
+                _tpPerfConfig = perfResp.config_value || {};
+                const t = (_tpPerfConfig.thresholds) || {};
+                const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); };
+                set('tp-attitude-aMax', t.attitude?.aMax ?? 2);
+                set('tp-attitude-bMax', t.attitude?.bMax ?? 4);
+                set('tp-attitude-cMax', t.attitude?.cMax ?? 8);
+                set('tp-pmexec-aMax', t.pmExecution?.aMax ?? 2);
+                set('tp-pmexec-bMax', t.pmExecution?.bMax ?? 4);
+                set('tp-pmexec-cMax', t.pmExecution?.cMax ?? 6);
+                set('tp-hcmgr-aMin', t.hongchaoManagerExecution?.aMin ?? 400);
+                set('tp-hcmgr-bMin', t.hongchaoManagerExecution?.bMin ?? 349);
+                set('tp-hcmgr-cMin', t.hongchaoManagerExecution?.cMin ?? 300);
+                set('tp-mjmgr-aMax', t.majixianManagerExecution?.aMax ?? 2);
+                set('tp-mjmgr-bMax', t.majixianManagerExecution?.bMax ?? 4);
+                set('tp-mjmgr-cMax', t.majixianManagerExecution?.cMax ?? 6);
+                document.getElementById('tp-perf-loading').classList.add('hidden');
+                document.getElementById('tp-perf-form').classList.remove('hidden');
+            } catch (e) {
+                document.getElementById('tp-perf-loading').textContent = '加载失败：' + (e?.message || e);
+            }
+
+            try {
+                const laborResp = await tpFetch('labor_cost_targets');
+                const labor = laborResp.config_value || { '洪潮': 1200, '马己仙': 1500 };
+                document.getElementById('tp-labor-hongchao').value = labor['洪潮'] ?? 1200;
+                document.getElementById('tp-labor-majixian').value = labor['马己仙'] ?? 1500;
+
+                const rhythmResp = await tpFetch('rhythm_schedule');
+                _tpRhythmItems = rhythmResp.config_value?.rhythmItems || [];
+                if (!_tpRhythmItems.length) _tpRhythmItems = ['opening', 'closing', 'patrol', 'inventory', 'cleaning'].map(k => ({ key: k, label: k }));
+
+                const inspResp = await tpFetch('daily_inspections');
+                _tpInspections = Array.isArray(inspResp.config_value) ? inspResp.config_value : (inspResp.config_value?.items || []);
+                renderTpInspectionList();
+
+                document.getElementById('tp-sched-loading').classList.add('hidden');
+                document.getElementById('tp-sched-form').classList.remove('hidden');
+            } catch (e) {
+                document.getElementById('tp-sched-loading').textContent = '加载失败：' + (e?.message || e);
+            }
+        }
+
+        function renderTpInspectionList() {
+            const box = document.getElementById('tp-inspection-list');
+            if (!box) return;
+            if (!_tpInspections.length) {
+                box.innerHTML = '<div style="color:rgba(255,255,255,0.5); padding:8px 0;">暂无巡检任务，点击下方"新增"添加</div>';
+                return;
+            }
+            box.innerHTML = _tpInspections.map((item, idx) => `
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 2fr auto; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
+                    <input type="text" placeholder="门店（留空=按品牌）" class="hrms-input" value="${escapeHtml(item.store || '')}" onchange="updateTpInspection(${idx},'store',this.value)">
+                    <select class="hrms-input" onchange="updateTpInspection(${idx},'brand',this.value)">
+                        <option value="">（全部品牌）</option>
+                        ${['洪潮','马己仙'].map(b => `<option value="${b}" ${item.brand===b?'selected':''}>${b}</option>`).join('')}
+                    </select>
+                    <select class="hrms-input" onchange="updateTpInspection(${idx},'type',this.value)">
+                        ${_tpRhythmItems.map(it => `<option value="${escapeHtml(it.key)}" ${item.type===it.key?'selected':''}>${escapeHtml(it.label||it.key)}</option>`).join('')}
+                    </select>
+                    <input type="time" class="hrms-input" value="${escapeHtml(item.time || '09:00')}" onchange="updateTpInspection(${idx},'time',this.value)">
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                        ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} onchange="toggleTpInspectionRole(${idx},'${role}',this.checked)">${label}</label>`).join('')}
+                        <select class="hrms-input" style="width:auto;" onchange="updateTpInspection(${idx},'frequency',this.value)">
+                            ${['daily','weekly','biweekly','monthly'].map(f => `<option value="${f}" ${((item.frequency||'daily')===f)?'selected':''}>${({daily:'每天',weekly:'每周',biweekly:'每两周',monthly:'每月'})[f]}</option>`).join('')}
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="removeTpInspectionItem(${idx})">删除</button>
+                </div>`).join('');
+        }
+
+        function addTpInspectionItem() {
+            _tpInspections.push({ store: '', brand: '', type: _tpRhythmItems[0]?.key || '', time: '09:00', frequency: 'daily', assigneeRoles: ['store_manager'] });
+            renderTpInspectionList();
+        }
+
+        function updateTpInspection(idx, field, value) {
+            if (_tpInspections[idx]) _tpInspections[idx][field] = value;
+        }
+
+        function toggleTpInspectionRole(idx, role, checked) {
+            const item = _tpInspections[idx];
+            if (!item) return;
+            const roles = new Set(item.assigneeRoles || []);
+            if (checked) roles.add(role); else roles.delete(role);
+            item.assigneeRoles = Array.from(roles);
+        }
+
+        function removeTpInspectionItem(idx) {
+            _tpInspections.splice(idx, 1);
+            renderTpInspectionList();
+        }
+
+        async function saveTpPerformance() {
+            const num = (id) => Number(document.getElementById(id)?.value);
+            const thresholds = {
+                ..._tpPerfConfig?.thresholds,
+                attitude: { aMax: num('tp-attitude-aMax'), bMax: num('tp-attitude-bMax'), cMax: num('tp-attitude-cMax') },
+                pmExecution: { aMax: num('tp-pmexec-aMax'), bMax: num('tp-pmexec-bMax'), cMax: num('tp-pmexec-cMax') },
+                hongchaoManagerExecution: { aMin: num('tp-hcmgr-aMin'), bMin: num('tp-hcmgr-bMin'), cMin: num('tp-hcmgr-cMin') },
+                majixianManagerExecution: { aMax: num('tp-mjmgr-aMax'), bMax: num('tp-mjmgr-bMax'), cMax: num('tp-mjmgr-cMax') }
+            };
+            const configValue = { ..._tpPerfConfig, thresholds };
+            try {
+                await tpFetch('performance_eval', 'PUT', { config_value: configValue, description: '租户前端-绩效考核规则' });
+                _tpPerfConfig = configValue;
+                showNotification('绩效考核规则已保存，Agent将在1分钟内按新规则执行', 'success');
+            } catch (e) {
+                showNotification('保存失败：' + (e?.message || e), 'error');
+            }
+        }
+
+        async function saveTpScheduled() {
+            const laborValue = {
+                '洪潮': Number(document.getElementById('tp-labor-hongchao')?.value),
+                '马己仙': Number(document.getElementById('tp-labor-majixian')?.value)
+            };
+            try {
+                await tpFetch('labor_cost_targets', 'PUT', { config_value: laborValue, description: '租户前端-人力成本目标' });
+                await tpFetch('daily_inspections', 'PUT', { config_value: _tpInspections, description: '租户前端-每日巡检任务' });
+                showNotification('定时任务设置已保存，Agent将在1分钟内按新配置执行', 'success');
+            } catch (e) {
+                showNotification('保存失败：' + (e?.message || e), 'error');
+            }
         }
 
         function openAddRoleModal() {

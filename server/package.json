@@ -8,7 +8,8 @@
     "start": "node index.js",
     "dev": "node index.js",
     "migrate": "node migrate.js",
-    "seed:growth-demo": "node scripts/seed-growth-demo.js"
+    "seed:growth-demo": "node scripts/seed-growth-demo.js",
+    "test": "node --test ./**/*.test.mjs ./middleware/**/*.test.mjs ./utils/**/*.test.mjs ./ontology/**/*.test.mjs ./marketing/**/*.test.mjs ./agents/**/*.test.mjs"
   },
   "dependencies": {
     "ali-oss": "^6.22.0",
