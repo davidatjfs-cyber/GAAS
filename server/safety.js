@@ -33,6 +33,22 @@ export function isHrmsAgentV1Enabled() {
   return String(process.env.HRMS_AGENT_V1_ENABLED || '').trim().toLowerCase() === 'true';
 }
 
+const WEAK_JWT_SECRETS = new Set(['', 'dev', 'local_dev_secret', 'secret', 'jwt_secret', 'changeme']);
+
+export function isWeakJwtSecret(secret) {
+  const s = String(secret || '').trim();
+  if (!s) return true;
+  if (WEAK_JWT_SECRETS.has(s.toLowerCase())) return true;
+  if (s.length < 16) return true;
+  return false;
+}
+
+/** 飞书 webhook 是否强制签名/Verification Token（默认关，DEMO/生产可开） */
+export function requireWebhookSignature() {
+  const v = String(process.env.REQUIRE_WEBHOOK_SIGNATURE || '').trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
+}
+
 export function enforceRuntimeSafetyOrExit({ serviceName }) {
   const appEnv = getAppEnv();
   const dbHost = process.env.DB_HOST || parseDbHostFromDatabaseUrl(process.env.DATABASE_URL) || '';
@@ -56,6 +72,16 @@ export function enforceRuntimeSafetyOrExit({ serviceName }) {
       console.error(`[safety] REFUSE_START: ${serviceName} APP_ENV=production without CONFIRM_PRODUCTION=true`);
       process.exit(2);
     }
+  }
+
+  // 3) 禁止弱 JWT（production/staging 强制；development 仅警告）
+  const jwtSecret = process.env.JWT_SECRET;
+  if (isWeakJwtSecret(jwtSecret)) {
+    if (appEnv === 'production' || appEnv === 'staging') {
+      console.error(`[safety] REFUSE_START: ${serviceName} JWT_SECRET missing or weak (dev/local_dev_secret/<16chars)`);
+      process.exit(2);
+    }
+    console.warn(`[safety] ${serviceName} JWT_SECRET is missing/weak — ok for local only`);
   }
 }
 
@@ -100,5 +126,52 @@ export function isWebhookEnabled() {
   // 默认关闭 webhook，必须显式开启
   if (appEnv === 'production' || appEnv === 'staging') return process.env.ENABLE_WEBHOOK === 'true';
   return process.env.ENABLE_WEBHOOK === 'true';
+}
+
+/** single = 自用 HRMS（默认）；multi = DEMO/托管多租户 */
+export function getTenantMode() {
+  const v = String(process.env.TENANT_MODE || '').trim().toLowerCase();
+  if (v === 'multi' || v === 'saas' || v === 'hosted') return 'multi';
+  return 'single';
+}
+
+export function isMultiTenantMode() {
+  return getTenantMode() === 'multi';
+}
+
+/**
+ * 是否强制 license 才能登录。
+ * - LICENSE_ENFORCE=true 显式开
+ * - multi 模式下默认开（可用 LICENSE_ENFORCE=false 关）
+ * - single 默认关，保证 default 租户现网零感知
+ */
+export function isLicenseEnforced() {
+  const v = String(process.env.LICENSE_ENFORCE || '').trim().toLowerCase();
+  if (v === 'true' || v === '1' || v === 'yes') return true;
+  if (v === 'false' || v === '0' || v === 'no') return false;
+  return isMultiTenantMode();
+}
+
+/** 逗号分隔的租户 ID，强制 license 时仍豁免（默认含 default） */
+export function getLicenseEnforceExemptTenants() {
+  const raw = String(process.env.LICENSE_ENFORCE_EXEMPT_TENANTS || 'default').trim();
+  if (!raw) return new Set();
+  return new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
+}
+
+export function isLicenseExemptTenant(tenantId) {
+  return getLicenseEnforceExemptTenants().has(String(tenantId || '').trim());
+}
+
+/**
+ * 是否允许回落马己仙/洪潮 legacy 飞书默认配置。
+ * - ALLOW_LEGACY_FEISHU_FALLBACK 显式控制
+ * - single 默认 true；multi 默认 false
+ */
+export function allowLegacyFeishuFallback() {
+  const v = String(process.env.ALLOW_LEGACY_FEISHU_FALLBACK || '').trim().toLowerCase();
+  if (v === 'true' || v === '1' || v === 'yes') return true;
+  if (v === 'false' || v === '0' || v === 'no') return false;
+  return !isMultiTenantMode();
 }
 

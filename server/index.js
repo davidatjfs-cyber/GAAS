@@ -67,7 +67,9 @@ import { ensureRecipeSchema, registerRecipeRoutes, generateRecipeTemplate, impor
 import { ensureTrainingSchema, registerTrainingRoutes, startTrainingReminderScheduler, getPromotionRequiredTopics, createTrainingAssignment, getPromotionTrackProgress, getCrossTrackTechnicianStatus } from './training.js';
 import { setDataExecutorPool, purgeExpiredCache, updateMetricVersion } from './data-executor.js';
 import fileRoutes from './file-routes.js';
-import { enforceRuntimeSafetyOrExit, configureDbSessionSafety, isSchemaChangeAllowed, getAppEnv, isWebhookEnabled, isExternalEnabled } from './safety.js';
+import { enforceRuntimeSafetyOrExit, configureDbSessionSafety, isSchemaChangeAllowed, getAppEnv, isWebhookEnabled, isExternalEnabled, requireWebhookSignature, isLicenseEnforced, isLicenseExemptTenant } from './safety.js';
+import { createLoginRateLimiter } from './middleware/rate-limit.js';
+import { verifyFeishuWebhookRequest } from './utils/feishu-webhook-verify.js';
 import { expandAgentStoreLabels, resolveAgentCanonicalStore } from './v2-store-alignment.js';
 import { ensureGrowthTables, registerGrowthRoutes, setSendGrowthAlert } from './growth-api.js';
 import { registerDiagnosisRoutes } from './store-diagnosis.js';
@@ -15062,7 +15064,9 @@ app.post('/api/admin/auth/bootstrap', async (req, res) => {
   }
 });
 
-app.post('/api/admin/auth/login', async (req, res) => {
+const loginRateLimit = createLoginRateLimiter();
+
+app.post('/api/admin/auth/login', loginRateLimit, async (req, res) => {
   try {
     const username = String(req.body?.username || '').trim();
     const password = String(req.body?.password || '').trim();
@@ -15413,6 +15417,9 @@ async function loadTenantRuntimeStatus(tenantId) {
     if (expiresAt && Number.isFinite(expiresAt.getTime()) && expiresAt.getTime() < Date.now()) {
       return { exists: true, loginAllowed: false, reason: 'license_expired', status, expiresAt: license.expires_at };
     }
+  } else if (isLicenseEnforced() && !isLicenseExemptTenant(tenantId)) {
+    // multi / LICENSE_ENFORCE：无 license 行拒绝登录；single 默认不强制，现网 default 不受影响
+    return { exists: true, loginAllowed: false, reason: 'license_missing', status };
   }
 
   return { exists: true, loginAllowed: true, status, license };
@@ -18309,9 +18316,9 @@ app.post('/api/auth/change-password', authRequired, async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', handleLogin);
+app.post('/api/auth/login', loginRateLimit, handleLogin);
 // compatibility alias
-app.post('/api/login', handleLogin);
+app.post('/api/login', loginRateLimit, handleLogin);
 
 app.post('/api/auth/login-as', authRequired, async (req, res) => {
   if (normalizeRoleForJwt(String(req.user?.role || '')) !== 'admin') {
@@ -19860,12 +19867,33 @@ app.post('/api/webhook/feishu', express.raw({ type: 'application/json' }), async
   console.log('[Feishu Webhook] Received request:', req.headers['x-lark-request-timestamp']);
   
   try {
-    // 验证webhook签名（可选，建议生产环境启用）
     const body = req.body;
-    const rawText = Buffer.isBuffer(body) ? body.toString('utf8') : (typeof body === 'string' ? body : JSON.stringify(body || {}));
+    const rawBuf = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body || {}), 'utf8');
+    const rawText = rawBuf.toString('utf8');
     let data = tryParseJson(rawText) || (body && typeof body === 'object' ? body : null);
     if (!data) {
       return res.status(400).json({ code: 400, message: 'invalid_json' });
+    }
+
+    const encryptKey = String(process.env.FEISHU_ENCRYPT_KEY || process.env.LARK_ENCRYPT_KEY || '').trim();
+    const verificationToken = String(process.env.FEISHU_VERIFICATION_TOKEN || process.env.LARK_VERIFICATION_TOKEN || '').trim();
+    const sigCheck = verifyFeishuWebhookRequest({
+      headers: req.headers,
+      rawBody: rawBuf,
+      parsedBody: data,
+      encryptKey,
+      verificationToken,
+      requireSignature: requireWebhookSignature(),
+    });
+    if (!sigCheck.ok) {
+      console.warn('[Feishu Webhook] signature/token rejected:', sigCheck.reason);
+      return res.status(401).json({ code: 401, message: sigCheck.reason || 'unauthorized' });
+    }
+    if (sigCheck.mode === 'skipped' && requireWebhookSignature() === false && (encryptKey || verificationToken)) {
+      // 非强制模式：有密钥但未带签名时仅告警，保持现网兼容
+      if (!req.headers['x-lark-signature']) {
+        console.warn('[Feishu Webhook] signature skipped (REQUIRE_WEBHOOK_SIGNATURE!=true)');
+      }
     }
 
     // Decrypt encrypted payload if present
@@ -19877,6 +19905,14 @@ app.post('/api/webhook/feishu', express.raw({ type: 'application/json' }), async
       } catch (e) {
         console.error('[Feishu Webhook] decrypt failed:', e?.message || e);
         return res.status(400).json({ code: 400, message: 'decrypt_failed' });
+      }
+    }
+
+    // 解密后再校验 Verification Token（加密包场景）
+    if (verificationToken && requireWebhookSignature()) {
+      const tokenAfter = String(data?.token || data?.header?.token || '').trim();
+      if (tokenAfter && tokenAfter !== verificationToken) {
+        return res.status(401).json({ code: 401, message: 'bad_verification_token' });
       }
     }
     

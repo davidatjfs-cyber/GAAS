@@ -7,6 +7,7 @@ import { pool, resolveTenantIdDefault, runForActiveTenants } from './utils/datab
 import { inferBrandFromStoreName } from './agents.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
 import { getTenantFeishuIntegration, saveTenantFeishuIntegration } from './tenant-integrations.js';
+import { allowLegacyFeishuFallback } from './safety.js';
 
 let _feishuSyncFailureNotifier = null;
 /** 由 index 注册：飞书→PG 定时/按表同步失败时立刻通知 admin */
@@ -100,6 +101,10 @@ async function loadTenantFeishuConfig(tenantId) {
   if (!key) return null;
   const configured = await getTenantFeishuIntegration(pool(), tenantId, key);
   if (configured) return configured;
+  if (!allowLegacyFeishuFallback()) {
+    console.warn('[feishu-sync] integration missing and legacy fallback disabled for tenant', tenantId);
+    return null;
+  }
   if (tenantId !== 'default') return null;
   const legacy = buildLegacyDefaultFeishuIntegration();
   if (!legacy) return null;

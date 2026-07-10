@@ -33,6 +33,8 @@ function bizThreshold(bizType) {
 }
 
 async function ensureSalesRawSchema(client) {
+  throw Object.assign(new Error('sales_raw_retired'), { code: 'sales_raw_retired' });
+
   let hasDishCode = true;
   let hasCategory = true;
   try {
@@ -294,6 +296,8 @@ export function parseSalesRawRows(matrix, defBiz, defStore, opts = {}) {
 }
 
 export async function insertSalesRawRows(rows, store, bizType, minDate, maxDate) {
+  throw Object.assign(new Error('sales_raw_retired: use pos_order_items / pos_sales_detail'), { code: 'sales_raw_retired' });
+
   const p = gp();
   const client = await p.connect();
   try {

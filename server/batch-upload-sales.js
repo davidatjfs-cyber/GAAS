@@ -22,6 +22,8 @@ const F = [
 ];
 
 (async () => {
+  console.error('sales_raw_retired: batch upload to sales_raw is disabled. Use POS sync → pos_order_items / pos_sales_detail.');
+  process.exit(2);
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
   setSalesRawPool(pool);
   let total = 0;

@@ -5683,9 +5683,12 @@ export function registerGrowthRoutes(app, pool) {
   // ── Phase 3: Feishu callback for alert cards ──
   const FEISHU_CALLBACK_SECRET = cleanText(process.env.FEISHU_CALLBACK_SECRET || process.env.MINIPROGRAM_SYNC_SECRET || '', 500);
   app.post('/api/growth/feishu-callback', async (req, res) => {
+    if (!FEISHU_CALLBACK_SECRET) {
+      return res.status(503).json({ ok: false, error: 'callback_secret_not_configured' });
+    }
     const b = req.body || {};
     const reqSecret = cleanText(b.secret || b.token || req.headers['x-callback-secret'] || '', 500);
-    if (FEISHU_CALLBACK_SECRET && reqSecret !== FEISHU_CALLBACK_SECRET) return res.status(403).json({ ok: false, error: 'unauthorized' });
+    if (reqSecret !== FEISHU_CALLBACK_SECRET) return res.status(403).json({ ok: false, error: 'unauthorized' });
     const actionKey = cleanText(b.action_key || '', 255);
     const decision = cleanText(b.decision || '', 80);
     if (!actionKey || !decision) return res.status(400).json({ ok: false, error: 'missing_action_key_or_decision' });
@@ -5836,9 +5839,9 @@ export function registerGrowthRoutes(app, pool) {
     if (!text) return res.status(400).json({ ok: false, error: 'missing_text' });
     try {
       const { default: jwt } = await import('jsonwebtoken');
-      const admToken = jwt.sign({ username: 'growth_semantic', role: 'admin' }, process.env.JWT_SECRET || 'dev', { expiresIn: '30s' });
+      const admToken = jwt.sign({ username: 'growth_semantic', role: 'admin' }, (() => { const s = String(process.env.JWT_SECRET || '').trim(); if (!s || s === 'dev') throw new Error('JWT_SECRET_missing'); return s; })(), { expiresIn: '30s' });
       const agentResp = await fetch((process.env.AGENTS_SERVICE_URL || 'http://127.0.0.1:3101') + '/api/growth/semantic-parse', {
-        method: 'POST', headers: { 'Authorization': 'Bearer ' + admToken, 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Authorization': 'Bearer ' + admToken, 'Content-Type': 'application/json', 'X-Internal-Secret': String(process.env.AGENTS_INTERNAL_SECRET || process.env.MINIPROGRAM_SYNC_SECRET || process.env.JWT_SECRET || '').trim() },
         body: JSON.stringify({ text })
       });
       const result = agentResp.ok ? await agentResp.json() : { ok: false };
@@ -6357,9 +6360,13 @@ export function registerGrowthRoutes(app, pool) {
   app.post('/api/growth/generate-selling-point', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     try {
+      const agentsInternal = String(process.env.AGENTS_INTERNAL_SECRET || process.env.MINIPROGRAM_SYNC_SECRET || process.env.JWT_SECRET || '').trim();
       const agentResp = await fetch((process.env.AGENTS_SERVICE_URL || 'http://127.0.0.1:3101') + '/api/growth/generate-selling-point', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(agentsInternal ? { 'X-Internal-Secret': agentsInternal, 'Authorization': 'Bearer ' + agentsInternal } : {})
+        },
         body: JSON.stringify({ title: req.body?.title || '', offer: req.body?.offer || '', store: req.body?.store || '' })
       });
       const data = await agentResp.json();

@@ -31,7 +31,8 @@ import {
   AgentCommunicationSystem, 
   AgentCommunicationHelper 
 } from './agent-communication-system.js';
-import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js';
+import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js'
+import { verifyFeishuWebhookRequest, requireWebhookSignatureEnabled } from './utils/feishu-webhook-verify.js';
 import { getBrandConfigSync, getBrandForStoreSync, getAllBrandNamesSync } from './utils/brand-config-loader.js';
 import {
   pgGetMonthlyExecutionFilingCount,
@@ -1532,7 +1533,7 @@ async function buildBiFactSourceAudit(store, text) {
       params: [normalizeStoreLike(store)]
     },
     sales_raw: {
-      label: '销售明细（sales_raw）',
+      label: '销售明细（pos_sales_detail）',
       sql: `SELECT COUNT(*)::int AS c, MAX(date)::text AS latest FROM pos_sales_detail WHERE lower(regexp_replace(coalesce(store,''), '\\s+', '', 'g')) LIKE $1`,
       params: [normalizeStoreLike(store)]
     }
@@ -11831,7 +11832,28 @@ export function registerAgentRoutes(app, authRequired) {
   // ── Feishu Webhook (public, no auth) ──
   app.post('/api/feishu/webhook', async (req, res) => {
     try {
-      const result = await onFeishuEvent(req.body);
+      const body = req.body;
+      const rawBuf = Buffer.isBuffer(body)
+        ? body
+        : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body || {}), 'utf8');
+      const encryptKey = String(process.env.FEISHU_ENCRYPT_KEY || process.env.LARK_ENCRYPT_KEY || '').trim();
+      const verificationToken = String(process.env.FEISHU_VERIFICATION_TOKEN || process.env.LARK_VERIFICATION_TOKEN || '').trim();
+      const parsed = (body && typeof body === 'object' && !Buffer.isBuffer(body))
+        ? body
+        : (() => { try { return JSON.parse(rawBuf.toString('utf8')); } catch { return {}; } })();
+      const sigCheck = verifyFeishuWebhookRequest({
+        headers: req.headers,
+        rawBody: rawBuf,
+        parsedBody: parsed,
+        encryptKey,
+        verificationToken,
+        requireSignature: requireWebhookSignatureEnabled(),
+      });
+      if (!sigCheck.ok) {
+        console.warn('[feishu webhook] rejected:', sigCheck.reason);
+        return res.status(401).json({ ok: false, error: sigCheck.reason || 'unauthorized' });
+      }
+      const result = await onFeishuEvent(parsed);
       return res.json(result);
     } catch (e) {
       console.error('[feishu webhook] error:', e?.message);
