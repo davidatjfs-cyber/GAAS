@@ -14416,43 +14416,8 @@ function canManageTenantSettings(user) {
   return role === 'admin' || role === 'hq_manager' || role === 'hr_manager';
 }
 
-app.get('/api/tenant-settings/:key', authRequired, async (req, res) => {
-  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
-  const key = String(req.params.key || '').trim();
-  if (!TENANT_SETTINGS_ALLOWED_KEYS.has(key)) return res.status(400).json({ error: 'unknown_settings_key' });
-  try {
-    const token = await getAgentsServiceAdminToken();
-    const url = getAgentsServiceBaseUrl() + '/api/config/' + encodeURIComponent(key);
-    const r = await axios.get(url, { timeout: 8000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}` } });
-    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'tenant_settings_proxy_failed' });
-    return res.json(r.data || { config_key: key, config_value: null });
-  } catch (e) {
-    return res.status(502).json({ error: 'internal_error' });
-  }
-});
-
-app.put('/api/tenant-settings/:key', authRequired, async (req, res) => {
-  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
-  const key = String(req.params.key || '').trim();
-  if (!TENANT_SETTINGS_ALLOWED_KEYS.has(key)) return res.status(400).json({ error: 'unknown_settings_key' });
-  const { config_value, description } = req.body || {};
-  if (config_value === undefined) return res.status(400).json({ error: 'config_value is required' });
-  try {
-    const token = await getAgentsServiceAdminToken();
-    const url = getAgentsServiceBaseUrl() + '/api/config/' + encodeURIComponent(key);
-    const r = await axios.put(url, { config_value, description }, {
-      timeout: 8000,
-      validateStatus: () => true,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
-    });
-    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'tenant_settings_proxy_failed' });
-    return res.json(r.data || { ok: true });
-  } catch (e) {
-    return res.status(502).json({ error: 'internal_error' });
-  }
-});
-
 // ─── 目标管理：通用KPI目标（门店/品牌/公司级，任意metric_key），供"任务和绩效"页面增删改 ───
+// 必须注册在 /api/tenant-settings/:key 之前，否则会被 :key 抢先匹配成 unknown_settings_key → HTTP 400。
 // 复用agents-service-v2既有的/api/kpi/targets CRUD（kpi_targets表已tenant_id隔离）。
 app.get('/api/tenant-settings/kpi-targets', authRequired, async (req, res) => {
   if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
@@ -14493,6 +14458,42 @@ app.delete('/api/tenant-settings/kpi-targets/:id', authRequired, async (req, res
     const url = getAgentsServiceBaseUrl() + '/api/kpi/targets/' + encodeURIComponent(req.params.id);
     const r = await axios.delete(url, { timeout: 8000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}` } });
     if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'kpi_targets_proxy_failed' });
+    return res.json(r.data || { ok: true });
+  } catch (e) {
+    return res.status(502).json({ error: 'internal_error' });
+  }
+});
+
+app.get('/api/tenant-settings/:key', authRequired, async (req, res) => {
+  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
+  const key = String(req.params.key || '').trim();
+  if (!TENANT_SETTINGS_ALLOWED_KEYS.has(key)) return res.status(400).json({ error: 'unknown_settings_key' });
+  try {
+    const token = await getAgentsServiceAdminToken();
+    const url = getAgentsServiceBaseUrl() + '/api/config/' + encodeURIComponent(key);
+    const r = await axios.get(url, { timeout: 8000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}` } });
+    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'tenant_settings_proxy_failed' });
+    return res.json(r.data || { config_key: key, config_value: null });
+  } catch (e) {
+    return res.status(502).json({ error: 'internal_error' });
+  }
+});
+
+app.put('/api/tenant-settings/:key', authRequired, async (req, res) => {
+  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
+  const key = String(req.params.key || '').trim();
+  if (!TENANT_SETTINGS_ALLOWED_KEYS.has(key)) return res.status(400).json({ error: 'unknown_settings_key' });
+  const { config_value, description } = req.body || {};
+  if (config_value === undefined) return res.status(400).json({ error: 'config_value is required' });
+  try {
+    const token = await getAgentsServiceAdminToken();
+    const url = getAgentsServiceBaseUrl() + '/api/config/' + encodeURIComponent(key);
+    const r = await axios.put(url, { config_value, description }, {
+      timeout: 8000,
+      validateStatus: () => true,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+    });
+    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'tenant_settings_proxy_failed' });
     return res.json(r.data || { ok: true });
   } catch (e) {
     return res.status(502).json({ error: 'internal_error' });
@@ -17627,10 +17628,15 @@ app.listen(PORT, HOST, async () => {
           timeZone: 'Asia/Shanghai',
           year: 'numeric',
           month: '2-digit',
-          day: '2-digit'
+          day: '2-digit',
+          hour: '2-digit',
+          hour12: false
         }).formatToParts(new Date());
         const shDay = Number(shParts.find((p) => p.type === 'day')?.value || '0');
-        if (shDay >= 10) {
+        const shHour = Number(shParts.find((p) => p.type === 'hour')?.value || '0');
+        // agents-service-v2 月度成绩单在每月10日 01:18 写入；此前告警属于误报窗口。
+        const pastMonthlyCloseWindow = shDay > 10 || (shDay === 10 && shHour >= 2);
+        if (pastMonthlyCloseWindow) {
           const period = getExpectedMonthlyPerformancePeriodShanghai();
           const eligibleCount = await countEligibleMonthlyPerformanceUsers().catch(() => 0);
           if (eligibleCount > 0) {
@@ -17652,7 +17658,7 @@ app.listen(PORT, HOST, async () => {
                 `应有人员（估算）：${eligibleCount}`,
                 `已写入结果：${actualCount}`,
                 '说明：月度绩效关账或结果写入可能未完成，员工端/管理端看到的绩效结果可能不完整。',
-                '请立即检查 hrms-service 日志中的 [perf-jobs]、agent_scores 表，以及每月 10 日关账任务执行情况。'
+                '请立即检查 agents-service-v2 的 monthly_comprehensive_rating（每月10日01:18）、agent_scores 表。'
               ].join('\n'));
             }
             if (actualCount >= minimumExpected) {
