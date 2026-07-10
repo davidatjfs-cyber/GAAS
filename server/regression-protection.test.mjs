@@ -31,7 +31,7 @@ test('sales_raw must not appear as live table write target in server JS (retired
     /FROM\s+sales_raw\b/i,
     /UPDATE\s+sales_raw\b/i,
   ];
-  const files = ['sales-raw.js', 'batch-upload-sales.js'].map((f) => path.join(__dirname, f));
+  const files = ['sales-raw-upload.js', 'sales-raw-folder-importer.js', 'batch-upload-sales.js'].map((f) => path.join(__dirname, f));
   for (const full of files) {
     if (!fs.existsSync(full)) continue;
     const src = fs.readFileSync(full, 'utf8');
