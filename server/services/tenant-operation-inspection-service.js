@@ -301,19 +301,32 @@ async function checkBaseConfiguration(pool, ctx, stores) {
   const managerCount = employees.filter((e) => ['store_manager', 'admin', 'tenant_admin', 'operation_admin', 'agent_admin'].includes(String(e.role || '').trim())).length;
   const boundCount = employees.filter((e) => String(e.store || e.store_id || '').trim() && String(e.role || e.position || '').trim()).length;
 
+  // 营业时间现在存在「门店画像」配置里（agents-service-v2 的 chairman_config，
+  // hrms_state.key='chairman_config'，与本服务同一个数据库），按门店名取 businessHours 字段。
+  let businessHoursByStore = {};
+  try {
+    const r = await pool.query(`SELECT data->'stores' AS stores FROM hrms_state WHERE key='chairman_config' LIMIT 1`);
+    const storeMap = r.rows?.[0]?.stores || {};
+    for (const [name, profile] of Object.entries(storeMap)) {
+      businessHoursByStore[name] = String(profile?.businessHours || '').trim();
+    }
+  } catch (e) {
+    console.warn('[tenant-inspection] chairman_config business hours lookup skipped:', e?.message);
+  }
   for (const store of stores.length ? stores : [{}]) {
+    const hours = businessHoursByStore[store.store_name] || '';
     items.push(issue({
       category: '基础配置',
       item_key: 'store_business_hours',
       item_name: '门店是否配置营业时间',
-      status: STATUS.pending,
-      severity: 'P3',
+      status: hours ? STATUS.ok : STATUS.pending,
+      severity: hours ? 'P3' : 'P3',
       owner_role: '实施人员',
       impact_modules: ['系统基础配置', '老板晨报'],
-      impact_description: '未发现统一营业时间字段，日报时段和复检判断会使用系统默认时段。',
-      suggestion: '请在门店配置中补充营业时间或接入门店营业配置表。',
+      impact_description: hours ? `已配置营业时间：${hours}。` : '未配置营业时间，日报时段和复检判断会使用系统默认时段。',
+      suggestion: '请在"门店画像"配置里补充营业时间字段。',
       store,
-      evidence: { compatible_reason: 'stores table has no stable business_hours contract' },
+      evidence: { business_hours: hours || null },
     }));
   }
 
