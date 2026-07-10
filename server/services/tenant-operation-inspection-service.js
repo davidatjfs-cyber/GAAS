@@ -301,8 +301,8 @@ async function checkBaseConfiguration(pool, ctx, stores) {
   const managerCount = employees.filter((e) => ['store_manager', 'admin', 'tenant_admin', 'operation_admin', 'agent_admin'].includes(String(e.role || '').trim())).length;
   const boundCount = employees.filter((e) => String(e.store || e.store_id || '').trim() && String(e.role || e.position || '').trim()).length;
 
-  // 营业时间现在存在「门店画像」配置里（agents-service-v2 的 chairman_config，
-  // hrms_state.key='chairman_config'，与本服务同一个数据库），按门店名取 businessHours 字段。
+  // 营业时间现在由门店在"编辑门店"里自行维护（hrms_state key='default' -> data.stores[].businessHours），
+  // 保存时会同步写一份到 chairman_config；这里两个来源都查一遍，兼容还没被重新保存过的旧数据。
   let businessHoursByStore = {};
   try {
     const r = await pool.query(`SELECT data->'stores' AS stores FROM hrms_state WHERE key='chairman_config' LIMIT 1`);
@@ -312,6 +312,16 @@ async function checkBaseConfiguration(pool, ctx, stores) {
     }
   } catch (e) {
     console.warn('[tenant-inspection] chairman_config business hours lookup skipped:', e?.message);
+  }
+  try {
+    const r2 = await pool.query(`SELECT data->'stores' AS stores FROM hrms_state WHERE key=$1 LIMIT 1`, [ctx.tenantId || 'default']);
+    const storeList = Array.isArray(r2.rows?.[0]?.stores) ? r2.rows[0].stores : [];
+    for (const s of storeList) {
+      const hours = String(s?.businessHours || '').trim();
+      if (hours && s?.name) businessHoursByStore[s.name] = hours;
+    }
+  } catch (e) {
+    console.warn('[tenant-inspection] store businessHours lookup skipped:', e?.message);
   }
   for (const store of stores.length ? stores : [{}]) {
     const hours = businessHoursByStore[store.store_name] || '';

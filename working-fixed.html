@@ -5865,6 +5865,50 @@
             padding: 24px 28px;
         }
 
+        /* 门店经营画像：手机上用可折叠分组代替一次性长表单，减少滚动、方便定位要填的字段 */
+        .ui-profile-section {
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 14px;
+            margin-bottom: 12px;
+            overflow: hidden;
+            background: rgba(255,255,255,0.03);
+        }
+        .ui-profile-section .ui-form-grid {
+            padding: 4px 16px 16px;
+            gap: 16px;
+        }
+        .ui-profile-section__head {
+            list-style: none;
+            cursor: pointer;
+            padding: 16px;
+            font-size: 14px;
+            font-weight: 600;
+            color: rgba(255,255,255,0.85);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            -webkit-tap-highlight-color: transparent;
+            min-height: 24px;
+        }
+        .ui-profile-section__head::-webkit-details-marker { display: none; }
+        .ui-profile-section__head::after {
+            content: '▸';
+            color: rgba(255,255,255,0.4);
+            font-size: 14px;
+            transition: transform 0.2s ease;
+            margin-left: 8px;
+        }
+        .ui-profile-section[open] .ui-profile-section__head::after {
+            transform: rotate(90deg);
+        }
+        .ui-profile-section[open] .ui-profile-section__head {
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        @media (max-width: 480px) {
+            .ui-profile-section__head { padding: 14px; font-size: 13.5px; }
+            .ui-profile-section .ui-form-grid { padding: 4px 14px 14px; }
+        }
+
         .ui-modal .ui-form-group {
             display: flex;
             flex-direction: column;
@@ -21698,6 +21742,71 @@
                                     <button class="ui-seg-btn" type="button" data-value="inactive">禁用</button>
                                 </div>
                             </div>
+                        </div>
+                        <div style="margin-top:20px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.1);">
+                            <h4 style="margin:0 0 4px; font-size:15px;">门店经营画像</h4>
+                            <div style="font-size:12px; color:rgba(255,255,255,0.5); margin-bottom:12px;">由门店自行维护，用于经营诊断、AI建议和老板晨报的判断依据 · 点击展开各分组</div>
+
+                            <details class="ui-profile-section" open>
+                                <summary class="ui-profile-section__head">基础画像与营业时间</summary>
+                                <div class="ui-form-grid">
+                                    <div class="ui-form-group"><label class="ui-label">定位</label><input id="store-form-positioning" type="text" placeholder="如：大众正餐"></div>
+                                    <div class="ui-form-group"><label class="ui-label">目标客群</label><input id="store-form-targetCustomer" type="text" placeholder="如：周边白领、家庭聚餐"></div>
+                                    <div class="ui-form-group"><label class="ui-label">核心策略</label><input id="store-form-coreStrategy" type="text" placeholder="如：走量，翻台率是生命线"></div>
+                                    <div class="ui-form-group"><label class="ui-label">当前瓶颈</label><input id="store-form-bottleneck" type="text" placeholder="如：午市客流"></div>
+                                    <div class="ui-form-group"><label class="ui-label">营业时间</label><input id="store-form-businessHours" type="text" placeholder="如：10:00-22:00（每日）"></div>
+                                    <div class="ui-form-group"><label class="ui-label">高峰时段</label><input id="store-form-peakHours" type="text" placeholder="如：11:30-13:30, 17:30-20:30"></div>
+                                </div>
+                            </details>
+
+                            <details class="ui-profile-section">
+                                <summary class="ui-profile-section__head">门店规模与定位</summary>
+                                <div class="ui-form-grid">
+                                    <div class="ui-form-group"><label class="ui-label">餐位数</label><input id="store-form-seats" type="number" inputmode="numeric" placeholder="整数"></div>
+                                    <div class="ui-form-group"><label class="ui-label">桌数</label><input id="store-form-tables" type="number" inputmode="numeric" placeholder="整数"></div>
+                                    <div class="ui-form-group"><label class="ui-label">人均（元）</label><input id="store-form-avgPrice" type="number" inputmode="numeric" placeholder="整数"></div>
+                                    <div class="ui-form-group"><label class="ui-label">面积（m²）</label><input id="store-form-area" type="number" inputmode="numeric" placeholder="整数"></div>
+                                    <div class="ui-form-group"><label class="ui-label">包房数</label><input id="store-form-privateRooms" type="number" inputmode="numeric" placeholder="0表示无包房"></div>
+                                    <div class="ui-form-group"><label class="ui-label">厨房产能（同时出菜）</label><input id="store-form-kitchenCapacity" type="number" inputmode="numeric" placeholder="整数"></div>
+                                    <div class="ui-form-group full-width"><label class="ui-label">招牌产品/拳头产品</label><input id="store-form-signatureProducts" type="text" placeholder="如：白切鸡、烧鹅（逗号分隔）"></div>
+                                    <div class="ui-form-group full-width"><label class="ui-label">竞争优势/差异化</label><input id="store-form-competitiveAdvantage" type="text" placeholder="如：周边唯一正宗粤菜"></div>
+                                    <div class="ui-form-group"><label class="ui-label">服务风格</label><input id="store-form-serviceStyle" type="text" placeholder="如：快速翻台型 / 精致服务型"></div>
+                                    <div class="ui-form-group full-width"><label class="ui-label">淡季/低谷说明</label><input id="store-form-lowSeasonNote" type="text" placeholder="如：周一至周四午市冷清"></div>
+                                </div>
+                            </details>
+
+                            <details class="ui-profile-section">
+                                <summary class="ui-profile-section__head">经营目标与成本结构</summary>
+                                <div style="display:flex; align-items:center; gap:8px; margin:4px 0 14px;">
+                                    <input id="store-form-hasTakeout" type="checkbox" style="width:20px; height:20px;">
+                                    <label class="ui-label" style="margin:0;" for="store-form-hasTakeout">有外卖业务</label>
+                                </div>
+                                <div class="ui-form-grid">
+                                    <div class="ui-form-group"><label class="ui-label">堂食日均营收（元）</label><input id="store-form-di-revenue" type="number" inputmode="numeric"></div>
+                                    <div class="ui-form-group"><label class="ui-label">堂食日均订单数</label><input id="store-form-di-orders" type="number" inputmode="numeric"></div>
+                                    <div class="ui-form-group"><label class="ui-label">堂食客单价（元）</label><input id="store-form-di-avgTicket" type="number" inputmode="numeric"></div>
+                                    <div class="ui-form-group"><label class="ui-label">翻台率</label><input id="store-form-di-turnover" type="number" inputmode="decimal" step="0.1"></div>
+                                    <div class="ui-form-group"><label class="ui-label">外卖日均营收（元）</label><input id="store-form-to-revenue" type="number" inputmode="numeric"></div>
+                                    <div class="ui-form-group"><label class="ui-label">外卖日均订单数</label><input id="store-form-to-orders" type="number" inputmode="numeric"></div>
+                                    <div class="ui-form-group"><label class="ui-label">外卖客单价（元）</label><input id="store-form-to-avgTicket" type="number" inputmode="numeric"></div>
+                                    <div class="ui-form-group"><label class="ui-label">食材成本率（如0.35=35%）</label><input id="store-form-cs-food" type="number" inputmode="decimal" step="0.01"></div>
+                                    <div class="ui-form-group"><label class="ui-label">人力成本率</label><input id="store-form-cs-labor" type="number" inputmode="decimal" step="0.01"></div>
+                                    <div class="ui-form-group"><label class="ui-label">租金成本率</label><input id="store-form-cs-rent" type="number" inputmode="decimal" step="0.01"></div>
+                                    <div class="ui-form-group"><label class="ui-label">目标利润率</label><input id="store-form-cs-profit" type="number" inputmode="decimal" step="0.01"></div>
+                                </div>
+                            </details>
+
+                            <details class="ui-profile-section">
+                                <summary class="ui-profile-section__head">招牌菜与需关注菜品</summary>
+                                <div class="ui-form-group full-width">
+                                    <label class="ui-label">高毛利招牌菜（每行一个：菜名,价格,毛利率，如 白切鸡,68,0.68）</label>
+                                    <textarea id="store-form-topDishes" rows="3" style="width:100%; font-family:inherit;" placeholder="白切鸡,68,0.68&#10;烧鹅,88,0.66"></textarea>
+                                </div>
+                                <div class="ui-form-group full-width" style="margin-top:10px;">
+                                    <label class="ui-label">需关注菜品（低毛利或差评多，每行一个：菜名,说明）</label>
+                                    <textarea id="store-form-problemDishes" rows="2" style="width:100%; font-family:inherit;" placeholder="XX菜,毛利偏低"></textarea>
+                                </div>
+                            </details>
                         </div>
                         <div class="ui-modal-footer">
                             <button class="btn btn-secondary" type="button" onclick="closeStoreFormModal()">取消</button>
@@ -41605,9 +41714,34 @@ ${knowledgeContent.slice(0, 30000)}`;
             if (statusEl) statusEl.value = store?.status ? String(store.status) : (store?.is_active === false ? 'inactive' : 'active');
             populateStoreBrandSelect(m === 'create' ? '' : String(store?.brandId || store?.brand || store?.brandName || ''));
 
+            // 门店经营画像（原Agent控制台"门店画像"配置，改为门店自行维护，字段名保持一致以便与AI上下文同步）
+            const profileFieldIds = ['positioning', 'targetCustomer', 'coreStrategy', 'bottleneck', 'businessHours', 'signatureProducts', 'competitiveAdvantage', 'serviceStyle'];
+            profileFieldIds.forEach(k => { const e = document.getElementById('store-form-' + k); if (e) e.value = m === 'create' ? '' : String(store?.[k] || ''); });
+            const numFieldIds = ['seats', 'tables', 'avgPrice', 'area', 'privateRooms', 'kitchenCapacity'];
+            numFieldIds.forEach(k => { const e = document.getElementById('store-form-' + k); if (e) e.value = m === 'create' ? '' : (store?.[k] || ''); });
+            const peakHoursEl = document.getElementById('store-form-peakHours');
+            if (peakHoursEl) peakHoursEl.value = m === 'create' ? '' : (Array.isArray(store?.peakHours) ? store.peakHours.join(', ') : '');
+            const lowSeasonEl = document.getElementById('store-form-lowSeasonNote');
+            if (lowSeasonEl) lowSeasonEl.value = m === 'create' ? '' : String(store?.lowSeasonNote || '');
+            const takeoutCb = document.getElementById('store-form-hasTakeout');
+            if (takeoutCb) takeoutCb.checked = m === 'create' ? false : !!store?.hasTakeout;
+            const di = (store && store.target_daily_dineIn) || {};
+            const to = (store && store.target_daily_takeout) || {};
+            const cs = (store && store.cost_structure) || {};
+            [['di-revenue', di.revenue], ['di-orders', di.orders], ['di-avgTicket', di.avgTicket], ['di-turnover', di.turnover],
+             ['to-revenue', to.revenue], ['to-orders', to.orders], ['to-avgTicket', to.avgTicket],
+             ['cs-food', cs.foodCostRate], ['cs-labor', cs.laborCostRate], ['cs-rent', cs.rentCostRate], ['cs-profit', cs.targetProfitRate]
+            ].forEach(([id, val]) => { const e = document.getElementById('store-form-' + id); if (e) e.value = m === 'create' ? '' : (val ?? ''); });
+            const topDishesEl = document.getElementById('store-form-topDishes');
+            if (topDishesEl) topDishesEl.value = m === 'create' ? '' : (Array.isArray(store?.topDishes) ? store.topDishes.map(d => [d.name, d.price, d.margin].filter(x => x !== undefined && x !== '').join(',')).join('\n') : '');
+            const problemDishesEl = document.getElementById('store-form-problemDishes');
+            if (problemDishesEl) problemDishesEl.value = m === 'create' ? '' : (Array.isArray(store?.problemDishes) ? store.problemDishes.map(d => typeof d === 'string' ? d : [d.name, d.note].filter(Boolean).join(',')).join('\n') : '');
+
             const readOnly = m === 'view';
             try {
-                [nameEl, addressEl, cityEl, floorEl, managerEl, phoneEl, openDateEl, brandEl, regionEl].forEach(el => {
+                const profileInputs = [...profileFieldIds, ...numFieldIds, 'peakHours', 'lowSeasonNote', 'hasTakeout', 'di-revenue', 'di-orders', 'di-avgTicket', 'di-turnover', 'to-revenue', 'to-orders', 'to-avgTicket', 'cs-food', 'cs-labor', 'cs-rent', 'cs-profit', 'topDishes', 'problemDishes']
+                    .map(k => document.getElementById('store-form-' + k));
+                [nameEl, addressEl, cityEl, floorEl, managerEl, phoneEl, openDateEl, brandEl, regionEl, ...profileInputs].forEach(el => {
                     if (el) el.disabled = readOnly;
                 });
             } catch (e) {}
@@ -41655,6 +41789,19 @@ ${knowledgeContent.slice(0, 30000)}`;
                 return;
             }
 
+            const g = (k) => (document.getElementById('store-form-' + k)?.value || '').trim();
+            const gn = (k) => { const v = g(k); return v === '' ? undefined : Number(v); };
+            const peakHoursVal = g('peakHours').split(/[,，]/).map(x => x.trim()).filter(Boolean);
+            const topDishesVal = g('topDishes').split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+                const [dn, price, margin] = line.split(',').map(x => (x || '').trim());
+                return { name: dn || '', price: Number(price) || 0, margin: Number(margin) || 0 };
+            });
+            const problemDishesVal = g('problemDishes').split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+                const [dn, note] = line.split(',').map(x => (x || '').trim());
+                return { name: dn || '', note: note || '' };
+            });
+            const hasTakeoutVal = !!document.getElementById('store-form-hasTakeout')?.checked;
+
             (async () => {
                 const payload = {
                     id,
@@ -41669,7 +41816,29 @@ ${knowledgeContent.slice(0, 30000)}`;
                     brandId,
                     brandName,
                     brand: brandName,
-                    region
+                    region,
+                    positioning: g('positioning'),
+                    targetCustomer: g('targetCustomer'),
+                    coreStrategy: g('coreStrategy'),
+                    bottleneck: g('bottleneck'),
+                    businessHours: g('businessHours'),
+                    peakHours: peakHoursVal,
+                    seats: gn('seats'),
+                    tables: gn('tables'),
+                    avgPrice: gn('avgPrice'),
+                    area: gn('area'),
+                    privateRooms: gn('privateRooms'),
+                    kitchenCapacity: gn('kitchenCapacity'),
+                    signatureProducts: g('signatureProducts'),
+                    competitiveAdvantage: g('competitiveAdvantage'),
+                    serviceStyle: g('serviceStyle'),
+                    lowSeasonNote: g('lowSeasonNote'),
+                    hasTakeout: hasTakeoutVal,
+                    target_daily_dineIn: { revenue: gn('di-revenue') || 0, orders: gn('di-orders') || 0, avgTicket: gn('di-avgTicket') || 0, turnover: gn('di-turnover') || 0 },
+                    target_daily_takeout: { revenue: gn('to-revenue') || 0, orders: gn('to-orders') || 0, avgTicket: gn('to-avgTicket') || 0 },
+                    cost_structure: { foodCostRate: gn('cs-food') || 0, laborCostRate: gn('cs-labor') || 0, rentCostRate: gn('cs-rent') || 0, targetProfitRate: gn('cs-profit') || 0 },
+                    topDishes: topDishesVal,
+                    problemDishes: problemDishesVal
                 };
                 if (mode === 'edit') {
                     await HRMS_API.updateStore(id, payload);
