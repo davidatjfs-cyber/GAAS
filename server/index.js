@@ -6640,7 +6640,7 @@ async function upsertPayrollDomainFromState(state) {
   const mc = Array.isArray(state.monthlyConfirmations) ? state.monthlyConfirmations : [];
   await pool.query(
     `INSERT INTO hrms_payroll_domain (id, tenant_id, payroll_adjustments, payroll_audits, salary_adjustments, monthly_confirmations, updated_at)
-     VALUES ($1, $1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, NOW())
+     VALUES ($1::text, $1::varchar(80), $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, NOW())
      ON CONFLICT (id) DO UPDATE SET
        payroll_adjustments = EXCLUDED.payroll_adjustments,
        payroll_audits = EXCLUDED.payroll_audits,
@@ -6681,7 +6681,7 @@ async function upsertLeaveDomainFromState(state) {
     `INSERT INTO hrms_leave_domain (
        id, tenant_id, leave_balance_overrides, leave_balance_adjustments, leave_cumulative_close_snapshots, updated_at
      )
-     VALUES ($1, $1, $2::jsonb, $3::jsonb, $4::jsonb, NOW())
+     VALUES ($1::text, $1::varchar(80), $2::jsonb, $3::jsonb, $4::jsonb, NOW())
      ON CONFLICT (id) DO UPDATE SET
        leave_balance_overrides = EXCLUDED.leave_balance_overrides,
        leave_balance_adjustments = EXCLUDED.leave_balance_adjustments,
