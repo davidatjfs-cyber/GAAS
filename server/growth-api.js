@@ -1004,6 +1004,7 @@ export async function ensureGrowthTables(pool) {
       action_payload: { channel: 'sms', campaign_key: 'prospect_recall', valid_days: 14 }
     }
   ];
+  // ALLOWED_SYSTEM_DEFAULT: 启动期仅给 default 播种触达规则（single 现网）；multi 应走平台开通种子
   // 启动期默认规则种子，无HTTP请求上下文，固定按default租户播种
   await tenantContext.run('default', async () => {
     for (const rule of defaultTouchRules) {

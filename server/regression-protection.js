@@ -228,6 +228,7 @@ export class RegressionDetector {
   async saveCheckResult(results) {
     try {
       const db = pool();
+      // ALLOWED_SYSTEM_DEFAULT: 回归/代码健康检查
       // 代码健康检查是全局系统级任务，不属于任何租户，固定写tenant_id='default'
       await tenantContext.run('default', async () => {
         await db.query(

@@ -5100,6 +5100,8 @@ export async function processBitableData(configKey, records) {
     return;
   }
 
+  // REVIEWED_COMPAT_DEFAULT: bitable 处理入口；single 现网等价 default。
+  // multi 下应由调用方按 app_token 解析租户后再包 ALS（见 resolveWebhookTenantId）。
   // 此函数是PG LISTEN/NOTIFY、catchup、回退轮询三条路径的唯一公共入口，
   // 但调用方均未建立ALS——导致内部写agent_messages时tenant_id列值('default')
   // 与会话变量(空sentinel)不一致，被严格RLS的WITH CHECK拒绝。这里统一建ALS。
@@ -10960,6 +10962,7 @@ export async function onFeishuEvent(body) {
 
         // Step 3: Save unregistered user record and ask for username
         try {
+          // REVIEWED_COMPAT_DEFAULT: 飞书未绑定用户占位（绑定后覆盖真实租户）
           // 此时还不知道用户名，无法解析真实租户；占位行先落default，等用户输入用户名
           // 绑定成功后(registerFeishuUser)会用真实租户覆盖
           await tenantContext.run('default', () =>
@@ -10976,6 +10979,7 @@ export async function onFeishuEvent(body) {
       } else {
         // No text (image/audio etc) and auto-bind failed
         try {
+          // REVIEWED_COMPAT_DEFAULT: 飞书未绑定用户占位（绑定后覆盖真实租户）
           // 此时还不知道用户名，无法解析真实租户；占位行先落default，等用户输入用户名
           // 绑定成功后(registerFeishuUser)会用真实租户覆盖
           await tenantContext.run('default', () =>

@@ -203,6 +203,7 @@ export class AgentAutonomousScheduler {
   async logTaskExecution(taskId, status, result) {
     try {
       // 自主任务调度器检查的是全局数据源/master_tasks，不属于任何租户，固定tenant_id='default'
+      // ALLOWED_SYSTEM_DEFAULT: 全局自主任务调度日志
       await tenantContext.run('default', async () => {
         const db = pool();
         await db.query(
@@ -468,6 +469,7 @@ export class AgentCollaborationOrchestrator {
     if (!collaboration) return;
 
     try {
+      // ALLOWED_SYSTEM_DEFAULT: 全局Agent协作归档
       // 全局Agent间协作编排，不属于任何租户，固定tenant_id='default'（与本文件logTaskExecution一致）
       await tenantContext.run('default', async () => {
         const db = pool();

@@ -21615,6 +21615,7 @@ app.listen(PORT, HOST, async () => {
     // 必须显式包裹tenantContext.run，否则resolveTenantIdDefault()返回'default'但
     // session变量是fail-closed的sentinel，写入会被WITH CHECK拒绝。
       try {
+      // ALLOWED_SYSTEM_DEFAULT: 启动回填 default 租户历史薪资调整
       await tenantContext.run('default', async () => {
       const stateSA = (await getSharedState()) || {};
       const saList = Array.isArray(stateSA.salaryAdjustments) ? stateSA.salaryAdjustments : [];
@@ -21754,6 +21755,7 @@ app.listen(PORT, HOST, async () => {
     // 避免RLS的WITH CHECK因为会话变量(无上下文时是哨兵值)跟列默认值'default'不一致而静默拒绝写入。
     async function beatHeartbeat(taskName) {
       try {
+        // ALLOWED_SYSTEM_DEFAULT: 全局调度心跳
         await tenantContext.run('default', async () => {
           await pool.query(
             `INSERT INTO scheduler_heartbeat (task_name, last_beat, run_count, tenant_id)
