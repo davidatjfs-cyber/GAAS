@@ -1113,13 +1113,13 @@
         #login.login-rep {
             --lr-bg0: #07060a;
             --lr-bg1: #12100c;
-            --lr-border: rgba(232, 196, 96, 0.22);
+            --lr-border: rgba(201, 169, 106, 0.22);
             --lr-border-soft: rgba(255, 255, 255, 0.08);
-            --lr-gold: #e8c460;
-            --lr-gold-deep: #c9a227;
-            --lr-gold-glow: rgba(232, 196, 96, 0.28);
-            --lr-text: #f4efe4;
-            --lr-muted: rgba(214, 200, 168, 0.62);
+            --lr-gold: #c9a96a;
+            --lr-gold-deep: #a8894f;
+            --lr-gold-glow: rgba(201, 169, 106, 0.22);
+            --lr-text: #ece7dc;
+            --lr-muted: rgba(196, 184, 160, 0.62);
             --lr-sans: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
             --lr-display: "Outfit", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
             --lr-mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -1136,10 +1136,10 @@
             font-family: var(--lr-sans);
             color: var(--lr-text);
             background:
-                radial-gradient(ellipse 80% 50% at 50% -8%, rgba(232, 196, 96, 0.22), transparent 55%),
-                radial-gradient(520px 360px at 110% 18%, rgba(245, 158, 11, 0.12), transparent 50%),
-                radial-gradient(480px 320px at -15% 78%, rgba(201, 162, 39, 0.14), transparent 48%),
-                linear-gradient(168deg, var(--lr-bg0) 0%, var(--lr-bg1) 48%, #0a0907 100%);
+                radial-gradient(ellipse 70% 45% at 50% -8%, rgba(201, 169, 106, 0.14), transparent 55%),
+                radial-gradient(520px 360px at 110% 18%, rgba(168, 137, 79, 0.08), transparent 50%),
+                radial-gradient(480px 320px at -15% 78%, rgba(120, 100, 70, 0.10), transparent 48%),
+                linear-gradient(168deg, #0c0c0e 0%, #111113 48%, #0a0a0b 100%);
             animation: lrEnter 0.55s ease-out both;
         }
 
@@ -1203,7 +1203,7 @@
             color: var(--lr-text);
             line-height: 1.35;
             margin: 0 0 10px;
-            text-shadow: 0 0 40px rgba(232, 196, 96, 0.18);
+            text-shadow: 0 0 40px rgba(201, 169, 106, 0.16);
         }
 
         #login.login-rep .login-rep-sub {
@@ -1225,7 +1225,7 @@
             box-shadow:
                 0 0 0 1px rgba(0, 0, 0, 0.4) inset,
                 0 28px 56px -24px rgba(0, 0, 0, 0.72),
-                0 0 48px -18px rgba(232, 196, 96, 0.18);
+                0 0 48px -18px rgba(201, 169, 106, 0.16);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
         }
@@ -1280,7 +1280,7 @@
 
         #login.login-rep .form-group input:focus {
             outline: none;
-            border-color: rgba(232, 196, 96, 0.55);
+            border-color: rgba(201, 169, 106, 0.40);
             box-shadow: 0 0 0 3px var(--lr-gold-glow);
         }
 
@@ -1299,10 +1299,10 @@
             cursor: pointer;
             position: relative;
             color: #1a1408;
-            background: linear-gradient(180deg, #f5e2a8 0%, var(--lr-gold) 42%, var(--lr-gold-deep) 100%);
+            background: linear-gradient(180deg, #dcc9a0 0%, var(--lr-gold) 42%, var(--lr-gold-deep) 100%);
             box-shadow:
                 0 0 0 1px rgba(255, 255, 255, 0.28) inset,
-                0 16px 36px -10px rgba(232, 196, 96, 0.48);
+                0 16px 36px -10px rgba(201, 169, 106, 0.35);
             transition: transform 0.15s ease, filter 0.2s ease, box-shadow 0.2s ease;
             touch-action: manipulation;
             -webkit-tap-highlight-color: transparent;
@@ -1312,7 +1312,7 @@
             filter: brightness(1.05);
             box-shadow:
                 0 0 0 1px rgba(255, 255, 255, 0.32) inset,
-                0 18px 40px -8px rgba(232, 196, 96, 0.55);
+                0 18px 40px -8px rgba(201, 169, 106, 0.40);
         }
 
         #login.login-rep .btn:active {
@@ -12160,55 +12160,54 @@
             }
         }
 
-        /* ── 我的档案：暗金活力 · 手机优先 ── */
+        /* ── 我的档案：Obsidian & Gold（哑光金）· 手机优先 ── */
         #profile-page {
-            --gold: #e8c460;
-            --gold-deep: #c9a227;
-            --gold-glow: rgba(232, 196, 96, 0.28);
-            --iris: #e8c460;
-            --iris-dim: #c9a227;
+            --gold: #c9a96a;
+            --gold-deep: #a8894f;
+            --gold-glow: rgba(201, 169, 106, 0.22);
+            --iris: #c9a96a;
+            --iris-dim: #a8894f;
             --mint: #5EEAD4;
             --coral: #FF7A90;
-            --amber: #FFC46B;
-            --text: #f4efe4;
-            --dim: rgba(214, 200, 168, 0.72);
-            --faint: rgba(186, 170, 130, 0.55);
-            --stroke: rgba(232, 196, 96, 0.16);
-            --stroke-hi: rgba(232, 196, 96, 0.32);
-            --glass: rgba(255, 236, 180, 0.06);
+            --amber: #d4b896;
+            --text: #ece7dc;
+            --dim: rgba(196, 184, 160, 0.72);
+            --faint: rgba(160, 148, 124, 0.55);
+            --stroke: rgba(201, 169, 106, 0.18);
+            --stroke-hi: rgba(201, 169, 106, 0.34);
+            --glass: rgba(201, 169, 106, 0.05);
             --pf-sans: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
             --pf-display: "Outfit", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
             background:
-                radial-gradient(ellipse 70% 42% at 18% -4%, rgba(232, 196, 96, 0.22), transparent 58%),
-                radial-gradient(ellipse 55% 36% at 96% 8%, rgba(245, 158, 11, 0.14), transparent 52%),
-                radial-gradient(ellipse 60% 40% at 50% 108%, rgba(201, 162, 39, 0.12), transparent 54%),
-                linear-gradient(180deg, #07060a 0%, #12100c 52%, #0a0907 100%) !important;
+                radial-gradient(ellipse 55% 36% at 12% 0%, rgba(201, 169, 106, 0.10), transparent 60%),
+                radial-gradient(ellipse 45% 30% at 100% 8%, rgba(168, 137, 79, 0.07), transparent 55%),
+                linear-gradient(180deg, #0c0c0e 0%, #111113 48%, #0a0a0b 100%) !important;
             position: relative;
             overflow-x: hidden;
             color: var(--text) !important;
             font-family: var(--pf-sans);
             -webkit-font-smoothing: antialiased;
         }
-        #profile-page .ap-aurora { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
-        #profile-page .ap-aurora__blob { position:absolute; border-radius:50%; filter:blur(110px); opacity:0.9; }
-        #profile-page .ap-aurora__blob--1 { width:72vw; height:58vw; top:-20%; left:-16%; background:rgba(232,196,96,0.28); }
-        #profile-page .ap-aurora__blob--2 { width:48vw; height:46vw; top:-6%; right:-18%; background:rgba(245,158,11,0.16); }
-        #profile-page .ap-aurora__blob--3 { width:70vw; height:52vw; bottom:-22%; left:18%; background:rgba(201,162,39,0.14); }
-        #profile-page .ap-grain { position:fixed; inset:0; z-index:0; pointer-events:none; opacity:0.05; mix-blend-mode:overlay; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); background-repeat:repeat; background-size:256px 256px; }
+        #profile-page .ap-aurora { position:absolute; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+        #profile-page .ap-aurora__blob { position:absolute; border-radius:50%; filter:blur(100px); opacity:0.55; }
+        #profile-page .ap-aurora__blob--1 { width:56vw; height:42vw; top:-16%; left:-12%; background:rgba(201,169,106,0.16); }
+        #profile-page .ap-aurora__blob--2 { width:40vw; height:36vw; top:4%; right:-14%; background:rgba(168,137,79,0.10); }
+        #profile-page .ap-aurora__blob--3 { width:50vw; height:40vw; bottom:-18%; left:24%; background:rgba(120,100,70,0.10); }
+        #profile-page .ap-grain { position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0.035; mix-blend-mode:overlay; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); background-repeat:repeat; background-size:256px 256px; }
         #profile-page .dr-shell { position:relative; z-index:1; padding-bottom:110px; }
         #profile-page .card,
         #profile-page .pf-quick-card,
         #profile-page .pf-notif-card,
         #profile-page .pf-leave-item,
         #profile-page .pf-approval-item {
-            background: linear-gradient(165deg, rgba(255,236,180,0.08), rgba(255,255,255,0.03) 45%, rgba(0,0,0,0.16)) !important;
-            backdrop-filter: blur(22px) saturate(1.25) !important;
-            -webkit-backdrop-filter: blur(22px) saturate(1.25) !important;
-            border: 1px solid rgba(232,196,96,0.16) !important;
-            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02)) !important;
+            backdrop-filter: blur(16px) saturate(1.1) !important;
+            -webkit-backdrop-filter: blur(16px) saturate(1.1) !important;
+            border: 1px solid rgba(255,255,255,0.07) !important;
+            border-radius: 16px;
             box-shadow:
-                inset 0 1px 0 rgba(255,236,180,0.14),
-                0 16px 40px rgba(0,0,0,0.32) !important;
+                inset 0 1px 0 rgba(255,255,255,0.05),
+                0 12px 28px rgba(0,0,0,0.28) !important;
         }
         #profile-page .pf-card-hero {
             position: relative;
@@ -12219,11 +12218,11 @@
             position: absolute;
             inset: 0;
             border-radius: inherit;
-            background: linear-gradient(135deg, rgba(232,196,96,0.18), transparent 42%, rgba(245,158,11,0.06) 78%);
+            background: linear-gradient(135deg, rgba(201,169,106,0.18), transparent 42%, rgba(245,158,11,0.06) 78%);
             pointer-events: none;
         }
         #profile-page .pf-card-hero > * { position: relative; z-index: 1; }
-        #profile-page .rep-page-head { border-bottom-color: rgba(232,196,96,0.14); }
+        #profile-page .rep-page-head { border-bottom-color: rgba(201,169,106,0.14); }
         #profile-page .rep-page-head__eyebrow {
             color: var(--gold) !important;
             letter-spacing: 0.22em;
@@ -12236,7 +12235,7 @@
             flex-shrink: 0;
         }
         #profile-page .rep-page-head h2 {
-            color: #f8f1df !important;
+            color: #ece7dc !important;
             letter-spacing: 0.08em;
             font-family: var(--pf-sans);
             font-weight: 700;
@@ -12250,13 +12249,13 @@
             transition: all 0.15s;
         }
         #profile-page .ga-btn--primary {
-            background: linear-gradient(180deg, #f5e2a8, var(--gold) 45%, var(--gold-deep));
-            color: #1a1408;
-            box-shadow: 0 8px 22px rgba(232,196,96,0.32);
+            background: linear-gradient(180deg, #dcc9a0, var(--gold) 45%, var(--gold-deep));
+            color: #1a1610;
+            box-shadow: 0 8px 22px rgba(201,169,106,0.32);
         }
         #profile-page .ga-btn--primary:hover { filter: brightness(1.05); }
-        #profile-page .ga-btn--ghost { background: rgba(255,236,180,0.06); color: var(--dim); border: 1px solid var(--stroke); }
-        #profile-page .ga-btn--ghost:hover { background: rgba(255,236,180,0.10); color: var(--text); }
+        #profile-page .ga-btn--ghost { background: rgba(201,169,106,0.06); color: var(--dim); border: 1px solid var(--stroke); }
+        #profile-page .ga-btn--ghost:hover { background: rgba(201,169,106,0.10); color: var(--text); }
         #profile-page .ga-btn--sm { height: 32px; padding: 0 12px; font-size: 12px; }
         #profile-page .ga-btn--danger { background: rgba(255,122,144,0.15); color: var(--coral); border: 1px solid rgba(255,122,144,0.2); }
         #profile-page .ga-badge {
@@ -12264,7 +12263,7 @@
             padding: 2px 8px; border-radius: 99px;
             font-size: 10px; font-weight: 600; line-height: 1;
         }
-        #profile-page .ga-badge--iris { background: rgba(232,196,96,0.15); border: 1px solid rgba(232,196,96,0.28); color: var(--gold); }
+        #profile-page .ga-badge--iris { background: rgba(201,169,106,0.15); border: 1px solid rgba(201,169,106,0.28); color: var(--gold); }
         #profile-page .ga-badge--mint { background: rgba(94,234,212,0.12); border: 1px solid rgba(94,234,212,0.2); color: var(--mint); }
         #profile-page .ga-badge--amber { background: rgba(255,196,107,0.15); border: 1px solid rgba(255,196,107,0.25); color: var(--amber); }
         #profile-page .ga-badge--coral { background: rgba(255,122,144,0.15); border: 1px solid rgba(255,122,144,0.25); color: var(--coral); }
@@ -12277,19 +12276,19 @@
             align-items: center;
             justify-content: center;
             font-size: 22px;
-            color: #1a1408;
-            background: linear-gradient(145deg, #f5e2a8, var(--gold) 50%, var(--gold-deep));
-            border: 1px solid rgba(255,236,180,0.35);
+            color: #1a1610;
+            background: linear-gradient(145deg, #dcc9a0, var(--gold) 50%, var(--gold-deep));
+            border: 1px solid rgba(201,169,106,0.35);
             box-shadow:
                 inset 0 1px 0 rgba(255,255,255,0.35),
-                0 10px 26px rgba(232,196,96,0.28);
+                0 10px 26px rgba(201,169,106,0.28);
         }
         #profile-page .pf-hero-name {
             font-weight: 700;
             font-size: 18px;
             line-height: 1.25;
             letter-spacing: 0.06em;
-            color: #f8f1df;
+            color: #ece7dc;
             font-family: var(--pf-sans);
         }
         #profile-page .pf-hero-meta {
@@ -12306,10 +12305,10 @@
             border-radius: 14px;
             max-width: 36vw;
             text-align: right;
-            background: linear-gradient(180deg, rgba(255,236,180,0.10), rgba(0,0,0,0.12));
-            border: 1px solid rgba(232,196,96,0.22);
+            background: linear-gradient(180deg, rgba(201,169,106,0.10), rgba(0,0,0,0.12));
+            border: 1px solid rgba(201,169,106,0.22);
             box-shadow:
-                inset 0 1px 0 rgba(255,236,180,0.16),
+                inset 0 1px 0 rgba(201,169,106,0.16),
                 0 10px 28px rgba(0,0,0,0.24);
         }
         /* 强制确认弹窗：系统通知 / 重要公告 */
@@ -12323,18 +12322,18 @@
             padding: 0;
             overflow: hidden;
             border-radius: 22px;
-            border: 1px solid rgba(232,196,96,0.18);
+            border: 1px solid rgba(201,169,106,0.18);
             background: linear-gradient(165deg, rgba(28,24,16,0.98), rgba(14,12,10,0.99));
-            box-shadow: 0 24px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,236,180,0.08);
+            box-shadow: 0 24px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(201,169,106,0.08);
             font-family: "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
         }
         #ack-announcement-modal .ack-top {
             padding: 22px 22px 16px;
-            border-bottom: 1px solid rgba(232,196,96,0.10);
+            border-bottom: 1px solid rgba(201,169,106,0.10);
         }
         #ack-announcement-modal .ack-top--urgent { background: linear-gradient(180deg, rgba(239,68,68,0.14), transparent); }
         #ack-announcement-modal .ack-top--warn { background: linear-gradient(180deg, rgba(245,158,11,0.12), transparent); }
-        #ack-announcement-modal .ack-top--info { background: linear-gradient(180deg, rgba(232,196,96,0.12), transparent); }
+        #ack-announcement-modal .ack-top--info { background: linear-gradient(180deg, rgba(201,169,106,0.12), transparent); }
         #ack-announcement-modal .ack-badge-row {
             display: flex;
             align-items: center;
@@ -12353,7 +12352,7 @@
         }
         #ack-announcement-modal .ack-badge--urgent { background: rgba(239,68,68,0.18); color: #fca5a5; border: 1px solid rgba(239,68,68,0.28); }
         #ack-announcement-modal .ack-badge--warn { background: rgba(245,158,11,0.16); color: #fcd34d; border: 1px solid rgba(245,158,11,0.24); }
-        #ack-announcement-modal .ack-badge--info { background: rgba(232,196,96,0.16); color: #f5e2a8; border: 1px solid rgba(232,196,96,0.28); }
+        #ack-announcement-modal .ack-badge--info { background: rgba(201,169,106,0.16); color: #dcc9a0; border: 1px solid rgba(201,169,106,0.28); }
         #ack-announcement-modal .ack-title {
             margin: 0;
             font-size: 17px;
@@ -12391,8 +12390,8 @@
             gap: 12px;
             padding: 8px 10px;
             border-radius: 10px;
-            background: rgba(255,236,180,0.04);
-            border: 1px solid rgba(232,196,96,0.10);
+            background: rgba(201,169,106,0.04);
+            border: 1px solid rgba(201,169,106,0.10);
             font-size: 12px;
         }
         #ack-announcement-modal .ack-kv-k { color: rgba(186,170,130,0.88); flex-shrink: 0; }
@@ -12400,7 +12399,7 @@
         #ack-announcement-modal .ack-details {
             margin-top: 4px;
             border-radius: 12px;
-            border: 1px solid rgba(232,196,96,0.10);
+            border: 1px solid rgba(201,169,106,0.10);
             background: rgba(0,0,0,0.22);
             overflow: hidden;
         }
@@ -12409,7 +12408,7 @@
             padding: 10px 12px;
             font-size: 12px;
             font-weight: 600;
-            color: rgba(232,196,96,0.95);
+            color: rgba(201,169,106,0.95);
             list-style: none;
         }
         #ack-announcement-modal .ack-details summary::-webkit-details-marker { display: none; }
@@ -12423,7 +12422,7 @@
         }
         #ack-announcement-modal .ack-foot {
             padding: 14px 22px 20px;
-            border-top: 1px solid rgba(232,196,96,0.10);
+            border-top: 1px solid rgba(201,169,106,0.10);
         }
         #ack-announcement-modal .ack-btn {
             width: 100%;
@@ -12434,9 +12433,9 @@
             font-weight: 700;
             letter-spacing: 0.12em;
             cursor: pointer;
-            color: #1a1408;
-            background: linear-gradient(180deg, #f5e2a8, #e8c460 45%, #c9a227);
-            box-shadow: 0 10px 28px rgba(232,196,96,0.32);
+            color: #1a1610;
+            background: linear-gradient(180deg, #dcc9a0, #c9a96a 45%, #a8894f);
+            box-shadow: 0 10px 28px rgba(201,169,106,0.32);
             font-family: "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
         }
         #ack-announcement-modal .ack-btn--urgent {
@@ -12450,7 +12449,7 @@
             text-align: center;
             cursor: pointer;
             box-shadow:
-                inset 0 1px 0 rgba(255,236,180,0.16),
+                inset 0 1px 0 rgba(201,169,106,0.16),
                 0 14px 26px rgba(0,0,0,0.22);
         }
         #profile-page .pf-icon-chip {
@@ -12460,11 +12459,11 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            border: 1px solid rgba(232,196,96,0.18);
-            box-shadow: inset 0 1px 0 rgba(255,236,180,0.14);
+            border: 1px solid rgba(201,169,106,0.18);
+            box-shadow: inset 0 1px 0 rgba(201,169,106,0.14);
         }
         #profile-page .pf-icon-chip--amber { background: linear-gradient(135deg, rgba(255,196,107,0.24), rgba(255,196,107,0.10)); }
-        #profile-page .pf-icon-chip--iris { background: linear-gradient(135deg, rgba(232,196,96,0.24), rgba(232,196,96,0.10)); }
+        #profile-page .pf-icon-chip--iris { background: linear-gradient(135deg, rgba(201,169,106,0.24), rgba(201,169,106,0.10)); }
         #profile-page .pf-icon-chip--mint { background: linear-gradient(135deg, rgba(94,234,212,0.22), rgba(94,234,212,0.10)); }
         #profile-page .pf-icon-chip--lg {
             position: relative;
@@ -12476,12 +12475,12 @@
         #profile-page .pf-notif-shell {
             padding: 14px 16px;
             border-radius: 20px;
-            background: linear-gradient(165deg, rgba(255,236,180,0.07), rgba(0,0,0,0.14));
-            border: 1px solid rgba(232,196,96,0.16);
+            background: linear-gradient(165deg, rgba(201,169,106,0.07), rgba(0,0,0,0.14));
+            border: 1px solid rgba(201,169,106,0.16);
             backdrop-filter: blur(18px) saturate(1.15);
             -webkit-backdrop-filter: blur(18px) saturate(1.15);
             box-shadow:
-                inset 0 1px 0 rgba(255,236,180,0.12),
+                inset 0 1px 0 rgba(201,169,106,0.12),
                 0 12px 30px rgba(0,0,0,0.22);
         }
         #profile-page .pf-notif-card {
@@ -12493,14 +12492,14 @@
             display: inline-flex; align-items: center; gap: 4px;
             padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 600;
         }
-        #profile-page .pf-notif-badge--announcement { background: rgba(232,196,96,0.15); color: var(--gold); }
+        #profile-page .pf-notif-badge--announcement { background: rgba(201,169,106,0.15); color: var(--gold); }
         #profile-page .pf-notif-badge--warning { background: rgba(255,122,144,0.15); color: var(--coral); }
         #profile-page .pf-notif-badge--info { background: rgba(94,234,212,0.12); color: var(--mint); }
         #profile-page .pf-notif-badge--urgent { background: #ef4444; color: #fff; font-weight: 800; animation: pfNotifUrgentPulse 1.6s ease-in-out infinite; }
         @keyframes pfNotifUrgentPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.55); } 50% { box-shadow: 0 0 0 5px rgba(239,68,68,0); } }
-        #profile-page .pf-notif-card--unread { border-color: rgba(232,196,96,0.55); background: rgba(232,196,96,0.07); }
+        #profile-page .pf-notif-card--unread { border-color: rgba(201,169,106,0.55); background: rgba(201,169,106,0.07); }
         #profile-page .pf-notif-card--urgent { border-color: rgba(239,68,68,0.6); background: rgba(239,68,68,0.07); }
-        #profile-page .pf-notif-unread-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#e8c460; flex-shrink:0; margin-right:2px; }
+        #profile-page .pf-notif-unread-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#c9a96a; flex-shrink:0; margin-right:2px; }
         #profile-page .pf-notif-card--urgent .pf-notif-unread-dot { background:#ef4444; }
         #profile-page .pf-approval-item {
             display: flex; align-items: center; gap: 10px;
@@ -12513,8 +12512,8 @@
         }
         #profile-page .pf-metric-tile,
         #profile-page .pf-summary-tile {
-            background: linear-gradient(180deg, rgba(255,236,180,0.07), rgba(0,0,0,0.12));
-            border: 1px solid rgba(232,196,96,0.12);
+            background: linear-gradient(180deg, rgba(201,169,106,0.07), rgba(0,0,0,0.12));
+            border: 1px solid rgba(201,169,106,0.12);
             border-radius: 14px;
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
@@ -12534,7 +12533,7 @@
             font-size: 14px;
             line-height: 1.25;
             letter-spacing: 0.02em;
-            color: #f4efe4;
+            color: #ece7dc;
         }
         #profile-page .pf-stat-reward {
             background: linear-gradient(135deg, rgba(94,234,212,0.14), rgba(94,234,212,0.05)); border: 1px solid rgba(94,234,212,0.20);
@@ -12546,7 +12545,7 @@
         }
         #profile-page .pf-band {
             border-radius: 14px;
-            box-shadow: inset 0 1px 0 rgba(255,236,180,0.10);
+            box-shadow: inset 0 1px 0 rgba(201,169,106,0.10);
         }
         #profile-page .pf-band--amber {
             background: linear-gradient(135deg, rgba(255,196,107,0.20), rgba(255,196,107,0.08));
@@ -12557,16 +12556,16 @@
             border: 1px solid rgba(94,234,212,0.18);
         }
         #profile-page .pf-band--iris {
-            background: linear-gradient(135deg, rgba(232,196,96,0.14), rgba(232,196,96,0.05));
-            border: 1px solid rgba(232,196,96,0.20);
+            background: linear-gradient(135deg, rgba(201,169,106,0.14), rgba(201,169,106,0.05));
+            border: 1px solid rgba(201,169,106,0.20);
         }
         #profile-page .pf-band--coral {
             background: linear-gradient(135deg, rgba(255,122,144,0.14), rgba(255,122,144,0.05));
             border: 1px solid rgba(255,122,144,0.20);
         }
         #profile-page .pf-summary-tile--iris {
-            background: linear-gradient(135deg, rgba(232,196,96,0.12), rgba(232,196,96,0.05));
-            border-color: rgba(232,196,96,0.18);
+            background: linear-gradient(135deg, rgba(201,169,106,0.12), rgba(201,169,106,0.05));
+            border-color: rgba(201,169,106,0.18);
         }
         #profile-page .pf-summary-tile--coral {
             background: linear-gradient(135deg, rgba(255,122,144,0.10), rgba(255,122,144,0.05));
@@ -12602,7 +12601,7 @@
         #profile-page .pf-notif-title {
             font-weight: 700;
             font-size: 13px;
-            color: #f8f1df;
+            color: #ece7dc;
             letter-spacing: 0.02em;
         }
         #profile-page .pf-notif-meta {
@@ -12631,7 +12630,7 @@
         #profile-page .pf-approval-title {
             font-weight: 600;
             font-size: 13px;
-            color: #f8f1df;
+            color: #ece7dc;
         }
         #profile-page .pf-approval-meta {
             font-size: 11px;
@@ -12667,21 +12666,21 @@
             border-color: var(--stroke-hi) !important;
             transform: translateY(-1px);
             box-shadow:
-                inset 0 1px 0 rgba(255,236,180,0.18),
+                inset 0 1px 0 rgba(201,169,106,0.18),
                 0 18px 34px rgba(0,0,0,0.34) !important;
         }
         #profile-page .pf-quick-card .pf-quick-icon {
             width: 40px; height: 40px; border-radius: 12px;
             display: flex; align-items: center; justify-content: center;
             font-size: 20px; margin-bottom: 8px;
-            border: 1px solid rgba(232,196,96,0.16);
-            box-shadow: inset 0 1px 0 rgba(255,236,180,0.12);
+            border: 1px solid rgba(201,169,106,0.16);
+            box-shadow: inset 0 1px 0 rgba(201,169,106,0.12);
         }
         #profile-page .pf-quick-card .pf-quick-title {
             font-weight: 700;
             font-size: 13px;
             letter-spacing: 0.04em;
-            color: #f4efe4;
+            color: #ece7dc;
         }
         #profile-page .pf-quick-card .pf-quick-desc {
             font-size: 11px;
@@ -12689,7 +12688,7 @@
             margin-top: 4px;
             line-height: 1.4;
         }
-        #profile-page .pf-quick-icon--leave { background: linear-gradient(135deg, rgba(232,196,96,0.22), rgba(232,196,96,0.08)); }
+        #profile-page .pf-quick-icon--leave { background: linear-gradient(135deg, rgba(201,169,106,0.22), rgba(201,169,106,0.08)); }
         #profile-page .pf-quick-icon--promote { background: linear-gradient(135deg, rgba(94,234,212,0.18), rgba(94,234,212,0.08)); }
         #profile-page .pf-quick-icon--mailbox { background: linear-gradient(135deg, rgba(255,196,107,0.20), rgba(255,196,107,0.08)); }
         #profile-page .pf-quick-icon--password { background: linear-gradient(135deg, rgba(255,122,144,0.16), rgba(255,122,144,0.08)); }
@@ -12704,7 +12703,7 @@
             font-weight: 700;
             font-size: 15px;
             letter-spacing: 0.06em;
-            color: #f8f1df;
+            color: #ece7dc;
         }
         #profile-page .att-summary-metrics {
             display: grid;
@@ -22440,7 +22439,7 @@
             </div>
             
             <!-- 个人信息页面 -->
-            <div id="profile-<div id="profile-page" class="hidden">
+            <div id="profile-page" class="hidden">
                 <div class="ap-grain"></div>
                 <div class="ap-aurora">
                     <div class="ap-aurora__blob ap-aurora__blob--1"></div>
@@ -22467,7 +22466,7 @@
                         <div id="profile-store-rating-badge" class="pf-store-rating-badge" style="display:none;">
                             <div style="font-size: 9px; font-weight: 700; letter-spacing: 0.14em; color: rgba(214,200,168,0.55);">门店级别</div>
                             <div style="margin-top: 2px; display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; flex-wrap: wrap;">
-                                <span id="profile-store-rating" style="font-size: 17px; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; color:#f5e2a8;">-</span>
+                                <span id="profile-store-rating" style="font-size: 17px; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; color:#dcc9a0;">-</span>
                                 <span style="font-size: 10px; font-weight: 600; color: rgba(214,200,168,0.45); white-space: nowrap;">上月·1日</span>
                             </div>
                         </div>
@@ -22486,8 +22485,8 @@
                 <div style="margin-bottom: 16px;">
                     <div class="pf-points-banner pf-band pf-band--amber" onclick="showPage('points')">
                         <div style="font-size: 12px; color: rgba(254,240,138,0.95); font-weight:700;">💎 多劳多得</div>
-                        <div style="font-weight: 900; font-size: 17px; margin-top: 4px; color: #facc15; text-shadow:0 2px 10px rgba(250,204,21,0.28);" id="profile-month-points">0分</div>
-                        <div id="profile-points-ranking" style="font-size: 11px; color: rgba(250,204,21,0.7); margin-top: 3px; display:none;"></div>
+                        <div style="font-weight: 900; font-size: 17px; margin-top: 4px; color: #c9a96a; text-shadow:0 2px 10px rgba(201,169,106,0.28);" id="profile-month-points">0分</div>
+                        <div id="profile-points-ranking" style="font-size: 11px; color: rgba(201,169,106,0.7); margin-top: 3px; display:none;"></div>
                     </div>
                 </div>
 
@@ -22523,7 +22522,7 @@
                             </div>
                         </div>
                         <span id="profile-notif-count-badge" style="display:none; background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; box-shadow:0 2px 8px rgba(245,158,11,0.3);"></span>
-                        <button id="profile-publish-announcement-btn" style="display:none; background:linear-gradient(180deg,#f5e2a8,#e8c460 45%,#c9a227); color:#1a1408; font-size:11px; font-weight:700; padding:5px 12px; border-radius:10px; border:none; cursor:pointer; box-shadow:0 2px 8px rgba(232,196,96,0.35); white-space:nowrap;" onclick="openAnnouncementModal()">+ 发布公告</button>
+                        <button id="profile-publish-announcement-btn" style="display:none; background:linear-gradient(180deg,#dcc9a0,#c9a96a 45%,#a8894f); color:#1a1408; font-size:11px; font-weight:700; padding:5px 12px; border-radius:10px; border:none; cursor:pointer; box-shadow:0 2px 8px rgba(201,169,106,0.35); white-space:nowrap;" onclick="openAnnouncementModal()">+ 发布公告</button>
                     </div>
                     <div class="profile-notifications-scroll">
                         <div id="profile-notifications" style="padding-bottom: 4px;"></div>
@@ -22589,8 +22588,8 @@
                             <div class="pf-summary-v" style="font-size: 15px; color: rgba(239,68,68,0.95);" id="profile-punishment-count">¥0.00</div>
                         </div>
                         <div class="pf-summary-tile pf-summary-tile--iris" style="padding: 10px 6px; text-align:center; cursor:pointer; min-height: 58px; display:flex; flex-direction:column; justify-content:center;" onclick="showPage('exam')">
-                            <div class="pf-summary-k" style="color: rgba(232,196,96,0.92);">考试</div>
-                            <div class="pf-summary-v" style="font-size: 15px; color: #f5e2a8;" id="profile-exam-count">0</div>
+                            <div class="pf-summary-k" style="color: rgba(201,169,106,0.92);">考试</div>
+                            <div class="pf-summary-v" style="font-size: 15px; color: #dcc9a0;" id="profile-exam-count">0</div>
                         </div>
                         <div class="pf-summary-tile pf-summary-tile--coral" style="padding: 10px 6px; text-align:center; cursor:pointer; min-height: 58px; display:flex; flex-direction:column; justify-content:center;" onclick="showPage('promotion')">
                             <div class="pf-summary-k" style="color: rgba(255,122,144,0.90);">升职</div>
@@ -22598,7 +22597,7 @@
                         </div>
                     </div>
                     <!-- 待审批 (embedded in 入职信息 card) -->
-                    <div id="profile-pending-approvals-card" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(232,196,96,0.12);">
+                    <div id="profile-pending-approvals-card" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(201,169,106,0.12);">
                         <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 10px;">
                             <span style="font-size: 15px;">📋</span>
                             <span style="font-weight: 700; font-size: 14px;">待审批</span>
@@ -25664,7 +25663,7 @@
                     listEl.innerHTML = urls.length
                         ? `<div style="display:flex; gap:8px; flex-wrap:wrap;">${urls.map((u, i) => {
                             const abs = toAbs(u);
-                            return `<a href="${escapeHtml(abs)}" target="_blank" rel="noopener" title="打开证据${i + 1}" style="position:relative; display:block; width:72px; height:72px; border-radius:10px; overflow:hidden; border:1px solid rgba(250,204,21,0.35); background:rgba(255,255,255,0.04);"><img src="${escapeHtml(abs)}" alt="证据${i + 1}" style="width:100%; height:100%; object-fit:cover;"><span style="position:absolute; right:4px; bottom:4px; font-size:10px; color:#fde68a; background:rgba(2,6,23,0.65); border-radius:6px; padding:1px 5px;">${i + 1}</span></a>`;
+                            return `<a href="${escapeHtml(abs)}" target="_blank" rel="noopener" title="打开证据${i + 1}" style="position:relative; display:block; width:72px; height:72px; border-radius:10px; overflow:hidden; border:1px solid rgba(201,169,106,0.35); background:rgba(255,255,255,0.04);"><img src="${escapeHtml(abs)}" alt="证据${i + 1}" style="width:100%; height:100%; object-fit:cover;"><span style="position:absolute; right:4px; bottom:4px; font-size:10px; color:#fde68a; background:rgba(2,6,23,0.65); border-radius:6px; padding:1px 5px;">${i + 1}</span></a>`;
                         }).join('')}</div>`
                         : '未上传成功';
                 }
@@ -25727,7 +25726,7 @@
             const idx = __POINTS_RET_ROW_SEQ;
             const rules = __POINTS_RULES_CACHE || [];
             const rulesHtml = rules.length
-                ? rules.map((r, ri) => `<div class="pts-rule-opt pts-ret-rule-opt" data-rid="${escapeHtml(String(r?.id||''))}" data-pts="${Number(r?.points||0)}" onclick="selectPointsReturnedRule(this,${idx})" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;${ri < rules.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : ''}cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background 0.18s ease;"><span style="flex:1;font-size:13px;color:rgba(226,232,240,0.9);line-height:1.5;padding-right:10px;">${escapeHtml(String(r?.itemName||'-'))}<span style="display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:rgba(250,204,21,0.82);">+${Number(r?.points||0)}分</span></span><div class="pts-radio-dot" style="width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s ease;background:rgba(255,255,255,0.04);"></div></div>`).join('')
+                ? rules.map((r, ri) => `<div class="pts-rule-opt pts-ret-rule-opt" data-rid="${escapeHtml(String(r?.id||''))}" data-pts="${Number(r?.points||0)}" onclick="selectPointsReturnedRule(this,${idx})" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;${ri < rules.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : ''}cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background 0.18s ease;"><span style="flex:1;font-size:13px;color:rgba(226,232,240,0.9);line-height:1.5;padding-right:10px;">${escapeHtml(String(r?.itemName||'-'))}<span style="display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:rgba(201,169,106,0.82);">+${Number(r?.points||0)}分</span></span><div class="pts-radio-dot" style="width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s ease;background:rgba(255,255,255,0.04);"></div></div>`).join('')
                 : '<div style="padding:18px;text-align:center;color:rgba(200,215,230,0.45);font-size:13px;">暂无可用事项</div>';
             const itemDiv = document.createElement('div');
             itemDiv.className = 'pts-ret-item';
@@ -25833,7 +25832,7 @@
             const idx = __POINTS_APPLY_COUNTER;
             const rules = __POINTS_RULES_CACHE || [];
             const rulesHtml = rules.length
-                ? rules.map((r, ri) => `<div class="pts-rule-opt" data-rid="${escapeHtml(String(r?.id||''))}" data-pts="${Number(r?.points||0)}" onclick="selectPointsRule(this,${idx})" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;${ri < rules.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : ''}cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background 0.18s ease;"><span style="flex:1;font-size:13px;color:rgba(226,232,240,0.9);line-height:1.5;padding-right:10px;">${escapeHtml(String(r?.itemName||'-'))}<span style="display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:rgba(250,204,21,0.82);">+${Number(r?.points||0)}分</span></span><div class="pts-radio-dot" style="width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s ease;background:rgba(255,255,255,0.04);"></div></div>`).join('')
+                ? rules.map((r, ri) => `<div class="pts-rule-opt" data-rid="${escapeHtml(String(r?.id||''))}" data-pts="${Number(r?.points||0)}" onclick="selectPointsRule(this,${idx})" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;${ri < rules.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : ''}cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background 0.18s ease;"><span style="flex:1;font-size:13px;color:rgba(226,232,240,0.9);line-height:1.5;padding-right:10px;">${escapeHtml(String(r?.itemName||'-'))}<span style="display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:rgba(201,169,106,0.82);">+${Number(r?.points||0)}分</span></span><div class="pts-radio-dot" style="width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s ease;background:rgba(255,255,255,0.04);"></div></div>`).join('')
                 : '<div style="padding:18px;text-align:center;color:rgba(200,215,230,0.45);font-size:13px;">暂无可用事项</div>';
             const itemDiv = document.createElement('div');
             itemDiv.className = 'points-apply-item';
@@ -25846,7 +25845,7 @@
                     </div>`;
             itemDiv.innerHTML = `
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                    <span style="font-size:12px;font-weight:700;color:rgba(250,204,21,0.85);">第 ${count+1} 条</span>
+                    <span style="font-size:12px;font-weight:700;color:rgba(201,169,106,0.85);">第 ${count+1} 条</span>
                     ${count>0?`<button type="button" onclick="removePointsApplyItem(this)" style="background:none;border:none;color:rgba(239,68,68,0.75);font-size:18px;cursor:pointer;padding:0 4px;line-height:1;" title="删除此条">✕</button>`:''}
                 </div>
                 <div style="margin-bottom:10px;">
@@ -26105,16 +26104,16 @@
                     if (rankNum === 1) medal = '🥇';
                     else if (rankNum === 2) medal = '🥈';
                     else if (rankNum === 3) medal = '🥉';
-                    const bgStyle = isMe ? 'background:rgba(250,204,21,0.12); border:1px solid rgba(250,204,21,0.3);' : 'background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06);';
+                    const bgStyle = isMe ? 'background:rgba(201,169,106,0.12); border:1px solid rgba(201,169,106,0.3);' : 'background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06);';
                     const nameColor = isMe ? 'color:rgba(254,240,138,0.95); font-weight:800;' : 'color:rgba(226,232,240,0.92);';
-                    const rankColor = rankNum <= 3 ? 'color:#facc15; font-weight:900;' : 'color:rgba(200,215,230,0.7); font-weight:700;';
+                    const rankColor = rankNum <= 3 ? 'color:#c9a96a; font-weight:900;' : 'color:rgba(200,215,230,0.7); font-weight:700;';
                     return `<div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; margin-bottom:4px; ${bgStyle}">
                         <div style="min-width:28px; text-align:center; font-size:${rankNum <= 3 ? '18px' : '14px'}; ${rankColor}">${medal || rankNum}</div>
                         <div style="flex:1; min-width:0;">
                             <div style="font-size:13px; ${nameColor} white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(item.name || item.username)}${isMe ? ' <span style="font-size:10px; opacity:0.7;">(我)</span>' : ''}</div>
                             ${(item.position || item.store) ? '<div style="font-size:10px; color:rgba(200,215,230,0.5); margin-top:1px;">' + escapeHtml([item.position, item.store].filter(Boolean).join(' · ')) + '</div>' : ''}
                         </div>
-                        <div style="font-size:15px; font-weight:900; color:${rankNum <= 3 ? '#facc15' : 'rgba(245,158,11,0.9)'}; text-shadow:0 1px 4px rgba(250,204,21,0.2);">${item.totalPoints}<span style="font-size:10px; font-weight:500; opacity:0.7;">分</span></div>
+                        <div style="font-size:15px; font-weight:900; color:${rankNum <= 3 ? '#c9a96a' : 'rgba(245,158,11,0.9)'}; text-shadow:0 1px 4px rgba(201,169,106,0.2);">${item.totalPoints}<span style="font-size:10px; font-weight:500; opacity:0.7;">分</span></div>
                     </div>`;
                 }).join('');
             } catch (e) {
@@ -26243,7 +26242,7 @@ const role = String(currentUser?.role || '').trim();
                                 <div style="margin-top:4px; font-size:12px; color:rgba(200,215,230,0.7);">门店：${escapeHtml(gStoreLabel)} · ${group.items.length}条记录</div>
                             </div>
                             <div style="text-align:right;">
-                                <div style="font-size:13px; color:#facc15; font-weight:900;">${Number(group.totalPoints || 0)}分</div>
+                                <div style="font-size:13px; color:#c9a96a; font-weight:900;">${Number(group.totalPoints || 0)}分</div>
                                 <div style="margin-top:4px; font-size:12px; color:#f59e0b; font-weight:800;">¥${Number(group.totalAmount || 0).toFixed(2)}</div>
                             </div>
                         </div>
@@ -26599,10 +26598,10 @@ const role = String(currentUser?.role || '').trim();
                 let itemsDetailHtml = '';
                 if (batchItems.length > 1) {
                     itemsDetailHtml = batchItems.map((it, idx) => `
-                        <div style="margin-top:${idx === 0 ? '10' : '8'}px; padding:10px 12px; border-radius:10px; background:rgba(250,204,21,0.04); border:1px solid rgba(250,204,21,0.12);">
+                        <div style="margin-top:${idx === 0 ? '10' : '8'}px; padding:10px 12px; border-radius:10px; background:rgba(201,169,106,0.04); border:1px solid rgba(201,169,106,0.12);">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="font-size:12px; font-weight:700; color:rgba(250,204,21,0.85);">第${idx + 1}条</span>
-                                <span style="color:#facc15; font-weight:900; font-size:13px;">${Number(it?.points || 0)}分</span>
+                                <span style="font-size:12px; font-weight:700; color:rgba(201,169,106,0.85);">第${idx + 1}条</span>
+                                <span style="color:#c9a96a; font-weight:900; font-size:13px;">${Number(it?.points || 0)}分</span>
                             </div>
                             <div style="margin-top:6px; color:rgba(200,215,230,0.85); font-size:13px;">事项：<span style="color:rgba(226,232,240,0.95); font-weight:700;">${escapeHtml(it?.itemName || '-')}</span></div>
                             <div style="margin-top:4px; color:rgba(200,215,230,0.85); font-size:13px;">理由：<span style="color:rgba(226,232,240,0.95);">${escapeHtml(it?.reason || '-')}</span></div>
@@ -26621,7 +26620,7 @@ const role = String(currentUser?.role || '').trim();
                 }
                 payloadHtml = `
                     <div style="margin-top: 14px; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03);">
-                        <div style="font-weight: 900;">积分申请信息${batchItems.length > 1 ? `<span style="font-size:12px; font-weight:600; color:rgba(250,204,21,0.85); margin-left:8px;">（共${batchItems.length}条）</span>` : ''}</div>
+                        <div style="font-weight: 900;">积分申请信息${batchItems.length > 1 ? `<span style="font-size:12px; font-weight:600; color:rgba(201,169,106,0.85); margin-left:8px;">（共${batchItems.length}条）</span>` : ''}</div>
                         <div style="margin-top: 10px; color: rgba(200,215,230,0.85);">申请人：<span style="color: rgba(226,232,240,0.95); font-weight: 800;">${escapeHtml(pointsApplicantName || '-')}</span></div>
                         ${pointsApplicantPosition ? `<div style="margin-top: 8px; color: rgba(200,215,230,0.85);">岗位：<span style="color: rgba(226,232,240,0.95); font-weight: 800;">${escapeHtml(pointsApplicantPosition)}</span></div>` : ''}
                         ${pointsApplicantLevel ? `<div style="margin-top: 8px; color: rgba(200,215,230,0.85);">级别：<span style="color: rgba(139,92,246,0.95); font-weight: 800;">${escapeHtml(pointsApplicantLevel)}</span></div>` : ''}
@@ -26629,7 +26628,7 @@ const role = String(currentUser?.role || '').trim();
                         ${pointsApplicantStore ? `<div style="margin-top: 8px; color: rgba(200,215,230,0.85);">门店：<span style="color: rgba(226,232,240,0.95); font-weight: 800;">${escapeHtml(pointsApplicantStore)}</span></div>` : ''}
                         <div style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="color: rgba(200,215,230,0.85);">总积分：<span style="color: #facc15; font-weight: 900;">${pts}分</span></span>
+                                <span style="color: rgba(200,215,230,0.85);">总积分：<span style="color: #c9a96a; font-weight: 900;">${pts}分</span></span>
                                 <span style="color: rgba(200,215,230,0.85);">折算金额：<span style="color: #f59e0b; font-weight: 900;">¥${amount.toFixed(2)}</span></span>
                             </div>
                         </div>
@@ -26637,7 +26636,7 @@ const role = String(currentUser?.role || '').trim();
                         ${evidences.length ? `<div style="margin-top: 10px; color: rgba(200,215,230,0.85);">证明图片（点击查看）
                             <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">${evidences.map((u, i) => {
                                 const abs = toAbs(u);
-                                return `<a href="${escapeHtml(abs)}" target="_blank" rel="noopener" title="查看证据${i + 1}" style="display:block; width:88px; height:88px; border-radius:10px; overflow:hidden; border:1px solid rgba(250,204,21,0.35); background:rgba(255,255,255,0.04);"><img src="${escapeHtml(abs)}" alt="证据${i + 1}" style="width:100%; height:100%; object-fit:cover;"></a>`;
+                                return `<a href="${escapeHtml(abs)}" target="_blank" rel="noopener" title="查看证据${i + 1}" style="display:block; width:88px; height:88px; border-radius:10px; overflow:hidden; border:1px solid rgba(201,169,106,0.35); background:rgba(255,255,255,0.04);"><img src="${escapeHtml(abs)}" alt="证据${i + 1}" style="width:100%; height:100%; object-fit:cover;"></a>`;
                             }).join('')}</div>
                         </div>` : ''}
                     </div>
@@ -58887,7 +58886,7 @@ ${body}
                 var evidence = (report.attributionSummary && report.attributionSummary.evidenceDetails) || [];
                 var issueHtml = issueRows.slice(0, 6).map(function(x) {
                     return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);">'
-                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.boss_language_summary || x.issue_title || '-') + '</b><span style="color:' + (x.severity === 'P1' ? '#fb7185' : '#facc15') + ';font-weight:800;">' + escapeHtml(x.severity || '-') + '</span></div>'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.boss_language_summary || x.issue_title || '-') + '</b><span style="color:' + (x.severity === 'P1' ? '#fb7185' : '#c9a96a') + ';font-weight:800;">' + escapeHtml(x.severity || '-') + '</span></div>'
                         + '<div style="font-size:12px;color:rgba(226,232,240,.56);margin-top:4px;">' + escapeHtml(x.issue_type || '') + ' · 置信度 ' + escapeHtml(String(x.confidence_score || '-')) + '</div>'
                         + '</div>';
                 }).join('');
@@ -58907,7 +58906,7 @@ ${body}
                 var evHtml = evidence.length ? '<details style="margin-top:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px;"><summary style="cursor:pointer;color:#fff;font-weight:800;">归因证据 · 以下订单为本次营销触达后窗口内产生的真实消费记录</summary>'
                     + evidence.slice(0, 20).map(function(e) {
                         var ev = e.evidence || {};
-                        var assisted = e.attributionType === 'assisted' ? '<div style="color:#facc15;margin-top:4px;">辅助归因：客户在触达后窗口内回店，但未使用对应优惠券。</div>' : '';
+                        var assisted = e.attributionType === 'assisted' ? '<div style="color:#c9a96a;margin-top:4px;">辅助归因：客户在触达后窗口内回店，但未使用对应优惠券。</div>' : '';
                         return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.6;">'
                             + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">客户 ' + escapeHtml(e.customerId || '-') + '</b><span style="color:#38bdf8;">' + escapeHtml(e.attributionType || '-') + '</span></div>'
                             + '<div style="color:rgba(226,232,240,.65);">触达：' + escapeHtml(String(ev.touchTime || '-').slice(0, 16)) + ' · 回店：' + escapeHtml(String(ev.conversionTime || '-').slice(0, 16)) + ' · 订单：' + escapeHtml(e.relatedOrderId || '-') + '</div>'
@@ -58920,7 +58919,7 @@ ${body}
                     + custopsMiniMetric('经营问题', issueRows.length, '经营问题地图', '#fb7185')
                     + custopsMiniMetric('增长机会', oppRows.length, '增长机会列表', '#38bdf8')
                     + custopsMiniMetric('闭环任务', (report.tasks || []).length, '动作闭环看板', '#22c55e')
-                    + custopsMiniMetric('归因营业额', fmtCustMoney(report.attributionSummary?.attributedRevenue || 0), '真实订单支撑', '#facc15')
+                    + custopsMiniMetric('归因营业额', fmtCustMoney(report.attributionSummary?.attributedRevenue || 0), '真实订单支撑', '#c9a96a')
                     + '</div>'
                     + '<div class="rep-dashboard-grid">'
                     + '<div class="rep-metric" style="text-align:left;"><div class="k">经营问题地图</div>' + (issueHtml || '<div class="rep-pay-empty">暂无经营问题</div>') + '</div>'
@@ -59896,7 +59895,7 @@ ${body}
                             var stored = opsRows.filter(function(c){ return Number(c.stored_value_count || 0) > 0; }).length;
                             ps.innerHTML = '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">'
                                 + custopsMiniMetric('客户资产', opsRows.length + '人', '来自最近POS清洗', '#fff')
-                                + custopsMiniMetric('VIP客户', vip + '人', '折前人均消费前15%', '#facc15')
+                                + custopsMiniMetric('VIP客户', vip + '人', '折前人均消费前15%', '#c9a96a')
                                 + custopsMiniMetric('待维护风险', risk + '人', '濒临流失/沉睡', '#fb7185')
                                 + custopsMiniMetric('可触达客户', reachable + '人', '手机号可用，商务客' + biz + '人，储值客' + stored + '人', '#22c55e')
                                 + '</div>';
@@ -60002,7 +60001,7 @@ ${body}
             if (!insights.length && !actions.length && !drafts.length) return '';
             var issueHtml = insights.slice(0, 4).map(function(x) {
                 return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);">'
-                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.bossLanguageTitle || x.issueName || '-') + '</b><span style="color:' + (x.severity === 'P1' ? '#fb7185' : '#facc15') + ';font-weight:800;">' + escapeHtml(x.severity || '-') + '</span></div>'
+                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.bossLanguageTitle || x.issueName || '-') + '</b><span style="color:' + (x.severity === 'P1' ? '#fb7185' : '#c9a96a') + ';font-weight:800;">' + escapeHtml(x.severity || '-') + '</span></div>'
                     + '<div style="font-size:12px;color:rgba(226,232,240,.68);margin-top:4px;">' + escapeHtml(x.issueName || '') + ' · 责任对象：' + escapeHtml((x.responsibleRoles || []).join('、') || '-') + '</div>'
                     + '<div style="font-size:12px;color:rgba(226,232,240,.5);margin-top:4px;line-height:1.55;">' + escapeHtml((x.evidence || []).join('；') || '-') + '</div>'
                     + '</div>';
@@ -60113,7 +60112,7 @@ ${body}
                 + '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-top:12px;">'
                 + custopsMiniMetric('储值客户', (sv.customers || 0) + '人', '来自储值/会员文件', '#38bdf8')
                 + custopsMiniMetric('充值金额', fmtCustMoney(sv.recharge), '不计入营业额', '#22c55e')
-                + custopsMiniMetric('赠送金额', fmtCustMoney(sv.gift), '会员权益成本', '#facc15')
+                + custopsMiniMetric('赠送金额', fmtCustMoney(sv.gift), '会员权益成本', '#c9a96a')
                 + custopsMiniMetric('储值余额', fmtCustMoney(sv.balance), '客户预付资产', '#fb7185')
                 + '</div>'
                 + renderBusinessOntologySection(report)
@@ -60171,7 +60170,7 @@ ${body}
         var CAMPAIGN_EFFECT_LABELS = { excellent:'优秀', meets:'达标', below:'不达标', blacklist:'黑名单（禁用）' };
         var CAMPAIGN_EFFECT_COLORS = { excellent:'#22c55e', meets:'#38bdf8', below:'#f59e0b', blacklist:'#ef4444' };
         var CAMPAIGN_STATUS_LABELS = { planned:'计划中', in_progress:'进行中', active:'进行中', completed:'已完成', paused:'已暂停', cancelled:'已取消' };
-        var CAMPAIGN_STATUS_COLORS = { planned:'#38bdf8', in_progress:'#facc15', active:'#facc15', completed:'#22c55e', paused:'#f59e0b', cancelled:'rgba(148,163,184,0.5)' };
+        var CAMPAIGN_STATUS_COLORS = { planned:'#38bdf8', in_progress:'#c9a96a', active:'#c9a96a', completed:'#22c55e', paused:'#f59e0b', cancelled:'rgba(148,163,184,0.5)' };
         var CAMPAIGN_TYPE_OPTIONS = ['充值活动','沉睡召回','新客激活','节日营销','新品推广','积分兑换','会员日','媒体投放','竞品反击','店庆活动','其他'];
         var CAMPAIGN_AUDIENCE_PRESETS = [
             { value:'dormant', label:'沉睡客（90天+未到店）' },
@@ -60254,7 +60253,7 @@ ${body}
                         + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">'
                         + '<button onclick="openCreateCampaignModal(' + JSON.stringify(c).replace(/\\/g,'\\\\').replace(/'/g,'&#39;').replace(/"/g,'&quot;') + ')" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.9);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">✏️ 编辑</button>'
                         + '<button onclick="openCampaignResultModal(' + c.id + ')" style="border:none;background:rgba(56,189,248,.15);color:#38bdf8;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📊 复盘</button>'
-                        + ((c.status === 'completed' && results.length) ? '<button onclick="openCampaignReportModal(' + c.id + ')" style="border:none;background:rgba(250,204,21,.15);color:#facc15;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📄 评估报告</button>' : '')
+                        + ((c.status === 'completed' && results.length) ? '<button onclick="openCampaignReportModal(' + c.id + ')" style="border:none;background:rgba(201,169,106,.15);color:#c9a96a;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📄 评估报告</button>' : '')
                         + '</div>'
                         + '</div>'
                         + resultsHtml
@@ -60416,7 +60415,7 @@ ${body}
                 + '<button onclick="document.getElementById(\'result-modal-overlay\').remove()" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
                 + '</div>'
                 + '<div style="padding:16px;">'
-                + (campaign.goal ? '<div style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.25);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:#facc15;">🎯 活动目标：' + escapeHtml(campaign.goal) + '</div>' : '')
+                + (campaign.goal ? '<div style="background:rgba(201,169,106,.08);border:1px solid rgba(201,169,106,.25);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:#c9a96a;">🎯 活动目标：' + escapeHtml(campaign.goal) + '</div>' : '')
                 + '<div style="margin-bottom:12px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">选择门店</div><select id="crm-store-sel" style="' + iStyle + '">' + '<option value="">全部门店</option>' + storeOpts + '</select></div>'
                 + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
                 + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">曝光人数</div><input id="crm-exposure" type="number" min="0" style="' + iStyle + '" value="' + (existing.actual_exposure_count || '') + '" placeholder="0"></div>'
@@ -60526,14 +60525,14 @@ ${body}
                 + '<div style="padding:16px;">'
                 + '<div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:4px;">' + escapeHtml(c.title) + '</div>'
                 + '<div style="font-size:12px;color:var(--rep-muted);margin-bottom:2px;">📅 执行时间：' + dateStr + '</div>'
-                + (c.goal ? '<div style="font-size:12px;color:#facc15;margin-bottom:14px;">🎯 活动目标：' + escapeHtml(c.goal) + '</div>' : '<div style="margin-bottom:14px;"></div>')
+                + (c.goal ? '<div style="font-size:12px;color:#c9a96a;margin-bottom:14px;">🎯 活动目标：' + escapeHtml(c.goal) + '</div>' : '<div style="margin-bottom:14px;"></div>')
                 + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">'
                 + kpiCard('曝光人数', totalExposure, '#a78bfa')
                 + kpiCard('发送人数', totalSend, '#38bdf8')
-                + kpiCard('核销单数', totalRedeem, '#facc15')
+                + kpiCard('核销单数', totalRedeem, '#c9a96a')
                 + '</div>'
                 + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">'
-                + kpiCard('核销率', redeemRate, '#facc15')
+                + kpiCard('核销率', redeemRate, '#c9a96a')
                 + kpiCard('到店/转化', totalConv, '#38bdf8')
                 + kpiCard('带动收入', fmtCustMoney(totalRevenue), '#22c55e')
                 + '</div>'
@@ -60583,7 +60582,7 @@ ${body}
                         var evidence = rep.evidenceDetails || rep.evidence_orders || [];
                         var evHtml = evidence.length ? '<details style="margin-bottom:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px;"><summary style="cursor:pointer;color:#fff;font-weight:800;">归因证据 · 以下订单为本次营销触达后 7 天内产生的真实消费记录</summary>'
                             + evidence.slice(0, 20).map(function(e) {
-                                var assisted = e.attributionType === 'assisted' ? '<div style="color:#facc15;margin-top:4px;">辅助归因：客户在触达后窗口内回店，但未使用对应优惠券。</div>' : '';
+                                var assisted = e.attributionType === 'assisted' ? '<div style="color:#c9a96a;margin-top:4px;">辅助归因：客户在触达后窗口内回店，但未使用对应优惠券。</div>' : '';
                                 return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.6;">'
                                     + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">客户 ' + escapeHtml(e.customerId || e.phone || '-') + '</b><span style="color:#38bdf8;">' + escapeHtml(e.attributionType || '-') + '</span></div>'
                                     + '<div style="color:rgba(226,232,240,.65);">触达：' + escapeHtml(String(e.touchTime || e.last_touch_date || '-').slice(0, 16)) + ' · 回店：' + escapeHtml(String(e.orderTime || e.date || '-').slice(0, 16)) + ' · 订单：' + escapeHtml(e.relatedOrderId || e.order_no || '-') + '</div>'
@@ -60595,7 +60594,7 @@ ${body}
                             + custopsMiniMetric('触达人数', rep.summary.touched_customers || 0, '自动营销触达客户', '#fff')
                             + custopsMiniMetric('回店人数', rep.summary.returned_customers || 0, '触达窗口内回店', '#22c55e')
                             + custopsMiniMetric('归因营业额', fmtCustMoney(rep.summary.attributed_revenue), '有订单记录支撑', '#38bdf8')
-                            + custopsMiniMetric('转化率', pctCust(rep.summary.return_rate), '回店/触达', '#facc15')
+                            + custopsMiniMetric('转化率', pctCust(rep.summary.return_rate), '回店/触达', '#c9a96a')
                             + '</div>' + evHtml;
                     }
                 } catch (_) {}
@@ -63283,7 +63282,7 @@ ${body}
                     return '<div style="background:linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04));border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:14px;box-shadow:0 8px 24px rgba(15,23,42,0.2);">'
                         + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px;">'
                         + '<div style="font-size:14px;font-weight:700;color:#fff;line-height:1.4;">🏪 ' + displayName + '</div>'
-                        + '<div style="font-size:11px;font-weight:800;color:' + (rank === 1 ? '#facc15' : rank === 2 ? '#cbd5e1' : rank === 3 ? '#fdba74' : '#94a3b8') + ';background:rgba(15,23,42,0.38);border:1px solid rgba(255,255,255,0.08);padding:4px 8px;border-radius:999px;white-space:nowrap;">' + badge + '</div>'
+                        + '<div style="font-size:11px;font-weight:800;color:' + (rank === 1 ? '#c9a96a' : rank === 2 ? '#cbd5e1' : rank === 3 ? '#fdba74' : '#94a3b8') + ';background:rgba(15,23,42,0.38);border:1px solid rgba(255,255,255,0.08);padding:4px 8px;border-radius:999px;white-space:nowrap;">' + badge + '</div>'
                         + '</div>'
                         + '<div style="font-size:11px;color:rgba(226,232,240,0.58);margin-bottom:10px;">营收贡献 ' + share + '%</div>'
                         + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">'
