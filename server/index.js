@@ -72,6 +72,7 @@ import { createLoginRateLimiter } from './middleware/rate-limit.js';
 import { verifyFeishuWebhookRequest } from './utils/feishu-webhook-verify.js';
 import { expandAgentStoreLabels, resolveAgentCanonicalStore } from './v2-store-alignment.js';
 import { ensureGrowthTables, registerGrowthRoutes, setSendGrowthAlert } from './growth-api.js';
+import { registerGrowthWinbackRoutes } from './growth-winback-routes.js';
 import { registerDiagnosisRoutes } from './store-diagnosis.js';
 import { registerOntologyRoutes } from './ontology/routes.js';
 import { runFreshnessCheck } from './ontology/freshness.js';
@@ -5563,6 +5564,7 @@ initBrandConfigCache().catch((e) => console.error('initBrandConfigCache failed:'
 configureDbSessionSafety(pool, { serviceName: 'hrms-server' });
 const __ALLOW_SCHEMA_CHANGES__ = isSchemaChangeAllowed();
 registerGrowthRoutes(app, pool);
+registerGrowthWinbackRoutes(app, pool);
 registerDiagnosisRoutes(app, pool, authRequired, callLLM);
 registerOntologyRoutes(app, pool, authRequired);
 setSendGrowthAlert(async (msg) => {
