@@ -80,6 +80,8 @@ import { registerGrowthMetricsRoutes } from './growth-metrics-routes.js';
 import { registerGrowthProfilesRoutes } from './growth-profiles-routes.js';
 import { registerGrowthContentRoutes } from './growth-content-routes.js';
 import { registerGrowthWecomFeishuRoutes } from './growth-wecom-feishu-routes.js';
+import { registerGrowthQueriesRoutes } from './growth-queries-routes.js';
+import { registerGrowthOpsRoutes } from './growth-ops-routes.js';
 import { registerDiagnosisRoutes } from './store-diagnosis.js';
 import { registerOntologyRoutes } from './ontology/routes.js';
 import { runFreshnessCheck } from './ontology/freshness.js';
@@ -5579,6 +5581,8 @@ registerGrowthMetricsRoutes(app, pool);
 registerGrowthProfilesRoutes(app, pool);
 registerGrowthContentRoutes(app, pool);
 registerGrowthWecomFeishuRoutes(app, pool);
+registerGrowthQueriesRoutes(app, pool);
+registerGrowthOpsRoutes(app, pool);
 registerDiagnosisRoutes(app, pool, authRequired, callLLM);
 registerOntologyRoutes(app, pool, authRequired);
 setSendGrowthAlert(async (msg) => {
