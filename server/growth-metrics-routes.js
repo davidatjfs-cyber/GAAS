@@ -257,14 +257,44 @@ export function registerGrowthMetricsRoutes(app, pool) {
       [phones, windowDays]
     );
 
+    // 每个手机号最近一单的菜品/人数/金额（用于小程序"熟客到店"卡片展示）
+    const lastOrderRes = await pool.query(
+      `WITH last_orders AS (
+         SELECT DISTINCT ON (trim(phone))
+                trim(phone) AS phone, order_no, diners, amount_after_discount
+         FROM pos_orders
+         WHERE trim(phone) = ANY($1::text[]) AND phone IS NOT NULL AND trim(phone) <> ''
+         ORDER BY trim(phone), checkout_time DESC NULLS LAST
+       )
+       SELECT lo.phone, lo.diners, lo.amount_after_discount,
+              COALESCE(STRING_AGG(DISTINCT oi.dish_name, '、' ORDER BY oi.dish_name)
+                FILTER (WHERE oi.dish_name IS NOT NULL AND oi.dish_name <> ''), '') AS last_order_dishes
+       FROM last_orders lo
+       LEFT JOIN pos_order_items oi ON oi.order_no = lo.order_no
+       GROUP BY lo.phone, lo.diners, lo.amount_after_discount`,
+      [phones]
+    );
+    const lastOrderByPhone = {};
+    for (const row of lastOrderRes.rows) {
+      lastOrderByPhone[row.phone] = {
+        diners: Number(row.diners) || 0,
+        amount_fen: Math.round((Number(row.amount_after_discount) || 0) * 100),
+        dishes: row.last_order_dishes || ''
+      };
+    }
+
     const data = {};
     for (const row of r.rows) {
+      const lastOrder = lastOrderByPhone[row.phone] || null;
       data[row.phone] = {
         total_spent_fen: Number(row.total_spent_fen) || 0,
         total_orders: Number(row.total_orders) || 0,
         spent_30d_fen: Number(row.spent_30d_fen) || 0,
         last_visit: row.last_visit ? new Date(row.last_visit).toISOString() : null,
-        store_id: row.last_store_id || ''
+        store_id: row.last_store_id || '',
+        last_order_dishes: lastOrder ? lastOrder.dishes : '',
+        last_order_diners: lastOrder ? lastOrder.diners : 0,
+        last_order_amount_fen: lastOrder ? lastOrder.amount_fen : 0
       };
     }
     return res.json({ ok: true, window_days: windowDays, requested: phones.length, matched: r.rows.length, data });
