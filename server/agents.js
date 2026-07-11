@@ -39,6 +39,9 @@ import {
   pgGetMonthlyAttitudeFilingCount
 } from './lib/performance-filing-counts-pg.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
+import { maskLLMMessages } from './utils/sensitive-mask.js';
+import { sanitizeLLMOutput, sanitizeLLMOutputWithAudit } from './utils/llm-output-sanitize.js';
+import { logAgentOperation } from './utils/agent-audit-log.js';
 import {
   feishuSkipOpenIdResolveHrms,
   isOpenIdCrossAppFeishuError,
@@ -990,13 +993,23 @@ async function execBiToolTableVisit(store, args = {}, originalQuery = '') {
   }
 }
 
-async function runBiFunctionTool(toolName, store, args = {}, originalQuery = '') {
-  if (toolName === 'query_sales_ranking') return execBiToolSalesRanking(store, args, originalQuery);
-  if (toolName === 'query_complaint_product_ranking') return execBiToolComplaintRanking(store, args, originalQuery);
-  if (toolName === 'query_revenue_summary') return execBiToolRevenueSummary(store, args, originalQuery);
-  if (toolName === 'query_revenue_forecast_next_day') return execBiToolRevenueForecastNextDay(store, args);
-  if (toolName === 'query_table_visit') return execBiToolTableVisit(store, args, originalQuery);
-  return { ok: false, source: 'unknown', text: `不支持的工具：${toolName}` };
+async function runBiFunctionTool(toolName, store, args = {}, originalQuery = '', ctx = {}) {
+  const auditBase = { operatorUsername: ctx.operatorUsername || null, operatorRole: ctx.operatorRole || null, tenantId: ctx.tenantId || null, toolName, storeId: store || null, args };
+  try { await logAgentOperation(pool(), { ...auditBase, resultSummary: 'tool execution started', status: 'started' }); } catch (e) {}
+  let result;
+  try {
+    if (toolName === 'query_sales_ranking') result = await execBiToolSalesRanking(store, args, originalQuery);
+    else if (toolName === 'query_complaint_product_ranking') result = await execBiToolComplaintRanking(store, args, originalQuery);
+    else if (toolName === 'query_revenue_summary') result = await execBiToolRevenueSummary(store, args, originalQuery);
+    else if (toolName === 'query_revenue_forecast_next_day') result = await execBiToolRevenueForecastNextDay(store, args);
+    else if (toolName === 'query_table_visit') result = await execBiToolTableVisit(store, args, originalQuery);
+    else result = { ok: false, source: 'unknown', text: `不支持的工具：${toolName}` };
+  } catch (e) {
+    try { await logAgentOperation(pool(), { ...auditBase, resultSummary: null, status: 'error', errorMessage: e?.message || String(e) }); } catch (e2) {}
+    throw e;
+  }
+  try { await logAgentOperation(pool(), { ...auditBase, resultSummary: String(result?.text || '').slice(0, 500), status: result?.ok ? 'success' : 'error', errorMessage: result?.ok ? null : String(result?.text || '').slice(0, 500) }); } catch (e) {}
+  return result;
 }
 
 function tryParseJsonObjectFromText(text) {
@@ -1117,7 +1130,7 @@ async function tryHandleBiByFunctionCalling({ text, store, brand, senderRole, se
     if (/(最好|前十|前10|top10|top 10)/i.test(q)) args.sort_order = 'desc';
     if (/(其他呢|还有呢|再来|继续|更多|再给我)/.test(q)) args.limit = clampInt(Number(args.limit || 10) + 5, 1, 20, 20);
 
-    const executed = await runBiFunctionTool(lastCtx.tool, safeStore, args, text);
+    const executed = await runBiFunctionTool(lastCtx.tool, safeStore, args, text, { operatorUsername: userId, operatorRole: senderRole });
     if (executed?.text && !/暂无.*数据|无法查询|未绑定门店/.test(String(executed.text || ''))) {
       const narrated = await narrateBiToolResult(text, executed.text, safeStore, senderRole);
       pushBiConversationTurn(userId, text, narrated, lastCtx.tool);
@@ -1277,7 +1290,7 @@ async function tryHandleBiByFunctionCalling({ text, store, brand, senderRole, se
 
   if (!name) { console.log('[bi-fc] skip: no tool name resolved'); return null; }
   console.log('[bi-fc] executing tool:', name, 'args:', JSON.stringify(args));
-  const executed = await runBiFunctionTool(name, safeStore, args, text);
+  const executed = await runBiFunctionTool(name, safeStore, args, text, { operatorUsername: userId, operatorRole: senderRole });
   console.log('[bi-fc] executed ok:', executed?.ok, 'source:', executed?.source, 'textLen:', String(executed?.text || '').length);
   if (!executed?.text) { console.log('[bi-fc] skip: empty tool result'); return null; }
   if (/暂无.*数据|无法查询|未绑定门店/.test(String(executed.text || ''))) {
@@ -3666,7 +3679,7 @@ export async function callLLM(messages, options = {}) {
 
     const payload = {
       model: fbCfg.model,
-      messages,
+      messages: maskLLMMessages(messages),
       temperature,
       max_tokens: maxTokens,
       top_p: budgetExceeded ? 0.7 : 0.9,
@@ -3709,7 +3722,12 @@ export async function callLLM(messages, options = {}) {
       usedProvider = candidate.provider;
 
       const messageObj = resp.data?.choices?.[0]?.message || {};
-      const content = messageObj.content || '';
+      let content = messageObj.content || '';
+      try {
+        content = await sanitizeLLMOutputWithAudit(pool(), content, { operatorRole: role || null });
+      } catch (e) {
+        content = sanitizeLLMOutput(content);
+      }
       const responseTime = Date.now() - startTime;
 
       _performanceMetrics.avgResponseTime =

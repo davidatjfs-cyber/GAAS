@@ -72,6 +72,7 @@ import { createLoginRateLimiter } from './middleware/rate-limit.js';
 import { verifyFeishuWebhookRequest } from './utils/feishu-webhook-verify.js';
 import { expandAgentStoreLabels, resolveAgentCanonicalStore } from './v2-store-alignment.js';
 import { ensureGrowthTables, registerGrowthRoutes, setSendGrowthAlert } from './growth-api.js';
+import { ensureAgentAuditLogTable } from './utils/agent-audit-log.js';
 import { registerGrowthWinbackRoutes } from './growth-winback-routes.js';
 import { registerGrowthPaymentRulesRoutes } from './growth-payment-rules-routes.js';
 import { registerGrowthStoredValueRoutes } from './growth-stored-value-routes.js';
@@ -15209,6 +15210,7 @@ app.listen(PORT, HOST, async () => {
       }
       await ensureBaselineSchemaHealth(pool).catch(e => console.warn('[schema] baseline health:', e?.message || e));
       await ensureGrowthTables(pool).catch(e => console.warn('[growth] ensure tables:', e?.message));
+      await ensureAgentAuditLogTable(pool).catch(e => console.warn('[agent-audit] ensure table:', e?.message));
       await ensurePhaseTables(pool).catch(e => console.warn('[growth-phases] ensure tables:', e?.message));
       await ensureCustomerOpsTables(pool).catch(e => console.warn('[customer-ops] ensure tables:', e?.message));
       // Runtime migration: 企微会员新增字段（避免旧库缺字段导致评分数据源为空）
