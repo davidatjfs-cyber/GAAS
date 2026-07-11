@@ -74,6 +74,8 @@ import { expandAgentStoreLabels, resolveAgentCanonicalStore } from './v2-store-a
 import { ensureGrowthTables, registerGrowthRoutes, setSendGrowthAlert } from './growth-api.js';
 import { registerGrowthWinbackRoutes } from './growth-winback-routes.js';
 import { registerGrowthPaymentRulesRoutes } from './growth-payment-rules-routes.js';
+import { registerGrowthStoredValueRoutes } from './growth-stored-value-routes.js';
+import { registerGrowthActionsRoutes } from './growth-actions-routes.js';
 import { registerDiagnosisRoutes } from './store-diagnosis.js';
 import { registerOntologyRoutes } from './ontology/routes.js';
 import { runFreshnessCheck } from './ontology/freshness.js';
@@ -5567,6 +5569,8 @@ const __ALLOW_SCHEMA_CHANGES__ = isSchemaChangeAllowed();
 registerGrowthRoutes(app, pool);
 registerGrowthWinbackRoutes(app, pool);
 registerGrowthPaymentRulesRoutes(app, pool);
+registerGrowthStoredValueRoutes(app, pool);
+registerGrowthActionsRoutes(app, pool);
 registerDiagnosisRoutes(app, pool, authRequired, callLLM);
 registerOntologyRoutes(app, pool, authRequired);
 setSendGrowthAlert(async (msg) => {

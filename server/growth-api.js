@@ -33,7 +33,7 @@ function smsSafeName(value) {
 const SMS_DERIVED_VARS = new Set(['name', 'value', 'date', 'code', 'balance', 'days']);
 
 // 券有效期 → 「M月D日」（到店报码时客人一眼能看懂的中文日期；以 valid_days 自当日顺延）。
-function formatSmsValidDate(validDays) {
+export function formatSmsValidDate(validDays) {
   const d = new Date();
   d.setDate(d.getDate() + Math.max(1, Math.floor(Number(validDays) || 7)));
   return `${d.getMonth() + 1}月${d.getDate()}日`;
@@ -1498,7 +1498,7 @@ async function autoBackfillSmsActions(pool) {
   return count;
 }
 
-async function appendExecutionLog(pool, payload) {
+export async function appendExecutionLog(pool, payload) {
   await pool.query(
     `INSERT INTO growth_execution_logs (
       action_key, strategy_key, store_id, action_type, decision,
@@ -1755,7 +1755,7 @@ function pickSmsTemplateByStore(storeId) {
 // (ALIYUN_SMS_SIGN_NAME="上海连年由喜餐饮管理有限")不是同一个，必须按模板类型各自传参，
 // 传错签名会被阿里云判"签名与模板不匹配"整批拒收。仅供 /campaign/send-sms(ABC/CAMPAIGN_TYPES
 // 模板)使用；旧的通用引擎直发路径、winback_sms、储值提醒仍用全局默认签名，不受影响。
-function pickCampaignSmsSign(storeId) {
+export function pickCampaignSmsSign(storeId) {
   const sfx = getStoreSmsEnvSuffix(storeId);
   if (sfx === 'MAJIXIAN') return String(process.env.ALIYUN_SMS_SIGN_MAJIXIAN || '马己仙').trim();
   if (sfx === 'HONGCHAO') return String(process.env.ALIYUN_SMS_SIGN_HONGCHAO || '连年由喜餐饮').trim();
@@ -1771,7 +1771,7 @@ export function pickWinbackTemplateByStore(storeId) {
 
 // 储值余额提醒模板（变量仅 balance；无券无码，提醒客人用余额+推荐菜促复购）。
 // 可被规则/任务里的 sms_template_code 覆盖。
-function pickBalanceTemplateByStore(storeId) {
+export function pickBalanceTemplateByStore(storeId) {
   const sfx = getStoreSmsEnvSuffix(storeId);
   const def = String(process.env.ALIYUN_SMS_BALANCE_TEMPLATE_DEFAULT || '').trim();
   return String(process.env[`ALIYUN_SMS_BALANCE_TEMPLATE_${sfx}`] || '').trim() || def;
@@ -1814,7 +1814,7 @@ export const CAMPAIGN_TYPES = {
   prospect_recall: { label: '到店未买单潜客召回', source: 'profiles', tplPrefix: 'PROSPECT', coupon_count: 1, vars: ['value', 'date', 'code'] },
 };
 // 按段+门店解析阿里云模板 code：ALIYUN_SMS_<PREFIX>_<MAJIXIAN|HONGCHAO|DEFAULT>
-function pickCampaignTemplate(campaignKey, storeId) {
+export function pickCampaignTemplate(campaignKey, storeId) {
   const cfg = CAMPAIGN_TYPES[campaignKey];
   if (!cfg) return '';
   const pfx = cfg.tplPrefix;
@@ -1907,7 +1907,7 @@ export async function handleSmsFailure(pool, phone, errMsg, tenantId = 'default'
 
 // 触达上限：同一手机号同一活动累计成功发送 N 次（默认3）仍未回店则永久停发该活动，
 // 防止对明确不响应的客人无限期发券。回店后 days_since 重置、自然脱离人群，不受此限影响。
-async function campaignTouchCapped(pool, campaignKey, phone, tenantId = 'default') {
+export async function campaignTouchCapped(pool, campaignKey, phone, tenantId = 'default') {
   const cap = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_CAMPAIGN_MAX_TOUCHES) || 3));
   if (cap <= 0) return false;
   const r = await pool.query(
@@ -1923,7 +1923,7 @@ const ABC_DEFAULT_LADDER_DAYS = [15, 30, 45, 60];
 // ABC方案轮换(活动制)：8条常规段「赠菜A/B/C + 赠券30/50/2X50」共6个模板按固定顺序轮换
 // (顺序差异=先菜后券 vs 先券后菜)；马己仙晚市2条拆分段各自只含本组3个模板。
 // 顺序即"该客户在本活动下累计成功发送次数 % 模板数"对应到第几个模板。
-const ABC_ROTATION_ORDER = {
+export const ABC_ROTATION_ORDER = {
   vip_gift:               ['giftA', 'giftB', 'giftC', 'coupon30', 'coupon50', 'coupon2x50'], // VIP客户维护：先菜后券
   active:                 ['giftA', 'giftB', 'giftC', 'coupon30', 'coupon50', 'coupon2x50'], // 活跃客经营：先菜后券
   regular_cooling:        ['giftA', 'giftB', 'giftC', 'coupon30', 'coupon50', 'coupon2x50'], // 常客降温唤醒21-60天：先菜后券
@@ -1943,7 +1943,7 @@ const ABC_ROTATION_ORDER = {
 // 与现有 lost_long/lost_over365 的「2张/1码核销2次」模式一致。
 // 2026-07 起 coupon30/50/2x50 改用「面额写死在已报备模板正文里」的新模板(阿里云审核更快过)，
 // 不再需要 {value} 变量；仍需 date+code。
-const ABC_STEP_DEFS = {
+export const ABC_STEP_DEFS = {
   giftA:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
   giftB:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
   giftC:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
@@ -1957,7 +1957,7 @@ const ABC_STEP_TPL_PREFIX = {
   giftA: 'ABCGIFTA', giftB: 'ABCGIFTB', giftC: 'ABCGIFTC',
   coupon30: 'ABCCOUPON30', coupon50: 'ABCCOUPON50', coupon2x50: 'ABCCOUPON2X50',
 };
-function pickAbcTemplate(step, storeId) {
+export function pickAbcTemplate(step, storeId) {
   const pfx = ABC_STEP_TPL_PREFIX[step];
   if (!pfx) return '';
   const sfx = getStoreSmsEnvSuffix(storeId);
@@ -1969,7 +1969,7 @@ function pickAbcTemplate(step, storeId) {
 // 单调降频：第1轮起每条间隔即按阶梯 15→30→45→60 天逐轮变慢；共走 4 轮(=阶梯长度)，
 // 每轮一整套模板(常规段6条/马己仙拆分段3条)；满 模板数×4 条(常规24/马己仙12)仍未回应
 // → 该客户对本活动进入"红名单"，不再自动触达。中途到店消费会清零(见 countCampaignSent)。
-function deriveAbcStep(campaignKey, totalSent) {
+export function deriveAbcStep(campaignKey, totalSent) {
   const order = ABC_ROTATION_ORDER[campaignKey];
   if (!order) return { step: null, freqDaysOverride: null, blacklisted: false };
   const ladder = ABC_DEFAULT_LADDER_DAYS; // [15,30,45,60]
@@ -1986,7 +1986,7 @@ function deriveAbcStep(campaignKey, totalSent) {
 // 这样自循环段(VIP客户维护/活跃客经营)里每次回头消费都会让轮换从头开始、不会把忠诚回头客
 // 误推进降频阶梯/红名单；而真正不回头的客户发送数持续累积，照常走阶梯并最终入红名单。
 // 从未到店(pos_last_order_at 为空)的潜客则统计全部发送数(无到店可清零)。
-async function countCampaignSent(pool, campaignKey, phone, tenantId = 'default') {
+export async function countCampaignSent(pool, campaignKey, phone, tenantId = 'default') {
   const p = String(phone || '').trim();
   const r = await pool.query(
     `SELECT count(*)::int n FROM growth_delivery_logs
@@ -2011,7 +2011,7 @@ function marketingFatigueWindowDays() {
   const v = Number(process.env.MARKETING_FATIGUE_WINDOW_DAYS);
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : 90;
 }
-async function marketingFatigueCapped(pool, phone, tenantId = 'default') {
+export async function marketingFatigueCapped(pool, phone, tenantId = 'default') {
   const p = String(phone || '').trim();
   if (!p) return false;
   const max = marketingFatigueMax();
@@ -2047,7 +2047,7 @@ function phoneAbBucket(phone, n) {
 // 通用发券人群(profiles)取数：可编辑筛选(门店/价值分级/生命周期/到店次数/未消费天数)+频控。
 // 返回 SQL 与参数，preview 与 launch 共用，保证「预览即所发」。
 // 至少需一个人群维度，否则视为全量、拒绝(防误群发)。
-function buildCampaignTargetQuery(opts) {
+export function buildCampaignTargetQuery(opts) {
   const { storeId, valueTier, lifecycleStage, minVisits, maxVisits, minDays, maxDays, ruleKey, freqDays, limit } = opts;
   const hasAudience = !!(valueTier || lifecycleStage
     || Number.isFinite(minVisits) || Number.isFinite(maxVisits)
@@ -2083,23 +2083,23 @@ function buildCampaignTargetQuery(opts) {
 }
 
 // 门店名 → POS门店号(储值客户表里的开卡/交易门店是中文名)
-function mapStoreNameToId(name) {
+export function mapStoreNameToId(name) {
   return _storeNameToIdFromConfig(name);
 }
 // 飞书多维表字段值解析(文本/数字/日期/电话)
-function bitText(v) {
+export function bitText(v) {
   if (v == null) return '';
   if (Array.isArray(v)) return v.map((x) => (x && (x.text || x.name)) || x).join(',');
   if (typeof v === 'object') return String(v.text || v.name || '');
   return String(v);
 }
-function bitNum(v) {
+export function bitNum(v) {
   if (v == null) return 0;
   if (typeof v === 'object' && v.text != null) return Number(v.text) || 0;
   const n = Number(v);
   return isNaN(n) ? 0 : n;
 }
-function bitDateMs(v) {
+export function bitDateMs(v) {
   if (v == null) return 0;
   if (typeof v === 'number') return v;
   const n = Number(v);
@@ -2107,7 +2107,7 @@ function bitDateMs(v) {
   const d = new Date(v);
   return isNaN(d.getTime()) ? 0 : d.getTime();
 }
-function bitPhone(v) { return bitText(v).replace(/[^0-9]/g, ''); }
+export function bitPhone(v) { return bitText(v).replace(/[^0-9]/g, ''); }
 
 // 用 BITABLE_TASK_RESP 飞书应用获取 tenant_access_token(该应用对储值客户表有读权限)
 async function getBitableTenantToken() {
@@ -2123,7 +2123,7 @@ async function getBitableTenantToken() {
   return d.tenant_access_token;
 }
 // 分页读「储值客户」多维表全部记录
-async function readStoredValueBitableRecords() {
+export async function readStoredValueBitableRecords() {
   const appToken = process.env.STORED_VALUE_BITABLE_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe';
   const tableId = process.env.STORED_VALUE_BITABLE_TABLE_ID || 'tblvAcEjXHmEYQGZ';
   const token = await getBitableTenantToken();
@@ -2975,7 +2975,7 @@ async function enqueueCampaignJobsForRule(pool, rule, candidates, campaignKey, c
   return { enqueued, held_out: heldOut };
 }
 
-async function runTouchRuleEngine(pool, options = {}) {
+export async function runTouchRuleEngine(pool, options = {}) {
   const ruleEngineTenantId = String(options.tenantId || 'default').trim() || 'default';
   // 第三层防护：POS数据新鲜度闸门。数据滞后会让全员被误判为临界/流失，
   // 进而乱发券。滞后超阈值时停止自动触达，改为告警人工核查。
@@ -3342,6 +3342,22 @@ async function buildGrowthDailyReport(pool, targetDate) {
   return reports.join('\n\n' + '━'.repeat(20) + '\n\n');
 }
 
+// 储值余额提醒（HRMS 自身后台直发，只发 {balance}，无券无码）：
+// 目标口径：有余额(≥min) + 久未消费(dormant_days) + 频控(remind 类 N 天内不重发)。
+// 与「储值召回(发券)」共用 growth_campaign_jobs 表，kind='stored_value_remind' 区分。
+export function buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets) {
+  return {
+    sql: `SELECT card_no, member_name, phone, balance_fen FROM growth_stored_value_members m
+            WHERE m.phone IS NOT NULL AND m.phone <> '' AND m.store_id = $2 AND m.balance_fen >= $3
+              AND (m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))
+              AND NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
+                WHERE d.channel='sms' AND d.rule_key='stored_value_remind' AND d.status IN ('sent','redeemed')
+                  AND d.payload->>'phone' = m.phone AND d.created_at > now() - ($1 || ' days')::interval)
+            ORDER BY m.balance_fen DESC LIMIT ${maxTargets}`,
+    params: [String(freqDays), storeId, minBalanceFen]
+  };
+}
+
 export function registerGrowthRoutes(app, pool) {
   async function recomputeDailyMetrics(days = 7) {
     const safeDays = Math.min(Math.max(Number(days) || 7, 1), 90);
@@ -3391,359 +3407,6 @@ export function registerGrowthRoutes(app, pool) {
   }
 
 
-  // 储值客户同步:从飞书「储值客户」表拉全部记录,按卡号聚合(当前余额=最新一行余额,
-  // 最近消费日=交易类型含「消费」的最新营业日期),写入 growth_stored_value_members。
-  // 你每周更新飞书表后,调用本接口(或我手动跑)即可同步。
-  app.post('/api/growth/stored-value/sync', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    try {
-      const records = await readStoredValueBitableRecords();
-      const byCard = new Map();
-      for (const rec of records) {
-        const f = (rec && rec.fields) || {};
-        const card = bitText(f['卡号']).trim();
-        if (!card) continue;
-        const txnMs = bitDateMs(f['交易时间']) || bitDateMs(f['营业日期']) || 0;
-        const type = bitText(f['交易类型']);
-        const od = bitDateMs(f['营业日期']);
-        const cur = byCard.get(card) || { card, latestMs: -1, consumeMs: 0, rechargeMs: 0 };
-        if (txnMs >= cur.latestMs) {
-          cur.latestMs = txnMs;
-          cur.member_name = bitText(f['会员名称']).trim();
-          cur.phone = bitPhone(f['手机号']);
-          cur.level = bitText(f['会员等级'] || f['会员登记']).trim();   // 兼容旧字段名「会员登记」
-          cur.tags = bitText(f['人群标签']).trim();
-          cur.store_id = mapStoreNameToId(bitText(f['交易门店']) || bitText(f['开卡门店']));
-          cur.balance_fen = Math.round((bitNum(f['交易后-储值余额']) || 0) * 100);
-        }
-        if (/消费|支付/.test(type) && od > cur.consumeMs) cur.consumeMs = od;
-        if (/充值|储值$/.test(type) && od > cur.rechargeMs) cur.rechargeMs = od;
-        byCard.set(card, cur);
-      }
-      const upserted = await tenantContext.run(getGrowthTenantId(req), async () => {
-        let upsertedCount = 0;
-        for (const m of byCard.values()) {
-          await pool.query(
-            `INSERT INTO growth_stored_value_members
-               (card_no, member_name, phone, level, tags, store_id, balance_fen, last_consume_date, last_recharge_date, updated_at, tenant_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),$10)
-             ON CONFLICT (card_no, tenant_id) DO UPDATE SET
-               member_name=EXCLUDED.member_name, phone=EXCLUDED.phone, level=EXCLUDED.level,
-               tags=EXCLUDED.tags, store_id=EXCLUDED.store_id, balance_fen=EXCLUDED.balance_fen,
-               last_consume_date=EXCLUDED.last_consume_date, last_recharge_date=EXCLUDED.last_recharge_date, updated_at=NOW()`,
-            [m.card, m.member_name || null, m.phone || null, m.level || null, m.tags || null, m.store_id || null,
-             m.balance_fen || 0,
-             m.consumeMs > 0 ? new Date(m.consumeMs) : null,
-             m.rechargeMs > 0 ? new Date(m.rechargeMs) : null,
-             resolveTenantIdDefault()]
-          );
-          upsertedCount++;
-        }
-        return upsertedCount;
-      });
-      return res.json({ ok: true, records: records.length, members: byCard.size, upserted });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
-
-  // 储值客户召回目标:有余额 + 久未消费(dormant_days),按门店,供 sendWinbackCampaign 取名单。
-  app.get('/api/growth/stored-value/targets', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    try {
-      const storeId = cleanText(req.query.store_id, 128);
-      const dormantDays = Math.max(1, Math.floor(Number(req.query.dormant_days) || 14));
-      const minBalanceFen = Math.max(0, Math.floor((Number(req.query.min_balance_yuan) || 1) * 100));
-      const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 2000);
-      const params = [];
-      const clauses = ["phone IS NOT NULL AND phone <> ''", `balance_fen >= ${minBalanceFen}`,
-        `(last_consume_date IS NULL OR last_consume_date <= (CURRENT_DATE - ${dormantDays}))`];
-      if (storeId) { params.push(storeId); clauses.push(`store_id = $${params.length}`); }
-      params.push(limit);
-      const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
-        `SELECT card_no, member_name, phone, level, tags, store_id, balance_fen, last_consume_date
-           FROM growth_stored_value_members
-          WHERE ${clauses.join(' AND ')}
-          ORDER BY balance_fen DESC LIMIT $${params.length}`,
-        params
-      ));
-      return res.json({ ok: true, count: r.rows.length, targets: r.rows });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
-
-
-
-
-
-
-  // ── 通用「营销发券一键发起」(VIP/新客/活跃/长期流失)：profiles 人群 + 召回任务管道 ──
-  // 与储值召回同理：HRMS 冻结名单 → 小程序执行(生成券码+写券+发短信)，券码可核销可统计。
-  function parseCampaignCriteria(src) {
-    const num = (v) => (v === '' || v == null || isNaN(Number(v)) ? NaN : Math.floor(Number(v)));
-    return {
-      storeId: cleanText(src.store_id, 128),
-      valueTier: cleanText(src.value_tier, 32),
-      lifecycleStage: cleanText(src.lifecycle_stage, 32),
-      minVisits: num(src.min_visits),
-      maxVisits: num(src.max_visits),
-      minDays: num(src.min_days),
-      maxDays: num(src.max_days),
-    };
-  }
-
-  app.post('/api/growth/campaign/preview', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    try {
-      const b = req.body && typeof req.body === 'object' ? req.body : {};
-      const campaignKey = cleanText(b.campaign_key, 64);
-      if (!CAMPAIGN_TYPES[campaignKey]) return res.status(400).json({ ok: false, error: 'unknown_campaign_key' });
-      const c = parseCampaignCriteria(b);
-      const freqDays = Math.max(0, Math.floor(Number(b.freq_days != null ? b.freq_days : (process.env.ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS || 30))));
-      const q = buildCampaignTargetQuery({ ...c, ruleKey: campaignKey, freqDays, limit: 5000 });
-      if (!q) return res.status(400).json({ ok: false, error: 'need_audience_filter' });
-      const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(q.sql, q.params));
-      const sendable = r.rows.filter((x) => x.sendable);
-      const sample = sendable.slice(0, 10).map((x) => ({
-        phone: x.phone ? (String(x.phone).slice(0, 3) + '****' + String(x.phone).slice(-4)) : '',
-        name: x.name || '', visits: x.visits, days: x.days
-      }));
-      return res.json({
-        ok: true, dry_run: true,
-        match_count: r.rows.length,
-        capped_count: r.rows.length - sendable.length,
-        sendable_count: sendable.length,
-        coupon_count: CAMPAIGN_TYPES[campaignKey].coupon_count,
-        frequency_days: freqDays, sample
-      });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
-
-  app.post('/api/growth/campaign/launch', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    try {
-      const b = req.body && typeof req.body === 'object' ? req.body : {};
-      const campaignKey = cleanText(b.campaign_key, 64);
-      const cfg = CAMPAIGN_TYPES[campaignKey];
-      if (!cfg) return res.status(400).json({ ok: false, error: 'unknown_campaign_key' });
-      const c = parseCampaignCriteria(b);
-      if (!c.storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
-      const valueYuan = Math.max(0, Math.floor(Number(b.value_yuan) || 0));
-      const validDays = Math.max(1, Math.floor(Number(b.valid_days) || 14));
-      if (valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
-      if (!pickCampaignTemplate(campaignKey, c.storeId)) return res.status(503).json({ ok: false, error: 'sms_template_not_configured' });
-      const maxTargets = Math.min(Math.max(Number(b.max_targets) || 500, 1), 2000);
-      const freqDays = freqDaysEnv('ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS', 30);
-      const q = buildCampaignTargetQuery({ ...c, ruleKey: campaignKey, freqDays, limit: maxTargets });
-      if (!q) return res.status(400).json({ ok: false, error: 'need_audience_filter' });
-      const launchResult = await tenantContext.run(getGrowthTenantId(req), async () => {
-        const r = await pool.query(q.sql, q.params);
-        const targets = r.rows.filter((x) => x.sendable).map((x) => ({ phone: x.phone, name: x.name || '' }));
-        if (!targets.length) return { job_id: null, target_count: 0, message: '没有符合条件的对象(人群/频控筛选后为空)' };
-        const campaignId = cleanText(b.campaign_id, 128) || (campaignKey + '_' + c.storeId + '_' + Date.now());
-        const result = { campaign_key: campaignKey, coupon_count: cfg.coupon_count };
-        const ins = await pool.query(
-          `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result, tenant_id)
-           VALUES ($1,$2,$3,$4,0,0,$5::jsonb,$6,'pending',$7,$8,$9::jsonb,$10) RETURNING id`,
-          [campaignId, c.storeId, valueYuan, validDays, JSON.stringify(targets), targets.length, campaignKey, cleanText(b.operator, 128) || 'hrms_admin', JSON.stringify(result), resolveTenantIdDefault()]
-        );
-        return { job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length, coupon_count: cfg.coupon_count };
-      });
-      return res.json({ ok: true, ...launchResult });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
-
-  // 【通用发券短信发送】小程序 runWinbackJobs 生成短码+写券后回调本接口发短信。
-  // 模板按 段key+门店 解析(pickCampaignTemplate)，templateParam 严格按 CAMPAIGN_TYPES[key].vars 拼装
-  // (赠菜类只 date+code；长期流失 value+date+code)。多/少变量都会被阿里云整批拒收，故以 vars 为准。
-  // 频控/幂等/落库/事件与 winback/send-sms 同构，但 rule_key=段key，核销可按活动归因统计。
-  app.post('/api/growth/campaign/send-sms', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    try {
-      const b = req.body && typeof req.body === 'object' ? req.body : {};
-      const campaignKey = cleanText(b.campaign_key, 64);
-      const cfg = CAMPAIGN_TYPES[campaignKey];
-      if (!cfg) return res.status(400).json({ ok: false, error: 'unknown_campaign_key' });
-      const phone = cleanPhone(b.phone);
-      const storeId = cleanText(b.store_id, 128);
-      const code = cleanText(b.coupon_code || b.code, 64);
-      const valueYuan = Math.max(0, Math.floor(Number(b.value_yuan || b.value) || 0));
-      const validUntil = cleanText(b.valid_until || b.date, 40) || formatSmsValidDate(b.valid_days);
-      const campaignId = cleanText(b.campaign_id || b.scene, 128);
-      const idempotencyKey = cleanText(b.idempotency_key, 255) || (code ? `${campaignKey}:${code}` : '');
-      const tenantId = await resolveTenantIdForStore(pool, storeId);
-
-      if (!phone) return res.status(400).json({ ok: false, error: 'missing_phone' });
-
-      return await tenantContext.run(tenantId, async () => {
-      // ABC 6模板滚动：按该手机号在本活动下累计成功发送次数推导当前应发的模板步骤+降频阶梯天数。
-      const abcOrder = ABC_ROTATION_ORDER[campaignKey];
-      let effectiveVars = cfg.vars;
-      let templateCode;
-      let abcFreqDaysOverride = null;
-      let abcStep = null;
-      if (abcOrder) {
-        const totalSent = await countCampaignSent(pool, campaignKey, phone, tenantId);
-        const derived = deriveAbcStep(campaignKey, totalSent);
-        if (derived.blacklisted) return res.json({ ok: true, skipped: true, reason: 'abc_blacklisted' });
-        abcStep = derived.step;
-        abcFreqDaysOverride = derived.freqDaysOverride;
-        effectiveVars = ABC_STEP_DEFS[abcStep].vars;
-        templateCode = pickAbcTemplate(abcStep, storeId);
-      } else {
-        templateCode = pickCampaignTemplate(campaignKey, storeId);
-      }
-      if (effectiveVars.includes('code') && !code) return res.status(400).json({ ok: false, error: 'missing_coupon_code' });
-      if (effectiveVars.includes('value') && valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
-      if (!templateCode) return res.status(503).json({ ok: false, error: 'sms_template_not_configured' });
-
-      // 幂等：同一券码已发过 → 不重复发
-      if (idempotencyKey) {
-        const dup = await pool.query(`SELECT status FROM growth_delivery_logs WHERE delivery_key = $1 LIMIT 1`, [idempotencyKey]);
-        if (dup.rows.length && dup.rows[0].status === 'sent') return res.json({ ok: true, deduped: true });
-      }
-      // 触达频控：同一手机号 N 天内最多收 1 条本活动短信。ABC 轮换走完一轮后按降频阶梯
-      // (15/30/45/60天)覆盖默认频率。
-      const freqDays = abcFreqDaysOverride != null ? abcFreqDaysOverride : freqDaysEnv('ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS', 30);
-      if (freqDays > 0) {
-        const recent = await pool.query(
-          `SELECT 1 FROM growth_delivery_logs
-            WHERE channel = 'sms' AND rule_key = $1 AND status = 'sent'
-              AND payload->>'phone' = $2 AND created_at > now() - ($3 || ' days')::interval
-            LIMIT 1`,
-          [campaignKey, phone, String(freqDays)]
-        );
-        if (recent.rows.length) return res.json({ ok: true, skipped: true, reason: 'frequency_capped', frequency_days: freqDays });
-      }
-      // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
-      const gCap = await globalSmsCapped(pool, phone, tenantId);
-      if (gCap) return res.json({ ok: true, skipped: true, reason: 'global_frequency_capped', frequency_days: gCap });
-      // 永久抑制名单：停机/空号/黑名单号码不再发送
-      if (await isPhoneSuppressed(pool, phone, tenantId)) return res.json({ ok: true, skipped: true, reason: 'suppressed' });
-      // 跨活动疲劳总闸：近90天最近到店后累计收满8条任意活动短信仍未回店 → 暂停所有营销
-      if (await marketingFatigueCapped(pool, phone, tenantId)) return res.json({ ok: true, skipped: true, reason: 'marketing_fatigue' });
-      // 触达上限：同活动累计发满 N 次(默认3)仍未回店 → 停发本活动。ABC 轮换自带 15/30/45/60天
-      // 降频阶梯+红名单机制，不再叠加此上限。
-      if (!abcOrder && await campaignTouchCapped(pool, campaignKey, phone, tenantId)) return res.json({ ok: true, skipped: true, reason: 'touch_capped' });
-      const deliveryKey = idempotencyKey || `${campaignKey}:${phone}:${Date.now()}`;
-      // 严格按 vars 拼模板参数：缺/多变量阿里云都判「参数不匹配」整批拒收。
-      const templateParam = {};
-      if (effectiveVars.includes('value')) templateParam.value = String(valueYuan);
-      if (effectiveVars.includes('date')) templateParam.date = validUntil;
-      if (effectiveVars.includes('code')) templateParam.code = code;
-
-      try {
-        const sent = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam, signName: pickCampaignSmsSign(storeId) });
-        const camCustomer = await upsertCustomer(pool, { phone, store_id: storeId }, tenantId).catch(() => null);
-        await upsertDeliveryLog(pool, {
-          delivery_key: deliveryKey, action_key: campaignId || campaignKey, rule_key: campaignKey,
-          customer_id: camCustomer?.id || null, store_id: storeId, channel: 'sms', external_userid: '',
-          provider_msg_id: sent.provider_msg_id, status: 'sent',
-          payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId, campaign_key: campaignKey },
-          result: sent.raw || {}
-        }, tenantId);
-        await insertGrowthEvent(pool, {
-          event_type: 'marketing_triggered',
-          customer_id: camCustomer?.id || null, phone, external_userid: null, store_id: storeId,
-          campaign_id: campaignId, channel: 'sms', coupon_id: code,
-          idempotency_key: `marketing_triggered:${campaignKey}:${code || phone}`,
-          metadata: {
-            rule_key: campaignKey, delivery_key: deliveryKey, provider_msg_id: sent.provider_msg_id,
-            short_code: code, coupon_value_fen: valueYuan * 100, template_code: templateCode
-          }
-        }, tenantId);
-        return res.json({ ok: true, provider_msg_id: sent.provider_msg_id });
-      } catch (deliveryErr) {
-        await upsertDeliveryLog(pool, {
-          delivery_key: deliveryKey, action_key: campaignId || campaignKey, rule_key: campaignKey,
-          customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'failed',
-          payload: { phone, template_param: templateParam, coupon_code: code, campaign_id: campaignId, campaign_key: campaignKey },
-          result: {}, error_message: deliveryErr?.message || 'sms_send_failed'
-        }, tenantId);
-        await handleSmsFailure(pool, phone, deliveryErr?.message, tenantId);
-        return res.status(502).json({ ok: false, error: deliveryErr?.message || 'sms_send_failed' });
-      }
-      });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
-
-  // ── 储值余额提醒（HRMS 自身后台直发，只发 {balance}，无券无码）──
-  // 目标口径：有余额(≥min) + 久未消费(dormant_days) + 频控(remind 类 N 天内不重发)。
-  // 与「储值召回(发券)」共用 growth_campaign_jobs 表，kind='stored_value_remind' 区分，
-  // 由本文件内的后台 worker 认领执行（小程序定时器只认 kind='winback'，不会误发本类）。
-  function buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets) {
-    return {
-      sql: `SELECT card_no, member_name, phone, balance_fen FROM growth_stored_value_members m
-              WHERE m.phone IS NOT NULL AND m.phone <> '' AND m.store_id = $2 AND m.balance_fen >= $3
-                AND (m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))
-                AND NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
-                  WHERE d.channel='sms' AND d.rule_key='stored_value_remind' AND d.status IN ('sent','redeemed')
-                    AND d.payload->>'phone' = m.phone AND d.created_at > now() - ($1 || ' days')::interval)
-              ORDER BY m.balance_fen DESC LIMIT ${maxTargets}`,
-      params: [String(freqDays), storeId, minBalanceFen]
-    };
-  }
-
-  app.post('/api/growth/stored-value/remind/preview', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    try {
-      const b = req.body || {};
-      const storeId = cleanText(b.store_id, 128);
-      const dormantDays = Math.max(0, Math.floor(Number(b.dormant_days) || 30));
-      const minBalanceFen = Math.max(0, Math.floor((Number(b.min_balance_yuan) || 1) * 100));
-      const maxTargets = Math.min(Math.max(Number(b.max_targets) || 1000, 1), 2000);
-      const freqDays = freqDaysEnv('ALIYUN_SMS_REMIND_FREQUENCY_DAYS', 30);
-      if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
-      const q = buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets);
-      const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(q.sql, q.params));
-      return res.json({
-        ok: true,
-        target_count: r.rows.length,
-        sample: r.rows.slice(0, 5).map((x) => ({ name: x.member_name || '', balance_yuan: Math.round((x.balance_fen || 0) / 100) }))
-      });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
-
-  app.post('/api/growth/stored-value/remind/launch', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    try {
-      const b = req.body || {};
-      const storeId = cleanText(b.store_id, 128);
-      const dormantDays = Math.max(0, Math.floor(Number(b.dormant_days) || 30));
-      const minBalanceFen = Math.max(0, Math.floor((Number(b.min_balance_yuan) || 1) * 100));
-      const maxTargets = Math.min(Math.max(Number(b.max_targets) || 1000, 1), 2000);
-      const freqDays = freqDaysEnv('ALIYUN_SMS_REMIND_FREQUENCY_DAYS', 30);
-      const templateCode = cleanText(b.sms_template_code, 64) || pickBalanceTemplateByStore(storeId);
-      if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
-      if (!templateCode) return res.status(503).json({ ok: false, error: 'balance_template_not_configured' });
-      const q = buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets);
-      const launchResult = await tenantContext.run(getGrowthTenantId(req), async () => {
-        const r = await pool.query(q.sql, q.params);
-        // 冻结目标(含发起时点余额快照)，发送时直接用，无需重查。
-        const targets = r.rows.map((x) => ({ phone: x.phone, name: x.member_name || '', card_no: x.card_no, balance_yuan: Math.round((x.balance_fen || 0) / 100) }));
-        if (!targets.length) return { job_id: null, target_count: 0, message: '没有符合条件的对象(余额/沉睡/频控筛选后为空)' };
-        const campaignId = cleanText(b.campaign_id, 128) || ('svremind_' + storeId + '_' + Date.now());
-        const ins = await pool.query(
-          `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result, tenant_id)
-           VALUES ($1,$2,0,0,$3,$4,$5::jsonb,$6,'pending','stored_value_remind',$7,$8::jsonb,$9) RETURNING id`,
-          [campaignId, storeId, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, cleanText(b.operator, 128) || 'hrms_admin', JSON.stringify({ template_code: templateCode }), resolveTenantIdDefault()]
-        );
-        return { job_id: ins.rows[0].id, campaign_id: campaignId, target_count: targets.length };
-      });
-      return res.json({ ok: true, ...launchResult });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
 
   // 后台 worker：认领 pending 的储值余额提醒任务并由 HRMS 自身逐条下发(不经小程序)。
   // 每 30s 跑一次；同一时刻只处理一个任务，发送结果写 delivery_logs + marketing_triggered。
@@ -4029,19 +3692,6 @@ export function registerGrowthRoutes(app, pool) {
     }
   });
 
-  app.get('/api/growth/campaigns/:campaignId/funnel', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const campaignId = cleanText(req.params.campaignId, 128);
-    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
-      `SELECT event_type, COUNT(*)::int AS count
-       FROM growth_events
-       WHERE campaign_id = $1
-       GROUP BY event_type
-       ORDER BY event_type`,
-      [campaignId]
-    ));
-    return res.json({ ok: true, campaign_id: campaignId, counts: r.rows });
-  });
 
   app.post('/api/growth/metrics/recompute', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
@@ -4369,256 +4019,6 @@ export function registerGrowthRoutes(app, pool) {
     };
     globalThis.__growthRedemptionBackfillTimer = setInterval(runBackfill, 10 * 60 * 1000);
   }
-
-  app.post('/api/growth/rule-engine/run', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const ruleEngineTenantId = getGrowthTenantId(req);
-    const result = await tenantContext.run(ruleEngineTenantId, () => runTouchRuleEngine(pool, { ...(req.body || {}), tenantId: ruleEngineTenantId }));
-    return res.json({ ok: true, result });
-  });
-
-  app.get('/api/growth/actions', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const status = cleanText(req.query.status || '', 40);
-    const channel = cleanText(req.query.channel || '', 40);
-    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
-    const offset = Math.max(Number(req.query.offset) || 0, 0);
-    const tenantId = getGrowthTenantId(req);
-
-    const actions = await tenantContext.run(tenantId, async () => {
-      // --- growth_actions ---
-      const PLATFORM_CHANNELS = ['wecom', 'xiaohongshu', 'dianping', 'miniprogram', 'douyin', 'pengyouquan'];
-      let sql = `SELECT * FROM growth_actions WHERE tenant_id = $1`;
-      const params = [tenantId];
-      if (status) { sql += ` AND status = $${params.length + 1}`; params.push(status); }
-      if (channel === 'pllm') {
-        sql += ` AND action_type = 'pllm_task'`;
-      } else if (channel === 'rule') {
-        sql += ` AND (payload->>'source' IS NULL OR payload->>'source' = '')`;
-      } else if (PLATFORM_CHANNELS.includes(channel)) {
-        sql += ` AND payload->>'channel' = $${params.length + 1}`; params.push(channel);
-      }
-      sql += ` ORDER BY created_at DESC LIMIT 500`;
-      const gaRows = (await pool.query(sql, params)).rows;
-
-      // --- strategy_experiments (PLLM方案A/B卡片) ---
-      // 只在不按具体渠道过滤时包含（PLLM实验没有平台渠道概念）
-      let expRows = [];
-      const excludeExperiments = PLATFORM_CHANNELS.includes(channel) || channel === 'rule';
-      if (!excludeExperiments) {
-        const onlyProposed = !status || status === 'proposed';
-        if (onlyProposed) {
-          const expSql = `
-            SELECT se.experiment_code, se.title, se.goal, se.anomaly_type, se.status AS exp_status, se.created_at, se.updated_at, se.tenant_id,
-                   sv_a.label AS va_label, sv_a.action AS va_action, sv_a.execution_guide AS va_guide, sv_a.store AS va_store,
-                   sv_b.label AS vb_label, sv_b.action AS vb_action, sv_b.execution_guide AS vb_guide, sv_b.store AS vb_store
-            FROM strategy_experiments se
-            LEFT JOIN strategy_variants sv_a ON sv_a.experiment_id = se.id AND sv_a.variant_code = 'A'
-            LEFT JOIN strategy_variants sv_b ON sv_b.experiment_id = se.id AND sv_b.variant_code = 'B'
-            WHERE se.tenant_id = $1 AND se.created_by = 'pllm' AND se.status = 'pending_approval'
-            ORDER BY se.created_at DESC LIMIT 200`;
-          expRows = (await pool.query(expSql, [tenantId])).rows.map((e) => ({
-            action_key: `pllm_exp_${e.experiment_code}`,
-            action_type: 'pllm_experiment',
-            status: 'proposed',
-            store_id: e.va_store || '',
-            title: e.title,
-            detail: e.goal || '',
-            payload: {
-              source: 'pllm_experiment',
-              channel: 'pllm',
-              experiment_code: e.experiment_code,
-              anomaly_type: e.anomaly_type || '',
-              variant_a: e.va_action ? { label: e.va_label || '方案A', action: e.va_action, execution_guide: e.va_guide || '' } : null,
-              variant_b: e.vb_action ? { label: e.vb_label || '方案B', action: e.vb_action, execution_guide: e.vb_guide || '' } : null,
-            },
-            created_by: 'pllm',
-            created_at: e.created_at,
-            updated_at: e.updated_at,
-            executed_at: null,
-            tenant_id: e.tenant_id,
-          }));
-        }
-      }
-
-      // 合并并按创建时间降序
-      const combined = [...gaRows, ...expRows].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      return combined.slice(offset, offset + limit);
-    });
-
-    return res.json({ ok: true, actions, total: actions.length, limit, offset });
-  });
-
-  // PLLM策略实验审批（approve=采纳执行中 / reject=不适合）
-  app.post('/api/growth/pllm-experiment/:code/approve', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const code = cleanText(req.params.code, 100);
-    const tenantId = getGrowthTenantId(req);
-    await tenantContext.run(tenantId, async () => {
-      await pool.query(
-        `UPDATE strategy_experiments SET status = 'approved', updated_at = NOW() WHERE experiment_code = $1 AND tenant_id = $2`,
-        [code, tenantId]
-      );
-    });
-    return res.json({ ok: true });
-  });
-
-  app.post('/api/growth/pllm-experiment/:code/reject', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const code = cleanText(req.params.code, 100);
-    const tenantId = getGrowthTenantId(req);
-    await tenantContext.run(tenantId, async () => {
-      await pool.query(
-        `UPDATE strategy_experiments SET status = 'rejected', updated_at = NOW() WHERE experiment_code = $1 AND tenant_id = $2`,
-        [code, tenantId]
-      );
-    });
-    return res.json({ ok: true });
-  });
-
-  app.get('/api/growth/execution-logs', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-    const offset = Math.max(Number(req.query.offset) || 0, 0);
-    const storeId = cleanText(req.query.store_id || '', 128);
-    const decision = cleanText(req.query.decision || '', 40);
-    // 关键语义修正：growth_execution_logs.decision='executed' 只代表「引擎处理了该动作」，
-    // 不代表「触达到了客人」。真正的渠道触达结果在 growth_delivery_logs。这里按 action_key
-    // 聚合投递日志，回传每条执行记录的真实触达统计，供前端区分「已触达 / 失败 / 跳过 / 仅内部执行」。
-    let sql = `SELECT el.*,
-        tr.name AS rule_name,
-        COALESCE(d.total_count, 0) AS delivery_total,
-        COALESCE(d.delivered_count, 0) AS delivery_delivered,
-        COALESCE(d.failed_count, 0) AS delivery_failed,
-        COALESCE(d.skipped_count, 0) AS delivery_skipped,
-        d.channels AS delivery_channels,
-        d.last_error AS delivery_last_error
-      FROM growth_execution_logs el
-      LEFT JOIN growth_touch_rules tr ON tr.rule_key = split_part(el.action_key, ':', 2)
-      LEFT JOIN LATERAL (
-        SELECT
-          COUNT(*) AS total_count,
-          COUNT(*) FILTER (WHERE status IN ('sent','delivered','read','clicked','redeemed')) AS delivered_count,
-          COUNT(*) FILTER (WHERE status = 'failed') AS failed_count,
-          COUNT(*) FILTER (WHERE status = 'skipped') AS skipped_count,
-          string_agg(DISTINCT channel, ',') AS channels,
-          (array_agg(error_message ORDER BY created_at DESC) FILTER (WHERE error_message IS NOT NULL))[1] AS last_error
-        FROM growth_delivery_logs dl
-        WHERE dl.action_key = el.action_key
-      ) d ON TRUE`;
-    const params = [];
-    const conds = [];
-    if (storeId) { conds.push(`el.store_id = $${params.length + 1}`); params.push(storeId); }
-    if (decision) { conds.push(`el.decision = $${params.length + 1}`); params.push(decision); }
-    if (conds.length) sql += ` WHERE ` + conds.join(' AND ');
-    sql += ` ORDER BY el.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(limit, offset);
-    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(sql, params));
-    const logs = r.rows.map((l) => {
-      let reach = 'na';
-      if (l.decision === 'ignored') reach = 'ignored';
-      else if (Number(l.delivery_total) === 0) reach = 'internal_only';
-      else if (Number(l.delivery_delivered) > 0) reach = 'reached';
-      else if (Number(l.delivery_failed) > 0) reach = 'failed';
-      else if (Number(l.delivery_skipped) > 0) reach = 'skipped';
-      else reach = 'internal_only';
-      return Object.assign({}, l, { reach });
-    });
-    return res.json({ ok: true, logs, limit, offset });
-  });
-
-  app.post('/api/growth/actions', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const actionsTenantId = getGrowthTenantId(req);
-    const r = await tenantContext.run(actionsTenantId, () => pool.query(
-      `INSERT INTO growth_actions (action_key, action_type, status, store_id, campaign_id, title, detail, payload, created_by, tenant_id)
-       VALUES (NULLIF($1,''),$2,COALESCE(NULLIF($3,''),'proposed'),NULLIF($4,''),NULLIF($5,''),$6,$7,$8::jsonb,COALESCE(NULLIF($9,''),'agent_v2'),$10)
-       ON CONFLICT (action_key, tenant_id) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, payload = EXCLUDED.payload, updated_at = NOW()
-       RETURNING *`,
-      [cleanText(b.action_key, 255), cleanText(b.action_type, 80), cleanText(b.status, 40), cleanText(b.store_id, 128), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.detail, 4000), JSON.stringify(b.payload || {}), cleanText(b.created_by, 80), actionsTenantId]
-    ));
-    return res.json({ ok: true, action: r.rows[0] });
-  });
-
-  app.post('/api/growth/actions/:actionKey/execute', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const actionKey = cleanText(req.params.actionKey, 255);
-    const operator = getGrowthOperator(req);
-    const executed = await tenantContext.run(getGrowthTenantId(req), async () => {
-      const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
-      if (!current.rows.length) return null;
-      const before = current.rows[0];
-      return executeGrowthActionRecord(pool, before, operator, req.body?.payload || {}, req.body?.reason || '');
-    });
-    if (!executed) return res.status(404).json({ ok: false, error: 'action_not_found' });
-    return res.json({ ok: true, action: executed.action, execution: executed.execution });
-  });
-
-  app.post('/api/growth/actions/:actionKey/ignore', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const actionKey = cleanText(req.params.actionKey, 255);
-    const operator = getGrowthOperator(req);
-    const outcome = await tenantContext.run(getGrowthTenantId(req), async () => {
-      const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
-      if (!current.rows.length) return null;
-      const before = current.rows[0];
-      const result = await pool.query(
-        `UPDATE growth_actions SET status = 'ignored', updated_at = NOW() WHERE action_key = $1 RETURNING *`,
-        [actionKey]
-      );
-      await appendExecutionLog(pool, {
-        action_key: actionKey,
-        strategy_key: cleanText(before.payload?.strategy_key || '', 255),
-        store_id: before.store_id,
-        action_type: before.action_type,
-        decision: 'ignored',
-        operator_username: operator.username,
-        operator_role: operator.role,
-        before_payload: before.payload || {},
-        after_payload: result.rows[0].payload || {},
-        decision_reason: cleanText(req.body?.reason || '', 2000),
-        result_summary: '动作被忽略'
-      });
-      return result.rows[0];
-    });
-    if (!outcome) return res.status(404).json({ ok: false, error: 'action_not_found' });
-    return res.json({ ok: true, action: outcome });
-  });
-
-  app.post('/api/growth/actions/:actionKey/edit-and-execute', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const actionKey = cleanText(req.params.actionKey, 255);
-    const operator = getGrowthOperator(req);
-    const outcome = await tenantContext.run(getGrowthTenantId(req), async () => {
-      const current = await pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
-      if (!current.rows.length) return null;
-      const before = current.rows[0];
-      const patch = req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : {};
-      const result = await pool.query(
-        `UPDATE growth_actions
-         SET status = 'executed', payload = COALESCE(payload,'{}'::jsonb) || $2::jsonb, updated_at = NOW(), executed_at = NOW()
-         WHERE action_key = $1 RETURNING *`,
-        [actionKey, JSON.stringify(patch)]
-      );
-      await appendExecutionLog(pool, {
-        action_key: actionKey,
-        strategy_key: cleanText(before.payload?.strategy_key || '', 255),
-        store_id: before.store_id,
-        action_type: before.action_type,
-        decision: 'edited_then_executed',
-        operator_username: operator.username,
-        operator_role: operator.role,
-        before_payload: before.payload || {},
-        after_payload: result.rows[0].payload || {},
-        decision_reason: cleanText(req.body?.reason || '', 2000),
-        result_summary: '动作修改后执行'
-      });
-      return result.rows[0];
-    });
-    if (!outcome) return res.status(404).json({ ok: false, error: 'action_not_found' });
-    return res.json({ ok: true, action: outcome });
-  });
 
   app.get('/api/growth/store-profiles', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
@@ -5142,108 +4542,6 @@ export function registerGrowthRoutes(app, pool) {
       }
       return res.status(404).json({ ok: false, error: 'action_not_found' });
     } catch (e) { return res.status(500).json({ ok: false, error: e?.message || 'callback_error' }); }
-  });
-
-  // ── Phase 3: Action feedback / 执行回填 ──
-  // 纯手动建议看板：店长回填实际结果(触达/核销/营收) → 按预计目标自动打分 → 沉淀经验库供下一轮AI建议复用。
-  app.post('/api/growth/actions/:actionKey/feedback', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const actionKey = cleanText(req.params.actionKey, 255);
-    const b = req.body || {};
-    const operator = getGrowthOperator(req);
-    return tenantContext.run(getGrowthTenantId(req), async () => {
-
-    // 先取动作，拿到 expected_kpi / 渠道 / 文案，用于打分与经验沉淀
-    const cur = await pool.query('SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1', [actionKey]);
-    if (!cur.rows.length) return res.status(404).json({ ok: false, error: 'action_not_found' });
-    const action = cur.rows[0];
-    const payload = action.payload || {};
-
-    // 结构化实际结果（任一可空；提供越多打分越准）
-    const hasResult = b.actual_reach != null || b.actual_redemptions != null || b.actual_revenue_fen != null;
-    const actual = {
-      reach: b.actual_reach != null ? Math.max(0, Math.floor(Number(b.actual_reach) || 0)) : null,
-      redemptions: b.actual_redemptions != null ? Math.max(0, Math.floor(Number(b.actual_redemptions) || 0)) : null,
-      revenue_fen: b.actual_revenue_fen != null ? Math.max(0, Math.floor(Number(b.actual_revenue_fen) || 0)) : null
-    };
-    const expected = (payload.expected_kpi && typeof payload.expected_kpi === 'object') ? payload.expected_kpi : {};
-
-    // 自动打分：各指标实际/预计的达成比，1.0=达标→80分；缺指标则跳过
-    let scorePayload = null;
-    if (hasResult) {
-      const parts = [];
-      if (Number(expected.reach) > 0 && actual.reach != null) parts.push(Math.min(2, actual.reach / Number(expected.reach)));
-      const actualRate = actual.reach && actual.reach > 0 && actual.redemptions != null ? (actual.redemptions / actual.reach) * 100 : null;
-      if (Number(expected.redemption_rate) > 0 && actualRate != null) parts.push(Math.min(2, actualRate / Number(expected.redemption_rate)));
-      if (Number(expected.revenue_fen) > 0 && actual.revenue_fen != null) parts.push(Math.min(2, actual.revenue_fen / Number(expected.revenue_fen)));
-      const achievement = parts.length ? parts.reduce((a, c) => a + c, 0) / parts.length : null;
-      const score = achievement != null ? Math.round(Math.min(100, achievement * 80)) : null;
-      const effectiveness = score == null ? '已回填' : score >= 70 ? '有效' : score >= 40 ? '部分有效' : '无效';
-      scorePayload = {
-        actual,
-        expected_kpi: expected,
-        actual_redemption_rate: actualRate != null ? Number(actualRate.toFixed(1)) : null,
-        achievement: achievement != null ? Number(achievement.toFixed(2)) : null,
-        effectiveness_score: score,
-        effectiveness,
-        scored_at: new Date().toISOString()
-      };
-    }
-
-    const mergePayload = {
-      feedback_note: cleanText(b.note, 4000),
-      feedback_screenshot_url: cleanText(b.screenshot_url, 1000),
-      feedback_result_url: cleanText(b.result_url, 1000),
-      executed_by: operator.username,
-      executed_at: new Date().toISOString()
-    };
-    if (scorePayload) mergePayload.outcome_summary = scorePayload;
-
-    const r = await pool.query(
-      `UPDATE growth_actions
-       SET status = COALESCE(NULLIF($2,''), status),
-           payload = COALESCE(payload,'{}'::jsonb) || $3::jsonb,
-           updated_at = NOW()
-       WHERE action_key = $1
-       RETURNING *`,
-      [actionKey, cleanText(b.status, 40), JSON.stringify(mergePayload)]
-    );
-
-    // 沉淀经验库：复用 growth_learnings，被下一轮 AI 建议生成读取
-    if (scorePayload && scorePayload.effectiveness_score != null) {
-      const approach = cleanText(payload.ready_copy || payload.execution_action || action.title, 500);
-      const channel = cleanText(payload.channel || '', 80);
-      const audienceTag = cleanText(payload.target_audience || '', 120) || null;
-      const isWin = scorePayload.effectiveness_score >= 70;
-      const effectDesc = cleanText(
-        `${scorePayload.effectiveness}｜核销率${scorePayload.actual_redemption_rate != null ? scorePayload.actual_redemption_rate + '%' : '-'}，实收¥${actual.revenue_fen != null ? Math.round(actual.revenue_fen / 100) : '-'}，达成${scorePayload.achievement != null ? Math.round(scorePayload.achievement * 100) + '%' : '-'}`,
-        255
-      );
-      const sample = actual.reach || 0;
-      await pool.query(
-        `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified, tenant_id)
-         VALUES ('ai_suggestion',$1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,true,$12)
-         ON CONFLICT DO NOTHING`,
-        [
-          actionKey,
-          cleanText(action.store_id, 128),
-          channel || null,
-          audienceTag,
-          'AI建议方案有效性',
-          isWin ? approach : '换其它方向（避免重复）',
-          isWin ? null : approach,
-          effectDesc,
-          sample,
-          sample >= 100 ? 'high' : sample >= 30 ? 'medium' : 'low',
-          new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10),
-          resolveTenantIdDefault()
-        ]
-      ).catch((e) => { console.warn('[growth] deposit learning failed:', e?.message || e); });
-    }
-
-    await appendExecutionLog(pool, { action_key: actionKey, store_id: r.rows[0].store_id, action_type: r.rows[0].action_type, decision: 'feedback', operator_username: operator.username, operator_role: operator.role, after_payload: r.rows[0].payload, decision_reason: cleanText(b.note, 2000), result_summary: scorePayload ? `回填打分：${scorePayload.effectiveness}(${scorePayload.effectiveness_score}分)` : (b.note || '执行回填完成') });
-    return res.json({ ok: true, action: r.rows[0], score: scorePayload });
-    });
   });
 
   // ── Phase 5: Semantic write-back to profiles ──
