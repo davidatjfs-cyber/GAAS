@@ -1,16 +1,3 @@
-const EVENT_TYPES = new Set([
-  'campaign_scan',
-  'phone_authorized',
-  'coupon_claimed',
-  'coupon_purchased',
-  'coupon_redeemed',
-  'payment_success',
-  'customer_arrived',
-  'marketing_triggered',
-  'wechat_match_check',
-  'customer_profile_updated'
-]);
-
 function cleanText(value, max = 255) {
   return String(value == null ? '' : value).trim().slice(0, max);
 }
@@ -60,7 +47,7 @@ async function getStoredValueBalanceYuan(pool, phone, storeId) {
   return Math.max(0, Math.round((r.rows[0]?.balance_fen || 0) / 100));
 }
 
-function parseOccurredAt(value) {
+export function parseOccurredAt(value) {
   if (!value) return new Date();
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? new Date() : d;
@@ -1618,15 +1605,25 @@ export async function upsertDeliveryLog(pool, payload, tenantId = 'default') {
 let __growthWecomTokenCache = { token: '', expiresAt: 0, store_id: '' };
 let __storeWecomTokenCaches = {};
 
-async function getWecomConfig(pool) {
+export async function getWecomConfig(pool) {
   const config = await getStateValue(pool, 'growth_wecom_config');
   return config && typeof config === 'object' ? config : null;
 }
 
-async function getStoreWecomConfig(pool, storeId) {
+export async function getStoreWecomConfig(pool, storeId) {
   if (!storeId) return null;
   const r = await pool.query('SELECT * FROM store_wecom_configs WHERE store_id = $1 LIMIT 1', [storeId]);
   return r.rows[0] || null;
+}
+
+// 桥接：企微 token 缓存是本模块内的可变共享状态，供已搬到 growth-wecom-feishu-routes.js
+// 的路由（重置全局 token / 清除门店 token）复用，不直接导出可变 let 变量。
+export function resetGrowthWecomTokenCache() {
+  __growthWecomTokenCache = { token: '', expiresAt: 0, store_id: '' };
+}
+
+export function clearStoreWecomTokenCache(storeId) {
+  delete __storeWecomTokenCaches[storeId];
 }
 
 // 企微小程序/webhook 等无 JWT 上下文的入口，通过 store 反查其所属租户（employees.store → tenant_id）。
@@ -1649,12 +1646,12 @@ export async function resolveTenantIdForStore(pool, storeId) {
   }
 }
 
-async function getAllStoreWecomConfigs(pool) {
+export async function getAllStoreWecomConfigs(pool) {
   const r = await pool.query('SELECT * FROM store_wecom_configs ORDER BY store_id');
   return r.rows;
 }
 
-async function getWecomAccessToken(pool, storeId) {
+export async function getWecomAccessToken(pool, storeId) {
   const now = Date.now();
   let corpId, corpSecret;
 
@@ -2659,7 +2656,7 @@ async function createChurnAlert(pool, rule, row) {
   );
 }
 
-async function loadRuleCandidates(pool, rule, tenantId = 'default') {
+export async function loadRuleCandidates(pool, rule, tenantId = 'default') {
   if (rule.rule_key === 'loyal_birthday_month') {
     const r = await pool.query(
       `SELECT cp.customer_id, cp.store_id, cp.phone, cp.pos_order_count, cp.pos_last_order_at, cp.visit_interval_days,
@@ -2790,7 +2787,7 @@ function buildRulePeriodKey(ruleKey, row) {
 // 随 POS 数据更新需定期重算(每日)。口径：
 //  - mj_dinner_weekend_repeat: 马己仙 晚市(≥16点)≥2次 或 周末(周六日)≥2次 的复购客；
 //  - hc_weekday_lunch:        洪潮 平日(排除周末+法定节假日,含调休补班) 午市(10-15点) ≥1次。
-async function recomputeDiningSegments(pool, tenantId = 'default') {
+export async function recomputeDiningSegments(pool, tenantId = 'default') {
   const BJ = "AT TIME ZONE 'Asia/Shanghai'";
   const hj = `LEFT JOIN cn_holiday_calendar h ON h.day=(order_time ${BJ})::date AND h.day_type='holiday'
               LEFT JOIN cn_holiday_calendar w ON w.day=(order_time ${BJ})::date AND w.day_type='workday'`;
@@ -3194,6 +3191,15 @@ export async function getTouchRulesAudience(tenantId, storeId, forceRefresh) {
   return _getTouchRulesAudience(tenantId, storeId, forceRefresh);
 }
 
+// 供本文件内的企微联系人定时同步任务调用：实现已搬到 growth-wecom-feishu-routes.js，
+// 通过 setSyncWecomContactsForStore 注入，避免与该文件的 import.growth-api.js 形成循环依赖。
+let _syncWecomContactsForStore = null;
+export function setSyncWecomContactsForStore(fn) { _syncWecomContactsForStore = fn; }
+async function syncWecomContactsForStore(pool, storeConfig) {
+  if (!_syncWecomContactsForStore) throw new Error('sync_wecom_contacts_not_ready');
+  return _syncWecomContactsForStore(pool, storeConfig);
+}
+
 function cnHour(ts) {
   if (!ts) return null;
   const d = new Date(ts);
@@ -3359,55 +3365,6 @@ export function buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, fre
 }
 
 export function registerGrowthRoutes(app, pool) {
-  async function recomputeDailyMetrics(days = 7) {
-    const safeDays = Math.min(Math.max(Number(days) || 7, 1), 90);
-    await pool.query(
-      `INSERT INTO growth_daily_metrics (
-         metric_date, store_id, campaign_id, channel,
-         scan_count, authorized_count,
-         coupon_claimed_count, coupon_purchased_count, marketing_triggered_count,
-         coupon_redeemed_count, payment_count, revenue_fen, roi, updated_at, tenant_id
-       )
-       SELECT
-         occurred_at::date AS metric_date,
-         COALESCE(store_id, '') AS store_id,
-         COALESCE(campaign_id, '') AS campaign_id,
-         COALESCE(channel, '') AS channel,
-         COUNT(*) FILTER (WHERE event_type = 'campaign_scan')::int AS scan_count,
-         COUNT(*) FILTER (WHERE event_type = 'phone_authorized')::int AS authorized_count,
-         COUNT(*) FILTER (WHERE event_type = 'coupon_claimed')::int AS coupon_claimed_count,
-         COUNT(*) FILTER (WHERE event_type = 'coupon_purchased')::int AS coupon_purchased_count,
-         COUNT(*) FILTER (WHERE event_type = 'marketing_triggered')::int AS marketing_triggered_count,
-         COUNT(*) FILTER (WHERE event_type = 'coupon_redeemed')::int AS coupon_redeemed_count,
-         COUNT(*) FILTER (WHERE event_type = 'payment_success')::int AS payment_count,
-          COALESCE(SUM(amount_fen) FILTER (WHERE event_type IN ('payment_success','coupon_redeemed')), 0)::int AS revenue_fen,
-          CASE WHEN COUNT(*) FILTER (WHERE event_type = 'campaign_scan') > 0
-            THEN ROUND(COALESCE(SUM(amount_fen) FILTER (WHERE event_type IN ('payment_success','coupon_redeemed')), 0)::numeric / COUNT(*) FILTER (WHERE event_type = 'campaign_scan'), 4)
-            ELSE NULL END AS roi,
-          NOW(),
-          current_setting('app.tenant_id', true)
-       FROM growth_events
-       WHERE occurred_at >= CURRENT_DATE - ($1::int || ' days')::interval
-       GROUP BY 1,2,3,4
-       ON CONFLICT (metric_date, store_id, campaign_id, channel, tenant_id)
-       DO UPDATE SET
-         scan_count = EXCLUDED.scan_count,
-         authorized_count = EXCLUDED.authorized_count,
-         coupon_claimed_count = EXCLUDED.coupon_claimed_count,
-         coupon_purchased_count = EXCLUDED.coupon_purchased_count,
-         marketing_triggered_count = EXCLUDED.marketing_triggered_count,
-         coupon_redeemed_count = EXCLUDED.coupon_redeemed_count,
-          payment_count = EXCLUDED.payment_count,
-          revenue_fen = EXCLUDED.revenue_fen,
-          roi = EXCLUDED.roi,
-          updated_at = NOW()`,
-      [safeDays]
-    );
-    return safeDays;
-  }
-
-
-
   // 后台 worker：认领 pending 的储值余额提醒任务并由 HRMS 自身逐条下发(不经小程序)。
   // 每 30s 跑一次；同一时刻只处理一个任务，发送结果写 delivery_logs + marketing_triggered。
   async function processOneRemindJob() {
@@ -3542,26 +3499,6 @@ export function registerGrowthRoutes(app, pool) {
     }, 20000);
   }
 
-  // 就餐时段标签：手动重算端点 + 每日重算(随 POS 数据更新保持新鲜)
-  app.post('/api/growth/segments/recompute', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    try {
-      const segmentTenantId = getGrowthTenantId(req);
-      const result = await tenantContext.run(segmentTenantId, () => recomputeDiningSegments(pool, segmentTenantId));
-      return res.json({ ok: true, result });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
-  if (!globalThis.__growthSegmentTimer) {
-    globalThis.__growthSegmentTimer = setInterval(() => {
-      runForActiveTenants(() => recomputeDiningSegments(pool)).catch((e) => console.warn('[segments] recompute failed:', e?.message));
-    }, 24 * 60 * 60 * 1000);
-    setTimeout(() => {
-      runForActiveTenants(() => recomputeDiningSegments(pool)).catch((e) => console.warn('[segments] initial recompute failed:', e?.message));
-    }, 30000);
-  }
-
   // T+7 SMS自动回填：每天跑一次；启动后延迟60s首跑（等DB连接稳定）
   if (!globalThis.__smsBackfillTimer) {
     globalThis.__smsBackfillTimer = setInterval(() => {
@@ -3577,308 +3514,6 @@ export function registerGrowthRoutes(app, pool) {
       }).catch((e) => console.warn('[sms-backfill] initial failed:', e?.message));
     }, 60000);
   }
-
-  app.post('/api/miniprogram/events', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-
-    try {
-      const body = req.body && typeof req.body === 'object' ? req.body : {};
-      const eventType = cleanText(body.event_type, 80);
-      if (!EVENT_TYPES.has(eventType)) {
-        return res.status(400).json({ ok: false, error: 'invalid_event_type' });
-      }
-
-      const storeId = cleanText(body.store_id, 128);
-      const tenantId = await resolveTenantIdForStore(pool, storeId);
-      const result = await tenantContext.run(tenantId, async () => {
-        const customer = await upsertCustomer(pool, body, tenantId);
-        const campaignId = cleanText(body.campaign_id || body.scene, 128);
-        const channel = cleanText(body.channel, 80);
-        const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
-        const amountFen = Math.max(0, Math.floor(Number(body.amount_fen) || 0));
-        const occurredAt = parseOccurredAt(body.occurred_at);
-        const idempotencyKey = cleanText(body.idempotency_key, 255) || null;
-
-        if (campaignId) {
-          await pool.query(
-            `INSERT INTO growth_campaigns (campaign_id, channel, store_id, meta, tenant_id)
-             VALUES ($1, NULLIF($2,''), NULLIF($3,''), $4::jsonb, $5)
-             ON CONFLICT (campaign_id, tenant_id) DO UPDATE SET
-               channel = COALESCE(growth_campaigns.channel, EXCLUDED.channel),
-               store_id = COALESCE(growth_campaigns.store_id, EXCLUDED.store_id),
-               updated_at = NOW()`,
-            [campaignId, channel, storeId, JSON.stringify({ first_event_type: eventType }), tenantId]
-          );
-        }
-
-        const inserted = await pool.query(
-          `INSERT INTO growth_events (
-             event_type, customer_id, phone, openid, external_userid, store_id, campaign_id, channel,
-             coupon_id, order_id, amount_fen, idempotency_key, metadata, occurred_at, tenant_id
-           ) VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),$11,$12,$13::jsonb,$14,$15)
-           ON CONFLICT (idempotency_key, tenant_id) DO NOTHING
-           RETURNING id`,
-          [
-            eventType,
-            customer?.id || null,
-            cleanPhone(body.phone),
-            cleanText(body.openid, 128),
-            cleanText(body.external_userid, 128),
-            storeId,
-            campaignId,
-            channel,
-            cleanText(body.coupon_id, 128),
-            cleanText(body.order_id, 128),
-            amountFen,
-            idempotencyKey,
-            JSON.stringify(metadata),
-            occurredAt,
-            tenantId
-          ]
-        );
-
-        if (eventType === 'coupon_redeemed' && inserted.rows.length) {
-          // 幂等已经由上面 growth_events 的 idempotency_key + ON CONFLICT + inserted.rows.length
-          // 门槛保证：只有真正插入了新 growth_events 行(即 idempotency_key 之前没出现过)才会走到
-          // 这里。2张/1码券(coupon_count=2)小程序按 idempotency_key='coupon_redeemed:<券id>:<第几次>'
-          // 区分两次合法核销(经核实同一券10秒内2条记录属于此类，非重复提交)。
-          // 2026-07 曾在此加过"5分钟内同券码去重"，经排查是误判合法二次核销为重复提交，已撤销。
-          await pool.query(
-            `INSERT INTO growth_redemptions (customer_id, coupon_id, campaign_id, store_id, amount_fen, metadata, redeemed_at, tenant_id)
-             VALUES ($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6::jsonb,$7,$8)
-             ON CONFLICT DO NOTHING`,
-            [customer?.id || null, cleanText(body.coupon_id, 128), campaignId, storeId, amountFen, JSON.stringify(metadata), occurredAt, tenantId]
-          );
-          // 闭环回写：按核销回传的短码，把对应「已发送」短信日志翻成「已核销」，
-          // 使 growth_delivery_logs 单表即可查「发→核销」全过程（核销率 = redeemed / sent）。
-          const redeemShortCode = cleanText(metadata.short_code || '', 64);
-          if (redeemShortCode) {
-            await pool.query(
-              `UPDATE growth_delivery_logs
-                  SET status = 'redeemed', updated_at = NOW()
-                WHERE channel = 'sms'
-                  AND status = 'sent'
-                  AND payload->>'coupon_code' = $1`,
-              [redeemShortCode]
-            ).catch((e) => console.warn('[growth] delivery redeem flip failed:', e?.message));
-          }
-        }
-
-        // Phase 2: 授权手机号/匹配检查时，反查 wechat_work_customers 并绑定
-        const matchPhone = cleanPhone(body.phone);
-        if ((eventType === 'phone_authorized' || eventType === 'wechat_match_check') && matchPhone) {
-          try {
-            const wwMatch = await pool.query(
-              `UPDATE wechat_work_customers SET bind_customer_id = $1, updated_at = NOW()
-               WHERE phone = $2 AND bind_customer_id IS NULL
-               RETURNING id, store_id`,
-              [customer?.id, matchPhone]
-            );
-            if (wwMatch.rows.length) {
-              console.log(`[growth] wechat_work customer matched: phone=${matchPhone}, customer_id=${customer?.id}`);
-            }
-          } catch (e) {
-            console.warn('[growth] wechat_work match failed:', e?.message);
-          }
-        }
-
-        return { inserted: inserted.rows.length > 0, customer_id: customer?.id || null };
-      });
-
-      return res.json({ ok: true, inserted: result.inserted, customer_id: result.customer_id });
-    } catch (e) {
-      console.error('[growth] miniprogram event failed:', e?.message || e);
-      return res.status(500).json({ ok: false, error: 'server_error' });
-    }
-  });
-
-
-  app.post('/api/growth/metrics/recompute', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const days = await tenantContext.run(getGrowthTenantId(req), () => recomputeDailyMetrics(req.body?.days || 7));
-    return res.json({ ok: true, days });
-  });
-
-  // 按手机号聚合 POS 消费，供小程序写回 users.total_spent 等字段。
-  // 入参 { phones: ['1xx...'], window_days: 30 }；金额以「分」返回，与小程序 users.total_spent 单位一致。
-  app.post('/api/growth/pos/consumption', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const body = req.body || {};
-    const windowDays = Math.min(Math.max(Number(body.window_days) || 30, 1), 365);
-    let phones = Array.isArray(body.phones) ? body.phones : [];
-    phones = phones.map((p) => cleanPhone(p)).filter(Boolean);
-    phones = Array.from(new Set(phones));
-    if (phones.length > 5000) phones = phones.slice(0, 5000);
-    if (!phones.length) return res.json({ ok: true, window_days: windowDays, matched: 0, data: {} });
-
-    const r = await pool.query(
-      `SELECT trim(phone) AS phone,
-              ROUND(COALESCE(SUM(amount_after_discount), 0) * 100)::bigint AS total_spent_fen,
-              COUNT(*)::int AS total_orders,
-              ROUND(COALESCE(SUM(amount_after_discount)
-                FILTER (WHERE biz_date >= (CURRENT_DATE - ($2::int || ' days')::interval)), 0) * 100)::bigint AS spent_30d_fen,
-              MAX(checkout_time) AS last_visit,
-              (ARRAY_AGG(store_id ORDER BY checkout_time DESC NULLS LAST))[1] AS last_store_id
-       FROM pos_orders
-       WHERE trim(phone) = ANY($1::text[]) AND phone IS NOT NULL AND trim(phone) <> ''
-       GROUP BY trim(phone)`,
-      [phones, windowDays]
-    );
-
-    const data = {};
-    for (const row of r.rows) {
-      data[row.phone] = {
-        total_spent_fen: Number(row.total_spent_fen) || 0,
-        total_orders: Number(row.total_orders) || 0,
-        spent_30d_fen: Number(row.spent_30d_fen) || 0,
-        last_visit: row.last_visit ? new Date(row.last_visit).toISOString() : null,
-        store_id: row.last_store_id || ''
-      };
-    }
-    return res.json({ ok: true, window_days: windowDays, requested: phones.length, matched: r.rows.length, data });
-  });
-
-  app.get('/api/growth/metrics', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 365);
-    const r = await tenantContext.run(getGrowthTenantId(req), async () => {
-      if (req.query.recompute === '1' || req.query.recompute === 'true') {
-        await recomputeDailyMetrics(days);
-      }
-      return pool.query(
-        `SELECT * FROM growth_daily_metrics
-         WHERE metric_date >= CURRENT_DATE - ($1::int || ' days')::interval
-           AND ($2::text = '' OR store_id = $2)
-           AND ($3::text = '' OR campaign_id = $3)
-         ORDER BY metric_date DESC, store_id, campaign_id, channel
-         LIMIT 1000`,
-        [days, cleanText(req.query.store_id || '', 128), cleanText(req.query.campaign_id || '', 128)]
-      );
-    });
-    return res.json({ ok: true, rows: r.rows });
-  });
-
-  app.get('/api/growth/alerts', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const status = cleanText(req.query.status || 'open', 40);
-    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
-      `SELECT * FROM growth_alerts WHERE ($1::text = '' OR status = $1) ORDER BY created_at DESC LIMIT 200`,
-      [status]
-    ));
-    return res.json({ ok: true, alerts: r.rows });
-  });
-
-  app.post('/api/growth/alerts', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const alertKey = cleanText(b.alert_key || `${b.alert_type || 'growth'}:${b.store_id || ''}:${b.campaign_id || ''}:${new Date().toISOString().slice(0, 10)}`, 255);
-    const alertsTenantId = getGrowthTenantId(req);
-    const r = await tenantContext.run(alertsTenantId, () => pool.query(
-      `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, campaign_id, title, message, suggested_action, metrics, tenant_id)
-       VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,$7,$8,$9::jsonb,$10)
-       ON CONFLICT (alert_key, tenant_id) DO UPDATE SET
-         severity = EXCLUDED.severity,
-         title = EXCLUDED.title,
-         message = EXCLUDED.message,
-         suggested_action = EXCLUDED.suggested_action,
-         metrics = EXCLUDED.metrics,
-         status = 'open',
-         updated_at = NOW()
-       RETURNING *`,
-      [alertKey, cleanText(b.alert_type, 80), cleanText(b.severity || 'medium', 40), cleanText(b.store_id, 128), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.message, 2000), cleanText(b.suggested_action, 2000), JSON.stringify(b.metrics || {}), alertsTenantId]
-    ));
-    return res.json({ ok: true, alert: r.rows[0] });
-  });
-
-  // 标记预警为已处理（关闭预警）
-  app.post('/api/growth/alerts/:alertKey/resolve', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const alertKey = cleanText(req.params.alertKey, 255);
-    const operator = getGrowthOperator(req);
-    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
-      `UPDATE growth_alerts SET status = 'resolved', resolved_by = $2, resolved_at = NOW(), updated_at = NOW()
-       WHERE alert_key = $1 RETURNING *`,
-      [alertKey, operator.username || 'system']
-    ));
-    if (!r.rows.length) return res.status(404).json({ ok: false, error: 'alert_not_found' });
-    return res.json({ ok: true, alert: r.rows[0] });
-  });
-
-
-  // ABC 6模板滚动分布：该活动当前命中人群中，各模板步骤(赠菜A/B/C+赠券30/50/2X50)×
-  // 降频阶梯(0=正常频率,1+=第几轮降频)各有多少人、以及已进入「红名单」(阶梯走完未回应，
-  // 本活动不再自动触达)的人数。campaign_key 未配置 ABC 轮换时返回 null。
-  async function computeAbcDistributionForCampaign(pool, campaignKey, tenantId) {
-    const order = ABC_ROTATION_ORDER[campaignKey];
-    if (!order) return null;
-    const ruleRes = await pool.query(
-      `SELECT * FROM growth_touch_rules WHERE action_payload->>'campaign_key' = $1 LIMIT 1`,
-      [campaignKey]
-    );
-    if (!ruleRes.rows.length) return null;
-    const rule = ruleRes.rows[0];
-
-    const candidates = (await loadRuleCandidates(pool, rule, tenantId)).slice(0, 500);
-    const phones = [...new Set(candidates.map((c) => cleanPhone(c.phone)).filter(Boolean))];
-    const sentCounts = phones.length ? await pool.query(
-      // 「到店即清零」：与发送端同口径，只统计最近一次到店(pos_last_order_at)之后的成功发送数。
-      `WITH lastvisit AS (
-         SELECT phone, MAX(pos_last_order_at) AS lv FROM growth_customer_profiles
-          WHERE phone = ANY($2::text[]) GROUP BY phone
-       )
-       SELECT dl.payload->>'phone' AS phone, count(*)::int n FROM growth_delivery_logs dl
-         LEFT JOIN lastvisit lv ON lv.phone = dl.payload->>'phone'
-        WHERE dl.channel='sms' AND dl.status = 'sent' AND dl.rule_key = $1
-          AND dl.payload->>'phone' = ANY($2::text[])
-          AND dl.created_at > COALESCE(lv.lv, '1970-01-01'::timestamptz)
-        GROUP BY 1`,
-      [campaignKey, phones]
-    ) : { rows: [] };
-    const sentByPhone = new Map(sentCounts.rows.map((r) => [r.phone, Number(r.n)]));
-
-    const dist = {};
-    for (const step of order) dist[step] = 0;
-    let cycling = 0; // 已走完至少一轮、进入更慢降频轮次(第2轮及以后)的人数
-    let blacklisted = 0;
-    for (const c of candidates) {
-      const phone = cleanPhone(c.phone);
-      if (!phone) continue;
-      const totalSent = sentByPhone.get(phone) || 0;
-      const { step, blacklisted: bl } = deriveAbcStep(campaignKey, totalSent);
-      if (bl) { blacklisted++; continue; }
-      dist[step] = (dist[step] || 0) + 1;
-      if (totalSent >= order.length) cycling++; // 超过一轮(perCycle)即已进入降频后续轮次
-    }
-    return { rule_key: rule.rule_key, total: candidates.length, step_distribution: dist, cycling, blacklisted };
-  }
-
-  app.get('/api/growth/campaign/:campaignKey/abc-distribution', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const campaignKey = cleanText(req.params.campaignKey, 64);
-    if (!ABC_ROTATION_ORDER[campaignKey]) return res.json({ ok: true, enabled: false });
-    const result = await tenantContext.run(getGrowthTenantId(req), () =>
-      computeAbcDistributionForCampaign(pool, campaignKey, getGrowthTenantId(req)));
-    if (!result) return res.status(404).json({ ok: false, error: 'rule_not_found' });
-    return res.json({ ok: true, enabled: true, ...result });
-  });
-
-  // 红名单总览：汇总所有 ABC 滚动活动(段)已流入红名单(阶梯走完仍未回应，本活动不再自动触达)
-  // 的人数，供决策"什么时候该对这批人另外出营销计划"。按 campaign_key 拆分+给总数。
-  app.get('/api/growth/abc-blacklist-summary', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const tenantId = getGrowthTenantId(req);
-    const campaignKeys = Object.keys(ABC_ROTATION_ORDER);
-    const items = await tenantContext.run(tenantId, async () => {
-      const out = [];
-      for (const campaignKey of campaignKeys) {
-        const r = await computeAbcDistributionForCampaign(pool, campaignKey, tenantId).catch(() => null);
-        if (r) out.push({ campaign_key: campaignKey, rule_key: r.rule_key, total: r.total, blacklisted: r.blacklisted });
-      }
-      return out;
-    });
-    const totalBlacklisted = items.reduce((sum, it) => sum + it.blacklisted, 0);
-    return res.json({ ok: true, items, total_blacklisted: totalBlacklisted });
-  });
 
   // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
   // 用于前台展示活动覆盖范围，让管理员审核前清楚知道这次会发给多少人。
@@ -4019,400 +3654,6 @@ export function registerGrowthRoutes(app, pool) {
     };
     globalThis.__growthRedemptionBackfillTimer = setInterval(runBackfill, 10 * 60 * 1000);
   }
-
-  app.get('/api/growth/store-profiles', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const r = await tenantContext.run(getGrowthTenantId(req), () =>
-      pool.query(`SELECT * FROM store_marketing_profiles ORDER BY updated_at DESC LIMIT 300`)
-    );
-    return res.json({ ok: true, profiles: r.rows });
-  });
-
-  app.post('/api/growth/store-profiles', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const storeId = cleanText(b.store_id, 128);
-    if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
-    const tenantId = getGrowthTenantId(req);
-    const r = await tenantContext.run(tenantId, () =>
-      pool.query(
-        `INSERT INTO store_marketing_profiles (store_id, brand, avg_ticket_fen, primary_audience, peak_hours, suitable_offers, unsuitable_offers, notes, tenant_id)
-         VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9)
-         ON CONFLICT (store_id, tenant_id) DO UPDATE SET
-           brand = EXCLUDED.brand,
-           avg_ticket_fen = EXCLUDED.avg_ticket_fen,
-           primary_audience = EXCLUDED.primary_audience,
-           peak_hours = EXCLUDED.peak_hours,
-           suitable_offers = EXCLUDED.suitable_offers,
-           unsuitable_offers = EXCLUDED.unsuitable_offers,
-           notes = EXCLUDED.notes,
-           updated_at = NOW()
-         RETURNING *`,
-        [storeId, cleanText(b.brand, 128), Math.max(0, Math.floor(Number(b.avg_ticket_fen) || 0)), cleanText(b.primary_audience, 500), JSON.stringify(b.peak_hours || []), JSON.stringify(b.suitable_offers || []), JSON.stringify(b.unsuitable_offers || []), cleanText(b.notes, 4000), tenantId]
-      )
-    );
-    return res.json({ ok: true, profile: r.rows[0] });
-  });
-
-  app.get('/api/growth/customer-profiles', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const storeId = cleanText(req.query.store_id || '', 128);
-    const lifecycle = cleanText(req.query.lifecycle_stage || '', 40);
-    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
-      `SELECT * FROM growth_customer_profiles
-       WHERE ($1::text = '' OR store_id = $1)
-         AND ($2::text = '' OR lifecycle_stage = $2)
-       ORDER BY updated_at DESC
-       LIMIT 300`,
-      [storeId, lifecycle]
-    ));
-    return res.json({ ok: true, profiles: r.rows });
-  });
-
-  app.post('/api/growth/customer-profiles/recompute', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const recomputeTenantId = getGrowthTenantId(req);
-    const days = await tenantContext.run(recomputeTenantId, () => recomputeCustomerProfiles(pool, req.body?.days || 90, recomputeTenantId));
-    return res.json({ ok: true, days });
-  });
-
-  app.get('/api/growth/profile-signals', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const customerId = Number(req.query.customer_id) || 0;
-    const signalType = cleanText(req.query.signal_type || '', 80);
-    const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
-      `SELECT * FROM growth_profile_signals
-       WHERE ($1::bigint = 0 OR customer_id = $1)
-         AND ($2::text = '' OR signal_type = $2)
-         AND tenant_id = $3
-       ORDER BY occurred_at DESC
-       LIMIT 300`,
-      [customerId, signalType, getGrowthTenantId(req)]
-    ));
-    return res.json({ ok: true, signals: r.rows });
-  });
-
-  app.post('/api/growth/profile-signals', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const payload = {
-      phone: b.phone,
-      openid: b.openid,
-      external_userid: b.external_userid,
-      store_id: b.store_id,
-      customer_meta: {}
-    };
-    const tenantId = getGrowthTenantId(req);
-    const signal = await tenantContext.run(tenantId, async () => {
-      const customer = b.customer_id ? { id: Number(b.customer_id) } : await upsertCustomer(pool, payload, tenantId);
-      return pool.query(
-        `INSERT INTO growth_profile_signals (
-          customer_id, signal_type, signal_key, signal_value, signal_score,
-          source, store_id, campaign_id, occurred_at, meta, tenant_id
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
-        RETURNING *`,
-        [
-          customer?.id || null,
-          cleanText(b.signal_type, 80),
-          cleanText(b.signal_key, 80),
-          cleanText(b.signal_value, 500),
-          b.signal_score == null ? null : Number(b.signal_score),
-          cleanText(b.source, 80),
-          cleanText(b.store_id, 128),
-          cleanText(b.campaign_id, 128),
-          parseOccurredAt(b.occurred_at),
-          JSON.stringify(b.meta || {}),
-          tenantId
-        ]
-      );
-    });
-    return res.json({ ok: true, signal: signal.rows[0] });
-  });
-
-  app.get('/api/growth/store-constraints', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const storeId = cleanText(req.query.store_id || '', 128);
-    const r = await pool.query(
-      `SELECT * FROM store_marketing_constraints
-       WHERE ($1::text = '' OR store_id = $1)
-       ORDER BY updated_at DESC
-       LIMIT 200`,
-      [storeId]
-    );
-    return res.json({ ok: true, constraints: r.rows });
-  });
-
-  app.post('/api/growth/store-constraints', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const storeId = cleanText(b.store_id, 128);
-    if (!storeId) return res.status(400).json({ ok: false, error: 'missing_store_id' });
-    const constraintTenantId = await resolveTenantIdForStore(pool, storeId);
-    const r = await pool.query(
-      `INSERT INTO store_marketing_constraints (
-        store_id, brand, min_discount_rate, max_coupon_value_fen, monthly_budget_fen,
-        max_touch_per_72h, cooldown_hours_after_payment, allowed_channels,
-        disallowed_campaign_types, disallowed_dishes, preferred_channels,
-        brand_voice_style, execution_notes, active, tenant_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12,$13,$14,$15)
-      ON CONFLICT (store_id, tenant_id) DO UPDATE SET
-        brand = EXCLUDED.brand,
-        min_discount_rate = EXCLUDED.min_discount_rate,
-        max_coupon_value_fen = EXCLUDED.max_coupon_value_fen,
-        monthly_budget_fen = EXCLUDED.monthly_budget_fen,
-        max_touch_per_72h = EXCLUDED.max_touch_per_72h,
-        cooldown_hours_after_payment = EXCLUDED.cooldown_hours_after_payment,
-        allowed_channels = EXCLUDED.allowed_channels,
-        disallowed_campaign_types = EXCLUDED.disallowed_campaign_types,
-        disallowed_dishes = EXCLUDED.disallowed_dishes,
-        preferred_channels = EXCLUDED.preferred_channels,
-        brand_voice_style = EXCLUDED.brand_voice_style,
-        execution_notes = EXCLUDED.execution_notes,
-        active = EXCLUDED.active,
-        updated_at = NOW()
-      RETURNING *`,
-      [
-        storeId,
-        cleanText(b.brand, 128),
-        b.min_discount_rate == null ? null : Number(b.min_discount_rate),
-        b.max_coupon_value_fen == null ? null : Math.max(0, Math.floor(Number(b.max_coupon_value_fen) || 0)),
-        b.monthly_budget_fen == null ? null : Math.max(0, Math.floor(Number(b.monthly_budget_fen) || 0)),
-        Math.max(0, Math.floor(Number(b.max_touch_per_72h) || 1)),
-        Math.max(0, Math.floor(Number(b.cooldown_hours_after_payment) || 24)),
-        JSON.stringify(b.allowed_channels || []),
-        JSON.stringify(b.disallowed_campaign_types || []),
-        JSON.stringify(b.disallowed_dishes || []),
-        JSON.stringify(b.preferred_channels || []),
-        cleanText(b.brand_voice_style, 200),
-        cleanText(b.execution_notes, 4000),
-        b.active !== false,
-        constraintTenantId
-      ]
-    );
-    return res.json({ ok: true, constraint: r.rows[0] });
-  });
-
-  // ── Strategy context — 为 Agent 提供门店画像+约束上下文 ──
-  app.get('/api/growth/strategy-context', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    await handleStrategyContext(cleanText(req.query.store_id, 128), cleanText(req.query.channel, 80), cleanText(req.query.audience, 200), res);
-  });
-
-  // Shared handler for strategy-context (used by both GET and POST)
-  async function handleStrategyContext(storeId, channel, audience, res) {
-    const result = { storeId, channel, audience, profile: null, constraints: null };
-    try {
-      if (storeId) {
-        const [p, c] = await Promise.all([
-          pool.query('SELECT * FROM store_marketing_profiles WHERE store_id = $1 LIMIT 1', [storeId]),
-          pool.query('SELECT * FROM store_marketing_constraints WHERE store_id = $1 LIMIT 1', [storeId])
-        ]);
-        if (p.rows?.length) result.profile = p.rows[0];
-        if (c.rows?.length) result.constraints = c.rows[0];
-      }
-      res.json({ ok: true, context: result, summary: { has_profile: !!result.profile, has_constraints: !!result.constraints } });
-    } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
-  }
-
-  app.post('/api/growth/strategy-context', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    await handleStrategyContext(cleanText(req.body.store_id, 128), cleanText(req.body.channel, 80), cleanText(req.body.audience, 200), res);
-  });
-
-  app.get('/api/growth/public-channels', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const r = await pool.query(`SELECT * FROM public_channels WHERE enabled = TRUE ORDER BY store_id, platform, name LIMIT 300`);
-    return res.json({ ok: true, channels: r.rows });
-  });
-
-  app.post('/api/growth/public-channels', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const r = await pool.query(
-      `INSERT INTO public_channels (channel_key, name, platform, store_id, owner_username, meta, enabled, tenant_id)
-       VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6::jsonb,COALESCE($7, TRUE),$8)
-       ON CONFLICT (channel_key, tenant_id) DO UPDATE SET
-         name = EXCLUDED.name,
-         platform = EXCLUDED.platform,
-         store_id = EXCLUDED.store_id,
-         owner_username = EXCLUDED.owner_username,
-         meta = EXCLUDED.meta,
-         enabled = EXCLUDED.enabled,
-         updated_at = NOW()
-       RETURNING *`,
-      [cleanText(b.channel_key, 128), cleanText(b.name, 200), cleanText(b.platform, 80), cleanText(b.store_id, 128), cleanText(b.owner_username, 128), JSON.stringify(b.meta || {}), b.enabled !== false, resolveTenantIdDefault()]
-    );
-    return res.json({ ok: true, channel: r.rows[0] });
-  });
-
-  app.get('/api/growth/public-promo-tasks', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const status = cleanText(req.query.status || '', 40);
-    const r = await pool.query(
-      `SELECT * FROM public_promo_tasks
-       WHERE ($1::text = '' OR status = $1)
-       ORDER BY COALESCE(due_at, created_at) DESC
-       LIMIT 300`,
-      [status]
-    );
-    return res.json({ ok: true, tasks: r.rows });
-  });
-
-  app.post('/api/growth/public-promo-tasks', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const tenantId = await resolveTenantIdForStore(pool, cleanText(b.store_id, 128));
-    const r = await pool.query(
-      `INSERT INTO public_promo_tasks (task_key, store_id, channel_key, campaign_id, title, content_brief, copy_text, poster_url, qr_scene, status, assignee_username, due_at, tenant_id)
-       VALUES (NULLIF($1,''),NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,COALESCE(NULLIF($10,''),'planned'),NULLIF($11,''),$12,$13)
-       ON CONFLICT (task_key, tenant_id) DO UPDATE SET status = EXCLUDED.status, copy_text = EXCLUDED.copy_text, poster_url = EXCLUDED.poster_url, updated_at = NOW()
-       RETURNING *`,
-      [cleanText(b.task_key, 255), cleanText(b.store_id, 128), cleanText(b.channel_key, 80), cleanText(b.campaign_id, 128), cleanText(b.title, 500), cleanText(b.content_brief, 2000), cleanText(b.copy_text, 4000), cleanText(b.poster_url, 1000), cleanText(b.qr_scene, 255), cleanText(b.status, 40), cleanText(b.assignee_username, 128), b.due_at ? parseOccurredAt(b.due_at) : null, tenantId]
-    );
-    return res.json({ ok: true, task: r.rows[0] });
-  });
-
-  app.get('/api/growth/creative-assets', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const storeId = cleanText(req.query.store_id || '', 128);
-    const r = await tenantContext.run(getGrowthTenantId(req), () =>
-      pool.query(
-        `SELECT * FROM creative_assets
-         WHERE enabled = TRUE AND ($1::text = '' OR store_id = $1)
-         ORDER BY created_at DESC
-         LIMIT 300`,
-        [storeId]
-      )
-    );
-    return res.json({ ok: true, assets: r.rows });
-  });
-
-  app.post('/api/growth/creative-assets', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const tenantId = getGrowthTenantId(req);
-    const r = await tenantContext.run(tenantId, () =>
-      pool.query(
-        `INSERT INTO creative_assets (asset_key, store_id, asset_type, name, url, tags, meta, enabled, tenant_id)
-         VALUES (NULLIF($1,''),NULLIF($2,''),$3,$4,$5,$6::jsonb,$7::jsonb,COALESCE($8, TRUE),$9)
-         ON CONFLICT (asset_key, tenant_id) DO UPDATE SET
-           store_id = EXCLUDED.store_id,
-           asset_type = EXCLUDED.asset_type,
-           name = EXCLUDED.name,
-           url = EXCLUDED.url,
-           tags = EXCLUDED.tags,
-           meta = EXCLUDED.meta,
-           enabled = EXCLUDED.enabled,
-           updated_at = NOW()
-         RETURNING *`,
-        [cleanText(b.asset_key, 255), cleanText(b.store_id, 128), cleanText(b.asset_type, 80), cleanText(b.name, 300), cleanText(b.url, 1000), JSON.stringify(b.tags || []), JSON.stringify(b.meta || {}), b.enabled !== false, tenantId]
-      )
-    );
-    return res.json({ ok: true, asset: r.rows[0] });
-  });
-
-  app.get('/api/growth/poster-templates', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const r = await pool.query(`SELECT * FROM poster_templates WHERE enabled = TRUE ORDER BY category, name LIMIT 300`);
-    return res.json({ ok: true, templates: r.rows });
-  });
-
-  app.post('/api/growth/poster-templates', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const purposes = Array.isArray(b.purposes) ? b.purposes.filter(Boolean) : [];
-    const channels = Array.isArray(b.channels) ? b.channels.filter(Boolean) : [];
-    const r = await pool.query(
-      `INSERT INTO poster_templates (template_key, name, category, channel, aspect_ratio, layout, style_guide, image_url, enabled, purposes, channels, tenant_id)
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,COALESCE($9, TRUE),$10,$11,$12)
-       ON CONFLICT (template_key, tenant_id) DO UPDATE SET
-         name = EXCLUDED.name,
-         category = EXCLUDED.category,
-         channel = EXCLUDED.channel,
-         aspect_ratio = EXCLUDED.aspect_ratio,
-         layout = EXCLUDED.layout,
-         style_guide = EXCLUDED.style_guide,
-         image_url = EXCLUDED.image_url,
-         enabled = EXCLUDED.enabled,
-         purposes = EXCLUDED.purposes,
-         channels = EXCLUDED.channels,
-         updated_at = NOW()
-       RETURNING *`,
-      [cleanText(b.template_key, 128), cleanText(b.name, 300), cleanText(b.category, 80), cleanText(b.channel, 80), cleanText(b.aspect_ratio, 40), JSON.stringify(b.layout || {}), JSON.stringify(b.style_guide || {}), cleanText(b.image_url, 1000), b.enabled !== false, purposes, channels, resolveTenantIdDefault()]
-    );
-    return res.json({ ok: true, template: r.rows[0] });
-  });
-
-  app.delete('/api/growth/poster-templates/:id', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
-    await pool.query('DELETE FROM poster_templates WHERE id = $1', [id]);
-    return res.json({ ok: true });
-  });
-
-  app.delete('/api/growth/creative-assets/:id', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
-    await pool.query('DELETE FROM creative_assets WHERE id = $1', [id]);
-    return res.json({ ok: true });
-  });
-
-  app.get('/api/growth/generated-posters', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const status = cleanText(req.query.status || '', 40);
-    const r = await pool.query(
-      `SELECT * FROM generated_posters
-       WHERE ($1::text = '' OR status = $1)
-       ORDER BY created_at DESC
-       LIMIT 300`,
-      [status]
-    );
-    return res.json({ ok: true, posters: r.rows });
-  });
-
-  app.post('/api/growth/generated-posters', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const tenantId = await resolveTenantIdForStore(pool, cleanText(b.store_id, 128));
-    const r = await pool.query(
-      `INSERT INTO generated_posters (poster_key, campaign_id, store_id, template_key, title, subtitle, cta, image_url, output_url, purposes, channels, status, meta, tenant_id)
-       VALUES (NULLIF($1,''),NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,COALESCE(NULLIF($12,''),'draft'),$13::jsonb,$14)
-       ON CONFLICT (poster_key, tenant_id) DO UPDATE SET title = EXCLUDED.title, subtitle = EXCLUDED.subtitle, cta = EXCLUDED.cta, output_url = EXCLUDED.output_url, purposes = EXCLUDED.purposes, channels = EXCLUDED.channels, status = EXCLUDED.status, meta = EXCLUDED.meta, updated_at = NOW()
-       RETURNING *`,
-      [cleanText(b.poster_key, 255), cleanText(b.campaign_id, 128), cleanText(b.store_id, 128), cleanText(b.template_key, 128), cleanText(b.title, 500), cleanText(b.subtitle, 1000), cleanText(b.cta, 500), cleanText(b.image_url, 1000), cleanText(b.output_url, 1000), Array.isArray(b.purposes) ? b.purposes.filter(Boolean) : [], Array.isArray(b.channels) ? b.channels.filter(Boolean) : [], cleanText(b.status, 40), JSON.stringify(b.meta || {}), tenantId]
-    );
-    return res.json({ ok: true, poster: r.rows[0] });
-  });
-
-  app.get('/api/growth/content-library', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const purpose = cleanText(req.query.purpose || '', 40);
-    const channel = cleanText(req.query.channel || '', 40);
-    const storeId = cleanText(req.query.store_id || '', 128);
-    const conditions = ["gp.status IN ('generated','published')"];
-    const params = [];
-    let idx = 1;
-    if (purpose) { conditions.push(`$${idx} = ANY(gp.purposes)`); params.push(purpose); idx++; }
-    if (channel) { conditions.push(`$${idx} = ANY(gp.channels)`); params.push(channel); idx++; }
-    if (storeId) { conditions.push(`(gp.store_id IS NULL OR gp.store_id = '' OR gp.store_id = $${idx})`); params.push(storeId); idx++; }
-    const query = `SELECT gp.id, gp.poster_key AS template_key, COALESCE(pt.name, gp.title, '海报') AS name, gp.title, gp.subtitle, gp.purposes, gp.channels, gp.output_url AS image_url, gp.created_at
-      FROM generated_posters gp
-      LEFT JOIN poster_templates pt ON pt.template_key = gp.template_key
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY gp.created_at DESC LIMIT 100`;
-    const r = await pool.query(query, params);
-    return res.json({ ok: true, items: r.rows });
-  });
-
-  app.delete('/api/growth/generated-posters/:id', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
-    await pool.query('DELETE FROM generated_posters WHERE id = $1', [id]);
-    return res.json({ ok: true });
-  });
 
   app.get('/api/growth/customers', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
@@ -4783,231 +4024,6 @@ export function registerGrowthRoutes(app, pool) {
       return { createdCount, total: r.rows.length };
     });
     return res.json({ ok: true, triggered: created.createdCount, total_at_risk: created.total });
-  });
-
-  app.get('/api/growth/wecom-config', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const config = await getWecomConfig(pool);
-    return res.json({ ok: true, config });
-  });
-
-  app.post('/api/growth/wecom-config', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const corpId = cleanText(b.corp_id, 200);
-    const corpSecret = cleanText(b.corp_secret, 500);
-    const senderUserId = cleanText(b.sender_userid, 128);
-    if (!corpId || !corpSecret || !senderUserId) return res.status(400).json({ ok: false, error: 'missing corp_id/corp_secret/sender_userid' });
-    const config = {
-      corp_id: corpId,
-      corp_secret: corpSecret,
-      sender_userid: senderUserId,
-      agent_id: cleanText(b.agent_id, 64),
-      callback_secret: cleanText(b.callback_secret, 500)
-    };
-    await pool.query(
-      `INSERT INTO hrms_state (key, data, updated_at) VALUES ('growth_wecom_config', $1::jsonb, NOW())
-       ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
-      [JSON.stringify(config)]
-    );
-    __growthWecomTokenCache = { token: '', expiresAt: 0 };
-    return res.json({ ok: true, config });
-  });
-
-  app.post('/api/growth/wecom/callback', async (req, res) => {
-    const config = await getWecomConfig(pool);
-    const configuredSecret = cleanText(config?.callback_secret || process.env.GROWTH_WECOM_CALLBACK_SECRET || '', 500);
-    const headerSecret = cleanText(req.headers['x-wecom-callback-secret'] || '', 500);
-    if (configuredSecret && headerSecret !== configuredSecret) return res.status(401).json({ ok: false, error: 'unauthorized' });
-    const b = req.body || {};
-    const providerMsgId = cleanText(b.provider_msg_id || b.msgid, 255);
-    const eventType = cleanText(b.event_type || b.event || '', 80).toLowerCase();
-    if (!providerMsgId || !eventType) return res.status(400).json({ ok: false, error: 'missing provider_msg_id or event_type' });
-    const delivery = await pool.query(`SELECT * FROM growth_delivery_logs WHERE provider_msg_id = $1 ORDER BY created_at DESC LIMIT 1`, [providerMsgId]);
-    const row = delivery.rows[0] || null;
-    if (!row) return res.status(404).json({ ok: false, error: 'delivery_not_found' });
-    const statusMap = { sent: 'sent', delivered: 'delivered', read: 'read', clicked: 'clicked', redeemed: 'redeemed' };
-    const eventMap = {
-      delivered: 'wecom_message_delivered',
-      read: 'wecom_message_read',
-      clicked: 'wecom_message_clicked',
-      redeemed: 'wecom_coupon_redeemed'
-    };
-    const newStatus = statusMap[eventType] || 'received';
-    const callbackTenantId = String(row.tenant_id || 'default').trim() || 'default';
-    await tenantContext.run(callbackTenantId, async () => {
-      await upsertDeliveryLog(pool, {
-        delivery_key: row.delivery_key,
-        action_key: row.action_key,
-        rule_key: row.rule_key,
-        customer_id: row.customer_id,
-        store_id: row.store_id,
-        channel: row.channel,
-        external_userid: row.external_userid,
-        provider_msg_id: providerMsgId,
-        status: newStatus,
-        payload: row.payload || {},
-        result: Object.assign({}, row.result || {}, b)
-      }, callbackTenantId);
-      if (eventMap[eventType]) {
-        await insertGrowthEvent(pool, {
-          event_type: eventMap[eventType],
-          customer_id: row.customer_id,
-          external_userid: row.external_userid,
-          store_id: row.store_id,
-          channel: row.channel,
-          campaign_id: cleanText((row.payload || {}).campaign_id, 128),
-          coupon_id: cleanText((row.payload || {}).coupon_id, 128),
-          idempotency_key: `${eventMap[eventType]}:${providerMsgId}`,
-          metadata: { provider_msg_id: providerMsgId, action_key: row.action_key, callback: b }
-        }, callbackTenantId);
-      }
-    });
-    return res.json({ ok: true, status: newStatus });
-  });
-
-  // ── Store WeCom config CRUD ──
-  app.get('/api/growth/store-wecom-configs', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const configs = await getAllStoreWecomConfigs(pool);
-    return res.json({ ok: true, configs });
-  });
-
-  app.post('/api/growth/store-wecom-configs', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const storeId = cleanText(b.store_id, 128);
-    const corpId = cleanText(b.corp_id, 200);
-    const corpSecret = cleanText(b.corp_secret, 500);
-    const agentId = cleanText(b.agent_id, 64);
-    const senderUserId = cleanText(b.sender_userid, 128);
-    if (!storeId || !corpId || !corpSecret) return res.status(400).json({ ok: false, error: 'missing store_id/corp_id/corp_secret' });
-    const tenantId = await resolveTenantIdForStore(pool, storeId);
-    await pool.query(
-      `INSERT INTO store_wecom_configs (store_id, corp_id, corp_secret, agent_id, sender_userid, tenant_id)
-       VALUES ($1,$2,$3,$4,$5,$6)
-       ON CONFLICT (store_id, tenant_id) DO UPDATE SET
-         corp_id = EXCLUDED.corp_id, corp_secret = EXCLUDED.corp_secret,
-         agent_id = EXCLUDED.agent_id, sender_userid = EXCLUDED.sender_userid,
-         updated_at = NOW()`,
-      [storeId, corpId, corpSecret, agentId, senderUserId, tenantId]
-    );
-    delete __storeWecomTokenCaches[storeId];
-    return res.json({ ok: true });
-  });
-
-  app.delete('/api/growth/store-wecom-configs/:storeId', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const storeId = cleanText(req.params.storeId, 128);
-    await pool.query('DELETE FROM store_wecom_configs WHERE store_id = $1', [storeId]);
-    delete __storeWecomTokenCaches[storeId];
-    return res.json({ ok: true });
-  });
-
-  // ── WeCom contact auto-sync from store configs ──
-  async function syncWecomContactsForStore(pool, storeConfig) {
-    try {
-      const storeId = storeConfig.store_id;
-      const token = await getWecomAccessToken(pool, storeId);
-      const listResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/externalcontact/list?access_token=${encodeURIComponent(token)}&userid=${encodeURIComponent(storeConfig.sender_userid || '')}`, { method: 'GET' });
-      const listData = await listResp.json();
-      if (Number(listData?.errcode) !== 0 || !Array.isArray(listData?.external_userid)) {
-        console.warn(`[wecom] list contacts failed for store=${storeId}:`, listData?.errmsg);
-        return 0;
-      }
-      const eids = listData.external_userid.filter(Boolean);
-      const tenantId = await resolveTenantIdForStore(pool, storeId);
-      let synced = 0;
-      await tenantContext.run(tenantId, async () => {
-      for (const eid of eids) {
-        const detailResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/externalcontact/get?access_token=${encodeURIComponent(token)}&external_userid=${encodeURIComponent(eid)}`, { method: 'GET' });
-        const detailData = await detailResp.json();
-        if (Number(detailData?.errcode) !== 0 || !detailData?.external_contact) continue;
-        const c = detailData.external_contact;
-        const phone = (c.corpid || c.corp_name || ''); // fallback, try from other fields
-        const externalUserid = cleanText(c.external_userid || eid, 128);
-        const name = cleanText(c.name || '', 128);
-        let contactPhone = '';
-        if (Array.isArray(detailData.follow_info) && detailData.follow_info.length) {
-          const fi = detailData.follow_info[0];
-          if (fi.description) {
-            const m = fi.description.match(/1[3-9]\d{9}/);
-            if (m) contactPhone = m[0];
-          }
-          if (!contactPhone && fi.tag_id && Array.isArray(fi.tag_id)) {
-          }
-        }
-        if (Array.isArray(detailData.wechat_channels)) {
-          const wc = detailData.wechat_channels.find(ch => ch.phone);
-          if (wc) contactPhone = wc.phone;
-        }
-        await pool.query(
-          `INSERT INTO wechat_work_customers (external_userid, name, phone, store_id, bind_customer_id, tenant_id)
-           VALUES ($1,$2,NULLIF($3,''),$4,NULL,$5)
-           ON CONFLICT (external_userid, tenant_id) WHERE external_userid IS NOT NULL AND external_userid <> '' DO UPDATE SET
-             name = COALESCE(NULLIF(EXCLUDED.name,''), wechat_work_customers.name),
-             phone = COALESCE(NULLIF(EXCLUDED.phone,''), wechat_work_customers.phone),
-             store_id = COALESCE(NULLIF(EXCLUDED.store_id,''), wechat_work_customers.store_id),
-             updated_at = NOW()`,
-          [externalUserid, name, contactPhone, storeId, tenantId]
-        );
-        if (contactPhone) {
-          await pool.query(
-            `UPDATE wechat_work_customers SET bind_customer_id = (
-              SELECT id FROM growth_customers WHERE phone = $1 LIMIT 1
-            ), updated_at = NOW()
-            WHERE external_userid = $2 AND bind_customer_id IS NULL`,
-            [contactPhone, externalUserid]
-          );
-        }
-        synced++;
-      }
-      });
-      return synced;
-    } catch (e) {
-      console.warn(`[wecom] sync contacts failed for store=${storeConfig.store_id}:`, e?.message);
-      return 0;
-    }
-  }
-
-  app.post('/api/growth/sync-wecom-contacts', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const storeId = cleanText(req.body?.store_id, 128);
-    let configs;
-    if (storeId) {
-      const cfg = await getStoreWecomConfig(pool, storeId);
-      configs = cfg ? [cfg] : [];
-    } else {
-      configs = await getAllStoreWecomConfigs(pool);
-    }
-    const results = [];
-    for (const cfg of configs) {
-      const synced = await syncWecomContactsForStore(pool, cfg);
-      results.push({ store_id: cfg.store_id, synced });
-    }
-    return res.json({ ok: true, results, total: results.reduce((s, r) => s + r.synced, 0) });
-  });
-
-  // ── Phase 2: Feishu config persistence for WeChat customer auto-sync ──
-  app.get('/api/growth/feishu-config', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const r = await pool.query(`SELECT data FROM hrms_state WHERE key = 'growth_feishu_config' LIMIT 1`);
-    const config = r.rows?.[0]?.data || null;
-    res.json({ ok: true, config });
-  });
-
-  app.post('/api/growth/feishu-config', async (req, res) => {
-    if (!requireGrowthAuth(req, res)) return;
-    const b = req.body || {};
-    const appToken = cleanText(b.app_token, 200);
-    const tableId = cleanText(b.table_id, 200);
-    if (!appToken || !tableId) return res.status(400).json({ ok: false, error: 'missing app_token or table_id' });
-    await pool.query(
-      `INSERT INTO hrms_state (key, data, updated_at) VALUES ('growth_feishu_config', $1::jsonb, NOW())
-       ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
-      [JSON.stringify({ app_token: appToken, table_id: tableId })]
-    );
-    res.json({ ok: true, config: { app_token: appToken, table_id: tableId } });
   });
 
   // ── Phase 6: User clustering (simplified, indexed) ──
