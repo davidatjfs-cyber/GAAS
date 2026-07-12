@@ -1705,8 +1705,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
         }
         // 有新订单落库后，把「pos_orders -> growth_customer_profiles -> growth_ontology_* -> 每日诊断/机会清单」
         // 这条链路整体跑一遍，否则诊断服务读的表要等到下一次定时任务才会更新，客户上传完看到的仍是空数据。
-        // 归因(generateGrowthAttribution)不在这条链里——它依赖 growth_ontology_touches（触达记录），
-        // POS Excel 里没有这份数据，是本次已知未解决的缺口，见回复里对客户的说明。
+        // 触达明细由 syncOntologyDataFromProduction 从 growth_delivery_logs 同步进 growth_ontology_touches。
         if (posSync.orders_synced > 0) {
           await tenantContext.run(tenantId, () => recomputeCustomerProfiles(pool, 90, tenantId));
           ontologySync.profiles_recomputed = true;

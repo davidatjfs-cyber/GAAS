@@ -13,6 +13,7 @@ import {
   getBusinessDomains,
   getIssueActionMappings,
   getMetricIssueMappings,
+  getRuleIdentities,
   inferIssuesFromMetrics,
 } from './business-ontology-engine.js';
 import { createTaskDraftsFromOntologyInsights } from './task-draft-adapter.js';
@@ -31,6 +32,7 @@ import {
   loadEffectiveRules,
 } from './ontology-rule-service.js';
 import { syncOntologyDataFromProduction } from './real-data-sync.js';
+import { runOntologyDailyDiagnosisForTenant } from './daily-diagnosis-scheduler.js';
 
 export function registerOntologyRoutes(app, pool, authRequired) {
   const getTenantId = (req) => String(req.tenantId || req.user?.tenant_id || req.query?.tenant_id || req.body?.tenant_id || 'default').trim() || 'default';
@@ -58,6 +60,7 @@ export function registerOntologyRoutes(app, pool, authRequired) {
       metricIssueMappings: getMetricIssueMappings(),
       issueActionMappings: getIssueActionMappings(),
       actionResultMappings: getActionResultMappings(),
+      ruleIdentities: getRuleIdentities(),
     });
   });
 
@@ -176,6 +179,22 @@ export function registerOntologyRoutes(app, pool, authRequired) {
       return res.json({ ok: true, syncResult, ...result });
     } catch (e) {
       console.error('[ontology] diagnosis run error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 手动触发「全门店日更」：sync + 每店诊断。定时任务同逻辑；force 不依赖 08:00 窗口。
+  app.post('/api/ontology/diagnosis/run-daily', authRequired, async (req, res) => {
+    try {
+      await ensureGrowth();
+      const tenantId = getTenantId(req);
+      const summary = await runOntologyDailyDiagnosisForTenant(pool, tenantId, {
+        date: req.body?.date || req.query?.date || '',
+        storeIds: Array.isArray(req.body?.store_ids) ? req.body.store_ids : undefined,
+      });
+      return res.json({ ok: true, ...summary });
+    } catch (e) {
+      console.error('[ontology] run-daily error:', e?.message || e);
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });

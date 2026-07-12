@@ -85,6 +85,7 @@ import { registerGrowthQueriesRoutes } from './growth-queries-routes.js';
 import { registerGrowthOpsRoutes } from './growth-ops-routes.js';
 import { registerDiagnosisRoutes } from './store-diagnosis.js';
 import { registerOntologyRoutes } from './ontology/routes.js';
+import { startOntologyDailyDiagnosisScheduler } from './ontology/daily-diagnosis-scheduler.js';
 import { runFreshnessCheck } from './ontology/freshness.js';
 import { FRESHNESS_SOURCES } from './ontology/freshness-config.js';
 import { ensureGrowthSolutionsSchema, registerGrowthSolutionRoutes, setSolutionNotifier, setSolutionLLM, setTrainingAssigner, startSolutionSweepScheduler } from './growth-solutions.js';
@@ -17510,6 +17511,9 @@ async function runFreshnessMonitorTick() {
 }
 setTimeout(() => { runFreshnessMonitorTick(); }, 90000);
 setInterval(runFreshnessMonitorTick, 6 * 3600 * 1000);
+
+// 经营语义层日更：CST 08:00–08:14 对各活跃租户门店 sync + 诊断（见 ontology/daily-diagnosis-scheduler.js）
+startOntologyDailyDiagnosisScheduler(pool);
 
 // 公告已读回执：员工标记自己已读/已确认某条公告。
 // announcements 现在直接对每条公告挂 readBy{username: isoTime} 这个map，不另起新表——

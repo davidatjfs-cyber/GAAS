@@ -10,14 +10,16 @@
  *                                  比 growth_customer_profiles 里可能过期的缓存字段更准
  *   growth_ontology_orders      <- pos_orders（近400天，覆盖 90-180 天沉睡客户判断窗口 + 冗余）
  *   growth_ontology_campaigns   <- marketing_campaigns
+ *   growth_ontology_touches     <- growth_delivery_logs（status=sent/redeemed，近400天；
+ *                                  用 payload.phone 关联 growth_customer_profiles 得到客户，
+ *                                  store_id 经 store_name_aliases 规整）
  *
  * 门店ID统一走 store_name_aliases 表规整成 canonical_name（stores.name / pos_orders.store_id /
- * growth_customer_profiles.store_id / employees.store 四边格式全不一样，这张表是唯一的对齐口径，
- * 见 CLAUDE.md 和 knowledge-graph.js#getStoreAliases 的既有约定）。
+ * growth_customer_profiles.store_id / employees.store / growth_delivery_logs.store_id 格式不一，
+ * 这张表是唯一的对齐口径，见 CLAUDE.md 和 knowledge-graph.js#getStoreAliases 的既有约定）。
  *
- * 已知缺口：growth_ontology_touches（客户级触达记录）没有对应的真实数据源——现有系统只有
- * campaign级的聚合数据，没有"哪个客户在哪个时间被哪次活动触达"的明细日志，所以这张表本次
- * 不同步，marketing_conversion_low 这条规则暂时算不出来，这是数据源缺失，不是本模块的bug。
+ * 若 delivery_logs 无法解析出客户（无 phone / 无 profile），该条触达不同步——诊断侧会在
+ * marketing.touched=0 时标记 dataGaps.marketing_touches，而不是假装算过转化率。
  */
 
 const ALIAS_MAP_CTE = `
@@ -27,7 +29,7 @@ const ALIAS_MAP_CTE = `
 `;
 
 export async function syncOntologyDataFromProduction(pool, tenantId = 'default') {
-  const result = { stores: 0, employees: 0, customers: 0, orders: 0, campaigns: 0 };
+  const result = { stores: 0, employees: 0, customers: 0, orders: 0, campaigns: 0, touches: 0 };
 
   const storesR = await pool.query(
     `WITH ${ALIAS_MAP_CTE}
@@ -154,6 +156,67 @@ export async function syncOntologyDataFromProduction(pool, tenantId = 'default')
     [tenantId]
   );
   result.campaigns = campaignsR.rowCount || 0;
+
+  // 历史日志常把手机号只写在 payload.phone；先回填到 phone 列再 JOIN，避免表达式扫全表过慢。
+  await pool.query(
+    `UPDATE growth_delivery_logs
+        SET phone = payload->>'phone'
+      WHERE tenant_id = $1
+        AND (phone IS NULL OR phone = '')
+        AND payload->>'phone' IS NOT NULL
+        AND payload->>'phone' <> ''`,
+    [tenantId]
+  ).catch((e) => console.warn('[ontology-sync] phone backfill skipped:', e?.message || e));
+
+  // 只同步能落到 ontology 客户 ID 的触达：marketingStats 用 customer_id DISTINCT 计数，
+  // 无客户 ID 的行进表也计不进 touched，白占空间。
+  const touchesR = await pool.query(
+    `WITH ${ALIAS_MAP_CTE}
+     INSERT INTO growth_ontology_touches (
+       touch_id, tenant_id, store_id, customer_id, campaign_id, channel, content,
+       coupon_id, sent_at, status, updated_at
+     )
+     SELECT
+       'dl_' || COALESCE(NULLIF(dl.delivery_key, ''), dl.id::text),
+       $1,
+       COALESCE(am.canonical_name, NULLIF(dl.store_id, ''), gcp_store.canonical_name, gcp.store_id),
+       'gcp_' || gcp.customer_id::text,
+       COALESCE(
+         NULLIF(dl.campaign_id, ''),
+         NULLIF(dl.payload->>'campaign_id', ''),
+         NULLIF(dl.rule_key, ''),
+         NULLIF(dl.action_key, '')
+       ),
+       COALESCE(NULLIF(dl.channel, ''), 'unknown'),
+       COALESCE(dl.action_key, dl.rule_key, ''),
+       COALESCE(NULLIF(dl.coupon_id, ''), NULLIF(dl.payload->>'coupon_code', '')),
+       dl.created_at,
+       dl.status,
+       now()
+     FROM growth_delivery_logs dl
+     LEFT JOIN alias_map am ON am.alias_name = dl.store_id
+     INNER JOIN growth_customer_profiles gcp
+       ON gcp.tenant_id = $1
+      AND gcp.phone = COALESCE(NULLIF(dl.phone, ''), NULLIF(dl.payload->>'phone', ''))
+     LEFT JOIN alias_map gcp_store ON gcp_store.alias_name = gcp.store_id
+     WHERE dl.tenant_id = $1
+       AND dl.status IN ('sent', 'redeemed')
+       AND dl.created_at >= now() - interval '400 days'
+       AND COALESCE(NULLIF(dl.phone, ''), NULLIF(dl.payload->>'phone', '')) IS NOT NULL
+       AND COALESCE(NULLIF(dl.phone, ''), NULLIF(dl.payload->>'phone', '')) <> ''
+     ON CONFLICT (touch_id) DO UPDATE SET
+       store_id = EXCLUDED.store_id,
+       customer_id = EXCLUDED.customer_id,
+       campaign_id = EXCLUDED.campaign_id,
+       channel = EXCLUDED.channel,
+       content = EXCLUDED.content,
+       coupon_id = EXCLUDED.coupon_id,
+       sent_at = EXCLUDED.sent_at,
+       status = EXCLUDED.status,
+       updated_at = now()`,
+    [tenantId]
+  );
+  result.touches = touchesR.rowCount || 0;
 
   return result;
 }

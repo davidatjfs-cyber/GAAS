@@ -9,6 +9,7 @@ import {
   recordRuleHit,
   renderBossLanguage,
 } from './ontology-rule-service.js';
+import { getDefaultThreshold } from './rule-identity.js';
 
 function num(v) {
   const n = Number(v);
@@ -213,12 +214,16 @@ export async function runDailyDiagnosis(pool, options = {}) {
   const prevStart = prevStartDate.toISOString();
   const ruleState = await loadDiagnosisRulesSafe(pool, { tenantId, storeId });
   const rules = ruleState.byId;
-  const dormantDaysMin = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'days_min', defaultValue: 90 });
-  const dormantDaysMax = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'days_max', defaultValue: 180 });
-  const minHistoricalVisitCount = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'min_historical_visit_count', defaultValue: 2 });
-  const minTotalSpend = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'min_total_spend', defaultValue: 300 });
-  const newFirstVisitDaysMin = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'new_customer_second_visit', thresholdKey: 'first_visit_days_min', defaultValue: 7 });
-  const newFirstVisitDaysMax = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'new_customer_second_visit', thresholdKey: 'first_visit_days_max', defaultValue: 14 });
+  const dormantDaysMin = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'days_min', defaultValue: getDefaultThreshold('dormant_customer_reactivation', 'days_min', 90) });
+  const dormantDaysMax = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'days_max', defaultValue: getDefaultThreshold('dormant_customer_reactivation', 'days_max', 180) });
+  const minHistoricalVisitCount = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'min_historical_visit_count', defaultValue: getDefaultThreshold('dormant_customer_reactivation', 'min_historical_visit_count', 2) });
+  const minTotalSpend = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'dormant_customer_reactivation', thresholdKey: 'min_total_spend', defaultValue: getDefaultThreshold('dormant_customer_reactivation', 'min_total_spend', 300) });
+  const newFirstVisitDaysMin = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'new_customer_second_visit', thresholdKey: 'first_visit_days_min', defaultValue: getDefaultThreshold('new_customer_second_visit', 'first_visit_days_min', 7) });
+  const newFirstVisitDaysMax = await thresholdSafe(pool, { tenantId, storeId, ruleId: 'new_customer_second_visit', thresholdKey: 'first_visit_days_max', defaultValue: getDefaultThreshold('new_customer_second_visit', 'first_visit_days_max', 14) });
+  const revenueDeclineFallback = getDefaultThreshold('revenue_decline', 'revenueChangeRate', -8);
+  const repeatRateFallback = getDefaultThreshold('repeat_rate_low', 'repeatRate', 0.35);
+  const marketingConversionFallback = getDefaultThreshold('marketing_conversion_low', 'marketingConversionRate', 0.25);
+  const newCustomerNoSecondVisitMin = getDefaultThreshold('new_customer_second_visit', 'no_second_visit_min', 5);
 
   const [current, prev, repeat, marketing, employee, dormant, newCustomerSecondVisit] = await Promise.all([
     orderStats(pool, { tenantId, storeId, start: dayStart, end: dayEnd }),
@@ -237,7 +242,7 @@ export async function runDailyDiagnosis(pool, options = {}) {
     const revenueChangeRate = Number((((curRevenue - prevRevenue) / prevRevenue) * 100).toFixed(2));
     const rule = rules.get('revenue_decline');
     const evaluated = await applyRule(pool, rule, { revenueChangeRate, currentRevenue: curRevenue, previousRevenue: prevRevenue });
-    if ((!rule && revenueChangeRate <= -8) || (rule && evaluated.matched)) {
+    if ((!rule && revenueChangeRate <= revenueDeclineFallback) || (rule && evaluated.matched)) {
       issues.push(issueRow({
         tenantId, storeId, issueType: 'revenue_decline', title: '营业额下滑',
         description: '本期营业额低于可比周期，需要拆解客流、复购和午市。',
@@ -251,7 +256,7 @@ export async function runDailyDiagnosis(pool, options = {}) {
   if (repeat.repeatRate !== null) {
     const rule = rules.get('repeat_rate_low');
     const evaluated = await applyRule(pool, rule, { repeatRate: repeat.repeatRate, customers: repeat.customers, riskCustomers: repeat.riskCustomers });
-    if ((!rule && repeat.repeatRate < 0.35) || (rule && evaluated.matched)) {
+    if ((!rule && repeat.repeatRate < repeatRateFallback) || (rule && evaluated.matched)) {
     issues.push(issueRow({
       tenantId, storeId, issueType: 'repeat_decline', title: '复购偏弱',
       description: '复购客户占比偏低，客户维护动作需要进入闭环。',
@@ -266,7 +271,7 @@ export async function runDailyDiagnosis(pool, options = {}) {
     secondVisitCount: newCustomerSecondVisit.noSecondVisit > 0 ? 0 : 1,
     noSecondVisit: newCustomerSecondVisit.noSecondVisit,
   });
-  if ((!newRule && newCustomerSecondVisit.noSecondVisit >= 5) || (newRule && newCustomerSecondVisit.noSecondVisit >= 1 && newEvaluated.matched)) {
+  if ((!newRule && newCustomerSecondVisit.noSecondVisit >= newCustomerNoSecondVisitMin) || (newRule && newCustomerSecondVisit.noSecondVisit >= 1 && newEvaluated.matched)) {
     issues.push(issueRow({
       tenantId,
       storeId,
@@ -308,7 +313,7 @@ export async function runDailyDiagnosis(pool, options = {}) {
   if (marketing.touched > 0 && marketing.conversionRate !== null) {
     const rule = rules.get('marketing_conversion_low');
     const evaluated = await applyRule(pool, rule, { marketingConversionRate: marketing.conversionRate, touched: marketing.touched, returned: marketing.returned });
-    if ((!rule && marketing.conversionRate < 0.25) || (rule && evaluated.matched)) {
+    if ((!rule && marketing.conversionRate < marketingConversionFallback) || (rule && evaluated.matched)) {
     issues.push(issueRow({
       tenantId, storeId, issueType: 'marketing_ineffective', title: '营销转化不足',
       description: '客户已触达，但回店转化没有起来。',
@@ -316,6 +321,17 @@ export async function runDailyDiagnosis(pool, options = {}) {
       evidence: ruleEvidence(rule, evaluated.matchedConditions, marketing), roots: ['offer_not_attractive', 'segment_not_precise'], impact: 0,
     }));
     }
+  } else if (marketing.touched === 0) {
+    // 诚实降级：没有可关联的客户触达明细时，不产出营销转化结论，也不假装“转化正常”。
+    console.log('[ontology] marketing_conversion skipped: no resolvable touches for store', storeId);
+  }
+
+  const dataGaps = [];
+  if (marketing.touched === 0) {
+    dataGaps.push({
+      code: 'marketing_touches',
+      message: '当前门店没有可关联的客户触达明细，营销转化规则暂未评估',
+    });
   }
 
   // 每次跑诊断都是全量重新判断这家店的问题，旧一轮生成的 issue/opportunity 不应该继续以
@@ -395,6 +411,13 @@ export async function runDailyDiagnosis(pool, options = {}) {
     ontologyStatus: savedIssues.length ? 'ok' : 'no_issue_detected',
     issues: savedIssues,
     opportunities,
+    dataGaps,
+    marketingStats: {
+      touched: marketing.touched,
+      returned: marketing.returned,
+      conversionRate: marketing.conversionRate,
+      evaluated: marketing.touched > 0,
+    },
   };
 }
 

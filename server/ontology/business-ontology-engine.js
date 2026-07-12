@@ -2,6 +2,7 @@ import { listActionResultMappings } from './action-result-mapping.js';
 import { listBusinessDomains } from './business-domains.js';
 import { listIssueActionMappings } from './issue-action-mapping.js';
 import { listMetricIssueMappings } from './metric-issue-mapping.js';
+import { listRuleIdentities, stampInsightIdentity } from './rule-identity.js';
 
 const SEVERITY_RANK = { P1: 3, P2: 2, P3: 1 };
 
@@ -154,7 +155,13 @@ export function inferIssuesFromMetrics(metricsInput = {}, options = {}) {
     }
   }
 
-  return [...insightsByIssue.values()].sort((a, b) => (SEVERITY_RANK[b.severity] || 0) - (SEVERITY_RANK[a.severity] || 0));
+  return [...insightsByIssue.values()]
+    .map((insight) => stampInsightIdentity(insight))
+    .sort((a, b) => (SEVERITY_RANK[b.severity] || 0) - (SEVERITY_RANK[a.severity] || 0));
+}
+
+export function getRuleIdentities() {
+  return listRuleIdentities();
 }
 
 export function generateActionPlanFromInsights(insights = []) {
@@ -194,6 +201,9 @@ export function enrichReportWithOntology(reportData = {}, metricsInput = {}, opt
     trackingMetrics: uniq(ontologyInsights.flatMap(item => item.trackingMetrics || [])),
     priorityIssues: ontologyInsights.filter(item => item.severity === 'P1' || item.severity === 'P2').map(item => ({
       issueId: item.issueId,
+      canonicalIssueId: item.canonicalIssueId || item.issueId,
+      diagnosisIssueType: item.diagnosisIssueType || null,
+      ruleId: item.ruleId || null,
       issueName: item.issueName,
       severity: item.severity,
       responsibleRoles: item.responsibleRoles,
