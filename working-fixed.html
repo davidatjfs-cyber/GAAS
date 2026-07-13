@@ -62626,6 +62626,9 @@ ${body}
                         +     '<div class="amr-stat"><span class="amr-stat-k">评分</span><span class="amr-stat-v" style="color:' + scoreColor + ';">' + scoreTxt + '</span></div>'
                         +     '<div class="amr-stat"><span class="amr-stat-k">上次运行</span><span class="amr-stat-v" style="font-size:12px;font-weight:600;color:rgba(226,232,240,0.7);">' + escapeHtml(lastRun) + '</span></div>'
                         +   '</div>'
+                        +   (isAbcCampaign
+                              ? '<div class="amr-hint" style="margin-top:8px;">🔴 红名单：<span id="am-redlist-' + escapeHtml(curCampaign) + '">统计中…</span></div>'
+                              : '')
                         + '</div>'
                         + (suggestionTxt ? '<div class="amr-sec"><div class="amr-suggest">💡 优化建议：' + escapeHtml(suggestionTxt) + '</div></div>' : '')
                         // —— 底部：审核信息 + 操作 ——
