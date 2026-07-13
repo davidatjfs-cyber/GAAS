@@ -1220,6 +1220,7 @@ export function buildInspectionReportHtml(report = {}, meta = {}) {
   <h2>本次检测结论</h2><p>${esc(report.summary || '')}</p>
   <h2>核心影响</h2><p>${esc((report.affected_modules || []).join('、') || '-')}</p>
   <h2>需要租赁方安排整改的事项</h2><table><thead><tr><th>整改事项</th><th>涉及门店</th><th>影响功能</th><th>问题说明</th><th>建议安排对象</th><th>建议完成时间</th><th>整改建议</th></tr></thead><tbody>${rows(report.tenant_rectification_items || [], [['item_name'],['store_name'],['impact_modules'],['problem_description'],['suggested_arrangement'],['suggested_deadline'],['rectification_suggestion']])}</tbody></table>
+  <h2>客户未执行责任说明</h2><p>${esc((report.customer_non_execution && report.customer_non_execution.statement) || '本期未附带未执行责任台账。若系统已出建议但客户未确认/未执行，复盘时应明确：无法评价实际改善效果。')}</p>
   <h2>我方说明 / 协助事项</h2><table><thead><tr><th>问题</th><th>影响</th><th>我方建议</th><th>需要租赁方配合什么</th></tr></thead><tbody>${rows(report.platform_notes || [], [['problem'],['impact'],['suggestion'],['tenant_cooperation']])}</tbody></table>
   <h2>数据缺失造成的影响说明</h2><ul>${(report.data_gap_impact || []).map((x) => `<li>${esc(x)}</li>`).join('') || '<li>-</li>'}</ul>
   <h2>下次复检建议</h2><p>${esc(report.next_recheck_suggestion || '建议租赁方完成以上整改后，在 3 天内重新运行检测。')}</p>

@@ -94,6 +94,7 @@ import { ensurePhaseTables, registerPhaseRoutes } from './growth-phases.js';
 import { ensureCustomerOpsTables, registerCustomerOpsRoutes } from './customer-ops.js';
 import { registerMarketingAttributionRoutes } from './marketing/marketing-attribution-routes.js';
 import { registerTenantOperationInspectionRoutes } from './tenant-operation-inspection-routes.js';
+import { registerLightSaasRoutes } from './light-saas-routes.js';
 import { loadTenantRuntimeStatus as loadTenantRuntimeStatusFromModule } from './tenant-runtime-status.js';
 import { registerTenantSubscriptionRoutes } from './tenant-subscription-routes.js';
 import { createPlatformAdminRequired, registerTenantPlatformRoutes } from './tenant-platform-routes.js';
@@ -5605,6 +5606,7 @@ registerPhaseRoutes(app, pool);
 registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM);
 registerMarketingAttributionRoutes(app, pool, authRequired);
 registerTenantOperationInspectionRoutes(app, pool, authRequired, platformAdminRequired);
+registerLightSaasRoutes(app, pool, platformAdminRequired);
 registerTenantSubscriptionRoutes(app, { pool, authRequired });
 registerTenantPlatformRoutes(app, {
   pool,

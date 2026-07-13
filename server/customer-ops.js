@@ -10,6 +10,7 @@ import {
   enrichReportForBusinessOntology,
 } from './ontology/report-metrics-adapters.js';
 import { reviewOntologyTaskHistory } from './ontology/ontology-task-adapter.js';
+import { buildExecutionLedger } from './services/execution-ledger-service.js';
 import { ingestPosOrders } from './growth-phases.js';
 import { recomputeCustomerProfiles } from './growth-api.js';
 import { syncOntologyDataFromProduction } from './ontology/real-data-sync.js';
@@ -2074,6 +2075,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       await applyReportMetricFacts(pool, getTenantId(req), report.report, 'customer_assets', req.query.store_id || req.query.storeId);
       const enriched = enrichReportForBusinessOntology(report.report, buildCustomerAssetMetricsInput);
       enriched.previousActionReview = await reviewOntologyTaskHistory(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, reportType: 'customer_assets' }).catch(() => ({ resultReviewStatus: 'insufficient_data', tasksCreated: 0, tasksCompleted: 0, tasks: [], summary: '上期动作已有记录，但当前追踪数据不足，暂无法判断改善结果。' }));
+      enriched.customerNonExecution = await buildExecutionLedger(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, dateFrom: req.query.date_from, dateTo: req.query.date_to }).catch((e) => ({ ok: false, statement: e?.message || 'ledger_unavailable', items: [] }));
       res.json({ ...report, report: enriched });
     } catch (e) {
       console.error('[customer-ops] customer asset report failed:', e);
@@ -2091,6 +2093,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       await applyReportMetricFacts(pool, getTenantId(req), report.report, 'ops_rectification', req.query.store_id || req.query.storeId);
       const enriched = enrichReportForBusinessOntology(report.report, buildOperationImprovementMetricsInput);
       enriched.previousActionReview = await reviewOntologyTaskHistory(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, reportType: 'ops_rectification' }).catch(() => ({ resultReviewStatus: 'insufficient_data', tasksCreated: 0, tasksCompleted: 0, tasks: [], summary: '上期动作已有记录，但当前追踪数据不足，暂无法判断改善结果。' }));
+      enriched.customerNonExecution = await buildExecutionLedger(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, dateFrom: req.query.date_from, dateTo: req.query.date_to }).catch((e) => ({ ok: false, statement: e?.message || 'ledger_unavailable', items: [] }));
       res.json({ ...report, report: enriched });
     } catch (e) {
       console.error('[customer-ops] ops rectification report failed:', e);
@@ -2108,6 +2111,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       await applyReportMetricFacts(pool, getTenantId(req), report.report, 'talent_growth', req.query.store_id || req.query.storeId);
       const enriched = enrichReportForBusinessOntology(report.report, buildTalentDevelopmentMetricsInput);
       enriched.previousActionReview = await reviewOntologyTaskHistory(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, reportType: 'talent_growth' }).catch(() => ({ resultReviewStatus: 'insufficient_data', tasksCreated: 0, tasksCompleted: 0, tasks: [], summary: '上期动作已有记录，但当前追踪数据不足，暂无法判断改善结果。' }));
+      enriched.customerNonExecution = await buildExecutionLedger(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, dateFrom: req.query.date_from, dateTo: req.query.date_to }).catch((e) => ({ ok: false, statement: e?.message || 'ledger_unavailable', items: [] }));
       res.json({ ...report, report: enriched });
     } catch (e) {
       console.error('[customer-ops] talent growth report failed:', e);

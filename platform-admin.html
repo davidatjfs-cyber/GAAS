@@ -384,6 +384,9 @@
     <nav class="top-tabs" id="topTabs">
       <button type="button" class="active" data-panel="overview">总览</button>
       <button type="button" data-panel="health">健康</button>
+      <button type="button" data-panel="onboarding">上线</button>
+      <button type="button" data-panel="faq">FAQ</button>
+      <button type="button" data-panel="demand">需求</button>
       <button type="button" data-panel="tenants">租户</button>
       <button type="button" data-panel="create">开通</button>
       <button type="button" data-panel="config">配置</button>
@@ -474,6 +477,75 @@
         </div>
         <div id="healthDetail"></div>
         <div id="faqDrawer"></div>
+        <div class="card stack" style="margin-top:12px;background:rgba(255,255,255,.55)">
+          <div class="section-title">
+            <strong>未执行责任台账（⑥）</strong>
+            <span class="small">月报复盘话术：系统已建议但客户未执行</span>
+          </div>
+          <div class="toolbar">
+            <label style="margin:0;flex:1">租户 ID
+              <input id="ledgerTenantId" placeholder="选中租户或手动输入">
+            </label>
+            <button type="button" id="ledgerLoadBtn" class="secondary">加载台账</button>
+          </div>
+          <div id="ledgerStatement" class="hint-box">选择租户后加载。</div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>来源</th><th>建议</th><th>判定</th><th>责任</th><th>影响</th></tr></thead>
+              <tbody id="ledgerTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-onboarding" class="panel stack">
+      <div class="card stack">
+        <div class="section-title">
+          <strong>上线向导（③）</strong>
+          <span class="small">10 步 checklist，目标人工 2–4 小时</span>
+        </div>
+        <div class="toolbar">
+          <label style="margin:0;flex:1">租户 ID<input id="onboardingTenantId" placeholder="先选中租户或输入"></label>
+          <button type="button" id="onboardingStartBtn" class="warn">启动/继续</button>
+          <button type="button" id="onboardingRefreshBtn" class="secondary">刷新进度</button>
+        </div>
+        <div id="onboardingStatus" class="small">未加载</div>
+        <div id="onboardingSteps" class="stack"></div>
+      </div>
+    </section>
+
+    <section id="panel-faq" class="panel stack">
+      <div class="card stack">
+        <div class="section-title">
+          <strong>客服 FAQ 自助（④）</strong>
+          <span class="small">目标：重复问题自助解决</span>
+        </div>
+        <label>搜索<input id="faqSearch" placeholder="例如：短信、手机号、归因"></label>
+        <div id="faqPortal" class="stack"></div>
+      </div>
+    </section>
+
+    <section id="panel-demand" class="panel stack">
+      <div class="card stack">
+        <div class="section-title">
+          <strong>需求治理（⑤ 轻量）</strong>
+          <span class="small">单店不做 / 配置解决 / 共有评估 / 拒绝复杂度</span>
+        </div>
+        <label>租户 ID<input id="demandTenantId" placeholder="可选"></label>
+        <label>标题<input id="demandTitle" placeholder="客户想要什么"></label>
+        <label>说明<textarea id="demandDetail" placeholder="背景与诉求"></textarea></label>
+        <label>裁定
+          <select id="demandVerdict">
+            <option value="reject_single_store">单家客户需要：不做</option>
+            <option value="config_solve">可通过配置解决</option>
+            <option value="evaluate_common" selected>多数餐厅共有：进入评估</option>
+            <option value="prioritize_renewal">提升续费/降成本：优先</option>
+            <option value="reject_complexity">只增加复杂度：拒绝</option>
+          </select>
+        </label>
+        <button type="button" id="demandSubmitBtn">登记需求</button>
+        <div id="demandList" class="stack" style="margin-top:10px"></div>
       </div>
     </section>
 
@@ -666,10 +738,13 @@
   <nav class="bottom-nav" id="bottomNav">
     <button type="button" class="active" data-panel="overview"><span class="nav-icon">📊</span>总览</button>
     <button type="button" data-panel="health"><span class="nav-icon">🔴</span>健康</button>
+    <button type="button" data-panel="onboarding"><span class="nav-icon">🚀</span>上线</button>
+    <button type="button" data-panel="faq"><span class="nav-icon">❓</span>FAQ</button>
+    <button type="button" data-panel="demand"><span class="nav-icon">📋</span>需求</button>
     <button type="button" data-panel="tenants"><span class="nav-icon">🏢</span>租户</button>
     <button type="button" data-panel="create"><span class="nav-icon">➕</span>开通</button>
     <button type="button" data-panel="config"><span class="nav-icon">⚙️</span>配置</button>
-    <button type="button" data-panel="log"><span class="nav-icon">📋</span>日志</button>
+    <button type="button" data-panel="log"><span class="nav-icon">📜</span>日志</button>
   </nav>
 
   <script>
@@ -742,6 +817,12 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
       if (name === 'health' && isLoggedIn()) {
         loadHealthBoard().catch((e) => { toast(e.message); log(`健康中心加载失败：${e.message}`); });
+      }
+      if (name === 'faq' && isLoggedIn()) loadFaqPortal().catch((e) => toast(e.message));
+      if (name === 'demand' && isLoggedIn()) loadDemandList().catch((e) => toast(e.message));
+      if (name === 'onboarding' && isLoggedIn()) {
+        const tid = state.selectedTenantId || $('cfgTenantId')?.value || '';
+        if (tid) $('onboardingTenantId').value = tid;
       }
     }
 
@@ -1025,6 +1106,9 @@
         if (!id) throw new Error('缺少租户 ID');
         state.selectedTenantId = id;
         $('cfgTenantId').value = id;
+        if ($('ledgerTenantId')) $('ledgerTenantId').value = id;
+        if ($('onboardingTenantId')) $('onboardingTenantId').value = id;
+        if ($('demandTenantId')) $('demandTenantId').value = id;
         switchPanel('tenants');
         updateSelectedTenantBar();
         await loadTenantProfile(id);
@@ -2530,7 +2614,121 @@
     $('incidentQueueFilter').onchange = () => loadIncidentQueue().catch((e) => toast(e.message));
     $('incidentSyncBtn').onclick = () => syncIncidentQueue().catch((e) => { toast(e.message); log(`同步分流失败：${e.message}`); });
     $('incidentReloadBtn').onclick = () => loadIncidentQueue().catch((e) => toast(e.message));
+    $('ledgerLoadBtn').onclick = () => loadExecutionLedger().catch((e) => toast(e.message));
+    $('onboardingStartBtn').onclick = () => startOnboardingFlow().catch((e) => toast(e.message));
+    $('onboardingRefreshBtn').onclick = () => refreshOnboardingFlow().catch((e) => toast(e.message));
+    $('faqSearch').oninput = () => loadFaqPortal().catch(() => null);
+    $('demandSubmitBtn').onclick = () => submitDemand().catch((e) => toast(e.message));
     $('tenantFilter').oninput = () => loadTenants().catch((e) => log(`搜索失败：${e.message}`));
+
+    async function loadExecutionLedger() {
+      const tenantId = String($('ledgerTenantId').value || state.selectedTenantId || '').trim();
+      if (!tenantId) throw new Error('请填写租户 ID');
+      const data = await api(`/api/admin/health-center/execution-ledger?tenant_id=${encodeURIComponent(tenantId)}`);
+      $('ledgerStatement').textContent = data.statement || '无说明';
+      const body = $('ledgerTableBody');
+      const items = data.items || [];
+      body.innerHTML = items.length ? items.map((it) => `
+        <tr>
+          <td>${escHtml(it.source)}</td>
+          <td>${escHtml(it.title)}<div class="mono">${escHtml(it.ref_id || '')}</div></td>
+          <td>${escHtml(it.decision)}</td>
+          <td>${escHtml(it.responsible_label || it.responsible_party)}</td>
+          <td class="small">${escHtml(it.impact || '')}</td>
+        </tr>
+      `).join('') : `<tr><td colspan="5" class="small">本周期无未执行/未确认记录（或数据表为空）。</td></tr>`;
+      log(`未执行台账 ${tenantId}：${data.summary?.suggested_count || 0} 条`);
+    }
+
+    async function startOnboardingFlow() {
+      const tenantId = String($('onboardingTenantId').value || state.selectedTenantId || '').trim();
+      if (!tenantId) throw new Error('请填写租户 ID');
+      toast('启动上线向导…');
+      const data = await api(`/api/admin/tenants/${encodeURIComponent(tenantId)}/onboarding/start`, { method: 'POST', body: '{}' });
+      renderOnboarding(data);
+    }
+
+    async function refreshOnboardingFlow() {
+      const tenantId = String($('onboardingTenantId').value || state.selectedTenantId || '').trim();
+      if (!tenantId) throw new Error('请填写租户 ID');
+      const data = await api(`/api/admin/tenants/${encodeURIComponent(tenantId)}/onboarding/refresh`, { method: 'POST', body: '{}' });
+      renderOnboarding(data);
+    }
+
+    function renderOnboarding(data) {
+      const run = data.run;
+      const steps = data.steps || [];
+      $('onboardingStatus').textContent = run
+        ? `状态 ${run.status} · 当前步骤 ${run.current_step} · run #${run.id}`
+        : '尚未启动';
+      $('onboardingSteps').innerHTML = steps.map((s) => `
+        <div class="list-card">
+          <div class="section-title">
+            <strong>${escHtml(s.step_order)}. ${escHtml(s.title || s.step_key)}</strong>
+            <span class="pill ${s.status === 'done' ? 'ok' : ''}">${escHtml(s.status)}</span>
+          </div>
+          <div class="small">责任：${escHtml(s.owner_role || '')} · 影响：${escHtml(s.impact || '')}</div>
+          <div class="small">${escHtml(s.missing || (s.status === 'done' ? '已完成' : '待完成'))}</div>
+          ${s.status !== 'done' ? `<button type="button" class="secondary" data-step="${escHtml(s.step_key)}">标记完成</button>` : ''}
+        </div>
+      `).join('') || '<div class="small">无步骤</div>';
+      $('onboardingSteps').querySelectorAll('button[data-step]').forEach((btn) => {
+        btn.onclick = async () => {
+          const tenantId = String($('onboardingTenantId').value || '').trim();
+          const data2 = await api(`/api/admin/tenants/${encodeURIComponent(tenantId)}/onboarding/steps/${encodeURIComponent(btn.dataset.step)}/complete`, {
+            method: 'POST',
+            body: JSON.stringify({ note: '平台手动确认' }),
+          });
+          renderOnboarding(data2);
+          toast('步骤已标记完成');
+        };
+      });
+    }
+
+    async function loadFaqPortal() {
+      const q = String($('faqSearch')?.value || '').trim();
+      const data = await api(`/api/admin/support/faqs${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+      const faqs = data.faqs || [];
+      $('faqPortal').innerHTML = faqs.map((f) => `
+        <div class="list-card">
+          <div class="pill">${escHtml(f.category || '通用')}</div>
+          <strong>${escHtml(f.title)}</strong>
+          <div class="small">${escHtml(f.summary || '')}</div>
+          <ol class="small">${(f.steps || []).map((s) => `<li>${escHtml(s)}</li>`).join('')}</ol>
+        </div>
+      `).join('') || '<div class="small">无匹配 FAQ</div>';
+    }
+
+    async function loadDemandList() {
+      const data = await api('/api/admin/demand-requests');
+      const items = data.items || [];
+      $('demandList').innerHTML = items.length ? items.map((it) => `
+        <div class="list-card">
+          <strong>${escHtml(it.title)}</strong>
+          <div class="small">${escHtml(it.tenant_id || '—')} · ${escHtml(it.verdict)} · ${escHtml(it.status)}</div>
+          <div class="small">${escHtml(it.decision_note || it.detail || '')}</div>
+        </div>
+      `).join('') : '<div class="small">暂无需求记录</div>';
+    }
+
+    async function submitDemand() {
+      const title = String($('demandTitle').value || '').trim();
+      if (!title) throw new Error('请填写标题');
+      const data = await api('/api/admin/demand-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          tenant_id: String($('demandTenantId').value || state.selectedTenantId || '').trim(),
+          title,
+          detail: String($('demandDetail').value || ''),
+          verdict: $('demandVerdict').value,
+        }),
+      });
+      if (!data.ok) throw new Error(data.error || '登记失败');
+      toast(data.item?.enter_eng ? '已登记并标记可进研发评估' : '已登记（默认不进研发）');
+      $('demandTitle').value = '';
+      $('demandDetail').value = '';
+      await loadDemandList();
+    }
     $('opsNav').addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-scroll-target]');
       if (!btn) return;
