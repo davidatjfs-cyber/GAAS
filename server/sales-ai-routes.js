@@ -11,6 +11,7 @@ import {
 } from './services/sales/sales-session.js';
 import { buildBossDailyReport } from './services/sales/sales-ops.js';
 import { setSalesCustomerAiLlm } from './services/sales/sales-customer-ai.js';
+import { draftCustomerReply, setSalesReplyDraftLlm } from './services/sales/sales-reply-draft.js';
 import {
   kfConfigured,
   kfEnv,
@@ -21,9 +22,83 @@ import {
 } from './services/sales/sales-kf.js';
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE, FORBIDDEN_CLAIMS } from './services/sales/sales-knowledge.js';
 
+// 超时未跟进：高意向线索若2小时内无人工接管/回复，且4小时内未提醒过，则再次提醒（避免轰炸）。
+async function remindStaleHighIntentLeads(pool, sendOpsAlert) {
+  if (typeof sendOpsAlert !== 'function') return;
+  const r = await pool.query(
+    `SELECT id, lead_key, company, name, city, store_count, intent_score, next_action
+       FROM sales_leads
+      WHERE intent_level = 'high'
+        AND controller <> 'human'
+        AND stage NOT IN ('won', 'lost', 'unfit')
+        AND (last_human_at IS NULL OR last_human_at < NOW() - INTERVAL '2 hours')
+        AND (last_reminder_at IS NULL OR last_reminder_at < NOW() - INTERVAL '4 hours')
+      ORDER BY intent_score DESC
+      LIMIT 20`
+  );
+  for (const lead of r.rows || []) {
+    try {
+      await sendOpsAlert(
+        [
+          '【销售AI·高意向仍未接管】',
+          `线索 ${lead.lead_key}｜${lead.company || lead.name || ''}｜${lead.city || '?'}｜${lead.store_count || '?'}店`,
+          `评分 ${lead.intent_score}（high），已超时未人工接管，请尽快跟进`,
+          lead.next_action ? `建议动作：${lead.next_action}` : '',
+        ].filter(Boolean).join('\n'),
+        { title: '高意向销售线索超时提醒', audience: 'sales' }
+      );
+      await pool.query(`UPDATE sales_leads SET last_reminder_at = NOW() WHERE id = $1`, [lead.id]);
+    } catch (e) {
+      console.warn('[sales-ai] stale lead reminder failed:', e?.message || e);
+    }
+  }
+}
+
 export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLLM, sendOpsAlert } = {}) {
   if (typeof callLLM === 'function') setSalesCustomerAiLlm(callLLM);
+  if (typeof callLLM === 'function') setSalesReplyDraftLlm(callLLM);
   if (typeof sendOpsAlert === 'function') setSalesNotify(sendOpsAlert);
+
+  // 任务1：每30分钟检查一次高意向未接管线索，超时未跟进则再次提醒（去重：4小时内不重复提醒同一线索）
+  if (!globalThis.__salesStaleLeadReminderTimer) {
+    globalThis.__salesStaleLeadReminderTimer = setInterval(() => {
+      ensureSalesTables(pool)
+        .then(() => remindStaleHighIntentLeads(pool, sendOpsAlert))
+        .catch((e) => console.warn('[sales-ai] stale lead reminder run failed:', e?.message || e));
+    }, 30 * 60 * 1000);
+  }
+
+  // 任务2：每日09:00自动生成并推送老板日报（复用 /daily-report/send 同样的逻辑）
+  if (!globalThis.__salesDailyReportTimer) {
+    const scheduleSalesDailyReport = () => {
+      const now = new Date();
+      const next = new Date(now);
+      next.setHours(9, 0, 0, 0);
+      if (next <= now) next.setDate(next.getDate() + 1);
+      globalThis.__salesDailyReportTimer = setTimeout(async () => {
+        try {
+          const report = await buildBossDailyReport(pool);
+          if (typeof sendOpsAlert === 'function') {
+            await sendOpsAlert(report.text, { title: '销售AI日报', audience: 'sales' });
+          }
+        } catch (e) {
+          console.warn('[sales-ai] daily report send failed:', e?.message || e);
+        }
+        scheduleSalesDailyReport();
+      }, next - now);
+    };
+    scheduleSalesDailyReport();
+  }
+
+  // 任务3：每5分钟主动补偿同步一次微信客服消息，防止回调因网络/重启丢失导致漏消息
+  if (!globalThis.__salesKfSyncTimer) {
+    globalThis.__salesKfSyncTimer = setInterval(() => {
+      if (!kfConfigured()) return;
+      const env = kfEnv();
+      processKfCallbackEvent(pool, { token: '', openKfid: env.openKfid }, (payload) => handleInboundMessage(pool, payload))
+        .catch((e) => console.warn('[sales-ai] kf compensating sync failed:', e?.message || e));
+    }, 5 * 60 * 1000);
+  }
 
   // —— 公开：微信客服回调（无需平台登录）——
   app.get('/api/wecom/kf/callback', (req, res) => {
@@ -181,6 +256,23 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       }
       res.json({ ok: true, saved: true });
     } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/leads/:id/draft-reply', platformAdminRequired, async (req, res) => {
+    try {
+      const detail = await getLeadDetail(pool, Number(req.params.id));
+      if (!detail.ok) return res.status(404).json(detail);
+      const draft = await draftCustomerReply({
+        lead: detail.lead,
+        messages: detail.messages,
+        advice: detail.advice,
+      });
+      if (!draft.ok) return res.json({ ok: false, error: draft.error, message: '暂无法生成草稿，请手动编写' });
+      res.json({ ok: true, text: draft.text });
+    } catch (e) {
+      console.error('[sales] draft reply', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });

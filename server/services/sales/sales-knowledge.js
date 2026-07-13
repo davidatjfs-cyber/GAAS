@@ -66,9 +66,12 @@ export const PUBLIC_KNOWLEDGE = [
 
 export const DIAGNOSTIC_SLOTS = [
   { key: 'store_count', question: '请问您目前有几家门店？', priority: 10 },
-  { key: 'cuisine_or_city', question: '方便说下主要品类和所在城市吗？', priority: 20 },
+  { key: 'city', question: '方便说下门店主要在哪个城市吗？', priority: 15 },
+  { key: 'cuisine', question: '主要经营的是什么品类？', priority: 20 },
   { key: 'pos_brand', question: '门店现在用的是哪家POS？', priority: 30 },
   { key: 'phone_data_ready', question: 'POS订单里目前能记录客户手机号吗？', priority: 40 },
+  { key: 'member_estimate', question: '目前积累的会员或客户手机号大概有多少？', priority: 45 },
+  { key: 'other_system_used', question: '目前有没有在用其他会员或营销管理系统？', priority: 47 },
   { key: 'pain_point', question: '您现在最想先解决的是客户复购、门店执行，还是人才培养？', priority: 50 },
   { key: 'decision_role', question: '这次主要是您本人在看，还是运营/IT同事一起评估？', priority: 60 },
 ];

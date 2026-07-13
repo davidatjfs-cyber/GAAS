@@ -3,6 +3,7 @@
  */
 import { scoreLead, persistScore } from './sales-scoring.js';
 import { addEvent, ensureSalesTables, listLeads } from './sales-store.js';
+import { deriveTagsForLead } from './sales-tags.js';
 
 export function buildNextAction(lead, score) {
   if (score.intent_level === 'high' || (lead.controller === 'ai' && score.intent_score >= 70)) {
@@ -30,6 +31,13 @@ export function buildSalesAdvice(lead, score) {
 export async function applyLeadUpdates(pool, leadId, { extracted, events, score, controller, stage }) {
   await ensureSalesTables(pool);
   const pain = extracted?.pain_point ? [extracted.pain_point] : [];
+  const tags = deriveTagsForLead({
+    store_count: extracted?.store_count,
+    phone_data_ready: extracted?.phone_data_ready,
+    pain_point: extracted?.pain_point,
+    stage: stage || null,
+    intent_level: score.intent_level,
+  });
   await pool.query(
     `UPDATE sales_leads SET
         store_count = COALESCE($2, store_count),
@@ -45,6 +53,7 @@ export async function applyLeadUpdates(pool, leadId, { extracted, events, score,
         stage = COALESCE($12, stage),
         intent_score = $13,
         intent_level = $14,
+        tags = $15::jsonb,
         last_message_at = NOW(),
         updated_at = NOW()
       WHERE id=$1`,
@@ -63,6 +72,7 @@ export async function applyLeadUpdates(pool, leadId, { extracted, events, score,
       stage || null,
       score.intent_score,
       score.intent_level,
+      JSON.stringify(tags),
     ]
   );
   await persistScore(pool, leadId, score);

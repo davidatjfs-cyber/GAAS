@@ -49,6 +49,9 @@ export function extractSlotsFromText(text = '', prev = {}) {
   const memM = t.match(/(\d+(?:\.\d+)?)\s*万/);
   if (memM && /会员|客户|手机/.test(t)) out.member_estimate = Math.round(Number(memM[1]) * 10000);
 
+  if (/在用.*(会员|营销|CRM|系统|软件)|已经有.*(会员|营销|系统|软件)|用过.*(系统|软件)/i.test(t)) out.other_system_used = true;
+  else if (/没有用.*系统|没有其他系统|没用系统|没有系统|没用过.*(系统|软件)/.test(t)) out.other_system_used = false;
+
   return out;
 }
 
@@ -67,15 +70,15 @@ export function detectEvents(text = '') {
 
 export function nextDiagnosticQuestion(extracted = {}) {
   for (const slot of DIAGNOSTIC_SLOTS) {
-    if (slot.key === 'cuisine_or_city') {
-      if (!extracted.city && !extracted.cuisine) return slot;
-      continue;
-    }
     if (slot.key === 'pain_point' && !extracted.pain_point) return slot;
     if (slot.key === 'phone_data_ready' && extracted.phone_data_ready == null) return slot;
     if (slot.key === 'store_count' && extracted.store_count == null) return slot;
     if (slot.key === 'pos_brand' && !extracted.pos_brand) return slot;
     if (slot.key === 'decision_role' && !extracted.decision_role) return slot;
+    if (slot.key === 'city' && !extracted.city) return slot;
+    if (slot.key === 'cuisine' && !extracted.cuisine) return slot;
+    if (slot.key === 'member_estimate' && extracted.member_estimate == null) return slot;
+    if (slot.key === 'other_system_used' && extracted.other_system_used == null) return slot;
   }
   return null;
 }

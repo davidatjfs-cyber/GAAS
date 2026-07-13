@@ -570,6 +570,7 @@
         <div id="salesChatLog" class="sales-chat"></div>
         <div class="toolbar">
           <input id="salesReplyInput" placeholder="人工回复（需先接管）" style="flex:1">
+          <button type="button" id="salesDraftReplyBtn" class="secondary">AI生成草稿</button>
           <button type="button" id="salesReplyBtn">发送</button>
         </div>
         <div id="salesEvents" class="small"></div>
@@ -2739,6 +2740,7 @@
     $('salesTakeoverBtn').onclick = () => salesTakeover().catch((e) => toast(e.message));
     $('salesReleaseBtn').onclick = () => salesReleaseAi().catch((e) => toast(e.message));
     $('salesReplyBtn').onclick = () => salesHumanReply().catch((e) => toast(e.message));
+    $('salesDraftReplyBtn').onclick = () => salesDraftReply().catch((e) => toast(e.message));
     $('salesReplyInput').onkeydown = (ev) => {
       if (ev.key === 'Enter') salesHumanReply().catch((e) => toast(e.message));
     };
@@ -2832,6 +2834,7 @@
       const adviceLines = [
         `阶段 ${lead.stage ? salesStageLabel(lead.stage) : '—'}｜控场 ${lead.controller ? salesControllerLabel(lead.controller) : '—'}`,
         `门店 ${lead.store_count ?? '未明'}｜POS ${lead.pos_brand || '未明'}｜手机号 ${lead.phone_data_ready == null ? '未明' : (lead.phone_data_ready ? '有' : '无')}`,
+        `标签：${(lead.tags || []).join('、') || '—'}`,
         `下一步：${lead.next_action || '—'}`,
       ];
       const scoreItems = data.score?.items || data.score_items || [];
@@ -2867,6 +2870,15 @@
       toast('已交回 AI');
       await openSalesLead(id);
       await loadSalesBoard();
+    }
+
+    async function salesDraftReply() {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先选择线索');
+      const data = await api(`/api/admin/sales/leads/${id}/draft-reply`, { method: 'POST', body: '{}' });
+      if (!data.ok) throw new Error(data.message || data.error || '生成失败');
+      $('salesReplyInput').value = data.text || '';
+      toast('已生成草稿，可编辑后发送');
     }
 
     async function salesHumanReply() {
