@@ -2761,6 +2761,16 @@
 
     function salesEsc(s) { return escHtml(String(s ?? '')); }
 
+    const SALES_STAGE_LABELS = {
+      new: '新线索', ai_greeting: 'AI接待中', need_identified: '需求已识别',
+      qualified: '有效客户', sales_takeover: '销售接管中'
+    };
+    const SALES_CONTROLLER_LABELS = { ai: '客户AI', human: '人工', waiting_human: '待人工接管' };
+    const SALES_INTENT_LABELS = { high: '高', medium: '中', low: '低' };
+    function salesStageLabel(v) { return SALES_STAGE_LABELS[v] || salesEsc(v); }
+    function salesControllerLabel(v) { return SALES_CONTROLLER_LABELS[v] || salesEsc(v); }
+    function salesIntentLabel(v) { return SALES_INTENT_LABELS[v] || salesEsc(v); }
+
     function renderSalesChat(el, messages) {
       if (!el) return;
       el.innerHTML = (messages || []).map((m) => {
@@ -2780,9 +2790,9 @@
         const updated = l.updated_at ? new Date(l.updated_at).toLocaleString() : '—';
         return `<tr class="${selected}" data-lead-id="${l.id}">
           <td><strong>${salesEsc(l.lead_key || l.id)}</strong><div class="mono small">${salesEsc(l.external_userid || '')}</div></td>
-          <td>${salesEsc(l.stage)}</td>
-          <td>${salesEsc(l.controller)}</td>
-          <td><strong>${salesEsc(l.intent_score)}</strong> <span class="small">${salesEsc(l.intent_level)}</span></td>
+          <td>${salesStageLabel(l.stage)}</td>
+          <td>${salesControllerLabel(l.controller)}</td>
+          <td><strong>${salesEsc(l.intent_score)}</strong> <span class="small">${salesIntentLabel(l.intent_level)}</span></td>
           <td>${l.store_count != null ? salesEsc(l.store_count) : '—'}</td>
           <td>${salesEsc(pain)}</td>
           <td class="small">${salesEsc(l.next_action || '—')}</td>
@@ -2818,9 +2828,9 @@
       state.sales.selectedLeadId = id;
       $('salesDetailCard').style.display = '';
       const lead = data.lead || {};
-      $('salesDetailTitle').textContent = `${lead.lead_key || id} · ${lead.controller || ''} · 分${lead.intent_score ?? 0}`;
+      $('salesDetailTitle').textContent = `${lead.lead_key || id} · ${lead.controller ? salesControllerLabel(lead.controller) : ''} · 分${lead.intent_score ?? 0}`;
       const adviceLines = [
-        `阶段 ${lead.stage || '—'}｜控场 ${lead.controller || '—'}`,
+        `阶段 ${lead.stage ? salesStageLabel(lead.stage) : '—'}｜控场 ${lead.controller ? salesControllerLabel(lead.controller) : '—'}`,
         `门店 ${lead.store_count ?? '未明'}｜POS ${lead.pos_brand || '未明'}｜手机号 ${lead.phone_data_ready == null ? '未明' : (lead.phone_data_ready ? '有' : '无')}`,
         `下一步：${lead.next_action || '—'}`,
       ];
