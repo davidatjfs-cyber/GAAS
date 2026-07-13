@@ -11,6 +11,12 @@ import {
   markInspectionReportSent,
   buildInspectionReportHtml,
 } from './services/tenant-operation-inspection-service.js';
+import {
+  getHealthCenterBoard,
+  getHealthCenterTenantDetail,
+  scanHealthCenter,
+} from './services/tenant-health-center-service.js';
+import { listHealthFaqs } from './services/tenant-health-faq.js';
 import { tenantContext } from './utils/database.js';
 
 const ALLOWED_ROLES = new Set([
@@ -229,5 +235,38 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
     app.post('/api/admin/tenants/:tenantId/tenant-inspection/recheck', platformAdminRequired, platformTenantMiddleware, h.recheck);
     app.post('/api/admin/tenants/:tenantId/tenant-inspection/items/:id/generate-task', platformAdminRequired, platformTenantMiddleware, h.generateTask);
     app.post('/api/admin/tenants/:tenantId/tenant-inspection/generate-tasks-batch', platformAdminRequired, platformTenantMiddleware, h.generateTasksBatch);
+
+    // 极轻模式 Phase 1：客服健康中心（全租户红名单）
+    app.get('/api/admin/health-center/board', platformAdminRequired, async (req, res) => {
+      try {
+        const data = await getHealthCenterBoard(pool, { light: req.query?.light || 'red' });
+        return res.json(data);
+      } catch (e) {
+        console.error('[health-center] board failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'board_failed' });
+      }
+    });
+    app.get('/api/admin/health-center/faqs', platformAdminRequired, (_req, res) => {
+      return res.json({ ok: true, faqs: listHealthFaqs() });
+    });
+    app.get('/api/admin/health-center/tenants/:tenantId', platformAdminRequired, async (req, res) => {
+      try {
+        const data = await getHealthCenterTenantDetail(pool, req.params.tenantId);
+        return res.json(data);
+      } catch (e) {
+        console.error('[health-center] tenant detail failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'detail_failed' });
+      }
+    });
+    app.post('/api/admin/health-center/scan', platformAdminRequired, async (req, res) => {
+      try {
+        const tenantIds = Array.isArray(req.body?.tenant_ids) ? req.body.tenant_ids : null;
+        const data = await scanHealthCenter(pool, { tenantIds, date: req.body?.date });
+        return res.json(data);
+      } catch (e) {
+        console.error('[health-center] scan failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'scan_failed' });
+      }
+    });
   }
 }

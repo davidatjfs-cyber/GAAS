@@ -163,6 +163,8 @@
     .stat .label { font-size: 11px; color: var(--muted); }
     .stat .value { font-size: 22px; font-weight: 800; margin-top: 4px; }
     .stat .sub { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+    .stat.ok .value { color: var(--accent); }
+    .stat.bad .value { color: var(--danger); }
 
     .selected-bar {
       display: none; position: sticky; top: 0; z-index: 20;
@@ -271,6 +273,35 @@
 
     .section-nav button.active { background: var(--accent); color: #fff; }
     .section-nav button { font-size: 12px; padding: 8px 12px; }
+    .light-dot {
+      display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+      margin-right: 6px; vertical-align: middle;
+    }
+    .light-dot.red { background: #b63f31; box-shadow: 0 0 0 3px rgba(182,63,49,.15); }
+    .light-dot.yellow { background: #c96b2c; box-shadow: 0 0 0 3px rgba(201,107,44,.15); }
+    .light-dot.green { background: #0d7a5f; box-shadow: 0 0 0 3px rgba(13,122,95,.15); }
+    .light-dot.gray { background: #9a8b78; }
+    .health-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    @media (min-width: 720px) { .health-summary { grid-template-columns: repeat(6, 1fr); } }
+    .health-card-row { cursor: pointer; }
+    .health-card-row:hover td { background: rgba(13,122,95,.04); }
+    .health-card-row.is-open td { background: rgba(182,63,49,.04); }
+    .faq-chip {
+      display: inline-block; margin: 2px 4px 2px 0; padding: 3px 8px;
+      border-radius: 999px; background: #efe5d5; color: var(--ink);
+      font-size: 11px; cursor: pointer; border: 0;
+    }
+    .faq-chip:hover { background: rgba(13,122,95,.15); color: var(--accent); }
+    #healthDetail {
+      border: 1px solid rgba(120,104,85,.18); border-radius: 14px;
+      padding: 12px; background: rgba(255,255,255,.75); display: none;
+    }
+    #healthDetail.visible { display: block; }
+    #faqDrawer {
+      border: 1px dashed rgba(120,104,85,.25); border-radius: 12px;
+      padding: 12px; background: #fff; margin-top: 10px; display: none;
+    }
+    #faqDrawer.visible { display: block; }
 
     @media (min-width: 768px) {
       body { padding-bottom: 20px; }
@@ -352,6 +383,7 @@
 
     <nav class="top-tabs" id="topTabs">
       <button type="button" class="active" data-panel="overview">总览</button>
+      <button type="button" data-panel="health">健康</button>
       <button type="button" data-panel="tenants">租户</button>
       <button type="button" data-panel="create">开通</button>
       <button type="button" data-panel="config">配置</button>
@@ -375,6 +407,48 @@
       <div class="card stack">
         <strong>功能说明</strong>
         <div class="glossary" id="actionGlossary"></div>
+      </div>
+    </section>
+
+    <section id="panel-health" class="panel stack">
+      <div class="card stack">
+        <div class="section-title">
+          <div>
+            <strong>客服健康中心</strong>
+            <div class="small">每天只处理红色异常；黄/绿不主动打扰。详见「红名单日巡 SOP」。</div>
+          </div>
+          <span id="healthGeneratedAt" class="pill">未加载</span>
+        </div>
+        <div class="health-summary" id="healthSummary"></div>
+        <div class="toolbar">
+          <label style="margin:0">筛选
+            <select id="healthLightFilter" style="width:auto;min-width:110px;padding:8px 10px">
+              <option value="red" selected>仅红色</option>
+              <option value="yellow">黄色</option>
+              <option value="all">全部</option>
+              <option value="gray">未检测</option>
+              <option value="green">绿色</option>
+            </select>
+          </label>
+          <button type="button" id="healthReloadBtn" class="secondary">刷新看板</button>
+          <button type="button" id="healthScanBtn" class="warn">全量扫描</button>
+          <button type="button" id="healthFaqBtn" class="ghost">FAQ</button>
+        </div>
+        <div id="healthHint" class="small">加载后显示红名单。</div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>灯</th><th>租户</th><th>健康分</th><th>P0/P1</th>
+                <th>同步</th><th>手机号</th><th>归因</th><th>短信</th>
+                <th>本月营销</th><th>登录</th><th>报告</th><th>风险</th>
+              </tr>
+            </thead>
+            <tbody id="healthTableBody"></tbody>
+          </table>
+        </div>
+        <div id="healthDetail"></div>
+        <div id="faqDrawer"></div>
       </div>
     </section>
 
@@ -566,6 +640,7 @@
 
   <nav class="bottom-nav" id="bottomNav">
     <button type="button" class="active" data-panel="overview"><span class="nav-icon">📊</span>总览</button>
+    <button type="button" data-panel="health"><span class="nav-icon">🔴</span>健康</button>
     <button type="button" data-panel="tenants"><span class="nav-icon">🏢</span>租户</button>
     <button type="button" data-panel="create"><span class="nav-icon">➕</span>开通</button>
     <button type="button" data-panel="config"><span class="nav-icon">⚙️</span>配置</button>
@@ -594,7 +669,15 @@
       const sep = url.includes('?') ? '&' : '?';
       return `${url}${sep}hrms_token=${encodeURIComponent(token)}`;
     }
-    const state = { tenants: [], selectedTenantId: '', detail: null, agentCenter: null, activePanel: 'overview', overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] } };
+    const state = {
+      tenants: [],
+      selectedTenantId: '',
+      detail: null,
+      agentCenter: null,
+      activePanel: 'overview',
+      overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] },
+      health: { summary: {}, tenants: [], faqs: [], filter: 'red', selectedTenantId: '' },
+    };
     const ACTION_GLOSSARY = [
       { term: '选中', desc: '将该租户设为当前操作对象。选中后顶部会显示租户条，「配置」页表单自动带入该租户 ID。' },
       { term: '查看 / 详情', desc: '跳转到「租户」页，加载该租户的详情、登录入口和验收报告。' },
@@ -605,6 +688,8 @@
       { term: '一键初始化', desc: '写入默认模板开关、种子 Agent 配置并运行验收。新租户创建后建议执行。' },
       { term: '失败修复', desc: '重新保存平台配置并重跑验收，用于验收未通过时的快速修复。' },
       { term: '刷新数据', desc: '重新从服务器拉取租户列表、账单、告警和验收汇总。' },
+      { term: '健康中心', desc: '客服日巡入口：全租户红绿灯与红名单。每天只处理红色异常，避免逐店登录检查。' },
+      { term: '全量扫描', desc: '对所有活跃租户重跑运营检测并写入缓存，供健康中心红名单使用。' },
     ];
 
     const log = (msg) => {
@@ -630,6 +715,9 @@
         btn.classList.toggle('active', btn.dataset.panel === name);
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (name === 'health' && isLoggedIn()) {
+        loadHealthBoard().catch((e) => { toast(e.message); log(`健康中心加载失败：${e.message}`); });
+      }
     }
 
     function switchConfigPane(paneId) {
@@ -1087,6 +1175,211 @@
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.message || data.error || `${resp.status}`);
       return data;
+    }
+
+    function yesNo(v) {
+      if (v === true) return '✓';
+      if (v === false) return '✗';
+      return '—';
+    }
+
+    function escHtml(v) {
+      return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function renderHealthSummary(summary = {}) {
+      const host = $('healthSummary');
+      if (!host) return;
+      const cells = [
+        ['租户', summary.total || 0, ''],
+        ['红', summary.red || 0, 'bad'],
+        ['黄', summary.yellow || 0, ''],
+        ['绿', summary.green || 0, 'ok'],
+        ['未检测', summary.gray || 0, ''],
+        ['P0+P1', (summary.p0_total || 0) + (summary.p1_total || 0), 'bad'],
+      ];
+      host.innerHTML = cells.map(([label, value, cls]) => `
+        <div class="stat ${cls}"><div class="label">${label}</div><div class="value">${value}</div></div>
+      `).join('');
+    }
+
+    function renderHealthTable(tenants = []) {
+      const body = $('healthTableBody');
+      if (!body) return;
+      if (!tenants.length) {
+        body.innerHTML = `<tr><td colspan="12" class="small">当前筛选下没有租户。可先「全量扫描」，或切换筛选为「全部」。</td></tr>`;
+        return;
+      }
+      body.innerHTML = tenants.map((t) => {
+        const ind = t.indicators || {};
+        const open = state.health.selectedTenantId === t.tenant_id ? ' is-open' : '';
+        return `<tr class="health-card-row${open}" data-tenant-id="${escHtml(t.tenant_id)}">
+          <td><span class="light-dot ${escHtml(t.light)}"></span>${escHtml(t.light_label || t.light)}</td>
+          <td><strong>${escHtml(t.tenant_name || t.tenant_id)}</strong><div class="mono">${escHtml(t.tenant_id)}</div></td>
+          <td>${t.health_score == null ? '—' : escHtml(t.health_score)}</td>
+          <td>${escHtml(t.p0_count || 0)} / ${escHtml(t.p1_count || 0)}</td>
+          <td>${yesNo(ind.data_sync_ok)}</td>
+          <td>${ind.phone_match_rate == null ? '—' : escHtml(ind.phone_match_rate) + '%'}</td>
+          <td>${yesNo(ind.attribution_available)}</td>
+          <td>${yesNo(ind.sms_ok)}</td>
+          <td>${yesNo(ind.marketing_mtd_ok)}</td>
+          <td>${yesNo(ind.customer_login_ok)}</td>
+          <td>${yesNo(ind.monthly_report_ok)}</td>
+          <td>${escHtml(ind.churn_risk || '—')}</td>
+        </tr>`;
+      }).join('');
+      body.querySelectorAll('tr.health-card-row').forEach((tr) => {
+        tr.onclick = () => openHealthTenant(tr.getAttribute('data-tenant-id'));
+      });
+    }
+
+    function renderHealthDetail(card) {
+      const host = $('healthDetail');
+      if (!host) return;
+      if (!card) {
+        host.classList.remove('visible');
+        host.innerHTML = '';
+        return;
+      }
+      const red = Array.isArray(card.red_items) ? card.red_items : [];
+      const signals = Array.isArray(card.signals) ? card.signals : [];
+      const redHtml = red.length ? red.map((item) => `
+        <tr>
+          <td><span class="pill ${item.severity === 'P0' ? 'bad' : ''}">${escHtml(item.severity)}</span></td>
+          <td>${escHtml(item.item_name)}<div class="small">${escHtml(item.category || '')}</div></td>
+          <td>${escHtml(item.owner_role || item.responsible_party || '—')}</td>
+          <td>${escHtml(item.suggestion || '—')}</td>
+          <td>${item.faq ? `<button type="button" class="faq-chip" data-faq="${escHtml(item.faq.id)}">${escHtml(item.faq.title)}</button>` : '—'}</td>
+        </tr>
+      `).join('') : `<tr><td colspan="5" class="small">无 P0/P1 红项（若仍为红灯，请看补充信号）。</td></tr>`;
+      const sigHtml = signals.map((s) => `
+        <div class="small" style="margin:4px 0">
+          <span class="light-dot ${escHtml(s.level || (s.ok ? 'green' : 'yellow'))}"></span>
+          <strong>${escHtml(s.label)}</strong> — ${escHtml(s.detail || '')}
+          ${s.faq ? `<button type="button" class="faq-chip" data-faq="${escHtml(s.faq.id)}">FAQ</button>` : ''}
+        </div>
+      `).join('');
+      host.innerHTML = `
+        <div class="section-title">
+          <strong>${escHtml(card.tenant_name || card.tenant_id)} · 红项明细</strong>
+          <div class="toolbar">
+            <button type="button" class="secondary" id="healthOpenAgentBtn">打开检测中心</button>
+            <button type="button" class="ghost" id="healthSelectTenantBtn">选中该租户</button>
+          </div>
+        </div>
+        <div class="small">最近检测：${escHtml(card.last_inspection_at || '从未')} · 阶段 ${escHtml(card.operation_stage || '—')} · 托管风险 ${escHtml(card.customer_success_risk || '—')}</div>
+        <div style="margin-top:8px"><strong>补充信号</strong>${sigHtml || '<div class="small">无</div>'}</div>
+        <div class="table-scroll" style="margin-top:8px">
+          <table>
+            <thead><tr><th>等级</th><th>问题</th><th>责任方</th><th>建议</th><th>FAQ</th></tr></thead>
+            <tbody>${redHtml}</tbody>
+          </table>
+        </div>
+      `;
+      host.classList.add('visible');
+      host.querySelectorAll('[data-faq]').forEach((btn) => {
+        btn.onclick = (e) => { e.stopPropagation(); showFaq(btn.getAttribute('data-faq')); };
+      });
+      const openAgent = $('healthOpenAgentBtn');
+      if (openAgent) openAgent.onclick = () => {
+        try { window.openAgentConsoleForTenant(card.tenant_id); } catch (e) { toast(e.message); }
+      };
+      const selectBtn = $('healthSelectTenantBtn');
+      if (selectBtn) selectBtn.onclick = () => window.selectTenant(card.tenant_id);
+    }
+
+    function showFaq(faqId) {
+      const drawer = $('faqDrawer');
+      if (!drawer) return;
+      const faq = (state.health.faqs || []).find((f) => f.id === faqId)
+        || (state.health.faqs || []).find((f) => f.id === String(faqId || '').trim());
+      if (!faq) {
+        drawer.innerHTML = `<strong>FAQ</strong><div class="small">未找到条目。完整文档见 docs/轻服务-客服FAQ.md</div>`;
+        drawer.classList.add('visible');
+        return;
+      }
+      drawer.innerHTML = `
+        <div class="section-title"><strong>${escHtml(faq.title)}</strong><button type="button" class="ghost" id="faqCloseBtn">关闭</button></div>
+        <div class="small">${escHtml(faq.summary || '')}</div>
+        <div class="small" style="margin-top:6px">完整说明：仓库 docs/轻服务-客服FAQ.md → #${escHtml(faq.id)}</div>
+      `;
+      drawer.classList.add('visible');
+      const close = $('faqCloseBtn');
+      if (close) close.onclick = () => drawer.classList.remove('visible');
+    }
+
+    function showAllFaqs() {
+      const drawer = $('faqDrawer');
+      if (!drawer) return;
+      const list = state.health.faqs || [];
+      drawer.innerHTML = `
+        <div class="section-title"><strong>客服 FAQ</strong><button type="button" class="ghost" id="faqCloseBtn">关闭</button></div>
+        <div class="stack">${list.map((f) => `
+          <button type="button" class="faq-chip" data-faq="${escHtml(f.id)}" style="text-align:left;display:block;width:100%;border-radius:10px;padding:8px 10px">
+            <strong>${escHtml(f.title)}</strong><div class="small">${escHtml(f.summary || '')}</div>
+          </button>
+        `).join('') || '<div class="small">暂无 FAQ</div>'}</div>
+      `;
+      drawer.classList.add('visible');
+      drawer.querySelectorAll('[data-faq]').forEach((btn) => {
+        btn.onclick = () => showFaq(btn.getAttribute('data-faq'));
+      });
+      const close = $('faqCloseBtn');
+      if (close) close.onclick = () => drawer.classList.remove('visible');
+    }
+
+    async function loadHealthBoard() {
+      if (!isLoggedIn()) throw new Error('请先登录');
+      const light = $('healthLightFilter')?.value || state.health.filter || 'red';
+      state.health.filter = light;
+      $('healthHint').textContent = '加载中…';
+      const data = await api(`/api/admin/health-center/board?light=${encodeURIComponent(light)}`);
+      state.health.summary = data.summary || {};
+      state.health.tenants = data.tenants || [];
+      state.health.faqs = data.faqs || state.health.faqs || [];
+      renderHealthSummary(state.health.summary);
+      renderHealthTable(state.health.tenants);
+      $('healthGeneratedAt').textContent = data.generated_at
+        ? `更新 ${new Date(data.generated_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
+        : '已加载';
+      $('healthHint').textContent = data.sop_hint || '每天只处理红色异常客户。';
+      if (state.health.selectedTenantId) {
+        const card = state.health.tenants.find((t) => t.tenant_id === state.health.selectedTenantId);
+        if (card) renderHealthDetail(card);
+        else renderHealthDetail(null);
+      }
+      log(`健康中心已加载：红 ${state.health.summary.red || 0} / 共 ${state.health.summary.total || 0}`);
+    }
+
+    async function openHealthTenant(tenantId) {
+      const id = String(tenantId || '').trim();
+      if (!id) return;
+      state.health.selectedTenantId = id;
+      renderHealthTable(state.health.tenants);
+      try {
+        const data = await api(`/api/admin/health-center/tenants/${encodeURIComponent(id)}`);
+        if (Array.isArray(data.faqs) && data.faqs.length) state.health.faqs = data.faqs;
+        renderHealthDetail(data.tenant || null);
+      } catch (e) {
+        const fallback = state.health.tenants.find((t) => t.tenant_id === id);
+        renderHealthDetail(fallback || null);
+        toast(e.message);
+      }
+    }
+
+    async function scanHealthCenterAll() {
+      if (!isLoggedIn()) throw new Error('请先登录');
+      if (!confirm('将对所有活跃/初始化中租户重跑运营检测，可能需要数十秒。继续？')) return;
+      $('healthScanBtn').disabled = true;
+      try {
+        toast('全量扫描中…');
+        const data = await api('/api/admin/health-center/scan', { method: 'POST', body: JSON.stringify({}) });
+        toast(`扫描完成：成功 ${data.success || 0}，失败 ${data.failed || 0}`);
+        log(`健康中心全量扫描：成功 ${data.success || 0} / ${data.scanned || 0}`);
+        await loadHealthBoard();
+      } finally {
+        $('healthScanBtn').disabled = false;
+      }
     }
 
     function normalizeTenantSearch(v) {
@@ -2038,12 +2331,24 @@
         if (!isLoggedIn()) throw new Error('请先登录');
         toast('正在刷新…');
         await loadTenants();
+        if (state.activePanel === 'health') await loadHealthBoard();
         toast('数据已刷新');
       } catch (e) {
         toast(e.message);
         log(`刷新失败：${e.message}`);
       }
     };
+    $('healthReloadBtn').onclick = () => loadHealthBoard().catch((e) => { toast(e.message); log(`健康中心刷新失败：${e.message}`); });
+    $('healthScanBtn').onclick = () => scanHealthCenterAll().catch((e) => { toast(e.message); log(`全量扫描失败：${e.message}`); });
+    $('healthFaqBtn').onclick = () => {
+      if (!(state.health.faqs || []).length) {
+        api('/api/admin/health-center/faqs').then((data) => {
+          state.health.faqs = data.faqs || [];
+          showAllFaqs();
+        }).catch((e) => toast(e.message));
+      } else showAllFaqs();
+    };
+    $('healthLightFilter').onchange = () => loadHealthBoard().catch((e) => toast(e.message));
     $('tenantFilter').oninput = () => loadTenants().catch((e) => log(`搜索失败：${e.message}`));
     $('opsNav').addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-scroll-target]');
