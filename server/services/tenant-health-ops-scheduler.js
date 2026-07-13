@@ -31,7 +31,7 @@ export function startHealthOpsLoopScheduler(pool, opts = {}) {
   const runDigest = async () => {
     if (runningDigest) return;
     const { ymd, hour, minute } = shanghaiParts();
-    if (hour !== digestHour || minute > digestMinuteEnd) return;
+    if (hour !== digestHour || minute < 30 || minute > digestMinuteEnd) return;
     if (lastDigestYmd === ymd) return;
     runningDigest = true;
     lastDigestYmd = ymd;
@@ -76,6 +76,6 @@ export function startHealthOpsLoopScheduler(pool, opts = {}) {
 
   setTimeout(() => { tick().catch(() => {}); }, 180 * 1000);
   setInterval(() => { tick().catch(() => {}); }, intervalMs);
-  console.log(`[health-ops] loop armed (digest CST ${String(digestHour).padStart(2, '0')}:00–${String(digestHour).padStart(2, '0')}:${String(digestMinuteEnd).padStart(2, '0')}; SLA hourly 09–20)`);
+  console.log(`[health-ops] loop armed (digest CST ${String(digestHour).padStart(2, '0')}:30–${String(digestHour).padStart(2, '0')}:${String(digestMinuteEnd).padStart(2, '0')}; SLA hourly 09–20)`);
   return { tick, runDigest, runSla, shanghaiParts };
 }
