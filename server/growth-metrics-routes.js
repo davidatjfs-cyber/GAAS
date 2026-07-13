@@ -127,7 +127,19 @@ export function registerGrowthMetricsRoutes(app, pool) {
         const campaignId = cleanText(body.campaign_id || body.scene, 128);
         const channel = cleanText(body.channel, 80);
         const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
-        const amountFen = Math.max(0, Math.floor(Number(body.amount_fen) || 0));
+        let amountFen = Math.max(0, Math.floor(Number(body.amount_fen) || 0));
+        // 防御：曾发生小程序把「核销码(short_code)」误当「金额」传入的真实事故(如
+        // amount_fen === short_code*100)，单笔核销污染活动累计营收/ROI统计。核销场景下
+        // 金额远超合理单桌消费上限(¥5000)一律清零，交由 backfillRedemptionAmounts() 按
+        // 匹配的真实POS订单金额兜底回填，而不是盲目采信客户端数值。
+        if (eventType === 'coupon_redeemed') {
+          const shortCode = String(metadata.short_code || '').trim();
+          const looksLikeShortCodeAsAmount = /^[0-9]+$/.test(shortCode) && amountFen === Number(shortCode) * 100;
+          if (looksLikeShortCodeAsAmount || amountFen > 500000) {
+            console.warn(`[growth] coupon_redeemed amount_fen 异常(疑似核销码/金额混淆)，已清零待回填：raw=${amountFen} short_code=${shortCode}`);
+            amountFen = 0;
+          }
+        }
         const occurredAt = parseOccurredAt(body.occurred_at);
         const idempotencyKey = cleanText(body.idempotency_key, 255) || null;
 
