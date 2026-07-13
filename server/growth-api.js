@@ -1963,19 +1963,22 @@ export function pickAbcTemplate(step, storeId) {
 }
 
 // 按"该手机号在本活动下累计成功发送次数"纯推导当前应发的模板步骤+降频阶梯天数。
-// 单调降频：第1轮起每条间隔即按阶梯 15→30→45→60→75→90 天逐轮变慢；共走 6 轮(=阶梯长度)，
-// 每轮一整套模板(常规段6条/马己仙拆分段3条)；满 模板数×6 条(常规36/马己仙18)仍未回应
-// → 该客户对本活动进入"红名单"，不再自动触达。中途到店消费会清零(见 countCampaignSent)。
+// 节奏：A发完后15天发B，再过30天发C，再过45天发下一轮A，再过60天发B，再过75天发C，
+// 到90天仍未到店回应 → 该客户对本活动进入"红名单"，不再自动触达(即最多6次触达，
+// 每次触达间隔按15/30/45/60/75逐次变慢；第1次触达无历史可比对，不设门槛)。
+// 模板步骤仍按 order 长度独立循环(常规段6条/马己仙拆分段3条)，与频控阶梯的推进各自独立。
+// 中途到店消费会清零 totalSent(见 countCampaignSent)，从头开始计。
 export function deriveAbcStep(campaignKey, totalSent) {
   const order = ABC_ROTATION_ORDER[campaignKey];
   if (!order) return { step: null, freqDaysOverride: null, blacklisted: false };
   const ladder = ABC_DEFAULT_LADDER_DAYS; // [15,30,45,60,75,90]
   const perCycle = order.length;
-  const blacklistAt = perCycle * ladder.length; // 常规6×6=36，马己仙3×6=18
-  if (totalSent >= blacklistAt) return { step: null, freqDaysOverride: null, blacklisted: true };
-  const cycleIdx = Math.floor(totalSent / perCycle); // 0..5
+  const maxTouches = ladder.length; // 6次触达仍未回应 → 红名单(90天为最后一档等待期)
+  if (totalSent >= maxTouches) return { step: null, freqDaysOverride: null, blacklisted: true };
   const posInCycle = totalSent % perCycle;
-  const freqDaysOverride = ladder[cycleIdx]; // 第1轮即15，单调15/30/45/60/75/90
+  // 第1次发送(totalSent=0)无历史可比对，此处取值不影响实际发送时机；
+  // 第2次起(totalSent>=1)按上一次发送起算15/30/45/60/75天逐次变慢。
+  const freqDaysOverride = ladder[Math.max(0, totalSent - 1)];
   return { step: order[posInCycle], freqDaysOverride, blacklisted: false };
 }
 
