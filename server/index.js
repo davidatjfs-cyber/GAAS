@@ -95,6 +95,7 @@ import { ensureCustomerOpsTables, registerCustomerOpsRoutes } from './customer-o
 import { registerMarketingAttributionRoutes } from './marketing/marketing-attribution-routes.js';
 import { registerTenantOperationInspectionRoutes } from './tenant-operation-inspection-routes.js';
 import { registerLightSaasRoutes } from './light-saas-routes.js';
+import { registerSalesAiRoutes } from './sales-ai-routes.js';
 import { startHealthCenterDailyScanScheduler } from './services/tenant-health-center-scheduler.js';
 import { setHealthIncidentNotifiers } from './services/tenant-health-incident-service.js';
 import { startHealthOpsLoopScheduler } from './services/tenant-health-ops-scheduler.js';
@@ -5618,6 +5619,22 @@ setHealthIncidentNotifiers({
       title: opts.title || '健康中心',
       notificationType: 'health_ops',
       meta: { source: 'health_ops', audience: opts.audience || 'cs', ...(opts.meta || {}) },
+    });
+    return {
+      ok: (r?.feishuSent || 0) > 0 || (r?.recipients || []).length > 0,
+      feishuSent: r?.feishuSent || 0,
+      feishuFailed: r?.feishuFailed || 0,
+      recipients: r?.recipients || [],
+    };
+  },
+});
+registerSalesAiRoutes(app, pool, platformAdminRequired, {
+  callLLM,
+  sendOpsAlert: async (msg, opts = {}) => {
+    const r = await sendAdminSystemAlert(String(msg || ''), {
+      title: opts.title || '销售AI',
+      notificationType: 'sales_ai',
+      meta: { source: 'sales_ai', audience: opts.audience || 'sales', ...(opts.meta || {}) },
     });
     return {
       ok: (r?.feishuSent || 0) > 0 || (r?.recipients || []).length > 0,
@@ -12009,6 +12026,7 @@ async function loadTenantRuntimeStatus(tenantId) {
 async function authRequired(req, res, next) {
   // 企业微信「接收消息」回调为无 token 公开端点（靠签名+AES 解密自证），放行
   if (String(req.originalUrl || '').split('?')[0] === '/api/wecom/callback') return next();
+  if (String(req.originalUrl || '').split('?')[0] === '/api/wecom/kf/callback') return next();
   const hdr = String(req.headers.authorization || '');
   let token = hdr.startsWith('Bearer ') ? String(hdr.slice(7) || '').trim() : '';
   // 部分移动端 WebView 在 multipart/form-data 上传时可能丢失 Authorization；允许 query 兜底（与 FormData 同发）

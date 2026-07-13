@@ -231,6 +231,20 @@
       background: rgba(201,107,44,.08); border-radius: 0 10px 10px 0;
       font-size: 12px; color: var(--muted); line-height: 1.55;
     }
+    .sales-chat {
+      max-height: 320px; overflow: auto; display: grid; gap: 8px;
+      padding: 10px; border: 1px solid rgba(120,104,85,.18); border-radius: 12px;
+      background: rgba(255,255,255,.7);
+    }
+    .sales-bubble {
+      max-width: 92%; padding: 8px 10px; border-radius: 12px; font-size: 13px; line-height: 1.5;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .sales-bubble.in { background: #f3eee4; color: var(--ink); justify-self: start; }
+    .sales-bubble.out { background: rgba(13,122,95,.14); color: var(--ink); justify-self: end; }
+    .sales-bubble .meta { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+    #salesLeadsBody tr.selected { background: rgba(13,122,95,.1); }
+    #salesLeadsBody tr { cursor: pointer; }
 
     .tenant-card-list { display: grid; gap: 10px; }
     .tenant-card {
@@ -384,6 +398,7 @@
     <nav class="top-tabs" id="topTabs">
       <button type="button" class="active" data-panel="overview">总览</button>
       <button type="button" data-panel="health">健康</button>
+      <button type="button" data-panel="sales">销售</button>
       <button type="button" data-panel="onboarding">上线</button>
       <button type="button" data-panel="faq">FAQ</button>
       <button type="button" data-panel="demand">需求</button>
@@ -495,6 +510,85 @@
               <tbody id="ledgerTableBody"></tbody>
             </table>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-sales" class="panel stack">
+      <div class="card stack">
+        <div class="section-title">
+          <div>
+            <strong>销售工作台</strong>
+            <div class="small">客户 AI 接待线索 · 销售 AI 评分建议 · 人工接管。不对客户直接说话的是销售 AI。</div>
+          </div>
+          <span id="salesKfStatus" class="pill">未加载</span>
+        </div>
+        <div class="toolbar">
+          <label style="margin:0">阶段
+            <select id="salesStageFilter" style="width:auto;min-width:120px;padding:8px 10px">
+              <option value="">全部</option>
+              <option value="ai_greeting">AI接待</option>
+              <option value="need_identified">需求确认</option>
+              <option value="qualified">待接管</option>
+              <option value="human">人工跟进</option>
+            </select>
+          </label>
+          <label style="margin:0">最低分
+            <select id="salesMinScore" style="width:auto;min-width:90px;padding:8px 10px">
+              <option value="">不限</option>
+              <option value="40">≥40</option>
+              <option value="70">≥70</option>
+            </select>
+          </label>
+          <button type="button" id="salesReloadBtn" class="secondary">刷新线索</button>
+          <button type="button" id="salesReportBtn" class="ghost">今日日报</button>
+          <button type="button" id="salesSendReportBtn" class="warn">推送日报</button>
+        </div>
+        <div id="salesReportBox" class="hint-box" style="display:none;white-space:pre-wrap"></div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>线索</th><th>阶段</th><th>控场</th><th>意向</th><th>门店</th><th>痛点</th><th>下一步</th><th>更新</th>
+              </tr>
+            </thead>
+            <tbody id="salesLeadsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card stack" id="salesDetailCard" style="display:none">
+        <div class="section-title">
+          <strong id="salesDetailTitle">线索详情</strong>
+          <div class="toolbar" style="margin:0">
+            <button type="button" id="salesTakeoverBtn" class="warn">接管</button>
+            <button type="button" id="salesReleaseBtn" class="secondary">交回AI</button>
+            <button type="button" id="salesDetailCloseBtn" class="ghost">关闭</button>
+          </div>
+        </div>
+        <div id="salesAdvice" class="hint-box">选择线索后显示销售建议。</div>
+        <div id="salesChatLog" class="sales-chat"></div>
+        <div class="toolbar">
+          <input id="salesReplyInput" placeholder="人工回复（需先接管）" style="flex:1">
+          <button type="button" id="salesReplyBtn">发送</button>
+        </div>
+        <div id="salesEvents" class="small"></div>
+      </div>
+
+      <div class="card stack">
+        <div class="section-title">
+          <strong>沙盒试聊</strong>
+          <span class="small">不依赖微信客服，验证客户 AI 策略与转人工</span>
+        </div>
+        <div class="toolbar">
+          <input id="salesSandboxKey" placeholder="会话键（可空，自动生成）" style="flex:1;max-width:220px">
+          <button type="button" id="salesSandboxWelcomeBtn" class="secondary">开场白</button>
+          <button type="button" id="salesSandboxClearBtn" class="ghost">清空</button>
+        </div>
+        <div id="salesSandboxLog" class="sales-chat"></div>
+        <div class="toolbar">
+          <input id="salesSandboxInput" placeholder="模拟客户发言…" style="flex:1">
+          <button type="button" id="salesSandboxSendBtn">发送</button>
         </div>
       </div>
     </section>
@@ -738,6 +832,7 @@
   <nav class="bottom-nav" id="bottomNav">
     <button type="button" class="active" data-panel="overview"><span class="nav-icon">📊</span>总览</button>
     <button type="button" data-panel="health"><span class="nav-icon">🔴</span>健康</button>
+    <button type="button" data-panel="sales"><span class="nav-icon">💬</span>销售</button>
     <button type="button" data-panel="onboarding"><span class="nav-icon">🚀</span>上线</button>
     <button type="button" data-panel="faq"><span class="nav-icon">❓</span>FAQ</button>
     <button type="button" data-panel="demand"><span class="nav-icon">📋</span>需求</button>
@@ -777,6 +872,7 @@
       activePanel: 'overview',
       overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] },
       health: { summary: {}, tenants: [], faqs: [], filter: 'red', selectedTenantId: '', incidents: null },
+      sales: { leads: [], selectedLeadId: null, sandboxKey: '', sandboxMessages: [] },
     };
     const ACTION_GLOSSARY = [
       { term: '选中', desc: '将该租户设为当前操作对象。选中后顶部会显示租户条，「配置」页表单自动带入该租户 ID。' },
@@ -790,6 +886,8 @@
       { term: '刷新数据', desc: '重新从服务器拉取租户列表、账单、告警和验收汇总。' },
       { term: '健康中心', desc: '客服日巡入口：全租户红绿灯与红名单。每天只处理红色异常，避免逐店登录检查。' },
       { term: '全量扫描', desc: '对所有活跃租户重跑运营检测并写入缓存，供健康中心红名单使用。' },
+      { term: '销售工作台', desc: '平台获客：客户AI接待微信客服/沙盒会话；销售AI给评分与建议；高意向可人工接管。' },
+      { term: '沙盒试聊', desc: '不接微信客服也能测客户AI：一轮一问、禁承诺闸门、转人工话术。' },
     ];
 
     const log = (msg) => {
@@ -817,6 +915,9 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
       if (name === 'health' && isLoggedIn()) {
         loadHealthBoard().catch((e) => { toast(e.message); log(`健康中心加载失败：${e.message}`); });
+      }
+      if (name === 'sales' && isLoggedIn()) {
+        loadSalesBoard().catch((e) => { toast(e.message); log(`销售工作台加载失败：${e.message}`); });
       }
       if (name === 'faq' && isLoggedIn()) loadFaqPortal().catch((e) => toast(e.message));
       if (name === 'demand' && isLoggedIn()) loadDemandList().catch((e) => toast(e.message));
@@ -2625,11 +2726,192 @@
     $('incidentSyncBtn').onclick = () => syncIncidentQueue().catch((e) => { toast(e.message); log(`同步分流失败：${e.message}`); });
     $('incidentReloadBtn').onclick = () => loadIncidentQueue().catch((e) => toast(e.message));
     $('ledgerLoadBtn').onclick = () => loadExecutionLedger().catch((e) => toast(e.message));
+    $('salesReloadBtn').onclick = () => loadSalesBoard().catch((e) => toast(e.message));
+    $('salesStageFilter').onchange = () => loadSalesBoard().catch((e) => toast(e.message));
+    $('salesMinScore').onchange = () => loadSalesBoard().catch((e) => toast(e.message));
+    $('salesReportBtn').onclick = () => loadSalesDailyReport(false).catch((e) => toast(e.message));
+    $('salesSendReportBtn').onclick = () => loadSalesDailyReport(true).catch((e) => toast(e.message));
+    $('salesDetailCloseBtn').onclick = () => {
+      state.sales.selectedLeadId = null;
+      $('salesDetailCard').style.display = 'none';
+      renderSalesLeads();
+    };
+    $('salesTakeoverBtn').onclick = () => salesTakeover().catch((e) => toast(e.message));
+    $('salesReleaseBtn').onclick = () => salesReleaseAi().catch((e) => toast(e.message));
+    $('salesReplyBtn').onclick = () => salesHumanReply().catch((e) => toast(e.message));
+    $('salesReplyInput').onkeydown = (ev) => {
+      if (ev.key === 'Enter') salesHumanReply().catch((e) => toast(e.message));
+    };
+    $('salesSandboxWelcomeBtn').onclick = () => salesSandboxChat({ welcome: true }).catch((e) => toast(e.message));
+    $('salesSandboxSendBtn').onclick = () => salesSandboxChat({}).catch((e) => toast(e.message));
+    $('salesSandboxInput').onkeydown = (ev) => {
+      if (ev.key === 'Enter') salesSandboxChat({}).catch((e) => toast(e.message));
+    };
+    $('salesSandboxClearBtn').onclick = () => {
+      state.sales.sandboxMessages = [];
+      state.sales.sandboxKey = `sandbox_${Date.now()}`;
+      $('salesSandboxKey').value = state.sales.sandboxKey;
+      $('salesSandboxLog').innerHTML = '';
+    };
     $('onboardingStartBtn').onclick = () => startOnboardingFlow().catch((e) => toast(e.message));
     $('onboardingRefreshBtn').onclick = () => refreshOnboardingFlow().catch((e) => toast(e.message));
     $('faqSearch').oninput = () => loadFaqPortal().catch(() => null);
     $('demandSubmitBtn').onclick = () => submitDemand().catch((e) => toast(e.message));
     $('tenantFilter').oninput = () => loadTenants().catch((e) => log(`搜索失败：${e.message}`));
+
+    function salesEsc(s) { return escHtml(String(s ?? '')); }
+
+    function renderSalesChat(el, messages) {
+      if (!el) return;
+      el.innerHTML = (messages || []).map((m) => {
+        const inbound = m.direction === 'inbound' || m.sender === 'customer';
+        const who = inbound ? '客户' : (m.sender === 'human' ? '人工' : '客户AI');
+        return `<div class="sales-bubble ${inbound ? 'in' : 'out'}"><span class="meta">${salesEsc(who)}</span>${salesEsc(m.content)}</div>`;
+      }).join('') || '<div class="small">暂无消息</div>';
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function renderSalesLeads() {
+      const body = $('salesLeadsBody');
+      const leads = state.sales.leads || [];
+      body.innerHTML = leads.length ? leads.map((l) => {
+        const selected = Number(state.sales.selectedLeadId) === Number(l.id) ? 'selected' : '';
+        const pain = (l.pain_points && l.pain_points[0]) || l.extracted?.pain_point || '—';
+        const updated = l.updated_at ? new Date(l.updated_at).toLocaleString() : '—';
+        return `<tr class="${selected}" data-lead-id="${l.id}">
+          <td><strong>${salesEsc(l.lead_key || l.id)}</strong><div class="mono small">${salesEsc(l.external_userid || '')}</div></td>
+          <td>${salesEsc(l.stage)}</td>
+          <td>${salesEsc(l.controller)}</td>
+          <td><strong>${salesEsc(l.intent_score)}</strong> <span class="small">${salesEsc(l.intent_level)}</span></td>
+          <td>${l.store_count != null ? salesEsc(l.store_count) : '—'}</td>
+          <td>${salesEsc(pain)}</td>
+          <td class="small">${salesEsc(l.next_action || '—')}</td>
+          <td class="small">${salesEsc(updated)}</td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="8" class="small">暂无线索。可用下方沙盒试聊产生一条。</td></tr>';
+      body.querySelectorAll('tr[data-lead-id]').forEach((tr) => {
+        tr.onclick = () => openSalesLead(Number(tr.dataset.leadId)).catch((e) => toast(e.message));
+      });
+    }
+
+    async function loadSalesBoard() {
+      const stage = $('salesStageFilter')?.value || '';
+      const minScore = $('salesMinScore')?.value || '';
+      const qs = new URLSearchParams();
+      if (stage) qs.set('stage', stage);
+      if (minScore) qs.set('min_score', minScore);
+      qs.set('limit', '80');
+      const [meta, list] = await Promise.all([
+        api('/api/admin/sales/meta'),
+        api(`/api/admin/sales/leads?${qs.toString()}`),
+      ]);
+      state.sales.leads = list.leads || [];
+      const kf = meta.kf_configured ? `微信客服已配置${meta.open_kfid ? ` · ${meta.open_kfid}` : ''}` : '微信客服未配置（可用沙盒）';
+      $('salesKfStatus').textContent = kf;
+      renderSalesLeads();
+      log(`销售线索 ${state.sales.leads.length} 条`);
+    }
+
+    async function openSalesLead(id) {
+      const data = await api(`/api/admin/sales/leads/${id}`);
+      if (!data.ok) throw new Error(data.error || '线索不存在');
+      state.sales.selectedLeadId = id;
+      $('salesDetailCard').style.display = '';
+      const lead = data.lead || {};
+      $('salesDetailTitle').textContent = `${lead.lead_key || id} · ${lead.controller || ''} · 分${lead.intent_score ?? 0}`;
+      const adviceLines = [
+        `阶段 ${lead.stage || '—'}｜控场 ${lead.controller || '—'}`,
+        `门店 ${lead.store_count ?? '未明'}｜POS ${lead.pos_brand || '未明'}｜手机号 ${lead.phone_data_ready == null ? '未明' : (lead.phone_data_ready ? '有' : '无')}`,
+        `下一步：${lead.next_action || '—'}`,
+      ];
+      const scoreItems = data.score?.items || data.score_items || [];
+      if (scoreItems.length) {
+        adviceLines.push('评分明细：' + scoreItems.map((s) => `${s.rule_key}+${s.points}`).join('，'));
+      }
+      if (data.advice) adviceLines.unshift(data.advice);
+      if (data.tasks?.length) {
+        adviceLines.push('开放任务：' + data.tasks.filter((t) => t.status === 'open').map((t) => t.title).join('；'));
+      }
+      $('salesAdvice').textContent = adviceLines.join('\n');
+      renderSalesChat($('salesChatLog'), data.messages || []);
+      const events = data.events || [];
+      $('salesEvents').innerHTML = events.length
+        ? events.slice(0, 12).map((e) => `<div>· ${salesEsc(e.event_type)} ${salesEsc(e.summary || '')} <span class="mono">${salesEsc(e.created_at || '')}</span></div>`).join('')
+        : '暂无事件';
+      renderSalesLeads();
+    }
+
+    async function salesTakeover() {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先选择线索');
+      await api(`/api/admin/sales/leads/${id}/takeover`, { method: 'POST', body: '{}' });
+      toast('已接管');
+      await openSalesLead(id);
+      await loadSalesBoard();
+    }
+
+    async function salesReleaseAi() {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先选择线索');
+      await api(`/api/admin/sales/leads/${id}/release-ai`, { method: 'POST', body: '{}' });
+      toast('已交回 AI');
+      await openSalesLead(id);
+      await loadSalesBoard();
+    }
+
+    async function salesHumanReply() {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先选择线索');
+      const text = String($('salesReplyInput').value || '').trim();
+      if (!text) throw new Error('请输入回复');
+      const data = await api(`/api/admin/sales/leads/${id}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
+      if (data.send_error) toast(`已保存，外发失败：${data.send_error}`);
+      else toast('已发送');
+      $('salesReplyInput').value = '';
+      await openSalesLead(id);
+    }
+
+    async function loadSalesDailyReport(send) {
+      const data = send
+        ? await api('/api/admin/sales/daily-report/send', { method: 'POST', body: '{}' })
+        : await api('/api/admin/sales/daily-report');
+      const report = data.report || data;
+      const box = $('salesReportBox');
+      box.style.display = '';
+      box.textContent = report.text || JSON.stringify(report, null, 2);
+      toast(send ? '日报已推送' : '日报已生成');
+    }
+
+    async function salesSandboxChat({ welcome = false } = {}) {
+      let key = String($('salesSandboxKey').value || state.sales.sandboxKey || '').trim();
+      if (!key) {
+        key = `sandbox_${Date.now()}`;
+        $('salesSandboxKey').value = key;
+      }
+      state.sales.sandboxKey = key;
+      const text = welcome ? '' : String($('salesSandboxInput').value || '').trim();
+      if (!welcome && !text) throw new Error('请输入客户话术');
+      if (!welcome) {
+        state.sales.sandboxMessages.push({ direction: 'inbound', sender: 'customer', content: text });
+        $('salesSandboxInput').value = '';
+      }
+      const data = await api('/api/admin/sales/sandbox/chat', {
+        method: 'POST',
+        body: JSON.stringify({ text, external_userid: key, welcome }),
+      });
+      if (data.reply) {
+        state.sales.sandboxMessages.push({ direction: 'outbound', sender: 'ai', content: data.reply });
+      } else if (data.reason === 'human_controller') {
+        state.sales.sandboxMessages.push({ direction: 'outbound', sender: 'ai', content: '（人工控场中，AI 不回复）' });
+      }
+      renderSalesChat($('salesSandboxLog'), state.sales.sandboxMessages);
+      if (data.lead_id) {
+        toast(`线索 #${data.lead_id} · 分${data.score?.intent_score ?? '—'} · ${data.controller || ''}`);
+        await loadSalesBoard();
+        if (data.controller === 'waiting_human') await openSalesLead(data.lead_id);
+      }
+      log(`沙盒：${data.source || data.reason || 'ok'} ${data.reply ? data.reply.slice(0, 40) : ''}`);
+    }
 
     async function loadExecutionLedger() {
       const tenantId = String($('ledgerTenantId').value || state.selectedTenantId || '').trim();
