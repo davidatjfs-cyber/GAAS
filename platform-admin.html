@@ -468,7 +468,7 @@
             <thead>
               <tr>
                 <th>灯</th><th>租户</th><th>健康分</th><th>P0/P1</th>
-                <th>同步</th><th>手机号</th><th>归因</th><th>短信</th>
+                <th>同步</th><th>手机号</th><th>归因</th><th>AI</th><th>短信</th>
                 <th>本月营销</th><th>登录</th><th>报告</th><th>风险</th>
               </tr>
             </thead>
@@ -1458,12 +1458,13 @@
       const body = $('healthTableBody');
       if (!body) return;
       if (!tenants.length) {
-        body.innerHTML = `<tr><td colspan="12" class="small">当前筛选下没有租户。可先「全量扫描」，或切换筛选为「全部」。</td></tr>`;
+        body.innerHTML = `<tr><td colspan="13" class="small">当前筛选下没有租户。可先「全量扫描」，或切换筛选为「全部」。</td></tr>`;
         return;
       }
       body.innerHTML = tenants.map((t) => {
         const ind = t.indicators || {};
         const open = state.health.selectedTenantId === t.tenant_id ? ' is-open' : '';
+        const aiLabel = ind.ai_status || (ind.ai_available == null ? '—' : ind.ai_available ? '可用' : '受影响');
         return `<tr class="health-card-row${open}" data-tenant-id="${escHtml(t.tenant_id)}">
           <td><span class="light-dot ${escHtml(t.light)}"></span>${escHtml(t.light_label || t.light)}</td>
           <td><strong>${escHtml(t.tenant_name || t.tenant_id)}</strong><div class="mono">${escHtml(t.tenant_id)}</div></td>
@@ -1472,7 +1473,8 @@
           <td>${yesNo(ind.data_sync_ok)}</td>
           <td>${ind.phone_match_rate == null ? '—' : escHtml(ind.phone_match_rate) + '%'}</td>
           <td>${yesNo(ind.attribution_available)}</td>
-          <td>${yesNo(ind.sms_ok)}</td>
+          <td>${escHtml(aiLabel)}</td>
+          <td title="${escHtml(ind.sms_detail || '')}">${yesNo(ind.sms_ok)}</td>
           <td>${yesNo(ind.marketing_mtd_ok)}</td>
           <td>${yesNo(ind.customer_login_ok)}</td>
           <td>${yesNo(ind.monthly_report_ok)}</td>

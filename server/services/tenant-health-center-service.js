@@ -12,6 +12,23 @@ import { tenantContext } from '../utils/database.js';
 const OK_STATUS = '正常';
 const RED_SEVERITIES = new Set(['P0', 'P1']);
 
+/** 结构性观察项：不进客服日巡红灯（与巡检 FP-01 对齐） */
+export const STRUCTURAL_WATCH_KEYS = new Set([
+  'customer_phone_match_rate',
+  'order_phone_complete_rate',
+  'order_customer_id_complete_rate',
+]);
+
+/** 客服日巡可处理：排除结构性上限 + 纯系统观测 */
+export function isCsDailyActionable(item) {
+  const key = String(item?.item_key || '');
+  if (STRUCTURAL_WATCH_KEYS.has(key)) return false;
+  const owner = String(item?.owner_role || '');
+  const party = String(item?.responsible_party || '');
+  if (owner === '系统' || party === 'system_integration') return false;
+  return true;
+}
+
 function ymd(date = new Date()) {
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(date ? new Date(date) : new Date());
@@ -119,12 +136,12 @@ async function loadSupplementalSignals(pool, tenantId) {
     });
   }
 
-  // 2) 短信配置（当前为平台全局；租户级配置后续可替换）
+  // 2) 短信：平台配置（全局，不单独染红）+ 租户近 7 日触达成败
   const smsConfigured = isAliyunSmsConfigured();
   const smsEnabled = isAliyunSmsAutoSendEnabled();
   signals.push({
     key: 'sms_platform_ready',
-    label: '短信是否正常',
+    label: '短信平台配置',
     ok: smsConfigured && smsEnabled,
     level: smsConfigured && smsEnabled ? 'green' : smsConfigured ? 'yellow' : 'red',
     severity: smsConfigured && smsEnabled ? null : smsConfigured ? 'P1' : 'P0',
@@ -132,6 +149,57 @@ async function loadSupplementalSignals(pool, tenantId) {
     evidence: { configured: smsConfigured, auto_send_enabled: smsEnabled, scope: 'platform_global' },
     faq: faqForItemKey('sms_wecom_sent'),
   });
+
+  if (await tableExists(pool, 'growth_delivery_logs')) {
+    const r = await pool.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status IN ('sent','success','delivered'))::int AS sent,
+              COUNT(*) FILTER (WHERE status IN ('failed','error','rejected'))::int AS failed,
+              MAX(created_at) AS last_at
+         FROM growth_delivery_logs
+        WHERE tenant_id=$1 AND created_at >= NOW() - INTERVAL '7 days'`,
+      [tenantId]
+    ).catch(() => ({ rows: [{ total: 0, sent: 0, failed: 0, last_at: null }] }));
+    const total = n(r.rows?.[0]?.total);
+    const sent = n(r.rows?.[0]?.sent);
+    const failed = n(r.rows?.[0]?.failed);
+    const failRate = total > 0 ? Math.round((failed / total) * 100) : 0;
+    let ok = true;
+    let level = 'green';
+    let detail = '近7天无触达记录（未发不算故障）';
+    let severity = null;
+    if (total > 0 && failRate >= 30) {
+      ok = false;
+      level = 'red';
+      severity = 'P0';
+      detail = `近7天触达失败率 ${failRate}%（失败 ${failed}/${total}）`;
+    } else if (total > 0 && failRate > 0) {
+      ok = true;
+      level = 'yellow';
+      severity = 'P2';
+      detail = `近7天有失败 ${failed}/${total}，成功率 ${Math.round((sent / total) * 100)}%`;
+    } else if (total > 0) {
+      detail = `近7天成功触达 ${sent} 次`;
+    }
+    signals.push({
+      key: 'sms_tenant_delivery_7d',
+      label: '短信/触达是否正常',
+      ok,
+      level,
+      severity,
+      detail,
+      evidence: {
+        scope: 'tenant',
+        window_days: 7,
+        total,
+        sent,
+        failed,
+        fail_rate_pct: failRate,
+        last_at: r.rows?.[0]?.last_at || null,
+      },
+      faq: faqForItemKey('sms_wecom_sent'),
+    });
+  }
 
   // 3) 本月是否有营销执行
   if (await tableExists(pool, 'growth_delivery_logs')) {
@@ -204,18 +272,34 @@ async function loadSupplementalSignals(pool, tenantId) {
   return signals;
 }
 
-function trafficLight({ run, redItems, signals, tenantStatus }) {
-  if (!run) return 'gray';
-  const hasP0 = redItems.some((i) => i.severity === 'P0');
-  const hasP1 = redItems.some((i) => i.severity === 'P1');
-  const score = run.health_score == null ? null : n(run.health_score);
-  const csRisk = String(run.customer_success_risk || '').toLowerCase();
-  // 平台全局信号（如短信密钥）只展示，不单独把每家租户打成红灯，避免淹没真实门店问题
-  const fatalSignal = (signals || []).some((s) => !s.ok && s.level === 'red' && s.evidence?.scope !== 'platform_global');
-  const warnSignal = (signals || []).some((s) => !s.ok && (s.level === 'yellow' || s.level === 'red'));
+function structuralDeduction(items) {
+  const table = { P0: 25, P1: 12, P2: 6, P3: 2 };
+  return (items || [])
+    .filter((i) => i.status !== OK_STATUS && STRUCTURAL_WATCH_KEYS.has(String(i.item_key || '')))
+    .reduce((sum, i) => sum + (table[i.severity] || 0), 0);
+}
 
-  if (hasP0 || csRisk === 'high' || (score != null && score < 60) || fatalSignal) return 'red';
-  if (hasP1 || csRisk === 'medium' || warnSignal) return 'yellow';
+function adjustedHealthScore(run, items) {
+  if (!run || run.health_score == null) return null;
+  return Math.min(100, n(run.health_score) + structuralDeduction(items));
+}
+
+function trafficLight({ run, redItems, allItems, signals }) {
+  if (!run) return 'gray';
+  const actionable = (redItems || []).filter(isCsDailyActionable);
+  const engWatch = (redItems || []).filter((i) => !isCsDailyActionable(i));
+  const hasActionableP0 = actionable.some((i) => i.severity === 'P0');
+  const hasActionableP1 = actionable.some((i) => i.severity === 'P1');
+  const hasEngP0P1 = engWatch.some((i) => RED_SEVERITIES.has(String(i.severity || '')));
+  const adjusted = adjustedHealthScore(run, allItems);
+  const csRiskRaw = String(run.customer_success_risk || '').toLowerCase();
+  // 缓存的 high 若仅由结构性项撑起来，降为 medium，避免旧扫描结果继续染红
+  const csRisk = csRiskRaw === 'high' && actionable.length === 0 ? 'medium' : csRiskRaw;
+  const fatalSignal = (signals || []).some((s) => !s.ok && s.level === 'red' && s.evidence?.scope !== 'platform_global');
+  const warnSignal = (signals || []).some((s) => !s.ok && (s.level === 'yellow' || s.level === 'red') && s.evidence?.scope !== 'platform_global');
+
+  if (hasActionableP0 || hasActionableP1 || fatalSignal || csRisk === 'high') return 'red';
+  if (hasEngP0P1 || csRisk === 'medium' || (adjusted != null && adjusted < 60) || warnSignal) return 'yellow';
   return 'green';
 }
 
@@ -231,15 +315,21 @@ async function buildTenantHealthCard(pool, tenant, { includeItems = true } = {})
   const allItems = run && includeItems ? await itemsForRun(pool, run.id) : [];
   const redItems = allItems.filter((i) => i.status !== OK_STATUS && RED_SEVERITIES.has(String(i.severity || '')));
   const signals = await loadSupplementalSignals(pool, tenantId);
-  const light = trafficLight({ run, redItems, signals, tenantStatus: tenant.status });
+  const light = trafficLight({ run, redItems, allItems, signals });
   const signalMap = pickSignalMap(signals);
 
-  // 从检测项里抽关键指标摘要
   const byKey = Object.fromEntries(allItems.map((i) => [i.item_key, i]));
   const phoneItem = byKey.customer_phone_match_rate || byKey.order_phone_complete_rate;
   const syncItem = byKey.yesterday_orders_synced;
   const attrItem = byKey.attribution_links_orders;
-  const aiBlocked = allItems.some((i) => i.category === 'AI 可运行度' && i.status !== OK_STATUS && RED_SEVERITIES.has(i.severity));
+  const aiItems = allItems.filter((i) => i.category === 'AI 可运行度');
+  const aiBlocked = aiItems.some((i) => i.status !== OK_STATUS && RED_SEVERITIES.has(String(i.severity || '')));
+  const aiWarn = aiItems.some((i) => i.status !== OK_STATUS);
+  const aiStatus = !run ? null : aiBlocked ? '不可用' : aiWarn ? '部分可用' : '可用';
+  const actionableRed = redItems.filter(isCsDailyActionable);
+  const watchRed = redItems.filter((i) => !isCsDailyActionable(i));
+  const tenantSms = signalMap.sms_tenant_delivery_7d;
+  const platformSms = signalMap.sms_platform_ready;
 
   return {
     tenant_id: tenantId,
@@ -258,14 +348,18 @@ async function buildTenantHealthCard(pool, tenant, { includeItems = true } = {})
     run_id: run?.id || null,
     p0_count: redItems.filter((i) => i.severity === 'P0').length,
     p1_count: redItems.filter((i) => i.severity === 'P1').length,
+    actionable_p0p1_count: actionableRed.length,
+    watch_p0p1_count: watchRed.length,
     red_item_count: redItems.length,
     indicators: {
       data_sync_ok: syncItem ? syncItem.status === OK_STATUS : null,
       last_sync_time: syncItem?.evidence?.latest_sync_time || null,
       phone_match_rate: phoneItem?.evidence?.rate ?? phoneItem?.evidence?.phone_match_rate ?? null,
       attribution_available: attrItem ? attrItem.status === OK_STATUS : null,
-      ai_available: aiBlocked ? false : (run ? true : null),
-      sms_ok: signalMap.sms_platform_ready?.ok ?? null,
+      ai_available: aiStatus === '可用' ? true : aiStatus == null ? null : false,
+      ai_status: aiStatus,
+      sms_ok: tenantSms ? tenantSms.ok && (platformSms?.ok !== false || tenantSms.evidence?.total > 0) : (platformSms?.ok ?? null),
+      sms_detail: tenantSms?.detail || platformSms?.detail || null,
       marketing_mtd_ok: signalMap.marketing_executed_mtd?.ok ?? null,
       customer_login_ok: signalMap.customer_login_30d?.ok ?? null,
       monthly_report_ok: signalMap.monthly_or_briefing_report?.ok ?? null,
@@ -273,7 +367,8 @@ async function buildTenantHealthCard(pool, tenant, { includeItems = true } = {})
     },
     signals,
     red_items: redItems.slice(0, 20),
-    top_red: redItems.slice(0, 3).map((i) => ({
+    actionable_red_items: actionableRed.slice(0, 20),
+    top_red: actionableRed.slice(0, 3).map((i) => ({
       item_key: i.item_key,
       item_name: i.item_name,
       severity: i.severity,

@@ -464,12 +464,13 @@ async function checkDataIntegration(pool, ctx, stores = []) {
       item_key: 'order_phone_complete_rate',
       item_name: '手机号完整率',
       status: !attributabilityR.exists ? STATUS.pending : attributabilityTotal === 0 ? STATUS.pending : phoneCompleteRate >= 60 ? STATUS.ok : STATUS.abnormal,
-      severity: phoneCompleteRate >= 60 ? 'P3' : 'P1',
+      // P2：结构性上限（散客/未开卡），非客服日巡可立刻修复的阻塞；详见 docs/轻服务-红名单误报清单.md FP-01
+      severity: phoneCompleteRate >= 60 ? 'P3' : 'P2',
       owner_role: '实施人员',
       impact_modules: ['自动营销', '客户资产报告'],
       impact_description: attributabilityTotal === 0 ? '暂无订单数据，无法计算手机号完整率。' : `订单中带手机号的比例为 ${phoneCompleteRate}%，决定了短信自动触达能覆盖多少客户。`,
       suggestion: '请确认 POS 导出/导入是否包含手机号字段，或门店是否有会员手机号采集流程。',
-      evidence: { ...(attributabilityR.evidence || {}), rate: phoneCompleteRate, with_phone: n(attributability.with_phone), total: attributabilityTotal },
+      evidence: { ...(attributabilityR.evidence || {}), rate: phoneCompleteRate, with_phone: n(attributability.with_phone), total: attributabilityTotal, structural_watch: true },
     }),
     issue({
       category: '数据接入',
@@ -526,14 +527,15 @@ async function checkDataIntegration(pool, ctx, stores = []) {
       item_key: 'customer_phone_match_rate',
       item_name: 'POS 订单客户识别率是否足够',
       status: !posR.exists ? STATUS.pending : phoneRate >= 60 ? STATUS.ok : STATUS.abnormal,
-      severity: phoneRate >= 60 ? 'P3' : 'P1',
+      // P2：结构性上限，不进客服日巡红名单（FP-01）
+      severity: phoneRate >= 60 ? 'P3' : 'P2',
       owner_role: '实施人员',
       impact_modules: ['客户资产报告', '自动营销', '营销归因'],
       // 这项本质上由POS系统在收银时是否采集/回传手机号决定，属于POS系统能力和门店收银流程的
       // 结构性限制，通常不是能靠"整改"短期解决的操作问题——散客/未开卡消费天然没有手机号。
       impact_description: phoneRate >= 60 ? 'POS 订单里的手机号、会员 ID 或顾客标识可支持基础客户识别。' : `当前 ${phoneRate}% 的订单能识别出客户身份，其余是未留手机号的散客或未开卡消费。这个比例主要由 POS 系统本身是否采集手机号、以及门店收银时是否引导顾客留手机号决定，不是系统数据丢失或运营失误。`,
       suggestion: '这项通常无法靠系统内操作提升。如果希望提高比例，需要门店在收银环节主动引导顾客留手机号/办会员；如果怀疑 POS 本身有采集但没有导出手机号字段，可以请我方核对导入映射。',
-      evidence: { ...(posR.evidence || {}), phone_match_rate: phoneRate, rows_with_phone: n(pos.rows_with_phone), phone_rows: n(pos.phone_rows) },
+      evidence: { ...(posR.evidence || {}), phone_match_rate: phoneRate, rows_with_phone: n(pos.rows_with_phone), phone_rows: n(pos.phone_rows), structural_watch: true },
     }),
     issue({
       category: '数据接入',
@@ -850,19 +852,36 @@ function operationStage(items) {
   };
 }
 
+/** 结构性观察项：不计入托管「高风险」的 P0/P1 计数（与健康中心日巡过滤对齐） */
+const STRUCTURAL_WATCH_KEYS = new Set([
+  'customer_phone_match_rate',
+  'order_phone_complete_rate',
+  'order_customer_id_complete_rate',
+]);
+
 function customerSuccessRisk(score, items) {
-  const p0p1 = (items || []).filter((item) => item.status !== STATUS.ok && ['P0', 'P1'].includes(item.severity));
-  const taskBad = (items || []).some((item) => item.category === '任务闭环' && item.status !== STATUS.ok && ['P1', 'P2'].includes(item.severity));
-  const attrBad = (items || []).some((item) => item.category === '营销归因' && item.status !== STATUS.ok && ['P1', 'P2'].includes(item.severity));
-  const dailyBad = (items || []).some((item) => item.impact_modules?.includes('老板晨报') && item.status !== STATUS.ok);
+  const actionable = (items || []).filter((item) => !STRUCTURAL_WATCH_KEYS.has(String(item.item_key || '')));
+  const p0p1 = actionable.filter((item) => item.status !== STATUS.ok && ['P0', 'P1'].includes(item.severity));
+  const structuralDeduction = (items || [])
+    .filter((item) => item.status !== STATUS.ok && STRUCTURAL_WATCH_KEYS.has(String(item.item_key || '')))
+    .reduce((sum, item) => sum + (SEVERITY_DEDUCTION[item.severity] || 0), 0);
+  const adjustedScore = score.health_score == null ? null : Math.min(100, score.health_score + structuralDeduction);
+  const taskBad = actionable.some((item) => item.category === '任务闭环' && item.status !== STATUS.ok && ['P1', 'P2'].includes(item.severity));
+  const attrBad = actionable.some((item) => item.category === '营销归因' && item.status !== STATUS.ok && ['P1', 'P2'].includes(item.severity));
+  const dailyBad = actionable.some((item) => item.impact_modules?.includes('老板晨报') && item.status !== STATUS.ok);
   const reasons = [];
-  if (score.health_score != null && score.health_score < 60) reasons.push('健康分连续处于低位风险区间');
-  if (p0p1.length) reasons.push(`仍有 ${p0p1.length} 个 P0/P1 阻塞未处理`);
+  if (adjustedScore != null && adjustedScore < 60) reasons.push('健康分连续处于低位风险区间（已排除结构性手机号观察项）');
+  if (p0p1.length) reasons.push(`仍有 ${p0p1.length} 个可处理 P0/P1 阻塞未处理`);
   if (taskBad) reasons.push('任务执行或审核闭环不足');
   if (attrBad) reasons.push('自动营销归因无法稳定生成');
   if (dailyBad) reasons.push('老板晨报依赖的数据或任务结果不完整');
-  const level = p0p1.length >= 2 || (score.health_score != null && score.health_score < 60) ? 'high' : reasons.length ? 'medium' : 'low';
-  return { customer_success_risk: level, customer_success_risk_label: level === 'high' ? '高' : level === 'medium' ? '中' : '低', customer_success_risk_reasons: reasons.length ? reasons : ['核心数据和任务闭环当前没有明显托管交付阻塞'] };
+  const level = p0p1.length >= 2 || (adjustedScore != null && adjustedScore < 60) ? 'high' : reasons.length ? 'medium' : 'low';
+  return {
+    customer_success_risk: level,
+    customer_success_risk_label: level === 'high' ? '高' : level === 'medium' ? '中' : '低',
+    customer_success_risk_reasons: reasons.length ? reasons : ['核心数据和任务闭环当前没有明显托管交付阻塞'],
+    health_score_adjusted: adjustedScore,
+  };
 }
 
 function buildOverview(score, items, stores) {

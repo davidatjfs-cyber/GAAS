@@ -95,6 +95,7 @@ import { ensureCustomerOpsTables, registerCustomerOpsRoutes } from './customer-o
 import { registerMarketingAttributionRoutes } from './marketing/marketing-attribution-routes.js';
 import { registerTenantOperationInspectionRoutes } from './tenant-operation-inspection-routes.js';
 import { registerLightSaasRoutes } from './light-saas-routes.js';
+import { startHealthCenterDailyScanScheduler } from './services/tenant-health-center-scheduler.js';
 import { loadTenantRuntimeStatus as loadTenantRuntimeStatusFromModule } from './tenant-runtime-status.js';
 import { registerTenantSubscriptionRoutes } from './tenant-subscription-routes.js';
 import { createPlatformAdminRequired, registerTenantPlatformRoutes } from './tenant-platform-routes.js';
@@ -17516,6 +17517,9 @@ setInterval(runFreshnessMonitorTick, 6 * 3600 * 1000);
 
 // 经营语义层日更：CST 08:00–08:14 对各活跃租户门店 sync + 诊断（见 ontology/daily-diagnosis-scheduler.js）
 startOntologyDailyDiagnosisScheduler(pool);
+
+// 健康中心日巡缓存：CST 07:00–07:14 全量扫描，客服上班前红名单就绪
+startHealthCenterDailyScanScheduler(pool);
 
 // 公告已读回执：员工标记自己已读/已确认某条公告。
 // announcements 现在直接对每条公告挂 readBy{username: isoTime} 这个map，不另起新表——
