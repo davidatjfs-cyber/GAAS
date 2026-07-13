@@ -124,6 +124,10 @@ export function classifyIncidentQueue({ item_key, responsible_party, owner_role 
 export function suggestedHealAction(itemKey, queue) {
   const key = String(itemKey || '');
   if (queue === 'customer') return 'notify_customer';
+  // 手机号采集类无法靠复检“修好”，应通知门店采集
+  if (['customer_phone_match_rate', 'order_phone_complete_rate', 'order_customer_id_complete_rate'].includes(key)) {
+    return 'notify_customer';
+  }
   if (['yesterday_orders_synced', 'pos_data_connected', 'morning_briefing_delivered'].includes(key)) {
     return 'rerun_inspection';
   }
@@ -273,7 +277,7 @@ export async function listIncidents(pool, opts = {}) {
     `SELECT *
        FROM tenant_health_incidents
       WHERE ($1::text = '' OR queue = $1)
-        AND ($2::text = 'all' OR status = $2 OR ($2::text = 'open' AND status IN ('open','acked','healing')))
+        AND ($2::text = 'all' OR status = $2 OR ($2::text = 'open' AND status IN ('open','acked','healing','escalated')))
         AND ($3::text = '' OR tenant_id = $3)
       ORDER BY CASE severity WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 ELSE 2 END,
                CASE queue WHEN 'eng' THEN 0 WHEN 'third_party' THEN 1 WHEN 'cs_ops' THEN 2 ELSE 3 END,
@@ -306,7 +310,7 @@ export async function listIncidents(pool, opts = {}) {
     escalated: 0,
   };
   for (const row of summaryR.rows || []) {
-    if (['open', 'acked', 'healing'].includes(row.status)) {
+    if (['open', 'acked', 'healing', 'escalated'].includes(row.status)) {
       summary[row.queue] = (summary[row.queue] || 0) + n(row.cnt);
       summary.open_total += n(row.cnt);
     }
@@ -335,7 +339,7 @@ export async function ackIncident(pool, incidentId, { note } = {}) {
     `UPDATE tenant_health_incidents
         SET status='acked', acked_at=NOW(), updated_at=NOW(),
             heal_result = COALESCE(heal_result,'{}'::jsonb) || jsonb_build_object('ack_note', $2::text)
-      WHERE id=$1 AND status IN ('open','healing')
+      WHERE id=$1 AND status IN ('open','healing','acked')
       RETURNING *`,
     [incidentId, String(note || '').slice(0, 500)]
   );

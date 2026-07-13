@@ -439,12 +439,13 @@
         <div class="toolbar">
           <label style="margin:0">分流队列
             <select id="incidentQueueFilter" style="width:auto;min-width:130px;padding:8px 10px">
-              <option value="">全部开放</option>
+              <option value="">全部待处理</option>
               <option value="customer">客户可处理</option>
               <option value="cs_ops">客服 / 实施</option>
               <option value="third_party">第三方</option>
-              <option value="eng">研发值班</option>
+              <option value="eng">研发值班（含已升级）</option>
             </select>
+            <span class="small" id="incidentFlowHint">自愈=白名单动作；确认=已受理；关闭=问题解决；升级=转入研发值班。</span>
           </label>
           <button type="button" id="incidentSyncBtn" class="secondary">同步分流队列</button>
           <button type="button" id="incidentReloadBtn" class="ghost">刷新队列</button>
@@ -1227,31 +1228,60 @@
       `).join('');
     }
 
+    function incidentStatusLabel(status) {
+      const map = {
+        open: '待处理',
+        acked: '已确认',
+        healing: '自愈中',
+        escalated: '已升级研发',
+        resolved: '已关闭',
+      };
+      return map[String(status || '')] || status || '—';
+    }
+
+    function formatHealResult(it) {
+      const r = it?.heal_result;
+      if (!r || typeof r !== 'object') return '';
+      if (r.action === 'rerun_inspection') {
+        if (r.auto_resolved) return '复检后已恢复正常';
+        if (r.item_still_abnormal) return '复检完成，问题仍在';
+        return `复检完成（健康分 ${r.health_score ?? '—'}）`;
+      }
+      if (r.action === 'notify_customer') return r.message || `已通知 ${r.notified || 0} 人`;
+      if (r.action === 'generate_report') return r.report_id ? `已生成报告 #${r.report_id}` : '已生成报告';
+      if (r.escalate_note) return `升级说明：${r.escalate_note}`;
+      return '';
+    }
+
     function renderIncidentTable(items = []) {
       const body = $('incidentTableBody');
       if (!body) return;
       if (!items.length) {
-        body.innerHTML = `<tr><td colspan="7" class="small">分流队列为空。可先「全量扫描」或「同步分流队列」。</td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" class="small">分流队列为空。可先「全量扫描」或「同步分流队列」。已关闭的不会显示在此。</td></tr>`;
         return;
       }
-      body.innerHTML = items.map((it) => `
+      body.innerHTML = items.map((it) => {
+        const healNote = formatHealResult(it);
+        const escalated = it.status === 'escalated';
+        const resolvedLike = it.status === 'resolved';
+        return `
         <tr data-incident-id="${escHtml(it.id)}">
           <td>${escHtml(it.queue_label || it.queue)}</td>
           <td><span class="pill ${it.severity === 'P0' ? 'bad' : ''}">${escHtml(it.severity || '—')}</span></td>
           <td><div class="mono">${escHtml(it.tenant_id)}</div></td>
-          <td><strong>${escHtml(it.item_name || it.item_key)}</strong><div class="small">${escHtml(it.suggestion || '')}</div></td>
+          <td><strong>${escHtml(it.item_name || it.item_key)}</strong><div class="small">${escHtml(it.suggestion || '')}</div>${healNote ? `<div class="small" style="color:var(--accent);margin-top:4px">最近自愈：${escHtml(healNote)}</div>` : ''}</td>
           <td class="small">${escHtml(it.suggested_heal_label || it.suggested_heal || '—')}</td>
-          <td>${escHtml(it.status)}</td>
+          <td><span class="pill ${escalated ? 'bad' : (it.status === 'acked' ? 'ok' : '')}">${escHtml(incidentStatusLabel(it.status))}</span></td>
           <td>
             <div class="tenant-actions compact">
-              <button type="button" class="secondary" data-act="heal">自愈</button>
-              <button type="button" class="ghost" data-act="ack">确认</button>
-              <button type="button" class="ghost" data-act="resolve">关闭</button>
-              <button type="button" class="warn" data-act="escalate">升级研发</button>
+              ${resolvedLike ? '' : `<button type="button" class="secondary" data-act="heal">自愈</button>`}
+              ${it.status === 'open' || it.status === 'healing' ? `<button type="button" class="ghost" data-act="ack">确认</button>` : ''}
+              ${!resolvedLike ? `<button type="button" class="ghost" data-act="resolve">关闭</button>` : ''}
+              ${!escalated && !resolvedLike ? `<button type="button" class="warn" data-act="escalate">升级研发</button>` : ''}
             </div>
           </td>
-        </tr>
-      `).join('');
+        </tr>`;
+      }).join('');
       body.querySelectorAll('tr[data-incident-id]').forEach((tr) => {
         const id = tr.getAttribute('data-incident-id');
         tr.querySelectorAll('button[data-act]').forEach((btn) => {
@@ -1286,26 +1316,36 @@
         if (act === 'heal') {
           const item = (state.health.incidents?.items || []).find((x) => String(x.id) === String(id));
           const action = item?.suggested_heal || 'rerun_inspection';
-          if (!confirm(`执行白名单自愈「${item?.suggested_heal_label || action}」？`)) return;
+          if (!confirm(`执行白名单自愈「${item?.suggested_heal_label || action}」？\n\n说明：自愈不会魔法修数据；复检只是再跑一遍检测，通知是发给租户管理员。`)) return;
+          toast('自愈执行中…');
           const data = await api(`/api/admin/health-center/incidents/${encodeURIComponent(id)}/heal`, {
             method: 'POST',
             body: JSON.stringify({ action }),
           });
-          toast(data.action_label ? `已执行：${data.action_label}` : '自愈完成');
-          log(`自愈 #${id}：${data.action || action} → ${data.incident?.status || ''}`);
+          const r = data.result || {};
+          let msg = `已执行：${data.action_label || action}`;
+          if (r.auto_resolved) msg += ' → 问题已消失，单已关闭';
+          else if (r.item_still_abnormal) msg += ' → 复检后问题仍在（状态改为已确认）';
+          else if (r.notified != null) msg += ` → 已通知 ${r.notified} 位管理员`;
+          else if (r.report_id) msg += ` → 报告 #${r.report_id}`;
+          toast(msg);
+          log(`自愈 #${id}：${msg}`);
         } else if (act === 'ack') {
           await api(`/api/admin/health-center/incidents/${encodeURIComponent(id)}/ack`, { method: 'POST', body: JSON.stringify({}) });
-          toast('已确认');
+          toast('已确认受理（单仍在列表，状态=已确认）');
         } else if (act === 'resolve') {
+          if (!confirm('确认关闭？关闭表示该问题已处理完，将从待处理列表移除。')) return;
           await api(`/api/admin/health-center/incidents/${encodeURIComponent(id)}/resolve`, { method: 'POST', body: JSON.stringify({}) });
-          toast('已关闭');
+          toast('已关闭，已从待处理列表移除');
         } else if (act === 'escalate') {
-          if (!confirm('确认升级到研发值班队列？仅平台技术问题应升级。')) return;
+          if (!confirm('确认升级到研发值班？\n\n升级后：队列变为「研发值班」，状态=已升级研发。\n请到筛选「研发值班」查看，不会丢失。')) return;
           await api(`/api/admin/health-center/incidents/${encodeURIComponent(id)}/escalate`, {
             method: 'POST',
             body: JSON.stringify({ note: '客服升级研发' }),
           });
-          toast('已升级研发');
+          $('incidentQueueFilter').value = 'eng';
+          toast('已升级：已自动切到「研发值班」队列');
+          log(`升级研发 #${id}`);
         }
         await loadIncidentQueue();
       } catch (e) {
