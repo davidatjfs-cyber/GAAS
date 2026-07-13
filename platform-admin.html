@@ -435,6 +435,30 @@
           <button type="button" id="healthFaqBtn" class="ghost">FAQ</button>
         </div>
         <div id="healthHint" class="small">加载后显示红名单。</div>
+        <div class="health-summary" id="incidentSummary" style="margin-top:4px"></div>
+        <div class="toolbar">
+          <label style="margin:0">分流队列
+            <select id="incidentQueueFilter" style="width:auto;min-width:130px;padding:8px 10px">
+              <option value="">全部开放</option>
+              <option value="customer">客户可处理</option>
+              <option value="cs_ops">客服 / 实施</option>
+              <option value="third_party">第三方</option>
+              <option value="eng">研发值班</option>
+            </select>
+          </label>
+          <button type="button" id="incidentSyncBtn" class="secondary">同步分流队列</button>
+          <button type="button" id="incidentReloadBtn" class="ghost">刷新队列</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>队列</th><th>等级</th><th>租户</th><th>问题</th><th>建议自愈</th><th>状态</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="incidentTableBody"></tbody>
+          </table>
+        </div>
         <div class="table-scroll">
           <table>
             <thead>
@@ -676,7 +700,7 @@
       agentCenter: null,
       activePanel: 'overview',
       overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] },
-      health: { summary: {}, tenants: [], faqs: [], filter: 'red', selectedTenantId: '' },
+      health: { summary: {}, tenants: [], faqs: [], filter: 'red', selectedTenantId: '', incidents: null },
     };
     const ACTION_GLOSSARY = [
       { term: '选中', desc: '将该租户设为当前操作对象。选中后顶部会显示租户条，「配置」页表单自动带入该租户 ID。' },
@@ -1187,6 +1211,109 @@
       return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
+    function renderIncidentSummary(summary = {}, labels = {}) {
+      const host = $('incidentSummary');
+      if (!host) return;
+      const cells = [
+        ['客户可处理', summary.customer || 0, ''],
+        ['客服/实施', summary.cs_ops || 0, ''],
+        ['第三方', summary.third_party || 0, ''],
+        ['研发值班', summary.eng || 0, 'bad'],
+        ['开放合计', summary.open_total || 0, ''],
+        ['已升级', summary.escalated || 0, 'bad'],
+      ];
+      host.innerHTML = cells.map(([label, value, cls]) => `
+        <div class="stat ${cls}"><div class="label">${label}</div><div class="value">${value}</div></div>
+      `).join('');
+    }
+
+    function renderIncidentTable(items = []) {
+      const body = $('incidentTableBody');
+      if (!body) return;
+      if (!items.length) {
+        body.innerHTML = `<tr><td colspan="7" class="small">分流队列为空。可先「全量扫描」或「同步分流队列」。</td></tr>`;
+        return;
+      }
+      body.innerHTML = items.map((it) => `
+        <tr data-incident-id="${escHtml(it.id)}">
+          <td>${escHtml(it.queue_label || it.queue)}</td>
+          <td><span class="pill ${it.severity === 'P0' ? 'bad' : ''}">${escHtml(it.severity || '—')}</span></td>
+          <td><div class="mono">${escHtml(it.tenant_id)}</div></td>
+          <td><strong>${escHtml(it.item_name || it.item_key)}</strong><div class="small">${escHtml(it.suggestion || '')}</div></td>
+          <td class="small">${escHtml(it.suggested_heal_label || it.suggested_heal || '—')}</td>
+          <td>${escHtml(it.status)}</td>
+          <td>
+            <div class="tenant-actions compact">
+              <button type="button" class="secondary" data-act="heal">自愈</button>
+              <button type="button" class="ghost" data-act="ack">确认</button>
+              <button type="button" class="ghost" data-act="resolve">关闭</button>
+              <button type="button" class="warn" data-act="escalate">升级研发</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+      body.querySelectorAll('tr[data-incident-id]').forEach((tr) => {
+        const id = tr.getAttribute('data-incident-id');
+        tr.querySelectorAll('button[data-act]').forEach((btn) => {
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            handleIncidentAction(id, btn.getAttribute('data-act'));
+          };
+        });
+      });
+    }
+
+    async function loadIncidentQueue() {
+      if (!isLoggedIn()) throw new Error('请先登录');
+      const queue = $('incidentQueueFilter')?.value || '';
+      const data = await api(`/api/admin/health-center/incidents?status=open${queue ? `&queue=${encodeURIComponent(queue)}` : ''}`);
+      state.health.incidents = data;
+      renderIncidentSummary(data.summary || {}, data.queue_labels || {});
+      renderIncidentTable(data.items || []);
+      return data;
+    }
+
+    async function syncIncidentQueue() {
+      toast('同步分流队列中…');
+      const data = await api('/api/admin/health-center/incidents/sync', { method: 'POST', body: JSON.stringify({}) });
+      toast(`同步完成：新增 ${data.upserted || 0}`);
+      log(`分流队列同步：新增 ${data.upserted || 0}，触及 ${data.touched || 0}`);
+      await loadIncidentQueue();
+    }
+
+    async function handleIncidentAction(id, act) {
+      try {
+        if (act === 'heal') {
+          const item = (state.health.incidents?.items || []).find((x) => String(x.id) === String(id));
+          const action = item?.suggested_heal || 'rerun_inspection';
+          if (!confirm(`执行白名单自愈「${item?.suggested_heal_label || action}」？`)) return;
+          const data = await api(`/api/admin/health-center/incidents/${encodeURIComponent(id)}/heal`, {
+            method: 'POST',
+            body: JSON.stringify({ action }),
+          });
+          toast(data.action_label ? `已执行：${data.action_label}` : '自愈完成');
+          log(`自愈 #${id}：${data.action || action} → ${data.incident?.status || ''}`);
+        } else if (act === 'ack') {
+          await api(`/api/admin/health-center/incidents/${encodeURIComponent(id)}/ack`, { method: 'POST', body: JSON.stringify({}) });
+          toast('已确认');
+        } else if (act === 'resolve') {
+          await api(`/api/admin/health-center/incidents/${encodeURIComponent(id)}/resolve`, { method: 'POST', body: JSON.stringify({}) });
+          toast('已关闭');
+        } else if (act === 'escalate') {
+          if (!confirm('确认升级到研发值班队列？仅平台技术问题应升级。')) return;
+          await api(`/api/admin/health-center/incidents/${encodeURIComponent(id)}/escalate`, {
+            method: 'POST',
+            body: JSON.stringify({ note: '客服升级研发' }),
+          });
+          toast('已升级研发');
+        }
+        await loadIncidentQueue();
+      } catch (e) {
+        toast(e.message);
+        log(`分流操作失败：${e.message}`);
+      }
+    }
+
     function renderHealthSummary(summary = {}) {
       const host = $('healthSummary');
       if (!host) return;
@@ -1337,8 +1464,19 @@
       state.health.summary = data.summary || {};
       state.health.tenants = data.tenants || [];
       state.health.faqs = data.faqs || state.health.faqs || [];
+      if (data.incidents && !data.incidents.error) {
+        state.health.incidents = {
+          summary: data.incidents.summary,
+          queue_labels: data.incidents.queue_labels,
+          items: data.incidents.open_preview || [],
+        };
+        renderIncidentSummary(data.incidents.summary || {}, data.incidents.queue_labels || {});
+        renderIncidentTable(data.incidents.open_preview || []);
+      }
       renderHealthSummary(state.health.summary);
       renderHealthTable(state.health.tenants);
+      // 队列筛选可能与看板预览不一致时，再拉一次完整队列
+      loadIncidentQueue().catch(() => null);
       $('healthGeneratedAt').textContent = data.generated_at
         ? `更新 ${new Date(data.generated_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
         : '已加载';
@@ -1375,7 +1513,7 @@
         toast('全量扫描中…');
         const data = await api('/api/admin/health-center/scan', { method: 'POST', body: JSON.stringify({}) });
         toast(`扫描完成：成功 ${data.success || 0}，失败 ${data.failed || 0}`);
-        log(`健康中心全量扫描：成功 ${data.success || 0} / ${data.scanned || 0}`);
+        log(`健康中心全量扫描：成功 ${data.success || 0} / ${data.scanned || 0}；分流新增 ${data.incidents_sync?.upserted ?? '—'}`);
         await loadHealthBoard();
       } finally {
         $('healthScanBtn').disabled = false;
@@ -2349,6 +2487,9 @@
       } else showAllFaqs();
     };
     $('healthLightFilter').onchange = () => loadHealthBoard().catch((e) => toast(e.message));
+    $('incidentQueueFilter').onchange = () => loadIncidentQueue().catch((e) => toast(e.message));
+    $('incidentSyncBtn').onclick = () => syncIncidentQueue().catch((e) => { toast(e.message); log(`同步分流失败：${e.message}`); });
+    $('incidentReloadBtn').onclick = () => loadIncidentQueue().catch((e) => toast(e.message));
     $('tenantFilter').oninput = () => loadTenants().catch((e) => log(`搜索失败：${e.message}`));
     $('opsNav').addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-scroll-target]');

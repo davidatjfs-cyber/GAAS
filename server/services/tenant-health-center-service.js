@@ -317,14 +317,32 @@ export async function getHealthCenterBoard(pool, opts = {}) {
   });
   if (lightFilter !== 'all') list = list.filter((c) => c.light === lightFilter);
 
+  let incidents = null;
+  try {
+    const { listIncidents, syncIncidentsFromInspections } = await import('./tenant-health-incident-service.js');
+    // 看板打开时轻量同步一次，保证队列与最新红项对齐（幂等）
+    if (opts.syncIncidents !== false) {
+      await syncIncidentsFromInspections(pool, {}).catch(() => null);
+    }
+    const listed = await listIncidents(pool, { status: 'open', limit: 50 });
+    incidents = {
+      summary: listed.summary,
+      queue_labels: listed.queue_labels,
+      open_preview: listed.items.slice(0, 20),
+    };
+  } catch (e) {
+    incidents = { error: e?.message || String(e) };
+  }
+
   return {
     ok: true,
     generated_at: new Date().toISOString(),
     filter: { light: lightFilter },
     summary,
     tenants: list,
+    incidents,
     faqs: listHealthFaqs(),
-    sop_hint: '每天只处理红色；黄/绿不主动打扰。详见 docs/轻服务-客服红名单日巡SOP.md',
+    sop_hint: '每天只处理红色；黄/绿不主动打扰。分流队列见下方：客户/客服/第三方/研发。',
   };
 }
 

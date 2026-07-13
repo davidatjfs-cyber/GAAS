@@ -1074,7 +1074,8 @@ export function generateInspectionReport({ tenantId, overview, store_results = [
 }
 
 export async function generateRecoveryTask(pool, { item, itemId } = {}) {
-  return { ok: false, deprecated: true, message: '当前版本已取消门店任务派发，请使用导出整改报告流程。' };
+  const { routeInspectionItemToIncident } = await import('./tenant-health-incident-service.js');
+  return routeInspectionItemToIncident(pool, { item, itemId });
 }
 
 function normalizeSeverityFilter(value) {
@@ -1086,7 +1087,8 @@ function normalizeSeverityFilter(value) {
 }
 
 export async function generateRecoveryTasksBatch(pool, opts = {}) {
-  return { ok: false, deprecated: true, message: '当前版本已取消门店任务派发，请使用导出整改报告流程。' };
+  const { routeInspectionItemsBatch } = await import('./tenant-health-incident-service.js');
+  return routeInspectionItemsBatch(pool, opts);
 }
 
 function dateRange7(endDate) {

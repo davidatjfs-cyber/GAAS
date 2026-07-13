@@ -17,6 +17,16 @@ import {
   scanHealthCenter,
 } from './services/tenant-health-center-service.js';
 import { listHealthFaqs } from './services/tenant-health-faq.js';
+import {
+  syncIncidentsFromInspections,
+  listIncidents,
+  ackIncident,
+  resolveIncident,
+  escalateIncident,
+  healIncident,
+  HEAL_ACTIONS,
+  QUEUE_LABELS,
+} from './services/tenant-health-incident-service.js';
 import { tenantContext } from './utils/database.js';
 
 const ALLOWED_ROLES = new Set([
@@ -128,7 +138,8 @@ function buildHandlers(pool) {
   const generateTask = async (req, res) => {
     try {
       const result = await generateRecoveryTask(pool, { itemId: req.params.id });
-      return res.status(410).json(result);
+      const status = result.ok ? 200 : (result.error === 'inspection_item_not_found' ? 404 : 400);
+      return res.status(status).json(result);
     } catch (e) {
       console.error('[tenant-inspection] generate task failed:', e?.message || e);
       const status = String(e?.message || '') === 'inspection_item_not_found' ? 404 : 500;
@@ -145,7 +156,7 @@ function buildHandlers(pool) {
         responsibleParty: req.body?.responsible_party,
         date: req.body?.date,
       });
-      return res.status(410).json(result);
+      return res.status(result.ok ? 200 : 400).json(result);
     } catch (e) {
       console.error('[tenant-inspection] generate batch tasks failed:', e?.message || e);
       return res.status(500).json({ ok: false, error: 'server_error' });
@@ -262,10 +273,81 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
       try {
         const tenantIds = Array.isArray(req.body?.tenant_ids) ? req.body.tenant_ids : null;
         const data = await scanHealthCenter(pool, { tenantIds, date: req.body?.date });
-        return res.json(data);
+        const synced = await syncIncidentsFromInspections(pool, { date: req.body?.date }).catch((e) => ({
+          ok: false,
+          error: e?.message || String(e),
+        }));
+        return res.json({ ...data, incidents_sync: synced });
       } catch (e) {
         console.error('[health-center] scan failed:', e?.message || e);
         return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'scan_failed' });
+      }
+    });
+
+    // Phase 2：分流队列 + 有限自愈
+    app.post('/api/admin/health-center/incidents/sync', platformAdminRequired, async (req, res) => {
+      try {
+        const data = await syncIncidentsFromInspections(pool, {
+          tenantId: req.body?.tenant_id,
+          date: req.body?.date,
+        });
+        return res.json(data);
+      } catch (e) {
+        console.error('[health-center] incidents sync failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'sync_failed' });
+      }
+    });
+    app.get('/api/admin/health-center/incidents', platformAdminRequired, async (req, res) => {
+      try {
+        const data = await listIncidents(pool, {
+          queue: req.query?.queue,
+          status: req.query?.status || 'open',
+          tenantId: req.query?.tenant_id,
+          limit: req.query?.limit,
+        });
+        return res.json(data);
+      } catch (e) {
+        console.error('[health-center] incidents list failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'list_failed' });
+      }
+    });
+    app.get('/api/admin/health-center/heal-actions', platformAdminRequired, (_req, res) => {
+      return res.json({ ok: true, actions: Object.values(HEAL_ACTIONS), queues: QUEUE_LABELS });
+    });
+    app.post('/api/admin/health-center/incidents/:id/ack', platformAdminRequired, async (req, res) => {
+      try {
+        const data = await ackIncident(pool, req.params.id, { note: req.body?.note });
+        return res.status(data.ok ? 200 : 404).json(data);
+      } catch (e) {
+        console.error('[health-center] ack failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error' });
+      }
+    });
+    app.post('/api/admin/health-center/incidents/:id/resolve', platformAdminRequired, async (req, res) => {
+      try {
+        const data = await resolveIncident(pool, req.params.id, { note: req.body?.note });
+        return res.status(data.ok ? 200 : 404).json(data);
+      } catch (e) {
+        console.error('[health-center] resolve failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error' });
+      }
+    });
+    app.post('/api/admin/health-center/incidents/:id/escalate', platformAdminRequired, async (req, res) => {
+      try {
+        const data = await escalateIncident(pool, req.params.id, { note: req.body?.note });
+        return res.status(data.ok ? 200 : 404).json(data);
+      } catch (e) {
+        console.error('[health-center] escalate failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error' });
+      }
+    });
+    app.post('/api/admin/health-center/incidents/:id/heal', platformAdminRequired, async (req, res) => {
+      try {
+        const data = await healIncident(pool, req.params.id, { action: req.body?.action });
+        return res.status(data.ok ? 200 : 400).json(data);
+      } catch (e) {
+        console.error('[health-center] heal failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'heal_failed' });
       }
     });
   }
