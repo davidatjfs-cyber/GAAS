@@ -1915,7 +1915,7 @@ export async function campaignTouchCapped(pool, campaignKey, phone, tenantId = '
   return (Number(r.rows[0]?.n) || 0) >= cap;
 }
 
-const ABC_DEFAULT_LADDER_DAYS = [15, 30, 45, 60];
+const ABC_DEFAULT_LADDER_DAYS = [15, 30, 45, 60, 75, 90];
 
 // ABC方案轮换(活动制)：8条常规段「赠菜A/B/C + 赠券30/50/2X50」共6个模板按固定顺序轮换
 // (顺序差异=先菜后券 vs 先券后菜)；马己仙晚市2条拆分段各自只含本组3个模板。
@@ -1963,19 +1963,19 @@ export function pickAbcTemplate(step, storeId) {
 }
 
 // 按"该手机号在本活动下累计成功发送次数"纯推导当前应发的模板步骤+降频阶梯天数。
-// 单调降频：第1轮起每条间隔即按阶梯 15→30→45→60 天逐轮变慢；共走 4 轮(=阶梯长度)，
-// 每轮一整套模板(常规段6条/马己仙拆分段3条)；满 模板数×4 条(常规24/马己仙12)仍未回应
+// 单调降频：第1轮起每条间隔即按阶梯 15→30→45→60→75→90 天逐轮变慢；共走 6 轮(=阶梯长度)，
+// 每轮一整套模板(常规段6条/马己仙拆分段3条)；满 模板数×6 条(常规36/马己仙18)仍未回应
 // → 该客户对本活动进入"红名单"，不再自动触达。中途到店消费会清零(见 countCampaignSent)。
 export function deriveAbcStep(campaignKey, totalSent) {
   const order = ABC_ROTATION_ORDER[campaignKey];
   if (!order) return { step: null, freqDaysOverride: null, blacklisted: false };
-  const ladder = ABC_DEFAULT_LADDER_DAYS; // [15,30,45,60]
+  const ladder = ABC_DEFAULT_LADDER_DAYS; // [15,30,45,60,75,90]
   const perCycle = order.length;
-  const blacklistAt = perCycle * ladder.length; // 常规6×4=24，马己仙3×4=12
+  const blacklistAt = perCycle * ladder.length; // 常规6×6=36，马己仙3×6=18
   if (totalSent >= blacklistAt) return { step: null, freqDaysOverride: null, blacklisted: true };
-  const cycleIdx = Math.floor(totalSent / perCycle); // 0..3
+  const cycleIdx = Math.floor(totalSent / perCycle); // 0..5
   const posInCycle = totalSent % perCycle;
-  const freqDaysOverride = ladder[cycleIdx]; // 第1轮即15，单调15/30/45/60
+  const freqDaysOverride = ladder[cycleIdx]; // 第1轮即15，单调15/30/45/60/75/90
   return { step: order[posInCycle], freqDaysOverride, blacklisted: false };
 }
 
