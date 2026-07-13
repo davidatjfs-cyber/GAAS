@@ -96,6 +96,8 @@ import { registerMarketingAttributionRoutes } from './marketing/marketing-attrib
 import { registerTenantOperationInspectionRoutes } from './tenant-operation-inspection-routes.js';
 import { registerLightSaasRoutes } from './light-saas-routes.js';
 import { startHealthCenterDailyScanScheduler } from './services/tenant-health-center-scheduler.js';
+import { setHealthIncidentNotifiers } from './services/tenant-health-incident-service.js';
+import { startHealthOpsLoopScheduler } from './services/tenant-health-ops-scheduler.js';
 import { loadTenantRuntimeStatus as loadTenantRuntimeStatusFromModule } from './tenant-runtime-status.js';
 import { registerTenantSubscriptionRoutes } from './tenant-subscription-routes.js';
 import { createPlatformAdminRequired, registerTenantPlatformRoutes } from './tenant-platform-routes.js';
@@ -5608,6 +5610,23 @@ registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUpl
 registerMarketingAttributionRoutes(app, pool, authRequired);
 registerTenantOperationInspectionRoutes(app, pool, authRequired, platformAdminRequired);
 registerLightSaasRoutes(app, pool, platformAdminRequired);
+setHealthIncidentNotifiers({
+  sendLarkMessage,
+  lookupFeishuUserByUsername,
+  sendOpsAlert: async (msg, opts = {}) => {
+    const r = await sendAdminSystemAlert(String(msg || ''), {
+      title: opts.title || '健康中心',
+      notificationType: 'health_ops',
+      meta: { source: 'health_ops', audience: opts.audience || 'cs', ...(opts.meta || {}) },
+    });
+    return {
+      ok: (r?.feishuSent || 0) > 0 || (r?.recipients || []).length > 0,
+      feishuSent: r?.feishuSent || 0,
+      feishuFailed: r?.feishuFailed || 0,
+      recipients: r?.recipients || [],
+    };
+  },
+});
 registerTenantSubscriptionRoutes(app, { pool, authRequired });
 registerTenantPlatformRoutes(app, {
   pool,
@@ -17520,6 +17539,8 @@ startOntologyDailyDiagnosisScheduler(pool);
 
 // 健康中心日巡缓存：CST 07:00–07:14 全量扫描，客服上班前红名单就绪
 startHealthCenterDailyScanScheduler(pool);
+// 健康中心运营闭环：CST 08:30 队列摘要 + 工作时段 SLA 提醒（投递走 setHealthIncidentNotifiers）
+startHealthOpsLoopScheduler(pool);
 
 // 公告已读回执：员工标记自己已读/已确认某条公告。
 // announcements 现在直接对每条公告挂 readBy{username: isoTime} 这个map，不另起新表——

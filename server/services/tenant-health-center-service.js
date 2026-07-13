@@ -423,6 +423,7 @@ export async function getHealthCenterBoard(pool, opts = {}) {
     incidents = {
       summary: listed.summary,
       queue_labels: listed.queue_labels,
+      ops_stats: listed.ops_stats,
       open_preview: listed.items.slice(0, 20),
     };
   } catch (e) {

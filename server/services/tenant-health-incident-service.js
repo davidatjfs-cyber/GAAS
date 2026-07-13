@@ -37,9 +37,30 @@ export const HEAL_ACTIONS = {
   notify_customer: {
     id: 'notify_customer',
     label: '通知租户管理员',
-    description: '向租户管理员写入站内通知，说明需客户处理的事项。',
+    description: '站内通知 + 飞书（若已绑定），说明需客户处理的事项与 FAQ。',
+  },
+  notify_ops: {
+    id: 'notify_ops',
+    label: '通知客服/研发值班',
+    description: '向平台值班人员推送本条异常摘要（不改业务数据）。',
+  },
+  audit_delivery_failures: {
+    id: 'audit_delivery_failures',
+    label: '汇总近7日触达失败',
+    description: '只读汇总 growth_delivery_logs 失败原因；禁止自动重发短信。',
   },
 };
+
+/** 可选外部投递（由 index.js 注入，避免循环依赖） */
+let _notifiers = {
+  sendLarkMessage: null,
+  lookupFeishuUserByUsername: null,
+  sendOpsAlert: null,
+};
+
+export function setHealthIncidentNotifiers(partial = {}) {
+  _notifiers = { ..._notifiers, ...partial };
+}
 
 /** 某些 item_key 强制进研发（平台技术问题） */
 const ENG_ITEM_KEYS = new Set([
@@ -124,15 +145,33 @@ export function classifyIncidentQueue({ item_key, responsible_party, owner_role 
 export function suggestedHealAction(itemKey, queue) {
   const key = String(itemKey || '');
   if (queue === 'customer') return 'notify_customer';
-  // 手机号采集类无法靠复检“修好”，应通知门店采集
   if (['customer_phone_match_rate', 'order_phone_complete_rate', 'order_customer_id_complete_rate'].includes(key)) {
     return 'notify_customer';
   }
-  if (['yesterday_orders_synced', 'pos_data_connected', 'morning_briefing_delivered'].includes(key)) {
-    return 'rerun_inspection';
+  if (['sms_wecom_sent', 'delivery_campaign_id_complete_rate'].includes(key)) {
+    return 'audit_delivery_failures';
+  }
+  if (queue === 'eng') return 'generate_report';
+  if (queue === 'third_party' || queue === 'cs_ops') {
+    if (['yesterday_orders_synced', 'pos_data_connected', 'morning_briefing_delivered'].includes(key)) {
+      return 'rerun_inspection';
+    }
+    return 'notify_ops';
   }
   if (['ai_tasks_generated', 'execution_review_records'].includes(key)) return 'generate_report';
   return 'rerun_inspection';
+}
+
+const SLA_HOURS = 24;
+
+export function isSlaBreached(incident, now = new Date()) {
+  if (!incident) return false;
+  const status = String(incident.status || '');
+  if (!['open', 'healing'].includes(status)) return false;
+  if (incident.acked_at) return false;
+  const created = incident.created_at ? new Date(incident.created_at).getTime() : 0;
+  if (!created) return false;
+  return now.getTime() - created >= SLA_HOURS * 3600 * 1000;
 }
 
 function fingerprintFor(tenantId, itemKey, date = ymd()) {
@@ -293,6 +332,8 @@ export async function listIncidents(pool, opts = {}) {
     faq: row.faq_id ? faqForItemKey(row.item_key) : faqForItemKey(row.item_key),
     suggested_heal: suggestedHealAction(row.item_key, row.queue),
     suggested_heal_label: HEAL_ACTIONS[suggestedHealAction(row.item_key, row.queue)]?.label || null,
+    sla_breached: isSlaBreached(row),
+    sla_hours: SLA_HOURS,
   }));
 
   const summaryR = await pool.query(
@@ -308,6 +349,7 @@ export async function listIncidents(pool, opts = {}) {
     eng: 0,
     open_total: 0,
     escalated: 0,
+    sla_breached: 0,
   };
   for (const row of summaryR.rows || []) {
     if (['open', 'acked', 'healing', 'escalated'].includes(row.status)) {
@@ -316,15 +358,83 @@ export async function listIncidents(pool, opts = {}) {
     }
     if (row.status === 'escalated') summary.escalated += n(row.cnt);
   }
+  summary.sla_breached = rows.filter((x) => x.sla_breached).length
+    || (await countSlaBreached(pool));
+
+  const ops_stats = await getIncidentOpsStats(pool);
 
   return {
     ok: true,
     filter: { queue: queue || 'all', status: status || 'open', tenant_id: tenantId || null },
     summary,
+    ops_stats,
     queue_labels: QUEUE_LABELS,
     heal_actions: Object.values(HEAL_ACTIONS),
     items: rows,
-    routing_hint: '客户可处理→通知客户；第三方→查供应商；客服实施→日巡处理；仅平台技术/升级项进研发。',
+    routing_hint: '客户可处理→通知客户；第三方→查供应商；客服实施→日巡处理；仅平台技术/升级项进研发。超24h未确认会 SLA 提醒（不自动升级）。',
+  };
+}
+
+async function countSlaBreached(pool) {
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS cnt
+       FROM tenant_health_incidents
+      WHERE status IN ('open','healing')
+        AND acked_at IS NULL
+        AND created_at < NOW() - INTERVAL '24 hours'`
+  ).catch(() => ({ rows: [{ cnt: 0 }] }));
+  return n(r.rows?.[0]?.cnt);
+}
+
+/**
+ * 今日运营统计：处理数 / 自愈成功 / 升级研发（供健康页截图）
+ */
+export async function getIncidentOpsStats(pool) {
+  await ensureHealthIncidentTables(pool);
+  const r = await pool.query(
+    `SELECT
+        COUNT(*) FILTER (
+          WHERE (acked_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+             OR (resolved_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+             OR (escalated_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+             OR (
+               heal_action IS NOT NULL
+               AND (updated_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+             )
+        )::int AS handled_today,
+        COUNT(*) FILTER (
+          WHERE heal_action IS NOT NULL
+            AND (updated_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+        )::int AS heal_attempts_today,
+        COUNT(*) FILTER (
+          WHERE heal_action IS NOT NULL
+            AND (updated_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+            AND COALESCE(heal_result->>'ok','true') NOT IN ('false','0')
+        )::int AS heal_ok_today,
+        COUNT(*) FILTER (
+          WHERE (escalated_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+        )::int AS escalated_today,
+        COUNT(*) FILTER (
+          WHERE (resolved_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+        )::int AS resolved_today,
+        COUNT(*) FILTER (
+          WHERE status IN ('open','healing') AND acked_at IS NULL
+            AND created_at < NOW() - INTERVAL '24 hours'
+        )::int AS sla_breached_open
+       FROM tenant_health_incidents`
+  ).catch(() => ({ rows: [{}] }));
+  const row = r.rows?.[0] || {};
+  const attempts = n(row.heal_attempts_today);
+  const ok = n(row.heal_ok_today);
+  return {
+    date: ymd(),
+    handled_today: n(row.handled_today),
+    heal_attempts_today: attempts,
+    heal_ok_today: ok,
+    heal_success_rate: attempts > 0 ? Math.round((ok / attempts) * 100) : null,
+    escalated_today: n(row.escalated_today),
+    resolved_today: n(row.resolved_today),
+    sla_breached_open: n(row.sla_breached_open),
   };
 }
 
@@ -415,6 +525,7 @@ async function healGenerateReport(pool, incident) {
 }
 
 async function healNotifyCustomer(pool, incident) {
+  const faq = faqForItemKey(incident.item_key) || (incident.faq_id ? { id: incident.faq_id, title: incident.faq_id } : null);
   const usersR = await pool.query(
     `SELECT username FROM users
       WHERE COALESCE(tenant_id,'default')=$1
@@ -440,19 +551,23 @@ async function healNotifyCustomer(pool, incident) {
   const message = [
     `租户：${incident.tenant_id}`,
     `问题：${incident.item_name || incident.item_key}（${incident.severity || ''}）`,
-    `说明：${incident.suggestion || '请按健康中心建议完成配置或确认。'}`,
+    `缺少/影响：${incident.suggestion || '请按健康中心建议完成配置或确认。'}`,
+    faq ? `自助说明：${faq.title || faq.id}（FAQ:${faq.id}）` : null,
     '此问题归类为「客户可处理」，请门店/管理员处理，无需研发介入。',
-  ].join('\n');
+    '入口：平台控制台 → 健康中心',
+  ].filter(Boolean).join('\n');
 
   let notified = 0;
+  const delivery = { in_app: [], feishu: [] };
   const hasNotif = await pool.query(
     `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='hrms_user_notifications' LIMIT 1`
   );
   if (hasNotif.rows?.length) {
     for (const u of targets) {
-      await pool.query(
+      const ins = await pool.query(
         `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
-         VALUES ($1,$2,$3,'health_incident',$4::jsonb,$5)`,
+         VALUES ($1,$2,$3,'health_incident',$4::jsonb,$5)
+         RETURNING id`,
         [
           u.username,
           title,
@@ -461,22 +576,156 @@ async function healNotifyCustomer(pool, incident) {
             incident_id: incident.id,
             item_key: incident.item_key,
             queue: 'customer',
-            faq_id: incident.faq_id || null,
+            faq_id: faq?.id || incident.faq_id || null,
+            channel: 'in_app',
           }),
           incident.tenant_id,
         ]
-      ).catch(() => null);
-      notified += 1;
+      ).catch((e) => ({ rows: [], error: e?.message }));
+      if (ins.rows?.length) {
+        notified += 1;
+        delivery.in_app.push({ username: u.username, ok: true, id: ins.rows[0].id });
+      } else {
+        delivery.in_app.push({ username: u.username, ok: false, error: ins.error || 'insert_failed' });
+      }
+    }
+  }
+
+  let feishuSent = 0;
+  let feishuFailed = 0;
+  if (typeof _notifiers.lookupFeishuUserByUsername === 'function' && typeof _notifiers.sendLarkMessage === 'function') {
+    const seen = new Set();
+    for (const u of targets) {
+      try {
+        const fu = await _notifiers.lookupFeishuUserByUsername(u.username);
+        const openId = String(fu?.open_id || '').trim();
+        if (!openId || seen.has(openId)) continue;
+        seen.add(openId);
+        const sent = await _notifiers.sendLarkMessage(openId, `${title}\n\n${message}`, { skipDedup: true })
+          .catch((e) => ({ ok: false, error: e?.message }));
+        if (sent?.ok) {
+          feishuSent += 1;
+          delivery.feishu.push({ username: u.username, open_id: openId, ok: true });
+        } else {
+          feishuFailed += 1;
+          delivery.feishu.push({ username: u.username, open_id: openId, ok: false, error: sent?.error || 'send_failed' });
+        }
+      } catch (e) {
+        feishuFailed += 1;
+        delivery.feishu.push({ username: u.username, ok: false, error: e?.message || String(e) });
+      }
     }
   }
 
   return {
-    ok: true,
+    ok: notified > 0 || feishuSent > 0,
     action: 'notify_customer',
     notified,
+    feishu_sent: feishuSent,
+    feishu_failed: feishuFailed,
     targets: targets.map((x) => x.username),
+    faq_id: faq?.id || null,
+    delivery,
     auto_resolved: false,
-    message: notified ? `已通知 ${notified} 位管理员` : '未找到可通知的管理员账号（已记录工单）',
+    message: (notified || feishuSent)
+      ? `站内 ${notified} / 飞书 ${feishuSent}（失败 ${feishuFailed}）`
+      : '未找到可通知的管理员账号或投递失败（已记录工单）',
+  };
+}
+
+async function healNotifyOps(pool, incident) {
+  const faq = faqForItemKey(incident.item_key);
+  const queueLabel = QUEUE_LABELS[incident.queue] || incident.queue;
+  const text = [
+    `【健康中心·${queueLabel}】`,
+    `租户 ${incident.tenant_id}`,
+    `${incident.severity || ''} ${incident.item_name || incident.item_key}`,
+    incident.suggestion || '',
+    faq ? `FAQ: ${faq.title} (${faq.id})` : '',
+    `工单 #${incident.id} · 请在 platform-admin「健康」页处理`,
+  ].filter(Boolean).join('\n');
+
+  let alertResult = { ok: false };
+  if (typeof _notifiers.sendOpsAlert === 'function') {
+    alertResult = await _notifiers.sendOpsAlert(text, {
+      title: `健康中心 ${queueLabel}`,
+      audience: incident.queue === 'eng' ? 'eng' : 'cs',
+      meta: { incident_id: incident.id, queue: incident.queue, item_key: incident.item_key },
+    }).catch((e) => ({ ok: false, error: e?.message || String(e) }));
+  }
+
+  return {
+    ok: !!alertResult?.ok || (alertResult?.feishuSent || 0) > 0,
+    action: 'notify_ops',
+    audience: incident.queue === 'eng' ? 'eng' : 'cs',
+    alert: alertResult,
+    auto_resolved: false,
+    message: (alertResult?.feishuSent || alertResult?.ok)
+      ? `已通知值班（飞书 ${alertResult.feishuSent || 0}）`
+      : `值班通知未投递：${alertResult?.error || 'notifier_unavailable'}`,
+  };
+}
+
+async function healAuditDeliveryFailures(pool, incident) {
+  const has = await pool.query(
+    `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='growth_delivery_logs' LIMIT 1`
+  );
+  if (!has.rows?.length) {
+    return { ok: false, action: 'audit_delivery_failures', error: 'growth_delivery_logs_missing', auto_resolved: false };
+  }
+
+  const r = await pool.query(
+    `SELECT status, COUNT(*)::int AS cnt,
+            MAX(created_at) AS last_at,
+            MIN(COALESCE(error_message, result->>'error', payload->>'error', '')) AS sample_error
+       FROM growth_delivery_logs
+      WHERE tenant_id=$1 AND created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY status
+      ORDER BY cnt DESC`,
+    [incident.tenant_id]
+  ).catch(() => ({ rows: [] }));
+
+  const byStatus = {};
+  let total = 0;
+  let failed = 0;
+  for (const row of r.rows || []) {
+    const c = n(row.cnt);
+    byStatus[row.status] = { count: c, last_at: row.last_at, sample_error: row.sample_error || null };
+    total += c;
+    if (['failed', 'error', 'rejected'].includes(String(row.status))) failed += c;
+  }
+  const failRate = total > 0 ? Math.round((failed / total) * 100) : 0;
+  const summary = {
+    window_days: 7,
+    total,
+    failed,
+    fail_rate_pct: failRate,
+    by_status: byStatus,
+    note: '仅汇总，未自动重发短信/企微',
+  };
+
+  // 顺带提醒值班（不重发）
+  let alert = null;
+  if (failed > 0 && typeof _notifiers.sendOpsAlert === 'function') {
+    alert = await _notifiers.sendOpsAlert(
+      [
+        '【健康中心·触达失败汇总】',
+        `租户 ${incident.tenant_id}`,
+        `近7日失败 ${failed}/${total}（${failRate}%）`,
+        `关联项：${incident.item_name || incident.item_key}`,
+        '禁止自动重发；请人工核对模板/运营商/频控后决定是否补发。',
+      ].join('\n'),
+      { title: '触达失败汇总', audience: 'cs', meta: { incident_id: incident.id, audit: summary } }
+    ).catch((e) => ({ ok: false, error: e?.message }));
+  }
+
+  return {
+    ok: true,
+    action: 'audit_delivery_failures',
+    summary,
+    alert,
+    auto_resolved: false,
+    message: total ? `近7日失败率 ${failRate}%（${failed}/${total}）` : '近7日无触达记录',
   };
 }
 
@@ -504,6 +753,8 @@ export async function healIncident(pool, incidentId, { action } = {}) {
     if (actionId === 'rerun_inspection') result = await healRerunInspection(pool, incident);
     else if (actionId === 'generate_report') result = await healGenerateReport(pool, incident);
     else if (actionId === 'notify_customer') result = await healNotifyCustomer(pool, incident);
+    else if (actionId === 'notify_ops') result = await healNotifyOps(pool, incident);
+    else if (actionId === 'audit_delivery_failures') result = await healAuditDeliveryFailures(pool, incident);
     else return { ok: false, error: 'action_not_implemented' };
   } catch (e) {
     await pool.query(
@@ -536,6 +787,110 @@ export async function healIncident(pool, incidentId, { action } = {}) {
     result,
     incident: updated.rows?.[0] || null,
   };
+}
+
+/**
+ * 构建并投递队列摘要（客服 / 研发分流）
+ */
+export async function sendQueueDigests(pool) {
+  const digests = await buildQueueDigests(pool);
+  const results = { cs: null, eng: null, empty: null };
+  if (typeof _notifiers.sendOpsAlert !== 'function') {
+    return { ok: false, error: 'notifier_unavailable', digests };
+  }
+  if (digests.cs.count > 0) {
+    results.cs = await _notifiers.sendOpsAlert(digests.cs.text, { title: '客服日巡摘要', audience: 'cs' })
+      .catch((e) => ({ ok: false, error: e?.message }));
+  }
+  if (digests.eng.count > 0) {
+    results.eng = await _notifiers.sendOpsAlert(digests.eng.text, { title: '研发值班摘要', audience: 'eng' })
+      .catch((e) => ({ ok: false, error: e?.message }));
+  }
+  if (!digests.cs.count && !digests.eng.count) {
+    results.empty = await _notifiers.sendOpsAlert(
+      `【健康中心】${digests.ops_stats?.date || ymd()} 开放队列为空。今日处理 ${digests.ops_stats?.handled_today ?? 0}。`,
+      { title: '健康中心日巡', audience: 'cs' }
+    ).catch((e) => ({ ok: false, error: e?.message }));
+  }
+  return { ok: true, digests, results };
+}
+
+/**
+ * 构建队列摘要文案（客服 / 研发分流）
+ */
+export async function buildQueueDigests(pool) {
+  await ensureHealthIncidentTables(pool);
+  const listed = await listIncidents(pool, { status: 'open', limit: 80 });
+  const items = listed.items || [];
+  const csItems = items.filter((i) => ['customer', 'cs_ops', 'third_party'].includes(i.queue));
+  const engItems = items.filter((i) => i.queue === 'eng' || i.status === 'escalated');
+  const fmt = (arr, title) => {
+    const top = arr.slice(0, 8).map((i) =>
+      `· [${i.severity || '?'}] ${i.tenant_id} ${i.item_name || i.item_key}${i.sla_breached ? ' ⚠SLA' : ''}`
+    );
+    return [
+      title,
+      `开放 ${arr.length} 条 | 今日处理 ${listed.ops_stats?.handled_today ?? 0} | 自愈成功 ${listed.ops_stats?.heal_ok_today ?? 0}/${listed.ops_stats?.heal_attempts_today ?? 0} | 升级 ${listed.ops_stats?.escalated_today ?? 0}`,
+      top.length ? top.join('\n') : '· （无开放项）',
+      '入口：/platform-admin → 健康',
+    ].join('\n');
+  };
+  return {
+    ok: true,
+    ops_stats: listed.ops_stats,
+    summary: listed.summary,
+    cs: { count: csItems.length, text: fmt(csItems, '【客服日巡摘要】客户+客服+第三方') },
+    eng: { count: engItems.length, text: fmt(engItems, '【研发值班摘要】仅 eng / 已升级') },
+  };
+}
+
+/**
+ * SLA：列出超 24h 未确认的开放工单（不自动改 queue）
+ */
+export async function listSlaBreaches(pool, { limit = 30 } = {}) {
+  await ensureHealthIncidentTables(pool);
+  const r = await pool.query(
+    `SELECT *
+       FROM tenant_health_incidents
+      WHERE status IN ('open','healing')
+        AND acked_at IS NULL
+        AND created_at < NOW() - INTERVAL '24 hours'
+      ORDER BY created_at ASC
+      LIMIT $1`,
+    [Math.min(Math.max(n(limit) || 30, 1), 100)]
+  );
+  const items = (r.rows || []).map((row) => ({
+    ...row,
+    queue_label: QUEUE_LABELS[row.queue] || row.queue,
+    sla_breached: true,
+    age_hours: Math.round((Date.now() - new Date(row.created_at).getTime()) / 3600000),
+  }));
+  return { ok: true, count: items.length, items, sla_hours: SLA_HOURS };
+}
+
+/**
+ * 发送 SLA 提醒（仅提醒，不自动升级）
+ */
+export async function sendSlaReminders(pool) {
+  const listed = await listSlaBreaches(pool, { limit: 40 });
+  if (!listed.count) return { ok: true, sent: false, count: 0, message: 'no_sla_breach' };
+  const lines = listed.items.slice(0, 12).map((i) =>
+    `· #${i.id} ${i.tenant_id} [${QUEUE_LABELS[i.queue] || i.queue}] ${i.item_name || i.item_key}（${i.age_hours}h）`
+  );
+  const text = [
+    `【健康中心·SLA提醒】超 ${SLA_HOURS}h 未确认 ${listed.count} 条`,
+    '不会自动升级研发，请人工确认或分流。',
+    ...lines,
+  ].join('\n');
+  let alert = { ok: false };
+  if (typeof _notifiers.sendOpsAlert === 'function') {
+    alert = await _notifiers.sendOpsAlert(text, {
+      title: '健康中心 SLA 提醒',
+      audience: 'cs',
+      meta: { type: 'sla_reminder', count: listed.count },
+    }).catch((e) => ({ ok: false, error: e?.message }));
+  }
+  return { ok: true, sent: !!(alert?.ok || alert?.feishuSent), count: listed.count, alert };
 }
 
 /**

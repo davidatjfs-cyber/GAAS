@@ -30,8 +30,7 @@ function makePool() {
       if (text.includes('CREATE TABLE IF NOT EXISTS tenant_health_incidents') || text.includes('CREATE INDEX IF NOT EXISTS idx_thi')) {
         return { rows: [] };
       }
-      if (text.includes('information_schema.tables') && text.includes("'tenants'")) return { rows: [{ '?column?': 1 }] };
-      if (text.includes('information_schema.tables') && text.includes("'hrms_user_notifications'")) return { rows: [{ '?column?': 1 }] };
+      if (text.includes('information_schema.tables')) return { rows: [{ ok: 1 }] };
       if (text.includes('FROM tenants')) return { rows: [{ tenant_id: 't1' }] };
       if (text.includes('FROM tenant_operation_inspection_runs')) return { rows: [{ id: 9 }] };
       if (text.includes('FROM tenant_operation_inspection_items WHERE run_id')) {
@@ -94,6 +93,12 @@ function makePool() {
           }),
         };
       }
+      if (text.includes('FROM tenant_health_incidents') && text.includes('handled_today')) {
+        return { rows: [{ handled_today: 0, heal_attempts_today: 0, heal_ok_today: 0, escalated_today: 0, resolved_today: 0, sla_breached_open: 0 }] };
+      }
+      if (text.includes('FROM tenant_health_incidents') && text.includes("INTERVAL '24 hours'") && text.includes('COUNT')) {
+        return { rows: [{ cnt: 0 }] };
+      }
       if (text.includes('FROM tenant_health_incidents') && text.includes('WHERE id=')) {
         const id = Number(params[0]);
         const row = incidents.get(id);
@@ -105,7 +110,7 @@ function makePool() {
         const status = params[1];
         const tenantId = params[2];
         if (queue) rows = rows.filter((r) => r.queue === queue);
-        if (status === 'open') rows = rows.filter((r) => ['open', 'acked', 'healing'].includes(r.status));
+        if (status === 'open') rows = rows.filter((r) => ['open', 'acked', 'healing', 'escalated'].includes(r.status));
         else if (status && status !== 'all') rows = rows.filter((r) => r.status === status);
         if (tenantId) rows = rows.filter((r) => r.tenant_id === tenantId);
         return { rows };
@@ -138,7 +143,12 @@ function makePool() {
         return { rows: row ? [row] : [] };
       }
       if (text.includes('FROM users')) return { rows: [{ username: 'admin_t1' }] };
-      if (text.includes('INSERT INTO hrms_user_notifications')) return { rows: [] };
+      if (text.includes('INSERT INTO hrms_user_notifications')) {
+        return { rows: [{ id: 900 + seq }] };
+      }
+      if (text.includes('FROM growth_delivery_logs')) {
+        return { rows: [{ status: 'failed', cnt: 3, last_at: null, sample_error: 'timeout' }, { status: 'sent', cnt: 1, last_at: null, sample_error: '' }] };
+      }
       return { rows: [] };
     },
   };
@@ -168,7 +178,47 @@ function makePool() {
   assert.equal(healed.ok, true);
   assert.equal(healed.action, 'notify_customer');
   assert.equal(healed.result.notified, 1);
+  assert.ok(listed.ops_stats);
   console.log('ok heal notify');
+}
+
+{
+  assert.equal(suggestedHealAction('sms_wecom_sent', 'third_party'), 'audit_delivery_failures');
+  assert.equal(suggestedHealAction('ai_tasks_generated', 'eng'), 'generate_report');
+  assert.ok(HEAL_ACTIONS.notify_ops);
+  assert.ok(HEAL_ACTIONS.audit_delivery_failures);
+  const pool = makePool();
+  await syncIncidentsFromInspections(pool, { tenantId: 't1' });
+  // 造一条触达失败类工单
+  const routed = await routeInspectionItemToIncident(pool, {
+    item: {
+      id: 88,
+      tenant_id: 't1',
+      run_id: 9,
+      item_key: 'sms_wecom_sent',
+      item_name: '短信发送',
+      severity: 'P1',
+      owner_role: '实施人员',
+      responsible_party: 'platform_team',
+      impact_modules: ['自动营销'],
+      suggestion: '检查发送',
+    },
+  });
+  const healed = await healIncident(pool, routed.incident.id, { action: 'audit_delivery_failures' });
+  if (!healed.result?.summary) {
+    console.error('audit heal debug', healed);
+  }
+  assert.equal(healed.ok, true);
+  assert.equal(healed.action, 'audit_delivery_failures');
+  assert.ok(healed.result?.summary);
+  console.log('ok audit delivery');
+}
+
+{
+  const { isSlaBreached } = await import('./services/tenant-health-incident-service.js');
+  assert.equal(isSlaBreached({ status: 'open', acked_at: null, created_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString() }), true);
+  assert.equal(isSlaBreached({ status: 'open', acked_at: new Date().toISOString(), created_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString() }), false);
+  console.log('ok sla helper');
 }
 
 {

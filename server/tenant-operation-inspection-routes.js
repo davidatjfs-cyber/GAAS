@@ -26,6 +26,11 @@ import {
   healIncident,
   HEAL_ACTIONS,
   QUEUE_LABELS,
+  getIncidentOpsStats,
+  buildQueueDigests,
+  sendQueueDigests,
+  listSlaBreaches,
+  sendSlaReminders,
 } from './services/tenant-health-incident-service.js';
 import { tenantContext } from './utils/database.js';
 
@@ -313,6 +318,41 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
     });
     app.get('/api/admin/health-center/heal-actions', platformAdminRequired, (_req, res) => {
       return res.json({ ok: true, actions: Object.values(HEAL_ACTIONS), queues: QUEUE_LABELS });
+    });
+    app.get('/api/admin/health-center/ops-stats', platformAdminRequired, async (_req, res) => {
+      try {
+        const ops_stats = await getIncidentOpsStats(pool);
+        return res.json({ ok: true, ops_stats });
+      } catch (e) {
+        console.error('[health-center] ops-stats failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error' });
+      }
+    });
+    app.get('/api/admin/health-center/incidents/digest', platformAdminRequired, async (_req, res) => {
+      try {
+        return res.json(await buildQueueDigests(pool));
+      } catch (e) {
+        console.error('[health-center] digest failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error' });
+      }
+    });
+    app.post('/api/admin/health-center/incidents/digest/send', platformAdminRequired, async (_req, res) => {
+      try {
+        const digests = await sendQueueDigests(pool);
+        const sla = await sendSlaReminders(pool);
+        return res.json({ ok: true, ...digests, sla });
+      } catch (e) {
+        console.error('[health-center] digest send failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error' });
+      }
+    });
+    app.get('/api/admin/health-center/incidents/sla', platformAdminRequired, async (req, res) => {
+      try {
+        return res.json(await listSlaBreaches(pool, { limit: req.query?.limit }));
+      } catch (e) {
+        console.error('[health-center] sla list failed:', e?.message || e);
+        return res.status(500).json({ ok: false, error: 'server_error' });
+      }
     });
     app.post('/api/admin/health-center/incidents/:id/ack', platformAdminRequired, async (req, res) => {
       try {

@@ -1296,9 +1296,10 @@
       return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
-    function renderIncidentSummary(summary = {}, labels = {}) {
+    function renderIncidentSummary(summary = {}, labels = {}, ops = {}) {
       const host = $('incidentSummary');
       if (!host) return;
+      const healRate = ops.heal_success_rate == null ? '—' : `${ops.heal_success_rate}%`;
       const cells = [
         ['客户可处理', summary.customer || 0, ''],
         ['客服/实施', summary.cs_ops || 0, ''],
@@ -1306,6 +1307,11 @@
         ['研发值班', summary.eng || 0, 'bad'],
         ['开放合计', summary.open_total || 0, ''],
         ['已升级', summary.escalated || 0, 'bad'],
+        ['今日处理', ops.handled_today || 0, 'ok'],
+        ['自愈成功', `${ops.heal_ok_today || 0}/${ops.heal_attempts_today || 0}`, ''],
+        ['自愈率', healRate, ''],
+        ['今日升级', ops.escalated_today || 0, 'bad'],
+        ['SLA超时', ops.sla_breached_open || summary.sla_breached || 0, 'bad'],
       ];
       host.innerHTML = cells.map(([label, value, cls]) => `
         <div class="stat ${cls}"><div class="label">${label}</div><div class="value">${value}</div></div>
@@ -1332,6 +1338,8 @@
         return `复检完成（健康分 ${r.health_score ?? '—'}）`;
       }
       if (r.action === 'notify_customer') return r.message || `已通知 ${r.notified || 0} 人`;
+      if (r.action === 'notify_ops') return r.message || '已通知值班';
+      if (r.action === 'audit_delivery_failures') return r.message || '已汇总触达失败';
       if (r.action === 'generate_report') return r.report_id ? `已生成报告 #${r.report_id}` : '已生成报告';
       if (r.escalate_note) return `升级说明：${r.escalate_note}`;
       return '';
@@ -1353,7 +1361,7 @@
           <td>${escHtml(it.queue_label || it.queue)}</td>
           <td><span class="pill ${it.severity === 'P0' ? 'bad' : ''}">${escHtml(it.severity || '—')}</span></td>
           <td><div class="mono">${escHtml(it.tenant_id)}</div></td>
-          <td><strong>${escHtml(it.item_name || it.item_key)}</strong><div class="small">${escHtml(it.suggestion || '')}</div>${healNote ? `<div class="small" style="color:var(--accent);margin-top:4px">最近自愈：${escHtml(healNote)}</div>` : ''}</td>
+          <td><strong>${escHtml(it.item_name || it.item_key)}</strong><div class="small">${escHtml(it.suggestion || '')}</div>${it.sla_breached ? `<div class="small" style="color:#b63f31;margin-top:2px">⚠ 超24h未确认（SLA）</div>` : ''}${healNote ? `<div class="small" style="color:var(--accent);margin-top:4px">最近自愈：${escHtml(healNote)}</div>` : ''}</td>
           <td class="small">${escHtml(it.suggested_heal_label || it.suggested_heal || '—')}</td>
           <td><span class="pill ${escalated ? 'bad' : (it.status === 'acked' ? 'ok' : '')}">${escHtml(incidentStatusLabel(it.status))}</span></td>
           <td>
@@ -1382,7 +1390,7 @@
       const queue = $('incidentQueueFilter')?.value || '';
       const data = await api(`/api/admin/health-center/incidents?status=open${queue ? `&queue=${encodeURIComponent(queue)}` : ''}`);
       state.health.incidents = data;
-      renderIncidentSummary(data.summary || {}, data.queue_labels || {});
+      renderIncidentSummary(data.summary || {}, data.queue_labels || {}, data.ops_stats || {});
       renderIncidentTable(data.items || []);
       return data;
     }
@@ -1596,7 +1604,7 @@
           queue_labels: data.incidents.queue_labels,
           items: data.incidents.open_preview || [],
         };
-        renderIncidentSummary(data.incidents.summary || {}, data.incidents.queue_labels || {});
+        renderIncidentSummary(data.incidents.summary || {}, data.incidents.queue_labels || {}, data.incidents.ops_stats || {});
         renderIncidentTable(data.incidents.open_preview || []);
       }
       renderHealthSummary(state.health.summary);
