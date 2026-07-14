@@ -406,7 +406,6 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const qr = String(req.body?.qr_url || process.env.WECOM_SALES_CONSULTANT_QR_URL || '').trim();
       if (!qr) return res.status(409).json({ ok: false, error: 'consultant_qr_not_configured', message: '请先配置销售顾问企业微信二维码' });
       const text = `为了方便发送Demo资料和后续跟进，请添加专属顾问：${qr}`;
-      const detail = await getLeadDetail(pool, leadId);
       if (kfConfigured() && lead.open_kfid && lead.external_userid) {
         const { sendKfText } = await import('./services/sales/sales-kf.js'); await sendKfText({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, content: text });
       }
