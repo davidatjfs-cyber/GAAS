@@ -159,6 +159,14 @@ export function buildStrategyPlan({ userText, extracted, history = [], intentSco
   };
 }
 
+// 客户AI禁止自行报价：命中具体数字+货币/折扣单位即视为报价（¥xxx、xxx元、xxx万、xx折），
+// 客户问价格由 shouldTakeover 的 HIGH_INTENT_PATTERNS 先一步转人工兜底；这里是第二道防线，
+// 防止LLM在非报价语境下自由发挥时意外说出具体数字。
+const PRICE_MENTION_RE = /¥\s*\d+(\.\d+)?|\d+(\.\d+)?\s*(元|块钱|万元|折)/;
+export function containsPriceMention(text = '') {
+  return PRICE_MENTION_RE.test(String(text || ''));
+}
+
 export function sanitizeReply(text = '') {
   let out = String(text || '').trim();
   const hit = containsForbiddenClaim(out);

@@ -2,7 +2,7 @@
  * 客户 AI 一轮对话：策略机 → LLM 生成 → 闸门
  */
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE } from './sales-knowledge.js';
-import { buildStrategyPlan, sanitizeReply, templateReply } from './sales-strategy.js';
+import { buildStrategyPlan, sanitizeReply, templateReply, containsPriceMention } from './sales-strategy.js';
 
 let _callLLM = null;
 export function setSalesCustomerAiLlm(fn) {
@@ -28,7 +28,7 @@ ${knowledgeBlurb}
 模式=${plan.mode}
 下一问=${plan.next_question?.question || '（可不问）'}
 是否转人工=${plan.takeover.takeover ? '是' : '否'}
-允许谈价格细节=${plan.allow_price_talk ? '否，只可讲原则' : '否'}
+价格规则=绝对禁止提及任何具体价格数字/折扣比例（包括金额、折扣、报价范围）。客户问价格一律引导"由顾问为您详细说明"，不得自行报价。
 已确认信息=${JSON.stringify(plan.extracted || {})}
 `;
 
@@ -61,6 +61,14 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
   if (plan.mode === 'handoff') {
     reply = sanitizeReply(templateReply(plan, userText));
     source = 'handoff_template';
+  } else if (containsPriceMention(reply)) {
+    // 第二道防线：策略机没有判定为转人工场景，但LLM回复里仍然出现了具体价格数字/折扣，
+    // 强制改为转人工模板，并把 takeover 标记为真，确保下游(sales-session.js)真正执行
+    // 人工接管，而不只是话术上"听起来像转人工"。
+    plan.mode = 'handoff';
+    plan.takeover = { ...plan.takeover, takeover: true, reason: 'price_leak_guard' };
+    reply = sanitizeReply(templateReply(plan, userText));
+    source = 'handoff_template_price_guard';
   }
 
   if (plan.next_question?.question && plan.mode !== 'handoff' && !/[？?]/.test(reply)) {
