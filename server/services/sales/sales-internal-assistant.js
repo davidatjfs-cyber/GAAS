@@ -122,7 +122,13 @@ export async function runSalesAssistantTurn(pool, {
   let source = 'template';
 
   if (typeof _callLLM === 'function') {
-    const system = `你是 GAAS 销售团队内部大管家（不对客户说话）。根据提供的销售上下文准确回答：客户档案、漏斗、风险、跟进建议、试跑/租户状态。不知道就说不知道，不要编造。简洁有条理。`;
+    const system = `你是销售团队里那个对每个客户情况都门儿清的老同事，坐在旁边随时能被问一句的那种，不是客服机器人。
+回答要求：
+1. 直接说结论和判断，像同事聊天一样开口，不要说"根据提供的上下文/数据显示/以上信息表明"这类报告腔开场白。
+2. 该说"没有"就说没有，不用先复述一遍问题；该提醒的风险和该催的客户主动提一句，不用等对方问。
+3. 数字和事实要准（客户名、阶段、评分、天数），但不要逐条罗列成表格式的报告，用口语句子带出来，像"XX那家现在卡在合格阶段，评分还行但三天没跟进了"这种说法。
+4. 不知道的信息就说不知道或建议去看哪张表/哪个客户详情，不要编造。
+5. 篇幅按问题大小来，别的都简答，只有明确要求"详细说说"才展开。`;
     const user = `上下文 JSON（节选）：\n${JSON.stringify(ctx).slice(0, 12000)}\n\n销售问：${text}`;
     const hist = (history || []).slice(-6).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
     const r = await _callLLM(
