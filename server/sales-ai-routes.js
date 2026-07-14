@@ -80,11 +80,13 @@ async function remindStaleHighIntentLeads(pool, sendOpsAlert) {
 async function runRiskAlerts(pool, sendOpsAlert) {
   if (typeof sendOpsAlert !== 'function') return;
   const r = await pool.query(
-    `SELECT id, lead_key, company, name, city, store_count, intent_score, stage, last_human_at, updated_at, decision_role, demo_count, events
-       FROM sales_leads
-      WHERE stage NOT IN ('won', 'lost', 'unfit')
-        AND (last_risk_check_at IS NULL OR last_risk_check_at < NOW() - INTERVAL '4 hours')
-      ORDER BY intent_score DESC
+    `SELECT sl.id, sl.lead_key, sl.company, sl.name, sl.city, sl.store_count, sl.intent_score, sl.stage,
+            sl.last_human_at, sl.updated_at, sl.decision_role, sl.demo_count,
+            EXISTS (SELECT 1 FROM sales_lead_events e WHERE e.lead_id = sl.id AND e.event_type = 'ASK_PRICE') AS has_asked_price
+       FROM sales_leads sl
+      WHERE sl.stage NOT IN ('won', 'lost', 'unfit')
+        AND (sl.last_risk_check_at IS NULL OR sl.last_risk_check_at < NOW() - INTERVAL '4 hours')
+      ORDER BY sl.intent_score DESC
       LIMIT 100`
   );
   const checked = [];
@@ -92,7 +94,7 @@ async function runRiskAlerts(pool, sendOpsAlert) {
     const risks = [];
     const lastT = lead.last_human_at || lead.updated_at;
     if (lastT && Date.now() - new Date(lastT).getTime() > 3 * 86400000) risks.push('超3天未跟进');
-    if (/ASK_PRICE/.test(String(lead.events || '[]')) && lastT && Date.now() - new Date(lastT).getTime() > 2 * 86400000) risks.push('报价后无进展');
+    if (lead.has_asked_price && lastT && Date.now() - new Date(lastT).getTime() > 2 * 86400000) risks.push('报价后无进展');
     if ((lead.demo_count || 0) > 0 && lead.decision_role !== '老板') risks.push('已Demo未确认决策人');
     if (!lead.decision_role) risks.push('未确认决策角色');
     if (lead.intent_score >= 70 && lead.stage !== 'sales_takeover' && lead.stage !== 'won' && lead.stage !== 'lost') risks.push('高意向但未接管');
