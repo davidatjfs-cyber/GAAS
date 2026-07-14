@@ -26,6 +26,14 @@ import {
 } from './services/sales/sales-ops.js';
 import { setSalesCustomerAiLlm } from './services/sales/sales-customer-ai.js';
 import { draftCustomerReply, draftStandardResponse, draftQuickReplyByScenario, setSalesReplyDraftLlm } from './services/sales/sales-reply-draft.js';
+import { provisionTenantFromLead } from './services/sales-provisioning.js';
+import { buildSalesBossDashboard } from './services/sales/sales-boss-metrics.js';
+import { listCaseAssets, recommendCasesForLead, formatCaseForSend, getCaseAsset } from './services/sales/sales-case-library.js';
+import { generateSalesProposal, runDeepDiagnosis, setSalesProposalLlm } from './services/sales/sales-proposal.js';
+import { TRAINING_SCENARIOS, scoreTrainingResponse, recordTrainingSession, getTrainingStats } from './services/sales/sales-training.js';
+import { runSalesAssistantTurn, listAssistantThreads, listAssistantMessages, setSalesAssistantLlm } from './services/sales/sales-internal-assistant.js';
+import { checkPricePermission } from './services/sales/sales-price-policy.js';
+import { validateTrialProgress, runTrialValidations } from './services/sales/sales-trial-monitor.js';
 import {
   kfConfigured,
   kfEnv,
@@ -110,8 +118,12 @@ async function runRiskAlerts(pool, sendOpsAlert) {
 }
 
 export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLLM, sendOpsAlert } = {}) {
-  if (typeof callLLM === 'function') setSalesCustomerAiLlm(callLLM);
-  if (typeof callLLM === 'function') setSalesReplyDraftLlm(callLLM);
+  if (typeof callLLM === 'function') {
+    setSalesCustomerAiLlm(callLLM);
+    setSalesReplyDraftLlm(callLLM);
+    setSalesProposalLlm(callLLM);
+    setSalesAssistantLlm(callLLM);
+  }
   if (typeof sendOpsAlert === 'function') setSalesNotify(sendOpsAlert);
 
   if (!globalThis.__salesStaleLeadReminderTimer) {
@@ -128,6 +140,22 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         .then(() => runRiskAlerts(pool, sendOpsAlert))
         .catch((e) => console.warn('[sales-ai] risk alert run failed:', e?.message || e));
     }, 60 * 60 * 1000);
+  }
+
+  if (!globalThis.__salesTrialValidationTimer) {
+    globalThis.__salesTrialValidationTimer = setInterval(() => {
+      runTrialValidations(pool, { limit: 10 })
+        .then((rows) => {
+          const bad = (rows || []).filter((r) => r.report?.status === 'no_data');
+          if (bad.length && typeof sendOpsAlert === 'function') {
+            return sendOpsAlert(
+              ['【销售AI·试跑无数据】', ...bad.map((b) => `· ${b.company || b.lead_id}：${b.report?.summary || ''}`)].join('\n'),
+              { title: '试跑数据告警', audience: 'sales' }
+            );
+          }
+        })
+        .catch((e) => console.warn('[sales-ai] trial validation failed:', e?.message || e));
+    }, 6 * 60 * 60 * 1000);
   }
 
   if (!globalThis.__salesDailyReportTimer) {
@@ -323,7 +351,9 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     try {
       const text = String(req.body?.text || '').trim();
       if (!text) return res.status(400).json({ ok: false, error: 'empty' });
-      res.json({ ok: true, risks: detectOvercommitment(text) });
+      const price = checkPricePermission({ role: 'platform_admin', ...req.platformAdmin }, text);
+      const risks = [...detectOvercommitment(text), ...price.risks];
+      res.json({ ok: true, risks, price_permission: price });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
@@ -458,14 +488,17 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   app.post('/api/admin/sales/trials', platformAdminRequired, async (req, res) => {
     try {
       const { createTrial } = await import('./services/sales/sales-store.js');
+      const leadId = Number(req.params?.id || req.body?.lead_id);
+      const lead = await getLead(pool, leadId);
       const trial = await createTrial(pool, {
-        leadId: Number(req.params?.id || req.body?.lead_id),
+        leadId,
         startedAt: req.body?.started_at,
         endedAt: req.body?.ended_at,
         stores: req.body?.stores,
-        posBrand: req.body?.pos_brand,
+        posBrand: req.body?.pos_brand || lead?.pos_brand,
         targetKpis: req.body?.target_kpis,
-        createdBy: req.user?.username,
+        createdBy: req.platformAdmin?.username,
+        tenantId: lead?.tenant_id || req.body?.tenant_id,
       });
       res.json({ ok: true, trial });
     } catch (e) {
@@ -476,20 +509,188 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   app.post('/api/admin/sales/deals', platformAdminRequired, async (req, res) => {
     try {
       const { createDeal, addOpportunity } = await import('./services/sales/sales-store.js');
+      const leadId = Number(req.params?.id || req.body?.lead_id);
       if (req.body?.opportunity_id) {
-        await addOpportunity(pool, { leadId: Number(req.body?.lead_id), title: '成交机会', stage: 'won', amount: req.body?.amount, createdBy: req.user?.username });
+        await addOpportunity(pool, { leadId, title: '成交机会', stage: 'won', amount: req.body?.amount, createdBy: req.platformAdmin?.username });
       }
       const deal = await createDeal(pool, {
-        leadId: Number(req.params?.id || req.body?.lead_id),
+        leadId,
         opportunityId: req.body?.opportunity_id,
         dealDate: req.body?.deal_date,
         amount: req.body?.amount,
         storeCount: req.body?.store_count,
         contractTerm: req.body?.contract_term,
         notes: req.body?.notes,
-        createdBy: req.user?.username,
+        createdBy: req.platformAdmin?.username,
       });
-      res.json({ ok: true, deal });
+      let provision = null;
+      if (req.body?.provision_tenant !== false) {
+        provision = await provisionTenantFromLead(pool, leadId, {
+          tenantId: req.body?.tenant_id,
+          tenantName: req.body?.tenant_name,
+          adminUsername: req.body?.admin_username,
+          startedBy: req.platformAdmin?.username || 'sales_ai',
+        });
+        if (provision?.ok && provision.tenant_id) {
+          await pool.query(`UPDATE sales_deals SET tenant_id=$2, provision_status='done' WHERE id=$1`, [deal.id, provision.tenant_id]);
+        }
+      }
+      res.json({ ok: true, deal, provision });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
+  app.post('/api/admin/sales/leads/:id/provision-tenant', platformAdminRequired, async (req, res) => {
+    try {
+      const result = await provisionTenantFromLead(pool, Number(req.params.id), {
+        tenantId: req.body?.tenant_id,
+        tenantName: req.body?.tenant_name,
+        adminUsername: req.body?.admin_username,
+        startedBy: req.platformAdmin?.username,
+      });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
+  app.post('/api/admin/sales/leads/:id/deep-diagnosis', platformAdminRequired, async (req, res) => {
+    try {
+      const detail = await getLeadDetail(pool, Number(req.params.id));
+      if (!detail.ok) return res.status(404).json(detail);
+      const result = await runDeepDiagnosis({
+        lead: detail.lead,
+        messages: detail.messages,
+        ruleDiagnosis: detail.diagnosis,
+      });
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/leads/:id/proposal', platformAdminRequired, async (req, res) => {
+    try {
+      const detail = await getLeadDetail(pool, Number(req.params.id));
+      if (!detail.ok) return res.status(404).json(detail);
+      const cases = await recommendCasesForLead(pool, detail.lead);
+      const proposal = await generateSalesProposal({
+        lead: detail.lead,
+        diagnosis: detail.diagnosis,
+        cases,
+        funnel: detail.funnel,
+      });
+      res.json({ ok: true, ...proposal, cases: cases.slice(0, 3).map((c) => ({ case_key: c.case_key, title: c.title })) });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/cases', platformAdminRequired, async (req, res) => {
+    try {
+      const cases = await listCaseAssets(pool, { theme: req.query?.theme, pain: req.query?.pain, limit: Number(req.query?.limit) || 50 });
+      res.json({ ok: true, cases });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/cases/:key', platformAdminRequired, async (req, res) => {
+    try {
+      const c = await getCaseAsset(pool, req.params.key);
+      if (!c) return res.status(404).json({ ok: false, error: 'not_found' });
+      res.json({ ok: true, case: c, text: formatCaseForSend(c) });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/boss-dashboard', platformAdminRequired, async (_req, res) => {
+    try {
+      res.json(await buildSalesBossDashboard(pool));
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/training/scenarios', platformAdminRequired, (_req, res) => {
+    res.json({ ok: true, scenarios: TRAINING_SCENARIOS });
+  });
+
+  app.post('/api/admin/sales/training/score', platformAdminRequired, async (req, res) => {
+    try {
+      const scored = scoreTrainingResponse(req.body?.scenario_key, req.body?.response);
+      if (!scored.ok) return res.status(400).json(scored);
+      const row = await recordTrainingSession(pool, {
+        username: req.platformAdmin?.username || 'admin',
+        scenarioKey: req.body.scenario_key,
+        response: req.body?.response,
+        score: scored.score,
+        feedback: scored.feedback,
+      });
+      res.json({ ok: true, ...scored, session: row });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/training/stats', platformAdminRequired, async (req, res) => {
+    try {
+      const stats = await getTrainingStats(pool, req.platformAdmin?.username || 'admin');
+      res.json({ ok: true, stats });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/trials/:id/validate', platformAdminRequired, async (req, res) => {
+    try {
+      const trialId = Number(req.params.id);
+      const tr = await pool.query(`SELECT * FROM sales_trials WHERE id=$1`, [trialId]);
+      const trial = tr.rows?.[0];
+      if (!trial) return res.status(404).json({ ok: false, error: 'not_found' });
+      const lead = await getLead(pool, trial.lead_id);
+      const result = await validateTrialProgress(pool, {
+        leadId: trial.lead_id,
+        tenantId: trial.tenant_id || lead?.tenant_id,
+        trialId,
+        days: Number(req.body?.days) || 30,
+      });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/assistant/chat', platformAdminRequired, async (req, res) => {
+    try {
+      const result = await runSalesAssistantTurn(pool, {
+        ownerUsername: req.platformAdmin?.username || 'admin',
+        threadId: req.body?.thread_id,
+        leadId: req.body?.lead_id ? Number(req.body.lead_id) : null,
+        message: req.body?.message,
+        history: req.body?.history,
+      });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
+  app.get('/api/admin/sales/assistant/threads', platformAdminRequired, async (req, res) => {
+    try {
+      const threads = await listAssistantThreads(pool, req.platformAdmin?.username || 'admin');
+      res.json({ ok: true, threads });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/assistant/threads/:id/messages', platformAdminRequired, async (req, res) => {
+    try {
+      const messages = await listAssistantMessages(pool, Number(req.params.id), req.platformAdmin?.username || 'admin');
+      res.json({ ok: true, messages });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
@@ -504,7 +705,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         reasonLabel: req.body?.reason_label,
         detail: req.body?.detail,
         evidence: req.body?.evidence,
-        createdBy: req.user?.username,
+        createdBy: req.platformAdmin?.username,
       });
       res.json({ ok: true, loss });
     } catch (e) {
@@ -521,7 +722,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         objectionLabel: req.body?.objection_label,
         evidence: req.body?.evidence,
         responseText: req.body?.response_text,
-        createdBy: req.user?.username,
+        createdBy: req.platformAdmin?.username,
       });
       res.json({ ok: true, objection: obj });
     } catch (e) {

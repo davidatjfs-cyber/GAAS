@@ -48,6 +48,10 @@ export async function ensureSalesTables(pool) {
         notes TEXT,
         next_action TEXT,
         next_action_due TIMESTAMPTZ,
+        tenant_id VARCHAR(80),
+        growth_customer_id BIGINT,
+        provision_status TEXT,
+        provision_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`);
@@ -195,6 +199,9 @@ export async function ensureSalesTables(pool) {
         target_kpis JSONB NOT NULL DEFAULT '{}'::jsonb,
         result_summary TEXT,
         status TEXT NOT NULL DEFAULT 'planned',
+        tenant_id VARCHAR(80),
+        validation_status TEXT,
+        validation_report JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_by TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -211,6 +218,9 @@ export async function ensureSalesTables(pool) {
         store_count INT,
         contract_term TEXT,
         notes TEXT,
+        tenant_id VARCHAR(80),
+        provision_status TEXT DEFAULT 'pending',
+        provision_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_by TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`);
@@ -358,13 +368,20 @@ export async function completeTask(pool, taskId) {
   await pool.query(`UPDATE sales_tasks SET status='done', updated_at=NOW() WHERE id=$1`, [taskId]);
 }
 
-export async function createDemo(pool, { leadId, scheduledAt, attendedBy, summary, keyPoints, objections, nextSteps, createdBy }) {
+export async function createDemo(pool, { leadId, scheduledAt, attendedBy, summary, keyPoints, objections, nextSteps, createdBy, markCompleted = false }) {
   const r = await pool.query(
-    `INSERT INTO sales_demos (lead_id, scheduled_at, attended_by, summary, key_points, objections, next_steps, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [leadId, scheduledAt || null, attendedBy || null, summary || null, keyPoints || null, JSON.stringify(objections || []), nextSteps || null, createdBy || null]
+    `INSERT INTO sales_demos (lead_id, scheduled_at, attended_by, summary, key_points, objections, next_steps, created_by, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [leadId, scheduledAt || null, attendedBy || null, summary || null, keyPoints || null, JSON.stringify(objections || []), nextSteps || null, createdBy || null, markCompleted || summary ? 'completed' : 'scheduled']
   );
-  await pool.query(`UPDATE sales_leads SET demo_count = demo_count + 1, updated_at=NOW() WHERE id=$1`, [leadId]);
+  await pool.query(
+    `UPDATE sales_leads
+        SET demo_count = demo_count + 1,
+            stage = CASE WHEN $2::boolean OR stage IN ('new','ai_greeting','need_identified','qualified','sales_takeover') THEN 'demo_completed' ELSE stage END,
+            updated_at=NOW()
+      WHERE id=$1`,
+    [leadId, !!(markCompleted || summary)]
+  );
   return r.rows?.[0] || null;
 }
 
@@ -374,27 +391,46 @@ export async function createMeeting(pool, { leadId, meetingType, occurredAt, raw
      VALUES ($1,$2,$3,$4,$5) RETURNING *`,
     [leadId, meetingType, occurredAt || null, rawNotes || null, createdBy || null]
   );
-  await pool.query(`UPDATE sales_leads SET meeting_count = meeting_count + 1, updated_at=NOW() WHERE id=$1`, [leadId]);
+  await pool.query(
+    `UPDATE sales_leads
+        SET meeting_count = meeting_count + 1,
+            stage = CASE WHEN stage IN ('new','ai_greeting','need_identified','qualified','sales_takeover') THEN 'sales_takeover' ELSE stage END,
+            updated_at=NOW()
+      WHERE id=$1`,
+    [leadId]
+  );
   return r.rows?.[0] || null;
 }
 
-export async function createTrial(pool, { leadId, startedAt, endedAt, stores, posBrand, targetKpis, createdBy }) {
+export async function createTrial(pool, { leadId, startedAt, endedAt, stores, posBrand, targetKpis, createdBy, tenantId }) {
   const r = await pool.query(
-    `INSERT INTO sales_trials (lead_id, started_at, ended_at, stores, pos_brand, target_kpis, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [leadId, startedAt || null, endedAt || null, stores || null, posBrand || null, JSON.stringify(targetKpis || {}), createdBy || null]
+    `INSERT INTO sales_trials (lead_id, started_at, ended_at, stores, pos_brand, target_kpis, created_by, status, tenant_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'in_progress',$8) RETURNING *`,
+    [leadId, startedAt || new Date().toISOString(), endedAt || null, stores || null, posBrand || null, JSON.stringify(targetKpis || {}), createdBy || null, tenantId || null]
   );
-  await pool.query(`UPDATE sales_leads SET trial_status='in_progress', updated_at=NOW() WHERE id=$1`, [leadId]);
+  await pool.query(
+    `UPDATE sales_leads
+        SET trial_status='in_progress', stage='trial', tenant_id=COALESCE($2, tenant_id), updated_at=NOW()
+      WHERE id=$1`,
+    [leadId, tenantId || null]
+  );
   return r.rows?.[0] || null;
 }
 
-export async function createDeal(pool, { leadId, opportunityId, dealDate, amount, storeCount, contractTerm, notes, createdBy }) {
+export async function createDeal(pool, { leadId, opportunityId, dealDate, amount, storeCount, contractTerm, notes, createdBy, tenantId }) {
   const r = await pool.query(
-    `INSERT INTO sales_deals (lead_id, opportunity_id, deal_date, amount, store_count, contract_term, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [leadId, opportunityId || null, dealDate || null, amount || null, storeCount || null, contractTerm || null, notes || null, createdBy || null]
+    `INSERT INTO sales_deals (lead_id, opportunity_id, deal_date, amount, store_count, contract_term, notes, created_by, tenant_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [leadId, opportunityId || null, dealDate || null, amount || null, storeCount || null, contractTerm || null, notes || null, createdBy || null, tenantId || null]
   );
-  await pool.query(`UPDATE sales_leads SET stage='won', updated_at=NOW() WHERE id=$1`, [leadId]);
+  await pool.query(
+    `UPDATE sales_leads SET stage='won', trial_status='completed', updated_at=NOW() WHERE id=$1`,
+    [leadId]
+  );
+  await pool.query(
+    `UPDATE sales_opportunities SET stage='won', status='closed_won', updated_at=NOW() WHERE lead_id=$1 AND status='open'`,
+    [leadId]
+  );
   return r.rows?.[0] || null;
 }
 
