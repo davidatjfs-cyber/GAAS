@@ -529,10 +529,15 @@ export function registerTenantPlatformRoutes(app, deps) {
       if (licenseReq && licenseReq.expires_at) {
         const licenseKey = randomUUID();
         const allowedFeatures = Array.isArray(licenseReq.allowed_features) ? licenseReq.allowed_features : [];
+        const maxStoresRaw = licenseReq.max_stores;
+        const maxStores = maxStoresRaw == null || maxStoresRaw === '' ? null : Number(maxStoresRaw);
+        if (maxStores != null && (!Number.isFinite(maxStores) || maxStores < 0)) {
+          throw new Error('invalid_max_stores');
+        }
         const lr = await client.query(
-          `INSERT INTO licenses (tenant_id, license_key, expires_at, allowed_features)
-           VALUES ($1, $2, $3, $4) RETURNING license_key, expires_at, status`,
-          [tenantId, licenseKey, licenseReq.expires_at, JSON.stringify(allowedFeatures)]
+          `INSERT INTO licenses (tenant_id, license_key, expires_at, allowed_features, max_stores)
+           VALUES ($1, $2, $3, $4, $5) RETURNING license_key, expires_at, status, max_stores`,
+          [tenantId, licenseKey, licenseReq.expires_at, JSON.stringify(allowedFeatures), maxStores]
         );
         issuedLicense = lr.rows[0];
       }

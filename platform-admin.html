@@ -746,6 +746,7 @@
         <label>管理员姓名<input id="adminRealName" placeholder="品牌管理员"></label>
         <label>管理员密码<input id="adminPassword" type="password" placeholder="至少 6 位"></label>
         <label>许可证到期<input id="licenseExpiresAt" type="datetime-local"></label>
+        <label>已购买门店数量上限<input id="licenseMaxStores" type="number" min="0" placeholder="留空=不限制，按店计费的关键控制点"></label>
         <button id="createTenantBtn">创建租户</button>
       </div>
     </section>
@@ -3677,7 +3678,11 @@ function legacyCopyFallback(value) {
             password: adminPassword
           },
           license: $('licenseExpiresAt').value
-            ? { expires_at: new Date($('licenseExpiresAt').value).toISOString(), allowed_features: ['hrms', 'agent_v2', 'feishu', 'mini_program'] }
+            ? {
+                expires_at: new Date($('licenseExpiresAt').value).toISOString(),
+                allowed_features: ['hrms', 'agent_v2', 'feishu', 'mini_program'],
+                max_stores: $('licenseMaxStores').value.trim() === '' ? null : Number($('licenseMaxStores').value),
+              }
             : undefined
         };
         const data = await api('/api/admin/tenants', { method: 'POST', body: JSON.stringify(payload) });
