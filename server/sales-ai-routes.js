@@ -43,6 +43,15 @@ import {
   processKfCallbackEvent,
 } from './services/sales/sales-kf.js';
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE, FORBIDDEN_CLAIMS } from './services/sales/sales-knowledge.js';
+import {
+  listSalesReps,
+  createOrUpdateSalesRep,
+  runDailyActivityRollup,
+  upsertKpiTarget,
+  computeAndSaveKpiScore,
+  getRepScorecard,
+  getTeamLeaderboard,
+} from './services/sales/sales-rep-management.js';
 
 // 超时未跟进：高意向线索若2小时内无人工接管/回复，且4小时内未提醒过，则再次提醒
 async function remindStaleHighIntentLeads(pool, sendOpsAlert) {
@@ -179,6 +188,24 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       }, next - now);
     };
     scheduleSalesDailyReport();
+  }
+
+  if (!globalThis.__salesRepActivityRollupTimer) {
+    const scheduleSalesRepActivityRollup = () => {
+      const now = new Date();
+      const next = new Date(now);
+      next.setHours(0, 30, 0, 0);
+      if (next <= now) next.setDate(next.getDate() + 1);
+      globalThis.__salesRepActivityRollupTimer = setTimeout(async () => {
+        try {
+          await runDailyActivityRollup(pool, {});
+        } catch (e) {
+          console.warn('[sales-ai] rep activity rollup failed:', e?.message || e);
+        }
+        scheduleSalesRepActivityRollup();
+      }, next - now);
+    };
+    scheduleSalesRepActivityRollup();
   }
 
   if (!globalThis.__salesKfSyncTimer) {
@@ -727,6 +754,96 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         createdBy: req.platformAdmin?.username,
       });
       res.json({ ok: true, objection: obj });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/reps', platformAdminRequired, async (req, res) => {
+    try {
+      const reps = await listSalesReps(pool, { status: req.query?.status });
+      res.json({ ok: true, reps });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/reps', platformAdminRequired, async (req, res) => {
+    try {
+      const rep = await createOrUpdateSalesRep(pool, {
+        repKey: req.body?.rep_key,
+        displayName: req.body?.display_name,
+        role: req.body?.role,
+        status: req.body?.status,
+        hireDate: req.body?.hire_date,
+      });
+      res.json({ ok: true, rep });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/reps/:id/activity', platformAdminRequired, async (req, res) => {
+    try {
+      const days = Math.min(Math.max(Number(req.query?.days) || 30, 1), 180);
+      const r = await pool.query(
+        `SELECT * FROM sales_daily_activity
+          WHERE rep_id = $1 AND activity_date >= (NOW() - ($2 || ' days')::interval)::date
+          ORDER BY activity_date DESC`,
+        [Number(req.params.id), days]
+      );
+      res.json({ ok: true, activity: r.rows || [] });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/reps/:id/scorecard', platformAdminRequired, async (req, res) => {
+    try {
+      const data = await getRepScorecard(pool, Number(req.params.id), req.query?.period_type, req.query?.period_key);
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
+  app.post('/api/admin/sales/kpi-targets', platformAdminRequired, async (req, res) => {
+    try {
+      const target = await upsertKpiTarget(pool, {
+        repId: Number(req.body?.rep_id),
+        periodType: req.body?.period_type,
+        periodKey: req.body?.period_key,
+        targetNewLeads: req.body?.target_new_leads,
+        targetDemos: req.body?.target_demos,
+        targetDeals: req.body?.target_deals,
+        targetRevenueFen: req.body?.target_revenue_fen,
+        createdBy: req.platformAdmin?.username,
+      });
+      res.json({ ok: true, target });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/kpi-scores', platformAdminRequired, async (req, res) => {
+    try {
+      const score = await computeAndSaveKpiScore(pool, {
+        repId: Number(req.body?.rep_id),
+        periodType: req.body?.period_type,
+        periodKey: req.body?.period_key,
+        managerScore: req.body?.manager_score,
+        managerComment: req.body?.manager_comment,
+      });
+      res.json({ ok: true, score });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
+  app.get('/api/admin/sales/kpi-leaderboard', platformAdminRequired, async (req, res) => {
+    try {
+      const leaderboard = await getTeamLeaderboard(pool, { periodType: req.query?.period_type, periodKey: req.query?.period_key });
+      res.json({ ok: true, leaderboard });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
