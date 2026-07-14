@@ -47,8 +47,13 @@ ${historyToPrompt(history) || '（新会话）'}
   return String(r.content).trim();
 }
 
-export async function runCustomerAiTurn({ userText, extracted, history, intentScore, controller }) {
+export async function runCustomerAiTurn({ userText, extracted, history, intentScore, controller, guidance = null }) {
   const plan = buildStrategyPlan({ userText, extracted, history, intentScore, controller });
+  if (guidance?.question_slot) {
+    const forced = (plan.next_question?.key === guidance.question_slot) || guidance.question_slot;
+    if (typeof forced === 'object') plan.next_question = forced;
+    else plan.guidance_question_slot = forced;
+  }
 
   let reply = await generateWithLlm(plan, userText, history);
   let source = 'llm';
@@ -75,5 +80,5 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
     reply = sanitizeReply(`${reply} ${plan.next_question.question}`);
   }
 
-  return { ok: true, reply, source, plan };
+  return { ok: true, reply, source, plan, guidance };
 }

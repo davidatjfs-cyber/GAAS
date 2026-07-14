@@ -35,7 +35,7 @@ export function buildSalesAdvice(lead, score) {
   return lines.join('\n');
 }
 
-export async function applyLeadUpdates(pool, leadId, { extracted, events, score, controller, stage }) {
+export async function applyLeadUpdates(pool, leadId, { extracted, events, score, controller, stage, handoff_level, last_sales_decision }) {
   await ensureSalesTables(pool);
   const pain = extracted?.pain_point ? [extracted.pain_point] : [];
   const tags = deriveTagsForLead({
@@ -75,6 +75,8 @@ export async function applyLeadUpdates(pool, leadId, { extracted, events, score,
         win_probability = $20,
         next_action = $21,
         next_action_due = NOW() + ($22 || '0')::INTERVAL,
+        handoff_level = COALESCE($23, handoff_level),
+        last_sales_decision = COALESCE($24::jsonb, last_sales_decision),
         last_message_at = NOW(),
         updated_at = NOW()
       WHERE id=$1`,
@@ -101,6 +103,8 @@ export async function applyLeadUpdates(pool, leadId, { extracted, events, score,
       winProb,
       next.next_action,
       `${next.due_hours || 24} hours`,
+      handoff_level || null,
+      JSON.stringify(last_sales_decision || {}),
     ]
   );
   await persistScore(pool, leadId, score);

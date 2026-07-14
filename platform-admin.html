@@ -2884,12 +2884,13 @@
       body.innerHTML = filtered.length ? filtered.map((l) => {
         const selected = Number(state.sales.selectedLeadId) === Number(l.id) ? 'selected' : '';
         const pain = (l.pain_points && l.pain_points[0]) || l.extracted?.pain_point || '—';
+        const handoff = l.handoff_level && l.handoff_level !== 'low' ? ` · ${salesEsc(l.handoff_level)}接管` : '';
         const updated = l.updated_at ? new Date(l.updated_at).toLocaleString() : '—';
         const tags = (l.tags || []).slice(0, 3).map((t) => `<span class="pill" style="font-size:10px;padding:2px 6px">${salesEsc(t)}</span>`).join(' ');
         return `<tr class="${selected}" data-lead-id="${l.id}">
           <td><strong>${salesEsc(l.company || l.name || l.lead_key || l.id)}</strong><div class="mono small">${salesEsc(l.external_userid || '')}</div></td>
           <td>${salesStageLabel(l.stage)}</td>
-          <td>${salesControllerLabel(l.controller)}</td>
+          <td>${salesControllerLabel(l.controller)}${handoff}</td>
           <td><strong>${salesEsc(l.intent_score)}</strong> <span class="small">${salesIntentLabel(l.intent_level)}</span></td>
           <td>${l.store_count != null ? salesEsc(l.store_count) : '—'}</td>
           <td>${salesEsc(pain)}<div>${tags}</div></td>
@@ -2935,6 +2936,10 @@
         `下一步：${lead.next_action || '—'}`,
         lead.tenant_id ? `租户：${lead.tenant_id}` : '租户：未开通',
       ];
+      const decision = lead.last_sales_decision || {};
+      if (decision.missing_facts?.length) adviceLines.push(`尚未确认：${decision.missing_facts.join('、')}`);
+      if (decision.next_action) adviceLines.push(`销售AI决策：${decision.next_action}`);
+      if (decision.customer_ai_policy?.forbidden?.length) adviceLines.push(`客户AI禁止：${decision.customer_ai_policy.forbidden.join('、')}`);
       const scoreItems = data.score?.items || data.score_items || [];
       if (scoreItems.length) {
         adviceLines.push('评分明细：' + scoreItems.map((s) => `${s.rule_key}+${s.points}`).join('，'));

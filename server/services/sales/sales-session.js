@@ -10,6 +10,9 @@ import {
   addEvent,
   upsertTask,
   loadLeadFunnel,
+  saveSalesGuidance,
+  recordStageChange,
+  getActiveSalesGuidance,
 } from './sales-store.js';
 import { runCustomerAiTurn } from './sales-customer-ai.js';
 import { extractSlotsFromText, detectEvents } from './sales-strategy.js';
@@ -24,6 +27,7 @@ import {
   matchObjection,
   getObjectionResponse,
 } from './sales-ops.js';
+import { buildSalesDecision, buildCustomerAiGuidance, normalizeCustomerAiEvent } from './sales-collaboration.js';
 
 let _notify = null;
 export function setSalesNotify(fn) {
@@ -157,32 +161,42 @@ export async function handleInboundMessage(pool, {
   });
 
   const history = await listMessages(pool, conv.id, 30);
+  const activeGuidanceRow = await getActiveSalesGuidance(pool, lead.id);
+  const activeGuidance = activeGuidanceRow?.guidance || null;
   const turn = await runCustomerAiTurn({
     userText: content,
     extracted: lead.extracted || {},
     history,
     intentScore: lead.intent_score || 0,
     controller: conv.controller,
+    guidance: activeGuidance,
   });
 
-  const eventTypes = (turn.plan.events || []).map((e) => e.event_type);
+  const normalizedEvents = (turn.plan.events || []).map((e) => normalizeCustomerAiEvent(e, content));
+  const eventTypes = normalizedEvents.map((e) => e.event_type);
   const score = scoreLead({ extracted: turn.plan.extracted, eventTypes });
-  const takeover = turn.plan.takeover?.takeover;
+  const decision = buildSalesDecision({ lead: { ...lead, extracted: turn.plan.extracted }, score, events: normalizedEvents });
+  const takeover = decision.controller_recommendation === 'handoff_now';
   const nextController = takeover ? 'waiting_human' : conv.controller;
-  const nextStage = takeover ? 'qualified' : (lead.stage === 'new' || lead.stage === 'ai_greeting' ? 'need_identified' : lead.stage);
+  const nextStage = decision.sales_stage;
 
   await applyLeadUpdates(pool, lead.id, {
     extracted: turn.plan.extracted,
-    events: (turn.plan.events || []).map((e) => ({ ...e, evidence: content.slice(0, 200), summary: e.event_type })),
+    events: normalizedEvents,
     score,
     controller: nextController,
     stage: nextStage,
+    handoff_level: decision.intent_level,
+    last_sales_decision: decision,
   });
 
   const updatedLead = await getLead(pool, lead.id);
   const advice = buildSalesAdvice(updatedLead, score);
   const next = buildNextAction(updatedLead, score);
   const diagnosis = buildDiagnosisReport(updatedLead);
+  const customerGuidance = buildCustomerAiGuidance(decision);
+  await saveSalesGuidance(pool, { leadId: lead.id, conversationId: conv.id, guidance: customerGuidance, expiresInTurns: customerGuidance.expires_in_turns });
+  await recordStageChange(pool, { leadId: lead.id, fromStage: lead.stage, toStage: nextStage, reason: decision.next_action, evidence: { score, events: normalizedEvents } });
 
   if (takeover) {
     await pool.query(`UPDATE sales_conversations SET controller='waiting_human', updated_at=NOW() WHERE id=$1`, [conv.id]);
@@ -202,7 +216,7 @@ export async function handleInboundMessage(pool, {
           `线索 ${lead.lead_key}`,
           `评分 ${score.intent_score}（${score.intent_level}）`,
           `门店 ${turn.plan.extracted.store_count ?? '未明'}｜痛点 ${turn.plan.extracted.pain_point || '未明'}`,
-          `原因：${turn.plan.takeover.reason}`,
+          `原因：${decision.next_action}`,
           advice,
           `诊断：${diagnosis.surface_problem}`,
         ].join('\n'),
@@ -238,7 +252,9 @@ export async function handleInboundMessage(pool, {
     advice,
     diagnosis,
     next_action: next.next_action,
-    plan: { mode: turn.plan.mode, extracted: turn.plan.extracted, takeover: turn.plan.takeover, events: turn.plan.events },
+    plan: { mode: turn.plan.mode, extracted: turn.plan.extracted, takeover: turn.plan.takeover, events: normalizedEvents },
+    sales_decision: decision,
+    customer_ai_guidance: customerGuidance,
     source: turn.source,
   };
 }

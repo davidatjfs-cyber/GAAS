@@ -254,6 +254,34 @@ export async function ensureSalesTables(pool) {
       )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_objections_lead ON sales_objections (lead_id, resolved, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_objections_key ON sales_objections (objection_key, created_at DESC)`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sales_ai_guidance (
+        id BIGSERIAL PRIMARY KEY,
+        lead_id BIGINT NOT NULL REFERENCES sales_leads(id) ON DELETE CASCADE,
+        conversation_id BIGINT REFERENCES sales_conversations(id) ON DELETE CASCADE,
+        guidance JSONB NOT NULL DEFAULT '{}'::jsonb,
+        source TEXT NOT NULL DEFAULT 'sales_ai',
+        status TEXT NOT NULL DEFAULT 'active',
+        expires_at TIMESTAMPTZ,
+        consumed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_guidance_active ON sales_ai_guidance (lead_id, status, created_at DESC)`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sales_stage_history (
+        id BIGSERIAL PRIMARY KEY,
+        lead_id BIGINT NOT NULL REFERENCES sales_leads(id) ON DELETE CASCADE,
+        from_stage TEXT,
+        to_stage TEXT NOT NULL,
+        reason TEXT,
+        evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+        actor TEXT NOT NULL DEFAULT 'sales_ai',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_stage_history_lead ON sales_stage_history (lead_id, created_at DESC)`);
+    await pool.query(`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS intent_level TEXT NOT NULL DEFAULT 'low'`);
+    await pool.query(`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS handoff_level TEXT NOT NULL DEFAULT 'low'`);
+    await pool.query(`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS last_sales_decision JSONB NOT NULL DEFAULT '{}'::jsonb`);
   })().catch((e) => {
     ensurePromise = null;
     throw e;
@@ -302,6 +330,33 @@ export async function addEvent(pool, leadId, event) {
       JSON.stringify(event.payload || {}),
     ]
   );
+}
+
+export async function saveSalesGuidance(pool, { leadId, conversationId, guidance, expiresInTurns = 1 }) {
+  const r = await pool.query(
+    `INSERT INTO sales_ai_guidance (lead_id, conversation_id, guidance, expires_at)
+     VALUES ($1,$2,$3::jsonb,NOW() + ($4::text || ' minutes')::interval) RETURNING *`,
+    [leadId, conversationId || null, JSON.stringify(guidance || {}), Math.max(5, Number(expiresInTurns || 1) * 15)]
+  );
+  return r.rows?.[0] || null;
+}
+
+export async function getActiveSalesGuidance(pool, leadId) {
+  const r = await pool.query(
+    `SELECT * FROM sales_ai_guidance WHERE lead_id=$1 AND status='active' AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY id DESC LIMIT 1`,
+    [leadId]
+  );
+  return r.rows?.[0] || null;
+}
+
+export async function recordStageChange(pool, { leadId, fromStage, toStage, reason, evidence, actor = 'sales_ai' }) {
+  if (!toStage || fromStage === toStage) return null;
+  const r = await pool.query(
+    `INSERT INTO sales_stage_history (lead_id, from_stage, to_stage, reason, evidence, actor)
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6) RETURNING *`,
+    [leadId, fromStage || null, toStage, reason || null, JSON.stringify(evidence || {}), actor]
+  );
+  return r.rows?.[0] || null;
 }
 
 export async function addMessage(pool, { conversationId, leadId, direction, sender, content, msgId, meta }) {
