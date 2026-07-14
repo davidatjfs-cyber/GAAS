@@ -45,6 +45,7 @@ import {
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE, FORBIDDEN_CLAIMS } from './services/sales/sales-knowledge.js';
 import { buildLeadSummary, canTransition, calculateSla } from './services/sales/sales-collaboration-service.js';
 import { recordStageChange } from './services/sales/sales-store.js';
+import { runSalesSlaScan } from './services/sales/sales-sla-service.js';
 import {
   listSalesReps,
   createOrUpdateSalesRep,
@@ -154,6 +155,12 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         .then(() => runRiskAlerts(pool, sendOpsAlert))
         .catch((e) => console.warn('[sales-ai] risk alert run failed:', e?.message || e));
     }, 60 * 60 * 1000);
+  }
+
+  if (!globalThis.__salesSlaTimer) {
+    globalThis.__salesSlaTimer = setInterval(() => {
+      ensureSalesTables(pool).then(() => runSalesSlaScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] SLA scan failed:', e?.message || e));
+    }, 5 * 60 * 1000);
   }
 
   if (!globalThis.__salesTrialValidationTimer) {
@@ -375,7 +382,13 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       } else if (actionType === 'send_case' || actionType === 'send_demo') {
         const text = actionType === 'send_demo' ? String(req.body?.text || '您好，我为您安排一次针对门店情况的系统演示，请回复方便的时间。') : String(req.body?.text || '我先发您一份相关案例，您可以重点看客户分层、触达和回店归因部分。');
         await pool.query(`INSERT INTO sales_messages (conversation_id, lead_id, direction, sender, content, meta) SELECT id, $1, 'outbound', 'human', $2, $3::jsonb FROM sales_conversations WHERE lead_id=$1 ORDER BY id DESC LIMIT 1`, [leadId, text, JSON.stringify({ action: actionType })]);
-        result = { text, external_send_pending: true, reason: kfConfigured() ? 'use_kf_send' : 'wecom_not_configured' };
+        let sendStatus = 'wecom_not_configured';
+        if (kfConfigured() && lead.open_kfid && lead.external_userid) {
+          const { sendKfText } = await import('./services/sales/sales-kf.js');
+          await sendKfText({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, content: text });
+          sendStatus = 'sent';
+        }
+        result = { text, send_status: sendStatus };
       } else if (actionType === 'pause') {
         await pool.query(`UPDATE sales_leads SET stage='paused', updated_at=NOW() WHERE id=$1`, [leadId]); result = { stage: 'paused' };
       } else if (actionType === 'transfer') {
