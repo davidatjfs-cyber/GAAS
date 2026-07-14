@@ -10,10 +10,10 @@ import { safeExecute } from './utils/error-handler.js';
 // ─────────────────────────────────────────────
 // 门店评级API
 // ─────────────────────────────────────────────
-export function registerNewScoringRoutes(app) {
-  
+export function registerNewScoringRoutes(app, authRequired) {
+
   // 获取门店评级
-  app.get('/api/scoring/store-rating', async (req, res) => {
+  app.get('/api/scoring/store-rating', authRequired, async (req, res) => {
     try {
       const { store, period } = req.query;
       
@@ -51,7 +51,7 @@ export function registerNewScoringRoutes(app) {
   });
   
   // 获取员工评分
-  app.get('/api/scoring/employee-score', async (req, res) => {
+  app.get('/api/scoring/employee-score', authRequired, async (req, res) => {
     try {
       const { store, username, role, period } = req.query;
       
@@ -88,7 +88,7 @@ export function registerNewScoringRoutes(app) {
   });
   
   // 获取营业日报数据
-  app.get('/api/scoring/daily-reports', async (req, res) => {
+  app.get('/api/scoring/daily-reports', authRequired, async (req, res) => {
     try {
       const { store, start, end } = req.query;
       
@@ -130,7 +130,7 @@ export function registerNewScoringRoutes(app) {
   });
   
   // 获取营业目标
-  app.get('/api/scoring/revenue-targets', async (req, res) => {
+  app.get('/api/scoring/revenue-targets', authRequired, async (req, res) => {
     try {
       const { store, period } = req.query;
       
@@ -167,7 +167,7 @@ export function registerNewScoringRoutes(app) {
   });
   
   // 获取毛利率目标
-  app.get('/api/scoring/margin-targets', async (req, res) => {
+  app.get('/api/scoring/margin-targets', authRequired, async (req, res) => {
     try {
       const { store, period } = req.query;
       
@@ -204,7 +204,7 @@ export function registerNewScoringRoutes(app) {
   });
   
   // 设置营业目标
-  app.post('/api/scoring/revenue-targets', async (req, res) => {
+  app.post('/api/scoring/revenue-targets', authRequired, async (req, res) => {
     try {
       const { store, brand, period, target_revenue } = req.body;
       
@@ -237,7 +237,7 @@ export function registerNewScoringRoutes(app) {
   });
   
   // 设置毛利率目标
-  app.post('/api/scoring/margin-targets', async (req, res) => {
+  app.post('/api/scoring/margin-targets', authRequired, async (req, res) => {
     try {
       const { store, brand, period, target_margin } = req.body;
       
@@ -270,7 +270,7 @@ export function registerNewScoringRoutes(app) {
   });
   
   // 更新营业日报
-  app.post('/api/scoring/daily-reports', async (req, res) => {
+  app.post('/api/scoring/daily-reports', authRequired, async (req, res) => {
     try {
       const { store, brand, date, actual_revenue, actual_margin, dianping_rating, new_wechat_members, wechat_month_total,
         pre_discount_revenue, total_discount, dine_orders, dine_revenue, dine_traffic, efficiency, labor_total,
