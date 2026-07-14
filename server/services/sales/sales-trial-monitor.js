@@ -1,7 +1,7 @@
 /**
  * 试跑期间数据校验：对比 POS 营收与执行指标
  */
-import { tenantContext } from '../utils/database.js';
+import { tenantContext } from '../../utils/database.js';
 
 export async function validateTrialProgress(pool, { leadId, tenantId, trialId, days = 30 } = {}) {
   if (!tenantId) return { ok: false, error: 'missing_tenant' };
