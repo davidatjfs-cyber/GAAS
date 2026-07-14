@@ -32,6 +32,7 @@ import {
   AgentCommunicationHelper 
 } from './agent-communication-system.js';
 import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js'
+import { getTenantAiModelConfig } from './tenant-integrations.js';
 import { verifyFeishuWebhookRequest, requireWebhookSignatureEnabled } from './utils/feishu-webhook-verify.js';
 import { getBrandConfigSync, getBrandForStoreSync, getAllBrandNamesSync } from './utils/brand-config-loader.js';
 import {
@@ -3626,16 +3627,44 @@ function isRetryableLLMError(err) {
 // 所以用 setTimeout(0) 延迟注入，等模块完全加载后再绑定
 setTimeout(() => { try { setCallLLMBridge(callLLM); } catch (_) {} }, 0);
 
+// ── 租户自定义AI模型：解析+短TTL缓存，DB/未配置时静默回退全局默认，不影响任何现有行为 ──
+const _tenantLlmConfigCache = new Map(); // tenantId -> { value, at }
+const TENANT_LLM_CONFIG_TTL_MS = 30_000;
+
+export function invalidateTenantLlmConfigCache(tenantId) {
+  if (tenantId) _tenantLlmConfigCache.delete(String(tenantId).trim());
+  else _tenantLlmConfigCache.clear();
+}
+
+async function resolveTenantLlmConfig(tenantId) {
+  const id = String(tenantId || '').trim();
+  if (!id) return null;
+  const cached = _tenantLlmConfigCache.get(id);
+  if (cached && Date.now() - cached.at < TENANT_LLM_CONFIG_TTL_MS) return cached.value;
+  const encKey = String(process.env.TENANT_INTEGRATION_ENCRYPTION_KEY || '').trim();
+  if (!encKey) return null;
+  let value = null;
+  try {
+    value = await getTenantAiModelConfig(pool(), id, encKey);
+  } catch (e) {
+    value = null;
+  }
+  _tenantLlmConfigCache.set(id, { value, at: Date.now() });
+  return value;
+}
+
 export async function callLLM(messages, options = {}) {
   if (!isExternalEnabled()) return { ok: false, error: 'external_disabled', content: '' };
   const role = String(options.role || '').trim();
   const purpose = String(options.purpose || 'reasoning').trim();
   const tier = role ? getModelTier(role) : '';
   const tierModel = role ? getModelForRole(role, purpose) : '';
-  const selectedModel = String(options.model || tierModel || QWEN_MODEL).trim() || QWEN_MODEL;
-  const cfg = getLLMClientConfig(selectedModel);
+  const tenantId = String(options.tenantId || tenantContext.getStore() || '').trim();
+  const tenantLlmConfig = tenantId ? await resolveTenantLlmConfig(tenantId) : null;
+  const selectedModel = String(options.model || tenantLlmConfig?.model || tierModel || QWEN_MODEL).trim() || QWEN_MODEL;
+  const cfg = getLLMClientConfig(selectedModel, tenantLlmConfig?.provider ? { forceProvider: tenantLlmConfig.provider } : {});
   const model = cfg.model;
-  const apiKey = cfg.apiKey;
+  const apiKey = tenantLlmConfig?.api_key || cfg.apiKey;
   if (!apiKey) return { ok: false, error: 'no_api_key', content: '' };
 
   const budgetExceeded = !!(tier && isTierBudgetExceeded(tier));
@@ -3674,7 +3703,9 @@ export async function callLLM(messages, options = {}) {
       console.log(`[LLM-FALLBACK] Skipping unhealthy provider: ${candidate.provider}`);
       continue;
     }
-    const fbCfg = getLLMClientConfig(candidate.model);
+    const isTenantPrimary = tenantLlmConfig && candidate.model === model;
+    const fbCfg = getLLMClientConfig(candidate.model, isTenantPrimary && tenantLlmConfig.provider ? { forceProvider: tenantLlmConfig.provider } : {});
+    if (isTenantPrimary && tenantLlmConfig.api_key) fbCfg.apiKey = tenantLlmConfig.api_key;
     if (!fbCfg.apiKey) continue;
 
     const payload = {

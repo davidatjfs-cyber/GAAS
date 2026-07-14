@@ -24,6 +24,25 @@ export function decryptIntegrationConfig(encrypted, key) {
   return JSON.parse(Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8'));
 }
 
+const AI_MODEL_PROVIDERS = ['qwen', 'deepseek', 'doubao'];
+
+export function validateAiModelConfig(value) {
+  const config = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const provider = String(config.provider || '').trim().toLowerCase();
+  const model = String(config.model || '').trim();
+  if (!AI_MODEL_PROVIDERS.includes(provider) || !model) throw new Error('invalid_ai_model_config');
+  const api_key = String(config.api_key || '').trim();
+  return { provider, model, api_key: api_key || null };
+}
+
+export async function getTenantAiModelConfig(db, tenantId, key) {
+  return getTenantIntegrationConfig(db, tenantId, 'ai_model_config', key, validateAiModelConfig);
+}
+
+export async function saveTenantAiModelConfig(db, tenantId, config, key) {
+  return saveTenantIntegrationConfig(db, tenantId, 'ai_model_config', config, key, validateAiModelConfig);
+}
+
 export function validateFeishuIntegrationConfig(value) {
   const config = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const app_id = String(config.app_id || '').trim();

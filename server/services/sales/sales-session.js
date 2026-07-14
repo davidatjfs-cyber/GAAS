@@ -15,6 +15,7 @@ import {
   getActiveSalesGuidance,
 } from './sales-store.js';
 import { runCustomerAiTurn } from './sales-customer-ai.js';
+import { loadKnowledgeItems } from './sales-knowledge-store.js';
 import { extractSlotsFromText, detectEvents } from './sales-strategy.js';
 import {
   applyLeadUpdates,
@@ -168,6 +169,7 @@ export async function handleInboundMessage(pool, {
   const history = await listMessages(pool, conv.id, 30);
   const activeGuidanceRow = await getActiveSalesGuidance(pool, lead.id);
   const activeGuidance = activeGuidanceRow?.guidance || null;
+  const knowledgeItems = await loadKnowledgeItems(pool);
   const turn = await runCustomerAiTurn({
     userText: content,
     extracted: lead.extracted || {},
@@ -175,6 +177,7 @@ export async function handleInboundMessage(pool, {
     intentScore: lead.intent_score || 0,
     controller: conv.controller,
     guidance: activeGuidance,
+    knowledgeItems,
   });
 
   const normalizedEvents = (turn.plan.events || []).map((e) => normalizeCustomerAiEvent(e, content));

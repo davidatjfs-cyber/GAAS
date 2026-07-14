@@ -36,7 +36,7 @@ import { Readable } from 'stream';
 import zlib from 'zlib';
 import XLSX from 'xlsx';
 import axios from 'axios';
-import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM } from './agents.js';
+import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache } from './agents.js';
 import { ensureAgentConfigTables, registerAgentConfigRoutes } from "./agent-config-manager.js";
 import { initBrandConfigCache, getBrandForStoreSync, getBrandConfigSync } from './utils/brand-config-loader.js';
 import { initStoreAliasCache } from './utils/store-alias-cache.js';
@@ -5655,6 +5655,7 @@ registerTenantPlatformRoutes(app, {
   PLATFORM_ADMIN_JWT_SECRET,
   TENANT_INTEGRATION_ENCRYPTION_KEY,
   REQUIRED_TENANT_FEISHU_TABLE_KEYS,
+  invalidateTenantLlmConfigCache,
 });
 registerKnowledgeRoutes(app, {
   pool,

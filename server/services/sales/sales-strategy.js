@@ -136,12 +136,12 @@ export function shouldTakeover({ text, extracted, intentScore, controller }) {
   return { takeover: false, reason: 'continue', level: 'low' };
 }
 
-export function buildStrategyPlan({ userText, extracted, history = [], intentScore = 0, controller = 'ai' }) {
+export function buildStrategyPlan({ userText, extracted, history = [], intentScore = 0, controller = 'ai', knowledgeItems }) {
   const slots = extractSlotsFromText(userText, extracted || {});
   const events = detectEvents(userText);
   const nextQ = nextDiagnosticQuestion(slots);
   const takeover = shouldTakeover({ text: userText, extracted: slots, intentScore, controller });
-  const knowledge = knowledgeForPain(slots.pain_point || userText);
+  const knowledge = knowledgeForPain(slots.pain_point || userText, knowledgeItems);
 
   let mode = 'diagnose';
   if (takeover.takeover) mode = 'handoff';

@@ -14,6 +14,8 @@ import {
   saveTenantFeishuIntegration,
   getTenantIntegrationConfig,
   saveTenantIntegrationConfig,
+  getTenantAiModelConfig,
+  saveTenantAiModelConfig,
 } from './tenant-integrations.js';
 import { clearAgentConfigCache } from './agent-config-manager.js';
 
@@ -67,6 +69,7 @@ export function registerTenantPlatformRoutes(app, deps) {
     PLATFORM_ADMIN_JWT_SECRET,
     TENANT_INTEGRATION_ENCRYPTION_KEY,
     REQUIRED_TENANT_FEISHU_TABLE_KEYS,
+    invalidateTenantLlmConfigCache,
   } = deps;
 
   // ── 平台管理员账号：登录 / 一次性bootstrap创建首个账号 / 已登录后创建更多账号 ──
@@ -985,6 +988,34 @@ export function registerTenantPlatformRoutes(app, deps) {
       return res.json({ ok: true, saved, integration: summary });
     } catch (e) {
       return res.status(e?.statusCode || 500).json({ error: e?.message || 'internal_error' });
+    }
+  });
+
+  app.get('/api/admin/tenants/:tenantId/integrations/ai_model_config', platformAdminRequired, async (req, res) => {
+    const tenantId = String(req.params.tenantId || '').trim();
+    try {
+      const key = requireTenantIntegrationKey();
+      const config = await tenantContext.run(tenantId, () => getTenantAiModelConfig(pool, tenantId, key));
+      return res.json({ ok: true, integration: { configured: !!config, provider: config?.provider || null, model: config?.model || null, api_key_configured: !!config?.api_key } });
+    } catch (e) {
+      return res.status(e?.statusCode || 500).json({ error: e?.message || 'internal_error' });
+    }
+  });
+
+  app.put('/api/admin/tenants/:tenantId/integrations/ai_model_config', platformAdminRequired, async (req, res) => {
+    const tenantId = String(req.params.tenantId || '').trim();
+    try {
+      const key = requireTenantIntegrationKey();
+      // api_key 留空表示"不修改"：先读旧配置，缺省沿用旧的 api_key，避免每次改model/provider都要重填密钥
+      const existing = await tenantContext.run(tenantId, () => getTenantAiModelConfig(pool, tenantId, key)).catch(() => null);
+      const body = req.body || {};
+      const apiKey = String(body.api_key || '').trim() || existing?.api_key || '';
+      await tenantContext.run(tenantId, () => saveTenantAiModelConfig(pool, tenantId, { provider: body.provider, model: body.model, api_key: apiKey }, key));
+      if (typeof invalidateTenantLlmConfigCache === 'function') invalidateTenantLlmConfigCache(tenantId);
+      const config = await tenantContext.run(tenantId, () => getTenantAiModelConfig(pool, tenantId, key));
+      return res.json({ ok: true, integration: { configured: !!config, provider: config?.provider || null, model: config?.model || null, api_key_configured: !!config?.api_key } });
+    } catch (e) {
+      return res.status(e?.statusCode || (String(e?.message || '').includes('invalid_ai_model_config') ? 400 : 500)).json({ error: e?.message || 'internal_error' });
     }
   });
 

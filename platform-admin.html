@@ -562,9 +562,11 @@
           <button type="button" id="salesBossDashBtn" class="ghost">老板看板</button>
           <button type="button" id="salesCasesBtn" class="ghost">案例库</button>
           <button type="button" id="salesTrainingBtn" class="ghost">话术训练</button>
+          <button type="button" id="salesKnowledgeBtn" class="ghost">知识库编辑</button>
         </div>
         <div id="salesBossDashBox" class="hint-box" style="display:none"></div>
         <div id="salesCasesBox" class="hint-box" style="display:none;max-height:240px;overflow:auto"></div>
+        <div id="salesKnowledgeBox" class="hint-box" style="display:none;max-height:400px;overflow:auto"></div>
         <div id="salesTrainingBox" class="hint-box" style="display:none"></div>
         <div id="salesReportBox" class="hint-box" style="display:none;white-space:pre-wrap"></div>
         <div id="salesFunnelBox" class="hint-box" style="display:none"></div>
@@ -2802,6 +2804,7 @@
     $('salesBossDashBtn').onclick = () => loadSalesBossDashboard().catch((e) => toast(e.message));
     $('salesCasesBtn').onclick = () => loadSalesCases().catch((e) => toast(e.message));
     $('salesTrainingBtn').onclick = () => loadSalesTraining().catch((e) => toast(e.message));
+    $('salesKnowledgeBtn').onclick = () => loadSalesKnowledge().catch((e) => toast(e.message));
     $('salesDetailCloseBtn').onclick = () => {
       state.sales.selectedLeadId = null;
       $('salesDetailCard').style.display = 'none';
@@ -2942,6 +2945,7 @@
       if (!data.ok) throw new Error(data.error || '线索不存在');
       state.sales.selectedLeadId = id;
       $('salesDetailCard').style.display = '';
+      $('salesDetailCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
       const lead = data.lead || {};
       $('salesDetailTitle').textContent = `${lead.lead_key || id} · ${lead.controller ? salesControllerLabel(lead.controller) : ''} · 分${lead.intent_score ?? 0}`;
       const adviceLines = [
@@ -3152,6 +3156,72 @@
       });
     }
 
+    async function loadSalesKnowledge() {
+      const data = await api('/api/admin/sales/knowledge');
+      const box = $('salesKnowledgeBox');
+      box.style.display = '';
+      const items = data.items || [];
+      box.innerHTML = `
+        <div style="margin-bottom:8px"><button type="button" class="secondary small" id="salesKnowledgeAddBtn">+ 新增知识条目</button></div>
+        ${items.map((it) => `
+          <div data-k-row style="padding:8px 0;border-bottom:1px solid rgba(0,0,0,.06);${it.active ? '' : 'opacity:.5'}">
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <input class="mono small" data-k-key value="${salesEsc(it.item_key)}" placeholder="item_key" style="width:120px">
+              <input data-k-title value="${salesEsc(it.title)}" placeholder="标题" style="width:140px">
+              <label class="small"><input type="checkbox" data-k-active ${it.active ? 'checked' : ''}> 启用</label>
+              <button type="button" class="ghost small" data-k-save="${it.id}">保存</button>
+              <button type="button" class="ghost small" data-k-del="${it.id}">删除</button>
+            </div>
+            <textarea data-k-body rows="2" style="width:100%;margin-top:4px" placeholder="话术内容">${salesEsc(it.body)}</textarea>
+            <input data-k-pain value="${salesEsc((it.pain_keys || []).join('，'))}" placeholder="触发痛点(逗号分隔，如：复购，老客)" style="width:100%;margin-top:4px">
+          </div>
+        `).join('') || '<div class="small">暂无知识条目</div>'}
+      `;
+      const saveItem = async (row, id) => {
+        const payload = {
+          id: id || undefined,
+          item_key: row.querySelector('[data-k-key]').value.trim(),
+          title: row.querySelector('[data-k-title]').value.trim(),
+          body: row.querySelector('[data-k-body]').value.trim(),
+          pain_keys: row.querySelector('[data-k-pain]').value,
+          active: row.querySelector('[data-k-active]')?.checked ?? true,
+        };
+        if (!payload.item_key || !payload.title || !payload.body) { toast('item_key/标题/内容不能为空'); return; }
+        const d = await api('/api/admin/sales/knowledge', { method: 'POST', body: JSON.stringify(payload) });
+        if (!d.ok) { toast(d.message || d.error || '保存失败'); return; }
+        toast('已保存');
+        await loadSalesKnowledge();
+      };
+      box.querySelectorAll('[data-k-save]').forEach((btn) => {
+        btn.onclick = () => saveItem(btn.closest('[data-k-row]'), Number(btn.dataset.kSave) || null);
+      });
+      box.querySelectorAll('[data-k-del]').forEach((btn) => {
+        btn.onclick = async () => {
+          if (!window.confirm('确定删除这条知识内容？')) return;
+          await api(`/api/admin/sales/knowledge/${btn.dataset.kDel}`, { method: 'DELETE' });
+          toast('已删除');
+          await loadSalesKnowledge();
+        };
+      });
+      const addBtn = $('salesKnowledgeAddBtn');
+      if (addBtn) addBtn.onclick = () => {
+        box.insertAdjacentHTML('beforeend', `
+          <div data-k-row style="padding:8px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <input class="mono small" data-k-key placeholder="item_key" style="width:120px">
+              <input data-k-title placeholder="标题" style="width:140px">
+              <label class="small"><input type="checkbox" data-k-active checked> 启用</label>
+              <button type="button" class="ghost small" data-k-save="">保存</button>
+            </div>
+            <textarea data-k-body rows="2" style="width:100%;margin-top:4px" placeholder="话术内容"></textarea>
+            <input data-k-pain placeholder="触发痛点(逗号分隔，如：复购，老客)" style="width:100%;margin-top:4px">
+          </div>
+        `);
+        const row = box.lastElementChild;
+        row.querySelector('[data-k-save]').onclick = () => saveItem(row, null);
+      };
+    }
+
     async function loadSalesTraining() {
       const [scData, stData] = await Promise.all([
         api('/api/admin/sales/training/scenarios'),
@@ -3289,9 +3359,13 @@
           <button type="button" class="ghost small" data-top5-lead="${t.lead_id}">打开</button>
         </div>
       `).join('') || '<div class="small">暂无高优先级线索</div>';
-      box.querySelectorAll('[data-top5-lead]').forEach((btn) => {
-        btn.onclick = () => openSalesLead(Number(btn.dataset.top5Lead)).catch((e) => toast(e.message));
-      });
+      box.onclick = (ev) => {
+        const btn = ev.target.closest('[data-top5-lead]');
+        if (!btn) return;
+        const id = Number(btn.dataset.top5Lead);
+        if (!id) return;
+        openSalesLead(id).catch((e) => toast(e.message));
+      };
     }
 
     async function loadSalesTodo() {

@@ -43,6 +43,7 @@ import {
   processKfCallbackEvent,
 } from './services/sales/sales-kf.js';
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE, FORBIDDEN_CLAIMS } from './services/sales/sales-knowledge.js';
+import { listKnowledgeItemsAdmin, upsertKnowledgeItem, deleteKnowledgeItem } from './services/sales/sales-knowledge-store.js';
 import { buildLeadSummary, canTransition, calculateSla } from './services/sales/sales-collaboration-service.js';
 import { recordStageChange } from './services/sales/sales-store.js';
 import { runSalesSlaScan } from './services/sales/sales-sla-service.js';
@@ -322,6 +323,46 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
 
   app.get('/api/admin/sales/meta', platformAdminRequired, (_req, res) => {
     res.json({ ok: true, persona: SALES_PERSONA, knowledge: PUBLIC_KNOWLEDGE, forbidden_claims: FORBIDDEN_CLAIMS, kf_configured: kfConfigured(), open_kfid: kfEnv().openKfid || null });
+  });
+
+  app.get('/api/admin/sales/knowledge', platformAdminRequired, async (_req, res) => {
+    try {
+      const items = await listKnowledgeItemsAdmin(pool);
+      res.json({ ok: true, items });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
+  app.post('/api/admin/sales/knowledge', platformAdminRequired, async (req, res) => {
+    try {
+      const title = String(req.body?.title || '').trim();
+      const body = String(req.body?.body || '').trim();
+      const itemKey = String(req.body?.item_key || '').trim();
+      if (!itemKey || !title || !body) return res.status(400).json({ ok: false, error: 'missing_fields' });
+      const painKeys = String(req.body?.pain_keys || '').split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+      const item = await upsertKnowledgeItem(pool, {
+        id: req.body?.id ? Number(req.body.id) : null,
+        item_key: itemKey,
+        title,
+        body,
+        pain_keys: painKeys,
+        active: req.body?.active !== false,
+        sort_order: Number.isFinite(Number(req.body?.sort_order)) ? Number(req.body.sort_order) : 0,
+      });
+      res.json({ ok: true, item });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
+  app.delete('/api/admin/sales/knowledge/:id', platformAdminRequired, async (req, res) => {
+    try {
+      await deleteKnowledgeItem(pool, Number(req.params.id));
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
   });
 
   app.get('/api/admin/sales/leads', platformAdminRequired, async (req, res) => {

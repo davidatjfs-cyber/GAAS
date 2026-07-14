@@ -16,9 +16,10 @@ function historyToPrompt(messages = []) {
     .join('\n');
 }
 
-async function generateWithLlm(plan, userText, history) {
+async function generateWithLlm(plan, userText, history, knowledgeItems) {
   if (typeof _callLLM !== 'function') return null;
-  const knowledgeBlurb = PUBLIC_KNOWLEDGE.map((k) => `- ${k.title}：${k.body}`).join('\n');
+  const items = Array.isArray(knowledgeItems) && knowledgeItems.length ? knowledgeItems : PUBLIC_KNOWLEDGE;
+  const knowledgeBlurb = items.map((k) => `- ${k.title}：${k.body}`).join('\n');
   const system = `${SALES_PERSONA.system_role}
 
 【可引用的公开知识】
@@ -48,15 +49,15 @@ ${historyToPrompt(history) || '（新会话）'}
   return String(r.content).trim();
 }
 
-export async function runCustomerAiTurn({ userText, extracted, history, intentScore, controller, guidance = null }) {
-  const plan = buildStrategyPlan({ userText, extracted, history, intentScore, controller });
+export async function runCustomerAiTurn({ userText, extracted, history, intentScore, controller, guidance = null, knowledgeItems = null }) {
+  const plan = buildStrategyPlan({ userText, extracted, history, intentScore, controller, knowledgeItems });
   if (guidance?.question_slot) {
     const forced = (plan.next_question?.key === guidance.question_slot) || guidance.question_slot;
     if (typeof forced === 'object') plan.next_question = forced;
     else plan.guidance_question_slot = forced;
   }
 
-  let reply = await generateWithLlm(plan, userText, history);
+  let reply = await generateWithLlm(plan, userText, history, knowledgeItems);
   let source = 'llm';
   if (!reply) {
     reply = templateReply(plan, userText);
