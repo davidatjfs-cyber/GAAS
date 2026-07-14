@@ -47,6 +47,7 @@ import {
   listSalesReps,
   createOrUpdateSalesRep,
   runDailyActivityRollup,
+  runAutoKpiRollupAndNotify,
   upsertKpiTarget,
   computeAndSaveKpiScore,
   getRepScorecard,
@@ -206,6 +207,46 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       }, next - now);
     };
     scheduleSalesRepActivityRollup();
+  }
+
+  // P3：每周一 08:00 自动结算上一周KPI；每月1号 08:15 自动结算上个月KPI（都不含主管主观分，
+  // 主管后续用 kpi-scores 接口补分即可覆盖更新）。
+  if (!globalThis.__salesWeeklyKpiTimer) {
+    const scheduleWeeklyKpi = () => {
+      const now = new Date();
+      const next = new Date(now);
+      next.setHours(8, 0, 0, 0);
+      const dayOfWeek = next.getDay() || 7; // 周一=1...周日=7
+      let daysUntilMonday = (1 - dayOfWeek + 7) % 7;
+      if (daysUntilMonday === 0 && next <= now) daysUntilMonday = 7;
+      next.setDate(next.getDate() + daysUntilMonday);
+      globalThis.__salesWeeklyKpiTimer = setTimeout(async () => {
+        try {
+          await runAutoKpiRollupAndNotify(pool, sendOpsAlert, 'week');
+        } catch (e) {
+          console.warn('[sales-ai] weekly kpi rollup failed:', e?.message || e);
+        }
+        scheduleWeeklyKpi();
+      }, next - now);
+    };
+    scheduleWeeklyKpi();
+  }
+
+  if (!globalThis.__salesMonthlyKpiTimer) {
+    const scheduleMonthlyKpi = () => {
+      const now = new Date();
+      let next = new Date(now.getFullYear(), now.getMonth(), 1, 8, 15, 0, 0);
+      if (next <= now) next = new Date(now.getFullYear(), now.getMonth() + 1, 1, 8, 15, 0, 0);
+      globalThis.__salesMonthlyKpiTimer = setTimeout(async () => {
+        try {
+          await runAutoKpiRollupAndNotify(pool, sendOpsAlert, 'month');
+        } catch (e) {
+          console.warn('[sales-ai] monthly kpi rollup failed:', e?.message || e);
+        }
+        scheduleMonthlyKpi();
+      }, next - now);
+    };
+    scheduleMonthlyKpi();
   }
 
   if (!globalThis.__salesKfSyncTimer) {

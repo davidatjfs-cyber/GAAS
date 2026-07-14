@@ -2,6 +2,7 @@
  * 销售人员管理：花名册 + 每日行为汇总 + KPI目标/得分
  * 销售人员不登录后台，仅通过 rep_key 字符串与 sales_leads.owner_username / sales_tasks.assignee 关联。
  */
+import { getTrainingStats } from './sales-training.js';
 
 // final_score 三段权重，集中定义方便调整
 const SCORE_WEIGHTS = { outcome: 0.5, behavior: 0.4, manager: 0.1 };
@@ -240,13 +241,18 @@ function pctOfTarget(actual, target) {
   return Math.min(100, (actual / target) * 100);
 }
 
+// 行为分四个子指标各自的权重，集中定义方便调整（P3新增训练分后，从40/35/25三段重新配平为四段）
+const BEHAVIOR_WEIGHTS = { response: 0.3, overdue: 0.25, priceGuard: 0.2, training: 0.25 };
+
 /**
  * 行为分计算思路（0~100分，简单加权，便于后续调整）：
- * - 响应速度分（40%）：平均响应分钟数越低分越高。以30分钟为满分基准，>=180分钟记0分，线性插值。
- * - 逾期分（35%）：以当期最后一天的 overdue_tasks 快照为准，0条逾期=满分，每条逾期扣10分，封底0分。
- * - 价格拦截分（25%）：price_guard_triggers 越少越好，当期总触发数每次扣15分，封底0分（说明未遵守报价话术边界）。
+ * - 响应速度分（30%）：平均响应分钟数越低分越高。以30分钟为满分基准，>=180分钟记0分，线性插值。
+ * - 逾期分（25%）：以当期最后一天的 overdue_tasks 快照为准，0条逾期=满分，每条逾期扣10分，封底0分。
+ * - 价格拦截分（20%）：price_guard_triggers 越少越好，当期总触发数每次扣15分，封底0分（说明未遵守报价话术边界）。
+ * - 话术训练分（25%，P3新增）：取该销售在 sales_training_sessions 里近期各场景平均分的整体均值；
+ *   完全没训练记录时给中性分60，不因为没练而重罚，鼓励但不强制。
  */
-function computeBehaviorScore(dailyRows = []) {
+function computeBehaviorScore(dailyRows = [], trainingRows = []) {
   if (!dailyRows.length) return 0;
   const avgResponseMinutes = (() => {
     const withResp = dailyRows.filter((r) => r.avg_response_minutes != null);
@@ -264,7 +270,16 @@ function computeBehaviorScore(dailyRows = []) {
   const totalPriceGuardTriggers = dailyRows.reduce((acc, r) => acc + (r.price_guard_triggers || 0), 0);
   const priceGuardScore = Math.max(0, 100 - totalPriceGuardTriggers * 15);
 
-  return Number((responseScore * 0.4 + overdueScore * 0.35 + priceGuardScore * 0.25).toFixed(2));
+  const trainingScore = trainingRows.length
+    ? trainingRows.reduce((acc, r) => acc + Number(r.avg_score || 0), 0) / trainingRows.length
+    : 60;
+
+  return Number((
+    responseScore * BEHAVIOR_WEIGHTS.response +
+    overdueScore * BEHAVIOR_WEIGHTS.overdue +
+    priceGuardScore * BEHAVIOR_WEIGHTS.priceGuard +
+    trainingScore * BEHAVIOR_WEIGHTS.training
+  ).toFixed(2));
 }
 
 export async function computeAndSaveKpiScore(pool, { repId, periodType, periodKey, managerScore, managerComment }) {
@@ -320,7 +335,9 @@ export async function computeAndSaveKpiScore(pool, { repId, periodType, periodKe
     ];
     const outcomeScore = Number((outcomeParts.reduce((a, b) => a + b, 0) / outcomeParts.length).toFixed(2));
 
-    const behaviorScore = computeBehaviorScore(dailyRes.rows || []);
+    // 训练分不按周期截断日期——训练习惯是持续性的素质，取该销售近期训练记录的整体表现即可。
+    const trainingRows = repKey ? await getTrainingStats(pool, repKey, 20).catch(() => []) : [];
+    const behaviorScore = computeBehaviorScore(dailyRes.rows || [], trainingRows);
 
     const finalScore = Number(
       (outcomeScore * SCORE_WEIGHTS.outcome + behaviorScore * SCORE_WEIGHTS.behavior + (managerScore || 0) * SCORE_WEIGHTS.manager).toFixed(2)
@@ -386,4 +403,53 @@ export async function getTeamLeaderboard(pool, { periodType, periodKey } = {}) {
     console.error('[sales-rep] getTeamLeaderboard failed:', e?.message || e);
     throw e;
   }
+}
+
+// P3：上一个ISO周的 'YYYY-Www' key（用于周一跑"上周"考核）
+function previousIsoWeekKey(now = new Date()) {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() - 7);
+  const day = d.getUTCDay() || 7;
+  const thursday = new Date(d);
+  thursday.setUTCDate(d.getUTCDate() + (4 - day));
+  const year = thursday.getUTCFullYear();
+  const jan1 = new Date(Date.UTC(year, 0, 1));
+  const week = Math.ceil((((thursday - jan1) / 86400000) + 1) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+// P3：上一个自然月的 'YYYY-MM' key（用于每月1号跑"上个月"考核）
+function previousMonthKey(now = new Date()) {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * P3：周期结束后自动为全部在职销售计算KPI得分(不含主管主观分，主管后续可通过
+ * kpi-scores接口补充manager_score后重新计算，走ON CONFLICT更新)，并推送排行榜通知。
+ * 用于每周一/每月1号的定时任务。
+ */
+export async function runAutoKpiRollupAndNotify(pool, sendOpsAlert, periodType) {
+  const periodKey = periodType === 'week' ? previousIsoWeekKey() : previousMonthKey();
+  const reps = await listSalesReps(pool, { status: 'active' });
+  const results = [];
+  for (const rep of reps) {
+    try {
+      const score = await computeAndSaveKpiScore(pool, { repId: rep.id, periodType, periodKey });
+      results.push({ ...rep, ...score });
+    } catch (e) {
+      console.warn(`[sales-rep] auto kpi rollup failed for rep ${rep.rep_key}:`, e?.message || e);
+    }
+  }
+  if (typeof sendOpsAlert === 'function' && results.length) {
+    const sorted = results.slice().sort((a, b) => (b.final_score || 0) - (a.final_score || 0));
+    const label = periodType === 'week' ? '周度' : '月度';
+    const lines = [
+      `【销售AI·${label}KPI自动结算】周期 ${periodKey}`,
+      ...sorted.map((r, i) => `${i + 1}. ${r.display_name}｜结果${r.outcome_score ?? '-'} 行为${r.behavior_score ?? '-'} 综合${r.final_score ?? '-'}`),
+      '（主观分待主管补充后综合分会更新）',
+    ];
+    await sendOpsAlert(lines.join('\n'), { title: `销售${label}KPI结算`, audience: 'sales' }).catch(() => null);
+  }
+  return { period_type: periodType, period_key: periodKey, results };
 }
