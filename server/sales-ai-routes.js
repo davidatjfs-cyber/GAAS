@@ -294,6 +294,14 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       let token = '';
       let openKfid = env.openKfid;
       const encrypt = req.body?.Encrypt || req.body?.encrypt;
+      const { msg_signature, timestamp, nonce } = req.query || {};
+      if (env.token && encrypt && msg_signature) {
+        const expect = verifyKfSignature(env.token, timestamp, nonce, encrypt);
+        if (expect !== String(msg_signature)) {
+          console.warn('[sales-kf] callback signature mismatch, ignoring');
+          return;
+        }
+      }
       if (encrypt && env.aesKey) {
         try {
           const plain = decryptKfMessage(String(encrypt), env.aesKey);
@@ -405,12 +413,16 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const leadId = Number(req.params.id); const lead = await getLead(pool, leadId); if (!lead) return res.status(404).json({ ok: false, error: 'not_found' });
       const qr = String(req.body?.qr_url || process.env.WECOM_SALES_CONSULTANT_QR_URL || '').trim();
       if (!qr) return res.status(409).json({ ok: false, error: 'consultant_qr_not_configured', message: '请先配置销售顾问企业微信二维码' });
-      const text = `为了方便发送Demo资料和后续跟进，请添加专属顾问：${qr}`;
+      let sent = false;
+      let text = `为了方便发送Demo资料和后续跟进，请添加专属顾问：${qr}`;
       if (kfConfigured() && lead.open_kfid && lead.external_userid) {
-        const { sendKfText } = await import('./services/sales/sales-kf.js'); await sendKfText({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, content: text });
+        const { sendKfConsultantCard } = await import('./services/sales/sales-kf.js');
+        const cardResult = await sendKfConsultantCard({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, consultantName: req.body?.consultant_name, qrUrl: qr });
+        sent = !!cardResult.ok;
+        if (cardResult.content) text = cardResult.content;
       }
-      await pool.query(`INSERT INTO sales_action_logs (lead_id, action_type, payload, created_by) VALUES ($1,'consultant_invite',$2::jsonb,$3)`, [leadId, JSON.stringify({ qr_url: qr, sent: kfConfigured(), text }), req.platformAdmin?.username || 'sales']);
-      res.json({ ok: true, sent: kfConfigured(), text, qr_url: qr, reason: kfConfigured() ? null : 'wecom_not_configured' });
+      await pool.query(`INSERT INTO sales_action_logs (lead_id, action_type, payload, created_by) VALUES ($1,'consultant_invite',$2::jsonb,$3)`, [leadId, JSON.stringify({ qr_url: qr, sent, text }), req.platformAdmin?.username || 'sales']);
+      res.json({ ok: true, sent, text, qr_url: qr, reason: sent ? null : 'wecom_not_configured' });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
   });
 

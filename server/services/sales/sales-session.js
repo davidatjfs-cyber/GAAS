@@ -136,9 +136,14 @@ export async function handleInboundMessage(pool, {
     };
   }
 
-  const firstResponse = !lead.first_response_at;
-
   if (welcome && !content) {
+    const already = await pool.query(
+      `SELECT id FROM sales_messages WHERE conversation_id=$1 AND meta->>'kind'='welcome' LIMIT 1`,
+      [conv.id]
+    );
+    if (already.rows?.length) {
+      return { ok: true, replied: false, reason: 'already_welcomed', lead_id: lead.id, conversation_id: conv.id, controller: 'ai' };
+    }
     const welcomeText = '您好，我是餐厅AI增长顾问。我可以介绍客户自动维护、门店自主运营和人才培养。请问您目前有几家门店？';
     await addMessage(pool, {
       conversationId: conv.id,

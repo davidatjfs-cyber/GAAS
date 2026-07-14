@@ -38,6 +38,11 @@ export const PUBLIC_KNOWLEDGE = [
     body: '系统按消费时间、次数、金额和偏好分层（新客、活跃、VIP、储值、流失风险），自动生成维护动作，并追踪回店与营业额归因。',
   },
   {
+    id: 'revenue-decline',
+    title: '营业额下降',
+    body: 'AI会按时段、菜品、渠道自动归因营业额变化的原因(不是单纯看总数下滑)，找到具体是出餐慢、客流下降还是客单下降，再给出对应的整改动作并跟踪结果。',
+  },
+  {
     id: 'execution',
     title: '店长执行',
     body: '每天发现经营异常，生成可执行建议并追踪店长/员工是否完成；老板看到的是问题、责任人、是否解决、结果是否改善。',
@@ -46,6 +51,16 @@ export const PUBLIC_KNOWLEDGE = [
     id: 'training',
     title: '人才培养',
     body: '培训、考试、认证与绩效可串成闭环，减少人员流动带来的能力不稳定。',
+  },
+  {
+    id: 'multi-store',
+    title: '多店管理',
+    body: '系统按门店维度汇总经营异常并自动排名，老板每天只看需要关注的门店和问题，而不是逐店翻数据；督导可以直接看到哪些店执行慢、哪些店在改善。',
+  },
+  {
+    id: 'marketing-roi',
+    title: '营销归因/ROI',
+    body: '每次营销触达(短信/企微/券)都会跟踪客户是否回店、产生了多少营业额，把投放和实际回店营收对应起来，而不是只看发了多少条、领了多少券。',
   },
   {
     id: 'trial',
@@ -88,8 +103,23 @@ export const PAIN_TO_MODULE = {
   员工: 'training',
 };
 
+// extractSlotsFromText 产出的 pain_point 是这几个精确值之一，优先精确匹配，
+// 避免子串匹配时出现"营销归因"命中"营销"→误判成复购模块的问题。
+const PAIN_POINT_EXACT_MODULE = {
+  复购: 'repurchase',
+  营业额下降: 'revenue-decline',
+  门店执行: 'execution',
+  人才培养: 'training',
+  多店管理: 'multi-store',
+  营销归因: 'marketing-roi',
+  缺少经营数据: 'multi-store',
+};
+
 export function knowledgeForPain(text = '') {
   const s = String(text);
+  if (PAIN_POINT_EXACT_MODULE[s]) {
+    return PUBLIC_KNOWLEDGE.find((x) => x.id === PAIN_POINT_EXACT_MODULE[s]) || PUBLIC_KNOWLEDGE[0];
+  }
   for (const [k, id] of Object.entries(PAIN_TO_MODULE)) {
     if (s.includes(k)) return PUBLIC_KNOWLEDGE.find((x) => x.id === id) || PUBLIC_KNOWLEDGE[0];
   }

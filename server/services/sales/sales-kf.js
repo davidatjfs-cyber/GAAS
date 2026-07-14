@@ -125,6 +125,26 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
   const results = [];
 
   for (const m of msgs) {
+    if (String(m.msgtype) === 'event') {
+      if (String(m.event?.event_type) === 'enter_session') {
+        const externalUserid = String(m.external_userid || m.event?.external_userid || '').trim();
+        const turn = await handleInbound({
+          welcome: true,
+          openKfid: String(m.open_kfid || m.event?.open_kfid || kfId),
+          externalUserid,
+          sourceChannel: 'wecom_kf',
+        });
+        if (turn?.replied && turn.reply && externalUserid) {
+          try {
+            await sendKfText({ openKfid: String(m.open_kfid || m.event?.open_kfid || kfId), externalUserid, content: turn.reply });
+          } catch (e) {
+            turn.send_error = e?.message || String(e);
+          }
+        }
+        results.push(turn);
+      }
+      continue;
+    }
     if (String(m.msgtype) !== 'text') continue;
     const text = String(m?.text?.content || '').trim();
     if (!text) continue;
