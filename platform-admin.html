@@ -2862,10 +2862,17 @@
       proposal: '方案/报价', trial: '试跑中', won: '成交', lost: '失单', unfit: '不匹配'
     };
     const SALES_CONTROLLER_LABELS = { ai: '客户AI', human: '人工', waiting_human: '待人工接管' };
-    const SALES_INTENT_LABELS = { high: '高', medium: '中', low: '低' };
+    const SALES_INTENT_LABELS = { critical: '紧急', high: '高', medium: '中', low: '低' };
     function salesStageLabel(v) { return SALES_STAGE_LABELS[v] || salesEsc(v); }
     function salesControllerLabel(v) { return SALES_CONTROLLER_LABELS[v] || salesEsc(v); }
     function salesIntentLabel(v) { return SALES_INTENT_LABELS[v] || salesEsc(v); }
+    function salesLeadDisplayName(l) {
+      if (!l) return '未知线索';
+      if (l.company || l.name) return l.company || l.name;
+      const city = l.city || l.extracted?.city || '';
+      const stores = l.store_count ? `${l.store_count}家店` : '';
+      return `${city}${stores}线索#${l.id ?? ''}` || `线索#${l.id ?? ''}`;
+    }
 
     function renderSalesChat(el, messages) {
       if (!el) return;
@@ -2892,11 +2899,11 @@
       body.innerHTML = filtered.length ? filtered.map((l) => {
         const selected = Number(state.sales.selectedLeadId) === Number(l.id) ? 'selected' : '';
         const pain = (l.pain_points && l.pain_points[0]) || l.extracted?.pain_point || '—';
-        const handoff = l.handoff_level && l.handoff_level !== 'low' ? ` · ${salesEsc(l.handoff_level)}接管` : '';
+        const handoff = l.handoff_level && l.handoff_level !== 'low' ? ` · ${salesIntentLabel(l.handoff_level)}接管` : '';
         const updated = l.updated_at ? new Date(l.updated_at).toLocaleString() : '—';
         const tags = (l.tags || []).slice(0, 3).map((t) => `<span class="pill" style="font-size:10px;padding:2px 6px">${salesEsc(t)}</span>`).join(' ');
         return `<tr class="${selected}" data-lead-id="${l.id}">
-          <td><strong>${salesEsc(l.company || l.name || l.lead_key || l.id)}</strong><div class="mono small">${salesEsc(l.external_userid || '')}</div></td>
+          <td><strong>${salesEsc(salesLeadDisplayName(l))}</strong><div class="mono small">${salesEsc(l.extracted?.phone || l.phone || '未留联系方式')}</div></td>
           <td>${salesStageLabel(l.stage)}</td>
           <td>${salesControllerLabel(l.controller)}${handoff}</td>
           <td><strong>${salesEsc(l.intent_score)}</strong> <span class="small">${salesIntentLabel(l.intent_level)}</span></td>
@@ -3274,7 +3281,7 @@
       box.innerHTML = (data.top5 || []).map((t, i) => `
         <div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06)">
           <div>
-            <strong>${i + 1}. ${salesEsc(t.company || t.lead_key)}</strong>
+            <strong>${i + 1}. ${salesEsc(salesLeadDisplayName({ ...t, id: t.lead_id ?? t.id }))}</strong>
             <span class="small"> · ${salesEsc(t.city || '?')} · ${t.store_count ?? '?'}店 · 分${t.intent_score ?? 0} · 成交${t.win_probability ?? 0}%</span>
             <div class="small">痛点 ${salesEsc(t.pain_point)}｜${salesEsc((t.reasons || []).join('、'))}</div>
             <div class="small">建议：${salesEsc(t.next_action || '—')}</div>
@@ -3291,15 +3298,15 @@
       const data = await api('/api/admin/sales/todo');
       const box = $('salesTodoBox');
       box.style.display = '';
-      box.innerHTML = (data.todos || []).map((t) => `<div><strong>${salesEsc(t.company || t.lead_key)}</strong> · ${salesEsc(t.title)} · ${t.priority}</div>`).join('') || '<div class="small">暂无待办</div>';
+      box.innerHTML = (data.todos || []).map((t) => `<div><strong>${salesEsc(salesLeadDisplayName({ ...t, id: t.lead_id ?? t.id }))}</strong> · ${salesEsc(t.title)} · ${t.priority}</div>`).join('') || '<div class="small">暂无待办</div>';
     }
 
     async function loadSalesRisk() {
       const data = await api('/api/admin/sales/risks');
       const box = $('salesRiskBox');
       box.style.display = '';
-      const risks = (data.risks || []).map((r) => `<div><strong>${salesEsc(r.company || r.lead_key)}</strong> · ${r.risks.join('、')}</div>`).join('');
-      const actions = (data.tomorrow_actions || []).map((a) => `<div><strong>${salesEsc(a.company || a.lead_key)}</strong> · ${salesEsc(a.action)}</div>`).join('');
+      const risks = (data.risks || []).map((r) => `<div><strong>${salesEsc(salesLeadDisplayName({ ...r, id: r.lead_id ?? r.id }))}</strong> · ${r.risks.join('、')}</div>`).join('');
+      const actions = (data.tomorrow_actions || []).map((a) => `<div><strong>${salesEsc(salesLeadDisplayName({ ...a, id: a.lead_id ?? a.id }))}</strong> · ${salesEsc(a.action)}</div>`).join('');
       box.innerHTML = `<div><strong>风险客户</strong></div>${risks || '<div class="small">无</div>'}<div style="margin-top:8px"><strong>明日优先</strong></div>${actions || '<div class="small">无</div>'}`;
     }
 

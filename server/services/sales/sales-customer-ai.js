@@ -29,6 +29,7 @@ ${knowledgeBlurb}
 下一问=${plan.next_question?.question || '（可不问）'}
 是否转人工=${plan.takeover.takeover ? '是' : '否'}
 价格规则=绝对禁止提及任何具体价格数字/折扣比例（包括金额、折扣、报价范围）。客户问价格一律引导"由顾问为您详细说明"，不得自行报价。
+联系方式规则=${!plan.extracted?.phone && plan.extracted?.pain_point ? '客户还没留手机号，且已经聊到具体痛点了——本轮结尾一定要自然地问一句手机号，方便顾问后续直接联系、发资料，不能跳过这一步。' : '不强制本轮问手机号。'}
 已确认信息=${JSON.stringify(plan.extracted || {})}
 `;
 

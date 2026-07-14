@@ -119,6 +119,7 @@ export function nextDiagnosticQuestion(extracted = {}) {
     if (slot.key === 'other_system_used' && extracted.other_system_used == null) return slot;
     if (slot.key === 'pain_point' && !extracted.pain_point) return slot;
     if (slot.key === 'decision_role' && !extracted.decision_role) return slot;
+    if (slot.key === 'contact_phone' && !extracted.phone) return slot;
   }
   return null;
 }

@@ -89,6 +89,7 @@ export const DIAGNOSTIC_SLOTS = [
   { key: 'member_estimate', question: '目前积累的会员或客户手机号大概有多少？', priority: 45 },
   { key: 'other_system_used', question: '目前有没有在用其他会员或营销管理系统？', priority: 47 },
   { key: 'pain_point', question: '您现在最想先解决的是客户复购、门店执行，还是人才培养？', priority: 50 },
+  { key: 'contact_phone', question: '方便留一个手机号吗？后面顾问可以直接联系您，发资料和方案会更快一些。', priority: 55 },
   { key: 'decision_role', question: '这次主要是您本人在看，还是运营/IT同事一起评估？', priority: 60 },
 ];
 
