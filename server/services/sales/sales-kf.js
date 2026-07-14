@@ -97,9 +97,13 @@ export async function sendKfText({ openKfid, externalUserid, content }) {
   return data;
 }
 
-export async function sendKfMenuOrCardPlaceholder() {
-  // 企业微信名片需在控制台配置；此处预留
-  return { ok: false, error: 'not_implemented' };
+export async function sendKfConsultantCard({ openKfid, externalUserid, consultantName, qrUrl }) {
+  const name = String(consultantName || '专属顾问').trim();
+  const url = String(qrUrl || '').trim();
+  if (!url) return { ok: false, error: 'consultant_qr_not_configured' };
+  const content = `为了方便发送Demo资料和后续跟进，请添加${name}：${url}`;
+  const result = await sendKfText({ openKfid, externalUserid, content });
+  return { ok: true, channel: 'wecom_kf_text_qr', content, result };
 }
 
 /**

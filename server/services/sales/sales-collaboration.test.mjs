@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildSalesDecision, buildCustomerAiGuidance, normalizeCustomerAiEvent } from './sales-collaboration.js';
+import { canTransition, buildLeadSummary, calculateSla } from './sales-collaboration-service.js';
 
 test('customer AI event is normalized with evidence and bounded confidence', () => {
   const event = normalizeCustomerAiEvent({ event_type: 'REQUEST_DEMO', priority: 'high', confidence: 2 }, '客户原话');
@@ -27,4 +28,16 @@ test('medium lead receives a reverse guidance question instead of forced takeove
   assert.equal(decision.controller_recommendation, 'continue_ai');
   assert.equal(guidance.mode, 'diagnose');
   assert.equal(guidance.question_slot, 'store_count');
+});
+
+test('state machine rejects illegal jumps and summary exposes missing facts', () => {
+  assert.equal(canTransition('ai_greeting', 'won'), false);
+  assert.equal(canTransition('demo_completed', 'proposal'), true);
+  const summary = buildLeadSummary({ stage: 'need_confirmed', intent_level: 'high', extracted: { pain_point: '复购' } }, { missing_facts: ['pos_brand'] });
+  assert.deepEqual(summary.missing_facts, ['pos_brand']);
+});
+
+test('critical SLA is five minutes', () => {
+  const now = new Date('2026-07-14T00:00:00Z');
+  assert.equal(calculateSla('critical', now).toISOString(), '2026-07-14T00:05:00.000Z');
 });

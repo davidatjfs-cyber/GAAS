@@ -1,7 +1,7 @@
 /**
  * 销售 AI 路由：沙盒试聊 + 线索工作台 + 微信客服回调 + 销售漏斗/会客/风险
  */
-import { ensureSalesTables, listLeads, getLead, loadLeadFunnel } from './services/sales/sales-store.js';
+import { ensureSalesTables, listLeads, getLead, loadLeadFunnel, upsertTask } from './services/sales/sales-store.js';
 import {
   handleInboundMessage,
   takeoverConversation,
@@ -43,6 +43,8 @@ import {
   processKfCallbackEvent,
 } from './services/sales/sales-kf.js';
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE, FORBIDDEN_CLAIMS } from './services/sales/sales-knowledge.js';
+import { buildLeadSummary, canTransition, calculateSla } from './services/sales/sales-collaboration-service.js';
+import { recordStageChange } from './services/sales/sales-store.js';
 import {
   listSalesReps,
   createOrUpdateSalesRep,
@@ -326,6 +328,78 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       console.error('[sales] lead detail', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
+  });
+
+  app.get('/api/admin/sales/leads/:id/summary', platformAdminRequired, async (req, res) => {
+    try {
+      const data = await getLeadDetail(pool, Number(req.params.id));
+      if (!data.ok) return res.status(404).json(data);
+      res.json({ ok: true, summary: buildLeadSummary(data.lead, data.lead.last_sales_decision || {}) });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.post('/api/admin/sales/leads/:id/assign', platformAdminRequired, async (req, res) => {
+    try {
+      const leadId = Number(req.params.id); const username = String(req.body?.username || '').trim();
+      if (!username) return res.status(400).json({ ok: false, error: 'missing_username' });
+      const lead = await getLead(pool, leadId); if (!lead) return res.status(404).json({ ok: false, error: 'not_found' });
+      const due = calculateSla(lead.handoff_level || lead.intent_level);
+      await pool.query(`UPDATE sales_leads SET assigned_to=$2, assigned_at=NOW(), sla_due_at=$3, sla_status=CASE WHEN $3 IS NULL THEN 'not_required' ELSE 'open' END, updated_at=NOW() WHERE id=$1`, [leadId, username, due]);
+      res.json({ ok: true, lead_id: leadId, assigned_to: username, sla_due_at: due });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.post('/api/admin/sales/leads/:id/stage', platformAdminRequired, async (req, res) => {
+    try {
+      const leadId = Number(req.params.id); const toStage = String(req.body?.stage || '').trim();
+      const lead = await getLead(pool, leadId); if (!lead) return res.status(404).json({ ok: false, error: 'not_found' });
+      if (!canTransition(lead.stage, toStage)) return res.status(400).json({ ok: false, error: 'invalid_stage_transition', from_stage: lead.stage, to_stage: toStage });
+      await pool.query(`UPDATE sales_leads SET stage=$2, updated_at=NOW() WHERE id=$1`, [leadId, toStage]);
+      await recordStageChange(pool, { leadId, fromStage: lead.stage, toStage, reason: req.body?.reason || 'manual_stage_change', evidence: req.body?.evidence || {}, actor: req.platformAdmin?.username || 'sales' });
+      res.json({ ok: true, lead_id: leadId, from_stage: lead.stage, to_stage: toStage });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.post('/api/admin/sales/leads/:id/actions', platformAdminRequired, async (req, res) => {
+    try {
+      const leadId = Number(req.params.id); const actionType = String(req.body?.action_type || '').trim();
+      const allowed = ['send_case', 'send_demo', 'create_task', 'schedule_meeting', 'pause', 'transfer'];
+      if (!allowed.includes(actionType)) return res.status(400).json({ ok: false, error: 'unsupported_action' });
+      const lead = await getLead(pool, leadId); if (!lead) return res.status(404).json({ ok: false, error: 'not_found' });
+      let result = null;
+      if (actionType === 'create_task') {
+        result = await upsertTask(pool, { leadId, title: String(req.body?.title || '销售跟进'), detail: req.body?.detail, dueAt: req.body?.due_at || null, assignee: req.body?.assignee || lead.assigned_to });
+      } else if (actionType === 'schedule_meeting') {
+        const { createMeeting } = await import('./services/sales/sales-store.js');
+        result = await createMeeting(pool, { leadId, meetingType: req.body?.meeting_type || 'demo', occurredAt: req.body?.occurred_at, rawNotes: req.body?.notes, createdBy: req.platformAdmin?.username });
+      } else if (actionType === 'send_case' || actionType === 'send_demo') {
+        const text = actionType === 'send_demo' ? String(req.body?.text || '您好，我为您安排一次针对门店情况的系统演示，请回复方便的时间。') : String(req.body?.text || '我先发您一份相关案例，您可以重点看客户分层、触达和回店归因部分。');
+        await pool.query(`INSERT INTO sales_messages (conversation_id, lead_id, direction, sender, content, meta) SELECT id, $1, 'outbound', 'human', $2, $3::jsonb FROM sales_conversations WHERE lead_id=$1 ORDER BY id DESC LIMIT 1`, [leadId, text, JSON.stringify({ action: actionType })]);
+        result = { text, external_send_pending: true, reason: kfConfigured() ? 'use_kf_send' : 'wecom_not_configured' };
+      } else if (actionType === 'pause') {
+        await pool.query(`UPDATE sales_leads SET stage='paused', updated_at=NOW() WHERE id=$1`, [leadId]); result = { stage: 'paused' };
+      } else if (actionType === 'transfer') {
+        const username = String(req.body?.username || '').trim(); if (!username) return res.status(400).json({ ok: false, error: 'missing_username' });
+        await pool.query(`UPDATE sales_leads SET assigned_to=$2, assigned_at=NOW(), updated_at=NOW() WHERE id=$1`, [leadId, username]); result = { assigned_to: username };
+      }
+      await pool.query(`INSERT INTO sales_action_logs (lead_id, action_type, asset_key, payload, created_by) VALUES ($1,$2,$3,$4::jsonb,$5)`, [leadId, actionType, req.body?.asset_key || null, JSON.stringify(result || req.body || {}), req.platformAdmin?.username || 'sales']);
+      res.json({ ok: true, action_type: actionType, result });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
+  });
+
+  app.post('/api/admin/sales/leads/:id/consultant-invite', platformAdminRequired, async (req, res) => {
+    try {
+      const leadId = Number(req.params.id); const lead = await getLead(pool, leadId); if (!lead) return res.status(404).json({ ok: false, error: 'not_found' });
+      const qr = String(req.body?.qr_url || process.env.WECOM_SALES_CONSULTANT_QR_URL || '').trim();
+      if (!qr) return res.status(409).json({ ok: false, error: 'consultant_qr_not_configured', message: '请先配置销售顾问企业微信二维码' });
+      const text = `为了方便发送Demo资料和后续跟进，请添加专属顾问：${qr}`;
+      const detail = await getLeadDetail(pool, leadId);
+      if (kfConfigured() && lead.open_kfid && lead.external_userid) {
+        const { sendKfText } = await import('./services/sales/sales-kf.js'); await sendKfText({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, content: text });
+      }
+      await pool.query(`INSERT INTO sales_action_logs (lead_id, action_type, payload, created_by) VALUES ($1,'consultant_invite',$2::jsonb,$3)`, [leadId, JSON.stringify({ qr_url: qr, sent: kfConfigured(), text }), req.platformAdmin?.username || 'sales']);
+      res.json({ ok: true, sent: kfConfigured(), text, qr_url: qr, reason: kfConfigured() ? null : 'wecom_not_configured' });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
   });
 
   app.post('/api/admin/sales/sandbox/chat', platformAdminRequired, async (req, res) => {

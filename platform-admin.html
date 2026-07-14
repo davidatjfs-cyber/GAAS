@@ -604,6 +604,7 @@
             <button type="button" id="salesProposalBtn" class="secondary">生成方案</button>
             <button type="button" id="salesDeepDxBtn" class="secondary">深诊断</button>
             <button type="button" id="salesProvisionBtn" class="secondary">开通租户</button>
+            <button type="button" id="salesConsultantInviteBtn" class="secondary">发顾问企微</button>
             <button type="button" id="salesReplyBtn">发送</button>
         </div>
         <div id="salesOvercommitHint" class="small" style="display:none;color:var(--warn);margin-top:4px"></div>
@@ -618,6 +619,9 @@
             <button type="button" id="salesTrialBtn" class="secondary">开试跑</button>
             <button type="button" id="salesDealBtn" class="warn">成交</button>
             <button type="button" id="salesLostBtn" class="ghost">标记失单</button>
+            <button type="button" id="salesSendCaseBtn" class="secondary">发案例</button>
+            <button type="button" id="salesSendDemoBtn" class="secondary">发Demo邀请</button>
+            <button type="button" id="salesCreateTaskBtn" class="secondary">创建任务</button>
           </div>
         </div>
       </div>
@@ -2812,6 +2816,7 @@
     $('salesProposalBtn').onclick = () => salesLoadProposal().catch((e) => toast(e.message));
     $('salesDeepDxBtn').onclick = () => salesDeepDiagnosis().catch((e) => toast(e.message));
     $('salesProvisionBtn').onclick = () => salesProvisionTenant().catch((e) => toast(e.message));
+    $('salesConsultantInviteBtn').onclick = () => salesConsultantInvite().catch((e) => toast(e.message));
     $('salesAssistantSendBtn').onclick = () => salesAssistantChat().catch((e) => toast(e.message));
     $('salesAssistantInput').onkeydown = (ev) => {
       if (ev.key === 'Enter') salesAssistantChat().catch((e) => toast(e.message));
@@ -2821,6 +2826,9 @@
     $('salesTrialBtn').onclick = () => salesLogTrial().catch((e) => toast(e.message));
     $('salesDealBtn').onclick = () => salesLogDeal().catch((e) => toast(e.message));
     $('salesLostBtn').onclick = () => salesLogLost().catch((e) => toast(e.message));
+    $('salesSendCaseBtn').onclick = () => salesAction('send_case').catch((e) => toast(e.message));
+    $('salesSendDemoBtn').onclick = () => salesAction('send_demo').catch((e) => toast(e.message));
+    $('salesCreateTaskBtn').onclick = () => salesAction('create_task', { title: window.prompt('任务名称', '销售跟进') || '销售跟进' }).catch((e) => toast(e.message));
     $('salesReplyInput').onkeydown = (ev) => {
       if (ev.key === 'Enter') salesHumanReply().catch((e) => toast(e.message));
     };
@@ -3022,6 +3030,24 @@
       const data = await api(`/api/admin/sales/leads/${id}/quick-reply`, { method: 'POST', body: JSON.stringify({ scenario }) });
       $('salesReplyInput').value = data.text || '';
       toast('已填快捷话术');
+    }
+
+    async function salesAction(action_type, extra = {}) {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先选择线索');
+      const data = await api(`/api/admin/sales/leads/${id}/actions`, { method: 'POST', body: JSON.stringify({ action_type, ...extra }) });
+      if (!data.ok) throw new Error(data.message || data.error || '动作失败');
+      toast(data.result?.reason === 'wecom_not_configured' ? '已记录动作，企微尚未配置' : '动作已完成');
+      await openSalesLead(id);
+    }
+
+    async function salesConsultantInvite() {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先选择线索');
+      const qr = window.prompt('销售顾问企业微信二维码链接（可留空使用服务器配置）', '');
+      const data = await api(`/api/admin/sales/leads/${id}/consultant-invite`, { method: 'POST', body: JSON.stringify({ qr_url: qr || undefined }) });
+      if (!data.ok) throw new Error(data.message || data.error || '发送失败');
+      toast(data.sent ? '顾问企微已发送' : '已生成邀请，企微尚未配置');
     }
 
     async function salesLogDemo() {

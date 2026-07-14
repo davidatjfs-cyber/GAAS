@@ -266,7 +266,7 @@ export async function takeoverConversation(pool, leadId, { ownerUsername } = {})
   await pool.query(
     `UPDATE sales_leads
         SET controller='human', stage=CASE WHEN stage IN ('new','ai_greeting','need_identified','qualified') THEN 'sales_takeover' ELSE stage END,
-            owner_username=COALESCE($2, owner_username), last_human_at=NOW(), updated_at=NOW()
+            owner_username=COALESCE($2, owner_username), assigned_to=COALESCE($2, assigned_to), handoff_at=COALESCE(handoff_at, NOW()), last_human_at=NOW(), first_human_response_at=COALESCE(first_human_response_at, NOW()), sla_status='met', updated_at=NOW()
       WHERE id=$1`,
     [leadId, ownerUsername || null]
   );
