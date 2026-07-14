@@ -10,6 +10,8 @@ import {
   renderBossLanguage,
 } from './ontology-rule-service.js';
 import { getDefaultThreshold } from './rule-identity.js';
+import { getBenchmarkForStore } from './benchmark-service.js';
+import { recordDataQuality } from './data-trust-service.js';
 
 function num(v) {
   const n = Number(v);
@@ -238,8 +240,9 @@ export async function runDailyDiagnosis(pool, options = {}) {
   const issues = [];
   const curRevenue = num(current.revenue);
   const prevRevenue = num(prev.revenue);
+  let revenueChangeRate = null;
   if (prevRevenue > 0) {
-    const revenueChangeRate = Number((((curRevenue - prevRevenue) / prevRevenue) * 100).toFixed(2));
+    revenueChangeRate = Number((((curRevenue - prevRevenue) / prevRevenue) * 100).toFixed(2));
     const rule = rules.get('revenue_decline');
     const evaluated = await applyRule(pool, rule, { revenueChangeRate, currentRevenue: curRevenue, previousRevenue: prevRevenue });
     if ((!rule && revenueChangeRate <= revenueDeclineFallback) || (rule && evaluated.matched)) {
@@ -250,6 +253,27 @@ export async function runDailyDiagnosis(pool, options = {}) {
         evidence: ruleEvidence(rule, evaluated.matchedConditions, { currentRevenue: curRevenue, previousRevenue: prevRevenue, changeRate: revenueChangeRate, revenueGap: prevRevenue - curRevenue }),
         roots: ['traffic_decline', 'repeat_decline', 'lunch_decline'],
         impact: prevRevenue - curRevenue,
+      }));
+    }
+  }
+
+  // 业态基准对比：这是"多维业态分层基准库"真正接入AI诊断的地方——不再只跟自己历史比，
+  // 还要跟同business_type+scale+price_band的门店比。样本不足时getBenchmarkForStore会
+  // 自动标注source='industry_reference'兜底，不会假装这是平台真实数据。
+  const curOrders = num(current.orders);
+  if (curOrders > 0) {
+    const avgTicket = curRevenue / curOrders;
+    const benchmark = await getBenchmarkForStore(pool, storeId, 'avg_ticket_price').catch(() => null);
+    if (benchmark && Number.isFinite(num(benchmark.p25)) && avgTicket < num(benchmark.p25)) {
+      const p10 = benchmark.p10 ?? benchmark.p25;
+      issues.push(issueRow({
+        tenantId, storeId, issueType: 'below_peer_benchmark', title: '客单价低于同类门店',
+        description: `本店客单价${avgTicket.toFixed(1)}元，低于同类型门店25分位水平${num(benchmark.p25).toFixed(1)}元(${benchmark.source === 'platform' ? '平台真实基准' : '行业参考值，样本不足暂未生成平台基准'})。`,
+        severity: avgTicket < num(p10) ? 'P2' : 'P3',
+        confidence: benchmark.source === 'platform' ? Math.min(0.9, 0.5 + Number(benchmark.confidence_score || 0) * 0.4) : 0.5,
+        evidence: { avg_ticket_price: Number(avgTicket.toFixed(2)), benchmark_p25: benchmark.p25, benchmark_p50: benchmark.p50, benchmark_source: benchmark.source, sample_size: benchmark.sample_size || 0 },
+        roots: ['pricing_strategy', 'upsell_not_executed'],
+        impact: 0,
       }));
     }
   }
@@ -309,6 +333,24 @@ export async function runDailyDiagnosis(pool, options = {}) {
       severity: 'P2', confidence: 0.72,
       evidence: employee, roots: ['training_not_completed', 'task_overdue'], impact: 0,
     }));
+  }
+
+  // Data Trust Engine 真实接入点：员工绩效自评(avgScore) vs 实际营业额趋势的交叉验证
+  // (对应 CONFLICT_MATRIX 里的 employee_score_vs_actual_revenue 规则)。
+  // 员工自评分很高但营业额同期明显下滑，是"自证数据"跟客观结果对不上的典型信号。
+  if (employee.avgScore > 0 && revenueChangeRate !== null) {
+    const conflict = employee.avgScore >= 85 && revenueChangeRate <= -8;
+    await recordDataQuality(pool, {
+      dataId: `employee_score_${tenantId}_${storeId}_${date}`,
+      dataType: 'employee_performance_review',
+      tenantId,
+      storeId,
+      sourceType: 'employee_manual_entry',
+      crossSourceChecks: [{
+        ruleId: 'employee_score_vs_actual_revenue',
+        result: conflict ? 'conflict' : 'consistent',
+      }],
+    }).catch((e) => console.warn('[data-trust] record employee score check failed:', e?.message || e));
   }
   if (marketing.touched > 0 && marketing.conversionRate !== null) {
     const rule = rules.get('marketing_conversion_low');
