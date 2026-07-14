@@ -2794,7 +2794,7 @@
     $('salesRiskFilter').onchange = () => loadSalesBoard().catch((e) => toast(e.message));
     $('salesMinScore').onchange = () => loadSalesBoard().catch((e) => toast(e.message));
     $('salesReportBtn').onclick = () => loadSalesDailyReport(false).catch((e) => toast(e.message));
-    $('salesSendReportBtn')?.onclick = () => loadSalesDailyReport(true).catch((e) => toast(e.message));
+    if ($('salesSendReportBtn')) $('salesSendReportBtn').onclick = () => loadSalesDailyReport(true).catch((e) => toast(e.message));
     $('salesTodoBtn').onclick = () => loadSalesTodo().catch((e) => toast(e.message));
     $('salesTop5Btn').onclick = () => loadSalesTop5().catch((e) => toast(e.message));
     $('salesRiskBtn').onclick = () => loadSalesRisk().catch((e) => toast(e.message));
