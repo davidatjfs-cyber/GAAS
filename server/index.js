@@ -105,6 +105,16 @@ import { createPlatformAdminRequired, registerTenantPlatformRoutes } from './ten
 import { registerKnowledgeRoutes } from './knowledge-routes.js';
 import { registerCheckinRoutes } from './checkin-routes.js';
 import { registerReportsRoutes } from './reports-routes.js';
+import {
+  registerHrmsPayrollClosedLoopRoutes,
+  ensurePayrollRulesTables,
+  seedDefaultBrandPayrollRules,
+  upsertPayrollLedgerEntry,
+  applyPromotionSalaryNextMonth,
+  insertSalaryTimeline,
+  buildPayrollForMonth
+} from './hrms-payroll-routes.js';
+import { resolveAttendancePayrollRules, safeBizMonth } from './services/hrms-payroll-rules.js';
 import { registerInventoryForecastRoutes } from './inventory-forecast-routes.js';
 import { registerAgentTaskBoardRoutes } from './agent-task-board-routes.js';
 import { ensureBaselineSchemaHealth } from './baseline-schema-health.js';
@@ -3629,6 +3639,26 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
         }
 
         if (decideExtras.onboardingEmployeeSync?.ok) {
+          // 入职定薪写入底薪时间线（自 joinDate 起生效）
+          try {
+            const salNum = Number(nextEmp?.salary);
+            const joinD = safeDateOnly(nextEmp?.joinDate) || hrmsNowISO().slice(0, 10);
+            if (Number.isFinite(salNum) && salNum > 0) {
+              await insertSalaryTimeline({
+                tenantId: req.tenantId || req.user?.tenant_id || 'default',
+                username: newUsername,
+                amount: salNum,
+                effectiveFrom: joinD,
+                source: 'onboarding',
+                approvalId: updated.id,
+                note: '入职定薪',
+                createdBy: username
+              });
+            }
+          } catch (tlOnbErr) {
+            console.error('[onboarding] salary timeline failed:', tlOnbErr?.message);
+          }
+
           const state = (await getSharedState()) || {};
           const submitter = String(updated.applicant_username || '').trim();
           const empManager = String(nextEmp.managerUsername || '').trim();
@@ -3915,6 +3945,33 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             const historyRows = Array.isArray(state.salaryChangeHistory) ? state.salaryChangeHistory.slice() : [];
             historyRows.unshift(rec);
             state = { ...state, salaryChangeHistory: historyRows };
+
+            // 晋升调薪：次月1日生效（底薪时间线）；当月仍按旧薪计
+            try {
+              const tidPromo = req.tenantId || req.user?.tenant_id || 'default';
+              if (Number.isFinite(oldSalaryNum) && oldSalaryNum > 0) {
+                const joinD = safeDateOnly(applicant?.joinDate || applicant?.hireDate) || `${hrmsNowISO().slice(0, 7)}-01`;
+                await insertSalaryTimeline({
+                  tenantId: tidPromo,
+                  username: applicantUser,
+                  amount: oldSalaryNum,
+                  effectiveFrom: joinD,
+                  source: 'profile_baseline',
+                  note: '晋升前底薪基线',
+                  createdBy: username
+                });
+              }
+              await applyPromotionSalaryNextMonth({
+                tenantId: tidPromo,
+                username: applicantUser,
+                newSalary,
+                approvalId: updated.id,
+                approvedAt: hrmsNowISO().slice(0, 10),
+                createdBy: username
+              });
+            } catch (tlErr) {
+              console.error('[promotion] salary timeline failed:', tlErr?.message);
+            }
           }
 
           // 闭环收尾：标记晋升资格记录已完成，并为新岗位尚未认证的晋升能力要求知识点派发培训任务
@@ -4173,6 +4230,30 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             void notifyAdminsDualWriteFailure('hrms_reward_punishment_records（奖惩审批双写）', e);
           }
 
+          // 薪资账本：按业务发生月入账（与终审日无关）
+          try {
+            const tidRp = req.tenantId || req.user?.tenant_id || 'default';
+            const bizMonthRp = safeBizMonth(
+              updated.payload?.bizMonth || updated.payload?.businessMonth || updated.payload?.occurMonth
+              || updated.payload?.occurDate || updated.payload?.eventDate || updated.payload?.date
+            ) || hrmsNowISO().slice(0, 7);
+            const signed = isReward ? Math.abs(amount || 0) : -Math.abs(amount || 0);
+            await upsertPayrollLedgerEntry({
+              tenantId: tidRp,
+              username: targetUsername || applicantUser,
+              store: String(targetRec?.store || '').trim(),
+              bizMonth: bizMonthRp,
+              entryType: isReward ? 'reward' : 'punishment',
+              amount: signed,
+              title: typeLabel,
+              reason: rpReason,
+              approvalId: updated.id,
+              createdBy: username
+            });
+          } catch (ledErr) {
+            console.error('[reward_punishment] payroll ledger failed:', ledErr?.message);
+          }
+
           // Notify target person (the one being rewarded/punished)
           const notifications = [];
           if (targetUsername) {
@@ -4219,8 +4300,21 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
         // payload.items[]: multi-item payload (one item per employee event)
         const rawItems = Array.isArray(updated.payload?.items) ? updated.payload.items : null;
         const store = String(updated.payload?.store || applicant?.store || '').trim();
-        const month = String(updated.created_at || updated.updated_at || '').slice(0, 7) || hrmsNowISO().slice(0, 7);
+        // 业务发生月优先（与终审日无关）
+        const month = safeBizMonth(
+          updated.payload?.bizMonth || updated.payload?.businessMonth || updated.payload?.occurMonth
+          || updated.payload?.occurDate || updated.payload?.eventDate || updated.payload?.date
+        ) || String(updated.created_at || updated.updated_at || '').slice(0, 7) || hrmsNowISO().slice(0, 7);
         const approvedBy = String(req.user?.username || '').trim();
+        let pointsRate = 0.5;
+        try {
+          const resolvedPts = await resolveAttendancePayrollRules({
+            tenantId: req.tenantId || req.user?.tenant_id || 'default',
+            store
+          });
+          const rate = Number(resolvedPts?.rules?.pointsYuanPerPoint);
+          if (Number.isFinite(rate) && rate >= 0) pointsRate = rate;
+        } catch (_) {}
 
         if (finalApproved) {
           // Idempotency: skip if this approval was already applied
@@ -4239,15 +4333,16 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
                   itemName: String(item.itemName || item.reason || '积分事项').trim().slice(0, 200),
                   reason: String(item.reason || '').trim().slice(0, 500),
                   points: pts,
-                  amount: Number((pts * 0.5).toFixed(2)),
+                  amount: Number((pts * pointsRate).toFixed(2)),
                   approvedAt: hrmsNowISO(),
-                  approvedBy
+                  approvedBy,
+                  bizMonth: safeBizMonth(item.bizMonth || item.occurDate || item.date) || month
                 };
               });
               totalSubsidy = newRecords.reduce((s, r) => s + r.amount, 0);
             } else {
               const pts = safeNumber(updated.payload?.points) || 0;
-              const subsidy = Number((pts * 0.5).toFixed(2));
+              const subsidy = Number((pts * pointsRate).toFixed(2));
               newRecords = [{
                 id: randomUUID(),
                 approvalId,
@@ -4259,29 +4354,38 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
                 points: pts,
                 amount: subsidy,
                 approvedAt: hrmsNowISO(),
-                approvedBy
+                approvedBy,
+                bizMonth: month
               }];
               totalSubsidy = subsidy;
             }
 
+            // 每人写入薪资账本（业务发生月）；不再把积分预写进 payrollAdjustments 与人工补贴抢字段
+            try {
+              const tidPts = req.tenantId || req.user?.tenant_id || 'default';
+              for (const rec of newRecords) {
+                await upsertPayrollLedgerEntry({
+                  tenantId: tidPts,
+                  username: rec.username,
+                  store: rec.store,
+                  bizMonth: rec.bizMonth || month,
+                  entryType: 'points',
+                  amount: rec.amount,
+                  points: rec.points,
+                  title: rec.itemName,
+                  reason: rec.reason,
+                  approvalId,
+                  createdBy: approvedBy,
+                  meta: { pointRecordId: rec.id }
+                });
+              }
+            } catch (ledPtsErr) {
+              console.error('[points] payroll ledger failed:', ledPtsErr?.message);
+            }
+
             // Atomic targeted merge — does NOT overwrite other concurrent writes
-            const adjKey = `${month}||${store || 'ALL'}||${applicantUser.toLowerCase()}`;
-            const prevAdj = state0?.payrollAdjustments?.[adjKey] || {};
-            const prevSubsidy = safeNumber(prevAdj?.subsidy) || 0;
             await mergeSharedStateFields({
               pointRecords: newRecords,
-              payrollAdjustments: {
-                [adjKey]: {
-                  ...prevAdj,
-                  month,
-                  store: store || '',
-                  username: applicantUser,
-                  subsidy: Number((prevSubsidy + totalSubsidy).toFixed(2)),
-                  updatedBy: approvedBy,
-                  updatedAt: hrmsNowISO(),
-                  source: 'points'
-                }
-              },
               pointsAppliedApprovals: { [approvalId]: true }
             }, { pointRecords: 'id' });
 
@@ -4311,11 +4415,11 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
 
           // Notifications: read fresh state AFTER the atomic merge
           const totalPoints = rawItems ? rawItems.reduce((s, i) => s + (safeNumber(i.points) || 0), 0) : (safeNumber(updated.payload?.points) || 0);
-          const subsidyLabel = Number((totalPoints * 0.5).toFixed(2));
+          const subsidyLabel = Number((totalPoints * pointsRate).toFixed(2));
           const itemLabel = rawItems && rawItems.length > 1
             ? `${rawItems.length}条积分事项（合计${totalPoints}分）`
             : String(updated.payload?.itemName || rawItems?.[0]?.reason || '积分事项').trim();
-          const msg = `${applicantName}，你申请的"${itemLabel}"已通过审批，共获得${totalPoints}积分（折算¥${subsidyLabel.toFixed(2)}，已计入薪资补贴）。`;
+          const msg = `${applicantName}，你申请的"${itemLabel}"已通过审批，共获得${totalPoints}积分（折算¥${subsidyLabel.toFixed(2)}，已计入薪资账本，业务月 ${month}）。`;
           const recipients = uniqUsernames([applicantUser, applicantManager].filter(Boolean));
           await appendNotifications(recipients.map((u) =>
             makeNotif(u, '积分申请已通过', msg, { type: 'points_result', approvalId })
@@ -5745,6 +5849,26 @@ registerReportsRoutes(app, {
   sendWeeklyReports,
   sendMonthlyReports,
   sendTestReportsToUser,
+  buildPayrollForMonth,
+});
+registerHrmsPayrollClosedLoopRoutes(app, {
+  pool,
+  authRequired,
+  getSharedState,
+  mergeSharedStateFields,
+  calcEmployeeMonthlyLeaveBalance,
+  findUserSalary,
+  isAdmin,
+  isHq,
+  canAccessAnalyticsReports,
+  appendNotifications,
+  makeNotif,
+  hrmsNowISO,
+  safeMonthOnly,
+  parseMonth,
+  dbListEmployeesForReports,
+  stateFindUserRecord,
+  isLegacyTestUsername,
 });
 registerInventoryForecastRoutes(app, {
   pool,
@@ -8332,6 +8456,20 @@ async function upsertDailyReportPgFromStateReport(dr, tenantId) {
     });
   } catch (re) {
     console.warn('[daily_report_attendance_register]', store, date, re?.message);
+  }
+  // 闭环：日报保存后同步重算权威日结果（排班+打卡+休假）
+  try {
+    const { reconcileAttendanceDays } = await import('./services/hrms-attendance-day.js');
+    await reconcileAttendanceDays({
+      tenantId: tenantId || 'default',
+      store,
+      startDate: date,
+      endDate: date,
+      db: pool,
+      getSharedState
+    });
+  } catch (adErr) {
+    console.warn('[hrms_attendance_day] reconcile after daily report:', store, date, adErr?.message);
   }
 }
 
@@ -11809,21 +11947,30 @@ function calcEmployeeMonthlyLeaveBalance(state, employee, month, opts = {}) {
   const baseLeave = MONTHLY_REST_DAYS;
   const annualLeave = 0;
 
-  const restStats = calcEmployeeMonthlyActualRestFromDailyReports(state, emp, m);
-  let usedLeave = Number(restStats?.total || 0);
+  // 优先用权威日结果汇总的休息天（周休+审批假+自动休息）；无则回退日报休息名单
   const usedLeaveDetails = [];
-
-  Object.entries(restStats?.byDay || {}).forEach(([day, val]) => {
-    const n = Number(val || 0);
-    if (!(Number.isFinite(n) && n > 0)) return;
-    usedLeaveDetails.push({ date: day, days: n, type: '休息', source: '日报休息' });
-    weekDetails.forEach((wk) => {
-      const [ws, we] = String(wk?.range || '').split('~');
-      if (!ws || !we) return;
-      if (day < ws || day > we) return;
-      wk.used = Number((Number(wk.used || 0) + n).toFixed(2));
+  let usedLeave = 0;
+  const attRest = opts && typeof opts === 'object' ? opts.attendanceRestDays : null;
+  if (attRest != null && Number.isFinite(Number(attRest))) {
+    usedLeave = Number(Number(attRest).toFixed(2));
+    if (usedLeave > 0) {
+      usedLeaveDetails.push({ date: m, days: usedLeave, type: '休息', source: '日结果权威表' });
+    }
+  } else {
+    const restStats = calcEmployeeMonthlyActualRestFromDailyReports(state, emp, m);
+    usedLeave = Number(restStats?.total || 0);
+    Object.entries(restStats?.byDay || {}).forEach(([day, val]) => {
+      const n = Number(val || 0);
+      if (!(Number.isFinite(n) && n > 0)) return;
+      usedLeaveDetails.push({ date: day, days: n, type: '休息', source: '日报休息' });
+      weekDetails.forEach((wk) => {
+        const [ws, we] = String(wk?.range || '').split('~');
+        if (!ws || !we) return;
+        if (day < ws || day > we) return;
+        wk.used = Number((Number(wk.used || 0) + n).toFixed(2));
+      });
     });
-  });
+  }
 
   usedLeave = Number((Number(usedLeave || 0)).toFixed(2));
 
@@ -13950,8 +14097,36 @@ app.get('/api/stores', authRequired, async (req, res) => {
 
 
 app.post('/api/stores', authRequired, async (req, res) => {
+  const role = String(req.user?.role || '').trim();
+  if (role !== 'admin' && role !== 'hq_manager') {
+    return res.status(403).json({ error: 'forbidden', message: '仅管理员可创建门店' });
+  }
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'missing_name' });
+
+  // 门店按数量计费：建店前先核对已购买的门店数量上限，避免租户绕过收费无限建店。
+  try {
+    const licenseR = await pool.query(
+      `SELECT max_stores FROM licenses WHERE tenant_id=$1 AND status IN ('active','trial') ORDER BY created_at DESC LIMIT 1`,
+      [resolveTenantIdDefault()]
+    );
+    const maxStores = licenseR.rows?.[0]?.max_stores;
+    if (maxStores != null) {
+      const state0 = (await getSharedState()) || {};
+      const currentCount = Array.isArray(state0?.stores) ? state0.stores.length : 0;
+      if (currentCount >= maxStores) {
+        return res.status(403).json({
+          error: 'store_quota_exceeded',
+          message: `已达门店数量上限(${currentCount}/${maxStores})，如需增加门店请联系客户成功经理购买更多门店额度`,
+          current: currentCount,
+          max: maxStores,
+        });
+      }
+    }
+  } catch (e) {
+    console.error('[/api/stores] quota check failed:', e?.message || e);
+    return res.status(500).json({ error: 'server_error', message: 'quota_check_failed' });
+  }
 
   const address = String(req.body?.address || '').trim();
   const city = String(req.body?.city || '').trim();
@@ -15251,6 +15426,8 @@ app.listen(PORT, HOST, async () => {
         return;
       }
       await ensureBaselineSchemaHealth(pool).catch(e => console.warn('[schema] baseline health:', e?.message || e));
+      await ensurePayrollRulesTables(pool).catch(e => console.warn('[payroll-rules] ensure tables:', e?.message));
+      await seedDefaultBrandPayrollRules('default', pool).catch(e => console.warn('[payroll-rules] seed:', e?.message));
       await ensureGrowthTables(pool).catch(e => console.warn('[growth] ensure tables:', e?.message));
       await ensureAgentAuditLogTable(pool).catch(e => console.warn('[agent-audit] ensure table:', e?.message));
       await ensurePhaseTables(pool).catch(e => console.warn('[growth-phases] ensure tables:', e?.message));
@@ -16256,11 +16433,16 @@ app.listen(PORT, HOST, async () => {
           );
           const presentStores = r.rows.map(row => String(row.store || '').trim());
 
-          // 预期门店列表（从 users 表取 store_manager 角色的门店）
-          const storeR = await pool.query(
-            `SELECT DISTINCT store FROM users WHERE role = 'store_manager' AND status = 'active' AND store IS NOT NULL AND store != ''`
-          );
-          const expectedStores = storeR.rows.map(row => String(row.store || '').trim()).filter(Boolean);
+          // 预期门店列表：门店经理的店铺归属存在 hrms_state 的员工名单里(state.employees/state.users)，
+          // 不在 SQL users 表(该表只有 role/is_active，没有 store/status 列，此前一直查错表导致这里天天报错)
+          const state = (await getSharedState(tenantId)) || {};
+          const staffList = [].concat(Array.isArray(state.employees) ? state.employees : [], Array.isArray(state.users) ? state.users : []);
+          const expectedStores = [...new Set(
+            staffList
+              .filter((x) => String(x?.role || '').trim() === 'store_manager' && String(x?.status || '').trim() !== '离职' && String(x?.status || '').trim() !== 'inactive')
+              .map((x) => String(x?.store || '').trim())
+              .filter(Boolean)
+          )];
 
           const missing = expectedStores.filter(es =>
             !presentStores.some(ps => ps.includes(es.slice(0, 4)) || es.includes(ps.slice(0, 4)))

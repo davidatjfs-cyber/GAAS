@@ -145,6 +145,7 @@ export function registerReportsRoutes(app, deps) {
     sendWeeklyReports,
     sendMonthlyReports,
     sendTestReportsToUser,
+    buildPayrollForMonth,
   } = deps;
   pool = deps.pool;
   safeMonthOnly = deps.safeMonthOnly;
@@ -755,14 +756,33 @@ export function registerReportsRoutes(app, deps) {
       }
 
       const penaltyMap = await computeAttendanceMissingClockPenalties(month, store, req.tenantId || req.user?.tenant_id || 'default');
-      const rows = people.map((p) => {
+      const tidLeave = req.tenantId || req.user?.tenant_id || 'default';
+      let summarizeAttMonth = null;
+      try {
+        const mod = await import('./services/hrms-attendance-day.js');
+        summarizeAttMonth = mod.summarizeAttendanceDaysForMonth;
+      } catch (_) {}
+      const rows = [];
+      for (const p of people) {
         const penalty = penaltyMap.get(String(p?.username || '').trim().toLowerCase());
-        const bal = calcEmployeeMonthlyLeaveBalance(state0, p, month, { penalty }) || {
+        let attendanceRestDays = null;
+        if (typeof summarizeAttMonth === 'function') {
+          try {
+            const att = await summarizeAttMonth({
+              tenantId: tidLeave,
+              username: p.username,
+              month,
+              db: typeof pool === 'function' ? pool() : pool
+            });
+            if (att && Number.isFinite(Number(att.restDays))) attendanceRestDays = Number(att.restDays);
+          } catch (_) {}
+        }
+        const bal = calcEmployeeMonthlyLeaveBalance(state0, p, month, { penalty, attendanceRestDays }) || {
           baseLeave: 0, annualLeave: 0, usedLeave: 0, totalLeave: 0, computedRemaining: 0, remaining: 0, overridden: false, weeklyDetails: [], lastAdjustment: null
         };
         const remaining = Number(bal?.remaining || 0);
         const joinDate = String(p?.joinDate || p?.hireDate || p?.startDate || p?.entryDate || p?.onboardDate || p?.joiningDate || p?.createdAt || '').trim();
-        return {
+        rows.push({
           username: String(p?.username || '').trim(),
           name: String(p?.name || p?.username || '').trim(),
           role: String(p?.role || '').trim(),
@@ -786,8 +806,9 @@ export function registerReportsRoutes(app, deps) {
           overridden: !!bal.overridden,
           weeklyDetails: Array.isArray(bal.weeklyDetails) ? bal.weeklyDetails : [],
           lastAdjustment: bal.lastAdjustment || null
-        };
-      }).sort((a, b) => {
+        });
+      }
+      rows.sort((a, b) => {
         if (Number(a.isOwed) !== Number(b.isOwed)) return Number(b.isOwed) - Number(a.isOwed);
         const ra = Number(a.remaining || 0);
         const rb = Number(b.remaining || 0);
@@ -1022,6 +1043,123 @@ export function registerReportsRoutes(app, deps) {
         ? (storeQ && _allowedStores11150.includes(storeQ) ? storeQ : (_currentStore11150 || myStore))
         : storeQ;
 
+      // ── 新闭环引擎（规则+日结果+账本+底薪时间线）──
+      if (typeof buildPayrollForMonth === 'function') {
+        try {
+          const employeesList = Array.isArray(state0?.employees) ? state0.employees : [];
+          const usersList = Array.isArray(state0?.users) ? state0.users : [];
+          const peopleByLower = new Map();
+          employeesList.forEach((p) => {
+            const uRaw = String(p?.username || '').trim();
+            const u = uRaw.toLowerCase();
+            if (!u || isLegacyTestUsername(u)) return;
+            if (!peopleByLower.has(u)) peopleByLower.set(u, { ...p, username: uRaw });
+          });
+          usersList.forEach((p) => {
+            const uRaw = String(p?.username || '').trim();
+            const u = uRaw.toLowerCase();
+            if (!u || isLegacyTestUsername(u)) return;
+            if (!peopleByLower.has(u)) peopleByLower.set(u, { ...p, username: uRaw });
+          });
+          if (!peopleByLower.size) {
+            const dbEmps = await dbListEmployeesForReports({ store, includeInactive: false, tenantId: req.tenantId || req.user?.tenant_id || 'default' });
+            for (const p of dbEmps) {
+              const uRaw = String(p?.username || '').trim();
+              const u = uRaw.toLowerCase();
+              if (!u || isLegacyTestUsername(u)) continue;
+              if (!peopleByLower.has(u)) peopleByLower.set(u, { ...p, username: uRaw });
+            }
+          }
+          let people = Array.from(peopleByLower.values());
+          if (store) people = people.filter((p) => String(p?.store || '').trim() === store);
+
+          const leaveBalanceByUser = new Map();
+          let summarizeAttMonthPay = null;
+          try {
+            const mod = await import('./services/hrms-attendance-day.js');
+            summarizeAttMonthPay = mod.summarizeAttendanceDaysForMonth;
+          } catch (_) {}
+          for (const p of people) {
+            let attendanceRestDays = null;
+            if (typeof summarizeAttMonthPay === 'function') {
+              try {
+                const att = await summarizeAttMonthPay({
+                  tenantId: req.tenantId || req.user?.tenant_id || 'default',
+                  username: p.username,
+                  month,
+                  db: typeof pool === 'function' ? pool() : pool
+                });
+                if (att && Number.isFinite(Number(att.restDays))) attendanceRestDays = Number(att.restDays);
+              } catch (_) {}
+            }
+            const bal = calcEmployeeMonthlyLeaveBalance(state0, p, month, { attendanceRestDays });
+            leaveBalanceByUser.set(String(p.username || '').trim().toLowerCase(), Number(bal?.remaining || 0));
+          }
+
+          const computed = await buildPayrollForMonth({
+            tenantId: req.tenantId || req.user?.tenant_id || 'default',
+            month,
+            store,
+            people,
+            leaveBalanceByUser,
+            getSharedState,
+            findUserSalary,
+            state: state0,
+            reconcile: true
+          });
+
+          if (computed?.ok) {
+            const auditKey = `${month}||${store || 'ALL'}`;
+            const auditMap = state0?.payrollAudits && typeof state0.payrollAudits === 'object' ? state0.payrollAudits : {};
+            const audit = auditMap[auditKey] || null;
+            const rows = (computed.rows || []).map((r) => ({
+              store: r.store,
+              username: r.username,
+              name: r.name,
+              attendanceDays: r.attendanceDays,
+              payableAttendanceDays: r.payableAttendanceDays,
+              missingAttendanceDays: Math.max(0, Number((Number(r.workDaysPerMonth || 0) - Number(r.attendanceDays || 0)).toFixed(2))),
+              leaveOffsetDays: null,
+              remainingLeaveBeforeOffset: r.leaveRemaining,
+              remainingLeaveAfterOffset: r.leaveRemaining,
+              monthlySalary: r.monthlySalary,
+              dailyRate: r.dailyRate,
+              computedBaseAmount: r.baseAmount,
+              baseAmount: r.baseAmount,
+              baseAmountOverridden: false,
+              rewardPunishmentAdj: r.rewardPunishmentAdj,
+              subsidy: r.subsidy,
+              pointsAmount: r.pointsAmount,
+              manualSubsidy: r.manualSubsidy,
+              amount: r.amount,
+              prorationMode: r.prorationMode,
+              salarySource: r.salarySource,
+              ledgerItems: r.ledgerItems,
+              attendanceSummary: r.attendanceSummary
+            })).filter((r) => {
+              const emp = peopleByLower.get(String(r.username || '').toLowerCase()) || null;
+              return !isEmployeeDepartedForPayroll(emp, month, r.attendanceDays);
+            });
+
+            return res.json({
+              month,
+              store: store || '',
+              monthDays: computed.monthDays,
+              workDaysPerMonth: computed.workDaysPerMonth,
+              audit,
+              rows,
+              totalAmount: rows.reduce((s, x) => s + clampNum(x.amount, 0), 0),
+              engine: 'closed_loop_v1',
+              rules: computed.rules,
+              monthRun: computed.monthRun,
+              resolvedFrom: computed.resolvedFrom
+            });
+          }
+        } catch (engineErr) {
+          console.warn('[payroll] closed-loop engine failed, fallback legacy:', engineErr?.message);
+        }
+      }
+
       const start = `${month}-01`;
       const [yr, mo] = month.split('-').map(Number);
       const end = `${month}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`;
@@ -1249,11 +1387,19 @@ export function registerReportsRoutes(app, deps) {
         const leaveBalance = person ? calcEmployeeMonthlyLeaveBalance(state0, person, month) : null;
         const attendanceDays = clampNum(x.days, 0);
         const missingAttendanceDays = Number(Math.max(0, Number((workDaysPerMonth - attendanceDays).toFixed(2))));
-        const remainingLeaveBeforeOffset = leaveBalance ? Math.max(0, Number(leaveBalance.remaining || 0)) : 0;
-        const leaveOffsetDays = Number(Math.min(missingAttendanceDays, remainingLeaveBeforeOffset).toFixed(2));
-        const payableAttendanceDays = Number(Math.min(workDaysPerMonth, attendanceDays + leaveOffsetDays).toFixed(2));
+        const remainingLeaveBeforeOffset = leaveBalance ? Number(leaveBalance.remaining || 0) : 0;
+        // 倒欠公司假期仍算全勤
+        let leaveOffsetDays;
+        let payableAttendanceDays;
+        if (remainingLeaveBeforeOffset < 0) {
+          leaveOffsetDays = missingAttendanceDays;
+          payableAttendanceDays = workDaysPerMonth;
+        } else {
+          leaveOffsetDays = Number(Math.min(missingAttendanceDays, Math.max(0, remainingLeaveBeforeOffset)).toFixed(2));
+          payableAttendanceDays = Number(Math.min(workDaysPerMonth, attendanceDays + leaveOffsetDays).toFixed(2));
+        }
         const remainingLeaveAfterOffset = leaveBalance
-          ? Number(Math.max(0, remainingLeaveBeforeOffset - leaveOffsetDays).toFixed(2))
+          ? Number((remainingLeaveBeforeOffset - leaveOffsetDays).toFixed(2))
           : null;
         const computedBaseAmount = dailyRate != null ? (dailyRate * payableAttendanceDays) : null;
         const rewardPunishmentAdj = adjustmentMap.get(String(x.username || '').toLowerCase()) || 0;
@@ -1279,7 +1425,8 @@ export function registerReportsRoutes(app, deps) {
         const pointSubsidyByStore2 = safeNumber(pointSubsidyByUserStore.get(`${effectiveStore || 'ALL'}||${rowUser}`)) || 0;
         const pointSubsidyAllStore2 = effectiveStore ? (safeNumber(pointSubsidyByUserStore.get(`ALL||${rowUser}`)) || 0) : 0;
         const subsidyFromPointRecords = pointSubsidyByStore2 + pointSubsidyAllStore2;
-        const subsidy = Number(Math.max(subsidyFromPayrollAdjustments, subsidyFromPointRecords).toFixed(2));
+        // 人工补贴与积分相加（不再取 max）
+        const subsidy = Number((subsidyFromPayrollAdjustments + subsidyFromPointRecords).toFixed(2));
         const amount = baseAmount != null ? (baseAmount + rewardPunishmentAdj + subsidy) : ((rewardPunishmentAdj || 0) + subsidy || null);
         return {
           store: effectiveStore,
@@ -1318,12 +1465,13 @@ export function registerReportsRoutes(app, deps) {
       const audit = auditMap[auditKey] || null;
 
       const totalAmount = rows.reduce((s, x) => s + clampNum(x.amount, 0), 0);
-      return res.json({ month, store: store || '', monthDays, workDaysPerMonth, audit, rows, totalAmount });
+      return res.json({ month, store: store || '', monthDays, workDaysPerMonth, audit, rows, totalAmount, engine: 'legacy_fallback' });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
 
+  // NOTE: legacy payroll body above ends; keep audit/adjustment endpoints below.
   app.post('/api/reports/payroll/audit', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
@@ -1387,6 +1535,26 @@ export function registerReportsRoutes(app, deps) {
       };
       // 原子合并，避免整包 saveSharedState 覆盖由积分审批写入的 pointRecords/payrollAdjustments
       await mergeSharedStateFields({ payrollAdjustments: { [key]: item } });
+      // 同步写入薪资账本（人工补贴与积分相加）
+      if (subsidy != null) {
+        try {
+          const { upsertPayrollLedgerEntry } = await import('./services/hrms-payroll-engine.js');
+          await upsertPayrollLedgerEntry({
+            tenantId: req.tenantId || req.user?.tenant_id || 'default',
+            username: targetUsername,
+            store,
+            bizMonth: month,
+            entryType: 'manual_subsidy',
+            amount: subsidy,
+            title: '人工补贴',
+            reason: String(req.body?.reason || '').trim() || '高温/调店等临时费用',
+            sourceRef: key,
+            createdBy: username
+          });
+        } catch (e) {
+          console.warn('[payroll/adjustment] ledger write failed:', e?.message);
+        }
+      }
       return res.json({ ok: true, item });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });

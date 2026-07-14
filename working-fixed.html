@@ -16648,8 +16648,14 @@
                     <div id="rep-payroll" class="hidden" style="margin-bottom:18px;">
                         <div class="rep-payroll-audit-bar">
                             <span id="rep-payroll-audit">-</span>
+                            <span id="rep-payroll-engine" style="margin-left:8px;opacity:0.75;font-size:12px;"></span>
                             <button id="rep-payroll-audit-btn" class="btn btn-secondary" type="button" onclick="togglePayrollAudit()" style="display:none;">审核切换</button>
+                            <button id="rep-payroll-att-lock-btn" class="btn btn-secondary" type="button" onclick="setPayrollMonthRunStatus('attendance_locked')" style="display:none;">锁定考勤</button>
+                            <button id="rep-payroll-pay-lock-btn" class="btn btn-secondary" type="button" onclick="setPayrollMonthRunStatus('payroll_locked')" style="display:none;">锁定薪资</button>
+                            <button id="rep-payroll-paid-btn" class="btn btn-secondary" type="button" onclick="setPayrollMonthRunStatus('paid')" style="display:none;">标记已发放</button>
+                            <button id="rep-payroll-reopen-btn" class="btn btn-secondary" type="button" onclick="setPayrollMonthRunStatus('open')" style="display:none;">重新打开</button>
                         </div>
+                        <div id="rep-payroll-abnormals" style="display:none;margin:8px 0;padding:10px 12px;border-radius:10px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);color:rgba(253,230,138,0.95);font-size:13px;"></div>
                         <div id="rep-payroll-box" style="color:rgba(186,198,215,0.55);">加载中...</div>
                     </div>
 
@@ -22085,6 +22091,11 @@
                             <span class="settings-card__title">积分事项</span>
                             <span class="settings-card__lede">杰出表现事项与分值</span>
                         </button>
+                        <button type="button" class="settings-card" onclick="showSettingsCard('attendance-payroll-rules-card')">
+                            <span class="settings-card__no">07b</span>
+                            <span class="settings-card__title">考勤薪资规则</span>
+                            <span class="settings-card__lede">应休/计薪/积分汇率/晋升生效等（按品牌或门店）</span>
+                        </button>
                         <button type="button" class="settings-card" onclick="showSettingsCard('store-duty-settings-card')">
                             <span class="settings-card__no">08</span>
                             <span class="settings-card__title">跨店职责绑定</span>
@@ -22309,6 +22320,55 @@
                                 <button class="btn btn-secondary" type="button" onclick="loadPointRulesSettings()">刷新列表</button>
                             </div>
                             <div id="points-rule-list" style="margin-top:10px;"></div>
+                        </div>
+                    </section>
+
+                    <section id="attendance-payroll-rules-card" class="settings-rep-sec" style="display:none;">
+                        <div class="settings-rep-sec__bar">
+                            <div class="settings-rep-sec__no">07b</div>
+                            <div>
+                                <h3 class="settings-rep-sec__title">考勤薪资规则</h3>
+                                <p class="settings-rep-sec__lede">按品牌或门店配置：月应休、日薪分母、积分汇率、晋升次月生效、业务发生月归属等。洪潮/马己仙已预置默认规则，其它租户可自行覆盖。</p>
+                            </div>
+                        </div>
+                        <div class="settings-rep-sec__body">
+                            <div class="settings-form" style="grid-template-columns: 1fr 1fr; align-items:end;">
+                                <div>
+                                    <label class="settings-label">作用范围</label>
+                                    <select id="apr-scope-type" class="settings-input">
+                                        <option value="brand">品牌</option>
+                                        <option value="store">门店</option>
+                                        <option value="tenant">整租户默认</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="settings-label">范围键（品牌 key 如 hongchao / majixian，或门店全名）</label>
+                                    <input id="apr-scope-key" class="settings-input" type="text" placeholder="hongchao">
+                                </div>
+                                <div>
+                                    <label class="settings-label">月应休天数</label>
+                                    <input id="apr-monthly-rest" class="settings-input" type="number" min="0" step="1" value="4">
+                                </div>
+                                <div>
+                                    <label class="settings-label">积分汇率（元/分）</label>
+                                    <input id="apr-points-rate" class="settings-input" type="number" min="0" step="0.1" value="0.5">
+                                </div>
+                                <div>
+                                    <label class="settings-label">发薪日（每月几号，仅说明）</label>
+                                    <input id="apr-pay-day" class="settings-input" type="number" min="1" max="28" value="15">
+                                </div>
+                                <div class="settings-form-full" style="display:flex;flex-wrap:wrap;gap:12px;color:rgba(226,232,240,0.88);font-size:13px;">
+                                    <label><input type="checkbox" id="apr-leave-auth" checked> 事假/病假/还休以休假审批为准</label>
+                                    <label><input type="checkbox" id="apr-owe-full" checked> 倒欠假期仍算全勤</label>
+                                    <label><input type="checkbox" id="apr-offset-leave" checked> 缺勤用剩余假冲抵</label>
+                                    <label><input type="checkbox" id="apr-subsidy-add" checked> 人工补贴与积分相加</label>
+                                </div>
+                            </div>
+                            <div class="settings-actions" style="margin-top:10px;">
+                                <button class="btn" type="button" onclick="saveAttendancePayrollRulesSettings()">保存规则</button>
+                                <button class="btn btn-secondary" type="button" onclick="loadAttendancePayrollRulesSettings()">刷新列表</button>
+                            </div>
+                            <div id="apr-rules-list" style="margin-top:12px;font-size:13px;color:rgba(200,215,230,0.85);"></div>
                         </div>
                     </section>
 
@@ -27683,7 +27743,7 @@ th { background: #f5f5f5; font-weight: 700; }
         // 这里维护同一份名单，点卡片时复查一次，避免直接把display强制设成''盖过权限隐藏。
         const SETTINGS_ADMIN_ONLY_CARDS = [
             'org-dict-settings-card', 'monthly-target-settings-card', 'approval-flow-settings-card',
-            'points-rule-settings-card', 'brands-settings-card', 'store-duty-settings-card',
+            'points-rule-settings-card', 'attendance-payroll-rules-card', 'brands-settings-card', 'store-duty-settings-card',
             'permission-groups-settings-card'
         ];
         function showSettingsCard(cardId) {
@@ -27699,7 +27759,141 @@ th { background: #f5f5f5; font-weight: 700; }
             const backBtn = document.getElementById('settings-back-btn');
             if (backBtn) backBtn.style.display = '';
             window.scrollTo(0, 0);
+            if (cardId === 'attendance-payroll-rules-card') {
+                try { loadAttendancePayrollRulesSettings(); } catch (_) {}
+            }
         }
+
+        async function loadAttendancePayrollRulesSettings() {
+            const listEl = document.getElementById('apr-rules-list');
+            if (listEl) listEl.textContent = '加载中...';
+            try {
+                const resp = await fetch('/api/hrms/attendance-payroll-rules', {
+                    headers: { Authorization: 'Bearer ' + (localStorage.getItem('hrms_token') || '') }
+                }).then((r) => r.json());
+                const rows = Array.isArray(resp?.rows) ? resp.rows : [];
+                if (listEl) {
+                    if (!rows.length) {
+                        listEl.innerHTML = '<div style="opacity:0.7;">暂无规则行（启动后会自动种子洪潮/马己仙）</div>';
+                    } else {
+                        listEl.innerHTML = rows.map((row) => {
+                            const rj = row.rules_json || {};
+                            return `<div style="padding:8px 0;border-bottom:1px solid rgba(148,163,184,0.15);">
+                              <strong>${escapeHtml(String(row.scope_type || ''))}</strong> /
+                              <code>${escapeHtml(String(row.scope_key || '(tenant)'))}</code>
+                              · 月应休 ${escapeHtml(String(rj.monthlyRestDays ?? '-'))}
+                              · 积分 ${escapeHtml(String(rj.pointsYuanPerPoint ?? '-'))}元/分
+                              · 晋升 ${escapeHtml(String(rj.promotionEffective || '-'))}
+                              · 更新 ${escapeHtml(String(row.updated_at || '').slice(0, 19))}
+                            </div>`;
+                        }).join('');
+                    }
+                }
+                const wantKey = String(document.getElementById('apr-scope-key')?.value || 'hongchao').trim();
+                const brandRow = rows.find((r) => String(r.scope_type) === 'brand' && String(r.scope_key) === wantKey)
+                  || rows.find((r) => String(r.scope_type) === 'brand')
+                  || rows.find((r) => String(r.scope_type) === 'tenant');
+                if (brandRow?.rules_json) {
+                    const rj = brandRow.rules_json;
+                    const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+                    const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+                    setVal('apr-monthly-rest', rj.monthlyRestDays);
+                    setVal('apr-points-rate', rj.pointsYuanPerPoint);
+                    setVal('apr-pay-day', rj.payDayOfMonth);
+                    setChk('apr-leave-auth', rj.approvedLeaveAuthoritative !== false);
+                    setChk('apr-owe-full', rj.oweLeaveStillFullAttendance !== false);
+                    setChk('apr-offset-leave', rj.offsetMissingWithRemainingLeave !== false);
+                    setChk('apr-subsidy-add', rj.manualSubsidyAddsWithPoints !== false);
+                }
+            } catch (e) {
+                if (listEl) listEl.textContent = '加载失败：' + String(e?.message || e);
+            }
+        }
+
+        async function saveAttendancePayrollRulesSettings() {
+            const scopeType = String(document.getElementById('apr-scope-type')?.value || 'brand').trim();
+            const scopeKey = String(document.getElementById('apr-scope-key')?.value || '').trim();
+            if (scopeType !== 'tenant' && !scopeKey) {
+                showNotification('请填写范围键（品牌 key 或门店名）', 'warning');
+                return;
+            }
+            const rules = {
+                monthlyRestDays: Number(document.getElementById('apr-monthly-rest')?.value || 4),
+                pointsYuanPerPoint: Number(document.getElementById('apr-points-rate')?.value || 0.5),
+                payDayOfMonth: Number(document.getElementById('apr-pay-day')?.value || 15),
+                approvedLeaveAuthoritative: !!document.getElementById('apr-leave-auth')?.checked,
+                oweLeaveStillFullAttendance: !!document.getElementById('apr-owe-full')?.checked,
+                offsetMissingWithRemainingLeave: !!document.getElementById('apr-offset-leave')?.checked,
+                manualSubsidyAddsWithPoints: !!document.getElementById('apr-subsidy-add')?.checked,
+                dailyRateDenominator: 'month_days_minus_rest',
+                weeklyRestSource: 'daily_report',
+                promotionEffective: 'next_month_first',
+                ledgerBizMonthSource: 'business_occurrence',
+                midMonthProration: 'active_calendar_days',
+                attendanceMode: 'schedule_plus_complete_punch',
+                noPunchWithSchedule: 'auto_rest',
+                punchWithoutSchedule: 'abnormal_confirm',
+                requireClockInAndOut: true
+            };
+            try {
+                const resp = await fetch('/api/hrms/attendance-payroll-rules', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: 'Bearer ' + (localStorage.getItem('hrms_token') || '')
+                    },
+                    body: JSON.stringify({ scopeType, scopeKey, rules })
+                }).then((r) => r.json());
+                if (!resp?.ok) throw new Error(resp?.error || 'save_failed');
+                showNotification('考勤薪资规则已保存', 'success');
+                await loadAttendancePayrollRulesSettings();
+            } catch (e) {
+                showNotification('保存失败：' + String(e?.message || e), 'error');
+            }
+        }
+
+        async function setPayrollMonthRunStatus(status) {
+            const month = String(document.getElementById('rep-month')?.value || '').trim();
+            const store = String(document.getElementById('rep-store')?.value || '').trim();
+            if (!month) {
+                showNotification('请先选择薪资月份', 'warning');
+                return;
+            }
+            try {
+                const resp = await fetch('/api/hrms/payroll/month-run/status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: 'Bearer ' + (localStorage.getItem('hrms_token') || '')
+                    },
+                    body: JSON.stringify({ month, store, status })
+                }).then((r) => r.json());
+                if (!resp?.ok) throw new Error(resp?.error || 'failed');
+                showNotification('月结状态已更新：' + status, 'success');
+                loadReportsData();
+            } catch (e) {
+                showNotification('月结状态更新失败：' + String(e?.message || e), 'error');
+            }
+        }
+
+        async function confirmPayrollAttendanceAbnormal(username, workDate, choice) {
+            try {
+                const resp = await fetch('/api/hrms/attendance-day/confirm', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: 'Bearer ' + (localStorage.getItem('hrms_token') || '')
+                    },
+                    body: JSON.stringify({ username, workDate, choice })
+                }).then((r) => r.json());
+                if (!resp?.ok) throw new Error(resp?.error || 'failed');
+                showNotification('已确认：' + choice, 'success');
+                loadReportsData();
+            } catch (e) {
+                showNotification('确认失败：' + String(e?.message || e), 'error');
+            }
+        }
+
         function backToSettingsOverview() {
             document.querySelectorAll('#settings-page .settings-rep-sec').forEach((el) => { el.style.display = 'none'; });
             const backBtn = document.getElementById('settings-back-btn');
@@ -54140,6 +54334,43 @@ ${ok
                         const audited = !!audit?.audited;
                         const auditEl = document.getElementById('rep-payroll-audit');
                         if (auditEl) auditEl.textContent = audited ? '状态：已审核' : '状态：未审核';
+                        const engEl = document.getElementById('rep-payroll-engine');
+                        const monthRun = resp?.monthRun || null;
+                        const runStatus = String(monthRun?.status || 'open');
+                        if (engEl) {
+                            const eng = String(resp?.engine || 'legacy');
+                            engEl.textContent = eng === 'closed_loop_v1'
+                              ? `闭环引擎 · 月结:${runStatus} · 分母${Number(resp?.workDaysPerMonth || 0)}天`
+                              : `引擎:${eng}`;
+                        }
+                        const canMonthLock = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HR_MANAGER || currentUser.role === ROLES.HQ_MANAGER);
+                        const showBtn = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; };
+                        showBtn('rep-payroll-att-lock-btn', canMonthLock && runStatus === 'open');
+                        showBtn('rep-payroll-pay-lock-btn', canMonthLock && runStatus === 'attendance_locked');
+                        showBtn('rep-payroll-paid-btn', canMonthLock && runStatus === 'payroll_locked');
+                        showBtn('rep-payroll-reopen-btn', canMonthLock && runStatus !== 'open');
+                        // 拉取有打卡无排班异常
+                        const abBox = document.getElementById('rep-payroll-abnormals');
+                        if (abBox && store) {
+                            fetch(`/api/hrms/attendance-day/abnormals?store=${encodeURIComponent(store)}&start=${encodeURIComponent(month + '-01')}&end=${encodeURIComponent(month + '-31')}`, {
+                                headers: { Authorization: 'Bearer ' + (localStorage.getItem('hrms_token') || '') }
+                            }).then((r) => r.json()).then((ab) => {
+                                const list = Array.isArray(ab?.rows) ? ab.rows : [];
+                                if (!list.length) { abBox.style.display = 'none'; abBox.innerHTML = ''; return; }
+                                abBox.style.display = '';
+                                abBox.innerHTML = `<div style="font-weight:700;margin-bottom:6px;">有打卡无排班异常（${list.length}）— 店长请确认记出勤或休息</div>` +
+                                  list.slice(0, 20).map((x) => {
+                                    const u = escapeHtml(String(x.username || ''));
+                                    const d = escapeHtml(String(x.work_date || '').slice(0, 10));
+                                    const n = escapeHtml(String(x.name || x.username || ''));
+                                    return `<div style="margin:4px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                                      <span>${n} · ${d}</span>
+                                      <button class="btn btn-secondary" type="button" style="padding:2px 8px;font-size:12px;" onclick="confirmPayrollAttendanceAbnormal('${u}','${d}','work')">记出勤</button>
+                                      <button class="btn btn-secondary" type="button" style="padding:2px 8px;font-size:12px;" onclick="confirmPayrollAttendanceAbnormal('${u}','${d}','rest')">记休息</button>
+                                    </div>`;
+                                  }).join('');
+                            }).catch(() => { abBox.style.display = 'none'; });
+                        } else if (abBox) { abBox.style.display = 'none'; }
                         const fmt = (n) => {
                             if (n == null) return '-';
                             const v = Number(n || 0);
@@ -54171,7 +54402,7 @@ ${ok
                                     <div>
                                         <div style="font-weight: 800; font-size: 15px; letter-spacing:0.04em;">${escapeHtml(titleStore)} · 薪资汇总</div>
                                         <div class="meta" style="margin-top: 8px;">账期 ${escapeHtml(month || '')} · ${audited ? '已审核' : '未审核'}</div>
-                                        <div class="meta" style="margin-top: 4px;">计薪：月薪 ÷（${Number(resp?.monthDays || 0)} − 4）= 月薪 ÷ ${Number(resp?.workDaysPerMonth || 0)} 个工作日</div>
+                                        <div class="meta" style="margin-top: 4px;">计薪：月薪 ÷（月天数 − 应休${Number(resp?.rules?.monthlyRestDays ?? 4)}）= 月薪 ÷ ${Number(resp?.workDaysPerMonth || 0)} 个工作日${resp?.engine === 'closed_loop_v1' ? ' · 积分/奖惩/补贴按账本相加 · 晋升次月生效' : ''}</div>
                                     </div>
                                 </div>
                                 <div class="rep-grid">
