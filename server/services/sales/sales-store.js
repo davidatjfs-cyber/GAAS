@@ -14,6 +14,7 @@ export async function ensureSalesTables(pool) {
         open_kfid TEXT,
         name TEXT,
         company TEXT,
+        phone TEXT,
         city TEXT,
         cuisine TEXT,
         store_count INT,
@@ -30,8 +31,21 @@ export async function ensureSalesTables(pool) {
         owner_username TEXT,
         tags JSONB NOT NULL DEFAULT '[]'::jsonb,
         extracted JSONB NOT NULL DEFAULT '{}'::jsonb,
+        budget_range TEXT,
+        expected_close_date DATE,
+        win_probability INT,
         last_message_at TIMESTAMPTZ,
         last_human_at TIMESTAMPTZ,
+        last_reminder_at TIMESTAMPTZ,
+        last_risk_check_at TIMESTAMPTZ,
+        first_contact_at TIMESTAMPTZ,
+        first_response_at TIMESTAMPTZ,
+        demo_count INT NOT NULL DEFAULT 0,
+        meeting_count INT NOT NULL DEFAULT 0,
+        trial_status TEXT,
+        lost_reason TEXT,
+        competitor TEXT,
+        notes TEXT,
         next_action TEXT,
         next_action_due TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -39,6 +53,9 @@ export async function ensureSalesTables(pool) {
       )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_leads_stage ON sales_leads (stage, intent_score DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_leads_score ON sales_leads (intent_score DESC, updated_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_leads_external ON sales_leads (external_userid)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_leads_owner ON sales_leads (owner_username, updated_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_leads_reminder ON sales_leads (last_reminder_at NULLS LAST)`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sales_conversations (
         id BIGSERIAL PRIMARY KEY,
@@ -82,6 +99,8 @@ export async function ensureSalesTables(pool) {
         payload JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_events_lead ON sales_lead_events (lead_id, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_events_type ON sales_lead_events (event_type, created_at DESC)`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sales_score_items (
         id BIGSERIAL PRIMARY KEY,
@@ -91,6 +110,7 @@ export async function ensureSalesTables(pool) {
         evidence TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_score_lead ON sales_score_items (lead_id, id DESC)`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sales_tasks (
         id BIGSERIAL PRIMARY KEY,
@@ -103,6 +123,127 @@ export async function ensureSalesTables(pool) {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_tasks_open ON sales_tasks (status, due_at NULLS LAST)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sales_opportunities (
+        id BIGSERIAL PRIMARY KEY,
+        lead_id BIGINT NOT NULL REFERENCES sales_leads(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        stage TEXT NOT NULL DEFAULT 'proposal',
+        amount INT,
+        expected_close_date DATE,
+        probability INT,
+        priority TEXT DEFAULT 'normal',
+        status TEXT NOT NULL DEFAULT 'open',
+        owner_username TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_opps_lead ON sales_opportunities (lead_id, stage)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_opps_stage ON sales_opportunities (stage, updated_at DESC)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sales_demos (
+        id BIGSERIAL PRIMARY KEY,
+        lead_id BIGINT NOT NULL REFERENCES sales_leads(id) ON DELETE CASCADE,
+        scheduled_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        attended_by TEXT,
+        summary TEXT,
+        key_points TEXT,
+        objections JSONB NOT NULL DEFAULT '[]'::jsonb,
+        next_steps TEXT,
+        status TEXT NOT NULL DEFAULT 'scheduled',
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_demos_lead ON sales_demos (lead_id, scheduled_at DESC)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sales_meetings (
+        id BIGSERIAL PRIMARY KEY,
+        lead_id BIGINT NOT NULL REFERENCES sales_leads(id) ON DELETE CASCADE,
+        meeting_type TEXT NOT NULL,
+        occurred_at TIMESTAMPTZ,
+        raw_notes TEXT,
+        summary TEXT,
+        customer_needs JSONB NOT NULL DEFAULT '[]'::jsonb,
+        customer_objections JSONB NOT NULL DEFAULT '[]'::jsonb,
+        customer_commitments JSONB NOT NULL DEFAULT '[]'::jsonb,
+        our_commitments JSONB NOT NULL DEFAULT '[]'::jsonb,
+        decision_maker TEXT,
+        budget TEXT,
+        timeline TEXT,
+        risks TEXT,
+        next_steps TEXT,
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_meetings_lead ON sales_meetings (lead_id, occurred_at DESC)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sales_trials (
+        id BIGSERIAL PRIMARY KEY,
+        lead_id BIGINT NOT NULL REFERENCES sales_leads(id) ON DELETE CASCADE,
+        started_at TIMESTAMPTZ,
+        ended_at TIMESTAMPTZ,
+        stores TEXT,
+        pos_brand TEXT,
+        target_kpis JSONB NOT NULL DEFAULT '{}'::jsonb,
+        result_summary TEXT,
+        status TEXT NOT NULL DEFAULT 'planned',
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_trials_lead ON sales_trials (lead_id, started_at DESC)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sales_deals (
+        id BIGSERIAL PRIMARY KEY,
+        lead_id BIGINT NOT NULL REFERENCES sales_leads(id) ON DELETE CASCADE,
+        opportunity_id BIGINT REFERENCES sales_opportunities(id) ON DELETE SET NULL,
+        deal_date DATE,
+        amount INT,
+        store_count INT,
+        contract_term TEXT,
+        notes TEXT,
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_deals_lead ON sales_deals (lead_id, deal_date DESC)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sales_loss_reasons (
+        id BIGSERIAL PRIMARY KEY,
+        lead_id BIGINT NOT NULL REFERENCES sales_leads(id) ON DELETE CASCADE,
+        reason_key TEXT NOT NULL,
+        reason_label TEXT,
+        detail TEXT,
+        evidence TEXT,
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_loss_reasons_lead ON sales_loss_reasons (lead_id, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_loss_reasons_key ON sales_loss_reasons (reason_key, created_at DESC)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sales_objections (
+        id BIGSERIAL PRIMARY KEY,
+        lead_id BIGINT NOT NULL REFERENCES sales_leads(id) ON DELETE CASCADE,
+        objection_key TEXT NOT NULL,
+        objection_label TEXT,
+        evidence TEXT,
+        response_text TEXT,
+        resolved BOOLEAN DEFAULT false,
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_objections_lead ON sales_objections (lead_id, resolved, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_objections_key ON sales_objections (objection_key, created_at DESC)`);
   })().catch((e) => {
     ensurePromise = null;
     throw e;
@@ -173,4 +314,145 @@ export async function listMessages(pool, conversationId, limit = 40) {
     [conversationId, limit]
   );
   return r.rows || [];
+}
+
+export async function loadLeadFunnel(pool, leadId) {
+  await ensureSalesTables(pool);
+  const [opps, demos, meetings, trials, deals, lossReasons, objections, tasks] = await Promise.all([
+    pool.query(`SELECT * FROM sales_opportunities WHERE lead_id=$1 ORDER BY id DESC`, [leadId]),
+    pool.query(`SELECT * FROM sales_demos WHERE lead_id=$1 ORDER BY scheduled_at DESC`, [leadId]),
+    pool.query(`SELECT * FROM sales_meetings WHERE lead_id=$1 ORDER BY occurred_at DESC`, [leadId]),
+    pool.query(`SELECT * FROM sales_trials WHERE lead_id=$1 ORDER BY started_at DESC`, [leadId]),
+    pool.query(`SELECT * FROM sales_deals WHERE lead_id=$1 ORDER BY deal_date DESC`, [leadId]),
+    pool.query(`SELECT * FROM sales_loss_reasons WHERE lead_id=$1 ORDER BY created_at DESC`, [leadId]),
+    pool.query(`SELECT * FROM sales_objections WHERE lead_id=$1 ORDER BY created_at DESC`, [leadId]),
+    pool.query(`SELECT * FROM sales_tasks WHERE lead_id=$1 ORDER BY due_at NULLS LAST, id DESC`, [leadId]),
+  ]);
+  return {
+    opportunities: opps.rows || [],
+    demos: demos.rows || [],
+    meetings: meetings.rows || [],
+    trials: trials.rows || [],
+    deals: deals.rows || [],
+    loss_reasons: lossReasons.rows || [],
+    objections: objections.rows || [],
+    tasks: tasks.rows || [],
+  };
+}
+
+export async function upsertTask(pool, { leadId, title, detail, dueAt, assignee }) {
+  const exist = await pool.query(
+    `SELECT id FROM sales_tasks WHERE lead_id=$1 AND status='open' AND title=$2 LIMIT 1`,
+    [leadId, title]
+  );
+  if (exist.rows?.length) return exist.rows[0];
+  const r = await pool.query(
+    `INSERT INTO sales_tasks (lead_id, title, detail, due_at, assignee)
+     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [leadId, title, detail || null, dueAt || null, assignee || null]
+  );
+  return r.rows?.[0] || null;
+}
+
+export async function completeTask(pool, taskId) {
+  await pool.query(`UPDATE sales_tasks SET status='done', updated_at=NOW() WHERE id=$1`, [taskId]);
+}
+
+export async function createDemo(pool, { leadId, scheduledAt, attendedBy, summary, keyPoints, objections, nextSteps, createdBy }) {
+  const r = await pool.query(
+    `INSERT INTO sales_demos (lead_id, scheduled_at, attended_by, summary, key_points, objections, next_steps, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [leadId, scheduledAt || null, attendedBy || null, summary || null, keyPoints || null, JSON.stringify(objections || []), nextSteps || null, createdBy || null]
+  );
+  await pool.query(`UPDATE sales_leads SET demo_count = demo_count + 1, updated_at=NOW() WHERE id=$1`, [leadId]);
+  return r.rows?.[0] || null;
+}
+
+export async function createMeeting(pool, { leadId, meetingType, occurredAt, rawNotes, createdBy }) {
+  const r = await pool.query(
+    `INSERT INTO sales_meetings (lead_id, meeting_type, occurred_at, raw_notes, created_by)
+     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [leadId, meetingType, occurredAt || null, rawNotes || null, createdBy || null]
+  );
+  await pool.query(`UPDATE sales_leads SET meeting_count = meeting_count + 1, updated_at=NOW() WHERE id=$1`, [leadId]);
+  return r.rows?.[0] || null;
+}
+
+export async function createTrial(pool, { leadId, startedAt, endedAt, stores, posBrand, targetKpis, createdBy }) {
+  const r = await pool.query(
+    `INSERT INTO sales_trials (lead_id, started_at, ended_at, stores, pos_brand, target_kpis, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [leadId, startedAt || null, endedAt || null, stores || null, posBrand || null, JSON.stringify(targetKpis || {}), createdBy || null]
+  );
+  await pool.query(`UPDATE sales_leads SET trial_status='in_progress', updated_at=NOW() WHERE id=$1`, [leadId]);
+  return r.rows?.[0] || null;
+}
+
+export async function createDeal(pool, { leadId, opportunityId, dealDate, amount, storeCount, contractTerm, notes, createdBy }) {
+  const r = await pool.query(
+    `INSERT INTO sales_deals (lead_id, opportunity_id, deal_date, amount, store_count, contract_term, notes, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [leadId, opportunityId || null, dealDate || null, amount || null, storeCount || null, contractTerm || null, notes || null, createdBy || null]
+  );
+  await pool.query(`UPDATE sales_leads SET stage='won', updated_at=NOW() WHERE id=$1`, [leadId]);
+  return r.rows?.[0] || null;
+}
+
+export async function recordObjection(pool, { leadId, objectionKey, objectionLabel, evidence, responseText, createdBy }) {
+  const r = await pool.query(
+    `INSERT INTO sales_objections (lead_id, objection_key, objection_label, evidence, response_text, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [leadId, objectionKey, objectionLabel || null, evidence || null, responseText || null, createdBy || null]
+  );
+  return r.rows?.[0] || null;
+}
+
+export async function recordLossReason(pool, { leadId, reasonKey, reasonLabel, detail, evidence, createdBy }) {
+  const r = await pool.query(
+    `INSERT INTO sales_loss_reasons (lead_id, reason_key, reason_label, detail, evidence, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [leadId, reasonKey, reasonLabel || null, detail || null, evidence || null, createdBy || null]
+  );
+  await pool.query(`UPDATE sales_leads SET stage='lost', lost_reason=$2, updated_at=NOW() WHERE id=$1`, [leadId, reasonKey]);
+  return r.rows?.[0] || null;
+}
+
+export async function listObjectionsForKey(pool, objectionKey, limit = 20) {
+  const r = await pool.query(
+    `SELECT objection_key, objection_label, evidence, response_text, resolved, created_at
+     FROM sales_objections
+     WHERE objection_key=$1
+     ORDER BY resolved DESC, created_at DESC
+     LIMIT $2`,
+    [objectionKey, limit]
+  );
+  return r.rows || [];
+}
+
+export async function listLossReasonStats(pool, limit = 20) {
+  const r = await pool.query(
+    `SELECT reason_key, reason_label, COUNT(*) as cnt
+     FROM sales_loss_reasons
+     GROUP BY reason_key, reason_label
+     ORDER BY cnt DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return r.rows || [];
+}
+
+export async function addOpportunity(pool, { leadId, title, stage, amount, expectedCloseDate, probability, ownerUsername }) {
+  const r = await pool.query(
+    `INSERT INTO sales_opportunities (lead_id, title, stage, amount, expected_close_date, probability, owner_username)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [leadId, title || '销售机会', stage || 'proposal', amount || null, expectedCloseDate || null, probability || null, ownerUsername || null]
+  );
+  return r.rows?.[0] || null;
+}
+
+export async function updateOpportunityStage(pool, opportunityId, { stage, status, probability, amount }) {
+  await pool.query(
+    `UPDATE sales_opportunities SET stage=COALESCE($2, stage), status=COALESCE($3, status), probability=COALESCE($4, probability), amount=COALESCE($5, amount), updated_at=NOW() WHERE id=$1`,
+    [opportunityId, stage || null, status || null, probability !== undefined ? probability : null, amount !== undefined ? amount : null]
+  );
 }

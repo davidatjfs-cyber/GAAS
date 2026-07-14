@@ -8,14 +8,21 @@ import {
   addMessage,
   listMessages,
   addEvent,
+  upsertTask,
+  loadLeadFunnel,
 } from './sales-store.js';
 import { runCustomerAiTurn } from './sales-customer-ai.js';
+import { extractSlotsFromText, detectEvents } from './sales-strategy.js';
 import {
   applyLeadUpdates,
   buildNextAction,
   buildSalesAdvice,
   ensureFollowupTask,
   scoreLead,
+  buildDiagnosisReport,
+  detectOvercommitment,
+  matchObjection,
+  getObjectionResponse,
 } from './sales-ops.js';
 
 let _notify = null;
@@ -56,9 +63,6 @@ async function upsertLead(pool, { openKfid, externalUserid, sourceChannel }) {
   return r.rows[0];
 }
 
-/**
- * 处理一条入站客户消息（微信客服或沙盒）
- */
 export async function handleInboundMessage(pool, {
   text,
   openKfid = 'sandbox',
@@ -74,7 +78,6 @@ export async function handleInboundMessage(pool, {
   const lead = await upsertLead(pool, { openKfid, externalUserid: externalUserid || `sandbox_${Date.now()}`, sourceChannel });
   const conv = await upsertConversation(pool, { openKfid, externalUserid: lead.external_userid, leadId: lead.id });
 
-  // 人工控场：只记录客户消息，不自动回复
   if (conv.controller === 'human') {
     if (content) {
       await addMessage(pool, {
@@ -87,14 +90,49 @@ export async function handleInboundMessage(pool, {
       });
     }
     await pool.query(`UPDATE sales_leads SET last_message_at=NOW(), updated_at=NOW() WHERE id=$1`, [lead.id]);
+    return { ok: true, replied: false, reason: 'human_controller', lead_id: lead.id, conversation_id: conv.id };
+  }
+
+  if (conv.controller === 'waiting_human') {
+    if (content) {
+      await addMessage(pool, {
+        conversationId: conv.id,
+        leadId: lead.id,
+        direction: 'inbound',
+        sender: 'customer',
+        content,
+        msgId,
+      });
+    }
+    const slots = extractSlotsFromText(content, lead.extracted || {});
+    const events = detectEvents(content);
+    const eventTypes = events.map((e) => e.event_type);
+    const score = scoreLead({ extracted: slots, eventTypes });
+    await applyLeadUpdates(pool, lead.id, {
+      extracted: slots,
+      events: events.map((e) => ({ ...e, evidence: content.slice(0, 200), summary: e.event_type })),
+      score,
+      controller: 'waiting_human',
+    });
+    const updatedLead = await getLead(pool, lead.id);
+    const advice = buildSalesAdvice(updatedLead, score);
+    const diagnosis = buildDiagnosisReport(updatedLead);
+    await pool.query(`UPDATE sales_leads SET last_message_at=NOW(), updated_at=NOW() WHERE id=$1`, [lead.id]);
     return {
       ok: true,
       replied: false,
-      reason: 'human_controller',
+      reason: 'waiting_human',
       lead_id: lead.id,
       conversation_id: conv.id,
+      controller: 'waiting_human',
+      score,
+      advice,
+      diagnosis,
+      plan: { extracted: slots, events },
     };
   }
+
+  const firstResponse = !lead.first_response_at;
 
   if (welcome && !content) {
     const welcomeText = '您好，我是餐厅AI增长顾问。我可以介绍客户自动维护、门店自主运营和人才培养。请问您目前有几家门店？';
@@ -106,14 +144,7 @@ export async function handleInboundMessage(pool, {
       content: welcomeText,
       meta: { kind: 'welcome' },
     });
-    return {
-      ok: true,
-      replied: true,
-      reply: welcomeText,
-      lead_id: lead.id,
-      conversation_id: conv.id,
-      controller: 'ai',
-    };
+    return { ok: true, replied: true, reply: welcomeText, lead_id: lead.id, conversation_id: conv.id, controller: 'ai' };
   }
 
   await addMessage(pool, {
@@ -142,36 +173,27 @@ export async function handleInboundMessage(pool, {
 
   await applyLeadUpdates(pool, lead.id, {
     extracted: turn.plan.extracted,
-    events: (turn.plan.events || []).map((e) => ({
-      ...e,
-      evidence: content.slice(0, 200),
-      summary: e.event_type,
-    })),
+    events: (turn.plan.events || []).map((e) => ({ ...e, evidence: content.slice(0, 200), summary: e.event_type })),
     score,
     controller: nextController,
     stage: nextStage,
   });
 
-  const advice = buildSalesAdvice({ ...lead, extracted: turn.plan.extracted, phone_data_ready: turn.plan.extracted.phone_data_ready }, score);
-  const next = buildNextAction({ ...lead, extracted: turn.plan.extracted, controller: nextController }, score);
-  await pool.query(
-    `UPDATE sales_leads SET next_action=$2, updated_at=NOW() WHERE id=$1`,
-    [lead.id, next.next_action]
-  );
+  const updatedLead = await getLead(pool, lead.id);
+  const advice = buildSalesAdvice(updatedLead, score);
+  const next = buildNextAction(updatedLead, score);
+  const diagnosis = buildDiagnosisReport(updatedLead);
 
   if (takeover) {
-    await pool.query(
-      `UPDATE sales_conversations SET controller='waiting_human', updated_at=NOW() WHERE id=$1`,
-      [conv.id]
-    );
-    await ensureFollowupTask(pool, lead.id, '高意向客户待接管', advice);
+    await pool.query(`UPDATE sales_conversations SET controller='waiting_human', updated_at=NOW() WHERE id=$1`, [conv.id]);
+    await ensureFollowupTask(pool, lead.id, '高意向客户待接管', advice, 0.2);
     await addEvent(pool, lead.id, {
       event_type: 'HANDOFF_REQUESTED',
       summary: turn.plan.takeover.reason,
       evidence: content.slice(0, 200),
       priority: 'high',
       recommended_action: 'takeover',
-      payload: { score, advice },
+      payload: { score, advice, diagnosis },
     });
     if (typeof _notify === 'function') {
       await _notify(
@@ -182,10 +204,13 @@ export async function handleInboundMessage(pool, {
           `门店 ${turn.plan.extracted.store_count ?? '未明'}｜痛点 ${turn.plan.extracted.pain_point || '未明'}`,
           `原因：${turn.plan.takeover.reason}`,
           advice,
+          `诊断：${diagnosis.surface_problem}`,
         ].join('\n'),
         { title: '高意向销售线索', audience: 'sales' }
       ).catch(() => null);
     }
+  } else if (next.priority === 'medium' && !updatedLead.next_action) {
+    await ensureFollowupTask(pool, lead.id, next.next_action, advice, next.due_hours || 48);
   }
 
   await addMessage(pool, {
@@ -197,6 +222,11 @@ export async function handleInboundMessage(pool, {
     meta: { source: turn.source, mode: turn.plan.mode },
   });
 
+  await pool.query(
+    `UPDATE sales_leads SET first_response_at=COALESCE(first_response_at, NOW()), first_contact_at=COALESCE(first_contact_at, NOW()), updated_at=NOW() WHERE id=$1`,
+    [lead.id]
+  );
+
   return {
     ok: true,
     replied: true,
@@ -206,13 +236,9 @@ export async function handleInboundMessage(pool, {
     controller: nextController,
     score,
     advice,
+    diagnosis,
     next_action: next.next_action,
-    plan: {
-      mode: turn.plan.mode,
-      extracted: turn.plan.extracted,
-      takeover: turn.plan.takeover,
-      events: turn.plan.events,
-    },
+    plan: { mode: turn.plan.mode, extracted: turn.plan.extracted, takeover: turn.plan.takeover, events: turn.plan.events },
     source: turn.source,
   };
 }
@@ -228,43 +254,19 @@ export async function takeoverConversation(pool, leadId, { ownerUsername } = {})
       WHERE id=$1`,
     [leadId, ownerUsername || null]
   );
-  await pool.query(
-    `UPDATE sales_conversations SET controller='human', updated_at=NOW() WHERE lead_id=$1 AND status='open'`,
-    [leadId]
-  );
-  await addEvent(pool, leadId, {
-    event_type: 'HUMAN_TAKEOVER',
-    summary: `由 ${ownerUsername || 'sales'} 接管`,
-    priority: 'high',
-    recommended_action: 'continue_human',
-  });
+  await pool.query(`UPDATE sales_conversations SET controller='human', updated_at=NOW() WHERE lead_id=$1 AND status='open'`, [leadId]);
+  await addEvent(pool, leadId, { event_type: 'HUMAN_TAKEOVER', summary: `由 ${ownerUsername || 'sales'} 接管`, priority: 'high', recommended_action: 'continue_human' });
   const notice = '您好，我是人工顾问，已接过沟通。接下来我结合您的门店情况具体说明。';
-  const conv = await pool.query(
-    `SELECT id FROM sales_conversations WHERE lead_id=$1 ORDER BY id DESC LIMIT 1`,
-    [leadId]
-  );
+  const conv = await pool.query(`SELECT id FROM sales_conversations WHERE lead_id=$1 ORDER BY id DESC LIMIT 1`, [leadId]);
   if (conv.rows?.[0]) {
-    await addMessage(pool, {
-      conversationId: conv.rows[0].id,
-      leadId,
-      direction: 'outbound',
-      sender: 'human',
-      content: notice,
-      meta: { kind: 'takeover_notice' },
-    });
+    await addMessage(pool, { conversationId: conv.rows[0].id, leadId, direction: 'outbound', sender: 'human', content: notice, meta: { kind: 'takeover_notice' } });
   }
   return { ok: true, lead_id: leadId, notice };
 }
 
 export async function releaseToAi(pool, leadId) {
-  await pool.query(
-    `UPDATE sales_leads SET controller='ai', updated_at=NOW() WHERE id=$1`,
-    [leadId]
-  );
-  await pool.query(
-    `UPDATE sales_conversations SET controller='ai', updated_at=NOW() WHERE lead_id=$1 AND status='open'`,
-    [leadId]
-  );
+  await pool.query(`UPDATE sales_leads SET controller='ai', updated_at=NOW() WHERE id=$1`, [leadId]);
+  await pool.query(`UPDATE sales_conversations SET controller='ai', updated_at=NOW() WHERE lead_id=$1 AND status='open'`, [leadId]);
   return { ok: true };
 }
 
@@ -272,28 +274,13 @@ export async function getLeadDetail(pool, leadId) {
   await ensureSalesTables(pool);
   const lead = await getLead(pool, leadId);
   if (!lead) return { ok: false, error: 'not_found' };
-  const conv = await pool.query(
-    `SELECT * FROM sales_conversations WHERE lead_id=$1 ORDER BY id DESC LIMIT 1`,
-    [leadId]
-  );
+  const conv = await pool.query(`SELECT * FROM sales_conversations WHERE lead_id=$1 ORDER BY id DESC LIMIT 1`, [leadId]);
   const messages = conv.rows?.[0] ? await listMessages(pool, conv.rows[0].id, 100) : [];
-  const events = await pool.query(
-    `SELECT * FROM sales_lead_events WHERE lead_id=$1 ORDER BY id DESC LIMIT 50`,
-    [leadId]
-  );
-  const scores = await pool.query(
-    `SELECT * FROM sales_score_items WHERE lead_id=$1 ORDER BY id ASC`,
-    [leadId]
-  );
-  const tasks = await pool.query(
-    `SELECT * FROM sales_tasks WHERE lead_id=$1 ORDER BY id DESC LIMIT 20`,
-    [leadId]
-  );
-  const score = {
-    intent_score: lead.intent_score,
-    intent_level: lead.intent_level,
-    items: scores.rows || [],
-  };
+  const events = await pool.query(`SELECT * FROM sales_lead_events WHERE lead_id=$1 ORDER BY id DESC LIMIT 50`, [leadId]);
+  const scores = await pool.query(`SELECT * FROM sales_score_items WHERE lead_id=$1 ORDER BY id ASC`, [leadId]);
+  const score = { intent_score: lead.intent_score, intent_level: lead.intent_level, items: scores.rows || [] };
+  const funnel = await loadLeadFunnel(pool, leadId);
+  const diagnosis = buildDiagnosisReport(lead);
   return {
     ok: true,
     lead,
@@ -301,8 +288,40 @@ export async function getLeadDetail(pool, leadId) {
     messages,
     events: events.rows || [],
     score,
-    tasks: tasks.rows || [],
+    tasks: funnel.tasks,
+    opportunities: funnel.opportunities,
+    demos: funnel.demos,
+    meetings: funnel.meetings,
+    trials: funnel.trials,
+    deals: funnel.deals,
+    objections: funnel.objections,
+    loss_reasons: funnel.loss_reasons,
     advice: buildSalesAdvice(lead, score),
     next_action: lead.next_action || buildNextAction(lead, score).next_action,
+    diagnosis,
   };
 }
+
+export async function recordSalesReply(pool, leadId, text, { sender = 'human' } = {}) {
+  await ensureSalesTables(pool);
+  const lead = await getLead(pool, leadId);
+  if (!lead) return { ok: false, error: 'not_found' };
+  const conv = await pool.query(`SELECT * FROM sales_conversations WHERE lead_id=$1 ORDER BY id DESC LIMIT 1`, [leadId]);
+  if (!conv.rows?.[0]) return { ok: false, error: 'no_conversation' };
+  await addMessage(pool, { conversationId: conv.rows[0].id, leadId, direction: 'outbound', sender, content: text });
+  const overcommit = detectOvercommitment(text);
+  if (overcommit.length) {
+    await addEvent(pool, leadId, { event_type: 'SALES_OVERCOMMIT', summary: '销售回复存在过度承诺', evidence: text.slice(0, 200), priority: 'high', recommended_action: 'review', payload: { risks: overcommit } });
+  }
+  const objectionKey = matchObjection(text);
+  if (objectionKey) {
+    const obj = getObjectionResponse(objectionKey);
+    if (obj) {
+      await addEvent(pool, leadId, { event_type: 'OBJECTION_DETECTED', summary: obj.label, evidence: text.slice(0, 200), priority: 'normal', recommended_action: 'use_standard_response', payload: obj });
+    }
+  }
+  await pool.query(`UPDATE sales_leads SET last_human_at=NOW(), updated_at=NOW() WHERE id=$1`, [leadId]);
+  return { ok: true, overcommit_risks: overcommit };
+}
+
+export { buildDiagnosisReport, detectOvercommitment, matchObjection, getObjectionResponse };

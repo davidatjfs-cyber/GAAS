@@ -5,7 +5,6 @@ import { SALES_PERSONA, PUBLIC_KNOWLEDGE } from './sales-knowledge.js';
 import { buildStrategyPlan, sanitizeReply, templateReply } from './sales-strategy.js';
 
 let _callLLM = null;
-
 export function setSalesCustomerAiLlm(fn) {
   _callLLM = fn;
 }
@@ -41,25 +40,15 @@ ${historyToPrompt(history) || '（新会话）'}
 请给出顾问的下一句回复。只输出对客户说的话，不要输出分析。`;
 
   const r = await _callLLM(
-    [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
+    [{ role: 'system', content: system }, { role: 'user', content: user }],
     { purpose: 'sales_customer_ai', temperature: 0.45, max_tokens: 280, skipCache: true }
   ).catch(() => null);
-
   if (!r?.ok || !r.content) return null;
   return String(r.content).trim();
 }
 
 export async function runCustomerAiTurn({ userText, extracted, history, intentScore, controller }) {
-  const plan = buildStrategyPlan({
-    userText,
-    extracted,
-    history,
-    intentScore,
-    controller,
-  });
+  const plan = buildStrategyPlan({ userText, extracted, history, intentScore, controller });
 
   let reply = await generateWithLlm(plan, userText, history);
   let source = 'llm';
@@ -69,21 +58,14 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
   }
   reply = sanitizeReply(reply);
 
-  // 闸门：转人工模式下强制手写话术，避免 LLM 继续报价
   if (plan.mode === 'handoff') {
     reply = sanitizeReply(templateReply(plan, userText));
     source = 'handoff_template';
   }
 
-  // 若策略要求提问但回复无问号，补上下一问
   if (plan.next_question?.question && plan.mode !== 'handoff' && !/[？?]/.test(reply)) {
     reply = sanitizeReply(`${reply} ${plan.next_question.question}`);
   }
 
-  return {
-    ok: true,
-    reply,
-    source,
-    plan,
-  };
+  return { ok: true, reply, source, plan };
 }

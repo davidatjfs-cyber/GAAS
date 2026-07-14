@@ -1,17 +1,29 @@
 /**
- * 销售 AI 路由：沙盒试聊 + 线索工作台 + 微信客服回调
+ * 销售 AI 路由：沙盒试聊 + 线索工作台 + 微信客服回调 + 销售漏斗/会客/风险
  */
-import { ensureSalesTables, listLeads } from './services/sales/sales-store.js';
+import { ensureSalesTables, listLeads, getLead, loadLeadFunnel } from './services/sales/sales-store.js';
 import {
   handleInboundMessage,
   takeoverConversation,
   releaseToAi,
   getLeadDetail,
+  recordSalesReply,
   setSalesNotify,
+  buildDiagnosisReport,
+  detectOvercommitment,
+  matchObjection,
 } from './services/sales/sales-session.js';
-import { buildBossDailyReport } from './services/sales/sales-ops.js';
+import {
+  buildBossDailyReport,
+  buildSalesTodoList,
+  buildRiskCustomers,
+  buildFunnelStats,
+  buildTomorrowActions,
+  buildDiagnosisReport as buildDiagnosisReportOps,
+  summarizeMeeting,
+} from './services/sales/sales-ops.js';
 import { setSalesCustomerAiLlm } from './services/sales/sales-customer-ai.js';
-import { draftCustomerReply, setSalesReplyDraftLlm } from './services/sales/sales-reply-draft.js';
+import { draftCustomerReply, draftStandardResponse, draftQuickReplyByScenario } from './services/sales/sales-reply-draft.js';
 import {
   kfConfigured,
   kfEnv,
@@ -22,7 +34,7 @@ import {
 } from './services/sales/sales-kf.js';
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE, FORBIDDEN_CLAIMS } from './services/sales/sales-knowledge.js';
 
-// 超时未跟进：高意向线索若2小时内无人工接管/回复，且4小时内未提醒过，则再次提醒（避免轰炸）。
+// 超时未跟进：高意向线索若2小时内无人工接管/回复，且4小时内未提醒过，则再次提醒
 async function remindStaleHighIntentLeads(pool, sendOpsAlert) {
   if (typeof sendOpsAlert !== 'function') return;
   const r = await pool.query(
@@ -54,12 +66,52 @@ async function remindStaleHighIntentLeads(pool, sendOpsAlert) {
   }
 }
 
+// 风险预警：漏跟/报价后无进展/已Demo未确认决策人/高意向未接管
+async function runRiskAlerts(pool, sendOpsAlert) {
+  if (typeof sendOpsAlert !== 'function') return;
+  const r = await pool.query(
+    `SELECT id, lead_key, company, name, city, store_count, intent_score, stage, last_human_at, updated_at, decision_role, demo_count, events
+       FROM sales_leads
+      WHERE stage NOT IN ('won', 'lost', 'unfit')
+        AND (last_risk_check_at IS NULL OR last_risk_check_at < NOW() - INTERVAL '4 hours')
+      ORDER BY intent_score DESC
+      LIMIT 100`
+  );
+  const checked = [];
+  for (const lead of r.rows || []) {
+    const risks = [];
+    const lastT = lead.last_human_at || lead.updated_at;
+    if (lastT && Date.now() - new Date(lastT).getTime() > 3 * 86400000) risks.push('超3天未跟进');
+    if (/ASK_PRICE/.test(String(lead.events || '[]')) && lastT && Date.now() - new Date(lastT).getTime() > 2 * 86400000) risks.push('报价后无进展');
+    if ((lead.demo_count || 0) > 0 && lead.decision_role !== '老板') risks.push('已Demo未确认决策人');
+    if (!lead.decision_role) risks.push('未确认决策角色');
+    if (lead.intent_score >= 70 && lead.stage !== 'sales_takeover' && lead.stage !== 'won' && lead.stage !== 'lost') risks.push('高意向但未接管');
+    if (risks.length) {
+      try {
+        await sendOpsAlert(
+          [
+            '【销售AI·风险客户提醒】',
+            `线索 ${lead.lead_key}｜${lead.company || lead.name || ''}`,
+            `风险：${risks.join('、')}`,
+          ].join('\n'),
+          { title: '销售风险客户提醒', audience: 'sales' }
+        );
+      } catch (e) {
+        console.warn('[sales-ai] risk alert failed:', e?.message || e);
+      }
+    }
+    checked.push(lead.id);
+  }
+  if (checked.length) {
+    await pool.query(`UPDATE sales_leads SET last_risk_check_at = NOW() WHERE id = ANY($1::int[])`, [checked]);
+  }
+}
+
 export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLLM, sendOpsAlert } = {}) {
   if (typeof callLLM === 'function') setSalesCustomerAiLlm(callLLM);
   if (typeof callLLM === 'function') setSalesReplyDraftLlm(callLLM);
   if (typeof sendOpsAlert === 'function') setSalesNotify(sendOpsAlert);
 
-  // 任务1：每30分钟检查一次高意向未接管线索，超时未跟进则再次提醒（去重：4小时内不重复提醒同一线索）
   if (!globalThis.__salesStaleLeadReminderTimer) {
     globalThis.__salesStaleLeadReminderTimer = setInterval(() => {
       ensureSalesTables(pool)
@@ -68,7 +120,14 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }, 30 * 60 * 1000);
   }
 
-  // 任务2：每日09:00自动生成并推送老板日报（复用 /daily-report/send 同样的逻辑）
+  if (!globalThis.__salesRiskAlertTimer) {
+    globalThis.__salesRiskAlertTimer = setInterval(() => {
+      ensureSalesTables(pool)
+        .then(() => runRiskAlerts(pool, sendOpsAlert))
+        .catch((e) => console.warn('[sales-ai] risk alert run failed:', e?.message || e));
+    }, 60 * 60 * 1000);
+  }
+
   if (!globalThis.__salesDailyReportTimer) {
     const scheduleSalesDailyReport = () => {
       const now = new Date();
@@ -90,7 +149,6 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     scheduleSalesDailyReport();
   }
 
-  // 任务3：每5分钟主动补偿同步一次微信客服消息，防止回调因网络/重启丢失导致漏消息
   if (!globalThis.__salesKfSyncTimer) {
     globalThis.__salesKfSyncTimer = setInterval(() => {
       if (!kfConfigured()) return;
@@ -100,7 +158,6 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }, 5 * 60 * 1000);
   }
 
-  // —— 公开：微信客服回调（无需平台登录）——
   app.get('/api/wecom/kf/callback', (req, res) => {
     const env = kfEnv();
     const { msg_signature, timestamp, nonce, echostr } = req.query || {};
@@ -118,7 +175,6 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   });
 
   app.post('/api/wecom/kf/callback', async (req, res) => {
-    // 企微要求尽快回成功；处理异步化
     res.send('success');
     try {
       if (!kfConfigured()) {
@@ -128,12 +184,10 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const env = kfEnv();
       let token = '';
       let openKfid = env.openKfid;
-      // 简化：若 body 含 encrypt，解密取 token；否则读 query/body.token
       const encrypt = req.body?.Encrypt || req.body?.encrypt;
       if (encrypt && env.aesKey) {
         try {
           const plain = decryptKfMessage(String(encrypt), env.aesKey);
-          // plain 可能是 XML；粗提取 Token / OpenKfId
           const tokenM = plain.match(/<Token><!\[CDATA\[(.*?)\]\]><\/Token>/) || plain.match(/"Token"\s*:\s*"([^"]+)"/);
           const kfM = plain.match(/<OpenKfId><!\[CDATA\[(.*?)\]\]><\/OpenKfId>/) || plain.match(/"OpenKfId"\s*:\s*"([^"]+)"/);
           if (tokenM) token = tokenM[1];
@@ -149,26 +203,14 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  // —— 平台管理员 ——
   app.get('/api/admin/sales/meta', platformAdminRequired, (_req, res) => {
-    res.json({
-      ok: true,
-      persona: SALES_PERSONA,
-      knowledge: PUBLIC_KNOWLEDGE,
-      forbidden_claims: FORBIDDEN_CLAIMS,
-      kf_configured: kfConfigured(),
-      open_kfid: kfEnv().openKfid || null,
-    });
+    res.json({ ok: true, persona: SALES_PERSONA, knowledge: PUBLIC_KNOWLEDGE, forbidden_claims: FORBIDDEN_CLAIMS, kf_configured: kfConfigured(), open_kfid: kfEnv().openKfid || null });
   });
 
   app.get('/api/admin/sales/leads', platformAdminRequired, async (req, res) => {
     try {
       await ensureSalesTables(pool);
-      const leads = await listLeads(pool, {
-        stage: req.query?.stage,
-        min_score: req.query?.min_score,
-        limit: req.query?.limit,
-      });
+      const leads = await listLeads(pool, { stage: req.query?.stage, min_score: req.query?.min_score, limit: req.query?.limit });
       res.json({ ok: true, leads });
     } catch (e) {
       console.error('[sales] list leads', e?.message || e);
@@ -191,13 +233,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const text = String(req.body?.text || '').trim();
       const externalUserid = String(req.body?.external_userid || req.body?.session_key || '').trim() || `sandbox_${req.user?.username || 'admin'}`;
       const welcome = !!req.body?.welcome;
-      const data = await handleInboundMessage(pool, {
-        text: welcome && !text ? '' : text,
-        openKfid: 'sandbox',
-        externalUserid,
-        sourceChannel: 'sandbox',
-        welcome,
-      });
+      const data = await handleInboundMessage(pool, { text: welcome && !text ? '' : text, openKfid: 'sandbox', externalUserid, sourceChannel: 'sandbox', welcome });
       res.json(data);
     } catch (e) {
       console.error('[sales] sandbox chat', e?.message || e);
@@ -207,9 +243,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
 
   app.post('/api/admin/sales/leads/:id/takeover', platformAdminRequired, async (req, res) => {
     try {
-      const data = await takeoverConversation(pool, Number(req.params.id), {
-        ownerUsername: req.user?.username || req.body?.owner_username,
-      });
+      const data = await takeoverConversation(pool, Number(req.params.id), { ownerUsername: req.user?.username || req.body?.owner_username });
       res.status(data.ok ? 200 : 404).json(data);
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
@@ -233,28 +267,16 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       if (detail.conversation?.controller !== 'human' && detail.lead.controller !== 'human') {
         return res.status(400).json({ ok: false, error: 'not_in_human_control', message: '请先接管会话' });
       }
-      const { addMessage } = await import('./services/sales/sales-store.js');
-      await addMessage(pool, {
-        conversationId: detail.conversation.id,
-        leadId: detail.lead.id,
-        direction: 'outbound',
-        sender: 'human',
-        content: text,
-      });
-      // 若已配置 KF 且非 sandbox，尝试外发
+      const result = await recordSalesReply(pool, Number(req.params.id), text, { sender: req.user?.username || 'human' });
       if (detail.lead.open_kfid && detail.lead.open_kfid !== 'sandbox' && detail.lead.external_userid && kfConfigured()) {
         try {
           const { sendKfText } = await import('./services/sales/sales-kf.js');
-          await sendKfText({
-            openKfid: detail.lead.open_kfid,
-            externalUserid: detail.lead.external_userid,
-            content: text,
-          });
+          await sendKfText({ openKfid: detail.lead.open_kfid, externalUserid: detail.lead.external_userid, content: text });
         } catch (e) {
-          return res.json({ ok: true, saved: true, send_error: e?.message || String(e) });
+          return res.json({ ok: true, saved: true, overcommit_risks: result.overcommit_risks, send_error: e?.message || String(e) });
         }
       }
-      res.json({ ok: true, saved: true });
+      res.json({ ok: true, saved: true, overcommit_risks: result.overcommit_risks });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
@@ -264,15 +286,54 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     try {
       const detail = await getLeadDetail(pool, Number(req.params.id));
       if (!detail.ok) return res.status(404).json(detail);
-      const draft = await draftCustomerReply({
-        lead: detail.lead,
-        messages: detail.messages,
-        advice: detail.advice,
-      });
+      const draft = await draftCustomerReply({ lead: detail.lead, messages: detail.messages, advice: detail.advice });
       if (!draft.ok) return res.json({ ok: false, error: draft.error, message: '暂无法生成草稿，请手动编写' });
       res.json({ ok: true, text: draft.text });
     } catch (e) {
       console.error('[sales] draft reply', e?.message || e);
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/leads/:id/quick-reply', platformAdminRequired, async (req, res) => {
+    try {
+      const scenario = String(req.body?.scenario || '').trim();
+      const detail = await getLeadDetail(pool, Number(req.params.id));
+      if (!detail.ok) return res.status(404).json(detail);
+      const draft = draftQuickReplyByScenario({ lead: detail.lead, scenario });
+      res.json(draft);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/leads/:id/diagnosis', platformAdminRequired, async (req, res) => {
+    try {
+      const detail = await getLeadDetail(pool, Number(req.params.id));
+      if (!detail.ok) return res.status(404).json(detail);
+      res.json({ ok: true, diagnosis: detail.diagnosis });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/leads/:id/check-overcommit', platformAdminRequired, async (req, res) => {
+    try {
+      const text = String(req.body?.text || '').trim();
+      if (!text) return res.status(400).json({ ok: false, error: 'empty' });
+      res.json({ ok: true, risks: detectOvercommitment(text) });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/objections/response', platformAdminRequired, async (req, res) => {
+    try {
+      const key = String(req.body?.objection_key || '').trim();
+      if (!key) return res.status(400).json({ ok: false, error: 'missing_key' });
+      const resp = draftStandardResponse(key);
+      res.json(resp.ok ? { ok: true, ...resp } : { ok: false, error: resp.error });
+    } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -288,10 +349,152 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   app.post('/api/admin/sales/daily-report/send', platformAdminRequired, async (_req, res) => {
     try {
       const report = await buildBossDailyReport(pool);
-      if (typeof sendOpsAlert === 'function') {
-        await sendOpsAlert(report.text, { title: '销售AI日报', audience: 'sales' });
-      }
+      if (typeof sendOpsAlert === 'function') await sendOpsAlert(report.text, { title: '销售AI日报', audience: 'sales' });
       res.json({ ok: true, report });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/todo', platformAdminRequired, async (_req, res) => {
+    try {
+      await ensureSalesTables(pool);
+      const leads = await listLeads(pool, { limit: 300 });
+      res.json({ ok: true, todos: buildSalesTodoList(leads) });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/risks', platformAdminRequired, async (_req, res) => {
+    try {
+      await ensureSalesTables(pool);
+      const leads = await listLeads(pool, { limit: 300 });
+      res.json({ ok: true, risks: buildRiskCustomers(leads), tomorrow_actions: buildTomorrowActions(leads) });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/funnel', platformAdminRequired, async (_req, res) => {
+    try {
+      await ensureSalesTables(pool);
+      const leads = await listLeads(pool, { limit: 500 });
+      res.json({ ok: true, funnel: buildFunnelStats(leads), count: leads.length });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/demos', platformAdminRequired, async (req, res) => {
+    try {
+      const { createDemo } = await import('./services/sales/sales-store.js');
+      const demo = await createDemo(pool, {
+        leadId: Number(req.params?.id || req.body?.lead_id),
+        scheduledAt: req.body?.scheduled_at,
+        attendedBy: req.body?.attended_by,
+        summary: req.body?.summary,
+        keyPoints: req.body?.key_points,
+        objections: req.body?.objections,
+        nextSteps: req.body?.next_steps,
+        createdBy: req.user?.username,
+      });
+      res.json({ ok: true, demo });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/meetings', platformAdminRequired, async (req, res) => {
+    try {
+      const { createMeeting } = await import('./services/sales/sales-store.js');
+      let summary = null;
+      if (req.body?.raw_notes) {
+        const s = summarizeMeeting(req.body.raw_notes);
+        summary = JSON.stringify(s);
+      }
+      const meeting = await createMeeting(pool, {
+        leadId: Number(req.params?.id || req.body?.lead_id),
+        meetingType: req.body?.meeting_type || 'meeting',
+        occurredAt: req.body?.occurred_at,
+        rawNotes: req.body?.raw_notes,
+        createdBy: req.user?.username,
+      });
+      res.json({ ok: true, meeting, summary });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/trials', platformAdminRequired, async (req, res) => {
+    try {
+      const { createTrial } = await import('./services/sales/sales-store.js');
+      const trial = await createTrial(pool, {
+        leadId: Number(req.params?.id || req.body?.lead_id),
+        startedAt: req.body?.started_at,
+        endedAt: req.body?.ended_at,
+        stores: req.body?.stores,
+        posBrand: req.body?.pos_brand,
+        targetKpis: req.body?.target_kpis,
+        createdBy: req.user?.username,
+      });
+      res.json({ ok: true, trial });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/deals', platformAdminRequired, async (req, res) => {
+    try {
+      const { createDeal, addOpportunity } = await import('./services/sales/sales-store.js');
+      if (req.body?.opportunity_id) {
+        await addOpportunity(pool, { leadId: Number(req.body?.lead_id), title: '成交机会', stage: 'won', amount: req.body?.amount, createdBy: req.user?.username });
+      }
+      const deal = await createDeal(pool, {
+        leadId: Number(req.params?.id || req.body?.lead_id),
+        opportunityId: req.body?.opportunity_id,
+        dealDate: req.body?.deal_date,
+        amount: req.body?.amount,
+        storeCount: req.body?.store_count,
+        contractTerm: req.body?.contract_term,
+        notes: req.body?.notes,
+        createdBy: req.user?.username,
+      });
+      res.json({ ok: true, deal });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/loss-reasons', platformAdminRequired, async (req, res) => {
+    try {
+      const { recordLossReason } = await import('./services/sales/sales-store.js');
+      const loss = await recordLossReason(pool, {
+        leadId: Number(req.params?.id || req.body?.lead_id),
+        reasonKey: req.body?.reason_key,
+        reasonLabel: req.body?.reason_label,
+        detail: req.body?.detail,
+        evidence: req.body?.evidence,
+        createdBy: req.user?.username,
+      });
+      res.json({ ok: true, loss });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/objections', platformAdminRequired, async (req, res) => {
+    try {
+      const { recordObjection } = await import('./services/sales/sales-store.js');
+      const obj = await recordObjection(pool, {
+        leadId: Number(req.params?.id || req.body?.lead_id),
+        objectionKey: req.body?.objection_key,
+        objectionLabel: req.body?.objection_label,
+        evidence: req.body?.evidence,
+        responseText: req.body?.response_text,
+        createdBy: req.user?.username,
+      });
+      res.json({ ok: true, objection: obj });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
