@@ -131,9 +131,10 @@ export async function provisionTenantFromLead(pool, leadId, {
     console.warn('[sales-provision] growth_customer bridge failed:', e?.message || e);
   }
 
+  // 落库的 provision_meta 不含明文密码：临时密码只在本次API响应里一次性返回给调用方
+  // (前端应立即展示给销售/客户，不做二次持久化)；users表里的 password_hash 才是登录凭据来源。
   const provisionMeta = {
     admin_username: adminUser,
-    temp_password: tempPassword,
     onboarding_run_id: onboarding?.run?.id || onboarding?.id || null,
     growth_customer_id: growthCustomerId,
     provisioned_at: new Date().toISOString(),
