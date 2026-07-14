@@ -555,12 +555,14 @@
           </label>
           <button type="button" id="salesReloadBtn" class="secondary">刷新线索</button>
           <button type="button" id="salesTodoBtn" class="secondary">今日待办</button>
+          <button type="button" id="salesTop5Btn" class="warn">今日Top5</button>
           <button type="button" id="salesRiskBtn" class="warn">风险客户</button>
           <button type="button" id="salesReportBtn" class="ghost">日报</button>
           <button type="button" id="salesFunnelBtn" class="ghost">漏斗</button>
         </div>
         <div id="salesReportBox" class="hint-box" style="display:none;white-space:pre-wrap"></div>
         <div id="salesFunnelBox" class="hint-box" style="display:none"></div>
+        <div id="salesTop5Box" class="hint-box" style="display:none"></div>
         <div id="salesRiskBox" class="hint-box" style="display:none"></div>
         <div id="salesTodoBox" class="hint-box" style="display:none"></div>
         <div class="table-scroll">
@@ -592,8 +594,11 @@
           <input id="salesReplyInput" placeholder="人工回复（需先接管）" style="flex:1">
           <button type="button" id="salesDraftReplyBtn" class="secondary">AI草稿</button>
           <button type="button" id="salesQuickReplyBtn" class="secondary">快捷话术</button>
+          <button type="button" id="salesDemoBriefBtn" class="secondary">会前简报</button>
           <button type="button" id="salesReplyBtn">发送</button>
         </div>
+        <div id="salesOvercommitHint" class="small" style="display:none;color:var(--warn);margin-top:4px"></div>
+        <div id="salesDemoBriefBox" class="hint-box" style="display:none;white-space:pre-wrap;margin-top:6px"></div>
         <div id="salesEvents" class="small"></div>
         <div style="margin-top:8px">
           <strong class="small">漏斗动作</strong>
@@ -2765,6 +2770,7 @@
     $('salesReportBtn').onclick = () => loadSalesDailyReport(false).catch((e) => toast(e.message));
     $('salesSendReportBtn')?.onclick = () => loadSalesDailyReport(true).catch((e) => toast(e.message));
     $('salesTodoBtn').onclick = () => loadSalesTodo().catch((e) => toast(e.message));
+    $('salesTop5Btn').onclick = () => loadSalesTop5().catch((e) => toast(e.message));
     $('salesRiskBtn').onclick = () => loadSalesRisk().catch((e) => toast(e.message));
     $('salesFunnelBtn').onclick = () => loadSalesFunnel().catch((e) => toast(e.message));
     $('salesDetailCloseBtn').onclick = () => {
@@ -2777,6 +2783,7 @@
     $('salesReplyBtn').onclick = () => salesHumanReply().catch((e) => toast(e.message));
     $('salesDraftReplyBtn').onclick = () => salesDraftReply().catch((e) => toast(e.message));
     $('salesQuickReplyBtn').onclick = () => salesQuickReply().catch((e) => toast(e.message));
+    $('salesDemoBriefBtn').onclick = () => salesLoadDemoBrief().catch((e) => toast(e.message));
     $('salesDemoBtn').onclick = () => salesLogDemo().catch((e) => toast(e.message));
     $('salesMeetingBtn').onclick = () => salesLogMeeting().catch((e) => toast(e.message));
     $('salesTrialBtn').onclick = () => salesLogTrial().catch((e) => toast(e.message));
@@ -2784,6 +2791,11 @@
     $('salesLostBtn').onclick = () => salesLogLost().catch((e) => toast(e.message));
     $('salesReplyInput').onkeydown = (ev) => {
       if (ev.key === 'Enter') salesHumanReply().catch((e) => toast(e.message));
+    };
+    let salesOvercommitTimer = null;
+    $('salesReplyInput').oninput = () => {
+      clearTimeout(salesOvercommitTimer);
+      salesOvercommitTimer = setTimeout(() => salesCheckOvercommitHint().catch(() => null), 400);
     };
     $('salesSandboxWelcomeBtn').onclick = () => salesSandboxChat({ welcome: true }).catch((e) => toast(e.message));
     $('salesSandboxSendBtn').onclick = () => salesSandboxChat({}).catch((e) => toast(e.message));
@@ -2874,6 +2886,7 @@
       $('salesKfStatus').textContent = kf;
       renderSalesLeads();
       log(`销售线索 ${state.sales.leads.length} 条`);
+      loadSalesTop5().catch(() => null);
     }
 
     async function openSalesLead(id) {
@@ -2910,6 +2923,8 @@
         $('salesDiagnosis').style.display = 'none';
       }
       $('salesTags').innerHTML = (lead.tags || []).map((t) => `<span class="pill">${salesEsc(t)}</span>`).join(' ');
+      $('salesOvercommitHint').style.display = 'none';
+      $('salesDemoBriefBox').style.display = 'none';
       renderSalesChat($('salesChatLog'), data.messages || []);
       const events = data.events || [];
       $('salesEvents').innerHTML = events.length
@@ -3036,6 +3051,53 @@
       box.style.display = '';
       box.textContent = report.text || JSON.stringify(report, null, 2);
       toast(send ? '日报已推送' : '日报已生成');
+    }
+
+    async function salesCheckOvercommitHint() {
+      const id = state.sales.selectedLeadId;
+      const text = String($('salesReplyInput').value || '').trim();
+      const hint = $('salesOvercommitHint');
+      if (!id || !text) {
+        hint.style.display = 'none';
+        return;
+      }
+      const check = await api(`/api/admin/sales/leads/${id}/check-overcommit`, { method: 'POST', body: JSON.stringify({ text }) });
+      if (check.risks?.length) {
+        hint.style.display = '';
+        hint.textContent = `⚠ 过度承诺风险：${check.risks.join('、')}`;
+      } else {
+        hint.style.display = 'none';
+      }
+    }
+
+    async function salesLoadDemoBrief() {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先选择线索');
+      const data = await api(`/api/admin/sales/leads/${id}/demo-brief`);
+      const box = $('salesDemoBriefBox');
+      box.style.display = '';
+      box.textContent = data.text || JSON.stringify(data.brief, null, 2);
+      toast('会前简报已生成');
+    }
+
+    async function loadSalesTop5() {
+      const data = await api('/api/admin/sales/top5');
+      const box = $('salesTop5Box');
+      box.style.display = '';
+      box.innerHTML = (data.top5 || []).map((t, i) => `
+        <div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+          <div>
+            <strong>${i + 1}. ${salesEsc(t.company || t.lead_key)}</strong>
+            <span class="small"> · ${salesEsc(t.city || '?')} · ${t.store_count ?? '?'}店 · 分${t.intent_score ?? 0} · 成交${t.win_probability ?? 0}%</span>
+            <div class="small">痛点 ${salesEsc(t.pain_point)}｜${salesEsc((t.reasons || []).join('、'))}</div>
+            <div class="small">建议：${salesEsc(t.next_action || '—')}</div>
+          </div>
+          <button type="button" class="ghost small" data-top5-lead="${t.lead_id}">打开</button>
+        </div>
+      `).join('') || '<div class="small">暂无高优先级线索</div>';
+      box.querySelectorAll('[data-top5-lead]').forEach((btn) => {
+        btn.onclick = () => openSalesLead(Number(btn.dataset.top5Lead)).catch((e) => toast(e.message));
+      });
     }
 
     async function loadSalesTodo() {

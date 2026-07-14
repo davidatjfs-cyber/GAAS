@@ -9,9 +9,9 @@ import {
 } from './services/sales/sales-strategy.js';
 import { scoreLead, computeWinProbability } from './services/sales/sales-scoring.js';
 import { runCustomerAiTurn } from './services/sales/sales-customer-ai.js';
-import { buildNextAction, buildSalesAdvice, buildBossDailyReport, buildFunnelStats, buildRiskCustomers, buildTomorrowActions, buildSalesTodoList } from './services/sales/sales-ops.js';
+import { buildNextAction, buildSalesAdvice, buildBossDailyReport, buildFunnelStats, buildRiskCustomers, buildTomorrowActions, buildSalesTodoList, buildTopHighLeads } from './services/sales/sales-ops.js';
 import { deriveTagsForLead, recommendCaseTheme, recommendAssets, recommendNextSteps } from './services/sales/sales-tags.js';
-import { buildDiagnosisReport, diagnoseLead, summarizeMeeting, detectOvercommitment, matchObjection, getObjectionResponse } from './services/sales/sales-diagnosis.js';
+import { buildDiagnosisReport, diagnoseLead, summarizeMeeting, detectOvercommitment, matchObjection, getObjectionResponse, buildDemoBrief } from './services/sales/sales-diagnosis.js';
 
 {
   const slots = extractSlotsFromText('我们上海有4家潮汕菜，叫洪潮小馆，现在用客如云，会员有两万多人，主要问题是复购低。我姓王，手机13800138000。', {});
@@ -204,6 +204,26 @@ import { buildDiagnosisReport, diagnoseLead, summarizeMeeting, detectOvercommitm
   const probWon = computeWinProbability({ stage: 'won' });
   assert.equal(probWon, 100);
   console.log('ok win probability', prob);
+}
+
+{
+  const leads = [
+    { id: 1, lead_key: 'L1', company: 'A', intent_score: 85, intent_level: 'high', controller: 'ai', stage: 'need_identified', store_count: 3, pain_points: ['复购'], extracted: { pain_point: '复购' } },
+    { id: 2, lead_key: 'L2', company: 'B', intent_score: 60, intent_level: 'medium', controller: 'human', stage: 'sales_takeover', store_count: 2 },
+    { id: 3, lead_key: 'L3', company: 'C', intent_score: 90, intent_level: 'high', controller: 'human', stage: 'won' },
+  ];
+  const top5 = buildTopHighLeads(leads);
+  assert.equal(top5.length, 2);
+  assert.equal(top5[0].lead_key, 'L1');
+  assert.ok(top5[0].reasons.includes('高意向待接管'));
+  console.log('ok top5');
+}
+
+{
+  const brief = buildDemoBrief({ company: '洪潮', store_count: 3, cuisine: '粤菜', extracted: { pain_point: '复购' } }, {});
+  assert.equal(brief.customer, '洪潮');
+  assert.ok((brief.main_problems || []).length > 0);
+  console.log('ok demo brief');
 }
 
 console.log('all sales-ai enhanced tests passed');

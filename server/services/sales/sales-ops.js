@@ -4,7 +4,7 @@
 import { scoreLead, persistScore, computeWinProbability } from './sales-scoring.js';
 import { addEvent, ensureSalesTables, listLeads, upsertTask, completeTask, loadLeadFunnel } from './sales-store.js';
 import { deriveTagsForLead, recommendCaseTheme, recommendAssets, recommendNextSteps } from './sales-tags.js';
-import { buildDiagnosisReport, summarizeMeeting, detectOvercommitment, matchObjection, getObjectionResponse } from './sales-diagnosis.js';
+import { buildDiagnosisReport, summarizeMeeting, detectOvercommitment, matchObjection, getObjectionResponse, buildDemoBrief } from './sales-diagnosis.js';
 
 export function buildNextAction(lead, score) {
   if (score.intent_level === 'high' || (lead.controller === 'ai' && score.intent_score >= 70)) {
@@ -271,4 +271,35 @@ export function recomputeFromLeadRow(lead, eventTypes = []) {
   return scoreLead({ extracted, eventTypes });
 }
 
-export { scoreLead, computeWinProbability, buildDiagnosisReport, recommendCaseTheme, recommendAssets, recommendNextSteps, summarizeMeeting, detectOvercommitment, matchObjection, getObjectionResponse };
+export function buildTopHighLeads(leads = []) {
+  return leads
+    .filter((l) => !['won', 'lost', 'unfit'].includes(l.stage))
+    .sort((a, b) => (b.intent_score || 0) - (a.intent_score || 0))
+    .slice(0, 5)
+    .map((l) => {
+      const score = { intent_score: l.intent_score || 0, intent_level: l.intent_level || 'low' };
+      const next = buildNextAction(l, score);
+      const reasons = [];
+      if (l.intent_level === 'high' && l.controller !== 'human') reasons.push('高意向待接管');
+      if ((l.intent_score || 0) >= 70) reasons.push('评分≥70');
+      if (l.next_action_due && new Date(l.next_action_due).getTime() < Date.now()) reasons.push('待办已到期');
+      if (!reasons.length) reasons.push('优先跟进');
+      return {
+        lead_id: l.id,
+        lead_key: l.lead_key,
+        company: l.company || l.name || '',
+        city: l.city || '',
+        store_count: l.store_count,
+        intent_score: l.intent_score,
+        intent_level: l.intent_level,
+        stage: l.stage,
+        controller: l.controller,
+        pain_point: l.extracted?.pain_point || (l.pain_points || [])[0] || '未明',
+        next_action: l.next_action || next.next_action,
+        win_probability: l.win_probability ?? computeWinProbability(l),
+        reasons,
+      };
+    });
+}
+
+export { scoreLead, computeWinProbability, buildDiagnosisReport, buildDemoBrief, recommendCaseTheme, recommendAssets, recommendNextSteps, summarizeMeeting, detectOvercommitment, matchObjection, getObjectionResponse };

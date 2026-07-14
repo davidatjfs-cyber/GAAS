@@ -378,6 +378,33 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
+  app.get('/api/admin/sales/top5', platformAdminRequired, async (_req, res) => {
+    try {
+      await ensureSalesTables(pool);
+      const leads = await listLeads(pool, { limit: 300 });
+      res.json({ ok: true, top5: buildTopHighLeads(leads) });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/leads/:id/demo-brief', platformAdminRequired, async (req, res) => {
+    try {
+      const detail = await getLeadDetail(pool, Number(req.params.id));
+      if (!detail.ok) return res.status(404).json(detail);
+      const brief = buildDemoBrief(detail.lead, detail.funnel || {});
+      res.json({ ok: true, brief, text: [
+        `【会前简报】${brief.customer}`,
+        `门店 ${brief.store_count}｜菜系 ${brief.cuisine}｜城市 ${brief.city}｜POS ${brief.pos}`,
+        `主要问题：${(brief.main_problems || []).join('；')}`,
+        `本次目标：${(brief.this_meeting_goal || []).join('、')}`,
+        `建议展示：${(brief.suggested_pages || []).join('、')}`,
+      ].join('\n') });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
   app.get('/api/admin/sales/funnel', platformAdminRequired, async (_req, res) => {
     try {
       await ensureSalesTables(pool);
