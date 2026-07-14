@@ -62320,13 +62320,24 @@ ${body}
         // 与后端 ABC_ROTATION_ORDER 保持一致。
         var AM_ABC_CAMPAIGNS = ['vip_gift','active','regular_cooling','dormant_90_180','newcomer_recall','dormant_60_90','vip_winback','lost_long','lost_over365','prospect_recall'];
         // 券模板 id（campaign_<key>_<store> / winback_cash_<store>）→ 活动中文名，用于核销明细标注来源。
+        // ABC 滚动活动的 key 可能带 _cash/_gift 后缀(标注该次核销走的是券还是赠菜步骤)，
+        // AM_CAMPAIGNS 里未收录带后缀的变体，先按原 key 查，查不到再剥掉后缀重试。
+        var AM_ABC_STEP_SUFFIX_LABEL = { cash: '·现金券', gift: '·赠菜' };
         function amCampaignLabelFromTemplate(templateId){
             var t = String(templateId || '');
             if (!t) return '';
             if (t.indexOf('winback_') === 0) return '储值客召回·现金券';
             var m = t.match(/^campaign_(.+)_(\d+)$/);
-            if (m) { var c = AM_CAMPAIGNS[m[1]]; return c ? c.name : ('营销发券·' + m[1]); }
-            return '';
+            if (!m) return '';
+            var key = m[1];
+            var c = AM_CAMPAIGNS[key];
+            if (c) return c.name;
+            var sm = key.match(/^(.+)_(cash|gift)$/);
+            if (sm) {
+                var base = AM_CAMPAIGNS[sm[1]];
+                if (base) return base.name + (AM_ABC_STEP_SUFFIX_LABEL[sm[2]] || '');
+            }
+            return '营销发券·' + key;
         }
         // 活动 → 已绑定门店双模板提示（选活动即绑定「马己仙＋洪潮」，无需手挑 14 条模板）
         function amCampaignPairTip(key){
