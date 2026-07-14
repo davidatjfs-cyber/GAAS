@@ -1144,11 +1144,30 @@
       }
     }
 
+function legacyCopyFallback(value) {
+      const ta = document.createElement('textarea');
+      ta.value = value;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (!ok) throw new Error('execCommand copy failed');
+    }
+
     async function copyText(label, text) {
       const value = String(text || '').trim();
       if (!value) return;
       try {
-        await navigator.clipboard.writeText(value);
+        // navigator.clipboard 在非HTTPS(不安全上下文)下是 undefined，直接调用会抛
+        // "undefined is not an object"；这里先判断能力，不行就退回旧的 execCommand 方案。
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(value);
+        } else {
+          legacyCopyFallback(value);
+        }
         log(`已复制${label}`);
       } catch (e) {
         log(`复制${label}失败：${e.message}`);
