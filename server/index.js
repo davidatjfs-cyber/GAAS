@@ -85,6 +85,7 @@ import { registerGrowthQueriesRoutes } from './growth-queries-routes.js';
 import { registerGrowthOpsRoutes } from './growth-ops-routes.js';
 import { registerDiagnosisRoutes } from './store-diagnosis.js';
 import { registerOntologyRoutes } from './ontology/routes.js';
+import { registerBenchmarkRoutes } from './ontology/benchmark-routes.js';
 import { startOntologyDailyDiagnosisScheduler } from './ontology/daily-diagnosis-scheduler.js';
 import { runFreshnessCheck } from './ontology/freshness.js';
 import { FRESHNESS_SOURCES } from './ontology/freshness-config.js';
@@ -5696,6 +5697,7 @@ registerGrowthQueriesRoutes(app, pool);
 registerGrowthOpsRoutes(app, pool);
 registerDiagnosisRoutes(app, pool, authRequired, callLLM);
 registerOntologyRoutes(app, pool, authRequired);
+registerBenchmarkRoutes(app, pool, authRequired, platformAdminRequired);
 setSendGrowthAlert(async (msg) => {
   const GROWTH_REPORT_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
   return sendLarkMessage(GROWTH_REPORT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
