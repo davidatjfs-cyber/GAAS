@@ -1530,9 +1530,15 @@ function legacyCopyFallback(value) {
           log('许可证到期时间格式不合法');
           return;
         }
+        const maxStoresInput = prompt('已购买的门店数量上限（留空=不限制，按店计费的关键控制点）', '');
+        const max_stores = String(maxStoresInput || '').trim() === '' ? null : Number(maxStoresInput);
+        if (max_stores != null && (!Number.isFinite(max_stores) || max_stores < 0)) {
+          log('门店数量上限格式不合法');
+          return;
+        }
         const data = await api(`/api/admin/tenants/${tenantId}/license`, {
           method: 'POST',
-          body: JSON.stringify({ expires_at: dt.toISOString(), allowed_features })
+          body: JSON.stringify({ expires_at: dt.toISOString(), allowed_features, max_stores })
         });
         log(`许可证已发放：${tenantId} / ${data.license.license_key}`);
         await loadTenants();

@@ -872,14 +872,19 @@ export function registerTenantPlatformRoutes(app, deps) {
     const expiresAt = req.body?.expires_at;
     if (!expiresAt) return res.status(400).json({ error: 'missing_expires_at' });
     const allowedFeatures = Array.isArray(req.body?.allowed_features) ? req.body.allowed_features : [];
+    const maxStoresRaw = req.body?.max_stores;
+    const maxStores = maxStoresRaw == null || maxStoresRaw === '' ? null : Number(maxStoresRaw);
+    if (maxStores != null && (!Number.isFinite(maxStores) || maxStores < 0)) {
+      return res.status(400).json({ error: 'invalid_max_stores' });
+    }
     try {
       const exists = await pool.query('SELECT 1 FROM tenants WHERE tenant_id = $1', [tenantId]);
       if (!exists.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
       const licenseKey = randomUUID();
       const r = await pool.query(
-        `INSERT INTO licenses (tenant_id, license_key, expires_at, allowed_features)
-         VALUES ($1, $2, $3, $4) RETURNING license_key, expires_at, status`,
-        [tenantId, licenseKey, expiresAt, JSON.stringify(allowedFeatures)]
+        `INSERT INTO licenses (tenant_id, license_key, expires_at, allowed_features, max_stores)
+         VALUES ($1, $2, $3, $4, $5) RETURNING license_key, expires_at, status, max_stores`,
+        [tenantId, licenseKey, expiresAt, JSON.stringify(allowedFeatures), maxStores]
       );
       return res.json({ ok: true, license: r.rows[0] });
     } catch (e) {
