@@ -25,14 +25,29 @@ export function decryptIntegrationConfig(encrypted, key) {
 }
 
 const AI_MODEL_PROVIDERS = ['qwen', 'deepseek', 'doubao'];
+const AI_MODEL_MIN_ITEMS = 2;
+const AI_MODEL_MAX_ITEMS = 3;
 
-export function validateAiModelConfig(value) {
-  const config = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+function validateAiModelEntry(entry) {
+  const config = entry && typeof entry === 'object' ? entry : {};
   const provider = String(config.provider || '').trim().toLowerCase();
   const model = String(config.model || '').trim();
   if (!AI_MODEL_PROVIDERS.includes(provider) || !model) throw new Error('invalid_ai_model_config');
   const api_key = String(config.api_key || '').trim();
   return { provider, model, api_key: api_key || null };
+}
+
+/**
+ * 租户AI模型配置：必须配置2-3个模型，按数组顺序作为降级优先级
+ * (第1个失败/不健康 -> 试第2个 -> 试第3个 -> 仍不行才落到平台全局默认)。
+ */
+export function validateAiModelConfig(value) {
+  const config = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const models = Array.isArray(config.models) ? config.models : [];
+  if (models.length < AI_MODEL_MIN_ITEMS || models.length > AI_MODEL_MAX_ITEMS) {
+    throw new Error('invalid_ai_model_config_count');
+  }
+  return { models: models.map(validateAiModelEntry) };
 }
 
 export async function getTenantAiModelConfig(db, tenantId, key) {

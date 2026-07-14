@@ -991,12 +991,19 @@ export function registerTenantPlatformRoutes(app, deps) {
     }
   });
 
+  function aiModelConfigPublicView(config) {
+    return {
+      configured: !!config,
+      models: (config?.models || []).map((m) => ({ provider: m.provider, model: m.model, api_key_configured: !!m.api_key })),
+    };
+  }
+
   app.get('/api/admin/tenants/:tenantId/integrations/ai_model_config', platformAdminRequired, async (req, res) => {
     const tenantId = String(req.params.tenantId || '').trim();
     try {
       const key = requireTenantIntegrationKey();
       const config = await tenantContext.run(tenantId, () => getTenantAiModelConfig(pool, tenantId, key));
-      return res.json({ ok: true, integration: { configured: !!config, provider: config?.provider || null, model: config?.model || null, api_key_configured: !!config?.api_key } });
+      return res.json({ ok: true, integration: aiModelConfigPublicView(config) });
     } catch (e) {
       return res.status(e?.statusCode || 500).json({ error: e?.message || 'internal_error' });
     }
@@ -1006,14 +1013,22 @@ export function registerTenantPlatformRoutes(app, deps) {
     const tenantId = String(req.params.tenantId || '').trim();
     try {
       const key = requireTenantIntegrationKey();
-      // api_key 留空表示"不修改"：先读旧配置，缺省沿用旧的 api_key，避免每次改model/provider都要重填密钥
+      // 每个模型条目的 api_key 留空表示"沿用旧配置里对应位置的密钥"，避免每次调整顺序/加一个模型都要重填所有密钥
       const existing = await tenantContext.run(tenantId, () => getTenantAiModelConfig(pool, tenantId, key)).catch(() => null);
       const body = req.body || {};
-      const apiKey = String(body.api_key || '').trim() || existing?.api_key || '';
-      await tenantContext.run(tenantId, () => saveTenantAiModelConfig(pool, tenantId, { provider: body.provider, model: body.model, api_key: apiKey }, key));
+      const inputModels = Array.isArray(body.models) ? body.models : [];
+      const models = inputModels.map((m, i) => ({
+        provider: m?.provider,
+        model: m?.model,
+        api_key: String(m?.api_key || '').trim() || existing?.models?.[i]?.api_key || '',
+      }));
+      if (models.length < 2 || models.length > 3) {
+        return res.status(400).json({ error: 'invalid_ai_model_config_count', message: '必须配置2-3个模型' });
+      }
+      await tenantContext.run(tenantId, () => saveTenantAiModelConfig(pool, tenantId, { models }, key));
       if (typeof invalidateTenantLlmConfigCache === 'function') invalidateTenantLlmConfigCache(tenantId);
       const config = await tenantContext.run(tenantId, () => getTenantAiModelConfig(pool, tenantId, key));
-      return res.json({ ok: true, integration: { configured: !!config, provider: config?.provider || null, model: config?.model || null, api_key_configured: !!config?.api_key } });
+      return res.json({ ok: true, integration: aiModelConfigPublicView(config) });
     } catch (e) {
       return res.status(e?.statusCode || (String(e?.message || '').includes('invalid_ai_model_config') ? 400 : 500)).json({ error: e?.message || 'internal_error' });
     }

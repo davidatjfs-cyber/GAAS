@@ -3661,10 +3661,11 @@ export async function callLLM(messages, options = {}) {
   const tierModel = role ? getModelForRole(role, purpose) : '';
   const tenantId = String(options.tenantId || tenantContext.getStore() || '').trim();
   const tenantLlmConfig = tenantId ? await resolveTenantLlmConfig(tenantId) : null;
-  const selectedModel = String(options.model || tenantLlmConfig?.model || tierModel || QWEN_MODEL).trim() || QWEN_MODEL;
-  const cfg = getLLMClientConfig(selectedModel, tenantLlmConfig?.provider ? { forceProvider: tenantLlmConfig.provider } : {});
+  const tenantModels = Array.isArray(tenantLlmConfig?.models) ? tenantLlmConfig.models : [];
+  const selectedModel = String(options.model || tenantModels[0]?.model || tierModel || QWEN_MODEL).trim() || QWEN_MODEL;
+  const cfg = getLLMClientConfig(selectedModel, tenantModels[0]?.provider ? { forceProvider: tenantModels[0].provider } : {});
   const model = cfg.model;
-  const apiKey = tenantLlmConfig?.api_key || cfg.apiKey;
+  const apiKey = tenantModels[0]?.api_key || cfg.apiKey;
   if (!apiKey) return { ok: false, error: 'no_api_key', content: '' };
 
   const budgetExceeded = !!(tier && isTierBudgetExceeded(tier));
@@ -3693,8 +3694,13 @@ export async function callLLM(messages, options = {}) {
   _performanceMetrics.totalCalls++;
   
   // ── Provider 级别自动降级：primary → fallback ──
+  // 租户配置了2-3个模型时，按其数组顺序逐个降级(第1个失败/不健康->试第2个->试第3个)，
+  // 全部试完仍不行才落到平台全局默认链路兜底，不会让租户的请求彻底失败。
   const hasTools = !!(options.tools && options.tools.length > 0);
-  const fallbackChain = hasTools ? [{ provider: resolveModelProvider(model), model }] : getTextFallbackChain(model);
+  const tenantChain = tenantModels.map((m) => ({ provider: m.provider, model: m.model, apiKeyOverride: m.api_key || null }));
+  const fallbackChain = hasTools
+    ? [{ provider: resolveModelProvider(model), model }]
+    : (tenantChain.length ? [...tenantChain, ...getTextFallbackChain(model)] : getTextFallbackChain(model));
   let usedModel = model;
   let usedProvider = resolveModelProvider(model);
 
@@ -3703,9 +3709,8 @@ export async function callLLM(messages, options = {}) {
       console.log(`[LLM-FALLBACK] Skipping unhealthy provider: ${candidate.provider}`);
       continue;
     }
-    const isTenantPrimary = tenantLlmConfig && candidate.model === model;
-    const fbCfg = getLLMClientConfig(candidate.model, isTenantPrimary && tenantLlmConfig.provider ? { forceProvider: tenantLlmConfig.provider } : {});
-    if (isTenantPrimary && tenantLlmConfig.api_key) fbCfg.apiKey = tenantLlmConfig.api_key;
+    const fbCfg = getLLMClientConfig(candidate.model, candidate.provider ? { forceProvider: candidate.provider } : {});
+    if (candidate.apiKeyOverride) fbCfg.apiKey = candidate.apiKeyOverride;
     if (!fbCfg.apiKey) continue;
 
     const payload = {

@@ -9,6 +9,7 @@ import {
   listTenantIntegrationSummaries,
   saveTenantFeishuIntegration,
   validateFeishuIntegrationConfig,
+  validateAiModelConfig,
 } from './tenant-integrations.js';
 
 const key = Buffer.alloc(32, 7).toString('base64');
@@ -100,4 +101,45 @@ test('platform can resolve which tenant owns a feishu app id without leaking sec
 
   assert.equal(await findTenantForFeishuAppId(db, ['tenant_a', 'tenant_b'], 'cli_app_b', key), 'tenant_b');
   assert.equal(await findTenantForFeishuAppId(db, ['tenant_a', 'tenant_b'], 'missing', key), null);
+});
+
+test('tenant AI model config requires 2-3 models, each with a valid provider+model', () => {
+  assert.throws(() => validateAiModelConfig({ models: [{ provider: 'qwen', model: 'qwen-max' }] }), /invalid_ai_model_config_count/);
+  assert.throws(() => validateAiModelConfig({ models: [
+    { provider: 'qwen', model: 'qwen-max' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+    { provider: 'doubao', model: 'doubao-1' },
+    { provider: 'qwen', model: 'qwen-plus' },
+  ] }), /invalid_ai_model_config_count/);
+  assert.throws(() => validateAiModelConfig({ models: [
+    { provider: 'openai', model: 'gpt-4' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+  ] }), /invalid_ai_model_config/);
+  assert.throws(() => validateAiModelConfig({ models: [
+    { provider: 'qwen', model: '' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+  ] }), /invalid_ai_model_config/);
+
+  const ok = validateAiModelConfig({ models: [
+    { provider: 'Qwen', model: 'qwen-max', api_key: ' sk-a ' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+    { provider: 'doubao', model: 'doubao-1', api_key: 'sk-c' },
+  ] });
+  assert.deepEqual(ok, {
+    models: [
+      { provider: 'qwen', model: 'qwen-max', api_key: 'sk-a' },
+      { provider: 'deepseek', model: 'deepseek-chat', api_key: null },
+      { provider: 'doubao', model: 'doubao-1', api_key: 'sk-c' },
+    ],
+  });
+});
+
+test('encrypted tenant AI model config round-trips through AES-GCM', () => {
+  const cfg = validateAiModelConfig({ models: [
+    { provider: 'qwen', model: 'qwen-max', api_key: 'sk-real-key' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+  ] });
+  const encrypted = encryptIntegrationConfig(cfg, key);
+  const decrypted = decryptIntegrationConfig(encrypted, key);
+  assert.deepEqual(decrypted, cfg);
 });

@@ -1332,6 +1332,83 @@
       }
     };
 
+    const AI_MODEL_PROVIDER_OPTIONS = ['qwen', 'deepseek', 'doubao'];
+
+    function renderAiModelConfigBox(tenantId, models) {
+      const box = $('aiModelConfigBox');
+      if (!box) return;
+      const rows = models.length ? models : [{ provider: 'qwen', model: '', api_key_configured: false }, { provider: 'deepseek', model: '', api_key_configured: false }];
+      box.innerHTML = `
+        <div id="aiModelRows">
+          ${rows.map((m, i) => `
+            <div data-ai-row style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+              <span class="small">优先级${i + 1}</span>
+              <select data-ai-provider>${AI_MODEL_PROVIDER_OPTIONS.map((p) => `<option value="${p}" ${p === m.provider ? 'selected' : ''}>${p}</option>`).join('')}</select>
+              <input data-ai-model value="${escHtml(m.model || '')}" placeholder="模型名，如 qwen-max" style="width:160px">
+              <input data-ai-key type="password" placeholder="${m.api_key_configured ? '已配置，留空则不改' : 'API Key(留空用平台默认key)'}" style="width:200px">
+              <button type="button" class="ghost small" data-ai-remove>移除</button>
+            </div>
+          `).join('')}
+        </div>
+        <div style="margin-top:6px">
+          <button type="button" class="ghost small" id="aiModelAddRowBtn">+ 添加一个模型(最多3个)</button>
+          <button type="button" class="secondary small" id="aiModelSaveBtn">保存降级顺序</button>
+        </div>
+      `;
+      const rowsHost = $('aiModelRows');
+      const bindRemove = () => {
+        rowsHost.querySelectorAll('[data-ai-remove]').forEach((btn) => {
+          btn.onclick = () => {
+            if (rowsHost.querySelectorAll('[data-ai-row]').length <= 2) { toast('至少保留2个模型'); return; }
+            btn.closest('[data-ai-row]').remove();
+          };
+        });
+      };
+      bindRemove();
+      $('aiModelAddRowBtn').onclick = () => {
+        if (rowsHost.querySelectorAll('[data-ai-row]').length >= 3) { toast('最多配置3个模型'); return; }
+        rowsHost.insertAdjacentHTML('beforeend', `
+          <div data-ai-row style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+            <span class="small">优先级${rowsHost.querySelectorAll('[data-ai-row]').length + 1}</span>
+            <select data-ai-provider>${AI_MODEL_PROVIDER_OPTIONS.map((p) => `<option value="${p}">${p}</option>`).join('')}</select>
+            <input data-ai-model placeholder="模型名，如 deepseek-chat" style="width:160px">
+            <input data-ai-key type="password" placeholder="API Key(留空用平台默认key)" style="width:200px">
+            <button type="button" class="ghost small" data-ai-remove>移除</button>
+          </div>
+        `);
+        bindRemove();
+      };
+      $('aiModelSaveBtn').onclick = async () => {
+        const rowEls = [...rowsHost.querySelectorAll('[data-ai-row]')];
+        const body = {
+          models: rowEls.map((r) => ({
+            provider: r.querySelector('[data-ai-provider]').value,
+            model: r.querySelector('[data-ai-model]').value.trim(),
+            api_key: r.querySelector('[data-ai-key]').value.trim(),
+          })),
+        };
+        try {
+          const data = await api(`/api/admin/tenants/${tenantId}/integrations/ai_model_config`, { method: 'PUT', body: JSON.stringify(body) });
+          toast('已保存');
+          renderAiModelConfigBox(tenantId, data.integration?.models || []);
+        } catch (e) {
+          toast(e.message || '保存失败');
+        }
+      };
+    }
+
+    window.loadAiModelConfigEditor = async (tenantId) => {
+      try {
+        if (!isLoggedIn()) throw new Error('请先登录');
+        const id = String(tenantId || state.selectedTenantId || '').trim();
+        if (!id) throw new Error('请先选择租户');
+        const data = await api(`/api/admin/tenants/${id}/integrations/ai_model_config`);
+        renderAiModelConfigBox(id, data.integration?.models || []);
+      } catch (e) {
+        toast(e.message || '加载失败');
+      }
+    };
+
     window.acceptTenant = async (tenantId) => {
       try {
         if (!isLoggedIn()) throw new Error('请先登录');
@@ -2482,6 +2559,12 @@
         <div class="stack" style="margin-top:12px">
           <strong>自动验收报告</strong>
           <div class="field" style="grid-column:1 / -1">${renderAcceptanceReport(acceptanceReport)}</div>
+        </div>
+        <div class="stack" style="margin-top:12px">
+          <strong>AI模型（自定义降级顺序）</strong>
+          <div class="small">配置该租户专用的AI模型，必须配置2-3个，按顺序作为主用/降级选择；不配置则使用平台全局默认模型。</div>
+          <div id="aiModelConfigBox" class="field" style="grid-column:1 / -1"></div>
+          <div><button type="button" class="secondary" onclick="window.loadAiModelConfigEditor('${tenant.tenant_id}')">编辑AI模型</button></div>
         </div>
         <div class="stack" style="margin-top:12px">
           <strong>租户 Agent 配置中心</strong>
