@@ -25,6 +25,13 @@ import {
   insertSalaryTimeline,
   applyPromotionSalaryNextMonth
 } from './services/hrms-payroll-engine.js';
+import {
+  requireHrmsPermission,
+  checkHrmsPermission,
+  getTenantEnforcementMode,
+  legacyCanManagePayrollRules,
+  legacyCanAccessAnalyticsReports,
+} from './services/hrms-permission-engine.js';
 
 export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
   const {
@@ -58,12 +65,44 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
     return r === 'admin' || r === 'hr_manager' || r === 'hq_manager';
   }
 
+  async function requirePayrollPerm(req, res, permission, store) {
+    const mode = await getTenantEnforcementMode(tenantOf(req));
+    if (mode === 'legacy') {
+      if (permission === 'reports.payroll.rules' || permission === 'reports.payroll.reconcile') {
+        if (!legacyCanManagePayrollRules(req.user?.role)) {
+          res.status(403).json({ error: 'forbidden' });
+          return false;
+        }
+        return true;
+      }
+      if (permission === 'reports.payroll.abnormal_confirm') {
+        const r = String(req.user?.role || '').trim().toLowerCase();
+        if (!(r === 'store_manager' || legacyCanManagePayrollRules(req.user?.role))) {
+          res.status(403).json({ error: 'forbidden' });
+          return false;
+        }
+        return true;
+      }
+      if (permission === 'reports.payroll.month_run') {
+        if (!legacyCanManagePayrollRules(req.user?.role)) {
+          res.status(403).json({ error: 'forbidden' });
+          return false;
+        }
+        return true;
+      }
+      if (!legacyCanAccessAnalyticsReports(req.user?.role)) {
+        res.status(403).json({ error: 'forbidden' });
+        return false;
+      }
+      return true;
+    }
+    return requireHrmsPermission(req, res, permission, { store, getSharedState });
+  }
+
   // ── 规则 ──
   app.get('/api/hrms/attendance-payroll-rules', authRequired, async (req, res) => {
     try {
-      if (!canManageRules(req.user?.role) && !canAccessAnalyticsReports?.(req.user?.role)) {
-        return res.status(403).json({ error: 'forbidden' });
-      }
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.rules'))) return;
       await seedDefaultBrandPayrollRules(tenantOf(req), db);
       const rows = await listAttendancePayrollRules(tenantOf(req), db);
       return res.json({
@@ -78,6 +117,7 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
 
   app.get('/api/hrms/attendance-payroll-rules/resolve', authRequired, async (req, res) => {
     try {
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.rules'))) return;
       const store = String(req.query?.store || '').trim();
       const brandKey = String(req.query?.brand || req.query?.brandKey || '').trim();
       const resolved = await resolveAttendancePayrollRules({
@@ -94,7 +134,7 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
 
   app.put('/api/hrms/attendance-payroll-rules', authRequired, async (req, res) => {
     try {
-      if (!canManageRules(req.user?.role)) return res.status(403).json({ error: 'forbidden' });
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.rules'))) return;
       const scopeType = String(req.body?.scopeType || req.body?.scope_type || 'brand').trim();
       const scopeKey = String(req.body?.scopeKey || req.body?.scope_key || '').trim();
       const rules = req.body?.rules && typeof req.body.rules === 'object' ? req.body.rules : null;
@@ -117,10 +157,8 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
   // ── 日结果 / 异常 ──
   app.post('/api/hrms/attendance-day/reconcile', authRequired, async (req, res) => {
     try {
-      if (!canManageRules(req.user?.role) && !canAccessAnalyticsReports?.(req.user?.role)) {
-        return res.status(403).json({ error: 'forbidden' });
-      }
       const store = String(req.body?.store || '').trim();
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.reconcile', store))) return;
       const startDate = String(req.body?.start || req.body?.startDate || '').trim();
       const endDate = String(req.body?.end || req.body?.endDate || startDate).trim();
       if (!store || !startDate) return res.status(400).json({ error: 'missing_store_or_start' });
@@ -150,6 +188,8 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
 
   app.get('/api/hrms/attendance-day/abnormals', authRequired, async (req, res) => {
     try {
+      const store = String(req.query?.store || '').trim();
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.view', store))) return;
       const rows = await listAbnormalAttendanceDays({
         tenantId: tenantOf(req),
         store: String(req.query?.store || '').trim() || undefined,
@@ -165,10 +205,7 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
 
   app.post('/api/hrms/attendance-day/confirm', authRequired, async (req, res) => {
     try {
-      const role = String(req.user?.role || '').toLowerCase();
-      if (!(role === 'store_manager' || canManageRules(role))) {
-        return res.status(403).json({ error: 'forbidden' });
-      }
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.abnormal_confirm'))) return;
       const result = await confirmAttendanceDayAbnormal({
         tenantId: tenantOf(req),
         username: req.body?.username,
@@ -188,6 +225,8 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
   // ── 月结 ──
   app.get('/api/hrms/payroll/month-run', authRequired, async (req, res) => {
     try {
+      const store = String(req.query?.store || '').trim();
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.view', store))) return;
       const month = parseMonth?.(req.query?.month) || safeMonthOnly?.(req.query?.month);
       if (!month) return res.status(400).json({ error: 'missing_month' });
       const row = await getOrCreateMonthRun({
@@ -204,9 +243,8 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
 
   app.post('/api/hrms/payroll/month-run/status', authRequired, async (req, res) => {
     try {
-      if (!canManageRules(req.user?.role) && !isHq?.(req.user?.role) && !isAdmin?.(req.user?.role)) {
-        return res.status(403).json({ error: 'forbidden' });
-      }
+      const store = String(req.body?.store || '').trim();
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.month_run', store))) return;
       const month = parseMonth?.(req.body?.month) || safeMonthOnly?.(req.body?.month);
       if (!month) return res.status(400).json({ error: 'missing_month' });
       const result = await setMonthRunStatus({
@@ -229,12 +267,10 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
   // ── 薪资试算（新引擎）──
   app.get('/api/hrms/payroll/compute', authRequired, async (req, res) => {
     try {
-      if (!canAccessAnalyticsReports?.(req.user?.role)) {
-        return res.status(403).json({ error: 'forbidden' });
-      }
+      const store = String(req.query?.store || '').trim();
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.view', store))) return;
       const month = parseMonth?.(req.query?.month) || safeMonthOnly?.(req.query?.month);
       if (!month) return res.status(400).json({ error: 'missing_month' });
-      const store = String(req.query?.store || '').trim();
       const tid = tenantOf(req);
       const state0 = (await getSharedState?.(tid)) || {};
       const emps = Array.isArray(state0.employees) ? state0.employees : [];
@@ -277,6 +313,8 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
 
   app.get('/api/hrms/payroll/ledger', authRequired, async (req, res) => {
     try {
+      const store = String(req.query?.store || '').trim();
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.ledger', store))) return;
       const month = parseMonth?.(req.query?.month) || safeMonthOnly?.(req.query?.month);
       if (!month) return res.status(400).json({ error: 'missing_month' });
       const rows = await listPayrollLedgerForMonth({
@@ -294,7 +332,8 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
 
   app.post('/api/hrms/payroll/ledger/manual', authRequired, async (req, res) => {
     try {
-      if (!canManageRules(req.user?.role)) return res.status(403).json({ error: 'forbidden' });
+      const store = String(req.body?.store || '').trim();
+      if (!(await requirePayrollPerm(req, res, 'reports.payroll.adjust', store))) return;
       const month = parseMonth?.(req.body?.month) || safeMonthOnly?.(req.body?.month);
       const username = String(req.body?.username || '').trim();
       const amount = Number(req.body?.amount);

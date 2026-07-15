@@ -23056,6 +23056,22 @@
                             </div>
                         </div>
                         <div class="settings-rep-sec__body">
+                            <div id="permission-policy-box" style="margin-bottom:16px;padding:12px;border:1px solid rgba(255,255,255,0.12);border-radius:10px;background:rgba(255,255,255,0.03);">
+                                <div style="font-weight:700;margin-bottom:8px;">权限 enforcement 策略</div>
+                                <p style="font-size:12px;line-height:1.5;color:rgba(200,215,230,0.72);margin:0 0 10px;">
+                                    <strong>legacy</strong>（默认）：洪潮/马己仙现有硬编码行为，零影响。<strong>hybrid</strong>：硬编码 ∪ 显式授权，适合迁移。<strong>strict</strong>：仅显式授权，未授权即拒绝（多租户托管推荐）。
+                                </p>
+                                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                                    <select id="permission-policy-mode" class="settings-input" style="max-width:220px;">
+                                        <option value="legacy">legacy · 兼容现有</option>
+                                        <option value="hybrid">hybrid · 渐进迁移</option>
+                                        <option value="strict">strict · 最严</option>
+                                    </select>
+                                    <button class="btn btn-secondary" type="button" onclick="loadPermissionPolicySettings()">刷新</button>
+                                    <button class="btn" type="button" onclick="savePermissionPolicySettings()">保存策略</button>
+                                </div>
+                                <div id="permission-policy-status" style="font-size:12px;color:rgba(200,215,230,0.6);margin-top:8px;"></div>
+                            </div>
                             <div id="permission-groups-list" style="margin-bottom:14px;"></div>
                             <div class="settings-actions" style="margin-bottom:14px;">
                                 <button class="btn" type="button" onclick="openPermissionGroupEditor()">+ 新建岗位</button>
@@ -23076,6 +23092,10 @@
                                 <div style="margin-top:10px;">
                                     <label class="settings-label">可见模块（勾选的才能看到）</label>
                                     <div id="pg-edit-modules" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px 14px;color:rgba(226,232,240,0.88);font-size:13px;margin-top:6px;"></div>
+                                </div>
+                                <div style="margin-top:10px;">
+                                    <label class="settings-label">敏感操作权限（薪资/月结等，strict/hybrid 模式由服务端强制校验）</label>
+                                    <div id="pg-edit-permissions" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px 14px;color:rgba(226,232,240,0.88);font-size:12px;margin-top:6px;"></div>
                                 </div>
                                 <div style="margin-top:10px;">
                                     <label class="settings-label">动作权限</label>
@@ -28344,6 +28364,70 @@ th { background: #f5f5f5; font-weight: 700; }
 
         // 权限组：同角色/岗位的员工可按租户自定义不同模块权限（与角色默认模块互不影响）
         let _serverPermissionGroups = [];
+        const _PAYROLL_PERMISSION_OPTIONS = [
+            { id: 'module.reports', label: '分析报表入口' },
+            { id: 'reports.payroll.view', label: '查看薪资报表' },
+            { id: 'reports.payroll.export', label: '导出薪资报表' },
+            { id: 'reports.payroll.adjust', label: '调整补贴/底薪' },
+            { id: 'reports.payroll.audit', label: '薪资审核切换' },
+            { id: 'reports.payroll.month_run', label: '月结锁定/发放' },
+            { id: 'reports.payroll.rules', label: '考勤薪资规则' },
+            { id: 'reports.payroll.ledger', label: '薪资账本' },
+            { id: 'reports.payroll.abnormal_confirm', label: '确认考勤异常' },
+            { id: 'reports.leave_owed.view', label: '欠休报表' },
+            { id: 'reports.leave_owed.adjust', label: '调整累计假期' },
+            { id: 'employee.salary.view', label: '查看员工薪资字段' },
+            { id: 'employee.salary.edit', label: '编辑员工薪资' },
+            { id: 'admin.permission_manage', label: '管理权限配置' }
+        ];
+
+        async function loadPermissionPolicySettings() {
+            const statusEl = document.getElementById('permission-policy-status');
+            const modeEl = document.getElementById('permission-policy-mode');
+            if (statusEl) statusEl.textContent = '加载中...';
+            try {
+                const tok = localStorage.getItem('hrms_token') || '';
+                const r = await fetch('/api/hrms/permissions/policy', { headers: { Authorization: 'Bearer ' + tok } });
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                const d = await r.json();
+                if (modeEl) modeEl.value = String(d?.enforcement_mode || 'legacy');
+                if (statusEl) statusEl.textContent = '当前模式：' + String(d?.enforcement_mode || 'legacy') + ' · 授权条目 ' + (Array.isArray(d?.grants) ? d.grants.length : 0);
+            } catch (e) {
+                if (statusEl) statusEl.textContent = '加载失败：' + String(e?.message || e);
+            }
+        }
+
+        async function savePermissionPolicySettings() {
+            const mode = String(document.getElementById('permission-policy-mode')?.value || 'legacy').trim();
+            const ok = await hrmsConfirm({
+                title: '保存权限策略',
+                message: '切换为 ' + mode + ' 将影响全租户 API 鉴权。strict 模式下未显式授权的操作将被拒绝。确认保存？',
+                okText: '确认保存',
+                icon: '🔐'
+            });
+            if (!ok) return;
+            try {
+                const tok = localStorage.getItem('hrms_token') || '';
+                const r = await fetch('/api/hrms/permissions/policy', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+                    body: JSON.stringify({ enforcement_mode: mode })
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d?.error || ('HTTP ' + r.status));
+                showNotification('权限策略已更新：' + mode, 'success');
+                await loadPermissionPolicySettings();
+                try {
+                    const me = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + tok } }).then((x) => x.json());
+                    if (me?.user && currentUser) {
+                        currentUser.enforcement_mode = me.user.enforcement_mode;
+                        currentUser.permissions = me.user.permissions || [];
+                    }
+                } catch (_) {}
+            } catch (e) {
+                showNotification('保存失败：' + String(e?.message || e), 'error');
+            }
+        }
         async function loadPermissionGroupsFromServer() {
             try {
                 const headers = {};
@@ -28523,6 +28607,7 @@ th { background: #f5f5f5; font-weight: 700; }
             await loadPermissionGroupsFromServer();
             renderPermissionGroupsList();
             renderPermissionGroupAssignSelect();
+            try { await loadPermissionPolicySettings(); } catch (_) {}
             __pgWireScopeModeRadios('pg-edit-scope-mode', 'pg-edit');
             __pgWireScopeModeRadios('pg-override-scope-mode', 'pg-override');
             __pgPopulateBrandSelect(document.getElementById('pg-override-scope-brand'));
@@ -28679,6 +28764,13 @@ th { background: #f5f5f5; font-weight: 700; }
                     '<label><input type="checkbox" value="' + escapeHtml(m.p) + '" ' + (checked.includes(m.p) ? 'checked' : '') + '> ' + escapeHtml(m.l) + '</label>'
                 ).join('');
             }
+            const permBox = document.getElementById('pg-edit-permissions');
+            if (permBox) {
+                const checkedPerms = g && Array.isArray(g.permissions) ? g.permissions : [];
+                permBox.innerHTML = _PAYROLL_PERMISSION_OPTIONS.map((p) =>
+                    '<label><input type="checkbox" value="' + escapeHtml(p.id) + '" ' + (checkedPerms.includes(p.id) ? 'checked' : '') + '> ' + escapeHtml(p.label) + '</label>'
+                ).join('');
+            }
             const actions = (g && g.actions && typeof g.actions === 'object') ? g.actions : {};
             const approveEl = document.getElementById('pg-edit-action-approve');
             const viewEmpEl = document.getElementById('pg-edit-action-view-emp');
@@ -28711,6 +28803,7 @@ th { background: #f5f5f5; font-weight: 700; }
             if (!name) { showNotification('请填写岗位名称', 'warning'); return; }
             const baseRole = String(document.getElementById('pg-edit-base-role')?.value || '').trim();
             const modules = Array.from(document.querySelectorAll('#pg-edit-modules input[type=checkbox]:checked')).map(cb => cb.value);
+            const permissions = Array.from(document.querySelectorAll('#pg-edit-permissions input[type=checkbox]:checked')).map(cb => cb.value);
             const actions = {
                 can_approve_hrms: !!document.getElementById('pg-edit-action-approve')?.checked,
                 can_view_employees: !!document.getElementById('pg-edit-action-view-emp')?.checked
@@ -28726,9 +28819,9 @@ th { background: #f5f5f5; font-weight: 700; }
             const groups = Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups.slice() : [];
             if (id) {
                 const idx = groups.findIndex(g => String(g.id) === id);
-                if (idx >= 0) groups[idx] = { ...groups[idx], name, baseRole, modules, actions, bottomNav, storeScope };
+                if (idx >= 0) groups[idx] = { ...groups[idx], name, baseRole, modules, permissions, actions, bottomNav, storeScope };
             } else {
-                groups.push({ id: 'pg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, baseRole, modules, actions, bottomNav, storeScope });
+                groups.push({ id: 'pg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, baseRole, modules, permissions, actions, bottomNav, storeScope });
             }
             try {
                 const tok = localStorage.getItem('hrms_token') || '';
@@ -28853,7 +28946,17 @@ th { background: #f5f5f5; font-weight: 700; }
             if (role == null && currentUser?.permissionGroupId) {
                 const grp = (Array.isArray(_serverPermissionGroups) ? _serverPermissionGroups : [])
                     .find(g => String(g?.id || '') === String(currentUser.permissionGroupId));
-                if (grp) return Array.isArray(grp.modules) && grp.modules.includes(page);
+                if (grp) {
+                    const em = String(currentUser?.enforcement_mode || 'legacy').trim() || 'legacy';
+                    if ((em === 'strict' || em === 'hybrid') && page === 'reports') {
+                        return hrmsHasPermission('module.reports');
+                    }
+                    return Array.isArray(grp.modules) && grp.modules.includes(page);
+                }
+            }
+
+            if ((String(currentUser?.enforcement_mode || 'legacy') === 'strict' || String(currentUser?.enforcement_mode || 'legacy') === 'hybrid') && page === 'reports') {
+                return hrmsHasPermission('module.reports');
             }
 
             // 知识库仅 admin 可访问（用于上传培训资料，其他角色不可见）
@@ -28954,8 +29057,27 @@ th { background: #f5f5f5; font-weight: 700; }
                 managerUsername,
                 managerName: String(managerRec.name || empInfo.managerName || u.managerName || '').trim(),
                 status: 'active',
-                permissionGroupId: String(u.permission_group_id || empInfo.permissionGroupId || '').trim() || null
+                permissionGroupId: String(u.permission_group_id || empInfo.permissionGroupId || '').trim() || null,
+                enforcement_mode: String(u.enforcement_mode || 'legacy').trim() || 'legacy',
+                permissions: Array.isArray(u.permissions) ? u.permissions.slice() : []
             };
+        }
+
+        function hrmsHasPermission(permission) {
+            const perm = String(permission || '').trim();
+            if (!perm || !currentUser) return false;
+            const mode = String(currentUser.enforcement_mode || 'legacy').trim() || 'legacy';
+            const perms = Array.isArray(currentUser.permissions) ? currentUser.permissions : [];
+            if (mode === 'hybrid' || mode === 'strict') {
+                return perms.includes('*') || perms.includes(perm);
+            }
+            return false;
+        }
+
+        function hrmsPayrollPermAllowed(permission, legacyRoleCheck) {
+            const mode = String(currentUser?.enforcement_mode || 'legacy').trim() || 'legacy';
+            if (mode === 'hybrid' || mode === 'strict') return hrmsHasPermission(permission);
+            return !!legacyRoleCheck;
         }
 
         async function switchCurrentUserStore(nextStore) {
@@ -52757,8 +52879,7 @@ tr:nth-child(even) td { background: #fafafa; }
         }
 
         function repRoleCanDownload() {
-            const r = String(currentUser?.role || '').trim();
-            return r === ROLES.ADMIN;
+            return hrmsPayrollPermAllowed('reports.payroll.export', String(currentUser?.role || '').trim() === ROLES.ADMIN);
         }
 
         function repRoleIsHrManager() {
@@ -54926,8 +55047,8 @@ ${ok
                 if (box) box.innerHTML = '加载中...';
 
                 const auditBtn = document.getElementById('rep-payroll-audit-btn');
-                const canAudit = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER);
-                const canEditPayroll = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HR_MANAGER);
+                const canAudit = hrmsPayrollPermAllowed('reports.payroll.audit', currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER || currentUser.role === ROLES.HR_MANAGER));
+                const canEditPayroll = hrmsPayrollPermAllowed('reports.payroll.adjust', currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HR_MANAGER));
                 if (auditBtn) auditBtn.style.display = canAudit ? '' : 'none';
 
                 HRMS_API.getPayrollReport({ store, month })
@@ -54965,7 +55086,7 @@ ${ok
                               ? `闭环引擎 · 月结:${runStatus} · 分母${Number(resp?.workDaysPerMonth || 0)}天`
                               : `引擎:${eng}`;
                         }
-                        const canMonthLock = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HR_MANAGER || currentUser.role === ROLES.HQ_MANAGER);
+                        const canMonthLock = hrmsPayrollPermAllowed('reports.payroll.month_run', currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HR_MANAGER || currentUser.role === ROLES.HQ_MANAGER));
                         const showBtn = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; };
                         showBtn('rep-payroll-att-lock-btn', canMonthLock && runStatus === 'open');
                         showBtn('rep-payroll-pay-lock-btn', canMonthLock && runStatus === 'attendance_locked');
@@ -56087,7 +56208,7 @@ ${ok
 
         function editPayrollSubsidy(username, store, currentSubsidy) {
             try {
-                if (!(currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HR_MANAGER))) {
+                if (!(hrmsPayrollPermAllowed('reports.payroll.adjust', currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HR_MANAGER)))) {
                     showNotification('仅管理员或总部人事可修改', 'warning');
                     return;
                 }
@@ -56120,7 +56241,7 @@ ${ok
 
         function editPayrollBaseAmount(username, store, currentBaseAmount) {
             try {
-                if (!(currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HR_MANAGER))) {
+                if (!(hrmsPayrollPermAllowed('reports.payroll.adjust', currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HR_MANAGER)))) {
                     showNotification('仅管理员或总部人事可修改', 'warning');
                     return;
                 }

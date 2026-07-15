@@ -2,6 +2,7 @@
  * Attendance / Checkin routes (extracted from index.js — monolith split).
  * registerCheckinRoutes(app, deps) — behavior-preserving move.
  */
+import { requireHrmsPermission } from './services/hrms-permission-engine.js';
 
 export function registerCheckinRoutes(app, deps) {
   const {
@@ -591,9 +592,7 @@ export function registerCheckinRoutes(app, deps) {
   app.post('/api/checkin/leave-balance', authRequired, async (req, res) => {
     const actor = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
-    if (role !== 'admin' && role !== 'hr_manager') {
-      return res.status(403).json({ error: 'forbidden' });
-    }
+    if (!(await requireHrmsPermission(req, res, 'reports.leave_owed.adjust', { getSharedState }))) return;
     const targetUsername = String(req.body?.username || '').trim();
     const month = String(req.body?.month || '').trim();
     const value = Number(req.body?.value);

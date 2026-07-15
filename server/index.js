@@ -117,6 +117,12 @@ import {
   buildPayrollForMonth
 } from './hrms-payroll-routes.js';
 import { resolveAttendancePayrollRules, safeBizMonth } from './services/hrms-payroll-rules.js';
+import { registerHrmsPermissionRoutes } from './hrms-permission-routes.js';
+import {
+  ensurePermissionTables,
+  resolveUserPermissionContext,
+  syncPermissionGroupGrants,
+} from './services/hrms-permission-engine.js';
 import { registerInventoryForecastRoutes } from './inventory-forecast-routes.js';
 import { registerAgentTaskBoardRoutes } from './agent-task-board-routes.js';
 import { ensureBaselineSchemaHealth } from './baseline-schema-health.js';
@@ -5206,6 +5212,16 @@ app.put('/api/permission-groups', authRequired, async (req, res) => {
     const state = (await getSharedState(req.tenantId)) || {};
     state.permissionGroups = groups;
     await saveSharedState(state, req.tenantId);
+    try {
+      await syncPermissionGroupGrants({
+        tenantId: req.tenantId || req.user?.tenant_id || 'default',
+        groups,
+        grantedBy: req.user?.username,
+        db: pool,
+      });
+    } catch (syncErr) {
+      console.warn('[permission-groups] grant sync failed (non-fatal):', syncErr?.message);
+    }
     return res.json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
@@ -5470,14 +5486,20 @@ app.get('/api/me', authRequired, async (req, res) => {
     const users = Array.isArray(state.users) ? state.users : [];
     const emp = employees.find(e => String(e?.username || '').trim() === username) || {};
     const usr = users.find(u => String(u?.username || '').trim() === username) || {};
+    const permCtx = await resolveUserPermissionContext(req, { getSharedState });
     return res.json({
       user: {
         username,
         name: emp.name || usr.name || username,
         role: role || emp.role || usr.role || 'employee',
-        store: emp.store || usr.store || '',
+        store: emp.store || usr.store || req.user?.store || '',
         position: emp.position || usr.position || '',
-        department: emp.department || usr.department || ''
+        department: emp.department || usr.department || '',
+        permission_group_id: permCtx.permission_group_id || null,
+        enforcement_mode: permCtx.enforcement_mode || 'legacy',
+        permissions: permCtx.permissions || [],
+        allowed_stores: req.user?.allowed_stores || [],
+        current_store: req.user?.current_store || '',
       }
     });
   } catch (e) {
@@ -5854,6 +5876,13 @@ registerReportsRoutes(app, {
   sendMonthlyReports,
   sendTestReportsToUser,
   buildPayrollForMonth,
+});
+registerHrmsPermissionRoutes(app, {
+  pool,
+  authRequired,
+  getSharedState,
+  saveSharedState,
+  isAdmin,
 });
 registerHrmsPayrollClosedLoopRoutes(app, {
   pool,
@@ -13659,11 +13688,28 @@ async function storeSessionNonce(uname, nonce, tenantId) {
   }
 }
 
-async function buildLoginUserPayload({ id, username, name, role, stateStore, permissionGroupId }) {
+async function buildLoginUserPayload({ id, username, name, role, stateStore, permissionGroupId, tenantId, reqLike }) {
   const ctx = await getUserStoreAccessContext(username, role, {
     requestedStore: stateStore,
     stateStore
   });
+  let permCtx = { enforcement_mode: 'legacy', permissions: [] };
+  try {
+    permCtx = await resolveUserPermissionContext(
+      reqLike || {
+        tenantId: tenantId || 'default',
+        user: {
+          username,
+          role,
+          tenant_id: tenantId || 'default',
+          store: stateStore,
+          allowed_stores: ctx.allowedStores,
+          current_store: ctx.currentStore,
+        },
+      },
+      { getSharedState, permissionGroupId }
+    );
+  } catch (_) {}
   return {
     id,
     username,
@@ -13673,8 +13719,9 @@ async function buildLoginUserPayload({ id, username, name, role, stateStore, per
     primary_store: ctx.primaryStore,
     current_store: ctx.currentStore,
     allowed_stores: ctx.allowedStores,
-    // 未分配时为 null，前端回退到角色默认权限——对现有租户零影响
-    permission_group_id: permissionGroupId || null
+    permission_group_id: permissionGroupId || null,
+    enforcement_mode: permCtx.enforcement_mode || 'legacy',
+    permissions: Array.isArray(permCtx.permissions) ? permCtx.permissions : [],
   };
 }
 
@@ -13772,7 +13819,8 @@ async function handleLoginInTenant(req, res, tenantId) {
           name: finalName,
           role: finalRole,
           stateStore,
-          permissionGroupId
+          permissionGroupId,
+          tenantId: String(u.tenant_id || tenantId || 'default').trim() || 'default',
         });
         return res.json({
           token,
@@ -13823,7 +13871,8 @@ async function handleLoginInTenant(req, res, tenantId) {
           name,
           role,
           stateStore,
-          permissionGroupId: String(found.permissionGroupId || '').trim() || null
+          permissionGroupId: String(found.permissionGroupId || '').trim() || null,
+          tenantId,
         });
         return res.json({ token, user: loginUser });
       }
@@ -13851,7 +13900,8 @@ async function handleLoginInTenant(req, res, tenantId) {
         username: localUser.username,
         name: localUser.name,
         role: localUser.role,
-        stateStore: ''
+        stateStore: '',
+        tenantId,
       });
       return res.json({
         token,
@@ -15464,6 +15514,7 @@ app.listen(PORT, HOST, async () => {
       await ensureBaselineSchemaHealth(pool).catch(e => console.warn('[schema] baseline health:', e?.message || e));
       await ensurePayrollRulesTables(pool).catch(e => console.warn('[payroll-rules] ensure tables:', e?.message));
       await seedDefaultBrandPayrollRules('default', pool).catch(e => console.warn('[payroll-rules] seed:', e?.message));
+      await ensurePermissionTables(pool).catch(e => console.warn('[permissions] ensure tables:', e?.message));
       await ensureGrowthTables(pool).catch(e => console.warn('[growth] ensure tables:', e?.message));
       await ensureAgentAuditLogTable(pool).catch(e => console.warn('[agent-audit] ensure table:', e?.message));
       await ensurePhaseTables(pool).catch(e => console.warn('[growth-phases] ensure tables:', e?.message));

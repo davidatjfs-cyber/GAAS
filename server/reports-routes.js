@@ -7,6 +7,13 @@
  * index.js for a future, separate extraction.
  */
 
+import {
+  requireHrmsPermission,
+  checkHrmsPermission,
+  getTenantEnforcementMode,
+  legacyCanAccessAnalyticsReports,
+} from './services/hrms-permission-engine.js';
+
 /** 离职日期统一为 YYYY-MM-DD，兼容 2026/4/5、ISO 前缀等，供本月离职判定 */
 function normalizeEmployeeDepartureDateForTurnover(emp) {
   const raw = String(emp?.offboardingDate || emp?.resignedAt || '').trim();
@@ -110,6 +117,26 @@ function isEmployeeDepartedForPayroll(emp, month, attendanceDays) {
 let pool;
 let safeMonthOnly;
 let resolveAgentCanonicalStore;
+let getSharedStateRef;
+
+async function requireReportPerm(req, res, permission, store) {
+  return requireHrmsPermission(req, res, permission, {
+    store,
+    getSharedState: getSharedStateRef,
+  });
+}
+
+async function legacyAnalyticsGate(req, res, store) {
+  const mode = await getTenantEnforcementMode(req.tenantId || req.user?.tenant_id);
+  if (mode !== 'legacy') {
+    return requireReportPerm(req, res, 'module.reports', store);
+  }
+  if (!legacyCanAccessAnalyticsReports(req.user?.role)) {
+    res.status(403).json({ error: 'forbidden' });
+    return false;
+  }
+  return true;
+}
 
 export function registerReportsRoutes(app, deps) {
   const {
@@ -150,6 +177,7 @@ export function registerReportsRoutes(app, deps) {
   pool = deps.pool;
   safeMonthOnly = deps.safeMonthOnly;
   resolveAgentCanonicalStore = deps.resolveAgentCanonicalStore;
+  getSharedStateRef = getSharedState;
 
   // 手动触发 BI 周报 / 月报（仅管理员，用于测试）
   app.post('/api/reports/bi/trigger-weekly', authRequired, async (req, res) => {
@@ -191,7 +219,8 @@ export function registerReportsRoutes(app, deps) {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
-    if (!canAccessBusinessReports(role)) return res.status(403).json({ error: 'forbidden' });
+    const storeQBiz = String(req.query?.store || '').trim();
+    if (!(await requireReportPerm(req, res, 'reports.business.view', storeQBiz))) return;
 
     const start = safeDateOnly(req.query?.start);
     const end = safeDateOnly(req.query?.end);
@@ -369,7 +398,8 @@ export function registerReportsRoutes(app, deps) {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
-    if (!canAccessAnalyticsReports(role)) return res.status(403).json({ error: 'forbidden' });
+    const storeQTurn = String(req.query?.store || '').trim();
+    if (!(await legacyAnalyticsGate(req, res, storeQTurn))) return;
 
     const month = String(req.query?.month || '').trim(); // e.g. "2026-02"
     const storeQ = String(req.query?.store || '').trim();
@@ -692,7 +722,8 @@ export function registerReportsRoutes(app, deps) {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
-    if (!canAccessAnalyticsReports(role)) return res.status(403).json({ error: 'forbidden' });
+    const filterStoreLeave = String(req.query?.store || '').trim();
+    if (!(await requireReportPerm(req, res, 'reports.leave_owed.view', filterStoreLeave))) return;
 
     const month = safeMonthOnly(req.query?.month || '') || hrmsNowISO().slice(0, 7);
     const filterStore = String(req.query?.store || '').trim();
@@ -852,11 +883,16 @@ export function registerReportsRoutes(app, deps) {
         .filter(a => !store || String(a?.store || '') === store)
         .slice(0, 200);
 
+      const canAdjustCheck = await checkHrmsPermission(req, 'reports.leave_owed.adjust', {
+        store: store || '',
+        getSharedState: getSharedStateRef,
+      });
+
       return res.json({
         month,
         store: store || '',
         includeInactive,
-        canAdjust: role === 'admin' || role === 'hr_manager',
+        canAdjust: !!canAdjustCheck.ok,
         totals,
         rows,
         adjustments: monthAdjustments
@@ -870,8 +906,8 @@ export function registerReportsRoutes(app, deps) {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
-    if (!canAccessAnalyticsReports(role)) return res.status(403).json({ error: 'forbidden' });
-
+    const storeQAtt = String(req.query?.store || '').trim();
+    if (!(await requireReportPerm(req, res, 'reports.attendance.view', storeQAtt))) return;
     const start = safeDateOnly(req.query?.start);
     const end = safeDateOnly(req.query?.end);
     if (!start || !end) return res.status(400).json({ error: 'missing_range' });
@@ -998,7 +1034,8 @@ export function registerReportsRoutes(app, deps) {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
-    if (!canAccessDailyAttendanceRegister(role)) return res.status(403).json({ error: 'forbidden' });
+    const storeQDar = String(req.query?.store || '').trim();
+    if (!(await requireReportPerm(req, res, 'reports.daily_register.view', storeQDar))) return;
 
     const start = safeDateOnly(req.query?.start);
     const end = safeDateOnly(req.query?.end);
@@ -1046,7 +1083,8 @@ export function registerReportsRoutes(app, deps) {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
-    if (!canAccessAnalyticsReports(role)) return res.status(403).json({ error: 'forbidden' });
+    const storeQPay = String(req.query?.store || '').trim();
+    if (!(await requireReportPerm(req, res, 'reports.payroll.view', storeQPay))) return;
 
     const month = parseMonth(req.query?.month);
     if (!month) return res.status(400).json({ error: 'missing_month' });
@@ -1494,7 +1532,8 @@ export function registerReportsRoutes(app, deps) {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
-    if (!(isAdmin(role) || isHq(role))) return res.status(403).json({ error: 'forbidden' });
+    const storeAudit = String(req.body?.store || '').trim();
+    if (!(await requireReportPerm(req, res, 'reports.payroll.audit', storeAudit))) return;
 
     const month = parseMonth(req.body?.month);
     if (!month) return res.status(400).json({ error: 'missing_month' });
@@ -1523,7 +1562,8 @@ export function registerReportsRoutes(app, deps) {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
-    if (!(isAdmin(role) || role === 'hr_manager')) return res.status(403).json({ error: 'forbidden' });
+    const storeAdj = String(req.body?.store || '').trim();
+    if (!(await requireReportPerm(req, res, 'reports.payroll.adjust', storeAdj))) return;
 
     const month = parseMonth(req.body?.month);
     if (!month) return res.status(400).json({ error: 'missing_month' });
