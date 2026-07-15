@@ -5760,18 +5760,16 @@ setHealthIncidentNotifiers({
 });
 registerSalesAiRoutes(app, pool, platformAdminRequired, {
   callLLM,
+  // 销售AI的告警(新线索/日报/停滞提醒)是GAAS销售团队自己的内部运营信息，跟马己仙/洪潮
+  // 这两个租户的门店经营毫无关系。之前误用 sendAdminSystemAlert()——那个函数按角色
+  // (admin/hq_manager/hr_manager)查 users 表且不区分租户，查到的正是马己仙/洪潮实际在用的
+  // 那几个管理员账号，导致门店管理者一直在收到"新增销售线索"这类跟他们无关的通知。
+  // 改成跟 GROWTH_REPORT_ADMIN 同样的写法(见上方 setSendGrowthAlert)——直接发给平台/销售
+  // 团队自己的飞书账号，不查任何tenant的users表。
   sendOpsAlert: async (msg, opts = {}) => {
-    const r = await sendAdminSystemAlert(String(msg || ''), {
-      title: opts.title || '销售AI',
-      notificationType: 'sales_ai',
-      meta: { source: 'sales_ai', audience: opts.audience || 'sales', ...(opts.meta || {}) },
-    });
-    return {
-      ok: (r?.feishuSent || 0) > 0 || (r?.recipients || []).length > 0,
-      feishuSent: r?.feishuSent || 0,
-      feishuFailed: r?.feishuFailed || 0,
-      recipients: r?.recipients || [],
-    };
+    const SALES_ALERT_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
+    const r = await sendLarkMessage(SALES_ALERT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+    return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [SALES_ALERT_ADMIN] };
   },
 });
 registerTenantSubscriptionRoutes(app, { pool, authRequired });
