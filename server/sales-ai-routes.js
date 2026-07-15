@@ -386,6 +386,34 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
+  // 客户档案手动编辑：之前公司/电话等字段只能靠客户AI从聊天里提取，销售没有任何
+  // 手动修正/补录的入口。这里只开放"客户档案"类字段(基础信息+营业执照/开票/联系人)，
+  // 不允许通过这个接口改stage/controller/intent_score这些由AI/销售流程自动维护的字段。
+  const LEAD_DOSSIER_FIELDS = [
+    'name', 'company', 'phone', 'city', 'cuisine', 'store_count', 'pos_brand',
+    'legal_company_name', 'unified_credit_code', 'registered_address', 'company_size', 'website',
+    'invoice_title', 'invoice_tax_no', 'invoice_bank_name', 'invoice_bank_account',
+    'legal_contact_name', 'legal_contact_title', 'legal_contact_phone',
+  ];
+  app.put('/api/admin/sales/leads/:id/dossier', platformAdminRequired, async (req, res) => {
+    try {
+      const leadId = Number(req.params.id);
+      const body = req.body || {};
+      const fields = Object.keys(body).filter((k) => LEAD_DOSSIER_FIELDS.includes(k));
+      if (!fields.length) return res.status(400).json({ ok: false, error: 'no_valid_fields' });
+      const setClauses = fields.map((f, i) => `${f} = $${i + 2}`);
+      const values = fields.map((f) => (body[f] === '' ? null : body[f]));
+      const r = await pool.query(
+        `UPDATE sales_leads SET ${setClauses.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
+        [leadId, ...values]
+      );
+      if (!r.rows?.[0]) return res.status(404).json({ ok: false, error: 'not_found' });
+      res.json({ ok: true, lead: r.rows[0] });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
   app.get('/api/admin/sales/leads/:id/summary', platformAdminRequired, async (req, res) => {
     try {
       const data = await getLeadDetail(pool, Number(req.params.id));

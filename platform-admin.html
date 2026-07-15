@@ -593,11 +593,13 @@
         <div class="section-title">
           <strong id="salesDetailTitle">线索详情</strong>
           <div class="toolbar" style="margin:0">
+            <button type="button" id="salesEditDossierBtn" class="secondary">编辑客户档案</button>
             <button type="button" id="salesTakeoverBtn" class="warn">接管</button>
             <button type="button" id="salesReleaseBtn" class="secondary">交回AI</button>
             <button type="button" id="salesDetailCloseBtn" class="ghost">关闭</button>
           </div>
         </div>
+        <div id="salesDossierBox" class="hint-box" style="display:none"></div>
         <div id="salesAdvice" class="hint-box">选择线索后显示销售建议。</div>
         <div id="salesDiagnosis" class="hint-box" style="background:rgba(13,122,95,.08);border-left-color:var(--accent);display:none"></div>
         <div id="salesTags" class="small" style="margin-top:6px"></div>
@@ -2936,6 +2938,7 @@ function legacyCopyFallback(value) {
     $('salesPerformanceBtn').onclick = () => loadSalesPerformance().catch((e) => toast(e.message));
     $('salesCommissionBtn').onclick = () => loadSalesCommission().catch((e) => toast(e.message));
     $('salesRecordVisitBtn').onclick = () => salesRecordVisit().catch((e) => toast(e.message));
+    $('salesEditDossierBtn').onclick = () => renderSalesDossierForm(state.sales.currentLead || {});
     $('salesDetailCloseBtn').onclick = () => {
       state.sales.selectedLeadId = null;
       $('salesDetailCard').style.display = 'none';
@@ -3079,6 +3082,8 @@ function legacyCopyFallback(value) {
       $('salesDetailCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
       loadSalesVisits(id).catch(() => null);
       const lead = data.lead || {};
+      state.sales.currentLead = lead;
+      renderSalesDossier(lead);
       $('salesDetailTitle').textContent = `${lead.lead_key || id} · ${lead.controller ? salesControllerLabel(lead.controller) : ''} · 分${lead.intent_score ?? 0}`;
       const adviceLines = [
         `阶段 ${lead.stage ? salesStageLabel(lead.stage) : '—'}｜控场 ${lead.controller ? salesControllerLabel(lead.controller) : '—'}`,
@@ -3467,6 +3472,58 @@ function legacyCopyFallback(value) {
           ${v.next_followup_at ? `<div class="small">下次跟进：${new Date(v.next_followup_at).toLocaleString()} ${salesEsc(v.next_followup_plan || '')}</div>` : ''}
         </div>
       `).join('') || '<div class="small">暂无拜访记录</div>';
+    }
+
+    const SALES_DOSSIER_FIELDS = [
+      ['name', '联系人姓名'], ['company', '公司简称'], ['phone', '联系电话'],
+      ['city', '城市'], ['cuisine', '品类'], ['store_count', '门店数'], ['pos_brand', 'POS品牌'],
+      ['legal_company_name', '营业执照全称'], ['unified_credit_code', '统一社会信用代码'],
+      ['registered_address', '注册地址'], ['company_size', '公司规模'], ['website', '官网'],
+      ['invoice_title', '开票抬头'], ['invoice_tax_no', '纳税人识别号'],
+      ['invoice_bank_name', '开户行'], ['invoice_bank_account', '银行账号'],
+      ['legal_contact_name', '官方联系人姓名'], ['legal_contact_title', '官方联系人职位'], ['legal_contact_phone', '官方联系人电话'],
+    ];
+
+    function renderSalesDossier(lead) {
+      const box = $('salesDossierBox');
+      box.style.display = '';
+      box.dataset.editing = 'false';
+      box.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong class="small">客户档案</strong>
+        </div>
+        ${SALES_DOSSIER_FIELDS.map(([key, label]) => `<div class="small">${label}：${salesEsc(lead[key] ?? '') || '—'}</div>`).join('')}
+      `;
+    }
+
+    function renderSalesDossierForm(lead) {
+      const box = $('salesDossierBox');
+      box.dataset.editing = 'true';
+      box.innerHTML = `
+        <strong class="small">编辑客户档案</strong>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+          ${SALES_DOSSIER_FIELDS.map(([key, label]) => `
+            <label class="small">${label}<input data-dossier-field="${key}" value="${salesEsc(lead[key] ?? '')}"></label>
+          `).join('')}
+        </div>
+        <div class="toolbar" style="margin-top:8px">
+          <button type="button" class="secondary small" id="salesDossierSaveBtn">保存</button>
+          <button type="button" class="ghost small" id="salesDossierCancelBtn">取消</button>
+        </div>
+      `;
+      $('salesDossierSaveBtn').onclick = async () => {
+        const payload = {};
+        box.querySelectorAll('[data-dossier-field]').forEach((input) => {
+          payload[input.dataset.dossierField] = input.value.trim();
+        });
+        const id = state.sales.selectedLeadId;
+        const data = await api(`/api/admin/sales/leads/${id}/dossier`, { method: 'PUT', body: JSON.stringify(payload) });
+        if (!data.ok) { toast(data.message || data.error || '保存失败'); return; }
+        state.sales.currentLead = data.lead;
+        renderSalesDossier(data.lead);
+        toast('客户档案已保存');
+      };
+      $('salesDossierCancelBtn').onclick = () => renderSalesDossier(lead);
     }
 
     async function loadSalesTraining() {
