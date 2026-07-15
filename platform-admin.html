@@ -563,6 +563,8 @@
           <button type="button" id="salesCasesBtn" class="ghost">案例库</button>
           <button type="button" id="salesTrainingBtn" class="ghost">话术训练</button>
           <button type="button" id="salesKnowledgeBtn" class="ghost">知识库编辑</button>
+          <button type="button" id="salesPerformanceBtn" class="ghost">销售业绩</button>
+          <button type="button" id="salesCommissionBtn" class="ghost">提成</button>
         </div>
         <div id="salesBossDashBox" class="hint-box" style="display:none"></div>
         <div id="salesCasesBox" class="hint-box" style="display:none;max-height:240px;overflow:auto"></div>
@@ -573,6 +575,8 @@
         <div id="salesTop5Box" class="hint-box" style="display:none"></div>
         <div id="salesRiskBox" class="hint-box" style="display:none"></div>
         <div id="salesTodoBox" class="hint-box" style="display:none"></div>
+        <div id="salesPerformanceBox" class="hint-box" style="display:none;max-height:400px;overflow:auto"></div>
+        <div id="salesCommissionBox" class="hint-box" style="display:none;max-height:400px;overflow:auto"></div>
         <div class="table-scroll">
           <table>
             <thead>
@@ -625,6 +629,21 @@
             <button type="button" id="salesSendDemoBtn" class="secondary">发Demo邀请</button>
             <button type="button" id="salesCreateTaskBtn" class="secondary">创建任务</button>
           </div>
+        </div>
+        <div style="margin-top:8px">
+          <strong class="small">拜访记录</strong>
+          <div class="toolbar" style="margin-top:4px;flex-wrap:wrap">
+            <select id="salesVisitType" style="width:auto">
+              <option value="onsite">现场拜访</option>
+              <option value="online">视频/线上</option>
+              <option value="phone">电话</option>
+            </select>
+            <input id="salesVisitNotes" placeholder="本次拜访聊了什么" style="flex:1;min-width:200px">
+            <input id="salesVisitNextFollowupAt" type="datetime-local" style="width:auto">
+            <input id="salesVisitNextFollowupPlan" placeholder="下次跟进计划" style="flex:1;min-width:160px">
+            <button type="button" id="salesRecordVisitBtn" class="secondary">记录拜访</button>
+          </div>
+          <div id="salesVisitsBox" class="small" style="margin-top:6px"></div>
         </div>
       </div>
 
@@ -2914,6 +2933,9 @@ function legacyCopyFallback(value) {
     $('salesCasesBtn').onclick = () => loadSalesCases().catch((e) => toast(e.message));
     $('salesTrainingBtn').onclick = () => loadSalesTraining().catch((e) => toast(e.message));
     $('salesKnowledgeBtn').onclick = () => loadSalesKnowledge().catch((e) => toast(e.message));
+    $('salesPerformanceBtn').onclick = () => loadSalesPerformance().catch((e) => toast(e.message));
+    $('salesCommissionBtn').onclick = () => loadSalesCommission().catch((e) => toast(e.message));
+    $('salesRecordVisitBtn').onclick = () => salesRecordVisit().catch((e) => toast(e.message));
     $('salesDetailCloseBtn').onclick = () => {
       state.sales.selectedLeadId = null;
       $('salesDetailCard').style.display = 'none';
@@ -3055,6 +3077,7 @@ function legacyCopyFallback(value) {
       state.sales.selectedLeadId = id;
       $('salesDetailCard').style.display = '';
       $('salesDetailCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      loadSalesVisits(id).catch(() => null);
       const lead = data.lead || {};
       $('salesDetailTitle').textContent = `${lead.lead_key || id} · ${lead.controller ? salesControllerLabel(lead.controller) : ''} · 分${lead.intent_score ?? 0}`;
       const adviceLines = [
@@ -3329,6 +3352,121 @@ function legacyCopyFallback(value) {
         const row = box.lastElementChild;
         row.querySelector('[data-k-save]').onclick = () => saveItem(row, null);
       };
+    }
+
+    async function loadSalesPerformance() {
+      const box = $('salesPerformanceBox');
+      box.style.display = '';
+      box.innerHTML = '<div class="small">加载中…</div>';
+      const [repsData, leaderboardData] = await Promise.all([
+        api('/api/admin/sales/reps'),
+        api('/api/admin/sales/kpi-leaderboard'),
+      ]);
+      const reps = repsData.reps || [];
+      const board = leaderboardData.leaderboard || [];
+      box.innerHTML = `
+        <div style="margin-bottom:8px">
+          <button type="button" class="secondary small" id="salesRepAddBtn">+ 新增销售</button>
+        </div>
+        <div style="margin-bottom:10px">
+          <strong class="small">销售花名册</strong>
+          ${reps.map((r) => `<div class="small">${salesEsc(r.display_name)}（${salesEsc(r.rep_key)}）· ${salesEsc(r.role)} · ${r.status === 'active' ? '在职' : '离职'}</div>`).join('') || '<div class="small">暂无销售人员</div>'}
+        </div>
+        <div>
+          <strong class="small">本期排行榜</strong>
+          ${board.map((b, i) => `<div class="small">${i + 1}. ${salesEsc(b.display_name)}｜结果分${b.outcome_score ?? '-'} 行为分${b.behavior_score ?? '-'} 综合分${b.final_score ?? '-'}</div>`).join('') || '<div class="small">暂无本期KPI结算数据</div>'}
+        </div>
+      `;
+      const addBtn = $('salesRepAddBtn');
+      if (addBtn) addBtn.onclick = async () => {
+        const repKey = window.prompt('销售工号/账号(rep_key，需唯一)', '');
+        if (!repKey) return;
+        const displayName = window.prompt('姓名', '') || repKey;
+        const d = await api('/api/admin/sales/reps', { method: 'POST', body: JSON.stringify({ rep_key: repKey, display_name: displayName, role: 'sales' }) });
+        if (!d.ok) { toast(d.message || d.error || '新增失败'); return; }
+        toast('已新增');
+        await loadSalesPerformance();
+      };
+    }
+
+    async function loadSalesCommission() {
+      const box = $('salesCommissionBox');
+      box.style.display = '';
+      box.innerHTML = '<div class="small">加载中…</div>';
+      const data = await api('/api/admin/sales/commissions');
+      const commissions = data.commissions || [];
+      const STATUS_LABEL = { pending: '待审批', approved: '已批准', paid: '已发放', rejected: '已驳回' };
+      box.innerHTML = `
+        <div style="margin-bottom:8px">
+          <button type="button" class="secondary small" id="salesCommissionRuleBtn">设置提成比例</button>
+        </div>
+        ${commissions.map((c) => `
+          <div data-c-row="${c.id}" style="padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+            <div class="small">${salesEsc(c.rep_name || '未分配')}｜${salesEsc(c.company || c.lead_name || '')}｜成交¥${c.deal_amount ?? '-'}｜提成率${c.rate_percent}%｜提成¥${(Number(c.commission_amount_fen || 0) / 100).toFixed(2)}｜${STATUS_LABEL[c.status] || c.status}</div>
+            ${c.status === 'pending' ? `<button type="button" class="ghost small" data-c-approve="${c.id}">批准</button>` : ''}
+            ${c.status === 'approved' ? `<button type="button" class="ghost small" data-c-pay="${c.id}">标记已发放</button>` : ''}
+          </div>
+        `).join('') || '<div class="small">暂无提成记录</div>'}
+      `;
+      box.querySelectorAll('[data-c-approve]').forEach((btn) => {
+        btn.onclick = async () => {
+          await api(`/api/admin/sales/commissions/${btn.dataset.cApprove}/status`, { method: 'POST', body: JSON.stringify({ status: 'approved' }) });
+          toast('已批准');
+          await loadSalesCommission();
+        };
+      });
+      box.querySelectorAll('[data-c-pay]').forEach((btn) => {
+        btn.onclick = async () => {
+          await api(`/api/admin/sales/commissions/${btn.dataset.cPay}/status`, { method: 'POST', body: JSON.stringify({ status: 'paid' }) });
+          toast('已标记发放');
+          await loadSalesCommission();
+        };
+      });
+      const ruleBtn = $('salesCommissionRuleBtn');
+      if (ruleBtn) ruleBtn.onclick = async () => {
+        const rate = window.prompt('提成比例(%)，留空rep_id则设为全员默认规则', '5');
+        if (rate === null || rate.trim() === '') return;
+        const repIdInput = window.prompt('销售ID(留空=设为全员默认规则)', '');
+        const d = await api('/api/admin/sales/commission-rules', {
+          method: 'POST',
+          body: JSON.stringify({ rep_id: repIdInput ? Number(repIdInput) : null, rate_percent: Number(rate) }),
+        });
+        if (!d.ok) { toast(d.message || d.error || '设置失败'); return; }
+        toast('规则已保存');
+      };
+    }
+
+    async function salesRecordVisit() {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先选择线索');
+      const notes = $('salesVisitNotes').value.trim();
+      const visitType = $('salesVisitType').value;
+      const nextFollowupAt = $('salesVisitNextFollowupAt').value ? new Date($('salesVisitNextFollowupAt').value).toISOString() : undefined;
+      const nextFollowupPlan = $('salesVisitNextFollowupPlan').value.trim();
+      const data = await api(`/api/admin/sales/leads/${id}/visits`, {
+        method: 'POST',
+        body: JSON.stringify({ visit_type: visitType, notes, next_followup_at: nextFollowupAt, next_followup_plan: nextFollowupPlan }),
+      });
+      if (!data.ok) throw new Error(data.message || data.error || '记录失败');
+      $('salesVisitNotes').value = '';
+      $('salesVisitNextFollowupAt').value = '';
+      $('salesVisitNextFollowupPlan').value = '';
+      toast('拜访已记录');
+      await loadSalesVisits(id);
+    }
+
+    async function loadSalesVisits(leadId) {
+      const box = $('salesVisitsBox');
+      if (!box) return;
+      const data = await api(`/api/admin/sales/leads/${leadId}/visits`);
+      const VISIT_TYPE_LABEL = { onsite: '现场拜访', online: '视频/线上', phone: '电话' };
+      box.innerHTML = (data.visits || []).map((v) => `
+        <div style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+          ${new Date(v.occurred_at).toLocaleString()} · ${VISIT_TYPE_LABEL[v.visit_type] || v.visit_type} · ${salesEsc(v.rep_name || '')}
+          <div>${salesEsc(v.notes || '')}</div>
+          ${v.next_followup_at ? `<div class="small">下次跟进：${new Date(v.next_followup_at).toLocaleString()} ${salesEsc(v.next_followup_plan || '')}</div>` : ''}
+        </div>
+      `).join('') || '<div class="small">暂无拜访记录</div>';
     }
 
     async function loadSalesTraining() {

@@ -744,7 +744,9 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
           await pool.query(`UPDATE sales_deals SET tenant_id=$2, provision_status='done' WHERE id=$1`, [deal.id, provision.tenant_id]);
         }
       }
-      res.json({ ok: true, deal, provision });
+      const { generateCommissionForDeal } = await import('./services/sales/sales-commission-service.js');
+      const commission = await generateCommissionForDeal(pool, deal.id).catch((e) => ({ ok: false, error: e?.message }));
+      res.json({ ok: true, deal, provision, commission });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
     }
@@ -1026,6 +1028,79 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       res.json({ ok: true, leaderboard });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  // ── 客户拜访记录 ──
+  app.post('/api/admin/sales/leads/:id/visits', platformAdminRequired, async (req, res) => {
+    try {
+      const { recordVisit } = await import('./services/sales/sales-visits-service.js');
+      const visit = await recordVisit(pool, {
+        leadId: Number(req.params.id),
+        repId: req.body?.rep_id ? Number(req.body.rep_id) : null,
+        visitType: req.body?.visit_type,
+        occurredAt: req.body?.occurred_at,
+        notes: req.body?.notes,
+        nextFollowupAt: req.body?.next_followup_at,
+        nextFollowupPlan: req.body?.next_followup_plan,
+        createdBy: req.platformAdmin?.username,
+      });
+      res.json({ ok: true, visit });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
+  app.get('/api/admin/sales/leads/:id/visits', platformAdminRequired, async (req, res) => {
+    try {
+      const { listVisitsForLead } = await import('./services/sales/sales-visits-service.js');
+      const visits = await listVisitsForLead(pool, Number(req.params.id));
+      res.json({ ok: true, visits });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  // ── 销售提成 ──
+  app.post('/api/admin/sales/commission-rules', platformAdminRequired, async (req, res) => {
+    try {
+      const { setCommissionRule } = await import('./services/sales/sales-commission-service.js');
+      const rule = await setCommissionRule(pool, {
+        repId: req.body?.rep_id ? Number(req.body.rep_id) : null,
+        ratePercent: Number(req.body?.rate_percent),
+        effectiveFrom: req.body?.effective_from,
+        createdBy: req.platformAdmin?.username,
+      });
+      res.json({ ok: true, rule });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
+  app.get('/api/admin/sales/commissions', platformAdminRequired, async (req, res) => {
+    try {
+      const { listCommissions } = await import('./services/sales/sales-commission-service.js');
+      const commissions = await listCommissions(pool, {
+        repId: req.query?.rep_id ? Number(req.query.rep_id) : null,
+        status: req.query?.status,
+      });
+      res.json({ ok: true, commissions });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/sales/commissions/:id/status', platformAdminRequired, async (req, res) => {
+    try {
+      const { updateCommissionStatus } = await import('./services/sales/sales-commission-service.js');
+      const commission = await updateCommissionStatus(pool, Number(req.params.id), {
+        status: req.body?.status,
+        approvedBy: req.platformAdmin?.username,
+      });
+      if (!commission) return res.status(404).json({ ok: false, error: 'not_found' });
+      res.json({ ok: true, commission });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: e?.message || 'invalid_request' });
     }
   });
 }
