@@ -133,7 +133,11 @@ async function runRiskAlerts(pool, sendOpsAlert) {
   }
 }
 
-export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLLM, sendOpsAlert } = {}) {
+export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLLM, sendOpsAlert, requireSalesManagerOrAbove } = {}) {
+  // 提成规则/审批、KPI目标与主管打分、销售花名册这类"销售管理"操作，普通销售/客服
+  // 不该碰，只有销售经理/超级管理员可以。没传这个中间件时(比如老的调用方式)退化成
+  // 只做登录校验，不因为这次改造而让原本能用的调用方式直接报错。
+  const managerGate = typeof requireSalesManagerOrAbove === 'function' ? requireSalesManagerOrAbove : (_req, _res, next) => next();
   if (typeof callLLM === 'function') {
     setSalesCustomerAiLlm(callLLM);
     setSalesReplyDraftLlm(callLLM);
@@ -978,7 +982,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  app.post('/api/admin/sales/reps', platformAdminRequired, async (req, res) => {
+  app.post('/api/admin/sales/reps', platformAdminRequired, managerGate, async (req, res) => {
     try {
       const rep = await createOrUpdateSalesRep(pool, {
         repKey: req.body?.rep_key,
@@ -1017,7 +1021,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  app.post('/api/admin/sales/kpi-targets', platformAdminRequired, async (req, res) => {
+  app.post('/api/admin/sales/kpi-targets', platformAdminRequired, managerGate, async (req, res) => {
     try {
       const target = await upsertKpiTarget(pool, {
         repId: Number(req.body?.rep_id),
@@ -1035,7 +1039,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  app.post('/api/admin/sales/kpi-scores', platformAdminRequired, async (req, res) => {
+  app.post('/api/admin/sales/kpi-scores', platformAdminRequired, managerGate, async (req, res) => {
     try {
       const score = await computeAndSaveKpiScore(pool, {
         repId: Number(req.body?.rep_id),
@@ -1090,7 +1094,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   });
 
   // ── 销售提成 ──
-  app.post('/api/admin/sales/commission-rules', platformAdminRequired, async (req, res) => {
+  app.post('/api/admin/sales/commission-rules', platformAdminRequired, managerGate, async (req, res) => {
     try {
       const { setCommissionRule } = await import('./services/sales/sales-commission-service.js');
       const rule = await setCommissionRule(pool, {
@@ -1118,7 +1122,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  app.post('/api/admin/sales/commissions/:id/status', platformAdminRequired, async (req, res) => {
+  app.post('/api/admin/sales/commissions/:id/status', platformAdminRequired, managerGate, async (req, res) => {
     try {
       const { updateCommissionStatus } = await import('./services/sales/sales-commission-service.js');
       const commission = await updateCommissionStatus(pool, Number(req.params.id), {

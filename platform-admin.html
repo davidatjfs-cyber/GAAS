@@ -909,6 +909,12 @@
         <label class="field">新账号<input id="newAccountUsername" placeholder="zhang_sales"></label>
         <label class="field">姓名<input id="newAccountRealName" placeholder="显示名称"></label>
         <label class="field">初始密码<input id="newAccountPassword" type="password" placeholder="至少8位"></label>
+        <label class="field">角色<select id="newAccountRole">
+          <option value="sales">销售</option>
+          <option value="customer_service">客服</option>
+          <option value="sales_manager">销售经理</option>
+          <option value="super_admin">超级管理员（可看到租户开通/系统配置）</option>
+        </select></label>
       </div>
       <button id="createAccountBtn">创建账号</button>
       <strong style="margin-top:8px">审计日志</strong>
@@ -1288,6 +1294,24 @@ function legacyCopyFallback(value) {
       if (loggedIn) {
         const acc = getAccount();
         $('currentAccountLabel').textContent = `${acc?.real_name || acc?.username || '管理员'}（${acc?.username || ''}）`;
+      }
+      applyRoleBasedNav();
+    }
+
+    // 租户/开通/配置/日志这几个标签页是"总控"操作(开通新租户/发许可证/系统配置)，
+    // 只有super_admin能看到——真正的安全边界是后端requireSuperAdmin，这里只是
+    // 前端体验层面不让销售/客服/销售经理这几种角色的账号误触/看到不该看的入口。
+    const SUPER_ADMIN_ONLY_PANELS = ['tenants', 'create', 'config', 'log'];
+    function applyRoleBasedNav() {
+      const acc = getAccount();
+      const isSuperAdmin = !acc || acc.role === 'super_admin'; // 兼容老account对象没有role字段的情况
+      document.querySelectorAll('#topTabs button, #bottomNav button').forEach((btn) => {
+        if (SUPER_ADMIN_ONLY_PANELS.includes(btn.dataset.panel)) {
+          btn.style.display = isSuperAdmin ? '' : 'none';
+        }
+      });
+      if (!isSuperAdmin && SUPER_ADMIN_ONLY_PANELS.includes(state.activePanel)) {
+        switchPanel('sales');
       }
     }
 
@@ -2813,8 +2837,9 @@ function legacyCopyFallback(value) {
         const username = $('newAccountUsername').value.trim();
         const real_name = $('newAccountRealName').value.trim();
         const password = $('newAccountPassword').value;
+        const role = $('newAccountRole').value;
         if (!username || password.length < 8) throw new Error('用户名必填，密码至少8位');
-        await api('/api/admin/auth/accounts', { method: 'POST', body: JSON.stringify({ username, real_name, password }) });
+        await api('/api/admin/auth/accounts', { method: 'POST', body: JSON.stringify({ username, real_name, password, role }) });
         log(`已创建账号：${username}`);
         $('newAccountUsername').value = '';
         $('newAccountRealName').value = '';
@@ -2831,11 +2856,12 @@ function legacyCopyFallback(value) {
         const accounts = data.accounts || [];
         $('accountsList').innerHTML = accounts.length ? `
           <table>
-            <thead><tr><th>账号</th><th>姓名</th><th>状态</th><th>创建时间</th><th>最近登录</th></tr></thead>
+            <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>状态</th><th>创建时间</th><th>最近登录</th></tr></thead>
             <tbody>${accounts.map((a) => `
               <tr>
                 <td class="mono">${a.username}</td>
                 <td>${a.real_name || '-'}</td>
+                <td>${({ super_admin: '超级管理员', sales_manager: '销售经理', sales: '销售', customer_service: '客服' })[a.role] || a.role || '超级管理员'}</td>
                 <td><span class="pill ${a.status === 'active' ? 'ok' : 'bad'}">${a.status}</span></td>
                 <td class="small">${a.created_at || '-'}</td>
                 <td class="small">${a.last_login_at || '从未登录'}</td>

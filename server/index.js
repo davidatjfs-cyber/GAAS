@@ -103,7 +103,7 @@ import { setHealthIncidentNotifiers } from './services/tenant-health-incident-se
 import { startHealthOpsLoopScheduler } from './services/tenant-health-ops-scheduler.js';
 import { loadTenantRuntimeStatus as loadTenantRuntimeStatusFromModule } from './tenant-runtime-status.js';
 import { registerTenantSubscriptionRoutes } from './tenant-subscription-routes.js';
-import { createPlatformAdminRequired, registerTenantPlatformRoutes } from './tenant-platform-routes.js';
+import { createPlatformAdminRequired, registerTenantPlatformRoutes, requireSuperAdmin, requireSalesManagerOrAbove } from './tenant-platform-routes.js';
 import { registerKnowledgeRoutes } from './knowledge-routes.js';
 import { registerCheckinRoutes } from './checkin-routes.js';
 import { registerReportsRoutes } from './reports-routes.js';
@@ -5720,8 +5720,9 @@ registerGrowthQueriesRoutes(app, pool);
 registerGrowthOpsRoutes(app, pool);
 registerDiagnosisRoutes(app, pool, authRequired, callLLM);
 registerOntologyRoutes(app, pool, authRequired);
-registerBenchmarkRoutes(app, pool, authRequired, platformAdminRequired);
-registerDataTrustRoutes(app, pool, authRequired, platformAdminRequired);
+// 跨租户聚合(重算基准库/复核数据冲突)只给super_admin，不是销售模块日常操作。
+registerBenchmarkRoutes(app, pool, authRequired, [platformAdminRequired, requireSuperAdmin]);
+registerDataTrustRoutes(app, pool, authRequired, [platformAdminRequired, requireSuperAdmin]);
 setSendGrowthAlert(async (msg) => {
   const GROWTH_REPORT_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
   return sendLarkMessage(GROWTH_REPORT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
@@ -5771,11 +5772,15 @@ registerSalesAiRoutes(app, pool, platformAdminRequired, {
     const r = await sendLarkMessage(SALES_ALERT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
     return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [SALES_ALERT_ADMIN] };
   },
+  requireSalesManagerOrAbove,
 });
 registerTenantSubscriptionRoutes(app, { pool, authRequired });
+// tenant-platform-routes.js 里全部是租户开通/许可证/系统配置这类"总控"操作，只该给
+// super_admin用——这里传一个组合中间件(先校验登录，再校验角色)，覆盖该文件里所有
+// 使用 platformAdminRequired 的路由，不用逐条去改25+个路由定义。
 registerTenantPlatformRoutes(app, {
   pool,
-  platformAdminRequired,
+  platformAdminRequired: [platformAdminRequired, requireSuperAdmin],
   loginRateLimit,
   upload,
   recordUploadOwnership,

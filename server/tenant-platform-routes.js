@@ -34,7 +34,10 @@ export function createPlatformAdminRequired(pool, platformAdminJwtSecret) {
     if (payload?.role !== 'platform_admin' || !payload?.username) {
       return res.status(401).json({ error: 'unauthorized' });
     }
-    req.platformAdmin = { username: payload.username };
+    // account_role 是这个账号的业务角色(super_admin/sales_manager/sales/customer_service)，
+    // 跟上面校验的 role==='platform_admin' 不是一回事——那个只是"这是个平台登录token"的
+    // 固定标记，account_role 才是真正决定这个人能看到哪些模块的字段。
+    req.platformAdmin = { username: payload.username, role: payload.account_role || 'super_admin' };
     if (req.method !== 'GET') {
       const targetTenantId = req.params?.tenantId || req.body?.tenant_id || req.body?.tenantId || null;
       let detail = {};
@@ -53,6 +56,27 @@ export function createPlatformAdminRequired(pool, platformAdminJwtSecret) {
     next();
   };
 }
+
+// 只有 super_admin 能碰租户开通/许可证/系统配置这类"总控"操作。
+// 必须放在 platformAdminRequired 之后使用(依赖 req.platformAdmin.role 已经被解出来)。
+export function requireSuperAdmin(req, res, next) {
+  if (req.platformAdmin?.role !== 'super_admin') {
+    return res.status(403).json({ error: 'forbidden', message: '仅超级管理员可执行此操作' });
+  }
+  next();
+}
+
+// 提成规则设置、KPI目标/主管打分、销售花名册维护这类"销售管理"操作，
+// 普通销售/客服不该碰，但销售经理和超级管理员都可以。
+export function requireSalesManagerOrAbove(req, res, next) {
+  const role = req.platformAdmin?.role;
+  if (role !== 'super_admin' && role !== 'sales_manager') {
+    return res.status(403).json({ error: 'forbidden', message: '仅销售经理/超级管理员可执行此操作' });
+  }
+  next();
+}
+
+const PLATFORM_ADMIN_ROLES = ['super_admin', 'sales_manager', 'sales', 'customer_service'];
 
 /**
  * @param {import('express').Express} app
@@ -109,33 +133,39 @@ export function registerTenantPlatformRoutes(app, deps) {
       const password = String(req.body?.password || '').trim();
       if (!username || !password) return res.status(400).json({ error: 'missing_credentials' });
       const r = await pool.query(
-        `SELECT id, username, password_hash, real_name, status FROM platform_admins WHERE lower(username) = lower($1) LIMIT 1`,
+        `SELECT id, username, password_hash, real_name, status, role FROM platform_admins WHERE lower(username) = lower($1) LIMIT 1`,
         [username]
       );
       const acc = r.rows?.[0];
       if (!acc || acc.status !== 'active') return res.status(401).json({ error: 'invalid_credentials' });
       const ok = await bcrypt.compare(password, String(acc.password_hash || ''));
       if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
-      const token = jwt.sign({ username: acc.username, role: 'platform_admin' }, PLATFORM_ADMIN_JWT_SECRET, { expiresIn: '12h' });
+      const accountRole = acc.role || 'super_admin';
+      const token = jwt.sign({ username: acc.username, role: 'platform_admin', account_role: accountRole }, PLATFORM_ADMIN_JWT_SECRET, { expiresIn: '12h' });
       await pool.query(`UPDATE platform_admins SET last_login_at = NOW() WHERE id = $1`, [acc.id]).catch(() => {});
-      return res.json({ ok: true, token, admin: { username: acc.username, real_name: acc.real_name } });
+      return res.json({ ok: true, token, admin: { username: acc.username, real_name: acc.real_name, role: accountRole } });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: e?.message });
     }
   });
 
-  app.post('/api/admin/auth/accounts', platformAdminRequired, async (req, res) => {
+  // 创建新账号本身是敏感操作(尤其能创建super_admin)，只有super_admin能做。
+  app.post('/api/admin/auth/accounts', platformAdminRequired, requireSuperAdmin, async (req, res) => {
     try {
       const username = String(req.body?.username || '').trim();
       const password = String(req.body?.password || '').trim();
       const realName = String(req.body?.real_name || '').trim() || username;
+      const role = String(req.body?.role || '').trim();
       if (!username || password.length < 8) {
         return res.status(400).json({ error: 'invalid_input', message: 'username必填，password至少8位' });
       }
+      if (!PLATFORM_ADMIN_ROLES.includes(role)) {
+        return res.status(400).json({ error: 'invalid_role', message: `role必须是以下之一：${PLATFORM_ADMIN_ROLES.join('、')}` });
+      }
       const hash = await bcrypt.hash(password, 10);
       await pool.query(
-        `INSERT INTO platform_admins (username, password_hash, real_name) VALUES ($1,$2,$3)`,
-        [username, hash, realName]
+        `INSERT INTO platform_admins (username, password_hash, real_name, role) VALUES ($1,$2,$3,$4)`,
+        [username, hash, realName, role]
       );
       return res.json({ ok: true });
     } catch (e) {
@@ -146,16 +176,16 @@ export function registerTenantPlatformRoutes(app, deps) {
     }
   });
 
-  app.get('/api/admin/auth/accounts', platformAdminRequired, async (req, res) => {
+  app.get('/api/admin/auth/accounts', platformAdminRequired, requireSuperAdmin, async (req, res) => {
     try {
-      const r = await pool.query(`SELECT username, real_name, status, created_at, last_login_at FROM platform_admins ORDER BY created_at`);
+      const r = await pool.query(`SELECT username, real_name, status, role, created_at, last_login_at FROM platform_admins ORDER BY created_at`);
       return res.json({ ok: true, accounts: r.rows });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: e?.message });
     }
   });
 
-  app.get('/api/admin/auth/audit-log', platformAdminRequired, async (req, res) => {
+  app.get('/api/admin/auth/audit-log', platformAdminRequired, requireSuperAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query?.limit) || 200, 1000);
       const r = await pool.query(
