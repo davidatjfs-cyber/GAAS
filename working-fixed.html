@@ -29784,7 +29784,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 const role = String(currentUser?.role || '');
                 const pos  = String(currentUser?.position || '').toLowerCase();
                 const isKitchen = role === 'store_production_manager'
-                    || /(后厨|厨房|炒锅|烧味|打荷|切配|出品|厨师|厨工)/.test(pos)
+                    || /(后厨|厨房|炒锅|烧味|打荷|砧板|切配|出品|厨师|厨工)/.test(pos)
                     || ['admin','hq_manager','store_manager'].includes(role);
                 if (!isKitchen) {
                     showNotification('仅厨房岗位员工可访问', 'warning');
@@ -57603,7 +57603,7 @@ ${body}
             const role = currentUser?.role || '';
             const _kitchenPos = String(currentUser?.position || '').toLowerCase();
             const _isKitchenUser = role === 'store_production_manager'
-                || /(后厨|厨房|炒锅|烧味|打荷|切配|出品|厨师|厨工)/.test(_kitchenPos)
+                || /(后厨|厨房|炒锅|烧味|打荷|砧板|切配|出品|厨师|厨工)/.test(_kitchenPos)
                 || ['admin','hq_manager','store_manager'].includes(role);
             const visibleItems = allItems.filter(item => {
                 if (item.kitchenOnly && !_isKitchenUser) return false;
@@ -67759,7 +67759,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
       const role = currentUser?.role || '';
       const pos  = (currentUser?.position || '').toLowerCase();
       const isKitchenRole = role === 'store_production_manager';
-      const isKitchenPos  = /(后厨|厨房|炒锅|烧味|打荷|切配|出品|厨师|厨工)/.test(pos);
+      const isKitchenPos  = /(后厨|厨房|炒锅|烧味|打荷|砧板|切配|出品|厨师|厨工)/.test(pos);
       const isManager     = ['admin','hq_manager','store_manager'].includes(role);
       const nav = document.getElementById('nav-kitchen');
       if (nav) nav.style.display = (isKitchenRole || isKitchenPos || isManager) ? '' : 'none';
