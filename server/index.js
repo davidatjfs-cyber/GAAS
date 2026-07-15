@@ -16191,7 +16191,7 @@ app.listen(PORT, HOST, async () => {
       }
     }
 
-    // 辅助：写心跳。task_name是全局单例系统任务(cache_purge/critical_data_reconcile/sales_raw_check)，
+    // 辅助：写心跳。task_name是全局单例系统任务(cache_purge/critical_data_reconcile/pos_sales_check)，
     // 不属于任何具体租户，固定写tenant_id='default'并在同一上下文里设置会话变量，
     // 避免RLS的WITH CHECK因为会话变量(无上下文时是哨兵值)跟列默认值'default'不一致而静默拒绝写入。
     async function beatHeartbeat(taskName) {
@@ -16224,6 +16224,8 @@ app.listen(PORT, HOST, async () => {
 
     const HEARTBEAT_ALERT_THRESHOLDS_MIN = {
       cache_purge: 390, // cache_purge 每 2 小时一次，放宽到 6.5 小时避免夜间误报
+      // 销售完整性检查每天23:30只执行一次；连续72小时未更新才告警。
+      pos_sales_check: 72 * 60,
       default: 180
     };
     const heartbeatAlertDedup = new Map();
@@ -16452,7 +16454,7 @@ app.listen(PORT, HOST, async () => {
             !presentStores.some(ps => ps.includes(es.slice(0, 4)) || es.includes(ps.slice(0, 4)))
           );
 
-          await beatHeartbeat('sales_raw_check');
+          await beatHeartbeat('pos_sales_check');
 
           if (missing.length > 0) {
             const msg = [

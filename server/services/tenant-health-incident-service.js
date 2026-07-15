@@ -845,7 +845,7 @@ export async function buildQueueDigests(pool) {
 }
 
 /**
- * SLA：列出超 24h 未确认的开放工单（不自动改 queue）
+ * SLA：列出超过 24 小时未确认的开放工单（不自动改分流队列）
  */
 export async function listSlaBreaches(pool, { limit = 30 } = {}) {
   await ensureHealthIncidentTables(pool);
@@ -869,7 +869,7 @@ export async function listSlaBreaches(pool, { limit = 30 } = {}) {
 }
 
 /**
- * 发送 SLA 提醒（仅提醒，不自动升级）
+ * 发送 SLA 提醒（每日一次，仅提醒，不自动升级）
  */
 export async function sendSlaReminders(pool) {
   const listed = await listSlaBreaches(pool, { limit: 40 });
@@ -878,8 +878,8 @@ export async function sendSlaReminders(pool) {
     `· #${i.id} ${i.tenant_id} [${QUEUE_LABELS[i.queue] || i.queue}] ${i.item_name || i.item_key}（${i.age_hours}h）`
   );
   const text = [
-    `【健康中心·SLA提醒】超 ${SLA_HOURS}h 未确认 ${listed.count} 条`,
-    '不会自动升级研发，请人工确认或分流。',
+    `【健康中心·SLA提醒】超过 ${SLA_HOURS} 小时未确认 ${listed.count} 条`,
+    '系统不会自动升级到研发，请人工确认或分流处理。',
     ...lines,
   ].join('\n');
   let alert = { ok: false };
