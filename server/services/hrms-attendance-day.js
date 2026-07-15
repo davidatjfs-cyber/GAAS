@@ -435,6 +435,57 @@ export async function summarizeAttendanceDaysForMonth({
   return { username: u, month: m, counts, workDays, restDays, abnormalDays: counts.abnormal || 0 };
 }
 
+const REST_DAY_RESULTS = new Set(['weekly_rest', 'approved_leave', 'auto_rest', 'confirmed_rest']);
+
+function restResultToDetailType(result, leaveType) {
+  const r = String(result || '').trim();
+  if (r === 'approved_leave') {
+    const lt = String(leaveType || '').trim();
+    if (lt && lt !== 'leave') return lt;
+    return '休假';
+  }
+  return '休息';
+}
+
+/** 月内每日休息明细（供欠休/档案展示具体日期） */
+export async function listAttendanceRestDaysForMonth({
+  tenantId = 'default',
+  username,
+  month,
+  db = getPool()
+} = {}) {
+  const tid = String(tenantId || 'default').trim() || 'default';
+  const u = String(username || '').trim();
+  const m = String(month || '').trim();
+  if (!u || !/^\d{4}-\d{2}$/.test(m)) return [];
+  try {
+    const r = await db.query(
+      `SELECT work_date::text AS d, result, leave_type
+         FROM hrms_attendance_day
+        WHERE tenant_id = $1 AND LOWER(username) = LOWER($2)
+          AND to_char(work_date, 'YYYY-MM') = $3
+          AND result = ANY($4::text[])
+        ORDER BY work_date ASC`,
+      [tid, u, m, Array.from(REST_DAY_RESULTS)]
+    );
+    const out = [];
+    for (const row of r.rows || []) {
+      const date = String(row.d || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      out.push({
+        date,
+        days: 1,
+        type: restResultToDetailType(row.result, row.leave_type),
+        source: '日结果',
+        result: String(row.result || '').trim()
+      });
+    }
+    return out;
+  } catch (_) {
+    return [];
+  }
+}
+
 export async function notifyStoreManagersAttendanceAbnormals({
   abnormals,
   appendNotifications,

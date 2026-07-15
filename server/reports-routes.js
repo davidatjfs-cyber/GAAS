@@ -757,27 +757,45 @@ export function registerReportsRoutes(app, deps) {
 
       const penaltyMap = await computeAttendanceMissingClockPenalties(month, store, req.tenantId || req.user?.tenant_id || 'default');
       const tidLeave = req.tenantId || req.user?.tenant_id || 'default';
+      const dbLeave = typeof pool === 'function' ? pool() : pool;
       let summarizeAttMonth = null;
+      let listAttRestDays = null;
       try {
         const mod = await import('./services/hrms-attendance-day.js');
         summarizeAttMonth = mod.summarizeAttendanceDaysForMonth;
+        listAttRestDays = mod.listAttendanceRestDaysForMonth;
       } catch (_) {}
       const rows = [];
       for (const p of people) {
         const penalty = penaltyMap.get(String(p?.username || '').trim().toLowerCase());
         let attendanceRestDays = null;
-        if (typeof summarizeAttMonth === 'function') {
+        let attendanceRestDetails = null;
+        if (typeof listAttRestDays === 'function') {
+          try {
+            const details = await listAttRestDays({
+              tenantId: tidLeave,
+              username: p.username,
+              month,
+              db: dbLeave
+            });
+            if (Array.isArray(details) && details.length) {
+              attendanceRestDetails = details;
+              attendanceRestDays = details.reduce((s, d) => s + Number(d?.days || 0), 0);
+            }
+          } catch (_) {}
+        }
+        if (attendanceRestDays == null && typeof summarizeAttMonth === 'function') {
           try {
             const att = await summarizeAttMonth({
               tenantId: tidLeave,
               username: p.username,
               month,
-              db: typeof pool === 'function' ? pool() : pool
+              db: dbLeave
             });
             if (att && Number.isFinite(Number(att.restDays))) attendanceRestDays = Number(att.restDays);
           } catch (_) {}
         }
-        const bal = calcEmployeeMonthlyLeaveBalance(state0, p, month, { penalty, attendanceRestDays }) || {
+        const bal = calcEmployeeMonthlyLeaveBalance(state0, p, month, { penalty, attendanceRestDays, attendanceRestDetails }) || {
           baseLeave: 0, annualLeave: 0, usedLeave: 0, totalLeave: 0, computedRemaining: 0, remaining: 0, overridden: false, weeklyDetails: [], lastAdjustment: null
         };
         const remaining = Number(bal?.remaining || 0);

@@ -11951,14 +11951,51 @@ function calcEmployeeMonthlyLeaveBalance(state, employee, month, opts = {}) {
   const baseLeave = MONTHLY_REST_DAYS;
   const annualLeave = 0;
 
-  // 优先用权威日结果汇总的休息天（周休+审批假+自动休息）；无则回退日报休息名单
+  // 优先用权威日结果：有按日明细则逐日展示；仅有汇总时回退日报按日明细
   const usedLeaveDetails = [];
   let usedLeave = 0;
+  const attDetails = Array.isArray(opts?.attendanceRestDetails) ? opts.attendanceRestDetails : null;
   const attRest = opts && typeof opts === 'object' ? opts.attendanceRestDays : null;
-  if (attRest != null && Number.isFinite(Number(attRest))) {
+
+  const addDetailToWeeks = (day, val) => {
+    const n = Number(val || 0);
+    if (!(Number.isFinite(n) && n > 0)) return;
+    weekDetails.forEach((wk) => {
+      const [ws, we] = String(wk?.range || '').split('~');
+      if (!ws || !we) return;
+      if (day < ws || day > we) return;
+      wk.used = Number((Number(wk.used || 0) + n).toFixed(2));
+    });
+  };
+
+  if (attDetails && attDetails.length) {
+    for (const d of attDetails) {
+      const day = String(d?.date || '').trim().slice(0, 10);
+      const n = Number(d?.days);
+      if (!day || !(Number.isFinite(n) && n > 0)) continue;
+      usedLeaveDetails.push({
+        date: day,
+        days: n,
+        type: String(d?.type || '休息').trim() || '休息',
+        source: String(d?.source || '日结果').trim() || '日结果'
+      });
+      addDetailToWeeks(day, n);
+    }
+    usedLeave = usedLeaveDetails.reduce((s, x) => s + Number(x.days || 0), 0);
+  } else if (attRest != null && Number.isFinite(Number(attRest))) {
     usedLeave = Number(Number(attRest).toFixed(2));
-    if (usedLeave > 0) {
-      usedLeaveDetails.push({ date: m, days: usedLeave, type: '休息', source: '日结果权威表' });
+    const restStats = calcEmployeeMonthlyActualRestFromDailyReports(state, emp, m);
+    const byDay = restStats?.byDay && typeof restStats.byDay === 'object' ? restStats.byDay : {};
+    const dayEntries = Object.entries(byDay);
+    if (dayEntries.length) {
+      dayEntries.forEach(([day, val]) => {
+        const n = Number(val || 0);
+        if (!(Number.isFinite(n) && n > 0)) return;
+        usedLeaveDetails.push({ date: day, days: n, type: '休息', source: '日报休息' });
+        addDetailToWeeks(day, n);
+      });
+    } else if (usedLeave > 0) {
+      usedLeaveDetails.push({ date: m, days: usedLeave, type: '休息', source: '日结果汇总' });
     }
   } else {
     const restStats = calcEmployeeMonthlyActualRestFromDailyReports(state, emp, m);
@@ -11967,12 +12004,7 @@ function calcEmployeeMonthlyLeaveBalance(state, employee, month, opts = {}) {
       const n = Number(val || 0);
       if (!(Number.isFinite(n) && n > 0)) return;
       usedLeaveDetails.push({ date: day, days: n, type: '休息', source: '日报休息' });
-      weekDetails.forEach((wk) => {
-        const [ws, we] = String(wk?.range || '').split('~');
-        if (!ws || !we) return;
-        if (day < ws || day > we) return;
-        wk.used = Number((Number(wk.used || 0) + n).toFixed(2));
-      });
+      addDetailToWeeks(day, n);
     });
   }
 
