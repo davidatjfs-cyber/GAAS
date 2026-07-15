@@ -129,6 +129,28 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   这意味着本仓库里任何"为多租户设计"的代码（`tenant_id` 字段、`tenantContext`、`wrapPoolForTenantContext` 等）
   要保留、要写对，但**不要在本仓库里主动执行"开启 RLS"这类操作**——那是 GAAS-demo 那边的事。
 
+### ⚠️ 巨石文件纪律：新功能一律加进已拆出来的独立模块，禁止继续往 index.js / agents.js 本体堆代码
+
+**每个对话在开发新功能前必须先读这一条并遵守，不分模块大小、不分任务紧急程度。**
+
+`server/index.js`（~1.8万行）、`server/agents.js`（~1.35万行）、`working-fixed.html`（~6.8万行）已经是巨石文件，
+2026-07 审计后的结论是**现在不拆存量代码**（拆分本身的重构风险，此时高于收益），但纪律是**不能再让它们变得更胖**：
+
+- **新增 API 路由**：一律新建/复用 `server/growth-*.js`、`server/ontology/*.js`、`server/sales-*.js` 这类独立模块文件，
+  写好 `registerXxxRoutes(app, pool, ...)` 导出函数，只在 `index.js` 里加两行（`import` + 调用注册函数）。
+  参考现有写法：`registerBenchmarkRoutes`、`registerDataTrustRoutes`、`registerGrowthActionsRoutes` 等。
+- **新增业务逻辑/计算函数**：放进对应领域的独立文件（如 `server/ontology/xxx-service.js`、
+  `server/services/sales/xxx.js`），不要直接写进 `index.js`/`agents.js` 函数体里。
+- **`index.js`/`agents.js` 本体只允许的改动**：注册新模块的 `import` + 调用那两行、修复本体内已有代码的 bug、
+  给已有函数补充极少量必要的调用点（比如这次把 `getBenchmarkForStore`/`recordDataQuality` 接进
+  `diagnosis-tree-service.js` 而不是 `index.js`，就是正确做法的例子）。
+- **`working-fixed.html`同理**：新的大块UI逻辑优先考虑能不能做成独立的可复用组件/模块文件，如果技术上暂时做不到
+  完全拆分（前端历史包袱重），至少不要把新功能的辅助函数/常量堆到已经很长的同一个 `<script>` 块顶部，
+  尽量放在靠近该功能实际使用位置的地方，方便以后真正拆分时能整块搬走。
+
+违反这条纪律的表现：`git diff --stat` 里 `index.js`/`agents.js` 一次改动新增几十上百行"新逻辑"（不是"新增两行注册"），
+这就是信号，应该先停下来问"这段该不该单独建个文件"。
+
 ### ⚠️ 远程操作：ssh 和 scp 分工不同，别用错，别用 ssh pipe 传大文件
 
 - **scp** 用于传文件（上传/下载代码、备份文件），**ssh** 用于在服务器上跑命令（`psql`、`pm2`、`node --check`、`curl` 健康检查）。

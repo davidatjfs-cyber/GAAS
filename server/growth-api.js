@@ -3155,6 +3155,19 @@ export function requireGrowthAuth(req, res) {
   return true;
 }
 
+// 一些写操作(审批营销实验/删除共享素材)之前只检查"是否登录"，没检查角色——
+// 任何门店角色(如收银员)登录后都能做。'system' 覆盖共享密钥的机器对机器调用
+// (getGrowthOperator 在没有真实用户JWT时会给这个角色)。
+const GROWTH_ADMIN_WRITE_ROLES = ['admin', 'hq_manager', 'system'];
+export function requireGrowthAdminRole(req, res) {
+  const role = String(getGrowthOperator(req).role || '').trim();
+  if (!GROWTH_ADMIN_WRITE_ROLES.includes(role)) {
+    res.status(403).json({ ok: false, error: 'forbidden', message: '仅管理员/总部可执行此操作' });
+    return false;
+  }
+  return true;
+}
+
 export function getGrowthOperator(req) {
   const auth = cleanText(req.headers.authorization || '', 500);
   const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';

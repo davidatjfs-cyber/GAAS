@@ -5,6 +5,7 @@
 import { tenantContext, resolveTenantIdDefault } from './utils/database.js';
 import {
   requireGrowthAuth,
+  requireGrowthAdminRole,
   getGrowthTenantId,
   resolveTenantIdForStore,
   parseOccurredAt,
@@ -141,6 +142,7 @@ export function registerGrowthContentRoutes(app, pool) {
 
   app.delete('/api/growth/poster-templates/:id', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
+    if (!requireGrowthAdminRole(req, res)) return;
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
     await pool.query('DELETE FROM poster_templates WHERE id = $1', [id]);
@@ -149,6 +151,7 @@ export function registerGrowthContentRoutes(app, pool) {
 
   app.delete('/api/growth/creative-assets/:id', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
+    if (!requireGrowthAdminRole(req, res)) return;
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
     await pool.query('DELETE FROM creative_assets WHERE id = $1', [id]);
@@ -204,6 +207,7 @@ export function registerGrowthContentRoutes(app, pool) {
 
   app.delete('/api/growth/generated-posters/:id', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
+    if (!requireGrowthAdminRole(req, res)) return;
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ ok: false, error: 'invalid_id' });
     await pool.query('DELETE FROM generated_posters WHERE id = $1', [id]);

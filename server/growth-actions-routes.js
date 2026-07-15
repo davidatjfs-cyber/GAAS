@@ -5,6 +5,7 @@
 import { tenantContext, resolveTenantIdDefault } from './utils/database.js';
 import {
   requireGrowthAuth,
+  requireGrowthAdminRole,
   getGrowthOperator,
   getGrowthTenantId,
   runTouchRuleEngine,
@@ -99,6 +100,7 @@ export function registerGrowthActionsRoutes(app, pool) {
   // PLLM策略实验审批（approve=采纳执行中 / reject=不适合）
   app.post('/api/growth/pllm-experiment/:code/approve', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
+    if (!requireGrowthAdminRole(req, res)) return;
     const code = cleanText(req.params.code, 100);
     const tenantId = getGrowthTenantId(req);
     await tenantContext.run(tenantId, async () => {
@@ -112,6 +114,7 @@ export function registerGrowthActionsRoutes(app, pool) {
 
   app.post('/api/growth/pllm-experiment/:code/reject', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
+    if (!requireGrowthAdminRole(req, res)) return;
     const code = cleanText(req.params.code, 100);
     const tenantId = getGrowthTenantId(req);
     await tenantContext.run(tenantId, async () => {
