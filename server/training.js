@@ -461,7 +461,8 @@ export async function getPromotionTrackProgress(applicantUsername, requiredTopic
 
   const r = await pool().query(
     `SELECT t.id AS topic_id, t.title,
-            c.manager_verdict, c.review_status, c.valid_until, c.status AS cert_status, c.certified_at
+            c.manager_verdict, c.review_status, c.valid_until, c.status AS cert_status,
+            c.legacy_accepted, c.certified_at
      FROM training_topics t
      LEFT JOIN LATERAL (
        SELECT * FROM training_certifications
@@ -474,7 +475,8 @@ export async function getPromotionTrackProgress(applicantUsername, requiredTopic
   const items = r.rows.map(row => ({
     topicId: row.topic_id,
     title: row.title,
-    certified: row.manager_verdict === 'passed' && (row.cert_status || 'valid') === 'valid',
+    certified: (row.manager_verdict === 'passed' || row.legacy_accepted === true)
+      && (row.cert_status || 'valid') === 'valid',
     validUntil: row.valid_until || null,
     certifiedAt: row.certified_at || null
   }));
@@ -1662,6 +1664,14 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
         SELECT a.id AS assignment_id, a.due_date, a.note, a.require_practice, a.assigned_by,
                t.id AS topic_id, t.title, t.position, t.description, t.key_points,
                s.id AS session_id, s.status AS session_status, s.quiz_passed, s.quiz_score,
+               CASE WHEN EXISTS (
+                 SELECT 1 FROM training_certifications ec
+                 WHERE ec.session_id = s.id
+                   AND ec.employee_username = a.employee_username
+                   AND ec.tenant_id = a.tenant_id
+                   AND (ec.manager_verdict = 'passed' OR ec.legacy_accepted = true)
+                   AND COALESCE(ec.status, 'valid') = 'valid'
+               ) THEN 'certified' ELSE COALESCE(s.status, 'not_started') END AS effective_status,
                CASE
                  WHEN a.due_date IS NOT NULL
                   AND a.due_date < ((NOW() AT TIME ZONE 'Asia/Shanghai')::date)
@@ -1965,10 +1975,25 @@ ${contentForPrompt}
                c.manager_verdict, c.manager_note, c.final_score, c.manager_score,
                c.review_status, c.certified_at, c.created_at,
                t.title, t.position,
+               a.require_practice,
+               CASE WHEN (c.manager_verdict = 'passed' OR c.legacy_accepted = true)
+                          AND COALESCE(c.status, 'valid') = 'valid'
+                    THEN 'certified'
+                    WHEN c.manager_verdict IS NULL AND c.legacy_accepted IS NOT TRUE
+                    THEN 'pending_review'
+                    ELSE 'not_certified'
+               END AS effective_status,
                s.quiz_score, s.status AS session_status
         FROM training_certifications c
         JOIN training_topics t ON t.id = c.topic_id
         JOIN training_sessions s ON s.id = c.session_id
+        LEFT JOIN LATERAL (
+          SELECT require_practice
+          FROM training_assignments
+          WHERE employee_username = c.employee_username AND topic_id = c.topic_id
+            AND tenant_id = c.tenant_id
+          ORDER BY created_at DESC LIMIT 1
+        ) a ON true
         WHERE c.employee_username = $1 AND c.tenant_id = $2
         ORDER BY c.created_at DESC
       `, [username, tenantId]);

@@ -35076,6 +35076,12 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     const finalScore = c.final_score;
                     const aiTotal = c.ai_total_score;
                     const reviewStatus = c.review_status;
+                    const effectiveStatus = c.effective_status || (c.manager_verdict === 'passed' ? 'certified' : 'pending_review');
+                    const certState = effectiveStatus === 'certified'
+                        ? { label: '✓ 已认证', color: '#34d399', bg: 'rgba(52,211,153,0.15)', border: 'rgba(52,211,153,0.25)' }
+                        : effectiveStatus === 'pending_review'
+                            ? { label: '⏳ 实操审核中', color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', border: 'rgba(251,191,36,0.25)' }
+                            : { label: '⚠️ 未通过', color: '#fca5a5', bg: 'rgba(248,113,113,0.15)', border: 'rgba(248,113,113,0.25)' };
                     if (c.require_practice && finalScore !== null && finalScore !== undefined) {
                         const scoreColor = finalScore >= 80 ? '#34d399' : finalScore >= 60 ? '#fbbf24' : '#f87171';
                         const scoreBadge = reviewStatus === 'overridden'
@@ -35086,10 +35092,10 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                         practiceScoreHtml = `<div style="margin-top:6px;font-size:12px;color:#eab308;">实操评分待派发人审核</div>`;
                     }
                     return `
-                    <div style="background:rgba(52,211,153,0.07);border:1px solid rgba(52,211,153,0.25);border-radius:14px;padding:16px;">
+                    <div style="background:${effectiveStatus === 'certified' ? 'rgba(52,211,153,0.07)' : 'rgba(251,191,36,0.06)'};border:1px solid ${certState.border};border-radius:14px;padding:16px;">
                         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">
                             <div style="font-size:15px;font-weight:700;color:#fff;flex:1;margin-right:8px;">${escapeHtml(c.title)}</div>
-                            <span style="font-size:11px;padding:3px 10px;border-radius:10px;background:rgba(52,211,153,0.15);color:#34d399;white-space:nowrap;">✓ 已认证</span>
+                            <span style="font-size:11px;padding:3px 10px;border-radius:10px;background:${certState.bg};color:${certState.color};white-space:nowrap;">${certState.label}</span>
                         </div>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${posTags}</div>
                         <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -35137,7 +35143,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     const sBg   = {'learning':'rgba(96,165,250,0.12)','quiz':'rgba(139,92,246,0.12)','practice':'rgba(249,115,22,0.12)','certified':'rgba(52,211,153,0.12)','not_started':'rgba(148,163,184,0.1)'};
                     const sBorder = {'learning':'rgba(96,165,250,0.3)','quiz':'rgba(139,92,246,0.3)','practice':'rgba(249,115,22,0.3)','certified':'rgba(52,211,153,0.3)','not_started':'rgba(148,163,184,0.2)'};
                     const sColor = {'learning':'#60a5fa','quiz':'#a78bfa','practice':'#fb923c','certified':'#34d399','not_started':'#94a3b8'};
-                    const st = t.session_status || 'not_started';
+                    const st = t.effective_status || t.session_status || 'not_started';
                     const deadline = getTrainingDeadlineState(t);
                     const isDone = st === 'certified';
                     const isPending = st === 'practice';
