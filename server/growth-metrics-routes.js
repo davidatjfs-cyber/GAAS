@@ -14,6 +14,7 @@ import {
   ABC_ROTATION_ORDER,
   deriveAbcStep,
 } from './growth-api.js';
+import { verifyServerTenantBinding } from './middleware/server-tenant-binding.js';
 
 function cleanText(value, max = 255) {
   return String(value == null ? '' : value).trim().slice(0, max);
@@ -122,6 +123,8 @@ export function registerGrowthMetricsRoutes(app, pool) {
 
       const storeId = cleanText(body.store_id, 128);
       const tenantId = await resolveTenantIdForStore(pool, storeId);
+      const binding = await verifyServerTenantBinding(pool, req, { tenantId, storeId });
+      if (!binding.ok) return res.status(binding.status).json({ ok: false, error: binding.error });
       const result = await tenantContext.run(tenantId, async () => {
         const customer = await upsertCustomer(pool, body, tenantId);
         const campaignId = cleanText(body.campaign_id || body.scene, 128);
@@ -248,6 +251,10 @@ export function registerGrowthMetricsRoutes(app, pool) {
   app.post('/api/growth/pos/consumption', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     const body = req.body || {};
+    const storeId = cleanText(body.store_id || req.headers['x-store-id'], 128);
+    const tenantId = cleanText(body.tenant_id || req.headers['x-tenant-id'] || getGrowthTenantId(req), 128) || 'default';
+    const binding = await verifyServerTenantBinding(pool, req, { tenantId, storeId });
+    if (!binding.ok) return res.status(binding.status).json({ ok: false, error: binding.error });
     const windowDays = Math.min(Math.max(Number(body.window_days) || 30, 1), 365);
     let phones = Array.isArray(body.phones) ? body.phones : [];
     phones = phones.map((p) => cleanPhone(p)).filter(Boolean);
