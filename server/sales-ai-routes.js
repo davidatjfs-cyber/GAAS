@@ -33,7 +33,7 @@ import { generateSalesProposal, runDeepDiagnosis, setSalesProposalLlm } from './
 import { TRAINING_SCENARIOS, scoreTrainingResponse, recordTrainingSession, getTrainingStats } from './services/sales/sales-training.js';
 import { runSalesAssistantTurn, listAssistantThreads, listAssistantMessages, setSalesAssistantLlm } from './services/sales/sales-internal-assistant.js';
 import { checkPricePermission } from './services/sales/sales-price-policy.js';
-import { validateTrialProgress, runTrialValidations } from './services/sales/sales-trial-monitor.js';
+import { validateTrialProgress, runTrialValidations, buildTrialProgressSummary } from './services/sales/sales-trial-monitor.js';
 import {
   kfConfigured,
   kfEnv,
@@ -50,6 +50,8 @@ import { runSalesSlaScan } from './services/sales/sales-sla-service.js';
 import { runNurtureCadence } from './services/sales/sales-nurture.js';
 import { getUnifiedCustomerTimeline } from './services/sales/sales-timeline.js';
 import { buildTenantMonthlyValueReport } from './services/sales/tenant-value-report.js';
+import { getOnboardingChecklist } from './services/sales/tenant-onboarding.js';
+import { computeRenewalHealth, listRenewalRisks, listReferralCandidates, syncCustomerSuccessTasks } from './services/sales/tenant-renewal-service.js';
 import {
   listSalesReps,
   createOrUpdateSalesRep,
@@ -177,6 +179,14 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         .then(() => runNurtureCadence(pool))
         .catch((e) => console.warn('[sales-ai] nurture cadence run failed:', e?.message || e));
     }, 60 * 60 * 1000);
+  }
+
+  if (!globalThis.__salesCsTaskSyncTimer) {
+    globalThis.__salesCsTaskSyncTimer = setInterval(() => {
+      ensureSalesTables(pool)
+        .then(() => syncCustomerSuccessTasks(pool))
+        .catch((e) => console.warn('[sales-ai] CS task sync failed:', e?.message || e));
+    }, 6 * 60 * 60 * 1000);
   }
 
   if (!globalThis.__salesTrialValidationTimer) {
@@ -409,6 +419,50 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       res.status(data.ok ? 200 : 404).json(data);
     } catch (e) {
       console.error('[sales] unified timeline', e?.message || e);
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  // 客户上线进度清单：新开通租户是否具备"数据条件+基础配置"就绪，复用已有巡检信号
+  app.get('/api/admin/sales/tenants/:tenantId/onboarding', platformAdminRequired, async (req, res) => {
+    try {
+      const data = await getOnboardingChecklist(pool, req.params.tenantId);
+      res.status(data.ok ? 200 : 400).json(data);
+    } catch (e) {
+      console.error('[sales] onboarding checklist', e?.message || e);
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  // 单租户续费健康度：透明加减分，续费风险/转介绍候选列表都是基于这个分数派生的
+  app.get('/api/admin/sales/tenants/:tenantId/renewal-health', platformAdminRequired, async (req, res) => {
+    try {
+      const data = await computeRenewalHealth(pool, req.params.tenantId);
+      res.status(data.ok ? 200 : 400).json(data);
+    } catch (e) {
+      console.error('[sales] renewal health', e?.message || e);
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  // 续费风险清单：分数<60或授权14天内到期的租户，按风险从高到低排
+  app.get('/api/admin/sales/renewal-risks', platformAdminRequired, async (req, res) => {
+    try {
+      const data = await listRenewalRisks(pool, { limit: Number(req.query.limit) || 50 });
+      res.json({ ok: true, items: data });
+    } catch (e) {
+      console.error('[sales] renewal risks', e?.message || e);
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  // 转介绍候选：稳定使用满60天、健康分≥80、无逾期异常的客户
+  app.get('/api/admin/sales/referral-candidates', platformAdminRequired, async (req, res) => {
+    try {
+      const data = await listReferralCandidates(pool, { limit: Number(req.query.limit) || 50 });
+      res.json({ ok: true, items: data });
+    } catch (e) {
+      console.error('[sales] referral candidates', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -936,6 +990,18 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       });
       res.json(result);
     } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  // 30天试跑第几天/剩几天 + 建档时约定的KPI目标 vs 实际值，validate接口只判断"有没有数据"，
+  // 这个接口回答"离目标还差多少"
+  app.get('/api/admin/sales/trials/:id/progress', platformAdminRequired, async (req, res) => {
+    try {
+      const data = await buildTrialProgressSummary(pool, Number(req.params.id));
+      res.status(data.ok ? 200 : 400).json(data);
+    } catch (e) {
+      console.error('[sales] trial progress', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
