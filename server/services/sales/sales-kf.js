@@ -6,6 +6,8 @@
  *   WECOM_KF_TOKEN / WECOM_KF_AES_KEY（可与 WECOM_CALLBACK_* 相同）
  */
 import { createHash, createDecipheriv, createCipheriv, randomBytes } from 'crypto';
+import { transcribeAmrVoice } from './sales-asr.js';
+import { synthesizeSpeechAmr } from './sales-tts.js';
 
 const tokenCache = { token: '', expireAt: 0 };
 
@@ -129,6 +131,55 @@ export async function sendKfConsultantCard({ openKfid, externalUserid, consultan
   return { ok: true, channel: 'wecom_kf_text_qr', content, result };
 }
 
+/** 下载客户发来的语音/图片等媒体文件，返回原始二进制Buffer；语音默认amr格式(voice_format=0，见sync_msg调用) */
+export async function downloadKfMedia(mediaId) {
+  const accessToken = await getAccessToken();
+  const resp = await fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/media/get?access_token=${encodeURIComponent(accessToken)}&media_id=${encodeURIComponent(mediaId)}`
+  );
+  const contentType = resp.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const data = await resp.json();
+    throw new Error(data?.errmsg || 'kf_media_download_failed');
+  }
+  const arrayBuffer = await resp.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+/** 发送语音消息(AI回复用真人声音)；media_id 需先调"上传临时素材"接口拿到 */
+export async function sendKfVoice({ openKfid, externalUserid, mediaId }) {
+  await claimKfServiceState({ openKfid, externalUserid }).catch((e) => {
+    console.warn('[sales-kf] claimKfServiceState failed (will still try to send):', e?.message || e);
+  });
+  const accessToken = await getAccessToken();
+  const resp = await fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/kf/send_msg?access_token=${encodeURIComponent(accessToken)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ touser: externalUserid, open_kfid: openKfid, msgtype: 'voice', voice: { media_id: mediaId } }),
+    }
+  );
+  const data = await resp.json();
+  if (Number(data?.errcode) !== 0) throw new Error(data?.errmsg || 'kf_send_voice_failed');
+  return data;
+}
+
+/** 上传临时素材(语音amr/图片等)，供 sendKfVoice 使用；素材3天内有效，用完即传不做缓存 */
+export async function uploadKfMedia(buffer, { type = 'voice', filename = 'voice.amr' } = {}) {
+  const accessToken = await getAccessToken();
+  const form = new FormData();
+  const mime = type === 'voice' ? 'audio/amr' : 'application/octet-stream';
+  form.append('media', new Blob([buffer], { type: mime }), filename);
+  const resp = await fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/media/upload?access_token=${encodeURIComponent(accessToken)}&type=${type}`,
+    { method: 'POST', body: form }
+  );
+  const data = await resp.json();
+  if (!data?.media_id) throw new Error(data?.errmsg || 'kf_media_upload_failed');
+  return data.media_id;
+}
+
 /**
  * 处理 kf 回调：拉消息 → 交给 session → 自动回复
  */
@@ -170,8 +221,32 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
       }
       continue;
     }
-    if (String(m.msgtype) !== 'text') continue;
-    const text = String(m?.text?.content || '').trim();
+    let text = '';
+    let fromVoice = false;
+    if (String(m.msgtype) === 'text') {
+      text = String(m?.text?.content || '').trim();
+    } else if (String(m.msgtype) === 'voice' && m?.voice?.media_id) {
+      try {
+        const amrBuffer = await downloadKfMedia(m.voice.media_id);
+        const transcribed = await transcribeAmrVoice(amrBuffer);
+        if (transcribed) { text = transcribed; fromVoice = true; }
+        console.log('[sales-kf] voice transcribed:', JSON.stringify({ media_id: m.voice.media_id, text: transcribed }));
+      } catch (e) {
+        console.error('[sales-kf] voice handling failed:', e?.message || e);
+      }
+      if (!text) {
+        // 识别失败：走一遍handleInbound只是为了让客户AI能自然地说"没听清"，不当成普通文本消息处理评分等副作用
+        const externalUseridFail = String(m.external_userid || '').trim();
+        if (externalUseridFail) {
+          try {
+            await sendKfText({ openKfid: String(m.open_kfid || kfId), externalUserid: externalUseridFail, content: '不好意思，刚才这条语音没听清，麻烦再说一遍，或者打字也行～' });
+          } catch (_) { /* ignore */ }
+        }
+        continue;
+      }
+    } else {
+      continue;
+    }
     if (!text) continue;
     const externalUserid = String(m.external_userid || '').trim();
     const msgId = String(m.msgid || '').trim() || null;
@@ -183,16 +258,31 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
       sourceChannel: 'wecom_kf',
     });
     if (turn?.replied && turn.reply && externalUserid) {
-      try {
-        const sendResult = await sendKfText({
-          openKfid: String(m.open_kfid || kfId),
-          externalUserid,
-          content: turn.reply,
-        });
-        console.log('[sales-kf] sendKfText ok:', JSON.stringify(sendResult));
-      } catch (e) {
-        turn.send_error = e?.message || String(e);
-        console.error('[sales-kf] sendKfText failed:', turn.send_error);
+      const replyOpenKfid = String(m.open_kfid || kfId);
+      let sentAsVoice = false;
+      if (fromVoice) {
+        // 客户发语音，镜像用语音回复；合成/上传任何一步失败都静默回退到文字，
+        // 不能因为语音链路故障让客户完全收不到回复。
+        try {
+          const amr = await synthesizeSpeechAmr(turn.reply);
+          if (amr) {
+            const mediaId = await uploadKfMedia(amr, { type: 'voice', filename: 'reply.amr' });
+            const sendResult = await sendKfVoice({ openKfid: replyOpenKfid, externalUserid, mediaId });
+            console.log('[sales-kf] sendKfVoice ok:', JSON.stringify(sendResult));
+            sentAsVoice = true;
+          }
+        } catch (e) {
+          console.error('[sales-kf] sendKfVoice failed, falling back to text:', e?.message || e);
+        }
+      }
+      if (!sentAsVoice) {
+        try {
+          const sendResult = await sendKfText({ openKfid: replyOpenKfid, externalUserid, content: turn.reply });
+          console.log('[sales-kf] sendKfText ok:', JSON.stringify(sendResult));
+        } catch (e) {
+          turn.send_error = e?.message || String(e);
+          console.error('[sales-kf] sendKfText failed:', turn.send_error);
+        }
       }
     }
     results.push(turn);

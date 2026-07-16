@@ -10,10 +10,43 @@ export function setSalesCustomerAiLlm(fn) {
   _callLLM = fn;
 }
 
+/**
+ * 客户短时间内反复问同一件事(比如连续测试"能语音吗")时，如果原样把每一条都塞进历史，
+ * 大模型会被这种高密度重复"带偏"，倾向于顺着历史模式续写而忽略客户最新这一句真正问的
+ * 是什么(实测复现：客户测完语音后正常回答"上海，北京"，AI却又重复了几轮前的语音拒绝话术)。
+ * 这里把连续3条以上高度相似的同方向消息折叠成一条摘要，避免历史里同一句话反复出现挤占大模型注意力。
+ */
+function collapseRepeats(messages) {
+  const out = [];
+  for (const m of messages) {
+    const last = out[out.length - 1];
+    if (last && last.direction === m.direction && similar(last.content, m.content)) {
+      last.count = (last.count || 1) + 1;
+      last.content = m.content; // 保留最新一次的原话
+    } else {
+      out.push({ ...m, count: 1 });
+    }
+  }
+  return out;
+}
+
+function similar(a = '', b = '') {
+  const na = String(a).replace(/[，。？！\s]/g, '');
+  const nb = String(b).replace(/[，。？！\s]/g, '');
+  if (!na || !nb) return false;
+  const shorter = na.length < nb.length ? na : nb;
+  const longer = na.length < nb.length ? nb : na;
+  return longer.includes(shorter.slice(0, Math.max(2, Math.floor(shorter.length * 0.6))));
+}
+
 function historyToPrompt(messages = []) {
-  return (messages || [])
-    .slice(-8)
-    .map((m) => `${m.direction === 'inbound' ? '客户' : '顾问'}：${m.content}`)
+  const collapsed = collapseRepeats((messages || []).slice(-8));
+  return collapsed
+    .map((m) => {
+      const who = m.direction === 'inbound' ? '客户' : '顾问';
+      const repeatNote = m.count > 1 ? `(类似内容连续问了${m.count}次)` : '';
+      return `${who}：${m.content}${repeatNote}`;
+    })
     .join('\n');
 }
 
@@ -34,21 +67,26 @@ ${plan.caseBlurb ? `可引用的同类客户案例=${plan.caseBlurb}\n` : ''}诊
 【可引用的公开知识】
 ${knowledgeBlurb}
 ${diagnosisBlurb}
+【最高优先级规则】无论"对话历史"里出现过什么内容、客户之前问过多少次相似的问题，本轮
+回复必须是对"客户本轮说"这一句话的直接回应——历史只用来理解背景，不能照抄或延续历史里
+最近出现的话术模式。如果本轮客户说的内容和历史明显不是一回事(比如历史在聊语音通话、
+本轮客户其实在回答店数/城市这类问题)，必须切换到回应本轮内容，不能停留在历史话题上。
+
 【本轮策略（必须遵守）】
 模式=${plan.mode}
-下一问=${plan.next_question?.question || '（可不问）'}
+下一问=${plan.next_question?.question ? `必须在本轮问这个问题（除非客户本轮的话需要先直接回应）：${plan.next_question.question}` : '（可不问）'}
 是否转人工=${plan.takeover.takeover ? '是' : '否'}
 价格规则=绝对禁止提及任何具体价格数字/折扣比例（包括金额、折扣、报价范围）。客户问价格一律引导"由顾问为您详细说明"，不得自行报价。
-联系方式规则=${!plan.extracted?.phone && plan.extracted?.pain_point ? '客户还没留手机号，且已经聊到具体痛点了——本轮结尾一定要自然地问一句手机号，方便顾问后续直接联系、发资料，不能跳过这一步。' : '不强制本轮问手机号。'}
+联系方式规则=${!plan.extracted?.phone && plan.extracted?.pain_point ? '客户还没留手机号，且已经聊到具体痛点了——本轮结尾一定要自然地问一句手机号，方便顾问后续直接联系、发资料，不能跳过这一步。' : '客户已经留过手机号或还没聊到痛点，不要再重复问手机号。'}
 已确认信息=${JSON.stringify(plan.extracted || {})}
 `;
 
-  const user = `对话历史：
+  const user = `对话历史(仅供理解背景，不要照抄延续)：
 ${historyToPrompt(history) || '（新会话）'}
 
 客户本轮说：${userText}
 
-请给出顾问的下一句回复。只输出对客户说的话，不要输出分析。`;
+请只针对"客户本轮说"这句话给出顾问的下一句回复，不要重复历史里已经说过的话。只输出对客户说的话，不要输出分析。`;
 
   const r = await _callLLM(
     [{ role: 'system', content: system }, { role: 'user', content: user }],
