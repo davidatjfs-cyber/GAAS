@@ -47,6 +47,9 @@ import { listKnowledgeItemsAdmin, upsertKnowledgeItem, deleteKnowledgeItem } fro
 import { buildLeadSummary, canTransition, calculateSla } from './services/sales/sales-collaboration-service.js';
 import { recordStageChange } from './services/sales/sales-store.js';
 import { runSalesSlaScan } from './services/sales/sales-sla-service.js';
+import { runNurtureCadence } from './services/sales/sales-nurture.js';
+import { getUnifiedCustomerTimeline } from './services/sales/sales-timeline.js';
+import { buildTenantMonthlyValueReport } from './services/sales/tenant-value-report.js';
 import {
   listSalesReps,
   createOrUpdateSalesRep,
@@ -166,6 +169,14 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     globalThis.__salesSlaTimer = setInterval(() => {
       ensureSalesTables(pool).then(() => runSalesSlaScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] SLA scan failed:', e?.message || e));
     }, 5 * 60 * 1000);
+  }
+
+  if (!globalThis.__salesNurtureCadenceTimer) {
+    globalThis.__salesNurtureCadenceTimer = setInterval(() => {
+      ensureSalesTables(pool)
+        .then(() => runNurtureCadence(pool))
+        .catch((e) => console.warn('[sales-ai] nurture cadence run failed:', e?.message || e));
+    }, 60 * 60 * 1000);
   }
 
   if (!globalThis.__salesTrialValidationTimer) {
@@ -386,6 +397,29 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       res.status(data.ok ? 200 : 404).json(data);
     } catch (e) {
       console.error('[sales] lead detail', e?.message || e);
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  // 统一客户时间线：售前(线索事件/阶段/对话) + 售后(已开通租户的健康度事件)，
+  // 销售/客户成功接手时不用再让客户重复一遍已经聊过的信息
+  app.get('/api/admin/sales/leads/:id/timeline', platformAdminRequired, async (req, res) => {
+    try {
+      const data = await getUnifiedCustomerTimeline(pool, Number(req.params.id));
+      res.status(data.ok ? 200 : 404).json(data);
+    } catch (e) {
+      console.error('[sales] unified timeline', e?.message || e);
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  // 月度客户价值报告：证明续费理由，供销售/客户成功在续费沟通前查看或发送给客户
+  app.get('/api/admin/sales/tenants/:tenantId/value-report', platformAdminRequired, async (req, res) => {
+    try {
+      const data = await buildTenantMonthlyValueReport(pool, req.params.tenantId, { month: req.query.month });
+      res.status(data.ok ? 200 : 400).json(data);
+    } catch (e) {
+      console.error('[sales] tenant value report', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });

@@ -3,6 +3,7 @@
  * LLM 只负责「怎么说」，不负责「该不该说」。
  */
 import { DIAGNOSTIC_SLOTS, knowledgeForPain, containsForbiddenClaim } from './sales-knowledge.js';
+import { diagnoseLead } from './sales-diagnosis.js';
 
 const HIGH_INTENT_PATTERNS = [
   /价格|多少钱|报价|费用|收费/,
@@ -144,8 +145,14 @@ export function buildStrategyPlan({ userText, extracted, history = [], intentSco
   const knowledge = knowledgeForPain(slots.pain_point || userText, knowledgeItems);
 
   let mode = 'diagnose';
+  let diagnosis = null;
   if (takeover.takeover) mode = 'handoff';
-  else if (/你们|系统|功能|什么|怎么|能否|可以|适合|有哪些|介绍一下|讲讲|说说|是什么|怎么做/.test(String(userText || '')) && slots.pain_point) mode = 'value_match';
+  else if (!nextQ && !slots.diagnosis_delivered) {
+    // 9个槽位全部收集完毕后，给出一次经营诊断结论，而不是继续问下一题或直接结束
+    mode = 'diagnosis_complete';
+    diagnosis = diagnoseLead(slots);
+    slots.diagnosis_delivered = true;
+  } else if (/你们|系统|功能|什么|怎么|能否|可以|适合|有哪些|介绍一下|讲讲|说说|是什么|怎么做/.test(String(userText || '')) && slots.pain_point) mode = 'value_match';
   else if (/你们|系统|功能|什么|介绍|产品|方案|服务|是什么|怎么收费|适合谁|有啥用/.test(String(userText || ''))) mode = 'introduce';
 
   return {
@@ -154,10 +161,22 @@ export function buildStrategyPlan({ userText, extracted, history = [], intentSco
     events,
     next_question: nextQ,
     knowledge,
+    diagnosis,
     takeover,
     allow_price_talk: !takeover.takeover && !/折扣|便宜点|优惠|便宜|降价|少点|优惠吗|最低价|特价/.test(String(userText || '')),
     history_turns: history.length,
   };
+}
+
+/** 诊断结论后的转化动作按意向分层，对齐 shouldTakeover 的 40 分中意向门槛 */
+export function diagnosisCta(intentScore = 0) {
+  if ((intentScore || 0) >= 40) {
+    return '我可以为您安排一次30分钟的针对性演示，演示内容会直接按照您目前的门店情况准备，而不是泛泛介绍系统。';
+  }
+  if ((intentScore || 0) >= 20) {
+    return '我先给您发送一个与您情况接近的餐饮客户解决方案，您看完以后，我再帮您安排一次针对性的演示。';
+  }
+  return '我已经记录了您目前最关注的问题，后续您需要了解客户复购、员工管理或多店经营时，可以直接继续问我。';
 }
 
 // 客户AI禁止自行报价：命中具体数字+货币/折扣单位即视为报价（¥xxx、xxx元、xxx万、xx折），
@@ -181,12 +200,20 @@ export function sanitizeReply(text = '') {
 }
 
 /** 无 LLM 时的高质量模板回复（保证像顾问） */
-export function templateReply(plan, userText) {
+export function templateReply(plan, userText, intentScore = 0) {
   const e = plan.extracted || {};
   const q = plan.next_question?.question;
 
   if (plan.mode === 'handoff') {
     return '根据您提到的情况，已经比较适合安排顾问做一次针对性说明和可行性判断。我这边先为您转人工顾问，他会基于您的门店数和数据条件继续沟通，不耽误您时间。';
+  }
+
+  if (plan.mode === 'diagnosis_complete') {
+    const d = plan.diagnosis || {};
+    const causes = (d.root_causes || []).slice(0, 2).join('；');
+    const modules = (d.recommended_modules || []).slice(0, 3).join('、');
+    const caseLine = plan.caseBlurb ? `同类客户案例：${plan.caseBlurb}。` : '';
+    return `根据您目前的情况，核心问题是「${d.surface_problem}」，背后原因可能是：${causes}。建议先帮您解决：${modules}。${caseLine}${diagnosisCta(intentScore)}`;
   }
 
   if (plan.mode === 'introduce') {

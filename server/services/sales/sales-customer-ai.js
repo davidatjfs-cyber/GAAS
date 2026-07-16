@@ -2,7 +2,8 @@
  * 客户 AI 一轮对话：策略机 → LLM 生成 → 闸门
  */
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE } from './sales-knowledge.js';
-import { buildStrategyPlan, sanitizeReply, templateReply, containsPriceMention } from './sales-strategy.js';
+import { buildStrategyPlan, sanitizeReply, templateReply, containsPriceMention, diagnosisCta } from './sales-strategy.js';
+import { recommendCasesForLead, formatCaseBlurb } from './sales-case-library.js';
 
 let _callLLM = null;
 export function setSalesCustomerAiLlm(fn) {
@@ -16,15 +17,23 @@ function historyToPrompt(messages = []) {
     .join('\n');
 }
 
-async function generateWithLlm(plan, userText, history, knowledgeItems) {
+async function generateWithLlm(plan, userText, history, knowledgeItems, intentScore = 0) {
   if (typeof _callLLM !== 'function') return null;
   const items = Array.isArray(knowledgeItems) && knowledgeItems.length ? knowledgeItems : PUBLIC_KNOWLEDGE;
   const knowledgeBlurb = items.map((k) => `- ${k.title}：${k.body}`).join('\n');
+  const diagnosisBlurb = plan.mode === 'diagnosis_complete' && plan.diagnosis
+    ? `\n【本轮必须先给出经营诊断结论，再引导下一步】
+核心问题=${plan.diagnosis.surface_problem}
+背后原因=${(plan.diagnosis.root_causes || []).slice(0, 2).join('；')}
+建议优先解决=${(plan.diagnosis.recommended_modules || []).slice(0, 3).join('、')}
+${plan.caseBlurb ? `可引用的同类客户案例=${plan.caseBlurb}\n` : ''}诊断后的转化动作（必须作为结尾）=${diagnosisCta(intentScore)}
+`
+    : '';
   const system = `${SALES_PERSONA.system_role}
 
 【可引用的公开知识】
 ${knowledgeBlurb}
-
+${diagnosisBlurb}
 【本轮策略（必须遵守）】
 模式=${plan.mode}
 下一问=${plan.next_question?.question || '（可不问）'}
@@ -49,7 +58,7 @@ ${historyToPrompt(history) || '（新会话）'}
   return String(r.content).trim();
 }
 
-export async function runCustomerAiTurn({ userText, extracted, history, intentScore, controller, guidance = null, knowledgeItems = null }) {
+export async function runCustomerAiTurn({ userText, extracted, history, intentScore, controller, guidance = null, knowledgeItems = null, pool = null }) {
   const plan = buildStrategyPlan({ userText, extracted, history, intentScore, controller, knowledgeItems });
   if (guidance?.question_slot) {
     const forced = (plan.next_question?.key === guidance.question_slot) || guidance.question_slot;
@@ -57,16 +66,21 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
     else plan.guidance_question_slot = forced;
   }
 
-  let reply = await generateWithLlm(plan, userText, history, knowledgeItems);
+  if (plan.mode === 'diagnosis_complete' && pool) {
+    const cases = await recommendCasesForLead(pool, { extracted: plan.extracted }).catch(() => []);
+    plan.caseBlurb = cases?.[0]?._score > 0 ? formatCaseBlurb(cases[0]) : '';
+  }
+
+  let reply = await generateWithLlm(plan, userText, history, knowledgeItems, intentScore);
   let source = 'llm';
   if (!reply) {
-    reply = templateReply(plan, userText);
+    reply = templateReply(plan, userText, intentScore);
     source = 'template';
   }
   reply = sanitizeReply(reply);
 
   if (plan.mode === 'handoff') {
-    reply = sanitizeReply(templateReply(plan, userText));
+    reply = sanitizeReply(templateReply(plan, userText, intentScore));
     source = 'handoff_template';
   } else if (containsPriceMention(reply)) {
     // 第二道防线：策略机没有判定为转人工场景，但LLM回复里仍然出现了具体价格数字/折扣，
@@ -74,7 +88,7 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
     // 人工接管，而不只是话术上"听起来像转人工"。
     plan.mode = 'handoff';
     plan.takeover = { ...plan.takeover, takeover: true, reason: 'price_leak_guard' };
-    reply = sanitizeReply(templateReply(plan, userText));
+    reply = sanitizeReply(templateReply(plan, userText, intentScore));
     source = 'handoff_template_price_guard';
   }
 

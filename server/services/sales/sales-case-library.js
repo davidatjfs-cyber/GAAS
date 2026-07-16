@@ -78,3 +78,10 @@ export function formatCaseForSend(caseRow) {
   if (!caseRow) return '';
   return `【${caseRow.title}】\n${caseRow.summary || ''}\n\n${caseRow.body || ''}`.trim();
 }
+
+/** 客户AI对话内嵌用的一句话案例佐证，控制在40字内避免把诊断话术挤爆 */
+export function formatCaseBlurb(caseRow) {
+  if (!caseRow) return '';
+  const gist = String(caseRow.summary || caseRow.title || '').trim();
+  return gist.length > 36 ? `${gist.slice(0, 36)}…` : gist;
+}

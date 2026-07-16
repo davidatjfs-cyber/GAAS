@@ -178,6 +178,7 @@ export async function handleInboundMessage(pool, {
     controller: conv.controller,
     guidance: activeGuidance,
     knowledgeItems,
+    pool,
   });
 
   const normalizedEvents = (turn.plan.events || []).map((e) => normalizeCustomerAiEvent(e, content));
