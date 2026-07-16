@@ -7,8 +7,9 @@ import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import WebSocket from 'ws';
 
-const TTS_MODEL = 'cosyvoice-v2';
-const DEFAULT_VOICE = 'longwan'; // CosyVoice经典预置女声(温柔知性)；longanlingxi是qwen-audio-3.0系列的音色，跟cosyvoice-v2不匹配导致InvalidParameter
+const DEFAULT_TTS_MODEL = 'cosyvoice-v3-flash';
+const DEFAULT_VOICE = 'longyingmu_v3'; // 优雅知性女声，适合专业顾问对话
+const TTS_WS_PATH = '/api-ws/v1/inference';
 
 /**
  * TTS用的是单独申请的"范围限定"API Key(只授权CosyVoice模型)，这类scoped key必须走
@@ -19,12 +20,35 @@ function getDashscopeTtsConfig() {
   return {
     apiKey: String(process.env.DASHSCOPE_TTS_API_KEY || process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY || '').trim(),
     wsHost: String(process.env.DASHSCOPE_TTS_WS_HOST || '').trim(),
+    model: String(process.env.DASHSCOPE_TTS_MODEL || DEFAULT_TTS_MODEL).trim(),
+    voice: String(process.env.DASHSCOPE_TTS_VOICE || DEFAULT_VOICE).trim(),
   };
+}
+
+export function buildDashscopeTtsWsUrl(wsHost) {
+  const raw = String(wsHost || '').trim();
+  if (!raw) throw new Error('dashscope_tts_ws_host_missing');
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `wss://${raw}`;
+  let url;
+  try {
+    url = new URL(candidate);
+  } catch (_) {
+    throw new Error('dashscope_tts_ws_host_invalid');
+  }
+  if (url.protocol !== 'wss:' || !url.hostname || url.username || url.password || url.hash) {
+    throw new Error('dashscope_tts_ws_host_invalid');
+  }
+  if (!url.pathname || url.pathname === '/') {
+    url.pathname = TTS_WS_PATH;
+  } else if (url.pathname.replace(/\/$/, '') !== TTS_WS_PATH) {
+    throw new Error('dashscope_tts_ws_host_invalid');
+  }
+  return url.toString();
 }
 
 function mp3ToAmr(mp3Buffer) {
   return new Promise((resolve, reject) => {
-    const ff = spawn('ffmpeg', ['-f', 'mp3', '-i', 'pipe:0', '-ar', '8000', '-ac', '1', '-f', 'amr', 'pipe:1']);
+    const ff = spawn('ffmpeg', ['-f', 'mp3', '-i', 'pipe:0', '-ar', '8000', '-ac', '1', '-c:a', 'libopencore_amrnb', '-b:a', '12.2k', '-f', 'amr', 'pipe:1']);
     const chunks = [];
     const errChunks = [];
     ff.stdout.on('data', (d) => chunks.push(d));
@@ -42,13 +66,16 @@ function mp3ToAmr(mp3Buffer) {
 /** 通过DashScope CosyVoice流式合成把文字转成mp3二进制；跟sales-asr.js的连接协议对称(那边收二进制发文字，这边发文字收二进制) */
 function synthesizeMp3(text, { timeoutMs = 20000 } = {}) {
   return new Promise((resolve, reject) => {
-    const { apiKey, wsHost } = getDashscopeTtsConfig();
+    const { apiKey, wsHost, model, voice } = getDashscopeTtsConfig();
     if (!apiKey) return reject(new Error('dashscope_tts_api_key_missing'));
-    if (!wsHost) return reject(new Error('dashscope_tts_ws_host_missing'));
+    let wsUrl;
+    try {
+      wsUrl = buildDashscopeTtsWsUrl(wsHost);
+    } catch (e) {
+      return reject(e);
+    }
     const taskId = randomUUID();
-    // 诊断用：临时改回通用地址(跟sales-asr.js的ASR连接一样)，排查是不是workspace专属地址
-    // 本身不支持路由TTS请求——如果这样能通，说明问题出在专属地址而不是Key权限本身。
-    const ws = new WebSocket(`wss://dashscope.aliyuncs.com/api-ws/v1/inference`, {
+    const ws = new WebSocket(wsUrl, {
       headers: { Authorization: `bearer ${apiKey}` },
     });
     const audioChunks = [];
@@ -75,8 +102,8 @@ function synthesizeMp3(text, { timeoutMs = 20000 } = {}) {
           task_group: 'audio',
           task: 'tts',
           function: 'SpeechSynthesizer',
-          model: TTS_MODEL,
-          parameters: { text_type: 'PlainText', voice: DEFAULT_VOICE, format: 'mp3', sample_rate: 22050, volume: 50, rate: 1.0, pitch: 1.0, enable_ssml: false },
+          model,
+          parameters: { text_type: 'PlainText', voice, format: 'mp3', sample_rate: 22050, volume: 50, rate: 1.0, pitch: 1.0, enable_ssml: false },
           input: {},
         },
       }));
@@ -101,6 +128,8 @@ function synthesizeMp3(text, { timeoutMs = 20000 } = {}) {
       } else if (event === 'task-failed') {
         console.error('[sales-tts] task-failed raw message:', JSON.stringify(msg));
         finish(new Error(msg?.header?.error_message || 'tts_task_failed'));
+      } else if (event === 'result-generated') {
+        // 音频数据通过二进制帧接收，该事件只是正常进度通知。
       } else if (event) {
         console.log('[sales-tts] unhandled event:', event, JSON.stringify(msg).slice(0, 300));
       }

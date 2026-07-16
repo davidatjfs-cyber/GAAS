@@ -256,6 +256,7 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
       externalUserid,
       msgId,
       sourceChannel: 'wecom_kf',
+      inputMode: fromVoice ? 'voice' : 'text',
     });
     if (turn?.replied && turn.reply && externalUserid) {
       const replyOpenKfid = String(m.open_kfid || kfId);

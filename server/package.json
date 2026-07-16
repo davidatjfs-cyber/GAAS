@@ -9,7 +9,7 @@
     "dev": "node index.js",
     "migrate": "node migrate.js",
     "seed:growth-demo": "node scripts/seed-growth-demo.js",
-    "test": "node --test ./**/*.test.mjs ./middleware/**/*.test.mjs ./utils/**/*.test.mjs ./ontology/**/*.test.mjs ./marketing/**/*.test.mjs ./agents/**/*.test.mjs"
+    "test": "node --test $(find . -mindepth 2 -maxdepth 2 -name '*.test.mjs' -print) $(find ./services -mindepth 2 -maxdepth 2 -name '*.test.mjs' -print)"
   },
   "dependencies": {
     "ali-oss": "^6.22.0",

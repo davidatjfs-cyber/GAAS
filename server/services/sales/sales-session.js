@@ -120,6 +120,7 @@ export async function handleInboundMessage(pool, {
   msgId,
   sourceChannel = 'sandbox',
   welcome = false,
+  inputMode = 'text',
 } = {}) {
   await ensureSalesTables(pool);
   const content = String(text || '').trim();
@@ -137,6 +138,7 @@ export async function handleInboundMessage(pool, {
         sender: 'customer',
         content,
         msgId,
+        meta: { input_mode: inputMode },
       });
       if (msgId && !m.inserted) {
         return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id };
@@ -155,6 +157,7 @@ export async function handleInboundMessage(pool, {
         sender: 'customer',
         content,
         msgId,
+        meta: { input_mode: inputMode },
       });
       if (msgId && !m.inserted) {
         return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: 'waiting_human' };
@@ -215,6 +218,7 @@ export async function handleInboundMessage(pool, {
     sender: 'customer',
     content,
     msgId,
+    meta: { input_mode: inputMode },
   });
   if (msgId && !inboundMsg.inserted) {
     // 企微/cron重推了同一条消息：这条inbound记录已经处理过，不再重跑评分/LLM回复/线索更新/
@@ -222,7 +226,9 @@ export async function handleInboundMessage(pool, {
     return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: conv.controller };
   }
 
-  const history = await listMessages(pool, conv.id, 30);
+  // 当前 inbound 已写入数据库，但不能又作为“历史”传给模型，否则同一句会同时出现在
+  // 历史和“客户本轮说”两个位置，放大模型对重复话术的关注。
+  const history = (await listMessages(pool, conv.id, 30)).filter((m) => m.id !== inboundMsg.id);
   const activeGuidanceRow = await getActiveSalesGuidance(pool, lead.id);
   const activeGuidance = activeGuidanceRow?.guidance || null;
   const knowledgeItems = await loadKnowledgeItems(pool);
@@ -235,6 +241,7 @@ export async function handleInboundMessage(pool, {
     guidance: activeGuidance,
     knowledgeItems,
     pool,
+    inputMode,
   });
 
   const normalizedEvents = (turn.plan.events || []).map((e) => normalizeCustomerAiEvent(e, content));

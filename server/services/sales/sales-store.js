@@ -455,7 +455,10 @@ export async function addMessage(pool, { conversationId, leadId, direction, send
 
 export async function listMessages(pool, conversationId, limit = 40) {
   const r = await pool.query(
-    `SELECT * FROM sales_messages WHERE conversation_id=$1 ORDER BY id ASC LIMIT $2`,
+    `SELECT * FROM (
+       SELECT * FROM sales_messages WHERE conversation_id=$1 ORDER BY id DESC LIMIT $2
+     ) recent_messages
+     ORDER BY id ASC`,
     [conversationId, limit]
   );
   return r.rows || [];

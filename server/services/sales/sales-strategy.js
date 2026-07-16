@@ -17,10 +17,52 @@ const HIGH_INTENT_PATTERNS = [
 
 const BUYING_SIGNALS = [/正在找|想上系统|准备采购|对比过|有预算|有需求|有意向/];
 const NEGATIVE_SIGNALS = [/随便问问|看看|了解一下|先看看|暂时不需要|没预算|太贵|不急着|不着急/];
+const UNCERTAINTY_RE = /不确定|不知道|不清楚|不太清楚|没确认|没注意|不了解|不晓得|说不准/;
+const CITY_PATTERN = '北京|上海|广州|深圳|杭州|成都|重庆|武汉|南京|苏州|西安|天津|青岛|厦门|长沙|郑州|宁波|无锡|佛山|东莞|合肥|福州|济南|沈阳|大连|昆明|哈尔滨|长春|南宁|贵阳|石家庄|太原|南昌|兰州|乌鲁木齐|呼和浩特|海口|银川|西宁|拉萨';
+
+const QUESTION_SLOT_PATTERNS = [
+  ['member_estimate', /(?:会员|客户|手机号).{0,18}(?:大概有多少|有多少|多少个|规模|数量|积累)/],
+  ['phone_data_ready', /(?:POS|订单|会员|顾客).{0,22}(?:手机号|手机号码)|(?:记录|留|存).{0,12}(?:客户|会员)?手机号|有没有手机号/],
+  ['store_count', /(?:几家|多少家|门店数)/],
+  ['city', /(?:哪个|什么|哪些).{0,8}城市|门店.{0,8}在哪/],
+  ['cuisine', /(?:什么|哪种).{0,8}(?:品类|菜系)|主要经营/],
+  ['pos_brand', /(?:哪家|什么|哪个).{0,8}POS|POS.{0,8}(?:品牌|系统)/i],
+  ['other_system_used', /(?:有没有|是否|在用).{0,12}(?:会员|营销).{0,6}(?:系统|软件)/],
+  ['pain_point', /(?:最想|最头疼|优先).{0,15}(?:解决|问题)|复购、门店执行/],
+  ['contact_phone', /(?:留|提供|方便).{0,8}(?:手机号|联系方式)/],
+  ['decision_role', /(?:您本人|谁).{0,10}(?:评估|拍板|决定)|运营\/?IT/],
+];
+
+export function isUncertainAnswer(text = '') {
+  return UNCERTAINTY_RE.test(String(text || ''));
+}
+
+export function inferQuestionSlotFromText(text = '') {
+  const value = String(text || '');
+  return QUESTION_SLOT_PATTERNS.find(([, pattern]) => pattern.test(value))?.[0] || null;
+}
+
+export function inferRecentQuestionSlot(history = []) {
+  const outbound = (history || []).filter((m) => m.direction === 'outbound').slice(-6).reverse();
+  for (const message of outbound) {
+    const slot = inferQuestionSlotFromText(message.content);
+    if (slot) return slot;
+  }
+  return null;
+}
+
+function markSlotUncertain(extracted, slot) {
+  if (!slot) return;
+  const uncertain = new Set(Array.isArray(extracted.uncertain_slots) ? extracted.uncertain_slots : []);
+  uncertain.add(slot);
+  extracted[slot] = null;
+  extracted.uncertain_slots = [...uncertain];
+}
 
 export function extractSlotsFromText(text = '', prev = {}) {
   const t = String(text || '');
   const out = normalizeCustomerProfileSlots(prev);
+  const uncertainSlots = new Set(Array.isArray(out.uncertain_slots) ? out.uncertain_slots : []);
 
   const nameM = t.match(/(?:我(?:姓|叫)|本人|名字|贵姓|怎么称呼|叫我)([^，。,\d]{1,6})/);
   if (nameM) out.name = nameM[1].trim();
@@ -29,7 +71,10 @@ export function extractSlotsFromText(text = '', prev = {}) {
   if (companyM) out.company = companyM[1].trim();
 
   const phoneM = t.match(/(?:1[3-9]\d{9}|(?:0\d{2,3}-?)?\d{7,8})/);
-  if (phoneM) out.contact_phone = phoneM[0];
+  if (phoneM) {
+    out.contact_phone = phoneM[0];
+    uncertainSlots.delete('contact_phone');
+  }
 
   const budgetM = t.match(/(?:预算|大概|投入|一年|每年).*?(\d+(?:\.\d+)?)\s*万/);
   if (budgetM) out.budget_range = `${budgetM[1]}万/年`;
@@ -40,15 +85,28 @@ export function extractSlotsFromText(text = '', prev = {}) {
   if (closeDateM) out.expected_close_hint = closeDateM[0];
 
   const storeM = t.match(/(\d+)\s*家/);
-  if (storeM) out.store_count = Number(storeM[1]);
-
-  if (/客如云|美团|企迈|天财|二维火|收钱吧|哗啦啦|博云|银豹|美味不用等/.test(t)) {
-    const m = t.match(/客如云|美团|企迈|天财|二维火|收钱吧|哗啦啦|博云|银豹|美味不用等/);
-    if (m) out.pos_brand = m[0];
+  if (storeM) {
+    out.store_count = Number(storeM[1]);
+    uncertainSlots.delete('store_count');
   }
 
-  if (/有手机号|能记录手机|有会员手机|手机号齐全|可以.*手机号/.test(t)) out.phone_data_ready = true;
-  if (/没有手机号|无手机号|记录不了手机/.test(t)) out.phone_data_ready = false;
+  const posM = t.match(/客如云|美团|企迈|天财|二维火|收钱吧|哗啦啦|博云|银豹|美味不用等/);
+  if (posM) {
+    out.pos_brand = posM[0];
+    uncertainSlots.delete('pos_brand');
+  }
+
+  const phoneDataUncertain = isUncertainAnswer(t) && /(?:手机号|手机号码|会员资料|顾客信息)/.test(t);
+  if (phoneDataUncertain) {
+    out.phone_data_ready = null;
+    uncertainSlots.add('phone_data_ready');
+  } else if (/有手机号|能记录手机|有会员手机|手机号齐全|可以.*手机号/.test(t)) {
+    out.phone_data_ready = true;
+    uncertainSlots.delete('phone_data_ready');
+  } else if (/(?<!有)没有手机号|无手机号|记录不了手机/.test(t)) {
+    out.phone_data_ready = false;
+    uncertainSlots.delete('phone_data_ready');
+  }
 
   if (/会员系统|CRM|营销系统|营销.*软件|客户.*系统|会员.*软件/.test(t)) out.has_member_system = true;
   if (/没有会员系统|没.*系统|没.*软件|无.*系统/.test(t)) out.has_member_system = false;
@@ -59,19 +117,26 @@ export function extractSlotsFromText(text = '', prev = {}) {
   else if (/培训|人才|员工|培养|流失|招聘|人效|能力|员工流失|不稳定/.test(t)) out.pain_point = '人才培养';
   else if (/多店|连锁|管理困难|管不过来|门店多|督导|巡店|标准化/.test(t)) out.pain_point = '多店管理';
   else if (/营销|投放|广告|推广|ROI|抖音|小红书|大众点评|广告费|触达|短信|企微|微信/.test(t)) out.pain_point = '营销归因';
-  else if (/数据|报表|看不见|不清楚|不知道|经营数据|老板要看|缺数据|数据孤岛/.test(t)) out.pain_point = '缺少经营数据';
+  else if (/数据|报表|看不见|经营数据不清楚|不知道经营数据|老板要看|缺数据|数据孤岛/.test(t)) out.pain_point = '缺少经营数据';
 
   if (/老板|我自己|法人|创始人|老板娘|我亲自|我决定|我说了算|拍板/.test(t)) out.decision_role = '老板';
   else if (/运营|店长|经理|总监|合伙人|副总|总经理|负责人|主管/.test(t)) out.decision_role = '运营';
   else if (/IT|技术|信息|系统管理员|运维|开发/.test(t)) out.decision_role = 'IT';
   else if (/财务|会计|出纳|行政|人事|采购|hr/.test(t)) out.decision_role = '职能';
 
-  const cityM = t.match(/(北京|上海|广州|深圳|杭州|成都|重庆|武汉|南京|苏州|西安|天津|青岛|厦门|长沙|郑州|宁波|无锡|佛山|东莞|合肥|福州|济南|沈阳|大连|昆明|哈尔滨|长春|南宁|贵阳|石家庄|太原|南昌|兰州|乌鲁木齐|呼和浩特|海口|银川|西宁|拉萨)[^市]?/);
-  if (cityM) out.city = cityM[1];
+  const cities = [...t.matchAll(new RegExp(CITY_PATTERN, 'g'))].map((m) => m[0]);
+  if (cities.length) {
+    out.cities = [...new Set(cities)];
+    out.city = out.cities.join('、');
+    uncertainSlots.delete('city');
+  }
 
   if (/潮汕|粤菜|川菜|火锅|烧烤|湘菜|日料|西餐|快餐|咖啡|茶饮|烘焙|云南菜|新疆菜|西北菜|江浙菜|东北菜|鲁菜|徽菜|闽菜|湘菜|本帮菜|淮扬菜|小吃|自助餐|轻食|酒馆|酒吧|烧烤|烤肉|串串|麻辣烫|粉面|饺子|粥|包子|汉堡|炸鸡|奶茶|甜品|冰淇淋/.test(t)) {
     const m = t.match(/潮汕|粤菜|川菜|火锅|烧烤|湘菜|日料|西餐|快餐|咖啡|茶饮|烘焙|云南菜|新疆菜|西北菜|江浙菜|东北菜|鲁菜|徽菜|闽菜|本帮菜|淮扬菜|小吃|自助餐|轻食|酒馆|酒吧|串串|麻辣烫|粉面|饺子|粥|包子|汉堡|炸鸡|奶茶|甜品|冰淇淋/);
-    if (m) out.cuisine = m[0];
+    if (m) {
+      out.cuisine = m[0];
+      uncertainSlots.delete('cuisine');
+    }
   }
 
   const CN_WAN = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
@@ -79,17 +144,35 @@ export function extractSlotsFromText(text = '', prev = {}) {
   if (cnMemM && /会员|客户|手机|微信|企微|粉丝/.test(t)) {
     const raw = cnMemM[1];
     const n = /^\d+$/.test(raw) ? Number(raw) : (CN_WAN[raw] || (raw === '十' ? 10 : null));
-    if (n) out.member_estimate = Math.round(n * 10000);
+    if (n) {
+      out.member_estimate = Math.round(n * 10000);
+      uncertainSlots.delete('member_estimate');
+    }
   }
   const memM = t.match(/(\d+(?:\.\d+)?)\s*万/);
-  if (!out.member_estimate && memM && /会员|客户|手机|微信|企微|粉丝/.test(t)) out.member_estimate = Math.round(Number(memM[1]) * 10000);
+  if (!out.member_estimate && memM && /会员|客户|手机|微信|企微|粉丝/.test(t)) {
+    out.member_estimate = Math.round(Number(memM[1]) * 10000);
+    uncertainSlots.delete('member_estimate');
+  }
   else if (!out.member_estimate && /两三千|三千|四千|五千|六千|七八千|八九千|九千|10000|1万|几千|一万多/.test(t) && /会员|客户|手机/.test(t)) {
     const nM = t.match(/(\d+)\s*千/);
-    if (nM) out.member_estimate = Math.round(Number(nM[1]) * 1000);
+    if (nM) {
+      out.member_estimate = Math.round(Number(nM[1]) * 1000);
+      uncertainSlots.delete('member_estimate');
+    }
   }
 
-  if (/在用.*(会员|营销|CRM|系统|软件)|已经有.*(会员|营销|系统|软件)|用过.*(系统|软件)|用过.*(有赞|客如云|美团|二维火|哗啦啦|银豹)/i.test(t)) out.other_system_used = true;
-  else if (/没有用.*系统|没有其他系统|没用系统|没有系统|没用过.*(系统|软件)|从零开始|还没用|没有会员系统/.test(t)) out.other_system_used = false;
+  if (/在用.*(会员|营销|CRM|系统|软件)|已经有.*(会员|营销|系统|软件)|用过.*(系统|软件)|用过.*(有赞|客如云|美团|二维火|哗啦啦|银豹)/i.test(t)) {
+    out.other_system_used = true;
+    uncertainSlots.delete('other_system_used');
+  } else if (/没有用.*系统|没有其他系统|没用系统|没有系统|没用过.*(系统|软件)|从零开始|还没用|没有会员系统/.test(t)) {
+    out.other_system_used = false;
+    uncertainSlots.delete('other_system_used');
+  }
+
+  if (out.decision_role && /(?:老板|我自己|法人|创始人|运营|店长|经理|总监|IT|技术|财务|会计|行政|人事|hr)/i.test(t)) uncertainSlots.delete('decision_role');
+  if (uncertainSlots.size) out.uncertain_slots = [...uncertainSlots];
+  else delete out.uncertain_slots;
 
   return normalizeCustomerProfileSlots(out);
 }
@@ -111,7 +194,10 @@ export function detectEvents(text = '') {
 }
 
 export function nextDiagnosticQuestion(extracted = {}) {
+  const uncertain = new Set(Array.isArray(extracted.uncertain_slots) ? extracted.uncertain_slots : []);
   for (const slot of DIAGNOSTIC_SLOTS) {
+    if (uncertain.has(slot.key)) continue;
+    if (slot.key === 'member_estimate' && uncertain.has('phone_data_ready')) continue;
     if (slot.key === 'store_count' && extracted.store_count == null) return slot;
     if (slot.key === 'city' && !extracted.city) return slot;
     if (slot.key === 'cuisine' && !extracted.cuisine) return slot;
@@ -140,6 +226,11 @@ export function shouldTakeover({ text, extracted, intentScore, controller }) {
 
 export function buildStrategyPlan({ userText, extracted, history = [], intentScore = 0, controller = 'ai', knowledgeItems }) {
   const slots = extractSlotsFromText(userText, extracted || {});
+  let uncertainSlot = null;
+  if (isUncertainAnswer(userText)) {
+    uncertainSlot = inferQuestionSlotFromText(userText) || inferRecentQuestionSlot(history);
+    if (uncertainSlot) markSlotUncertain(slots, uncertainSlot);
+  }
   const events = detectEvents(userText);
   const nextQ = nextDiagnosticQuestion(slots);
   const takeover = shouldTakeover({ text: userText, extracted: slots, intentScore, controller });
@@ -148,6 +239,7 @@ export function buildStrategyPlan({ userText, extracted, history = [], intentSco
   let mode = 'diagnose';
   let diagnosis = null;
   if (takeover.takeover) mode = 'handoff';
+  else if (uncertainSlot) mode = 'clarify_unknown';
   else if (!nextQ && !slots.diagnosis_delivered) {
     // 9个槽位全部收集完毕后，给出一次经营诊断结论，而不是继续问下一题或直接结束
     mode = 'diagnosis_complete';
@@ -163,6 +255,7 @@ export function buildStrategyPlan({ userText, extracted, history = [], intentSco
     next_question: nextQ,
     knowledge,
     diagnosis,
+    uncertain_slot: uncertainSlot,
     takeover,
     allow_price_talk: !takeover.takeover && !/折扣|便宜点|优惠|便宜|降价|少点|优惠吗|最低价|特价/.test(String(userText || '')),
     history_turns: history.length,
@@ -190,6 +283,17 @@ export function containsPriceMention(text = '') {
 
 export function sanitizeReply(text = '') {
   let out = String(text || '').trim();
+  out = out.replace(/^(?:嗯+|呃+|啊+)[，,。！!\s]*/, '');
+  out = out.replace(/精准(?:地)?找出原因/g, '辅助定位原因');
+  const posBrands = '客如云|美团|企迈|天财|二维火|收钱吧|哗啦啦|博云|银豹|美味不用等';
+  out = out.replace(
+    new RegExp(`(${posBrands})(?:的)?(?:POS)?(?:系统)?我们(?:是)?支持的`, 'g'),
+    '$1能否标准接入需要先做数据字段与接口评估'
+  );
+  out = out.replace(
+    new RegExp(`我们(?:是)?支持(${posBrands})(?:的)?(?:POS)?(?:系统)?`, 'g'),
+    '$1能否标准接入需要先做数据字段与接口评估'
+  );
   const hit = containsForbiddenClaim(out);
   if (hit) {
     out = out.replace(hit, '需由顾问评估后确认');

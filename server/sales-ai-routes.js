@@ -639,7 +639,8 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const text = String(req.body?.text || '').trim();
       const externalUserid = String(req.body?.external_userid || req.body?.session_key || '').trim() || `sandbox_${req.user?.username || 'admin'}`;
       const welcome = !!req.body?.welcome;
-      const data = await handleInboundMessage(pool, { text: welcome && !text ? '' : text, openKfid: 'sandbox', externalUserid, sourceChannel: 'sandbox', welcome });
+      const inputMode = req.body?.input_mode === 'voice' ? 'voice' : 'text';
+      const data = await handleInboundMessage(pool, { text: welcome && !text ? '' : text, openKfid: 'sandbox', externalUserid, sourceChannel: 'sandbox', welcome, inputMode });
       res.json(data);
     } catch (e) {
       console.error('[sales] sandbox chat', e?.message || e);

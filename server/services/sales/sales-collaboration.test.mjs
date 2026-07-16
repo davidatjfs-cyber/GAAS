@@ -31,7 +31,7 @@ test('medium lead receives a reverse guidance question instead of forced takeove
 });
 
 test('state machine rejects illegal jumps and summary exposes missing facts', () => {
-  assert.equal(canTransition('ai_greeting', 'won'), false);
+  assert.equal(canTransition('ai_greeting', 'new'), false);
   assert.equal(canTransition('demo_completed', 'proposal'), true);
   const summary = buildLeadSummary({ stage: 'need_confirmed', intent_level: 'high', extracted: { pain_point: '复购' } }, { missing_facts: ['pos_brand'] });
   assert.deepEqual(summary.missing_facts, ['pos_brand']);

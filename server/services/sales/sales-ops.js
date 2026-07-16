@@ -59,7 +59,10 @@ export async function applyLeadUpdates(pool, leadId, { extracted, events, score,
         phone = COALESCE($4, phone),
         store_count = COALESCE($5, store_count),
         pos_brand = COALESCE($6, pos_brand),
-        phone_data_ready = COALESCE($7, phone_data_ready),
+        phone_data_ready = CASE
+          WHEN COALESCE($14::jsonb->'uncertain_slots', '[]'::jsonb) ? 'phone_data_ready' THEN NULL
+          ELSE COALESCE($7, phone_data_ready)
+        END,
         city = COALESCE($8, city),
         cuisine = COALESCE($9, cuisine),
         decision_role = COALESCE($10, decision_role),

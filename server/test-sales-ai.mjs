@@ -89,10 +89,10 @@ import { buildDiagnosisReport, diagnoseLead, summarizeMeeting, detectOvercommitm
   });
   assert.equal(turn.ok, true);
   assert.ok(turn.reply);
-  assert.equal(turn.source, 'template');
+  assert.equal(turn.source, 'profile_fact_guard');
   assert.ok(turn.plan.extracted.store_count === 3);
   assert.ok(/执行|店长/.test(turn.reply));
-  console.log('ok customer ai template turn');
+  console.log('ok customer ai guarded turn');
 }
 
 {
