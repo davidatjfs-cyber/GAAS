@@ -21,17 +21,23 @@ async function ensureCaseTables(pool) {
         suggested_modules JSONB NOT NULL DEFAULT '[]'::jsonb,
         status TEXT NOT NULL DEFAULT 'active',
         sort_order INT NOT NULL DEFAULT 100,
+        external_approved BOOLEAN NOT NULL DEFAULT true,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`);
+    await pool.query(`ALTER TABLE sales_case_assets ADD COLUMN IF NOT EXISTS external_approved BOOLEAN NOT NULL DEFAULT true`);
   })().catch((e) => { caseEnsurePromise = null; throw e; });
   return caseEnsurePromise;
 }
 
-export async function listCaseAssets(pool, { theme, pain, limit = 50 } = {}) {
+export async function listCaseAssets(pool, { theme, pain, limit = 50, externalOnly = false } = {}) {
   await ensureCaseTables(pool);
   let sql = `SELECT * FROM sales_case_assets WHERE status='active'`;
   const params = [];
+  // external_use_allowed/anonymized 默认false，需要人工逐条标记才会被客户AI推荐——这是本批
+  // 明确要求的行为变化："旧数据默认不得自动视为允许外部展示"，即便此前external_approved
+  // 字段默认true、案例已经在正常展示，这里也不做兼容回退，宁可客户AI暂时没有案例可引用。
+  if (externalOnly) sql += ` AND external_use_allowed = true AND anonymized = true`;
   if (theme) {
     params.push(`%${theme}%`);
     sql += ` AND (theme ILIKE $${params.length} OR title ILIKE $${params.length})`;
@@ -61,9 +67,10 @@ export async function matchCasesForLead(lead = {}) {
   return { pain, tags };
 }
 
+/** 只推荐已标记"允许对外使用"的案例——这些结果会被客户AI/销售提案直接展示给潜在客户 */
 export async function recommendCasesForLead(pool, lead = {}) {
   const { pain, tags } = await matchCasesForLead(lead);
-  const all = await listCaseAssets(pool, { limit: 30 });
+  const all = await listCaseAssets(pool, { limit: 30, externalOnly: true });
   const scored = all.map((c) => {
     const pt = Array.isArray(c.pain_tags) ? c.pain_tags : JSON.parse(c.pain_tags || '[]');
     let score = 0;

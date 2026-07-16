@@ -12,15 +12,24 @@ const NURTURE_SCHEDULE = [
   { step: 5, afterHours: 720, title: '培育Day30：询问近期经营调整计划', build: () => '询问客户近期是否有门店经营调整计划，判断是否重新进入活跃培育，若长期无响应可考虑降级跟进频率。' },
 ];
 
-let ensureNurtureColumnsPromise = null;
+// nurture_step/nurture_last_sent_at 已经收进正式migration(124)，这里不再用业务请求触发
+// ALTER TABLE——只做只读的schema完整性检查，缺列时报错而不是静默尝试建表结构，
+// 逼着运维去跑 node migrate.js 而不是让cron悄悄改生产schema。
+let schemaCheckPromise = null;
 async function ensureNurtureColumns(pool) {
-  if (ensureNurtureColumnsPromise) return ensureNurtureColumnsPromise;
-  ensureNurtureColumnsPromise = (async () => {
+  if (schemaCheckPromise) return schemaCheckPromise;
+  schemaCheckPromise = (async () => {
     await ensureSalesTables(pool);
-    await pool.query(`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS nurture_step INT NOT NULL DEFAULT 0`);
-    await pool.query(`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS nurture_last_sent_at TIMESTAMPTZ`);
-  })().catch((e) => { ensureNurtureColumnsPromise = null; throw e; });
-  return ensureNurtureColumnsPromise;
+    const r = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_name='sales_leads' AND column_name IN ('nurture_step','nurture_last_sent_at')`
+    );
+    const found = new Set((r.rows || []).map((row) => row.column_name));
+    if (!found.has('nurture_step') || !found.has('nurture_last_sent_at')) {
+      throw new Error('sales_leads 缺少 nurture_step/nurture_last_sent_at 列，请先执行 node migrate.js（migration 124）');
+    }
+  })().catch((e) => { schemaCheckPromise = null; throw e; });
+  return schemaCheckPromise;
 }
 
 /**
@@ -48,15 +57,24 @@ export async function runNurtureCadence(pool) {
     const dueThresholdMs = nextStep.afterHours * 3600000;
     if (Date.now() - new Date(sinceLast).getTime() < dueThresholdMs) continue;
 
+    // 先"认领"这一步(乐观锁：WHERE nurture_step=旧值)，抢到才继续生成任务；两个并发tick
+    // 同时跑到这里时，第二个UPDATE会因为行已被改动而影响0行，直接跳过，不会重复推进/重复建任务。
+    const claim = await pool.query(
+      `UPDATE sales_leads SET nurture_step = $2, nurture_last_sent_at = NOW(), updated_at = NOW()
+        WHERE id = $1 AND nurture_step = $3`,
+      [lead.id, nextStep.step, lead.nurture_step]
+    );
+    if (!claim.rowCount) continue;
+
     const cases = await recommendCasesForLead(pool, { extracted: lead.extracted }).catch(() => []);
     const caseBlurb = cases?.[0]?._score > 0 ? formatCaseBlurb(cases[0]) : '';
     const detail = [nextStep.build(lead), caseBlurb ? `可引用案例：${caseBlurb}` : ''].filter(Boolean).join('\n');
 
-    await upsertTask(pool, { leadId: lead.id, title: nextStep.title, detail, dueAt: new Date(), assignee: lead.owner_username || null });
-    await pool.query(
-      `UPDATE sales_leads SET nurture_step = $2, nurture_last_sent_at = NOW(), updated_at = NOW() WHERE id = $1`,
-      [lead.id, nextStep.step]
-    );
+    await upsertTask(pool, {
+      leadId: lead.id, title: nextStep.title, detail, dueAt: new Date(), assignee: lead.owner_username || null,
+      dedupKey: `nurture:${lead.id}:${nextStep.step}`, taskDomain: 'nurture', taskType: 'nurture_touch',
+      tenantId: lead.tenant_id || null, sourceType: 'sales_leads', sourceId: String(lead.id), createdBy: 'cron:nurture',
+    });
     created.push({ lead_id: lead.id, lead_key: lead.lead_key, step: nextStep.step, title: nextStep.title });
   }
   return created;

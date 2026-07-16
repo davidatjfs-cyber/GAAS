@@ -99,13 +99,19 @@ export async function listReferralCandidates(pool, { limit = 50 } = {}) {
   return results.sort((a, b) => b.renewal_health_score - a.renewal_health_score);
 }
 
+function todayPeriod() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
+}
+
 /**
  * 把续费风险/转介绍机会转成客户成功任务，复用 sales_tasks 表(通过 tenant_id 反查
  * 该客户当初的 lead_id)，不新建一张表——同一个客户的售前/售后任务在同一处能看到。
- * upsertTask 按(lead_id, status=open, title)去重，标题保持固定文案，避免每次跑cron都刷屏。
+ * dedup_key 按天粒度(renewal-risk:{tenant_id}:renewal_health:{today})，同一天内cron
+ * 无论跑几次(每6小时一次)都只产生一条任务，不刷屏。
  */
 export async function syncCustomerSuccessTasks(pool) {
   const created = [];
+  const period = todayPeriod();
 
   const risks = await listRenewalRisks(pool);
   for (const r of risks) {
@@ -119,6 +125,9 @@ export async function syncCustomerSuccessTasks(pool) {
       detail: `${r.tenant_name || r.tenant_id}：续费健康分 ${r.renewal_health_score}。${detail}`,
       dueAt: new Date(),
       assignee: leadRow.owner_username || null,
+      dedupKey: `renewal-risk:${r.tenant_id}:renewal_health:${period}`,
+      taskDomain: 'renewal', taskType: 'renewal_risk_followup',
+      tenantId: r.tenant_id, sourceType: 'tenant_renewal_health', sourceId: r.tenant_id, createdBy: 'cron:renewal',
     });
     if (task) created.push({ kind: 'renewal_risk', tenant_id: r.tenant_id, task_id: task.id });
   }
@@ -134,6 +143,9 @@ export async function syncCustomerSuccessTasks(pool) {
       detail: `${c.tenant_name || c.tenant_id}：已稳定使用${c.tenure_days}天，健康分${c.renewal_health_score}，可尝试邀请转介绍。`,
       dueAt: new Date(),
       assignee: leadRow.owner_username || null,
+      dedupKey: `referral:${c.tenant_id}:${period}`,
+      taskDomain: 'referral', taskType: 'referral_followup',
+      tenantId: c.tenant_id, sourceType: 'tenant_renewal_health', sourceId: c.tenant_id, createdBy: 'cron:referral',
     });
     if (task) created.push({ kind: 'referral_opportunity', tenant_id: c.tenant_id, task_id: task.id });
   }

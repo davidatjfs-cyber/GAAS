@@ -62,6 +62,14 @@ async function issueTrialLicense(client, tenantId, days = 30) {
   return expires;
 }
 
+/**
+ * 补偿机制说明：核心事务(tenants/users/hrms_state/license)成功提交后立即把 tenant_id 和
+ * provision_status='tenant_created' 落库——即使后面 startOnboarding/upsertCustomer/关联表回写
+ * 任何一步失败，后台也能立刻查出"租户已经建好但销售侧关联还没完成"，而不是returned模糊500后
+ * 销售不知道该不该重新点"开租户"。重试时(lead.tenant_id已存在但provision_status!=='done')
+ * 直接跳过建租户/建管理员账号那段，只重跑还没完成的收尾步骤，收尾步骤本身都是幂等的
+ * (upsert/COALESCE/WHERE ... IS NULL)，可以放心重跑。
+ */
 export async function provisionTenantFromLead(pool, leadId, {
   tenantId: requestedTenantId,
   tenantName,
@@ -71,111 +79,155 @@ export async function provisionTenantFromLead(pool, leadId, {
 } = {}) {
   const lead = await getLead(pool, leadId);
   if (!lead) return { ok: false, error: 'lead_not_found' };
-  if (lead.tenant_id) {
-    return { ok: true, already: true, tenant_id: lead.tenant_id, provision_status: lead.provision_status || 'done' };
+  if (lead.tenant_id && lead.provision_status === 'done') {
+    return { ok: true, already: true, tenant_id: lead.tenant_id, provision_status: 'done' };
   }
 
+  let tenantId = lead.tenant_id;
+  let adminUser = lead.provision_meta?.admin_username || null;
+  let tempPassword = null;
+  const isRetry = !!lead.tenant_id;
   const name = String(tenantName || lead.company || lead.name || lead.lead_key || '新客户').trim();
-  let tenantId = String(requestedTenantId || '').trim();
-  if (!tenantId || !/^[a-zA-Z0-9_-]{1,80}$/.test(tenantId)) tenantId = slugifyTenantId(name);
 
-  const exists = await pool.query(`SELECT 1 FROM tenants WHERE tenant_id=$1`, [tenantId]);
-  if (exists.rows?.length) tenantId = slugifyTenantId(`${name}_${lead.id}`);
+  if (!isRetry) {
+    tenantId = String(requestedTenantId || '').trim();
+    if (!tenantId || !/^[a-zA-Z0-9_-]{1,80}$/.test(tenantId)) tenantId = slugifyTenantId(name);
+    const exists = await pool.query(`SELECT 1 FROM tenants WHERE tenant_id=$1`, [tenantId]);
+    if (exists.rows?.length) tenantId = slugifyTenantId(`${name}_${lead.id}`);
 
-  const adminUser = String(adminUsername || lead.phone || `admin_${tenantId}`).replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 40) || `admin_${tenantId}`;
-  const tempPassword = genTempPassword();
+    adminUser = String(adminUsername || lead.phone || `admin_${tenantId}`).replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 40) || `admin_${tenantId}`;
+    tempPassword = genTempPassword();
 
-  const client = await pool.connect();
-  let onboarding = null;
-  try {
-    await client.query('BEGIN');
-    await client.query(
-      `INSERT INTO tenants (tenant_id, name, mode, status) VALUES ($1, $2, 'managed', 'provisioning')`,
-      [tenantId, name]
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO tenants (tenant_id, name, mode, status) VALUES ($1, $2, 'managed', 'provisioning')`,
+        [tenantId, name]
+      );
+      const hash = await bcrypt.hash(tempPassword, 10);
+      await client.query(
+        `INSERT INTO users (id, username, password_hash, real_name, role, is_active, tenant_id)
+         VALUES (gen_random_uuid(), $1, $2, $3, 'admin', TRUE, $4)`,
+        [adminUser, hash, name, tenantId]
+      );
+      await client.query(
+        `INSERT INTO hrms_state (key, data, updated_at) VALUES ($1, $2::jsonb, NOW()) ON CONFLICT (key) DO NOTHING`,
+        [tenantId, JSON.stringify(createEmptyTenantState({ tenantId, tenantName: name, adminUsername: adminUser, adminName: name }))]
+      );
+      await savePlatformProfile(client, tenantId, name);
+      await issueTrialLicense(client, tenantId, trialDays);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      return { ok: false, error: 'provision_failed', message: e?.message || String(e) };
+    } finally {
+      client.release();
+    }
+
+    // 核心事务一旦提交，立刻落库——这一步之后即便下面全部失败，也不会有"租户已创建但
+    // 数据库里查不到任何痕迹"的情况，后台巡检可以按 provision_status='tenant_created' 找出待补偿的记录。
+    await pool.query(
+      `UPDATE sales_leads SET tenant_id=$2, provision_status='tenant_created',
+              provision_meta=$3::jsonb, updated_at=NOW() WHERE id=$1`,
+      [leadId, tenantId, JSON.stringify({ admin_username: adminUser, provisioned_at: new Date().toISOString(), provisioned_by: startedBy, retry_count: 0, failed_steps: [] })]
     );
-    const hash = await bcrypt.hash(tempPassword, 10);
-    await client.query(
-      `INSERT INTO users (id, username, password_hash, real_name, role, is_active, tenant_id)
-       VALUES (gen_random_uuid(), $1, $2, $3, 'admin', TRUE, $4)`,
-      [adminUser, hash, name, tenantId]
-    );
-    await client.query(
-      `INSERT INTO hrms_state (key, data, updated_at) VALUES ($1, $2::jsonb, NOW()) ON CONFLICT (key) DO NOTHING`,
-      [tenantId, JSON.stringify(createEmptyTenantState({ tenantId, tenantName: name, adminUsername: adminUser, adminName: name }))]
-    );
-    await savePlatformProfile(client, tenantId, name);
-    await issueTrialLicense(client, tenantId, trialDays);
-    await client.query('COMMIT');
-  } catch (e) {
-    await client.query('ROLLBACK');
-    return { ok: false, error: 'provision_failed', message: e?.message || String(e) };
-  } finally {
-    client.release();
   }
 
+  const priorMeta = isRetry ? (lead.provision_meta || {}) : { admin_username: adminUser, retry_count: 0, failed_steps: [] };
+  const failedSteps = [];
+  const retryCount = (priorMeta.retry_count || 0) + (isRetry ? 1 : 0);
+
+  let onboarding = null;
   try {
     onboarding = await tenantContext.run(tenantId, () => startOnboarding(pool, { tenantId, startedBy }));
   } catch (e) {
     onboarding = { error: e?.message || String(e) };
+    failedSteps.push({ step: 'startOnboarding', error: e?.message || String(e), at: new Date().toISOString() });
   }
 
-  let growthCustomerId = null;
+  let growthCustomerId = priorMeta.growth_customer_id || null;
   try {
     const gc = await tenantContext.run(tenantId, () => upsertCustomer(pool, {
       phone: lead.phone || lead.extracted?.phone,
       external_userid: lead.external_userid,
       customer_meta: { source: 'sales_lead', lead_id: lead.id, lead_key: lead.lead_key, company: name },
     }, tenantId));
-    growthCustomerId = gc?.id || null;
+    growthCustomerId = gc?.id || growthCustomerId;
   } catch (e) {
     console.warn('[sales-provision] growth_customer bridge failed:', e?.message || e);
+    failedSteps.push({ step: 'upsertCustomer', error: e?.message || String(e), at: new Date().toISOString() });
   }
 
-  // 落库的 provision_meta 不含明文密码：临时密码只在本次API响应里一次性返回给调用方
+  // 落库的 provision_meta 不含明文密码：临时密码只在首次开通的本次API响应里一次性返回给调用方
   // (前端应立即展示给销售/客户，不做二次持久化)；users表里的 password_hash 才是登录凭据来源。
+  const allDone = failedSteps.length === 0;
   const provisionMeta = {
     admin_username: adminUser,
-    onboarding_run_id: onboarding?.run?.id || onboarding?.id || null,
+    onboarding_run_id: onboarding?.run?.id || onboarding?.id || priorMeta.onboarding_run_id || null,
     growth_customer_id: growthCustomerId,
-    provisioned_at: new Date().toISOString(),
+    provisioned_at: priorMeta.provisioned_at || new Date().toISOString(),
     provisioned_by: startedBy,
+    retry_count: retryCount,
+    failed_steps: failedSteps,
+    last_retry_at: isRetry ? new Date().toISOString() : (priorMeta.last_retry_at || null),
   };
 
-  await pool.query(
-    `UPDATE sales_leads
-        SET tenant_id=$2, growth_customer_id=COALESCE($3, growth_customer_id),
-            provision_status='done', provision_meta=$4::jsonb, updated_at=NOW()
-      WHERE id=$1`,
-    [leadId, tenantId, growthCustomerId, JSON.stringify(provisionMeta)]
-  );
-  await pool.query(
-    `UPDATE sales_deals SET tenant_id=$2, provision_status='done', provision_meta=$3::jsonb, updated_at=NOW()
-      WHERE lead_id=$1 AND tenant_id IS NULL`,
-    [leadId, tenantId, JSON.stringify(provisionMeta)]
-  );
-  await pool.query(
-    `UPDATE sales_trials SET tenant_id=$2, updated_at=NOW() WHERE lead_id=$1 AND tenant_id IS NULL`,
-    [leadId, tenantId]
-  );
+  try {
+    await pool.query(
+      `UPDATE sales_leads
+          SET tenant_id=$2, growth_customer_id=COALESCE($3, growth_customer_id),
+              provision_status=$4, provision_meta=$5::jsonb, updated_at=NOW()
+        WHERE id=$1`,
+      [leadId, tenantId, growthCustomerId, allDone ? 'done' : 'partial', JSON.stringify(provisionMeta)]
+    );
+    await pool.query(
+      `UPDATE sales_deals SET tenant_id=$2, provision_status=$3, provision_meta=$4::jsonb, updated_at=NOW()
+        WHERE lead_id=$1 AND tenant_id IS NULL`,
+      [leadId, tenantId, allDone ? 'done' : 'partial', JSON.stringify(provisionMeta)]
+    );
+    await pool.query(
+      `UPDATE sales_trials SET tenant_id=$2, updated_at=NOW() WHERE lead_id=$1 AND tenant_id IS NULL`,
+      [leadId, tenantId]
+    );
+  } catch (e) {
+    failedSteps.push({ step: 'writeback_sales_tables', error: e?.message || String(e), at: new Date().toISOString() });
+    console.error('[sales-provision] writeback failed, tenant already created:', tenantId, e?.message || e);
+  }
 
   await addEvent(pool, leadId, {
-    event_type: 'TENANT_PROVISIONED',
-    summary: `已开通租户 ${tenantId}`,
-    priority: 'high',
-    recommended_action: 'onboarding',
-    payload: { tenant_id: tenantId, admin_username: adminUser, onboarding_run_id: provisionMeta.onboarding_run_id },
-  });
+    event_type: allDone ? 'TENANT_PROVISIONED' : 'TENANT_PROVISIONED_PARTIAL',
+    summary: allDone ? `已开通租户 ${tenantId}` : `租户 ${tenantId} 已创建，${failedSteps.length}个收尾步骤待重试`,
+    priority: allDone ? 'high' : 'high',
+    recommended_action: allDone ? 'onboarding' : 'retry_provisioning',
+    payload: { tenant_id: tenantId, admin_username: adminUser, failed_steps: failedSteps, retry_count: retryCount },
+  }).catch(() => null);
 
   return {
     ok: true,
     tenant_id: tenantId,
     tenant_name: name,
     admin_username: adminUser,
-    temp_password: tempPassword,
+    temp_password: tempPassword, // 只有首次开通(非重试)才非空
     onboarding,
     growth_customer_id: growthCustomerId,
     provision_meta: provisionMeta,
+    needs_retry: !allDone,
+    failed_steps: failedSteps,
   };
+}
+
+/** 后台巡检用：找出"租户已创建但销售侧收尾未完成"的记录，供人工或定时任务重试 */
+export async function listPendingProvisioningCompensations(pool, { limit = 50 } = {}) {
+  const r = await pool.query(
+    `SELECT id, lead_key, company, tenant_id, provision_status, provision_meta, updated_at
+       FROM sales_leads
+      WHERE provision_status IN ('tenant_created', 'partial')
+      ORDER BY updated_at ASC
+      LIMIT $1`,
+    [limit]
+  );
+  return r.rows || [];
 }
 
 export async function completeDealWithProvisioning(pool, dealParams, { provision = true, startedBy } = {}) {

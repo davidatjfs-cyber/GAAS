@@ -43,14 +43,40 @@ async function upsertConversation(pool, { openKfid, externalUserid, leadId }) {
     [openKfid || null, externalUserid || null]
   );
   if (existing.rows?.[0]) return existing.rows[0];
-  const r = await pool.query(
-    `INSERT INTO sales_conversations (lead_id, open_kfid, external_userid, controller)
-     VALUES ($1,$2,$3,'ai') RETURNING *`,
-    [leadId, openKfid || null, externalUserid || null]
+  try {
+    // idx_sales_conv_ext_kf 是(open_kfid,external_userid)都非空时的部分唯一索引；两个并发
+    // 请求同时给同一客户建会话时，靠这个索引兜底只留一行，不再是SELECT没查到就直接抛冲突异常。
+    const r = await pool.query(
+      `INSERT INTO sales_conversations (lead_id, open_kfid, external_userid, controller)
+       VALUES ($1,$2,$3,'ai')
+       ON CONFLICT (open_kfid, external_userid) WHERE open_kfid IS NOT NULL AND external_userid IS NOT NULL DO NOTHING
+       RETURNING *`,
+      [leadId, openKfid || null, externalUserid || null]
+    );
+    if (r.rows?.[0]) return r.rows[0];
+  } catch (e) {
+    if (!/no unique or exclusion constraint/i.test(e?.message || '')) throw e;
+    const r = await pool.query(
+      `INSERT INTO sales_conversations (lead_id, open_kfid, external_userid, controller)
+       VALUES ($1,$2,$3,'ai') RETURNING *`,
+      [leadId, openKfid || null, externalUserid || null]
+    );
+    return r.rows[0];
+  }
+  const found = await pool.query(
+    `SELECT * FROM sales_conversations
+      WHERE open_kfid IS NOT DISTINCT FROM $1 AND external_userid IS NOT DISTINCT FROM $2
+      ORDER BY id DESC LIMIT 1`,
+    [openKfid || null, externalUserid || null]
   );
-  return r.rows[0];
+  return found.rows?.[0] || null;
 }
 
+/**
+ * 同一客户几乎同时发两条消息会并发触发两次调用；靠 idx_sales_leads_external_uid 这个
+ * 部分唯一索引兜底，INSERT ... ON CONFLICT DO NOTHING 后如果没插进去就查回已存在的那条，
+ * 不会像之前"先SELECT再INSERT"那样在竞态下拆出两条lead_key不同的重复线索。
+ */
 async function upsertLead(pool, { openKfid, externalUserid, sourceChannel }) {
   if (externalUserid) {
     const found = await pool.query(
@@ -60,12 +86,31 @@ async function upsertLead(pool, { openKfid, externalUserid, sourceChannel }) {
     if (found.rows?.[0]) return found.rows[0];
   }
   const key = newLeadKey();
-  const r = await pool.query(
-    `INSERT INTO sales_leads (lead_key, external_userid, open_kfid, source_channel, stage, controller)
-     VALUES ($1,$2,$3,$4,'ai_greeting','ai') RETURNING *`,
-    [key, externalUserid || null, openKfid || null, sourceChannel || 'wecom_kf']
-  );
-  return r.rows[0];
+  try {
+    const r = await pool.query(
+      `INSERT INTO sales_leads (lead_key, external_userid, open_kfid, source_channel, stage, controller)
+       VALUES ($1,$2,$3,$4,'ai_greeting','ai')
+       ON CONFLICT (external_userid) WHERE external_userid IS NOT NULL DO NOTHING
+       RETURNING *`,
+      [key, externalUserid || null, openKfid || null, sourceChannel || 'wecom_kf']
+    );
+    if (r.rows?.[0]) return r.rows[0];
+    const existing = await pool.query(
+      `SELECT * FROM sales_leads WHERE external_userid=$1 ORDER BY id DESC LIMIT 1`,
+      [externalUserid]
+    );
+    return existing.rows?.[0] || null;
+  } catch (e) {
+    // idx_sales_leads_external_uid 可能因历史重复数据未清理而尚未建成，过渡期退回无约束的
+    // 普通INSERT，去重保护降级但不阻断新客户建档。
+    if (!/no unique or exclusion constraint/i.test(e?.message || '')) throw e;
+    const r = await pool.query(
+      `INSERT INTO sales_leads (lead_key, external_userid, open_kfid, source_channel, stage, controller)
+       VALUES ($1,$2,$3,$4,'ai_greeting','ai') RETURNING *`,
+      [key, externalUserid || null, openKfid || null, sourceChannel || 'wecom_kf']
+    );
+    return r.rows[0];
+  }
 }
 
 export async function handleInboundMessage(pool, {
@@ -85,7 +130,7 @@ export async function handleInboundMessage(pool, {
 
   if (conv.controller === 'human') {
     if (content) {
-      await addMessage(pool, {
+      const m = await addMessage(pool, {
         conversationId: conv.id,
         leadId: lead.id,
         direction: 'inbound',
@@ -93,6 +138,9 @@ export async function handleInboundMessage(pool, {
         content,
         msgId,
       });
+      if (msgId && !m.inserted) {
+        return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id };
+      }
     }
     await pool.query(`UPDATE sales_leads SET last_message_at=NOW(), updated_at=NOW() WHERE id=$1`, [lead.id]);
     return { ok: true, replied: false, reason: 'human_controller', lead_id: lead.id, conversation_id: conv.id };
@@ -100,7 +148,7 @@ export async function handleInboundMessage(pool, {
 
   if (conv.controller === 'waiting_human') {
     if (content) {
-      await addMessage(pool, {
+      const m = await addMessage(pool, {
         conversationId: conv.id,
         leadId: lead.id,
         direction: 'inbound',
@@ -108,6 +156,9 @@ export async function handleInboundMessage(pool, {
         content,
         msgId,
       });
+      if (msgId && !m.inserted) {
+        return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: 'waiting_human' };
+      }
     }
     const slots = extractSlotsFromText(content, lead.extracted || {});
     const events = detectEvents(content);
@@ -157,7 +208,7 @@ export async function handleInboundMessage(pool, {
     return { ok: true, replied: true, reply: welcomeText, lead_id: lead.id, conversation_id: conv.id, controller: 'ai' };
   }
 
-  await addMessage(pool, {
+  const inboundMsg = await addMessage(pool, {
     conversationId: conv.id,
     leadId: lead.id,
     direction: 'inbound',
@@ -165,6 +216,11 @@ export async function handleInboundMessage(pool, {
     content,
     msgId,
   });
+  if (msgId && !inboundMsg.inserted) {
+    // 企微/cron重推了同一条消息：这条inbound记录已经处理过，不再重跑评分/LLM回复/线索更新/
+    // 通知——否则客户会收到两条几乎相同的AI回复，销售会收到重复的高意向通知。
+    return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: conv.controller };
+  }
 
   const history = await listMessages(pool, conv.id, 30);
   const activeGuidanceRow = await getActiveSalesGuidance(pool, lead.id);

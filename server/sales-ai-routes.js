@@ -26,7 +26,7 @@ import {
 } from './services/sales/sales-ops.js';
 import { setSalesCustomerAiLlm } from './services/sales/sales-customer-ai.js';
 import { draftCustomerReply, draftStandardResponse, draftQuickReplyByScenario, setSalesReplyDraftLlm } from './services/sales/sales-reply-draft.js';
-import { provisionTenantFromLead } from './services/sales-provisioning.js';
+import { provisionTenantFromLead, listPendingProvisioningCompensations } from './services/sales-provisioning.js';
 import { buildSalesBossDashboard } from './services/sales/sales-boss-metrics.js';
 import { listCaseAssets, recommendCasesForLead, formatCaseForSend, getCaseAsset } from './services/sales/sales-case-library.js';
 import { generateSalesProposal, runDeepDiagnosis, setSalesProposalLlm } from './services/sales/sales-proposal.js';
@@ -44,14 +44,17 @@ import {
 } from './services/sales/sales-kf.js';
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE, FORBIDDEN_CLAIMS } from './services/sales/sales-knowledge.js';
 import { listKnowledgeItemsAdmin, upsertKnowledgeItem, deleteKnowledgeItem } from './services/sales/sales-knowledge-store.js';
-import { buildLeadSummary, canTransition, calculateSla } from './services/sales/sales-collaboration-service.js';
-import { recordStageChange } from './services/sales/sales-store.js';
+import { buildLeadSummary, calculateSla } from './services/sales/sales-collaboration-service.js';
+import { recordStageChange, transitionLeadStage } from './services/sales/sales-store.js';
 import { runSalesSlaScan } from './services/sales/sales-sla-service.js';
 import { runNurtureCadence } from './services/sales/sales-nurture.js';
 import { getUnifiedCustomerTimeline } from './services/sales/sales-timeline.js';
 import { buildTenantMonthlyValueReport } from './services/sales/tenant-value-report.js';
 import { getOnboardingChecklist } from './services/sales/tenant-onboarding.js';
 import { computeRenewalHealth, listRenewalRisks, listReferralCandidates, syncCustomerSuccessTasks } from './services/sales/tenant-renewal-service.js';
+import { maskLeadContact, maskLeadListContact, canViewFullContact } from './services/sales/sales-privacy.js';
+import { sensitiveRateLimit } from './services/sales/sales-rate-limit.js';
+import { leadScopeSql, canAccessLead, canAccessRepMetrics, canAccessTenant, isManager } from './services/sales/sales-permissions.js';
 import {
   listSalesReps,
   createOrUpdateSalesRep,
@@ -393,29 +396,56 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   app.get('/api/admin/sales/leads', platformAdminRequired, async (req, res) => {
     try {
       await ensureSalesTables(pool);
-      const leads = await listLeads(pool, { stage: req.query?.stage, min_score: req.query?.min_score, limit: req.query?.limit });
-      res.json({ ok: true, leads });
+      const scope = leadScopeSql(req.platformAdmin, 4);
+      const leads = await listLeads(pool, { stage: req.query?.stage, min_score: req.query?.min_score, limit: req.query?.limit }, scope);
+      res.json({ ok: true, leads: maskLeadListContact(leads, req.platformAdmin) });
     } catch (e) {
       console.error('[sales] list leads', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
 
-  app.get('/api/admin/sales/leads/:id', platformAdminRequired, async (req, res) => {
+  // 记录级归属校验：查不到 或 无权限 统一返回404，不用403——避免通过状态码差异
+  // 就能判断出"这个ID存在但我无权看"，变相把线索ID是否存在这件事泄露出去。
+  app.get('/api/admin/sales/leads/:id', platformAdminRequired, sensitiveRateLimit('lead_detail'), async (req, res) => {
     try {
       const data = await getLeadDetail(pool, Number(req.params.id));
-      res.status(data.ok ? 200 : 404).json(data);
+      if (!data.ok) return res.status(404).json(data);
+      if (!canAccessLead(req.platformAdmin, data.lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      data.lead = maskLeadContact(data.lead, req.platformAdmin);
+      res.status(200).json(data);
     } catch (e) {
       console.error('[sales] lead detail', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
 
+  // 受控查看完整联系方式：列表/详情接口默认脱敏，需要真实拨打电话时走这个接口，
+  // 必须带业务原因；POST请求会被 platformAdminRequired 中间件自动写入
+  // platform_admin_audit_log(admin_username/path/target_tenant_id/detail/ip)，不用另建审计表。
+  app.post('/api/admin/sales/leads/:id/reveal-contact', platformAdminRequired, sensitiveRateLimit('reveal_contact'), async (req, res) => {
+    try {
+      const reason = String(req.body?.reason || '').trim();
+      if (!reason) return res.status(400).json({ ok: false, error: 'reason_required' });
+      const leadId = Number(req.params.id);
+      const lead = await getLead(pool, leadId);
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      if (!canViewFullContact(req.platformAdmin, lead)) return res.status(403).json({ ok: false, error: 'forbidden' });
+      res.json({ ok: true, phone: lead.phone || null, legal_contact_phone: lead.legal_contact_phone || null });
+    } catch (e) {
+      console.error('[sales] reveal contact', e?.message || e);
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
   // 统一客户时间线：售前(线索事件/阶段/对话) + 售后(已开通租户的健康度事件)，
   // 销售/客户成功接手时不用再让客户重复一遍已经聊过的信息
-  app.get('/api/admin/sales/leads/:id/timeline', platformAdminRequired, async (req, res) => {
+  app.get('/api/admin/sales/leads/:id/timeline', platformAdminRequired, sensitiveRateLimit('lead_timeline'), async (req, res) => {
     try {
-      const data = await getUnifiedCustomerTimeline(pool, Number(req.params.id));
+      const leadId = Number(req.params.id);
+      const lead = await getLead(pool, leadId);
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      const data = await getUnifiedCustomerTimeline(pool, leadId);
       res.status(data.ok ? 200 : 404).json(data);
     } catch (e) {
       console.error('[sales] unified timeline', e?.message || e);
@@ -424,8 +454,9 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   });
 
   // 客户上线进度清单：新开通租户是否具备"数据条件+基础配置"就绪，复用已有巡检信号
-  app.get('/api/admin/sales/tenants/:tenantId/onboarding', platformAdminRequired, async (req, res) => {
+  app.get('/api/admin/sales/tenants/:tenantId/onboarding', platformAdminRequired, sensitiveRateLimit('tenant_onboarding'), async (req, res) => {
     try {
+      if (!(await canAccessTenant(pool, req.platformAdmin, req.params.tenantId))) return res.status(404).json({ ok: false, error: 'not_found' });
       const data = await getOnboardingChecklist(pool, req.params.tenantId);
       res.status(data.ok ? 200 : 400).json(data);
     } catch (e) {
@@ -435,8 +466,9 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   });
 
   // 单租户续费健康度：透明加减分，续费风险/转介绍候选列表都是基于这个分数派生的
-  app.get('/api/admin/sales/tenants/:tenantId/renewal-health', platformAdminRequired, async (req, res) => {
+  app.get('/api/admin/sales/tenants/:tenantId/renewal-health', platformAdminRequired, sensitiveRateLimit('tenant_renewal_health'), async (req, res) => {
     try {
+      if (!(await canAccessTenant(pool, req.platformAdmin, req.params.tenantId))) return res.status(404).json({ ok: false, error: 'not_found' });
       const data = await computeRenewalHealth(pool, req.params.tenantId);
       res.status(data.ok ? 200 : 400).json(data);
     } catch (e) {
@@ -445,22 +477,30 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  // 续费风险清单：分数<60或授权14天内到期的租户，按风险从高到低排
-  app.get('/api/admin/sales/renewal-risks', platformAdminRequired, async (req, res) => {
+  // 续费风险清单：分数<60或授权14天内到期的租户，按风险从高到低排；非manager只看自己范围内的租户
+  app.get('/api/admin/sales/renewal-risks', platformAdminRequired, sensitiveRateLimit('renewal_risks'), async (req, res) => {
     try {
-      const data = await listRenewalRisks(pool, { limit: Number(req.query.limit) || 50 });
-      res.json({ ok: true, items: data });
+      const all = await listRenewalRisks(pool, { limit: Number(req.query.limit) || 50 });
+      const items = [];
+      for (const item of all) {
+        if (await canAccessTenant(pool, req.platformAdmin, item.tenant_id)) items.push(item);
+      }
+      res.json({ ok: true, items });
     } catch (e) {
       console.error('[sales] renewal risks', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
 
-  // 转介绍候选：稳定使用满60天、健康分≥80、无逾期异常的客户
-  app.get('/api/admin/sales/referral-candidates', platformAdminRequired, async (req, res) => {
+  // 转介绍候选：稳定使用满60天、健康分≥80、无逾期异常的客户；非manager只看自己范围内的租户
+  app.get('/api/admin/sales/referral-candidates', platformAdminRequired, sensitiveRateLimit('referral_candidates'), async (req, res) => {
     try {
-      const data = await listReferralCandidates(pool, { limit: Number(req.query.limit) || 50 });
-      res.json({ ok: true, items: data });
+      const all = await listReferralCandidates(pool, { limit: Number(req.query.limit) || 50 });
+      const items = [];
+      for (const item of all) {
+        if (await canAccessTenant(pool, req.platformAdmin, item.tenant_id)) items.push(item);
+      }
+      res.json({ ok: true, items });
     } catch (e) {
       console.error('[sales] referral candidates', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
@@ -468,8 +508,9 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   });
 
   // 月度客户价值报告：证明续费理由，供销售/客户成功在续费沟通前查看或发送给客户
-  app.get('/api/admin/sales/tenants/:tenantId/value-report', platformAdminRequired, async (req, res) => {
+  app.get('/api/admin/sales/tenants/:tenantId/value-report', platformAdminRequired, sensitiveRateLimit('tenant_value_report'), async (req, res) => {
     try {
+      if (!(await canAccessTenant(pool, req.platformAdmin, req.params.tenantId))) return res.status(404).json({ ok: false, error: 'not_found' });
       const data = await buildTenantMonthlyValueReport(pool, req.params.tenantId, { month: req.query.month });
       res.status(data.ok ? 200 : 400).json(data);
     } catch (e) {
@@ -528,11 +569,15 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   app.post('/api/admin/sales/leads/:id/stage', platformAdminRequired, async (req, res) => {
     try {
       const leadId = Number(req.params.id); const toStage = String(req.body?.stage || '').trim();
-      const lead = await getLead(pool, leadId); if (!lead) return res.status(404).json({ ok: false, error: 'not_found' });
-      if (!canTransition(lead.stage, toStage)) return res.status(400).json({ ok: false, error: 'invalid_stage_transition', from_stage: lead.stage, to_stage: toStage });
-      await pool.query(`UPDATE sales_leads SET stage=$2, updated_at=NOW() WHERE id=$1`, [leadId, toStage]);
-      await recordStageChange(pool, { leadId, fromStage: lead.stage, toStage, reason: req.body?.reason || 'manual_stage_change', evidence: req.body?.evidence || {}, actor: req.platformAdmin?.username || 'sales' });
-      res.json({ ok: true, lead_id: leadId, from_stage: lead.stage, to_stage: toStage });
+      const t = await transitionLeadStage(pool, {
+        leadId, toStage, actorType: 'human', actorId: req.platformAdmin?.username || 'sales',
+        reason: req.body?.reason || 'manual_stage_change', sourceType: 'manual', sourceId: 'stage_route', metadata: req.body?.evidence || {},
+      });
+      if (!t.ok) {
+        const status = t.error === 'lead_not_found' ? 404 : 400;
+        return res.status(status).json({ ok: false, error: t.error, from_stage: t.from_stage, to_stage: t.to_stage });
+      }
+      res.json({ ok: true, lead_id: leadId, from_stage: t.from_stage, to_stage: t.to_stage, changed: t.changed });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
   });
 
@@ -559,7 +604,9 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         }
         result = { text, send_status: sendStatus };
       } else if (actionType === 'pause') {
-        await pool.query(`UPDATE sales_leads SET stage='paused', updated_at=NOW() WHERE id=$1`, [leadId]); result = { stage: 'paused' };
+        const t = await transitionLeadStage(pool, { leadId, toStage: 'paused', actorType: 'human', actorId: req.platformAdmin?.username || 'sales_ops', reason: 'manual_pause', sourceType: 'sales_action', sourceId: 'pause' });
+        if (!t.ok) return res.status(409).json({ ok: false, error: t.error, from_stage: t.from_stage, to_stage: t.to_stage });
+        result = { stage: 'paused' };
       } else if (actionType === 'transfer') {
         const username = String(req.body?.username || '').trim(); if (!username) return res.status(400).json({ ok: false, error: 'missing_username' });
         await pool.query(`UPDATE sales_leads SET assigned_to=$2, assigned_at=NOW(), updated_at=NOW() WHERE id=$1`, [leadId, username]); result = { assigned_to: username };
@@ -886,6 +933,17 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
+  // 开租户"部分成功"补偿队列：核心租户已建好，但收尾步骤(onboarding/客户桥接/关联表回写)
+  // 还没完成的记录，供人工确认后重试(重试走同一个provision-tenant接口，不会重复建租户)
+  app.get('/api/admin/sales/provisioning/pending-compensations', platformAdminRequired, managerGate, async (req, res) => {
+    try {
+      const items = await listPendingProvisioningCompensations(pool, { limit: Number(req.query.limit) || 50 });
+      res.json({ ok: true, items });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
   app.post('/api/admin/sales/leads/:id/deep-diagnosis', platformAdminRequired, async (req, res) => {
     try {
       const detail = await getLeadDetail(pool, Number(req.params.id));
@@ -996,9 +1054,15 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
 
   // 30天试跑第几天/剩几天 + 建档时约定的KPI目标 vs 实际值，validate接口只判断"有没有数据"，
   // 这个接口回答"离目标还差多少"
-  app.get('/api/admin/sales/trials/:id/progress', platformAdminRequired, async (req, res) => {
+  app.get('/api/admin/sales/trials/:id/progress', platformAdminRequired, sensitiveRateLimit('trial_progress'), async (req, res) => {
     try {
-      const data = await buildTrialProgressSummary(pool, Number(req.params.id));
+      const trialId = Number(req.params.id);
+      const tr = await pool.query(`SELECT lead_id FROM sales_trials WHERE id=$1`, [trialId]);
+      const leadId = tr.rows?.[0]?.lead_id;
+      if (!leadId) return res.status(404).json({ ok: false, error: 'not_found' });
+      const lead = await getLead(pool, leadId);
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      const data = await buildTrialProgressSummary(pool, trialId);
       res.status(data.ok ? 200 : 400).json(data);
     } catch (e) {
       console.error('[sales] trial progress', e?.message || e);
@@ -1114,6 +1178,8 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
 
   app.get('/api/admin/sales/reps/:id/scorecard', platformAdminRequired, async (req, res) => {
     try {
+      const repRow = await pool.query(`SELECT rep_key FROM sales_reps WHERE id=$1 LIMIT 1`, [Number(req.params.id)]);
+      if (!canAccessRepMetrics(req.platformAdmin, repRow.rows?.[0]?.rep_key)) return res.status(404).json({ ok: false, error: 'not_found' });
       const data = await getRepScorecard(pool, Number(req.params.id), req.query?.period_type, req.query?.period_key);
       res.json(data);
     } catch (e) {
@@ -1209,13 +1275,17 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  app.get('/api/admin/sales/commissions', platformAdminRequired, async (req, res) => {
+  // rep_id 之前完全信任客户端传参，普通销售改个数字就能看到别人的提成——非manager一律
+  // 强制用自己的rep_id覆盖请求参数，不管前端传了什么。
+  app.get('/api/admin/sales/commissions', platformAdminRequired, sensitiveRateLimit('commissions'), async (req, res) => {
     try {
       const { listCommissions } = await import('./services/sales/sales-commission-service.js');
-      const commissions = await listCommissions(pool, {
-        repId: req.query?.rep_id ? Number(req.query.rep_id) : null,
-        status: req.query?.status,
-      });
+      let repId = req.query?.rep_id ? Number(req.query.rep_id) : null;
+      if (!isManager(req.platformAdmin)) {
+        const own = await pool.query(`SELECT id FROM sales_reps WHERE rep_key=$1 LIMIT 1`, [req.platformAdmin?.username]);
+        repId = own.rows?.[0]?.id || -1; // 查不到自己的rep记录就传个不存在的id，返回空列表而不是报错
+      }
+      const commissions = await listCommissions(pool, { repId, status: req.query?.status });
       res.json({ ok: true, commissions });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
