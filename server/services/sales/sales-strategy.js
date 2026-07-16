@@ -4,6 +4,7 @@
  */
 import { DIAGNOSTIC_SLOTS, knowledgeForPain, containsForbiddenClaim } from './sales-knowledge.js';
 import { diagnoseLead } from './sales-diagnosis.js';
+import { normalizeCustomerProfileSlots } from './sales-lead-schema.js';
 
 const HIGH_INTENT_PATTERNS = [
   /价格|多少钱|报价|费用|收费/,
@@ -19,7 +20,7 @@ const NEGATIVE_SIGNALS = [/随便问问|看看|了解一下|先看看|暂时不�
 
 export function extractSlotsFromText(text = '', prev = {}) {
   const t = String(text || '');
-  const out = { ...prev };
+  const out = normalizeCustomerProfileSlots(prev);
 
   const nameM = t.match(/(?:我(?:姓|叫)|本人|名字|贵姓|怎么称呼|叫我)([^，。,\d]{1,6})/);
   if (nameM) out.name = nameM[1].trim();
@@ -28,7 +29,7 @@ export function extractSlotsFromText(text = '', prev = {}) {
   if (companyM) out.company = companyM[1].trim();
 
   const phoneM = t.match(/(?:1[3-9]\d{9}|(?:0\d{2,3}-?)?\d{7,8})/);
-  if (phoneM) out.phone = phoneM[0];
+  if (phoneM) out.contact_phone = phoneM[0];
 
   const budgetM = t.match(/(?:预算|大概|投入|一年|每年).*?(\d+(?:\.\d+)?)\s*万/);
   if (budgetM) out.budget_range = `${budgetM[1]}万/年`;
@@ -90,7 +91,7 @@ export function extractSlotsFromText(text = '', prev = {}) {
   if (/在用.*(会员|营销|CRM|系统|软件)|已经有.*(会员|营销|系统|软件)|用过.*(系统|软件)|用过.*(有赞|客如云|美团|二维火|哗啦啦|银豹)/i.test(t)) out.other_system_used = true;
   else if (/没有用.*系统|没有其他系统|没用系统|没有系统|没用过.*(系统|软件)|从零开始|还没用|没有会员系统/.test(t)) out.other_system_used = false;
 
-  return out;
+  return normalizeCustomerProfileSlots(out);
 }
 
 export function detectEvents(text = '') {
@@ -120,7 +121,7 @@ export function nextDiagnosticQuestion(extracted = {}) {
     if (slot.key === 'other_system_used' && extracted.other_system_used == null) return slot;
     if (slot.key === 'pain_point' && !extracted.pain_point) return slot;
     if (slot.key === 'decision_role' && !extracted.decision_role) return slot;
-    if (slot.key === 'contact_phone' && !extracted.phone) return slot;
+    if (slot.key === 'contact_phone' && !extracted.contact_phone && !extracted.phone) return slot;
   }
   return null;
 }

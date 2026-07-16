@@ -10,13 +10,18 @@ import { SALES_STAGES } from './sales-collaboration.js';
 // 必须能从任意非终态直接抵达，不能只挂在部分中间状态上——用代码而不是手抄一遍每个分支，
 // 避免漏挂导致真实成交在收口后突然被拒绝。
 const BASE_TRANSITIONS = {
-  new: ['ai_greeting', 'nurture', 'unfit', 'sales_takeover', 'demo_completed', 'paused', 'lost'],
+  new: ['ai_greeting', 'profiling', 'nurture', 'unfit', 'sales_takeover', 'demo_requested', 'demo_completed', 'paused', 'lost'],
   ai_greeting: ['need_identified', 'nurture', 'unfit', 'sales_takeover', 'demo_completed', 'paused', 'lost'],
-  need_identified: ['qualified', 'need_confirmed', 'nurture', 'unfit', 'sales_takeover', 'demo_completed', 'paused', 'lost'],
-  qualified: ['need_confirmed', 'sales_takeover', 'nurture', 'unfit', 'demo_completed', 'paused', 'lost'],
+  need_identified: ['qualified', 'profiling', 'need_confirmed', 'nurture', 'unfit', 'sales_takeover', 'demo_requested', 'demo_completed', 'paused', 'lost'],
+  profiling: ['diagnosed', 'qualified', 'need_confirmed', 'nurture', 'unfit', 'sales_takeover', 'demo_requested', 'paused', 'lost'],
+  diagnosed: ['qualified', 'handoff_pending', 'demo_requested', 'nurture', 'paused', 'lost'],
+  qualified: ['need_confirmed', 'handoff_pending', 'sales_takeover', 'demo_requested', 'nurture', 'unfit', 'demo_completed', 'paused', 'lost'],
   need_confirmed: ['sales_takeover', 'demo_scheduled', 'nurture', 'unfit', 'paused', 'lost'],
-  sales_takeover: ['need_confirmed', 'demo_scheduled', 'demo_completed', 'paused', 'lost'],
-  demo_scheduled: ['demo_completed', 'paused', 'lost'],
+  handoff_pending: ['human_following', 'demo_requested', 'sales_takeover', 'paused', 'lost'],
+  human_following: ['demo_requested', 'demo_scheduled', 'demo_completed', 'paused', 'lost'],
+  sales_takeover: ['need_confirmed', 'demo_requested', 'demo_scheduled', 'demo_completed', 'paused', 'lost'],
+  demo_requested: ['demo_scheduled', 'demo_rescheduled', 'demo_cancelled', 'paused', 'lost'],
+  demo_scheduled: ['demo_rescheduled', 'demo_cancelled', 'demo_no_show', 'demo_completed', 'paused', 'lost'],
   demo_completed: ['proposal', 'paused', 'lost'],
   proposal: ['paused', 'lost'],
   trial: ['paused', 'lost'],

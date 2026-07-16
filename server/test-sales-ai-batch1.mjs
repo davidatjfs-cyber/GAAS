@@ -145,7 +145,7 @@ async function main() {
     const leadRow = await pool.query(`SELECT stage FROM sales_leads WHERE id=$1`, [leadId]);
     assert.equal(leadRow.rows[0].stage, 'ai_greeting', 'sales_leads.stage actually updated');
 
-    const illegal = await transitionLeadStage(pool, { leadId, toStage: 'won', actorType: 'system', actorId: 'test', reason: 'e2e_illegal' });
+    const illegal = await transitionLeadStage(pool, { leadId, toStage: 'new', actorType: 'system', actorId: 'test', reason: 'e2e_illegal' });
     assert.equal(illegal.ok, false);
     assert.equal(illegal.error, 'illegal_transition');
     const afterIllegal = await pool.query(`SELECT COUNT(*)::int AS cnt FROM sales_stage_history WHERE lead_id=$1`, [leadId]);

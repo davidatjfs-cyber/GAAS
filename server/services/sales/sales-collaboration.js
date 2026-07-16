@@ -4,8 +4,9 @@
  */
 export const SALES_STAGES = Object.freeze([
   'new', 'ai_greeting', 'need_identified', 'qualified', 'sales_takeover',
-  'need_confirmed', 'demo_completed', 'proposal', 'trial', 'won',
-  'nurture', 'paused', 'unfit', 'lost',
+  'need_confirmed', 'profiling', 'diagnosed', 'handoff_pending', 'human_following',
+  'demo_requested', 'demo_scheduled', 'demo_rescheduled', 'demo_cancelled', 'demo_no_show', 'demo_completed', 'proposal', 'trial', 'won',
+  'onboarding', 'active', 'renewal_due', 'renewed', 'nurture', 'paused', 'unfit', 'lost', 'disqualified', 'churned',
 ]);
 
 export const CUSTOMER_AI_POLICIES = Object.freeze({

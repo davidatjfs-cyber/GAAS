@@ -11,7 +11,7 @@ import {
   upsertTask,
   loadLeadFunnel,
   saveSalesGuidance,
-  recordStageChange,
+  transitionLeadStage,
   getActiveSalesGuidance,
 } from './sales-store.js';
 import { runCustomerAiTurn } from './sales-customer-ai.js';
@@ -250,7 +250,6 @@ export async function handleInboundMessage(pool, {
     events: normalizedEvents,
     score,
     controller: nextController,
-    stage: nextStage,
     handoff_level: decision.intent_level,
     last_sales_decision: decision,
   });
@@ -261,7 +260,22 @@ export async function handleInboundMessage(pool, {
   const diagnosis = buildDiagnosisReport(updatedLead);
   const customerGuidance = buildCustomerAiGuidance(decision);
   await saveSalesGuidance(pool, { leadId: lead.id, conversationId: conv.id, guidance: customerGuidance, expiresInTurns: customerGuidance.expires_in_turns });
-  await recordStageChange(pool, { leadId: lead.id, fromStage: lead.stage, toStage: nextStage, reason: decision.next_action, evidence: { score, events: normalizedEvents } });
+  if (nextStage && nextStage !== lead.stage) {
+    const stageResult = await transitionLeadStage(pool, {
+      leadId: lead.id,
+      toStage: nextStage,
+      actorType: 'customer_ai',
+      actorId: conv.session_key || String(conv.id),
+      reason: decision.next_action,
+      sourceType: 'customer_ai_session',
+      sourceId: String(conv.id),
+      metadata: { score, events: normalizedEvents },
+    });
+    if (!stageResult.ok) {
+      console.warn('[sales-session] customer AI stage transition rejected', { leadId: lead.id, from: lead.stage, to: nextStage, error: stageResult.error });
+      await addEvent(pool, lead.id, { event_type: 'STAGE_TRANSITION_REJECTED', summary: stageResult.error, priority: 'normal', recommended_action: 'continue', payload: { from_stage: lead.stage, to_stage: nextStage } });
+    }
+  }
 
   if (takeover) {
     await pool.query(`UPDATE sales_conversations SET controller='waiting_human', updated_at=NOW() WHERE id=$1`, [conv.id]);

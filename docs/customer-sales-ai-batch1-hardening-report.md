@@ -260,3 +260,24 @@ ALTER TABLE sales_case_assets DROP COLUMN IF EXISTS external_use_allowed, DROP C
 在测试被验证之前，我不建议正式宣布"批次1已验收"——代码逻辑已经过我逐行检查且部署健康检查通过，
 但"数据库最终状态是否真的符合预期"这一条，按你自己在需求里强调的标准("不能只测试HTTP 200")，
 现在还没有被证实。
+
+## 十六、批次1最终验收收尾（2026-07-16）
+
+- 数据库级测试：**未执行**。本地没有 `TEST_DATABASE_URL`、`E2E_DATABASE_URL`、独立测试库或Docker PostgreSQL；生产库连接配置也不可作为测试库使用。本次未向生产库写入测试数据，未伪造通过结果。待提供测试库后执行 `cd server && DATABASE_URL="<测试库>" node test-sales-ai-batch1.mjs`。
+- 案例库审批：已尝试通过生产只读查询核实，但服务器当前 `.env` 的 `DATABASE_URL` 指向不存在的本机角色 `magainze`，无法取得真实清单；未批量批准任何案例。客户AI仍严格要求 `status='active' AND external_use_allowed=true AND anonymized=true AND approved_at IS NOT NULL`。
+- AI阶段热路径：已改为调用 `transitionLeadStage`，不再由 `sales-session.js` 直接写入阶段；非法转换记录警告事件并继续安全回复，同阶段保持幂等。纯函数批次1测试实际通过；数据库级阶段并发断言仍待测试库执行。
+- 结论：**批次1暂不正式验收通过**，原因仅为数据库级测试和案例清单核实缺少安全可用的数据库环境；代码收口已完成。
+
+## 十七、隔离数据库重放记录（2026-07-16）
+
+- 本机测试环境：Homebrew PostgreSQL 16.14，独立数据库 `hrms_sales_ai_test`、独立用户 `hrms_test`，监听本机 5432；未连接生产数据库。
+- 从空库开始重放正式 migration。已修复并通过空库重放的历史兼容点：004（缺少 `hrms_state` 时跳过历史数据搬迁）、025（缺少 `point_records` 时跳过索引）、028（表达式索引语法）、033（约束依赖的索引删除）、035/037/039（可选表缺失时跳过租户列补充）。
+- 当前阻断：完整链尚未验证通过；最新一次重放已通过 001–059，060 已完成存在性保护修复，待重建空库后继续验证。根据本次验收规则，未创建占位表、未跳过 migration、未执行批次1数据库测试。
+- 因此本节结论仍为：**批次1未通过，阻断项为完整正式 migration 链尚未能从空库成功重放**。未部署、未执行生产 migration、未触碰生产测试数据。
+
+## 十八、批次1最终数据库验收（2026-07-16）
+
+- 隔离 PostgreSQL `hrms_sales_ai_test` 从空库完整重放 001–126 通过，共 133 个 migration 文件；第二次执行 `applied 0, skipped 133`，幂等通过。
+- `server/test-sales-ai-batch1.mjs` 使用该隔离库实际执行并 `ALL PASS`：权限矩阵、手机号递归脱敏、任务/消息并发去重、合法阶段审计、非法阶段无副作用、同阶段幂等、租户拒绝策略均通过。
+- 修正验收脚本的非法阶段场景为真实非法回退 `ai_greeting → new`；保留既有业务规则允许非终态直接进入 `won` 的行为。
+- 本阶段未部署、未连接生产数据库、未执行生产 migration；未进入批次2。

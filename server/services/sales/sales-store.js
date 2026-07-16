@@ -335,8 +335,8 @@ export async function listLeads(pool, opts = {}, scope = { clause: 'TRUE', param
 export async function addEvent(pool, leadId, event) {
   await pool.query(
     `INSERT INTO sales_lead_events
-      (lead_id, event_type, summary, evidence, confidence, priority, recommended_action, payload)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+      (lead_id, event_type, summary, evidence, confidence, priority, recommended_action, payload, actor_type, actor_id, source_type, source_id, correlation_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13)`,
     [
       leadId,
       event.event_type,
@@ -346,6 +346,7 @@ export async function addEvent(pool, leadId, event) {
       event.priority || 'normal',
       event.recommended_action || null,
       JSON.stringify(event.payload || {}),
+      event.actor_type || null, event.actor_id || null, event.source_type || null, event.source_id || null, event.correlation_id || null,
     ]
   );
 }
