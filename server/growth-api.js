@@ -124,6 +124,25 @@ function authMiniProgramSync(req) {
   const headerSecret = cleanText(req.headers['x-miniprogram-sync-secret'] || '', 500);
   const auth = cleanText(req.headers.authorization || '', 500);
   const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
+  const signature = cleanText(req.headers['x-signature'] || '', 128);
+  const timestamp = cleanText(req.headers['x-timestamp'] || '', 32);
+  const requestId = cleanText(req.headers['x-request-id'] || '', 128);
+  const tenantId = cleanText(req.headers['x-tenant-id'] || '', 128);
+  const storeId = cleanText(req.headers['x-store-id'] || '', 128);
+  if (signature || timestamp || requestId) {
+    const age = Math.abs(Date.now() - Number(timestamp));
+    const bodyText = JSON.stringify(req.body && typeof req.body === 'object' ? req.body : {});
+    const bodyHash = crypto.createHash('sha256').update(bodyText).digest('hex');
+    const material = [timestamp, requestId, tenantId, storeId, bodyHash].join('\n');
+    const expected = crypto.createHmac('sha256', secret).update(material).digest('hex');
+    const sigBuf = Buffer.from(signature);
+    const expectedBuf = Buffer.from(expected);
+    if (!timestamp || !requestId || sigBuf.length !== expectedBuf.length || !Number.isFinite(age) || age > 5 * 60 * 1000 || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return { ok: false, status: 401, error: 'invalid_miniprogram_signature' };
+    const allowed = String(process.env.HRMS_ALLOWED_TENANT_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (allowed.length && (!tenantId || !allowed.includes(tenantId))) return { ok: false, status: 403, error: 'tenant_not_assigned_to_server' };
+    return { ok: true };
+  }
+  if (String(process.env.MINIPROGRAM_SIGNATURE_REQUIRED || 'false').toLowerCase() === 'true') return { ok: false, status: 401, error: 'miniprogram_signature_required' };
   if (headerSecret === secret || bearer === secret) return { ok: true };
   if (bearer && process.env.JWT_SECRET) {
     try {
