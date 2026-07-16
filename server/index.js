@@ -5746,17 +5746,12 @@ setHealthIncidentNotifiers({
   sendLarkMessage,
   lookupFeishuUserByUsername,
   sendOpsAlert: async (msg, opts = {}) => {
-    const r = await sendAdminSystemAlert(String(msg || ''), {
-      title: opts.title || '健康中心',
-      notificationType: 'health_ops',
-      meta: { source: 'health_ops', audience: opts.audience || 'cs', ...(opts.meta || {}) },
-    });
-    return {
-      ok: (r?.feishuSent || 0) > 0 || (r?.recipients || []).length > 0,
-      feishuSent: r?.feishuSent || 0,
-      feishuFailed: r?.feishuFailed || 0,
-      recipients: r?.recipients || [],
-    };
+    // 健康中心 SLA/队列摘要属于平台运营信息，不按租户 users.role 群发。
+    // sendAdminSystemAlert() 会跨租户扫描 admin/hq_manager/hr_manager，
+    // 从而把销售/系统运营告警发给马己仙、洪潮的门店管理员。
+    const HEALTH_OPS_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
+    const r = await sendLarkMessage(HEALTH_OPS_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+    return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [HEALTH_OPS_ADMIN] };
   },
 });
 registerSalesAiRoutes(app, pool, platformAdminRequired, {
