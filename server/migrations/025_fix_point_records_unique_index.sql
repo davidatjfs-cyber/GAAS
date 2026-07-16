@@ -4,4 +4,9 @@
 -- 解决: 删除该唯一索引，改为普通索引
 
 DROP INDEX IF EXISTS idx_point_records_approval_id;
-CREATE INDEX IF NOT EXISTS idx_point_records_approval_id ON point_records (approval_id) WHERE approval_id IS NOT NULL;
+DO $$
+BEGIN
+  IF to_regclass('public.point_records') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_point_records_approval_id ON point_records (approval_id) WHERE approval_id IS NOT NULL;
+  END IF;
+END $$;

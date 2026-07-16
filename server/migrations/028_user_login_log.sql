@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS user_login_log (
 );
 
 -- 索引：按用户+日期查询登录次数
-CREATE INDEX IF NOT EXISTS idx_user_login_log_username_date ON user_login_log (username, (login_at AT TIME ZONE 'Asia/Shanghai')::date);
+CREATE INDEX IF NOT EXISTS idx_user_login_log_username_date ON user_login_log (username, ((login_at AT TIME ZONE 'Asia/Shanghai')::date));
 -- 索引：按日期范围查询
 CREATE INDEX IF NOT EXISTS idx_user_login_log_login_at ON user_login_log (login_at);
 -- 索引：查找未关闭的会话（用于登出时匹配）

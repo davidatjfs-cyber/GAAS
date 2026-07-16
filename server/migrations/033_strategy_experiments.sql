@@ -54,6 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_variants_status ON strategy_variants(status);
 ALTER TABLE agent_experience ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'auto';
 UPDATE agent_experience SET source = 'auto_deprecated' WHERE source = 'auto' OR source IS NULL;
 
+ALTER TABLE strategy_rules DROP CONSTRAINT IF EXISTS strategy_rules_scenario_root_unique;
 DROP INDEX IF EXISTS strategy_rules_scenario_root_unique;
 ALTER TABLE strategy_rules ADD COLUMN IF NOT EXISTS variant_label VARCHAR(10) DEFAULT NULL;
 ALTER TABLE strategy_rules ADD COLUMN IF NOT EXISTS experiment_verified BOOLEAN DEFAULT FALSE;

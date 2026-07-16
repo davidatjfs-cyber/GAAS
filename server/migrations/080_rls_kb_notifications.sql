@@ -1,21 +1,13 @@
--- RLS Phase5批2b: knowledge_base/knowledge_edit_history/hrms_user_notifications大表开RLS
--- 代码侧已补全所有INSERT的tenant_id列写入。这3张表只有PRIMARY KEY约束(knowledge_base另有1个created_by的FK)，
--- 无其他UNIQUE约束，无ON CONFLICT耦合，故无需像079那样改约束/索引，仅需开RLS+建policy。
-
-ALTER TABLE knowledge_base ENABLE ROW LEVEL SECURITY;
-ALTER TABLE knowledge_base FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON knowledge_base
-  USING (tenant_id = current_setting('app.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
-
-ALTER TABLE knowledge_edit_history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE knowledge_edit_history FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON knowledge_edit_history
-  USING (tenant_id = current_setting('app.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
-
-ALTER TABLE hrms_user_notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE hrms_user_notifications FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON hrms_user_notifications
-  USING (tenant_id = current_setting('app.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+-- 可选知识库/通知表：存在且含 tenant_id 时启用租户 RLS。
+DO $$
+DECLARE t TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['knowledge_base','knowledge_edit_history','hrms_user_notifications'] LOOP
+    IF to_regclass('public.'||t) IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=t AND column_name='tenant_id') THEN
+      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY',t);
+      EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY',t);
+      EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I',t);
+      EXECUTE format('CREATE POLICY tenant_isolation ON %I USING (tenant_id = current_setting(''app.tenant_id'', true)) WITH CHECK (tenant_id = current_setting(''app.tenant_id'', true))',t);
+    END IF;
+  END LOOP;
+END $$;

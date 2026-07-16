@@ -8801,13 +8801,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_user_sessions_username_tenant ON user_sessi
 -- Name: feishu_generic_records trg_feishu_generic_records_bitable_notify; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_feishu_generic_records_bitable_notify AFTER INSERT OR UPDATE OF fields, raw, config_key ON feishu_generic_records FOR EACH ROW EXECUTE FUNCTION feishu_generic_records_bitable_notify();
+DO $$ BEGIN
+  IF to_regclass('public.feishu_generic_records') IS NOT NULL
+     AND to_regprocedure('public.feishu_generic_records_bitable_notify()') IS NOT NULL THEN
+    CREATE TRIGGER trg_feishu_generic_records_bitable_notify AFTER INSERT OR UPDATE OF fields, raw, config_key ON feishu_generic_records FOR EACH ROW EXECUTE FUNCTION feishu_generic_records_bitable_notify();
+  END IF;
+END $$;
 
 --
 -- Name: hrms_state trg_hrms_state_audit; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_hrms_state_audit AFTER UPDATE ON hrms_state FOR EACH ROW EXECUTE FUNCTION audit_hrms_state_update();
+DO $$ BEGIN
+  IF to_regclass('public.hrms_state') IS NOT NULL
+     AND to_regprocedure('public.audit_hrms_state_update()') IS NOT NULL THEN
+    CREATE TRIGGER trg_hrms_state_audit AFTER UPDATE ON hrms_state FOR EACH ROW EXECUTE FUNCTION audit_hrms_state_update();
+  END IF;
+END $$;
 
 --
 -- Name: ab_test_results ab_test_results_test_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -9730,4 +9740,3 @@ CREATE POLICY tenant_isolation ON wechat_work_customers USING (((tenant_id)::tex
 --
 -- PostgreSQL database dump complete
 --
-

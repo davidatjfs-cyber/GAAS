@@ -1,14 +1,22 @@
--- 模式2批4: POS数据相关表加 tenant_id，纯加列+默认值，零行为风险。
-ALTER TABLE sales_raw ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
-CREATE INDEX IF NOT EXISTS idx_sales_raw_tenant ON sales_raw(tenant_id);
-
-ALTER TABLE pos_orders ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
-CREATE INDEX IF NOT EXISTS idx_pos_orders_tenant ON pos_orders(tenant_id);
-
-ALTER TABLE pos_order_items ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
-CREATE INDEX IF NOT EXISTS idx_pos_order_items_tenant ON pos_order_items(tenant_id);
+-- 模式2批4: POS数据相关表加 tenant_id。
+-- sales_raw 已于 2026-07-03 下线，唯一权威明细来源是 pos_order_items；本迁移禁止重新引用它。
+DO $$
+BEGIN
+  IF to_regclass('public.pos_orders') IS NOT NULL THEN
+    ALTER TABLE pos_orders ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
+    CREATE INDEX IF NOT EXISTS idx_pos_orders_tenant ON pos_orders(tenant_id);
+  END IF;
+  IF to_regclass('public.pos_order_items') IS NOT NULL THEN
+    ALTER TABLE pos_order_items ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
+    CREATE INDEX IF NOT EXISTS idx_pos_order_items_tenant ON pos_order_items(tenant_id);
+  END IF;
+END $$;
 
 -- pos_sales_detail 视图重建：补充暴露 tenant_id，供下游查询过滤
+DO $$
+BEGIN
+  IF to_regclass('public.pos_order_items') IS NOT NULL THEN
+    EXECUTE $view$
 CREATE OR REPLACE VIEW pos_sales_detail AS
 SELECT
   CASE
@@ -43,3 +51,6 @@ SELECT
   EXTRACT(isodow FROM pos_order_items.biz_date)::int AS weekday,
   pos_order_items.tenant_id
 FROM pos_order_items;
+$view$;
+  END IF;
+END $$;

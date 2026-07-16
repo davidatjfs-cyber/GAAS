@@ -2,16 +2,14 @@
 -- 纯加列+默认值，不改任何现有查询逻辑，零行为风险——
 -- 所有现有数据自动归入 'default' 租户，现网马己仙/洪潮使用不受影响。
 
-ALTER TABLE training_topics          ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
-ALTER TABLE training_assignments     ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
-ALTER TABLE training_certifications  ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
-ALTER TABLE growth_actions           ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
-ALTER TABLE ab_test_tasks            ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
-ALTER TABLE strategy_experiments     ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default';
-
-CREATE INDEX IF NOT EXISTS idx_training_topics_tenant         ON training_topics(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_training_assignments_tenant    ON training_assignments(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_training_certifications_tenant ON training_certifications(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_growth_actions_tenant          ON growth_actions(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_ab_test_tasks_tenant           ON ab_test_tasks(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_strategy_experiments_tenant    ON strategy_experiments(tenant_id);
+DO $$
+DECLARE t TEXT; idx TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['training_topics','training_assignments','training_certifications','growth_actions','ab_test_tasks','strategy_experiments'] LOOP
+    IF to_regclass('public.' || t) IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT %L', t, 'default');
+      idx := 'idx_' || t || '_tenant';
+      EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I(tenant_id)', idx, t);
+    END IF;
+  END LOOP;
+END $$;

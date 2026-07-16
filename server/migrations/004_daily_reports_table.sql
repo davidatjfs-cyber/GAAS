@@ -40,23 +40,23 @@ CREATE TRIGGER update_daily_reports_updated_at
 BEFORE UPDATE ON daily_reports 
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- 4. 数据迁移：从hrms_state迁移到daily_reports表
-INSERT INTO daily_reports (store, brand, date, dine_orders, actual_revenue, submitted, submitted_at)
-SELECT 
-    daily_report->>'store' as store,
-    daily_report->>'brand' as brand,
-    (daily_report->>'date')::DATE as date,
-    (daily_report->'data'->'dine'->>'orders')::INTEGER as dine_orders,
-    (daily_report->'data'->>'actual')::DECIMAL(12,2) as actual_revenue,
-    true as submitted,
-    CURRENT_TIMESTAMP as submitted_at
-FROM hrms_state, 
-     jsonb_array_elements(data->'dailyReports') as daily_report
-WHERE NOT EXISTS (
-    SELECT 1 FROM daily_reports dr 
-    WHERE dr.store = daily_report->>'store' 
-      AND dr.date = (daily_report->>'date')::DATE
-);
+-- 4. 数据迁移：从hrms_state迁移到daily_reports表。
+-- 空库重放时hrms_state由后续baseline迁移创建，不能让历史数据搬迁阻断整条migration链。
+DO $$
+BEGIN
+  IF to_regclass('public.hrms_state') IS NOT NULL THEN
+    INSERT INTO daily_reports (store, brand, date, dine_orders, actual_revenue, submitted, submitted_at)
+    SELECT
+        daily_report->>'store', daily_report->>'brand', (daily_report->>'date')::DATE,
+        (daily_report->'data'->'dine'->>'orders')::INTEGER,
+        (daily_report->'data'->>'actual')::DECIMAL(12,2), true, CURRENT_TIMESTAMP
+    FROM hrms_state, jsonb_array_elements(data->'dailyReports') AS daily_report
+    WHERE NOT EXISTS (
+      SELECT 1 FROM daily_reports dr
+      WHERE dr.store = daily_report->>'store' AND dr.date = (daily_report->>'date')::DATE
+    );
+  END IF;
+END $$;
 
 -- 5. 添加注释
 COMMENT ON TABLE daily_reports IS '营业日报数据表';

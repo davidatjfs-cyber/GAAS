@@ -1,31 +1,13 @@
--- RLS Phase5全量推进第9批：5张表全代码库(hr-management-system+agents-service-v2两个
--- codebase都查过)零引用，确认是死表，直接开RLS无需任何代码改动。
-ALTER TABLE task_locks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE task_locks FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON task_locks
-  USING (tenant_id = current_setting('app.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
-
-ALTER TABLE task_runs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE task_runs FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON task_runs
-  USING (tenant_id = current_setting('app.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
-
-ALTER TABLE escalation_chains ENABLE ROW LEVEL SECURITY;
-ALTER TABLE escalation_chains FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON escalation_chains
-  USING (tenant_id = current_setting('app.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
-
-ALTER TABLE brand_voice_samples ENABLE ROW LEVEL SECURITY;
-ALTER TABLE brand_voice_samples FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON brand_voice_samples
-  USING (tenant_id = current_setting('app.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
-
-ALTER TABLE data_quality_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE data_quality_logs FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON data_quality_logs
-  USING (tenant_id = current_setting('app.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+-- RLS Phase5第九批：已确认无代码引用的历史死表；存在时开启，空库缺失时跳过。
+DO $$
+DECLARE t TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['task_locks','task_runs','escalation_chains','brand_voice_samples','data_quality_logs'] LOOP
+    IF to_regclass('public.' || t) IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+      EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+      EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', t);
+      EXECUTE format('CREATE POLICY tenant_isolation ON %I USING (tenant_id = current_setting(''app.tenant_id'', true)) WITH CHECK (tenant_id = current_setting(''app.tenant_id'', true))', t);
+    END IF;
+  END LOOP;
+END $$;
