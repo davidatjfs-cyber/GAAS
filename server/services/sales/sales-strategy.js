@@ -236,5 +236,5 @@ export function templateReply(plan, userText, intentScore = 0) {
   if (userText && q) {
     return `明白。${q}`;
   }
-  return q || '您好，我是餐厅AI增长顾问。请问您目前有几家门店？';
+  return q || '您好，我是李娟娟，负责餐厅经营顾问这块。请问您目前有几家门店？';
 }

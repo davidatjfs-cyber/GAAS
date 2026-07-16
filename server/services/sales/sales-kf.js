@@ -77,7 +77,30 @@ export async function syncKfMessages({ token, cursor, openKfid, limit = 1000 } =
   return data;
 }
 
+/**
+ * 会话状态必须先转为"由智能助手接待"(service_state=1)，kf/send_msg 才允许往这个会话发消息——
+ * 新会话默认是"未处理"(0)，不调用这个接口直接发消息会报95018 session status invalid。
+ * 已经是状态1时重复调用是无害的幂等操作，所以每次发送前都调用一次，不额外维护会话状态缓存。
+ */
+export async function claimKfServiceState({ openKfid, externalUserid }) {
+  const accessToken = await getAccessToken();
+  const resp = await fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/kf/service_state/trans?access_token=${encodeURIComponent(accessToken)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ open_kfid: openKfid, external_userid: externalUserid, service_state: 1 }),
+    }
+  );
+  const data = await resp.json();
+  if (Number(data?.errcode) !== 0) throw new Error(data?.errmsg || 'kf_service_state_trans_failed');
+  return data;
+}
+
 export async function sendKfText({ openKfid, externalUserid, content }) {
+  await claimKfServiceState({ openKfid, externalUserid }).catch((e) => {
+    console.warn('[sales-kf] claimKfServiceState failed (will still try to send):', e?.message || e);
+  });
   const accessToken = await getAccessToken();
   const resp = await fetch(
     `https://qyapi.weixin.qq.com/cgi-bin/kf/send_msg?access_token=${encodeURIComponent(accessToken)}`,
@@ -136,9 +159,11 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
         });
         if (turn?.replied && turn.reply && externalUserid) {
           try {
-            await sendKfText({ openKfid: String(m.open_kfid || m.event?.open_kfid || kfId), externalUserid, content: turn.reply });
+            const sendResult = await sendKfText({ openKfid: String(m.open_kfid || m.event?.open_kfid || kfId), externalUserid, content: turn.reply });
+            console.log('[sales-kf] sendKfText ok (welcome):', JSON.stringify(sendResult));
           } catch (e) {
             turn.send_error = e?.message || String(e);
+            console.error('[sales-kf] sendKfText failed (welcome):', turn.send_error);
           }
         }
         results.push(turn);
@@ -159,13 +184,15 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
     });
     if (turn?.replied && turn.reply && externalUserid) {
       try {
-        await sendKfText({
+        const sendResult = await sendKfText({
           openKfid: String(m.open_kfid || kfId),
           externalUserid,
           content: turn.reply,
         });
+        console.log('[sales-kf] sendKfText ok:', JSON.stringify(sendResult));
       } catch (e) {
         turn.send_error = e?.message || String(e);
+        console.error('[sales-kf] sendKfText failed:', turn.send_error);
       }
     }
     results.push(turn);

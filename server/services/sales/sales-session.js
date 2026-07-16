@@ -196,7 +196,7 @@ export async function handleInboundMessage(pool, {
     if (already.rows?.length) {
       return { ok: true, replied: false, reason: 'already_welcomed', lead_id: lead.id, conversation_id: conv.id, controller: 'ai' };
     }
-    const welcomeText = '您好，我是餐厅AI增长顾问。我可以介绍客户自动维护、门店自主运营和人才培养。请问您目前有几家门店？';
+    const welcomeText = '您好，我是李娟娟，负责餐厅经营顾问这块。可以聊聊客户维护、门店管理或者人才培养这些，您目前有几家门店？';
     await addMessage(pool, {
       conversationId: conv.id,
       leadId: lead.id,
