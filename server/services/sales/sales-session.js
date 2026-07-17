@@ -113,6 +113,19 @@ async function upsertLead(pool, { openKfid, externalUserid, sourceChannel }) {
   }
 }
 
+export function buildWaitingHumanBridgeReply({ content, lead = {} } = {}) {
+  const text = String(content || '').trim();
+  if (/^(?:你|您)?还?在吗[？?]?$/.test(text)) {
+    return '在的，人工顾问正在接手，但我不会让您在这里空等。您继续发问就行，我会先回答并把信息同步给顾问。';
+  }
+  const company = String(lead.company || lead.extracted?.company || '').trim();
+  if (/还记得.{0,12}(?:公司|品牌)|我是哪家公司/.test(text)) {
+    if (company) return `记得，您是${company}。我会把这个信息一起同步给接手顾问。`;
+    return '公司或品牌名称我这边还没有记录到，不会随便猜。您把品牌名发我，我马上补上并同步给顾问。';
+  }
+  return '收到，我还在这里，也已经把您这条新信息同步给接手顾问。顾问回复前，您继续问就行，我会先接着回答。';
+}
+
 export async function handleInboundMessage(pool, {
   text,
   openKfid = 'sandbox',
@@ -149,8 +162,9 @@ export async function handleInboundMessage(pool, {
   }
 
   if (conv.controller === 'waiting_human') {
+    let inboundMsg = null;
     if (content) {
-      const m = await addMessage(pool, {
+      inboundMsg = await addMessage(pool, {
         conversationId: conv.id,
         leadId: lead.id,
         direction: 'inbound',
@@ -159,7 +173,7 @@ export async function handleInboundMessage(pool, {
         msgId,
         meta: { input_mode: inputMode },
       });
-      if (msgId && !m.inserted) {
+      if (msgId && !inboundMsg.inserted) {
         return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: 'waiting_human' };
       }
     }
@@ -176,17 +190,60 @@ export async function handleInboundMessage(pool, {
     const updatedLead = await getLead(pool, lead.id);
     const advice = buildSalesAdvice(updatedLead, score);
     const diagnosis = buildDiagnosisReport(updatedLead);
+    const history = (await listMessages(pool, conv.id, 30)).filter((m) => m.id !== inboundMsg?.id);
+    const knowledgeItems = await loadKnowledgeItems(pool);
+    const mergedProfile = {
+      ...(updatedLead.extracted || slots || {}),
+      name: updatedLead.name || updatedLead.extracted?.name || undefined,
+      company: updatedLead.company || updatedLead.extracted?.company || undefined,
+      phone: updatedLead.phone || updatedLead.extracted?.phone || undefined,
+      contact_phone: updatedLead.phone || updatedLead.extracted?.contact_phone || undefined,
+    };
+    const turn = await runCustomerAiTurn({
+      userText: content,
+      extracted: mergedProfile,
+      history,
+      intentScore: score.intent_score,
+      controller: 'waiting_human',
+      knowledgeItems,
+      pool,
+      inputMode,
+    }).catch(() => null);
+    const reply = turn?.reply || buildWaitingHumanBridgeReply({ content, lead: updatedLead });
+    await addMessage(pool, {
+      conversationId: conv.id,
+      leadId: lead.id,
+      direction: 'outbound',
+      sender: 'ai',
+      content: reply,
+      meta: { source: turn?.source || 'waiting_human_bridge_fallback', mode: 'waiting_human_bridge' },
+    });
+    await addEvent(pool, lead.id, {
+      event_type: 'CUSTOMER_FOLLOWUP_WAITING_HUMAN',
+      summary: '客户在等待人工时继续追问',
+      evidence: content.slice(0, 200),
+      priority: 'high',
+      recommended_action: 'takeover',
+    });
+    if (typeof _notify === 'function') {
+      await _notify(
+        ['【销售AI·待接管客户继续追问】', `线索 ${lead.lead_key}`, `客户：${content.slice(0, 160)}`, '请尽快人工接管，AI已先行回应防止冷场。'].join('\n'),
+        { title: '待接管客户继续追问', audience: 'sales' }
+      ).catch(() => null);
+    }
     await pool.query(`UPDATE sales_leads SET last_message_at=NOW(), updated_at=NOW() WHERE id=$1`, [lead.id]);
     return {
       ok: true,
-      replied: false,
-      reason: 'waiting_human',
+      replied: true,
+      reply,
+      reason: 'waiting_human_bridge',
       lead_id: lead.id,
       conversation_id: conv.id,
       controller: 'waiting_human',
       score,
       advice,
       diagnosis,
+      source: turn?.source || 'waiting_human_bridge_fallback',
       plan: { extracted: slots, events },
     };
   }

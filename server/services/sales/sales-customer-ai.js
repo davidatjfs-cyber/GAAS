@@ -29,6 +29,12 @@ export function setSalesCustomerAiLlm(fn) {
 const OBSOLETE_VOICE_DENIAL_RE = /只能.{0,8}文字|还是.{0,8}文字|没法.{0,8}语音|不能.{0,8}语音|无法.{0,8}语音/;
 const VOICE_CAPABILITY_QUERY_RE = /(?:能|可以|会).{0,8}(?:听|识别|收|发|回复|回答).{0,8}语音|语音.{0,8}(?:回答|回复|听|识别|测试)|听.{0,5}(?:见|到|懂).{0,10}(?:说话|声音)/;
 const CORRECTION_RE = /你听不懂|你没听懂|你没明白|我说的是|不是这个意思|能听明白我的意思|你能听明白|理解错了/;
+const MATERIAL_REQUEST_RE = /产品介绍|书面|文字版|资料|介绍.{0,8}(?:发|看)|发.{0,8}(?:介绍|方案)/;
+const CONTACT_QUERY_RE = /怎么联系|如何联系|联系你们|联系.{0,6}客户顾问|找.{0,6}顾问/;
+const COMMITMENT_QUERY_RE = /什么承诺|能.{0,6}承诺|承诺.{0,6}什么|能.{0,6}保证/;
+const TRIAL_QUERY_RE = /试用|试跑|试点|体验.{0,6}(?:一个月|30天)|试.{0,4}一个月/;
+const PROFILE_MEMORY_QUERY_RE = /还记得.{0,12}(?:公司|品牌)|我是哪家公司|知道我是哪家/;
+const PRESENCE_QUERY_RE = /^(?:你|您)?还?在吗[？?]?$/;
 
 function historyBeforeCurrent(messages = [], userText = '') {
   const out = (messages || []).map((m) => ({ ...m }));
@@ -155,8 +161,54 @@ function buildProfileFactReply({ userText, previousExtracted = {}, plan, history
   return `${facts.join('，')}，我记下了。${nextQuestion || ''}`;
 }
 
-function buildConversationGuard({ userText, previousExtracted, plan, history, inputMode }) {
+function phoneTail(extracted = {}) {
+  const phone = String(extracted.contact_phone || extracted.phone || '').replace(/\D/g, '');
+  return phone.length >= 4 ? phone.slice(-4) : '';
+}
+
+function profileSummary(extracted = {}) {
+  return [
+    extracted.city,
+    extracted.store_count ? `${extracted.store_count}家` : '',
+    extracted.cuisine,
+    extracted.pos_brand ? `使用${extracted.pos_brand}` : '',
+  ].filter(Boolean).join('、');
+}
+
+function buildMaterialReply(extracted = {}) {
+  const profile = profileSummary(extracted);
+  return `可以，我先把文字版直接发您：我们做的是餐厅AI增长服务，核心是把POS经营数据、客户维护和门店执行串成闭环。${profile ? `按您目前${profile}的情况，` : ''}第一步评估数据字段，第二步做经营诊断和整改跟踪，第三步可选1～2家店做30天试跑，用真实结果决定是否扩大。`;
+}
+
+function buildContactReply(extracted = {}) {
+  const tail = phoneTail(extracted);
+  if (tail) return `您直接在当前微信继续发消息就可以。之前留的手机号尾号${tail}我已经记录，人工顾问会通过当前微信或这个号码与您联系，不需要再留一次。`;
+  return '您直接在当前微信继续发消息就可以，人工顾问会在这个会话里接手。如果希望电话联系，再留一个方便接听的手机号即可。';
+}
+
+function buildTrialReply(extracted = {}) {
+  const tail = phoneTail(extracted);
+  const scale = extracted.store_count ? `再决定是否扩大到${extracted.store_count}家店` : '再决定是否扩大';
+  return `可以申请30天试跑。先做数据评估，确认${extracted.pos_brand || 'POS'}能否提供订单、菜品和会员等必要字段，再选1～2家代表门店，约定营业额、复购或执行指标；30天后用真实结果复盘，${scale}。${tail ? `您已留过尾号${tail}，` : ''}我现在把试跑申请交给人工顾问确认范围和启动时间。`;
+}
+
+function buildProfileMemoryReply(extracted = {}) {
+  const company = String(extracted.company || '').trim();
+  if (company) return `记得，您是${company}。${profileSummary(extracted) ? `我这边还记录了：${profileSummary(extracted)}。` : ''}`;
+  const known = profileSummary(extracted);
+  return `公司或品牌名称我这边还没有记录到，不会随便猜。${known ? `已记住的是：${known}。` : ''}您把品牌名发我，我马上补上。`;
+}
+
+function buildConversationGuard({ userText, previousExtracted, plan, history, inputMode, controller }) {
   const text = String(userText || '');
+  if (PRESENCE_QUERY_RE.test(text)) {
+    return {
+      source: 'presence_guard',
+      reply: controller === 'waiting_human'
+        ? '在的，人工顾问正在接手，但我不会让您在这里空等。您继续发问就行，我会先回答并把信息同步给顾问。'
+        : '在的，您直接说就行，我会接着前面的内容继续聊。',
+    };
+  }
   if (VOICE_CAPABILITY_QUERY_RE.test(text)) {
     return {
       source: 'voice_capability_guard',
@@ -165,6 +217,17 @@ function buildConversationGuard({ userText, previousExtracted, plan, history, in
         : '可以，您直接发送语音消息就行，我能识别内容并用语音消息回复；目前支持的是语音消息，不是实时电话通话。',
     };
   }
+  if (MATERIAL_REQUEST_RE.test(text)) return { source: 'material_conversion_guard', reply: buildMaterialReply(plan.extracted), preserveOnHandoff: true };
+  if (CONTACT_QUERY_RE.test(text)) return { source: 'contact_conversion_guard', reply: buildContactReply(plan.extracted), preserveOnHandoff: true };
+  if (COMMITMENT_QUERY_RE.test(text)) {
+    return {
+      source: 'commitment_guard',
+      preserveOnHandoff: true,
+      reply: `能承诺的是过程和交付可验收，不是未经评估就承诺${plan.extracted?.pos_brand || 'POS'}一定接入或营业额一定上涨。我们会基于真实数据做接入评估，明确问题证据、整改动作和责任人，并在试跑后复盘验收；达不到约定的数据条件会提前说清楚。`,
+    };
+  }
+  if (TRIAL_QUERY_RE.test(text)) return { source: 'trial_conversion_guard', reply: buildTrialReply(plan.extracted), preserveOnHandoff: true };
+  if (PROFILE_MEMORY_QUERY_RE.test(text)) return { source: 'profile_memory_guard', reply: buildProfileMemoryReply(plan.extracted), preserveOnHandoff: true };
   if (plan.uncertain_slot || (isUncertainAnswer(text) && inferRecentQuestionSlot(history)) || CORRECTION_RE.test(text)) {
     const reply = buildUncertaintyReply({ userText: text, plan, history });
     if (reply) return { source: 'uncertainty_guard', reply };
@@ -203,6 +266,7 @@ export function evaluateCustomerReply({ reply, userText, history = [], plan = {}
     issues.push('premature_contact_request');
   }
   if (POS_OVERCLAIM_RE.test(value) && !/评估|确认后|具体要看/.test(value)) issues.push('pos_overclaim');
+  if (/官方电话|客服电话|拨打我们.{0,6}电话/.test(value)) issues.push('invented_contact_channel');
   if (/啥|咱们|整一个|不少问题呢/.test(value)) issues.push('overcasual_language');
   if ((value.match(/[？?]/g) || []).length > 1) issues.push('multiple_questions');
 
@@ -280,6 +344,10 @@ ${repairInstruction}
 
 export async function runCustomerAiTurn({ userText, extracted, history, intentScore, controller, guidance = null, knowledgeItems = null, pool = null, inputMode = 'text' }) {
   const plan = buildStrategyPlan({ userText, extracted, history, intentScore, controller, knowledgeItems });
+  if (controller === 'waiting_human') {
+    plan.mode = 'waiting_human_bridge';
+    plan.next_question = null;
+  }
   if (guidance?.question_slot) {
     const forced = (plan.next_question?.key === guidance.question_slot) || guidance.question_slot;
     if (typeof forced === 'object') plan.next_question = forced;
@@ -291,7 +359,7 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
     plan.caseBlurb = cases?.[0]?._score > 0 ? formatCaseBlurb(cases[0]) : '';
   }
 
-  const guarded = buildConversationGuard({ userText, previousExtracted: extracted || {}, plan, history, inputMode });
+  const guarded = buildConversationGuard({ userText, previousExtracted: extracted || {}, plan, history, inputMode, controller });
   let reply = guarded?.reply || await generateWithLlm(plan, userText, history, knowledgeItems, intentScore);
   let source = guarded?.source || 'llm';
   if (!reply) {
@@ -300,7 +368,7 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
   }
   reply = sanitizeReply(reply);
 
-  if (plan.mode === 'handoff') {
+  if (plan.mode === 'handoff' && !guarded?.preserveOnHandoff) {
     reply = sanitizeReply(templateReply(plan, userText, intentScore));
     source = 'handoff_template';
   } else if (containsPriceMention(reply)) {

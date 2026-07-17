@@ -1,5 +1,5 @@
 /**
- * 文字转语音：AI回复文本 → 阿里云百炼 CosyVoice(WebSocket流式合成) → mp3 → ffmpeg转amr
+ * 文字转语音：AI回复文本 → 阿里云百炼 Qwen-Audio-TTS → mp3 → ffmpeg转amr
  * (企微语音消息要求的格式)。复用已验证可用的 QWEN_API_KEY(DashScope)，跟语音识别(sales-asr.js)
  * 用同一个账号、同一套 run-task/continue-task/finish-task 协议，不再依赖MiniMax的账号配置。
  */
@@ -7,8 +7,9 @@ import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import WebSocket from 'ws';
 
-const DEFAULT_TTS_MODEL = 'cosyvoice-v3-flash';
-const DEFAULT_VOICE = 'longyingmu_v3'; // 优雅知性女声，适合专业顾问对话
+const DEFAULT_TTS_MODEL = 'qwen-audio-3.0-tts-plus';
+const DEFAULT_VOICE = 'longanlingxin'; // Qwen Audio Plus兼容的25岁“温暖共情”真人音色
+const DEFAULT_INSTRUCTION = '像一位30岁左右的真人女性餐饮顾问在微信里自然回复客户。语气温暖、克制、可信，有自然停顿和轻微呼吸感；不要播音腔，不要客服腔，不要逐字匀速朗读，不要夸张情绪。';
 const TTS_WS_PATH = '/api-ws/v1/inference';
 
 /**
@@ -22,7 +23,39 @@ function getDashscopeTtsConfig() {
     wsHost: String(process.env.DASHSCOPE_TTS_WS_HOST || '').trim(),
     model: String(process.env.DASHSCOPE_TTS_MODEL || DEFAULT_TTS_MODEL).trim(),
     voice: String(process.env.DASHSCOPE_TTS_VOICE || DEFAULT_VOICE).trim(),
+    instruction: String(process.env.DASHSCOPE_TTS_INSTRUCTION || DEFAULT_INSTRUCTION).trim(),
+    rate: Number(process.env.DASHSCOPE_TTS_RATE || 0.96),
   };
+}
+
+export function prepareSpeechText(text = '') {
+  return String(text || '')
+    .replace(/POS/gi, 'P O S')
+    .replace(/1\s*[～~-]\s*2家/g, '一到两家')
+    .replace(/30天/g, '三十天')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function buildTtsParameters(config = {}) {
+  const model = String(config.model || DEFAULT_TTS_MODEL).trim();
+  const voice = String(config.voice || DEFAULT_VOICE).trim();
+  const requestedRate = Number(config.rate ?? 0.96);
+  const rate = Number.isFinite(requestedRate) ? Math.min(1.2, Math.max(0.8, requestedRate)) : 0.96;
+  const parameters = {
+    text_type: 'PlainText',
+    voice,
+    format: 'mp3',
+    sample_rate: 24000,
+    volume: 50,
+    rate,
+    pitch: 1.0,
+    enable_ssml: false,
+  };
+  if (/^qwen-audio-|^cosyvoice-v3\.5-/.test(model)) {
+    parameters.instruction = String(config.instruction || DEFAULT_INSTRUCTION).trim();
+  }
+  return { model, voice, parameters };
 }
 
 export function buildDashscopeTtsWsUrl(wsHost) {
@@ -46,6 +79,14 @@ export function buildDashscopeTtsWsUrl(wsHost) {
   return url.toString();
 }
 
+export function buildDashscopeTtsHttpUrl(wsHost) {
+  const wsUrl = new URL(buildDashscopeTtsWsUrl(wsHost));
+  wsUrl.protocol = 'https:';
+  wsUrl.pathname = '/api/v1/services/audio/tts/SpeechSynthesizer';
+  wsUrl.search = '';
+  return wsUrl.toString();
+}
+
 function mp3ToAmr(mp3Buffer) {
   return new Promise((resolve, reject) => {
     const ff = spawn('ffmpeg', ['-f', 'mp3', '-i', 'pipe:0', '-ar', '8000', '-ac', '1', '-c:a', 'libopencore_amrnb', '-b:a', '12.2k', '-f', 'amr', 'pipe:1']);
@@ -64,9 +105,11 @@ function mp3ToAmr(mp3Buffer) {
 }
 
 /** 通过DashScope CosyVoice流式合成把文字转成mp3二进制；跟sales-asr.js的连接协议对称(那边收二进制发文字，这边发文字收二进制) */
-function synthesizeMp3(text, { timeoutMs = 20000 } = {}) {
+function synthesizeMp3(text, { timeoutMs = 20000, config = null } = {}) {
   return new Promise((resolve, reject) => {
-    const { apiKey, wsHost, model, voice } = getDashscopeTtsConfig();
+    const resolved = config || getDashscopeTtsConfig();
+    const { apiKey, wsHost } = resolved;
+    const task = buildTtsParameters(resolved);
     if (!apiKey) return reject(new Error('dashscope_tts_api_key_missing'));
     let wsUrl;
     try {
@@ -102,8 +145,8 @@ function synthesizeMp3(text, { timeoutMs = 20000 } = {}) {
           task_group: 'audio',
           task: 'tts',
           function: 'SpeechSynthesizer',
-          model,
-          parameters: { text_type: 'PlainText', voice, format: 'mp3', sample_rate: 22050, volume: 50, rate: 1.0, pitch: 1.0, enable_ssml: false },
+          model: task.model,
+          parameters: task.parameters,
           input: {},
         },
       }));
@@ -117,7 +160,7 @@ function synthesizeMp3(text, { timeoutMs = 20000 } = {}) {
       if (event === 'task-started') {
         ws.send(JSON.stringify({
           header: { action: 'continue-task', task_id: taskId, streaming: 'duplex' },
-          payload: { input: { text: String(text || '').slice(0, 500) } },
+          payload: { input: { text: prepareSpeechText(text).slice(0, 500) } },
         }));
         ws.send(JSON.stringify({
           header: { action: 'finish-task', task_id: taskId, streaming: 'duplex' },
@@ -140,14 +183,65 @@ function synthesizeMp3(text, { timeoutMs = 20000 } = {}) {
   });
 }
 
+async function synthesizeHttpMp3(text, { timeoutMs = 30000, config = null } = {}) {
+  const resolved = config || getDashscopeTtsConfig();
+  const { apiKey, wsHost } = resolved;
+  if (!apiKey) throw new Error('dashscope_tts_api_key_missing');
+  const task = buildTtsParameters(resolved);
+  const endpoint = buildDashscopeTtsHttpUrl(wsHost);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: task.model,
+        input: {
+          text: prepareSpeechText(text).slice(0, 500),
+          voice: task.voice,
+          format: task.parameters.format,
+          sample_rate: task.parameters.sample_rate,
+          volume: task.parameters.volume,
+          rate: task.parameters.rate,
+          pitch: task.parameters.pitch,
+          instruction: task.parameters.instruction,
+        },
+      }),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.output?.audio?.url) {
+      throw new Error(payload?.message || payload?.code || `tts_http_${response.status}`);
+    }
+    const audioResponse = await fetch(payload.output.audio.url, { signal: controller.signal });
+    if (!audioResponse.ok) throw new Error(`tts_audio_download_${audioResponse.status}`);
+    return Buffer.from(await audioResponse.arrayBuffer());
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** 文本 → amr语音Buffer；失败返回 null，调用方应回退到文字回复而不是让客户没收到任何消息 */
 export async function synthesizeSpeechAmr(text) {
-  try {
-    const mp3 = await synthesizeMp3(text);
-    if (!mp3?.length) { console.error('[sales-tts] 合成结果为空音频'); return null; }
-    return await mp3ToAmr(mp3);
-  } catch (e) {
-    console.error('[sales-tts] synthesize failed:', e?.message || e);
-    return null;
+  const primary = getDashscopeTtsConfig();
+  const candidates = [primary];
+  if (primary.model !== 'cosyvoice-v2') {
+    candidates.push({ ...primary, model: 'cosyvoice-v2', voice: 'longwan_v2', instruction: '', rate: 0.98 });
   }
+  for (const config of candidates) {
+    try {
+      const mp3 = /^qwen-audio-/.test(config.model)
+        ? await synthesizeHttpMp3(text, { config })
+        : await synthesizeMp3(text, { config });
+      if (!mp3?.length) throw new Error('tts_empty_audio');
+      return await mp3ToAmr(mp3);
+    } catch (e) {
+      console.error(`[sales-tts] synthesize failed model=${config.model}:`, e?.message || e);
+    }
+  }
+  return null;
 }

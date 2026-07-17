@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { extractSlotsFromText, nextDiagnosticQuestion, sanitizeReply } from './sales-strategy.js';
 import { runCustomerAiTurn, setSalesCustomerAiLlm } from './sales-customer-ai.js';
+import { buildWaitingHumanBridgeReply } from './sales-session.js';
 import { listMessages } from './sales-store.js';
 
 const phoneQuestionHistory = [
@@ -206,4 +207,105 @@ test('重写仍不合格时必须退回安全模板，不得发出坏回复', as
   assert.equal(turn.source, 'quality_fallback');
   assert.doesNotMatch(turn.reply, /我叫|手机号/);
   setSalesCustomerAiLlm(null);
+});
+
+const conversionProfile = {
+  store_count: 10,
+  city: '北京、上海',
+  cuisine: '西餐',
+  pos_brand: '二维火',
+  pain_point: '缺少经营数据',
+  contact_phone: '18321341205',
+  phone: '18321341205',
+  phone_data_ready: null,
+  uncertain_slots: ['phone_data_ready'],
+};
+
+test('客户要产品资料时必须当场给可阅读的文字版，不能空口说稍后发', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '能发一下你们的产品介绍给我吗？',
+    extracted: conversionProfile,
+    history: [],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  assert.equal(turn.source, 'material_conversion_guard');
+  assert.match(turn.reply, /10家|十家/);
+  assert.match(turn.reply, /北京、上海/);
+  assert.match(turn.reply, /二维火/);
+  assert.match(turn.reply, /30天|三十天/);
+  assert.doesNotMatch(turn.reply, /稍后.*发|手机号吗/);
+});
+
+test('客户问怎么联系时必须使用已有渠道和已留号码，不得虚构官方电话', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '怎么联系你们？',
+    extracted: conversionProfile,
+    history: [],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  assert.equal(turn.source, 'contact_conversion_guard');
+  assert.match(turn.reply, /当前微信/);
+  assert.match(turn.reply, /尾号1205/);
+  assert.doesNotMatch(turn.reply, /官方电话|客服电话|其他会员/);
+});
+
+test('客户问承诺时必须说可验收边界，不得承诺POS必然接入或效果', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '你们能给我一些什么承诺呢？',
+    extracted: conversionProfile,
+    history: [],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  assert.equal(turn.source, 'commitment_guard');
+  assert.match(turn.reply, /真实数据/);
+  assert.match(turn.reply, /评估/);
+  assert.match(turn.reply, /验收|复盘/);
+  assert.doesNotMatch(turn.reply, /准确连接|保证效果|一定涨/);
+});
+
+test('客户问试用时要说清30天试跑条件和下一步，不能只发通用转人工模板', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '那有试用期吗？比如试用一个月。',
+    extracted: conversionProfile,
+    history: [],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  assert.equal(turn.source, 'trial_conversion_guard');
+  assert.match(turn.reply, /30天|三十天/);
+  assert.match(turn.reply, /1[～~-]2家|一到两家/);
+  assert.match(turn.reply, /数据.*评估|评估.*数据/);
+  assert.doesNotMatch(turn.reply, /已经比较适合安排顾问/);
+});
+
+test('客户问是否记得公司时，未记录就必须诚实说明并复述已知信息', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '你还记得我是哪家公司吗？',
+    extracted: conversionProfile,
+    history: [],
+    intentScore: 50,
+    controller: 'waiting_human',
+    inputMode: 'voice',
+  });
+  assert.equal(turn.source, 'profile_memory_guard');
+  assert.match(turn.reply, /还没有记录到.*公司|公司.*还没有记录/);
+  assert.match(turn.reply, /10家|十家/);
+  assert.match(turn.reply, /北京、上海/);
+});
+
+test('等待人工期间AI必须继续回应客户，不能进入静默黑洞', () => {
+  const reply = buildWaitingHumanBridgeReply({
+    content: '你还在吗？',
+    lead: { ...conversionProfile, extracted: conversionProfile },
+  });
+  assert.match(reply, /在的/);
+  assert.match(reply, /顾问.*接手|人工顾问/);
+  assert.doesNotMatch(reply, /稍后再联系/);
 });
