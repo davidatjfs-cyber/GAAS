@@ -1,7 +1,7 @@
 /**
  * 销售 AI 路由：沙盒试聊 + 线索工作台 + 微信客服回调 + 销售漏斗/会客/风险
  */
-import { ensureSalesTables, listLeads, getLead, loadLeadFunnel, upsertTask } from './services/sales/sales-store.js';
+import { ensureSalesTables, listLeads, getLead, loadLeadFunnel, upsertTask, addEvent, newLeadKey } from './services/sales/sales-store.js';
 import {
   handleInboundMessage,
   takeoverConversation,
@@ -154,6 +154,12 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   };
   const generalManagerGate = (req, res, next) => {
     if (!['super_admin', 'general_manager'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden', message: '仅总经理可授信或解锁客户' });
+    next();
+  };
+  const salesCreateCustomerGate = (req, res, next) => {
+    if (!['super_admin', 'general_manager', 'sales_manager', 'sales'].includes(req.platformAdmin?.role)) {
+      return res.status(403).json({ ok: false, error: 'forbidden', message: '仅销售人员或销售管理人员可以新建客户档案' });
+    }
     next();
   };
   const autoProvisionIfEligible = async (leadId, startedBy) => {
@@ -694,6 +700,75 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const credentials = status === 'delivered' && prior.rows?.[0]?.status !== 'delivered' ? await rotateTenantAdminCredentials(pool, lead.id) : null;
       res.json({ ok: true, project: r.rows[0], credentials });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
+  });
+
+  // 销售自主拜访、转介绍、展会等非客户 AI 来源，统一在此建立客户档案。
+  // 数据仍落在 sales_leads，确保后续拜访、合同、回款、授信、开通和交付完全复用同一闭环；
+  // 但对业务界面使用 customer_code，不再把内部“线索”编号暴露给用户。
+  app.post('/api/admin/sales/customers', platformAdminRequired, salesCreateCustomerGate, async (req, res) => {
+    const body = req.body || {};
+    const company = String(body.company || '').trim();
+    const name = String(body.name || '').trim();
+    const phone = String(body.phone || '').trim();
+    const city = String(body.city || '').trim();
+    const origin = String(body.customer_origin || 'sales_visit').trim();
+    const allowedOrigins = new Set(['sales_visit', 'referral', 'exhibition', 'phone_outreach', 'other']);
+    if (!company) return res.status(400).json({ ok: false, error: 'company_required', message: '请填写客户企业名称' });
+    if (!name && !phone) return res.status(400).json({ ok: false, error: 'contact_required', message: '请至少填写联系人姓名或联系电话' });
+    if (!allowedOrigins.has(origin)) return res.status(400).json({ ok: false, error: 'invalid_origin', message: '客户来源不正确' });
+    try {
+      await ensureSalesTables(pool);
+      const duplicate = await pool.query(
+        `SELECT * FROM sales_leads
+          WHERE ($1 <> '' AND phone = $1)
+             OR (LOWER(COALESCE(company,'')) = LOWER($2) AND COALESCE(city,'') = $3)
+          ORDER BY updated_at DESC LIMIT 1`,
+        [phone, company, city]
+      );
+      const existing = duplicate.rows?.[0];
+      if (existing) {
+        if (canAccessLead(req.platformAdmin, existing)) {
+          return res.status(409).json({ ok: false, error: 'customer_exists', message: '该客户已建档，请直接打开已有客户档案', existing: { id: existing.id, customer_code: existing.customer_code || null, company: existing.company, name: existing.name } });
+        }
+        return res.status(409).json({ ok: false, error: 'customer_exists', message: '该客户已建档，请联系销售经理确认归属' });
+      }
+      const owner = req.platformAdmin?.username || null;
+      const visitNotes = String(body.first_visit_notes || '').trim();
+      const followupAt = body.next_followup_at ? new Date(body.next_followup_at) : null;
+      const r = await pool.query(
+        `INSERT INTO sales_leads
+          (lead_key, customer_code, customer_origin, source_channel, manual_created_by, manual_created_at,
+           name, company, phone, city, region_code, region_name, cuisine, store_count, pos_brand,
+           stage, controller, intent_score, intent_level, owner_username, assigned_to,
+           next_action, next_action_due, tags, extracted)
+         VALUES ($1,$2,$3,'manual',$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13,
+                 'sales_takeover','human',0,'low',$4,$4,
+                 $14,$15::timestamptz,$16::jsonb,$17::jsonb)
+         RETURNING *`,
+        [
+          newLeadKey('M'), `KH${Date.now().toString().slice(-8)}${Math.random().toString(36).slice(2, 4).toUpperCase()}`,
+          origin, owner, name || null, company, phone || null, city || null,
+          String(body.region_code || '').trim() || null, String(body.region_name || '').trim() || null,
+          String(body.cuisine || '').trim() || null, Number(body.store_count) || null, String(body.pos_brand || '').trim() || null,
+          String(body.next_action || '补全客户档案并安排下一次跟进').trim(), followupAt && !Number.isNaN(followupAt.getTime()) ? followupAt.toISOString() : null,
+          JSON.stringify(['销售自主建档']), JSON.stringify({ source: 'manual_customer', first_visit_notes: visitNotes || null }),
+        ]
+      );
+      const customer = r.rows?.[0];
+      await pool.query(
+        `INSERT INTO sales_conversations (lead_id, controller, status, meta) VALUES ($1,'human','open',$2::jsonb)`,
+        [customer.id, JSON.stringify({ source: 'manual_customer', customer_origin: origin })]
+      );
+      await addEvent(pool, customer.id, {
+        event_type: 'MANUAL_CUSTOMER_CREATED', summary: '销售自主建立客户档案', evidence: visitNotes || null,
+        priority: 'normal', recommended_action: customer.next_action, actor_type: 'human', actor_id: owner,
+        source_type: 'manual_customer', source_id: origin, payload: { customer_origin: origin, first_visit_notes: visitNotes || null },
+      });
+      res.status(201).json({ ok: true, customer });
+    } catch (e) {
+      console.error('[sales] create manual customer failed:', e?.message || e);
+      res.status(500).json({ ok: false, error: 'server_error', message: '客户建档失败，请稍后重试' });
+    }
   });
 
   app.get('/api/admin/sales/leads', platformAdminRequired, async (req, res) => {

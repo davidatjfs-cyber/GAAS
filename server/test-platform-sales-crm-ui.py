@@ -98,6 +98,17 @@ call(f"/api/admin/sales/leads/{lead_id}/assign", "POST", {"username": "e2e_sales
 
 sales_login = call("/api/admin/auth/login", "POST", {"username": "e2e_sales", "password": "E2ePassw0rd!"})
 sales_token = sales_login["token"]
+manual_customer = call("/api/admin/sales/customers", "POST", {
+    "company": "E2E销售拜访餐饮管理有限公司", "name": "王店长", "phone": "13900001234",
+    "city": "上海", "store_count": 4, "customer_origin": "sales_visit",
+    "first_visit_notes": "首次上门拜访，客户希望提升会员复购并安排下周系统演示。",
+    "next_action": "下周发送方案并预约演示"
+}, sales_token, expected=201)["customer"]
+assert manual_customer["customer_origin"] == "sales_visit" and manual_customer["customer_code"]
+duplicate_manual = call("/api/admin/sales/customers", "POST", {
+    "company": "E2E销售拜访餐饮管理有限公司", "name": "王店长", "phone": "13900001234", "city": "上海"
+}, sales_token, expected=409)
+assert duplicate_manual["error"] == "customer_exists" and int(duplicate_manual["existing"]["id"]) == int(manual_customer["id"])
 sales_assets = call("/api/admin/sales/content-assets", token=sales_token)["items"]
 assert all((x.get("knowledge_domain") or "customer_ai") == "customer_ai" for x in sales_assets)
 call(f"/api/admin/sales/leads/{lead_id}/dossier", "PUT", {"region_code": "east_china", "region_name": "华东区", "city": "上海"}, sales_token)
@@ -137,6 +148,7 @@ assert unlocked["provision"] and unlocked["provision"]["ok"] is True
 assert unlocked["provision"].get("temp_password") is None
 
 cs_token = call("/api/admin/auth/login", "POST", {"username": "e2e_cs", "password": "E2ePassw0rd!"})["token"]
+call("/api/admin/sales/customers", "POST", {"company": "不应由客服创建", "name": "测试"}, cs_token, expected=403)
 delivery_overview = call(f"/api/admin/sales/leads/{lead_id}/crm-overview", token=cs_token)
 assert delivery_overview["delivery"] and delivery_overview["delivery"]["cs_owner"] == "e2e_cs"
 delivered = None
@@ -200,25 +212,37 @@ with sync_playwright() as p:
     page.wait_for_load_state("networkidle")
     assert page.locator('#topTabs button[data-panel="sales"]').inner_text() == "销售 CRM"
     assert page.locator("#panel-sales").get_by_text("客户成交与交付中心", exact=True).count() == 1
+    assert page.locator("#salesCreateCustomerBtn").inner_text() == "新建客户档案"
     assert page.locator("#salesCrmNav").get_by_text("客户管理", exact=True).count() == 1
     assert page.locator("#salesCrmNav").get_by_text("合同回款", exact=True).count() == 1
     assert page.locator("#salesCrmNav").get_by_text("内容培育", exact=True).count() == 1
-    assert page.locator("#crmCustomersSection").get_by_text("客户管理", exact=True).count() == 1
+    assert page.locator("#crmCustomersSection").get_by_text("我的客户", exact=True).count() == 1
     assert page.locator("#crmFinanceSection").get_by_text("合同、回款与开票", exact=True).count() == 1
     assert page.locator("#crmContentSection").get_by_text("客户 AI 内容与培育", exact=True).count() == 1
     assert page.locator("#crmPerformanceSection").get_by_text("区域与销售业绩", exact=True).count() == 1
     page.wait_for_function("() => Number(document.querySelector('#crmKpiTotal')?.textContent || 0) >= 1")
     assert int(page.locator("#crmKpiTotal").inner_text()) >= 1
+    assert page.locator(f'tr[data-lead-id="{manual_customer["id"]}"]').count() == 1
     assert page.locator('#topTabs button[data-panel="tenants"]').is_hidden()
     assert page.locator('#topTabs button[data-panel="create"]').is_hidden()
     assert page.locator('#topTabs button[data-panel="config"]').is_hidden()
+    page.click("#salesCreateCustomerBtn")
+    page.wait_for_selector("#salesManualCustomerFormCard", state="visible")
+    page.fill("#manualCustomerCompany", "E2E界面自主建档客户")
+    page.fill("#manualCustomerName", "李店长")
+    page.fill("#manualCustomerVisitNotes", "销售上门完成首访，客户确认下周安排经营系统演示。")
+    page.click("#salesManualCustomerSaveBtn")
+    page.wait_for_selector("#salesDetailCard", state="visible")
+    assert "E2E界面自主建档客户" in page.locator("#salesDetailTitle").inner_text()
+    assert "销售上门拜访" in page.locator("#salesDossierBox").inner_text()
+    page.click("#salesDetailCloseBtn")
     page.locator(f'tr[data-lead-id="{lead_id}"]').click()
     page.wait_for_selector("#salesDetailCard", state="visible")
     page.wait_for_selector("#salesContractsBox [data-contract-id]")
     assert page.locator("#salesContractFile").count() == 1
     assert page.locator("#salesContractsBox [data-payment-amount]").count() == 1
     assert page.locator("#salesContractsBox [data-invoice-amount]").count() == 1
-    assert "V2" in page.locator("#salesContractsBox").inner_text()
+    assert "第2版" in page.locator("#salesContractsBox").inner_text()
     page.click("#salesLostBtn")
     page.wait_for_selector("#salesLossReviewBox", state="visible")
     assert page.locator("#salesLossBudget").count() == 1
@@ -242,6 +266,38 @@ with sync_playwright() as p:
     assert finance_page.locator('#topTabs button[data-panel="tenants"]').is_hidden()
     finance_page.screenshot(path="/tmp/gaas-sales-crm-finance-e2e.png", full_page=True)
     finance_browser.close()
+
+    cs_browser = p.chromium.launch(headless=True, args=["--no-proxy-server"])
+    cs_page = cs_browser.new_page(viewport={"width": 1280, "height": 900})
+    cs_page.goto(BASE + "/sales-crm")
+    cs_page.wait_for_load_state("networkidle")
+    cs_page.fill("#loginUsername", "e2e_cs")
+    cs_page.fill("#loginPassword", "E2ePassw0rd!")
+    cs_page.click("#loginBtn")
+    cs_page.wait_for_selector("#panel-sales.active")
+    cs_page.wait_for_function("() => document.querySelector('#crmCustomersSection')?.innerText.includes('待交付客户')")
+    assert "待交付客户" in cs_page.locator("#crmCustomersSection").inner_text()
+    assert cs_page.locator("#salesCreateCustomerBtn").is_hidden()
+    assert cs_page.locator("#crmTodaySection").is_hidden()
+    assert "客服 / 实施岗位" in cs_page.locator("#salesRoleGuide").inner_text()
+    cs_page.screenshot(path="/tmp/gaas-sales-crm-delivery-e2e.png", full_page=True)
+    cs_browser.close()
+
+    mobile_browser = p.chromium.launch(headless=True, args=["--no-proxy-server"])
+    mobile_page = mobile_browser.new_page(viewport={"width": 390, "height": 844})
+    mobile_page.goto(BASE + "/platform-admin/")
+    mobile_page.wait_for_load_state("networkidle")
+    mobile_page.fill("#loginUsername", "e2e_super")
+    mobile_page.fill("#loginPassword", "E2ePassw0rd!")
+    mobile_page.click("#loginBtn")
+    mobile_page.wait_for_function("() => !!localStorage.getItem('platform_admin_token')")
+    # 窄屏下顶部标签会折叠，直接调用与标签相同的切换入口验证 CRM 的实际移动端状态。
+    mobile_page.evaluate("switchPanel('sales')")
+    mobile_page.wait_for_selector("#panel-sales.active")
+    assert mobile_page.locator("#selectedTenantBar").is_hidden()
+    assert "wkAc" not in mobile_page.locator("#panel-sales .crm-hero").inner_text()
+    mobile_page.screenshot(path="/tmp/gaas-sales-crm-mobile-e2e.png", full_page=True)
+    mobile_browser.close()
 
 print(f"platform sales CRM UI/API e2e passed lead={lead_id} contract={contract_id}")
 for uploaded_path in uploaded_paths:
