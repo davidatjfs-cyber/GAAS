@@ -43,7 +43,8 @@ export async function runNurtureCadence(pool) {
   const r = await pool.query(
     `SELECT * FROM sales_leads
       WHERE controller = 'ai'
-        AND stage NOT IN ('won', 'lost', 'unfit')
+        AND stage NOT IN ('won', 'unfit')
+        AND (stage <> 'lost' OR auto_nurture_enabled = true)
         AND extracted->>'diagnosis_delivered' = 'true'
         AND nurture_step < ${NURTURE_SCHEDULE.length}
         AND last_message_at IS NOT NULL

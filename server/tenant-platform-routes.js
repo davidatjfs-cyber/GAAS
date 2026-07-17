@@ -39,9 +39,12 @@ export function createPlatformAdminRequired(pool, platformAdminJwtSecret) {
     // 跟上面校验的 role==='platform_admin' 不是一回事——那个只是"这是个平台登录token"的
     // 固定标记，account_role 才是真正决定这个人能看到哪些模块的字段。
     req.platformAdmin = { username: payload.username, role: payload.account_role || 'super_admin' };
-    const controlPlaneOnly = ['/api/admin/tenants', '/api/admin/health-center', '/api/admin/auth/accounts', '/api/admin/auth/audit-log'];
+    const controlPlaneOnly = ['/api/admin/tenants', '/api/admin/health-center', '/api/admin/auth/accounts'];
     if (req.platformAdmin.role !== 'super_admin' && controlPlaneOnly.some((prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`))) {
       return res.status(403).json({ error: 'forbidden', message: '该账号无权查看平台租户总控信息' });
+    }
+    if (req.platformAdmin.role === 'auditor' && req.method !== 'GET') {
+      return res.status(403).json({ error: 'forbidden', message: '只读审计账号不能执行修改操作' });
     }
     if (req.method !== 'GET') {
       const targetTenantId = req.params?.tenantId || req.body?.tenant_id || req.body?.tenantId || null;
@@ -81,7 +84,7 @@ export function requireSalesManagerOrAbove(req, res, next) {
   next();
 }
 
-const PLATFORM_ADMIN_ROLES = ['super_admin', 'general_manager', 'sales_manager', 'sales', 'customer_service', 'finance', 'implementation'];
+const PLATFORM_ADMIN_ROLES = ['super_admin', 'general_manager', 'sales_manager', 'sales', 'customer_service', 'finance', 'implementation', 'auditor'];
 
 /**
  * @param {import('express').Express} app
@@ -91,6 +94,7 @@ export function registerTenantPlatformRoutes(app, deps) {
   const {
     pool,
     platformAdminRequired,
+    platformAdminSessionRequired = platformAdminRequired,
     loginRateLimit,
     upload,
     recordUploadOwnership,
@@ -194,8 +198,11 @@ export function registerTenantPlatformRoutes(app, deps) {
     }
   });
 
-  app.get('/api/admin/auth/audit-log', platformAdminRequired, requireSuperAdmin, async (req, res) => {
+  app.get('/api/admin/auth/audit-log', platformAdminSessionRequired, async (req, res) => {
     try {
+      if (!['super_admin', 'auditor'].includes(req.platformAdmin?.role)) {
+        return res.status(403).json({ error: 'forbidden', message: '仅超级管理员或只读审计人员可查看审计日志' });
+      }
       const limit = Math.min(Number(req.query?.limit) || 200, 1000);
       const r = await pool.query(
         `SELECT admin_username, method, path, target_tenant_id, detail, ip, created_at

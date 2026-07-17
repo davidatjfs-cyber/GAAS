@@ -639,6 +639,7 @@
           <div class="detail-grid">
             <label class="field">合同编号<input id="salesContractNo" placeholder="例如 NNYX-2026-001"></label>
             <label class="field">合同金额（元）<input id="salesContractAmount" type="number" min="0" step="0.01"></label>
+            <label class="field">合同版本<input id="salesContractVersion" type="number" min="1" step="1" value="1"></label>
             <label class="field">合同文件（PDF/Word/图片）<input id="salesContractFile" type="file" accept=".pdf,.doc,.docx,image/*"><input id="salesContractFileUrl" type="hidden"></label>
             <div class="field"><span>操作</span><button type="button" id="salesCreateContractBtn" class="secondary">登记合同</button></div>
           </div>
@@ -659,6 +660,19 @@
             <button type="button" id="salesSendCaseBtn" class="secondary">发案例</button>
             <button type="button" id="salesSendDemoBtn" class="secondary">发Demo邀请</button>
             <button type="button" id="salesCreateTaskBtn" class="secondary">创建任务</button>
+          </div>
+          <div id="salesLossReviewBox" class="hint-box" style="display:none;margin-top:8px">
+            <strong>失单复盘（必填）</strong>
+            <div class="detail-grid" style="margin-top:6px">
+              <label class="field">最大原因<select id="salesLossReason"><option value="price_too_high">价格过高</option><option value="competitor">选择竞争对手</option><option value="need_customization">定制需求不匹配</option><option value="no_decision">决策未形成</option><option value="no_budget">暂无预算</option><option value="timing">时机不合适</option><option value="data_unfit">数据条件不匹配</option><option value="other">其他</option></select></label>
+              <label class="field">竞争对手<input id="salesLossCompetitor" placeholder="没有则填无"></label>
+              <label class="field">预算情况<input id="salesLossBudget" placeholder="例如：本年度无预算"></label>
+              <label class="field">客户当前系统<input id="salesLossCurrentSystem" placeholder="例如：仅使用POS / 无系统"></label>
+              <label class="field" style="grid-column:1/-1">具体细节<textarea id="salesLossDetail" rows="3" placeholder="至少10个字，说明无法成交的真实细节"></textarea></label>
+              <label class="field">未来重新联系时间<input id="salesLossRecontactAt" type="datetime-local"></label>
+              <label class="field"><span>后续策略</span><span><input id="salesLossEnterNurture" type="checkbox"> 进入客户AI自动培育</span></label>
+            </div>
+            <div class="toolbar"><button type="button" id="salesLossSubmitBtn" class="warn">确认失单并保存复盘</button><button type="button" id="salesLossCancelBtn" class="ghost">取消</button></div>
           </div>
         </div>
         <div style="margin-top:8px">
@@ -945,6 +959,7 @@
           <option value="finance">财务</option>
           <option value="sales_manager">销售经理</option>
           <option value="general_manager">总经理（授信与销售全局）</option>
+          <option value="auditor">只读审计人员</option>
           <option value="super_admin">超级管理员（可看到租户开通/系统配置）</option>
         </select></label>
       </div>
@@ -1335,7 +1350,7 @@ function legacyCopyFallback(value) {
     // 前端体验层面不让销售/客服/销售经理这几种角色的账号误触/看到不该看的入口。
     const SUPER_ADMIN_ONLY_PANELS = ['tenants', 'create', 'config', 'log'];
     const ROLE_PANEL_ALLOWLIST = {
-      sales: ['sales'], sales_manager: ['sales'], finance: ['sales'], general_manager: ['sales'],
+      sales: ['sales'], sales_manager: ['sales'], finance: ['sales'], general_manager: ['sales'], auditor: ['sales'],
       customer_service: ['sales', 'onboarding', 'faq', 'demand'], implementation: ['sales', 'onboarding', 'faq', 'demand'],
     };
     function applyRoleBasedNav() {
@@ -1358,6 +1373,11 @@ function legacyCopyFallback(value) {
       $('platformHeaderLinks').style.display = isSuperAdmin ? '' : 'none';
       $('reloadBtn').style.display = isSuperAdmin ? '' : 'none';
       $('manageAccountsBtn').style.display = isSuperAdmin ? '' : 'none';
+      if (acc?.role === 'auditor') {
+        document.querySelectorAll('#panel-sales button').forEach((button) => { button.disabled = true; });
+        if ($('salesReloadBtn')) $('salesReloadBtn').disabled = false;
+        if ($('salesDetailCloseBtn')) $('salesDetailCloseBtn').disabled = false;
+      }
       if (isSuperAdmin) {
         $('workspaceTitle').textContent = '平台租户控制台';
         $('workspaceSubtitle').textContent = '管理租户开通、许可证、飞书、品牌外观与自动验收';
@@ -3054,6 +3074,8 @@ function legacyCopyFallback(value) {
     $('salesTrialBtn').onclick = () => salesLogTrial().catch((e) => toast(e.message));
     $('salesDealBtn').onclick = () => salesLogDeal().catch((e) => toast(e.message));
     $('salesLostBtn').onclick = () => salesLogLost().catch((e) => toast(e.message));
+    $('salesLossSubmitBtn').onclick = () => salesSubmitLossReview().catch((e) => toast(e.message));
+    $('salesLossCancelBtn').onclick = () => { $('salesLossReviewBox').style.display = 'none'; };
     $('salesSendCaseBtn').onclick = () => salesAction('send_case').catch((e) => toast(e.message));
     $('salesSendDemoBtn').onclick = () => salesAction('send_demo').catch((e) => toast(e.message));
     $('salesCreateTaskBtn').onclick = () => salesAction('create_task', { title: window.prompt('任务名称', '销售跟进') || '销售跟进' }).catch((e) => toast(e.message));
@@ -3315,8 +3337,9 @@ function legacyCopyFallback(value) {
     async function salesLoadContentAssets() {
       const data = await api('/api/admin/sales/content-assets');
       const select = $('salesContentAsset');
-      select.innerHTML = '<option value="">请选择已审批资料</option>' + (data.items || []).map((x) => `<option value="${Number(x.id)}">${salesEsc(x.title)}（${salesEsc(x.content_type)}）</option>`).join('');
-      $('salesContentDeliveryHint').textContent = `可发送资料 ${(data.items || []).length} 项`;
+      const sendable = (data.items || []).filter((x) => (x.knowledge_domain || 'customer_ai') === 'customer_ai' && x.external_approved);
+      select.innerHTML = '<option value="">请选择已审批资料</option>' + sendable.map((x) => `<option value="${Number(x.id)}">${salesEsc(x.title)}（${salesEsc(x.content_type)}）</option>`).join('');
+      $('salesContentDeliveryHint').textContent = `可发送资料 ${sendable.length} 项`;
     }
     async function salesSendContentAsset() {
       const id = state.sales.selectedLeadId;
@@ -3337,11 +3360,12 @@ function legacyCopyFallback(value) {
       const leadId = state.sales.selectedLeadId;
       const contractNo = String($('salesContractNo').value || '').trim();
       const amount = Number($('salesContractAmount').value || 0);
+      const versionNo = Math.max(1, Number($('salesContractVersion').value || 1));
       if (!leadId || !contractNo || !amount) return;
       const uploaded = await salesUploadDocument($('salesContractFile').files?.[0]);
-      const data = await api(`/api/admin/sales/leads/${leadId}/contracts`, { method: 'POST', body: JSON.stringify({ contract_no: contractNo, amount, file_url: uploaded?.file_url || null, file_name: uploaded?.file_name || null }) });
+      const data = await api(`/api/admin/sales/leads/${leadId}/contracts`, { method: 'POST', body: JSON.stringify({ contract_no: contractNo, amount, version_no: versionNo, file_url: uploaded?.file_url || null, file_name: uploaded?.file_name || null }) });
       $('salesContractHint').textContent = `合同 ${data.contract.contract_no} 已登记，待双方签署后由销售经理设为生效。`;
-      $('salesContractNo').value = ''; $('salesContractAmount').value = ''; $('salesContractFileUrl').value = ''; $('salesContractFile').value = '';
+      $('salesContractNo').value = ''; $('salesContractAmount').value = ''; $('salesContractVersion').value = '1'; $('salesContractFileUrl').value = ''; $('salesContractFile').value = '';
       await salesLoadCrmOverview();
     }
     async function salesUploadDocument(file) {
@@ -3374,7 +3398,7 @@ function legacyCopyFallback(value) {
       $('salesContractsBox').innerHTML = (data.contracts || []).map((c) => {
         const ps = paymentsByContract.get(Number(c.id)) || [];
         const invs = invoicesByContract.get(Number(c.id)) || [];
-        return `<div class="glossary-item" data-contract-id="${Number(c.id)}"><strong>${salesEsc(c.contract_no)}</strong><p>金额 ${salesMoney(c.amount_fen)} · 状态 ${salesEsc(c.status)} ${c.file_url ? `· <a href="${salesEsc(c.file_url)}" target="_blank">查看原合同</a>` : ''}</p>
+        return `<div class="glossary-item" data-contract-id="${Number(c.id)}"><strong>${salesEsc(c.contract_no)} · V${Number(c.version_no || 1)}</strong><p>金额 ${salesMoney(c.amount_fen)} · 状态 ${salesEsc(c.status)} ${c.file_url ? `· <a href="${salesEsc(c.file_url)}" target="_blank">查看原合同</a>` : ''}</p>
           <div class="toolbar"><input data-customer-sign-file type="file" accept=".pdf,.doc,.docx,image/*" style="max-width:190px"><button data-cstatus="customer_signed" data-file-source="customer" class="secondary">上传客户盖章件</button>${['super_admin','general_manager','sales_manager'].includes(role) ? '<input data-our-sign-file type="file" accept=".pdf,.doc,.docx,image/*" style="max-width:190px"><button data-cstatus="our_signed" data-file-source="our" class="secondary">上传我方盖章件</button><button data-cstatus="effective" class="warn">确认合同生效</button>' : ''}</div>
           <div class="toolbar"><input data-payment-amount type="number" min="0.01" step="0.01" placeholder="本次回款金额"><input data-payment-file type="file" accept=".pdf,image/*"><button data-payment class="secondary">提交回款凭证</button><input data-invoice-amount type="number" min="0.01" step="0.01" placeholder="申请开票金额"><button data-invoice class="secondary">申请开票</button></div>
           <div class="small">${ps.map((p) => `回款 ${salesMoney(p.amount_fen)} · ${salesEsc(p.status)} ${p.receipt_url ? `· <a href="${salesEsc(p.receipt_url)}" target="_blank">凭证</a>` : ''} ${p.status === 'pending' && ['super_admin','finance'].includes(role) ? `<button data-confirm-payment="${Number(p.id)}" class="ghost">财务确认</button>` : ''}`).join('<br>') || '暂无回款'}</div>
@@ -3456,9 +3480,29 @@ function legacyCopyFallback(value) {
     async function salesLogLost() {
       const id = state.sales.selectedLeadId;
       if (!id) throw new Error('请先选择线索');
-      const reason = window.prompt('失单原因：price_too_high / competitor / need_customization / no_decision / no_budget / timing / data_unfit / other', 'price_too_high');
-      if (!reason) return;
-      await api('/api/admin/sales/loss-reasons', { method: 'POST', body: JSON.stringify({ lead_id: id, reason_key: reason }) });
+      $('salesLossReviewBox').style.display = '';
+      $('salesLossReviewBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function salesSubmitLossReview() {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先选择线索');
+      const enterNurture = $('salesLossEnterNurture').checked;
+      const payload = {
+        lead_id: id,
+        reason_key: $('salesLossReason').value,
+        competitor: $('salesLossCompetitor').value.trim(),
+        budget_status: $('salesLossBudget').value.trim(),
+        current_system: $('salesLossCurrentSystem').value.trim(),
+        detail: $('salesLossDetail').value.trim(),
+        recontact_at: $('salesLossRecontactAt').value ? new Date($('salesLossRecontactAt').value).toISOString() : null,
+        enter_nurture: enterNurture,
+      };
+      if (payload.detail.length < 10 || !payload.budget_status || !payload.current_system || (enterNurture && !payload.recontact_at)) {
+        throw new Error('请完整填写具体细节、预算情况、当前系统；进入培育时必须填写重新联系时间');
+      }
+      await api('/api/admin/sales/loss-reasons', { method: 'POST', body: JSON.stringify(payload) });
+      $('salesLossReviewBox').style.display = 'none';
       toast('已标记失单');
       await openSalesLead(id);
       await loadSalesBoard();
@@ -3574,12 +3618,17 @@ function legacyCopyFallback(value) {
         <div class="detail-grid" style="margin-top:8px">
           <label class="field">资料名称<input id="ccTitle" placeholder="例如：餐饮增长方案"></label>
           <label class="field">类型<select id="ccType"><option value="text">文字</option><option value="image">图片</option><option value="file">文件/PDF</option><option value="video">视频</option><option value="link">链接</option><option value="qr">销售二维码</option></select></label>
+          <label class="field">知识域<select id="ccDomain"><option value="customer_ai">客户AI（可对外）</option><option value="sales_ai">销售AI（仅内部）</option><option value="implementation">客服/实施（仅内部）</option></select></label>
+          <label class="field">适用客户类型<input id="ccCustomerTypes" placeholder="连锁餐饮,单店,茶饮"></label>
+          <label class="field">版本号<input id="ccVersion" type="number" min="1" value="1"></label>
+          <label class="field">生效时间<input id="ccEffectiveFrom" type="datetime-local"></label>
+          <label class="field">失效时间<input id="ccExpiresAt" type="datetime-local"></label>
           <label class="field">文字/链接<textarea id="ccText" rows="2"></textarea></label>
           <label class="field">上传图片、文件或视频<input id="ccFile" type="file"></label>
           <label class="field">培育节点<select id="ccStep"><option value="">仅手动</option><option value="1">Day1</option><option value="2">Day3</option><option value="3">Day7</option><option value="4">Day14</option><option value="5">Day30</option></select></label>
           <label class="field"><span>审批</span><span><input id="ccApproved" type="checkbox" checked> 允许对外 <input id="ccAuto" type="checkbox"> 允许AI自动发送</span></label>
         </div><button id="ccSaveBtn" class="warn">上传并保存资料</button>
-        <div style="margin-top:10px">${(data.items || []).map((x) => `<div class="small">• ${salesEsc(x.title)} · ${salesEsc(x.content_type)} ${x.auto_send_allowed ? `· 自动Day${x.nurture_step || '?'}` : '· 手动发送'}</div>`).join('') || '暂无已审批资料'}</div>`;
+        <div style="margin-top:10px">${(data.items || []).map((x) => `<div class="small">• ${salesEsc(x.title)} · ${salesEsc(x.knowledge_domain || 'customer_ai')} · V${Number(x.version_no || 1)} · ${salesEsc(x.content_type)} ${x.auto_send_allowed ? `· 自动Day${x.nurture_step || '?'}` : '· 手动/内部'}</div>`).join('') || '暂无资料'}</div>`;
       $('ccSaveBtn').onclick = async () => {
         let mediaUrl = ''; let fileName = ''; let contentType = $('ccType').value;
         const file = $('ccFile').files?.[0];
@@ -3591,7 +3640,18 @@ function legacyCopyFallback(value) {
         }
         const title = $('ccTitle').value.trim(); const textContent = $('ccText').value.trim();
         if (!title || (!textContent && !mediaUrl)) throw new Error('资料名称和内容/文件不能为空');
-        await api('/api/admin/sales/content-assets', { method: 'POST', body: JSON.stringify({ asset_key: `asset_${Date.now()}`, title, content_type: contentType, text_content: textContent || null, media_url: mediaUrl || null, file_name: fileName || null, external_approved: $('ccApproved').checked, auto_send_allowed: $('ccAuto').checked, nurture_step: $('ccStep').value || null }) });
+        const domain = $('ccDomain').value;
+        await api('/api/admin/sales/content-assets', { method: 'POST', body: JSON.stringify({
+          asset_key: `asset_${Date.now()}`, title, content_type: contentType, text_content: textContent || null,
+          media_url: mediaUrl || null, file_name: fileName || null, knowledge_domain: domain,
+          customer_types: $('ccCustomerTypes').value.split(/[,，]/).map((x) => x.trim()).filter(Boolean),
+          version_no: Number($('ccVersion').value || 1),
+          effective_from: $('ccEffectiveFrom').value ? new Date($('ccEffectiveFrom').value).toISOString() : null,
+          expires_at: $('ccExpiresAt').value ? new Date($('ccExpiresAt').value).toISOString() : null,
+          external_approved: domain === 'customer_ai' && $('ccApproved').checked,
+          auto_send_allowed: domain === 'customer_ai' && $('ccAuto').checked,
+          nurture_step: domain === 'customer_ai' ? ($('ccStep').value || null) : null,
+        }) });
         toast('资料已保存'); await loadSalesContentCenter(); await salesLoadContentAssets();
       };
     }

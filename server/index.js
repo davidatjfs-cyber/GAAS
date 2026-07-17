@@ -5778,6 +5778,7 @@ registerTenantSubscriptionRoutes(app, { pool, authRequired });
 registerTenantPlatformRoutes(app, {
   pool,
   platformAdminRequired: [platformAdminRequired, requireSuperAdmin],
+  platformAdminSessionRequired: platformAdminRequired,
   loginRateLimit,
   upload,
   recordUploadOwnership,

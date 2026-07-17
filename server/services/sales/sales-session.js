@@ -128,6 +128,24 @@ export function buildWaitingHumanBridgeReply({ content, lead = {} } = {}) {
   return '收到，我还在这里，也已经把您这条新信息同步给接手顾问。顾问回复前，您继续问就行，我会先接着回答。';
 }
 
+async function pauseAutoNurtureOnCustomerReply(pool, leadId) {
+  const r = await pool.query(
+    `UPDATE sales_leads
+        SET auto_nurture_enabled=false,auto_nurture_paused_at=NOW(),updated_at=NOW()
+      WHERE id=$1 AND auto_nurture_enabled=true
+      RETURNING id`,
+    [leadId]
+  );
+  if (r.rowCount) {
+    await addEvent(pool, leadId, {
+      event_type: 'AUTO_NURTURE_PAUSED_BY_REPLY',
+      summary: '客户已回复，自动培育已暂停，等待销售重新确认',
+      priority: 'normal',
+      recommended_action: 'review_customer_reply',
+    });
+  }
+}
+
 export async function handleInboundMessage(pool, {
   text,
   openKfid = 'sandbox',
@@ -158,6 +176,7 @@ export async function handleInboundMessage(pool, {
       if (msgId && !m.inserted) {
         return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id };
       }
+      await pauseAutoNurtureOnCustomerReply(pool, lead.id);
     }
     await pool.query(`UPDATE sales_leads SET last_message_at=NOW(), updated_at=NOW() WHERE id=$1`, [lead.id]);
     return { ok: true, replied: false, reason: 'human_controller', lead_id: lead.id, conversation_id: conv.id };
@@ -178,6 +197,7 @@ export async function handleInboundMessage(pool, {
       if (msgId && !inboundMsg.inserted) {
         return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: 'waiting_human' };
       }
+      await pauseAutoNurtureOnCustomerReply(pool, lead.id);
     }
     const slots = extractSlotsFromText(content, lead.extracted || {});
     const events = detectEvents(content);
@@ -284,6 +304,7 @@ export async function handleInboundMessage(pool, {
     // 通知——否则客户会收到两条几乎相同的AI回复，销售会收到重复的高意向通知。
     return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: conv.controller };
   }
+  await pauseAutoNurtureOnCustomerReply(pool, lead.id);
 
   // 当前 inbound 已写入数据库，但不能又作为“历史”传给模型，否则同一句会同时出现在
   // 历史和“客户本轮说”两个位置，放大模型对重复话术的关注。

@@ -517,7 +517,9 @@ export async function upsertTask(pool, {
   } catch (e) {
     // 兜底索引可能因历史重复数据未清理而尚未建成(见 ensureSalesTables/migration说明)，
     // 这种过渡期里退回旧的SELECT-then-INSERT写法，至少保证功能不中断，去重保护降级但不消失。
-    if (!/no unique or exclusion constraint/i.test(e?.message || '')) throw e;
+    // 同时存在 dedup_key 和 (lead_id,title,status=open) 两个唯一索引时，并发插入也可能先撞到
+    // 另一个索引；23505 同样应当回查已存在行，而不是把幂等请求当成业务失败。
+    if (e?.code !== '23505' && !/no unique or exclusion constraint/i.test(e?.message || '')) throw e;
   }
   const exist = dedupKey
     ? await pool.query(`SELECT * FROM sales_tasks WHERE dedup_key=$1 LIMIT 1`, [dedupKey])
@@ -596,11 +598,11 @@ export async function recordObjection(pool, { leadId, objectionKey, objectionLab
   return r.rows?.[0] || null;
 }
 
-export async function recordLossReason(pool, { leadId, reasonKey, reasonLabel, detail, evidence, createdBy }) {
+export async function recordLossReason(pool, { leadId, reasonKey, reasonLabel, detail, evidence, competitor, budgetStatus, currentSystem, recontactAt, enterNurture, createdBy }) {
   const r = await pool.query(
-    `INSERT INTO sales_loss_reasons (lead_id, reason_key, reason_label, detail, evidence, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [leadId, reasonKey, reasonLabel || null, detail || null, evidence || null, createdBy || null]
+    `INSERT INTO sales_loss_reasons (lead_id, reason_key, reason_label, detail, evidence, competitor, budget_status, current_system, recontact_at, enter_nurture, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+    [leadId, reasonKey, reasonLabel || null, detail || null, evidence || null, competitor || null, budgetStatus || null, currentSystem || null, recontactAt || null, !!enterNurture, createdBy || null]
   );
   await pool.query(`UPDATE sales_leads SET lost_reason=$2, updated_at=NOW() WHERE id=$1`, [leadId, reasonKey]);
   await transitionLeadStage(pool, { leadId, toStage: 'lost', actorType: 'human', actorId: createdBy || 'sales_ops', reason: `recordLossReason:${reasonKey}`, sourceType: 'sales_loss_reason', sourceId: String(r.rows?.[0]?.id || '') });

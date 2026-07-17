@@ -61,12 +61,23 @@ qr_asset = call("/api/admin/sales/content-assets", "POST", {
     "media_url": qr_data["media_url"], "external_approved": True, "auto_send_allowed": False
 }, super_token)
 assert qr_asset["asset"]["content_type"] == "qr"
+internal_asset = call("/api/admin/sales/content-assets", "POST", {
+    "asset_key": "e2e_internal_sales_playbook", "title": "E2E内部销售策略", "content_type": "text",
+    "text_content": "仅供销售AI使用", "knowledge_domain": "sales_ai", "version_no": 2,
+    "customer_types": ["连锁餐饮"], "external_approved": False, "auto_send_allowed": False
+}, super_token)["asset"]
+assert internal_asset["knowledge_domain"] == "sales_ai" and internal_asset["version_no"] == 2
+call("/api/admin/sales/content-assets", "POST", {
+    "asset_key": "e2e_internal_leak", "title": "不得外发", "content_type": "text",
+    "text_content": "内部资料", "knowledge_domain": "sales_ai", "external_approved": True
+}, super_token, expected=400)
 for username, role, name in [
     ("e2e_sales", "sales", "E2E销售"),
     ("e2e_finance", "finance", "E2E财务"),
     ("e2e_gm", "general_manager", "E2E总经理"),
     ("e2e_cs", "customer_service", "E2E客服"),
     ("e2e_impl", "implementation", "E2E实施"),
+    ("e2e_auditor", "auditor", "E2E只读审计"),
 ]:
     result = call("/api/admin/auth/accounts", "POST", {
         "username": username, "password": "E2ePassw0rd!", "real_name": name, "role": role
@@ -87,6 +98,8 @@ call(f"/api/admin/sales/leads/{lead_id}/assign", "POST", {"username": "e2e_sales
 
 sales_login = call("/api/admin/auth/login", "POST", {"username": "e2e_sales", "password": "E2ePassw0rd!"})
 sales_token = sales_login["token"]
+sales_assets = call("/api/admin/sales/content-assets", token=sales_token)["items"]
+assert all((x.get("knowledge_domain") or "customer_ai") == "customer_ai" for x in sales_assets)
 call(f"/api/admin/sales/leads/{lead_id}/dossier", "PUT", {"region_code": "east_china", "region_name": "华东区", "city": "上海"}, sales_token)
 leads = call("/api/admin/sales/leads?limit=20", token=sales_token)
 assert any(int(x["id"]) == int(lead_id) for x in leads["leads"])
@@ -96,8 +109,9 @@ overview = call(f"/api/admin/sales/leads/{lead_id}/crm-overview", token=sales_to
 contract = (overview.get("contracts") or [None])[0]
 if not contract:
     contract = call(f"/api/admin/sales/leads/{lead_id}/contracts", "POST", {
-        "contract_no": f"E2E-{lead_id}", "amount": 1000
+        "contract_no": f"E2E-{lead_id}", "amount": 1000, "version_no": 2
     }, sales_token)["contract"]
+assert int(contract.get("version_no") or 1) >= 1
 contract_id = contract["id"]
 if not contract.get("customer_signed_at"):
     call(f"/api/admin/sales/contracts/{contract_id}/status", "PATCH", {"status": "customer_signed"}, sales_token)
@@ -145,6 +159,32 @@ assert east["lead_count"] >= 1 and int(east["paid_fen"]) >= 10000
 call(f"/api/admin/sales/contracts/{contract_id}/payments", "POST", {"amount": 50}, sales_token)
 call(f"/api/admin/sales/contracts/{contract_id}/invoices", "POST", {"amount": 50}, sales_token)
 
+loss_lead = call("/api/admin/sales/sandbox/chat", "POST", {
+    "external_userid": "e2e_loss_customer", "text": "我们暂时不考虑采购，明年再联系。"
+}, super_token)["lead_id"]
+call("/api/admin/sales/loss-reasons", "POST", {
+    "lead_id": loss_lead, "reason_key": "timing", "detail": "太短",
+    "budget_status": "无预算", "current_system": "仅POS"
+}, super_token, expected=400)
+recontact = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 86400))
+loss = call("/api/admin/sales/loss-reasons", "POST", {
+    "lead_id": loss_lead, "reason_key": "timing", "detail": "客户本年度预算已经锁定，计划明年重新评估。",
+    "competitor": "无", "budget_status": "本年度无预算", "current_system": "仅使用POS",
+    "recontact_at": recontact, "enter_nurture": True
+}, super_token)["loss"]
+assert loss["enter_nurture"] is True and loss["recontact_at"]
+call(f"/api/admin/sales/sandbox/chat", "POST", {
+    "external_userid": "e2e_loss_customer", "text": "资料我看到了，有问题再联系。"
+}, super_token)
+loss_state = call(f"/api/admin/sales/leads/{loss_lead}", token=super_token)["lead"]
+assert loss_state["auto_nurture_enabled"] is False and loss_state["auto_nurture_paused_at"]
+
+auditor_token = call("/api/admin/auth/login", "POST", {"username": "e2e_auditor", "password": "E2ePassw0rd!"})["token"]
+call("/api/admin/sales/leads?limit=20", token=auditor_token)
+call("/api/admin/auth/audit-log?limit=10", token=auditor_token)
+call("/api/admin/tenants", token=auditor_token, expected=403)
+call(f"/api/admin/sales/leads/{loss_lead}/auto-nurture", "PUT", {"enabled": True}, auditor_token, expected=403)
+
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True, args=["--no-proxy-server"])
     page = browser.new_page(viewport={"width": 1440, "height": 1000})
@@ -167,6 +207,13 @@ with sync_playwright() as p:
     assert page.locator("#salesContractFile").count() == 1
     assert page.locator("#salesContractsBox [data-payment-amount]").count() == 1
     assert page.locator("#salesContractsBox [data-invoice-amount]").count() == 1
+    assert "V2" in page.locator("#salesContractsBox").inner_text()
+    page.click("#salesLostBtn")
+    page.wait_for_selector("#salesLossReviewBox", state="visible")
+    assert page.locator("#salesLossBudget").count() == 1
+    assert page.locator("#salesLossCurrentSystem").count() == 1
+    assert page.locator("#salesLossRecontactAt").count() == 1
+    page.click("#salesLossCancelBtn")
     page.screenshot(path="/tmp/gaas-sales-crm-e2e.png", full_page=True)
     assert not errors, errors
     browser.close()

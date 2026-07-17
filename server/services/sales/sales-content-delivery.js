@@ -33,7 +33,9 @@ async function fetchApprovedAsset(url) {
 export async function listSendableContentAssets(pool, { tag, limit = 50 } = {}) {
   const params = [];
   let sql = `SELECT * FROM sales_content_assets
-    WHERE active=true AND external_approved=true`;
+    WHERE active=true AND external_approved=true AND knowledge_domain='customer_ai'
+      AND (effective_from IS NULL OR effective_from <= NOW())
+      AND (expires_at IS NULL OR expires_at > NOW())`;
   if (tag) { params.push(tag); sql += ` AND tags ? $${params.length}`; }
   params.push(limit);
   sql += ` ORDER BY updated_at DESC LIMIT $${params.length}`;
@@ -44,6 +46,7 @@ export async function listSendableContentAssets(pool, { tag, limit = 50 } = {}) 
 export async function sendContentAssetToLead(pool, lead, asset, { deliveryType = 'manual', sentBy = 'sales' } = {}) {
   if (!lead?.open_kfid || !lead?.external_userid) throw new Error('wecom_conversation_missing');
   if (!asset?.external_approved || !asset?.active) throw new Error('asset_not_approved');
+  if ((asset.knowledge_domain || 'customer_ai') !== 'customer_ai') throw new Error('internal_asset_cannot_be_sent_to_customer');
   const record = await pool.query(
     `INSERT INTO sales_content_deliveries (lead_id, asset_id, delivery_type, status, sent_by)
      VALUES ($1,$2,$3,'pending',$4) RETURNING id`,
