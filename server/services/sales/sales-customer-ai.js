@@ -199,14 +199,30 @@ function buildProfileMemoryReply(extracted = {}) {
   return `公司或品牌名称我这边还没有记录到，不会随便猜。${known ? `已记住的是：${known}。` : ''}您把品牌名发我，我马上补上。`;
 }
 
+function buildPresenceReply({ history = [], controller } = {}) {
+  const recentPresenceCount = (history || [])
+    .filter((message) => message.direction === 'inbound' && PRESENCE_QUERY_RE.test(String(message.content || '').trim()))
+    .slice(-3).length;
+  if (controller !== 'waiting_human') {
+    return recentPresenceCount
+      ? '在，我看到您刚才的消息了。您直接说，我马上接着回答。'
+      : '在的，您直接说就行，我会接着前面的内容继续聊。';
+  }
+  if (recentPresenceCount >= 2) {
+    return '我在，没有掉线。您直接把问题发过来，我会马上接着回答，同时继续提醒顾问尽快接手。';
+  }
+  if (recentPresenceCount === 1) {
+    return '在，我看到您刚才的消息了。顾问还没回复前，您现在最想确认哪件事？我先给您明确答复。';
+  }
+  return '在的，人工顾问正在接手，但我不会让您在这里空等。您继续发问就行，我会先回答并把信息同步给顾问。';
+}
+
 function buildConversationGuard({ userText, previousExtracted, plan, history, inputMode, controller }) {
   const text = String(userText || '');
   if (PRESENCE_QUERY_RE.test(text)) {
     return {
       source: 'presence_guard',
-      reply: controller === 'waiting_human'
-        ? '在的，人工顾问正在接手，但我不会让您在这里空等。您继续发问就行，我会先回答并把信息同步给顾问。'
-        : '在的，您直接说就行，我会接着前面的内容继续聊。',
+      reply: buildPresenceReply({ history, controller }),
     };
   }
   if (VOICE_CAPABILITY_QUERY_RE.test(text)) {

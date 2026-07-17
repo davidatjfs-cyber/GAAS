@@ -309,3 +309,26 @@ test('等待人工期间AI必须继续回应客户，不能进入静默黑洞', 
   assert.match(reply, /顾问.*接手|人工顾问/);
   assert.doesNotMatch(reply, /稍后再联系/);
 });
+
+test('客户连续追问在吗时回复必须自然递进，不能机械复制同一句', async () => {
+  const first = await runCustomerAiTurn({
+    userText: '你还在吗？', extracted: conversionProfile, history: [], intentScore: 90, controller: 'waiting_human',
+  });
+  const second = await runCustomerAiTurn({
+    userText: '在吗', extracted: conversionProfile,
+    history: [{ direction: 'inbound', sender: 'customer', content: '你还在吗？' }, { direction: 'outbound', sender: 'ai', content: first.reply }],
+    intentScore: 90, controller: 'waiting_human',
+  });
+  const third = await runCustomerAiTurn({
+    userText: '还在吗？', extracted: conversionProfile,
+    history: [
+      { direction: 'inbound', sender: 'customer', content: '你还在吗？' },
+      { direction: 'outbound', sender: 'ai', content: first.reply },
+      { direction: 'inbound', sender: 'customer', content: '在吗' },
+      { direction: 'outbound', sender: 'ai', content: second.reply },
+    ],
+    intentScore: 90, controller: 'waiting_human',
+  });
+  assert.equal(new Set([first.reply, second.reply, third.reply]).size, 3);
+  assert.match(third.reply, /没有掉线|马上接着回答/);
+});
