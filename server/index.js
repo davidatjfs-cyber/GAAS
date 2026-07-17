@@ -5724,14 +5724,19 @@ registerOntologyRoutes(app, pool, authRequired);
 // 跨租户聚合(重算基准库/复核数据冲突)只给super_admin，不是销售模块日常操作。
 registerBenchmarkRoutes(app, pool, authRequired, [platformAdminRequired, requireSuperAdmin]);
 registerDataTrustRoutes(app, pool, authRequired, [platformAdminRequired, requireSuperAdmin]);
+// 各类平台/运营告警的飞书收件人，统一从环境变量读取，未配置时回退到共用的默认账号。
+// 销售公司独立租户建好、拿到专属飞书 open_id 后，只需设置 FEISHU_ALERT_ADMIN_SALES，
+// 无需再改代码。
+const FEISHU_ALERT_ADMIN_DEFAULT = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
+const FEISHU_ALERT_ADMIN_GROWTH = process.env.FEISHU_ALERT_ADMIN_GROWTH || FEISHU_ALERT_ADMIN_DEFAULT;
+const FEISHU_ALERT_ADMIN_HEALTH = process.env.FEISHU_ALERT_ADMIN_HEALTH || FEISHU_ALERT_ADMIN_DEFAULT;
+const FEISHU_ALERT_ADMIN_SALES = process.env.FEISHU_ALERT_ADMIN_SALES || FEISHU_ALERT_ADMIN_DEFAULT;
 setSendGrowthAlert(async (msg) => {
-  const GROWTH_REPORT_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
-  return sendLarkMessage(GROWTH_REPORT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+  return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
 });
 registerGrowthSolutionRoutes(app, authRequired);
 setSolutionNotifier(async (msg) => {
-  const GROWTH_REPORT_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
-  return sendLarkMessage(GROWTH_REPORT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+  return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
 });
 setSolutionLLM(async (prompt) => {
   const r = await callLLM([{ role: 'user', content: prompt }], { purpose: 'reasoning' });
@@ -5750,9 +5755,8 @@ setHealthIncidentNotifiers({
     // 健康中心 SLA/队列摘要属于平台运营信息，不按租户 users.role 群发。
     // sendAdminSystemAlert() 会跨租户扫描 admin/hq_manager/hr_manager，
     // 从而把销售/系统运营告警发给马己仙、洪潮的门店管理员。
-    const HEALTH_OPS_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
-    const r = await sendLarkMessage(HEALTH_OPS_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
-    return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [HEALTH_OPS_ADMIN] };
+    const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_HEALTH, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+    return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [FEISHU_ALERT_ADMIN_HEALTH] };
   },
 });
 registerSalesAiRoutes(app, pool, platformAdminRequired, {
@@ -5762,11 +5766,11 @@ registerSalesAiRoutes(app, pool, platformAdminRequired, {
   // (admin/hq_manager/hr_manager)查 users 表且不区分租户，查到的正是马己仙/洪潮实际在用的
   // 那几个管理员账号，导致门店管理者一直在收到"新增销售线索"这类跟他们无关的通知。
   // 改成跟 GROWTH_REPORT_ADMIN 同样的写法(见上方 setSendGrowthAlert)——直接发给平台/销售
-  // 团队自己的飞书账号，不查任何tenant的users表。
+  // 团队自己的飞书账号，不查任何tenant的users表。收件人由 FEISHU_ALERT_ADMIN_SALES 配置，
+  // 销售公司新租户建好后改这一个环境变量即可切换收件人，无需再动代码。
   sendOpsAlert: async (msg, opts = {}) => {
-    const SALES_ALERT_ADMIN = 'ou_6ba8c330d8b2e1e9fa0b70c615b524d9';
-    const r = await sendLarkMessage(SALES_ALERT_ADMIN, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
-    return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [SALES_ALERT_ADMIN] };
+    const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_SALES, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+    return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [FEISHU_ALERT_ADMIN_SALES] };
   },
   requireSalesManagerOrAbove,
   upload,

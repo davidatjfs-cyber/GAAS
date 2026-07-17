@@ -410,14 +410,15 @@ async function queueAbSmsAssignments(pool, taskRow, audienceRows, opts = {}, ten
     };
     const ins = await pool.query(
       `INSERT INTO growth_delivery_logs (
-         delivery_key, action_key, rule_key, customer_id, store_id, channel,
+         delivery_key, action_key, rule_key, campaign_id, customer_id, store_id, channel,
          status, payload, result, created_at, updated_at, tenant_id
-       ) VALUES ($1,$2,$3,$4,$5,'sms','sent',$6::jsonb,$7::jsonb,$8::timestamptz,$8::timestamptz,$9)
+       ) VALUES ($1,$2,$3,$4,$5,$6,'sms','sent',$7::jsonb,$8::jsonb,$9::timestamptz,$9::timestamptz,$10)
        ON CONFLICT (delivery_key, tenant_id) DO NOTHING
        RETURNING id`,
       [
         deliveryKey,
         deliveryKey,
+        `ab_test_${taskId}`,
         `ab_test_${taskId}`,
         customerId,
         storeCode,

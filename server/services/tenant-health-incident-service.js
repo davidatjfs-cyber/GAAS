@@ -174,11 +174,11 @@ export function isSlaBreached(incident, now = new Date()) {
   return now.getTime() - created >= SLA_HOURS * 3600 * 1000;
 }
 
-function fingerprintFor(tenantId, itemKey, date = ymd()) {
-  return `${String(tenantId)}::${String(itemKey)}::${ymd(date)}`;
+function fingerprintFor(tenantId, itemKey) {
+  return `${String(tenantId)}::${String(itemKey)}`;
 }
 
-function mapItemToIncident(tenantId, item, runId, date) {
+function mapItemToIncident(tenantId, item, runId) {
   const queue = classifyIncidentQueue(item);
   const faq = faqForItemKey(item.item_key);
   return {
@@ -195,7 +195,7 @@ function mapItemToIncident(tenantId, item, runId, date) {
     impact_modules: Array.isArray(item.impact_modules) ? item.impact_modules : [],
     suggestion: item.suggestion || '',
     faq_id: faq?.id || null,
-    fingerprint: fingerprintFor(tenantId, item.item_key, date),
+    fingerprint: fingerprintFor(tenantId, item.item_key),
     suggested_heal: suggestedHealAction(item.item_key, queue),
   };
 }
@@ -246,7 +246,7 @@ export async function syncIncidentsFromInspections(pool, opts = {}) {
     );
 
     for (const item of red) {
-      const draft = mapItemToIncident(tenantId, item, runId, date);
+      const draft = mapItemToIncident(tenantId, item, runId);
       byQueue[draft.queue] = (byQueue[draft.queue] || 0) + 1;
       const r = await pool.query(
         `INSERT INTO tenant_health_incidents
@@ -259,8 +259,7 @@ export async function syncIncidentsFromInspections(pool, opts = {}) {
            item_name = EXCLUDED.item_name,
            severity = EXCLUDED.severity,
            queue = CASE
-             WHEN tenant_health_incidents.status IN ('escalated') THEN tenant_health_incidents.queue
-             WHEN tenant_health_incidents.status IN ('resolved') THEN tenant_health_incidents.queue
+             WHEN tenant_health_incidents.status = 'escalated' THEN tenant_health_incidents.queue
              ELSE EXCLUDED.queue
            END,
            owner_role = EXCLUDED.owner_role,
@@ -268,10 +267,28 @@ export async function syncIncidentsFromInspections(pool, opts = {}) {
            impact_modules = EXCLUDED.impact_modules,
            suggestion = EXCLUDED.suggestion,
            faq_id = EXCLUDED.faq_id,
+           -- 已 resolved 的问题若再次出现，重新开一个干净的 SLA 计时；
+           -- 仍处于 open/acked/healing/escalated 的沿用原记录，不重置计时，避免每日巡检刷新出新告警
            status = CASE
-             WHEN tenant_health_incidents.status = 'resolved' THEN 'resolved'
+             WHEN tenant_health_incidents.status = 'resolved' THEN 'open'
              WHEN tenant_health_incidents.status = 'escalated' THEN 'escalated'
              ELSE tenant_health_incidents.status
+           END,
+           created_at = CASE
+             WHEN tenant_health_incidents.status = 'resolved' THEN NOW()
+             ELSE tenant_health_incidents.created_at
+           END,
+           acked_at = CASE
+             WHEN tenant_health_incidents.status = 'resolved' THEN NULL
+             ELSE tenant_health_incidents.acked_at
+           END,
+           resolved_at = CASE
+             WHEN tenant_health_incidents.status = 'resolved' THEN NULL
+             ELSE tenant_health_incidents.resolved_at
+           END,
+           heal_action = CASE
+             WHEN tenant_health_incidents.status = 'resolved' THEN NULL
+             ELSE tenant_health_incidents.heal_action
            END,
            updated_at = NOW()
          RETURNING id, (xmax = 0) AS inserted`,

@@ -1592,9 +1592,9 @@ export async function insertGrowthEvent(pool, payload, tenantId = 'default') {
 export async function upsertDeliveryLog(pool, payload, tenantId = 'default') {
   const r = await pool.query(
     `INSERT INTO growth_delivery_logs (
-       delivery_key, action_key, rule_key, customer_id, store_id, channel,
+       delivery_key, action_key, rule_key, campaign_id, customer_id, store_id, channel,
        external_userid, provider_msg_id, status, payload, result, error_message, updated_at, tenant_id
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,NOW(),$13)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,NOW(),$14)
      ON CONFLICT (delivery_key, tenant_id) DO UPDATE SET
        provider_msg_id = COALESCE(NULLIF(EXCLUDED.provider_msg_id,''), growth_delivery_logs.provider_msg_id),
        status = EXCLUDED.status,
@@ -1606,6 +1606,7 @@ export async function upsertDeliveryLog(pool, payload, tenantId = 'default') {
       cleanText(payload.delivery_key, 255),
       cleanText(payload.action_key, 255),
       cleanText(payload.rule_key, 128),
+      cleanText(payload.campaign_id, 128) || cleanText(payload.rule_key, 128),
       payload.customer_id ? Number(payload.customer_id) : null,
       cleanText(payload.store_id, 128),
       cleanText(payload.channel || 'wecom', 40),
