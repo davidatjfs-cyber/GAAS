@@ -53,12 +53,12 @@ async function savePlatformProfile(client, tenantId, name) {
   );
 }
 
-async function issueTrialLicense(client, tenantId, days = 30) {
+async function issueTrialLicense(client, tenantId, days = 30, maxStores = null) {
   const expires = new Date(Date.now() + days * 86400000);
   await client.query(
-    `INSERT INTO licenses (tenant_id, license_key, expires_at, allowed_features, status)
-     VALUES ($1, $2, $3, $4::jsonb, 'trial')`,
-    [tenantId, randomUUID(), expires.toISOString(), JSON.stringify(['growth', 'sales_ai', 'reports'])]
+    `INSERT INTO licenses (tenant_id, license_key, expires_at, allowed_features, status, max_stores)
+     VALUES ($1, $2, $3, $4::jsonb, 'trial', $5)`,
+    [tenantId, randomUUID(), expires.toISOString(), JSON.stringify(['growth', 'sales_ai', 'reports']), maxStores]
   );
   return expires;
 }
@@ -253,6 +253,32 @@ export async function provisionTenantFromOrder(pool, orderId, { startedBy = 'fin
   if (!order) return { ok: false, error: 'order_not_found' };
   if (order.provision_status === 'done') return { ok: true, already: true, tenant_id: order.tenant_id };
   if (!['paid','credit_approved','provisioning'].includes(order.status) || order.pool_status !== 'active') return { ok: false, error: 'order_not_eligible' };
+  const existing = await pool.query(`SELECT tenant_id FROM sales_orders WHERE lead_id=$1 AND status='provisioned' AND tenant_id IS NOT NULL ORDER BY id ASC LIMIT 1`, [order.lead_id]);
+  const existingTenantId = existing.rows?.[0]?.tenant_id || null;
+  if (existingTenantId) {
+    if (order.order_type === 'renewal') {
+      const renewed = await pool.query(`UPDATE tenant_store_licenses SET expires_at=GREATEST(expires_at,NOW()) + ($3::text || ' days')::interval,updated_at=NOW() WHERE id=(SELECT id FROM tenant_store_licenses WHERE tenant_id=$1 AND store_name=$2 AND status='active' ORDER BY expires_at DESC LIMIT 1) RETURNING *`, [existingTenantId, order.store_name, Number(order.license_days) || 365]);
+      if (!renewed.rows?.[0]) return { ok:false, error:'store_license_not_found', message:'续约订单必须对应已开通门店的许可证' };
+      await pool.query(`UPDATE sales_orders SET tenant_id=$2,provision_status='done',status='provisioned',provision_meta=$3::jsonb,updated_at=NOW() WHERE id=$1`, [order.id, existingTenantId, JSON.stringify({ action:'renewal', renewed_by:startedBy, renewed_at:new Date().toISOString() })]);
+      return { ok:true, tenant_id:existingTenantId, reused:true, action:'renewal' };
+    }
+    const storeQty = Math.max(1, Number(order.store_quantity) || 1);
+    const stateRow = await pool.query(`SELECT data FROM hrms_state WHERE key=$1`, [existingTenantId]);
+    const state = stateRow.rows?.[0]?.data || {};
+    const stores = Array.isArray(state.stores) ? state.stores.slice() : [];
+    const current = stores.length;
+    await pool.query(`UPDATE licenses SET max_stores=COALESCE(max_stores,$2)+$3 WHERE id=(SELECT id FROM licenses WHERE tenant_id=$1 AND status IN ('active','trial') ORDER BY expires_at DESC LIMIT 1)`, [existingTenantId,current,storeQty]);
+    const brandName = String(order.brand_name || '').trim(); const brandId = String(order.brand_key || brandName || 'default').trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g,'_');
+    const storeId=`store_${Date.now()}`;
+    stores.push({ id:storeId, name:order.store_name, address:order.store_address || '', managerName:order.contact_name || '', phone:order.contact_phone || '', brand:brandName, brandName, brandId, restaurantType:order.restaurant_type || '', area_sqm:order.area_sqm || null, status:'active', createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() });
+    const brands = Array.isArray(state.brands) ? state.brands.slice() : [];
+    if (brandName && !brands.some((b) => String(b.id || '').toLowerCase() === brandId)) brands.push({ id:brandId,name:brandName,config:{ sopKeypoints:[],performanceWeights:{} } });
+    await pool.query(`UPDATE hrms_state SET data=$2::jsonb,updated_at=NOW() WHERE key=$1`, [existingTenantId, JSON.stringify({ ...state, stores, brands })]);
+    await pool.query(`INSERT INTO tenant_store_licenses (tenant_id,order_id,store_id,store_name,expires_at) VALUES ($1,$2,$3,$4,NOW() + ($5::text || ' days')::interval)`, [existingTenantId,order.id,storeId,order.store_name,Number(order.license_days)||365]);
+    await pool.query(`UPDATE sales_orders SET tenant_id=$2,provision_status='done',status='provisioned',provision_meta=$3::jsonb,updated_at=NOW() WHERE id=$1`, [order.id,existingTenantId,JSON.stringify({ action:'add_store', store_quantity:storeQty, added_by:startedBy, added_at:new Date().toISOString() })]);
+    await pool.query(`INSERT INTO sales_order_delivery_projects (order_id,tenant_id,status) VALUES ($1,$2,'pending')`, [order.id,existingTenantId]);
+    return { ok:true, tenant_id:existingTenantId, reused:true, action:'add_store', added_stores:storeQty };
+  }
   const tenantName = String(order.store_name || order.company || order.name).trim();
   const tenantId = slugifyTenantId(`${tenantName}_${order.id}`);
   const adminUsername = String(order.contact_phone || order.phone || `admin_${tenantId}`).replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 40) || `admin_${tenantId}`;
@@ -264,10 +290,19 @@ export async function provisionTenantFromOrder(pool, orderId, { startedBy = 'fin
     await client.query(`INSERT INTO users (id,username,password_hash,real_name,role,is_active,tenant_id) VALUES (gen_random_uuid(),$1,$2,$3,'admin',TRUE,$4)`, [adminUsername, await bcrypt.hash(tempPassword, 10), tenantName, tenantId]);
     await client.query(`INSERT INTO hrms_state (key,data,updated_at) VALUES ($1,$2::jsonb,NOW()) ON CONFLICT (key) DO NOTHING`, [tenantId, JSON.stringify(createEmptyTenantState({ tenantId, tenantName, adminUsername, adminName: tenantName }))]);
     await savePlatformProfile(client, tenantId, tenantName);
-    await issueTrialLicense(client, tenantId);
+    await issueTrialLicense(client, tenantId, 30, Math.max(1, Number(order.store_quantity) || 1));
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); return { ok: false, error: 'provision_failed', message: e?.message }; } finally { client.release(); }
   await pool.query(`UPDATE sales_orders SET tenant_id=$2,provision_status='done',provision_meta=$3::jsonb,status='provisioned',updated_at=NOW() WHERE id=$1`, [order.id, tenantId, JSON.stringify({ admin_username: adminUsername, provisioned_by: startedBy, provisioned_at: new Date().toISOString() })]);
+  const firstStoreId = `store_${Date.now()}`;
+  const firstState = await pool.query(`SELECT data FROM hrms_state WHERE key=$1`, [tenantId]);
+  const firstData = firstState.rows?.[0]?.data || {};
+  const firstBrandName = String(order.brand_name || '').trim(); const firstBrandId = String(order.brand_key || firstBrandName || 'default').trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g,'_');
+  const firstStores = Array.isArray(firstData.stores) ? firstData.stores.slice() : [];
+  firstStores.push({ id:firstStoreId,name:order.store_name,address:order.store_address || '',managerName:order.contact_name || '',phone:order.contact_phone || '',brand:firstBrandName,brandName:firstBrandName,brandId:firstBrandId,status:'active',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString() });
+  const firstBrands=Array.isArray(firstData.brands)?firstData.brands.slice():[]; if(firstBrandName&&!firstBrands.some((b)=>String(b.id||'')===firstBrandId)) firstBrands.push({id:firstBrandId,name:firstBrandName,config:{sopKeypoints:[],performanceWeights:{}}});
+  await pool.query(`UPDATE hrms_state SET data=$2::jsonb,updated_at=NOW() WHERE key=$1`,[tenantId,JSON.stringify({...firstData,stores:firstStores,brands:firstBrands})]);
+  await pool.query(`INSERT INTO tenant_store_licenses (tenant_id,order_id,store_id,store_name,expires_at) VALUES ($1,$2,$3,$4,NOW() + ($5::text || ' days')::interval)`,[tenantId,order.id,firstStoreId,order.store_name,Number(order.license_days)||365]);
   const owners = await pool.query(`SELECT role,username FROM platform_admins WHERE status='active' AND role IN ('customer_service','implementation') ORDER BY role,username`).catch(() => ({ rows: [] }));
   const cs = owners.rows.find((x) => x.role === 'customer_service')?.username || null;
   const impl = owners.rows.find((x) => x.role === 'implementation')?.username || null;

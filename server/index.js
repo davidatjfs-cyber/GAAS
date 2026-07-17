@@ -14219,11 +14219,11 @@ app.post('/api/stores', authRequired, async (req, res) => {
 
   // 门店按数量计费：建店前先核对已购买的门店数量上限，避免租户绕过收费无限建店。
   try {
-    const licenseR = await pool.query(
-      `SELECT max_stores FROM licenses WHERE tenant_id=$1 AND status IN ('active','trial') ORDER BY created_at DESC LIMIT 1`,
-      [resolveTenantIdDefault()]
-    );
-    const maxStores = licenseR.rows?.[0]?.max_stores;
+    const tenantForQuota = resolveTenantIdDefault();
+    const storeLicenseR = await pool.query(`SELECT COUNT(*)::int AS max_stores FROM tenant_store_licenses WHERE tenant_id=$1 AND status='active' AND expires_at>=NOW()`, [tenantForQuota]);
+    const licenseR = await pool.query(`SELECT max_stores FROM licenses WHERE tenant_id=$1 AND status IN ('active','trial') ORDER BY created_at DESC LIMIT 1`, [tenantForQuota]);
+    // 新客户按门店许可证计数；历史租户仍兼容原总门店额度。
+    const maxStores = Number(storeLicenseR.rows?.[0]?.max_stores || 0) || licenseR.rows?.[0]?.max_stores;
     if (maxStores != null) {
       const state0 = (await getSharedState()) || {};
       const currentCount = Array.isArray(state0?.stores) ? state0.stores.length : 0;

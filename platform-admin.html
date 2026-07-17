@@ -808,7 +808,9 @@
             <label class="field">审批通过合同<select id="salesOrderContract"><option value="">请先选择已审批合同</option></select></label>
             <label class="field">订单类型<select id="salesOrderType"><option value="new_store">新开门店</option><option value="renewal">续约</option></select></label>
             <label class="field">订单金额（元）<input id="salesOrderAmount" type="number" min="0.01" step="0.01"></label>
+            <label class="field">许可证年限（天）<input id="salesOrderLicenseDays" type="number" min="1" value="365"></label>
             <label class="field">门店名称<input id="salesOrderStoreName" placeholder="本次开通的门店名称"></label>
+            <label class="field">品牌名称<input id="salesOrderBrandName" placeholder="新品牌填写名称；原品牌可照填"></label>
             <label class="field">门店地址<input id="salesOrderAddress"></label>
             <label class="field">门店联系人<input id="salesOrderContact"></label>
             <label class="field">联系电话<input id="salesOrderPhone"></label>
@@ -3692,10 +3694,10 @@ function legacyCopyFallback(value) {
     }
     async function salesCreateOrder() {
       const leadId = state.sales.selectedLeadId;
-      const payload = { contract_id: Number($('salesOrderContract').value), order_type: $('salesOrderType').value, amount: Number($('salesOrderAmount').value || 0), store_name: $('salesOrderStoreName').value.trim(), store_address: $('salesOrderAddress').value.trim(), contact_name: $('salesOrderContact').value.trim(), contact_phone: $('salesOrderPhone').value.trim(), area_sqm: Number($('salesOrderArea').value || 0), restaurant_type: $('salesOrderRestaurantType').value.trim() };
+      const payload = { contract_id: Number($('salesOrderContract').value), order_type: $('salesOrderType').value, amount: Number($('salesOrderAmount').value || 0), license_days: Number($('salesOrderLicenseDays').value || 365), store_name: $('salesOrderStoreName').value.trim(), brand_name: $('salesOrderBrandName').value.trim(), store_address: $('salesOrderAddress').value.trim(), contact_name: $('salesOrderContact').value.trim(), contact_phone: $('salesOrderPhone').value.trim(), area_sqm: Number($('salesOrderArea').value || 0), restaurant_type: $('salesOrderRestaurantType').value.trim() };
       if (!payload.contract_id || !payload.amount || !payload.store_name) throw new Error('请选择已审批合同，并填写订单金额和门店名称');
       await api(`/api/admin/sales/leads/${leadId}/orders`, { method:'POST', body:JSON.stringify(payload) });
-      toast('订单已提交财务审核'); ['salesOrderAmount','salesOrderStoreName','salesOrderAddress','salesOrderContact','salesOrderPhone','salesOrderArea','salesOrderRestaurantType'].forEach((x)=>$(x).value=''); await salesLoadCrmOverview();
+      toast('订单已提交财务审核'); ['salesOrderAmount','salesOrderStoreName','salesOrderBrandName','salesOrderAddress','salesOrderContact','salesOrderPhone','salesOrderArea','salesOrderRestaurantType'].forEach((x)=>$(x).value=''); $('salesOrderLicenseDays').value='365'; await salesLoadCrmOverview();
     }
     async function salesUploadDocument(file) {
       if (!file) return null;

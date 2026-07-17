@@ -35,9 +35,13 @@ CREATE TABLE IF NOT EXISTS sales_orders (
   contract_id BIGINT NOT NULL REFERENCES sales_contracts(id) ON DELETE RESTRICT,
   credit_pool_id BIGINT NOT NULL REFERENCES sales_credit_pools(id) ON DELETE RESTRICT,
   order_type TEXT NOT NULL CHECK (order_type IN ('new_store','renewal')),
+  store_quantity INTEGER NOT NULL DEFAULT 1 CHECK (store_quantity > 0),
+  license_days INTEGER NOT NULL DEFAULT 365 CHECK (license_days > 0),
   status TEXT NOT NULL DEFAULT 'finance_pending' CHECK (status IN ('finance_pending','paid','credit_approved','returned','provisioning','provisioned')),
   amount_fen BIGINT NOT NULL CHECK (amount_fen > 0),
   store_name TEXT NOT NULL,
+  brand_name TEXT,
+  brand_key TEXT,
   store_address TEXT,
   contact_name TEXT,
   contact_phone TEXT,
@@ -78,3 +82,18 @@ CREATE TABLE IF NOT EXISTS sales_order_delivery_projects (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- 一个客户租户可有多门店；许可证必须按门店/订单独立计时，不能由租户总许可证覆盖。
+CREATE TABLE IF NOT EXISTS tenant_store_licenses (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  order_id BIGINT NOT NULL UNIQUE REFERENCES sales_orders(id) ON DELETE RESTRICT,
+  store_id TEXT NOT NULL,
+  store_name TEXT NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','expired','cancelled')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tenant_store_licenses_active ON tenant_store_licenses (tenant_id,status,expires_at);
