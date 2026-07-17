@@ -34,7 +34,7 @@ export function createPlatformAdminRequired(pool, platformAdminJwtSecret) {
     if (payload?.role !== 'platform_admin' || !payload?.username) {
       return res.status(401).json({ error: 'unauthorized' });
     }
-    // account_role 是这个账号的业务角色(super_admin/sales_manager/sales/customer_service)，
+    // account_role 是这个账号的业务角色(super_admin/sales_manager/sales/customer_service/finance/implementation)，
     // 跟上面校验的 role==='platform_admin' 不是一回事——那个只是"这是个平台登录token"的
     // 固定标记，account_role 才是真正决定这个人能看到哪些模块的字段。
     req.platformAdmin = { username: payload.username, role: payload.account_role || 'super_admin' };
@@ -76,7 +76,7 @@ export function requireSalesManagerOrAbove(req, res, next) {
   next();
 }
 
-const PLATFORM_ADMIN_ROLES = ['super_admin', 'sales_manager', 'sales', 'customer_service'];
+const PLATFORM_ADMIN_ROLES = ['super_admin', 'sales_manager', 'sales', 'customer_service', 'finance', 'implementation'];
 
 /**
  * @param {import('express').Express} app

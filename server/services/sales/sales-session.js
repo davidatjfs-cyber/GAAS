@@ -29,6 +29,7 @@ import {
   getObjectionResponse,
 } from './sales-ops.js';
 import { buildSalesDecision, buildCustomerAiGuidance, normalizeCustomerAiEvent } from './sales-collaboration.js';
+import { kfConfigured, sendKfConsultantCard } from './sales-kf.js';
 
 let _notify = null;
 export function setSalesNotify(fn) {
@@ -352,6 +353,21 @@ export async function handleInboundMessage(pool, {
       recommended_action: 'takeover',
       payload: { score, advice, diagnosis },
     });
+    // 客户AI完成人格化接待与判断后，明确把客户交给具名顾问；不让销售继续假扮AI客服。
+    const qrUrl = String(process.env.WECOM_SALES_CONSULTANT_QR_URL || '').trim();
+    if (updatedLead.handoff_mode === 'consultant_qr' && qrUrl && kfConfigured() && updatedLead.open_kfid && updatedLead.external_userid) {
+      try {
+        const card = await sendKfConsultantCard({
+          openKfid: updatedLead.open_kfid,
+          externalUserid: updatedLead.external_userid,
+          consultantName: process.env.WECOM_SALES_CONSULTANT_NAME || '专属顾问',
+          qrUrl,
+        });
+        if (card?.ok) await addEvent(pool, lead.id, { event_type: 'CONSULTANT_QR_SENT', summary: '客户AI已发送专属销售企业微信二维码', priority: 'high', recommended_action: 'wait_customer_add' });
+      } catch (e) {
+        console.warn('[sales-session] consultant QR handoff failed:', e?.message || e);
+      }
+    }
     if (typeof _notify === 'function') {
       await _notify(
         [

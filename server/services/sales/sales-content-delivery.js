@@ -1,0 +1,63 @@
+/** 客户 AI / 销售向企业微信客服发送资料的唯一入口。 */
+import { sendKfText, sendKfImage, sendKfFile, sendKfVideo, uploadKfMedia } from './sales-kf.js';
+
+const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
+
+function safeAssetUrl(raw) {
+  const url = new URL(String(raw || '').trim());
+  if (url.protocol !== 'https:') throw new Error('asset_url_must_use_https');
+  return url;
+}
+
+async function fetchApprovedAsset(url) {
+  const response = await fetch(safeAssetUrl(url), { redirect: 'error', signal: AbortSignal.timeout(20000) });
+  if (!response.ok) throw new Error(`asset_download_failed_${response.status}`);
+  const length = Number(response.headers.get('content-length') || 0);
+  if (length > MAX_MEDIA_BYTES) throw new Error('asset_too_large');
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > MAX_MEDIA_BYTES) throw new Error('asset_too_large');
+  return { buffer, mimeType: response.headers.get('content-type') || 'application/octet-stream' };
+}
+
+export async function listSendableContentAssets(pool, { tag, limit = 50 } = {}) {
+  const params = [];
+  let sql = `SELECT * FROM sales_content_assets
+    WHERE active=true AND external_approved=true`;
+  if (tag) { params.push(tag); sql += ` AND tags ? $${params.length}`; }
+  params.push(limit);
+  sql += ` ORDER BY updated_at DESC LIMIT $${params.length}`;
+  const r = await pool.query(sql, params);
+  return r.rows || [];
+}
+
+export async function sendContentAssetToLead(pool, lead, asset, { deliveryType = 'manual', sentBy = 'sales' } = {}) {
+  if (!lead?.open_kfid || !lead?.external_userid) throw new Error('wecom_conversation_missing');
+  if (!asset?.external_approved || !asset?.active) throw new Error('asset_not_approved');
+  const record = await pool.query(
+    `INSERT INTO sales_content_deliveries (lead_id, asset_id, delivery_type, status, sent_by)
+     VALUES ($1,$2,$3,'pending',$4) RETURNING id`,
+    [lead.id, asset.id, deliveryType, sentBy]
+  );
+  const deliveryId = record.rows[0].id;
+  try {
+    let result;
+    if (asset.content_type === 'text' || asset.content_type === 'link' || asset.content_type === 'qr') {
+      const text = String(asset.text_content || asset.media_url || '').trim();
+      if (!text) throw new Error('asset_text_missing');
+      result = await sendKfText({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, content: text });
+    } else {
+      if (!asset.media_url) throw new Error('asset_media_url_missing');
+      const { buffer, mimeType } = await fetchApprovedAsset(asset.media_url);
+      const type = asset.content_type === 'image' ? 'image' : asset.content_type === 'video' ? 'video' : 'file';
+      const mediaId = await uploadKfMedia(buffer, { type, filename: asset.file_name || `${asset.asset_key}.${type}`, mimeType });
+      if (type === 'image') result = await sendKfImage({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, mediaId });
+      else if (type === 'video') result = await sendKfVideo({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, mediaId });
+      else result = await sendKfFile({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, mediaId });
+    }
+    await pool.query(`UPDATE sales_content_deliveries SET status='sent', wecom_msg_id=$2, sent_at=NOW() WHERE id=$1`, [deliveryId, String(result?.msgid || result?.msg_id || '') || null]);
+    return { ok: true, delivery_id: deliveryId };
+  } catch (e) {
+    await pool.query(`UPDATE sales_content_deliveries SET status='failed', error_message=$2 WHERE id=$1`, [deliveryId, String(e?.message || e).slice(0, 1000)]);
+    throw e;
+  }
+}

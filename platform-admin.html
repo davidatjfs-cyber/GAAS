@@ -618,6 +618,28 @@
         <div id="salesOvercommitHint" class="small" style="display:none;color:var(--warn);margin-top:4px"></div>
         <div id="salesDemoBriefBox" class="hint-box" style="display:none;white-space:pre-wrap;margin-top:6px"></div>
         <div id="salesProposalBox" class="hint-box" style="display:none;white-space:pre-wrap;margin-top:6px;max-height:320px;overflow:auto"></div>
+        <div class="hint-box" style="margin-top:8px">
+          <strong>客户资料与自动培育</strong>
+          <div class="small" style="margin:4px 0 8px">仅发送已审批的对外资料；自动培育开启后，客户 AI 只会按计划发送已批准的资料，销售接管时应关闭。</div>
+          <div class="toolbar">
+            <select id="salesContentAsset" style="min-width:220px"><option value="">加载可发送资料…</option></select>
+            <button type="button" id="salesRefreshAssetsBtn" class="secondary">刷新资料</button>
+            <button type="button" id="salesSendContentBtn" class="secondary">发送资料</button>
+            <label class="small" style="display:flex;align-items:center;gap:6px"><input id="salesAutoNurtureEnabled" type="checkbox">允许客户AI自动培育</label>
+            <button type="button" id="salesSaveAutoNurtureBtn" class="secondary">保存培育设置</button>
+          </div>
+          <div id="salesContentDeliveryHint" class="small"></div>
+        </div>
+        <div class="hint-box" style="margin-top:8px">
+          <strong>合同、回款与开通</strong>
+          <div class="small" style="margin:4px 0 8px">开通租户前必须有已生效合同和财务已确认的足额回款。销售只能登记，财务确认后才可进入开通。</div>
+          <div class="toolbar">
+            <button type="button" id="salesCreateContractBtn" class="secondary">登记合同</button>
+            <button type="button" id="salesRecordPaymentBtn" class="secondary">登记回款</button>
+            <button type="button" id="salesConfirmPaymentBtn" class="secondary">财务确认回款</button>
+          </div>
+          <div id="salesContractHint" class="small"></div>
+        </div>
         <div id="salesEvents" class="small"></div>
         <div style="margin-top:8px">
           <strong class="small">漏斗动作</strong>
@@ -2980,6 +3002,12 @@ function legacyCopyFallback(value) {
     $('salesDeepDxBtn').onclick = () => salesDeepDiagnosis().catch((e) => toast(e.message));
     $('salesProvisionBtn').onclick = () => salesProvisionTenant().catch((e) => toast(e.message));
     $('salesConsultantInviteBtn').onclick = () => salesConsultantInvite().catch((e) => toast(e.message));
+    $('salesRefreshAssetsBtn').onclick = () => salesLoadContentAssets().catch((e) => toast(e.message));
+    $('salesSendContentBtn').onclick = () => salesSendContentAsset().catch((e) => toast(e.message));
+    $('salesSaveAutoNurtureBtn').onclick = () => salesSaveAutoNurture().catch((e) => toast(e.message));
+    $('salesCreateContractBtn').onclick = () => salesCreateContract().catch((e) => toast(e.message));
+    $('salesRecordPaymentBtn').onclick = () => salesRecordPayment().catch((e) => toast(e.message));
+    $('salesConfirmPaymentBtn').onclick = () => salesConfirmPayment().catch((e) => toast(e.message));
     $('salesAssistantSendBtn').onclick = () => salesAssistantChat().catch((e) => toast(e.message));
     $('salesAssistantInput').onkeydown = (ev) => {
       if (ev.key === 'Enter') salesAssistantChat().catch((e) => toast(e.message));
@@ -3145,6 +3173,8 @@ function legacyCopyFallback(value) {
       $('salesTags').innerHTML = (lead.tags || []).map((t) => `<span class="pill">${salesEsc(t)}</span>`).join(' ');
       $('salesOvercommitHint').style.display = 'none';
       $('salesDemoBriefBox').style.display = 'none';
+      $('salesAutoNurtureEnabled').checked = !!lead.auto_nurture_enabled;
+      salesLoadContentAssets().catch(() => null);
       renderSalesChat($('salesChatLog'), data.messages || []);
       const events = data.events || [];
       $('salesEvents').innerHTML = events.length
@@ -3213,6 +3243,49 @@ function legacyCopyFallback(value) {
       if (!data.ok) throw new Error(data.message || data.error || '动作失败');
       toast(data.result?.reason === 'wecom_not_configured' ? '已记录动作，企微尚未配置' : '动作已完成');
       await openSalesLead(id);
+    }
+
+    async function salesLoadContentAssets() {
+      const data = await api('/api/admin/sales/content-assets');
+      const select = $('salesContentAsset');
+      select.innerHTML = '<option value="">请选择已审批资料</option>' + (data.items || []).map((x) => `<option value="${Number(x.id)}">${salesEsc(x.title)}（${salesEsc(x.content_type)}）</option>`).join('');
+      $('salesContentDeliveryHint').textContent = `可发送资料 ${(data.items || []).length} 项`;
+    }
+    async function salesSendContentAsset() {
+      const id = state.sales.selectedLeadId;
+      const assetId = Number($('salesContentAsset').value);
+      if (!id || !assetId) throw new Error('请选择客户和资料');
+      const data = await api(`/api/admin/sales/leads/${id}/content-deliveries`, { method: 'POST', body: JSON.stringify({ asset_id: assetId }) });
+      $('salesContentDeliveryHint').textContent = data.ok ? '资料已通过企业微信客服发送，并已写入发送审计。' : '发送失败';
+      toast('资料已发送');
+    }
+    async function salesSaveAutoNurture() {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先选择客户');
+      const enabled = $('salesAutoNurtureEnabled').checked;
+      await api(`/api/admin/sales/leads/${id}/auto-nurture`, { method: 'PUT', body: JSON.stringify({ enabled }) });
+      $('salesContentDeliveryHint').textContent = enabled ? '已开启客户AI自动培育；只会发送审批且允许自动发送的资料。' : '已关闭客户AI自动培育。';
+    }
+    async function salesCreateContract() {
+      const leadId = state.sales.selectedLeadId;
+      const contractNo = window.prompt('合同编号');
+      const amount = window.prompt('合同含税金额（元）');
+      if (!leadId || !contractNo || !amount) return;
+      const data = await api(`/api/admin/sales/leads/${leadId}/contracts`, { method: 'POST', body: JSON.stringify({ contract_no: contractNo, amount: Number(amount) }) });
+      $('salesContractHint').textContent = `合同 ${data.contract.contract_no} 已登记，待双方签署后由销售经理设为生效。`;
+    }
+    async function salesRecordPayment() {
+      const contractId = window.prompt('合同ID（登记合同后由财务从合同列表选择）');
+      const amount = window.prompt('本次回款金额（元）');
+      if (!contractId || !amount) return;
+      const data = await api(`/api/admin/sales/contracts/${Number(contractId)}/payments`, { method: 'POST', body: JSON.stringify({ amount: Number(amount) }) });
+      $('salesContractHint').textContent = `回款记录 #${data.payment.id} 已登记，等待财务确认。`;
+    }
+    async function salesConfirmPayment() {
+      const paymentId = window.prompt('待确认的回款记录ID');
+      if (!paymentId) return;
+      const data = await api(`/api/admin/sales/payments/${Number(paymentId)}/confirm`, { method: 'POST', body: '{}' });
+      $('salesContractHint').textContent = `回款 #${data.payment.id} 已由财务确认。`;
     }
 
     async function salesConsultantInvite() {

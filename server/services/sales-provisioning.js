@@ -195,6 +195,16 @@ export async function provisionTenantFromLead(pool, leadId, {
     console.error('[sales-provision] writeback failed, tenant already created:', tenantId, e?.message || e);
   }
 
+  // 已开通的客户自动进入交付项目；这里不把“开通”伪装成“已交付”，客服/实施必须逐步推进。
+  if (allDone) {
+    await pool.query(
+      `INSERT INTO sales_delivery_projects (lead_id, tenant_id, status, created_at, updated_at)
+       VALUES ($1,$2,'pending',NOW(),NOW())
+       ON CONFLICT (lead_id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id, updated_at=NOW()`,
+      [leadId, tenantId]
+    ).catch((e) => console.warn('[sales-provision] delivery project creation failed:', e?.message || e));
+  }
+
   await addEvent(pool, leadId, {
     event_type: allDone ? 'TENANT_PROVISIONED' : 'TENANT_PROVISIONED_PARTIAL',
     summary: allDone ? `已开通租户 ${tenantId}` : `租户 ${tenantId} 已创建，${failedSteps.length}个收尾步骤待重试`,

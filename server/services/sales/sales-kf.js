@@ -122,6 +122,36 @@ export async function sendKfText({ openKfid, externalUserid, content }) {
   return data;
 }
 
+async function sendKfMediaMessage({ openKfid, externalUserid, msgtype, mediaId }) {
+  if (!mediaId) throw new Error('media_id_required');
+  await claimKfServiceState({ openKfid, externalUserid }).catch((e) => {
+    console.warn('[sales-kf] claimKfServiceState failed (will still try to send):', e?.message || e);
+  });
+  const accessToken = await getAccessToken();
+  const resp = await fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/kf/send_msg?access_token=${encodeURIComponent(accessToken)}`,
+    {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ touser: externalUserid, open_kfid: openKfid, msgtype, [msgtype]: { media_id: mediaId } }),
+    }
+  );
+  const data = await resp.json();
+  if (Number(data?.errcode) !== 0) throw new Error(data?.errmsg || `kf_send_${msgtype}_failed`);
+  return data;
+}
+
+export async function sendKfImage({ openKfid, externalUserid, mediaId }) {
+  return sendKfMediaMessage({ openKfid, externalUserid, msgtype: 'image', mediaId });
+}
+
+export async function sendKfFile({ openKfid, externalUserid, mediaId }) {
+  return sendKfMediaMessage({ openKfid, externalUserid, msgtype: 'file', mediaId });
+}
+
+export async function sendKfVideo({ openKfid, externalUserid, mediaId }) {
+  return sendKfMediaMessage({ openKfid, externalUserid, msgtype: 'video', mediaId });
+}
+
 export async function sendKfConsultantCard({ openKfid, externalUserid, consultantName, qrUrl }) {
   const name = String(consultantName || '专属顾问').trim();
   const url = String(qrUrl || '').trim();
@@ -166,10 +196,10 @@ export async function sendKfVoice({ openKfid, externalUserid, mediaId }) {
 }
 
 /** 上传临时素材(语音amr/图片等)，供 sendKfVoice 使用；素材3天内有效，用完即传不做缓存 */
-export async function uploadKfMedia(buffer, { type = 'voice', filename = 'voice.amr' } = {}) {
+export async function uploadKfMedia(buffer, { type = 'voice', filename = 'voice.amr', mimeType } = {}) {
   const accessToken = await getAccessToken();
   const form = new FormData();
-  const mime = type === 'voice' ? 'audio/amr' : 'application/octet-stream';
+  const mime = mimeType || (type === 'voice' ? 'audio/amr' : 'application/octet-stream');
   form.append('media', new Blob([buffer], { type: mime }), filename);
   const resp = await fetch(
     `https://qyapi.weixin.qq.com/cgi-bin/media/upload?access_token=${encodeURIComponent(accessToken)}&type=${type}`,

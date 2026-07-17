@@ -5,7 +5,7 @@
  * 角色矩阵：
  *   super_admin / sales_manager  → 全量可见
  *   sales                        → 只看 owner_username=自己 或 assigned_to=自己 的线索
- *   customer_service              → 只看 cs_owner_username=自己 的线索/租户(需显式分配，不给默认可见)
+ *   customer_service / implementation → 只看 cs_owner_username=自己 的线索/租户(需显式分配，不给默认可见)
  */
 
 const MANAGER_ROLES = new Set(['super_admin', 'sales_manager']);
@@ -22,7 +22,7 @@ function leadScopeSql(admin, paramIndex) {
   if (role === 'sales') {
     return { clause: `(owner_username = $${paramIndex} OR assigned_to = $${paramIndex})`, params: [username] };
   }
-  if (role === 'customer_service') {
+  if (role === 'customer_service' || role === 'implementation') {
     return { clause: `cs_owner_username = $${paramIndex}`, params: [username] };
   }
   // 未知角色一律视为无可见范围，不是"全部可见"
@@ -36,7 +36,7 @@ function canAccessLead(admin, lead) {
   const role = admin?.role || '';
   const username = admin?.username || '';
   if (role === 'sales') return lead.owner_username === username || lead.assigned_to === username;
-  if (role === 'customer_service') return lead.cs_owner_username === username;
+  if (role === 'customer_service' || role === 'implementation') return lead.cs_owner_username === username;
   return false;
 }
 

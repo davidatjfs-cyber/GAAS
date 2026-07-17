@@ -3,6 +3,7 @@
  */
 import { ensureSalesTables, upsertTask } from './sales-store.js';
 import { formatCaseBlurb, recommendCasesForLead } from './sales-case-library.js';
+import { listSendableContentAssets, sendContentAssetToLead } from './sales-content-delivery.js';
 
 const NURTURE_SCHEDULE = [
   { step: 1, afterHours: 24, title: '培育Day1：发送针对性案例', build: (lead) => `给「${lead.company || lead.name || lead.lead_key}」发一条与其痛点(${lead.extracted?.pain_point || '未明'})接近的客户案例，先建立信任，不要催单。` },
@@ -34,7 +35,8 @@ async function ensureNurtureColumns(pool) {
 
 /**
  * 找出诊断已交付、仍由AI跟进、且距上次互动/培育已达到下一节奏节点的线索，
- * 为销售生成一条培育任务(而非自动发送消息)，由销售确认内容后手动触达。
+ * 默认生成待办；只有销售显式为客户开启 auto_nurture_enabled 且素材已经审批为
+ * auto_send_allowed 时，才通过企业微信客服真实发送。这样不会把“自动化”变成无授权群发。
  */
 export async function runNurtureCadence(pool) {
   await ensureNurtureColumns(pool);
@@ -70,12 +72,25 @@ export async function runNurtureCadence(pool) {
     const caseBlurb = cases?.[0]?._score > 0 ? formatCaseBlurb(cases[0]) : '';
     const detail = [nextStep.build(lead), caseBlurb ? `可引用案例：${caseBlurb}` : ''].filter(Boolean).join('\n');
 
-    await upsertTask(pool, {
+    let autoSent = false;
+    if (lead.auto_nurture_enabled && lead.open_kfid && lead.external_userid) {
+      const assets = await listSendableContentAssets(pool, { limit: 50 }).catch(() => []);
+      const approved = assets.find((asset) => asset.auto_send_allowed && (asset.content_type === 'text' || asset.content_type === 'link' || asset.content_type === 'qr'));
+      if (approved) {
+        try {
+          await sendContentAssetToLead(pool, lead, approved, { deliveryType: 'ai_nurture', sentBy: 'customer_ai' });
+          autoSent = true;
+        } catch (e) {
+          console.warn('[sales-nurture] auto delivery failed:', e?.message || e);
+        }
+      }
+    }
+    if (!autoSent) await upsertTask(pool, {
       leadId: lead.id, title: nextStep.title, detail, dueAt: new Date(), assignee: lead.owner_username || null,
       dedupKey: `nurture:${lead.id}:${nextStep.step}`, taskDomain: 'nurture', taskType: 'nurture_touch',
       tenantId: lead.tenant_id || null, sourceType: 'sales_leads', sourceId: String(lead.id), createdBy: 'cron:nurture',
     });
-    created.push({ lead_id: lead.id, lead_key: lead.lead_key, step: nextStep.step, title: nextStep.title });
+    created.push({ lead_id: lead.id, lead_key: lead.lead_key, step: nextStep.step, title: nextStep.title, auto_sent: autoSent });
   }
   return created;
 }
