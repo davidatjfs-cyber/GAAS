@@ -769,11 +769,28 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     const company = String(body.company || '').trim();
     const name = String(body.name || '').trim();
     const phone = String(body.phone || '').trim();
-    const city = String(body.city || '').trim();
+    const contactTitle = String(body.contact_title || '').trim();
+    const rawBrands = Array.isArray(body.customer_brands) ? body.customer_brands : [];
+    const customerBrands = rawBrands.map((item) => ({
+      brand_name: String(item?.brand_name || '').trim(),
+      city: String(item?.city || '').trim(),
+      store_count: Math.max(0, Number(item?.store_count) || 0),
+    })).filter((item) => item.brand_name || item.city || item.store_count);
+    const customerCities = [...new Set(customerBrands.map((item) => item.city).filter(Boolean))];
+    const city = customerCities[0] || String(body.city || '').trim();
+    const storeCount = customerBrands.reduce((total, item) => total + item.store_count, 0) || Number(body.store_count) || null;
+    const customerContacts = [{ name, title: contactTitle, phone }].filter((item) => item.name || item.phone);
+    const requestedPaymentType = String(body.requested_payment_type || 'cash').trim();
+    const requestedCreditDays = Math.max(0, Number(body.requested_credit_days) || 0);
+    const requestedCreditLimitFen = Math.max(0, Math.round(Number(body.requested_credit_limit || 0) * 100));
     const origin = String(body.customer_origin || 'sales_visit').trim();
     const allowedOrigins = new Set(['sales_visit', 'referral', 'exhibition', 'phone_outreach', 'other']);
     if (!company) return res.status(400).json({ ok: false, error: 'company_required', message: '请填写客户企业名称' });
     if (!name && !phone) return res.status(400).json({ ok: false, error: 'contact_required', message: '请至少填写联系人姓名或联系电话' });
+    if (!customerBrands.length) return res.status(400).json({ ok: false, error: 'brand_required', message: '请至少填写一个品牌、城市和门店数量' });
+    if (customerBrands.some((item) => !item.brand_name || !item.city || !item.store_count)) return res.status(400).json({ ok: false, error: 'brand_invalid', message: '每个品牌都需要填写品牌名称、城市和门店数量' });
+    if (!['cash', 'credit'].includes(requestedPaymentType)) return res.status(400).json({ ok: false, error: 'payment_type_invalid', message: '客户性质不正确' });
+    if (requestedPaymentType === 'credit' && (!requestedCreditDays || !requestedCreditLimitFen)) return res.status(400).json({ ok: false, error: 'credit_terms_required', message: '帐期客户请填写申请账期天数和申请授信金额' });
     if (!allowedOrigins.has(origin)) return res.status(400).json({ ok: false, error: 'invalid_origin', message: '客户来源不正确' });
     try {
       await ensureSalesTables(pool);
@@ -798,19 +815,26 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         `INSERT INTO sales_leads
           (lead_key, customer_code, customer_origin, source_channel, manual_created_by, manual_created_at,
            name, company, phone, city, region_code, region_name, cuisine, store_count, pos_brand,
+           legal_contact_name, legal_contact_title, legal_contact_phone,
+           customer_brands, customer_cities, customer_contacts,
+           requested_payment_type, requested_credit_days, requested_credit_limit_fen,
            stage, controller, intent_score, intent_level, owner_username, assigned_to,
            next_action, next_action_due, tags, extracted)
-         VALUES ($1,$2,$3,'manual',$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13,
+         VALUES ($1,$2,$3,'manual',$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+                 $17::jsonb,$18::jsonb,$19::jsonb,$20,$21,$22,
                  'sales_takeover','human',0,'low',$4,$4,
-                 $14,$15::timestamptz,$16::jsonb,$17::jsonb)
+                 $23,$24::timestamptz,$25::jsonb,$26::jsonb)
          RETURNING *`,
         [
           newLeadKey('M'), `KH${Date.now().toString().slice(-8)}${Math.random().toString(36).slice(2, 4).toUpperCase()}`,
           origin, owner, name || null, company, phone || null, city || null,
           String(body.region_code || '').trim() || null, String(body.region_name || '').trim() || null,
-          String(body.cuisine || '').trim() || null, Number(body.store_count) || null, String(body.pos_brand || '').trim() || null,
+          String(body.cuisine || '').trim() || null, storeCount, String(body.pos_brand || customerBrands[0]?.brand_name || '').trim() || null,
+          name || null, contactTitle || null, phone || null,
+          JSON.stringify(customerBrands), JSON.stringify(customerCities), JSON.stringify(customerContacts),
+          requestedPaymentType, requestedPaymentType === 'credit' ? requestedCreditDays : null, requestedPaymentType === 'credit' ? requestedCreditLimitFen : null,
           String(body.next_action || '补全客户档案并安排下一次跟进').trim(), followupAt && !Number.isNaN(followupAt.getTime()) ? followupAt.toISOString() : null,
-          JSON.stringify(['销售自主建档']), JSON.stringify({ source: 'manual_customer', first_visit_notes: visitNotes || null }),
+          JSON.stringify(['销售自主建档']), JSON.stringify({ source: 'manual_customer', first_visit_notes: visitNotes || null, customer_brands: customerBrands, requested_payment_type: requestedPaymentType }),
         ]
       );
       const customer = r.rows?.[0];
@@ -961,6 +985,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   // 不允许通过这个接口改stage/controller/intent_score这些由AI/销售流程自动维护的字段。
   const LEAD_DOSSIER_FIELDS = [
     'name', 'company', 'phone', 'city', 'region_code', 'region_name', 'cuisine', 'store_count', 'pos_brand',
+    'customer_brands', 'customer_cities', 'customer_contacts', 'requested_payment_type', 'requested_credit_days', 'requested_credit_limit_fen',
     'legal_company_name', 'unified_credit_code', 'registered_address', 'company_size', 'website',
     'invoice_title', 'invoice_tax_no', 'invoice_bank_name', 'invoice_bank_account',
     'legal_contact_name', 'legal_contact_title', 'legal_contact_phone',
@@ -971,16 +996,52 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const body = req.body || {};
       const fields = Object.keys(body).filter((k) => LEAD_DOSSIER_FIELDS.includes(k));
       if (!fields.length) return res.status(400).json({ ok: false, error: 'no_valid_fields' });
-      const setClauses = fields.map((f, i) => `${f} = $${i + 2}`);
-      const values = fields.map((f) => (body[f] === '' ? null : body[f]));
+      const jsonFields = new Set(['customer_brands', 'customer_cities', 'customer_contacts']);
+      if (fields.includes('customer_brands')) {
+        const brands = Array.isArray(body.customer_brands) ? body.customer_brands : JSON.parse(String(body.customer_brands || '[]'));
+        if (!Array.isArray(brands) || brands.some((item) => !String(item?.brand_name || '').trim() || !String(item?.city || '').trim() || !(Number(item?.store_count) > 0))) {
+          return res.status(400).json({ ok: false, error: 'customer_brands_invalid', message: '每个品牌都需要填写品牌名称、城市和门店数量' });
+        }
+        const cities = [...new Set(brands.map((item) => String(item.city).trim()))];
+        body.customer_brands = brands.map((item) => ({ brand_name: String(item.brand_name).trim(), city: String(item.city).trim(), store_count: Number(item.store_count) }));
+        body.customer_cities = cities;
+        body.city = cities.join('、');
+        body.store_count = brands.reduce((total, item) => total + Number(item.store_count), 0);
+        body.pos_brand = [...new Set(brands.map((item) => String(item.brand_name).trim()))].join('、');
+        for (const derivedField of ['customer_cities', 'city', 'store_count', 'pos_brand']) if (!fields.includes(derivedField)) fields.push(derivedField);
+      }
+      if (fields.includes('customer_contacts')) {
+        const contacts = Array.isArray(body.customer_contacts) ? body.customer_contacts : JSON.parse(String(body.customer_contacts || '[]'));
+        if (!Array.isArray(contacts) || contacts.some((item) => !String(item?.name || '').trim() || !String(item?.title || '').trim() || !String(item?.phone || '').trim())) {
+          return res.status(400).json({ ok: false, error: 'customer_contacts_invalid', message: '每位联系人都需要填写姓名、职位和电话' });
+        }
+        body.customer_contacts = contacts.map((item) => ({ name: String(item.name).trim(), title: String(item.title).trim(), phone: String(item.phone).trim() }));
+        const primary = body.customer_contacts[0];
+        body.name = primary.name; body.phone = primary.phone;
+        body.legal_contact_name = primary.name; body.legal_contact_title = primary.title; body.legal_contact_phone = primary.phone;
+        for (const derivedField of ['name', 'phone', 'legal_contact_name', 'legal_contact_title', 'legal_contact_phone']) if (!fields.includes(derivedField)) fields.push(derivedField);
+      }
+      const values = fields.map((field) => {
+        const value = body[field];
+        if (!jsonFields.has(field)) return value === '' ? null : value;
+        if (Array.isArray(value)) return JSON.stringify(value);
+        try {
+          const parsed = JSON.parse(String(value || '[]'));
+          if (!Array.isArray(parsed)) throw new Error('not_array');
+          return JSON.stringify(parsed);
+        } catch {
+          throw Object.assign(new Error(`${field}_invalid`), { statusCode: 400 });
+        }
+      });
+      const typedSetClauses = fields.map((f, i) => `${f} = $${i + 2}${jsonFields.has(f) ? '::jsonb' : ''}`);
       const r = await pool.query(
-        `UPDATE sales_leads SET ${setClauses.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
+        `UPDATE sales_leads SET ${typedSetClauses.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
         [leadId, ...values]
       );
       if (!r.rows?.[0]) return res.status(404).json({ ok: false, error: 'not_found' });
       res.json({ ok: true, lead: r.rows[0] });
     } catch (e) {
-      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+      res.status(e?.statusCode || 500).json({ ok: false, error: e?.message || 'server_error', message: e?.statusCode ? '档案中的品牌或联系人格式不正确' : e?.message });
     }
   });
 

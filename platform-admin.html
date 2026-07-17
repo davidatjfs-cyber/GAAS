@@ -631,10 +631,14 @@
         <div class="detail-grid">
           <label class="field">客户企业名称 <span style="color:var(--danger)">*</span><input id="manualCustomerCompany" placeholder="例如：上海某某餐饮管理有限公司"></label>
           <label class="field">联系人姓名 <input id="manualCustomerName" placeholder="例如：张女士"></label>
+          <label class="field">联系人职位 <input id="manualCustomerTitle" placeholder="例如：运营总监 / 老板"></label>
           <label class="field">联系电话 <input id="manualCustomerPhone" inputmode="tel" placeholder="至少填写联系人或电话其中一项"></label>
           <label class="field">客户来源 <select id="manualCustomerOrigin"><option value="sales_visit">销售上门拜访</option><option value="referral">老客户转介绍</option><option value="exhibition">展会/活动</option><option value="phone_outreach">电话开发</option><option value="other">其他</option></select></label>
-          <label class="field">城市 <input id="manualCustomerCity" placeholder="例如：上海"></label>
-          <label class="field">门店数量 <input id="manualCustomerStoreCount" type="number" min="0" placeholder="例如：5"></label>
+          <div class="field" style="grid-column:1/-1"><span>品牌、城市与门店数量 <span style="color:var(--danger)">*</span></span><div class="small" style="margin:3px 0 6px">每行是一项品牌经营分布；同一客户可以覆盖多个品牌、多个城市。</div><div id="manualBrandRows" class="stack" style="gap:6px"></div><button type="button" id="manualAddBrandBtn" class="ghost small" style="margin-top:6px">+ 增加品牌/城市</button></div>
+          <label class="field">客户性质 <select id="manualCustomerPaymentType"><option value="cash">现金客户（回款后开通）</option><option value="credit">帐期客户（审批授信后可开通）</option></select></label>
+          <label class="field">申请账期（天）<input id="manualCustomerCreditDays" type="number" min="1" placeholder="帐期客户必填，例如30"></label>
+          <label class="field">申请授信金额（元）<input id="manualCustomerCreditLimit" type="number" min="0" step="0.01" placeholder="帐期客户必填"></label>
+          <div class="field"><span>审批说明</span><span class="small">以上为拟申请条款；签约合同上传后，必须经总经理审批，最终以审批授信为准。</span></div>
           <label class="field">下次跟进计划 <input id="manualCustomerNextAction" placeholder="例如：周三发送方案并约演示"></label>
           <label class="field">下次跟进时间 <input id="manualCustomerNextAt" type="datetime-local"></label>
           <label class="field" style="grid-column:1/-1">本次拜访记录 <textarea id="manualCustomerVisitNotes" placeholder="记录客户现状、需求、决策人和下一步，不少于10个字"></textarea></label>
@@ -756,12 +760,15 @@
           <strong id="salesDetailTitle">客户档案</strong>
           <div class="toolbar" style="margin:0">
             <button type="button" id="salesEditDossierBtn" class="secondary" data-role-edit-only>编辑客户档案</button>
+            <button type="button" id="salesDossierContractBtn" class="warn" data-role-sales-only>上传签约合同 / 提交审批</button>
+            <button type="button" id="salesDossierOrderBtn" class="secondary" data-role-sales-only>新增订单</button>
             <button type="button" id="salesTakeoverBtn" class="warn" data-role-sales-only>接管</button>
             <button type="button" id="salesReleaseBtn" class="secondary" data-role-sales-only>交回客户AI</button>
             <button type="button" id="salesDetailCloseBtn" class="ghost">关闭</button>
           </div>
         </div>
         <div id="salesDossierBox" class="hint-box" style="display:none"></div>
+        <div id="salesApprovalStatusBox" class="hint-box" style="margin-top:8px;display:none"></div>
         <div id="salesAdvice" class="hint-box">选择客户后显示跟进建议。</div>
         <div id="salesDiagnosis" class="hint-box" style="background:rgba(13,122,95,.08);border-left-color:var(--accent);display:none"></div>
         <div id="salesTags" class="small" style="margin-top:6px"></div>
@@ -792,9 +799,9 @@
           </div>
           <div id="salesContentDeliveryHint" class="small"></div>
         </div>
-        <div class="hint-box" style="margin-top:8px">
+        <div class="hint-box" id="salesCommerceSection" style="margin-top:8px">
           <div class="section-title"><strong>合同、回款、授信与交付</strong><button type="button" id="salesRefreshCrmBtn" class="ghost">刷新</button></div>
-          <div class="small" style="margin:4px 0 8px">系统自动判断是否允许开通：现金客户须足额回款；帐期客户须合同生效且未超过总经理授信。</div>
+          <div class="small" style="margin:4px 0 8px"><strong>签约合同操作：</strong>选择合同文件后点击“登记合同” → 在下方合同列表点击“提交总经理审批” → 审批通过后才可新增订单。现金客户须足额回款；帐期客户须合同生效且未超过总经理授信。</div>
           <div class="detail-grid">
             <label class="field">合同编号<input id="salesContractNo" placeholder="例如 NNYX-2026-001"></label>
             <label class="field">合同金额（元）<input id="salesContractAmount" type="number" min="0" step="0.01"></label>
@@ -804,6 +811,7 @@
           </div>
           <div id="salesCreditBox" class="small" style="margin-top:8px"></div>
           <div id="salesContractsBox" class="stack" style="margin-top:8px"></div>
+          <div id="salesOrderSection" style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(120,78,22,.18)"><strong>新增订单（门店 / 品牌开通）</strong><div class="small" style="margin:4px 0 8px">请先在上方登记并审批签约合同；每张订单对应一个门店许可证。首单开通客户系统账号，后续门店或品牌订单复用同一账号并增加门店。</div></div>
           <div class="detail-grid" style="margin-top:10px">
             <label class="field">审批通过合同<select id="salesOrderContract"><option value="">请先选择已审批合同</option></select></label>
             <label class="field">订单类型<select id="salesOrderType"><option value="new_store">新开门店</option><option value="renewal">续约</option></select></label>
@@ -850,17 +858,18 @@
           </div>
         </div>
         <div style="margin-top:8px">
-          <strong class="small">拜访记录</strong>
+          <strong class="small">销售跟进记录（可连续新增）</strong>
+          <div class="small" style="margin-top:3px">每一次上门、电话或线上沟通都在此新增，系统会保留完整历史与下一次跟进计划。</div>
           <div class="toolbar" style="margin-top:4px;flex-wrap:wrap">
             <select id="salesVisitType" style="width:auto">
               <option value="onsite">现场拜访</option>
               <option value="online">视频/线上</option>
               <option value="phone">电话</option>
             </select>
-            <input id="salesVisitNotes" placeholder="本次拜访聊了什么" style="flex:1;min-width:200px">
+            <input id="salesVisitNotes" placeholder="本次跟进内容（必填）" style="flex:1;min-width:200px">
             <input id="salesVisitNextFollowupAt" type="datetime-local" style="width:auto">
             <input id="salesVisitNextFollowupPlan" placeholder="下次跟进计划" style="flex:1;min-width:160px">
-            <button type="button" id="salesRecordVisitBtn" class="secondary">记录拜访</button>
+            <button type="button" id="salesRecordVisitBtn" class="secondary">新增跟进记录</button>
           </div>
           <div id="salesVisitsBox" class="small" style="margin-top:6px"></div>
         </div>
@@ -3217,6 +3226,10 @@ function legacyCopyFallback(value) {
       $('salesManualCustomerFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     $('salesManualCustomerCancelBtn').onclick = () => { $('salesManualCustomerFormCard').style.display = 'none'; };
+    $('manualAddBrandBtn').onclick = () => appendManualBrandRow();
+    $('manualCustomerPaymentType').onchange = () => syncManualCreditInputs();
+    resetManualBrandRows();
+    syncManualCreditInputs();
     $('salesManualCustomerSaveBtn').onclick = () => salesCreateManualCustomer().catch((e) => toast(e.message));
     $('salesStageFilter').onchange = () => loadSalesBoard().catch((e) => toast(e.message));
     $('salesRiskFilter').onchange = () => loadSalesBoard().catch((e) => toast(e.message));
@@ -3236,6 +3249,8 @@ function legacyCopyFallback(value) {
     $('salesCommissionBtn').onclick = () => loadSalesCommission().catch((e) => toast(e.message));
     $('salesRecordVisitBtn').onclick = () => salesRecordVisit().catch((e) => toast(e.message));
     $('salesEditDossierBtn').onclick = () => renderSalesDossierForm(state.sales.currentLead || {});
+    $('salesDossierContractBtn').onclick = () => $('salesCommerceSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('salesDossierOrderBtn').onclick = () => $('salesOrderSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     $('salesDetailCloseBtn').onclick = () => {
       state.sales.selectedLeadId = null;
       $('salesDetailCard').style.display = 'none';
@@ -3383,12 +3398,15 @@ function legacyCopyFallback(value) {
     async function salesCreateManualCustomer() {
       const payload = {
         company: $('manualCustomerCompany').value.trim(), name: $('manualCustomerName').value.trim(), phone: $('manualCustomerPhone').value.trim(),
-        customer_origin: $('manualCustomerOrigin').value, city: $('manualCustomerCity').value.trim(),
-        store_count: Number($('manualCustomerStoreCount').value || 0) || null,
+        contact_title: $('manualCustomerTitle').value.trim(), customer_origin: $('manualCustomerOrigin').value,
+        customer_brands: readManualBrands(), requested_payment_type: $('manualCustomerPaymentType').value,
+        requested_credit_days: Number($('manualCustomerCreditDays').value || 0), requested_credit_limit: Number($('manualCustomerCreditLimit').value || 0),
         next_action: $('manualCustomerNextAction').value.trim(), next_followup_at: $('manualCustomerNextAt').value || null,
         first_visit_notes: $('manualCustomerVisitNotes').value.trim(),
       };
       if (!payload.company || (!payload.name && !payload.phone)) throw new Error('请填写客户企业名称，以及联系人姓名或联系电话');
+      if (!payload.customer_brands.length || payload.customer_brands.some((item) => !item.brand_name || !item.city || !item.store_count)) throw new Error('请至少填写一个品牌、对应城市和门店数量');
+      if (payload.requested_payment_type === 'credit' && (!payload.requested_credit_days || !payload.requested_credit_limit)) throw new Error('帐期客户请填写申请账期天数和申请授信金额');
       if (payload.first_visit_notes && payload.first_visit_notes.length < 10) throw new Error('请补充至少10个字的拜访记录');
       const data = await api('/api/admin/sales/customers', { method: 'POST', body: JSON.stringify(payload) });
       if (!data.ok && data.error === 'customer_exists' && data.existing?.id) {
@@ -3399,10 +3417,43 @@ function legacyCopyFallback(value) {
       }
       if (!data.ok) throw new Error(data.message || '客户建档失败');
       $('salesManualCustomerFormCard').style.display = 'none';
-      ['manualCustomerCompany','manualCustomerName','manualCustomerPhone','manualCustomerCity','manualCustomerStoreCount','manualCustomerNextAction','manualCustomerNextAt','manualCustomerVisitNotes'].forEach((id) => { if ($(id)) $(id).value = ''; });
+      ['manualCustomerCompany','manualCustomerName','manualCustomerTitle','manualCustomerPhone','manualCustomerCreditDays','manualCustomerCreditLimit','manualCustomerNextAction','manualCustomerNextAt','manualCustomerVisitNotes'].forEach((id) => { if ($(id)) $(id).value = ''; });
+      $('manualCustomerPaymentType').value = 'cash'; resetManualBrandRows(); syncManualCreditInputs();
       toast('客户档案已建立，已进入人工跟进');
       await loadSalesBoard();
       await openSalesLead(Number(data.customer.id));
+    }
+
+    function appendManualBrandRow(value = {}) {
+      const rows = $('manualBrandRows');
+      const row = document.createElement('div');
+      row.className = 'toolbar';
+      row.style.margin = '0';
+      row.innerHTML = `<input data-manual-brand="name" placeholder="品牌名称" value="${salesEsc(value.brand_name || '')}" style="flex:1;min-width:160px"><input data-manual-brand="city" placeholder="所在城市" value="${salesEsc(value.city || '')}" style="flex:1;min-width:130px"><input data-manual-brand="stores" type="number" min="1" placeholder="门店数量" value="${value.store_count || ''}" style="width:120px"><button type="button" class="ghost small">删除</button>`;
+      row.querySelector('button').onclick = () => {
+        if (rows.children.length === 1) { row.querySelectorAll('input').forEach((input) => { input.value = ''; }); return; }
+        row.remove();
+      };
+      rows.appendChild(row);
+    }
+    function resetManualBrandRows() {
+      const rows = $('manualBrandRows');
+      rows.innerHTML = '';
+      appendManualBrandRow();
+    }
+    function readManualBrands() {
+      return [...$('manualBrandRows').children].map((row) => ({
+        brand_name: row.querySelector('[data-manual-brand="name"]').value.trim(),
+        city: row.querySelector('[data-manual-brand="city"]').value.trim(),
+        store_count: Number(row.querySelector('[data-manual-brand="stores"]').value || 0),
+      })).filter((item) => item.brand_name || item.city || item.store_count);
+    }
+    function syncManualCreditInputs() {
+      const isCredit = $('manualCustomerPaymentType').value === 'credit';
+      ['manualCustomerCreditDays', 'manualCustomerCreditLimit'].forEach((id) => {
+        $(id).disabled = !isCredit;
+        if (!isCredit) $(id).value = '';
+      });
     }
 
     function renderSalesCrmOverview() {
@@ -3716,6 +3767,14 @@ function legacyCopyFallback(value) {
       const risk = data.credit_risk || {};
       const riskLabel = risk.payment_type === 'credit' ? '帐期客户' : '现金客户';
       const riskState = risk.status === 'locked' || risk.exceeded ? '已锁定' : '正常';
+      const contracts = data.contracts || [];
+      const approval = contracts.some((c) => c.approval_status === 'pending') ? { label: '审批中', note: '已有签约合同等待总经理审批，审批通过后才能提交订单。' }
+        : contracts.some((c) => c.approval_status === 'approved') ? { label: '已审批', note: '至少一份签约合同已获总经理批准，可按批准合同新增订单。' }
+        : contracts.some((c) => c.approval_status === 'rejected') ? { label: '已退回', note: '合同被退回，请补充或修订后重新提交审批。' }
+        : contracts.length ? { label: '待提交审批', note: '合同已登记，等待销售提交总经理审批。' }
+        : { label: '未提交合同', note: '请先上传已签约合同并登记，再提交总经理审批。' };
+      $('salesApprovalStatusBox').style.display = '';
+      $('salesApprovalStatusBox').innerHTML = `<strong>客户档案状态：${approval.label}</strong><div class="small" style="margin-top:4px">${approval.note}</div><div class="small" style="margin-top:3px">客户性质：${riskLabel} · 风控：${riskState} · 欠款 ${salesMoney(risk.outstanding_fen)} · 授信 ${salesMoney(risk.credit_limit_fen)}</div>`;
       $('salesCreditBox').innerHTML = `<div><strong>客户风控：</strong>${riskLabel} · ${riskState} · 欠款 ${salesMoney(risk.outstanding_fen)} · 授信 ${salesMoney(risk.credit_limit_fen)}</div>
         ${['super_admin','general_manager'].includes(role) ? `<div class="toolbar" style="margin-top:6px"><select id="salesCreditType" style="width:auto"><option value="cash">现金客户</option><option value="credit" ${risk.payment_type === 'credit' ? 'selected' : ''}>帐期客户</option></select><input id="salesCreditLimit" type="number" min="0" step="0.01" value="${Number(risk.credit_limit_fen || 0) / 100}" placeholder="授信金额"><button id="salesSaveCreditBtn" class="secondary">总经理授信/解锁</button></div>` : ''}`;
       $('salesSaveCreditBtn')?.addEventListener('click', async () => {
@@ -3726,7 +3785,7 @@ function legacyCopyFallback(value) {
       for (const p of data.payments || []) { if (!paymentsByContract.has(Number(p.contract_id))) paymentsByContract.set(Number(p.contract_id), []); paymentsByContract.get(Number(p.contract_id)).push(p); }
       const invoicesByContract = new Map();
       for (const i of data.invoices || []) { if (!invoicesByContract.has(Number(i.contract_id))) invoicesByContract.set(Number(i.contract_id), []); invoicesByContract.get(Number(i.contract_id)).push(i); }
-      $('salesContractsBox').innerHTML = (data.contracts || []).map((c) => {
+      $('salesContractsBox').innerHTML = contracts.map((c) => {
         const ps = paymentsByContract.get(Number(c.id)) || [];
         const invs = invoicesByContract.get(Number(c.id)) || [];
         return `<div class="glossary-item" data-contract-id="${Number(c.id)}"><strong>${salesEsc(c.contract_no)} · 第${Number(c.version_no || 1)}版</strong><p>金额 ${salesMoney(c.amount_fen)} · ${contractStatusLabel(c.status)} · 审批：${c.approval_status === 'approved' ? '总经理已批准' : c.approval_status === 'pending' ? '待总经理审批' : c.approval_status === 'rejected' ? '已退回' : '待提交审批'} ${c.file_url ? `· <a href="${salesEsc(c.file_url)}" target="_blank">查看原合同</a>` : ''}</p>
@@ -3736,7 +3795,7 @@ function legacyCopyFallback(value) {
           <div class="small">${ps.map((p) => `回款 ${salesMoney(p.amount_fen)} · ${paymentStatusLabel(p.status)} ${p.receipt_url ? `· <a href="${salesEsc(p.receipt_url)}" target="_blank">查看凭证</a>` : ''} ${p.status === 'pending' && ['super_admin','finance'].includes(role) ? `<button data-confirm-payment="${Number(p.id)}" class="ghost">确认到账</button>` : ''}`).join('<br>') || '暂无回款'}</div>
           <div class="small">${invs.map((i) => `发票 ${salesMoney(i.amount_fen)} · ${i.status === 'issued' ? '已开票' : '待开票'} ${i.invoice_no ? `· 发票号码 ${salesEsc(i.invoice_no)}` : ''}`).join('<br>') || '暂无开票记录'}</div></div>`;
       }).join('') || '<div class="small">尚未登记合同。</div>';
-      $('salesOrderContract').innerHTML = '<option value="">请选择已审批合同</option>' + (data.contracts || []).filter((c) => c.approval_status === 'approved').map((c) => `<option value="${Number(c.id)}">${salesEsc(c.contract_no)} · ${salesMoney(c.amount_fen)}</option>`).join('');
+      $('salesOrderContract').innerHTML = '<option value="">请选择已审批合同</option>' + contracts.filter((c) => c.approval_status === 'approved').map((c) => `<option value="${Number(c.id)}">${salesEsc(c.contract_no)} · ${salesMoney(c.amount_fen)}</option>`).join('');
       $('salesOrdersBox').innerHTML = (data.orders || []).map((o) => `<div class="glossary-item"><strong>${salesEsc(o.order_no)} · ${o.order_type === 'renewal' ? '续约' : '新开门店'} · ${salesEsc(o.store_name)}</strong><p>金额 ${salesMoney(o.amount_fen)} · ${o.status === 'finance_pending' ? '待财务审核' : o.status === 'paid' ? '已付款，正在开通' : o.status === 'credit_approved' ? '帐期审核通过，正在开通' : o.status === 'provisioned' ? `已开通 ${salesEsc(o.tenant_id)}` : o.status === 'returned' ? `已退回：${salesEsc(o.return_reason)}` : o.status}</p></div>`).join('') || '<div class="small">暂无订单。合同审批通过后，销售可为新店或续约门店提交订单。</div>';
       $('salesContractsBox').querySelectorAll('[data-submit-contract-approval]').forEach((btn) => btn.onclick = async () => { const card=btn.closest('[data-contract-id]'); await api(`/api/admin/sales/contracts/${card.dataset.contractId}/submit-approval`, {method:'POST',body:'{}'}); toast('已提交总经理审批'); await salesLoadCrmOverview(); });
       $('salesContractsBox').querySelectorAll('[data-approve-contract]').forEach((btn) => btn.onclick = async () => { const card=btn.closest('[data-contract-id]'); const payment=window.prompt('客户类型：请输入“现金”或“帐期”', '现金'); const isCredit=payment==='帐期'; const brand=window.prompt('授信主体品牌名称（连锁店填写品牌统一名称）', state.sales.currentLead?.company || ''); const credit=isCredit ? Number(window.prompt('总经理授信金额（元）', '0') || 0) : 0; await api(`/api/admin/sales/contracts/${card.dataset.contractId}/approve`, {method:'POST',body:JSON.stringify({payment_type:isCredit?'credit':'cash',brand_name:brand,credit_limit:credit})}); toast('合同审批及授信已完成'); await salesLoadCrmOverview(); });
@@ -4094,6 +4153,7 @@ function legacyCopyFallback(value) {
       const id = state.sales.selectedLeadId;
       if (!id) throw new Error('请先选择线索');
       const notes = $('salesVisitNotes').value.trim();
+      if (!notes) throw new Error('请填写本次跟进内容');
       const visitType = $('salesVisitType').value;
       const nextFollowupAt = $('salesVisitNextFollowupAt').value ? new Date($('salesVisitNextFollowupAt').value).toISOString() : undefined;
       const nextFollowupPlan = $('salesVisitNextFollowupPlan').value.trim();
@@ -4105,7 +4165,7 @@ function legacyCopyFallback(value) {
       $('salesVisitNotes').value = '';
       $('salesVisitNextFollowupAt').value = '';
       $('salesVisitNextFollowupPlan').value = '';
-      toast('拜访已记录');
+      toast('跟进记录已新增');
       await loadSalesVisits(id);
     }
 
@@ -4133,6 +4193,28 @@ function legacyCopyFallback(value) {
       ['legal_contact_name', '官方联系人姓名'], ['legal_contact_title', '官方联系人职位'], ['legal_contact_phone', '官方联系人电话'],
     ];
 
+    function normaliseSalesArray(value) {
+      if (Array.isArray(value)) return value;
+      try { const parsed = JSON.parse(value || '[]'); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+    }
+    function dossierBrands(lead) {
+      const brands = normaliseSalesArray(lead.customer_brands);
+      return brands.length ? brands : ((lead.pos_brand || lead.city || lead.store_count) ? [{ brand_name: lead.pos_brand || '待补充品牌', city: lead.city || '待补充城市', store_count: Number(lead.store_count || 1) }] : []);
+    }
+    function dossierContacts(lead) {
+      const contacts = normaliseSalesArray(lead.customer_contacts);
+      return contacts.length ? contacts : ((lead.name || lead.phone) ? [{ name: lead.name || '待补充联系人', title: lead.legal_contact_title || '待补充职位', phone: lead.phone || '待补充电话' }] : []);
+    }
+    function brandLines(lead) { return dossierBrands(lead).map((item) => `${item.brand_name || ''}|${item.city || ''}|${Number(item.store_count || 0)}`).join('\n'); }
+    function contactLines(lead) { return dossierContacts(lead).map((item) => `${item.name || ''}|${item.title || ''}|${item.phone || ''}`).join('\n'); }
+    function parseDossierLines(value, fields, labels) {
+      return String(value || '').split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+        const parts = line.split('|').map((part) => part.trim()); const item = {};
+        fields.forEach((field, index) => { item[field] = field === 'store_count' ? Math.max(0, Number(parts[index] || 0)) : (parts[index] || ''); });
+        return item;
+      }).filter((item) => fields.every((field) => field === 'store_count' ? item[field] > 0 : item[field]));
+    }
+
     function renderSalesDossier(lead) {
       const box = $('salesDossierBox');
       box.style.display = '';
@@ -4143,6 +4225,9 @@ function legacyCopyFallback(value) {
         </div>
         <div class="small">客户编号：${salesEsc(customerCode(lead))} · 来源：${customerOriginLabel(lead.customer_origin || lead.source_channel)}</div>
         <div class="small">跟进负责人：${salesEsc(lead.assigned_to || lead.owner_username || '待分配')}</div>
+        <div class="small"><strong>品牌与门店分布：</strong>${dossierBrands(lead).map((item) => `${salesEsc(item.brand_name)} · ${salesEsc(item.city)} · ${Number(item.store_count || 0)}店`).join('；') || '—'}</div>
+        <div class="small"><strong>联系人：</strong>${dossierContacts(lead).map((item) => `${salesEsc(item.name)}${item.title ? `（${salesEsc(item.title)}）` : ''}${item.phone ? ` ${salesEsc(item.phone)}` : ''}`).join('；') || '—'}</div>
+        <div class="small"><strong>拟申请商务条款：</strong>${lead.requested_payment_type === 'credit' ? `帐期客户 · ${Number(lead.requested_credit_days || 0)}天 · 申请授信 ¥${(Number(lead.requested_credit_limit_fen || 0) / 100).toFixed(2)}（以总经理审批为准）` : '现金客户（回款后开通；以合同审批为准）'}</div>
         ${SALES_DOSSIER_FIELDS.map(([key, label]) => `<div class="small">${label}：${salesEsc(lead[key] ?? '') || '—'}</div>`).join('')}
       `;
     }
@@ -4156,6 +4241,11 @@ function legacyCopyFallback(value) {
           ${SALES_DOSSIER_FIELDS.map(([key, label]) => `
             <label class="small">${label}<input data-dossier-field="${key}" value="${salesEsc(lead[key] ?? '')}"></label>
           `).join('')}
+          <label class="small" style="grid-column:1/-1">品牌、城市、门店数量（每行：品牌｜城市｜门店数）<textarea data-dossier-lines="brands" rows="3">${salesEsc(brandLines(lead))}</textarea></label>
+          <label class="small" style="grid-column:1/-1">联系人（每行：姓名｜职位｜电话）<textarea data-dossier-lines="contacts" rows="3">${salesEsc(contactLines(lead))}</textarea></label>
+          <label class="small">拟申请客户性质<select data-dossier-field="requested_payment_type"><option value="cash" ${lead.requested_payment_type !== 'credit' ? 'selected' : ''}>现金客户</option><option value="credit" ${lead.requested_payment_type === 'credit' ? 'selected' : ''}>帐期客户</option></select></label>
+          <label class="small">拟申请账期（天）<input data-dossier-field="requested_credit_days" type="number" min="0" value="${Number(lead.requested_credit_days || 0)}"></label>
+          <label class="small">拟申请授信金额（元）<input data-dossier-field="requested_credit_limit_yuan" type="number" min="0" step="0.01" value="${(Number(lead.requested_credit_limit_fen || 0) / 100).toFixed(2)}"></label>
         </div>
         <div class="toolbar" style="margin-top:8px">
           <button type="button" class="secondary small" id="salesDossierSaveBtn">保存</button>
@@ -4165,8 +4255,14 @@ function legacyCopyFallback(value) {
       $('salesDossierSaveBtn').onclick = async () => {
         const payload = {};
         box.querySelectorAll('[data-dossier-field]').forEach((input) => {
-          payload[input.dataset.dossierField] = input.value.trim();
+          if (input.dataset.dossierField === 'requested_credit_limit_yuan') payload.requested_credit_limit_fen = Math.round(Number(input.value || 0) * 100);
+          else payload[input.dataset.dossierField] = input.value.trim();
         });
+        payload.customer_brands = parseDossierLines(box.querySelector('[data-dossier-lines="brands"]').value, ['brand_name', 'city', 'store_count']);
+        payload.customer_cities = [...new Set(payload.customer_brands.map((item) => item.city))];
+        payload.customer_contacts = parseDossierLines(box.querySelector('[data-dossier-lines="contacts"]').value, ['name', 'title', 'phone']);
+        if (!payload.customer_brands.length) { toast('请至少保留一个完整的品牌、城市和门店数量'); return; }
+        if (!payload.customer_contacts.length) { toast('请至少保留一位完整联系人（姓名、职位、电话）'); return; }
         const id = state.sales.selectedLeadId;
         const data = await api(`/api/admin/sales/leads/${id}/dossier`, { method: 'PUT', body: JSON.stringify(payload) });
         if (!data.ok) { toast(data.message || data.error || '保存失败'); return; }
