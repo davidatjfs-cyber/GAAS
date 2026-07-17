@@ -45,6 +45,7 @@ import {
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE, FORBIDDEN_CLAIMS } from './services/sales/sales-knowledge.js';
 import { listKnowledgeItemsAdmin, upsertKnowledgeItem, deleteKnowledgeItem } from './services/sales/sales-knowledge-store.js';
 import { listSendableContentAssets, sendContentAssetToLead } from './services/sales/sales-content-delivery.js';
+import { getCreditRisk } from './services/sales/sales-credit-risk.js';
 import { buildLeadSummary, calculateSla } from './services/sales/sales-collaboration-service.js';
 import { recordStageChange, transitionLeadStage } from './services/sales/sales-store.js';
 import { runSalesSlaScan } from './services/sales/sales-sla-service.js';
@@ -149,6 +150,10 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   const managerGate = typeof requireSalesManagerOrAbove === 'function' ? requireSalesManagerOrAbove : (_req, _res, next) => next();
   const financeGate = (req, res, next) => {
     if (!['super_admin', 'finance'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden', message: '仅财务或超级管理员可确认回款' });
+    next();
+  };
+  const generalManagerGate = (req, res, next) => {
+    if (!['super_admin', 'general_manager'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden', message: '仅总经理可授信或解锁客户' });
     next();
   };
   if (typeof callLLM === 'function') {
@@ -490,6 +495,31 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       if (!p.rows?.[0]) return res.status(409).json({ ok: false, error: 'payment_not_pending' });
       res.json({ ok: true, payment: p.rows[0] });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.get('/api/admin/sales/leads/:id/credit-risk', platformAdminRequired, async (req, res) => {
+    try {
+      const lead = await getLead(pool, Number(req.params.id));
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      res.json(await getCreditRisk(pool, lead.id));
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.put('/api/admin/sales/leads/:id/credit-risk', platformAdminRequired, generalManagerGate, async (req, res) => {
+    try {
+      const lead = await getLead(pool, Number(req.params.id));
+      if (!lead) return res.status(404).json({ ok: false, error: 'not_found' });
+      const paymentType = String(req.body?.payment_type || '').trim();
+      const limitFen = Math.round(Number(req.body?.credit_limit || 0) * 100);
+      if (!['cash', 'credit'].includes(paymentType) || (paymentType === 'credit' && limitFen <= 0)) return res.status(400).json({ ok: false, error: 'invalid_credit_terms' });
+      const r = await pool.query(
+        `INSERT INTO sales_credit_accounts (lead_id,payment_type,credit_limit_fen,status,approved_by,approved_at,lock_reason)
+         VALUES ($1,$2,$3,'active',$4,NOW(),NULL)
+         ON CONFLICT (lead_id) DO UPDATE SET payment_type=EXCLUDED.payment_type,credit_limit_fen=EXCLUDED.credit_limit_fen,status='active',approved_by=EXCLUDED.approved_by,approved_at=NOW(),lock_reason=NULL,updated_at=NOW()
+         RETURNING *`, [lead.id, paymentType, paymentType === 'cash' ? 0 : limitFen, req.platformAdmin.username]
+      );
+      res.json({ ok: true, account: r.rows[0], risk: await getCreditRisk(pool, lead.id) });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
   });
 
   app.get('/api/admin/sales/leads/:id/delivery', platformAdminRequired, async (req, res) => {
@@ -1016,15 +1046,10 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       if (!leadForDeal || !canAccessLead(req.platformAdmin, leadForDeal)) return res.status(404).json({ ok: false, error: 'not_found' });
       if (req.body?.provision_tenant !== false) {
         if (req.platformAdmin?.role !== 'super_admin') return res.status(403).json({ ok: false, error: 'provision_requires_super_admin' });
-        const paid = await pool.query(
-          `SELECT c.id FROM sales_contracts c
-             JOIN sales_payments p ON p.contract_id=c.id AND p.status='confirmed'
-            WHERE c.lead_id=$1 AND c.status='effective'
-            GROUP BY c.id,c.amount_fen
-           HAVING COALESCE(SUM(p.amount_fen),0) >= c.amount_fen
-            LIMIT 1`, [leadId]
-        );
-        if (!paid.rows?.[0]) return res.status(409).json({ ok: false, error: 'effective_contract_and_confirmed_payment_required' });
+        const effectiveContract = await pool.query(`SELECT 1 FROM sales_contracts WHERE lead_id=$1 AND status='effective' LIMIT 1`, [leadId]);
+        if (!effectiveContract.rows?.[0]) return res.status(409).json({ ok: false, error: 'effective_contract_required' });
+        const creditRisk = await getCreditRisk(pool, leadId);
+        if (!creditRisk.can_provision) return res.status(409).json({ ok: false, error: creditRisk.payment_type === 'cash' ? 'confirmed_payment_required' : 'credit_limit_exceeded_or_not_authorized', credit_risk: creditRisk });
       }
       if (req.body?.opportunity_id) {
         await addOpportunity(pool, { leadId, title: '成交机会', stage: 'won', amount: req.body?.amount, createdBy: req.platformAdmin?.username });

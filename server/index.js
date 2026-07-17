@@ -14188,6 +14188,24 @@ app.post('/api/stores', authRequired, async (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'missing_name' });
 
+  // 帐期客户欠款超授信时，冻结“自动新增门店”能力；总经理重新授信后由风控表解除。
+  // 单租户本地环境没有关联销售线索时不受该规则影响。
+  try {
+    const tenantId = resolveTenantIdDefault();
+    const risk = await pool.query(
+      `SELECT ca.status FROM sales_credit_accounts ca
+        JOIN sales_leads sl ON sl.id=ca.lead_id
+       WHERE sl.tenant_id=$1 AND ca.payment_type='credit'
+       ORDER BY ca.updated_at DESC LIMIT 1`, [tenantId]
+    );
+    if (risk.rows?.[0]?.status === 'locked') {
+      return res.status(423).json({ error: 'credit_account_locked', message: '该客户欠款已超过授信额度，账户已锁定新增门店；请联系总经理重新授信。' });
+    }
+  } catch (e) {
+    console.error('[/api/stores] credit risk check failed:', e?.message || e);
+    return res.status(500).json({ error: 'server_error', message: 'credit_risk_check_failed' });
+  }
+
   // 门店按数量计费：建店前先核对已购买的门店数量上限，避免租户绕过收费无限建店。
   try {
     const licenseR = await pool.query(
