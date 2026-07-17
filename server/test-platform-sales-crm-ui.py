@@ -73,6 +73,12 @@ for username, role, name in [
     }, super_token, expected=(200, 409))
     assert result.get("ok") or result.get("error") == "username_taken"
 
+call("/api/admin/sales/regions", "POST", {"region_code": "east_china", "region_name": "华东区"}, super_token)
+call("/api/admin/sales/reps", "POST", {
+    "rep_key": "e2e_sales", "display_name": "E2E销售", "role": "sales",
+    "region_code": "east_china", "region_name": "华东区", "wecom_qr_asset_id": qr_asset["asset"]["id"]
+}, super_token)
+
 sandbox = call("/api/admin/sales/sandbox/chat", "POST", {
     "external_userid": "e2e_crm_customer", "text": "我是测试餐饮公司，有三家门店，想了解系统。"
 }, super_token)
@@ -81,6 +87,7 @@ call(f"/api/admin/sales/leads/{lead_id}/assign", "POST", {"username": "e2e_sales
 
 sales_login = call("/api/admin/auth/login", "POST", {"username": "e2e_sales", "password": "E2ePassw0rd!"})
 sales_token = sales_login["token"]
+call(f"/api/admin/sales/leads/{lead_id}/dossier", "PUT", {"region_code": "east_china", "region_name": "华东区", "city": "上海"}, sales_token)
 leads = call("/api/admin/sales/leads?limit=20", token=sales_token)
 assert any(int(x["id"]) == int(lead_id) for x in leads["leads"])
 call("/api/admin/tenants", token=sales_token, expected=403)
@@ -132,6 +139,9 @@ assert any(int(x["id"]) == int(payment["id"]) for x in call("/api/admin/sales/fi
 assert any(int(x["id"]) == int(invoice["id"]) for x in call("/api/admin/sales/finance/pending-invoices", token=finance_token)["items"])
 call(f"/api/admin/sales/payments/{payment['id']}/confirm", "POST", {}, finance_token)
 call(f"/api/admin/sales/invoices/{invoice['id']}/issued", "PATCH", {"invoice_no": f"INV-{invoice['id']}"}, finance_token)
+region_performance = call("/api/admin/sales/performance/by-region", token=gm_token)["regions"]
+east = next(x for x in region_performance if x["region_code"] == "east_china")
+assert east["lead_count"] >= 1 and int(east["paid_fen"]) >= 10000
 call(f"/api/admin/sales/contracts/{contract_id}/payments", "POST", {"amount": 50}, sales_token)
 call(f"/api/admin/sales/contracts/{contract_id}/invoices", "POST", {"amount": 50}, sales_token)
 

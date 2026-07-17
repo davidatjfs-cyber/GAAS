@@ -66,11 +66,11 @@ export async function listSalesReps(pool, { status } = {}) {
   }
 }
 
-export async function createOrUpdateSalesRep(pool, { repKey, displayName, role, status, hireDate, wecomName, wecomQrAssetId }) {
+export async function createOrUpdateSalesRep(pool, { repKey, displayName, role, status, hireDate, wecomName, wecomQrAssetId, regionCode, regionName }) {
   try {
     const r = await pool.query(
-      `INSERT INTO sales_reps (rep_key, display_name, role, status, hire_date, wecom_name, wecom_qr_asset_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO sales_reps (rep_key, display_name, role, status, hire_date, wecom_name, wecom_qr_asset_id, region_code, region_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (rep_key) DO UPDATE SET
          display_name = EXCLUDED.display_name,
          role = COALESCE(EXCLUDED.role, sales_reps.role),
@@ -78,9 +78,11 @@ export async function createOrUpdateSalesRep(pool, { repKey, displayName, role, 
          hire_date = COALESCE(EXCLUDED.hire_date, sales_reps.hire_date),
          wecom_name = COALESCE(EXCLUDED.wecom_name, sales_reps.wecom_name),
          wecom_qr_asset_id = COALESCE(EXCLUDED.wecom_qr_asset_id, sales_reps.wecom_qr_asset_id),
+         region_code = COALESCE(EXCLUDED.region_code, sales_reps.region_code),
+         region_name = COALESCE(EXCLUDED.region_name, sales_reps.region_name),
          updated_at = NOW()
        RETURNING *`,
-      [repKey, displayName, role || 'sales', status || 'active', hireDate || null, wecomName || null, wecomQrAssetId || null]
+      [repKey, displayName, role || 'sales', status || 'active', hireDate || null, wecomName || null, wecomQrAssetId || null, regionCode || null, regionName || null]
     );
     return r.rows?.[0] || null;
   } catch (e) {

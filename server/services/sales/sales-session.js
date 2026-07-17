@@ -361,7 +361,10 @@ export async function handleInboundMessage(pool, {
         `SELECT r.rep_key FROM sales_reps r
           LEFT JOIN sales_leads l ON (l.assigned_to=r.rep_key OR l.owner_username=r.rep_key) AND l.stage NOT IN ('won','lost','unfit')
          WHERE r.status='active' AND r.role IN ('sales','sales_manager')
-         GROUP BY r.id,r.rep_key ORDER BY COUNT(l.id) ASC,r.id ASC LIMIT 1`
+         GROUP BY r.id,r.rep_key,r.region_code
+         ORDER BY CASE WHEN $1::text IS NOT NULL AND r.region_code=$1 THEN 0 WHEN r.region_code IS NULL THEN 1 ELSE 2 END,
+                  COUNT(l.id) ASC,r.id ASC LIMIT 1`,
+        [handoffLead.region_code || null]
       ).catch(() => ({ rows: [] }));
       if (rep.rows?.[0]?.rep_key) {
         await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=NOW(),updated_at=NOW() WHERE id=$1 AND assigned_to IS NULL`, [lead.id, rep.rows[0].rep_key]);

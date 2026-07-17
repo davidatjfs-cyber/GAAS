@@ -816,7 +816,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   // 手动修正/补录的入口。这里只开放"客户档案"类字段(基础信息+营业执照/开票/联系人)，
   // 不允许通过这个接口改stage/controller/intent_score这些由AI/销售流程自动维护的字段。
   const LEAD_DOSSIER_FIELDS = [
-    'name', 'company', 'phone', 'city', 'cuisine', 'store_count', 'pos_brand',
+    'name', 'company', 'phone', 'city', 'region_code', 'region_name', 'cuisine', 'store_count', 'pos_brand',
     'legal_company_name', 'unified_credit_code', 'registered_address', 'company_size', 'website',
     'invoice_title', 'invoice_tax_no', 'invoice_bank_name', 'invoice_bank_account',
     'legal_contact_name', 'legal_contact_title', 'legal_contact_phone',
@@ -1462,6 +1462,27 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
+  app.get('/api/admin/sales/regions', platformAdminRequired, async (_req, res) => {
+    try {
+      const r = await pool.query(`SELECT * FROM sales_regions WHERE active=true ORDER BY sort_order,region_name`);
+      res.json({ ok: true, regions: r.rows });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.post('/api/admin/sales/regions', platformAdminRequired, managerGate, async (req, res) => {
+    try {
+      const code = String(req.body?.region_code || '').trim();
+      const name = String(req.body?.region_name || '').trim();
+      if (!code || !name || !/^[A-Za-z0-9_-]{1,40}$/.test(code)) return res.status(400).json({ ok: false, error: 'invalid_region' });
+      const r = await pool.query(
+        `INSERT INTO sales_regions (region_code,region_name,active) VALUES ($1,$2,true)
+         ON CONFLICT (region_code) DO UPDATE SET region_name=EXCLUDED.region_name,active=true,updated_at=NOW() RETURNING *`,
+        [code, name]
+      );
+      res.json({ ok: true, region: r.rows[0] });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
   app.post('/api/admin/sales/reps', platformAdminRequired, managerGate, async (req, res) => {
     try {
       const rep = await createOrUpdateSalesRep(pool, {
@@ -1472,11 +1493,39 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         hireDate: req.body?.hire_date,
         wecomName: req.body?.wecom_name,
         wecomQrAssetId: req.body?.wecom_qr_asset_id ? Number(req.body.wecom_qr_asset_id) : null,
+        regionCode: req.body?.region_code,
+        regionName: req.body?.region_name,
       });
       res.json({ ok: true, rep });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
+  });
+
+  app.get('/api/admin/sales/performance/by-region', platformAdminRequired, async (req, res) => {
+    try {
+      if (!isManager(req.platformAdmin)) return res.status(403).json({ ok: false, error: 'manager_required' });
+      const scope = leadScopeSql(req.platformAdmin, 1);
+      const r = await pool.query(
+        `WITH scoped AS (
+           SELECT l.id,l.stage,
+                  COALESCE(l.region_code,rep.region_code,'unassigned') AS region_code,
+                  COALESCE(l.region_name,rep.region_name,'未分区域') AS region_name,
+                  COALESCE((SELECT SUM(c.amount_fen) FROM sales_contracts c WHERE c.lead_id=l.id AND c.status='effective'),0) AS contract_fen,
+                  COALESCE((SELECT SUM(p.amount_fen) FROM sales_payments p JOIN sales_contracts c ON c.id=p.contract_id WHERE c.lead_id=l.id AND p.status='confirmed'),0) AS paid_fen
+             FROM sales_leads l
+             LEFT JOIN sales_reps rep ON rep.rep_key=COALESCE(l.assigned_to,l.owner_username)
+            WHERE ${scope.clause}
+         )
+         SELECT region_code,MAX(region_name) AS region_name,COUNT(*)::int AS lead_count,
+                COUNT(*) FILTER (WHERE stage='won')::int AS won_count,
+                COALESCE(SUM(contract_fen),0)::bigint AS contract_fen,
+                COALESCE(SUM(paid_fen),0)::bigint AS paid_fen
+           FROM scoped GROUP BY region_code ORDER BY paid_fen DESC,lead_count DESC`,
+        scope.params
+      );
+      res.json({ ok: true, regions: r.rows });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
   });
 
   app.get('/api/admin/sales/reps/:id/activity', platformAdminRequired, async (req, res) => {
