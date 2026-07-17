@@ -75,7 +75,8 @@ export async function runNurtureCadence(pool) {
     let autoSent = false;
     if (lead.auto_nurture_enabled && lead.open_kfid && lead.external_userid) {
       const assets = await listSendableContentAssets(pool, { limit: 50 }).catch(() => []);
-      const approved = assets.find((asset) => asset.auto_send_allowed && (asset.content_type === 'text' || asset.content_type === 'link' || asset.content_type === 'qr'));
+      const approved = assets.find((asset) => asset.auto_send_allowed && Number(asset.nurture_step || 0) === Number(nextStep.step))
+        || assets.find((asset) => asset.auto_send_allowed && asset.nurture_step == null);
       if (approved) {
         try {
           await sendContentAssetToLead(pool, lead, approved, { deliveryType: 'ai_nurture', sentBy: 'customer_ai' });

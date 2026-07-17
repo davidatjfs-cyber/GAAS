@@ -8,6 +8,7 @@ import { createEmptyTenantState } from '../tenant-login.js';
 import { startOnboarding } from './tenant-onboarding-service.js';
 import { upsertCustomer } from '../growth-api.js';
 import { getLead, addEvent } from './sales/sales-store.js';
+import { getCreditRisk } from './sales/sales-credit-risk.js';
 
 const DEFAULT_PROFILE = {
   system_name: 'GAAS 增长平台',
@@ -81,6 +82,12 @@ export async function provisionTenantFromLead(pool, leadId, {
   if (!lead) return { ok: false, error: 'lead_not_found' };
   if (lead.tenant_id && lead.provision_status === 'done') {
     return { ok: true, already: true, tenant_id: lead.tenant_id, provision_status: 'done' };
+  }
+  const effectiveContract = await pool.query(`SELECT 1 FROM sales_contracts WHERE lead_id=$1 AND status='effective' LIMIT 1`, [leadId]);
+  if (!effectiveContract.rows?.[0]) return { ok: false, error: 'effective_contract_required' };
+  const creditRisk = await getCreditRisk(pool, leadId);
+  if (!creditRisk.can_provision) {
+    return { ok: false, error: creditRisk.payment_type === 'cash' ? 'confirmed_payment_required' : 'credit_limit_exceeded_or_not_authorized', credit_risk: creditRisk };
   }
 
   let tenantId = lead.tenant_id;
@@ -182,7 +189,7 @@ export async function provisionTenantFromLead(pool, leadId, {
       [leadId, tenantId, growthCustomerId, allDone ? 'done' : 'partial', JSON.stringify(provisionMeta)]
     );
     await pool.query(
-      `UPDATE sales_deals SET tenant_id=$2, provision_status=$3, provision_meta=$4::jsonb, updated_at=NOW()
+      `UPDATE sales_deals SET tenant_id=$2, provision_status=$3, provision_meta=$4::jsonb
         WHERE lead_id=$1 AND tenant_id IS NULL`,
       [leadId, tenantId, allDone ? 'done' : 'partial', JSON.stringify(provisionMeta)]
     );
@@ -197,11 +204,22 @@ export async function provisionTenantFromLead(pool, leadId, {
 
   // 已开通的客户自动进入交付项目；这里不把“开通”伪装成“已交付”，客服/实施必须逐步推进。
   if (allDone) {
+    const owners = await pool.query(
+      `SELECT role, username FROM platform_admins
+        WHERE status='active' AND role IN ('customer_service','implementation')
+        ORDER BY role, username`
+    ).catch(() => ({ rows: [] }));
+    const csOwner = owners.rows.find((row) => row.role === 'customer_service')?.username || null;
+    const implementationOwner = owners.rows.find((row) => row.role === 'implementation')?.username || null;
+    const scopeOwner = csOwner || implementationOwner;
+    if (scopeOwner) {
+      await pool.query(`UPDATE sales_leads SET cs_owner_username=COALESCE(cs_owner_username,$2),updated_at=NOW() WHERE id=$1`, [leadId, scopeOwner]);
+    }
     await pool.query(
-      `INSERT INTO sales_delivery_projects (lead_id, tenant_id, status, created_at, updated_at)
-       VALUES ($1,$2,'pending',NOW(),NOW())
-       ON CONFLICT (lead_id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id, updated_at=NOW()`,
-      [leadId, tenantId]
+      `INSERT INTO sales_delivery_projects (lead_id, tenant_id, status, cs_owner, implementation_owner, created_at, updated_at)
+       VALUES ($1,$2,'pending',$3,$4,NOW(),NOW())
+       ON CONFLICT (lead_id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,cs_owner=COALESCE(sales_delivery_projects.cs_owner,EXCLUDED.cs_owner),implementation_owner=COALESCE(sales_delivery_projects.implementation_owner,EXCLUDED.implementation_owner),updated_at=NOW()`,
+      [leadId, tenantId, csOwner, implementationOwner]
     ).catch((e) => console.warn('[sales-provision] delivery project creation failed:', e?.message || e));
   }
 
@@ -225,6 +243,22 @@ export async function provisionTenantFromLead(pool, leadId, {
     needs_retry: !allDone,
     failed_steps: failedSteps,
   };
+}
+
+/** 最终交付时生成一次性凭据；明文只返回本次调用，不写入销售表或日志。 */
+export async function rotateTenantAdminCredentials(pool, leadId) {
+  const lead = await getLead(pool, leadId);
+  if (!lead?.tenant_id || lead.provision_status !== 'done') return { ok: false, error: 'tenant_not_ready' };
+  const username = lead.provision_meta?.admin_username;
+  if (!username) return { ok: false, error: 'admin_username_missing' };
+  const password = genTempPassword();
+  const hash = await bcrypt.hash(password, 10);
+  const r = await pool.query(
+    `UPDATE users SET password_hash=$3 WHERE tenant_id=$1 AND username=$2 AND role='admin' RETURNING username,real_name`,
+    [lead.tenant_id, username, hash]
+  );
+  if (!r.rows?.[0]) return { ok: false, error: 'tenant_admin_not_found' };
+  return { ok: true, tenant_id: lead.tenant_id, username, temp_password: password };
 }
 
 /** 后台巡检用：找出"租户已创建但销售侧收尾未完成"的记录，供人工或定时任务重试 */

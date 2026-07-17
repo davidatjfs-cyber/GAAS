@@ -8,7 +8,7 @@
  *   customer_service / implementation → 只看 cs_owner_username=自己 的线索/租户(需显式分配，不给默认可见)
  */
 
-const MANAGER_ROLES = new Set(['super_admin', 'sales_manager']);
+const MANAGER_ROLES = new Set(['super_admin', 'general_manager', 'sales_manager']);
 
 function isManager(admin) {
   return MANAGER_ROLES.has(admin?.role || '');

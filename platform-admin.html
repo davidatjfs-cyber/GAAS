@@ -351,15 +351,15 @@
     <header class="app-header card">
       <div class="header-top">
         <div>
-          <h1>平台租户控制台</h1>
-          <div class="sub">管理租户开通、许可证、飞书、品牌外观与自动验收</div>
+          <h1 id="workspaceTitle">平台租户控制台</h1>
+          <div class="sub" id="workspaceSubtitle">管理租户开通、许可证、飞书、品牌外观与自动验收</div>
         </div>
-        <div class="header-links">
+        <div class="header-links" id="platformHeaderLinks">
           <a href="/agents-admin/" onclick="event.preventDefault(); window.open(withHrmsToken(agentsAdminBase() + '/agents-admin/'), '_blank', 'noopener')" target="_blank" rel="noreferrer">Agent</a>
           <a href="/api/health" target="_blank" rel="noreferrer">健康</a>
         </div>
       </div>
-      <div class="stats-row">
+      <div class="stats-row" id="tenantStatsRow">
         <div class="stat"><div class="label">租户总数</div><div id="statTotal" class="value">0</div></div>
         <div class="stat"><div class="label">已激活</div><div id="statActive" class="value">0</div></div>
         <div class="stat"><div class="label">已配置飞书</div><div id="statFeishu" class="value">0</div></div>
@@ -523,7 +523,7 @@
           </div>
           <span id="salesKfStatus" class="pill">未加载</span>
         </div>
-        <div class="toolbar">
+        <div class="toolbar" id="salesMainToolbar">
           <label style="margin:0">阶段
             <select id="salesStageFilter" style="width:auto;min-width:120px;padding:8px 10px">
               <option value="">全部</option>
@@ -563,12 +563,15 @@
           <button type="button" id="salesCasesBtn" class="ghost">案例库</button>
           <button type="button" id="salesTrainingBtn" class="ghost">话术训练</button>
           <button type="button" id="salesKnowledgeBtn" class="ghost">知识库编辑</button>
+          <button type="button" id="salesContentCenterBtn" class="ghost">客户资料中心</button>
           <button type="button" id="salesPerformanceBtn" class="ghost">销售业绩</button>
           <button type="button" id="salesCommissionBtn" class="ghost">提成</button>
         </div>
+        <div id="salesFinanceBox" class="hint-box" style="display:none"></div>
         <div id="salesBossDashBox" class="hint-box" style="display:none"></div>
         <div id="salesCasesBox" class="hint-box" style="display:none;max-height:240px;overflow:auto"></div>
         <div id="salesKnowledgeBox" class="hint-box" style="display:none;max-height:400px;overflow:auto"></div>
+        <div id="salesContentCenterBox" class="hint-box" style="display:none;max-height:520px;overflow:auto"></div>
         <div id="salesTrainingBox" class="hint-box" style="display:none"></div>
         <div id="salesReportBox" class="hint-box" style="display:none;white-space:pre-wrap"></div>
         <div id="salesFunnelBox" class="hint-box" style="display:none"></div>
@@ -577,7 +580,7 @@
         <div id="salesTodoBox" class="hint-box" style="display:none"></div>
         <div id="salesPerformanceBox" class="hint-box" style="display:none;max-height:400px;overflow:auto"></div>
         <div id="salesCommissionBox" class="hint-box" style="display:none;max-height:400px;overflow:auto"></div>
-        <div class="table-scroll">
+        <div class="table-scroll" id="salesLeadsTable">
           <table>
             <thead>
               <tr>
@@ -631,14 +634,18 @@
           <div id="salesContentDeliveryHint" class="small"></div>
         </div>
         <div class="hint-box" style="margin-top:8px">
-          <strong>合同、回款与开通</strong>
-          <div class="small" style="margin:4px 0 8px">开通租户前必须有已生效合同和财务已确认的足额回款。销售只能登记，财务确认后才可进入开通。</div>
-          <div class="toolbar">
-            <button type="button" id="salesCreateContractBtn" class="secondary">登记合同</button>
-            <button type="button" id="salesRecordPaymentBtn" class="secondary">登记回款</button>
-            <button type="button" id="salesConfirmPaymentBtn" class="secondary">财务确认回款</button>
+          <div class="section-title"><strong>合同、回款、授信与交付</strong><button type="button" id="salesRefreshCrmBtn" class="ghost">刷新</button></div>
+          <div class="small" style="margin:4px 0 8px">系统自动判断是否允许开通：现金客户须足额回款；帐期客户须合同生效且未超过总经理授信。</div>
+          <div class="detail-grid">
+            <label class="field">合同编号<input id="salesContractNo" placeholder="例如 NNYX-2026-001"></label>
+            <label class="field">合同金额（元）<input id="salesContractAmount" type="number" min="0" step="0.01"></label>
+            <label class="field">合同文件（PDF/Word/图片）<input id="salesContractFile" type="file" accept=".pdf,.doc,.docx,image/*"><input id="salesContractFileUrl" type="hidden"></label>
+            <div class="field"><span>操作</span><button type="button" id="salesCreateContractBtn" class="secondary">登记合同</button></div>
           </div>
-          <div id="salesContractHint" class="small"></div>
+          <div id="salesCreditBox" class="small" style="margin-top:8px"></div>
+          <div id="salesContractsBox" class="stack" style="margin-top:8px"></div>
+          <div id="salesDeliveryBox" class="small" style="margin-top:8px"></div>
+          <div id="salesContractHint" class="small" style="margin-top:6px"></div>
         </div>
         <div id="salesEvents" class="small"></div>
         <div style="margin-top:8px">
@@ -671,7 +678,7 @@
         </div>
       </div>
 
-      <div class="card stack">
+      <div class="card stack" id="salesAssistantCard">
         <div class="section-title">
           <strong>销售大管家</strong>
           <span class="small">内部对话助手：查客户、漏斗、风险、跟进建议（不对客户说话）</span>
@@ -683,7 +690,7 @@
         </div>
       </div>
 
-      <div class="card stack">
+      <div class="card stack" id="salesSandboxCard">
         <div class="section-title">
           <strong>沙盒试聊</strong>
           <span class="small">不依赖微信客服，验证客户 AI 策略与转人工</span>
@@ -934,7 +941,10 @@
         <label class="field">角色<select id="newAccountRole">
           <option value="sales">销售</option>
           <option value="customer_service">客服</option>
+          <option value="implementation">实施</option>
+          <option value="finance">财务</option>
           <option value="sales_manager">销售经理</option>
+          <option value="general_manager">总经理（授信与销售全局）</option>
           <option value="super_admin">超级管理员（可看到租户开通/系统配置）</option>
         </select></label>
       </div>
@@ -1324,16 +1334,39 @@ function legacyCopyFallback(value) {
     // 只有super_admin能看到——真正的安全边界是后端requireSuperAdmin，这里只是
     // 前端体验层面不让销售/客服/销售经理这几种角色的账号误触/看到不该看的入口。
     const SUPER_ADMIN_ONLY_PANELS = ['tenants', 'create', 'config', 'log'];
+    const ROLE_PANEL_ALLOWLIST = {
+      sales: ['sales'], sales_manager: ['sales'], finance: ['sales'], general_manager: ['sales'],
+      customer_service: ['sales', 'onboarding', 'faq', 'demand'], implementation: ['sales', 'onboarding', 'faq', 'demand'],
+    };
     function applyRoleBasedNav() {
       const acc = getAccount();
-      const isSuperAdmin = !acc || acc.role === 'super_admin'; // 兼容老account对象没有role字段的情况
+      const dedicatedSalesEntry = location.pathname === '/sales-crm' || location.pathname === '/sales-crm/';
+      const isSuperAdmin = acc ? (!acc.role || acc.role === 'super_admin') : !dedicatedSalesEntry;
+      const allowed = isSuperAdmin ? null : (ROLE_PANEL_ALLOWLIST[acc?.role] || ['sales']);
       document.querySelectorAll('#topTabs button, #bottomNav button').forEach((btn) => {
-        if (SUPER_ADMIN_ONLY_PANELS.includes(btn.dataset.panel)) {
-          btn.style.display = isSuperAdmin ? '' : 'none';
-        }
+        btn.style.display = isSuperAdmin || allowed.includes(btn.dataset.panel) ? '' : 'none';
       });
-      if (!isSuperAdmin && SUPER_ADMIN_ONLY_PANELS.includes(state.activePanel)) {
+      if (!isSuperAdmin && !allowed.includes(state.activePanel)) {
         switchPanel('sales');
+      }
+      $('accountsPanel').style.display = isSuperAdmin && state.activePanel === 'config' ? '' : 'none';
+      const managerUi = isSuperAdmin || ['general_manager','sales_manager'].includes(acc?.role);
+      if ($('salesContentCenterBtn')) $('salesContentCenterBtn').style.display = managerUi ? '' : 'none';
+      if ($('salesKnowledgeBtn')) $('salesKnowledgeBtn').style.display = managerUi ? '' : 'none';
+      $('tenantStatsRow').style.display = isSuperAdmin ? '' : 'none';
+      $('selectedTenantBar').style.display = isSuperAdmin ? '' : 'none';
+      $('platformHeaderLinks').style.display = isSuperAdmin ? '' : 'none';
+      $('reloadBtn').style.display = isSuperAdmin ? '' : 'none';
+      $('manageAccountsBtn').style.display = isSuperAdmin ? '' : 'none';
+      if (isSuperAdmin) {
+        $('workspaceTitle').textContent = '平台租户控制台';
+        $('workspaceSubtitle').textContent = '管理租户开通、许可证、飞书、品牌外观与自动验收';
+      } else if (['customer_service','implementation'].includes(acc?.role)) {
+        $('workspaceTitle').textContent = '上海年年有喜客户交付工作台';
+        $('workspaceSubtitle').textContent = '客户上线、数据导入、经营诊断、系统配置、验收与使用辅导';
+      } else {
+        $('workspaceTitle').textContent = '上海年年有喜销售 CRM';
+        $('workspaceSubtitle').textContent = '从客户 AI 线索到签约、回款、授信、开票与交付的完整闭环';
       }
     }
 
@@ -2829,8 +2862,12 @@ function legacyCopyFallback(value) {
         renderAuthUI();
         toast(`登录成功：${data.admin?.username}`);
         log(`登录成功：${data.admin?.username}`);
-        switchPanel('overview');
-        await loadTenants();
+        if (data.admin?.role === 'super_admin') {
+          switchPanel('overview');
+          await loadTenants();
+        } else {
+          switchPanel((ROLE_PANEL_ALLOWLIST[data.admin?.role] || ['sales'])[0]);
+        }
       } catch (e) {
         log(`登录失败：${e.message}`);
       }
@@ -2983,6 +3020,7 @@ function legacyCopyFallback(value) {
     $('salesCasesBtn').onclick = () => loadSalesCases().catch((e) => toast(e.message));
     $('salesTrainingBtn').onclick = () => loadSalesTraining().catch((e) => toast(e.message));
     $('salesKnowledgeBtn').onclick = () => loadSalesKnowledge().catch((e) => toast(e.message));
+    $('salesContentCenterBtn').onclick = () => loadSalesContentCenter().catch((e) => toast(e.message));
     $('salesPerformanceBtn').onclick = () => loadSalesPerformance().catch((e) => toast(e.message));
     $('salesCommissionBtn').onclick = () => loadSalesCommission().catch((e) => toast(e.message));
     $('salesRecordVisitBtn').onclick = () => salesRecordVisit().catch((e) => toast(e.message));
@@ -3006,8 +3044,7 @@ function legacyCopyFallback(value) {
     $('salesSendContentBtn').onclick = () => salesSendContentAsset().catch((e) => toast(e.message));
     $('salesSaveAutoNurtureBtn').onclick = () => salesSaveAutoNurture().catch((e) => toast(e.message));
     $('salesCreateContractBtn').onclick = () => salesCreateContract().catch((e) => toast(e.message));
-    $('salesRecordPaymentBtn').onclick = () => salesRecordPayment().catch((e) => toast(e.message));
-    $('salesConfirmPaymentBtn').onclick = () => salesConfirmPayment().catch((e) => toast(e.message));
+    $('salesRefreshCrmBtn').onclick = () => salesLoadCrmOverview().catch((e) => toast(e.message));
     $('salesAssistantSendBtn').onclick = () => salesAssistantChat().catch((e) => toast(e.message));
     $('salesAssistantInput').onkeydown = (ev) => {
       if (ev.key === 'Enter') salesAssistantChat().catch((e) => toast(e.message));
@@ -3110,6 +3147,20 @@ function legacyCopyFallback(value) {
     }
 
     async function loadSalesBoard() {
+      const role = getAccount()?.role || 'super_admin';
+      if (role === 'finance') {
+        $('salesMainToolbar').style.display = 'none';
+        $('salesLeadsTable').style.display = 'none';
+        $('salesAssistantCard').style.display = 'none';
+        $('salesSandboxCard').style.display = 'none';
+        await loadSalesFinanceBoard();
+        return;
+      }
+      $('salesMainToolbar').style.display = '';
+      $('salesLeadsTable').style.display = '';
+      $('salesAssistantCard').style.display = '';
+      $('salesSandboxCard').style.display = '';
+      $('salesFinanceBox').style.display = 'none';
       const stage = $('salesStageFilter')?.value || '';
       const minScore = $('salesMinScore')?.value || '';
       const qs = new URLSearchParams();
@@ -3126,6 +3177,21 @@ function legacyCopyFallback(value) {
       renderSalesLeads();
       log(`销售线索 ${state.sales.leads.length} 条`);
       loadSalesTop5().catch(() => null);
+    }
+
+    async function loadSalesFinanceBoard() {
+      const [payments, invoices] = await Promise.all([
+        api('/api/admin/sales/finance/pending-payments'),
+        api('/api/admin/sales/finance/pending-invoices'),
+      ]);
+      const box = $('salesFinanceBox');
+      box.style.display = '';
+      box.innerHTML = `<strong>财务待办</strong><div class="small">确认回款后现金客户才允许开通；开票完成后上传发票文件，全部动作写入审计。</div>
+        <div class="stack" style="margin-top:8px">${(payments.items || []).map((p) => `<div class="glossary-item"><strong>${salesEsc(p.company || p.name || `客户#${p.lead_id}`)}</strong><p>合同 ${salesEsc(p.contract_no)} · 待确认回款 ${salesMoney(p.amount_fen)}</p><button data-finance-payment="${Number(p.id)}" class="warn">确认已到账</button></div>`).join('') || '<div class="small">暂无待确认回款。</div>'}</div>
+        <div class="stack" style="margin-top:8px">${(invoices.items || []).map((i) => `<div class="glossary-item" data-finance-invoice="${Number(i.id)}"><strong>${salesEsc(i.company || i.name || `客户#${i.lead_id}`)}</strong><p>合同 ${salesEsc(i.contract_no)} · 待开票 ${salesMoney(i.amount_fen)}</p><div class="toolbar"><input data-invoice-no placeholder="发票号码"><input data-invoice-file type="file" accept=".pdf,image/*"><button data-issue-invoice class="secondary">登记已开票</button></div></div>`).join('') || '<div class="small">暂无待开票申请。</div>'}</div>`;
+      box.querySelectorAll('[data-finance-payment]').forEach((btn) => btn.onclick = async () => { await api(`/api/admin/sales/payments/${btn.dataset.financePayment}/confirm`, { method: 'POST', body: '{}' }); toast('回款已确认'); await loadSalesFinanceBoard(); });
+      box.querySelectorAll('[data-issue-invoice]').forEach((btn) => btn.onclick = async () => { const card = btn.closest('[data-finance-invoice]'); const invoiceNo = card.querySelector('[data-invoice-no]').value.trim(); if (!invoiceNo) throw new Error('请填写发票号码'); const uploaded = await salesUploadDocument(card.querySelector('[data-invoice-file]')?.files?.[0]); await api(`/api/admin/sales/invoices/${card.dataset.financeInvoice}/issued`, { method: 'PATCH', body: JSON.stringify({ invoice_no: invoiceNo, file_url: uploaded?.file_url || null }) }); toast('发票已登记'); await loadSalesFinanceBoard(); });
+      $('salesKfStatus').textContent = `待确认回款 ${(payments.items || []).length} · 待开票 ${(invoices.items || []).length}`;
     }
 
     async function openSalesLead(id) {
@@ -3175,6 +3241,7 @@ function legacyCopyFallback(value) {
       $('salesDemoBriefBox').style.display = 'none';
       $('salesAutoNurtureEnabled').checked = !!lead.auto_nurture_enabled;
       salesLoadContentAssets().catch(() => null);
+      salesLoadCrmOverview().catch(() => null);
       renderSalesChat($('salesChatLog'), data.messages || []);
       const events = data.events || [];
       $('salesEvents').innerHTML = events.length
@@ -3268,24 +3335,65 @@ function legacyCopyFallback(value) {
     }
     async function salesCreateContract() {
       const leadId = state.sales.selectedLeadId;
-      const contractNo = window.prompt('合同编号');
-      const amount = window.prompt('合同含税金额（元）');
+      const contractNo = String($('salesContractNo').value || '').trim();
+      const amount = Number($('salesContractAmount').value || 0);
       if (!leadId || !contractNo || !amount) return;
-      const data = await api(`/api/admin/sales/leads/${leadId}/contracts`, { method: 'POST', body: JSON.stringify({ contract_no: contractNo, amount: Number(amount) }) });
+      const uploaded = await salesUploadDocument($('salesContractFile').files?.[0]);
+      const data = await api(`/api/admin/sales/leads/${leadId}/contracts`, { method: 'POST', body: JSON.stringify({ contract_no: contractNo, amount, file_url: uploaded?.file_url || null, file_name: uploaded?.file_name || null }) });
       $('salesContractHint').textContent = `合同 ${data.contract.contract_no} 已登记，待双方签署后由销售经理设为生效。`;
+      $('salesContractNo').value = ''; $('salesContractAmount').value = ''; $('salesContractFileUrl').value = ''; $('salesContractFile').value = '';
+      await salesLoadCrmOverview();
     }
-    async function salesRecordPayment() {
-      const contractId = window.prompt('合同ID（登记合同后由财务从合同列表选择）');
-      const amount = window.prompt('本次回款金额（元）');
-      if (!contractId || !amount) return;
-      const data = await api(`/api/admin/sales/contracts/${Number(contractId)}/payments`, { method: 'POST', body: JSON.stringify({ amount: Number(amount) }) });
-      $('salesContractHint').textContent = `回款记录 #${data.payment.id} 已登记，等待财务确认。`;
+    async function salesUploadDocument(file) {
+      if (!file) return null;
+      const fd = new FormData(); fd.append('file', file);
+      const resp = await fetch('/api/admin/sales/documents/upload', { method: 'POST', headers: { Authorization: `Bearer ${getToken()}` }, body: fd });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.message || data.error || '文件上传失败');
+      return data;
     }
-    async function salesConfirmPayment() {
-      const paymentId = window.prompt('待确认的回款记录ID');
-      if (!paymentId) return;
-      const data = await api(`/api/admin/sales/payments/${Number(paymentId)}/confirm`, { method: 'POST', body: '{}' });
-      $('salesContractHint').textContent = `回款 #${data.payment.id} 已由财务确认。`;
+    const salesMoney = (fen) => `¥${(Number(fen || 0) / 100).toFixed(2)}`;
+    async function salesLoadCrmOverview() {
+      const leadId = state.sales.selectedLeadId;
+      if (!leadId) return;
+      const data = await api(`/api/admin/sales/leads/${leadId}/crm-overview`);
+      const role = getAccount()?.role || 'super_admin';
+      const risk = data.credit_risk || {};
+      const riskLabel = risk.payment_type === 'credit' ? '帐期客户' : '现金客户';
+      const riskState = risk.status === 'locked' || risk.exceeded ? '已锁定' : '正常';
+      $('salesCreditBox').innerHTML = `<div><strong>客户风控：</strong>${riskLabel} · ${riskState} · 欠款 ${salesMoney(risk.outstanding_fen)} · 授信 ${salesMoney(risk.credit_limit_fen)}</div>
+        ${['super_admin','general_manager'].includes(role) ? `<div class="toolbar" style="margin-top:6px"><select id="salesCreditType" style="width:auto"><option value="cash">现金客户</option><option value="credit" ${risk.payment_type === 'credit' ? 'selected' : ''}>帐期客户</option></select><input id="salesCreditLimit" type="number" min="0" step="0.01" value="${Number(risk.credit_limit_fen || 0) / 100}" placeholder="授信金额"><button id="salesSaveCreditBtn" class="secondary">总经理授信/解锁</button></div>` : ''}`;
+      $('salesSaveCreditBtn')?.addEventListener('click', async () => {
+        await api(`/api/admin/sales/leads/${leadId}/credit-risk`, { method: 'PUT', body: JSON.stringify({ payment_type: $('salesCreditType').value, credit_limit: Number($('salesCreditLimit').value || 0) }) });
+        toast('授信设置已保存'); await salesLoadCrmOverview();
+      });
+      const paymentsByContract = new Map();
+      for (const p of data.payments || []) { if (!paymentsByContract.has(Number(p.contract_id))) paymentsByContract.set(Number(p.contract_id), []); paymentsByContract.get(Number(p.contract_id)).push(p); }
+      const invoicesByContract = new Map();
+      for (const i of data.invoices || []) { if (!invoicesByContract.has(Number(i.contract_id))) invoicesByContract.set(Number(i.contract_id), []); invoicesByContract.get(Number(i.contract_id)).push(i); }
+      $('salesContractsBox').innerHTML = (data.contracts || []).map((c) => {
+        const ps = paymentsByContract.get(Number(c.id)) || [];
+        const invs = invoicesByContract.get(Number(c.id)) || [];
+        return `<div class="glossary-item" data-contract-id="${Number(c.id)}"><strong>${salesEsc(c.contract_no)}</strong><p>金额 ${salesMoney(c.amount_fen)} · 状态 ${salesEsc(c.status)} ${c.file_url ? `· <a href="${salesEsc(c.file_url)}" target="_blank">查看原合同</a>` : ''}</p>
+          <div class="toolbar"><input data-customer-sign-file type="file" accept=".pdf,.doc,.docx,image/*" style="max-width:190px"><button data-cstatus="customer_signed" data-file-source="customer" class="secondary">上传客户盖章件</button>${['super_admin','general_manager','sales_manager'].includes(role) ? '<input data-our-sign-file type="file" accept=".pdf,.doc,.docx,image/*" style="max-width:190px"><button data-cstatus="our_signed" data-file-source="our" class="secondary">上传我方盖章件</button><button data-cstatus="effective" class="warn">确认合同生效</button>' : ''}</div>
+          <div class="toolbar"><input data-payment-amount type="number" min="0.01" step="0.01" placeholder="本次回款金额"><input data-payment-file type="file" accept=".pdf,image/*"><button data-payment class="secondary">提交回款凭证</button><input data-invoice-amount type="number" min="0.01" step="0.01" placeholder="申请开票金额"><button data-invoice class="secondary">申请开票</button></div>
+          <div class="small">${ps.map((p) => `回款 ${salesMoney(p.amount_fen)} · ${salesEsc(p.status)} ${p.receipt_url ? `· <a href="${salesEsc(p.receipt_url)}" target="_blank">凭证</a>` : ''} ${p.status === 'pending' && ['super_admin','finance'].includes(role) ? `<button data-confirm-payment="${Number(p.id)}" class="ghost">财务确认</button>` : ''}`).join('<br>') || '暂无回款'}</div>
+          <div class="small">${invs.map((i) => `发票 ${salesMoney(i.amount_fen)} · ${salesEsc(i.status)} ${i.invoice_no ? `· ${salesEsc(i.invoice_no)}` : ''}`).join('<br>') || '暂无开票记录'}</div></div>`;
+      }).join('') || '<div class="small">尚未登记合同。</div>';
+      $('salesContractsBox').querySelectorAll('[data-cstatus]').forEach((btn) => btn.onclick = async () => { const card = btn.closest('[data-contract-id]'); const source = btn.dataset.fileSource; const file = source === 'customer' ? card.querySelector('[data-customer-sign-file]')?.files?.[0] : source === 'our' ? card.querySelector('[data-our-sign-file]')?.files?.[0] : null; if (source && !file) throw new Error('请先选择对应的盖章文件'); const uploaded = await salesUploadDocument(file); await api(`/api/admin/sales/contracts/${card.dataset.contractId}/status`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.cstatus, file_url: uploaded?.file_url || null }) }); await salesLoadCrmOverview(); });
+      $('salesContractsBox').querySelectorAll('[data-payment]').forEach((btn) => btn.onclick = async () => { const card = btn.closest('[data-contract-id]'); const amount = Number(card.querySelector('[data-payment-amount]').value || 0); if (!amount) throw new Error('请输入本次回款金额'); const uploaded = await salesUploadDocument(card.querySelector('[data-payment-file]')?.files?.[0]); await api(`/api/admin/sales/contracts/${card.dataset.contractId}/payments`, { method: 'POST', body: JSON.stringify({ amount, receipt_url: uploaded?.file_url || null }) }); await salesLoadCrmOverview(); });
+      $('salesContractsBox').querySelectorAll('[data-invoice]').forEach((btn) => btn.onclick = async () => { const card = btn.closest('[data-contract-id]'); const amount = Number(card.querySelector('[data-invoice-amount]').value || 0); if (!amount) throw new Error('请输入申请开票金额'); await api(`/api/admin/sales/contracts/${card.dataset.contractId}/invoices`, { method: 'POST', body: JSON.stringify({ amount }) }); await salesLoadCrmOverview(); });
+      $('salesContractsBox').querySelectorAll('[data-confirm-payment]').forEach((btn) => btn.onclick = async () => { await api(`/api/admin/sales/payments/${btn.dataset.confirmPayment}/confirm`, { method: 'POST', body: '{}' }); await salesLoadCrmOverview(); });
+      const d = data.delivery;
+      $('salesDeliveryBox').innerHTML = d ? `<strong>实施交付：</strong>${salesEsc(d.status)} ${['super_admin','customer_service','implementation'].includes(role) ? `<select id="salesDeliveryStatus" style="width:auto"><option value="assigned">已分配实施</option><option value="data_import">数据已导入</option><option value="diagnosis">经营诊断完成</option><option value="configuration">系统配置完成</option><option value="acceptance">客户验收完成</option><option value="delivered">账号已交付</option></select><button id="salesSaveDeliveryBtn" class="secondary">推进交付</button>` : ''}` : '<strong>实施交付：</strong>租户开通后自动建立交付项目。';
+      $('salesSaveDeliveryBtn')?.addEventListener('click', async () => {
+        const result = await api(`/api/admin/sales/leads/${leadId}/delivery`, { method: 'PUT', body: JSON.stringify({ status: $('salesDeliveryStatus').value }) });
+        if (result.credentials?.ok) {
+          $('salesContractHint').textContent = `客户账号（只显示本次）：租户 ${result.credentials.tenant_id}，账号 ${result.credentials.username}，临时密码 ${result.credentials.temp_password}。请安全发送给客户并要求首次登录后修改。`;
+        }
+        await salesLoadCrmOverview();
+      });
+      $('salesProvisionBtn').style.display = role === 'super_admin' ? '' : 'none';
     }
 
     async function salesConsultantInvite() {
@@ -3458,19 +3566,55 @@ function legacyCopyFallback(value) {
       };
     }
 
+    async function loadSalesContentCenter() {
+      const data = await api('/api/admin/sales/content-assets');
+      const box = $('salesContentCenterBox');
+      box.style.display = '';
+      box.innerHTML = `<strong>客户AI资料中心</strong><div class="small">上传并审批后，销售可手动发送；勾选允许自动发送并设置Day节点后，客户AI按培育计划发送。</div>
+        <div class="detail-grid" style="margin-top:8px">
+          <label class="field">资料名称<input id="ccTitle" placeholder="例如：餐饮增长方案"></label>
+          <label class="field">类型<select id="ccType"><option value="text">文字</option><option value="image">图片</option><option value="file">文件/PDF</option><option value="video">视频</option><option value="link">链接</option><option value="qr">销售二维码</option></select></label>
+          <label class="field">文字/链接<textarea id="ccText" rows="2"></textarea></label>
+          <label class="field">上传图片、文件或视频<input id="ccFile" type="file"></label>
+          <label class="field">培育节点<select id="ccStep"><option value="">仅手动</option><option value="1">Day1</option><option value="2">Day3</option><option value="3">Day7</option><option value="4">Day14</option><option value="5">Day30</option></select></label>
+          <label class="field"><span>审批</span><span><input id="ccApproved" type="checkbox" checked> 允许对外 <input id="ccAuto" type="checkbox"> 允许AI自动发送</span></label>
+        </div><button id="ccSaveBtn" class="warn">上传并保存资料</button>
+        <div style="margin-top:10px">${(data.items || []).map((x) => `<div class="small">• ${salesEsc(x.title)} · ${salesEsc(x.content_type)} ${x.auto_send_allowed ? `· 自动Day${x.nurture_step || '?'}` : '· 手动发送'}</div>`).join('') || '暂无已审批资料'}</div>`;
+      $('ccSaveBtn').onclick = async () => {
+        let mediaUrl = ''; let fileName = ''; let contentType = $('ccType').value;
+        const file = $('ccFile').files?.[0];
+        if (file) {
+          const fd = new FormData(); fd.append('file', file);
+          const resp = await fetch('/api/admin/sales/content-assets/upload', { method: 'POST', headers: { Authorization: `Bearer ${getToken()}` }, body: fd });
+          const up = await resp.json(); if (!resp.ok) throw new Error(up.message || up.error || '上传失败');
+          mediaUrl = up.media_url; fileName = up.file_name; contentType = contentType === 'qr' ? 'qr' : up.content_type;
+        }
+        const title = $('ccTitle').value.trim(); const textContent = $('ccText').value.trim();
+        if (!title || (!textContent && !mediaUrl)) throw new Error('资料名称和内容/文件不能为空');
+        await api('/api/admin/sales/content-assets', { method: 'POST', body: JSON.stringify({ asset_key: `asset_${Date.now()}`, title, content_type: contentType, text_content: textContent || null, media_url: mediaUrl || null, file_name: fileName || null, external_approved: $('ccApproved').checked, auto_send_allowed: $('ccAuto').checked, nurture_step: $('ccStep').value || null }) });
+        toast('资料已保存'); await loadSalesContentCenter(); await salesLoadContentAssets();
+      };
+    }
+
     async function loadSalesPerformance() {
       const box = $('salesPerformanceBox');
       box.style.display = '';
       box.innerHTML = '<div class="small">加载中…</div>';
-      const [repsData, leaderboardData] = await Promise.all([
+      const [repsData, leaderboardData, assetsData] = await Promise.all([
         api('/api/admin/sales/reps'),
         api('/api/admin/sales/kpi-leaderboard'),
+        api('/api/admin/sales/content-assets'),
       ]);
       const reps = repsData.reps || [];
       const board = leaderboardData.leaderboard || [];
+      const qrAssets = (assetsData.items || []).filter((x) => x.content_type === 'qr');
       box.innerHTML = `
-        <div style="margin-bottom:8px">
-          <button type="button" class="secondary small" id="salesRepAddBtn">+ 新增销售</button>
+        <div class="detail-grid" style="margin-bottom:8px">
+          <label class="field">销售账号/工号<input id="salesRepKey" placeholder="例如 lijuanjuan"></label>
+          <label class="field">姓名<input id="salesRepName" placeholder="例如 李娟娟"></label>
+          <label class="field">企微对外名称<input id="salesRepWecomName" placeholder="客户添加时看到的名称"></label>
+          <label class="field">企微二维码<select id="salesRepQr"><option value="">先在客户资料中心上传二维码</option>${qrAssets.map((a) => `<option value="${Number(a.id)}">${salesEsc(a.title)}</option>`).join('')}</select></label>
+          <div class="field"><span>操作</span><button type="button" class="secondary small" id="salesRepAddBtn">保存销售与企微二维码</button></div>
         </div>
         <div style="margin-bottom:10px">
           <strong class="small">销售花名册</strong>
@@ -3483,10 +3627,10 @@ function legacyCopyFallback(value) {
       `;
       const addBtn = $('salesRepAddBtn');
       if (addBtn) addBtn.onclick = async () => {
-        const repKey = window.prompt('销售工号/账号(rep_key，需唯一)', '');
-        if (!repKey) return;
-        const displayName = window.prompt('姓名', '') || repKey;
-        const d = await api('/api/admin/sales/reps', { method: 'POST', body: JSON.stringify({ rep_key: repKey, display_name: displayName, role: 'sales' }) });
+        const repKey = $('salesRepKey').value.trim();
+        const displayName = $('salesRepName').value.trim() || repKey;
+        if (!repKey) throw new Error('请填写销售账号/工号');
+        const d = await api('/api/admin/sales/reps', { method: 'POST', body: JSON.stringify({ rep_key: repKey, display_name: displayName, role: 'sales', wecom_name: $('salesRepWecomName').value.trim() || displayName, wecom_qr_asset_id: Number($('salesRepQr').value) || null }) });
         if (!d.ok) { toast(d.message || d.error || '新增失败'); return; }
         toast('已新增');
         await loadSalesPerformance();

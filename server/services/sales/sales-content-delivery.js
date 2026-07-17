@@ -1,5 +1,7 @@
 /** 客户 AI / 销售向企业微信客服发送资料的唯一入口。 */
 import { sendKfText, sendKfImage, sendKfFile, sendKfVideo, uploadKfMedia } from './sales-kf.js';
+import fs from 'fs/promises';
+import path from 'path';
 
 const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
 
@@ -10,6 +12,15 @@ function safeAssetUrl(raw) {
 }
 
 async function fetchApprovedAsset(url) {
+  const raw = String(url || '').trim();
+  if (/^\/uploads\/[a-zA-Z0-9._-]+$/.test(raw)) {
+    const uploadsRoot = path.resolve(process.env.UPLOADS_DIR || path.join(process.cwd(), 'uploads'));
+    const filePath = path.resolve(uploadsRoot, path.basename(raw));
+    if (!filePath.startsWith(`${uploadsRoot}${path.sep}`)) throw new Error('invalid_local_asset_path');
+    const buffer = await fs.readFile(filePath);
+    if (buffer.length > MAX_MEDIA_BYTES) throw new Error('asset_too_large');
+    return { buffer, mimeType: 'application/octet-stream' };
+  }
   const response = await fetch(safeAssetUrl(url), { redirect: 'error', signal: AbortSignal.timeout(20000) });
   if (!response.ok) throw new Error(`asset_download_failed_${response.status}`);
   const length = Number(response.headers.get('content-length') || 0);
@@ -41,14 +52,14 @@ export async function sendContentAssetToLead(pool, lead, asset, { deliveryType =
   const deliveryId = record.rows[0].id;
   try {
     let result;
-    if (asset.content_type === 'text' || asset.content_type === 'link' || asset.content_type === 'qr') {
+    if (asset.content_type === 'text' || asset.content_type === 'link' || (asset.content_type === 'qr' && !asset.media_url)) {
       const text = String(asset.text_content || asset.media_url || '').trim();
       if (!text) throw new Error('asset_text_missing');
       result = await sendKfText({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, content: text });
     } else {
       if (!asset.media_url) throw new Error('asset_media_url_missing');
       const { buffer, mimeType } = await fetchApprovedAsset(asset.media_url);
-      const type = asset.content_type === 'image' ? 'image' : asset.content_type === 'video' ? 'video' : 'file';
+      const type = asset.content_type === 'image' || asset.content_type === 'qr' ? 'image' : asset.content_type === 'video' ? 'video' : 'file';
       const mediaId = await uploadKfMedia(buffer, { type, filename: asset.file_name || `${asset.asset_key}.${type}`, mimeType });
       if (type === 'image') result = await sendKfImage({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, mediaId });
       else if (type === 'video') result = await sendKfVideo({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, mediaId });

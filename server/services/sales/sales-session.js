@@ -30,6 +30,7 @@ import {
 } from './sales-ops.js';
 import { buildSalesDecision, buildCustomerAiGuidance, normalizeCustomerAiEvent } from './sales-collaboration.js';
 import { kfConfigured, sendKfConsultantCard } from './sales-kf.js';
+import { sendContentAssetToLead } from './sales-content-delivery.js';
 
 let _notify = null;
 export function setSalesNotify(fn) {
@@ -353,16 +354,29 @@ export async function handleInboundMessage(pool, {
       recommended_action: 'takeover',
       payload: { score, advice, diagnosis },
     });
+    // 多销售按当前开放线索数最少者自动分配；同负载时按销售ID轮询，避免永远分给第一人。
+    let handoffLead = updatedLead;
+    if (!handoffLead.assigned_to) {
+      const rep = await pool.query(
+        `SELECT r.rep_key FROM sales_reps r
+          LEFT JOIN sales_leads l ON (l.assigned_to=r.rep_key OR l.owner_username=r.rep_key) AND l.stage NOT IN ('won','lost','unfit')
+         WHERE r.status='active' AND r.role IN ('sales','sales_manager')
+         GROUP BY r.id,r.rep_key ORDER BY COUNT(l.id) ASC,r.id ASC LIMIT 1`
+      ).catch(() => ({ rows: [] }));
+      if (rep.rows?.[0]?.rep_key) {
+        await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=NOW(),updated_at=NOW() WHERE id=$1 AND assigned_to IS NULL`, [lead.id, rep.rows[0].rep_key]);
+        handoffLead = { ...handoffLead, assigned_to: rep.rows[0].rep_key };
+      }
+    }
     // 客户AI完成人格化接待与判断后，明确把客户交给具名顾问；不让销售继续假扮AI客服。
     const qrUrl = String(process.env.WECOM_SALES_CONSULTANT_QR_URL || '').trim();
-    if (updatedLead.handoff_mode === 'consultant_qr' && qrUrl && kfConfigured() && updatedLead.open_kfid && updatedLead.external_userid) {
+    if (handoffLead.handoff_mode === 'consultant_qr' && kfConfigured() && handoffLead.open_kfid && handoffLead.external_userid) {
       try {
-        const card = await sendKfConsultantCard({
-          openKfid: updatedLead.open_kfid,
-          externalUserid: updatedLead.external_userid,
-          consultantName: process.env.WECOM_SALES_CONSULTANT_NAME || '专属顾问',
-          qrUrl,
-        });
+        const rep = handoffLead.assigned_to ? await pool.query(`SELECT r.wecom_name,a.* FROM sales_reps r LEFT JOIN sales_content_assets a ON a.id=r.wecom_qr_asset_id WHERE r.rep_key=$1 AND r.status='active' LIMIT 1`, [handoffLead.assigned_to]) : { rows: [] };
+        const repAsset = rep.rows?.[0]?.id ? rep.rows[0] : null;
+        const card = repAsset
+          ? await sendContentAssetToLead(pool, handoffLead, repAsset, { deliveryType: 'handoff', sentBy: 'customer_ai' })
+          : qrUrl ? await sendKfConsultantCard({ openKfid: handoffLead.open_kfid, externalUserid: handoffLead.external_userid, consultantName: process.env.WECOM_SALES_CONSULTANT_NAME || '专属顾问', qrUrl }) : null;
         if (card?.ok) await addEvent(pool, lead.id, { event_type: 'CONSULTANT_QR_SENT', summary: '客户AI已发送专属销售企业微信二维码', priority: 'high', recommended_action: 'wait_customer_add' });
       } catch (e) {
         console.warn('[sales-session] consultant QR handoff failed:', e?.message || e);

@@ -26,7 +26,7 @@ import {
 } from './services/sales/sales-ops.js';
 import { setSalesCustomerAiLlm } from './services/sales/sales-customer-ai.js';
 import { draftCustomerReply, draftStandardResponse, draftQuickReplyByScenario, setSalesReplyDraftLlm } from './services/sales/sales-reply-draft.js';
-import { provisionTenantFromLead, listPendingProvisioningCompensations } from './services/sales-provisioning.js';
+import { provisionTenantFromLead, listPendingProvisioningCompensations, rotateTenantAdminCredentials } from './services/sales-provisioning.js';
 import { buildSalesBossDashboard } from './services/sales/sales-boss-metrics.js';
 import { listCaseAssets, recommendCasesForLead, formatCaseForSend, getCaseAsset } from './services/sales/sales-case-library.js';
 import { generateSalesProposal, runDeepDiagnosis, setSalesProposalLlm } from './services/sales/sales-proposal.js';
@@ -45,7 +45,7 @@ import {
 import { SALES_PERSONA, PUBLIC_KNOWLEDGE, FORBIDDEN_CLAIMS } from './services/sales/sales-knowledge.js';
 import { listKnowledgeItemsAdmin, upsertKnowledgeItem, deleteKnowledgeItem } from './services/sales/sales-knowledge-store.js';
 import { listSendableContentAssets, sendContentAssetToLead } from './services/sales/sales-content-delivery.js';
-import { getCreditRisk } from './services/sales/sales-credit-risk.js';
+import { getCreditRisk, scanCreditRisks } from './services/sales/sales-credit-risk.js';
 import { buildLeadSummary, calculateSla } from './services/sales/sales-collaboration-service.js';
 import { recordStageChange, transitionLeadStage } from './services/sales/sales-store.js';
 import { runSalesSlaScan } from './services/sales/sales-sla-service.js';
@@ -143,7 +143,7 @@ async function runRiskAlerts(pool, sendOpsAlert) {
   }
 }
 
-export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLLM, sendOpsAlert, requireSalesManagerOrAbove } = {}) {
+export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLLM, sendOpsAlert, requireSalesManagerOrAbove, upload } = {}) {
   // 提成规则/审批、KPI目标与主管打分、销售花名册这类"销售管理"操作，普通销售/客服
   // 不该碰，只有销售经理/超级管理员可以。没传这个中间件时(比如老的调用方式)退化成
   // 只做登录校验，不因为这次改造而让原本能用的调用方式直接报错。
@@ -155,6 +155,21 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   const generalManagerGate = (req, res, next) => {
     if (!['super_admin', 'general_manager'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden', message: '仅总经理可授信或解锁客户' });
     next();
+  };
+  const autoProvisionIfEligible = async (leadId, startedBy) => {
+    const lead = await getLead(pool, leadId);
+    if (!lead || (lead.tenant_id && lead.provision_status === 'done')) return null;
+    const contract = await pool.query(`SELECT 1 FROM sales_contracts WHERE lead_id=$1 AND status='effective' LIMIT 1`, [leadId]);
+    if (!contract.rows?.[0]) return null;
+    const risk = await getCreditRisk(pool, leadId);
+    if (!risk.can_provision) return null;
+    const provision = await provisionTenantFromLead(pool, leadId, { startedBy });
+    if (provision?.ok && typeof sendOpsAlert === 'function') {
+      await sendOpsAlert(`【销售CRM·新客户待交付】\n客户线索 #${leadId}\n租户 ${provision.tenant_id} 已自动开通，请客服/实施进入交付工作台完成数据导入、经营诊断、配置和验收。`, { title: '新客户自动开通待交付', audience: 'sales' }).catch(() => null);
+    }
+    if (!provision) return null;
+    const { temp_password: _discarded, ...safeProvision } = provision;
+    return safeProvision;
   };
   if (typeof callLLM === 'function') {
     setSalesCustomerAiLlm(callLLM);
@@ -192,6 +207,12 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         .then(() => runNurtureCadence(pool))
         .catch((e) => console.warn('[sales-ai] nurture cadence run failed:', e?.message || e));
     }, 60 * 60 * 1000);
+  }
+
+  if (!globalThis.__salesCreditRiskTimer) {
+    globalThis.__salesCreditRiskTimer = setInterval(() => {
+      scanCreditRisks(pool, sendOpsAlert).catch((e) => console.warn('[sales-ai] credit risk scan failed:', e?.message || e));
+    }, 30 * 60 * 1000);
   }
 
   if (!globalThis.__salesCsTaskSyncTimer) {
@@ -256,6 +277,16 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     };
     scheduleSalesRepActivityRollup();
   }
+
+  // 所有以 /leads/:id 为目标的接口统一做记录级归属校验，避免某个新增路由忘记加权限。
+  app.use('/api/admin/sales/leads/:id', platformAdminRequired, async (req, res, next) => {
+    try {
+      const lead = await getLead(pool, Number(req.params.id));
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      req.salesLead = lead;
+      next();
+    } catch (e) { console.error('[sales] lead scope check failed:', e?.message || e); res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
 
   // P3：每周一 08:00 自动结算上一周KPI；每月1号 08:15 自动结算上个月KPI（都不含主管主观分，
   // 主管后续用 kpi-scores 接口补分即可覆盖更新）。
@@ -372,7 +403,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  app.post('/api/admin/sales/knowledge', platformAdminRequired, async (req, res) => {
+  app.post('/api/admin/sales/knowledge', platformAdminRequired, managerGate, async (req, res) => {
     try {
       const title = String(req.body?.title || '').trim();
       const body = String(req.body?.body || '').trim();
@@ -394,7 +425,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  app.delete('/api/admin/sales/knowledge/:id', platformAdminRequired, async (req, res) => {
+  app.delete('/api/admin/sales/knowledge/:id', platformAdminRequired, managerGate, async (req, res) => {
     try {
       await deleteKnowledgeItem(pool, Number(req.params.id));
       res.json({ ok: true });
@@ -418,16 +449,40 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const title = String(body.title || '').trim();
       const contentType = String(body.content_type || '').trim();
       if (!assetKey || !title || !['text', 'image', 'file', 'video', 'link', 'qr'].includes(contentType)) return res.status(400).json({ ok: false, error: 'invalid_asset' });
-      if (['image', 'file', 'video'].includes(contentType) && !/^https:\/\//.test(String(body.media_url || ''))) return res.status(400).json({ ok: false, error: 'https_media_url_required' });
+      const mediaUrl = String(body.media_url || '');
+      if (['image', 'file', 'video', 'qr'].includes(contentType) && !(/^https:\/\//.test(mediaUrl) || /^\/uploads\/[A-Za-z0-9._-]+$/.test(mediaUrl))) {
+        return res.status(400).json({ ok: false, error: 'safe_media_url_required' });
+      }
       const r = await pool.query(
-        `INSERT INTO sales_content_assets (asset_key,title,content_type,text_content,media_url,file_name,external_approved,active,auto_send_allowed,tags,created_by,approved_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12)
-         ON CONFLICT (asset_key) DO UPDATE SET title=EXCLUDED.title,content_type=EXCLUDED.content_type,text_content=EXCLUDED.text_content,media_url=EXCLUDED.media_url,file_name=EXCLUDED.file_name,external_approved=EXCLUDED.external_approved,active=EXCLUDED.active,auto_send_allowed=EXCLUDED.auto_send_allowed,tags=EXCLUDED.tags,approved_by=EXCLUDED.approved_by,updated_at=NOW()
+        `INSERT INTO sales_content_assets (asset_key,title,content_type,text_content,media_url,file_name,external_approved,active,auto_send_allowed,tags,created_by,approved_by,nurture_step)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13)
+         ON CONFLICT (asset_key) DO UPDATE SET title=EXCLUDED.title,content_type=EXCLUDED.content_type,text_content=EXCLUDED.text_content,media_url=EXCLUDED.media_url,file_name=EXCLUDED.file_name,external_approved=EXCLUDED.external_approved,active=EXCLUDED.active,auto_send_allowed=EXCLUDED.auto_send_allowed,tags=EXCLUDED.tags,approved_by=EXCLUDED.approved_by,nurture_step=EXCLUDED.nurture_step,updated_at=NOW()
          RETURNING *`,
-        [assetKey, title, contentType, body.text_content || null, body.media_url || null, body.file_name || null, !!body.external_approved, body.active !== false, !!body.auto_send_allowed, JSON.stringify(Array.isArray(body.tags) ? body.tags : []), req.platformAdmin.username, body.external_approved ? req.platformAdmin.username : null]
+        [assetKey, title, contentType, body.text_content || null, body.media_url || null, body.file_name || null, !!body.external_approved, body.active !== false, !!body.auto_send_allowed, JSON.stringify(Array.isArray(body.tags) ? body.tags : []), req.platformAdmin.username, body.external_approved ? req.platformAdmin.username : null, body.nurture_step ? Number(body.nurture_step) : null]
       );
       res.json({ ok: true, asset: r.rows[0] });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
+  });
+
+  if (upload?.single) app.post('/api/admin/sales/content-assets/upload', platformAdminRequired, managerGate, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ ok: false, error: 'file_required' });
+      if (Number(req.file.size || 0) > 20 * 1024 * 1024) return res.status(413).json({ ok: false, error: 'asset_too_large', message: '企微发送素材不能超过20MB' });
+      const mime = String(req.file.mimetype || '');
+      const contentType = mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : 'file';
+      res.json({ ok: true, media_url: `/uploads/${req.file.filename}`, file_name: req.file.originalname, content_type: contentType });
+    } catch (e) { res.status(500).json({ ok: false, error: 'upload_failed', message: e?.message }); }
+  });
+
+  if (upload?.single) app.post('/api/admin/sales/documents/upload', platformAdminRequired, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ ok: false, error: 'file_required' });
+      if (Number(req.file.size || 0) > 20 * 1024 * 1024) return res.status(413).json({ ok: false, error: 'document_too_large' });
+      const mime = String(req.file.mimetype || '');
+      const allowed = mime === 'application/pdf' || mime.startsWith('image/') || mime === 'application/msword' || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      if (!allowed) return res.status(415).json({ ok: false, error: 'unsupported_document_type' });
+      res.json({ ok: true, file_url: `/uploads/${req.file.filename}`, file_name: req.file.originalname });
+    } catch (e) { res.status(500).json({ ok: false, error: 'upload_failed', message: e?.message }); }
   });
 
   app.post('/api/admin/sales/leads/:id/content-deliveries', platformAdminRequired, async (req, res) => {
@@ -465,16 +520,51 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
          VALUES ($1,$2,'draft',$3,$4,$5,$6) RETURNING *`,
         [lead.id, contractNo, amountFen, req.body?.file_url || null, req.body?.file_name || null, req.platformAdmin.username]
       );
+      await pool.query(`INSERT INTO sales_credit_accounts (lead_id,payment_type,credit_limit_fen,status) VALUES ($1,'cash',0,'active') ON CONFLICT (lead_id) DO NOTHING`, [lead.id]);
       res.json({ ok: true, contract: r.rows[0] });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
   });
 
-  app.post('/api/admin/sales/contracts/:id/mark-effective', platformAdminRequired, managerGate, async (req, res) => {
+  app.get('/api/admin/sales/leads/:id/crm-overview', platformAdminRequired, async (req, res) => {
     try {
-      const r = await pool.query(`UPDATE sales_contracts SET status='effective', signed_at=COALESCE(signed_at,NOW()), effective_at=NOW(), approved_by=$2, updated_at=NOW() WHERE id=$1 AND status IN ('draft','customer_signed','our_signed') RETURNING *`, [Number(req.params.id), req.platformAdmin.username]);
-      if (!r.rows?.[0]) return res.status(409).json({ ok: false, error: 'contract_not_ready' });
-      res.json({ ok: true, contract: r.rows[0] });
-    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+      const lead = await getLead(pool, Number(req.params.id));
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      const [contracts, payments, invoices, delivery, contentDeliveries, risk] = await Promise.all([
+        pool.query(`SELECT * FROM sales_contracts WHERE lead_id=$1 ORDER BY created_at DESC`, [lead.id]),
+        pool.query(`SELECT p.* FROM sales_payments p JOIN sales_contracts c ON c.id=p.contract_id WHERE c.lead_id=$1 ORDER BY p.created_at DESC`, [lead.id]),
+        pool.query(`SELECT i.* FROM sales_invoices i JOIN sales_contracts c ON c.id=i.contract_id WHERE c.lead_id=$1 ORDER BY i.created_at DESC`, [lead.id]),
+        pool.query(`SELECT * FROM sales_delivery_projects WHERE lead_id=$1`, [lead.id]),
+        pool.query(`SELECT d.*,a.title AS asset_title,a.content_type FROM sales_content_deliveries d LEFT JOIN sales_content_assets a ON a.id=d.asset_id WHERE d.lead_id=$1 ORDER BY d.created_at DESC LIMIT 50`, [lead.id]),
+        getCreditRisk(pool, lead.id),
+      ]);
+      res.json({ ok: true, contracts: contracts.rows, payments: payments.rows, invoices: invoices.rows, delivery: delivery.rows?.[0] || null, content_deliveries: contentDeliveries.rows, credit_risk: risk });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
+  });
+
+  app.patch('/api/admin/sales/contracts/:id/status', platformAdminRequired, async (req, res) => {
+    try {
+      const status = String(req.body?.status || '').trim();
+      if (!['customer_signed', 'our_signed', 'effective', 'cancelled'].includes(status)) return res.status(400).json({ ok: false, error: 'invalid_contract_status' });
+      const c = await pool.query(`SELECT c.*,l.owner_username,l.assigned_to,l.cs_owner_username FROM sales_contracts c JOIN sales_leads l ON l.id=c.lead_id WHERE c.id=$1`, [Number(req.params.id)]);
+      const contract = c.rows?.[0];
+      if (!contract || !canAccessLead(req.platformAdmin, contract)) return res.status(404).json({ ok: false, error: 'not_found' });
+      if ((status === 'our_signed' || status === 'effective' || status === 'cancelled') && !isManager(req.platformAdmin)) return res.status(403).json({ ok: false, error: 'manager_required' });
+      if (status === 'effective' && (!contract.customer_signed_at || !contract.our_signed_at)) return res.status(409).json({ ok: false, error: 'both_signatures_required' });
+      const signedFile = String(req.body?.file_url || '').trim() || null;
+      const r = await pool.query(
+        `UPDATE sales_contracts SET status=$2,
+           customer_signed_at=CASE WHEN $2='customer_signed' THEN NOW() ELSE customer_signed_at END,
+           customer_signed_file_url=CASE WHEN $2='customer_signed' THEN COALESCE($3,customer_signed_file_url) ELSE customer_signed_file_url END,
+           our_signed_at=CASE WHEN $2='our_signed' THEN NOW() ELSE our_signed_at END,
+           our_signed_file_url=CASE WHEN $2='our_signed' THEN COALESCE($3,our_signed_file_url) ELSE our_signed_file_url END,
+           effective_at=CASE WHEN $2='effective' THEN NOW() ELSE effective_at END,
+           approved_by=CASE WHEN $2 IN ('our_signed','effective') THEN $4 ELSE approved_by END,updated_at=NOW()
+         WHERE id=$1 RETURNING *`, [contract.id, status, signedFile, req.platformAdmin.username]
+      );
+      const risk = status === 'effective' ? await getCreditRisk(pool, contract.lead_id) : null;
+      const provision = status === 'effective' ? await autoProvisionIfEligible(contract.lead_id, req.platformAdmin.username) : null;
+      res.json({ ok: true, contract: r.rows[0], credit_risk: risk, provision });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
   });
 
   app.post('/api/admin/sales/contracts/:id/payments', platformAdminRequired, async (req, res) => {
@@ -493,7 +583,43 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     try {
       const p = await pool.query(`UPDATE sales_payments SET status='confirmed',confirmed_by=$2,confirmed_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='pending' RETURNING *`, [Number(req.params.id), req.platformAdmin.username]);
       if (!p.rows?.[0]) return res.status(409).json({ ok: false, error: 'payment_not_pending' });
-      res.json({ ok: true, payment: p.rows[0] });
+      const lead = await pool.query(`SELECT c.lead_id FROM sales_contracts c WHERE c.id=$1`, [p.rows[0].contract_id]);
+      const risk = lead.rows?.[0] ? await getCreditRisk(pool, lead.rows[0].lead_id) : null;
+      const provision = lead.rows?.[0] ? await autoProvisionIfEligible(lead.rows[0].lead_id, req.platformAdmin.username) : null;
+      res.json({ ok: true, payment: p.rows[0], credit_risk: risk, provision });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.get('/api/admin/sales/finance/pending-payments', platformAdminRequired, financeGate, async (_req, res) => {
+    try {
+      const r = await pool.query(`SELECT p.*,c.contract_no,c.lead_id,l.company,l.name FROM sales_payments p JOIN sales_contracts c ON c.id=p.contract_id JOIN sales_leads l ON l.id=c.lead_id WHERE p.status='pending' ORDER BY p.created_at ASC`);
+      res.json({ ok: true, items: r.rows });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.get('/api/admin/sales/finance/pending-invoices', platformAdminRequired, financeGate, async (_req, res) => {
+    try {
+      const r = await pool.query(`SELECT i.*,c.contract_no,c.lead_id,l.company,l.name FROM sales_invoices i JOIN sales_contracts c ON c.id=i.contract_id JOIN sales_leads l ON l.id=c.lead_id WHERE i.status='requested' ORDER BY i.created_at ASC`);
+      res.json({ ok: true, items: r.rows });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.post('/api/admin/sales/contracts/:id/invoices', platformAdminRequired, async (req, res) => {
+    try {
+      const c = await pool.query(`SELECT c.*,l.owner_username,l.assigned_to,l.cs_owner_username FROM sales_contracts c JOIN sales_leads l ON l.id=c.lead_id WHERE c.id=$1`, [Number(req.params.id)]);
+      if (!c.rows?.[0] || !canAccessLead(req.platformAdmin, c.rows[0])) return res.status(404).json({ ok: false, error: 'not_found' });
+      const amountFen = Math.round(Number(req.body?.amount || 0) * 100);
+      if (amountFen <= 0) return res.status(400).json({ ok: false, error: 'invalid_invoice_amount' });
+      const r = await pool.query(`INSERT INTO sales_invoices (contract_id,amount_fen,status,requested_by) VALUES ($1,$2,'requested',$3) RETURNING *`, [c.rows[0].id, amountFen, req.platformAdmin.username]);
+      res.json({ ok: true, invoice: r.rows[0] });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.patch('/api/admin/sales/invoices/:id/issued', platformAdminRequired, financeGate, async (req, res) => {
+    try {
+      const r = await pool.query(`UPDATE sales_invoices SET status='issued',invoice_no=$2,file_url=$3,issued_by=$4,issued_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='requested' RETURNING *`, [Number(req.params.id), req.body?.invoice_no || null, req.body?.file_url || null, req.platformAdmin.username]);
+      if (!r.rows?.[0]) return res.status(409).json({ ok: false, error: 'invoice_not_requested' });
+      res.json({ ok: true, invoice: r.rows[0] });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
   });
 
@@ -518,7 +644,9 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
          ON CONFLICT (lead_id) DO UPDATE SET payment_type=EXCLUDED.payment_type,credit_limit_fen=EXCLUDED.credit_limit_fen,status='active',approved_by=EXCLUDED.approved_by,approved_at=NOW(),lock_reason=NULL,updated_at=NOW()
          RETURNING *`, [lead.id, paymentType, paymentType === 'cash' ? 0 : limitFen, req.platformAdmin.username]
       );
-      res.json({ ok: true, account: r.rows[0], risk: await getCreditRisk(pool, lead.id) });
+      const risk = await getCreditRisk(pool, lead.id);
+      const provision = await autoProvisionIfEligible(lead.id, req.platformAdmin.username);
+      res.json({ ok: true, account: r.rows[0], risk, provision });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
   });
 
@@ -539,12 +667,22 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const status = String(req.body?.status || '').trim();
       if (!allowed.includes(status)) return res.status(400).json({ ok: false, error: 'invalid_delivery_status' });
       if (!['super_admin', 'customer_service', 'implementation'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+      const prior = await pool.query(`SELECT status FROM sales_delivery_projects WHERE lead_id=$1`, [lead.id]);
       const r = await pool.query(
-        `UPDATE sales_delivery_projects SET status=$2, implementation_owner=COALESCE($3,implementation_owner), cs_owner=COALESCE($4,cs_owner), account_sent_at=CASE WHEN $2='delivered' THEN COALESCE(account_sent_at,NOW()) ELSE account_sent_at END, accepted_at=CASE WHEN $2='delivered' THEN COALESCE(accepted_at,NOW()) ELSE accepted_at END, updated_at=NOW() WHERE lead_id=$1 RETURNING *`,
+        `UPDATE sales_delivery_projects SET status=$2, implementation_owner=COALESCE($3,implementation_owner), cs_owner=COALESCE($4,cs_owner),
+           assigned_at=CASE WHEN $2='assigned' THEN COALESCE(assigned_at,NOW()) ELSE assigned_at END,
+           data_imported_at=CASE WHEN $2='data_import' THEN COALESCE(data_imported_at,NOW()) ELSE data_imported_at END,
+           diagnosis_completed_at=CASE WHEN $2='diagnosis' THEN COALESCE(diagnosis_completed_at,NOW()) ELSE diagnosis_completed_at END,
+           configured_at=CASE WHEN $2='configuration' THEN COALESCE(configured_at,NOW()) ELSE configured_at END,
+           acceptance_completed_at=CASE WHEN $2='acceptance' THEN COALESCE(acceptance_completed_at,NOW()) ELSE acceptance_completed_at END,
+           account_sent_at=CASE WHEN $2='delivered' THEN COALESCE(account_sent_at,NOW()) ELSE account_sent_at END,
+           accepted_at=CASE WHEN $2='delivered' THEN COALESCE(accepted_at,NOW()) ELSE accepted_at END,updated_at=NOW()
+         WHERE lead_id=$1 RETURNING *`,
         [lead.id, status, req.body?.implementation_owner || null, req.body?.cs_owner || null]
       );
       if (!r.rows?.[0]) return res.status(409).json({ ok: false, error: 'delivery_project_not_created' });
-      res.json({ ok: true, project: r.rows[0] });
+      const credentials = status === 'delivered' && prior.rows?.[0]?.status !== 'delivered' ? await rotateTenantAdminCredentials(pool, lead.id) : null;
+      res.json({ ok: true, project: r.rows[0], credentials });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
   });
 
@@ -716,9 +854,9 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       if (!username) return res.status(400).json({ ok: false, error: 'missing_username' });
       const lead = await getLead(pool, leadId); if (!lead) return res.status(404).json({ ok: false, error: 'not_found' });
       const due = calculateSla(lead.handoff_level || lead.intent_level);
-      await pool.query(`UPDATE sales_leads SET assigned_to=$2, assigned_at=NOW(), sla_due_at=$3, sla_status=CASE WHEN $3 IS NULL THEN 'not_required' ELSE 'open' END, updated_at=NOW() WHERE id=$1`, [leadId, username, due]);
+      await pool.query(`UPDATE sales_leads SET assigned_to=$2, assigned_at=NOW(), sla_due_at=$3::timestamptz, sla_status=CASE WHEN $3::timestamptz IS NULL THEN 'not_required' ELSE 'open' END, updated_at=NOW() WHERE id=$1`, [leadId, username, due]);
       res.json({ ok: true, lead_id: leadId, assigned_to: username, sla_due_at: due });
-    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+    } catch (e) { console.error('[sales] assign lead failed:', e?.message || e); res.status(500).json({ ok: false, error: 'server_error' }); }
   });
 
   app.post('/api/admin/sales/leads/:id/stage', platformAdminRequired, async (req, res) => {
@@ -920,30 +1058,30 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  app.get('/api/admin/sales/todo', platformAdminRequired, async (_req, res) => {
+  app.get('/api/admin/sales/todo', platformAdminRequired, async (req, res) => {
     try {
       await ensureSalesTables(pool);
-      const leads = await listLeads(pool, { limit: 300 });
+      const leads = await listLeads(pool, { limit: 300 }, leadScopeSql(req.platformAdmin, 4));
       res.json({ ok: true, todos: buildSalesTodoList(leads) });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
 
-  app.get('/api/admin/sales/risks', platformAdminRequired, async (_req, res) => {
+  app.get('/api/admin/sales/risks', platformAdminRequired, async (req, res) => {
     try {
       await ensureSalesTables(pool);
-      const leads = await listLeads(pool, { limit: 300 });
+      const leads = await listLeads(pool, { limit: 300 }, leadScopeSql(req.platformAdmin, 4));
       res.json({ ok: true, risks: buildRiskCustomers(leads), tomorrow_actions: buildTomorrowActions(leads) });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
 
-  app.get('/api/admin/sales/top5', platformAdminRequired, async (_req, res) => {
+  app.get('/api/admin/sales/top5', platformAdminRequired, async (req, res) => {
     try {
       await ensureSalesTables(pool);
-      const leads = await listLeads(pool, { limit: 300 });
+      const leads = await listLeads(pool, { limit: 300 }, leadScopeSql(req.platformAdmin, 4));
       res.json({ ok: true, top5: buildTopHighLeads(leads) });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
@@ -967,10 +1105,10 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     }
   });
 
-  app.get('/api/admin/sales/funnel', platformAdminRequired, async (_req, res) => {
+  app.get('/api/admin/sales/funnel', platformAdminRequired, async (req, res) => {
     try {
       await ensureSalesTables(pool);
-      const leads = await listLeads(pool, { limit: 500 });
+      const leads = await listLeads(pool, { limit: 500 }, leadScopeSql(req.platformAdmin, 4));
       res.json({ ok: true, funnel: buildFunnelStats(leads), count: leads.length });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'server_error' });
@@ -980,15 +1118,18 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   app.post('/api/admin/sales/demos', platformAdminRequired, async (req, res) => {
     try {
       const { createDemo } = await import('./services/sales/sales-store.js');
+      const leadId = Number(req.body?.lead_id);
+      const lead = await getLead(pool, leadId);
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
       const demo = await createDemo(pool, {
-        leadId: Number(req.params?.id || req.body?.lead_id),
+        leadId,
         scheduledAt: req.body?.scheduled_at,
         attendedBy: req.body?.attended_by,
         summary: req.body?.summary,
         keyPoints: req.body?.key_points,
         objections: req.body?.objections,
         nextSteps: req.body?.next_steps,
-        createdBy: req.user?.username,
+        createdBy: req.platformAdmin?.username,
       });
       res.json({ ok: true, demo });
     } catch (e) {
@@ -999,17 +1140,20 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   app.post('/api/admin/sales/meetings', platformAdminRequired, async (req, res) => {
     try {
       const { createMeeting } = await import('./services/sales/sales-store.js');
+      const leadId = Number(req.body?.lead_id);
+      const lead = await getLead(pool, leadId);
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
       let summary = null;
       if (req.body?.raw_notes) {
         const s = summarizeMeeting(req.body.raw_notes);
         summary = JSON.stringify(s);
       }
       const meeting = await createMeeting(pool, {
-        leadId: Number(req.params?.id || req.body?.lead_id),
+        leadId,
         meetingType: req.body?.meeting_type || 'meeting',
         occurredAt: req.body?.occurred_at,
         rawNotes: req.body?.raw_notes,
-        createdBy: req.user?.username,
+        createdBy: req.platformAdmin?.username,
       });
       res.json({ ok: true, meeting, summary });
     } catch (e) {
@@ -1022,6 +1166,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const { createTrial } = await import('./services/sales/sales-store.js');
       const leadId = Number(req.params?.id || req.body?.lead_id);
       const lead = await getLead(pool, leadId);
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
       const trial = await createTrial(pool, {
         leadId,
         startedAt: req.body?.started_at,
@@ -1271,8 +1416,11 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   app.post('/api/admin/sales/loss-reasons', platformAdminRequired, async (req, res) => {
     try {
       const { recordLossReason } = await import('./services/sales/sales-store.js');
+      const leadId = Number(req.body?.lead_id);
+      const lead = await getLead(pool, leadId);
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
       const loss = await recordLossReason(pool, {
-        leadId: Number(req.params?.id || req.body?.lead_id),
+        leadId,
         reasonKey: req.body?.reason_key,
         reasonLabel: req.body?.reason_label,
         detail: req.body?.detail,
@@ -1288,8 +1436,11 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   app.post('/api/admin/sales/objections', platformAdminRequired, async (req, res) => {
     try {
       const { recordObjection } = await import('./services/sales/sales-store.js');
+      const leadId = Number(req.body?.lead_id);
+      const lead = await getLead(pool, leadId);
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
       const obj = await recordObjection(pool, {
-        leadId: Number(req.params?.id || req.body?.lead_id),
+        leadId,
         objectionKey: req.body?.objection_key,
         objectionLabel: req.body?.objection_label,
         evidence: req.body?.evidence,
@@ -1319,6 +1470,8 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         role: req.body?.role,
         status: req.body?.status,
         hireDate: req.body?.hire_date,
+        wecomName: req.body?.wecom_name,
+        wecomQrAssetId: req.body?.wecom_qr_asset_id ? Number(req.body.wecom_qr_asset_id) : null,
       });
       res.json({ ok: true, rep });
     } catch (e) {

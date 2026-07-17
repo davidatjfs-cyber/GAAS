@@ -66,19 +66,21 @@ export async function listSalesReps(pool, { status } = {}) {
   }
 }
 
-export async function createOrUpdateSalesRep(pool, { repKey, displayName, role, status, hireDate }) {
+export async function createOrUpdateSalesRep(pool, { repKey, displayName, role, status, hireDate, wecomName, wecomQrAssetId }) {
   try {
     const r = await pool.query(
-      `INSERT INTO sales_reps (rep_key, display_name, role, status, hire_date)
-       VALUES ($1,$2,$3,$4,$5)
+      `INSERT INTO sales_reps (rep_key, display_name, role, status, hire_date, wecom_name, wecom_qr_asset_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (rep_key) DO UPDATE SET
          display_name = EXCLUDED.display_name,
          role = COALESCE(EXCLUDED.role, sales_reps.role),
          status = COALESCE(EXCLUDED.status, sales_reps.status),
          hire_date = COALESCE(EXCLUDED.hire_date, sales_reps.hire_date),
+         wecom_name = COALESCE(EXCLUDED.wecom_name, sales_reps.wecom_name),
+         wecom_qr_asset_id = COALESCE(EXCLUDED.wecom_qr_asset_id, sales_reps.wecom_qr_asset_id),
          updated_at = NOW()
        RETURNING *`,
-      [repKey, displayName, role || 'sales', status || 'active', hireDate || null]
+      [repKey, displayName, role || 'sales', status || 'active', hireDate || null, wecomName || null, wecomQrAssetId || null]
     );
     return r.rows?.[0] || null;
   } catch (e) {

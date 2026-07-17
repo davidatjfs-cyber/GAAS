@@ -98,6 +98,7 @@ import { registerMarketingAttributionRoutes } from './marketing/marketing-attrib
 import { registerTenantOperationInspectionRoutes } from './tenant-operation-inspection-routes.js';
 import { registerLightSaasRoutes } from './light-saas-routes.js';
 import { registerSalesAiRoutes } from './sales-ai-routes.js';
+import { getCreditRisk } from './services/sales/sales-credit-risk.js';
 import { startHealthCenterDailyScanScheduler } from './services/tenant-health-center-scheduler.js';
 import { setHealthIncidentNotifiers } from './services/tenant-health-incident-service.js';
 import { startHealthOpsLoopScheduler } from './services/tenant-health-ops-scheduler.js';
@@ -5768,6 +5769,7 @@ registerSalesAiRoutes(app, pool, platformAdminRequired, {
     return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [SALES_ALERT_ADMIN] };
   },
   requireSalesManagerOrAbove,
+  upload,
 });
 registerTenantSubscriptionRoutes(app, { pool, authRequired });
 // tenant-platform-routes.js 里全部是租户开通/许可证/系统配置这类"总控"操作，只该给
@@ -14188,18 +14190,22 @@ app.post('/api/stores', authRequired, async (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'missing_name' });
 
-  // 帐期客户欠款超授信时，冻结“自动新增门店”能力；总经理重新授信后由风控表解除。
+  // 现金客户存在未结清合同或帐期客户欠款超授信时，冻结“自动新增门店”能力。
   // 单租户本地环境没有关联销售线索时不受该规则影响。
   try {
     const tenantId = resolveTenantIdDefault();
     const risk = await pool.query(
-      `SELECT ca.status FROM sales_credit_accounts ca
+      `SELECT ca.lead_id FROM sales_credit_accounts ca
         JOIN sales_leads sl ON sl.id=ca.lead_id
-       WHERE sl.tenant_id=$1 AND ca.payment_type='credit'
+       WHERE sl.tenant_id=$1
        ORDER BY ca.updated_at DESC LIMIT 1`, [tenantId]
     );
-    if (risk.rows?.[0]?.status === 'locked') {
-      return res.status(423).json({ error: 'credit_account_locked', message: '该客户欠款已超过授信额度，账户已锁定新增门店；请联系总经理重新授信。' });
+    const creditRisk = risk.rows?.[0] ? await getCreditRisk(pool, risk.rows[0].lead_id) : null;
+    if (creditRisk && !creditRisk.can_open_store) {
+      const message = creditRisk.payment_type === 'cash'
+        ? '现金客户存在未结清合同，禁止新增门店；请先由财务确认足额回款。'
+        : '该客户欠款已超过授信额度，账户已锁定新增门店；请联系总经理重新授信。';
+      return res.status(423).json({ error: 'credit_account_locked', message });
     }
   } catch (e) {
     console.error('[/api/stores] credit risk check failed:', e?.message || e);

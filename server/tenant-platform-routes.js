@@ -23,6 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function createPlatformAdminRequired(pool, platformAdminJwtSecret) {
   return async function platformAdminRequired(req, res, next) {
+    if (req.platformAdmin?.username) return next();
     const token = String(req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
     if (!token) return res.status(401).json({ error: 'unauthorized' });
     let payload;
@@ -38,6 +39,10 @@ export function createPlatformAdminRequired(pool, platformAdminJwtSecret) {
     // 跟上面校验的 role==='platform_admin' 不是一回事——那个只是"这是个平台登录token"的
     // 固定标记，account_role 才是真正决定这个人能看到哪些模块的字段。
     req.platformAdmin = { username: payload.username, role: payload.account_role || 'super_admin' };
+    const controlPlaneOnly = ['/api/admin/tenants', '/api/admin/health-center', '/api/admin/auth/accounts', '/api/admin/auth/audit-log'];
+    if (req.platformAdmin.role !== 'super_admin' && controlPlaneOnly.some((prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`))) {
+      return res.status(403).json({ error: 'forbidden', message: '该账号无权查看平台租户总控信息' });
+    }
     if (req.method !== 'GET') {
       const targetTenantId = req.params?.tenantId || req.body?.tenant_id || req.body?.tenantId || null;
       let detail = {};
@@ -70,8 +75,8 @@ export function requireSuperAdmin(req, res, next) {
 // 普通销售/客服不该碰，但销售经理和超级管理员都可以。
 export function requireSalesManagerOrAbove(req, res, next) {
   const role = req.platformAdmin?.role;
-  if (role !== 'super_admin' && role !== 'sales_manager') {
-    return res.status(403).json({ error: 'forbidden', message: '仅销售经理/超级管理员可执行此操作' });
+  if (!['super_admin', 'general_manager', 'sales_manager'].includes(role)) {
+    return res.status(403).json({ error: 'forbidden', message: '仅总经理、销售经理或超级管理员可执行此操作' });
   }
   next();
 }
@@ -95,6 +100,10 @@ export function registerTenantPlatformRoutes(app, deps) {
     REQUIRED_TENANT_FEISHU_TABLE_KEYS,
     invalidateTenantLlmConfigCache,
   } = deps;
+
+  app.get(['/sales-crm', '/sales-crm/'], (_req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'platform-admin.html'));
+  });
 
   // ── 平台管理员账号：登录 / 一次性bootstrap创建首个账号 / 已登录后创建更多账号 ──
   app.post('/api/admin/auth/bootstrap', async (req, res) => {
