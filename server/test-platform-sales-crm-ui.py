@@ -198,6 +198,17 @@ with sync_playwright() as p:
     page.wait_for_function("() => !!localStorage.getItem('platform_admin_token')")
     page.wait_for_selector("#panel-sales.active")
     page.wait_for_load_state("networkidle")
+    assert page.locator('#topTabs button[data-panel="sales"]').inner_text() == "销售 CRM"
+    assert page.locator("#panel-sales").get_by_text("客户成交与交付中心", exact=True).count() == 1
+    assert page.locator("#salesCrmNav").get_by_text("客户管理", exact=True).count() == 1
+    assert page.locator("#salesCrmNav").get_by_text("合同回款", exact=True).count() == 1
+    assert page.locator("#salesCrmNav").get_by_text("内容培育", exact=True).count() == 1
+    assert page.locator("#crmCustomersSection").get_by_text("客户管理", exact=True).count() == 1
+    assert page.locator("#crmFinanceSection").get_by_text("合同、回款与开票", exact=True).count() == 1
+    assert page.locator("#crmContentSection").get_by_text("客户 AI 内容与培育", exact=True).count() == 1
+    assert page.locator("#crmPerformanceSection").get_by_text("区域与销售业绩", exact=True).count() == 1
+    page.wait_for_function("() => Number(document.querySelector('#crmKpiTotal')?.textContent || 0) >= 1")
+    assert int(page.locator("#crmKpiTotal").inner_text()) >= 1
     assert page.locator('#topTabs button[data-panel="tenants"]').is_hidden()
     assert page.locator('#topTabs button[data-panel="create"]').is_hidden()
     assert page.locator('#topTabs button[data-panel="config"]').is_hidden()

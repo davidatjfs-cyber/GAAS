@@ -246,6 +246,68 @@
     #salesLeadsBody tr.selected { background: rgba(13,122,95,.1); }
     #salesLeadsBody tr { cursor: pointer; }
 
+    /* Sales CRM: make the business workflow visible before operational tools. */
+    .crm-hero {
+      overflow: hidden; position: relative; padding: 22px;
+      color: #fff; border: 0;
+      background: linear-gradient(125deg, #123f34 0%, #0d7059 62%, #12876b 100%);
+      box-shadow: 0 16px 38px rgba(18,63,52,.18);
+    }
+    .crm-hero::after {
+      content: ""; position: absolute; width: 240px; height: 240px; right: -70px; top: -125px;
+      border: 42px solid rgba(255,255,255,.08); border-radius: 50%;
+    }
+    .crm-eyebrow { font-size: 11px; letter-spacing: .18em; opacity: .72; font-weight: 800; }
+    .crm-hero h2 { margin: 6px 0 4px; font-size: 25px; letter-spacing: -.02em; }
+    .crm-hero .sub { color: rgba(255,255,255,.74); max-width: 760px; }
+    .crm-hero #salesKfStatus { background: rgba(255,255,255,.14); color: #fff; }
+    .crm-flow {
+      display: grid; grid-template-columns: repeat(6, minmax(100px, 1fr)); gap: 1px;
+      margin-top: 18px; overflow: hidden; border-radius: 12px; background: rgba(255,255,255,.12);
+    }
+    .crm-flow-item { padding: 10px 12px; background: rgba(6,45,36,.34); }
+    .crm-flow-item span { display: block; font-size: 10px; opacity: .62; margin-bottom: 3px; }
+    .crm-flow-item strong { font-size: 12px; }
+    .crm-nav {
+      position: sticky; top: 8px; z-index: 18; display: flex; gap: 6px; overflow-x: auto;
+      padding: 7px; border: 1px solid rgba(120,104,85,.16); border-radius: 14px;
+      background: rgba(255,250,242,.94); backdrop-filter: blur(12px);
+    }
+    .crm-nav button { flex: 0 0 auto; padding: 9px 12px; background: transparent; color: var(--muted); font-size: 12px; }
+    .crm-nav button.active { background: var(--ink); color: #fff; }
+    .crm-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .crm-kpi { padding: 13px; border: 1px solid rgba(120,104,85,.15); border-radius: 13px; background: rgba(255,255,255,.76); }
+    .crm-kpi .label { color: var(--muted); font-size: 11px; }
+    .crm-kpi .value { margin-top: 5px; font-size: 23px; font-weight: 850; letter-spacing: -.03em; }
+    .crm-kpi.warn .value { color: var(--accent-2); }
+    .crm-kpi.bad .value { color: var(--danger); }
+    .crm-pipeline { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
+    .crm-stage { min-height: 68px; padding: 10px; border-radius: 12px; background: #f2eadc; }
+    .crm-stage strong { display: block; font-size: 20px; margin-top: 5px; }
+    .crm-stage span { color: var(--muted); font-size: 11px; }
+    .crm-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+    .crm-section-head h3 { margin: 0; font-size: 17px; }
+    .crm-section-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+    .crm-action-grid { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 10px; }
+    .crm-action-panel { min-width: 0; border: 1px solid rgba(120,104,85,.15); border-radius: 13px; padding: 12px; background: rgba(255,255,255,.72); }
+    .crm-action-panel > strong { display: block; margin-bottom: 7px; font-size: 13px; }
+    .crm-action-panel .hint-box { border-left: 0; padding: 0; background: transparent; }
+    .crm-tools { border-style: dashed; box-shadow: none; }
+    .crm-tools summary { cursor: pointer; font-weight: 800; }
+
+    @media (min-width: 768px) {
+      #panel-sales { gap: 14px; }
+      #salesLeadsTable table { min-width: 920px; }
+    }
+    @media (max-width: 767px) {
+      .crm-hero { padding: 18px; }
+      .crm-hero h2 { font-size: 21px; }
+      .crm-flow { grid-template-columns: repeat(3, 1fr); }
+      .crm-kpis { grid-template-columns: repeat(2, 1fr); }
+      .crm-pipeline { grid-template-columns: repeat(2, 1fr); }
+      .crm-action-grid { grid-template-columns: 1fr; }
+    }
+
     .tenant-card-list { display: grid; gap: 10px; }
     .tenant-card {
       border: 1px solid rgba(120,104,85,.2); border-radius: 14px;
@@ -398,7 +460,7 @@
     <nav class="top-tabs" id="topTabs">
       <button type="button" class="active" data-panel="overview">总览</button>
       <button type="button" data-panel="health">健康</button>
-      <button type="button" data-panel="sales">销售</button>
+      <button type="button" data-panel="sales">销售 CRM</button>
       <button type="button" data-panel="onboarding">上线</button>
       <button type="button" data-panel="faq">FAQ</button>
       <button type="button" data-panel="demand">需求</button>
@@ -515,14 +577,58 @@
     </section>
 
     <section id="panel-sales" class="panel stack">
-      <div class="card stack">
+      <div class="card crm-hero">
         <div class="section-title">
           <div>
-            <strong>销售工作台</strong>
-            <div class="small">客户 AI 接待线索 · 销售 AI 评分建议 · 人工接管。不对客户直接说话的是销售 AI。</div>
+            <div class="crm-eyebrow">SALES CRM · 客户全生命周期</div>
+            <h2>客户成交与交付中心</h2>
+            <div class="sub">从客户 AI 获客、销售跟进，到合同回款、授信风控、实施交付与长期培育，一个客户一份完整档案。</div>
           </div>
           <span id="salesKfStatus" class="pill">未加载</span>
         </div>
+        <div class="crm-flow" aria-label="销售闭环">
+          <div class="crm-flow-item"><span>01 获客</span><strong>客户 AI 接待</strong></div>
+          <div class="crm-flow-item"><span>02 跟进</span><strong>销售接管拜访</strong></div>
+          <div class="crm-flow-item"><span>03 商务</span><strong>方案合同签署</strong></div>
+          <div class="crm-flow-item"><span>04 财务</span><strong>回款开票授信</strong></div>
+          <div class="crm-flow-item"><span>05 交付</span><strong>配置验收上线</strong></div>
+          <div class="crm-flow-item"><span>06 长期经营</span><strong>客户 AI 培育</strong></div>
+        </div>
+      </div>
+
+      <nav class="crm-nav" id="salesCrmNav" aria-label="销售 CRM 功能导航">
+        <button type="button" class="active" data-scroll-target="crmOverviewSection">CRM 总览</button>
+        <button type="button" data-scroll-target="crmCustomersSection">客户管理</button>
+        <button type="button" data-scroll-target="crmTodaySection">今日跟进</button>
+        <button type="button" data-scroll-target="crmFinanceSection">合同回款</button>
+        <button type="button" data-scroll-target="crmContentSection">内容培育</button>
+        <button type="button" data-scroll-target="crmPerformanceSection">区域业绩</button>
+      </nav>
+
+      <div class="card stack" id="crmOverviewSection">
+        <div class="crm-section-head"><div><h3>CRM 总览</h3><p>先看今天要推进什么，再进入客户档案处理。</p></div><button type="button" id="salesReloadBtn" class="secondary">刷新 CRM</button></div>
+        <div class="crm-kpis">
+          <div class="crm-kpi"><div class="label">全部客户</div><div class="value" id="crmKpiTotal">0</div></div>
+          <div class="crm-kpi"><div class="label">正在跟进</div><div class="value" id="crmKpiActive">0</div></div>
+          <div class="crm-kpi warn"><div class="label">高意向客户</div><div class="value" id="crmKpiHigh">0</div></div>
+          <div class="crm-kpi bad"><div class="label">超 3 天未跟进</div><div class="value" id="crmKpiStale">0</div></div>
+          <div class="crm-kpi"><div class="label">已成交</div><div class="value" id="crmKpiWon">0</div></div>
+          <div class="crm-kpi"><div class="label">待交付上线</div><div class="value" id="crmKpiDelivery">0</div></div>
+        </div>
+        <div class="crm-pipeline" id="crmPipeline"></div>
+      </div>
+
+      <div class="card stack" id="crmTodaySection">
+        <div class="crm-section-head"><div><h3>今日行动</h3><p>销售 AI 已按优先级整理待办、重点客户和风险。</p></div></div>
+        <div class="crm-action-grid">
+          <div class="crm-action-panel"><strong>今日 Top 5</strong><div id="salesTop5Box" class="hint-box"></div></div>
+          <div class="crm-action-panel"><strong>今日待办</strong><div id="salesTodoBox" class="hint-box"></div></div>
+          <div class="crm-action-panel"><strong>风险提醒</strong><div id="salesRiskBox" class="hint-box"></div></div>
+        </div>
+      </div>
+
+      <div class="card stack" id="crmCustomersSection">
+        <div class="crm-section-head"><div><h3>客户管理</h3><p>点击客户行打开完整档案，处理沟通、拜访、合同、回款、风控和交付。</p></div></div>
         <div class="toolbar" id="salesMainToolbar">
           <label style="margin:0">阶段
             <select id="salesStageFilter" style="width:auto;min-width:120px;padding:8px 10px">
@@ -553,7 +659,6 @@
               <option value="70">≥70</option>
             </select>
           </label>
-          <button type="button" id="salesReloadBtn" class="secondary">刷新线索</button>
           <button type="button" id="salesTodoBtn" class="secondary">今日待办</button>
           <button type="button" id="salesTop5Btn" class="warn">今日Top5</button>
           <button type="button" id="salesRiskBtn" class="warn">风险客户</button>
@@ -563,33 +668,41 @@
           <button type="button" id="salesCasesBtn" class="ghost">案例库</button>
           <button type="button" id="salesTrainingBtn" class="ghost">话术训练</button>
           <button type="button" id="salesKnowledgeBtn" class="ghost">知识库编辑</button>
-          <button type="button" id="salesContentCenterBtn" class="ghost">客户资料中心</button>
-          <button type="button" id="salesPerformanceBtn" class="ghost">销售业绩</button>
           <button type="button" id="salesCommissionBtn" class="ghost">提成</button>
         </div>
-        <div id="salesFinanceBox" class="hint-box" style="display:none"></div>
         <div id="salesBossDashBox" class="hint-box" style="display:none"></div>
         <div id="salesCasesBox" class="hint-box" style="display:none;max-height:240px;overflow:auto"></div>
         <div id="salesKnowledgeBox" class="hint-box" style="display:none;max-height:400px;overflow:auto"></div>
-        <div id="salesContentCenterBox" class="hint-box" style="display:none;max-height:520px;overflow:auto"></div>
         <div id="salesTrainingBox" class="hint-box" style="display:none"></div>
         <div id="salesReportBox" class="hint-box" style="display:none;white-space:pre-wrap"></div>
         <div id="salesFunnelBox" class="hint-box" style="display:none"></div>
-        <div id="salesTop5Box" class="hint-box" style="display:none"></div>
-        <div id="salesRiskBox" class="hint-box" style="display:none"></div>
-        <div id="salesTodoBox" class="hint-box" style="display:none"></div>
-        <div id="salesPerformanceBox" class="hint-box" style="display:none;max-height:400px;overflow:auto"></div>
         <div id="salesCommissionBox" class="hint-box" style="display:none;max-height:400px;overflow:auto"></div>
         <div class="table-scroll" id="salesLeadsTable">
           <table>
             <thead>
               <tr>
-                <th>线索</th><th>阶段</th><th>控场</th><th>意向</th><th>门店</th><th>痛点</th><th>下一步</th><th>更新</th>
+                <th>客户</th><th>销售阶段</th><th>负责人</th><th>意向</th><th>区域 / 门店</th><th>核心需求</th><th>下一步</th><th>最近更新</th>
               </tr>
             </thead>
             <tbody id="salesLeadsBody"></tbody>
           </table>
         </div>
+      </div>
+
+      <div class="card stack" id="crmFinanceSection">
+        <div class="crm-section-head"><div><h3>合同、回款与开票</h3><p>财务角色在这里确认到账和开票；客户合同原件、授信与交付状态保存在客户档案中。</p></div></div>
+        <div id="salesFinanceBox" class="hint-box" style="display:none"></div>
+        <div class="small" id="salesFinanceGuide">财务账号登录后显示待确认回款与待开票清单；其他角色请从客户档案进入合同台账。</div>
+      </div>
+
+      <div class="card stack" id="crmContentSection">
+        <div class="crm-section-head"><div><h3>客户 AI 内容与培育</h3><p>维护可对外发送的文字、图片、文件、视频和销售企微二维码；只有审批通过的资料可自动发送。</p></div><button type="button" id="salesContentCenterBtn" class="secondary">打开内容中心</button></div>
+        <div id="salesContentCenterBox" class="hint-box" style="display:none;max-height:520px;overflow:auto"></div>
+      </div>
+
+      <div class="card stack" id="crmPerformanceSection">
+        <div class="crm-section-head"><div><h3>区域与销售业绩</h3><p>按区域、销售人员查看线索、成交、合同和回款；销售经理在这里维护人员与区域归属。</p></div><button type="button" id="salesPerformanceBtn" class="secondary">加载区域业绩</button></div>
+        <div id="salesPerformanceBox" class="hint-box" style="display:none;max-height:400px;overflow:auto"></div>
       </div>
 
       <div class="card stack" id="salesDetailCard" style="display:none">
@@ -692,7 +805,9 @@
         </div>
       </div>
 
-      <div class="card stack" id="salesAssistantCard">
+      <details class="card crm-tools" id="salesAssistantCard">
+        <summary>销售 AI 助手（辅助工具）</summary>
+        <div class="stack" style="margin-top:12px">
         <div class="section-title">
           <strong>销售大管家</strong>
           <span class="small">内部对话助手：查客户、漏斗、风险、跟进建议（不对客户说话）</span>
@@ -702,9 +817,12 @@
           <input id="salesAssistantInput" placeholder="问：这家客户什么情况？今日跟谁？漏斗转化？" style="flex:1">
           <button type="button" id="salesAssistantSendBtn" class="warn">问大管家</button>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="card stack" id="salesSandboxCard">
+      <details class="card crm-tools" id="salesSandboxCard">
+        <summary>客户 AI 沙盒（仅用于测试）</summary>
+        <div class="stack" style="margin-top:12px">
         <div class="section-title">
           <strong>沙盒试聊</strong>
           <span class="small">不依赖微信客服，验证客户 AI 策略与转人工</span>
@@ -719,7 +837,8 @@
           <input id="salesSandboxInput" placeholder="模拟客户发言…" style="flex:1">
           <button type="button" id="salesSandboxSendBtn">发送</button>
         </div>
-      </div>
+        </div>
+      </details>
     </section>
 
     <section id="panel-onboarding" class="panel stack">
@@ -972,7 +1091,7 @@
   <nav class="bottom-nav" id="bottomNav">
     <button type="button" class="active" data-panel="overview"><span class="nav-icon">📊</span>总览</button>
     <button type="button" data-panel="health"><span class="nav-icon">🔴</span>健康</button>
-    <button type="button" data-panel="sales"><span class="nav-icon">💬</span>销售</button>
+    <button type="button" data-panel="sales"><span class="nav-icon">CRM</span>客户</button>
     <button type="button" data-panel="onboarding"><span class="nav-icon">🚀</span>上线</button>
     <button type="button" data-panel="faq"><span class="nav-icon">❓</span>FAQ</button>
     <button type="button" data-panel="demand"><span class="nav-icon">📋</span>需求</button>
@@ -1026,7 +1145,7 @@
       { term: '刷新数据', desc: '重新从服务器拉取租户列表、账单、告警和验收汇总。' },
       { term: '健康中心', desc: '客服日巡入口：全租户红绿灯与红名单。每天只处理红色异常，避免逐店登录检查。' },
       { term: '全量扫描', desc: '对所有活跃租户重跑运营检测并写入缓存，供健康中心红名单使用。' },
-      { term: '销售工作台', desc: '平台获客：客户AI接待微信客服/沙盒会话；销售AI给评分与建议；高意向可人工接管。' },
+      { term: '销售 CRM', desc: '客户 AI 获客、销售跟进、合同回款、授信风控、实施交付和长期培育的一体化客户管理。' },
       { term: '沙盒试聊', desc: '不接微信客服也能测客户AI：一轮一问、禁承诺闸门、转人工话术。' },
     ];
 
@@ -3124,6 +3243,35 @@ function legacyCopyFallback(value) {
       return `${city}${stores}线索#${l.id ?? ''}` || `线索#${l.id ?? ''}`;
     }
 
+    function renderSalesCrmOverview() {
+      const leads = state.sales.leads || [];
+      const terminal = new Set(['won', 'lost', 'unfit']);
+      const active = leads.filter((l) => !terminal.has(l.stage));
+      const stale = active.filter((l) => {
+        const last = l.last_human_at || l.updated_at;
+        return last && Date.now() - new Date(last).getTime() > 3 * 86400000;
+      });
+      const setText = (id, value) => { if ($(id)) $(id).textContent = String(value); };
+      setText('crmKpiTotal', leads.length);
+      setText('crmKpiActive', active.length);
+      setText('crmKpiHigh', active.filter((l) => ['high', 'critical'].includes(l.intent_level) || Number(l.intent_score) >= 70).length);
+      setText('crmKpiStale', stale.length);
+      setText('crmKpiWon', leads.filter((l) => l.stage === 'won').length);
+      setText('crmKpiDelivery', leads.filter((l) => l.stage === 'won' && !l.tenant_id).length);
+      const groups = [
+        ['AI 接待', ['new', 'ai_greeting', 'need_identified']],
+        ['销售跟进', ['qualified', 'sales_takeover']],
+        ['已拜访 / Demo', ['demo_completed']],
+        ['方案 / 报价', ['proposal']],
+        ['试跑 / 合同', ['trial']],
+        ['成交', ['won']],
+      ];
+      if ($('crmPipeline')) $('crmPipeline').innerHTML = groups.map(([label, stages]) => {
+        const count = leads.filter((l) => stages.includes(l.stage)).length;
+        return `<div class="crm-stage"><span>${salesEsc(label)}</span><strong>${count}</strong></div>`;
+      }).join('');
+    }
+
     function renderSalesChat(el, messages) {
       if (!el) return;
       el.innerHTML = (messages || []).map((m) => {
@@ -3155,9 +3303,9 @@ function legacyCopyFallback(value) {
         return `<tr class="${selected}" data-lead-id="${l.id}">
           <td><strong>${salesEsc(salesLeadDisplayName(l))}</strong><div class="mono small">${salesEsc(l.extracted?.phone || l.phone || '未留联系方式')}</div></td>
           <td>${salesStageLabel(l.stage)}</td>
-          <td>${salesControllerLabel(l.controller)}${handoff}</td>
+          <td><strong>${salesEsc(l.assigned_to || l.owner_username || '未分配')}</strong><div class="small">${salesControllerLabel(l.controller)}${handoff}</div></td>
           <td><strong>${salesEsc(l.intent_score)}</strong> <span class="small">${salesIntentLabel(l.intent_level)}</span></td>
-          <td>${l.store_count != null ? salesEsc(l.store_count) : '—'}</td>
+          <td>${salesEsc(l.region_name || l.city || '未分区域')}<div class="small">${l.store_count != null ? `${salesEsc(l.store_count)} 家门店` : '门店数待确认'}</div></td>
           <td>${salesEsc(pain)}<div>${tags}</div></td>
           <td class="small">${salesEsc(l.next_action || '—')}</td>
           <td class="small">${salesEsc(updated)}</td>
@@ -3166,6 +3314,7 @@ function legacyCopyFallback(value) {
       body.querySelectorAll('tr[data-lead-id]').forEach((tr) => {
         tr.onclick = () => openSalesLead(Number(tr.dataset.leadId)).catch((e) => toast(e.message));
       });
+      renderSalesCrmOverview();
     }
 
     async function loadSalesBoard() {
@@ -3198,7 +3347,9 @@ function legacyCopyFallback(value) {
       $('salesKfStatus').textContent = kf;
       renderSalesLeads();
       log(`销售线索 ${state.sales.leads.length} 条`);
-      loadSalesTop5().catch(() => null);
+      Promise.allSettled([
+        loadSalesTop5(), loadSalesTodo(), loadSalesRisk(), loadSalesFunnel(), loadSalesBossDashboard(),
+      ]).catch(() => null);
     }
 
     async function loadSalesFinanceBoard() {
@@ -4151,6 +4302,13 @@ function legacyCopyFallback(value) {
       const btn = e.target.closest('button[data-scroll-target]');
       if (!btn) return;
       scrollToOpsSection(btn.dataset.scrollTarget);
+    });
+    $('salesCrmNav').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-scroll-target]');
+      if (!btn) return;
+      document.querySelectorAll('#salesCrmNav button').forEach((item) => item.classList.toggle('active', item === btn));
+      const target = $(btn.dataset.scrollTarget);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
     function generateTenantId() {
