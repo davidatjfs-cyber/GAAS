@@ -245,6 +245,37 @@ export async function provisionTenantFromLead(pool, leadId, {
   };
 }
 
+/** 每张订单独立开通一个租户；同一品牌多门店不会复用客户主档的 tenant_id。 */
+export async function provisionTenantFromOrder(pool, orderId, { startedBy = 'finance' } = {}) {
+  const q = await pool.query(`SELECT o.*,l.company,l.name,l.phone,l.external_userid,p.payment_type,p.status AS pool_status
+    FROM sales_orders o JOIN sales_leads l ON l.id=o.lead_id JOIN sales_credit_pools p ON p.id=o.credit_pool_id WHERE o.id=$1`, [orderId]);
+  const order = q.rows?.[0];
+  if (!order) return { ok: false, error: 'order_not_found' };
+  if (order.provision_status === 'done') return { ok: true, already: true, tenant_id: order.tenant_id };
+  if (!['paid','credit_approved','provisioning'].includes(order.status) || order.pool_status !== 'active') return { ok: false, error: 'order_not_eligible' };
+  const tenantName = String(order.store_name || order.company || order.name).trim();
+  const tenantId = slugifyTenantId(`${tenantName}_${order.id}`);
+  const adminUsername = String(order.contact_phone || order.phone || `admin_${tenantId}`).replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 40) || `admin_${tenantId}`;
+  const tempPassword = genTempPassword();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`INSERT INTO tenants (tenant_id,name,mode,status) VALUES ($1,$2,'managed','provisioning')`, [tenantId, tenantName]);
+    await client.query(`INSERT INTO users (id,username,password_hash,real_name,role,is_active,tenant_id) VALUES (gen_random_uuid(),$1,$2,$3,'admin',TRUE,$4)`, [adminUsername, await bcrypt.hash(tempPassword, 10), tenantName, tenantId]);
+    await client.query(`INSERT INTO hrms_state (key,data,updated_at) VALUES ($1,$2::jsonb,NOW()) ON CONFLICT (key) DO NOTHING`, [tenantId, JSON.stringify(createEmptyTenantState({ tenantId, tenantName, adminUsername, adminName: tenantName }))]);
+    await savePlatformProfile(client, tenantId, tenantName);
+    await issueTrialLicense(client, tenantId);
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); return { ok: false, error: 'provision_failed', message: e?.message }; } finally { client.release(); }
+  await pool.query(`UPDATE sales_orders SET tenant_id=$2,provision_status='done',provision_meta=$3::jsonb,status='provisioned',updated_at=NOW() WHERE id=$1`, [order.id, tenantId, JSON.stringify({ admin_username: adminUsername, provisioned_by: startedBy, provisioned_at: new Date().toISOString() })]);
+  const owners = await pool.query(`SELECT role,username FROM platform_admins WHERE status='active' AND role IN ('customer_service','implementation') ORDER BY role,username`).catch(() => ({ rows: [] }));
+  const cs = owners.rows.find((x) => x.role === 'customer_service')?.username || null;
+  const impl = owners.rows.find((x) => x.role === 'implementation')?.username || null;
+  await pool.query(`INSERT INTO sales_order_delivery_projects (order_id,tenant_id,status,cs_owner,implementation_owner) VALUES ($1,$2,'pending',$3,$4)`, [order.id, tenantId, cs, impl]);
+  await addEvent(pool, order.lead_id, { event_type: 'ORDER_PROVISIONED', summary: `订单 ${order.order_no} 已开通租户 ${tenantId}`, priority: 'high', recommended_action: 'onboarding', payload: { order_id: order.id, tenant_id: tenantId } }).catch(() => null);
+  return { ok: true, tenant_id: tenantId, admin_username: adminUsername, temp_password: tempPassword };
+}
+
 /** 最终交付时生成一次性凭据；明文只返回本次调用，不写入销售表或日志。 */
 export async function rotateTenantAdminCredentials(pool, leadId) {
   const lead = await getLead(pool, leadId);

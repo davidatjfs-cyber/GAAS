@@ -804,6 +804,19 @@
           </div>
           <div id="salesCreditBox" class="small" style="margin-top:8px"></div>
           <div id="salesContractsBox" class="stack" style="margin-top:8px"></div>
+          <div class="detail-grid" style="margin-top:10px">
+            <label class="field">审批通过合同<select id="salesOrderContract"><option value="">请先选择已审批合同</option></select></label>
+            <label class="field">订单类型<select id="salesOrderType"><option value="new_store">新开门店</option><option value="renewal">续约</option></select></label>
+            <label class="field">订单金额（元）<input id="salesOrderAmount" type="number" min="0.01" step="0.01"></label>
+            <label class="field">门店名称<input id="salesOrderStoreName" placeholder="本次开通的门店名称"></label>
+            <label class="field">门店地址<input id="salesOrderAddress"></label>
+            <label class="field">门店联系人<input id="salesOrderContact"></label>
+            <label class="field">联系电话<input id="salesOrderPhone"></label>
+            <label class="field">面积（㎡）<input id="salesOrderArea" type="number" min="0"></label>
+            <label class="field">餐厅类型<input id="salesOrderRestaurantType" placeholder="例如：正餐 / 快餐"></label>
+            <div class="field"><span>操作</span><button type="button" id="salesCreateOrderBtn" class="warn">提交订单给财务</button></div>
+          </div>
+          <div id="salesOrdersBox" class="stack" style="margin-top:8px"></div>
           <div id="salesDeliveryBox" class="small" style="margin-top:8px"></div>
           <div id="salesContractHint" class="small" style="margin-top:6px"></div>
         </div>
@@ -3240,6 +3253,7 @@ function legacyCopyFallback(value) {
     $('salesSendContentBtn').onclick = () => salesSendContentAsset().catch((e) => toast(e.message));
     $('salesSaveAutoNurtureBtn').onclick = () => salesSaveAutoNurture().catch((e) => toast(e.message));
     $('salesCreateContractBtn').onclick = () => salesCreateContract().catch((e) => toast(e.message));
+    $('salesCreateOrderBtn').onclick = () => salesCreateOrder().catch((e) => toast(e.message));
     $('salesRefreshCrmBtn').onclick = () => salesLoadCrmOverview().catch((e) => toast(e.message));
     $('salesAssistantSendBtn').onclick = () => salesAssistantChat().catch((e) => toast(e.message));
     $('salesAssistantInput').onkeydown = (ev) => {
@@ -3499,16 +3513,21 @@ function legacyCopyFallback(value) {
     }
 
     async function loadSalesFinanceBoard() {
-      const [payments, invoices] = await Promise.all([
+      const [payments, invoices, orders] = await Promise.all([
         api('/api/admin/sales/finance/pending-payments'),
         api('/api/admin/sales/finance/pending-invoices'),
+        api('/api/admin/sales/finance/orders'),
       ]);
       const box = $('salesFinanceBox');
       box.style.display = '';
-      box.innerHTML = `<strong>财务待办</strong><div class="small">确认回款后现金客户才允许开通；开票完成后上传发票文件，全部动作写入审计。</div>
+      box.innerHTML = `<strong>财务销账与订单审核</strong><div class="small">现金客户确认收款后自动开通；帐期客户须实时核对品牌共享授信，超额自动锁定并退回销售。</div>
+        <div class="stack" style="margin-top:8px">${(orders.items || []).map((o) => `<div class="glossary-item" data-finance-order="${Number(o.id)}"><strong>${salesEsc(o.company || o.name)} · ${salesEsc(o.store_name)}</strong><p>${o.order_type === 'renewal' ? '续约' : '新开门店'} · ${salesMoney(o.amount_fen)} · ${o.payment_type === 'credit' ? `帐期 / 品牌${salesEsc(o.brand_name)} / 授信${salesMoney(o.credit_limit_fen)}` : '现金客户'}</p><div class="toolbar">${o.payment_type === 'cash' ? '<input data-order-amount type="number" step="0.01" value="'+(Number(o.amount_fen)/100)+'"><button data-order-paid class="warn">确认收款并开通</button>' : '<button data-order-credit class="warn">核实授信并通过</button>'}<button data-order-return class="ghost">退回销售</button></div></div>`).join('') || '<div class="small">暂无待审核订单。</div>'}</div>
         <div class="stack" style="margin-top:8px">${(payments.items || []).map((p) => `<div class="glossary-item"><strong>${salesEsc(p.company || p.name || `客户#${p.lead_id}`)}</strong><p>合同 ${salesEsc(p.contract_no)} · 待确认回款 ${salesMoney(p.amount_fen)}</p><button data-finance-payment="${Number(p.id)}" class="warn">确认已到账</button></div>`).join('') || '<div class="small">暂无待确认回款。</div>'}</div>
         <div class="stack" style="margin-top:8px">${(invoices.items || []).map((i) => `<div class="glossary-item" data-finance-invoice="${Number(i.id)}"><strong>${salesEsc(i.company || i.name || `客户#${i.lead_id}`)}</strong><p>合同 ${salesEsc(i.contract_no)} · 待开票 ${salesMoney(i.amount_fen)}</p><div class="toolbar"><input data-invoice-no placeholder="发票号码"><input data-invoice-file type="file" accept=".pdf,image/*"><button data-issue-invoice class="secondary">登记已开票</button></div></div>`).join('') || '<div class="small">暂无待开票申请。</div>'}</div>`;
       box.querySelectorAll('[data-finance-payment]').forEach((btn) => btn.onclick = async () => { await api(`/api/admin/sales/payments/${btn.dataset.financePayment}/confirm`, { method: 'POST', body: '{}' }); toast('回款已确认'); await loadSalesFinanceBoard(); });
+      box.querySelectorAll('[data-order-paid]').forEach((btn) => btn.onclick = async () => { const card=btn.closest('[data-finance-order]'); await api(`/api/admin/sales/orders/${card.dataset.financeOrder}/finance-decision`, {method:'POST',body:JSON.stringify({action:'confirm_paid',amount:Number(card.querySelector('[data-order-amount]').value||0)})}); toast('已销账，系统已创建开通与交付任务'); await loadSalesFinanceBoard(); });
+      box.querySelectorAll('[data-order-credit]').forEach((btn) => btn.onclick = async () => { const card=btn.closest('[data-finance-order]'); const d=await api(`/api/admin/sales/orders/${card.dataset.financeOrder}/finance-decision`, {method:'POST',body:JSON.stringify({action:'approve_credit'})}); if(!d.ok) throw new Error(d.error||'授信审核未通过'); toast('授信核实通过，系统已创建开通与交付任务'); await loadSalesFinanceBoard(); });
+      box.querySelectorAll('[data-order-return]').forEach((btn) => btn.onclick = async () => { const reason=window.prompt('退回销售原因',''); if(!reason) return; const card=btn.closest('[data-finance-order]'); await api(`/api/admin/sales/orders/${card.dataset.financeOrder}/finance-decision`, {method:'POST',body:JSON.stringify({action:'return',reason})}); toast('订单已退回销售'); await loadSalesFinanceBoard(); });
       box.querySelectorAll('[data-issue-invoice]').forEach((btn) => btn.onclick = async () => { const card = btn.closest('[data-finance-invoice]'); const invoiceNo = card.querySelector('[data-invoice-no]').value.trim(); if (!invoiceNo) throw new Error('请填写发票号码'); const uploaded = await salesUploadDocument(card.querySelector('[data-invoice-file]')?.files?.[0]); await api(`/api/admin/sales/invoices/${card.dataset.financeInvoice}/issued`, { method: 'PATCH', body: JSON.stringify({ invoice_no: invoiceNo, file_url: uploaded?.file_url || null }) }); toast('发票已登记'); await loadSalesFinanceBoard(); });
       $('salesKfStatus').textContent = `待确认回款 ${(payments.items || []).length} · 待开票 ${(invoices.items || []).length}`;
     }
@@ -3671,6 +3690,13 @@ function legacyCopyFallback(value) {
       $('salesContractNo').value = ''; $('salesContractAmount').value = ''; $('salesContractVersion').value = '1'; $('salesContractFileUrl').value = ''; $('salesContractFile').value = '';
       await salesLoadCrmOverview();
     }
+    async function salesCreateOrder() {
+      const leadId = state.sales.selectedLeadId;
+      const payload = { contract_id: Number($('salesOrderContract').value), order_type: $('salesOrderType').value, amount: Number($('salesOrderAmount').value || 0), store_name: $('salesOrderStoreName').value.trim(), store_address: $('salesOrderAddress').value.trim(), contact_name: $('salesOrderContact').value.trim(), contact_phone: $('salesOrderPhone').value.trim(), area_sqm: Number($('salesOrderArea').value || 0), restaurant_type: $('salesOrderRestaurantType').value.trim() };
+      if (!payload.contract_id || !payload.amount || !payload.store_name) throw new Error('请选择已审批合同，并填写订单金额和门店名称');
+      await api(`/api/admin/sales/leads/${leadId}/orders`, { method:'POST', body:JSON.stringify(payload) });
+      toast('订单已提交财务审核'); ['salesOrderAmount','salesOrderStoreName','salesOrderAddress','salesOrderContact','salesOrderPhone','salesOrderArea','salesOrderRestaurantType'].forEach((x)=>$(x).value=''); await salesLoadCrmOverview();
+    }
     async function salesUploadDocument(file) {
       if (!file) return null;
       const fd = new FormData(); fd.append('file', file);
@@ -3701,12 +3727,17 @@ function legacyCopyFallback(value) {
       $('salesContractsBox').innerHTML = (data.contracts || []).map((c) => {
         const ps = paymentsByContract.get(Number(c.id)) || [];
         const invs = invoicesByContract.get(Number(c.id)) || [];
-        return `<div class="glossary-item" data-contract-id="${Number(c.id)}"><strong>${salesEsc(c.contract_no)} · 第${Number(c.version_no || 1)}版</strong><p>金额 ${salesMoney(c.amount_fen)} · ${contractStatusLabel(c.status)} ${c.file_url ? `· <a href="${salesEsc(c.file_url)}" target="_blank">查看原合同</a>` : ''}</p>
+        return `<div class="glossary-item" data-contract-id="${Number(c.id)}"><strong>${salesEsc(c.contract_no)} · 第${Number(c.version_no || 1)}版</strong><p>金额 ${salesMoney(c.amount_fen)} · ${contractStatusLabel(c.status)} · 审批：${c.approval_status === 'approved' ? '总经理已批准' : c.approval_status === 'pending' ? '待总经理审批' : c.approval_status === 'rejected' ? '已退回' : '待提交审批'} ${c.file_url ? `· <a href="${salesEsc(c.file_url)}" target="_blank">查看原合同</a>` : ''}</p>
+          <div class="toolbar">${c.approval_status === 'draft' || c.approval_status === 'rejected' ? '<button data-submit-contract-approval class="warn">提交总经理审批</button>' : ''}${c.approval_status === 'pending' && ['super_admin','general_manager'].includes(role) ? '<button data-approve-contract class="warn">总经理审批并设置授信</button>' : ''}</div>
           <div class="toolbar"><input data-customer-sign-file type="file" accept=".pdf,.doc,.docx,image/*" style="max-width:190px"><button data-cstatus="customer_signed" data-file-source="customer" class="secondary">上传客户盖章件</button>${['super_admin','general_manager','sales_manager'].includes(role) ? '<input data-our-sign-file type="file" accept=".pdf,.doc,.docx,image/*" style="max-width:190px"><button data-cstatus="our_signed" data-file-source="our" class="secondary">上传我方盖章件</button><button data-cstatus="effective" class="warn">确认合同生效</button>' : ''}</div>
           <div class="toolbar"><input data-payment-amount type="number" min="0.01" step="0.01" placeholder="本次回款金额"><input data-payment-file type="file" accept=".pdf,image/*"><button data-payment class="secondary">提交回款凭证</button><input data-invoice-amount type="number" min="0.01" step="0.01" placeholder="申请开票金额"><button data-invoice class="secondary">申请开票</button></div>
           <div class="small">${ps.map((p) => `回款 ${salesMoney(p.amount_fen)} · ${paymentStatusLabel(p.status)} ${p.receipt_url ? `· <a href="${salesEsc(p.receipt_url)}" target="_blank">查看凭证</a>` : ''} ${p.status === 'pending' && ['super_admin','finance'].includes(role) ? `<button data-confirm-payment="${Number(p.id)}" class="ghost">确认到账</button>` : ''}`).join('<br>') || '暂无回款'}</div>
           <div class="small">${invs.map((i) => `发票 ${salesMoney(i.amount_fen)} · ${i.status === 'issued' ? '已开票' : '待开票'} ${i.invoice_no ? `· 发票号码 ${salesEsc(i.invoice_no)}` : ''}`).join('<br>') || '暂无开票记录'}</div></div>`;
       }).join('') || '<div class="small">尚未登记合同。</div>';
+      $('salesOrderContract').innerHTML = '<option value="">请选择已审批合同</option>' + (data.contracts || []).filter((c) => c.approval_status === 'approved').map((c) => `<option value="${Number(c.id)}">${salesEsc(c.contract_no)} · ${salesMoney(c.amount_fen)}</option>`).join('');
+      $('salesOrdersBox').innerHTML = (data.orders || []).map((o) => `<div class="glossary-item"><strong>${salesEsc(o.order_no)} · ${o.order_type === 'renewal' ? '续约' : '新开门店'} · ${salesEsc(o.store_name)}</strong><p>金额 ${salesMoney(o.amount_fen)} · ${o.status === 'finance_pending' ? '待财务审核' : o.status === 'paid' ? '已付款，正在开通' : o.status === 'credit_approved' ? '帐期审核通过，正在开通' : o.status === 'provisioned' ? `已开通 ${salesEsc(o.tenant_id)}` : o.status === 'returned' ? `已退回：${salesEsc(o.return_reason)}` : o.status}</p></div>`).join('') || '<div class="small">暂无订单。合同审批通过后，销售可为新店或续约门店提交订单。</div>';
+      $('salesContractsBox').querySelectorAll('[data-submit-contract-approval]').forEach((btn) => btn.onclick = async () => { const card=btn.closest('[data-contract-id]'); await api(`/api/admin/sales/contracts/${card.dataset.contractId}/submit-approval`, {method:'POST',body:'{}'}); toast('已提交总经理审批'); await salesLoadCrmOverview(); });
+      $('salesContractsBox').querySelectorAll('[data-approve-contract]').forEach((btn) => btn.onclick = async () => { const card=btn.closest('[data-contract-id]'); const payment=window.prompt('客户类型：请输入“现金”或“帐期”', '现金'); const isCredit=payment==='帐期'; const brand=window.prompt('授信主体品牌名称（连锁店填写品牌统一名称）', state.sales.currentLead?.company || ''); const credit=isCredit ? Number(window.prompt('总经理授信金额（元）', '0') || 0) : 0; await api(`/api/admin/sales/contracts/${card.dataset.contractId}/approve`, {method:'POST',body:JSON.stringify({payment_type:isCredit?'credit':'cash',brand_name:brand,credit_limit:credit})}); toast('合同审批及授信已完成'); await salesLoadCrmOverview(); });
       $('salesContractsBox').querySelectorAll('[data-cstatus]').forEach((btn) => btn.onclick = async () => { const card = btn.closest('[data-contract-id]'); const source = btn.dataset.fileSource; const file = source === 'customer' ? card.querySelector('[data-customer-sign-file]')?.files?.[0] : source === 'our' ? card.querySelector('[data-our-sign-file]')?.files?.[0] : null; if (source && !file) throw new Error('请先选择对应的盖章文件'); const uploaded = await salesUploadDocument(file); await api(`/api/admin/sales/contracts/${card.dataset.contractId}/status`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.cstatus, file_url: uploaded?.file_url || null }) }); await salesLoadCrmOverview(); });
       $('salesContractsBox').querySelectorAll('[data-payment]').forEach((btn) => btn.onclick = async () => { const card = btn.closest('[data-contract-id]'); const amount = Number(card.querySelector('[data-payment-amount]').value || 0); if (!amount) throw new Error('请输入本次回款金额'); const uploaded = await salesUploadDocument(card.querySelector('[data-payment-file]')?.files?.[0]); await api(`/api/admin/sales/contracts/${card.dataset.contractId}/payments`, { method: 'POST', body: JSON.stringify({ amount, receipt_url: uploaded?.file_url || null }) }); await salesLoadCrmOverview(); });
       $('salesContractsBox').querySelectorAll('[data-invoice]').forEach((btn) => btn.onclick = async () => { const card = btn.closest('[data-contract-id]'); const amount = Number(card.querySelector('[data-invoice-amount]').value || 0); if (!amount) throw new Error('请输入申请开票金额'); await api(`/api/admin/sales/contracts/${card.dataset.contractId}/invoices`, { method: 'POST', body: JSON.stringify({ amount }) }); await salesLoadCrmOverview(); });
