@@ -383,6 +383,11 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       if (encrypt && env.aesKey) {
         try {
           const plain = decryptKfMessage(String(encrypt), env.aesKey);
+          // 企微自建应用一个回调地址会推送多种事件类型；"外部联系人变更回调"和"微信客服
+          // 消息和事件"共用同一个URL/Token/EncodingAESKey，这里先分流给客户联系事件处理，
+          // 命中就直接返回，不再走下面 KF 消息同步的逻辑。
+          const { handleExternalContactChangeEvent } = await import('./services/sales/wecom-contact-events.js');
+          if (await handleExternalContactChangeEvent(pool, plain)) return;
           const tokenM = plain.match(/<Token><!\[CDATA\[(.*?)\]\]><\/Token>/) || plain.match(/"Token"\s*:\s*"([^"]+)"/);
           const kfM = plain.match(/<OpenKfId><!\[CDATA\[(.*?)\]\]><\/OpenKfId>/) || plain.match(/"OpenKfId"\s*:\s*"([^"]+)"/);
           if (tokenM) token = tokenM[1];

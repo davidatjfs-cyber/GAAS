@@ -1,27 +1,18 @@
 /**
- * 企微「客户联系」实时事件回调(add_external_contact/del_external_contact)。
+ * 企微「客户联系」变更事件(add_external_contact/del_external_contact)处理。
+ * 企业微信自建应用一个应用只有一个回调URL/Token/EncodingAESKey，"外部联系人变更回调"
+ * 和"微信客服消息和事件"是同一个应用下勾选的两种事件类型，共用同一个回调地址——不是
+ * 分开配置的两个URL。所以这里不注册新路由，而是被 /api/wecom/kf/callback 这个既有回调
+ * 解密报文后，按 ChangeType 字段分流调用，复用同一份Token/EncodingAESKey。
+ *
  * 与 growth-wecom-feishu-routes.js 里的 syncWecomContactsForStore 轮询是互补关系：
  * 轮询降级为低频兜底对账，这里才是主力实时数据源，避免加好友到系统感知之间的延迟，
  * 并且直接用 external_userid 强关联 sales_leads(已有唯一索引 idx_sales_leads_external_uid)，
  * 不再像轮询那样只能靠手机号做弱匹配。
  */
-import express from 'express';
-import { verifyKfSignature, decryptKfEcho, decryptKfMessage } from './sales-kf.js';
 import { getAllStoreWecomConfigs, getWecomAccessToken, resolveTenantIdForStore } from '../../growth-api.js';
 import { newLeadKey } from './sales-store.js';
 import { tenantContext } from '../../utils/database.js';
-
-// 「客户联系」事件回调走的是老式XML报文(<xml><Encrypt>...</Encrypt></xml>)，
-// 不是"微信客服"KF回调那种JSON报文，全局 express.json() 解析不了，这里只在本路由
-// 局部用 express.text 把原始报文当字符串接住，不影响其他路由的body解析方式。
-const rawXmlBody = express.text({ type: () => true });
-
-function contactEventEnv() {
-  return {
-    token: String(process.env.WECOM_CONTACT_TOKEN || process.env.WECOM_CALLBACK_TOKEN || '').trim(),
-    aesKey: String(process.env.WECOM_CONTACT_AES_KEY || process.env.WECOM_CALLBACK_AES_KEY || '').trim(),
-  };
-}
 
 function parseXmlTag(xml, tag) {
   const m = String(xml || '').match(new RegExp(`<${tag}><!\\[CDATA\\[(.*?)\\]\\]></${tag}>`));
@@ -76,47 +67,24 @@ async function upsertContactRealtime(pool, { storeId, externalUserid, tenantId }
   return { name, phone };
 }
 
-export function registerWecomContactEventRoutes(app, pool) {
-  // 企微后台校验URL用：GET请求原样解密echostr返回。
-  app.get('/api/wecom/contact-events/callback', (req, res) => {
-    const { msg_signature, timestamp, nonce, echostr } = req.query;
-    const { token, aesKey } = contactEventEnv();
-    if (!token || !aesKey) return res.status(500).send('not_configured');
-    const sig = verifyKfSignature(token, timestamp, nonce, echostr);
-    if (sig !== msg_signature) return res.status(401).send('invalid_signature');
-    try {
-      res.send(decryptKfEcho(String(echostr), aesKey));
-    } catch (e) {
-      res.status(400).send('decrypt_failed');
-    }
-  });
-
-  app.post('/api/wecom/contact-events/callback', rawXmlBody, async (req, res) => {
-    res.send('success'); // 企微要求尽快200响应，处理逻辑异步进行，失败不影响下次重试之外的行为
-    try {
-      const { msg_signature, timestamp, nonce } = req.query;
-      const { token, aesKey } = contactEventEnv();
-      if (!token || !aesKey) return;
-      const encrypt = parseXmlTag(String(req.body || ''), 'Encrypt');
-      if (!encrypt) return;
-      const sig = verifyKfSignature(token, timestamp, nonce, encrypt);
-      if (sig !== msg_signature) { console.warn('[wecom-contact-events] invalid signature'); return; }
-      const xml = decryptKfMessage(encrypt, aesKey);
-      const changeType = parseXmlTag(xml, 'ChangeType');
-      const externalUserid = parseXmlTag(xml, 'ExternalUserID');
-      const userId = parseXmlTag(xml, 'UserID');
-      if (!externalUserid) return;
-      if (changeType === 'del_external_contact' || changeType === 'del_follow_user') {
-        await pool.query(`UPDATE wechat_work_customers SET updated_at=NOW(), note=COALESCE(note,'') || ' [已删除好友]' WHERE external_userid=$1`, [externalUserid]);
-        return;
-      }
-      if (changeType !== 'add_external_contact') return;
-      const storeId = await resolveStoreIdByUserId(pool, userId);
-      if (!storeId) { console.warn('[wecom-contact-events] no store matched for userId:', userId); return; }
-      const tenantId = await resolveTenantIdForStore(pool, storeId);
-      await tenantContext.run(tenantId, () => upsertContactRealtime(pool, { storeId, externalUserid, tenantId }));
-    } catch (e) {
-      console.error('[wecom-contact-events] callback processing failed:', e?.message || e);
-    }
-  });
+/**
+ * @param {string} decryptedXml 已用 decryptKfMessage 解开的明文XML(和KF共用同一份解密结果)
+ * @returns {boolean} 是否是本模块认识并处理了的事件(ChangeType命中)；false表示上层应继续按其他事件类型处理(如KF消息)
+ */
+export async function handleExternalContactChangeEvent(pool, decryptedXml) {
+  const changeType = parseXmlTag(decryptedXml, 'ChangeType');
+  if (!['add_external_contact', 'del_external_contact', 'del_follow_user'].includes(changeType)) return false;
+  const externalUserid = parseXmlTag(decryptedXml, 'ExternalUserID');
+  const userId = parseXmlTag(decryptedXml, 'UserID');
+  if (!externalUserid) return true;
+  if (changeType === 'del_external_contact' || changeType === 'del_follow_user') {
+    await pool.query(`UPDATE wechat_work_customers SET updated_at=NOW(), note=COALESCE(note,'') || ' [已删除好友]' WHERE external_userid=$1`, [externalUserid]).catch((e) => console.warn('[wecom-contact-events] del update failed:', e?.message || e));
+    return true;
+  }
+  const storeId = await resolveStoreIdByUserId(pool, userId);
+  if (!storeId) { console.warn('[wecom-contact-events] no store matched for userId:', userId); return true; }
+  const tenantId = await resolveTenantIdForStore(pool, storeId);
+  await tenantContext.run(tenantId, () => upsertContactRealtime(pool, { storeId, externalUserid, tenantId }))
+    .catch((e) => console.error('[wecom-contact-events] add upsert failed:', e?.message || e));
+  return true;
 }
