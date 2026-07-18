@@ -1,7 +1,7 @@
 #!/bin/bash
 # HRMS PostgreSQL 本地备份 — 历史大表逻辑全量脚本（cron 已停用，勿重新挂频繁任务）
-# 当前生产备份：PITR（WAL + 周 pg_basebackup）+ 周 pg_dump 到 /opt/pg_pitr/weekly_export；轻量日备见 backup-state-only.sh
-# 仓库调度说明见 backup-schedule.crontab
+# 商业化基线：每周逻辑全量 + 每日全租户 state 快照；调度见 backup-schedule.crontab。
+# WAL-PITR 只有在实际安装归档脚本且 PostgreSQL archive_mode=on 后才能宣称启用，不能仅凭注释判断。
 # 防积分等丢失：服务端 PUT /api/state 已对 pointRecords 等与 DB 合并；勿用陈旧 localStorage 整包覆盖；
 # 极端恢复：server/scripts/merge-point-records-from-backup.mjs（只补缺失 id）
 # Keeps 30 days of local backups on ECS；OSS 上传已关闭时仅本地保留

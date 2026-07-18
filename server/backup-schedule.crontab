@@ -1,19 +1,15 @@
-# HRMS 数据库备份（2026-05 起：ECS 上 PITR + 周逻辑全量 + 日本地 hrms_state）
-# 安装：在 ECS 上以 root: crontab -e，或执行 scripts/pg-pitr/install-pitr-on-ecs.sh
+# HRMS 数据库备份基线：每日全租户 state + 每周 PostgreSQL 逻辑全量。
+# 安装时请合并到现有 root crontab，不要整文件覆盖其它业务任务。
 #
-# 服务端（ECS root crontab 示例，时区上海）：
+# 服务端（ECS root crontab，时区上海）：
 # CRON_TZ=Asia/Shanghai
-# 15 4 * * * /opt/pg_pitr/scripts/pg-pitr-backup-health.sh
-# 30 3 * * * /opt/pg_pitr/scripts/pg-pitr-prune-wal.sh
-# 30 2 * * 0 /opt/pg_pitr/scripts/pg-pitr-weekly-base.sh
-# 0 3 * * 0 /opt/pg_pitr/scripts/pg-pitr-weekly-logical-export.sh
-# 0 12 * * * /bin/bash /opt/hrms/server/backup-state-only.sh
+CRON_TZ=Asia/Shanghai
+0 12 * * * /usr/bin/flock -n /var/lock/hrms-state-backup.lock /bin/bash /opt/hrms/server/backup-state-only.sh
+0 3 * * 0 /usr/bin/flock -n /var/lock/hrms-full-backup.lock /bin/bash /opt/hrms/server/backup.sh
 #
 # Mac 本机自动拉取周备（推荐：每周一 23:00，无需手跑命令）
 #   bash scripts/mac-launchd/install-weekly-pull-launchagent.sh
 # 或手动（测试）：
 # HRMS_MAC_BACKUP_DIR="/Users/magainze/hrms backup" bash /path/to/HRMS/scripts/pull-hrms-weekly-backup.sh
 #
-# 失败告警：在 ECS 编辑 /opt/pg_pitr/alert.env，设置 BACKUP_ALERT_WEBHOOK=飞书机器人 Webhook；参见 /opt/pg_pitr/alert.env.example
-#
-# 旧版：每天两次 backup.sh 大表逻辑全量 — 已停用，详见 /opt/pg_pitr/README_PITR.txt
+# 注意：WAL-PITR 是独立增强项；必须验证 archive_mode=on、archive_command、base backup 和恢复演练后才算启用。
