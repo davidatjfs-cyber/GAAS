@@ -43,6 +43,7 @@ import { safeExecute, safeErrorLog } from './utils/error-handler.js';
 import { maskLLMMessages } from './utils/sensitive-mask.js';
 import { sanitizeLLMOutput, sanitizeLLMOutputWithAudit } from './utils/llm-output-sanitize.js';
 import { logAgentOperation } from './utils/agent-audit-log.js';
+import { recordAiFeedback, recordAiInteraction } from './services/ai-quality-learning-service.js';
 import {
   feishuSkipOpenIdResolveHrms,
   isOpenIdCrossAppFeishuError,
@@ -3500,11 +3501,28 @@ async function setAgentLongMemory(userKey, memoryKey, value) {
 }
 
 async function recordAgentQualityAudit({ route, username, queryText, responseText, auditResult, passed, rewriteCount = 0 }) {
+  const auditId = randomUUID();
+  let traceId = null;
+  try {
+    traceId = await recordAiInteraction(pool(), {
+      source: 'agent_quality_audit',
+      sourceRecordId: auditId,
+      route,
+      purpose: 'user_response',
+      actorId: username,
+      input: queryText,
+      output: responseText,
+      qualityMetrics: { ...(auditResult || {}), passed: passed === true, rewrite_count: rewriteCount },
+    });
+  } catch (e) {
+    console.error('[agents] record AI interaction trace failed:', e?.message || e);
+  }
   try {
     await pool().query(
-      `INSERT INTO agent_quality_audits (route, username, query_text, response_text, audit_result, passed, rewrite_count, tenant_id)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)`,
+      `INSERT INTO agent_quality_audits (id, route, username, query_text, response_text, audit_result, passed, rewrite_count, tenant_id, trace_id)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)`,
       [
+        auditId,
         String(route || '').trim(),
         String(username || '').trim(),
         String(queryText || '').slice(0, 1000),
@@ -3512,10 +3530,39 @@ async function recordAgentQualityAudit({ route, username, queryText, responseTex
         JSON.stringify(auditResult || {}),
         passed === true,
         Math.max(0, Number(rewriteCount) || 0),
-        resolveTenantIdDefault()
+        resolveTenantIdDefault(),
+        traceId,
       ]
     );
-  } catch (e) { console.error('[agents] recordAgentQualityAudit failed:', e?.message || e); }
+  } catch (e) {
+    console.error('[agents] recordAgentQualityAudit failed:', e?.message || e);
+    try {
+      await pool().query(
+        `INSERT INTO agent_quality_audits (id, route, username, query_text, response_text, audit_result, passed, rewrite_count, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)`,
+        [auditId, String(route || '').trim(), String(username || '').trim(), String(queryText || '').slice(0, 1000),
+          String(responseText || '').slice(0, 4000), JSON.stringify(auditResult || {}), passed === true,
+          Math.max(0, Number(rewriteCount) || 0), resolveTenantIdDefault()]
+      );
+    } catch (fallbackError) {
+      console.error('[agents] recordAgentQualityAudit legacy fallback failed:', fallbackError?.message || fallbackError);
+    }
+  }
+  if (traceId) {
+    try {
+      await recordAiFeedback(pool(), {
+        traceId,
+        actorId: 'quality_gate',
+        feedbackType: 'quality_audit',
+        rating: passed === true ? 1 : -1,
+        input: queryText,
+        output: responseText,
+        idempotencyKey: `quality-audit:${auditId}`,
+      });
+    } catch (e) {
+      console.error('[agents] record AI quality feedback failed:', e?.message || e);
+    }
+  }
 }
 
 function buildAutonomousTaskFingerprint({ taskType, store, route, queryText }) {

@@ -108,6 +108,8 @@ import { createPlatformAdminRequired, registerTenantPlatformRoutes, requireSuper
 import { registerKnowledgeRoutes } from './knowledge-routes.js';
 import { registerCheckinRoutes } from './checkin-routes.js';
 import { registerReportsRoutes } from './reports-routes.js';
+import { registerAiQualityLearningRoutes } from './ai-quality-learning-routes.js';
+import { recordAiFeedback, startAiQualityLearningScheduler } from './services/ai-quality-learning-service.js';
 import {
   registerHrmsPayrollClosedLoopRoutes,
   ensurePayrollRulesTables,
@@ -5776,6 +5778,12 @@ registerSalesAiRoutes(app, pool, platformAdminRequired, {
   upload,
 });
 registerTenantSubscriptionRoutes(app, { pool, authRequired });
+registerAiQualityLearningRoutes(app, {
+  pool,
+  authRequired,
+  platformAdminRequired,
+  requireSuperAdmin,
+});
 // tenant-platform-routes.js 里全部是租户开通/许可证/系统配置这类"总控"操作，只该给
 // super_admin用——这里传一个组合中间件(先校验登录，再校验角色)，覆盖该文件里所有
 // 使用 platformAdminRequired 的路由，不用逐条去改25+个路由定义。
@@ -11268,12 +11276,28 @@ app.post('/api/agent/diagnosis-feedback', authRequired, async (req, res) => {
   const fb = Number(feedback);
   if (fb !== 0 && fb !== 1) return res.status(400).json({ error: 'feedback must be 0 or 1' });
   try {
-    await pool.query(
+    const updated = await pool.query(
       `UPDATE diagnosis_feedback
        SET feedback = $1, feedback_note = $2, updated_at = NOW()
-       WHERE task_id = $3 AND user_key = $4`,
-      [fb, String(feedback_note || '').slice(0, 500), task_id, userKey]
+       WHERE task_id = $3 AND user_key = $4 AND tenant_id = $5
+       RETURNING id, trace_id, diagnosis, query_text`,
+      [fb, String(feedback_note || '').slice(0, 500), task_id, userKey, req.tenantId]
     );
+    const row = updated.rows[0];
+    if (!row) return res.status(404).json({ error: 'diagnosis_not_found' });
+    if (row.trace_id) {
+      await recordAiFeedback(pool, {
+        traceId: row.trace_id,
+        actorId: userKey,
+        feedbackType: 'user_rating',
+        rating: fb === 1 ? 1 : -1,
+        note: feedback_note,
+        input: row.query_text || task_id,
+        output: row.diagnosis,
+        idempotencyKey: `diagnosis:${row.id}`,
+        tenantId: req.tenantId,
+      });
+    }
     return res.json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: e?.message });
@@ -11292,8 +11316,8 @@ app.get('/api/admin/diagnosis-stats', authRequired, async (req, res) => {
         ROUND(AVG(char_count), 0) AS avg_char_count,
         ROUND(AVG(metric_count), 1) AS avg_metric_count
       FROM diagnosis_feedback
-      WHERE created_at > NOW() - INTERVAL '30 days'
-    `);
+      WHERE created_at > NOW() - INTERVAL '30 days' AND tenant_id = $1
+    `, [req.tenantId]);
     return res.json(r.rows[0]);
   } catch (e) {
     return res.status(500).json({ error: e?.message });
@@ -17862,6 +17886,36 @@ startOntologyDailyDiagnosisScheduler(pool);
 startHealthCenterDailyScanScheduler(pool);
 // 健康中心运营闭环：CST 08:30 队列摘要 + 工作时段 SLA 提醒（投递走 setHealthIncidentNotifiers）
 startHealthOpsLoopScheduler(pool);
+// Multi-tenant AI quality flywheel: tenant-scoped signal backfill followed by
+// an opted-in, redacted and tenant-balanced platform evaluation dataset.
+startAiQualityLearningScheduler(pool, {
+  generateCandidate: async ({ route, samples, evidence }) => {
+    const result = await callLLM([
+      {
+        role: 'system',
+        content: `你是平台AI质量工程师。根据已脱敏、跨租户汇总的失败样本，为指定路由提出一个最小提示词补丁。
+只能总结共性，不得复原或猜测租户、员工、顾客身份，不得照抄样本中的专有名词或数字。
+严格返回JSON：{"problem_pattern":"共性问题","prompt_patch":"可追加到系统提示词的明确规则","risk":"潜在副作用","evaluation_focus":["评测重点"]}`,
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({ route, evidence, samples }, null, 2).slice(0, 24000),
+      },
+    ], {
+      purpose: 'quality_improvement',
+      temperature: 0,
+      max_tokens: 800,
+      skipCache: true,
+    });
+    if (!result?.ok || !result.content) return null;
+    const text = String(result.content).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    try {
+      return JSON.parse(text);
+    } catch (_error) {
+      return null;
+    }
+  },
+});
 
 // 公告已读回执：员工标记自己已读/已确认某条公告。
 // announcements 现在直接对每条公告挂 readBy{username: isoTime} 这个map，不另起新表——

@@ -20,8 +20,8 @@
  */
 
 import { randomUUID } from 'crypto';
-import { resolveTenantIdForStore } from './growth-api.js';
 import { resolveTenantIdDefault } from './utils/database.js';
+import { getRuntimePromptPatch, recordAiInteraction } from './services/ai-quality-learning-service.js';
 
 let _pool = null;
 export function setDataExecutorPool(p) { _pool = p; }
@@ -94,7 +94,7 @@ async function getCachedResult(taskId, metricId, timeRange, store) {
 async function setCachedResult(taskId, metricId, timeRange, store, result, metricVersion, ttlMinutes) {
   const ttl = (ttlMinutes && ttlMinutes > 0) ? `${ttlMinutes} minutes` : '120 minutes';
   try {
-    const tenantId = await resolveTenantIdForStore(pool(), store);
+    const tenantId = resolveTenantIdDefault();
     await pool().query(
       `INSERT INTO agent_metric_cache
          (task_id, metric_id, time_range, store, result, metric_version, created_at, expires_at, tenant_id)
@@ -903,6 +903,16 @@ export async function runBusinessDiagnosis(execResult, userQuery, options = {}) 
     notes: r.notes || ''
   }));
 
+  const diagnosisTenantId = resolveTenantIdDefault();
+  const runtimePatch = await getRuntimePromptPatch(pool(), {
+    artifactKey: 'data_diagnosis',
+    tenantId: diagnosisTenantId,
+    actorId: options.username || 'unknown',
+  }).catch(() => null);
+  const qualityPatchBlock = runtimePatch?.patch
+    ? `\n【已通过质量门禁的改进规则】\n${runtimePatch.patch}\n`
+    : '';
+
   const systemPrompt = `你是年年有喜餐饮集团的经营诊断专家"小年"。
 你的任务：基于下方【已查数据】，对用户问题给出专业、简洁的分析结论和行动建议。
 
@@ -915,6 +925,7 @@ ${JSON.stringify(dataSummary, null, 2)}
 3. 结论必须量化，引用上方具体数字，不得笼统描述
 4. 建议必须可执行，对应具体岗位（店长/厨师长/营运等）
 5. 禁止输出任何JSON，直接输出简洁的中文分析（200字以内）
+${qualityPatchBlock}
 
 用户问题：${userQuery}
 门店范围：${execResult.store || '全部门店'}
@@ -948,13 +959,34 @@ ${JSON.stringify(dataSummary, null, 2)}
       text_len: diagnosisText.length
     });
 
-    // P1B: 写入 diagnosis_feedback 表供质量监控
+    // P1B: 写入 diagnosis_feedback 表供质量监控，并绑定统一AI追踪记录。
     try {
-      const diagTenantId = await resolveTenantIdForStore(pool(), execResult.store);
+      const diagTenantId = diagnosisTenantId;
+      const traceId = await recordAiInteraction(pool(), {
+        source: 'diagnosis_feedback',
+        sourceRecordId: taskId,
+        route: 'data_diagnosis',
+        purpose: 'diagnosis',
+        actorId: options.username || 'unknown',
+        modelName: llm?.actualModel || null,
+        promptVersion: runtimePatch?.version || 'baseline',
+        input: userQuery,
+        output: diagnosisText,
+        latencyMs: duration,
+        inputTokens: llm?.raw?.usage?.prompt_tokens,
+        outputTokens: llm?.raw?.usage?.completion_tokens,
+        businessContext: {
+          store: execResult.store || null,
+          metrics_used: availableMetrics,
+          quality_release_candidate_id: runtimePatch?.candidateId || null,
+          quality_release_status: runtimePatch?.status || 'baseline',
+        },
+        tenantId: diagTenantId,
+      });
       await pool().query(
         `INSERT INTO diagnosis_feedback
-           (task_id, user_key, store, time_range, metrics_used, diagnosis, char_count, metric_count, created_at, updated_at, tenant_id)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, NOW(), NOW(), $9)
+           (task_id, user_key, store, time_range, metrics_used, diagnosis, char_count, metric_count, created_at, updated_at, tenant_id, trace_id, query_text)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, NOW(), NOW(), $9, $10, $11)
          ON CONFLICT DO NOTHING`,
         [
           taskId,
@@ -965,7 +997,9 @@ ${JSON.stringify(dataSummary, null, 2)}
           diagnosisText.slice(0, 2000),
           diagnosisText.length,
           availableMetrics.length,
-          diagTenantId
+          diagTenantId,
+          traceId,
+          String(userQuery || '').slice(0, 2000),
         ]
       );
     } catch (fe) {
