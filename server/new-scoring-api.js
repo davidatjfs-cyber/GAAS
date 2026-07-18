@@ -399,8 +399,8 @@ export function registerNewScoringRoutes(app, authRequired) {
           ELSE
             jsonb_set(COALESCE(data, '{}'::jsonb), '{dailyReports}', COALESCE(data->'dailyReports', '[]'::jsonb) || $3::jsonb)
           END, updated_at = NOW()
-          WHERE key = 'default'
-        `, [store, stateDate, JSON.stringify(stateItem)]);
+          WHERE key = $4
+        `, [store, stateDate, JSON.stringify(stateItem), tenantId]);
       } catch (e) {
         console.error('[api] daily_reports state sync failed:', e?.message);
       }

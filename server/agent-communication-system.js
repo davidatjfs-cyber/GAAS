@@ -687,7 +687,8 @@ export class AgentCommunicationHelper {
   static async getCurrentScoringRules(ruleType) {
     try {
       const r = await pool().query(
-        `SELECT data->'scoringRules' AS rules FROM hrms_state WHERE key = 'default' LIMIT 1`
+        `SELECT data->'scoringRules' AS rules FROM hrms_state WHERE key = $1 LIMIT 1`,
+        [resolveTenantIdDefault()]
       );
       const rules = r.rows?.[0]?.rules;
       const ruleList = Array.isArray(rules) ? rules : [];

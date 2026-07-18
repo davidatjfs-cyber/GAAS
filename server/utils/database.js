@@ -120,8 +120,8 @@ function wrapPoolForTenantContext(rawPool) {
 }
 
 // 多租户后台任务用：取所有激活租户的tenant_id列表。
-// 查询失败时兜底返回['default']而不是空数组——避免数据库瞬时抖动导致某次tick
-// 一个租户都不处理；这样最差情况下退化为"只处理default"，即改造前的行为，不会更差。
+// 查询失败时保留上一次已确认列表；冷启动没有可信列表时返回空并由调用方 fail closed，
+// 绝不静默退化到 default，以免把未知租户任务误写到默认租户。
 const ACTIVE_TENANTS_CACHE_MS = 60 * 1000;
 let _activeTenantIds = [];
 let _activeTenantIdsLoadedAt = 0;

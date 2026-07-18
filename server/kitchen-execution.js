@@ -27,7 +27,10 @@ function canManageKitchenConfig(role) {
 async function getRuntimeUserContext(username) {
   const uname = String(username || '').trim().toLowerCase();
   if (!uname) return null;
-  const r = await pool().query(`SELECT data FROM hrms_state WHERE key = $1 LIMIT 1`, ['default']);
+  const r = await pool().query(
+    `SELECT data FROM hrms_state WHERE key = $1 LIMIT 1`,
+    [resolveTenantIdDefault()]
+  );
   const data = r.rows?.[0]?.data;
   if (!data || typeof data !== 'object') return null;
   const people = []
