@@ -5,6 +5,7 @@ import { getBrandForStoreSync } from './utils/brand-config-loader.js';
 import { getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js';
 import { checkTextGrounding } from './ontology/plan-grounding-check.js';
 import { fetchDineMetricsForDays, resolveStoreCanonicalName } from './utils/dine-metrics.js';
+import { maybeNotifyRegularCustomerFromPosOrder } from './pos-regular-arrival-feishu.js';
 
 const PHASE_EVENT_TYPES = new Set([
   'campaign_scan', 'phone_authorized', 'coupon_claimed',
@@ -1682,6 +1683,7 @@ export async function ingestPosOrders(pool, tenantId, { orders = [], items = [],
     for (const o of orders) {
       const phone = parseKeruyunPhone(o.phone || o.member_phone || '');
       const bizDate = cnDate(o.biz_date);
+      const resolvedStoreId = storeId || cleanText(o.store_id || '', 128);
       await pool.query(`
         INSERT INTO pos_orders(seq_no,order_no,order_source,biz_date,order_time,checkout_time,order_status,amount_before_discount,total_discount,amount_after_discount,payment_method,payment_count,member_name,phone,order_type,table_no,diners,duration,store_name,store_id,tenant_id)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
@@ -1711,9 +1713,21 @@ export async function ingestPosOrders(pool, tenantId, { orders = [], items = [],
         cleanText(o.member_name || '', 100), phone,
         cleanText(o.order_type || '', 40), cleanText(o.table_no || '', 40),
         Number(o.diners) || null, cleanText(o.duration || '', 40),
-        cleanText(o.store_name || '', 200), storeId || cleanText(o.store_id || '', 128), tenantId
+        cleanText(o.store_name || '', 200), resolvedStoreId, tenantId
       ]);
       ordersUpserted++;
+      if (phone) {
+        maybeNotifyRegularCustomerFromPosOrder(pool, {
+          tenantId,
+          storeId: resolvedStoreId,
+          storeName: cleanText(o.store_name || '', 200),
+          phone,
+          orderNo: cleanText(o.order_no || '', 64),
+          tableNo: cleanText(o.table_no || '', 40),
+          bizDate: bizDate || '',
+          checkoutTime: parseKeruyunDateTime(o.checkout_time)
+        }).catch((e) => console.warn('[pos-regular-arrival]', e?.message || e));
+      }
     }
   }
 
@@ -2736,6 +2750,7 @@ export function registerPhaseRoutes(app, pool) {
          for (const o of ordersBatch) {
           const phone = parseKeruyunPhone(o.phone || o.member_phone || '');
           const bizDate = cnDate(o.biz_date);
+          const resolvedStoreId = (function() { var sn = cleanText(o.store_name || '', 200); var sid = storeId || cleanText(o.store_id || '', 128); var dbId = getBrandForStoreSync(sn, getPhaseApiTenantId(req))?.storeId; if (dbId) return dbId; if (sn && sn.includes('洪潮')) return '64822111'; if (sn && sn.includes('马己仙')) return '51866138'; return sid; })();
           try {
             await pool.query(`
               INSERT INTO pos_orders(seq_no,order_no,order_source,biz_date,order_time,checkout_time,order_status,amount_before_discount,total_discount,amount_after_discount,payment_method,payment_count,member_name,phone,order_type,table_no,diners,duration,store_name,store_id,tenant_id)
@@ -2766,9 +2781,21 @@ export function registerPhaseRoutes(app, pool) {
               cleanText(o.member_name || '', 100), phone,
               cleanText(o.order_type || '', 40), cleanText(o.table_no || '', 40),
               Number(o.diners) || null, cleanText(o.duration || '', 40),
-               cleanText(o.store_name || '', 200), (function() { var sn = cleanText(o.store_name || '', 200); var sid = storeId || cleanText(o.store_id || '', 128); var dbId = getBrandForStoreSync(sn, getPhaseApiTenantId(req))?.storeId; if (dbId) return dbId; if (sn && sn.includes('洪潮')) return '64822111'; if (sn && sn.includes('马己仙')) return '51866138'; return sid; })(), tenantId
+               cleanText(o.store_name || '', 200), resolvedStoreId, tenantId
             ]);
             totalOrders++;
+            if (phone) {
+              maybeNotifyRegularCustomerFromPosOrder(pool, {
+                tenantId,
+                storeId: resolvedStoreId,
+                storeName: cleanText(o.store_name || '', 200),
+                phone,
+                orderNo: cleanText(o.order_no || '', 64),
+                tableNo: cleanText(o.table_no || '', 40),
+                bizDate: bizDate || '',
+                checkoutTime: parseKeruyunDateTime(o.checkout_time)
+              }).catch((e) => console.warn('[pos-regular-arrival]', e?.message || e));
+            }
           } catch (e) { console.error('[pos-feishu-sync] order upsert error:', e.message, o.order_no); }
         }
       }
