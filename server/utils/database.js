@@ -125,11 +125,48 @@ function wrapPoolForTenantContext(rawPool) {
 const ACTIVE_TENANTS_CACHE_MS = 60 * 1000;
 let _activeTenantIds = [];
 let _activeTenantIdsLoadedAt = 0;
+
+/**
+ * Repairs missing registry rows from persisted tenant state without changing an
+ * existing tenant's lifecycle status. hrms_state is the last-resort source here:
+ * a tenant that already has durable application state must remain discoverable
+ * by reconciliation jobs even if an older provisioning path skipped `tenants`.
+ */
+export async function reconcileTenantRegistryFromState(p) {
+  return await runWithSystemTenantContext(async () => {
+    const r = await (p || pool()).query(`
+      INSERT INTO tenants (tenant_id, name, mode, status)
+      SELECT s.key,
+             COALESCE(
+               NULLIF(s.data #>> '{settings,companyName}', ''),
+               NULLIF(s.data #>> '{company,name}', ''),
+               s.key
+             ),
+             'managed',
+             'active'
+        FROM hrms_state s
+       WHERE (s.key = 'default' OR s.key ~ '^tenant_[A-Za-z0-9_-]+$')
+         AND NOT EXISTS (
+           SELECT 1 FROM tenants t WHERE t.tenant_id = s.key
+         )
+      ON CONFLICT (tenant_id) DO NOTHING
+      RETURNING tenant_id
+    `);
+    const inserted = (r.rows || []).map((row) => String(row.tenant_id || '').trim()).filter(Boolean);
+    if (inserted.length > 0) {
+      _activeTenantIdsLoadedAt = 0;
+      console.warn('[database] repaired missing tenants registry rows:', inserted.join(','));
+    }
+    return inserted;
+  });
+}
+
 export async function getActiveTenantIds(p) {
   if (Date.now() - _activeTenantIdsLoadedAt < ACTIVE_TENANTS_CACHE_MS) return _activeTenantIds;
   try {
     // tenants表开启RLS后，必须用__system__上下文才能跨租户读全量列表；
     // 不用resolveTenantIdDefault兜底'default'——那样RLS上线后只能看到default租户自己的行。
+    await reconcileTenantRegistryFromState(p);
     const r = await runWithSystemTenantContext(() =>
       (p || pool()).query("SELECT tenant_id FROM tenants WHERE status = 'active' ORDER BY tenant_id")
     );

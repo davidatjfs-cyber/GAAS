@@ -36,7 +36,8 @@ const _dictCache = new Map(); // 内存缓存，避免每次查库
 const _dictCacheTtl = 5 * 60 * 1000; // 5分钟
 
 export async function getMetricDef(metricId) {
-  const cached = _dictCache.get(metricId);
+  const cacheKey = `${resolveTenantIdDefault()}::${metricId}`;
+  const cached = _dictCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < _dictCacheTtl) return cached.def;
   try {
     const r = await pool().query(
@@ -44,7 +45,7 @@ export async function getMetricDef(metricId) {
       [metricId]
     );
     const def = r.rows?.[0] || null;
-    if (def) _dictCache.set(metricId, { def, ts: Date.now() });
+    if (def) _dictCache.set(cacheKey, { def, ts: Date.now() });
     return def;
   } catch (e) {
     console.error('[data-executor] getMetricDef error:', e?.message);
@@ -138,7 +139,7 @@ export async function updateMetricVersion(metricId, changes, changedBy) {
       [metricId]
     );
     // 清除内存字典缓存
-    _dictCache.delete(metricId);
+    _dictCache.delete(`${resolveTenantIdDefault()}::${metricId}`);
     logExecutorEvent('metric_version_bumped', {
       metric_id: metricId,
       old_version: cur.version || 1,
@@ -603,25 +604,27 @@ export async function executeMetrics(metricIds, timeRange, store, taskId) {
 
 // ── 11. 分析规则匹配 ──────────────────────────────────────────
 
-const _rulesCache = { rules: null, ts: 0 };
+const _rulesCache = new Map();
 
 export async function matchAnalysisRule(text) {
+  const tenantId = resolveTenantIdDefault();
+  let cached = _rulesCache.get(tenantId) || { rules: null, ts: 0 };
   // 缓存规则 5 分钟
-  if (!_rulesCache.rules || Date.now() - _rulesCache.ts > 5 * 60 * 1000) {
+  if (!cached.rules || Date.now() - cached.ts > 5 * 60 * 1000) {
     try {
       const r = await pool().query(
         `SELECT * FROM analysis_rules WHERE enabled = TRUE ORDER BY priority DESC, id ASC`
       );
-      _rulesCache.rules = r.rows || [];
-      _rulesCache.ts = Date.now();
+      cached = { rules: r.rows || [], ts: Date.now() };
     } catch (e) {
-      _rulesCache.rules = [];
+      cached = { rules: [], ts: Date.now() };
     }
+    _rulesCache.set(tenantId, cached);
   }
 
   const t = String(text || '').toLowerCase();
   const matched = [];
-  for (const rule of _rulesCache.rules) {
+  for (const rule of cached.rules) {
     const keywords = Array.isArray(rule.trigger_keywords) ? rule.trigger_keywords : [];
     if (keywords.some(kw => t.includes(String(kw).toLowerCase()))) {
       matched.push(rule);

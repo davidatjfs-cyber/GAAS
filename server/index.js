@@ -9860,15 +9860,19 @@ function mergePreferredForecastHistoryRows(primaryRows, fallbackRows, limit = 0)
 // 这里把配置门店名解析成真实 POS 门店名：① 精确 key 命中；② 用品牌词（店名前2个汉字）圈定
 // POS 候选，品牌下唯一候选即命中；③ 多候选时用去掉品牌/通用词后的位置词最长公共子串≥2 兜底。
 // 解析不到则回退原 key（结果与修复前一致，不引入回归）。结果带 60s 缓存。
-let _posStoreListCache = { at: 0, list: [] };
+const _posStoreListCache = new Map();
 async function listPosStoreNames() {
   const now = Date.now();
-  if (now - _posStoreListCache.at < 60000 && _posStoreListCache.list.length) return _posStoreListCache.list;
+  const tenantId = resolveTenantIdDefault();
+  const cached = _posStoreListCache.get(tenantId);
+  if (cached && now - cached.at < 60000 && cached.list.length) return cached.list;
   try {
     const r = await pool.query(`SELECT DISTINCT store FROM pos_sales_detail WHERE store IS NOT NULL AND trim(store) <> ''`);
-    _posStoreListCache = { at: now, list: (r.rows || []).map((x) => String(x.store || '').trim()).filter(Boolean) };
+    const list = (r.rows || []).map((x) => String(x.store || '').trim()).filter(Boolean);
+    _posStoreListCache.set(tenantId, { at: now, list });
+    return list;
   } catch (_e) { /* keep stale cache on error */ }
-  return _posStoreListCache.list;
+  return cached?.list || [];
 }
 function longestCommonRun(a, b) {
   if (!a || !b) return 0;
@@ -15706,6 +15710,11 @@ app.listen(PORT, HOST, async () => {
         }
       }
 
+    });
+
+    // 启动时的数据互备/重建全部按已注册活跃租户执行。这里不能使用 bootstrap/default
+    // 上下文，否则多租户库重启后只有 default 会被修复，其余租户会永久跳过。
+    const startupTenantReconcile = await runForActiveTenants(async (tenantId) => {
     // 启动时权威重建：每次启动都从 daily_reports 表完整重建 hrms_state.dailyReports
     // 策略：DB 是基础字段（营收/订单等）的权威来源；但明细字段（segments/categories/staff/photos/schedule_next_day/weather/discount/bad_reviews）
     //       DB 从未写入过，必须从 state 保留，否则每次重启明细数据全部丢失。
@@ -15761,11 +15770,11 @@ app.listen(PORT, HOST, async () => {
       const client2 = await pool.connect();
       try {
         await client2.query('BEGIN');
-        const cur = await client2.query(`SELECT data FROM hrms_state WHERE key=$1 FOR UPDATE`, ['default']);
+        const cur = await client2.query(`SELECT data FROM hrms_state WHERE key=$1 FOR UPDATE`, [tenantId]);
         const curData = cur.rows[0]?.data || {};
         await client2.query(
           `UPDATE hrms_state SET data=$2::jsonb, updated_at=NOW() WHERE key=$1`,
-          ['default', JSON.stringify({ ...curData, dailyReports: finalMerged })]
+          [tenantId, JSON.stringify({ ...curData, dailyReports: finalMerged })]
         );
         await client2.query('COMMIT');
       } finally {
@@ -15809,11 +15818,11 @@ app.listen(PORT, HOST, async () => {
       const client3 = await pool.connect();
       try {
         await client3.query('BEGIN');
-        const cur3 = await client3.query(`SELECT data FROM hrms_state WHERE key=$1 FOR UPDATE`, ['default']);
+        const cur3 = await client3.query(`SELECT data FROM hrms_state WHERE key=$1 FOR UPDATE`, [tenantId]);
         const curData3 = cur3.rows[0]?.data || {};
         await client3.query(
           `UPDATE hrms_state SET data=$2::jsonb, updated_at=NOW() WHERE key=$1`,
-          ['default', JSON.stringify({ ...curData3, pointRecords: mergedPr })]
+          [tenantId, JSON.stringify({ ...curData3, pointRecords: mergedPr })]
         );
         await client3.query('COMMIT');
       } finally {
@@ -15856,7 +15865,7 @@ app.listen(PORT, HOST, async () => {
 
     // 薪资域双备：state 某字段空则从 hrms_payroll_domain 回灌，再写回独立表
       try {
-      const domainR = await pool.query(`SELECT * FROM hrms_payroll_domain WHERE id = $1`, ['default']);
+      const domainR = await pool.query(`SELECT * FROM hrms_payroll_domain WHERE id = $1`, [tenantId]);
       const row = domainR.rows?.[0];
       if (row) {
         let stateP = (await getSharedState()) || {};
@@ -15878,7 +15887,7 @@ app.listen(PORT, HOST, async () => {
         if (changed) {
           await pool.query(
             `UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`,
-            ['default', JSON.stringify(stateP)]
+            [tenantId, JSON.stringify(stateP)]
           );
           console.log('[startup] 薪资域从 hrms_payroll_domain 回灌到 hrms_state');
         }
@@ -15891,7 +15900,7 @@ app.listen(PORT, HOST, async () => {
 
     // 欠休/累计假域双备：state 某字段空则从 hrms_leave_domain 回灌，再写回独立表
       try {
-      const leaveDomainR = await pool.query(`SELECT * FROM hrms_leave_domain WHERE id = $1`, ['default']);
+      const leaveDomainR = await pool.query(`SELECT * FROM hrms_leave_domain WHERE id = $1`, [tenantId]);
       const row = leaveDomainR.rows?.[0];
       if (row) {
         let stateL = (await getSharedState()) || {};
@@ -15912,7 +15921,7 @@ app.listen(PORT, HOST, async () => {
         if (changed) {
           await pool.query(
             `UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`,
-            ['default', JSON.stringify(stateL)]
+            [tenantId, JSON.stringify(stateL)]
           );
           console.log('[startup] 欠休域从 hrms_leave_domain 回灌到 hrms_state');
         }
@@ -15926,8 +15935,7 @@ app.listen(PORT, HOST, async () => {
     // 启动时同步员工信息：把各租户 hrms_state.employees 同步到 employees 独立表，
     // 同时把 employees 中新增的账号反向回灌各自的 hrms_state，避免多租户登录链路断裂。
       try {
-      const employeeSyncSummary = await runForActiveTenants(async (tenantId) => {
-        return await tenantContext.run(tenantId, async () => {
+      const employeeSyncSummary = await tenantContext.run(tenantId, async () => {
           const stateEmp = (await getSharedState(tenantId)) || {};
           const empArr = Array.isArray(stateEmp.employees) ? stateEmp.employees : [];
           let syncedToTable = 0;
@@ -16006,16 +16014,8 @@ app.listen(PORT, HOST, async () => {
 
           console.log(`[startup][${tenantId}] 员工信息同步：${syncedToTable} 条 → employees 表；回灌 ${backfilledToState} 条 → hrms_state.employees`);
           return { tenantId, syncedToTable, backfilledToState };
-        });
-      }, {
-        continueOnError: true,
-        onError: (error, tenantId) => {
-          console.error(`[startup][${tenantId}] 员工信息同步失败（非致命）:`, error?.message);
-        }
       });
-      const okCount = Array.isArray(employeeSyncSummary?.results) ? employeeSyncSummary.results.length : 0;
-      const errCount = Array.isArray(employeeSyncSummary?.errors) ? employeeSyncSummary.errors.length : 0;
-      console.log(`[startup] 多租户员工同步完成：成功 ${okCount} 个租户，失败 ${errCount} 个租户`);
+      console.log(`[startup][${tenantId}] 员工同步完成：写表 ${employeeSyncSummary.syncedToTable}，回灌 ${employeeSyncSummary.backfilledToState}`);
       } catch (e) {
         console.error('[startup] 多租户员工同步失败（非致命，不影响启动）:', e?.message);
       }
@@ -16047,7 +16047,7 @@ app.listen(PORT, HOST, async () => {
       const mergedLeave = [...dbLeaveItems, ...stateOnlyLeave];
       if (mergedLeave.length !== existingLeave.length) {
         stateLeave = { ...stateLeave, leaveRecords: mergedLeave };
-        await pool.query(`UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`, ['default', JSON.stringify(stateLeave)]);
+        await pool.query(`UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`, [tenantId, JSON.stringify(stateLeave)]);
       }
       console.log(`[startup] 休假记录重建：DB ${dbLeaveItems.length} 条 + 草稿 ${stateOnlyLeave.length} 条 = 共 ${mergedLeave.length} 条`);
       } catch (e) {
@@ -16079,7 +16079,7 @@ app.listen(PORT, HOST, async () => {
       const mergedRP = [...dbRPItems, ...stateOnlyRP];
       if (mergedRP.length !== existingRP.length) {
         stateRP = { ...stateRP, salaryAdjustments: mergedRP };
-        await pool.query(`UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`, ['default', JSON.stringify(stateRP)]);
+        await pool.query(`UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`, [tenantId, JSON.stringify(stateRP)]);
       }
       console.log(`[startup] 奖惩记录重建：DB ${dbRPItems.length} 条 + 孤立 ${stateOnlyRP.length} 条 = 共 ${mergedRP.length} 条`);
       } catch (e) {
@@ -16117,7 +16117,7 @@ app.listen(PORT, HOST, async () => {
         const mergedNotifs = [...dbNotifItems, ...stateOnlyNotifs];
         if (mergedNotifs.length !== existingNotifs.length) {
           stateNotif = { ...stateNotif, notifications: mergedNotifs };
-          await pool.query(`UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`, ['default', JSON.stringify(stateNotif)]);
+          await pool.query(`UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`, [tenantId, JSON.stringify(stateNotif)]);
         }
         console.log(`[startup] 公司通知重建：DB ${dbNotifItems.length} 条 + 孤立 ${stateOnlyNotifs.length} 条 = 共 ${mergedNotifs.length} 条`);
       }
@@ -16164,8 +16164,6 @@ app.listen(PORT, HOST, async () => {
     // 必须显式包裹tenantContext.run，否则resolveTenantIdDefault()返回'default'但
     // session变量是fail-closed的sentinel，写入会被WITH CHECK拒绝。
       try {
-      // ALLOWED_SYSTEM_DEFAULT: 启动回填 default 租户历史薪资调整
-      await tenantContext.run('default', async () => {
       const stateSA = (await getSharedState()) || {};
       const saList = Array.isArray(stateSA.salaryAdjustments) ? stateSA.salaryAdjustments : [];
       if (saList.length > 0) {
@@ -16192,7 +16190,6 @@ app.listen(PORT, HOST, async () => {
         }
         if (backfillCount > 0) console.log(`[startup] 奖惩记录回填：${backfillCount} 条 state → hrms_reward_punishment_records`);
       }
-      });
       } catch (e) {
         console.error('[startup] 奖惩记录回填失败（非致命）:', e?.message);
       }
@@ -16262,7 +16259,13 @@ app.listen(PORT, HOST, async () => {
 
       await dedupeGlobalSocialMediaPointRules();
       await ensureGlobalSocialMediaPointRule();
+    }, {
+      continueOnError: true,
+      onError: ({ tenantId, error }) => {
+        console.error(`[startup][${tenantId}] 租户数据重建失败（非致命）:`, error?.message || error);
+      }
     });
+    console.log(`[startup] 多租户数据重建完成：成功 ${startupTenantReconcile.results.length}，失败 ${startupTenantReconcile.errors.length}`);
 
     // P0B: Purge expired session states every hour
     // 原用runWithBootstrapTenantContext只清default租户，agent_long_memory开了RLS，改为遍历活跃租户各自清理
@@ -16650,9 +16653,7 @@ app.listen(PORT, HOST, async () => {
     }, 60 * 1000);
 
     setInterval(() => {
-      void runWithBootstrapTenantContext(async () => {
-        await runMonthlyRecurringRewardTemplatesJob();
-      }).catch((e) =>
+      void runMonthlyRecurringRewardTemplatesJob().catch((e) =>
         console.error('[recurring-reward] tick error:', e?.message || e)
       );
     }, 5 * 60 * 1000);
@@ -16761,6 +16762,8 @@ app.listen(PORT, HOST, async () => {
 
   // Migration: normalize all roles to 7 built-in roles + set specific user assignments
   try {
+    // 这里包含马己仙/洪潮历史员工姓名映射，只属于 default 租户，不能扩散到商业租户。
+    await runWithBootstrapTenantContext(async () => {
     const state = (await getSharedState()) || {};
     let changed = false;
     const cleanup = cleanupLegacyTestState(state);
@@ -16897,6 +16900,7 @@ app.listen(PORT, HOST, async () => {
       await saveSharedState(freshState);
       console.log('[migration] Role cleanup complete');
     }
+    });
   } catch (e) {
     console.error('[migration] role cleanup failed:', e?.message || e);
   }

@@ -1,7 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runForActiveTenants } from './utils/database.js';
+import { reconcileTenantRegistryFromState, runForActiveTenants } from './utils/database.js';
+
+test('reconcileTenantRegistryFromState registers persisted tenants without reactivating existing rows', async () => {
+  const calls = [];
+  const db = {
+    async query(sql) {
+      calls.push(String(sql));
+      return { rows: [{ tenant_id: 'tenant_orphaned' }] };
+    },
+  };
+
+  const inserted = await reconcileTenantRegistryFromState(db);
+
+  assert.deepEqual(inserted, ['tenant_orphaned']);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /FROM hrms_state/i);
+  assert.match(calls[0], /NOT EXISTS[\s\S]*FROM tenants/i);
+  assert.match(calls[0], /ON CONFLICT \(tenant_id\) DO NOTHING/i);
+  assert.doesNotMatch(calls[0], /DO UPDATE[\s\S]*status/i);
+});
 
 test('runForActiveTenants executes each active tenant in its own context', async () => {
   const seen = [];

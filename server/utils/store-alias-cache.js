@@ -12,7 +12,7 @@
  * 启动后第一次DB查询完成前的极短窗口，用与原硬编码完全一致的兜底值，确保
  * "数据库还没就绪"不会导致和现在不一样的结果。
  */
-import { pool } from './database.js';
+import { pool, runWithSystemTenantContext } from './database.js';
 
 const REFRESH_MS = 5 * 60 * 1000;
 const DEFAULT_TENANT = 'default';
@@ -54,8 +54,10 @@ async function refresh() {
   if (_loadingPromise) return _loadingPromise;
   _loadingPromise = (async () => {
     try {
-      const res = await pool().query(
-        `SELECT tenant_id, canonical_name, alias_name, source FROM store_name_aliases WHERE enabled = TRUE`
+      const res = await runWithSystemTenantContext(() =>
+        pool().query(
+          `SELECT tenant_id, canonical_name, alias_name, source FROM store_name_aliases WHERE enabled = TRUE`
+        )
       );
       if (res.rows?.length) _aliases = res.rows;
       _lastLoadAt = Date.now();

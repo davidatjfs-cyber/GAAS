@@ -3,7 +3,7 @@
  * 负责同步开档报告、收档报告、例会报告、原料收货日报
  */
 
-import { pool, resolveTenantIdDefault, runForActiveTenants } from './utils/database.js';
+import { pool, resolveTenantIdDefault, runForActiveTenants, runWithSystemTenantContext } from './utils/database.js';
 import { inferBrandFromStoreName } from './agents.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
 import { getTenantFeishuIntegration, saveTenantFeishuIntegration } from './tenant-integrations.js';
@@ -129,10 +129,12 @@ export async function resolveWebhookTenantId(appToken) {
   const now = Date.now();
   if (now - _appTokenTenantCacheAt > 5 * 60 * 1000) {
     try {
-      const rows = await pool().query(
-        `SELECT DISTINCT tenant_id FROM tenant_integrations
-         WHERE integration_key = $1 AND status = 'active'`,
-        ['feishu_bitable']
+      const rows = await runWithSystemTenantContext(() =>
+        pool().query(
+          `SELECT DISTINCT tenant_id FROM tenant_integrations
+           WHERE integration_key = $1 AND status = 'active'`,
+          ['feishu_bitable']
+        )
       );
       const newMap = new Map();
       for (const { tenant_id } of rows.rows) {

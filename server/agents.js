@@ -3425,10 +3425,11 @@ function setCachedResponse(cacheKey, response) {
 }
 
 function updateContext(userId, role, content) {
-  if (!_conversationContext.has(userId)) {
-    _conversationContext.set(userId, []);
+  const contextKey = `${resolveTenantIdDefault()}::${String(userId || '').trim().toLowerCase()}`;
+  if (!_conversationContext.has(contextKey)) {
+    _conversationContext.set(contextKey, []);
   }
-  const context = _conversationContext.get(userId);
+  const context = _conversationContext.get(contextKey);
   context.push({ role, content, timestamp: Date.now() });
   
   // 保持最近10轮对话
@@ -3454,7 +3455,8 @@ function updateContext(userId, role, content) {
 }
 
 function getContext(userId) {
-  return _conversationContext.get(userId) || [];
+  const contextKey = `${resolveTenantIdDefault()}::${String(userId || '').trim().toLowerCase()}`;
+  return _conversationContext.get(contextKey) || [];
 }
 
 function markQualityMetric(field, delta = 1) {
@@ -3682,7 +3684,7 @@ export async function callLLM(messages, options = {}) {
     : (budgetExceeded ? 512 : 1500);
   
   // 生成缓存键
-  const cacheKey = `${model}:${JSON.stringify(messages.slice(-2))}:${temperature}:${purpose}:${role}`;
+  const cacheKey = `${tenantId || '__platform__'}:${model}:${JSON.stringify(messages.slice(-2))}:${temperature}:${purpose}:${role}`;
   
   // 检查缓存
   const cachedResponse = getCachedResponse(cacheKey);
