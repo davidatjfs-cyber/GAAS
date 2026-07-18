@@ -292,6 +292,26 @@ export function registerOntologyRoutes(app, pool, authRequired) {
     }
   });
 
+  // 供 agents-service-v2 的客户生命周期里程碑扫描(每30天)调用，用同一套内部密钥口径
+  // (X-Miniprogram-Sync-Secret)，不复用 authRequired(那是面向租户用户JWT的)。
+  app.post('/api/internal/ontology/closed-loop-report', async (req, res) => {
+    try {
+      const secret = String(req.headers['x-miniprogram-sync-secret'] || '');
+      const expected = String(process.env.MINIPROGRAM_SYNC_SECRET || process.env.HRMS_GROWTH_EVENT_SECRET || '');
+      if (!expected || secret !== expected) return res.status(401).json({ ok: false, error: 'unauthorized' });
+      await ensureGrowth();
+      const report = await buildClosedLoopReport(pool, {
+        tenantId: req.body?.tenant_id || '',
+        storeId: req.body?.store_id || '',
+        period: req.body?.period || '30d',
+      });
+      return res.json(report);
+    } catch (e) {
+      console.error('[ontology] internal closed loop report error:', e?.message || e);
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   app.get('/api/ontology/rules', authRequired, async (req, res) => {
     try {
       await ensureOntologyRuleConfig(pool);

@@ -3714,7 +3714,7 @@ export function registerGrowthRoutes(app, pool) {
       } catch (e) {
         console.warn('[growth] wecom contact sync failed:', e?.message);
       }
-    }, 6 * 60 * 60 * 1000);
+    }, 24 * 60 * 60 * 1000); // 实时事件回调(wecom-contact-events.js)已是主力数据源，这里降为每日兜底对账
     setTimeout(async () => {
       try {
         await runForActiveTenants(async () => {

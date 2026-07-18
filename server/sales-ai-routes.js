@@ -50,6 +50,8 @@ import { brandKey, getCreditPoolRisk } from './services/sales/sales-order-credit
 import { buildLeadSummary, calculateSla } from './services/sales/sales-collaboration-service.js';
 import { recordStageChange, transitionLeadStage } from './services/sales/sales-store.js';
 import { runSalesSlaScan } from './services/sales/sales-sla-service.js';
+import { runDeployCheckSlaScan, completeDeployCheck } from './services/sales/onboarding-sla-service.js';
+import { runHealthCheckPeriodScan, deliverHealthCheckReport } from './services/sales/health-check-period-service.js';
 import { runNurtureCadence } from './services/sales/sales-nurture.js';
 import { getUnifiedCustomerTimeline } from './services/sales/sales-timeline.js';
 import { buildTenantMonthlyValueReport } from './services/sales/tenant-value-report.js';
@@ -193,6 +195,18 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     globalThis.__salesSlaTimer = setInterval(() => {
       ensureSalesTables(pool).then(() => runSalesSlaScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] SLA scan failed:', e?.message || e));
     }, 5 * 60 * 1000);
+  }
+
+  if (!globalThis.__salesDeployCheckSlaTimer) {
+    globalThis.__salesDeployCheckSlaTimer = setInterval(() => {
+      ensureSalesTables(pool).then(() => runDeployCheckSlaScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] deploy check SLA scan failed:', e?.message || e));
+    }, 30 * 60 * 1000);
+  }
+
+  if (!globalThis.__salesHealthCheckPeriodTimer) {
+    globalThis.__salesHealthCheckPeriodTimer = setInterval(() => {
+      ensureSalesTables(pool).then(() => runHealthCheckPeriodScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] health check period scan failed:', e?.message || e));
+    }, 60 * 60 * 1000);
   }
 
   if (!globalThis.__salesNurtureCadenceTimer) {
@@ -758,6 +772,30 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       if (!r.rows?.[0]) return res.status(409).json({ ok: false, error: 'delivery_project_not_created' });
       const credentials = status === 'delivered' && prior.rows?.[0]?.status !== 'delivered' ? await rotateTenantAdminCredentials(pool, lead.id) : null;
       res.json({ ok: true, project: r.rows[0], credentials });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
+  });
+
+  app.post('/api/admin/sales/leads/:id/delivery/deploy-check-complete', platformAdminRequired, async (req, res) => {
+    try {
+      const lead = await getLead(pool, Number(req.params.id));
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      if (!['super_admin', 'customer_service', 'implementation'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+      const project = await pool.query(`SELECT id FROM sales_delivery_projects WHERE lead_id=$1`, [lead.id]);
+      if (!project.rows?.[0]) return res.status(409).json({ ok: false, error: 'delivery_project_not_created' });
+      const updated = await completeDeployCheck(pool, project.rows[0].id);
+      res.json({ ok: true, project: updated });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
+  });
+
+  app.post('/api/admin/sales/leads/:id/delivery/health-check-report', platformAdminRequired, async (req, res) => {
+    try {
+      const lead = await getLead(pool, Number(req.params.id));
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      if (!['super_admin', 'customer_service', 'implementation'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+      const project = await pool.query(`SELECT id FROM sales_delivery_projects WHERE lead_id=$1`, [lead.id]);
+      if (!project.rows?.[0]) return res.status(409).json({ ok: false, error: 'delivery_project_not_created' });
+      const updated = await deliverHealthCheckReport(pool, project.rows[0].id, req.body?.report_ref);
+      res.json({ ok: true, project: updated });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
   });
 
@@ -1369,9 +1407,18 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   app.post('/api/admin/sales/trials', platformAdminRequired, async (req, res) => {
     try {
       const { createTrial } = await import('./services/sales/sales-store.js');
+      const { evaluateTrialEligibility } = await import('./services/sales/trial-eligibility-service.js');
       const leadId = Number(req.params?.id || req.body?.lead_id);
       const lead = await getLead(pool, leadId);
       if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      const eligibility = await evaluateTrialEligibility(pool, lead);
+      const isManagerOrAbove = ['super_admin', 'general_manager', 'sales_manager'].includes(req.platformAdmin?.role);
+      if (eligibility.verdict === 'unfit' && !(req.body?.override_ineligible === true && isManagerOrAbove)) {
+        return res.status(422).json({ ok: false, error: 'trial_not_eligible', eligibility });
+      }
+      if (eligibility.verdict === 'conditional' && !isManagerOrAbove) {
+        return res.status(403).json({ ok: false, error: 'trial_conditional_requires_manager_confirm', eligibility });
+      }
       const trial = await createTrial(pool, {
         leadId,
         startedAt: req.body?.started_at,

@@ -9,6 +9,7 @@ import { startOnboarding } from './tenant-onboarding-service.js';
 import { upsertCustomer } from '../growth-api.js';
 import { getLead, addEvent } from './sales/sales-store.js';
 import { getCreditRisk } from './sales/sales-credit-risk.js';
+import { computeDueAt } from './sales/sla-utils.js';
 
 const DEFAULT_PROFILE = {
   system_name: 'GAAS 增长平台',
@@ -215,11 +216,13 @@ export async function provisionTenantFromLead(pool, leadId, {
     if (scopeOwner) {
       await pool.query(`UPDATE sales_leads SET cs_owner_username=COALESCE(cs_owner_username,$2),updated_at=NOW() WHERE id=$1`, [leadId, scopeOwner]);
     }
+    const deployCheckDueAt = computeDueAt(new Date(), { unit: 'business_day', amount: 1 });
+    const healthCheckDueAt = computeDueAt(new Date(), { unit: 'calendar_day', amount: 7 });
     await pool.query(
-      `INSERT INTO sales_delivery_projects (lead_id, tenant_id, status, cs_owner, implementation_owner, created_at, updated_at)
-       VALUES ($1,$2,'pending',$3,$4,NOW(),NOW())
-       ON CONFLICT (lead_id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,cs_owner=COALESCE(sales_delivery_projects.cs_owner,EXCLUDED.cs_owner),implementation_owner=COALESCE(sales_delivery_projects.implementation_owner,EXCLUDED.implementation_owner),updated_at=NOW()`,
-      [leadId, tenantId, csOwner, implementationOwner]
+      `INSERT INTO sales_delivery_projects (lead_id, tenant_id, status, cs_owner, implementation_owner, deploy_check_due_at, health_check_due_at, created_at, updated_at)
+       VALUES ($1,$2,'pending',$3,$4,$5,$6,NOW(),NOW())
+       ON CONFLICT (lead_id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,cs_owner=COALESCE(sales_delivery_projects.cs_owner,EXCLUDED.cs_owner),implementation_owner=COALESCE(sales_delivery_projects.implementation_owner,EXCLUDED.implementation_owner),deploy_check_due_at=COALESCE(sales_delivery_projects.deploy_check_due_at,EXCLUDED.deploy_check_due_at),health_check_due_at=COALESCE(sales_delivery_projects.health_check_due_at,EXCLUDED.health_check_due_at),updated_at=NOW()`,
+      [leadId, tenantId, csOwner, implementationOwner, deployCheckDueAt, healthCheckDueAt]
     ).catch((e) => console.warn('[sales-provision] delivery project creation failed:', e?.message || e));
   }
 
@@ -276,7 +279,7 @@ export async function provisionTenantFromOrder(pool, orderId, { startedBy = 'fin
     await pool.query(`UPDATE hrms_state SET data=$2::jsonb,updated_at=NOW() WHERE key=$1`, [existingTenantId, JSON.stringify({ ...state, stores, brands })]);
     await pool.query(`INSERT INTO tenant_store_licenses (tenant_id,order_id,store_id,store_name,expires_at) VALUES ($1,$2,$3,$4,NOW() + ($5::text || ' days')::interval)`, [existingTenantId,order.id,storeId,order.store_name,Number(order.license_days)||365]);
     await pool.query(`UPDATE sales_orders SET tenant_id=$2,provision_status='done',status='provisioned',provision_meta=$3::jsonb,updated_at=NOW() WHERE id=$1`, [order.id,existingTenantId,JSON.stringify({ action:'add_store', store_quantity:storeQty, added_by:startedBy, added_at:new Date().toISOString() })]);
-    await pool.query(`INSERT INTO sales_order_delivery_projects (order_id,tenant_id,status) VALUES ($1,$2,'pending')`, [order.id,existingTenantId]);
+    await pool.query(`INSERT INTO sales_order_delivery_projects (order_id,tenant_id,status,deploy_check_due_at,health_check_due_at) VALUES ($1,$2,'pending',$3,$4)`, [order.id,existingTenantId,computeDueAt(new Date(),{unit:'business_day',amount:1}),computeDueAt(new Date(),{unit:'calendar_day',amount:7})]);
     return { ok:true, tenant_id:existingTenantId, reused:true, action:'add_store', added_stores:storeQty };
   }
   const tenantName = String(order.store_name || order.company || order.name).trim();
@@ -306,7 +309,7 @@ export async function provisionTenantFromOrder(pool, orderId, { startedBy = 'fin
   const owners = await pool.query(`SELECT role,username FROM platform_admins WHERE status='active' AND role IN ('customer_service','implementation') ORDER BY role,username`).catch(() => ({ rows: [] }));
   const cs = owners.rows.find((x) => x.role === 'customer_service')?.username || null;
   const impl = owners.rows.find((x) => x.role === 'implementation')?.username || null;
-  await pool.query(`INSERT INTO sales_order_delivery_projects (order_id,tenant_id,status,cs_owner,implementation_owner) VALUES ($1,$2,'pending',$3,$4)`, [order.id, tenantId, cs, impl]);
+  await pool.query(`INSERT INTO sales_order_delivery_projects (order_id,tenant_id,status,cs_owner,implementation_owner,deploy_check_due_at,health_check_due_at) VALUES ($1,$2,'pending',$3,$4,$5,$6)`, [order.id, tenantId, cs, impl, computeDueAt(new Date(),{unit:'business_day',amount:1}), computeDueAt(new Date(),{unit:'calendar_day',amount:7})]);
   await addEvent(pool, order.lead_id, { event_type: 'ORDER_PROVISIONED', summary: `订单 ${order.order_no} 已开通租户 ${tenantId}`, priority: 'high', recommended_action: 'onboarding', payload: { order_id: order.id, tenant_id: tenantId } }).catch(() => null);
   return { ok: true, tenant_id: tenantId, admin_username: adminUsername, temp_password: tempPassword };
 }
