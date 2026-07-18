@@ -12952,7 +12952,7 @@ app.put('/api/state', authRequired, async (req, res) => {
       `insert into hrms_state (key, data, updated_at)
        values ($1, $2::jsonb, now())
        on conflict (key) do update set data = excluded.data, updated_at = now()`,
-      ['default', JSON.stringify(data)]
+      [resolveTenantIdDefault(), JSON.stringify(data)]
     );
     // Dual-write employees to independent table for disaster recovery
     setImmediate(async () => {
