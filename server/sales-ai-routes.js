@@ -57,7 +57,7 @@ import { getUnifiedCustomerTimeline } from './services/sales/sales-timeline.js';
 import { buildTenantMonthlyValueReport } from './services/sales/tenant-value-report.js';
 import { getOnboardingChecklist } from './services/sales/tenant-onboarding.js';
 import { computeRenewalHealth, listRenewalRisks, listReferralCandidates, syncCustomerSuccessTasks, runRenewalBillReminders15d } from './services/sales/tenant-renewal-service.js';
-import { maskLeadContact, maskLeadListContact, canViewFullContact } from './services/sales/sales-privacy.js';
+import { maskLeadContact, maskLeadListContact, canViewFullContact, canViewContractPrice } from './services/sales/sales-privacy.js';
 import { sensitiveRateLimit } from './services/sales/sales-rate-limit.js';
 import { leadScopeSql, canAccessLead, canAccessRepMetrics, canAccessTenant, isManager } from './services/sales/sales-permissions.js';
 import { getSalesPermissionConfig, saveSalesPermissionConfig, refreshSalesPermissionConfigCache, SALES_MODULES, SALES_CONFIGURABLE_ROLES } from './services/sales/sales-permission-config.js';
@@ -159,6 +159,12 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   // 开票提醒财务和客服都要能看到/处理：客服经常是第一个知道"客户不需要发票"的人。
   const financeOrCsGate = (req, res, next) => {
     if (!['super_admin', 'finance', 'customer_service'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden', message: '仅财务/客服或超级管理员可处理开票提醒' });
+    next();
+  };
+  // 签约价格/账期属于客户档案里最机密的一档信息，比手机号可见范围更窄——
+  // sales_manager能看完整联系方式，但看不到签约价格。
+  const contractPriceGate = (req, res, next) => {
+    if (!canViewContractPrice(req.platformAdmin)) return res.status(403).json({ ok: false, error: 'forbidden', message: '仅超级管理员/总经理/财务可查看或修改签约价格' });
     next();
   };
   /**
@@ -1005,6 +1011,45 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       console.error('[sales] lead detail', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
+  });
+
+  // 签约价格/账期——由销售在首次签约时录入一次，之后基本不变；只有总经理/财务/超级管理员
+  // 能读写。这是账单PDF自动生成金额和账期的唯一权威来源(见 tenant-platform-routes.js)。
+  app.get('/api/admin/sales/leads/:id/contract-price', platformAdminRequired, contractPriceGate, async (req, res) => {
+    try {
+      const lead = await getLead(pool, Number(req.params.id));
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      res.json({
+        ok: true,
+        contract_price_fen: lead.contract_price_fen ?? null,
+        contract_billing_cycle: lead.contract_billing_cycle || null,
+        contract_billing_day: lead.contract_billing_day ?? null,
+        contract_price_note: lead.contract_price_note || '',
+        contract_price_set_by: lead.contract_price_set_by || null,
+        contract_price_set_at: lead.contract_price_set_at || null,
+      });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  app.put('/api/admin/sales/leads/:id/contract-price', platformAdminRequired, contractPriceGate, async (req, res) => {
+    try {
+      const lead = await getLead(pool, Number(req.params.id));
+      if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
+      // 跟订单金额(sales_orders.amount_fen)同样的约定：前端表单填元，这里统一转成分存库。
+      const priceFen = Math.round(Number(req.body?.contract_price || 0) * 100);
+      const cycle = String(req.body?.contract_billing_cycle || '').trim();
+      const day = Number(req.body?.contract_billing_day);
+      if (priceFen <= 0) return res.status(400).json({ ok: false, error: 'invalid_price', message: '签约价格必须大于0' });
+      if (!['monthly', 'quarterly', 'yearly'].includes(cycle)) return res.status(400).json({ ok: false, error: 'invalid_cycle', message: '账期只能是monthly/quarterly/yearly' });
+      if (!Number.isInteger(day) || day < 1 || day > 28) return res.status(400).json({ ok: false, error: 'invalid_billing_day', message: '扣款/开票日必须是1-28之间的整数' });
+      const r = await pool.query(
+        `UPDATE sales_leads SET contract_price_fen=$2, contract_billing_cycle=$3, contract_billing_day=$4,
+           contract_price_note=$5, contract_price_set_by=$6, contract_price_set_at=NOW()
+         WHERE id=$1 RETURNING contract_price_fen, contract_billing_cycle, contract_billing_day, contract_price_note, contract_price_set_by, contract_price_set_at`,
+        [lead.id, priceFen, cycle, day, String(req.body?.contract_price_note || '').trim() || null, req.platformAdmin.username]
+      );
+      res.json({ ok: true, ...r.rows[0] });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error', message: e?.message }); }
   });
 
   // 受控查看完整联系方式：列表/详情接口默认脱敏，需要真实拨打电话时走这个接口，

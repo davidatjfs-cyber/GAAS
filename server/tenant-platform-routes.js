@@ -343,6 +343,50 @@ export function registerTenantPlatformRoutes(app, deps) {
     return normalized;
   }
 
+  // 我方收款账户——平台级单一配置，不按租户区分，复用tenant_config表但用'__system__'
+  // 这个哨兵tenant_key(该表对tenant_key没有外键约束，不会因为不是真实tenant_id而报错)。
+  const PLATFORM_BILLING_ACCOUNT_KEY = '__system__';
+  const DEFAULT_BILLING_ACCOUNT = {
+    account_name: '', bank_name: '', bank_branch: '', bank_account_no: '',
+    wechat_qr_url: '', alipay_qr_url: '', notes: '',
+  };
+  async function getPlatformBillingAccount(db) {
+    const r = await db.query(
+      `SELECT config_value FROM tenant_config WHERE tenant_key = $1 AND config_key = 'billing_account' LIMIT 1`,
+      [PLATFORM_BILLING_ACCOUNT_KEY]
+    );
+    return { ...DEFAULT_BILLING_ACCOUNT, ...(r.rows?.[0]?.config_value || {}) };
+  }
+  async function savePlatformBillingAccount(db, account) {
+    const normalized = {
+      account_name: String(account?.account_name || '').trim(),
+      bank_name: String(account?.bank_name || '').trim(),
+      bank_branch: String(account?.bank_branch || '').trim(),
+      bank_account_no: String(account?.bank_account_no || '').trim(),
+      wechat_qr_url: String(account?.wechat_qr_url || '').trim(),
+      alipay_qr_url: String(account?.alipay_qr_url || '').trim(),
+      notes: String(account?.notes || '').trim(),
+    };
+    await db.query(
+      `INSERT INTO tenant_config (tenant_key, config_key, config_value)
+       VALUES ($1, 'billing_account', $2::jsonb)
+       ON CONFLICT (tenant_key, config_key)
+       DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = NOW()`,
+      [PLATFORM_BILLING_ACCOUNT_KEY, JSON.stringify(normalized)]
+    );
+    return normalized;
+  }
+
+  // 收款账户信息跟签约价格一样敏感，只对超级管理员/总经理/财务开放编辑；
+  // 下载账单本身(会带出这份信息)仍按现有platformAdminRequired口径开放给
+  // 需要把账单发给客户的销售/客服——机密的是"能不能改"，不是"账单上能不能看见"。
+  const billingAccountGate = (req, res, next) => {
+    if (!['super_admin', 'general_manager', 'finance'].includes(req.platformAdmin?.role)) {
+      return res.status(403).json({ error: 'forbidden', message: '仅超级管理员/总经理/财务可查看或修改收款账户' });
+    }
+    next();
+  };
+
   async function getTenantPlatformAcceptanceReport(db, tenantId) {
     const r = await db.query(
       `SELECT config_value
@@ -909,6 +953,32 @@ export function registerTenantPlatformRoutes(app, deps) {
   const BILLING_FONT_REGULAR = path.join(__dirname, 'assets/fonts/NotoSansSC-Regular.ttf');
   const BILLING_FONT_BOLD = path.join(__dirname, 'assets/fonts/NotoSansSC-Bold.ttf');
 
+  app.get('/api/admin/platform/billing-account', platformAdminRequired, billingAccountGate, async (_req, res) => {
+    try {
+      res.json({ ok: true, account: await getPlatformBillingAccount(pool) });
+    } catch (e) { res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' }); }
+  });
+
+  app.put('/api/admin/platform/billing-account', platformAdminRequired, billingAccountGate, async (req, res) => {
+    try {
+      const saved = await savePlatformBillingAccount(pool, req.body?.account || req.body || {});
+      res.json({ ok: true, account: saved });
+    } catch (e) { res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' }); }
+  });
+
+  const BILLING_CYCLE_LABELS = { monthly: '按月', quarterly: '按季', yearly: '按年' };
+  // 账期起点=下次开票日期往前推一个周期。这个日期是平台配置页里人工维护的"下次开票"，
+  // 不是凭空计算的——账期准确性依赖这个字段被及时维护，PDF只负责把它换算成一个区间展示。
+  function computeBillingPeriod(nextInvoiceAt, cycle) {
+    const end = nextInvoiceAt ? new Date(nextInvoiceAt) : null;
+    if (!end || Number.isNaN(end.getTime())) return null;
+    const start = new Date(end);
+    if (cycle === 'quarterly') start.setMonth(start.getMonth() - 3);
+    else if (cycle === 'yearly') start.setFullYear(start.getFullYear() - 1);
+    else start.setMonth(start.getMonth() - 1); // monthly 或未设置时的默认假设
+    return { start, end };
+  }
+
   app.get('/api/admin/tenants/:tenantId/billing/pdf', platformAdminRequired, async (req, res) => {
     const tenantId = String(req.params.tenantId || '').trim();
     try {
@@ -923,6 +993,18 @@ export function registerTenantPlatformRoutes(app, deps) {
         const d = new Date(v);
         return Number.isNaN(d.getTime()) ? String(v) : d.toISOString().slice(0, 10);
       };
+
+      // 签约价格/账期是sales_leads上的机密字段，权威来源只有这一个，不能让账单金额跟
+      // platform_profile.billing里那个自由文本的账单计划/周期各说各话、对不上账。
+      const leadRow = await pool.query(
+        `SELECT id, contract_price_fen, contract_billing_cycle, contract_billing_day
+           FROM sales_leads WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`,
+        [tenantId]
+      );
+      const lead = leadRow.rows?.[0] || null;
+      const hasContractPrice = lead && Number(lead.contract_price_fen) > 0;
+      const period = hasContractPrice ? computeBillingPeriod(billing.next_invoice_at, lead.contract_billing_cycle) : null;
+      const billingAccount = await getPlatformBillingAccount(pool);
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="billing-${tenantId}-${new Date().toISOString().slice(0, 10)}.pdf"`);
@@ -946,6 +1028,31 @@ export function registerTenantPlatformRoutes(app, deps) {
         doc.moveTo(doc.page.margins.left, y).lineTo(doc.page.width - doc.page.margins.right, y).strokeColor('#e0dcd3').lineWidth(1).stroke();
         doc.moveDown(0.8);
       };
+      hr();
+
+      // 本期账单金额——放在最显眼的位置，金额只来自sales_leads的机密字段，
+      // 没配置就明确写"未设置"，绝不编造一个数字。
+      const amountBoxY = doc.y;
+      doc.rect(doc.page.margins.left, amountBoxY, pageWidth, 64).fill('#f7f4ee');
+      doc.font('cn').fontSize(9).fillColor('#999').text('本期账单金额', doc.page.margins.left + 16, amountBoxY + 10);
+      if (hasContractPrice) {
+        doc.font('cn-bold').fontSize(22).fillColor(brandColor).text(
+          `¥ ${(Number(lead.contract_price_fen) / 100).toFixed(2)}`,
+          doc.page.margins.left + 16, amountBoxY + 24
+        );
+        if (period) {
+          doc.font('cn').fontSize(9).fillColor('#666').text(
+            `账期：${period.start.toISOString().slice(0, 10)} 至 ${period.end.toISOString().slice(0, 10)}（${BILLING_CYCLE_LABELS[lead.contract_billing_cycle] || ''}）`,
+            doc.page.margins.left + 200, amountBoxY + 32
+          );
+        }
+      } else {
+        doc.font('cn-bold').fontSize(13).fillColor('#a15c00').text(
+          '未设置签约价格，请联系总经理/财务在客户档案中补充后再发送本账单',
+          doc.page.margins.left + 16, amountBoxY + 28, { width: pageWidth - 32 }
+        );
+      }
+      doc.y = amountBoxY + 64 + 16;
       hr();
 
       // 两列信息区：左边租户/计划信息，右边联系与送达信息
@@ -972,6 +1079,19 @@ export function registerTenantPlatformRoutes(app, deps) {
 
       doc.y = topY + 138 + 40;
       hr();
+
+      // 收款账户——只要平台管理员填过其中一项就展示，避免全空时还打印一堆"未配置"的表格。
+      const hasBillingAccount = billingAccount.account_name || billingAccount.bank_account_no || billingAccount.bank_name;
+      if (hasBillingAccount) {
+        doc.font('cn-bold').fontSize(10).fillColor('#1a1a1a').text('收款账户信息');
+        doc.moveDown(0.4);
+        const acctTopY = doc.y;
+        field(leftX, acctTopY, '收款单位', billingAccount.account_name);
+        field(leftX, acctTopY + 46, '开户行', billingAccount.bank_name + (billingAccount.bank_branch ? `（${billingAccount.bank_branch}）` : ''));
+        field(rightX, acctTopY, '银行账号', billingAccount.bank_account_no);
+        doc.y = acctTopY + 46 + 40;
+        hr();
+      }
 
       if (billing.notes) {
         doc.font('cn-bold').fontSize(10).fillColor('#1a1a1a').text('备注');

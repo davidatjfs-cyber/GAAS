@@ -655,6 +655,7 @@
         <button type="button" data-scroll-target="crmContentSection">内容培育</button>
         <button type="button" data-scroll-target="crmPerformanceSection">区域业绩</button>
         <button type="button" id="salesPermissionSettingsBtn" style="display:none;margin-left:auto" onclick="openSalesPermissionSettings()">权限设置</button>
+        <button type="button" id="billingAccountSettingsBtn" style="display:none" onclick="openBillingAccountSettings()">收款账户</button>
       </nav>
 
       <div class="card stack" id="salesPermissionSettingsCard" style="display:none">
@@ -663,6 +664,23 @@
         <div style="margin-top:10px">
           <button type="button" onclick="saveSalesPermissionConfig()">保存设置</button>
           <button type="button" class="ghost" onclick="loadSalesPermissionConfig()">刷新</button>
+        </div>
+      </div>
+
+      <div class="card stack" id="billingAccountSettingsCard" style="display:none">
+        <div class="crm-section-head"><div><h3>我方收款账户</h3><p>平台级唯一配置，所有租户的账单PDF都会显示这份收款信息；只有超级管理员/总经理/财务能查看和修改。</p></div><button type="button" class="secondary" onclick="closeBillingAccountSettings()">收起</button></div>
+        <div class="detail-grid">
+          <label class="field">收款单位<input id="billingAcctName" placeholder="公司全称"></label>
+          <label class="field">开户行<input id="billingAcctBank" placeholder="例如：中国建设银行上海分行"></label>
+          <label class="field">支行<input id="billingAcctBranch" placeholder="可留空"></label>
+          <label class="field">银行账号<input id="billingAcctNo" placeholder="收款银行账号"></label>
+          <label class="field">微信收款二维码URL<input id="billingAcctWechatQr" placeholder="可留空"></label>
+          <label class="field">支付宝收款二维码URL<input id="billingAcctAlipayQr" placeholder="可留空"></label>
+        </div>
+        <label>备注<textarea id="billingAcctNotes" style="min-height:56px"></textarea></label>
+        <div style="margin-top:10px">
+          <button type="button" onclick="saveBillingAccountSettings()">保存收款账户</button>
+          <button type="button" class="ghost" onclick="loadBillingAccountSettings()">刷新</button>
         </div>
       </div>
 
@@ -821,6 +839,7 @@
             <div class="field"><span>操作</span><button type="button" id="salesCreateContractBtn" class="secondary">登记合同</button></div>
           </div>
           <div id="salesCreditBox" class="small" style="margin-top:8px"></div>
+          <div id="salesContractPriceBox" class="small" style="margin-top:8px"></div>
           <div id="salesContractsBox" class="stack" style="margin-top:8px"></div>
           <div id="salesOrderSection" style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(120,78,22,.18)"><strong>新增订单（门店 / 品牌开通）</strong><div class="small" style="margin:4px 0 8px">请先在上方登记并审批签约合同；每张订单对应一个门店许可证。首单开通客户系统账号，后续门店或品牌订单复用同一账号并增加门店。</div></div>
           <div class="detail-grid" style="margin-top:10px">
@@ -3555,6 +3574,8 @@ function legacyCopyFallback(value) {
       }
       const canEditPermissions = ['super_admin', 'general_manager', 'sales_manager'].includes(role);
       if ($('salesPermissionSettingsBtn')) $('salesPermissionSettingsBtn').style.display = canEditPermissions ? '' : 'none';
+      const canEditBillingAccount = ['super_admin', 'general_manager', 'finance'].includes(role);
+      if ($('billingAccountSettingsBtn')) $('billingAccountSettingsBtn').style.display = canEditBillingAccount ? '' : 'none';
       applySalesModuleVisibilityFromConfig(role);
     }
 
@@ -3659,6 +3680,53 @@ function legacyCopyFallback(value) {
 
     function closeSalesPermissionSettings() {
       if ($('salesPermissionSettingsCard')) $('salesPermissionSettingsCard').style.display = 'none';
+    }
+
+    async function loadBillingAccountSettings() {
+      try {
+        const d = await api('/api/admin/platform/billing-account');
+        const a = d.account || {};
+        $('billingAcctName').value = a.account_name || '';
+        $('billingAcctBank').value = a.bank_name || '';
+        $('billingAcctBranch').value = a.bank_branch || '';
+        $('billingAcctNo').value = a.bank_account_no || '';
+        $('billingAcctWechatQr').value = a.wechat_qr_url || '';
+        $('billingAcctAlipayQr').value = a.alipay_qr_url || '';
+        $('billingAcctNotes').value = a.notes || '';
+      } catch (e) {
+        toast('加载收款账户失败: ' + (e?.message || e));
+      }
+    }
+
+    async function saveBillingAccountSettings() {
+      try {
+        await api('/api/admin/platform/billing-account', {
+          method: 'PUT',
+          body: JSON.stringify({
+            account: {
+              account_name: $('billingAcctName').value.trim(),
+              bank_name: $('billingAcctBank').value.trim(),
+              bank_branch: $('billingAcctBranch').value.trim(),
+              bank_account_no: $('billingAcctNo').value.trim(),
+              wechat_qr_url: $('billingAcctWechatQr').value.trim(),
+              alipay_qr_url: $('billingAcctAlipayQr').value.trim(),
+              notes: $('billingAcctNotes').value.trim(),
+            },
+          }),
+        });
+        toast('收款账户已保存');
+      } catch (e) {
+        toast('保存失败: ' + (e?.message || e));
+      }
+    }
+
+    function openBillingAccountSettings() {
+      if ($('billingAccountSettingsCard')) $('billingAccountSettingsCard').style.display = '';
+      loadBillingAccountSettings();
+    }
+
+    function closeBillingAccountSettings() {
+      if ($('billingAccountSettingsCard')) $('billingAccountSettingsCard').style.display = 'none';
     }
 
     async function salesCreateManualCustomer() {
@@ -4048,6 +4116,36 @@ function legacyCopyFallback(value) {
         await api(`/api/admin/sales/leads/${leadId}/credit-risk`, { method: 'PUT', body: JSON.stringify({ payment_type: $('salesCreditType').value, credit_limit: Number($('salesCreditLimit').value || 0) }) });
         toast('授信设置已保存'); await salesLoadCrmOverview();
       });
+      // 签约价格/账期是机密字段，接口本身按角色403，这里干脆不对无权限角色发起请求，
+      // 免得控制台里一堆无意义的403报错；普通销售/客服完全看不到这个区块。
+      if (['super_admin', 'general_manager', 'finance'].includes(role)) {
+        const cp = await api(`/api/admin/sales/leads/${leadId}/contract-price`).catch(() => null);
+        const cycleLabel = { monthly: '按月', quarterly: '按季', yearly: '按年' };
+        $('salesContractPriceBox').innerHTML = `<div><strong>签约价格（机密，仅总经理/财务/超级管理员可见）：</strong>${cp?.contract_price_fen ? salesMoney(cp.contract_price_fen) : '未设置'} ${cp?.contract_billing_cycle ? `· ${cycleLabel[cp.contract_billing_cycle]} · 每期第${cp.contract_billing_day}天` : ''}</div>
+          <div class="toolbar" style="margin-top:6px">
+            <input id="salesContractPrice" type="number" min="0.01" step="0.01" placeholder="签约价格（元）" value="${cp?.contract_price_fen ? Number(cp.contract_price_fen) / 100 : ''}">
+            <select id="salesContractCycle" style="width:auto">
+              <option value="monthly" ${cp?.contract_billing_cycle === 'monthly' || !cp?.contract_billing_cycle ? 'selected' : ''}>按月</option>
+              <option value="quarterly" ${cp?.contract_billing_cycle === 'quarterly' ? 'selected' : ''}>按季</option>
+              <option value="yearly" ${cp?.contract_billing_cycle === 'yearly' ? 'selected' : ''}>按年</option>
+            </select>
+            <input id="salesContractBillingDay" type="number" min="1" max="28" placeholder="每期第几天扣款/开票" value="${cp?.contract_billing_day || ''}">
+            <button id="salesSaveContractPriceBtn" class="secondary">保存签约价格</button>
+          </div>`;
+        $('salesSaveContractPriceBtn')?.addEventListener('click', async () => {
+          await api(`/api/admin/sales/leads/${leadId}/contract-price`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              contract_price: Number($('salesContractPrice').value || 0),
+              contract_billing_cycle: $('salesContractCycle').value,
+              contract_billing_day: Number($('salesContractBillingDay').value || 0),
+            }),
+          });
+          toast('签约价格已保存'); await salesLoadCrmOverview();
+        });
+      } else {
+        $('salesContractPriceBox').innerHTML = '';
+      }
       const paymentsByContract = new Map();
       for (const p of data.payments || []) { if (!paymentsByContract.has(Number(p.contract_id))) paymentsByContract.set(Number(p.contract_id), []); paymentsByContract.get(Number(p.contract_id)).push(p); }
       const invoicesByContract = new Map();
