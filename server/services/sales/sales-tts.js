@@ -72,13 +72,14 @@ export function classifySpeechTone(text = '') {
 
 export function buildNaturalSpeechDirection(text = '') {
   const tone = classifySpeechTone(text);
-  const common = '像一位有经验的真人女性餐饮顾问在微信语音里给客户讲解。先理解内容，再像当面聊天一样讲出来，不是在朗读一段文字。不改变原文含义和事实；避免播音腔、客服腔、说明书腔和逐字匀速朗读。句子之间有自然节奏变化，重点稍作停顿。';
+  // Qwen Audio会拒绝过长的instruction；把表达要求控制在已通过生产接口验证的长度内。
+  const common = '像真人女性餐饮顾问在微信里自然讲解，语气温暖可信，句子有长短和自然停顿，不改变原文含义，不要播音腔、客服腔或逐字朗读。';
   const styles = {
-    empathy: { rate: 0.93, instruction: '先带出理解和关心，再自然说明；重点前轻微停顿，句尾克制地收住，不要过度热情。' },
-    quick: { rate: 0.98, instruction: '像刚看到微信后马上回应，亲切轻快，带很轻的微笑感，短句干净利落。' },
-    explain: { rate: 1.0, instruction: '像客户刚问到你熟悉的功能，先用一句话讲核心，再自然补充细节。语速接近日常聊天，不要放慢成培训授课，也不要念标题、编号或标签。' },
-    question: { rate: 0.97, instruction: '像面对面继续聊天一样自然发问，语气真诚，问句尾音不要夸张上扬。' },
-    conversation: { rate: 0.96, instruction: '保持松弛、可信的聊天感，长短句节奏有变化，句尾自然收住。' },
+    empathy: { rate: 0.93, instruction: '先带出关心再说明，句尾克制，不要过度热情。' },
+    quick: { rate: 0.98, instruction: '像刚看到微信后马上回应，亲切轻快，短句利落。' },
+    explain: { rate: 1.0, instruction: '先讲核心，再自然补充细节，语速接近日常聊天，不要念标题或编号。' },
+    question: { rate: 0.97, instruction: '像面对面聊天一样真诚发问，尾音不要夸张上扬。' },
+    conversation: { rate: 0.96, instruction: '保持松弛可信的聊天感，句尾自然收住。' },
   };
   return { tone, rate: styles[tone].rate, instruction: `${common}${styles[tone].instruction}` };
 }
