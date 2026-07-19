@@ -371,7 +371,7 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
     const best = productQuery.matches[0] || null;
     await logProductQuestion(pool, { query: userText, match: best });
     const reply = best
-      ? formatProductAnswer(productQuery.matches)
+      ? formatProductAnswer(productQuery.matches, userText)
       : '这个问题我暂时没有找到足够准确的系统说明，所以不想凭印象回答。您可以把具体页面、按钮名称或报错文字发给我，我会按实际功能继续核对；这个问题也会记录下来补充到系统手册。';
     const speechReply = formatProductSpeechAnswer(productQuery.matches, userText);
     return {

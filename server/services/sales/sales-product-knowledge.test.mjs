@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PRODUCT_KNOWLEDGE,
+  buildCustomerLanguageBenchmark,
   buildProductBenchmark,
   classifyProductQuery,
   formatProductAnswer,
@@ -27,6 +28,20 @@ test('系统问答检索基准 Top-1 准确率至少90%', () => {
     else failures.push({ ...sample, actual });
   }
   const accuracy = correct / benchmark.length;
+  assert.ok(accuracy >= 0.9, `accuracy=${(accuracy * 100).toFixed(2)}% failures=${JSON.stringify(failures.slice(0, 12))}`);
+});
+
+test('聊天式系统问法 Top-1 准确率至少90%', () => {
+  const benchmark = buildCustomerLanguageBenchmark();
+  let correct = 0;
+  const failures = [];
+  for (const sample of benchmark) {
+    const actual = classifyProductQuery(sample.question).matches[0]?.id || null;
+    if (actual === sample.expected) correct += 1;
+    else failures.push({ ...sample, actual });
+  }
+  const accuracy = correct / benchmark.length;
+  assert.ok(benchmark.length >= 600, `benchmark=${benchmark.length}`);
   assert.ok(accuracy >= 0.9, `accuracy=${(accuracy * 100).toFixed(2)}% failures=${JSON.stringify(failures.slice(0, 12))}`);
 });
 
@@ -79,6 +94,35 @@ test('刚才三条真实语音问法必须命中，并生成顾问讲解稿而�
     assert.doesNotMatch(speech, /操作路径|权限说明|注意：|\d+[.、]/);
     assert.ok(speech.length >= 70 && speech.length <= 220, `${userText}: ${speech.length}`);
   }
+});
+
+test('最新真实失败问法命中卖点和培训资料，并使用容易理解的顾问表达', async () => {
+  const cases = [
+    ['那你给我介绍一下你们系统最大的卖点是什么？', 'account.selling-points', /问题|闭环|改善/],
+    ['我的问题是培训的资料怎么整理？', 'training.materials', /岗位|资料|培训/],
+  ];
+  for (const [userText, expected, valuePattern] of cases) {
+    const classified = classifyProductQuery(userText);
+    assert.equal(classified.matches[0]?.id, expected, userText);
+    const answer = formatProductAnswer(classified.matches, userText);
+    const speech = formatProductSpeechAnswer(classified.matches, userText);
+    assert.match(answer, valuePattern);
+    assert.match(speech, valuePattern);
+    assert.doesNotMatch(speech, /操作路径|权限说明|注意：|\d+[.、]/);
+
+    const turn = await runCustomerAiTurn({
+      userText,
+      extracted: {}, history: [], intentScore: 0, controller: 'waiting_human', inputMode: 'voice',
+    });
+    assert.equal(turn.source, 'product_knowledge');
+    assert.equal(turn.productKnowledge.matched, expected);
+    assert.equal(turn.speechReply, speech);
+  }
+});
+
+test('缺少系统语境的泛化追问不会误命中产品知识', () => {
+  const result = classifyProductQuery('你没有解决方案吗？');
+  assert.equal(result.isProductQuery, false);
 });
 
 test('企微语音发送优先使用讲解稿，文字失败回退仍保留完整答案', () => {

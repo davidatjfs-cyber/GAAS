@@ -47,6 +47,8 @@ export const PRODUCT_MODULES = {
 export const PRODUCT_KNOWLEDGE = [
   card('account','overview','系统整体功能',['系统是做什么','系统功能','平台功能','产品功能','有哪些模块','系统的功能','介绍整个系统'],
     '这套系统面向餐饮门店经营管理，把员工与权限、考勤、日报、审批请款、知识培训、厨房执行、经营报表、客户增长、诊断策略和Agent任务连接在一起。不同岗位看到的模块会按权限和门店范围裁剪。'),
+  card('account','selling-points','系统核心卖点',['系统最大卖点','核心卖点','产品优势','为什么选择你们','和普通管理软件有什么区别','系统价值'],
+    '系统的核心卖点不是多一个报表，而是把“发现问题、安排执行、提交证据、验收结果、复盘改善”连成闭环。经营数据、客户复购、门店任务和员工培训不再各自分散，老板可以直接看到哪里有问题、谁在处理、最后有没有改善。'),
   card('account','login','登录与修改密码',['登录','账号','密码','忘记密码','修改密码'],
     '员工使用分配的账号登录系统。登录后可在“我的档案”中修改自己的密码；无法登录或忘记原密码时，需要联系本企业系统管理员重置。',
     ['打开系统登录页并输入账号、密码','登录后进入“我的档案”','点击“修改密码”，填写原密码和新密码后保存']),
@@ -115,6 +117,9 @@ export const PRODUCT_KNOWLEDGE = [
   card('training','topics','培训知识点与任务',['培训认证','培训知识点','培训任务','指派培训','员工学习SOP怎么指派'],
     '培训模块把知识点、学习任务、测验、实操和认证串联起来。管理者可创建知识点并关联知识库资料，再按员工、岗位或门店指派培训任务。',
     ['创建或选择培训知识点','关联适用岗位及知识库资料','指派员工并设置要求','员工学习、测验或提交实操','管理者查看结果']),
+  card('training','materials','培训资料整理',['培训资料怎么整理','整理培训资料','培训文件怎么归类','培训内容如何组织','SOP资料整理'],
+    '培训资料整理的关键不是把文件堆在一起，而是让员工找得到、学得完、还能验证。可以先按品牌、岗位和主题在知识库中分组，上传SOP、图片或视频并设置适用对象；再把资料关联到培训知识点，配置学习、测验、实操和认证要求。',
+    ['在知识库按品牌、岗位或主题建立分组','上传资料并设置品牌、范围和适用对象','在培训认证中创建知识点并关联资料','配置测验、实操或认证要求','按员工、岗位或门店指派任务']),
   card('training','learn','员工完成培训',['我的培训','开始学习','培训测验','实操上传'],
     '员工在培训认证页查看分配给自己的知识点，进入学习会话后阅读资料、完成测验，并按要求上传实操证据。完成条件以该知识点配置为准。'),
   card('training','certification','认证审核与评分',['认证','认证审核','培训评分','待审核认证'],
@@ -241,16 +246,41 @@ export function searchProductKnowledge(query, { limit = 3, minScore = 10 } = {})
 
 const PRODUCT_SIGNAL_RE = /系统|平台|功能|模块|页面|菜单|后台|权限|账号|登录|档案|员工|考勤|打卡|日报|审批|请款|知识库|培训|考试|晋升|数据中心|agent|增长看板|客户分层|经营诊断|营销策略|积分|奖惩|厨房|备料|配方|报表|预测|绩效|设置|飞书|pos/i;
 
-export function classifyProductQuery(text = '') {
-  const matches = searchProductKnowledge(text, { limit: 3, minScore: 10 });
-  const best = matches[0];
-  const explicit = PRODUCT_SIGNAL_RE.test(String(text));
-  return { isProductQuery: Boolean(explicit || (best && best.score >= 22)), confidence: best ? Math.min(1, best.score / 50) : 0, matches };
+const PRODUCT_INTENT_RULES = [
+  { test: /(?:系统|产品|平台)?.{0,6}(?:最大|核心|主要).{0,4}卖点|为什么.{0,6}(?:选择|买|用).{0,4}(?:你们|这个系统)|(?:产品|系统).{0,4}(?:优势|价值)|和普通.{0,8}(?:软件|系统).{0,4}(?:区别|不同)/i, id: 'account.selling-points' },
+  { test: /培训.{0,8}(?:资料|文件|内容|SOP).{0,8}(?:整理|归类|组织|维护)|(?:资料|文件|SOP).{0,8}(?:整理|归类|组织).{0,8}培训/i, id: 'training.materials' },
+];
+
+function matchProductIntent(text = '') {
+  const rule = PRODUCT_INTENT_RULES.find((item) => item.test.test(String(text)));
+  if (!rule) return null;
+  const item = PRODUCT_KNOWLEDGE.find((candidate) => candidate.id === rule.id);
+  return item ? { ...item, score: 120 } : null;
 }
 
-export function formatProductAnswer(matches = []) {
+export function classifyProductQuery(text = '') {
+  const intentMatch = matchProductIntent(text);
+  const lexicalMatches = searchProductKnowledge(text, { limit: 3, minScore: 10 });
+  const matches = intentMatch
+    ? [intentMatch, ...lexicalMatches.filter((item) => item.id !== intentMatch.id)].slice(0, 3)
+    : lexicalMatches;
+  const best = matches[0];
+  const explicit = PRODUCT_SIGNAL_RE.test(String(text));
+  return { isProductQuery: Boolean(explicit || intentMatch || (best && best.score >= 32)), confidence: best ? Math.min(1, best.score / 50) : 0, matches };
+}
+
+export function formatProductAnswer(matches = [], userText = '') {
   if (!matches.length) return '';
   const primary = matches[0];
+  if (/卖点|优势|价值|为什么选择|区别/.test(String(userText)) || primary.id === 'account.selling-points') {
+    return '如果只讲一个最大的卖点，就是这套系统不只告诉您“哪里有问题”，还会继续追到“谁去处理、有没有证据、结果是否改善”。比如营业额或复购出现异常后，可以继续形成门店任务、跟踪执行并复盘结果；客户运营、门店执行和员工培养也在同一套流程里。老板不用每天逐店追问，而是直接看问题有没有真正闭环。';
+  }
+  if (primary.id === 'training.materials') {
+    return '培训资料整理，关键不是把文件全堆进去，而是让员工找得到、学得完、还能验证。可以先按品牌、岗位和主题建立资料分组，上传SOP、图片或视频并设置适用对象；再把资料关联到培训知识点，配置测验、实操和认证，最后按员工、岗位或门店安排学习。这样资料来源、培训进度和认证结果都能继续追踪。';
+  }
+  if (/介绍|讲讲|了解|好处|能解决什么/.test(String(userText))) {
+    return formatProductSpeechAnswer(matches, userText);
+  }
   const lines = [primary.answer];
   if (primary.steps?.length) lines.push(`操作路径：${primary.steps.map((step, i) => `${i + 1}.${step}`).join('；')}`);
   if (primary.roles) lines.push(`权限说明：${primary.roles}。`);
@@ -262,6 +292,8 @@ const PRODUCT_SPEECH_OVERRIDES = {
   'account.overview': '可以。简单说，这套系统是把门店里原来分散的事情串起来：员工和考勤、营业日报、审批请款、培训认证、厨房执行、经营报表，再到客户增长和经营诊断。不同岗位登录后，只会看到自己有权限的部分，所以员工、店长和老板看到的页面会不一样。您想深入了解哪一块，我可以接着给您讲具体怎么用。',
   'attendance.checkin': '可以。考勤打卡这块，员工到店后用手机完成上下班打卡，系统会把时间和门店位置一起记下来。如果手机没开定位，或者人不在门店设置的范围里，系统会提醒无法打卡。实际使用时，先允许手机定位，确认当前门店，再点上班或下班打卡就可以了。',
   'training.topics': '可以。培训认证这块，不是简单放几份资料给员工看，而是把学习、测验、实操和最后的认证串在一起。管理者可以按岗位或门店安排培训，员工学完以后做题、提交实操，审核通过后会形成认证记录。这样培训有没有完成、实际掌握得怎么样，都能继续跟踪。',
+  'account.selling-points': '如果只讲一个最大的卖点，就是我们不只告诉您哪里有问题，还会继续追到谁去处理、有没有证据、最后有没有改善。比如营业额或者复购出现异常以后，系统可以继续形成门店任务、跟踪执行，再回头看结果。老板不用每天逐店追问，打开系统就能看到问题到底有没有闭环。',
+  'training.materials': '培训资料整理，关键不是把文件全堆进去，而是让员工找得到、学得完、还能验证。可以先按品牌、岗位和主题把SOP、图片或视频分好组，再设置哪些门店、哪些岗位能看。接着把资料关联到培训知识点，配上测验、实操或者认证，最后再安排给员工学习。这样资料和培训结果就不会散掉。',
 };
 
 function naturalizeProductSentence(text = '') {
@@ -316,4 +348,32 @@ export function buildProductBenchmark() {
   return PRODUCT_KNOWLEDGE.flatMap((item) => item.keywords.slice(0, 3).flatMap((keyword, index) =>
     templates.slice(index, index + 3).map((make) => ({ question: make(keyword), expected: item.id }))
   ));
+}
+
+export function buildCustomerLanguageBenchmark() {
+  const patterns = [
+    (keyword) => `我对${keyword}不太懂，你用简单的话给我讲讲`,
+    (keyword) => `我们门店正卡在${keyword}这块，系统具体能怎么帮？`,
+    (keyword) => `如果真正在店里用${keyword}，一般要怎么操作？`,
+    (keyword) => `${keyword}对老板和店长到底有什么用？`,
+  ];
+  const generated = PRODUCT_KNOWLEDGE.flatMap((item) => patterns.map((make) => ({
+    question: make(item.keywords[0] || item.title),
+    expected: item.id,
+  })));
+  const hardCases = [
+    ['那你给我介绍一下你们系统最大的卖点是什么？', 'account.selling-points'],
+    ['你们这套东西和普通门店管理软件最大的区别在哪里？', 'account.selling-points'],
+    ['老板为什么要用你们这个系统？', 'account.selling-points'],
+    ['我的问题是培训的资料怎么整理？', 'training.materials'],
+    ['一堆SOP、图片和视频，怎么整理成培训内容？', 'training.materials'],
+    ['不同岗位的培训文件怎么分开给员工看？', 'training.materials'],
+    ['你能给我介绍一下你的这个系统的功能？', 'account.overview'],
+    ['日报填错以后还能不能重新改？', 'daily.edit'],
+    ['同事有这个菜单，为什么我的账号没有？', 'account.permissions'],
+    ['员工培训完成以后怎么证明他真的会了？', 'training.practice'],
+    ['活动发出去以后怎么看有没有客户回来？', 'growth.attribution'],
+    ['系统说经营异常，我去哪里看判断依据？', 'diagnosis.anomaly'],
+  ].map(([question, expected]) => ({ question, expected }));
+  return [...generated, ...hardCases];
 }
