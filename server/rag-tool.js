@@ -1,5 +1,11 @@
 // RAG 多维知识库工具
 import { pool as getPool } from './utils/database.js';
+import {
+  classifyProductQuery,
+  PRODUCT_KNOWLEDGE_VERSION,
+  PRODUCT_MODULES,
+  searchProductKnowledge,
+} from './services/sales/sales-product-knowledge.js';
 function pool() { return getPool(); }
 
 export const KB_SCOPES = { PUBLIC: 'public', BUSINESS: 'business', SENSITIVE: 'sensitive' };
@@ -144,7 +150,35 @@ export async function ragQuery(params = {}) {
       `SELECT id,title,content,category,tags,scope,file_path,file_type,created_at,audience FROM knowledge_base WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT $${idx}`,
       vals
     );
-    return { success: true, results: (r.rows||[]).map(row => ({ id: row.id, title: row.title, content: String(row.content||'').slice(0,1000), category: row.category, scope: row.scope, tags: row.tags, hasFile: !!row.file_path, fileType: row.file_type })), accessScopes: allowed };
+    const databaseResults = (r.rows||[]).map(row => ({ id: row.id, title: row.title, content: String(row.content||'').slice(0,1000), category: row.category, scope: row.scope, tags: row.tags, hasFile: !!row.file_path, fileType: row.file_type }));
+    const productIntent = classifyProductQuery(query);
+    const includeProductManual = Boolean(query)
+      && (!category || category === '系统使用手册')
+      && (category === '系统使用手册' || Number(productIntent.matches[0]?.score || 0) >= 22);
+    const productResults = includeProductManual
+      ? searchProductKnowledge(query, { limit: Math.min(limit, 10) }).map((item) => ({
+          id: `product:${item.id}`,
+          title: item.title,
+          content: [
+            item.answer,
+            item.steps.length ? `操作步骤：${item.steps.map((step, i) => `${i + 1}.${step}`).join('；')}` : '',
+            `权限说明：${item.roles}`,
+            item.limits ? `注意：${item.limits}` : '',
+          ].filter(Boolean).join('\n'),
+          category: '系统使用手册',
+          scope: 'public',
+          tags: ['system_manual', `module:${item.module}`, `version:${PRODUCT_KNOWLEDGE_VERSION}`],
+          module: PRODUCT_MODULES[item.module],
+          score: item.score,
+          source: 'product_knowledge',
+          hasFile: false,
+          fileType: null,
+        }))
+      : [];
+    const results = [...productResults, ...databaseResults]
+      .filter((item, index, all) => all.findIndex((other) => String(other.id) === String(item.id)) === index)
+      .slice(0, Math.min(limit, 20));
+    return { success: true, results, accessScopes: allowed, productKnowledgeVersion: PRODUCT_KNOWLEDGE_VERSION };
   } catch (e) { console.error('[RAG] query error:', e?.message); return { success: false, results: [], error: e?.message }; }
 }
 

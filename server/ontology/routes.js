@@ -33,6 +33,7 @@ import {
 } from './ontology-rule-service.js';
 import { syncOntologyDataFromProduction } from './real-data-sync.js';
 import { runOntologyDailyDiagnosisForTenant } from './daily-diagnosis-scheduler.js';
+import { getProductKnowledgeOntology, searchProductKnowledgeOntology } from './product-knowledge-ontology.js';
 
 export function registerOntologyRoutes(app, pool, authRequired) {
   const getTenantId = (req) => String(req.tenantId || req.user?.tenant_id || req.query?.tenant_id || req.body?.tenant_id || 'default').trim() || 'default';
@@ -52,6 +53,16 @@ export function registerOntologyRoutes(app, pool, authRequired) {
 
   app.get('/api/ontology/business/domains', authRequired, async (req, res) => {
     return res.json({ ok: true, domains: getBusinessDomains() });
+  });
+
+  app.get('/api/ontology/product-knowledge', authRequired, async (_req, res) => {
+    return res.json({ ok: true, ...getProductKnowledgeOntology() });
+  });
+
+  app.get('/api/ontology/product-knowledge/search', authRequired, async (req, res) => {
+    const query = String(req.query?.q || req.query?.query || '').trim();
+    const limit = Math.max(1, Math.min(Number(req.query?.limit || 5), 20));
+    return res.json({ ok: true, ...searchProductKnowledgeOntology(query, limit) });
   });
 
   app.get('/api/ontology/business/mappings', authRequired, async (req, res) => {

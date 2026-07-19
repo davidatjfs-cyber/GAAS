@@ -196,7 +196,7 @@ test('重写仍不合格时必须退回安全模板，不得发出坏回复', as
     return { ok: true, content: '我叫李娟娟Catherine，方便留个手机号吗？' };
   });
   const turn = await runCustomerAiTurn({
-    userText: '你们的系统是做什么的？',
+    userText: '你们团队一般怎么帮助餐厅？',
     extracted: {},
     history: [],
     intentScore: 0,

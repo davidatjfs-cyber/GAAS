@@ -72,6 +72,23 @@ test('GET /api/ontology/business/domains returns business domains', async () => 
   assert.equal(res.body.domains.length, 4);
 });
 
+test('产品知识 ontology 与客户AI知识源同版本并可检索功能关系', async () => {
+  const app = fakeApp();
+  registerOntologyRoutes(app, {}, (req, res, next) => next());
+  const all = fakeRes();
+  await app.routes['/api/ontology/product-knowledge']({ query: {} }, all);
+  assert.equal(all.body.ok, true);
+  assert.ok(all.body.modules.length >= 18);
+  assert.ok(all.body.capabilities.length >= 120);
+  assert.ok(all.body.edges.some((edge) => edge.relation === 'contains'));
+
+  const found = fakeRes();
+  await app.routes['/api/ontology/product-knowledge/search']({ query: { q: '营业日报怎么提交' } }, found);
+  assert.equal(found.body.ok, true);
+  assert.equal(found.body.version, all.body.version);
+  assert.equal(found.body.results[0].id, 'capability:daily.submit');
+});
+
 test('POST /api/ontology/business/infer returns insights, boss summary, and action plan', async () => {
   const app = fakeApp();
   registerOntologyRoutes(app, {}, (req, res, next) => next());

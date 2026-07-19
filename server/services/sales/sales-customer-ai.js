@@ -13,6 +13,11 @@ import {
   isUncertainAnswer,
 } from './sales-strategy.js';
 import { recommendCasesForLead, formatCaseBlurb } from './sales-case-library.js';
+import {
+  classifyProductQuery,
+  formatProductAnswer,
+  logProductQuestion,
+} from './sales-product-knowledge.js';
 
 let _callLLM = null;
 export function setSalesCustomerAiLlm(fn) {
@@ -360,6 +365,26 @@ ${repairInstruction}
 
 export async function runCustomerAiTurn({ userText, extracted, history, intentScore, controller, guidance = null, knowledgeItems = null, pool = null, inputMode = 'text' }) {
   const plan = buildStrategyPlan({ userText, extracted, history, intentScore, controller, knowledgeItems });
+  const productQuery = classifyProductQuery(userText);
+  if (productQuery.isProductQuery) {
+    const best = productQuery.matches[0] || null;
+    await logProductQuestion(pool, { query: userText, match: best });
+    const reply = best
+      ? formatProductAnswer(productQuery.matches)
+      : '这个问题我暂时没有找到足够准确的系统说明，所以不想凭印象回答。您可以把具体页面、按钮名称或报错文字发给我，我会按实际功能继续核对；这个问题也会记录下来补充到系统手册。';
+    return {
+      ok: true,
+      reply,
+      source: best ? 'product_knowledge' : 'product_knowledge_unanswered',
+      plan: { ...plan, mode: 'product_query', next_question: null },
+      guidance,
+      productKnowledge: {
+        confidence: productQuery.confidence,
+        matched: best?.id || null,
+        candidates: productQuery.matches.map((item) => ({ id: item.id, score: item.score })),
+      },
+    };
+  }
   if (controller === 'waiting_human') {
     plan.mode = 'waiting_human_bridge';
     plan.next_question = null;

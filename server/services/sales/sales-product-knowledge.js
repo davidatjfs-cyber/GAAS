@@ -1,0 +1,280 @@
+/**
+ * 客户 AI 的系统功能知识。
+ *
+ * 这里是外部客户可见的唯一产品事实源：回答、检索评测和 Markdown 手册都由它生成。
+ * 不写服务器、密钥、内部评分、客户数据或尚未上线的承诺。
+ */
+
+import { createHash } from 'node:crypto';
+import { PRODUCT_KNOWLEDGE_DETAIL_DEFINITIONS } from './sales-product-knowledge-details.js';
+
+const MODULE_SOURCE_REFS = {
+  account: ['working-fixed.html#main-app', 'working-fixed.html#canAccessModulePage'],
+  profile: ['working-fixed.html#profile-page'], employee: ['working-fixed.html#employees-page'],
+  attendance: ['working-fixed.html#attendance-page'], daily: ['working-fixed.html#daily-report-page'],
+  approval: ['working-fixed.html#approvals-page', 'working-fixed.html#payment-page'],
+  knowledge: ['working-fixed.html#knowledge-page', 'server/knowledge-routes.js'],
+  training: ['working-fixed.html#training-page', 'working-fixed.html#exam-page', 'server/training.js'],
+  agent: ['working-fixed.html#agents-page', 'working-fixed.html#agent-tasks-page', 'server/agents.js'],
+  growth: ['working-fixed.html#growth-page', 'server/customer-ops.js'],
+  diagnosis: ['working-fixed.html#diagnosis-page', 'server/ontology/routes.js'],
+  strategy: ['working-fixed.html#strategy-page'], points: ['working-fixed.html#points-page', 'working-fixed.html#rewards-page'],
+  kitchen: ['working-fixed.html#kitchen-page'], report: ['working-fixed.html#reports-page'],
+  forecast: ['forecast.html', 'working-fixed.html#nav-forecast'], task: ['working-fixed.html#task-performance-page'],
+  settings: ['working-fixed.html#settings-page'],
+};
+
+const card = (module, key, title, keywords, answer, steps = [], roles = '以账号实际可见权限为准', limits = '') => ({
+  id: `${module}.${key}`,
+  module,
+  title,
+  keywords,
+  answer,
+  steps,
+  roles,
+  limits,
+  sources: MODULE_SOURCE_REFS[module] || [],
+});
+
+export const PRODUCT_MODULES = {
+  account: '账号、权限与门店', profile: '我的档案', employee: '员工管理', attendance: '考勤与休假',
+  daily: '营业日报', approval: '审批与请款', knowledge: '知识库', training: '培训、考试与晋升',
+  agent: '数据中心与Agent', growth: '增长看板与客户运营', diagnosis: '经营诊断', strategy: '门店营销策略',
+  points: '积分与奖惩', kitchen: '厨房执行', report: '分析报表', forecast: '智能预测',
+  task: '任务和绩效', settings: '系统设置',
+};
+
+export const PRODUCT_KNOWLEDGE = [
+  card('account','overview','系统整体功能',['系统是做什么','系统功能','平台功能','产品功能','有哪些模块'],
+    '这套系统面向餐饮门店经营管理，把员工与权限、考勤、日报、审批请款、知识培训、厨房执行、经营报表、客户增长、诊断策略和Agent任务连接在一起。不同岗位看到的模块会按权限和门店范围裁剪。'),
+  card('account','login','登录与修改密码',['登录','账号','密码','忘记密码','修改密码'],
+    '员工使用分配的账号登录系统。登录后可在“我的档案”中修改自己的密码；无法登录或忘记原密码时，需要联系本企业系统管理员重置。',
+    ['打开系统登录页并输入账号、密码','登录后进入“我的档案”','点击“修改密码”，填写原密码和新密码后保存']),
+  card('account','store-switch','多门店切换',['切换门店','多门店','当前门店','看另一家店','allowed stores','跨店经理怎么切到另一家门店'],
+    '拥有多门店范围的账号可以切换当前门店。切换后系统会重新加载该门店的员工、日报、审批和报表数据，不能切换到授权范围外的门店。',
+    ['点击页面顶部或个人区域的当前门店','选择被授权的目标门店','等待页面重新加载后再查看业务数据']),
+  card('account','permissions','看不到菜单或按钮',['看不到','没有菜单','权限','角色','岗位','模块不可见','按钮不见了','同事有菜单我没有'],
+    '菜单和操作按钮由系统角色、岗位权限组、门店范围共同决定。若同事能看到而当前账号看不到，通常是岗位未勾选该模块、账号门店范围不同，或该功能仅管理员开放。',
+    ['先确认当前切换的门店是否正确','让管理员在“系统设置－岗位（权限组）”核对模块权限','仍无权限时核对账号角色和门店范围']),
+
+  card('profile','overview','个人档案内容',['我的档案','个人资料','发展地图','档案里有什么'],
+    '“我的档案”集中展示个人基础信息、岗位与职级、所属门店、考勤概览、培训认证、积分表现和发展信息。普通员工主要在这里查看自己的数据。'),
+  card('profile','leave','发起休假申请',['请假','休假申请','年假','调休','假期'],
+    '员工可从“我的档案”发起休假申请，选择假期类型和起止时间并说明原因。提交后进入审批流程，审批结果可在个人档案或审批记录中查看。',
+    ['进入“我的档案”','点击“休假申请”','选择类型和日期，填写原因','提交并等待审批']),
+  card('profile','mailbox','总经理信箱',['总经理信箱','意见反馈','匿名建议','投诉'],
+    '“总经理信箱”用于向管理层提交意见或问题。填写主题和内容后发送，具体处理范围和是否匿名以企业配置及页面提示为准。',
+    ['进入“我的档案”','打开“总经理信箱”','填写主题和内容后提交']),
+
+  card('employee','records','员工档案管理',['员工管理','新增员工','编辑员工','入职','员工档案'],
+    '员工管理用于维护人员基础资料、门店、部门、岗位、职级和直属上级等信息。新增员工通常会进入入职审批，审批通过后才形成正式人员记录。',
+    ['进入“员工管理”','点击新增或选择现有员工编辑','补齐门店、岗位、上级等必填项','保存或提交入职审批'], '管理员、HR及获授权管理者'),
+  card('employee','offboarding','离职申请与交接',['离职','离职申请','员工离职','交接','员工要离职应该直接删掉吗'],
+    '离职通过申请和审批处理，不建议直接删除员工。审批流程用于保留离职原因、日期和交接记录；完成后账号与在职状态按企业流程更新。',
+    ['打开员工档案或离职入口','填写离职日期、原因及交接信息','提交审批','审批完成后核对人员和账号状态'], '管理员、HR及相关管理者'),
+  card('employee','scope','员工跨店管理范围',['跨店员工','门店范围','允许门店','跨店职责'],
+    '跨店人员可配置主门店、允许访问的门店，以及特定门店的职责绑定。主门店决定默认上下文，允许门店决定可切换范围，职责绑定用于跨店审批或业务负责关系。', [], '管理员'),
+
+  card('attendance','checkin','上下班打卡',['打卡','上班打卡','下班打卡','定位','考勤'],
+    '员工在“考勤打卡”中完成上班或下班打卡。系统会记录时间，并可按企业设置校验门店定位；定位不在允许范围或浏览器未授权定位时可能无法正常打卡。',
+    ['打开“考勤打卡”并允许定位','确认当前门店和打卡类型','点击打卡并等待成功提示']),
+  card('attendance','records','查看考勤记录与异常',['考勤记录','迟到','早退','缺卡','异常考勤'],
+    '“考勤打卡”可查看个人打卡记录；管理报表可按门店、日期和员工查看迟到、早退、缺卡等异常。异常是否影响薪资由企业设置的考勤薪资规则决定。'),
+  card('attendance','confirm','月度考勤确认',['考勤确认','月度确认','确认考勤','工资考勤'],
+    '月度考勤确认用于让员工或管理者核对某月考勤结果。确认前应检查异常和补充说明；确认后的修改能力取决于管理员设置及工资结算状态。'),
+
+  card('daily','submit','填写并提交营业日报',['营业日报','日报','提交日报','保存草稿'],
+    '营业日报按门店和营业日期记录经营数据、客流、营业情况及现场信息。可以先保存草稿，核对后再正式提交；同一门店同一天通常维护一份日报。',
+    ['进入“营业日报”','选择门店和营业日期','填写各项数据并上传需要的照片','先保存草稿或直接提交']),
+  card('daily','edit','修改或删除日报',['修改日报','删除日报','日报填错','重新提交','日报填错了还能改吗'],
+    '有权限的人员可以打开对应门店和日期的日报进行修改；删除属于高影响操作，是否可用取决于账号权限。已进入后续统计或审核的数据应先确认影响再修改。'),
+  card('daily','private-room','包房月度统计',['包房','包间','包房营业额','包房月统计'],
+    '营业日报支持按门店和月份汇总包房相关数据，便于查看当月累计表现。具体指标取决于日报实际填写字段。'),
+
+  card('approval','inbox','待审批与审批操作',['待审批','审批','同意','驳回','审批意见'],
+    '“待审批”汇总当前账号需要处理的单据，可按状态和类型筛选。审批人打开详情后可同意、驳回或填写意见；能看到哪些单据由流程、角色和门店职责共同决定。',
+    ['进入“待审批”','筛选并打开目标单据','核对申请内容与附件','选择同意或驳回并填写必要意见']),
+  card('approval','return','退回与重新提交',['退回申请','重新提交','驳回后修改','退回重提','审批被退回来以后怎么重新交'],
+    '支持退回的单据可由审批人退回申请人补充或修改。申请人完成修改后重新提交，单据会按流程再次进入审批，历史处理记录会保留。'),
+  card('approval','flow','审批流程如何决定',['审批流程','谁审批','审批人','流程设置','为什么给他审批'],
+    '审批人由单据类型对应的审批流程、申请人门店、直属关系和跨店职责等共同解析。管理员可在系统设置中维护流程；普通用户不能自行指定不在流程中的审批人。'),
+  card('approval','payment','发起请款',['请款','付款申请','报销','费用申请'],
+    '“请款”用于提交费用或付款申请。申请人选择门店、月份和费用类别，填写金额、用途及附件后提交；系统可结合预算进行校验，审批通过后再由有权限人员登记付款。',
+    ['进入“请款”并点击新建','选择门店、月份和费用类别','填写金额、说明并上传凭证','提交审批','审批通过后由财务登记付款']),
+  card('approval','budget','请款预算与超预算',['请款预算','预算','超预算','费用类别','请款超过预算还能提交吗'],
+    '管理员可按门店、月份和费用类别维护请款预算。提交请款时系统会展示或校验预算占用；超预算能否继续提交取决于企业流程配置，不代表系统自动批准。', [], '管理员、财务及获授权人员'),
+
+  card('knowledge','upload','上传知识资料',['知识库','上传文件','批量上传','培训资料','文档'],
+    '知识库用于集中上传和维护制度、SOP、产品及培训资料。支持单个或批量上传，资料可设置品牌、范围和适用对象；解析完成后可供检索和培训引用。',
+    ['进入“知识库”','点击上传或批量上传','选择文件并设置品牌、范围和适用对象','等待解析完成后检查标题与内容'], '管理员或获授权人员'),
+  card('knowledge','organize','知识库分组和整理',['知识分组','整理台','移动文档','重命名分组'],
+    '“知识库整理台”可创建分组、查看组内文件、移动资料和重命名分组，帮助按业务主题整理内容。删除分组前应确认组内资料的处理方式。', [], '管理员或获授权人员'),
+  card('knowledge','edit','编辑知识内容与重新解释',['编辑知识','修改文档内容','重新生成解释','知识解析错误'],
+    '资料解析后可查看并编辑文本内容；解释不准确时可以重新生成。修改会影响后续检索和培训引用，因此应以企业正式制度或SOP为准。', [], '管理员或获授权人员'),
+
+  card('training','topics','培训知识点与任务',['培训认证','培训知识点','培训任务','指派培训','员工学习SOP怎么指派'],
+    '培训模块把知识点、学习任务、测验、实操和认证串联起来。管理者可创建知识点并关联知识库资料，再按员工、岗位或门店指派培训任务。',
+    ['创建或选择培训知识点','关联适用岗位及知识库资料','指派员工并设置要求','员工学习、测验或提交实操','管理者查看结果']),
+  card('training','learn','员工完成培训',['我的培训','开始学习','培训测验','实操上传'],
+    '员工在培训认证页查看分配给自己的知识点，进入学习会话后阅读资料、完成测验，并按要求上传实操证据。完成条件以该知识点配置为准。'),
+  card('training','certification','认证审核与评分',['认证','认证审核','培训评分','待审核认证'],
+    '员工完成规定内容后形成认证申请或记录。审核人可查看测验、实操证据和评分明细，决定通过、退回或调整评分；通过后显示在个人认证记录中。', [], '审核人及获授权管理者'),
+  card('training','exam','考试测评',['考试','题库','安排考试','参加考试','考试记录'],
+    '考试测评支持出题设置、题库、考试安排、员工在线作答和结果记录。管理者可安排考试，员工在“我被安排的考试”中作答，提交后查看允许公开的结果。'),
+  card('training','promotion','晋升申请',['升职','晋升','我要升职','晋升培训','晋升考核'],
+    '“我要升职”根据晋升通道展示目标岗位、必修培训和考核要求。员工提交晋升申请后，需要完成规定培训与审批；系统保留申请、培训和考核记录。'),
+
+  card('agent','center','数据中心能看什么',['数据中心','Agent中心','智能助手','Agent监控'],
+    '数据中心汇总系统健康、Agent运行、问题记录、消息活动和员工相关分析，帮助管理者判断自动任务是否正常以及哪些问题需要人工处理。具体卡片随账号权限和企业配置显示。', [], '管理员及获授权管理者'),
+  card('agent','tasks','发布和跟踪Agent任务',['Agent任务','发布任务','任务中枢','任务验收','执行证据'],
+    'Agent任务看板用于把门店问题转成可跟踪任务，覆盖发布、解析、认领、分配、执行、证据提交、验收、打回和结案。管理者可查看状态、超时和证据覆盖。',
+    ['在Agent任务页描述问题并发布','确认系统解析和任务分配','跟踪执行与证据','在待验收阶段通过或打回','确认问题结案'], '管理员、总部营运、HR及获授权人员'),
+  card('agent','feishu','飞书连接与同步',['飞书','飞书连接','同步飞书','飞书消息'],
+    '系统可配置飞书连接，用于消息通知、任务协作或数据同步。管理员可测试连接和手动同步；是否能发送给某人还取决于企业飞书应用权限、人员映射及接收配置。', [], '管理员'),
+
+  card('growth','dashboard','增长看板',['增长看板','增长数据','经营增长','增长动作'],
+    '增长看板把经营指标、客户运营、增长问题和执行动作放在同一视图，帮助管理者从发现问题到执行、复盘形成闭环。可见门店和数据范围受账号权限限制。', [], '管理员或获授权人员'),
+  card('growth','customer','客户分层与客户运营',['客户运营','客户分层','新客','老客','流失客户','会员'],
+    '客户运营基于已接入的POS或会员数据，按消费次数、时间、金额等条件形成客户分层，并支持针对不同人群制定维护动作。实际可用字段取决于数据源和接入评估。'),
+  card('growth','pos','POS数据接入',['POS','POS接入','销售数据','订单同步','能对接什么POS','POS是不是所有品牌都可以直接接'],
+    'POS接入不是口头承诺的通用开关，需要先评估接口、订单明细、菜品、会员标识和历史数据质量。接入后系统才能进行经营分析、客户分层和效果归因；具体品牌是否可接需由技术评估确认。'),
+  card('growth','campaign','营销触达与效果归因',['营销活动','触达','短信','企微','回店','ROI','营销归因'],
+    '营销动作可面向选定客户人群进行触达，并跟踪后续回店和营业贡献。只有客户标识、订单数据和触达记录能够可靠关联时，系统才能做较可信的效果归因。'),
+
+  card('diagnosis','overview','门店经营诊断',['经营诊断','门店诊断','经营问题','异常诊断'],
+    '经营诊断按门店和经营指标识别异常，展示问题、证据和建议方向，并可进入对应增长方案。它用于辅助定位和推动整改，不等同于在缺少数据时保证找出唯一原因。', [], '管理员或获授权管理者'),
+  card('diagnosis','solutions','六大增长方案',['六大增长方案','增长方案','解决方案','诊断方案'],
+    '诊断页将常见经营问题组织为六类增长方案，用户选择当前问题后查看适用方案、任务和进展。方案最终效果仍取决于数据条件、门店执行和复盘。'),
+  card('diagnosis','tasks','诊断整改任务',['整改任务','诊断任务','完成任务','团队任务'],
+    '增长方案可以生成个人或团队整改任务。执行人提交完成情况和必要证据，管理者查看团队任务与进展，形成“发现问题－执行－验证”的闭环。'),
+
+  card('strategy','experiment','创建营销策略实验',['门店营销策略','策略实验','A/B测试','营销实验'],
+    '门店营销策略用于把营销想法做成可追踪实验。可创建单方案或A/B方案，设置目标与执行内容，记录结果后比较不同方案表现。',
+    ['进入“门店营销策略”','新建实验并填写目标','配置方案A及可选方案B','执行后提交结果','比较指标并形成结论'], '管理员、总部营运、店长、出品经理及获授权人员'),
+
+  card('points','points','员工积分',['员工积分','积分规则','积分排名','积分记录'],
+    '员工积分记录可配置事项、分值和证据要求。员工或管理者按规则提交积分事项，经需要的审批后计入记录；积分页可查看个人积分、排行榜和明细。'),
+  card('points','reward','奖惩单',['奖惩管理','奖励','处罚','奖惩单'],
+    '奖惩管理用于创建奖励或处罚单，记录对象、原因、金额或影响、证据和审批过程。生效前应按企业流程审批，历史记录可在详情和报表中追溯。'),
+
+  card('kitchen','prep','今日备料',['厨房执行','今日备料','备料任务','菜品负责'],
+    '厨房执行页用于查看和维护今日备料任务，并按岗位或人员配置负责菜品。实际数量可结合经营计划或预测生成，执行人员按页面要求更新完成情况。'),
+  card('kitchen','recipe','配方库',['配方库','菜品配方','原料配比','工艺步骤','后厨菜品的原料配比在哪看'],
+    '配方库记录菜品的原料配比、工艺步骤和注意事项，供后厨按统一标准执行。有编辑权限的人员可新建或维护配方，普通员工以查看和执行为主。', [], '出品管理者及获授权人员'),
+
+  card('report','business','经营分析报表',['分析报表','经营报表','营业额','销量','菜品分析'],
+    '分析报表可按门店和日期查看经营汇总、营业额、销量及相关趋势。报表口径取决于接入的正式数据源和企业指标定义，查看前应确认门店与时间范围。'),
+  card('report','hr','人事考勤薪资报表',['人事报表','考勤报表','工资报表','离职率','薪资'],
+    '获授权管理者可查看考勤、工资、人员流动、晋升和薪资变更等报表。此类数据属于敏感信息，系统会按角色、权限和门店范围限制访问。', [], '管理员、HR、财务或获授权管理者'),
+  card('report','export','报表筛选和导出',['导出报表','下载报表','筛选门店','筛选日期'],
+    '使用报表时先选择门店、日期或月份，再执行查询；有导出按钮的报表可下载当前筛选结果。导出内容仍受账号数据范围限制。'),
+
+  card('forecast','inventory','智能库存预测',['库存预测','备货预测','预测销量','采购预测','预测出来的备货量一定准吗'],
+    '智能预测根据历史销售、产品映射和可用经营数据估算未来需求，提供备货参考并记录预测历史与准确率。预测是辅助决策，节假日、天气和临时活动等变化仍需人工校正。'),
+  card('forecast','margin','毛利估算',['毛利预测','毛利估算','产品别名','毛利配置'],
+    '管理员可维护产品别名和毛利相关配置，使不同数据名称映射到统一产品后进行收入或毛利估算。配置不完整时，估算结果可能缺项，应先完善映射。'),
+
+  card('task','performance','任务和绩效',['任务和绩效','绩效记录','任务完成率','员工绩效'],
+    '任务和绩效页将任务执行、完成证据和绩效结果汇总，供管理者查看员工或团队表现。评分应以已配置规则和有效记录为依据，不应仅凭AI文字判断。', [], '管理员、总部营运、HR及获授权人员'),
+
+  card('settings','stores','门店与品牌设置',['系统设置','门店设置','新增门店','品牌设置','经营画像'],
+    '管理员可在系统设置维护门店和品牌，包括名称、归属、状态及门店经营画像等。修改会影响筛选、权限和报表归属，应避免随意改名或重复建店。', [], '管理员'),
+  card('settings','roles','岗位权限组',['岗位权限组','角色权限','模块权限','底部导航','权限配置'],
+    '岗位（权限组）可配置员工可见模块、底部导航和门店范围。系统管理类页面仍有管理员硬边界，不能仅通过自定义岗位绕过。权限修改后相关账号重新加载或登录即可按新配置生效。', [], '管理员'),
+  card('settings','flows','审批与业务规则设置',['审批流程设置','积分事项设置','考勤薪资规则','目标管理'],
+    '系统设置集中维护审批流程、积分事项、考勤薪资规则和经营目标等基础规则。规则变更会影响后续单据或计算，是否追溯历史数据取决于具体模块。', [], '管理员'),
+  card('settings','ai','AI模型配置',['AI配置','AI模型','模型设置','智能助手配置'],
+    '管理员可配置系统允许使用的AI模型与相关参数，供智能助手等功能调用。模型配置只决定调用能力，回答质量还依赖知识内容、权限范围和业务数据。敏感凭据不应在普通页面或对话中公开。', [], '管理员'),
+  ...PRODUCT_KNOWLEDGE_DETAIL_DEFINITIONS.map((definition) => card(...definition)),
+];
+
+export const PRODUCT_KNOWLEDGE_VERSION = createHash('sha256')
+  .update(JSON.stringify(PRODUCT_KNOWLEDGE))
+  .digest('hex')
+  .slice(0, 16);
+
+const STOP_WORDS = new Set(['怎么','如何','什么','是否','可以','能不能','为什么','请问','一下','系统','功能','里面','这个','那个','使用']);
+
+function normalize(text = '') {
+  return String(text).toLowerCase().replace(/[\s，。！？、；：,.!?;:()（）【】\[\]"'“”‘’_-]/g, '');
+}
+
+function terms(text = '') {
+  const raw = String(text).toLowerCase().match(/[a-z0-9]+|[\u4e00-\u9fff]{2,}/g) || [];
+  const result = new Set();
+  for (const token of raw) {
+    if (!STOP_WORDS.has(token)) result.add(token);
+    if (/^[\u4e00-\u9fff]+$/.test(token)) {
+      for (let n = 2; n <= Math.min(4, token.length); n += 1) {
+        for (let i = 0; i <= token.length - n; i += 1) result.add(token.slice(i, i + n));
+      }
+    }
+  }
+  return result;
+}
+
+export function scoreProductCard(query, item) {
+  const q = normalize(query);
+  if (!q) return 0;
+  const title = normalize(item.title);
+  const aliases = item.keywords.map(normalize).filter(Boolean);
+  let score = 0;
+  if (q === title || aliases.includes(q)) score += 100;
+  if (q.includes(title) || title.includes(q)) score += 28;
+  for (const alias of aliases) {
+    if (q.includes(alias)) score += Math.min(24, 8 + alias.length * 2);
+    else if (alias.includes(q) && q.length >= 2) score += 8;
+  }
+  const qTerms = terms(query);
+  const haystack = terms([item.title, ...item.keywords, item.answer].join(' '));
+  for (const term of qTerms) if (haystack.has(term)) score += term.length >= 4 ? 3 : 1;
+  return score;
+}
+
+export function searchProductKnowledge(query, { limit = 3, minScore = 10 } = {}) {
+  return PRODUCT_KNOWLEDGE
+    .map((item) => ({ ...item, score: scoreProductCard(query, item) }))
+    .filter((item) => item.score >= minScore)
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+    .slice(0, limit);
+}
+
+const PRODUCT_SIGNAL_RE = /系统|平台|功能|模块|页面|菜单|后台|权限|账号|登录|档案|员工|考勤|打卡|日报|审批|请款|知识库|培训|考试|晋升|数据中心|agent|增长看板|客户分层|经营诊断|营销策略|积分|奖惩|厨房|备料|配方|报表|预测|绩效|设置|飞书|pos/i;
+
+export function classifyProductQuery(text = '') {
+  const matches = searchProductKnowledge(text, { limit: 3, minScore: 10 });
+  const best = matches[0];
+  const explicit = PRODUCT_SIGNAL_RE.test(String(text));
+  return { isProductQuery: Boolean(explicit || (best && best.score >= 22)), confidence: best ? Math.min(1, best.score / 50) : 0, matches };
+}
+
+export function formatProductAnswer(matches = []) {
+  if (!matches.length) return '';
+  const primary = matches[0];
+  const lines = [primary.answer];
+  if (primary.steps?.length) lines.push(`操作路径：${primary.steps.map((step, i) => `${i + 1}.${step}`).join('；')}`);
+  if (primary.roles) lines.push(`权限说明：${primary.roles}。`);
+  if (primary.limits) lines.push(`注意：${primary.limits}`);
+  return lines.join('\n');
+}
+
+export async function logProductQuestion(pool, { query, match = null, source = 'customer_ai' } = {}) {
+  if (!pool?.query || !String(query || '').trim()) return;
+  await pool.query(
+    `INSERT INTO sales_product_question_logs
+       (question, matched_card_id, match_score, answered, source)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [String(query).slice(0, 1000), match?.id || null, Number(match?.score || 0), Boolean(match), source]
+  ).catch((error) => console.warn('[sales-product-knowledge] question log failed:', error?.message || error));
+}
+
+export function buildProductBenchmark() {
+  const templates = [
+    (k) => `${k}怎么用？`, (k) => `系统里的${k}在哪里？`, (k) => `${k}具体是什么功能？`,
+    (k) => `能介绍一下${k}吗？`, (k) => `我想操作${k}应该怎么办？`, (k) => `${k}有什么权限要求？`,
+    (k) => `客户问${k}，应该怎么回答？`,
+  ];
+  return PRODUCT_KNOWLEDGE.flatMap((item) => item.keywords.slice(0, 3).flatMap((keyword, index) =>
+    templates.slice(index, index + 3).map((make) => ({ question: make(keyword), expected: item.id }))
+  ));
+}
