@@ -69,7 +69,7 @@ export async function computeRenewalHealth(pool, tenantId) {
 
 /** 全量已开通租户的续费风险清单，按分数升序(风险最高排前面) */
 export async function listRenewalRisks(pool, { limit = 50 } = {}) {
-  const tenants = await pool.query(`SELECT tenant_id, name FROM tenants WHERE status <> 'disabled' ORDER BY id ASC LIMIT $1`, [limit]);
+  const tenants = await pool.query(`SELECT tenant_id, name FROM tenants WHERE status <> 'disabled' ORDER BY created_at ASC LIMIT $1`, [limit]);
   const results = [];
   for (const t of tenants.rows || []) {
     const health = await computeRenewalHealth(pool, t.tenant_id).catch(() => null);
@@ -83,7 +83,7 @@ export async function listRenewalRisks(pool, { limit = 50 } = {}) {
 /** 转介绍候选：健康分高、无逾期异常、授权不是快过期状态的稳定客户 */
 export async function listReferralCandidates(pool, { limit = 50 } = {}) {
   const tenants = await pool.query(
-    `SELECT tenant_id, name, created_at FROM tenants WHERE status='active' ORDER BY id ASC LIMIT $1`,
+    `SELECT tenant_id, name, created_at FROM tenants WHERE status='active' ORDER BY created_at ASC LIMIT $1`,
     [limit]
   );
   const results = [];
