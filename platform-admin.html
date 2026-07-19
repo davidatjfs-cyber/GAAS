@@ -1053,12 +1053,18 @@
             <label class="field">下次开票<input id="billingNextInvoiceAt" type="datetime-local"></label>
             <label class="field">账单联系人<input id="billingContact" placeholder="财务联系人"></label>
             <label class="field">联系方式<input id="billingContactMethod" placeholder="手机/微信/邮箱"></label>
+            <label class="field">账单/发票送达方式<select id="billingDeliveryMethod"><option value="email">邮箱</option><option value="wechat">微信</option></select></label>
+            <label class="field">联系人邮箱<input id="billingContactEmail" type="email" placeholder="用于发送账单/发票"></label>
+            <label class="field">联系人微信号<input id="billingContactWechat" placeholder="用于发送账单/发票"></label>
             <label class="field">提前提醒(天)<input id="alertsNotifyDays" type="number" min="1" value="30"></label>
             <label class="field">告警接收人<input id="alertsContact" placeholder="姓名/联系方式"></label>
             <label class="field" style="grid-column:1/-1">飞书告警群<input id="alertsFeishuChat" placeholder="可留空"></label>
           </div>
           <label>平台备注<textarea id="profileNotes" style="min-height:72px" placeholder="仅平台运营可见"></textarea></label>
-          <button id="saveProfileBtn">保存平台配置</button>
+          <div class="toolbar">
+            <button id="saveProfileBtn">保存平台配置</button>
+            <button id="downloadBillingPdfBtn" type="button" class="secondary">下载账单PDF</button>
+          </div>
         </div>
 
         <div id="feishuPane" class="config-pane stack">
@@ -1869,7 +1875,7 @@ function legacyCopyFallback(value) {
           method: 'POST',
           body: JSON.stringify({ activate: true })
         });
-        log(`自动验收 ${tenantId}：${data.ok ? '通过' : '失败'}${data.report?.checks ? '；' + data.report.checks.map((x) => `${x.key}=${x.ok}`).join('，') : ''}`);
+        log(`自动验收 ${tenantId}：${data.ok ? '通过' : '失败'}${data.report?.checks ? '；' + data.report.checks.map((x) => `${checkLabel(x.key)}=${x.ok ? '通过' : '未通过'}`).join('，') : ''}`);
         await loadTenants();
         toast(data.ok ? '验收通过' : '验收未通过');
       } catch (e) {
@@ -2472,14 +2478,14 @@ function legacyCopyFallback(value) {
       return `
         <div class="detail-grid">
           <div class="field"><div class="k">最近验收时间</div><div class="v">${checkedAt || '-'}</div></div>
-          <div class="field"><div class="k">验收动作</div><div class="v">${action}</div></div>
+          <div class="field"><div class="k">验收动作</div><div class="v">${actionLabel(action)}</div></div>
           <div class="field"><div class="k">结果</div><div class="v">${report.ok ? '通过' : '未通过'} · 通过 ${okCount} / 失败 ${failCount}</div></div>
           <div class="field"><div class="k">说明</div><div class="v">${report.message || '-'}</div></div>
         </div>
         <div class="detail-grid" style="margin-top:10px">
           ${checks.length ? checks.map((item) => `
             <div class="field">
-              <div class="k">${item.key}</div>
+              <div class="k">${checkLabel(item.key)}</div>
               <div class="v">${item.ok ? '✅' : '❌'} ${item.detail || ''}</div>
             </div>
           `).join('') : '<div class="field" style="grid-column:1 / -1"><div class="v">无检查项</div></div>'}
@@ -2502,10 +2508,29 @@ function legacyCopyFallback(value) {
       return parts.length ? parts.join(' · ') : '未配置';
     }
 
+    const ACCEPTANCE_CHECK_LABELS = {
+      tenant_exists: '租户存在',
+      state_seeded: '初始数据已写入',
+      admin_ready: '管理员账号就绪',
+      license_present: '已发放许可证',
+      license_not_expired: '许可证未过期',
+    };
+    const ACCEPTANCE_ACTION_LABELS = {
+      acceptance: '验收',
+      provision: '开通',
+      bootstrap: '一键初始化',
+    };
+    function checkLabel(key) {
+      return ACCEPTANCE_CHECK_LABELS[key] || key;
+    }
+    function actionLabel(action) {
+      return ACCEPTANCE_ACTION_LABELS[action] || action;
+    }
+
     function formatChecksSummary(checks = []) {
       const list = Array.isArray(checks) ? checks : [];
       if (!list.length) return '暂无检查项';
-      return list.map((item) => `${item.ok ? '✓' : '✗'}${item.key}`).join(' · ');
+      return list.map((item) => `${item.ok ? '✓' : '✗'}${checkLabel(item.key)}`).join(' · ');
     }
 
     function renderAlertLevel(level) {
@@ -2843,7 +2868,7 @@ function legacyCopyFallback(value) {
             const tr = el('tr');
             tr.appendChild(el('td', {}, [el('div', { style: 'font-weight:700' }, item.tenant_name || item.tenant_id), el('div', { className: 'mono' }, item.tenant_id)]));
             tr.appendChild(el('td', {}, [el('span', { className: `pill ${item.accepted_ok ? 'ok' : 'bad'}` }, item.accepted_ok ? '通过' : (item.accepted_ok === false ? '未通过' : '未验收'))]));
-            tr.appendChild(el('td', {}, [el('div', { className: 'mono' }, item.checked_at || '-'), el('div', { className: 'small' }, item.acceptance_action || 'acceptance')]));
+            tr.appendChild(el('td', {}, [el('div', { className: 'mono' }, item.checked_at || '-'), el('div', { className: 'small' }, actionLabel(item.acceptance_action || 'acceptance'))]));
             tr.appendChild(el('td', {}, formatChecksSummary(item.checks)));
             tr.appendChild(el('td', {}, el('div', { className: 'tenant-actions compact' }, [
               btnGhost('重新验收', () => window.acceptTenant(item.tenant_id)),
@@ -2907,6 +2932,9 @@ function legacyCopyFallback(value) {
       $('billingCycle').value = p.billing?.billing_cycle || '';
       $('billingContact').value = p.billing?.billing_contact || '';
       $('billingContactMethod').value = p.billing?.billing_contact_method || '';
+      $('billingDeliveryMethod').value = p.billing?.delivery_method || 'email';
+      $('billingContactEmail').value = p.billing?.billing_contact_email || '';
+      $('billingContactWechat').value = p.billing?.billing_contact_wechat || '';
       $('billingNextInvoiceAt').value = p.billing?.next_invoice_at ? String(p.billing.next_invoice_at).slice(0, 16) : '';
       $('alertsNotifyDays').value = p.alerts?.notify_days_before_expiry || 30;
       $('alertsContact').value = p.alerts?.contact || '';
@@ -2942,6 +2970,9 @@ function legacyCopyFallback(value) {
           next_invoice_at: $('billingNextInvoiceAt').value ? new Date($('billingNextInvoiceAt').value).toISOString() : '',
           billing_contact: $('billingContact').value.trim(),
           billing_contact_method: $('billingContactMethod').value.trim(),
+          delivery_method: $('billingDeliveryMethod').value,
+          billing_contact_email: $('billingContactEmail').value.trim(),
+          billing_contact_wechat: $('billingContactWechat').value.trim(),
           notes: '',
         },
         alerts: {
@@ -3695,12 +3726,13 @@ function legacyCopyFallback(value) {
       box.innerHTML = `<strong>财务销账与订单审核</strong><div class="small">现金客户确认收款后自动开通；帐期客户须实时核对品牌共享授信，超额自动锁定并退回销售。</div>
         <div class="stack" style="margin-top:8px">${(orders.items || []).map((o) => `<div class="glossary-item" data-finance-order="${Number(o.id)}"><strong>${salesEsc(o.company || o.name)} · ${salesEsc(o.store_name)}</strong><p>${o.order_type === 'renewal' ? '续约' : '新开门店'} · ${salesMoney(o.amount_fen)} · ${o.payment_type === 'credit' ? `帐期 / 品牌${salesEsc(o.brand_name)} / 授信${salesMoney(o.credit_limit_fen)}` : '现金客户'}</p><div class="toolbar">${o.payment_type === 'cash' ? '<input data-order-amount type="number" step="0.01" value="'+(Number(o.amount_fen)/100)+'"><button data-order-paid class="warn">确认收款并开通</button>' : '<button data-order-credit class="warn">核实授信并通过</button>'}<button data-order-return class="ghost">退回销售</button></div></div>`).join('') || '<div class="small">暂无待审核订单。</div>'}</div>
         <div class="stack" style="margin-top:8px">${(payments.items || []).map((p) => `<div class="glossary-item"><strong>${salesEsc(p.company || p.name || `客户#${p.lead_id}`)}</strong><p>合同 ${salesEsc(p.contract_no)} · 待确认回款 ${salesMoney(p.amount_fen)}</p><button data-finance-payment="${Number(p.id)}" class="warn">确认已到账</button></div>`).join('') || '<div class="small">暂无待确认回款。</div>'}</div>
-        <div class="stack" style="margin-top:8px">${(invoices.items || []).map((i) => `<div class="glossary-item" data-finance-invoice="${Number(i.id)}"><strong>${salesEsc(i.company || i.name || `客户#${i.lead_id}`)}</strong><p>合同 ${salesEsc(i.contract_no)} · 待开票 ${salesMoney(i.amount_fen)}</p><div class="toolbar"><input data-invoice-no placeholder="发票号码"><input data-invoice-file type="file" accept=".pdf,image/*"><button data-issue-invoice class="secondary">登记已开票</button></div></div>`).join('') || '<div class="small">暂无待开票申请。</div>'}</div>`;
+        <div class="stack" style="margin-top:8px">${(invoices.items || []).map((i) => `<div class="glossary-item" data-finance-invoice="${Number(i.id)}"><strong>${salesEsc(i.company || i.name || `客户#${i.lead_id}`)}</strong><p>合同 ${salesEsc(i.contract_no)} · 待开票 ${salesMoney(i.amount_fen)}</p><div class="toolbar"><input data-invoice-no placeholder="发票号码"><input data-invoice-file type="file" accept=".pdf,image/*"><button data-issue-invoice class="secondary">登记已开票</button><button data-ignore-invoice class="ghost">忽略开票(客户不需要)</button></div></div>`).join('') || '<div class="small">暂无待开票申请。</div>'}</div>`;
       box.querySelectorAll('[data-finance-payment]').forEach((btn) => btn.onclick = async () => { await api(`/api/admin/sales/payments/${btn.dataset.financePayment}/confirm`, { method: 'POST', body: '{}' }); toast('回款已确认'); await loadSalesFinanceBoard(); });
       box.querySelectorAll('[data-order-paid]').forEach((btn) => btn.onclick = async () => { const card=btn.closest('[data-finance-order]'); await api(`/api/admin/sales/orders/${card.dataset.financeOrder}/finance-decision`, {method:'POST',body:JSON.stringify({action:'confirm_paid',amount:Number(card.querySelector('[data-order-amount]').value||0)})}); toast('已销账，系统已创建开通与交付任务'); await loadSalesFinanceBoard(); });
       box.querySelectorAll('[data-order-credit]').forEach((btn) => btn.onclick = async () => { const card=btn.closest('[data-finance-order]'); const d=await api(`/api/admin/sales/orders/${card.dataset.financeOrder}/finance-decision`, {method:'POST',body:JSON.stringify({action:'approve_credit'})}); if(!d.ok) throw new Error(d.error||'授信审核未通过'); toast('授信核实通过，系统已创建开通与交付任务'); await loadSalesFinanceBoard(); });
       box.querySelectorAll('[data-order-return]').forEach((btn) => btn.onclick = async () => { const reason=window.prompt('退回销售原因',''); if(!reason) return; const card=btn.closest('[data-finance-order]'); await api(`/api/admin/sales/orders/${card.dataset.financeOrder}/finance-decision`, {method:'POST',body:JSON.stringify({action:'return',reason})}); toast('订单已退回销售'); await loadSalesFinanceBoard(); });
       box.querySelectorAll('[data-issue-invoice]').forEach((btn) => btn.onclick = async () => { const card = btn.closest('[data-finance-invoice]'); const invoiceNo = card.querySelector('[data-invoice-no]').value.trim(); if (!invoiceNo) throw new Error('请填写发票号码'); const uploaded = await salesUploadDocument(card.querySelector('[data-invoice-file]')?.files?.[0]); await api(`/api/admin/sales/invoices/${card.dataset.financeInvoice}/issued`, { method: 'PATCH', body: JSON.stringify({ invoice_no: invoiceNo, file_url: uploaded?.file_url || null }) }); toast('发票已登记'); await loadSalesFinanceBoard(); });
+      box.querySelectorAll('[data-ignore-invoice]').forEach((btn) => btn.onclick = async () => { const card = btn.closest('[data-finance-invoice]'); const reason = window.prompt('客户不需要发票的原因(可留空)', '') || undefined; await api(`/api/admin/sales/invoices/${card.dataset.financeInvoice}/ignore`, { method: 'PATCH', body: JSON.stringify({ reason }) }); toast('已标记为客户不需要发票'); await loadSalesFinanceBoard(); });
       $('salesKfStatus').textContent = `待确认回款 ${(payments.items || []).length} · 待开票 ${(invoices.items || []).length}`;
     }
 
@@ -4782,6 +4814,29 @@ function legacyCopyFallback(value) {
       } catch (e) {
         toast(e.message);
         log(`创建租户失败：${e.message}`);
+      }
+    };
+
+    $('downloadBillingPdfBtn').onclick = async () => {
+      try {
+        const tenantId = $('cfgTenantId').value.trim();
+        if (!tenantId) throw new Error('请先选择要下载账单的租户 ID');
+        // 这个端点返回二进制PDF，不能走上面那个默认按JSON解析响应的 api()，
+        // 但鉴权方式一样(Authorization头)，所以还是要带上 headers()。
+        const resp = await fetch(`/api/admin/tenants/${tenantId}/billing/pdf`, { headers: headers() });
+        if (!resp.ok) { const d = await resp.json().catch(() => ({})); throw new Error(d.message || d.error || `${resp.status}`); }
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `billing-${tenantId}-${new Date().toISOString().slice(0, 10)}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        log(`账单PDF已下载：${tenantId}。`);
+      } catch (e) {
+        log(`下载账单PDF失败：${e.message}`);
       }
     };
 

@@ -152,3 +152,55 @@ export async function syncCustomerSuccessTasks(pool) {
 
   return created;
 }
+
+// 每天只主动推送一次续费提醒消息(CS任务本身按天dedup不会重复，但sendOpsAlert没有去重能力，
+// 不加这个内存guard的话每次cron tick——目前每天固定跑一次——都会重发同一条消息)。
+let _lastRenewalBillReminderSentDate = null;
+
+/**
+ * 续费前15天提醒：发给销售+客服的内部提醒(不直接发给客户)，客户侧账单需要销售/客服
+ * 从平台配置的"下载账单PDF"功能里拿到文件后手动发给客人——自动发送客户以后再做。
+ */
+export async function runRenewalBillReminders15d(pool, sendOpsAlert) {
+  const period = todayPeriod();
+  const r = await pool.query(
+    `SELECT l.tenant_id, l.store_id, l.store_name, l.expires_at, t.name AS tenant_name
+       FROM tenant_store_licenses l
+       JOIN tenants t ON t.tenant_id = l.tenant_id
+      WHERE l.status = 'active'
+        AND l.expires_at BETWEEN NOW() AND NOW() + INTERVAL '15 days'
+      ORDER BY l.expires_at ASC`
+  );
+  const rows = r.rows || [];
+  const created = [];
+  for (const row of rows) {
+    const lead = await pool.query(`SELECT id, owner_username FROM sales_leads WHERE tenant_id=$1 ORDER BY id DESC LIMIT 1`, [row.tenant_id]);
+    const leadRow = lead.rows?.[0];
+    if (!leadRow) continue;
+    const daysLeft = Math.max(0, Math.ceil((new Date(row.expires_at).getTime() - Date.now()) / 86400000));
+    const task = await upsertTask(pool, {
+      leadId: leadRow.id,
+      title: '续费账单提醒',
+      detail: `${row.tenant_name || row.tenant_id}·${row.store_name}：授权将于${daysLeft}天后到期(${new Date(row.expires_at).toISOString().slice(0, 10)})，请在平台配置页下载账单PDF发送给客户并跟进续费。`,
+      dueAt: new Date(),
+      assignee: leadRow.owner_username || null,
+      dedupKey: `renewal-bill-15d:${row.tenant_id}:${row.store_id}:${period}`,
+      taskDomain: 'renewal', taskType: 'renewal_bill_reminder',
+      tenantId: row.tenant_id, sourceType: 'tenant_store_license', sourceId: row.store_id, createdBy: 'cron:renewal-bill',
+    });
+    if (task) created.push({ tenant_id: row.tenant_id, store_name: row.store_name, days_left: daysLeft, task_id: task.id });
+  }
+
+  if (rows.length && typeof sendOpsAlert === 'function' && _lastRenewalBillReminderSentDate !== period) {
+    _lastRenewalBillReminderSentDate = period;
+    await sendOpsAlert(
+      ['【续费账单提醒·15天内到期】', ...rows.map((row) => {
+        const daysLeft = Math.max(0, Math.ceil((new Date(row.expires_at).getTime() - Date.now()) / 86400000));
+        return `· ${row.tenant_name || row.tenant_id}·${row.store_name}：剩${daysLeft}天到期，请下载账单PDF跟进续费`;
+      })].join('\n'),
+      { title: '续费账单提醒', audience: 'sales' }
+    );
+  }
+
+  return created;
+}

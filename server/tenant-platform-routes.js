@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import PDFDocument from 'pdfkit';
 import { SYSTEM_TENANT_ID, tenantContext } from './utils/database.js';
 import { createEmptyTenantState } from './tenant-login.js';
 import {
@@ -245,6 +246,11 @@ export function registerTenantPlatformRoutes(app, deps) {
       next_invoice_at: '',
       billing_contact: '',
       billing_contact_method: '',
+      // 账单/发票送达方式与联系方式——目前只存这些信息、供人工下载账单后手动发送；
+      // 自动发送(邮件/微信)是后续需求，这里先把数据结构和录入入口做好。
+      delivery_method: 'email',
+      billing_contact_email: '',
+      billing_contact_wechat: '',
       notes: '',
     },
     alerts: {
@@ -290,6 +296,11 @@ export function registerTenantPlatformRoutes(app, deps) {
         next_invoice_at: String(billing.next_invoice_at || '').trim(),
         billing_contact: String(billing.billing_contact || '').trim(),
         billing_contact_method: String(billing.billing_contact_method || '').trim(),
+        delivery_method: ['email', 'wechat'].includes(String(billing.delivery_method || '').trim())
+          ? String(billing.delivery_method).trim()
+          : DEFAULT_PLATFORM_PROFILE.billing.delivery_method,
+        billing_contact_email: String(billing.billing_contact_email || '').trim(),
+        billing_contact_wechat: String(billing.billing_contact_wechat || '').trim(),
         notes: String(billing.notes || '').trim(),
       },
       alerts: {
@@ -884,6 +895,43 @@ export function registerTenantPlatformRoutes(app, deps) {
       return res.json({ ok: true, profile: saved });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+    }
+  });
+
+  // 账单PDF下载——现在只做"生成可下载文件"这一步，不做自动发送；销售/客服下载后
+  // 自行通过邮箱/微信手动发给客户。内容来自platform_profile.billing这个已有的配置对象，
+  // 不需要新表；只是把已经录入的账单计划/周期/联系人信息渲染成一份能给客户看的PDF。
+  app.get('/api/admin/tenants/:tenantId/billing/pdf', platformAdminRequired, async (req, res) => {
+    const tenantId = String(req.params.tenantId || '').trim();
+    try {
+      const tenantRow = await pool.query('SELECT name FROM tenants WHERE tenant_id = $1 LIMIT 1', [tenantId]);
+      if (!tenantRow.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
+      const profile = await getTenantPlatformProfile(pool, tenantId, tenantRow.rows[0].name);
+      const billing = profile.billing || {};
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="billing-${tenantId}-${new Date().toISOString().slice(0, 10)}.pdf"`);
+      const doc = new PDFDocument({ margin: 50 });
+      doc.pipe(res);
+      doc.fontSize(18).text(`${profile.system_name || tenantRow.rows[0].name || tenantId} · 账单`, { align: 'left' });
+      doc.moveDown();
+      doc.fontSize(11);
+      const row = (label, value) => doc.text(`${label}：${value || '未配置'}`);
+      row('租户', `${tenantRow.rows[0].name || tenantId}（${tenantId}）`);
+      row('账单计划', billing.plan_name);
+      row('账单周期', billing.billing_cycle);
+      row('下次开票', billing.next_invoice_at);
+      row('账单联系人', billing.billing_contact);
+      row('联系人邮箱', billing.billing_contact_email);
+      row('联系人微信', billing.billing_contact_wechat);
+      row('送达方式', billing.delivery_method === 'wechat' ? '微信' : '邮箱');
+      if (billing.notes) { doc.moveDown(); doc.text(`备注：${billing.notes}`); }
+      doc.moveDown();
+      doc.fontSize(9).fillColor('#888').text(`生成时间：${new Date().toISOString()}`);
+      doc.end();
+    } catch (e) {
+      if (!res.headersSent) return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+      res.end();
     }
   });
 

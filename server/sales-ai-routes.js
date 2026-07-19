@@ -56,7 +56,7 @@ import { runNurtureCadence } from './services/sales/sales-nurture.js';
 import { getUnifiedCustomerTimeline } from './services/sales/sales-timeline.js';
 import { buildTenantMonthlyValueReport } from './services/sales/tenant-value-report.js';
 import { getOnboardingChecklist } from './services/sales/tenant-onboarding.js';
-import { computeRenewalHealth, listRenewalRisks, listReferralCandidates, syncCustomerSuccessTasks } from './services/sales/tenant-renewal-service.js';
+import { computeRenewalHealth, listRenewalRisks, listReferralCandidates, syncCustomerSuccessTasks, runRenewalBillReminders15d } from './services/sales/tenant-renewal-service.js';
 import { maskLeadContact, maskLeadListContact, canViewFullContact } from './services/sales/sales-privacy.js';
 import { sensitiveRateLimit } from './services/sales/sales-rate-limit.js';
 import { leadScopeSql, canAccessLead, canAccessRepMetrics, canAccessTenant, isManager } from './services/sales/sales-permissions.js';
@@ -155,6 +155,27 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     if (!['super_admin', 'finance'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden', message: '仅财务或超级管理员可确认回款' });
     next();
   };
+  // 开票提醒财务和客服都要能看到/处理：客服经常是第一个知道"客户不需要发票"的人。
+  const financeOrCsGate = (req, res, next) => {
+    if (!['super_admin', 'finance', 'customer_service'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden', message: '仅财务/客服或超级管理员可处理开票提醒' });
+    next();
+  };
+  /**
+   * 订单标记已付款(现金)或授信审核通过后，自动生成一条待开票申请——不用再等客户/客服
+   * 主动发起"申请开票"这一步。用 order_id 唯一索引天然防重复(同一订单多次触发finance-decision
+   * 也只会有一条开票申请)。
+   */
+  async function ensureInvoiceRequestForOrder(order, requestedBy) {
+    try {
+      await pool.query(
+        `INSERT INTO sales_invoices (contract_id, order_id, amount_fen, status, requested_by)
+         VALUES ($1,$2,$3,'requested',$4) ON CONFLICT (order_id) WHERE order_id IS NOT NULL DO NOTHING`,
+        [order.contract_id, order.id, order.amount_fen, requestedBy]
+      );
+    } catch (e) {
+      console.warn('[sales-ai] auto invoice request failed:', e?.message || e);
+    }
+  }
   const generalManagerGate = (req, res, next) => {
     if (!['super_admin', 'general_manager'].includes(req.platformAdmin?.role)) return res.status(403).json({ ok: false, error: 'forbidden', message: '仅总经理可授信或解锁客户' });
     next();
@@ -228,6 +249,31 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       ensureSalesTables(pool)
         .then(() => syncCustomerSuccessTasks(pool))
         .catch((e) => console.warn('[sales-ai] CS task sync failed:', e?.message || e));
+    }, 6 * 60 * 60 * 1000);
+  }
+
+  if (!globalThis.__salesRenewalBillReminderTimer) {
+    globalThis.__salesRenewalBillReminderTimer = setInterval(() => {
+      runRenewalBillReminders15d(pool, sendOpsAlert).catch((e) => console.warn('[sales-ai] renewal bill reminder failed:', e?.message || e));
+    }, 6 * 60 * 60 * 1000);
+  }
+
+  if (!globalThis.__salesInvoiceReminderTimer) {
+    let lastInvoiceReminderSentDate = null;
+    globalThis.__salesInvoiceReminderTimer = setInterval(() => {
+      const period = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
+      if (lastInvoiceReminderSentDate === period) return;
+      pool.query(`SELECT i.*,c.contract_no,l.company,l.name FROM sales_invoices i JOIN sales_contracts c ON c.id=i.contract_id JOIN sales_leads l ON l.id=c.lead_id WHERE i.status='requested' ORDER BY i.created_at ASC`)
+        .then((r) => {
+          const items = r.rows || [];
+          if (!items.length || typeof sendOpsAlert !== 'function') return;
+          lastInvoiceReminderSentDate = period;
+          return sendOpsAlert(
+            ['【待开票提醒】', ...items.map((i) => `· ${i.company || i.name || `客户#${i.lead_id}`}：${i.contract_no || ''} 待开票 ¥${(Number(i.amount_fen) / 100).toFixed(2)}`)].join('\n'),
+            { title: '待开票提醒', audience: 'sales' }
+          );
+        })
+        .catch((e) => console.warn('[sales-ai] invoice reminder failed:', e?.message || e));
     }, 6 * 60 * 60 * 1000);
   }
 
@@ -623,7 +669,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
   });
 
-  app.get('/api/admin/sales/finance/pending-invoices', platformAdminRequired, financeGate, async (_req, res) => {
+  app.get('/api/admin/sales/finance/pending-invoices', platformAdminRequired, financeOrCsGate, async (_req, res) => {
     try {
       const r = await pool.query(`SELECT i.*,c.contract_no,c.lead_id,l.company,l.name FROM sales_invoices i JOIN sales_contracts c ON c.id=i.contract_id JOIN sales_leads l ON l.id=c.lead_id WHERE i.status='requested' ORDER BY i.created_at ASC`);
       res.json({ ok: true, items: r.rows });
@@ -643,7 +689,17 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
 
   app.patch('/api/admin/sales/invoices/:id/issued', platformAdminRequired, financeGate, async (req, res) => {
     try {
-      const r = await pool.query(`UPDATE sales_invoices SET status='issued',invoice_no=$2,file_url=$3,issued_by=$4,issued_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='requested' RETURNING *`, [Number(req.params.id), req.body?.invoice_no || null, req.body?.file_url || null, req.platformAdmin.username]);
+      const r = await pool.query(`UPDATE sales_invoices SET status='issued',invoice_no=$2,file_url=$3,issued_by=$4,issued_at=NOW(),resolved_by=$4,resolved_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='requested' RETURNING *`, [Number(req.params.id), req.body?.invoice_no || null, req.body?.file_url || null, req.platformAdmin.username]);
+      if (!r.rows?.[0]) return res.status(409).json({ ok: false, error: 'invoice_not_requested' });
+      res.json({ ok: true, invoice: r.rows[0] });
+    } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
+  });
+
+  // 客户明确表示不需要发票——财务或客服都能操作，停止后续提醒。
+  app.patch('/api/admin/sales/invoices/:id/ignore', platformAdminRequired, financeOrCsGate, async (req, res) => {
+    try {
+      const reason = String(req.body?.reason || '客户不需要发票').trim();
+      const r = await pool.query(`UPDATE sales_invoices SET status='cancelled',ignored_reason=$2,resolved_by=$3,resolved_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='requested' RETURNING *`, [Number(req.params.id), reason, req.platformAdmin.username]);
       if (!r.rows?.[0]) return res.status(409).json({ ok: false, error: 'invoice_not_requested' });
       res.json({ ok: true, invoice: r.rows[0] });
     } catch (e) { res.status(500).json({ ok: false, error: 'server_error' }); }
@@ -734,12 +790,13 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       const paidFen=Math.round(Number(req.body?.amount||order.amount_fen/100)*100); if(paidFen<=0) return res.status(400).json({ok:false,error:'invalid_payment'});
       await pool.query(`INSERT INTO sales_order_payments (order_id,amount_fen,receipt_url,received_by,note) VALUES ($1,$2,$3,$4,$5)`,[order.id,paidFen,req.body?.receipt_url||null,req.platformAdmin.username,req.body?.note||null]);
       const u=await pool.query(`UPDATE sales_orders SET status='paid',finance_by=$2,finance_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING *`,[order.id,req.platformAdmin.username]);
+      await ensureInvoiceRequestForOrder(u.rows[0], req.platformAdmin.username);
       const provision=await provisionTenantFromOrder(pool,order.id,{startedBy:req.platformAdmin.username}); return res.json({ok:true,order:u.rows[0],provision});
     }
     if(order.payment_type==='credit' && action==='approve_credit'){
       const risk=await getCreditPoolRisk(pool,order.credit_pool_id,{lockWhenExceeded:false}); const projected=Number(risk.outstanding_fen)+Number(order.amount_fen);
       if(risk.status!=='active' || projected>Number(risk.credit_limit_fen)){await pool.query(`UPDATE sales_credit_pools SET status='locked',lock_reason=$2,updated_at=NOW() WHERE id=$1`,[order.credit_pool_id,`订单 ${order.order_no} 审核后欠款将达${projected}分，超过授信${risk.credit_limit_fen}分`]);const u=await pool.query(`UPDATE sales_orders SET status='returned',return_reason='品牌欠款超过授信，已锁定，需总经理重新授信',finance_by=$2,finance_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING *`,[order.id,req.platformAdmin.username]);return res.status(409).json({ok:false,error:'credit_limit_exceeded',order:u.rows[0],risk:{...risk,projected_outstanding_fen:projected}});}
-      const u=await pool.query(`UPDATE sales_orders SET status='credit_approved',finance_by=$2,finance_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING *`,[order.id,req.platformAdmin.username]);const provision=await provisionTenantFromOrder(pool,order.id,{startedBy:req.platformAdmin.username});return res.json({ok:true,order:u.rows[0],provision,credit_risk:await getCreditPoolRisk(pool,order.credit_pool_id)});
+      const u=await pool.query(`UPDATE sales_orders SET status='credit_approved',finance_by=$2,finance_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING *`,[order.id,req.platformAdmin.username]);await ensureInvoiceRequestForOrder(u.rows[0],req.platformAdmin.username);const provision=await provisionTenantFromOrder(pool,order.id,{startedBy:req.platformAdmin.username});return res.json({ok:true,order:u.rows[0],provision,credit_risk:await getCreditPoolRisk(pool,order.credit_pool_id)});
     }
     return res.status(400).json({ok:false,error:'invalid_finance_action'});
   });
