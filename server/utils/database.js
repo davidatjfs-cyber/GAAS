@@ -75,7 +75,6 @@ function wrapPoolForTenantContext(rawPool) {
   rawPool.__tenantContextWrapped = true;
 
   const originalConnect = rawPool.connect.bind(rawPool);
-  const originalQuery = rawPool.query.bind(rawPool);
 
   async function setSessionTenant(client, tenantId) {
     await client.query('SELECT set_config($1, $2, false)', ['app.tenant_id', tenantId]);
@@ -113,10 +112,29 @@ function wrapPoolForTenantContext(rawPool) {
     }
   };
 
-  // 保留逃生通道：极少数确实需要绕开这层包装、直接用原始pool方法的场景(目前没有已知调用方，
-  // 留着是为了排障方便，比如怀疑包装本身有问题时可以临时切回来对比)。
+  // 逃生通道：绕开租户上下文包装、直接查询(现有调用方: ontology-rule-service.js的
+  // loadEffectiveRules/规则阈值查询，用于读system-scope规则时不受当前租户会话变量影响)。
+  //
+  // 不能直接用originalQuery = rawPool.query.bind(rawPool)绑定的pg-pool原生query()：
+  // 该原生query内部会调用this.connect(callback)来借出连接，而此时this.connect已经
+  // 被本函数上面替换成了包一层租户上下文的async版本——原生query传给它的是回调函数，
+  // 我们的wrapped connect却把它当成connect的普通参数转发给originalConnect(callback)，
+  // pg-pool对"传callback"的connect()是同步返回undefined、异步回调通知结果，而不是返回
+  // 一个resolve到client的Promise；于是await出来的client是undefined，setSessionTenant
+  // 里client.query直接抛错——且这个错误发生在await this.connect(cb)返回的Promise链上，
+  // 而原生query从不等待/使用connect()的返回值(它只等回调触发)，所以这个reject永远没人
+  // catch，变成整个进程的unhandled rejection；同时原生query期待的回调也从未被调用，
+  // 调用方那个Promise会永久挂起。用直接持有originalConnect的手写实现来完全绕开这条
+  // 内部this.connect(callback)路径，才是安全的"不设置租户会话变量的裸查询"。
   rawPool.__unwrappedConnect = originalConnect;
-  rawPool.__unwrappedQuery = originalQuery;
+  rawPool.__unwrappedQuery = async function (text, params) {
+    const client = await originalConnect();
+    try {
+      return await client.query(text, params);
+    } finally {
+      client.release();
+    }
+  };
 }
 
 // 多租户后台任务用：取所有激活租户的tenant_id列表。
