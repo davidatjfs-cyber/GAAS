@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import jwt from 'jsonwebtoken';
 import { createPlatformAdminRequired, requireSuperAdmin, requireSalesManagerOrAbove } from './tenant-platform-routes.js';
+import { SYSTEM_TENANT_ID, tenantContext } from './utils/database.js';
 
 test('createPlatformAdminRequired rejects missing token', async () => {
   const mw = createPlatformAdminRequired({ query: async () => ({}) }, 'plat-secret');
@@ -15,6 +17,22 @@ test('createPlatformAdminRequired rejects missing token', async () => {
   await mw(req, res, () => { next = true; });
   assert.equal(next, false);
   assert.equal(res.statusCode, 401);
+});
+
+test('createPlatformAdminRequired runs downstream platform queries in system tenant context', async () => {
+  const secret = 'platform-test-secret';
+  const token = jwt.sign({ username: 'owner', role: 'platform_admin', account_role: 'super_admin' }, secret);
+  const mw = createPlatformAdminRequired({ query: async () => ({}) }, secret);
+  const req = {
+    headers: { authorization: `Bearer ${token}` },
+    method: 'GET',
+    path: '/api/admin/tenants/overview',
+  };
+  const res = mockRes();
+  let observedTenant = null;
+  await mw(req, res, () => { observedTenant = tenantContext.getStore(); });
+  assert.equal(observedTenant, SYSTEM_TENANT_ID);
+  assert.equal(req.platformAdmin.role, 'super_admin');
 });
 
 function mockRes() {

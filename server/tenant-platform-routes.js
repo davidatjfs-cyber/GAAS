@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
-import { tenantContext } from './utils/database.js';
+import { SYSTEM_TENANT_ID, tenantContext } from './utils/database.js';
 import { createEmptyTenantState } from './tenant-login.js';
 import {
   getTenantIntegrationSummary,
@@ -23,7 +23,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function createPlatformAdminRequired(pool, platformAdminJwtSecret) {
   return async function platformAdminRequired(req, res, next) {
-    if (req.platformAdmin?.username) return next();
+    const nextInSystemContext = () => tenantContext.run(SYSTEM_TENANT_ID, () => next());
+    if (req.platformAdmin?.username) return nextInSystemContext();
     const token = String(req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
     if (!token) return res.status(401).json({ error: 'unauthorized' });
     let payload;
@@ -55,13 +56,13 @@ export function createPlatformAdminRequired(pool, platformAdminJwtSecret) {
           if (/secret|password|key|token/i.test(k)) detail[k] = '***';
         }
       }
-      pool.query(
+      tenantContext.run(SYSTEM_TENANT_ID, () => pool.query(
         `INSERT INTO platform_admin_audit_log (admin_username, method, path, target_tenant_id, detail, ip)
          VALUES ($1,$2,$3,$4,$5,$6)`,
         [payload.username, req.method, req.originalUrl, targetTenantId, JSON.stringify(detail).slice(0, 4000), req.ip || '']
-      ).catch((e) => console.warn('[platform-admin] audit log write failed:', e?.message));
+      )).catch((e) => console.warn('[platform-admin] audit log write failed:', e?.message));
     }
-    next();
+    return nextInSystemContext();
   };
 }
 
