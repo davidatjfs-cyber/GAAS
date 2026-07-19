@@ -60,6 +60,7 @@ import { computeRenewalHealth, listRenewalRisks, listReferralCandidates, syncCus
 import { maskLeadContact, maskLeadListContact, canViewFullContact } from './services/sales/sales-privacy.js';
 import { sensitiveRateLimit } from './services/sales/sales-rate-limit.js';
 import { leadScopeSql, canAccessLead, canAccessRepMetrics, canAccessTenant, isManager } from './services/sales/sales-permissions.js';
+import { getSalesPermissionConfig, saveSalesPermissionConfig, refreshSalesPermissionConfigCache, SALES_MODULES, SALES_CONFIGURABLE_ROLES } from './services/sales/sales-permission-config.js';
 import {
   listSalesReps,
   createOrUpdateSalesRep,
@@ -196,6 +197,8 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     setSalesAssistantLlm(callLLM);
   }
   if (typeof sendOpsAlert === 'function') setSalesNotify(sendOpsAlert);
+
+  refreshSalesPermissionConfigCache(pool).catch((e) => console.warn('[sales-ai] permission config warm-up failed:', e?.message || e));
 
   if (!globalThis.__salesStaleLeadReminderTimer) {
     globalThis.__salesStaleLeadReminderTimer = setInterval(() => {
@@ -452,6 +455,26 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
 
   app.get('/api/admin/sales/meta', platformAdminRequired, (_req, res) => {
     res.json({ ok: true, persona: SALES_PERSONA, knowledge: PUBLIC_KNOWLEDGE, forbidden_claims: FORBIDDEN_CLAIMS, kf_configured: kfConfigured(), open_kfid: kfEnv().openKfid || null });
+  });
+
+  // 任何已登录的销售后台管理员都能读(前端要靠这个算出自己能看到哪些CRM模块)，
+  // 但只有销售经理/总经理/超级管理员能改——改的是别人的可见范围，不是自己的。
+  app.get('/api/admin/sales/permission-config', platformAdminRequired, async (req, res) => {
+    try {
+      const config = await getSalesPermissionConfig(pool);
+      res.json({ ok: true, config, modules: SALES_MODULES, roles: SALES_CONFIGURABLE_ROLES, my_role: req.platformAdmin?.role || null });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
+  });
+
+  app.put('/api/admin/sales/permission-config', platformAdminRequired, managerGate, async (req, res) => {
+    try {
+      const config = await saveSalesPermissionConfig(pool, req.body?.config || {}, req.platformAdmin?.username);
+      res.json({ ok: true, config, modules: SALES_MODULES, roles: SALES_CONFIGURABLE_ROLES });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
+    }
   });
 
   app.get('/api/admin/sales/knowledge', platformAdminRequired, async (_req, res) => {

@@ -654,7 +654,17 @@
         <button type="button" data-scroll-target="crmFinanceSection">合同回款</button>
         <button type="button" data-scroll-target="crmContentSection">内容培育</button>
         <button type="button" data-scroll-target="crmPerformanceSection">区域业绩</button>
+        <button type="button" id="salesPermissionSettingsBtn" style="display:none;margin-left:auto" onclick="openSalesPermissionSettings()">权限设置</button>
       </nav>
+
+      <div class="card stack" id="salesPermissionSettingsCard" style="display:none">
+        <div class="crm-section-head"><div><h3>销售CRM权限设置</h3><p>按角色配置数据可见范围(只看自己 / 全量可见)和CRM导航模块的可见性；未配置的角色沿用系统默认值。</p></div><button type="button" class="secondary" onclick="closeSalesPermissionSettings()">收起</button></div>
+        <div id="salesPermissionGrid" style="overflow-x:auto"></div>
+        <div style="margin-top:10px">
+          <button type="button" onclick="saveSalesPermissionConfig()">保存设置</button>
+          <button type="button" class="ghost" onclick="loadSalesPermissionConfig()">刷新</button>
+        </div>
+      </div>
 
       <div class="card stack" id="crmOverviewSection">
         <div class="crm-section-head"><div><h3>CRM 总览</h3><p>先看今天要推进什么，再进入客户档案处理。</p></div><button type="button" id="salesReloadBtn" class="secondary">刷新 CRM</button></div>
@@ -3543,6 +3553,112 @@ function legacyCopyFallback(value) {
         showNavTarget('crmContentSection', role === 'sales' || isManager);
         showNavTarget('crmPerformanceSection', isManager);
       }
+      const canEditPermissions = ['super_admin', 'general_manager', 'sales_manager'].includes(role);
+      if ($('salesPermissionSettingsBtn')) $('salesPermissionSettingsBtn').style.display = canEditPermissions ? '' : 'none';
+      applySalesModuleVisibilityFromConfig(role);
+    }
+
+    let _salesPermissionConfig = null;
+    let _salesPermissionCatalog = { modules: [], roles: [] };
+
+    async function fetchSalesPermissionConfig() {
+      const r = await fetch('/api/admin/sales/permission-config', { headers: headers() });
+      const d = await r.json();
+      if (!r.ok || !d?.ok) throw new Error(d?.error || ('HTTP ' + r.status));
+      _salesPermissionConfig = d.config;
+      _salesPermissionCatalog = { modules: d.modules || [], roles: d.roles || [] };
+      return d;
+    }
+
+    /** configureSalesWorkspace 的CRM导航显隐逻辑之后的最终一道过滤：按后台可配置的模块清单，
+     * 进一步收掉当前角色不该看到的导航按钮/区块。默认配置和改造前的硬编码显隐完全一致，
+     * 只有管理员在"权限设置"里手动调整过，才会真的改变显示效果。 */
+    async function applySalesModuleVisibilityFromConfig(role) {
+      try {
+        if (!_salesPermissionConfig) await fetchSalesPermissionConfig();
+        const cfg = _salesPermissionConfig?.[role];
+        if (!cfg) return; // super_admin等没有配置项，走前面已有的显隐逻辑即可
+        const allowed = new Set(cfg.modules || []);
+        (_salesPermissionCatalog.modules || []).forEach((m) => {
+          const visible = allowed.has(m.key);
+          const section = $(m.key);
+          if (section && section.style.display !== 'none') section.style.display = visible ? '' : 'none';
+          const btn = $('salesCrmNav') ? $('salesCrmNav').querySelector(`[data-scroll-target="${m.key}"]`) : null;
+          if (btn && btn.style.display !== 'none') btn.style.display = visible ? '' : 'none';
+        });
+      } catch (e) {
+        console.warn('加载销售权限配置失败，使用默认显隐:', e?.message || e);
+      }
+    }
+
+    async function loadSalesPermissionConfig() {
+      try {
+        await fetchSalesPermissionConfig();
+        renderSalesPermissionGrid();
+      } catch (e) {
+        toast('加载权限设置失败: ' + (e?.message || e));
+      }
+    }
+
+    function renderSalesPermissionGrid() {
+      const c = $('salesPermissionGrid');
+      if (!c) return;
+      const roles = _salesPermissionCatalog.roles || [];
+      const modules = _salesPermissionCatalog.modules || [];
+      let h = '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>';
+      h += '<th style="text-align:left;padding:6px 8px">角色</th><th style="text-align:left;padding:6px 8px">数据范围</th>';
+      modules.forEach((m) => { h += `<th style="padding:6px 4px;font-size:11px">${m.label}</th>`; });
+      h += '</tr></thead><tbody>';
+      roles.forEach((r) => {
+        const cfg = _salesPermissionConfig?.[r.role] || { data_scope: 'own', modules: [] };
+        h += `<tr><td style="padding:5px 8px">${r.label}</td><td style="padding:5px 8px">
+          <select data-scope-role="${r.role}">
+            <option value="own" ${cfg.data_scope === 'own' ? 'selected' : ''}>只看自己</option>
+            <option value="all" ${cfg.data_scope === 'all' ? 'selected' : ''}>全量可见</option>
+          </select></td>`;
+        modules.forEach((m) => {
+          const checked = (cfg.modules || []).includes(m.key) ? 'checked' : '';
+          h += `<td style="text-align:center;padding:5px 4px"><input type="checkbox" data-module-role="${r.role}" data-module-key="${m.key}" ${checked}></td>`;
+        });
+        h += '</tr>';
+      });
+      h += '</tbody></table>';
+      c.innerHTML = h;
+    }
+
+    function collectSalesPermissionConfigFromGrid() {
+      const c = $('salesPermissionGrid');
+      const config = {};
+      (_salesPermissionCatalog.roles || []).forEach((r) => { config[r.role] = { data_scope: 'own', modules: [] }; });
+      c.querySelectorAll('select[data-scope-role]').forEach((sel) => {
+        if (config[sel.dataset.scopeRole]) config[sel.dataset.scopeRole].data_scope = sel.value;
+      });
+      c.querySelectorAll('input[data-module-role]').forEach((box) => {
+        if (box.checked && config[box.dataset.moduleRole]) config[box.dataset.moduleRole].modules.push(box.dataset.moduleKey);
+      });
+      return config;
+    }
+
+    async function saveSalesPermissionConfig() {
+      try {
+        const config = collectSalesPermissionConfigFromGrid();
+        const r = await fetch('/api/admin/sales/permission-config', { method: 'PUT', headers: headers(), body: JSON.stringify({ config }) });
+        const d = await r.json();
+        if (!r.ok || !d?.ok) throw new Error(d?.error || ('HTTP ' + r.status));
+        _salesPermissionConfig = d.config;
+        toast('权限设置已保存');
+      } catch (e) {
+        toast('保存失败: ' + (e?.message || e));
+      }
+    }
+
+    function openSalesPermissionSettings() {
+      if ($('salesPermissionSettingsCard')) $('salesPermissionSettingsCard').style.display = '';
+      loadSalesPermissionConfig();
+    }
+
+    function closeSalesPermissionSettings() {
+      if ($('salesPermissionSettingsCard')) $('salesPermissionSettingsCard').style.display = 'none';
     }
 
     async function salesCreateManualCustomer() {
