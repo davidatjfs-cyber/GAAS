@@ -21,7 +21,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { isExternalEnabled } from './safety.js';
+import { isAiQualityExternalEnabled, isExternalEnabled } from './safety.js';
 import crypto from 'crypto';
 import { 
   calculateStoreRating, 
@@ -3732,13 +3732,15 @@ async function resolveTenantLlmConfig(tenantId) {
 }
 
 export async function callLLM(messages, options = {}) {
-  if (!isExternalEnabled()) return { ok: false, error: 'external_disabled', content: '' };
+  const platformQuality = options.platformQuality === true;
+  if (!isExternalEnabled() && !(platformQuality && isAiQualityExternalEnabled())) {
+    return { ok: false, error: 'external_disabled', content: '' };
+  }
   const role = String(options.role || '').trim();
   const purpose = String(options.purpose || 'reasoning').trim();
   const tier = role ? getModelTier(role) : '';
   const tierModel = role ? getModelForRole(role, purpose) : '';
   const tenantId = String(options.tenantId || tenantContext.getStore() || '').trim();
-  const platformQuality = options.platformQuality === true;
   const tenantLlmConfig = !platformQuality && tenantId ? await resolveTenantLlmConfig(tenantId) : null;
   const tenantModels = Array.isArray(tenantLlmConfig?.models) ? tenantLlmConfig.models : [];
   const selectedModel = String(platformQuality ? AI_QUALITY_LLM_MODEL : (options.model || tenantModels[0]?.model || tierModel || QWEN_MODEL)).trim() || QWEN_MODEL;

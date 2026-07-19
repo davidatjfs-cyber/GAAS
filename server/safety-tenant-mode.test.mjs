@@ -5,6 +5,7 @@ import {
   isLicenseEnforced,
   isLicenseExemptTenant,
   allowLegacyFeishuFallback,
+  isAiQualityExternalEnabled,
 } from './safety.js';
 
 const OLD = { ...process.env };
@@ -14,6 +15,7 @@ function clear() {
   delete process.env.LICENSE_ENFORCE;
   delete process.env.LICENSE_ENFORCE_EXEMPT_TENANTS;
   delete process.env.ALLOW_LEGACY_FEISHU_FALLBACK;
+  delete process.env.ENABLE_AI_QUALITY_EXTERNAL;
 }
 
 test.afterEach(() => {
@@ -61,4 +63,13 @@ test('allowLegacyFeishuFallback true in single, false in multi', () => {
   assert.equal(allowLegacyFeishuFallback(), true);
   process.env.TENANT_MODE = 'multi';
   assert.equal(allowLegacyFeishuFallback(), false);
+});
+
+test('platform AI quality external access requires its independent switch', () => {
+  clear();
+  assert.equal(isAiQualityExternalEnabled(), false);
+  process.env.ENABLE_AI_QUALITY_EXTERNAL = 'true';
+  assert.equal(isAiQualityExternalEnabled(), true);
+  process.env.ENABLE_AI_QUALITY_EXTERNAL = 'false';
+  assert.equal(isAiQualityExternalEnabled(), false);
 });

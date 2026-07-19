@@ -121,6 +121,11 @@ export function isExternalEnabled() {
   return process.env.ENABLE_EXTERNAL === 'true';
 }
 
+/** 仅允许显式标记的离线平台质量任务调用专用模型，不放开租户业务对话。 */
+export function isAiQualityExternalEnabled() {
+  return String(process.env.ENABLE_AI_QUALITY_EXTERNAL || '').trim().toLowerCase() === 'true';
+}
+
 export function isWebhookEnabled() {
   const appEnv = getAppEnv();
   // 默认关闭 webhook，必须显式开启
@@ -174,4 +179,3 @@ export function allowLegacyFeishuFallback() {
   if (v === 'false' || v === '0' || v === 'no') return false;
   return !isMultiTenantMode();
 }
-
