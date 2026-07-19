@@ -63,6 +63,15 @@ test('动态语气只改变TTS表达参数，不改回复文字', () => {
   assert.match(direction.instruction, /不改变原文含义/);
 });
 
+test('功能讲解使用聊天语速，并明确禁止念说明书', () => {
+  const direction = buildNaturalSpeechDirection('具体操作步骤和流程我给您解释一下，这项功能会记录相关数据。');
+  assert.equal(direction.tone, 'explain');
+  assert.equal(direction.rate, 1);
+  assert.match(direction.instruction, /不是在朗读|不是照着文字念/);
+  assert.match(direction.instruction, /说明书腔/);
+  assert.match(direction.instruction, /不要放慢成培训授课/);
+});
+
 test('小流量分组对同一个客户保持稳定', () => {
   assert.equal(stableRolloutBucket('customer-123'), stableRolloutBucket('customer-123'));
   assert.equal(stableRolloutBucket(''), 100);

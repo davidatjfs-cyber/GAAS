@@ -238,7 +238,11 @@ export async function handleInboundMessage(pool, {
       direction: 'outbound',
       sender: 'ai',
       content: reply,
-      meta: { source: turn?.source || 'waiting_human_bridge_fallback', mode: 'waiting_human_bridge' },
+      meta: {
+        source: turn?.source || 'waiting_human_bridge_fallback',
+        mode: 'waiting_human_bridge',
+        speech_reply: turn?.speechReply || null,
+      },
     });
     await addEvent(pool, lead.id, {
       event_type: 'CUSTOMER_FOLLOWUP_WAITING_HUMAN',
@@ -258,6 +262,7 @@ export async function handleInboundMessage(pool, {
       ok: true,
       replied: true,
       reply,
+      speech_reply: turn?.speechReply || null,
       reason: 'waiting_human_bridge',
       lead_id: lead.id,
       conversation_id: conv.id,
@@ -430,7 +435,7 @@ export async function handleInboundMessage(pool, {
     direction: 'outbound',
     sender: 'ai',
     content: turn.reply,
-    meta: { source: turn.source, mode: turn.plan.mode },
+    meta: { source: turn.source, mode: turn.plan.mode, speech_reply: turn.speechReply || null },
   });
 
   await pool.query(
@@ -442,6 +447,7 @@ export async function handleInboundMessage(pool, {
     ok: true,
     replied: true,
     reply: turn.reply,
+    speech_reply: turn.speechReply || null,
     lead_id: lead.id,
     conversation_id: conv.id,
     controller: nextController,

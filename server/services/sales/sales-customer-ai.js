@@ -16,6 +16,7 @@ import { recommendCasesForLead, formatCaseBlurb } from './sales-case-library.js'
 import {
   classifyProductQuery,
   formatProductAnswer,
+  formatProductSpeechAnswer,
   logProductQuestion,
 } from './sales-product-knowledge.js';
 
@@ -372,9 +373,11 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
     const reply = best
       ? formatProductAnswer(productQuery.matches)
       : '这个问题我暂时没有找到足够准确的系统说明，所以不想凭印象回答。您可以把具体页面、按钮名称或报错文字发给我，我会按实际功能继续核对；这个问题也会记录下来补充到系统手册。';
+    const speechReply = formatProductSpeechAnswer(productQuery.matches, userText);
     return {
       ok: true,
       reply,
+      speechReply,
       source: best ? 'product_knowledge' : 'product_knowledge_unanswered',
       plan: { ...plan, mode: 'product_query', next_question: null },
       guidance,

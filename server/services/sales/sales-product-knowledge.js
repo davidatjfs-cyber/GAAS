@@ -45,7 +45,7 @@ export const PRODUCT_MODULES = {
 };
 
 export const PRODUCT_KNOWLEDGE = [
-  card('account','overview','系统整体功能',['系统是做什么','系统功能','平台功能','产品功能','有哪些模块'],
+  card('account','overview','系统整体功能',['系统是做什么','系统功能','平台功能','产品功能','有哪些模块','系统的功能','介绍整个系统'],
     '这套系统面向餐饮门店经营管理，把员工与权限、考勤、日报、审批请款、知识培训、厨房执行、经营报表、客户增长、诊断策略和Agent任务连接在一起。不同岗位看到的模块会按权限和门店范围裁剪。'),
   card('account','login','登录与修改密码',['登录','账号','密码','忘记密码','修改密码'],
     '员工使用分配的账号登录系统。登录后可在“我的档案”中修改自己的密码；无法登录或忘记原密码时，需要联系本企业系统管理员重置。',
@@ -256,6 +256,45 @@ export function formatProductAnswer(matches = []) {
   if (primary.roles) lines.push(`权限说明：${primary.roles}。`);
   if (primary.limits) lines.push(`注意：${primary.limits}`);
   return lines.join('\n');
+}
+
+const PRODUCT_SPEECH_OVERRIDES = {
+  'account.overview': '可以。简单说，这套系统是把门店里原来分散的事情串起来：员工和考勤、营业日报、审批请款、培训认证、厨房执行、经营报表，再到客户增长和经营诊断。不同岗位登录后，只会看到自己有权限的部分，所以员工、店长和老板看到的页面会不一样。您想深入了解哪一块，我可以接着给您讲具体怎么用。',
+  'attendance.checkin': '可以。考勤打卡这块，员工到店后用手机完成上下班打卡，系统会把时间和门店位置一起记下来。如果手机没开定位，或者人不在门店设置的范围里，系统会提醒无法打卡。实际使用时，先允许手机定位，确认当前门店，再点上班或下班打卡就可以了。',
+  'training.topics': '可以。培训认证这块，不是简单放几份资料给员工看，而是把学习、测验、实操和最后的认证串在一起。管理者可以按岗位或门店安排培训，员工学完以后做题、提交实操，审核通过后会形成认证记录。这样培训有没有完成、实际掌握得怎么样，都能继续跟踪。',
+};
+
+function naturalizeProductSentence(text = '') {
+  return String(text)
+    .replace(/“|”/g, '')
+    .replace(/；/g, '，')
+    .replace(/。\s*/g, '。')
+    .trim();
+}
+
+/**
+ * 语音专用讲解稿：事实与文字答案一致，但不朗读“操作路径/权限说明/编号”等页面文案。
+ */
+export function formatProductSpeechAnswer(matches = [], userText = '') {
+  if (!matches.length) return '这个功能我还没有核对到准确说明，所以先不凭印象讲。您把页面名称或者按钮发给我，我核实清楚后再给您说明。';
+  const primary = matches[0];
+  if (PRODUCT_SPEECH_OVERRIDES[primary.id]) return PRODUCT_SPEECH_OVERRIDES[primary.id];
+
+  const wantsHow = /怎么|如何|操作|步骤|流程|在哪里|在哪儿/.test(String(userText));
+  const intro = /介绍|讲讲|了解|仔细|具体/.test(String(userText))
+    ? `可以。${primary.title}这块，简单说，`
+    : `可以。关于${primary.title}，`;
+  const parts = [`${intro}${naturalizeProductSentence(primary.answer)}`];
+  if (wantsHow && primary.steps?.length) {
+    const steps = primary.steps.map((step) => naturalizeProductSentence(step).replace(/[。]$/, ''));
+    if (steps.length === 1) parts.push(`实际操作时，${steps[0]}就可以了。`);
+    else if (steps.length === 2) parts.push(`实际操作时，先${steps[0]}，然后${steps[1]}。`);
+    else parts.push(`实际操作时，先${steps[0]}，${steps.slice(1, -1).map((step) => `然后${step}`).join('，')}，最后${steps.at(-1)}。`);
+  }
+  if (primary.roles && primary.roles !== '以账号实际可见权限为准') {
+    parts.push(`不过这部分一般需要${primary.roles}的权限。`);
+  }
+  return parts.join('');
 }
 
 export async function logProductQuestion(pool, { query, match = null, source = 'customer_ai' } = {}) {

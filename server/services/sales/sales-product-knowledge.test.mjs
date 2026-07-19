@@ -5,9 +5,11 @@ import {
   buildProductBenchmark,
   classifyProductQuery,
   formatProductAnswer,
+  formatProductSpeechAnswer,
   searchProductKnowledge,
 } from './sales-product-knowledge.js';
 import { runCustomerAiTurn, setSalesCustomerAiLlm } from './sales-customer-ai.js';
+import { voiceReplyForTurn } from './sales-kf.js';
 
 test('系统知识覆盖主要功能模块且基准问题不少于300条', () => {
   assert.ok(PRODUCT_KNOWLEDGE.length >= 120);
@@ -58,7 +60,30 @@ test('系统问题直接走产品知识，不调用销售话术模型也不继�
   assert.equal(turn.plan.next_question, null);
   assert.equal(llmCalls, 0);
   assert.match(turn.reply, /营业日报|保存草稿|提交/);
+  assert.ok(turn.speechReply);
+  assert.doesNotMatch(turn.speechReply, /操作路径|权限说明|1\./);
   setSalesCustomerAiLlm(null);
+});
+
+test('刚才三条真实语音问法必须命中，并生成顾问讲解稿而不是念手册', async () => {
+  const cases = [
+    ['你能给我介绍一下你的这个系统的功能？', 'account.overview'],
+    ['那你给我介绍一下你们这个关于考勤打卡这块的功能，可以吗？', 'attendance.checkin'],
+    ['你们有个培训认证，我觉得不错，你能跟我仔细介绍一下。', 'training.topics'],
+  ];
+  for (const [userText, expected] of cases) {
+    const result = classifyProductQuery(userText);
+    assert.equal(result.matches[0]?.id, expected, userText);
+    const speech = formatProductSpeechAnswer(result.matches, userText);
+    assert.match(speech, /可以|简单说|这块/);
+    assert.doesNotMatch(speech, /操作路径|权限说明|注意：|\d+[.、]/);
+    assert.ok(speech.length >= 70 && speech.length <= 220, `${userText}: ${speech.length}`);
+  }
+});
+
+test('企微语音发送优先使用讲解稿，文字失败回退仍保留完整答案', () => {
+  assert.equal(voiceReplyForTurn({ reply: '完整文字', speech_reply: '自然讲解' }), '自然讲解');
+  assert.equal(voiceReplyForTurn({ reply: '完整文字' }), '完整文字');
 });
 
 test('命中答案包含可执行步骤和权限边界', () => {

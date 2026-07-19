@@ -295,11 +295,12 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
         // 客户发语音，镜像用语音回复；合成/上传任何一步失败都静默回退到文字，
         // 不能因为语音链路故障让客户完全收不到回复。
         try {
-          const amr = await synthesizeSpeechAmr(turn.reply, { rolloutKey: externalUserid });
+          const voiceReply = voiceReplyForTurn(turn);
+          const amr = await synthesizeSpeechAmr(voiceReply, { rolloutKey: externalUserid });
           if (amr) {
             const mediaId = await uploadKfMedia(amr, { type: 'voice', filename: 'reply.amr' });
             const sendResult = await sendKfVoice({ openKfid: replyOpenKfid, externalUserid, mediaId });
-            console.log('[sales-kf] sendKfVoice ok:', JSON.stringify(sendResult));
+            console.log('[sales-kf] sendKfVoice ok:', JSON.stringify({ ...sendResult, speech_chars: voiceReply.length, speech_mode: turn.speech_reply ? 'conversational' : 'original' }));
             sentAsVoice = true;
           }
         } catch (e) {
@@ -327,4 +328,7 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
   }
 
   return { ok: true, pulled: msgs.length, handled: results.length, next_cursor: nextCursor, results };
+}
+export function voiceReplyForTurn(turn = {}) {
+  return String(turn?.speech_reply || turn?.reply || '').trim();
 }
