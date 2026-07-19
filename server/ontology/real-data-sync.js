@@ -38,7 +38,7 @@ export async function syncOntologyDataFromProduction(pool, tenantId = 'default')
             CASE WHEN s.is_active THEN 'active' ELSE 'inactive' END, now()
        FROM stores s
        LEFT JOIN alias_map am ON am.alias_name = s.name
-     ON CONFLICT (store_id) DO UPDATE SET
+     ON CONFLICT (tenant_id, store_id) DO UPDATE SET
        name = EXCLUDED.name, city = EXCLUDED.city, status = EXCLUDED.status, updated_at = now()`,
     [tenantId]
   );
@@ -51,7 +51,7 @@ export async function syncOntologyDataFromProduction(pool, tenantId = 'default')
        FROM employees e
        LEFT JOIN alias_map am ON am.alias_name = e.store
       WHERE e.tenant_id = $1
-     ON CONFLICT (employee_id) DO UPDATE SET
+     ON CONFLICT (tenant_id, employee_id) DO UPDATE SET
        store_id = EXCLUDED.store_id, name = EXCLUDED.name, role = EXCLUDED.role,
        status = EXCLUDED.status, updated_at = now()`,
     [tenantId]
@@ -94,7 +94,7 @@ export async function syncOntologyDataFromProduction(pool, tenantId = 'default')
      LEFT JOIN alias_map am2 ON am2.alias_name = gcp.store_id
      LEFT JOIN order_agg oa ON oa.store_id = COALESCE(am2.canonical_name, gcp.store_id) AND oa.phone = gcp.phone
      WHERE gcp.tenant_id = $1
-     ON CONFLICT (customer_id) DO UPDATE SET
+     ON CONFLICT (tenant_id, customer_id) DO UPDATE SET
        store_id = EXCLUDED.store_id, phone = EXCLUDED.phone,
        first_visit_at = EXCLUDED.first_visit_at, last_visit_at = EXCLUDED.last_visit_at,
        visit_count = EXCLUDED.visit_count, total_spend = EXCLUDED.total_spend, avg_spend = EXCLUDED.avg_spend,
@@ -127,7 +127,7 @@ export async function syncOntologyDataFromProduction(pool, tenantId = 'default')
      LEFT JOIN alias_map am ON am.alias_name = po.store_id::text
      LEFT JOIN growth_customer_profiles gcp ON gcp.tenant_id = $1 AND gcp.phone = po.phone AND po.phone <> ''
      WHERE po.tenant_id = $1 AND COALESCE(po.checkout_time, po.order_time) >= now() - interval '400 days'
-     ON CONFLICT (order_id) DO UPDATE SET
+     ON CONFLICT (tenant_id, order_id) DO UPDATE SET
        store_id = EXCLUDED.store_id, customer_id = EXCLUDED.customer_id, order_time = EXCLUDED.order_time,
        amount = EXCLUDED.amount, discount_amount = EXCLUDED.discount_amount, actual_paid = EXCLUDED.actual_paid,
        pax = EXCLUDED.pax, channel = EXCLUDED.channel, updated_at = now()`,
@@ -149,7 +149,7 @@ export async function syncOntologyDataFromProduction(pool, tenantId = 'default')
        FROM marketing_campaigns mc
        LEFT JOIN alias_map am ON am.alias_name = mc.store
       WHERE mc.tenant_id = $1
-     ON CONFLICT (campaign_id) DO UPDATE SET
+     ON CONFLICT (tenant_id, campaign_id) DO UPDATE SET
        store_id = EXCLUDED.store_id, name = EXCLUDED.name, channel = EXCLUDED.channel,
        offer_type = EXCLUDED.offer_type, offer_cost_estimate = EXCLUDED.offer_cost_estimate,
        start_at = EXCLUDED.start_at, end_at = EXCLUDED.end_at, status = EXCLUDED.status, updated_at = now()`,
@@ -204,7 +204,7 @@ export async function syncOntologyDataFromProduction(pool, tenantId = 'default')
        AND dl.created_at >= now() - interval '400 days'
        AND COALESCE(NULLIF(dl.phone, ''), NULLIF(dl.payload->>'phone', '')) IS NOT NULL
        AND COALESCE(NULLIF(dl.phone, ''), NULLIF(dl.payload->>'phone', '')) <> ''
-     ON CONFLICT (touch_id) DO UPDATE SET
+     ON CONFLICT (tenant_id, touch_id) DO UPDATE SET
        store_id = EXCLUDED.store_id,
        customer_id = EXCLUDED.customer_id,
        campaign_id = EXCLUDED.campaign_id,

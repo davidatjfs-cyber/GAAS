@@ -90,7 +90,7 @@ async function seed() {
   await pool.query(
     `INSERT INTO growth_ontology_stores (store_id, tenant_id, name, city, business_type, status)
      VALUES ($1,$2,'E2E增长门店','上海','restaurant','active')
-     ON CONFLICT (store_id) DO UPDATE SET updated_at=now()`,
+     ON CONFLICT (tenant_id, store_id) DO UPDATE SET updated_at=now()`,
     [STORE_ID, TENANT_ID]
   );
   const customers = [
@@ -105,20 +105,20 @@ async function seed() {
         customer_id, tenant_id, store_id, phone, first_visit_at, last_visit_at, visit_count,
         total_spend, avg_spend, lifecycle_stage, tags, risk_level, value_level
       ) VALUES ($1,$2,$3,$4,now()-interval '60 days',now()-interval '20 days',$5,$6,$7,$8,'[]'::jsonb,$9,$10)
-      ON CONFLICT (customer_id) DO UPDATE SET updated_at=now()`,
+      ON CONFLICT (tenant_id, customer_id) DO UPDATE SET updated_at=now()`,
       [c[0], TENANT_ID, STORE_ID, c[1], c[2], c[3], c[2] ? c[3] / c[2] : 0, c[4], c[4] === 'dormant' ? 'high' : 'medium', c[5]]
     );
   }
   await pool.query(
     `INSERT INTO growth_ontology_campaigns (campaign_id, tenant_id, store_id, name, target_segment, channel, offer_type, offer_cost_estimate, start_at, end_at, status)
      VALUES ($1,$2,$3,'E2E沉睡客户唤醒','dormant','wecom','coupon',80,now()-interval '1 day',now()+interval '6 days','active')
-     ON CONFLICT (campaign_id) DO UPDATE SET updated_at=now()`,
+     ON CONFLICT (tenant_id, campaign_id) DO UPDATE SET updated_at=now()`,
     [CAMPAIGN_ID, TENANT_ID, STORE_ID]
   );
   await pool.query(
     `INSERT INTO growth_ontology_benefits (benefit_id, tenant_id, store_id, campaign_id, name, type, face_value, cost_estimate, valid_from, valid_to, status)
      VALUES ('benefit_growth_001',$1,$2,$3,'满减券','coupon',50,20,now()-interval '1 day',now()+interval '6 days','active')
-     ON CONFLICT (benefit_id) DO UPDATE SET updated_at=now()`,
+     ON CONFLICT (tenant_id, benefit_id) DO UPDATE SET updated_at=now()`,
     [TENANT_ID, STORE_ID, CAMPAIGN_ID]
   );
   const touches = [
@@ -131,7 +131,7 @@ async function seed() {
     await pool.query(
       `INSERT INTO growth_ontology_touches (touch_id, tenant_id, store_id, customer_id, campaign_id, channel, content, coupon_id, sent_at, status)
        VALUES ($1,$2,$3,$4,$5,'wecom','E2E客户维护触达',$6,now()-interval '1 day','sent')
-       ON CONFLICT (touch_id) DO UPDATE SET updated_at=now()`,
+       ON CONFLICT (tenant_id, touch_id) DO UPDATE SET updated_at=now()`,
       [t[0], TENANT_ID, STORE_ID, t[1], CAMPAIGN_ID, t[2]]
     );
   }
@@ -146,14 +146,14 @@ async function seed() {
     await pool.query(
       `INSERT INTO growth_ontology_orders (order_id, tenant_id, store_id, customer_id, order_time, amount, discount_amount, actual_paid, pax, channel, source, coupon_id, campaign_id)
        VALUES ($1,$2,$3,$4,$5,$6,0,$6,2,'pos','e2e',$7,$8)
-       ON CONFLICT (order_id) DO UPDATE SET updated_at=now()`,
+       ON CONFLICT (tenant_id, order_id) DO UPDATE SET updated_at=now()`,
       [o[0], TENANT_ID, STORE_ID, o[1], o[2], o[3], o[4], o[5]]
     );
   }
   await pool.query(
     `INSERT INTO growth_ontology_employees (employee_id, tenant_id, store_id, name, role, status, skill_level, performance_score)
      VALUES ('emp_growth_001',$1,$2,'E2E店长','store_manager','active','mid',62)
-     ON CONFLICT (employee_id) DO UPDATE SET updated_at=now()`,
+     ON CONFLICT (tenant_id, employee_id) DO UPDATE SET updated_at=now()`,
     [TENANT_ID, STORE_ID]
   );
 }

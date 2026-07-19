@@ -84,14 +84,14 @@ async function seed() {
   await pool.query(
     `INSERT INTO growth_ontology_stores (store_id, tenant_id, name, city, business_type, status)
      VALUES ($1,$2,'E2E经营诊断门店','上海','restaurant','active')
-     ON CONFLICT (store_id) DO UPDATE SET updated_at=now()`,
+     ON CONFLICT (tenant_id, store_id) DO UPDATE SET updated_at=now()`,
     [STORE_ID, TENANT_ID]
   );
 
   await pool.query(
     `INSERT INTO growth_ontology_employees (employee_id, tenant_id, store_id, name, role, status, skill_level, performance_score)
      VALUES ('emp_agent_001',$1,$2,'E2E店长','store_manager','active','mid',62)
-     ON CONFLICT (employee_id) DO UPDATE SET updated_at=now()`,
+     ON CONFLICT (tenant_id, employee_id) DO UPDATE SET updated_at=now()`,
     [TENANT_ID, STORE_ID]
   );
 
@@ -106,7 +106,7 @@ async function seed() {
         customer_id, tenant_id, store_id, phone, first_visit_at, last_visit_at, visit_count,
         total_spend, avg_spend, lifecycle_stage, tags, risk_level, value_level
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'[]'::jsonb,$11,$12)
-      ON CONFLICT (customer_id) DO UPDATE SET updated_at=now()`,
+      ON CONFLICT (tenant_id, customer_id) DO UPDATE SET updated_at=now()`,
       [c[0], TENANT_ID, STORE_ID, c[1], isoDaysAgo(60), isoDaysAgo(20), c[2], c[3], c[3] / c[2], c[4], c[5], c[5]]
     );
   }
@@ -121,7 +121,7 @@ async function seed() {
     await pool.query(
       `INSERT INTO growth_ontology_orders (order_id, tenant_id, store_id, customer_id, order_time, amount, discount_amount, actual_paid, pax, channel, source)
        VALUES ($1,$2,$3,$4,$5,$6,0,$6,2,'pos','e2e')
-       ON CONFLICT (order_id) DO UPDATE SET updated_at=now()`,
+       ON CONFLICT (tenant_id, order_id) DO UPDATE SET updated_at=now()`,
       [o[0], TENANT_ID, STORE_ID, o[1], o[2], o[3]]
     );
   }
@@ -134,7 +134,7 @@ async function seed() {
     ) VALUES ($1,$2,$3,'revenue_decline','营业额下滑','本期营业额低于可比周期','P1',0.84,
       '{"currentRevenue": 700, "previousRevenue": 1500, "changeRate": -53.33, "revenueGap": 800}',
       '["traffic_decline","repeat_decline","lunch_decline"]', 800, 'open', now(), now())
-    ON CONFLICT (issue_id) DO UPDATE SET updated_at=now()`,
+    ON CONFLICT (tenant_id, issue_id) DO UPDATE SET updated_at=now()`,
     ['issue_agent_001', TENANT_ID, STORE_ID]
   );
 
@@ -148,7 +148,7 @@ async function seed() {
       '{"rule_id":"revenue_decline"}',
       '[{"actionName":"拆解午市客群","step":1,"ownerRole":"店长","deadlineDays":3,"expectedResult":"识别出午市流失客群","trackingMetrics":["午市客流"]},{"actionName":"设计午市套餐","step":2,"ownerRole":"厨师长","deadlineDays":7,"expectedResult":"推出新套餐","trackingMetrics":["套餐销量"]}]',
       'open')
-    ON CONFLICT (opportunity_id) DO UPDATE SET updated_at=now()`,
+    ON CONFLICT (tenant_id, opportunity_id) DO UPDATE SET updated_at=now()`,
     ['opp_agent_001', TENANT_ID, STORE_ID, 'issue_agent_001']
   );
 }

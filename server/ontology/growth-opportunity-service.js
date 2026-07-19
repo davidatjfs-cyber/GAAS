@@ -93,7 +93,7 @@ export async function createOpportunitiesForIssue(pool, issue) {
         target_entity_type, target_entity_ids_json, estimated_revenue_uplift, estimated_cost,
         expected_roi, priority, evidence_json, recommended_actions_json, status
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16)
-      ON CONFLICT (opportunity_id) DO UPDATE SET updated_at = now()
+      ON CONFLICT (tenant_id, opportunity_id) DO UPDATE SET updated_at = now()
       RETURNING *`,
       [
         opp.opportunity_id, opp.tenant_id, opp.store_id, opp.issue_id, opp.opportunity_type,

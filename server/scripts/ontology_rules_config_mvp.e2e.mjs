@@ -77,7 +77,7 @@ async function seedDormantCustomer() {
       customer_id, tenant_id, store_id, phone, first_visit_at, last_visit_at,
       visit_count, total_spend, lifecycle_stage, risk_level
     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-    ON CONFLICT (customer_id) DO UPDATE SET
+    ON CONFLICT (tenant_id, customer_id) DO UPDATE SET
       last_visit_at = EXCLUDED.last_visit_at,
       visit_count = EXCLUDED.visit_count,
       total_spend = EXCLUDED.total_spend`,
