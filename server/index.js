@@ -109,7 +109,7 @@ import { registerKnowledgeRoutes } from './knowledge-routes.js';
 import { registerCheckinRoutes } from './checkin-routes.js';
 import { registerReportsRoutes } from './reports-routes.js';
 import { registerAiQualityLearningRoutes } from './ai-quality-learning-routes.js';
-import { recordAiFeedback, startAiQualityLearningScheduler } from './services/ai-quality-learning-service.js';
+import { recordAiFeedback, runPlatformQualityModelTask, startAiQualityLearningScheduler } from './services/ai-quality-learning-service.js';
 import {
   registerHrmsPayrollClosedLoopRoutes,
   ensurePayrollRulesTables,
@@ -17886,11 +17886,19 @@ startOntologyDailyDiagnosisScheduler(pool);
 startHealthCenterDailyScanScheduler(pool);
 // 健康中心运营闭环：CST 08:30 队列摘要 + 工作时段 SLA 提醒（投递走 setHealthIncidentNotifiers）
 startHealthOpsLoopScheduler(pool);
-// Multi-tenant AI quality flywheel: tenant-scoped signal backfill followed by
-// an opted-in, redacted and tenant-balanced platform evaluation dataset.
+// Multi-tenant AI quality flywheel: contract-authorized policies are synced for
+// active tenants, then tenant-scoped signals become redacted, balanced platform
+// evaluation data. Low-risk prompt patches pass offline and live canary gates
+// automatically; any regression rolls back without employee interaction.
+if (!String(process.env.AI_QUALITY_LLM_API_KEY || '').trim()) {
+  console.error('[ai-quality-learning] AI_QUALITY_LLM_API_KEY missing: signal capture and redaction remain active, but proposal generation/evaluation is paused');
+}
 startAiQualityLearningScheduler(pool, {
   generateCandidate: async ({ route, samples, evidence }) => {
-    const result = await callLLM([
+    const result = await runPlatformQualityModelTask(pool, {
+      operation: 'generate_prompt_patch',
+      route,
+      execute: () => callLLM([
       {
         role: 'system',
         content: `你是平台AI质量工程师。根据已脱敏、跨租户汇总的失败样本，为指定路由提出一个最小提示词补丁。
@@ -17901,11 +17909,44 @@ startAiQualityLearningScheduler(pool, {
         role: 'user',
         content: JSON.stringify({ route, evidence, samples }, null, 2).slice(0, 24000),
       },
-    ], {
-      purpose: 'quality_improvement',
-      temperature: 0,
-      max_tokens: 800,
-      skipCache: true,
+      ], {
+        purpose: 'quality_improvement',
+        platformQuality: true,
+        temperature: 0,
+        max_tokens: 800,
+        skipCache: true,
+      }),
+    });
+    if (!result?.ok || !result.content) return null;
+    const text = String(result.content).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    try {
+      return JSON.parse(text);
+    } catch (_error) {
+      return null;
+    }
+  },
+  evaluateCandidate: async ({ route, samples, proposal, evidence }) => {
+    const result = await runPlatformQualityModelTask(pool, {
+      operation: 'evaluate_prompt_patch',
+      route,
+      execute: () => callLLM([
+      {
+        role: 'system',
+        content: `你是独立AI质量评测器。对已脱敏失败样本与候选提示词补丁进行离线对比评测。
+不得猜测或恢复任何身份。只判断补丁能否纠正共性错误、是否有事实依据、是否引入安全风险。
+严格返回JSON：{"quality_score":0到1,"groundedness":0到1,"safety_violation_rate":0到1,"negative_feedback_rate":0到1,"p95_latency_ms":0,"rationale":"不超过100字"}`,
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({ route, evidence, proposal, samples }, null, 2).slice(0, 24000),
+      },
+      ], {
+        purpose: 'quality_improvement_evaluation',
+        platformQuality: true,
+        temperature: 0,
+        max_tokens: 500,
+        skipCache: true,
+      }),
     });
     if (!result?.ok || !result.content) return null;
     const text = String(result.content).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');

@@ -115,6 +115,10 @@ const DEEPSEEK_VISION_MODEL = process.env.DEEPSEEK_VISION_MODEL || 'ep-202604241
 const QWEN_API_KEY = process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY || '';
 const QWEN_BASE_URL = process.env.QWEN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const QWEN_MODEL = process.env.QWEN_MODEL || 'qwen-max';
+const AI_QUALITY_LLM_PROVIDER = String(process.env.AI_QUALITY_LLM_PROVIDER || 'deepseek').trim();
+const AI_QUALITY_LLM_MODEL = String(process.env.AI_QUALITY_LLM_MODEL || 'deepseek-chat').trim();
+const AI_QUALITY_LLM_API_KEY = String(process.env.AI_QUALITY_LLM_API_KEY || '').trim();
+const AI_QUALITY_LLM_BASE_URL = String(process.env.AI_QUALITY_LLM_BASE_URL || 'https://api.deepseek.com').trim();
 const DOUBAO_API_KEY = process.env.ARK_API_KEY || process.env.DOUBAO_API_KEY || '';
 const DOUBAO_BASE_URL = process.env.DOUBAO_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
 
@@ -1207,15 +1211,40 @@ async function tryHandleBiByFunctionCalling({ text, store, brand, senderRole, se
       const rev = revenueRes.rows[0] || {};
       const topSales = salesRes.rows.map((r, i) => `${i+1}. ${r.dish_name}：${r.total_qty}份，¥${Number(r.total_revenue).toFixed(0)}`).join('\n');
       const dataContext = `门店：${safeStore}\n近30天日均营收：¥${rev.avg_rev || 0}（最高¥${rev.max_rev || 0}，最低¥${rev.min_rev || 0}）${productSalesText}\n\nTOP10销售产品（按营收）：\n${topSales || '暂无数据'}`;
+      const marketingTenantId = resolveTenantIdDefault();
+      const runtimePatch = await getRuntimePromptPatch(pool(), {
+        artifactKey: 'marketing_plan',
+        tenantId: marketingTenantId,
+        actorId: senderUsername || 'unknown',
+      }).catch(() => null);
+      const qualityPatchBlock = runtimePatch?.patch
+        ? `\n7) 已通过质量门禁的改进规则：${runtimePatch.patch}`
+        : '';
       // 5. 调用LLM基于真实数据生成方案
       const planLLM = await callLLM([
         {
           role: 'system',
-          content: `你是年年有喜餐饮集团的营运顾问。根据以下门店真实数据，生成一份简洁可执行的营收提升行动方案。\n要求：\n1) 基于数据分析，找出2-3个提升点\n2) 每个提升点给出具体可执行动作（不超过2条）\n3) 预估增量（保守）\n4) 总字数不超过400字\n5) 严格基于提供数据，不臆造数据\n6) 如有指定产品，围绕该产品给出推广策略`
+          content: `你是年年有喜餐饮集团的营运顾问。根据以下门店真实数据，生成一份简洁可执行的营收提升行动方案。\n要求：\n1) 基于数据分析，找出2-3个提升点\n2) 每个提升点给出具体可执行动作（不超过2条）\n3) 预估增量（保守）\n4) 总字数不超过400字\n5) 严格基于提供数据，不臆造数据\n6) 如有指定产品，围绕该产品给出推广策略${qualityPatchBlock}`
         },
         { role: 'user', content: `用户需求：${text}\n\n真实数据：\n${dataContext}` }
       ], { role: senderRole, purpose: 'reasoning', temperature: 0.3, max_tokens: 600 });
       const planResponse = planLLM?.content || '数据查询完成，但方案生成失败，请稍后重试。';
+      await recordAiInteraction(pool(), {
+        source: 'marketing_plan', sourceRecordId: randomUUID(), route: 'marketing_plan',
+        purpose: 'marketing_plan', actorId: senderUsername || null,
+        modelName: planLLM?.actualModel || null,
+        promptVersion: runtimePatch?.version || 'baseline',
+        input: text, output: planResponse, latencyMs: planLLM?.responseTime,
+        inputTokens: planLLM?.raw?.usage?.prompt_tokens,
+        outputTokens: planLLM?.raw?.usage?.completion_tokens,
+        qualityMetrics: { grounded: true, llm_ok: planLLM?.ok === true },
+        businessContext: {
+          store: safeStore, product_name: productName || null,
+          quality_release_candidate_id: runtimePatch?.candidateId || null,
+          quality_release_status: runtimePatch?.status || 'baseline',
+        },
+        tenantId: marketingTenantId,
+      }).catch((error) => console.error('[bi-fc] marketing quality trace failed:', error?.message || error));
       console.log('[bi-fc] marketing_plan_request: generated real plan, len:', planResponse.length);
       return {
         response: planResponse,
@@ -3709,12 +3738,19 @@ export async function callLLM(messages, options = {}) {
   const tier = role ? getModelTier(role) : '';
   const tierModel = role ? getModelForRole(role, purpose) : '';
   const tenantId = String(options.tenantId || tenantContext.getStore() || '').trim();
-  const tenantLlmConfig = tenantId ? await resolveTenantLlmConfig(tenantId) : null;
+  const platformQuality = options.platformQuality === true;
+  const tenantLlmConfig = !platformQuality && tenantId ? await resolveTenantLlmConfig(tenantId) : null;
   const tenantModels = Array.isArray(tenantLlmConfig?.models) ? tenantLlmConfig.models : [];
-  const selectedModel = String(options.model || tenantModels[0]?.model || tierModel || QWEN_MODEL).trim() || QWEN_MODEL;
-  const cfg = getLLMClientConfig(selectedModel, tenantModels[0]?.provider ? { forceProvider: tenantModels[0].provider } : {});
+  const selectedModel = String(platformQuality ? AI_QUALITY_LLM_MODEL : (options.model || tenantModels[0]?.model || tierModel || QWEN_MODEL)).trim() || QWEN_MODEL;
+  const cfg = getLLMClientConfig(selectedModel, platformQuality
+    ? { forceProvider: AI_QUALITY_LLM_PROVIDER }
+    : (tenantModels[0]?.provider ? { forceProvider: tenantModels[0].provider } : {}));
+  if (platformQuality) {
+    cfg.apiKey = AI_QUALITY_LLM_API_KEY;
+    cfg.baseUrl = AI_QUALITY_LLM_BASE_URL;
+  }
   const model = cfg.model;
-  const apiKey = tenantModels[0]?.api_key || cfg.apiKey;
+  const apiKey = platformQuality ? AI_QUALITY_LLM_API_KEY : (tenantModels[0]?.api_key || cfg.apiKey);
   if (!apiKey) return { ok: false, error: 'no_api_key', content: '' };
 
   const budgetExceeded = !!(tier && isTierBudgetExceeded(tier));
@@ -3747,7 +3783,9 @@ export async function callLLM(messages, options = {}) {
   // 全部试完仍不行才落到平台全局默认链路兜底，不会让租户的请求彻底失败。
   const hasTools = !!(options.tools && options.tools.length > 0);
   const tenantChain = tenantModels.map((m) => ({ provider: m.provider, model: m.model, apiKeyOverride: m.api_key || null }));
-  const fallbackChain = hasTools
+  const fallbackChain = platformQuality
+    ? [{ provider: AI_QUALITY_LLM_PROVIDER, model: AI_QUALITY_LLM_MODEL, apiKeyOverride: AI_QUALITY_LLM_API_KEY, baseUrlOverride: AI_QUALITY_LLM_BASE_URL }]
+    : hasTools
     ? [{ provider: resolveModelProvider(model), model }]
     : (tenantChain.length ? [...tenantChain, ...getTextFallbackChain(model)] : getTextFallbackChain(model));
   let usedModel = model;
@@ -3760,6 +3798,7 @@ export async function callLLM(messages, options = {}) {
     }
     const fbCfg = getLLMClientConfig(candidate.model, candidate.provider ? { forceProvider: candidate.provider } : {});
     if (candidate.apiKeyOverride) fbCfg.apiKey = candidate.apiKeyOverride;
+    if (candidate.baseUrlOverride) fbCfg.baseUrl = candidate.baseUrlOverride;
     if (!fbCfg.apiKey) continue;
 
     const payload = {

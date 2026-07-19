@@ -1,12 +1,12 @@
 import {
   approveReleaseCandidate,
   evaluateReleaseCandidate,
+  getPlatformQualityActivity,
   getPlatformQualityOverview,
-  getTenantQualityOverview,
+  recordContractLearningAuthorization,
   recordAiFeedback,
   recordCanaryObservation,
   runAiQualityLearningCycle,
-  upsertLearningPolicy,
 } from './services/ai-quality-learning-service.js';
 import { runWithSystemTenantContext } from './utils/database.js';
 
@@ -26,48 +26,6 @@ export function registerAiQualityLearningRoutes(app, {
   platformAdminRequired,
   requireSuperAdmin,
 }) {
-  app.get('/api/ai-quality/learning-policy', authRequired, async (req, res) => {
-    if (!requireTenantAdmin(req, res)) return;
-    try {
-      const r = await pool.query(
-        `SELECT tenant_id, platform_learning_enabled, allowed_purposes,
-                retention_days, max_daily_contributions, policy_version,
-                updated_by, updated_at
-           FROM ai_learning_policies WHERE tenant_id=$1 LIMIT 1`,
-        [req.tenantId]
-      );
-      return res.json({
-        policy: r.rows[0] || {
-          tenant_id: req.tenantId,
-          platform_learning_enabled: false,
-          allowed_purposes: [],
-          retention_days: 365,
-          max_daily_contributions: 100,
-          policy_version: 0,
-        },
-      });
-    } catch (error) {
-      return res.status(500).json({ error: error?.message || 'server_error' });
-    }
-  });
-
-  app.put('/api/ai-quality/learning-policy', authRequired, async (req, res) => {
-    if (!requireTenantAdmin(req, res)) return;
-    try {
-      const policy = await upsertLearningPolicy(pool, {
-        enabled: req.body?.platform_learning_enabled === true,
-        allowedPurposes: req.body?.allowed_purposes,
-        retentionDays: req.body?.retention_days,
-        maxDailyContributions: req.body?.max_daily_contributions,
-        updatedBy: req.user?.username,
-        tenantId: req.tenantId,
-      });
-      return res.json({ ok: true, policy });
-    } catch (error) {
-      return res.status(400).json({ error: error?.message || 'invalid_policy' });
-    }
-  });
-
   app.post('/api/ai-quality/feedback', authRequired, async (req, res) => {
     try {
       const traceId = String(req.body?.trace_id || '').trim();
@@ -99,15 +57,6 @@ export function registerAiQualityLearningRoutes(app, {
     }
   });
 
-  app.get('/api/ai-quality/overview', authRequired, async (req, res) => {
-    if (!requireTenantAdmin(req, res)) return;
-    try {
-      return res.json({ overview: await getTenantQualityOverview(pool, req.tenantId) });
-    } catch (error) {
-      return res.status(500).json({ error: error?.message || 'server_error' });
-    }
-  });
-
   const platformOnly = [platformAdminRequired, requireSuperAdmin];
 
   app.get('/api/admin/ai-quality/overview', platformOnly, async (_req, res) => {
@@ -115,6 +64,29 @@ export function registerAiQualityLearningRoutes(app, {
       return res.json({ overview: await getPlatformQualityOverview(pool) });
     } catch (error) {
       return res.status(500).json({ error: error?.message || 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/ai-quality/activity', platformOnly, async (_req, res) => {
+    try {
+      return res.json({ activity: await getPlatformQualityActivity(pool) });
+    } catch (error) {
+      return res.status(500).json({ error: error?.message || 'server_error' });
+    }
+  });
+
+  app.post('/api/admin/ai-quality/contract-authorizations', platformOnly, async (req, res) => {
+    try {
+      const policy = await recordContractLearningAuthorization(pool, {
+        tenantId: req.body?.tenant_id,
+        agreementReference: req.body?.agreement_reference,
+        agreementVersion: req.body?.agreement_version,
+        agreementEffectiveAt: req.body?.agreement_effective_at,
+        recordedBy: req.platformAdmin?.username,
+      });
+      return res.json({ ok: true, policy });
+    } catch (error) {
+      return res.status(400).json({ error: error?.message || 'invalid_contract_authorization' });
     }
   });
 

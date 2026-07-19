@@ -8,6 +8,40 @@ import {
 const MAX_LEARNING_TEXT = 6000;
 const PURPOSE_RE = /^[a-zA-Z0-9_.:-]{1,80}$/;
 
+export function normalizeContractLearningConfig({
+  agreementReference,
+  agreementVersion = '1',
+  agreementEffectiveAt = null,
+  recordedBy = 'platform_owner',
+} = {}) {
+  const reference = String(agreementReference || '').trim();
+  if (!reference) throw new Error('AI_LEARNING_AGREEMENT_REFERENCE_required');
+  const effectiveAt = agreementEffectiveAt ? new Date(agreementEffectiveAt) : new Date();
+  if (Number.isNaN(effectiveAt.getTime())) throw new Error('invalid_agreement_effective_at');
+  return {
+    authorizationBasis: 'contract',
+    agreementReference: reference.slice(0, 200),
+    agreementVersion: String(agreementVersion || '1').trim().slice(0, 80),
+    agreementEffectiveAt: effectiveAt.toISOString(),
+    recordedBy: String(recordedBy || 'platform_owner').trim().slice(0, 120),
+    automationMode: 'automatic',
+  };
+}
+
+export function decideAutomaticPromotion(baseline = {}, canary = {}, {
+  minSamples = 100,
+  minTenants = 3,
+} = {}) {
+  const rollback = shouldRollbackCanary(baseline, canary);
+  const sampleSize = Number(canary?.sample_size || 0);
+  const tenantCount = Number(canary?.tenant_count || 0);
+  if (rollback.rollback) return { status: 'rolled_back', reason: 'automatic_quality_rollback', rollback };
+  if (sampleSize < minSamples || tenantCount < minTenants) {
+    return { status: 'canary', reason: 'awaiting_canary_evidence', rollback };
+  }
+  return { status: 'approved', reason: 'automatic_quality_promotion', rollback };
+}
+
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value || '')).digest('hex');
 }
@@ -25,11 +59,17 @@ export function redactLearningText(value) {
   };
   replace('authorization', /\b(?:bearer|basic)\s+[a-z0-9._~+/=-]{8,}\b/gi, '[AUTH_REDACTED]');
   replace('secret', /\b(?:api[_-]?key|secret|token|password|passwd)\s*[:=]\s*[^\s,;，。]{4,}/gi, '[SECRET_REDACTED]');
+  replace('url', /https?:\/\/[^\s<>{}"']+/gi, '[URL_REDACTED]');
+  replace('ipv4', /(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)/g, '[IP_REDACTED]');
   replace('id_card', /\b\d{17}[0-9Xx]\b/g, '[ID_REDACTED]');
   replace('phone', /(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)/g, '[PHONE_REDACTED]');
   replace('email', /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[EMAIL_REDACTED]');
   replace('bank_card', /(?<!\d)\d{16,19}(?!\d)/g, '[BANK_REDACTED]');
   replace('open_id', /\b(?:ou_|on_|oc_|cli_)[a-z0-9_-]{12,}\b/gi, '[EXTERNAL_ID_REDACTED]');
+  replace('labeled_person', /(?:姓名|员工|顾客|客户|联系人|负责人|店长)\s*[:：=]\s*[\u4e00-\u9fa5·]{2,12}/g, '[PERSON_REDACTED]');
+  replace('labeled_entity', /(?:公司|品牌|门店|店铺|商户)\s*[:：=]\s*[^\s,，。；;]{2,40}/g, '[ENTITY_REDACTED]');
+  replace('address', /(?:地址|住址|所在地)\s*[:：=]\s*[^\n。；;]{4,80}/g, '[ADDRESS_REDACTED]');
+  replace('account_id', /(?:微信号|账号|工号|会员号)\s*[:：=]\s*[a-zA-Z0-9_-]{4,40}/gi, '[ACCOUNT_REDACTED]');
   return { text, report: { replacements: counts, truncated: String(value || '').length > MAX_LEARNING_TEXT } };
 }
 
@@ -41,7 +81,7 @@ function sanitizeJson(value, depth = 0) {
   if (typeof value !== 'object') return String(value);
   const result = {};
   for (const [key, item] of Object.entries(value).slice(0, 100)) {
-    if (/password|secret|token|api[_-]?key|authorization/i.test(key)) {
+    if (/password|secret|token|api[_-]?key|authorization|phone|mobile|email|address|open.?id|user.?id|customer.?id|employee.?id|person.?name|customer.?name/i.test(key)) {
       result[key] = '[SECRET_REDACTED]';
     } else {
       result[key] = sanitizeJson(item, depth + 1);
@@ -149,7 +189,11 @@ export async function materializeLearningCandidate(pool, {
   const tid = resolveTenantIdDefault(tenantId);
   const policyR = await pool.query(
     `SELECT platform_learning_enabled, allowed_purposes
-       FROM ai_learning_policies WHERE tenant_id=$1 LIMIT 1`,
+       FROM ai_learning_policies
+      WHERE tenant_id=$1
+        AND authorization_basis='contract'
+        AND NULLIF(TRIM(agreement_reference),'') IS NOT NULL
+      LIMIT 1`,
     [tid]
   );
   const policy = policyR.rows[0];
@@ -254,83 +298,168 @@ export async function recordAiFeedback(pool, {
   return { feedbackId, candidate };
 }
 
-export async function upsertLearningPolicy(pool, {
-  enabled,
-  allowedPurposes = [],
-  retentionDays = 365,
-  maxDailyContributions = 100,
-  updatedBy = '',
-  tenantId = null,
-} = {}) {
-  const tid = resolveTenantIdDefault(tenantId);
-  if (enabled === true && !String(process.env.AI_LEARNING_PSEUDONYM_KEY || '').trim()) {
-    throw new Error('AI_LEARNING_PSEUDONYM_KEY_required_before_opt_in');
-  }
-  const purposes = [...new Set((Array.isArray(allowedPurposes) ? allowedPurposes : [])
-    .map((v) => String(v || '').trim()).filter((v) => v === '*' || PURPOSE_RE.test(v)))];
+async function writeContractLearningPolicy(pool, tenantId, normalized, authorizationSource) {
   const r = await pool.query(
     `INSERT INTO ai_learning_policies (
        tenant_id, platform_learning_enabled, allowed_purposes, retention_days,
-       max_daily_contributions, updated_by
-     ) VALUES ($1,$2,$3::text[],$4,$5,$6)
+       max_daily_contributions, updated_by, authorization_basis,
+       agreement_reference, agreement_version, agreement_effective_at,
+       authorization_recorded_by, authorization_source, automation_mode, enabled_at
+     ) VALUES ($1,TRUE,ARRAY['*']::TEXT[],365,100,$2,'contract',$3,$4,$5,$2,$6,'automatic',NOW())
      ON CONFLICT (tenant_id) DO UPDATE SET
-       platform_learning_enabled=EXCLUDED.platform_learning_enabled,
-       allowed_purposes=EXCLUDED.allowed_purposes,
-       retention_days=EXCLUDED.retention_days,
-       max_daily_contributions=EXCLUDED.max_daily_contributions,
+       platform_learning_enabled=TRUE,
+       allowed_purposes=ARRAY['*']::TEXT[],
+       authorization_basis='contract',
+       agreement_reference=EXCLUDED.agreement_reference,
+       agreement_version=EXCLUDED.agreement_version,
+       agreement_effective_at=EXCLUDED.agreement_effective_at,
+       authorization_recorded_by=EXCLUDED.authorization_recorded_by,
+       authorization_source=EXCLUDED.authorization_source,
+       automation_mode='automatic',
+       enabled_at=COALESCE(ai_learning_policies.enabled_at,NOW()),
        policy_version=ai_learning_policies.policy_version+1,
        updated_by=EXCLUDED.updated_by,
        updated_at=NOW()
+     WHERE ai_learning_policies.platform_learning_enabled IS DISTINCT FROM TRUE
+        OR ai_learning_policies.authorization_basis IS DISTINCT FROM 'contract'
+        OR ai_learning_policies.agreement_reference IS DISTINCT FROM EXCLUDED.agreement_reference
+        OR ai_learning_policies.agreement_version IS DISTINCT FROM EXCLUDED.agreement_version
      RETURNING *`,
-    [
-      tid, enabled === true, purposes,
-      Math.max(30, Math.min(1095, Number(retentionDays) || 365)),
-      Math.max(1, Math.min(1000, Number(maxDailyContributions) || 100)),
-      String(updatedBy || '').slice(0, 120),
-    ]
+    [tenantId, normalized.recordedBy, normalized.agreementReference,
+      normalized.agreementVersion, normalized.agreementEffectiveAt,
+      String(authorizationSource || 'manual_platform_record').slice(0, 40)]
   );
   const policy = r.rows[0];
+  if (!policy) return null;
   await pool.query(
     `INSERT INTO ai_learning_policy_events (
        tenant_id, policy_version, platform_learning_enabled, allowed_purposes,
-       retention_days, max_daily_contributions, changed_by
-     ) VALUES ($1,$2,$3,$4::text[],$5,$6,$7)`,
-    [tid, policy.policy_version, policy.platform_learning_enabled, policy.allowed_purposes,
-      policy.retention_days, policy.max_daily_contributions, policy.updated_by]
+       retention_days, max_daily_contributions, changed_by,
+       authorization_basis, agreement_reference, agreement_version,
+       agreement_effective_at, authorization_source, automation_mode
+     ) VALUES ($1,$2,TRUE,$3,$4,$5,$6,'contract',$7,$8,$9,$10,'automatic')`,
+    [policy.tenant_id, policy.policy_version, policy.allowed_purposes,
+      policy.retention_days, policy.max_daily_contributions, normalized.recordedBy,
+      normalized.agreementReference, normalized.agreementVersion,
+      normalized.agreementEffectiveAt,
+      String(authorizationSource || 'manual_platform_record').slice(0, 40)]
   );
-  if (enabled !== true) {
-    await runWithSystemTenantContext(async () => {
+  return policy;
+}
+
+export async function recordContractLearningAuthorization(pool, {
+  tenantId,
+  ...config
+} = {}) {
+  const tid = String(tenantId || '').trim();
+  if (!tid) throw new Error('tenant_id_required');
+  const normalized = normalizeContractLearningConfig(config);
+  if (!String(process.env.AI_LEARNING_PSEUDONYM_KEY || '').trim()) {
+    throw new Error('AI_LEARNING_PSEUDONYM_KEY_required');
+  }
+  return runWithSystemTenantContext(async () => {
+    const tenant = await pool.query(
+      `SELECT tenant_id FROM tenants WHERE tenant_id=$1 AND status IN ('active','provisioning') LIMIT 1`,
+      [tid]
+    );
+    if (!tenant.rows[0]) throw new Error('tenant_not_found_or_inactive');
+    return writeContractLearningPolicy(pool, tid, normalized, 'manual_platform_record');
+  });
+}
+
+export async function ensureContractAuthorizedLearningPolicies(pool) {
+  if (!String(process.env.AI_LEARNING_PSEUDONYM_KEY || '').trim()) {
+    throw new Error('AI_LEARNING_PSEUDONYM_KEY_required');
+  }
+  return runWithSystemTenantContext(async () => {
+    const active = await pool.query(`SELECT tenant_id FROM tenants WHERE status='active' ORDER BY tenant_id`);
+    const contracts = await pool.query(
+      `SELECT DISTINCT ON (o.tenant_id)
+              o.tenant_id, c.contract_no,
+              COALESCE(c.version_no,1)::text AS agreement_version,
+              COALESCE(c.effective_at,c.approved_at,c.signed_at,o.updated_at) AS effective_at,
+              COALESCE(c.approved_by,'sales_contract_automation') AS recorded_by
+         FROM sales_orders o
+         JOIN sales_contracts c ON c.id=o.contract_id
+         JOIN tenants t ON t.tenant_id=o.tenant_id AND t.status='active'
+        WHERE o.tenant_id IS NOT NULL
+          AND c.status='effective' AND c.approval_status='approved'
+        ORDER BY o.tenant_id,COALESCE(c.effective_at,c.approved_at,c.signed_at,o.updated_at) DESC`
+    );
+    const enabled = [];
+    for (const row of contracts.rows || []) {
+      const policy = await writeContractLearningPolicy(pool, row.tenant_id, normalizeContractLearningConfig({
+        agreementReference: row.contract_no,
+        agreementVersion: row.agreement_version,
+        agreementEffectiveAt: row.effective_at,
+        recordedBy: row.recorded_by,
+      }), 'sales_crm');
+      if (policy) enabled.push(policy.tenant_id);
+    }
+    const crmTenantIds = (contracts.rows || []).map((row) => row.tenant_id);
+    const revoked = await pool.query(
+      `UPDATE ai_learning_policies
+          SET platform_learning_enabled=FALSE,updated_at=NOW(),policy_version=policy_version+1
+        WHERE authorization_source='sales_crm'
+          AND platform_learning_enabled=TRUE
+          AND NOT (tenant_id=ANY($1::text[]))
+        RETURNING *`,
+      [crmTenantIds]
+    );
+    for (const policy of revoked.rows || []) {
       const affected = await pool.query(
         `SELECT DISTINCT i.dataset_id
            FROM ai_evaluation_dataset_items i
            JOIN ai_learning_candidates c ON c.id=i.candidate_id
           WHERE c.tenant_id=$1`,
-        [tid]
+        [policy.tenant_id]
       );
       await pool.query(
-        `DELETE FROM ai_evaluation_dataset_items i
-          USING ai_learning_candidates c
-         WHERE i.candidate_id=c.id AND c.tenant_id=$1`,
-        [tid]
+        `DELETE FROM ai_evaluation_dataset_items i USING ai_learning_candidates c
+          WHERE i.candidate_id=c.id AND c.tenant_id=$1`,
+        [policy.tenant_id]
       );
       await pool.query(
-        `UPDATE ai_learning_candidates SET status='withdrawn', withdrawn_at=NOW()
-          WHERE tenant_id=$1 AND status <> 'withdrawn'`,
-        [tid]
+        `UPDATE ai_learning_candidates SET status='withdrawn',withdrawn_at=NOW()
+          WHERE tenant_id=$1 AND status<>'withdrawn'`,
+        [policy.tenant_id]
       );
       for (const row of affected.rows || []) {
         await pool.query(
-          `UPDATE ai_evaluation_datasets d SET
-             status='invalidated_consent',
+          `UPDATE ai_evaluation_datasets d SET status='invalidated_contract',
              item_count=(SELECT COUNT(*)::int FROM ai_evaluation_dataset_items i WHERE i.dataset_id=d.id),
              tenant_count=(SELECT COUNT(DISTINCT source_tenant_pseudonym)::int FROM ai_evaluation_dataset_items i WHERE i.dataset_id=d.id)
            WHERE d.id=$1`,
           [row.dataset_id]
         );
       }
-    });
-  }
-  return policy;
+      await pool.query(
+        `INSERT INTO ai_learning_policy_events (
+           tenant_id,policy_version,platform_learning_enabled,allowed_purposes,
+           retention_days,max_daily_contributions,changed_by,authorization_basis,
+           agreement_reference,agreement_version,agreement_effective_at,
+           authorization_source,automation_mode
+         ) VALUES ($1,$2,FALSE,$3,$4,$5,'sales_contract_automation',$6,$7,$8,$9,$10,'automatic')`,
+        [policy.tenant_id, policy.policy_version, policy.allowed_purposes,
+          policy.retention_days, policy.max_daily_contributions, policy.authorization_basis,
+          policy.agreement_reference, policy.agreement_version,
+          policy.agreement_effective_at, policy.authorization_source]
+      );
+    }
+    const authorized = await pool.query(
+      `SELECT tenant_id FROM ai_learning_policies
+        WHERE platform_learning_enabled=TRUE AND authorization_basis='contract'`
+    );
+    const authorizedIds = new Set((authorized.rows || []).map((row) => row.tenant_id));
+    const missingAuthorization = (active.rows || []).map((row) => row.tenant_id)
+      .filter((tenantId) => !authorizedIds.has(tenantId));
+    return {
+      activeTenants: active.rows?.length || 0,
+      enabled,
+      revoked: (revoked.rows || []).map((row) => row.tenant_id),
+      missingAuthorization,
+    };
+  });
 }
 
 export async function backfillTenantLearningSignals(pool, tenantId = null) {
@@ -468,8 +597,11 @@ export async function buildEvaluationDataset(pool, {
       `SELECT c.*, p.max_daily_contributions
          FROM ai_learning_candidates c
          JOIN ai_learning_policies p ON p.tenant_id=c.tenant_id
+         JOIN tenants t ON t.tenant_id=c.tenant_id AND t.status='active'
         WHERE c.status='eligible'
           AND p.platform_learning_enabled=TRUE
+          AND p.authorization_basis='contract'
+          AND NULLIF(TRIM(p.agreement_reference),'') IS NOT NULL
           AND c.created_at >= NOW()-make_interval(days => $1)
         ORDER BY c.tenant_id, c.created_at DESC`,
       [Math.max(1, Math.min(730, Number(lookbackDays) || 180))]
@@ -571,6 +703,7 @@ export async function generateImprovementProposals(pool, {
   datasetId,
   datasetVersion,
   generateCandidate,
+  evaluateCandidate = null,
   minSamples = 8,
   minTenants = 2,
 } = {}) {
@@ -604,6 +737,7 @@ export async function generateImprovementProposals(pool, {
       });
       if (!generated || typeof generated !== 'object') continue;
       const artifactVersion = `${datasetVersion || datasetId}-${group.route}`.slice(0, 80);
+      const payload = sanitizeJson({ ...generated, evidence: group }) || {};
       const r = await pool.query(
         `INSERT INTO ai_quality_release_candidates (
            artifact_type, artifact_key, artifact_version, artifact_payload,
@@ -613,9 +747,44 @@ export async function generateImprovementProposals(pool, {
            artifact_payload=EXCLUDED.artifact_payload, dataset_id=EXCLUDED.dataset_id,
            updated_at=NOW()
          RETURNING id, artifact_key, artifact_version, status`,
-        [group.route, artifactVersion, JSON.stringify(sanitizeJson({ ...generated, evidence: group }) || {}), datasetId]
+        [group.route, artifactVersion, JSON.stringify(payload), datasetId]
       );
-      proposals.push(r.rows[0]);
+      let evaluation = null;
+      if (typeof evaluateCandidate === 'function') {
+        const positiveCount = (sampleR.rows || []).filter((item) => !['unhelpful', 'audit_fail', 'business_loss'].includes(item.expected_label)).length;
+        const total = Math.max(1, Number(group.sample_count) || sampleR.rows?.length || 1);
+        const baselineQuality = positiveCount / total;
+        const baselineMetrics = {
+          quality_score: baselineQuality,
+          groundedness: baselineQuality,
+          safety_violation_rate: 0,
+          negative_feedback_rate: 1 - baselineQuality,
+          p95_latency_ms: 0,
+        };
+        const judged = await evaluateCandidate({
+          route: group.route,
+          samples: sampleR.rows || [],
+          proposal: payload,
+          evidence: { sample_count: Number(group.sample_count), tenant_count: Number(group.tenant_count) },
+        });
+        if (judged && typeof judged === 'object') {
+          evaluation = await evaluateReleaseCandidate(pool, {
+            artifactType: 'prompt_patch',
+            artifactKey: group.route,
+            artifactVersion,
+            artifactPayload: payload,
+            datasetId,
+            baselineMetrics,
+            candidateMetrics: {
+              ...judged,
+              sample_size: Number(group.sample_count),
+              tenant_count: Number(group.tenant_count),
+            },
+            createdBy: 'auto_learning_cycle',
+          });
+        }
+      }
+      proposals.push({ ...r.rows[0], evaluation: evaluation?.gate || null });
     }
     return proposals;
   });
@@ -665,39 +834,86 @@ export async function monitorActiveCanaries(pool) {
       quality_score: qualitySamples ? qualityWeighted / qualitySamples : null,
     };
     const result = await recordCanaryObservation(pool, { candidateId: candidate.id, canaryMetrics: metrics });
-    observations.push({ candidateId: candidate.id, metrics, rollback: result.rollback });
+    observations.push({
+      candidateId: candidate.id,
+      metrics,
+      status: result.candidate?.status,
+      rollback: result.rollback,
+    });
   }
   return observations;
 }
 
-export async function runAiQualityLearningCycle(pool, { generateCandidate = null } = {}) {
-  const tenantRun = await runForActiveTenants(
-    (tenantId) => backfillTenantLearningSignals(pool, tenantId),
-    { p: pool, continueOnError: true }
-  );
-  const dataset = await buildEvaluationDataset(pool);
-  const proposals = dataset.created
-    ? await generateImprovementProposals(pool, {
-      datasetId: dataset.datasetId,
-      datasetVersion: dataset.version,
-      generateCandidate,
-    })
-    : [];
-  const canaries = await monitorActiveCanaries(pool);
-  return { tenantRun, dataset, proposals, canaries, completedAt: new Date().toISOString() };
+export async function runAiQualityLearningCycle(pool, {
+  generateCandidate = null,
+  evaluateCandidate = null,
+  triggerType = 'scheduler',
+} = {}) {
+  const run = await runWithSystemTenantContext(() => pool.query(
+    `INSERT INTO ai_learning_cycle_runs (status,trigger_type) VALUES ('running',$1) RETURNING id,started_at`,
+    [String(triggerType || 'scheduler').slice(0, 30)]
+  ));
+  const runId = run.rows[0].id;
+  try {
+    const policySync = await ensureContractAuthorizedLearningPolicies(pool);
+    const tenantRun = await runForActiveTenants(
+      (tenantId) => backfillTenantLearningSignals(pool, tenantId),
+      { p: pool, continueOnError: true }
+    );
+    const dataset = await buildEvaluationDataset(pool);
+    const proposals = dataset.created
+      ? await generateImprovementProposals(pool, {
+        datasetId: dataset.datasetId,
+        datasetVersion: dataset.version,
+        generateCandidate,
+        evaluateCandidate,
+      })
+      : [];
+    const canaries = await monitorActiveCanaries(pool);
+    const values = (tenantRun.results || []).filter((item) => item?.ok).map((item) => item.value || {});
+    const totals = values.reduce((acc, item) => ({
+      traced: acc.traced + Number(item.traced || 0),
+      feedback: acc.feedback + Number(item.feedback || 0),
+      materialized: acc.materialized + Number(item.materialized || 0),
+    }), { traced: 0, feedback: 0, materialized: 0 });
+    const promoted = canaries.filter((item) => item.status === 'approved').length;
+    const rolledBack = canaries.filter((item) => item.status === 'rolled_back').length;
+    await runWithSystemTenantContext(() => pool.query(
+      `UPDATE ai_learning_cycle_runs SET
+         status='completed', tenant_count=$2, trace_count=$3, feedback_count=$4,
+         candidate_count=$5, dataset_id=$6, dataset_version=$7,
+         proposal_count=$8, canary_count=$9, promoted_count=$10,
+         rolled_back_count=$11, error_count=$12, error_summary=$13::jsonb,
+         completed_at=NOW()
+       WHERE id=$1`,
+      [runId, policySync.activeTenants || values.length, totals.traced, totals.feedback,
+        totals.materialized, dataset.datasetId || null, dataset.version || null,
+        proposals.length, canaries.length, promoted, rolledBack,
+        tenantRun.errors?.length || 0, JSON.stringify(sanitizeJson(tenantRun.errors || []))]
+    ));
+    return { runId, policySync, tenantRun, dataset, proposals, canaries, completedAt: new Date().toISOString() };
+  } catch (error) {
+    await runWithSystemTenantContext(() => pool.query(
+      `UPDATE ai_learning_cycle_runs SET status='failed',error_count=1,
+         error_summary=$2::jsonb,completed_at=NOW() WHERE id=$1`,
+      [runId, JSON.stringify([{ message: String(error?.message || error).slice(0, 500) }])]
+    )).catch(() => {});
+    throw error;
+  }
 }
 
 export function startAiQualityLearningScheduler(pool, {
   initialDelayMs = 120000,
   intervalMs = 24 * 60 * 60 * 1000,
   generateCandidate = null,
+  evaluateCandidate = null,
 } = {}) {
   let running = false;
   const tick = async () => {
     if (running) return;
     running = true;
     try {
-      const result = await runAiQualityLearningCycle(pool, { generateCandidate });
+      const result = await runAiQualityLearningCycle(pool, { generateCandidate, evaluateCandidate });
       console.log('[ai-quality-learning] cycle complete:', JSON.stringify({ dataset: result.dataset, proposals: result.proposals?.length || 0, canaries: result.canaries?.length || 0, errors: result.tenantRun?.errors?.length || 0 }));
     } catch (error) {
       console.error('[ai-quality-learning] cycle failed:', error?.message || error);
@@ -730,14 +946,99 @@ export async function getPlatformQualityOverview(pool) {
   return runWithSystemTenantContext(async () => {
     const r = await pool.query(`
       SELECT
-        (SELECT COUNT(*)::int FROM ai_learning_policies WHERE platform_learning_enabled=TRUE) AS opted_in_tenants,
+        (SELECT COUNT(*)::int FROM ai_learning_policies
+          WHERE platform_learning_enabled=TRUE AND authorization_basis='contract') AS contract_authorized_tenants,
         (SELECT COUNT(*)::int FROM ai_learning_candidates WHERE status='eligible') AS eligible_candidates,
         (SELECT COUNT(DISTINCT tenant_id)::int FROM ai_learning_candidates WHERE status='eligible') AS contributing_tenants,
         (SELECT COUNT(*)::int FROM ai_evaluation_datasets) AS datasets,
-        (SELECT COUNT(*)::int FROM ai_quality_release_candidates WHERE status IN ('draft','evaluated','canary','pending_approval')) AS open_release_candidates
+        (SELECT COUNT(*)::int FROM ai_quality_release_candidates WHERE status IN ('draft','evaluated','canary','pending_approval')) AS open_release_candidates,
+        (SELECT COUNT(*)::int FROM ai_quality_model_calls WHERE created_at >= date_trunc('day',NOW())) AS quality_model_calls_today
     `);
-    return r.rows[0] || {};
+    return {
+      ...(r.rows[0] || {}),
+      platform_quality_model_configured: Boolean(String(process.env.AI_QUALITY_LLM_API_KEY || '').trim()),
+      platform_quality_model_provider: String(process.env.AI_QUALITY_LLM_PROVIDER || '').trim() || null,
+      platform_quality_model_name: String(process.env.AI_QUALITY_LLM_MODEL || '').trim() || null,
+      quality_model_daily_limit: Math.max(1, Math.min(10000, Number(process.env.AI_QUALITY_DAILY_CALL_LIMIT) || 100)),
+    };
   });
+}
+
+export async function getPlatformQualityActivity(pool) {
+  return runWithSystemTenantContext(async () => {
+    const [policies, cycles, releases, modelCalls] = await Promise.all([
+      pool.query(
+        `SELECT tenant_id,authorization_basis,authorization_source,agreement_reference,agreement_version,
+                agreement_effective_at,automation_mode,enabled_at,updated_at
+           FROM ai_learning_policies
+          WHERE platform_learning_enabled=TRUE
+          ORDER BY tenant_id LIMIT 200`
+      ),
+      pool.query(
+        `SELECT id,status,trigger_type,tenant_count,trace_count,feedback_count,
+                candidate_count,dataset_version,proposal_count,canary_count,
+                promoted_count,rolled_back_count,error_count,started_at,completed_at
+           FROM ai_learning_cycle_runs ORDER BY started_at DESC LIMIT 100`
+      ),
+      pool.query(
+        `SELECT e.id,e.release_candidate_id,e.from_status,e.to_status,e.reason,
+                e.metrics,e.created_at,c.artifact_key,c.artifact_version
+           FROM ai_quality_release_events e
+           JOIN ai_quality_release_candidates c ON c.id=e.release_candidate_id
+          ORDER BY e.created_at DESC LIMIT 200`
+      ),
+      pool.query(
+        `SELECT id,operation,route,provider,model_name,success,latency_ms,
+                input_tokens,output_tokens,error_code,created_at
+           FROM ai_quality_model_calls ORDER BY created_at DESC LIMIT 200`
+      ),
+    ]);
+    return {
+      policies: policies.rows || [], cycles: cycles.rows || [],
+      releases: releases.rows || [], modelCalls: modelCalls.rows || [],
+    };
+  });
+}
+
+export async function runPlatformQualityModelTask(pool, {
+  operation,
+  route = null,
+  execute,
+} = {}) {
+  if (typeof execute !== 'function') throw new Error('quality_model_execute_required');
+  const op = String(operation || '').trim().slice(0, 40);
+  if (!op) throw new Error('quality_model_operation_required');
+  const dailyLimit = Math.max(1, Math.min(10000, Number(process.env.AI_QUALITY_DAILY_CALL_LIMIT) || 100));
+  const used = await runWithSystemTenantContext(() => pool.query(
+    `SELECT COUNT(*)::int AS count FROM ai_quality_model_calls
+      WHERE created_at >= date_trunc('day',NOW())`
+  ));
+  if (Number(used.rows[0]?.count || 0) >= dailyLimit) {
+    return { ok: false, error: 'ai_quality_daily_call_limit_exceeded' };
+  }
+  const startedAt = Date.now();
+  let result;
+  try {
+    result = await execute();
+    return result;
+  } catch (error) {
+    result = { ok: false, error: error?.message || 'quality_model_call_failed' };
+    return result;
+  } finally {
+    await runWithSystemTenantContext(() => pool.query(
+      `INSERT INTO ai_quality_model_calls (
+         operation,route,provider,model_name,success,latency_ms,
+         input_tokens,output_tokens,error_code
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [op, route == null ? null : String(route).slice(0, 80),
+        String(process.env.AI_QUALITY_LLM_PROVIDER || '').slice(0, 60) || null,
+        String(result?.actualModel || process.env.AI_QUALITY_LLM_MODEL || '').slice(0, 160) || null,
+        result?.ok === true, Number(result?.responseTime || (Date.now() - startedAt)),
+        Number(result?.raw?.usage?.prompt_tokens || 0) || null,
+        Number(result?.raw?.usage?.completion_tokens || 0) || null,
+        result?.ok === true ? null : String(result?.error || 'quality_model_call_failed').slice(0, 120)]
+    )).catch((error) => console.error('[ai-quality-learning] model call audit failed:', error?.message || error));
+  }
 }
 
 export async function evaluateReleaseCandidate(pool, {
@@ -788,6 +1089,14 @@ export async function evaluateReleaseCandidate(pool, {
         JSON.stringify(finalGate), finalGate.passed ? 'canary' : 'rejected',
         String(createdBy || '').slice(0, 120),
       ]
+    );
+    await pool.query(
+      `INSERT INTO ai_quality_release_events (
+         release_candidate_id,from_status,to_status,reason,metrics
+       ) VALUES ($1,'draft',$2,$3,$4::jsonb)`,
+      [r.rows[0].id, r.rows[0].status,
+        finalGate.passed ? 'automatic_offline_gate_passed' : 'automatic_offline_gate_rejected',
+        JSON.stringify({ baseline: sanitizeJson(baselineMetrics), candidate: sanitizeJson(metrics), gate: finalGate })]
     );
     return { candidate: r.rows[0], gate: finalGate, initialGate: gate };
   });
@@ -850,14 +1159,23 @@ export async function recordCanaryObservation(pool, {
     );
     const row = existing.rows[0];
     if (!row) throw new Error('release_candidate_not_found');
-    const rollback = shouldRollbackCanary(row.baseline_metrics || {}, canaryMetrics || {});
-    const status = rollback.rollback ? 'rolled_back' : 'pending_approval';
+    const decision = decideAutomaticPromotion(row.baseline_metrics || {}, canaryMetrics || {});
+    const status = decision.status;
     const r = await pool.query(
       `UPDATE ai_quality_release_candidates
           SET canary_metrics=$1::jsonb, status=$2, updated_at=NOW()
         WHERE id=$3 RETURNING *`,
       [JSON.stringify(sanitizeJson(canaryMetrics) || {}), status, candidateId]
     );
-    return { candidate: r.rows[0], rollback };
+    if (row.status !== status) {
+      await pool.query(
+        `INSERT INTO ai_quality_release_events (
+           release_candidate_id,from_status,to_status,reason,metrics
+         ) VALUES ($1,$2,$3,$4,$5::jsonb)`,
+        [candidateId, row.status, status, decision.reason,
+          JSON.stringify({ canary: sanitizeJson(canaryMetrics), rollback: decision.rollback })]
+      );
+    }
+    return { candidate: r.rows[0], rollback: decision.rollback, decision };
   });
 }

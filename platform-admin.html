@@ -1126,6 +1126,40 @@
       </div>
     </section>
 
+    <section id="panel-ai-quality" class="panel stack">
+      <div class="card stack">
+        <div class="section-title">
+          <div><h2>AI 质量自动学习闭环</h2><div class="sub">仅平台超级管理员可见。展示合同依据、自动脱敏、数据集、离线门禁、灰度、晋级与回滚的全链路痕迹；不展示租户原始内容。</div></div>
+          <button type="button" class="secondary" id="refreshAiQualityBtn">刷新进展</button>
+        </div>
+        <div class="stats-row" id="aiQualityStats"></div>
+      </div>
+      <div class="card stack">
+        <div class="section-title"><div><strong>合同处理依据</strong><div class="small">CRM 有效合同会自动关联；只有历史直开租户需要在这里补录一次，不是员工授权开关。</div></div></div>
+        <div class="detail-grid">
+          <label class="field">租户 ID<input id="aiContractTenantId" placeholder="tenant_xxx"></label>
+          <label class="field">合同编号 / 可核验标识<input id="aiContractReference" placeholder="必填，与线下合同一致"></label>
+          <label class="field">合同版本<input id="aiContractVersion" value="1" placeholder="1"></label>
+          <label class="field">生效时间<input id="aiContractEffectiveAt" type="datetime-local"></label>
+        </div>
+        <div class="toolbar"><button type="button" id="saveAiContractAuthorizationBtn">记录合同依据并启用自动闭环</button></div>
+        <div class="table-scroll"><table><thead><tr><th>租户</th><th>依据</th><th>来源</th><th>合同标识</th><th>版本</th><th>生效时间</th><th>模式</th></tr></thead><tbody id="aiQualityPolicies"></tbody></table></div>
+      </div>
+      <div class="card stack">
+        <strong>自动学习周期</strong>
+        <div class="table-scroll"><table><thead><tr><th>开始时间</th><th>状态</th><th>租户</th><th>新增轨迹/反馈/候选</th><th>数据集</th><th>提案/灰度/晋级/回滚</th><th>错误</th></tr></thead><tbody id="aiQualityCycles"></tbody></table></div>
+      </div>
+      <div class="card stack">
+        <strong>发布与回滚痕迹</strong>
+        <div class="table-scroll"><table><thead><tr><th>时间</th><th>路由</th><th>版本</th><th>状态变化</th><th>原因</th></tr></thead><tbody id="aiQualityReleases"></tbody></table></div>
+      </div>
+      <div class="card stack">
+        <strong>平台质量模型独立调用日志</strong>
+        <div class="small">仅记录任务类型、模型、耗时、Token 与错误码，不记录提示词或租户原文。</div>
+        <div class="table-scroll"><table><thead><tr><th>时间</th><th>任务</th><th>路由</th><th>模型</th><th>结果</th><th>耗时</th><th>输入/输出 Token</th></tr></thead><tbody id="aiQualityModelCalls"></tbody></table></div>
+      </div>
+    </section>
+
     <section id="panel-log" class="panel stack">
       <div id="tenantLoginAccess" class="login-access-card hidden"></div>
       <div class="card stack">
@@ -1168,6 +1202,7 @@
     <button type="button" data-panel="tenants"><span class="nav-icon">🏢</span>租户</button>
     <button type="button" data-panel="create"><span class="nav-icon">➕</span>开通</button>
     <button type="button" data-panel="config"><span class="nav-icon">⚙️</span>配置</button>
+    <button type="button" data-panel="ai-quality"><span class="nav-icon">AI</span>质量</button>
     <button type="button" data-panel="log"><span class="nav-icon">📜</span>日志</button>
   </nav>
 
@@ -1253,10 +1288,68 @@
       }
       if (name === 'faq' && isLoggedIn()) loadFaqPortal().catch((e) => toast(e.message));
       if (name === 'demand' && isLoggedIn()) loadDemandList().catch((e) => toast(e.message));
+      if (name === 'ai-quality' && isLoggedIn()) {
+        if ($('aiContractTenantId') && state.selectedTenantId) $('aiContractTenantId').value = state.selectedTenantId;
+        loadAiQualityBoard().catch((e) => { toast(e.message); log(`AI质量闭环加载失败：${e.message}`); });
+      }
       if (name === 'onboarding' && isLoggedIn()) {
         const tid = state.selectedTenantId || $('cfgTenantId')?.value || '';
         if (tid) $('onboardingTenantId').value = tid;
       }
+    }
+
+    function aiQualitySafe(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[ch]);
+    }
+
+    function aiQualityTime(value) {
+      if (!value) return '—';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? aiQualitySafe(value) : date.toLocaleString('zh-CN');
+    }
+
+    async function loadAiQualityBoard() {
+      const [overviewData, activityData] = await Promise.all([
+        api('/api/admin/ai-quality/overview'),
+        api('/api/admin/ai-quality/activity'),
+      ]);
+      const overview = overviewData.overview || {};
+      const activity = activityData.activity || {};
+      const stat = (label, value, sub = '') => `<div class="stat"><div class="label">${label}</div><div class="value">${Number(value || 0)}</div><div class="sub">${sub}</div></div>`;
+      $('aiQualityStats').innerHTML = [
+        stat('合同授权租户', overview.contract_authorized_tenants, '自动策略已生效'),
+        stat('平台质量模型', overview.platform_quality_model_configured ? 1 : 0, overview.platform_quality_model_configured ? `${overview.platform_quality_model_provider || ''}/${overview.platform_quality_model_name || ''}` : '未配置，提案生成暂停'),
+        stat('今日质量模型调用', overview.quality_model_calls_today, `每日上限 ${Number(overview.quality_model_daily_limit || 0)}`),
+        stat('可用学习样本', overview.eligible_candidates, '已完成脱敏'),
+        stat('贡献租户', overview.contributing_tenants, '数据集按租户限额均衡'),
+        stat('评测数据集', overview.datasets, '版本化且可追溯'),
+        stat('进行中改进', overview.open_release_candidates, '离线/灰度门禁中'),
+      ].join('');
+      $('aiQualityPolicies').innerHTML = (activity.policies || []).map((row) => `<tr>
+        <td class="mono">${aiQualitySafe(row.tenant_id)}</td><td>${aiQualitySafe(row.authorization_basis)}</td><td>${aiQualitySafe(row.authorization_source)}</td>
+        <td>${aiQualitySafe(row.agreement_reference)}</td><td>${aiQualitySafe(row.agreement_version)}</td>
+        <td>${aiQualityTime(row.agreement_effective_at)}</td><td>${aiQualitySafe(row.automation_mode)}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="small">暂无已生效合同策略</td></tr>';
+      $('aiQualityCycles').innerHTML = (activity.cycles || []).map((row) => `<tr>
+        <td>${aiQualityTime(row.started_at)}</td><td>${aiQualitySafe(row.status)}</td><td>${Number(row.tenant_count || 0)}</td>
+        <td>${Number(row.trace_count || 0)} / ${Number(row.feedback_count || 0)} / ${Number(row.candidate_count || 0)}</td>
+        <td class="mono">${aiQualitySafe(row.dataset_version || '—')}</td>
+        <td>${Number(row.proposal_count || 0)} / ${Number(row.canary_count || 0)} / ${Number(row.promoted_count || 0)} / ${Number(row.rolled_back_count || 0)}</td>
+        <td>${Number(row.error_count || 0)}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="small">调度器尚未完成首个周期</td></tr>';
+      $('aiQualityReleases').innerHTML = (activity.releases || []).map((row) => `<tr>
+        <td>${aiQualityTime(row.created_at)}</td><td>${aiQualitySafe(row.artifact_key)}</td>
+        <td class="mono">${aiQualitySafe(row.artifact_version)}</td>
+        <td>${aiQualitySafe(row.from_status || '—')} → ${aiQualitySafe(row.to_status)}</td><td>${aiQualitySafe(row.reason)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="small">尚无发布或回滚事件</td></tr>';
+      $('aiQualityModelCalls').innerHTML = (activity.modelCalls || []).map((row) => `<tr>
+        <td>${aiQualityTime(row.created_at)}</td><td>${aiQualitySafe(row.operation)}</td><td>${aiQualitySafe(row.route || '—')}</td>
+        <td>${aiQualitySafe([row.provider, row.model_name].filter(Boolean).join('/') || '—')}</td>
+        <td>${row.success ? '成功' : `失败：${aiQualitySafe(row.error_code || 'unknown')}`}</td>
+        <td>${Number(row.latency_ms || 0)}ms</td><td>${Number(row.input_tokens || 0)} / ${Number(row.output_tokens || 0)}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="small">尚无平台质量模型调用</td></tr>';
     }
 
     function switchConfigPane(paneId) {
@@ -1355,6 +1448,31 @@
         const btn = e.target.closest('button[data-config-pane]');
         if (!btn) return;
         switchConfigPane(btn.dataset.configPane);
+      });
+      $('refreshAiQualityBtn')?.addEventListener('click', () => {
+        loadAiQualityBoard().then(() => toast('AI质量进展已刷新')).catch((e) => toast(e.message));
+      });
+      $('saveAiContractAuthorizationBtn')?.addEventListener('click', async () => {
+        try {
+          const tenantId = String($('aiContractTenantId')?.value || state.selectedTenantId || '').trim();
+          const reference = String($('aiContractReference')?.value || '').trim();
+          if (!tenantId || !reference) throw new Error('租户 ID 和合同编号必填');
+          await api('/api/admin/ai-quality/contract-authorizations', {
+            method: 'POST',
+            body: JSON.stringify({
+              tenant_id: tenantId,
+              agreement_reference: reference,
+              agreement_version: String($('aiContractVersion')?.value || '1').trim(),
+              agreement_effective_at: $('aiContractEffectiveAt')?.value || new Date().toISOString(),
+            }),
+          });
+          $('aiContractReference').value = '';
+          await loadAiQualityBoard();
+          toast('合同处理依据已记录，自动闭环已启用');
+        } catch (e) {
+          toast(e.message);
+          log(`记录合同处理依据失败：${e.message}`);
+        }
       });
       $('goConfigBtn').onclick = () => {
         if (!state.selectedTenantId) { toast('请先选择租户'); return; }
