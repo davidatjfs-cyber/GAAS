@@ -4,12 +4,14 @@
  * 用同一个账号、同一套 run-task/continue-task/finish-task 协议，不再依赖MiniMax的账号配置。
  */
 import { spawn } from 'child_process';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import WebSocket from 'ws';
 
 const DEFAULT_TTS_MODEL = 'qwen-audio-3.0-tts-plus';
 const DEFAULT_VOICE = 'longanlingxin'; // Qwen Audio Plus兼容的25岁“温暖共情”真人音色
 const DEFAULT_INSTRUCTION = '像一位30岁左右的真人女性餐饮顾问在微信里自然回复客户。语气温暖、克制、可信，有自然停顿和轻微呼吸感；不要播音腔，不要客服腔，不要逐字匀速朗读，不要夸张情绪。';
+const NATURAL_TTS_MODEL = 'qwen-audio-3.0-tts-flash';
+const NATURAL_TTS_VOICE = 'longanxiaoxin';
 const TTS_WS_PATH = '/api-ws/v1/inference';
 
 /**
@@ -25,6 +27,7 @@ function getDashscopeTtsConfig() {
     voice: String(process.env.DASHSCOPE_TTS_VOICE || DEFAULT_VOICE).trim(),
     instruction: String(process.env.DASHSCOPE_TTS_INSTRUCTION || DEFAULT_INSTRUCTION).trim(),
     rate: Number(process.env.DASHSCOPE_TTS_RATE || 0.96),
+    naturalRolloutPercent: Number(process.env.DASHSCOPE_TTS_NATURAL_ROLLOUT_PERCENT || 0),
   };
 }
 
@@ -56,6 +59,44 @@ export function buildTtsParameters(config = {}) {
     parameters.instruction = String(config.instruction || DEFAULT_INSTRUCTION).trim();
   }
   return { model, voice, parameters };
+}
+
+export function classifySpeechTone(text = '') {
+  const value = String(text || '');
+  if (/(抱歉|不好意思|理解|担心|顾虑|投诉|确实|着急)/.test(value)) return 'empathy';
+  if (/(在吗|您好|你好|没问题|好的|当然|可以的)/.test(value) && value.length < 70) return 'quick';
+  if (/(首先|其次|具体|数据|方案|试用|评估|步骤|流程|比如|例如|\d)/.test(value) || value.length > 85) return 'explain';
+  if (/[？?]$/.test(value)) return 'question';
+  return 'conversation';
+}
+
+export function buildNaturalSpeechDirection(text = '') {
+  const tone = classifySpeechTone(text);
+  const common = '像一位有经验的真人女性餐饮顾问在微信语音里回复。自然随意但专业，不改变原文含义；避免播音腔、客服腔和逐字匀速朗读。';
+  const styles = {
+    empathy: { rate: 0.93, instruction: '先带出理解和关心，再自然说明；重点前轻微停顿，句尾克制地收住，不要过度热情。' },
+    quick: { rate: 0.98, instruction: '像刚看到微信后马上回应，亲切轻快，带很轻的微笑感，短句干净利落。' },
+    explain: { rate: 0.95, instruction: '从容解释，按意群自然停顿；数字和关键结论稍作强调，不要像念方案或做宣讲。' },
+    question: { rate: 0.97, instruction: '像面对面继续聊天一样自然发问，语气真诚，问句尾音不要夸张上扬。' },
+    conversation: { rate: 0.96, instruction: '保持松弛、可信的聊天感，长短句节奏有变化，句尾自然收住。' },
+  };
+  return { tone, rate: styles[tone].rate, instruction: `${common}${styles[tone].instruction}` };
+}
+
+export function stableRolloutBucket(value = '') {
+  const key = String(value || '').trim();
+  if (!key) return 100;
+  return createHash('sha256').update(key).digest().readUInt32BE(0) % 100;
+}
+
+export function buildTtsCandidateConfigs(text = '', { rolloutKey = '', rolloutPercent = 0, baseConfig = {} } = {}) {
+  const percent = Number.isFinite(Number(rolloutPercent)) ? Math.min(100, Math.max(0, Number(rolloutPercent))) : 0;
+  if (percent < 100 && stableRolloutBucket(rolloutKey) >= percent) return [{ ...baseConfig, variant: 'baseline' }];
+  const direction = buildNaturalSpeechDirection(text);
+  return [
+    { ...baseConfig, model: NATURAL_TTS_MODEL, voice: NATURAL_TTS_VOICE, instruction: direction.instruction, rate: direction.rate, variant: 'natural_v1', tone: direction.tone },
+    { ...baseConfig, model: DEFAULT_TTS_MODEL, voice: DEFAULT_VOICE, instruction: direction.instruction, rate: direction.rate, variant: 'natural_fallback', tone: direction.tone },
+  ];
 }
 
 export function buildDashscopeTtsWsUrl(wsHost) {
@@ -226,11 +267,15 @@ async function synthesizeHttpMp3(text, { timeoutMs = 30000, config = null } = {}
 }
 
 /** 文本 → amr语音Buffer；失败返回 null，调用方应回退到文字回复而不是让客户没收到任何消息 */
-export async function synthesizeSpeechAmr(text) {
+export async function synthesizeSpeechAmr(text, { rolloutKey = '' } = {}) {
   const primary = getDashscopeTtsConfig();
-  const candidates = [primary];
-  if (primary.model !== 'cosyvoice-v2') {
-    candidates.push({ ...primary, model: 'cosyvoice-v2', voice: 'longwan_v2', instruction: '', rate: 0.98 });
+  const candidates = buildTtsCandidateConfigs(text, {
+    rolloutKey,
+    rolloutPercent: primary.naturalRolloutPercent,
+    baseConfig: primary,
+  });
+  if (!candidates.some((candidate) => candidate.model === 'cosyvoice-v2')) {
+    candidates.push({ ...primary, model: 'cosyvoice-v2', voice: 'longwan_v2', instruction: '', rate: 0.98, variant: 'legacy_fallback' });
   }
   for (const config of candidates) {
     try {
@@ -238,7 +283,9 @@ export async function synthesizeSpeechAmr(text) {
         ? await synthesizeHttpMp3(text, { config })
         : await synthesizeMp3(text, { config });
       if (!mp3?.length) throw new Error('tts_empty_audio');
-      return await mp3ToAmr(mp3);
+      const amr = await mp3ToAmr(mp3);
+      console.log(`[sales-tts] synthesized variant=${config.variant || 'baseline'} model=${config.model} tone=${config.tone || 'static'}`);
+      return amr;
     } catch (e) {
       console.error(`[sales-tts] synthesize failed model=${config.model}:`, e?.message || e);
     }

@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDashscopeTtsHttpUrl, buildDashscopeTtsWsUrl, buildTtsParameters, prepareSpeechText } from './sales-tts.js';
+import {
+  buildDashscopeTtsHttpUrl,
+  buildDashscopeTtsWsUrl,
+  buildNaturalSpeechDirection,
+  buildTtsCandidateConfigs,
+  buildTtsParameters,
+  prepareSpeechText,
+  stableRolloutBucket,
+} from './sales-tts.js';
 
 test('buildDashscopeTtsWsUrl adds wss protocol and inference path to a workspace host', () => {
   assert.equal(
@@ -46,4 +54,32 @@ test('语音前处理要把技术缩写转成自然口语读法', () => {
     prepareSpeechText('先评估POS数据，再选1-2家店做30天试跑。'),
     '先评估P O S数据，再选一到两家店做三十天试跑。'
   );
+});
+
+test('动态语气只改变TTS表达参数，不改回复文字', () => {
+  const direction = buildNaturalSpeechDirection('我理解您的顾虑，这里确实需要先说明清楚。');
+  assert.equal(direction.tone, 'empathy');
+  assert.ok(direction.rate < 0.96);
+  assert.match(direction.instruction, /不改变原文含义/);
+});
+
+test('小流量分组对同一个客户保持稳定', () => {
+  assert.equal(stableRolloutBucket('customer-123'), stableRolloutBucket('customer-123'));
+  assert.equal(stableRolloutBucket(''), 100);
+});
+
+test('0%保持当前基线，100%使用胜出音色并配置当前音色动态回退', () => {
+  const baseline = buildTtsCandidateConfigs('好的。', { rolloutKey: 'customer-1', rolloutPercent: 0, baseConfig: { model: 'current', voice: 'current' } });
+  assert.deepEqual(baseline.map((item) => item.variant), ['baseline']);
+
+  const natural = buildTtsCandidateConfigs('具体可以先评估数据。', { rolloutKey: 'customer-1', rolloutPercent: 100, baseConfig: {} });
+  assert.equal(natural[0].model, 'qwen-audio-3.0-tts-flash');
+  assert.equal(natural[0].voice, 'longanxiaoxin');
+  assert.equal(natural[0].variant, 'natural_v1');
+  assert.equal(natural[1].model, 'qwen-audio-3.0-tts-plus');
+  assert.equal(natural[1].voice, 'longanlingxin');
+  assert.equal(natural[1].variant, 'natural_fallback');
+
+  const naturalWithoutKey = buildTtsCandidateConfigs('好的。', { rolloutPercent: 100, baseConfig: {} });
+  assert.equal(naturalWithoutKey[0].variant, 'natural_v1');
 });

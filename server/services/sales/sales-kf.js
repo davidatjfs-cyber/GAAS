@@ -295,7 +295,7 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
         // 客户发语音，镜像用语音回复；合成/上传任何一步失败都静默回退到文字，
         // 不能因为语音链路故障让客户完全收不到回复。
         try {
-          const amr = await synthesizeSpeechAmr(turn.reply);
+          const amr = await synthesizeSpeechAmr(turn.reply, { rolloutKey: externalUserid });
           if (amr) {
             const mediaId = await uploadKfMedia(amr, { type: 'voice', filename: 'reply.amr' });
             const sendResult = await sendKfVoice({ openKfid: replyOpenKfid, externalUserid, mediaId });
