@@ -29,6 +29,7 @@ import {
   getObjectionResponse,
 } from './sales-ops.js';
 import { buildSalesDecision, buildCustomerAiGuidance, normalizeCustomerAiEvent } from './sales-collaboration.js';
+import { checkLeadCompleteness, STAGES_REQUIRING_COMPLETE_INFO } from './sales-lead-completeness.js';
 import { kfConfigured, sendKfConsultantCard } from './sales-kf.js';
 import { sendContentAssetToLead } from './sales-content-delivery.js';
 
@@ -352,7 +353,20 @@ export async function handleInboundMessage(pool, {
   const diagnosis = buildDiagnosisReport(updatedLead);
   const customerGuidance = buildCustomerAiGuidance(decision);
   await saveSalesGuidance(pool, { leadId: lead.id, conversationId: conv.id, guidance: customerGuidance, expiresInTurns: customerGuidance.expires_in_turns });
-  if (nextStage && nextStage !== lead.stage) {
+  const completeness = checkLeadCompleteness(updatedLead);
+  if (nextStage && nextStage !== lead.stage && STAGES_REQUIRING_COMPLETE_INFO.has(nextStage) && !completeness.complete) {
+    // 门店基础信息还没收全就不让AI把线索推进到"已确认"往后的阶段——两条建档入口(AI对话/
+    // 销售手工表单)现在共用同一份完整性判断，不再各自为政。不阻断人工接管本身，客户仍然
+    // 可以立刻转人工，只是转阶段要等信息收全，销售看得到具体缺哪些字段。
+    console.warn('[sales-session] stage transition blocked, lead info incomplete', { leadId: lead.id, to: nextStage, missing: completeness.missing });
+    await addEvent(pool, lead.id, {
+      event_type: 'STAGE_TRANSITION_BLOCKED_INCOMPLETE_INFO',
+      summary: `门店信息未收全(缺：${completeness.missing.join('、')})，暂不推进到「${nextStage}」`,
+      priority: 'normal',
+      recommended_action: 'collect_missing_info',
+      payload: { to_stage: nextStage, missing: completeness.missing },
+    });
+  } else if (nextStage && nextStage !== lead.stage) {
     const stageResult = await transitionLeadStage(pool, {
       leadId: lead.id,
       toStage: nextStage,
@@ -421,6 +435,7 @@ export async function handleInboundMessage(pool, {
           `原因：${decision.next_action}`,
           advice,
           `诊断：${diagnosis.surface_problem}`,
+          completeness.complete ? '门店信息：已收全' : `门店信息缺口：${completeness.missing.join('、')}（跟进时请先补齐）`,
         ].join('\n'),
         { title: '高意向销售线索', audience: 'sales' }
       ).catch(() => null);

@@ -52,6 +52,7 @@ import { recordStageChange, transitionLeadStage } from './services/sales/sales-s
 import { runSalesSlaScan } from './services/sales/sales-sla-service.js';
 import { runDeployCheckSlaScan, completeDeployCheck } from './services/sales/onboarding-sla-service.js';
 import { runHealthCheckPeriodScan, deliverHealthCheckReport } from './services/sales/health-check-period-service.js';
+import { runProvisioningRetryScan } from './services/sales/provisioning-retry-service.js';
 import { runNurtureCadence } from './services/sales/sales-nurture.js';
 import { getUnifiedCustomerTimeline } from './services/sales/sales-timeline.js';
 import { buildTenantMonthlyValueReport } from './services/sales/tenant-value-report.js';
@@ -238,6 +239,12 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     globalThis.__salesHealthCheckPeriodTimer = setInterval(() => {
       ensureSalesTables(pool).then(() => runHealthCheckPeriodScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] health check period scan failed:', e?.message || e));
     }, 60 * 60 * 1000);
+  }
+
+  if (!globalThis.__salesProvisioningRetryTimer) {
+    globalThis.__salesProvisioningRetryTimer = setInterval(() => {
+      ensureSalesTables(pool).then(() => runProvisioningRetryScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] provisioning retry scan failed:', e?.message || e));
+    }, 5 * 60 * 1000);
   }
 
   if (!globalThis.__salesNurtureCadenceTimer) {
@@ -1081,6 +1088,21 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       res.status(data.ok ? 200 : 404).json(data);
     } catch (e) {
       console.error('[sales] unified timeline', e?.message || e);
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  // 供 agents-service-v2 的"首月每周运行检测报告"调用，用同一套内部密钥口径
+  // (X-Miniprogram-Sync-Secret)，不复用 platformAdminRequired(那是面向后台管理员会话的)。
+  app.post('/api/internal/sales/tenant-onboarding-checklist', async (req, res) => {
+    try {
+      const secret = String(req.headers['x-miniprogram-sync-secret'] || '');
+      const expected = String(process.env.MINIPROGRAM_SYNC_SECRET || process.env.HRMS_GROWTH_EVENT_SECRET || '');
+      if (!expected || secret !== expected) return res.status(401).json({ ok: false, error: 'unauthorized' });
+      const data = await getOnboardingChecklist(pool, req.body?.tenant_id);
+      res.status(data.ok ? 200 : 400).json(data);
+    } catch (e) {
+      console.error('[sales] internal onboarding checklist', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
