@@ -901,6 +901,14 @@ export function registerTenantPlatformRoutes(app, deps) {
   // 账单PDF下载——现在只做"生成可下载文件"这一步，不做自动发送；销售/客服下载后
   // 自行通过邮箱/微信手动发给客户。内容来自platform_profile.billing这个已有的配置对象，
   // 不需要新表；只是把已经录入的账单计划/周期/联系人信息渲染成一份能给客户看的PDF。
+  //
+  // 中文字体：pdfkit内置字体(Helvetica等)不含中文字形，直接doc.text()写中文会变成乱码方框——
+  // 这是上线后被发现的真实bug，不是假设性风险。必须显式注册一个含中文字形的TrueType字体
+  // (server/assets/fonts/NotoSansSC-*.ttf，OFL开源协议，可随仓库分发)。用doc.font()指定字体名
+  // 而不是每次都传完整路径，方便下面在常规/粗体之间切换。
+  const BILLING_FONT_REGULAR = path.join(__dirname, 'assets/fonts/NotoSansSC-Regular.ttf');
+  const BILLING_FONT_BOLD = path.join(__dirname, 'assets/fonts/NotoSansSC-Bold.ttf');
+
   app.get('/api/admin/tenants/:tenantId/billing/pdf', platformAdminRequired, async (req, res) => {
     const tenantId = String(req.params.tenantId || '').trim();
     try {
@@ -908,26 +916,75 @@ export function registerTenantPlatformRoutes(app, deps) {
       if (!tenantRow.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
       const profile = await getTenantPlatformProfile(pool, tenantId, tenantRow.rows[0].name);
       const billing = profile.billing || {};
+      const tenantName = tenantRow.rows[0].name || tenantId;
+      const brandColor = /^#[0-9a-fA-F]{6}$/.test(profile.brand_color || '') ? profile.brand_color : '#0d7a5f';
+      const fmtDate = (v) => {
+        if (!v) return '未配置';
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? String(v) : d.toISOString().slice(0, 10);
+      };
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="billing-${tenantId}-${new Date().toISOString().slice(0, 10)}.pdf"`);
-      const doc = new PDFDocument({ margin: 50 });
+      const doc = new PDFDocument({ size: 'A4', margin: 56 });
+      doc.registerFont('cn', BILLING_FONT_REGULAR);
+      doc.registerFont('cn-bold', BILLING_FONT_BOLD);
       doc.pipe(res);
-      doc.fontSize(18).text(`${profile.system_name || tenantRow.rows[0].name || tenantId} · 账单`, { align: 'left' });
-      doc.moveDown();
-      doc.fontSize(11);
-      const row = (label, value) => doc.text(`${label}：${value || '未配置'}`);
-      row('租户', `${tenantRow.rows[0].name || tenantId}（${tenantId}）`);
-      row('账单计划', billing.plan_name);
-      row('账单周期', billing.billing_cycle);
-      row('下次开票', billing.next_invoice_at);
-      row('账单联系人', billing.billing_contact);
-      row('联系人邮箱', billing.billing_contact_email);
-      row('联系人微信', billing.billing_contact_wechat);
-      row('送达方式', billing.delivery_method === 'wechat' ? '微信' : '邮箱');
-      if (billing.notes) { doc.moveDown(); doc.text(`备注：${billing.notes}`); }
-      doc.moveDown();
-      doc.fontSize(9).fillColor('#888').text(`生成时间：${new Date().toISOString()}`);
+
+      const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+      // 顶部品牌条 + 标题
+      doc.rect(doc.page.margins.left, doc.page.margins.top, pageWidth, 4).fill(brandColor);
+      doc.moveDown(1.2);
+      doc.font('cn-bold').fontSize(20).fillColor('#1a1a1a').text(tenantName);
+      doc.font('cn').fontSize(11).fillColor('#666').text('账单 / Billing Statement');
+      doc.moveDown(1);
+
+      // 分隔线
+      const hr = () => {
+        const y = doc.y;
+        doc.moveTo(doc.page.margins.left, y).lineTo(doc.page.width - doc.page.margins.right, y).strokeColor('#e0dcd3').lineWidth(1).stroke();
+        doc.moveDown(0.8);
+      };
+      hr();
+
+      // 两列信息区：左边租户/计划信息，右边联系与送达信息
+      const colGap = 24;
+      const colWidth = (pageWidth - colGap) / 2;
+      const leftX = doc.page.margins.left;
+      const rightX = leftX + colWidth + colGap;
+      const topY = doc.y;
+
+      const field = (x, y, label, value) => {
+        doc.font('cn').fontSize(9).fillColor('#999').text(label, x, y);
+        doc.font('cn').fontSize(12).fillColor('#1a1a1a').text(value || '未配置', x, y + 13, { width: colWidth });
+      };
+
+      field(leftX, topY, '租户编号', tenantId);
+      field(leftX, topY + 46, '账单计划', billing.plan_name);
+      field(leftX, topY + 92, '账单周期', billing.billing_cycle);
+      field(leftX, topY + 138, '下次开票日期', fmtDate(billing.next_invoice_at));
+
+      field(rightX, topY, '账单联系人', billing.billing_contact);
+      field(rightX, topY + 46, '联系人邮箱', billing.billing_contact_email);
+      field(rightX, topY + 92, '联系人微信', billing.billing_contact_wechat);
+      field(rightX, topY + 138, '送达方式', billing.delivery_method === 'wechat' ? '微信' : '邮箱');
+
+      doc.y = topY + 138 + 40;
+      hr();
+
+      if (billing.notes) {
+        doc.font('cn-bold').fontSize(10).fillColor('#1a1a1a').text('备注');
+        doc.moveDown(0.3);
+        doc.font('cn').fontSize(10).fillColor('#444').text(billing.notes, { width: pageWidth });
+        doc.moveDown(1);
+        hr();
+      }
+
+      doc.font('cn').fontSize(9).fillColor('#999');
+      doc.text(`生成时间：${new Date().toISOString().slice(0, 19).replace('T', ' ')}`);
+      doc.text('本账单由平台系统自动生成');
+
       doc.end();
     } catch (e) {
       if (!res.headersSent) return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
