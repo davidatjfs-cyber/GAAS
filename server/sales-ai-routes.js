@@ -161,9 +161,10 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     next();
   };
   /**
-   * 订单标记已付款(现金)或授信审核通过后，自动生成一条待开票申请——不用再等客户/客服
+   * 订单标记"已付款"(现金，真正收到客人的钱)后，自动生成一条待开票申请——不用再等客户/客服
    * 主动发起"申请开票"这一步。用 order_id 唯一索引天然防重复(同一订单多次触发finance-decision
-   * 也只会有一条开票申请)。
+   * 也只会有一条开票申请)。注意：授信审核通过不算"收到付款"，不应该调用这个函数——
+   * 账期客户还没实际付钱，见 approve_credit 分支旁边的说明。
    */
   async function ensureInvoiceRequestForOrder(order, requestedBy) {
     try {
@@ -796,7 +797,9 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     if(order.payment_type==='credit' && action==='approve_credit'){
       const risk=await getCreditPoolRisk(pool,order.credit_pool_id,{lockWhenExceeded:false}); const projected=Number(risk.outstanding_fen)+Number(order.amount_fen);
       if(risk.status!=='active' || projected>Number(risk.credit_limit_fen)){await pool.query(`UPDATE sales_credit_pools SET status='locked',lock_reason=$2,updated_at=NOW() WHERE id=$1`,[order.credit_pool_id,`订单 ${order.order_no} 审核后欠款将达${projected}分，超过授信${risk.credit_limit_fen}分`]);const u=await pool.query(`UPDATE sales_orders SET status='returned',return_reason='品牌欠款超过授信，已锁定，需总经理重新授信',finance_by=$2,finance_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING *`,[order.id,req.platformAdmin.username]);return res.status(409).json({ok:false,error:'credit_limit_exceeded',order:u.rows[0],risk:{...risk,projected_outstanding_fen:projected}});}
-      const u=await pool.query(`UPDATE sales_orders SET status='credit_approved',finance_by=$2,finance_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING *`,[order.id,req.platformAdmin.username]);await ensureInvoiceRequestForOrder(u.rows[0],req.platformAdmin.username);const provision=await provisionTenantFromOrder(pool,order.id,{startedBy:req.platformAdmin.username});return res.json({ok:true,order:u.rows[0],provision,credit_risk:await getCreditPoolRisk(pool,order.credit_pool_id)});
+      // 授信通过只是"允许赊账开通"，客户这时候还没有真的付钱，不该在这一步生成开票申请——
+      // 只有 confirm_paid(现金已收款) 才是真正"收到客人付款"的那一刻，见上面 ensureInvoiceRequestForOrder 的唯一调用点。
+      const u=await pool.query(`UPDATE sales_orders SET status='credit_approved',finance_by=$2,finance_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING *`,[order.id,req.platformAdmin.username]);const provision=await provisionTenantFromOrder(pool,order.id,{startedBy:req.platformAdmin.username});return res.json({ok:true,order:u.rows[0],provision,credit_risk:await getCreditPoolRisk(pool,order.credit_pool_id)});
     }
     return res.status(400).json({ok:false,error:'invalid_finance_action'});
   });
