@@ -1,11 +1,17 @@
-BEGIN;
-
 -- 共享单域名登录（server/tenant-login.js resolveExplicitTenantId +
 -- server/index.js lookupTenantIdByUsername）在客户端没有显式传 tenant_id 时，
 -- 靠查一次 users.username 找出所在租户，前提是 username 全局唯一——但当时的
 -- 约束是 UNIQUE(username, tenant_id)（按租户唯一），已经产生过真实冲突
 -- （两个不同租户各自注册了 adminxie）。业务方确认：tenant_wkzec7cxng（上海
 -- 年年有喜科技有限公司）继续用 adminxie；tenant_2wjavmfm0f 改名为 admin3。
+--
+-- users 表开了 FORCE RLS（tenant_id = current_setting('app.tenant_id') OR
+-- ...= '__system__'）。迁移脚本执行时不带任何会话租户身份，若不显式切到
+-- system 上下文，下面的 UPDATE/DO 块会被 RLS 静默过滤成 0 行生效（不报错，
+-- 只是什么也没改），实测就是这样导致后面 ALTER TABLE 撞见没被修复的重复值
+-- 才报错——所以必须先设置这一行。
+SELECT set_config('app.tenant_id', '__system__', true);
+
 UPDATE users
 SET username = 'admin3'
 WHERE tenant_id = 'tenant_2wjavmfm0f' AND lower(username) = 'adminxie';
@@ -46,5 +52,3 @@ END $$;
 
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key;
 ALTER TABLE users ADD CONSTRAINT users_username_key UNIQUE (username);
-
-COMMIT;
