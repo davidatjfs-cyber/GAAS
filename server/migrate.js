@@ -48,6 +48,12 @@ async function seedAdmin() {
     return;
   }
 
+  // users 表开了 FORCE RLS。这是独立的CLI脚本，不像应用服务器那样按请求
+  // 用中间件设置 app.tenant_id 会话变量——不显式切到 system 上下文的话，
+  // 下面的 SELECT 会被 RLS 过滤成看不到任何已有行，导致重复插入时又被
+  // INSERT 的 WITH CHECK 拦下报错（曾经在这台机器上实际触发过）。
+  await pool.query(`SELECT set_config('app.tenant_id', '__system__', false)`);
+
   const existing = await pool.query('select id from users where username = $1 limit 1', [username]);
   if ((existing.rows || []).length) {
     console.log('Admin already exists:', username);
