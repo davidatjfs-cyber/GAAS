@@ -21,7 +21,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { isAiQualityExternalEnabled, isExternalEnabled } from './safety.js';
+import { isAiQualityExternalEnabled, isExternalEnabled, isWebhookEnabled } from './safety.js';
 import crypto from 'crypto';
 import { 
   calculateStoreRating, 
@@ -11969,6 +11969,13 @@ export function registerAgentRoutes(app, authRequired) {
   // 这个是"平台全局应用"的固定地址，飞书自建应用一个应用只能配一个Request URL，所以外部租户
   // 自己的飞书应用必须配一个不同的URL——见下面的 /api/feishu/webhook/:tenantId。
   async function handleFeishuWebhookRequest(req, res, { encryptKey, verificationToken, tenantId }) {
+    // 飞书机器人事件回调实际由 agents-service-v2(独立进程/端口) 接收处理，这里默认关闭，
+    // 避免留一个没人维护、未鉴权就能调用的公网入口(风险面)。确认过nginx改指回GAAS再显式
+    // 设置 ENABLE_WEBHOOK=true 打开——跟同文件里 index.js 的另一个飞书webhook用同一个开关，
+    // 默认关闭时行为不变(生产环境本来就没设这个变量)。
+    if (!isWebhookEnabled()) {
+      return res.status(404).json({ ok: false, error: 'webhook_disabled' });
+    }
     try {
       const body = req.body;
       const rawBuf = Buffer.isBuffer(body)
