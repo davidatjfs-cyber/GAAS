@@ -62,14 +62,15 @@ const rows = [
   { brand_suffix: 'MAJIXIAN', slot: 'NEW8', template_code: 'SMS_509265150', sign_name: '马己仙', vars: ['date', 'code'],
     content: '马己仙大宁音乐广场店想你啦，为您预留一份百合酱蒸凤爪免费品鉴，请于${date}前到店报券码${code}使用,拒收请回复R' },
 
-  // 老的通用引擎直发路径 / 沉睡客召回现金券——这两个功能没有换新模板，只搬code过来，不知道正文
-  // 就不填content（content为空时跳过字数校验，不影响正常发送；后续要改这两个正文时务必补上content）
-  { brand_suffix: 'MAJIXIAN', slot: 'TEMPLATE', template_code: process.env.ALIYUN_SMS_TEMPLATE_MAJIXIAN || 'SMS_507400089' },
-  { brand_suffix: 'HONGCHAO', slot: 'TEMPLATE', template_code: process.env.ALIYUN_SMS_TEMPLATE_HONGCHAO || 'SMS_507130081' },
-  { brand_suffix: 'DEFAULT', slot: 'TEMPLATE', template_code: process.env.ALIYUN_SMS_TEMPLATE_DEFAULT || 'SMS_507400089' },
-  { brand_suffix: 'MAJIXIAN', slot: 'WINBACK_TEMPLATE', template_code: process.env.ALIYUN_SMS_WINBACK_TEMPLATE_MAJIXIAN || 'SMS_507205142' },
-  { brand_suffix: 'HONGCHAO', slot: 'WINBACK_TEMPLATE', template_code: process.env.ALIYUN_SMS_WINBACK_TEMPLATE_HONGCHAO || 'SMS_507240155' },
-  { brand_suffix: 'DEFAULT', slot: 'WINBACK_TEMPLATE', template_code: process.env.ALIYUN_SMS_WINBACK_TEMPLATE_DEFAULT || 'SMS_507205142' },
+  // 储值余额提醒（stored_value_remind规则，目前enabled=true、每天在跑，唯一还在用env兜底的功能）
+  { brand_suffix: 'DEFAULT', slot: 'BALANCE_TEMPLATE', template_code: 'SMS_507260262' },
+  { brand_suffix: 'HONGCHAO', slot: 'BALANCE_TEMPLATE', template_code: 'SMS_507290291' },
+  { brand_suffix: 'MAJIXIAN', slot: 'BALANCE_TEMPLATE', template_code: 'SMS_507260262' },
+
+  // 2026-07-21 已确认删除：TEMPLATE(老的通用引擎直发)、WINBACK_TEMPLATE(沉睡客召回现金券)
+  // 两个slot——核查 growth_touch_rules 发现当前enabled=true的15条sms规则全部带campaign_key，
+  // 会走ABC/CAMPAIGN_TYPES系统，不会落到这两个老路径；growth_campaign_jobs里kind='winback'
+  // 最后一条记录停在2026-06-05，已闲置超6周，确认是废弃功能。不要再把这两个slot加回来。
 ];
 
 async function main() {
