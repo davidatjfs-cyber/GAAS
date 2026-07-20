@@ -81,3 +81,49 @@ export async function sendAliyunSms(opts = {}) {
   }
   return { provider_msg_id: String(data?.BizId || data?.RequestId || ''), raw: data };
 }
+
+// 通用阿里云 dysmsapi RPC 调用（GET + HMAC-SHA1签名），供 sendAliyunSms 之外的只读查询复用
+// （如核对已报备模板真实正文用的 QuerySmsTemplate）。
+async function callAliyunRpc(action, extraParams = {}) {
+  const accessKeyId = String(process.env.ALIYUN_SMS_ACCESS_KEY_ID || '').trim();
+  const accessKeySecret = String(process.env.ALIYUN_SMS_ACCESS_KEY_SECRET || '').trim();
+  if (!accessKeyId || !accessKeySecret) throw new Error('missing_aliyun_sms_credentials');
+
+  const params = {
+    Action: action,
+    Version: '2017-05-25',
+    RegionId: 'cn-hangzhou',
+    Format: 'JSON',
+    SignatureMethod: 'HMAC-SHA1',
+    SignatureVersion: '1.0',
+    SignatureNonce: crypto.randomUUID(),
+    Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    AccessKeyId: accessKeyId,
+    ...extraParams
+  };
+  const canonical = Object.keys(params)
+    .sort()
+    .map((k) => `${percentEncode(k)}=${percentEncode(params[k])}`)
+    .join('&');
+  const stringToSign = `GET&${percentEncode('/')}&${percentEncode(canonical)}`;
+  const signature = crypto.createHmac('sha1', `${accessKeySecret}&`).update(stringToSign).digest('base64');
+  const url = `https://dysmsapi.aliyuncs.com/?Signature=${percentEncode(signature)}&${canonical}`;
+  const resp = await fetch(url, { method: 'GET' });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || String(data?.Code) !== 'OK') {
+    throw new Error(data?.Message || data?.Code || `aliyun_${action}_failed`);
+  }
+  return data;
+}
+
+// 查询阿里云已报备模板的真实审核状态+正文，用于核对DB/线上配置是否与阿里云后台一致
+// （见 growth-sms-reconcile.js）。TemplateStatus: 0=审核中 1=通过 2=未通过。
+export async function querySmsTemplate(templateCode) {
+  const data = await callAliyunRpc('QuerySmsTemplate', { TemplateCode: String(templateCode || '').trim() });
+  return {
+    template_code: String(data?.TemplateCode || ''),
+    content: String(data?.TemplateContent || ''),
+    status: Number(data?.TemplateStatus),
+    reason: String(data?.Reason || '')
+  };
+}

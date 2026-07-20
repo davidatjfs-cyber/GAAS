@@ -56,8 +56,9 @@ export function parseOccurredAt(value) {
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from './sms.js';
-import { getStoreSmsEnvSuffix, storeNameToId as _storeNameToIdFromConfig, STORE_ID_TO_NAME, STORES as _ALL_STORES } from './brands-config.js';
+import { storeNameToId as _storeNameToIdFromConfig, STORE_ID_TO_NAME, STORES as _ALL_STORES } from './brands-config.js';
 import { runForActiveTenants, tenantContext, resolveTenantIdDefault } from './utils/database.js';
+import { getSmsSlot, initSmsTemplatesCache } from './sms-templates.js';
 const _storeId = (brandName) => _ALL_STORES.find(s => s.brandName === brandName)?.storeId || '';
 
 // 订阅消息推送网关（方案B）：HRMS 自己没有小程序 access_token，发不了订阅消息，
@@ -1760,11 +1761,10 @@ function buildActionMessage(actionRow, payload) {
 }
 
 // 门店→已报备短信模板（每店一个独立模板，模板正文里写死了对应门店名，绝不能发错店）。
-// 模板 CODE 从环境变量读取；后缀映射在 brands-config.js 维护，增改门店不动此处代码。
+// 配置来源：sms_templates 表（DB优先，找不到才回退env）—— 见 sms-templates.js 顶部注释：
+// 改用DB是因为env改完必须重启进程才生效，曾导致改配置后仍继续发了几天旧模板而无人发现。
 function pickSmsTemplateByStore(storeId) {
-  const sfx = getStoreSmsEnvSuffix(storeId);
-  const def = String(process.env.ALIYUN_SMS_TEMPLATE_DEFAULT || '').trim();
-  return String(process.env[`ALIYUN_SMS_TEMPLATE_${sfx}`] || '').trim() || def;
+  return getSmsSlot({ storeId, slot: 'TEMPLATE' }).template_code;
 }
 
 // 门店→短信签名。2026-07 起 CAMPAIGN_TYPES/ABC 系列新模板按品牌分别报备了短签名
@@ -1773,25 +1773,18 @@ function pickSmsTemplateByStore(storeId) {
 // 传错签名会被阿里云判"签名与模板不匹配"整批拒收。仅供 /campaign/send-sms(ABC/CAMPAIGN_TYPES
 // 模板)使用；旧的通用引擎直发路径、winback_sms、储值提醒仍用全局默认签名，不受影响。
 export function pickCampaignSmsSign(storeId) {
-  const sfx = getStoreSmsEnvSuffix(storeId);
-  if (sfx === 'MAJIXIAN') return String(process.env.ALIYUN_SMS_SIGN_MAJIXIAN || '马己仙').trim();
-  if (sfx === 'HONGCHAO') return String(process.env.ALIYUN_SMS_SIGN_HONGCHAO || '上海连年由喜餐饮管理').trim();
-  return String(process.env.ALIYUN_SMS_SIGN_NAME || '').trim();
+  return getSmsSlot({ storeId, slot: 'SIGN' }).sign_name;
 }
 
 // 沉睡客召回券「现金抵用券」新模板（变量 name/value/date/code，含券码到店报码核销）。
 export function pickWinbackTemplateByStore(storeId) {
-  const sfx = getStoreSmsEnvSuffix(storeId);
-  const def = String(process.env.ALIYUN_SMS_WINBACK_TEMPLATE_DEFAULT || '').trim();
-  return String(process.env[`ALIYUN_SMS_WINBACK_TEMPLATE_${sfx}`] || '').trim() || def;
+  return getSmsSlot({ storeId, slot: 'WINBACK_TEMPLATE' }).template_code;
 }
 
 // 储值余额提醒模板（变量仅 balance；无券无码，提醒客人用余额+推荐菜促复购）。
 // 可被规则/任务里的 sms_template_code 覆盖。
 export function pickBalanceTemplateByStore(storeId) {
-  const sfx = getStoreSmsEnvSuffix(storeId);
-  const def = String(process.env.ALIYUN_SMS_BALANCE_TEMPLATE_DEFAULT || '').trim();
-  return String(process.env[`ALIYUN_SMS_BALANCE_TEMPLATE_${sfx}`] || '').trim() || def;
+  return getSmsSlot({ storeId, slot: 'BALANCE_TEMPLATE' }).template_code;
 }
 
 // 通用「营销发券一键发起」段配置。所有带券码段统一走召回任务管道：
@@ -1830,14 +1823,11 @@ export const CAMPAIGN_TYPES = {
   // 到店未买单潜客召回：扫码/陪客但从未下单，先券后菜促首单。走 ABC 轮换(复用 ABC 6模板，无新模板)。
   prospect_recall: { label: '到店未买单潜客召回', source: 'profiles', tplPrefix: 'PROSPECT', coupon_count: 1, vars: ['value', 'date', 'code'] },
 };
-// 按段+门店解析阿里云模板 code：ALIYUN_SMS_<PREFIX>_<MAJIXIAN|HONGCHAO|DEFAULT>
+// 按段+门店解析阿里云模板 code（slot = cfg.tplPrefix，即原来env变量的中间段）
 export function pickCampaignTemplate(campaignKey, storeId) {
   const cfg = CAMPAIGN_TYPES[campaignKey];
   if (!cfg) return '';
-  const pfx = cfg.tplPrefix;
-  const sfx = getStoreSmsEnvSuffix(storeId);
-  const def = String(process.env[`ALIYUN_SMS_${pfx}_DEFAULT`] || '').trim();
-  return String(process.env[`ALIYUN_SMS_${pfx}_${sfx}`] || '').trim() || def;
+  return getSmsSlot({ storeId, slot: cfg.tplPrefix }).template_code;
 }
 
 // 解析「天数」类环境变量：未配置(缺省/空串)用默认值；显式填 0 表示「关闭频控」。
@@ -1977,9 +1967,7 @@ const ABC_STEP_TPL_PREFIX = {
 export function pickAbcTemplate(step, storeId) {
   const pfx = ABC_STEP_TPL_PREFIX[step];
   if (!pfx) return '';
-  const sfx = getStoreSmsEnvSuffix(storeId);
-  const def = String(process.env[`ALIYUN_SMS_${pfx}_DEFAULT`] || '').trim();
-  return String(process.env[`ALIYUN_SMS_${pfx}_${sfx}`] || '').trim() || def;
+  return getSmsSlot({ storeId, slot: pfx }).template_code;
 }
 
 // 按"该手机号在本活动下累计成功发送次数"纯推导当前应发的模板步骤+降频阶梯天数。
@@ -3402,6 +3390,7 @@ export function buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, fre
 }
 
 export function registerGrowthRoutes(app, pool) {
+  initSmsTemplatesCache(pool);
   // 后台 worker：认领 pending 的储值余额提醒任务并由 HRMS 自身逐条下发(不经小程序)。
   // 每 30s 跑一次；同一时刻只处理一个任务，发送结果写 delivery_logs + marketing_triggered。
   async function processOneRemindJob() {
