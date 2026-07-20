@@ -30,8 +30,14 @@ export function createLoginRateLimiter(options = {}) {
       res.setHeader('Retry-After', String(Math.ceil(windowMs / 1000)));
       return res.status(429).json({ error: 'too_many_login_attempts', message: '登录尝试过于频繁，请稍后再试' });
     }
-    prev.push(now);
-    hits.set(key, prev);
+    // 只统计失败的登录尝试，避免同一账号被多台设备正常登录（如门店共用账号）时误触发限流
+    res.on('finish', () => {
+      if (res.statusCode === 401 || res.statusCode === 403) {
+        const list = (hits.get(key) || []).filter((t) => now - t < windowMs);
+        list.push(now);
+        hits.set(key, list);
+      }
+    });
     return next();
   };
 }
