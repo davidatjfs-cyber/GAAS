@@ -9,8 +9,8 @@ import { statfs } from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID, createDecipheriv, createHash } from 'crypto';
-import { getActiveTenantIds, tenantContext, resolveTenantIdDefault, runWithBootstrapTenantContext, runForActiveTenants } from './utils/database.js';
-import { createEmptyTenantState, resolveLoginTenantId } from './tenant-login.js';
+import { getActiveTenantIds, tenantContext, resolveTenantIdDefault, runWithBootstrapTenantContext, runForActiveTenants, runWithSystemTenantContext } from './utils/database.js';
+import { createEmptyTenantState, resolveExplicitTenantId } from './tenant-login.js';
 import {
   getTenantIntegrationSummary,
   saveTenantFeishuIntegration,
@@ -13763,12 +13763,31 @@ async function buildLoginUserPayload({ id, username, name, role, stateStore, per
   };
 }
 
+// Shared login domain has no subdomain/path to carry the tenant, so when the
+// client didn't send one explicitly, resolve it from the (globally-unique)
+// username instead. Unknown/not-found usernames fall back to 'default' so the
+// existing single-tenant behavior is unchanged for callers that never pass one.
+async function lookupTenantIdByUsername(username) {
+  try {
+    const r = await runWithSystemTenantContext(() =>
+      pool.query('select tenant_id from users where lower(username) = lower($1) limit 1', [username])
+    );
+    return String(r.rows?.[0]?.tenant_id || '').trim() || 'default';
+  } catch (e) {
+    return 'default';
+  }
+}
+
 async function handleLogin(req, res) {
   let tenantId;
   try {
-    tenantId = resolveLoginTenantId(req);
+    tenantId = resolveExplicitTenantId(req);
   } catch (e) {
     return res.status(400).json({ error: 'invalid_tenant_id' });
+  }
+  if (!tenantId) {
+    const username = String(req.body?.username || '').trim();
+    tenantId = username ? await lookupTenantIdByUsername(username) : 'default';
   }
   return tenantContext.run(tenantId, () => handleLoginInTenant(req, res, tenantId));
 }

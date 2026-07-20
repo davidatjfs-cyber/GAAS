@@ -1,24 +1,25 @@
 const TENANT_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 
 /**
- * Resolves an unauthenticated login to one tenant before identity data is read.
- * Legacy clients without a tenant id stay on the existing production tenant.
+ * Reads an explicitly-supplied tenant id off a login request (body or header).
+ * Returns null when the client didn't send one — callers should then resolve
+ * the tenant by looking up the username, since a single shared login domain
+ * (no per-tenant subdomain/path) has no other way to know which tenant a
+ * request belongs to.
  */
-export function resolveLoginTenantId(req = {}) {
-  const raw = String(
-    req?.body?.tenant_id
-      ?? req?.body?.tenantId
-      ?? req?.headers?.['x-tenant-id']
-      ?? req?.headers?.['X-Tenant-Id']
-      ?? 'default'
-  ).trim() || 'default';
+export function resolveExplicitTenantId(req = {}) {
+  const raw = req?.body?.tenant_id ?? req?.body?.tenantId
+    ?? req?.headers?.['x-tenant-id'] ?? req?.headers?.['X-Tenant-Id'];
+  if (raw == null) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
 
-  if (!TENANT_ID_RE.test(raw)) {
+  if (!TENANT_ID_RE.test(trimmed)) {
     const error = new Error('invalid_tenant_id');
     error.code = 'invalid_tenant_id';
     throw error;
   }
-  return raw;
+  return trimmed;
 }
 
 export function createEmptyTenantState({ tenantId, tenantName, adminUsername, adminName }) {
