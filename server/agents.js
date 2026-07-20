@@ -33,6 +33,7 @@ import {
 } from './agent-communication-system.js';
 import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js'
 import { getTenantAiModelConfig } from './tenant-integrations.js';
+import { getLarkTenantToken as getTenantLarkToken } from './feishu-messaging.js';
 import { verifyFeishuWebhookRequest, requireWebhookSignatureEnabled } from './utils/feishu-webhook-verify.js';
 import { getBrandConfigSync, getBrandForStoreSync, getAllBrandNamesSync } from './utils/brand-config-loader.js';
 import {
@@ -4854,35 +4855,21 @@ async function loadTableVisitMetricsByStore(store, startDate, endDate) {
 // 4. Feishu Client
 // ─────────────────────────────────────────────
 
-let _larkTenantToken = null;
-let _larkTenantTokenExpires = 0;
 let _bitableTenantTokens = new Map(); // 支持多个配置的 token
 
-// 获取飞书租户token
-async function getLarkTenantToken() {
-  // 检查缓存的token
-  if (_larkTenantToken && Date.now() < _larkTenantTokenExpires) {
-    return _larkTenantToken;
-  }
-  
-  try {
-    const resp = await axios.post('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-      app_id: LARK_APP_ID,
-      app_secret: LARK_APP_SECRET
-    }, { timeout: 10000 });
-    
-    const token = resp.data?.tenant_access_token || '';
-    const expires = Date.now() + (resp.data?.expire || 7000) * 1000;
-    
-    _larkTenantToken = token;
-    _larkTenantTokenExpires = expires;
-    
-    console.log('[feishu] tenant token refreshed, expires in', resp.data?.expire, 's');
-    return token;
-  } catch (e) {
-    console.error('[feishu] get tenant token failed:', e?.message);
-    return '';
-  }
+// 获取飞书租户token；tenantId 有独立配置的 feishu_bot(app_id/app_secret) 就用租户自己的应用身份，
+// 否则回退到平台全局 LARK_APP_ID/LARK_APP_SECRET（历史行为，向后兼容不传tenantId的调用方）
+async function getLarkTenantToken(tenantId) {
+  // 未显式传tenantId时，跟随当前 AsyncLocalStorage 租户上下文（跟RLS用的是同一套上下文），
+  // 这样绝大多数已经跑在 tenantContext.run(tenantId, ...) 里的业务调用（审批提醒/检查表提醒等）
+  // 不需要逐个调用点手动传tenantId也能自动按租户选择飞书应用；没有任何租户上下文时(或该租户未
+  // 配置feishu_bot)才回退到平台全局应用，行为与改造前一致。
+  return getTenantLarkToken(resolveTenantIdDefault(tenantId), {
+    pool: pool(),
+    encryptionKey: String(process.env.TENANT_INTEGRATION_ENCRYPTION_KEY || '').trim(),
+    globalAppId: LARK_APP_ID,
+    globalAppSecret: LARK_APP_SECRET
+  });
 }
 
 async function getBitableTenantToken(configKey = 'ops_checklist') {
@@ -7254,7 +7241,7 @@ export async function sendLarkMessage(openId, text, options = {}) {
     return { ok: true, deduplicated: true };
   }
 
-  const token = await getLarkTenantToken();
+  const token = await getLarkTenantToken(options.tenantId);
   if (!token) {
     console.error('[feishu] cannot send: no token');
     return { ok: false, error: 'no_token' };
@@ -7303,13 +7290,13 @@ export async function sendLarkMessage(openId, text, options = {}) {
 }
 
 // Send interactive card (rich message) to a user
-export async function sendLarkCard(openId, card) {
+export async function sendLarkCard(openId, card, options = {}) {
   try {
     deepSanitizeFeishuCardStrings(card, sanitizePerformanceZhText);
   } catch (e) {
     console.warn('[feishu] card sanitize skipped:', e?.message);
   }
-  const token = await getLarkTenantToken();
+  const token = await getLarkTenantToken(options.tenantId);
   if (!token) return { ok: false, error: 'no_token' };
 
   const deps = feishuOpenIdResolveDeps();

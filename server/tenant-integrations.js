@@ -87,6 +87,31 @@ export async function getTenantFeishuIntegration(db, tenantId, key) {
   return getTenantIntegrationConfig(db, tenantId, 'feishu_bitable', key, validateFeishuIntegrationConfig);
 }
 
+// feishu_bot: 租户自己飞书自建应用的 app_id/app_secret，用于消息机器人(sendLarkMessage/sendLarkCard)，
+// 与 feishu_bitable（多维表格同步用）是两个独立的应用/权限范围，分开存储。见 server/feishu-messaging.js。
+export function validateFeishuBotConfig(value) {
+  const config = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const app_id = String(config.app_id || '').trim();
+  const app_secret = String(config.app_secret || '').trim();
+  if (!app_id || !app_secret) throw new Error('invalid_feishu_bot_config');
+  return { app_id, app_secret };
+}
+
+export async function getTenantFeishuBotIntegration(db, tenantId, key) {
+  return getTenantIntegrationConfig(db, tenantId, 'feishu_bot', key, validateFeishuBotConfig);
+}
+
+export async function saveTenantFeishuBotIntegration(db, tenantId, config, key) {
+  return saveTenantIntegrationConfig(db, tenantId, 'feishu_bot', config, key, validateFeishuBotConfig);
+}
+
+export function feishuBotIntegrationPublicSummary(config) {
+  return {
+    configured: !!config,
+    app_id: config?.app_id ? `${config.app_id.slice(0, 6)}…` : '',
+  };
+}
+
 export async function saveTenantIntegrationConfig(db, tenantId, integrationKey, config, key, validate) {
   const normalized = typeof validate === 'function' ? validate(config) : config;
   const encrypted = encryptIntegrationConfig(normalized, key);

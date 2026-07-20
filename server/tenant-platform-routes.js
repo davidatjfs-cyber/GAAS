@@ -17,8 +17,12 @@ import {
   saveTenantIntegrationConfig,
   getTenantAiModelConfig,
   saveTenantAiModelConfig,
+  getTenantFeishuBotIntegration,
+  saveTenantFeishuBotIntegration,
+  feishuBotIntegrationPublicSummary,
 } from './tenant-integrations.js';
 import { clearAgentConfigCache } from './agent-config-manager.js';
+import { resetLarkTenantTokenCache } from './feishu-messaging.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1330,7 +1334,34 @@ export function registerTenantPlatformRoutes(app, deps) {
     }
   });
 
-  // 通用集成配置（飞书对话/小程序/定时任务覆盖）— 复用 tenant_integrations 表，按 integration_key 区分
+  // 租户自己的飞书消息机器人应用(app_id/app_secret)——用于 sendLarkMessage/sendLarkCard 按租户
+  // 使用各自的飞书自建应用身份发消息，而不是永远用平台全局 LARK_APP_ID。跟 feishu_bitable(多维表格
+  // 同步用)是两个独立配置。未配置时 getLarkTenantToken 回退到全局应用，兼容未做迁移的老租户。
+  app.get('/api/admin/tenants/:tenantId/integrations/feishu_bot', platformAdminRequired, async (req, res) => {
+    const tenantId = String(req.params.tenantId || '').trim();
+    try {
+      const key = requireTenantIntegrationKey();
+      const config = await tenantContext.run(tenantId, () => getTenantFeishuBotIntegration(pool, tenantId, key));
+      return res.json({ ok: true, integration: feishuBotIntegrationPublicSummary(config) });
+    } catch (e) {
+      return res.status(e?.statusCode || 500).json({ error: e?.message || 'internal_error' });
+    }
+  });
+
+  app.put('/api/admin/tenants/:tenantId/integrations/feishu_bot', platformAdminRequired, async (req, res) => {
+    const tenantId = String(req.params.tenantId || '').trim();
+    try {
+      const key = requireTenantIntegrationKey();
+      const saved = await tenantContext.run(tenantId, () => saveTenantFeishuBotIntegration(pool, tenantId, req.body || {}, key));
+      resetLarkTenantTokenCache(tenantId);
+      const config = await tenantContext.run(tenantId, () => getTenantFeishuBotIntegration(pool, tenantId, key));
+      return res.json({ ok: true, saved, integration: feishuBotIntegrationPublicSummary(config) });
+    } catch (e) {
+      return res.status(e?.statusCode || 500).json({ error: e?.message || 'internal_error' });
+    }
+  });
+
+  // 通用集成配置（飞书对话/定时任务覆盖）— 复用 tenant_integrations 表，按 integration_key 区分
   const GENERIC_INTEGRATION_KEYS = new Set(['feishu_chat', 'cron_overrides']);
 
   app.get('/api/admin/tenants/:tenantId/integrations/:integKey', platformAdminRequired, async (req, res) => {
