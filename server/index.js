@@ -3599,7 +3599,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
             await pool.query(
               `INSERT INTO users (username, password_hash, real_name, role, department, position, is_active, tenant_id)
                VALUES ($1, $2, $3, $4, $5, $6, true, $7)
-               ON CONFLICT (username, tenant_id) DO UPDATE
+               ON CONFLICT (username) DO UPDATE
                SET password_hash = EXCLUDED.password_hash,
                    real_name = EXCLUDED.real_name,
                    role = EXCLUDED.role,
@@ -14146,7 +14146,7 @@ app.post('/api/auth/login-as', authRequired, async (req, res) => {
         await pool.query(
           `INSERT INTO users (id, username, password_hash, real_name, role, is_active, tenant_id)
            VALUES ($1, $2, $3, $4, $5, TRUE, $6)
-           ON CONFLICT (username, tenant_id) DO UPDATE SET is_active = TRUE, password_hash = EXCLUDED.password_hash, updated_at = NOW()`,
+           ON CONFLICT (username) DO UPDATE SET is_active = TRUE, password_hash = EXCLUDED.password_hash, updated_at = NOW()`,
           [targetId, targetUsernameNorm, hash, finalName, finalRole, targetTenantId]
         );
       } catch (createErr) {

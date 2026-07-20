@@ -585,7 +585,18 @@ export function registerTenantPlatformRoutes(app, deps) {
         [tenantId, name, mode]
       );
       let createdAdmin = null;
-      const adminUsername = String(adminReq.username).trim();
+      const adminUsername = String(adminReq.username).trim().toLowerCase();
+      // username 现在是平台内全局唯一（见 migrations/145），共享单域名登录靠它
+      // 在没有租户提示时定位账号，所以这里要在建号前跨租户查重，而不是等
+      // 数据库唯一约束报错才发现。查重要临时切到system上下文，否则当前事务
+      // 的会话租户还是这个新租户，只能看见它自己的（还不存在的）用户。
+      await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [SYSTEM_TENANT_ID]);
+      const dupCheck = await client.query('SELECT 1 FROM users WHERE lower(username) = lower($1) LIMIT 1', [adminUsername]);
+      await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+      if (dupCheck.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'username_taken', message: `用户名 ${adminUsername} 已被占用（登录账号在平台内全局唯一），请更换后重试` });
+      }
       const hash = await bcrypt.hash(String(adminReq.password), 10);
       await client.query(
         `INSERT INTO users (id, username, password_hash, real_name, role, is_active, tenant_id)
@@ -676,6 +687,9 @@ export function registerTenantPlatformRoutes(app, deps) {
       });
     } catch (e) {
       await client.query('ROLLBACK');
+      if (e?.code === '23505' && String(e?.constraint || '').includes('username')) {
+        return res.status(409).json({ error: 'username_taken', message: '用户名已被占用（登录账号在平台内全局唯一），请更换后重试' });
+      }
       return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
     } finally {
       client.release();
