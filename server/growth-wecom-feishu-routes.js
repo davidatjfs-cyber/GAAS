@@ -121,10 +121,6 @@ export function registerGrowthWecomFeishuRoutes(app, pool) {
   });
 
   app.post('/api/growth/wecom/callback', async (req, res) => {
-    const config = await getWecomConfig(pool);
-    const configuredSecret = cleanText(config?.callback_secret || process.env.GROWTH_WECOM_CALLBACK_SECRET || '', 500);
-    const headerSecret = cleanText(req.headers['x-wecom-callback-secret'] || '', 500);
-    if (configuredSecret && headerSecret !== configuredSecret) return res.status(401).json({ ok: false, error: 'unauthorized' });
     const b = req.body || {};
     const providerMsgId = cleanText(b.provider_msg_id || b.msgid, 255);
     const eventType = cleanText(b.event_type || b.event || '', 80).toLowerCase();
@@ -132,6 +128,18 @@ export function registerGrowthWecomFeishuRoutes(app, pool) {
     const delivery = await pool.query(`SELECT * FROM growth_delivery_logs WHERE provider_msg_id = $1 ORDER BY created_at DESC LIMIT 1`, [providerMsgId]);
     const row = delivery.rows[0] || null;
     if (!row) return res.status(404).json({ ok: false, error: 'delivery_not_found' });
+
+    // 先查这条投递记录归属的门店有没有自己的回调密钥，没有才回退全局密钥——
+    // 跟发消息本身(store_wecom_configs按store_id/tenant_id隔离)保持一致，不再只认一把全局密钥。
+    const storeConfig = row.store_id ? await getStoreWecomConfig(pool, row.store_id) : null;
+    const globalConfig = await getWecomConfig(pool);
+    const configuredSecret = cleanText(
+      storeConfig?.callback_secret || globalConfig?.callback_secret || process.env.GROWTH_WECOM_CALLBACK_SECRET || '',
+      500
+    );
+    const headerSecret = cleanText(req.headers['x-wecom-callback-secret'] || '', 500);
+    if (configuredSecret && headerSecret !== configuredSecret) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
     const statusMap = { sent: 'sent', delivered: 'delivered', read: 'read', clicked: 'clicked', redeemed: 'redeemed' };
     const eventMap = {
       delivered: 'wecom_message_delivered',
@@ -187,16 +195,20 @@ export function registerGrowthWecomFeishuRoutes(app, pool) {
     const corpSecret = cleanText(b.corp_secret, 500);
     const agentId = cleanText(b.agent_id, 64);
     const senderUserId = cleanText(b.sender_userid, 128);
+    // 送达状态回调(消息已读/点击/核销)的校验密钥，跟corp_id/corp_secret一样按门店独立配置；
+    // 不填就沿用旧行为，/api/growth/wecom/callback 回退到全局 growth_wecom_config.callback_secret。
+    const callbackSecret = cleanText(b.callback_secret, 500);
     if (!storeId || !corpId || !corpSecret) return res.status(400).json({ ok: false, error: 'missing store_id/corp_id/corp_secret' });
     const tenantId = await resolveTenantIdForStore(pool, storeId);
     await pool.query(
-      `INSERT INTO store_wecom_configs (store_id, corp_id, corp_secret, agent_id, sender_userid, tenant_id)
-       VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO store_wecom_configs (store_id, corp_id, corp_secret, agent_id, sender_userid, callback_secret, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (store_id, tenant_id) DO UPDATE SET
          corp_id = EXCLUDED.corp_id, corp_secret = EXCLUDED.corp_secret,
          agent_id = EXCLUDED.agent_id, sender_userid = EXCLUDED.sender_userid,
+         callback_secret = COALESCE(NULLIF(EXCLUDED.callback_secret, ''), store_wecom_configs.callback_secret),
          updated_at = NOW()`,
-      [storeId, corpId, corpSecret, agentId, senderUserId, tenantId]
+      [storeId, corpId, corpSecret, agentId, senderUserId, callbackSecret, tenantId]
     );
     clearStoreWecomTokenCache(storeId);
     return res.json({ ok: true });
