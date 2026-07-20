@@ -72,8 +72,10 @@ export function getSmsSlot({ tenantId = 'default', storeId = '', slot }) {
   return { ...envFallback(slot, suffix), vars: [], source: 'env' };
 }
 
-// 阿里云单条短信上限70字，超过会被拆成多条计费/部分平台直接拒收。留3字安全边际。
-export const SMS_CHAR_LIMIT = 67;
+// 阿里云单条短信上限70字（含签名），超过会被拆成多条计费/部分平台直接拒收。
+// 注意：现网已报备在用的多条真实模板长度就卡在68~70字（如洪潮ABC系列），
+// 阈值只能设成70本身，不能再收紧——收紧会把已经通过阿里云审核、正在用的合法模板挡在外面。
+export const SMS_CHAR_LIMIT = 70;
 
 // 签名+正文按示例值替换变量后的可读字数（管理端保存模板时用来拦截超字数模板）。
 export function computeSmsCharLen(content, signName, sampleValues = {}) {
