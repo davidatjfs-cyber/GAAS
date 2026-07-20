@@ -1768,14 +1768,14 @@ function pickSmsTemplateByStore(storeId) {
 }
 
 // 门店→短信签名。2026-07 起 CAMPAIGN_TYPES/ABC 系列新模板按品牌分别报备了短签名
-// (马己仙店签"马己仙"/洪潮店签"连年由喜餐饮")，与旧模板复用的公司名签名
+// (马己仙店签"马己仙"/洪潮店2026-07-13起改签"上海连年由喜餐饮管理")，与旧模板复用的公司名签名
 // (ALIYUN_SMS_SIGN_NAME="上海连年由喜餐饮管理有限")不是同一个，必须按模板类型各自传参，
 // 传错签名会被阿里云判"签名与模板不匹配"整批拒收。仅供 /campaign/send-sms(ABC/CAMPAIGN_TYPES
 // 模板)使用；旧的通用引擎直发路径、winback_sms、储值提醒仍用全局默认签名，不受影响。
 export function pickCampaignSmsSign(storeId) {
   const sfx = getStoreSmsEnvSuffix(storeId);
   if (sfx === 'MAJIXIAN') return String(process.env.ALIYUN_SMS_SIGN_MAJIXIAN || '马己仙').trim();
-  if (sfx === 'HONGCHAO') return String(process.env.ALIYUN_SMS_SIGN_HONGCHAO || '连年由喜餐饮').trim();
+  if (sfx === 'HONGCHAO') return String(process.env.ALIYUN_SMS_SIGN_HONGCHAO || '上海连年由喜餐饮管理').trim();
   return String(process.env.ALIYUN_SMS_SIGN_NAME || '').trim();
 }
 
