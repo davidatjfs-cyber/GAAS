@@ -4,9 +4,15 @@ BEGIN;
 -- server/index.js lookupTenantIdByUsername）在客户端没有显式传 tenant_id 时，
 -- 靠查一次 users.username 找出所在租户，前提是 username 全局唯一——但当时的
 -- 约束是 UNIQUE(username, tenant_id)（按租户唯一），已经产生过真实冲突
--- （两个不同租户各自注册了 adminxie）。这里先把已存在的冲突自动改名解决
--- （保留创建时间最早的账号用原用户名，其余的加租户后缀），再收紧约束为
--- 全局唯一，避免以后再出现同名账号导致登录被路由到错误租户。
+-- （两个不同租户各自注册了 adminxie）。业务方确认：tenant_wkzec7cxng（上海
+-- 年年有喜科技有限公司）继续用 adminxie；tenant_2wjavmfm0f 改名为 admin3。
+UPDATE users
+SET username = 'admin3'
+WHERE tenant_id = 'tenant_2wjavmfm0f' AND lower(username) = 'adminxie';
+
+-- 安全网：处理上面这条已知冲突之外，未预料到的其它重名（保留创建时间最早
+-- 的账号用原用户名，其余的加租户后缀），确保这条迁移在任何环境都能把
+-- username 收紧成全局唯一，而不只是修复这一次审计发现的这一对。
 DO $$
 DECLARE
   dup RECORD;
