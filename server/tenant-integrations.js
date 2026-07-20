@@ -94,7 +94,15 @@ export function validateFeishuBotConfig(value) {
   const app_id = String(config.app_id || '').trim();
   const app_secret = String(config.app_secret || '').trim();
   if (!app_id || !app_secret) throw new Error('invalid_feishu_bot_config');
-  return { app_id, app_secret };
+  // encrypt_key/verification_token 是可选的：只有租户需要接收入站事件（机器人回复、审批卡片
+  // 点击回调）时才需要配置，仅用来主动发消息(sendLarkMessage/sendLarkCard)可以不填。
+  // 对应飞书开发者后台"事件订阅"里的 Encrypt Key / Verification Token。
+  return {
+    app_id,
+    app_secret,
+    encrypt_key: String(config.encrypt_key || '').trim(),
+    verification_token: String(config.verification_token || '').trim(),
+  };
 }
 
 export async function getTenantFeishuBotIntegration(db, tenantId, key) {
