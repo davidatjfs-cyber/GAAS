@@ -12447,6 +12447,16 @@ async function authRequiredOrQueryToken(req, res, next) {
   }
 }
 
+// users 表 role 列有 CHECK 约束，只允许 admin/hq_manager/store_manager/hq_employee/store_employee 5种，
+// normalizeRoleForJwt() 的输出可能是 cashier/hr_manager 等更细的角色（登录时另外从 hrms_state 同步真实权限），
+// 写 users 表时需要先收窄到约束允许的范围，避免 INSERT 因 CHECK 失败。
+function normalizeUsersTableRole(input) {
+  const jwtRole = normalizeRoleForJwt(input);
+  const allowed = ['admin', 'hq_manager', 'store_manager', 'hq_employee', 'store_employee'];
+  if (allowed.includes(jwtRole)) return jwtRole;
+  return 'store_employee';
+}
+
 function normalizeRoleForJwt(input) {
   const v = String(input || '').trim();
   if (!v) return 'store_employee';
@@ -13917,6 +13927,22 @@ async function handleLoginInTenant(req, res, tenantId) {
         const pwd = String(found.password || '');
         if (pwd !== password) return res.status(401).json({ error: 'invalid_credentials' });
 
+        // C4-FIX: 明文登录成功的这一刻，顺手把该用户迁移到 users 表（bcrypt），
+        // 之后这个用户会走上面的 DATABASE_URL 分支，不再经过明文比对。失败不影响本次登录。
+        try {
+          const migrateHash = await bcrypt.hash(password, 10);
+          const migrateRole = normalizeUsersTableRole(found.role);
+          const migrateRealName = String(found.name || found.real_name || found.realName || username);
+          await pool.query(
+            `insert into users (username, password_hash, real_name, role, is_active, tenant_id)
+             values ($1, $2, $3, $4, true, $5)
+             on conflict (username) do nothing`,
+            [username, migrateHash, migrateRealName, migrateRole, tenantId]
+          );
+        } catch (migrateErr) {
+          console.log('[password-migrate] login-time migration failed (non-fatal):', migrateErr?.message);
+        }
+
         const role = normalizeRoleForJwt(found.role);
         const canonicalUsername = String(found.username || '').trim() || username;
         const id = String(found.id || canonicalUsername);
@@ -14060,27 +14086,20 @@ app.post('/api/auth/change-password', authRequired, async (req, res) => {
     );
     const row = dbUser.rows?.[0] || null;
 
-    let state = (await getSharedState(tenantId)) || {};
-    const users = Array.isArray(state.users) ? state.users.slice() : [];
-    const employees = Array.isArray(state.employees) ? state.employees.slice() : [];
-
     if (row) {
       const ok = await bcrypt.compare(oldPassword, String(row.password_hash || ''));
       if (!ok) return res.status(400).json({ error: 'old_password_invalid', message: '原密码不正确' });
       const hash = await bcrypt.hash(newPassword, 10);
       await pool.query('update users set password_hash = $2 where id = $1 and tenant_id = $3', [row.id, hash, tenantId]);
-
-      const upd = (arr) => arr.map(it =>
-        String(it?.username || '').trim().toLowerCase() === String(username).toLowerCase()
-          ? { ...it, password: newPassword }
-          : it
-      );
-      state = { ...state, users: upd(users), employees: upd(employees) };
-      await saveSharedState(state, tenantId);
+      // C4-FIX: 不再把新密码明文写回 hrms_state（此前会导致每次改密码都产生一份新的明文密码）
       return res.json({ ok: true, mode: 'db' });
     }
 
-    // Fallback mode: shared-state users/employees
+    // Fallback mode: 用户还没进 users 表，仍用 hrms_state 校验旧密码，
+    // 但改密码这一刻起就把该用户迁移到 users 表（bcrypt），不再写明文。
+    const state = (await getSharedState(tenantId)) || {};
+    const users = Array.isArray(state.users) ? state.users : [];
+    const employees = Array.isArray(state.employees) ? state.employees : [];
     const all = employees.concat(users);
     const found = all.find(u => String(u?.username || '').trim().toLowerCase() === String(username).toLowerCase());
     if (!found) return res.status(404).json({ error: 'not_found' });
@@ -14088,14 +14107,16 @@ app.post('/api/auth/change-password', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'old_password_invalid', message: '原密码不正确' });
     }
 
-    const upd = (arr) => arr.map(it =>
-      String(it?.username || '').trim().toLowerCase() === String(username).toLowerCase()
-        ? { ...it, password: newPassword }
-        : it
+    const hash = await bcrypt.hash(newPassword, 10);
+    const role = normalizeUsersTableRole(found.role);
+    const realName = String(found.name || found.real_name || found.realName || username);
+    await pool.query(
+      `insert into users (username, password_hash, real_name, role, is_active, tenant_id)
+       values ($1, $2, $3, $4, true, $5)
+       on conflict (username) do update set password_hash = excluded.password_hash`,
+      [username, hash, realName, role, tenantId]
     );
-    state = { ...state, users: upd(users), employees: upd(employees) };
-    await saveSharedState(state, tenantId);
-    return res.json({ ok: true, mode: 'state' });
+    return res.json({ ok: true, mode: 'state_migrated' });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
   }
