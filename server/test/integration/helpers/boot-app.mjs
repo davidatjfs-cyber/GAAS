@@ -28,7 +28,10 @@ export async function bootApp(envOverrides = {}, attempt = 0) {
     APP_ENV: 'test',
     PORT: String(port),
     HOST: '127.0.0.1',
-    DATABASE_URL: process.env.TEST_DATABASE_URL || 'postgres://' + (process.env.USER || 'postgres') + '@localhost:5432/gaas_test',
+    // 被测应用必须用非superuser角色连接——本地起的测试库默认连接用户是superuser，
+    // Postgres里superuser天生bypass RLS(不管表有没有FORCE ROW LEVEL SECURITY)，
+    // 如果应用也用superuser连接，多租户隔离测试会"看起来通过"但其实什么都没测到。
+    DATABASE_URL: process.env.TEST_APP_DATABASE_URL || 'postgres://gaas_app_test:gaas_app_test_pw@localhost:5432/gaas_test',
     JWT_SECRET: 'test-jwt-secret-not-for-production-use-only-in-tests',
     // 测试环境不允许自动建表/改schema（和生产一致的安全策略），schema由migrate.js预先跑好
     ALLOW_SCHEMA_CHANGES: 'false',
@@ -71,7 +74,10 @@ export async function bootApp(envOverrides = {}, attempt = 0) {
   return { baseUrl, stop, logs };
 }
 
-async function waitForHealthy(baseUrl, child, logs, timeoutMs = 15000) {
+async function waitForHealthy(baseUrl, child, logs, timeoutMs = 45000) {
+  // 用非superuser角色连接时，几个模块的schema-ensure调用会因权限不足报错(被捕获、非致命，
+  // 生产环境用的应用角色大概率也没有这些表的owner权限，这是真实场景，不是测试环境的假象)，
+  // 导致启动比superuser下慢很多(实测约20s)，超时要留够余量。
   const deadline = Date.now() + timeoutMs;
   let lastErr = null;
   while (Date.now() < deadline) {
