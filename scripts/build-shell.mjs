@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 // 第二层缓存方案：把 working-fixed.html 里的主 CSS / 主 JS 抽成内容哈希命名的外链文件。
 // 文件名带 sha256 短哈希 + nginx immutable 头 => 内容不变永不重下，内容变了文件名变 => 自动失效。
-// 零依赖。源文件 working-fixed.html 始终是唯一真源；本脚本只生成 dist/ 产物用于部署。
+// JS 真源在 frontend/src/pages/；先 bundle 进 working-fixed.html，再抽 shell。
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const SRC = join(ROOT, 'working-fixed.html');
 const DIST = join(ROOT, 'dist');
+
+// 先把 frontend/src/pages 拼回 working-fixed.html 主 script（物理切分源）。
+execFileSync(process.execPath, [join(__dirname, 'bundle-frontend.mjs')], { stdio: 'inherit' });
 
 const STYLE_OPEN = '\n    <style>\n';
 const STYLE_CLOSE = '\n    </style>\n';
@@ -43,29 +47,23 @@ const jsHash = hash8(js.inner);
 const cssName = `app.${cssHash}.css`;
 const jsName = `app.${jsHash}.js`;
 
-// 构造 shell：CSS 块换成外链 <link>，JS 块换成外链 <script src>，保持原缩进与前后换行不变，
-// 这样 <script> 在文档中的位置（含其后的尾部 HTML）和执行时机与原内联完全一致。
 let shell =
   html.slice(0, css.openIdx) +
   `\n    <link rel="stylesheet" href="/${cssName}">\n` +
   html.slice(css.closeIdx + STYLE_CLOSE.length);
 
-// 重新计算 JS 锚点在新 shell 里的位置（CSS 替换会改变偏移）。
 const js2 = extractUnique(shell, SCRIPT_OPEN, SCRIPT_CLOSE, 'JS(after css replace)');
 shell =
   shell.slice(0, js2.openIdx) +
   `\n    <script src="/${jsName}"></script>\n` +
   shell.slice(js2.closeIdx + SCRIPT_CLOSE.length);
 
-// 清理旧产物并写入。
 rmSync(DIST, { recursive: true, force: true });
 mkdirSync(DIST, { recursive: true });
 writeFileSync(join(DIST, cssName), css.inner);
 writeFileSync(join(DIST, jsName), js.inner);
 writeFileSync(join(DIST, 'working-fixed.html'), shell);
 
-// 语法自检：抽出来的 JS 必须能通过 node --check。
-import { execFileSync } from 'node:child_process';
 try {
   execFileSync(process.execPath, ['--check', join(DIST, jsName)], { stdio: 'pipe' });
 } catch (e) {

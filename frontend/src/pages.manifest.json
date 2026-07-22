@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "parts": [
+    {
+      "file": "01-boot.js",
+      "start": 1,
+      "end": 4959,
+      "lines": 4959
+    },
+    {
+      "file": "02-confirm-role-modules.js",
+      "start": 4960,
+      "end": 7682,
+      "lines": 2723
+    },
+    {
+      "file": "03-training-focus.js",
+      "start": 7683,
+      "end": 13065,
+      "lines": 5383
+    },
+    {
+      "file": "04-knowledge-ai.js",
+      "start": 13066,
+      "end": 13504,
+      "lines": 439
+    },
+    {
+      "file": "05-agents.js",
+      "start": 13505,
+      "end": 15265,
+      "lines": 1761
+    },
+    {
+      "file": "06-flashcards.js",
+      "start": 15266,
+      "end": 15881,
+      "lines": 616
+    },
+    {
+      "file": "07-promotion.js",
+      "start": 15882,
+      "end": 20129,
+      "lines": 4248
+    },
+    {
+      "file": "08-materials-tasks.js",
+      "start": 20130,
+      "end": 25411,
+      "lines": 5282
+    },
+    {
+      "file": "09-resignation.js",
+      "start": 25412,
+      "end": 28147,
+      "lines": 2736
+    },
+    {
+      "file": "10-daily-report-hr.js",
+      "start": 28148,
+      "end": 32508,
+      "lines": 4361
+    },
+    {
+      "file": "11-rewards-permissions.js",
+      "start": 32509,
+      "end": 34549,
+      "lines": 2041
+    },
+    {
+      "file": "12-files.js",
+      "start": 34550,
+      "end": 36214,
+      "lines": 1665
+    },
+    {
+      "file": "13-growth.js",
+      "start": 36215,
+      "end": 39918,
+      "lines": 3704
+    },
+    {
+      "file": "14-subscription-and-tail.js",
+      "start": 39919,
+      "end": 44315,
+      "lines": 4397
+    }
+  ],
+  "sourceSha256": "585f2bc404f7a37f5a500e75f7b8b366177dd5b5401c9f66ddb89bcef71194a8",
+  "sourceLines": 44315
+}

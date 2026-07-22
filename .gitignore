@@ -21,3 +21,4 @@ npm-debug.log*
 server/uploads/*
 !server/uploads/.gitkeep
 dist/*
+frontend/src/.bundle-check.js

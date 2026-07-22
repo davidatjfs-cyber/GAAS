@@ -161,23 +161,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 这条连接本身有时会话间歇性变慢/断开（`Connection closed`/`timed out during banner exchange`），属于正常波动，
   遇到就用更长的 `ConnectTimeout` 重试、把大批量文件传输拆成小批次，不代表命令或凭据有问题。
 
-### 前端缓存方案：working-fixed.html 是源，生产跑的是构建产物 shell（别直接 scp 源文件）
+### 前端缓存方案：JS 真源在 `frontend/src/pages/`，`npm run build:shell` 部署
 
-仓库里的 `working-fixed.html` 是**唯一真源**（内联大 CSS/JS，~3.3MB）。生产 `/opt/hrms/working-fixed.html`
-跑的是构建脚本生成的 **shell**（~600KB，大 CSS/JS 抽成 `/app.<hash>.css`、`/app.<hash>.js` 外链）。
-两者**故意不同源**——这是缓存优化，不是"被覆盖错了"。
-
-**改动前端后重新部署步骤：**
-1. 改源文件 `working-fixed.html`。
-2. `node scripts/build-shell.mjs` → 生成 `dist/`（已 gitignore）。
-3. 先传两个哈希资源再传 shell（顺序很重要，先有资源再换 shell，否则瞬间 404）：
-   `scp dist/app.*.css dist/app.*.js root@47.100.96.30:/opt/hrms/`，
-   再 `scp dist/working-fixed.html root@…:/opt/hrms/working-fixed.html.staged && ssh … "mv … working-fixed.html"`。
-4. 验证：shell 返回 `Cache-Control: no-cache`+ETag（`If-None-Match` 应回 304）；`app.<hash>.js/.css`
-   返回 `Cache-Control: public, max-age=31536000, immutable`。
-   `curl -sk -D - https://127.0.0.1/working-fixed.html -H "Host: nnyx.cc"`。
-5. nginx 已加 `location ~* "^/app\.[0-9a-f]+\.(js|css)$"`（immutable）+ 首个 `.html` 块改 `no-cache`，
-   通常无需再动 nginx；若动了先 `nginx -t` 再 `systemctl reload nginx`，改前备份配置。
-   注意 server_name 是 **nnyx.cc**（不是 hrms.nnyx.cc），80 端口 301 跳 443。
+- 改业务 JS → 改 `frontend/src/pages/*.js` → `npm run build:shell` → 先 scp `app.*.js/css` 再换 shell。
+- 不要直接编辑 `working-fixed.html` 内联主 `<script>`（由 `bundle-frontend.mjs` 写回）。
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

@@ -41,7 +41,9 @@ export const STATE_PUT_WHITELIST = Object.freeze([
 
 /**
  * 服务端权威字段（禁止 PUT 覆盖）。有独立 API 或由 mergeSharedStateFields / 审批终审写入。
- * 文档/审计用；运行时靠「不在白名单」生效。
+ * 2026-07 Week2-3：pointRecords → point_records 表；
+ * payrollAdjustments / salaryAdjustments / monthlyConfirmations → hrms_payroll_domain。
+ * GET /api/state 会用表覆盖这些镜像字段。运行时靠「不在白名单」生效。
  */
 export const STATE_PUT_SERVER_OWNED = Object.freeze([
   'roleModules',

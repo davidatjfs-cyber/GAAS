@@ -14,6 +14,8 @@ import { createEmptyTenantState, resolveExplicitTenantId } from './tenant-login.
 import { registerAuthRoutes } from './auth-routes.js';
 import { registerApprovalRoutes } from './approval-routes.js';
 import { applyStatePutWhitelist } from './hrms-state-put.js';
+import { registerPayrollDomainRoutes } from './domains/payroll/routes.js';
+import { hydrateStateFromAuthoritativeTables } from './domains/payroll/service.js';
 import {
   getTenantIntegrationSummary,
   saveTenantFeishuIntegration,
@@ -12501,10 +12503,12 @@ app.get('/api/state', authRequired, async (req, res) => {
         console.error('[state] Failed to persist repaired state:', saveErr?.message || saveErr);
       }
     }
+    // 积分/薪资以表为权威，覆盖 state 镜像，避免前端读到陈旧 localStorage 同步后的脏数据
+    const hydrated = await hydrateStateFromAuthoritativeTables(pool, repaired, tenantIdQ);
     const role = String(req.user?.role || '').trim();
     const uname = String(req.user?.username || '').trim();
-    let payload = stripPasswordFieldsFromStateForClient(repaired, role);
-    payload = await applyStatePeopleVisibilityForRole(payload, role, uname, repaired, req.user?.current_store);
+    let payload = stripPasswordFieldsFromStateForClient(hydrated, role);
+    payload = await applyStatePeopleVisibilityForRole(payload, role, uname, hydrated, req.user?.current_store);
     return res.json({ data: payload });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
@@ -14639,6 +14643,11 @@ registerApprovalRoutes(app, authRequired, {
   normalizeApprovalType,
   safeDateOnly,
   scheduleLeaveDomainSync,
+});
+
+registerPayrollDomainRoutes(app, authRequired, {
+  pool,
+  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
 });
 
 registerAgentRoutes(app, authRequired);
