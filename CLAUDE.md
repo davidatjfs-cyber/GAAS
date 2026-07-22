@@ -71,8 +71,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 姊妹项目 **agents-service-v2**（Agent 服务，增长诊断/自动化任务/飞书集成）现独立仓库：
 `davidatjfs-cyber/agents-service-v2`，本地建议放在 `/Users/xieding/agents-service-v2`。
 两个服务通过 HTTP（`http://127.0.0.1:3101/health` 等）和同一个 Postgres 库互相协作，
-**代码层面没有相互 import**，可以独立开发部署，但改动会互相影响的场景（共享表结构、
-共享密钥）要留意通知对方。
+**代码层面没有相互 import**，但**共享同一 Postgres = 进程级耦合**（distributed monolith）：
+任何一边改共享表列语义，另一边可能静默出错。不要说「可独立开发部署」——
+部署进程可分开，**改共享表 / 共享密钥 / 指标口径必须双边通知**，并遵守下方「共享表唯一写入方」矩阵。
 
 ## 6. Deployment & Server Info
 
@@ -136,20 +137,36 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 `server/index.js`（~1.8万行）、`server/agents.js`（~1.35万行）、`working-fixed.html`（~6.8万行）已经是巨石文件，
 2026-07 审计后的结论是**现在不拆存量代码**（拆分本身的重构风险，此时高于收益），但纪律是**不能再让它们变得更胖**：
 
-- **新增 API 路由**：一律新建/复用 `server/growth-*.js`、`server/ontology/*.js`、`server/sales-*.js` 这类独立模块文件，
-  写好 `registerXxxRoutes(app, pool, ...)` 导出函数，只在 `index.js` 里加两行（`import` + 调用注册函数）。
-  参考现有写法：`registerBenchmarkRoutes`、`registerDataTrustRoutes`、`registerGrowthActionsRoutes` 等。
-- **新增业务逻辑/计算函数**：放进对应领域的独立文件（如 `server/ontology/xxx-service.js`、
-  `server/services/sales/xxx.js`），不要直接写进 `index.js`/`agents.js` 函数体里。
+- **新增 API 路由（升级后）**：禁止再造「2000 行 `registerXxxRoutes` 闭包」。新域放
+  `server/domains/<域>/`（或复用已有 `ontology/`、`services/`），拆成：
+  - `routes.js`：只做路由绑定与参数校验，**每个 handler ≤ 30 行**，不写业务逻辑；
+  - `service.js`：纯逻辑，导出函数，**不接触 `req`/`res`**，可直接单测。
+  `index.js` 只加两行（`import` + 注册）。存量 `registerXxxRoutes` 不动；改到某文件时按新形态外提。
+- **`server/` 根目录**：只允许入口/遗留模块；**新文件必须进 `domains/<域>/`、`ontology/`、`services/` 等分层目录**，禁止继续平铺。
 - **`index.js`/`agents.js` 本体只允许的改动**：注册新模块的 `import` + 调用那两行、修复本体内已有代码的 bug、
-  给已有函数补充极少量必要的调用点（比如这次把 `getBenchmarkForStore`/`recordDataQuality` 接进
-  `diagnosis-tree-service.js` 而不是 `index.js`，就是正确做法的例子）。
-- **`working-fixed.html`同理**：新的大块UI逻辑优先考虑能不能做成独立的可复用组件/模块文件，如果技术上暂时做不到
-  完全拆分（前端历史包袱重），至少不要把新功能的辅助函数/常量堆到已经很长的同一个 `<script>` 块顶部，
-  尽量放在靠近该功能实际使用位置的地方，方便以后真正拆分时能整块搬走。
+  给已有函数补充极少量必要的调用点。
+- **`working-fixed.html`同理**：新的大块 UI 逻辑优先独立模块；至少不要堆到同一个超长 `<script>` 顶部。
+- **`PUT /api/state`**：已改为**白名单写入**（`server/hrms-state-put.js`）。新业务事实字段禁止靠扩大白名单偷懒；
+  应落真表 + 窄 API，并从白名单删除。配置类（如 `settings`）可留 state。
 
 违反这条纪律的表现：`git diff --stat` 里 `index.js`/`agents.js` 一次改动新增几十上百行"新逻辑"（不是"新增两行注册"），
-这就是信号，应该先停下来问"这段该不该单独建个文件"。
+或新增又一个 >500 行的 `registerXxxRoutes` 闭包——应停下来按 routes/service 拆。
+
+### ⚠️ 共享表唯一写入方（GAAS ↔ agents-service-v2）
+
+两边直连同一库。改 schema 以 **GAAS `server/migrations/`** 为权威；agents-service-v2 **不要**再为共享表自建 migration。
+另一方若要写，必须走 HTTP，禁止静默双边写。
+
+| 表 | 唯一写入方 | 另一方 |
+|----|------------|--------|
+| `master_tasks` | agents-service-v2 | GAAS 只读（或经 HTTP） |
+| `feishu_users` / `feishu_generic_records` | agents-service-v2（飞书同步） | GAAS 读；注册状态等经既有 API |
+| `agent_messages` / `agent_scores` / `knowledge_base` | agents-service-v2 | GAAS 读或经 HTTP |
+| `daily_reports` | GAAS | agents 只读 |
+| `hrms_state` | GAAS | agents 只读（配置/员工镜像） |
+| `pos_order_items` / `pos_sales_detail` | GAAS（导入） | agents 只读 |
+| `tenants` / `tenant_integrations` | GAAS | agents 读配置 |
+| `schema_migrations` | GAAS `migrate.js` | agents 禁止并行建共享表 |
 
 **2026-07 追加：什么时候可以拆存量代码，以及怎么安全拆**——"现在不拆存量代码"不等于"永远不拆"。
 2026-07-22 已经从 `index.js` 拆出过 `auth-routes.js`（登录/鉴权，~550行）和 `approval-routes.js`

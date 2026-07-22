@@ -71,8 +71,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 姊妹项目 **agents-service-v2**（Agent 服务，增长诊断/自动化任务/飞书集成）现独立仓库：
 `davidatjfs-cyber/agents-service-v2`，本地建议放在 `/Users/xieding/agents-service-v2`。
 两个服务通过 HTTP（`http://127.0.0.1:3101/health` 等）和同一个 Postgres 库互相协作，
-**代码层面没有相互 import**，可以独立开发部署，但改动会互相影响的场景（共享表结构、
-共享密钥）要留意通知对方。
+**代码层面没有相互 import**，但**共享同一 Postgres = 进程级耦合**（distributed monolith）：
+任何一边改共享表列语义，另一边可能静默出错。不要说「可独立开发部署」——
+部署进程可分开，**改共享表 / 共享密钥 / 指标口径必须双边通知**，并遵守下方「共享表唯一写入方」矩阵。
 
 ## 6. Deployment & Server Info
 
@@ -128,6 +129,26 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **协作方式**：所有代码改动一律先在本仓库（GAAS）完成、验证，之后才会被同步到 GAAS-demo。
   这意味着本仓库里任何"为多租户设计"的代码（`tenant_id` 字段、`tenantContext`、`wrapPoolForTenantContext` 等）
   要保留、要写对，但**不要在本仓库里主动执行"开启 RLS"这类操作**——那是 GAAS-demo 那边的事。
+
+### ⚠️ 巨石文件纪律（2026-07 升级）
+
+- **现在不拆** `index.js` / `agents.js` / `working-fixed.html` 存量；禁止再往里堆新功能。
+- **新 API**：`server/domains/<域>/routes.js`（handler ≤30 行）+ `service.js`（纯逻辑、不碰 req/res）；
+  禁止再造 2000 行 `registerXxxRoutes` 闭包。`server/` 根目录禁止继续平铺新文件。
+- **`PUT /api/state`**：白名单写入（`server/hrms-state-put.js`）；业务事实落表后从白名单删除。
+
+### ⚠️ 共享表唯一写入方（GAAS ↔ agents-service-v2）
+
+| 表 | 唯一写入方 | 另一方 |
+|----|------------|--------|
+| `master_tasks` | agents-service-v2 | GAAS 只读（或经 HTTP） |
+| `feishu_users` / `feishu_generic_records` | agents-service-v2 | GAAS 读 |
+| `agent_messages` / `agent_scores` / `knowledge_base` | agents-service-v2 | GAAS 读或经 HTTP |
+| `daily_reports` | GAAS | agents 只读 |
+| `hrms_state` | GAAS | agents 只读 |
+| `pos_order_items` / `pos_sales_detail` | GAAS | agents 只读 |
+| `tenants` / `tenant_integrations` | GAAS | agents 读配置 |
+| schema migration（共享表） | GAAS `server/migrations/` | agents 禁止并行建共享表 |
 
 ### ⚠️ 远程操作：ssh 和 scp 分工不同，别用错，别用 ssh pipe 传大文件
 

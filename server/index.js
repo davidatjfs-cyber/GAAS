@@ -13,6 +13,7 @@ import { getActiveTenantIds, tenantContext, resolveTenantIdDefault, runWithBoots
 import { createEmptyTenantState, resolveExplicitTenantId } from './tenant-login.js';
 import { registerAuthRoutes } from './auth-routes.js';
 import { registerApprovalRoutes } from './approval-routes.js';
+import { applyStatePutWhitelist } from './hrms-state-put.js';
 import {
   getTenantIntegrationSummary,
   saveTenantFeishuIntegration,
@@ -12530,62 +12531,6 @@ app.get('/api/admin/employee-password/:username', authRequired, async (req, res)
   }
 });
 
-/**
- * 管理员 PUT 全量 state 时，浏览器 localStorage 里的 employees 往往滞后于服务端（如入职终审刚写入）。
- * 若直接覆盖会抹掉新人。规则：同 username 以请求体为主并叠在旧记录上；仅服务端存在的员工追加保留。
- */
-function mergeEmployeesForStatePut(incomingEmployees, existingEmployees) {
-  const norm = (u) => String(u || '').trim().toLowerCase();
-  const inc = Array.isArray(incomingEmployees) ? incomingEmployees : [];
-  const ex = Array.isArray(existingEmployees) ? existingEmployees : [];
-  const exMap = new Map();
-  for (const e of ex) {
-    const k = norm(e?.username);
-    if (k) exMap.set(k, e);
-  }
-  const seen = new Set();
-  const out = [];
-  for (const e of inc) {
-    const k = norm(e?.username);
-    if (!k) continue;
-    seen.add(k);
-    const base = exMap.get(k) || {};
-    out.push({ ...base, ...e });
-  }
-  for (const e of ex) {
-    const k = norm(e?.username);
-    if (!k || seen.has(k)) continue;
-    out.push(e);
-  }
-  return out;
-}
-
-function mergeArrayByIdForStatePut(incomingItems, existingItems, idField = 'id') {
-  const inc = Array.isArray(incomingItems) ? incomingItems : [];
-  const ex = Array.isArray(existingItems) ? existingItems : [];
-  const norm = (v) => String(v || '').trim();
-  const exMap = new Map();
-  for (const e of ex) {
-    const k = norm(e?.[idField]);
-    if (k) exMap.set(k, e);
-  }
-  const seen = new Set();
-  const out = [];
-  for (const e of inc) {
-    const k = norm(e?.[idField]);
-    if (!k) continue;
-    seen.add(k);
-    const base = exMap.get(k) || {};
-    out.push({ ...base, ...e });
-  }
-  for (const e of ex) {
-    const k = norm(e?.[idField]);
-    if (!k || seen.has(k)) continue;
-    out.push(e);
-  }
-  return out;
-}
-
 app.put('/api/state', authRequired, async (req, res) => {
   if (String(req.user?.role || '') !== 'admin') {
     return res.status(403).json({ error: 'forbidden' });
@@ -12595,123 +12540,14 @@ app.put('/api/state', authRequired, async (req, res) => {
     return res.status(400).json({ error: 'missing_data' });
   }
   // Auto-repair garbled UTF-8 before persisting
-  const data = deepRepairGarbledStrings(rawData);
+  const repaired = deepRepairGarbledStrings(rawData);
   try {
-    // Preserve server-side store location fields (latitude, longitude, address)
-    // that the frontend may not have in its stale localStorage copy
-    const existingState = await getSharedState();
-    if (existingState) {
-      data.employees = mergeEmployeesForStatePut(data.employees, existingState.employees);
-
-      // ── 配置安全保护 ──────────────────────────────────────────────────────────
-      // roleModules（角色可见模块）/ approvalFlows（审批流程）/ paymentFlowByStore
-      // （分店请款付款链）属于服务端权威配置，分别由 PUT /api/role-modules、
-      // PUT /api/approval-flows 原子写入。前端 localStorage 可能比这几个字段旧，
-      // 直接 PUT /api/state 全量覆盖会把刚配置好的可见模块/审批流程整段抹掉，
-      // 这正是「请款模块消失」「审批流程乱了」反复出现的根因。
-      // 策略：以服务端为主，PUT /api/state 不再触碰这三个配置字段。
-      if (existingState.roleModules !== undefined) data.roleModules = existingState.roleModules;
-      if (existingState.approvalFlows !== undefined) data.approvalFlows = existingState.approvalFlows;
-      if (existingState.paymentFlowByStore !== undefined) data.paymentFlowByStore = existingState.paymentFlowByStore;
-      // ─────────────────────────────────────────────────────────────────────────
-
-      // ── 积分安全保护 ──────────────────────────────────────────────────────────
-      // pointRecords / pointsAppliedApprovals / payrollAdjustments 由服务端
-      // mergeSharedStateFields 原子写入；前端 localStorage 可能比这几个字段旧，
-      // 直接 PUT 会把刚审批通过的积分/薪酬调整记录全部抹掉。
-      // 策略：以服务端为主，把浏览器没有的 id 追加进来（不回退已存在记录）。
-      const srvPoints = Array.isArray(existingState.pointRecords) ? existingState.pointRecords : [];
-      const incPoints = Array.isArray(data.pointRecords) ? data.pointRecords : [];
-      if (srvPoints.length) {
-        const incIds = new Set(incPoints.map(r => String(r?.id || '')).filter(Boolean));
-        const srvOnly = srvPoints.filter(r => !incIds.has(String(r?.id || '')));
-        data.pointRecords = [...incPoints, ...srvOnly];
-      }
-      // pointsAppliedApprovals：object merge，服务端字段不被浏览器覆盖
-      if (existingState.pointsAppliedApprovals && typeof existingState.pointsAppliedApprovals === 'object') {
-        data.pointsAppliedApprovals = Object.assign(
-          {},
-          existingState.pointsAppliedApprovals,
-          data.pointsAppliedApprovals && typeof data.pointsAppliedApprovals === 'object' ? data.pointsAppliedApprovals : {}
-        );
-      }
-      // payrollAdjustments：object merge，服务端字段不被浏览器覆盖
-      if (existingState.payrollAdjustments && typeof existingState.payrollAdjustments === 'object') {
-        data.payrollAdjustments = Object.assign(
-          {},
-          existingState.payrollAdjustments,
-          data.payrollAdjustments && typeof data.payrollAdjustments === 'object' ? data.payrollAdjustments : {}
-        );
-      }
-      if (existingState.payrollAudits && typeof existingState.payrollAudits === 'object') {
-        data.payrollAudits = Object.assign(
-          {},
-          existingState.payrollAudits,
-          data.payrollAudits && typeof data.payrollAudits === 'object' ? data.payrollAudits : {}
-        );
-      }
-      if (existingState.leaveBalanceOverrides && typeof existingState.leaveBalanceOverrides === 'object') {
-        data.leaveBalanceOverrides = Object.assign(
-          {},
-          existingState.leaveBalanceOverrides,
-          data.leaveBalanceOverrides && typeof data.leaveBalanceOverrides === 'object' ? data.leaveBalanceOverrides : {}
-        );
-      }
-      if (existingState.leaveCumulativeCloseSnapshots && typeof existingState.leaveCumulativeCloseSnapshots === 'object') {
-        data.leaveCumulativeCloseSnapshots = Object.assign(
-          {},
-          existingState.leaveCumulativeCloseSnapshots,
-          data.leaveCumulativeCloseSnapshots && typeof data.leaveCumulativeCloseSnapshots === 'object'
-            ? data.leaveCumulativeCloseSnapshots
-            : {}
-        );
-      }
-      data.leaveBalanceAdjustments = mergeArrayByIdForStatePut(
-        data.leaveBalanceAdjustments,
-        existingState.leaveBalanceAdjustments,
-        'id'
-      );
-      data.monthlyConfirmations = mergeArrayByIdForStatePut(
-        data.monthlyConfirmations,
-        existingState.monthlyConfirmations,
-        'id'
-      );
-      data.salaryChangeHistory = mergeArrayByIdForStatePut(
-        data.salaryChangeHistory,
-        existingState.salaryChangeHistory,
-        'id'
-      );
-      data.leaveRecords = mergeArrayByIdForStatePut(
-        data.leaveRecords,
-        existingState.leaveRecords,
-        'id'
-      );
-      // ─────────────────────────────────────────────────────────────────────────
-
-      const existingStores = Array.isArray(existingState.stores) ? existingState.stores : [];
-      const incomingStores = Array.isArray(data.stores) ? data.stores : [];
-      if (existingStores.length && incomingStores.length) {
-        const locMap = new Map();
-        for (const s of existingStores) {
-          const name = String(s?.name || '').trim();
-          if (name && (Number.isFinite(s?.latitude) || Number.isFinite(s?.longitude) || s?.address)) {
-            locMap.set(name, { latitude: s.latitude, longitude: s.longitude, address: s.address });
-          }
-        }
-        if (locMap.size) {
-          data.stores = incomingStores.map(s => {
-            const name = String(s?.name || '').trim();
-            const existing = locMap.get(name);
-            if (!existing) return s;
-            return {
-              ...s,
-              latitude: Number.isFinite(s?.latitude) ? s.latitude : existing.latitude,
-              longitude: Number.isFinite(s?.longitude) ? s.longitude : existing.longitude,
-              address: s.address || existing.address || ''
-            };
-          });
-        }
-      }
+    // 白名单写入：以服务端 existing 为底，仅 overlay STATE_PUT_WHITELIST 字段。
+    // 禁止再靠「黑名单保护块」拦字段——漏一个就事故一次（请款模块消失 / 审批流乱 / 积分被抹）。
+    const existingState = (await getSharedState()) || {};
+    const { next: data, ignoredKeys } = applyStatePutWhitelist(existingState, repaired);
+    if (ignoredKeys.length) {
+      console.warn('[state] PUT ignored non-whitelist keys:', ignoredKeys.slice(0, 30).join(','));
     }
     await pool.query(
       `insert into hrms_state (key, data, updated_at)
@@ -12789,7 +12625,7 @@ app.put('/api/state', authRequired, async (req, res) => {
         console.error('[state] account gate sync error:', syncErr?.message);
       }
     });
-    return res.json({ ok: true });
+    return res.json({ ok: true, ignoredKeys });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
   }

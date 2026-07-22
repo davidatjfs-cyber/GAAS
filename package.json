@@ -9,9 +9,13 @@
     "start": "npm --workspace server run start",
     "migrate": "npm --workspace server run migrate",
     "seed:growth-demo": "npm --workspace server run seed:growth-demo",
-    "test": "npm --workspace server run test"
+    "test": "npm --workspace server run test",
+    "lint": "eslint \"server/**/*.js\" \"server/**/*.mjs\" --max-warnings 394"
   },
   "dependencies": {
     "mammoth": "^1.12.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5"
   }
 }
