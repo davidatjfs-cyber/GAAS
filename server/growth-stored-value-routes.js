@@ -189,7 +189,13 @@ export function registerGrowthStoredValueRoutes(app, pool) {
       const valueYuan = Math.max(0, Math.floor(Number(b.value_yuan) || 0));
       const validDays = Math.max(1, Math.floor(Number(b.valid_days) || 14));
       if (valueYuan <= 0) return res.status(400).json({ ok: false, error: 'missing_value' });
-      if (!pickCampaignTemplate(campaignKey, c.storeId)) return res.status(503).json({ ok: false, error: 'sms_template_not_configured' });
+      // ABC轮换活动实际发送走 pickAbcTemplate(ABCGIFTA/B/C等新slot)，预检查必须与发送路径同源；
+      // 老写法查 pickCampaignTemplate(VIP/ACTIVE等旧slot)只剩env残留兜底，env一清理就会误报503。
+      const launchAbcOrder = ABC_ROTATION_ORDER[campaignKey];
+      const launchTplOk = launchAbcOrder
+        ? !!pickAbcTemplate(launchAbcOrder[0], c.storeId)
+        : !!pickCampaignTemplate(campaignKey, c.storeId);
+      if (!launchTplOk) return res.status(503).json({ ok: false, error: 'sms_template_not_configured' });
       const maxTargets = Math.min(Math.max(Number(b.max_targets) || 500, 1), 2000);
       const freqDays = freqDaysEnv('ALIYUN_SMS_CAMPAIGN_FREQUENCY_DAYS', 30);
       const q = buildCampaignTargetQuery({ ...c, ruleKey: campaignKey, freqDays, limit: maxTargets });
