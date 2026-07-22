@@ -7093,7 +7093,12 @@ async function pickAdminUsername(state) {
   if (fromState) return String(fromState).trim();
 
   try {
-    const r = await pool.query("select username from users where role = 'admin' and is_active = true order by created_at asc limit 1");
+    // 缺少 tenant_id 过滤会跨租户拿到别的租户的admin用户名，
+    // 拿去当审批链assignee用会导致跨租户的人被塞进审批链。
+    const r = await pool.query(
+      "select username from users where role = 'admin' and is_active = true and tenant_id = $1 order by created_at asc limit 1",
+      [resolveTenantIdDefault()]
+    );
     const row = r.rows?.[0] || null;
     if (row?.username) return String(row.username).trim();
   } catch (e) {}
@@ -7110,7 +7115,11 @@ async function pickHqManagerUsername(state) {
   if (fromState) return String(fromState).trim();
 
   try {
-    const r = await pool.query("select username from users where role = 'hq_manager' and is_active = true order by created_at asc limit 1");
+    // 同 pickAdminUsername：缺少 tenant_id 过滤会跨租户拿到别的租户的hq_manager。
+    const r = await pool.query(
+      "select username from users where role = 'hq_manager' and is_active = true and tenant_id = $1 order by created_at asc limit 1",
+      [resolveTenantIdDefault()]
+    );
     const row = r.rows?.[0] || null;
     if (row?.username) return String(row.username).trim();
   } catch (e) {}

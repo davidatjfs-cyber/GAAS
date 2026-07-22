@@ -145,3 +145,42 @@ test('非审批人不能对别人的审批单做决定', async () => {
   const decideBody = await decideRes.json();
   assert.equal(decideRes.status, 403, JSON.stringify(decideBody));
 });
+
+test('回归：pickHqManagerUsername的DB兜底查询不应该跨租户拿到别的租户的hq_manager', async () => {
+  const db = testDb();
+  const otherTenant = uniqueId('leak_tenant');
+  await db.query(
+    `insert into tenants (tenant_id, name, status) values ($1, '别的租户', 'active')`,
+    [otherTenant]
+  );
+  // 这个hq_manager只存在于别的租户的users表里，不在任何hrms_state.employees里——
+  // 专门用来命中 pickHqManagerUsername() 里"state里找不到就查DB"的兜底分支
+  const foreignHqManager = uniqueId('foreignhq');
+  await createUser(foreignHqManager, 'hq_manager', otherTenant);
+
+  const applicantUsername = uniqueId('leaveapp4');
+  const managerUsername = uniqueId('leavemgr4');
+  await createUser(managerUsername, 'store_manager'); // 直属上级，不是hq_manager，不影响这条测试
+  await createUser(applicantUsername, 'store_employee');
+  await appendStateEmployee('default', {
+    username: applicantUsername,
+    role: 'store_employee',
+    store: '测试门店',
+    managerUsername
+  });
+
+  const token = await login(applicantUsername);
+  const res = await fetch(app.baseUrl + '/api/approvals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ type: 'leave', payload: { startDate: '2026-08-01', endDate: '2026-08-03' } })
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+
+  const assignees = body.item.chain.map((c) => c.assignee);
+  assert.ok(
+    !assignees.includes(foreignHqManager),
+    '审批链不应该出现别的租户的hq_manager: ' + JSON.stringify(assignees)
+  );
+});
