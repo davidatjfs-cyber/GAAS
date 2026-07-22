@@ -152,6 +152,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 违反这条纪律的表现：`git diff --stat` 里 `index.js`/`agents.js` 一次改动新增几十上百行"新逻辑"（不是"新增两行注册"），
 或新增又一个 >500 行的 `registerXxxRoutes` 闭包——应停下来按 routes/service 拆。
 
+### ⚠️ @gaas/shared（跨仓共享包）
+
+权威路径：`packages/gaas-shared`（飞书验签、tenant token、共享表名常量）。
+agents-service-v2 通过 `file:packages/gaas-shared` 引用**同步副本**；改共享代码后跑
+`node scripts/sync-gaas-shared.mjs` 再在两边提交。两边的 `utils/feishu-webhook-verify.js`
+已改为 re-export，勿再复制粘贴实现。
+
 ### ⚠️ 共享表唯一写入方（GAAS ↔ agents-service-v2）
 
 两边直连同一库。改 schema 以 **GAAS `server/migrations/`** 为权威；agents-service-v2 **不要**再为共享表自建 migration。

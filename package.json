@@ -3,7 +3,8 @@
   "private": true,
   "packageManager": "npm@10.2.0",
   "workspaces": [
-    "server"
+    "server",
+    "packages/gaas-shared"
   ],
   "scripts": {
     "start": "npm --workspace server run start",

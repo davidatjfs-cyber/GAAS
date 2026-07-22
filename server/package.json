@@ -13,6 +13,7 @@
     "test:integration": "node --test --test-concurrency=2 $(find test/integration -name '*.test.mjs')"
   },
   "dependencies": {
+    "@gaas/shared": "file:../packages/gaas-shared",
     "ali-oss": "^6.22.0",
     "archiver": "^7.0.1",
     "axios": "^1.13.5",

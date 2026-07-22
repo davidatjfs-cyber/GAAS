@@ -1,0 +1,13 @@
+{
+  "name": "@gaas/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GAAS ↔ agents-service-v2 共享：飞书验签/token、共享表名常量。权威副本在 GAAS/packages/gaas-shared，agents 侧同步一份。",
+  "exports": {
+    ".": "./index.js",
+    "./feishu-webhook-verify.js": "./feishu-webhook-verify.js",
+    "./feishu-token.js": "./feishu-token.js",
+    "./tables.js": "./tables.js"
+  }
+}

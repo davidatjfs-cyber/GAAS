@@ -8,6 +8,7 @@ import { inferBrandFromStoreName } from './agents.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
 import { getTenantFeishuIntegration, saveTenantFeishuIntegration } from './tenant-integrations.js';
 import { allowLegacyFeishuFallback } from './safety.js';
+import { fetchFeishuTenantAccessToken } from '@gaas/shared/feishu-token.js';
 
 let _feishuSyncFailureNotifier = null;
 /** 由 index 注册：飞书→PG 定时/按表同步失败时立刻通知 admin */
@@ -346,23 +347,11 @@ export function extractMaterialReportFields(fields) {
 
 // 获取飞书访问令牌
 export async function getFeishuAccessToken(config) {
-  const response = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      app_id: config.app_id,
-      app_secret: config.app_secret
-    })
+  const { token } = await fetchFeishuTenantAccessToken({
+    appId: config.app_id,
+    appSecret: config.app_secret,
   });
-  
-  const data = await response.json();
-  if (data.code !== 0) {
-    throw new Error(`获取飞书token失败: ${data.msg}`);
-  }
-  
-  return data.tenant_access_token;
+  return token;
 }
 
 /**
