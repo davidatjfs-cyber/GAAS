@@ -41,3 +41,13 @@ test('critical SLA is five minutes', () => {
   const now = new Date('2026-07-14T00:00:00Z');
   assert.equal(calculateSla('critical', now).toISOString(), '2026-07-14T00:05:00.000Z');
 });
+
+test('请求演示属于高意向并进入人工接管建议', () => {
+  const decision = buildSalesDecision({
+    lead: { stage: 'need_identified', extracted: { store_count: 3, pain_point: '多店管理' } },
+    score: { intent_score: 35 },
+    events: [{ event_type: 'REQUEST_DEMO', priority: 'high' }],
+  });
+  assert.equal(decision.controller_recommendation, 'handoff_now');
+  assert.match(decision.next_action, /Demo|人工/);
+});

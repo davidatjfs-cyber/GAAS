@@ -29,7 +29,7 @@ export function normalizeCustomerAiEvent(event = {}, fallbackEvidence = '') {
 
 export function buildSalesDecision({ lead = {}, score = {}, events = [], guidance = null } = {}) {
   const eventTypes = new Set((events || []).map((e) => e.event_type));
-  const highSignals = ['ASK_PRICE', 'REQUEST_DEMO', 'REQUEST_TRIAL', 'ASK_CONTRACT', 'ASK_POS_INTEGRATION', 'ASK_DISCOUNT', 'BUYING_INTENT'];
+  const highSignals = ['ASK_PRICE', 'REQUEST_DEMO', 'REQUEST_TRIAL', 'ASK_CONTRACT', 'ASK_POS_INTEGRATION', 'ASK_DISCOUNT', 'BUYING_INTENT', 'CONTACT_SALES_REQUESTED'];
   const critical = eventTypes.has('ASK_CONTRACT') || eventTypes.has('ASK_DISCOUNT') ||
     (eventTypes.has('REQUEST_TRIAL') && eventTypes.has('ASK_POS_INTEGRATION')) ||
     (lead.decision_role === '老板' && Number(score.intent_score || 0) >= 80);

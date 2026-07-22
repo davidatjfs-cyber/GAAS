@@ -13,6 +13,7 @@ import {
   saveSalesGuidance,
   transitionLeadStage,
   getActiveSalesGuidance,
+  recordObjection,
 } from './sales-store.js';
 import { runCustomerAiTurn } from './sales-customer-ai.js';
 import { loadKnowledgeItems } from './sales-knowledge-store.js';
@@ -163,6 +164,54 @@ export function resolveHandoffController({ requested = false, repKey = null, cur
     deferred: Boolean(requested && !takeover),
     controller: takeover ? 'waiting_human' : currentController,
   };
+}
+
+export async function recordCustomerConversionIntent(pool, {
+  leadId,
+  leadKey = '',
+  assignee = null,
+  conversion = null,
+  evidence = '',
+} = {}) {
+  if (!leadId || !conversion?.goal || !conversion?.action_type) return { recorded: false };
+  await pool.query(
+    `INSERT INTO sales_action_logs (lead_id, action_type, payload, status, created_by)
+     VALUES ($1,$2,$3::jsonb,'created','customer_ai')`,
+    [leadId, conversion.action_type, JSON.stringify({
+      goal: conversion.goal,
+      priority: conversion.priority || 'normal',
+      objection_key: conversion.objection_key || null,
+      evidence: String(evidence || '').slice(0, 500),
+      lead_key: leadKey || null,
+    })]
+  );
+  if (conversion.objection_key) {
+    await recordObjection(pool, {
+      leadId,
+      objectionKey: conversion.objection_key,
+      objectionLabel: conversion.objection_label || conversion.objection_key,
+      evidence: String(evidence || '').slice(0, 500),
+      responseText: conversion.response_text || null,
+      createdBy: 'customer_ai',
+    });
+  }
+  let task = null;
+  if (conversion.task_title) {
+    const dueHours = Math.max(0.1, Number(conversion.due_hours || 24));
+    task = await upsertTask(pool, {
+      leadId,
+      title: conversion.task_title,
+      detail: conversion.task_detail || String(evidence || '').slice(0, 500),
+      dueAt: new Date(Date.now() + dueHours * 3600000),
+      assignee,
+      taskDomain: 'sales',
+      taskType: `conversion_${conversion.goal}`,
+      sourceType: 'customer_ai_session',
+      sourceId: String(leadId),
+      createdBy: 'customer_ai',
+    });
+  }
+  return { recorded: true, task };
 }
 
 async function pauseAutoNurtureOnCustomerReply(pool, leadId) {
@@ -411,13 +460,28 @@ export async function handleInboundMessage(pool, {
     last_sales_decision: effectiveDecision,
   });
 
-  const updatedLead = await getLead(pool, lead.id);
+  let updatedLead = await getLead(pool, lead.id);
+  const conversionAssignee = handoffRep
+    || updatedLead.assigned_to
+    || updatedLead.owner_username
+    || (turn.plan?.conversion?.task_title ? await findAssignableSalesRep(pool, updatedLead) : null);
+  if (conversionAssignee && !updatedLead.assigned_to) {
+    await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=COALESCE(assigned_at,NOW()),updated_at=NOW() WHERE id=$1`, [lead.id, conversionAssignee]);
+    updatedLead = { ...updatedLead, assigned_to: conversionAssignee };
+  }
   const advice = buildSalesAdvice(updatedLead, score);
   const next = buildNextAction(updatedLead, score);
   const diagnosis = buildDiagnosisReport(updatedLead);
   const customerGuidance = buildCustomerAiGuidance(effectiveDecision);
   await saveSalesGuidance(pool, { leadId: lead.id, conversationId: conv.id, guidance: customerGuidance, expiresInTurns: customerGuidance.expires_in_turns });
   const completeness = checkLeadCompleteness(updatedLead);
+  await recordCustomerConversionIntent(pool, {
+    leadId: lead.id,
+    leadKey: lead.lead_key,
+    assignee: conversionAssignee || null,
+    conversion: turn.plan?.conversion || null,
+    evidence: content,
+  });
   if (nextStage && nextStage !== lead.stage && STAGES_REQUIRING_COMPLETE_INFO.has(nextStage) && !completeness.complete) {
     // 门店基础信息还没收全就不让AI把线索推进到"已确认"往后的阶段——两条建档入口(AI对话/
     // 销售手工表单)现在共用同一份完整性判断，不再各自为政。不阻断人工接管本身，客户仍然
@@ -449,7 +513,7 @@ export async function handleInboundMessage(pool, {
 
   if (takeover) {
     await pool.query(`UPDATE sales_conversations SET controller='waiting_human', updated_at=NOW() WHERE id=$1`, [conv.id]);
-    await ensureFollowupTask(pool, lead.id, '高意向客户待接管', advice, 0.2);
+    await ensureFollowupTask(pool, lead.id, '高意向客户待接管', advice, 0.2, handoffRep);
     await addEvent(pool, lead.id, {
       event_type: 'HANDOFF_REQUESTED',
       summary: turn.plan.takeover.reason,
@@ -540,7 +604,7 @@ export async function handleInboundMessage(pool, {
     advice,
     diagnosis,
     next_action: next.next_action,
-    plan: { mode: turn.plan.mode, extracted: turn.plan.extracted, takeover: turn.plan.takeover, events: normalizedEvents },
+    plan: { mode: turn.plan.mode, extracted: turn.plan.extracted, takeover: turn.plan.takeover, events: normalizedEvents, conversion: turn.plan.conversion || null },
     sales_decision: effectiveDecision,
     customer_ai_guidance: customerGuidance,
     source: turn.source,

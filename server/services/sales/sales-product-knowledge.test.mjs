@@ -63,6 +63,15 @@ test('真实口语问题能命中正确知识卡', () => {
   }
 });
 
+test('方案差别与合作流程同步进入客户AI、RAG和Ontology共用知识源', () => {
+  const packageQuery = classifyProductQuery('公司的话有什么差别呢？');
+  assert.equal(packageQuery.matches[0]?.id, 'account.packages');
+  assert.match(packageQuery.matches[0].answer, /跨店汇总|分级权限/);
+  const processQuery = classifyProductQuery('你们正式合作和试跑是什么流程？');
+  assert.equal(processQuery.matches[0]?.id, 'account.cooperation-process');
+  assert.match(processQuery.matches[0].answer, /数据接入评估|30天/);
+});
+
 test('系统问题直接走产品知识，不调用销售话术模型也不继续诊断追问', async () => {
   let llmCalls = 0;
   setSalesCustomerAiLlm(async () => { llmCalls += 1; return { ok: true, content: '销售话术' }; });

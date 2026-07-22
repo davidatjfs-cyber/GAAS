@@ -71,10 +71,63 @@ export function buildSalesBossMetrics(leads = []) {
   };
 }
 
+export function buildSalesConversionReadiness(snapshot = {}) {
+  const checks = [
+    { key: 'human_handoff', label: '真人接管', ready: Number(snapshot.active_reps || 0) > 0, weight: 30, impact: '高意向客户能否立即由真人继续成交' },
+    { key: 'commercial_knowledge', label: '销售知识', ready: Number(snapshot.active_knowledge || 0) >= 10, weight: 20, impact: '卖点、方案和合作边界能否稳定回答' },
+    { key: 'approved_material', label: '对外资料', ready: Number(snapshot.approved_assets || 0) > 0, weight: 15, impact: '客户索要资料时能否立即发送' },
+    { key: 'approved_case', label: '授权案例', ready: Number(snapshot.approved_cases || 0) > 0, weight: 15, impact: '客户需要真实证据时能否建立信任' },
+    { key: 'nurture_content', label: '培育内容', ready: Number(snapshot.auto_assets || 0) > 0, weight: 10, impact: '未立即成交客户能否持续、合规触达' },
+    { key: 'conversion_tracking', label: '转化追踪', ready: snapshot.tracking_ready !== false, weight: 10, impact: '能否判断改造是否真正带来演示、试跑和成交' },
+  ];
+  const score = checks.reduce((sum, item) => sum + (item.ready ? item.weight : 0), 0);
+  return {
+    score,
+    status: score >= 90 ? 'ready' : score >= 70 ? 'partially_ready' : 'blocked',
+    checks,
+    blockers: checks.filter((item) => !item.ready).map((item) => ({ key: item.key, label: item.label, impact: item.impact })),
+  };
+}
+
 export async function buildSalesBossDashboard(pool) {
   const { listLeads } = await import('./sales-store.js');
   const leads = await listLeads(pool, { limit: 500 });
   const metrics = buildSalesBossMetrics(leads);
-  const loss_stats = await listLossReasonStats(pool, 10);
-  return { ok: true, metrics, loss_stats };
+  const [loss_stats, readinessRow, actionRows, outcomeRow] = await Promise.all([
+    listLossReasonStats(pool, 10),
+    pool.query(`SELECT
+      (SELECT COUNT(*)::int FROM sales_reps WHERE status='active' AND role IN ('sales','sales_manager')) AS active_reps,
+      (SELECT COUNT(*)::int FROM sales_knowledge_items WHERE active=true) AS active_knowledge,
+      (SELECT COUNT(*)::int FROM sales_content_assets WHERE active=true AND external_approved=true AND knowledge_domain='customer_ai' AND (effective_from IS NULL OR effective_from<=NOW()) AND (expires_at IS NULL OR expires_at>NOW())) AS approved_assets,
+      (SELECT COUNT(*)::int FROM sales_content_assets WHERE active=true AND external_approved=true AND auto_send_allowed=true AND knowledge_domain='customer_ai' AND (effective_from IS NULL OR effective_from<=NOW()) AND (expires_at IS NULL OR expires_at>NOW())) AS auto_assets,
+      (SELECT COUNT(*)::int FROM sales_case_assets WHERE status='active' AND external_use_allowed=true AND anonymized=true) AS approved_cases,
+      (to_regclass('public.sales_action_logs') IS NOT NULL) AS tracking_ready`),
+    pool.query(`SELECT action_type,COUNT(*)::int AS count
+      FROM sales_action_logs
+      WHERE created_at >= NOW() - INTERVAL '30 days' AND action_type LIKE 'customer_ai_%'
+      GROUP BY action_type ORDER BY count DESC,action_type`),
+    pool.query(`WITH requests AS (
+        SELECT lead_id,action_type,MIN(created_at) AS requested_at
+        FROM sales_action_logs
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+          AND action_type IN ('customer_ai_demo_requested','customer_ai_trial_requested','customer_ai_contact_requested','customer_ai_price_requested','customer_ai_discount_requested')
+        GROUP BY lead_id,action_type
+      )
+      SELECT
+        COUNT(DISTINCT lead_id) FILTER (WHERE action_type='customer_ai_demo_requested')::int AS demo_requested,
+        COUNT(DISTINCT lead_id) FILTER (WHERE action_type='customer_ai_demo_requested' AND EXISTS (SELECT 1 FROM sales_demos d WHERE d.lead_id=requests.lead_id AND d.created_at>=requests.requested_at))::int AS demo_created,
+        COUNT(DISTINCT lead_id) FILTER (WHERE action_type='customer_ai_trial_requested')::int AS trial_requested,
+        COUNT(DISTINCT lead_id) FILTER (WHERE action_type='customer_ai_trial_requested' AND EXISTS (SELECT 1 FROM sales_trials t WHERE t.lead_id=requests.lead_id AND t.created_at>=requests.requested_at))::int AS trial_started,
+        COUNT(DISTINCT lead_id) FILTER (WHERE action_type IN ('customer_ai_contact_requested','customer_ai_price_requested','customer_ai_discount_requested'))::int AS handoff_requested,
+        COUNT(DISTINCT lead_id) FILTER (WHERE action_type IN ('customer_ai_contact_requested','customer_ai_price_requested','customer_ai_discount_requested') AND EXISTS (SELECT 1 FROM sales_lead_events e WHERE e.lead_id=requests.lead_id AND e.event_type='HUMAN_TAKEOVER' AND e.created_at>=requests.requested_at))::int AS human_takeover
+      FROM requests`),
+  ]);
+  return {
+    ok: true,
+    metrics,
+    loss_stats,
+    conversion_readiness: buildSalesConversionReadiness(readinessRow.rows?.[0] || { tracking_ready: false }),
+    customer_ai_actions_30d: actionRows.rows || [],
+    customer_ai_outcomes_30d: outcomeRow.rows?.[0] || {},
+  };
 }

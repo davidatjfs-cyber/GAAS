@@ -251,7 +251,7 @@ export const OBJECTION_LIBRARY = {
   },
   data_security: {
     label: '担心数据安全',
-    response: '我们只读取经营数据用于分析和触达，不获取客户隐私信息；数据归属权归客户，合同可明确约定。',
+    response: '数据接入范围、用途和权限需要在实施前明确，只处理已授权的经营与客户数据，并按账号和门店范围控制访问；具体数据责任与安全边界会写进合同和实施方案。',
   },
   more_workload: {
     label: '不想增加员工工作量',

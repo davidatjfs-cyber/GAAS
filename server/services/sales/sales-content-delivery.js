@@ -11,6 +11,17 @@ function safeAssetUrl(raw) {
   return url;
 }
 
+export function renderContentAssetText(text, lead = {}) {
+  const extracted = lead.extracted || {};
+  const values = {
+    customer_name: lead.company || lead.name || extracted.company || extracted.name || '您',
+    pain_point: extracted.pain_point || lead.pain_points?.[0] || '门店经营问题',
+    store_count: lead.store_count || extracted.store_count || '当前',
+    city: lead.city || extracted.city || '所在城市',
+  };
+  return String(text || '').replace(/\{\{(customer_name|pain_point|store_count|city)\}\}/g, (_match, key) => String(values[key]));
+}
+
 async function fetchApprovedAsset(url) {
   const raw = String(url || '').trim();
   if (/^\/uploads\/[a-zA-Z0-9._-]+$/.test(raw)) {
@@ -56,7 +67,7 @@ export async function sendContentAssetToLead(pool, lead, asset, { deliveryType =
   try {
     let result;
     if (asset.content_type === 'text' || asset.content_type === 'link' || (asset.content_type === 'qr' && !asset.media_url)) {
-      const text = String(asset.text_content || asset.media_url || '').trim();
+      const text = renderContentAssetText(asset.text_content || asset.media_url || '', lead).trim();
       if (!text) throw new Error('asset_text_missing');
       result = await sendKfText({ openKfid: lead.open_kfid, externalUserid: lead.external_userid, content: text });
     } else {

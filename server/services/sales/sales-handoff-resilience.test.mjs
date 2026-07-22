@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   buildDeferredHandoffReply,
   findAssignableSalesRep,
+  recordCustomerConversionIntent,
   resolveHandoffController,
 } from './sales-session.js';
 import {
@@ -50,6 +51,37 @@ test('存在可用销售时才进入waiting_human', () => {
     resolveHandoffController({ requested: true, repKey: 'sales_01', currentController: 'ai' }),
     { takeover: true, deferred: false, controller: 'waiting_human' }
   );
+});
+
+test('客户AI识别到Demo后必须写转化动作并创建去重跟进任务', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params) {
+      queries.push({ sql: String(sql), params });
+      return { rows: [{ id: 88 }], rowCount: 1 };
+    },
+  };
+  const result = await recordCustomerConversionIntent(pool, {
+    leadId: 5,
+    leadKey: 'L5',
+    assignee: 'adminxie',
+    conversion: {
+      goal: 'demo',
+      action_type: 'customer_ai_demo_requested',
+      task_title: '客户请求针对性演示',
+      task_detail: '按3家门店、多店管理准备演示',
+      due_hours: 0.2,
+      priority: 'high',
+    },
+    evidence: '可以给我安排个演示吗',
+  });
+  assert.equal(result.recorded, true);
+  assert.ok(queries.some((q) => /INSERT INTO sales_action_logs/.test(q.sql)));
+  const taskQuery = queries.find((q) => /INSERT INTO sales_tasks/.test(q.sql));
+  assert.ok(taskQuery);
+  assert.ok(taskQuery.params.includes('客户请求针对性演示'));
+  assert.ok(taskQuery.params.includes('adminxie'));
+  assert.match(taskQuery.sql, /ON CONFLICT \(lead_id, title\).*status='open'/);
 });
 
 test('企微会话处于待人工状态2时停止假发送并返回明确错误', async () => {

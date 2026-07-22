@@ -13,6 +13,7 @@ import {
   isUncertainAnswer,
 } from './sales-strategy.js';
 import { recommendCasesForLead, formatCaseBlurb } from './sales-case-library.js';
+import { matchObjection, getObjectionResponse } from './sales-diagnosis.js';
 import {
   classifyProductQuery,
   formatProductAnswer,
@@ -44,6 +45,10 @@ const PRESENCE_QUERY_RE = /^(?:你|您)?还?在吗[？?]?$/;
 const IDENTITY_QUERY_RE = /(?:你|您).{0,8}(?:是|算)?(?:机器人|ai|人工智能|真人)|(?:机器人|ai|人工智能).{0,8}(?:还是真人|吗)|(?:真人|人工客服).{0,8}(?:还是|吗)/i;
 const DISCOUNT_QUERY_RE = /折扣|优惠|便宜|打折|单店成本|批量价|连锁价/;
 const PRICE_QUERY_RE = /价格|多少钱|报价|费用|收费|年费|月费|怎么定价/;
+const DEMO_REQUEST_RE = /(?:安排|预约|看|做|来|给我).{0,8}(?:demo|演示)|(?:demo|演示).{0,8}(?:安排|预约|看看|看一下|可以吗)/i;
+const CASE_PROOF_RE = /服务过哪些|客户案例|真实案例|成功案例|同类案例|案例.{0,8}(?:看|发|介绍)|哪些餐厅.{0,8}(?:用|合作)/;
+const COMPANY_TEAM_RE = /(?:你们|贵公司|公司|团队).{0,8}(?:多少人|几个人|团队规模|多大团队)/;
+const CONTRACT_PROCESS_RE = /合同|签约流程|合作流程|付款方式|对公|打款|发票|怎么签|怎么合作/;
 
 function historyBeforeCurrent(messages = [], userText = '') {
   const out = (messages || []).map((m) => ({ ...m }));
@@ -221,6 +226,106 @@ function buildCommercialTermsReply(text, extracted = {}) {
   return `我们不是统一一口价，主要按门店数量、使用模块、数据接入和试跑范围确定。${scale}具体报价由顾问结合实际方案确认，我先把定价逻辑和适用范围给您说明清楚。`;
 }
 
+function conversionMeta(goal, overrides = {}) {
+  return {
+    goal,
+    action_type: `customer_ai_${goal}`,
+    priority: 'medium',
+    due_hours: 24,
+    ...overrides,
+  };
+}
+
+function buildDemoReply(extracted = {}) {
+  const profile = profileSummary(extracted);
+  const pain = extracted.pain_point ? `，重点看怎么处理“${extracted.pain_point}”` : '';
+  return `可以。演示不会走一遍通用功能，而是${profile ? `按您目前${profile}的情况` : '先按您的门店情况'}准备${pain}，让您直接判断是否适合。您工作日上午还是下午更方便？`;
+}
+
+function buildObjectionReply(objectionKey, extracted = {}) {
+  const objection = getObjectionResponse(objectionKey);
+  if (!objection) return '';
+  const lowPressureNext = objectionKey === 'too_complex' || objectionKey === 'staff_cannot_use'
+    ? '演示时可以直接让您看店长每天实际要做的动作，再判断操作是否真的复杂。'
+    : objectionKey === 'no_effect'
+      ? '可以先围绕一项真实指标设计30天试跑，再决定要不要扩大。'
+      : objectionKey === 'competitor'
+        ? '可以把您最在意的两个比较维度放进演示和试跑里验证。'
+        : `可以先按${extracted.store_count ? `${extracted.store_count}家门店` : '您的门店情况'}做一次针对性演示或可行性评估，不需要现在做决定。`;
+  return `${objection.response}${lowPressureNext}`;
+}
+
+async function buildSalesConversionGuard({ userText, plan, pool }) {
+  const text = String(userText || '').trim();
+  if (DEMO_REQUEST_RE.test(text)) {
+    plan.mode = 'handoff';
+    plan.takeover = { ...(plan.takeover || {}), takeover: true, reason: 'demo_requested', level: 'high' };
+    plan.answer_before_handoff = true;
+    plan.conversion = conversionMeta('demo', {
+      action_type: 'customer_ai_demo_requested',
+      priority: 'high',
+      due_hours: 0.2,
+      task_title: '客户请求针对性演示',
+      task_detail: `按${profileSummary(plan.extracted) || '客户当前画像'}准备演示，重点回应${plan.extracted?.pain_point || '客户核心需求'}并确认时间。`,
+    });
+    return { source: 'demo_conversion_guard', reply: buildDemoReply(plan.extracted) };
+  }
+  if (CONTRACT_PROCESS_RE.test(text)) {
+    plan.mode = 'handoff';
+    plan.takeover = { ...(plan.takeover || {}), takeover: true, reason: 'contract_process_requested', level: 'high' };
+    plan.answer_before_handoff = true;
+    plan.conversion = conversionMeta('contract', {
+      action_type: 'customer_ai_contract_requested',
+      priority: 'high',
+      due_hours: 0.2,
+      task_title: '客户询问合同与合作流程',
+      task_detail: '确认需求和数据接入范围后，提供经审批的方案、合同、付款与发票安排；禁止口头承诺未审批条款。',
+    });
+    return { source: 'contract_conversion_guard', reply: '可以。通常先确认门店范围和数据接入条件，再确定使用模块、试跑或正式合作范围；方案和商务条件确认后进入合同审批，付款与发票按最终合同执行。我现在把您的合作意向交给顾问继续确认具体条款。' };
+  }
+  if (CASE_PROOF_RE.test(text)) {
+    const cases = pool ? await recommendCasesForLead(pool, { extracted: plan.extracted }).catch(() => []) : [];
+    const approved = cases?.[0] || null;
+    plan.conversion = conversionMeta('case_proof', {
+      action_type: approved ? 'customer_ai_case_provided' : 'customer_ai_case_requested',
+      priority: 'high',
+      due_hours: 4,
+      task_title: approved ? null : '客户请求经授权真实案例',
+      task_detail: approved ? null : `按${profileSummary(plan.extracted) || '客户当前画像'}确认可公开的真实案例，禁止使用未授权客户名称或结果数字。`,
+    });
+    if (approved) {
+      return { source: 'case_proof_guard', reply: `可以。这里有一条已获授权、可对外使用的匿名案例：${formatCaseBlurb(approved)}。如果您愿意，我再让顾问按您的品类和门店规模补充完整背景。` };
+    }
+    return { source: 'case_proof_guard', reply: `目前客户AI资料库里还没有已获客户授权、可以对外展示的真实案例，我不会拿未授权信息或虚构数字回答。您可以先看针对${plan.extracted?.pain_point || '门店经营'}的系统演示，我也会让顾问确认是否有适合公开的同类案例。` };
+  }
+  if (COMPANY_TEAM_RE.test(text)) {
+    plan.conversion = conversionMeta('company_fact_checked', { action_type: 'customer_ai_company_fact_checked', priority: 'normal', task_title: null });
+    return { source: 'company_fact_guard', reply: '具体团队人数没有纳入我已核实的公开资料，所以我不会随便报一个数字。能确认的是，系统能力、交付范围和试跑结果都可以按实际页面与验收标准核对。' };
+  }
+  const objectionKey = matchObjection(text);
+  if (objectionKey && !PRICE_QUERY_RE.test(text) && !DISCOUNT_QUERY_RE.test(text)) {
+    const reply = buildObjectionReply(objectionKey, plan.extracted);
+    if (reply) {
+      plan.events = [...(plan.events || []), {
+        event_type: 'OBJECTION_RAISED',
+        priority: 'medium',
+        recommended_action: 'follow_up_objection',
+        payload: { objection_key: objectionKey },
+      }];
+      plan.conversion = conversionMeta('resolve_objection', {
+        action_type: 'customer_ai_objection_handled',
+        objection_key: objectionKey,
+        objection_label: getObjectionResponse(objectionKey)?.label || objectionKey,
+        response_text: reply,
+        task_title: `跟进客户异议：${getObjectionResponse(objectionKey)?.label || objectionKey}`,
+        task_detail: `客户异议：${text.slice(0, 160)}。AI已先回应，销售需结合客户真实情况确认是否已消除顾虑。`,
+      });
+      return { source: 'objection_conversion_guard', reply };
+    }
+  }
+  return null;
+}
+
 function buildPriorityConversationGuard({ userText, plan }) {
   const text = String(userText || '').trim();
   if (IDENTITY_QUERY_RE.test(text)) {
@@ -230,6 +335,13 @@ function buildPriorityConversationGuard({ userText, plan }) {
     plan.mode = 'handoff';
     plan.takeover = { ...(plan.takeover || {}), takeover: true, reason: 'commercial_terms_query', level: 'high' };
     plan.answer_before_handoff = true;
+    plan.conversion = conversionMeta('commercial_terms', {
+      action_type: DISCOUNT_QUERY_RE.test(text) ? 'customer_ai_discount_requested' : 'customer_ai_price_requested',
+      priority: 'high',
+      due_hours: 0.2,
+      task_title: DISCOUNT_QUERY_RE.test(text) ? '客户询问优惠方案' : '客户询问报价',
+      task_detail: `客户已主动询问${DISCOUNT_QUERY_RE.test(text) ? '优惠' : '报价'}，请按门店数量、模块、数据接入和试跑范围给出经审批的商务答复。`,
+    });
     return { source: 'commercial_terms_guard', reply: buildCommercialTermsReply(text, plan.extracted) };
   }
   return null;
@@ -269,8 +381,20 @@ function buildConversationGuard({ userText, previousExtracted, plan, history, in
         : '可以，您直接发送语音消息就行，我能识别内容并用语音消息回复；目前支持的是语音消息，不是实时电话通话。',
     };
   }
-  if (MATERIAL_REQUEST_RE.test(text)) return { source: 'material_conversion_guard', reply: buildMaterialReply(plan.extracted), preserveOnHandoff: true };
-  if (CONTACT_QUERY_RE.test(text)) return { source: 'contact_conversion_guard', reply: buildContactReply(plan.extracted), preserveOnHandoff: true };
+  if (MATERIAL_REQUEST_RE.test(text)) {
+    plan.conversion = conversionMeta('material', { action_type: 'customer_ai_material_provided', priority: 'medium', task_title: null });
+    return { source: 'material_conversion_guard', reply: buildMaterialReply(plan.extracted), preserveOnHandoff: true };
+  }
+  if (CONTACT_QUERY_RE.test(text)) {
+    plan.mode = 'handoff';
+    plan.takeover = { ...(plan.takeover || {}), takeover: true, reason: 'contact_requested', level: 'high' };
+    plan.events = [...(plan.events || []), { event_type: 'CONTACT_SALES_REQUESTED', priority: 'high', recommended_action: 'takeover' }];
+    plan.conversion = conversionMeta('contact', {
+      action_type: 'customer_ai_contact_requested', priority: 'high', due_hours: 0.2,
+      task_title: '客户主动要求联系顾问', task_detail: '客户已主动要求联系，请通过当前企微会话或已留手机号尽快接管。',
+    });
+    return { source: 'contact_conversion_guard', reply: buildContactReply(plan.extracted), preserveOnHandoff: true };
+  }
   if (COMMITMENT_QUERY_RE.test(text)) {
     return {
       source: 'commitment_guard',
@@ -278,7 +402,13 @@ function buildConversationGuard({ userText, previousExtracted, plan, history, in
       reply: `能承诺的是过程和交付可验收，不是未经评估就承诺${plan.extracted?.pos_brand || 'POS'}一定接入或营业额一定上涨。我们会基于真实数据做接入评估，明确问题证据、整改动作和责任人，并在试跑后复盘验收；达不到约定的数据条件会提前说清楚。`,
     };
   }
-  if (TRIAL_QUERY_RE.test(text)) return { source: 'trial_conversion_guard', reply: buildTrialReply(plan.extracted), preserveOnHandoff: true };
+  if (TRIAL_QUERY_RE.test(text)) {
+    plan.conversion = conversionMeta('trial', {
+      action_type: 'customer_ai_trial_requested', priority: 'high', due_hours: 0.2,
+      task_title: '客户申请30天试跑', task_detail: `先确认${plan.extracted?.pos_brand || 'POS'}数据字段和试跑门店，再约定可验收指标与启动时间。`,
+    });
+    return { source: 'trial_conversion_guard', reply: buildTrialReply(plan.extracted), preserveOnHandoff: true };
+  }
   if (PROFILE_MEMORY_QUERY_RE.test(text)) return { source: 'profile_memory_guard', reply: buildProfileMemoryReply(plan.extracted), preserveOnHandoff: true };
   if (plan.uncertain_slot || (isUncertainAnswer(text) && inferRecentQuestionSlot(history)) || CORRECTION_RE.test(text)) {
     const reply = buildUncertaintyReply({ userText: text, plan, history });
@@ -403,6 +533,17 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
       reply: priorityGuard.reply,
       speechReply: priorityGuard.reply,
       source: priorityGuard.source,
+      plan,
+      guidance,
+    };
+  }
+  const salesConversionGuard = await buildSalesConversionGuard({ userText, plan, pool });
+  if (salesConversionGuard) {
+    return {
+      ok: true,
+      reply: salesConversionGuard.reply,
+      speechReply: salesConversionGuard.reply,
+      source: salesConversionGuard.source,
       plan,
       guidance,
     };

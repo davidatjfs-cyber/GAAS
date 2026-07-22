@@ -9,7 +9,7 @@ const NURTURE_SCHEDULE = [
   { step: 1, afterHours: 24, title: '培育Day1：发送针对性案例', build: (lead) => `给「${lead.company || lead.name || lead.lead_key}」发一条与其痛点(${lead.extracted?.pain_point || '未明'})接近的客户案例，先建立信任，不要催单。` },
   { step: 2, afterHours: 72, title: '培育Day3：追问是否看过案例', build: () => '追问客户是否看过之前发送的案例，了解有没有具体疑问，不要重复介绍功能。' },
   { step: 3, afterHours: 168, title: '培育Day7：发送经营诊断内容', build: (lead) => `再次触达，附上针对「${lead.extracted?.pain_point || '其经营痛点'}」的诊断结论，强化"我们真的懂你的问题"。` },
-  { step: 4, afterHours: 336, title: '培育Day14：发送同业客户实际结果', build: () => '发送同品类/同规模客户使用后的具体结果数据(回店率、营业额归因等)，用结果说话。' },
+  { step: 4, afterHours: 336, title: '培育Day14：提供经授权的同业证据', build: () => '只有存在已获对外授权且已匿名的同品类/同规模案例时才发送；没有授权案例时，改为邀请客户看针对性演示或约定可验收的试跑指标，严禁编造客户名称和结果数字。' },
   { step: 5, afterHours: 720, title: '培育Day30：询问近期经营调整计划', build: () => '询问客户近期是否有门店经营调整计划，判断是否重新进入活跃培育，若长期无响应可考虑降级跟进频率。' },
 ];
 

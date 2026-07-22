@@ -345,6 +345,79 @@ test('客户问试用时要说清30天试跑条件和下一步，不能只发通
   assert.doesNotMatch(turn.reply, /已经比较适合安排顾问/);
 });
 
+test('客户要Demo时必须当场说明针对性演示并只问一个可预约时间问题', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '可以给我安排个系统演示吗？',
+    extracted: conversionProfile,
+    history: [],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  assert.equal(turn.source, 'demo_conversion_guard');
+  assert.equal(turn.plan.conversion?.goal, 'demo');
+  assert.equal(turn.plan.answer_before_handoff, true);
+  assert.match(turn.reply, /针对|按.*情况|不会.*通用/);
+  assert.match(turn.reply, /上午|下午|时间/);
+  assert.equal((turn.reply.match(/[？?]/g) || []).length, 1);
+  assert.doesNotMatch(turn.reply, /已经比较适合安排顾问/);
+});
+
+test('客户索要案例但没有对外授权案例时必须诚实说明并形成案例跟进动作', async () => {
+  const pool = {
+    async query(sql) {
+      if (String(sql).includes('sales_case_assets')) return { rows: [] };
+      return { rows: [] };
+    },
+  };
+  const turn = await runCustomerAiTurn({
+    userText: '你们服务过哪些餐厅？给我看看真实案例。',
+    extracted: conversionProfile,
+    history: [],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'text',
+    pool,
+  });
+  assert.equal(turn.source, 'case_proof_guard');
+  assert.equal(turn.plan.conversion?.goal, 'case_proof');
+  assert.match(turn.reply, /没有.*获.*授权|还没有.*授权/);
+  assert.match(turn.reply, /不会.*编|不.*虚构/);
+  assert.doesNotMatch(turn.reply, /很多|取得了不错|提升\s*\d+%/);
+});
+
+test('客户提出常见异议时必须先正面回应，再给低压力下一步', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '我担心系统太复杂，店长不会用。',
+    extracted: conversionProfile,
+    history: [],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  assert.equal(turn.source, 'objection_conversion_guard');
+  assert.equal(turn.plan.conversion?.goal, 'resolve_objection');
+  assert.equal(turn.plan.conversion?.objection_key, 'too_complex');
+  assert.match(turn.reply, /门店|店长|必要动作|复杂操作/);
+  assert.match(turn.reply, /演示|试跑/);
+  assert.doesNotMatch(turn.reply, /您比较关注|已经比较适合安排顾问/);
+});
+
+test('客户询问团队人数时不得编造规模或用反问绕开', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '你们公司有多少人？',
+    extracted: conversionProfile,
+    history: [],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'text',
+  });
+  assert.equal(turn.source, 'company_fact_guard');
+  assert.match(turn.reply, /没有.*核实|未.*核实/);
+  assert.match(turn.reply, /不会.*编|不.*随便/);
+  assert.doesNotMatch(turn.reply, /团队规模不大|经验丰富|您更关心/);
+});
+
 test('客户问是否记得公司时，未记录就必须诚实说明并复述已知信息', async () => {
   const turn = await runCustomerAiTurn({
     userText: '你还记得我是哪家公司吗？',

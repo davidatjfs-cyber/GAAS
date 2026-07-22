@@ -4282,9 +4282,16 @@ function legacyCopyFallback(value) {
       const box = $('salesBossDashBox');
       box.style.display = '';
       const conv = m.conversion || {};
+      const readiness = data.conversion_readiness || {};
+      const outcomes = data.customer_ai_outcomes_30d || {};
+      const readinessStatus = { ready: '已就绪', partially_ready: '部分就绪', blocked: '存在成交阻塞' }[readiness.status] || '待评估';
       box.innerHTML = `
         <div><strong>总览</strong> 线索${m.summary?.total ?? 0} · 高意向${m.summary?.high_intent ?? 0} · 成交${m.summary?.won ?? 0} · 胜率${m.summary?.win_rate_pct ?? 0}%</div>
         <div class="small">转化：线索→Demo ${conv.lead_to_demo_pct ?? 0}% · Demo→试跑 ${conv.demo_to_trial_pct ?? 0}% · 试跑→成交 ${conv.trial_to_won_pct ?? 0}%</div>
+        <div style="margin-top:6px"><strong>客户AI成交就绪度 ${readiness.score ?? 0}分 · ${readinessStatus}</strong></div>
+        ${(readiness.checks || []).map((item) => `<div class="small">${item.ready ? '✓' : '✗'} ${salesEsc(item.label)}：${salesEsc(item.impact)}</div>`).join('') || '<div class="small">暂无就绪度数据</div>'}
+        ${(data.customer_ai_actions_30d || []).length ? `<div class="small" style="margin-top:4px">近30天客户AI转化动作：${data.customer_ai_actions_30d.map((item) => `${salesEsc(item.action_type)} ${Number(item.count || 0)}次`).join(' · ')}</div>` : '<div class="small" style="margin-top:4px">近30天暂无可归因的客户AI转化动作</div>'}
+        <div class="small">结果回流：Demo ${Number(outcomes.demo_created || 0)}/${Number(outcomes.demo_requested || 0)} · 试跑 ${Number(outcomes.trial_started || 0)}/${Number(outcomes.trial_requested || 0)} · 真人接管 ${Number(outcomes.human_takeover || 0)}/${Number(outcomes.handoff_requested || 0)}</div>
         <div style="margin-top:6px"><strong>销售效率</strong></div>
         ${(m.owner_stats || []).map((o) => `<div class="small">${salesEsc(o.owner)}：${o.leads}线索 · 成交${o.won} · 均分${o.avg_score}</div>`).join('') || '<div class="small">暂无</div>'}
         <div style="margin-top:6px"><strong>失单原因</strong></div>
