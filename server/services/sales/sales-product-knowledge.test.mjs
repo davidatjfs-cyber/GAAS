@@ -72,6 +72,31 @@ test('方案差别与合作流程同步进入客户AI、RAG和Ontology共用知�
   assert.match(processQuery.matches[0].answer, /数据接入评估|30天/);
 });
 
+test('刚才真实竞品语音问法必须命中竞品定位，文字和语音不能答成两个主题', async () => {
+  const questions = [
+    '那你们跟美团客户云这些有什么区别呢？',
+    '那你觉得你们的系统跟威盟啊，跟那个友赞啊，这些公司有什么区别吗？',
+  ];
+  for (const question of questions) {
+    const classified = classifyProductQuery(question);
+    assert.equal(classified.matches[0]?.id, 'account.competitive-positioning', question);
+    const turn = await runCustomerAiTurn({
+      userText: question,
+      extracted: { store_count: 3, pain_point: '多店管理' },
+      history: [],
+      intentScore: 23,
+      controller: 'ai',
+      inputMode: 'voice',
+    });
+    assert.equal(turn.source, 'product_knowledge');
+    assert.equal(turn.productKnowledge?.matched, 'account.competitive-positioning');
+    assert.match(turn.reply, /不会简单说|侧重点|30天/);
+    assert.doesNotMatch(turn.reply, /权限说明|注意：/);
+    assert.match(turn.speechReply, /不想简单说谁好谁坏|任务|30天/);
+    assert.doesNotMatch(turn.speechReply, /基础、连锁与集团方案/);
+  }
+});
+
 test('系统问题直接走产品知识，不调用销售话术模型也不继续诊断追问', async () => {
   let llmCalls = 0;
   setSalesCustomerAiLlm(async () => { llmCalls += 1; return { ok: true, content: '销售话术' }; });

@@ -90,9 +90,9 @@ export function extractSlotsFromText(text = '', prev = {}) {
     uncertainSlots.delete('store_count');
   }
 
-  const posM = t.match(/客如云|美团|企迈|天财|二维火|收钱吧|哗啦啦|博云|银豹|美味不用等/);
+  const posM = t.match(/客如云|美团|企迈|天财|二维火|二维虎|收钱吧|哗啦啦|博云|银豹|美味不用等/);
   if (posM) {
-    out.pos_brand = posM[0];
+    out.pos_brand = posM[0] === '二维虎' ? '二维火' : posM[0];
     uncertainSlots.delete('pos_brand');
   }
 

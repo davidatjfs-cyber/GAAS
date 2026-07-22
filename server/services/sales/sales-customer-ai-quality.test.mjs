@@ -207,6 +207,23 @@ test('POS品牌不得擅自承诺支持，回复也不得机械以“嗯”开�
   setSalesCustomerAiLlm(null);
 });
 
+test('真实语音把二维火识别成二维虎时必须纠正品牌并停止追问无关城市', async () => {
+  const slots = extractSlotsFromText('呃，现在我们用的是二维虎吧。', { pos_brand: '美团', pain_point: '多店管理' });
+  assert.equal(slots.pos_brand, '二维火');
+  const turn = await runCustomerAiTurn({
+    userText: '呃，现在我们用的是二维虎吧。',
+    extracted: { pos_brand: '美团', pain_point: '多店管理', store_count: 3 },
+    history: [],
+    intentScore: 23,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  assert.equal(turn.source, 'profile_fact_guard');
+  assert.match(turn.reply, /二维火/);
+  assert.match(turn.reply, /订单、菜品、会员字段和接口条件/);
+  assert.doesNotMatch(turn.reply, /主要在哪个城市|标准接入评估/);
+});
+
 test('客户只是提供画像事实时，不得突然自我介绍或过早索要手机号', async () => {
   setSalesCustomerAiLlm(async () => ({ ok: true, content: '我叫李娟娟Catherine。方便留个手机号吗？' }));
   const turn = await runCustomerAiTurn({
@@ -327,6 +344,34 @@ test('客户问承诺时必须说可验收边界，不得承诺POS必然接入�
   assert.match(turn.reply, /评估/);
   assert.match(turn.reply, /验收|复盘/);
   assert.doesNotMatch(turn.reply, /准确连接|保证效果|一定涨/);
+});
+
+test('客户连续追问能否用起来时必须直接给准话，不能复读同一段模板', async () => {
+  const first = await runCustomerAiTurn({
+    userText: '你能保证我们用起来吗？',
+    extracted: conversionProfile,
+    history: [],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  const second = await runCustomerAiTurn({
+    userText: '你能保证我们肯定能用起来嘛？',
+    extracted: conversionProfile,
+    history: [
+      { direction: 'inbound', content: '你能保证我们用起来吗？' },
+      { direction: 'outbound', content: first.reply },
+    ],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  assert.equal(first.source, 'commitment_guard');
+  assert.equal(second.source, 'commitment_guard');
+  assert.notEqual(second.reply, first.reply);
+  assert.match(first.reply, /不能现在答应.*100%|三件事/);
+  assert.match(second.reply, /一句准话|正式扩大前|任何一项不成立/);
+  assert.doesNotMatch(`${first.reply}\n${second.reply}`, /美团一定接入/);
 });
 
 test('客户问试用时要说清30天试跑条件和下一步，不能只发通用转人工模板', async () => {

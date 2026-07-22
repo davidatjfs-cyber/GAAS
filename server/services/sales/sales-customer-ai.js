@@ -155,7 +155,7 @@ function buildProfileFactReply({ userText, previousExtracted = {}, plan, history
   const recentSlot = inferRecentQuestionSlot(history);
   const nextQuestion = plan.next_question?.key && plan.next_question.key !== recentSlot ? plan.next_question.question : '';
   if (changed('pos_brand')) {
-    return `您现在用的是${current.pos_brand}，我记下了。能否标准接入需要先做数据字段和接口评估，不会先口头承诺。${nextQuestion || ''}`;
+    return `明白，您现在用的是${current.pos_brand}，我已经记下了。是否能接不能只看品牌名，要先评估订单、菜品、会员字段和接口条件，我不会先口头承诺一定可以。`;
   }
   if (changed('phone_data_ready')) {
     const status = current.phone_data_ready ? '订单里能记录客户手机号' : '订单里目前没有客户手机号';
@@ -365,6 +365,18 @@ function buildPresenceReply({ history = [], controller } = {}) {
   return '在的，人工顾问正在接手，但我不会让您在这里空等。您继续发问就行，我会先回答并把信息同步给顾问。';
 }
 
+function buildCommitmentReply(history = []) {
+  const recentOutbound = (history || [])
+    .filter((message) => message.direction === 'outbound')
+    .slice(-4)
+    .map((message) => String(message.content || ''))
+    .join('\n');
+  if (/100%肯定能用|能承诺的是过程|签了就一定成功/.test(recentOutbound)) {
+    return '如果您要一句准话：我们不承诺“签了就一定成功”，但会在正式扩大前把能不能落地验证清楚。数据能接、任务有人执行、试跑达到约定指标再扩大；任何一项不成立，我们都会明确告诉您原因和处理方案。';
+  }
+  return '我不能现在答应您100%肯定能用起来，这样说反而不负责。真正落地要同时满足三件事：现有数据能接、门店有人执行、双方先约定验收指标。我们会基于真实数据先评估，再选代表门店试跑；条件不满足会在正式合作前说清楚，而不是让您买完才发现用不了。';
+}
+
 function buildConversationGuard({ userText, previousExtracted, plan, history, inputMode, controller }) {
   const text = String(userText || '');
   if (PRESENCE_QUERY_RE.test(text)) {
@@ -399,7 +411,7 @@ function buildConversationGuard({ userText, previousExtracted, plan, history, in
     return {
       source: 'commitment_guard',
       preserveOnHandoff: true,
-      reply: `能承诺的是过程和交付可验收，不是未经评估就承诺${plan.extracted?.pos_brand || 'POS'}一定接入或营业额一定上涨。我们会基于真实数据做接入评估，明确问题证据、整改动作和责任人，并在试跑后复盘验收；达不到约定的数据条件会提前说清楚。`,
+      reply: buildCommitmentReply(history),
     };
   }
   if (TRIAL_QUERY_RE.test(text)) {
