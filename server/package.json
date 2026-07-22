@@ -10,7 +10,7 @@
     "migrate": "node migrate.js",
     "seed:growth-demo": "node scripts/seed-growth-demo.js",
     "test": "node --test $(find . -mindepth 2 -maxdepth 2 -name '*.test.mjs' -print) $(find ./services -mindepth 2 -maxdepth 2 -name '*.test.mjs' -print)",
-    "test:integration": "node --test $(find test/integration -name '*.test.mjs')"
+    "test:integration": "node --test --test-concurrency=2 $(find test/integration -name '*.test.mjs')"
   },
   "dependencies": {
     "ali-oss": "^6.22.0",
