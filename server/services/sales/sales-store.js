@@ -621,6 +621,39 @@ export async function listObjectionsForKey(pool, objectionKey, limit = 20) {
   return r.rows || [];
 }
 
+/**
+ * 按异议类型统计"回应后是否真的推动了转化"：命中该异议的线索，在异议提出后N天内
+ * 是否推进到试跑或成交(sales_stage_history 里出现更晚的 trial/won 记录)。
+ * 只统计"异议之后"的阶段变化，避免把异议提出前就已经在推进的线索计成这条话术的功劳。
+ */
+export async function listObjectionConversionStats(pool, { days = 30, limit = 20 } = {}) {
+  const r = await pool.query(
+    `SELECT o.objection_key,
+            MAX(o.objection_label) AS objection_label,
+            COUNT(*)::int AS raised_count,
+            COUNT(conv.lead_id)::int AS converted_count
+       FROM sales_objections o
+       LEFT JOIN LATERAL (
+         SELECT h.lead_id
+           FROM sales_stage_history h
+          WHERE h.lead_id = o.lead_id
+            AND h.to_stage IN ('trial','won')
+            AND h.created_at > o.created_at
+            AND h.created_at <= o.created_at + ($2 || ' days')::interval
+          LIMIT 1
+       ) conv ON true
+      WHERE o.created_at >= NOW() - ($2 || ' days')::interval
+      GROUP BY o.objection_key
+      ORDER BY raised_count DESC
+      LIMIT $1`,
+    [limit, days]
+  );
+  return (r.rows || []).map((row) => ({
+    ...row,
+    conversion_rate: row.raised_count ? Math.round((row.converted_count / row.raised_count) * 100) : 0,
+  }));
+}
+
 export async function listLossReasonStats(pool, limit = 20) {
   const r = await pool.query(
     `SELECT reason_key, reason_label, COUNT(*) as cnt

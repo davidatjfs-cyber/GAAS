@@ -2,7 +2,7 @@
  * 老板/销售效率看板指标
  */
 import { buildFunnelStats, buildRiskCustomers, buildTopHighLeads } from './sales-ops.js';
-import { listLossReasonStats } from './sales-store.js';
+import { listLossReasonStats, listObjectionConversionStats } from './sales-store.js';
 
 const STAGE_ORDER = ['new', 'ai_greeting', 'need_identified', 'sales_takeover', 'demo_completed', 'proposal', 'trial', 'won'];
 
@@ -93,8 +93,9 @@ export async function buildSalesBossDashboard(pool) {
   const { listLeads } = await import('./sales-store.js');
   const leads = await listLeads(pool, { limit: 500 });
   const metrics = buildSalesBossMetrics(leads);
-  const [loss_stats, readinessRow, actionRows, outcomeRow] = await Promise.all([
+  const [loss_stats, objection_stats, readinessRow, actionRows, outcomeRow] = await Promise.all([
     listLossReasonStats(pool, 10),
+    listObjectionConversionStats(pool, { days: 30, limit: 20 }),
     pool.query(`SELECT
       (SELECT COUNT(*)::int FROM sales_reps WHERE status='active' AND role IN ('sales','sales_manager')) AS active_reps,
       (SELECT COUNT(*)::int FROM sales_knowledge_items WHERE active=true) AS active_knowledge,
@@ -126,6 +127,10 @@ export async function buildSalesBossDashboard(pool) {
     ok: true,
     metrics,
     loss_stats,
+    // 每种异议(价格太高/系统太复杂/已有POS...)被提出后30天内，命中的线索有多少真的推进
+    // 到了试跑或成交——用来判断"AI已先回应"的固定话术是不是真的打消了顾虑，转化率低的
+    // 异议类型需要销售复核话术，而不是继续套用同一段回复。
+    objection_stats_30d: objection_stats,
     conversion_readiness: buildSalesConversionReadiness(readinessRow.rows?.[0] || { tracking_ready: false }),
     customer_ai_actions_30d: actionRows.rows || [],
     customer_ai_outcomes_30d: outcomeRow.rows?.[0] || {},

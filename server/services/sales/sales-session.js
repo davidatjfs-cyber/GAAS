@@ -166,12 +166,35 @@ export function resolveHandoffController({ requested = false, repKey = null, cur
   };
 }
 
+/**
+ * 客户在"询价/要演示/要合同/要联系顾问"这类高意向时刻转人工后，如果销售一直没接手，
+ * 客户实际上是在沉默流失，而不是随便问问。这里把这类紧急转化时刻接进已有的
+ * sales_leads.sla_due_at/sla_status，让本来就每5分钟跑一次的 runSalesSlaScan
+ * 到点直接飞书报警——不新建监控通道，只是把"高意向后沉默"这个信号喂给已有的报警管线。
+ * 只收紧(LEAST)不放宽已有截止时间；已经 breached 的不重置，避免掩盖之前的超时。
+ */
+async function refreshConversionSla(pool, { leadId, dueHours, controller }) {
+  if (controller !== 'waiting_human') return;
+  const hours = Number(dueHours);
+  if (!(hours > 0) || hours > 2) return;
+  const dueAt = new Date(Date.now() + hours * 3600000).toISOString();
+  await pool.query(
+    `UPDATE sales_leads
+        SET sla_due_at = LEAST(COALESCE(sla_due_at, $2::timestamptz), $2::timestamptz),
+            sla_status = CASE WHEN sla_status = 'breached' THEN sla_status ELSE 'open' END,
+            updated_at = NOW()
+      WHERE id = $1 AND stage NOT IN ('won','lost','unfit')`,
+    [leadId, dueAt]
+  );
+}
+
 export async function recordCustomerConversionIntent(pool, {
   leadId,
   leadKey = '',
   assignee = null,
   conversion = null,
   evidence = '',
+  controller = null,
 } = {}) {
   if (!leadId || !conversion?.goal || !conversion?.action_type) return { recorded: false };
   await pool.query(
@@ -210,6 +233,7 @@ export async function recordCustomerConversionIntent(pool, {
       sourceId: String(leadId),
       createdBy: 'customer_ai',
     });
+    await refreshConversionSla(pool, { leadId, dueHours: conversion.due_hours, controller });
   }
   return { recorded: true, task };
 }
@@ -486,6 +510,7 @@ export async function handleInboundMessage(pool, {
     assignee: conversionAssignee || null,
     conversion: turn.plan?.conversion || null,
     evidence: content,
+    controller: nextController,
   }).catch((e) => {
     console.error('[sales-session] record conversion intent failed', { leadId: lead.id, error: e?.message });
   });

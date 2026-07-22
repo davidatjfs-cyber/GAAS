@@ -125,6 +125,60 @@ test('转化意向落库payload字段完整，异议同步写入异议表', asyn
   assert.ok(objectionInsert);
   assert.equal(objectionInsert.params[1], 'too_complex');
   assert.equal(objectionInsert.params[5], 'customer_ai');
+  // 异议由AI直接回应、没有转人工(controller未传/非waiting_human)，不应该压一条SLA倒计时，
+  // 否则销售会被"客户其实已经被AI安抚住了"的异议无谓报警。
+  assert.ok(!queries.some((q) => /UPDATE sales_leads[\s\S]*sla_due_at/.test(q.sql)));
+});
+
+test('客户询价/要演示这类高意向转人工时刻必须压紧SLA倒计时，喂给已有的报警扫描', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params) {
+      queries.push({ sql: String(sql), params });
+      return { rows: [{ id: 99 }], rowCount: 1 };
+    },
+  };
+  const before = Date.now();
+  await recordCustomerConversionIntent(pool, {
+    leadId: 7,
+    leadKey: 'wx_urgent',
+    assignee: 'sales_02',
+    conversion: {
+      goal: 'demo',
+      action_type: 'customer_ai_demo_requested',
+      priority: 'high',
+      due_hours: 0.2,
+      task_title: '客户请求针对性演示',
+      task_detail: '按3家门店、多店管理准备演示',
+    },
+    evidence: '可以给我安排个演示吗',
+    controller: 'waiting_human',
+  });
+  const slaUpdate = queries.find((q) => /UPDATE sales_leads[\s\S]*sla_due_at/.test(q.sql));
+  assert.ok(slaUpdate, '高意向转人工时刻必须刷新sla_due_at，否则销售不响应也不会被5分钟一次的SLA扫描报警');
+  assert.match(slaUpdate.sql, /LEAST\(COALESCE\(sla_due_at/);
+  assert.match(slaUpdate.sql, /stage NOT IN \('won','lost','unfit'\)/);
+  assert.equal(slaUpdate.params[0], 7);
+  const dueAt = new Date(slaUpdate.params[1]).getTime();
+  assert.ok(dueAt >= before + 0.2 * 3600000 - 2000 && dueAt <= before + 0.2 * 3600000 + 5000, 'due_hours=0.2应换算成约12分钟后');
+});
+
+test('培育型转化(due_hours较长)或未转人工时不得压SLA，避免把长周期培育当成紧急报警', async () => {
+  const queries = [];
+  const pool = { async query(sql, params) { queries.push({ sql: String(sql), params }); return { rows: [{ id: 1 }], rowCount: 1 }; } };
+  await recordCustomerConversionIntent(pool, {
+    leadId: 8,
+    conversion: { goal: 'case_proof', action_type: 'customer_ai_case_requested', priority: 'high', due_hours: 4, task_title: '客户请求经授权真实案例' },
+    evidence: '有没有案例',
+    controller: 'waiting_human',
+  });
+  await recordCustomerConversionIntent(pool, {
+    leadId: 9,
+    conversion: { goal: 'demo', action_type: 'customer_ai_demo_requested', priority: 'high', due_hours: 0.2, task_title: '客户请求针对性演示' },
+    evidence: '演示一下',
+    controller: 'ai',
+  });
+  assert.ok(!queries.some((q) => /UPDATE sales_leads[\s\S]*sla_due_at/.test(q.sql)));
 });
 
 test('无转化意向时不写任何库，转化写库失败必须以拒绝暴露(调用点负责兜底不断主链路)', async () => {
