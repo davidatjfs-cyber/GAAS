@@ -17878,6 +17878,13 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('[HRMS] Unhandled rejection:', reason instanceof Error ? reason.stack : String(reason));
 });
 
+// 未捕获的同步异常此前没有专门处理，会静默让进程崩溃（PM2会重启，但没有留下明确原因）。
+// 这里先记录清晰日志再退出，方便事后从日志定位，而不是改变"崩溃后重启"的现有行为。
+process.on('uncaughtException', (err) => {
+  console.error('[HRMS] Uncaught exception, process exiting:', err instanceof Error ? err.stack : String(err));
+  process.exit(1);
+});
+
 // ── Scheduled cleanup: retain 2 months of notifications ────
 // hrms_user_notifications带RLS，原只清default租户；改为遍历活跃租户各自清理
 async function cleanupOldNotifications() {
