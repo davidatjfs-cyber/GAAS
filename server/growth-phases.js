@@ -1770,16 +1770,27 @@ export function registerPhaseRoutes(app, pool) {
     if (!rqa(req, res)) return;
     const b = req.body || {};
     const couponTenantId = getPhaseApiTenantId(req);
-    const r = await tenantContext.run(couponTenantId, () => pool.query(
-      `INSERT INTO growth_coupons (coupon_id,name,type,value_fen,price_fen,valid_days,stock,usage_rule,dish_name,is_active,store_id,tenant_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       ON CONFLICT (coupon_id, tenant_id) DO UPDATE SET name=EXCLUDED.name,is_active=EXCLUDED.is_active,updated_at=NOW() RETURNING *`,
-      [cleanText(b.coupon_id,128),cleanText(b.name,300),cleanText(b.type||'cash',40),
-       Math.max(0,Math.floor(Number(b.value_fen)||0)),Math.max(0,Math.floor(Number(b.price_fen)||0)),
-       Math.max(1,Math.floor(Number(b.valid_days)||30)),Math.floor(Number(b.stock)!=null?Number(b.stock):-1),
-       cleanText(b.usage_rule,500),cleanText(b.dish_name,500),b.is_active!==false,cleanText(b.store_id,128),couponTenantId]
-    ));
-    res.json({ok:true,coupon:r.rows[0]});
+    try {
+      // BUG-FIX: 原来是 Number(b.stock)!=null?Number(b.stock):-1 —— b.stock缺失时
+      // Number(undefined)是NaN，"NaN != null"恒为true(NaN不等于任何值，包括null)，
+      // 导致条件恒真、把NaN当stock传给Postgres整数列报错。这个handler之前没有
+      // try/catch，报错变成unhandled rejection，请求会一直挂起到客户端自己超时，
+      // 而不是返回500——实测省略stock字段会直接hang住请求。
+      const stockRaw = Number(b.stock);
+      const stock = Number.isFinite(stockRaw) ? Math.floor(stockRaw) : -1;
+      const r = await tenantContext.run(couponTenantId, () => pool.query(
+        `INSERT INTO growth_coupons (coupon_id,name,type,value_fen,price_fen,valid_days,stock,usage_rule,dish_name,is_active,store_id,tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT (coupon_id, tenant_id) DO UPDATE SET name=EXCLUDED.name,is_active=EXCLUDED.is_active,updated_at=NOW() RETURNING *`,
+        [cleanText(b.coupon_id,128),cleanText(b.name,300),cleanText(b.type||'cash',40),
+         Math.max(0,Math.floor(Number(b.value_fen)||0)),Math.max(0,Math.floor(Number(b.price_fen)||0)),
+         Math.max(1,Math.floor(Number(b.valid_days)||30)),stock,
+         cleanText(b.usage_rule,500),cleanText(b.dish_name,500),b.is_active!==false,cleanText(b.store_id,128),couponTenantId]
+      ));
+      res.json({ok:true,coupon:r.rows[0]});
+    } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
   });
   app.get('/api/growth/coupons', async (req, res) => {
     if (!rqa(req, res)) return;
