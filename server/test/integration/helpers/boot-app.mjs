@@ -14,10 +14,14 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_ROOT = path.resolve(__dirname, '../../..');
 
-let nextPort = 4100; // 避免和本机开发用的3000/3101撞
+// node --test 会把不同测试文件当独立进程/模块实例并行跑，模块级计数器在文件间不共享，
+// 用随机端口+启动失败重试，比"每个文件从固定端口起跳"更不容易撞。
+function randomTestPort() {
+  return 20000 + Math.floor(Math.random() * 20000);
+}
 
-export async function bootApp(envOverrides = {}) {
-  const port = nextPort++;
+export async function bootApp(envOverrides = {}, attempt = 0) {
+  const port = randomTestPort();
   const env = {
     ...process.env,
     NODE_ENV: 'test',
@@ -28,6 +32,10 @@ export async function bootApp(envOverrides = {}) {
     JWT_SECRET: 'test-jwt-secret-not-for-production-use-only-in-tests',
     // 测试环境不允许自动建表/改schema（和生产一致的安全策略），schema由migrate.js预先跑好
     ALLOW_SCHEMA_CHANGES: 'false',
+    // safety.js 默认在非production/staging环境把DB连接设为只读(防止本地/CI意外写坏共享库)，
+    // 这里的测试库是专用的一次性库，需要显式打开写权限，否则登录迁移/改密码这类写操作
+    // 会被静默设为只读事务，产生看似随机的失败(取决于连接池里哪条连接先被读写)。
+    ENABLE_DB_WRITE: 'true',
     ...envOverrides
   };
 
@@ -42,7 +50,15 @@ export async function bootApp(envOverrides = {}) {
   child.stderr.on('data', (d) => logs.push(String(d)));
 
   const baseUrl = `http://127.0.0.1:${port}`;
-  await waitForHealthy(baseUrl, child, logs);
+  try {
+    await waitForHealthy(baseUrl, child, logs);
+  } catch (e) {
+    child.kill('SIGKILL');
+    if (attempt < 3 && /EADDRINUSE/.test(logs.join(''))) {
+      return bootApp(envOverrides, attempt + 1);
+    }
+    throw e;
+  }
 
   async function stop() {
     child.kill('SIGTERM');

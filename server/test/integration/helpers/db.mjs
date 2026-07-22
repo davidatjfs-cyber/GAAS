@@ -30,6 +30,35 @@ export function uniqueId(prefix = 'test') {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// 登录等大部分路由都会先查 tenants 表判断 loginAllowed，测试库是空schema，
+// 没有这一条'default'租户的话，所有请求会在到达业务逻辑前就被403拦下。
+export async function ensureDefaultTenant() {
+  const db = testDb();
+  await db.query(
+    `insert into tenants (tenant_id, name, status) values ('default', '测试租户', 'active')
+     on conflict (tenant_id) do update set status = 'active'`
+  );
+}
+
+// 多个测试文件并行跑，都要给 hrms_state.employees 追加一条测试数据。
+// 用单条原子UPDATE（jsonb_set + ||）而不是"JS里读出来改数组再整份写回"，
+// 避免并行测试互相覆盖对方刚写入的数据（应用层read-modify-write在并发下不安全，
+// 单条SQL语句由Postgres行锁保证原子性）。
+export async function appendStateEmployee(tenantId, employee) {
+  const db = testDb();
+  await db.query(
+    `insert into hrms_state (key, data)
+     values ($1, jsonb_build_object('employees', jsonb_build_array($2::jsonb)))
+     on conflict (key) do update
+     set data = jsonb_set(
+       coalesce(hrms_state.data, '{}'::jsonb),
+       '{employees}',
+       coalesce(hrms_state.data->'employees', '[]'::jsonb) || jsonb_build_array($2::jsonb)
+     )`,
+    [tenantId, JSON.stringify(employee)]
+  );
+}
+
 export async function truncateTables(tableNames) {
   const db = testDb();
   for (const name of tableNames) {
