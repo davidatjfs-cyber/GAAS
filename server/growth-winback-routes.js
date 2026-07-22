@@ -223,16 +223,29 @@ export function registerGrowthWinbackRoutes(app, pool) {
   app.get('/api/growth/winback/pending-jobs', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     try {
-      // 禁发时段(默认北京时间21:30-9:00)：不放出任务，pending 保持原状，窗口外自动续跑。
+      // 允许发送时段由 SMS_SEND_WINDOWS 控制（默认北京时间10:30-12:00,17:00-20:30，见
+      // inSmsQuietHours()）：窗口外不放出任务，pending 保持原状，下一个窗口自动续跑。
       // 此端点是小程序执行器唯一的任务入口，在这里拦截即覆盖全部发券短信。
       if (inSmsQuietHours()) return res.json({ ok: true, job: null, quiet_hours: true });
+      // 2026-07-22 事故：newcomer_8d两条任务在小程序端处理时挂死，从未回写postJobResult，
+      // 一直停在running。下面按created_at asc取最老一条的逻辑会把它反复重新认领，同样的
+      // bug再次触发，堵死了后面183条任务足足2天。这里先把"重试次数超过阈值仍未完成"的
+      // running任务判定失败、退出队列，避免同一个坏任务无限期挡住所有人。
+      await tenantContext.run(getGrowthTenantId(req), () => pool.query(
+        `UPDATE growth_campaign_jobs SET status='failed', updated_at=now(),
+           result = result || '{"error":"auto_failed_stuck_after_retries"}'::jsonb
+          WHERE kind <> 'stored_value_remind' AND status='running'
+            AND updated_at < now() - interval '3 minutes' AND retry_count >= 3`
+      ));
       // 小程序认领所有「带券码」任务：召回(winback) + 通用发券(各段key)。
       // 仅排除 stored_value_remind（无券无码，由 HRMS 后台 worker 直发）。
       // 认领待执行任务：pending 优先；另回收「卡死的 running」——小程序断点续跑会把未发完的
       // 任务置回 pending，但若其执行中崩溃/超时来不及回写，任务会滞留 running。超过 3 分钟未更新
-      // 即视为僵死，重新认领续跑（已发出的人受 7 天频控保护不会重复发，按 result.processed 续跑不重复建券）。
+      // 即视为僵死，重新认领续跑（已发出的人受 7 天频控保护不会重复发，按 result.processed 续跑不重复建券），
+      // 每次重新认领 retry_count+1，达到阈值由上面那条 UPDATE 自动判失败退出队列。
       const r = await tenantContext.run(getGrowthTenantId(req), () => pool.query(
-        `UPDATE growth_campaign_jobs SET status='running', updated_at=now()
+        `UPDATE growth_campaign_jobs SET status='running', updated_at=now(),
+           retry_count = CASE WHEN status = 'running' THEN retry_count + 1 ELSE retry_count END
           WHERE id = (SELECT id FROM growth_campaign_jobs
                        WHERE kind <> 'stored_value_remind'
                          AND (status='pending' OR status='partial' OR (status='running' AND updated_at < now() - interval '3 minutes'))
