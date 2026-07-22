@@ -12204,158 +12204,455 @@
             }
         }
 
-        /* ── 我的档案：Obsidian & Gold（哑光金）· 手机优先 ── */
+        /* ══════════════════════════════════════════════════════════════════
+           我的档案 v2 · 暖纸 Warm Paper · 手机优先
+           形态：取消「卡片堆叠」，改为发丝线分区 + 数据直接落在页面上。
+           配色：4 个语义色（焦土=强调 / 松绿=正向 / 砖红=负向 / 赭黄=警示）+ 中性四级。
+           新增样式一律用 var(--pf-*)，不要再写裸色值。
+           说明：本块同时负责重新着色「渲染函数发出的旧类名」（.pf-notif-* /
+           .pf-approval-* / .ga-btn 等），因为那些 HTML 在 JS 里拼装，
+           不改 JS 也能正确适配浅色底。
+           ══════════════════════════════════════════════════════════════════ */
         #profile-page {
-            --gold: #c9a96a;
-            --gold-deep: #a8894f;
-            --gold-glow: rgba(201, 169, 106, 0.22);
-            --iris: #c9a96a;
-            --iris-dim: #a8894f;
-            --mint: #5EEAD4;
-            --coral: #FF7A90;
-            --amber: #d4b896;
-            --text: #ece7dc;
-            --dim: rgba(196, 184, 160, 0.72);
-            --faint: rgba(160, 148, 124, 0.55);
-            --stroke: rgba(201, 169, 106, 0.18);
-            --stroke-hi: rgba(201, 169, 106, 0.34);
-            --glass: rgba(201, 169, 106, 0.05);
+            --pf-bg: #F7F5F1;
+            --pf-sf: #FFFFFF;
+            --pf-sunk: #F1EDE6;
+            --pf-tx: #1A1815;
+            --pf-tx2: #4A443C;
+            --pf-dim: #7A7268;
+            --pf-faint: #A69D91;
+            --pf-line: #E6E0D6;
+            --pf-line2: #D8D0C2;
+            --pf-ac: #B4552D;
+            --pf-acx: #FFFFFF;
+            --pf-ac1: rgba(180, 85, 45, 0.08);
+            --pf-ac2: rgba(180, 85, 45, 0.22);
+            --pf-pos: #4E7A5C;
+            --pf-pos1: rgba(78, 122, 92, 0.10);
+            --pf-neg: #AF4A44;
+            --pf-neg1: rgba(175, 74, 68, 0.09);
+            --pf-wn: #96701C;
+            --pf-wn1: rgba(150, 112, 28, 0.10);
+            --pf-sh: 0 1px 2px rgba(45, 35, 22, 0.05);
             --pf-sans: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
             --pf-display: "Outfit", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
-            background:
-                radial-gradient(ellipse 55% 36% at 12% 0%, rgba(201, 169, 106, 0.10), transparent 60%),
-                radial-gradient(ellipse 45% 30% at 100% 8%, rgba(168, 137, 79, 0.07), transparent 55%),
-                linear-gradient(180deg, #0c0c0e 0%, #111113 48%, #0a0a0b 100%) !important;
+            --pf-tap: 44px;
+            background: var(--pf-bg) !important;
+            color: var(--pf-tx) !important;
+            font-family: var(--pf-sans);
             position: relative;
             overflow-x: hidden;
-            color: var(--text) !important;
-            font-family: var(--pf-sans);
             -webkit-font-smoothing: antialiased;
         }
-        #profile-page .ap-aurora { position:absolute; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
-        #profile-page .ap-aurora__blob { position:absolute; border-radius:50%; filter:blur(100px); opacity:0.55; }
-        #profile-page .ap-aurora__blob--1 { width:56vw; height:42vw; top:-16%; left:-12%; background:rgba(201,169,106,0.16); }
-        #profile-page .ap-aurora__blob--2 { width:40vw; height:36vw; top:4%; right:-14%; background:rgba(168,137,79,0.10); }
-        #profile-page .ap-aurora__blob--3 { width:50vw; height:40vw; bottom:-18%; left:24%; background:rgba(120,100,70,0.10); }
-        #profile-page .ap-grain { position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0.035; mix-blend-mode:overlay; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); background-repeat:repeat; background-size:256px 256px; }
-        #profile-page .dr-shell { position:relative; z-index:1; padding-bottom:110px; }
-        #profile-page .card,
-        #profile-page .pf-quick-card,
-        #profile-page .pf-notif-card,
-        #profile-page .pf-leave-item,
-        #profile-page .pf-approval-item {
-            background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02)) !important;
-            backdrop-filter: blur(16px) saturate(1.1) !important;
-            -webkit-backdrop-filter: blur(16px) saturate(1.1) !important;
-            border: 1px solid rgba(255,255,255,0.07) !important;
-            border-radius: 16px;
-            box-shadow:
-                inset 0 1px 0 rgba(255,255,255,0.05),
-                0 12px 28px rgba(0,0,0,0.28) !important;
+        /* 旧的极光/噪点装饰在浅色底上没有意义，直接隐藏（DOM 保留以免影响别处） */
+        #profile-page .ap-aurora,
+        #profile-page .ap-grain { display: none !important; }
+
+        #profile-page .dr-shell { position: relative; z-index: 1; padding: 0 0 96px; }
+
+        /* ── 图标：统一 currentColor + 1.5 描边 ── */
+        #profile-page .pfi {
+            width: 18px; height: 18px; flex: none; display: block;
+            stroke: currentColor; stroke-width: 1.5; fill: none;
+            stroke-linecap: round; stroke-linejoin: round;
         }
-        #profile-page .pf-card-hero {
-            position: relative;
-            overflow: hidden;
+        #profile-page .pfi--sm { width: 14px; height: 14px; }
+        #profile-page .pfi--lg { width: 21px; height: 21px; }
+
+        /* ── 顶部身份：无卡片 ── */
+        #profile-page .pf2-top {
+            padding: 24px 20px 20px;
+            display: flex; align-items: center; gap: 13px;
         }
-        #profile-page .pf-card-hero::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border-radius: inherit;
-            background: linear-gradient(135deg, rgba(201,169,106,0.18), transparent 42%, rgba(245,158,11,0.06) 78%);
-            pointer-events: none;
+        #profile-page .pf2-av {
+            width: 50px; height: 50px; flex: none; border-radius: 15px;
+            background: var(--pf-ac); color: var(--pf-acx);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; font-weight: 500; letter-spacing: 0.04em;
         }
-        #profile-page .pf-card-hero > * { position: relative; z-index: 1; }
-        #profile-page .rep-page-head { border-bottom-color: rgba(201,169,106,0.14); }
-        #profile-page .rep-page-head__eyebrow {
-            color: var(--gold) !important;
-            letter-spacing: 0.22em;
-            font-family: var(--pf-display);
-            display: flex; align-items: center; gap: 8px;
+        #profile-page .pf2-who { flex: 1; min-width: 0; }
+        #profile-page .pf2-who em {
+            display: block; font-style: normal; font-size: 12.5px; font-weight: 500;
+            color: var(--pf-ac); letter-spacing: 0.04em; margin-bottom: 3px;
         }
-        #profile-page .rep-page-head__eyebrow::before {
-            content: ''; width: 7px; height: 7px; border-radius: 50%;
-            background: var(--gold); box-shadow: 0 0 12px var(--gold-glow);
-            flex-shrink: 0;
+        #profile-page .pf2-who em:empty { display: none; }
+        #profile-page .pf2-who b {
+            display: block; font-size: 20px; font-weight: 600;
+            letter-spacing: 0.01em; line-height: 1.2; color: var(--pf-tx);
         }
-        #profile-page .rep-page-head h2 {
-            color: #ece7dc !important;
-            letter-spacing: 0.08em;
-            font-family: var(--pf-sans);
-            font-weight: 700;
+        #profile-page .pf2-who p {
+            margin: 5px 0 0; font-size: 12.5px; color: var(--pf-dim);
         }
-        #profile-page .rep-page-head__sub { color: var(--dim) !important; letter-spacing: 0.04em; }
+        #profile-page .pf2-rk {
+            flex: none; text-align: center; padding: 6px 11px; border-radius: 11px;
+            background: var(--pf-ac1); border: 1px solid var(--pf-ac2);
+        }
+        #profile-page .pf2-rk i {
+            display: block; font-family: var(--pf-display); font-size: 22px; font-weight: 600;
+            line-height: 1; color: var(--pf-ac); font-style: normal;
+            font-variant-numeric: tabular-nums;
+        }
+        #profile-page .pf2-rk s {
+            display: block; margin-top: 3px; font-size: 9.5px; color: var(--pf-dim);
+            text-decoration: none; letter-spacing: 0.08em;
+        }
+
+        /* ── 分区：发丝线 ── */
+        #profile-page .pf2-wrap { padding: 0 20px; }
+        #profile-page .pf2-sec { padding: 22px 0; border-top: 1px solid var(--pf-line); }
+        #profile-page .pf2-sh { display: flex; align-items: baseline; gap: 9px; margin-bottom: 15px; }
+        #profile-page .pf2-sh h3 {
+            font-size: 15px; font-weight: 600; letter-spacing: 0.02em; margin: 0;
+            color: var(--pf-tx);
+        }
+        #profile-page .pf2-sh .n {
+            font-family: var(--pf-display); font-size: 11px; font-weight: 600;
+            color: var(--pf-acx); background: var(--pf-ac); border-radius: 99px;
+            padding: 2px 7px; line-height: 1.5; align-self: center;
+            font-variant-numeric: tabular-nums;
+        }
+        #profile-page .pf2-sh .x {
+            margin-left: auto; font-size: 11.5px; color: var(--pf-faint);
+        }
+        #profile-page .pf2-sh .act {
+            margin-left: auto; font-size: 12px; color: var(--pf-ac); cursor: pointer;
+            font-weight: 500; background: none; border: 0; font-family: inherit;
+            display: flex; align-items: center; gap: 3px; padding: 4px 0;
+        }
+
+        /* ── 待办三合一 ── */
+        #profile-page .pf2-seg {
+            display: flex; gap: 3px; padding: 3px; border-radius: 11px;
+            background: var(--pf-sunk); margin-bottom: 12px;
+        }
+        #profile-page .pf2-seg button {
+            flex: 1; min-height: 36px; border: 0; border-radius: 8px; cursor: pointer;
+            font-size: 12.5px; font-weight: 500; color: var(--pf-dim); background: transparent;
+            font-family: inherit; display: flex; align-items: center; justify-content: center;
+            gap: 5px; transition: background 0.16s, color 0.16s;
+        }
+        #profile-page .pf2-seg button.is-on {
+            background: var(--pf-sf); color: var(--pf-tx); font-weight: 600;
+            box-shadow: var(--pf-sh);
+        }
+        #profile-page .pf2-seg button i {
+            font-family: var(--pf-display); font-size: 10px; font-weight: 600; font-style: normal;
+            padding: 1.5px 5px; border-radius: 99px; background: var(--pf-ac1);
+            color: var(--pf-ac); font-variant-numeric: tabular-nums;
+        }
+        #profile-page .pf2-seg button.is-on i { background: var(--pf-ac); color: var(--pf-acx); }
+        #profile-page .pf2-seg button i.al { background: var(--pf-neg); color: #fff; }
+        #profile-page .pf2-pane { display: none; }
+        #profile-page .pf2-pane.is-on { display: block; }
+        #profile-page .pf2-empty {
+            padding: 26px 8px; text-align: center; font-size: 12.5px; color: var(--pf-faint);
+        }
+
+        /* ── 数字并排（本月）── */
+        #profile-page .pf2-nums { display: flex; align-items: flex-start; }
+        #profile-page .pf2-nums > div { flex: 1; min-width: 0; padding-right: 10px; }
+        #profile-page .pf2-nums > div + div { border-left: 1px solid var(--pf-line); padding-left: 14px; }
+        #profile-page .pf2-nv {
+            font-family: var(--pf-display); font-size: 21px; font-weight: 600; line-height: 1.05;
+            letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap;
+            color: var(--pf-tx);
+        }
+        /* 金额列单独收窄：¥12,800.00 有 10 个字符，三列并排时 21px 会互相压字 */
+        #profile-page .pf2-nv--pos,
+        #profile-page .pf2-nv--neg { font-size: 17px; letter-spacing: -0.01em; }
+        #profile-page .pf2-nv s {
+            font-size: 12px; font-weight: 500; color: var(--pf-dim);
+            text-decoration: none; margin-left: 2px;
+        }
+        #profile-page .pf2-nv--pos { color: var(--pf-pos); }
+        #profile-page .pf2-nv--neg { color: var(--pf-neg); }
+        #profile-page .pf2-nk { margin-top: 8px; font-size: 11px; color: var(--pf-dim); letter-spacing: 0.04em; }
+        #profile-page .pf2-nsub {
+            margin-top: 5px; font-size: 10.5px; color: var(--pf-faint);
+            font-family: var(--pf-display); font-variant-numeric: tabular-nums;
+        }
+
+        /* ── 绩效：大数 + 横条 ── */
+        #profile-page .pf2-big { display: flex; align-items: baseline; gap: 9px; margin-bottom: 16px; }
+        #profile-page .pf2-big b {
+            font-family: var(--pf-display); font-size: 36px; font-weight: 600; line-height: 0.9;
+            letter-spacing: -0.02em; color: var(--pf-ac); font-variant-numeric: tabular-nums;
+        }
+        #profile-page .pf2-big span { font-size: 11.5px; color: var(--pf-dim); }
+        #profile-page .pf2-pb { display: flex; align-items: center; gap: 12px; min-height: 22px; }
+        #profile-page .pf2-pb + .pf2-pb { margin-top: 13px; }
+        #profile-page .pf2-pb i {
+            width: 62px; flex: none; font-style: normal; font-size: 12px; color: var(--pf-tx2);
+        }
+        #profile-page .pf2-pb u {
+            flex: 1; height: 4px; border-radius: 99px; background: var(--pf-sunk);
+            overflow: hidden; text-decoration: none; display: block;
+        }
+        #profile-page .pf2-pb u b {
+            display: block; height: 100%; border-radius: 99px; background: var(--pf-ac);
+            transition: width 0.4s ease;
+        }
+        #profile-page .pf2-pb u b.p { background: var(--pf-pos); }
+        #profile-page .pf2-pb s {
+            width: 40px; flex: none; text-align: right; text-decoration: none;
+            font-family: var(--pf-display); font-size: 12.5px; font-weight: 600;
+            font-variant-numeric: tabular-nums; color: var(--pf-tx);
+        }
+
+        /* ── 考勤 ── */
+        #profile-page .pf2-lv {
+            display: flex; align-items: center; justify-content: space-between;
+            min-height: 50px; padding: 12px 14px; border-radius: 12px;
+            background: var(--pf-ac1); margin-bottom: 14px;
+        }
+        #profile-page .pf2-lv i {
+            font-style: normal; font-size: 12.5px; color: var(--pf-tx2);
+            display: flex; align-items: center; gap: 7px;
+        }
+        #profile-page .pf2-lv b {
+            font-family: var(--pf-display); font-size: 23px; font-weight: 600; line-height: 1;
+            color: var(--pf-ac); font-variant-numeric: tabular-nums; white-space: nowrap;
+        }
+        #profile-page .pf2-lv b s {
+            font-size: 12px; font-weight: 500; color: var(--pf-dim);
+            text-decoration: none; margin-left: 2px;
+        }
+        #profile-page .pf2-att { display: flex; }
+        #profile-page .pf2-att > div { flex: 1; text-align: center; padding: 2px 0; }
+        #profile-page .pf2-att > div + div { border-left: 1px solid var(--pf-line); }
+        #profile-page .pf2-att i {
+            display: block; font-style: normal; font-family: var(--pf-display);
+            font-size: 20px; font-weight: 600; line-height: 1; color: var(--pf-faint);
+            font-variant-numeric: tabular-nums;
+        }
+        #profile-page .pf2-att b {
+            display: block; margin-top: 7px; font-size: 10.5px; font-weight: 400; color: var(--pf-faint);
+        }
+        /* 只有异常值着色：由 JS 加 is-bad / is-good */
+        #profile-page .pf2-att > div.is-bad i,
+        #profile-page .pf2-att > div.is-bad b { color: var(--pf-neg); }
+        #profile-page .pf2-att > div.is-good i { color: var(--pf-pos); }
+
+        /* ── 折叠区 ── */
+        #profile-page .pf2-fold { border-top: 1px solid var(--pf-line); }
+        #profile-page .pf2-fold > summary {
+            list-style: none; cursor: pointer; min-height: 54px; display: flex;
+            align-items: center; gap: 11px; font-size: 14px; font-weight: 500;
+            color: var(--pf-tx2);
+        }
+        #profile-page .pf2-fold > summary::-webkit-details-marker { display: none; }
+        #profile-page .pf2-fold[open] > summary { color: var(--pf-tx); }
+        #profile-page .pf2-fold[open] > summary .pf2-cv { transform: rotate(90deg); }
+        #profile-page .pf2-cv { margin-left: auto; color: var(--pf-faint); transition: transform 0.2s; }
+        #profile-page .pf2-fb { padding: 2px 0 20px; }
+        #profile-page .pf2-kv {
+            display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+            padding: 11px 0; border-bottom: 1px solid var(--pf-line);
+        }
+        #profile-page .pf2-kv:last-child { border-bottom: 0; }
+        #profile-page .pf2-kv i { font-style: normal; font-size: 12.5px; color: var(--pf-dim); flex: none; }
+        #profile-page .pf2-kv b {
+            font-size: 13.5px; font-weight: 500; text-align: right;
+            overflow-wrap: anywhere; color: var(--pf-tx);
+        }
+        #profile-page .pf2-note {
+            font-size: 11.5px; line-height: 1.8; color: var(--pf-dim); padding: 2px 0 18px;
+        }
+        #profile-page .pf2-hint {
+            font-size: 11.5px; line-height: 1.7; color: var(--pf-dim);
+            padding: 11px 13px; border-radius: 11px; background: var(--pf-sunk);
+        }
+        #profile-page .pf2-hint + .pf2-hint { margin-top: 8px; }
+        #profile-page .pf2-hint:empty { display: none; }
+
+        /* ── 快捷操作：整行列表。
+           原先是 5 列小方块，「总经理信箱」这种 5 字标签会被挤断行；
+           且这些都是低频操作，整行列表比拥挤的格子更易读。 ── */
+        #profile-page .pf2-qk > div {
+            display: flex; align-items: center; gap: 11px; min-height: 52px;
+            padding: 6px 0; border-bottom: 1px solid var(--pf-line);
+            cursor: pointer; color: var(--pf-ac);
+        }
+        #profile-page .pf2-qk > div:last-child { border-bottom: 0; }
+        #profile-page .pf2-qk > div:active { color: var(--pf-tx); }
+        #profile-page .pf2-qk > div span {
+            flex: 1; font-size: 13.5px; font-weight: 500; color: var(--pf-tx2);
+        }
+        #profile-page .pf2-qk > div.is-muted,
+        #profile-page .pf2-qk > div.is-muted span { color: var(--pf-faint); }
+
+        /* ══ 以下为「渲染函数发出的旧类名」的浅色适配 ══ */
+
+        /* 按钮 */
         #profile-page .ga-btn {
-            display: inline-flex; align-items: center; justify-content: center;
-            gap: 6px; height: 40px; padding: 0 16px; border-radius: 12px;
-            font-size: 13px; font-weight: 600; cursor: pointer; border: none;
-            font-family: var(--pf-sans);
-            transition: all 0.15s;
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            min-height: var(--pf-tap); padding: 0 14px; border-radius: 10px;
+            font-size: 12.5px; font-weight: 500; cursor: pointer; font-family: var(--pf-sans);
+            background: var(--pf-sf); color: var(--pf-ac); border: 1px solid var(--pf-ac2);
+            transition: background 0.15s;
         }
-        #profile-page .ga-btn--primary {
-            background: linear-gradient(180deg, #dcc9a0, var(--gold) 45%, var(--gold-deep));
-            color: #1a1610;
-            box-shadow: 0 8px 22px rgba(201,169,106,0.32);
-        }
-        #profile-page .ga-btn--primary:hover { filter: brightness(1.05); }
-        #profile-page .ga-btn--ghost { background: rgba(201,169,106,0.06); color: var(--dim); border: 1px solid var(--stroke); }
-        #profile-page .ga-btn--ghost:hover { background: rgba(201,169,106,0.10); color: var(--text); }
-        #profile-page .ga-btn--sm { height: 32px; padding: 0 12px; font-size: 12px; }
-        #profile-page .ga-btn--danger { background: rgba(255,122,144,0.15); color: var(--coral); border: 1px solid rgba(255,122,144,0.2); }
+        #profile-page .ga-btn:active { background: var(--pf-ac1); }
+        #profile-page .ga-btn--primary { background: var(--pf-sf); color: var(--pf-ac); border-color: var(--pf-ac2); }
+        #profile-page .ga-btn--ghost { background: transparent; color: var(--pf-dim); border-color: var(--pf-line2); }
+        #profile-page .ga-btn--danger { background: transparent; color: var(--pf-neg); border-color: rgba(175, 74, 68, 0.3); }
+        #profile-page .ga-btn--sm { min-height: 32px; padding: 0 11px; font-size: 11.5px; border-radius: 8px; }
+
+        /* 徽章 */
         #profile-page .ga-badge {
-            display: inline-flex; align-items: center; gap: 4px;
-            padding: 2px 8px; border-radius: 99px;
-            font-size: 10px; font-weight: 600; line-height: 1;
+            display: inline-flex; align-items: center; gap: 4px; padding: 1.5px 6px;
+            border-radius: 5px; font-size: 10px; font-weight: 600; line-height: 1.6;
+            letter-spacing: 0.03em;
         }
-        #profile-page .ga-badge--iris { background: rgba(201,169,106,0.15); border: 1px solid rgba(201,169,106,0.28); color: var(--gold); }
-        #profile-page .ga-badge--mint { background: rgba(94,234,212,0.12); border: 1px solid rgba(94,234,212,0.2); color: var(--mint); }
-        #profile-page .ga-badge--amber { background: rgba(255,196,107,0.15); border: 1px solid rgba(255,196,107,0.25); color: var(--amber); }
-        #profile-page .ga-badge--coral { background: rgba(255,122,144,0.15); border: 1px solid rgba(255,122,144,0.25); color: var(--coral); }
-        #profile-page .pf-avatar-orb {
-            width: 56px;
-            height: 56px;
-            flex-shrink: 0;
-            border-radius: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 22px;
-            color: #1a1610;
-            background: linear-gradient(145deg, #dcc9a0, var(--gold) 50%, var(--gold-deep));
-            border: 1px solid rgba(201,169,106,0.35);
-            box-shadow:
-                inset 0 1px 0 rgba(255,255,255,0.35),
-                0 10px 26px rgba(201,169,106,0.28);
+        #profile-page .ga-badge--iris { background: var(--pf-ac1); color: var(--pf-ac); }
+        #profile-page .ga-badge--mint { background: var(--pf-pos1); color: var(--pf-pos); }
+        #profile-page .ga-badge--amber { background: var(--pf-wn1); color: var(--pf-wn); }
+        #profile-page .ga-badge--coral { background: var(--pf-neg1); color: var(--pf-neg); }
+
+        /* 通知卡：改为发丝线行，不再是盒子 */
+        #profile-page .pf-notif-card {
+            position: relative; padding: 13px 0 13px 13px;
+            border-bottom: 1px solid var(--pf-line); background: transparent;
         }
-        #profile-page .pf-hero-name {
-            font-weight: 700;
-            font-size: 18px;
-            line-height: 1.25;
-            letter-spacing: 0.06em;
-            color: #ece7dc;
-            font-family: var(--pf-sans);
+        #profile-page .pf-notif-card::before {
+            content: ""; position: absolute; left: 0; top: 13px; bottom: 13px;
+            width: 3px; border-radius: 99px; background: var(--pf-line2);
         }
-        #profile-page .pf-hero-meta {
-            font-size: 12px;
-            color: var(--dim);
-            margin-top: 6px;
-            line-height: 1.55;
-            letter-spacing: 0.02em;
+        #profile-page .pf-notif-card--unread::before { background: var(--pf-ac); }
+        #profile-page .pf-notif-card--urgent::before { background: var(--pf-neg); }
+        #profile-page .pf-notif-head {
+            display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
         }
-        #profile-page .pf-store-rating-badge {
-            flex-shrink: 0;
-            align-self: center;
-            padding: 8px 12px;
-            border-radius: 14px;
-            max-width: 36vw;
-            text-align: right;
-            background: linear-gradient(180deg, rgba(201,169,106,0.10), rgba(0,0,0,0.12));
-            border: 1px solid rgba(201,169,106,0.22);
-            box-shadow:
-                inset 0 1px 0 rgba(201,169,106,0.16),
-                0 10px 28px rgba(0,0,0,0.24);
+        #profile-page .pf-notif-main { display: flex; align-items: flex-start; gap: 8px; min-width: 0; flex: 1; }
+        #profile-page .pf-notif-icon { flex: none; color: var(--pf-ac); margin-top: 1px; }
+        #profile-page .pf-notif-card--urgent .pf-notif-icon { color: var(--pf-neg); }
+        #profile-page .pf-notif-copy { min-width: 0; flex: 1; }
+        #profile-page .pf-notif-title-row {
+            display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
         }
-        /* 强制确认弹窗：系统通知 / 重要公告 */
+        #profile-page .pf-notif-title {
+            font-weight: 500; font-size: 14px; color: var(--pf-tx); line-height: 1.4;
+        }
+        #profile-page .pf-notif-meta { font-size: 11.5px; color: var(--pf-faint); margin-top: 4px; }
+        #profile-page .pf-notif-body,
+        #profile-page .pf-notif-full {
+            margin-top: 7px; color: var(--pf-tx2); font-size: 12.5px; line-height: 1.65;
+            white-space: pre-line;
+        }
+        #profile-page .pf-notif-expand-hint {
+            margin-top: 5px; font-size: 11px; color: var(--pf-ac); text-align: right;
+        }
+        #profile-page .pf-notif-badge {
+            display: inline-flex; align-items: center; gap: 3px; padding: 1.5px 6px;
+            border-radius: 5px; font-size: 10px; font-weight: 600; letter-spacing: 0.03em;
+        }
+        #profile-page .pf-notif-badge--announcement { background: var(--pf-ac1); color: var(--pf-ac); }
+        #profile-page .pf-notif-badge--warning { background: var(--pf-wn1); color: var(--pf-wn); }
+        #profile-page .pf-notif-badge--info { background: var(--pf-pos1); color: var(--pf-pos); }
+        #profile-page .pf-notif-badge--urgent { background: var(--pf-neg); color: #fff; }
+        #profile-page .pf-notif-unread-dot { display: none; }
+
+        /* 待办 / 待审批行 */
+        #profile-page .pf-approval-item {
+            display: flex; align-items: center; gap: 11px; min-height: 58px; padding: 12px 0 12px 13px;
+            border-bottom: 1px solid var(--pf-line); position: relative; background: transparent;
+        }
+        #profile-page .pf-approval-item::before {
+            content: ""; position: absolute; left: 0; top: 12px; bottom: 12px;
+            width: 3px; border-radius: 99px; background: var(--pf-line2);
+        }
+        #profile-page .pf-approval-item--hot::before { background: var(--pf-neg); }
+        #profile-page .pf-approval-main { flex: 1; min-width: 0; }
+        #profile-page .pf-approval-title {
+            font-weight: 500; font-size: 14px; color: var(--pf-tx); line-height: 1.4;
+            display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+        }
+        #profile-page .pf-approval-meta { font-size: 11.5px; color: var(--pf-faint); margin-top: 4px; }
+        #profile-page .pf-approval-summary { font-size: 11.5px; color: var(--pf-dim); margin-top: 3px; }
+        #profile-page .pf-approval-actions { display: flex; gap: 6px; flex: none; }
+
+        /* 通知展开区 / 更多按钮 */
+        #profile-page .profile-notifications-scroll { background: transparent; border: 0; padding: 0; }
+        #profile-page .notif-expand-area { display: none; }
+        #profile-page .notif-expand-area.expanded { display: block; }
+        #profile-page .notif-more-btn,
+        #profile-page #profile-notif-expand-footer button {
+            display: flex; align-items: center; justify-content: center; gap: 4px;
+            width: 100%; min-height: var(--pf-tap); border: 0; background: transparent;
+            color: var(--pf-ac); font-family: var(--pf-sans); font-size: 12.5px;
+            font-weight: 500; cursor: pointer;
+        }
+        #profile-page .notif-full-msg.notif-msg-show { display: block !important; }
+        #profile-page .notif-full-msg.notif-msg-show + div { display: none !important; }
+
+        /* 发展地图（renderDevelopmentMap 输出） */
+        #profile-page .pf2-ld + .pf2-ld { margin-top: 14px; }
+        #profile-page .pf2-ldh {
+            display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px;
+        }
+        #profile-page .pf2-ldh b { font-weight: 500; display: flex; align-items: center; gap: 7px; color: var(--pf-tx); }
+        #profile-page .pf2-ldh s {
+            text-decoration: none; font-family: var(--pf-display); font-size: 11.5px;
+            color: var(--pf-faint); font-variant-numeric: tabular-nums;
+        }
+        #profile-page .pf2-ldb {
+            margin-top: 7px; height: 4px; border-radius: 99px; background: var(--pf-sunk); overflow: hidden;
+        }
+        #profile-page .pf2-ldb i { display: block; height: 100%; background: var(--pf-ac); border-radius: 99px; }
+        #profile-page .pf2-ldb i.p { background: var(--pf-pos); }
+        #profile-page .pf2-path {
+            display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+            margin-top: 15px; padding-top: 14px; border-top: 1px solid var(--pf-line);
+        }
+        #profile-page .pf2-nd {
+            font-size: 11.5px; padding: 4px 9px; border-radius: 7px;
+            background: var(--pf-sunk); color: var(--pf-dim); white-space: nowrap;
+        }
+        #profile-page .pf2-nd--now { background: var(--pf-ac); color: var(--pf-acx); font-weight: 500; }
+        #profile-page .pf2-nd--top { background: var(--pf-ac1); color: var(--pf-ac); border: 1px solid var(--pf-ac2); }
+        #profile-page .pf2-sp { color: var(--pf-faint); font-size: 11px; }
+        #profile-page .pf2-nx {
+            display: flex; gap: 9px; align-items: flex-start; margin-top: 14px;
+            padding: 12px 13px; border-radius: 11px; background: var(--pf-ac1);
+            font-size: 12.5px; line-height: 1.6; color: var(--pf-tx2);
+        }
+        #profile-page .pf2-nx .pfi { color: var(--pf-ac); margin-top: 1px; }
+        #profile-page .pf2-nx b { font-weight: 600; color: var(--pf-tx); }
+
+        /* 页面内可能出现的全局组件兜底（浅色底上的可读性） */
+        #profile-page .btn,
+        #profile-page .btn-secondary {
+            background: var(--pf-sf) !important; color: var(--pf-ac) !important;
+            border: 1px solid var(--pf-ac2) !important;
+        }
+        #profile-page a { color: var(--pf-ac); }
+        #profile-page ::-webkit-scrollbar { width: 6px; }
+        #profile-page ::-webkit-scrollbar-thumb { background: var(--pf-line2); border-radius: 10px; }
+
+        /* 旧的吸底工具条只放了一个「总经理信箱」，与 v2 的「快捷操作 → 信箱」重复，
+           且是深色粘底条，与暖纸页面冲突。入口未丢失，故在档案页隐藏。
+           （它在 3604 行被 display:flex !important 强制显示，这里需要同等强度覆盖） */
+        #profile-page #profile-mobile-toolbar { display: none !important; }
+
+        /* ── 窄屏 ── */
+        @media (max-width: 378px) {
+            #profile-page .pf2-top { padding: 20px 16px 16px; }
+            #profile-page .pf2-wrap { padding: 0 16px; }
+            /* 窄屏三列放不下金额：多劳多得独占一行，奖励/处罚各半 */
+            #profile-page .pf2-nums { flex-wrap: wrap; }
+            #profile-page .pf2-nums > div:first-child {
+                flex: 0 0 100%; padding: 0 0 14px; margin-bottom: 14px;
+                border-bottom: 1px solid var(--pf-line);
+            }
+            #profile-page .pf2-nums > div:nth-child(2) {
+                flex: 0 0 50%; border-left: 0; padding-left: 0;
+            }
+            #profile-page .pf2-nums > div:nth-child(3) { flex: 0 0 50%; padding-left: 14px; }
+            #profile-page .pf2-nv { font-size: 21px; }
+            #profile-page .pf2-nv--pos,
+            #profile-page .pf2-nv--neg { font-size: 19px; }
+            #profile-page .pf2-pb i { width: 54px; }
+        }
+
         #ack-announcement-modal.modal {
             backdrop-filter: blur(12px) saturate(1.2);
             -webkit-backdrop-filter: blur(12px) saturate(1.2);
@@ -12487,372 +12784,6 @@
             background: linear-gradient(135deg, rgba(239,68,68,0.96), rgba(220,38,38,0.96));
             box-shadow: 0 10px 28px rgba(220,38,38,0.32);
         }
-        #profile-page .pf-points-banner {
-            padding: 14px 14px;
-            border-radius: 18px;
-            text-align: center;
-            cursor: pointer;
-            box-shadow:
-                inset 0 1px 0 rgba(201,169,106,0.16),
-                0 14px 26px rgba(0,0,0,0.22);
-        }
-        #profile-page .pf-icon-chip {
-            width: 32px;
-            height: 32px;
-            border-radius: 10px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid rgba(201,169,106,0.18);
-            box-shadow: inset 0 1px 0 rgba(201,169,106,0.14);
-        }
-        #profile-page .pf-icon-chip--amber { background: linear-gradient(135deg, rgba(255,196,107,0.24), rgba(255,196,107,0.10)); }
-        #profile-page .pf-icon-chip--iris { background: linear-gradient(135deg, rgba(201,169,106,0.24), rgba(201,169,106,0.10)); }
-        #profile-page .pf-icon-chip--mint { background: linear-gradient(135deg, rgba(94,234,212,0.22), rgba(94,234,212,0.10)); }
-        #profile-page .pf-icon-chip--lg {
-            position: relative;
-            width: 36px;
-            height: 36px;
-            border-radius: 12px;
-            font-size: 18px;
-        }
-        #profile-page .pf-notif-shell {
-            padding: 14px 16px;
-            border-radius: 20px;
-            background: linear-gradient(165deg, rgba(201,169,106,0.07), rgba(0,0,0,0.14));
-            border: 1px solid rgba(201,169,106,0.16);
-            backdrop-filter: blur(18px) saturate(1.15);
-            -webkit-backdrop-filter: blur(18px) saturate(1.15);
-            box-shadow:
-                inset 0 1px 0 rgba(201,169,106,0.12),
-                0 12px 30px rgba(0,0,0,0.22);
-        }
-        #profile-page .pf-notif-card {
-            border-radius: 14px; padding: 12px; margin-bottom: 8px;
-            transition: border-color 0.15s;
-        }
-        #profile-page .pf-notif-card:hover { border-color: var(--stroke-hi); }
-        #profile-page .pf-notif-card .pf-notif-badge {
-            display: inline-flex; align-items: center; gap: 4px;
-            padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 600;
-        }
-        #profile-page .pf-notif-badge--announcement { background: rgba(201,169,106,0.15); color: var(--gold); }
-        #profile-page .pf-notif-badge--warning { background: rgba(255,122,144,0.15); color: var(--coral); }
-        #profile-page .pf-notif-badge--info { background: rgba(94,234,212,0.12); color: var(--mint); }
-        #profile-page .pf-notif-badge--urgent { background: #ef4444; color: #fff; font-weight: 800; animation: pfNotifUrgentPulse 1.6s ease-in-out infinite; }
-        @keyframes pfNotifUrgentPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.55); } 50% { box-shadow: 0 0 0 5px rgba(239,68,68,0); } }
-        #profile-page .pf-notif-card--unread { border-color: rgba(201,169,106,0.55); background: rgba(201,169,106,0.07); }
-        #profile-page .pf-notif-card--urgent { border-color: rgba(239,68,68,0.6); background: rgba(239,68,68,0.07); }
-        #profile-page .pf-notif-unread-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#c9a96a; flex-shrink:0; margin-right:2px; }
-        #profile-page .pf-notif-card--urgent .pf-notif-unread-dot { background:#ef4444; }
-        #profile-page .pf-approval-item {
-            display: flex; align-items: center; gap: 10px;
-            padding: 10px; border-radius: 12px;
-            margin-bottom: 6px;
-        }
-        #profile-page .pf-leave-item {
-            padding: 10px 12px; border-radius: 12px;
-            margin-bottom: 6px;
-        }
-        #profile-page .pf-metric-tile,
-        #profile-page .pf-summary-tile {
-            background: linear-gradient(180deg, rgba(201,169,106,0.07), rgba(0,0,0,0.12));
-            border: 1px solid rgba(201,169,106,0.12);
-            border-radius: 14px;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-        }
-        #profile-page .pf-metric-k,
-        #profile-page .pf-summary-k {
-            font-size: 11px;
-            color: var(--faint);
-            line-height: 1.35;
-            letter-spacing: 0.04em;
-            font-weight: 500;
-        }
-        #profile-page .pf-metric-v,
-        #profile-page .pf-summary-v {
-            margin-top: 6px;
-            font-weight: 700;
-            font-size: 14px;
-            line-height: 1.25;
-            letter-spacing: 0.02em;
-            color: #ece7dc;
-        }
-        #profile-page .pf-stat-reward {
-            background: linear-gradient(135deg, rgba(94,234,212,0.14), rgba(94,234,212,0.05)); border: 1px solid rgba(94,234,212,0.20);
-            border-radius: 12px;
-        }
-        #profile-page .pf-stat-punish {
-            background: linear-gradient(135deg, rgba(255,122,144,0.14), rgba(255,122,144,0.05)); border: 1px solid rgba(255,122,144,0.20);
-            border-radius: 12px;
-        }
-        #profile-page .pf-band {
-            border-radius: 14px;
-            box-shadow: inset 0 1px 0 rgba(201,169,106,0.10);
-        }
-        #profile-page .pf-band--amber {
-            background: linear-gradient(135deg, rgba(255,196,107,0.20), rgba(255,196,107,0.08));
-            border: 1px solid rgba(255,196,107,0.28);
-        }
-        #profile-page .pf-band--mint {
-            background: linear-gradient(135deg, rgba(94,234,212,0.12), rgba(94,234,212,0.05));
-            border: 1px solid rgba(94,234,212,0.18);
-        }
-        #profile-page .pf-band--iris {
-            background: linear-gradient(135deg, rgba(201,169,106,0.14), rgba(201,169,106,0.05));
-            border: 1px solid rgba(201,169,106,0.20);
-        }
-        #profile-page .pf-band--coral {
-            background: linear-gradient(135deg, rgba(255,122,144,0.14), rgba(255,122,144,0.05));
-            border: 1px solid rgba(255,122,144,0.20);
-        }
-        #profile-page .pf-summary-tile--iris {
-            background: linear-gradient(135deg, rgba(201,169,106,0.12), rgba(201,169,106,0.05));
-            border-color: rgba(201,169,106,0.18);
-        }
-        #profile-page .pf-summary-tile--coral {
-            background: linear-gradient(135deg, rgba(255,122,144,0.10), rgba(255,122,144,0.05));
-            border-color: rgba(255,122,144,0.16);
-        }
-        #profile-page .pf-notif-head {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 8px;
-        }
-        #profile-page .pf-notif-main {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            min-width: 0;
-            flex: 1;
-        }
-        #profile-page .pf-notif-icon {
-            font-size: 15px;
-            flex-shrink: 0;
-        }
-        #profile-page .pf-notif-copy {
-            min-width: 0;
-            flex: 1;
-        }
-        #profile-page .pf-notif-title-row {
-            display: flex;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 4px;
-        }
-        #profile-page .pf-notif-title {
-            font-weight: 700;
-            font-size: 13px;
-            color: #ece7dc;
-            letter-spacing: 0.02em;
-        }
-        #profile-page .pf-notif-meta {
-            font-size: 11px;
-            color: var(--faint);
-            margin-top: 2px;
-        }
-        #profile-page .pf-notif-body,
-        #profile-page .pf-notif-full {
-            margin-top: 8px;
-            color: var(--dim);
-            font-size: 12px;
-            line-height: 1.6;
-            white-space: pre-line;
-        }
-        #profile-page .pf-notif-expand-hint {
-            margin-top: 4px;
-            font-size: 11px;
-            color: var(--faint);
-            text-align: right;
-        }
-        #profile-page .pf-approval-main {
-            flex: 1;
-            min-width: 0;
-        }
-        #profile-page .pf-approval-title {
-            font-weight: 600;
-            font-size: 13px;
-            color: #ece7dc;
-        }
-        #profile-page .pf-approval-meta {
-            font-size: 11px;
-            color: var(--faint);
-            margin-top: 2px;
-        }
-        #profile-page .pf-approval-summary {
-            font-size: 11px;
-            color: var(--dim);
-            margin-top: 2px;
-        }
-        #profile-page .pf-approval-actions {
-            display: flex;
-            gap: 5px;
-            flex-shrink: 0;
-        }
-        #profile-page .pf-quick-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px;
-            margin-bottom: 14px;
-        }
-        #profile-page .pf-quick-card {
-            border-radius: 16px;
-            padding: 16px 12px; cursor: pointer; text-align: center;
-            min-height: 92px; display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
-            -webkit-tap-highlight-color: transparent;
-        }
-        #profile-page .pf-quick-card:hover,
-        #profile-page .pf-quick-card:active {
-            border-color: var(--stroke-hi) !important;
-            transform: translateY(-1px);
-            box-shadow:
-                inset 0 1px 0 rgba(201,169,106,0.18),
-                0 18px 34px rgba(0,0,0,0.34) !important;
-        }
-        #profile-page .pf-quick-card .pf-quick-icon {
-            width: 40px; height: 40px; border-radius: 12px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 20px; margin-bottom: 8px;
-            border: 1px solid rgba(201,169,106,0.16);
-            box-shadow: inset 0 1px 0 rgba(201,169,106,0.12);
-        }
-        #profile-page .pf-quick-card .pf-quick-title {
-            font-weight: 700;
-            font-size: 13px;
-            letter-spacing: 0.04em;
-            color: #ece7dc;
-        }
-        #profile-page .pf-quick-card .pf-quick-desc {
-            font-size: 11px;
-            color: var(--dim);
-            margin-top: 4px;
-            line-height: 1.4;
-        }
-        #profile-page .pf-quick-icon--leave { background: linear-gradient(135deg, rgba(201,169,106,0.22), rgba(201,169,106,0.08)); }
-        #profile-page .pf-quick-icon--promote { background: linear-gradient(135deg, rgba(94,234,212,0.18), rgba(94,234,212,0.08)); }
-        #profile-page .pf-quick-icon--mailbox { background: linear-gradient(135deg, rgba(255,196,107,0.20), rgba(255,196,107,0.08)); }
-        #profile-page .pf-quick-icon--password { background: linear-gradient(135deg, rgba(255,122,144,0.16), rgba(255,122,144,0.08)); }
-        #profile-page .pf-quick-icon--resign { background: linear-gradient(135deg, rgba(120,110,90,0.18), rgba(90,80,60,0.08)); }
-        #profile-page .pf-quick-card--muted {
-            opacity: 0.72;
-            filter: saturate(0.85);
-        }
-        #profile-page .pf-quick-card--muted .pf-quick-title { color: var(--dim); }
-        #profile-page .pf-quick-card--muted .pf-quick-desc { color: var(--faint); }
-        #profile-page .pf-section-title {
-            font-weight: 700;
-            font-size: 15px;
-            letter-spacing: 0.06em;
-            color: #ece7dc;
-        }
-        #profile-page .att-summary-metrics {
-            display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-            gap: 6px;
-        }
-        #profile-page .pf-footnote {
-            margin-top: 8px;
-            font-size: 10px;
-            color: var(--faint);
-            line-height: 1.55;
-        }
-
-        /* profile 手机优先响应式 */
-        @media (max-width: 768px) {
-            #profile-page .dr-shell {
-                padding: 10px 12px 108px !important;
-                max-width: 100% !important;
-            }
-            #profile-page .rep-page-head {
-                margin-bottom: 12px;
-                padding-bottom: 10px;
-                align-items: flex-start;
-            }
-            #profile-page .rep-page-head h2 {
-                font-size: 1.28rem;
-                letter-spacing: 0.1em;
-            }
-            #profile-page .rep-page-head__sub {
-                font-size: 12px;
-                max-width: 100%;
-            }
-            #profile-page .pf-card-hero {
-                padding: 16px !important;
-                margin-bottom: 12px !important;
-            }
-            #profile-page .pf-hero-row {
-                display: flex;
-                align-items: flex-start;
-                gap: 12px;
-            }
-            #profile-page .pf-store-rating-badge {
-                max-width: 30vw;
-                padding: 6px 8px;
-            }
-            #profile-page .pf-notif-shell,
-            #profile-page .card {
-                margin-bottom: 12px !important;
-                padding: 14px !important;
-            }
-            #profile-page .profile-metrics-grid {
-                grid-template-columns: 1fr 1fr !important;
-                gap: 8px !important;
-            }
-            #profile-page .pf-stats-row-4 {
-                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-                gap: 8px !important;
-            }
-            #profile-page .att-summary-metrics {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-                gap: 8px;
-            }
-            #profile-page .pf-quick-grid {
-                gap: 8px;
-            }
-            #profile-page .pf-quick-card {
-                min-height: 84px;
-                padding: 14px 8px;
-                border-radius: 14px;
-            }
-            #profile-page .pf-quick-card .pf-quick-icon {
-                width: 36px; height: 36px; font-size: 18px; border-radius: 11px;
-            }
-            #profile-page .pf-footnote {
-                display: -webkit-box;
-                -webkit-line-clamp: 3;
-                -webkit-box-orient: vertical;
-                overflow: hidden;
-            }
-            #profile-page #profile-publish-announcement-btn {
-                font-size: 11px !important;
-                padding: 6px 10px !important;
-            }
-        }
-
-        @media (max-width: 480px) {
-            #profile-page .card { border-radius: 16px; }
-            #profile-page .pf-avatar-orb { width: 50px; height: 50px; border-radius: 16px; font-size: 20px; }
-            #profile-page .pf-hero-name { font-size: 17px; }
-            #profile-page .pf-quick-card { min-height: 78px; }
-            #profile-page .pf-quick-card .pf-quick-desc { display: none; }
-            #profile-page .att-summary-metrics {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-            #profile-page .att-summary-metrics .att-summary-metric:last-child {
-                grid-column: 1 / -1;
-            }
-            #profile-page .rep-page-head h2 { font-size: 1.18rem; }
-        }
-
-        @media (max-width: 360px) {
-            #profile-page .dr-shell { padding-left: 10px !important; padding-right: 10px !important; }
-            #profile-page .pf-quick-card .pf-quick-title { font-size: 12px; }
-        }
-
         /* ── 我的档案 / 员工管理 / 考勤打卡 / 奖惩管理 / 厨房执行 / 增长看板：与#reports-page 同系金融面板 ── */
         #employees-page,
         #attendance-page,
@@ -16580,7 +16511,7 @@
                             <input id="edit-exec-reason" type="text" placeholder="已调整后执行" class="dr-store-select" style="font-size:13px;">
                         </div>
                     </div>
-                    <div style="display:flex;gap:12px;margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.06);">
+                    <div style="display:flex;gap:12px;margin-top:20px;padding-top:14px;border-top:1px solid var(--pf-line);">
                         <button onclick="submitEditExecuteForm()" style="flex:1;padding:10px 20px;border:none;border-radius:10px;background:linear-gradient(135deg,#e8d48b,#c9a227);color:#0a0c10;font-weight:700;cursor:pointer;font-size:14px;">✅ 确认修改并执行</button>
                         <button onclick="closeEditExecuteForm()" style="padding:10px 20px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:transparent;color:rgba(255,255,255,0.5);cursor:pointer;">取消</button>
                     </div>
@@ -16615,7 +16546,7 @@
                         ⚠️ 以下内容将自动发送给客户，请仔细核对后再确认执行。
                     </div>
                     <div id="exec-confirm-body" style="display:flex;flex-direction:column;gap:12px;"></div>
-                    <div style="display:flex;gap:12px;margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.06);">
+                    <div style="display:flex;gap:12px;margin-top:20px;padding-top:14px;border-top:1px solid var(--pf-line);">
                         <button id="exec-confirm-btn" onclick="confirmExecAction()" style="flex:1;padding:12px 20px;border:none;border-radius:10px;background:linear-gradient(135deg,#e8d48b,#c9a227);color:#0a0c10;font-weight:700;cursor:pointer;font-size:15px;box-shadow:0 8px 24px -8px rgba(212,175,55,0.45);">✅ 确认发送并执行</button>
                         <button onclick="closeExecConfirm()" style="padding:12px 20px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:transparent;color:rgba(255,255,255,0.5);cursor:pointer;font-size:13px;">取消</button>
                     </div>
@@ -16659,7 +16590,7 @@
                             启用此规则
                         </label>
                     </div>
-                    <div style="padding:16px 20px;border-top:1px solid rgba(255,255,255,0.06);display:flex;justify-content:flex-end;gap:10px;">
+                    <div style="padding:16px 20px;border-top:1px solid var(--pf-line);display:flex;justify-content:flex-end;gap:10px;">
                         <button class="btn btn-secondary" onclick="closeAgentRuleModal()" style="padding:10px 20px;border-radius:8px;">取消</button>
                         <button class="btn" onclick="saveAgentRule()" style="padding:10px 24px;border-radius:8px;">保存</button>
                     </div>
@@ -23244,7 +23175,30 @@
             </div>
             
             <!-- 个人信息页面 -->
+            <!-- 我的档案图标 sprite：单色描边，统一 currentColor + 1.5px。
+                 放在 #profile-page 之外，避免 .hidden 的 display:none 影响 <use> 解析。 -->
+            <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+                <symbol id="pfi-task" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></symbol>
+                <symbol id="pfi-stamp" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 18h14v-2a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/><path d="M9 14V9a3 3 0 0 1 6 0v5"/></symbol>
+                <symbol id="pfi-bell" viewBox="0 0 24 24"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/></symbol>
+                <symbol id="pfi-alert" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0"/></symbol>
+                <symbol id="pfi-mega" viewBox="0 0 24 24"><path d="m3 11 18-5v12L3 13z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></symbol>
+                <symbol id="pfi-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></symbol>
+                <symbol id="pfi-id" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="9" cy="11" r="2.5"/><path d="M5 17c.8-1.6 2.3-2.5 4-2.5s3.2.9 4 2.5M15 10h4M15 14h2.5"/></symbol>
+                <symbol id="pfi-leaf" viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10"/><path d="M2 21c0-3 1.9-5.3 4.5-6.5"/></symbol>
+                <symbol id="pfi-trend" viewBox="0 0 24 24"><path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></symbol>
+                <symbol id="pfi-mail" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></symbol>
+                <symbol id="pfi-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+                <symbol id="pfi-exit" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></symbol>
+                <symbol id="pfi-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M9 19h5a4 4 0 0 0 0-8h-4a4 4 0 0 1 0-8h5"/></symbol>
+                <symbol id="pfi-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></symbol>
+                <symbol id="pfi-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z"/></symbol>
+                <symbol id="pfi-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+                <symbol id="pfi-pin" viewBox="0 0 24 24"><path d="M12 17v5M9 10.8V4h6v6.8l2 3.2H7z"/></symbol>
+            </defs></svg>
             <div id="profile-page" class="hidden">
+                <!-- v2 结构重排：发丝线分区，取消卡片堆叠。所有 id 与旧版一致，
+                     以保证 loadProfileData / renderProfile* 等渲染函数无需改挂载点。 -->
                 <div class="ap-grain"></div>
                 <div class="ap-aurora">
                     <div class="ap-aurora__blob ap-aurora__blob--1"></div>
@@ -23252,229 +23206,220 @@
                     <div class="ap-aurora__blob ap-aurora__blob--3"></div>
                 </div>
                 <div class="dr-shell">
-                <header class="rep-page-head">
-                    <div>
-                        <span class="rep-page-head__eyebrow">PROFILE</span>
-                        <h2>我的档案</h2>
-                        <p class="rep-page-head__sub">档案 · 通知 · 绩效 · 考勤</p>
-                    </div>
-                </header>
 
-                <!-- 个人信息卡片 - 紧凑头部 -->
-                <div class="card pf-card-hero" style="margin-bottom: 14px; padding: 20px;">
-                    <div class="pf-hero-row" style="display:flex; align-items:flex-start; gap: 12px;">
-                        <div class="pf-avatar-orb">👤</div>
-                        <div style="flex:1; min-width:0;">
-                            <div class="pf-hero-name" id="profile-name">--</div>
-                            <div class="pf-hero-meta"><span id="profile-store">--</span> · <span id="profile-department">--</span> · <span id="profile-position">--</span></div>
+                <!-- ① 身份 -->
+                <div class="pf2-top">
+                    <div class="pf2-av" id="profile-avatar-initial">–</div>
+                    <div class="pf2-who">
+                        <em id="profile-greeting"></em>
+                        <b id="profile-name">--</b>
+                        <p id="pf2-meta"></p>
+                        <!-- 门店/部门/岗位：既有 JS 仍写这三个 span，隐藏后由 pf2Sync 组装成
+                             pf2-meta（过滤空值与 '--'，并去掉与姓名重复的岗位） -->
+                        <span id="profile-store" style="display:none;">--</span>
+                        <span id="profile-department" style="display:none;">--</span>
+                        <span id="profile-position" style="display:none;">--</span>
+                    </div>
+                    <div class="pf2-rk" id="profile-store-rating-badge" style="display:none;">
+                        <i id="profile-store-rating">-</i>
+                        <s>门店级别</s>
+                    </div>
+                </div>
+                <!-- 兼容字段：旧 JS 仍会写入，隐藏保留 -->
+                <span id="profile-id" style="display:none;">--</span>
+                <span id="profile-gender" style="display:none;">--</span>
+                <span id="profile-birthday" style="display:none;">--</span>
+                <span id="profile-hometown" style="display:none;">--</span>
+
+                <div class="pf2-wrap">
+
+                <!-- ② 待办三合一：任务 / 待批 / 通知 -->
+                <div class="pf2-sec" style="border-top:0;">
+                    <div class="pf2-sh">
+                        <h3>待办</h3>
+                        <span class="n" id="pf2-todo-total">0</span>
+                        <span class="x" id="pf2-today"></span>
+                    </div>
+                    <div class="pf2-seg" role="tablist">
+                        <button type="button" class="is-on" data-pf2tab="tasks" onclick="pf2SwitchTodo('tasks')">
+                            <svg class="pfi pfi--sm"><use href="#pfi-task"/></svg>任务<i id="pf2-n-tasks">0</i>
+                        </button>
+                        <button type="button" data-pf2tab="approvals" onclick="pf2SwitchTodo('approvals')">
+                            <svg class="pfi pfi--sm"><use href="#pfi-stamp"/></svg>待批<i class="al" id="pf2-n-approvals">0</i>
+                        </button>
+                        <button type="button" data-pf2tab="notifs" onclick="pf2SwitchTodo('notifs')">
+                            <svg class="pfi pfi--sm"><use href="#pfi-bell"/></svg>通知<i id="pf2-n-notifs">0</i>
+                        </button>
+                    </div>
+
+                    <!-- 任务：我的任务 + 团队任务 -->
+                    <div class="pf2-pane is-on" data-pf2pane="tasks">
+                        <div id="profile-my-tasks-section" style="display:none;">
+                            <span id="profile-my-tasks-count" style="display:none;"></span>
+                            <div id="profile-my-tasks-list"></div>
                         </div>
-                        <div id="profile-store-rating-badge" class="pf-store-rating-badge" style="display:none;">
-                            <div style="font-size: 9px; font-weight: 700; letter-spacing: 0.14em; color: rgba(214,200,168,0.55);">门店级别</div>
-                            <div style="margin-top: 2px; display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; flex-wrap: wrap;">
-                                <span id="profile-store-rating" style="font-size: 17px; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; color:#dcc9a0;">-</span>
-                                <span style="font-size: 10px; font-weight: 600; color: rgba(214,200,168,0.45); white-space: nowrap;">上月·1日</span>
+                        <div id="profile-team-tasks-section" style="display:none; margin-top:14px;">
+                            <div class="pf2-sh" style="margin-bottom:10px;">
+                                <h3 style="font-size:13px;">团队任务</h3>
+                                <span class="x" id="profile-team-tasks-count"></span>
                             </div>
+                            <div id="profile-team-tasks-list"></div>
+                        </div>
+                        <div class="pf2-empty" id="pf2-tasks-empty">暂无进行中的任务</div>
+                    </div>
+
+                    <!-- 待批 -->
+                    <div class="pf2-pane" data-pf2pane="approvals">
+                        <div id="profile-pending-approvals-card">
+                            <span id="profile-pending-count" style="display:none;">0</span>
+                            <div id="profile-pending-approvals-list"></div>
+                            <button type="button" class="notif-more-btn" onclick="showPage('approvals')">
+                                查看全部待审批<svg class="pfi pfi--sm"><use href="#pfi-chev"/></svg>
+                            </button>
                         </div>
                     </div>
-                    <!-- hidden fields kept for JS compatibility -->
-                    <span id="profile-id" style="display:none;">--</span>
-                    <span id="profile-gender" style="display:none;">--</span>
-                    <span id="profile-birthday" style="display:none;">--</span>
-                    <span id="profile-hometown" style="display:none;">--</span>
-                </div>
 
-                <!-- 发展地图 -->
-                <div id="profile-devmap" class="card" style="margin-bottom: 16px; padding: 18px; display:none;"></div>
-
-                <!-- 多劳多得：置顶在通知上方 -->
-                <div style="margin-bottom: 16px;">
-                    <div class="pf-points-banner pf-band pf-band--amber" onclick="showPage('points')">
-                        <div style="font-size: 12px; color: rgba(254,240,138,0.95); font-weight:700;">💎 多劳多得</div>
-                        <div style="font-weight: 900; font-size: 17px; margin-top: 4px; color: #c9a96a; text-shadow:0 2px 10px rgba(201,169,106,0.28);" id="profile-month-points">0分</div>
-                        <div id="profile-points-ranking" style="font-size: 11px; color: rgba(201,169,106,0.7); margin-top: 3px; display:none;"></div>
-                    </div>
-                </div>
-
-                <!-- 当前任务：增长方案里指派给我的任务(六大标准问题+自定义问题共用) -->
-                <div id="profile-my-tasks-section" class="card" style="margin-bottom: 16px; padding: 16px; display:none;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 10px;">
-                        <div style="font-weight:800; font-size:15px;">📋 当前任务</div>
-                        <span id="profile-my-tasks-count" style="font-size:11px; color:rgba(214,200,168,0.55);"></span>
-                    </div>
-                    <div id="profile-my-tasks-list"></div>
-                </div>
-
-                <!-- 团队任务(管理层专属)：下属增长方案任务的完成情况总览 -->
-                <div id="profile-team-tasks-section" class="card" style="margin-bottom: 16px; padding: 16px; display:none;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px;">
-                        <div style="font-weight:800; font-size:15px;">👥 团队任务</div>
-                        <span id="profile-team-tasks-count" style="font-size:11px; color:rgba(214,200,168,0.55);"></span>
-                    </div>
-                    <div id="profile-team-tasks-list"></div>
-                </div>
-
-                <!-- 公司通知：多劳多得下方；标题固定，列表区内滚动 -->
-                <div id="profile-notif-section" class="pf-notif-shell" style="margin-bottom: 16px; position: relative;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; padding: 0 2px;">
-                        <div style="display:flex; align-items:center; gap: 10px;">
-                            <div class="pf-icon-chip pf-icon-chip--amber pf-icon-chip--lg">
-                                <span>📢</span>
-                                <span id="profile-notif-pulse" style="display:none; position:absolute; top:-2px; right:-2px; width:10px; height:10px; border-radius:50%; background:#f59e0b; box-shadow:0 0 0 3px rgba(15,23,42,0.9); animation: notifPulse 2s infinite;"></span>
+                    <!-- 通知 -->
+                    <div class="pf2-pane" data-pf2pane="notifs">
+                        <div id="profile-notif-section">
+                            <span id="profile-notif-pulse" style="display:none;"></span>
+                            <span id="profile-notif-subtitle" style="display:none;"></span>
+                            <span id="profile-notif-count-badge" style="display:none;"></span>
+                            <div class="profile-notifications-scroll">
+                                <div id="profile-notifications"></div>
+                                <div class="pf2-empty" id="profile-notifications-empty" style="display:none;">暂无通知</div>
                             </div>
-                            <div>
-                                <div class="pf-section-title" style="font-size:16px;">公司通知</div>
-                                <div id="profile-notif-subtitle" style="font-size:11px; color:rgba(214,200,168,0.55); margin-top:1px;">暂无新通知</div>
-                            </div>
+                            <div id="profile-notif-expand-footer"></div>
+                            <button type="button" class="ga-btn ga-btn--sm" id="profile-publish-announcement-btn"
+                                    style="display:none; width:100%; margin-top:10px;" onclick="openAnnouncementModal()">
+                                + 发布公告
+                            </button>
                         </div>
-                        <span id="profile-notif-count-badge" style="display:none; background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; box-shadow:0 2px 8px rgba(245,158,11,0.3);"></span>
-                        <button id="profile-publish-announcement-btn" style="display:none; background:linear-gradient(180deg,#dcc9a0,#c9a96a 45%,#a8894f); color:#1a1408; font-size:11px; font-weight:700; padding:5px 12px; border-radius:10px; border:none; cursor:pointer; box-shadow:0 2px 8px rgba(201,169,106,0.35); white-space:nowrap;" onclick="openAnnouncementModal()">+ 发布公告</button>
-                    </div>
-                    <div class="profile-notifications-scroll">
-                        <div id="profile-notifications" style="padding-bottom: 4px;"></div>
-                        <div id="profile-notifications-empty" style="display:none; text-align:center; padding:24px 16px;">
-                            <div style="font-size:32px; margin-bottom:8px; opacity:0.4;">🔕</div>
-                            <div style="font-size:13px; color:rgba(214,200,168,0.45); font-weight:500;">暂无通知</div>
-                        </div>
-                    </div>
-                    <div id="profile-notif-expand-footer"></div>
-                </div>
-
-                <!-- 档案信息 + 统计 -->
-                <div class="card" style="margin-bottom: 14px; padding: 20px;">
-                    <div style="display:flex; align-items:center; gap: 10px; margin-bottom: 14px;">
-                        <div class="pf-icon-chip pf-icon-chip--iris" style="font-size: 16px;">📅</div>
-                        <span class="pf-section-title">档案信息</span>
-                    </div>
-                    <div class="profile-metrics-grid" style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px;">
-                        <div class="pf-metric-tile" style="padding: 12px 10px; text-align:center; min-height: 68px; display:flex; flex-direction:column; justify-content:center;">
-                            <div class="pf-metric-k">级别</div>
-                            <div class="pf-metric-v" style="word-break:break-all;" id="profile-level">--</div>
-                        </div>
-                        <div class="pf-metric-tile" style="padding: 12px 10px; text-align:center; min-height: 68px; display:flex; flex-direction:column; justify-content:center;">
-                            <div class="pf-metric-k">直属上级</div>
-                            <div class="pf-metric-v" style="word-break:break-all;" id="profile-manager">--</div>
-                        </div>
-                        <div class="pf-metric-tile" style="padding: 12px 10px; text-align:center; min-height: 68px; display:flex; flex-direction:column; justify-content:center;">
-                            <div class="pf-metric-k">绩效得分</div>
-                            <div class="pf-metric-v" id="profile-total-score">--</div>
-                        </div>
-                        <div class="pf-metric-tile" style="padding: 12px 10px; text-align:center; min-height: 68px; display:flex; flex-direction:column; justify-content:center;">
-                            <div class="pf-metric-k">执行力等级</div>
-                            <div class="pf-metric-v" id="profile-execution-rating">--</div>
-                        </div>
-                        <div class="pf-metric-tile" style="padding: 12px 10px; text-align:center; min-height: 68px; display:flex; flex-direction:column; justify-content:center;">
-                            <div class="pf-metric-k">工作态度等级</div>
-                            <div class="pf-metric-v" id="profile-attitude-rating">--</div>
-                        </div>
-                        <div class="pf-metric-tile" style="padding: 12px 10px; text-align:center; min-height: 68px; display:flex; flex-direction:column; justify-content:center;">
-                            <div class="pf-metric-k">工作能力等级</div>
-                            <div class="pf-metric-v" id="profile-ability-rating">--</div>
-                        </div>
-                    </div>
-                    <div id="profile-store-rating-hint" class="pf-band pf-band--mint" style="margin: 0 0 8px; padding: 10px 12px; font-size: 11px; color: rgba(214,200,168,0.78); line-height: 1.5;"></div>
-                    <div id="profile-personal-performance-hint" class="pf-band pf-band--iris" style="margin: 0 0 12px; padding: 10px 12px; font-size: 11px; color: rgba(214,200,168,0.78); line-height: 1.5;"></div>
-                    <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom:12px;">
-                        <div class="pf-summary-tile pf-stat-reward" style="padding: 12px 10px; text-align:center; min-height: 64px; display:flex; flex-direction:column; justify-content:center;">
-                            <div class="pf-summary-k" style="color: rgba(34,197,94,0.85);">本月奖励</div>
-                            <div class="pf-summary-v" style="font-size: 15px; color: rgba(34,197,94,0.95);" id="profile-month-reward-amount">¥0.00</div>
-                        </div>
-                        <div class="pf-summary-tile pf-stat-punish" style="padding: 12px 10px; text-align:center; min-height: 64px; display:flex; flex-direction:column; justify-content:center;">
-                            <div class="pf-summary-k" style="color: rgba(239,68,68,0.85);">本月处罚</div>
-                            <div class="pf-summary-v" style="font-size: 15px; color: rgba(239,68,68,0.95);" id="profile-month-punishment-amount">¥0.00</div>
-                        </div>
-                    </div>
-                    <div class="pf-stats-row-4" style="display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;">
-                        <div class="pf-summary-tile pf-stat-reward" style="padding: 10px 6px; text-align:center; cursor:pointer; min-height: 58px; display:flex; flex-direction:column; justify-content:center;" onclick="openMyRewards('reward')">
-                            <div class="pf-summary-k" style="color: rgba(34,197,94,0.85);">累积奖励</div>
-                            <div class="pf-summary-v" style="font-size: 15px; color: rgba(34,197,94,0.95);" id="profile-reward-count">¥0.00</div>
-                        </div>
-                        <div class="pf-summary-tile pf-stat-punish" style="padding: 10px 6px; text-align:center; cursor:pointer; min-height: 58px; display:flex; flex-direction:column; justify-content:center;" onclick="openMyRewards('punishment')">
-                            <div class="pf-summary-k" style="color: rgba(239,68,68,0.85);">累积处罚</div>
-                            <div class="pf-summary-v" style="font-size: 15px; color: rgba(239,68,68,0.95);" id="profile-punishment-count">¥0.00</div>
-                        </div>
-                        <div class="pf-summary-tile pf-summary-tile--iris" style="padding: 10px 6px; text-align:center; cursor:pointer; min-height: 58px; display:flex; flex-direction:column; justify-content:center;" onclick="showPage('exam')">
-                            <div class="pf-summary-k" style="color: rgba(201,169,106,0.92);">考试</div>
-                            <div class="pf-summary-v" style="font-size: 15px; color: #dcc9a0;" id="profile-exam-count">0</div>
-                        </div>
-                        <div class="pf-summary-tile pf-summary-tile--coral" style="padding: 10px 6px; text-align:center; cursor:pointer; min-height: 58px; display:flex; flex-direction:column; justify-content:center;" onclick="showPage('promotion')">
-                            <div class="pf-summary-k" style="color: rgba(255,122,144,0.90);">升职</div>
-                            <div class="pf-summary-v" style="font-size: 15px; color: rgba(255,205,216,0.98);" id="profile-promotion-count">0</div>
-                        </div>
-                    </div>
-                    <!-- 待审批 (embedded in 入职信息 card) -->
-                    <div id="profile-pending-approvals-card" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(201,169,106,0.12);">
-                        <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 10px;">
-                            <span style="font-size: 15px;">📋</span>
-                            <span style="font-weight: 700; font-size: 14px;">待审批</span>
-                            <span id="profile-pending-count" style="background: rgba(245,158,11,0.2); color: rgba(245,158,11,0.95); font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 10px;">0</span>
-                            <button class="btn btn-secondary" style="margin-left:auto; padding: 4px 10px; font-size: 11px;" onclick="showPage('approvals')">查看全部</button>
-                        </div>
-                        <div id="profile-pending-approvals-list"><div style="font-size:12px; color:rgba(214,200,168,0.5); text-align:center; padding:8px;">暂无待审批</div></div>
                     </div>
                 </div>
 
-                <!-- 本月考勤概览 -->
-                <div class="card" style="margin-bottom: 14px; padding: 20px;">
-                    <div style="display:flex; align-items:center; gap: 10px; margin-bottom: 14px;">
-                        <div class="pf-icon-chip pf-icon-chip--mint" style="font-size: 16px;">🏖️</div>
-                        <span class="pf-section-title">本月考勤概览</span>
-                        <span style="font-size: 11px; color: rgba(214,200,168,0.5); margin-left: auto;" id="profile-leave-month"></span>
-                    </div>
-                    <div id="profile-leave-balance-box" class="att-list-item" style="padding: 12px;">
-                        <div class="att-list-row"><span class="att-list-main" id="profile-att-username">-</span><span class="att-list-sub" id="profile-att-month">-</span></div>
-                        <div class="pf-band pf-band--amber" style="margin-top:8px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; padding:8px 10px;">
-                            <span style="font-size:12px; color:rgba(251,191,36,0.92); font-weight:700;">累计假期</span>
-                            <span style="font-size:18px; color:#fbbf24; font-weight:900;"><span id="profile-att-cumulative-leave">0</span>天</span>
+                <!-- ③ 本月：三个数字并排 -->
+                <div class="pf2-sec">
+                    <div class="pf2-sh"><h3>本月</h3><span class="x" id="pf2-month"></span></div>
+                    <div class="pf2-nums">
+                        <div>
+                            <div class="pf2-nv" id="profile-month-points">0</div>
+                            <div class="pf2-nk">多劳多得</div>
+                            <div class="pf2-nsub" id="profile-points-ranking" style="display:none;"></div>
                         </div>
-                        <div class="att-summary-metrics">
-                            <div class="att-summary-metric"><div class="k">缺勤</div><div class="v" id="profile-att-absent-count" style="color:rgba(239,68,68,0.95);">0</div></div>
-                            <div class="att-summary-metric"><div class="k">迟到</div><div class="v" id="profile-att-late-count" style="color:rgba(251,146,60,0.95);">0</div></div>
-                            <div class="att-summary-metric"><div class="k">早退</div><div class="v" id="profile-att-early-count" style="color:rgba(168,85,247,0.95);">0</div></div>
-                            <div class="att-summary-metric"><div class="k">休息</div><div class="v" id="profile-att-rest-days" style="color:rgba(34,197,94,0.95);">0</div></div>
-                            <div class="att-summary-metric"><div class="k">本月余休</div><div class="v" id="profile-att-rest-remaining" style="color:rgba(96,165,250,0.95);">0</div></div>
+                        <div>
+                            <div class="pf2-nv pf2-nv--pos" id="profile-month-reward-amount">¥0.00</div>
+                            <div class="pf2-nk">奖励</div>
+                            <div class="pf2-nsub">累计 <span id="profile-reward-count">¥0.00</span></div>
                         </div>
-                    </div>
-                    <div class="pf-footnote">
-                        统计口径：日报排班 + 实际打卡 + 日报休息人员（缺勤/迟到/早退/休息在上海时区与门店班次窗口下统计）；本月余休按每月4天休息额度实时计算。「累计假期」优先人事「调整累计假期」：保存后以人工月初池为准，当月内不再按公式滚动重算该格；无人工时为上月末系统锁定（次月1日6:00上海时间）或公式滚动。缺勤等其它指标在档案页约45秒自动刷新。
+                        <div>
+                            <div class="pf2-nv pf2-nv--neg" id="profile-month-punishment-amount">¥0.00</div>
+                            <div class="pf2-nk">处罚</div>
+                            <div class="pf2-nsub">累计 <span id="profile-punishment-count">¥0.00</span></div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- 快捷操作 -->
-                <div class="pf-quick-grid">
-                    <div class="pf-quick-card" onclick="openLeaveApplyModal()">
-                        <div class="pf-quick-icon pf-quick-icon--leave">🌿</div>
-                        <div class="pf-quick-title">休假申请</div>
-                        <div class="pf-quick-desc">提交休假审批</div>
+                <!-- ④ 绩效：大数 + 横条 -->
+                <div class="pf2-sec">
+                    <div class="pf2-sh"><h3>绩效</h3><span class="x">上级评定</span></div>
+                    <div class="pf2-big">
+                        <b id="profile-total-score">--</b>
+                        <span>综合得分</span>
                     </div>
-                    <div class="pf-quick-card" onclick="showPage('promotion')">
-                        <div class="pf-quick-icon pf-quick-icon--promote">📈</div>
-                        <div class="pf-quick-title">升职申请</div>
-                        <div class="pf-quick-desc">发起晋升流程</div>
+                    <div class="pf2-pb"><i>执行力</i><u><b id="pf2-bar-exec" style="width:0"></b></u><s id="profile-execution-rating">--</s></div>
+                    <div class="pf2-pb"><i>工作态度</i><u><b id="pf2-bar-att" style="width:0"></b></u><s id="profile-attitude-rating">--</s></div>
+                    <div class="pf2-pb"><i>工作能力</i><u><b id="pf2-bar-abil" style="width:0"></b></u><s id="profile-ability-rating">--</s></div>
+                    <!-- 考试/升职是计数，不是占比，用进度条会误导；且只展示结果，不做入口 -->
+                    <div style="margin-top:16px;">
+                        <div class="pf2-kv">
+                            <i>考试测评</i><b><span id="profile-exam-count">0</span> 次</b>
+                        </div>
+                        <div class="pf2-kv">
+                            <i>升职记录</i><b><span id="profile-promotion-count">0</span> 次</b>
+                        </div>
                     </div>
-                    <div class="pf-quick-card" onclick="openGmMailboxModal()">
-                        <div class="pf-quick-icon pf-quick-icon--mailbox">📮</div>
-                        <div class="pf-quick-title">总经理信箱</div>
-                        <div class="pf-quick-desc">匿名反馈不公与违规</div>
-                    </div>
-                    <div class="pf-quick-card" onclick="openChangePasswordModal()">
-                        <div class="pf-quick-icon pf-quick-icon--password">🔐</div>
-                        <div class="pf-quick-title">修改密码</div>
-                        <div class="pf-quick-desc">认领账号后可自行修改</div>
-                    </div>
-                    <div class="pf-quick-card pf-quick-card--muted" onclick="openResignationModal()" style="grid-column: 1 / -1;">
-                        <div class="pf-quick-icon pf-quick-icon--resign">📋</div>
-                        <div class="pf-quick-title">离职申请</div>
-                        <div class="pf-quick-desc">提交离职审批</div>
+                    <div style="margin-top:16px;">
+                        <div class="pf2-hint" id="profile-store-rating-hint"></div>
+                        <div class="pf2-hint" id="profile-personal-performance-hint"></div>
                     </div>
                 </div>
 
-                <!-- 休假记录 -->
+                <!-- ⑤ 考勤 -->
+                <div class="pf2-sec">
+                    <div class="pf2-sh">
+                        <h3>考勤</h3>
+                        <span class="x"><span id="profile-leave-month"></span></span>
+                    </div>
+                    <div id="profile-leave-balance-box">
+                        <span id="profile-att-username" style="display:none;">-</span>
+                        <span id="profile-att-month" style="display:none;">-</span>
+                        <div class="pf2-lv">
+                            <i><svg class="pfi pfi--sm"><use href="#pfi-leaf"/></svg>累计假期</i>
+                            <b><span id="profile-att-cumulative-leave">0</span><s>天</s></b>
+                        </div>
+                        <div class="pf2-att">
+                            <div id="pf2-att-absent"><i id="profile-att-absent-count">0</i><b>缺勤</b></div>
+                            <div id="pf2-att-late"><i id="profile-att-late-count">0</i><b>迟到</b></div>
+                            <div id="pf2-att-early"><i id="profile-att-early-count">0</i><b>早退</b></div>
+                            <div id="pf2-att-rest"><i id="profile-att-rest-days">0</i><b>休息</b></div>
+                            <div id="pf2-att-remain"><i id="profile-att-rest-remaining">0</i><b>余休</b></div>
+                        </div>
+                    </div>
+                    <details class="pf2-fold" style="border-top:0; margin-top:14px;">
+                        <summary style="min-height:40px; font-size:12px; color:var(--pf-faint); font-weight:400;">
+                            统计口径说明<svg class="pfi pfi--sm pf2-cv"><use href="#pfi-chev"/></svg>
+                        </summary>
+                        <div class="pf2-note">
+                            统计口径：日报排班 + 实际打卡 + 日报休息人员（缺勤/迟到/早退/休息在上海时区与门店班次窗口下统计）；本月余休按每月 4 天休息额度实时计算。「累计假期」优先人事「调整累计假期」：保存后以人工月初池为准，当月内不再按公式滚动重算该格；无人工时为上月末系统锁定（次月 1 日 6:00 上海时间）或公式滚动。缺勤等其它指标在档案页约 45 秒自动刷新。
+                        </div>
+                    </details>
+                </div>
+
+                <!-- ⑥ 归档区：默认收起 -->
+                <details class="pf2-fold" id="profile-devmap-fold" style="display:none;">
+                    <summary>
+                        <svg class="pfi"><use href="#pfi-route"/></svg>我的发展地图
+                        <svg class="pfi pfi--sm pf2-cv"><use href="#pfi-chev"/></svg>
+                    </summary>
+                    <div class="pf2-fb"><div id="profile-devmap"></div></div>
+                </details>
+
+                <details class="pf2-fold">
+                    <summary>
+                        <svg class="pfi"><use href="#pfi-id"/></svg>档案信息
+                        <svg class="pfi pfi--sm pf2-cv"><use href="#pfi-chev"/></svg>
+                    </summary>
+                    <div class="pf2-fb">
+                        <div class="pf2-kv"><i>级别</i><b id="profile-level">--</b></div>
+                        <div class="pf2-kv"><i>直属上级</i><b id="profile-manager">--</b></div>
+                    </div>
+                </details>
+
+                <details class="pf2-fold">
+                    <summary>
+                        <svg class="pfi"><use href="#pfi-star"/></svg>快捷操作
+                        <svg class="pfi pfi--sm pf2-cv"><use href="#pfi-chev"/></svg>
+                    </summary>
+                    <div class="pf2-fb">
+                        <div class="pf2-qk">
+                            <div onclick="openLeaveApplyModal()"><svg class="pfi"><use href="#pfi-leaf"/></svg><span>休假申请</span><svg class="pfi pfi--sm" style="margin-left:auto;color:var(--pf-faint);"><use href="#pfi-chev"/></svg></div>
+                            <div onclick="showPage('promotion')"><svg class="pfi"><use href="#pfi-trend"/></svg><span>升职申请</span><svg class="pfi pfi--sm" style="margin-left:auto;color:var(--pf-faint);"><use href="#pfi-chev"/></svg></div>
+                            <div onclick="openGmMailboxModal()"><svg class="pfi"><use href="#pfi-mail"/></svg><span>总经理信箱</span><svg class="pfi pfi--sm" style="margin-left:auto;color:var(--pf-faint);"><use href="#pfi-chev"/></svg></div>
+                            <div onclick="openChangePasswordModal()"><svg class="pfi"><use href="#pfi-lock"/></svg><span>修改密码</span><svg class="pfi pfi--sm" style="margin-left:auto;color:var(--pf-faint);"><use href="#pfi-chev"/></svg></div>
+                            <div class="is-muted" onclick="openResignationModal()"><svg class="pfi"><use href="#pfi-exit"/></svg><span>离职申请</span><svg class="pfi pfi--sm" style="margin-left:auto;color:var(--pf-faint);"><use href="#pfi-chev"/></svg></div>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- 休假记录（旧逻辑保留） -->
                 <div id="leave-apply-card" style="display:none;">
                     <div id="profile-leave-records"></div>
                 </div>
-
                 <div id="profile-mobile-toolbar" style="display:none;">
                     <button class="btn" type="button" onclick="openGmMailboxModal()">总经理信箱</button>
+                </div>
+
                 </div>
                 </div>
             </div>
@@ -35292,7 +35237,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                                 </div>
                             </div>
                             <button onclick="${btnDisabled ? '' : 'openTrainingSession('+t.topic_id+')'}"
-                                style="width:100%;padding:13px;border:none;border-top:1px solid rgba(255,255,255,0.06);background:${btnDisabled ? 'rgba(255,255,255,0.03)' : 'rgba(99,102,241,0.8)'};color:${btnDisabled ? 'rgba(255,255,255,0.3)' : '#fff'};font-size:14px;font-weight:600;cursor:${btnDisabled ? 'default' : 'pointer'};letter-spacing:.3px;">
+                                style="width:100%;padding:13px;border:none;border-top:1px solid var(--pf-line);background:${btnDisabled ? 'rgba(255,255,255,0.03)' : 'rgba(99,102,241,0.8)'};color:${btnDisabled ? 'rgba(255,255,255,0.3)' : '#fff'};font-size:14px;font-weight:600;cursor:${btnDisabled ? 'default' : 'pointer'};letter-spacing:.3px;">
                                 ${btnLabel}
                             </button>
                         </div>
@@ -49879,44 +49824,33 @@ tr:nth-child(even) td { background: #fafafa; }
                 const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
                 const ladderHtml = m.ladder.map(l => {
                     const pct = l.total ? Math.round(l.certified / l.total * 100) : 0;
-                    const cur = l.isCurrent ? ' <span style="font-size:10px;font-weight:700;color:#0B0F1E;background:#5EEAD4;padding:1px 7px;border-radius:8px;vertical-align:middle;">当前</span>' : '';
-                    const tick = l.complete ? ' ✅' : '';
-                    return `<div style="margin-top:10px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;">
-                            <span style="font-weight:700;color:#EEF1FA;">${esc(l.label)}${cur}${tick}</span>
-                            <span style="color:#9AA3C7;font-size:12px;">认证 ${l.certified}/${l.total}</span>
-                        </div>
-                        <div style="margin-top:5px;height:7px;border-radius:99px;background:rgba(255,255,255,0.10);overflow:hidden;">
-                            <div style="height:100%;width:${pct}%;border-radius:99px;background:linear-gradient(90deg,#6D7CFF,#5EEAD4);"></div>
-                        </div>
+                    const cur = l.isCurrent ? ' <span class="ga-badge ga-badge--iris">当前</span>' : '';
+                    const tick = l.complete ? ' <span class="ga-badge ga-badge--mint">已达成</span>' : '';
+                    return `<div class="pf2-ld">
+                        <div class="pf2-ldh"><b>${esc(l.label)}${cur}${tick}</b><s>认证 ${l.certified}/${l.total}</s></div>
+                        <div class="pf2-ldb"><i class="${l.complete ? 'p' : ''}" style="width:${pct}%"></i></div>
                     </div>`;
                 }).join('');
                 let pathHtml = '';
                 if (m.path && m.path.nodes && m.path.nodes.length) {
                     const steps = m.path.nodes.map((n, i) => {
-                        const sep = i < m.path.nodes.length - 1 ? '<span style="color:#5B6597;margin:0 2px;">›</span>' : '';
-                        let st = 'color:#9AA3C7;background:rgba(255,255,255,0.06);';
-                        if (n.isApex) st = 'color:#FFC46B;background:rgba(255,196,107,0.12);font-weight:700;';
-                        if (n.isCurrent) st = 'color:#0B0F1E;background:#6D7CFF;font-weight:800;';
-                        return `<span style="white-space:nowrap;padding:3px 9px;border-radius:9px;font-size:12px;${st}">${esc(n.display)}</span>${sep}`;
+                        const sep = i < m.path.nodes.length - 1 ? '<span class="pf2-sp">\u203a</span>' : '';
+                        let cls = 'pf2-nd';
+                        if (n.isApex) cls += ' pf2-nd--top';
+                        if (n.isCurrent) cls += ' pf2-nd--now';
+                        return `<span class="${cls}">${esc(n.display)}</span>${sep}`;
                     }).join('');
-                    pathHtml = `<div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.10);">
-                        <div style="font-size:11px;color:#9AA3C7;margin-bottom:8px;">${esc(m.path.note)}</div>
-                        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 2px;overflow-x:auto;">${steps}</div>
+                    pathHtml = `<div class="pf2-path" style="flex-direction:column;align-items:flex-start;gap:9px;">
+                        <div style="font-size:11.5px;color:var(--pf-faint);">${esc(m.path.note)}</div>
+                        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;">${steps}</div>
                     </div>`;
                 } else if (m.path && m.path.note) {
-                    pathHtml = `<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.10);font-size:12px;color:#9AA3C7;">${esc(m.path.note)}</div>`;
+                    pathHtml = `<div class="pf2-path" style="font-size:12px;color:var(--pf-faint);">${esc(m.path.note)}</div>`;
                 }
-                const ctaHtml = m.cta ? `<span onclick="showPage('promotion')" style="display:inline-block;margin-left:8px;padding:2px 10px;border-radius:8px;background:#6D7CFF;color:#0B0F1E;font-weight:800;font-size:11.5px;cursor:pointer;white-space:nowrap;vertical-align:middle;">${esc(m.cta.text)} ›</span>` : '';
-                const nextHtml = m.nextStep ? `<div style="margin-top:14px;padding:10px 12px;border-radius:12px;background:rgba(109,124,255,0.14);border:1px solid rgba(109,124,255,0.28);font-size:12.5px;color:#C7CEFF;">👉 ${esc(m.nextStep)}${ctaHtml}</div>` : '';
+                const ctaHtml = m.cta ? `<span onclick="showPage('promotion')" style="display:inline-block;margin-left:8px;padding:3px 10px;border-radius:8px;background:var(--pf-ac);color:var(--pf-acx);font-weight:600;font-size:11.5px;cursor:pointer;white-space:nowrap;">${esc(m.cta.text)} ›</span>` : '';
+                const nextHtml = m.nextStep ? `<div class="pf2-nx"><svg class="pfi"><use href="#pfi-flag"/></svg><span>${esc(m.nextStep)}${ctaHtml}</span></div>` : '';
                 box.innerHTML = `
-                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-                        <div class="pf-icon-chip pf-icon-chip--iris" style="font-size:16px;">🚀</div>
-                        <div>
-                            <div style="font-weight:800;font-size:15px;color:#EEF1FA;">我的发展地图</div>
-                            <div style="font-size:11px;color:#9AA3C7;margin-top:1px;">当前岗位 <b style="color:#EEF1FA;">${esc(m.positionDisplay)}</b>${m.currentLevel ? ' · ' + esc(m.currentLevel) : ''}</div>
-                        </div>
-                    </div>
+                    <div style="font-size:11.5px;color:var(--pf-faint);margin-bottom:12px;">当前岗位 <b style="color:var(--pf-tx);font-weight:600;">${esc(m.positionDisplay)}</b>${m.currentLevel ? ' \u00b7 ' + esc(m.currentLevel) : ''}</div>
                     ${ladderHtml}
                     ${nextHtml}
                     ${pathHtml}
@@ -49924,6 +49858,200 @@ tr:nth-child(even) td { background: #fafafa; }
                 box.style.display = 'block';
             } catch (e) { box.style.display = 'none'; }
         }
+
+        /* ══════════════════════════════════════════════════════════════════
+           我的档案 v2 · 结构重排配套逻辑
+           设计取舍：不逐个改写既有渲染函数（loadProfileData / renderProfile* 等），
+           而是用 MutationObserver 监听档案页子树，从它们已经写好的值里「派生」出
+           v2 需要的展示状态（评分条宽度 / 考勤异常着色 / 待办计数）。
+           好处是既有渲染逻辑一行不动，降低回归风险。
+           ══════════════════════════════════════════════════════════════════ */
+
+        // 分段切换：任务 / 待批 / 通知
+        function pf2SwitchTodo(tab) {
+            const root = document.getElementById('profile-page');
+            if (!root) return;
+            root.querySelectorAll('.pf2-seg button').forEach(b => {
+                b.classList.toggle('is-on', b.dataset.pf2tab === tab);
+            });
+            root.querySelectorAll('.pf2-pane').forEach(p => {
+                p.classList.toggle('is-on', p.dataset.pf2pane === tab);
+            });
+            try { localStorage.setItem('pf2_todo_tab', tab); } catch (e) {}
+        }
+
+        // 等级 → 进度条宽度。无法识别的等级返回 null（不画条，避免瞎猜）
+        function pf2RatingPct(raw) {
+            const s = String(raw == null ? '' : raw).trim().toUpperCase();
+            if (!s || s === '--' || s === '-') return null;
+            const num = parseFloat(s);
+            if (!isNaN(num) && /^[\d.]+$/.test(s)) return Math.max(0, Math.min(100, num));
+            const MAP = {
+                'S+': 100, 'S': 98, 'S-': 95,
+                'A+': 94, 'A': 90, 'A-': 86,
+                'B+': 80, 'B': 74, 'B-': 68,
+                'C+': 60, 'C': 54, 'C-': 48,
+                'D+': 40, 'D': 34, 'D-': 28,
+                'E': 20, 'F': 12
+            };
+            if (MAP[s] != null) return MAP[s];
+            if (s.includes('优秀')) return 92;
+            if (s.includes('良好')) return 78;
+            if (s.includes('合格') || s.includes('达标')) return 64;
+            if (s.includes('待改进') || s.includes('不合格')) return 36;
+            return null;
+        }
+
+        function pf2Sync() {
+            const root = document.getElementById('profile-page');
+            if (!root || pf2Sync._busy) return;
+            pf2Sync._busy = true;
+            try {
+                const txt = id => (document.getElementById(id)?.textContent || '').trim();
+                const num = id => {
+                    const v = parseFloat(String(txt(id)).replace(/[^\d.-]/g, ''));
+                    return isNaN(v) ? 0 : v;
+                };
+
+                // ① 姓名 / 头像首字 / 问候语 / 门店岗位行
+                const name = txt('profile-name');
+                const hasName = name && name !== '--' && name !== '-';
+
+                const av = document.getElementById('profile-avatar-initial');
+                if (av) {
+                    const ch = hasName ? Array.from(name)[0].toUpperCase() : '–';
+                    if (av.textContent !== ch) av.textContent = ch;
+                }
+
+                // 问候语：按上海时区的当前时段。用当前时间而非会话建立时间——
+                // 早上登录挂到晚上还显示「早上好」会更奇怪。
+                const gr = document.getElementById('profile-greeting');
+                if (gr) {
+                    let h;
+                    try {
+                        h = parseInt(new Intl.DateTimeFormat('en-US', {
+                            hour: 'numeric', hour12: false, timeZone: 'Asia/Shanghai'
+                        }).format(new Date()), 10);
+                    } catch (e) { h = new Date().getHours(); }
+                    if (isNaN(h)) h = new Date().getHours();
+                    let g;
+                    if (h < 5) g = '夜深了';
+                    else if (h < 11) g = '早上好';
+                    else if (h < 14) g = '中午好';
+                    else if (h < 18) g = '下午好';
+                    else g = '晚上好';
+                    if (gr.textContent !== g) gr.textContent = g;
+                }
+
+                // 门店 · 部门 · 岗位：过滤空值/占位符，并去掉与姓名重复的岗位
+                const meta = document.getElementById('pf2-meta');
+                if (meta) {
+                    const parts = ['profile-store', 'profile-department', 'profile-position']
+                        .map(txt)
+                        .filter(v => v && v !== '--' && v !== '-')
+                        .filter((v, i, arr) => arr.indexOf(v) === i)
+                        .filter(v => v !== name);
+                    const line = parts.join(' \u00b7 ');
+                    if (meta.textContent !== line) meta.textContent = line;
+                }
+
+                // ② 绩效条：由已渲染的等级文本派生宽度
+                [['profile-execution-rating', 'pf2-bar-exec'],
+                 ['profile-attitude-rating', 'pf2-bar-att'],
+                 ['profile-ability-rating', 'pf2-bar-abil']].forEach(([src, bar]) => {
+                    const el = document.getElementById(bar);
+                    if (!el) return;
+                    const pct = pf2RatingPct(txt(src));
+                    const w = pct == null ? '0%' : pct + '%';
+                    if (el.style.width !== w) el.style.width = w;
+                    el.classList.toggle('p', pct != null && pct >= 85);
+                });
+
+                // ③ 考勤：只有异常值着色（0 是好消息，不该显示告警色）
+                const mark = (wrapId, bad) => {
+                    const el = document.getElementById(wrapId);
+                    if (el) el.classList.toggle('is-bad', bad);
+                };
+                mark('pf2-att-absent', num('profile-att-absent-count') > 0);
+                mark('pf2-att-late', num('profile-att-late-count') > 0);
+                mark('pf2-att-early', num('profile-att-early-count') > 0);
+                const remain = document.getElementById('pf2-att-remain');
+                if (remain) {
+                    const v = num('profile-att-rest-remaining');
+                    remain.classList.toggle('is-good', v > 0);
+                    remain.classList.toggle('is-bad', v < 0);
+                }
+
+                // ④ 待办计数：从各列表实际渲染出的条目数取
+                const cnt = (sel) => root.querySelectorAll(sel).length;
+                const nTask = cnt('#profile-my-tasks-list > *') + cnt('#profile-team-tasks-list > *');
+                const nAppr = cnt('#profile-pending-approvals-list .pf-approval-item');
+                const nNoti = cnt('#profile-notifications .pf-notif-card');
+                const put = (id, v) => {
+                    const e = document.getElementById(id);
+                    if (e && e.textContent !== String(v)) e.textContent = v;
+                };
+                put('pf2-n-tasks', nTask);
+                put('pf2-n-approvals', nAppr);
+                put('pf2-n-notifs', nNoti);
+                put('pf2-todo-total', nTask + nAppr + nNoti);
+
+                // 待批为 0 时，红色计数徽章降级为普通样式
+                const apprBadge = document.getElementById('pf2-n-approvals');
+                if (apprBadge) apprBadge.classList.toggle('al', nAppr > 0);
+
+                // 任务空态
+                const te = document.getElementById('pf2-tasks-empty');
+                if (te) te.style.display = nTask > 0 ? 'none' : '';
+
+                // 待批空态
+                const al = document.getElementById('profile-pending-approvals-list');
+                if (al && !al.querySelector('.pf-approval-item') && !al.querySelector('.pf2-empty')) {
+                    al.innerHTML = '<div class="pf2-empty">暂无待审批</div>';
+                }
+
+                // ⑤ 日期
+                const now = new Date();
+                const ymd = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+                put('pf2-today', ymd + '-' + String(now.getDate()).padStart(2, '0'));
+                put('pf2-month', ymd);
+
+                // ⑥ 发展地图：内容非空才展开外层折叠
+                const dm = document.getElementById('profile-devmap');
+                const dmFold = document.getElementById('profile-devmap-fold');
+                if (dm && dmFold) {
+                    const has = dm.innerHTML.trim().length > 0 && dm.style.display !== 'none';
+                    dmFold.style.display = has ? '' : 'none';
+                }
+            } catch (e) {
+                /* 派生逻辑失败不应影响页面主体 */
+            } finally {
+                pf2Sync._busy = false;
+            }
+        }
+
+        // 监听档案页子树变化，渲染函数写完值后自动派生
+        (function pf2Observe() {
+            const start = () => {
+                const root = document.getElementById('profile-page');
+                if (!root) { setTimeout(start, 400); return; }
+                try {
+                    const tab = localStorage.getItem('pf2_todo_tab');
+                    if (tab) pf2SwitchTodo(tab);
+                } catch (e) {}
+                let t = null;
+                new MutationObserver(() => {
+                    clearTimeout(t);
+                    t = setTimeout(pf2Sync, 60);
+                }).observe(root, { childList: true, subtree: true, characterData: true });
+                pf2Sync();
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', start);
+            } else {
+                start();
+            }
+        })();
 
         async function loadProfileData() {
             if (!currentUser) return;
@@ -50088,15 +50216,18 @@ tr:nth-child(even) td { background: #fafafa; }
                 const todayYmd = new Date().toISOString().slice(0, 10);
                 list.innerHTML = data.tasks.map(t => {
                     const overdue = t.due_date && String(t.due_date).slice(0, 10) < todayYmd;
-                    return `<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,0.06);">
-                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-                            <div style="font-size:13px;font-weight:700;color:#EEF1FA;">${escapeHtml(t.title)}</div>
-                            <button class="ga-btn ga-btn--primary ga-btn--sm" style="flex-shrink:0;" onclick="profileCompleteMyTask(${t.round_id},${t.task_id},this)">标记完成</button>
+                    const meta = [escapeHtml(t.store), escapeHtml(t.problem_title)].filter(Boolean).join(' \u00b7 ');
+                    const due = t.due_date ? ` \u00b7 截止 ${String(t.due_date).slice(0, 10)}` : '';
+                    const rem = Number(t.reminder_count) > 0 ? ` \u00b7 已提醒 ${t.reminder_count} 次` : '';
+                    return `<div class="pf-approval-item${overdue ? ' pf-approval-item--hot' : ''}">
+                        <div class="pf-approval-main">
+                            <div class="pf-approval-title">${escapeHtml(t.title)}${overdue ? '<span class="ga-badge ga-badge--coral">逾期</span>' : ''}</div>
+                            ${t.description ? `<div class="pf-approval-summary">${escapeHtml(t.description)}</div>` : ''}
+                            <div class="pf-approval-meta">${meta}${due}${rem}</div>
                         </div>
-                        <div style="font-size:12px;color:rgba(200,215,230,0.55);margin-top:4px;">${escapeHtml(t.description || '')}</div>
-                        ${t.why ? `<div style="font-size:12px;color:#A5B0FF;margin-top:6px;">💡 为什么要做:${escapeHtml(t.why)}</div>` : ''}
-                        ${t.acceptance_criteria ? `<div style="font-size:12px;color:#3ED9A6;margin-top:4px;">✓ 验收标准:${escapeHtml(t.acceptance_criteria)}</div>` : ''}
-                        <div style="font-size:11px;margin-top:6px;color:${overdue ? '#FF8A7A' : 'rgba(200,215,230,0.45)'};">${escapeHtml(t.store)} · ${escapeHtml(t.problem_title)}${t.due_date ? ` · 截止 ${String(t.due_date).slice(0, 10)}${overdue ? '(已逾期)' : ''}` : ''}${Number(t.reminder_count) > 0 ? ` · <span style="color:#FF8A7A;">⏰ 已被提醒${t.reminder_count}次</span>` : ''}</div>
+                        <div class="pf-approval-actions">
+                            <button class="ga-btn ga-btn--primary ga-btn--sm" onclick="profileCompleteMyTask(${t.round_id},${t.task_id},this)">完成</button>
+                        </div>
                     </div>`;
                 }).join('');
             } catch (e) { section.style.display = 'none'; }
@@ -50122,19 +50253,19 @@ tr:nth-child(even) td { background: #fafafa; }
                 list.innerHTML = data.people.map(p => {
                     const doneRate = p.total ? Math.round((p.done / p.total) * 100) : 0;
                     const taskRows = p.tasks.map(t => `
-                        <div style="padding:8px 0;border-top:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                        <div style="padding:8px 0;border-top:1px solid var(--pf-line);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
                             <div style="min-width:0;">
-                                <div style="font-size:12px;color:#EEF1FA;">${escapeHtml(t.title)}</div>
-                                <div style="font-size:11px;color:${t.overdue ? '#FF8A7A' : 'rgba(200,215,230,0.45)'};margin-top:2px;">${escapeHtml(t.store)} · ${escapeHtml(t.problem_title)}${t.due_date ? ` · 截止${String(t.due_date).slice(0, 10)}${t.overdue ? '(已逾期)' : ''}` : ''}${Number(t.reminder_count) > 0 ? ` · 已提醒${t.reminder_count}次` : ''}</div>
+                                <div style="font-size:12.5px;color:var(--pf-tx);">${escapeHtml(t.title)}</div>
+                                <div style="font-size:11px;color:${t.overdue ? 'var(--pf-neg)' : 'var(--pf-faint)'};margin-top:2px;">${escapeHtml(t.store)} · ${escapeHtml(t.problem_title)}${t.due_date ? ` · 截止${String(t.due_date).slice(0, 10)}${t.overdue ? '(已逾期)' : ''}` : ''}${Number(t.reminder_count) > 0 ? ` · 已提醒${t.reminder_count}次` : ''}</div>
                             </div>
-                            <button class="ga-btn ga-btn--ghost ga-btn--sm" style="flex-shrink:0;" onclick="gsRemindTask(${t.task_id}, this)">⏰ 提醒</button>
+                            <button class="ga-btn ga-btn--ghost ga-btn--sm" style="flex-shrink:0;" onclick="gsRemindTask(${t.task_id}, this)">提醒</button>
                         </div>`).join('');
                     return `<details style="margin-bottom:8px;">
-                        <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid rgba(255,255,255,0.06);">
-                            <span style="font-size:13px;font-weight:700;color:#EEF1FA;">${escapeHtml(p.assignee_name)}</span>
-                            <span style="font-size:11px;color:rgba(200,215,230,0.55);">完成${p.done}/${p.total}(${doneRate}%)${p.overdue ? ` · <span style="color:#FF8A7A;">逾期${p.overdue}</span>` : ''}</span>
+                        <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--pf-line);">
+                            <span style="font-size:13px;font-weight:600;color:var(--pf-tx);">${escapeHtml(p.assignee_name)}</span>
+                            <span style="font-size:11px;color:var(--pf-faint);">完成${p.done}/${p.total}(${doneRate}%)${p.overdue ? ` · <span style="color:var(--pf-neg);">逾期${p.overdue}</span>` : ''}</span>
                         </summary>
-                        ${taskRows || '<div style="padding:8px 0;font-size:12px;color:rgba(200,215,230,0.4);">全部任务已完成</div>'}
+                        ${taskRows || '<div style="padding:8px 0;font-size:12px;color:var(--pf-faint);">全部任务已完成</div>'}
                     </details>`;
                 }).join('');
             } catch (e) { section.style.display = 'none'; }
@@ -50407,17 +50538,18 @@ tr:nth-child(even) td { background: #fafafa; }
                 const isImportant = annLevel === 'important' || isUrgent;
                 const isRead = isSys ? true : !!(a?.readBy && a.readBy[myUsername]);
 
-                let typeIcon = isSys ? '🔔' : isToday ? '🆕' : isUrgent ? '🚨' : isImportant ? '🔴' : '📣';
-                if (String(a?.title || '').includes('排班')) typeIcon = '📅';
-                if (isUrgent) typeIcon = '🚨'; else if (isImportant) typeIcon = '🔴';
+                const __ic = n => '<svg class="pfi"><use href="#pfi-' + n + '"/></svg>';
+                let typeIcon = __ic(isSys ? 'bell' : 'mega');
+                if (String(a?.title || '').includes('排班')) typeIcon = __ic('cal');
+                if (isUrgent) typeIcon = __ic('alert');
 
                 const nowISO = new Date().toISOString();
                 const isPinned = a?.pinned && (!a?.pin_until || a.pin_until >= nowISO);
                 let badge = '';
                 if (isUrgent) {
-                    badge = '<span class="pf-notif-badge pf-notif-badge--urgent">🚨 紧急</span>';
+                    badge = '<span class="pf-notif-badge pf-notif-badge--urgent">紧急</span>';
                 } else if (isPinned) {
-                    badge = '<span class="pf-notif-badge pf-notif-badge--announcement">📌 置顶</span>';
+                    badge = '<span class="pf-notif-badge pf-notif-badge--announcement">置顶</span>';
                 } else if (isToday) {
                     badge = '<span class="pf-notif-badge pf-notif-badge--warning">NEW</span>';
                 } else if (isImportant) {
@@ -53252,7 +53384,7 @@ tr:nth-child(even) td { background: #fafafa; }
                         parts.push(`<details style="border-radius:14px;background:${hasAnom ? 'rgba(30,15,5,0.45)' : 'rgba(15,23,42,0.28)'};border:1px solid ${hasAnom ? 'rgba(249,115,22,0.25)' : 'rgba(34,197,94,0.15)'};overflow:hidden;">`);
                         parts.push(`<summary style="list-style:none;cursor:pointer;padding:13px 14px;display:flex;align-items:center;gap:10px;user-select:none;"><span style="display:inline-block;transition:transform .15s;color:rgba(148,163,184,0.8);font-size:12px;">▸</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:800;color:#e2e8f0;">${escapeHtml(sd.store || '未知门店')}</div><div style="font-size:11px;color:rgba(148,163,184,0.8);margin-top:2px;">${escapeHtml(sd.date)} · ${escapeHtml(String(sd.people.length))} 人打卡</div></div>${hasAnom ? `<span style="padding:3px 10px;border-radius:999px;background:rgba(249,115,22,0.18);color:#fdba74;font-size:11px;font-weight:800;">⚠ ${escapeHtml(String(anomPeople.length))} 人异常</span>` : '<span style="padding:3px 10px;border-radius:999px;background:rgba(34,197,94,0.15);color:#86efac;font-size:11px;font-weight:800;">✓ 正常</span>'}</summary>`);
                         if (hasAnom) {
-                            parts.push(`<div style="padding:0 14px 14px;border-top:1px solid rgba(255,255,255,0.06);">`);
+                            parts.push(`<div style="padding:0 14px 14px;border-top:1px solid var(--pf-line);">`);
                             anomPeople.forEach(function(p) {
                                 const label = p.isAbsent ? '未打卡' : (p.isLate ? '迟到' + (p.firstIn ? ' ' + p.firstIn : '') : '异常打卡');
                                 parts.push(`<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><div style="width:6px;height:6px;border-radius:50%;background:${p.isAbsent ? '#f87171' : '#fbbf24'};flex-shrink:0;"></div><div style="flex:1;"><div style="font-size:12px;font-weight:700;color:#e2e8f0;">${escapeHtml(p.name || p.username || '—')}</div></div><span style="font-size:11px;padding:2px 8px;border-radius:6px;background:${p.isAbsent ? 'rgba(248,113,113,0.15)' : 'rgba(251,191,36,0.15)'};color:${p.isAbsent ? '#fca5a5' : '#fde68a'};">${escapeHtml(label)}</span></div>`);
@@ -55015,7 +55147,7 @@ ${ok
     : `<span style="padding:3px 10px;border-radius:999px;background:rgba(249,115,22,0.18);color:#fdba74;font-size:11px;font-weight:800;">⚠ 异常 ${escapeHtml(String(anomCount))} 人</span>`}
 </summary>`;
                             if (!ok) {
-                                html += `<div style="padding:0 14px 14px;border-top:1px solid rgba(255,255,255,0.06);margin-top:0;">`;
+                                html += `<div style="padding:0 14px 14px;border-top:1px solid var(--pf-line);margin-top:0;">`;
                                 for (const ln of anomLines) {
                                     const rs = Array.isArray(ln.reasons) && ln.reasons.length ? ln.reasons.join('；') : (ln.has_clock_in ? '状态异常' : '无打卡记录');
                                     html += `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
@@ -55579,7 +55711,7 @@ ${ok
                                     ${monthCells}
                                     <div class="rep-pay-cell"><span class="k">当月实际休息</span><span class="v">${fmt(latestActualRest, 2)}</span></div>
                                     <div class="rep-pay-cell"><span class="k">当月假期天数</span><span class="v">${fmt(latestHolidayDays, 2)}</span></div>
-                                    <div style="grid-column:1/-1;margin-top:8px;border-top:1px solid rgba(255,255,255,0.06);padding-top:8px;">
+                                    <div style="grid-column:1/-1;margin-top:8px;border-top:1px solid var(--pf-line);padding-top:8px;">
                                         <div style="font-size:11px;color:rgba(200,215,230,0.6);margin-bottom:6px;">明细</div>
                                         ${restDetails.length ? restDetails.map(function(d) {
                                             return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:rgba(200,215,230,0.8);">'
@@ -59387,7 +59519,7 @@ ${body}
                   ${t.due_date ? `<span class="gs-task__phase">截止 ${String(t.due_date).slice(0, 10)}</span>` : ''}
                   <span class="gs-task__status gs-task__status--${t.status === 'done' ? 'done' : 'pending'}">${t.status === 'done' ? '✓ 已完成' : (t.due_date && String(t.due_date).slice(0, 10) < new Date().toISOString().slice(0, 10) ? '⚠️ 已逾期' : '进行中')}</span>
                   ${Number(t.reminder_count) > 0 ? `<span class="gs-task__phase" style="color:#FF8A7A;">已催促 ${t.reminder_count} 次</span>` : ''}
-                  ${t.status !== 'done' && r.status === 'active' ? `<button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsRemindTask(${t.id}, this)">⏰ 提醒</button>` : ''}
+                  ${t.status !== 'done' && r.status === 'active' ? `<button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsRemindTask(${t.id}, this)">提醒</button>` : ''}
                 </div>
               </div>
             </div>`).join('');
@@ -64720,7 +64852,7 @@ ${body}
             ];
             var chBreakdownHtml = '';
             if (chList.length > 1) {
-                chBreakdownHtml = '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);">'
+                chBreakdownHtml = '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--pf-line);">'
                     + '<div style="font-size:11px;color:rgba(226,232,240,0.5);margin-bottom:6px;"> 按渠道细分</div>'
                     + chList.map(function(ch) {
                         var d = byChannel[ch];
