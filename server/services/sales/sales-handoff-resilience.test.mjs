@@ -84,6 +84,70 @@ test('客户AI识别到Demo后必须写转化动作并创建去重跟进任务',
   assert.match(taskQuery.sql, /ON CONFLICT \(lead_id, title\).*status='open'/);
 });
 
+test('转化意向落库payload字段完整，异议同步写入异议表', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params) {
+      queries.push({ sql: String(sql), params });
+      return { rows: [{ id: 77 }], rowCount: 1 };
+    },
+  };
+  const result = await recordCustomerConversionIntent(pool, {
+    leadId: 42,
+    leadKey: 'wx_abc',
+    assignee: 'sales_01',
+    conversion: {
+      goal: 'resolve_objection',
+      action_type: 'customer_ai_objection_handled',
+      priority: 'high',
+      due_hours: 4,
+      objection_key: 'too_complex',
+      objection_label: '系统太复杂',
+      response_text: 'AI已先回应',
+      task_title: '跟进客户异议：系统太复杂',
+      task_detail: '客户异议：我担心系统太复杂。',
+    },
+    evidence: '我担心系统太复杂，店长不会用。',
+  });
+  assert.equal(result.recorded, true);
+  assert.equal(result.task?.id, 77);
+  const actionInsert = queries.find((q) => /INSERT INTO sales_action_logs/.test(q.sql));
+  assert.ok(actionInsert);
+  assert.equal(actionInsert.params[0], 42);
+  assert.equal(actionInsert.params[1], 'customer_ai_objection_handled');
+  const payload = JSON.parse(actionInsert.params[2]);
+  assert.equal(payload.goal, 'resolve_objection');
+  assert.equal(payload.priority, 'high');
+  assert.equal(payload.objection_key, 'too_complex');
+  assert.equal(payload.evidence, '我担心系统太复杂，店长不会用。');
+  assert.equal(payload.lead_key, 'wx_abc');
+  const objectionInsert = queries.find((q) => /INSERT INTO sales_objections/.test(q.sql));
+  assert.ok(objectionInsert);
+  assert.equal(objectionInsert.params[1], 'too_complex');
+  assert.equal(objectionInsert.params[5], 'customer_ai');
+});
+
+test('无转化意向时不写任何库，转化写库失败必须以拒绝暴露(调用点负责兜底不断主链路)', async () => {
+  const queries = [];
+  const quietPool = { async query(sql, params) { queries.push(sql); return { rows: [] }; } };
+  const noop = await recordCustomerConversionIntent(quietPool, { leadId: 1, conversion: null, evidence: 'x' });
+  assert.deepEqual(noop, { recorded: false });
+  assert.equal(queries.length, 0);
+
+  const failingPool = { async query() { throw new Error('db down'); } };
+  await assert.rejects(
+    () => recordCustomerConversionIntent(failingPool, {
+      leadId: 1,
+      conversion: { goal: 'demo', action_type: 'customer_ai_demo_requested' },
+      evidence: 'x',
+    }),
+    /db down/
+  );
+  const sessionSource = readFileSync(new URL('./sales-session.js', import.meta.url), 'utf8');
+  const callSite = sessionSource.slice(sessionSource.indexOf('await recordCustomerConversionIntent(pool'));
+  assert.match(callSite.slice(0, 400), /\.catch\(/, 'handleInboundMessage里的转化落库调用必须有catch兜底,失败不能中断客户回复主链路');
+});
+
 test('企微会话处于待人工状态2时停止假发送并返回明确错误', async () => {
   const calls = [];
   process.env.WECOM_KF_CORP_ID = 'corp';

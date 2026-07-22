@@ -461,13 +461,18 @@ export async function handleInboundMessage(pool, {
   });
 
   let updatedLead = await getLead(pool, lead.id);
-  const conversionAssignee = handoffRep
-    || updatedLead.assigned_to
-    || updatedLead.owner_username
-    || (turn.plan?.conversion?.task_title ? await findAssignableSalesRep(pool, updatedLead) : null);
-  if (conversionAssignee && !updatedLead.assigned_to) {
-    await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=COALESCE(assigned_at,NOW()),updated_at=NOW() WHERE id=$1`, [lead.id, conversionAssignee]);
-    updatedLead = { ...updatedLead, assigned_to: conversionAssignee };
+  // 转化归属/落库是锦上添花,任何一步失败都不允许拖垮"客户必须收到回复"的主链路。
+  let conversionAssignee = handoffRep || updatedLead.assigned_to || updatedLead.owner_username || null;
+  try {
+    if (!conversionAssignee && turn.plan?.conversion?.task_title) {
+      conversionAssignee = await findAssignableSalesRep(pool, updatedLead);
+    }
+    if (conversionAssignee && !updatedLead.assigned_to) {
+      await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=COALESCE(assigned_at,NOW()),updated_at=NOW() WHERE id=$1`, [lead.id, conversionAssignee]);
+      updatedLead = { ...updatedLead, assigned_to: conversionAssignee };
+    }
+  } catch (e) {
+    console.error('[sales-session] conversion assignee bookkeeping failed', { leadId: lead.id, error: e?.message });
   }
   const advice = buildSalesAdvice(updatedLead, score);
   const next = buildNextAction(updatedLead, score);
@@ -481,6 +486,8 @@ export async function handleInboundMessage(pool, {
     assignee: conversionAssignee || null,
     conversion: turn.plan?.conversion || null,
     evidence: content,
+  }).catch((e) => {
+    console.error('[sales-session] record conversion intent failed', { leadId: lead.id, error: e?.message });
   });
   if (nextStage && nextStage !== lead.stage && STAGES_REQUIRING_COMPLETE_INFO.has(nextStage) && !completeness.complete) {
     // 门店基础信息还没收全就不让AI把线索推进到"已确认"往后的阶段——两条建档入口(AI对话/

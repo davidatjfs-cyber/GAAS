@@ -11,6 +11,11 @@ import {
   inferQuestionSlotFromText,
   inferRecentQuestionSlot,
   isUncertainAnswer,
+  isCommercialTermsQuery,
+  isContractProcessQuery,
+  DISCOUNT_QUERY_RE,
+  PRICE_QUERY_RE,
+  DEMO_REQUEST_RE,
 } from './sales-strategy.js';
 import { recommendCasesForLead, formatCaseBlurb } from './sales-case-library.js';
 import { matchObjection, getObjectionResponse } from './sales-diagnosis.js';
@@ -42,13 +47,11 @@ const COMMITMENT_QUERY_RE = /什么承诺|能.{0,6}承诺|承诺.{0,6}什么|能
 const TRIAL_QUERY_RE = /试用|试跑|试点|体验.{0,6}(?:一个月|30天)|试.{0,4}一个月/;
 const PROFILE_MEMORY_QUERY_RE = /还记得.{0,12}(?:公司|品牌)|我是哪家公司|知道我是哪家/;
 const PRESENCE_QUERY_RE = /^(?:你|您)?还?在吗[？?]?$/;
-const IDENTITY_QUERY_RE = /(?:你|您).{0,8}(?:是|算)?(?:机器人|ai|人工智能|真人)|(?:机器人|ai|人工智能).{0,8}(?:还是真人|吗)|(?:真人|人工客服).{0,8}(?:还是|吗)/i;
-const DISCOUNT_QUERY_RE = /折扣|优惠|便宜|打折|单店成本|批量价|连锁价/;
-const PRICE_QUERY_RE = /价格|多少钱|报价|费用|收费|年费|月费|怎么定价/;
-const DEMO_REQUEST_RE = /(?:安排|预约|看|做|来|给我).{0,8}(?:demo|演示)|(?:demo|演示).{0,8}(?:安排|预约|看看|看一下|可以吗)/i;
+// 身份守卫只拦"你到底是不是机器人/真人"这类真身份质询；"你们的AI客服功能""你们是AI公司"
+// 这类聊产品或公司的话不算(真实误伤复盘:客户问AI诊断功能,被答了一句"我是AI不是真人")。
+const IDENTITY_QUERY_RE = /(?:你|您)(?:们)?(?:到底|真的)?(?:是不是|是否|是)?.{0,2}(?:机器人|真人|人工智能|ai)(?:吗|嘛|吧|啊|还是)|(?:机器人|人工智能|ai)还是真人|真人还是(?:机器人|人工智能|ai)|(?:是不是|是否)(?:机器人|真人)|(?:人工客服|真人客服)(?:吗|嘛|还是)|(?:在跟|在和).{0,4}(?:机器人|ai).{0,6}(?:说话|聊天|对话)/i;
 const CASE_PROOF_RE = /服务过哪些|客户案例|真实案例|成功案例|同类案例|案例.{0,8}(?:看|发|介绍)|哪些餐厅.{0,8}(?:用|合作)/;
 const COMPANY_TEAM_RE = /(?:你们|贵公司|公司|团队).{0,8}(?:多少人|几个人|团队规模|多大团队)/;
-const CONTRACT_PROCESS_RE = /合同|签约流程|合作流程|付款方式|对公|打款|发票|怎么签|怎么合作/;
 
 function historyBeforeCurrent(messages = [], userText = '') {
   const out = (messages || []).map((m) => ({ ...m }));
@@ -270,7 +273,7 @@ async function buildSalesConversionGuard({ userText, plan, pool }) {
     });
     return { source: 'demo_conversion_guard', reply: buildDemoReply(plan.extracted) };
   }
-  if (CONTRACT_PROCESS_RE.test(text)) {
+  if (isContractProcessQuery(text)) {
     plan.mode = 'handoff';
     plan.takeover = { ...(plan.takeover || {}), takeover: true, reason: 'contract_process_requested', level: 'high' };
     plan.answer_before_handoff = true;
@@ -303,7 +306,16 @@ async function buildSalesConversionGuard({ userText, plan, pool }) {
     return { source: 'company_fact_guard', reply: '具体团队人数没有纳入我已核实的公开资料，所以我不会随便报一个数字。能确认的是，系统能力、交付范围和试跑结果都可以按实际页面与验收标准核对。' };
   }
   const objectionKey = matchObjection(text);
-  if (objectionKey && !PRICE_QUERY_RE.test(text) && !DISCOUNT_QUERY_RE.test(text)) {
+  // 确切命中产品知识卡的问题优先按功能事实回答,不套异议话术模板(比如"权限设置有点复杂
+  // 怎么改"是支持问题,不是"系统太复杂"异议)；只是像产品话题但没有知识卡命中的,仍按异议处理。
+  const productHit = classifyProductQuery(text);
+  // "价格太高"异议要求客户真的在评价我们的价格(贵/预算/值不值),"人力成本占比很高"
+  // "食材越来越贵"这类自家成本的痛点陈述不算异议,应交给LLM按经营诊断回应。
+  const ownCostComplaint = /(?:食材|原材料|房租|人工|人力|水电|外卖|平台|抽成|成本|工资).{0,8}(?:贵|涨|高)/.test(text);
+  const falsePriceObjection = objectionKey === 'price_too_high'
+    && !isCommercialTermsQuery(text)
+    && (ownCostComplaint || !/贵|预算|性价比|ROI|划算|值得|值不值/i.test(text));
+  if (objectionKey && !falsePriceObjection && !PRICE_QUERY_RE.test(text) && !DISCOUNT_QUERY_RE.test(text) && !(productHit.isProductQuery && productHit.matches.length)) {
     const reply = buildObjectionReply(objectionKey, plan.extracted);
     if (reply) {
       plan.events = [...(plan.events || []), {
@@ -331,7 +343,7 @@ function buildPriorityConversationGuard({ userText, plan }) {
   if (IDENTITY_QUERY_RE.test(text)) {
     return { source: 'identity_transparency_guard', reply: buildIdentityReply() };
   }
-  if (DISCOUNT_QUERY_RE.test(text) || PRICE_QUERY_RE.test(text)) {
+  if (isCommercialTermsQuery(text)) {
     plan.mode = 'handoff';
     plan.takeover = { ...(plan.takeover || {}), takeover: true, reason: 'commercial_terms_query', level: 'high' };
     plan.answer_before_handoff = true;
@@ -371,7 +383,12 @@ function buildCommitmentReply(history = []) {
     .slice(-4)
     .map((message) => String(message.content || ''))
     .join('\n');
-  if (/100%肯定能用|能承诺的是过程|签了就一定成功/.test(recentOutbound)) {
+  const saidBaseline = /100%肯定能用|能承诺的是过程|签了就一定成功/.test(recentOutbound);
+  const saidPlainWords = /一句准话/.test(recentOutbound);
+  if (saidBaseline && saidPlainWords) {
+    return '我的答复不会因为多问几次就改口：不做空口保证，用试跑结果说话。您可以直接定一家代表门店，我们把30天的验收指标先写清楚；达标就扩大，不达标我会把原因和处理方案摆出来，这比任何口头承诺都可靠。';
+  }
+  if (saidBaseline) {
     return '如果您要一句准话：我们不承诺“签了就一定成功”，但会在正式扩大前把能不能落地验证清楚。数据能接、任务有人执行、试跑达到约定指标再扩大；任何一项不成立，我们都会明确告诉您原因和处理方案。';
   }
   return '我不能现在答应您100%肯定能用起来，这样说反而不负责。真正落地要同时满足三件事：现有数据能接、门店有人执行、双方先约定验收指标。我们会基于真实数据先评估，再选代表门店试跑；条件不满足会在正式合作前说清楚，而不是让您买完才发现用不了。';

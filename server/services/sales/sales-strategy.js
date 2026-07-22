@@ -6,14 +6,52 @@ import { DIAGNOSTIC_SLOTS, knowledgeForPain, containsForbiddenClaim } from './sa
 import { diagnoseLead } from './sales-diagnosis.js';
 import { normalizeCustomerProfileSlots } from './sales-lead-schema.js';
 
+// Demo意图要有"安排/预约/给我看"的指向性,"门店晨会怎么演示菜品"这种自家经营话题不算。
+export const DEMO_REQUEST_RE = /(?:安排|预约|看|做|来|给我).{0,8}(?:demo|演示)|(?:demo|演示).{0,8}(?:安排|预约|看看|看一下|可以吗)/i;
+const DEMO_CHANNEL_RE = /看一下系统|产品演示|在线演示|腾讯会议|飞书会议|会议演示/i;
+
 const HIGH_INTENT_PATTERNS = [
-  /价格|多少钱|报价|费用|收费/,
-  /demo|演示|看一下系统|演示一下/i,
-  /合同|签约|付款|对公/,
+  DEMO_REQUEST_RE,
+  DEMO_CHANNEL_RE,
   /试跑|试用|试点/,
   /接入|对接|能不能接/,
   /什么时候能上|上线时间|下周|尽快|这个月|下个月|下月/,
 ];
+
+// ===== 询价/签约的意图判定(转人工三层判定共用:优先守卫、shouldTakeover、事件检测) =====
+// 餐饮老板日常话语里"优惠/费用/合同"高频出现:做优惠活动、外卖抽成、供应商合同都不是
+// 在向我们询价/要签约。只认关键词不认意图,会答非所问还误触转人工(2026-07-22真实误伤复盘,
+// 双向语料契约见 sales-customer-ai-quality.test.mjs 的守卫误伤回归测试)。
+export const DISCOUNT_QUERY_RE = /折扣|优惠|便宜|打折|单店成本|批量价|连锁价/;
+export const PRICE_QUERY_RE = /价格|多少钱|报价|费用|收费|年费|月费|怎么定价/;
+// 客户在描述自己门店的经营动作/成本,或在问系统功能(优惠券管理)——价格词只是话题背景。
+const OWN_BUSINESS_PRICE_CONTEXT_RE = /(?:优惠券|折扣券|储值|积分|会员).{0,12}(?:功能|管理|营销|体系|系统|有吗|能不能|能导|导入|吗)|(?:搞|做|办|发|策划|设计|推).{0,6}(?:优惠|打折|促销|折扣)|(?:优惠|打折|促销|折扣)活动|(?:菜品|菜价|商品|客单).{0,8}(?:打折|折扣|降价|定价|价格)|毛利|(?:外卖|平台|供应商|食材|房租|水电|人工|人力|员工).{0,8}(?:抽成|成本|费用|工资|价格|收费)|年费会员/;
+const DEAL_PRICE_INTENT_RE = /(?:你们|贵司|这套|这个系统|这个软件|软件|合作|方案|服务).{0,12}(?:价格|费用|收费|报价|多少钱|贵|优惠|折扣|便宜)/;
+// 明确的问价句式:即使同一句里夹着自家经营话题,也应按询价处理。
+const EXPLICIT_PRICE_ASK_RE = /(?:怎么|如何)(?:收费|定价|报价)|报价|多少钱|多少费用|费用多少|价格多少|价格是多少|什么价位?|贵不贵|贵吗|收费吗|要收费/;
+const CONTRACT_PROCESS_RE = /(?:怎么|如何|什么时候).{0,6}(?:签约|签合同|合作|付款|打款)|(?:签约|合作|付款|打款|开票)流程|合同.{0,6}(?:流程|条款|模板|细节|内容|怎么签|什么时候)|付款方式|对公(?:打款|转账|付款|账户)|(?:开|要|提供)发票|怎么签|怎么合作/;
+const SYSTEM_FEATURE_INQUIRY_RE = /(?:系统|后台|平台|软件|功能|模块)(?:里|上|内)?.{0,6}(?:能|可以|支持|有没有|有吗)|能(?:存|管|导|录|传|放)|帮我(?:管|存|记)|(?:管理|存储|归档)(?:功能|模块)|功能(?:有吗|吗)/;
+
+/** 客户是否真的在向我们询价/问优惠(而不是描述自己的经营或问系统功能)。 */
+export function isCommercialTermsQuery(text) {
+  const t = String(text || '');
+  if (EXPLICIT_PRICE_ASK_RE.test(t)) return true;
+  const mentionsPriceWord = DISCOUNT_QUERY_RE.test(t) || PRICE_QUERY_RE.test(t);
+  const asksExpensive = /贵/.test(t);
+  if (!mentionsPriceWord && !asksExpensive) return false;
+  if (OWN_BUSINESS_PRICE_CONTEXT_RE.test(t)) return false;
+  // 单独一个"贵"字要有对话指向(你们/这套)才算询价,"食材越来越贵"不算。
+  if (!mentionsPriceWord && asksExpensive && !DEAL_PRICE_INTENT_RE.test(t)) return false;
+  return true;
+}
+
+/** 客户是否真的在问"和我们怎么签约/付款"(而不是问合同/发票类系统功能)。 */
+export function isContractProcessQuery(text) {
+  const t = String(text || '');
+  if (!CONTRACT_PROCESS_RE.test(t)) return false;
+  if (SYSTEM_FEATURE_INQUIRY_RE.test(t)) return false;
+  return true;
+}
 
 const BUYING_SIGNALS = [/正在找|想上系统|准备采购|对比过|有预算|有需求|有意向/];
 const NEGATIVE_SIGNALS = [/随便问问|看看|了解一下|先看看|暂时不需要|没预算|太贵|不急着|不着急/];
@@ -180,12 +218,12 @@ export function extractSlotsFromText(text = '', prev = {}) {
 export function detectEvents(text = '') {
   const t = String(text || '');
   const events = [];
-  if (/价格|多少钱|报价|费用|收费|年费|月费|多少钱一套|怎么收费|怎么定价/.test(t)) events.push({ event_type: 'ASK_PRICE', priority: 'high', recommended_action: 'takeover' });
-  if (/demo|演示|看一下系统|演示一下|产品演示|在线演示|腾讯会议|飞书会议|会议演示|展示/i.test(t)) events.push({ event_type: 'REQUEST_DEMO', priority: 'high', recommended_action: 'takeover' });
+  if (PRICE_QUERY_RE.test(t) && isCommercialTermsQuery(t)) events.push({ event_type: 'ASK_PRICE', priority: 'high', recommended_action: 'takeover' });
+  if (DEMO_REQUEST_RE.test(t) || DEMO_CHANNEL_RE.test(t)) events.push({ event_type: 'REQUEST_DEMO', priority: 'high', recommended_action: 'takeover' });
   if (/试跑|试用|试点|试一个月|试两个月|30天|三十天|试一个店|跑一个月|跑一跑|跑一下|测试一下|体验|体验一下|试试看|试一试行不行/.test(t)) events.push({ event_type: 'REQUEST_TRIAL', priority: 'high', recommended_action: 'takeover' });
-  if (/合同|签约|付款|对公|打款|发票|付款方式|签约流程|合作流程|走流程|审批|预算|申请预算/.test(t)) events.push({ event_type: 'ASK_CONTRACT', priority: 'high', recommended_action: 'takeover' });
+  if (isContractProcessQuery(t) || /走流程|审批|申请预算/.test(t)) events.push({ event_type: 'ASK_CONTRACT', priority: 'high', recommended_action: 'takeover' });
   if (/接入|对接|POS|数据打通|数据同步|接口|导入|数据迁移|能否接|可以接|能不能接|怎么接|接不接|支持.*POS|支持.*数据|支持.*系统|能接吗|能对接吗/.test(t)) events.push({ event_type: 'ASK_POS_INTEGRATION', priority: 'high', recommended_action: 'notify_sales' });
-  if (/能不能便宜|便宜点|打个折|折扣|优惠|优惠吗|有没有优惠|能不能便宜|少点|便宜多少|降点价|价格能否优惠|优惠方案|最低价/.test(t)) events.push({ event_type: 'ASK_DISCOUNT', priority: 'high', recommended_action: 'takeover' });
+  if (DISCOUNT_QUERY_RE.test(t) && isCommercialTermsQuery(t)) events.push({ event_type: 'ASK_DISCOUNT', priority: 'high', recommended_action: 'takeover' });
   if (/已经.*看|已经.*对比|正在对比|正在比较|比几家|看了几家|其他家|竞品|竞争者|替代方案|也在看|同时看|比较一下|几家产品|几个方案/.test(t)) events.push({ event_type: 'COMPETITOR_MENTIONED', priority: 'medium', recommended_action: 'notify_sales' });
   if (BUYING_SIGNALS.some((re) => re.test(t))) events.push({ event_type: 'BUYING_INTENT', priority: 'medium', recommended_action: 'notify_sales' });
   if (NEGATIVE_SIGNALS.some((re) => re.test(t))) events.push({ event_type: 'LOW_INTEREST', priority: 'low', recommended_action: 'continue' });
@@ -215,7 +253,9 @@ export function nextDiagnosticQuestion(extracted = {}) {
 export function shouldTakeover({ text, extracted, intentScore, controller }) {
   if (controller === 'human' || controller === 'waiting_human') return { takeover: false, reason: 'already_human' };
   const t = String(text || '');
-  if (HIGH_INTENT_PATTERNS.some((re) => re.test(t))) return { takeover: true, reason: 'high_intent_phrase', level: 'high' };
+  if (HIGH_INTENT_PATTERNS.some((re) => re.test(t)) || isCommercialTermsQuery(t) || isContractProcessQuery(t)) {
+    return { takeover: true, reason: 'high_intent_phrase', level: 'high' };
+  }
   if ((intentScore || 0) >= 70) return { takeover: true, reason: 'score_threshold', level: 'high' };
   if ((extracted.store_count || 0) >= 3 && extracted.pain_point && extracted.phone_data_ready === true && (intentScore || 0) >= 50) {
     return { takeover: true, reason: 'qualified_profile', level: 'high' };

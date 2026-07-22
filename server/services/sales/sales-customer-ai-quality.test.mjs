@@ -366,12 +366,29 @@ test('客户连续追问能否用起来时必须直接给准话，不能复读�
     controller: 'ai',
     inputMode: 'voice',
   });
+  const third = await runCustomerAiTurn({
+    userText: '我就问你到底能不能保证用起来？',
+    extracted: conversionProfile,
+    history: [
+      { direction: 'inbound', content: '你能保证我们用起来吗？' },
+      { direction: 'outbound', content: first.reply },
+      { direction: 'inbound', content: '你能保证我们肯定能用起来嘛？' },
+      { direction: 'outbound', content: second.reply },
+    ],
+    intentScore: 50,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
   assert.equal(first.source, 'commitment_guard');
   assert.equal(second.source, 'commitment_guard');
+  assert.equal(third.source, 'commitment_guard');
   assert.notEqual(second.reply, first.reply);
+  assert.notEqual(third.reply, second.reply);
+  assert.notEqual(third.reply, first.reply);
   assert.match(first.reply, /不能现在答应.*100%|三件事/);
   assert.match(second.reply, /一句准话|正式扩大前|任何一项不成立/);
-  assert.doesNotMatch(`${first.reply}\n${second.reply}`, /美团一定接入/);
+  assert.match(third.reply, /空口保证|验收指标先写清楚/);
+  assert.doesNotMatch(`${first.reply}\n${second.reply}\n${third.reply}`, /美团一定接入/);
 });
 
 test('客户问试用时要说清30天试跑条件和下一步，不能只发通用转人工模板', async () => {
@@ -509,4 +526,89 @@ test('客户连续追问在吗时回复必须自然递进，不能机械复制�
   });
   assert.equal(new Set([first.reply, second.reply, third.reply]).size, 3);
   assert.match(third.reply, /没有掉线|马上接着回答/);
+});
+
+// ===== 守卫误伤语料回归 =====
+// 2026-07-22 真实误伤复盘:餐饮老板日常话语里"优惠/费用/合同/AI"高频出现,守卫只认关键词
+// 不认意图时,功能咨询和痛点陈述会被答非所问的商务模板拦截,还误触转人工+高优任务。
+// 这两组语料是守卫正则的双向契约:改守卫正则前必须先过这两个测试。
+
+test('功能咨询和痛点陈述不得被商务/身份/合同守卫误伤(负例语料回归)', async () => {
+  setSalesCustomerAiLlm(async () => ({ ok: true, content: '多店的经营数据可以在同一个后台里分店查看和汇总对比。' }));
+  const guardSources = new Set([
+    'identity_transparency_guard',
+    'commercial_terms_guard',
+    'contract_conversion_guard',
+    'demo_conversion_guard',
+    'objection_conversion_guard',
+  ]);
+  const mustNotGuard = [
+    '会员储值优惠券这些功能有吗',
+    '我想搞点优惠活动拉新客',
+    '我们店最近在做打折活动，系统能管吗',
+    '外卖平台抽成费用太高了怎么办',
+    '人工成本收费太高，想省人力',
+    '我们年费会员体系能导进来吗',
+    '你们的AI客服功能怎么样？',
+    '你们这个系统里的AI诊断准不准？',
+    '听说你们是AI公司',
+    '我们跟供应商的合同也能存系统里吗',
+    '员工签约流程你们系统能管吗',
+    '发票管理功能有吗',
+    '菜品打折以后毛利怎么算',
+    '食材价格一直在涨怎么办',
+    '食材越来越贵了',
+    '我们人力成本占比很高',
+    '门店晨会怎么演示菜品',
+    '我们跟商场的合同快到期了',
+    '员工离职合同怎么在系统里归档',
+  ];
+  for (const q of mustNotGuard) {
+    const turn = await runCustomerAiTurn({
+      userText: q,
+      extracted: { store_count: 3, pain_point: '多店管理' },
+      history: [],
+      intentScore: 20,
+      controller: 'ai',
+      inputMode: 'text',
+    });
+    assert.ok(!guardSources.has(turn.source), `「${q}」被误伤为 ${turn.source}`);
+    assert.ok(!turn.plan?.takeover?.takeover, `「${q}」被误触转人工`);
+  }
+  setSalesCustomerAiLlm(null);
+});
+
+test('真询价/真身份/真签约问法必须命中对应守卫(正例语料回归)', async () => {
+  let llmCalls = 0;
+  setSalesCustomerAiLlm(async () => { llmCalls += 1; return { ok: true, content: '不应走到这里' }; });
+  const positive = [
+    ['你们费用多少？', 'commercial_terms_guard'],
+    ['门店多的话有折扣吗？', 'commercial_terms_guard'],
+    ['能便宜点吗？', 'commercial_terms_guard'],
+    ['你们这套系统怎么收费？', 'commercial_terms_guard'],
+    ['我做优惠活动的话，你们系统怎么收费？', 'commercial_terms_guard'],
+    ['你们这个服务贵吗？', 'commercial_terms_guard'],
+    ['整体下来一年要多少费用？', 'commercial_terms_guard'],
+    ['那你是机器人还是真人啊？', 'identity_transparency_guard'],
+    ['你是AI吗？', 'identity_transparency_guard'],
+    ['我是在跟机器人说话吗？', 'identity_transparency_guard'],
+    ['怎么签合同？', 'contract_conversion_guard'],
+    ['付款方式有哪些？', 'contract_conversion_guard'],
+    ['可以对公打款吗？', 'contract_conversion_guard'],
+    ['怎么跟你们合作？', 'contract_conversion_guard'],
+    ['合同里的服务条款能看下吗？', 'contract_conversion_guard'],
+  ];
+  for (const [q, expected] of positive) {
+    const turn = await runCustomerAiTurn({
+      userText: q,
+      extracted: { store_count: 3, pain_point: '多店管理' },
+      history: [],
+      intentScore: 20,
+      controller: 'ai',
+      inputMode: 'text',
+    });
+    assert.equal(turn.source, expected, `「${q}」应命中 ${expected}，实际 ${turn.source}`);
+  }
+  assert.equal(llmCalls, 0);
+  setSalesCustomerAiLlm(null);
 });
