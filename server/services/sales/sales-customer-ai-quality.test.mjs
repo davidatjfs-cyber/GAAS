@@ -130,6 +130,66 @@ test('真实语音输入必须回答已听到，不得再说只能文字', async
   setSalesCustomerAiLlm(null);
 });
 
+test('客户问是真人还是机器人时必须诚实回答身份，不能回放旧客户画像', async () => {
+  let calls = 0;
+  setSalesCustomerAiLlm(async () => {
+    calls += 1;
+    return { ok: true, content: '收到，3家店，多店管理很关键。' };
+  });
+  const turn = await runCustomerAiTurn({
+    userText: '那你是机器人还是真人啊？',
+    extracted: { store_count: 3, pain_point: '多店管理' },
+    history: [],
+    intentScore: 23,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  assert.equal(calls, 0);
+  assert.equal(turn.source, 'identity_transparency_guard');
+  assert.match(turn.reply, /AI/);
+  assert.match(turn.reply, /不是真人/);
+  assert.match(turn.reply, /系统怎么用|功能/);
+  assert.doesNotMatch(turn.reply, /3家|多店管理|方便说下/);
+  assert.doesNotMatch(turn.reply, /[？?]/);
+  setSalesCustomerAiLlm(null);
+});
+
+test('客户问多店折扣时必须先回答优惠原则，不能只说转人工或暂无顾问', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '如果说门店多的话，你们有折扣吗？',
+    extracted: { store_count: 3, pain_point: '多店管理' },
+    history: [],
+    intentScore: 23,
+    controller: 'ai',
+    inputMode: 'voice',
+  });
+  assert.equal(turn.source, 'commercial_terms_guard');
+  assert.equal(turn.plan.mode, 'handoff');
+  assert.equal(turn.plan.takeover.takeover, true);
+  assert.equal(turn.plan.answer_before_handoff, true);
+  assert.match(turn.reply, /门店数量|门店数/);
+  assert.match(turn.reply, /单店成本|优惠空间/);
+  assert.match(turn.reply, /3家店/);
+  assert.match(turn.reply, /顾问确认|方案审批/);
+  assert.doesNotMatch(turn.reply, /当前暂时没有|先为您转人工/);
+});
+
+test('客户直接问费用时必须说明定价维度，不能用空泛转人工模板', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '你们费用多少？',
+    extracted: { store_count: 3, pain_point: '多店管理' },
+    history: [],
+    intentScore: 23,
+    controller: 'ai',
+    inputMode: 'text',
+  });
+  assert.equal(turn.source, 'commercial_terms_guard');
+  assert.match(turn.reply, /门店数量|使用模块|数据接入|试跑范围/);
+  assert.match(turn.reply, /3家店/);
+  assert.match(turn.reply, /具体报价.*顾问.*确认/);
+  assert.doesNotMatch(turn.reply, /先为您转人工|当前暂时没有/);
+});
+
 test('POS品牌不得擅自承诺支持，回复也不得机械以“嗯”开头', async () => {
   setSalesCustomerAiLlm(async () => ({ ok: true, content: '嗯，二维火的系统我们是支持的。POS订单里能记录客户手机号吗？' }));
   const turn = await runCustomerAiTurn({

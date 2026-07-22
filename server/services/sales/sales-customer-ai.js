@@ -41,6 +41,9 @@ const COMMITMENT_QUERY_RE = /什么承诺|能.{0,6}承诺|承诺.{0,6}什么|能
 const TRIAL_QUERY_RE = /试用|试跑|试点|体验.{0,6}(?:一个月|30天)|试.{0,4}一个月/;
 const PROFILE_MEMORY_QUERY_RE = /还记得.{0,12}(?:公司|品牌)|我是哪家公司|知道我是哪家/;
 const PRESENCE_QUERY_RE = /^(?:你|您)?还?在吗[？?]?$/;
+const IDENTITY_QUERY_RE = /(?:你|您).{0,8}(?:是|算)?(?:机器人|ai|人工智能|真人)|(?:机器人|ai|人工智能).{0,8}(?:还是真人|吗)|(?:真人|人工客服).{0,8}(?:还是|吗)/i;
+const DISCOUNT_QUERY_RE = /折扣|优惠|便宜|打折|单店成本|批量价|连锁价/;
+const PRICE_QUERY_RE = /价格|多少钱|报价|费用|收费|年费|月费|怎么定价/;
 
 function historyBeforeCurrent(messages = [], userText = '') {
   const out = (messages || []).map((m) => ({ ...m }));
@@ -205,6 +208,33 @@ function buildProfileMemoryReply(extracted = {}) {
   return `公司或品牌名称我这边还没有记录到，不会随便猜。${known ? `已记住的是：${known}。` : ''}您把品牌名发我，我马上补上。`;
 }
 
+function buildIdentityReply() {
+  return '我是AI经营顾问李娟娟，不是真人。系统怎么用、有哪些功能、适不适合您的门店，这些我都可以直接回答。最终报价和合同需要顾问确认，我会明确告诉您，不会装成真人。';
+}
+
+function buildCommercialTermsReply(text, extracted = {}) {
+  const stores = Number(extracted.store_count || 0);
+  const scale = stores > 0 ? `您目前是${stores}家店，我已经按连锁场景记录。` : '';
+  if (DISCOUNT_QUERY_RE.test(String(text || ''))) {
+    return `有的，门店数量会影响合作方案。通常会结合门店数、使用模块、数据接入和试跑范围综合评估；连锁门店增加时，单店成本一般会有优化空间，不过具体优惠要按方案审批并由顾问确认。${scale}`;
+  }
+  return `我们不是统一一口价，主要按门店数量、使用模块、数据接入和试跑范围确定。${scale}具体报价由顾问结合实际方案确认，我先把定价逻辑和适用范围给您说明清楚。`;
+}
+
+function buildPriorityConversationGuard({ userText, plan }) {
+  const text = String(userText || '').trim();
+  if (IDENTITY_QUERY_RE.test(text)) {
+    return { source: 'identity_transparency_guard', reply: buildIdentityReply() };
+  }
+  if (DISCOUNT_QUERY_RE.test(text) || PRICE_QUERY_RE.test(text)) {
+    plan.mode = 'handoff';
+    plan.takeover = { ...(plan.takeover || {}), takeover: true, reason: 'commercial_terms_query', level: 'high' };
+    plan.answer_before_handoff = true;
+    return { source: 'commercial_terms_guard', reply: buildCommercialTermsReply(text, plan.extracted) };
+  }
+  return null;
+}
+
 function buildPresenceReply({ history = [], controller } = {}) {
   const recentPresenceCount = (history || [])
     .filter((message) => message.direction === 'inbound' && PRESENCE_QUERY_RE.test(String(message.content || '').trim()))
@@ -283,7 +313,7 @@ export function evaluateCustomerReply({ reply, userText, history = [], plan = {}
   if (!value) issues.push('empty_reply');
   if (/^(?:嗯+|呃+|啊+)[，,。！!\s]*/.test(value) || /^我理解您的困惑/.test(value)) issues.push('mechanical_opening');
   if (OBSOLETE_VOICE_DENIAL_RE.test(value)) issues.push('stale_voice_denial');
-  if (IDENTITY_INTRO_RE.test(value) && !/你是谁|您是谁|叫什么|怎么称呼/.test(customer)) issues.push('unsolicited_identity');
+  if (IDENTITY_INTRO_RE.test(value) && !IDENTITY_QUERY_RE.test(customer) && !/你是谁|您是谁|叫什么|怎么称呼/.test(customer)) issues.push('unsolicited_identity');
   if (CONTACT_REQUEST_RE.test(value) && !CONTACT_ALLOWED_RE.test(customer) && !plan?.extracted?.contact_phone && !plan?.extracted?.phone) {
     issues.push('premature_contact_request');
   }
@@ -366,6 +396,17 @@ ${repairInstruction}
 
 export async function runCustomerAiTurn({ userText, extracted, history, intentScore, controller, guidance = null, knowledgeItems = null, pool = null, inputMode = 'text' }) {
   const plan = buildStrategyPlan({ userText, extracted, history, intentScore, controller, knowledgeItems });
+  const priorityGuard = buildPriorityConversationGuard({ userText, plan });
+  if (priorityGuard) {
+    return {
+      ok: true,
+      reply: priorityGuard.reply,
+      speechReply: priorityGuard.reply,
+      source: priorityGuard.source,
+      plan,
+      guidance,
+    };
+  }
   const productQuery = classifyProductQuery(userText);
   if (productQuery.isProductQuery) {
     const best = productQuery.matches[0] || null;
@@ -404,6 +445,7 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
   }
 
   const guarded = buildConversationGuard({ userText, previousExtracted: extracted || {}, plan, history, inputMode, controller });
+  if (guarded?.preserveOnHandoff) plan.answer_before_handoff = true;
   let reply = guarded?.reply || await generateWithLlm(plan, userText, history, knowledgeItems, intentScore);
   let source = guarded?.source || 'llm';
   if (!reply) {

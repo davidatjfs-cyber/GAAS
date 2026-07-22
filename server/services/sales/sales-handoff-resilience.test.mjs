@@ -34,6 +34,17 @@ test('没有可接管销售时继续由客户AI接待，不能进入waiting_huma
   assert.doesNotMatch(buildDeferredHandoffReply(), /已经转人工|正在接手/);
 });
 
+test('无人接管时必须保留已经回答的价格或折扣信息，只追加简短跟进说明', () => {
+  const reply = buildDeferredHandoffReply(
+    '门店数量增加时，单店成本通常有优化空间，具体优惠需要按方案审批。',
+    { preserveAnswer: true }
+  );
+  assert.match(reply, /单店成本通常有优化空间/);
+  assert.match(reply, /具体优惠需要按方案审批/);
+  assert.match(reply, /继续.*回答/);
+  assert.doesNotMatch(reply, /当前暂时没有可立即接管的顾问/);
+});
+
 test('存在可用销售时才进入waiting_human', () => {
   assert.deepEqual(
     resolveHandoffController({ requested: true, repKey: 'sales_01', currentController: 'ai' }),

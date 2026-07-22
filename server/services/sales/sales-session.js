@@ -129,8 +129,16 @@ export function buildWaitingHumanBridgeReply({ content, lead = {} } = {}) {
   return '收到，我还在这里，也已经把您这条新信息同步给接手顾问。顾问回复前，您继续问就行，我会先接着回答。';
 }
 
-export function buildDeferredHandoffReply() {
-  return '价格需要顾问结合门店数量、数据条件和试跑范围进一步说明。当前暂时没有可立即接管的顾问，我先继续在这里为您解答系统功能和使用问题；您的询价需求已经记录，顾问可接入后会继续跟进。';
+export function buildDeferredHandoffReply(answer = '', { preserveAnswer = false } = {}) {
+  const directAnswer = String(answer || '').trim();
+  if (preserveAnswer && directAnswer) {
+    const separator = /[。！？!?]$/.test(directAnswer) ? '' : '。';
+    const followup = /顾问.{0,8}确认/.test(directAnswer)
+      ? '顾问接入前，您继续问，我会直接回答。'
+      : '具体商务条件我已经记下，等顾问确认；您继续问，我会直接回答。';
+    return `${directAnswer}${separator}${followup}`;
+  }
+  return '您的需求我已经记录。顾问接入前，我会继续在这里为您解答，不让您空等。';
 }
 
 export async function findAssignableSalesRep(pool, lead = {}) {
@@ -370,11 +378,16 @@ export async function handleInboundMessage(pool, {
   const takeover = handoffResolution.takeover;
   const handoffDeferred = handoffResolution.deferred;
   if (handoffDeferred) {
-    turn.reply = buildDeferredHandoffReply();
+    turn.reply = buildDeferredHandoffReply(turn.reply, { preserveAnswer: Boolean(turn.plan?.answer_before_handoff) });
     turn.speechReply = turn.reply;
     turn.source = 'handoff_deferred_no_active_sales';
     turn.plan.mode = 'handoff_deferred';
     turn.plan.takeover = { ...(turn.plan.takeover || {}), takeover: false, deferred: true, reason: 'no_active_sales' };
+  } else if (takeover && turn.plan?.answer_before_handoff) {
+    const directAnswer = String(turn.reply || '').trim();
+    const separator = /[。！？!?]$/.test(directAnswer) ? '' : '。';
+    turn.reply = `${directAnswer}${separator}我现在为您安排顾问继续确认。`;
+    turn.speechReply = turn.reply;
   }
   const nextController = handoffResolution.controller;
   const nextStage = decision.sales_stage;
