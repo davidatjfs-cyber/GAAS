@@ -3824,7 +3824,15 @@ function legacyCopyFallback(value) {
       el.innerHTML = (messages || []).map((m) => {
         const inbound = m.direction === 'inbound' || m.sender === 'customer';
         const who = inbound ? '客户' : (m.sender === 'human' ? '人工' : '客户AI');
-        return `<div class="sales-bubble ${inbound ? 'in' : 'out'}"><span class="meta">${salesEsc(who)}</span>${salesEsc(m.content)}</div>`;
+        const deliveryStatus = String(m.meta?.delivery_status || '');
+        const deliveryLabel = deliveryStatus === 'failed'
+          ? `<span class="meta" style="color:#dc2626;font-weight:700">发送失败：${salesEsc(m.meta?.send_error || '企微会话不可发送')}</span>`
+          : deliveryStatus === 'pending'
+            ? '<span class="meta" style="color:#d97706">发送中</span>'
+            : deliveryStatus === 'sent'
+              ? '<span class="meta" style="color:#059669">已送达企微</span>'
+              : '';
+        return `<div class="sales-bubble ${inbound ? 'in' : 'out'}"><span class="meta">${salesEsc(who)}</span>${salesEsc(m.content)}${inbound ? '' : deliveryLabel}</div>`;
       }).join('') || '<div class="small">暂无消息</div>';
       el.scrollTop = el.scrollHeight;
     }

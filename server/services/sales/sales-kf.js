@@ -10,6 +10,13 @@ import { transcribeAmrVoice } from './sales-asr.js';
 import { synthesizeSpeechAmr } from './sales-tts.js';
 
 const tokenCache = { token: '', expireAt: 0 };
+let _fetch = (...args) => globalThis.fetch(...args);
+
+export function setSalesKfFetch(fn) {
+  _fetch = typeof fn === 'function' ? fn : (...args) => globalThis.fetch(...args);
+  tokenCache.token = '';
+  tokenCache.expireAt = 0;
+}
 
 export function kfEnv() {
   return {
@@ -53,7 +60,7 @@ async function getAccessToken() {
   if (!corpId || !secret) throw new Error('kf_credentials_missing');
   if (tokenCache.token && Date.now() < tokenCache.expireAt) return tokenCache.token;
   const url = `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(corpId)}&corpsecret=${encodeURIComponent(secret)}`;
-  const resp = await fetch(url);
+  const resp = await _fetch(url);
   const data = await resp.json();
   if (!resp.ok || Number(data?.errcode) !== 0) throw new Error(data?.errmsg || 'kf_token_failed');
   tokenCache.token = String(data.access_token);
@@ -70,7 +77,7 @@ export async function syncKfMessages({ token, cursor, openKfid, limit = 1000 } =
     voice_format: 0,
   };
   if (openKfid) body.open_kfid = openKfid;
-  const resp = await fetch(
+  const resp = await _fetch(
     `https://qyapi.weixin.qq.com/cgi-bin/kf/sync_msg?access_token=${encodeURIComponent(accessToken)}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
   );
@@ -79,14 +86,35 @@ export async function syncKfMessages({ token, cursor, openKfid, limit = 1000 } =
   return data;
 }
 
+export async function getKfServiceState({ openKfid, externalUserid }) {
+  const accessToken = await getAccessToken();
+  const resp = await _fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/kf/service_state/get?access_token=${encodeURIComponent(accessToken)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ open_kfid: openKfid, external_userid: externalUserid }),
+    }
+  );
+  const data = await resp.json();
+  if (Number(data?.errcode) !== 0) throw new Error(data?.errmsg || 'kf_service_state_get_failed');
+  return Number(data.service_state);
+}
+
 /**
- * 会话状态必须先转为"由智能助手接待"(service_state=1)，kf/send_msg 才允许往这个会话发消息——
- * 新会话默认是"未处理"(0)，不调用这个接口直接发消息会报95018 session status invalid。
- * 已经是状态1时重复调用是无害的幂等操作，所以每次发送前都调用一次，不额外维护会话状态缓存。
+ * 只有未处理(0)可以由当前客户AI认领为智能助手接待(1)。待人工接入(2)、人工接待或
+ * 已结束会话不能被AI强抢；遇到这些状态直接返回可审计错误，不再盲目调用send_msg制造95018。
  */
 export async function claimKfServiceState({ openKfid, externalUserid }) {
+  const state = await getKfServiceState({ openKfid, externalUserid });
+  if (state === 1) return { errcode: 0, errmsg: 'ok', service_state: 1, already_claimed: true };
+  if (state !== 0) {
+    const error = new Error(`kf_session_not_ai_service_state_${state}`);
+    error.serviceState = state;
+    throw error;
+  }
   const accessToken = await getAccessToken();
-  const resp = await fetch(
+  const resp = await _fetch(
     `https://qyapi.weixin.qq.com/cgi-bin/kf/service_state/trans?access_token=${encodeURIComponent(accessToken)}`,
     {
       method: 'POST',
@@ -100,11 +128,9 @@ export async function claimKfServiceState({ openKfid, externalUserid }) {
 }
 
 export async function sendKfText({ openKfid, externalUserid, content }) {
-  await claimKfServiceState({ openKfid, externalUserid }).catch((e) => {
-    console.warn('[sales-kf] claimKfServiceState failed (will still try to send):', e?.message || e);
-  });
+  await claimKfServiceState({ openKfid, externalUserid });
   const accessToken = await getAccessToken();
-  const resp = await fetch(
+  const resp = await _fetch(
     `https://qyapi.weixin.qq.com/cgi-bin/kf/send_msg?access_token=${encodeURIComponent(accessToken)}`,
     {
       method: 'POST',
@@ -124,11 +150,9 @@ export async function sendKfText({ openKfid, externalUserid, content }) {
 
 async function sendKfMediaMessage({ openKfid, externalUserid, msgtype, mediaId }) {
   if (!mediaId) throw new Error('media_id_required');
-  await claimKfServiceState({ openKfid, externalUserid }).catch((e) => {
-    console.warn('[sales-kf] claimKfServiceState failed (will still try to send):', e?.message || e);
-  });
+  await claimKfServiceState({ openKfid, externalUserid });
   const accessToken = await getAccessToken();
-  const resp = await fetch(
+  const resp = await _fetch(
     `https://qyapi.weixin.qq.com/cgi-bin/kf/send_msg?access_token=${encodeURIComponent(accessToken)}`,
     {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -164,7 +188,7 @@ export async function sendKfConsultantCard({ openKfid, externalUserid, consultan
 /** 下载客户发来的语音/图片等媒体文件，返回原始二进制Buffer；语音默认amr格式(voice_format=0，见sync_msg调用) */
 export async function downloadKfMedia(mediaId) {
   const accessToken = await getAccessToken();
-  const resp = await fetch(
+  const resp = await _fetch(
     `https://qyapi.weixin.qq.com/cgi-bin/media/get?access_token=${encodeURIComponent(accessToken)}&media_id=${encodeURIComponent(mediaId)}`
   );
   const contentType = resp.headers.get('content-type') || '';
@@ -178,11 +202,9 @@ export async function downloadKfMedia(mediaId) {
 
 /** 发送语音消息(AI回复用真人声音)；media_id 需先调"上传临时素材"接口拿到 */
 export async function sendKfVoice({ openKfid, externalUserid, mediaId }) {
-  await claimKfServiceState({ openKfid, externalUserid }).catch((e) => {
-    console.warn('[sales-kf] claimKfServiceState failed (will still try to send):', e?.message || e);
-  });
+  await claimKfServiceState({ openKfid, externalUserid });
   const accessToken = await getAccessToken();
-  const resp = await fetch(
+  const resp = await _fetch(
     `https://qyapi.weixin.qq.com/cgi-bin/kf/send_msg?access_token=${encodeURIComponent(accessToken)}`,
     {
       method: 'POST',
@@ -201,7 +223,7 @@ export async function uploadKfMedia(buffer, { type = 'voice', filename = 'voice.
   const form = new FormData();
   const mime = mimeType || (type === 'voice' ? 'audio/amr' : 'application/octet-stream');
   form.append('media', new Blob([buffer], { type: mime }), filename);
-  const resp = await fetch(
+  const resp = await _fetch(
     `https://qyapi.weixin.qq.com/cgi-bin/media/upload?access_token=${encodeURIComponent(accessToken)}&type=${type}`,
     { method: 'POST', body: form }
   );
@@ -210,10 +232,37 @@ export async function uploadKfMedia(buffer, { type = 'voice', filename = 'voice.
   return data.media_id;
 }
 
+export async function recordKfDelivery(pool, turn, { status, channel = 'text', result = null, error = null } = {}) {
+  const messageId = Number(turn?.outbound_message_id || 0);
+  if (!messageId || !['sent', 'failed'].includes(status)) return { updated: false };
+  const errorText = error ? String(error?.message || error).slice(0, 1000) : null;
+  const patch = {
+    delivery_status: status,
+    delivery_channel: channel,
+    delivery_updated_at: new Date().toISOString(),
+    wecom_msg_id: String(result?.msgid || result?.msg_id || '') || null,
+    send_error: errorText,
+  };
+  await pool.query(
+    `UPDATE sales_messages SET meta=COALESCE(meta,'{}'::jsonb) || $2::jsonb WHERE id=$1`,
+    [messageId, JSON.stringify(patch)]
+  );
+  if (status === 'failed' && turn?.lead_id) {
+    await pool.query(
+      `INSERT INTO sales_lead_events (lead_id,event_type,summary,evidence,priority,recommended_action,payload)
+       VALUES ($1,'CUSTOMER_AI_DELIVERY_FAILED',$2,$3,'critical','restore_wecom_session',$4::jsonb)`,
+      [turn.lead_id, '客户AI已生成回复，但企业微信发送失败', errorText, JSON.stringify({ message_id: messageId, channel, error: errorText })]
+    );
+  }
+  turn.delivery_status = status;
+  if (errorText) turn.send_error = errorText;
+  return { updated: true, message_id: messageId, status };
+}
+
 /**
  * 处理 kf 回调：拉消息 → 交给 session → 自动回复
  */
-export async function processKfCallbackEvent(pool, { token, openKfid }, handleInbound) {
+export async function processKfCallbackEvent(pool, { token, openKfid }, handleInbound, { notify = null } = {}) {
   const env = kfEnv();
   const kfId = openKfid || env.openKfid;
   let cursor = '';
@@ -227,6 +276,13 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
   const nextCursor = synced.next_cursor || cursor;
   const msgs = Array.isArray(synced.msg_list) ? synced.msg_list : [];
   const results = [];
+  const alertDeliveryFailure = async (turn, error) => {
+    if (typeof notify !== 'function') return;
+    await notify(
+      ['【客户AI·企微发送失败】', `线索ID：${turn?.lead_id || '未知'}`, `消息ID：${turn?.outbound_message_id || '未知'}`, `原因：${String(error?.message || error).slice(0, 500)}`, '回复已标红并写入严重事件，请立即恢复企微会话或人工接管。'].join('\n'),
+      { title: '客户AI回复未送达', audience: 'sales' }
+    ).catch(() => null);
+  };
 
   for (const m of msgs) {
     if (String(m.msgtype) === 'event') {
@@ -241,8 +297,11 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
         if (turn?.replied && turn.reply && externalUserid) {
           try {
             const sendResult = await sendKfText({ openKfid: String(m.open_kfid || m.event?.open_kfid || kfId), externalUserid, content: turn.reply });
+            await recordKfDelivery(pool, turn, { status: 'sent', channel: 'text', result: sendResult });
             console.log('[sales-kf] sendKfText ok (welcome):', JSON.stringify(sendResult));
           } catch (e) {
+            await recordKfDelivery(pool, turn, { status: 'failed', channel: 'text', error: e }).catch(() => null);
+            await alertDeliveryFailure(turn, e);
             turn.send_error = e?.message || String(e);
             console.error('[sales-kf] sendKfText failed (welcome):', turn.send_error);
           }
@@ -300,6 +359,7 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
           if (amr) {
             const mediaId = await uploadKfMedia(amr, { type: 'voice', filename: 'reply.amr' });
             const sendResult = await sendKfVoice({ openKfid: replyOpenKfid, externalUserid, mediaId });
+            await recordKfDelivery(pool, turn, { status: 'sent', channel: 'voice', result: sendResult });
             console.log('[sales-kf] sendKfVoice ok:', JSON.stringify({ ...sendResult, speech_chars: voiceReply.length, speech_mode: turn.speech_reply ? 'conversational' : 'original' }));
             sentAsVoice = true;
           }
@@ -310,8 +370,11 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
       if (!sentAsVoice) {
         try {
           const sendResult = await sendKfText({ openKfid: replyOpenKfid, externalUserid, content: turn.reply });
+          await recordKfDelivery(pool, turn, { status: 'sent', channel: 'text', result: sendResult });
           console.log('[sales-kf] sendKfText ok:', JSON.stringify(sendResult));
         } catch (e) {
+          await recordKfDelivery(pool, turn, { status: 'failed', channel: 'text', error: e }).catch(() => null);
+          await alertDeliveryFailure(turn, e);
           turn.send_error = e?.message || String(e);
           console.error('[sales-kf] sendKfText failed:', turn.send_error);
         }

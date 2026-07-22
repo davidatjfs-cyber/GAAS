@@ -403,7 +403,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     globalThis.__salesKfSyncTimer = setInterval(() => {
       if (!kfConfigured()) return;
       const env = kfEnv();
-      processKfCallbackEvent(pool, { token: '', openKfid: env.openKfid }, (payload) => handleInboundMessage(pool, payload))
+      processKfCallbackEvent(pool, { token: '', openKfid: env.openKfid }, (payload) => handleInboundMessage(pool, payload), { notify: sendOpsAlert })
         .catch((e) => console.warn('[sales-ai] kf compensating sync failed:', e?.message || e));
     }, 5 * 60 * 1000);
   }
@@ -460,7 +460,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         }
       }
       token = token || String(req.body?.Token || req.query?.token || '');
-      await processKfCallbackEvent(pool, { token, openKfid }, (payload) => handleInboundMessage(pool, payload));
+      await processKfCallbackEvent(pool, { token, openKfid }, (payload) => handleInboundMessage(pool, payload), { notify: sendOpsAlert });
     } catch (e) {
       console.error('[sales-kf] callback handle failed', e?.message || e);
     }

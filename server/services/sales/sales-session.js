@@ -129,6 +129,34 @@ export function buildWaitingHumanBridgeReply({ content, lead = {} } = {}) {
   return '收到，我还在这里，也已经把您这条新信息同步给接手顾问。顾问回复前，您继续问就行，我会先接着回答。';
 }
 
+export function buildDeferredHandoffReply() {
+  return '价格需要顾问结合门店数量、数据条件和试跑范围进一步说明。当前暂时没有可立即接管的顾问，我先继续在这里为您解答系统功能和使用问题；您的询价需求已经记录，顾问可接入后会继续跟进。';
+}
+
+export async function findAssignableSalesRep(pool, lead = {}) {
+  const rep = await pool.query(
+    `SELECT r.rep_key FROM sales_reps r
+      LEFT JOIN sales_leads l ON (l.assigned_to=r.rep_key OR l.owner_username=r.rep_key) AND l.stage NOT IN ('won','lost','unfit')
+     WHERE r.status='active' AND r.role IN ('sales','sales_manager')
+     GROUP BY r.id,r.rep_key,r.region_code
+     ORDER BY CASE WHEN $2::text IS NOT NULL AND r.rep_key=$2 THEN -1
+                   WHEN $1::text IS NOT NULL AND r.region_code=$1 THEN 0
+                   WHEN r.region_code IS NULL THEN 1 ELSE 2 END,
+              COUNT(l.id) ASC,r.id ASC LIMIT 1`,
+    [lead.region_code || null, lead.assigned_to || null]
+  ).catch(() => ({ rows: [] }));
+  return rep.rows?.[0]?.rep_key || null;
+}
+
+export function resolveHandoffController({ requested = false, repKey = null, currentController = 'ai' } = {}) {
+  const takeover = Boolean(requested && repKey);
+  return {
+    takeover,
+    deferred: Boolean(requested && !takeover),
+    controller: takeover ? 'waiting_human' : currentController,
+  };
+}
+
 async function pauseAutoNurtureOnCustomerReply(pool, leadId) {
   const r = await pool.query(
     `UPDATE sales_leads
@@ -233,7 +261,7 @@ export async function handleInboundMessage(pool, {
       inputMode,
     }).catch(() => null);
     const reply = turn?.reply || buildWaitingHumanBridgeReply({ content, lead: updatedLead });
-    await addMessage(pool, {
+    const outboundMsg = await addMessage(pool, {
       conversationId: conv.id,
       leadId: lead.id,
       direction: 'outbound',
@@ -243,6 +271,7 @@ export async function handleInboundMessage(pool, {
         source: turn?.source || 'waiting_human_bridge_fallback',
         mode: 'waiting_human_bridge',
         speech_reply: turn?.speechReply || null,
+        delivery_status: sourceChannel === 'wecom_kf' ? 'pending' : 'local',
       },
     });
     await addEvent(pool, lead.id, {
@@ -267,6 +296,7 @@ export async function handleInboundMessage(pool, {
       reason: 'waiting_human_bridge',
       lead_id: lead.id,
       conversation_id: conv.id,
+      outbound_message_id: outboundMsg.id || null,
       controller: 'waiting_human',
       score,
       advice,
@@ -285,15 +315,15 @@ export async function handleInboundMessage(pool, {
       return { ok: true, replied: false, reason: 'already_welcomed', lead_id: lead.id, conversation_id: conv.id, controller: 'ai' };
     }
     const welcomeText = '您好，我是李娟娟，负责餐厅经营顾问这块。可以聊聊客户维护、门店管理或者人才培养这些，您目前有几家门店？';
-    await addMessage(pool, {
+    const outboundMsg = await addMessage(pool, {
       conversationId: conv.id,
       leadId: lead.id,
       direction: 'outbound',
       sender: 'ai',
       content: welcomeText,
-      meta: { kind: 'welcome' },
+      meta: { kind: 'welcome', delivery_status: sourceChannel === 'wecom_kf' ? 'pending' : 'local' },
     });
-    return { ok: true, replied: true, reply: welcomeText, lead_id: lead.id, conversation_id: conv.id, controller: 'ai' };
+    return { ok: true, replied: true, reply: welcomeText, lead_id: lead.id, conversation_id: conv.id, outbound_message_id: outboundMsg.id || null, controller: 'ai' };
   }
 
   const inboundMsg = await addMessage(pool, {
@@ -334,9 +364,30 @@ export async function handleInboundMessage(pool, {
   const eventTypes = normalizedEvents.map((e) => e.event_type);
   const score = scoreLead({ extracted: turn.plan.extracted, eventTypes });
   const decision = buildSalesDecision({ lead: { ...lead, extracted: turn.plan.extracted }, score, events: normalizedEvents });
-  const takeover = decision.controller_recommendation === 'handoff_now';
-  const nextController = takeover ? 'waiting_human' : conv.controller;
+  const handoffRequested = decision.controller_recommendation === 'handoff_now';
+  const handoffRep = handoffRequested ? await findAssignableSalesRep(pool, lead) : null;
+  const handoffResolution = resolveHandoffController({ requested: handoffRequested, repKey: handoffRep, currentController: conv.controller });
+  const takeover = handoffResolution.takeover;
+  const handoffDeferred = handoffResolution.deferred;
+  if (handoffDeferred) {
+    turn.reply = buildDeferredHandoffReply();
+    turn.speechReply = turn.reply;
+    turn.source = 'handoff_deferred_no_active_sales';
+    turn.plan.mode = 'handoff_deferred';
+    turn.plan.takeover = { ...(turn.plan.takeover || {}), takeover: false, deferred: true, reason: 'no_active_sales' };
+  }
+  const nextController = handoffResolution.controller;
   const nextStage = decision.sales_stage;
+
+  const effectiveDecision = handoffDeferred
+    ? {
+        ...decision,
+        controller_recommendation: 'notify_and_continue',
+        requested_controller_recommendation: 'handoff_now',
+        handoff_deferred_reason: 'no_active_sales',
+        next_action: '配置可接管销售并尽快联系客户；配置完成前由客户AI继续接待',
+      }
+    : decision;
 
   await applyLeadUpdates(pool, lead.id, {
     extracted: turn.plan.extracted,
@@ -344,14 +395,14 @@ export async function handleInboundMessage(pool, {
     score,
     controller: nextController,
     handoff_level: decision.intent_level,
-    last_sales_decision: decision,
+    last_sales_decision: effectiveDecision,
   });
 
   const updatedLead = await getLead(pool, lead.id);
   const advice = buildSalesAdvice(updatedLead, score);
   const next = buildNextAction(updatedLead, score);
   const diagnosis = buildDiagnosisReport(updatedLead);
-  const customerGuidance = buildCustomerAiGuidance(decision);
+  const customerGuidance = buildCustomerAiGuidance(effectiveDecision);
   await saveSalesGuidance(pool, { leadId: lead.id, conversationId: conv.id, guidance: customerGuidance, expiresInTurns: customerGuidance.expires_in_turns });
   const completeness = checkLeadCompleteness(updatedLead);
   if (nextStage && nextStage !== lead.stage && STAGES_REQUIRING_COMPLETE_INFO.has(nextStage) && !completeness.complete) {
@@ -396,20 +447,9 @@ export async function handleInboundMessage(pool, {
     });
     // 多销售按当前开放线索数最少者自动分配；同负载时按销售ID轮询，避免永远分给第一人。
     let handoffLead = updatedLead;
-    if (!handoffLead.assigned_to) {
-      const rep = await pool.query(
-        `SELECT r.rep_key FROM sales_reps r
-          LEFT JOIN sales_leads l ON (l.assigned_to=r.rep_key OR l.owner_username=r.rep_key) AND l.stage NOT IN ('won','lost','unfit')
-         WHERE r.status='active' AND r.role IN ('sales','sales_manager')
-         GROUP BY r.id,r.rep_key,r.region_code
-         ORDER BY CASE WHEN $1::text IS NOT NULL AND r.region_code=$1 THEN 0 WHEN r.region_code IS NULL THEN 1 ELSE 2 END,
-                  COUNT(l.id) ASC,r.id ASC LIMIT 1`,
-        [handoffLead.region_code || null]
-      ).catch(() => ({ rows: [] }));
-      if (rep.rows?.[0]?.rep_key) {
-        await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=NOW(),updated_at=NOW() WHERE id=$1 AND assigned_to IS NULL`, [lead.id, rep.rows[0].rep_key]);
-        handoffLead = { ...handoffLead, assigned_to: rep.rows[0].rep_key };
-      }
+    if (handoffLead.assigned_to !== handoffRep) {
+      await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=NOW(),updated_at=NOW() WHERE id=$1`, [lead.id, handoffRep]);
+      handoffLead = { ...handoffLead, assigned_to: handoffRep };
     }
     // 客户AI完成人格化接待与判断后，明确把客户交给具名顾问；不让销售继续假扮AI客服。
     const qrUrl = String(process.env.WECOM_SALES_CONSULTANT_QR_URL || '').trim();
@@ -440,17 +480,33 @@ export async function handleInboundMessage(pool, {
         { title: '高意向销售线索', audience: 'sales' }
       ).catch(() => null);
     }
+  } else if (handoffDeferred) {
+    await ensureFollowupTask(pool, lead.id, '高意向客户待配置销售', advice, 0.2);
+    await addEvent(pool, lead.id, {
+      event_type: 'HANDOFF_DEFERRED_NO_ACTIVE_SALES',
+      summary: '客户触发转人工，但没有可接管销售；客户AI继续接待',
+      evidence: content.slice(0, 200),
+      priority: 'critical',
+      recommended_action: 'configure_sales_and_takeover',
+      payload: { score, advice, diagnosis },
+    });
+    if (typeof _notify === 'function') {
+      await _notify(
+        ['【客户AI·转人工失败】', `线索 ${lead.lead_key}`, '当前没有可用销售人员，客户AI已继续接待以避免失联。', `客户：${content.slice(0, 160)}`, '请立即配置销售人员并接管。'].join('\n'),
+        { title: '客户转人工无人接管', audience: 'sales' }
+      ).catch(() => null);
+    }
   } else if (next.priority === 'medium' && !updatedLead.next_action) {
     await ensureFollowupTask(pool, lead.id, next.next_action, advice, next.due_hours || 48);
   }
 
-  await addMessage(pool, {
+  const outboundMsg = await addMessage(pool, {
     conversationId: conv.id,
     leadId: lead.id,
     direction: 'outbound',
     sender: 'ai',
     content: turn.reply,
-    meta: { source: turn.source, mode: turn.plan.mode, speech_reply: turn.speechReply || null },
+    meta: { source: turn.source, mode: turn.plan.mode, speech_reply: turn.speechReply || null, delivery_status: sourceChannel === 'wecom_kf' ? 'pending' : 'local' },
   });
 
   await pool.query(
@@ -465,13 +521,14 @@ export async function handleInboundMessage(pool, {
     speech_reply: turn.speechReply || null,
     lead_id: lead.id,
     conversation_id: conv.id,
+    outbound_message_id: outboundMsg.id || null,
     controller: nextController,
     score,
     advice,
     diagnosis,
     next_action: next.next_action,
     plan: { mode: turn.plan.mode, extracted: turn.plan.extracted, takeover: turn.plan.takeover, events: normalizedEvents },
-    sales_decision: decision,
+    sales_decision: effectiveDecision,
     customer_ai_guidance: customerGuidance,
     source: turn.source,
   };
