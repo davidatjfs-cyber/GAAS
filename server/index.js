@@ -197,6 +197,11 @@ app.use((req, res, next) => {
   res.setHeader('X-Request-Id', requestId);
   next();
 });
+// M1-FIX: 生产环境不把内部错误细节（e.message，可能含SQL/文件路径等）返回给客户端
+function safeErrMessage(e) {
+  if (process.env.NODE_ENV === 'production') return 'internal_error';
+  return safeErrMessage(e);
+}
 // H3-FIX: 限制CORS来源（生产环境使用白名单，开发环境允许所有）
 const CORS_WHITELIST = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors(CORS_WHITELIST.length > 0 ? {
@@ -625,7 +630,7 @@ async function ensureOpsTasksTable() {
     await pool.query(`create index if not exists idx_ops_tasks_store_date on ops_tasks (store, biz_date)`);
     await pool.query(`create index if not exists idx_ops_tasks_due on ops_tasks (due_at)`);
   } catch (e) {
-    if (String(e?.message || e).includes('already exists')) return;
+    if (safeErrMessage(e).includes('already exists')) return;
     if (e?.code === '23505') {
       const rel = await pool.query(`select to_regclass('public.ops_tasks') as rel`).catch(() => null);
       if (rel?.rows?.[0]?.rel === 'ops_tasks') return;
@@ -655,7 +660,7 @@ async function getFeishuAccessToken(options = {}) {
     }
     throw new Error(`Feishu API error: ${response.data?.msg || 'Unknown error'} (code: ${response.data?.code})`);
   } catch (error) {
-    console.error('[getFeishuAccessToken] Error:', error?.message || error);
+    console.error('[getFeishuAccessToken] Error:', safeErrMessage(error));
     if (error?.response?.data) {
       const code = error.response.data?.code;
       const msg = error.response.data?.msg;
@@ -692,7 +697,7 @@ async function createFeishuBitableRecord({ appToken, tableId, fields, accessToke
     }
     return response.data?.data?.record || null;
   } catch (error) {
-    console.error('[createFeishuBitableRecord] Error:', error?.message || error);
+    console.error('[createFeishuBitableRecord] Error:', safeErrMessage(error));
     if (error?.response?.data) {
       const code = error.response.data?.code;
       const msg = error.response.data?.msg;
@@ -744,7 +749,7 @@ async function getFeishuBitableData(appToken, tableId, accessToken) {
 
     return { items: allItems, has_more: false };
   } catch (error) {
-    console.error('[getFeishuBitableData] Error:', error?.message || error);
+    console.error('[getFeishuBitableData] Error:', safeErrMessage(error));
     if (error?.response?.data) {
       const code = error.response.data?.code;
       const msg = error.response.data?.msg;
@@ -773,7 +778,7 @@ async function ensureFeishuSyncTable() {
     await pool.query(`create index if not exists idx_feishu_sync_status on feishu_sync_logs (sync_status)`);
     await pool.query(`create index if not exists idx_feishu_sync_table on feishu_sync_logs (table_id, created_at)`);
   } catch (e) {
-    if (String(e?.message || e).includes('already exists')) return;
+    if (safeErrMessage(e).includes('already exists')) return;
     console.error('[ensureFeishuSyncTable] Error:', e?.message || e);
     throw e;
   }
@@ -987,7 +992,7 @@ async function ensureTableVisitRecordsTable() {
     }
     
   } catch (e) {
-    if (String(e?.message || e).includes('already exists')) return;
+    if (safeErrMessage(e).includes('already exists')) return;
     console.error('[ensureTableVisitRecordsTable] Error:', e?.message || e);
     throw e;
   }
@@ -3590,7 +3595,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           console.error('[approval/onboarding] mergeSharedStateFields(employees) 失败', {
             approvalId: updated.id,
             username: newUsername,
-            err: String(mergeErr?.message || mergeErr)
+            err: safeErrMessage(e)
           });
           decideExtras.onboardingEmployeeSync = { ok: false, reason: 'merge_failed', username: newUsername };
         }
@@ -4557,7 +4562,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
     console.log('[approval-decide] ok', { id, ms: __decideMs, status: updated?.status, type: updated?.type });
     return res.json(Object.keys(decideExtras).length ? { item: updated, decideMs: __decideMs, ...decideExtras } : { item: updated, decideMs: __decideMs });
   } catch (e) {
-    console.log('[approval-decide] error', { id, ms: Date.now() - __decideStartedAt, err: String(e?.message || e) });
+    console.log('[approval-decide] error', { id, ms: Date.now() - __decideStartedAt, err: safeErrMessage(e) });
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
   }
 });
@@ -9230,7 +9235,7 @@ app.post('/api/daily-reports', authRequired, async (req, res) => {
       );
     } catch (mergeErr) {
       void notifyAdminsDualWriteFailure('daily_reports（营业日报 state 合并）', mergeErr);
-      return res.status(502).json({ error: 'state_merge_failed', message: String(mergeErr?.message || mergeErr) });
+      return res.status(502).json({ error: 'state_merge_failed', message: safeErrMessage(mergeErr) });
     }
     return res.json({ item });
   } catch (e) {
@@ -9261,7 +9266,7 @@ app.delete('/api/daily-reports', authRequired, async (req, res) => {
       );
     } catch (mergeErr) {
       void notifyAdminsDualWriteFailure('daily_reports（营业日报删除 state 合并）', mergeErr);
-      return res.status(502).json({ error: 'state_merge_failed', message: String(mergeErr?.message || mergeErr) });
+      return res.status(502).json({ error: 'state_merge_failed', message: safeErrMessage(mergeErr) });
     }
     return res.json({ ok: true });
   } catch (e) {
@@ -9295,7 +9300,7 @@ app.post('/api/admin/sync-submitted-daily-reports-pg', authRequired, async (req,
         await upsertDailyReportPgFromStateReport(dr, req.tenantId || req.user?.tenant_id || 'default');
         results.push({ store: st, date: d, ok: true });
       } catch (e) {
-        const msg = String(e?.message || e);
+        const msg = safeErrMessage(e);
         void notifyAdminsDualWriteFailure(`daily_reports（admin 补写 PG ${st} ${d}）`, e);
         results.push({ store: st, date: d, ok: false, error: msg });
       }
@@ -11241,7 +11246,7 @@ app.post('/api/admin/leave-close-snapshot/recompute', authRequired, async (req, 
     const r = await runLeaveCumulativeCloseSnapshotForClosedMonth(month);
     return res.json(r);
   } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: String(e?.message || e) });
+    return res.status(500).json({ error: 'server_error', message: safeErrMessage(e) });
   }
 });
 
@@ -14044,7 +14049,9 @@ app.post('/api/auth/change-password', authRequired, async (req, res) => {
   const newPassword = String(req.body?.newPassword || '').trim();
   if (!username) return res.status(400).json({ error: 'missing_user' });
   if (!oldPassword || !newPassword) return res.status(400).json({ error: 'missing_params' });
-  if (newPassword.length < 6) return res.status(400).json({ error: 'weak_password', message: '新密码至少6位' });
+  if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+    return res.status(400).json({ error: 'weak_password', message: '新密码至少8位，且需同时包含字母和数字' });
+  }
 
   try {
     const dbUser = await pool.query(
@@ -14567,7 +14574,7 @@ app.post('/api/webhook/feishu', express.raw({ type: 'application/json' }), async
           console.error('[Feishu Webhook] Async processing error:', error);
           await pool.query(
             'update feishu_sync_logs set sync_status = $1, error_message = $2, processed_at = now() where id = $3',
-            ['failed', error?.message || error, logId]
+            ['failed', safeErrMessage(error), logId]
           );
           void notifyAdminsDualWriteFailure('飞书 Webhook → DB（bitable.record.changed 异步处理失败）', error);
         }
@@ -14770,7 +14777,7 @@ async function processFeishuDataChange(event, logId) {
   } catch (error) {
     await pool.query(
       'update feishu_sync_logs set sync_status = $1, error_message = $2, processed_at = now() where id = $3',
-      ['failed', error?.message || error, logId]
+      ['failed', safeErrMessage(error), logId]
     );
     throw error;
   }
@@ -14811,7 +14818,7 @@ app.get('/api/feishu/sync-status', authRequired, async (req, res) => {
     });
   } catch (error) {
     console.error('[Feishu Sync Status] Error:', error);
-    res.status(500).json({ error: 'server_error', message: error?.message || error });
+    res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
   }
 });
 
@@ -15014,7 +15021,7 @@ app.post('/api/feishu/sync-manual', authRequired, async (req, res) => {
   } catch (error) {
     console.error('[Manual Sync] Error:', error);
     void notifyAdminsDualWriteFailure('飞书多维表手动同步（整次失败）', error);
-    res.status(500).json({ error: 'server_error', message: error?.message || error });
+    res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
   }
 });
 
@@ -15038,7 +15045,7 @@ app.post('/api/feishu/sync-dish-library', authRequired, async (req, res) => {
   } catch (error) {
     console.error('[Dish Library Sync] Error:', error);
     void notifyAdminsDualWriteFailure('菜品库成本同步（HTTP 接口抛错）', error);
-    res.status(500).json({ error: 'server_error', message: error?.message || error });
+    res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
   }
 });
 
@@ -15056,7 +15063,7 @@ app.post('/api/feishu/sync-sop-steps', authRequired, async (req, res) => {
     res.json({ message: 'SOP步骤库同步完成', ...result });
   } catch (error) {
     console.error('[SOP Steps Sync] Error:', error);
-    res.status(500).json({ error: 'server_error', message: error?.message || error });
+    res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
   }
 });
 
@@ -15078,7 +15085,7 @@ app.post('/api/feishu/test-connection', authRequired, async (req, res) => {
     res.json({ success: true, message: '连接成功', accessToken: accessToken ? 'valid' : 'invalid' });
   } catch (error) {
     console.error('[Feishu Test Connection] Error:', error);
-    res.status(500).json({ success: false, message: error?.message || error });
+    res.status(500).json({ success: false, message: safeErrMessage(error) });
   }
 });
 
@@ -15115,7 +15122,7 @@ app.post('/api/feishu/send-test-message', authRequired, async (req, res) => {
     return res.json({ ok: Boolean(result?.ok), openId, result });
   } catch (error) {
     console.error('[Feishu Test Message] Error:', error);
-    return res.status(500).json({ error: 'server_error', message: String(error?.message || error) });
+    return res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
   }
 });
 
@@ -15157,7 +15164,7 @@ app.post('/api/admin/system-alert/test', authRequired, async (req, res) => {
     return res.json({ ok: true, ...result, targetUsername: target.username });
   } catch (error) {
     console.error('[admin system alert test] Error:', error);
-    return res.status(500).json({ error: 'server_error', message: String(error?.message || error) });
+    return res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
   }
 });
 
@@ -15233,7 +15240,7 @@ app.post('/api/agent/feishu-table-write', authRequired, async (req, res) => {
     });
   } catch (error) {
     console.error('[Agent Feishu Table Write] Error:', error);
-    return res.status(500).json({ error: 'server_error', message: error?.message || error });
+    return res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
   }
 });
 
@@ -15362,7 +15369,7 @@ app.get('/api/agent/table-visit-data', authRequired, async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: 'server_error', 
-      message: error?.message || error 
+      message: safeErrMessage(error) 
     });
   }
 });
@@ -15459,7 +15466,7 @@ app.get('/api/agent/table-visit-summary', authRequired, async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: 'server_error', 
-      message: error?.message || error 
+      message: safeErrMessage(error) 
     });
   }
 });
@@ -16316,7 +16323,7 @@ app.listen(PORT, HOST, async () => {
     }, {
       continueOnError: true,
       onError: ({ tenantId, error }) => {
-        console.error(`[startup][${tenantId}] 租户数据重建失败（非致命）:`, error?.message || error);
+        console.error(`[startup][${tenantId}] 租户数据重建失败（非致命）:`, safeErrMessage(error));
       }
     });
     console.log(`[startup] 多租户数据重建完成：成功 ${startupTenantReconcile.results.length}，失败 ${startupTenantReconcile.errors.length}`);
@@ -16695,7 +16702,7 @@ app.listen(PORT, HOST, async () => {
               await sendSystemAlert([
                 '🔴 [HRMS] 上月累计假期快照任务异常',
                 `租户：${tenantId}`,
-                `错误：${String(e?.message || e)}`,
+                `错误：${safeErrMessage(e)}`,
                 '请检查 hrms-service 日志与数据库/共享状态写入。'
               ].join('\n'));
             } catch (_) {}
@@ -16784,7 +16791,7 @@ app.listen(PORT, HOST, async () => {
       void runForActiveTenants(
         (tenantId) => captureHrmsStateSnapshotToDb({ source: 'scheduled', stateKey: tenantId }),
         { continueOnError: true, onError: ({ tenantId, error }) => {
-          console.error('[hrms_state_snapshot] tick:', tenantId, error?.message || error);
+          console.error('[hrms_state_snapshot] tick:', tenantId, safeErrMessage(error));
           void notifyAdminsDualWriteFailure(`hrms_state 定时快照（hrms_state_snapshots）租户=${tenantId}`, error);
         } }
       ).catch((e) => {
