@@ -267,10 +267,15 @@ export function registerGrowthWinbackRoutes(app, pool) {
       if (!jobId) return res.status(400).json({ ok: false, error: 'missing_job_id' });
       const sentN = Math.max(0, Math.floor(Number(b.sent) || 0));
       const failedN = Math.max(0, Math.floor(Number(b.failed) || 0));
-      // 优先尊重小程序的 finished 信号(status='done'): processed>=total 时即使有失败也算完成。
-      // 若小程序未报告 done，则按 sent/failed 推导：全失败=failed，混合=partial，全成功=done。
-      const miniDone = cleanText(b.status || '', 20) === 'done';
-      const computedStatus = miniDone ? 'done' : (sentN === 0 && failedN > 0 ? 'failed' : sentN > 0 && failedN > 0 ? 'partial' : 'done');
+      // 优先尊重小程序的显式信号：'done'=发完(processed>=total 时即使有失败也算完成)；
+      // 'pending'=断点续跑未发完，必须保留在队列等下轮续跑——2026-07-22 事故：这里曾无视
+      // 'pending'、只按 sent/failed 推导，sent>0且failed=0 就判 done，导致 142 人的大任务
+      // 在 50s 预算内发到 90 人被提前关单，剩余 52 人永久漏发。仅当小程序未带 status
+      // (老版本客户端)才回退推导：全失败=failed，混合=partial，全成功=done。
+      const miniStatus = cleanText(b.status || '', 20);
+      const computedStatus = miniStatus === 'done' ? 'done'
+        : miniStatus === 'pending' ? 'pending'
+        : (sentN === 0 && failedN > 0 ? 'failed' : sentN > 0 && failedN > 0 ? 'partial' : 'done');
       await tenantContext.run(getGrowthTenantId(req), () => pool.query(
         `UPDATE growth_campaign_jobs SET sent=$2, failed=$3, status=$4, result=$5::jsonb, updated_at=now() WHERE id=$1`,
         [jobId, sentN, failedN, computedStatus, JSON.stringify(b.result || {})]
