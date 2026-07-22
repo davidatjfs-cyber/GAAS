@@ -938,7 +938,10 @@ async function pushWeeklySuggestionToFeishu(pool, suggestionRow) {
   );
   let pushed = 0;
   for (const row of rec.rows || []) {
-    const sent = await sendLarkMessage(String(row.open_id || '').trim(), text, { skipDedup: true }).catch(() => ({ ok: false }));
+    const sent = await sendLarkMessage(String(row.open_id || '').trim(), text, { skipDedup: true }).catch((e) => {
+      console.error('[growth-content-suggestion] feishu send failed:', e?.message || e);
+      return { ok: false };
+    });
     if (sent?.ok) pushed += 1;
   }
   if (pushed > 0) {

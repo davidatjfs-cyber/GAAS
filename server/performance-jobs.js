@@ -184,7 +184,7 @@ async function notifyHrmsPerfAdmins(taskName, err) {
     for (const h of hq.rows || []) {
       const fu = await lookupFeishuUserByUsername(h.username);
       if (!fu?.open_id) continue;
-      await sendLarkMessage(fu.open_id, text).catch(() => {});
+      await sendLarkMessage(fu.open_id, text).catch((e2) => console.error('[perf-jobs] notifyHrmsPerfAdmins send failed:', h.username, e2?.message || e2));
     }
   } catch (e) {
     console.error('[perf-jobs] notifyHrmsPerfAdmins failed', e?.message || e);
@@ -313,7 +313,7 @@ async function sendFeishuPerformanceDigest(period) {
       `工作能力：${b.ability_rating || '—'}\n` +
       `门店级别：${fmtStoreLevelLabel(b.store_rating)}\n\n` +
       `${row.summary || ''}\n\n如有异议请回复「申诉」说明原因。`;
-    await sendLarkMessage(fu.open_id, text).catch(() => {});
+    await sendLarkMessage(fu.open_id, text).catch((e) => console.error('[perf-jobs] performance notify send failed:', row.username, e?.message || e));
   }
 
   // 管理员侧「全员汇总」文本已移除：与 agents-service 每月 10 日「月度评级汇总」飞书卡片重复，避免噪音。

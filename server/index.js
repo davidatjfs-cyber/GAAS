@@ -5452,11 +5452,11 @@ const FEISHU_ALERT_ADMIN_GROWTH = process.env.FEISHU_ALERT_ADMIN_GROWTH || FEISH
 const FEISHU_ALERT_ADMIN_HEALTH = process.env.FEISHU_ALERT_ADMIN_HEALTH || FEISHU_ALERT_ADMIN_DEFAULT;
 const FEISHU_ALERT_ADMIN_SALES = process.env.FEISHU_ALERT_ADMIN_SALES || FEISHU_ALERT_ADMIN_DEFAULT;
 setSendGrowthAlert(async (msg) => {
-  return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+  return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true }).catch((e) => { console.error('[feishu-alert-growth] send failed:', e?.message || e); return { ok: false }; });
 });
 registerGrowthSolutionRoutes(app, authRequired);
 setSolutionNotifier(async (msg) => {
-  return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+  return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true }).catch((e) => { console.error('[feishu-alert-growth] send failed:', e?.message || e); return { ok: false }; });
 });
 setSolutionLLM(async (prompt) => {
   const r = await callLLM([{ role: 'user', content: prompt }], { purpose: 'reasoning' });
@@ -5475,7 +5475,7 @@ setHealthIncidentNotifiers({
     // 健康中心 SLA/队列摘要属于平台运营信息，不按租户 users.role 群发。
     // sendAdminSystemAlert() 会跨租户扫描 admin/hq_manager/hr_manager，
     // 从而把销售/系统运营告警发给马己仙、洪潮的门店管理员。
-    const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_HEALTH, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+    const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_HEALTH, String(msg || ''), { skipDedup: true }).catch((e) => { console.error('[feishu-alert-health] send failed:', e?.message || e); return { ok: false }; });
     return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [FEISHU_ALERT_ADMIN_HEALTH] };
   },
 });
@@ -5489,7 +5489,7 @@ registerSalesAiRoutes(app, pool, platformAdminRequired, {
   // 团队自己的飞书账号，不查任何tenant的users表。收件人由 FEISHU_ALERT_ADMIN_SALES 配置，
   // 销售公司新租户建好后改这一个环境变量即可切换收件人，无需再动代码。
   sendOpsAlert: async (msg, opts = {}) => {
-    const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_SALES, String(msg || ''), { skipDedup: true }).catch(() => ({ ok: false }));
+    const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_SALES, String(msg || ''), { skipDedup: true }).catch((e) => { console.error('[feishu-alert-sales] send failed:', e?.message || e); return { ok: false }; });
     return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [FEISHU_ALERT_ADMIN_SALES] };
   },
   requireSalesManagerOrAbove,
@@ -17176,8 +17176,13 @@ async function runFreshnessMonitorTick() {
       const sends = rows.map((row) =>
         sendLarkMessage(row.open_id, alertText, { skipDedup: true }).catch((e) => ({ err: e?.message || e }))
       );
-      await Promise.all(sends);
-      console.error('[freshness] alert sent, tenant:', tenantId, 'stale:', stale.map(s => s.name));
+      const settled = await Promise.all(sends);
+      const failed = settled.filter((x) => x && x.err);
+      if (failed.length) {
+        console.error('[freshness] 部分飞书告警发送失败:', tenantId, failed.length, '/', settled.length, failed[0]?.err);
+      } else {
+        console.error('[freshness] alert sent, tenant:', tenantId, 'stale:', stale.map(s => s.name));
+      }
     }, { continueOnError: true });
   } catch (e) {
     console.error('[freshness] runForActiveTenants error:', e?.message || e);
