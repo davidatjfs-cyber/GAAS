@@ -1,5 +1,8 @@
 # HRMS 系统恢复手册
 
+> ⚠️ **存档文档**：特定时间点的一次性报告快照，不代表当前状态，仅供追溯参考。当前有效文档见 [README.md](README.md#-文档索引)。
+
+
 > 服务器：47.100.96.30（阿里云 ECS，Ubuntu 20.04）  
 > 服务：hrms.service（systemd）  
 > 数据库：PostgreSQL / hrms  

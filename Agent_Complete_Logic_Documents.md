@@ -1,5 +1,8 @@
 # HRMS Multi-Agent System - Complete Logic Documents
 
+> ⚠️ **存档文档**：特定时间点的一次性报告快照，不代表当前状态，仅供追溯参考。当前有效文档见 [README.md](README.md#-文档索引)。
+
+
 ---
 
 ## Agent 1: Data Auditor (BI Agent) - 数据审计员

@@ -1,5 +1,8 @@
 # Agents-V2 总部主管型Agent — 开发计划
 
+> ⚠️ **存档文档**：特定时间点的一次性报告快照，不代表当前状态，仅供追溯参考。当前有效文档见 [README.md](README.md#-文档索引)。
+
+
 > 独立微服务 | Express + BullMQ + Redis + PostgreSQL | 端口3100
 
 ## Phase 1 ✅ 已完成 (2026-03-05)

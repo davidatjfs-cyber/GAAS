@@ -210,6 +210,16 @@ hr-management-system/
 - 自适应布局确保在不同设备上的最佳体验
 - 触摸友好的交互设计
 
+## 📚 文档索引
+
+- **当前有效**：[CLAUDE.md](CLAUDE.md)、[AGENTS.md](AGENTS.md)、[SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md)（安全审计与修复记录）
+- **历史/存档**（早期开发阶段的一次性报告，内容是特定时间点的快照，不代表当前状态，仅供追溯参考）：
+  AGENTS-V2-PLAN.md、AGENT_CONFIG_HANDBOOK.md、AGENT_EVALUATION_REPORT.md、Agent_Complete_Logic_Documents.md、
+  CRITICAL_BUGS_REPORT.md、DELIVERY_REPORT.md、DEPLOYMENT_CHECKLIST.md、DEPLOYMENT_SUMMARY.md、
+  FILE_MANAGEMENT_VERIFICATION.md、HRMS_Agents真实状态表.md、HRMS_Agent系统内容总览.md、
+  MARKETING_CAMPAIGN_FINAL_OUTPUT.md、MOBILE_NAVIGATION_FIX_REPORT.md、QUICK_VERIFICATION_GUIDE.md、
+  RECOVERY.md、核心Agent最新信息.md、飞书权限检查指南.md、飞书表格对接完成报告.md、飞书表格连通性测试报告.md
+
 ## 🔄 版本信息
 
 - **当前版本**: v2.0.3
