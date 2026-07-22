@@ -17093,15 +17093,38 @@ app.get('/api/admin/usage-weekly', authRequired, async (req, res) => {
   }
 });
 
+// unhandledRejection 不会让进程崩溃，可能一天触发几十次（不像uncaughtException那样
+// 自带"只会响一次"的天然限流）。直接接飞书会刷屏、导致频道被静音，反而让真正的崩溃
+// 告警被忽略——所以这里加一个15分钟冷却，同一条错误消息在冷却期内只告警一次。
+let _lastRejectionAlertAt = 0;
+const _rejectionAlertCooldownMs = 15 * 60 * 1000;
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('[HRMS] Unhandled rejection:', reason instanceof Error ? reason.stack : String(reason));
+  const detail = reason instanceof Error ? reason.stack : String(reason);
+  console.error('[HRMS] Unhandled rejection:', detail);
+  const now = Date.now();
+  if (now - _lastRejectionAlertAt > _rejectionAlertCooldownMs) {
+    _lastRejectionAlertAt = now;
+    sendLarkMessage(
+      FEISHU_ALERT_ADMIN_HEALTH,
+      `⚠️【HRMS 未处理的Promise异常】\n\n${String(detail || '').slice(0, 800)}\n\n（15分钟内只告警一次，日志里可能还有更多同类异常，请查看服务器日志确认。）`,
+      { skipDedup: true }
+    ).catch((e) => console.error('[HRMS] unhandledRejection告警发送失败:', e?.message || e));
+  }
 });
 
 // 未捕获的同步异常此前没有专门处理，会静默让进程崩溃（PM2会重启，但没有留下明确原因）。
 // 这里先记录清晰日志再退出，方便事后从日志定位，而不是改变"崩溃后重启"的现有行为。
 process.on('uncaughtException', (err) => {
-  console.error('[HRMS] Uncaught exception, process exiting:', err instanceof Error ? err.stack : String(err));
-  process.exit(1);
+  const detail = err instanceof Error ? err.stack : String(err);
+  console.error('[HRMS] Uncaught exception, process exiting:', detail);
+  // 之前这里只写日志，进程崩溃靠人工翻日志才会发现。补一条飞书告警，
+  // 给个短超时避免飞书调用本身卡住导致进程迟迟不退出。
+  const alertPromise = sendLarkMessage(
+    FEISHU_ALERT_ADMIN_HEALTH,
+    `🚨【HRMS 进程崩溃】\n\n${String(detail || '').slice(0, 800)}\n\n进程即将重启(PM2)，如果频繁重启请立即排查。`,
+    { skipDedup: true }
+  ).catch((e) => console.error('[HRMS] 崩溃告警发送失败:', e?.message || e));
+  Promise.race([alertPromise, new Promise((r) => setTimeout(r, 5000))]).finally(() => process.exit(1));
 });
 
 // ── Scheduled cleanup: retain 2 months of notifications ────
