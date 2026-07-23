@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const gaasRoot = path.resolve(__dirname, '..');
 const agentsRoot = path.resolve(__dirname, '../../agents-service-v2');
+const hasAgentsCheckout = fs.existsSync(path.join(agentsRoot, 'src/index.js'));
 
 test('HRMS growth-api / agents proxy must send internal auth header when calling agents', () => {
   const growth = fs.readFileSync(path.join(__dirname, 'growth-api.js'), 'utf8');
@@ -16,7 +17,7 @@ test('HRMS growth-api / agents proxy must send internal auth header when calling
   assert.ok(hasInternal, 'growth-api should reference internal secret for agents calls');
 });
 
-test('agents /health gates detailed payload via allowDetailedHealth', () => {
+test('agents /health gates detailed payload via allowDetailedHealth', { skip: !hasAgentsCheckout }, () => {
   const index = fs.readFileSync(path.join(agentsRoot, 'src/index.js'), 'utf8');
   assert.match(index, /allowDetailedHealth/);
   assert.match(index, /app\.get\(['"]\/health['"]/);
@@ -25,7 +26,7 @@ test('agents /health gates detailed payload via allowDetailedHealth', () => {
   assert.match(auth, /HEALTH_TOKEN/);
 });
 
-test('ontology-client contract: diagnosis URL + Bearer service token', () => {
+test('ontology-client contract: diagnosis URL + Bearer service token', { skip: !hasAgentsCheckout }, () => {
   const src = fs.readFileSync(
     path.join(agentsRoot, 'src/services/ontology-client.js'),
     'utf8'
