@@ -16,6 +16,7 @@ const ALLOW_FILES = new Set([
   'scripts/verify-bi-sales-raw-totals.mjs',
 ]);
 
+// 含 DELETE FROM sales_raw（2026-07-03 表已 DROP，禁止任何 DML/DDL 引用）
 const SQL_HIT = /\b(FROM|INTO|UPDATE|JOIN|TABLE|DELETE\s+FROM)\s+sales_raw\b/i;
 
 function walk(dir, out = []) {

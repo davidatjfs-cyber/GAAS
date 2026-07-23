@@ -8600,7 +8600,7 @@ async function loadInventoryForecastHistoryFromSalesRaw({ storeScope, bizType, s
     const key = `${String(raw?.store || '').trim()}||${biz}||${slotName}||${date}`;
     if (!grouped.has(key)) {
       grouped.set(key, {
-        id: `sales_raw:${key}`,
+        id: `pos_sales:${key}`,
         store: String(raw?.store || '').trim(),
         bizType: biz,
         slot: slotName,
