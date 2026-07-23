@@ -137,7 +137,7 @@ function tryParseQuizJsonFromLLM(text) {
     try {
       const parsed = JSON.parse(candidate);
       if (parsed && typeof parsed === 'object') return parsed;
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   }
 
   // 外层 JSON 损坏时，尝试逐题提取完整对象
@@ -148,7 +148,7 @@ function tryParseQuizJsonFromLLM(text) {
     for (const m of matches) {
       try {
         questions.push(JSON.parse(repairJsonText(m)));
-      } catch (_) {}
+      } catch (_) { /* ignore */ }
     }
     if (questions.length >= 5) return { questions };
   }
@@ -355,7 +355,7 @@ async function createTrainingUserNotification(targetUsername, title, message, me
         resolveTenantIdDefault()
       ]
     );
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
 }
 
 async function sendTrainingFeishuMessage(username, message) {
@@ -365,7 +365,7 @@ async function sendTrainingFeishuMessage(username, message) {
       await sendLarkMessage(fu.open_id, message, { skipDedup: true });
       return true;
     }
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
   return false;
 }
 
@@ -984,7 +984,7 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
           const localVideoPath = path.join(__dirname, '..', fileField);
           execFileSync('ffmpeg', ['-i', localVideoPath, '-ss', '00:00:05', '-frames:v', '1', framePath], { timeout: 30000 });
           llmResult = await callVisionLLM(framePath, rubricPrompt);
-          try { fs.unlinkSync(framePath); } catch (_) {}
+          try { fs.unlinkSync(framePath); } catch (_) { /* ignore */ }
         } catch (ffmpegErr) {
           // Try video API as fallback
           try {
@@ -2358,7 +2358,7 @@ verdict说明：passed=总分≥${rubric.pass_threshold || 80}且无一票否决
                 frames.push({ type: 'text', text: scoringPrompt });
                 visionResult = await callVisionLLM(frames, '');
               } finally {
-                try { fs.rmSync(frameDir, { recursive: true, force: true }); } catch (_) {}
+                try { fs.rmSync(frameDir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
               }
             }
             aiRawResponse = visionResult;
@@ -2407,7 +2407,7 @@ verdict说明：passed=合格，review=需人工复核，failed=不合格需重�
                 aiVerdict = parsed.verdict || 'review';
                 aiFeedback = parsed.feedback || '';
               }
-              try { fs.unlinkSync(framePath); } catch (_) {}
+              try { fs.unlinkSync(framePath); } catch (_) { /* ignore */ }
             } catch (ffmpegErr) {
               aiVerdict = 'review';
               aiFeedback = '视频处理失败，需人工审核';

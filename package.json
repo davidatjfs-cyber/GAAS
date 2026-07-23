@@ -11,7 +11,7 @@
     "migrate": "npm --workspace server run migrate",
     "seed:growth-demo": "npm --workspace server run seed:growth-demo",
     "test": "npm --workspace server run test",
-    "lint": "eslint \"server/**/*.js\" \"server/**/*.mjs\" --max-warnings 380",
+    "lint": "eslint \"server/**/*.js\" \"server/**/*.mjs\" --max-warnings 213",
     "bundle:frontend": "node scripts/bundle-frontend.mjs",
     "build:shell": "node scripts/build-shell.mjs"
   },

@@ -33,7 +33,7 @@ function canUserViewApprovalRow(user, row, state0, pickMyStoreFromState) {
       const store = String(p.store || '').trim();
       const myStore = String(pickMyStoreFromState(state0 || {}, user.username) || '').trim();
       if (store && myStore && store === myStore) return true;
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
   return false;
 }
@@ -114,7 +114,7 @@ export function registerApprovalRoutes(app, authRequired, deps) {
         // 多店店长：请款按「当前门店」过滤，且必须在可访问门店范围内（防越权查看范围外门店）；
         // 当前门店缺失或越权时回退到主店（在职档案门店）。
         let resolved = '';
-        try { resolved = pickMyStoreFromState((await getSharedState()) || {}, username) || ''; } catch (e) {}
+        try { resolved = pickMyStoreFromState((await getSharedState()) || { /* ignore */ }, username) || ''; } catch (e) {}
         const allowed = Array.isArray(req.user?.allowed_stores)
           ? req.user.allowed_stores.map((s) => String(s || '').trim()).filter(Boolean)
           : [];
@@ -292,7 +292,7 @@ export function registerApprovalRoutes(app, authRequired, deps) {
           }
         } catch (e3) { console.error('[delete approval] cascade state.leaveRecords:', e3?.message); }
 
-        try { scheduleLeaveDomainSync(); } catch (_) {}
+        try { scheduleLeaveDomainSync(); } catch (_) { /* ignore */ }
       }
 
       return res.json({ ok: true, deleted });

@@ -193,7 +193,7 @@ export async function resolveAttendancePayrollRules({ tenantId, store, brandKey,
     try {
       const b = getBrandForStoreSync(storeName, tid);
       brand = String(b?.brand_key || b?.brandKey || '').trim().toLowerCase();
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   }
 
   const r = await db.query(

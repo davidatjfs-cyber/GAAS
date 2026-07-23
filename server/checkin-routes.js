@@ -209,7 +209,7 @@ export function registerCheckinRoutes(app, deps) {
         try {
           const dutyRows = await loadActiveDutyRowsForUser(pool, username);
           managerStores = dutyRows.map(r => String(r.store || '').trim()).filter(Boolean);
-        } catch (_e) {}
+        } catch (_e) { /* ignore */ }
         if (!managerStores.length) {
           const myStore = pickMyStoreFromState(state, username);
           if (myStore) managerStores = [myStore];

@@ -293,7 +293,7 @@ export async function resolveUserPermissionContext(req, opts = {}) {
         const grp = groups.find((g) => String(g?.id || '') === permissionGroupId);
         if (grp && Array.isArray(grp.permissions)) groupPermissions = grp.permissions.map((p) => String(p).trim()).filter(Boolean);
       }
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   }
 
   const explicitSpecs = [{ type: 'role', key: role }];
@@ -306,7 +306,7 @@ export async function resolveUserPermissionContext(req, opts = {}) {
       const rows = await loadExplicitGrants(tenantId, explicitSpecs, db);
       explicitSet = grantsToPermissionSet(rows);
       for (const p of groupPermissions) explicitSet.add(p);
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   }
 
   const effective = new Set();
@@ -439,7 +439,7 @@ export async function writePermissionAudit({ tenantId, actor, action, detail, db
       `INSERT INTO hrms_permission_audit_log (tenant_id, actor_username, action, detail) VALUES ($1, $2, $3, $4)`,
       [tenantKey(tenantId), actor || null, String(action || ''), detail && typeof detail === 'object' ? detail : {}]
     );
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
 }
 
 /** 模块页 → 所需权限（strict/hybrid 前端用） */

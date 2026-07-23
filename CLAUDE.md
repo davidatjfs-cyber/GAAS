@@ -172,6 +172,9 @@ agents-service-v2 通过 `file:packages/gaas-shared` 引用**同步副本**；�
 `node scripts/sync-gaas-shared.mjs` 再在两边提交。两边的 `utils/feishu-webhook-verify.js`
 已改为 re-export，勿再复制粘贴实现。
 
+**生产软链与部署步骤见** [`docs/gaas-shared.md`](docs/gaas-shared.md)
+（`node_modules/@gaas/shared` → 本仓 `packages/gaas-shared`；部署后须 `ln -sfn` 再 `pm2 restart`）。
+
 ### ⚠️ 共享表唯一写入方（GAAS ↔ agents-service-v2）
 
 两边直连同一库。改 schema 以 **GAAS `server/migrations/`** 为权威；agents-service-v2 **不要**再为共享表自建 migration。

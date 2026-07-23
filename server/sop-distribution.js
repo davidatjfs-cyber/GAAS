@@ -252,7 +252,7 @@ export async function remindUnreadSOP(sopVersionId, sendMessageFn) {
             title: `⏰ SOP阅读提醒: ${d.sop_title}`,
             content: `您有一条SOP更新尚未阅读确认，请尽快查看并完成测验。`
           });
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
       }
       await pool().query('UPDATE sop_distributions SET reminder_count=reminder_count+1, last_reminder_at=NOW() WHERE id=$1', [d.id]);
       reminded++;

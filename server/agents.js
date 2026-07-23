@@ -222,9 +222,9 @@ const AGENT_EVAL_CASES = [
 function safeJsonParse(text, fallback = null) {
   const raw = String(text || '').trim();
   if (!raw) return fallback;
-  try { return JSON.parse(raw); } catch (e) {}
+  try { return JSON.parse(raw); } catch (e) { /* ignore */ }
   const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-  try { return JSON.parse(cleaned); } catch (e) {}
+  try { return JSON.parse(cleaned); } catch (e) { /* ignore */ }
   const m = cleaned.match(/\{[\s\S]*\}/);
   if (!m) return fallback;
   try { return JSON.parse(m[0]); } catch (e) { return fallback; }
@@ -675,7 +675,7 @@ async function execBiToolSalesRanking(store, args = {}, originalQuery = '') {
           }
           return { ok: true, source: 'pos_sales_detail', text: `📦 ${period.label}销售数据（${targetStore}）：暂无可用销售明细。\n⚠️ 销售数据最新截至 ${maxDate}，请上传最新数据。` };
         }
-      } catch (_e) {}
+      } catch (_e) { /* ignore */ }
       return { ok: true, source: 'pos_sales_detail', text: `📦 ${period.label}销售数据（${targetStore}）：暂无可用销售明细。` };
     }
 
@@ -745,7 +745,7 @@ async function execBiToolComplaintRanking(store, args = {}, originalQuery = '') 
         const items = String(row.dissatisfaction_dish || '').split(/[，,、]+/).map(x => x.trim()).filter(x => x && x !== '无');
         for (const item of items) { tableVisitDishMap.set(item, (tableVisitDishMap.get(item) || 0) + 1); }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     if (!rows.length && !tableVisitDishMap.size) {
       return { ok: true, source: 'bad_reviews', text: `📊 ${period.label}投诉数据（${targetStore}）：暂无投诉/差评记录，桌访也无不满意菜品。` };
@@ -1002,7 +1002,7 @@ async function execBiToolTableVisit(store, args = {}, originalQuery = '') {
 
 async function runBiFunctionTool(toolName, store, args = {}, originalQuery = '', ctx = {}) {
   const auditBase = { operatorUsername: ctx.operatorUsername || null, operatorRole: ctx.operatorRole || null, tenantId: ctx.tenantId || null, toolName, storeId: store || null, args };
-  try { await logAgentOperation(pool(), { ...auditBase, resultSummary: 'tool execution started', status: 'started' }); } catch (e) {}
+  try { await logAgentOperation(pool(), { ...auditBase, resultSummary: 'tool execution started', status: 'started' }); } catch (e) { /* ignore */ }
   let result;
   try {
     if (toolName === 'query_sales_ranking') result = await execBiToolSalesRanking(store, args, originalQuery);
@@ -1012,10 +1012,10 @@ async function runBiFunctionTool(toolName, store, args = {}, originalQuery = '',
     else if (toolName === 'query_table_visit') result = await execBiToolTableVisit(store, args, originalQuery);
     else result = { ok: false, source: 'unknown', text: `不支持的工具：${toolName}` };
   } catch (e) {
-    try { await logAgentOperation(pool(), { ...auditBase, resultSummary: null, status: 'error', errorMessage: e?.message || String(e) }); } catch (e2) {}
+    try { await logAgentOperation(pool(), { ...auditBase, resultSummary: null, status: 'error', errorMessage: e?.message || String(e) }); } catch (e2) { /* ignore */ }
     throw e;
   }
-  try { await logAgentOperation(pool(), { ...auditBase, resultSummary: String(result?.text || '').slice(0, 500), status: result?.ok ? 'success' : 'error', errorMessage: result?.ok ? null : String(result?.text || '').slice(0, 500) }); } catch (e) {}
+  try { await logAgentOperation(pool(), { ...auditBase, resultSummary: String(result?.text || '').slice(0, 500), status: result?.ok ? 'success' : 'error', errorMessage: result?.ok ? null : String(result?.text || '').slice(0, 500) }); } catch (e) { /* ignore */ }
   return result;
 }
 
@@ -1107,7 +1107,7 @@ async function tryHandleBiByFunctionCalling({ text, store, brand, senderRole, se
       const extracted = String(r.rows?.[0]?.store || '').trim();
       if (extracted) { safeStore = extracted; }
     }
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   // 次选：HQ用户store=总部时，继承上一轮工具上下文门店
   if ((!safeStore || safeStore === '总部') && lastCtx?.store && lastCtx.store !== '总部') {
@@ -2019,7 +2019,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
           sLines.push(`\n> 数据源：pos_sales_detail（销售明细按日汇总，共${sRows.length}天）`);
           return sLines.join('\n');
         }
-      } catch (_e) {}
+      } catch (_e) { /* ignore */ }
       return `📊 ${period.label}营收分析（${targetStore}）：暂无营业数据。`;
     }
 
@@ -2042,7 +2042,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
       monthBudget = parseFloat(m.budget) || 0;
       monthDays = parseInt(m.days) || 0;
       cumLabor = parseFloat(m.cum_labor) || 0;
-    } catch (_e) {}
+    } catch (_e) { /* ignore */ }
     // 优先使用 revenue_targets 表的月目标
     try {
       const rtR = await pool().query(
@@ -2050,7 +2050,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
         [storeLike, monthStart.slice(0, 7)]
       );
       if (rtR.rows?.[0]?.target_revenue) monthBudget = parseFloat(rtR.rows[0].target_revenue) || monthBudget;
-    } catch (_e) {}
+    } catch (_e) { /* ignore */ }
 
     // ── 单日/短期（≤2天）：详细格式 ──
     if (rows.length <= 2) {
@@ -2129,7 +2129,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
             }
           }
         }
-      } catch (_e) {}
+      } catch (_e) { /* ignore */ }
       return lines.join('\n');
     }
 
@@ -2202,7 +2202,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
           lines.push(`- ${label}：¥${rev.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}（${qty}份）`);
         }
       }
-    } catch (_e) {}
+    } catch (_e) { /* ignore */ }
     if (rows.length >= 4) {
       const recent3 = rows.slice(0, 3).reduce((s, r) => s + (parseFloat(r.actual_revenue) || 0), 0) / 3;
       const older = rows.slice(3).reduce((s, r) => s + (parseFloat(r.actual_revenue) || 0), 0) / rows.slice(3).length;
@@ -2292,7 +2292,7 @@ async function buildBiDeterministicSalesRawTopReply(store, text) {
           lines.push(`- ${slotName}：¥${Number(sr.total_revenue || 0).toFixed(0)}（${Number(sr.total_qty || 0).toFixed(0)}份）`);
         }
       }
-    } catch (_e) {}
+    } catch (_e) { /* ignore */ }
 
     // 毛利率（从 daily_reports 获取该时段平均毛利率）
     try {
@@ -2307,7 +2307,7 @@ async function buildBiDeterministicSalesRawTopReply(store, text) {
       if (avgMargin != null) {
         lines.push(``, `📊 **同期平均毛利率**: ${avgMargin}%`);
       }
-    } catch (_e) {}
+    } catch (_e) { /* ignore */ }
 
     lines.push('> 数据源：pos_sales_detail（门店销售明细）');
     return lines.join('\n');
@@ -2431,7 +2431,7 @@ async function buildBiDeterministicBadReviewReportReply(store, text) {
         const items = String(row.dissatisfaction_dish || '').split(/[，,、]+/).map(x => x.trim()).filter(x => x && x !== '无');
         for (const item of items) { tableVisitDishMap.set(item, (tableVisitDishMap.get(item) || 0) + 1); }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     if (!rows.length && !tableVisitDishMap.size) {
       return `📊 ${period.label}差评数据（${targetStore}）：暂无差评记录入库，桌访也无不满意菜品记录。`;
@@ -3704,7 +3704,7 @@ function isRetryableLLMError(err) {
 // ── LLM Bridge for data-executor (避免循环依赖，延迟注入) ──
 // 注意：此行必须在 callLLM 定义之后，利用函数提升不适用于表达式，
 // 所以用 setTimeout(0) 延迟注入，等模块完全加载后再绑定
-setTimeout(() => { try { setCallLLMBridge(callLLM); } catch (_) {} }, 0);
+setTimeout(() => { try { setCallLLMBridge(callLLM); } catch (_) { /* ignore */ } }, 0);
 
 // ── 租户自定义AI模型：解析+短TTL缓存，DB/未配置时静默回退全局默认，不影响任何现有行为 ──
 const _tenantLlmConfigCache = new Map(); // tenantId -> { value, at }
@@ -3865,7 +3865,7 @@ export async function callLLM(messages, options = {}) {
         setCachedResponse(cacheKey, content);
       }
       if (tier && options.trackTier === true) {
-        try { trackLLMCall(tier, Number(resp.data?.usage?.total_tokens || 0)); } catch (e) {}
+        try { trackLLMCall(tier, Number(resp.data?.usage?.total_tokens || 0)); } catch (e) { /* ignore */ }
       }
 
       trackLLMResult(true);
@@ -5781,7 +5781,7 @@ export async function pollBitableSubmissions(configKey = 'ops_checklist') {
 
     // 知识图谱: 从新记录中抽取实体关系 (确定性规则, 零LLM成本)
     for (const record of newRecords) {
-      try { await extractRelationsFromBitableRecord(record, configKey); } catch (e) {}
+      try { await extractRelationsFromBitableRecord(record, configKey); } catch (e) { /* ignore */ }
     }
 
     // 仅处理"本轮新增记录"，避免高量表每轮重复全量处理导致其它表饥饿
@@ -5895,7 +5895,7 @@ export async function pollBitableSubmissions(configKey = 'ops_checklist') {
                `${sub.checkType}图片识别分析`, JSON.stringify({ recordId: sub.recordId, visionResults, photoValidationResults, avgScore: visionResults.reduce((sum, r) => sum + r.score, 0) / visionResults.length }), resolveTenantIdDefault()]
             );
           }
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
         
         // 6. 存储结构化数据到本地数据库（含 record_id 去重）
         try {
@@ -5907,7 +5907,7 @@ export async function pollBitableSubmissions(configKey = 'ops_checklist') {
             [sub.submitter.id, sub.submitter.name || sub.submitter.id, sub.submitter.name || sub.submitter.id, '',
              `${sub.checkType}提交（Bitable）`, JSON.stringify(submission), sub.recordId || '', resolveTenantIdDefault()]
           );
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
         
         // 7. 发送确认消息
         await sendLarkMessage(sub.submitter.id, prefixWithAgentName('ops_supervisor', reply));
@@ -6946,7 +6946,7 @@ async function handleTaskEscalation(taskId, assignee, taskType, overdueMinutes) 
          VALUES ('system','feishu','performance_issue',$1,$2::jsonb,$3)`,
         [`任务响应迟缓 - ${taskType}`, JSON.stringify({ taskId, assignee, overdueMinutes }), resolveTenantIdDefault()]
       );
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
     
   } else if (overdueMinutes >= 15) {
     escalationLevel = 'strong_reminder';
@@ -7646,7 +7646,7 @@ async function registerFeishuUser(openId, username) {
     try {
       const tr = await pool().query('SELECT tenant_id FROM users WHERE lower(username) = lower($1) LIMIT 1', [uname]);
       tenantId = String(tr.rows?.[0]?.tenant_id || '').trim() || 'default';
-    } catch (_e) {}
+    } catch (_e) { /* ignore */ }
 
     await tenantContext.run(tenantId, async () => {
       await pool().query(
@@ -8292,7 +8292,7 @@ export async function auditImage(imageUrl, auditType, context = {}) {
       // TODO: 提取Exif数据用于时间验证
       exifData = { timestamp: new Date().toISOString() }; // 临时使用当前时间
     }
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   let duplicateOf = null;
   if (imageHash) {
@@ -8301,7 +8301,7 @@ export async function auditImage(imageUrl, auditType, context = {}) {
         `SELECT id FROM agent_visual_audits WHERE image_hash = $1 LIMIT 1`, [imageHash]
       );
       if (dup.rows?.length) duplicateOf = dup.rows[0].id;
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
 
   // 根据审核类型选择Prompt
@@ -8652,7 +8652,7 @@ export async function runChiefEvaluator(period, tenantId = 'default') {
           { role: 'user', content: `品牌${brand}（${config.label}），门店${storeName}，${mgr.name || username}（${role === 'store_manager' ? '店长' : '出品经理'}）。总分${totalScore}，门店评级${storeRating.rating || 'N/A'}，执行力${employeeScore.execution_rating}，态度${employeeScore.attitude_rating}，能力${employeeScore.ability_rating}。请给出2-3句评语。` }
         ]);
         summary = llm.content || '';
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       try {
         await pool().query(
@@ -9062,7 +9062,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
           if (prefix && s.includes(prefix)) { store = s; break; }
         }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
 
   // 【Q5】查询用户近期活跃任务，注入上下文提升交互质量
@@ -9075,7 +9075,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
     if (taskR.rows?.length) {
       activeTaskContext = '\n\n【该用户当前活跃任务】\n' + taskR.rows.map((t,i) => `${i+1}. [${t.severity||'medium'}] ${t.title}（状态:${t.status}，类别:${t.category}）${t.detail ? '\n   详情: '+String(t.detail).substring(0,100) : ''}`).join('\n');
     }
-  } catch(e) {}
+  } catch(e) { /* ignore */ }
   
   // 【修复】继承上一轮的 Agent，解决多轮对话中断（例如用户回复选项 1, 2）的问题
   // 仅继承5分钟内的最近一条非general路由，避免跨对话污染
@@ -9230,7 +9230,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
                 console.log(`[data_auditor] store resolved from text: ${store} → ${resolvedStore}`);
               }
             }
-          } catch (_e) {}
+          } catch (_e) { /* ignore */ }
           // 2. 兜底：HQ用户未提及门店时，尝试从数据库查
           if (!resolvedStore || resolvedStore === '总部') {
             try {
@@ -9241,7 +9241,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
                 const r = await pool().query(`SELECT store FROM pos_sales_detail WHERE store LIKE '%马己仙%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
                 resolvedStore = r.rows?.[0]?.store || resolvedStore;
               }
-            } catch (_e) {}
+            } catch (_e) { /* ignore */ }
             if (resolvedStore && resolvedStore !== '总部') {
               console.log(`[data_auditor] HQ store fallback: ${store} → ${resolvedStore}`);
             }
@@ -9277,7 +9277,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
                       console.warn(`[data_auditor] stale source detected: ${staleDataNotice}`);
                     }
                   }
-                } catch (_e) {}
+                } catch (_e) { /* ignore */ }
               }
               sessionState.time_range = resolvedTimeRange;
               logExecutorEvent('time_range_extracted', {
@@ -9499,7 +9499,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
           if (issuesR.rows?.length) {
             issueContext = '\n\n当前门店未解决的审计异常：\n' + issuesR.rows.map((i, idx) => `${idx+1}. [${i.severity}] ${i.title}`).join('\n');
           }
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
 
         const groundingFacts = await buildBiGroundingFacts(store, text);
         const sourceAuditText = buildBiSourceAuditText(sourceAuditRows);
@@ -9618,7 +9618,7 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
             const roleLabel = { admin: '管理员', store_manager: '店长', store_production_manager: '出品经理', store_employee: '员工', hr_manager: 'HR', hq_manager: '总部营运', cashier: '出纳' };
             employeeContext = '\n\n当前可查询的员工资料（共' + visibleEmps.length + '人）：\n' + visibleEmps.map(e => `- ${e.name}（${e.username}）| ${roleLabel[e.role] || e.role} | ${e.store || '总部'} | ${e.position || '-'} | ${e.department || '-'}`).join('\n');
           }
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
         
         if (isScoreQuery) {
           // 绩效查询：查数据库
@@ -9675,7 +9675,7 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
         });
         try {
           await pool().query(`INSERT INTO agent_appeals (username, reason, status) VALUES ($1, $2, 'pending')`, [senderUsername, text]);
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
         agentData = { route, appealRecorded: true };
         break;
       }
@@ -9703,7 +9703,7 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
             kbContext = '\n\n相关知识库内容：\n' + 
               kbResults.map(r => `【${r.title}】${String(r.content || '').slice(0, 300)}...`).join('\n');
           }
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
 
         // 查阅该用户的培训记录
         let trainingTasksContext = '';
@@ -9849,7 +9849,7 @@ ${kbContext}${trainingTasksContext}${activeTaskContext}
       confidence: agentData.confidence,
       updatedAt: new Date().toISOString()
     });
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   // ── 最终持久化 session state ────────────────────────────────
   try {
@@ -9862,7 +9862,7 @@ ${kbContext}${trainingTasksContext}${activeTaskContext}
     sessionState.route = route;
     sessionState.store = store || sessionState.store;
     await setSessionState(senderUsername, sessionState);
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   const needsAutonomousTask = !!(
     agentData?.factualGuardrailBlocked ||
@@ -10054,7 +10054,7 @@ async function runWithCheckAgent(userQuery, route, generateFn, maxRetries = 2) {
       passed: lastAudit?.pass !== false,
       rewriteCount
     });
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   return response;
 }
@@ -10300,7 +10300,7 @@ async function startBitableListener() {
       try {
         _bitableListenClient.removeAllListeners();
         await _bitableListenClient.end();
-      } catch (_) {}
+      } catch (_) { /* ignore */ }
       _bitableListenClient = null;
     }
     const client = new pgModule.Client({ connectionString });
@@ -10320,7 +10320,7 @@ async function startBitableListener() {
         minIntervalMs: 30_000,
         dedupeKey: 'listen_client_error'
       });
-      try { client.end(); } catch (_) {}
+      try { client.end(); } catch (_) { /* ignore */ }
     });
     client.on('end', () => {
       if (_bitableListenKeepaliveTimer) {
@@ -10379,7 +10379,7 @@ async function startBitableListener() {
           _bitableListenKeepaliveFailStreak = 0;
           scheduleBitableAggressiveCatchup('listen_keepalive_degraded');
         }
-        try { _bitableListenClient?.end(); } catch (_) {}
+        try { _bitableListenClient?.end(); } catch (_) { /* ignore */ }
       }
     }, BITABLE_LISTEN_HEALTH_MS);
     console.log('[bitable] PG LISTEN setup complete for bitable_records_updated (keepalive every ' + BITABLE_LISTEN_HEALTH_MS + 'ms)');
@@ -10569,7 +10569,7 @@ async function processBitableRecordsFromDB(configKey) {
 
   // 知识图谱
   for (const record of newRecords) {
-    try { await extractRelationsFromBitableRecord(record, configKey); } catch (e) {}
+    try { await extractRelationsFromBitableRecord(record, configKey); } catch (e) { /* ignore */ }
   }
 
   // 业务处理
@@ -11101,7 +11101,7 @@ export async function onFeishuEvent(body) {
               `INSERT INTO feishu_users (open_id, registered, tenant_id) VALUES ($1, FALSE, 'default') ON CONFLICT (open_id, tenant_id) DO NOTHING`, [openId]
             )
           );
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
 
         await sendLarkMessage(openId,
           `你好！我是HRMS智能助理 🤖\n\n首次使用需要绑定HRMS账号。\n请输入你的HRMS用户名（登录HRMS系统时使用的用户名，如：NNYXYF26）：`
@@ -11118,7 +11118,7 @@ export async function onFeishuEvent(body) {
               `INSERT INTO feishu_users (open_id, registered, tenant_id) VALUES ($1, FALSE, 'default') ON CONFLICT (open_id, tenant_id) DO NOTHING`, [openId]
             )
           );
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
 
         await sendLarkMessage(openId,
           `你好！我是HRMS智能助理 🤖\n\n首次使用需要绑定HRMS账号。\n请输入你的HRMS用户名（登录HRMS系统时使用的用户名，如：NNYXYF26）：`
@@ -11141,7 +11141,7 @@ export async function onFeishuEvent(body) {
           await tenantContext.run(feishuUser.tenant_id || 'default', () =>
             pool().query('UPDATE feishu_users SET registered=FALSE WHERE open_id=$1', [openId])
           );
-        } catch(_e) {}
+        } catch(_e) { /* ignore */ }
         return { ok: true, blocked: !_empRec ? 'deleted' : 'inactive' };
       }
     } catch (_e) { console.error('[feishu] status check error:', _e?.message); }
@@ -11278,7 +11278,7 @@ export async function onFeishuEvent(body) {
            VALUES ('out','feishu',$1,$2,$3,$4,'ops_supervisor','bitable_form',$5,$6::jsonb,$7)`,
           [openId, feishuUser.username, feishuUser.name || feishuUser.username, feishuUser.role || '', `${typeLabel}检查表（Bitable表单）`, JSON.stringify({ checklistType, via: 'bitable_form', formUrl }), resolveTenantIdDefault()]
         );
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       return { ok: true, route: 'ops_supervisor', bitableForm: true };
     }
@@ -11294,7 +11294,7 @@ export async function onFeishuEvent(body) {
          JSON.stringify(imageUrls), messageId, resolveTenantIdDefault()]
       );
       msgDbId = r.rows?.[0]?.id;
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     // ── Master Agent: 任务反馈拦截 ──
     console.log('[feishu] task-reply-debug: parentMessageId=', JSON.stringify(parentMessageId), 'rootMessageId=', JSON.stringify(rootMessageId), 'text=', JSON.stringify(String(text||'').slice(0,60)), 'msgKeys=', JSON.stringify(Object.keys(msg)));
@@ -11375,7 +11375,7 @@ export async function onFeishuEvent(body) {
           [result.route, result.response, JSON.stringify(result.agentData || {}), msgDbId]
         );
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     return { ok: true, route: result.route, responded: !!result.response };
     });
@@ -11438,7 +11438,7 @@ async function pushIssuesToFeishu(tenantId = 'default') {
              VALUES ('out','feishu',$1,$2,$3,'data_auditor','text',$4,$5)`,
             [fu.open_id, 'system', 'HRMS Agent', `${sev} 异常通知: ${issue.title}`, resolveTenantIdDefault()]
           );
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
       }
     }
     return pushed;
@@ -11551,12 +11551,12 @@ export async function verifyLLMHealth(options = {}) {
     console.error('[LLM-HEALTH] ⚠️ 部分LLM不可用，自动降级已激活');
     try {
       await sendErrorAlertToAdmin(`⚠️ 【系统告警】LLM健康检查未通过:\n${summary}${fallbackNote}\n\n请检查 API Key / 模型配置 / 网络连通性。`);
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   }
   if (allOk && notifyOnRecovery && prevAllOk === false) {
     try {
       await sendErrorAlertToAdmin(`✅ 【系统恢复】LLM健康检查已恢复正常:\n${summary}`);
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   }
   return { allOk, results };
 }
@@ -11851,7 +11851,7 @@ export function startAgentScheduler() {
         if (pushedIssues || pushedScores) {
           console.log(`[scheduler] Push retry(${tenantId}): ${pushedIssues} issues, ${pushedScores} scores`);
         }
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
     });
     }
   };
@@ -12840,7 +12840,7 @@ export function registerAgentRoutes(app, authRequired) {
           [username]
         );
         store = String(fu.rows?.[0]?.store || '').trim() || null;
-      } catch (_e) {}
+      } catch (_e) { /* ignore */ }
 
       if (!store) {
         try {
@@ -12851,7 +12851,7 @@ export function registerAgentRoutes(app, authRequired) {
           ];
           const me = emps.find((e) => String(e?.username || '').trim().toLowerCase() === username.toLowerCase());
           if (me?.store) store = String(me.store).trim();
-        } catch (_e2) {}
+        } catch (_e2) { /* ignore */ }
       }
 
       const es = await pool().query(
@@ -12899,7 +12899,7 @@ export function registerAgentRoutes(app, authRequired) {
             store_rating = srInfo.rating;
             store_rating_period = srInfo.period;
             store_rating_is_fallback = !!srInfo.isFallback;
-          } catch (_srCalc) {}
+          } catch (_srCalc) { /* ignore */ }
         }
       }
 

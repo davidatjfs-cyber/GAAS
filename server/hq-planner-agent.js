@@ -80,7 +80,7 @@ function extractFirstJsonObject(text) {
   try {
     const parsed = JSON.parse(cleaned);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
   const m = cleaned.match(/\{[\s\S]*\}/);
   if (!m) return null;
   try {

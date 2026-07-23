@@ -336,7 +336,7 @@ export function registerReportsRoutes(app, deps) {
           return tMonth === ym && (!store || tStore === store);
         });
         if (tgt) monthlyTargets = tgt.targets || null;
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       // budget info from state
       let budgetInfo = null;
@@ -345,7 +345,7 @@ export function registerReportsRoutes(app, deps) {
         const ym = start.slice(0, 7);
         const b = budgets.find(x => String(x?.month || '').trim() === ym && (!store || String(x?.store || '').trim() === store));
         if (b) budgetInfo = b;
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       // budget execution: all categories for this store/month with actual usage
       let budgetExecution = [];
@@ -385,7 +385,7 @@ export function registerReportsRoutes(app, deps) {
             return { category: cat, budget: budgetAmt, used, remaining, rate };
           });
         }
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       return res.json({ start, end, store: store || '', rows, total, monthlyTargets, budgetInfo, budgetExecution });
     } catch (e) {
@@ -488,7 +488,7 @@ export function registerReportsRoutes(app, deps) {
           else if (/劝退|辞退|裁员|开除|解雇|淘汰/.test(reason)) isVoluntary = false;
           offDeparted.set(uname, { resignDate: rd, reason, isVoluntary });
         }
-      } catch (_) {}
+      } catch (_) { /* ignore */ }
 
       // ── Step 2: ensure offboarding applicants are in storeEmps ──
       const empByLower = new Map(storeEmps.map(e => [String(e?.username || '').trim().toLowerCase(), e]));
@@ -773,7 +773,7 @@ export function registerReportsRoutes(app, deps) {
                         order by name asc, username asc`;
           const dbRows = await pool.query(sql, params);
           people = Array.isArray(dbRows.rows) ? dbRows.rows : [];
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
       }
       if (store) people = people.filter(p => String(p?.store || '').trim() === store);
       if (!includeInactive) {
@@ -795,7 +795,7 @@ export function registerReportsRoutes(app, deps) {
         const mod = await import('./services/hrms-attendance-day.js');
         summarizeAttMonth = mod.summarizeAttendanceDaysForMonth;
         listAttRestDays = mod.listAttendanceRestDaysForMonth;
-      } catch (_) {}
+      } catch (_) { /* ignore */ }
       const rows = [];
       for (const p of people) {
         const penalty = penaltyMap.get(String(p?.username || '').trim().toLowerCase());
@@ -813,7 +813,7 @@ export function registerReportsRoutes(app, deps) {
               attendanceRestDetails = details;
               attendanceRestDays = details.reduce((s, d) => s + Number(d?.days || 0), 0);
             }
-          } catch (_) {}
+          } catch (_) { /* ignore */ }
         }
         if (attendanceRestDays == null && typeof summarizeAttMonth === 'function') {
           try {
@@ -824,7 +824,7 @@ export function registerReportsRoutes(app, deps) {
               db: dbLeave
             });
             if (att && Number.isFinite(Number(att.restDays))) attendanceRestDays = Number(att.restDays);
-          } catch (_) {}
+          } catch (_) { /* ignore */ }
         }
         const bal = calcEmployeeMonthlyLeaveBalance(state0, p, month, { penalty, attendanceRestDays, attendanceRestDetails }) || {
           baseLeave: 0, annualLeave: 0, usedLeave: 0, totalLeave: 0, computedRemaining: 0, remaining: 0, overridden: false, weeklyDetails: [], lastAdjustment: null
@@ -982,7 +982,7 @@ export function registerReportsRoutes(app, deps) {
           if (!r.store && storeByLower) r.store = storeByLower.get(lower) || '';
           return r;
         });
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       const fallbackRows = buildAttendanceFromCheckinRecords(checkinDetails, { start, end });
       let registerRows = [];
@@ -1001,7 +1001,7 @@ export function registerReportsRoutes(app, deps) {
         registerSql += ` ORDER BY report_date DESC, store ASC`;
         const rr = await pool.query(registerSql, args);
         registerRows = Array.isArray(rr.rows) ? rr.rows : [];
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       const summaryRows = buildAttendanceSummaryRows(registerRows, checkinDetails);
       const totals = summaryRows.reduce((acc, row) => {
@@ -1134,7 +1134,7 @@ export function registerReportsRoutes(app, deps) {
           try {
             const mod = await import('./services/hrms-attendance-day.js');
             summarizeAttMonthPay = mod.summarizeAttendanceDaysForMonth;
-          } catch (_) {}
+          } catch (_) { /* ignore */ }
           for (const p of people) {
             let attendanceRestDays = null;
             if (typeof summarizeAttMonthPay === 'function') {
@@ -1146,7 +1146,7 @@ export function registerReportsRoutes(app, deps) {
                   db: typeof pool === 'function' ? pool() : pool
                 });
                 if (att && Number.isFinite(Number(att.restDays))) attendanceRestDays = Number(att.restDays);
-              } catch (_) {}
+              } catch (_) { /* ignore */ }
             }
             const bal = calcEmployeeMonthlyLeaveBalance(state0, p, month, { attendanceRestDays });
             leaveBalanceByUser.set(String(p.username || '').trim().toLowerCase(), Number(bal?.remaining || 0));

@@ -9,6 +9,7 @@ import { execFileSync } from 'child_process';
 import axios from 'axios';
 import { Readable } from 'stream';
 import { ragUpdateScope } from './rag-tool.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 function isUuid(input) {
   const v = String(input || '').trim();
@@ -36,7 +37,7 @@ function normalizeMultipartFilename(name) {
     if (recovered && !recovered.includes('�') && (hasCjk || rawLooksMojibake)) {
       return recovered;
     }
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
   return raw;
 }
 
@@ -219,7 +220,7 @@ export function registerKnowledgeRoutes(app, deps) {
             const upNorm = path.resolve(uploadsDir) + path.sep;
             if (absNorm.startsWith(upNorm)) return absNorm;
           }
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
 
         // 2) /uploads/... OR uploads/...
         const rel1 = raw.replace(/^\/uploads\//, '').replace(/^uploads\//, '');
@@ -241,7 +242,7 @@ export function registerKnowledgeRoutes(app, deps) {
           const originalName = path.basename(uploadsAbs);
           const fallback = inferContentType({ declaredType: ft, originalName, mimeType: '' });
           if (fallback && !res.getHeader('Content-Type')) res.setHeader('Content-Type', fallback);
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
         return res.sendFile(uploadsAbs);
       }
 
@@ -253,7 +254,7 @@ export function registerKnowledgeRoutes(app, deps) {
       try {
         const r = String(req.headers?.range || '').trim();
         if (r) upstreamHeaders['Range'] = r;
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       const upstream = await fetch(filePath, { headers: upstreamHeaders });
       if (!upstream.ok || !upstream.body) {
@@ -277,7 +278,7 @@ export function registerKnowledgeRoutes(app, deps) {
       nodeStream.on('error', () => {
         try {
           res.end();
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
       });
       return nodeStream.pipe(res);
     } catch (e) {
@@ -691,7 +692,7 @@ ${oldVal.slice(0, 20000)}` }
     if (!groupName) return res.status(400).json({ error: 'missing_group_name' });
     try {
       const r = await pool.query(
-        `UPDATE knowledge_base
+        `UPDATE ${SHARED_TABLES.KNOWLEDGE_BASE}
          SET group_name = $2, updated_at = NOW()
          WHERE group_id = $1::uuid
          RETURNING id`,
@@ -838,7 +839,7 @@ ${oldVal.slice(0, 20000)}` }
         oldContent = prev.rows?.[0]?.content || null;
       }
       const r = await pool.query(
-        `UPDATE knowledge_base SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id, title, category, tags, scope, file_path, file_type, file_size, access_roles, access_departments, created_by, version, created_at, updated_at, audience, group_id, group_name`,
+        `UPDATE ${SHARED_TABLES.KNOWLEDGE_BASE} SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id, title, category, tags, scope, file_path, file_type, file_size, access_roles, access_departments, created_by, version, created_at, updated_at, audience, group_id, group_name`,
         params
       );
       const row = r.rows?.[0];
@@ -852,7 +853,7 @@ ${oldVal.slice(0, 20000)}` }
       }
       if (targetGroupId && groupName) {
         await pool.query(
-          `UPDATE knowledge_base
+          `UPDATE ${SHARED_TABLES.KNOWLEDGE_BASE}
            SET group_name = $2, updated_at = NOW()
            WHERE group_id = $1::uuid`,
           [targetGroupId, groupName]
@@ -921,7 +922,7 @@ ${oldVal.slice(0, 20000)}` }
 
       try {
         const r = await pool.query(
-          `insert into knowledge_base (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name, tenant_id)
+          `insert into ${SHARED_TABLES.KNOWLEDGE_BASE} (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name, tenant_id)
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::uuid,$15,$16)
            returning id, title, category, tags, scope, file_path, file_type, file_size, access_roles, access_departments, created_by, version, created_at, updated_at, audience, group_id, group_name`,
           [fileTitle, '', category || null, tags, filePath, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName, resolveTenantIdDefault()]
@@ -946,7 +947,7 @@ ${oldVal.slice(0, 20000)}` }
                 await new Promise((resolve, reject) => {
                   cos.putObjectCopy({ Bucket: COS_BUCKET, Region: COS_REGION, Key: objectKey, CopySource: `${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com/${objectKey}`, MetadataDirective: 'Replaced', ContentType: contentType, ContentDisposition: buildInlineContentDisposition(originalName) }, (err) => err ? reject(err) : resolve());
                 });
-              } catch (e2) {}
+              } catch (e2) { /* ignore */ }
               finalUrl = buildCosPublicUrl(objectKey) || '';
             } else {
               const oss = getOssClient();
@@ -957,7 +958,7 @@ ${oldVal.slice(0, 20000)}` }
             }
             if (finalUrl) {
               await pool.query('update knowledge_base set file_path = $1, updated_at = now() where id = $2', [finalUrl, insertedId]);
-              try { fs.unlinkSync(localPath); } catch (e) {}
+              try { fs.unlinkSync(localPath); } catch (e) { /* ignore */ }
             }
           } catch (e) {
             console.log('Batch knowledge cloud upload failed for', insertedId, e?.message || e);
@@ -1058,7 +1059,7 @@ ${oldVal.slice(0, 20000)}` }
       if (!useGroupId) useGroupId = randomUUID();
       const useGroupName = await resolveKnowledgeGroupName(useGroupId, requestedGroupName, title || category || '未命名项目组');
       const r = await pool.query(
-        `insert into knowledge_base (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name, tenant_id)
+        `insert into ${SHARED_TABLES.KNOWLEDGE_BASE} (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name, tenant_id)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::uuid,$15,$16)
          returning id, title, category, tags, scope, file_path, file_type, file_size, access_roles, access_departments, created_by, version, created_at, updated_at, audience, group_id, group_name`,
         [title, videoSummary, category || null, tags, filePath, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName, resolveTenantIdDefault()]
@@ -1105,7 +1106,7 @@ ${oldVal.slice(0, 20000)}` }
       if (!useGroupId) useGroupId = randomUUID();
       const useGroupName = await resolveKnowledgeGroupName(useGroupId, requestedGroupName, title || category || '未命名项目组');
       const r = await pool.query(
-        `insert into knowledge_base (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name, tenant_id)
+        `insert into ${SHARED_TABLES.KNOWLEDGE_BASE} (title, content, category, tags, file_path, file_type, file_size, access_roles, access_departments, created_by, scope, version, audience, group_id, group_name, tenant_id)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::uuid,$15,$16)
          returning id, title, category, tags, scope, file_path, file_type, file_size, access_roles, access_departments, created_by, version, created_at, updated_at, audience, group_id, group_name`,
         [title, videoSummary, category || null, tags, `uploads/${req.file.filename}`, fileType || null, size || null, null, null, createdBy, kbScope, version, audienceObj, useGroupId, useGroupName, resolveTenantIdDefault()]
@@ -1382,7 +1383,7 @@ ${oldVal.slice(0, 20000)}` }
                 }
               );
             });
-          } catch (e) {}
+          } catch (e) { /* ignore */ }
           finalUrl = buildCosPublicUrl(objectKey) || '';
         } else {
           const oss = getOssClient();
@@ -1407,7 +1408,7 @@ ${oldVal.slice(0, 20000)}` }
         await pool.query('update knowledge_base set file_path = $1, updated_at = now() where id = $2', [finalUrl, inserted.id]);
         try {
           fs.unlinkSync(localPath);
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
       } catch (e) {
         console.log('Async knowledge cloud upload failed:', e?.message || e);
       }

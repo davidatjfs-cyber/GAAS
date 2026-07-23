@@ -610,7 +610,7 @@ async function buildAbAiSummary(taskRow, outcome) {
       const grounding = checkTextGrounding(llm.content, known);
       if (grounding.passed) return cleanText(llm.content, 1800);
     }
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
   const winner = (a.redemption_rate || 0) > (b.redemption_rate || 0) ? 'A' : (a.redemption_rate || 0) < (b.redemption_rate || 0) ? 'B' : 'tie';
   return cleanText(`测试完成：A组核销率${formatPercent((a.redemption_rate || 0) * 100)}，B组核销率${formatPercent((b.redemption_rate || 0) * 100)}，${winner === 'tie' ? '两组差异不明显，建议继续积累样本。' : `${winner}组表现更好，建议将该版本作为下轮默认文案。`}`, 1800);
 }
@@ -957,7 +957,7 @@ function authPhaseApi(req) {
     try {
       const decoded = jwt.verify(bearer, process.env.JWT_SECRET);
       if (decoded && decoded.username) return { ok: true, user: { username: decoded.username, role: decoded.role || '' } };
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
   return { ok: false, status: 401, error: 'unauthorized' };
 }
@@ -3749,7 +3749,7 @@ export function registerPhaseRoutes(app, pool) {
               [`pos_sync_failed_${failedTenant}`, 'pos_sync_failed', 'high', 'POS数据同步失败', '每日凌晨POS飞书同步失败：' + (e.message || String(e)).slice(0, 200), '检查飞书应用权限、表字段、网络连接；手动调 POST /api/growth/pos-feishu-sync 重试', failedTenant]);
           });
         }
-      } catch (_) {}
+      } catch (_) { /* ignore */ }
     }
   }, 60 * 1000);
   console.log('[pos-sync-cron] Scheduled: daily at ~01:10 CST, failure alerts to growth_sync_failures');

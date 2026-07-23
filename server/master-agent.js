@@ -440,7 +440,7 @@ async function createTask({ source, sourceRef, category, severity, store, brand,
     );
     await emitEvent(taskId, 'task_created', 'data_auditor', 'master', null, 'pending_dispatch', { category, severity, store }, tenantId);
     // 知识图谱: 写入异常→门店关系
-    try { await extractAnomalyRelations({ task_id: taskId, category, severity, store, brand, title, detail, created_at: new Date() }); } catch (e) {}
+    try { await extractAnomalyRelations({ task_id: taskId, category, severity, store, brand, title, detail, created_at: new Date() }); } catch (e) { /* ignore */ }
     console.log(`[master] Task created: ${taskId} [${category}] ${store}`);
     return taskId;
   } catch (e) {
@@ -801,7 +801,7 @@ async function opsAgentListener(tenantId = 'default') {
           [task.task_id, tenantId]
         );
         isFirstDispatch = (parseInt(evR.rows[0]?.cnt || '0') === 0);
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       let sendResult;
       // 直接发送交互卡片（不再使用表单链接）
@@ -824,7 +824,7 @@ async function opsAgentListener(tenantId = 'default') {
              VALUES ('out','feishu',$1,'system','Master Agent','ops_supervisor','card',$2,$3)`,
             [fu.open_id, `异常通知卡片 [${task.task_id}] - 回复表单已发送`, tenantId]
           );
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
         actions++;
       }
     }
@@ -882,7 +882,7 @@ async function opsAgentListener(tenantId = 'default') {
           if (sopResults.length) {
             sopContext = '\n\n参考SOP标准：\n' + sopResults.map(r => `【${r.title}】${String(r.content || '').slice(0, 200)}`).join('\n');
           }
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
 
         const llm = await callLLM([
           { role: 'system', content: `你是小年，年年有喜餐饮集团AI助理。请审核员工对异常问题的回复，仅判断回复是否包含了有效的事实描述和整改措施。
@@ -1217,7 +1217,7 @@ async function trainAgentListener(tenantId = 'default') {
           // 这里可以调用queryKnowledgeBase的写入接口
           console.log(`[master:sop] Case ${sopCase.case_id} published to SOP library`);
         }
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       actions++;
     }
@@ -1416,7 +1416,7 @@ export function startMasterAgent() {
       // 全局自增序号，不按租户区分——避免多租户共享同一计数器时task_id撞号
       const r = await pool().query(`SELECT MAX(id) as maxid FROM master_tasks`);
       _taskSeq = Number(r.rows?.[0]?.maxid || 0);
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   })();
 
   // ── Tick 1: Data Auditor (每30分钟扫描一次) ──

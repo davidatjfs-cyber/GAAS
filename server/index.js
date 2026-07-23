@@ -1426,7 +1426,7 @@ function estimateRevenueByHistory(historyRows, target, store) {
     if (Number.isFinite(td.getTime())) targetDow = td.getDay();
     // 节假日按周末预测：将目标日视为周日(0)
     if (storeConfig.holidayAsWeekend && targetIsHoliday && targetDow >= 1 && targetDow <= 5) targetDow = 0;
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   const result = {
     sampleCount: 0,
@@ -1500,7 +1500,7 @@ function estimateRevenueByHistory(historyRows, target, store) {
             score += Math.max(0, 2.0 * (1.0 - Math.min(1.0, dayDiff / 90)));
           }
         }
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
       // Holiday matching (separate dimension)
       if (Boolean(item.isHoliday) === targetIsHoliday) score += 0.8;
       // Weather match
@@ -1906,8 +1906,8 @@ function extractPdfText(rawBuffer) {
     const around = text.slice(Math.max(0, s.start - 220), s.start + 40);
     const mayFlate = /FlateDecode/i.test(around);
     if (mayFlate) {
-      try { pushDecoded(zlib.inflateSync(s.data)); continue; } catch (e) {}
-      try { pushDecoded(zlib.inflateRawSync(s.data)); continue; } catch (e) {}
+      try { pushDecoded(zlib.inflateSync(s.data)); continue; } catch (e) { /* ignore */ }
+      try { pushDecoded(zlib.inflateRawSync(s.data)); continue; } catch (e) { /* ignore */ }
     }
     pushDecoded(s.data);
   }
@@ -1990,7 +1990,7 @@ function parseInventoryForecastRowsFromPdfBuffer(rawBuffer, fallbackBizType = ''
 
 function nfkcNormalize(s) {
   let out = String(s || '');
-  try { out = out.normalize('NFKC'); } catch (e) {}
+  try { out = out.normalize('NFKC'); } catch (e) { /* ignore */ }
   // CJK Radicals Supplement chars that NFKC misses (pdftotext outputs these)
   const radicalMap = {
     '\u2E81': '丨', '\u2E84': '丶', '\u2E85': '丿', '\u2E86': '乀', '\u2E87': '乁',
@@ -2226,7 +2226,7 @@ app.post('/api/ai/chat-completions', authRequired, async (req, res) => {
     });
     const text = await upstream.text();
     let data = null;
-    try { data = JSON.parse(text); } catch (e) {}
+    try { data = JSON.parse(text); } catch (e) { /* ignore */ }
     if (!upstream.ok) {
       return res.status(upstream.status).json({
         error: 'upstream_error',
@@ -3030,7 +3030,7 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
           }
         }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     try {
       if (item) {
@@ -3092,7 +3092,7 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
           }
         })();
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     if (type === 'reward_punishment' && recurringFrequencyReward === 'monthly' && item?.id) {
       const rpT = String(payload?.rpType || '').trim();
@@ -3478,7 +3478,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           await appendNotifications([makeNotif(applicantUser, title, msg, { type: 'onboarding_result', approvalId: updated.id })]);
         }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     // --- Leave / Offboarding post-approval ---
     try {
@@ -3623,7 +3623,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           await mergeSharedStateFields({ notifications: [notif] }, { notifications: 'id' });
         }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     // --- Promotion post-approval ---
     try {
@@ -3932,7 +3932,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           await appendNotifications([makeNotif(nextAssignee, '晋升申请待审批', msg, { type: 'promotion_request', approvalId: updated.id })]);
         }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     // --- Reward/Punishment post-approval ---
     try {
@@ -4046,7 +4046,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           await appendNotifications([makeNotif(nextAssignee, `${typeLabel}申请待审批`, msg, { type: 'reward_punishment_request', approvalId: updated.id })]);
         }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     // --- Points post-approval ---
     // IMPORTANT: uses mergeSharedStateFields to avoid Read-Modify-Write race condition
@@ -4079,7 +4079,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           });
           const rate = Number(resolvedPts?.rules?.pointsYuanPerPoint);
           if (Number.isFinite(rate) && rate >= 0) pointsRate = rate;
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
 
         if (finalApproved) {
           // Idempotency: skip if this approval was already applied
@@ -4210,7 +4210,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           ]);
         }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     // --- Monthly confirm post-approval ---
     try {
@@ -4297,7 +4297,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
           })();
         }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     const __decideMs = Date.now() - __decideStartedAt;
     console.log('[approval-decide] ok', { id, ms: __decideMs, status: updated?.status, type: updated?.type });
@@ -4815,7 +4815,7 @@ app.get('/api/unread-counts', authRequired, async (req, res) => {
         [username, req.tenantId || req.user?.tenant_id || 'default']
       );
       rewards = rwR.rows?.[0]?.cnt || 0;
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     // payment: unread payment records for this user
     let payment = 0;
@@ -4833,7 +4833,7 @@ app.get('/api/unread-counts', authRequired, async (req, res) => {
         [username, req.tenantId || req.user?.tenant_id || 'default']
       );
       payment = pmR.rows?.[0]?.cnt || 0;
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     let opsTasks = 0;
     try {
@@ -4848,7 +4848,7 @@ app.get('/api/unread-counts', authRequired, async (req, res) => {
         [username]
       );
       opsTasks = opR.rows?.[0]?.cnt || 0;
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     return res.json({ approvals, training, exam, dashboard, rewards, payment, opsTasks });
   } catch (e) {
@@ -5718,7 +5718,7 @@ async function ensureEmployeeAttachmentsTable() {
       )
     `);
     await pool.query(`create index if not exists idx_emp_att_emp_id on employee_attachments(employee_id)`);
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 }
 if (__ALLOW_SCHEMA_CHANGES__) ensureEmployeeAttachmentsTable();
 
@@ -5777,7 +5777,7 @@ app.delete('/api/employees/:empId/attachments/:attachId', authRequired, async (r
         const filepath = path.join(uploadsDir, filename);
         fs.unlink(filepath, () => {});
       }
-    } catch (e2) {}
+    } catch (e2) { /* ignore */ }
     return res.json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
@@ -6815,7 +6815,7 @@ async function pickAdminUsername(state) {
     );
     const row = r.rows?.[0] || null;
     if (row?.username) return String(row.username).trim();
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   return 'admin';
 }
@@ -6836,7 +6836,7 @@ async function pickHqManagerUsername(state) {
     );
     const row = r.rows?.[0] || null;
     if (row?.username) return String(row.username).trim();
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   return '';
 }
@@ -6865,7 +6865,7 @@ async function pickCashierUsername(state) {
     const r = await pool.query("select username from users where role = 'cashier' and is_active = true order by created_at asc limit 1");
     const row = r.rows?.[0] || null;
     if (row?.username) return String(row.username).trim();
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   return '';
 }
@@ -8518,7 +8518,7 @@ app.get('/api/daily-reports', authRequired, async (req, res) => {
           [store, monthStart, date, req.tenantId || req.user?.tenant_id || 'default']
         );
         wechat_month_base = Number(baseR.rows?.[0]?.base || 0);
-      } catch (_e) {}
+      } catch (_e) { /* ignore */ }
     }
     return res.json({ items, wechat_month_base });
   } catch (e) {
@@ -9920,7 +9920,7 @@ function scoreForecastRow(item, target) {
       const recencyBonus = Math.max(0, 1.0 - Math.min(1.0, Number(dayDiff || 0) / 60));
       score += recencyBonus;
     }
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
   // Holiday matching as separate dimension (some stores busy on holidays, some not)
   if (Boolean(item?.isHoliday) === Boolean(target?.isHoliday)) score += 0.7;
   // Weather match
@@ -12068,7 +12068,7 @@ async function authRequired(req, res, next) {
         );
         const dbRole = String(dbRoleRow.rows?.[0]?.role || '').trim();
         if (dbRole) effectiveRole = dbRole;
-      } catch (_e) {}
+      } catch (_e) { /* ignore */ }
 
       const state0 = (await getSharedState().catch(() => null)) || {};
       const stateStore = String(pickMyStoreFromState(state0, uname) || payload.store || '').trim();
@@ -12144,7 +12144,7 @@ async function authRequiredOrQueryToken(req, res, next) {
         );
         const dbRole = String(dbRoleRow.rows?.[0]?.role || '').trim();
         if (dbRole) effectiveRole = dbRole;
-      } catch (_e) {}
+      } catch (_e) { /* ignore */ }
 
       const state0 = (await getSharedState().catch(() => null)) || {};
       const stateStore = String(pickMyStoreFromState(state0, uname) || payload.store || '').trim();
@@ -12280,7 +12280,7 @@ async function applyHrmsUserAccountGateFromEmployee(emp) {
     try {
       const tr = await pool.query('SELECT tenant_id FROM users WHERE lower(username) = lower($1) LIMIT 1', [uname]);
       tenantId = String(tr.rows?.[0]?.tenant_id || '').trim() || 'default';
-    } catch (_e) {}
+    } catch (_e) { /* ignore */ }
     await tenantContext.run(tenantId, async () => {
     if (disable) {
       await pool.query(
@@ -12338,7 +12338,7 @@ function repairGarbledUtf8(str) {
     const decoded = bytes.toString('utf8');
     // Valid repair if result contains CJK chars and no replacement chars
     if (/[\u4e00-\u9fff]/.test(decoded) && !decoded.includes('\ufffd')) return decoded;
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
   return str;
 }
 
@@ -12470,7 +12470,7 @@ async function applyStatePeopleVisibilityForRole(data, role, username, fullState
   try {
     const dbRow = await pool.query('SELECT role FROM users WHERE lower(username) = lower($1) LIMIT 1', [un]);
     dbRole = String(dbRow.rows?.[0]?.role || '').trim() || null;
-  } catch (_e) {}
+  } catch (_e) { /* ignore */ }
 
   const filteredEmps = empsOut.filter(pass);
   const filteredUsers = usersOut.filter(pass);
@@ -12962,7 +12962,7 @@ app.get('/api/health', async (req, res) => {
     const cosConfigured = !!getCosClient();
     const uploads = ensureUploadsDir();
     let agentHealth = {};
-    try { agentHealth = getAgentHealthStatus(); } catch (e) {}
+    try { agentHealth = getAgentHealthStatus(); } catch (e) { /* ignore */ }
     let agentsService = null;
     try {
       agentsService = await fetchAgentsServiceHealthSnapshot();
@@ -13022,12 +13022,12 @@ app.get('/api/version', async (req, res) => {
     try {
       const st = fs.statSync(__filename);
       out.server.indexMtime = st?.mtime ? st.mtime.toISOString() : null;
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
     try {
       const agentsPath = path.resolve(__dirname, 'agents.js');
       const ast = fs.statSync(agentsPath);
       out.server.agentsMtime = ast?.mtime ? ast.mtime.toISOString() : null;
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     try {
       const webRootDir = path.resolve(__dirname, '..');
@@ -13044,9 +13044,9 @@ app.get('/api/version', async (req, res) => {
           const head = String(fs.readFileSync(sw, 'utf8') || '').split(/\r?\n/).slice(0, 3).join('\n');
           const m = head.match(/CACHE_NAME\s*=\s*['"]([^'"]+)['"]/);
           out.frontend.swCacheName = m && m[1] ? String(m[1]) : null;
-        } catch (e3) {}
+        } catch (e3) { /* ignore */ }
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     return res.json(out);
   } catch (e) {
@@ -15446,7 +15446,7 @@ app.listen(PORT, HOST, async () => {
             [taskName]
           );
         });
-      } catch (_) {}
+      } catch (_) { /* ignore */ }
     }
 
     // 辅助：给管理员发送系统告警，并同步写入 HRMS 公司通知
@@ -15771,7 +15771,7 @@ app.listen(PORT, HOST, async () => {
                 `错误：${safeErrMessage(e)}`,
                 '请检查 hrms-service 日志与数据库/共享状态写入。'
               ].join('\n'));
-            } catch (_) {}
+            } catch (_) { /* ignore */ }
           }
         }, { continueOnError: true });
       } catch (e) {
@@ -16067,7 +16067,7 @@ app.use((err, req, res, next) => {
       }
       return res.status(400).json({ error: 'upload_error', code, request_id: requestId });
     }
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   const msg = String(err?.message || err);
   if (/uploads_dir_not_writable/i.test(msg)) {
@@ -16267,7 +16267,7 @@ setInterval(() => {
         for (const it of items) {
           try {
             await pool.query('update approval_requests set executed_at = now(), updated_at = now() where id = $1', [it.id]);
-          } catch (e) {}
+          } catch (e) { /* ignore */ }
         }
       } catch (e) {
         console.log('offboarding auto-disable job failed:', tenantId, e?.message || e);
@@ -16718,7 +16718,7 @@ app.get('/api/birthday/upcoming', authRequired, async (req, res) => {
         await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_username ON attention_scores(username)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_material ON attention_scores(material_id)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_created ON attention_scores(created_at)');
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
     });
   } catch (e) {
     console.log('attention_scores table init:', e?.message || e);

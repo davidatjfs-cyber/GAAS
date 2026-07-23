@@ -197,7 +197,7 @@ export function registerInventoryForecastRoutes(app, deps) {
       const parseErrors = [];
       let __debugMatrixSample = [];
       // Save a copy for debugging
-      try { fs.copyFileSync(file.path, path.join(uploadsDir, '__last_inventory_upload' + ext)); } catch (e) {}
+      try { fs.copyFileSync(file.path, path.join(uploadsDir, '__last_inventory_upload' + ext)); } catch (e) { /* ignore */ }
       const tryParseExcel = () => {
         const wb = XLSX.readFile(file.path, { raw: false });
         const sheetNames = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
@@ -411,7 +411,7 @@ export function registerInventoryForecastRoutes(app, deps) {
       try {
         const p = String(req.file?.path || '').trim();
         if (p) fs.unlinkSync(p);
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
     }
   });
 
@@ -436,7 +436,7 @@ export function registerInventoryForecastRoutes(app, deps) {
         message: '销售明细已改为自动同步（pos_order_items/pos_sales_detail），不再需要手工上传销售明细文件。'
       });
     } finally {
-      try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch (e) {}
+      try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
     }
   });
 
@@ -1048,7 +1048,7 @@ export function registerInventoryForecastRoutes(app, deps) {
           if(targetIsNormalWd0 && (srIsCNY||srIsHol)) continue;
           historyRows.push({date:d,bizType:biz,slot:'',expectedRevenue:rev,isHoliday:srIsCNY||srIsHol});
         }
-      } catch(e){}
+      } catch(e){ /* ignore */ }
 
       const target = { date, weather, isHoliday };
       const estimate = estimateRevenueByHistory(historyRows, target, store);

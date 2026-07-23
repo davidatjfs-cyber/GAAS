@@ -57,7 +57,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
         },
         { getSharedState, permissionGroupId }
       );
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
     return {
       id,
       username,
@@ -164,7 +164,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
                 permissionGroupId = String(stateUser.permissionGroupId || '').trim() || null;
               }
             }
-          } catch (syncErr) {}
+          } catch (syncErr) { /* ignore */ }
 
           const persisted = await storeSessionNonce(u.username, sn, tenantId);
           if (!persisted) {
@@ -312,7 +312,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
       const allEmp = (Array.isArray(state.employees) ? state.employees : []).concat(Array.isArray(state.users) ? state.users : []);
       const stateUser = allEmp.find(x => String(x?.username || '').trim().toLowerCase() === username.toLowerCase());
       permissionGroupId = String(stateUser?.permissionGroupId || '').trim() || null;
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
     const user = {
       ...req.user,
       primary_store: ctx?.primaryStore || req.user?.primary_store,
@@ -480,7 +480,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
               `UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE lower(username) = lower($1) AND tenant_id = $2`,
               [targetUsernameNorm, targetTenantId]
             );
-          } catch (e2) {}
+          } catch (e2) { /* ignore */ }
         }
         needCreateUser = true;
       }
@@ -499,7 +499,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
               if (stateUser.name) finalName = String(stateUser.name).trim() || finalName;
             }
           }
-        } catch (e) {}
+        } catch (e) { /* ignore */ }
       }
 
       // 4) Ensure user is active for login

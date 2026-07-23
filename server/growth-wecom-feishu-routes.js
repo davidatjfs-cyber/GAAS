@@ -53,6 +53,7 @@ export async function syncWecomContactsForStore(pool, storeConfig) {
           if (m) contactPhone = m[0];
         }
         if (!contactPhone && fi.tag_id && Array.isArray(fi.tag_id)) {
+        /* ignore */
         }
       }
       if (Array.isArray(detailData.wechat_channels)) {

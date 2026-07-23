@@ -662,7 +662,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
         parsedValue = typeof a.trigger_value === 'string' ? JSON.parse(a.trigger_value) : a.trigger_value;
         if (parsedValue.detail) anomalyGroups[key].detail = parsedValue.detail;
         if (parsedValue.consecutiveDown) anomalyGroups[key].detail = `连续${parsedValue.consecutiveDown}周下降(${parsedValue.changePct}%)`;
-      } catch (_) {}
+      } catch (_) { /* ignore */ }
     }
     anomalyGroups[key].records.push({
       date: a.trigger_date,
@@ -672,7 +672,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
       threshold_value: (() => {
         let v = a.threshold_value;
         if (typeof v === 'string') {
-          try { v = JSON.parse(v); } catch (_) {}
+          try { v = JSON.parse(v); } catch (_) { /* ignore */ }
         }
         return v;
       })(),

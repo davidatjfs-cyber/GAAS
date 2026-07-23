@@ -695,7 +695,7 @@ export async function resetSessionState(username) {
        WHERE user_key = $1 AND memory_key = 'session_state'`,
       [u]
     );
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 }
 
 // ── 13. 清理过期缓存（定时任务调用） ─────────────────────────

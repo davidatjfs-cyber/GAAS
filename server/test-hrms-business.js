@@ -18,7 +18,7 @@ async function request(method, path, body, token) {
   const res = await fetch(url, opts);
   const text = await res.text();
   let json = null;
-  try { json = JSON.parse(text); } catch (_) {}
+  try { json = JSON.parse(text); } catch (_) { /* ignore */ }
   return { status: res.status, json, text };
 }
 

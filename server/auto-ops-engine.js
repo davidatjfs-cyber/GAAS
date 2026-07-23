@@ -349,7 +349,7 @@ export async function biProactivePushTick(tenantId = 'default') {
 
   try {
     if (await hasAutoOpsRun('bi_proactive_push', runKey, tenantId)) return 0;
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   let pushed = 0;
   const yesterday = reportDate;
@@ -416,7 +416,7 @@ export async function biProactivePushTick(tenantId = 'default') {
         if (matCount >= BI_PUSH_THRESHOLDS.material_anomaly_count) {
           alerts.push(`🥬 原料异常: 昨日${matCount}次 (阈值${BI_PUSH_THRESHOLDS.material_anomaly_count}次)`);
         }
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       // ── 未关闭的高严重度任务 ──
       try {
@@ -429,7 +429,7 @@ export async function biProactivePushTick(tenantId = 'default') {
         if (openHigh > 0) {
           alerts.push(`🔴 高严重度未关闭任务: ${openHigh}个`);
         }
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       // ── 巡检不合格率 ──
       try {
@@ -448,7 +448,7 @@ export async function biProactivePushTick(tenantId = 'default') {
         if (failRate >= BI_PUSH_THRESHOLDS.inspection_fail_rate && total >= 3) {
           alerts.push(`📋 近7天巡检不合格率: ${failRate}% (${failCnt}/${total}次)`);
         }
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
 
       // ── 推送 ──
       if (alerts.length > 0) {
@@ -518,7 +518,7 @@ export async function laborEfficiencyTick(tenantId = 'default') {
 
   try {
     if (await hasAutoOpsRun('labor_efficiency_push', runKey, tenantId)) return 0;
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   let pushed = 0;
 
@@ -625,7 +625,7 @@ export async function trainingClosedLoopTick(tenantId = 'default') {
 
   try {
     if (await hasAutoOpsRun('training_closed_loop', runKey, tenantId)) return 0;
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 
   let created = 0;
 
@@ -743,7 +743,7 @@ export async function trainingClosedLoopTick(tenantId = 'default') {
           [task.id]
         );
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     if (created > 0) {
       await appendAutoOpsEvent('training_closed_loop', `TRAIN-${cstDateString(now, 0)}`, { created });

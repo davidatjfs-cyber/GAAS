@@ -257,8 +257,8 @@ export function parseSalesRawRows(matrix, defBiz, defStore, opts = {}) {
     const category = n(iCat>=0?L[iCat]:'');
     const categoryCode = n(iCatCode>=0?L[iCatCode]:'');
     let oTime=null,cTime=null;
-    if(iOT>=0){try{const t=n(L[iOT]).replace(/：/g,':');const d=new Date(`${date}T${t}`);if(!isNaN(d))oTime=d.toISOString();}catch(e){}}
-    if(iCT>=0){try{const t=n(L[iCT]).replace(/：/g,':');const d=new Date(`${date}T${t}`);if(!isNaN(d))cTime=d.toISOString();}catch(e){}}
+    if(iOT>=0){try{const t=n(L[iOT]).replace(/：/g,':');const d=new Date(`${date}T${t}`);if(!isNaN(d))oTime=d.toISOString();}catch(e){ /* ignore */ }}
+    if(iCT>=0){try{const t=n(L[iCT]).replace(/：/g,':');const d=new Date(`${date}T${t}`);if(!isNaN(d))cTime=d.toISOString();}catch(e){ /* ignore */ }}
     res.push({store,date,biz_type:biz,dish_name:prod,dish_code:dishCode,category,category_code:categoryCode,qty:+qty.toFixed(2),sales_amount:+sa.toFixed(2),revenue:+revenue.toFixed(2),discount:+di.toFixed(2),slot,order_time:oTime,checkout_time:cTime,weekday:wd});
   }
   return res;

@@ -75,7 +75,7 @@ export async function getSalaryForMonth({ tenantId, username, month, fallbackSal
         source: r.rows[0].source
       };
     }
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
   const fb = Number(fallbackSalary);
   return Number.isFinite(fb) ? { amount: fb, effectiveFrom: asOf, source: 'profile_fallback' } : { amount: null, effectiveFrom: null, source: null };
 }

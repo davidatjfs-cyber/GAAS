@@ -149,7 +149,7 @@ function authMiniProgramSync(req) {
     try {
       const decoded = jwt.verify(bearer, process.env.JWT_SECRET);
       if (decoded && decoded.username) return { ok: true };
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
   return { ok: false, status: 401, error: 'unauthorized' };
 }

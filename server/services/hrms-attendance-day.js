@@ -127,7 +127,7 @@ export async function reconcileAttendanceDays({
         [tid, st]
       );
       people = er.rows || [];
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   }
 
   // 日报
@@ -160,7 +160,7 @@ export async function reconcileAttendanceDays({
       }
       reportsByDate.set(d, snap && typeof snap === 'object' ? snap : {});
     }
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
 
   // 打卡：按人按日聚合 in/out
   const punchMap = new Map(); // key: user|date -> {in,out}
@@ -186,7 +186,7 @@ export async function reconcileAttendanceDays({
       else prev.in = true;
       punchMap.set(key, prev);
     }
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
 
   // 已批休假覆盖日
   const leaveByUserDate = new Map(); // user|date -> {id, type}
@@ -208,7 +208,7 @@ export async function reconcileAttendanceDays({
         });
       }
     }
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
   // state leaveRecords 兜底
   const stateLeaves = Array.isArray(state.leaveRecords) ? state.leaveRecords : [];
   for (const lr of stateLeaves) {
@@ -235,7 +235,7 @@ export async function reconcileAttendanceDays({
     for (const row of cf.rows || []) {
       confirmMap.set(`${row.u}|${String(row.d).slice(0, 10)}`, row);
     }
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
 
   const allDates = datesInRange(start, end);
   let upserted = 0;
@@ -496,7 +496,7 @@ export async function notifyStoreManagersAttendanceAbnormals({
   if (!Array.isArray(abnormals) || !abnormals.length) return 0;
   if (typeof appendNotifications !== 'function' || typeof makeNotif !== 'function') return 0;
   let state = {};
-  try { state = (await getSharedState(tenantId)) || {}; } catch (_) {}
+  try { state = (await getSharedState(tenantId)) || { /* ignore */ }; } catch (_) {}
   const byStore = new Map();
   for (const a of abnormals) {
     const s = String(a.store || '').trim();

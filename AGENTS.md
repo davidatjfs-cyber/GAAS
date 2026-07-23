@@ -180,4 +180,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 不要直接编辑 `working-fixed.html` 内联主 `<script>`（由 `bundle-frontend.mjs` 写回）。
 - **B7 XSS**：主 script 前加载 `/assets/vendor/dompurify/`；`innerHTML` 已挂 DOMPurify。新代码优先 `setHTML`/`appendHTML`。
 
+### @gaas/shared 生产软链
+
+见 [`docs/gaas-shared.md`](docs/gaas-shared.md)。改共享包后：`node scripts/sync-gaas-shared.mjs`，两边提交；生产 `ln -sfn` 到本仓 `packages/gaas-shared` 再重启。
+
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
