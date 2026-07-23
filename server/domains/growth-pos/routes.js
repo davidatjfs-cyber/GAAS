@@ -1,12 +1,20 @@
 import { tenantContext } from '../../utils/database.js';
 import { cleanText } from '../growth-phase-auth.js';
 import {
+  getPosFeishuConfig,
+  mapFeishuSyncError,
+  savePosFeishuConfig,
+  syncPosFromFeishu,
+} from './feishu-service.js';
+import { clampSnapshotDays, ingestPosOrders, linkPosOrdersToCustomers, refreshSalesGrowthSnapshot } from './ingest.js';
+import {
   listCustomerOrders,
   listHardcodedGrowthStores,
   listPosLinkedCustomers,
   listPosOrderItems,
   listPosOrders,
 } from './service.js';
+import { getPosStats } from './stats-service.js';
 
 /**
  * @param {import('express').Express} app
@@ -14,12 +22,10 @@ import {
  *   pool: any,
  *   requirePhaseAuth: Function,
  *   getPhaseTenantId: Function,
- *   ingestPosOrders: Function,
- *   linkPosOrdersToCustomers: Function,
  * }} deps
  */
 export function registerGrowthPosRoutes(app, deps) {
-  const { pool, requirePhaseAuth, getPhaseTenantId, ingestPosOrders, linkPosOrdersToCustomers } = deps;
+  const { pool, requirePhaseAuth, getPhaseTenantId } = deps;
 
   app.post('/api/growth/pos-orders', async (req, res) => {
     if (!requirePhaseAuth(req, res)) return;
@@ -102,5 +108,57 @@ export function registerGrowthPosRoutes(app, deps) {
     } catch (e) {
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
+  });
+
+  app.get('/api/growth/pos-stats', async (req, res) => {
+    if (!requirePhaseAuth(req, res)) return;
+    try {
+      const payload = await tenantContext.run(getPhaseTenantId(req), () =>
+        getPosStats(pool, req.query || {})
+      );
+      return res.json(payload);
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/growth/pos-feishu-config', async (req, res) => {
+    if (!requirePhaseAuth(req, res)) return;
+    const config = await getPosFeishuConfig(pool);
+    return res.json({ ok: true, config });
+  });
+
+  app.post('/api/growth/pos-feishu-config', async (req, res) => {
+    if (!requirePhaseAuth(req, res)) return;
+    try {
+      const config = await savePosFeishuConfig(pool, req.body || {});
+      return res.json({ ok: true, config });
+    } catch (e) {
+      if (e?.code === 'bad_request') return res.status(400).json({ ok: false, error: e.message });
+      return res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/growth/pos-feishu-sync', async (req, res) => {
+    const tenantId = getPhaseTenantId(req);
+    await tenantContext.run(tenantId, async () => {
+      if (!requirePhaseAuth(req, res)) return;
+      try {
+        const result = await syncPosFromFeishu(pool, tenantId, {
+          config: req.body?.config || null,
+        });
+        return res.json({ ok: true, ...result });
+      } catch (e) {
+        const mapped = mapFeishuSyncError(e);
+        return res.status(mapped.status).json(mapped.body);
+      }
+    });
+  });
+
+  app.post('/api/growth/snapshot/refresh', async (req, res) => {
+    if (!requirePhaseAuth(req, res)) return;
+    const days = clampSnapshotDays(req.body?.days);
+    const rows = await refreshSalesGrowthSnapshot(pool, days);
+    return res.json({ ok: true, rows_upserted: rows, days_covered: days });
   });
 }

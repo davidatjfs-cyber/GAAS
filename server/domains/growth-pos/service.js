@@ -1,6 +1,5 @@
 /**
- * POS 订单查询/上传薄路由（不含巨型 pos-stats / feishu-sync）。
- * ingest / link 仍由 growth-phases 注入，避免打断 customer-ops 对 ingestPosOrders 的依赖。
+ * POS 订单查询/列表薄服务（不含 feishu-sync / ingest，见 ingest.js、feishu-service.js）。
  */
 import { cleanText } from '../growth-phase-auth.js';
 
