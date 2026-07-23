@@ -44,6 +44,7 @@ import { registerPaymentRoutes } from './domains/payments/routes.js';
 import { registerPermissionGroupsRoutes } from './domains/permission-groups/routes.js';
 import { registerUploadRoutes } from './domains/uploads/routes.js';
 import { registerOpsTasksRoutes } from './domains/ops-tasks/routes.js';
+import { registerStoreDutyBindingsRoutes } from './domains/store-duty-bindings/routes.js';
 import { registerRemainingStateRoutes } from './domains/remaining-state/routes.js';
 import { registerGmMailboxRoutes } from './domains/gm-mailbox/routes.js';
 import {
@@ -2560,115 +2561,7 @@ app.get('/agent/tenant-operation-inspection', (req, res) => {
 // A2：GET/PUT /api/role-modules 唯一权威 = domains/flow-config（hr_rating_configs + state 镜像）
 // agent-config-manager 内影子路由已删除（勿再加 /api/admin/role-modules）
 
-app.get('/api/admin/store-duty-bindings', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
-  try {
-    await ensureStoreDutyBindingsReady();
-    const rows = await pool.query(
-      `SELECT id, username, store, access_level, is_primary_store,
-              can_receive_ops, can_receive_performance, can_receive_food_safety, can_receive_approval,
-              can_handle_ops, can_handle_food_safety, can_approve_hrms, can_view_employees,
-              enabled, effective_from, effective_to, metadata, updated_at
-         FROM store_duty_bindings
-        ORDER BY enabled DESC, username ASC, is_primary_store DESC, store ASC, id ASC`
-    );
-    return res.json({ items: rows.rows || [] });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-app.post('/api/admin/store-duty-bindings', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
-  try {
-    await ensureStoreDutyBindingsReady();
-    const body = req.body && typeof req.body === 'object' ? req.body : {};
-    const username = String(body.username || '').trim();
-    const store = String(body.store || '').trim();
-    if (!username || !store) return res.status(400).json({ error: 'missing_username_or_store' });
-    const bool = (key) => Boolean(body[key]);
-    const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
-    const result = await pool.query(
-      `INSERT INTO store_duty_bindings (
-          username, store, access_level, is_primary_store,
-          can_receive_ops, can_receive_performance, can_receive_food_safety, can_receive_approval,
-          can_handle_ops, can_handle_food_safety, can_approve_hrms, can_view_employees,
-          enabled, effective_from, effective_to, metadata, updated_at, tenant_id
-        ) VALUES (
-          $1, $2, $3, $4,
-          $5, $6, $7, $8,
-          $9, $10, $11, $12,
-          $13, NULLIF($14,'')::timestamptz, NULLIF($15,'')::timestamptz, $16::jsonb, now(), $17
-        )
-        ON CONFLICT (username, store, tenant_id) DO UPDATE SET
-          access_level = EXCLUDED.access_level,
-          is_primary_store = EXCLUDED.is_primary_store,
-          can_receive_ops = EXCLUDED.can_receive_ops,
-          can_receive_performance = EXCLUDED.can_receive_performance,
-          can_receive_food_safety = EXCLUDED.can_receive_food_safety,
-          can_receive_approval = EXCLUDED.can_receive_approval,
-          can_handle_ops = EXCLUDED.can_handle_ops,
-          can_handle_food_safety = EXCLUDED.can_handle_food_safety,
-          can_approve_hrms = EXCLUDED.can_approve_hrms,
-          can_view_employees = EXCLUDED.can_view_employees,
-          enabled = EXCLUDED.enabled,
-          effective_from = EXCLUDED.effective_from,
-          effective_to = EXCLUDED.effective_to,
-          metadata = EXCLUDED.metadata,
-          updated_at = now()
-        RETURNING *`,
-      [
-        username,
-        store,
-        String(body.access_level || 'support').trim() || 'support',
-        bool('is_primary_store'),
-        bool('can_receive_ops'),
-        bool('can_receive_performance'),
-        bool('can_receive_food_safety'),
-        bool('can_receive_approval'),
-        bool('can_handle_ops'),
-        bool('can_handle_food_safety'),
-        bool('can_approve_hrms'),
-        bool('can_view_employees'),
-        body.enabled !== false,
-        String(body.effective_from || '').trim(),
-        String(body.effective_to || '').trim(),
-        JSON.stringify(metadata),
-        req.tenantId || req.user?.tenant_id || 'default'
-      ]
-    );
-    if (bool('is_primary_store')) {
-      await pool.query(
-        `UPDATE store_duty_bindings
-            SET is_primary_store = false, updated_at = now()
-          WHERE lower(trim(username)) = lower(trim($1))
-            AND lower(trim(store)) <> lower(trim($2))
-            AND tenant_id = $3`,
-        [username, store, req.tenantId || req.user?.tenant_id || 'default']
-      );
-    }
-    return res.json({ item: result.rows?.[0] || null });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-app.delete('/api/admin/store-duty-bindings/:id', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
-  try {
-    await ensureStoreDutyBindingsReady();
-    const id = Number(req.params?.id || 0);
-    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'invalid_id' });
-    const result = await pool.query('DELETE FROM store_duty_bindings WHERE id = $1 RETURNING id', [id]);
-    if (!result.rowCount) return res.status(404).json({ error: 'not_found' });
-    return res.json({ ok: true });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
+// Wave 4k: /api/admin/store-duty-bindings* → domains/store-duty-bindings/routes.js
 
 // ─── Dedup Stats & Cleanup API ───────────────────────────────────────────────
 app.get('/api/dedup/stats', authRequired, async (req, res) => {
@@ -10351,6 +10244,8 @@ registerOpsTasksRoutes(app, authRequired, {
   normalizeOpsRole,
   buildOpsFeedback,
 });
+
+registerStoreDutyBindingsRoutes(app, authRequired, { pool });
 
 registerRemainingStateRoutes(app, authRequired, {
   pool,
