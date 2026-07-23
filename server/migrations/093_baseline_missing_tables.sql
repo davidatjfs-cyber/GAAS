@@ -9399,6 +9399,7 @@ CREATE POLICY tenant_isolation ON hrms_leave_domain USING (((tenant_id)::text = 
 -- Name: hrms_payroll_history tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
+DROP POLICY IF EXISTS tenant_isolation ON hrms_payroll_history;
 CREATE POLICY tenant_isolation ON hrms_payroll_history USING (((tenant_id)::text = current_setting('app.tenant_id'::text, true))) WITH CHECK (((tenant_id)::text = current_setting('app.tenant_id'::text, true)));
 
 --
