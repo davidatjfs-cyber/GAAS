@@ -66,6 +66,10 @@ import { registerBitableAdminRoutes } from './domains/bitable-admin/routes.js';
 import { registerPerfAdminRoutes } from './domains/perf-admin/routes.js';
 import { registerMetricsAdminRoutes } from './domains/metrics-admin/routes.js';
 import { registerDedupRoutes } from './domains/dedup/routes.js';
+import { registerAdminOpsRoutes } from './domains/admin-ops/routes.js';
+import { registerDiagnosisFeedbackRoutes } from './domains/diagnosis/routes.js';
+import { registerAgentDataRoutes } from './domains/agent-data/routes.js';
+import { registerFeishuWebhookRoutes } from './domains/feishu-webhook/routes.js';
 import {
 
 
@@ -2119,57 +2123,7 @@ try {
 
 // Wave 4p: bitable stats/archive → domains/bitable-admin/routes.js
 
-// ─── Agent API - 通用查询飞书多维表数据（已落库的 generic records）
-// H1-FIX: 添加认证保护
-app.get('/api/agent/feishu-table-data', authRequired, async (req, res) => {
-  try {
-    const appToken = String(req.query?.appToken || '').trim();
-    const tableId = String(req.query?.tableId || '').trim();
-    const q = String(req.query?.q || '').trim();
-    const limit = Math.min(Math.max(Number(req.query?.limit) || 100, 1), 500);
-    const offset = Math.max(Number(req.query?.offset) || 0, 0);
-
-    if (!appToken || !tableId) {
-      return res.status(400).json({ error: 'missing_params', message: 'appToken/tableId required' });
-    }
-
-    const where = ['app_token = $1', 'table_id = $2'];
-    const params = [appToken, tableId];
-    if (q) {
-      params.push(`%${q}%`);
-      where.push(`fields::text ilike $${params.length}`);
-    }
-    params.push(req.tenantId || req.user?.tenant_id || 'default');
-    where.push(`tenant_id = $${params.length}`);
-
-    const whereSql = where.length ? `where ${where.join(' and ')}` : '';
-
-    const countR = await pool.query(
-      `select count(*)::int as cnt from feishu_generic_records ${whereSql}`,
-      params
-    );
-    const total = Number(countR.rows?.[0]?.cnt || 0) || 0;
-
-    params.push(limit, offset);
-    const r = await pool.query(
-      `select app_token, table_id, record_id, fields, updated_at
-       from feishu_generic_records
-       ${whereSql}
-       order by updated_at desc
-       limit $${params.length - 1} offset $${params.length}`,
-      params
-    );
-
-    return res.json({
-      items: r.rows || [],
-      pagination: { limit, offset, total },
-      query: { appToken, tableId, q: q || '' }
-    });
-  } catch (e) {
-    console.error('[Agent Feishu Table Data] Error:', e);
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
+// Wave 4q: agent feishu-table-data → domains/agent-data/routes.js
 
 app.post('/api/ai/chat-completions', authRequired, async (req, res) => {
   const username = String(req.user?.username || '').trim();
@@ -6577,119 +6531,13 @@ function startOpsTaskScheduler() {
 
 // Wave 4j: /api/ops/tasks* → domains/ops-tasks/routes.js
 
-app.post('/api/admin/reconcile-daily-attendance-register-from-pg', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!canAccessDailyAttendanceRegister(role)) return res.status(403).json({ error: 'forbidden' });
-  if (!pool) return res.status(503).json({ error: 'database_unavailable' });
-
-  const maxRows = Math.min(5000, Math.max(1, Number(req.body?.maxRows) || 1500));
-  const start = safeDateOnly(req.body?.start);
-  const end = safeDateOnly(req.body?.end);
-  const store = String(req.body?.store || '').trim();
-
-  try {
-    const refreshExisting = !!req.body?.refreshExisting;
-    const out = await backfillDailyAttendanceRegisterMissing(pool, {
-      maxRows,
-      start,
-      end,
-      store,
-      refreshExisting,
-      tenantId: req.tenantId || req.user?.tenant_id || 'default'
-    });
-    return res.json({ ok: true, refreshExisting, ...out });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-// 管理端：重算指定「已闭合月份」的累计假期闭合快照（覆盖 system_month_close，保留人工 manual_carryover）。
-// 用途：累计假期公式修复后，旧公式在月初锁定的快照仍会被 getLockedOpeningCarryForMonth 取用，需刷新。
-app.post('/api/admin/leave-close-snapshot/recompute', authRequired, async (req, res) => {
-  if (String(req.user?.role || '') !== 'admin') return res.status(403).json({ error: 'admin_only' });
-  const month = safeMonthOnly(req.body?.month || '');
-  if (!month) return res.status(400).json({ error: 'missing_month' });
-  try {
-    const r = await runLeaveCumulativeCloseSnapshotForClosedMonth(month);
-    return res.json(r);
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: safeErrMessage(e) });
-  }
-});
-
+// Wave 4q: admin reconcile/leave-close → domains/admin-ops/routes.js
 
 // Wave 4p: metrics admin → domains/metrics-admin/routes.js
 
-// ─── P1B: Diagnosis 反馈 API ───
-app.post('/api/agent/diagnosis-feedback', authRequired, async (req, res) => {
-  const userKey = String(req.user?.username || '').toLowerCase();
-  const { task_id, feedback, feedback_note } = req.body || {};
-  if (!task_id || feedback === undefined) return res.status(400).json({ error: 'missing task_id or feedback' });
-  const fb = Number(feedback);
-  if (fb !== 0 && fb !== 1) return res.status(400).json({ error: 'feedback must be 0 or 1' });
-  try {
-    const updated = await pool.query(
-      `UPDATE diagnosis_feedback
-       SET feedback = $1, feedback_note = $2, updated_at = NOW()
-       WHERE task_id = $3 AND user_key = $4 AND tenant_id = $5
-       RETURNING id, trace_id, diagnosis, query_text`,
-      [fb, String(feedback_note || '').slice(0, 500), task_id, userKey, req.tenantId]
-    );
-    const row = updated.rows[0];
-    if (!row) return res.status(404).json({ error: 'diagnosis_not_found' });
-    if (row.trace_id) {
-      await recordAiFeedback(pool, {
-        traceId: row.trace_id,
-        actorId: userKey,
-        feedbackType: 'user_rating',
-        rating: fb === 1 ? 1 : -1,
-        note: feedback_note,
-        input: row.query_text || task_id,
-        output: row.diagnosis,
-        idempotencyKey: `diagnosis:${row.id}`,
-        tenantId: req.tenantId,
-      });
-    }
-    return res.json({ ok: true });
-  } catch (e) {
-    return res.status(500).json({ error: e?.message });
-  }
-});
+// Wave 4q: diagnosis feedback/stats → domains/diagnosis/routes.js
 
-app.get('/api/admin/diagnosis-stats', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-  try {
-    const r = await pool.query(`
-      SELECT
-        COUNT(*) AS total,
-        COUNT(feedback) AS rated,
-        ROUND(AVG(CASE WHEN feedback = 1 THEN 100.0 ELSE 0 END), 1) AS like_rate_pct,
-        ROUND(AVG(char_count), 0) AS avg_char_count,
-        ROUND(AVG(metric_count), 1) AS avg_metric_count
-      FROM diagnosis_feedback
-      WHERE created_at > NOW() - INTERVAL '30 days' AND tenant_id = $1
-    `, [req.tenantId]);
-    return res.json(r.rows[0]);
-  } catch (e) {
-    return res.status(500).json({ error: e?.message });
-  }
-});
-
-
-/** 手动触发 sales_raw 目录扫描（需配置 SALES_RAW_IMPORT_DIR） */
-app.post('/api/admin/sales-raw/run-folder-import', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (role !== 'admin') return res.status(403).json({ error: 'forbidden' });
-  try {
-    const r = await runSalesRawFolderImportOnce();
-    return res.json(r);
-  } catch (e) {
-    void notifyAdminsDualWriteFailure('sales_raw（管理员触发目录导入抛错）', e);
-    return res.status(500).json({ error: 'internal_error' });
-  }
-});
-
+// Wave 4q: sales-raw folder import → domains/admin-ops/routes.js
 
 function normalizeStoreKey(v) {
   return String(v || '').trim().toLowerCase().replace(/\s+/g, '');
@@ -8002,31 +7850,7 @@ app.get('/api/state', authRequired, async (req, res) => {
   }
 });
 
-/** 管理员查看某账号当前登录密码明文（优先 employees 表，其次 state 镜像）。 */
-app.get('/api/admin/employee-password/:username', authRequired, async (req, res) => {
-  if (normalizeRoleForJwt(String(req.user?.role || '')) !== 'admin') {
-    return res.status(403).json({ error: 'forbidden', message: '仅系统管理员可查看密码' });
-  }
-  const un = String(req.params.username || '').trim().toLowerCase();
-  if (!un) return res.status(400).json({ error: 'missing_username' });
-  try {
-    const tid = req.tenantId || req.user?.tenant_id || 'default';
-    const tableEmps = await loadEmployeesFromTable(pool, tid);
-    const emp = tableEmps.find((e) => String(e?.username || '').trim().toLowerCase() === un);
-    if (emp) {
-      return res.json({ username: String(req.params.username || '').trim(), password: String(emp.password || '').trim() });
-    }
-    const state = (await getSharedState(tid)) || {};
-    const employees = Array.isArray(state.employees) ? state.employees : [];
-    const users = Array.isArray(state.users) ? state.users : [];
-    const empS = employees.find((e) => String(e?.username || '').trim().toLowerCase() === un);
-    const usr = users.find((u) => String(u?.username || '').trim().toLowerCase() === un);
-    const password = String(empS?.password ?? usr?.password ?? '').trim();
-    return res.json({ username: String(req.params.username || '').trim(), password });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
+// Wave 4q: employee-password → domains/admin-ops/routes.js
 
 app.put('/api/state', authRequired, async (req, res) => {
   if (String(req.user?.role || '') !== 'admin') {
@@ -8343,647 +8167,13 @@ async function storeSessionNonce(uname, nonce, tenantId) {
 
 // Wave 4p: rag + getKnowledgeViewerProfile → domains/rag/*
 
-// ─── 飞书Webhook接收端点 ───────────────────────────────────────────────
-
-app.post('/api/webhook/feishu', express.raw({ type: 'application/json' }), async (req, res) => {
-  if (!isWebhookEnabled()) return res.status(404).send('Not found');
-  console.log('[Feishu Webhook] Received request:', req.headers['x-lark-request-timestamp']);
-  
-  try {
-    const body = req.body;
-    const rawBuf = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body || {}), 'utf8');
-    const rawText = rawBuf.toString('utf8');
-    let data = tryParseJson(rawText) || (body && typeof body === 'object' ? body : null);
-    if (!data) {
-      return res.status(400).json({ code: 400, message: 'invalid_json' });
-    }
-
-    const encryptKey = String(process.env.FEISHU_ENCRYPT_KEY || process.env.LARK_ENCRYPT_KEY || '').trim();
-    const verificationToken = String(process.env.FEISHU_VERIFICATION_TOKEN || process.env.LARK_VERIFICATION_TOKEN || '').trim();
-    const sigCheck = verifyFeishuWebhookRequest({
-      headers: req.headers,
-      rawBody: rawBuf,
-      parsedBody: data,
-      encryptKey,
-      verificationToken,
-      requireSignature: requireWebhookSignature(),
-    });
-    if (!sigCheck.ok) {
-      console.warn('[Feishu Webhook] signature/token rejected:', sigCheck.reason);
-      return res.status(401).json({ code: 401, message: sigCheck.reason || 'unauthorized' });
-    }
-    if (sigCheck.mode === 'skipped' && requireWebhookSignature() === false && (encryptKey || verificationToken)) {
-      // 非强制模式：有密钥但未带签名时仅告警，保持现网兼容
-      if (!req.headers['x-lark-signature']) {
-        console.warn('[Feishu Webhook] signature skipped (REQUIRE_WEBHOOK_SIGNATURE!=true)');
-      }
-    }
-
-    // Decrypt encrypted payload if present
-    if (data.encrypt) {
-      try {
-        const decrypted = decryptFeishuEncryptPayload(data.encrypt);
-        const parsed = tryParseJson(decrypted);
-        if (parsed) data = parsed;
-      } catch (e) {
-        console.error('[Feishu Webhook] decrypt failed:', e?.message || e);
-        return res.status(400).json({ code: 400, message: 'decrypt_failed' });
-      }
-    }
-
-    // 解密后再校验 Verification Token（加密包场景）
-    if (verificationToken && requireWebhookSignature()) {
-      const tokenAfter = String(data?.token || data?.header?.token || '').trim();
-      if (tokenAfter && tokenAfter !== verificationToken) {
-        return res.status(401).json({ code: 401, message: 'bad_verification_token' });
-      }
-    }
-    
-    // URL验证模式（飞书首次配置webhook时）
-    if (data.type === 'url_verification') {
-      console.log('[Feishu Webhook] URL verification challenge:', data.challenge);
-      return res.json({ challenge: data.challenge });
-    }
-    
-    // 处理业务数据变更事件
-    if (data.header?.event_type === 'bitable.record.changed') {
-      // webhook 无 JWT/ALS 租户上下文，通过 app_token 反查 tenant_id（5分钟缓存）。
-      // 新租户只需在 tenant_integrations 配置 feishu_bitable，无需改代码。
-      const event = data.event;
-      const webhookTenantId = await resolveWebhookTenantId(event?.app_token).catch(() => 'default');
-      return await tenantContext.run(webhookTenantId, async () => {
-      const logId = randomUUID();
-
-      // 记录同步日志
-      await pool.query(
-        `insert into feishu_sync_logs (id, event_type, table_id, record_id, data, sync_status, tenant_id)
-         values ($1, $2, $3, $4, $5, 'pending', $6)`,
-        [logId, data.header.event_type, event.app_token, event.record_id, event, webhookTenantId]
-      );
-
-      // 异步处理数据同步
-      setImmediate(async () => {
-        try {
-          await processFeishuDataChange(event, logId);
-        } catch (error) {
-          console.error('[Feishu Webhook] Async processing error:', error);
-          await pool.query(
-            'update feishu_sync_logs set sync_status = $1, error_message = $2, processed_at = now() where id = $3',
-            ['failed', safeErrMessage(error), logId]
-          );
-          void notifyAdminsDualWriteFailure('飞书 Webhook → DB（bitable.record.changed 异步处理失败）', error);
-        }
-      });
-
-      return res.json({ code: 0, message: 'success' });
-      });
-    }
-
-    // Forward all non-bitable events to agents handler (bot replies, card actions, etc.)
-    try {
-      const resp = await onFeishuEvent(data);
-      return res.json(resp || { ok: true });
-    } catch (e) {
-      console.error('[Feishu Webhook] onFeishuEvent error:', e?.message || e);
-      return res.status(500).json({ code: 500, message: 'agent_error' });
-    }
-    
-    // 其他事件类型
-    console.log('[Feishu Webhook] Unhandled event type:', data.header?.event_type);
-    return res.json({ code: 0, message: 'ignored' });
-    
-  } catch (error) {
-    console.error('[Feishu Webhook] Error:', error);
-    return res.status(500).json({ code: 500, message: 'internal error' });
-  }
-});
-
-// 处理飞书数据变更
-async function processFeishuDataChange(event, logId) {
-  try {
-    // 租户感知：tenant 由外层 tenantContext.run(webhookTenantId, ...) 设置。
-    const tenantId = resolveTenantIdDefault();
-    const tenantCfg = await loadTenantFeishuBitableConfig(tenantId).catch(() => null);
-    // 优先用租户专属凭证，无租户配置时回退到全局环境变量（兜底'default'）。
-    const accessToken = tenantCfg?.app_id
-      ? await getFeishuTokenByConfig({ app_id: tenantCfg.app_id, app_secret: tenantCfg.app_secret }).catch(() => getFeishuAccessToken())
-      : await getFeishuAccessToken();
-    const appToken = event.app_token;
-    const tableId = event.table_id;
-    const recordId = event.record_id;
-
-    // 获取记录详情
-    const recordData = await getFeishuBitableData(appToken, tableId, accessToken);
-    const record = recordData.items?.find(item => item.record_id === recordId);
-
-    if (!record) {
-      throw new Error('Record not found in Feishu');
-    }
-
-    // Always upsert raw record into generic storage with configKey
-    try {
-      const configKey = findConfigKeyByTableInfo(appToken, tableId);
-      await upsertFeishuGenericRecord({ appToken, tableId, record, configKey });
-    } catch (e) {
-      console.log('[processFeishuDataChange] generic upsert failed:', e?.message || e);
-      void notifyAdminsDualWriteFailure(
-        `飞书 Webhook → feishu_generic_records（table ${String(tableId || '').slice(0, 16)} record ${String(recordId || '').slice(0, 24)}）`,
-        e
-      );
-    }
-
-    // 桌访表：从租户配置取 table_id，回退到默认值（默认租户历史值）。
-    const tableVisitTableId = tenantCfg?.tables?.table_visit?.table_id || 'tblpx5Efqc6eHo3L';
-    const isTableVisit = String(tableId || '').trim() === tableVisitTableId;
-    if (!isTableVisit) {
-      await pool.query(
-        'update feishu_sync_logs set sync_status = $1, processed_at = now() where id = $2',
-        ['success', logId]
-      );
-      return;
-    }
-    
-    // 根据表格类型处理数据
-    const hrmsData = mapFeishuFieldToHrms(record, 'table_visit');
-    
-    // 存储到HRMS系统（这里以桌访记录为例）
-    if (hrmsData.date && hrmsData.store) {
-      await pool.query(
-        `insert into table_visit_records (
-          date, store, brand, table_number, guest_count, amount, 
-          has_reservation, dissatisfaction_dish, feedback,
-          reservation_time, customer_type, order_type, service_rating, food_rating, environment_rating,
-          waiter_name, promotion_info, weather, peak_hours, customer_complaint, complaint_resolution,
-          satisfaction_level, repeat_customer, special_requests, payment_method, order_duration,
-          table_turnover, dish_recommendations, allergic_info, celebration_type, visit_purpose,
-          companion_info, customer_age, customer_gender, visit_frequency, preferred_dishes,
-          unsatisfied_items, suggested_improvements, staff_performance, facility_issues,
-          hygiene_rating, value_rating, ambiance_rating, noise_level, temperature,
-          lighting, music_volume, seating_comfort, queue_time, service_speed, order_accuracy,
-          staff_attitude, problem_resolution, manager_intervention, compensation_provided,
-          follow_up_required, follow_up_details, additional_notes,
-          rush_dish_content,
-          feishu_record_id, created_at
-        ) values (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-          $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-          $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-          $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
-          $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-          $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, now()
-        ) on conflict (feishu_record_id) do update set
-          date = excluded.date,
-          store = excluded.store,
-          brand = excluded.brand,
-          table_number = excluded.table_number,
-          guest_count = excluded.guest_count,
-          amount = excluded.amount,
-          has_reservation = excluded.has_reservation,
-          dissatisfaction_dish = excluded.dissatisfaction_dish,
-          feedback = excluded.feedback,
-          reservation_time = excluded.reservation_time,
-          customer_type = excluded.customer_type,
-          order_type = excluded.order_type,
-          service_rating = excluded.service_rating,
-          food_rating = excluded.food_rating,
-          environment_rating = excluded.environment_rating,
-          waiter_name = excluded.waiter_name,
-          promotion_info = excluded.promotion_info,
-          weather = excluded.weather,
-          peak_hours = excluded.peak_hours,
-          customer_complaint = excluded.customer_complaint,
-          complaint_resolution = excluded.complaint_resolution,
-          satisfaction_level = excluded.satisfaction_level,
-          repeat_customer = excluded.repeat_customer,
-          special_requests = excluded.special_requests,
-          payment_method = excluded.payment_method,
-          order_duration = excluded.order_duration,
-          table_turnover = excluded.table_turnover,
-          dish_recommendations = excluded.dish_recommendations,
-          allergic_info = excluded.allergic_info,
-          celebration_type = excluded.celebration_type,
-          visit_purpose = excluded.visit_purpose,
-          companion_info = excluded.companion_info,
-          customer_age = excluded.customer_age,
-          customer_gender = excluded.customer_gender,
-          visit_frequency = excluded.visit_frequency,
-          preferred_dishes = excluded.preferred_dishes,
-          unsatisfied_items = excluded.unsatisfied_items,
-          suggested_improvements = excluded.suggested_improvements,
-          staff_performance = excluded.staff_performance,
-          facility_issues = excluded.facility_issues,
-          hygiene_rating = excluded.hygiene_rating,
-          value_rating = excluded.value_rating,
-          ambiance_rating = excluded.ambiance_rating,
-          noise_level = excluded.noise_level,
-          temperature = excluded.temperature,
-          lighting = excluded.lighting,
-          music_volume = excluded.music_volume,
-          seating_comfort = excluded.seating_comfort,
-          queue_time = excluded.queue_time,
-          service_speed = excluded.service_speed,
-          order_accuracy = excluded.order_accuracy,
-          staff_attitude = excluded.staff_attitude,
-          problem_resolution = excluded.problem_resolution,
-          manager_intervention = excluded.manager_intervention,
-          compensation_provided = excluded.compensation_provided,
-          follow_up_required = excluded.follow_up_required,
-          follow_up_details = excluded.follow_up_details,
-          additional_notes = excluded.additional_notes,
-          rush_dish_content = excluded.rush_dish_content,
-          updated_at = now()`,
-        [
-          hrmsData.date, hrmsData.store, hrmsData.brand, hrmsData.tableNumber,
-          hrmsData.guestCount, hrmsData.amount, hrmsData.hasReservation,
-          hrmsData.dissatisfactionDish, hrmsData.feedback,
-          hrmsData.reservationTime ? hrmsData.reservationTime.replace(/^(\d{1,2}):(\d{1,2})$/, '$1:$2:00') : null,
-          hrmsData.customerType, hrmsData.orderType,
-          hrmsData.serviceRating, hrmsData.foodRating, hrmsData.environmentRating,
-          hrmsData.waiterName, hrmsData.promotionInfo, hrmsData.weather, hrmsData.peakHours,
-          hrmsData.customerComplaint, hrmsData.complaintResolution, hrmsData.satisfactionLevel,
-          hrmsData.repeatCustomer, hrmsData.specialRequests, hrmsData.paymentMethod,
-          hrmsData.orderDuration, hrmsData.tableTurnover, hrmsData.dishRecommendations,
-          hrmsData.allergicInfo, hrmsData.celebrationType, hrmsData.visitPurpose,
-          hrmsData.companionInfo, hrmsData.customerAge, hrmsData.customerGender,
-          hrmsData.visitFrequency, hrmsData.preferredDishes, hrmsData.unsatisfiedItems,
-          hrmsData.suggestedImprovements, hrmsData.staffPerformance, hrmsData.facilityIssues,
-          hrmsData.hygieneRating, hrmsData.valueRating, hrmsData.ambianceRating,
-          hrmsData.noiseLevel, hrmsData.temperature, hrmsData.lighting,
-          hrmsData.musicVolume, hrmsData.seatingComfort, hrmsData.queueTime,
-          hrmsData.serviceSpeed, hrmsData.orderAccuracy, hrmsData.staffAttitude,
-          hrmsData.problemResolution, hrmsData.managerIntervention, hrmsData.compensationProvided,
-          hrmsData.followUpRequired, hrmsData.followUpDetails, hrmsData.additionalNotes,
-          hrmsData.rushDishContent || null,
-          hrmsData.recordId
-        ]
-      );
-      
-      // 更新同步状态
-      await pool.query(
-        'update feishu_sync_logs set sync_status = $1, processed_at = now() where id = $2',
-        ['success', logId]
-      );
-      
-      console.log('[Feishu Webhook] Data synced successfully:', hrmsData.recordId);
-    } else {
-      throw new Error('Missing required fields: date or store');
-    }
-    
-  } catch (error) {
-    await pool.query(
-      'update feishu_sync_logs set sync_status = $1, error_message = $2, processed_at = now() where id = $3',
-      ['failed', safeErrMessage(error), logId]
-    );
-    throw error;
-  }
-}
+// Wave 4q: feishu webhook + processFeishuDataChange → domains/feishu-webhook/*
 
 // Wave 4p: feishu sync HTTP + runManualFeishuBitableSync → domains/feishu-sync/*
 
-app.post('/api/admin/system-alert/test', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
+// Wave 4q: system-alert test → domains/admin-ops/routes.js
 
-  try {
-    const targetUsername = String(req.body?.username || '').trim();
-    if (!targetUsername) return res.status(400).json({ error: 'missing_username' });
-
-    const targetR = await pool.query(
-      `SELECT username, role
-       FROM users
-       WHERE lower(username) = lower($1)
-         AND role IN ('admin','hq_manager','hr_manager')
-       LIMIT 1`,
-      [targetUsername]
-    );
-    const target = targetR.rows?.[0] || null;
-    if (!target) return res.status(400).json({ error: 'target_user_not_admin' });
-
-    const message = String(
-      req.body?.message ||
-      `🧪 [HRMS] 管理员单人告警测试\n目标账号：${target.username}\n时间：${hrmsNowISO()}\n说明：用于验证飞书告警与 HRMS 公司通知链路是否同时生效。`
-    ).trim();
-
-    const result = await sendAdminSystemAlert(message, {
-      usernames: [target.username],
-      persistToHrms: true,
-      notificationType: 'system_alert_test',
-      meta: {
-        test: true,
-        createdBy: String(req.user?.username || '')
-      }
-    });
-    return res.json({ ok: true, ...result, targetUsername: target.username });
-  } catch (error) {
-    console.error('[admin system alert test] Error:', error);
-    return res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
-  }
-});
-
-// Agent/API: 直接写入飞书多维表格（单条或批量）
-app.post('/api/agent/feishu-table-write', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager', 'store_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-
-  try {
-    const { appToken, tableId, appId, appSecret, fields, records } = req.body || {};
-    if (!appToken || !tableId) {
-      return res.status(400).json({ error: 'missing_app_token_or_table_id' });
-    }
-
-    const items = Array.isArray(records)
-      ? records
-      : (fields && typeof fields === 'object' ? [fields] : []);
-
-    if (!items.length) {
-      return res.status(400).json({ error: 'missing_fields_or_records' });
-    }
-    if (items.length > 50) {
-      return res.status(400).json({ error: 'too_many_records', message: 'max 50 records per request' });
-    }
-
-    const accessToken = await getFeishuAccessToken({ appId, appSecret });
-    const createdRecordIds = [];
-    const failedDetails = [];
-
-    for (let i = 0; i < items.length; i++) {
-      const row = items[i];
-      try {
-        if (!row || typeof row !== 'object' || Array.isArray(row)) {
-          throw new Error('invalid_fields');
-        }
-
-        const created = await createFeishuBitableRecord({
-          appToken,
-          tableId,
-          fields: row,
-          accessToken
-        });
-
-        if (created?.record_id) {
-          createdRecordIds.push(created.record_id);
-        }
-
-        try {
-          if (created) {
-            const configKey = findConfigKeyByTableInfo(appToken, tableId);
-            await upsertFeishuGenericRecord({ appToken, tableId, record: created, configKey });
-          }
-        } catch (e) {
-          // best effort local mirror; should not fail write call
-        }
-      } catch (err) {
-        failedDetails.push({
-          index: i,
-          error: err?.message || String(err)
-        });
-      }
-    }
-
-    return res.json({
-      success: true,
-      total: items.length,
-      created: createdRecordIds.length,
-      failed: failedDetails.length,
-      recordIds: createdRecordIds,
-      failedDetails
-    });
-  } catch (error) {
-    console.error('[Agent Feishu Table Write] Error:', error);
-    return res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
-  }
-});
-
-// Agent API - 查询桌访记录数据
-// H1-FIX: 添加认证保护
-app.get('/api/agent/table-visit-data', authRequired, async (req, res) => {
-  try {
-    const { 
-      startDate, 
-      endDate, 
-      store, 
-      satisfactionLevel, 
-      minRating, 
-      maxRating,
-      limit = 100,
-      offset = 0
-    } = req.query;
-    
-    let conditions = [];
-    let params = [];
-    let idx = 1;
-    
-    // 日期范围过滤
-    if (startDate) {
-      conditions.push(`date >= $${idx}::date`);
-      params.push(startDate);
-      idx++;
-    }
-    if (endDate) {
-      conditions.push(`date <= $${idx}::date`);
-      params.push(endDate);
-      idx++;
-    }
-    
-    // 门店过滤
-    if (store) {
-      conditions.push(`store = $${idx}`);
-      params.push(store);
-      idx++;
-    }
-    
-    // 满意度等级过滤
-    if (satisfactionLevel) {
-      conditions.push(`satisfaction_level = $${idx}`);
-      params.push(satisfactionLevel);
-      idx++;
-    }
-    
-    // 评分范围过滤
-    if (minRating) {
-      conditions.push(`service_rating >= $${idx} AND food_rating >= $${idx} AND environment_rating >= $${idx}`);
-      params.push(parseInt(minRating, 10));
-      idx++;
-    }
-    if (maxRating) {
-      conditions.push(`service_rating <= $${idx} AND food_rating <= $${idx} AND environment_rating <= $${idx}`);
-      params.push(parseInt(maxRating, 10));
-      idx++;
-    }
-    
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const baseCond = conditions.length > 0 ? conditions.join(' AND ') : 'TRUE';
-    const _whereWithSatisfaction = `WHERE ${baseCond} AND satisfaction_level IS NOT NULL AND satisfaction_level != ''`;
-    const _whereWithWeather = `WHERE ${baseCond} AND weather IS NOT NULL AND weather != ''`;
-    const limitClause = `LIMIT ${Math.min(parseInt(limit, 10) || 100, 1000)} OFFSET ${Math.max(parseInt(offset, 10) || 0, 0)}`;
-    
-    const query = `
-      SELECT 
-        id, date, store, brand, table_number, guest_count, amount,
-        has_reservation, dissatisfaction_dish, feedback,
-        reservation_time, customer_type, order_type,
-        service_rating, food_rating, environment_rating,
-        waiter_name, promotion_info, weather, peak_hours,
-        customer_complaint, complaint_resolution, satisfaction_level,
-        repeat_customer, special_requests, payment_method,
-        order_duration, table_turnover, dish_recommendations,
-        allergic_info, celebration_type, visit_purpose,
-        companion_info, customer_age, customer_gender,
-        visit_frequency, preferred_dishes, unsatisfied_items,
-        suggested_improvements, staff_performance, facility_issues,
-        hygiene_rating, value_rating, ambiance_rating,
-        noise_level, temperature, lighting, music_volume,
-        seating_comfort, queue_time, service_speed,
-        order_accuracy, staff_attitude, problem_resolution,
-        manager_intervention, compensation_provided,
-        follow_up_required, follow_up_details, additional_notes,
-        feishu_record_id, created_at, updated_at
-      FROM table_visit_records 
-      ${whereClause}
-      ORDER BY date DESC, created_at DESC
-      ${limitClause}
-    `;
-    
-    const result = await pool.query(query, params);
-    
-    // 返回统计信息
-    const statsQuery = `
-      SELECT 
-        COUNT(*) as total_records,
-        COUNT(CASE WHEN dissatisfaction_dish IS NOT NULL AND dissatisfaction_dish != '' THEN 1 END) as complaints,
-        COUNT(CASE WHEN customer_complaint IS NOT NULL AND customer_complaint != '' THEN 1 END) as serious_complaints,
-        AVG(service_rating) as avg_service_rating,
-        AVG(food_rating) as avg_food_rating,
-        AVG(environment_rating) as avg_environment_rating,
-        AVG(amount) as avg_amount,
-        SUM(guest_count) as total_guests
-      FROM table_visit_records 
-      ${whereClause}
-    `;
-    
-    const statsResult = await pool.query(statsQuery, params);
-    
-    res.json({
-      success: true,
-      data: result.rows,
-      stats: statsResult.rows[0] || {},
-      pagination: {
-        limit: parseInt(limit, 10) || 100,
-        offset: parseInt(offset, 10) || 0,
-        total: result.rowCount
-      }
-    });
-    
-  } catch (error) {
-    console.error('[Agent Table Visit Data] Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'server_error', 
-      message: safeErrMessage(error) 
-    });
-  }
-});
-
-// Agent API - 获取桌访数据统计摘要
-// H1-FIX: 添加认证保护
-app.get('/api/agent/table-visit-summary', authRequired, async (req, res) => {
-  try {
-    const { startDate, endDate, store } = req.query;
-    
-    let conditions = [];
-    let params = [];
-    let idx = 1;
-    
-    if (startDate) {
-      conditions.push(`date >= $${idx}::date`);
-      params.push(startDate);
-      idx++;
-    }
-    if (endDate) {
-      conditions.push(`date <= $${idx}::date`);
-      params.push(endDate);
-      idx++;
-    }
-    if (store) {
-      conditions.push(`store = $${idx}`);
-      params.push(store);
-      idx++;
-    }
-    
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    
-    const query = `
-      SELECT 
-        COUNT(*) as total_visits,
-        COUNT(DISTINCT date) as active_days,
-        COUNT(DISTINCT store) as active_stores,
-        SUM(guest_count) as total_guests,
-        SUM(amount) as total_revenue,
-        AVG(amount) as avg_amount_per_visit,
-        AVG(guest_count) as avg_guests_per_visit,
-        COUNT(CASE WHEN has_reservation THEN 1 END) as reservation_count,
-        COUNT(CASE WHEN dissatisfaction_dish IS NOT NULL AND dissatisfaction_dish != '' THEN 1 END) as dish_complaints,
-        COUNT(CASE WHEN customer_complaint IS NOT NULL AND customer_complaint != '' THEN 1 END) as customer_complaints,
-        COUNT(CASE WHEN repeat_customer THEN 1 END) as repeat_customers,
-        AVG(service_rating) as avg_service_rating,
-        AVG(food_rating) as avg_food_rating,
-        AVG(environment_rating) as avg_environment_rating,
-        AVG(hygiene_rating) as avg_hygiene_rating,
-        AVG(value_rating) as avg_value_rating,
-        AVG(ambiance_rating) as avg_ambiance_rating,
-        COUNT(CASE WHEN manager_intervention THEN 1 END) as manager_interventions,
-        COUNT(CASE WHEN follow_up_required THEN 1 END) as follow_ups_required
-      FROM table_visit_records 
-      ${whereClause}
-    `;
-    
-    const result = await pool.query(query, params);
-    
-    // 满意度分布
-    const satisfactionQuery = `
-      SELECT satisfaction_level, COUNT(*) as count
-      FROM table_visit_records 
-      ${whereWithSatisfaction}
-      GROUP BY satisfaction_level
-      ORDER BY count DESC
-    `;
-    
-    const satisfactionResult = await pool.query(satisfactionQuery, params);
-    
-    // 天气影响分析
-    const weatherQuery = `
-      SELECT weather, 
-             COUNT(*) as visits,
-             AVG(amount) as avg_amount,
-             AVG(service_rating) as avg_service_rating
-      FROM table_visit_records 
-      ${whereWithWeather}
-      GROUP BY weather
-      ORDER BY visits DESC
-    `;
-    
-    const weatherResult = await pool.query(weatherQuery, params);
-    
-    res.json({
-      success: true,
-      summary: result.rows[0] || {},
-      satisfaction_distribution: satisfactionResult.rows || [],
-      weather_impact: weatherResult.rows || []
-    });
-    
-  } catch (error) {
-    console.error('[Agent Table Visit Summary] Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'server_error', 
-      message: safeErrMessage(error) 
-    });
-  }
-});
+// Wave 4q: feishu-table-write + table-visit → domains/agent-data/routes.js
 
 // ── Multi-Agent Routes ──
 // ─── Training APIs：batch 已迁入 domains/training/routes-batch-tasks.js（Wave 4e）───
@@ -9283,6 +8473,63 @@ registerMetricsAdminRoutes(app, authRequired, {
 });
 
 registerDedupRoutes(app, authRequired, { pool });
+
+registerAdminOpsRoutes(app, authRequired, {
+  pool,
+  canAccessDailyAttendanceRegister,
+  safeDateOnly,
+  safeMonthOnly,
+  safeErrMessage,
+  backfillDailyAttendanceRegisterMissing,
+  runLeaveCumulativeCloseSnapshotForClosedMonth,
+  runSalesRawFolderImportOnce,
+  notifyAdminsDualWriteFailure,
+  normalizeRoleForJwt,
+  loadEmployeesFromTable,
+  getSharedState,
+  sendAdminSystemAlert,
+  hrmsNowISO,
+});
+
+registerDiagnosisFeedbackRoutes(app, authRequired, {
+  pool,
+  recordAiFeedback,
+});
+
+registerAgentDataRoutes(app, authRequired, {
+  pool,
+  safeErrMessage,
+  getFeishuAccessToken,
+  createFeishuBitableRecord,
+  findConfigKeyByTableInfo,
+  upsertFeishuGenericRecord,
+  getFeishuBitableData,
+  mapFeishuFieldToHrms,
+});
+
+registerFeishuWebhookRoutes(app, {
+  express,
+  pool,
+  isWebhookEnabled,
+  tryParseJson,
+  verifyFeishuWebhookRequest,
+  requireWebhookSignature,
+  decryptFeishuEncryptPayload,
+  resolveWebhookTenantId,
+  tenantContext,
+  randomUUID,
+  safeErrMessage,
+  notifyAdminsDualWriteFailure,
+  onFeishuEvent,
+  resolveTenantIdDefault,
+  loadTenantFeishuBitableConfig,
+  getFeishuTokenByConfig,
+  getFeishuAccessToken,
+  getFeishuBitableData,
+  findConfigKeyByTableInfo,
+  upsertFeishuGenericRecord,
+  mapFeishuFieldToHrms,
+});
 
 registerRemainingStateRoutes(app, authRequired, {
   pool,
