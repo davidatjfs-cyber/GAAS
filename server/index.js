@@ -13499,7 +13499,6 @@ registerApprovalDecideRoutes(app, authRequired, {
   makeNotif,
   appendNotifications,
   getSharedState,
-  saveSharedState,
   mergeSharedStateFields,
   stateFindUserRecord,
   uniqUsernames,
