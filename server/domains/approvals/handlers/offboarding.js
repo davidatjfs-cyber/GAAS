@@ -19,7 +19,6 @@ export async function beforeUpdate(ctx) {
 
 export async function afterDecide(ctx) {
   const {
-    req,
     deps,
     updated,
     nextAssignee,

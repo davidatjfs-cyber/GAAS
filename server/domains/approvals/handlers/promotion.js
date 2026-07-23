@@ -1,6 +1,5 @@
 export async function beforeUpdate(ctx) {
   const {
-    req,
     res,
     row,
     role,
