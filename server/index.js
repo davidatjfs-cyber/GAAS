@@ -58,6 +58,14 @@ import { registerUsageWeeklyRoutes } from './domains/usage-weekly/routes.js';
 import { registerWecomCallbackRoutes } from './domains/wecom/routes-callback.js';
 import { registerPromotionTracksRoutes } from './domains/promotion/routes-tracks.js';
 import { registerBitableSyncRoutes } from './domains/bitable-sync/routes.js';
+import { registerRagRoutes } from './domains/rag/routes.js';
+import { getKnowledgeViewerProfile as getKnowledgeViewerProfileFromDomain } from './domains/rag/profile.js';
+import { registerFeishuSyncRoutes } from './domains/feishu-sync/routes.js';
+import { runManualFeishuBitableSync } from './domains/feishu-sync/manual-bitable-sync.js';
+import { registerBitableAdminRoutes } from './domains/bitable-admin/routes.js';
+import { registerPerfAdminRoutes } from './domains/perf-admin/routes.js';
+import { registerMetricsAdminRoutes } from './domains/metrics-admin/routes.js';
+import { registerDedupRoutes } from './domains/dedup/routes.js';
 import {
 
 
@@ -84,7 +92,7 @@ pg.types.setTypeParser(1184, str => {
 import zlib from 'zlib';
 import XLSX from 'xlsx';
 import axios from 'axios';
-import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache } from './agents.js';
+import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache, getBitableSubmissionStats, archiveOldBitableSubmissions } from './agents.js';
 import { ensureAgentConfigTables, registerAgentConfigRoutes } from "./agent-config-manager.js";
 import { initBrandConfigCache, getBrandForStoreSync, getBrandConfigSync } from './utils/brand-config-loader.js';
 import { initStoreAliasCache } from './utils/store-alias-cache.js';
@@ -2107,63 +2115,9 @@ try {
 
 
 
-/**
- * 手动补发「菜品优化周报」飞书卡片 → admin / hq_manager（sales_raw + dish_library_costs）
- * Body 可选：{ "weekStart": "2026-03-23", "weekEnd": "2026-03-29" }；省略则按当前上海日期取「刚结束的自然周」周一～周日。
- */
-app.post('/api/admin/perf/dish-weekly/resend', authRequired, async (req, res) => {
-  try {
-    const role = String(req.user?.role || '').trim();
-    if (role !== 'admin' && role !== 'hq_manager') {
-      return res.status(403).json({ error: 'forbidden', message: '仅 admin 或 hq_manager' });
-    }
-    let weekStart = String(req.body?.weekStart || '').trim();
-    let weekEnd = String(req.body?.weekEnd || '').trim();
-    if (!weekStart || !weekEnd) {
-      const w = getLastCompletedWeekRangeShanghai();
-      weekStart = w.start;
-      weekEnd = w.end;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || !/^\d{4}-\d{2}-\d{2}$/.test(weekEnd)) {
-      return res.status(400).json({ error: 'bad_range', message: 'weekStart/weekEnd 须为 YYYY-MM-DD' });
-    }
-    await sendWeeklyDishOptimizationReport(weekStart, weekEnd);
-    return res.json({ ok: true, weekStart, weekEnd, message: '已尝试向 admin/hq_manager 发送菜品优化周报卡片' });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
+// Wave 4p: dish-weekly resend → domains/perf-admin/routes.js
 
-// Bitable Management API
-app.get('/api/bitable/stats', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hr_manager', 'hq_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-  
-  try {
-    const stats = await getBitableSubmissionStats();
-    res.json({ ok: true, data: stats });
-  } catch (e) {
-    console.error('[api] bitable stats error:', e?.message);
-    res.status(500).json({ error: 'internal_error', message: 'internal_error' });
-  }
-});
-
-app.post('/api/bitable/archive', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hr_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-  
-  try {
-    const result = await archiveOldBitableSubmissions();
-    res.json({ ok: true, data: result });
-  } catch (e) {
-    console.error('[api] bitable archive error:', e?.message);
-    res.status(500).json({ error: 'internal_error', message: 'internal_error' });
-  }
-});
+// Wave 4p: bitable stats/archive → domains/bitable-admin/routes.js
 
 // ─── Agent API - 通用查询飞书多维表数据（已落库的 generic records）
 // H1-FIX: 添加认证保护
@@ -2379,49 +2333,7 @@ app.get('/agent/tenant-operation-inspection', (req, res) => {
 
 // Wave 4k: /api/admin/store-duty-bindings* → domains/store-duty-bindings/routes.js
 
-// ─── Dedup Stats & Cleanup API ───────────────────────────────────────────────
-app.get('/api/dedup/stats', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
-  try {
-    const tables = {};
-    // agent_messages duplicates
-    const am = await pool.query(`SELECT count(*) as cnt FROM (
-      SELECT record_id, content_type, count(*) as c FROM agent_messages
-      WHERE record_id IS NOT NULL AND record_id != '' AND tenant_id = $1
-      GROUP BY record_id, content_type HAVING count(*) > 1) t`, [req.tenantId || req.user?.tenant_id || 'default']);
-    tables.agent_messages_dup_groups = Number(am.rows[0]?.cnt || 0);
-    // feishu_generic_records total
-    const fg = await pool.query(`SELECT count(*) as cnt FROM feishu_generic_records`);
-    tables.feishu_generic_records = Number(fg.rows[0]?.cnt || 0);
-    // pos_sales_detail total(sales_raw已下线)
-    const sr = await pool.query(`SELECT count(*) as cnt FROM pos_sales_detail`);
-    tables.pos_sales_detail = Number(sr.rows[0]?.cnt || 0);
-    // table_visit_records total
-    const tv = await pool.query(`SELECT count(*) as cnt FROM table_visit_records`);
-    tables.table_visit_records = Number(tv.rows[0]?.cnt || 0);
-    return res.json({ ok: true, tables });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-app.post('/api/dedup/cleanup', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
-  try {
-    // Remove duplicate agent_messages (keep newest, tiebreak by id)
-    const del = await pool.query(`
-      DELETE FROM agent_messages a USING agent_messages b
-      WHERE a.record_id IS NOT NULL AND a.record_id != ''
-        AND a.record_id = b.record_id AND a.content_type = b.content_type
-        AND a.tenant_id = b.tenant_id AND a.tenant_id = $1
-        AND (a.created_at < b.created_at OR (a.created_at = b.created_at AND a.id < b.id))`, [req.tenantId || req.user?.tenant_id || 'default']);
-    return res.json({ ok: true, deleted: del.rowCount || 0 });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
+// Wave 4p: dedup → domains/dedup/routes.js
 
 app.get('/api/me', authRequired, async (req, res) => {
   const username = String(req.user?.username || '').trim();
@@ -2699,7 +2611,7 @@ registerKnowledgeRoutes(app, {
   pool,
   authRequired,
   authRequiredOrQueryToken,
-  getKnowledgeViewerProfile,
+  getKnowledgeViewerProfile: (req) => getKnowledgeViewerProfileFromDomain(req, getSharedState),
   buildKnowledgeBrandScopeTag,
   callLLM,
   resolveTenantIdDefault,
@@ -6706,38 +6618,7 @@ app.post('/api/admin/leave-close-snapshot/recompute', authRequired, async (req, 
 });
 
 
-// ─── P0A: 指标版本管理 API ───
-app.post('/api/admin/metrics/bump-version', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-  const metricId = String(req.body?.metric_id || '').trim();
-  const changes = req.body?.changes || {};
-  const changedBy = String(req.user?.username || 'admin');
-  if (!metricId) return res.status(400).json({ error: 'missing metric_id' });
-  try {
-    const result = await updateMetricVersion(metricId, changes, changedBy);
-    return res.json(result);
-  } catch (e) {
-    return res.status(500).json({ error: e?.message });
-  }
-});
-
-app.get('/api/admin/metrics/change-log/:metricId', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-  const metricId = String(req.params.metricId || '').trim();
-  try {
-    const r = await pool.query(
-      `SELECT metric_id, name, version, metadata->'change_log' AS change_log, updated_at
-       FROM metric_dictionary WHERE metric_id = $1`,
-      [metricId]
-    );
-    if (!r.rows[0]) return res.status(404).json({ error: 'not_found' });
-    return res.json(r.rows[0]);
-  } catch (e) {
-    return res.status(500).json({ error: e?.message });
-  }
-});
+// Wave 4p: metrics admin → domains/metrics-admin/routes.js
 
 // ─── P1B: Diagnosis 反馈 API ───
 app.post('/api/agent/diagnosis-feedback', authRequired, async (req, res) => {
@@ -8460,70 +8341,7 @@ async function storeSessionNonce(uname, nonce, tenantId) {
 }
 
 
-async function getKnowledgeViewerProfile(req) {
-  const username = String(req.user?.username || '').trim();
-  const role = String(req.user?.role || '').trim();
-  if (!username) return { username: '', role: '', store: '', position: '' };
-  try {
-    const state = (await getSharedState()) || {};
-    const employees = Array.isArray(state.employees) ? state.employees : [];
-    const users = Array.isArray(state.users) ? state.users : [];
-    const emp = employees.find((e) => String(e?.username || '').trim().toLowerCase() === username.toLowerCase()) || {};
-    const usr = users.find((u) => String(u?.username || '').trim().toLowerCase() === username.toLowerCase()) || {};
-    return {
-      username,
-      role,
-      store: String(emp.store || usr.store || '').trim(),
-      position: String(emp.position || usr.position || '').trim()
-    };
-  } catch (e) {
-    return { username, role, store: '', position: '' };
-  }
-}
-
-// ─── RAG 多维知识库 API ───
-app.get('/api/rag/stats', authRequired, async (req, res) => {
-  res.json(await ragStats());
-});
-
-app.post('/api/rag/query', authRequired, async (req, res) => {
-  const { query, scope, category, brandTag, limit } = req.body;
-  if (!query) return res.status(400).json({ error: 'query required' });
-  const profile = await getKnowledgeViewerProfile(req);
-  const adminRag = profile.role === 'admin';
-  const result = await ragQuery({
-    agentName: req.body.agentName || 'master_agent',
-    userRole: profile.role || req.user?.role,
-    userStore: profile.store,
-    userPosition: profile.position,
-    skipKnowledgeAudienceFilter: adminRag,
-    query,
-    scope,
-    category,
-    brandTag,
-    limit
-  });
-  res.json(result);
-});
-
-app.post('/api/rag/multi-query', authRequired, async (req, res) => {
-  const { queries, scope, brandTag, limit } = req.body;
-  if (!Array.isArray(queries)) return res.status(400).json({ error: 'queries array required' });
-  const profile = await getKnowledgeViewerProfile(req);
-  const adminRag = profile.role === 'admin';
-  const result = await ragMultiQuery({
-    agentName: req.body.agentName || 'master_agent',
-    userRole: profile.role || req.user?.role,
-    userStore: profile.store,
-    userPosition: profile.position,
-    skipKnowledgeAudienceFilter: adminRag,
-    queries,
-    scope,
-    brandTag,
-    limit
-  });
-  res.json(result);
-});
+// Wave 4p: rag + getKnowledgeViewerProfile → domains/rag/*
 
 // ─── 飞书Webhook接收端点 ───────────────────────────────────────────────
 
@@ -8820,348 +8638,7 @@ async function processFeishuDataChange(event, logId) {
   }
 }
 
-// 获取飞书同步状态
-app.get('/api/feishu/sync-status', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-  
-  try {
-    const limit = Math.min(Number(req.query?.limit) || 50, 200);
-    const offset = Math.max(Number(req.query?.offset) || 0, 0);
-    const status = String(req.query?.status || '').trim();
-    
-    let query = 'select * from feishu_sync_logs';
-    const params = [];
-    
-    if (status) {
-      query += ' where sync_status = $1';
-      params.push(status);
-    }
-    
-    query += ' order by created_at desc limit $' + (params.length + 1) + ' offset $' + (params.length + 2);
-    params.push(limit, offset);
-    
-    const result = await pool.query(query, params);
-    
-    res.json({
-      items: result.rows,
-      pagination: {
-        limit,
-        offset,
-        total: result.rowCount
-      }
-    });
-  } catch (error) {
-    console.error('[Feishu Sync Status] Error:', error);
-    res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
-  }
-});
-
-/** 全量拉取指定多维表并写入 feishu_generic_records；桌访表同时 upsert table_visit_records（供 HTTP 与 CLI 共用） */
-async function runManualFeishuBitableSync({ appToken, tableId, appId, appSecret }) {
-  if (!appToken || !tableId) {
-    throw new Error('missing_app_token_or_table_id');
-  }
-  const accessToken = await getFeishuAccessToken({ appId, appSecret });
-  const data = await getFeishuBitableData(appToken, tableId, accessToken);
-
-  const TABLE_VISIT_TABLE_ID = 'tblpx5Efqc6eHo3L';
-  const isTableVisit = String(tableId || '').trim() === TABLE_VISIT_TABLE_ID;
-
-  let synced = 0;
-  let failed = 0;
-  let genericUpserted = 0;
-  const failedDetails = [];
-
-  for (const record of data.items || []) {
-      try {
-        const configKey = findConfigKeyByTableInfo(appToken, tableId);
-        await upsertFeishuGenericRecord({ appToken, tableId, record, configKey });
-        genericUpserted++;
-
-        if (!isTableVisit) {
-          continue;
-        }
-
-        const hrmsData = mapFeishuFieldToHrms(record, 'table_visit');
-
-        if (hrmsData.date && hrmsData.store) {
-          await pool.query(
-            `insert into table_visit_records (
-              date, store, brand, table_number, guest_count, amount, 
-              has_reservation, dissatisfaction_dish, feedback,
-              reservation_time, customer_type, order_type, service_rating, food_rating, environment_rating,
-              waiter_name, promotion_info, weather, peak_hours, customer_complaint, complaint_resolution,
-              satisfaction_level, repeat_customer, special_requests, payment_method, order_duration,
-              table_turnover, dish_recommendations, allergic_info, celebration_type, visit_purpose,
-              companion_info, customer_age, customer_gender, visit_frequency, preferred_dishes,
-              unsatisfied_items, suggested_improvements, staff_performance, facility_issues,
-              hygiene_rating, value_rating, ambiance_rating, noise_level, temperature,
-              lighting, music_volume, seating_comfort, queue_time, service_speed, order_accuracy,
-              staff_attitude, problem_resolution, manager_intervention, compensation_provided,
-              follow_up_required, follow_up_details, additional_notes,
-              feishu_record_id, created_at
-            ) values (
-              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-              $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-              $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-              $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
-              $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-              $51, $52, $53, $54, $55, $56, $57, $58, $59, now()
-            ) on conflict (feishu_record_id) do update set
-              date = excluded.date,
-              store = excluded.store,
-              brand = excluded.brand,
-              table_number = excluded.table_number,
-              guest_count = excluded.guest_count,
-              amount = excluded.amount,
-              has_reservation = excluded.has_reservation,
-              dissatisfaction_dish = excluded.dissatisfaction_dish,
-              feedback = excluded.feedback,
-              reservation_time = excluded.reservation_time,
-              customer_type = excluded.customer_type,
-              order_type = excluded.order_type,
-              service_rating = excluded.service_rating,
-              food_rating = excluded.food_rating,
-              environment_rating = excluded.environment_rating,
-              waiter_name = excluded.waiter_name,
-              promotion_info = excluded.promotion_info,
-              weather = excluded.weather,
-              peak_hours = excluded.peak_hours,
-              customer_complaint = excluded.customer_complaint,
-              complaint_resolution = excluded.complaint_resolution,
-              satisfaction_level = excluded.satisfaction_level,
-              repeat_customer = excluded.repeat_customer,
-              special_requests = excluded.special_requests,
-              payment_method = excluded.payment_method,
-              order_duration = excluded.order_duration,
-              table_turnover = excluded.table_turnover,
-              dish_recommendations = excluded.dish_recommendations,
-              allergic_info = excluded.allergic_info,
-              celebration_type = excluded.celebration_type,
-              visit_purpose = excluded.visit_purpose,
-              companion_info = excluded.companion_info,
-              customer_age = excluded.customer_age,
-              customer_gender = excluded.customer_gender,
-              visit_frequency = excluded.visit_frequency,
-              preferred_dishes = excluded.preferred_dishes,
-              unsatisfied_items = excluded.unsatisfied_items,
-              suggested_improvements = excluded.suggested_improvements,
-              staff_performance = excluded.staff_performance,
-              facility_issues = excluded.facility_issues,
-              hygiene_rating = excluded.hygiene_rating,
-              value_rating = excluded.value_rating,
-              ambiance_rating = excluded.ambiance_rating,
-              noise_level = excluded.noise_level,
-              temperature = excluded.temperature,
-              lighting = excluded.lighting,
-              music_volume = excluded.music_volume,
-              seating_comfort = excluded.seating_comfort,
-              queue_time = excluded.queue_time,
-              service_speed = excluded.service_speed,
-              order_accuracy = excluded.order_accuracy,
-              staff_attitude = excluded.staff_attitude,
-              problem_resolution = excluded.problem_resolution,
-              manager_intervention = excluded.manager_intervention,
-              compensation_provided = excluded.compensation_provided,
-              follow_up_required = excluded.follow_up_required,
-              follow_up_details = excluded.follow_up_details,
-              additional_notes = excluded.additional_notes,
-              updated_at = now()`,
-            [
-              hrmsData.date, hrmsData.store, hrmsData.brand, hrmsData.tableNumber,
-              hrmsData.guestCount, hrmsData.amount, hrmsData.hasReservation,
-              hrmsData.dissatisfactionDish, hrmsData.feedback,
-              hrmsData.reservationTime ? hrmsData.reservationTime.replace(/^(\d{1,2}):(\d{1,2})$/, '$1:$2:00') : null,
-              hrmsData.customerType, hrmsData.orderType,
-              hrmsData.serviceRating, hrmsData.foodRating, hrmsData.environmentRating,
-              hrmsData.waiterName, hrmsData.promotionInfo, hrmsData.weather, hrmsData.peakHours,
-              hrmsData.customerComplaint, hrmsData.complaintResolution, hrmsData.satisfactionLevel,
-              hrmsData.repeatCustomer, hrmsData.specialRequests, hrmsData.paymentMethod,
-              hrmsData.orderDuration, hrmsData.tableTurnover, hrmsData.dishRecommendations,
-              hrmsData.allergicInfo, hrmsData.celebrationType, hrmsData.visitPurpose,
-              hrmsData.companionInfo, hrmsData.customerAge, hrmsData.customerGender,
-              hrmsData.visitFrequency, hrmsData.preferredDishes, hrmsData.unsatisfiedItems,
-              hrmsData.suggestedImprovements, hrmsData.staffPerformance, hrmsData.facilityIssues,
-              hrmsData.hygieneRating, hrmsData.valueRating, hrmsData.ambianceRating,
-              hrmsData.noiseLevel, hrmsData.temperature, hrmsData.lighting,
-              hrmsData.musicVolume, hrmsData.seatingComfort, hrmsData.queueTime,
-              hrmsData.serviceSpeed, hrmsData.orderAccuracy, hrmsData.staffAttitude,
-              hrmsData.problemResolution, hrmsData.managerIntervention, hrmsData.compensationProvided,
-              hrmsData.followUpRequired, hrmsData.followUpDetails, hrmsData.additionalNotes,
-              hrmsData.recordId
-            ]
-          );
-          synced++;
-        } else {
-          failed++;
-          const reason = `missing_required_fields date="${hrmsData.date || ''}" store="${hrmsData.store || ''}"`;
-          const detail = {
-            recordId: record?.record_id || null,
-            reason,
-            required: {
-              date: hrmsData.date || '',
-              store: hrmsData.store || ''
-            }
-          };
-          if (failedDetails.length < 30) failedDetails.push(detail);
-          console.warn('[Manual Sync] Skipped record:', detail);
-        }
-      } catch (error) {
-        const detail = {
-          recordId: record?.record_id || null,
-          reason: error?.message || String(error || 'unknown_error')
-        };
-        if (failedDetails.length < 30) failedDetails.push(detail);
-        console.error('[Manual Sync] Record error:', detail);
-        failed++;
-      }
-    }
-
-  if (failed > 0) {
-    void notifyAdminsDualWriteFailure(
-      '飞书多维表手动同步（部分记录写入失败）',
-      new Error(
-        `failed=${failed} synced=${synced} total=${data.items?.length || 0} ` +
-          `${JSON.stringify((failedDetails || []).slice(0, 5))}`.slice(0, 500)
-      )
-    );
-  }
-
-  return {
-    message: 'Manual sync completed',
-    synced,
-    failed,
-    total: data.items?.length || 0,
-    genericUpserted,
-    isTableVisit,
-    failedDetails
-  };
-}
-
-// 手动触发飞书数据同步
-app.post('/api/feishu/sync-manual', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager', 'store_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-
-  try {
-    const { appToken, tableId, appId, appSecret } = req.body;
-    if (!appToken || !tableId) {
-      return res.status(400).json({ error: 'missing_app_token_or_table_id' });
-    }
-    const result = await runManualFeishuBitableSync({ appToken, tableId, appId, appSecret });
-    res.json(result);
-  } catch (error) {
-    console.error('[Manual Sync] Error:', error);
-    void notifyAdminsDualWriteFailure('飞书多维表手动同步（整次失败）', error);
-    res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
-  }
-});
-
-// 手动触发菜品库成本同步（写入 dish_library_costs）
-app.post('/api/feishu/sync-dish-library', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-
-  try {
-    const result = await syncDishLibraryCosts();
-    if (!result?.ok) {
-      return res.status(500).json({ error: 'server_error', message: result?.error || 'sync_failed' });
-    }
-    res.json({
-      message: 'Dish library sync completed',
-      records: Number(result.records || 0),
-      upserted: Number(result.upserted || 0)
-    });
-  } catch (error) {
-    console.error('[Dish Library Sync] Error:', error);
-    void notifyAdminsDualWriteFailure('菜品库成本同步（HTTP 接口抛错）', error);
-    res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
-  }
-});
-
-// 手动触发SOP步骤库同步
-app.post('/api/feishu/sync-sop-steps', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager', 'store_manager', 'store_production_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-  try {
-    const result = await syncSopSteps();
-    if (!result?.ok) {
-      return res.status(500).json({ error: 'sync_failed', message: result?.error });
-    }
-    res.json({ message: 'SOP步骤库同步完成', ...result });
-  } catch (error) {
-    console.error('[SOP Steps Sync] Error:', error);
-    res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
-  }
-});
-
-// 测试飞书连接
-app.post('/api/feishu/test-connection', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager', 'store_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-
-  try {
-    const { appId, appSecret } = req.body;
-
-    if (!appId || !appSecret) {
-      return res.status(400).json({ error: 'missing_app_id_or_secret' });
-    }
-
-    const accessToken = await getFeishuAccessToken({ appId, appSecret });
-    res.json({ success: true, message: '连接成功', accessToken: accessToken ? 'valid' : 'invalid' });
-  } catch (error) {
-    console.error('[Feishu Test Connection] Error:', error);
-    res.status(500).json({ success: false, message: safeErrMessage(error) });
-  }
-});
-
-// 发送飞书测试消息（轻量验收：token可用 + 至少一条消息可送达）
-app.post('/api/feishu/send-test-message', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager', 'store_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-
-  try {
-    const username = String(req.body?.username || '').trim();
-    const openIdDirect = String(req.body?.openId || '').trim();
-    const message = String(req.body?.message || 'HRMS 连通性测试消息').trim();
-
-    let openId = openIdDirect;
-    if (!openId && username) {
-      const u = await lookupFeishuUserByUsername(username);
-      openId = String(u?.open_id || '').trim();
-      if (!openId) {
-        const r = await pool.query(
-          `SELECT open_id FROM feishu_users WHERE lower(username)=lower($1) LIMIT 1`,
-          [username]
-        );
-        openId = String(r.rows?.[0]?.open_id || '').trim();
-      }
-    }
-
-    if (!openId) {
-      return res.status(400).json({ error: 'missing_open_id_or_bind_user' });
-    }
-
-    const result = await sendLarkMessage(openId, message, { skipDedup: true });
-    return res.json({ ok: Boolean(result?.ok), openId, result });
-  } catch (error) {
-    console.error('[Feishu Test Message] Error:', error);
-    return res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
-  }
-});
+// Wave 4p: feishu sync HTTP + runManualFeishuBitableSync → domains/feishu-sync/*
 
 app.post('/api/admin/system-alert/test', authRequired, async (req, res) => {
   const role = String(req.user?.role || '').trim();
@@ -9768,6 +9245,45 @@ registerPromotionTracksRoutes(app, authRequired, {
 
 registerBitableSyncRoutes(app, authRequired, { pool });
 
+registerRagRoutes(app, authRequired, {
+  getSharedState,
+  ragStats,
+  ragQuery,
+  ragMultiQuery,
+});
+
+registerFeishuSyncRoutes(app, authRequired, {
+  pool,
+  safeErrMessage,
+  getFeishuAccessToken,
+  getFeishuBitableData,
+  findConfigKeyByTableInfo,
+  upsertFeishuGenericRecord,
+  mapFeishuFieldToHrms,
+  notifyAdminsDualWriteFailure,
+  syncDishLibraryCosts,
+  syncSopSteps,
+  lookupFeishuUserByUsername,
+  sendLarkMessage,
+});
+
+registerBitableAdminRoutes(app, authRequired, {
+  getBitableSubmissionStats,
+  archiveOldBitableSubmissions,
+});
+
+registerPerfAdminRoutes(app, authRequired, {
+  getLastCompletedWeekRangeShanghai,
+  sendWeeklyDishOptimizationReport,
+});
+
+registerMetricsAdminRoutes(app, authRequired, {
+  pool,
+  updateMetricVersion,
+});
+
+registerDedupRoutes(app, authRequired, { pool });
+
 registerRemainingStateRoutes(app, authRequired, {
   pool,
   getSharedState,
@@ -9807,6 +9323,14 @@ if (String(process.env.HRMS_CLI_SYNC_TABLE_VISIT || '').trim() === '1') {
       await ensureFeishuGenericRecordsNotifyTrigger();
       await ensureTableVisitRecordsTable();
       const r = await runManualFeishuBitableSync({
+        pool,
+        getFeishuAccessToken,
+        getFeishuBitableData,
+        findConfigKeyByTableInfo,
+        upsertFeishuGenericRecord,
+        mapFeishuFieldToHrms,
+        notifyAdminsDualWriteFailure,
+      }, {
         appToken: process.env.BITABLE_TABLEVISIT_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
         tableId: process.env.BITABLE_TABLEVISIT_TABLE_ID || 'tblpx5Efqc6eHo3L',
         appId: process.env.FEISHU_APP_ID,
