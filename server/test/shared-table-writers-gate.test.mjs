@@ -57,7 +57,9 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'performance-jobs.js|UPDATE|agent_scores',
   'rag-tool.js|UPDATE|knowledge_base',
   'test-tenant-operation-inspection.mjs|INSERT INTO|master_tasks',
-  'training.js|UPDATE|knowledge_base',
+  // Wave 2：training.js → domains/training/*（同 OP+表换路径；会话/图谱两处仍写 knowledge_base）
+  'domains/training/routes-rubric.js|UPDATE|knowledge_base',
+  'domains/training/routes-sessions.js|UPDATE|knowledge_base',
   'utils/feishu-open-id-cross-app.js|UPDATE|feishu_users',
 ]);
 
@@ -65,6 +67,8 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
 const REPATH_NOTES = [
   'index.js → domains/approvals/handlers/onboarding.js | INSERT INTO|feishu_users',
   'index.js → domains/approvals/handlers/onboarding.js | UPDATE|feishu_users',
+  'training.js → domains/training/routes-rubric.js | UPDATE|knowledge_base',
+  'training.js → domains/training/routes-sessions.js | UPDATE|knowledge_base',
 ];
 
 const OWNER = 'gaas';
