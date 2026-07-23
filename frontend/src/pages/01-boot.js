@@ -8,6 +8,25 @@
         const APP_BUILD = '20260704c';
         console.log('=== 年年有喜管理系统启动 ===');
 
+        // B7：确保 DOMPurify hook 已挂上（外链 hrms-sethtml.js 应已执行；此处兜底）
+        try {
+            if (typeof hrmsInstallInnerHTMLHook === 'function') hrmsInstallInnerHTMLHook();
+            if (typeof setHTML !== 'function') {
+                window.setHTML = function (el, html) {
+                    if (!el) return el;
+                    el.innerHTML = html == null ? '' : String(html);
+                    return el;
+                };
+            }
+            if (typeof appendHTML !== 'function') {
+                window.appendHTML = function (el, html) {
+                    if (!el) return el;
+                    el.innerHTML = String(el.innerHTML || '') + (html == null ? '' : String(html));
+                    return el;
+                };
+            }
+        } catch (e) {}
+
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {

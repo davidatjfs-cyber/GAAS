@@ -232,6 +232,8 @@ agents-service-v2 通过 `file:packages/gaas-shared` 引用**同步副本**；�
 - **拼回**：`node scripts/bundle-frontend.mjs` → 写回 `working-fixed.html` 主 `<script>`。
 - **部署产物**：`node scripts/build-shell.mjs`（内部先 bundle）→ `dist/`（shell + `app.<hash>.js/.css`）。
 - HTML/CSS 结构仍以 `working-fixed.html` 为载体；**不要**直接在内联 `<script>` 里改业务逻辑。
+- **B7 XSS**：`/assets/vendor/dompurify/` 在主 script 前加载；`Element.innerHTML` setter 已挂 DOMPurify。
+  新代码优先 `setHTML(el, html)` / `appendHTML(el, html)`；勿再引入第二个 `\n    <script>\n` 锚点（会破坏 bundle）。
 
 #### ⚠️ 违反上面这条会「静默丢改动」（2026-07-23 真实事故）
 

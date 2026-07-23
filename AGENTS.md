@@ -178,5 +178,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - 改业务 JS → 改 `frontend/src/pages/*.js` → `npm run build:shell` → 先 scp `app.*.js/css` 再换 shell。
 - 不要直接编辑 `working-fixed.html` 内联主 `<script>`（由 `bundle-frontend.mjs` 写回）。
+- **B7 XSS**：主 script 前加载 `/assets/vendor/dompurify/`；`innerHTML` 已挂 DOMPurify。新代码优先 `setHTML`/`appendHTML`。
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
