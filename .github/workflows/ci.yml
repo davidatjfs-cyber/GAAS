@@ -13,10 +13,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
+          # 必须 >=22：server 测试脚本依赖 --test-force-exit；Node 18 会 bad option 并零执行闸门
           node-version: '22'
+          check-latest: false
+      - name: Assert Node runtime can actually run test gates
+        run: node scripts/assert-ci-runtime.mjs
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      - name: Prove critical unit gates executed (not vacuously skipped)
+        run: |
+          set -e
+          # 重新跑闸门文件并要求至少 1 条 pass，防止 find/脚本漂移导致「npm test 绿但闸门没进进程」
+          cd server
+          out=$(node --test --test-force-exit test/shared-table-writers-gate.test.mjs test/ensure-ddl-freeze.test.mjs)
+          echo "$out"
+          echo "$out" | grep -q 'SHARED_TABLE_WRITERS'
+          echo "$out" | grep -q 'domains/ 不得在 ensure'
+          echo "$out" | grep -Eq 'fail 0'
 
   test-integration:
     runs-on: ubuntu-latest
@@ -41,6 +55,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          check-latest: false
+      - name: Assert Node runtime can actually run test gates
+        run: node scripts/assert-ci-runtime.mjs
       - run: npm ci
       - run: DATABASE_URL=$TEST_DATABASE_URL APP_ENV=development node migrate.js
         working-directory: server

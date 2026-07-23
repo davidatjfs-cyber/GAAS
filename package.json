@@ -2,6 +2,9 @@
   "name": "hr-management-system",
   "private": true,
   "packageManager": "npm@10.2.0",
+  "engines": {
+    "node": ">=22"
+  },
   "workspaces": [
     "server",
     "packages/gaas-shared"
@@ -10,7 +13,8 @@
     "start": "npm --workspace server run start",
     "migrate": "npm --workspace server run migrate",
     "seed:growth-demo": "npm --workspace server run seed:growth-demo",
-    "test": "npm --workspace server run test",
+    "assert:ci-runtime": "node scripts/assert-ci-runtime.mjs",
+    "test": "npm run assert:ci-runtime && npm --workspace server run test",
     "lint": "eslint \"server/**/*.js\" \"server/**/*.mjs\" --max-warnings 80",
     "bundle:frontend": "node scripts/bundle-frontend.mjs",
     "build:shell": "node scripts/build-shell.mjs"

@@ -77,6 +77,20 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 6. Deployment & Server Info
 
+### ⚠️ CI 运行时：Node >= 22（闸门必须真跑）
+
+`server` 的 `npm test` / `test:integration` 依赖 Node 的 `--test-force-exit`（Node 22+）。
+2026-07-23 曾出现：脚本已写 `--test-force-exit`，但 CI 仍是 Node 18 → 进程立刻
+`bad option` 退出，**SHARED_TABLE / ensure-ddl / 集成测全部零执行**，只剩红灯噪音。
+
+硬约束：
+- `.github/workflows/ci.yml` → `node-version: '22'`
+- `package.json` / `server/package.json` → `"engines": { "node": ">=22" }` + `.npmrc` `engine-strict=true`
+- `.nvmrc` → `22`
+- 每次 CI / `npm test` 前跑 `node scripts/assert-ci-runtime.mjs`；单测 job 另有一步复查关键闸门输出
+
+本地 Node &lt; 22 时不要强行跑测试装过门面——先升级。
+
 - **Server**: root@47.100.96.30 (passwordless SSH)
 - **Nginx serves from**: `/opt/hrms` (NOT `/root/hr-management-system/`)
 - **HRMS(GAAS) deploy**: `scp` files to `root@47.100.96.30:/opt/hrms/` then `ssh root@47.100.96.30 "pm2 restart hrms-service"`
