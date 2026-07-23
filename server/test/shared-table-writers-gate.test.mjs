@@ -36,6 +36,8 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'fix_bitable_process.js|INSERT INTO|agent_messages',
   'force_sync.js|INSERT INTO|agent_messages',
   'index.js|DELETE FROM|agent_messages',
+  // Wave 4p：dedup cleanup 从 index.js 迁出（同 OP+表换路径）
+  'domains/dedup/routes.js|DELETE FROM|agent_messages',
   'index.js|INSERT INTO|feishu_generic_records',
   // P0-A1：decide 从 index.js 迁出；feishu_users 写入现位于 handlers/onboarding.js
   // （同 OP+表换路径不算新增，见 REPATH_NOTES）
@@ -69,6 +71,7 @@ const REPATH_NOTES = [
   'index.js → domains/approvals/handlers/onboarding.js | UPDATE|feishu_users',
   'training.js → domains/training/routes-rubric.js | UPDATE|knowledge_base',
   'training.js → domains/training/routes-sessions.js | UPDATE|knowledge_base',
+  'index.js → domains/dedup/routes.js | DELETE FROM|agent_messages',
 ];
 
 const OWNER = 'gaas';
