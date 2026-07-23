@@ -77,16 +77,17 @@ test('employees 合并辅助仍可用于服务端内部镜像合并', () => {
   assert.ok(merged.some((e) => e.username === 'bob'));
 });
 
-test('stores 保留服务端经纬度', () => {
+test('stores 已移出白名单：PUT 不能覆盖经纬度等门店字段', () => {
   const existing = {
     stores: [{ name: '洪潮', latitude: 31.2, longitude: 121.5, address: '旧址' }],
   };
   const incoming = {
     stores: [{ name: '洪潮', capacity: 40 }],
   };
-  const { next } = applyStatePutWhitelist(existing, incoming);
+  const { next, ignoredKeys } = applyStatePutWhitelist(existing, incoming);
   assert.equal(next.stores[0].latitude, 31.2);
   assert.equal(next.stores[0].longitude, 121.5);
-  assert.equal(next.stores[0].capacity, 40);
   assert.equal(next.stores[0].address, '旧址');
+  assert.equal(next.stores[0].capacity, undefined);
+  assert.ok(ignoredKeys.includes('stores'));
 });

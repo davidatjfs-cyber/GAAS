@@ -4536,9 +4536,18 @@ ${String(text || '').slice(0, 9000)}`;
             const stName = st?.name || storeId;
             const _ok3 = await hrmsConfirm({ title: '删除门店', message: `确定删除门店「${stName}」？删除后相关数据将无法恢复。`, okText: '确认删除', icon: '🏪' });
             if (!_ok3) return;
-            HRMS_STORE.setStores(stores.filter(s => s.id !== storeId));
-            loadStoresData();
-            showNotification('已删除', 'success');
+            try {
+                await HRMS_API.deleteStore(storeId);
+                const latest = await HRMS_API.getStores();
+                HRMS_STORE.setStores(Array.isArray(latest?.items) ? latest.items : []);
+                loadStoresData();
+                try { populateKnowledgeAudienceOptions(); } catch (e) {}
+                try { populateTrainingAssignModalOptions(); } catch (e) {}
+                try { populateExamAssignStoreOptions(); } catch (e) {}
+                showNotification('已删除', 'success');
+            } catch (e) {
+                showNotification('删除失败：' + String(e?.message || e), 'error');
+            }
         }
 
         function showAddStoreModal() {

@@ -1091,6 +1091,11 @@
                     body: JSON.stringify(payload || {})
                 });
             },
+            async deleteStore(id) {
+                return this.request('/api/stores/' + encodeURIComponent(String(id || '')), {
+                    method: 'DELETE'
+                });
+            },
             async getBrands() {
                 return this.request('/api/brands', { method: 'GET' });
             },
@@ -1599,7 +1604,8 @@
                 ['employees', 'roleModules', 'approvalFlows', 'paymentFlowByStore',
                  'pointRules', 'forecastCoreProducts', 'forecastProductAliasRules', 'forecastGrossProfitProfiles',
                  'knowledge', 'examResults', 'notifications',
-                 'exams', 'promotionRequests', 'promotionAbilityRequirements', 'rewardPunishments'
+                 'exams', 'promotionRequests', 'promotionAbilityRequirements', 'rewardPunishments',
+                 'stores'
                 ].forEach(function(k) { try { delete _d[k]; } catch (e) {} });
                 return this.request('/api/state', {
                     method: 'PUT',

@@ -11,7 +11,6 @@
 /** 仍允许经 PUT /api/state 写入的顶层字段（未落表 / 仍走前端 saveState 的业务数据） */
 /** A3：白名单收敛为配置/内容类；已有独立 API 的业务事实一律 SERVER_OWNED */
 export const STATE_PUT_WHITELIST = Object.freeze([
-  'stores',
   'users',
   'roles',
   'brands',
@@ -37,10 +36,12 @@ export const STATE_PUT_WHITELIST = Object.freeze([
  * 2026-07 A3：pointRules / forecast* 移出白名单（已有窄 API）。
  * 2026-07 A3续：knowledge / examResults / notifications 表权威；
  *   exams / promotionRequests / promotionAbilityRequirements / rewardPunishments 死字段移出。
+ * 2026-07 A3再续：stores 走窄 API（含 DELETE），禁止 PUT /api/state 覆盖。
  * GET /api/state 会用表覆盖这些镜像字段。运行时靠「不在白名单」生效。
  */
 export const STATE_PUT_SERVER_OWNED = Object.freeze([
   'employees',
+  'stores',
   'roleModules',
   'approvalFlows',
   'paymentFlowByStore',
