@@ -115,6 +115,19 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `daily_reports`（人工日报，`actual_margin`/`pre_discount_revenue` 等字段）与 `pos_sales_detail` 交叉验证过，数字一致（误差 <0.5%），
   两者都可信；`metric_dictionary` 里营业额/毛利相关口径目前以 `daily_reports` 为准（历史决策，7 组重复口径已于 2026-07-03 合并）。
 - 如果你在写新代码或看到旧代码里出现 `sales_raw` 字样：**这一定是需要修的信号**，不是可以照抄的参考。
+- 闸门：`server/test/sales-raw-ban.test.mjs` 禁止可执行代码再出现 `FROM/INTO/UPDATE sales_raw`；
+  `insertSalesRawRows` 已永久抛 `sales_raw_retired`。
+
+### ⚠️ ensure*Table / listen-time DDL 冻结（B5）
+
+**新表、新列、新索引一律只走编号 migration**：`server/migrations/NNN_*.sql` → `node migrate.js`
+（生产需 `ALLOW_PRODUCTION_MIGRATE=true`）。agents-service-v2 **禁止**为共享表自建 migration。
+
+- **禁止**在 `ensure*Table` / `ensure*Schema` 里新增 `CREATE TABLE` / `ALTER TABLE` / 补列逻辑。
+- 存量 ensure* 视为遗留：仅当 `ALLOW_SCHEMA_CHANGES=true`（见 `safety.js#isSchemaChangeAllowed`）才在 listen 时跑；
+  生产/staging 默认关闭 listen-time DDL。
+- ensure* 若仍保留，只允许「存在性检查 / no-op / 读校验」，不得再扩张 schema。
+- 闸门：`server/test/ensure-ddl-freeze.test.mjs`；改 schema 纪律写在本段，不要靠口头约定。
 
 ### ⚠️ RLS：本仓库（GAAS/47.100.96.30）永远关闭，另有 GAAS-demo（多租户服务器）永远开启——别搞混
 
@@ -207,6 +220,11 @@ agents-service-v2 通过 `file:packages/gaas-shared` 引用**同步副本**；�
   再单独 `scp root@...:/tmp/x.sql ./` 把这个文件传下来（普通文件传输速度快得多）。
 - 这条连接本身有时会话间歇性变慢/断开（`Connection closed`/`timed out during banner exchange`），属于正常波动，
   遇到就用更长的 `ConnectTimeout` 重试、把大批量文件传输拆成小批次，不代表命令或凭据有问题。
+- **别把 scp 接管道后再取 `$?`**：`scp ... | tail -2; echo EXIT=$?` 拿到的是 `tail` 的退出码，
+  scp 真失败了也会显示 0。这条链路本来就容易断，一旦漏判就会「资源没传上去但以为成功」，
+  接着换 shell → 线上 404。**正确做法**：`scp ...; RC=$?`（不接管道），
+  并且**传完一律用 md5 对账**（`md5 -q 本地文件` vs `ssh ... "md5sum 远端文件"`），
+  只有 md5 一致才继续下一步。shell 也一样：先传到 `.staged`，md5 比对通过后再 `mv` 原子替换。
 
 ### 前端缓存方案：JS 真源在 frontend/src/pages，working-fixed.html 由 bundle 写回后再抽 shell
 
@@ -214,6 +232,29 @@ agents-service-v2 通过 `file:packages/gaas-shared` 引用**同步副本**；�
 - **拼回**：`node scripts/bundle-frontend.mjs` → 写回 `working-fixed.html` 主 `<script>`。
 - **部署产物**：`node scripts/build-shell.mjs`（内部先 bundle）→ `dist/`（shell + `app.<hash>.js/.css`）。
 - HTML/CSS 结构仍以 `working-fixed.html` 为载体；**不要**直接在内联 `<script>` 里改业务逻辑。
+
+#### ⚠️ 违反上面这条会「静默丢改动」（2026-07-23 真实事故）
+
+改 `working-fixed.html` 内联 `<script>` 不会报错、当场也能跑通、甚至能构建部署成功——
+但**下一次任何人跑 `bundle-frontend.mjs`（或 `build:shell`，它内部会先 bundle），
+主 `<script>` 整块会被 `frontend/src/pages/*.js` 覆盖回去，你的 JS 无声无息消失**。
+HTML/CSS 改动会留下，只有 JS 没了，所以现象非常迷惑：功能突然失效，但 diff 看着一切正常。
+
+实际发生过两次：
+1. 增长看板抽屉的 90 行 JS 注入后被覆盖，只剩 HTML 里的 `onclick="gxOpenSheet()"` 指向一个不存在的函数。
+2. 档案页问候语的 `hourCycle` 修复（提交 `8e6b6b8`）只改了 `working-fixed.html` 没同步拆分源，
+   被 bundle 回退成有 bug 的 `hour12:false` 版本；生产因为部署早于覆盖才侥幸没受影响。
+
+**因此：**
+- **拆分是按行号切的，不是按业务切的**——一个功能的 JS 很可能不在你以为的文件里。
+  例：增长看板的 `renderGrowthSubnav` 定义在 `12-files.js`，而 `13-growth.js` 里只是调用它。
+  动手前先 `grep -ln "函数名" frontend/src/pages/*.js` 确认归属，不要凭文件名猜。
+- **改完必须验证真的进了产物**，不能只看本地页面正常：
+  ```bash
+  node scripts/bundle-frontend.mjs && grep -c "你的函数名" working-fixed.html
+  node scripts/build-shell.mjs   && grep -c "你的函数名" dist/app.*.js
+  ```
+  两个都 ≥1 才算数。JS 哈希**没变**却声称改了 JS，一定是没进去。
 
 **改动前端后重新部署步骤：**
 1. 改 `frontend/src/pages/*.js`（或先改 HTML 结构部分）。

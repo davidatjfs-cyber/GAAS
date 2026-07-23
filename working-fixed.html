@@ -12952,7 +12952,9 @@
             --gx-display: "Outfit", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
         }
         .gx-sheet {
-            position: fixed; inset: 0; z-index: 2000; display: none;
+            /* 必须高于 .mobile-nav 的 z-index:2300，否则底部导航会压在抽屉上，
+               把最后几个模块挡住点不到（真机反馈过）。 */
+            position: fixed; inset: 0; z-index: 2400; display: none;
         }
         .gx-sheet.is-open { display: block; }
         .gx-sheet__mask {
@@ -12961,8 +12963,9 @@
         }
         .gx-sheet__panel {
             position: absolute; left: 0; right: 0; bottom: 0;
-            max-height: 86vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
-            padding: 0 16px calc(20px + env(safe-area-inset-bottom));
+            max-height: 78vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            padding: 0 16px calc(28px + env(safe-area-inset-bottom));
             border-radius: 20px 20px 0 0;
             background: linear-gradient(180deg, #16151a, #0e0e10);
             border-top: 1px solid var(--gx-ac2);
@@ -12971,16 +12974,26 @@
         }
         @keyframes gxSheetUp { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
         .gx-sheet__grip {
-            position: sticky; top: 0; z-index: 1; padding: 12px 0 10px;
-            background: linear-gradient(180deg, #16151a 70%, transparent);
-            display: flex; flex-direction: column; align-items: center; gap: 10px;
+            position: sticky; top: 0; z-index: 1; padding: 10px 0 12px;
+            background: #16151a; border-bottom: 1px solid var(--gx-line);
+            display: grid; grid-template-columns: 44px 1fr 44px; align-items: center;
+            row-gap: 8px;
         }
         .gx-sheet__grip i {
+            grid-column: 1 / -1; justify-self: center;
             width: 36px; height: 4px; border-radius: 99px; background: var(--gx-line);
         }
         .gx-sheet__grip b {
-            font-size: 13.5px; font-weight: 600; color: var(--gx-tx); letter-spacing: 0.04em;
+            grid-column: 2; text-align: center;
+            font-size: 14px; font-weight: 600; color: var(--gx-tx); letter-spacing: 0.04em;
         }
+        .gx-sheet__x {
+            grid-column: 3; justify-self: end;
+            width: 34px; height: 34px; border: 0; border-radius: 10px; cursor: pointer;
+            background: rgba(255, 255, 255, 0.06); color: var(--gx-dim);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .gx-sheet__x:active { background: var(--gx-ac1); color: var(--gx-tx); }
         .gx-grp + .gx-grp { margin-top: 6px; }
         .gx-grp__t {
             font-family: var(--gx-display); font-size: 9.5px; font-weight: 600;
@@ -20878,7 +20891,13 @@
                 <div class="gx-sheet" id="gx-sheet" aria-hidden="true">
                   <div class="gx-sheet__mask" onclick="gxCloseSheet()"></div>
                   <div class="gx-sheet__panel" role="dialog" aria-label="选择模块">
-                    <div class="gx-sheet__grip"><i></i><b>选择模块</b></div>
+                    <div class="gx-sheet__grip">
+                      <i></i>
+                      <b>选择模块</b>
+                      <button type="button" class="gx-sheet__x" onclick="gxCloseSheet()" aria-label="关闭">
+                        <svg class="pfi pfi--sm"><use href="#pfi-x"/></svg>
+                      </button>
+                    </div>
                     <div id="gx-sheet-body"></div>
                   </div>
                 </div>
@@ -23465,6 +23484,7 @@
                 <symbol id="pfi-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></symbol>
                 <symbol id="pfi-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z"/></symbol>
                 <symbol id="pfi-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+                <symbol id="pfi-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
                 <symbol id="pfi-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
                 <symbol id="pfi-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></symbol>
                 <symbol id="pfi-ext" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
