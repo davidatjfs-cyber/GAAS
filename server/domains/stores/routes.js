@@ -44,3 +44,6 @@ export function registerStoresDomainRoutes(app, authRequired, deps) {
 
   app.use('/api/stores', r);
 }
+
+export { registerStoresCrudRoutes } from './routes-crud.js';
+export { registerBrandsRoutes } from './routes-brands.js';

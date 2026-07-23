@@ -34,7 +34,11 @@ import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
 import { hydrateNotificationsFromTable } from './domains/notifications/service.js';
 import { hydrateExamResultsFromTable } from './domains/exam-results/service.js';
-import { registerStoresDomainRoutes } from './domains/stores/routes.js';
+import {
+  registerStoresDomainRoutes,
+  registerStoresCrudRoutes,
+  registerBrandsRoutes,
+} from './domains/stores/routes.js';
 import { registerPaymentConfigRoutes } from './domains/payment-config/routes.js';
 import { registerPaymentRoutes } from './domains/payments/routes.js';
 import { registerRemainingStateRoutes } from './domains/remaining-state/routes.js';
@@ -9358,113 +9362,7 @@ app.post('/api/exam-results', authRequired, async (req, res) => {
   }
 });
 
-// 门店经营画像字段：原来只能在Agent控制台（托管人员权限）维护，现在改成门店在"编辑门店"里自行维护。
-// 字段名与 agents-service-v2 chairman_config 的 store profile 保持一致，方便下面 syncStoreProfileToChairmanConfig 直接映射。
-function extractStoreProfileFields(body = {}) {
-  const s = (v) => String(v || '').trim();
-  const n = (v) => (v === undefined || v === null || v === '' ? undefined : Number(v));
-  return {
-    positioning: s(body.positioning),
-    targetCustomer: s(body.targetCustomer),
-    coreStrategy: s(body.coreStrategy),
-    bottleneck: s(body.bottleneck),
-    businessHours: s(body.businessHours),
-    peakHours: Array.isArray(body.peakHours) ? body.peakHours.map(s).filter(Boolean) : [],
-    seats: n(body.seats),
-    tables: n(body.tables),
-    avgPrice: n(body.avgPrice),
-    area: n(body.area),
-    privateRooms: n(body.privateRooms),
-    kitchenCapacity: n(body.kitchenCapacity),
-    signatureProducts: s(body.signatureProducts),
-    competitiveAdvantage: s(body.competitiveAdvantage),
-    serviceStyle: s(body.serviceStyle),
-    lowSeasonNote: s(body.lowSeasonNote),
-    hasTakeout: !!body.hasTakeout,
-    target_daily_dineIn: body.target_daily_dineIn && typeof body.target_daily_dineIn === 'object' ? body.target_daily_dineIn : undefined,
-    target_daily_takeout: body.target_daily_takeout && typeof body.target_daily_takeout === 'object' ? body.target_daily_takeout : undefined,
-    cost_structure: body.cost_structure && typeof body.cost_structure === 'object' ? body.cost_structure : undefined,
-    topDishes: Array.isArray(body.topDishes) ? body.topDishes : undefined,
-    problemDishes: Array.isArray(body.problemDishes) ? body.problemDishes : undefined,
-  };
-}
-
-// 门店在"编辑门店"里保存画像后，同时写一份到 chairman_config（agents-service-v2 用它给AI agent注入上下文），
-// 避免"编辑门店"和Agent控制台两边数据不一致。失败不阻塞门店保存本身。
-async function syncStoreProfileToChairmanConfig(storeName, brandName, profile) {
-  if (!storeName) return;
-  try {
-    const r = await pool.query(`SELECT data FROM hrms_state WHERE key = 'chairman_config' LIMIT 1`);
-    const current = r.rows?.[0]?.data || {};
-    const stores = { ...(current.stores || {}) };
-    const prevProfile = stores[storeName] || {};
-    stores[storeName] = { ...prevProfile, brand: brandName || prevProfile.brand, ...profile };
-    const next = { ...current, stores };
-    await pool.query(
-      `INSERT INTO hrms_state (key, data, updated_at) VALUES ('chairman_config', $1::jsonb, NOW())
-       ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
-      [JSON.stringify(next)]
-    );
-  } catch (e) {
-    console.warn('[stores] chairman_config sync skipped:', e?.message);
-  }
-}
-
-app.put('/api/stores/:id', authRequired, async (req, res) => {
-  const id = String(req.params?.id || '').trim();
-  if (!id) return res.status(400).json({ error: 'missing_id' });
-
-  const name = String(req.body?.name || '').trim();
-  if (!name) return res.status(400).json({ error: 'missing_name' });
-
-  const address = String(req.body?.address || '').trim();
-  const city = String(req.body?.city || '').trim();
-  const floor = String(req.body?.floor || '').trim();
-  const managerName = String(req.body?.managerName || '').trim();
-  const phone = String(req.body?.phone || '').trim();
-  const openDate = String(req.body?.openDate || '').trim() || null;
-  const brandName = String(req.body?.brand || req.body?.brandName || '').trim();
-  const brandId = normalizeBrandId(req.body?.brandId || brandName);
-  const isActive = req.body?.status ? String(req.body.status) === 'active' : true;
-  const region = String(req.body?.region || '').trim();
-  const profileFields = extractStoreProfileFields(req.body);
-
-  try {
-    const state0 = (await getSharedState()) || {};
-    const stores = Array.isArray(state0?.stores) ? state0.stores.slice() : [];
-    const idx = stores.findIndex((s) => String(s?.id || '').trim() === id);
-    if (idx < 0) return res.status(404).json({ error: 'not_found' });
-    const prev = stores[idx] || {};
-    stores[idx] = {
-      ...prev,
-      id,
-      name,
-      address,
-      city,
-      floor,
-      managerName,
-      manager: managerName,
-      phone,
-      openDate,
-      status: isActive ? 'active' : 'inactive',
-      brand: brandName,
-      brandName,
-      brandId,
-      region,
-      ...profileFields,
-      updatedAt: hrmsNowISO()
-    };
-    const nextState = { ...state0, stores };
-    if (Array.isArray(nextState.brands)) {
-      nextState.brands = getBrandsFromState(nextState);
-    }
-    await saveSharedState(nextState);
-    syncStoreProfileToChairmanConfig(name, brandName, profileFields).catch(() => {});
-    return res.json({ item: stores[idx] });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
+// Wave 4g: stores CRUD/brands/location → domains/stores/*
 
 /** @returns {Promise<boolean>} 是否已成功持久化（失败时不得签发 JWT，否则 sn 与库不一致 → 全站 401/session_replaced） */
 async function storeSessionNonce(uname, nonce, tenantId) {
@@ -9496,214 +9394,6 @@ async function storeSessionNonce(uname, nonce, tenantId) {
   }
 }
 
-
-app.get('/api/stores', authRequired, async (req, res) => {
-  try {
-    // Read from hrms_state table (where actual data is stored)
-    const r = await pool.query('select data from hrms_state where key = $1 limit 1', [req.tenantId || req.user?.tenant_id || 'default']);
-    const row = r.rows?.[0] || null;
-    if (!row || !row.data) {
-      return res.json({ items: [] });
-    }
-    
-    const stateStores = Array.isArray(row.data.stores) ? row.data.stores : [];
-    const items = stateStores.map(s => ({
-      id: s.id || s.name,
-      name: s.name,
-      address: s.address || '',
-      city: s.city || '',
-      floor: s.floor || '',
-      manager_name: s.manager || s.managerName || '',
-      managerName: s.manager || s.managerName || '',
-      phone: s.phone || '',
-      openDate: s.openDate || s.open_date || '',
-      brand: s.brand || s.brandName || '',
-      brandName: s.brand || s.brandName || '',
-      brandId: normalizeBrandId(s.brandId || s.brand || s.brandName),
-      region: s.region || '',
-      status: String(s.status || 'active') === 'active' ? 'active' : 'inactive',
-      is_active: String(s.status || 'active') === 'active'
-    }));
-    
-    console.log('[/api/stores] Returning stores:', items.map(s => s.name));
-    return res.json({ items });
-  } catch (e) {
-    console.error('[/api/stores] Error:', e?.message || e);
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-
-app.post('/api/stores', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (role !== 'admin' && role !== 'hq_manager') {
-    return res.status(403).json({ error: 'forbidden', message: '仅管理员可创建门店' });
-  }
-  const name = String(req.body?.name || '').trim();
-  if (!name) return res.status(400).json({ error: 'missing_name' });
-
-  // 现金客户存在未结清合同或帐期客户欠款超授信时，冻结“自动新增门店”能力。
-  // 单租户本地环境没有关联销售线索时不受该规则影响。
-  try {
-    const tenantId = resolveTenantIdDefault();
-    const risk = await pool.query(
-      `SELECT ca.lead_id FROM sales_credit_accounts ca
-        JOIN sales_leads sl ON sl.id=ca.lead_id
-       WHERE sl.tenant_id=$1
-       ORDER BY ca.updated_at DESC LIMIT 1`, [tenantId]
-    );
-    const creditRisk = risk.rows?.[0] ? await getCreditRisk(pool, risk.rows[0].lead_id) : null;
-    if (creditRisk && !creditRisk.can_open_store) {
-      const message = creditRisk.payment_type === 'cash'
-        ? '现金客户存在未结清合同，禁止新增门店；请先由财务确认足额回款。'
-        : '该客户欠款已超过授信额度，账户已锁定新增门店；请联系总经理重新授信。';
-      return res.status(423).json({ error: 'credit_account_locked', message });
-    }
-  } catch (e) {
-    console.error('[/api/stores] credit risk check failed:', e?.message || e);
-    return res.status(500).json({ error: 'server_error', message: 'credit_risk_check_failed' });
-  }
-
-  // 门店按数量计费：建店前先核对已购买的门店数量上限，避免租户绕过收费无限建店。
-  try {
-    const tenantForQuota = resolveTenantIdDefault();
-    const storeLicenseR = await pool.query(`SELECT COUNT(*)::int AS max_stores FROM tenant_store_licenses WHERE tenant_id=$1 AND status='active' AND expires_at>=NOW()`, [tenantForQuota]);
-    const licenseR = await pool.query(`SELECT max_stores FROM licenses WHERE tenant_id=$1 AND status IN ('active','trial') ORDER BY created_at DESC LIMIT 1`, [tenantForQuota]);
-    // 新客户按门店许可证计数；历史租户仍兼容原总门店额度。
-    const maxStores = Number(storeLicenseR.rows?.[0]?.max_stores || 0) || licenseR.rows?.[0]?.max_stores;
-    if (maxStores != null) {
-      const state0 = (await getSharedState()) || {};
-      const currentCount = Array.isArray(state0?.stores) ? state0.stores.length : 0;
-      if (currentCount >= maxStores) {
-        return res.status(403).json({
-          error: 'store_quota_exceeded',
-          message: `已达门店数量上限(${currentCount}/${maxStores})，如需增加门店请联系客户成功经理购买更多门店额度`,
-          current: currentCount,
-          max: maxStores,
-        });
-      }
-    }
-  } catch (e) {
-    console.error('[/api/stores] quota check failed:', e?.message || e);
-    return res.status(500).json({ error: 'server_error', message: 'quota_check_failed' });
-  }
-
-  const address = String(req.body?.address || '').trim();
-  const city = String(req.body?.city || '').trim();
-  const floor = String(req.body?.floor || '').trim();
-  const managerName = String(req.body?.managerName || '').trim();
-  const phone = String(req.body?.phone || '').trim();
-  const openDate = String(req.body?.openDate || '').trim() || null;
-  const brandName = String(req.body?.brand || req.body?.brandName || '').trim();
-  const brandId = normalizeBrandId(req.body?.brandId || brandName);
-  const isActive = req.body?.status ? String(req.body.status) === 'active' : true;
-  const region = String(req.body?.region || '').trim();
-  const profileFields = extractStoreProfileFields(req.body);
-
-  try {
-    const state0 = (await getSharedState()) || {};
-    const stores = Array.isArray(state0?.stores) ? state0.stores.slice() : [];
-    const item = {
-      id: `store_${Date.now()}`,
-      name,
-      address,
-      city,
-      floor,
-      managerName,
-      manager: managerName,
-      phone,
-      openDate,
-      status: isActive ? 'active' : 'inactive',
-      brand: brandName,
-      brandName,
-      brandId,
-      region,
-      ...profileFields,
-      createdAt: hrmsNowISO(),
-      updatedAt: hrmsNowISO()
-    };
-    stores.push(item);
-    const nextState = { ...state0, stores };
-    nextState.brands = getBrandsFromState(nextState);
-    await saveSharedState(nextState);
-    syncStoreProfileToChairmanConfig(name, brandName, profileFields).catch(() => {});
-    return res.json({ item });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-app.get('/api/brands', authRequired, async (req, res) => {
-  try {
-    const state0 = (await getSharedState()) || {};
-    const items = getBrandsFromState(state0);
-    return res.json({ items });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-app.post('/api/brands', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-  const name = String(req.body?.name || '').trim();
-  if (!name) return res.status(400).json({ error: 'missing_name' });
-  const id = normalizeBrandId(req.body?.id || name);
-  if (!id) return res.status(400).json({ error: 'invalid_brand_id' });
-  const config = req.body?.config && typeof req.body.config === 'object' ? req.body.config : { sopKeypoints: [], performanceWeights: {} };
-  try {
-    const state0 = (await getSharedState()) || {};
-    const brands = getBrandsFromState(state0).filter((b) => normalizeBrandId(b?.id) !== id);
-    const item = { id, name, config };
-    brands.unshift(item);
-    await saveSharedState({ ...state0, brands });
-    return res.json({ ok: true, item });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-app.put('/api/brands/:id', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-  const id = normalizeBrandId(req.params?.id);
-  if (!id) return res.status(400).json({ error: 'missing_id' });
-  const name = String(req.body?.name || '').trim();
-  const config = req.body?.config && typeof req.body.config === 'object' ? req.body.config : null;
-  try {
-    const state0 = (await getSharedState()) || {};
-    const brands = getBrandsFromState(state0);
-    const idx = brands.findIndex((b) => normalizeBrandId(b?.id) === id);
-    if (idx < 0) return res.status(404).json({ error: 'not_found' });
-    const prev = brands[idx] || {};
-    brands[idx] = {
-      ...prev,
-      id,
-      name: name || prev.name,
-      config: config || prev.config || { sopKeypoints: [], performanceWeights: {} }
-    };
-
-    const stores = Array.isArray(state0?.stores) ? state0.stores.slice() : [];
-    const oldName = String(prev?.name || '').trim();
-    const newName = String(brands[idx]?.name || '').trim();
-    const nextStores = stores.map((s) => {
-      const sid = normalizeBrandId(s?.brandId || s?.brand || s?.brandName);
-      if (sid !== id) return s;
-      return {
-        ...s,
-        brandId: id,
-        brand: newName || oldName,
-        brandName: newName || oldName,
-        updatedAt: hrmsNowISO()
-      };
-    });
-
-    await saveSharedState({ ...state0, brands, stores: nextStores });
-    return res.json({ ok: true, item: brands[idx] });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
 
 async function getKnowledgeViewerProfile(req) {
   const username = String(req.user?.username || '').trim();
@@ -10894,6 +10584,25 @@ registerFlowConfigRoutes(app, authRequired, {
 registerStoresDomainRoutes(app, authRequired, {
   pool,
   resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
+});
+
+registerStoresCrudRoutes(app, authRequired, {
+  pool,
+  getSharedState,
+  saveSharedState,
+  resolveTenantIdDefault,
+  getCreditRisk,
+  hrmsNowISO,
+  normalizeBrandId,
+  getBrandsFromState,
+});
+
+registerBrandsRoutes(app, authRequired, {
+  getSharedState,
+  saveSharedState,
+  hrmsNowISO,
+  normalizeBrandId,
+  getBrandsFromState,
 });
 
 registerPaymentConfigRoutes(app, authRequired, {
@@ -12296,28 +12005,6 @@ app.listen(PORT, HOST, async () => {
   }
 });
 }
-
-app.post('/api/stores/:name/location', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (role !== 'admin') return res.status(403).json({ error: 'forbidden' });
-  const storeName = decodeURIComponent(String(req.params?.name || '').trim());
-  const lat = Number(req.body?.latitude);
-  const lng = Number(req.body?.longitude);
-  const address = String(req.body?.address || '').trim();
-  if (!storeName) return res.status(400).json({ error: 'missing_store' });
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: 'missing_location' });
-  try {
-    const state = (await getSharedState()) || {};
-    const stores = Array.isArray(state.stores) ? state.stores.slice() : [];
-    const idx = stores.findIndex(s => String(s?.name || '').trim() === storeName);
-    if (idx < 0) return res.status(404).json({ error: 'store_not_found' });
-    stores[idx] = { ...stores[idx], latitude: lat, longitude: lng, address: address || stores[idx].address || '' };
-    await saveSharedState({ ...state, stores });
-    return res.json({ store: stores[idx] });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
 
 app.use((err, req, res, next) => {
   if (!err) return next();
