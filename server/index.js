@@ -5023,7 +5023,8 @@ app.post('/api/permission-groups/assign', authRequired, async (req, res) => {
   }
 });
 
-// A2：GET/PUT /api/role-modules 已迁至 domains/flow-config/routes.js（hr_rating_configs 权威）
+// A2：GET/PUT /api/role-modules 唯一权威 = domains/flow-config（hr_rating_configs + state 镜像）
+// agent-config-manager 内影子路由已删除（勿再加 /api/admin/role-modules）
 
 app.get('/api/admin/store-duty-bindings', authRequired, async (req, res) => {
   const role = String(req.user?.role || '').trim();

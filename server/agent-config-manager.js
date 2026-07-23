@@ -1098,48 +1098,8 @@ export function registerAgentConfigRoutes(app, authRequired) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // === 角色模块权限配置 ===
-  const DEFAULT_ROLE_MODULES = {
-    store_employee: ['profile', 'attendance', 'points', 'exam'],
-    store_manager: ['profile', 'attendance', 'employees', 'daily-report', 'approvals', 'payment', 'rewards', 'points', 'reports', 'knowledge', 'exam', 'agents'],
-    store_production_manager: ['profile', 'attendance', 'reports', 'points', 'knowledge', 'rewards', 'exam', 'agents'],
-    hq_manager: ['profile', 'attendance', 'daily-report', 'approvals', 'employees', 'payment', 'exam', 'rewards', 'points', 'knowledge', 'reports', 'agents'],
-    hr_manager: ['profile', 'attendance', 'employees', 'approvals', 'payment', 'reports', 'exam'],
-    cashier: ['profile', 'attendance', 'payment', 'exam'],
-    front_manager: ['profile', 'attendance', 'exam', 'points', 'daily-report', 'knowledge']
-  };
-
-  // 所有用户可调用（登录后加载自己角色的可用模块）
-  app.get('/api/role-modules', authRequired, async (req, res) => {
-    try {
-      const r = await pool().query(`SELECT config FROM hr_rating_configs WHERE config_key='role_module_config' AND enabled=true LIMIT 1`);
-      const cfg = r.rows?.[0]?.config;
-      const parsed = cfg && typeof cfg === 'object' ? cfg : (typeof cfg === 'string' ? JSON.parse(cfg) : null);
-      return res.json({ config: parsed || DEFAULT_ROLE_MODULES });
-    } catch (e) {
-      return res.json({ config: DEFAULT_ROLE_MODULES });
-    }
-  });
-
-  // 管理员保存角色模块配置
-  app.put('/api/admin/role-modules', authRequired, async (req, res) => {
-    if (!assertAdmin(req, res)) return;
-    const config = req.body?.config;
-    if (!config || typeof config !== 'object') return res.status(400).json({ error: 'invalid_config' });
-    try {
-      const r = await pool().query(
-        `INSERT INTO hr_rating_configs (config_key, config, enabled, updated_at, tenant_id)
-         VALUES ('role_module_config', $1::jsonb, true, now(), $2)
-         ON CONFLICT (config_key, tenant_id)
-         DO UPDATE SET config = excluded.config, enabled = true, updated_at = now()
-         RETURNING config, updated_at`,
-        [JSON.stringify(config), resolveTenantIdDefault()]
-      );
-      return res.json({ config: r.rows[0].config, updated_at: r.rows[0].updated_at });
-    } catch (e) {
-      return res.status(500).json({ error: e.message });
-    }
-  });
+  // 角色模块权限：唯一权威为 domains/flow-config（GET/PUT /api/role-modules）。
+  // 此处不再注册影子 GET /api/role-modules 与 PUT /api/admin/role-modules，避免双写/无镜像。
 }
 
 // 缓存相关的辅助函数

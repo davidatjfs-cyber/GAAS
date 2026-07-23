@@ -1,11 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   normalizeApprovalFlows,
   normalizePaymentFlowByStore,
   normalizeRoleModules,
   hydrateFlowConfigFromTable,
 } from '../domains/flow-config/service.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 test('normalizeApprovalFlows 兼容遗留 array 形状', () => {
   const out = normalizeApprovalFlows({ leave: ['manager', 'admin'], payment: { steps: ['cashier'], stores: ['洪潮'] } });
@@ -23,6 +28,13 @@ test('normalizePaymentFlowByStore 兼容遗留 array 形状', () => {
 test('normalizeRoleModules 自动补 training', () => {
   const out = normalizeRoleModules({ store_manager: ['employees', 'attendance'] });
   assert.ok(out.store_manager.includes('training'));
+});
+
+test('影子 API 已拆除：agent-config-manager 不再注册 role-modules', () => {
+  const src = readFileSync(join(__dirname, '../agent-config-manager.js'), 'utf8');
+  assert.equal(src.includes("app.get('/api/role-modules'"), false);
+  assert.equal(src.includes("app.put('/api/admin/role-modules'"), false);
+  assert.ok(src.includes('domains/flow-config'));
 });
 
 test('hydrateFlowConfigFromTable：表有数据时覆盖', async () => {
