@@ -1716,7 +1716,7 @@
 
         async function repInventoryForecastUpload() {
             if (!currentUser) return;
-            showNotification('智能助手已改为自动读取 sales_raw，无需再手动上传历史数据。', 'info');
+            showNotification('智能助手已改为自动读取销售明细（pos_sales_detail），无需再手动上传历史数据。', 'info');
             loadReportsData();
         }
 
@@ -1922,7 +1922,7 @@
                                         `);
                                     });
                                 });
-                                return rows.length ? rows.join('') : '<tr><td colspan="6" style="text-align:center; color:rgba(200,215,230,0.6); padding:14px 0;">暂无预测明细（当前按 sales_raw 自动汇总，可先检查销售明细是否已入库）</td></tr>';
+                                return rows.length ? rows.join('') : '<tr><td colspan="6" style="text-align:center; color:rgba(200,215,230,0.6); padding:14px 0;">暂无预测明细（当前按销售明细自动汇总，可先检查 pos_sales_detail 是否已入库）</td></tr>';
                             })()}
                         </tbody>
                     </table>
@@ -1937,9 +1937,9 @@
                         </select>
                     </div>
                     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                        <button class="btn btn-secondary" type="button" onclick="repInventoryForecastRun()" style="padding:8px 12px; border-radius:8px;">刷新 sales_raw 样本</button>
+                        <button class="btn btn-secondary" type="button" onclick="repInventoryForecastRun()" style="padding:8px 12px; border-radius:8px;">刷新销售明细样本</button>
                     </div>
-                    <div style="margin-top:8px; font-size:11px; color:rgba(200,215,230,0.62);">智能助手现在直接按所选门店、业态与日期范围汇总 sales_raw，不再依赖手工上传第二份历史文件。</div>
+                    <div style="margin-top:8px; font-size:11px; color:rgba(200,215,230,0.62);">智能助手现在直接按所选门店、业态与日期范围汇总销售明细（pos_sales_detail），不再依赖手工上传第二份历史文件。</div>
                 </div>` : ''}
 
                 <div style="margin-top:12px; font-size:12px; font-weight:800; color:rgba(226,232,240,0.92);">历史样本（${bizLabel(historyBizType)}）</div>

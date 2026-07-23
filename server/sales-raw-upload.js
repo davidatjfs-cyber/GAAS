@@ -32,37 +32,6 @@ function bizThreshold(bizType) {
   return bizType === 'takeaway' ? QUALITY_THRESHOLDS.takeawayMinCoveragePct : QUALITY_THRESHOLDS.dineinMinCoveragePct;
 }
 
-async function ensureSalesRawSchema(client) {
-  throw Object.assign(new Error('sales_raw_retired'), { code: 'sales_raw_retired' });
-
-  let hasDishCode = true;
-  let hasCategory = true;
-  try {
-    await client.query(`ALTER TABLE sales_raw ADD COLUMN IF NOT EXISTS dish_code VARCHAR(120)`);
-  } catch (e) {
-    const msg = String(e?.message || e);
-    if (/must be owner|permission denied|not owner/i.test(msg)) {
-      console.warn('[sales-raw] skip schema alter for sales_raw.dish_code:', msg);
-      hasDishCode = false;
-    } else {
-      throw e;
-    }
-  }
-  try {
-    await client.query(`ALTER TABLE sales_raw ADD COLUMN IF NOT EXISTS category VARCHAR(200)`);
-    await client.query(`ALTER TABLE sales_raw ADD COLUMN IF NOT EXISTS category_code VARCHAR(120)`);
-  } catch (e) {
-    const msg = String(e?.message || e);
-    if (/must be owner|permission denied|not owner/i.test(msg)) {
-      console.warn('[sales-raw] skip schema alter for sales_raw category columns:', msg);
-      hasCategory = false;
-    } else {
-      throw e;
-    }
-  }
-  return { hasDishCode, hasCategory };
-}
-
 async function buildAliasMap(store, bizType) {
   const p = gp();
   const rows = await p.query(
@@ -295,44 +264,8 @@ export function parseSalesRawRows(matrix, defBiz, defStore, opts = {}) {
   return res;
 }
 
-export async function insertSalesRawRows(rows, store, bizType, minDate, maxDate) {
-  throw Object.assign(new Error('sales_raw_retired: use pos_order_items / pos_sales_detail'), { code: 'sales_raw_retired' });
-
-  const p = gp();
-  const client = await p.connect();
-  try {
-    const { hasDishCode: hasDishCodeColumn, hasCategory: hasCategoryColumns } = await ensureSalesRawSchema(client);
-    await client.query('BEGIN');
-    const del = await client.query('DELETE FROM sales_raw WHERE store=$1 AND biz_type=$2 AND date BETWEEN $3 AND $4',[store,bizType,minDate,maxDate]);
-    console.log(`[sales-raw] deleted ${del.rowCount} old rows ${store}/${bizType} ${minDate}~${maxDate}`);
-    let cnt=0;
-    for (const r of rows) {
-      const cat = String(r.category || '').trim() || null;
-      const ccode = String(r.category_code || '').trim() || null;
-      if (hasDishCodeColumn && hasCategoryColumns) {
-        await client.query(
-          `INSERT INTO sales_raw(store,date,biz_type,dish_name,dish_code,category,category_code,qty,sales_amount,revenue,discount,slot,order_time,checkout_time,weekday) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-          [r.store, r.date, r.biz_type, r.dish_name, String(r.dish_code || ''), cat, ccode, r.qty, r.sales_amount, r.revenue, r.discount, r.slot, r.order_time, r.checkout_time, r.weekday]
-        );
-      } else if (hasDishCodeColumn) {
-        await client.query(
-          `INSERT INTO sales_raw(store,date,biz_type,dish_name,dish_code,qty,sales_amount,revenue,discount,slot,order_time,checkout_time,weekday) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-          [r.store, r.date, r.biz_type, r.dish_name, String(r.dish_code || ''), r.qty, r.sales_amount, r.revenue, r.discount, r.slot, r.order_time, r.checkout_time, r.weekday]
-        );
-      } else {
-        await client.query(
-          `INSERT INTO sales_raw(store,date,biz_type,dish_name,qty,sales_amount,revenue,discount,slot,order_time,checkout_time,weekday) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-          [r.store, r.date, r.biz_type, r.dish_name, r.qty, r.sales_amount, r.revenue, r.discount, r.slot, r.order_time, r.checkout_time, r.weekday]
-        );
-      }
-      cnt++;
-    }
-    await client.query('COMMIT');
-    return { deleted: del.rowCount, inserted: cnt };
-  } catch (e) {
-    await client.query('ROLLBACK');
-    throw e;
-  } finally {
-    client.release();
-  }
+export async function insertSalesRawRows() {
+  throw Object.assign(new Error('sales_raw_retired: use pos_order_items / pos_sales_detail'), {
+    code: 'sales_raw_retired',
+  });
 }

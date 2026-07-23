@@ -3818,23 +3818,38 @@ ${String(text || '').slice(0, 9000)}`;
                 }
                 const old = employees[idx] || {};
                 const nextPwd = passwordInput ? passwordInput : (old.password || '');
-                employees[idx] = { ...old, id, username, name, password: nextPwd, gender, birthday, idCardNumber, hometown, registeredResidence, maritalStatus, wechat, store, role, department, position, level, managerUsername, salary, education, bankCardCompany, bankNameCompany, bankCardPersonal, bankNamePersonal, bankCard, emergencyContactName, emergencyContactPhone, emergencyContactRelation, idCardFrontUrl, idCardBackUrl, joinDate, phone, email, status, coreTalent };
+                const nextEmp = { ...old, id, username, name, password: nextPwd, gender, birthday, idCardNumber, hometown, registeredResidence, maritalStatus, wechat, store, role, department, position, level, managerUsername, salary, education, bankCardCompany, bankNameCompany, bankCardPersonal, bankNamePersonal, bankCard, emergencyContactName, emergencyContactPhone, emergencyContactRelation, idCardFrontUrl, idCardBackUrl, joinDate, phone, email, status, coreTalent };
+                try {
+                    const resp = await HRMS_API.upsertEmployee(origEmpId, nextEmp);
+                    const saved = resp?.employee || nextEmp;
+                    const keyLower = String(origEmpId).toLowerCase();
+                    const nextList = (employees || []).filter(e => {
+                        const un = String(e?.username || '').trim().toLowerCase();
+                        const eid = String(e?.id || '').trim();
+                        return un !== keyLower && eid !== origEmpId;
+                    });
+                    nextList.push(saved);
+                    HRMS_STORE.setEmployees(nextList);
+                } catch (e) {
+                    showNotification('编辑员工失败：' + (e?.message || e || '网络错误'), 'error');
+                    return;
+                }
             } else {
                 const pwd = passwordInput || '123456';
-                employees.push({ id, username, name, password: pwd, gender, birthday, idCardNumber, hometown, registeredResidence, maritalStatus, wechat, store, role, department, position, level, managerUsername, salary, education, bankCardCompany, bankNameCompany, bankCardPersonal, bankNamePersonal, bankCard, emergencyContactName, emergencyContactPhone, emergencyContactRelation, idCardFrontUrl, idCardBackUrl, joinDate, phone, email, status, coreTalent, promotionHistory: [], createdAt: new Date().toISOString().slice(0, 10), lastLogin: null });
+                const nextEmp = { id, username, name, password: pwd, gender, birthday, idCardNumber, hometown, registeredResidence, maritalStatus, wechat, store, role, department, position, level, managerUsername, salary, education, bankCardCompany, bankNameCompany, bankCardPersonal, bankNamePersonal, bankCard, emergencyContactName, emergencyContactPhone, emergencyContactRelation, idCardFrontUrl, idCardBackUrl, joinDate, phone, email, status, coreTalent, promotionHistory: [], createdAt: new Date().toISOString().slice(0, 10), lastLogin: null };
+                try {
+                    const resp = await HRMS_API.createEmployee(nextEmp);
+                    const saved = resp?.employee || nextEmp;
+                    HRMS_STORE.setEmployees([...(employees || []), saved]);
+                } catch (e) {
+                    const raw = String(e?.message || e || '网络错误');
+                    showNotification('新增员工失败：' + (raw.includes('duplicate') ? '账号已存在' : raw), 'error');
+                    return;
+                }
             }
 
-            HRMS_STORE.setEmployees(employees);
             closeEmployeeFormModal();
             loadEmployeesData();
-            try {
-                const ok = await hrmsFlushStateSave();
-                if (!ok) {
-                    showNotification('员工信息已保存到本地，但同步到服务器失败（请稍后重试或刷新后检查）', 'warning');
-                }
-            } catch (e) {
-                showNotification('员工信息已保存到本地，但同步到服务器失败（请稍后重试或刷新后检查）', 'warning');
-            }
             showNotification(mode === 'edit' ? '编辑员工成功' : '新增员工成功', 'success');
         }
         
@@ -3863,9 +3878,15 @@ ${String(text || '').slice(0, 9000)}`;
             }
             const _okRP = await hrmsConfirm({ title: '重置密码', message: `确定要重置账号 ${key} 的密码为默认 123456 吗？`, okText: '确认重置', icon: '🔑' });
             if (!_okRP) return;
-            employees[idx] = { ...employees[idx], password: '123456' };
-            HRMS_STORE.setEmployees(employees);
-            showNotification('密码已重置', 'success');
+            const uname = String(employees[idx]?.username || key).trim();
+            try {
+                await HRMS_API.resetEmployeePassword(uname, '123456');
+                employees[idx] = { ...employees[idx], password: '123456' };
+                HRMS_STORE.setEmployees(employees);
+                showNotification('密码已重置', 'success');
+            } catch (e) {
+                showNotification('重置密码失败：' + (e?.message || e || '网络错误'), 'error');
+            }
         }
         
         async function toggleEmployeeStatus(empId) {
@@ -3887,10 +3908,15 @@ ${String(text || '').slice(0, 9000)}`;
             const ok = await hrmsConfirm({ title: '切换员工状态', message: `确定要将账号 ${emp.username || key} 状态切换为 ${nextStatus === 'active' ? '启用' : '禁用'} 吗？`, okText: nextStatus === 'active' ? '确认启用' : '确认禁用', icon: nextStatus === 'active' ? '✅' : '🚫' });
             if (!ok) return;
 
-            employees[idx] = { ...emp, status: nextStatus };
-            HRMS_STORE.setEmployees(employees);
-            loadEmployeesData();
-            showNotification('状态已更新', 'success');
+            try {
+                const resp = await HRMS_API.patchEmployeeStatus(emp.username || key, nextStatus);
+                employees[idx] = resp?.employee || { ...emp, status: nextStatus };
+                HRMS_STORE.setEmployees(employees);
+                loadEmployeesData();
+                showNotification('状态已更新', 'success');
+            } catch (e) {
+                showNotification('状态更新失败：' + (e?.message || e || '网络错误'), 'error');
+            }
         }
 
         async function loginAsEmployee(username, displayName) {
@@ -3978,31 +4004,35 @@ ${String(text || '').slice(0, 9000)}`;
             const keyLower = key.toLowerCase();
             const employees = HRMS_STORE.getEmployees();
             const users = HRMS_STORE.getUsers ? HRMS_STORE.getUsers() : [];
+            const uname = (() => {
+                const hit = (employees || []).find(e => {
+                    const un = String(e?.username || '').trim().toLowerCase();
+                    const id = String(e?.id || '').trim();
+                    return un === keyLower || id === key;
+                });
+                return String(hit?.username || key).trim();
+            })();
+            try {
+                await HRMS_API.deleteEmployeeApi(uname);
+            } catch (e) {
+                showNotification('删除失败：' + (e?.message || e || '网络错误'), 'error');
+                return;
+            }
             HRMS_STORE.setEmployees((employees || []).filter(e => {
                 const un = String(e?.username || '').trim().toLowerCase();
                 const id = String(e?.id || '').trim();
-                return un !== keyLower && id !== key;
+                return un !== keyLower && id !== key && un !== String(uname).toLowerCase();
             }));
             try {
                 if (HRMS_STORE.setUsers && Array.isArray(users)) {
                     HRMS_STORE.setUsers(users.filter(u => {
                         const un = String(u?.username || '').trim().toLowerCase();
                         const id = String(u?.id || '').trim();
-                        return un !== keyLower && id !== key;
+                        return un !== keyLower && id !== key && un !== String(uname).toLowerCase();
                     }));
                 }
             } catch (e) {}
             loadEmployeesData();
-            try {
-                const ok = await hrmsFlushStateSave();
-                if (!ok) {
-                    showNotification('已删除，但同步到服务器失败（请稍后重试或刷新后检查）', 'warning');
-                    return;
-                }
-            } catch (e) {
-                showNotification('已删除，但同步到服务器失败（请稍后重试或刷新后检查）', 'warning');
-                return;
-            }
             showNotification('已删除', 'success');
         }
         

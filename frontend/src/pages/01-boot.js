@@ -1595,10 +1595,47 @@
                 ['dailyReports', 'inventoryForecastHistory', 'pointRecords'].forEach(function(k) {
                     if (_d[k] === undefined && _hrmsServerPassthrough[k] !== undefined) _d[k] = _hrmsServerPassthrough[k];
                 });
+                // A1：employees 已表权威，禁止经 PUT /api/state 覆盖
+                try { delete _d.employees; } catch (e) {}
                 return this.request('/api/state', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ data: _d })
+                });
+            },
+
+            async createEmployee(employee) {
+                return this.request('/api/employees', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ employee: employee || {} })
+                });
+            },
+            async upsertEmployee(username, employee) {
+                return this.request('/api/employees/' + encodeURIComponent(String(username || '').trim()), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ employee: employee || {} })
+                });
+            },
+            async patchEmployeeStatus(username, status, extra) {
+                const body = Object.assign({ status: status }, extra && typeof extra === 'object' ? extra : {});
+                return this.request('/api/employees/' + encodeURIComponent(String(username || '').trim()) + '/status', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            },
+            async resetEmployeePassword(username, password) {
+                return this.request('/api/employees/' + encodeURIComponent(String(username || '').trim()) + '/password', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: password == null ? '123456' : String(password) })
+                });
+            },
+            async deleteEmployeeApi(username) {
+                return this.request('/api/employees/' + encodeURIComponent(String(username || '').trim()), {
+                    method: 'DELETE'
                 });
             },
             async getUnreadCounts() {

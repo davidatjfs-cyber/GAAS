@@ -38,7 +38,7 @@ test.after(async () => {
   await app.stop();
 });
 
-test('PUT /api/state 白名单：不能覆盖 roleModules/approvalFlows/pointRecords', async () => {
+test('PUT /api/state 白名单：不能覆盖 roleModules/approvalFlows/pointRecords/employees', async () => {
   const db = testDb();
   const marker = uniqueId('flow');
   await db.query(
@@ -79,6 +79,7 @@ test('PUT /api/state 白名单：不能覆盖 roleModules/approvalFlows/pointRec
   assert.ok(Array.isArray(putBody.ignoredKeys));
   assert.ok(putBody.ignoredKeys.includes('roleModules'));
   assert.ok(putBody.ignoredKeys.includes('pointRecords'));
+  assert.ok(putBody.ignoredKeys.includes('employees'));
   assert.ok(putBody.ignoredKeys.includes('totallyNewKey'));
 
   const row = await db.query(`select data from hrms_state where key = 'default'`);
@@ -90,6 +91,6 @@ test('PUT /api/state 白名单：不能覆盖 roleModules/approvalFlows/pointRec
   assert.equal(data.payrollAdjustments?.['2026-07']?.keep, true);
   assert.equal(data.settings?.theme, 'new');
   assert.equal(data.totallyNewKey, undefined);
-  assert.ok(data.employees.some((e) => e.username === 'keep_emp' && e.name === '改名员工'));
-  assert.ok(data.employees.some((e) => e.username === 'new_emp'));
+  assert.ok(data.employees.some((e) => e.username === 'keep_emp' && e.name === '保留员工'));
+  assert.ok(!data.employees.some((e) => e.username === 'new_emp'));
 });

@@ -813,7 +813,7 @@ async function execBiToolRevenueSummary(store, args = {}, originalQuery = '') {
       return { ok: true, source: 'daily_reports', text: lines.join('\n') };
     }
 
-    // Fallback: daily_reports 无数据时从 sales_raw 按日汇总
+    // Fallback: daily_reports 无数据时从 pos_sales_detail 按日汇总
     const salesR = await pool().query(
       `SELECT s.date::text AS date, ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS day_revenue,
               ROUND(SUM(COALESCE(s.sales_amount,0))::numeric, 2) AS day_sales
@@ -901,7 +901,7 @@ async function execBiToolRevenueForecastNextDay(store, args = {}) {
       };
     }
 
-    // 回退到 sales_raw 的按日实收汇总
+    // 回退到 pos_sales_detail 的按日实收汇总
     const salesR = await pool().query(
       `SELECT s.date, ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS day_revenue
        FROM pos_sales_detail s
@@ -1509,7 +1509,7 @@ function resolveBiRelevantSourceKeys(text) {
     keys.add('daily_reports');
   }
   if (/(堂食|外卖|销售明细|时段.*销|午市|晚市|热销|畅销|备货|菜品.*销量|点单)/.test(q)) {
-    keys.add('sales_raw');
+    keys.add('pos_sales_detail');
     keys.add('inventory_forecast');
   }
   if (keys.size === 0 && isFactLikeQuestion(q)) {
@@ -1577,7 +1577,7 @@ async function buildBiFactSourceAudit(store, text) {
       sql: `SELECT COUNT(*)::int AS c, MAX(date)::text AS latest FROM daily_reports WHERE lower(regexp_replace(coalesce(store,''), '\\s+', '', 'g')) LIKE $1`,
       params: [normalizeStoreLike(store)]
     },
-    sales_raw: {
+    pos_sales_detail: {
       label: '销售明细（pos_sales_detail）',
       sql: `SELECT COUNT(*)::int AS c, MAX(date)::text AS latest FROM pos_sales_detail WHERE lower(regexp_replace(coalesce(store,''), '\\s+', '', 'g')) LIKE $1`,
       params: [normalizeStoreLike(store)]
@@ -1997,7 +1997,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
     const r = await pool().query(sql, params);
     const rows = r.rows || [];
     if (!rows.length) {
-      // Fallback: 从 sales_raw 按日汇总
+      // Fallback: 从 pos_sales_detail 按日汇总
       try {
         const salesR = await pool().query(
           `SELECT s.date::text AS date, ROUND(SUM(COALESCE(s.revenue,0))::numeric, 2) AS day_revenue,
@@ -2174,7 +2174,7 @@ async function buildBiDeterministicDailyReportReply(store, text) {
       const cumEff = Math.round(cumPre / cumLabor);
       lines.push(`📦 **本月累计人效**: ¥${cumEff.toLocaleString('zh-CN')}`);
     }
-    // 堂食/外卖单数（从 sales_raw 查询）
+    // 堂食/外卖单数（从 pos_sales_detail 查询）
     try {
       const bizR = await pool().query(
         `SELECT
@@ -4613,7 +4613,7 @@ function buildGrossProfileMap(profiles, store) {
   return map;
 }
 
-/** 基于备货预测历史 + 成本库的估算；数据审计「总实收毛利率异常」已改用 resolveTrustedNetMarginForAuditorIssue（sales_raw/日报），勿混用。 */
+/** 基于备货预测历史 + 成本库的估算；数据审计「总实收毛利率异常」已改用 resolveTrustedNetMarginForAuditorIssue（pos_sales_detail/日报），勿混用。 */
 async function estimateMarginMetricsForRange({ state, store, startDate, endDate }) {
   const historyRows = (Array.isArray(state?.inventoryForecastHistory) ? state.inventoryForecastHistory : [])
     .filter((x) => dailyReportRowMatches(store, x?.store))
@@ -4696,7 +4696,7 @@ async function estimateMarginMetricsForRange({ state, store, startDate, endDate 
 
 /**
  * 数据审计「总实收毛利率异常」专用：只使用可核对的数据源，与 bi-weekly-report 对齐。
- * 1) 优先 sales_raw + dish_library_costs（周报同款 SQL），并要求成本覆盖实收 ≥ 阈值、实收字段完整；
+ * 1) 优先 pos_sales_detail + dish_library_costs（周报同款 SQL），并要求成本覆盖实收 ≥ 阈值、实收字段完整；
  * 2) 否则使用 PostgreSQL daily_reports.actual_margin（日报有填报的天数）；
  * 3) 不再用 inventoryForecastHistory 触发该类告警，避免「未提供销售明细却出毛利率」的质疑。
  */
@@ -4736,7 +4736,7 @@ async function resolveTrustedNetMarginForAuditorIssue(storeName, startDate, endD
     if (missingRevPct > maxMissingRevPct) {
       return {
         ok: false,
-        reason: 'sales_raw_incomplete_revenue',
+        reason: 'pos_sales_incomplete_revenue',
         storeDbKey,
         alignNote: align?.note || null,
         message: `pos_sales_detail 中 ${missingRevRows}/${validSalesRows} 行(${missingRevPct.toFixed(1)}%)实收(revenue)为0，超过审计允许上限 ${maxMissingRevPct}%，不触发毛利率异常（请先修正导入）。`
@@ -4767,7 +4767,7 @@ async function resolveTrustedNetMarginForAuditorIssue(storeName, startDate, endD
     }
     return {
       ok: true,
-      source: 'sales_raw_plus_cost_library',
+      source: 'pos_sales_detail_plus_cost_library',
       marginRate: netPct / 100,
       actualRevenue: Number(marginPack.total.revenue || 0),
       estimatedCost: Number(marginPack.total.cost || 0),

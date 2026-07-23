@@ -16,6 +16,13 @@ import { registerApprovalRoutes } from './approval-routes.js';
 import { applyStatePutWhitelist } from './hrms-state-put.js';
 import { registerPayrollDomainRoutes } from './domains/payroll/routes.js';
 import { hydrateStateFromAuthoritativeTables } from './domains/payroll/service.js';
+import { registerEmployeesDomainRoutes } from './domains/employees/routes.js';
+import {
+  hydrateEmployeesFromTable,
+  upsertEmployeeFromStateShape,
+  upsertEmployeesFromStateShape,
+  loadEmployeesFromTable,
+} from './domains/employees/service.js';
 import {
   getTenantIntegrationSummary,
   saveTenantFeishuIntegration,
@@ -6289,6 +6296,13 @@ async function mergeSharedStateFields(patches, arrayIdFields = {}, tenantId) {
               } catch (e) {
                 console.error('[mergeSharedStateFields][account-gate]', u, e?.message || e);
               }
+              // A1：表权威 — merge state 后同步 employees 表（修复原只写 state 的缺口）
+              try {
+                await upsertEmployeeFromStateShape(pool, key, rec);
+              } catch (e) {
+                console.error('[mergeSharedStateFields][employees-table]', u, e?.message || e);
+                void notifyAdminsDualWriteFailure('employees（mergeSharedStateFields）', e);
+              }
             }
           }
         }
@@ -6307,6 +6321,51 @@ async function mergeSharedStateFields(patches, arrayIdFields = {}, tenantId) {
     }
   }
   throw new Error('mergeSharedStateFields: max retries exceeded');
+}
+
+/** 从 hrms_state 镜像中移除员工（及 users 同账号），供 DELETE /api/employees 使用 */
+async function removeEmployeesFromSharedState(usernames, tenantId) {
+  const want = new Set(
+    (Array.isArray(usernames) ? usernames : [usernames])
+      .map((u) => String(u || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  if (!want.size) return;
+  const key = resolveTenantIdDefault(tenantId);
+  const MAX_RETRY = 10;
+  for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const r = await client.query('SELECT data, updated_at FROM hrms_state WHERE key = $1 FOR UPDATE', [key]);
+      const row = r.rows?.[0];
+      const current = row?.data && typeof row.data === 'object' ? row.data : {};
+      const prevUpdatedAt = row?.updated_at;
+      const next = { ...current };
+      next.employees = (Array.isArray(current.employees) ? current.employees : []).filter(
+        (e) => !want.has(String(e?.username || '').trim().toLowerCase())
+      );
+      next.users = (Array.isArray(current.users) ? current.users : []).filter(
+        (u) => !want.has(String(u?.username || '').trim().toLowerCase())
+      );
+      const updateResult = await client.query(
+        `UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1 AND updated_at = $3`,
+        [key, JSON.stringify(next), prevUpdatedAt]
+      );
+      if (updateResult.rowCount > 0) {
+        await client.query('COMMIT');
+        client.release();
+        return;
+      }
+      await client.query('ROLLBACK');
+      client.release();
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      client.release();
+      throw e;
+    }
+  }
+  throw new Error('removeEmployeesFromSharedState: max retries exceeded');
 }
 
 /**
@@ -6456,35 +6515,10 @@ async function notifyAdminsOcrFailed(itemTitle, fileType, reason) {
 async function dualWriteStateToDB(state) {
   if (!state || typeof state !== 'object') return;
   try {
-    // 1. employees → employees 表
+    // 1. employees → employees 表（A1：走 domain service）
     const empArr = Array.isArray(state.employees) ? state.employees : [];
-    for (const emp of empArr) {
-      const username = String(emp?.username || '').trim();
-      if (!username) continue;
-      const { id, name, role, store, department, position, status, gender, phone, email,
-              joinDate, birthday, salary, password, managerUsername, idCardNumber, bankCard,
-              createdAt, updatedAt, ...rest } = emp;
-      await pool.query(
-         `INSERT INTO employees (id, username, name, role, store, department, position, status,
-            gender, phone, email, join_date, birthday, salary, password_hash, manager_username,
-            id_card_number, bank_card, extra_json, created_at, updated_at, tenant_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-         ON CONFLICT (username, tenant_id) DO UPDATE SET
-           name=EXCLUDED.name, role=EXCLUDED.role, store=EXCLUDED.store,
-           department=EXCLUDED.department, position=EXCLUDED.position, status=EXCLUDED.status,
-           gender=EXCLUDED.gender, phone=EXCLUDED.phone, email=EXCLUDED.email,
-           join_date=EXCLUDED.join_date, birthday=EXCLUDED.birthday, salary=EXCLUDED.salary,
-           password_hash=EXCLUDED.password_hash, manager_username=EXCLUDED.manager_username,
-           id_card_number=EXCLUDED.id_card_number, bank_card=EXCLUDED.bank_card, extra_json=EXCLUDED.extra_json, updated_at=NOW()`,
-        [String(id || username), username,
-         String(name || ''), String(role || ''), String(store || ''), String(department || ''),
-         String(position || ''), String(status || 'active'), String(gender || ''),
-         String(phone || ''), String(email || ''), String(joinDate || ''), String(birthday || ''),
-         String(salary || ''), String(password || ''), String(managerUsername || ''),
-         String(idCardNumber || ''), String(bankCard || ''), JSON.stringify(rest),
-         createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
-         new Date().toISOString(), resolveTenantIdDefault()]
-      );
+    if (empArr.length) {
+      await upsertEmployeesFromStateShape(pool, resolveTenantIdDefault(), empArr);
     }
 
     // 2. leaveRecords → hrms_leave_records 表
@@ -12503,8 +12537,9 @@ app.get('/api/state', authRequired, async (req, res) => {
         console.error('[state] Failed to persist repaired state:', saveErr?.message || saveErr);
       }
     }
-    // 积分/薪资以表为权威，覆盖 state 镜像，避免前端读到陈旧 localStorage 同步后的脏数据
-    const hydrated = await hydrateStateFromAuthoritativeTables(pool, repaired, tenantIdQ);
+    // 积分/薪资/员工以表为权威，覆盖 state 镜像，避免前端读到陈旧 localStorage 同步后的脏数据
+    let hydrated = await hydrateStateFromAuthoritativeTables(pool, repaired, tenantIdQ);
+    hydrated = await hydrateEmployeesFromTable(pool, hydrated, tenantIdQ);
     const role = String(req.user?.role || '').trim();
     const uname = String(req.user?.username || '').trim();
     let payload = stripPasswordFieldsFromStateForClient(hydrated, role);
@@ -12515,7 +12550,7 @@ app.get('/api/state', authRequired, async (req, res) => {
   }
 });
 
-/** 管理员查看某账号在 hrms_state 中记录的当前登录密码明文（与改密接口写入的 state 同步，保证为最新）。 */
+/** 管理员查看某账号当前登录密码明文（优先 employees 表，其次 state 镜像）。 */
 app.get('/api/admin/employee-password/:username', authRequired, async (req, res) => {
   if (normalizeRoleForJwt(String(req.user?.role || '')) !== 'admin') {
     return res.status(403).json({ error: 'forbidden', message: '仅系统管理员可查看密码' });
@@ -12523,12 +12558,18 @@ app.get('/api/admin/employee-password/:username', authRequired, async (req, res)
   const un = String(req.params.username || '').trim().toLowerCase();
   if (!un) return res.status(400).json({ error: 'missing_username' });
   try {
-    const state = (await getSharedState(req.tenantId || req.user?.tenant_id || 'default')) || {};
+    const tid = req.tenantId || req.user?.tenant_id || 'default';
+    const tableEmps = await loadEmployeesFromTable(pool, tid);
+    const emp = tableEmps.find((e) => String(e?.username || '').trim().toLowerCase() === un);
+    if (emp) {
+      return res.json({ username: String(req.params.username || '').trim(), password: String(emp.password || '').trim() });
+    }
+    const state = (await getSharedState(tid)) || {};
     const employees = Array.isArray(state.employees) ? state.employees : [];
     const users = Array.isArray(state.users) ? state.users : [];
-    const emp = employees.find((e) => String(e?.username || '').trim().toLowerCase() === un);
+    const empS = employees.find((e) => String(e?.username || '').trim().toLowerCase() === un);
     const usr = users.find((u) => String(u?.username || '').trim().toLowerCase() === un);
-    const password = String(emp?.password ?? usr?.password ?? '').trim();
+    const password = String(empS?.password ?? usr?.password ?? '').trim();
     return res.json({ username: String(req.params.username || '').trim(), password });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
@@ -12559,51 +12600,7 @@ app.put('/api/state', authRequired, async (req, res) => {
        on conflict (key) do update set data = excluded.data, updated_at = now()`,
       [resolveTenantIdDefault(), JSON.stringify(data)]
     );
-    // Dual-write employees to independent table for disaster recovery
-    setImmediate(async () => {
-      let alertedEmployeesDualWrite = false;
-      try {
-        const emps = Array.isArray(data.employees) ? data.employees : [];
-        for (const emp of emps) {
-          const username = String(emp?.username || '').trim();
-          if (!username) continue;
-          const { id, name, role, store, department, position, status, gender, phone, email,
-                  joinDate, birthday, salary, password, managerUsername, idCardNumber, bankCard,
-                  createdAt, updatedAt, ...rest } = emp;
-          await pool.query(
-            `INSERT INTO employees (id, username, name, role, store, department, position, status,
-               gender, phone, email, join_date, birthday, salary, password_hash, manager_username,
-               id_card_number, bank_card, extra_json, created_at, updated_at, tenant_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-             ON CONFLICT (username, tenant_id) DO UPDATE SET
-               name=EXCLUDED.name, role=EXCLUDED.role, store=EXCLUDED.store,
-               department=EXCLUDED.department, position=EXCLUDED.position, status=EXCLUDED.status,
-               gender=EXCLUDED.gender, phone=EXCLUDED.phone, email=EXCLUDED.email,
-               join_date=EXCLUDED.join_date, birthday=EXCLUDED.birthday, salary=EXCLUDED.salary,
-               password_hash=EXCLUDED.password_hash, manager_username=EXCLUDED.manager_username,
-               id_card_number=EXCLUDED.id_card_number, bank_card=EXCLUDED.bank_card,
-               extra_json=EXCLUDED.extra_json, updated_at=NOW()`,
-            [String(id || username), username,
-             String(name || ''), String(role || ''), String(store || ''), String(department || ''),
-             String(position || ''), String(status || 'active'), String(gender || ''),
-             String(phone || ''), String(email || ''), String(joinDate || ''), String(birthday || ''),
-             String(salary || ''), String(password || ''), String(managerUsername || ''),
-             String(idCardNumber || ''), String(bankCard || ''), JSON.stringify(rest),
-             createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
-             new Date().toISOString(), resolveTenantIdDefault()]
-          ).catch((e) => {
-            console.error('[employees] dual-write error:', e?.message);
-            if (!alertedEmployeesDualWrite) {
-              alertedEmployeesDualWrite = true;
-              void notifyAdminsDualWriteFailure('employees（PUT /api/state）', e);
-            }
-          });
-        }
-      } catch (e) {
-        console.error('[employees] dual-write failed (non-fatal):', e?.message);
-        void notifyAdminsDualWriteFailure('employees（PUT /api/state 批处理）', e);
-      }
-    });
+    // A1：employees 已移出 PUT 白名单，不再从 PUT /api/state 双写员工表
     setImmediate(async () => {
       try {
         await upsertPayrollDomainFromState(data);
@@ -12612,7 +12609,7 @@ app.put('/api/state', authRequired, async (req, res) => {
         void notifyAdminsDualWriteFailure('hrms_payroll_domain（PUT /api/state）', e);
       }
     });
-    // 同步 users.is_active、飞书 feishu_users.registered 与 JWT 失效策略（与 mergeSharedStateFields 一致）
+    // users 数组仍可能经 PUT 写入；employees 账号门控改由窄 API / mergeSharedStateFields 负责
     setImmediate(async () => {
       try {
         const emps = Array.isArray(data.employees) ? data.employees : [];
@@ -14650,6 +14647,18 @@ registerPayrollDomainRoutes(app, authRequired, {
   resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
 });
 
+registerEmployeesDomainRoutes(app, authRequired, {
+  pool,
+  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
+  mergeEmployeesMirror: async (emps, tenantId) => {
+    await mergeSharedStateFields({ employees: emps }, { employees: 'username' }, tenantId);
+  },
+  removeEmployeesMirror: async (usernames, tenantId) => {
+    await removeEmployeesFromSharedState(usernames, tenantId);
+  },
+  applyAccountGate: applyHrmsUserAccountGateFromEmployee,
+});
+
 registerAgentRoutes(app, authRequired);
 registerAgentConfigRoutes(app, authRequired);
 
@@ -15104,74 +15113,13 @@ app.listen(PORT, HOST, async () => {
         console.error('[startup] 欠休域互备同步失败（非致命，不影响启动）:', e?.message);
       }
 
-    // 启动时同步员工信息：把各租户 hrms_state.employees 同步到 employees 独立表，
-    // 同时把 employees 中新增的账号反向回灌各自的 hrms_state，避免多租户登录链路断裂。
+    // A1：启动时 state→表补齐；表中多出的账号回灌 state 镜像（GET 仍以表 hydrate 为准）
       try {
       const employeeSyncSummary = await tenantContext.run(tenantId, async () => {
           const stateEmp = (await getSharedState(tenantId)) || {};
           const empArr = Array.isArray(stateEmp.employees) ? stateEmp.employees : [];
-          let syncedToTable = 0;
-          for (const emp of empArr) {
-            const username = String(emp?.username || '').trim();
-            if (!username) continue;
-            const { id, name, role, store, department, position, status, gender, phone, email,
-                    joinDate, birthday, salary, password, managerUsername, idCardNumber, bankCard,
-                    createdAt, updatedAt, ...rest } = emp;
-            await pool.query(
-              `INSERT INTO employees (id, username, name, role, store, department, position, status,
-                 gender, phone, email, join_date, birthday, salary, password_hash, manager_username,
-                 id_card_number, bank_card, extra_json, created_at, updated_at, tenant_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-               ON CONFLICT (username, tenant_id) DO UPDATE SET
-                 name=EXCLUDED.name, role=EXCLUDED.role, store=EXCLUDED.store,
-                 department=EXCLUDED.department, position=EXCLUDED.position, status=EXCLUDED.status,
-                 gender=EXCLUDED.gender, phone=EXCLUDED.phone, email=EXCLUDED.email,
-                 join_date=EXCLUDED.join_date, birthday=EXCLUDED.birthday, salary=EXCLUDED.salary,
-                 password_hash=EXCLUDED.password_hash, manager_username=EXCLUDED.manager_username,
-                 id_card_number=EXCLUDED.id_card_number, bank_card=EXCLUDED.bank_card,
-                 extra_json=EXCLUDED.extra_json, updated_at=NOW()`,
-              [String(id || username), username,
-               String(name || ''), String(role || ''), String(store || ''), String(department || ''),
-               String(position || ''), String(status || 'active'), String(gender || ''),
-               String(phone || ''), String(email || ''), String(joinDate || ''), String(birthday || ''),
-               String(salary || ''), String(password || ''), String(managerUsername || ''),
-               String(idCardNumber || ''), String(bankCard || ''), JSON.stringify(rest),
-               createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
-               new Date().toISOString(), tenantId]
-            );
-            syncedToTable++;
-          }
-
-          const dbEmp = await pool.query(
-            `SELECT id, username, name, role, store, department, position, status, gender, phone, email,
-                    join_date, birthday, salary, manager_username, id_card_number, bank_card, extra_json, created_at, updated_at
-               FROM employees
-              WHERE tenant_id = $1
-              ORDER BY username`,
-            [tenantId]
-          );
-          const dbEmpItems = dbEmp.rows.map(r => ({
-            id: r.id,
-            username: String(r.username || '').trim(),
-            name: String(r.name || '').trim(),
-            role: String(r.role || '').trim(),
-            store: String(r.store || '').trim(),
-            department: String(r.department || '').trim(),
-            position: String(r.position || '').trim(),
-            status: String(r.status || 'active').trim(),
-            gender: String(r.gender || '').trim(),
-            phone: String(r.phone || '').trim(),
-            email: String(r.email || '').trim(),
-            joinDate: String(r.join_date || '').trim(),
-            birthday: String(r.birthday || '').trim(),
-            salary: String(r.salary || '').trim(),
-            managerUsername: String(r.manager_username || '').trim(),
-            idCardNumber: String(r.id_card_number || '').trim(),
-            bankCard: String(r.bank_card || '').trim(),
-            createdAt: r.created_at ? String(r.created_at) : '',
-            updatedAt: r.updated_at ? String(r.updated_at) : '',
-            ...(r.extra_json && typeof r.extra_json === 'object' ? r.extra_json : {})
-          }));
+          const syncedToTable = await upsertEmployeesFromStateShape(pool, tenantId, empArr);
+          const dbEmpItems = await loadEmployeesFromTable(pool, tenantId);
 
           let backfilledToState = 0;
           if (dbEmpItems.length > 0) {
@@ -15179,7 +15127,7 @@ app.listen(PORT, HOST, async () => {
             const existingUsernames = new Set(existingEmployees.map(e => String(e?.username || '').trim().toLowerCase()));
             const newEmps = dbEmpItems.filter(e => e.username && !existingUsernames.has(e.username.toLowerCase()));
             if (newEmps.length > 0) {
-              await saveSharedState({ employees: [...existingEmployees, ...newEmps] }, tenantId);
+              await mergeSharedStateFields({ employees: newEmps }, { employees: 'username' }, tenantId);
               backfilledToState = newEmps.length;
             }
           }

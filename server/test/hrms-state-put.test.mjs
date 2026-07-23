@@ -12,7 +12,7 @@ test('白名单与服务端权威字段不重叠', () => {
   assert.deepEqual(overlap, []);
 });
 
-test('PUT 不能覆盖 roleModules / approvalFlows / pointRecords / payrollAdjustments', () => {
+test('PUT 不能覆盖 roleModules / approvalFlows / pointRecords / payrollAdjustments / employees', () => {
   const existing = {
     roleModules: { admin: ['a'] },
     approvalFlows: { leave: ['hq'] },
@@ -38,15 +38,16 @@ test('PUT 不能覆盖 roleModules / approvalFlows / pointRecords / payrollAdjus
   assert.deepEqual(next.paymentFlowByStore, { 门店A: ['u1'] });
   assert.deepEqual(next.pointRecords, [{ id: 'p1', points: 10 }]);
   assert.deepEqual(next.payrollAdjustments, { '2026-07': { x: 1 } });
-  assert.equal(next.employees[0].name, 'Alice2');
+  assert.equal(next.employees[0].name, 'Alice');
   assert.equal(next.settings.theme, 'new');
   assert.equal(next.brandNewField, undefined);
   assert.ok(ignoredKeys.includes('roleModules'));
   assert.ok(ignoredKeys.includes('pointRecords'));
+  assert.ok(ignoredKeys.includes('employees'));
   assert.ok(ignoredKeys.includes('brandNewField'));
 });
 
-test('employees 合并：服务端独有员工不会被抹掉', () => {
+test('employees 合并辅助仍可用于服务端内部镜像合并', () => {
   const merged = mergeEmployeesForStatePut(
     [{ username: 'alice', name: 'A2' }],
     [

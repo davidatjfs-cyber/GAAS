@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * 校验 sales_raw 全量 SUM（与月报「执行摘要」折前/实收同一 SQL 口径）
+ * 校验 pos_sales_detail 全量 SUM（与月报「执行摘要」折前/实收同一 SQL 口径）
+ * （原 sales_raw 表已于 2026-07-03 下线）
  *
  * Usage:
  *   cd server && node scripts/verify-bi-sales-raw-totals.mjs "马己仙上海音乐广场店" 2026-03-01 2026-03-31 821961.35 691041.98
@@ -43,7 +44,7 @@ const q = dineinOnly
     ROUND(COALESCE(SUM(revenue), 0)::numeric, 2) AS net,
     COUNT(*)::bigint AS row_count,
     COUNT(DISTINCT date)::int AS data_days
-  FROM sales_raw
+  FROM pos_sales_detail
   WHERE TRIM(store) = TRIM($1) AND date BETWEEN $2 AND $3
     AND (${bizDinein}) = 'dinein'
 `
@@ -53,7 +54,7 @@ const q = dineinOnly
     ROUND(COALESCE(SUM(revenue), 0)::numeric, 2) AS net,
     COUNT(*)::bigint AS row_count,
     COUNT(DISTINCT date)::int AS data_days
-  FROM sales_raw
+  FROM pos_sales_detail
   WHERE TRIM(store) = TRIM($1) AND date BETWEEN $2 AND $3
 `;
 

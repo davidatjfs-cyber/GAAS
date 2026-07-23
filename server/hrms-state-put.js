@@ -10,7 +10,6 @@
 
 /** 仍允许经 PUT /api/state 写入的顶层字段（未落表 / 仍走前端 saveState 的业务数据） */
 export const STATE_PUT_WHITELIST = Object.freeze([
-  'employees',
   'stores',
   'users',
   'roles',
@@ -43,9 +42,11 @@ export const STATE_PUT_WHITELIST = Object.freeze([
  * 服务端权威字段（禁止 PUT 覆盖）。有独立 API 或由 mergeSharedStateFields / 审批终审写入。
  * 2026-07 Week2-3：pointRecords → point_records 表；
  * payrollAdjustments / salaryAdjustments / monthlyConfirmations → hrms_payroll_domain。
+ * 2026-07 A1：employees → employees 表（窄 API + GET hydrate）。
  * GET /api/state 会用表覆盖这些镜像字段。运行时靠「不在白名单」生效。
  */
 export const STATE_PUT_SERVER_OWNED = Object.freeze([
+  'employees',
   'roleModules',
   'approvalFlows',
   'paymentFlowByStore',
@@ -139,9 +140,7 @@ export function applyStatePutWhitelist(existingState, incomingData) {
       ignoredKeys.push(key);
       continue;
     }
-    if (key === 'employees') {
-      next.employees = mergeEmployeesForStatePut(incoming.employees, existing.employees);
-    } else if (key === 'stores') {
+    if (key === 'stores') {
       next.stores = mergeStoresPreserveLocation(incoming.stores, existing.stores);
     } else {
       next[key] = incoming[key];

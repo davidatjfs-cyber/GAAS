@@ -115,6 +115,19 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `daily_reports`（人工日报，`actual_margin`/`pre_discount_revenue` 等字段）与 `pos_sales_detail` 交叉验证过，数字一致（误差 <0.5%），
   两者都可信；`metric_dictionary` 里营业额/毛利相关口径目前以 `daily_reports` 为准（历史决策，7 组重复口径已于 2026-07-03 合并）。
 - 如果你在写新代码或看到旧代码里出现 `sales_raw` 字样：**这一定是需要修的信号**，不是可以照抄的参考。
+- 闸门：`server/test/sales-raw-ban.test.mjs` 禁止可执行代码再出现 `FROM/INTO/UPDATE sales_raw`；
+  `insertSalesRawRows` 已永久抛 `sales_raw_retired`。
+
+### ⚠️ ensure*Table / listen-time DDL 冻结（B5）
+
+**新表、新列、新索引一律只走编号 migration**：`server/migrations/NNN_*.sql` → `node migrate.js`
+（生产需 `ALLOW_PRODUCTION_MIGRATE=true`）。agents-service-v2 **禁止**为共享表自建 migration。
+
+- **禁止**在 `ensure*Table` / `ensure*Schema` 里新增 `CREATE TABLE` / `ALTER TABLE` / 补列逻辑。
+- 存量 ensure* 视为遗留：仅当 `ALLOW_SCHEMA_CHANGES=true`（见 `safety.js#isSchemaChangeAllowed`）才在 listen 时跑；
+  生产/staging 默认关闭 listen-time DDL。
+- ensure* 若仍保留，只允许「存在性检查 / no-op / 读校验」，不得再扩张 schema。
+- 闸门：`server/test/ensure-ddl-freeze.test.mjs`；改 schema 纪律写在本段，不要靠口头约定。
 
 ### ⚠️ RLS：本仓库（GAAS/47.100.96.30）永远关闭，另有 GAAS-demo（多租户服务器）永远开启——别搞混
 

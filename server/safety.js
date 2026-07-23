@@ -104,6 +104,11 @@ export function configureDbSessionSafety(pool, { serviceName }) {
   });
 }
 
+/**
+ * listen-time DDL / ensure*Table 是否允许跑。
+ * B5 冻结：新 schema 只走 numbered migrations + migrate.js；
+ * ensure* 不得再新增 CREATE/ALTER。本开关仅控制存量遗留 ensure 是否执行。
+ */
 export function isSchemaChangeAllowed() {
   const appEnv = getAppEnv();
   // 默认：staging/production 禁止自动建表/补列/运行时 migration

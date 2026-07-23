@@ -6,7 +6,7 @@ import { checkFreshness, formatFreshnessAlert, runFreshnessCheck } from './fresh
 test('checkFreshness flags a source past its staleness threshold', () => {
   const now = new Date('2026-07-03T12:00:00+08:00');
   const sources = [
-    { name: 'sales_raw', lastSeenAt: '2026-07-03T10:00:00+08:00', maxStalenessHours: 6 }, // 2h old, fresh
+    { name: 'pos_sales_detail', lastSeenAt: '2026-07-03T10:00:00+08:00', maxStalenessHours: 6 }, // 2h old, fresh
     { name: 'daily_reports', lastSeenAt: '2026-07-01T12:00:00+08:00', maxStalenessHours: 24 }, // 48h old, stale
   ];
   const stale = checkFreshness(sources, now);
@@ -24,7 +24,7 @@ test('checkFreshness treats a never-populated source as stale (Infinity)', () =>
 test('checkFreshness returns empty when everything is fresh', () => {
   const now = new Date('2026-07-03T12:00:00+08:00');
   const stale = checkFreshness(
-    [{ name: 'sales_raw', lastSeenAt: '2026-07-03T11:00:00+08:00', maxStalenessHours: 6 }],
+    [{ name: 'pos_sales_detail', lastSeenAt: '2026-07-03T11:00:00+08:00', maxStalenessHours: 6 }],
     now
   );
   assert.deepEqual(stale, []);
@@ -50,12 +50,12 @@ test('runFreshnessCheck queries each source and only alerts when something is st
   const fakePool = {
     query: async (sql) => {
       calls.push(sql);
-      if (sql.includes('sales_raw')) return { rows: [{ last_seen: new Date().toISOString() }] };
+      if (sql.includes('pos_sales_detail')) return { rows: [{ last_seen: new Date().toISOString() }] };
       return { rows: [{ last_seen: '2020-01-01T00:00:00Z' }] };
     },
   };
   const { stale, alertText } = await runFreshnessCheck(fakePool, [
-    { name: 'sales_raw', table: 'sales_raw', timeColumn: 'date', maxStalenessHours: 24 },
+    { name: 'pos_sales_detail', table: 'pos_sales_detail', timeColumn: 'date', maxStalenessHours: 24 },
     { name: 'daily_reports', table: 'daily_reports', timeColumn: 'date', maxStalenessHours: 24 },
   ]);
   assert.equal(calls.length, 2);
@@ -67,7 +67,7 @@ test('runFreshnessCheck queries each source and only alerts when something is st
 test('runFreshnessCheck returns null alertText when nothing is stale', async () => {
   const fakePool = { query: async () => ({ rows: [{ last_seen: new Date().toISOString() }] }) };
   const { stale, alertText } = await runFreshnessCheck(fakePool, [
-    { name: 'sales_raw', table: 'sales_raw', timeColumn: 'date', maxStalenessHours: 24 },
+    { name: 'pos_sales_detail', table: 'pos_sales_detail', timeColumn: 'date', maxStalenessHours: 24 },
   ]);
   assert.deepEqual(stale, []);
   assert.equal(alertText, null);
