@@ -25995,7 +25995,7 @@
                  'pointRules', 'forecastCoreProducts', 'forecastProductAliasRules', 'forecastGrossProfitProfiles',
                  'knowledge', 'examResults', 'notifications',
                  'exams', 'promotionRequests', 'promotionAbilityRequirements', 'rewardPunishments',
-                 'stores', 'brands', 'gmMailbox'
+                 'stores', 'brands', 'gmMailbox', 'paymentSettings', 'paymentBudgets'
                 ].forEach(function(k) { try { delete _d[k]; } catch (e) {} });
                 return this.request('/api/state', {
                     method: 'PUT',
@@ -31105,28 +31105,37 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
         async function hrmsFetchPaymentSettingsAndBudgets() {
             const token = HRMS_API.token();
             if (!token) return { paymentSettings: hrmsNormalizePaymentSettings(null), paymentBudgets: [] };
-            const st = await HRMS_API.getState();
-            const data = st?.data && typeof st.data === 'object' ? st.data : (st || {});
-            const settings = hrmsNormalizePaymentSettings(data?.paymentSettings);
-            const budgets = hrmsNormalizePaymentBudgets(data?.paymentBudgets);
-            return { paymentSettings: settings, paymentBudgets: budgets };
+            try {
+                const cfg = await HRMS_API.request('/api/payment-config', { method: 'GET' });
+                return {
+                    paymentSettings: hrmsNormalizePaymentSettings(cfg?.paymentSettings),
+                    paymentBudgets: hrmsNormalizePaymentBudgets(cfg?.paymentBudgets)
+                };
+            } catch (e) {
+                // 兼容旧部署：窄 API 未上线时回退 GET /api/state
+                const st = await HRMS_API.getState();
+                const data = st?.data && typeof st.data === 'object' ? st.data : (st || {});
+                return {
+                    paymentSettings: hrmsNormalizePaymentSettings(data?.paymentSettings),
+                    paymentBudgets: hrmsNormalizePaymentBudgets(data?.paymentBudgets)
+                };
+            }
         }
 
         async function hrmsSavePaymentSettingsAndBudgets(nextSettings, nextBudgets) {
             const token = HRMS_API.token();
             if (!token) throw new Error('未登录');
-            const st = await HRMS_API.getState();
-            const base = (st && typeof st === 'object' ? (st.data || st) : {}) || {};
-            const merged = {
-                ...base,
-                paymentSettings: hrmsNormalizePaymentSettings(nextSettings),
-                paymentBudgets: hrmsNormalizePaymentBudgets(nextBudgets)
-            };
-            await HRMS_API.saveState(merged);
+            const paymentSettings = hrmsNormalizePaymentSettings(nextSettings);
+            const paymentBudgets = hrmsNormalizePaymentBudgets(nextBudgets);
+            const resp = await HRMS_API.request('/api/payment-config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paymentSettings, paymentBudgets })
+            });
             try {
                 const local = HRMS_STORE.ensure();
-                local.paymentSettings = merged.paymentSettings;
-                local.paymentBudgets = merged.paymentBudgets;
+                local.paymentSettings = resp?.paymentSettings || paymentSettings;
+                local.paymentBudgets = resp?.paymentBudgets || paymentBudgets;
                 HRMS_STORE.set(local);
             } catch (e) {}
             return true;

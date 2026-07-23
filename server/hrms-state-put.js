@@ -21,8 +21,6 @@ export const STATE_PUT_WHITELIST = Object.freeze([
   'trainingTasks',
   'trainingMaterials',
   'promotionTracks',
-  'paymentBudgets',
-  'paymentSettings',
 ]);
 
 /**
@@ -36,6 +34,7 @@ export const STATE_PUT_WHITELIST = Object.freeze([
  *   exams / promotionRequests / promotionAbilityRequirements / rewardPunishments 死字段移出。
  * 2026-07 A3再续：stores 走窄 API（含 DELETE），禁止 PUT /api/state 覆盖。
  * 2026-07 A3再续2：brands / gmMailbox 走窄 API，禁止 PUT 覆盖。
+ * 2026-07 A3再续3：paymentSettings / paymentBudgets 走 /api/payment-config。
  * GET /api/state 会用表覆盖这些镜像字段。运行时靠「不在白名单」生效。
  */
 export const STATE_PUT_SERVER_OWNED = Object.freeze([
@@ -43,6 +42,8 @@ export const STATE_PUT_SERVER_OWNED = Object.freeze([
   'stores',
   'brands',
   'gmMailbox',
+  'paymentSettings',
+  'paymentBudgets',
   'roleModules',
   'approvalFlows',
   'paymentFlowByStore',

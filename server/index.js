@@ -28,6 +28,7 @@ import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
 import { hydrateNotificationsFromTable } from './domains/notifications/service.js';
 import { hydrateExamResultsFromTable } from './domains/exam-results/service.js';
 import { registerStoresDomainRoutes } from './domains/stores/routes.js';
+import { registerPaymentConfigRoutes } from './domains/payment-config/routes.js';
 import {
   getTenantIntegrationSummary,
   saveTenantFeishuIntegration,
@@ -14646,6 +14647,12 @@ registerFlowConfigRoutes(app, authRequired, {
 });
 
 registerStoresDomainRoutes(app, authRequired, {
+  getSharedState,
+  saveSharedState,
+  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
+});
+
+registerPaymentConfigRoutes(app, authRequired, {
   getSharedState,
   saveSharedState,
   resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
