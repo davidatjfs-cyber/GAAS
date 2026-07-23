@@ -4,11 +4,8 @@ import { bootApp } from './helpers/boot-app.mjs';
 import { testDb, uniqueId } from './helpers/db.mjs';
 
 // P1覆盖：/api/growth/coupons 是GAAS这边"发券"相关的接口（真正的核销/verify在
-// 小程序云函数里，是另一套技术栈，不在这次GAAS测试覆盖范围内，见growth-phases.js
-// 注释）。这个接口走的是小程序同步密钥认证(MINIPROGRAM_SYNC_SECRET)，不是普通
-// 用户JWT登录，且代码里明确写了"没有tenant_id就归default，与现网单租户行为
-// 一致，零风险"——这是已经做过的设计权衡，测试只验证现状行为，不断言"应该"
-// 按租户隔离(这点和登录/审批/多租户isolation那几个模块不一样)。
+// 小程序云函数里，是另一套技术栈，不在这次GAAS测试覆盖范围内）。
+// 路由已外提至 domains/growth-coupons；认证仍走小程序同步密钥(MINIPROGRAM_SYNC_SECRET)。
 
 const SYNC_SECRET = 'test-miniprogram-sync-secret-for-integration-test';
 
@@ -100,7 +97,7 @@ test('现状记录：GET列表接口不按tenant_id过滤(已知的设计权衡�
   assert.equal(res.status, 200);
   const ids = body.coupons.map((c) => c.coupon_id);
   // 这里断言的是"现状确实会返回别的租户的券"，不是期望行为——如果以后
-  // growth-phases.js改成按租户过滤了，这条测试会失败，提醒去更新这条注释
+  // domains/growth-coupons 改成按租户过滤了，这条测试会失败，提醒去更新这条注释
   // 和这次的P1覆盖判断，而不是意味着改坏了什么。
   assert.ok(ids.includes(otherCouponId), '现状：GET /api/growth/coupons 会返回所有租户的券(设计如此，见文件头注释)');
 });

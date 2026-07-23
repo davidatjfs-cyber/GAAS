@@ -5,7 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, '../..');
+const gaasRoot = path.resolve(__dirname, '..');
+const agentsRoot = path.resolve(__dirname, '../../agents-service-v2');
 
 test('HRMS growth-api / agents proxy must send internal auth header when calling agents', () => {
   const growth = fs.readFileSync(path.join(__dirname, 'growth-api.js'), 'utf8');
@@ -16,17 +17,17 @@ test('HRMS growth-api / agents proxy must send internal auth header when calling
 });
 
 test('agents /health gates detailed payload via allowDetailedHealth', () => {
-  const index = fs.readFileSync(path.join(repoRoot, 'agents-service-v2/src/index.js'), 'utf8');
+  const index = fs.readFileSync(path.join(agentsRoot, 'src/index.js'), 'utf8');
   assert.match(index, /allowDetailedHealth/);
   assert.match(index, /app\.get\(['"]\/health['"]/);
-  const auth = fs.readFileSync(path.join(repoRoot, 'agents-service-v2/src/middleware/internal-auth.js'), 'utf8');
+  const auth = fs.readFileSync(path.join(agentsRoot, 'src/middleware/internal-auth.js'), 'utf8');
   assert.match(auth, /export function allowDetailedHealth/);
   assert.match(auth, /HEALTH_TOKEN/);
 });
 
 test('ontology-client contract: diagnosis URL + Bearer service token', () => {
   const src = fs.readFileSync(
-    path.join(repoRoot, 'agents-service-v2/src/services/ontology-client.js'),
+    path.join(agentsRoot, 'src/services/ontology-client.js'),
     'utf8'
   );
   assert.match(src, /\/api\/ai\/operation-diagnosis/);
@@ -36,6 +37,9 @@ test('ontology-client contract: diagnosis URL + Bearer service token', () => {
 });
 
 test('public API surface documents health and tenant branding', () => {
-  const doc = fs.readFileSync(path.join(repoRoot, 'docs/public-api-surface.md'), 'utf8');
+  const docPath = path.join(gaasRoot, 'docs/public-api-surface.md');
+  assert.ok(fs.existsSync(docPath), `missing ${docPath}`);
+  const doc = fs.readFileSync(docPath, 'utf8');
   assert.match(doc, /\/api\/tenant\/branding|branding/i);
+  assert.match(doc, /\/health|health/i);
 });

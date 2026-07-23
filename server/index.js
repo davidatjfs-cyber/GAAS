@@ -23,6 +23,7 @@ import {
   upsertEmployeesFromStateShape,
   loadEmployeesFromTable,
 } from './domains/employees/service.js';
+import { reconcileEmployeesMirror } from './domains/employees/mirror-tx.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
 import { hydrateNotificationsFromTable } from './domains/notifications/service.js';
@@ -5449,7 +5450,7 @@ setSolutionLLM(async (prompt) => {
   return r?.ok ? r.content : '';
 });
 setTrainingAssigner(createTrainingAssignment);
-registerPhaseRoutes(app, pool);
+registerPhaseRoutes(app, pool, { getFeishuBitableData });
 registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM);
 registerMarketingAttributionRoutes(app, pool, authRequired);
 registerTenantOperationInspectionRoutes(app, pool, authRequired, platformAdminRequired);
@@ -14629,14 +14630,29 @@ registerPayrollDomainRoutes(app, authRequired, {
 registerEmployeesDomainRoutes(app, authRequired, {
   pool,
   resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
-  mergeEmployeesMirror: async (emps, tenantId) => {
-    await mergeSharedStateFields({ employees: emps }, { employees: 'username' }, tenantId);
-  },
-  removeEmployeesMirror: async (usernames, tenantId) => {
-    await removeEmployeesFromSharedState(usernames, tenantId);
-  },
   applyAccountGate: applyHrmsUserAccountGateFromEmployee,
 });
+
+// 员工表 vs hrms_state 镜像日对账（绞杀期一致性告警）
+{
+  const runEmployeesMirrorReconcile = async () => {
+    try {
+      const tid = resolveTenantIdDefault();
+      const report = await reconcileEmployeesMirror(pool, tid);
+      if (!report.ok) {
+        const msg = `employees mirror drift tenant=${report.tenantId} table=${report.tableCount} mirror=${report.mirrorCount} onlyTable=${report.onlyTable.slice(0, 20).join(',')} onlyMirror=${report.onlyMirror.slice(0, 20).join(',')}`;
+        console.error('[employees-mirror-reconcile]', msg);
+        void notifyAdminsDualWriteFailure('employees（表/镜像对账）', new Error(msg));
+      } else {
+        console.log('[employees-mirror-reconcile] ok', report.tenantId, report.tableCount);
+      }
+    } catch (e) {
+      console.error('[employees-mirror-reconcile] failed', e?.message || e);
+    }
+  };
+  setTimeout(() => void runEmployeesMirrorReconcile(), 60_000);
+  setInterval(() => void runEmployeesMirrorReconcile(), 24 * 60 * 60 * 1000);
+}
 
 registerFlowConfigRoutes(app, authRequired, {
   pool,

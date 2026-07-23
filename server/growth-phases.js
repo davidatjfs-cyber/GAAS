@@ -6,14 +6,18 @@ import { getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './uti
 import { checkTextGrounding } from './ontology/plan-grounding-check.js';
 import { fetchDineMetricsForDays, resolveStoreCanonicalName } from './utils/dine-metrics.js';
 import { maybeNotifyRegularCustomerFromPosOrder } from './pos-regular-arrival-feishu.js';
-
-function cleanText(value, max = 255) {
-  return String(value == null ? '' : value).trim().slice(0, max);
-}
-
-function cleanPhone(value) {
-  return cleanText(value, 32).replace(/[^0-9+]/g, '');
-}
+import { registerGrowthCouponRoutes } from './domains/growth-coupons/routes.js';
+import { registerGrowthSyncFailureRoutes } from './domains/growth-sync-failures/routes.js';
+import { registerGrowthWechatWorkRoutes } from './domains/growth-wechat-work/routes.js';
+import { registerGrowthCampaignRoutes } from './domains/growth-campaigns/routes.js';
+import { registerGrowthContentCalendarRoutes } from './domains/growth-content-calendar/routes.js';
+import { registerGrowthPosRoutes } from './domains/growth-pos/routes.js';
+import {
+  authPhaseApi,
+  cleanPhone,
+  cleanText,
+  getPhaseApiTenantId,
+} from './domains/growth-phase-auth.js';
 
 function parseOccurredAt(value) {
   if (!value) return new Date();
@@ -944,38 +948,7 @@ async function pushWeeklySuggestionToFeishu(pool, suggestionRow) {
   return { pushed };
 }
 
-import jwt from 'jsonwebtoken';
-
-function authPhaseApi(req) {
-  const secret = cleanText(process.env.MINIPROGRAM_SYNC_SECRET || '', 500);
-  if (!secret) return { ok: false, status: 503, error: 'miniprogram_sync_disabled' };
-  const headerSecret = cleanText(req.headers['x-miniprogram-sync-secret'] || '', 500);
-  const auth = cleanText(req.headers.authorization || '', 500);
-  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
-  if (headerSecret === secret || bearer === secret) return { ok: true, user: { username: 'system', role: 'system' } };
-  if (bearer && process.env.JWT_SECRET) {
-    try {
-      const decoded = jwt.verify(bearer, process.env.JWT_SECRET);
-      if (decoded && decoded.username) return { ok: true, user: { username: decoded.username, role: decoded.role || '' } };
-    } catch (e) { /* ignore */ }
-  }
-  return { ok: false, status: 401, error: 'unauthorized' };
-}
-
-// authPhaseApi走小程序同步密钥/可选JWT，不经过用户认证中间件，
-// req.tenantId不会自动有值。这里复用Bearer token(若带了)解出tenant_id，
-// 取不到则归default——与现网单租户行为一致，零风险。
-function getPhaseApiTenantId(req) {
-  const auth = cleanText(req.headers.authorization || '', 500);
-  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
-  if (!bearer || !process.env.JWT_SECRET) return 'default';
-  try {
-    const decoded = jwt.verify(bearer, process.env.JWT_SECRET);
-    return cleanText(decoded.tenant_id || 'default', 80) || 'default';
-  } catch (_) {
-    return 'default';
-  }
-}
+// authPhaseApi / getPhaseApiTenantId → domains/growth-phase-auth.js
 
 // ── Phase 7a: Churn prediction (rule-based scoring) ───────────────────────────
 async function computeChurnScores(pool, storeCode, tenantId = 'default') {
@@ -1755,442 +1728,45 @@ export async function ingestPosOrders(pool, tenantId, { orders = [], items = [],
   return { ordersUpserted, itemsUpserted, customersLinked };
 }
 
-export function registerPhaseRoutes(app, pool) {
+/**
+ * @param {import('express').Express} app
+ * @param {any} pool
+ * @param {{ getFeishuBitableData?: Function }} [deps]
+ */
+export function registerPhaseRoutes(app, pool, deps = {}) {
   function rqa(req, res) {
     const auth = authPhaseApi(req);
     if (!auth.ok) { res.status(auth.status).json({ ok: false, error: auth.error }); return false; }
     return true;
   }
 
-  // ── Phase 1: Coupons ──
-  app.post('/api/growth/coupons', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const b = req.body || {};
-    const couponTenantId = getPhaseApiTenantId(req);
-    try {
-      // BUG-FIX: 原来是 Number(b.stock)!=null?Number(b.stock):-1 —— b.stock缺失时
-      // Number(undefined)是NaN，"NaN != null"恒为true(NaN不等于任何值，包括null)，
-      // 导致条件恒真、把NaN当stock传给Postgres整数列报错。这个handler之前没有
-      // try/catch，报错变成unhandled rejection，请求会一直挂起到客户端自己超时，
-      // 而不是返回500——实测省略stock字段会直接hang住请求。
-      const stockRaw = Number(b.stock);
-      const stock = Number.isFinite(stockRaw) ? Math.floor(stockRaw) : -1;
-      const r = await tenantContext.run(couponTenantId, () => pool.query(
-        `INSERT INTO growth_coupons (coupon_id,name,type,value_fen,price_fen,valid_days,stock,usage_rule,dish_name,is_active,store_id,tenant_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-         ON CONFLICT (coupon_id, tenant_id) DO UPDATE SET name=EXCLUDED.name,is_active=EXCLUDED.is_active,updated_at=NOW() RETURNING *`,
-        [cleanText(b.coupon_id,128),cleanText(b.name,300),cleanText(b.type||'cash',40),
-         Math.max(0,Math.floor(Number(b.value_fen)||0)),Math.max(0,Math.floor(Number(b.price_fen)||0)),
-         Math.max(1,Math.floor(Number(b.valid_days)||30)),stock,
-         cleanText(b.usage_rule,500),cleanText(b.dish_name,500),b.is_active!==false,cleanText(b.store_id,128),couponTenantId]
-      ));
-      res.json({ok:true,coupon:r.rows[0]});
-    } catch (e) {
-      res.status(500).json({ ok: false, error: 'server_error' });
-    }
-  });
-  app.get('/api/growth/coupons', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query('SELECT * FROM growth_coupons ORDER BY created_at DESC LIMIT 300'));
-    res.json({ok:true,coupons:r.rows});
-  });
+  const phaseAuthDeps = {
+    pool,
+    requirePhaseAuth: rqa,
+    getPhaseTenantId: getPhaseApiTenantId,
+  };
 
-  // ── Phase 1: Sync Failures ──
-  app.post('/api/growth/sync-failures', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const b = req.body || {};
-    const syncFailTenantId = getPhaseApiTenantId(req);
-    await tenantContext.run(syncFailTenantId, () => pool.query('INSERT INTO growth_sync_failures (source,event_type,payload,error_message,tenant_id) VALUES ($1,$2,$3::jsonb,$4,$5)',
-      [cleanText(b.source,80),cleanText(b.event_type,80),JSON.stringify(b.payload||{}),cleanText(b.error_message,2000),syncFailTenantId]));
-    res.json({ok:true});
+  // Phase 1–3 → domains（#6：先测后搬；企微飞书依赖 getFeishuBitableData 注入，禁止反向 import index）
+  registerGrowthCouponRoutes(app, phaseAuthDeps);
+  registerGrowthSyncFailureRoutes(app, phaseAuthDeps);
+  registerGrowthWechatWorkRoutes(app, {
+    ...phaseAuthDeps,
+    resolveTenantIdForStore,
+    getFeishuBitableData:
+      deps.getFeishuBitableData ||
+      (async () => {
+        throw new Error('getFeishuBitableData_not_injected');
+      }),
   });
-  app.get('/api/growth/sync-failures', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query('SELECT * FROM growth_sync_failures ORDER BY created_at DESC LIMIT 100'));
-    res.json({ok:true,failures:r.rows});
+  registerGrowthCampaignRoutes(app, {
+    ...phaseAuthDeps,
+    executeGrowthActionRecord,
   });
-
-  // ── Phase 2: WeChat Work ──
-  app.post('/api/growth/wechat-work/import-feishu', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const b = req.body || {};
-    const appToken = cleanText(b.app_token, 200);
-    const tableId = cleanText(b.table_id, 200);
-    const batch = `batch_${Date.now()}`;
-    if (!appToken || !tableId) return res.status(400).json({ok:false,error:'missing app_token or table_id'});
-    try {
-      const mod = await import('../server/index.js');
-      const getFeishuBitableData = mod.getFeishuBitableData || (await import('../index.js')).getFeishuBitableData;
-      let records = [];
-      try { const data = await getFeishuBitableData(appToken, tableId, b.access_token || ''); records = data?.data?.items || data?.data?.records || data?.items || []; } catch (e) { records = []; }
-      let imported = 0;
-      let lastTenantId = 'default';
-      for (const rec of records) {
-        const f = rec.fields || rec;
-        const phone = cleanPhone(f.phone||f.手机号||f.mobile||'');
-        const name = cleanText(f.name||f.姓名||f.昵称||'',200);
-        const eid = cleanText(f.external_userid||f.userid||f.user_id||'',128);
-        const sid = cleanText(f.store_id||f.门店||'',128);
-        const note = cleanText(f.note||f.备注||'',500);
-        if (phone||eid) {
-          const tenantId = await resolveTenantIdForStore(pool, sid);
-          lastTenantId = tenantId;
-          const ins = await tenantContext.run(tenantId, () =>
-            pool.query('INSERT INTO wechat_work_customers(external_userid,name,phone,store_id,note,import_batch,tenant_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING RETURNING id',
-              [eid,name,phone,sid,note,batch,tenantId])
-          );
-          if (ins.rows.length) imported++;
-        }
-      }
-      // 整批导入通常来自同一门店/租户；用最后解析到的tenantId做匹配收尾(空批次时退回default，安全)
-      const matched = await tenantContext.run(lastTenantId, () =>
-        pool.query(
-          `UPDATE wechat_work_customers w SET bind_customer_id=g.id,updated_at=NOW()
-           FROM growth_customers g WHERE w.phone=g.phone AND w.bind_customer_id IS NULL AND w.import_batch=$1`,[batch])
-      );
-      res.json({ok:true,imported,matched:matched.rowCount||0,batch});
-    } catch (e) { res.status(500).json({ok:false,error:e?.message||'import_failed'}); }
-  });
-
-  app.post('/api/growth/wechat-work/customers', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const b = req.body || {};
-    const batch = `manual_${Date.now()}`;
-    const customers = Array.isArray(b.customers) ? b.customers : [b];
-    let imported = 0;
-    let lastTenantId = 'default';
-    for (const c of customers) {
-      const phone = cleanPhone(c.phone||'');
-      if (phone) {
-        const sid = cleanText(c.store_id,128);
-        const tenantId = await resolveTenantIdForStore(pool, sid);
-        lastTenantId = tenantId;
-        await tenantContext.run(tenantId, () =>
-          pool.query('INSERT INTO wechat_work_customers(external_userid,name,phone,store_id,note,import_batch,tenant_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING',
-            [cleanText(c.external_userid,128),cleanText(c.name,200),phone,sid,cleanText(c.note,500),batch,tenantId])
-        );
-        imported++;
-      }
-    }
-    const matched = await tenantContext.run(lastTenantId, () =>
-      pool.query(
-        `UPDATE wechat_work_customers w SET bind_customer_id=g.id,updated_at=NOW()
-         FROM growth_customers g WHERE w.phone=g.phone AND w.bind_customer_id IS NULL AND w.import_batch=$1`,[batch])
-    );
-    res.json({ok:true,imported,matched:matched.rowCount||0,batch});
-  });
-
-  app.get('/api/growth/wechat-work/customers', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const sid = cleanText(req.query.store_id||'',128);
-    const r = await tenantContext.run(getPhaseApiTenantId(req), () =>
-      pool.query(
-        `SELECT w.*,g.openid bound_openid,g.phone bound_phone FROM wechat_work_customers w LEFT JOIN growth_customers g ON w.bind_customer_id=g.id
-         WHERE ($1='' OR w.store_id=$1) ORDER BY w.created_at DESC LIMIT 500`,[sid])
-    );
-    const total = r.rows.length;
-    const bound = r.rows.filter(x=>x.bind_customer_id).length;
-    res.json({ok:true,total,bound,unbound:total-bound,customers:r.rows});
-  });
-
-  app.get('/api/growth/wechat-work/stats', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const r = await tenantContext.run(getPhaseApiTenantId(req), () =>
-      pool.query(`SELECT store_id,COUNT(*)::int total,
-        COUNT(*) FILTER(WHERE bind_customer_id IS NOT NULL)::int bound,
-        COUNT(*) FILTER(WHERE bind_customer_id IS NULL)::int unbound
-        FROM wechat_work_customers GROUP BY store_id ORDER BY store_id`)
-    );
-    res.json({ok:true,stats:r.rows});
-  });
-
-  // ── Phase 3: Campaign Plans + Rankings ──
-  app.post('/api/growth/campaign-plans', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const b = req.body || {};
-    const cpTenantId = getPhaseApiTenantId(req);
-    const r = await tenantContext.run(cpTenantId, async () => {
-      const r = await pool.query(
-        `INSERT INTO growth_campaign_plans(plan_id,store_id,campaign_id,title,channel,voucher_template_id,target_audience,coupon_value_fen,budget_fen,status,planned_start,planned_end,created_by,source_template_id,recommended_poster_id,tenant_id)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-         ON CONFLICT(plan_id, tenant_id) DO UPDATE SET title=EXCLUDED.title,status=EXCLUDED.status,channel=EXCLUDED.channel,target_audience=EXCLUDED.target_audience,coupon_value_fen=EXCLUDED.coupon_value_fen,budget_fen=EXCLUDED.budget_fen,source_template_id=EXCLUDED.source_template_id,recommended_poster_id=EXCLUDED.recommended_poster_id,updated_at=NOW() RETURNING *`,
-        [cleanText(b.plan_id,128),cleanText(b.store_id,128),cleanText(b.campaign_id,128),cleanText(b.title,500),
-         cleanText(b.channel,80),cleanText(b.voucher_template_id,128),cleanText(b.target_audience||'all',200),
-         Math.max(0,Math.floor(Number(b.coupon_value_fen)||0)),Math.max(0,Math.floor(Number(b.budget_fen)||0)),cleanText(b.status||'draft',40),
-         b.planned_start?parseOccurredAt(b.planned_start):null,b.planned_end?parseOccurredAt(b.planned_end):null,
-         cleanText(b.created_by||'admin',80),
-         b.source_template_id?Number(b.source_template_id):null,
-         b.recommended_poster_id?Number(b.recommended_poster_id):null,
-         cpTenantId]
-      );
-      if (b.source_template_id) {
-        pool.query('UPDATE marketing_templates SET use_count = use_count + 1 WHERE id = $1', [Number(b.source_template_id)]).catch(() => {});
-      }
-      return r;
-    });
-    res.json({ok:true,plan:r.rows[0]});
-  });
-
-  app.get('/api/growth/campaign-plans', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const sid = cleanText(req.query.store_id||'',128);
-    const st = cleanText(req.query.status||'',40);
-    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(`SELECT * FROM growth_campaign_plans WHERE ($1='' OR store_id=$1) AND ($2='' OR status=$2) ORDER BY created_at DESC LIMIT 200`,[sid,st]));
-    res.json({ok:true,plans:r.rows});
-  });
-
-  app.get('/api/growth/marketing-templates', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const r = await pool.query('SELECT id, name, category, description, actions, expected_roi, budget_range, duration_days, success_rate, use_count, channel, target_audience, payload_template FROM marketing_templates ORDER BY success_rate DESC NULLS LAST, use_count DESC');
-    res.json({ok:true,templates:r.rows});
-  });
-
-  app.post('/api/growth/marketing-templates', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const b = req.body || {};
-    const r = await pool.query(
-      `INSERT INTO marketing_templates(name,category,description,actions,expected_roi,budget_range,duration_days,success_rate,channel,target_audience,payload_template,tenant_id)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [cleanText(b.name,200),cleanText(b.category,80),cleanText(b.description,1000),
-       JSON.stringify(b.actions||[]),Number(b.expected_roi)||0,cleanText(b.budget_range,100),
-       Math.max(1,Math.floor(Number(b.duration_days)||7)),Number(b.success_rate)||0,
-       cleanText(b.channel,80),cleanText(b.target_audience||'all',200),
-       JSON.stringify(b.payload_template||{}),getPhaseApiTenantId(req)]
-    );
-    res.json({ok:true,template:r.rows[0]});
-  });
-
-  app.patch('/api/growth/campaign-plans/:id/status', async (req, res) => {
-    const auth = authPhaseApi(req);
-    if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
-    const id = cleanText(req.params.id, 128);
-    const status = cleanText(req.body.status, 40);
-    if (!['draft','active','completed','cancelled'].includes(status)) {
-      return res.status(400).json({ ok: false, error: 'invalid_status' });
-    }
-    const tenantId = getPhaseApiTenantId(req);
-    const { notFound, plan, execution } = await tenantContext.run(tenantId, async () => {
-    const before = await pool.query(
-      `SELECT * FROM growth_campaign_plans WHERE (plan_id=$1 OR campaign_id=$1) LIMIT 1`,
-      [id]
-    );
-    if (!before.rows.length) return { notFound: true };
-    const r = await pool.query(
-      `UPDATE growth_campaign_plans SET status=$1, updated_at=NOW() WHERE (plan_id=$2 OR campaign_id=$2) RETURNING *`,
-      [status, id]
-    );
-    const plan = r.rows[0];
-    let execution = null;
-    if (status === 'active' && before.rows[0].status !== 'active') {
-      const previous = before.rows[0];
-      const actionKey = `manual_activate_${cleanText(plan.plan_id || plan.campaign_id || id, 120)}_${Date.now()}`;
-      const plannedStart = previous.planned_start ? new Date(previous.planned_start) : null;
-      const plannedEnd = previous.planned_end ? new Date(previous.planned_end) : null;
-      const validDays = plannedStart && plannedEnd ? Math.max(1, Math.ceil((plannedEnd.getTime() - plannedStart.getTime()) / 86400000)) : 7;
-      const payload = {
-        store_id: previous.store_id || '',
-        plan_id: previous.plan_id || '',
-        campaign_id: previous.campaign_id || '',
-        channel: previous.channel || 'miniprogram',
-        target_audience: previous.target_audience || 'all',
-        budget_fen: Number(previous.budget_fen || 0),
-        coupon_value_fen: Number(previous.coupon_value_fen || previous.voucher_template_id || 0),
-        valid_days: validDays,
-        source_template_id: previous.source_template_id || null,
-        recommended_poster_id: previous.recommended_poster_id || null,
-        execution_action: '手动激活活动计划'
-      };
-      await pool.query(
-        `INSERT INTO growth_actions (action_key, action_type, status, store_id, campaign_id, title, detail, payload, created_by, tenant_id)
-         VALUES ($1,'campaign_activate','proposed',$2,$3,$4,$5,$6::jsonb,$7,$8)`,
-        [
-          actionKey,
-          previous.store_id || '',
-          previous.campaign_id || '',
-          previous.title || '手动激活活动',
-          `活动 ${previous.title || previous.campaign_id || previous.plan_id || id} 已手动激活`,
-          JSON.stringify(payload),
-          auth.user?.username || previous.created_by || 'admin',
-          tenantId
-        ]
-      );
-      const actionRow = {
-        action_key: actionKey,
-        action_type: 'campaign_activate',
-        store_id: previous.store_id || '',
-        campaign_id: previous.campaign_id || '',
-        title: previous.title || '手动激活活动',
-        detail: `活动 ${previous.title || previous.campaign_id || previous.plan_id || id} 已手动激活`,
-        payload
-      };
-      execution = await executeGrowthActionRecord(pool, actionRow, {
-        username: auth.user?.username || previous.created_by || 'admin',
-        role: auth.user?.role || 'admin'
-      }, {}, '手动激活活动');
-    }
-    return { plan, execution };
-    });
-    if (notFound) return res.status(404).json({ ok: false, error: 'not_found' });
-    res.json({ ok: true, plan, execution });
-  });
-
-  app.delete('/api/growth/marketing-templates/:id', async (req, res) => {
-    if (!rqa(req, res)) return;
-    await pool.query('DELETE FROM marketing_templates WHERE id = $1', [Number(req.params.id)]);
-    res.json({ok:true});
-  });
-
-  app.get('/api/growth/store-rankings', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const days = Math.min(Math.max(Number(req.query.days)||7,1),90);
-    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(
-      `SELECT dm.store_id,SUM(dm.scan_count)::int scan_count,SUM(dm.authorized_count)::int auth_count,
-              SUM(dm.coupon_issued_count)::int issued_count,SUM(dm.coupon_redeemed_count)::int redeemed_count,
-              SUM(dm.payment_count)::int payment_count,SUM(dm.revenue_fen)::int revenue_fen,
-              COUNT(DISTINCT dm.campaign_id)::int active_campaigns
-       FROM growth_daily_metrics dm WHERE dm.metric_date>=CURRENT_DATE-($1::int||' days')::interval
-       GROUP BY dm.store_id ORDER BY revenue_fen DESC,scan_count DESC LIMIT 200`,[days]));
-    res.json({ok:true,rankings:r.rows.map((row,i)=>({rank:i+1,...row}))});
-  });
-
-  // ── Phase 8: Content Calendar + Channel Effects ──
-  app.post('/api/growth/content-calendar', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const b = req.body || {};
-    const ccTenantId = getPhaseApiTenantId(req);
-    const r = await tenantContext.run(ccTenantId, () => pool.query(
-      `INSERT INTO growth_content_calendar(item_id,store_id,channel,publish_date,title,content_brief,copy_text,image_url,campaign_id,qr_scene,status,assignee_username,tenant_id)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT(item_id, tenant_id) DO UPDATE SET title=EXCLUDED.title,copy_text=EXCLUDED.copy_text,status=EXCLUDED.status,updated_at=NOW() RETURNING *`,
-      [cleanText(b.item_id,128),cleanText(b.store_id,128),cleanText(b.channel,80),
-       b.publish_date?b.publish_date.slice(0,10):new Date().toISOString().slice(0,10),cleanText(b.title,500),
-       cleanText(b.content_brief,2000),cleanText(b.copy_text,4000),cleanText(b.image_url,1000),
-       cleanText(b.campaign_id,128),cleanText(b.qr_scene,255),cleanText(b.status||'draft',40),cleanText(b.assignee_username,128),
-       ccTenantId]
-    ));
-    res.json({ok:true,item:r.rows[0]});
-  });
-
-  app.get('/api/growth/content-calendar', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const sid = cleanText(req.query.store_id||'',128);
-    const ch = cleanText(req.query.channel||'',80);
-    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(`SELECT * FROM growth_content_calendar WHERE ($1='' OR store_id=$1) AND ($2='' OR channel=$2) ORDER BY publish_date DESC LIMIT 300`,[sid,ch]));
-    res.json({ok:true,items:r.rows});
-  });
-
-  app.get('/api/growth/content-calendar/upcoming', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const sid = cleanText(req.query.store_id||'',128);
-    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(`SELECT * FROM growth_content_calendar WHERE publish_date>=CURRENT_DATE AND ($1='' OR store_id=$1) ORDER BY publish_date ASC LIMIT 30`,[sid]));
-    res.json({ok:true,items:r.rows});
-  });
-
-  app.get('/api/growth/channel-effects', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const days = Math.min(Math.max(Number(req.query.days)||30,1),365);
-    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(
-      `SELECT gc.channel,COUNT(*)::int total_items,
-              COUNT(*) FILTER(WHERE gc.status='published')::int published,
-              SUM(gc.result_scan_count)::int total_scans,
-              SUM(gc.result_revenue_fen)::int total_revenue_fen
-       FROM growth_content_calendar gc WHERE gc.publish_date>=CURRENT_DATE-($1::int||' days')::interval
-       GROUP BY gc.channel ORDER BY total_revenue_fen DESC`,[days]));
-    res.json({ok:true,effects:r.rows});
-  });
-
-  // ── Phase 9: POS Orders (KeruYun via Feishu bitable or direct upload) ──
-
-  app.post('/api/growth/pos-orders', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const b = req.body || {};
-    const { orders = [], items = [] } = b;
-    if (!orders.length && !items.length) return res.status(400).json({ok:false,error:'missing orders or items'});
-
-    const storeId = cleanText(b.store_id || '', 128);
-    const tenantId = getPhaseApiTenantId(req);
-    return await tenantContext.run(tenantId, async () => {
-      const result = await ingestPosOrders(pool, tenantId, { orders, items, storeId });
-      res.json({ok:true, orders_upserted: result.ordersUpserted, items_upserted: result.itemsUpserted, customers_linked: result.customersLinked});
-    });
-  });
-
-  app.get('/api/growth/pos-orders', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const sid = cleanText(req.query.store_id || '', 128);
-    const phone = cleanText(req.query.phone || '', 32);
-    const from = req.query.from || '';
-    const to = req.query.to || '';
-    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
-    const conds = ['1=1'];
-    const params = [];
-    let pi = 1;
-    if (sid) { conds.push(`store_id=$${pi++}`); params.push(sid); }
-    if (phone) { conds.push(`phone=$${pi++}`); params.push(phone); }
-    if (from) { conds.push(`biz_date>=$${pi++}`); params.push(from); }
-    if (to) { conds.push(`biz_date<=$${pi++}`); params.push(to); }
-    params.push(limit);
-    const r = await pool.query(`SELECT * FROM pos_orders WHERE ${conds.join(' AND ')} ORDER BY biz_date DESC, order_time DESC LIMIT $${pi}`, params);
-    res.json({ok:true, orders: r.rows});
-  });
-
-  app.get('/api/growth/pos-order-items', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const orderNo = cleanText(req.query.order_no || '', 64);
-    if (!orderNo) return res.status(400).json({ok:false,error:'missing order_no'});
-    const r = await pool.query('SELECT * FROM pos_order_items WHERE order_no=$1 ORDER BY id', [orderNo]);
-    res.json({ok:true, items: r.rows});
-  });
-
-  app.get('/api/growth/customer-orders', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const phone = cleanText(req.query.phone || '', 32);
-    const cid = req.query.customer_id ? Number(req.query.customer_id) : null;
-    if (!phone && !cid) return res.status(400).json({ok:false,error:'missing phone or customer_id'});
-    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-    let r;
-    if (phone) {
-      r = await pool.query('SELECT * FROM pos_orders WHERE phone=$1 ORDER BY biz_date DESC LIMIT $2', [phone, limit]);
-    } else {
-      r = await pool.query('SELECT * FROM pos_orders WHERE customer_id=$1 ORDER BY biz_date DESC LIMIT $2', [cid, limit]);
-    }
-    res.json({ok:true, orders: r.rows});
-  });
-
-  app.get('/api/growth/pos-linked-customers', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const sid = cleanText(req.query.store_id || '', 128);
-    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
-    const r = await tenantContext.run(getPhaseApiTenantId(req), () => pool.query(`
-      SELECT po.phone, gc.id AS customer_id, gc.openid, gcp.lifecycle_stage, gcp.price_sensitivity,
-             COUNT(*)::int AS order_count, SUM(po.amount_after_discount) AS total_revenue,
-             MIN(po.biz_date) AS first_order, MAX(po.biz_date) AS last_order
-      FROM pos_orders po
-      LEFT JOIN growth_customers gc ON po.phone = gc.phone
-      LEFT JOIN growth_customer_profiles gcp ON gc.id = gcp.customer_id
-      WHERE po.phone <> '' AND po.biz_date >= CURRENT_DATE - ($1::int || ' days')::interval
-        AND ($2='' OR po.store_id=$2)
-      GROUP BY po.phone, gc.id, gc.openid, gcp.lifecycle_stage, gcp.price_sensitivity
-      ORDER BY total_revenue DESC NULLS LAST LIMIT 200
-    `, [days, sid]));
-    res.json({ok:true, linked: r.rows});
-  });
-
-  app.get('/api/growth/stores', async (req, res) => {
-    if (!rqa(req, res)) return;
-    res.json({
-      ok: true,
-      stores: [
-        { store_id: '64822111', store_name: '洪潮大宁久光店' },
-        { store_id: '51866138', store_name: '马己仙上海音乐广场店' }
-      ]
-    });
-  });
-
-  app.post('/api/growth/pos-link-customers', async (req, res) => {
-    if (!rqa(req, res)) return;
-    const linked = await tenantContext.run(getPhaseApiTenantId(req), () => linkPosOrdersToCustomers(pool));
-    res.json({ok:true, customers_linked: linked});
+  registerGrowthContentCalendarRoutes(app, phaseAuthDeps);
+  registerGrowthPosRoutes(app, {
+    ...phaseAuthDeps,
+    ingestPosOrders,
+    linkPosOrdersToCustomers,
   });
 
   // ── POS consumption stats ──

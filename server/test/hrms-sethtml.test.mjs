@@ -30,7 +30,7 @@ function loadSetHtmlEnv() {
   return window;
 }
 
-test('B7 hrms-sethtml：剥离 script，保留 onclick 与 data-*', async (t) => {
+test('B7 hrms-sethtml：剥离 script，保留 onclick；DOMPurify 缺失时 fail-closed', async (t) => {
   const window = loadSetHtmlEnv();
   if (!window) {
     t.skip('需要 jsdom + dompurify（npm i -D jsdom dompurify）');
@@ -42,11 +42,18 @@ test('B7 hrms-sethtml：剥离 script，保留 onclick 与 data-*', async (t) =>
   assert.match(el.innerHTML, /onclick=/i);
   assert.match(el.innerHTML, /data-rid="x1"/i);
   assert.equal(/<script/i.test(el.innerHTML), false);
-  // onerror on img is an event handler we allow in ADD_ATTR for legacy; script body must still be gone
+  // 事件属性 XSS 因 ADD_ATTR 兼容遗留 inline handler 仍放行——B7 不声称已解决 XSS
+  assert.match(el.innerHTML, /onerror=/i);
   assert.equal(typeof window.setHTML, 'function');
   window.setHTML(el, '<p>hi<script>x</script></p>');
   assert.equal(/<script/i.test(el.innerHTML), false);
   assert.match(el.innerHTML, /hi/);
+
+  // fail-closed：无 DOMPurify 时不得原样放行
+  const prev = window.DOMPurify;
+  delete window.DOMPurify;
+  assert.equal(window.hrmsSanitizeHTML('<script>alert(1)</script><img src=x onerror=alert(2)>'), '');
+  window.DOMPurify = prev;
 });
 
 test('B7 vendor 文件与 HTML 引用存在', () => {

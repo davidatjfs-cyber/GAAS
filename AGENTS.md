@@ -178,7 +178,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - 改业务 JS → 改 `frontend/src/pages/*.js` → `npm run build:shell` → 先 scp `app.*.js/css` 再换 shell。
 - 不要直接编辑 `working-fixed.html` 内联主 `<script>`（由 `bundle-frontend.mjs` 写回）。
-- **B7 XSS**：主 script 前加载 `/assets/vendor/dompurify/`；`innerHTML` 已挂 DOMPurify。新代码优先 `setHTML`/`appendHTML`。
+- **B7 XSS（边界须如实）**：主 script 前加载 `/assets/vendor/dompurify/`；`innerHTML` 已挂 DOMPurify。
+  - 已拦 script/iframe/javascript:；**不拦**事件属性 XSS（`on*`，兼容遗留 inline onclick）。
+  - DOMPurify 未加载时 fail-closed（返回空串）。新代码优先 `setHTML`/`appendHTML`。
+  - 消灭 inline onclick 之前，不能把 B7 当成 XSS 已解决。
 
 ### @gaas/shared 生产软链
 

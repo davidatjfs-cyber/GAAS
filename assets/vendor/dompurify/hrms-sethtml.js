@@ -1,10 +1,14 @@
 /**
  * B7：innerHTML → setHTML + DOMPurify
  *
- * 在 Element.prototype.innerHTML 的 setter 上挂净化，覆盖全部现有赋值（含 +=）。
- * 本系统大量模板依赖 onclick/onchange 等内联事件，故 ADD_ATTR 放行；
- * 仍剥离 script/iframe/javascript: 等危险载荷。
+ * ⚠️ 防护边界（务必如实）：
+ * - 已拦：`<script>` / `<iframe>` / `javascript:` 等。
+ * - **不拦**：事件属性 XSS（`onerror` / `onload` / `onclick` / `onfocus` …）。
+ *   因前端仍有大量 inline `onclick` 等，ADD_ATTR 放行了全部 `on*`；在消灭这些
+ *   inline handler 之前，**不能**把 B7 当成「XSS 已解决」。
+ * - 前提：写入 innerHTML 的内容须来自可信模板/服务端，不能把用户原文当 HTML 拼进去。
  *
+ * fail-closed：DOMPurify 未加载时返回空串（并 console.error），禁止原样放行。
  * 新代码请优先用 setHTML(el, html) / appendHTML(el, html)。
  */
 (function (global) {
@@ -30,7 +34,10 @@
   function sanitize(html) {
     var raw = html == null ? '' : String(html);
     if (typeof global.DOMPurify === 'undefined' || !global.DOMPurify.sanitize) {
-      return raw;
+      if (typeof console !== 'undefined' && console.error) {
+        console.error('[B7] DOMPurify missing — fail-closed, returning empty HTML');
+      }
+      return '';
     }
     return global.DOMPurify.sanitize(raw, CFG);
   }

@@ -1,4 +1,4 @@
-/** Week1 卫生：只拦空 catch / 未使用变量；用 max-warnings 卡存量禁新增。 */
+/** Week1 卫生：存量 warn+棘轮；新文件 no-unused-vars 升为 error。 */
 export default [
   {
     ignores: [
@@ -32,10 +32,30 @@ export default [
       },
     },
     rules: {
-      // 存量用 warn + max-warnings 卡住；新增空 catch / 未使用变量会推高计数导致 CI 失败
       'no-empty': ['warn', { allowEmptyCatch: false }],
       'no-unused-vars': [
         'warn',
+        {
+          args: 'after-used',
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrors: 'none',
+        },
+      ],
+    },
+  },
+  // 新域 / 新脚本：未使用变量直接 error，避免继续堆 warn 天花板
+  {
+    files: [
+      'server/domains/**/*.js',
+      'server/domains/**/*.mjs',
+      'server/test/shared-table-writers-gate.test.mjs',
+      'server/test/employees-mirror-tx.test.mjs',
+      'scripts/eslint-c9-*.mjs',
+    ],
+    rules: {
+      'no-unused-vars': [
+        'error',
         {
           args: 'after-used',
           argsIgnorePattern: '^_',

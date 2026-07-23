@@ -6,6 +6,11 @@ import {
   renameEmployeeUsername,
   upsertEmployeeFromStateShape,
 } from './service.js';
+import {
+  mergeEmployeesMirrorOnClient,
+  removeEmployeesMirrorOnClient,
+  withEmployeesWriteTx,
+} from './mirror-tx.js';
 
 function canManageEmployees(role) {
   const r = String(role || '');
@@ -13,19 +18,17 @@ function canManageEmployees(role) {
 }
 
 /**
- * 员工窄接口：表权威写入；同步 hrms_state 镜像由 deps.mergeEmployeesMirror 完成。
+ * 员工窄接口：表权威写入；与 hrms_state.employees 镜像同事务提交。
  * @param {import('express').Express} app
  * @param {(req,res,next)=>void} authRequired
  * @param {{
  *   pool: any,
  *   resolveTenantId: (req)=>string,
- *   mergeEmployeesMirror: (emps: object[], tenantId: string)=>Promise<void>,
- *   removeEmployeesMirror: (usernames: string[], tenantId: string)=>Promise<void>,
  *   applyAccountGate?: (emp: object)=>Promise<void>,
  * }} deps
  */
 export function registerEmployeesDomainRoutes(app, authRequired, deps) {
-  const { pool, resolveTenantId, mergeEmployeesMirror, removeEmployeesMirror, applyAccountGate } = deps;
+  const { pool, resolveTenantId, applyAccountGate } = deps;
   const r = express.Router();
 
   r.get('/', authRequired, async (req, res) => {
@@ -59,14 +62,17 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
       if (existing.some((e) => String(e.username || '').toLowerCase() === username.toLowerCase())) {
         return res.status(409).json({ error: 'duplicate_username' });
       }
-      const saved = await upsertEmployeeFromStateShape(pool, tid, {
-        ...emp,
-        username,
-        id: emp?.id || username,
-        status: emp?.status || 'active',
-        createdAt: emp?.createdAt || new Date().toISOString().slice(0, 10),
+      const saved = await withEmployeesWriteTx(pool, async (client) => {
+        const row = await upsertEmployeeFromStateShape(client, tid, {
+          ...emp,
+          username,
+          id: emp?.id || username,
+          status: emp?.status || 'active',
+          createdAt: emp?.createdAt || new Date().toISOString().slice(0, 10),
+        });
+        await mergeEmployeesMirrorOnClient(client, [row], tid);
+        return row;
       });
-      await mergeEmployeesMirror([saved], tid);
       if (applyAccountGate) {
         try {
           await applyAccountGate(saved);
@@ -106,14 +112,17 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
         merged.password = cur.password || '';
       }
 
-      let saved;
-      if (nextUser.toLowerCase() !== pathUser.toLowerCase()) {
-        saved = await renameEmployeeUsername(pool, tid, pathUser, merged);
-        await removeEmployeesMirror([pathUser], tid);
-      } else {
-        saved = await upsertEmployeeFromStateShape(pool, tid, merged);
-      }
-      await mergeEmployeesMirror([saved], tid);
+      const saved = await withEmployeesWriteTx(pool, async (client) => {
+        let row;
+        if (nextUser.toLowerCase() !== pathUser.toLowerCase()) {
+          row = await renameEmployeeUsername(client, tid, pathUser, merged);
+          await removeEmployeesMirrorOnClient(client, [pathUser], tid);
+        } else {
+          row = await upsertEmployeeFromStateShape(client, tid, merged);
+        }
+        await mergeEmployeesMirrorOnClient(client, [row], tid);
+        return row;
+      });
       if (applyAccountGate) {
         try {
           await applyAccountGate(saved);
@@ -138,8 +147,11 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
       if (!username || !status) return res.status(400).json({ error: 'missing_username_or_status' });
       const extra = {};
       if (req.body?.resignDate != null) extra.resignDate = req.body.resignDate;
-      const saved = await patchEmployeeStatus(pool, tid, username, status, extra);
-      await mergeEmployeesMirror([saved], tid);
+      const saved = await withEmployeesWriteTx(pool, async (client) => {
+        const row = await patchEmployeeStatus(client, tid, username, status, extra);
+        await mergeEmployeesMirrorOnClient(client, [row], tid);
+        return row;
+      });
       if (applyAccountGate) {
         try {
           await applyAccountGate(saved);
@@ -166,8 +178,11 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
       const list = await loadEmployeesFromTable(pool, tid);
       const cur = list.find((e) => String(e.username || '').toLowerCase() === username.toLowerCase());
       if (!cur) return res.status(404).json({ error: 'not_found' });
-      const saved = await upsertEmployeeFromStateShape(pool, tid, { ...cur, password });
-      await mergeEmployeesMirror([saved], tid);
+      const saved = await withEmployeesWriteTx(pool, async (client) => {
+        const row = await upsertEmployeeFromStateShape(client, tid, { ...cur, password });
+        await mergeEmployeesMirrorOnClient(client, [row], tid);
+        return row;
+      });
       return res.json({ ok: true, employee: { ...saved, password: undefined } });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
@@ -182,9 +197,12 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
       const tid = resolveTenantId(req);
       const username = String(req.params.username || '').trim();
       if (!username) return res.status(400).json({ error: 'missing_username' });
-      const n = await deleteEmployeeFromTable(pool, tid, username);
+      const n = await withEmployeesWriteTx(pool, async (client) => {
+        const deleted = await deleteEmployeeFromTable(client, tid, username);
+        if (deleted) await removeEmployeesMirrorOnClient(client, [username], tid);
+        return deleted;
+      });
       if (!n) return res.status(404).json({ error: 'not_found' });
-      await removeEmployeesMirror([username], tid);
       return res.json({ ok: true, deleted: username });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
