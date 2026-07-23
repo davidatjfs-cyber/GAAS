@@ -51,3 +51,22 @@ test('loadPaymentConfigFromState', () => {
   const cfg = loadPaymentConfigFromState({ paymentSettings: { payees: ['A'] }, paymentBudgets: [] });
   assert.deepEqual(cfg.paymentSettings.payees, ['A']);
 });
+
+test('promotionTracks / roles 不在白名单且 PUT 不能覆盖', () => {
+  assert.equal(STATE_PUT_WHITELIST.includes('promotionTracks'), false);
+  assert.equal(STATE_PUT_WHITELIST.includes('roles'), false);
+  assert.ok(STATE_PUT_SERVER_OWNED.includes('promotionTracks'));
+  assert.ok(STATE_PUT_SERVER_OWNED.includes('roles'));
+  const existing = {
+    promotionTracks: [{ id: 't1', applicantUsername: 'alice' }],
+    roles: [{ id: 'admin', name: '管理员' }],
+  };
+  const { next, ignoredKeys } = applyStatePutWhitelist(existing, {
+    promotionTracks: [{ id: 'hack' }],
+    roles: [{ id: 'hack', name: '黑' }],
+  });
+  assert.equal(next.promotionTracks[0].id, 't1');
+  assert.equal(next.roles[0].id, 'admin');
+  assert.ok(ignoredKeys.includes('promotionTracks'));
+  assert.ok(ignoredKeys.includes('roles'));
+});

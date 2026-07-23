@@ -12,7 +12,6 @@
 /** A3：白名单收敛为配置/内容类；已有独立 API 的业务事实一律 SERVER_OWNED */
 export const STATE_PUT_WHITELIST = Object.freeze([
   'users',
-  'roles',
   'settings',
   'examAssignments',
   'questionBank',
@@ -20,7 +19,6 @@ export const STATE_PUT_WHITELIST = Object.freeze([
   'announcements',
   'trainingTasks',
   'trainingMaterials',
-  'promotionTracks',
 ]);
 
 /**
@@ -35,6 +33,7 @@ export const STATE_PUT_WHITELIST = Object.freeze([
  * 2026-07 A3再续：stores 走窄 API（含 DELETE），禁止 PUT /api/state 覆盖。
  * 2026-07 A3再续2：brands / gmMailbox 走窄 API，禁止 PUT 覆盖。
  * 2026-07 A3再续3：paymentSettings / paymentBudgets 走 /api/payment-config。
+ * 2026-07 A3再续4：promotionTracks（服务端权威+GET）/ roles（无有效写路径）移出白名单。
  * GET /api/state 会用表覆盖这些镜像字段。运行时靠「不在白名单」生效。
  */
 export const STATE_PUT_SERVER_OWNED = Object.freeze([
@@ -44,6 +43,8 @@ export const STATE_PUT_SERVER_OWNED = Object.freeze([
   'gmMailbox',
   'paymentSettings',
   'paymentBudgets',
+  'promotionTracks',
+  'roles',
   'roleModules',
   'approvalFlows',
   'paymentFlowByStore',

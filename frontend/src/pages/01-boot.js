@@ -1605,7 +1605,8 @@
                  'pointRules', 'forecastCoreProducts', 'forecastProductAliasRules', 'forecastGrossProfitProfiles',
                  'knowledge', 'examResults', 'notifications',
                  'exams', 'promotionRequests', 'promotionAbilityRequirements', 'rewardPunishments',
-                 'stores', 'brands', 'gmMailbox', 'paymentSettings', 'paymentBudgets'
+                 'stores', 'brands', 'gmMailbox', 'paymentSettings', 'paymentBudgets',
+                 'promotionTracks', 'roles'
                 ].forEach(function(k) { try { delete _d[k]; } catch (e) {} });
                 return this.request('/api/state', {
                     method: 'PUT',
