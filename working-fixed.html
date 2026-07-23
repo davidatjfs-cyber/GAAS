@@ -12405,7 +12405,7 @@
         #profile-page .pf2-pb { display: flex; align-items: center; gap: 12px; min-height: 22px; }
         #profile-page .pf2-pb + .pf2-pb { margin-top: 13px; }
         #profile-page .pf2-pb i {
-            width: 62px; flex: none; font-style: normal; font-size: 12px; color: var(--pf-tx2);
+            width: 58px; flex: none; font-style: normal; font-size: 12px; color: var(--pf-tx2);
         }
         #profile-page .pf2-pb u {
             flex: 1; height: 4px; border-radius: 99px; background: var(--pf-sunk);
@@ -12416,11 +12416,36 @@
             transition: width 0.4s ease;
         }
         #profile-page .pf2-pb u b.p { background: var(--pf-pos); }
+        /* 评级徽章：原来是右对齐的 12.5px 小字，太不显眼。
+           改成分档着色的实心徽章——A/B/C/D 一眼可辨。 */
         #profile-page .pf2-pb s {
-            width: 40px; flex: none; text-align: right; text-decoration: none;
-            font-family: var(--pf-display); font-size: 12.5px; font-weight: 600;
-            font-variant-numeric: tabular-nums; color: var(--pf-tx);
+            min-width: 40px; flex: none; text-align: center; text-decoration: none;
+            font-family: var(--pf-display); font-size: 15px; font-weight: 700;
+            line-height: 1; letter-spacing: 0.01em; padding: 6px 9px; border-radius: 9px;
+            font-variant-numeric: tabular-nums;
+            color: var(--pf-dim); background: rgba(255, 255, 255, 0.05);
+            border: 1px solid transparent;
         }
+        #profile-page .pf2-pb s.is-a {
+            color: var(--pf-acx); background: linear-gradient(180deg, #8ff0dd, var(--pf-pos));
+            box-shadow: 0 4px 14px rgba(94, 234, 212, 0.26);
+        }
+        #profile-page .pf2-pb s.is-b {
+            color: var(--pf-acx); background: linear-gradient(180deg, var(--pf-ac-hi), var(--pf-ac-deep));
+            box-shadow: 0 4px 14px rgba(201, 169, 106, 0.28);
+        }
+        #profile-page .pf2-pb s.is-c {
+            color: var(--pf-wn); background: var(--pf-wn1); border-color: rgba(255, 196, 107, 0.34);
+        }
+        #profile-page .pf2-pb s.is-d {
+            color: #fff; background: linear-gradient(180deg, #ff97a8, var(--pf-neg));
+            box-shadow: 0 4px 14px rgba(255, 122, 144, 0.28);
+        }
+        /* 进度条同档同色 */
+        #profile-page .pf2-pb u b.t-a { background: var(--pf-pos); }
+        #profile-page .pf2-pb u b.t-b { background: var(--pf-ac); }
+        #profile-page .pf2-pb u b.t-c { background: var(--pf-wn); }
+        #profile-page .pf2-pb u b.t-d { background: var(--pf-neg); }
 
         /* ── 考勤 ── */
         #profile-page .pf2-lv {
@@ -12915,16 +12940,26 @@
             box-shadow: 0 6px 18px rgba(201, 169, 106, 0.28);
         }
 
-        /* ── 底部抽屉：一次看全 12 个模块 ── */
-        #growth-page .gx-sheet {
+        /* ── 底部抽屉：一次看全 12 个模块 ──
+           作用域是全局而非 #growth-page：抽屉在打开时会被挂到 <body> 下，
+           以绕开祖先的 transform/filter 造成的 fixed 包含块问题。
+           因此这里自带一套令牌，不依赖 #growth-page 上的 --gx-*。 */
+        .gx-sheet {
+            --gx-ac: #c9a96a; --gx-ac-hi: #dcc9a0; --gx-ac-deep: #a8894f; --gx-acx: #1a1610;
+            --gx-ac1: rgba(201,169,106,0.10); --gx-ac2: rgba(201,169,106,0.30);
+            --gx-tx: #ece7dc; --gx-dim: rgba(196,184,160,0.72); --gx-faint: rgba(160,148,124,0.60);
+            --gx-line: rgba(201,169,106,0.15);
+            --gx-display: "Outfit", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+        }
+        .gx-sheet {
             position: fixed; inset: 0; z-index: 2000; display: none;
         }
-        #growth-page .gx-sheet.is-open { display: block; }
-        #growth-page .gx-sheet__mask {
+        .gx-sheet.is-open { display: block; }
+        .gx-sheet__mask {
             position: absolute; inset: 0; background: rgba(0, 0, 0, 0.62);
             backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
         }
-        #growth-page .gx-sheet__panel {
+        .gx-sheet__panel {
             position: absolute; left: 0; right: 0; bottom: 0;
             max-height: 86vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
             padding: 0 16px calc(20px + env(safe-area-inset-bottom));
@@ -12935,43 +12970,43 @@
             animation: gxSheetUp 0.22s ease-out;
         }
         @keyframes gxSheetUp { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
-        #growth-page .gx-sheet__grip {
+        .gx-sheet__grip {
             position: sticky; top: 0; z-index: 1; padding: 12px 0 10px;
             background: linear-gradient(180deg, #16151a 70%, transparent);
             display: flex; flex-direction: column; align-items: center; gap: 10px;
         }
-        #growth-page .gx-sheet__grip i {
+        .gx-sheet__grip i {
             width: 36px; height: 4px; border-radius: 99px; background: var(--gx-line);
         }
-        #growth-page .gx-sheet__grip b {
+        .gx-sheet__grip b {
             font-size: 13.5px; font-weight: 600; color: var(--gx-tx); letter-spacing: 0.04em;
         }
-        #growth-page .gx-grp + .gx-grp { margin-top: 6px; }
-        #growth-page .gx-grp__t {
+        .gx-grp + .gx-grp { margin-top: 6px; }
+        .gx-grp__t {
             font-family: var(--gx-display); font-size: 9.5px; font-weight: 600;
             letter-spacing: 0.2em; text-transform: uppercase; color: var(--gx-faint);
             padding: 14px 2px 8px; display: flex; align-items: center; gap: 8px;
         }
-        #growth-page .gx-grp__t::after {
+        .gx-grp__t::after {
             content: ""; flex: 1; height: 1px; background: var(--gx-line);
         }
-        #growth-page .gx-item {
+        .gx-item {
             display: flex; align-items: center; gap: 10px; width: 100%;
             min-height: 50px; padding: 10px 12px; margin-bottom: 4px;
             border-radius: 12px; cursor: pointer; font-family: inherit; text-align: left;
             background: transparent; border: 1px solid transparent; color: var(--gx-dim);
             font-size: 14px; transition: background 0.15s, color 0.15s;
         }
-        #growth-page .gx-item:active { background: var(--gx-ac1); }
-        #growth-page .gx-item.is-on {
+        .gx-item:active { background: var(--gx-ac1); }
+        .gx-item.is-on {
             background: var(--gx-ac1); border-color: var(--gx-ac2); color: var(--gx-tx);
             font-weight: 600;
         }
-        #growth-page .gx-item__dot {
+        .gx-item__dot {
             width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--gx-line);
         }
-        #growth-page .gx-item.is-on .gx-item__dot { background: var(--gx-ac); box-shadow: 0 0 8px var(--gx-ac2); }
-        #growth-page .gx-item__ext {
+        .gx-item.is-on .gx-item__dot { background: var(--gx-ac); box-shadow: 0 0 8px var(--gx-ac2); }
+        .gx-item__ext {
             margin-left: auto; flex: none; font-size: 10px; color: var(--gx-faint);
             border: 1px solid var(--gx-line); border-radius: 5px; padding: 1px 5px;
         }
@@ -25930,10 +25965,47 @@
                 ['dailyReports', 'inventoryForecastHistory', 'pointRecords'].forEach(function(k) {
                     if (_d[k] === undefined && _hrmsServerPassthrough[k] !== undefined) _d[k] = _hrmsServerPassthrough[k];
                 });
+                // A1：employees 已表权威，禁止经 PUT /api/state 覆盖
+                try { delete _d.employees; } catch (e) {}
                 return this.request('/api/state', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ data: _d })
+                });
+            },
+
+            async createEmployee(employee) {
+                return this.request('/api/employees', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ employee: employee || {} })
+                });
+            },
+            async upsertEmployee(username, employee) {
+                return this.request('/api/employees/' + encodeURIComponent(String(username || '').trim()), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ employee: employee || {} })
+                });
+            },
+            async patchEmployeeStatus(username, status, extra) {
+                const body = Object.assign({ status: status }, extra && typeof extra === 'object' ? extra : {});
+                return this.request('/api/employees/' + encodeURIComponent(String(username || '').trim()) + '/status', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            },
+            async resetEmployeePassword(username, password) {
+                return this.request('/api/employees/' + encodeURIComponent(String(username || '').trim()) + '/password', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: password == null ? '123456' : String(password) })
+                });
+            },
+            async deleteEmployeeApi(username) {
+                return this.request('/api/employees/' + encodeURIComponent(String(username || '').trim()), {
+                    method: 'DELETE'
                 });
             },
             async getUnreadCounts() {
@@ -48282,23 +48354,38 @@ ${String(text || '').slice(0, 9000)}`;
                 }
                 const old = employees[idx] || {};
                 const nextPwd = passwordInput ? passwordInput : (old.password || '');
-                employees[idx] = { ...old, id, username, name, password: nextPwd, gender, birthday, idCardNumber, hometown, registeredResidence, maritalStatus, wechat, store, role, department, position, level, managerUsername, salary, education, bankCardCompany, bankNameCompany, bankCardPersonal, bankNamePersonal, bankCard, emergencyContactName, emergencyContactPhone, emergencyContactRelation, idCardFrontUrl, idCardBackUrl, joinDate, phone, email, status, coreTalent };
+                const nextEmp = { ...old, id, username, name, password: nextPwd, gender, birthday, idCardNumber, hometown, registeredResidence, maritalStatus, wechat, store, role, department, position, level, managerUsername, salary, education, bankCardCompany, bankNameCompany, bankCardPersonal, bankNamePersonal, bankCard, emergencyContactName, emergencyContactPhone, emergencyContactRelation, idCardFrontUrl, idCardBackUrl, joinDate, phone, email, status, coreTalent };
+                try {
+                    const resp = await HRMS_API.upsertEmployee(origEmpId, nextEmp);
+                    const saved = resp?.employee || nextEmp;
+                    const keyLower = String(origEmpId).toLowerCase();
+                    const nextList = (employees || []).filter(e => {
+                        const un = String(e?.username || '').trim().toLowerCase();
+                        const eid = String(e?.id || '').trim();
+                        return un !== keyLower && eid !== origEmpId;
+                    });
+                    nextList.push(saved);
+                    HRMS_STORE.setEmployees(nextList);
+                } catch (e) {
+                    showNotification('编辑员工失败：' + (e?.message || e || '网络错误'), 'error');
+                    return;
+                }
             } else {
                 const pwd = passwordInput || '123456';
-                employees.push({ id, username, name, password: pwd, gender, birthday, idCardNumber, hometown, registeredResidence, maritalStatus, wechat, store, role, department, position, level, managerUsername, salary, education, bankCardCompany, bankNameCompany, bankCardPersonal, bankNamePersonal, bankCard, emergencyContactName, emergencyContactPhone, emergencyContactRelation, idCardFrontUrl, idCardBackUrl, joinDate, phone, email, status, coreTalent, promotionHistory: [], createdAt: new Date().toISOString().slice(0, 10), lastLogin: null });
+                const nextEmp = { id, username, name, password: pwd, gender, birthday, idCardNumber, hometown, registeredResidence, maritalStatus, wechat, store, role, department, position, level, managerUsername, salary, education, bankCardCompany, bankNameCompany, bankCardPersonal, bankNamePersonal, bankCard, emergencyContactName, emergencyContactPhone, emergencyContactRelation, idCardFrontUrl, idCardBackUrl, joinDate, phone, email, status, coreTalent, promotionHistory: [], createdAt: new Date().toISOString().slice(0, 10), lastLogin: null };
+                try {
+                    const resp = await HRMS_API.createEmployee(nextEmp);
+                    const saved = resp?.employee || nextEmp;
+                    HRMS_STORE.setEmployees([...(employees || []), saved]);
+                } catch (e) {
+                    const raw = String(e?.message || e || '网络错误');
+                    showNotification('新增员工失败：' + (raw.includes('duplicate') ? '账号已存在' : raw), 'error');
+                    return;
+                }
             }
 
-            HRMS_STORE.setEmployees(employees);
             closeEmployeeFormModal();
             loadEmployeesData();
-            try {
-                const ok = await hrmsFlushStateSave();
-                if (!ok) {
-                    showNotification('员工信息已保存到本地，但同步到服务器失败（请稍后重试或刷新后检查）', 'warning');
-                }
-            } catch (e) {
-                showNotification('员工信息已保存到本地，但同步到服务器失败（请稍后重试或刷新后检查）', 'warning');
-            }
             showNotification(mode === 'edit' ? '编辑员工成功' : '新增员工成功', 'success');
         }
         
@@ -48327,9 +48414,15 @@ ${String(text || '').slice(0, 9000)}`;
             }
             const _okRP = await hrmsConfirm({ title: '重置密码', message: `确定要重置账号 ${key} 的密码为默认 123456 吗？`, okText: '确认重置', icon: '🔑' });
             if (!_okRP) return;
-            employees[idx] = { ...employees[idx], password: '123456' };
-            HRMS_STORE.setEmployees(employees);
-            showNotification('密码已重置', 'success');
+            const uname = String(employees[idx]?.username || key).trim();
+            try {
+                await HRMS_API.resetEmployeePassword(uname, '123456');
+                employees[idx] = { ...employees[idx], password: '123456' };
+                HRMS_STORE.setEmployees(employees);
+                showNotification('密码已重置', 'success');
+            } catch (e) {
+                showNotification('重置密码失败：' + (e?.message || e || '网络错误'), 'error');
+            }
         }
         
         async function toggleEmployeeStatus(empId) {
@@ -48351,10 +48444,15 @@ ${String(text || '').slice(0, 9000)}`;
             const ok = await hrmsConfirm({ title: '切换员工状态', message: `确定要将账号 ${emp.username || key} 状态切换为 ${nextStatus === 'active' ? '启用' : '禁用'} 吗？`, okText: nextStatus === 'active' ? '确认启用' : '确认禁用', icon: nextStatus === 'active' ? '✅' : '🚫' });
             if (!ok) return;
 
-            employees[idx] = { ...emp, status: nextStatus };
-            HRMS_STORE.setEmployees(employees);
-            loadEmployeesData();
-            showNotification('状态已更新', 'success');
+            try {
+                const resp = await HRMS_API.patchEmployeeStatus(emp.username || key, nextStatus);
+                employees[idx] = resp?.employee || { ...emp, status: nextStatus };
+                HRMS_STORE.setEmployees(employees);
+                loadEmployeesData();
+                showNotification('状态已更新', 'success');
+            } catch (e) {
+                showNotification('状态更新失败：' + (e?.message || e || '网络错误'), 'error');
+            }
         }
 
         async function loginAsEmployee(username, displayName) {
@@ -48442,31 +48540,35 @@ ${String(text || '').slice(0, 9000)}`;
             const keyLower = key.toLowerCase();
             const employees = HRMS_STORE.getEmployees();
             const users = HRMS_STORE.getUsers ? HRMS_STORE.getUsers() : [];
+            const uname = (() => {
+                const hit = (employees || []).find(e => {
+                    const un = String(e?.username || '').trim().toLowerCase();
+                    const id = String(e?.id || '').trim();
+                    return un === keyLower || id === key;
+                });
+                return String(hit?.username || key).trim();
+            })();
+            try {
+                await HRMS_API.deleteEmployeeApi(uname);
+            } catch (e) {
+                showNotification('删除失败：' + (e?.message || e || '网络错误'), 'error');
+                return;
+            }
             HRMS_STORE.setEmployees((employees || []).filter(e => {
                 const un = String(e?.username || '').trim().toLowerCase();
                 const id = String(e?.id || '').trim();
-                return un !== keyLower && id !== key;
+                return un !== keyLower && id !== key && un !== String(uname).toLowerCase();
             }));
             try {
                 if (HRMS_STORE.setUsers && Array.isArray(users)) {
                     HRMS_STORE.setUsers(users.filter(u => {
                         const un = String(u?.username || '').trim().toLowerCase();
                         const id = String(u?.id || '').trim();
-                        return un !== keyLower && id !== key;
+                        return un !== keyLower && id !== key && un !== String(uname).toLowerCase();
                     }));
                 }
             } catch (e) {}
             loadEmployeesData();
-            try {
-                const ok = await hrmsFlushStateSave();
-                if (!ok) {
-                    showNotification('已删除，但同步到服务器失败（请稍后重试或刷新后检查）', 'warning');
-                    return;
-                }
-            } catch (e) {
-                showNotification('已删除，但同步到服务器失败（请稍后重试或刷新后检查）', 'warning');
-                return;
-            }
             showNotification('已删除', 'success');
         }
         
@@ -50202,11 +50304,19 @@ tr:nth-child(even) td { background: #fafafa; }
                  ['profile-attitude-rating', 'pf2-bar-att'],
                  ['profile-ability-rating', 'pf2-bar-abil']].forEach(([src, bar]) => {
                     const el = document.getElementById(bar);
-                    if (!el) return;
+                    const badge = document.getElementById(src);
                     const pct = pf2RatingPct(txt(src));
+                    // 等级 -> 语义档：优(薄荷) / 良(金) / 中(琥珀) / 差(珊瑚)
+                    let tier = '';
+                    // 阈值对齐字母档：A 系 >=85 / B 系 >=68 / C 系 >=45 / D 及以下
+                    if (pct != null) tier = pct >= 85 ? 'a' : pct >= 68 ? 'b' : pct >= 45 ? 'c' : 'd';
+                    if (badge) {
+                        ['a', 'b', 'c', 'd'].forEach(t => badge.classList.toggle('is-' + t, tier === t));
+                    }
+                    if (!el) return;
                     const w = pct == null ? '0%' : pct + '%';
                     if (el.style.width !== w) el.style.width = w;
-                    el.classList.toggle('p', pct != null && pct >= 85);
+                    ['a', 'b', 'c', 'd'].forEach(t => el.classList.toggle('t-' + t, tier === t));
                 });
 
                 // ③ 考勤：只有异常值着色（0 是好消息，不该显示告警色）
@@ -60560,6 +60670,10 @@ ${body}
             var sheet = document.getElementById('gx-sheet');
             var body = document.getElementById('gx-sheet-body');
             if (!sheet || !body) return;
+            // 祖先若有 transform/filter/backdrop-filter，会成为 fixed 的包含块，
+            // 导致抽屉被定位到长页面的最底部（手机上表现为「点一下跳到页面最下面」）。
+            // 挂到 body 下可彻底绕开，不依赖排查是哪个祖先。
+            if (sheet.parentNode !== document.body) document.body.appendChild(sheet);
             var cur = (typeof __growthActiveTab !== 'undefined') ? __growthActiveTab : 'dashboard';
             var html = '';
             (typeof GROWTH_GROUPS !== 'undefined' ? GROWTH_GROUPS : []).forEach(function (g) {
@@ -60583,6 +60697,7 @@ ${body}
             body.innerHTML = html;
             sheet.classList.add('is-open');
             sheet.setAttribute('aria-hidden', 'false');
+            document.body.style.overflow = 'hidden';
             document.addEventListener('keydown', gxSheetEsc);
         }
 
@@ -60591,6 +60706,7 @@ ${body}
             if (!sheet) return;
             sheet.classList.remove('is-open');
             sheet.setAttribute('aria-hidden', 'true');
+            document.body.style.overflow = '';
             document.removeEventListener('keydown', gxSheetEsc);
         }
         function gxSheetEsc(e) { if (e.key === 'Escape') gxCloseSheet(); }

@@ -299,6 +299,14 @@
 
             if (employeesChanged) {
                 HRMS_STORE.setEmployees(employees);
+                // A1：employees 已不在 PUT /api/state 白名单，离职状态走窄 API
+                todayResignations.forEach(r => {
+                    const un = String(r?.applicant || '').trim();
+                    if (!un) return;
+                    HRMS_API.patchEmployeeStatus(un, 'resigned', { resignDate: today }).catch(e => {
+                        console.warn('[resignation] patch status failed', un, e?.message || e);
+                    });
+                });
             }
             if (notifsChanged || todayResignations.length) {
                 HRMS_STORE.setResignations(resignations);
@@ -456,11 +464,19 @@
                  ['profile-attitude-rating', 'pf2-bar-att'],
                  ['profile-ability-rating', 'pf2-bar-abil']].forEach(([src, bar]) => {
                     const el = document.getElementById(bar);
-                    if (!el) return;
+                    const badge = document.getElementById(src);
                     const pct = pf2RatingPct(txt(src));
+                    // 等级 -> 语义档：优(薄荷) / 良(金) / 中(琥珀) / 差(珊瑚)
+                    let tier = '';
+                    // 阈值对齐字母档：A 系 >=85 / B 系 >=68 / C 系 >=45 / D 及以下
+                    if (pct != null) tier = pct >= 85 ? 'a' : pct >= 68 ? 'b' : pct >= 45 ? 'c' : 'd';
+                    if (badge) {
+                        ['a', 'b', 'c', 'd'].forEach(t => badge.classList.toggle('is-' + t, tier === t));
+                    }
+                    if (!el) return;
                     const w = pct == null ? '0%' : pct + '%';
                     if (el.style.width !== w) el.style.width = w;
-                    el.classList.toggle('p', pct != null && pct >= 85);
+                    ['a', 'b', 'c', 'd'].forEach(t => el.classList.toggle('t-' + t, tier === t));
                 });
 
                 // ③ 考勤：只有异常值着色（0 是好消息，不该显示告警色）

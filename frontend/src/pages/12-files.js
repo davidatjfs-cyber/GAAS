@@ -1674,6 +1674,10 @@
             var sheet = document.getElementById('gx-sheet');
             var body = document.getElementById('gx-sheet-body');
             if (!sheet || !body) return;
+            // 祖先若有 transform/filter/backdrop-filter，会成为 fixed 的包含块，
+            // 导致抽屉被定位到长页面的最底部（手机上表现为「点一下跳到页面最下面」）。
+            // 挂到 body 下可彻底绕开，不依赖排查是哪个祖先。
+            if (sheet.parentNode !== document.body) document.body.appendChild(sheet);
             var cur = (typeof __growthActiveTab !== 'undefined') ? __growthActiveTab : 'dashboard';
             var html = '';
             (typeof GROWTH_GROUPS !== 'undefined' ? GROWTH_GROUPS : []).forEach(function (g) {
@@ -1697,6 +1701,7 @@
             body.innerHTML = html;
             sheet.classList.add('is-open');
             sheet.setAttribute('aria-hidden', 'false');
+            document.body.style.overflow = 'hidden';
             document.addEventListener('keydown', gxSheetEsc);
         }
 
@@ -1705,6 +1710,7 @@
             if (!sheet) return;
             sheet.classList.remove('is-open');
             sheet.setAttribute('aria-hidden', 'true');
+            document.body.style.overflow = '';
             document.removeEventListener('keydown', gxSheetEsc);
         }
         function gxSheetEsc(e) { if (e.key === 'Escape') gxCloseSheet(); }
