@@ -11,6 +11,7 @@ import {
   removeEmployeesMirrorOnClient,
   withEmployeesWriteTx,
 } from './mirror-tx.js';
+import { registerEmployeeAttachmentsRoutes } from './routes-attachments.js';
 
 function canManageEmployees(role) {
   const r = String(role || '');
@@ -25,11 +26,26 @@ function canManageEmployees(role) {
  *   pool: any,
  *   resolveTenantId: (req)=>string,
  *   applyAccountGate?: (emp: object)=>Promise<void>,
+ *   upload?: import('multer').Multer,
+ *   recordUploadOwnership?: (filename: string, tenantId: string, uploadedBy: string) => Promise<void>,
+ *   uploadsDir?: string,
+ *   resolveTenantIdDefault?: () => string,
  * }} deps
  */
 export function registerEmployeesDomainRoutes(app, authRequired, deps) {
-  const { pool, resolveTenantId, applyAccountGate } = deps;
+  const { pool, resolveTenantId, applyAccountGate, upload, recordUploadOwnership, uploadsDir, resolveTenantIdDefault } =
+    deps;
   const r = express.Router();
+
+  if (upload) {
+    registerEmployeeAttachmentsRoutes(r, authRequired, {
+      pool,
+      upload,
+      recordUploadOwnership,
+      uploadsDir,
+      resolveTenantIdDefault,
+    });
+  }
 
   r.get('/', authRequired, async (req, res) => {
     if (!canManageEmployees(req.user?.role) && String(req.user?.role || '') !== 'store_manager') {
