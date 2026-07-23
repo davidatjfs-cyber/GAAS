@@ -91,10 +91,13 @@ jobs:
             }
 
       - name: Optional Feishu webhook
-        if: ${{ secrets.FEISHU_CI_WEBHOOK != '' }}
         env:
           FEISHU_CI_WEBHOOK: ${{ secrets.FEISHU_CI_WEBHOOK }}
         run: |
+          if [ -z "$FEISHU_CI_WEBHOOK" ]; then
+            echo "FEISHU_CI_WEBHOOK not set; skip"
+            exit 0
+          fi
           curl -sS -X POST "$FEISHU_CI_WEBHOOK" \
             -H 'Content-Type: application/json' \
             -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"CI failed on main\\n${{ github.event.workflow_run.html_url }}\\nSHA ${{ github.event.workflow_run.head_sha }}\"}}" \
