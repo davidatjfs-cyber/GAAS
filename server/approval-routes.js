@@ -1,8 +1,8 @@
 /**
  * 审批模块的简单路由（架构拆分阶段B，第一批：只拆低风险的部分）。
  *
- * 有意不拆的部分：POST /api/approvals(创建)、POST /api/approvals/:id/return、
- * POST /api/approvals/:id/resubmit —— decide 已拆至 domains/approvals/（P0-A1）。
+ * create / return / resubmit / repair-onboarding 已拆至 domains/approvals/routes-lifecycle.js（Wave 4c）；
+ * decide 在 domains/approvals/（P0-A1）。
  *
  * 依赖注入方式同 auth-routes.js：不从这里import index.js，而是通过 deps 参数接收
  * index.js里那些被广泛复用、不属于审批模块本身的工具函数。
