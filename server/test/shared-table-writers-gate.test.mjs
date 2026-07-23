@@ -3,6 +3,9 @@
  *
  * packages/gaas-shared 的 SHARED_TABLE_WRITERS 定义唯一写入方；
  * 本测试扫描 INSERT/UPDATE/DELETE，比对矩阵，存量进 allowlist（只减不增）。
+ *
+ * 搬家约定：同一 OP+表 从旧路径迁到新路径不算「新增」——把 allowlist 里旧键
+ * 换成新键即可（见 REPATH_NOTES）。禁止净新增（新 OP+表 组合）。
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,7 +17,10 @@ import { SHARED_TABLES, SHARED_TABLE_WRITERS } from '@gaas/shared';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
 
-/** 冻结前已存在的越界写入（file|OP|table）。只减不增。 */
+/**
+ * 冻结前已存在的越界写入（file|OP|table）。只减不增。
+ * 文件搬家时：删除旧路径键、加入新路径键，并在 REPATH_NOTES 记一笔。
+ */
 const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'agents.js|DELETE FROM|agent_messages',
   'agents.js|INSERT INTO|agent_messages',
@@ -31,7 +37,11 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'force_sync.js|INSERT INTO|agent_messages',
   'index.js|DELETE FROM|agent_messages',
   'index.js|INSERT INTO|feishu_generic_records',
-  'index.js|INSERT INTO|feishu_users',
+  // P0-A1：decide 从 index.js 迁出；feishu_users 写入现位于 handlers/onboarding.js
+  // （同 OP+表换路径不算新增，见 REPATH_NOTES）
+  'domains/approvals/handlers/onboarding.js|INSERT INTO|feishu_users',
+  'domains/approvals/handlers/onboarding.js|UPDATE|feishu_users',
+  // index.js 仍有其它路径的 feishu_users UPDATE（非 decide）
   'index.js|UPDATE|feishu_users',
   'index.js|UPDATE|knowledge_base',
   'knowledge-routes.js|DELETE FROM|knowledge_base',
@@ -50,6 +60,12 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'training.js|UPDATE|knowledge_base',
   'utils/feishu-open-id-cross-app.js|UPDATE|feishu_users',
 ]);
+
+/** 搬家记录（文档用，不参与断言）。格式：旧路径 → 新路径 | OP|table */
+const REPATH_NOTES = [
+  'index.js → domains/approvals/handlers/onboarding.js | INSERT INTO|feishu_users',
+  'index.js → domains/approvals/handlers/onboarding.js | UPDATE|feishu_users',
+];
 
 const OWNER = 'gaas';
 const keyToTable = Object.fromEntries(Object.entries(SHARED_TABLES));
@@ -96,14 +112,30 @@ function scanCrossWrites(rootAbs, owner) {
   return [...hits].sort();
 }
 
+/** 键的 OP|table 后缀，用于搬家时判断「同写入、换路径」 */
+function opTableSuffix(key) {
+  const parts = key.split('|');
+  if (parts.length < 3) return key;
+  return parts.slice(1).join('|');
+}
+
 test('SHARED_TABLE_WRITERS：GAAS 不得新增对 agents 权威表的写入', () => {
   const found = scanCrossWrites(serverRoot, OWNER);
   const unexpected = found.filter((h) => !GAAS_CROSS_WRITER_ALLOWLIST.has(h));
   const stale = [...GAAS_CROSS_WRITER_ALLOWLIST].filter((h) => !found.includes(h));
+
+  // 若失败信息像「路径变了、OP+表没变」，提示按 REPATH_NOTES 改 allowlist，而不是当新写入
+  const allowedSuffixes = new Set([...GAAS_CROSS_WRITER_ALLOWLIST].map(opTableSuffix));
+  const likelyRepath = unexpected.filter((h) => allowedSuffixes.has(opTableSuffix(h)));
+  const hint =
+    likelyRepath.length > 0
+      ? `\n（疑似文件搬家，请更新 allowlist 路径并记入 REPATH_NOTES：\n${likelyRepath.join('\n')}\n已有记录：\n${REPATH_NOTES.join('\n')}）`
+      : '';
+
   assert.deepEqual(
     unexpected,
     [],
-    `新增越界写入（请改走 HTTP 或扩共享包纪律）：\n${unexpected.join('\n')}`
+    `新增越界写入（请改走 HTTP 或扩共享包纪律）：\n${unexpected.join('\n')}${hint}`
   );
   // allowlist 只减不增：已清除的条目应从白名单删掉（提示，不强制 fail 以免误伤 WIP）
   if (stale.length) {

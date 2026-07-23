@@ -148,8 +148,14 @@ test('PUT /api/approval-flows: 只有admin能配置，配置正确写入hrms_sta
   const okBody = await okRes.json();
   assert.equal(okRes.status, 200, JSON.stringify(okBody));
 
+  // A2：approvalFlows 权威在 hr_rating_configs；数组入参会被 normalize 成 { steps: [...] }
   const db = testDb();
-  const row = await db.query(`select data from hrms_state where key = 'default'`);
-  const flows = row.rows[0]?.data?.approvalFlows;
-  assert.ok(flows?.payment?.includes(marker), 'approvalFlows应该被正确写入hrms_state');
+  const cfg = await db.query(
+    `select config from hr_rating_configs
+      where tenant_id = 'default' and config_key = 'approval_flows' and enabled = true
+      limit 1`
+  );
+  const flows = cfg.rows[0]?.config || {};
+  const paymentSteps = Array.isArray(flows?.payment?.steps) ? flows.payment.steps : [];
+  assert.ok(paymentSteps.includes(marker), 'approvalFlows.payment.steps 应写入权威表: ' + JSON.stringify(flows?.payment));
 });

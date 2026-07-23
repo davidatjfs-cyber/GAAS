@@ -1,0 +1,101 @@
+# P0.4：main CI 失败时可见——发 GitHub Issue 评论式通知到仓库 Discussions 不适用时，
+# 用 workflow_run + 失败 job 摘要写一条 sticky issue 评论，并在 Actions 摘要里打醒目标记。
+# 飞书推送依赖生产密钥，Actions 里默认只做 GitHub 侧可见性；若配置了 FEISHU_CI_WEBHOOK 则额外推送。
+name: CI Failure Notify
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+
+jobs:
+  notify:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Summarize failure
+        id: summary
+        run: |
+          echo "## CI 失败告警" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **workflow**: ${{ github.event.workflow_run.name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **run**: ${{ github.event.workflow_run.html_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **head_sha**: \`${{ github.event.workflow_run.head_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **actor**: ${{ github.event.workflow_run.actor.login }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "main 上 CI 红了；请先修闸门再继续拆代码。" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "title=CI failed on main @ ${{ github.event.workflow_run.head_sha }}"
+            echo "body<<EOF"
+            echo "CI workflow failed on \`main\`."
+            echo ""
+            echo "- Run: ${{ github.event.workflow_run.html_url }}"
+            echo "- SHA: \`${{ github.event.workflow_run.head_sha }}\`"
+            echo "- Actor: @${{ github.event.workflow_run.actor.login }}"
+            echo ""
+            echo "Do not deploy until CI is green."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update tracking issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '🚨 CI red on main — fix before deploy';
+            const body = [
+              '## CI failure on `main`',
+              '',
+              `Latest failed run: ${{ github.event.workflow_run.html_url }}`,
+              `SHA: \`${{ github.event.workflow_run.head_sha }}\``,
+              `Actor: @${{ github.event.workflow_run.actor.login }}`,
+              '',
+              '_Auto-updated by `ci-failure-notify.yml`. Close only when CI is green._',
+            ].join('\n');
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'ci-failure',
+              per_page: 5,
+            });
+            const existing = issues.data.find((i) => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              try {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title,
+                  body,
+                  labels: ['ci-failure'],
+                });
+              } catch (e) {
+                // label 可能不存在：无 label 再试一次
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title,
+                  body,
+                });
+              }
+            }
+
+      - name: Optional Feishu webhook
+        if: ${{ secrets.FEISHU_CI_WEBHOOK != '' }}
+        env:
+          FEISHU_CI_WEBHOOK: ${{ secrets.FEISHU_CI_WEBHOOK }}
+        run: |
+          curl -sS -X POST "$FEISHU_CI_WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"CI failed on main\\n${{ github.event.workflow_run.html_url }}\\nSHA ${{ github.event.workflow_run.head_sha }}\"}}" \
+            || true
