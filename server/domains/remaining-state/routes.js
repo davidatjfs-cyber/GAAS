@@ -1,3 +1,5 @@
+export { registerAnnouncementExtraRoutes } from './routes-announcement-extra.js';
+
 import {
   normalizeUserRecord,
   removeAnnouncementFromList,

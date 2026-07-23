@@ -46,6 +46,10 @@ import { registerUploadRoutes } from './domains/uploads/routes.js';
 import { registerOpsTasksRoutes } from './domains/ops-tasks/routes.js';
 import { registerStoreDutyBindingsRoutes } from './domains/store-duty-bindings/routes.js';
 import { registerReadsRoutes } from './domains/reads/routes.js';
+import { registerAttentionScoresRoutes } from './domains/attention-scores/routes.js';
+import { registerAnnouncementExtraRoutes } from './domains/remaining-state/routes-announcement-extra.js';
+import { registerNotificationsWriteRoutes } from './domains/notifications/routes.js';
+import { registerBirthdayRoutes } from './domains/birthday/routes.js';
 import { registerRemainingStateRoutes } from './domains/remaining-state/routes.js';
 import { registerGmMailboxRoutes } from './domains/gm-mailbox/routes.js';
 import {
@@ -10004,6 +10008,36 @@ registerReadsRoutes(app, authRequired, {
   dbFindEmployeeRecord,
 });
 
+registerAttentionScoresRoutes(app, authRequired, {
+  pool,
+  getSharedState,
+  resolveTenantIdDefault,
+});
+
+registerAnnouncementExtraRoutes(app, authRequired, {
+  getSharedState,
+  mergeSharedStateFields,
+  employeeAccountShouldDisable,
+});
+
+registerNotificationsWriteRoutes(app, authRequired, {
+  pool,
+  resolveTenantIdDefault,
+});
+
+registerBirthdayRoutes(app, authRequired, {
+  getSharedState,
+  saveSharedState,
+  isInactiveStatus,
+  employeeAccountShouldDisable,
+  addStateNotification,
+  makeNotif,
+  hrmsNowISO,
+  pickAdminUsername,
+  pickHrManagerUsername,
+  stateFindUserRecord,
+});
+
 registerRemainingStateRoutes(app, authRequired, {
   pool,
   getSharedState,
@@ -11804,364 +11838,10 @@ setInterval(() => {
 }, 60 * 60 * 1000); // 每小时检查一次
 
 // 手动触发生日检查（仅管理员，用于测试）
-app.post('/api/birthday/check', authRequired, async (req, res) => {
-  try {
-    const role = String(req.user?.role || '').trim();
-    if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
+// Wave 4n: /api/birthday/* HTTP → domains/birthday/routes.js（cron 仍留 index）
 
-    const forceDate = String(req.body?.date || '').trim(); // 可选：模拟指定日期 YYYY-MM-DD
-    const now = forceDate ? new Date(forceDate + 'T09:00:00') : new Date();
-    if (isNaN(now.getTime())) return res.status(400).json({ error: 'invalid_date' });
+// Wave 4n: /api/attention-scores* → domains/attention-scores/routes.js
 
-    const todayMonth = now.getMonth() + 1;
-    const todayDay = now.getDate();
-    const todayStr = `${now.getFullYear()}-${String(todayMonth).padStart(2, '0')}-${String(todayDay).padStart(2, '0')}`;
-
-    let state = (await getSharedState()) || {};
-    const employees = Array.isArray(state.employees) ? state.employees : [];
-    const activeEmployees = employees.filter(e => !isInactiveStatus(String(e?.status || '').trim()) && !employeeAccountShouldDisable(e));
-
-    const birthdayGreetingsSent = state.birthdayGreetingsSent || {};
-    const birthdayRemindersSent = state.birthdayRemindersSent || {};
-    const monthlyRemindersSent = state.monthlyRemindersSent || {};
-
-    let changed = false;
-    const results = { greetings: [], reminders1day: [], monthlyReminders: [] };
-
-    // 1. 生日当天祝福
-    const adminUsername = await pickAdminUsername(state);
-    const adminName = adminUsername ? (stateFindUserRecord(state, adminUsername)?.name || adminUsername) : '总部';
-
-    for (const emp of activeEmployees) {
-      const bd = parseBirthdayMonthDay(emp?.birthday);
-      if (!bd || bd.month !== todayMonth || bd.day !== todayDay) continue;
-
-      const empUsername = String(emp?.username || '').trim();
-      const empName = String(emp?.name || '').trim() || empUsername;
-      const greetingKey = `${empUsername}_${todayStr}`;
-
-      if (birthdayGreetingsSent[greetingKey]) {
-        results.greetings.push({ name: empName, status: 'already_sent' });
-        continue;
-      }
-
-      const message = `${empName}，今天是你的生日，公司代表门店及总部所有人员祝你生日快乐，感谢你在过去一年里的努力与付出，你的专业与责任心让团队更加稳固可靠。愿新的一岁事业顺遂、生活明朗，收获成长与喜悦。公司很荣幸与你一路同行，期待与你共同创造更好的未来。\n\n来自总部 ${adminName}（${todayStr}）`;
-
-      state = addStateNotification(state, makeNotif(empUsername, '🎂 生日快乐', message, { type: 'birthday_greeting' }));
-      birthdayGreetingsSent[greetingKey] = hrmsNowISO();
-      changed = true;
-      results.greetings.push({ name: empName, status: 'sent' });
-    }
-
-    // 2. 生日前1天提醒店长
-    const tomorrow = new Date(now.getTime() + 86400000);
-    const tomorrowMonth = tomorrow.getMonth() + 1;
-    const tomorrowDay = tomorrow.getDate();
-    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrowMonth).padStart(2, '0')}-${String(tomorrowDay).padStart(2, '0')}`;
-
-    const storeMap = new Map();
-    for (const emp of activeEmployees) {
-      const bd = parseBirthdayMonthDay(emp?.birthday);
-      if (!bd || bd.month !== tomorrowMonth || bd.day !== tomorrowDay) continue;
-      const store = String(emp?.store || '').trim() || '总部';
-      if (!storeMap.has(store)) storeMap.set(store, []);
-      storeMap.get(store).push(emp);
-    }
-
-    for (const [store, emps] of storeMap) {
-      const storeManager = activeEmployees.find(e => String(e?.store || '').trim() === store && String(e?.role || '').trim() === 'store_manager');
-      if (!storeManager) continue;
-
-      const smUsername = String(storeManager?.username || '').trim();
-      const reminderKey = `${smUsername}_${tomorrowStr}`;
-      if (birthdayRemindersSent[reminderKey]) {
-        results.reminders1day.push({ store, status: 'already_sent' });
-        continue;
-      }
-
-      const names = emps.map(e => String(e?.name || e?.username || '').trim()).join('、');
-      const message = `温馨提醒：明天（${tomorrowStr}）是以下员工的生日，请提前准备祝福：\n\n${names}`;
-
-      state = addStateNotification(state, makeNotif(smUsername, '🎂 明日生日提醒', message, { type: 'birthday_reminder_1day' }));
-      birthdayRemindersSent[reminderKey] = hrmsNowISO();
-      changed = true;
-      results.reminders1day.push({ store, employees: names, status: 'sent' });
-    }
-
-    // 3. 月底提醒
-    if (isEndOfMonth(now)) {
-      const nextMonth = getNextMonth(now);
-      const monthKey = `${nextMonth.year}-${String(nextMonth.month).padStart(2, '0')}`;
-
-      const nextMonthBirthdays = activeEmployees.filter(e => {
-        const bd = parseBirthdayMonthDay(e?.birthday);
-        return bd && bd.month === nextMonth.month;
-      });
-
-      if (nextMonthBirthdays.length > 0) {
-        const storeMap2 = new Map();
-        for (const emp of nextMonthBirthdays) {
-          const store = String(emp?.store || '').trim() || '总部';
-          if (!storeMap2.has(store)) storeMap2.set(store, []);
-          storeMap2.get(store).push(emp);
-        }
-
-        for (const [store, emps] of storeMap2) {
-          const storeManager = activeEmployees.find(e => String(e?.store || '').trim() === store && String(e?.role || '').trim() === 'store_manager');
-          if (!storeManager) continue;
-
-          const smUsername = String(storeManager?.username || '').trim();
-          const reminderKey = `monthly_${smUsername}_${monthKey}`;
-          if (monthlyRemindersSent[reminderKey]) {
-            results.monthlyReminders.push({ store, status: 'already_sent' });
-            continue;
-          }
-
-          const lines = emps.map(e => {
-            const bd = parseBirthdayMonthDay(e?.birthday);
-            return `• ${String(e?.name || e?.username || '').trim()}（${nextMonth.month}月${bd?.day}日）`;
-          }).join('\n');
-          const message = `以下是${store}门店${nextMonth.month}月份过生日的员工名单，请提前准备祝福：\n\n${lines}`;
-
-          state = addStateNotification(state, makeNotif(smUsername, `📋 ${nextMonth.month}月生日员工名单`, message, { type: 'birthday_monthly_reminder' }));
-          monthlyRemindersSent[reminderKey] = hrmsNowISO();
-          changed = true;
-          results.monthlyReminders.push({ store, count: emps.length, status: 'sent' });
-        }
-
-        const hrUsername = await pickHrManagerUsername(state);
-        if (hrUsername) {
-          const hrReminderKey = `monthly_hr_${monthKey}`;
-          if (!monthlyRemindersSent[hrReminderKey]) {
-            const lines = nextMonthBirthdays.map(e => {
-              const bd = parseBirthdayMonthDay(e?.birthday);
-              const store = String(e?.store || '').trim() || '总部';
-              return `• ${String(e?.name || e?.username || '').trim()}（${store}，${nextMonth.month}月${bd?.day}日）`;
-            }).sort().join('\n');
-            const message = `以下是公司所有门店（含总部）${nextMonth.month}月份过生日的员工名单：\n\n${lines}`;
-
-            state = addStateNotification(state, makeNotif(hrUsername, `📋 ${nextMonth.month}月全公司生日员工名单`, message, { type: 'birthday_monthly_reminder_hr' }));
-            monthlyRemindersSent[hrReminderKey] = hrmsNowISO();
-            changed = true;
-            results.monthlyReminders.push({ target: 'HR', count: nextMonthBirthdays.length, status: 'sent' });
-          }
-        }
-      }
-    }
-
-    if (changed) {
-      state.birthdayGreetingsSent = birthdayGreetingsSent;
-      state.birthdayRemindersSent = birthdayRemindersSent;
-      state.monthlyRemindersSent = monthlyRemindersSent;
-      await saveSharedState(state);
-    }
-
-    res.json({ ok: true, date: todayStr, isEndOfMonth: isEndOfMonth(now), results });
-  } catch (e) {
-    console.error('POST /api/birthday/check error:', e);
-    res.status(500).json({ error: 'internal_error' });
-  }
-});
-
-// 查询生日员工列表（管理员/HR/店长）
-app.get('/api/birthday/upcoming', authRequired, async (req, res) => {
-  try {
-    const role = String(req.user?.role || '').trim();
-    const username = String(req.user?.username || '').trim();
-    const _canSeeAll = role === 'admin' || role === 'hq_manager' || role === 'hr_manager' || role.startsWith('custom_人事');
-
-    const state = (await getSharedState()) || {};
-    const employees = Array.isArray(state.employees) ? state.employees : [];
-     const activeEmployees = employees.filter(e => !isInactiveStatus(String(e?.status || '').trim()) && !employeeAccountShouldDisable(e));
-
-    let myStore = '';
-    if (role === 'store_manager') {
-      const me = activeEmployees.find(e => String(e?.username || '').toLowerCase() === username.toLowerCase());
-      myStore = String(me?.store || '').trim();
-    }
-
-    const now = new Date();
-    const _todayMonth = now.getMonth() + 1;
-    const _todayDay = now.getDate();
-    const daysParam = Math.max(1, Math.min(90, Number(req.query?.days) || 30));
-
-    const results = [];
-    for (const emp of activeEmployees) {
-      const bd = parseBirthdayMonthDay(emp?.birthday);
-      if (!bd) continue;
-
-      // 店长只能看本店
-      if (role === 'store_manager' && myStore) {
-        const empStore = String(emp?.store || '').trim();
-        if (empStore !== myStore) continue;
-      }
-
-      // 计算距离生日的天数
-      const thisYearBd = new Date(now.getFullYear(), bd.month - 1, bd.day);
-      let nextBd = thisYearBd;
-      if (thisYearBd < now) {
-        nextBd = new Date(now.getFullYear() + 1, bd.month - 1, bd.day);
-      }
-      const diffDays = Math.ceil((nextBd.getTime() - now.getTime()) / 86400000);
-
-      if (diffDays <= daysParam) {
-        results.push({
-          username: String(emp?.username || '').trim(),
-          name: String(emp?.name || '').trim(),
-          store: String(emp?.store || '').trim() || '总部',
-          birthday: String(emp?.birthday || '').trim(),
-          birthdayDisplay: `${bd.month}月${bd.day}日`,
-          daysUntil: diffDays,
-          isToday: diffDays === 0
-        });
-      }
-    }
-
-    results.sort((a, b) => a.daysUntil - b.daysUntil);
-    res.json({ ok: true, upcoming: results });
-  } catch (e) {
-    console.error('GET /api/birthday/upcoming error:', e);
-    res.status(500).json({ error: 'internal_error' });
-  }
-});
-
-// ========== 培训专注度监控 API ==========
-
-// 创建 attention_scores 表（如果不存在）
-(async () => {
-  try {
-    await runWithBootstrapTenantContext(async () => {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS attention_scores (
-          id TEXT PRIMARY KEY,
-          username TEXT NOT NULL,
-          name TEXT DEFAULT '',
-          store TEXT DEFAULT '',
-          material_id TEXT NOT NULL,
-          material_title TEXT DEFAULT '',
-          score INTEGER DEFAULT 0,
-          duration_seconds INTEGER DEFAULT 0,
-          total_samples INTEGER DEFAULT 0,
-          attentive_samples INTEGER DEFAULT 0,
-          avg_score INTEGER DEFAULT 0,
-          created_at TIMESTAMPTZ DEFAULT NOW()
-        )
-      `);
-      try {
-        await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_username ON attention_scores(username)');
-        await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_material ON attention_scores(material_id)');
-        await pool.query('CREATE INDEX IF NOT EXISTS idx_attn_created ON attention_scores(created_at)');
-      } catch (e) { /* ignore */ }
-    });
-  } catch (e) {
-    console.log('attention_scores table init:', e?.message || e);
-  }
-})();
-
-// 保存专注度分数
-app.post('/api/attention-scores', authRequired, async (req, res) => {
-  try {
-    const username = String(req.user?.username || '').trim();
-    if (!username) return res.status(400).json({ error: 'missing_user' });
-
-    const materialId = String(req.body?.materialId || '').trim();
-    const materialTitle = String(req.body?.materialTitle || '').trim();
-    const score = Math.max(0, Math.min(100, Number(req.body?.score) || 0));
-    const durationSeconds = Math.max(0, Number(req.body?.durationSeconds) || 0);
-    const totalSamples = Math.max(0, Number(req.body?.totalSamples) || 0);
-    const attentiveSamples = Math.max(0, Number(req.body?.attentiveSamples) || 0);
-    const avgScore = Math.max(0, Math.min(100, Number(req.body?.avgScore) || 0));
-
-    if (!materialId) return res.status(400).json({ error: 'missing_material_id' });
-
-    // 获取用户姓名和门店
-    const state = (await getSharedState()) || {};
-    const users = Array.isArray(state.users) ? state.users : [];
-    const employees = Array.isArray(state.employees) ? state.employees : [];
-    const userObj = users.find(u => String(u?.username || '').toLowerCase() === username.toLowerCase())
-      || employees.find(e => String(e?.username || '').toLowerCase() === username.toLowerCase());
-    const name = String(userObj?.name || '').trim();
-    const store = String(userObj?.store || '').trim();
-
-    const id = 'attn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-    await pool.query(
-      `INSERT INTO attention_scores (id, username, name, store, material_id, material_title, score, duration_seconds, total_samples, attentive_samples, avg_score, tenant_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [id, username, name, store, materialId, materialTitle, score, durationSeconds, totalSamples, attentiveSamples, avgScore, resolveTenantIdDefault()]
-    );
-
-    res.json({ ok: true, id, score });
-  } catch (e) {
-    console.error('POST /api/attention-scores error:', e);
-    res.status(500).json({ error: 'internal_error' });
-  }
-});
-
-// 查询专注度分数（管理员/经理可查全部，普通员工只能查自己）
-app.get('/api/attention-scores', authRequired, async (req, res) => {
-  try {
-    const username = String(req.user?.username || '').trim();
-    const role = String(req.user?.role || '').trim();
-    const canSeeAll = role === 'admin' || role === 'hq_manager' || role === 'hr_manager' || role === 'store_manager';
-
-    const filterUser = String(req.query?.username || '').trim();
-    const filterMaterial = String(req.query?.materialId || '').trim();
-    const limit = Math.max(1, Math.min(200, Number(req.query?.limit) || 50));
-
-    let query = 'SELECT * FROM attention_scores WHERE 1=1';
-    const params = [];
-    let paramIdx = 1;
-
-    if (!canSeeAll) {
-      query += ` AND username = $${paramIdx++}`;
-      params.push(username);
-    } else if (filterUser) {
-      query += ` AND username = $${paramIdx++}`;
-      params.push(filterUser);
-    }
-
-    if (filterMaterial) {
-      query += ` AND material_id = $${paramIdx++}`;
-      params.push(filterMaterial);
-    }
-
-    query += ` ORDER BY created_at DESC LIMIT $${paramIdx++}`;
-    params.push(limit);
-
-    const r = await pool.query(query, params);
-    res.json({ scores: r.rows || [] });
-  } catch (e) {
-    console.error('GET /api/attention-scores error:', e);
-    res.status(500).json({ error: 'internal_error' });
-  }
-});
-
-// 专注度统计摘要（按用户汇总）
-app.get('/api/attention-scores/summary', authRequired, async (req, res) => {
-  try {
-    const role = String(req.user?.role || '').trim();
-    const canSeeAll = role === 'admin' || role === 'hq_manager' || role === 'hr_manager' || role === 'store_manager';
-    if (!canSeeAll) return res.status(403).json({ error: 'forbidden' });
-
-    const r = await pool.query(`
-      SELECT username, name, store,
-        COUNT(*) as session_count,
-        ROUND(AVG(score)) as avg_score,
-        SUM(duration_seconds) as total_duration,
-        MAX(created_at) as last_session
-      FROM attention_scores
-      GROUP BY username, name, store
-      ORDER BY avg_score ASC
-    `);
-    res.json({ summary: r.rows || [] });
-  } catch (e) {
-    console.error('GET /api/attention-scores/summary error:', e);
-    res.status(500).json({ error: 'internal_error' });
-  }
-});
-
-
-// ─── 员工系统使用周报表 ───
 app.get('/api/admin/usage-weekly', authRequired, async (req, res) => {
   const role = String(req.user?.role || '').trim();
   if (role !== 'admin' && role !== 'hq_manager') {
@@ -12415,125 +12095,8 @@ startAiQualityLearningScheduler(pool, {
 // 公告已读回执：员工标记自己已读/已确认某条公告。
 // announcements 现在直接对每条公告挂 readBy{username: isoTime} 这个map，不另起新表——
 // 用 mergeSharedStateFields 按 id 合并单条公告对象，不会跟其它员工的并发已读/其它字段写入冲突。
-app.post('/api/announcements/:id/ack', authRequired, async (req, res) => {
-  try {
-    const annId = String(req.params.id || '').trim();
-    const username = String(req.user?.username || '').trim().toLowerCase();
-    if (!annId) return res.status(400).json({ error: 'missing_id' });
-    if (!username) return res.status(400).json({ error: 'missing_user' });
-    const state = await getSharedState(req.tenantId);
-    const anns = Array.isArray(state?.announcements) ? state.announcements : [];
-    const ann = anns.find((a) => String(a?.id || '') === annId);
-    if (!ann) return res.status(404).json({ error: 'not_found' });
-    const readBy = (ann.readBy && typeof ann.readBy === 'object' && !Array.isArray(ann.readBy)) ? { ...ann.readBy } : {};
-    if (!readBy[username]) {
-      readBy[username] = new Date().toISOString();
-      await mergeSharedStateFields({ announcements: [{ ...ann, readBy }] }, { announcements: 'id' }, req.tenantId);
-    }
-    return res.json({ ok: true, readAt: readBy[username] });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
-  }
-});
+// Wave 4n: announcements ack/receipts + notifications write → domains
 
-// 管理员查看某条公告的已读情况：总目标人数/已读人数/未读名单
-app.get('/api/announcements/:id/receipts', authRequired, async (req, res) => {
-  if (!['admin', 'hq_manager', 'store_manager'].includes(String(req.user?.role || ''))) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-  try {
-    const annId = String(req.params.id || '').trim();
-    const state = await getSharedState(req.tenantId);
-    const anns = Array.isArray(state?.announcements) ? state.announcements : [];
-    const ann = anns.find((a) => String(a?.id || '') === annId);
-    if (!ann) return res.status(404).json({ error: 'not_found' });
-    const employees = (Array.isArray(state?.employees) ? state.employees : [])
-      .filter((e) => !employeeAccountShouldDisable(e));
-    const scope = ann.scope || { type: 'all' };
-    const scopeType = String(scope.type || 'all');
-    const targets = employees.filter((e) => {
-      if (scopeType === 'all') return true;
-      if (scopeType === 'hq') return String(e?.store || '') === '总部';
-      if (scopeType === 'store') return String(e?.store || '') === String(scope.store || '');
-      return false;
-    });
-    const readBy = (ann.readBy && typeof ann.readBy === 'object') ? ann.readBy : {};
-    const unread = targets.filter((e) => !readBy[String(e?.username || '').trim().toLowerCase()]);
-    return res.json({
-      ok: true,
-      total: targets.length,
-      readCount: targets.length - unread.length,
-      unread: unread.map((e) => ({ username: e.username, name: e.name || e.username, store: e.store || '' }))
-    });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
-  }
-});
-
-app.delete('/api/notifications/:id', authRequired, async (req, res) => {
-  if (String(req.user?.role || '') !== 'admin') {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-  const notifId = String(req.params.id || '').trim();
-  if (!notifId) return res.status(400).json({ error: 'missing_id' });
-  try {
-    const r = await pool.query(`DELETE FROM hrms_user_notifications WHERE id = $1`, [notifId]);
-    if (r.rowCount === 0) {
-      return res.json({ ok: true, deleted: 0, note: 'not_in_db' });
-    }
-    res.json({ ok: true, deleted: r.rowCount });
-  } catch (e) {
-    console.error('[DELETE /api/notifications/:id] error:', e?.message);
-    res.status(500).json({ error: 'db_error' });
-  }
-});
-
-app.post('/api/notifications/batch', authRequired, async (req, res) => {
-  const items = Array.isArray(req.body?.notifications) ? req.body.notifications : [];
-  if (!items.length) return res.status(400).json({ error: 'empty' });
-  try {
-    const ids = [];
-    for (const n of items) {
-      const target = String(n.targetUser || '').trim();
-      const title  = String(n.title   || '').trim();
-      const msg    = String(n.message || '').trim();
-      const type   = String(n.type    || 'system').trim();
-      const meta   = (n.meta && typeof n.meta === 'object') ? n.meta : {};
-      if (!target || !title) continue;
-      const r = await pool.query(
-        `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-        [target, title, msg, type, meta, resolveTenantIdDefault()]
-      );
-      ids.push(r.rows[0]?.id);
-    }
-    return res.json({ ok: true, ids });
-  } catch (e) {
-    console.error('[POST /api/notifications/batch]', e?.message);
-    return res.status(500).json({ error: 'server_error' });
-  }
-});
-
-// 企业微信服务器验证接口（配置「接收消息服务器URL」时企微发 GET 请求，返回 echostr 即通过验证）
-// 企业微信「接收消息」回调验证（仅用于解锁可信IP；本系统只发消息，不处理被动消息）
-// Token / EncodingAESKey 来自环境变量，与企微后台「接收消息」配置一致：
-//   WECOM_CALLBACK_TOKEN, WECOM_CALLBACK_AES_KEY
-function wecomVerifySignature(token, timestamp, nonce, encrypt) {
-  const arr = [token, String(timestamp || ''), String(nonce || ''), String(encrypt || '')].sort();
-  return createHash('sha1').update(arr.join('')).digest('hex');
-}
-function wecomDecryptEchostr(encryptB64, encodingAesKey) {
-  const aesKey = Buffer.from(encodingAesKey + '=', 'base64'); // 32 bytes
-  const iv = aesKey.subarray(0, 16);
-  const decipher = createDecipheriv('aes-256-cbc', aesKey, iv);
-  decipher.setAutoPadding(false);
-  let decrypted = Buffer.concat([decipher.update(Buffer.from(encryptB64, 'base64')), decipher.final()]);
-  const pad = decrypted[decrypted.length - 1];
-  decrypted = decrypted.subarray(0, decrypted.length - pad); // 去 PKCS7 填充
-  const content = decrypted.subarray(16); // 去 16 字节随机前缀
-  const msgLen = content.readUInt32BE(0);
-  return content.subarray(4, 4 + msgLen).toString('utf8'); // 明文 echostr
-}
 app.get('/api/wecom/callback', (req, res) => {
   const token = String(process.env.WECOM_CALLBACK_TOKEN || '').trim();
   const aesKey = String(process.env.WECOM_CALLBACK_AES_KEY || '').trim();
