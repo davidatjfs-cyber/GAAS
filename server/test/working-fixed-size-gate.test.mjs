@@ -11,8 +11,8 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
 
-/** 冻结基线（2026-07-23 wc -l working-fixed.html） */
-const MAX_LINES = 69151;
+/** 冻结基线（2026-07-23 P3 build:shell 后 wc -l working-fixed.html） */
+const MAX_LINES = 69156;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

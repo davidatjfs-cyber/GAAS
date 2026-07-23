@@ -25,6 +25,7 @@ import {
   loadEmployeesFromTable,
 } from './domains/employees/service.js';
 import { reconcileEmployeesMirrorAllTenants } from './domains/employees/mirror-tx.js';
+import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
 import { hydrateNotificationsFromTable } from './domains/notifications/service.js';
@@ -93,7 +94,7 @@ import { enforceRuntimeSafetyOrExit, configureDbSessionSafety, isSchemaChangeAll
 import { createLoginRateLimiter } from './middleware/rate-limit.js';
 import { verifyFeishuWebhookRequest } from './utils/feishu-webhook-verify.js';
 import { expandAgentStoreLabels, resolveAgentCanonicalStore } from './v2-store-alignment.js';
-import { ensureGrowthTables, registerGrowthRoutes, setSendGrowthAlert } from './growth-api.js';
+import { ensureGrowthTables, registerGrowthRoutes, setSendGrowthAlert, getSendGrowthAlert } from './growth-api.js';
 import { ensureAgentAuditLogTable } from './utils/agent-audit-log.js';
 import { registerGrowthWinbackRoutes } from './growth-winback-routes.js';
 import { registerGrowthPaymentRulesRoutes } from './growth-payment-rules-routes.js';
@@ -15911,6 +15912,15 @@ async function runFreshnessMonitorTick() {
 }
 setTimeout(() => { runFreshnessMonitorTick(); }, 90000);
 setInterval(runFreshnessMonitorTick, 6 * 3600 * 1000);
+
+// schema_migrations 漂移对账（仓库 .sql vs 记账表）；告警走增长管理员通道
+startSchemaMigrationDriftMonitor(pool, {
+  notifyFn: async (msg) => {
+    const send = getSendGrowthAlert();
+    if (send) return send(msg, 'schema_migration_drift');
+    return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true });
+  },
+});
 
 // 经营语义层日更：CST 08:00–08:14 对各活跃租户门店 sync + 诊断（见 ontology/daily-diagnosis-scheduler.js）
 startOntologyDailyDiagnosisScheduler(pool);
