@@ -1,33 +1,18 @@
 #!/usr/bin/env bash
-# 标准安全部署入口（hr-management-system → 阿里云 ECS）
-# 与仓库约定一致：修改本目录代码后 push main，由 .github/workflows/hrms-safe-deployment.yml 调用本脚本；
-# 手动：cd hr-management-system && bash scripts/deploy-hrms-safe.sh
-#
-# 依赖 monorepo 根目录下的 scripts/（与 agents 同仓）。
+# 标准安全部署入口（GAAS → 阿里云 ECS）
+# 注意：原 monorepo 根 scripts/deploy-hrms-*.sh 已随拆仓退役；
+# 本脚本仅做本地结构校验。实际部署请按 CLAUDE.md：build-shell → scp hash 资源 → 换 shell → pm2。
 set -euo pipefail
 HRMS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-REPO_ROOT="$(cd "${HRMS_DIR}/.." && pwd)"
 
-if [[ ! -f "${REPO_ROOT}/scripts/deploy-hrms-server-ecs.sh" ]]; then
-  echo "ERROR: 未找到 ${REPO_ROOT}/scripts/deploy-hrms-server-ecs.sh — 请在 HRMS monorepo 根目录克隆完整仓库后执行。" >&2
-  exit 1
-fi
+echo ">>> deploy-hrms-safe: 本地结构校验（移动端导航 / 主入口）"
+# 真源入口是 working-fixed.html（mobile-nav-production.html 已于 B6 退役）
+rg -n 'mobile-nav-label">首页<' "${HRMS_DIR}/working-fixed.html" >/dev/null
+rg -n 'mobile-nav-label">增长<' "${HRMS_DIR}/working-fixed.html" >/dev/null
+rg -n 'mobile-nav-label">知识库<' "${HRMS_DIR}/working-fixed.html" >/dev/null
+rg -n 'mobile-nav-label">考试<' "${HRMS_DIR}/working-fixed.html" >/dev/null
+rg -n 'mobile-nav-label">更多<' "${HRMS_DIR}/working-fixed.html" >/dev/null
+test -f "${HRMS_DIR}/working-fixed.html"
+test ! -f "${HRMS_DIR}/mobile-nav-production.html"
 
-echo ">>> deploy-hrms-safe: 本地结构校验（智能助手 / 知识库 / 移动端导航）"
-rg -n 'mobile-nav-label">档案<' "${HRMS_DIR}/mobile-nav-production.html" >/dev/null
-rg -n 'mobile-nav-label">日报<' "${HRMS_DIR}/mobile-nav-production.html" >/dev/null
-rg -n 'mobile-nav-label">报表<' "${HRMS_DIR}/mobile-nav-production.html" >/dev/null
-rg -n 'mobile-nav-label">数据中心<' "${HRMS_DIR}/mobile-nav-production.html" >/dev/null
-rg -n 'mobile-nav-label">更多<' "${HRMS_DIR}/mobile-nav-production.html" >/dev/null
-rg -n '<span>知识库</span>' "${HRMS_DIR}/mobile-nav-production.html" >/dev/null
-rg -n '<span>智能助手</span>' "${HRMS_DIR}/mobile-nav-production.html" >/dev/null
-rg -n 'openMobileSmartAssistantBridge' "${HRMS_DIR}/mobile-nav-production.html" >/dev/null
-rg -n '自动读取 sales_raw|刷新 sales_raw 样本' "${HRMS_DIR}/working-fixed.html" >/dev/null
-
-echo ">>> deploy-hrms-safe: 服务端 (rsync + pm2 hrms-service)"
-bash "${REPO_ROOT}/scripts/deploy-hrms-server-ecs.sh"
-
-echo ">>> deploy-hrms-safe: 前端静态 (working-fixed / mobile-nav / sw.js / forecast.html + nginx)"
-bash "${REPO_ROOT}/scripts/deploy-hrms-frontend.sh"
-
-echo ">>> deploy-hrms-safe: 完成。"
+echo ">>> deploy-hrms-safe: 校验通过。请按 CLAUDE.md 手动 scp + pm2 部署（本脚本不再 rsync monorepo 根脚本）。"

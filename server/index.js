@@ -4907,7 +4907,7 @@ const webRootDir = path.resolve(__dirname, '..');
 // 落到下面的具体路由处理（未匹配的最终会进Express默认404，不会再暴露文件系统）。
 const STATIC_ALLOWED_ROOT_FILES = new Set([
   'working-fixed.html', 'agents-admin.html', 'platform-admin.html', 'campaign.html',
-  'forecast.html', 'index.html', 'member-agreement.html', 'mobile-nav-production.html',
+  'forecast.html', 'index.html', 'member-agreement.html',
   'svremind.html', 'winback.html', 'manifest.json', 'pwa-icon.svg', 'sw.js', 'script.js',
   'styles.css', 'role-modules-ui.js'
 ]);
