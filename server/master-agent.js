@@ -32,7 +32,7 @@ import {
   sendLarkCard,
   lookupFeishuUserByUsername,
   getSharedState,
-  getStoresFromState,
+
   inferBrandFromStoreName,
   findStoreManager,
   callLLM,
@@ -46,7 +46,7 @@ import {
   pollTaskResponseBitable
 } from './agents.js';
 import { AgentCommunicationSystem } from './agent-communication-system.js';
-import { pool as masterPool, setPool as setUnifiedMasterPool, getActiveTenantIds, tenantContext } from './utils/database.js';
+import { setPool as setUnifiedMasterPool, getActiveTenantIds, tenantContext } from './utils/database.js';
 import { extractAnomalyRelations, refreshEntityHealthSnapshots, ensureKnowledgeGraphTables, setKGPool } from './knowledge-graph.js';
 import { registerHqPlannerRoutes, setHqPlannerPool, setHqPlannerLLM } from './hq-planner-agent.js';
 import {
@@ -54,7 +54,7 @@ import {
   inspectionClosedLoopTick, biProactivePushTick,
   laborEfficiencyTick, trainingClosedLoopTick
 } from './auto-ops-engine.js';
-import { safeExecute, safeErrorLog } from './utils/error-handler.js';
+
 
 function normalizeStoreKey(v) {
   return String(v || '').trim().toLowerCase().replace(/\s+/g, '');
@@ -1204,7 +1204,7 @@ async function trainAgentListener(tenantId = 'default') {
         const state = await getSharedState();
         if (state?.knowledgeBase) {
           // 添加到SOP库
-          const entry = {
+          const _entry = {
             id: sopCase.case_id,
             type: 'case_study',
             store: sopCase.store,

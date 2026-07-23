@@ -9,8 +9,8 @@ import { statfs } from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID, createDecipheriv, createHash } from 'crypto';
-import { getActiveTenantIds, tenantContext, resolveTenantIdDefault, runWithBootstrapTenantContext, runForActiveTenants, runWithSystemTenantContext } from './utils/database.js';
-import { createEmptyTenantState, resolveExplicitTenantId } from './tenant-login.js';
+import { getActiveTenantIds, tenantContext, resolveTenantIdDefault, runWithBootstrapTenantContext, runForActiveTenants } from './utils/database.js';
+
 import { registerAuthRoutes } from './auth-routes.js';
 import { registerApprovalRoutes } from './approval-routes.js';
 import { applyStatePutWhitelist } from './hrms-state-put.js';
@@ -31,14 +31,14 @@ import { registerStoresDomainRoutes } from './domains/stores/routes.js';
 import { registerPaymentConfigRoutes } from './domains/payment-config/routes.js';
 import { registerRemainingStateRoutes } from './domains/remaining-state/routes.js';
 import {
-  getTenantIntegrationSummary,
-  saveTenantFeishuIntegration,
-  getTenantIntegrationConfig,
-  saveTenantIntegrationConfig,
+
+
+
+
 } from './tenant-integrations.js';
 import multer from 'multer';
 import https from 'https';
-import { execFileSync, execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import OSS from 'ali-oss';
 import COS from 'cos-nodejs-sdk-v5';
 import pg from 'pg';
@@ -52,7 +52,7 @@ pg.types.setTypeParser(1184, str => {
   const d = new Date(str);
   return d.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
 });
-import { Readable } from 'stream';
+
 import zlib from 'zlib';
 import XLSX from 'xlsx';
 import axios from 'axios';
@@ -62,7 +62,7 @@ import { initBrandConfigCache, getBrandForStoreSync, getBrandConfigSync } from '
 import { initStoreAliasCache } from './utils/store-alias-cache.js';
 
 import { setMasterPool, ensureMasterTables, startMasterAgent, registerMasterRoutes, handleTaskResponse } from './master-agent.js';
-import { setReportPool, generateWeeklyReport, formatReportMarkdown } from './bi-weekly-report.js';
+import { setReportPool } from './bi-weekly-report.js';
 import { setSalesRawPool } from './sales-raw-upload.js';
 import { startSalesRawFolderImporter, runSalesRawFolderImportOnce, setSalesRawFolderImportFailureNotifier } from './sales-raw-folder-importer.js';
 import {
@@ -73,12 +73,12 @@ import {
   countEligibleMonthlyPerformanceUsers
 } from './performance-jobs.js';
 import { startDailyFeishuSync, syncDishLibraryCosts, syncSopSteps, setFeishuSyncFailureNotifier, resolveWebhookTenantId, loadTenantFeishuBitableConfig, getFeishuAccessToken as getFeishuTokenByConfig } from './feishu-sync.js';
-import { calculateStoreRating, calculateEmployeeScore } from './new-scoring-model.js';
+
 import { registerNewScoringRoutes } from './new-scoring-api.js';
 import { registerPerformanceInvalidationRoutes } from './performance-invalidation-api.js';
-import { handleMarginMessage } from './margin-message-handler.js';
+
 import { registerUploadStatusRoute } from './upload-status.js';
-import { ensureRAGSchema, ragQuery, ragMultiQuery, ragUpdateScope, ragStats } from './rag-tool.js';
+import { ensureRAGSchema, ragQuery, ragMultiQuery, ragStats } from './rag-tool.js';
 import { ensureTaskBoardSchema } from './task-board-api.js';
 import { ensureHRMSApiSchema, registerHRMSApiRoutes } from './hrms-api-tools.js';
 import { ensureSOPDistributionSchema, registerSOPDistributionRoutes } from './sop-distribution.js';
@@ -87,7 +87,7 @@ import { ensureRecipeSchema, registerRecipeRoutes, generateRecipeTemplate, impor
 import { ensureTrainingSchema, registerTrainingRoutes, startTrainingReminderScheduler, getPromotionRequiredTopics, createTrainingAssignment, getPromotionTrackProgress, getCrossTrackTechnicianStatus } from './training.js';
 import { setDataExecutorPool, purgeExpiredCache, updateMetricVersion } from './data-executor.js';
 import fileRoutes from './file-routes.js';
-import { enforceRuntimeSafetyOrExit, configureDbSessionSafety, isSchemaChangeAllowed, getAppEnv, isWebhookEnabled, isExternalEnabled, requireWebhookSignature, isLicenseEnforced, isLicenseExemptTenant } from './safety.js';
+import { enforceRuntimeSafetyOrExit, configureDbSessionSafety, isSchemaChangeAllowed, getAppEnv, isWebhookEnabled, isExternalEnabled, requireWebhookSignature } from './safety.js';
 import { createLoginRateLimiter } from './middleware/rate-limit.js';
 import { verifyFeishuWebhookRequest } from './utils/feishu-webhook-verify.js';
 import { expandAgentStoreLabels, resolveAgentCanonicalStore } from './v2-store-alignment.js';
@@ -161,16 +161,16 @@ import {
 import {
   buildStoreAccessContext,
   canAccessApprovalCenter,
-  canViewEmployeesForRole,
+
   ensureStoreDutyBindingsTable,
   loadActiveDutyRowsForUser,
-  pickEffectiveStore,
+
 } from './store-duty-bindings.js';
 import {
   buildConfiguredApprovalAssignees,
   resolveStoreApprovalRoleUsername,
 } from './approval-assignee-resolution.js';
-import { clearAgentConfigCache } from './agent-config-manager.js';
+
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = String(process.env.HOST || '0.0.0.0');
@@ -241,11 +241,11 @@ app.use((req, res, next) => {
   next();
 });
 
-const OSS_REGION = process.env.OSS_REGION;
-const OSS_BUCKET = process.env.OSS_BUCKET;
-const OSS_ACCESS_KEY_ID = process.env.OSS_ACCESS_KEY_ID;
-const OSS_ACCESS_KEY_SECRET = process.env.OSS_ACCESS_KEY_SECRET;
-const OSS_PUBLIC_BASE_URL = process.env.OSS_PUBLIC_BASE_URL;
+const _OSS_REGION = process.env.OSS_REGION;
+const _OSS_BUCKET = process.env.OSS_BUCKET;
+const _OSS_ACCESS_KEY_ID = process.env.OSS_ACCESS_KEY_ID;
+const _OSS_ACCESS_KEY_SECRET = process.env.OSS_ACCESS_KEY_SECRET;
+const _OSS_PUBLIC_BASE_URL = process.env.OSS_PUBLIC_BASE_URL;
 const OSS_TIMEOUT_MS = Number(process.env.OSS_TIMEOUT_MS || 600000);
 const OSS_PART_SIZE_MB = Number(process.env.OSS_PART_SIZE_MB || 10);
 const OSS_PARALLEL = Number(process.env.OSS_PARALLEL || 3);
@@ -3034,7 +3034,7 @@ app.get('/api/payments/budget-summary', authRequired, async (req, res) => {
 
     try {
       if (item) {
-        let nextState = state;
+        let _nextState = state;
         const label = approvalTypeLabel(type);
         const title = `${label}申请待审批`;
         const applicantName = String(applicant?.name || username).trim() || username;
@@ -3490,7 +3490,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
 
         let state = state0;
         const tp = String(updated.type || '').trim();
-        const label = approvalTypeLabel(tp);
+        const _label = approvalTypeLabel(tp);
         const finalApproved = String(updated.status || '') === 'approved';
         const finalRejected = String(updated.status || '') === 'rejected';
 
@@ -4255,7 +4255,7 @@ app.post('/api/approvals/:id/decide', authRequired, async (req, res) => {
 
         // Intermediate step: notify next approver
         if (String(updated.status || '') === 'pending' && nextAssignee) {
-          let state = state0;
+          let _state = state0;
           const msg = `${applicantName} 提交了 ${mcMonth} ${mcStore || '全部门店'} 的月度考勤确认，需要您审批。`;
           await appendNotifications([makeNotif(nextAssignee, '月度考勤确认待审批', msg, { type: 'monthly_confirm_request', approvalId: updated.id })]);
         }
@@ -5457,7 +5457,7 @@ registerLightSaasRoutes(app, pool, platformAdminRequired);
 setHealthIncidentNotifiers({
   sendLarkMessage,
   lookupFeishuUserByUsername,
-  sendOpsAlert: async (msg, opts = {}) => {
+  sendOpsAlert: async (msg, _opts = {}) => {
     // 健康中心 SLA/队列摘要属于平台运营信息，不按租户 users.role 群发。
     // sendAdminSystemAlert() 会跨租户扫描 admin/hq_manager/hr_manager，
     // 从而把销售/系统运营告警发给马己仙、洪潮的门店管理员。
@@ -5474,7 +5474,7 @@ registerSalesAiRoutes(app, pool, platformAdminRequired, {
   // 改成跟 GROWTH_REPORT_ADMIN 同样的写法(见上方 setSendGrowthAlert)——直接发给平台/销售
   // 团队自己的飞书账号，不查任何tenant的users表。收件人由 FEISHU_ALERT_ADMIN_SALES 配置，
   // 销售公司新租户建好后改这一个环境变量即可切换收件人，无需再动代码。
-  sendOpsAlert: async (msg, opts = {}) => {
+  sendOpsAlert: async (msg, _opts = {}) => {
     const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_SALES, String(msg || ''), { skipDedup: true }).catch((e) => { console.error('[feishu-alert-sales] send failed:', e?.message || e); return { ok: false }; });
     return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [FEISHU_ALERT_ADMIN_SALES] };
   },
@@ -6752,7 +6752,7 @@ async function dbFindEmployeeRecord(username) {
     const row = r.rows?.[0];
     if (!row) return null;
     const ex = row.extraJson && typeof row.extraJson === 'object' ? row.extraJson : {};
-    const { extraJson, ...rest } = row;
+    const { ...rest } = row;
     const levelFromExtra = ex.level != null && ex.level !== '' ? String(ex.level).trim() : '';
     return { ...rest, level: levelFromExtra || String(rest.level || '').trim() };
   } catch (_) {
@@ -7919,7 +7919,7 @@ function dailyReportItemFromPgRow(row) {
   const delPre = Number(row.delivery_pre_revenue) || 0;
   const delAct = Number(row.delivery_actual) || 0;
   const delOrd = Math.floor(Number(row.delivery_orders) || 0);
-  const badRev = Math.floor(Number(row.delivery_bad_reviews) || 0);
+  const _badRev = Math.floor(Number(row.delivery_bad_reviews) || 0);
   const submittedAt = row.submitted_at
     ? (row.submitted_at instanceof Date ? row.submitted_at.toISOString() : String(row.submitted_at))
     : null;
@@ -9268,7 +9268,7 @@ function parseInventoryForecastRowsFromTableMatrix(matrix, fallbackBizType = '',
   for (let i = 0; i < rows.length; i += 1) {
     const line = Array.isArray(rows[i]) ? rows[i] : [];
     const heads = line.map((x) => cleanHead(x));
-    const joined = heads.join('|');
+    const _joined = heads.join('|');
     const hasSlot = heads.some((h) => /餐时段名称|时段名称|餐时段|时段/.test(h));
     const hasProduct = heads.some((h) => /菜品名称|商品名称|产品名称|产品|菜品|品名/.test(h));
     const hasQty = heads.some((h) => /销售数量|数量|qty|quantity/.test(h));
@@ -9277,9 +9277,9 @@ function parseInventoryForecastRowsFromTableMatrix(matrix, fallbackBizType = '',
     const hasDate = heads.some((h) => /营业日期|销售日期|日期/.test(h));
     const hasActualRevenue = heads.some((h) => /实际收入|实收|实际营收|菜品收入|家品收入|折后营收|折后收入/.test(h));
     const hasOrderTime = heads.some((h) => /下单时间|点单时间|订单时间/.test(h));
-    const hasCheckoutTime = heads.some((h) => /结账时间|结算时间/.test(h));
-    const hasDiscount = heads.some((h) => /优惠金额|优惠|折扣/.test(h));
-    const hasMenuPrice = heads.some((h) => /菜谱售价|售价|单价|菜品售价/.test(h));
+    const _hasCheckoutTime = heads.some((h) => /结账时间|结算时间/.test(h));
+    const _hasDiscount = heads.some((h) => /优惠金额|优惠|折扣/.test(h));
+    const _hasMenuPrice = heads.some((h) => /菜谱售价|售价|单价|菜品售价/.test(h));
     // Accept if we have slot+product+qty, or slot+product+amount, or seqNo+slot+product
     if ((hasSlot && hasProduct && hasQty) || (hasSlot && hasProduct && hasAmount) || (hasSeqNo && hasSlot && hasProduct)) {
       headerRowIndex = i;
@@ -9352,11 +9352,11 @@ function parseInventoryForecastRowsFromTableMatrix(matrix, fallbackBizType = '',
   // New format columns
   const iActualRevenue = idx(['实际收入', '实收', '实际营收', '实收金额', '实收营业额', '实收金额元', '菜品收入', '家品收入', '折后营收', '折后收入']);
   const iDiscount = idx(['优惠金额', '优惠', '折扣']);
-  const iMenuPrice = idx(['菜谱售价', '售价', '单价', '菜品售价']);
+  const _iMenuPrice = idx(['菜谱售价', '售价', '单价', '菜品售价']);
   const iOrderTime = idx(['下单时间', '点单时间', '订单时间']);
   const iCheckoutTime = idx(['结账时间', '结算时间']);
-  const iDept = idx(['出品部门', '部门']);
-  const iCategory = idx(['大类名称/编码', '大类名称', '大类', '类别']);
+  const _iDept = idx(['出品部门', '部门']);
+  const _iCategory = idx(['大类名称/编码', '大类名称', '大类', '类别']);
 
   const grouped = new Map();
   const parseNumCell = (v) => {
@@ -12958,7 +12958,7 @@ app.get('/api/health', async (req, res) => {
     return res.status(500).json({ ok: false, missing });
   }
   try {
-    const r = await pool.query('select now() as now');
+    const _r = await pool.query('select now() as now');
     const ossConfigured = !!getOssClient();
     const cosConfigured = !!getCosClient();
     const uploads = ensureUploadsDir();
@@ -14358,8 +14358,8 @@ app.get('/api/agent/table-visit-data', authRequired, async (req, res) => {
     
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const baseCond = conditions.length > 0 ? conditions.join(' AND ') : 'TRUE';
-    const whereWithSatisfaction = `WHERE ${baseCond} AND satisfaction_level IS NOT NULL AND satisfaction_level != ''`;
-    const whereWithWeather = `WHERE ${baseCond} AND weather IS NOT NULL AND weather != ''`;
+    const _whereWithSatisfaction = `WHERE ${baseCond} AND satisfaction_level IS NOT NULL AND satisfaction_level != ''`;
+    const _whereWithWeather = `WHERE ${baseCond} AND weather IS NOT NULL AND weather != ''`;
     const limitClause = `LIMIT ${Math.min(parseInt(limit, 10) || 100, 1000)} OFFSET ${Math.max(parseInt(offset, 10) || 0, 0)}`;
     
     const query = `
@@ -16636,7 +16636,7 @@ app.get('/api/birthday/upcoming', authRequired, async (req, res) => {
   try {
     const role = String(req.user?.role || '').trim();
     const username = String(req.user?.username || '').trim();
-    const canSeeAll = role === 'admin' || role === 'hq_manager' || role === 'hr_manager' || role.startsWith('custom_人事');
+    const _canSeeAll = role === 'admin' || role === 'hq_manager' || role === 'hr_manager' || role.startsWith('custom_人事');
 
     const state = (await getSharedState()) || {};
     const employees = Array.isArray(state.employees) ? state.employees : [];
@@ -16649,8 +16649,8 @@ app.get('/api/birthday/upcoming', authRequired, async (req, res) => {
     }
 
     const now = new Date();
-    const todayMonth = now.getMonth() + 1;
-    const todayDay = now.getDate();
+    const _todayMonth = now.getMonth() + 1;
+    const _todayDay = now.getDate();
     const daysParam = Math.max(1, Math.min(90, Number(req.query?.days) || 30));
 
     const results = [];
@@ -16899,7 +16899,7 @@ app.get('/api/admin/usage-weekly', authRequired, async (req, res) => {
 // 告警被忽略——所以这里加一个15分钟冷却，同一条错误消息在冷却期内只告警一次。
 let _lastRejectionAlertAt = 0;
 const _rejectionAlertCooldownMs = 15 * 60 * 1000;
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason, _promise) => {
   const detail = reason instanceof Error ? reason.stack : String(reason);
   console.error('[HRMS] Unhandled rejection:', detail);
   const now = Date.now();

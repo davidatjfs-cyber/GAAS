@@ -29,7 +29,7 @@ function monthDateRange(month) {
 
 /** 在职日历天（含首尾） */
 export function countActiveCalendarDaysInMonth({ month, joinDate, resignDate }) {
-  const { start, end, dim } = monthDateRange(month);
+  const { start, end } = monthDateRange(month);
   let from = start;
   let to = end;
   const jd = safeDateOnly(joinDate);

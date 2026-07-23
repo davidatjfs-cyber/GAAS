@@ -52,7 +52,7 @@ function makePool() {
       if (text.includes('INSERT INTO tenant_health_incidents')) {
         const fingerprint = params[12] || params[params.length - 1];
         const tenantId = params[0];
-        const key = `${tenantId}::${fingerprint}`;
+        const _key = `${tenantId}::${fingerprint}`;
         const existing = [...incidents.values()].find((x) => x.tenant_id === tenantId && x.fingerprint === fingerprint);
         if (existing) {
           Object.assign(existing, { suggestion: params[10], updated_at: new Date().toISOString() });

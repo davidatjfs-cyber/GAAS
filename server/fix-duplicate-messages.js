@@ -2,7 +2,7 @@
  * 修复重复消息问题
  */
 
-import { pool } from './utils/database.js';
+
 import { Pool } from 'pg';
 
 async function fixDuplicateMessages() {

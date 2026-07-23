@@ -2,7 +2,7 @@
  * 测试营业日报数据
  */
 
-import { pool } from './utils/database.js';
+
 import { Pool } from 'pg';
 
 async function testDailyReportsData() {

@@ -39,7 +39,7 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
       const safe =
         role === 'admin'
           ? items
-          : items.map(({ password, ...rest }) => rest);
+          : items.map(({ _password, ...rest }) => rest);
       return res.json({ ok: true, items: safe, count: safe.length });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });

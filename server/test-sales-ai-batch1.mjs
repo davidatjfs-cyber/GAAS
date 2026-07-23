@@ -9,7 +9,7 @@ import { canAccessLead, canAccessTenant, leadScopeSql, isManager, canAccessRepMe
 import { maskPhone, maskLeadContact, canViewFullContact } from './services/sales/sales-privacy.js';
 import { canTransition } from './services/sales/sales-collaboration-service.js';
 import {
-  ensureSalesTables, upsertTask, addMessage, transitionLeadStage, newLeadKey,
+  ensureSalesTables, upsertTask, addMessage, transitionLeadStage, _newLeadKey,
 } from './services/sales/sales-store.js';
 
 const RUN_TAG = `e2e_test_${Date.now()}`;

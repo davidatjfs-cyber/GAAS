@@ -12,7 +12,7 @@ function clearLicenseEnv() {
 
 function mockPool({ tenant, license } = {}) {
   return {
-    async query(sql, params) {
+    async query(sql, _params) {
       const s = String(sql);
       if (/FROM tenants/i.test(s)) {
         if (!tenant) return { rows: [] };

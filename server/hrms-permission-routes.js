@@ -21,7 +21,7 @@ export function registerHrmsPermissionRoutes(app, deps = {}) {
     pool,
     authRequired,
     getSharedState,
-    saveSharedState,
+
     isAdmin,
   } = deps;
 

@@ -123,7 +123,7 @@ export async function callOntologyForAgent(pool, options) {
   const taskDrafts = buildTaskDraftsForOpportunities(opportunities);
 
   const ontologyAvailable = calledApis.length > 0 && !calledApis.every(api => errors.some(e => e.api === api));
-  const hasData = issues.length > 0 || opportunities.length > 0;
+  const _hasData = issues.length > 0 || opportunities.length > 0;
 
   const evidence = [];
   if (diagnosisResult.ok && diagnosisResult.data) {

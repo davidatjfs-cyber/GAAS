@@ -10,6 +10,7 @@ import { upsertCustomer } from '../growth-api.js';
 import { getLead, addEvent } from './sales/sales-store.js';
 import { getCreditRisk } from './sales/sales-credit-risk.js';
 import { computeDueAt } from './sales/sla-utils.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 const DEFAULT_PROFILE = {
   system_name: 'GAAS 增长平台',
@@ -120,7 +121,7 @@ export async function provisionTenantFromLead(pool, leadId, {
         [adminUser, hash, name, tenantId]
       );
       await client.query(
-        `INSERT INTO hrms_state (key, data, updated_at) VALUES ($1, $2::jsonb, NOW()) ON CONFLICT (key) DO NOTHING`,
+        `INSERT INTO ${SHARED_TABLES.HRMS_STATE} (key, data, updated_at) VALUES ($1, $2::jsonb, NOW()) ON CONFLICT (key) DO NOTHING`,
         [tenantId, JSON.stringify(createEmptyTenantState({ tenantId, tenantName: name, adminUsername: adminUser, adminName: name }))]
       );
       await savePlatformProfile(client, tenantId, name);
@@ -266,7 +267,7 @@ export async function provisionTenantFromOrder(pool, orderId, { startedBy = 'fin
       return { ok:true, tenant_id:existingTenantId, reused:true, action:'renewal' };
     }
     const storeQty = Math.max(1, Number(order.store_quantity) || 1);
-    const stateRow = await pool.query(`SELECT data FROM hrms_state WHERE key=$1`, [existingTenantId]);
+    const stateRow = await pool.query(`SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key=$1`, [existingTenantId]);
     const state = stateRow.rows?.[0]?.data || {};
     const stores = Array.isArray(state.stores) ? state.stores.slice() : [];
     const current = stores.length;
@@ -276,7 +277,7 @@ export async function provisionTenantFromOrder(pool, orderId, { startedBy = 'fin
     stores.push({ id:storeId, name:order.store_name, address:order.store_address || '', managerName:order.contact_name || '', phone:order.contact_phone || '', brand:brandName, brandName, brandId, restaurantType:order.restaurant_type || '', area_sqm:order.area_sqm || null, status:'active', createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() });
     const brands = Array.isArray(state.brands) ? state.brands.slice() : [];
     if (brandName && !brands.some((b) => String(b.id || '').toLowerCase() === brandId)) brands.push({ id:brandId,name:brandName,config:{ sopKeypoints:[],performanceWeights:{} } });
-    await pool.query(`UPDATE hrms_state SET data=$2::jsonb,updated_at=NOW() WHERE key=$1`, [existingTenantId, JSON.stringify({ ...state, stores, brands })]);
+    await pool.query(`UPDATE ${SHARED_TABLES.HRMS_STATE} SET data=$2::jsonb,updated_at=NOW() WHERE key=$1`, [existingTenantId, JSON.stringify({ ...state, stores, brands })]);
     await pool.query(`INSERT INTO tenant_store_licenses (tenant_id,order_id,store_id,store_name,expires_at) VALUES ($1,$2,$3,$4,NOW() + ($5::text || ' days')::interval)`, [existingTenantId,order.id,storeId,order.store_name,Number(order.license_days)||365]);
     await pool.query(`UPDATE sales_orders SET tenant_id=$2,provision_status='done',status='provisioned',provision_meta=$3::jsonb,updated_at=NOW() WHERE id=$1`, [order.id,existingTenantId,JSON.stringify({ action:'add_store', store_quantity:storeQty, added_by:startedBy, added_at:new Date().toISOString() })]);
     await pool.query(`INSERT INTO sales_order_delivery_projects (order_id,tenant_id,status,deploy_check_due_at,health_check_due_at) VALUES ($1,$2,'pending',$3,$4)`, [order.id,existingTenantId,computeDueAt(new Date(),{unit:'business_day',amount:1}),computeDueAt(new Date(),{unit:'calendar_day',amount:7})]);
@@ -291,20 +292,20 @@ export async function provisionTenantFromOrder(pool, orderId, { startedBy = 'fin
     await client.query('BEGIN');
     await client.query(`INSERT INTO tenants (tenant_id,name,mode,status) VALUES ($1,$2,'managed','provisioning')`, [tenantId, tenantName]);
     await client.query(`INSERT INTO users (id,username,password_hash,real_name,role,is_active,tenant_id) VALUES (gen_random_uuid(),$1,$2,$3,'admin',TRUE,$4)`, [adminUsername, await bcrypt.hash(tempPassword, 10), tenantName, tenantId]);
-    await client.query(`INSERT INTO hrms_state (key,data,updated_at) VALUES ($1,$2::jsonb,NOW()) ON CONFLICT (key) DO NOTHING`, [tenantId, JSON.stringify(createEmptyTenantState({ tenantId, tenantName, adminUsername, adminName: tenantName }))]);
+    await client.query(`INSERT INTO ${SHARED_TABLES.HRMS_STATE} (key,data,updated_at) VALUES ($1,$2::jsonb,NOW()) ON CONFLICT (key) DO NOTHING`, [tenantId, JSON.stringify(createEmptyTenantState({ tenantId, tenantName, adminUsername, adminName: tenantName }))]);
     await savePlatformProfile(client, tenantId, tenantName);
     await issueTrialLicense(client, tenantId, 30, Math.max(1, Number(order.store_quantity) || 1));
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); return { ok: false, error: 'provision_failed', message: e?.message }; } finally { client.release(); }
   await pool.query(`UPDATE sales_orders SET tenant_id=$2,provision_status='done',provision_meta=$3::jsonb,status='provisioned',updated_at=NOW() WHERE id=$1`, [order.id, tenantId, JSON.stringify({ admin_username: adminUsername, provisioned_by: startedBy, provisioned_at: new Date().toISOString() })]);
   const firstStoreId = `store_${Date.now()}`;
-  const firstState = await pool.query(`SELECT data FROM hrms_state WHERE key=$1`, [tenantId]);
+  const firstState = await pool.query(`SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key=$1`, [tenantId]);
   const firstData = firstState.rows?.[0]?.data || {};
   const firstBrandName = String(order.brand_name || '').trim(); const firstBrandId = String(order.brand_key || firstBrandName || 'default').trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g,'_');
   const firstStores = Array.isArray(firstData.stores) ? firstData.stores.slice() : [];
   firstStores.push({ id:firstStoreId,name:order.store_name,address:order.store_address || '',managerName:order.contact_name || '',phone:order.contact_phone || '',brand:firstBrandName,brandName:firstBrandName,brandId:firstBrandId,status:'active',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString() });
   const firstBrands=Array.isArray(firstData.brands)?firstData.brands.slice():[]; if(firstBrandName&&!firstBrands.some((b)=>String(b.id||'')===firstBrandId)) firstBrands.push({id:firstBrandId,name:firstBrandName,config:{sopKeypoints:[],performanceWeights:{}}});
-  await pool.query(`UPDATE hrms_state SET data=$2::jsonb,updated_at=NOW() WHERE key=$1`,[tenantId,JSON.stringify({...firstData,stores:firstStores,brands:firstBrands})]);
+  await pool.query(`UPDATE ${SHARED_TABLES.HRMS_STATE} SET data=$2::jsonb,updated_at=NOW() WHERE key=$1`,[tenantId,JSON.stringify({...firstData,stores:firstStores,brands:firstBrands})]);
   await pool.query(`INSERT INTO tenant_store_licenses (tenant_id,order_id,store_id,store_name,expires_at) VALUES ($1,$2,$3,$4,NOW() + ($5::text || ' days')::interval)`,[tenantId,order.id,firstStoreId,order.store_name,Number(order.license_days)||365]);
   const owners = await pool.query(`SELECT role,username FROM platform_admins WHERE status='active' AND role IN ('customer_service','implementation') ORDER BY role,username`).catch(() => ({ rows: [] }));
   const cs = owners.rows.find((x) => x.role === 'customer_service')?.username || null;

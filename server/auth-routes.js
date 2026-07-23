@@ -13,6 +13,7 @@ import { tenantContext, runWithSystemTenantContext } from './utils/database.js';
 import { resolveExplicitTenantId } from './tenant-login.js';
 import { resolveUserPermissionContext } from './services/hrms-permission-engine.js';
 import { pickEffectiveStore } from './store-duty-bindings.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 // 本地开发/DB不可用时的兜底账号
 const LOCAL_TEST_ACCOUNTS = [
@@ -146,7 +147,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
           let stateStore = '';
           let permissionGroupId = null;
           try {
-            const sr = await pool.query('select data from hrms_state where key = $1 limit 1', [String(u.tenant_id || 'default').trim() || 'default']);
+            const sr = await pool.query(`select data from ${SHARED_TABLES.HRMS_STATE} where key = $1 limit 1`, [String(u.tenant_id || 'default').trim() || 'default']);
             const sd = sr.rows?.[0]?.data;
             if (sd && typeof sd === 'object') {
               // employees first – real users live there
@@ -203,7 +204,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
     // Legacy path: tenant is unknown until a username match is found, so this only ever
     // searches the 'default' tenant's blob (non-default tenants have no legacy users here).
     try {
-      const r = await pool.query('select data from hrms_state where key = $1 limit 1', [tenantId]);
+      const r = await pool.query(`select data from ${SHARED_TABLES.HRMS_STATE} where key = $1 limit 1`, [tenantId]);
       const data = r.rows?.[0]?.data;
       if (data && typeof data === 'object') {
         const users = Array.isArray(data.users) ? data.users : [];
@@ -449,7 +450,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
         finalName = u.real_name || u.username;
       } else {
         // 2) Fallback: find in hrms_state.employees / users
-        const sr = await pool.query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', [targetTenantId]);
+        const sr = await pool.query(`SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 LIMIT 1`, [targetTenantId]);
         const sd = sr.rows?.[0]?.data;
         if (!sd || typeof sd !== 'object') return res.status(404).json({ error: 'user_not_found', message: '目标用户不存在' });
 
@@ -488,7 +489,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
       // 3) Merge role/name from state (authoritative) regardless of source
       if (!needCreateUser) {
         try {
-          const sr = await pool.query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', [targetTenantId]);
+          const sr = await pool.query(`SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 LIMIT 1`, [targetTenantId]);
           const sd = sr.rows?.[0]?.data;
           if (sd && typeof sd === 'object') {
             const allState = (Array.isArray(sd.employees) ? sd.employees : []).concat(Array.isArray(sd.users) ? sd.users : []);

@@ -209,7 +209,7 @@ export function calculateDimensionScore(brand, dimension, issueCounts, auditCoun
   const model = UNIFIED_BRAND_SCORING_MODELS[brand];
   if (!model || !model.dimensions[dimension]) return 100;
   
-  const config = model.dimensions[dimension];
+  const _config = model.dimensions[dimension];
   let score = model.baseScore;
   
   // 根据维度类型计算扣分

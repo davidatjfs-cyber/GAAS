@@ -11,6 +11,7 @@
 import { randomUUID } from 'crypto';
 import { pool as getPool } from '../utils/database.js';
 import { ensurePayrollRulesTables, resolveAttendancePayrollRules } from './hrms-payroll-rules.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 function safeDateOnly(d) {
   const s = String(d || '').trim();
@@ -120,7 +121,7 @@ export async function reconcileAttendanceDays({
     try {
       const er = await db.query(
         `SELECT username, name, store, status, join_date AS "joinDate"
-           FROM employees
+           FROM ${SHARED_TABLES.EMPLOYEES}
           WHERE tenant_id = $1
             AND TRIM(COALESCE(store,'')) ILIKE '%' || $2 || '%'
             AND COALESCE(status,'') NOT IN ('离职','inactive','disabled')`,
@@ -496,7 +497,7 @@ export async function notifyStoreManagersAttendanceAbnormals({
   if (!Array.isArray(abnormals) || !abnormals.length) return 0;
   if (typeof appendNotifications !== 'function' || typeof makeNotif !== 'function') return 0;
   let state = {};
-  try { state = (await getSharedState(tenantId)) || { /* ignore */ }; } catch (_) {}
+  try { state = (await getSharedState(tenantId)) || { /* ignore */ }; } catch (_) { /* ignore */ }
   const byStore = new Map();
   for (const a of abnormals) {
     const s = String(a.store || '').trim();

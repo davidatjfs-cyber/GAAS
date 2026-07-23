@@ -452,8 +452,8 @@ export function registerReportsRoutes(app, deps) {
         allEmployees = merged;
       }
       const [yr, mo] = month.split('-').map(Number);
-      const monthStart = new Date(yr, mo - 1, 1);
-      const monthEnd = new Date(yr, mo, 0); // last day of month
+      const _monthStart = new Date(yr, mo - 1, 1);
+      const _monthEnd = new Date(yr, mo, 0); // last day of month
 
       // Filter employees by store（与 v2-store-alignment 一致：洪潮大宁久光店 ↔ 洪潮久光店 等）
       const storeEmps = store
@@ -550,7 +550,7 @@ export function registerReportsRoutes(app, deps) {
               existing.offboardingDate = existing.offboardingDate || row.actionDate;
               existing.resignedAt = existing.resignedAt || row.actionDate;
             }
-            const st0 = String(existing.status || '').trim().toLowerCase();
+            const _st0 = String(existing.status || '').trim().toLowerCase();
             if (!isEmployeeDepartedForTurnoverReport(existing) && synDate) {
               existing.status = '离职';
             }
@@ -830,7 +830,7 @@ export function registerReportsRoutes(app, deps) {
           baseLeave: 0, annualLeave: 0, usedLeave: 0, totalLeave: 0, computedRemaining: 0, remaining: 0, overridden: false, weeklyDetails: [], lastAdjustment: null
         };
         const remaining = Number(bal?.remaining || 0);
-        const joinDate = String(p?.joinDate || p?.hireDate || p?.startDate || p?.entryDate || p?.onboardDate || p?.joiningDate || p?.createdAt || '').trim();
+        const _joinDate = String(p?.joinDate || p?.hireDate || p?.startDate || p?.entryDate || p?.onboardDate || p?.joiningDate || p?.createdAt || '').trim();
         rows.push({
           username: String(p?.username || '').trim(),
           name: String(p?.name || p?.username || '').trim(),
@@ -1032,7 +1032,7 @@ export function registerReportsRoutes(app, deps) {
 
   app.get('/api/reports/daily-attendance-register', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
-    const role = String(req.user?.role || '').trim();
+    const _role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
     const storeQDar = String(req.query?.store || '').trim();
     if (!(await requireReportPerm(req, res, 'reports.daily_register.view', storeQDar))) return;
@@ -1530,7 +1530,7 @@ export function registerReportsRoutes(app, deps) {
   // NOTE: legacy payroll body above ends; keep audit/adjustment endpoints below.
   app.post('/api/reports/payroll/audit', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
-    const role = String(req.user?.role || '').trim();
+    const _role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
     const storeAudit = String(req.body?.store || '').trim();
     if (!(await requireReportPerm(req, res, 'reports.payroll.audit', storeAudit))) return;
@@ -1560,7 +1560,7 @@ export function registerReportsRoutes(app, deps) {
 
   app.post('/api/reports/payroll/adjustment', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
-    const role = String(req.user?.role || '').trim();
+    const _role = String(req.user?.role || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_user' });
     const storeAdj = String(req.body?.store || '').trim();
     if (!(await requireReportPerm(req, res, 'reports.payroll.adjust', storeAdj))) return;

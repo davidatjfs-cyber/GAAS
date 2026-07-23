@@ -255,7 +255,7 @@ export async function getStoreDiagnosis(pool, store, dateRange) {
      GROUP BY biz_date ORDER BY biz_date`,
     [storeName, startDate, endDate]
   );
-  const prevCustomerAnalysis = await pool.query(
+  const _prevCustomerAnalysis = await pool.query(
     `WITH orders AS (
        SELECT o.biz_date,
               CASE

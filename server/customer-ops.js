@@ -17,6 +17,7 @@ import { syncOntologyDataFromProduction } from './ontology/real-data-sync.js';
 import { runDailyDiagnosis } from './ontology/diagnosis-tree-service.js';
 import { ensureGrowthOntologyCore } from './ontology/growth-ontology-schema.js';
 import { tenantContext } from './utils/database.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 const PYTHON_BIN = process.env.CUSTOMER_OPS_PYTHON_BIN || process.env.CODEX_PYTHON_BIN || 'python3';
 
@@ -67,7 +68,7 @@ async function resolveCustomerOpsStoreFilter(pool, tenantId, rawStoreId = '') {
 
   let stateStores = [];
   try {
-    const r = await pool.query(`SELECT data->'stores' AS stores FROM hrms_state WHERE key = $1 LIMIT 1`, [tenantId || 'default']);
+    const r = await pool.query(`SELECT data->'stores' AS stores FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 LIMIT 1`, [tenantId || 'default']);
     stateStores = Array.isArray(r.rows?.[0]?.stores) ? r.rows[0].stores : [];
   } catch (e) {
     console.warn('[customer-ops] store state lookup skipped:', e?.message);
@@ -535,9 +536,9 @@ async function ensureCustomerOpsTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_training_sessions_tenant_started ON training_sessions (tenant_id, started_at)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS training_certifications (id SERIAL PRIMARY KEY, session_id INTEGER NOT NULL DEFAULT 0, employee_username VARCHAR(100) NOT NULL, topic_id INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_training_certifications_tenant_created ON training_certifications (tenant_id, created_at)`);
-  await pool.query(`CREATE TABLE IF NOT EXISTS agent_scores (id SERIAL PRIMARY KEY, username TEXT, total_score NUMERIC DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
-  await pool.query(`ALTER TABLE agent_scores ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default'`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_scores_tenant_created ON agent_scores (tenant_id, created_at)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${SHARED_TABLES.AGENT_SCORES} (id SERIAL PRIMARY KEY, username TEXT, total_score NUMERIC DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
+  await pool.query(`ALTER TABLE ${SHARED_TABLES.AGENT_SCORES} ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_scores_tenant_created ON ${SHARED_TABLES.AGENT_SCORES} (tenant_id, created_at)`);
 }
 
 async function latestDiagnosis(pool, tenantId, diagnosisId = 0) {
@@ -1211,7 +1212,7 @@ async function buildOpsRectificationReport(pool, tenantId, opts = {}) {
     SELECT COUNT(*)::int AS total,
            COUNT(*) FILTER (WHERE status IN ('done','closed','completed'))::int AS completed,
            COUNT(*) FILTER (WHERE sla_due_at IS NOT NULL AND status NOT IN ('done','closed','completed') AND sla_due_at < NOW())::int AS overdue
-    FROM master_tasks
+    FROM ${SHARED_TABLES.MASTER_TASKS}
     WHERE created_at::date >= $1::date AND created_at::date <= $2::date`, [dateFrom, dateTo], [{}]))[0] || {};
   const rows = await safeReportQuery(pool, `
     SELECT anomaly_key, store, severity, status, trigger_date, task_id, resolution_code
@@ -1355,7 +1356,7 @@ async function buildTalentGrowthReport(pool, tenantId, opts = {}) {
     FROM training_sessions
     WHERE started_at::date >= $1::date AND started_at::date <= $2::date`, [dateFrom, dateTo], [{}]))[0] || {};
   const cert = (await safeReportQuery(pool, `SELECT COUNT(*)::int AS certifications FROM training_certifications WHERE created_at::date >= $1::date AND created_at::date <= $2::date`, [dateFrom, dateTo], [{}]))[0] || {};
-  const scores = (await safeReportQuery(pool, `SELECT AVG(total_score)::numeric AS avg_score, COUNT(*)::int AS score_count FROM agent_scores WHERE created_at::date >= $1::date AND created_at::date <= $2::date`, [dateFrom, dateTo], [{}]))[0] || {};
+  const scores = (await safeReportQuery(pool, `SELECT AVG(total_score)::numeric AS avg_score, COUNT(*)::int AS score_count FROM ${SHARED_TABLES.AGENT_SCORES} WHERE created_at::date >= $1::date AND created_at::date <= $2::date`, [dateFrom, dateTo], [{}]))[0] || {};
   const tasks = Number(train.tasks || 0);
   const completed = Number(sessions.completed || 0);
   const passed = Number(sessions.passed || 0);

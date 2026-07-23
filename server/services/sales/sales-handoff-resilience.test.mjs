@@ -183,7 +183,7 @@ test('培育型转化(due_hours较长)或未转人工时不得压SLA，避免把
 
 test('无转化意向时不写任何库，转化写库失败必须以拒绝暴露(调用点负责兜底不断主链路)', async () => {
   const queries = [];
-  const quietPool = { async query(sql, params) { queries.push(sql); return { rows: [] }; } };
+  const quietPool = { async query(sql, _params) { queries.push(sql); return { rows: [] }; } };
   const noop = await recordCustomerConversionIntent(quietPool, { leadId: 1, conversion: null, evidence: 'x' });
   assert.deepEqual(noop, { recorded: false });
   assert.equal(queries.length, 0);

@@ -1,5 +1,5 @@
 import { callOntologyForAgent } from './tools/ontology-tool-client.js';
-import { summarizeIssueForBoss, summarizeOpportunityForBoss } from '../ontology/boss-language-service.js';
+
 
 const LOG_PREFIX = '[OntologyAgent]';
 

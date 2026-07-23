@@ -371,7 +371,7 @@ export class AgentCollaborationOrchestrator {
   /**
    * Ops Supervisor 消息处理：统计当前积压任务数
    */
-  async handleOpsSupervisorMessage(sessionId, message) {
+  async handleOpsSupervisorMessage(sessionId, _message) {
     console.log(`[AgentCollaboration] Ops Supervisor processing message in ${sessionId}`);
     try {
       const db = pool();
@@ -393,7 +393,7 @@ export class AgentCollaborationOrchestrator {
   /**
    * Chief Evaluator 消息处理：统计近7天评分任务完成率
    */
-  async handleChiefEvaluatorMessage(sessionId, message) {
+  async handleChiefEvaluatorMessage(sessionId, _message) {
     console.log(`[AgentCollaboration] Chief Evaluator processing message in ${sessionId}`);
     try {
       const db = pool();
@@ -419,7 +419,7 @@ export class AgentCollaborationOrchestrator {
   /**
    * Train Advisor 消息处理：返回知识库启用文章数
    */
-  async handleTrainAdvisorMessage(sessionId, message) {
+  async handleTrainAdvisorMessage(sessionId, _message) {
     console.log(`[AgentCollaboration] Train Advisor processing message in ${sessionId}`);
     try {
       const db = pool();

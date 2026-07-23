@@ -59,6 +59,7 @@ import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from
 import { storeNameToId as _storeNameToIdFromConfig, STORE_ID_TO_NAME, STORES as _ALL_STORES } from './brands-config.js';
 import { runForActiveTenants, tenantContext, resolveTenantIdDefault } from './utils/database.js';
 import { getSmsSlot, initSmsTemplatesCache } from './sms-templates.js';
+import { SHARED_TABLES } from '@gaas/shared';
 const _storeId = (brandName) => _ALL_STORES.find(s => s.brandName === brandName)?.storeId || '';
 
 // 订阅消息推送网关（方案B）：HRMS 自己没有小程序 access_token，发不了订阅消息，
@@ -1530,7 +1531,7 @@ export async function appendExecutionLog(pool, payload) {
 }
 
 async function getStateValue(pool, key) {
-  const r = await pool.query(`SELECT data FROM hrms_state WHERE key = $1 LIMIT 1`, [key]);
+  const r = await pool.query(`SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 LIMIT 1`, [key]);
   return r.rows?.[0]?.data || null;
 }
 
@@ -1658,7 +1659,7 @@ export async function resolveTenantIdForStore(pool, storeId) {
   if (now - __storeTenantCacheAt > 300000) { __storeTenantCache = {}; __storeTenantCacheAt = now; }
   if (__storeTenantCache[sid]) return __storeTenantCache[sid];
   try {
-    const r = await pool.query('SELECT tenant_id FROM employees WHERE store = $1 AND tenant_id IS NOT NULL LIMIT 1', [sid]);
+    const r = await pool.query(`SELECT tenant_id FROM ${SHARED_TABLES.EMPLOYEES} WHERE store = $1 AND tenant_id IS NOT NULL LIMIT 1`, [sid]);
     const tid = String(r.rows?.[0]?.tenant_id || '').trim() || 'default';
     __storeTenantCache[sid] = tid;
     return tid;

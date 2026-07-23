@@ -3,6 +3,7 @@
  * 聚合 master_tasks + growth_actions，供月报复盘说明「系统已建议但客户未执行」。
  */
 import { tenantContext } from '../utils/database.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 function ymd(date = new Date()) {
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
@@ -37,10 +38,10 @@ export async function buildExecutionLedger(pool, opts = {}) {
 
   const items = [];
 
-  if (await tableExists(pool, 'master_tasks')) {
+  if (await tableExists(pool, SHARED_TABLES.MASTER_TASKS)) {
     const r = await pool.query(
       `SELECT task_id, title, status, store, assignee_role, source, created_at, updated_at, due_at
-         FROM master_tasks
+         FROM ${SHARED_TABLES.MASTER_TASKS}
         WHERE tenant_id=$1
           AND created_at::date BETWEEN $2::date AND $3::date
           AND ($4::text='' OR store=$4 OR store_id::text=$4)

@@ -77,7 +77,7 @@ export function registerCheckinRoutes(app, deps) {
         const timeStr = shNow.split(', ')[1] || '';
         const parts = timeStr.split(':');
         const shHour = parseInt(parts[0] || '0', 10);
-        const shMin = parseInt(parts[1] || '0', 10);
+        const _shMin = parseInt(parts[1] || '0', 10);
         if (shHour >= 17) {
           return res.status(400).json({ error: 'late_clock_in', message: '超过17:00不允许上班打卡' });
         }

@@ -5,11 +5,11 @@ import {
   buildStrategyPlan,
   sanitizeReply,
   templateReply,
-  shouldTakeover,
+
 } from './services/sales/sales-strategy.js';
 import { scoreLead, computeWinProbability } from './services/sales/sales-scoring.js';
 import { runCustomerAiTurn } from './services/sales/sales-customer-ai.js';
-import { buildNextAction, buildSalesAdvice, buildBossDailyReport, buildFunnelStats, buildRiskCustomers, buildTomorrowActions, buildSalesTodoList, buildTopHighLeads } from './services/sales/sales-ops.js';
+import { buildNextAction, buildBossDailyReport, buildRiskCustomers, buildSalesTodoList, buildTopHighLeads } from './services/sales/sales-ops.js';
 import { deriveTagsForLead, recommendCaseTheme, recommendAssets, recommendNextSteps } from './services/sales/sales-tags.js';
 import { buildDiagnosisReport, diagnoseLead, summarizeMeeting, detectOvercommitment, matchObjection, getObjectionResponse, buildDemoBrief } from './services/sales/sales-diagnosis.js';
 
@@ -153,7 +153,7 @@ import { buildDiagnosisReport, diagnoseLead, summarizeMeeting, detectOvercommitm
 
 {
   const pool = {
-    async query(sql, params = []) {
+    async query(sql, _params = []) {
       const t = String(sql);
       if (t.includes('CREATE TABLE') || t.includes('CREATE INDEX') || t.includes('CREATE UNIQUE')) return { rows: [] };
       if (t.includes('COUNT(*)') && t.includes('sales_leads')) return { rows: [{ c: 2 }] };

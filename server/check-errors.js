@@ -3,7 +3,7 @@
  */
 
 import { getErrorStats } from './utils/error-handler.js';
-import { pool } from './utils/database.js';
+
 import { Pool } from 'pg';
 
 async function checkSystemStatus() {

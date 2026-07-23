@@ -55,7 +55,7 @@ export function createPlatformAdminRequired(pool, platformAdminJwtSecret) {
     if (req.method !== 'GET') {
       const targetTenantId = req.params?.tenantId || req.body?.tenant_id || req.body?.tenantId || null;
       let detail = {};
-      try { detail = JSON.parse(JSON.stringify(req.body || { /* ignore */ })); } catch (_) {}
+      try { detail = JSON.parse(JSON.stringify(req.body || { /* ignore */ })); } catch (_) { /* ignore */ }
       if (detail && typeof detail === 'object') {
         for (const k of Object.keys(detail)) {
           if (/secret|password|key|token/i.test(k)) detail[k] = '***';

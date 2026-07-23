@@ -42,7 +42,7 @@ export function registerApprovalRoutes(app, authRequired, deps) {
   const {
     pool,
     getSharedState,
-    saveSharedState,
+
     stateOrDbFindUserRecord,
     pickMyStoreFromState,
     normalizeApprovalType,
@@ -114,7 +114,7 @@ export function registerApprovalRoutes(app, authRequired, deps) {
         // 多店店长：请款按「当前门店」过滤，且必须在可访问门店范围内（防越权查看范围外门店）；
         // 当前门店缺失或越权时回退到主店（在职档案门店）。
         let resolved = '';
-        try { resolved = pickMyStoreFromState((await getSharedState()) || { /* ignore */ }, username) || ''; } catch (e) {}
+        try { resolved = pickMyStoreFromState((await getSharedState()) || { /* ignore */ }, username) || ''; } catch (e) { /* ignore */ }
         const allowed = Array.isArray(req.user?.allowed_stores)
           ? req.user.allowed_stores.map((s) => String(s || '').trim()).filter(Boolean)
           : [];

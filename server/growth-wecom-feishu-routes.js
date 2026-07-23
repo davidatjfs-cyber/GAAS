@@ -16,6 +16,7 @@ import {
   insertGrowthEvent,
   setSyncWecomContactsForStore,
 } from './growth-api.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 function cleanText(value, max = 255) {
   return String(value == null ? '' : value).trim().slice(0, max);
@@ -42,7 +43,7 @@ export async function syncWecomContactsForStore(pool, storeConfig) {
       const detailData = await detailResp.json();
       if (Number(detailData?.errcode) !== 0 || !detailData?.external_contact) continue;
       const c = detailData.external_contact;
-      const phone = (c.corpid || c.corp_name || ''); // fallback, try from other fields
+      const _phone = (c.corpid || c.corp_name || ''); // fallback, try from other fields
       const externalUserid = cleanText(c.external_userid || eid, 128);
       const name = cleanText(c.name || '', 128);
       let contactPhone = '';
@@ -113,7 +114,7 @@ export function registerGrowthWecomFeishuRoutes(app, pool) {
       callback_secret: cleanText(b.callback_secret, 500)
     };
     await pool.query(
-      `INSERT INTO hrms_state (key, data, updated_at) VALUES ('growth_wecom_config', $1::jsonb, NOW())
+      `INSERT INTO ${SHARED_TABLES.HRMS_STATE} (key, data, updated_at) VALUES ('growth_wecom_config', $1::jsonb, NOW())
        ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
       [JSON.stringify(config)]
     );
@@ -244,7 +245,7 @@ export function registerGrowthWecomFeishuRoutes(app, pool) {
   // ── Phase 2: Feishu config persistence for WeChat customer auto-sync ──
   app.get('/api/growth/feishu-config', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    const r = await pool.query(`SELECT data FROM hrms_state WHERE key = 'growth_feishu_config' LIMIT 1`);
+    const r = await pool.query(`SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = 'growth_feishu_config' LIMIT 1`);
     const config = r.rows?.[0]?.data || null;
     res.json({ ok: true, config });
   });
@@ -256,7 +257,7 @@ export function registerGrowthWecomFeishuRoutes(app, pool) {
     const tableId = cleanText(b.table_id, 200);
     if (!appToken || !tableId) return res.status(400).json({ ok: false, error: 'missing app_token or table_id' });
     await pool.query(
-      `INSERT INTO hrms_state (key, data, updated_at) VALUES ('growth_feishu_config', $1::jsonb, NOW())
+      `INSERT INTO ${SHARED_TABLES.HRMS_STATE} (key, data, updated_at) VALUES ('growth_feishu_config', $1::jsonb, NOW())
        ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
       [JSON.stringify({ app_token: appToken, table_id: tableId })]
     );

@@ -16,6 +16,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { pool as getUnifiedPool, resolveTenantIdDefault, tenantContext } from './utils/database.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 let _pool = null;
 let _sendLarkMessage = null;
@@ -149,7 +150,7 @@ export async function inspectionClosedLoopTick(tenantId = 'default') {
                 COALESCE(t.remind_count, 0),
                 COALESCE((t.source_data->>'reminder_count')::int, 0)
               ) as auto_ops_reminder_seq
-       FROM master_tasks t
+       FROM ${SHARED_TABLES.MASTER_TASKS} t
        WHERE t.status = 'pending_response'
          AND t.dispatched_at < NOW() - INTERVAL '${REMINDER_HOURS} hours'
          AND t.tenant_id = $1
@@ -195,7 +196,7 @@ export async function inspectionClosedLoopTick(tenantId = 'default') {
     const resolved = await pool().query(
       `SELECT task_id, dispatched_at, responded_at,
               EXTRACT(EPOCH FROM (responded_at - dispatched_at))/3600 as resolve_hours
-       FROM master_tasks
+       FROM ${SHARED_TABLES.MASTER_TASKS}
        WHERE status IN ('resolved', 'pending_settlement')
          AND responded_at IS NOT NULL
          AND dispatched_at IS NOT NULL
@@ -204,7 +205,7 @@ export async function inspectionClosedLoopTick(tenantId = 'default') {
     );
     for (const task of (resolved.rows || [])) {
       await pool().query(
-        `UPDATE master_tasks SET source_data = COALESCE(source_data, '{}'::jsonb) || $1::jsonb WHERE task_id = $2`,
+        `UPDATE ${SHARED_TABLES.MASTER_TASKS} SET source_data = COALESCE(source_data, '{}'::jsonb) || $1::jsonb WHERE task_id = $2`,
         [JSON.stringify({ closed_loop_logged: true, resolve_hours: parseFloat(task.resolve_hours || 0).toFixed(1) }), task.task_id]
       );
     }
@@ -239,7 +240,7 @@ async function sendReminder(task, reminderNum, hoursWaiting) {
   const result = await _sendLarkCard(fu.open_id, card);
   if (result?.ok) {
     await pool().query(
-      `UPDATE master_tasks SET source_data = COALESCE(source_data, '{}'::jsonb) || $1::jsonb WHERE task_id = $2`,
+      `UPDATE ${SHARED_TABLES.MASTER_TASKS} SET source_data = COALESCE(source_data, '{}'::jsonb) || $1::jsonb WHERE task_id = $2`,
       [JSON.stringify({ reminder_count: reminderNum, last_reminder_at: new Date().toISOString() }), task.task_id]
     );
     console.log(`[auto-ops] reminder #${reminderNum} sent for ${task.task_id} to ${task.assignee_username}`);
@@ -265,7 +266,7 @@ async function escalateTask(task, hoursWaiting, tenantId = 'default') {
   try {
     const admR = await pool().query(
       `SELECT f.open_id, u.username, u.real_name
-       FROM feishu_users f
+       FROM ${SHARED_TABLES.FEISHU_USERS} f
        JOIN users u ON f.username = u.username
        WHERE u.role = 'admin' AND u.is_active = true
          AND f.registered = true AND f.open_id IS NOT NULL AND trim(f.open_id) <> ''
@@ -313,7 +314,7 @@ async function escalateTask(task, hoursWaiting, tenantId = 'default') {
   const result = await _sendLarkCard(escalateTo.open_id, card);
   if (result?.ok) {
     await pool().query(
-      `UPDATE master_tasks SET source_data = COALESCE(source_data, '{}'::jsonb) || $1::jsonb WHERE task_id = $2`,
+      `UPDATE ${SHARED_TABLES.MASTER_TASKS} SET source_data = COALESCE(source_data, '{}'::jsonb) || $1::jsonb WHERE task_id = $2`,
       [JSON.stringify({
         escalated: true,
         escalated_to: escalateTo.username,
@@ -358,7 +359,7 @@ export async function biProactivePushTick(tenantId = 'default') {
   try {
     // 获取所有门店
     const storesR = await pool().query(
-      `SELECT DISTINCT store FROM feishu_users WHERE store IS NOT NULL AND store != '' AND store != '总部' AND tenant_id = $1`,
+      `SELECT DISTINCT store FROM ${SHARED_TABLES.FEISHU_USERS} WHERE store IS NOT NULL AND store != '' AND store != '总部' AND tenant_id = $1`,
       [tenantId]
     );
     const stores = (storesR.rows || []).map(r => r.store);
@@ -368,7 +369,7 @@ export async function biProactivePushTick(tenantId = 'default') {
     try {
       const badAllR = await pool().query(
         `SELECT fields->>'差评门店' as store_name, COUNT(*) as cnt
-         FROM feishu_generic_records
+         FROM ${SHARED_TABLES.FEISHU_GENERIC_RECORDS}
          WHERE config_key = 'bad_review' AND created_at::date = $1::date AND tenant_id = $2
          GROUP BY fields->>'差评门店'`,
         [yesterday, tenantId]
@@ -406,7 +407,7 @@ export async function biProactivePushTick(tenantId = 'default') {
       // ── 原料异常 ──
       try {
         const matR = await pool().query(
-          `SELECT COUNT(*) as cnt FROM feishu_generic_records
+          `SELECT COUNT(*) as cnt FROM ${SHARED_TABLES.FEISHU_GENERIC_RECORDS}
            WHERE config_key = 'raw_material_orders' AND (fields->>'门店' = $1 OR fields->>'store' = $1)
              AND fields->>'异常' IS NOT NULL AND fields->>'异常' != ''
              AND created_at::date = $2::date AND tenant_id = $3`,
@@ -421,7 +422,7 @@ export async function biProactivePushTick(tenantId = 'default') {
       // ── 未关闭的高严重度任务 ──
       try {
         const taskR = await pool().query(
-          `SELECT COUNT(*) as cnt FROM master_tasks
+          `SELECT COUNT(*) as cnt FROM ${SHARED_TABLES.MASTER_TASKS}
            WHERE store = $1 AND severity = 'high' AND status NOT IN ('closed', 'settled', 'resolved') AND tenant_id = $2`,
           [storeName, tenantId]
         );
@@ -437,7 +438,7 @@ export async function biProactivePushTick(tenantId = 'default') {
           `SELECT
              COUNT(*) FILTER (WHERE fields->>'status' = 'fail') as fail_cnt,
              COUNT(*) as total
-           FROM feishu_generic_records
+           FROM ${SHARED_TABLES.FEISHU_GENERIC_RECORDS}
            WHERE config_key = 'ops_checklists' AND (fields->>'store' = $1 OR fields->>'门店' = $1)
              AND created_at > NOW() - INTERVAL '7 days' AND tenant_id = $2`,
           [storeName, tenantId]
@@ -478,7 +479,7 @@ export async function biProactivePushTick(tenantId = 'default') {
     if (hqSummaries.length > 0) {
       try {
         const hqR = await pool().query(
-          `SELECT f.open_id FROM feishu_users f JOIN users u ON f.username = u.username WHERE u.role = 'admin' AND u.is_active = true AND f.registered = true AND f.open_id IS NOT NULL AND trim(f.open_id) <> '' AND f.open_id NOT LIKE '%probe%' AND u.tenant_id = $1 ORDER BY f.updated_at DESC LIMIT 1`,
+          `SELECT f.open_id FROM ${SHARED_TABLES.FEISHU_USERS} f JOIN users u ON f.username = u.username WHERE u.role = 'admin' AND u.is_active = true AND f.registered = true AND f.open_id IS NOT NULL AND trim(f.open_id) <> '' AND f.open_id NOT LIKE '%probe%' AND u.tenant_id = $1 ORDER BY f.updated_at DESC LIMIT 1`,
           [tenantId]
         );
         if (hqR.rows?.[0]?.open_id) {
@@ -524,7 +525,7 @@ export async function laborEfficiencyTick(tenantId = 'default') {
 
   try {
     const storesR = await pool().query(
-      `SELECT DISTINCT store FROM feishu_users WHERE store IS NOT NULL AND store != '' AND store != '总部' AND tenant_id = $1`,
+      `SELECT DISTINCT store FROM ${SHARED_TABLES.FEISHU_USERS} WHERE store IS NOT NULL AND store != '' AND store != '总部' AND tenant_id = $1`,
       [tenantId]
     );
 
@@ -538,7 +539,7 @@ export async function laborEfficiencyTick(tenantId = 'default') {
              COUNT(*) as total_tasks,
              COUNT(*) FILTER (WHERE severity = 'high') as high_tasks,
              AVG(EXTRACT(EPOCH FROM (COALESCE(responded_at, NOW()) - dispatched_at))/3600) as avg_response_hours
-           FROM master_tasks
+           FROM ${SHARED_TABLES.MASTER_TASKS}
            WHERE store = $1 AND created_at > NOW() - INTERVAL '7 days' AND tenant_id = $2`,
           [storeName, tenantId]
         ),
@@ -546,7 +547,7 @@ export async function laborEfficiencyTick(tenantId = 'default') {
           `SELECT
              COUNT(*) as total,
              COUNT(*) FILTER (WHERE fields->>'status' = 'fail') as fail_cnt
-           FROM feishu_generic_records
+           FROM ${SHARED_TABLES.FEISHU_GENERIC_RECORDS}
            WHERE config_key = 'ops_checklists' AND (fields->>'store' = $1)
              AND created_at > NOW() - INTERVAL '7 days' AND tenant_id = $2`,
           [storeName, tenantId]
@@ -634,7 +635,7 @@ export async function trainingClosedLoopTick(tenantId = 'default') {
     const anomalyR = await pool().query(
       `SELECT store, category, COUNT(*) as cnt,
               array_agg(DISTINCT title ORDER BY title) as sample_titles
-       FROM master_tasks
+       FROM ${SHARED_TABLES.MASTER_TASKS}
        WHERE created_at > NOW() - INTERVAL '${TRAINING_LOOKBACK_DAYS} days'
          AND status NOT IN ('closed')
          AND tenant_id = $1

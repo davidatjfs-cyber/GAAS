@@ -4,6 +4,7 @@
  */
 import { runInspection } from './tenant-operation-inspection-service.js';
 import { tenantContext } from '../utils/database.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 export const ONBOARDING_STEPS = [
   { step_key: 'create_store', step_order: 1, title: '创建门店', owner_role: 'platform_team', inspection_keys: ['tenant_has_stores'], impact: '无门店则无法经营诊断与派单' },
@@ -94,7 +95,7 @@ async function loadMeta(pool, tenantId) {
   const t = await pool.query(`SELECT status FROM tenants WHERE tenant_id=$1 LIMIT 1`, [tenantId]).catch(() => ({ rows: [] }));
   meta.tenant_status = t.rows?.[0]?.status || '';
   const state = await pool.query(
-    `SELECT data FROM hrms_state WHERE key=$1 ORDER BY updated_at DESC NULLS LAST LIMIT 1`,
+    `SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key=$1 ORDER BY updated_at DESC NULLS LAST LIMIT 1`,
     [tenantId]
   ).catch(() => ({ rows: [] }));
   const raw = state.rows?.[0]?.data;

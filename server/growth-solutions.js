@@ -3,6 +3,7 @@
 // 规则:达成率 = 实际/目标,≥90% 算达成;同一(门店,问题)同时只允许一个未关闭轮次
 
 import { pool as getPool } from './utils/database.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 function pool() { return getPool(); }
 
@@ -220,7 +221,7 @@ function normalizeBiz(v) {
 // ─── 现状指标计算(六个问题) ──────────────────────────────
 async function metricStaffEfficiency(store, startDate, endDate) {
   const r = await pool().query(
-    `SELECT pre_discount_revenue, staff FROM daily_reports
+    `SELECT pre_discount_revenue, staff FROM ${SHARED_TABLES.DAILY_REPORTS}
      WHERE store = $1 AND date >= $2 AND date <= $3`,
     [store, startDate, endDate]
   );
@@ -240,7 +241,7 @@ async function metricStaffEfficiency(store, startDate, endDate) {
 async function metricRevenue(store, startDate, endDate) {
   const r = await pool().query(
     `SELECT COALESCE(SUM(actual_revenue),0) AS rev, COUNT(*) AS days
-     FROM daily_reports WHERE store = $1 AND date >= $2 AND date <= $3`,
+     FROM ${SHARED_TABLES.DAILY_REPORTS} WHERE store = $1 AND date >= $2 AND date <= $3`,
     [store, startDate, endDate]
   );
   const storeCode = store.includes('马己仙') ? '51866138' : (store.includes('洪潮') ? '64822111' : '');
@@ -337,7 +338,7 @@ async function dishAggregates(store, startDate, endDate) {
   const r = await pool().query(
     `SELECT dish_name, category, biz_type,
             SUM(qty) AS qty, SUM(revenue) AS revenue
-     FROM pos_sales_detail
+     FROM ${SHARED_TABLES.POS_SALES_DETAIL}
      WHERE store ILIKE '%' || $1 || '%' AND date >= $2 AND date <= $3
        AND coalesce(trim(dish_name), '') <> ''
      GROUP BY dish_name, category, biz_type`,
@@ -448,7 +449,7 @@ async function metricGrossMargin(store, startDate, endDate) {
 async function metricTrainingReplication(store) {
   const brand = brandKeyOf(store);
   const emps = await pool().query(
-    `SELECT username, name, position FROM employees
+    `SELECT username, name, position FROM ${SHARED_TABLES.EMPLOYEES}
      WHERE store ILIKE '%' || $1 || '%'
        AND coalesce(status,'') NOT IN ('inactive','disabled','resigned','离职','禁用','停用')
        AND coalesce(trim(position), '') <> ''`,
@@ -552,7 +553,7 @@ async function suggestAssignees(store, role) {
   const positions = ROLE_POSITIONS[role] || ROLE_POSITIONS.store_manager;
   const clauses = positions.map((_, i) => `position ILIKE '%' || $${i + 2} || '%'`).join(' OR ');
   const r = await pool().query(
-    `SELECT username, name, position FROM employees
+    `SELECT username, name, position FROM ${SHARED_TABLES.EMPLOYEES}
      WHERE store ILIKE '%' || $1 || '%'
        AND coalesce(status,'') NOT IN ('inactive','disabled','resigned','离职','禁用','停用')
        AND (${clauses})
@@ -593,7 +594,7 @@ async function fetchRecentComplaints(store, days = 30) {
     `SELECT created_at::date AS date, agent_data->>'reason' AS reason,
             agent_data->>'product' AS product, agent_data->>'rating' AS rating,
             agent_data->>'platform' AS platform
-       FROM agent_messages
+       FROM ${SHARED_TABLES.AGENT_MESSAGES}
       WHERE content_type = 'negative_review'
         AND agent_data->>'store' ILIKE '%' || $1 || '%'
         AND created_at > now() - ($2 || ' days')::interval
@@ -613,7 +614,7 @@ async function fetchTurnoverSnapshot(store) {
     `SELECT count(*) FILTER (WHERE coalesce(status,'') NOT IN ('inactive','disabled','resigned','离职','禁用','停用')) AS active,
             count(*) FILTER (WHERE coalesce(status,'') IN ('inactive','resigned','离职')) AS left_count,
             count(*) AS total
-       FROM employees WHERE store ILIKE '%' || $1 || '%'`,
+       FROM ${SHARED_TABLES.EMPLOYEES} WHERE store ILIKE '%' || $1 || '%'`,
     [brand]
   );
   const row = r.rows[0] || {};

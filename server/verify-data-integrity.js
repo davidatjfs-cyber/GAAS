@@ -2,7 +2,7 @@
  * 数据完整性验证脚本
  */
 
-import { pool } from './utils/database.js';
+
 import { Pool } from 'pg';
 
 async function verifyDataIntegrity() {
@@ -100,7 +100,7 @@ async function verifyDataIntegrity() {
     console.log(`一致性检查记录数: ${consistencyCheck.rows.length}`);
     let inconsistencies = 0;
     
-    consistencyCheck.rows.forEach((row, index) => {
+    consistencyCheck.rows.forEach((row, _index) => {
       const issues = [];
       
       if (row.target_revenue !== row.rt_target) {

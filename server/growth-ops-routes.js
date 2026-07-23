@@ -27,7 +27,7 @@ export function registerGrowthOpsRoutes(app, pool) {
     const today = new Date().toISOString().slice(0, 10);
     const holiday = CHINA_HOLIDAYS[today] || null;
     const month = new Date().getMonth() + 1;
-    const day = new Date().getDate();
+    const _day = new Date().getDate();
     const season = month >= 3 && month <= 5 ? '春季' : month >= 6 && month <= 8 ? '夏季' : month >= 9 && month <= 11 ? '秋季' : '冬季';
     const isWeekend = [0, 6].includes(new Date().getDay());
     const dateKey = today;

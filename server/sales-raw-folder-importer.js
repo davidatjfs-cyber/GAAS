@@ -16,7 +16,7 @@ import fs from 'fs';
 import path from 'path';
 import XLSX from 'xlsx';
 
-const LOCK = { running: false };
+const _LOCK = { running: false };
 
 /** 由 index 注册：目录入库出现失败时立刻飞书通知 admin（避免循环依赖） */
 let _importFailureNotifier = null;

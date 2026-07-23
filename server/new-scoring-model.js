@@ -11,7 +11,7 @@
 import { pool, resolveTenantIdDefault } from './utils/database.js';
 import { inferBrandFromStoreName } from './agents.js';
 import { getBrandConfigSync } from './utils/brand-config-loader.js';
-import { safeExecute, safeErrorLog } from './utils/error-handler.js';
+import { safeErrorLog } from './utils/error-handler.js';
 import {
   countFullyCompliantPMDaysInRange,
   getMajixianMeetingExecutionStatsFromAgentMessages

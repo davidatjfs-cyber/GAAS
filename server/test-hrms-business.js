@@ -105,7 +105,7 @@ async function main() {
     log('2_checkin_post', checkinOk || checkinDup, checkinDup ? { note: '1小时内已打卡，防重复逻辑生效' } : (checkinRes.json?.error ? { error: checkinRes.json.error } : null));
   }
   const recordsRes = await request('GET', '/api/checkin/records', null, token);
-  const hasRecords = recordsRes.status === 200 && Array.isArray(recordsRes.json?.records) && recordsRes.json.records.length > 0;
+  const _hasRecords = recordsRes.status === 200 && Array.isArray(recordsRes.json?.records) && recordsRes.json.records.length > 0;
   log('2_checkin_get_records', recordsRes.status === 200, { count: recordsRes.json?.records?.length ?? 0 });
 
   // ========== 第三步：请款审批（payment） ==========

@@ -2202,7 +2202,7 @@ export function registerPhaseRoutes(app, pool) {
     const byName = /[\u4e00-\u9fff\uff08\uff09【】]/.test(sid);
     const posCond = sid ? (byName ? `store_name = $1` : `store_id = $1`) : `$1::text = ''`;
     const itemsCond = sid ? (byName ? `store_name = $1` : `store_code = $1`) : `$1::text = ''`;
-    const profCond = sid ? `store_id = $1` : `$1::text = ''`;
+    const _profCond = sid ? `store_id = $1` : `$1::text = ''`;
     const statsParams = [sid, days];
     const reportStoreCond = sid
       ? (byName

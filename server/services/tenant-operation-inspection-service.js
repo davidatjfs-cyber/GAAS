@@ -1,3 +1,4 @@
+import { SHARED_TABLES } from '@gaas/shared';
 const STATUS = {
   ok: '正常',
   abnormal: '异常',
@@ -8,7 +9,7 @@ const STATUS = {
 
 const SEVERITY_DEDUCTION = { P0: 25, P1: 12, P2: 6, P3: 2 };
 const ALLOWED_SCOPES = new Set(['全部', '基础配置', '数据接入', '数据新鲜度', '任务闭环', 'AI 可运行度', '营销归因']);
-const CORE_TABLES = ['stores', 'pos_order_items', 'growth_customer_profiles', 'customer_ops_source_records'];
+const _CORE_TABLES = ['stores', SHARED_TABLES.POS_ORDER_ITEMS, 'growth_customer_profiles', 'customer_ops_source_records'];
 const RESPONSIBLE_PARTY_LABELS = {
   platform_team: '我方实施 / 系统人员',
   tenant_admin: '租户管理员',
@@ -190,7 +191,7 @@ async function queryIfTable(pool, table, sql, params = []) {
 async function resolveStoreIdFromHrmsState(pool, tenantId, storeId) {
   if (!storeId) return null;
   try {
-    const r = await pool.query(`SELECT data->'stores' AS stores FROM hrms_state WHERE key = $1 LIMIT 1`, [tenantId || 'default']);
+    const r = await pool.query(`SELECT data->'stores' AS stores FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 LIMIT 1`, [tenantId || 'default']);
     const list = Array.isArray(r.rows?.[0]?.stores) ? r.rows[0].stores : [];
     const hit = list.find((s) => String(s?.id || '').trim() === storeId || String(s?.name || '').trim() === storeId);
     if (!hit) return null;
@@ -276,8 +277,8 @@ async function checkBaseConfiguration(pool, ctx, stores) {
   }));
 
   let empR = { exists: false, rows: [] };
-  if (await tableExists(pool, 'employees')) {
-    const cols = await tableColumns(pool, 'employees');
+  if (await tableExists(pool, SHARED_TABLES.EMPLOYEES)) {
+    const cols = await tableColumns(pool, SHARED_TABLES.EMPLOYEES);
     const selectStoreId = cols.has('store_id') ? 'store_id::text AS store_id' : "''::text AS store_id";
     const selectStore = cols.has('store') ? 'store::text AS store' : cols.has('store_name') ? 'store_name::text AS store' : "''::text AS store";
     const whereParts = ['tenant_id=$1'];
@@ -292,8 +293,8 @@ async function checkBaseConfiguration(pool, ctx, stores) {
     }
     empR = await queryIfTable(
       pool,
-      'employees',
-      `SELECT username, role, position, ${selectStore}, ${selectStoreId} FROM employees WHERE ${whereParts.join(' AND ')}`,
+      SHARED_TABLES.EMPLOYEES,
+      `SELECT username, role, position, ${selectStore}, ${selectStoreId} FROM ${SHARED_TABLES.EMPLOYEES} WHERE ${whereParts.join(' AND ')}`,
       params
     );
   }
@@ -305,7 +306,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
   // 保存时会同步写一份到 chairman_config；这里两个来源都查一遍，兼容还没被重新保存过的旧数据。
   let businessHoursByStore = {};
   try {
-    const r = await pool.query(`SELECT data->'stores' AS stores FROM hrms_state WHERE key='chairman_config' LIMIT 1`);
+    const r = await pool.query(`SELECT data->'stores' AS stores FROM ${SHARED_TABLES.HRMS_STATE} WHERE key='chairman_config' LIMIT 1`);
     const storeMap = r.rows?.[0]?.stores || {};
     for (const [name, profile] of Object.entries(storeMap)) {
       businessHoursByStore[name] = String(profile?.businessHours || '').trim();
@@ -314,7 +315,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
     console.warn('[tenant-inspection] chairman_config business hours lookup skipped:', e?.message);
   }
   try {
-    const r2 = await pool.query(`SELECT data->'stores' AS stores FROM hrms_state WHERE key=$1 LIMIT 1`, [ctx.tenantId || 'default']);
+    const r2 = await pool.query(`SELECT data->'stores' AS stores FROM ${SHARED_TABLES.HRMS_STATE} WHERE key=$1 LIMIT 1`, [ctx.tenantId || 'default']);
     const storeList = Array.isArray(r2.rows?.[0]?.stores) ? r2.rows[0].stores : [];
     for (const s of storeList) {
       const hours = String(s?.businessHours || '').trim();
@@ -397,7 +398,7 @@ async function checkDataIntegration(pool, ctx, stores = []) {
   // 这张表本身没有手机号字段——真实手机号在 pos_orders 上，这里改成按 order_no 关联过去查。
   const posR = await queryIfTable(
     pool,
-    'pos_order_items',
+    SHARED_TABLES.POS_ORDER_ITEMS,
     `SELECT COUNT(*)::int AS total,
             COUNT(*) FILTER (WHERE poi.biz_date=$3::date)::int AS yesterday_total,
             MAX(poi.biz_date)::text AS latest_date,
@@ -405,7 +406,7 @@ async function checkDataIntegration(pool, ctx, stores = []) {
             COUNT(*) FILTER (WHERE COALESCE(po.phone,'') <> '')::int AS rows_with_phone,
             COUNT(DISTINCT poi.dish_name)::int AS dish_rows,
             COUNT(DISTINCT poi.dish_name) FILTER (WHERE COALESCE(poi.category,'') <> '')::int AS categorized_dish_rows
-       FROM pos_order_items poi
+       FROM ${SHARED_TABLES.POS_ORDER_ITEMS} poi
        LEFT JOIN pos_orders po ON po.order_no = poi.order_no AND po.tenant_id = poi.tenant_id
       WHERE poi.tenant_id=$1 AND ($2::text[] IS NULL OR poi.store_code = ANY($2::text[]) OR poi.store_name = ANY($2::text[]) OR poi.store_name ILIKE ANY($4::text[]))`,
     [ctx.tenantId, storeValues.length ? storeValues : null, yesterday, storePatterns.length ? storePatterns : null]
@@ -653,14 +654,14 @@ async function checkTaskClosedLoop(pool, ctx, stores = []) {
   const storePatterns = storeFilterPatterns(storeValues);
   const taskR = await queryIfTable(
     pool,
-    'master_tasks',
+    SHARED_TABLES.MASTER_TASKS,
     `SELECT COUNT(*)::int AS total,
             COUNT(*)::int AS generated,
             COUNT(*) FILTER (WHERE status IN ('pending_response','pending_review','resolved','settled','closed','hr_filed'))::int AS confirmed,
             COUNT(*) FILTER (WHERE status IN ('resolved','settled','closed','hr_filed'))::int AS executed,
             COUNT(*) FILTER (WHERE status NOT IN ('resolved','settled','closed','hr_filed') AND COALESCE(timeout_at, dispatched_at + INTERVAL '1 day') < NOW())::int AS overdue,
             COUNT(*) FILTER (WHERE review_result <> '{}'::jsonb OR status IN ('resolved','settled','closed','hr_filed'))::int AS reviewed
-       FROM master_tasks
+       FROM ${SHARED_TABLES.MASTER_TASKS}
       WHERE tenant_id=$1 AND ($2::text[] IS NULL OR store = ANY($2::text[]) OR store ILIKE ANY($3::text[]) OR source_data->>'store_id' = ANY($2::text[]))`,
     [ctx.tenantId, storeValues.length ? storeValues : null, storePatterns.length ? storePatterns : null]
   );

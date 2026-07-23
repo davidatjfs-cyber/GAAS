@@ -5,10 +5,11 @@
 
 import { pool, resolveTenantIdDefault, runForActiveTenants, runWithSystemTenantContext } from './utils/database.js';
 import { inferBrandFromStoreName } from './agents.js';
-import { safeExecute, safeErrorLog } from './utils/error-handler.js';
+
 import { getTenantFeishuIntegration, saveTenantFeishuIntegration } from './tenant-integrations.js';
 import { allowLegacyFeishuFallback } from './safety.js';
 import { fetchFeishuTenantAccessToken } from '@gaas/shared/feishu-token.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 let _feishuSyncFailureNotifier = null;
 /** 由 index 注册：飞书→PG 定时/按表同步失败时立刻通知 admin */
@@ -132,7 +133,7 @@ export async function resolveWebhookTenantId(appToken) {
     try {
       const rows = await runWithSystemTenantContext(() =>
         pool().query(
-          `SELECT DISTINCT tenant_id FROM tenant_integrations
+          `SELECT DISTINCT tenant_id FROM ${SHARED_TABLES.TENANT_INTEGRATIONS}
            WHERE integration_key = $1 AND status = 'active'`,
           ['feishu_bitable']
         )

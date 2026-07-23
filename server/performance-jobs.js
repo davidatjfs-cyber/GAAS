@@ -25,6 +25,7 @@ import {
   resolveAgentCanonicalStore
 } from './v2-store-alignment.js';
 import { getBrandForStoreSync } from './utils/brand-config-loader.js';
+import { SHARED_TABLES } from '@gaas/shared';
 
 function roleLabelZh(r) {
   const x = String(r || '').trim();
@@ -144,7 +145,7 @@ export async function countEligibleMonthlyPerformanceUsers() {
             COALESCE(NULLIF(TRIM(name), ''), username) AS name,
             TRIM(store) AS store,
             role
-     FROM feishu_users
+     FROM ${SHARED_TABLES.FEISHU_USERS}
      WHERE registered = true
        AND role IN ('store_manager', 'store_production_manager')
        AND TRIM(COALESCE(store, '')) <> ''`
@@ -179,7 +180,7 @@ async function notifyHrmsPerfAdmins(taskName, err) {
     `⚠️ 【HRMS 定时任务失败】\n任务：${taskName}\n时间：${timeStr}（上海）\n错误：${msg}\n\n请检查服务日志并在必要时联系运维补跑或补发。`;
   try {
     const hq = await pool().query(
-      `SELECT username FROM feishu_users WHERE registered = true AND role IN ('admin','hq_manager') AND open_id NOT LIKE '%probe%'`
+      `SELECT username FROM ${SHARED_TABLES.FEISHU_USERS} WHERE registered = true AND role IN ('admin','hq_manager') AND open_id NOT LIKE '%probe%'`
     );
     for (const h of hq.rows || []) {
       const fu = await lookupFeishuUserByUsername(h.username);
@@ -199,7 +200,7 @@ export async function runMonthlyPerformanceClose() {
             COALESCE(NULLIF(TRIM(name), ''), username) AS name,
             TRIM(store) AS store,
             role
-     FROM feishu_users
+     FROM ${SHARED_TABLES.FEISHU_USERS}
      WHERE registered = true
        AND role IN ('store_manager', 'store_production_manager')
        AND TRIM(COALESCE(store, '')) <> ''`
@@ -256,7 +257,7 @@ export async function runMonthlyPerformanceClose() {
     const summary = `月度自动评分（${period}）：执行力 ${es.execution_rating || '—'}，态度 ${es.attitude_rating || '—'}，能力 ${es.ability_rating || '—'}，门店 ${fmtStoreLevelLabel(storeRating)}。`;
     try {
       await pool().query(
-          `INSERT INTO agent_scores (brand, store, username, name, role, period, score_model, base_score, total_score, breakdown, deductions, summary, tenant_id)
+          `INSERT INTO ${SHARED_TABLES.AGENT_SCORES} (brand, store, username, name, role, period, score_model, base_score, total_score, breakdown, deductions, summary, tenant_id)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13)
            ON CONFLICT (brand, store, username, period, tenant_id)
            DO UPDATE SET
@@ -295,7 +296,7 @@ export async function runMonthlyPerformanceClose() {
 async function sendFeishuPerformanceDigest(period) {
   const rows = await pool().query(
     `SELECT username, name, store, role, total_score, breakdown, summary
-     FROM agent_scores
+     FROM ${SHARED_TABLES.AGENT_SCORES}
      WHERE period = $1 AND score_model = 'new_model_monthly'
      ORDER BY store, role`,
     [period]
@@ -318,7 +319,7 @@ async function sendFeishuPerformanceDigest(period) {
 
   // 管理员侧「全员汇总」文本已移除：与 agents-service 每月 10 日「月度评级汇总」飞书卡片重复，避免噪音。
   await pool().query(
-    `UPDATE agent_scores SET feishu_notified = TRUE
+    `UPDATE ${SHARED_TABLES.AGENT_SCORES} SET feishu_notified = TRUE
      WHERE period = $1 AND score_model = 'new_model_monthly'`,
     [period]
   ).catch(() => {});
@@ -445,7 +446,7 @@ function buildDishOptimizationMarkdown({ start, end, reportTitle, tenantId = 'de
       `SELECT store, biz_type, dish_name,
               SUM(qty)::numeric AS qty,
               SUM(revenue)::numeric AS revenue
-       FROM pos_sales_detail
+       FROM ${SHARED_TABLES.POS_SALES_DETAIL}
        WHERE date >= $1::date AND date <= $2::date AND COALESCE(dish_name,'') <> '' AND tenant_id = $3
        GROUP BY store, biz_type, dish_name`,
       [start, end, tenantId]
@@ -532,7 +533,7 @@ function splitMarkdownChunks(md, maxLen = 3400) {
 
 async function sendDishReportCardsToHq(fullMd, cardHeaderTitle, tenantId = 'default') {
   const hq = await pool().query(
-    `SELECT username FROM feishu_users WHERE registered = true AND role IN ('admin','hq_manager') AND open_id NOT LIKE '%probe%' AND tenant_id = $1`,
+    `SELECT username FROM ${SHARED_TABLES.FEISHU_USERS} WHERE registered = true AND role IN ('admin','hq_manager') AND open_id NOT LIKE '%probe%' AND tenant_id = $1`,
     [tenantId]
   );
   const chunks = splitMarkdownChunks(fullMd, 3400);

@@ -28,7 +28,7 @@ import {
   calculateEmployeeScore
 } from './new-scoring-model.js';
 import { 
-  AgentCommunicationSystem, 
+
   AgentCommunicationHelper 
 } from './agent-communication-system.js';
 import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js'
@@ -66,7 +66,7 @@ import {
   calendarPreviousMonthRangeShanghai,
   calendarLastCompletedWeekMonSunShanghai
 } from './bi-weekly-report.js';
-import { extractRelationsFromBitableRecord, extractAnomalyRelations } from './knowledge-graph.js';
+import { extractRelationsFromBitableRecord } from './knowledge-graph.js';
 import { handleHqBrainMessage } from './hq-planner-agent.js';
 import {
   feishuStoreSearchPatterns,
@@ -90,9 +90,9 @@ import {
   matchAnalysisRule,
   getSessionState,
   setSessionState,
-  resetSessionState,
-  setDataExecutorPool,
-  purgeExpiredCache,
+
+
+
   extractTimeRangeFromText,
   runBusinessDiagnosis,
   setCallLLMBridge,
@@ -1723,7 +1723,7 @@ async function buildBiDeterministicOpsReportCountReply(store, text) {
     }
   });
   const feedbackList = Array.from(feedbackTop.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const feedbackText = feedbackList.map(([k, v]) => `「${k}」(${v}次)`).join('、') || '无';
+  const _feedbackText = feedbackList.map(([k, v]) => `「${k}」(${v}次)`).join('、') || '无';
   const feedbackCount = rows.filter(x => { const r = String(x?.unsatisfied_items || '').trim(); return r && !blockedFb.has(r); }).length;
 
   // 识别负面反馈（排除明显正面内容后，匹配负面关键词）
@@ -1738,7 +1738,7 @@ async function buildBiDeterministicOpsReportCountReply(store, text) {
   });
   const negList = Array.from(negFeedbackTop.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const negCount = negList.reduce((s, [, v]) => s + v, 0);
-  const negText = negList.map(([k, v]) => `「${k}」(${v}次)`).join('、');
+  const _negText = negList.map(([k, v]) => `「${k}」(${v}次)`).join('、');
 
   const dissatisfactionIntent = /(最不满意|哪里不满意|哪些不满意|不满意点|不满意.*菜|菜品.*不满意|出品.*不满意)/.test(q);
   if (dissatisfactionIntent) {
@@ -2567,8 +2567,8 @@ function getLLMClientConfig(modelName, options = {}) {
 const _isProd = String(process.env.NODE_ENV || '').trim() === 'production';
 const LARK_APP_ID = process.env.LARK_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : '');
 const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
-const LARK_ENCRYPT_KEY = process.env.LARK_ENCRYPT_KEY || '';
-const LARK_VERIFICATION_TOKEN = process.env.LARK_VERIFICATION_TOKEN || '';
+const _LARK_ENCRYPT_KEY = process.env.LARK_ENCRYPT_KEY || '';
+const _LARK_VERIFICATION_TOKEN = process.env.LARK_VERIFICATION_TOKEN || '';
 
 // Bitable Configuration - 支持多个配置
 const BITABLE_CONFIGS = {
@@ -2836,12 +2836,12 @@ async function refreshOpsAgentRuntimeConfig() {
 }
 
 // 向后兼容的默认配置
-const BITABLE_APP_ID = process.env.BITABLE_APP_ID || BITABLE_CONFIGS.ops_checklist.appId;
-const BITABLE_APP_SECRET = process.env.BITABLE_APP_SECRET || BITABLE_CONFIGS.ops_checklist.appSecret;
-const BITABLE_APP_TOKEN = process.env.BITABLE_APP_TOKEN || BITABLE_CONFIGS.ops_checklist.appToken;
-const BITABLE_TABLE_ID = process.env.BITABLE_TABLE_ID || BITABLE_CONFIGS.ops_checklist.tableId;
+const _BITABLE_APP_ID = process.env.BITABLE_APP_ID || BITABLE_CONFIGS.ops_checklist.appId;
+const _BITABLE_APP_SECRET = process.env.BITABLE_APP_SECRET || BITABLE_CONFIGS.ops_checklist.appSecret;
+const _BITABLE_APP_TOKEN = process.env.BITABLE_APP_TOKEN || BITABLE_CONFIGS.ops_checklist.appToken;
+const _BITABLE_TABLE_ID = process.env.BITABLE_TABLE_ID || BITABLE_CONFIGS.ops_checklist.tableId;
 
-const BRAND_ANALYSIS_CONFIG = {
+const _BRAND_ANALYSIS_CONFIG = {
   '洪潮': {
     marginTolerance: 0.01,
     scoreWeights: { quality: 0.4, cost: 0.3, response: 0.3 },
@@ -3146,7 +3146,7 @@ function getOpsChecklistItems(checkType, storeName = '', brandName = '') {
   return Array.isArray(target?.checklist) ? target.checklist : [];
 }
 
-function buildOpsChecklistCard({ checkType, brandName, storeName, abnormalCount = 0, totalCount = 0 }) {
+function buildOpsChecklistCard({ checkType, brandName, storeName, abnormalCount = 0, _totalCount = 0 }) {
   const typeLabel = formatChecklistTypeLabel(checkType);
   const items = getOpsChecklistItems(checkType, storeName, brandName);
   const listMd = items.length
@@ -4390,7 +4390,7 @@ function extractDissatisfactionReasonFromFields(fields) {
 
 function extractTableVisitItems(row) {
   const dishText = String(row?.dissatisfaction_dish || '').trim();
-  const reasonText = String(row?.unsatisfied_items || '').trim();
+  const _reasonText = String(row?.unsatisfied_items || '').trim();
 
   const dishItems = dishText
     ? dishText
@@ -4979,7 +4979,7 @@ export async function getBitableRecords(configKey = 'ops_checklist', options = {
       lastErr = String(e?.message || e);
 
       if (bizCode || (errBody && typeof errBody === 'object')) {
-        const code = Number(bizCode);
+        const _code = Number(bizCode);
         if (bizCode === 1254607 || bizCode === '1254607' || /data not ready/i.test(String(errBody?.msg || ''))) {
           _isDataNotReady = true;
           if (attempt >= maxRetries) {
@@ -7805,7 +7805,7 @@ export async function runDataAuditor(checkMode = 'daily', tenantId = 'default') 
   const issues = [];
   const enableDailyReports = isBiSourceEnabled('daily_reports');
   const enableTableVisit = isBiSourceEnabled('table_visit_records') || isBiSourceEnabled('table_visit_bitable');
-  const enableBadReviews = isBiSourceEnabled('bad_reviews');
+  const _enableBadReviews = isBiSourceEnabled('bad_reviews');
   
   // 重新启用数据源质量检查（带错误处理）
   await checkDataSourceQuality();
@@ -8676,12 +8676,12 @@ export async function runChiefEvaluator(period, tenantId = 'default') {
 // 9. Message Router
 // ─────────────────────────────────────────────
 
-const AUDIT_KEYWORDS = ['损耗', '盘点', '毛利', '牛肉', '成本', '差评', '折扣', '营收', '对账', '异常'];
-const OPS_KEYWORDS = ['图片', '卫生', '检查', '拍照', '摆盘', '收货', '消毒', '开市', '闭市', '巡检'];
-const EVAL_KEYWORDS = ['分数', '绩效', '考核', '奖金', '得分', '扣分', '排名', '评价', '这周'];
-const HR_KEYWORDS = ['离职', '辞职', '入职', '转正', '晋升', '调岗', '加薪', '薪资', '工资', '请假', '休假', '社保', '人事', '档案', '考勤'];
-const APPEAL_KEYWORDS = ['申诉', '取消扣分', '不公平', '误判', '恢复', '投诉', '举报'];
-const SOP_KEYWORDS = ['SOP', '赔付', '退款', '培训', '入职培训', '课件', '带教', '讲师', '考核培训', '技能培训', '标准作业'];
+const _AUDIT_KEYWORDS = ['损耗', '盘点', '毛利', '牛肉', '成本', '差评', '折扣', '营收', '对账', '异常'];
+const _OPS_KEYWORDS = ['图片', '卫生', '检查', '拍照', '摆盘', '收货', '消毒', '开市', '闭市', '巡检'];
+const _EVAL_KEYWORDS = ['分数', '绩效', '考核', '奖金', '得分', '扣分', '排名', '评价', '这周'];
+const _HR_KEYWORDS = ['离职', '辞职', '入职', '转正', '晋升', '调岗', '加薪', '薪资', '工资', '请假', '休假', '社保', '人事', '档案', '考勤'];
+const _APPEAL_KEYWORDS = ['申诉', '取消扣分', '不公平', '误判', '恢复', '投诉', '举报'];
+const _SOP_KEYWORDS = ['SOP', '赔付', '退款', '培训', '入职培训', '课件', '带教', '讲师', '考核培训', '技能培训', '标准作业'];
 
 // Agent name prefix mapping
 const AGENT_PREFIX = {
@@ -11219,7 +11219,7 @@ export async function onFeishuEvent(body) {
     const checklistType = detectOpsChecklistType(text);
     if (msgType === 'text' && checklistType) {
       const sharedState = await getSharedState();
-      const brandContext = resolveBrandContextByStore(sharedState, feishuUser.store || '');
+      const _brandContext = resolveBrandContextByStore(sharedState, feishuUser.store || '');
       const storeName = String(feishuUser.store || '').trim();
       const typeLabel = checklistType === 'opening' ? '开市' : '收档';
       

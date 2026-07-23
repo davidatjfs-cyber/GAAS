@@ -126,7 +126,7 @@ export function buildDiagnosisReport(lead = {}) {
 export function buildDemoBrief(lead = {}, funnel = {}) {
   const d = diagnoseLead(lead);
   const demos = funnel.demos || [];
-  const latestDemo = demos[0] || {};
+  const _latestDemo = demos[0] || {};
   return {
     customer: lead.company || lead.name || lead.lead_key || '未知名称',
     store_count: lead.store_count || '未明',

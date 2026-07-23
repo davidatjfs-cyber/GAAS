@@ -5,7 +5,7 @@
  *   WECOM_KF_OPEN_KFID
  *   WECOM_KF_TOKEN / WECOM_KF_AES_KEY（可与 WECOM_CALLBACK_* 相同）
  */
-import { createHash, createDecipheriv, createCipheriv, randomBytes } from 'crypto';
+import { createHash, createDecipheriv } from 'crypto';
 import { transcribeAmrVoice } from './sales-asr.js';
 import { synthesizeSpeechAmr } from './sales-tts.js';
 

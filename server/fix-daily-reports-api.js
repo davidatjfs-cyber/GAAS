@@ -1,3 +1,4 @@
+import { SHARED_TABLES } from '@gaas/shared';
 /**
  * 修复营业日报API，合并JSON和数据库表数据
  */
@@ -27,7 +28,7 @@ export function patchDailyReportsAPI(app) {
       
       // 获取daily_reports表中的数据
       const dailyReportsData = await pool().query(`
-        SELECT * FROM daily_reports 
+        SELECT * FROM ${SHARED_TABLES.DAILY_REPORTS} 
         WHERE 1=1
         ${store ? 'AND store = $1' : ''}
         ORDER BY date DESC

@@ -188,7 +188,7 @@ export async function getMyTasks({ store, station, username, date }) {
       return { success: true, tasks: [], station, date: taskDate };
     }
 
-    const dishNames = mappings.rows.map(r => r.dish_name);
+    const _dishNames = mappings.rows.map(r => r.dish_name);
 
     // 查今日已确认的记录
     const confirmed = await pool().query(

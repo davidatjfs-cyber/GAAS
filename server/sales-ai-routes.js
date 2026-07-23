@@ -1,7 +1,7 @@
 /**
  * 销售 AI 路由：沙盒试聊 + 线索工作台 + 微信客服回调 + 销售漏斗/会客/风险
  */
-import { ensureSalesTables, listLeads, getLead, loadLeadFunnel, upsertTask, addEvent, newLeadKey } from './services/sales/sales-store.js';
+import { ensureSalesTables, listLeads, getLead, upsertTask, addEvent, newLeadKey } from './services/sales/sales-store.js';
 import {
   handleInboundMessage,
   takeoverConversation,
@@ -9,9 +9,9 @@ import {
   getLeadDetail,
   recordSalesReply,
   setSalesNotify,
-  buildDiagnosisReport,
+
   detectOvercommitment,
-  matchObjection,
+
 } from './services/sales/sales-session.js';
 import {
   buildBossDailyReport,
@@ -48,7 +48,7 @@ import { listSendableContentAssets, sendContentAssetToLead } from './services/sa
 import { getCreditRisk, scanCreditRisks } from './services/sales/sales-credit-risk.js';
 import { brandKey, getCreditPoolRisk } from './services/sales/sales-order-credit.js';
 import { buildLeadSummary, calculateSla } from './services/sales/sales-collaboration-service.js';
-import { recordStageChange, transitionLeadStage } from './services/sales/sales-store.js';
+import { transitionLeadStage } from './services/sales/sales-store.js';
 import { runSalesSlaScan } from './services/sales/sales-sla-service.js';
 import { runDeployCheckSlaScan, completeDeployCheck } from './services/sales/onboarding-sla-service.js';
 import { runHealthCheckPeriodScan, deliverHealthCheckReport } from './services/sales/health-check-period-service.js';

@@ -2,7 +2,7 @@
  * 销售 AI 后台：更新档案、任务、建议、日报、风险预警、漏斗
  */
 import { scoreLead, persistScore, computeWinProbability } from './sales-scoring.js';
-import { addEvent, ensureSalesTables, listLeads, upsertTask, completeTask, loadLeadFunnel } from './sales-store.js';
+import { addEvent, ensureSalesTables, listLeads, upsertTask } from './sales-store.js';
 import { deriveTagsForLead, recommendCaseTheme, recommendAssets, recommendNextSteps } from './sales-tags.js';
 import { buildDiagnosisReport, summarizeMeeting, detectOvercommitment, matchObjection, getObjectionResponse, buildDemoBrief } from './sales-diagnosis.js';
 

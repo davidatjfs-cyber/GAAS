@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setCommissionRule, generateCommissionForDeal, listCommissions, updateCommissionStatus } from './sales-commission-service.js';
+import { setCommissionRule, generateCommissionForDeal, updateCommissionStatus } from './sales-commission-service.js';
 
 function makeMockPool() {
   const commissionRules = [];

@@ -39,15 +39,15 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
     getSharedState,
     calcEmployeeMonthlyLeaveBalance,
     findUserSalary,
-    isHq,
-    canAccessAnalyticsReports,
+
+
     appendNotifications,
     makeNotif,
-    hrmsNowISO,
+
     safeMonthOnly,
     parseMonth,
     dbListEmployeesForReports,
-    stateFindUserRecord,
+
     isLegacyTestUsername
   } = deps;
 

@@ -7,7 +7,7 @@ import {
   getModelTier, 
   getTierConfig, 
   trackLLMCall,
-  isTierBudgetExceeded,
+
   MODEL_TIERS,
   ROLE_TIER_MAP 
 } from './hq-brain-config.js';
