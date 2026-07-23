@@ -1659,7 +1659,95 @@
             }
         }
 
+        /* ══ 增长看板 v2 · 模块抽屉 + 筛选摘要 ══
+           原来一级 9 个 tab 横向滚动，手机上只看得见 2.5 个且无滚动提示，
+           后面 6 个（执行中心/设置治理等）等于不存在。
+           这里把跨组导航收进一个底部抽屉（12 个成员 + 3 个外链工具一次全可见），
+           组内切换仍走原有的 #growth-subnav 分段。showGrowthTab 本身未改。 */
+        var GX_EXTERNAL = [
+            { label: '营销发券（手动补发）', url: '/campaign.html' },
+            { label: '储值召回（手动）', url: '/winback.html' },
+            { label: '储值提醒（手动测试）', url: '/svremind.html' }
+        ];
+
+        function gxOpenSheet() {
+            var sheet = document.getElementById('gx-sheet');
+            var body = document.getElementById('gx-sheet-body');
+            if (!sheet || !body) return;
+            var cur = (typeof __growthActiveTab !== 'undefined') ? __growthActiveTab : 'dashboard';
+            var html = '';
+            (typeof GROWTH_GROUPS !== 'undefined' ? GROWTH_GROUPS : []).forEach(function (g) {
+                html += '<div class="gx-grp"><div class="gx-grp__t">' + escapeHtml(g.label) + '</div>';
+                g.members.forEach(function (m) {
+                    var on = m === cur;
+                    var label = (typeof GROWTH_MEMBER_LABEL !== 'undefined' && GROWTH_MEMBER_LABEL[m]) || m;
+                    html += '<button type="button" class="gx-item' + (on ? ' is-on' : '') + '"'
+                         + ' onclick="gxPick(\'' + m + '\')">'
+                         + '<span class="gx-item__dot"></span>' + escapeHtml(label) + '</button>';
+                });
+                html += '</div>';
+            });
+            html += '<div class="gx-grp"><div class="gx-grp__t">手动工具</div>';
+            GX_EXTERNAL.forEach(function (x) {
+                html += '<button type="button" class="gx-item" onclick="gxOpenExternal(\'' + x.url + '\')">'
+                     + '<span class="gx-item__dot"></span>' + escapeHtml(x.label)
+                     + '<span class="gx-item__ext">新窗口</span></button>';
+            });
+            html += '</div>';
+            body.innerHTML = html;
+            sheet.classList.add('is-open');
+            sheet.setAttribute('aria-hidden', 'false');
+            document.addEventListener('keydown', gxSheetEsc);
+        }
+
+        function gxCloseSheet() {
+            var sheet = document.getElementById('gx-sheet');
+            if (!sheet) return;
+            sheet.classList.remove('is-open');
+            sheet.setAttribute('aria-hidden', 'true');
+            document.removeEventListener('keydown', gxSheetEsc);
+        }
+        function gxSheetEsc(e) { if (e.key === 'Escape') gxCloseSheet(); }
+
+        function gxPick(member) {
+            gxCloseSheet();
+            try { showGrowthTab(member); } catch (e) {}
+        }
+        function gxOpenExternal(url) {
+            gxCloseSheet();
+            window.open(url, '_blank');
+        }
+
+        // 切换器标题：显示「分组 · 成员」，成员与分组同名时不重复
+        function gxSyncSwitchLabel(group, member) {
+            var el = document.getElementById('gx-switch-label');
+            if (!el) return;
+            var gl = group && group.label ? group.label : '';
+            var ml = (typeof GROWTH_MEMBER_LABEL !== 'undefined' && GROWTH_MEMBER_LABEL[member]) || member || '';
+            var txt = (gl && ml && gl !== ml) ? (gl + ' \u00b7 ' + ml) : (ml || gl);
+            if (el.textContent !== txt) el.textContent = txt;
+        }
+
+        // 筛选摘要：把三个 select 的当前选项拼成一行
+        function gxSyncFilterSummary() {
+            var el = document.getElementById('gx-filter-summary');
+            if (!el) return;
+            var pick = function (id, fallback) {
+                var sel = document.getElementById(id);
+                if (!sel) return fallback;
+                var o = sel.options[sel.selectedIndex];
+                return (o && o.text) ? o.text.trim() : fallback;
+            };
+            var txt = [
+                pick('growth-store-filter', '全部门店'),
+                pick('growth-campaign-filter', '全部活动'),
+                pick('growth-days-filter', '近30天')
+            ].join(' \u00b7 ');
+            if (el.textContent !== txt) el.textContent = txt;
+        }
+
         function renderGrowthSubnav(group, activeMember) {
+            try { gxSyncSwitchLabel(group, activeMember); gxSyncFilterSummary(); } catch (e) {}
             var host = document.getElementById('growth-subnav');
             if (!host) return;
             if (!group || group.members.length <= 1) { host.innerHTML = ''; host.style.display = 'none'; return; }

@@ -423,11 +423,13 @@
                 if (gr) {
                     let h;
                     try {
+                        // 用 hourCycle:'h23'：hour12:false 在部分引擎午夜会返回 "24"
                         h = parseInt(new Intl.DateTimeFormat('en-US', {
-                            hour: 'numeric', hour12: false, timeZone: 'Asia/Shanghai'
+                            hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Shanghai'
                         }).format(new Date()), 10);
                     } catch (e) { h = new Date().getHours(); }
                     if (isNaN(h)) h = new Date().getHours();
+                    if (h >= 24) h = 0;
                     let g;
                     if (h < 5) g = '夜深了';
                     else if (h < 11) g = '早上好';
