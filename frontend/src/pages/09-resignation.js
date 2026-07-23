@@ -1422,15 +1422,19 @@
                         try { await HRMS_API.request('/api/notifications/' + encodeURIComponent(dbId), { method: 'DELETE' }); } catch (e) { console.warn('db notif delete failed', e); }
                     }
                 } else {
+                    if (id) {
+                        try { await HRMS_API.deleteAnnouncementApi(id); } catch (e) {
+                            // 兼容旧通知：本地仍删
+                            console.warn('announcement delete failed', e);
+                        }
+                    }
                     const anns = Array.isArray(data.announcements) ? data.announcements.slice() : [];
-                    const realIdx = anns.findIndex(a => a.id === id);
-                    if (realIdx >= 0) { anns.splice(realIdx, 1); data.announcements = anns; }
+                    data.announcements = anns.filter(a => String(a?.id || '') !== String(id));
                     if (dbId) {
                         try { await HRMS_API.request('/api/notifications/' + encodeURIComponent(dbId), { method: 'DELETE' }); } catch (e) { console.warn('db ann delete failed', e); }
                     }
                 }
                 HRMS_STORE.set(data);
-                try { await HRMS_API.saveState(HRMS_STORE.ensure()); } catch (e) { console.warn('state save failed', e); }
                 showNotification('通知已删除', 'success');
                 renderProfileNotifications();
             } catch (e) {

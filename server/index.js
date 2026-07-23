@@ -29,6 +29,7 @@ import { hydrateNotificationsFromTable } from './domains/notifications/service.j
 import { hydrateExamResultsFromTable } from './domains/exam-results/service.js';
 import { registerStoresDomainRoutes } from './domains/stores/routes.js';
 import { registerPaymentConfigRoutes } from './domains/payment-config/routes.js';
+import { registerRemainingStateRoutes } from './domains/remaining-state/routes.js';
 import {
   getTenantIntegrationSummary,
   saveTenantFeishuIntegration,
@@ -14655,6 +14656,13 @@ registerStoresDomainRoutes(app, authRequired, {
 registerPaymentConfigRoutes(app, authRequired, {
   getSharedState,
   saveSharedState,
+  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
+});
+
+registerRemainingStateRoutes(app, authRequired, {
+  getSharedState,
+  saveSharedState,
+  mergeSharedStateFields,
   resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
 });
 

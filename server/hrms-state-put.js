@@ -6,35 +6,18 @@
  *
  * 策略：以服务端 existing 为底，仅 overlay 白名单字段。白名单外的键一律保留服务端值。
  * 字段落表后从 STATE_PUT_WHITELIST 删除；清空 = 坑填完。
+ *
+ * A3 终态：白名单仅保留配置类 settings。
  */
 
-/** 仍允许经 PUT /api/state 写入的顶层字段（未落表 / 仍走前端 saveState 的业务数据） */
-/** A3：白名单收敛为配置/内容类；已有独立 API 的业务事实一律 SERVER_OWNED */
+/** 仍允许经 PUT /api/state 写入的顶层字段（配置类） */
 export const STATE_PUT_WHITELIST = Object.freeze([
-  'users',
   'settings',
-  'examAssignments',
-  'questionBank',
-  'questionSets',
-  'announcements',
-  'trainingTasks',
-  'trainingMaterials',
 ]);
 
 /**
  * 服务端权威字段（禁止 PUT 覆盖）。有独立 API 或由 mergeSharedStateFields / 审批终审写入。
- * 2026-07 Week2-3：pointRecords → point_records 表；
- * payrollAdjustments / salaryAdjustments / monthlyConfirmations → hrms_payroll_domain。
- * 2026-07 A1：employees → employees 表。
- * 2026-07 A2：roleModules / approvalFlows / paymentFlowByStore → hr_rating_configs。
- * 2026-07 A3：pointRules / forecast* 移出白名单（已有窄 API）。
- * 2026-07 A3续：knowledge / examResults / notifications 表权威；
- *   exams / promotionRequests / promotionAbilityRequirements / rewardPunishments 死字段移出。
- * 2026-07 A3再续：stores 走窄 API（含 DELETE），禁止 PUT /api/state 覆盖。
- * 2026-07 A3再续2：brands / gmMailbox 走窄 API，禁止 PUT 覆盖。
- * 2026-07 A3再续3：paymentSettings / paymentBudgets 走 /api/payment-config。
- * 2026-07 A3再续4：promotionTracks（服务端权威+GET）/ roles（无有效写路径）移出白名单。
- * GET /api/state 会用表覆盖这些镜像字段。运行时靠「不在白名单」生效。
+ * 2026-07 A3 终态：业务事实一律 SERVER_OWNED；仅 settings 可经 PUT /api/state。
  */
 export const STATE_PUT_SERVER_OWNED = Object.freeze([
   'employees',
@@ -45,6 +28,13 @@ export const STATE_PUT_SERVER_OWNED = Object.freeze([
   'paymentBudgets',
   'promotionTracks',
   'roles',
+  'users',
+  'announcements',
+  'examAssignments',
+  'questionBank',
+  'questionSets',
+  'trainingTasks',
+  'trainingMaterials',
   'roleModules',
   'approvalFlows',
   'paymentFlowByStore',

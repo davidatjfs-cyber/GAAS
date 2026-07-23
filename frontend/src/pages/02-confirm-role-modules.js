@@ -2680,9 +2680,15 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 ann.pinned = true;
                 ann.pin_until = pinUntilVal ? new Date(pinUntilVal).toISOString() : null;
             }
-            data.announcements.push(ann);
-            HRMS_STORE.set(data);
-            try { await HRMS_API.saveState(HRMS_STORE.ensure()); } catch (e) { console.warn('state save after announcement publish failed', e); }
+            try {
+                const resp = await HRMS_API.createAnnouncement(ann);
+                const saved = resp?.item || ann;
+                data.announcements.push(saved);
+                HRMS_STORE.set(data);
+            } catch (e) {
+                showNotification('公告发布失败：' + String(e?.message || e), 'error');
+                return;
+            }
             closeAnnouncementModal();
             try { loadProfileData(); } catch (e) {}
             showNotification('公告已发布', 'success');
@@ -2700,13 +2706,17 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
 
              const data = HRMS_STORE.ensure();
              const anns = Array.isArray(data.announcements) ? data.announcements : [];
-             const next = anns.filter(a => String(a.id) !== id);
-             data.announcements = next;
-             if (id) {
-                 try { await HRMS_API.request('/api/notifications/' + encodeURIComponent(id), { method: 'DELETE' }); } catch (e) { console.warn('db announcement delete failed', e); }
+             try {
+                 await HRMS_API.deleteAnnouncementApi(id);
+                 if (id) {
+                     try { await HRMS_API.request('/api/notifications/' + encodeURIComponent(id), { method: 'DELETE' }); } catch (e) { console.warn('db announcement delete failed', e); }
+                 }
+                 data.announcements = anns.filter(a => String(a.id) !== id);
+                 HRMS_STORE.set(data);
+             } catch (e) {
+                 showNotification('删除失败：' + String(e?.message || e), 'error');
+                 return;
              }
-             HRMS_STORE.set(data);
-             try { await HRMS_API.saveState(HRMS_STORE.ensure()); } catch (e) { console.warn('state save after deleteAnnouncement failed', e); }
              try { loadProfileData(); } catch (e) {}
              showNotification('已删除，所有员工将不再看到该通知', 'success');
          }

@@ -1322,7 +1322,7 @@
             if (boxUserSets) boxUserSets.style.display = 'none';
         }
 
-        function confirmExamAssignModal() {
+        async function confirmExamAssignModal() {
             if (!isAdminUser()) {
                 showNotification('您没有安排考试权限', 'warning');
                 return;
@@ -1386,7 +1386,14 @@
             };
 
             const cur = (HRMS_STORE.getExamAssignments ? HRMS_STORE.getExamAssignments() : []) || [];
-            HRMS_STORE.setExamAssignments([assignment, ...cur]);
+            try {
+                const resp = await HRMS_API.createExamAssignment(assignment);
+                const saved = resp?.item || assignment;
+                HRMS_STORE.setExamAssignments([saved, ...cur.filter(a => String(a?.id) !== String(saved.id))]);
+            } catch (e) {
+                showNotification('安排考试失败：' + String(e?.message || e), 'error');
+                return;
+            }
             closeExamAssignModal();
             renderAssignedExams();
             showNotification('已安排考试', 'success');

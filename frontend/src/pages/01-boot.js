@@ -1600,13 +1600,15 @@
                 ['dailyReports', 'inventoryForecastHistory', 'pointRecords'].forEach(function(k) {
                     if (_d[k] === undefined && _hrmsServerPassthrough[k] !== undefined) _d[k] = _hrmsServerPassthrough[k];
                 });
-                // A1/A2/A3：表权威或死字段禁止经 PUT /api/state 覆盖
+                // A3 终态：仅 settings 可经 PUT /api/state；业务字段一律走窄 API
                 ['employees', 'roleModules', 'approvalFlows', 'paymentFlowByStore',
                  'pointRules', 'forecastCoreProducts', 'forecastProductAliasRules', 'forecastGrossProfitProfiles',
                  'knowledge', 'examResults', 'notifications',
                  'exams', 'promotionRequests', 'promotionAbilityRequirements', 'rewardPunishments',
                  'stores', 'brands', 'gmMailbox', 'paymentSettings', 'paymentBudgets',
-                 'promotionTracks', 'roles'
+                 'promotionTracks', 'roles',
+                 'users', 'announcements', 'examAssignments', 'questionBank', 'questionSets',
+                 'trainingTasks', 'trainingMaterials'
                 ].forEach(function(k) { try { delete _d[k]; } catch (e) {} });
                 return this.request('/api/state', {
                     method: 'PUT',
@@ -1617,6 +1619,58 @@
 
             async getApprovalFlows() {
                 return this.request('/api/approval-flows', { method: 'GET' });
+            },
+            async upsertHrmsUser(username, user) {
+                return this.request('/api/hrms-users/' + encodeURIComponent(String(username || '').trim()), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(user || {})
+                });
+            },
+            async deleteHrmsUser(username) {
+                return this.request('/api/hrms-users/' + encodeURIComponent(String(username || '').trim()), {
+                    method: 'DELETE'
+                });
+            },
+            async importHrmsUsers(users) {
+                return this.request('/api/hrms-users/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ users: users || [] })
+                });
+            },
+            async createAnnouncement(item) {
+                return this.request('/api/announcements', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(item || {})
+                });
+            },
+            async deleteAnnouncementApi(id) {
+                return this.request('/api/announcements/' + encodeURIComponent(String(id || '')), {
+                    method: 'DELETE'
+                });
+            },
+            async saveExamQuestionBank(questionBank, questionSets) {
+                return this.request('/api/exam/question-bank', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ questionBank: questionBank || [], questionSets: questionSets || [] })
+                });
+            },
+            async createExamAssignment(assignment) {
+                return this.request('/api/exam/assignments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ assignment: assignment || {} })
+                });
+            },
+            async saveTrainingMaterials(items) {
+                return this.request('/api/training-materials', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: items || [] })
+                });
             },
 
             async createEmployee(employee) {

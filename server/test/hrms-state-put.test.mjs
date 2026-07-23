@@ -12,6 +12,10 @@ test('白名单与服务端权威字段不重叠', () => {
   assert.deepEqual(overlap, []);
 });
 
+test('A3 终态：PUT 白名单仅 settings', () => {
+  assert.deepEqual([...STATE_PUT_WHITELIST], ['settings']);
+});
+
 test('PUT 不能覆盖 roleModules / approvalFlows / pointRecords / payrollAdjustments / employees', () => {
   const existing = {
     roleModules: { admin: ['a'] },

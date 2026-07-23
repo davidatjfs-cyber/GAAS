@@ -1313,7 +1313,7 @@
             }
         }
 
-        function saveTrainingMaterialFromText() {
+        async function saveTrainingMaterialFromText() {
             if (!requireAdminForMaterialSave()) return;
             const text = (document.getElementById('training-material-text')?.value || '').trim();
             if (!text) {
@@ -1329,6 +1329,12 @@
                 createdAt: hrmsNowISO()
             });
             HRMS_STORE.setTrainingMaterials(materials);
+            try {
+                await HRMS_API.saveTrainingMaterials(materials);
+            } catch (e) {
+                showNotification('资料已保存到本地，但同步服务器失败：' + String(e?.message || e), 'warning');
+                return;
+            }
             showNotification('资料已保存', 'success');
             renderTrainingMaterialsSelect();
         }
@@ -1407,6 +1413,12 @@
             }
             materials.splice(idx, 1);
             HRMS_STORE.setTrainingMaterials(materials);
+            try {
+                await HRMS_API.saveTrainingMaterials(materials);
+            } catch (e) {
+                showNotification('本地已删除，但同步服务器失败：' + String(e?.message || e), 'warning');
+                return;
+            }
             renderTrainingMaterialsSelect();
 
             const textarea = document.getElementById('training-material-text');
@@ -2180,12 +2192,20 @@ ${String(text || '').slice(0, 9000)}`;
                 const questions = await generateQuestionsForExam(text, cfg);
                 const base = padToCount(questions);
                 const questionSets = setsCount > 1 ? hrmsBuildQuestionSets(base, setsCount, 'bank_' + String(cfg?.difficulty || 'm')) : [base];
+                const bank = questionSets[0] || base;
                 try {
                     const data = HRMS_STORE.ensure();
                     data.questionSets = questionSets;
                     HRMS_STORE.set(data);
                 } catch (e) {}
-                HRMS_STORE.setQuestionBank(questionSets[0] || base);
+                HRMS_STORE.setQuestionBank(bank);
+                try {
+                    await HRMS_API.saveExamQuestionBank(bank, questionSets);
+                } catch (e) {
+                    showNotification('题库已更新到本地，但同步服务器失败：' + String(e?.message || e), 'warning');
+                    renderQuestionBankPreview();
+                    return;
+                }
                 renderQuestionBankPreview();
                 const lastErr = String(window.__HRMS_LAST_AI_ERROR || '').trim();
                 if (lastErr) {
@@ -2197,12 +2217,20 @@ ${String(text || '').slice(0, 9000)}`;
                 console.error(e);
                 const fallback = padToCount([]);
                 const questionSets = setsCount > 1 ? hrmsBuildQuestionSets(fallback, setsCount, 'bank_fallback') : [fallback];
+                const bank = questionSets[0] || fallback;
                 try {
                     const data = HRMS_STORE.ensure();
                     data.questionSets = questionSets;
                     HRMS_STORE.set(data);
                 } catch (e2) {}
-                HRMS_STORE.setQuestionBank(questionSets[0] || fallback);
+                HRMS_STORE.setQuestionBank(bank);
+                try {
+                    await HRMS_API.saveExamQuestionBank(bank, questionSets);
+                } catch (e2) {
+                    showNotification('规则题库已更新到本地，但同步服务器失败：' + String(e2?.message || e2), 'warning');
+                    renderQuestionBankPreview();
+                    return;
+                }
                 renderQuestionBankPreview();
                 const lastErr = String(window.__HRMS_LAST_AI_ERROR || '').trim();
                 showNotification('AI调用异常，已使用规则生成（已更新题库）' + (lastErr ? '：' + lastErr : ''), 'warning');
@@ -4014,6 +4042,7 @@ ${String(text || '').slice(0, 9000)}`;
             })();
             try {
                 await HRMS_API.deleteEmployeeApi(uname);
+                try { await HRMS_API.deleteHrmsUser(uname); } catch (e) { /* 镜像可能不存在 */ }
             } catch (e) {
                 showNotification('删除失败：' + (e?.message || e || '网络错误'), 'error');
                 return;
@@ -4191,7 +4220,7 @@ ${String(text || '').slice(0, 9000)}`;
             if (modal) modal.classList.remove('show');
         }
 
-        function submitUserForm() {
+        async function submitUserForm() {
             if (!isAdminUser()) {
                 showNotification('仅管理员可操作', 'warning');
                 return;
@@ -4252,6 +4281,7 @@ ${String(text || '').slice(0, 9000)}`;
                 return;
             }
 
+            let nextUser;
             if (mode === 'edit') {
                 const idx = (users || []).findIndex(u => u.username === username);
                 if (idx < 0) {
@@ -4260,17 +4290,27 @@ ${String(text || '').slice(0, 9000)}`;
                 }
                 const old = users[idx] || {};
                 const nextPwd = passwordInput ? passwordInput : (old.password || '');
-                users[idx] = { ...old, username, name, role, store, managerUsername, position, department, level, salary, joinDate, phone, email, status, password: nextPwd };
+                nextUser = { ...old, username, name, role, store, managerUsername, position, department, level, salary, joinDate, phone, email, status, password: nextPwd };
+                users[idx] = nextUser;
             } else {
                 const pwd = passwordInput || '123456';
-                users.push({ username, name, role, store, managerUsername, position, department, level, salary, joinDate, phone, email, status, password: pwd, createdAt: new Date().toISOString().slice(0, 10), lastLogin: null });
+                nextUser = { username, name, role, store, managerUsername, position, department, level, salary, joinDate, phone, email, status, password: pwd, createdAt: new Date().toISOString().slice(0, 10), lastLogin: null };
+                users.push(nextUser);
             }
 
+            try {
+                const resp = await HRMS_API.upsertHrmsUser(username, nextUser);
+                nextUser = resp?.item || nextUser;
+                const idx2 = users.findIndex(u => String(u?.username || '').toLowerCase() === username.toLowerCase());
+                if (idx2 >= 0) users[idx2] = nextUser;
+                else users.push(nextUser);
+            } catch (e) {
+                showNotification('保存用户失败：' + String(e?.message || e), 'error');
+                return;
+            }
             HRMS_STORE.setUsers(users);
 
             try {
-                const employees = HRMS_STORE.getEmployees() || [];
-                const idx = (employees || []).findIndex(e => String(e?.username || '').toLowerCase() === username.toLowerCase());
                 const empPatch = {
                     id: username,
                     username,
@@ -4283,11 +4323,17 @@ ${String(text || '').slice(0, 9000)}`;
                     role,
                     status: status || 'active'
                 };
-                if (idx >= 0) {
-                    employees[idx] = { ...(employees[idx] || {}), ...empPatch };
+                if (mode === 'create') {
+                    try { await HRMS_API.createEmployee(empPatch); } catch (e) {
+                        try { await HRMS_API.upsertEmployee(username, empPatch); } catch (e2) {}
+                    }
                 } else {
-                    employees.push(empPatch);
+                    try { await HRMS_API.upsertEmployee(username, empPatch); } catch (e) {}
                 }
+                const employees = HRMS_STORE.getEmployees() || [];
+                const idx = (employees || []).findIndex(e => String(e?.username || '').toLowerCase() === username.toLowerCase());
+                if (idx >= 0) employees[idx] = { ...(employees[idx] || {}), ...empPatch };
+                else employees.push(empPatch);
                 HRMS_STORE.setEmployees(employees);
             } catch (e) {}
             closeUserFormModal();
@@ -4319,7 +4365,15 @@ ${String(text || '').slice(0, 9000)}`;
             const _okUP = await hrmsConfirm({ title: '重置用户密码', message: `确定要将用户 ${username} 密码重置为：${newPwd} 吗？`, okText: '确认重置', icon: '🔑' });
             if (!_okUP) return;
 
-            users[idx] = { ...users[idx], password: newPwd };
+            const next = { ...users[idx], password: newPwd };
+            try {
+                await HRMS_API.upsertHrmsUser(username, next);
+                try { await HRMS_API.resetEmployeePassword(username, newPwd); } catch (e) {}
+            } catch (e) {
+                showNotification('重置失败：' + String(e?.message || e), 'error');
+                return;
+            }
+            users[idx] = next;
             HRMS_STORE.setUsers(users);
             showNotification('密码已重置', 'success');
         }
@@ -4361,7 +4415,15 @@ ${String(text || '').slice(0, 9000)}`;
             const _okUS = await hrmsConfirm({ title: '切换用户状态', message: `确定要将用户 ${username} ${nextStatus === 'active' ? '启用' : '禁用'} 吗？`, okText: nextStatus === 'active' ? '确认启用' : '确认禁用', icon: nextStatus === 'active' ? '✅' : '🚫' });
             if (!_okUS) return;
 
-            users[idx] = { ...u, status: nextStatus };
+            const next = { ...u, status: nextStatus };
+            try {
+                await HRMS_API.upsertHrmsUser(username, next);
+                try { await HRMS_API.patchEmployeeStatus(username, nextStatus); } catch (e) {}
+            } catch (e) {
+                showNotification('状态更新失败：' + String(e?.message || e), 'error');
+                return;
+            }
+            users[idx] = next;
             HRMS_STORE.setUsers(users);
             loadUsersData();
             showNotification('状态已更新', 'success');
@@ -4379,6 +4441,13 @@ ${String(text || '').slice(0, 9000)}`;
             const unameLower = uname.toLowerCase();
             const users = HRMS_STORE.getUsers();
             const employees = HRMS_STORE.getEmployees ? HRMS_STORE.getEmployees() : [];
+            try {
+                await HRMS_API.deleteHrmsUser(uname);
+                try { await HRMS_API.deleteEmployeeApi(uname); } catch (e) {}
+            } catch (e) {
+                showNotification('删除失败：' + String(e?.message || e), 'error');
+                return;
+            }
             HRMS_STORE.setUsers((users || []).filter(u => String(u?.username || '').trim().toLowerCase() !== unameLower));
             try {
                 if (HRMS_STORE.setEmployees) {
@@ -4387,16 +4456,6 @@ ${String(text || '').slice(0, 9000)}`;
             } catch (e) {}
             loadUsersData();
             try { loadEmployeesData(); } catch (e) {}
-            try {
-                const ok = await hrmsFlushStateSave();
-                if (!ok) {
-                    showNotification('已删除，但同步到服务器失败（请稍后重试）', 'warning');
-                    return;
-                }
-            } catch (e) {
-                showNotification('已删除，但同步到服务器失败（请稍后重试）', 'warning');
-                return;
-            }
             showNotification('已删除', 'success');
         }
 
@@ -5103,9 +5162,10 @@ ${String(text || '').slice(0, 9000)}`;
                 }
             });
 
-            HRMS_STORE.setUsers(Array.from(byUname.values()));
+            const list = Array.from(byUname.values());
+            HRMS_STORE.setUsers(list);
             loadUsersData();
-            return { added, updated };
+            return { added, updated, users: list };
         }
         
         // 批量导入功能
@@ -5217,11 +5277,14 @@ ${String(text || '').slice(0, 9000)}`;
                     }
                     const headers = rows[0];
                     const objs = hrmsCsvRowsToObjects(headers, rows.slice(1));
-                    const { added, updated } = hrmsImportUsersFromCsvObjects(objs);
-                    const synced = await hrmsFlushStateSave();
-                    showNotification(`导入完成：新增 ${added}，覆盖 ${updated}`, 'success');
-                    if (!synced) {
-                        showNotification('用户导入已写入本地，但同步到服务器失败（请稍后重试或刷新后检查）', 'warning');
+                    const { added, updated, users } = hrmsImportUsersFromCsvObjects(objs);
+                    try {
+                        const resp = await HRMS_API.importHrmsUsers(users);
+                        if (Array.isArray(resp?.items)) HRMS_STORE.setUsers(resp.items);
+                        loadUsersData();
+                        showNotification(`导入完成：新增 ${added}，覆盖 ${updated}`, 'success');
+                    } catch (e) {
+                        showNotification('用户导入已写入本地，但同步到服务器失败：' + String(e?.message || e), 'warning');
                     }
                 } catch (e) {
                     console.error(e);
