@@ -25985,9 +25985,11 @@
                 ['dailyReports', 'inventoryForecastHistory', 'pointRecords'].forEach(function(k) {
                     if (_d[k] === undefined && _hrmsServerPassthrough[k] !== undefined) _d[k] = _hrmsServerPassthrough[k];
                 });
-                // A1/A2：表权威字段禁止经 PUT /api/state 覆盖
+                // A1/A2/A3：表权威或死字段禁止经 PUT /api/state 覆盖
                 ['employees', 'roleModules', 'approvalFlows', 'paymentFlowByStore',
-                 'pointRules', 'forecastCoreProducts', 'forecastProductAliasRules', 'forecastGrossProfitProfiles'
+                 'pointRules', 'forecastCoreProducts', 'forecastProductAliasRules', 'forecastGrossProfitProfiles',
+                 'knowledge', 'examResults', 'notifications',
+                 'exams', 'promotionRequests', 'promotionAbilityRequirements', 'rewardPunishments'
                 ].forEach(function(k) { try { delete _d[k]; } catch (e) {} });
                 return this.request('/api/state', {
                     method: 'PUT',

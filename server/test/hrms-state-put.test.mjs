@@ -20,6 +20,9 @@ test('PUT 不能覆盖 roleModules / approvalFlows / pointRecords / payrollAdjus
     pointRecords: [{ id: 'p1', points: 10 }],
     payrollAdjustments: { '2026-07': { x: 1 } },
     employees: [{ username: 'alice', name: 'Alice' }],
+    knowledge: [{ id: 'k1' }],
+    examResults: [{ id: 'e1', score: 90 }],
+    notifications: [{ id: 'n1', title: '旧' }],
     settings: { theme: 'old' },
   };
   const incoming = {
@@ -29,6 +32,11 @@ test('PUT 不能覆盖 roleModules / approvalFlows / pointRecords / payrollAdjus
     pointRecords: [{ id: 'p1', points: -999 }],
     payrollAdjustments: { '2026-07': { x: 999 } },
     employees: [{ username: 'alice', name: 'Alice2' }],
+    knowledge: [{ id: 'kHACK' }],
+    examResults: [{ id: 'eHACK', score: 0 }],
+    notifications: [{ id: 'nHACK', title: '黑' }],
+    exams: [{ id: 'dead' }],
+    rewardPunishments: [{ id: 'rp' }],
     settings: { theme: 'new' },
     brandNewField: 'should-ignore',
   };
@@ -39,11 +47,19 @@ test('PUT 不能覆盖 roleModules / approvalFlows / pointRecords / payrollAdjus
   assert.deepEqual(next.pointRecords, [{ id: 'p1', points: 10 }]);
   assert.deepEqual(next.payrollAdjustments, { '2026-07': { x: 1 } });
   assert.equal(next.employees[0].name, 'Alice');
+  assert.deepEqual(next.knowledge, [{ id: 'k1' }]);
+  assert.deepEqual(next.examResults, [{ id: 'e1', score: 90 }]);
+  assert.deepEqual(next.notifications, [{ id: 'n1', title: '旧' }]);
+  assert.equal(next.exams, undefined);
+  assert.equal(next.rewardPunishments, undefined);
   assert.equal(next.settings.theme, 'new');
   assert.equal(next.brandNewField, undefined);
   assert.ok(ignoredKeys.includes('roleModules'));
   assert.ok(ignoredKeys.includes('pointRecords'));
   assert.ok(ignoredKeys.includes('employees'));
+  assert.ok(ignoredKeys.includes('knowledge'));
+  assert.ok(ignoredKeys.includes('examResults'));
+  assert.ok(ignoredKeys.includes('notifications'));
   assert.ok(ignoredKeys.includes('brandNewField'));
 });
 

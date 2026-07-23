@@ -21,6 +21,8 @@ export const SHARED_TABLES = Object.freeze({
   STORE_NAME_ALIASES: 'store_name_aliases',
   EMPLOYEES: 'employees',
   HR_RATING_CONFIGS: 'hr_rating_configs',
+  HRMS_USER_NOTIFICATIONS: 'hrms_user_notifications',
+  EXAM_RESULTS: 'exam_results',
 });
 
 /** hr_rating_configs.config_key（A2 流程/角色模块配置） */
@@ -52,4 +54,6 @@ export const SHARED_TABLE_WRITERS = Object.freeze({
   [SHARED_TABLES.STORE_NAME_ALIASES]: 'gaas',
   [SHARED_TABLES.EMPLOYEES]: 'gaas',
   [SHARED_TABLES.HR_RATING_CONFIGS]: 'gaas',
+  [SHARED_TABLES.HRMS_USER_NOTIFICATIONS]: 'gaas',
+  [SHARED_TABLES.EXAM_RESULTS]: 'gaas',
 });

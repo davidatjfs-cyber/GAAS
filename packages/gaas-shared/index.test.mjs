@@ -36,6 +36,8 @@ test('shared: table writer matrix covers master_tasks / hrms_state / employees',
   assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.HRMS_STATE], 'gaas');
   assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.EMPLOYEES], 'gaas');
   assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.HR_RATING_CONFIGS], 'gaas');
+  assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.EXAM_RESULTS], 'gaas');
+  assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.HRMS_USER_NOTIFICATIONS], 'gaas');
   assert.equal(HR_RATING_CONFIG_KEYS.APPROVAL_FLOWS, 'approval_flows');
 });
 

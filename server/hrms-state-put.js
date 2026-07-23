@@ -16,21 +16,14 @@ export const STATE_PUT_WHITELIST = Object.freeze([
   'roles',
   'brands',
   'settings',
-  'exams',
-  'examResults',
   'examAssignments',
   'questionBank',
   'questionSets',
-  'knowledge',
   'gmMailbox',
   'announcements',
-  'notifications',
   'trainingTasks',
   'trainingMaterials',
   'promotionTracks',
-  'promotionRequests',
-  'promotionAbilityRequirements',
-  'rewardPunishments',
   'paymentBudgets',
   'paymentSettings',
 ]);
@@ -42,6 +35,8 @@ export const STATE_PUT_WHITELIST = Object.freeze([
  * 2026-07 A1：employees → employees 表。
  * 2026-07 A2：roleModules / approvalFlows / paymentFlowByStore → hr_rating_configs。
  * 2026-07 A3：pointRules / forecast* 移出白名单（已有窄 API）。
+ * 2026-07 A3续：knowledge / examResults / notifications 表权威；
+ *   exams / promotionRequests / promotionAbilityRequirements / rewardPunishments 死字段移出。
  * GET /api/state 会用表覆盖这些镜像字段。运行时靠「不在白名单」生效。
  */
 export const STATE_PUT_SERVER_OWNED = Object.freeze([
@@ -53,6 +48,13 @@ export const STATE_PUT_SERVER_OWNED = Object.freeze([
   'forecastCoreProducts',
   'forecastProductAliasRules',
   'forecastGrossProfitProfiles',
+  'knowledge',
+  'examResults',
+  'notifications',
+  'exams',
+  'promotionRequests',
+  'promotionAbilityRequirements',
+  'rewardPunishments',
   'pointRecords',
   'pointsAppliedApprovals',
   'payrollAdjustments',

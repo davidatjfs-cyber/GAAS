@@ -25,6 +25,8 @@ import {
 } from './domains/employees/service.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
+import { hydrateNotificationsFromTable } from './domains/notifications/service.js';
+import { hydrateExamResultsFromTable } from './domains/exam-results/service.js';
 import {
   getTenantIntegrationSummary,
   saveTenantFeishuIntegration,
@@ -12507,10 +12509,12 @@ app.get('/api/state', authRequired, async (req, res) => {
         console.error('[state] Failed to persist repaired state:', saveErr?.message || saveErr);
       }
     }
-    // 积分/薪资/员工/流程配置以表为权威，覆盖 state 镜像
+    // 积分/薪资/员工/流程配置/通知/考试成绩以表为权威，覆盖 state 镜像
     let hydrated = await hydrateStateFromAuthoritativeTables(pool, repaired, tenantIdQ);
     hydrated = await hydrateEmployeesFromTable(pool, hydrated, tenantIdQ);
     hydrated = await hydrateFlowConfigFromTable(pool, hydrated, tenantIdQ);
+    hydrated = await hydrateNotificationsFromTable(pool, hydrated, tenantIdQ);
+    hydrated = await hydrateExamResultsFromTable(pool, hydrated, tenantIdQ);
     const role = String(req.user?.role || '').trim();
     const uname = String(req.user?.username || '').trim();
     let payload = stripPasswordFieldsFromStateForClient(hydrated, role);
