@@ -23,6 +23,8 @@ import {
   upsertEmployeesFromStateShape,
   loadEmployeesFromTable,
 } from './domains/employees/service.js';
+import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
+import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
 import {
   getTenantIntegrationSummary,
   saveTenantFeishuIntegration,
@@ -5016,39 +5018,7 @@ app.post('/api/permission-groups/assign', authRequired, async (req, res) => {
   }
 });
 
-// ─── Role-Modules Config API ─────────────────────────────────────────────────
-app.get('/api/role-modules', authRequired, async (req, res) => {
-  try {
-    const state = (await getSharedState()) || {};
-    const config = state.roleModules || null;
-    // 确保 training 模块对所有已配置角色可见
-    if (config && typeof config === 'object') {
-      for (const role of Object.keys(config)) {
-        if (Array.isArray(config[role]) && !config[role].includes('training')) {
-          config[role].push('training');
-        }
-      }
-    }
-    return res.json({ config });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-app.put('/api/role-modules', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
-  try {
-    const config = req.body?.config;
-    if (!config || typeof config !== 'object') return res.status(400).json({ error: 'invalid_config' });
-    const state = (await getSharedState()) || {};
-    state.roleModules = config;
-    await saveSharedState(state);
-    return res.json({ ok: true });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
+// A2：GET/PUT /api/role-modules 已迁至 domains/flow-config/routes.js（hr_rating_configs 权威）
 
 app.get('/api/admin/store-duty-bindings', authRequired, async (req, res) => {
   const role = String(req.user?.role || '').trim();
@@ -12537,9 +12507,10 @@ app.get('/api/state', authRequired, async (req, res) => {
         console.error('[state] Failed to persist repaired state:', saveErr?.message || saveErr);
       }
     }
-    // 积分/薪资/员工以表为权威，覆盖 state 镜像，避免前端读到陈旧 localStorage 同步后的脏数据
+    // 积分/薪资/员工/流程配置以表为权威，覆盖 state 镜像
     let hydrated = await hydrateStateFromAuthoritativeTables(pool, repaired, tenantIdQ);
     hydrated = await hydrateEmployeesFromTable(pool, hydrated, tenantIdQ);
+    hydrated = await hydrateFlowConfigFromTable(pool, hydrated, tenantIdQ);
     const role = String(req.user?.role || '').trim();
     const uname = String(req.user?.username || '').trim();
     let payload = stripPasswordFieldsFromStateForClient(hydrated, role);
@@ -14657,6 +14628,16 @@ registerEmployeesDomainRoutes(app, authRequired, {
     await removeEmployeesFromSharedState(usernames, tenantId);
   },
   applyAccountGate: applyHrmsUserAccountGateFromEmployee,
+});
+
+registerFlowConfigRoutes(app, authRequired, {
+  pool,
+  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
+  getSharedState,
+  mirrorToState: async (fields, tenantId) => {
+    if (!fields || typeof fields !== 'object') return;
+    await saveSharedState(fields, tenantId);
+  },
 });
 
 registerAgentRoutes(app, authRequired);

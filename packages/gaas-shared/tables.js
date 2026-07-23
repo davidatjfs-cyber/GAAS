@@ -19,6 +19,18 @@ export const SHARED_TABLES = Object.freeze({
   POINT_RECORDS: 'point_records',
   HRMS_PAYROLL_DOMAIN: 'hrms_payroll_domain',
   STORE_NAME_ALIASES: 'store_name_aliases',
+  EMPLOYEES: 'employees',
+  HR_RATING_CONFIGS: 'hr_rating_configs',
+});
+
+/** hr_rating_configs.config_key（A2 流程/角色模块配置） */
+export const HR_RATING_CONFIG_KEYS = Object.freeze({
+  ROLE_MODULES: 'role_module_config',
+  APPROVAL_FLOWS: 'approval_flows',
+  PAYMENT_FLOW_BY_STORE: 'payment_flow_by_store',
+  EMPLOYEE_RATING: 'employee_rating',
+  OPS_AGENT: 'ops_agent',
+  BI_AGENT: 'bi_agent',
 });
 
 /** 唯一写入方：'gaas' | 'agents' */
@@ -38,4 +50,6 @@ export const SHARED_TABLE_WRITERS = Object.freeze({
   [SHARED_TABLES.POINT_RECORDS]: 'gaas',
   [SHARED_TABLES.HRMS_PAYROLL_DOMAIN]: 'gaas',
   [SHARED_TABLES.STORE_NAME_ALIASES]: 'gaas',
+  [SHARED_TABLES.EMPLOYEES]: 'gaas',
+  [SHARED_TABLES.HR_RATING_CONFIGS]: 'gaas',
 });

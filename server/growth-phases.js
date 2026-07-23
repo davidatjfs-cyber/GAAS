@@ -7,12 +7,6 @@ import { checkTextGrounding } from './ontology/plan-grounding-check.js';
 import { fetchDineMetricsForDays, resolveStoreCanonicalName } from './utils/dine-metrics.js';
 import { maybeNotifyRegularCustomerFromPosOrder } from './pos-regular-arrival-feishu.js';
 
-const PHASE_EVENT_TYPES = new Set([
-  'campaign_scan', 'phone_authorized', 'coupon_claimed',
-  'coupon_purchased', 'coupon_redeemed', 'payment_success',
-  'customer_arrived', 'marketing_triggered'
-]);
-
 function cleanText(value, max = 255) {
   return String(value == null ? '' : value).trim().slice(0, max);
 }

@@ -341,7 +341,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
         return res.status(403).json({ error: 'store_forbidden' });
       }
       // Strip JWT reserved claims before re-signing to avoid "There is an existing exp value" error
-      const { iat, exp, ...restUser } = req.user;
+      const { iat: _iat, exp: _exp, ...restUser } = req.user;
       const nextPayload = {
         ...restUser,
         role,

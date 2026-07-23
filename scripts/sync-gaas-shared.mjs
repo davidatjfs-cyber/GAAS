@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const GAAS_SHARED = join(__dirname, '../../packages/gaas-shared');
-const AGENTS_SHARED = join(__dirname, '../../../agents-service-v2/packages/gaas-shared');
+const GAAS_SHARED = join(__dirname, '../packages/gaas-shared');
+const AGENTS_SHARED = join(__dirname, '../../agents-service-v2/packages/gaas-shared');
 
 if (!existsSync(GAAS_SHARED)) {
   console.error('missing', GAAS_SHARED);

@@ -9,6 +9,7 @@
  */
 
 /** 仍允许经 PUT /api/state 写入的顶层字段（未落表 / 仍走前端 saveState 的业务数据） */
+/** A3：白名单收敛为配置/内容类；已有独立 API 的业务事实一律 SERVER_OWNED */
 export const STATE_PUT_WHITELIST = Object.freeze([
   'stores',
   'users',
@@ -22,7 +23,6 @@ export const STATE_PUT_WHITELIST = Object.freeze([
   'questionSets',
   'knowledge',
   'gmMailbox',
-  'pointRules',
   'announcements',
   'notifications',
   'trainingTasks',
@@ -33,16 +33,15 @@ export const STATE_PUT_WHITELIST = Object.freeze([
   'rewardPunishments',
   'paymentBudgets',
   'paymentSettings',
-  'forecastCoreProducts',
-  'forecastProductAliasRules',
-  'forecastGrossProfitProfiles',
 ]);
 
 /**
  * 服务端权威字段（禁止 PUT 覆盖）。有独立 API 或由 mergeSharedStateFields / 审批终审写入。
  * 2026-07 Week2-3：pointRecords → point_records 表；
  * payrollAdjustments / salaryAdjustments / monthlyConfirmations → hrms_payroll_domain。
- * 2026-07 A1：employees → employees 表（窄 API + GET hydrate）。
+ * 2026-07 A1：employees → employees 表。
+ * 2026-07 A2：roleModules / approvalFlows / paymentFlowByStore → hr_rating_configs。
+ * 2026-07 A3：pointRules / forecast* 移出白名单（已有窄 API）。
  * GET /api/state 会用表覆盖这些镜像字段。运行时靠「不在白名单」生效。
  */
 export const STATE_PUT_SERVER_OWNED = Object.freeze([
@@ -50,6 +49,10 @@ export const STATE_PUT_SERVER_OWNED = Object.freeze([
   'roleModules',
   'approvalFlows',
   'paymentFlowByStore',
+  'pointRules',
+  'forecastCoreProducts',
+  'forecastProductAliasRules',
+  'forecastGrossProfitProfiles',
   'pointRecords',
   'pointsAppliedApprovals',
   'payrollAdjustments',

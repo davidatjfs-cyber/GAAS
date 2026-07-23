@@ -9,12 +9,14 @@
  * 覆盖这些字段，避免读到陈旧 state 镜像。
  */
 
+import { SHARED_TABLES } from '@gaas/shared';
+
 export async function loadPointRecordsFromTable(pool, tenantId) {
   const tid = String(tenantId || 'default');
   const prRows = await pool.query(
     `SELECT id::text, approval_id, username, name, store, item_name, reason,
             points, amount, approved_at, approved_by
-     FROM point_records
+     FROM ${SHARED_TABLES.POINT_RECORDS}
      WHERE tenant_id = $1
      ORDER BY approved_at DESC NULLS LAST, created_at DESC`,
     [tid]
@@ -38,7 +40,7 @@ export async function loadPayrollDomainFromTable(pool, tenantId) {
   const tid = String(tenantId || 'default');
   const domainR = await pool.query(
     `SELECT payroll_adjustments, payroll_audits, salary_adjustments, monthly_confirmations
-     FROM hrms_payroll_domain WHERE id = $1`,
+     FROM ${SHARED_TABLES.HRMS_PAYROLL_DOMAIN} WHERE id = $1`,
     [tid]
   );
   const row = domainR.rows?.[0];

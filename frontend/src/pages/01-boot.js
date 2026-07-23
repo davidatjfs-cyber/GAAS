@@ -1595,13 +1595,19 @@
                 ['dailyReports', 'inventoryForecastHistory', 'pointRecords'].forEach(function(k) {
                     if (_d[k] === undefined && _hrmsServerPassthrough[k] !== undefined) _d[k] = _hrmsServerPassthrough[k];
                 });
-                // A1：employees 已表权威，禁止经 PUT /api/state 覆盖
-                try { delete _d.employees; } catch (e) {}
+                // A1/A2：表权威字段禁止经 PUT /api/state 覆盖
+                ['employees', 'roleModules', 'approvalFlows', 'paymentFlowByStore',
+                 'pointRules', 'forecastCoreProducts', 'forecastProductAliasRules', 'forecastGrossProfitProfiles'
+                ].forEach(function(k) { try { delete _d[k]; } catch (e) {} });
                 return this.request('/api/state', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ data: _d })
                 });
+            },
+
+            async getApprovalFlows() {
+                return this.request('/api/approval-flows', { method: 'GET' });
             },
 
             async createEmployee(employee) {
@@ -3990,7 +3996,7 @@ th { background: #f5f5f5; font-weight: 700; }
                         const serverData = (serverResp && typeof serverResp === 'object' ? (serverResp.data || serverResp) : {}) || {};
                         ['dailyReports', 'inventoryForecastHistory', 'pointRecords'].forEach(k => { if (serverData[k] !== undefined) _hrmsServerPassthrough[k] = serverData[k]; });
                         const localData = HRMS_STORE.ensure();
-                        const serverOnlyKeys = ['approvalFlows', 'paymentFlowByStore'];
+                        const serverOnlyKeys = ['approvalFlows', 'paymentFlowByStore', 'roleModules'];
                         const merged = { ...localData };
                         serverOnlyKeys.forEach(k => { if (serverData[k] !== undefined && merged[k] === undefined) merged[k] = serverData[k]; });
                         if (Array.isArray(serverData.employees) && serverData.employees.length > 0) {
@@ -4029,7 +4035,7 @@ th { background: #f5f5f5; font-weight: 700; }
                 const serverData = (serverResp && typeof serverResp === 'object' ? (serverResp.data || serverResp) : {}) || {};
                 ['dailyReports', 'inventoryForecastHistory', 'pointRecords'].forEach(k => { if (serverData[k] !== undefined) _hrmsServerPassthrough[k] = serverData[k]; });
                 const localData = HRMS_STORE.ensure();
-                const serverOnlyKeys = ['approvalFlows', 'paymentFlowByStore'];
+                const serverOnlyKeys = ['approvalFlows', 'paymentFlowByStore', 'roleModules'];
                 const merged = { ...localData };
                 serverOnlyKeys.forEach(k => { if (serverData[k] !== undefined && merged[k] === undefined) merged[k] = serverData[k]; });
                 if (Array.isArray(serverData.employees) && serverData.employees.length > 0) {

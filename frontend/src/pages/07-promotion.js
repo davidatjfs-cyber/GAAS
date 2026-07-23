@@ -3843,6 +3843,11 @@
             try {
                 const token = HRMS_API.token();
                 if (token) {
+                    try {
+                        const resp = await HRMS_API.getApprovalFlows();
+                        const flows = resp?.approvalFlows || {};
+                        if (flows && typeof flows === 'object' && Object.keys(flows).length) return flows;
+                    } catch (e) { /* fallback getState */ }
                     const st = await HRMS_API.getState();
                     const flows = st?.data?.approvalFlows || st?.approvalFlows || {};
                     return flows && typeof flows === 'object' ? flows : {};

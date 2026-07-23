@@ -10,4 +10,4 @@ export {
   evictFeishuTokenCache,
 } from './feishu-token.js';
 
-export { SHARED_TABLES, SHARED_TABLE_WRITERS } from './tables.js';
+export { SHARED_TABLES, SHARED_TABLE_WRITERS, HR_RATING_CONFIG_KEYS } from './tables.js';

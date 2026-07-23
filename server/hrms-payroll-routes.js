@@ -27,7 +27,6 @@ import {
 } from './services/hrms-payroll-engine.js';
 import {
   requireHrmsPermission,
-  checkHrmsPermission,
   getTenantEnforcementMode,
   legacyCanManagePayrollRules,
   legacyCanAccessAnalyticsReports,
@@ -38,10 +37,8 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
     pool,
     authRequired,
     getSharedState,
-    mergeSharedStateFields,
     calcEmployeeMonthlyLeaveBalance,
     findUserSalary,
-    isAdmin,
     isHq,
     canAccessAnalyticsReports,
     appendNotifications,

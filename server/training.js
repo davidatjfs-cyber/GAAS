@@ -8,7 +8,6 @@
 
 import { pool as getPool, resolveTenantIdDefault, runForActiveTenants } from './utils/database.js';
 import { callLLM, callVisionLLM, callVisionLLMVideo, lookupFeishuUserByUsername, sendLarkMessage } from './agents.js';
-import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
@@ -751,7 +750,6 @@ export function registerTrainingRoutes(app, authMiddleware, uploadMiddleware) {
       const allIds = allR.rows.map(r => r.id);
       if (!allIds.length) return res.json({ success: true, updated: 0 });
 
-      const reqSet = new Set(requiredIds);
       // 批量 update：用 CASE 一次搞定
       await pool().query(
         `UPDATE training_topics SET promotion_required = (id = ANY($1::int[]))
@@ -2301,7 +2299,6 @@ ${contentForPrompt}
 
       if (rubric && Array.isArray(rubric.items) && rubric.items.length) {
         // ──── 图谱评分模式（兼容新旧格式）────
-        const isKitchenSop = rubric.items[0].action !== undefined;  // 厨房SOP格式用action，旧格式用name
         const dishInfo = rubric.dish_name ? `考核菜品：${rubric.dish_name}（${rubric.station || '未知工位'}）` : '';
         const scoringPrompt = `你是餐饮实操考试审评官。请根据以下步骤评分表，逐项判断员工操作是否合格，给出具体得分和扣分原因。
 
@@ -2483,7 +2480,6 @@ export async function runTrainingReminderSweep() {
       const reminderMeta = parseReminderMeta(row.reminder_meta);
       const topicTitle = String(row.title || '培训任务').trim();
       const assigneeName = String(row.employee_name || row.employee_username || '').trim() || '员工';
-      const assignerName = String(row.assigner_name || row.assigned_by || '').trim() || '管理员';
       const isOverdue = todayKey > dueDate;
 
       if (!isOverdue) {

@@ -6,6 +6,8 @@
  * 并由调用方同步 mergeSharedStateFields 镜像（或窄 API 内完成）。
  */
 
+import { SHARED_TABLES } from '@gaas/shared';
+
 const STRUCTURED_KEYS = new Set([
   'id',
   'username',
@@ -66,7 +68,7 @@ export async function loadEmployeesFromTable(pool, tenantId) {
     `SELECT id, username, name, role, store, department, position, status, gender, phone, email,
             join_date, birthday, salary, password_hash, manager_username, id_card_number, bank_card,
             extra_json, created_at, updated_at
-       FROM employees
+       FROM ${SHARED_TABLES.EMPLOYEES}
       WHERE tenant_id = $1
       ORDER BY username`,
     [tid]
@@ -129,7 +131,7 @@ export async function upsertEmployeeFromStateShape(pool, tenantId, emp) {
   const createdAt = s.createdAt ? new Date(s.createdAt).toISOString() : new Date().toISOString();
   const updatedAt = new Date().toISOString();
   await pool.query(
-    `INSERT INTO employees (id, username, name, role, store, department, position, status,
+    `INSERT INTO ${SHARED_TABLES.EMPLOYEES} (id, username, name, role, store, department, position, status,
        gender, phone, email, join_date, birthday, salary, password_hash, manager_username,
        id_card_number, bank_card, extra_json, created_at, updated_at, tenant_id)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
@@ -191,7 +193,7 @@ export async function renameEmployeeUsername(pool, tenantId, oldUsername, emp) {
   if (oldU.toLowerCase() === newU.toLowerCase()) {
     return upsertEmployeeFromStateShape(pool, tid, emp);
   }
-  await pool.query(`DELETE FROM employees WHERE lower(username) = lower($1) AND tenant_id = $2`, [oldU, tid]);
+  await pool.query(`DELETE FROM ${SHARED_TABLES.EMPLOYEES} WHERE lower(username) = lower($1) AND tenant_id = $2`, [oldU, tid]);
   return upsertEmployeeFromStateShape(pool, tid, emp);
 }
 
@@ -199,7 +201,7 @@ export async function deleteEmployeeFromTable(pool, tenantId, username) {
   const tid = String(tenantId || 'default');
   const u = String(username || '').trim();
   if (!u) return 0;
-  const r = await pool.query(`DELETE FROM employees WHERE lower(username) = lower($1) AND tenant_id = $2`, [u, tid]);
+  const r = await pool.query(`DELETE FROM ${SHARED_TABLES.EMPLOYEES} WHERE lower(username) = lower($1) AND tenant_id = $2`, [u, tid]);
   return r.rowCount || 0;
 }
 

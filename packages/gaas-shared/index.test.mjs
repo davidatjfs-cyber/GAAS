@@ -6,6 +6,7 @@ import {
   fetchFeishuTenantAccessToken,
   SHARED_TABLES,
   SHARED_TABLE_WRITERS,
+  HR_RATING_CONFIG_KEYS,
 } from './index.js';
 
 test('shared: signature roundtrip', () => {
@@ -30,9 +31,12 @@ test('shared: signature roundtrip', () => {
   assert.equal(r.mode, 'signature');
 });
 
-test('shared: table writer matrix covers master_tasks / hrms_state', () => {
+test('shared: table writer matrix covers master_tasks / hrms_state / employees', () => {
   assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.MASTER_TASKS], 'agents');
   assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.HRMS_STATE], 'gaas');
+  assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.EMPLOYEES], 'gaas');
+  assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.HR_RATING_CONFIGS], 'gaas');
+  assert.equal(HR_RATING_CONFIG_KEYS.APPROVAL_FLOWS, 'approval_flows');
 });
 
 test('shared: fetchFeishuTenantAccessToken uses fetchImpl', async () => {

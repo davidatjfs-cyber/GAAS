@@ -2178,6 +2178,11 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
         async function hrmsFetchPaymentFlowMap() {
             const token = HRMS_API.token();
             if (!token) return {};
+            try {
+                const resp = await HRMS_API.getApprovalFlows();
+                const map = resp?.paymentFlowByStore;
+                if (map && typeof map === 'object') return map;
+            } catch (e) { /* fallback getState */ }
             const st = await HRMS_API.getState();
             const data = st?.data && typeof st.data === 'object' ? st.data : (st || {});
             const map = data?.paymentFlowByStore;

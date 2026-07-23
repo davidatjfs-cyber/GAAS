@@ -301,24 +301,5 @@ export function registerApprovalRoutes(app, authRequired, deps) {
     }
   });
 
-  app.put('/api/approval-flows', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (role !== 'admin') return res.status(403).json({ error: 'admin_only' });
-    try {
-      const approvalFlows = req.body?.approvalFlows;
-      const paymentFlowByStore = req.body?.paymentFlowByStore;
-      const hasApprovalFlows = approvalFlows && typeof approvalFlows === 'object';
-      const hasPaymentFlow = paymentFlowByStore && typeof paymentFlowByStore === 'object';
-      if (!hasApprovalFlows && !hasPaymentFlow) {
-        return res.status(400).json({ error: 'invalid_config' });
-      }
-      const state = (await getSharedState()) || {};
-      if (hasApprovalFlows) state.approvalFlows = approvalFlows;
-      if (hasPaymentFlow) state.paymentFlowByStore = paymentFlowByStore;
-      await saveSharedState(state);
-      return res.json({ ok: true });
-    } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-    }
-  });
+  // A2：PUT/GET /api/approval-flows 已迁至 domains/flow-config/routes.js（hr_rating_configs 权威）
 }
