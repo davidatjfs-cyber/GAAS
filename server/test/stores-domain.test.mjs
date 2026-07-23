@@ -41,3 +41,22 @@ test('PUT /api/state 不能覆盖 stores', () => {
   assert.equal(next.settings.theme, 'new');
   assert.ok(ignoredKeys.includes('stores'));
 });
+
+test('brands / gmMailbox 不在白名单且 PUT 不能覆盖', () => {
+  assert.equal(STATE_PUT_WHITELIST.includes('brands'), false);
+  assert.equal(STATE_PUT_WHITELIST.includes('gmMailbox'), false);
+  assert.ok(STATE_PUT_SERVER_OWNED.includes('brands'));
+  assert.ok(STATE_PUT_SERVER_OWNED.includes('gmMailbox'));
+  const existing = {
+    brands: [{ id: 'b1', name: '洪潮' }],
+    gmMailbox: [{ id: 'm1', subject: '旧' }],
+  };
+  const { next, ignoredKeys } = applyStatePutWhitelist(existing, {
+    brands: [{ id: 'hack', name: '黑' }],
+    gmMailbox: [{ id: 'hack', subject: '黑' }],
+  });
+  assert.deepEqual(next.brands, [{ id: 'b1', name: '洪潮' }]);
+  assert.deepEqual(next.gmMailbox, [{ id: 'm1', subject: '旧' }]);
+  assert.ok(ignoredKeys.includes('brands'));
+  assert.ok(ignoredKeys.includes('gmMailbox'));
+});
