@@ -52,6 +52,12 @@ import { registerNotificationsWriteRoutes } from './domains/notifications/routes
 import { registerBirthdayRoutes } from './domains/birthday/routes.js';
 import { registerRemainingStateRoutes } from './domains/remaining-state/routes.js';
 import { registerGmMailboxRoutes } from './domains/gm-mailbox/routes.js';
+import { registerExamResultsRoutes } from './domains/exam-results/routes.js';
+import { registerTenantSettingsRoutes } from './domains/tenant-settings/routes.js';
+import { registerUsageWeeklyRoutes } from './domains/usage-weekly/routes.js';
+import { registerWecomCallbackRoutes } from './domains/wecom/routes-callback.js';
+import { registerPromotionTracksRoutes } from './domains/promotion/routes-tracks.js';
+import { registerBitableSyncRoutes } from './domains/bitable-sync/routes.js';
 import {
 
 
@@ -8197,88 +8203,7 @@ app.put('/api/state', authRequired, async (req, res) => {
   }
 });
 
-app.get('/api/promotion/tracks', authRequired, async (req, res) => {
-  const username = String(req.user?.username || '').trim();
-  const role = String(req.user?.role || '').trim();
-  if (!username) return res.status(400).json({ error: 'missing_user' });
-  try {
-    const state = (await getSharedState()) || {};
-    const list = Array.isArray(state.promotionTracks) ? state.promotionTracks.slice() : [];
-    let items = list;
-    if (!(role === 'admin' || role === 'hq_manager' || role === 'hr_manager')) {
-      items = list.filter(t => {
-        const applicant = String(t?.applicantUsername || '').trim();
-        const mentor = String(t?.mentorUsername || '').trim();
-        const store = String(t?.store || '').trim();
-        const mine = stateFindUserRecord(state, username) || {};
-        const myStore = String(mine?.store || '').trim();
-        const myRole = String(mine?.role || role || '').trim();
-        const storeManagerMatch = myRole === 'store_manager' && myStore && store === myStore;
-        const prodManagerMatch = myRole === 'store_production_manager' && myStore && store === myStore;
-        return applicant === username || mentor === username || storeManagerMatch || prodManagerMatch;
-      });
-    }
-    items.sort((a, b) => String(b?.updatedAt || '').localeCompare(String(a?.updatedAt || '')));
-
-    // 唯一渠道：考核结果由系统根据培训认证进度自动判定，去掉人工考核环节
-    items = await Promise.all(items.map(async (t) => {
-      if (!Array.isArray(t?.requiredTopicIds)) return t;
-      const progress = await getPromotionTrackProgress(t.applicantUsername, t.requiredTopicIds);
-      return { ...t, trainingProgress: progress, assessmentStatus: progress.passed ? 'passed' : 'pending' };
-    }));
-
-    return res.json({ items });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-// ── Bitable Sync Status (for 数据中心 dashboard) ──
-const BITABLE_TABLE_NAMES = {
-  'tblpx5Efqc6eHo3L': '桌访表',
-  'tblz4kW1cY22XRlL': '马己仙原料收货日报',
-  'tblZXgaU0LpSye2m': '例会报告',
-  'tbl32E6d0CyvLvfi': '开档报告',
-  'tblgReexNjWJOJB6': '差评报告DB',
-  'tbllcV1evqTJyzlN': '洪潮原料收货日报',
-  'tblXYfSBRrgNGohN': '收档报告DB',
-  'tblLCxLO0ZbV7uyo': '报损单',
-  'tblxHI9ZAKONOTpp': '运营检查表(含开收档)',
-  'tblT86H1uuTJydne': '异常任务回复',
-  /** 实际毛利率多维表（线上表 ID 可能为 I 或 l，兼容两种） */
-  'tbl4RTo9ZVTxlpLw': '实际毛利率（飞书多维表）',
-  'tbl4RTo9ZVTxIpLw': '实际毛利率（飞书多维表）'
-};
-
-function bitableSyncDisplayName(tableId) {
-  const id = String(tableId || '').trim();
-  if (!id) return '—';
-  if (BITABLE_TABLE_NAMES[id]) return BITABLE_TABLE_NAMES[id];
-  if (/^tbl[A-Za-z0-9]{10,}$/.test(id)) {
-    return `飞书多维表（未登记中文名｜${id}）`;
-  }
-  return id;
-}
-
-app.get('/api/agents/bitable-sync', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin', 'hq_manager', 'hr_manager', 'store_manager', 'front_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-  try {
-    const r = await pool.query(
-      `SELECT table_id, COUNT(*) as cnt, MAX(updated_at) as last_sync FROM feishu_generic_records WHERE tenant_id = $1 GROUP BY table_id ORDER BY last_sync DESC`,
-      [req.tenantId || req.user?.tenant_id || 'default']
-    );
-    const items = (r.rows || []).map(row => ({
-      tableId: row.table_id,
-      name: bitableSyncDisplayName(row.table_id),
-      count: Number(row.cnt),
-      lastSync: row.last_sync
-    }));
-    return res.json({ items });
-  } catch (e) {
-    return res.status(500).json({ error: 'internal_error' });
-  }
-});
+// Wave 4o: promotion tracks + bitable-sync → domains/promotion, domains/bitable-sync
 
 /** 与 agents-service-v2 /health 对齐；生产在 .env 设置 AGENTS_SERVICE_HEALTH_URL=http://127.0.0.1:3101/health */
 async function fetchAgentsServiceHealthSnapshot() {
@@ -8327,148 +8252,7 @@ async function getAgentsServiceAdminToken() {
   return token;
 }
 
-function canManageChairmanConfig(user) {
-  const role = String(user?.role || '').trim();
-  return role === 'admin' || role === 'hq_manager' || role === 'hr_manager';
-}
-
-app.get('/api/chairman/config', authRequired, async (req, res) => {
-  if (!canManageChairmanConfig(req.user)) return res.status(403).json({ error: 'forbidden' });
-  try {
-    const url = getAgentsServiceBaseUrl() + '/api/chairman/config';
-    const token = await getAgentsServiceAdminToken();
-    const r = await axios.get(url, {
-      timeout: 8000,
-      validateStatus: () => true,
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (r.status < 200 || r.status >= 300) {
-      return res.status(r.status || 502).json(r.data || { error: 'chairman_config_proxy_failed' });
-    }
-    return res.json(r.data || { ok: true, config: {} });
-  } catch (e) {
-    return res.status(502).json({ error: 'internal_error' });
-  }
-});
-
-app.post('/api/chairman/config', authRequired, async (req, res) => {
-  if (!canManageChairmanConfig(req.user)) return res.status(403).json({ error: 'forbidden' });
-  try {
-    const url = getAgentsServiceBaseUrl() + '/api/chairman/config';
-    const token = await getAgentsServiceAdminToken();
-    const r = await axios.post(url, req.body || {}, {
-      timeout: 10000,
-      validateStatus: () => true,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      }
-    });
-    if (r.status < 200 || r.status >= 300) {
-      return res.status(r.status || 502).json(r.data || { error: 'chairman_config_proxy_failed' });
-    }
-    return res.json(r.data || { ok: true });
-  } catch (e) {
-    return res.status(502).json({ error: 'internal_error' });
-  }
-});
-
-// ═══════════════════════════════════════════════════════
-// 任务和绩效 — 租户自助配置代理（原agents-admin控制台 #performance / #scheduled 的租户前端入口）
-// 复用 /api/chairman/config 同款代理模式：HRMS后端持service token代租户用户调agents-service-v2的
-// 通用配置API，agents-service-v2侧已按tenant_id隔离（当前单租户，行为等价于原全局配置）。
-// ═══════════════════════════════════════════════════════
-const TENANT_SETTINGS_ALLOWED_KEYS = new Set(['performance_eval', 'rhythm_schedule', 'daily_inspections', 'labor_cost_targets', 'random_inspections']);
-
-function canManageTenantSettings(user) {
-  const role = String(user?.role || '').trim();
-  return role === 'admin' || role === 'hq_manager' || role === 'hr_manager';
-}
-
-// ─── 目标管理：通用KPI目标（门店/品牌/公司级，任意metric_key），供"任务和绩效"页面增删改 ───
-// 必须注册在 /api/tenant-settings/:key 之前，否则会被 :key 抢先匹配成 unknown_settings_key → HTTP 400。
-// 复用agents-service-v2既有的/api/kpi/targets CRUD（kpi_targets表已tenant_id隔离）。
-app.get('/api/tenant-settings/kpi-targets', authRequired, async (req, res) => {
-  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
-  try {
-    const token = await getAgentsServiceAdminToken();
-    const qs = new URLSearchParams();
-    ['store', 'brand', 'metric_key'].forEach(k => { if (req.query?.[k]) qs.set(k, String(req.query[k])); });
-    const url = getAgentsServiceBaseUrl() + '/api/kpi/targets' + (qs.toString() ? `?${qs}` : '');
-    const r = await axios.get(url, { timeout: 8000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}` } });
-    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'kpi_targets_proxy_failed' });
-    return res.json(r.data || { targets: [] });
-  } catch (e) {
-    return res.status(502).json({ error: 'internal_error' });
-  }
-});
-
-app.put('/api/tenant-settings/kpi-targets', authRequired, async (req, res) => {
-  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
-  try {
-    const token = await getAgentsServiceAdminToken();
-    const url = getAgentsServiceBaseUrl() + '/api/kpi/targets';
-    const r = await axios.put(url, req.body || {}, {
-      timeout: 8000,
-      validateStatus: () => true,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
-    });
-    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'kpi_targets_proxy_failed' });
-    return res.json(r.data || { ok: true });
-  } catch (e) {
-    return res.status(502).json({ error: 'internal_error' });
-  }
-});
-
-app.delete('/api/tenant-settings/kpi-targets/:id', authRequired, async (req, res) => {
-  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
-  try {
-    const token = await getAgentsServiceAdminToken();
-    const url = getAgentsServiceBaseUrl() + '/api/kpi/targets/' + encodeURIComponent(req.params.id);
-    const r = await axios.delete(url, { timeout: 8000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}` } });
-    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'kpi_targets_proxy_failed' });
-    return res.json(r.data || { ok: true });
-  } catch (e) {
-    return res.status(502).json({ error: 'internal_error' });
-  }
-});
-
-app.get('/api/tenant-settings/:key', authRequired, async (req, res) => {
-  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
-  const key = String(req.params.key || '').trim();
-  if (!TENANT_SETTINGS_ALLOWED_KEYS.has(key)) return res.status(400).json({ error: 'unknown_settings_key' });
-  try {
-    const token = await getAgentsServiceAdminToken();
-    const url = getAgentsServiceBaseUrl() + '/api/config/' + encodeURIComponent(key);
-    const r = await axios.get(url, { timeout: 8000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}` } });
-    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'tenant_settings_proxy_failed' });
-    return res.json(r.data || { config_key: key, config_value: null });
-  } catch (e) {
-    return res.status(502).json({ error: 'internal_error' });
-  }
-});
-
-app.put('/api/tenant-settings/:key', authRequired, async (req, res) => {
-  if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
-  const key = String(req.params.key || '').trim();
-  if (!TENANT_SETTINGS_ALLOWED_KEYS.has(key)) return res.status(400).json({ error: 'unknown_settings_key' });
-  const { config_value, description } = req.body || {};
-  if (config_value === undefined) return res.status(400).json({ error: 'config_value is required' });
-  try {
-    const token = await getAgentsServiceAdminToken();
-    const url = getAgentsServiceBaseUrl() + '/api/config/' + encodeURIComponent(key);
-    const r = await axios.put(url, { config_value, description }, {
-      timeout: 8000,
-      validateStatus: () => true,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
-    });
-    if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'tenant_settings_proxy_failed' });
-    return res.json(r.data || { ok: true });
-  } catch (e) {
-    return res.status(502).json({ error: 'internal_error' });
-  }
-});
-
+// Wave 4o: chairman/tenant-settings → domains/tenant-settings/routes.js
 
 let __lastDiskLarkNoticeAt = 0;
 
@@ -8641,81 +8425,7 @@ app.get('/api/version', async (req, res) => {
   }
 });
 
-app.get('/api/exam-results', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  const isPrivileged = role === 'admin' || role === 'hq_manager' || role === 'store_manager';
-  const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 100)));
-  try {
-    if (isPrivileged) {
-      const r = await pool.query(
-        `select id, assignment_id, user_key, created_at, started_at, submitted_at, time_used_seconds, auto_submitted, set_index, total, correct, score, answers
-         from exam_results
-         where tenant_id = $2
-         order by created_at desc
-         limit $1`,
-        [limit, req.tenantId || req.user?.tenant_id || 'default']
-      );
-      return res.json({ items: r.rows || [] });
-    }
-
-    const userKey = String(req.user?.username || '').trim();
-    const r = await pool.query(
-      `select id, assignment_id, user_key, created_at, started_at, submitted_at, time_used_seconds, auto_submitted, set_index, total, correct, score, answers
-       from exam_results
-       where user_key = $1
-       order by created_at desc
-       limit $2`,
-      [userKey, limit]
-    );
-    return res.json({ items: r.rows || [] });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-app.post('/api/exam-results', authRequired, async (req, res) => {
-  const userKey = String(req.user?.username || '').trim() || 'unknown';
-  const assignmentIdRaw = req.body?.assignmentId;
-  const assignmentId = assignmentIdRaw ? String(assignmentIdRaw).trim() : null;
-  const startedAt = req.body?.startedAt ? String(req.body.startedAt).trim() : null;
-  const submittedAt = req.body?.submittedAt ? String(req.body.submittedAt).trim() : null;
-  const timeUsedSeconds = req.body?.timeUsedSeconds == null ? null : Number(req.body.timeUsedSeconds);
-  const autoSubmitted = !!req.body?.autoSubmitted;
-  const setIndex = req.body?.setIndex == null ? null : Number(req.body.setIndex);
-  const total = req.body?.total == null ? null : Number(req.body.total);
-  const correct = req.body?.correct == null ? null : Number(req.body.correct);
-  const score = req.body?.score == null ? null : Number(req.body.score);
-  const answers = Array.isArray(req.body?.answers) ? req.body.answers : [];
-
-  if (total == null || score == null) {
-    return res.status(400).json({ error: 'missing_fields' });
-  }
-
-  try {
-    const r = await pool.query(
-      `insert into exam_results (assignment_id, user_key, started_at, submitted_at, time_used_seconds, auto_submitted, set_index, total, correct, score, answers, tenant_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       returning id, assignment_id, user_key, created_at, started_at, submitted_at, time_used_seconds, auto_submitted, set_index, total, correct, score, answers`,
-      [
-        assignmentId || null,
-        userKey,
-        startedAt || null,
-        submittedAt || null,
-        Number.isFinite(timeUsedSeconds) ? Math.max(0, Math.floor(timeUsedSeconds)) : null,
-        autoSubmitted,
-        Number.isFinite(setIndex) ? Math.max(0, Math.floor(setIndex)) : null,
-        Number.isFinite(total) ? Math.max(0, Math.floor(total)) : null,
-        Number.isFinite(correct) ? Math.max(0, Math.floor(correct)) : null,
-        Number.isFinite(score) ? Math.max(0, Math.floor(score)) : null,
-        JSON.stringify(answers || []),
-        req.tenantId || req.user?.tenant_id || 'default'
-      ]
-    );
-    return res.json({ item: r.rows?.[0] || null });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
+// Wave 4o: exam-results → domains/exam-results/routes.js
 
 // Wave 4g: stores CRUD/brands/location → domains/stores/*
 
@@ -10037,6 +9747,26 @@ registerBirthdayRoutes(app, authRequired, {
   pickHrManagerUsername,
   stateFindUserRecord,
 });
+
+registerExamResultsRoutes(app, authRequired, { pool });
+
+registerTenantSettingsRoutes(app, authRequired, {
+  axios,
+  getAgentsServiceBaseUrl,
+  getAgentsServiceAdminToken,
+});
+
+registerUsageWeeklyRoutes(app, authRequired, { pool });
+
+registerWecomCallbackRoutes(app);
+
+registerPromotionTracksRoutes(app, authRequired, {
+  getSharedState,
+  stateFindUserRecord,
+  getPromotionTrackProgress,
+});
+
+registerBitableSyncRoutes(app, authRequired, { pool });
 
 registerRemainingStateRoutes(app, authRequired, {
   pool,
@@ -11842,69 +11572,7 @@ setInterval(() => {
 
 // Wave 4n: /api/attention-scores* → domains/attention-scores/routes.js
 
-app.get('/api/admin/usage-weekly', authRequired, async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (role !== 'admin' && role !== 'hq_manager') {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-  try {
-    const { periodStart, periodEnd } = (() => {
-      const now = new Date();
-      const shanghaiNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-      const dayOfWeek = shanghaiNow.getDay();
-      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      const monday = new Date(shanghaiNow);
-      monday.setDate(shanghaiNow.getDate() + mondayOffset - 7);
-      const sunday = new Date(monday);
-      sunday.setDate(monday.getDate() + 6);
-      const fmt = d => d.toISOString().slice(0, 10);
-      return { periodStart: fmt(monday), periodEnd: fmt(sunday) };
-    })();
-
-    const result = await pool.query(`
-      SELECT
-        l.username,
-        COALESCE(e.name, u.real_name, l.username) AS name,
-        COALESCE(e.store, fu.store, '') AS store,
-        COALESCE(e.position, fu.role, u.role, '') AS position,
-        COUNT(*) AS login_count,
-        ROUND(
-          EXTRACT(EPOCH FROM (
-            COALESCE(
-              SUM(
-                LEAST(
-                  COALESCE(
-                    l.logout_at,
-                    LEAST(
-                      (($2::text || ' 23:59:59')::timestamp AT TIME ZONE 'Asia/Shanghai'),
-                      l.login_at + INTERVAL '12 hours'
-                    )
-                  ),
-                  l.login_at + INTERVAL '12 hours'
-                ) - l.login_at
-              ),
-              INTERVAL '0'
-            )
-          )) / 60.0
-        , 1) AS online_minutes
-      FROM user_login_log l
-      LEFT JOIN employees e ON LOWER(TRIM(e.username)) = LOWER(TRIM(l.username))
-      LEFT JOIN users u ON LOWER(TRIM(u.username)) = LOWER(TRIM(l.username))
-      LEFT JOIN feishu_users fu ON LOWER(TRIM(fu.username)) = LOWER(TRIM(l.username))
-      WHERE (l.login_at AT TIME ZONE 'Asia/Shanghai')::date >= $1::date
-        AND (l.login_at AT TIME ZONE 'Asia/Shanghai')::date <= $2::date
-        AND l.username NOT LIKE '__periodic%%'
-        AND COALESCE(e.name, u.real_name, '') NOT IN ('系统管理员', 'test')
-      GROUP BY l.username, e.name, u.real_name, e.store, fu.store, e.position, fu.role, u.role
-      ORDER BY login_count DESC, online_minutes DESC
-    `, [periodStart, periodEnd]);
-
-    res.json({ periodStart, periodEnd, data: result.rows });
-  } catch (e) {
-    console.error('GET /api/admin/usage-weekly error:', e);
-    res.status(500).json({ error: 'internal_error' });
-  }
-});
+// Wave 4o: usage-weekly → domains/usage-weekly/routes.js
 
 // unhandledRejection 不会让进程崩溃，可能一天触发几十次（不像uncaughtException那样
 // 自带"只会响一次"的天然限流）。直接接飞书会刷屏、导致频道被静音，反而让真正的崩溃
@@ -12097,21 +11765,4 @@ startAiQualityLearningScheduler(pool, {
 // 用 mergeSharedStateFields 按 id 合并单条公告对象，不会跟其它员工的并发已读/其它字段写入冲突。
 // Wave 4n: announcements ack/receipts + notifications write → domains
 
-app.get('/api/wecom/callback', (req, res) => {
-  const token = String(process.env.WECOM_CALLBACK_TOKEN || '').trim();
-  const aesKey = String(process.env.WECOM_CALLBACK_AES_KEY || '').trim();
-  const { msg_signature, timestamp, nonce, echostr } = req.query || {};
-  if (token && aesKey && msg_signature && echostr) {
-    try {
-      const expect = wecomVerifySignature(token, timestamp, nonce, echostr);
-      if (expect !== String(msg_signature)) return res.status(401).send('invalid signature');
-      return res.send(wecomDecryptEchostr(String(echostr), aesKey));
-    } catch (e) {
-      return res.status(400).send('decrypt failed');
-    }
-  }
-  if (echostr) return res.send(String(echostr)); // 明文模式兜底
-  return res.send('ok');
-});
-// 被动接收消息：仅回执，不处理（系统为单向群发）
-app.post('/api/wecom/callback', (req, res) => res.send(''));
+// Wave 4o: wecom callback → domains/wecom/routes-callback.js
