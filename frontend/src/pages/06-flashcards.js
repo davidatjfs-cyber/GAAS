@@ -366,7 +366,7 @@
                 optionsEl.style.display = 'flex';
                 optionsEl.innerHTML = opts.map(op => {
                     const safe = escapeHtml(op);
-                    return `<button class="btn btn-secondary" type="button" onclick="selectKnowledgeFlashcardOption('${safe}')">${safe}</button>`;
+                    return `<button class="btn btn-secondary" type="button" data-fc-option="${safe}">${safe}</button>`;
                 }).join('');
             } else if (optionsEl) {
                 optionsEl.style.display = 'none';
@@ -621,3 +621,8 @@
             showNotification('已重置', 'success');
         }
 
+        document.addEventListener('click', (event) => {
+            const btn = event.target.closest('#kb-fc-options button[data-fc-option]');
+            if (!btn) return;
+            selectKnowledgeFlashcardOption(btn.getAttribute('data-fc-option') || '');
+        });

@@ -4,19 +4,24 @@ import {
   removeUserFromList,
   upsertUsersInList,
 } from './service.js';
+import {
+  mergeStateFieldsOnClient,
+  patchHrmsStateFieldsOnClient,
+  readHrmsStateForUpdate,
+  withMirrorWriteTx,
+} from '../shared/mirror-tx.js';
 
 /**
  * @param {import('express').Express} app
  * @param {(req,res,next)=>void} authRequired
  * @param {{
+ *   pool: any,
  *   getSharedState: (tenantId?: string)=>Promise<object|null>,
- *   saveSharedState: (data: object, tenantId?: string)=>Promise<any>,
- *   mergeSharedStateFields: (patches: object, arrayIdFields?: object, tenantId?: string)=>Promise<void>,
  *   resolveTenantId: (req)=>string,
  * }} deps
  */
 export function registerRemainingStateRoutes(app, authRequired, deps) {
-  const { getSharedState, saveSharedState, mergeSharedStateFields, resolveTenantId } = deps;
+  const { pool, getSharedState, resolveTenantId } = deps;
 
   function requireAdmin(req, res) {
     const role = String(req.user?.role || '').trim();
@@ -63,7 +68,9 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
         item.pinned = true;
         item.pin_until = body.pin_until || null;
       }
-      await mergeSharedStateFields({ announcements: [item] }, { announcements: 'id' }, tid);
+      await withMirrorWriteTx(pool, async (client) => {
+        await mergeStateFieldsOnClient(client, tid, { announcements: [item] }, { announcements: 'id' });
+      });
       return res.json({ ok: true, item });
     } catch (e) {
       console.error('[POST /api/announcements]', e?.message || e);
@@ -77,12 +84,19 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
     if (!id) return res.status(400).json({ error: 'missing_id' });
     try {
       const tid = resolveTenantId(req);
-      const state0 = (await getSharedState(tid)) || {};
-      const result = removeAnnouncementFromList(state0.announcements, id);
-      if (!result.ok) return res.status(404).json({ error: 'not_found' });
-      await saveSharedState({ ...state0, announcements: result.list }, tid);
+      await withMirrorWriteTx(pool, async (client) => {
+        const { current } = await readHrmsStateForUpdate(client, tid);
+        const result = removeAnnouncementFromList(current.announcements, id);
+        if (!result.ok) {
+          const err = new Error('not_found');
+          err.code = 'not_found';
+          throw err;
+        }
+        await patchHrmsStateFieldsOnClient(client, tid, { announcements: result.list });
+      });
       return res.json({ ok: true });
     } catch (e) {
+      if (e?.code === 'not_found') return res.status(404).json({ error: 'not_found' });
       console.error('[DELETE /api/announcements/:id]', e?.message || e);
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
@@ -106,10 +120,11 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
     if (!requireAdmin(req, res)) return;
     try {
       const tid = resolveTenantId(req);
-      const state0 = (await getSharedState(tid)) || {};
       const questionBank = Array.isArray(req.body?.questionBank) ? req.body.questionBank : [];
       const questionSets = Array.isArray(req.body?.questionSets) ? req.body.questionSets : [];
-      await saveSharedState({ ...state0, questionBank, questionSets }, tid);
+      await withMirrorWriteTx(pool, async (client) => {
+        await patchHrmsStateFieldsOnClient(client, tid, { questionBank, questionSets });
+      });
       return res.json({ ok: true, questionBank, questionSets });
     } catch (e) {
       console.error('[PUT /api/exam/question-bank]', e?.message || e);
@@ -140,7 +155,9 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
         createdAt: String(assignment.createdAt || new Date().toISOString()),
         createdBy: String(assignment.createdBy || req.user?.username || '').trim(),
       };
-      await mergeSharedStateFields({ examAssignments: [item] }, { examAssignments: 'id' }, tid);
+      await withMirrorWriteTx(pool, async (client) => {
+        await mergeStateFieldsOnClient(client, tid, { examAssignments: [item] }, { examAssignments: 'id' });
+      });
       return res.json({ ok: true, item });
     } catch (e) {
       console.error('[POST /api/exam/assignments]', e?.message || e);
@@ -163,13 +180,14 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
     if (!requireAdmin(req, res)) return;
     try {
       const tid = resolveTenantId(req);
-      const state0 = (await getSharedState(tid)) || {};
       const items = Array.isArray(req.body?.items)
         ? req.body.items
         : Array.isArray(req.body?.trainingMaterials)
           ? req.body.trainingMaterials
           : [];
-      await saveSharedState({ ...state0, trainingMaterials: items }, tid);
+      await withMirrorWriteTx(pool, async (client) => {
+        await patchHrmsStateFieldsOnClient(client, tid, { trainingMaterials: items });
+      });
       return res.json({ ok: true, items });
     } catch (e) {
       console.error('[PUT /api/training-materials]', e?.message || e);
@@ -196,7 +214,9 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
       const tid = resolveTenantId(req);
       const user = normalizeUserRecord({ ...(req.body || {}), username });
       if (!user) return res.status(400).json({ error: 'invalid_user' });
-      await mergeSharedStateFields({ users: [user] }, { users: 'username' }, tid);
+      await withMirrorWriteTx(pool, async (client) => {
+        await mergeStateFieldsOnClient(client, tid, { users: [user] }, { users: 'username' });
+      });
       return res.json({ ok: true, item: user });
     } catch (e) {
       console.error('[PUT /api/hrms-users/:username]', e?.message || e);
@@ -210,12 +230,19 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
     if (!username) return res.status(400).json({ error: 'missing_username' });
     try {
       const tid = resolveTenantId(req);
-      const state0 = (await getSharedState(tid)) || {};
-      const result = removeUserFromList(state0.users, username);
-      if (!result.ok) return res.status(404).json({ error: 'not_found' });
-      await saveSharedState({ ...state0, users: result.list }, tid);
+      await withMirrorWriteTx(pool, async (client) => {
+        const { current } = await readHrmsStateForUpdate(client, tid);
+        const result = removeUserFromList(current.users, username);
+        if (!result.ok) {
+          const err = new Error('not_found');
+          err.code = 'not_found';
+          throw err;
+        }
+        await patchHrmsStateFieldsOnClient(client, tid, { users: result.list });
+      });
       return res.json({ ok: true });
     } catch (e) {
+      if (e?.code === 'not_found') return res.status(404).json({ error: 'not_found' });
       console.error('[DELETE /api/hrms-users/:username]', e?.message || e);
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
@@ -227,10 +254,13 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
       const tid = resolveTenantId(req);
       const incoming = Array.isArray(req.body?.users) ? req.body.users : [];
       if (!incoming.length) return res.status(400).json({ error: 'empty' });
-      const state0 = (await getSharedState(tid)) || {};
-      const { list, upserted } = upsertUsersInList(state0.users, incoming);
-      await saveSharedState({ ...state0, users: list }, tid);
-      return res.json({ ok: true, count: upserted.length, items: list });
+      const result = await withMirrorWriteTx(pool, async (client) => {
+        const { current } = await readHrmsStateForUpdate(client, tid);
+        const merged = upsertUsersInList(current.users, incoming);
+        await patchHrmsStateFieldsOnClient(client, tid, { users: merged.list });
+        return merged;
+      });
+      return res.json({ ok: true, count: result.upserted.length, items: result.list });
     } catch (e) {
       console.error('[POST /api/hrms-users/import]', e?.message || e);
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });

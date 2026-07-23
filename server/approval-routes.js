@@ -1,10 +1,8 @@
 /**
  * 审批模块的简单路由（架构拆分阶段B，第一批：只拆低风险的部分）。
  *
- * 有意不拆的部分：POST /api/approvals(创建)、POST /api/approvals/:id/decide(审批决定)、
- * POST /api/approvals/:id/return、POST /api/approvals/:id/resubmit —— 这几个直接涉及
- * 薪资时间线、晋升记录、培训任务生成、离职员工状态变更，依赖的辅助函数有40+个，
- * 复杂度和业务风险都远高于这批，留给专门的一次拆分再仔细做。
+ * 有意不拆的部分：POST /api/approvals(创建)、POST /api/approvals/:id/return、
+ * POST /api/approvals/:id/resubmit —— decide 已拆至 domains/approvals/（P0-A1）。
  *
  * 依赖注入方式同 auth-routes.js：不从这里import index.js，而是通过 deps 参数接收
  * index.js里那些被广泛复用、不属于审批模块本身的工具函数。

@@ -4,18 +4,19 @@ import {
   normalizePaymentBudgets,
   normalizePaymentSettings,
 } from './service.js';
+import { patchHrmsStateFieldsOnClient, readHrmsStateForUpdate, withMirrorWriteTx } from '../shared/mirror-tx.js';
 
 /**
  * @param {import('express').Express} app
  * @param {(req,res,next)=>void} authRequired
  * @param {{
+ *   pool: any,
  *   getSharedState: (tenantId?: string)=>Promise<object|null>,
- *   saveSharedState: (data: object, tenantId?: string)=>Promise<any>,
  *   resolveTenantId: (req)=>string,
  * }} deps
  */
 export function registerPaymentConfigRoutes(app, authRequired, deps) {
-  const { getSharedState, saveSharedState, resolveTenantId } = deps;
+  const { pool, getSharedState, resolveTenantId } = deps;
   const r = express.Router();
 
   r.get('/', authRequired, async (req, res) => {
@@ -36,14 +37,20 @@ export function registerPaymentConfigRoutes(app, authRequired, deps) {
     }
     try {
       const tid = resolveTenantId(req);
-      const state0 = (await getSharedState(tid)) || {};
-      const paymentSettings = normalizePaymentSettings(
-        req.body?.paymentSettings !== undefined ? req.body.paymentSettings : state0.paymentSettings
-      );
-      const paymentBudgets = normalizePaymentBudgets(
-        req.body?.paymentBudgets !== undefined ? req.body.paymentBudgets : state0.paymentBudgets
-      );
-      await saveSharedState({ ...state0, paymentSettings, paymentBudgets }, tid);
+      const { paymentSettings, paymentBudgets } = await withMirrorWriteTx(pool, async (client) => {
+        const { current } = await readHrmsStateForUpdate(client, tid);
+        const nextSettings = normalizePaymentSettings(
+          req.body?.paymentSettings !== undefined ? req.body.paymentSettings : current.paymentSettings
+        );
+        const nextBudgets = normalizePaymentBudgets(
+          req.body?.paymentBudgets !== undefined ? req.body.paymentBudgets : current.paymentBudgets
+        );
+        await patchHrmsStateFieldsOnClient(client, tid, {
+          paymentSettings: nextSettings,
+          paymentBudgets: nextBudgets,
+        });
+        return { paymentSettings: nextSettings, paymentBudgets: nextBudgets };
+      });
       return res.json({ ok: true, paymentSettings, paymentBudgets });
     } catch (e) {
       console.error('[PUT /api/payment-config]', e?.message || e);

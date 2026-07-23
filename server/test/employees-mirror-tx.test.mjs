@@ -98,16 +98,36 @@ test('withEmployeesWriteTx rolls back on throw', async () => {
 });
 
 test('reconcileEmployeesMirror reports ok when sets match', async () => {
+  const emp = (username, name) => ({
+    id: username,
+    username,
+    name,
+    role: 'staff',
+    store: 's1',
+    department: '',
+    position: '',
+    status: 'active',
+  });
   const pool = {
     async query(sql) {
       if (/FROM employees\b/i.test(sql)) {
-        return { rows: [{ u: 'alice' }, { u: 'bob' }] };
+        return { rows: [emp('alice', 'Alice'), emp('bob', 'Bob')] };
       }
-      return { rows: [{ emps: [{ username: 'Alice' }, { username: 'bob' }] }] };
+      return {
+        rows: [
+          {
+            emps: [
+              { username: 'Alice', name: 'Alice', role: 'staff', store: 's1', status: 'active' },
+              { username: 'bob', name: 'Bob', role: 'staff', store: 's1', status: 'active' },
+            ],
+          },
+        ],
+      };
     },
   };
   const report = await reconcileEmployeesMirror(pool, 'default');
   assert.equal(report.ok, true);
   assert.equal(report.tableCount, 2);
   assert.equal(report.mirrorCount, 2);
+  assert.deepEqual(report.fieldDrift, []);
 });

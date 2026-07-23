@@ -10,6 +10,7 @@ import {
   saveRoleModules,
   FLOW_CONFIG_KEYS,
 } from './service.js';
+import { patchHrmsStateFieldsOnClient, withMirrorWriteTx } from '../shared/mirror-tx.js';
 
 /**
  * @param {import('express').Express} app
@@ -17,12 +18,11 @@ import {
  * @param {{
  *   pool: any,
  *   resolveTenantId: (req)=>string,
- *   mirrorToState: (fields: object, tenantId: string)=>Promise<void>,
  *   getSharedState?: (tenantId: string)=>Promise<object|null>,
  * }} deps
  */
 export function registerFlowConfigRoutes(app, authRequired, deps) {
-  const { pool, resolveTenantId, mirrorToState, getSharedState } = deps;
+  const { pool, resolveTenantId, getSharedState } = deps;
   const r = express.Router();
 
   r.get('/role-modules', authRequired, async (req, res) => {
@@ -58,8 +58,11 @@ export function registerFlowConfigRoutes(app, authRequired, deps) {
       if (!config || typeof config !== 'object') {
         return res.status(400).json({ error: 'invalid_config' });
       }
-      const saved = await saveRoleModules(pool, tid, config);
-      await mirrorToState({ roleModules: saved }, tid);
+      const saved = await withMirrorWriteTx(pool, async (client) => {
+        const normalized = await saveRoleModules(client, tid, config);
+        await patchHrmsStateFieldsOnClient(client, tid, { roleModules: normalized });
+        return normalized;
+      });
       return res.json({ ok: true, config: saved });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
@@ -112,14 +115,17 @@ export function registerFlowConfigRoutes(app, authRequired, deps) {
       if (!hasApprovalFlows && !hasPaymentFlow) {
         return res.status(400).json({ error: 'invalid_config' });
       }
-      const mirror = {};
-      if (hasApprovalFlows) {
-        mirror.approvalFlows = await saveApprovalFlows(pool, tid, approvalFlows);
-      }
-      if (hasPaymentFlow) {
-        mirror.paymentFlowByStore = await savePaymentFlowByStore(pool, tid, paymentFlowByStore);
-      }
-      await mirrorToState(mirror, tid);
+      const mirror = await withMirrorWriteTx(pool, async (client) => {
+        const fields = {};
+        if (hasApprovalFlows) {
+          fields.approvalFlows = await saveApprovalFlows(client, tid, approvalFlows);
+        }
+        if (hasPaymentFlow) {
+          fields.paymentFlowByStore = await savePaymentFlowByStore(client, tid, paymentFlowByStore);
+        }
+        await patchHrmsStateFieldsOnClient(client, tid, fields);
+        return fields;
+      });
       return res.json({ ok: true, ...mirror });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });

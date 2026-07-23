@@ -2,30 +2,43 @@
  * 员工表权威 + hrms_state.employees 镜像：同事务写入，避免表提交后镜像失败导致分叉。
  */
 import { SHARED_TABLES } from '@gaas/shared';
+import {
+  mergeStateFieldsOnClient,
+  patchHrmsStateFieldsOnClient,
+  readHrmsStateForUpdate,
+  withMirrorWriteTx,
+} from '../shared/mirror-tx.js';
+import { employeeRowToStateShape } from './service.js';
+
+/** 保留存量 import 名 */
+export const withEmployeesWriteTx = withMirrorWriteTx;
+
+const RECONCILE_HASH_KEYS = ['username', 'status', 'role', 'store', 'name', 'department', 'position'];
 
 /**
- * @param {import('pg').Pool} pool
- * @param {(client: import('pg').PoolClient) => Promise<T>} fn
- * @returns {Promise<T>}
- * @template T
+ * @param {object|null|undefined} emp
  */
-export async function withEmployeesWriteTx(pool, fn) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (e) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {
-      /* ignore */
+function normalizeEmployeeForReconcileHash(emp) {
+  if (!emp || typeof emp !== 'object') return {};
+  const out = {};
+  for (const k of RECONCILE_HASH_KEYS) {
+    if (emp[k] != null && String(emp[k]).trim() !== '') {
+      out[k] = String(emp[k]).trim().toLowerCase();
     }
-    throw e;
-  } finally {
-    client.release();
   }
+  return out;
+}
+
+/**
+ * @param {object|null|undefined} emp
+ */
+function employeeContentHash(emp) {
+  const norm = normalizeEmployeeForReconcileHash(emp);
+  const sorted = {};
+  for (const k of Object.keys(norm).sort()) {
+    sorted[k] = norm[k];
+  }
+  return JSON.stringify(sorted);
 }
 
 /**
@@ -35,38 +48,9 @@ export async function withEmployeesWriteTx(pool, fn) {
  * @param {string} tenantId
  */
 export async function mergeEmployeesMirrorOnClient(client, emps, tenantId) {
-  const key = String(tenantId || 'default');
   const patchList = Array.isArray(emps) ? emps.filter((e) => e?.username) : [];
   if (!patchList.length) return;
-
-  const r = await client.query(
-    `SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 FOR UPDATE`,
-    [key]
-  );
-  const current = r.rows?.[0]?.data && typeof r.rows[0].data === 'object' ? r.rows[0].data : {};
-  const existing = Array.isArray(current.employees) ? current.employees.slice() : [];
-  const byUser = new Map(existing.map((e) => [String(e?.username || '').trim().toLowerCase(), e]));
-  for (const item of patchList) {
-    const u = String(item.username || '').trim().toLowerCase();
-    if (!u) continue;
-    byUser.set(u, item);
-  }
-  const patchKeys = new Set(patchList.map((e) => String(e.username || '').trim().toLowerCase()));
-  const retained = existing.filter((e) => !patchKeys.has(String(e?.username || '').trim().toLowerCase()));
-  const nextEmployees = [...patchList, ...retained];
-  const next = { ...current, employees: nextEmployees };
-
-  if (r.rows?.[0]) {
-    await client.query(
-      `UPDATE ${SHARED_TABLES.HRMS_STATE} SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`,
-      [key, JSON.stringify(next)]
-    );
-  } else {
-    await client.query(
-      `INSERT INTO ${SHARED_TABLES.HRMS_STATE} (key, data, updated_at) VALUES ($1, $2::jsonb, NOW())`,
-      [key, JSON.stringify(next)]
-    );
-  }
+  await mergeStateFieldsOnClient(client, tenantId, { employees: patchList }, { employees: 'username' });
 }
 
 /**
@@ -75,56 +59,86 @@ export async function mergeEmployeesMirrorOnClient(client, emps, tenantId) {
  * @param {string} tenantId
  */
 export async function removeEmployeesMirrorOnClient(client, usernames, tenantId) {
-  const key = String(tenantId || 'default');
   const removeSet = new Set(
     (Array.isArray(usernames) ? usernames : []).map((u) => String(u || '').trim().toLowerCase()).filter(Boolean)
   );
   if (!removeSet.size) return;
 
-  const r = await client.query(
-    `SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 FOR UPDATE`,
-    [key]
-  );
-  if (!r.rows?.[0]) return;
-  const current = r.rows[0].data && typeof r.rows[0].data === 'object' ? r.rows[0].data : {};
+  const { current } = await readHrmsStateForUpdate(client, tenantId);
   const existing = Array.isArray(current.employees) ? current.employees : [];
   const nextEmployees = existing.filter((e) => !removeSet.has(String(e?.username || '').trim().toLowerCase()));
-  const next = { ...current, employees: nextEmployees };
-  await client.query(
-    `UPDATE ${SHARED_TABLES.HRMS_STATE} SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`,
-    [key, JSON.stringify(next)]
-  );
+  await patchHrmsStateFieldsOnClient(client, tenantId, { employees: nextEmployees });
 }
 
 /**
- * 表 vs 镜像对账：username 集合不一致则返回 diff。
+ * 表 vs 镜像对账：username 集合 + 关键字段内容 hash。
  * @param {import('pg').Pool} pool
  * @param {string} tenantId
  */
 export async function reconcileEmployeesMirror(pool, tenantId) {
   const tid = String(tenantId || 'default');
   const tableR = await pool.query(
-    `SELECT lower(trim(username)) AS u FROM ${SHARED_TABLES.EMPLOYEES} WHERE tenant_id = $1 AND username IS NOT NULL AND trim(username) <> ''`,
+    `SELECT id, username, name, role, store, department, position, status, gender, phone, email,
+            join_date, birthday, salary, password_hash, manager_username, id_card_number, bank_card,
+            extra_json, created_at, updated_at
+       FROM ${SHARED_TABLES.EMPLOYEES}
+      WHERE tenant_id = $1 AND username IS NOT NULL AND trim(username) <> ''`,
     [tid]
   );
-  const stateR = await pool.query(`SELECT data->'employees' AS emps FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 LIMIT 1`, [
-    tid,
-  ]);
-  const tableSet = new Set((tableR.rows || []).map((r) => r.u).filter(Boolean));
-  const emps = stateR.rows?.[0]?.emps;
-  const mirrorSet = new Set(
-    (Array.isArray(emps) ? emps : [])
-      .map((e) => String(e?.username || '').trim().toLowerCase())
-      .filter(Boolean)
+  const stateR = await pool.query(
+    `SELECT data->'employees' AS emps FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 LIMIT 1`,
+    [tid]
   );
+
+  const tableByUser = new Map();
+  for (const row of tableR.rows || []) {
+    const shaped = employeeRowToStateShape(row);
+    const u = String(shaped?.username || '').trim().toLowerCase();
+    if (u) tableByUser.set(u, shaped);
+  }
+
+  const mirrorByUser = new Map();
+  const emps = stateR.rows?.[0]?.emps;
+  for (const e of Array.isArray(emps) ? emps : []) {
+    const u = String(e?.username || '').trim().toLowerCase();
+    if (u) mirrorByUser.set(u, e);
+  }
+
+  const tableSet = new Set(tableByUser.keys());
+  const mirrorSet = new Set(mirrorByUser.keys());
   const onlyTable = [...tableSet].filter((u) => !mirrorSet.has(u)).sort();
   const onlyMirror = [...mirrorSet].filter((u) => !tableSet.has(u)).sort();
+
+  /** @type {{ username: string, reason: string }[]} */
+  const fieldDrift = [];
+  for (const u of [...tableSet].filter((x) => mirrorSet.has(x)).sort()) {
+    const tableHash = employeeContentHash(tableByUser.get(u));
+    const mirrorHash = employeeContentHash(mirrorByUser.get(u));
+    if (tableHash !== mirrorHash) {
+      fieldDrift.push({ username: tableByUser.get(u)?.username || u, reason: 'content_hash_mismatch' });
+    }
+  }
+
   return {
     tenantId: tid,
     tableCount: tableSet.size,
     mirrorCount: mirrorSet.size,
     onlyTable,
     onlyMirror,
-    ok: onlyTable.length === 0 && onlyMirror.length === 0,
+    fieldDrift,
+    ok: onlyTable.length === 0 && onlyMirror.length === 0 && fieldDrift.length === 0,
   };
+}
+
+/**
+ * @param {import('pg').Pool} pool
+ * @param {(p: import('pg').Pool) => Promise<string[]>} getActiveTenantIds
+ */
+export async function reconcileEmployeesMirrorAllTenants(pool, getActiveTenantIds) {
+  const tenantIds = await getActiveTenantIds(pool);
+  const reports = [];
+  for (const tid of tenantIds) {
+    reports.push(await reconcileEmployeesMirror(pool, tid));
+  }
+  return reports;
 }
