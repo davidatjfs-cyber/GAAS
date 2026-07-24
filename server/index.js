@@ -69,6 +69,9 @@ import {
   inferContentType,
   buildInlineContentDisposition,
 } from './domains/uploads/content-type.js';
+import { createObjectStorageHelpers } from './domains/uploads/object-storage.js';
+import { createRequireEnvHelpers } from './domains/shared/require-env.js';
+import { createLoginLogHelpers } from './domains/auth/login-log.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
@@ -282,6 +285,12 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = String(process.env.HOST || '0.0.0.0');
 const DATABASE_URL = process.env.DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET;
+
+// Wave H28: requireEnv → domains/shared/require-env.js
+const { requireEnv } = createRequireEnvHelpers({
+  databaseUrl: DATABASE_URL,
+  jwtSecret: JWT_SECRET,
+});
 const PLATFORM_ADMIN_SECRET = process.env.PLATFORM_ADMIN_SECRET;
 // 平台管理员JWT用独立密钥签发/校验，与租户内普通用户登录的JWT_SECRET隔离，
 // 避免任一边密钥轮换/泄露时影响范围扩大到另一边。agents-service-v2需配置同一个值
@@ -358,6 +367,22 @@ const COS_SECRET_KEY = process.env.COS_SECRET_KEY;
 const COS_BUCKET = process.env.COS_BUCKET;
 const COS_REGION = process.env.COS_REGION;
 const COS_PUBLIC_BASE_URL = process.env.COS_PUBLIC_BASE_URL;
+
+// Wave H28: COS/OSS helpers → domains/uploads/object-storage.js
+// Must run before registerKnowledgeRoutes / registerHealthRoutes (factory not hoisted).
+const {
+  getOssClient,
+  getCosClient,
+  buildCosPublicUrl,
+  buildOssPublicUrl,
+} = createObjectStorageHelpers({
+  COS,
+  cosSecretId: COS_SECRET_ID,
+  cosSecretKey: COS_SECRET_KEY,
+  cosBucket: COS_BUCKET,
+  cosRegion: COS_REGION,
+  cosPublicBaseUrl: COS_PUBLIC_BASE_URL,
+});
 
 // 飞书配置
 const FEISHU_APP_ID = process.env.FEISHU_APP_ID;
@@ -621,6 +646,9 @@ const pool = new Pool({ connectionString: DATABASE_URL });
 const recordUploadOwnership = createRecordUploadOwnership(pool);
 const loginRateLimit = createLoginRateLimiter();
 const platformAdminRequired = createPlatformAdminRequired(pool, PLATFORM_ADMIN_JWT_SECRET);
+
+// Wave H28: recordLogin / recordLogout → domains/auth/login-log.js
+const { recordLogin, recordLogout } = createLoginLogHelpers({ pool, tenantContext });
 
 // Wave H11: user/employee lookup helpers → domains/employees/user-lookup.js
 // Must run after pool + expandAgentStoreLabels import; BEFORE registerPointsRoutes
@@ -968,52 +996,7 @@ async function ensureLoginLogTable() {
   }
 }
 
-async function recordLogin(username, sessionNonce, req, tenantId = 'default') {
-  const key = String(username || '').trim().toLowerCase();
-  if (!key) return;
-  const ip = String(req.headers?.['x-forwarded-for'] || req.headers?.['x-real-ip'] || req.ip || '').split(',')[0].trim().slice(0, 45);
-  const ua = String(req.headers?.['user-agent'] || '').slice(0, 500);
-  const tid = String(tenantId || 'default').trim() || 'default';
-  // 登录这一刻还没有JWT/ALS上下文(还没发token)，靠调用方传入刚查到的用户租户身份，
-  // 自己用tenantContext.run()包裹，不依赖外部上下文。
-  await tenantContext.run(tid, async () => {
-    let client;
-    try {
-      client = await pool.connect();
-      await client.query('SET default_transaction_read_only = OFF');
-      await client.query(
-        `update user_login_log set logout_at = now() where lower(username) = $1 and logout_at is null`,
-        [key]
-      );
-      await client.query(
-        `insert into user_login_log (username, login_at, session_nonce, ip_address, user_agent, tenant_id) values ($1, now(), $2, $3, $4, $5)`,
-        [key, sessionNonce, ip, ua, tid]
-      );
-    } catch (e) {
-      console.error('recordLogin failed:', e?.message || e);
-    } finally {
-      try { if (client) client.release(); } catch (_e) { /* ignore */ }
-    }
-  });
-}
-
-async function recordLogout(username) {
-  const key = String(username || '').trim().toLowerCase();
-  if (!key) return;
-  let client;
-  try {
-    client = await pool.connect();
-    await client.query('SET default_transaction_read_only = OFF');
-    await client.query(
-      `update user_login_log set logout_at = now() where username = $1 and logout_at is null`,
-      [key]
-    );
-  } catch (e) {
-    console.error('recordLogout failed:', e?.message || e);
-  } finally {
-    try { if (client) client.release(); } catch (_e) { /* ignore */ }
-  }
-}
+// Wave H28: recordLogin / recordLogout → domains/auth/login-log.js (after pool)
 
 async function ensureCheckinTable() {
   try {
@@ -1774,39 +1757,8 @@ async function ensureExamResultsTable() {
   }
 }
 
-function getOssClient() {
-  return null;
-}
-
-function getCosClient() {
-  if (!COS_SECRET_ID || !COS_SECRET_KEY || !COS_BUCKET || !COS_REGION) return null;
-  return new COS({
-    SecretId: COS_SECRET_ID,
-    SecretKey: COS_SECRET_KEY
-  });
-}
-
-function buildCosPublicUrl(objectKey) {
-  const key = String(objectKey || '').replace(/^\/+/, '');
-  if (!key) return '';
-  const base = String(COS_PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
-  if (base) return `${base}/${key}`;
-  if (!COS_BUCKET || !COS_REGION) return '';
-  return `https://${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com/${key}`;
-}
-
-function buildOssPublicUrl(objectKey) {
-  return '';
-}
-
-// Wave H27: inferContentType / buildInlineContentDisposition → domains/uploads/content-type.js
-
-function requireEnv() {
-  const missing = [];
-  if (!DATABASE_URL) missing.push('DATABASE_URL');
-  if (!JWT_SECRET) missing.push('JWT_SECRET');
-  return missing;
-}
+// Wave H28: getOssClient / getCosClient / build*PublicUrl → domains/uploads/object-storage.js
+// Wave H28: requireEnv → domains/shared/require-env.js
 
 async function loadTenantRuntimeStatus(tenantId) {
   return loadTenantRuntimeStatusFromModule(pool, tenantId);
