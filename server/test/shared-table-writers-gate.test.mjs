@@ -55,7 +55,7 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'master-agent.js|UPDATE|master_tasks',
   'ontology/action-plan-service.js|INSERT INTO|master_tasks',
   'ontology/ontology-task-adapter.js|INSERT INTO|master_tasks',
-  'performance-invalidation-api.js|UPDATE|agent_scores',
+  'domains/performance-invalidation/service.js|UPDATE|agent_scores',
   'performance-jobs.js|INSERT INTO|agent_scores',
   'performance-jobs.js|UPDATE|agent_scores',
   'rag-tool.js|UPDATE|knowledge_base',
@@ -81,6 +81,7 @@ const REPATH_NOTES = [
   'index.js → domains/dedup/routes.js | DELETE FROM|agent_messages',
   'index.js → domains/feishu-bitable/records.js | INSERT INTO|feishu_generic_records',
   'index.js → services/feishu-bitable-schema-ensure.js | DELETE FROM|agent_messages',
+  'performance-invalidation-api.js → domains/performance-invalidation/service.js | UPDATE|agent_scores',
 ];
 
 const OWNER = 'gaas';
