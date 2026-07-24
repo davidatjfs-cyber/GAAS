@@ -34,6 +34,15 @@ import { createUserLookupHelpers } from './domains/employees/user-lookup.js';
 import { findUserSalary } from './domains/employees/salary-helpers.js';
 import { createRoleAccessHelpers } from './domains/shared/role-access.js';
 import {
+  normalizeRoleForJwt,
+  normalizeUsersTableRole,
+} from './domains/shared/role-normalize.js';
+import {
+  isInactiveStatus,
+  employeeAccountShouldDisable,
+  createAccountGateHelpers,
+} from './domains/employees/account-gate.js';
+import {
   safeNumber,
   toNullableUuid,
   hrmsNowISO,
@@ -708,7 +717,7 @@ registerTenantPlatformRoutes(app, {
 // 延后到 createLeaveAttendanceHelpers 之后（工厂非 hoisted，不能在定义前 capture）
 // Wave H17: registerHrmsPermissionRoutes / registerDailyReportsRoutes / registerInventoryForecastRoutes /
 // registerReportsRoutes / registerHrmsPayrollClosedLoopRoutes
-// 延后到 createRoleAccessHelpers 之后（须在 normalizeRoleForJwt 之后；工厂非 hoisted）
+// 延后到 createRoleAccessHelpers 之后（工厂非 hoisted；normalizeRoleForJwt 已为 H19 顶层 import）
 registerPointsRoutes(app, {
   pool,
   authRequired,
@@ -1710,7 +1719,7 @@ const { isKitchenByRoleOrPosition, getPromotionTrackRecipients } = createPromoti
 // normalizeStoreKey / safeDateOnly / safeMonthOnly → domains/shared/time-number.js (named imports)
 
 // Wave H17: role access gates → domains/shared/role-access.js
-// Factory must run AFTER normalizeRoleForJwt (not hoisted); see createRoleAccessHelpers below.
+// see createRoleAccessHelpers below (normalizeRoleForJwt is H19 top-level import).
 
 // Wave H12: normalizeOpenAiCompatibleBaseUrl → domains/ai/routes-chat-completions.js
 
@@ -1743,8 +1752,8 @@ const { startRecurringRewardScheduler } = createRecurringRewardScheduler({
 });
 
 // Wave H15: getUserStoreAccessContext → domains/store-duty-bindings/store-access-context.js
-// Factory must run AFTER normalizeRoleForJwt (not hoisted) and AFTER H14 ensureStoreDutyBindingsReady;
-// see createStoreAccessContextHelpers call below normalizeRoleForJwt.
+// After H14 ensureStoreDutyBindingsReady; see createStoreAccessContextHelpers call below
+// (normalizeRoleForJwt is H19 top-level import).
 
 // Wave 4j: /api/ops/tasks* → domains/ops-tasks/routes.js
 
@@ -2137,71 +2146,10 @@ async function authRequiredOrQueryToken(req, res, next) {
   }
 }
 
-// users 表 role 列有 CHECK 约束，只允许 admin/hq_manager/store_manager/hq_employee/store_employee 5种，
-// normalizeRoleForJwt() 的输出可能是 cashier/hr_manager 等更细的角色（登录时另外从 hrms_state 同步真实权限），
-// 写 users 表时需要先收窄到约束允许的范围，避免 INSERT 因 CHECK 失败。
-function normalizeUsersTableRole(input) {
-  const jwtRole = normalizeRoleForJwt(input);
-  const allowed = ['admin', 'hq_manager', 'store_manager', 'hq_employee', 'store_employee'];
-  if (allowed.includes(jwtRole)) return jwtRole;
-  return 'store_employee';
-}
+// Wave H19: normalizeRoleForJwt / normalizeUsersTableRole → domains/shared/role-normalize.js (top import)
 
-function normalizeRoleForJwt(input) {
-  const v = String(input || '').trim();
-  if (!v) return 'store_employee';
-  const allowed = ['admin', 'hq_manager', 'store_manager', 'store_employee', 'cashier', 'hr_manager', 'store_production_manager', 'front_manager'];
-  if (allowed.includes(v)) return v;
-  // Map known Chinese/custom role names to standard codes（与前端 hrmsNormalizeRoleCode 对齐，避免 JWT 为 custom_管理员 时服务端仍按非 admin 处理）
-  const map = {
-    管理员: 'admin',
-    系统管理员: 'admin',
-    custom_管理员: 'admin',
-    custom_系统管理员: 'admin',
-    总部管理层: 'hq_manager',
-    总部经理: 'hq_manager',
-    custom_总部经理: 'hq_manager',
-    custom_总部营运: 'hq_manager',
-    custom_总部管理层: 'hq_manager',
-    总部营运: 'hq_manager',
-    总部人员: 'hr_manager',
-    总部人事: 'hr_manager',
-    custom_总部人员: 'hr_manager',
-    custom_总部人事: 'hr_manager',
-    custom_人事经理: 'hr_manager',
-    人事经理: 'hr_manager',
-    出纳: 'cashier',
-    总部出纳: 'cashier',
-    custom_出纳: 'cashier',
-    门店店长: 'store_manager',
-    店长: 'store_manager',
-    custom_门店店长: 'store_manager',
-    custom_店长: 'store_manager',
-    门店出品经理: 'store_production_manager',
-    出品经理: 'store_production_manager',
-    custom_门店出品经理: 'store_production_manager',
-    custom_出品经理: 'store_production_manager',
-    store_product_manager: 'store_production_manager',
-    门店员工: 'store_employee',
-    员工: 'store_employee'
-  };
-  if (map[v]) return map[v];
-  if (v.startsWith('custom_')) {
-    const raw = v.slice(7);
-    if (map[raw]) return map[raw];
-    if (/管理员/.test(raw)) return 'admin';
-    if (/总部|营运/.test(raw)) return 'hq_manager';
-    if (/人事|hr/i.test(raw)) return 'hr_manager';
-    if (/店长/.test(raw)) return 'store_manager';
-    if (/出品/.test(raw)) return 'store_production_manager';
-    if (/出纳|财务/.test(raw)) return 'cashier';
-    return 'store_employee';
-  }
-  return map[v] || v;
-}
-
-// Wave H15: after normalizeRoleForJwt (factory is not hoisted) + after H14 ensureStoreDutyBindingsReady;
-// before registerAuthRoutes / any capture of getUserStoreAccessContext at module load.
+// Wave H15: after H14 ensureStoreDutyBindingsReady; before registerAuthRoutes /
+// any capture of getUserStoreAccessContext at module load.
 const { getUserStoreAccessContext } = createStoreAccessContextHelpers({
   pool,
   getSharedState,
@@ -2212,7 +2160,7 @@ const { getUserStoreAccessContext } = createStoreAccessContextHelpers({
 });
 
 // Wave H17: role access gates → domains/shared/role-access.js
-// After normalizeRoleForJwt (factory not hoisted); before register* that inject these.
+// Before register* that inject these.
 const {
   isAdmin,
   isHq,
@@ -2326,100 +2274,27 @@ registerHrmsPayrollClosedLoopRoutes(app, {
   isLegacyTestUsername,
 });
 
-function isInactiveStatus(input) {
-  const v = String(input || '').trim().toLowerCase();
-  if (!v) return false;
-  return ['inactive', 'disabled', 'disable', 'off', '0', 'resigned', 'leave', 'left', '离职', '禁用', '停用'].includes(v);
-}
-
 /** 上海时区当天 YYYY-MM-DD（与 safeDateOnly / offboarding 日期比较口径一致） */
 function shanghaiTodayDateOnly() {
   return leaveAttendanceHelpers.shanghaiDateOnly(new Date());
 }
 
-/**
- * 是否应对该员工关闭 HRMS 登录与飞书侧绑定（含：档案为离职类 / 离职审批已通过）
- */
-function employeeAccountShouldDisable(emp) {
-  if (!emp || typeof emp !== 'object') return false;
-  if (isInactiveStatus(emp.status)) return true;
-  const ob =
-    emp.offboardingApproved === true
-    || String(emp.offboardingApproved || '').trim().toLowerCase() === 'true'
-    || String(emp.offboardingApproved || '').trim() === '1';
-  if (ob) {
-    const obDate = String(emp.offboardingDate || emp.extra_json?.offboardingDate || '').trim().slice(0, 10);
-    if (obDate) {
-      const today = new Date().toLocaleString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
-      if (obDate > today) return false;
-    }
-    return true;
-  }
-  return false;
-}
-
-/**
- * 根据员工档案同步：PostgreSQL users.is_active、飞书 feishu_users.registered、并作废现有 JWT（换 session nonce）
- * 在 mergeSharedStateFields(employees)、PUT /api/state、离职定时任务等路径调用。
- */
-async function applyHrmsUserAccountGateFromEmployee(emp) {
-  const uname = String(emp?.username || '').trim();
-  if (!uname || !DATABASE_URL) return;
-  const disable = employeeAccountShouldDisable(emp);
-  try {
-    // 调用方有HTTP路由(已有ALS)也有定时任务(没有)，函数内部自己反查真实租户并
-    // tenantContext.run()包裹，不依赖调用方是否已设好上下文。
-    let tenantId = 'default';
-    try {
-      const tr = await pool.query('SELECT tenant_id FROM users WHERE lower(username) = lower($1) LIMIT 1', [uname]);
-      tenantId = String(tr.rows?.[0]?.tenant_id || '').trim() || 'default';
-    } catch (_e) { /* ignore */ }
-    await tenantContext.run(tenantId, async () => {
-    if (disable) {
-      await pool.query(
-        'UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE lower(username) = lower($1)',
-        [uname]
-      );
-      await pool.query(
-        'UPDATE feishu_users SET registered = FALSE, updated_at = NOW() WHERE lower(username) = lower($1)',
-        [uname]
-      );
-      const sn = randomUUID().replace(/-/g, '').slice(0, 16);
-      await storeSessionNonce(uname, sn);
-    } else {
-      await pool.query(
-        'UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE lower(username) = lower($1)',
-        [uname]
-      );
-      await pool.query(
-        `UPDATE feishu_users
-            SET registered = TRUE,
-                role = $2,
-                store = $3,
-                name = $4,
-                updated_at = NOW()
-          WHERE lower(username) = lower($1)`,
-        [uname, String(emp.role || ''), String(emp.store || ''), String(emp.name || '')]
-      );
-    }
-    });
-  } catch (e) {
-    console.error('[account-gate]', uname, disable ? 'disable' : 'enable', e?.message || e);
-  }
-}
-
-async function assertEmployeeLoginAllowedByState(username) {
-  const un = String(username || '').trim();
-  if (!un) return;
-  const st = (await getSharedState().catch(() => null)) || {};
-  const rec = stateFindUserRecord(st, un);
-  if (!rec) return;
-  if (employeeAccountShouldDisable(rec)) {
-    const err = new Error('account_disabled');
-    err.statusCode = 403;
-    throw err;
-  }
-}
+// Wave H19: account gate → domains/employees/account-gate.js
+// After pool / DATABASE_URL / tenantContext / getSharedState / stateFindUserRecord
+// (storeSessionNonce is a function declaration — hoisted). Before registerAuthRoutes /
+// birthday+offboarding schedulers that DI-capture these at module load.
+const {
+  applyHrmsUserAccountGateFromEmployee,
+  assertEmployeeLoginAllowedByState,
+} = createAccountGateHelpers({
+  pool,
+  DATABASE_URL,
+  tenantContext,
+  storeSessionNonce,
+  randomUUID,
+  getSharedState,
+  stateFindUserRecord,
+});
 
 // ─── Garbled UTF-8 repair (mojibake: UTF-8 bytes mis-decoded as Latin-1) ─────
 function repairGarbledUtf8(str) {
@@ -4749,7 +4624,7 @@ if (__ALLOW_SCHEMA_CHANGES__) {
 }
 
 // Wave H8: offboarding auto-disable + promotion sweep → domains/approvals/scheduler-offboarding-promotion.js
-// Factory after applyHrmsUserAccountGateFromEmployee / notifications / getPromotionTrackRecipients; module-load start (before birthday H6).
+// Factory after H19 applyHrmsUserAccountGateFromEmployee / notifications / getPromotionTrackRecipients; module-load start (before birthday H6).
 const { startOffboardingPromotionScheduler } = createOffboardingPromotionScheduler({
   pool,
   runForActiveTenants,
