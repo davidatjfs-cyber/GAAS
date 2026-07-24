@@ -20,6 +20,9 @@ import {
   listMyTrainingTopics,
   getOrCreateTopicSession,
   gradeAndSubmitQuiz,
+  chatTrainingSession,
+  startTrainingQuiz,
+  resolveTrainingKbFilePath,
 } from './service-sessions.js';
 
 export function registerTrainingSessionsRoutes(app, authMiddleware, uploadMiddleware) {
@@ -59,19 +62,14 @@ export function registerTrainingSessionsRoutes(app, authMiddleware, uploadMiddle
       const row = r.rows[0];
       if (!row?.file_path) return res.status(404).json({ error: 'not_found' });
 
-      const kbUploadsDir = path.resolve(path.join(serverDir, '..', 'uploads'));
-      const raw = String(row.file_path || '').trim();
-      const rel = raw.replace(/^\/uploads\//, '').replace(/^uploads\//, '');
-      const normalized = path.posix.normalize(rel).replace(/^\/+/, '');
-      if (!normalized || normalized.includes('..')) return res.status(400).json({ error: 'invalid_path' });
-      const abs = path.join(kbUploadsDir, normalized);
-      if (!fs.existsSync(abs)) return res.status(404).json({ error: 'file_not_found' });
+      const resolved = resolveTrainingKbFilePath({ filePath: row.file_path, serverDir });
+      if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
 
       const ft = String(row.file_type || '').toLowerCase();
       const ctMap = { pdf: 'application/pdf', video: 'video/mp4', img: 'image/jpeg', image: 'image/jpeg' };
       if (ctMap[ft]) res.setHeader('Content-Type', ctMap[ft]);
       res.setHeader('Content-Disposition', 'inline');
-      return res.sendFile(abs);
+      return res.sendFile(resolved.abs);
     } catch (e) {
       console.error('[Training] kb-file error:', e?.message);
       res.status(500).json({ error: e?.message });
@@ -264,76 +262,14 @@ ${contentForPrompt}
   // POST /api/training/sessions/:id/chat - AI 对话
   app.post('/api/training/sessions/:id/chat', authMiddleware, async (req, res) => {
     try {
-      const { id } = req.params;
-      const { message } = req.body;
-      const username = req.user?.username;
-
-      if (!message?.trim()) {
-        return res.json({ success: false, error: '消息不能为空' });
-      }
-
-      // 获取 session 和 topic（含关联知识库文章ID）
-      const sessionResult = await pool().query(`
-        SELECT s.*, t.title, t.position, t.description, t.key_points, t.kb_article_ids
-        FROM training_sessions s
-        JOIN training_topics t ON t.id = s.topic_id
-        WHERE s.id = $1 AND s.employee_username = $2
-      `, [id, username]);
-
-      if (sessionResult.rows.length === 0) {
-        return res.json({ success: false, error: '会话不存在' });
-      }
-
-      const session = sessionResult.rows[0];
-      const topic = {
-        title: session.title,
-        position: session.position,
-        description: session.description,
-        key_points: session.key_points,
-        kb_article_ids: session.kb_article_ids || []
-      };
-
-      // 构建对话历史
-      const chatHistory = session.chat_history || [];
-      chatHistory.push({ role: 'user', content: message });
-
-      // 拼接关联知识库文章内容
-      let kbContext = '';
-      if (topic.kb_article_ids.length > 0) {
-        const kbResult = await pool().query(
-          `SELECT title, LEFT(content, 6000) AS content, ai_explanation, step_rubric FROM knowledge_base WHERE id = ANY($1) AND enabled = true`,
-          [topic.kb_article_ids]
-        );
-        if (kbResult.rows.length > 0) {
-          kbContext = '\n\n以下是相关参考资料，请结合这些内容回答（标准类内容以此为准）：\n\n' +
-            kbResult.rows.map(r => `【${r.title}】\n${buildKbArticleText(r)}`).join('\n\n---\n\n');
-        }
-      }
-
-      // 构建 system prompt（key_points 为空时只靠知识库内容）
-      const kpText = Array.isArray(topic.key_points) && topic.key_points.length > 0
-        ? `\n核心要点：${topic.key_points.join('、')}` : '';
-      const systemPrompt = `你是一名餐饮培训助手，正在帮助员工学习「${topic.title}」。
-岗位：${topic.position}${kpText}${kbContext}
-请用简体中文，结合实际工作场景解释，适当提问检验理解。每次回复控制在150字以内。`;
-
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        ...chatHistory.slice(-10).map(h => ({ role: h.role, content: h.content }))
-      ];
-
-      // 调用 AI
-      const aiResponse = await callLLM(messages, { max_tokens: 500, temperature: 0.7 });
-      const aiReply = aiResponse?.content || '抱歉，AI 服务暂时不可用。';
-
-      // 保存对话历史
-      chatHistory.push({ role: 'assistant', content: aiReply });
-      await pool().query(
-        `UPDATE training_sessions SET chat_history = $1 WHERE id = $2`,
-        [JSON.stringify(chatHistory), id]
-      );
-
-      res.json({ success: true, reply: aiReply, chat_history: chatHistory });
+      const result = await chatTrainingSession({
+        sessionId: req.params.id,
+        username: req.user?.username,
+        message: req.body?.message,
+        callLLM,
+        buildKbArticleText,
+      });
+      res.json(result);
     } catch (e) {
       console.error('[Training] Chat error:', e?.message);
       res.json({ success: false, error: e?.message });
@@ -343,91 +279,14 @@ ${contentForPrompt}
   // POST /api/training/sessions/:id/start-quiz - 开始测验
   app.post('/api/training/sessions/:id/start-quiz', authMiddleware, async (req, res) => {
     try {
-      const { id } = req.params;
-      const username = req.user?.username;
-
-      // 获取 session 和 topic（含关联知识库文章ID）
-      const sessionResult = await pool().query(`
-        SELECT s.*, t.title, t.position, t.description, t.key_points, t.kb_article_ids
-        FROM training_sessions s
-        JOIN training_topics t ON t.id = s.topic_id
-        WHERE s.id = $1 AND s.employee_username = $2
-      `, [id, username]);
-
-      if (sessionResult.rows.length === 0) {
-        return res.json({ success: false, error: '会话不存在' });
-      }
-
-      const session = sessionResult.rows[0];
-      // Only block retake if already certified (passed and certified)
-      if (session.status === 'certified') {
-        return res.json({ success: false, error: '已完成认证，无需重复测试' });
-      }
-
-      const topic = {
-        title: session.title,
-        key_points: session.key_points,
-        description: session.description,
-        kb_article_ids: session.kb_article_ids || []
-      };
-
-      // Collect previous questions to avoid repetition (70%+ variety)
-      let prevQuestionsSection = '';
-      const prevQs = session.quiz_questions || [];
-      if (prevQs.length > 0) {
-        const prevTexts = prevQs.map((q, i) => `${i + 1}. ${q.q}`).join('\n');
-        prevQuestionsSection = `\n\n【重要】以下是上次已出过的题目，本次必须避免重复，至少70%以上题目要全新不同：\n${prevTexts}`;
-      }
-
-      // 拼接关联知识库内容用于出题
-      let kbQuizContext = '';
-      if (topic.kb_article_ids.length > 0) {
-        const kbResult = await pool().query(
-          `SELECT title, LEFT(content, 6000) AS content, ai_explanation, step_rubric FROM knowledge_base WHERE id = ANY($1) AND enabled = true`,
-          [topic.kb_article_ids]
-        );
-        if (kbResult.rows.length > 0) {
-          kbQuizContext = '\n参考资料（请严格依据以下内容出题，标准类内容以此为准）：\n' +
-            kbResult.rows.map(r => `【${r.title}】\n${buildKbArticleText(r)}`).join('\n---\n');
-        }
-      }
-
-      // 生成测验题目（key_points 为空时纯靠知识库内容出题）
-      const genResult = await generateQuizQuestionsForSession({
-        topic: {
-          title: topic.title,
-          position: session.position,
-          key_points: topic.key_points
-        },
-        username,
-        kbQuizContext,
-        prevQuestionsSection
+      const result = await startTrainingQuiz({
+        sessionId: req.params.id,
+        username: req.user?.username,
+        generateQuizQuestionsForSession,
+        shuffleQuizOptions,
+        buildKbArticleText,
       });
-
-      let questionList = Array.isArray(genResult.questions) ? genResult.questions : [];
-      if (questionList.length < 5) {
-        console.error('[Training] Quiz generation failed completely:', genResult);
-        return res.json({ success: false, error: '题目数量不足，请重试' });
-      }
-
-      if (genResult.source === 'rule') {
-        console.warn('[Training] Quiz used rule-based fallback for session', id);
-      }
-
-      questionList = questionList.map(shuffleQuizOptions);
-
-      // 保存题目（不含答案）
-      const questionsForClient = questionList.map(q => ({
-        q: q.q,
-        options: q.options
-      }));
-
-      await pool().query(
-        `UPDATE training_sessions SET quiz_questions = $1, status = 'quiz' WHERE id = $2`,
-        [JSON.stringify(questionList), id]
-      );
-
-      res.json({ success: true, questions: questionsForClient });
+      res.json(result);
     } catch (e) {
       console.error('[Training] Start quiz error:', e?.message);
       res.json({ success: false, error: e?.message });
