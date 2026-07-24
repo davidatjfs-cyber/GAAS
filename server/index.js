@@ -76,6 +76,7 @@ import { createSessionNonceHelpers } from './domains/auth/session-nonce.js';
 import { createAuthMiddlewareHelpers } from './domains/auth/middleware.js';
 import { createPayrollLeaveDomainSyncHelpers } from './domains/payroll/domain-sync.js';
 import { createHrmsStateSnapshotHelpers } from './domains/shared/hrms-state-snapshot.js';
+import { createStateDualWriteHelpers } from './domains/shared/state-dual-write.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
@@ -1210,6 +1211,17 @@ const {
   notifyAdminsDualWriteFailure,
 });
 
+// Wave H32: dualWriteStateToDB → domains/shared/state-dual-write.js
+// After notifyAdminsDualWriteFailure; saveSharedState calls at runtime (not module-load).
+const { dualWriteStateToDB } = createStateDualWriteHelpers({
+  pool,
+  resolveTenantIdDefault,
+  upsertEmployeesFromStateShape,
+  hrmsNowISO,
+  toNullableUuid,
+  notifyAdminsDualWriteFailure,
+});
+
 const {
   tryParseJson,
   decryptFeishuEncryptPayload,
@@ -1267,91 +1279,7 @@ registerKnowledgeRoutes(app, {
 });
 // Wave H17: registerDailyReportsRoutes → after createRoleAccessHelpers (isAdmin)
 
-/** 全量双写：每次保存 state 时自动同步所有模块到独立 DB 表 */
-async function dualWriteStateToDB(state) {
-  if (!state || typeof state !== 'object') return;
-  try {
-    // 1. employees → employees 表（A1：走 domain service）
-    const empArr = Array.isArray(state.employees) ? state.employees : [];
-    if (empArr.length) {
-      await upsertEmployeesFromStateShape(pool, resolveTenantIdDefault(), empArr);
-    }
-
-    // 2. leaveRecords → hrms_leave_records 表
-    const lrArr = Array.isArray(state.leaveRecords) ? state.leaveRecords : [];
-    for (const lr of lrArr) {
-      const rid = String(lr?.id || '').trim();
-      if (!rid) continue;
-      const startDate = String(lr?.startDate || '').trim();
-      const endDate = String(lr?.endDate || '').trim();
-      if (!startDate || !endDate) continue;
-      await pool.query(
-        `INSERT INTO hrms_leave_records (id, username, name, store, brand, start_date, end_date, days, type, reason, status, submitted_by, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-         ON CONFLICT (id) DO UPDATE SET
-           username=EXCLUDED.username, name=EXCLUDED.name, store=EXCLUDED.store,
-           start_date=EXCLUDED.start_date, end_date=EXCLUDED.end_date, days=EXCLUDED.days,
-           type=EXCLUDED.type, reason=EXCLUDED.reason, status=EXCLUDED.status, updated_at=NOW()`,
-        [rid, String(lr?.applicant || '').trim(), String(lr?.applicantName || lr?.name || '').trim(),
-         String(lr?.store || '').trim(), String(lr?.brand || '').trim(),
-         startDate, endDate, lr?.days != null && lr?.days !== '' ? Number(lr.days) : 0,
-         String(lr?.type || 'leave').trim(), String(lr?.reason || '').trim(),
-         String(lr?.status || 'pending').trim(), String(lr?.createdAt || '').trim() || hrmsNowISO(),
-         String(lr?.createdAt || '').trim() || hrmsNowISO()]
-      );
-    }
-
-    // 3. salaryAdjustments → hrms_reward_punishment_records 表
-    const saArr = Array.isArray(state.salaryAdjustments) ? state.salaryAdjustments : [];
-    for (const sa of saArr) {
-      const rid = String(sa?.id || '').trim();
-      if (!rid) continue;
-      const rpType = String(sa?.type || '').trim();
-      const isReward = rpType === '奖励' || rpType === 'reward';
-      await pool.query(
-        `INSERT INTO hrms_reward_punishment_records (id, username, name, store, brand, type, category, amount, reason, source, approval_id, status, created_by, created_at, tenant_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approval',$10,$11,$12,$13,$14)
-         ON CONFLICT (id) DO UPDATE SET
-           username=EXCLUDED.username, name=EXCLUDED.name, type=EXCLUDED.type,
-           amount=EXCLUDED.amount, reason=EXCLUDED.reason, status=EXCLUDED.status, updated_at=NOW()`,
-        [rid, String(sa?.targetUsername || '').trim(), String(sa?.targetName || '').trim(),
-         '', '', isReward ? 'reward' : 'punishment', rpType,
-         Math.abs(Number(sa?.amount) || 0), String(sa?.reason || '').trim(),
-         toNullableUuid(sa?.approvalId), String(sa?.status || 'active').trim(),
-         String(sa?.applicantUsername || '').trim(),
-         String(sa?.createdAt || '').trim() || hrmsNowISO(),
-         resolveTenantIdDefault()]
-      );
-    }
-
-    // 4. notifications → hrms_user_notifications 表（绩效扣分、工作态度、排班通知等全部通知）
-    const notifArr = Array.isArray(state.notifications) ? state.notifications : [];
-    for (const n of notifArr) {
-      // makeNotif 使用 targetUser 字段，兼容旧的 targetUsername/to
-      const target = String(n?.targetUser || n?.targetUsername || n?.to || '').trim();
-      if (!target) continue;
-      const nType = String(n?.type || 'system_notice').trim();
-      await pool.query(
-        `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at, tenant_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT DO NOTHING`,
-        [target, String(n?.title || '').trim(), String(n?.message || '').trim(),
-         nType, JSON.stringify(n?.meta || n?.data || {}),
-         n?.createdAt ? new Date(n.createdAt).toISOString() : hrmsNowISO(),
-         resolveTenantIdDefault()]
-      );
-    }
-  } catch (e) {
-    // 双写失败告警：虽然不影响 hrms_state 保存，但会导致 DB 表与 state 不一致
-    // 重启时会自动从 DB 表重建 state，所以双写失败可能导致数据丢失
-    console.error('[dualWriteStateToDB] ⚠️ 双写失败！DB 表与 hrms_state 可能不一致，重启后可能丢失数据:', e?.message);
-    console.error('[dualWriteStateToDB] 失败堆栈:', e?.stack || 'no stack');
-    void notifyAdminsDualWriteFailure(
-      '全量双写（employees / hrms_leave_records / hrms_reward_punishment_records / hrms_user_notifications）',
-      e
-    );
-  }
-}
+// Wave H32: dualWriteStateToDB → domains/shared/state-dual-write.js
 
 // Wave H27: payrollDomainFieldEmpty / leaveDomainFieldEmpty → domainJsonFieldEmpty
 // (domains/shared/domain-json-empty.js)
