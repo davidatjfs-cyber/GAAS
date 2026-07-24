@@ -33,6 +33,17 @@ import { createPickUsernameHelpers } from './domains/employees/pick-usernames.js
 import { createUserLookupHelpers } from './domains/employees/user-lookup.js';
 import { findUserSalary } from './domains/employees/salary-helpers.js';
 import { createRoleAccessHelpers } from './domains/shared/role-access.js';
+import {
+  safeNumber,
+  toNullableUuid,
+  hrmsNowISO,
+  inDateRange,
+  parseMonth,
+  clampNum,
+  normalizeStoreKey,
+  safeDateOnly,
+  safeMonthOnly,
+} from './domains/shared/time-number.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
@@ -1375,7 +1386,7 @@ const {
   pool,
   mergeSharedStateFields,
   resolveTenantIdDefault,
-  hrmsNowISO, // function declaration later in file — hoisted OK
+  hrmsNowISO, // Wave H18: imported from domains/shared/time-number.js
   sendLarkMessage,
   lookupFeishuUserByUsername,
 });
@@ -1695,64 +1706,11 @@ const { isKitchenByRoleOrPosition, getPromotionTrackRecipients } = createPromoti
   stateFindUserRecord,
 });
 
-function safeNumber(input) {
-  const n = Number(input);
-  return Number.isFinite(n) ? n : null;
-}
-
-function toNullableUuid(input) {
-  const value = String(input || '').trim();
-  return value ? value : null;
-}
-
-function hrmsNowISO() {
-  // Force Asia/Shanghai wall-clock time regardless of server timezone.
-  const fmt = new Intl.DateTimeFormat('sv-SE', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-  const parts = fmt.formatToParts(new Date());
-  const pick = (t) => parts.find(p => p.type === t)?.value || '';
-  const y = pick('year');
-  const m = pick('month');
-  const d = pick('day');
-  const h = pick('hour');
-  const mi = pick('minute');
-  const s = pick('second');
-  return `${y}-${m}-${d}T${h}:${mi}:${s}+08:00`;
-}
+// Wave H18: safeNumber / toNullableUuid / hrmsNowISO / inDateRange / parseMonth / clampNum /
+// normalizeStoreKey / safeDateOnly / safeMonthOnly → domains/shared/time-number.js (named imports)
 
 // Wave H17: role access gates → domains/shared/role-access.js
 // Factory must run AFTER normalizeRoleForJwt (not hoisted); see createRoleAccessHelpers below.
-
-function inDateRange(date, start, end) {
-  const d = String(date || '').trim();
-  if (!d) return false;
-  const s = start ? String(start).trim() : '';
-  const e = end ? String(end).trim() : '';
-  if (s && d < s) return false;
-  if (e && d > e) return false;
-  return true;
-}
-
-
-function parseMonth(input) {
-  const v = String(input || '').trim();
-  if (!/^\d{4}-\d{2}$/.test(v)) return null;
-  return v;
-}
-
-function clampNum(n, d = 0) {
-  const v = Number(n);
-  return Number.isFinite(v) ? v : d;
-}
-
 
 // Wave H12: normalizeOpenAiCompatibleBaseUrl → domains/ai/routes-chat-completions.js
 
@@ -1798,18 +1756,7 @@ const { startRecurringRewardScheduler } = createRecurringRewardScheduler({
 
 // Wave 4q: sales-raw folder import → domains/admin-ops/routes.js
 
-function normalizeStoreKey(v) {
-  return String(v || '').trim().toLowerCase().replace(/\s+/g, '');
-}
-
-function safeDateOnly(input) {
-  const v = String(input || '').trim();
-  if (!v) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
-  return v;
-}
-
-// Wave H16: approval normalize helpers (must run after safeDateOnly; before registerApproval*)
+// Wave H16: approval normalize helpers (safeDateOnly from H18 import; before registerApproval*)
 const {
   normalizePromotionTrainingPeriods,
   normalizeApprovalType,
@@ -1817,7 +1764,7 @@ const {
   approvalTypeLabel,
 } = createApprovalNormalizeHelpers({ safeDateOnly, randomUUID });
 
-// Wave H5: ops-tasks helpers + scheduler (must run after safeDateOnly; ensureOpsTasksTable / pickStoreRoleUsernameByStore hoisted)
+// Wave H5: ops-tasks helpers + scheduler (safeDateOnly from H18 import; ensureOpsTasksTable / pickStoreRoleUsernameByStore hoisted)
 const {
   normalizeOpsRole,
   buildOpsFeedback,
@@ -1832,7 +1779,7 @@ const {
   ensureOpsTasksTable,
 });
 
-// Wave H2b: inventory-forecast helpers factory (must run after brand/store utils + safeDateOnly/safeNumber/inDateRange/pickMyStoreFromState)
+// Wave H2b: inventory-forecast helpers factory (safeDateOnly/safeNumber/inDateRange/hrmsNowISO/normalizeStoreKey from H18 import + brand/store utils)
 const forecastHelpers = createInventoryForecastHelpers({
   safeDateOnly,
   safeNumber,
@@ -1852,15 +1799,7 @@ const forecastHelpers = createInventoryForecastHelpers({
 });
 // Wave H17: registerInventoryForecastRoutes → after createRoleAccessHelpers (canAccessAnalyticsReports)
 
-function safeMonthOnly(input) {
-  const v = String(input || '').trim();
-  if (!v) return null;
-  if (!/^\d{4}-\d{2}$/.test(v)) return null;
-  return v;
-}
-
-
-// Wave H3: leave/attendance calc helpers（须在 safeMonthOnly / clampNum / hrmsNowISO / getSharedState 等之后）
+// Wave H3: leave/attendance calc helpers（safeMonthOnly / clampNum / hrmsNowISO from H18 import + getSharedState 等）
 const leaveAttendanceHelpers = createLeaveAttendanceHelpers({
   pool,
   getSharedState,
