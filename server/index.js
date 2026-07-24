@@ -28,6 +28,8 @@ import {
   loadEmployeesFromTable,
 } from './domains/employees/service.js';
 import { reconcileEmployeesMirrorAllTenants } from './domains/employees/mirror-tx.js';
+import { reconcileFlowConfigMirrorAllTenants } from './domains/flow-config/reconcile.js';
+import { createMirrorReconcileScheduler } from './domains/shared/mirror-reconcile-scheduler.js';
 import { createPickUsernameHelpers } from './domains/employees/pick-usernames.js';
 import { createUserLookupHelpers } from './domains/employees/user-lookup.js';
 import { findUserSalary } from './domains/employees/salary-helpers.js';
@@ -1577,27 +1579,16 @@ registerEmployeesDomainRoutes(app, authRequired, {
   resolveTenantIdDefault,
 });
 
-// 员工表 vs hrms_state 镜像日对账（绞杀期一致性告警）
+// 表权威 vs hrms_state 镜像日对账（employees + flow-config；见 mirror-reconcile-scheduler 注释）
 {
-  const runEmployeesMirrorReconcile = async () => {
-    try {
-      const reports = await reconcileEmployeesMirrorAllTenants(pool, getActiveTenantIds);
-      for (const report of reports) {
-        if (!report.ok) {
-          const driftSample = (report.fieldDrift || []).slice(0, 10).map((d) => d.username).join(',');
-          const msg = `employees mirror drift tenant=${report.tenantId} table=${report.tableCount} mirror=${report.mirrorCount} onlyTable=${report.onlyTable.slice(0, 20).join(',')} onlyMirror=${report.onlyMirror.slice(0, 20).join(',')} fieldDrift=${driftSample}`;
-          console.error('[employees-mirror-reconcile]', msg);
-          void notifyAdminsDualWriteFailure('employees（表/镜像对账）', new Error(msg));
-        } else {
-          console.log('[employees-mirror-reconcile] ok', report.tenantId, report.tableCount);
-        }
-      }
-    } catch (e) {
-      console.error('[employees-mirror-reconcile] failed', e?.message || e);
-    }
-  };
-  setTimeout(() => void runEmployeesMirrorReconcile(), 60_000);
-  setInterval(() => void runEmployeesMirrorReconcile(), 24 * 60 * 60 * 1000);
+  const { startMirrorReconcileScheduler } = createMirrorReconcileScheduler({
+    pool,
+    getActiveTenantIds,
+    notifyAdminsDualWriteFailure,
+    reconcileEmployeesMirrorAllTenants,
+    reconcileFlowConfigMirrorAllTenants,
+  });
+  startMirrorReconcileScheduler();
 }
 
 registerFlowConfigRoutes(app, authRequired, {
