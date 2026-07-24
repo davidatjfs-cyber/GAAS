@@ -5,6 +5,25 @@ import * as leave from '../domains/approvals/handlers/leave.js';
 import * as monthlyConfirm from '../domains/approvals/handlers/monthly-confirm.js';
 import * as offboarding from '../domains/approvals/handlers/offboarding.js';
 import * as points from '../domains/approvals/handlers/points.js';
+import * as promotion from '../domains/approvals/handlers/promotion.js';
+import * as onboarding from '../domains/approvals/handlers/onboarding.js';
+
+function makeRes() {
+  return {
+    statusCode: null,
+    body: null,
+    status(c) { this.statusCode = c; return this; },
+    json(b) { this.body = b; return this; },
+  };
+}
+
+function makePromotionDeps(poolQueryImpl) {
+  return {
+    pool: { query: poolQueryImpl || (async () => ({ rows: [] })) },
+    safeDateOnly: (d) => String(d || '').slice(0, 10) || '',
+    normalizePromotionTrainingPeriods: () => [],
+  };
+}
 
 function makeDeps(overrides = {}) {
   const notifs = [];
@@ -341,4 +360,236 @@ test('points.afterDecide alreadyApplied skips new pointRecords merge but still n
   assert.equal(queries.length, 0);
   assert.equal(ledgerCalls.length, 0);
   assert.ok(notifs.some((n) => n.meta?.type === 'points_result' && n.title === '积分申请已通过'));
+});
+
+test('promotion.beforeUpdate qualification store_manager approved missing mentor aborts', async () => {
+  const res = makeRes();
+  const updatedPayload = { promotionStage: 'qualification' };
+  const out = await promotion.beforeUpdate({
+    res,
+    row: { type: 'promotion' },
+    role: 'store_manager',
+    username: 'mgr1',
+    nowIso: '2026-07-24T12:00:00+08:00',
+    approved: true,
+    mentorUsernameRaw: '',
+    updatedPayload,
+    deps: makePromotionDeps(),
+  });
+  assert.equal(out?.abort, true);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'missing_mentor');
+});
+
+test('promotion.beforeUpdate qualification mentor exists sets mentor fields', async () => {
+  const res = makeRes();
+  const updatedPayload = { promotionStage: 'qualification' };
+  const queries = [];
+  await promotion.beforeUpdate({
+    res,
+    row: { type: 'promotion' },
+    role: 'store_manager',
+    username: 'mgr1',
+    nowIso: '2026-07-24T12:00:00+08:00',
+    approved: true,
+    mentorUsernameRaw: 'mentor1',
+    mentorNameRaw: '带教王',
+    updatedPayload,
+    deps: makePromotionDeps(async (...a) => {
+      queries.push(a);
+      return { rows: [{ ok: 1 }] };
+    }),
+  });
+  assert.equal(res.statusCode, null);
+  assert.equal(updatedPayload.mentorUsername, 'mentor1');
+  assert.equal(updatedPayload.mentorName, '带教王');
+  assert.equal(updatedPayload.mentorAssignedBy, 'mgr1');
+  assert.equal(updatedPayload.mentorAssignedAt, '2026-07-24T12:00:00+08:00');
+  assert.equal(queries.length, 1);
+  assert.match(String(queries[0][0]), /from users where lower\(username\)/i);
+});
+
+test('promotion.beforeUpdate qualification mentor not found aborts', async () => {
+  const res = makeRes();
+  const updatedPayload = { promotionStage: 'qualification' };
+  const out = await promotion.beforeUpdate({
+    res,
+    row: { type: 'promotion' },
+    role: 'store_manager',
+    username: 'mgr1',
+    nowIso: '2026-07-24T12:00:00+08:00',
+    approved: false,
+    mentorUsernameRaw: 'ghost',
+    updatedPayload,
+    deps: makePromotionDeps(async () => ({ rows: [] })),
+  });
+  assert.equal(out?.abort, true);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'mentor_not_found');
+});
+
+test('promotion.beforeUpdate formal store_manager approved missing salary aborts', async () => {
+  const res = makeRes();
+  const updatedPayload = { promotionStage: 'formal' };
+  const out = await promotion.beforeUpdate({
+    res,
+    row: { type: 'promotion' },
+    role: 'store_manager',
+    username: 'mgr1',
+    nowIso: '2026-07-24T12:00:00+08:00',
+    approved: true,
+    promotedSalaryRaw: 'abc',
+    updatedPayload,
+    deps: makePromotionDeps(),
+  });
+  assert.equal(out?.abort, true);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'missing_promoted_salary');
+});
+
+test('promotion.beforeUpdate formal store_manager approved valid salary sets promotedSalary', async () => {
+  const res = makeRes();
+  const updatedPayload = { promotionStage: 'formal' };
+  await promotion.beforeUpdate({
+    res,
+    row: { type: 'promotion' },
+    role: 'store_manager',
+    username: 'mgr1',
+    nowIso: '2026-07-24T12:00:00+08:00',
+    approved: true,
+    promotedSalaryRaw: '8800.567',
+    updatedPayload,
+    deps: makePromotionDeps(),
+  });
+  assert.equal(updatedPayload.promotedSalary, 8800.57);
+  assert.equal(updatedPayload.promotedSalarySetBy, 'mgr1');
+  assert.equal(updatedPayload.promotedSalarySetAt, '2026-07-24T12:00:00+08:00');
+});
+
+test('onboarding.afterDecide approved build ok merges employee inserts user', async () => {
+  const { deps, merges, queries } = makeDeps({ state: { employees: [] } });
+  const decideExtras = {};
+  const hashCalls = [];
+  deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+    ok: true,
+    nextEmp: {
+      username: 'newemp1',
+      role: 'waiter',
+      department: '前厅',
+      position: '服务员',
+      store: '测试店',
+      salary: 5000,
+      joinDate: '2026-07-24',
+    },
+    newUsername: 'newemp1',
+    empName: '李四',
+    empPassword: 'TempPass123',
+  });
+  deps.bcrypt = { hash: async (pw, rounds) => { hashCalls.push({ pw, rounds }); return 'hashed'; } };
+  deps.toNullableUuid = () => null;
+  deps.insertSalaryTimeline = async () => {};
+  deps.safeErrMessage = (e) => String(e?.message || e);
+
+  await onboarding.afterDecide({
+    req: { tenantId: 'default', user: { tenant_id: 'default', username: 'hr1' } },
+    deps,
+    updated: {
+      id: 'appr-onb-1',
+      type: 'onboarding',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { employee: { name: '李四' } },
+    },
+    nextAssignee: null,
+    note: '',
+    username: 'admin1',
+    decideExtras,
+  });
+
+  assert.equal(decideExtras.onboardingEmployeeSync?.ok, true);
+  assert.equal(decideExtras.onboardingEmployeeSync?.username, 'newemp1');
+  assert.ok(merges.some((m) => m.keys?.employees === 'username'));
+  assert.equal(hashCalls.length, 1);
+  assert.equal(hashCalls[0].pw, 'TempPass123');
+  assert.ok(queries.some((q) => /INSERT INTO users/i.test(String(q[0]))));
+});
+
+test('onboarding.afterDecide approved build fails sets sync ok false without merge', async () => {
+  const { deps, merges } = makeDeps();
+  const decideExtras = {};
+  deps.buildOnboardingEmployeeRecordFromPayload = () => ({ ok: false, reason: 'duplicate_username' });
+  deps.bcrypt = { hash: async () => 'hashed' };
+  deps.toNullableUuid = () => null;
+  deps.safeErrMessage = (e) => String(e?.message || e);
+
+  await onboarding.afterDecide({
+    req: { tenantId: 'default', user: { tenant_id: 'default' } },
+    deps,
+    updated: {
+      id: 'appr-onb-2',
+      type: 'onboarding',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { employee: { name: '王五' } },
+    },
+    nextAssignee: null,
+    note: '',
+    username: 'admin1',
+    decideExtras,
+  });
+
+  assert.deepEqual(decideExtras.onboardingEmployeeSync, { ok: false, reason: 'duplicate_username' });
+  assert.equal(merges.length, 0);
+});
+
+test('onboarding.afterDecide rejected sends 被拒绝 onboarding_result notification', async () => {
+  const { deps, notifs } = makeDeps();
+
+  await onboarding.afterDecide({
+    req: { tenantId: 'default', user: { tenant_id: 'default' } },
+    deps,
+    updated: {
+      id: 'appr-onb-3',
+      type: 'onboarding',
+      status: 'rejected',
+      applicant_username: 'hr1',
+      payload: { employee: { name: '赵六' } },
+    },
+    nextAssignee: null,
+    note: '资料不全',
+    username: 'admin1',
+    decideExtras: {},
+  });
+
+  assert.equal(notifs.length, 1);
+  assert.equal(notifs[0].title, '新员工入职审批被拒绝');
+  assert.equal(notifs[0].meta.type, 'onboarding_result');
+  assert.match(notifs[0].msg, /赵六/);
+  assert.match(notifs[0].msg, /资料不全/);
+});
+
+test('onboarding.afterDecide pending with nextAssignee sends pending notification', async () => {
+  const { deps, notifs } = makeDeps();
+
+  await onboarding.afterDecide({
+    req: { tenantId: 'default', user: { tenant_id: 'default' } },
+    deps,
+    updated: {
+      id: 'appr-onb-4',
+      type: 'onboarding',
+      status: 'pending',
+      applicant_username: 'hr1',
+      payload: { employee: { name: '钱七' } },
+    },
+    nextAssignee: 'mgr1',
+    note: '',
+    username: 'hr1',
+    decideExtras: {},
+  });
+
+  assert.equal(notifs.length, 1);
+  assert.equal(notifs[0].u, 'mgr1');
+  assert.equal(notifs[0].title, '新员工入职审批待处理');
+  assert.equal(notifs[0].meta.type, 'onboarding_request');
+  assert.match(notifs[0].msg, /钱七/);
 });
