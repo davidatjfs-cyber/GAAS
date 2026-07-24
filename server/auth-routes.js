@@ -324,6 +324,38 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
     return res.json({ user });
   });
 
+  // Distinct from /api/auth/me — richer profile + permission context for the shell.
+  app.get('/api/me', authRequired, async (req, res) => {
+    const username = String(req.user?.username || '').trim();
+    const role = String(req.user?.role || '').trim();
+    if (!username) return res.status(400).json({ error: 'missing_user' });
+    try {
+      const state = (await getSharedState()) || {};
+      const employees = Array.isArray(state.employees) ? state.employees : [];
+      const users = Array.isArray(state.users) ? state.users : [];
+      const emp = employees.find(e => String(e?.username || '').trim() === username) || {};
+      const usr = users.find(u => String(u?.username || '').trim() === username) || {};
+      const permCtx = await resolveUserPermissionContext(req, { getSharedState });
+      return res.json({
+        user: {
+          username,
+          name: emp.name || usr.name || username,
+          role: role || emp.role || usr.role || 'employee',
+          store: emp.store || usr.store || req.user?.store || '',
+          position: emp.position || usr.position || '',
+          department: emp.department || usr.department || '',
+          permission_group_id: permCtx.permission_group_id || null,
+          enforcement_mode: permCtx.enforcement_mode || 'legacy',
+          permissions: permCtx.permissions || [],
+          allowed_stores: req.user?.allowed_stores || [],
+          current_store: req.user?.current_store || '',
+        }
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+    }
+  });
+
   app.post('/api/auth/switch-store', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
     const role = normalizeRoleForJwt(req.user?.role);

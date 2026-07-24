@@ -62,6 +62,14 @@ test('POST /api/uploads/*：无 token → 401', async () => {
   }
 });
 
+test('GET /uploads/* + POST /api/growth/upload：无 token → 401', async () => {
+  const getRes = await fetch(app.baseUrl + '/uploads/x.png');
+  assert.equal(getRes.status, 401);
+  const form = new FormData();
+  const postRes = await postMultipart('/api/growth/upload', null, form);
+  assert.equal(postRes.status, 401);
+});
+
 test('POST /api/uploads/daily-report：store_employee → 403', async () => {
   const username = uniqueId('up_dr_emp');
   await createUser(username, 'store_employee');

@@ -53,6 +53,8 @@ import { registerPaymentConfigRoutes } from './domains/payment-config/routes.js'
 import { registerPaymentRoutes } from './domains/payments/routes.js';
 import { registerPermissionGroupsRoutes } from './domains/permission-groups/routes.js';
 import { registerUploadRoutes } from './domains/uploads/routes.js';
+import { createRecordUploadOwnership } from './domains/uploads/ownership.js';
+import { registerAiChatCompletionsRoutes } from './domains/ai/routes-chat-completions.js';
 import { registerOpsTasksRoutes } from './domains/ops-tasks/routes.js';
 import { createOpsTaskHelpers } from './domains/ops-tasks/create-helpers.js';
 import { registerStoreDutyBindingsRoutes } from './domains/store-duty-bindings/routes.js';
@@ -140,7 +142,7 @@ import { ensureTaskBoardSchema } from './task-board-api.js';
 import { ensureHRMSApiSchema, registerHRMSApiRoutes } from './hrms-api-tools.js';
 import { ensureSOPDistributionSchema, registerSOPDistributionRoutes } from './sop-distribution.js';
 import { ensureKitchenExecutionSchema, registerKitchenExecutionRoutes } from './kitchen-execution.js';
-import { ensureRecipeSchema, registerRecipeRoutes, generateRecipeTemplate, importRecipeFromExcel } from './recipe-management.js';
+import { ensureRecipeSchema, registerRecipeRoutes } from './recipe-management.js';
 import { ensureTrainingSchema, registerTrainingRoutes, startTrainingReminderScheduler, getPromotionRequiredTopics, createTrainingAssignment, getPromotionTrackProgress, getCrossTrackTechnicianStatus } from './training.js';
 import { setDataExecutorPool, purgeExpiredCache, updateMetricVersion } from './data-executor.js';
 import fileRoutes from './file-routes.js';
@@ -205,7 +207,6 @@ import { resolveAttendancePayrollRules, safeBizMonth } from './services/hrms-pay
 import { registerHrmsPermissionRoutes } from './hrms-permission-routes.js';
 import {
   ensurePermissionTables,
-  resolveUserPermissionContext,
 } from './services/hrms-permission-engine.js';
 import { registerInventoryForecastRoutes } from './inventory-forecast-routes.js';
 import { registerAgentTaskBoardRoutes } from './agent-task-board-routes.js';
@@ -430,113 +431,13 @@ try {
 
 // Wave 4q: agent feishu-table-data → domains/agent-data/routes.js
 
-app.post('/api/ai/chat-completions', authRequired, async (req, res) => {
-  const username = String(req.user?.username || '').trim();
-  if (!username) return res.status(400).json({ error: 'missing_user' });
-
-  const baseUrl = normalizeOpenAiCompatibleBaseUrl(req.body?.baseUrl || req.body?.apiUrl || '');
-  const apiKey = String(req.body?.apiKey || '').trim();
-  const model = String(req.body?.model || '').trim();
-  const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
-  const maxTokens = Math.max(1, Math.min(4000, Number(req.body?.max_tokens || req.body?.maxTokens || 1024) || 1024));
-  const temperature = Number(req.body?.temperature);
-
-  if (!baseUrl) return res.status(400).json({ error: 'missing_base_url' });
-  if (!apiKey) return res.status(400).json({ error: 'missing_api_key' });
-  if (!model) return res.status(400).json({ error: 'missing_model' });
-  if (!messages.length) return res.status(400).json({ error: 'missing_messages' });
-
-  const payload = {
-    model,
-    messages,
-    max_tokens: maxTokens,
-    temperature: Number.isFinite(temperature) ? temperature : 0.2
-  };
-
-  const controller = new AbortController();
-  /** 出题/长上下文等场景上游常 >25s；过短会 502 + 浏览器 aborted */
-  const timer = setTimeout(() => controller.abort(), 120000);
-  try {
-    const upstream = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-    const text = await upstream.text();
-    let data = null;
-    try { data = JSON.parse(text); } catch (e) { /* ignore */ }
-    if (!upstream.ok) {
-      return res.status(upstream.status).json({
-        error: 'upstream_error',
-        message: String(data?.error?.message || data?.message || text || `HTTP ${upstream.status}`),
-        upstreamStatus: upstream.status
-      });
-    }
-    if (data && typeof data === 'object') return res.json(data);
-    return res.json({ raw: text });
-  } catch (e) {
-    return res.status(502).json({ error: 'upstream_unreachable', message: 'internal_error' });
-  } finally {
-    clearTimeout(timer);
-  }
-});
-
+// Wave H12: POST /api/ai/chat-completions → domains/ai/routes-chat-completions.js
 // Wave 4f: /api/payments/* → domains/payments/routes.js
 // Wave 4c: POST /api/approvals (create), return, resubmit, repair-onboarding → domains/approvals/routes-lifecycle.js
 
 // Wave 4m: /api/reads/batch + /api/unread-counts → domains/reads/routes.js
 
-// 2026-06-25 文件存储租户隔离：/uploads 之前用express.static公开裸露，任何人拿到URL
-// (哪怕是员工身份证照片)不用登录就能直接看，且没有租户边界。改为鉴权路由按文件归属
-// 租户校验后才流式返回。URL路径不变(/uploads/<...>)，老链接不受影响，只是访问方式变了。
-app.get('/uploads/*', authRequired, async (req, res) => {
-  try {
-    const rawRel = String(req.params[0] || '').replace(/^\/+/, '');
-    const normalizedRel = path.normalize(rawRel);
-    if (!rawRel || normalizedRel.startsWith('..') || path.isAbsolute(normalizedRel)) {
-      return res.status(400).json({ error: 'invalid_path' });
-    }
-    const fullPath = path.join(uploadsDir, normalizedRel);
-    if (!fullPath.startsWith(uploadsDir)) return res.status(400).json({ error: 'invalid_path' });
-    if (!fs.existsSync(fullPath)) return res.status(404).json({ error: 'not_found' });
-
-    const filename = path.basename(normalizedRel);
-    const reqTenantId = String(req.tenantId || 'default').trim() || 'default';
-    const role = String(req.user?.role || '').trim();
-    if (role !== 'admin') {
-      let ownerTenantId = 'default';
-      try {
-        const r = await pool.query(`SELECT tenant_id FROM upload_file_owners WHERE filename = $1 LIMIT 1`, [filename]);
-        ownerTenantId = r.rows?.[0]?.tenant_id || 'default';
-      } catch (_) { /* 查询失败：保守按default处理，不放行非default租户 */ }
-      if (ownerTenantId !== reqTenantId) return res.status(403).json({ error: 'forbidden' });
-    }
-    return res.sendFile(fullPath);
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
-
-// 上传成功后记录文件归属租户，供上面的鉴权下载路由做校验
-async function recordUploadOwnership(filenames, tenantId, uploadedBy) {
-  const list = (Array.isArray(filenames) ? filenames : [filenames]).filter(Boolean);
-  if (!list.length) return;
-  try {
-    for (const filename of list) {
-      await pool.query(
-        `INSERT INTO upload_file_owners (filename, tenant_id, uploaded_by) VALUES ($1,$2,$3)
-         ON CONFLICT (filename) DO NOTHING`,
-        [filename, tenantId || 'default', uploadedBy || null]
-      );
-    }
-  } catch (e) {
-    console.warn('[uploads] recordUploadOwnership failed:', e?.message);
-  }
-}
+// Wave H12: GET /uploads/* + recordUploadOwnership → domains/uploads/*
 
 const webRootDir = path.resolve(__dirname, '..');
 // 2026-06-25 安全修复(严重)：原来 express.static(webRootDir) 不分青红皂白地把整个项目根目录
@@ -594,36 +495,7 @@ app.get('/agent/tenant-operation-inspection', (req, res) => {
 
 // Wave 4p: dedup → domains/dedup/routes.js
 
-app.get('/api/me', authRequired, async (req, res) => {
-  const username = String(req.user?.username || '').trim();
-  const role = String(req.user?.role || '').trim();
-  if (!username) return res.status(400).json({ error: 'missing_user' });
-  try {
-    const state = (await getSharedState()) || {};
-    const employees = Array.isArray(state.employees) ? state.employees : [];
-    const users = Array.isArray(state.users) ? state.users : [];
-    const emp = employees.find(e => String(e?.username || '').trim() === username) || {};
-    const usr = users.find(u => String(u?.username || '').trim() === username) || {};
-    const permCtx = await resolveUserPermissionContext(req, { getSharedState });
-    return res.json({
-      user: {
-        username,
-        name: emp.name || usr.name || username,
-        role: role || emp.role || usr.role || 'employee',
-        store: emp.store || usr.store || req.user?.store || '',
-        position: emp.position || usr.position || '',
-        department: emp.department || usr.department || '',
-        permission_group_id: permCtx.permission_group_id || null,
-        enforcement_mode: permCtx.enforcement_mode || 'legacy',
-        permissions: permCtx.permissions || [],
-        allowed_stores: req.user?.allowed_stores || [],
-        current_store: req.user?.current_store || '',
-      }
-    });
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
-});
+// Wave H12: GET /api/me → auth-routes.js (distinct from /api/auth/me)
 
 app.get('/', (req, res) => {
   const p1 = path.join(webRootDir, 'working-fixed.html');
@@ -680,23 +552,7 @@ const knowledgeUpload = multer({
   limits: { fileSize: 500 * 1024 * 1024 } // 视频上传需 500MB
 });
 
-// 配方工艺步骤媒体上传（图片 + 视频）
-const RECIPE_MEDIA_EXTS = new Set(['.jpg','.jpeg','.png','.gif','.webp','.mp4','.mov','.webm','.heic']);
-const recipeMediaUpload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      const st = ensureUploadsDir();
-      if (!st.ok) return cb(new Error('uploads_dir_not_writable'));
-      return cb(null, uploadsDir);
-    },
-    filename: (req, file, cb) => {
-      const ext = path.extname(String(file?.originalname || 'file')).toLowerCase().slice(0, 16);
-      if (!RECIPE_MEDIA_EXTS.has(ext)) return cb(new Error(`blocked_file_type: ${ext}`));
-      cb(null, `recipe-step-${randomUUID()}${ext}`);
-    }
-  }),
-  limits: { fileSize: 200 * 1024 * 1024 } // 200MB max for video
-});
+// Wave H12: recipeMediaUpload + /api/recipes/{upload-step-media,template,import} → recipe-management.js
 
 // 培训实操上传（图片 + 视频）
 const TRAINING_MEDIA_EXTS = new Set(['.jpg','.jpeg','.png','.mp4','.mov','.webm','.heic']);
@@ -716,56 +572,10 @@ const trainingPracticeUpload = multer({
   limits: { fileSize: 200 * 1024 * 1024 }
 });
 
-app.post('/api/recipes/upload-step-media', authRequired, recipeMediaUpload.single('file'), async (req, res) => {
-  const role = String(req.user?.role || '').trim();
-  if (!['admin','hq_manager','store_manager','store_production_manager'].includes(role)) {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-  try {
-    if (!req.file?.filename) return res.status(400).json({ error: 'missing_file' });
-    await recordUploadOwnership(req.file.filename, req.tenantId, req.user?.username);
-    const ext = path.extname(req.file.filename).toLowerCase();
-    const videoExts = new Set(['.mp4','.mov','.webm']);
-    const mediaType = videoExts.has(ext) ? 'video' : 'image';
-    return res.json({ ok: true, url: `/uploads/${req.file.filename}`, type: mediaType });
-  } catch (e) {
-    return res.status(500).json({ error: e?.message });
-  }
-});
-
-// 配方 Excel 模版下载
-const RECIPE_ADMIN_ROLES = new Set(['admin','hq_manager','store_manager','store_production_manager']);
-app.get('/api/recipes/template', authRequired, (req, res) => {
-  if (!RECIPE_ADMIN_ROLES.has(req.user?.role)) return res.status(403).json({ error: 'forbidden' });
-  try {
-    const buf = generateRecipeTemplate();
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename*=UTF-8\'\'%E9%85%8D%E6%96%B9%E5%AF%BC%E5%85%A5%E6%A8%A1%E7%89%88.xlsx');
-    res.send(buf);
-  } catch(e) {
-    res.status(500).json({ error: e?.message });
-  }
-});
-
-// 配方 Excel 导入
-app.post('/api/recipes/import', authRequired, upload.single('file'), async (req, res) => {
-  if (!RECIPE_ADMIN_ROLES.has(req.user?.role)) return res.status(403).json({ error: 'forbidden' });
-  try {
-    if (!req.file?.path) return res.status(400).json({ error: 'missing_file' });
-    const buffer = fs.readFileSync(req.file.path);
-    const result = await importRecipeFromExcel(buffer, req.user.username, req.user?.store || '*');
-    if (!result.success) return res.json({ success: false, error: result.error });
-    // Read back dish name from the import for the response
-    const row = await import('./utils/database.js').then(m => m.pool().query('SELECT dish_name FROM recipes WHERE id=$1', [result.id]));
-    return res.json({ success: true, id: result.id, dishName: row.rows[0]?.dish_name || '' });
-  } catch(e) {
-    return res.status(500).json({ success: false, error: e?.message });
-  }
-});
-
-// Wave 4i: POST /api/uploads/* (daily-report/idcard/points) → domains/uploads/routes.js
+// Wave 4i / H12: POST /api/uploads/* + GET /uploads/* + growth/upload → domains/uploads/routes.js
 
 const pool = new Pool({ connectionString: DATABASE_URL });
+const recordUploadOwnership = createRecordUploadOwnership(pool);
 const loginRateLimit = createLoginRateLimiter();
 const platformAdminRequired = createPlatformAdminRequired(pool, PLATFORM_ADMIN_JWT_SECRET);
 
@@ -916,16 +726,7 @@ registerCustomerOpsRoutes(app, pool, platformAdminRequired, upload, uploadsDir, 
 });
 app.use(strategyExperimentRoutes(pool, authRequired));
 
-app.post('/api/growth/upload', authRequired, upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ ok: false, error: 'no_file' });
-    await recordUploadOwnership(req.file.filename, req.tenantId, req.user?.username);
-    const url = `/uploads/${req.file.filename}`;
-    return res.json({ ok: true, url, filename: req.file.filename, size: req.file.size });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: e?.message || 'upload_failed' });
-  }
-});
+// Wave H12: POST /api/growth/upload → domains/uploads/routes.js
 
 async function ensureEmployeeAttachmentsTable() {
   try {
@@ -2045,18 +1846,7 @@ function clampNum(n, d = 0) {
 }
 
 
-function normalizeOpenAiCompatibleBaseUrl(input) {
-  const raw = String(input || '').trim();
-  if (!raw) return '';
-  const noSlash = raw.replace(/\/+$/, '');
-  if (/ark\.cn-beijing\.volces\.com/i.test(noSlash)) {
-    if (/\/api\/v3$/i.test(noSlash)) return noSlash;
-    if (/\/v1$/i.test(noSlash)) return noSlash.replace(/\/v1$/i, '/api/v3');
-    return `${noSlash}/api/v3`;
-  }
-  if (/\/v1$/i.test(noSlash)) return noSlash;
-  return `${noSlash}/v1`;
-}
+// Wave H12: normalizeOpenAiCompatibleBaseUrl → domains/ai/routes-chat-completions.js
 
 function getStateUsers(state) {
   const users = Array.isArray(state?.users) ? state.users : [];
@@ -3394,6 +3184,8 @@ registerAuthRoutes(app, authRequired, loginRateLimit, {
   loadTenantRuntimeStatus,
 });
 
+registerAiChatCompletionsRoutes(app, authRequired);
+
 registerApprovalRoutes(app, authRequired, {
   pool,
   getSharedState,
@@ -3565,6 +3357,8 @@ registerPermissionGroupsRoutes(app, authRequired, {
 registerUploadRoutes(app, authRequired, {
   upload,
   recordUploadOwnership,
+  pool,
+  uploadsDir,
 });
 
 registerOpsTasksRoutes(app, authRequired, {
@@ -3753,7 +3547,12 @@ registerPerformanceInvalidationRoutes(app, authRequired);
 registerHRMSApiRoutes(app, authRequired);
 registerSOPDistributionRoutes(app, authRequired);
 registerKitchenExecutionRoutes(app, authRequired);
-registerRecipeRoutes(app, authRequired);
+registerRecipeRoutes(app, authRequired, {
+  upload,
+  uploadsDir,
+  ensureUploadsDir,
+  recordUploadOwnership,
+});
 registerTrainingRoutes(app, authRequired, trainingPracticeUpload, { getSharedState });
 registerUploadStatusRoute(app, { pool, getSharedState, authRequired });
 app.use('/api', authRequired, fileRoutes);
