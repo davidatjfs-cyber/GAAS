@@ -134,6 +134,9 @@ import { registerDiagnosisFeedbackRoutes } from './domains/diagnosis/routes.js';
 import { registerAgentDataRoutes } from './domains/agent-data/routes.js';
 import { registerFeishuWebhookRoutes } from './domains/feishu-webhook/routes.js';
 import { registerHealthRoutes } from './domains/health/routes.js';
+import { registerWebStaticRoutes } from './domains/health/web-static.js';
+import { createEnsureUploadsDir } from './domains/uploads/ensure-dir.js';
+import { createHasColumnHelpers } from './domains/shared/has-column.js';
 import { createFeishuBitableHelpers } from './domains/feishu-bitable/create-helpers.js';
 import { createInventoryForecastHelpers } from './domains/inventory-forecast/create-helpers.js';
 import { createLeaveAttendanceHelpers } from './domains/leave-attendance/create-helpers.js';
@@ -397,22 +400,8 @@ const __dirname = path.dirname(__filename);
 const FEISHU_ENCRYPT_KEY = process.env.FEISHU_ENCRYPT_KEY;
 
 const uploadsDir = path.join(__dirname, 'uploads');
-function ensureUploadsDir() {
-  try {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  } catch (e) {
-    console.error('[ensureUploadsDir] mkdirSync failed:', e?.message || e);
-    return { ok: false, error: 'internal_error' };
-  }
-
-  try {
-    fs.accessSync(uploadsDir, fs.constants.R_OK | fs.constants.W_OK);
-    return { ok: true };
-  } catch (e) {
-    console.error('[ensureUploadsDir] accessSync failed:', e?.message || e);
-    return { ok: false, error: 'internal_error' };
-  }
-}
+// Wave H30: ensureUploadsDir → domains/uploads/ensure-dir.js (before multer)
+const { ensureUploadsDir } = createEnsureUploadsDir({ fs, uploadsDir });
 
 async function ensureOpsTasksTable() {
   try {
@@ -510,73 +499,10 @@ try {
 // Wave H12: GET /uploads/* + recordUploadOwnership → domains/uploads/*
 
 const webRootDir = path.resolve(__dirname, '..');
-// 2026-06-25 安全修复(严重)：原来 express.static(webRootDir) 不分青红皂白地把整个项目根目录
-// 公开对外，包括 server/ 全部后端源码、migrations/ 全部SQL、docs/、*.md报告、database.sql、
-// db-check*.js等——任何人访问 https://nnyx.cc/server/index.js 都能直接下载完整后端源码。
-// 实测确认(curl https://nnyx.cc/server/index.js → 200，返回完整源码)。
-// 改为白名单：只放行前端确实需要公开访问的具体文件/目录，其余一律不经过这个静态服务器，
-// 落到下面的具体路由处理（未匹配的最终会进Express默认404，不会再暴露文件系统）。
-const STATIC_ALLOWED_ROOT_FILES = new Set([
-  'working-fixed.html', 'agents-admin.html', 'platform-admin.html', 'campaign.html',
-  'forecast.html', 'index.html', 'member-agreement.html',
-  'svremind.html', 'winback.html', 'manifest.json', 'pwa-icon.svg', 'sw.js', 'script.js',
-  'styles.css', 'role-modules-ui.js'
-]);
-const STATIC_ALLOWED_DIR_PREFIXES = ['assets/', 'dist/'];
-const staticServeWebRoot = express.static(webRootDir, {
-  index: false,
-  extensions: ['html'],
-  setHeaders: (res, filePath) => {
-    const lp = String(filePath || '').toLowerCase();
-    if (lp.endsWith('.html')) {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      // no-cache（非 no-store）：浏览器可缓存，但每次用前必须带 ETag 回源校验；
-      // 内容未变回 304（几乎0流量并复用缓存），改版后 ETag 变化即拉新版，不会读到过期页面。
-      res.setHeader('Cache-Control', 'no-cache');
-    } else if (lp.endsWith('sw.js')) {
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-    }
-  }
-});
-app.use((req, res, next) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-  const reqPath = decodeURIComponent(String(req.path || '')).replace(/^\/+/, '');
-  const isAllowedDir = STATIC_ALLOWED_DIR_PREFIXES.some((pre) => reqPath.startsWith(pre));
-  const isAllowedFile = STATIC_ALLOWED_ROOT_FILES.has(reqPath) || reqPath === '';
-  // build-shell.mjs生成的内容哈希资源(app.<hash>.js/.css)，生产环境nginx会先拦截直接served，
-  // 这里放行只是为了本地/没走nginx时也不404，与白名单其余条目同等安全(内容是构建产物，不是源码)
-  const isHashedAsset = /^app\.[0-9a-f]+\.(js|css)$/.test(reqPath);
-  if (!isAllowedDir && !isAllowedFile && !isHashedAsset) return next();
-  return staticServeWebRoot(req, res, next);
-});
-
-app.get('/agent/tenant-operation-inspection', (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(webRootDir, 'agents-admin.html'));
-});
+// Wave H30: whitelisted static + shell HTML → domains/health/web-static.js
+registerWebStaticRoutes(app, { express, fs, path, webRootDir });
 
 // Wave 4h: /api/permission-groups* → domains/permission-groups/routes.js
-
-// A2：GET/PUT /api/role-modules 唯一权威 = domains/flow-config（hr_rating_configs + state 镜像）
-// agent-config-manager 内影子路由已删除（勿再加 /api/admin/role-modules）
-
-// Wave 4k: /api/admin/store-duty-bindings* → domains/store-duty-bindings/routes.js
-
-// Wave 4p: dedup → domains/dedup/routes.js
-
-// Wave H12: GET /api/me → auth-routes.js (distinct from /api/auth/me)
-
-app.get('/', (req, res) => {
-  const p1 = path.join(webRootDir, 'working-fixed.html');
-  const p2 = path.join(webRootDir, 'index.html');
-  const target = fs.existsSync(p1) ? p1 : (fs.existsSync(p2) ? p2 : null);
-  if (!target) return res.status(404).send('Missing frontend html');
-  // no-cache（非 no-store）：允许缓存但每次回源校验，命中 ETag 回 304；改版即拉新版。
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  return res.sendFile(target);
-});
 
 const UPLOAD_ALLOWED_EXTS = new Set([
   '.pdf','.doc','.docx','.xls','.xlsx','.ppt','.pptx',
@@ -655,6 +581,9 @@ const { recordLogin, recordLogout } = createLoginLogHelpers({ pool, tenantContex
 // Wave H29: storeSessionNonce → domains/auth/session-nonce.js
 // Before createAccountGateHelpers / registerAuthRoutes (factory not hoisted).
 const { storeSessionNonce } = createSessionNonceHelpers({ pool, resolveTenantIdDefault });
+
+// Wave H30: hasColumn → domains/shared/has-column.js (before ensureExamResultsTable runtime)
+const { hasColumn } = createHasColumnHelpers({ pool });
 
 // Wave H11: user/employee lookup helpers → domains/employees/user-lookup.js
 // Must run after pool + expandAgentStoreLabels import; BEFORE registerPointsRoutes
@@ -826,21 +755,7 @@ if (__ALLOW_SCHEMA_CHANGES__) ensureEmployeeAttachmentsTable();
 
 // Wave 4l: employee attachments → domains/employees/routes-attachments.js
 
-async function hasColumn(tableName, columnName) {
-  const t = String(tableName || '').trim();
-  const c = String(columnName || '').trim();
-  if (!t || !c) return false;
-  const r = await pool.query(
-    `select 1
-     from information_schema.columns
-     where table_schema = 'public'
-       and table_name = $1
-       and column_name = $2
-     limit 1`,
-    [t, c]
-  );
-  return (r.rows || []).length > 0;
-}
+// Wave H30: hasColumn → domains/shared/has-column.js
 
 async function ensureHrmsStateTable() {
   try {
