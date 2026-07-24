@@ -13,6 +13,11 @@ import {
   recalcWechatMonthTotalsForStoreMonth,
   upsertDailyReportPgFromStateReport,
 } from './helpers.js';
+import {
+  queryPrivateRoomMonthTotal,
+  deleteDailyReportFromState,
+  syncSubmittedDailyReportsToPg,
+} from './service.js';
 import { randomUUID } from 'crypto';
 import { reconcileDailyReportAttendanceRegister } from '../../daily-attendance-register.js';
 
@@ -51,31 +56,13 @@ export function registerDailyReportsRoutes(app, deps) {
       return res.json({ total: 0 });
     }
     try {
-      const labels = [...new Set(expandAgentStoreLabels(store).map((s) => String(s || '').trim()).filter(Boolean))];
-      const patterns = labels.map((s) => `%${s.replace(/%/g, '')}%`);
-
-      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
-      // 先按规范店名/别名做精确匹配，再退化到 ILIKE ANY，兼容洪潮门店双轨写法。
-      let r = await pool.query(
-        `SELECT COALESCE(SUM(private_room_uses), 0)::int AS total
-         FROM daily_reports
-         WHERE TO_CHAR(date::date,'YYYY-MM') = $1
-           AND TRIM(store) = ANY($2::text[])
-           AND tenant_id = $3`,
-        [month, labels, tenantIdQ]
-      );
-      let total = parseInt(r.rows?.[0]?.total || 0, 10);
-      if (!total) {
-        r = await pool.query(
-          `SELECT COALESCE(SUM(private_room_uses), 0)::int AS total
-           FROM daily_reports
-           WHERE TO_CHAR(date::date,'YYYY-MM') = $1
-             AND TRIM(store) ILIKE ANY($2::text[])
-             AND tenant_id = $3`,
-          [month, patterns, tenantIdQ]
-        );
-        total = parseInt(r.rows?.[0]?.total || 0, 10);
-      }
+      const { total } = await queryPrivateRoomMonthTotal({
+        pool,
+        store,
+        month,
+        tenantId: req.tenantId || req.user?.tenant_id || 'default',
+        expandAgentStoreLabels,
+      });
       return res.json({ total });
     } catch (e) {
       console.error('[private-room-month-total]', e?.message);
@@ -763,18 +750,16 @@ export function registerDailyReportsRoutes(app, deps) {
     if (!date) return res.status(400).json({ error: 'missing_date' });
 
     try {
-      const state0 = (await getSharedState()) || {};
-      const list = Array.isArray(state0.dailyReports) ? state0.dailyReports.slice() : [];
-      const next = list.filter(r => !(String(r?.store || '').trim() === store && String(r?.date || '').trim() === date));
-      // 原子合并 dailyReports，避免 saveSharedState 全量写回与并发请求互相覆盖
-      try {
-        await mergeSharedStateFields(
-          { dailyReports: next },
-          { dailyReports: ['store', 'date'] }
-        );
-      } catch (mergeErr) {
-        void notifyAdminsDualWriteFailure('daily_reports（营业日报删除 state 合并）', mergeErr);
-        return res.status(502).json({ error: 'state_merge_failed', message: safeErrMessage(mergeErr) });
+      const result = await deleteDailyReportFromState({
+        store,
+        date,
+        getSharedState,
+        mergeSharedStateFields,
+        notifyAdminsDualWriteFailure,
+        safeErrMessage,
+      });
+      if (result.error) {
+        return res.status(502).json({ error: result.error, message: result.message });
       }
       return res.json({ ok: true });
     } catch (e) {
@@ -794,32 +779,17 @@ export function registerDailyReportsRoutes(app, deps) {
       return res.status(400).json({ error: 'missing_date', hint: 'JSON body: { "date": "2026-04-11", "store": "可选精确店名" }' });
     }
     try {
-      const state0 = (await getSharedState()) || {};
-      const list = Array.isArray(state0.dailyReports) ? state0.dailyReports : [];
-      const results = [];
-      for (const dr of list) {
-        const d = safeDateOnly(dr?.date);
-        const st = String(dr?.store || '').trim();
-        if (d !== date) continue;
-        if (storeFilter && st !== storeFilter) continue;
-        const submitted = !!(dr?.submittedAt || dr?.submitted_at || dr?.submitted);
-        if (!submitted) continue;
-        try {
-          await upsertDailyReportPgFromStateReport(dr, req.tenantId || req.user?.tenant_id || 'default');
-          results.push({ store: st, date: d, ok: true });
-        } catch (e) {
-          const msg = safeErrMessage(e);
-          void notifyAdminsDualWriteFailure(`daily_reports（admin 补写 PG ${st} ${d}）`, e);
-          results.push({ store: st, date: d, ok: false, error: msg });
-        }
-      }
-      return res.json({
-        ok: true,
+      const payload = await syncSubmittedDailyReportsToPg({
         date,
-        storeFilter: storeFilter || null,
-        matched: results.length,
-        results
+        storeFilter,
+        tenantId: req.tenantId || req.user?.tenant_id || 'default',
+        getSharedState,
+        safeDateOnly,
+        upsertDailyReportPgFromStateReport,
+        notifyAdminsDualWriteFailure,
+        safeErrMessage,
       });
+      return res.json(payload);
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
