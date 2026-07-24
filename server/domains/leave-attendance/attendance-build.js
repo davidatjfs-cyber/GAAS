@@ -14,6 +14,11 @@ export function shanghaiDateOnly(input) {
   return d.toLocaleString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
 }
 
+/** 上海时区当天 YYYY-MM-DD（与 safeDateOnly / offboarding 日期比较口径一致） */
+export function shanghaiTodayDateOnly() {
+  return shanghaiDateOnly(new Date());
+}
+
 export function normalizeAttendanceRegisterLineDetails(raw) {
   let lines = raw;
   if (typeof lines === 'string') {

@@ -59,7 +59,9 @@ import {
   normalizeStoreKey,
   safeDateOnly,
   safeMonthOnly,
+  safeUuid,
 } from './domains/shared/time-number.js';
+import { shanghaiTodayDateOnly } from './domains/leave-attendance/attendance-build.js';
 import { createAgentsServiceAuthHelpers } from './domains/shared/agents-service-auth.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
@@ -1724,13 +1726,7 @@ registerCheckinRoutes(app, {
 });
 // Wave H17: registerReportsRoutes / registerHrmsPayrollClosedLoopRoutes → after createRoleAccessHelpers
 
-
-function safeUuid(input) {
-  const v = String(input || '').trim();
-  if (!v) return '';
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return '';
-  return v;
-}
+// Wave H26: safeUuid → domains/shared/time-number.js (named import)
 
 async function ensureExamResultsTable() {
   try {
@@ -2149,10 +2145,7 @@ registerHrmsPayrollClosedLoopRoutes(app, {
   isLegacyTestUsername,
 });
 
-/** 上海时区当天 YYYY-MM-DD（与 safeDateOnly / offboarding 日期比较口径一致） */
-function shanghaiTodayDateOnly() {
-  return leaveAttendanceHelpers.shanghaiDateOnly(new Date());
-}
+// Wave H26: shanghaiTodayDateOnly → domains/leave-attendance/attendance-build.js (named import)
 
 // Wave H19: account gate → domains/employees/account-gate.js
 // After pool / DATABASE_URL / tenantContext / getSharedState / stateFindUserRecord

@@ -14,6 +14,14 @@ export function toNullableUuid(input) {
   return value ? value : null;
 }
 
+/** Strict UUID v4-ish shape; invalid → '' (not null — payments/query excludeId). */
+export function safeUuid(input) {
+  const v = String(input || '').trim();
+  if (!v) return '';
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return '';
+  return v;
+}
+
 export function hrmsNowISO() {
   // Force Asia/Shanghai wall-clock time regardless of server timezone.
   const fmt = new Intl.DateTimeFormat('sv-SE', {

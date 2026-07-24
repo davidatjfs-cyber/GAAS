@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   safeNumber,
   toNullableUuid,
+  safeUuid,
   hrmsNowISO,
   inDateRange,
   parseMonth,
@@ -11,6 +12,7 @@ import {
   safeDateOnly,
   safeMonthOnly,
 } from '../domains/shared/time-number.js';
+import { shanghaiDateOnly, shanghaiTodayDateOnly } from '../domains/leave-attendance/attendance-build.js';
 
 test('safeNumber: finite / NaN / empty → null', () => {
   assert.equal(safeNumber(42), 42);
@@ -95,4 +97,20 @@ test('safeDateOnly: valid / invalid / empty', () => {
   assert.equal(safeDateOnly(''), null);
   assert.equal(safeDateOnly(null), null);
   assert.equal(safeDateOnly(undefined), null);
+});
+
+test('safeUuid: accepts uuid shape; invalid → empty string', () => {
+  assert.equal(safeUuid(''), '');
+  assert.equal(safeUuid('not-a-uuid'), '');
+  assert.equal(safeUuid('  '), '');
+  const id = '550e8400-e29b-41d4-a716-446655440000';
+  assert.equal(safeUuid(id), id);
+  assert.equal(safeUuid(` ${id} `), id);
+});
+
+test('shanghaiTodayDateOnly matches shanghaiDateOnly(now)', () => {
+  const a = shanghaiTodayDateOnly();
+  const b = shanghaiDateOnly(new Date());
+  assert.match(a, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(a, b);
 });

@@ -21,6 +21,7 @@
 import { pool as getUnifiedPool, getActiveTenantIds, tenantContext } from './utils/database.js';
 import { resolveTenantIdForStore } from './growth-api.js';
 import axios from 'axios';
+import { createAgentsServiceAuthHelpers } from './domains/shared/agents-service-auth.js';
 import {
   traceCausalChain,
   getStoreHealthOverview,
@@ -48,19 +49,8 @@ function pool() {
   return getUnifiedPool();
 }
 
-function getAgentsServiceBaseUrl() {
-  return String(process.env.AGENTS_SERVICE_BASE_URL || 'http://127.0.0.1:3101').trim().replace(/\/$/, '');
-}
-
-async function getAgentsServiceAdminToken() {
-  const url = getAgentsServiceBaseUrl() + '/api/login';
-  const username = String(process.env.AGENTS_ADMIN_USERNAME || 'admin').trim() || 'admin';
-  const password = String(process.env.AGENTS_ADMIN_PASSWORD || '').trim();
-  if (!password) throw new Error('AGENTS_ADMIN_PASSWORD not configured');
-  const r = await axios.post(url, { username, password }, { timeout: 8000, validateStatus: () => true, headers: { 'Content-Type': 'application/json' } });
-  if (r.status < 200 || r.status >= 300 || !r.data?.token) throw new Error(`agents_service_login_failed:${r.status}`);
-  return String(r.data.token);
-}
+// Wave H26: reuse H23 agents-service auth (45s JWT cache)
+const { getAgentsServiceBaseUrl, getAgentsServiceAdminToken } = createAgentsServiceAuthHelpers({ axios });
 
 async function createBoardTaskViaV2({ content, priority, store, createdBy, createdByRole }) {
   try {
