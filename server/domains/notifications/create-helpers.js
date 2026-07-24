@@ -1,0 +1,50 @@
+/**
+ * Notifications / system-alert helpers factory (Wave H4).
+ */
+
+import { createMakeNotif, addStateNotification, uniqUsernames } from './make-notif.js';
+import { createAppendHelpers } from './append.js';
+import { systemAlertTitle, createSendAdminSystemAlert } from './system-alert.js';
+import { createNotifyAdminsDualWriteFailure } from './dual-write-alert.js';
+import { createNotifyAdminsOcrFailed } from './ocr-alert.js';
+
+export function createNotificationsHelpers({
+  pool,
+  mergeSharedStateFields,
+  resolveTenantIdDefault,
+  hrmsNowISO,
+  sendLarkMessage,
+  lookupFeishuUserByUsername,
+}) {
+  const makeNotif = createMakeNotif({ hrmsNowISO });
+  const { appendNotifications, insertHrmsUserNotifications } = createAppendHelpers({
+    pool,
+    mergeSharedStateFields,
+    resolveTenantIdDefault,
+    hrmsNowISO,
+  });
+  const sendAdminSystemAlert = createSendAdminSystemAlert({
+    pool,
+    makeNotif,
+    appendNotifications,
+    insertHrmsUserNotifications,
+    uniqUsernames,
+    systemAlertTitle,
+    lookupFeishuUserByUsername,
+    sendLarkMessage,
+  });
+  const notifyAdminsDualWriteFailure = createNotifyAdminsDualWriteFailure({ pool, sendLarkMessage });
+  const notifyAdminsOcrFailed = createNotifyAdminsOcrFailed({ pool, sendLarkMessage });
+
+  return {
+    makeNotif,
+    addStateNotification,
+    uniqUsernames,
+    appendNotifications,
+    insertHrmsUserNotifications,
+    systemAlertTitle,
+    sendAdminSystemAlert,
+    notifyAdminsDualWriteFailure,
+    notifyAdminsOcrFailed,
+  };
+}

@@ -73,6 +73,7 @@ import { registerFeishuWebhookRoutes } from './domains/feishu-webhook/routes.js'
 import { createFeishuBitableHelpers } from './domains/feishu-bitable/create-helpers.js';
 import { createInventoryForecastHelpers } from './domains/inventory-forecast/create-helpers.js';
 import { createLeaveAttendanceHelpers } from './domains/leave-attendance/create-helpers.js';
+import { createNotificationsHelpers } from './domains/notifications/create-helpers.js';
 import {
 
 
@@ -967,49 +968,10 @@ registerTenantPlatformRoutes(app, {
   REQUIRED_TENANT_FEISHU_TABLE_KEYS,
   invalidateTenantLlmConfigCache,
 });
-registerKnowledgeRoutes(app, {
-  pool,
-  authRequired,
-  authRequiredOrQueryToken,
-  getKnowledgeViewerProfile: (req) => getKnowledgeViewerProfileFromDomain(req, getSharedState),
-  buildKnowledgeBrandScopeTag,
-  callLLM,
-  resolveTenantIdDefault,
-  knowledgeUpload,
-  uploadsDir,
-  recordUploadOwnership,
-  notifyAdminsOcrFailed,
-  inferContentType,
-  buildInlineContentDisposition,
-  getCosClient,
-  getOssClient,
-  buildCosPublicUrl,
-  buildOssPublicUrl,
-  COS_BUCKET,
-  COS_REGION,
-  OSS_PART_SIZE_MB,
-  OSS_PARALLEL,
-  OSS_RETRY_COUNT,
-  OSS_TIMEOUT_MS,
-});
+// Wave H4: registerKnowledgeRoutes / registerDailyReportsRoutes
+// 延后到 createNotificationsHelpers 之后（notifyAdminsOcrFailed / notifyAdminsDualWriteFailure 等非 hoisted）
 // Wave H3: registerCheckinRoutes / registerReportsRoutes / registerHrmsPayrollClosedLoopRoutes
 // 延后到 createLeaveAttendanceHelpers 之后（工厂非 hoisted，不能在定义前 capture）
-registerDailyReportsRoutes(app, {
-  pool,
-  authRequired,
-  getSharedState,
-  mergeSharedStateFields,
-  safeDateOnly,
-  stateFindUserRecord,
-  expandAgentStoreLabels,
-  inDateRange,
-  hrmsNowISO,
-  notifyAdminsDualWriteFailure,
-  safeErrMessage,
-  isAdmin,
-  addStateNotification,
-  makeNotif,
-});
 registerPointsRoutes(app, {
   pool,
   authRequired,
@@ -1688,56 +1650,25 @@ async function captureHrmsStateSnapshotToDb(opts = {}) {
   return { ok: true, byteSize };
 }
 
-/**
- * 双写失败告警（系统底线）：任何 hrms_state ↔ PostgreSQL 不同步风险必须调用本函数。
- * - 先入运维日志（console.error，便于采集/巡检），再尽最大努力发飞书。
- * - 飞书接收人：feishu_users 中 admin / hq_manager（及常见中文管理员别名），避免仅有英文 admin 导致漏告。
- *
- * 已接入范围见仓库内对此函数的引用（遗漏新增双写时请同步调用）。
- */
-async function notifyAdminsDualWriteFailure(scopeLabel, err) {
-  const reason = String(err?.message || err || 'unknown').slice(0, 500);
-  const timeStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
-  console.error('[dual-write][CRITICAL]', scopeLabel, '|', reason, '|', timeStr, 'Asia/Shanghai');
-
-  try {
-    const r = await pool.query(
-      `SELECT DISTINCT open_id
-       FROM feishu_users
-       WHERE registered = true
-         AND open_id IS NOT NULL
-         AND open_id NOT LIKE '%probe%'
-         AND (
-           TRIM(LOWER(role)) IN ('admin', 'hq_manager')
-           OR TRIM(role) IN ('管理员', '系统管理员', '总部经理', '总部营运')
-         )
-       LIMIT 35`
-    );
-    const rows = r.rows || [];
-    if (!rows.length) {
-      console.error(
-        '[dual-write][CRITICAL] 双写失败但无可投递飞书账号（请检查 feishu_users.registered / role / open_id）。范围:',
-        scopeLabel
-      );
-      return;
-    }
-    const msg =
-      `【HRMS 双写失败告警】\n范围：${scopeLabel}\n原因：${reason}\n时间：${timeStr}（上海）\n` +
-      `说明：营业日报若 PG 失败，接口会返回 **502（pg_sync_failed）** 且 **不会** 写入 hrms_state，避免「前端已提交、库表无行」。\n` +
-      `请检查 DATABASE_URL、表约束、字段类型；可用 POST /api/admin/sync-submitted-daily-reports-pg 从 state 补写 daily_reports。\n` +
-      `请核对 hrms_state 与独立表一致性。`;
-    const sends = (rows || []).map((row) =>
-      sendLarkMessage(row.open_id, msg, { skipDedup: true }).catch((e) => ({ err: e?.message || e }))
-    );
-    const settled = await Promise.all(sends);
-    const failed = settled.filter((x) => x && x.err);
-    if (failed.length) {
-      console.error('[dual-write][CRITICAL] 部分飞书告警发送失败:', failed.length, failed[0]?.err);
-    }
-  } catch (e) {
-    console.error('[dual-write][CRITICAL] notifyAdminsDualWriteFailure 自身异常:', scopeLabel, e?.message);
-  }
-}
+// Wave H4: notifications write/alert helpers（须在 mergeSharedStateFields 之后、createFeishuBitableHelpers 之前）
+const {
+  notifyAdminsDualWriteFailure,
+  notifyAdminsOcrFailed,
+  makeNotif,
+  addStateNotification,
+  appendNotifications,
+  sendAdminSystemAlert,
+  uniqUsernames,
+  insertHrmsUserNotifications,
+  systemAlertTitle,
+} = createNotificationsHelpers({
+  pool,
+  mergeSharedStateFields,
+  resolveTenantIdDefault,
+  hrmsNowISO, // function declaration later in file — hoisted OK
+  sendLarkMessage,
+  lookupFeishuUserByUsername,
+});
 
 const {
   tryParseJson,
@@ -1769,46 +1700,47 @@ const {
 });
 registerPhaseRoutes(app, pool, { getFeishuBitableData });
 
-/**
- * 知识库文件 OCR/解析失败时飞书告警管理员
- * @param {string} itemTitle   文件标题
- * @param {string} fileType    类型描述（如图片、PDF、PDF 扫描件）
- * @param {string} reason      失败原因
- */
-async function notifyAdminsOcrFailed(itemTitle, fileType, reason) {
-  try {
-    const r = await pool.query(
-      `SELECT open_id FROM feishu_users
-       WHERE registered = true AND open_id IS NOT NULL
-         AND role = 'admin'
-         AND open_id NOT LIKE '%probe%'
-       LIMIT 20`
-    );
-    const rows = r.rows || [];
-    if (!rows.length) {
-      console.warn('[knowledge-ocr] no admin open_id for Feishu alert');
-      return;
-    }
-    const timeStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
-    const msg =
-`【知识库文件解析失败告警】
-文件：${itemTitle}
-类型：${fileType || '未知'}
-原因：${String(reason || '未知错误').slice(0, 500)}
-时间：${timeStr}（上海）
-说明：该文件自动解析失败，如需使用请在知识库中重新上传或手动填写内容。请检查视觉模型配置或服务器依赖（poppler-utils）是否正常安装。`;
-    const sends = rows.map(row =>
-      sendLarkMessage(row.open_id, msg, { skipDedup: true }).catch(e => ({ err: e?.message || e }))
-    );
-    const settled = await Promise.all(sends);
-    const failed = settled.filter(x => x && x.err);
-    if (failed.length) {
-      console.error('[knowledge-ocr] some Feishu admin alerts failed:', failed.length, failed[0]?.err);
-    }
-  } catch (e) {
-    console.error('[knowledge-ocr] notify admins failed:', e?.message);
-  }
-}
+registerKnowledgeRoutes(app, {
+  pool,
+  authRequired,
+  authRequiredOrQueryToken,
+  getKnowledgeViewerProfile: (req) => getKnowledgeViewerProfileFromDomain(req, getSharedState),
+  buildKnowledgeBrandScopeTag,
+  callLLM,
+  resolveTenantIdDefault,
+  knowledgeUpload,
+  uploadsDir,
+  recordUploadOwnership,
+  notifyAdminsOcrFailed,
+  inferContentType,
+  buildInlineContentDisposition,
+  getCosClient,
+  getOssClient,
+  buildCosPublicUrl,
+  buildOssPublicUrl,
+  COS_BUCKET,
+  COS_REGION,
+  OSS_PART_SIZE_MB,
+  OSS_PARALLEL,
+  OSS_RETRY_COUNT,
+  OSS_TIMEOUT_MS,
+});
+registerDailyReportsRoutes(app, {
+  pool,
+  authRequired,
+  getSharedState,
+  mergeSharedStateFields,
+  safeDateOnly,
+  stateFindUserRecord,
+  expandAgentStoreLabels,
+  inDateRange,
+  hrmsNowISO,
+  notifyAdminsDualWriteFailure,
+  safeErrMessage,
+  isAdmin,
+  addStateNotification,
+  makeNotif,
+});
 
 /** 全量双写：每次保存 state 时自动同步所有模块到独立 DB 表 */
 async function dualWriteStateToDB(state) {
@@ -2396,158 +2328,6 @@ function toNullableUuid(input) {
   return value ? value : null;
 }
 
-function addStateNotification(state, notif) {
-  const s = state && typeof state === 'object' ? state : {};
-  const list = Array.isArray(s.notifications) ? s.notifications.slice() : [];
-  list.push(notif);
-  return { ...s, notifications: list };
-}
-
-async function appendNotifications(notifs) {
-  const list = Array.isArray(notifs) ? notifs.filter(Boolean) : [];
-  if (!list.length) return;
-  await mergeSharedStateFields({ notifications: list }, { notifications: 'id' });
-}
-
-function systemAlertTitle(msg) {
-  const firstLine = String(msg || '').split(/\r?\n/).map(s => String(s || '').trim()).find(Boolean) || '';
-  return firstLine.slice(0, 120) || 'HRMS 系统告警';
-}
-
-async function insertHrmsUserNotifications(notifs) {
-  const list = Array.isArray(notifs) ? notifs.filter(Boolean) : [];
-  if (!list.length) return;
-  for (const n of list) {
-    const target = String(n?.targetUser || n?.targetUsername || n?.to || '').trim();
-    if (!target) continue;
-    await pool.query(
-      `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at, tenant_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [
-        target,
-        String(n?.title || '').trim() || '通知',
-        String(n?.message || '').trim(),
-        String(n?.type || 'system_notice').trim(),
-        JSON.stringify(n?.meta || n?.data || {}),
-        n?.createdAt ? new Date(n.createdAt).toISOString() : hrmsNowISO(),
-        resolveTenantIdDefault()
-      ]
-    );
-  }
-}
-
-async function sendAdminSystemAlert(msg, options = {}) {
-  const text = String(msg || '').trim();
-  if (!text) return { recipients: [], feishuSent: 0, feishuFailed: 0 };
-
-  const explicitUsernames = uniqUsernames(Array.isArray(options?.usernames) ? options.usernames : []);
-  let recipients = explicitUsernames.slice();
-  if (!recipients.length) {
-    const admins = await pool.query(
-      `SELECT username
-       FROM users
-       WHERE role IN ('admin','hq_manager','hr_manager')
-         AND is_active = true
-       LIMIT 8`
-    );
-    recipients = uniqUsernames((admins.rows || []).map(r => r.username));
-  }
-  if (!recipients.length) return { recipients: [], feishuSent: 0, feishuFailed: 0 };
-
-  const title = String(options?.title || '').trim() || systemAlertTitle(text);
-  const notificationType = String(options?.notificationType || 'system_alert').trim();
-  const meta = options?.meta && typeof options.meta === 'object' ? options.meta : {};
-
-  if (options?.persistToHrms !== false) {
-    const notifs = recipients.map((username) => makeNotif(username, title, text, {
-      type: notificationType,
-      meta: {
-        source: 'admin_system_alert',
-        ...meta
-      }
-    }));
-    try {
-      await appendNotifications(notifs);
-      await insertHrmsUserNotifications(notifs);
-    } catch (e) {
-      console.error('[system-alert] persist company notification failed:', e?.message || e);
-    }
-  }
-
-  let feishuSent = 0;
-  let feishuFailed = 0;
-  const sendTargets = [];
-  const seenOpenId = new Set();
-  for (const username of recipients) {
-    try {
-      let fu = await lookupFeishuUserByUsername(username);
-      let openId = String(fu?.open_id || '').trim();
-      if (!openId) {
-        const r = await pool.query(
-          `SELECT open_id FROM feishu_users WHERE lower(username)=lower($1) LIMIT 1`,
-          [username]
-        );
-        openId = String(r.rows?.[0]?.open_id || '').trim();
-      }
-      if (!openId || seenOpenId.has(openId)) continue;
-      seenOpenId.add(openId);
-      sendTargets.push(openId);
-    } catch (e) {
-      // ignore single user mapping failure, below会走角色兜底
-    }
-  }
-  // 仅在“群发管理员”场景启用 role 兜底；单人演练/定向告警必须严格按指定用户名发送
-  if (!explicitUsernames.length) {
-    try {
-      const roleRows = await pool.query(
-        `SELECT DISTINCT open_id
-         FROM feishu_users
-         WHERE registered = true
-           AND role IN ('admin','hq_manager','hr_manager')
-           AND TRIM(COALESCE(open_id, '')) <> ''
-           AND open_id NOT LIKE '%probe%'`
-      );
-      for (const row of roleRows.rows || []) {
-        const oid = String(row?.open_id || '').trim();
-        if (!oid || seenOpenId.has(oid)) continue;
-        seenOpenId.add(oid);
-        sendTargets.push(oid);
-      }
-    } catch (e) {
-      console.error('[system-alert] feishu role fallback query failed:', e?.message || e);
-    }
-  }
-
-  for (const openId of sendTargets) {
-    const result = await sendLarkMessage(openId, text, { skipDedup: true }).catch((e) => ({ ok: false, error: e?.message }));
-    if (result?.ok) feishuSent += 1;
-    else feishuFailed += 1;
-  }
-
-  if (sendTargets.length === 0) {
-    feishuFailed = recipients.length || 1;
-  }
-  if (feishuSent === 0) {
-    console.error('[system-alert] feishu send all failed:', { recipients, sendTargetsCount: sendTargets.length, feishuFailed });
-  }
-
-  return { recipients, feishuSent, feishuFailed };
-}
-
-function uniqUsernames(list) {
-  const seen = new Set();
-  const out = [];
-  (list || []).forEach(u => {
-    const v = String(u || '').trim();
-    if (!v) return;
-    const k = v.toLowerCase();
-    if (seen.has(k)) return;
-    seen.add(k);
-    out.push(v);
-  });
-  return out;
-}
-
 function hrmsNowISO() {
   // Force Asia/Shanghai wall-clock time regardless of server timezone.
   const fmt = new Intl.DateTimeFormat('sv-SE', {
@@ -2569,18 +2349,6 @@ function hrmsNowISO() {
   const mi = pick('minute');
   const s = pick('second');
   return `${y}-${m}-${d}T${h}:${mi}:${s}+08:00`;
-}
-
-function makeNotif(targetUser, title, message, extra) {
-  return {
-    id: 'NOTIF-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-    type: String(extra?.type || 'notice'),
-    targetUser: String(targetUser || '').trim(),
-    title: String(title || '').trim() || '通知',
-    message: String(message || '').trim(),
-    createdAt: hrmsNowISO(),
-    ...(extra && typeof extra === 'object' ? extra : {})
-  };
 }
 
 let _lastRecurringRewardJobSlot = '';
