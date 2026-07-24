@@ -72,6 +72,8 @@ import {
 import { createObjectStorageHelpers } from './domains/uploads/object-storage.js';
 import { createRequireEnvHelpers } from './domains/shared/require-env.js';
 import { createLoginLogHelpers } from './domains/auth/login-log.js';
+import { createSessionNonceHelpers } from './domains/auth/session-nonce.js';
+import { createPayrollLeaveDomainSyncHelpers } from './domains/payroll/domain-sync.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
@@ -649,6 +651,10 @@ const platformAdminRequired = createPlatformAdminRequired(pool, PLATFORM_ADMIN_J
 
 // Wave H28: recordLogin / recordLogout → domains/auth/login-log.js
 const { recordLogin, recordLogout } = createLoginLogHelpers({ pool, tenantContext });
+
+// Wave H29: storeSessionNonce → domains/auth/session-nonce.js
+// Before createAccountGateHelpers / registerAuthRoutes (factory not hoisted).
+const { storeSessionNonce } = createSessionNonceHelpers({ pool, resolveTenantIdDefault });
 
 // Wave H11: user/employee lookup helpers → domains/employees/user-lookup.js
 // Must run after pool + expandAgentStoreLabels import; BEFORE registerPointsRoutes
@@ -1304,6 +1310,20 @@ const {
   lookupFeishuUserByUsername,
 });
 
+// Wave H29: payroll/leave domain dual-write → domains/payroll/domain-sync.js
+// After getSharedState + notifyAdminsDualWriteFailure; ensureLeaveDomainTable stays in index.
+const {
+  upsertPayrollDomainFromState,
+  upsertLeaveDomainFromState,
+  schedulePayrollDomainSync,
+  scheduleLeaveDomainSync,
+} = createPayrollLeaveDomainSyncHelpers({
+  pool,
+  resolveTenantIdDefault,
+  getSharedState,
+  notifyAdminsDualWriteFailure,
+});
+
 const {
   tryParseJson,
   decryptFeishuEncryptPayload,
@@ -1450,31 +1470,7 @@ async function dualWriteStateToDB(state) {
 // Wave H27: payrollDomainFieldEmpty / leaveDomainFieldEmpty → domainJsonFieldEmpty
 // (domains/shared/domain-json-empty.js)
 
-/** 将当前 state 中的薪资相关字段写入独立表 hrms_payroll_domain（双写备份） */
-// id曾经硬编码为'default'常量、tenant_id列全靠DEFAULT带过——在只有一个租户时无害，
-// 但id是单独的PRIMARY KEY(不是id+tenant_id复合键)，多租户下所有租户会共享同一行、
-// 互相覆盖数据；RLS开启的环境(如demo)还会因为写入行的tenant_id(默认'default')与
-// 当前会话的租户上下文不一致而被policy拒绝(new row violates row-level security policy)。
-// 改为用当前租户id同时作为id和tenant_id，天然解决两个问题。
-async function upsertPayrollDomainFromState(state) {
-  if (!state || typeof state !== 'object') return;
-  const tid = resolveTenantIdDefault();
-  const pa = state.payrollAdjustments && typeof state.payrollAdjustments === 'object' ? state.payrollAdjustments : {};
-  const pau = state.payrollAudits && typeof state.payrollAudits === 'object' ? state.payrollAudits : {};
-  const sa = Array.isArray(state.salaryAdjustments) ? state.salaryAdjustments : [];
-  const mc = Array.isArray(state.monthlyConfirmations) ? state.monthlyConfirmations : [];
-  await pool.query(
-    `INSERT INTO hrms_payroll_domain (id, tenant_id, payroll_adjustments, payroll_audits, salary_adjustments, monthly_confirmations, updated_at)
-     VALUES ($1::text, $1::varchar(80), $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, NOW())
-     ON CONFLICT (id) DO UPDATE SET
-       payroll_adjustments = EXCLUDED.payroll_adjustments,
-       payroll_audits = EXCLUDED.payroll_audits,
-       salary_adjustments = EXCLUDED.salary_adjustments,
-       monthly_confirmations = EXCLUDED.monthly_confirmations,
-       updated_at = NOW()`,
-    [tid, JSON.stringify(pa), JSON.stringify(pau), JSON.stringify(sa), JSON.stringify(mc)]
-  );
-}
+// Wave H29: upsert/schedule payroll+leave domain → domains/payroll/domain-sync.js
 
 async function ensureLeaveDomainTable() {
   await pool.query(`
@@ -1486,58 +1482,6 @@ async function ensureLeaveDomainTable() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-}
-
-// 同上：id曾经硬编码为'default'、tenant_id全靠列DEFAULT带过，多租户下会互相覆盖数据，
-// RLS开启环境下还会触发policy拒绝。改为用当前租户id同时作为id和tenant_id。
-async function upsertLeaveDomainFromState(state) {
-  if (!state || typeof state !== 'object') return;
-  const tid = resolveTenantIdDefault();
-  const overrides =
-    state.leaveBalanceOverrides && typeof state.leaveBalanceOverrides === 'object'
-      ? state.leaveBalanceOverrides
-      : {};
-  const adjustments = Array.isArray(state.leaveBalanceAdjustments) ? state.leaveBalanceAdjustments : [];
-  const snapshots =
-    state.leaveCumulativeCloseSnapshots && typeof state.leaveCumulativeCloseSnapshots === 'object'
-      ? state.leaveCumulativeCloseSnapshots
-      : {};
-  await pool.query(
-    `INSERT INTO hrms_leave_domain (
-       id, tenant_id, leave_balance_overrides, leave_balance_adjustments, leave_cumulative_close_snapshots, updated_at
-     )
-     VALUES ($1::text, $1::varchar(80), $2::jsonb, $3::jsonb, $4::jsonb, NOW())
-     ON CONFLICT (id) DO UPDATE SET
-       leave_balance_overrides = EXCLUDED.leave_balance_overrides,
-       leave_balance_adjustments = EXCLUDED.leave_balance_adjustments,
-       leave_cumulative_close_snapshots = EXCLUDED.leave_cumulative_close_snapshots,
-       updated_at = NOW()`,
-    [tid, JSON.stringify(overrides), JSON.stringify(adjustments), JSON.stringify(snapshots)]
-  );
-}
-
-function schedulePayrollDomainSync() {
-  setImmediate(async () => {
-    try {
-      const s = await getSharedState();
-      await upsertPayrollDomainFromState(s);
-    } catch (e) {
-      console.error('[hrms_payroll_domain] async sync failed (non-fatal):', e?.message);
-      void notifyAdminsDualWriteFailure('hrms_payroll_domain（异步薪资域双写）', e);
-    }
-  });
-}
-
-function scheduleLeaveDomainSync() {
-  setImmediate(async () => {
-    try {
-      const s = await getSharedState();
-      await upsertLeaveDomainFromState(s);
-    } catch (e) {
-      console.error('[hrms_leave_domain] async sync failed (non-fatal):', e?.message);
-      void notifyAdminsDualWriteFailure('hrms_leave_domain（异步欠休域双写）', e);
-    }
-  });
 }
 
 // Wave H24: upsertEmployeeAttendanceMirrorFromCheckinRow → domains/leave-attendance/attendance-mirror.js
@@ -2206,36 +2150,7 @@ registerHealthRoutes(app, {
 
 // Wave 4g: stores CRUD/brands/location → domains/stores/*
 
-/** @returns {Promise<boolean>} 是否已成功持久化（失败时不得签发 JWT，否则 sn 与库不一致 → 全站 401/session_replaced） */
-async function storeSessionNonce(uname, nonce, tenantId) {
-  const key = String(uname || '').trim().toLowerCase();
-  const effectiveTenantId = resolveTenantIdDefault(tenantId);
-  if (!key) return false;
-  let client;
-  try {
-    client = await pool.connect();
-    // configureDbSessionSafety 在 ENABLE_DB_WRITE!=true 时会把连接设为只读；
-    // 会话 nonce 必须写入，否则新 token 与库中旧 sn 不一致 → 立刻 401（表现为「登录不了/一进系统就掉线」）。
-    await client.query('SET default_transaction_read_only = OFF');
-    await client.query(
-      `insert into user_sessions (username, session_nonce, tenant_id, updated_at)
-       values ($1, $2, $3, now())
-       on conflict (username, tenant_id) do update set session_nonce = $2, updated_at = now()`,
-      [key, nonce, effectiveTenantId]
-    );
-    return true;
-  } catch (e) {
-    console.error('storeSessionNonce failed:', e?.message || e);
-    return false;
-  } finally {
-    try {
-      if (client) client.release();
-    } catch (_e) {
-      /* ignore */
-    }
-  }
-}
-
+// Wave H29: storeSessionNonce → domains/auth/session-nonce.js (after pool)
 
 // Wave 4p: rag + getKnowledgeViewerProfile → domains/rag/*
 
