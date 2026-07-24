@@ -1,0 +1,220 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  createCheckin,
+  listCheckinRecords,
+  getAttendanceOverview,
+  setLeaveBalance,
+  confirmMonthlyAttendance,
+} from '../domains/checkin/service.js';
+
+const LONG_PHOTO = 'x'.repeat(100);
+
+function makePool(handler) {
+  return {
+    query: async (sql, params) => {
+      if (handler) return handler(sql, params);
+      return { rows: [] };
+    },
+  };
+}
+
+function baseCreateCtx(overrides = {}) {
+  return {
+    pool: overrides.pool || makePool(),
+    haversineDistance: () => 0,
+    resolveCheckinRadiusMeters: () => 200,
+    upsertEmployeeAttendanceMirrorFromCheckinRow: async () => {},
+    notifyAdminsDualWriteFailure: () => {},
+    getShanghaiHour: overrides.getShanghaiHour || (() => 10),
+    ...overrides.ctxExtra,
+  };
+}
+
+function validCreateInput(extra = {}) {
+  return {
+    username: 'alice',
+    type: 'clock_in',
+    latitude: 31.2,
+    longitude: 121.5,
+    body: {},
+    faceMatch: true,
+    faceScore: 0.9,
+    photoUrl: LONG_PHOTO,
+    storeName: '',
+    tenantId: 'default',
+    ...extra,
+  };
+}
+
+test('createCheckin: invalid_type', async () => {
+  const result = await createCheckin(baseCreateCtx(), validCreateInput({ type: 'break' }));
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 400);
+  assert.equal(result.error, 'invalid_type');
+});
+
+test('createCheckin: duplicate_checkin when record exists within 1h', async () => {
+  const pool = makePool(async (sql) => {
+    if (/select id from checkin_records/i.test(sql) && /1 hour/i.test(sql)) {
+      return { rows: [{ id: 'dup-1' }] };
+    }
+    return { rows: [] };
+  });
+  const result = await createCheckin(baseCreateCtx({ pool }), validCreateInput());
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 400);
+  assert.equal(result.error, 'duplicate_checkin');
+  assert.match(result.message, /1小时内已上班打卡/);
+});
+
+test('createCheckin: late_clock_in when getShanghaiHour >= 17', async () => {
+  const pool = makePool(async () => ({ rows: [] }));
+  const result = await createCheckin(
+    baseCreateCtx({ pool, getShanghaiHour: () => 17 }),
+    validCreateInput()
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 400);
+  assert.equal(result.error, 'late_clock_in');
+  assert.match(result.message, /17:00/);
+});
+
+test('createCheckin: no_clock_in when clocking out without clock_in today', async () => {
+  const pool = makePool(async (sql) => {
+    if (/type = 'clock_in'/i.test(sql) && /CURRENT_DATE/i.test(sql)) {
+      return { rows: [] };
+    }
+    if (/1 hour/i.test(sql)) return { rows: [] };
+    return { rows: [] };
+  });
+  const result = await createCheckin(
+    baseCreateCtx({ pool }),
+    validCreateInput({ type: 'clock_out' })
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 400);
+  assert.equal(result.error, 'no_clock_in');
+  assert.match(result.message, /无上班打卡/);
+});
+
+test('listCheckinRecords: empty data returns { ok, records: [] }', async () => {
+  const pool = makePool(async () => ({ rows: [] }));
+  const result = await listCheckinRecords(
+    {
+      pool,
+      getSharedState: async () => ({ users: [], employees: [] }),
+      safeDateOnly: (d) => (d ? String(d).slice(0, 10) : ''),
+      loadActiveDutyRowsForUser: async () => [],
+      pickMyStoreFromState: () => '',
+    },
+    {
+      username: 'alice',
+      role: 'employee',
+      filterUser: '',
+      filterStore: '',
+      filterName: '',
+      start: '',
+      end: '',
+      filterStatus: '',
+      tenantId: 'default',
+    }
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.records, []);
+});
+
+test('getAttendanceOverview: empty month data returns zero counts structure', async () => {
+  const pool = makePool(async () => ({ rows: [] }));
+  const result = await getAttendanceOverview(
+    {
+      pool,
+      getSharedState: async () => ({
+        users: [{ username: 'alice', name: '爱丽丝', store: '测试店' }],
+        dailyReports: [],
+      }),
+      stateFindUserRecord: (_s, u) => ({ username: u, name: '爱丽丝', store: '测试店' }),
+      hrmsAttendanceWindowMinutesForStore: () => ({ startMinutes: 9 * 60, endMinutes: 18 * 60 }),
+      hrmsDateKeyInShanghai: () => '',
+      hrmsClockMinutesInShanghai: () => 0,
+      dailyReportRestDaysForEmployee: () => 0,
+      computeAttendanceMissingClockPenalties: async () => new Map(),
+      calcEmployeeMonthlyLeaveBalance: () => ({
+        baseLeave: 4,
+        annualLeave: 0,
+        usedLeave: 0,
+        totalLeave: 4,
+        cumulativeLeaveDays: 0,
+        monthRemaining: 4,
+        computedRemaining: 4,
+        remaining: 4,
+        overridden: false,
+        cumulativeLeaveManualLock: false,
+        weeklyDetails: [],
+        lastAdjustment: null,
+      }),
+    },
+    { username: 'alice', role: 'employee', month: '2026-07', tenantId: 'default' }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.month, '2026-07');
+  assert.equal(result.username, 'alice');
+  assert.equal(result.absentCount, 0);
+  assert.equal(result.lateCount, 0);
+  assert.equal(result.earlyLeaveCount, 0);
+  assert.equal(result.restDays, 0);
+  assert.ok(result.leave);
+});
+
+test('setLeaveBalance: missing_params', async () => {
+  const result = await setLeaveBalance(
+    {
+      getSharedState: async () => ({}),
+      mergeSharedStateFields: async () => {},
+      stateFindUserRecord: () => null,
+      dbFindEmployeeRecord: async () => null,
+      calcEmployeeMonthlyLeaveBalance: () => null,
+      leaveBalanceOverrideKey: (u, m) => `${u}_${m}`,
+      shiftMonth: () => '',
+      hrmsNowISO: () => '2026-07-24T12:00:00+08:00',
+      randomUUID: () => 'uuid-1',
+    },
+    {
+      actor: 'admin',
+      role: 'admin',
+      targetUsername: '',
+      month: '2026-07',
+      value: 2,
+      mode: 'carryover',
+      note: '',
+    }
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 400);
+  assert.equal(result.error, 'missing_params');
+});
+
+test('confirmMonthlyAttendance: only_managers_can_confirm for employee', async () => {
+  const result = await confirmMonthlyAttendance(
+    {
+      pool: makePool(),
+      getSharedState: async () => ({}),
+      mergeSharedStateFields: async () => {},
+      stateFindUserRecord: () => null,
+      pickHrManagerUsername: () => '',
+      appendNotifications: async () => {},
+      hrmsNowISO: () => '2026-07-24T12:00:00+08:00',
+    },
+    {
+      username: 'alice',
+      role: 'employee',
+      month: '2026-07',
+      store: '测试店',
+      summary: {},
+      tenantId: 'default',
+    }
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 403);
+  assert.equal(result.error, 'only_managers_can_confirm');
+});
