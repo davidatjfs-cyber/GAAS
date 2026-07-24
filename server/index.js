@@ -58,6 +58,7 @@ import { registerAiChatCompletionsRoutes } from './domains/ai/routes-chat-comple
 import { registerOpsTasksRoutes } from './domains/ops-tasks/routes.js';
 import { createOpsTaskHelpers } from './domains/ops-tasks/create-helpers.js';
 import { registerStoreDutyBindingsRoutes } from './domains/store-duty-bindings/routes.js';
+import { createDutyApproverResolver } from './domains/store-duty-bindings/resolve-approver.js';
 import { registerReadsRoutes } from './domains/reads/routes.js';
 import { registerAttentionScoresRoutes } from './domains/attention-scores/routes.js';
 import { registerAnnouncementExtraRoutes } from './domains/remaining-state/routes-announcement-extra.js';
@@ -223,7 +224,6 @@ import {
   buildStoreAccessContext,
   canAccessApprovalCenter,
 
-  ensureStoreDutyBindingsTable,
   loadActiveDutyRowsForUser,
 
 } from './store-duty-bindings.js';
@@ -1875,42 +1875,10 @@ function findUserSalary(state, username) {
   return Number.isFinite(n) ? n : null;
 }
 
-let __storeDutyBindingsReady = false;
-
-async function ensureStoreDutyBindingsReady() {
-  if (__storeDutyBindingsReady) return;
-  try {
-    await ensureStoreDutyBindingsTable(pool);
-    __storeDutyBindingsReady = true;
-  } catch (e) {
-    console.warn('[store-duty-bindings] ensure table failed:', e?.message || e);
-  }
-}
-
-// 门店若无在岗店长（如喻烽以监管身份兼管马己仙），回退到该门店职责绑定中
-// can_approve_hrms 的负责人，作为审批链的「门店店长」步骤。
-async function resolveDutyApproverForStore(store) {
-  const s = String(store || '').trim();
-  if (!s) return '';
-  try {
-    await ensureStoreDutyBindingsReady();
-    const r = await pool.query(
-      `SELECT username FROM store_duty_bindings
-        WHERE enabled = true
-          AND can_approve_hrms = true
-          AND lower(trim(store)) = lower(trim($1))
-          AND (effective_from IS NULL OR effective_from <= now())
-          AND (effective_to IS NULL OR effective_to >= now())
-        ORDER BY is_primary_store DESC, updated_at DESC, id DESC
-        LIMIT 1`,
-      [s]
-    );
-    return r.rows?.[0]?.username ? String(r.rows[0].username).trim() : '';
-  } catch (e) {
-    console.warn('[store-duty-bindings] resolveDutyApproverForStore failed:', e?.message || e);
-    return '';
-  }
-}
+// Wave H14: resolveDutyApproverForStore → domains/store-duty-bindings/resolve-approver.js
+// Instantiate after pool; before createRecurringRewardScheduler (which needs the resolver).
+// ensureStoreDutyBindingsReady reuses domains/service.js ensureReady (no second ready flag).
+const { resolveDutyApproverForStore, ensureStoreDutyBindingsReady } = createDutyApproverResolver({ pool });
 
 // Wave H7: monthly recurring reward/punishment templates cron → domains/approvals/scheduler-recurring-reward.js
 // Factory after resolveDutyApproverForStore; start inside app.listen (not module-load).
