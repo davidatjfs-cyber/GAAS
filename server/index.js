@@ -44,6 +44,7 @@ import { registerPaymentRoutes } from './domains/payments/routes.js';
 import { registerPermissionGroupsRoutes } from './domains/permission-groups/routes.js';
 import { registerUploadRoutes } from './domains/uploads/routes.js';
 import { registerOpsTasksRoutes } from './domains/ops-tasks/routes.js';
+import { createOpsTaskHelpers } from './domains/ops-tasks/create-helpers.js';
 import { registerStoreDutyBindingsRoutes } from './domains/store-duty-bindings/routes.js';
 import { registerReadsRoutes } from './domains/reads/routes.js';
 import { registerAttentionScoresRoutes } from './domains/attention-scores/routes.js';
@@ -2719,255 +2720,6 @@ async function getUserStoreAccessContext(username, role, opts = {}) {
   });
 }
 
-const OPS_BRAND_STORE_MAP = {
-  '洪潮大宁久光店': '洪潮传统潮汕菜',
-  '马己仙上海音乐广场店': '马己仙广东小馆'
-};
-
-const OPS_BRAND_RULES = {
-  '洪潮传统潮汕菜': {
-    lunchDeadline: '11:00',
-    dinnerDeadline: '17:00',
-    reviewDeadline: '22:30',
-    tableVisitDeadline: '22:00'
-  },
-  '马己仙广东小馆': {
-    lunchDeadline: '11:00',
-    dinnerDeadline: '17:00',
-    reviewDeadline: '22:30',
-    tableVisitDeadline: '22:00'
-  }
-};
-
-const OPS_ROLE_ALIASES = {
-  store_product_manager: 'store_production_manager'
-};
-
-function normalizeOpsRole(input) {
-  const raw = String(input || '').trim();
-  return OPS_ROLE_ALIASES[raw] || raw;
-}
-
-function opsDateOnly(d = new Date()) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function opsDateAt(dateStr, hm) {
-  const date = safeDateOnly(dateStr);
-  const time = String(hm || '').trim();
-  if (!date || !/^\d{2}:\d{2}$/.test(time)) return null;
-  const v = new Date(`${date}T${time}:00`);
-  return Number.isFinite(v.getTime()) ? v : null;
-}
-
-function resolveOpsStoreBrand(state, storeName) {
-  const store = String(storeName || '').trim();
-  if (!store) return '';
-  const stores = Array.isArray(state?.stores) ? state.stores : [];
-  const row = stores.find(s => String(s?.name || '').trim() === store) || null;
-  const fromState = String(row?.brand || row?.brandName || '').trim();
-  if (fromState) return fromState;
-  return String(OPS_BRAND_STORE_MAP[store] || '').trim();
-}
-
-function getOpsManagedStores(state) {
-  const inState = Array.isArray(state?.stores)
-    ? state.stores.map(s => String(s?.name || '').trim()).filter(Boolean)
-    : [];
-  const mapped = Object.keys(OPS_BRAND_STORE_MAP);
-  return Array.from(new Set(inState.concat(mapped))).filter(Boolean);
-}
-
-function getOpsStoreAssignee(state, store, role) {
-  const r = normalizeOpsRole(role);
-  return pickStoreRoleUsernameByStore(state, store, [r]);
-}
-
-function buildOpsTaskTemplates(store, brand, bizDate) {
-  const rules = OPS_BRAND_RULES[brand] || OPS_BRAND_RULES['洪潮传统潮汕菜'];
-  if (!rules) return [];
-  return [
-    {
-      taskType: 'opening_lunch',
-      scheduleKey: 'opening_lunch',
-      assigneeRole: 'store_manager',
-      title: '午市开档检查（11:00前）',
-      dueAt: opsDateAt(bizDate, rules.lunchDeadline),
-      requiredPhotos: 3,
-      checklist: ['门店前场与后厨开档状态完整', '关键岗位到岗确认', '收银及开档准备完成']
-    },
-    {
-      taskType: 'prep_lunch',
-      scheduleKey: 'prep_lunch',
-      assigneeRole: 'store_production_manager',
-      title: '午市出品与备货巡查（11:00前）',
-      dueAt: opsDateAt(bizDate, rules.lunchDeadline),
-      requiredPhotos: 3,
-      checklist: ['备货台全景', '重点SKU备货近景', '出品工位卫生与标准']
-    },
-    {
-      taskType: 'opening_dinner',
-      scheduleKey: 'opening_dinner',
-      assigneeRole: 'store_manager',
-      title: '晚市开档检查（17:00前）',
-      dueAt: opsDateAt(bizDate, rules.dinnerDeadline),
-      requiredPhotos: 3,
-      checklist: ['晚市排班到岗确认', '服务区与后厨开档完成', '晚市物料状态确认']
-    },
-    {
-      taskType: 'prep_dinner',
-      scheduleKey: 'prep_dinner',
-      assigneeRole: 'store_production_manager',
-      title: '晚市出品与备货巡查（17:00前）',
-      dueAt: opsDateAt(bizDate, rules.dinnerDeadline),
-      requiredPhotos: 3,
-      checklist: ['晚市备货全景', '热销菜品备货细节', '出品台状态与风险点']
-    },
-    {
-      taskType: 'bad_review_followup',
-      scheduleKey: 'bad_review_followup',
-      assigneeRole: 'store_manager',
-      title: '堂食/外卖差评跟踪处理（当日）',
-      dueAt: opsDateAt(bizDate, rules.reviewDeadline),
-      requiredPhotos: 2,
-      checklist: ['上传差评截图（堂食/外卖）', '上传处理结果或沟通记录截图']
-    },
-    {
-      taskType: 'table_visit_tracking',
-      scheduleKey: 'table_visit_tracking',
-      assigneeRole: 'store_manager',
-      title: '桌访达成记录同步确认（当日）',
-      dueAt: opsDateAt(bizDate, rules.tableVisitDeadline),
-      requiredPhotos: 1,
-      checklist: ['上传桌访记录截图（飞书或内部表）', '备注当日关键反馈与跟进项']
-    }
-  ].filter(t => t.dueAt instanceof Date);
-}
-
-async function createOpsTaskIfAbsent(input) {
-  const dedupeKey = String(input?.dedupeKey || '').trim();
-  if (!dedupeKey) return;
-  await pool.query(
-    `insert into ops_tasks (
-      biz_date, store, brand, task_type, schedule_key, dedupe_key,
-      title, instructions, checklist, required_photos,
-      assignee_username, assignee_role, due_at, source, tenant_id
-    )
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15)
-    on conflict (dedupe_key, tenant_id) do nothing`,
-    [
-      input.bizDate,
-      input.store,
-      input.brand || null,
-      input.taskType,
-      input.scheduleKey,
-      dedupeKey,
-      input.title,
-      input.instructions || null,
-      JSON.stringify(Array.isArray(input.checklist) ? input.checklist : []),
-      Math.max(1, Number(input.requiredPhotos || 1)),
-      input.assigneeUsername,
-      normalizeOpsRole(input.assigneeRole),
-      input.dueAt,
-      'ops_agent',
-      resolveTenantIdDefault()
-    ]
-  );
-}
-
-async function ensureOpsTasksForDate(dateStr) {
-  const bizDate = safeDateOnly(dateStr);
-  if (!bizDate) return;
-  const state = (await getSharedState()) || {};
-  const stores = getOpsManagedStores(state);
-  for (const store of stores) {
-    const brand = resolveOpsStoreBrand(state, store);
-    if (!brand) continue;
-    const templates = buildOpsTaskTemplates(store, brand, bizDate);
-    for (const t of templates) {
-      const assigneeUsername = getOpsStoreAssignee(state, store, t.assigneeRole);
-      if (!assigneeUsername) continue;
-      const dedupeKey = `${bizDate}||${store}||${t.scheduleKey}||${assigneeUsername}`;
-      await createOpsTaskIfAbsent({
-        bizDate,
-        store,
-        brand,
-        taskType: t.taskType,
-        scheduleKey: t.scheduleKey,
-        dedupeKey,
-        title: t.title,
-        checklist: t.checklist,
-        requiredPhotos: t.requiredPhotos,
-        assigneeUsername,
-        assigneeRole: t.assigneeRole,
-        dueAt: t.dueAt,
-        instructions: `${brand} · ${store}：请按检查项完成并上传照片。`
-      });
-    }
-  }
-}
-
-function buildOpsFeedback(task, completedAt, photoCount, options) {
-  const opts = options && typeof options === 'object' ? options : {};
-  const contentVerified = !!opts.contentVerified;
-
-  let score = contentVerified ? 5 : 3;
-  const dueAt = new Date(task?.due_at || 0);
-  const required = Math.max(1, Number(task?.required_photos || 1));
-  if (Number.isFinite(dueAt.getTime()) && completedAt > dueAt) score -= 1;
-  if (photoCount < required) score -= 2;
-  if (photoCount === required) score -= 0;
-  if (photoCount > required) score += 0;
-  score = Math.max(1, Math.min(5, score));
-
-  const lateText = Number.isFinite(dueAt.getTime()) && completedAt > dueAt ? '本次提交晚于计划时间，' : '';
-  const photoText = photoCount < required
-    ? `照片不足（需${required}张，实传${photoCount}张），`
-    : '照片数量达标，';
-
-  if (!contentVerified) {
-    const feedback = `${lateText}${photoText}系统当前仅校验“时间与照片张数”，尚未校验图片内容与任务是否匹配。该结果仅供提醒，请由值班经理人工复核后再做评价。`;
-    return { score, feedback, verificationStatus: 'unverified' };
-  }
-
-  const feedback = `${lateText}${photoText}图片内容与任务匹配，执行情况良好。下一次请按检查项逐条拍摄并备注异常点。`;
-  return { score, feedback, verificationStatus: 'verified' };
-}
-
-let __OPS_TASK_SCHEDULER_STARTED = false;
-// ops_tasks是真实业务数据(带RLS)，原只在default租户上下文里生成/关账，改为遍历活跃租户各自处理
-async function runOpsTaskSchedulerTick() {
-  try {
-    await runForActiveTenants(async (tenantId) => {
-      try {
-        await ensureOpsTasksTable();
-        const today = opsDateOnly(new Date());
-        await ensureOpsTasksForDate(today);
-        await pool.query(
-          `update ops_tasks
-           set status = 'overdue', updated_at = now()
-           where status = 'open'
-             and due_at < now()`
-        );
-      } catch (e) {
-        console.error('[ops scheduler] tick failed:', tenantId, e?.message || e);
-      }
-    }, { continueOnError: true });
-  } catch (e) {
-    console.error('[ops scheduler] runForActiveTenants error:', e?.message || e);
-  }
-}
-
-function startOpsTaskScheduler() {
-  if (__OPS_TASK_SCHEDULER_STARTED) return;
-  __OPS_TASK_SCHEDULER_STARTED = true;
-  runOpsTaskSchedulerTick();
-  setInterval(runOpsTaskSchedulerTick, 60 * 1000);
-}
-
 // Wave 4j: /api/ops/tasks* → domains/ops-tasks/routes.js
 
 // Wave 4q: admin reconcile/leave-close → domains/admin-ops/routes.js
@@ -2988,6 +2740,21 @@ function safeDateOnly(input) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
   return v;
 }
+
+// Wave H5: ops-tasks helpers + scheduler (must run after safeDateOnly; ensureOpsTasksTable / pickStoreRoleUsernameByStore hoisted)
+const {
+  normalizeOpsRole,
+  buildOpsFeedback,
+  startOpsTaskScheduler,
+} = createOpsTaskHelpers({
+  pool,
+  safeDateOnly,
+  getSharedState,
+  resolveTenantIdDefault,
+  pickStoreRoleUsernameByStore,
+  runForActiveTenants,
+  ensureOpsTasksTable,
+});
 
 // Wave H2b: inventory-forecast helpers factory (must run after brand/store utils + safeDateOnly/safeNumber/inDateRange/pickMyStoreFromState)
 const forecastHelpers = createInventoryForecastHelpers({
