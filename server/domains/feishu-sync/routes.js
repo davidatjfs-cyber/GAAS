@@ -12,6 +12,7 @@ export function registerFeishuSyncRoutes(app, authRequired, deps) {
     findConfigKeyByTableInfo,
     upsertFeishuGenericRecord,
     mapFeishuFieldToHrms,
+    upsertTableVisitRecordFromMapped,
     notifyAdminsDualWriteFailure,
     syncDishLibraryCosts,
     syncSopSteps,
@@ -26,6 +27,7 @@ export function registerFeishuSyncRoutes(app, authRequired, deps) {
     findConfigKeyByTableInfo,
     upsertFeishuGenericRecord,
     mapFeishuFieldToHrms,
+    upsertTableVisitRecordFromMapped,
     notifyAdminsDualWriteFailure
   };
 

@@ -923,6 +923,7 @@ const {
   stripAttachmentLikeFields,
   mapFeishuFieldToHrms,
   upsertFeishuGenericRecord,
+  upsertTableVisitRecordFromMapped,
   ensureFeishuGenericRecordsTable,
   ensureFeishuGenericRecordsNotifyTrigger,
   ensureFeishuSyncTable,
@@ -1732,6 +1733,7 @@ registerFeishuSyncRoutes(app, authRequired, {
   findConfigKeyByTableInfo,
   upsertFeishuGenericRecord,
   mapFeishuFieldToHrms,
+  upsertTableVisitRecordFromMapped,
   notifyAdminsDualWriteFailure,
   syncDishLibraryCosts,
   syncSopSteps,
@@ -1809,6 +1811,7 @@ registerFeishuWebhookRoutes(app, {
   findConfigKeyByTableInfo,
   upsertFeishuGenericRecord,
   mapFeishuFieldToHrms,
+  upsertTableVisitRecordFromMapped,
 });
 
 registerRemainingStateRoutes(app, authRequired, {
@@ -1861,6 +1864,7 @@ if (String(process.env.HRMS_CLI_SYNC_TABLE_VISIT || '').trim() === '1') {
         findConfigKeyByTableInfo,
         upsertFeishuGenericRecord,
         mapFeishuFieldToHrms,
+        upsertTableVisitRecordFromMapped,
         notifyAdminsDualWriteFailure,
       }, {
         appToken: process.env.BITABLE_TABLEVISIT_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',

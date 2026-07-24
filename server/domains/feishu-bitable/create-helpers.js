@@ -2,6 +2,7 @@ import { tryParseJson, decryptFeishuEncryptPayload } from './crypto.js';
 import { findConfigKeyByTableInfo } from './config-lookup.js';
 import { stripAttachmentLikeFields, mapFeishuFieldToHrms } from './map.js';
 import { upsertFeishuGenericRecord } from './records.js';
+import { upsertTableVisitRecordFromMapped } from './table-visit-upsert.js';
 import {
   ensureFeishuGenericRecordsTable,
   ensureFeishuGenericRecordsNotifyTrigger,
@@ -32,6 +33,7 @@ export function createFeishuBitableHelpers({
     stripAttachmentLikeFields,
     mapFeishuFieldToHrms,
     upsertFeishuGenericRecord: (args) => upsertFeishuGenericRecord(pool, args),
+    upsertTableVisitRecordFromMapped: (hrmsData) => upsertTableVisitRecordFromMapped(pool, hrmsData),
     ensureFeishuGenericRecordsTable: () => ensureFeishuGenericRecordsTable(pool),
     ensureFeishuGenericRecordsNotifyTrigger: () => ensureFeishuGenericRecordsNotifyTrigger(pool, notifyAdminsDualWriteFailure),
     ensureFeishuSyncTable: () => ensureFeishuSyncTable(pool, safeErrMessage),

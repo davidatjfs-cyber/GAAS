@@ -30,6 +30,7 @@ export function registerFeishuWebhookRoutes(app, deps) {
     findConfigKeyByTableInfo,
     upsertFeishuGenericRecord,
     mapFeishuFieldToHrms,
+    upsertTableVisitRecordFromMapped,
   } = deps;
 
   const dataChangeCtx = {
@@ -43,6 +44,7 @@ export function registerFeishuWebhookRoutes(app, deps) {
     findConfigKeyByTableInfo,
     upsertFeishuGenericRecord,
     mapFeishuFieldToHrms,
+    upsertTableVisitRecordFromMapped,
     notifyAdminsDualWriteFailure,
   };
 
