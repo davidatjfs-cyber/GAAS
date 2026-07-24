@@ -6,7 +6,6 @@ export async function runManualFeishuBitableSync(
   { appToken, tableId, appId, appSecret }
 ) {
   const {
-    pool,
     getFeishuAccessToken,
     getFeishuBitableData,
     findConfigKeyByTableInfo,
