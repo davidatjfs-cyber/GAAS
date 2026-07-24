@@ -30,6 +30,7 @@ import {
 } from './domains/employees/service.js';
 import { reconcileEmployeesMirrorAllTenants } from './domains/employees/mirror-tx.js';
 import { createPickUsernameHelpers } from './domains/employees/pick-usernames.js';
+import { createUserLookupHelpers } from './domains/employees/user-lookup.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
@@ -767,6 +768,17 @@ app.post('/api/recipes/import', authRequired, upload.single('file'), async (req,
 const pool = new Pool({ connectionString: DATABASE_URL });
 const loginRateLimit = createLoginRateLimiter();
 const platformAdminRequired = createPlatformAdminRequired(pool, PLATFORM_ADMIN_JWT_SECRET);
+
+// Wave H11: user/employee lookup helpers → domains/employees/user-lookup.js
+// Must run after pool + expandAgentStoreLabels import; BEFORE registerPointsRoutes
+// (and any other register* that DI-injects these — factories are NOT hoisted).
+const {
+  stateFindUserRecord,
+  dbFindEmployeeRecord,
+  dbListEmployeesForReports,
+  stateOrDbFindUserRecord,
+  pickMyStoreFromState,
+} = createUserLookupHelpers({ pool, expandAgentStoreLabels });
 
 setAgentPool(pool);
 initBrandConfigCache().catch((e) => console.error('initBrandConfigCache failed:', e?.message || e));
@@ -1877,81 +1889,9 @@ async function upsertEmployeeAttendanceMirrorFromCheckinRow(rec, tenantId) {
   );
 }
 
-function stateFindUserRecord(state, username) {
-  const u = String(username || '').trim();
-  if (!u) return null;
-  const users = Array.isArray(state?.users) ? state.users : [];
-  const employees = Array.isArray(state?.employees) ? state.employees : [];
-  // employees first – real users live there
-  const all = employees.concat(users);
-  return all.find(x => String(x?.username || '').trim().toLowerCase() === u.toLowerCase()) || null;
-}
-
-async function dbFindEmployeeRecord(username) {
-  const u = String(username || '').trim();
-  if (!u) return null;
-  try {
-    const r = await pool.query(
-      `select username, name, role, store, department, position, status,
-              join_date as "joinDate", created_at as "createdAt",
-              coalesce(extra_json, '{}'::jsonb) as "extraJson"
-         from employees
-        where lower(username) = lower($1)
-        limit 1`,
-      [u]
-    );
-    const row = r.rows?.[0];
-    if (!row) return null;
-    const ex = row.extraJson && typeof row.extraJson === 'object' ? row.extraJson : {};
-    const { ...rest } = row;
-    const levelFromExtra = ex.level != null && ex.level !== '' ? String(ex.level).trim() : '';
-    return { ...rest, level: levelFromExtra || String(rest.level || '').trim() };
-  } catch (_) {
-    return null;
-  }
-}
-
-async function dbListEmployeesForReports({ store, includeInactive, tenantId }) {
-  try {
-    const params = [];
-    const where = [];
-    if (store) {
-      const storeLabels = [
-        ...new Set(expandAgentStoreLabels(store).map((s) => String(s).trim()).filter(Boolean))
-      ];
-      if (storeLabels.length) {
-        params.push(storeLabels);
-        where.push(`trim(store) = ANY($${params.length}::text[])`);
-      }
-    }
-    if (!includeInactive) {
-      where.push(`coalesce(status, '') not in ('inactive', '离职')`);
-    }
-    params.push(String(tenantId || 'default'));
-    where.push(`tenant_id = $${params.length}`);
-    const sql = `select username, name, role, store, department, position, status,
-                        join_date as "joinDate", created_at as "createdAt",
-                        extra_json->>'offboardingDate' as "offboardingDate",
-                        extra_json->>'offboardingApproved' as "offboardingApproved",
-                        extra_json->>'resignedAt' as "resignedAt",
-                        coalesce(extra_json->>'coreTalent', 'false')::boolean as "coreTalent",
-                        nullif(trim(coalesce(extra_json->>'level', extra_json->>'jobLevel', '')), '') as level
-                   from employees
-                   ${where.length ? ('where ' + where.join(' and ')) : ''}
-                  order by name asc, username asc`;
-    const r = await pool.query(sql, params);
-    return Array.isArray(r.rows) ? r.rows : [];
-  } catch (_) {
-    return [];
-  }
-}
-
-async function stateOrDbFindUserRecord(state, username) {
-  return stateFindUserRecord(state, username) || await dbFindEmployeeRecord(username);
-}
-
 // Wave H10: pick*Username helpers → domains/employees/pick-usernames.js
 // Must run after pool + resolveTenantIdDefault; before promotion-recipients / recurring-reward / ops-tasks.
+// (Wave H11 user-lookup factory already ran early after pool — stateFindUserRecord is in scope.)
 const {
   pickAdminUsername,
   pickHqManagerUsername,
@@ -2141,12 +2081,6 @@ function findUserSalary(state, username) {
           : ((rec.pay !== undefined && rec.pay !== null && rec.pay !== '') ? rec.pay : null))));
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
-}
-
-function pickMyStoreFromState(state, username) {
-  const me = stateFindUserRecord(state, username) || {};
-  const st = String(me?.store || '').trim();
-  return st;
 }
 
 let __storeDutyBindingsReady = false;
