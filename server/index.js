@@ -51,6 +51,7 @@ import { registerAttentionScoresRoutes } from './domains/attention-scores/routes
 import { registerAnnouncementExtraRoutes } from './domains/remaining-state/routes-announcement-extra.js';
 import { registerNotificationsWriteRoutes } from './domains/notifications/routes.js';
 import { registerBirthdayRoutes } from './domains/birthday/routes.js';
+import { createBirthdayScheduler } from './domains/birthday/scheduler.js';
 import { registerRemainingStateRoutes } from './domains/remaining-state/routes.js';
 import { registerGmMailboxRoutes } from './domains/gm-mailbox/routes.js';
 import { registerExamResultsRoutes } from './domains/exam-results/routes.js';
@@ -2210,90 +2211,6 @@ function normalizeApprovalType(input) {
   const allowed = ['onboarding', 'offboarding', 'leave', 'payment', 'reward_punishment', 'promotion', 'points', 'monthly_confirm'];
   if (!allowed.includes(t)) return '';
   return t;
-}
-
-function getApprovalFlowStepsFromState(state, type, applicantStore) {
-  const st = state && typeof state === 'object' ? state : {};
-  const flows = st.approvalFlows && typeof st.approvalFlows === 'object' ? st.approvalFlows : {};
-  const cfg = flows[String(type || '').trim().toLowerCase()];
-  if (!cfg || typeof cfg !== 'object') return [];
-  const cfgStores = Array.isArray(cfg.stores) ? cfg.stores.map(x => String(x || '').trim()).filter(Boolean) : [];
-  if (cfgStores.length > 0 && applicantStore) {
-    const aStore = String(applicantStore).trim().toLowerCase();
-    const match = cfgStores.some(s => s.toLowerCase() === aStore);
-    if (!match) return [];
-  }
-  const steps = cfg.steps;
-  return Array.isArray(steps) ? steps.map(x => String(x || '').trim()).filter(Boolean) : [];
-}
-
-function resolveApprovalFlowToken(token, ctx) {
-  const t0 = String(token || '').trim();
-  if (!t0) return '';
-  const t = t0.toLowerCase();
-
-  if (t === 'manager') return String(ctx?.managerUsername || '').trim();
-  if (t === 'hq_manager') return String(ctx?.hqManagerUsername || '').trim();
-  if (t === 'hr_manager') return String(ctx?.hrManagerUsername || '').trim();
-  if (t === 'admin') return String(ctx?.adminUsername || '').trim();
-  if (t === 'cashier') return String(ctx?.cashierUsername || '').trim();
-
-  if (t.startsWith('username:')) {
-    return String(t0.slice('username:'.length) || '').trim();
-  }
-
-  // Handle role: prefix (e.g. "role:custom_人事经理")
-  if (t.startsWith('role:')) {
-    const roleId = t0.slice('role:'.length).trim();
-    if (roleId && ctx?.state) {
-      const found = findUserByRole(ctx.state, roleId);
-      if (found) return found;
-    }
-    return '';
-  }
-
-  // Try to resolve any other token as a role id (e.g. "custom_人事经理")
-  if (ctx?.state) {
-    const found = findUserByRole(ctx.state, t0);
-    if (found) return found;
-  }
-  return '';
-}
-
-function findUserByRole(state, roleId) {
-  const rid = String(roleId || '').trim();
-  if (!rid) return '';
-  const users = Array.isArray(state?.users) ? state.users : [];
-  const employees = Array.isArray(state?.employees) ? state.employees : [];
-  // employees first – real users live there
-  const all = employees.concat(users);
-  const match = all.find(x => {
-    const r = String(x?.role || '').trim();
-    const st = String(x?.status || '').trim();
-    return r.toLowerCase() === rid.toLowerCase() && String(x?.username || '').trim() && st !== '离职' && st !== 'inactive';
-  });
-  return match ? String(match.username).trim() : '';
-}
-
-function buildApprovalAssigneesFromConfig(state, type, ctx) {
-  const applicantStore = String(ctx?.applicantStore || '').trim();
-  const steps = getApprovalFlowStepsFromState(state, type, applicantStore);
-  if (!steps.length) return [];
-  const assignees = steps
-    .map(s => resolveApprovalFlowToken(s, ctx))
-    .map(x => String(x || '').trim())
-    .filter(Boolean);
-
-  // de-dupe while keeping order
-  const seen = new Set();
-  const uniq = [];
-  for (const a of assignees) {
-    const k = a.toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    uniq.push(a);
-  }
-  return uniq;
 }
 
 function getPaymentFlowForStore(state, store) {
@@ -5852,199 +5769,24 @@ setInterval(() => {
   })();
 }, 30 * 60 * 1000);
 
-// ========== 生日祝福自动发送 ==========
+// Wave H6: birthday greeting cron → domains/birthday/scheduler.js（module-load start, same as legacy setInterval）
+const { startBirthdayGreetingScheduler } = createBirthdayScheduler({
+  getSharedState,
+  saveSharedState,
+  runForActiveTenants,
+  addStateNotification,
+  makeNotif,
+  hrmsNowISO,
+  isInactiveStatus,
+  employeeAccountShouldDisable,
+  pickAdminUsername,
+  pickHrManagerUsername,
+  stateFindUserRecord,
+  getNow: () => new Date(),
+});
+startBirthdayGreetingScheduler();
 
-// 解析生日字段，返回 { month, day } 或 null
-function parseBirthdayMonthDay(birthday) {
-  const s = String(birthday || '').trim();
-  if (!s) return null;
-  // 支持格式: YYYY-MM-DD, MM-DD, YYYY/MM/DD, MM/DD
-  const match = s.match(/(?:\d{4}[-/])?(\d{1,2})[-/](\d{1,2})/);
-  if (!match) return null;
-  const month = parseInt(match[1], 10);
-  const day = parseInt(match[2], 10);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  return { month, day };
-}
-
-// 获取下个月的年月
-function getNextMonth(today) {
-  const y = today.getFullYear();
-  const m = today.getMonth() + 1; // 1-12
-  if (m === 12) return { year: y + 1, month: 1 };
-  return { year: y, month: m + 1 };
-}
-
-// 检查是否是月底（当月最后3天）
-function isEndOfMonth(today) {
-  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  return today.getDate() >= lastDay - 2;
-}
-
-// 生日祝福定时任务 - 每小时检查一次
-// 原用runWithBootstrapTenantContext只处理default租户的员工生日；改为遍历活跃租户各自处理各自员工
-setInterval(() => {
-  (async () => {
-    try {
-    await runForActiveTenants(async (tenantId) => {
-      try {
-      const now = new Date();
-      const todayMonth = now.getMonth() + 1;
-      const todayDay = now.getDate();
-      const todayStr = `${now.getFullYear()}-${String(todayMonth).padStart(2, '0')}-${String(todayDay).padStart(2, '0')}`;
-      const hour = now.getHours();
-
-      let state = (await getSharedState(tenantId)) || {};
-      const employees = Array.isArray(state.employees) ? state.employees : [];
-      const activeEmployees = employees.filter(e => !isInactiveStatus(String(e?.status || '').trim()) && !employeeAccountShouldDisable(e));
-
-      // 记录已发送的生日祝福，避免重复
-      const birthdayGreetingsSent = state.birthdayGreetingsSent || {};
-      const birthdayRemindersSent = state.birthdayRemindersSent || {};
-      const monthlyRemindersSent = state.monthlyRemindersSent || {};
-
-      let changed = false;
-
-      // === 1. 生日当天自动发送祝福（每天8-10点之间执行一次）===
-      if (hour >= 8 && hour <= 10) {
-        const adminUsername = await pickAdminUsername(state);
-        const adminName = adminUsername ? (stateFindUserRecord(state, adminUsername)?.name || adminUsername) : '总部';
-
-        for (const emp of activeEmployees) {
-          const bd = parseBirthdayMonthDay(emp?.birthday);
-          if (!bd || bd.month !== todayMonth || bd.day !== todayDay) continue;
-
-          const empUsername = String(emp?.username || '').trim();
-          const empName = String(emp?.name || '').trim() || empUsername;
-          const greetingKey = `${empUsername}_${todayStr}`;
-
-          if (birthdayGreetingsSent[greetingKey]) continue;
-
-          // 生日祝福消息
-          const message = `${empName}，今天是你的生日，公司代表门店及总部所有人员祝你生日快乐，感谢你在过去一年里的努力与付出，你的专业与责任心让团队更加稳固可靠。愿新的一岁事业顺遂、生活明朗，收获成长与喜悦。公司很荣幸与你一路同行，期待与你共同创造更好的未来。\n\n来自总部 ${adminName}（${todayStr}）`;
-
-          state = addStateNotification(state, makeNotif(empUsername, '🎂 生日快乐', message, { type: 'birthday_greeting' }));
-          birthdayGreetingsSent[greetingKey] = hrmsNowISO();
-          changed = true;
-          console.log(`Birthday greeting sent to ${empName} (${empUsername})`);
-        }
-      }
-
-      // === 2. 生日前1天提醒店长（每天8-10点之间执行一次）===
-      if (hour >= 8 && hour <= 10) {
-        const tomorrow = new Date(now.getTime() + 86400000);
-        const tomorrowMonth = tomorrow.getMonth() + 1;
-        const tomorrowDay = tomorrow.getDate();
-        const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrowMonth).padStart(2, '0')}-${String(tomorrowDay).padStart(2, '0')}`;
-
-        // 按门店分组明天过生日的员工
-        const storeMap = new Map();
-        for (const emp of activeEmployees) {
-          const bd = parseBirthdayMonthDay(emp?.birthday);
-          if (!bd || bd.month !== tomorrowMonth || bd.day !== tomorrowDay) continue;
-          const store = String(emp?.store || '').trim() || '总部';
-          if (!storeMap.has(store)) storeMap.set(store, []);
-          storeMap.get(store).push(emp);
-        }
-
-        // 通知每个门店的店长
-        for (const [store, emps] of storeMap) {
-          const storeManager = activeEmployees.find(e => String(e?.store || '').trim() === store && String(e?.role || '').trim() === 'store_manager');
-          if (!storeManager) continue;
-
-          const smUsername = String(storeManager?.username || '').trim();
-          const reminderKey = `${smUsername}_${tomorrowStr}`;
-          if (birthdayRemindersSent[reminderKey]) continue;
-
-          const names = emps.map(e => String(e?.name || e?.username || '').trim()).join('、');
-          const message = `温馨提醒：明天（${tomorrowStr}）是以下员工的生日，请提前准备祝福：\n\n${names}`;
-
-          state = addStateNotification(state, makeNotif(smUsername, '🎂 明日生日提醒', message, { type: 'birthday_reminder_1day' }));
-          birthdayRemindersSent[reminderKey] = hrmsNowISO();
-          changed = true;
-        }
-      }
-
-      // === 3. 月底提醒：下月生日员工名单（每月最后3天的8-10点执行一次）===
-      if (hour >= 8 && hour <= 10 && isEndOfMonth(now)) {
-        const nextMonth = getNextMonth(now);
-        const monthKey = `${nextMonth.year}-${String(nextMonth.month).padStart(2, '0')}`;
-
-        // 找出下月过生日的员工
-        const nextMonthBirthdays = activeEmployees.filter(e => {
-          const bd = parseBirthdayMonthDay(e?.birthday);
-          return bd && bd.month === nextMonth.month;
-        });
-
-        if (nextMonthBirthdays.length > 0) {
-          // 按门店分组
-          const storeMap = new Map();
-          for (const emp of nextMonthBirthdays) {
-            const store = String(emp?.store || '').trim() || '总部';
-            if (!storeMap.has(store)) storeMap.set(store, []);
-            storeMap.get(store).push(emp);
-          }
-
-          // 通知每个门店的店长
-          for (const [store, emps] of storeMap) {
-            const storeManager = activeEmployees.find(e => String(e?.store || '').trim() === store && String(e?.role || '').trim() === 'store_manager');
-            if (!storeManager) continue;
-
-            const smUsername = String(storeManager?.username || '').trim();
-            const reminderKey = `monthly_${smUsername}_${monthKey}`;
-            if (monthlyRemindersSent[reminderKey]) continue;
-
-            const lines = emps.map(e => {
-              const bd = parseBirthdayMonthDay(e?.birthday);
-              return `• ${String(e?.name || e?.username || '').trim()}（${nextMonth.month}月${bd?.day}日）`;
-            }).join('\n');
-            const message = `以下是${store}门店${nextMonth.month}月份过生日的员工名单，请提前准备祝福：\n\n${lines}`;
-
-            state = addStateNotification(state, makeNotif(smUsername, `📋 ${nextMonth.month}月生日员工名单`, message, { type: 'birthday_monthly_reminder' }));
-            monthlyRemindersSent[reminderKey] = hrmsNowISO();
-            changed = true;
-          }
-
-          // 通知总部人事（HR）
-          const hrUsername = await pickHrManagerUsername(state);
-          if (hrUsername) {
-            const hrReminderKey = `monthly_hr_${monthKey}`;
-            if (!monthlyRemindersSent[hrReminderKey]) {
-              const lines = nextMonthBirthdays.map(e => {
-                const bd = parseBirthdayMonthDay(e?.birthday);
-                const store = String(e?.store || '').trim() || '总部';
-                return `• ${String(e?.name || e?.username || '').trim()}（${store}，${nextMonth.month}月${bd?.day}日）`;
-              }).sort().join('\n');
-              const message = `以下是公司所有门店（含总部）${nextMonth.month}月份过生日的员工名单：\n\n${lines}`;
-
-              state = addStateNotification(state, makeNotif(hrUsername, `📋 ${nextMonth.month}月全公司生日员工名单`, message, { type: 'birthday_monthly_reminder_hr' }));
-              monthlyRemindersSent[hrReminderKey] = hrmsNowISO();
-              changed = true;
-            }
-          }
-        }
-      }
-
-        // 保存状态
-        if (changed) {
-          state.birthdayGreetingsSent = birthdayGreetingsSent;
-          state.birthdayRemindersSent = birthdayRemindersSent;
-          state.monthlyRemindersSent = monthlyRemindersSent;
-          await saveSharedState(state, tenantId);
-        }
-
-      } catch (e) {
-        console.log('birthday greeting job failed:', tenantId, e?.message || e);
-      }
-    }, { continueOnError: true });
-    } catch (e) {
-      console.error('[birthday-greeting] runForActiveTenants error:', e?.message || e);
-    }
-  })();
-}, 60 * 60 * 1000); // 每小时检查一次
-
-// 手动触发生日检查（仅管理员，用于测试）
-// Wave 4n: /api/birthday/* HTTP → domains/birthday/routes.js（cron 仍留 index）
+// Wave 4n: /api/birthday/* HTTP → domains/birthday/routes.js；cron → domains/birthday/scheduler.js（Wave H6）
 
 // Wave 4n: /api/attention-scores* → domains/attention-scores/routes.js
 
