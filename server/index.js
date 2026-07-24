@@ -72,6 +72,7 @@ import { registerAgentDataRoutes } from './domains/agent-data/routes.js';
 import { registerFeishuWebhookRoutes } from './domains/feishu-webhook/routes.js';
 import { createFeishuBitableHelpers } from './domains/feishu-bitable/create-helpers.js';
 import { createInventoryForecastHelpers } from './domains/inventory-forecast/create-helpers.js';
+import { createLeaveAttendanceHelpers } from './domains/leave-attendance/create-helpers.js';
 import {
 
 
@@ -991,71 +992,8 @@ registerKnowledgeRoutes(app, {
   OSS_RETRY_COUNT,
   OSS_TIMEOUT_MS,
 });
-registerCheckinRoutes(app, {
-  pool,
-  authRequired,
-  getSharedState,
-  mergeSharedStateFields,
-  safeDateOnly,
-  loadActiveDutyRowsForUser,
-  pickMyStoreFromState,
-  stateFindUserRecord,
-  dbFindEmployeeRecord,
-  calcEmployeeMonthlyLeaveBalance,
-  computeAttendanceMissingClockPenalties,
-  hrmsAttendanceWindowMinutesForStore,
-  hrmsDateKeyInShanghai,
-  hrmsClockMinutesInShanghai,
-  dailyReportRestDaysForEmployee,
-  leaveBalanceOverrideKey,
-  shiftMonth,
-  hrmsNowISO,
-  pickHrManagerUsername,
-  appendNotifications,
-  upsertEmployeeAttendanceMirrorFromCheckinRow,
-  notifyAdminsDualWriteFailure,
-  haversineDistance,
-  resolveCheckinRadiusMeters,
-  randomUUID,
-});
-registerReportsRoutes(app, {
-  pool,
-  authRequired,
-  getSharedState,
-  mergeSharedStateFields,
-  safeDateOnly,
-  safeMonthOnly,
-  parseMonth,
-  pickMyStoreFromState,
-  stateFindUserRecord,
-  stateOrDbFindUserRecord,
-  dbListEmployeesForReports,
-  calcEmployeeMonthlyLeaveBalance,
-  computeAttendanceMissingClockPenalties,
-  buildAttendanceFromCheckinRecords,
-  buildAttendanceFromReports,
-  buildAttendanceSummaryRows,
-  summarizeDailyRegisterForEmployee,
-  filterDailyRegisterRowsByEmployee,
-  expandAgentStoreLabels,
-  resolveAgentCanonicalStore,
-  isLegacyTestUsername,
-  canAccessBusinessReports,
-  canAccessAnalyticsReports,
-  canAccessDailyAttendanceRegister,
-  isAdmin,
-  isHq,
-  inDateRange,
-  clampNum,
-  safeNumber,
-  findUserSalary,
-  hrmsNowISO,
-  randomUUID,
-  sendWeeklyReports,
-  sendMonthlyReports,
-  sendTestReportsToUser,
-  buildPayrollForMonth,
-});
+// Wave H3: registerCheckinRoutes / registerReportsRoutes / registerHrmsPayrollClosedLoopRoutes
+// 延后到 createLeaveAttendanceHelpers 之后（工厂非 hoisted，不能在定义前 capture）
 registerDailyReportsRoutes(app, {
   pool,
   authRequired,
@@ -1091,25 +1029,6 @@ registerHrmsPermissionRoutes(app, {
   getSharedState,
   saveSharedState,
   isAdmin,
-});
-registerHrmsPayrollClosedLoopRoutes(app, {
-  pool,
-  authRequired,
-  getSharedState,
-  mergeSharedStateFields,
-  calcEmployeeMonthlyLeaveBalance,
-  findUserSalary,
-  isAdmin,
-  isHq,
-  canAccessAnalyticsReports,
-  appendNotifications,
-  makeNotif,
-  hrmsNowISO,
-  safeMonthOnly,
-  parseMonth,
-  dbListEmployeesForReports,
-  stateFindUserRecord,
-  isLegacyTestUsername,
 });
 
 registerAgentTaskBoardRoutes(app, {
@@ -2919,255 +2838,6 @@ function findUserSalary(state, username) {
   return Number.isFinite(n) ? n : null;
 }
 
-function buildAttendanceFromReports(items) {
-  const out = [];
-  const map = new Map();
-
-  const add = (store, date, staffArr) => {
-    const list = Array.isArray(staffArr) ? staffArr : [];
-    for (const it of list) {
-      const user = String(it?.user || it?.username || '').trim();
-      if (!user) continue;
-      const name = String(it?.name || '').trim();
-      const days = clampNum(it?.days, 1);
-      const key = `${store}||${date}||${user}`;
-      const prev = map.get(key);
-      if (prev) {
-        prev.days = clampNum(prev.days, 0) + (Number.isFinite(days) ? days : 1);
-      } else {
-        const rec = { store, date, username: user, name, days: Number.isFinite(days) ? days : 1 };
-        map.set(key, rec);
-        out.push(rec);
-      }
-    }
-  };
-
-  (Array.isArray(items) ? items : []).forEach(r => {
-    const store = String(r?.store || '').trim();
-    const date = String(r?.date || '').trim();
-    if (!store || !date) return;
-    const data = r?.data && typeof r.data === 'object' ? r.data : {};
-    add(store, date, data?.staff?.front);
-    add(store, date, data?.staff?.kitchen);
-  });
-
-  out.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.store).localeCompare(String(b.store)) || String(a.username).localeCompare(String(b.username)));
-  return out;
-}
-
-function isCountableCheckinStatus(status) {
-  const s = String(status || '').trim().toLowerCase();
-  return !s || s === 'normal' || s === 'confirmed' || s === 'no_gps';
-}
-
-function shanghaiDateOnly(input) {
-  const d = input instanceof Date ? input : new Date(input);
-  if (!Number.isFinite(d.getTime())) return '';
-  return d.toLocaleString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
-}
-
-function buildAttendanceFromCheckinRecords(rows, options = {}) {
-  const out = [];
-  const map = new Map();
-  const start = safeDateOnly(options?.start);
-  const end = safeDateOnly(options?.end);
-  const knownUsers = options?.knownUsers instanceof Set ? options.knownUsers : null;
-
-  for (const row of (Array.isArray(rows) ? rows : [])) {
-    const user = String(row?.username || '').trim();
-    const userLower = user.toLowerCase();
-    if (!user || isLegacyTestUsername(userLower)) continue;
-    if (knownUsers && !knownUsers.has(userLower)) continue;
-    if (!isCountableCheckinStatus(row?.status)) continue;
-    const date = shanghaiDateOnly(row?.check_time);
-    if (!date) continue;
-    if (start && date < start) continue;
-    if (end && date > end) continue;
-    const store = String(row?.store || '').trim();
-    if (!store) continue;
-    const key = `${store}||${date}||${userLower}`;
-    if (map.has(key)) continue;
-    const rec = {
-      store,
-      date,
-      username: user,
-      name: String(row?.display_name || row?.name || user).trim(),
-      days: 1
-    };
-    map.set(key, rec);
-    out.push(rec);
-  }
-
-  out.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.store).localeCompare(String(b.store)) || String(a.username).localeCompare(String(b.username)));
-  return out;
-}
-
-function normalizeAttendanceRegisterLineDetails(raw) {
-  let lines = raw;
-  if (typeof lines === 'string') {
-    try { lines = JSON.parse(lines); } catch (e) { lines = []; }
-  }
-  return Array.isArray(lines) ? lines : [];
-}
-
-function sortIsoDateList(values) {
-  return Array.from(new Set((Array.isArray(values) ? values : []).map((x) => String(x || '').trim()).filter(Boolean))).sort();
-}
-
-function buildAttendanceSummaryRows(registerRows, checkinDetails) {
-  const summaryMap = new Map();
-  const checkinDayMap = new Map();
-
-  const ensureSummary = (storeRaw, usernameRaw, nameRaw) => {
-    const store = String(storeRaw || '').trim();
-    const username = String(usernameRaw || '').trim();
-    const name = String(nameRaw || username || '').trim();
-    const identity = username ? username.toLowerCase() : name.toLowerCase();
-    if (!identity) return null;
-    const key = `${store}||${identity}`;
-    let row = summaryMap.get(key);
-    if (!row) {
-      row = {
-        store,
-        username,
-        name,
-        actualDates: new Set(),
-        absentDates: new Set(),
-        lateDates: new Set(),
-        restDates: new Set(),
-        restOffsetDates: new Set(),
-        anomalyPunches: 0,
-        punchDays: new Set(),
-        workFrac: new Map(),   // 日期 -> 上班天数（半天=0.5），来自台账 declared_days
-        restFrac: new Map()    // 日期 -> 休息天数（半天=0.5）
-      };
-      summaryMap.set(key, row);
-    } else {
-      if (!row.username && username) row.username = username;
-      if ((!row.name || row.name === row.username) && name) row.name = name;
-      if (!row.store && store) row.store = store;
-    }
-    return row;
-  };
-
-  for (const regRow of (Array.isArray(registerRows) ? registerRows : [])) {
-    const reportDate = String(regRow?.report_date || '').slice(0, 10);
-    const store = String(regRow?.store || '').trim();
-    if (!reportDate) continue;
-    const lines = normalizeAttendanceRegisterLineDetails(regRow?.line_details);
-    for (const line of lines) {
-      const username = String(line?.username || line?.user || '').trim();
-      const name = String(line?.display_name || line?.name || username).trim();
-      const row = ensureSummary(store, username, name);
-      if (!row) continue;
-      const kind = String(line?.kind || '').trim();
-      const declared = Number(line?.declared_days);
-      const frac = Number.isFinite(declared) && declared > 0 ? declared : 1;
-      if (kind === 'work') {
-        row.actualDates.add(reportDate);
-        row.workFrac.set(reportDate, (Number(row.workFrac.get(reportDate)) || 0) + frac);
-      } else if (kind === 'absent') {
-        row.absentDates.add(reportDate);
-      } else if (kind === 'rest' || kind === 'leave_only') {
-        row.restDates.add(reportDate);
-        row.restOffsetDates.add(reportDate);
-        row.restFrac.set(reportDate, (Number(row.restFrac.get(reportDate)) || 0) + frac);
-      }
-    }
-  }
-
-  for (const checkin of (Array.isArray(checkinDetails) ? checkinDetails : [])) {
-    const username = String(checkin?.username || '').trim();
-    const name = String(checkin?.display_name || checkin?.name || username).trim();
-    const store = String(checkin?.store || '').trim();
-    const date = shanghaiDateOnly(checkin?.check_time);
-    const row = ensureSummary(store, username, name);
-    if (!row || !date) continue;
-
-    const dayKey = `${store}||${(username || name).trim().toLowerCase()}||${date}`;
-    let day = checkinDayMap.get(dayKey);
-    if (!day) {
-      day = { store, date, firstIn: null, hasCountable: false, anomalyPunches: 0 };
-      checkinDayMap.set(dayKey, day);
-    }
-
-    const status = String(checkin?.status || '').trim();
-    if (isCountableCheckinStatus(status)) {
-      day.hasCountable = true;
-      row.punchDays.add(date);
-      if (!row.actualDates.has(date) && !row.absentDates.has(date) && !row.restDates.has(date)) {
-        row.actualDates.add(date);
-      }
-      if (String(checkin?.type || '').trim() === 'clock_in') {
-        const dt = new Date(checkin.check_time);
-        if (Number.isFinite(dt.getTime()) && (!day.firstIn || dt.getTime() < day.firstIn.getTime())) {
-          day.firstIn = dt;
-        }
-      }
-    }
-
-    if (status && !['normal', 'no_gps', 'confirmed'].includes(status)) {
-      day.anomalyPunches += 1;
-    }
-  }
-
-  for (const row of summaryMap.values()) {
-    const identity = String(row.username || row.name || '').trim().toLowerCase();
-    if (!identity) continue;
-    for (const [key, day] of checkinDayMap.entries()) {
-      if (!key.startsWith(`${row.store}||${identity}||`)) continue;
-      row.anomalyPunches += Number(day?.anomalyPunches || 0);
-      if (day?.hasCountable && day?.firstIn && row.actualDates.has(day.date)) {
-        const attWin = hrmsAttendanceWindowMinutesForStore(row.store);
-        const firstInMinutes = hrmsClockMinutesInShanghai(day.firstIn);
-        if (Number.isFinite(firstInMinutes) && firstInMinutes > attWin.startMinutes) {
-          row.lateDates.add(day.date);
-        }
-      }
-    }
-  }
-
-  return Array.from(summaryMap.values())
-    .map((row) => {
-      const actualDates = sortIsoDateList(Array.from(row.actualDates));
-      const absentDates = sortIsoDateList(Array.from(row.absentDates));
-      const lateDates = sortIsoDateList(Array.from(row.lateDates));
-      const restDates = sortIsoDateList(Array.from(row.restDates));
-      const restOffsetDates = sortIsoDateList(Array.from(row.restOffsetDates));
-      // 半天精度：台账有 declared_days 用其分数，无台账记录（仅打卡推断）按整天计
-      const sumFrac = (dates, fracMap) => Number(dates.reduce(
-        (s, d) => s + (fracMap.has(d) ? Number(fracMap.get(d)) || 0 : 1), 0).toFixed(2));
-      return {
-        store: row.store,
-        username: row.username,
-        name: row.name || row.username,
-        actualAttendanceDays: sumFrac(actualDates, row.workFrac),
-        absenceDays: absentDates.length,
-        lateDays: lateDates.length,
-        restDays: sumFrac(restDates, row.restFrac),
-        anomalyPunches: Number(row.anomalyPunches || 0),
-        checkinDays: row.punchDays.size,
-        actualDates,
-        absentDates,
-        lateDates,
-        restDates,
-        restOffsetDates
-      };
-    })
-    .sort((a, b) => {
-      if (String(a.store || '') !== String(b.store || '')) {
-        return String(a.store || '').localeCompare(String(b.store || ''), 'zh-Hans-CN');
-      }
-      if (Number(b.absenceDays || 0) !== Number(a.absenceDays || 0)) {
-        return Number(b.absenceDays || 0) - Number(a.absenceDays || 0);
-      }
-      if (Number(b.lateDays || 0) !== Number(a.lateDays || 0)) {
-        return Number(b.lateDays || 0) - Number(a.lateDays || 0);
-      }
-      return String(a.name || a.username || '').localeCompare(String(b.name || b.username || ''), 'zh-Hans-CN');
-    });
-}
-
 function pickMyStoreFromState(state, username) {
   const me = stateFindUserRecord(state, username) || {};
   const st = String(me?.store || '').trim();
@@ -3599,644 +3269,104 @@ function safeMonthOnly(input) {
   return v;
 }
 
-function calcDateSpanDaysInclusive(startDate, endDate) {
-  const s = safeDateOnly(startDate);
-  const e = safeDateOnly(endDate);
-  if (!s || !e) return null;
-  const st = new Date(s + 'T00:00:00').getTime();
-  const et = new Date(e + 'T00:00:00').getTime();
-  if (!Number.isFinite(st) || !Number.isFinite(et) || et < st) return null;
-  const days = Math.floor((et - st) / (24 * 60 * 60 * 1000)) + 1;
-  return days > 0 ? days : null;
-}
 
-function calcOverlapDaysWithinMonth(startDate, endDate, month) {
-  const s = safeDateOnly(startDate);
-  const e = safeDateOnly(endDate);
-  const m = safeMonthOnly(month);
-  if (!s || !e || !m) return 0;
-  const [yr, mo] = m.split('-').map(Number);
-  const monthStart = new Date(yr, mo - 1, 1).getTime();
-  const monthEnd = new Date(yr, mo, 0).getTime();
-  const st = new Date(s + 'T00:00:00').getTime();
-  const et = new Date(e + 'T00:00:00').getTime();
-  if (!Number.isFinite(st) || !Number.isFinite(et) || et < st) return 0;
-  const overlapStart = Math.max(st, monthStart);
-  const overlapEnd = Math.min(et, monthEnd);
-  if (overlapEnd < overlapStart) return 0;
-  return Math.floor((overlapEnd - overlapStart) / 86400000) + 1;
-}
+// Wave H3: leave/attendance calc helpers（须在 safeMonthOnly / clampNum / hrmsNowISO / getSharedState 等之后）
+const leaveAttendanceHelpers = createLeaveAttendanceHelpers({
+  pool,
+  getSharedState,
+  mergeSharedStateFields,
+  safeDateOnly,
+  safeMonthOnly,
+  isLegacyTestUsername,
+  clampNum,
+  hrmsNowISO,
+});
 
-function dailyReportRestStaffForLeaveCalc(staffObj) {
-  const so = staffObj && typeof staffObj === 'object' && !Array.isArray(staffObj) ? staffObj : {};
-  const lists = [
-    Array.isArray(so.restStaff) ? so.restStaff : [],
-    Array.isArray(so.frontRestStaff) ? so.frontRestStaff : [],
-    Array.isArray(so.kitchenRestStaff) ? so.kitchenRestStaff : []
-  ];
-  const seen = new Set();
-  const out = [];
-  for (const arr of lists) {
-    for (const it of arr) {
-      const u = String(it?.user || it?.username || '').trim().toLowerCase();
-      const n = String(it?.name || '').trim();
-      const key = u || n.toLowerCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      out.push(it);
-    }
-  }
-  return out;
-}
+registerCheckinRoutes(app, {
+  pool,
+  authRequired,
+  getSharedState,
+  mergeSharedStateFields,
+  safeDateOnly,
+  loadActiveDutyRowsForUser,
+  pickMyStoreFromState,
+  stateFindUserRecord,
+  dbFindEmployeeRecord,
+  calcEmployeeMonthlyLeaveBalance: leaveAttendanceHelpers.calcEmployeeMonthlyLeaveBalance,
+  computeAttendanceMissingClockPenalties: leaveAttendanceHelpers.computeAttendanceMissingClockPenalties,
+  hrmsAttendanceWindowMinutesForStore: leaveAttendanceHelpers.hrmsAttendanceWindowMinutesForStore,
+  hrmsDateKeyInShanghai: leaveAttendanceHelpers.hrmsDateKeyInShanghai,
+  hrmsClockMinutesInShanghai: leaveAttendanceHelpers.hrmsClockMinutesInShanghai,
+  dailyReportRestDaysForEmployee: leaveAttendanceHelpers.dailyReportRestDaysForEmployee,
+  leaveBalanceOverrideKey: leaveAttendanceHelpers.leaveBalanceOverrideKey,
+  shiftMonth: leaveAttendanceHelpers.shiftMonth,
+  hrmsNowISO,
+  pickHrManagerUsername,
+  appendNotifications,
+  upsertEmployeeAttendanceMirrorFromCheckinRow,
+  notifyAdminsDualWriteFailure,
+  haversineDistance,
+  resolveCheckinRadiusMeters,
+  randomUUID,
+});
+registerReportsRoutes(app, {
+  pool,
+  authRequired,
+  getSharedState,
+  mergeSharedStateFields,
+  safeDateOnly,
+  safeMonthOnly,
+  parseMonth,
+  pickMyStoreFromState,
+  stateFindUserRecord,
+  stateOrDbFindUserRecord,
+  dbListEmployeesForReports,
+  calcEmployeeMonthlyLeaveBalance: leaveAttendanceHelpers.calcEmployeeMonthlyLeaveBalance,
+  computeAttendanceMissingClockPenalties: leaveAttendanceHelpers.computeAttendanceMissingClockPenalties,
+  buildAttendanceFromCheckinRecords: leaveAttendanceHelpers.buildAttendanceFromCheckinRecords,
+  buildAttendanceFromReports: leaveAttendanceHelpers.buildAttendanceFromReports,
+  buildAttendanceSummaryRows: leaveAttendanceHelpers.buildAttendanceSummaryRows,
+  summarizeDailyRegisterForEmployee,
+  filterDailyRegisterRowsByEmployee,
+  expandAgentStoreLabels,
+  resolveAgentCanonicalStore,
+  isLegacyTestUsername,
+  canAccessBusinessReports,
+  canAccessAnalyticsReports,
+  canAccessDailyAttendanceRegister,
+  isAdmin,
+  isHq,
+  inDateRange,
+  clampNum,
+  safeNumber,
+  findUserSalary,
+  hrmsNowISO,
+  randomUUID,
+  sendWeeklyReports,
+  sendMonthlyReports,
+  sendTestReportsToUser,
+  buildPayrollForMonth,
+});
+registerHrmsPayrollClosedLoopRoutes(app, {
+  pool,
+  authRequired,
+  getSharedState,
+  mergeSharedStateFields,
+  calcEmployeeMonthlyLeaveBalance: leaveAttendanceHelpers.calcEmployeeMonthlyLeaveBalance,
+  findUserSalary,
+  isAdmin,
+  isHq,
+  canAccessAnalyticsReports,
+  appendNotifications,
+  makeNotif,
+  hrmsNowISO,
+  safeMonthOnly,
+  parseMonth,
+  dbListEmployeesForReports,
+  stateFindUserRecord,
+  isLegacyTestUsername,
+});
 
-function dailyReportHasRestForEmployee(staffObj, unameLower, nameRaw) {
-  const uname = String(unameLower || '').trim().toLowerCase();
-  const name = String(nameRaw || '').trim();
-  if (!uname && !name) return false;
-  const restStaff = dailyReportRestStaffForLeaveCalc(staffObj);
-  return restStaff.some((it) => {
-    const u = String(it?.user || it?.username || '').trim().toLowerCase();
-    const n = String(it?.name || '').trim();
-    if (u && uname && u === uname) return true;
-    if (!u && name && n && n === name) return true;
-    return false;
-  });
-}
-
-// 返回员工当日日报休息「天数」（支持半天 0.5），未命中返回 0。
-// 与 dailyReportHasRestForEmployee 的布尔判定一致，但保留 days 精度。
-function dailyReportRestDaysForEmployee(staffObj, unameLower, nameRaw) {
-  const uname = String(unameLower || '').trim().toLowerCase();
-  const name = String(nameRaw || '').trim();
-  if (!uname && !name) return 0;
-  const restStaff = dailyReportRestStaffForLeaveCalc(staffObj);
-  for (const it of restStaff) {
-    const u = String(it?.user || it?.username || '').trim().toLowerCase();
-    const n = String(it?.name || '').trim();
-    if ((u && uname && u === uname) || (!u && name && n && n === name)) {
-      const d = Number(it?.days);
-      return Number.isFinite(d) && d > 0 ? d : 1;
-    }
-  }
-  return 0;
-}
-
-function calcEmployeeMonthlyActualRestFromDailyReports(state, employee, month) {
-  const m = safeMonthOnly(month);
-  const emp = employee && typeof employee === 'object' ? employee : null;
-  const uname = String(emp?.username || '').trim().toLowerCase();
-  const name = String(emp?.name || '').trim();
-  if (!m || (!uname && !name)) return { total: 0, byDay: {} };
-
-  const reportList = Array.isArray(state?.dailyReports) ? state.dailyReports : [];
-  const byDay = {};
-
-  const splitNameTokens = (raw) => String(raw || '')
-    .split(/[，,、;；\n\r\t\s\/|]+/)
-    .map(x => String(x || '').trim())
-    .filter(Boolean);
-
-  const getRestDaysForEmployee = (staffObj) => {
-    const so = staffObj && typeof staffObj === 'object' && !Array.isArray(staffObj) ? staffObj : {};
-    const lists = [
-      Array.isArray(so.restStaff) ? so.restStaff : [],
-      Array.isArray(so.frontRestStaff) ? so.frontRestStaff : [],
-      Array.isArray(so.kitchenRestStaff) ? so.kitchenRestStaff : []
-    ];
-    for (const arr of lists) {
-      for (const it of arr) {
-        const u = String(it?.user || it?.username || '').trim().toLowerCase();
-        const n = String(it?.name || '').trim();
-        if ((u && uname && u === uname) || (!u && name && n && n === name)) {
-          const d = Number(it?.days);
-          return Number.isFinite(d) && d > 0 ? d : 1;
-        }
-      }
-    }
-    return null;
-  };
-
-  reportList.forEach((rep) => {
-    const repDate = String(rep?.date || '').trim();
-    if (!repDate || !repDate.startsWith(m + '-')) return;
-    const data = rep?.data && typeof rep.data === 'object' ? rep.data : {};
-
-    let days = getRestDaysForEmployee(data?.staff);
-
-    // legacy fallback: comma-separated text names
-    if (days == null) {
-      const frontRest = String(data?.staff?.frontRest || '').trim();
-      const kitchenRest = String(data?.staff?.kitchenRest || '').trim();
-      const tokens = splitNameTokens(frontRest).concat(splitNameTokens(kitchenRest));
-      const tokenSet = new Set(tokens.map(x => x.toLowerCase()));
-      const hitByToken = (uname && tokenSet.has(uname)) || (!!name && tokenSet.has(name.toLowerCase()));
-      const hitByRaw = (!!name && (frontRest.includes(name) || kitchenRest.includes(name)))
-        || (uname && (frontRest.toLowerCase().includes(uname) || kitchenRest.toLowerCase().includes(uname)));
-      if (hitByToken || hitByRaw) days = 1;
-    }
-
-    if (days != null && days > 0) {
-      byDay[repDate] = Number(days);   // 半天休息=0.5，不再硬编码为整天
-    }
-  });
-
-  const total = Number(Object.values(byDay).reduce((s, x) => {
-    const n = Number(x || 0);
-    return Number((s + (Number.isFinite(n) ? n : 0)).toFixed(2));
-  }, 0).toFixed(2));
-
-  return { total, byDay };
-}
-
-function calcCumulativeLeaveDaysByJoinDate(joinDateInput) {
-  const joinDate = String(joinDateInput || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(joinDate)) return 0;
-  const jd = new Date(joinDate + 'T00:00:00');
-  if (!Number.isFinite(jd.getTime())) return 0;
-  const years = (Date.now() - jd.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
-  if (years >= 20) return 15;
-  if (years >= 10) return 10;
-  if (years >= 1) return 5;
-  return 0;
-}
-
-function shiftMonth(ym, delta) {
-  const m = safeMonthOnly(ym);
-  if (!m || !Number.isFinite(Number(delta))) return '';
-  const [y, mo] = m.split('-').map(Number);
-  const d = new Date(y, mo - 1 + Number(delta), 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-/** 打卡时刻在上海时区的「时×60+分」，用于迟到/早退判断 */
-function hrmsClockMinutesInShanghai(d) {
-  if (!(d instanceof Date) || !Number.isFinite(d.getTime())) return NaN;
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d);
-  const hh = Number(parts.find((x) => x.type === 'hour')?.value);
-  const mm = Number(parts.find((x) => x.type === 'minute')?.value);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return NaN;
-  return hh * 60 + mm;
-}
-
-/** 打卡记录归属的「上海日历日」YYYY-MM-DD */
-function hrmsDateKeyInShanghai(d) {
-  if (!(d instanceof Date) || !Number.isFinite(d.getTime())) return '';
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
-  const gv = (t) => parts.find((x) => x.type === t)?.value || '';
-  return `${gv('year')}-${gv('month')}-${gv('day')}`;
-}
-
-/**
- * 迟到/早退比对用的门店班次窗口（上海墙钟）。
- * 洪潮大宁久光店：9:15 上班 – 21:00 下班；时段外打卡计迟到/早退。马己仙等未单独配置：9:00–22:00。
- */
-function hrmsAttendanceWindowMinutesForStore(storeRaw) {
-  const s = String(storeRaw || '').trim();
-  const db = getBrandForStoreSync(s, resolveTenantIdDefault());
-  if (db && Number.isFinite(db.punchStartMinutes) && Number.isFinite(db.punchEndMinutes)) {
-    return { startMinutes: db.punchStartMinutes, endMinutes: db.punchEndMinutes };
-  }
-  const hongJiuguang = s.includes('洪潮大宁久光')
-    || (s.includes('洪潮') && (s.includes('久光') || s.includes('大宁')));
-  if (hongJiuguang) return { startMinutes: 9 * 60 + 15, endMinutes: 21 * 60 };
-  return { startMinutes: 9 * 60, endMinutes: 22 * 60 };
-}
-
-function resolveEmployeeLeaveCalcStartMonth(state, employee, fallbackMonth) {
-  const emp = employee && typeof employee === 'object' ? employee : {};
-  const uname = String(emp?.username || '').trim().toLowerCase();
-  const name = String(emp?.name || '').trim();
-  const months = [];
-
-  const reportList = Array.isArray(state?.dailyReports) ? state.dailyReports : [];
-  reportList.forEach((rep) => {
-    const repDate = String(rep?.date || '').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(repDate)) return;
-    const store = String(rep?.store || '').trim();
-    if (!store) return;
-    const data = rep?.data && typeof rep.data === 'object' ? rep.data : {};
-    const hit = dailyReportHasRestForEmployee(data?.staff, uname, name);
-    if (hit) months.push(repDate.slice(0, 7));
-  });
-
-  const leaveRecords = Array.isArray(state?.leaveRecords) ? state.leaveRecords : [];
-  leaveRecords.forEach((lr) => {
-    if (String(lr?.applicant || '').trim().toLowerCase() !== uname) return;
-    const sd = String(lr?.startDate || '').trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) months.push(sd.slice(0, 7));
-  });
-
-  const overrides = state?.leaveBalanceOverrides && typeof state.leaveBalanceOverrides === 'object'
-    ? state.leaveBalanceOverrides
-    : {};
-  Object.keys(overrides).forEach((key) => {
-    const m = String(key || '').match(/^(.+)_([0-9]{4}-[0-9]{2})$/);
-    if (!m) return;
-    if (String(m[1] || '').trim().toLowerCase() !== uname) return;
-    months.push(String(m[2] || '').trim());
-  });
-
-  const clean = months.filter(Boolean).sort();
-  return clean[0] || safeMonthOnly(fallbackMonth) || hrmsNowISO().slice(0, 7);
-}
-
-/** 与 leaveBalanceOverrides / 审计记录 key 一致：用户名一律小写，避免大小写不一致导致「手动累计假期」未生效 */
-function leaveBalanceOverrideKey(username, month) {
-  return `${String(username || '').trim().toLowerCase()}_${String(month || '').trim()}`;
-}
-
-function getLeaveBalanceOverride(state, username, month) {
-  const overrides = state?.leaveBalanceOverrides && typeof state.leaveBalanceOverrides === 'object'
-    ? state.leaveBalanceOverrides
-    : {};
-  const canonical = leaveBalanceOverrideKey(username, month);
-  let raw = overrides[canonical];
-  if (raw == null) {
-    const legacy = `${String(username || '').trim()}_${String(month || '').trim()}`;
-    raw = overrides[legacy];
-  }
-  if (raw == null) return null;
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    const mode = String(raw.mode || '').trim().toLowerCase();
-    const value = Number(raw.value);
-    if (!Number.isFinite(value)) return null;
-    return { mode: mode || 'carryover', value, raw };
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return null;
-  return { mode: 'remaining', value, raw };
-}
-
-/** 当月已批准休假在月内的天数合计（与薪资/累计假展示口径一致） */
-function calcEmployeeMonthlyApprovedLeaveDays(state, employee, month) {
-  const m = safeMonthOnly(month);
-  const emp = employee && typeof employee === 'object' ? employee : null;
-  const uname = String(emp?.username || '').trim().toLowerCase();
-  if (!m || !uname) return 0;
-  const leaveRecords = Array.isArray(state?.leaveRecords) ? state.leaveRecords : [];
-  let usedLeave = 0;
-  leaveRecords.forEach((lr) => {
-    if (String(lr?.applicant || '').toLowerCase() !== uname) return;
-    if (String(lr?.status || '') !== 'approved') return;
-    const sd = String(lr?.startDate || '').trim();
-    const ed = String(lr?.endDate || '').trim();
-    const rawDays = lr?.days != null && lr?.days !== '' ? Number(lr.days) : null;
-    const overlapDays = calcOverlapDaysWithinMonth(sd, ed, m);
-    let days = 0;
-    if (overlapDays > 0) {
-      const sameMonthRange = sd.startsWith(m) && ed.startsWith(m);
-      days = (sameMonthRange && rawDays != null && Number.isFinite(rawDays) && rawDays > 0)
-        ? rawDays
-        : overlapDays;
-    } else if (rawDays != null && Number.isFinite(rawDays) && rawDays > 0 && sd.startsWith(m)) {
-      days = rawDays;
-    }
-    if (Number.isFinite(days) && days > 0) usedLeave += days;
-  });
-  return Number(usedLeave.toFixed(2));
-}
-
-/**
- * 滚动计算「目标月」月初累计池（不含目标月当月额度与消耗）。
- * @param {{ ignoreEndCarryoverOverride?: boolean }} opts 为 true 时忽略目标月 carryover 人工覆盖（用于次月1日快照，避免把尚未审的覆盖写入上月闭合值）
- */
-function calcEmployeeMonthlyCarryover(state, employee, month, opts) {
-  const m = safeMonthOnly(month);
-  const emp = employee && typeof employee === 'object' ? employee : null;
-  const uname = String(emp?.username || '').trim();
-  if (!m || !uname) return 0;
-  const ignoreEnd = !!(opts && opts.ignoreEndCarryoverOverride);
-
-  const startMonth = resolveEmployeeLeaveCalcStartMonth(state, emp, m);
-  let cur = startMonth;
-  let carry = 0;
-  while (cur && cur < m) {
-    // 上月及以前：若该月存在「累计假期（carryover）」手动校准，则以手动值为月初起点，否则沿用滚动计算
-    const ov = getLeaveBalanceOverride(state, uname, cur);
-    const monthQuota = 4;
-    const restInfo = calcEmployeeMonthlyActualRestFromDailyReports(state, emp, cur);
-    const usedRest = Number(restInfo?.total || 0);
-    const usedLike = Number(usedRest.toFixed(2));
-    const startCarry = ov && ov.mode === 'carryover' ? ov.value : carry;
-    carry = Number((startCarry + monthQuota - usedLike).toFixed(2));
-    cur = shiftMonth(cur, 1);
-  }
-  // 当月月初累计池：若本月已手动设置「截止上月累计假期」(mode=carryover)，以手动值为准；否则以系统滚动计算为准
-  if (!ignoreEnd) {
-    const currentOv = getLeaveBalanceOverride(state, uname, m);
-    if (currentOv && currentOv.mode === 'carryover') return Number(currentOv.value.toFixed(2));
-  }
-  return Number(carry.toFixed(2));
-}
-
-/** 读取「已闭合月份」上月末累计池快照（次月1日 06:00 上海时区写入） */
-function getLeaveCumulativeCloseSnapshot(state, username, closedMonth) {
-  const snaps = state?.leaveCumulativeCloseSnapshots && typeof state.leaveCumulativeCloseSnapshots === 'object'
-    ? state.leaveCumulativeCloseSnapshots
-    : {};
-  const k = leaveBalanceOverrideKey(username, closedMonth);
-  const raw = snaps[k];
-  if (raw == null) return null;
-  if (typeof raw === 'object' && raw !== null && Number.isFinite(Number(raw.value))) {
-    return { value: Number(raw.value), lockedAt: String(raw.lockedAt || ''), source: String(raw.source || 'system') };
-  }
-  const v = Number(raw);
-  if (Number.isFinite(v)) return { value: v, lockedAt: '', source: 'system' };
-  return null;
-}
-
-/**
- * 业务口径（与「我的档案」累计假期展示一致）：
- * 1）若当月已有人工 carryover（核实上月末池），以人工为准，且不再回退到公式滚动（当月内固定展示该值）；
- * 2）否则若有「上月」闭合快照（次月1日6点锁定），以快照为准，当月内不随日报回填抖动；
- * 3）否则回退实时滚动计算（新系统或无快照月份）。
- */
-function getLockedOpeningCarryForMonth(state, employee, monthM) {
-  const m = safeMonthOnly(monthM);
-  const emp = employee && typeof employee === 'object' ? employee : null;
-  const uname = String(emp?.username || '').trim();
-  if (!m || !uname) return 0;
-  const oNow = getLeaveBalanceOverride(state, uname, m);
-  if (oNow && String(oNow.mode || '').toLowerCase() === 'carryover' && Number.isFinite(Number(oNow.value))) {
-    return Number(Number(oNow.value).toFixed(2));
-  }
-  const prev = shiftMonth(m, -1);
-  if (prev) {
-    const snap = getLeaveCumulativeCloseSnapshot(state, uname, prev);
-    if (snap && Number.isFinite(snap.value)) return Number(snap.value.toFixed(2));
-  }
-  return Number(calcEmployeeMonthlyCarryover(state, emp, m).toFixed(2));
-}
-
-/**
- * 为「已闭合自然月」写入上月末累计池快照（次月 1 日 06:00 上海时区由定时任务调用）。
- * 写入值 = 次月月初池（公式滚动，且忽略次月 carryover 人工覆盖，避免把未审覆盖写进上月闭合快照）。
- */
-async function runLeaveCumulativeCloseSnapshotForClosedMonth(closedMonth) {
-  const m = safeMonthOnly(closedMonth);
-  if (!m) return { ok: false, error: 'bad_month' };
-  const nextM = shiftMonth(m, 1);
-  if (!nextM) return { ok: false, error: 'bad_next' };
-
-  const state0 = (await getSharedState()) || {};
-  const emps = Array.isArray(state0?.employees) ? state0.employees : [];
-  const users = Array.isArray(state0?.users) ? state0.users : [];
-  const map = new Map();
-  users.forEach((u) => {
-    const k = String(u?.username || '').trim().toLowerCase();
-    if (!k || isLegacyTestUsername(k)) return;
-    if (!map.has(k)) map.set(k, { ...u, username: String(u?.username || '').trim() });
-  });
-  emps.forEach((e) => {
-    const k = String(e?.username || '').trim().toLowerCase();
-    if (!k || isLegacyTestUsername(k)) return;
-    map.set(k, { ...(map.get(k) || {}), ...e, username: String(e?.username || '').trim() });
-  });
-  const people = Array.from(map.values());
-
-  const prevSnaps = state0.leaveCumulativeCloseSnapshots && typeof state0.leaveCumulativeCloseSnapshots === 'object'
-    ? state0.leaveCumulativeCloseSnapshots
-    : {};
-  const snaps = { ...prevSnaps };
-  const lockedAt = hrmsNowISO();
-  let n = 0;
-  for (const p of people) {
-    const uname = String(p?.username || '').trim();
-    if (!uname) continue;
-    const kk = leaveBalanceOverrideKey(uname, m);
-    const prevSnap = prevSnaps[kk];
-    if (prevSnap && typeof prevSnap === 'object' && String(prevSnap.source || '') === 'manual_carryover') {
-      continue;
-    }
-    const val = calcEmployeeMonthlyCarryover(state0, p, nextM, { ignoreEndCarryoverOverride: true });
-    snaps[kk] = {
-      value: Number(Number(val).toFixed(2)),
-      lockedAt,
-      source: 'system_month_close',
-      closedMonth: m
-    };
-    n++;
-  }
-  try {
-    // 必须用字段级原子合并：saveSharedState 全量写回会与 mergeSharedStateFields（如人工累计假期）并发竞态，导致覆盖丢失
-    await mergeSharedStateFields({ leaveCumulativeCloseSnapshots: snaps });
-  } catch (e) {
-    return { ok: false, error: 'internal_error', closedMonth: m };
-  }
-  return { ok: true, closedMonth: m, nextMonth: nextM, employees: n };
-}
-
-// 考勤缺失扣假规则起始日（含）：2026-06-01 之前不统计
-const ATTENDANCE_PENALTY_START_DATE = '2026-06-01';
-
-/**
- * 计算某月「有出勤但缺考勤」的扣假：日报标记上班(work)，但当天缺上班卡或下班卡（任一缺即算缺勤），
- * 每缺勤 1 天扣 1 天休假。返回 Map<usernameLower, { days, details:[{date,days,type,source}] }>。
- * store 仅用于圈定日报台账范围；打卡按 用户+日期 全局匹配（员工打卡归属其本人）。
- */
-async function computeAttendanceMissingClockPenalties(month, store, tenantId) {
-  const m = safeMonthOnly(month);
-  const out = new Map();
-  if (!m) return out;
-  const [yr, mo] = m.split('-').map(Number);
-  const monthStart = `${m}-01`;
-  const monthEnd = `${m}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`;
-  const effStart = monthStart > ATTENDANCE_PENALTY_START_DATE ? monthStart : ATTENDANCE_PENALTY_START_DATE;
-  if (effStart > monthEnd) return out;
-  try {
-    const wArgs = [effStart, monthEnd];
-    let storeClause = '';
-    if (store) { wArgs.push(store); storeClause = ` AND TRIM(store) = TRIM($3::text)`; }
-    wArgs.push(tenantId || 'default');
-    const workSql = `
-      SELECT DISTINCT lower(trim(ld->>'username')) AS u, report_date::text AS d
-      FROM daily_report_attendance_register, LATERAL jsonb_array_elements(line_details) ld
-      WHERE report_date >= $1::date AND report_date <= $2::date${storeClause}
-        AND ld->>'kind' = 'work' AND coalesce(ld->>'username','') <> ''
-        AND tenant_id = $${wArgs.length}`;
-    const workRows = (await pool.query(workSql, wArgs)).rows || [];
-    if (!workRows.length) return out;
-
-    const ciSql = `
-      SELECT lower(trim(username)) AS u,
-             (timezone('Asia/Shanghai', check_time))::date::text AS d,
-             bool_or(type = 'clock_in')  AS has_in,
-             bool_or(type = 'clock_out') AS has_out
-      FROM checkin_records
-      WHERE (timezone('Asia/Shanghai', check_time))::date >= $1::date
-        AND (timezone('Asia/Shanghai', check_time))::date <= $2::date
-        AND tenant_id = $3
-      GROUP BY 1, 2`;
-    const ciRows = (await pool.query(ciSql, [effStart, monthEnd, tenantId || 'default'])).rows || [];
-    const ciMap = new Map();
-    for (const r of ciRows) ciMap.set(`${r.u}||${r.d}`, { has_in: r.has_in === true, has_out: r.has_out === true });
-
-    for (const w of workRows) {
-      const ci = ciMap.get(`${w.u}||${w.d}`);
-      if (ci && ci.has_in && ci.has_out) continue; // 上下班卡齐全 → 不缺勤
-      const miss = !ci ? '无打卡' : (!ci.has_in ? '缺上班卡' : '缺下班卡');
-      let entry = out.get(w.u);
-      if (!entry) { entry = { days: 0, details: [] }; out.set(w.u, entry); }
-      entry.days = Number((entry.days + 1).toFixed(2));
-      entry.details.push({ date: w.d, days: 1, type: '考勤缺失扣假', source: `有出勤·${miss}` });
-    }
-  } catch (e) {
-    console.error('[attendance-penalty] compute failed:', e?.message);
-  }
-  return out;
-}
-
-function calcEmployeeMonthlyLeaveBalance(state, employee, month, opts = {}) {
-  const m = safeMonthOnly(month);
-  const emp = employee && typeof employee === 'object' ? employee : null;
-  const uname = String(emp?.username || '').trim();
-  if (!m || !uname) return null;
-
-  const [yr, mo] = m.split('-').map(Number);
-  const daysInMonth = new Date(yr, mo, 0).getDate();
-
-  // Fixed entitlement: 4 rest days per month (not Sunday-count based)
-  const MONTHLY_REST_DAYS = 4;
-  const weekDetails = [];
-  for (let d = 1; d <= daysInMonth; d += 7) {
-    const startDay = d;
-    const endDay = Math.min(daysInMonth, d + 6);
-    // Proportional share of 4 days based on days in this week-segment
-    const weekDays = endDay - startDay + 1;
-    const entitled = Number((MONTHLY_REST_DAYS * weekDays / daysInMonth).toFixed(2));
-    weekDetails.push({
-      weekIndex: weekDetails.length + 1,
-      range: `${m}-${String(startDay).padStart(2, '0')}~${m}-${String(endDay).padStart(2, '0')}`,
-      entitled,
-      used: 0,
-      remaining: entitled
-    });
-  }
-
-  const baseLeave = MONTHLY_REST_DAYS;
-  const annualLeave = 0;
-
-  // 优先用权威日结果：有按日明细则逐日展示；仅有汇总时回退日报按日明细
-  const usedLeaveDetails = [];
-  let usedLeave = 0;
-  const attDetails = Array.isArray(opts?.attendanceRestDetails) ? opts.attendanceRestDetails : null;
-  const attRest = opts && typeof opts === 'object' ? opts.attendanceRestDays : null;
-
-  const addDetailToWeeks = (day, val) => {
-    const n = Number(val || 0);
-    if (!(Number.isFinite(n) && n > 0)) return;
-    weekDetails.forEach((wk) => {
-      const [ws, we] = String(wk?.range || '').split('~');
-      if (!ws || !we) return;
-      if (day < ws || day > we) return;
-      wk.used = Number((Number(wk.used || 0) + n).toFixed(2));
-    });
-  };
-
-  if (attDetails && attDetails.length) {
-    for (const d of attDetails) {
-      const day = String(d?.date || '').trim().slice(0, 10);
-      const n = Number(d?.days);
-      if (!day || !(Number.isFinite(n) && n > 0)) continue;
-      usedLeaveDetails.push({
-        date: day,
-        days: n,
-        type: String(d?.type || '休息').trim() || '休息',
-        source: String(d?.source || '日结果').trim() || '日结果'
-      });
-      addDetailToWeeks(day, n);
-    }
-    usedLeave = usedLeaveDetails.reduce((s, x) => s + Number(x.days || 0), 0);
-  } else if (attRest != null && Number.isFinite(Number(attRest))) {
-    usedLeave = Number(Number(attRest).toFixed(2));
-    const restStats = calcEmployeeMonthlyActualRestFromDailyReports(state, emp, m);
-    const byDay = restStats?.byDay && typeof restStats.byDay === 'object' ? restStats.byDay : {};
-    const dayEntries = Object.entries(byDay);
-    if (dayEntries.length) {
-      dayEntries.forEach(([day, val]) => {
-        const n = Number(val || 0);
-        if (!(Number.isFinite(n) && n > 0)) return;
-        usedLeaveDetails.push({ date: day, days: n, type: '休息', source: '日报休息' });
-        addDetailToWeeks(day, n);
-      });
-    } else if (usedLeave > 0) {
-      usedLeaveDetails.push({ date: m, days: usedLeave, type: '休息', source: '日结果汇总' });
-    }
-  } else {
-    const restStats = calcEmployeeMonthlyActualRestFromDailyReports(state, emp, m);
-    usedLeave = Number(restStats?.total || 0);
-    Object.entries(restStats?.byDay || {}).forEach(([day, val]) => {
-      const n = Number(val || 0);
-      if (!(Number.isFinite(n) && n > 0)) return;
-      usedLeaveDetails.push({ date: day, days: n, type: '休息', source: '日报休息' });
-      addDetailToWeeks(day, n);
-    });
-  }
-
-  usedLeave = Number((Number(usedLeave || 0)).toFixed(2));
-
-  // 考勤缺失扣假：有出勤(日报上班)但当天缺上班卡或下班卡，每缺勤1天扣1天休假（2026-06起）。
-  // 由调用方异步算好后通过 opts.penalty 注入，计入已用假期并在「休息明细」展示。
-  const penalty = opts && typeof opts === 'object' ? opts.penalty : null;
-  const penaltyDays = Number(penalty?.days || 0);
-  if (Number.isFinite(penaltyDays) && penaltyDays > 0) {
-    usedLeave = Number((usedLeave + penaltyDays).toFixed(2));
-    if (Array.isArray(penalty?.details)) {
-      for (const d of penalty.details) usedLeaveDetails.push(d);
-    }
-  }
-
-  // 月初「累计假期」池：人工 carryover > 上月闭合快照 > 实时滚动（与我的档案、欠休展示一致）
-  const cumulativeLeaveDays = getLockedOpeningCarryForMonth(state, emp, m);
-  const totalLeave = Number((baseLeave + annualLeave).toFixed(2));
-  const monthRemaining = Number((totalLeave - usedLeave).toFixed(2));
-  const computedRemaining = Number((cumulativeLeaveDays + totalLeave - usedLeave).toFixed(2));
-
-  const override = getLeaveBalanceOverride(state, uname, m);
-  const overridden = !!override;
-  const overrideMode = override?.mode || null;
-  const overrideValue = override?.value ?? null;
-  const carryoverManualLock = !!(override && String(override.mode || '').trim().toLowerCase() === 'carryover');
-  let remaining = computedRemaining;
-  if (override && String(override.mode || '').trim().toLowerCase() === 'remaining' && Number.isFinite(Number(override.value))) {
-    remaining = Number(Number(override.value).toFixed(2));
-  }
-
-  const adjustments = Array.isArray(state?.leaveBalanceAdjustments) ? state.leaveBalanceAdjustments : [];
-  const overrideKeyNorm = leaveBalanceOverrideKey(uname, m);
-  const lastAdjustment = adjustments.find((a) => {
-    const k = String(a?.key || '');
-    if (k && k.toLowerCase() === overrideKeyNorm) return true;
-    const mo = String(a?.month || '').trim();
-    const tu = String(a?.targetUsername || '').trim().toLowerCase();
-    return mo === m && tu === String(uname || '').trim().toLowerCase();
-  }) || null;
-
-  weekDetails.forEach((wk) => {
-    wk.remaining = Number((Number(wk.entitled || 0) - Number(wk.used || 0)).toFixed(2));
-  });
-
-  return {
-    username: uname,
-    month: m,
-    baseLeave,
-    annualLeave: Number(annualLeave.toFixed(2)),
-    usedLeave: Number(usedLeave.toFixed(2)),
-    totalLeave,
-    cumulativeLeaveDays: Number(cumulativeLeaveDays.toFixed(2)),
-    monthRemaining,
-    computedRemaining,
-    remaining: Number(remaining.toFixed(2)),
-    overridden,
-    overrideValue: overridden ? Number(overrideValue) : null,
-    overrideMode: overridden ? overrideMode : null,
-    usedLeaveDetails,
-    /** 人事已手动校准「截止上月累计假期」：月初池以人工为准，当月内不按公式滚动重算该池（次月1日系统锁数后可对照核验） */
-    cumulativeLeaveManualLock: carryoverManualLock,
-    weeklyDetails: weekDetails,
-    lastAdjustment
-  };
-}
 
 function safeUuid(input) {
   const v = String(input || '').trim();
@@ -4605,7 +3735,7 @@ function isInactiveStatus(input) {
 
 /** 上海时区当天 YYYY-MM-DD（与 safeDateOnly / offboarding 日期比较口径一致） */
 function shanghaiTodayDateOnly() {
-  return shanghaiDateOnly(new Date());
+  return leaveAttendanceHelpers.shanghaiDateOnly(new Date());
 }
 
 /**
@@ -5305,7 +4435,7 @@ registerApprovalDecideRoutes(app, authRequired, {
   getPromotionTrackProgress,
   normalizePromotionTrainingPeriods,
   approvalTypeLabel,
-  calcDateSpanDaysInclusive,
+  calcDateSpanDaysInclusive: leaveAttendanceHelpers.calcDateSpanDaysInclusive,
   isKitchenByRoleOrPosition,
   pickHqManagerUsername,
   pickStoreRoleUsernameByStore,
@@ -5523,7 +4653,7 @@ registerAdminOpsRoutes(app, authRequired, {
   safeMonthOnly,
   safeErrMessage,
   backfillDailyAttendanceRegisterMissing,
-  runLeaveCumulativeCloseSnapshotForClosedMonth,
+  runLeaveCumulativeCloseSnapshotForClosedMonth: leaveAttendanceHelpers.runLeaveCumulativeCloseSnapshotForClosedMonth,
   runSalesRawFolderImportOnce,
   notifyAdminsDualWriteFailure,
   normalizeRoleForJwt,
@@ -6676,9 +5806,9 @@ app.listen(PORT, HOST, async () => {
             if (d !== '01' || h !== 6 || mi >= 15) return;
             const curYm = `${y}-${mo}`;
             if (_leaveCumulativeSnapshotDoneCurYm.get(tenantId) === curYm) return;
-            const closedMonth = shiftMonth(curYm, -1);
+            const closedMonth = leaveAttendanceHelpers.shiftMonth(curYm, -1);
             if (!closedMonth) return;
-            const r = await runLeaveCumulativeCloseSnapshotForClosedMonth(closedMonth);
+            const r = await leaveAttendanceHelpers.runLeaveCumulativeCloseSnapshotForClosedMonth(closedMonth);
             if (r?.ok) {
               _leaveCumulativeSnapshotDoneCurYm.set(tenantId, curYm);
               console.log('[leave-cumulative-snapshot] locked tenant=', tenantId, 'closedMonth=', r.closedMonth, 'employees=', r.employees);
