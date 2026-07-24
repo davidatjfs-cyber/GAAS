@@ -91,6 +91,8 @@ import { createFeishuBitableHelpers } from './domains/feishu-bitable/create-help
 import { createInventoryForecastHelpers } from './domains/inventory-forecast/create-helpers.js';
 import { createLeaveAttendanceHelpers } from './domains/leave-attendance/create-helpers.js';
 import { createNotificationsHelpers } from './domains/notifications/create-helpers.js';
+import { createNotificationsCleanupScheduler } from './domains/notifications/scheduler-cleanup.js';
+import { createFreshnessMonitorScheduler } from './domains/notifications/scheduler-freshness.js';
 import {
 
 
@@ -5040,69 +5042,21 @@ process.on('uncaughtException', (err) => {
   Promise.race([alertPromise, new Promise((r) => setTimeout(r, 5000))]).finally(() => process.exit(1));
 });
 
-// ── Scheduled cleanup: retain 2 months of notifications ────
-// hrms_user_notifications带RLS，原只清default租户；改为遍历活跃租户各自清理
-async function cleanupOldNotifications() {
-  let deleted = 0;
-  try {
-    await runForActiveTenants(async () => {
-      const r = await pool.query(`DELETE FROM hrms_user_notifications WHERE created_at < now() - interval '3 days' AND id NOT IN (SELECT id FROM hrms_user_notifications ORDER BY created_at DESC LIMIT 50)`);
-      deleted += r.rowCount ?? 0;
-    }, { continueOnError: true });
-  } catch (e) {
-    console.error('[cleanup] hrms_user_notifications error:', e?.message);
-  }
-  if (deleted > 0) console.log('[cleanup] hrms_user_notifications deleted:', deleted);
-}
-// Run every 6 hours; first run deferred 1 min after startup
-setTimeout(() => { cleanupOldNotifications(); }, 60000);
-setInterval(cleanupOldNotifications, 6 * 3600 * 1000);
+// Wave H13: notification cleanup + freshness monitor cron → domains/notifications/scheduler-*.js
+const { startNotificationsCleanupScheduler } = createNotificationsCleanupScheduler({
+  pool,
+  runForActiveTenants,
+});
+startNotificationsCleanupScheduler();
 
-// 数据新鲜度监控：server/ontology/freshness.js写好后一直没接cron，是纯代码骨架，
-// 这里激活它——每6小时按活跃租户检查一遍，每个租户每天最多告警一次(防止刷屏)。
-const _freshnessAlertFiredDate = new Map();
-async function runFreshnessMonitorTick() {
-  try {
-    await runForActiveTenants(async (tenantId) => {
-      const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
-      if (_freshnessAlertFiredDate.get(tenantId) === todayStr) return;
-      const { stale, alertText } = await runFreshnessCheck(pool, FRESHNESS_SOURCES);
-      if (!alertText) return;
-      _freshnessAlertFiredDate.set(tenantId, todayStr);
-      const r = await pool.query(
-        `SELECT DISTINCT open_id
-         FROM feishu_users
-         WHERE registered = true
-           AND open_id IS NOT NULL
-           AND open_id NOT LIKE '%probe%'
-           AND (
-             TRIM(LOWER(role)) IN ('admin', 'hq_manager')
-             OR TRIM(role) IN ('管理员', '系统管理员', '总部经理', '总部营运')
-           )
-         LIMIT 35`
-      );
-      const rows = r.rows || [];
-      if (!rows.length) {
-        console.error('[freshness] 数据陈旧但无可投递飞书账号，tenant:', tenantId, stale.map(s => s.name));
-        return;
-      }
-      const sends = rows.map((row) =>
-        sendLarkMessage(row.open_id, alertText, { skipDedup: true }).catch((e) => ({ err: e?.message || e }))
-      );
-      const settled = await Promise.all(sends);
-      const failed = settled.filter((x) => x && x.err);
-      if (failed.length) {
-        console.error('[freshness] 部分飞书告警发送失败:', tenantId, failed.length, '/', settled.length, failed[0]?.err);
-      } else {
-        console.error('[freshness] alert sent, tenant:', tenantId, 'stale:', stale.map(s => s.name));
-      }
-    }, { continueOnError: true });
-  } catch (e) {
-    console.error('[freshness] runForActiveTenants error:', e?.message || e);
-  }
-}
-setTimeout(() => { runFreshnessMonitorTick(); }, 90000);
-setInterval(runFreshnessMonitorTick, 6 * 3600 * 1000);
+const { startFreshnessMonitorScheduler } = createFreshnessMonitorScheduler({
+  pool,
+  runForActiveTenants,
+  runFreshnessCheck,
+  FRESHNESS_SOURCES,
+  sendLarkMessage,
+});
+startFreshnessMonitorScheduler();
 
 // schema_migrations 漂移对账（仓库 .sql vs 记账表）；告警走增长管理员通道
 startSchemaMigrationDriftMonitor(pool, {
