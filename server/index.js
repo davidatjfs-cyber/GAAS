@@ -8,7 +8,7 @@ import fs from 'fs';
 import { statfs } from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { randomUUID, createDecipheriv, createHash } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { getActiveTenantIds, tenantContext, resolveTenantIdDefault, runWithBootstrapTenantContext, runForActiveTenants } from './utils/database.js';
 
 import { registerAuthRoutes } from './auth-routes.js';
@@ -70,6 +70,7 @@ import { registerAdminOpsRoutes } from './domains/admin-ops/routes.js';
 import { registerDiagnosisFeedbackRoutes } from './domains/diagnosis/routes.js';
 import { registerAgentDataRoutes } from './domains/agent-data/routes.js';
 import { registerFeishuWebhookRoutes } from './domains/feishu-webhook/routes.js';
+import { createFeishuBitableHelpers } from './domains/feishu-bitable/create-helpers.js';
 import {
 
 
@@ -260,7 +261,7 @@ app.use((req, res, next) => {
 // M1-FIX: 生产环境不把内部错误细节（e.message，可能含SQL/文件路径等）返回给客户端
 function safeErrMessage(e) {
   if (process.env.NODE_ENV === 'production') return 'internal_error';
-  return safeErrMessage(e);
+  return String(e?.message || e || 'internal_error');
 }
 // H3-FIX: 限制CORS来源（生产环境使用白名单，开发环境允许所有）
 const CORS_WHITELIST = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -308,34 +309,6 @@ const __dirname = path.dirname(__filename);
 
 const FEISHU_ENCRYPT_KEY = process.env.FEISHU_ENCRYPT_KEY;
 
-function tryParseJson(input) {
-  try {
-    if (!input) return null;
-    return JSON.parse(input);
-  } catch (e) {
-    return null;
-  }
-}
-
-function decryptFeishuEncryptPayload(encryptValue) {
-  if (!FEISHU_ENCRYPT_KEY) throw new Error('missing_feishu_encrypt_key');
-  const cipherBuf = Buffer.from(String(encryptValue || ''), 'base64');
-  if (!cipherBuf.length) throw new Error('invalid_encrypt_payload');
-
-  let keyBuf = Buffer.from(String(FEISHU_ENCRYPT_KEY || ''), 'base64');
-  if (keyBuf.length !== 32) {
-    keyBuf = Buffer.from(String(FEISHU_ENCRYPT_KEY || ''), 'utf8');
-    if (keyBuf.length < 32) {
-      keyBuf = Buffer.concat([keyBuf, Buffer.alloc(32 - keyBuf.length)]);
-    }
-    if (keyBuf.length > 32) keyBuf = keyBuf.subarray(0, 32);
-  }
-  const iv = keyBuf.subarray(0, 16);
-  const decipher = createDecipheriv('aes-256-cbc', keyBuf, iv);
-  let decrypted = decipher.update(cipherBuf, undefined, 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-}
 const uploadsDir = path.join(__dirname, 'uploads');
 function ensureUploadsDir() {
   try {
@@ -513,147 +486,6 @@ function resolveForecastScope(state0, username, role, requestedStore, requestedB
   return { store: '', brandId: '', brandName: '', storeScope: [] };
 }
 
-import { FEISHU_TABLE_CONFIG } from './feishu-sync.js';
-
-// 根据 appToken 和 tableId 查找对应的 configKey
-function findConfigKeyByTableInfo(appToken, tableId) {
-  if (!appToken || !tableId) return null;
-  const appTokenNorm = String(appToken).trim();
-  const tableIdNorm = String(tableId).trim();
-  
-  for (const [key, config] of Object.entries(FEISHU_TABLE_CONFIG)) {
-    if (typeof config === 'object' && config !== null) {
-      // 处理嵌套配置（如 material_reports.majixian）
-      if (config.app_token && config.table_id) {
-        if (String(config.app_token).trim() === appTokenNorm && 
-            String(config.table_id).trim() === tableIdNorm) {
-          return key;
-        }
-      }
-      // 处理嵌套的品牌配置
-      for (const [subKey, subConfig] of Object.entries(config)) {
-        if (typeof subConfig === 'object' && subConfig !== null && 
-            subConfig.app_token && subConfig.table_id) {
-          if (String(subConfig.app_token).trim() === appTokenNorm && 
-              String(subConfig.table_id).trim() === tableIdNorm) {
-            return `${key}_${subKey}`;
-          }
-        }
-      }
-    }
-  }
-  return null;
-}
-
-async function ensureFeishuGenericRecordsTable() {
-  try {
-    await pool.query('create extension if not exists pgcrypto');
-    await pool.query(
-      `create table if not exists feishu_generic_records (
-        id uuid primary key default gen_random_uuid(),
-        app_token varchar(100) not null,
-        table_id varchar(100) not null,
-        record_id varchar(100) not null,
-        config_key varchar(60),
-        fields jsonb,
-        raw jsonb,
-        created_at timestamp default current_timestamp,
-        updated_at timestamp default current_timestamp,
-        unique (app_token, table_id, record_id)
-      )`
-    );
-    await pool.query('alter table feishu_generic_records add column if not exists config_key varchar(60)');
-    await pool.query('create index if not exists idx_feishu_generic_table on feishu_generic_records (app_token, table_id, updated_at desc)');
-    await pool.query('create index if not exists idx_feishu_generic_record on feishu_generic_records (record_id)');
-    await pool.query('create index if not exists idx_feishu_generic_config on feishu_generic_records (config_key, updated_at desc)');
-  } catch (e) {
-    console.error('[ensureFeishuGenericRecordsTable] Error:', e?.message || e);
-    throw e;
-  }
-}
-
-/**
- * 库级 NOTIFY：凡写入 feishu_generic_records（含 HRMS Webhook / Agent 轮询）且 fields/raw/config_key 实质变化即通知，
- * 与 HRMS LISTEN channel `bitable_records_updated` 对齐；payload 为 config_key 或兜底 table_id。
- */
-async function ensureFeishuGenericRecordsNotifyTrigger() {
-  // 注意：不能把 TG_OP 写在触发器 WHEN (...) 里 —— WHEN 是 SQL 表达式，会把 TG_OP 当成列名 tg_op 而报错。
-  // 插入/更新是否实质变化在函数体内用 TG_OP / OLD / NEW 判断。
-  const fnSql = `
-CREATE OR REPLACE FUNCTION feishu_generic_records_bitable_notify() RETURNS trigger AS $$
-DECLARE
-  pl text;
-BEGIN
-  IF TG_OP = 'UPDATE' THEN
-    IF NOT (
-      OLD.fields IS DISTINCT FROM NEW.fields
-      OR OLD.raw IS DISTINCT FROM NEW.raw
-      OR OLD.config_key IS DISTINCT FROM NEW.config_key
-    ) THEN
-      RETURN NEW;
-    END IF;
-  END IF;
-
-  pl := COALESCE(NULLIF(BTRIM(COALESCE(NEW.config_key, '')), ''), NULLIF(BTRIM(COALESCE(NEW.table_id, '')), ''));
-  IF pl IS NULL OR pl = '' THEN
-    RETURN NEW;
-  END IF;
-  PERFORM pg_notify('bitable_records_updated', pl);
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql`;
-  const dropSql = 'DROP TRIGGER IF EXISTS trg_feishu_generic_records_bitable_notify ON feishu_generic_records';
-  const trigBody = `
-AFTER INSERT OR UPDATE OF fields, raw, config_key ON feishu_generic_records
-FOR EACH ROW`;
-  try {
-    await pool.query(fnSql);
-    await pool.query(dropSql);
-    try {
-      await pool.query(
-        `CREATE TRIGGER trg_feishu_generic_records_bitable_notify ${trigBody} EXECUTE FUNCTION feishu_generic_records_bitable_notify();`
-      );
-    } catch (e1) {
-      await pool.query(
-        `CREATE TRIGGER trg_feishu_generic_records_bitable_notify ${trigBody} EXECUTE PROCEDURE feishu_generic_records_bitable_notify();`
-      );
-    }
-    console.log('[schema] feishu_generic_records → pg_notify(bitable_records_updated) trigger ready');
-  } catch (e) {
-    console.error('[ensureFeishuGenericRecordsNotifyTrigger] Error:', e?.message || e);
-    void notifyAdminsDualWriteFailure('feishu_generic_records（NOTIFY 触发器安装/更新失败）', e);
-    throw e;
-  }
-}
-
-function stripAttachmentLikeFields(fields) {
-  const src = fields && typeof fields === 'object' ? fields : {};
-  const out = {};
-  Object.entries(src).forEach(([k, v]) => {
-    if (!k) return;
-    const key = String(k).toLowerCase();
-    if (key.includes('附件') || key.includes('attachment') || key.includes('file') || key.includes('图片') || key.includes('image')) return;
-    out[k] = v;
-  });
-  return out;
-}
-
-async function upsertFeishuGenericRecord({ appToken, tableId, record, configKey = null }) {
-  if (!appToken || !tableId || !record) return;
-  const recordId = String(record?.record_id || '').trim();
-  if (!recordId) return;
-  const rawFields = record?.fields || {};
-  const cleanedFields = stripAttachmentLikeFields(rawFields);
-
-  await pool.query(
-    `insert into feishu_generic_records (app_token, table_id, record_id, config_key, fields, raw, updated_at)
-     values ($1, $2, $3, $4, $5, $6, now())
-     on conflict (app_token, table_id, record_id)
-     do update set config_key = excluded.config_key, fields = excluded.fields, raw = excluded.raw, updated_at = now()`,
-    [appToken, tableId, recordId, configKey, cleanedFields, record]
-  );
-}
-
 async function ensureOpsTasksTable() {
   try {
     await pool.query('create extension if not exists pgcrypto');
@@ -698,539 +530,6 @@ async function ensureOpsTasksTable() {
     console.error('[ensureOpsTasksTable] Error:', e?.message || e);
     throw e;
   }
-}
-
-async function getFeishuAccessToken(options = {}) {
-  if (!isExternalEnabled()) return '';
-  const appId = options.appId || FEISHU_APP_ID;
-  const appSecret = options.appSecret || FEISHU_APP_SECRET;
-
-  if (!appId || !appSecret) {
-    return '';
-  }
-
-  try {
-    const response = await axios.post(`${FEISHU_BASE_URL}/auth/v3/tenant_access_token/internal`, {
-      app_id: appId,
-      app_secret: appSecret
-    });
-
-    if (response.data?.code === 0 && response.data?.tenant_access_token) {
-      return response.data.tenant_access_token;
-    }
-    throw new Error(`Feishu API error: ${response.data?.msg || 'Unknown error'} (code: ${response.data?.code})`);
-  } catch (error) {
-    console.error('[getFeishuAccessToken] Error:', safeErrMessage(error));
-    if (error?.response?.data) {
-      const code = error.response.data?.code;
-      const msg = error.response.data?.msg;
-      throw new Error(`Feishu API error: ${msg || error.message} (code: ${code ?? 'unknown'})`);
-    }
-    throw error;
-  }
-}
-
-async function createFeishuBitableRecord({ appToken, tableId, fields, accessToken }) {
-  if (!isExternalEnabled()) return null;
-  if (!appToken || !tableId) {
-    return null;
-  }
-  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
-    return null;
-  }
-
-  try {
-    const url = `${FEISHU_BASE_URL}/bitable/v1/apps/${appToken}/tables/${tableId}/records`;
-    const response = await axios.post(
-      url,
-      { fields },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    if (response.data?.code !== 0) {
-      throw new Error(`Feishu Bitable Create API error: ${response.data?.msg || 'Unknown error'} (code: ${response.data?.code})`);
-    }
-    return response.data?.data?.record || null;
-  } catch (error) {
-    console.error('[createFeishuBitableRecord] Error:', safeErrMessage(error));
-    if (error?.response?.data) {
-      const code = error.response.data?.code;
-      const msg = error.response.data?.msg;
-      throw new Error(`Feishu Bitable Create API error: ${msg || error.message} (code: ${code ?? 'unknown'})`);
-    }
-    throw error;
-  }
-}
-
-async function getFeishuBitableData(appToken, tableId, accessToken) {
-  if (!isExternalEnabled()) return { items: [], has_more: false };
-  try {
-    const allItems = [];
-    let pageToken = '';
-    let guard = 0;
-
-    while (guard < 2000) {
-      guard++;
-      const url = `${FEISHU_BASE_URL}/bitable/v1/apps/${appToken}/tables/${tableId}/records`;
-      const response = await axios.get(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        params: {
-          page_size: 500,
-          ...(pageToken ? { page_token: pageToken } : {})
-        }
-      });
-
-      if (response.data?.code !== 0) {
-        throw new Error(`Feishu Bitable API error: ${response.data?.msg || 'Unknown error'} (code: ${response.data?.code})`);
-      }
-
-      const data = response.data?.data || {};
-      const items = Array.isArray(data.items) ? data.items : [];
-      allItems.push(...items);
-
-      if (!data.has_more) {
-        return { ...data, items: allItems };
-      }
-
-      pageToken = String(data.page_token || '').trim();
-      if (!pageToken) {
-        // defensive: has_more=true but no token
-        return { ...data, has_more: false, items: allItems };
-      }
-    }
-
-    return { items: allItems, has_more: false };
-  } catch (error) {
-    console.error('[getFeishuBitableData] Error:', safeErrMessage(error));
-    if (error?.response?.data) {
-      const code = error.response.data?.code;
-      const msg = error.response.data?.msg;
-      throw new Error(`Feishu Bitable API error: ${msg || error.message} (code: ${code ?? 'unknown'})`);
-    }
-    throw error;
-  }
-}
-
-async function ensureFeishuSyncTable() {
-  try {
-    await pool.query('create extension if not exists pgcrypto');
-    await pool.query(
-      `create table if not exists feishu_sync_logs (
-        id uuid primary key default gen_random_uuid(),
-        event_type varchar(50) not null,
-        table_id varchar(100) not null,
-        record_id varchar(100),
-        data jsonb,
-        sync_status varchar(20) not null default 'pending',
-        error_message text,
-        created_at timestamp default current_timestamp,
-        processed_at timestamp
-      )`
-    );
-    await pool.query(`create index if not exists idx_feishu_sync_status on feishu_sync_logs (sync_status)`);
-    await pool.query(`create index if not exists idx_feishu_sync_table on feishu_sync_logs (table_id, created_at)`);
-  } catch (e) {
-    if (safeErrMessage(e).includes('already exists')) return;
-    console.error('[ensureFeishuSyncTable] Error:', e?.message || e);
-    throw e;
-  }
-}
-
-// ─── Dedup: unique partial index on agent_messages ───────────────────────────
-async function ensureDedupIndexes() {
-  try {
-    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_messages_record_content
-      ON agent_messages (record_id, content_type)
-      WHERE record_id IS NOT NULL AND record_id != ''`);
-  } catch (e) {
-    // If duplicates already exist, clean them first then retry
-    if (/duplicate key|could not create unique index/i.test(String(e?.message || ''))) {
-      console.log('[dedup] cleaning existing duplicates in agent_messages...');
-      try {
-        await pool.query(`
-          DELETE FROM agent_messages a USING agent_messages b
-          WHERE a.record_id IS NOT NULL AND a.record_id != ''
-            AND a.record_id = b.record_id AND a.content_type = b.content_type
-            AND a.created_at < b.created_at`);
-        await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_messages_record_content
-          ON agent_messages (record_id, content_type)
-          WHERE record_id IS NOT NULL AND record_id != ''`);
-        console.log('[dedup] agent_messages unique index created after cleanup');
-      } catch (e2) {
-        console.warn('[dedup] could not create unique index:', e2?.message);
-      }
-    } else {
-      console.warn('[dedup] index creation skipped:', e?.message);
-    }
-  }
-}
-
-async function ensureTableVisitRecordsTable() {
-  try {
-    await pool.query('create extension if not exists pgcrypto');
-    
-    // 首先检查表是否存在
-    const tableExists = await pool.query(`
-      select exists (
-        select from information_schema.tables 
-        where table_schema = 'public' 
-        and table_name = 'table_visit_records'
-      )
-    `);
-    
-    if (!tableExists.rows[0].exists) {
-      // 表不存在，创建完整的新表
-      await pool.query(
-        `create table table_visit_records (
-          id uuid primary key default gen_random_uuid(),
-          date date not null,
-          store varchar(200) not null,
-          brand varchar(120),
-          table_number varchar(20),
-          guest_count int default 0,
-          amount decimal(10,2) default 0,
-          has_reservation boolean default false,
-          dissatisfaction_dish text,
-          feedback text,
-          
-          -- 扩展字段（供agent分析使用）
-          reservation_time time,
-          customer_type varchar(50),
-          order_type varchar(50),
-          service_rating int default 0,
-          food_rating int default 0,
-          environment_rating int default 0,
-          waiter_name varchar(100),
-          promotion_info text,
-          weather varchar(50),
-          peak_hours boolean default false,
-          customer_complaint text,
-          complaint_resolution text,
-          satisfaction_level varchar(20),
-          repeat_customer boolean default false,
-          special_requests text,
-          payment_method varchar(50),
-          order_duration int default 0,
-          table_turnover int default 0,
-          dish_recommendations text,
-          allergic_info text,
-          celebration_type varchar(50),
-          visit_purpose varchar(100),
-          companion_info text,
-          customer_age varchar(20),
-          customer_gender varchar(10),
-          visit_frequency varchar(50),
-          preferred_dishes text,
-          unsatisfied_items text,
-          suggested_improvements text,
-          staff_performance text,
-          facility_issues text,
-          hygiene_rating int default 0,
-          value_rating int default 0,
-          ambiance_rating int default 0,
-          noise_level varchar(20),
-          temperature varchar(20),
-          lighting varchar(20),
-          music_volume varchar(20),
-          seating_comfort varchar(20),
-          queue_time int default 0,
-          service_speed varchar(20),
-          order_accuracy varchar(20),
-          staff_attitude varchar(20),
-          problem_resolution text,
-          manager_intervention boolean default false,
-          compensation_provided text,
-          follow_up_required boolean default false,
-          follow_up_details text,
-          additional_notes text,
-          
-          feishu_record_id varchar(100) unique,
-          created_at timestamp default current_timestamp,
-          updated_at timestamp default current_timestamp
-        )`
-      );
-    } else {
-      // 表已存在，检查并添加缺失的字段
-      const existingColumns = await pool.query(`
-        select column_name, data_type 
-        from information_schema.columns 
-        where table_schema = 'public' 
-        and table_name = 'table_visit_records'
-      `);
-      const columnNames = existingColumns.rows.map(row => row.column_name);
-      
-      // 需要添加的字段定义
-      const newColumns = [
-        { name: 'reservation_time', type: 'time' },
-        { name: 'customer_type', type: 'varchar(50)' },
-        { name: 'order_type', type: 'varchar(50)' },
-        { name: 'service_rating', type: 'int default 0' },
-        { name: 'food_rating', type: 'int default 0' },
-        { name: 'environment_rating', type: 'int default 0' },
-        { name: 'waiter_name', type: 'varchar(100)' },
-        { name: 'promotion_info', type: 'text' },
-        { name: 'weather', type: 'varchar(50)' },
-        { name: 'peak_hours', type: 'boolean default false' },
-        { name: 'customer_complaint', type: 'text' },
-        { name: 'complaint_resolution', type: 'text' },
-        { name: 'satisfaction_level', type: 'varchar(20)' },
-        { name: 'repeat_customer', type: 'boolean default false' },
-        { name: 'special_requests', type: 'text' },
-        { name: 'payment_method', type: 'varchar(50)' },
-        { name: 'order_duration', type: 'int default 0' },
-        { name: 'table_turnover', type: 'int default 0' },
-        { name: 'dish_recommendations', type: 'text' },
-        { name: 'allergic_info', type: 'text' },
-        { name: 'celebration_type', type: 'varchar(50)' },
-        { name: 'visit_purpose', type: 'varchar(100)' },
-        { name: 'companion_info', type: 'text' },
-        { name: 'customer_age', type: 'varchar(20)' },
-        { name: 'customer_gender', type: 'varchar(10)' },
-        { name: 'visit_frequency', type: 'varchar(50)' },
-        { name: 'preferred_dishes', type: 'text' },
-        { name: 'unsatisfied_items', type: 'text' },
-        { name: 'suggested_improvements', type: 'text' },
-        { name: 'staff_performance', type: 'text' },
-        { name: 'facility_issues', type: 'text' },
-        { name: 'hygiene_rating', type: 'int default 0' },
-        { name: 'value_rating', type: 'int default 0' },
-        { name: 'ambiance_rating', type: 'int default 0' },
-        { name: 'noise_level', type: 'varchar(20)' },
-        { name: 'temperature', type: 'varchar(20)' },
-        { name: 'lighting', type: 'varchar(20)' },
-        { name: 'music_volume', type: 'varchar(20)' },
-        { name: 'seating_comfort', type: 'varchar(20)' },
-        { name: 'queue_time', type: 'int default 0' },
-        { name: 'service_speed', type: 'varchar(20)' },
-        { name: 'order_accuracy', type: 'varchar(20)' },
-        { name: 'staff_attitude', type: 'varchar(20)' },
-        { name: 'problem_resolution', type: 'text' },
-        { name: 'manager_intervention', type: 'boolean default false' },
-        { name: 'compensation_provided', type: 'text' },
-        { name: 'follow_up_required', type: 'boolean default false' },
-        { name: 'follow_up_details', type: 'text' },
-        { name: 'additional_notes', type: 'text' },
-        { name: 'rush_dish_content', type: 'text' }
-      ];
-      
-      for (const column of newColumns) {
-        if (!columnNames.includes(column.name)) {
-          try {
-            await pool.query(`alter table table_visit_records add column ${column.name} ${column.type}`);
-            console.log(`[ensureTableVisitRecordsTable] Added column: ${column.name}`);
-          } catch (e) {
-            console.log(`[ensureTableVisitRecordsTable] Failed to add column ${column.name}:`, e?.message || e);
-          }
-        }
-      }
-    }
-    
-    // 创建索引
-    await pool.query(`create index if not exists idx_table_visit_date on table_visit_records (date)`);
-    await pool.query(`create index if not exists idx_table_visit_store on table_visit_records (store)`);
-    await pool.query(`create index if not exists idx_table_visit_feishu_id on table_visit_records (feishu_record_id)`);
-    
-    // 尝试创建新索引（如果字段存在的话）
-    try {
-      await pool.query(`create index if not exists idx_table_visit_satisfaction on table_visit_records (satisfaction_level)`);
-    } catch (e) {
-      console.log('[ensureTableVisitRecordsTable] Satisfaction index skipped (column may not exist)');
-    }
-    
-    try {
-      await pool.query(`create index if not exists idx_table_visit_rating on table_visit_records (service_rating, food_rating, environment_rating)`);
-    } catch (e) {
-      console.log('[ensureTableVisitRecordsTable] Rating index skipped (columns may not exist)');
-    }
-    
-  } catch (e) {
-    if (safeErrMessage(e).includes('already exists')) return;
-    console.error('[ensureTableVisitRecordsTable] Error:', e?.message || e);
-    throw e;
-  }
-}
-
-function mapFeishuFieldToHrms(feishuRecord, fieldType) {
-  const mapped = {};
-
-  const normalizeFeishuFieldValue = (rawValue) => {
-    if (rawValue == null) return '';
-    if (typeof rawValue === 'string') return rawValue.trim();
-    if (typeof rawValue === 'number' || typeof rawValue === 'boolean') return rawValue;
-
-    if (Array.isArray(rawValue)) {
-      const parts = rawValue
-        .map((item) => normalizeFeishuFieldValue(item))
-        .filter((item) => item !== '' && item != null);
-      if (!parts.length) return '';
-      if (parts.length === 1) return parts[0];
-      return parts.map((item) => String(item)).join(', ');
-    }
-
-    if (typeof rawValue === 'object') {
-      if (typeof rawValue.text === 'string' && rawValue.text.trim()) return rawValue.text.trim();
-      if (Array.isArray(rawValue.text_arr) && rawValue.text_arr.length) return rawValue.text_arr.join('');
-      if (typeof rawValue.name === 'string' && rawValue.name.trim()) return rawValue.name.trim();
-      if (typeof rawValue.id === 'string' && rawValue.id.trim()) return rawValue.id.trim();
-      return '';
-    }
-
-    return String(rawValue || '').trim();
-  };
-
-  const normalizePgTimeOrNull = (rawValue) => {
-    const s = String(normalizeFeishuFieldValue(rawValue) || '').trim();
-    if (!s) return null;
-    if (/^\d{2}:\d{2}:\d{2}$/.test(s)) return s;
-    if (/^\d{2}:\d{2}$/.test(s)) return s + ':00';
-    return null;
-  };
-
-  const parseFeishuNumber = (rawValue) => {
-    const normalized = normalizeFeishuFieldValue(rawValue);
-    const text = String(normalized || '').trim();
-    if (!text) return 0;
-    const n = Number(text.replace(/[^\d.-]/g, ''));
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  const parseFeishuBoolean = (rawValue) => {
-    if (typeof rawValue === 'boolean') return rawValue;
-    const normalized = String(normalizeFeishuFieldValue(rawValue) || '').trim().toLowerCase();
-    if (!normalized) return false;
-    return ['是', 'true', '1', 'yes', 'y'].includes(normalized);
-  };
-
-  const parseFeishuDate = (rawValue) => {
-    const normalized = normalizeFeishuFieldValue(rawValue);
-    if (normalized === '' || normalized == null) return '';
-
-    const toDateOnly = (dateObj) => {
-      if (!dateObj || !Number.isFinite(dateObj.getTime())) return '';
-      return dateObj.toISOString().slice(0, 10);
-    };
-
-    if (typeof normalized === 'number' && Number.isFinite(normalized)) {
-      const millis = normalized > 1e12 ? normalized : normalized * 1000;
-      return toDateOnly(new Date(millis));
-    }
-
-    const text = String(normalized).trim();
-    if (!text) return '';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
-
-    if (/^\d{13}$/.test(text)) return toDateOnly(new Date(Number(text)));
-    if (/^\d{10}$/.test(text)) return toDateOnly(new Date(Number(text) * 1000));
-
-    const parsed = new Date(text);
-    if (Number.isFinite(parsed.getTime())) return toDateOnly(parsed);
-    return '';
-  };
-
-  const fields = feishuRecord?.fields || {};
-  const pickRaw = (...keys) => {
-    for (const key of keys) {
-      if (Object.prototype.hasOwnProperty.call(fields, key)) return fields[key];
-    }
-    return undefined;
-  };
-  const pickText = (...keys) => String(normalizeFeishuFieldValue(pickRaw(...keys)) || '').trim();
-  
-  if (fieldType === 'table_visit') {
-    // 桌访记录完整字段映射（供agent使用）
-    // 飞书多维里常见主键为「记录日期」「提交时间」，旧模板用「日期」；缺任一都会导致无法入结构化表
-    mapped.date = parseFeishuDate(pickRaw('记录日期', '提交时间', '日期', '就餐日期', '发生日期', '营业日期'));
-    mapped.store = pickText('所属门店', '门店', '店铺');
-    mapped.brand = pickText('所属品牌', '品牌');
-    mapped.tableNumber = pickText('桌号', '桌位号');
-    mapped.guestCount = parseFeishuNumber(pickRaw('就餐人数', '人数'));
-    mapped.amount = parseFeishuNumber(pickRaw('消费金额', '消费额', '金额'));
-    mapped.hasReservation = parseFeishuBoolean(pickRaw('是否有预订', '有无预订'));
-    mapped.dissatisfactionDish = pickText(
-      '今天不满意的菜品',
-      '今天 不满意菜品',
-      '今日不满意菜品',
-      '不满意菜品'
-    );
-    mapped.feedback = pickText('顾客反馈', '反馈', '评价');
-    
-    // 扩展字段（供agent分析使用）
-    mapped.reservationTime = normalizePgTimeOrNull(pickRaw('预订时间'));
-    mapped.customerType = pickText('是否第一次来', '新老客户', '客户类型');
-    mapped.orderType = pickText('点单方式');
-    mapped.serviceRating = parseFeishuNumber(pickRaw('服务评分'));
-    mapped.foodRating = parseFeishuNumber(pickRaw('菜品评分'));
-    mapped.environmentRating = parseFeishuNumber(pickRaw('环境评分'));
-    mapped.waiterName = pickText('服务员姓名');
-    mapped.promotionInfo = pickText('哪里知道我们的', '如何知道我们', '客流渠道', '促销活动');
-    mapped.weather = pickText('天气情况');
-    mapped.peakHours = parseFeishuBoolean(pickRaw('高峰时段'));
-    mapped.customerComplaint = pickText('客户投诉');
-    mapped.complaintResolution = pickText('投诉处理');
-    mapped.satisfactionLevel = pickText('今天用餐是否满意', '满意度等级', '满意度');
-    mapped.repeatCustomer = parseFeishuBoolean(pickRaw('是否回头客'));
-    mapped.specialRequests = pickText('特殊要求');
-    mapped.paymentMethod = pickText('支付方式');
-    mapped.orderDuration = parseFeishuNumber(pickRaw('用餐时长（分钟）', '用餐时长'));
-    mapped.tableTurnover = parseFeishuNumber(pickRaw('翻台次数'));
-    mapped.dishRecommendations = pickText('推荐菜品', '菜品推荐');
-    mapped.allergicInfo = pickText('过敏信息');
-    mapped.celebrationType = pickText('庆祝类型');
-    mapped.visitPurpose = pickText('就餐目的');
-    mapped.companionInfo = pickText('同行人员');
-    mapped.customerAge = pickText('客户年龄段');
-    mapped.customerGender = pickText('客户性别');
-    mapped.visitFrequency = pickText('就餐频次');
-    mapped.preferredDishes = pickText('今天比较喜欢的菜', '比较喜欢菜品', '偏好菜品');
-    mapped.unsatisfiedItems = pickText(
-      '不满意的主要原因是什么',
-      '不满意的主要原因',
-      '满意或不满意的主要原因是什么？',
-      '满意或不满意的主要原因',
-      '满意/不满意的主要原因',
-      '不满意项',
-      '不满意原因'
-    );
-    mapped.suggestedImprovements = pickText('改进建议');
-    mapped.staffPerformance = pickText('员工表现');
-    mapped.facilityIssues = pickText('设施问题');
-    mapped.hygieneRating = parseFeishuNumber(pickRaw('卫生评分'));
-    mapped.valueRating = parseFeishuNumber(pickRaw('性价比评分'));
-    mapped.ambianceRating = parseFeishuNumber(pickRaw('氛围评分'));
-    mapped.noiseLevel = pickText('噪音水平');
-    mapped.temperature = pickText('室内温度');
-    mapped.lighting = pickText('照明情况');
-    mapped.musicVolume = pickText('音乐音量');
-    mapped.seatingComfort = pickText('座位舒适度');
-    mapped.queueTime = parseFeishuNumber(pickRaw('等位时间（分钟）', '等位时间'));
-    mapped.serviceSpeed = pickText('服务速度');
-    mapped.orderAccuracy = pickText('点单准确性');
-    mapped.staffAttitude = pickText('员工态度');
-    mapped.problemResolution = pickText('问题解决');
-    mapped.managerIntervention = parseFeishuBoolean(pickRaw('经理介入'));
-    mapped.compensationProvided = pickText('补偿措施');
-    mapped.followUpRequired = parseFeishuBoolean(pickRaw('需要跟进'));
-    mapped.followUpDetails = pickText('跟进详情');
-    mapped.additionalNotes = pickText('备注');
-    mapped.rushDishContent = pickText('今天催菜内容', '催菜内容');
-    mapped.recordId = feishuRecord?.record_id;
-
-    console.log('[mapFeishuFieldToHrms] mapped required fields:', {
-      recordId: mapped.recordId,
-      mappedDate: mapped.date,
-      mappedStore: mapped.store
-    });
-  }
-  
-  return mapped;
 }
 
 // ─── Product Name Normalization ───
@@ -2506,7 +1805,6 @@ setSolutionLLM(async (prompt) => {
   return r?.ok ? r.content : '';
 });
 setTrainingAssigner(createTrainingAssignment);
-registerPhaseRoutes(app, pool, { getFeishuBitableData });
 registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM);
 registerMarketingAttributionRoutes(app, pool, authRequired);
 registerTenantOperationInspectionRoutes(app, pool, authRequired, platformAdminRequired);
@@ -3471,6 +2769,36 @@ async function notifyAdminsDualWriteFailure(scopeLabel, err) {
     console.error('[dual-write][CRITICAL] notifyAdminsDualWriteFailure 自身异常:', scopeLabel, e?.message);
   }
 }
+
+const {
+  tryParseJson,
+  decryptFeishuEncryptPayload,
+  findConfigKeyByTableInfo,
+  stripAttachmentLikeFields,
+  mapFeishuFieldToHrms,
+  upsertFeishuGenericRecord,
+  ensureFeishuGenericRecordsTable,
+  ensureFeishuGenericRecordsNotifyTrigger,
+  ensureFeishuSyncTable,
+  ensureDedupIndexes,
+  ensureTableVisitRecordsTable,
+  getFeishuAccessToken,
+  createFeishuBitableRecord,
+  getFeishuBitableData,
+} = createFeishuBitableHelpers({
+  pool,
+  axios,
+  isExternalEnabled,
+  safeErrMessage,
+  notifyAdminsDualWriteFailure,
+  feishuEnv: {
+    appId: FEISHU_APP_ID,
+    appSecret: FEISHU_APP_SECRET,
+    baseUrl: FEISHU_BASE_URL,
+    encryptKey: FEISHU_ENCRYPT_KEY || process.env.FEISHU_ENCRYPT_KEY || process.env.LARK_ENCRYPT_KEY || '',
+  },
+});
+registerPhaseRoutes(app, pool, { getFeishuBitableData });
 
 /**
  * 知识库文件 OCR/解析失败时飞书告警管理员
@@ -8503,8 +7831,6 @@ registerAgentDataRoutes(app, authRequired, {
   createFeishuBitableRecord,
   findConfigKeyByTableInfo,
   upsertFeishuGenericRecord,
-  getFeishuBitableData,
-  mapFeishuFieldToHrms,
 });
 
 registerFeishuWebhookRoutes(app, {
