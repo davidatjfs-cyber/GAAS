@@ -5,7 +5,6 @@ import compression from 'compression';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import fs from 'fs';
-import { statfs } from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID, createHash } from 'crypto';
@@ -116,6 +115,7 @@ import { registerAdminOpsRoutes } from './domains/admin-ops/routes.js';
 import { registerDiagnosisFeedbackRoutes } from './domains/diagnosis/routes.js';
 import { registerAgentDataRoutes } from './domains/agent-data/routes.js';
 import { registerFeishuWebhookRoutes } from './domains/feishu-webhook/routes.js';
+import { registerHealthRoutes } from './domains/health/routes.js';
 import { createFeishuBitableHelpers } from './domains/feishu-bitable/create-helpers.js';
 import { createInventoryForecastHelpers } from './domains/inventory-forecast/create-helpers.js';
 import { createLeaveAttendanceHelpers } from './domains/leave-attendance/create-helpers.js';
@@ -2500,21 +2500,6 @@ app.put('/api/state', authRequired, async (req, res) => {
 
 // Wave 4o: promotion tracks + bitable-sync → domains/promotion, domains/bitable-sync
 
-/** 与 agents-service-v2 /health 对齐；生产在 .env 设置 AGENTS_SERVICE_HEALTH_URL=http://127.0.0.1:3101/health */
-async function fetchAgentsServiceHealthSnapshot() {
-  const raw = String(process.env.AGENTS_SERVICE_HEALTH_URL || '').trim();
-  if (!raw) return null;
-  try {
-    const r = await axios.get(raw, { timeout: 4500, validateStatus: () => true });
-    if (r.status !== 200 || r.data == null) {
-      return { ok: false, httpStatus: r.status, error: 'agents health non-200 or empty' };
-    }
-    return r.data;
-  } catch (e) {
-    return { ok: false, error: 'internal_error' };
-  }
-}
-
 function getAgentsServiceBaseUrl() {
   return String(process.env.AGENTS_SERVICE_BASE_URL || 'http://127.0.0.1:3101').trim().replace(/\/$/, '');
 }
@@ -2549,175 +2534,19 @@ async function getAgentsServiceAdminToken() {
 
 // Wave 4o: chairman/tenant-settings → domains/tenant-settings/routes.js
 
-let __lastDiskLarkNoticeAt = 0;
-
-/** 根分区空间（供 /api/health 与磁盘告警）；阈值偏保守，避免再次写满导致 PostgreSQL 宕机 */
-async function buildRootDiskHealthInfo() {
-  try {
-    const s = await statfs('/');
-    const bsize = Number(s.bsize) || 4096;
-    const total = Number(s.blocks) * bsize;
-    const avail = Number(s.bavail) * bsize;
-    const usedPct = total > 0 ? Math.round(((total - avail) / total) * 1000) / 10 : null;
-    const availGb = Math.round((avail / (1024 ** 3)) * 100) / 100;
-    const totalGb = Math.round((total / (1024 ** 3)) * 100) / 100;
-    const availCrit = 2 * 1024 ** 3;
-    const availWarn = 20 * 1024 ** 3;
-    let level = 'ok';
-    let message = null;
-    if (avail < availCrit || (usedPct != null && usedPct >= 92)) {
-      level = 'crit';
-      message =
-        '根分区空间危急：剩余过低或已用过高，PostgreSQL 可能无法扩展文件，导致全员无法登录。请立即清理 /opt/deploy-backups、journal、PM2 日志等。';
-    } else if (avail < availWarn || (usedPct != null && usedPct >= 82)) {
-      level = 'warn';
-      message = '根分区空间紧张：建议尽快清理部署备份与日志，避免写满磁盘。';
-    } else if (usedPct != null && usedPct >= 72) {
-      level = 'notice';
-      message = `根分区已用约 ${usedPct}%，请关注磁盘余量。`;
-    }
-    return {
-      path: '/',
-      totalBytes: total,
-      availBytes: avail,
-      totalGb,
-      availGb,
-      usedPercent: usedPct,
-      level,
-      message
-    };
-  } catch (e) {
-    return { path: '/', error: 'internal_error' };
-  }
-}
-
-async function maybeNotifyDiskPressureByLark(disk) {
-  if (!disk || disk.error) return;
-  if (disk.level !== 'crit' && disk.level !== 'warn') return;
-  const ids = String(process.env.HRMS_DISK_ALERT_OPEN_IDS || '')
-    .split(/[\s,]+/)
-    .map(x => x.trim())
-    .filter(Boolean);
-  if (!ids.length) return;
-  const now = Date.now();
-  const minMs = disk.level === 'crit' ? 30 * 60 * 1000 : 24 * 60 * 60 * 1000;
-  if (now - __lastDiskLarkNoticeAt < minMs) return;
-  __lastDiskLarkNoticeAt = now;
-  const text =
-    `【HRMS 磁盘告警】\n${disk.message || '磁盘空间异常'}\n` +
-    `剩余约 ${disk.availGb} GiB / 合计 ${disk.totalGb} GiB` +
-    `${disk.usedPercent != null ? `（已用约 ${disk.usedPercent}%）` : ''}。\n` +
-    '可在服务器执行 df -h / 与 du -sh /opt/deploy-backups/* 排查。';
-  for (const id of ids) {
-    try {
-      await sendLarkMessage(id, text);
-    } catch (e) {
-      console.error('HRMS disk lark notify failed:', e?.message || e);
-    }
-  }
-}
-
-app.get('/api/health', async (req, res) => {
-  const missing = requireEnv();
-  if (missing.length) {
-    return res.status(500).json({ ok: false, missing });
-  }
-  try {
-    const _r = await pool.query('select now() as now');
-    const ossConfigured = !!getOssClient();
-    const cosConfigured = !!getCosClient();
-    const uploads = ensureUploadsDir();
-    let agentHealth = {};
-    try { agentHealth = getAgentHealthStatus(); } catch (e) { /* ignore */ }
-    let agentsService = null;
-    try {
-      agentsService = await fetchAgentsServiceHealthSnapshot();
-    } catch (e) {
-      agentsService = { ok: false, error: 'internal_error' };
-    }
-    const diskInfo = await buildRootDiskHealthInfo();
-    maybeNotifyDiskPressureByLark(diskInfo).catch(() => {});
-
-    let databaseSizeBytes = null;
-    let databaseSizeGb = null;
-    try {
-      const sz = await pool.query('select pg_database_size(current_database())::bigint as b');
-      const b = Number(sz.rows?.[0]?.b || 0);
-      if (b > 0) {
-        databaseSizeBytes = b;
-        databaseSizeGb = Math.round((b / (1024 ** 3)) * 100) / 100;
-      }
-    } catch (e) {
-      /* ignore size errors */
-    }
-
-    const payload = {
-      ok: true,
-      database: true,
-      now: hrmsNowISO(),
-      storage: { ossConfigured, cosConfigured },
-      uploads,
-      agents: agentHealth,
-      disk: diskInfo,
-      databaseSizeBytes,
-      databaseSizeGb
-    };
-    if (agentsService != null) payload.agentsService = agentsService;
-    return res.json(payload);
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: 'internal_error' });
-  }
-});
-
-app.get('/api/version', async (req, res) => {
-  try {
-    const out = {
-      startedAt: STARTED_AT,
-      buildVersion: 'v176',
-      server: {
-        indexMtime: null,
-        agentsMtime: null
-      },
-      frontend: {
-        workingFixedMtime: null,
-        swMtime: null,
-        swCacheName: null
-      }
-    };
-
-    try {
-      const st = fs.statSync(__filename);
-      out.server.indexMtime = st?.mtime ? st.mtime.toISOString() : null;
-    } catch (e) { /* ignore */ }
-    try {
-      const agentsPath = path.resolve(__dirname, 'agents.js');
-      const ast = fs.statSync(agentsPath);
-      out.server.agentsMtime = ast?.mtime ? ast.mtime.toISOString() : null;
-    } catch (e) { /* ignore */ }
-
-    try {
-      const webRootDir = path.resolve(__dirname, '..');
-      const wf = path.join(webRootDir, 'working-fixed.html');
-      const sw = path.join(webRootDir, 'sw.js');
-      if (fs.existsSync(wf)) {
-        const st = fs.statSync(wf);
-        out.frontend.workingFixedMtime = st?.mtime ? st.mtime.toISOString() : null;
-      }
-      if (fs.existsSync(sw)) {
-        const st2 = fs.statSync(sw);
-        out.frontend.swMtime = st2?.mtime ? st2.mtime.toISOString() : null;
-        try {
-          const head = String(fs.readFileSync(sw, 'utf8') || '').split(/\r?\n/).slice(0, 3).join('\n');
-          const m = head.match(/CACHE_NAME\s*=\s*['"]([^'"]+)['"]/);
-          out.frontend.swCacheName = m && m[1] ? String(m[1]) : null;
-        } catch (e3) { /* ignore */ }
-      }
-    } catch (e) { /* ignore */ }
-
-    return res.json(out);
-  } catch (e) {
-    return res.status(500).json({ error: 'server_error', message: 'internal_error' });
-  }
+// Wave H21: /api/health + /api/version → domains/health/
+registerHealthRoutes(app, {
+  requireEnv,
+  pool,
+  getOssClient,
+  getCosClient,
+  ensureUploadsDir,
+  getAgentHealthStatus,
+  hrmsNowISO,
+  sendLarkMessage,
+  STARTED_AT,
+  indexFilePath: __filename,
+  serverDir: __dirname,
 });
 
 // Wave 4o: exam-results → domains/exam-results/routes.js
