@@ -1,5 +1,4 @@
-# P0.4：main CI 失败时可见——发 GitHub Issue 评论式通知到仓库 Discussions 不适用时，
-# 用 workflow_run + 失败 job 摘要写一条 sticky issue 评论，并在 Actions 摘要里打醒目标记。
+# P0.4：main CI 失败时开/更新 sticky Issue；转绿时自动关闭，避免「狼来了」疲劳。
 # 飞书推送依赖生产密钥，Actions 里默认只做 GitHub 侧可见性；若配置了 FEISHU_CI_WEBHOOK 则额外推送。
 name: CI Failure Notify
 
@@ -10,7 +9,7 @@ on:
     branches: [main]
 
 jobs:
-  notify:
+  notify-failure:
     if: ${{ github.event.workflow_run.conclusion == 'failure' }}
     runs-on: ubuntu-latest
     permissions:
@@ -28,18 +27,6 @@ jobs:
           echo "- **actor**: ${{ github.event.workflow_run.actor.login }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "main 上 CI 红了；请先修闸门再继续拆代码。" >> "$GITHUB_STEP_SUMMARY"
-          {
-            echo "title=CI failed on main @ ${{ github.event.workflow_run.head_sha }}"
-            echo "body<<EOF"
-            echo "CI workflow failed on \`main\`."
-            echo ""
-            echo "- Run: ${{ github.event.workflow_run.html_url }}"
-            echo "- SHA: \`${{ github.event.workflow_run.head_sha }}\`"
-            echo "- Actor: @${{ github.event.workflow_run.actor.login }}"
-            echo ""
-            echo "Do not deploy until CI is green."
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
 
       - name: Open or update tracking issue
         uses: actions/github-script@v7
@@ -53,7 +40,7 @@ jobs:
               `SHA: \`${{ github.event.workflow_run.head_sha }}\``,
               `Actor: @${{ github.event.workflow_run.actor.login }}`,
               '',
-              '_Auto-updated by `ci-failure-notify.yml`. Close only when CI is green._',
+              '_Auto-updated by `ci-failure-notify.yml`. Auto-closes when CI turns green._',
             ].join('\n');
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -102,3 +89,52 @@ jobs:
             -H 'Content-Type: application/json' \
             -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"CI failed on main\\n${{ github.event.workflow_run.html_url }}\\nSHA ${{ github.event.workflow_run.head_sha }}\"}}" \
             || true
+
+  close-on-success:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Close open ci-failure issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '🚨 CI red on main — fix before deploy';
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'ci-failure',
+              per_page: 10,
+            });
+            const matches = issues.data.filter((i) => i.title === title);
+            if (!matches.length) {
+              core.info('No open ci-failure issue to close');
+              return;
+            }
+            const comment = [
+              '## CI green again',
+              '',
+              `Successful run: ${{ github.event.workflow_run.html_url }}`,
+              `SHA: \`${{ github.event.workflow_run.head_sha }}\``,
+              '',
+              '_Auto-closed by `ci-failure-notify.yml`._',
+            ].join('\n');
+            for (const issue of matches) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: comment,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              core.info(`Closed issue #${issue.number}`);
+            }
