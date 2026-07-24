@@ -73,7 +73,9 @@ import { createObjectStorageHelpers } from './domains/uploads/object-storage.js'
 import { createRequireEnvHelpers } from './domains/shared/require-env.js';
 import { createLoginLogHelpers } from './domains/auth/login-log.js';
 import { createSessionNonceHelpers } from './domains/auth/session-nonce.js';
+import { createAuthMiddlewareHelpers } from './domains/auth/middleware.js';
 import { createPayrollLeaveDomainSyncHelpers } from './domains/payroll/domain-sync.js';
+import { createHrmsStateSnapshotHelpers } from './domains/shared/hrms-state-snapshot.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
@@ -595,6 +597,24 @@ const {
   stateOrDbFindUserRecord,
   pickMyStoreFromState,
 } = createUserLookupHelpers({ pool, expandAgentStoreLabels });
+
+// Wave H31: auth middleware late-bind wrappers (impl assigned after account-gate + store-access).
+// Early register*(app, authRequired) must keep a stable function reference.
+let _authRequiredImpl = null;
+let _authRequiredOrQueryTokenImpl = null;
+async function authRequired(req, res, next) {
+  if (!_authRequiredImpl) return res.status(503).json({ error: 'auth_not_ready' });
+  return _authRequiredImpl(req, res, next);
+}
+async function authRequiredOrQueryToken(req, res, next) {
+  if (!_authRequiredOrQueryTokenImpl) return res.status(503).json({ error: 'auth_not_ready' });
+  return _authRequiredOrQueryTokenImpl(req, res, next);
+}
+
+// Wave H31: hrms_state snapshot → domains/shared/hrms-state-snapshot.js
+const { captureHrmsStateSnapshotToDb } = createHrmsStateSnapshotHelpers({ pool });
+
+const loadTenantRuntimeStatus = (tenantId) => loadTenantRuntimeStatusFromModule(pool, tenantId);
 
 setAgentPool(pool);
 initBrandConfigCache().catch((e) => console.error('initBrandConfigCache failed:', e?.message || e));
@@ -1154,56 +1174,7 @@ async function removeEmployeesFromSharedState(usernames, tenantId) {
   throw new Error('removeEmployeesFromSharedState: max retries exceeded');
 }
 
-/**
- * 将当前 hrms_state 整包写入 hrms_state_snapshots（定时任务用），并按保留策略裁剪旧行。
- * 失败由调用方 catch 后走 notifyAdminsDualWriteFailure。
- */
-async function captureHrmsStateSnapshotToDb(opts = {}) {
-  if (String(process.env.HRMS_STATE_SNAPSHOT_DISABLED || '').toLowerCase() === 'true') {
-    return { ok: true, skipped: true, reason: 'disabled' };
-  }
-  const source = String(opts.source || 'scheduled').slice(0, 64);
-  const key = String(opts.stateKey || 'default').trim() || 'default';
-  const r = await pool.query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', [key]);
-  const row = r.rows?.[0];
-  if (!row) return { ok: true, skipped: true, reason: 'no_row' };
-  let payload = row.data;
-  if (payload == null) payload = {};
-  if (typeof payload === 'string') {
-    try {
-      payload = JSON.parse(payload);
-    } catch {
-      payload = {};
-    }
-  }
-  if (typeof payload !== 'object' || Array.isArray(payload)) payload = {};
-  const jsonStr = JSON.stringify(payload);
-  const byteSize = Buffer.byteLength(jsonStr, 'utf8');
-  await pool.query(
-    `INSERT INTO hrms_state_snapshots (state_key, data, byte_size, source)
-     VALUES ($1, $2::jsonb, $3, $4)`,
-    [key, jsonStr, byteSize, source]
-  );
-  const retainDays = Math.max(1, Math.min(365, Number(process.env.HRMS_STATE_SNAPSHOT_RETAIN_DAYS || 30)));
-  await pool.query(
-    `DELETE FROM hrms_state_snapshots WHERE state_key = $1 AND created_at < NOW() - ($2::int * INTERVAL '1 day')`,
-    [key, retainDays]
-  );
-  const retainRows = Math.max(10, Math.min(5000, Number(process.env.HRMS_STATE_SNAPSHOT_MAX_ROWS || 400)));
-  await pool.query(
-    `DELETE FROM hrms_state_snapshots s
-     USING (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (PARTITION BY state_key ORDER BY created_at DESC) AS rn
-         FROM hrms_state_snapshots
-         WHERE state_key = $1
-       ) x WHERE x.rn > $2
-     ) d
-     WHERE s.id = d.id`,
-    [key, retainRows]
-  );
-  return { ok: true, byteSize };
-}
+// Wave H31: captureHrmsStateSnapshotToDb → domains/shared/hrms-state-snapshot.js (after pool)
 
 // Wave H4: notifications write/alert helpers（须在 mergeSharedStateFields 之后、createFeishuBitableHelpers 之前）
 const {
@@ -1618,172 +1589,7 @@ async function ensureExamResultsTable() {
 
 // Wave H28: getOssClient / getCosClient / build*PublicUrl → domains/uploads/object-storage.js
 // Wave H28: requireEnv → domains/shared/require-env.js
-
-async function loadTenantRuntimeStatus(tenantId) {
-  return loadTenantRuntimeStatusFromModule(pool, tenantId);
-}
-
-async function authRequired(req, res, next) {
-  // 企业微信「接收消息」回调为无 token 公开端点（靠签名+AES 解密自证），放行
-  if (String(req.originalUrl || '').split('?')[0] === '/api/wecom/callback') return next();
-  if (String(req.originalUrl || '').split('?')[0] === '/api/wecom/kf/callback') return next();
-  const hdr = String(req.headers.authorization || '');
-  let token = hdr.startsWith('Bearer ') ? String(hdr.slice(7) || '').trim() : '';
-  // 部分移动端 WebView 在 multipart/form-data 上传时可能丢失 Authorization；允许 query 兜底（与 FormData 同发）
-  if (!token) {
-    try {
-      token = String(req.query?.access_token || req.query?.token || '').trim();
-    } catch (e) {
-      token = '';
-    }
-  }
-  if (!token) return res.status(401).json({ error: 'unauthorized' });
-  if (!JWT_SECRET) return res.status(500).json({ error: 'server_config_error' });
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload;
-    // 旧token(改造前签发)没有tenant_id字段，兜底归入default租户，保持现有行为不变。
-    req.tenantId = String(payload.tenant_id || 'default').trim() || 'default';
-
-    // 用 AsyncLocalStorage 把租户上下文挂到本次请求的整条异步调用链上，
-    // 让 getSharedState()/saveSharedState() 等未显式传tenantId的历史调用点也能拿到正确租户。
-    return await tenantContext.run(req.tenantId, async () => {
-    // Single-device login: validate session nonce
-    const nonce = String(payload.sn || '').trim();
-    const uname = String(payload.username || '').trim();
-    if (nonce && uname) {
-      try {
-        const r = await pool.query(
-          'select session_nonce from user_sessions where lower(username) = lower($1) and tenant_id = $2 limit 1',
-          [uname, req.tenantId]
-        );
-        const stored = String(r.rows?.[0]?.session_nonce || '').trim();
-        if (stored && stored !== nonce) {
-          return res.status(401).json({ error: 'session_replaced', message: '您的账号已在其他设备登录，当前会话已失效' });
-        }
-      } catch (e) {
-        // DB error: allow through to avoid blocking all requests
-      }
-    }
-
-    try {
-      await assertEmployeeLoginAllowedByState(uname);
-    } catch (e) {
-      if (e && e.statusCode === 403) {
-        return res.status(403).json({ error: 'account_disabled', message: '账号已停用或已离职' });
-      }
-    }
-
-    try {
-      let effectiveRole = String(payload.role || '').trim();
-      try {
-        const dbRoleRow = await pool.query(
-          'SELECT role FROM users WHERE lower(username) = lower($1) AND tenant_id = $2 LIMIT 1',
-          [uname, req.tenantId]
-        );
-        const dbRole = String(dbRoleRow.rows?.[0]?.role || '').trim();
-        if (dbRole) effectiveRole = dbRole;
-      } catch (_e) { /* ignore */ }
-
-      const state0 = (await getSharedState().catch(() => null)) || {};
-      const stateStore = String(pickMyStoreFromState(state0, uname) || payload.store || '').trim();
-      const ctx = await getUserStoreAccessContext(uname, effectiveRole, {
-        requestedStore: payload.current_store || stateStore,
-        stateStore
-      });
-      req.user = {
-        ...payload,
-        role: effectiveRole,
-        store: stateStore,
-        primary_store: ctx.primaryStore,
-        current_store: ctx.currentStore,
-        allowed_stores: ctx.allowedStores
-      };
-    } catch (_e) {
-      req.user = payload;
-    }
-
-    next();
-    });
-  } catch (e) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
-}
-
-async function authRequiredOrQueryToken(req, res, next) {
-  const hdr = String(req.headers.authorization || '');
-  let token = hdr.startsWith('Bearer ') ? String(hdr.slice(7) || '').trim() : '';
-  if (!token) {
-    try {
-      token = String(req.query?.token || req.query?.access_token || '').trim();
-    } catch (e) {
-      token = '';
-    }
-  }
-  if (!token) return res.status(401).json({ error: 'unauthorized' });
-  if (!JWT_SECRET) return res.status(500).json({ error: 'server_config_error' });
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload;
-    req.tenantId = String(payload.tenant_id || 'default').trim() || 'default';
-    return await tenantContext.run(req.tenantId, async () => {
-    const nonce = String(payload.sn || '').trim();
-    const uname = String(payload.username || '').trim();
-    if (nonce && uname) {
-      try {
-        const r = await pool.query(
-          'select session_nonce from user_sessions where lower(username) = lower($1) and tenant_id = $2 limit 1',
-          [uname, req.tenantId]
-        );
-        const stored = String(r.rows?.[0]?.session_nonce || '').trim();
-        if (stored && stored !== nonce) {
-          return res.status(401).json({ error: 'session_replaced', message: '您的账号已在其他设备登录，当前会话已失效' });
-        }
-      } catch (e) {
-        // DB error: allow through
-      }
-    }
-    try {
-      await assertEmployeeLoginAllowedByState(uname);
-    } catch (e) {
-      if (e && e.statusCode === 403) {
-        return res.status(403).json({ error: 'account_disabled', message: '账号已停用或已离职' });
-      }
-    }
-    try {
-      let effectiveRole = String(payload.role || '').trim();
-      try {
-        const dbRoleRow = await pool.query(
-          'SELECT role FROM users WHERE lower(username) = lower($1) AND tenant_id = $2 LIMIT 1',
-          [uname, req.tenantId]
-        );
-        const dbRole = String(dbRoleRow.rows?.[0]?.role || '').trim();
-        if (dbRole) effectiveRole = dbRole;
-      } catch (_e) { /* ignore */ }
-
-      const state0 = (await getSharedState().catch(() => null)) || {};
-      const stateStore = String(pickMyStoreFromState(state0, uname) || payload.store || '').trim();
-      const ctx = await getUserStoreAccessContext(uname, effectiveRole, {
-        requestedStore: payload.current_store || stateStore,
-        stateStore
-      });
-      req.user = {
-        ...payload,
-        role: effectiveRole,
-        store: stateStore,
-        primary_store: ctx.primaryStore,
-        current_store: ctx.currentStore,
-        allowed_stores: ctx.allowedStores
-      };
-    } catch (_e) {
-      req.user = payload;
-    }
-    return next();
-    });
-  } catch (e) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
-}
+// Wave H31: authRequired / authRequiredOrQueryToken / loadTenantRuntimeStatus → late-bind + domains/auth/middleware.js
 
 // Wave H19: normalizeRoleForJwt / normalizeUsersTableRole → domains/shared/role-normalize.js (top import)
 
@@ -1931,6 +1737,22 @@ const {
   getSharedState,
   stateFindUserRecord,
 });
+
+// Wave H31: bind real auth middleware after account-gate + store-access-context
+{
+  const authMw = createAuthMiddlewareHelpers({
+    jwt,
+    jwtSecret: JWT_SECRET,
+    pool,
+    tenantContext,
+    assertEmployeeLoginAllowedByState,
+    getSharedState,
+    pickMyStoreFromState,
+    getUserStoreAccessContext,
+  });
+  _authRequiredImpl = authMw.authRequired;
+  _authRequiredOrQueryTokenImpl = authMw.authRequiredOrQueryToken;
+}
 
 // Wave H22: state client-shaping → domains/shared/state-client-shaping.js
 // After H15 getUserStoreAccessContext + pool; before GET/PUT /api/state.
