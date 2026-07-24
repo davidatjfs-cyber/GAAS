@@ -270,6 +270,17 @@ import { registerHrmsPermissionRoutes } from './hrms-permission-routes.js';
 import {
   ensurePermissionTables,
 } from './services/hrms-permission-engine.js';
+import {
+  ensureEmployeeAttachmentsTable as ensureEmployeeAttachmentsTableImpl,
+  ensureHrmsStateTable as ensureHrmsStateTableImpl,
+  ensureApprovalTables as ensureApprovalTablesImpl,
+  ensureUserSessionsTable as ensureUserSessionsTableImpl,
+  ensureTenantRuntimeTables as ensureTenantRuntimeTablesImpl,
+  ensureUserReadsTable as ensureUserReadsTableImpl,
+  ensureLoginLogTable as ensureLoginLogTableImpl,
+} from './services/hrms-core-schema-ensure.js';
+import { createExpressErrorMiddleware } from './domains/health/express-error-middleware.js';
+import { registerProcessGuards } from './domains/health/process-guards.js';
 import { registerInventoryForecastRoutes } from './inventory-forecast-routes.js';
 import { registerAgentTaskBoardRoutes } from './agent-task-board-routes.js';
 import { ensureBaselineSchemaHealth } from './baseline-schema-health.js';
@@ -780,21 +791,7 @@ app.use(strategyExperimentRoutes(pool, authRequired));
 // Wave H12: POST /api/growth/upload → domains/uploads/routes.js
 
 async function ensureEmployeeAttachmentsTable() {
-  try {
-    await pool.query(`
-      create table if not exists employee_attachments (
-        id serial primary key,
-        employee_id text not null,
-        filename text not null,
-        original_name text not null,
-        url text not null,
-        description text default '',
-        uploaded_by text not null,
-        created_at timestamptz default now()
-      )
-    `);
-    await pool.query(`create index if not exists idx_emp_att_emp_id on employee_attachments(employee_id)`);
-  } catch (e) { /* ignore */ }
+  return ensureEmployeeAttachmentsTableImpl(pool);
 }
 if (__ALLOW_SCHEMA_CHANGES__) ensureEmployeeAttachmentsTable();
 
@@ -803,163 +800,27 @@ if (__ALLOW_SCHEMA_CHANGES__) ensureEmployeeAttachmentsTable();
 // Wave H30: hasColumn → domains/shared/has-column.js
 
 async function ensureHrmsStateTable() {
-  try {
-    await pool.query(
-      `create table if not exists hrms_state (
-        key text primary key,
-        data jsonb not null,
-        updated_at timestamp default current_timestamp
-      )`
-    );
-  } catch (e) {
-    console.error('ensureHrmsStateTable failed:', e);
-  }
+  return ensureHrmsStateTableImpl(pool);
 }
 
 async function ensureApprovalTables() {
-  try {
-    await pool.query('create extension if not exists pgcrypto');
-    await pool.query(
-      `create table if not exists approval_requests (
-        id uuid primary key default gen_random_uuid(),
-        type varchar(50) not null,
-        status varchar(20) not null,
-        applicant_username varchar(100) not null,
-        current_assignee_username varchar(100),
-        chain jsonb not null default '[]'::jsonb,
-        payload jsonb not null default '{}'::jsonb,
-        effective_date date,
-        executed_at timestamp,
-        created_at timestamp default current_timestamp,
-        updated_at timestamp default current_timestamp
-      )`
-    );
-    await pool.query(`create index if not exists idx_approval_requests_assignee_status on approval_requests (current_assignee_username, status)`);
-    await pool.query(`create index if not exists idx_approval_requests_applicant_status on approval_requests (applicant_username, status)`);
-    await pool.query(`create index if not exists idx_approval_requests_type_effective_date on approval_requests (type, effective_date)`);
-    await pool.query(`create table if not exists recurring_reward_templates (
-      id uuid primary key default gen_random_uuid(),
-      active boolean not null default true,
-      created_by varchar(100) not null,
-      frequency varchar(20) not null default 'monthly',
-      payload jsonb not null default '{}'::jsonb,
-      last_generated_ym varchar(7),
-      created_at timestamptz default current_timestamp,
-      updated_at timestamptz default current_timestamp
-    )`);
-    await pool.query(
-      `create index if not exists idx_recurring_reward_templates_active on recurring_reward_templates (active, frequency)`
-    );
-  } catch (e) {
-    console.error('ensureApprovalTables failed:', e);
-  }
+  return ensureApprovalTablesImpl(pool);
 }
 
 async function ensureUserSessionsTable() {
-  if (!DATABASE_URL) return;
-  let client;
-  try {
-    client = await pool.connect();
-    await client.query('SET default_transaction_read_only = OFF');
-    await client.query(
-      `create table if not exists user_sessions (
-        username varchar(100) primary key,
-        session_nonce varchar(64) not null,
-        tenant_id varchar(80) not null default 'default',
-        updated_at timestamp default current_timestamp
-      )`
-    );
-    await client.query(`alter table user_sessions add column if not exists tenant_id varchar(80) not null default 'default'`);
-    await client.query(`create unique index if not exists user_sessions_username_tenant_idx on user_sessions (username, tenant_id)`);
-  } catch (e) {
-    console.error('ensureUserSessionsTable failed:', e);
-  } finally {
-    try {
-      if (client) client.release();
-    } catch (_e) {
-      /* ignore */
-    }
-  }
+  return ensureUserSessionsTableImpl(pool, DATABASE_URL);
 }
 
 async function ensureTenantRuntimeTables() {
-  if (!DATABASE_URL) return;
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS tenants (
-        id BIGSERIAL PRIMARY KEY,
-        tenant_id TEXT UNIQUE NOT NULL,
-        name TEXT,
-        mode TEXT DEFAULT 'managed',
-        status TEXT DEFAULT 'active',
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )`);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS licenses (
-        id BIGSERIAL PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        status TEXT DEFAULT 'trial',
-        expires_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )`);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS tenant_config (
-        id BIGSERIAL PRIMARY KEY,
-        tenant_key TEXT NOT NULL,
-        config_key TEXT NOT NULL,
-        config_value JSONB DEFAULT '{}'::jsonb,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE (tenant_key, config_key)
-      )`);
-    await pool.query(`
-      INSERT INTO tenants (tenant_id, name, mode, status)
-      VALUES ('default', '本地默认租户', 'managed', 'active')
-      ON CONFLICT (tenant_id) DO UPDATE SET status='active', updated_at=NOW()`);
-  } catch (e) {
-    console.error('ensureTenantRuntimeTables failed:', e?.message || e);
-  }
+  return ensureTenantRuntimeTablesImpl(pool, DATABASE_URL);
 }
 
 async function ensureUserReadsTable() {
-  try {
-    await pool.query(
-      `create table if not exists user_reads (
-        username varchar(100) not null,
-        module varchar(50) not null,
-        item_key varchar(160) not null,
-        read_at timestamp default current_timestamp,
-        primary key (username, module, item_key)
-      )`
-    );
-    await pool.query(`create index if not exists idx_user_reads_username_module on user_reads (username, module)`);
-  } catch (e) {
-    console.error('ensureUserReadsTable failed:', e);
-  }
+  return ensureUserReadsTableImpl(pool);
 }
 
 async function ensureLoginLogTable() {
-  try {
-    await pool.query(`
-      create table if not exists user_login_log (
-        id serial primary key,
-        username varchar(100) not null,
-        login_at timestamptz not null default now(),
-        logout_at timestamptz,
-        session_nonce varchar(64),
-        ip_address varchar(45),
-        user_agent text,
-        created_at timestamptz not null default now()
-      )
-    `);
-    await pool.query(`create index if not exists idx_ull_username_date on user_login_log (username, CAST((login_at at time zone 'Asia/Shanghai') AS date))`);
-    await pool.query(`create index if not exists idx_ull_login_at on user_login_log (login_at)`);
-    await pool.query(`create index if not exists idx_ull_open_session on user_login_log (username, logout_at) where logout_at is null`);
-  } catch (e) {
-    console.error('ensureLoginLogTable failed:', e);
-  }
+  return ensureLoginLogTableImpl(pool);
 }
 
 // Wave H28: recordLogin / recordLogout → domains/auth/login-log.js (after pool)
@@ -3353,29 +3214,7 @@ app.listen(PORT, HOST, async () => {
 });
 }
 
-app.use((err, req, res, next) => {
-  if (!err) return next();
-  const requestId = req.requestId || res.getHeader?.('X-Request-Id') || null;
-  try {
-    if (err instanceof multer.MulterError) {
-      const code = String(err.code || 'multer_error');
-      if (code === 'LIMIT_FILE_SIZE') {
-        return res.status(413).json({ error: 'file_too_large', request_id: requestId });
-      }
-      return res.status(400).json({ error: 'upload_error', code, request_id: requestId });
-    }
-  } catch (e) { /* ignore */ }
-
-  const msg = String(err?.message || err);
-  if (/uploads_dir_not_writable/i.test(msg)) {
-    return res.status(500).json({ error: 'uploads_dir_not_writable', message: msg, request_id: requestId });
-  }
-  if (/blocked_file_type/i.test(msg)) {
-    return res.status(400).json({ error: 'blocked_file_type', message: msg, request_id: requestId });
-  }
-  console.error('[express]', requestId || '-', msg);
-  return res.status(500).json({ error: 'server_error', message: 'internal_error', request_id: requestId });
-});
+app.use(createExpressErrorMiddleware({ multer }));
 
 if (__ALLOW_SCHEMA_CHANGES__) {
   void runWithBootstrapTenantContext(async () => {
@@ -3444,39 +3283,7 @@ startBirthdayGreetingScheduler();
 
 // Wave 4o: usage-weekly → domains/usage-weekly/routes.js
 
-// unhandledRejection 不会让进程崩溃，可能一天触发几十次（不像uncaughtException那样
-// 自带"只会响一次"的天然限流）。直接接飞书会刷屏、导致频道被静音，反而让真正的崩溃
-// 告警被忽略——所以这里加一个15分钟冷却，同一条错误消息在冷却期内只告警一次。
-let _lastRejectionAlertAt = 0;
-const _rejectionAlertCooldownMs = 15 * 60 * 1000;
-process.on('unhandledRejection', (reason, _promise) => {
-  const detail = reason instanceof Error ? reason.stack : String(reason);
-  console.error('[HRMS] Unhandled rejection:', detail);
-  const now = Date.now();
-  if (now - _lastRejectionAlertAt > _rejectionAlertCooldownMs) {
-    _lastRejectionAlertAt = now;
-    sendLarkMessage(
-      FEISHU_ALERT_ADMIN_HEALTH,
-      `⚠️【HRMS 未处理的Promise异常】\n\n${String(detail || '').slice(0, 800)}\n\n（15分钟内只告警一次，日志里可能还有更多同类异常，请查看服务器日志确认。）`,
-      { skipDedup: true }
-    ).catch((e) => console.error('[HRMS] unhandledRejection告警发送失败:', e?.message || e));
-  }
-});
-
-// 未捕获的同步异常此前没有专门处理，会静默让进程崩溃（PM2会重启，但没有留下明确原因）。
-// 这里先记录清晰日志再退出，方便事后从日志定位，而不是改变"崩溃后重启"的现有行为。
-process.on('uncaughtException', (err) => {
-  const detail = err instanceof Error ? err.stack : String(err);
-  console.error('[HRMS] Uncaught exception, process exiting:', detail);
-  // 之前这里只写日志，进程崩溃靠人工翻日志才会发现。补一条飞书告警，
-  // 给个短超时避免飞书调用本身卡住导致进程迟迟不退出。
-  const alertPromise = sendLarkMessage(
-    FEISHU_ALERT_ADMIN_HEALTH,
-    `🚨【HRMS 进程崩溃】\n\n${String(detail || '').slice(0, 800)}\n\n进程即将重启(PM2)，如果频繁重启请立即排查。`,
-    { skipDedup: true }
-  ).catch((e) => console.error('[HRMS] 崩溃告警发送失败:', e?.message || e));
-  Promise.race([alertPromise, new Promise((r) => setTimeout(r, 5000))]).finally(() => process.exit(1));
-});
+registerProcessGuards({ sendLarkMessage, FEISHU_ALERT_ADMIN_HEALTH });
 
 // Wave H13: notification cleanup + freshness monitor cron → domains/notifications/scheduler-*.js
 const { startNotificationsCleanupScheduler } = createNotificationsCleanupScheduler({
