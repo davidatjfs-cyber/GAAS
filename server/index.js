@@ -77,6 +77,7 @@ import { createAuthMiddlewareHelpers } from './domains/auth/middleware.js';
 import { createPayrollLeaveDomainSyncHelpers } from './domains/payroll/domain-sync.js';
 import { createHrmsStateSnapshotHelpers } from './domains/shared/hrms-state-snapshot.js';
 import { createStateDualWriteHelpers } from './domains/shared/state-dual-write.js';
+import { createHrmsStateStoreHelpers } from './domains/shared/hrms-state-store.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
@@ -612,6 +613,28 @@ async function authRequiredOrQueryToken(req, res, next) {
   return _authRequiredOrQueryTokenImpl(req, res, next);
 }
 
+// Wave H33: hrms_state hub late-bind wrappers (impl after account-gate + dual-write + schedules).
+let _getSharedStateImpl = null;
+let _saveSharedStateImpl = null;
+let _mergeSharedStateFieldsImpl = null;
+let _removeEmployeesFromSharedStateImpl = null;
+async function getSharedState(tenantId) {
+  if (!_getSharedStateImpl) throw new Error('getSharedState_not_ready');
+  return _getSharedStateImpl(tenantId);
+}
+async function saveSharedState(nextData, tenantId) {
+  if (!_saveSharedStateImpl) throw new Error('saveSharedState_not_ready');
+  return _saveSharedStateImpl(nextData, tenantId);
+}
+async function mergeSharedStateFields(patches, arrayIdFields, tenantId) {
+  if (!_mergeSharedStateFieldsImpl) throw new Error('mergeSharedStateFields_not_ready');
+  return _mergeSharedStateFieldsImpl(patches, arrayIdFields, tenantId);
+}
+async function removeEmployeesFromSharedState(usernames, tenantId) {
+  if (!_removeEmployeesFromSharedStateImpl) throw new Error('removeEmployeesFromSharedState_not_ready');
+  return _removeEmployeesFromSharedStateImpl(usernames, tenantId);
+}
+
 // Wave H31: hrms_state snapshot → domains/shared/hrms-state-snapshot.js
 const { captureHrmsStateSnapshotToDb } = createHrmsStateSnapshotHelpers({ pool });
 
@@ -978,202 +1001,9 @@ async function ensureCheckinTable() {
 // tenantContext/resolveTenantIdDefault现在是utils/database.js里的共享实例(见该文件注释)，
 // 这样agents.js/performance-jobs.js等同一进程内的其它文件也能读到authRequired设置的租户上下文。
 
-async function getSharedState(tenantId) {
-  const key = resolveTenantIdDefault(tenantId);
-  const r = await pool.query('select data from hrms_state where key = $1 limit 1', [key]);
-  const row = r.rows?.[0] || null;
-  return row?.data && typeof row.data === 'object' ? row.data : null;
-}
 
-async function saveSharedState(nextData, tenantId) {
-  if (!nextData || typeof nextData !== 'object' || !Object.keys(nextData).length) return;
-  const key = resolveTenantIdDefault(tenantId);
-
-  // 使用显式事务 + FOR UPDATE + 乐观锁，避免调用方传入陈旧 state 覆盖并发修改
-  // （与 mergeSharedStateFields 一致的事务保护模式）
-  const MAX_RETRY = 10;
-  for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const r = await client.query('SELECT data, updated_at FROM hrms_state WHERE key = $1 FOR UPDATE', [key]);
-      const current = (r.rows?.[0]?.data && typeof r.rows[0].data === 'object') ? r.rows[0].data : {};
-      const prevUpdatedAt = r.rows?.[0]?.updated_at;
-
-      // Merge: caller 的字段覆盖 current，但 nextData 未涉及的字段（如 dailyReports）保留 current 值
-      // 避免调用方传入的陈旧 state 覆盖其他模块的并发写入
-      const merged = { ...current, ...nextData };
-
-      const result = await client.query(
-        `UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1 AND updated_at = $3`,
-        [key, JSON.stringify(merged), prevUpdatedAt]
-      );
-      if (result.rowCount > 0) {
-        await client.query('COMMIT');
-        client.release();
-        schedulePayrollDomainSync();
-        scheduleLeaveDomainSync();
-        await dualWriteStateToDB(merged);
-        return;
-      }
-      // 乐观锁冲突：回滚后重试
-      await client.query('ROLLBACK');
-      client.release();
-    } catch (e) {
-      await client.query('ROLLBACK').catch(() => {});
-      client.release();
-      throw e;
-    }
-  }
-  throw new Error('saveSharedState: max retries exceeded');
-}
-
-/**
- * 仅原子合并 hrms_state 中的特定顶层字段，避免 Read-Modify-Write 竞态覆盖其他字段。
- * 对于 array 类型字段（如 pointRecords、dailyReports），每个元素按 idField 去重合并。
- * 对于 object 类型字段（如 payrollAdjustments、pointsAppliedApprovals），做 JSON merge。
- * 对于非 array/object 字段，直接替换值。
- *
- * @param {Object} patches  key→value 映射；value 可以是数组（追加/更新）、对象（merge）或原始值（覆盖）
- * @param {Object} [arrayIdFields]  对 array 字段指定去重 key，如 { pointRecords: 'id', dailyReports: ['store','date'] }
- */
-// tenantId 默认 'default'，与现有调用方(未传参)行为完全一致，零风险。
-async function mergeSharedStateFields(patches, arrayIdFields = {}, tenantId) {
-  if (!patches || typeof patches !== 'object' || !Object.keys(patches).length) return;
-  const key = resolveTenantIdDefault(tenantId);
-
-  // 原子合并 hrms_state：使用显式事务 + FOR UPDATE + 乐观锁（updated_at）
-  // 避免 auto-commit 模式下 FOR UPDATE 锁在 SELECT 后即释放导致的丢失更新竞态
-  const MAX_RETRY = 10;
-  for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const r = await client.query('SELECT data, updated_at FROM hrms_state WHERE key = $1 FOR UPDATE', [key]);
-      const row = r.rows?.[0];
-      const current = (row?.data && typeof row.data === 'object') ? row.data : {};
-      const prevUpdatedAt = row?.updated_at;
-
-      const next = { ...current };
-      for (const [field, patchValue] of Object.entries(patches)) {
-        if (Array.isArray(patchValue)) {
-          const idSpec = arrayIdFields[field];
-          const existing = Array.isArray(current[field]) ? current[field].slice() : [];
-          if (idSpec) {
-            // Merge: update existing items by id, prepend new ones
-            const getKey = Array.isArray(idSpec)
-              ? (item) => idSpec.map(k => String(item?.[k] || '')).join('|')
-              : (item) => String(item?.[idSpec] || '');
-            const existingMap = new Map(existing.map(e => [getKey(e), e]));
-            for (const item of patchValue) {
-              existingMap.set(getKey(item), item);
-            }
-            // Preserve original order, new items at front
-            const patchKeys = new Set(patchValue.map(getKey));
-            const retained = existing.filter(e => !patchKeys.has(getKey(e)));
-            next[field] = [...patchValue, ...retained];
-          } else {
-            // No id spec: prepend patch items
-            next[field] = [...patchValue, ...existing];
-          }
-        } else if (patchValue && typeof patchValue === 'object' && !Array.isArray(patchValue)) {
-          next[field] = { ...(current[field] && typeof current[field] === 'object' ? current[field] : {}), ...patchValue };
-        } else {
-          next[field] = patchValue;
-        }
-      }
-
-      // 乐观锁：仅当 updated_at 未被其他事务修改时写入
-      const updateResult = await client.query(
-        `UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1 AND updated_at = $3`,
-        [key, JSON.stringify(next), prevUpdatedAt]
-      );
-      if (updateResult.rowCount > 0) {
-        await client.query('COMMIT');
-        // (after commit the client is auto-released back to pool)
-        if (Array.isArray(patches.employees) && patches.employees.length && arrayIdFields.employees === 'username') {
-          const mergedEmps = Array.isArray(next.employees) ? next.employees : [];
-          for (const item of patches.employees) {
-            const u = String(item?.username || '').trim();
-            if (!u) continue;
-            const rec = mergedEmps.find(e => String(e?.username || '').trim().toLowerCase() === u.toLowerCase());
-            if (rec) {
-              try {
-                await applyHrmsUserAccountGateFromEmployee(rec);
-              } catch (e) {
-                console.error('[mergeSharedStateFields][account-gate]', u, e?.message || e);
-              }
-              // A1：表权威 — merge state 后同步 employees 表（修复原只写 state 的缺口）
-              try {
-                await upsertEmployeeFromStateShape(pool, key, rec);
-              } catch (e) {
-                console.error('[mergeSharedStateFields][employees-table]', u, e?.message || e);
-                void notifyAdminsDualWriteFailure('employees（mergeSharedStateFields）', e);
-              }
-            }
-          }
-        }
-        schedulePayrollDomainSync();
-        scheduleLeaveDomainSync();
-        client.release();
-        return;
-      }
-      // 乐观锁冲突：其他事务已修改，回滚后重试
-      await client.query('ROLLBACK');
-      client.release();
-    } catch (e) {
-      await client.query('ROLLBACK').catch(() => {});
-      client.release();
-      throw e;
-    }
-  }
-  throw new Error('mergeSharedStateFields: max retries exceeded');
-}
-
-/** 从 hrms_state 镜像中移除员工（及 users 同账号），供 DELETE /api/employees 使用 */
-async function removeEmployeesFromSharedState(usernames, tenantId) {
-  const want = new Set(
-    (Array.isArray(usernames) ? usernames : [usernames])
-      .map((u) => String(u || '').trim().toLowerCase())
-      .filter(Boolean)
-  );
-  if (!want.size) return;
-  const key = resolveTenantIdDefault(tenantId);
-  const MAX_RETRY = 10;
-  for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const r = await client.query('SELECT data, updated_at FROM hrms_state WHERE key = $1 FOR UPDATE', [key]);
-      const row = r.rows?.[0];
-      const current = row?.data && typeof row.data === 'object' ? row.data : {};
-      const prevUpdatedAt = row?.updated_at;
-      const next = { ...current };
-      next.employees = (Array.isArray(current.employees) ? current.employees : []).filter(
-        (e) => !want.has(String(e?.username || '').trim().toLowerCase())
-      );
-      next.users = (Array.isArray(current.users) ? current.users : []).filter(
-        (u) => !want.has(String(u?.username || '').trim().toLowerCase())
-      );
-      const updateResult = await client.query(
-        `UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1 AND updated_at = $3`,
-        [key, JSON.stringify(next), prevUpdatedAt]
-      );
-      if (updateResult.rowCount > 0) {
-        await client.query('COMMIT');
-        client.release();
-        return;
-      }
-      await client.query('ROLLBACK');
-      client.release();
-    } catch (e) {
-      await client.query('ROLLBACK').catch(() => {});
-      client.release();
-      throw e;
-    }
-  }
-  throw new Error('removeEmployeesFromSharedState: max retries exceeded');
-}
+// Wave H33: get/save/merge/removeEmployees shared-state → domains/shared/hrms-state-store.js
+// (late-bind wrappers near pool; real impl after account-gate)
 
 // Wave H31: captureHrmsStateSnapshotToDb → domains/shared/hrms-state-snapshot.js (after pool)
 
@@ -1680,6 +1510,24 @@ const {
   });
   _authRequiredImpl = authMw.authRequired;
   _authRequiredOrQueryTokenImpl = authMw.authRequiredOrQueryToken;
+}
+
+// Wave H33: bind hrms_state hub after account-gate + dual-write + payroll/leave schedules
+{
+  const stateStore = createHrmsStateStoreHelpers({
+    pool,
+    resolveTenantIdDefault,
+    schedulePayrollDomainSync,
+    scheduleLeaveDomainSync,
+    dualWriteStateToDB,
+    applyHrmsUserAccountGateFromEmployee,
+    upsertEmployeeFromStateShape,
+    notifyAdminsDualWriteFailure,
+  });
+  _getSharedStateImpl = stateStore.getSharedState;
+  _saveSharedStateImpl = stateStore.saveSharedState;
+  _mergeSharedStateFieldsImpl = stateStore.mergeSharedStateFields;
+  _removeEmployeesFromSharedStateImpl = stateStore.removeEmployeesFromSharedState;
 }
 
 // Wave H22: state client-shaping → domains/shared/state-client-shaping.js
