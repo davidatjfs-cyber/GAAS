@@ -44,8 +44,8 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   // （同 OP+表换路径不算新增，见 REPATH_NOTES）
   'domains/approvals/handlers/onboarding.js|INSERT INTO|feishu_users',
   'domains/approvals/handlers/onboarding.js|UPDATE|feishu_users',
-  // index.js 仍有其它路径的 feishu_users UPDATE（非 decide）
-  'index.js|UPDATE|feishu_users',
+  // Wave H19：account-gate 从 index.js 迁出（同 OP+表换路径）
+  'domains/employees/account-gate.js|UPDATE|feishu_users',
   'index.js|UPDATE|knowledge_base',
   'knowledge-routes.js|DELETE FROM|knowledge_base',
   'knowledge-routes.js|INSERT INTO|knowledge_base',
@@ -70,6 +70,7 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
 const REPATH_NOTES = [
   'index.js → domains/approvals/handlers/onboarding.js | INSERT INTO|feishu_users',
   'index.js → domains/approvals/handlers/onboarding.js | UPDATE|feishu_users',
+  'index.js → domains/employees/account-gate.js | UPDATE|feishu_users',
   'training.js → domains/training/routes-rubric.js | UPDATE|knowledge_base',
   'training.js → domains/training/routes-sessions.js | UPDATE|knowledge_base',
   'index.js → domains/dedup/routes.js | DELETE FROM|agent_messages',
