@@ -124,6 +124,7 @@ import { registerHealthRoutes } from './domains/health/routes.js';
 import { createFeishuBitableHelpers } from './domains/feishu-bitable/create-helpers.js';
 import { createInventoryForecastHelpers } from './domains/inventory-forecast/create-helpers.js';
 import { createLeaveAttendanceHelpers } from './domains/leave-attendance/create-helpers.js';
+import { createAttendanceMirrorHelpers } from './domains/leave-attendance/attendance-mirror.js';
 import { createNotificationsHelpers } from './domains/notifications/create-helpers.js';
 import { createNotificationsCleanupScheduler } from './domains/notifications/scheduler-cleanup.js';
 import { createFreshnessMonitorScheduler } from './domains/notifications/scheduler-freshness.js';
@@ -1601,53 +1602,8 @@ function scheduleLeaveDomainSync() {
   });
 }
 
-/** 打卡记录写入 employee_attendance_records（与 checkin_records 同 id） */
-async function upsertEmployeeAttendanceMirrorFromCheckinRow(rec, tenantId) {
-  if (!rec?.id) return;
-  await pool.query(
-    `INSERT INTO employee_attendance_records (
-       id, username, store, type, check_time, latitude, longitude, distance_meters,
-       face_match, face_score, photo_url, status, note, confirmed_by, confirmed_at, created_at, synced_at, tenant_id
-     ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,COALESCE($16::timestamptz, NOW()), NOW(), $17
-     )
-     ON CONFLICT (id) DO UPDATE SET
-       username = EXCLUDED.username,
-       store = EXCLUDED.store,
-       type = EXCLUDED.type,
-       check_time = EXCLUDED.check_time,
-       latitude = EXCLUDED.latitude,
-       longitude = EXCLUDED.longitude,
-       distance_meters = EXCLUDED.distance_meters,
-       face_match = EXCLUDED.face_match,
-       face_score = EXCLUDED.face_score,
-       photo_url = EXCLUDED.photo_url,
-       status = EXCLUDED.status,
-       note = EXCLUDED.note,
-       confirmed_by = EXCLUDED.confirmed_by,
-       confirmed_at = EXCLUDED.confirmed_at,
-       synced_at = NOW()`,
-    [
-      rec.id,
-      rec.username,
-      rec.store,
-      rec.type,
-      rec.check_time,
-      rec.latitude,
-      rec.longitude,
-      rec.distance_meters,
-      rec.face_match,
-      rec.face_score,
-      rec.photo_url,
-      rec.status,
-      rec.note,
-      rec.confirmed_by,
-      rec.confirmed_at,
-      rec.created_at,
-      tenantId || 'default'
-    ]
-  );
-}
+// Wave H24: upsertEmployeeAttendanceMirrorFromCheckinRow → domains/leave-attendance/attendance-mirror.js
+// Instantiated with leaveAttendanceHelpers before registerCheckinRoutes.
 
 // Wave H10: pick*Username helpers → domains/employees/pick-usernames.js
 // Must run after pool + resolveTenantIdDefault; before promotion-recipients / recurring-reward / ops-tasks.
@@ -1772,6 +1728,9 @@ const leaveAttendanceHelpers = createLeaveAttendanceHelpers({
   clampNum,
   hrmsNowISO,
 });
+
+// Wave H24: dual-write checkin → employee_attendance_records (no DDL)
+const { upsertEmployeeAttendanceMirrorFromCheckinRow } = createAttendanceMirrorHelpers({ pool });
 
 registerCheckinRoutes(app, {
   pool,
