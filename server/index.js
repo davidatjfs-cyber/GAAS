@@ -514,60 +514,22 @@ async function ensureDataGovernanceTables() {
 }
 
 
-// Inventory-forecast helpers (Wave H2) — assigned from createInventoryForecastHelpers after deps exist.
-// Remaining early functions (PDF parse) close over these lets; assigned before any request handling.
-let resolveForecastScope;
-let isForecastStoreScopedRole;
-let normalizeProductName;
-let resolveForecastProductName;
-let forecastDayTypeLabel;
-let normalizeForecastWeatherTag;
-let buildForecastProductAliasLookup;
-let canonicalizeForecastProductQuantities;
-let canonicalizeForecastRows;
-let STORE_FORECAST_CONFIG;
-let getStoreForecastConfig;
+// Inventory-forecast helpers (Wave H2) — only bind symbols still referenced by PDF/POS/upsert/AI leftovers.
+// Full set lives on forecastHelpers; assigned after brand/store utils + safeDateOnly exist.
 let isCNYPeriod;
-let KNOWN_PUBLIC_HOLIDAYS;
 let isKnownPublicHoliday;
-let isNormalWorkday;
-let estimateRevenueByHistory;
-let normalizeGrossProfitProfileItem;
-let computeAvgPricePerProduct;
-let canManageGrossProfitProfiles;
-let normalizeDishAliasBizType;
-let estimateGrossMarginByHistory;
-let normalizePredictionItems;
-let forecastPredictionToProductMap;
 let calcForecastAccuracyMetrics;
-let buildForecastCalibrationFactors;
-let applyForecastCalibration;
-let summarizeForecastAccuracyRows;
 let normalizeForecastBizType;
-let forecastBrandToken;
-let STORE_SLOT_CONFIG;
-let getStoreSlotConfig;
 let normalizeForecastSlot;
-let resolveSlotForHour;
 let normalizeForecastSlotFromHourRange;
 let normalizeForecastUploadDate;
-let inferForecastUploadDateFromFilename;
 let normalizeForecastWeather;
 let normalizeForecastStoreName;
-let normalizeForecastStoreKey;
-let shiftForecastDate;
-let forecastHistoryRowKey;
 let sortForecastHistoryRows;
-let mergePreferredForecastHistoryRows;
 let parseInventoryForecastRowsFromTableMatrix;
-let FORECAST_EXCLUDED_PRODUCTS;
 let isExcludedForecastProduct;
 let normalizeForecastProducts;
-let scoreForecastRow;
-let buildForecastByHeuristic;
-let extractHistoryProductUniverse;
-let constrainPredictionsToHistory;
-let computeSlotRevenueShare;
+let forecastHelpers;
 
 
 function decodePdfLiteralText(token) {
@@ -4299,60 +4261,7 @@ function safeDateOnly(input) {
 }
 
 // Wave H2: inventory-forecast sync helpers factory (must run after brand/store utils + safeDateOnly/safeNumber/inDateRange/pickMyStoreFromState)
-({
-  resolveForecastScope,
-  isForecastStoreScopedRole,
-  normalizeProductName,
-  resolveForecastProductName,
-  forecastDayTypeLabel,
-  normalizeForecastWeatherTag,
-  buildForecastProductAliasLookup,
-  canonicalizeForecastProductQuantities,
-  canonicalizeForecastRows,
-  STORE_FORECAST_CONFIG,
-  getStoreForecastConfig,
-  isCNYPeriod,
-  KNOWN_PUBLIC_HOLIDAYS,
-  isKnownPublicHoliday,
-  isNormalWorkday,
-  estimateRevenueByHistory,
-  normalizeGrossProfitProfileItem,
-  computeAvgPricePerProduct,
-  canManageGrossProfitProfiles,
-  normalizeDishAliasBizType,
-  estimateGrossMarginByHistory,
-  normalizePredictionItems,
-  forecastPredictionToProductMap,
-  calcForecastAccuracyMetrics,
-  buildForecastCalibrationFactors,
-  applyForecastCalibration,
-  summarizeForecastAccuracyRows,
-  normalizeForecastBizType,
-  forecastBrandToken,
-  STORE_SLOT_CONFIG,
-  getStoreSlotConfig,
-  normalizeForecastSlot,
-  resolveSlotForHour,
-  normalizeForecastSlotFromHourRange,
-  normalizeForecastUploadDate,
-  inferForecastUploadDateFromFilename,
-  normalizeForecastWeather,
-  normalizeForecastStoreName,
-  normalizeForecastStoreKey,
-  shiftForecastDate,
-  forecastHistoryRowKey,
-  sortForecastHistoryRows,
-  mergePreferredForecastHistoryRows,
-  parseInventoryForecastRowsFromTableMatrix,
-  FORECAST_EXCLUDED_PRODUCTS,
-  isExcludedForecastProduct,
-  normalizeForecastProducts,
-  scoreForecastRow,
-  buildForecastByHeuristic,
-  extractHistoryProductUniverse,
-  constrainPredictionsToHistory,
-  computeSlotRevenueShare,
-} = createInventoryForecastHelpers({
+forecastHelpers = createInventoryForecastHelpers({
   safeDateOnly,
   safeNumber,
   inDateRange,
@@ -4364,7 +4273,22 @@ function safeDateOnly(input) {
   pickMyStoreFromState,
   getBrandsFromState,
   getStoreNamesByBrand,
-}));
+});
+({
+  isCNYPeriod,
+  isKnownPublicHoliday,
+  calcForecastAccuracyMetrics,
+  normalizeForecastBizType,
+  normalizeForecastSlot,
+  normalizeForecastSlotFromHourRange,
+  normalizeForecastUploadDate,
+  normalizeForecastWeather,
+  normalizeForecastStoreName,
+  sortForecastHistoryRows,
+  parseInventoryForecastRowsFromTableMatrix,
+  isExcludedForecastProduct,
+  normalizeForecastProducts,
+} = forecastHelpers);
 
 registerInventoryForecastRoutes(app, {
   pool,
@@ -4374,54 +4298,23 @@ registerInventoryForecastRoutes(app, {
   getSharedState,
   saveSharedState,
   pickMyStoreFromState,
-  isForecastStoreScopedRole,
   safeDateOnly,
-  normalizeForecastBizType,
-  normalizeForecastSlot,
   loadInventoryForecastHistoryFromSalesRaw,
-  shiftForecastDate,
   upsertInventoryForecastHistoryInState,
-  parseInventoryForecastRowsFromTableMatrix,
-  inferForecastUploadDateFromFilename,
   parseInventoryForecastRowsFromPdfPath,
   parseInventoryForecastRowsFromPdfBuffer,
-  normalizeForecastStoreName,
-  normalizeForecastStoreKey,
-  normalizeDishAliasBizType,
-  canManageGrossProfitProfiles,
   resolveTenantIdDefault,
   canAccessAnalyticsReports,
-  resolveForecastScope,
   normalizeBrandId,
   resolveStoreBrandContext,
-  normalizeProductName,
-  buildForecastProductAliasLookup,
-  resolveForecastProductName,
-  computeAvgPricePerProduct,
-  normalizeGrossProfitProfileItem,
-  mergePreferredForecastHistoryRows,
   getStoreNamesByBrand,
-  forecastBrandToken,
   normalizeStoreKey,
-  isExcludedForecastProduct,
-  estimateRevenueByHistory,
   resolvePosStoreKeys,
-  isCNYPeriod,
-  isKnownPublicHoliday,
-  estimateGrossMarginByHistory,
-  summarizeForecastAccuracyRows,
-  normalizeForecastWeather,
-  canonicalizeForecastRows,
-  computeSlotRevenueShare,
-  buildForecastCalibrationFactors,
-  buildForecastByHeuristic,
   buildForecastByAI,
-  applyForecastCalibration,
-  constrainPredictionsToHistory,
-  calcForecastAccuracyMetrics,
   safeNumber,
   inDateRange,
   hrmsNowISO,
+  ...forecastHelpers,
 });
 
 
