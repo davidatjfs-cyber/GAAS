@@ -31,6 +31,8 @@ import {
 import { reconcileEmployeesMirrorAllTenants } from './domains/employees/mirror-tx.js';
 import { createPickUsernameHelpers } from './domains/employees/pick-usernames.js';
 import { createUserLookupHelpers } from './domains/employees/user-lookup.js';
+import { findUserSalary } from './domains/employees/salary-helpers.js';
+import { createRoleAccessHelpers } from './domains/shared/role-access.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
@@ -693,6 +695,9 @@ registerTenantPlatformRoutes(app, {
 // 延后到 createNotificationsHelpers 之后（notifyAdminsOcrFailed / notifyAdminsDualWriteFailure 等非 hoisted）
 // Wave H3: registerCheckinRoutes / registerReportsRoutes / registerHrmsPayrollClosedLoopRoutes
 // 延后到 createLeaveAttendanceHelpers 之后（工厂非 hoisted，不能在定义前 capture）
+// Wave H17: registerHrmsPermissionRoutes / registerDailyReportsRoutes / registerInventoryForecastRoutes /
+// registerReportsRoutes / registerHrmsPayrollClosedLoopRoutes
+// 延后到 createRoleAccessHelpers 之后（须在 normalizeRoleForJwt 之后；工厂非 hoisted）
 registerPointsRoutes(app, {
   pool,
   authRequired,
@@ -705,13 +710,6 @@ registerPointsRoutes(app, {
   safeNumber,
   hrmsNowISO,
   randomUUID,
-});
-registerHrmsPermissionRoutes(app, {
-  pool,
-  authRequired,
-  getSharedState,
-  saveSharedState,
-  isAdmin,
 });
 
 registerAgentTaskBoardRoutes(app, {
@@ -1437,22 +1435,7 @@ registerKnowledgeRoutes(app, {
   OSS_RETRY_COUNT,
   OSS_TIMEOUT_MS,
 });
-registerDailyReportsRoutes(app, {
-  pool,
-  authRequired,
-  getSharedState,
-  mergeSharedStateFields,
-  safeDateOnly,
-  stateFindUserRecord,
-  expandAgentStoreLabels,
-  inDateRange,
-  hrmsNowISO,
-  notifyAdminsDualWriteFailure,
-  safeErrMessage,
-  isAdmin,
-  addStateNotification,
-  makeNotif,
-});
+// Wave H17: registerDailyReportsRoutes → after createRoleAccessHelpers (isAdmin)
 
 /** 全量双写：每次保存 state 时自动同步所有模块到独立 DB 表 */
 async function dualWriteStateToDB(state) {
@@ -1745,31 +1728,8 @@ function hrmsNowISO() {
   return `${y}-${m}-${d}T${h}:${mi}:${s}+08:00`;
 }
 
-function isAdmin(role) {
-  return String(role || '').trim() === 'admin';
-}
-
-function isHq(role) {
-  const r = String(role || '').trim();
-  return r === 'hq_manager' || r === 'hr_manager';
-}
-
-function canAccessAnalyticsReports(role) {
-  const r = String(role || '').trim();
-  return r === 'admin' || r === 'hq_manager' || r === 'store_manager' || r === 'hr_manager' || r === 'store_production_manager';
-}
-
-/** 出勤表台账：仅管理员 / 总部营运 / 总部人事（与 JWT 中文/别名角色映射一致） */
-function canAccessDailyAttendanceRegister(role) {
-  const r = normalizeRoleForJwt(role);
-  return r === 'admin' || r === 'hq_manager' || r === 'hr_manager';
-}
-
-function canAccessBusinessReports(role) {
-  const r = String(role || '').trim();
-  return r === 'admin' || r === 'hq_manager' || r === 'store_manager';
-}
-
+// Wave H17: role access gates → domains/shared/role-access.js
+// Factory must run AFTER normalizeRoleForJwt (not hoisted); see createRoleAccessHelpers below.
 
 function inDateRange(date, start, end) {
   const d = String(date || '').trim();
@@ -1796,30 +1756,7 @@ function clampNum(n, d = 0) {
 
 // Wave H12: normalizeOpenAiCompatibleBaseUrl → domains/ai/routes-chat-completions.js
 
-function getStateUsers(state) {
-  const users = Array.isArray(state?.users) ? state.users : [];
-  const employees = Array.isArray(state?.employees) ? state.employees : [];
-  return { users, employees };
-}
-
-function findUserSalary(state, username) {
-  const u = String(username || '').trim();
-  if (!u) return null;
-  const { users, employees } = getStateUsers(state);
-  const rec = users.find(x => String(x?.username || '').trim() === u) || employees.find(x => String(x?.username || '').trim() === u) || null;
-  if (!rec) return null;
-  const raw = (rec.salary !== undefined && rec.salary !== null && rec.salary !== '')
-    ? rec.salary
-    : ((rec.wage !== undefined && rec.wage !== null && rec.wage !== '')
-      ? rec.wage
-      : ((rec.baseSalary !== undefined && rec.baseSalary !== null && rec.baseSalary !== '')
-        ? rec.baseSalary
-        : ((rec.monthlySalary !== undefined && rec.monthlySalary !== null && rec.monthlySalary !== '')
-          ? rec.monthlySalary
-          : ((rec.pay !== undefined && rec.pay !== null && rec.pay !== '') ? rec.pay : null))));
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
+// Wave H17: getStateUsers / findUserSalary → domains/employees/salary-helpers.js
 
 // Wave H14: resolveDutyApproverForStore → domains/store-duty-bindings/resolve-approver.js
 // Instantiate after pool; before createRecurringRewardScheduler (which needs the resolver).
@@ -1913,28 +1850,7 @@ const forecastHelpers = createInventoryForecastHelpers({
   randomUUID,
   normalizeStoreKey,
 });
-
-registerInventoryForecastRoutes(app, {
-  pool,
-  authRequired,
-  upload,
-  uploadsDir,
-  getSharedState,
-  saveSharedState,
-  pickMyStoreFromState,
-  safeDateOnly,
-  resolveTenantIdDefault,
-  canAccessAnalyticsReports,
-  normalizeBrandId,
-  resolveStoreBrandContext,
-  getStoreNamesByBrand,
-  normalizeStoreKey,
-  safeNumber,
-  inDateRange,
-  hrmsNowISO,
-  ...forecastHelpers,
-});
-
+// Wave H17: registerInventoryForecastRoutes → after createRoleAccessHelpers (canAccessAnalyticsReports)
 
 function safeMonthOnly(input) {
   const v = String(input || '').trim();
@@ -1983,63 +1899,7 @@ registerCheckinRoutes(app, {
   resolveCheckinRadiusMeters,
   randomUUID,
 });
-registerReportsRoutes(app, {
-  pool,
-  authRequired,
-  getSharedState,
-  mergeSharedStateFields,
-  safeDateOnly,
-  safeMonthOnly,
-  parseMonth,
-  pickMyStoreFromState,
-  stateFindUserRecord,
-  stateOrDbFindUserRecord,
-  dbListEmployeesForReports,
-  calcEmployeeMonthlyLeaveBalance: leaveAttendanceHelpers.calcEmployeeMonthlyLeaveBalance,
-  computeAttendanceMissingClockPenalties: leaveAttendanceHelpers.computeAttendanceMissingClockPenalties,
-  buildAttendanceFromCheckinRecords: leaveAttendanceHelpers.buildAttendanceFromCheckinRecords,
-  buildAttendanceFromReports: leaveAttendanceHelpers.buildAttendanceFromReports,
-  buildAttendanceSummaryRows: leaveAttendanceHelpers.buildAttendanceSummaryRows,
-  summarizeDailyRegisterForEmployee,
-  filterDailyRegisterRowsByEmployee,
-  expandAgentStoreLabels,
-  resolveAgentCanonicalStore,
-  isLegacyTestUsername,
-  canAccessBusinessReports,
-  canAccessAnalyticsReports,
-  canAccessDailyAttendanceRegister,
-  isAdmin,
-  isHq,
-  inDateRange,
-  clampNum,
-  safeNumber,
-  findUserSalary,
-  hrmsNowISO,
-  randomUUID,
-  sendWeeklyReports,
-  sendMonthlyReports,
-  sendTestReportsToUser,
-  buildPayrollForMonth,
-});
-registerHrmsPayrollClosedLoopRoutes(app, {
-  pool,
-  authRequired,
-  getSharedState,
-  mergeSharedStateFields,
-  calcEmployeeMonthlyLeaveBalance: leaveAttendanceHelpers.calcEmployeeMonthlyLeaveBalance,
-  findUserSalary,
-  isAdmin,
-  isHq,
-  canAccessAnalyticsReports,
-  appendNotifications,
-  makeNotif,
-  hrmsNowISO,
-  safeMonthOnly,
-  parseMonth,
-  dbListEmployeesForReports,
-  stateFindUserRecord,
-  isLegacyTestUsername,
-});
+// Wave H17: registerReportsRoutes / registerHrmsPayrollClosedLoopRoutes → after createRoleAccessHelpers
 
 
 function safeUuid(input) {
@@ -2410,6 +2270,121 @@ const { getUserStoreAccessContext } = createStoreAccessContextHelpers({
   normalizeRoleForJwt,
   resolveStoreScopeStores,
   ensureStoreDutyBindingsReady,
+});
+
+// Wave H17: role access gates → domains/shared/role-access.js
+// After normalizeRoleForJwt (factory not hoisted); before register* that inject these.
+const {
+  isAdmin,
+  isHq,
+  canAccessAnalyticsReports,
+  canAccessDailyAttendanceRegister,
+  canAccessBusinessReports,
+} = createRoleAccessHelpers({ normalizeRoleForJwt });
+
+registerHrmsPermissionRoutes(app, {
+  pool,
+  authRequired,
+  getSharedState,
+  saveSharedState,
+  isAdmin,
+});
+
+registerDailyReportsRoutes(app, {
+  pool,
+  authRequired,
+  getSharedState,
+  mergeSharedStateFields,
+  safeDateOnly,
+  stateFindUserRecord,
+  expandAgentStoreLabels,
+  inDateRange,
+  hrmsNowISO,
+  notifyAdminsDualWriteFailure,
+  safeErrMessage,
+  isAdmin,
+  addStateNotification,
+  makeNotif,
+});
+
+registerInventoryForecastRoutes(app, {
+  pool,
+  authRequired,
+  upload,
+  uploadsDir,
+  getSharedState,
+  saveSharedState,
+  pickMyStoreFromState,
+  safeDateOnly,
+  resolveTenantIdDefault,
+  canAccessAnalyticsReports,
+  normalizeBrandId,
+  resolveStoreBrandContext,
+  getStoreNamesByBrand,
+  normalizeStoreKey,
+  safeNumber,
+  inDateRange,
+  hrmsNowISO,
+  ...forecastHelpers,
+});
+
+registerReportsRoutes(app, {
+  pool,
+  authRequired,
+  getSharedState,
+  mergeSharedStateFields,
+  safeDateOnly,
+  safeMonthOnly,
+  parseMonth,
+  pickMyStoreFromState,
+  stateFindUserRecord,
+  stateOrDbFindUserRecord,
+  dbListEmployeesForReports,
+  calcEmployeeMonthlyLeaveBalance: leaveAttendanceHelpers.calcEmployeeMonthlyLeaveBalance,
+  computeAttendanceMissingClockPenalties: leaveAttendanceHelpers.computeAttendanceMissingClockPenalties,
+  buildAttendanceFromCheckinRecords: leaveAttendanceHelpers.buildAttendanceFromCheckinRecords,
+  buildAttendanceFromReports: leaveAttendanceHelpers.buildAttendanceFromReports,
+  buildAttendanceSummaryRows: leaveAttendanceHelpers.buildAttendanceSummaryRows,
+  summarizeDailyRegisterForEmployee,
+  filterDailyRegisterRowsByEmployee,
+  expandAgentStoreLabels,
+  resolveAgentCanonicalStore,
+  isLegacyTestUsername,
+  canAccessBusinessReports,
+  canAccessAnalyticsReports,
+  canAccessDailyAttendanceRegister,
+  isAdmin,
+  isHq,
+  inDateRange,
+  clampNum,
+  safeNumber,
+  findUserSalary,
+  hrmsNowISO,
+  randomUUID,
+  sendWeeklyReports,
+  sendMonthlyReports,
+  sendTestReportsToUser,
+  buildPayrollForMonth,
+});
+
+registerHrmsPayrollClosedLoopRoutes(app, {
+  pool,
+  authRequired,
+  getSharedState,
+  mergeSharedStateFields,
+  calcEmployeeMonthlyLeaveBalance: leaveAttendanceHelpers.calcEmployeeMonthlyLeaveBalance,
+  findUserSalary,
+  isAdmin,
+  isHq,
+  canAccessAnalyticsReports,
+  appendNotifications,
+  makeNotif,
+  hrmsNowISO,
+  safeMonthOnly,
+  parseMonth,
+  dbListEmployeesForReports,
+  stateFindUserRecord,
+  isLegacyTestUsername,
 });
 
 function isInactiveStatus(input) {
