@@ -17,6 +17,8 @@ const serverRoot = path.resolve(__dirname, '..');
 /** 冻结前已存在、允许保留 CREATE 的 ensure* 文件（只减不增） */
 const LEGACY_ENSURE_CREATE_ALLOWLIST = new Set([
   'services/demand-governance-service.js',
+  // Wave H1：从 index.js 外提的遗留 listen-time ensure*（只搬家，不新增 schema）
+  'services/feishu-bitable-schema-ensure.js',
   'services/hrms-payroll-rules.js',
   'services/hrms-permission-engine.js',
   'services/sales/sales-case-library.js',

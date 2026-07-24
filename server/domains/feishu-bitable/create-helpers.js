@@ -8,7 +8,7 @@ import {
   ensureFeishuSyncTable,
   ensureDedupIndexes,
   ensureTableVisitRecordsTable,
-} from './schema-ensure.js';
+} from '../../services/feishu-bitable-schema-ensure.js';
 import {
   getFeishuAccessToken,
   createFeishuBitableRecord,

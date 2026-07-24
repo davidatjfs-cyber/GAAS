@@ -38,7 +38,7 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   // Wave 4p：dedup cleanup 从 index.js 迁出（同 OP+表换路径）
   'domains/dedup/routes.js|DELETE FROM|agent_messages',
   // Wave H1：ensureDedupIndexes / upsertFeishuGenericRecord 从 index.js 迁出
-  'domains/feishu-bitable/schema-ensure.js|DELETE FROM|agent_messages',
+  'services/feishu-bitable-schema-ensure.js|DELETE FROM|agent_messages',
   'domains/feishu-bitable/records.js|INSERT INTO|feishu_generic_records',
   // P0-A1：decide 从 index.js 迁出；feishu_users 写入现位于 handlers/onboarding.js
   // （同 OP+表换路径不算新增，见 REPATH_NOTES）
@@ -74,7 +74,7 @@ const REPATH_NOTES = [
   'training.js → domains/training/routes-sessions.js | UPDATE|knowledge_base',
   'index.js → domains/dedup/routes.js | DELETE FROM|agent_messages',
   'index.js → domains/feishu-bitable/records.js | INSERT INTO|feishu_generic_records',
-  'index.js → domains/feishu-bitable/schema-ensure.js | DELETE FROM|agent_messages',
+  'index.js → services/feishu-bitable-schema-ensure.js | DELETE FROM|agent_messages',
 ];
 
 const OWNER = 'gaas';
