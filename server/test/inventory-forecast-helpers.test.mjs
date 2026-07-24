@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'crypto';
 import { createInventoryForecastHelpers } from '../domains/inventory-forecast/create-helpers.js';
 
 function safeDateOnly(input) {
@@ -24,6 +25,10 @@ function inDateRange(d, s, e) {
   return true;
 }
 
+function normalizeStoreKey(v) {
+  return String(v || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
 const helpers = createInventoryForecastHelpers({
   safeDateOnly,
   safeNumber,
@@ -36,6 +41,10 @@ const helpers = createInventoryForecastHelpers({
   pickMyStoreFromState: () => '',
   getBrandsFromState: () => [],
   getStoreNamesByBrand: () => [],
+  pool: { query: async () => ({ rows: [{ store: '洪潮传统潮汕菜【大宁久光中心店】' }] }) },
+  hrmsNowISO: () => '2026-07-24T00:00:00.000Z',
+  randomUUID,
+  normalizeStoreKey,
 });
 
 test('normalizeProductName strips 【】 and maps 魚→鱼, 9→九', () => {
@@ -156,4 +165,100 @@ test('calcForecastAccuracyMetrics / applyForecastCalibration smoke', () => {
   );
   assert.equal(calibrated.length, 1);
   assert.equal(calibrated[0].qty, 8);
+});
+
+test('normalizeArkBaseUrl defaults and preserves /api/v3', () => {
+  assert.equal(helpers.normalizeArkBaseUrl(''), 'https://ark.cn-beijing.volces.com/api/v3');
+  assert.equal(
+    helpers.normalizeArkBaseUrl('https://ark.cn-beijing.volces.com/api/v3'),
+    'https://ark.cn-beijing.volces.com/api/v3'
+  );
+  assert.equal(
+    helpers.normalizeArkBaseUrl('https://ark.cn-beijing.volces.com'),
+    'https://ark.cn-beijing.volces.com/api/v3'
+  );
+});
+
+test('resolveTenantAiConfigFromState null for empty; returns config when models present', () => {
+  assert.equal(helpers.resolveTenantAiConfigFromState({}), null);
+  assert.equal(helpers.resolveTenantAiConfigFromState({ settings: {} }), null);
+  const cfg = helpers.resolveTenantAiConfigFromState({
+    settings: {
+      llm: {
+        models: [
+          {
+            id: 'm1',
+            enabled: true,
+            apiKey: 'k',
+            baseUrl: 'https://ark.cn-beijing.volces.com',
+            model: 'ep-test',
+          },
+        ],
+        bindings: { default: 'm1' },
+      },
+    },
+  });
+  assert.ok(cfg);
+  assert.equal(cfg.apiKey, 'k');
+  assert.equal(cfg.model, 'ep-test');
+  assert.equal(cfg.baseUrl, 'https://ark.cn-beijing.volces.com/api/v3');
+});
+
+test('parseForecastHistoryRow accepts valid row; rejects empty products', () => {
+  const ok = helpers.parseForecastHistoryRow({
+    date: '2026-07-01',
+    weather: '晴',
+    expectedRevenue: 100,
+    productQuantities: { 测试菜: 2 },
+  });
+  assert.ok(ok);
+  assert.equal(ok.date, '2026-07-01');
+  assert.equal(ok.productQuantities['测试菜'], 2);
+
+  assert.equal(
+    helpers.parseForecastHistoryRow({
+      date: '2026-07-01',
+      productQuantities: {},
+    }),
+    null
+  );
+});
+
+test('longestCommonRun / stripStoreGenericWords + resolvePosStoreKeys', async () => {
+  assert.ok(helpers.longestCommonRun('大宁久光', '大宁久光中心') >= 4);
+  assert.equal(helpers.stripStoreGenericWords('洪潮传统潮汕菜大宁久光中心店').includes('传统潮汕菜'), false);
+
+  const keys = await helpers.resolvePosStoreKeys(['洪潮大宁久光店']);
+  assert.ok(Array.isArray(keys));
+  assert.ok(keys.length >= 1);
+  assert.ok(keys.some((k) => k.includes('大宁') || k.includes('久光')));
+});
+
+test('upsertInventoryForecastHistoryInState inserts one history row', () => {
+  const ret = helpers.upsertInventoryForecastHistoryInState(
+    { inventoryForecastHistory: [], inventoryForecastPredictions: [], inventoryForecastEvaluations: [] },
+    {
+      store: '洪潮久光店',
+      bizType: 'dinein',
+      slot: 'lunch',
+      username: 'tester',
+      rowsRaw: [
+        {
+          date: '2026-07-01',
+          weather: '晴',
+          expectedRevenue: 100,
+          productQuantities: { 测试菜: 2 },
+        },
+      ],
+    }
+  );
+  assert.equal(ret.inserted, 1);
+  assert.equal(ret.accepted, 1);
+  assert.equal(ret.state.inventoryForecastHistory.length, 1);
+  assert.equal(ret.state.inventoryForecastHistory[0].date, '2026-07-01');
+});
+
+test('parseInventoryForecastRowsFromPdfBuffer empty buffer returns []', () => {
+  const rows = helpers.parseInventoryForecastRowsFromPdfBuffer(Buffer.from(''), 'dinein');
+  assert.deepEqual(rows, []);
 });

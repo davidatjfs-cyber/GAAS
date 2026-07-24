@@ -46,6 +46,10 @@ import {
 } from './heuristic.js';
 import { createAccuracyHelpers } from './accuracy.js';
 import { createEstimateHelpers } from './estimate.js';
+import { createPdfParseHelpers } from './pdf-parse.js';
+import { createHistoryFromPosHelpers } from './history-from-pos.js';
+import { createStateUpsertHelpers } from './state-upsert.js';
+import { createAiForecastHelpers } from './ai-forecast.js';
 
 export function createInventoryForecastHelpers({
   safeDateOnly,
@@ -59,6 +63,10 @@ export function createInventoryForecastHelpers({
   pickMyStoreFromState,
   getBrandsFromState,
   getStoreNamesByBrand,
+  pool,
+  hrmsNowISO,
+  randomUUID,
+  normalizeStoreKey,
 }) {
   const getStoreForecastConfig = createGetStoreForecastConfig({
     resolveTenantIdDefault,
@@ -119,6 +127,57 @@ export function createInventoryForecastHelpers({
     normalizeForecastSlotFromHourRange,
     isExcludedForecastProduct,
   });
+
+  const {
+    parseInventoryForecastRowsFromPdfBuffer,
+    parseInventoryForecastRowsFromPdfPath,
+  } = createPdfParseHelpers({
+    parseInventoryForecastRowsFromTableMatrix,
+    normalizeForecastUploadDate,
+    normalizeForecastStoreName,
+    normalizeForecastWeather,
+    normalizeForecastBizType,
+    normalizeForecastSlotFromHourRange,
+    isExcludedForecastProduct,
+  });
+
+  const {
+    resolvePosStoreKeys,
+    loadInventoryForecastHistoryFromSalesRaw,
+    longestCommonRun,
+    stripStoreGenericWords,
+  } = createHistoryFromPosHelpers({
+    pool,
+    resolveTenantIdDefault,
+    normalizeStoreKey,
+    safeDateOnly,
+    safeNumber,
+    normalizeForecastBizType,
+    normalizeForecastSlot,
+    isKnownPublicHoliday,
+    isCNYPeriod,
+    sortForecastHistoryRows,
+  });
+
+  const {
+    parseForecastHistoryRow,
+    upsertInventoryForecastHistoryInState,
+  } = createStateUpsertHelpers({
+    hrmsNowISO,
+    randomUUID,
+    calcForecastAccuracyMetrics,
+    safeDateOnly,
+    safeNumber,
+    normalizeForecastWeather,
+    normalizeForecastProducts,
+  });
+
+  const {
+    normalizeArkBaseUrl,
+    resolveTenantAiConfigFromState,
+    resolveForecastArkConfig,
+    buildForecastByAI,
+  } = createAiForecastHelpers({ isExcludedForecastProduct });
 
   const {
     estimateRevenueByHistory,
@@ -209,6 +268,26 @@ export function createInventoryForecastHelpers({
 
     // table parse
     parseInventoryForecastRowsFromTableMatrix,
+
+    // pdf parse
+    parseInventoryForecastRowsFromPdfBuffer,
+    parseInventoryForecastRowsFromPdfPath,
+
+    // POS history
+    resolvePosStoreKeys,
+    loadInventoryForecastHistoryFromSalesRaw,
+    longestCommonRun,
+    stripStoreGenericWords,
+
+    // state upsert
+    parseForecastHistoryRow,
+    upsertInventoryForecastHistoryInState,
+
+    // AI forecast
+    normalizeArkBaseUrl,
+    resolveTenantAiConfigFromState,
+    resolveForecastArkConfig,
+    buildForecastByAI,
 
     // heuristic / products
     FORECAST_EXCLUDED_PRODUCTS,
