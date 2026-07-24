@@ -68,6 +68,7 @@ import { registerBirthdayRoutes } from './domains/birthday/routes.js';
 import { createBirthdayScheduler } from './domains/birthday/scheduler.js';
 import { createRecurringRewardScheduler } from './domains/approvals/scheduler-recurring-reward.js';
 import { createPromotionRecipientsHelpers } from './domains/approvals/promotion-recipients.js';
+import { createApprovalNormalizeHelpers } from './domains/approvals/normalize-helpers.js';
 import { createOffboardingPromotionScheduler } from './domains/approvals/scheduler-offboarding-promotion.js';
 import { registerRemainingStateRoutes } from './domains/remaining-state/routes.js';
 import { registerGmMailboxRoutes } from './domains/gm-mailbox/routes.js';
@@ -1711,61 +1712,6 @@ const { isKitchenByRoleOrPosition, getPromotionTrackRecipients } = createPromoti
   stateFindUserRecord,
 });
 
-function normalizePromotionTrainingPeriods(input) {
-  const list = Array.isArray(input) ? input : [];
-  const out = [];
-  const seen = new Set();
-  list.forEach((x, idx) => {
-    if (!x || typeof x !== 'object') return;
-    const startDate = safeDateOnly(x.startDate || x.date || '');
-    const endDate = safeDateOnly(x.endDate || x.date || startDate || '');
-    if (!startDate || !endDate) return;
-    const title = String(x.title || `培训周期${idx + 1}`).trim() || `培训周期${idx + 1}`;
-    const key = `${startDate}__${endDate}__${title}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push({
-      id: String(x.id || randomUUID()),
-      title,
-      startDate,
-      endDate,
-      note: String(x.note || '').trim()
-    });
-  });
-  out.sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
-  return out;
-}
-
-function normalizeApprovalType(input) {
-  const t = String(input || '').trim().toLowerCase();
-  const allowed = ['onboarding', 'offboarding', 'leave', 'payment', 'reward_punishment', 'promotion', 'points', 'monthly_confirm'];
-  if (!allowed.includes(t)) return '';
-  return t;
-}
-
-function getPaymentFlowForStore(state, store) {
-  const st = state && typeof state === 'object' ? state : {};
-  const map = st.paymentFlowByStore && typeof st.paymentFlowByStore === 'object' ? st.paymentFlowByStore : {};
-  const key = String(store || '').trim();
-  const cfg = key ? map[key] : null;
-  const approvers = Array.isArray(cfg?.approvers) ? cfg.approvers.map(x => String(x || '').trim()).filter(Boolean) : [];
-  const cashier = String(cfg?.cashier || '').trim();
-  return { approvers, cashier };
-}
-
-function approvalTypeLabel(type) {
-  const t = String(type || '').trim().toLowerCase();
-  if (t === 'onboarding') return '入职';
-  if (t === 'offboarding') return '离职';
-  if (t === 'leave') return '休假';
-  if (t === 'payment') return '请款';
-  if (t === 'reward_punishment') return '奖惩';
-  if (t === 'points') return '积分';
-  if (t === 'promotion') return '晋升';
-  if (t === 'monthly_confirm') return '月度考勤确认';
-  return t || '审批';
-}
-
 function safeNumber(input) {
   const n = Number(input);
   return Number.isFinite(n) ? n : null;
@@ -1925,6 +1871,14 @@ function safeDateOnly(input) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
   return v;
 }
+
+// Wave H16: approval normalize helpers (must run after safeDateOnly; before registerApproval*)
+const {
+  normalizePromotionTrainingPeriods,
+  normalizeApprovalType,
+  getPaymentFlowForStore,
+  approvalTypeLabel,
+} = createApprovalNormalizeHelpers({ safeDateOnly, randomUUID });
 
 // Wave H5: ops-tasks helpers + scheduler (must run after safeDateOnly; ensureOpsTasksTable / pickStoreRoleUsernameByStore hoisted)
 const {
