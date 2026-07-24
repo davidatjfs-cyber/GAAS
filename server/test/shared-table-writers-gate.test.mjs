@@ -62,7 +62,8 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'test-tenant-operation-inspection.mjs|INSERT INTO|master_tasks',
   // Wave 2：training.js → domains/training/*（同 OP+表换路径；会话/图谱两处仍写 knowledge_base）
   'domains/training/routes-rubric.js|UPDATE|knowledge_base',
-  'domains/training/routes-sessions.js|UPDATE|knowledge_base',
+  // Wave H44：sessions UPDATE knowledge_base 从 routes-sessions 抽到 service-sessions
+  'domains/training/service-sessions.js|UPDATE|knowledge_base',
   'utils/feishu-open-id-cross-app.js|UPDATE|feishu_users',
 ]);
 
@@ -73,6 +74,7 @@ const REPATH_NOTES = [
   'index.js → domains/employees/account-gate.js | UPDATE|feishu_users',
   'training.js → domains/training/routes-rubric.js | UPDATE|knowledge_base',
   'training.js → domains/training/routes-sessions.js | UPDATE|knowledge_base',
+  'domains/training/routes-sessions.js → domains/training/service-sessions.js | UPDATE|knowledge_base',
   'index.js → domains/dedup/routes.js | DELETE FROM|agent_messages',
   'index.js → domains/feishu-bitable/records.js | INSERT INTO|feishu_generic_records',
   'index.js → services/feishu-bitable-schema-ensure.js | DELETE FROM|agent_messages',
