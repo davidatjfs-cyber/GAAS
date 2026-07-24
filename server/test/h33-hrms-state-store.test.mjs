@@ -42,7 +42,6 @@ test('getSharedState returns data object or null', async () => {
 
 test('saveSharedState merges, schedules, dual-writes', async () => {
   const calls = { payroll: 0, leave: 0, dual: null };
-  let step = 0;
   const handlers = {
     released: 0,
     async clientQuery(sql) {
@@ -51,7 +50,6 @@ test('saveSharedState merges, schedules, dual-writes', async () => {
         return { rows: [{ data: { keep: true, x: 1 }, updated_at: 'ts1' }] };
       }
       if (/UPDATE hrms_state/.test(sql)) {
-        step += 1;
         return { rowCount: 1 };
       }
       if (/COMMIT/.test(sql)) return {};
