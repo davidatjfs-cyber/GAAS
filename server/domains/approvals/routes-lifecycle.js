@@ -13,6 +13,11 @@ import {
   bindOnboardingPayloadDeps,
   buildOnboardingEmployeeRecordFromPayload,
 } from './onboarding-payload.js';
+import {
+  repairOnboardingEmployee,
+  returnApproval,
+  resubmitApproval,
+} from './service-lifecycle.js';
 
 /**
  * @param {import('express').Express} app
@@ -602,25 +607,23 @@ export function registerApprovalLifecycleRoutes(app, authRequired, deps) {
     const id = String(req.params?.id || '').trim();
     if (!id) return res.status(400).json({ error: 'missing_id' });
     try {
-      const r0 = await pool.query(
-        'select id, type, status, payload from approval_requests where id = $1 limit 1',
-        [id]
-      );
-      const row = r0.rows?.[0];
-      if (!row) return res.status(404).json({ error: 'not_found' });
-      if (String(row.type || '') !== 'onboarding') return res.status(400).json({ error: 'not_onboarding' });
-      if (String(row.status || '') !== 'approved') return res.status(400).json({ error: 'not_approved' });
-      const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
-      const emp = payload?.employee && typeof payload.employee === 'object' ? payload.employee : {};
-      const stateForId = (await getSharedState()) || {};
-      const built = buildOnboardingEmployeeRecordFromPayload(emp, stateForId);
-      if (!built.ok) return res.status(400).json({ error: built.reason, message: '审批单中缺少 employee.username，无法补录' });
-      await mergeSharedStateFields({ employees: [built.nextEmp] }, { employees: 'username' });
+      const result = await repairOnboardingEmployee({
+        pool,
+        getSharedState,
+        mergeSharedStateFields,
+        buildOnboardingEmployeeRecordFromPayload,
+        id,
+      });
+      if (result.error) {
+        const body = { error: result.error };
+        if (result.message) body.message = result.message;
+        return res.status(result.status).json(body);
+      }
       return res.json({
         ok: true,
-        approvalId: row.id,
-        username: built.newUsername,
-        name: built.empName
+        approvalId: result.approvalId,
+        username: result.username,
+        name: result.name,
       });
     } catch (e) {
       console.error('[admin/repair-onboarding-employee]', e);
@@ -636,74 +639,23 @@ export function registerApprovalLifecycleRoutes(app, authRequired, deps) {
     if (!id) return res.status(400).json({ error: 'missing_id' });
 
     try {
-      const r0 = await pool.query(
-        'select id, type, status, applicant_username, current_assignee_username, chain, payload, effective_date, created_at, updated_at from approval_requests where id = $1 limit 1',
-        [id]
-      );
-      const row = r0.rows?.[0] || null;
-      if (!row) return res.status(404).json({ error: 'not_found' });
-      if (String(row.status || '') !== 'pending') return res.status(400).json({ error: 'not_pending' });
-
-      // Verify the current user is in the approval chain and is a pending assignee
-      const chain = Array.isArray(row.chain) ? row.chain : [];
-      const idx = chain.findIndex(x => String(x?.assignee || '').toLowerCase() === username.toLowerCase() && String(x?.status || '') === 'pending');
-      if (idx < 0) return res.status(403).json({ error: 'forbidden' });
-
-      const nowIso = hrmsNowISO();
-      // Mark the current step as returned
-      chain[idx] = { ...chain[idx], status: 'returned', decidedAt: nowIso, note };
-
-      // Reset all previous approved steps back to queued so the chain restarts on resubmit
-      for (let i = 0; i < idx; i++) {
-        if (chain[i] && String(chain[i].status || '') === 'approved') {
-          chain[i] = { ...chain[i], status: 'queued', decidedAt: null, note: '' };
-        }
-      }
-      // Reset any remaining queued steps
-      for (let i = idx + 1; i < chain.length; i++) {
-        if (chain[i]) chain[i] = { ...chain[i], status: 'queued', decidedAt: null, note: '' };
-      }
-
-      // Save the returned payload with return metadata
-      const updatedPayload = row.payload && typeof row.payload === 'object' ? { ...row.payload } : {};
-      updatedPayload.returnedAt = nowIso;
-      updatedPayload.returnedBy = username;
-      updatedPayload.returnNote = note;
-
-      const r1 = await pool.query(
-        `update approval_requests
-         set status='returned', current_assignee_username=null, chain=$2::jsonb, payload=$3::jsonb, updated_at=now()
-         where id=$1
-         returning id, type, status, applicant_username, current_assignee_username, chain, payload, effective_date, executed_at, created_at, updated_at`,
-        [id, JSON.stringify(chain), JSON.stringify(updatedPayload)]
-      );
-      const updated = r1.rows?.[0] || null;
-
-      // Notify applicant that the request was returned
-      try {
-        const state0 = (await getSharedState()) || {};
-        let stateN = state0;
-        const applicantUser = String(row.applicant_username || '').trim();
-        const applicant = stateFindUserRecord(stateN, applicantUser) || {};
-        const applicantName = String(applicant?.name || applicantUser).trim() || applicantUser;
-        const returnerRec = stateFindUserRecord(stateN, username) || {};
-        const returnerName = String(returnerRec?.name || username).trim() || username;
-        const label = approvalTypeLabel(String(row.type || ''));
-        const msg = `${applicantName}，你提交的${label}申请被${returnerName}退回${note ? `，原因：${note}` : ''}。请修改后重新提交。`;
-        stateN = addStateNotification(stateN, makeNotif(applicantUser, `${label}申请被退回`, msg, { type: `${row.type}_returned`, approvalId: id }));
-        await saveSharedState(stateN);
-
-        // 飞书通知申请人
-        try {
-          const fu = await lookupFeishuUserByUsername(applicantUser);
-          if (fu?.open_id) {
-            const feishuMsg = `📋 【HRMS 审批退回】\n\n${applicantName}，您的${label}申请被${returnerName}退回${note ? `，原因：${note}` : ''}。\n请修改后重新提交：https://nnyx.cc`;
-            await sendLarkMessage(fu.open_id, feishuMsg, { skipDedup: true });
-          }
-        } catch (e) { console.error('[approval-return] feishu notify error:', e?.message); }
-      } catch (e) { console.error('[approval-return] notification error:', e?.message); }
-
-      return res.json({ item: updated });
+      const result = await returnApproval({
+        pool,
+        getSharedState,
+        saveSharedState,
+        stateFindUserRecord,
+        addStateNotification,
+        makeNotif,
+        approvalTypeLabel,
+        lookupFeishuUserByUsername,
+        sendLarkMessage,
+        hrmsNowISO,
+        id,
+        username,
+        note,
+      });
+      if (result.error) return res.status(result.status).json({ error: result.error });
+      return res.json({ item: result.item });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
@@ -716,126 +668,28 @@ export function registerApprovalLifecycleRoutes(app, authRequired, deps) {
     if (!id) return res.status(400).json({ error: 'missing_id' });
 
     try {
-      const r0 = await pool.query(
-        'select id, type, status, applicant_username, current_assignee_username, chain, payload, effective_date, created_at, updated_at from approval_requests where id = $1 limit 1',
-        [id]
-      );
-      const row = r0.rows?.[0] || null;
-      if (!row) return res.status(404).json({ error: 'not_found' });
-      if (String(row.status || '') !== 'returned') return res.status(400).json({ error: 'not_returned' });
-
-      // Only the original applicant can resubmit
-      if (String(row.applicant_username || '').toLowerCase() !== username.toLowerCase()) {
-        return res.status(403).json({ error: 'forbidden' });
+      const result = await resubmitApproval({
+        pool,
+        getSharedState,
+        saveSharedState,
+        stateFindUserRecord,
+        addStateNotification,
+        makeNotif,
+        approvalTypeLabel,
+        lookupFeishuUserByUsername,
+        sendLarkMessage,
+        hrmsNowISO,
+        safeNumber,
+        id,
+        username,
+        bodyPayload: req.body,
+      });
+      if (result.error) {
+        const body = { error: result.error };
+        if (result.message) body.message = result.message;
+        return res.status(result.status).json(body);
       }
-
-      const updatedPayload = row.payload && typeof row.payload === 'object' ? { ...row.payload } : {};
-
-      // 积分退回后重新提交：允许随请求更新 items（理由等），校验规则与新建申请一致
-      if (String(row.type || '') === 'points') {
-        const bodyItems = Array.isArray(req.body?.items) ? req.body.items : null;
-        if (bodyItems && bodyItems.length === 0) {
-          return res.status(400).json({ error: 'empty_items', message: '积分条目不能为空' });
-        }
-        if (bodyItems && bodyItems.length > 0) {
-          const state = (await getSharedState()) || {};
-          const rules = Array.isArray(state?.pointRules) ? state.pointRules : [];
-          const applicantRec = stateFindUserRecord(state, username) || {};
-          const applicantStore = String(applicantRec?.store || '').trim();
-          if (!applicantStore) return res.status(400).json({ error: 'missing_store', message: '缺少门店信息，无法校验积分事项' });
-          if (bodyItems.length > 20) return res.status(400).json({ error: 'too_many_items', message: '单次最多申请20条' });
-          const validatedItems = [];
-          let totalPoints = 0;
-          for (let i = 0; i < bodyItems.length; i++) {
-            const it = bodyItems[i];
-            const rid = String(it?.ruleId || '').trim();
-            const rsn = String(it?.reason || '').trim();
-            if (!rid) return res.status(400).json({ error: 'missing_rule', message: `第${i + 1}条缺少事项` });
-            if (!rsn) return res.status(400).json({ error: 'missing_reason', message: `第${i + 1}条缺少理由` });
-            const rule = rules.find(r => String(r?.id || '').trim() === rid);
-            if (!rule) return res.status(400).json({ error: 'invalid_rule', message: `第${i + 1}条事项无效` });
-            if (rule?.enabled === false) return res.status(400).json({ error: 'rule_disabled', message: `第${i + 1}条事项已禁用` });
-            const ruleStore = String(rule?.store || '').trim();
-            if (ruleStore && ruleStore !== applicantStore) return res.status(400).json({ error: 'rule_store_mismatch', message: `第${i + 1}条事项门店不匹配` });
-            const rulePoints = safeNumber(rule?.points);
-            if (rulePoints == null || rulePoints <= 0) return res.status(400).json({ error: 'invalid_rule_points', message: `第${i + 1}条积分无效` });
-            validatedItems.push({ ruleId: rid, itemName: String(rule?.itemName || '').trim() || '积分事项', points: rulePoints, reason: rsn });
-            totalPoints += rulePoints;
-          }
-          updatedPayload.items = validatedItems;
-          updatedPayload.totalPoints = totalPoints;
-          updatedPayload.points = totalPoints;
-          updatedPayload.itemName = validatedItems.length === 1 ? validatedItems[0].itemName : `${validatedItems.length}项积分申请（共${totalPoints}分）`;
-          delete updatedPayload.ruleId;
-          delete updatedPayload.reason;
-        }
-        if (Array.isArray(req.body?.evidenceUrls)) {
-          updatedPayload.evidenceUrls = req.body.evidenceUrls.map(x => String(x || '').trim()).filter(Boolean);
-        }
-      }
-
-      // onboarding: allow updating employee fields on resubmit
-      if (String(row.type || '') === 'onboarding') {
-        const bodyEmp = req.body?.employee && typeof req.body.employee === 'object' ? req.body.employee : null;
-        if (bodyEmp) {
-          const existing = updatedPayload.employee && typeof updatedPayload.employee === 'object' ? updatedPayload.employee : {};
-          updatedPayload.employee = { ...existing, ...bodyEmp };
-        }
-      }
-      // other types: allow patching top-level payload fields on resubmit
-      if (['leave', 'payment', 'offboarding', 'reward_punishment', 'promotion'].includes(String(row.type || ''))) {
-        const bodyPatch = req.body?.patch && typeof req.body.patch === 'object' ? req.body.patch : null;
-        if (bodyPatch) {
-          Object.assign(updatedPayload, bodyPatch);
-        }
-      }
-
-      // Reset the chain: all steps back to pending/queued, first step becomes pending
-      const chain = Array.isArray(row.chain) ? row.chain : [];
-      for (let i = 0; i < chain.length; i++) {
-        chain[i] = { ...chain[i], status: i === 0 ? 'pending' : 'queued', decidedAt: null, note: '' };
-      }
-      const firstAssignee = chain.length > 0 ? String(chain[0]?.assignee || '').trim() : '';
-
-      // Clean up return metadata from payload
-      updatedPayload.resubmittedAt = hrmsNowISO();
-      delete updatedPayload.returnedAt;
-      delete updatedPayload.returnedBy;
-      delete updatedPayload.returnNote;
-
-      const r1 = await pool.query(
-        `update approval_requests
-         set status='pending', current_assignee_username=$2, chain=$3::jsonb, payload=$4::jsonb, updated_at=now()
-         where id=$1
-         returning id, type, status, applicant_username, current_assignee_username, chain, payload, effective_date, executed_at, created_at, updated_at`,
-        [id, firstAssignee || null, JSON.stringify(chain), JSON.stringify(updatedPayload)]
-      );
-      const updated = r1.rows?.[0] || null;
-
-      // Notify the first assignee about the resubmission
-      try {
-        const state0 = (await getSharedState()) || {};
-        let stateN = state0;
-        const applicantRec = stateFindUserRecord(stateN, username) || {};
-        const applicantName = String(applicantRec?.name || username).trim() || username;
-        const label = approvalTypeLabel(String(row.type || ''));
-        if (firstAssignee) {
-          const msg = `${applicantName}重新提交了${label}申请，请审批。`;
-          stateN = addStateNotification(stateN, makeNotif(firstAssignee, `${label}申请待审批`, msg, { type: `${row.type}_resubmitted`, approvalId: id }));
-          await saveSharedState(stateN);
-
-          // 飞书通知审批人
-          try {
-            const fu = await lookupFeishuUserByUsername(firstAssignee);
-            if (fu?.open_id) {
-              const feishuMsg = `📋 【HRMS 审批通知】\n\n${applicantName}重新提交了${label}申请，请审批。\n审批地址：https://nnyx.cc`;
-              await sendLarkMessage(fu.open_id, feishuMsg, { skipDedup: true });
-            }
-          } catch (e) { console.error('[approval-resubmit] feishu notify error:', e?.message); }
-        }
-      } catch (e) { console.error('[approval-resubmit] notification error:', e?.message); }
-
-      return res.json({ item: updated });
+      return res.json({ item: result.item });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
