@@ -63,6 +63,12 @@ import {
 } from './domains/shared/time-number.js';
 import { shanghaiTodayDateOnly } from './domains/leave-attendance/attendance-build.js';
 import { createAgentsServiceAuthHelpers } from './domains/shared/agents-service-auth.js';
+import { safeErrMessage } from './domains/shared/safe-err-message.js';
+import { domainJsonFieldEmpty } from './domains/shared/domain-json-empty.js';
+import {
+  inferContentType,
+  buildInlineContentDisposition,
+} from './domains/uploads/content-type.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
@@ -316,11 +322,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Request-Id', requestId);
   next();
 });
-// M1-FIX: 生产环境不把内部错误细节（e.message，可能含SQL/文件路径等）返回给客户端
-function safeErrMessage(e) {
-  if (process.env.NODE_ENV === 'production') return 'internal_error';
-  return String(e?.message || e || 'internal_error');
-}
+// Wave H27: safeErrMessage → domains/shared/safe-err-message.js (named import)
 // H3-FIX: 限制CORS来源（生产环境使用白名单，开发环境允许所有）
 const CORS_WHITELIST = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors(CORS_WHITELIST.length > 0 ? {
@@ -1462,20 +1464,8 @@ async function dualWriteStateToDB(state) {
   }
 }
 
-/** 薪资域 JSON 是否视为「空」（用于 state ↔ hrms_payroll_domain 互备回灌） */
-function payrollDomainFieldEmpty(v) {
-  if (v === undefined || v === null) return true;
-  if (Array.isArray(v)) return v.length === 0;
-  if (typeof v === 'object') return Object.keys(v).length === 0;
-  return false;
-}
-
-function leaveDomainFieldEmpty(v) {
-  if (v === undefined || v === null) return true;
-  if (Array.isArray(v)) return v.length === 0;
-  if (typeof v === 'object') return Object.keys(v).length === 0;
-  return false;
-}
+// Wave H27: payrollDomainFieldEmpty / leaveDomainFieldEmpty → domainJsonFieldEmpty
+// (domains/shared/domain-json-empty.js)
 
 /** 将当前 state 中的薪资相关字段写入独立表 hrms_payroll_domain（双写备份） */
 // id曾经硬编码为'default'常量、tenant_id列全靠DEFAULT带过——在只有一个租户时无害，
@@ -1809,40 +1799,7 @@ function buildOssPublicUrl(objectKey) {
   return '';
 }
 
-function encodeRFC5987ValueChars(str) {
-  return encodeURIComponent(String(str || ''))
-    .replace(/['()]/g, escape)
-    .replace(/\*/g, '%2A')
-    .replace(/%(7C|60|5E)/g, (m) => m.toLowerCase());
-}
-
-function buildInlineContentDisposition(filename) {
-  const name = String(filename || '').trim() || 'file';
-  const encoded = encodeRFC5987ValueChars(name);
-  return `inline; filename*=UTF-8''${encoded}`;
-}
-
-function inferContentType({ declaredType, originalName, mimeType }) {
-  const t = String(declaredType || '').trim().toLowerCase();
-  const orig = String(originalName || '').trim();
-  const ext = path.extname(orig).toLowerCase();
-  const mt = String(mimeType || '').trim().toLowerCase();
-
-  if (mt && mt !== 'application/octet-stream') return mt;
-
-  if (t === 'pdf' || ext === '.pdf') return 'application/pdf';
-  if (t === 'video' || ext === '.mp4') return 'video/mp4';
-  if (ext === '.mov') return 'video/quicktime';
-  if (t === 'img' || ext === '.png') return 'image/png';
-  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
-  if (ext === '.webp') return 'image/webp';
-
-  if (ext === '.txt') return 'text/plain; charset=utf-8';
-  if (ext === '.doc') return 'application/msword';
-  if (ext === '.docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-
-  return 'application/octet-stream';
-}
+// Wave H27: inferContentType / buildInlineContentDisposition → domains/uploads/content-type.js
 
 function requireEnv() {
   const missing = [];
@@ -3127,7 +3084,7 @@ app.listen(PORT, HOST, async () => {
         for (const [sk, col] of pairs) {
           const dbVal = row[col];
           const stVal = stateP[sk];
-          if (payrollDomainFieldEmpty(stVal) && !payrollDomainFieldEmpty(dbVal)) {
+          if (domainJsonFieldEmpty(stVal) && !domainJsonFieldEmpty(dbVal)) {
             stateP = { ...stateP, [sk]: dbVal };
             changed = true;
           }
@@ -3161,7 +3118,7 @@ app.listen(PORT, HOST, async () => {
         for (const [sk, col] of pairs) {
           const dbVal = row[col];
           const stVal = stateL[sk];
-          if (leaveDomainFieldEmpty(stVal) && !leaveDomainFieldEmpty(dbVal)) {
+          if (domainJsonFieldEmpty(stVal) && !domainJsonFieldEmpty(dbVal)) {
             stateL = { ...stateL, [sk]: dbVal };
             changed = true;
           }
