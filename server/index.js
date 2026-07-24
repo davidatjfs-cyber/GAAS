@@ -71,6 +71,7 @@ import { registerDiagnosisFeedbackRoutes } from './domains/diagnosis/routes.js';
 import { registerAgentDataRoutes } from './domains/agent-data/routes.js';
 import { registerFeishuWebhookRoutes } from './domains/feishu-webhook/routes.js';
 import { createFeishuBitableHelpers } from './domains/feishu-bitable/create-helpers.js';
+import { createInventoryForecastHelpers } from './domains/inventory-forecast/create-helpers.js';
 import {
 
 
@@ -444,47 +445,6 @@ function buildKnowledgeBrandScopeTag(input) {
   return id ? `brand:${id}` : 'brand:all';
 }
 
-function resolveForecastScope(state0, username, role, requestedStore, requestedBrandId) {
-  const scopedRole = isForecastStoreScopedRole(role);
-  const myStore = pickMyStoreFromState(state0, username);
-  const qStore = String(requestedStore || '').trim();
-  const qBrandId = normalizeBrandId(requestedBrandId);
-
-  if (scopedRole) {
-    const ctx = resolveStoreBrandContext(state0, myStore);
-    const store = String(ctx.storeName || myStore || '').trim();
-    return {
-      store,
-      brandId: normalizeBrandId(ctx.brandId),
-      brandName: String(ctx.brandName || '').trim(),
-      storeScope: store ? [store] : []
-    };
-  }
-
-  if (qStore) {
-    const ctx = resolveStoreBrandContext(state0, qStore);
-    const store = String(ctx.storeName || qStore || '').trim();
-    return {
-      store,
-      brandId: normalizeBrandId(ctx.brandId),
-      brandName: String(ctx.brandName || '').trim(),
-      storeScope: store ? [store] : []
-    };
-  }
-
-  if (qBrandId) {
-    const brands = getBrandsFromState(state0);
-    const brand = brands.find((b) => normalizeBrandId(b?.id) === qBrandId) || null;
-    return {
-      store: '',
-      brandId: qBrandId,
-      brandName: String(brand?.name || '').trim(),
-      storeScope: getStoreNamesByBrand(state0, qBrandId)
-    };
-  }
-
-  return { store: '', brandId: '', brandName: '', storeScope: [] };
-}
 
 async function ensureOpsTasksTable() {
   try {
@@ -532,444 +492,6 @@ async function ensureOpsTasksTable() {
   }
 }
 
-// ─── Product Name Normalization ───
-// Maps variant names like "9秒生炒魚片【地道鲜嫩廣府味】" → "九秒生炒鱼片"
-const _TRAD_TO_SIMP = {'魚':'鱼','雞':'鸡','鴨':'鸭','豬':'猪','牛':'牛','蝦':'虾','蠔':'蚝','鵝':'鹅','雜':'杂','滷':'卤','燒':'烧','煲':'煲','湯':'汤','飯':'饭','麵':'面','餅':'饼','粥':'粥','蛋':'蛋','菜':'菜','醬':'酱','糖':'糖','鹽':'盐','點':'点','條':'条','塊':'块','份':'份','碟':'碟','個':'个','隻':'只','煎':'煎','炒':'炒','蒸':'蒸','燜':'焖','燉':'炖','烤':'烤','炸':'炸','焗':'焗','凍':'冻','熱':'热','鮮':'鲜','嫩':'嫩','脆':'脆','軟':'软','濃':'浓','淡':'淡','辣':'辣','甜':'甜','酸':'酸','鹹':'咸','廣':'广','東':'东','風':'风','記':'记','號':'号','閣':'阁','園':'园','館':'馆','樓':'楼','優':'优','選':'选','經':'经','標':'标','準':'准','與':'与','開':'开','關':'关','電':'电','話':'话','網':'网','車':'车','門':'门','書':'书','學':'学','師':'师','員':'员','長':'长','華':'华','國':'国','區':'区','場':'场','種':'种','類':'类','質':'质','體':'体','節':'节','張':'张','動':'动','機':'机','對':'对','裡':'里','後':'后','從':'从','過':'过','間':'间','樣':'样','見':'见','頭':'头','實':'实','結':'结','當':'当','處':'处','總':'总','進':'进','現':'现','發':'发','線':'线','連':'连','運':'运','達':'达','傳':'传','輕':'轻','邊':'边','產':'产','話':'话','識':'识','認':'认','議':'议','論':'论','訂':'订','計':'计','調':'调','設':'设','許':'许','試':'试','語':'语','讀':'读','護':'护','變':'变','讓':'让','買':'买','賣':'卖','費':'费','賞':'赏','資':'资','貨':'货','貿':'贸','財':'财','價':'价','貴':'贵','賓':'宾','貢':'贡','響':'响','頁':'页','順':'顺','領':'领','題':'题','顏':'颜','額':'额','飲':'饮','餐':'餐','養':'养','駕':'驾','騎':'骑','驗':'验','髮':'发','鬥':'斗','鑊':'镬','鍋':'锅','鐵':'铁','鏡':'镜','鋪':'铺','鮑':'鲍','鱸':'鲈','鯇':'鲩','龍':'龙','龜':'龟'};
-const _ARAB_TO_CN = {'0':'零','1':'一','2':'二','3':'三','4':'四','5':'五','6':'六','7':'七','8':'八','9':'九'};
-function normalizeProductName(raw) {
-  let s = String(raw || '').trim();
-  if (!s) return '';
-  // Strip bracketed marketing text: 【...】 （...） (...) [...] etc.
-  s = s.replace(/【[^】]*】/g, '').replace(/\([^)]*\)/g, '').replace(/（[^）]*）/g, '').replace(/\[[^\]]*\]/g, '');
-  // Traditional → Simplified
-  s = s.split('').map(c => _TRAD_TO_SIMP[c] || c).join('');
-  // Arabic digits → Chinese digits (single-char only, for product names like "9秒"→"九秒")
-  s = s.split('').map(c => _ARAB_TO_CN[c] || c).join('');
-  // Remove extra whitespace
-  s = s.replace(/\s+/g, '').trim();
-  return s;
-}
-
-function buildForecastProductAliasLookup(state0, scopeInput) {
-  const scopeStore = typeof scopeInput === 'string' ? String(scopeInput || '').trim() : String(scopeInput?.store || '').trim();
-  const scopeBrandId = normalizeBrandId(typeof scopeInput === 'string' ? '' : scopeInput?.brandId);
-  const inferredBrandId = scopeBrandId || normalizeBrandId(resolveStoreBrandContext(state0, scopeStore).brandId);
-  const lookup = new Map();
-  const list = Array.isArray(state0?.forecastProductAliasRules) ? state0.forecastProductAliasRules : [];
-  list
-    .filter((x) => {
-      const ruleBrandId = normalizeBrandId(x?.brandId);
-      if (ruleBrandId && inferredBrandId) return ruleBrandId === inferredBrandId;
-      if (inferredBrandId && !ruleBrandId) {
-        const rowBrandId = normalizeBrandId(resolveStoreBrandContext(state0, String(x?.store || '').trim()).brandId);
-        return rowBrandId === inferredBrandId;
-      }
-      return String(x?.store || '').trim() === scopeStore;
-    })
-    .forEach((rule) => {
-      const canonical = String(rule?.canonical || '').trim();
-      const canonicalNorm = normalizeProductName(canonical);
-      if (!canonical || !canonicalNorm) return;
-      const aliases = Array.isArray(rule?.aliases) ? rule.aliases : [];
-      [canonical, ...aliases].forEach((name) => {
-        const norm = normalizeProductName(name);
-        if (!norm) return;
-        lookup.set(norm, { canonical, canonicalNorm });
-      });
-    });
-  return lookup;
-}
-
-function resolveForecastProductName(rawName, aliasLookup) {
-  const original = String(rawName || '').trim();
-  const normalized = normalizeProductName(original);
-  if (!normalized) return { key: '', display: '' };
-  if (aliasLookup && aliasLookup.has(normalized)) {
-    const hit = aliasLookup.get(normalized);
-    return {
-      key: String(hit?.canonicalNorm || normalized),
-      display: String(hit?.canonical || original || normalized).trim()
-    };
-  }
-  return { key: normalized, display: original || normalized };
-}
-
-function canonicalizeForecastProductQuantities(input, aliasLookup) {
-  const source = input && typeof input === 'object' ? input : {};
-  const out = {};
-  Object.entries(source).forEach(([product, qtyRaw]) => {
-    const qty = Number(qtyRaw || 0);
-    if (!Number.isFinite(qty) || qty <= 0) return;
-    const resolved = resolveForecastProductName(product, aliasLookup);
-    if (!resolved.key || isExcludedForecastProduct(resolved.display)) return;
-    out[resolved.display] = Number((Number(out[resolved.display] || 0) + qty).toFixed(2));
-  });
-  return out;
-}
-
-function canonicalizeForecastRows(rows, aliasLookup) {
-  return (Array.isArray(rows) ? rows : []).map((row) => ({
-    ...row,
-    productQuantities: canonicalizeForecastProductQuantities(row?.productQuantities, aliasLookup)
-  }));
-}
-
-function forecastDayTypeLabel(date, isHoliday) {
-  if (isHoliday === true) return 'holiday';
-  const d = new Date(String(date || '') + 'T00:00:00');
-  if (Number.isFinite(d.getTime())) {
-    const day = d.getDay();
-    if (day === 0 || day === 6) return 'holiday';
-  }
-  return 'workday';
-}
-
-function normalizeForecastWeatherTag(input) {
-  const s = String(input || '').trim();
-  if (!s) return '';
-  if (/雨|暴雨|雷|阵雨/.test(s)) return 'rain';
-  if (/雪/.test(s)) return 'snow';
-  if (/雾|霾/.test(s)) return 'fog';
-  if (/风/.test(s)) return 'wind';
-  if (/阴|多云/.test(s)) return 'cloudy';
-  if (/晴/.test(s)) return 'sunny';
-  return s.toLowerCase();
-}
-
-// 门店预测配置：雨天系数、节假日策略
-const STORE_FORECAST_CONFIG = {
-  '洪潮大宁久光店': { rainFactor: 0.90, snowFactor: 0.85, holidayAsWeekend: true },
-  '洪潮久光店': { rainFactor: 0.90, snowFactor: 0.85, holidayAsWeekend: true },
-  '马己仙上海音乐广场店': { rainFactor: 0.85, snowFactor: 0.80, holidayAsWeekend: true },
-  '马己仙': { rainFactor: 0.85, snowFactor: 0.80, holidayAsWeekend: true },
-  '_default': { rainFactor: 0.88, snowFactor: 0.82, holidayAsWeekend: true }
-};
-
-function getStoreForecastConfig(store) {
-  const s = String(store || '').trim();
-  // resolveTenantIdDefault读AsyncLocalStorage里authRequired设置的租户上下文，
-  // 不需要给这个函数的所有调用点都加tenantId参数。
-  const tid = resolveTenantIdDefault();
-  const brandKey = getBrandForStoreSync(s, tid)?.brandKey;
-  const dbCfg = brandKey ? getBrandConfigSync(brandKey, tid)?.forecast : null;
-  if (dbCfg) return dbCfg;
-  if (STORE_FORECAST_CONFIG[s]) return STORE_FORECAST_CONFIG[s];
-  // Partial name match for abbreviated store names
-  const key = Object.keys(STORE_FORECAST_CONFIG).find(k => k !== '_default' && (s.includes(k) || k.includes(s)));
-  return (key ? STORE_FORECAST_CONFIG[key] : null) || STORE_FORECAST_CONFIG['_default'];
-}
-
-function isCNYPeriod(dateStr) {
-  // Spring Festival anomaly window. Mar 1+ treated as normal (元宵 = Feb 20 2026).
-  if (!dateStr) return false;
-  const d = new Date(dateStr + 'T00:00:00');
-  if (!Number.isFinite(d.getTime())) return false;
-  const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
-  // 2026 CNY window: Jan 25 – Feb 28
-  if (y === 2026 && ((m === 1 && day >= 25) || m === 2)) return true;
-  // Generic guard for other years: Jan 25 – Feb 28
-  if (m === 2 || (m === 1 && day >= 25)) return true;
-  return false;
-}
-
-// Known national public holidays (non-CNY) that inflate restaurant sales.
-const KNOWN_PUBLIC_HOLIDAYS = new Set([
-  '2026-01-01','2026-01-02','2026-01-03',
-  '2026-05-01','2026-05-02','2026-05-03','2026-05-04','2026-05-05',
-  '2026-06-19','2026-06-20','2026-06-21',
-  '2026-10-01','2026-10-02','2026-10-03','2026-10-04','2026-10-05','2026-10-06','2026-10-07','2026-10-08',
-  '2025-01-01','2025-01-02','2025-01-03',
-  '2025-05-01','2025-05-02','2025-05-03','2025-05-04','2025-05-05',
-  '2025-05-31','2025-06-01','2025-06-02',
-  '2025-10-01','2025-10-02','2025-10-03','2025-10-04','2025-10-05','2025-10-06','2025-10-07','2025-10-08',
-]);
-
-function isKnownPublicHoliday(dateStr) {
-  return KNOWN_PUBLIC_HOLIDAYS.has(String(dateStr || '').trim());
-}
-
-function isNormalWorkday(dateStr, isHoliday) {
-  if (isHoliday) return false;
-  if (isCNYPeriod(dateStr)) return false;
-  if (isKnownPublicHoliday(dateStr)) return false;
-  const d = new Date((dateStr || '') + 'T00:00:00');
-  if (!Number.isFinite(d.getTime())) return false;
-  const dow = d.getDay();
-  return dow >= 1 && dow <= 5;
-}
-
-function estimateRevenueByHistory(historyRows, target, store) {
-  const rows = Array.isArray(historyRows) ? historyRows : [];
-  const dailyMap = new Map();
-  rows.forEach((row) => {
-    const date = safeDateOnly(row?.date);
-    const bizType = normalizeForecastBizType(row?.bizType);
-    if (!date || !bizType) return;
-    const key = `${date}||${bizType}`;
-    const prev = dailyMap.get(key) || {
-      date,
-      bizType,
-      weather: normalizeForecastWeather(row?.weather),
-      isHoliday: !!row?.isHoliday,
-      revenue: 0
-    };
-    prev.revenue += Number(row?.expectedRevenue || 0);
-    if (!prev.weather) prev.weather = normalizeForecastWeather(row?.weather);
-    if (row?.isHoliday) prev.isHoliday = true;
-    dailyMap.set(key, prev);
-  });
-
-  // Mark known public holidays so they get the same penalty as CNY weekdays
-  dailyMap.forEach((item) => {
-    if (!item.isHoliday && isKnownPublicHoliday(item.date)) item.isHoliday = true;
-  });
-
-  // Outlier removal: per-DOW IQR filter.
-  // Removes extreme records (e.g. Jan 15 = 502722) that would skew the weighted average.
-  // Only removes genuine outliers: revenue > Q3 + 3×IQR within the same day-of-week group.
-  (() => {
-    const revByDow = {};
-    dailyMap.forEach((item) => {
-      const dObj = new Date(String(item.date || '') + 'T00:00:00');
-      if (!Number.isFinite(dObj.getTime())) return;
-      const dw = dObj.getDay();
-      if (!revByDow[dw]) revByDow[dw] = [];
-      revByDow[dw].push(Number(item.revenue || 0));
-    });
-    const caps = {};
-    Object.entries(revByDow).forEach(([dw, vals]) => {
-      if (vals.length < 4) return;
-      const sorted = vals.slice().sort((a, b) => a - b);
-      const q1 = sorted[Math.floor(sorted.length * 0.25)];
-      const q3 = sorted[Math.floor(sorted.length * 0.75)];
-      const iqr = q3 - q1;
-      caps[dw] = q3 + 3 * iqr;
-    });
-    dailyMap.forEach((item, key) => {
-      const dObj = new Date(String(item.date || '') + 'T00:00:00');
-      if (!Number.isFinite(dObj.getTime())) return;
-      const dw = dObj.getDay();
-      const cap = caps[dw];
-      if (cap != null && Number(item.revenue || 0) > cap) {
-        dailyMap.delete(key);
-      }
-    });
-  })();
-
-  const storeConfig = getStoreForecastConfig(store);
-  const targetDate = safeDateOnly(target?.date);
-  const targetWeatherTag = normalizeForecastWeatherTag(target?.weather);
-  const targetIsHoliday = !!target?.isHoliday;
-  let targetDow = -1;
-  try {
-    const td = new Date(String(targetDate || '') + 'T00:00:00');
-    if (Number.isFinite(td.getTime())) targetDow = td.getDay();
-    // 节假日按周末预测：将目标日视为周日(0)
-    if (storeConfig.holidayAsWeekend && targetIsHoliday && targetDow >= 1 && targetDow <= 5) targetDow = 0;
-  } catch (e) { /* ignore */ }
-
-  const result = {
-    sampleCount: 0,
-    byBizType: {
-      takeaway: { enabled: false, estimatedRevenue: 0, sampleCount: 0, confidence: 0 },
-      dinein: { enabled: false, estimatedRevenue: 0, sampleCount: 0, confidence: 0 }
-    },
-    totalEstimatedRevenue: 0
-  };
-
-  ['takeaway', 'dinein'].forEach((bizType) => {
-    const list = Array.from(dailyMap.values())
-      .filter((x) => x.bizType === bizType)
-      .filter((x) => Number(x.revenue || 0) > 0)
-      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
-      .slice(0, 400);
-    result.byBizType[bizType].enabled = list.length > 0;
-    result.byBizType[bizType].sampleCount = list.length;
-    result.sampleCount += list.length;
-    if (!list.length) return;
-
-    // Determine if target is a normal workday (non-holiday, non-CNY, Mon-Fri)
-    const targetIsNormalWorkday = isNormalWorkday(targetDate, targetIsHoliday);
-
-    const scored = list.map((item) => {
-      let score = 1;
-      let cnyPenaltyFactor = 1.0; // applied last, after all additive scoring
-      try {
-        const d1 = new Date(String(item.date || '') + 'T00:00:00');
-        if (Number.isFinite(d1.getTime()) && targetDow >= 0) {
-          // Day-of-week: exact match is the strongest signal (Mon≠Fri, weekday≠weekend)
-          let itemDow = d1.getDay();
-          const itemRawDow = itemDow;
-          if (storeConfig.holidayAsWeekend && item.isHoliday && itemDow >= 1 && itemDow <= 5) itemDow = 0;
-          if (itemDow === targetDow) score += 20.0;
-          else {
-            // Saturday(6) and Sunday(0) are NOT interchangeable — different revenue patterns
-            const bothWeekend = (itemDow === 0 || itemDow === 6) && (targetDow === 0 || targetDow === 6);
-            if (bothWeekend) score += 1.5;
-            else score += 0.3; // weekday vs wrong weekday, or weekday vs weekend
-          }
-
-          // ── CNY / holiday contamination detection ─────────────────────────
-          const itemIsCNY = isCNYPeriod(item.date);
-          const itemIsHolidayWeekday = (item.isHoliday || itemIsCNY) && itemRawDow >= 1 && itemRawDow <= 5;
-          const itemIsNormalWkd = isNormalWorkday(item.date, item.isHoliday);
-
-          if (itemIsHolidayWeekday && targetIsNormalWorkday) {
-            // CNY-inflated weekday vs normal-day target: nearly discard
-            // Penalty applied AFTER all additive scoring so recency can't rescue it
-            cnyPenaltyFactor = 0.05;
-          } else if (itemIsNormalWkd && !targetIsNormalWorkday && (targetDow === 0 || targetDow === 6 || targetIsHoliday)) {
-            // Normal weekday data pulled for weekend/holiday forecast: down-weight
-            cnyPenaltyFactor = 0.5;
-          }
-
-          // Recency bonus: skip for CNY-contaminated items targeting normal workdays
-          if (targetDate && cnyPenaltyFactor > 0.1) {
-            const d2 = new Date(targetDate + 'T00:00:00');
-            if (Number.isFinite(d2.getTime())) {
-              const dayDiff = Math.abs(Math.round((d2.getTime() - d1.getTime()) / 86400000));
-              score += Math.max(0, 2.0 * (1.0 - Math.min(1.0, dayDiff / 90)));
-            }
-          }
-        } else if (targetDate) {
-          // Recency bonus when DOW not available
-          const d1b = new Date(String(item.date || '') + 'T00:00:00');
-          const d2 = new Date(targetDate + 'T00:00:00');
-          if (Number.isFinite(d1b.getTime()) && Number.isFinite(d2.getTime())) {
-            const dayDiff = Math.abs(Math.round((d2.getTime() - d1b.getTime()) / 86400000));
-            score += Math.max(0, 2.0 * (1.0 - Math.min(1.0, dayDiff / 90)));
-          }
-        }
-      } catch (e) { /* ignore */ }
-      // Holiday matching (separate dimension)
-      if (Boolean(item.isHoliday) === targetIsHoliday) score += 0.8;
-      // Weather match
-      const itemWeatherTag = normalizeForecastWeatherTag(item.weather);
-      if (itemWeatherTag && targetWeatherTag) {
-        if (itemWeatherTag === targetWeatherTag) score += 0.6;
-        else score += 0.1;
-      }
-      // Apply CNY penalty as final multiplier — after all additive bonuses
-      score = score * cnyPenaltyFactor;
-      return { ...item, score: Number(score.toFixed(4)) };
-    });
-
-    // Filter to exact DOW-matching items when sufficient (≥2) to prevent
-    // weekend high-revenue records from inflating weekday forecasts.
-    const dowMatched = scored.filter((x) => {
-      if (targetDow < 0) return false;
-      try {
-        const dw = new Date(String(x.date || '') + 'T00:00:00').getDay();
-        return dw === targetDow;
-      } catch (e) { return false; }
-    });
-    const scoringPool = dowMatched.length >= 2 ? dowMatched : scored;
-    const picked = scoringPool
-      .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
-      .slice(0, Math.min(20, scoringPool.length));
-    const scoreSum = picked.reduce((s, x) => s + Number(x.score || 0), 0);
-    const weightedRevenue = picked.reduce((s, x) => s + Number(x.revenue || 0) * Number(x.score || 0), 0);
-    let estimatedRevenue = scoreSum > 0 ? (weightedRevenue / scoreSum) : 0;
-
-    // Weather adjustment: rain/snow → takeaway up, dine-in down (differential correction)
-    // Only apply if the weather-matched samples are underrepresented in picked set
-    if (targetWeatherTag === 'rain' || targetWeatherTag === 'snow') {
-      const matchCount = picked.filter((x) => normalizeForecastWeatherTag(x.weather) === targetWeatherTag).length;
-      const coverage = picked.length > 0 ? matchCount / picked.length : 0;
-      const strength = Math.max(0, 1 - coverage * 2); // full strength if <50% weather-matched
-      const wf = targetWeatherTag === 'snow' ? storeConfig.snowFactor : storeConfig.rainFactor;
-      const drop = 1 - wf; // e.g. 0.10 for 90% factor
-      if (bizType === 'dinein') estimatedRevenue *= (1 - drop * strength);
-      else if (bizType === 'takeaway') estimatedRevenue *= (1 + drop * 0.5 * strength);
-    }
-
-    const confidence = Math.max(0.2, Math.min(0.95, 0.35 + Math.min(0.5, list.length * 0.02)));
-    result.byBizType[bizType].estimatedRevenue = Number(Math.max(0, estimatedRevenue).toFixed(2));
-    result.byBizType[bizType].confidence = Number(confidence.toFixed(2));
-    result.totalEstimatedRevenue += Number(result.byBizType[bizType].estimatedRevenue || 0);
-  });
-
-  result.totalEstimatedRevenue = Number(result.totalEstimatedRevenue.toFixed(2));
-  return result;
-}
-
-function normalizeGrossProfitProfileItem(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const product = String(raw?.product || '').trim();
-  const bizType = normalizeForecastBizType(raw?.bizType) || '';
-  const costPerUnit = safeNumber(raw?.costPerUnit ?? raw?.cost);
-  const grossPerUnit = safeNumber(raw?.grossPerUnit ?? raw?.grossProfit ?? raw?.profitPerUnit);
-  if (!product) return null;
-  // Accept either costPerUnit or grossPerUnit
-  const hasCost = Number.isFinite(costPerUnit) && costPerUnit >= 0;
-  const hasGross = Number.isFinite(grossPerUnit) && grossPerUnit >= 0;
-  if (!hasCost && !hasGross) return null;
-  return {
-    product,
-    bizType,
-    costPerUnit: hasCost ? Number(costPerUnit.toFixed(4)) : undefined,
-    grossPerUnit: hasGross ? Number(grossPerUnit.toFixed(4)) : undefined
-  };
-}
-
-function computeAvgPricePerProduct(historyRows, storeScope, aliasLookup) {
-  const storeSet = new Set(
-    (Array.isArray(storeScope) ? storeScope : [storeScope])
-      .map((x) => String(x || '').trim())
-      .filter(Boolean)
-  );
-  // agg keyed by bizType||productKey so dine-in and takeaway prices are tracked separately
-  const agg = new Map();
-  const rows = Array.isArray(historyRows) ? historyRows : [];
-  rows.filter((x) => {
-    if (!storeSet.size) return true;
-    return storeSet.has(String(x?.store || '').trim());
-  }).forEach((row) => {
-    const rowBiz = normalizeForecastBizType(row?.bizType) || '';
-    const rev = Math.max(0, Number(row?.expectedRevenue || 0));
-    const products = row?.productQuantities && typeof row.productQuantities === 'object' ? row.productQuantities : {};
-    const entries = Object.entries(products)
-      .map(([p, q]) => ({ product: String(p || '').trim(), qty: Number(q || 0) }))
-      .filter((x) => x.product && x.qty > 0);
-    const totalQty = entries.reduce((s, x) => s + x.qty, 0);
-    entries.forEach(({ product, qty }) => {
-      const resolved = resolveForecastProductName(product, aliasLookup);
-      if (!resolved.key) return;
-      const allocRev = totalQty > 0 && rev > 0 ? (qty / totalQty) * rev : 0;
-      // Key by bizType so channels don't blend prices
-      const key = `${rowBiz}||${resolved.key}`;
-      const prev = agg.get(key) || { totalRevenue: 0, totalQty: 0 };
-      prev.totalRevenue += allocRev;
-      prev.totalQty += qty;
-      agg.set(key, prev);
-      // Also accumulate blended fallback key (empty biz prefix) for cross-channel lookup
-      const fallbackKey = `||${resolved.key}`;
-      const prev2 = agg.get(fallbackKey) || { totalRevenue: 0, totalQty: 0 };
-      prev2.totalRevenue += allocRev;
-      prev2.totalQty += qty;
-      agg.set(fallbackKey, prev2);
-    });
-  });
-  const result = new Map();
-  agg.forEach((v, k) => {
-    if (v.totalQty > 0) result.set(k, Number((v.totalRevenue / v.totalQty).toFixed(4)));
-  });
-  return result;
-}
-
-function canManageGrossProfitProfiles(role) {
-const r = String(role || '').trim();
-return r === 'admin' || r === 'hq_manager';
-}
-
-function normalizeDishAliasBizType(v) {
-  const s = String(v || '').trim().toLowerCase();
-  if (!s || s === '*' || s === 'all' || s === '全部' || s === '通用') return '*';
-  if (/takeaway|delivery|外卖|外送/.test(s)) return 'takeaway';
-  if (/dinein|堂食|店内|堂食点餐/.test(s)) return 'dinein';
-  return '*';
-}
-
 async function ensureDataGovernanceTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS dish_name_aliases (
@@ -991,161 +513,62 @@ async function ensureDataGovernanceTables() {
   // category_code该视图固定为NULL，不需要再对sales_raw做列补齐。
 }
 
-function estimateGrossMarginByHistory({ historyRows, profiles, startDate, endDate, bizType, storeScope, aliasLookup }) {
-const list = Array.isArray(historyRows) ? historyRows : [];
-const profileList = Array.isArray(profiles) ? profiles : [];
-// Build avg price map for cost→gross conversion
-const priceMap = storeScope ? computeAvgPricePerProduct(list, storeScope, aliasLookup) : new Map();
-const profileMap = new Map();
-const costPerUnitMap = new Map();
-  profileList.forEach((p) => {
-    const item = normalizeGrossProfitProfileItem(p);
-    if (!item) return;
-    let gpu = item.grossPerUnit;
-    const resolvedItem = resolveForecastProductName(item.product, aliasLookup);
-    const hasCost = Number.isFinite(item.costPerUnit) && item.costPerUnit >= 0;
-    // Store costPerUnit for direct cost-based calculation
-    if (hasCost) {
-      costPerUnitMap.set(`${item.bizType}||${resolvedItem.key}`, item.costPerUnit);
-      costPerUnitMap.set(`||${resolvedItem.key}`, item.costPerUnit);
-    }
-    // If only costPerUnit is set, compute grossPerUnit from biz-specific avg price
-    if ((!Number.isFinite(gpu) || gpu === undefined) && hasCost) {
-      const bizKey = `${item.bizType}||${resolvedItem.key}`;
-      const fallbackKey = `||${resolvedItem.key}`;
-      const avgPrice = priceMap.get(bizKey) || priceMap.get(fallbackKey) || 0;
-      gpu = avgPrice > item.costPerUnit ? Number((avgPrice - item.costPerUnit).toFixed(4)) : 0;
-    }
-    if (!Number.isFinite(gpu)) return;
-    // Store by both original and normalized name for matching
-    profileMap.set(`${item.bizType}||${resolvedItem.key}`, gpu);
-    const normName = resolvedItem.key;
-    if (normName && normName !== item.product) {
-      profileMap.set(`${item.bizType}||${normName}`, gpu);
-      profileMap.set(`||${normName}`, gpu);
-    }
-    profileMap.set(`||${resolvedItem.key}`, gpu);
-  });
 
-  let rows = list.filter((x) => inDateRange(String(x?.date || '').trim(), startDate, endDate));
-  if (bizType) rows = rows.filter((x) => normalizeForecastBizType(x?.bizType) === bizType);
+// Inventory-forecast helpers (Wave H2) — assigned from createInventoryForecastHelpers after deps exist.
+// Remaining early functions (PDF parse) close over these lets; assigned before any request handling.
+let resolveForecastScope;
+let isForecastStoreScopedRole;
+let normalizeProductName;
+let resolveForecastProductName;
+let forecastDayTypeLabel;
+let normalizeForecastWeatherTag;
+let buildForecastProductAliasLookup;
+let canonicalizeForecastProductQuantities;
+let canonicalizeForecastRows;
+let STORE_FORECAST_CONFIG;
+let getStoreForecastConfig;
+let isCNYPeriod;
+let KNOWN_PUBLIC_HOLIDAYS;
+let isKnownPublicHoliday;
+let isNormalWorkday;
+let estimateRevenueByHistory;
+let normalizeGrossProfitProfileItem;
+let computeAvgPricePerProduct;
+let canManageGrossProfitProfiles;
+let normalizeDishAliasBizType;
+let estimateGrossMarginByHistory;
+let normalizePredictionItems;
+let forecastPredictionToProductMap;
+let calcForecastAccuracyMetrics;
+let buildForecastCalibrationFactors;
+let applyForecastCalibration;
+let summarizeForecastAccuracyRows;
+let normalizeForecastBizType;
+let forecastBrandToken;
+let STORE_SLOT_CONFIG;
+let getStoreSlotConfig;
+let normalizeForecastSlot;
+let resolveSlotForHour;
+let normalizeForecastSlotFromHourRange;
+let normalizeForecastUploadDate;
+let inferForecastUploadDateFromFilename;
+let normalizeForecastWeather;
+let normalizeForecastStoreName;
+let normalizeForecastStoreKey;
+let shiftForecastDate;
+let forecastHistoryRowKey;
+let sortForecastHistoryRows;
+let mergePreferredForecastHistoryRows;
+let parseInventoryForecastRowsFromTableMatrix;
+let FORECAST_EXCLUDED_PRODUCTS;
+let isExcludedForecastProduct;
+let normalizeForecastProducts;
+let scoreForecastRow;
+let buildForecastByHeuristic;
+let extractHistoryProductUniverse;
+let constrainPredictionsToHistory;
+let computeSlotRevenueShare;
 
-  const productAgg = new Map();
-  const byBizAgg = new Map();
-  const uncovered = new Map();
-  let totalRevenue = 0;
-  let totalGrossProfit = 0;
-  let totalActualRevenue = 0;
-  let totalExpectedRevenue = 0;
-
-  rows.forEach((row) => {
-    const rowBizType = normalizeForecastBizType(row?.bizType);
-    const products = row?.productQuantities && typeof row.productQuantities === 'object' ? row.productQuantities : {};
-    let rev = Math.max(0, Number(row?.expectedRevenue || 0));
-    let rowActualRevRaw = Math.max(0, Number(row?.actualRevenue || 0));
-    const rowDiscount = Math.max(0, Number(row?.totalDiscount || 0));
-    // 安全校验：折前营收一定>=实收营收，若反了则交换（修复列映射反转问题）
-    if (rev > 0 && rowActualRevRaw > 0 && rowActualRevRaw > rev) {
-      const tmp = rev; rev = rowActualRevRaw; rowActualRevRaw = tmp;
-    }
-    const rowActualRev = rowActualRevRaw > 0 ? rowActualRevRaw : Math.max(0, rev - rowDiscount);
-    totalExpectedRevenue += rev;
-    totalActualRevenue += rowActualRev;
-    const validEntries = Object.entries(products)
-      .map(([product, qtyRaw]) => ({ product: String(product || '').trim(), qty: Number(qtyRaw || 0) }))
-      .filter((x) => x.product && !isExcludedForecastProduct(x.product) && Number.isFinite(x.qty) && x.qty > 0);
-    const rowTotalQty = validEntries.reduce((s, x) => s + Number(x.qty || 0), 0);
-    validEntries.forEach((it) => {
-      // Try exact name first, then normalized name for cross-matching (takeaway vs dine-in name variants)
-      const resolved = resolveForecastProductName(it.product, aliasLookup);
-      const normName = resolved.key;
-      const keyExact = `${rowBizType}||${normName}`;
-      const keyFallback = `||${normName}`;
-      const keyNormExact = `${rowBizType}||${normName}`;
-      const keyNormFallback = `||${normName}`;
-      const gpu = Number(
-        profileMap.has(keyExact) ? profileMap.get(keyExact) :
-        profileMap.has(keyFallback) ? profileMap.get(keyFallback) :
-        profileMap.has(keyNormExact) ? profileMap.get(keyNormExact) :
-        profileMap.has(keyNormFallback) ? profileMap.get(keyNormFallback) : NaN
-      );
-      const allocRevenue = rowTotalQty > 0 && rev > 0 ? (Number(it.qty || 0) / rowTotalQty) * rev : 0;
-      if (!Number.isFinite(gpu) || gpu === 0) {
-        // Fallback: if costPerUnit available but no avgPrice for gross, use cost-based
-        const cpuKey = costPerUnitMap.has(keyExact) ? keyExact : costPerUnitMap.has(keyFallback) ? keyFallback : null;
-        if (cpuKey) {
-          const cpu = costPerUnitMap.get(cpuKey);
-          const costEst = Number(it.qty || 0) * cpu;
-          const grossEst = Math.max(0, allocRevenue - costEst);
-          totalRevenue += allocRevenue;
-          totalGrossProfit += grossEst;
-          const p2 = productAgg.get(resolved.display) || { product: resolved.display, qty: 0, revenue: 0, grossProfit: 0 };
-          p2.qty += Number(it.qty || 0); p2.revenue += allocRevenue; p2.grossProfit += grossEst;
-          productAgg.set(resolved.display, p2);
-          return;
-        }
-        const miss = uncovered.get(resolved.display) || { product: resolved.display, qty: 0 };
-        miss.qty += Number(it.qty || 0);
-        uncovered.set(resolved.display, miss);
-        return;
-      }
-      const gross = Number(it.qty || 0) * gpu;
-      totalRevenue += allocRevenue;
-      totalGrossProfit += gross;
-
-      const p = productAgg.get(resolved.display) || { product: resolved.display, qty: 0, revenue: 0, grossProfit: 0 };
-      p.qty += Number(it.qty || 0);
-      p.revenue += allocRevenue;
-      p.grossProfit += gross;
-      productAgg.set(resolved.display, p);
-
-      const b = byBizAgg.get(rowBizType) || { bizType: rowBizType, revenue: 0, grossProfit: 0, marginRate: 0 };
-      b.revenue += allocRevenue;
-      b.grossProfit += gross;
-      byBizAgg.set(rowBizType, b);
-    });
-  });
-
-  const byBiz = Array.from(byBizAgg.values()).map((x) => ({
-    bizType: x.bizType,
-    revenue: Number(x.revenue.toFixed(2)),
-    grossProfit: Number(x.grossProfit.toFixed(2)),
-    marginRate: Number((x.revenue > 0 ? x.grossProfit / x.revenue : 0).toFixed(4))
-  }));
-  const products = Array.from(productAgg.values())
-    .map((x) => ({
-      product: x.product,
-      qty: Number(x.qty.toFixed(2)),
-      revenue: Number(x.revenue.toFixed(2)),
-      grossProfit: Number(x.grossProfit.toFixed(2)),
-      marginRate: Number((x.revenue > 0 ? x.grossProfit / x.revenue : 0).toFixed(4))
-    }))
-    .sort((a, b) => Number(b.grossProfit || 0) - Number(a.grossProfit || 0));
-
-  // 估算成本 = 折前营收 - 毛利（毛利基于折前营收分配计算）
-  const coveredCostRate = totalRevenue > 0 ? Math.max(0, 1 - totalGrossProfit / totalRevenue) : 1;
-  const totalEstimatedCost = Math.max(0, totalExpectedRevenue * coveredCostRate);
-  // 折前毛利率 = (折前营收 - 成本) / 折前营收
-  const marginRate = totalRevenue > 0 ? Number((totalGrossProfit / totalRevenue).toFixed(4)) : 0;
-  // 实收毛利率 = (实收营收 - 成本) / 实收营收（成本不变，实收更低所以实收毛利率 < 折前毛利率）
-  const actualGrossProfit = Math.max(0, totalActualRevenue - totalEstimatedCost);
-  const actualMarginRate = totalActualRevenue > 0 ? Number((actualGrossProfit / totalActualRevenue).toFixed(4)) : 0;
-
-  return {
-    sampleCount: rows.length,
-    revenue: Number(totalExpectedRevenue.toFixed(2)),
-    actualRevenue: Number(totalActualRevenue.toFixed(2)),
-    grossProfit: Number(totalGrossProfit.toFixed(2)),
-    marginRate,
-    actualMarginRate,
-    byBiz,
-    products,
-    uncoveredProducts: Array.from(uncovered.values())
-      .map((x) => ({ product: x.product, qty: Number(Number(x.qty || 0).toFixed(2)) }))
-      .sort((a, b) => Number(b.qty || 0) - Number(a.qty || 0))
-      .slice(0, 100)
-  };
-}
 
 function decodePdfLiteralText(token) {
   let s = String(token || '');
@@ -2003,63 +1426,6 @@ registerHrmsPayrollClosedLoopRoutes(app, {
   dbListEmployeesForReports,
   stateFindUserRecord,
   isLegacyTestUsername,
-});
-registerInventoryForecastRoutes(app, {
-  pool,
-  authRequired,
-  upload,
-  uploadsDir,
-  getSharedState,
-  saveSharedState,
-  pickMyStoreFromState,
-  isForecastStoreScopedRole,
-  safeDateOnly,
-  normalizeForecastBizType,
-  normalizeForecastSlot,
-  loadInventoryForecastHistoryFromSalesRaw,
-  shiftForecastDate,
-  upsertInventoryForecastHistoryInState,
-  parseInventoryForecastRowsFromTableMatrix,
-  inferForecastUploadDateFromFilename,
-  parseInventoryForecastRowsFromPdfPath,
-  parseInventoryForecastRowsFromPdfBuffer,
-  normalizeForecastStoreName,
-  normalizeForecastStoreKey,
-  normalizeDishAliasBizType,
-  canManageGrossProfitProfiles,
-  resolveTenantIdDefault,
-  canAccessAnalyticsReports,
-  resolveForecastScope,
-  normalizeBrandId,
-  resolveStoreBrandContext,
-  normalizeProductName,
-  buildForecastProductAliasLookup,
-  resolveForecastProductName,
-  computeAvgPricePerProduct,
-  normalizeGrossProfitProfileItem,
-  mergePreferredForecastHistoryRows,
-  getStoreNamesByBrand,
-  forecastBrandToken,
-  normalizeStoreKey,
-  isExcludedForecastProduct,
-  estimateRevenueByHistory,
-  resolvePosStoreKeys,
-  isCNYPeriod,
-  isKnownPublicHoliday,
-  estimateGrossMarginByHistory,
-  summarizeForecastAccuracyRows,
-  normalizeForecastWeather,
-  canonicalizeForecastRows,
-  computeSlotRevenueShare,
-  buildForecastCalibrationFactors,
-  buildForecastByHeuristic,
-  buildForecastByAI,
-  applyForecastCalibration,
-  constrainPredictionsToHistory,
-  calcForecastAccuracyMetrics,
-  safeNumber,
-  inDateRange,
-  hrmsNowISO,
 });
 
 registerAgentTaskBoardRoutes(app, {
@@ -3883,209 +3249,6 @@ function upsertInventoryForecastHistoryInState(state0, { store, bizType, slot, r
   };
 }
 
-function normalizePredictionItems(input) {
-  const arr = Array.isArray(input) ? input : [];
-  return arr
-    .map((x) => ({
-      product: String(x?.product || '').trim(),
-      qty: Number(Number(x?.qty || 0).toFixed(2)),
-      reason: String(x?.reason || '').trim()
-    }))
-    .filter((x) => x.product && Number.isFinite(x.qty) && x.qty >= 0);
-}
-
-function forecastPredictionToProductMap(predictions) {
-  const map = {};
-  normalizePredictionItems(predictions).forEach((x) => {
-    map[x.product] = Number((Number(map[x.product] || 0) + Number(x.qty || 0)).toFixed(2));
-  });
-  return map;
-}
-
-function calcForecastAccuracyMetrics(predictions, actualProducts) {
-  const predMap = forecastPredictionToProductMap(predictions);
-  const actualMap = normalizeForecastProducts(actualProducts);
-  const names = Array.from(new Set([...Object.keys(predMap), ...Object.keys(actualMap)]));
-  let totalPredQty = 0;
-  let totalActualQty = 0;
-  let totalAbsError = 0;
-  const perProduct = names.map((name) => {
-    const predQty = Number(predMap[name] || 0);
-    const actualQty = Number(actualMap[name] || 0);
-    const absError = Math.abs(predQty - actualQty);
-    const ape = absError / Math.max(actualQty, 1);
-    const accuracy = Math.max(0, Math.min(1, 1 - ape));
-    totalPredQty += predQty;
-    totalActualQty += actualQty;
-    totalAbsError += absError;
-    return {
-      product: name,
-      predQty: Number(predQty.toFixed(2)),
-      actualQty: Number(actualQty.toFixed(2)),
-      absError: Number(absError.toFixed(2)),
-      ape: Number(ape.toFixed(4)),
-      accuracy: Number(accuracy.toFixed(4))
-    };
-  });
-
-  const count = perProduct.length;
-  const mape = count ? Number((perProduct.reduce((s, x) => s + Number(x.ape || 0), 0) / count).toFixed(4)) : 1;
-  const hitRate20 = count
-    ? Number((perProduct.filter((x) => Number(x.ape || 0) <= 0.2).length / count).toFixed(4))
-    : 0;
-  const totalAccuracy = Number(Math.max(0, Math.min(1, 1 - (totalAbsError / Math.max(totalActualQty, 1)))).toFixed(4));
-  const topDiffProducts = perProduct
-    .slice()
-    .sort((a, b) => Number(b.absError || 0) - Number(a.absError || 0))
-    .slice(0, 10);
-  return {
-    totalPredQty: Number(totalPredQty.toFixed(2)),
-    totalActualQty: Number(totalActualQty.toFixed(2)),
-    totalAbsError: Number(totalAbsError.toFixed(2)),
-    totalAccuracy,
-    mape,
-    hitRate20,
-    productCount: count,
-    perProduct,
-    topDiffProducts
-  };
-}
-
-function buildForecastCalibrationFactors(evaluations, asOfDate) {
-  const list = Array.isArray(evaluations) ? evaluations : [];
-  const productRatios = new Map();
-  let sumPred = 0;
-  let sumActual = 0;
-  let sampleCount = 0;
-  const cutoff = (() => {
-    const d = String(asOfDate || '').trim();
-    return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
-  })();
-
-  list.forEach((ev) => {
-    const d = String(ev?.date || '').trim();
-    if (cutoff && d && d >= cutoff) return;
-    const per = Array.isArray(ev?.perProduct) ? ev.perProduct : [];
-    per.forEach((x) => {
-      const predQty = Number(x?.predQty || 0);
-      const actualQty = Number(x?.actualQty || 0);
-      if (!(predQty > 0) || !(actualQty >= 0)) return;
-      const ratio = Math.max(0.2, Math.min(3, actualQty / Math.max(predQty, 0.0001)));
-      const name = String(x?.product || '').trim();
-      if (!name) return;
-      const prev = productRatios.get(name) || [];
-      prev.push(ratio);
-      productRatios.set(name, prev.slice(-20));
-      sumPred += predQty;
-      sumActual += actualQty;
-      sampleCount += 1;
-    });
-  });
-
-  const globalRaw = sumPred > 0 ? (sumActual / sumPred) : 1;
-  const globalFactor = Number(Math.max(0.65, Math.min(1.35, globalRaw)).toFixed(4));
-  const byProduct = {};
-  productRatios.forEach((ratios, name) => {
-    if (!Array.isArray(ratios) || ratios.length < 2) return;
-    const avg = ratios.reduce((s, x) => s + Number(x || 0), 0) / Math.max(1, ratios.length);
-    byProduct[name] = Number(Math.max(0.6, Math.min(1.45, avg)).toFixed(4));
-  });
-
-  return {
-    globalFactor,
-    byProduct,
-    sampleCount,
-    productSampleCount: Object.keys(byProduct).length
-  };
-}
-
-function applyForecastCalibration(predictions, calibration) {
-  const list = normalizePredictionItems(predictions);
-  const cal = calibration && typeof calibration === 'object' ? calibration : {};
-  const globalFactor = Number.isFinite(Number(cal.globalFactor)) ? Number(cal.globalFactor) : 1;
-  const byProduct = cal.byProduct && typeof cal.byProduct === 'object' ? cal.byProduct : {};
-  return list
-    .map((x) => {
-      const f = Number.isFinite(Number(byProduct[x.product])) ? Number(byProduct[x.product]) : globalFactor;
-      return {
-        ...x,
-        qty: Number((Number(x.qty || 0) * Math.max(0.5, Math.min(1.8, f))).toFixed(2))
-      };
-    })
-    .sort((a, b) => Number(b.qty || 0) - Number(a.qty || 0));
-}
-
-function summarizeForecastAccuracyRows(items) {
-  const list = Array.isArray(items) ? items : [];
-  if (!list.length) {
-    return {
-      comparedCount: 0,
-      avgAccuracy: 0,
-      avgMape: 0,
-      avgHitRate20: 0,
-      totalPredQty: 0,
-      totalActualQty: 0,
-      totalAbsError: 0,
-      moduleStats: []
-    };
-  }
-  let sumAcc = 0;
-  let sumMape = 0;
-  let sumHit = 0;
-  let totalPredQty = 0;
-  let totalActualQty = 0;
-  let totalAbsError = 0;
-  const moduleMap = new Map();
-
-  list.forEach((x) => {
-    const acc = Number(x?.totalAccuracy || 0);
-    const mape = Number(x?.mape || 0);
-    const hit = Number(x?.hitRate20 || 0);
-    sumAcc += acc;
-    sumMape += mape;
-    sumHit += hit;
-    totalPredQty += Number(x?.totalPredQty || 0);
-    totalActualQty += Number(x?.totalActualQty || 0);
-    totalAbsError += Number(x?.totalAbsError || 0);
-    const key = `${String(x?.bizType || '').trim()}||${String(x?.slot || '').trim()}`;
-    const prev = moduleMap.get(key) || {
-      bizType: String(x?.bizType || '').trim(),
-      slot: String(x?.slot || '').trim(),
-      comparedCount: 0,
-      sumAcc: 0,
-      sumMape: 0,
-      sumHit: 0
-    };
-    prev.comparedCount += 1;
-    prev.sumAcc += acc;
-    prev.sumMape += mape;
-    prev.sumHit += hit;
-    moduleMap.set(key, prev);
-  });
-
-  const count = list.length;
-  const moduleStats = Array.from(moduleMap.values())
-    .map((m) => ({
-      bizType: m.bizType,
-      slot: m.slot,
-      comparedCount: m.comparedCount,
-      avgAccuracy: Number((m.sumAcc / Math.max(1, m.comparedCount)).toFixed(4)),
-      avgMape: Number((m.sumMape / Math.max(1, m.comparedCount)).toFixed(4)),
-      avgHitRate20: Number((m.sumHit / Math.max(1, m.comparedCount)).toFixed(4))
-    }))
-    .sort((a, b) => String(a.bizType).localeCompare(String(b.bizType)) || String(a.slot).localeCompare(String(b.slot)));
-
-  return {
-    comparedCount: count,
-    avgAccuracy: Number((sumAcc / Math.max(1, count)).toFixed(4)),
-    avgMape: Number((sumMape / Math.max(1, count)).toFixed(4)),
-    avgHitRate20: Number((sumHit / Math.max(1, count)).toFixed(4)),
-    totalPredQty: Number(totalPredQty.toFixed(2)),
-    totalActualQty: Number(totalActualQty.toFixed(2)),
-    totalAbsError: Number(totalAbsError.toFixed(2)),
-    moduleStats
-  };
-}
 
 
 function isAdmin(role) {
@@ -4113,10 +3276,6 @@ function canAccessBusinessReports(role) {
   return r === 'admin' || r === 'hq_manager' || r === 'store_manager';
 }
 
-function isForecastStoreScopedRole(role) {
-  const r = String(role || '').trim();
-  return r === 'store_manager' || r === 'store_production_manager';
-}
 
 function inDateRange(date, start, end) {
   const d = String(date || '').trim();
@@ -4140,556 +3299,6 @@ function clampNum(n, d = 0) {
   return Number.isFinite(v) ? v : d;
 }
 
-function normalizeForecastBizType(input) {
-  const v = String(input || '').trim().toLowerCase();
-  if (!v) return '';
-  if (v === 'takeaway' || v === 'delivery' || v === '外卖') return 'takeaway';
-  if (v === 'dinein' || v === 'dine_in' || v === '堂食') return 'dinein';
-  return '';
-}
-
-// 从品牌名/门店名推断品牌 token（洪潮/马己仙），用于按品牌过滤菜品库成本，避免跨品牌成本污染。
-function forecastBrandToken(input) {
-  const t = String(input || '');
-  const dbBrand = getBrandForStoreSync(t, resolveTenantIdDefault())?.brandName;
-  if (dbBrand) return dbBrand;
-  if (t.includes('洪潮')) return '洪潮';
-  if (t.includes('马己仙')) return '马己仙';
-  return '';
-}
-
-// Store-level business slot configuration.
-// hasAfternoon: false  → no afternoon tea slot; 14:00-16:59 becomes early dinner.
-// dineinEarlyStart: hour at which dine-in can start (e.g. 16 for weekend 16:30 arrivals).
-const STORE_SLOT_CONFIG = {
-  '洪潮大宁久光店': { hasAfternoon: false, dineinEarlyStart: 16 },
-  '洪潮久光店':     { hasAfternoon: false, dineinEarlyStart: 16 },
-  '_default':       { hasAfternoon: true,  dineinEarlyStart: 17 }
-};
-
-function getStoreSlotConfig(store) {
-  const s = String(store || '').trim();
-  const tid = resolveTenantIdDefault();
-  const brandKey = getBrandForStoreSync(s, tid)?.brandKey;
-  const dbCfg = brandKey ? getBrandConfigSync(brandKey, tid)?.slotConfig : null;
-  if (dbCfg) return dbCfg;
-  if (STORE_SLOT_CONFIG[s]) return STORE_SLOT_CONFIG[s];
-  const key = Object.keys(STORE_SLOT_CONFIG).find(k => k !== '_default' && (s.includes(k) || k.includes(s)));
-  return (key ? STORE_SLOT_CONFIG[key] : null) || STORE_SLOT_CONFIG['_default'];
-}
-
-function normalizeForecastSlot(input) {
-  const v = String(input || '').trim().toLowerCase();
-  if (!v) return '';
-  if (v === 'lunch' || v === 'noon' || v === '午市') return 'lunch';
-  if (v === 'afternoon' || v === 'tea' || v === 'afternoon_tea' || v === '下午茶') return 'afternoon';
-  if (v === 'dinner' || v === 'night' || v === '晚市') return 'dinner';
-  return '';
-}
-
-// Returns the canonical slot for a given hour, respecting store-level slot config.
-function resolveSlotForHour(startHour, storeSlotCfg) {
-  const cfg = storeSlotCfg || STORE_SLOT_CONFIG['_default'];
-  if (startHour >= 10 && startHour < 14) return 'lunch';
-  if (!cfg.hasAfternoon) {
-    // No afternoon tea: everything from lunch-end onward is dinner
-    if (startHour >= 14 && startHour < 23) return 'dinner';
-  } else {
-    if (startHour >= 14 && startHour < 17) return 'afternoon';
-    if (startHour >= 17 && startHour < 23) return 'dinner';
-  }
-  return '';
-}
-
-function normalizeForecastSlotFromHourRange(input, store) {
-  const raw = String(input || '').trim();
-  if (!raw) return '';
-  const byWord = normalizeForecastSlot(raw);
-  // If explicitly named as a slot, remap 'afternoon' → 'dinner' for stores without afternoon tea
-  if (byWord) {
-    if (byWord === 'afternoon' && store) {
-      const cfg = getStoreSlotConfig(store);
-      if (!cfg.hasAfternoon) return 'dinner';
-    }
-    return byWord;
-  }
-  const slotCfg = store ? getStoreSlotConfig(store) : null;
-  // Match HH:MM or HH：MM patterns
-  const m = raw.match(/(\d{1,2})\s*[:：]\s*\d{1,2}/);
-  if (m) {
-    const startHour = Number(m[1]);
-    if (Number.isFinite(startHour)) {
-      const s = resolveSlotForHour(startHour, slotCfg);
-      if (s) return s;
-    }
-  }
-  // Match decimal time from Excel (e.g. 0.708333 = 17:00)
-  const dec = Number(raw);
-  if (Number.isFinite(dec) && dec > 0 && dec < 1) {
-    const hour = Math.floor(dec * 24);
-    const s = resolveSlotForHour(hour, slotCfg);
-    if (s) return s;
-  }
-  // Match AM/PM time (e.g. "5:00 PM", "5:00:00 PM")
-  const ampm = raw.match(/(\d{1,2})\s*[:：]\s*\d{1,2}(?:\s*[:：]\s*\d{1,2})?\s*(AM|PM|am|pm|上午|下午)/i);
-  if (ampm) {
-    let h = Number(ampm[1]);
-    const isPM = /pm|下午/i.test(ampm[2]);
-    if (isPM && h < 12) h += 12;
-    if (!isPM && h === 12) h = 0;
-    const s = resolveSlotForHour(h, slotCfg);
-    if (s) return s;
-  }
-  // Match plain hour number (e.g. "17" or "17:00")
-  const plainHour = raw.match(/^(\d{1,2})$/);
-  if (plainHour) {
-    const s = resolveSlotForHour(Number(plainHour[1]), slotCfg);
-    if (s) return s;
-  }
-  return '';
-}
-
-function normalizeForecastUploadDate(input) {
-  const v = String(input || '').trim();
-  if (!v) return '';
-  const date = safeDateOnly(v);
-  if (date) return date;
-  // Chinese: X月Y日
-  const cn = v.match(/^(\d{1,2})月(\d{1,2})日$/);
-  if (cn) {
-    const y = new Date().getFullYear();
-    const m = String(Math.max(1, Math.min(12, Number(cn[1] || 1)))).padStart(2, '0');
-    const d = String(Math.max(1, Math.min(31, Number(cn[2] || 1)))).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-  // M/D/YY or M/D/YYYY (XLSX date output format)
-  const mdy = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (mdy) {
-    let yr = Number(mdy[3]);
-    if (yr < 100) yr += yr < 50 ? 2000 : 1900;
-    const m = String(Math.max(1, Math.min(12, Number(mdy[1])))).padStart(2, '0');
-    const d = String(Math.max(1, Math.min(31, Number(mdy[2])))).padStart(2, '0');
-    return `${yr}-${m}-${d}`;
-  }
-  // D/M/YYYY or DD/MM/YYYY
-  const dmy = v.match(/^(\d{1,2})[\.\-](\d{1,2})[\.\-](\d{4})$/);
-  if (dmy) {
-    const a = Number(dmy[1]), b = Number(dmy[2]), yr = Number(dmy[3]);
-    if (a > 12 && b <= 12) {
-      return `${yr}-${String(b).padStart(2, '0')}-${String(a).padStart(2, '0')}`;
-    }
-    return `${yr}-${String(a).padStart(2, '0')}-${String(b).padStart(2, '0')}`;
-  }
-  // YYYY/M/D
-  const ymd = v.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
-  if (ymd) {
-    return `${ymd[1]}-${String(ymd[2]).padStart(2, '0')}-${String(ymd[3]).padStart(2, '0')}`;
-  }
-  return '';
-}
-
-function inferForecastUploadDateFromFilename(input, now = new Date()) {
-  const raw = String(input || '').trim();
-  if (!raw) return '';
-  const basename = raw.replace(/\.[^.]+$/, '');
-
-  // 1) Full date patterns in filename: YYYY-MM-DD / YYYY_MM_DD / YYYY.MM.DD
-  const full = basename.match(/(20\d{2})[-_.\/年](\d{1,2})[-_.\/月](\d{1,2})/);
-  if (full) {
-    const y = Number(full[1]);
-    const m = Number(full[2]);
-    const d = Number(full[3]);
-    if (y >= 2000 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    }
-  }
-
-  // 2) Range-like pattern: 2-16-22 => interpret as M-D1-D2, choose D2
-  const mdRange = basename.match(/(^|\D)(\d{1,2})[-_.\/](\d{1,2})[-_.\/](\d{1,2})(\D|$)/);
-  if (mdRange) {
-    const m = Number(mdRange[2]);
-    const d1 = Number(mdRange[3]);
-    const d2 = Number(mdRange[4]);
-    if (m >= 1 && m <= 12 && d1 >= 1 && d1 <= 31 && d2 >= 1 && d2 <= 31) {
-      const y = now.getFullYear();
-      const day = Math.max(d1, d2);
-      return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    }
-  }
-
-  // 3) Single month-day pattern: 2-16 / 2_16 / 2.16
-  const md = basename.match(/(^|\D)(\d{1,2})[-_.\/](\d{1,2})(\D|$)/);
-  if (md) {
-    const m = Number(md[2]);
-    const d = Number(md[3]);
-    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      const y = now.getFullYear();
-      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    }
-  }
-
-  return '';
-}
-
-function parseInventoryForecastRowsFromTableMatrix(matrix, fallbackBizType = '', options = {}) {
-  const rows = Array.isArray(matrix) ? matrix : [];
-  if (!rows.length) return [];
-  const fallbackDate = normalizeForecastUploadDate(options?.fallbackDate || '');
-  const allowTodayFallbackDate = options?.allowTodayFallbackDate !== false;
-  const norm = (x) => String(x || '').trim();
-  const normHead = (x) => norm(x).toLowerCase().replace(/\s+/g, '');
-  const cleanHead = (x) => normHead(x).replace(/[\/:：()（）\[\]【】_\-~～]/g, '');
-  const rowMetaValue = (line, keyReg) => {
-    const arr = Array.isArray(line) ? line.map(norm) : [];
-    for (let i = 0; i < arr.length; i += 1) {
-      const cell = String(arr[i] || '');
-      const compact = cell.replace(/\s+/g, '');
-      if (!keyReg.test(cell) && !keyReg.test(compact)) continue;
-      for (let j = i + 1; j < arr.length; j += 1) {
-        if (arr[j]) return arr[j];
-      }
-    }
-    return '';
-  };
-
-  let headerRowIndex = -1;
-  for (let i = 0; i < rows.length; i += 1) {
-    const line = Array.isArray(rows[i]) ? rows[i] : [];
-    const heads = line.map((x) => cleanHead(x));
-    const _joined = heads.join('|');
-    const hasSlot = heads.some((h) => /餐时段名称|时段名称|餐时段|时段/.test(h));
-    const hasProduct = heads.some((h) => /菜品名称|商品名称|产品名称|产品|菜品|品名/.test(h));
-    const hasQty = heads.some((h) => /销售数量|数量|qty|quantity/.test(h));
-    const hasAmount = heads.some((h) => /销售金额|销售额|销售收入|折前营收|折前营业额|折前收入|金额/.test(h));
-    const hasSeqNo = heads.some((h) => /^序号$/.test(h));
-    const hasDate = heads.some((h) => /营业日期|销售日期|日期/.test(h));
-    const hasActualRevenue = heads.some((h) => /实际收入|实收|实际营收|菜品收入|家品收入|折后营收|折后收入/.test(h));
-    const hasOrderTime = heads.some((h) => /下单时间|点单时间|订单时间/.test(h));
-    const _hasCheckoutTime = heads.some((h) => /结账时间|结算时间/.test(h));
-    const _hasDiscount = heads.some((h) => /优惠金额|优惠|折扣/.test(h));
-    const _hasMenuPrice = heads.some((h) => /菜谱售价|售价|单价|菜品售价/.test(h));
-    // Accept if we have slot+product+qty, or slot+product+amount, or seqNo+slot+product
-    if ((hasSlot && hasProduct && hasQty) || (hasSlot && hasProduct && hasAmount) || (hasSeqNo && hasSlot && hasProduct)) {
-      headerRowIndex = i;
-      break;
-    }
-    // New format: 序号+营业日期+菜品名称+销售数量 (no slot column, derive from 下单时间/结账时间)
-    if (hasSeqNo && hasDate && hasProduct && hasQty) {
-      headerRowIndex = i;
-      break;
-    }
-    // New format variant: 营业日期+菜品名称+销售数量+实际收入
-    if (hasDate && hasProduct && hasQty && hasActualRevenue) {
-      headerRowIndex = i;
-      break;
-    }
-    // Fuzzy: if row has >=3 known header keywords, accept it
-    const knownCount = [hasSlot, hasProduct, hasQty, hasAmount, hasSeqNo, hasDate, hasActualRevenue, hasOrderTime].filter(Boolean).length;
-    if (knownCount >= 3) {
-      headerRowIndex = i;
-      break;
-    }
-  }
-  const dataStartIndex = headerRowIndex >= 0 ? (headerRowIndex + 1) : 0;
-
-  let defaultDate = fallbackDate || '';
-  let defaultBizType = normalizeForecastBizType(fallbackBizType);
-  let defaultStore = '';
-  let defaultWeather = '';
-  for (let i = 0; i < (headerRowIndex >= 0 ? headerRowIndex : Math.min(rows.length, 12)); i += 1) {
-    const line = Array.isArray(rows[i]) ? rows[i] : [];
-    if (!defaultDate) {
-      const v = rowMetaValue(line, /营业日期|销售日期|日期/);
-      if (v) defaultDate = normalizeForecastUploadDate(v);
-    }
-    if (!defaultBizType) {
-      const v = rowMetaValue(line, /销售类型|类型/);
-      if (v) defaultBizType = normalizeForecastBizType(v);
-    }
-    if (!defaultStore) {
-      const v = rowMetaValue(line, /门店|店铺|商户|销售门店|门店名称/);
-      if (v) defaultStore = normalizeForecastStoreName(v);
-    }
-    if (!defaultWeather) {
-      const v = rowMetaValue(line, /天气|weather/i);
-      if (v) defaultWeather = normalizeForecastWeather(v);
-    }
-  }
-  if (!defaultDate && allowTodayFallbackDate) {
-    defaultDate = normalizeForecastUploadDate(new Date().toISOString());
-  }
-
-  const headersRaw = headerRowIndex >= 0 && Array.isArray(rows[headerRowIndex]) ? rows[headerRowIndex] : [];
-  const headers = headersRaw.map(cleanHead);
-  const idx = (names) => {
-    for (const n of names) {
-      const i = headers.indexOf(cleanHead(n));
-      if (i >= 0) return i;
-    }
-    return -1;
-  };
-
-  const iDate = idx(['销售日期', '日期', 'date', '营业日期']);
-  const iBizType = idx(['销售类型', '类型', 'biztype']);
-  const iSlot = idx(['餐/时段名称', '时段名称', '餐时段', '时段']);
-  const iProduct = idx(['菜品名称', '商品名称', '品名', '产品', 'product']);
-  const iQty = idx(['销售数量', '数量', 'qty', 'quantity']);
-  const iAmount = idx(['销售金额', '销售额', '销售收入', '折前营收', '折前营业额', '折前收入', 'amount']);
-  const iStore = idx(['门店', '店铺', '商户', '销售门店', '门店名称', 'store']);
-  const iWeather = idx(['天气', 'weather']);
-  // New format columns
-  const iActualRevenue = idx(['实际收入', '实收', '实际营收', '实收金额', '实收营业额', '实收金额元', '菜品收入', '家品收入', '折后营收', '折后收入']);
-  const iDiscount = idx(['优惠金额', '优惠', '折扣']);
-  const _iMenuPrice = idx(['菜谱售价', '售价', '单价', '菜品售价']);
-  const iOrderTime = idx(['下单时间', '点单时间', '订单时间']);
-  const iCheckoutTime = idx(['结账时间', '结算时间']);
-  const _iDept = idx(['出品部门', '部门']);
-  const _iCategory = idx(['大类名称/编码', '大类名称', '大类', '类别']);
-
-  const grouped = new Map();
-  const parseNumCell = (v) => {
-    const s = String(v == null ? '' : v).replace(/[,，\s]/g, '').replace(/[¥￥]/g, '').trim();
-    if (!s) return NaN;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : NaN;
-  };
-  const looksLikeTimeRange = (v) => {
-    const s = String(v || '').trim();
-    if (!s) return false;
-    // Standard: 17:00~18:00 or 17：00～18：00
-    if (/\d{1,2}\s*[:：]\s*\d{1,2}\s*[~～\-—–至到]\s*\d{1,2}\s*[:：]\s*\d{1,2}/.test(s)) return true;
-    // AM/PM: 5:00 PM - 6:00 PM
-    if (/\d{1,2}\s*[:：]\s*\d{1,2}.*(?:AM|PM|am|pm|上午|下午)/.test(s)) return true;
-    // Decimal time from Excel: 0.4166666 to 0.9166666
-    const dec = Number(s);
-    if (Number.isFinite(dec) && dec > 0 && dec < 1) return true;
-    // Single time: 17:00 or 17：00
-    if (/^\d{1,2}\s*[:：]\s*\d{1,2}(?:\s*[:：]\s*\d{1,2})?$/.test(s)) return true;
-    return false;
-  };
-  for (let r = dataStartIndex; r < rows.length; r += 1) {
-    const line = Array.isArray(rows[r]) ? rows[r] : [];
-    if (!line.length) continue;
-    const product = norm(iProduct >= 0 ? line[iProduct] : '');
-    const qty = parseNumCell(iQty >= 0 ? line[iQty] : 0);
-    if (!product || isExcludedForecastProduct(product) || !Number.isFinite(qty) || qty <= 0) continue;
-
-    const dateRaw = norm(iDate >= 0 ? line[iDate] : '');
-    const date = normalizeForecastUploadDate(dateRaw) || defaultDate;
-    if (!date) continue;
-
-    const bizRaw = norm(iBizType >= 0 ? line[iBizType] : '');
-    const bizType = normalizeForecastBizType(bizRaw) || defaultBizType || 'dinein';
-    const store = normalizeForecastStoreName(iStore >= 0 ? line[iStore] : '') || defaultStore;
-
-    // Derive slot: prefer explicit slot column, then 下单时间, then 结账时间
-    let slotRaw = norm(iSlot >= 0 ? line[iSlot] : '');
-    let slot = slotRaw ? normalizeForecastSlotFromHourRange(slotRaw, store) : '';
-    if (!slot && iOrderTime >= 0) {
-      slot = normalizeForecastSlotFromHourRange(norm(line[iOrderTime]), store);
-    }
-    if (!slot && iCheckoutTime >= 0) {
-      slot = normalizeForecastSlotFromHourRange(norm(line[iCheckoutTime]), store);
-    }
-    // If still no slot and we have a datetime in the date column, try extracting time from it
-    if (!slot && dateRaw && /\d{1,2}[:：]\d{1,2}/.test(dateRaw)) {
-      slot = normalizeForecastSlotFromHourRange(dateRaw, store);
-    }
-    if (!slot) continue;
-    const weather = normalizeForecastWeather(iWeather >= 0 ? line[iWeather] : '') || defaultWeather;
-
-    // 约定：销售收入 = 折前营收（expectedRevenue）
-    const amount = parseNumCell(iAmount >= 0 ? line[iAmount] : 0);
-    const expectedRevenueInc = Number.isFinite(amount) && amount > 0 ? amount : 0;
-    // 约定：菜品收入 = 折后营收（actualRevenue），用于实收毛利率计算
-    const actualRevenueRaw = parseNumCell(iActualRevenue >= 0 ? line[iActualRevenue] : 0);
-    const discountRaw = parseNumCell(iDiscount >= 0 ? line[iDiscount] : 0);
-    const discountInc = Number.isFinite(discountRaw) ? Math.abs(discountRaw) : 0;
-    const derivedActualRevenue = Math.max(0, expectedRevenueInc - discountInc);
-    const actualRevenueInc = Number.isFinite(actualRevenueRaw) && actualRevenueRaw > 0
-      ? actualRevenueRaw
-      : derivedActualRevenue;
-
-    const key = `${bizType}||${slot}||${date}`;
-    if (!grouped.has(key)) {
-      grouped.set(key, {
-        store,
-        bizType,
-        slot,
-        date,
-        weather: weather || '',
-        isHoliday: false,
-        expectedRevenue: 0,
-        actualRevenue: 0,
-        totalDiscount: 0,
-        productQuantities: {}
-      });
-    }
-    const row = grouped.get(key);
-    if (!row.store && store) row.store = store;
-    if (!row.weather && weather) row.weather = weather;
-    row.expectedRevenue = Number((Number(row.expectedRevenue || 0) + expectedRevenueInc).toFixed(2));
-    row.actualRevenue = Number((Number(row.actualRevenue || 0) + actualRevenueInc).toFixed(2));
-    row.totalDiscount = Number((Number(row.totalDiscount || 0) + discountInc).toFixed(2));
-    row.productQuantities[product] = Number((Number(row.productQuantities[product] || 0) + qty).toFixed(2));
-  }
-
-  // Fallback: for complex/merged templates from Excel export, infer columns by row shape.
-  if (!grouped.size) {
-    for (let r = dataStartIndex; r < rows.length; r += 1) {
-      const line = Array.isArray(rows[r]) ? rows[r].map(norm) : [];
-      if (!line.length) continue;
-      let slotIdx = -1;
-      for (let i = 0; i < line.length; i += 1) {
-        if (looksLikeTimeRange(line[i])) {
-          slotIdx = i;
-          break;
-        }
-      }
-      if (slotIdx < 0) continue;
-      const slot = normalizeForecastSlotFromHourRange(line[slotIdx], defaultStore);
-      if (!slot) continue;
-
-      const numericCells = [];
-      for (let i = 0; i < line.length; i += 1) {
-        const n = parseNumCell(line[i]);
-        if (Number.isFinite(n)) numericCells.push({ i, n });
-      }
-      if (!numericCells.length) continue;
-
-      const amountCell = numericCells[numericCells.length - 1];
-      const qtyCell = numericCells
-        .filter((x) => x.i < amountCell.i)
-        .sort((a, b) => b.i - a.i)[0] || null;
-      const qty = qtyCell ? qtyCell.n : NaN;
-      if (!Number.isFinite(qty) || qty <= 0) continue;
-      const amount = Number.isFinite(amountCell?.n) ? amountCell.n : 0;
-
-      let product = '';
-      for (let i = (qtyCell ? qtyCell.i : amountCell.i) - 1; i >= 0; i -= 1) {
-        const cell = line[i];
-        if (!cell) continue;
-        if (looksLikeTimeRange(cell)) continue;
-        if (Number.isFinite(parseNumCell(cell))) continue;
-        if (cell === '-' || cell === '—' || cell === '–' || cell === '一') continue;
-        if (/(^序号$|^菜品大类$|^菜品中类$|^餐时段名称$|^时段名称$|^销售数量$|^销售金额$)/.test(cell.replace(/\s+/g, ''))) continue;
-        product = cell;
-        break;
-      }
-      if (!product) continue;
-
-      let date = '';
-      for (let i = 0; i < line.length; i += 1) {
-        date = normalizeForecastUploadDate(line[i]);
-        if (date) break;
-      }
-      date = date || defaultDate;
-      if (!date) continue;
-
-      let bizType = '';
-      for (let i = 0; i < line.length; i += 1) {
-        bizType = normalizeForecastBizType(line[i]);
-        if (bizType) break;
-      }
-      bizType = bizType || defaultBizType || 'dinein';
-
-      let weather = '';
-      for (let i = 0; i < line.length; i += 1) {
-        const s = normalizeForecastWeather(line[i]);
-        if (!s) continue;
-        if (/(晴|阴|雨|雪|风|雾|多云|weather)/i.test(s)) {
-          weather = s;
-          break;
-        }
-      }
-      weather = weather || defaultWeather;
-
-      let store = '';
-      for (let i = 0; i < line.length; i += 1) {
-        const s = normalizeForecastStoreName(line[i]);
-        if (!s) continue;
-        if (/(门店|店铺|广场店|久光店|万象城|商场|mall|store)/i.test(s)) {
-          store = s;
-          break;
-        }
-      }
-      store = store || defaultStore;
-
-      const key = `${bizType}||${slot}||${date}`;
-      if (!grouped.has(key)) {
-        grouped.set(key, {
-          store,
-          bizType,
-          slot,
-          date,
-          weather: weather || '',
-          isHoliday: false,
-          expectedRevenue: 0,
-          productQuantities: {}
-        });
-      }
-      const row = grouped.get(key);
-      if (!row.store && store) row.store = store;
-      if (!row.weather && weather) row.weather = weather;
-      row.expectedRevenue = Number((Number(row.expectedRevenue || 0) + (amount > 0 ? amount : 0)).toFixed(2));
-      row.productQuantities[product] = Number((Number(row.productQuantities[product] || 0) + qty).toFixed(2));
-    }
-  }
-  return Array.from(grouped.values()).filter((x) => x.bizType && x.slot && x.date && Object.keys(x.productQuantities || {}).length);
-}
-
-function normalizeForecastWeather(input) {
-  return String(input || '').trim().slice(0, 40);
-}
-
-function normalizeForecastStoreName(input) {
-  return String(input || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-}
-
-function normalizeForecastStoreKey(input) {
-  return normalizeForecastStoreName(input).replace(/\s+/g, '').toLowerCase();
-}
-
-function shiftForecastDate(dateStr, deltaDays) {
-  const safe = safeDateOnly(dateStr);
-  if (!safe) return '';
-  const dt = new Date(`${safe}T00:00:00Z`);
-  if (!Number.isFinite(dt.getTime())) return '';
-  dt.setUTCDate(dt.getUTCDate() + Number(deltaDays || 0));
-  return dt.toISOString().slice(0, 10);
-}
-
-function forecastHistoryRowKey(row) {
-  return [
-    String(row?.store || '').trim(),
-    String(row?.bizType || '').trim(),
-    String(row?.slot || '').trim(),
-    String(row?.date || '').trim()
-  ].join('||');
-}
-
-function sortForecastHistoryRows(rows, limit = 0) {
-  const sorted = (Array.isArray(rows) ? rows : []).slice().sort((a, b) => {
-    const aDate = String(a?.date || '');
-    const bDate = String(b?.date || '');
-    if (aDate !== bDate) return bDate.localeCompare(aDate);
-    return String(b?.updatedAt || b?.createdAt || '').localeCompare(String(a?.updatedAt || a?.createdAt || ''));
-  });
-  if (limit > 0) return sorted.slice(0, limit);
-  return sorted;
-}
-
-function mergePreferredForecastHistoryRows(primaryRows, fallbackRows, limit = 0) {
-  const map = new Map();
-  (Array.isArray(primaryRows) ? primaryRows : []).forEach((row) => {
-    map.set(forecastHistoryRowKey(row), row);
-  });
-  (Array.isArray(fallbackRows) ? fallbackRows : []).forEach((row) => {
-    const key = forecastHistoryRowKey(row);
-    if (!map.has(key)) map.set(key, row);
-  });
-  return sortForecastHistoryRows(Array.from(map.values()), limit);
-}
 
 // POS 上传门店名（导出全称，如「洪潮传统潮汕菜【大宁久光中心店】」）与系统配置门店名
 // （简称，如「洪潮大宁久光店」）属于两套命名体系，直接等值匹配取不到数（毛利率/预测全为0）。
@@ -4844,13 +3453,6 @@ async function loadInventoryForecastHistoryFromSalesRaw({ storeScope, bizType, s
   return sortForecastHistoryRows(Array.from(grouped.values()));
 }
 
-const FORECAST_EXCLUDED_PRODUCTS = ['打包盒', '特色米饭', '年夜饭', '五常大米饭'];
-
-function isExcludedForecastProduct(name) {
-  const n = String(name || '').trim();
-  if (!n) return true;
-  return FORECAST_EXCLUDED_PRODUCTS.some((kw) => n.includes(kw));
-}
 
 function normalizeArkBaseUrl(input) {
   const raw = String(input || '').trim();
@@ -4939,31 +3541,6 @@ async function resolveForecastArkConfig(state0, opts = {}) {
   return { apiKey, baseUrl, model };
 }
 
-function normalizeForecastProducts(input) {
-  const out = {};
-  if (Array.isArray(input)) {
-    input.forEach((it) => {
-      const name = String(it?.name || it?.product || '').trim();
-      if (isExcludedForecastProduct(name)) return;
-      if (!name) return;
-      const qty = safeNumber(it?.qty ?? it?.quantity ?? it?.count);
-      if (!Number.isFinite(qty) || qty < 0) return;
-      out[name] = Number((Number(out[name] || 0) + qty).toFixed(2));
-    });
-    return out;
-  }
-  if (input && typeof input === 'object') {
-    Object.keys(input).forEach((k) => {
-      const name = String(k || '').trim();
-      if (isExcludedForecastProduct(name)) return;
-      if (!name) return;
-      const qty = safeNumber(input[k]);
-      if (!Number.isFinite(qty) || qty < 0) return;
-      out[name] = Number(qty.toFixed(2));
-    });
-  }
-  return out;
-}
 
 function parseForecastHistoryRow(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -4987,163 +3564,6 @@ function parseForecastHistoryRow(raw) {
   };
 }
 
-function scoreForecastRow(item, target) {
-  const date = String(item?.date || '').trim();
-  const weather = String(item?.weather || '').trim().toLowerCase();
-  const targetWeather = String(target?.weather || '').trim().toLowerCase();
-  let score = 1;
-  let dayDiff = null;
-  try {
-    const d1 = new Date(date + 'T00:00:00');
-    const d2 = new Date(String(target?.date || '') + 'T00:00:00');
-    if (Number.isFinite(d1.getTime()) && Number.isFinite(d2.getTime())) {
-      dayDiff = Math.abs(Math.round((d2.getTime() - d1.getTime()) / 86400000));
-      // Day-of-week: exact match is the strongest signal (Mon≠Fri≠Sat)
-      if (d1.getDay() === d2.getDay()) score += 1.8;
-      else {
-        const diff = Math.abs(d1.getDay() - d2.getDay());
-        const adj = Math.min(diff, 7 - diff);
-        if (adj === 1) score += 0.3;
-      }
-      // Recency bonus: closer dates are more reliable for food demand.
-      const recencyBonus = Math.max(0, 1.0 - Math.min(1.0, Number(dayDiff || 0) / 60));
-      score += recencyBonus;
-    }
-  } catch (e) { /* ignore */ }
-  // Holiday matching as separate dimension (some stores busy on holidays, some not)
-  if (Boolean(item?.isHoliday) === Boolean(target?.isHoliday)) score += 0.7;
-  // Weather match
-  const itemWeatherTag = normalizeForecastWeatherTag(weather);
-  const targetWeatherTag = normalizeForecastWeatherTag(targetWeather);
-  if (itemWeatherTag && targetWeatherTag) {
-    if (itemWeatherTag === targetWeatherTag) score += 0.6;
-    else score += 0.1;
-  }
-  const rev = Number(item?.expectedRevenue || 0);
-  const targetRev = Number(target?.expectedRevenue || 0);
-  if (targetRev > 0 && rev > 0) {
-    const diffRate = Math.abs(rev - targetRev) / Math.max(targetRev, 1);
-    score += Math.max(0, 0.8 - diffRate);
-  }
-  return Math.max(0.2, Number(score.toFixed(4)));
-}
-
-function buildForecastByHeuristic(historyRows, target, topN) {
-  const list = Array.isArray(historyRows) ? historyRows : [];
-  if (!list.length) return { predictions: [], confidence: 0.1, summary: '暂无历史数据，无法生成稳定预测。' };
-
-  const sumByProduct = new Map();
-  let totalScore = 0;
-  let strongMatchCount = 0;
-  let weightedRevenueSum = 0;
-  let revenueScoreSum = 0;
-
-  list.forEach((row) => {
-    const score = scoreForecastRow(row, target);
-    totalScore += score;
-    if (score >= 2.4) strongMatchCount += 1;
-    const rowRev = Number(row?.expectedRevenue || row?.revenue || row?.totalAmount || 0);
-    if (rowRev > 0) {
-      weightedRevenueSum += rowRev * score;
-      revenueScoreSum += score;
-    }
-    const products = row?.productQuantities && typeof row.productQuantities === 'object' ? row.productQuantities : {};
-    Object.entries(products).forEach(([name, qtyRaw]) => {
-      const nameSafe = String(name || '').trim();
-      if (isExcludedForecastProduct(nameSafe)) return;
-      if (!nameSafe) return;
-      const qty = Number(qtyRaw || 0);
-      if (!Number.isFinite(qty) || qty < 0) return;
-      const prev = sumByProduct.get(nameSafe) || 0;
-      sumByProduct.set(nameSafe, prev + qty * score);
-    });
-  });
-
-  const divider = totalScore > 0 ? totalScore : list.length;
-
-  // CRITICAL: Calculate revenue scaling factor
-  // If target revenue is 20000 but historical average is 10000, scale predictions by ~2x
-  const targetRev = Number(target?.expectedRevenue || 0);
-  const avgHistoricalRevenue = revenueScoreSum > 0 ? (weightedRevenueSum / revenueScoreSum) : 0;
-  let revenueScale = 1;
-  if (targetRev > 0 && avgHistoricalRevenue > 0) {
-    const ratio = targetRev / avgHistoricalRevenue;
-    // Small sample size is very noisy. Use stronger damping to avoid runaway qty inflation.
-    const exp = list.length < 8 ? 0.45 : (list.length < 20 ? 0.6 : 0.72);
-    revenueScale = Math.pow(Math.max(0.01, ratio), exp);
-    // 旺日/节假日放宽缩放上限，避免大促当天备货系统性不足；样本越多越敢放宽。
-    const upperCap = target?.isHoliday ? 2.8 : (list.length >= 20 ? 2.3 : 1.9);
-    if (revenueScale > upperCap) revenueScale = upperCap;
-    if (revenueScale < 0.6) revenueScale = 0.6;
-  }
-
-  const sorted = Array.from(sumByProduct.entries())
-    .map(([product, weightedQty]) => ({
-      product,
-      qty: Number(((weightedQty / Math.max(1, divider)) * revenueScale).toFixed(1)),
-      reason: revenueScale !== 1 ? `营收比例${(revenueScale * 100).toFixed(0)}%调整` : ''
-    }))
-    .filter((x) => Number(x.qty) > 0)
-    .sort((a, b) => Number(b.qty || 0) - Number(a.qty || 0));
-
-  const limit = Math.max(5, Math.min(80, Number(topN || 20) || 20));
-  const predictions = sorted.slice(0, limit);
-  const baseConfidence = 0.35 + Math.min(0.35, list.length * 0.015) + Math.min(0.2, strongMatchCount * 0.03);
-  const confidence = Number(Math.max(0.1, Math.min(0.95, baseConfidence)).toFixed(2));
-  const revNote = (targetRev > 0 && avgHistoricalRevenue > 0)
-    ? `预计营收¥${targetRev}（历史均值¥${Math.round(avgHistoricalRevenue)}，缩放${(revenueScale * 100).toFixed(0)}%）。`
-    : '';
-  const summary = `基于${list.length}条历史记录进行相似度加权，匹配度较高样本${strongMatchCount}条。${revNote}`;
-  return { predictions, confidence, summary };
-}
-
-function extractHistoryProductUniverse(historyRows) {
-  const out = new Set();
-  (Array.isArray(historyRows) ? historyRows : []).forEach((row) => {
-    const products = row?.productQuantities && typeof row.productQuantities === 'object' ? row.productQuantities : {};
-    Object.keys(products).forEach((name) => {
-      const n = String(name || '').trim();
-      if (!n || isExcludedForecastProduct(n)) return;
-      out.add(n);
-    });
-  });
-  return out;
-}
-
-function constrainPredictionsToHistory(predictions, historyRows, topN) {
-  const universe = extractHistoryProductUniverse(historyRows);
-  if (!universe.size) return [];
-  return normalizePredictionItems(predictions)
-    .filter((x) => universe.has(String(x?.product || '').trim()))
-    .sort((a, b) => Number(b.qty || 0) - Number(a.qty || 0))
-    .slice(0, Math.max(5, Math.min(80, Number(topN || 20) || 20)));
-}
-
-// Compute slot's share of total biz-type revenue from historical data.
-// Returns { slotRevenue, slotShare, splitMode } where slotRevenue is the
-// revenue this specific slot should expect given a total biz-type revenue.
-function computeSlotRevenueShare(allHistoryRows, store, bizType, slot, date) {
-  const rows = (Array.isArray(allHistoryRows) ? allHistoryRows : [])
-    .filter((x) => String(x?.store || '').trim() === String(store || '').trim())
-    .filter((x) => normalizeForecastBizType(x?.bizType) === normalizeForecastBizType(bizType))
-    .filter((x) => { const d = safeDateOnly(x?.date); return !date || !d || d <= date; });
-  const bySlot = { lunch: 0, afternoon: 0, dinner: 0 };
-  rows.forEach((row) => {
-    const s = normalizeForecastSlot(row?.slot);
-    if (s && Object.prototype.hasOwnProperty.call(bySlot, s)) {
-      bySlot[s] += Math.max(0, Number(row?.expectedRevenue || 0));
-    }
-  });
-  const total = Object.values(bySlot).reduce((a, b) => a + b, 0);
-  // Fallback shares if no history: typical restaurant pattern
-  const fallback = { lunch: 0.45, afternoon: 0.10, dinner: 0.45 };
-  const normalizedSlot = normalizeForecastSlot(slot);
-  if (total > 0) {
-    const share = Number((bySlot[normalizedSlot] || 0) / total);
-    return { slotShare: Number(Math.max(0.05, share).toFixed(4)), splitMode: 'history' };
-  }
-  return { slotShare: fallback[normalizedSlot] || 0.33, splitMode: 'fallback' };
-}
 
 async function buildForecastByAI({ historyRows, target, topN, state0 }) {
   const cfg = await resolveForecastArkConfig(state0 || {}, { preferVision: false });
@@ -5877,6 +4297,133 @@ function safeDateOnly(input) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
   return v;
 }
+
+// Wave H2: inventory-forecast sync helpers factory (must run after brand/store utils + safeDateOnly/safeNumber/inDateRange/pickMyStoreFromState)
+({
+  resolveForecastScope,
+  isForecastStoreScopedRole,
+  normalizeProductName,
+  resolveForecastProductName,
+  forecastDayTypeLabel,
+  normalizeForecastWeatherTag,
+  buildForecastProductAliasLookup,
+  canonicalizeForecastProductQuantities,
+  canonicalizeForecastRows,
+  STORE_FORECAST_CONFIG,
+  getStoreForecastConfig,
+  isCNYPeriod,
+  KNOWN_PUBLIC_HOLIDAYS,
+  isKnownPublicHoliday,
+  isNormalWorkday,
+  estimateRevenueByHistory,
+  normalizeGrossProfitProfileItem,
+  computeAvgPricePerProduct,
+  canManageGrossProfitProfiles,
+  normalizeDishAliasBizType,
+  estimateGrossMarginByHistory,
+  normalizePredictionItems,
+  forecastPredictionToProductMap,
+  calcForecastAccuracyMetrics,
+  buildForecastCalibrationFactors,
+  applyForecastCalibration,
+  summarizeForecastAccuracyRows,
+  normalizeForecastBizType,
+  forecastBrandToken,
+  STORE_SLOT_CONFIG,
+  getStoreSlotConfig,
+  normalizeForecastSlot,
+  resolveSlotForHour,
+  normalizeForecastSlotFromHourRange,
+  normalizeForecastUploadDate,
+  inferForecastUploadDateFromFilename,
+  normalizeForecastWeather,
+  normalizeForecastStoreName,
+  normalizeForecastStoreKey,
+  shiftForecastDate,
+  forecastHistoryRowKey,
+  sortForecastHistoryRows,
+  mergePreferredForecastHistoryRows,
+  parseInventoryForecastRowsFromTableMatrix,
+  FORECAST_EXCLUDED_PRODUCTS,
+  isExcludedForecastProduct,
+  normalizeForecastProducts,
+  scoreForecastRow,
+  buildForecastByHeuristic,
+  extractHistoryProductUniverse,
+  constrainPredictionsToHistory,
+  computeSlotRevenueShare,
+} = createInventoryForecastHelpers({
+  safeDateOnly,
+  safeNumber,
+  inDateRange,
+  normalizeBrandId,
+  resolveStoreBrandContext,
+  resolveTenantIdDefault,
+  getBrandForStoreSync,
+  getBrandConfigSync,
+  pickMyStoreFromState,
+  getBrandsFromState,
+  getStoreNamesByBrand,
+}));
+
+registerInventoryForecastRoutes(app, {
+  pool,
+  authRequired,
+  upload,
+  uploadsDir,
+  getSharedState,
+  saveSharedState,
+  pickMyStoreFromState,
+  isForecastStoreScopedRole,
+  safeDateOnly,
+  normalizeForecastBizType,
+  normalizeForecastSlot,
+  loadInventoryForecastHistoryFromSalesRaw,
+  shiftForecastDate,
+  upsertInventoryForecastHistoryInState,
+  parseInventoryForecastRowsFromTableMatrix,
+  inferForecastUploadDateFromFilename,
+  parseInventoryForecastRowsFromPdfPath,
+  parseInventoryForecastRowsFromPdfBuffer,
+  normalizeForecastStoreName,
+  normalizeForecastStoreKey,
+  normalizeDishAliasBizType,
+  canManageGrossProfitProfiles,
+  resolveTenantIdDefault,
+  canAccessAnalyticsReports,
+  resolveForecastScope,
+  normalizeBrandId,
+  resolveStoreBrandContext,
+  normalizeProductName,
+  buildForecastProductAliasLookup,
+  resolveForecastProductName,
+  computeAvgPricePerProduct,
+  normalizeGrossProfitProfileItem,
+  mergePreferredForecastHistoryRows,
+  getStoreNamesByBrand,
+  forecastBrandToken,
+  normalizeStoreKey,
+  isExcludedForecastProduct,
+  estimateRevenueByHistory,
+  resolvePosStoreKeys,
+  isCNYPeriod,
+  isKnownPublicHoliday,
+  estimateGrossMarginByHistory,
+  summarizeForecastAccuracyRows,
+  normalizeForecastWeather,
+  canonicalizeForecastRows,
+  computeSlotRevenueShare,
+  buildForecastCalibrationFactors,
+  buildForecastByHeuristic,
+  buildForecastByAI,
+  applyForecastCalibration,
+  constrainPredictionsToHistory,
+  calcForecastAccuracyMetrics,
+  safeNumber,
+  inDateRange,
+  hrmsNowISO,
+});
+
 
 function safeMonthOnly(input) {
   const v = String(input || '').trim();
