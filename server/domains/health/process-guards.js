@@ -1,9 +1,11 @@
+import { logger } from '../../utils/logger.js';
+
 export function createUnhandledRejectionHandler({ sendLarkMessage, FEISHU_ALERT_ADMIN_HEALTH }) {
   let _lastRejectionAlertAt = 0;
   const _rejectionAlertCooldownMs = 15 * 60 * 1000;
   return (reason, _promise) => {
     const detail = reason instanceof Error ? reason.stack : String(reason);
-    console.error('[HRMS] Unhandled rejection:', detail);
+    logger.error({ err: reason, msg: 'unhandled_rejection' });
     const now = Date.now();
     if (now - _lastRejectionAlertAt > _rejectionAlertCooldownMs) {
       _lastRejectionAlertAt = now;
@@ -11,7 +13,7 @@ export function createUnhandledRejectionHandler({ sendLarkMessage, FEISHU_ALERT_
         FEISHU_ALERT_ADMIN_HEALTH,
         `⚠️【HRMS 未处理的Promise异常】\n\n${String(detail || '').slice(0, 800)}\n\n（15分钟内只告警一次，日志里可能还有更多同类异常，请查看服务器日志确认。）`,
         { skipDedup: true }
-      ).catch((e) => console.error('[HRMS] unhandledRejection告警发送失败:', e?.message || e));
+      ).catch((e) => logger.error({ err: e, msg: 'unhandled_rejection_alert_failed' }));
     }
   };
 }
@@ -19,12 +21,12 @@ export function createUnhandledRejectionHandler({ sendLarkMessage, FEISHU_ALERT_
 export function createUncaughtExceptionHandler({ sendLarkMessage, FEISHU_ALERT_ADMIN_HEALTH }) {
   return (err) => {
     const detail = err instanceof Error ? err.stack : String(err);
-    console.error('[HRMS] Uncaught exception, process exiting:', detail);
+    logger.fatal({ err, msg: 'uncaught_exception' });
     const alertPromise = sendLarkMessage(
       FEISHU_ALERT_ADMIN_HEALTH,
       `🚨【HRMS 进程崩溃】\n\n${String(detail || '').slice(0, 800)}\n\n进程即将重启(PM2)，如果频繁重启请立即排查。`,
       { skipDedup: true }
-    ).catch((e) => console.error('[HRMS] 崩溃告警发送失败:', e?.message || e));
+    ).catch((e) => logger.error({ err: e, msg: 'uncaught_exception_alert_failed' }));
     Promise.race([alertPromise, new Promise((r) => setTimeout(r, 5000))]).finally(() => process.exit(1));
   };
 }

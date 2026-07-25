@@ -2,6 +2,7 @@
  * 进程健康监视：启动时扫 PM2 日志找「非 SIGINT」异常退出；运行中盯内存压线。
  */
 import fs from 'fs';
+import { logger } from '../../utils/logger.js';
 import {
   evaluateMemoryPressure,
   scanPm2LogForUnexpectedExits,
@@ -44,13 +45,13 @@ export async function runProcessHealthBootCheck(opts) {
       fs.closeSync(fd);
     }
   } catch (e) {
-    console.error('[process-health] read pm2 log failed:', e?.message || e);
+    logger.error({ err: e, msg: 'process_health_pm2_log_read_failed' });
     return { ok: false, error: String(e?.message || e) };
   }
 
   const unexpected = scanPm2LogForUnexpectedExits(logText, { processName, afterMs });
   if (!unexpected.length) {
-    console.log(`[process-health] boot ok process=${processName} unexpected_exits=0`);
+    logger.info({ msg: 'process_health_boot_ok', process: processName, unexpected_exits: 0 });
     return { ok: true, unexpected: [] };
   }
 
@@ -65,12 +66,17 @@ export async function runProcessHealthBootCheck(opts) {
     '请查 pm2.log / err 日志；若为 OOM 请看 max_memory_restart 与 RSS。',
   ].join('\n');
 
-  console.error('[process-health]', msg.replace(/\n/g, ' | '));
+  logger.error({
+    msg: 'process_health_unexpected_exits',
+    process: processName,
+    count: unexpected.length,
+    preview: unexpected.slice(-5).map((e) => ({ signal: e.signal, code: e.code })),
+  });
   if (typeof opts.notifyFn === 'function') {
     try {
       await opts.notifyFn(msg);
     } catch (e) {
-      console.error('[process-health] notify failed:', e?.message || e);
+      logger.error({ err: e, msg: 'process_health_notify_failed' });
     }
   }
   return { ok: false, unexpected };
@@ -106,12 +112,18 @@ export async function runMemoryPressureCheck(opts) {
     `RSS≈${pressure.rssMb}MB / PM2 max_memory_restart=${pressure.limitMb}MB（${Math.round(pressure.ratio * 100)}%）`,
     '接近阈值后会被 PM2 杀掉重启；请排查泄漏或上调限额。',
   ].join('\n');
-  console.error('[process-health]', msg.replace(/\n/g, ' | '));
+  logger.warn({
+    msg: 'process_health_memory_pressure',
+    process: processName,
+    rss_mb: pressure.rssMb,
+    limit_mb: pressure.limitMb,
+    ratio: pressure.ratio,
+  });
   if (typeof opts.notifyFn === 'function') {
     try {
       await opts.notifyFn(msg);
     } catch (e) {
-      console.error('[process-health] memory notify failed:', e?.message || e);
+      logger.error({ err: e, msg: 'process_health_memory_notify_failed' });
     }
   }
   return { ok: false, pressure };
@@ -132,7 +144,7 @@ export function startProcessHealthMonitor(opts = {}) {
 
   setTimeout(() => {
     runProcessHealthBootCheck({ ...opts, notifyFn }).catch((e) => {
-      console.error('[process-health] boot check error:', e?.message || e);
+      logger.error({ err: e, msg: 'process_health_boot_check_error' });
     });
   }, bootDelayMs);
 
@@ -148,11 +160,13 @@ export function startProcessHealthMonitor(opts = {}) {
         if (typeof notifyFn === 'function') await notifyFn(msg);
       },
     }).catch((e) => {
-      console.error('[process-health] memory check error:', e?.message || e);
+      logger.error({ err: e, msg: 'process_health_memory_check_error' });
     });
   }, memIntervalMs);
 
-  console.log(
-    `[process-health] monitor armed boot_delay_ms=${bootDelayMs} mem_interval_ms=${memIntervalMs}`
-  );
+  logger.info({
+    msg: 'process_health_monitor_armed',
+    boot_delay_ms: bootDelayMs,
+    mem_interval_ms: memIntervalMs,
+  });
 }

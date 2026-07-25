@@ -84,6 +84,7 @@ import { createHrmsStateStoreHelpers } from './domains/shared/hrms-state-store.j
 import { registerStateRoutes } from './domains/hrms-state/routes.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
 import { startProcessHealthMonitor } from './domains/health/process-health-monitor.js';
+import { createHttpAccessLogger, logger } from './utils/logger.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
 import { hydrateNotificationsFromTable } from './domains/notifications/service.js';
@@ -363,6 +364,8 @@ app.use((req, res, next) => {
   res.setHeader('X-Request-Id', requestId);
   next();
 });
+// 结构化访问日志（pino）：依赖上方 requestId；auth 完成后 finish 带 tenant/username
+app.use(createHttpAccessLogger(logger));
 // Wave H27: safeErrMessage → domains/shared/safe-err-message.js (named import)
 // H3-FIX: 限制CORS来源（生产环境使用白名单，开发环境允许所有）
 const CORS_WHITELIST = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -1932,7 +1935,7 @@ if (String(process.env.HRMS_CLI_SYNC_TABLE_VISIT || '').trim() === '1') {
   })();
 } else {
 app.listen(PORT, HOST, async () => {
-  console.log(`hrms-server listening on ${HOST}:${PORT}`);
+  logger.info({ msg: 'listening', host: HOST, port: PORT });
 
   // Initialize multi-agent system
   try {

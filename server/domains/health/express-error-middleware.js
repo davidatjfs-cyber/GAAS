@@ -1,7 +1,10 @@
+import { logger } from '../../utils/logger.js';
+
 export function createExpressErrorMiddleware({ multer }) {
   return (err, req, res, next) => {
     if (!err) return next();
     const requestId = req.requestId || res.getHeader?.('X-Request-Id') || null;
+    const log = req.log || logger.child({ request_id: requestId });
     try {
       if (err instanceof multer.MulterError) {
         const code = String(err.code || 'multer_error');
@@ -19,7 +22,7 @@ export function createExpressErrorMiddleware({ multer }) {
     if (/blocked_file_type/i.test(msg)) {
       return res.status(400).json({ error: 'blocked_file_type', message: msg, request_id: requestId });
     }
-    console.error('[express]', requestId || '-', msg);
+    log.error({ err, msg: 'express_error' });
     return res.status(500).json({ error: 'server_error', message: 'internal_error', request_id: requestId });
   };
 }

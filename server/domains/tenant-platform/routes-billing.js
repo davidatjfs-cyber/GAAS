@@ -7,20 +7,9 @@ import {
   getTenantPlatformProfile,
   savePlatformBillingAccount,
 } from './helpers.js';
+import { computeBillingPeriod } from './billing-period.js';
 
 const BILLING_CYCLE_LABELS = { monthly: '按月', quarterly: '按季', yearly: '按年' };
-
-// 账期起点=下次开票日期往前推一个周期。这个日期是平台配置页里人工维护的"下次开票"，
-// 不是凭空计算的——账期准确性依赖这个字段被及时维护，PDF只负责把它换算成一个区间展示。
-function computeBillingPeriod(nextInvoiceAt, cycle) {
-  const end = nextInvoiceAt ? new Date(nextInvoiceAt) : null;
-  if (!end || Number.isNaN(end.getTime())) return null;
-  const start = new Date(end);
-  if (cycle === 'quarterly') start.setMonth(start.getMonth() - 3);
-  else if (cycle === 'yearly') start.setFullYear(start.getFullYear() - 1);
-  else start.setMonth(start.getMonth() - 1); // monthly 或未设置时的默认假设
-  return { start, end };
-}
 
 /**
  * @param {import('express').Express} app

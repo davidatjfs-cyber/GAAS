@@ -2,6 +2,7 @@
  * 统一错误处理模块
  * 防止错误循环传播
  */
+import { logger } from './logger.js';
 
 // 错误统计
 const errorStats = {
@@ -19,8 +20,8 @@ export function safeErrorLog(context, error, details = {}) {
     const errorInfo = {
       timestamp: new Date().toISOString(),
       context,
-      message: error.message,
-      stack: error.stack,
+      message: error?.message || String(error),
+      stack: error?.stack,
       details
     };
     
@@ -30,18 +31,17 @@ export function safeErrorLog(context, error, details = {}) {
       errorStats.recent.pop();
     }
     
-    // 记录到控制台（安全操作）
-    console.error(`[${context}] ${error.message}`, details);
+    logger.error({ err: error, context, details, msg: 'safe_error' });
     
     // 如果错误过多，停止记录防止日志爆炸
     if (errorStats.total > 100) {
-      console.warn('[error-handler] Too many errors, throttling logs');
+      logger.warn({ msg: 'error_handler_throttling' });
       return;
     }
     
   } catch (logError) {
     // 连错误记录都失败了，只能静默处理
-    console.error('[error-handler] Failed to log error:', logError.message);
+    console.error('[error-handler] Failed to log error:', logError?.message || logError);
   }
 }
 
