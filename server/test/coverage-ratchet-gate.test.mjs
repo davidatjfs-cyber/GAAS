@@ -59,3 +59,20 @@ test('run-merged-coverage.mjs 与 package.json test:coverage:merged 存在（Wav
   assert.equal(typeof pkg.scripts?.['test:coverage:merged'], 'string');
   assert.match(pkg.scripts['test:coverage:merged'], /run-merged-coverage/);
 });
+
+/** 合并口径地板：与单测棘轮并存，只升不降 */
+const MERGED_RATCHET_FLOOR = { lines: 44, branches: 58, functions: 43, minIndexJsLines: 60 };
+
+test('coverage-merged-ratchet.json 只升不降且要求 index.js', () => {
+  const mr = JSON.parse(
+    fs.readFileSync(path.join(serverRoot, 'coverage-merged-ratchet.json'), 'utf8')
+  );
+  for (const key of ['lines', 'branches', 'functions', 'minIndexJsLines']) {
+    assert.equal(typeof mr[key], 'number', `${key} must be number`);
+    assert.ok(
+      mr[key] >= MERGED_RATCHET_FLOOR[key],
+      `merged ${key}=${mr[key]} < floor ${MERGED_RATCHET_FLOOR[key]}`
+    );
+  }
+  assert.equal(mr.requireIndexJs, true);
+});

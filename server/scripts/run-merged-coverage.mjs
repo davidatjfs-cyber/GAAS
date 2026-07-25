@@ -181,11 +181,40 @@ const payload = {
   statements: Number(total.statements?.pct) || 0,
   indexJsLinesPct: Number(indexLines.pct) || 0,
   indexJsKey: indexKey,
-  note: '观测口径，不驱动棘轮。报告必须含 index.js。Wave B 需同 commit 波动稳定后再切。',
+  note: '双棘轮：本脚本校验 coverage-merged-ratchet.json；单测棘轮仍由 test:coverage 负责。',
 };
 fs.writeFileSync(summaryOut, `${JSON.stringify(payload, null, 2)}\n`);
 console.log('[merged-coverage] summary → coverage/merged-summary.json');
 console.log(
   `[merged-coverage] lines=${payload.lines} branches=${payload.branches} functions=${payload.functions}`
 );
+
+const mergedRatchetPath = path.join(serverRoot, 'coverage-merged-ratchet.json');
+if (fs.existsSync(mergedRatchetPath)) {
+  const mr = JSON.parse(fs.readFileSync(mergedRatchetPath, 'utf8'));
+  const checks = [
+    ['lines', payload.lines, Number(mr.lines)],
+    ['branches', payload.branches, Number(mr.branches)],
+    ['functions', payload.functions, Number(mr.functions)],
+  ];
+  let failed = false;
+  for (const [name, actual, floor] of checks) {
+    if (!Number.isFinite(floor)) continue;
+    if (actual + 1e-9 < floor) {
+      console.error(`[merged-coverage] ratchet FAIL ${name}=${actual} < ${floor}`);
+      failed = true;
+    } else {
+      console.log(`[merged-coverage] ratchet ok ${name}=${actual} >= ${floor}`);
+    }
+  }
+  const minIdx = Number(mr.minIndexJsLines);
+  if (Number.isFinite(minIdx) && payload.indexJsLinesPct + 1e-9 < minIdx) {
+    console.error(
+      `[merged-coverage] ratchet FAIL index.js lines=${payload.indexJsLinesPct} < ${minIdx}`
+    );
+    failed = true;
+  }
+  if (failed) process.exit(1);
+}
+
 process.exit(0);
