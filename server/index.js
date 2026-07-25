@@ -83,6 +83,7 @@ import { createStateDualWriteHelpers } from './domains/shared/state-dual-write.j
 import { createHrmsStateStoreHelpers } from './domains/shared/hrms-state-store.js';
 import { registerStateRoutes } from './domains/hrms-state/routes.js';
 import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monitor.js';
+import { startProcessHealthMonitor } from './domains/health/process-health-monitor.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
 import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
 import { hydrateNotificationsFromTable } from './domains/notifications/service.js';
@@ -3352,6 +3353,15 @@ startSchemaMigrationDriftMonitor(pool, {
     const send = getSendGrowthAlert();
     if (send) return send(msg, 'schema_migration_drift');
     return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true });
+  },
+});
+
+// 进程健康：区分 PM2 部署 SIGINT vs 异常退出；内存接近 max_memory_restart 告警（健康通道）
+startProcessHealthMonitor({
+  processName: 'hrms-service',
+  maxMemoryRestartBytes: Number(process.env.PM2_MAX_MEMORY_RESTART_BYTES || 800 * 1024 * 1024),
+  notifyFn: async (msg) => {
+    return sendLarkMessage(FEISHU_ALERT_ADMIN_HEALTH, String(msg || ''), { skipDedup: true });
   },
 });
 
