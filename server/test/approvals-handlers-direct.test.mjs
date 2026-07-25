@@ -794,6 +794,53 @@ test('onboarding.afterDecide pending with nextAssignee sends pending notificatio
   assert.match(notifs[0].msg, /钱七/);
 });
 
+test('onboarding.afterDecide：通知 merge 失败不抛；仍保留员工同步成功', async () => {
+  const { deps } = makeDeps({
+    state: { employees: [{ username: 'sm1', store: '测试店', role: 'store_manager' }] },
+  });
+  const decideExtras = {};
+  let notifMergeAttempts = 0;
+  deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+    ok: true,
+    nextEmp: {
+      username: 'new4',
+      role: 'waiter',
+      store: '测试店',
+      managerUsername: 'mgr1',
+      salary: 0,
+      joinDate: '2026-08-03',
+    },
+    newUsername: 'new4',
+    empName: '丁',
+    empPassword: 'p',
+  });
+  deps.bcrypt = { hash: async () => 'h' };
+  deps.toNullableUuid = () => null;
+  deps.insertSalaryTimeline = async () => {};
+  deps.safeErrMessage = (e) => String(e?.message || e);
+  deps.mergeSharedStateFields = async (patch, keys) => {
+    if (patch.notifications) {
+      notifMergeAttempts += 1;
+      throw new Error('notif merge boom');
+    }
+  };
+  await onboarding.afterDecide({
+    req: { tenantId: 'default' },
+    deps,
+    updated: {
+      id: 'onb-notif-fail',
+      type: 'onboarding',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { employee: { name: '丁' } },
+    },
+    username: 'a1',
+    decideExtras,
+  });
+  assert.equal(decideExtras.onboardingEmployeeSync?.ok, true);
+  assert.equal(notifMergeAttempts, 1);
+});
+
 test('onboarding.afterDecide：merge 失败 / users 失败 / 飞书成功 / 定薪 / 店长通知', async () => {
   // merge employees 失败
   {

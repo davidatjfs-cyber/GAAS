@@ -114,3 +114,29 @@ test('租户B的管理员看不到租户A的agent_issues数据（反向验证，
   assert.equal(res.status, 200, JSON.stringify(body));
   assert.equal(Number(body.issues.total), 1, '租户B应该只看到自己的1条issue，实际: ' + JSON.stringify(body.issues));
 });
+
+test('租户A token 伪造 X-Tenant-Id=B 仍只能看到 A 的数据', async () => {
+  const tenantA = uniqueId('tenant_ax');
+  const tenantB = uniqueId('tenant_bx');
+  await createTenant(tenantA);
+  await createTenant(tenantB);
+  const adminA = await createAdminUser(tenantA);
+  await createAgentIssue(tenantA, 'A-only');
+  await createAgentIssue(tenantB, 'B-secret');
+  await createAgentIssue(tenantB, 'B-secret-2');
+
+  const token = await loginAndGetToken(adminA, 'AdminPass123', tenantA);
+  const res = await fetch(app.baseUrl + '/api/agents/dashboard', {
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'X-Tenant-Id': tenantB,
+    },
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  assert.equal(
+    Number(body.issues.total),
+    1,
+    '请求头串租户不得放大可见 issues: ' + JSON.stringify(body.issues)
+  );
+});
