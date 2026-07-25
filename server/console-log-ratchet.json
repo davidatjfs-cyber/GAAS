@@ -1,7 +1,30 @@
 {
   "updated": "2026-07-26",
-  "note": "domains/** 内 console.log|warn|error 数量棘轮：只降不升。已清零，新增禁止（请用 utils/logger）。",
+  "note": "console.log|warn|error 棘轮：domains 与非巨石运行时均已清零；只降不升。巨石 agents/index/master 与 scripts/一次性工具除外。",
   "maxCount": 0,
-  "scope": "server/domains",
-  "methods": ["log", "warn", "error"]
+  "domainsMaxCount": 0,
+  "runtimeMaxCount": 0,
+  "methods": ["log", "warn", "error"],
+  "runtimeExemptExact": [
+    "agents.js",
+    "index.js",
+    "master-agent.js",
+    "migrate.js"
+  ],
+  "runtimeExemptPrefixes": [
+    "scripts/",
+    "test/",
+    "migrations/"
+  ],
+  "runtimeExemptNamePatterns": [
+    "^test-",
+    "^check",
+    "^fix_",
+    "^fix-",
+    "^verify-",
+    "^local_",
+    "^force_",
+    "^batch-",
+    "^resync_"
+  ]
 }

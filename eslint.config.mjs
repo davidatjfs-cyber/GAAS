@@ -100,9 +100,18 @@ export default [
       'no-unused-vars': ['error', unusedVarsRule],
     },
   },
-  // P2.2 domains：已清零 → 全禁 console.*（含 warn/error）；baseline 块仅在有存量时启用
+  // P2.2：已清零的运行时目录全禁 console.*（巨石/scripts 不在此列）
   {
-    files: ['server/domains/**/*.js', 'server/domains/**/*.mjs'],
+    files: [
+      'server/domains/**/*.js',
+      'server/domains/**/*.mjs',
+      'server/ontology/**/*.js',
+      'server/services/**/*.js',
+      'server/utils/**/*.js',
+      'server/middleware/**/*.js',
+      'server/marketing/**/*.js',
+      'server/agents/**/*.js',
+    ],
     rules: {
       'no-console': 'error',
     },

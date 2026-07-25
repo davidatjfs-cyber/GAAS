@@ -61,7 +61,7 @@ test('run-merged-coverage.mjs 与 package.json test:coverage:merged 存在（Wav
 });
 
 /** 合并口径地板：与单测棘轮并存，只升不降 */
-const MERGED_RATCHET_FLOOR = { lines: 44, branches: 61, functions: 44, minIndexJsLines: 60 };
+const MERGED_RATCHET_FLOOR = { lines: 45, branches: 61, functions: 44, minIndexJsLines: 70 };
 
 test('coverage-merged-ratchet.json 只升不降且要求 index.js', () => {
   const mr = JSON.parse(
@@ -86,6 +86,14 @@ const L1_FILE_FLOOR = {
   'domains/approvals/handlers/promotion.js': { branches: 85, lines: 95 },
   'domains/tenant-platform/routes-billing.js': { branches: 85, lines: 95 },
   'domains/tenant-platform/routes-auth.js': { branches: 85, lines: 95 },
+  'domains/shared/time-number.js': { branches: 95, lines: 95 },
+  'domains/approvals/onboarding-payload.js': { branches: 95, lines: 95 },
+  'domains/approvals/normalize-helpers.js': { branches: 90, lines: 95 },
+  'domains/tenant-platform/auth-guards.js': { branches: 85, lines: 95 },
+  'domains/shared/agents-service-auth.js': { branches: 85, lines: 95 },
+  'domains/employees/account-gate.js': { branches: 85, lines: 90 },
+  'domains/employees/user-lookup.js': { branches: 85, lines: 95 },
+  'domains/store-duty-bindings/store-access-context.js': { branches: 85, lines: 95 },
 };
 
 test('l1-coverage-floor.json 只升不降且含全部 L1 目标文件', () => {
