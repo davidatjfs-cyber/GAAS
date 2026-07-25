@@ -246,6 +246,11 @@
     "domains/birthday/routes.js",
     "domains/feishu-webhook/process-data-change.js",
     "domains/feishu-sync/manual-bitable-sync.js",
-    "domains/feishu-webhook/routes.js"
+    "domains/feishu-webhook/routes.js",
+    "domains/payments/routes.js",
+    "domains/agent-data/routes.js",
+    "domains/feishu-sync/routes.js",
+    "domains/remaining-state/routes.js",
+    "domains/growth-content/routes.js"
   ]
 }
