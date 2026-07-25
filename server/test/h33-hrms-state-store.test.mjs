@@ -240,3 +240,135 @@ test('removeEmployeesFromSharedState filters employees and users', async () => {
     ['carol']
   );
 });
+
+function deps(extra = {}) {
+  return {
+    resolveTenantIdDefault: () => 'default',
+    schedulePayrollDomainSync: () => {},
+    scheduleLeaveDomainSync: () => {},
+    dualWriteStateToDB: async () => {},
+    applyHrmsUserAccountGateFromEmployee: async () => {},
+    upsertEmployeeFromStateShape: async () => {},
+    notifyAdminsDualWriteFailure: () => {},
+    ...extra,
+  };
+}
+
+test('getSharedState：无行/非对象 → null；save/merge/remove 空入参 no-op', async () => {
+  const { getSharedState, saveSharedState, mergeSharedStateFields, removeEmployeesFromSharedState } =
+    createHrmsStateStoreHelpers({
+      pool: {
+        query: async () => ({ rows: [{ data: 'x' }] }),
+        connect: async () => {
+          throw new Error('should_not_connect');
+        },
+      },
+      ...deps(),
+    });
+  assert.equal(await getSharedState(), null);
+  await saveSharedState({});
+  await saveSharedState(null);
+  await mergeSharedStateFields({});
+  await removeEmployeesFromSharedState([]);
+  await removeEmployeesFromSharedState(['', null]);
+});
+
+test('mergeSharedStateFields：对象合并 / 无 id 数组前插 / 标量 / gate 与 upsert 失败', async () => {
+  const notified = [];
+  const handlers = {
+    async clientQuery(sql, params) {
+      if (/BEGIN/.test(sql)) return {};
+      if (/SELECT data, updated_at/.test(sql)) {
+        return {
+          rows: [{
+            data: {
+              settings: { a: 1 },
+              tags: ['old'],
+              employees: [{ username: 'x', status: 'active' }],
+              flag: false,
+            },
+            updated_at: 't0',
+          }],
+        };
+      }
+      if (/UPDATE hrms_state/.test(sql)) {
+        handlers.saved = JSON.parse(params[1]);
+        return { rowCount: 1 };
+      }
+      if (/COMMIT/.test(sql)) return {};
+      return {};
+    },
+  };
+  const { mergeSharedStateFields } = createHrmsStateStoreHelpers({
+    pool: makePool(handlers),
+    ...deps({
+      applyHrmsUserAccountGateFromEmployee: async () => {
+        throw new Error('gate');
+      },
+      upsertEmployeeFromStateShape: async () => {
+        throw new Error('upsert');
+      },
+      notifyAdminsDualWriteFailure: (scope) => {
+        notified.push(scope);
+      },
+    }),
+  });
+  await mergeSharedStateFields(
+    {
+      settings: { b: 2 },
+      tags: ['new'],
+      flag: true,
+      employees: [{ username: 'x', status: 'active' }, { username: '' }],
+    },
+    { employees: 'username' }
+  );
+  assert.deepEqual(handlers.saved.settings, { a: 1, b: 2 });
+  assert.deepEqual(handlers.saved.tags, ['new', 'old']);
+  assert.equal(handlers.saved.flag, true);
+  assert.ok(notified.some((s) => /employees/.test(s)));
+});
+
+test('saveSharedState / merge / remove：乐观锁冲突耗尽抛错', async () => {
+  const handlers = {
+    async clientQuery(sql) {
+      if (/BEGIN/.test(sql)) return {};
+      if (/SELECT data, updated_at/.test(sql)) {
+        return { rows: [{ data: {}, updated_at: 't0' }] };
+      }
+      if (/UPDATE hrms_state/.test(sql)) return { rowCount: 0 };
+      if (/ROLLBACK/.test(sql)) return {};
+      return {};
+    },
+  };
+  const h = createHrmsStateStoreHelpers({ pool: makePool(handlers), ...deps() });
+  await assert.rejects(() => h.saveSharedState({ a: 1 }), /max retries exceeded/);
+  await assert.rejects(() => h.mergeSharedStateFields({ a: 1 }), /max retries exceeded/);
+  await assert.rejects(() => h.removeEmployeesFromSharedState(['a']), /max retries exceeded/);
+});
+
+test('saveSharedState：client 抛错走 ROLLBACK 再抛出', async () => {
+  const handlers = {
+    async clientQuery(sql) {
+      if (/BEGIN/.test(sql)) return {};
+      if (/SELECT data, updated_at/.test(sql)) throw new Error('lock_fail');
+      if (/ROLLBACK/.test(sql)) return {};
+      return {};
+    },
+  };
+  const { saveSharedState } = createHrmsStateStoreHelpers({ pool: makePool(handlers), ...deps() });
+  await assert.rejects(() => saveSharedState({ a: 1 }), /lock_fail/);
+});
+
+test('merge / remove：client 抛错走 ROLLBACK 再抛出', async () => {
+  const handlers = {
+    async clientQuery(sql) {
+      if (/BEGIN/.test(sql)) return {};
+      if (/SELECT data, updated_at/.test(sql)) throw new Error('m_fail');
+      if (/ROLLBACK/.test(sql)) return {};
+      return {};
+    },
+  };
+  const h = createHrmsStateStoreHelpers({ pool: makePool(handlers), ...deps() });
+  await assert.rejects(() => h.mergeSharedStateFields({ a: 1 }), /m_fail/);
+  await assert.rejects(() => h.removeEmployeesFromSharedState(['z']), /m_fail/);
+});
