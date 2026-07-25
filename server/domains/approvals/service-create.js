@@ -2,12 +2,12 @@
  * POST /api/approvals 创建审批纯逻辑。
  * 不接触 req/res；鉴权门留在 routes-lifecycle.js。
  */
-import {
-  buildConfiguredApprovalAssignees,
-  resolveStoreApprovalRoleUsername,
-} from '../../approval-assignee-resolution.js';
 import { getPromotionTrackProgress, getCrossTrackTechnicianStatus } from '../../training.js';
 import { resolveTenantIdDefault } from '../../utils/database.js';
+import {
+  resolveCreateAssignees,
+  uniqAssignees,
+} from './create-assignees.js';
 import {
   validateLeaveCreate,
   validateOnboardingCreate,
@@ -225,95 +225,27 @@ export async function createApproval({
       hrManagerUsername,
       cashierUsername
     };
-    const applicantRole = String(applicant?.role || role || '').trim().toLowerCase();
-    const applicantStoreLower = String(applicant?.store || '').trim().toLowerCase();
-    const isHeadquarterApplicant =
-      applicantRole === 'admin'
-      || applicantRole === 'hq_manager'
-      || applicantRole === 'hr_manager'
-      || applicantRole === 'cashier'
-      || applicantRole.startsWith('custom_')
-      || (applicantStoreLower.includes('总部') || applicantStoreLower.includes('headquarter') || applicantStoreLower.includes('hq'));
 
-    if (type === 'payment') {
-      const configured = await buildConfiguredApprovalAssignees(state, type, ctx, resolveDutyApproverForStore);
-      if (configured.length) {
-        assignees = configured;
-      } else {
-        const store = String(payload?.store || '').trim();
-        const flow = getPaymentFlowForStore(state, store);
-        if (flow.approvers.length) {
-          assignees = flow.approvers;
-        } else {
-          assignees = [applicantManager, cashierUsername, adminUsername].filter(Boolean);
-        }
-      }
-    } else if (type === 'leave') {
-      assignees = isHeadquarterApplicant
-        ? [applicantManager, hrManagerUsername].filter(Boolean)
-        : [applicantManager, hqManagerUsername, hrManagerUsername].filter(Boolean);
-    } else if (type === 'promotion') {
-      const stage = String(payload?.promotionStage || 'qualification').trim().toLowerCase();
-      if (stage === 'qualification') {
-        const applicantPosition = String(applicant?.position || payload?.currentPosition || '').trim();
-        const applicantDepartment = String(applicant?.department || payload?.department || '').trim();
-        const kitchenApplicant = isKitchenByRoleOrPosition(applicantRole, applicantPosition, applicantDepartment);
-        const applicantStoreName = String(applicant?.store || payload?.store || '').trim();
-        const storeManagerByStore = await resolveStoreApprovalRoleUsername(
-          state,
-          applicantStoreName,
-          ['store_manager'],
-          resolveDutyApproverForStore
-        );
-        const productionManagerByStore = pickStoreRoleUsernameByStore(state, applicantStoreName, ['store_production_manager']);
-        if (kitchenApplicant) {
-          assignees = [productionManagerByStore, storeManagerByStore].filter(Boolean);
-        } else {
-          assignees = [storeManagerByStore].filter(Boolean);
-        }
-      } else {
-        const applicantStoreName = String(applicant?.store || payload?.store || '').trim();
-        const storeManagerByStore = await resolveStoreApprovalRoleUsername(
-          state,
-          applicantStoreName,
-          ['store_manager'],
-          resolveDutyApproverForStore
-        );
-        assignees = [storeManagerByStore, hqManagerUsername, hrManagerUsername].filter(Boolean);
-      }
-    } else {
-      const configured = await buildConfiguredApprovalAssignees(state, type, ctx, resolveDutyApproverForStore);
-      if (configured.length) {
-        assignees = configured;
-      } else {
-        if (type === 'onboarding') {
-          assignees = [applicantManager, hrManagerUsername, adminUsername].filter(Boolean);
-        } else if (type === 'offboarding') {
-          assignees = [applicantManager, hqManagerUsername, hrManagerUsername].filter(Boolean);
-        } else if (type === 'reward_punishment') {
-          assignees = [applicantManager, hrManagerUsername].filter(Boolean);
-        } else if (type === 'points') {
-          const storeManagerForPoints = await resolveStoreApprovalRoleUsername(
-            state,
-            applicantStore,
-            ['store_manager'],
-            resolveDutyApproverForStore
-          );
-          assignees = [storeManagerForPoints, hqManagerUsername, hrManagerUsername].filter(Boolean);
-        } else {
-          assignees = [applicantManager, adminUsername].filter(Boolean);
-        }
-      }
-    }
-
-    const seen = new Set();
-    const uniq = [];
-    (assignees || []).forEach(a => {
-      const k = String(a || '').trim().toLowerCase();
-      if (!k || seen.has(k)) return;
-      seen.add(k);
-      uniq.push(String(a || '').trim());
+    assignees = await resolveCreateAssignees({
+      type,
+      payload,
+      state,
+      ctx,
+      applicant,
+      role,
+      applicantManager,
+      adminUsername,
+      hqManagerUsername,
+      hrManagerUsername,
+      cashierUsername,
+      applicantStore,
+      getPaymentFlowForStore,
+      pickStoreRoleUsernameByStore,
+      isKitchenByRoleOrPosition,
+      resolveDutyApproverForStore,
     });
+
+    const uniq = uniqAssignees(assignees);
     if (!uniq.length) return { error: 'missing_assignee', status: 400 };
 
     const chain = uniq.map((a, idx) => ({

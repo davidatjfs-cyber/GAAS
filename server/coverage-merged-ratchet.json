@@ -1,10 +1,10 @@
 {
-  "lines": 43,
+  "lines": 44,
   "branches": 58,
   "functions": 43,
   "requireIndexJs": true,
   "minIndexJsLines": 60,
   "tolerancePct": 0.5,
   "updated": "2026-07-25",
-  "note": "Wave B 双棘轮：合并口径。CI 复跑波动 44.15→43.85，lines 地板取稳定档 43；校验含 tolerancePct。与单测棘轮并存。只升不降（纠正误钉除外）。"
+  "note": "合并棘轮：CI f27d593 实测 lines 44.34 / branches 58.88 / functions 44.07，index.js 71%。lines 升至 44。与单测棘轮并存。只升不降。"
 }
