@@ -364,6 +364,44 @@ test('points.afterDecide alreadyApplied skips new pointRecords merge but still n
   assert.ok(notifs.some((n) => n.meta?.type === 'points_result' && n.title === '积分申请已通过'));
 });
 
+test('points.afterDecide approved multi items: amount = pts * rate，ledger 多行', async () => {
+  let n = 0;
+  const { deps, merges, ledgerCalls, notifs } = makeDeps({ state: {} });
+  deps.randomUUID = () => `uuid-${++n}`;
+  deps.resolveAttendancePayrollRules = async () => ({ rules: { pointsYuanPerPoint: 1 } });
+
+  await points.afterDecide({
+    req: { tenantId: 'default', user: { tenant_id: 'default', username: 'approver1' } },
+    deps,
+    updated: {
+      id: 'appr-pts-multi',
+      type: 'points',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: {
+        store: '测试店',
+        bizMonth: '2026-07',
+        items: [
+          { username: 'emp1', points: 10, reason: 'A', itemName: '事项A' },
+          { username: 'emp2', name: '李四', points: 4, reason: 'B', store: '分店' },
+        ],
+      },
+    },
+    nextAssignee: null,
+    note: '',
+  });
+
+  assert.equal(merges[0].patch.pointRecords.length, 2);
+  assert.equal(merges[0].patch.pointRecords[0].amount, 10);
+  assert.equal(merges[0].patch.pointRecords[1].amount, 4);
+  assert.equal(merges[0].patch.pointRecords[1].username, 'emp2');
+  assert.equal(ledgerCalls.length, 2);
+  assert.equal(ledgerCalls[0][0].amount, 10);
+  assert.equal(ledgerCalls[1][0].amount, 4);
+  assert.match(notifs[0].msg, /2条积分事项/);
+  assert.match(notifs[0].msg, /合计14分/);
+});
+
 test('promotion.beforeUpdate qualification store_manager approved missing mentor aborts', async () => {
   const res = makeRes();
   const updatedPayload = { promotionStage: 'qualification' };
