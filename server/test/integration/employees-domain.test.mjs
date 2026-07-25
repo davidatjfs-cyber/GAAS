@@ -77,6 +77,11 @@ test('员工窄 API：创建/改状态/读表 hydrate/DELETE；PUT /api/state �
   const patchBody = await patchRes.json();
   assert.equal(patchRes.status, 200, JSON.stringify(patchBody));
   assert.equal(patchBody.employee?.status, 'inactive');
+  const afterPatch = await db.query(
+    `select status from employees where lower(username)=lower($1) and tenant_id='default'`,
+    [uname]
+  );
+  assert.equal(afterPatch.rows[0]?.status, 'inactive', 'PATCH 后权威表 status 必须为 inactive');
 
   const putRes = await fetch(app.baseUrl + '/api/state', {
     method: 'PUT',
