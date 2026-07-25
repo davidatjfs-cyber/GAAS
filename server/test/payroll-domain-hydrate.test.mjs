@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hydrateStateFromAuthoritativeTables } from '../domains/payroll/service.js';
+import {
+  hydrateStateFromAuthoritativeTables,
+  loadPointRecordsFromTable,
+  loadPayrollDomainFromTable,
+  upsertPayrollDomain,
+} from '../domains/payroll/service.js';
 
 function fakePool({ points = [], domain = null } = {}) {
   return {
@@ -70,4 +75,51 @@ test('hydrate：domain 表无行时保留 state 薪资字段', async () => {
   const next = await hydrateStateFromAuthoritativeTables(pool, state, 'default');
   assert.deepEqual(next.payrollAdjustments, { keep: 1 });
   assert.deepEqual(next.pointRecords, []); // points 表空 → 覆盖为空数组（权威）
+});
+
+test('loadPointRecordsFromTable / loadPayrollDomainFromTable / upsertPayrollDomain', async () => {
+  const points = await loadPointRecordsFromTable(
+    fakePool({
+      points: [{ id: 'p2', username: 'u2', points: 3, amount: 1.5, approvedAt: '2026-07-02' }],
+    }),
+    'default'
+  );
+  assert.equal(points[0].points, 3);
+  assert.equal(points[0].amount, 1.5);
+
+  assert.equal(await loadPayrollDomainFromTable(fakePool({ domain: null }), 't'), null);
+  const domain = await loadPayrollDomainFromTable(
+    fakePool({ domain: { payrollAudits: { a: 1 }, salaryAdjustments: [] } }),
+    't'
+  );
+  assert.equal(domain.payrollAudits.a, 1);
+
+  const writes = [];
+  const pool = {
+    query: async (sql, params) => {
+      writes.push({ sql: String(sql), params });
+      return { rows: [] };
+    },
+  };
+  await upsertPayrollDomain(pool, 'default', {
+    payrollAdjustments: { k: 1 },
+    payrollAudits: { a: true },
+    salaryAdjustments: [{ id: 1 }],
+    monthlyConfirmations: [{ id: 2 }],
+  });
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].sql, /INSERT INTO hrms_payroll_domain/i);
+  assert.equal(JSON.parse(writes[0].params[1]).k, 1);
+});
+
+test('hydrate：表查询失败时保留原 state', async () => {
+  const pool = {
+    query: async () => {
+      throw new Error('db_down');
+    },
+  };
+  const state = { pointRecords: [{ id: 'keep' }], payrollAdjustments: { x: 1 } };
+  const next = await hydrateStateFromAuthoritativeTables(pool, state, 'default');
+  assert.deepEqual(next.pointRecords, [{ id: 'keep' }]);
+  assert.deepEqual(next.payrollAdjustments, { x: 1 });
 });
