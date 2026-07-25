@@ -80,26 +80,16 @@ test('when stale + recipients, calls sendLarkMessage', async () => {
   assert.equal(sends[0].opts?.skipDedup, true);
 });
 
-test('no recipients → logs and returns without send', async () => {
-  const errors = [];
-  const realError = console.error;
-  console.error = (...args) => {
-    errors.push(args.join(' '));
-  };
-  try {
-    const { runFreshnessMonitorTick, sends } = makeScheduler({
-      pool: {
-        query: async () => ({ rows: [] }),
-      },
-    });
+test('no recipients → returns without send', async () => {
+  const { runFreshnessMonitorTick, sends } = makeScheduler({
+    pool: {
+      query: async () => ({ rows: [] }),
+    },
+  });
 
-    await runFreshnessMonitorTick();
+  await runFreshnessMonitorTick();
 
-    assert.equal(sends.length, 0);
-    assert.ok(errors.some((e) => e.includes('无可投递飞书账号')));
-  } finally {
-    console.error = realError;
-  }
+  assert.equal(sends.length, 0);
 });
 
 test('startFreshnessMonitorScheduler is idempotent', () => {

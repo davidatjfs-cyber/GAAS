@@ -2,6 +2,10 @@
  * Data freshness monitor cron (every 6h, first run deferred 90s).
  * Wave H13 peel from index.js.
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'notifications', handler: 'freshness' });
+
 export function createFreshnessMonitorScheduler({
   pool,
   runForActiveTenants,
@@ -35,7 +39,11 @@ export function createFreshnessMonitorScheduler({
         );
         const rows = r.rows || [];
         if (!rows.length) {
-          console.error('[freshness] 数据陈旧但无可投递飞书账号，tenant:', tenantId, stale.map(s => s.name));
+          log.error({
+            msg: 'freshness_no_feishu_recipients',
+            tenant_id: tenantId,
+            stale: (stale || []).map((s) => s.name),
+          });
           return;
         }
         const sends = rows.map((row) =>
@@ -44,13 +52,23 @@ export function createFreshnessMonitorScheduler({
         const settled = await Promise.all(sends);
         const failed = settled.filter((x) => x && x.err);
         if (failed.length) {
-          console.error('[freshness] 部分飞书告警发送失败:', tenantId, failed.length, '/', settled.length, failed[0]?.err);
+          log.error({
+            msg: 'freshness_feishu_partial_fail',
+            tenant_id: tenantId,
+            failed: failed.length,
+            total: settled.length,
+            err: failed[0]?.err || null,
+          });
         } else {
-          console.error('[freshness] alert sent, tenant:', tenantId, 'stale:', stale.map(s => s.name));
+          log.info({
+            msg: 'freshness_alert_sent',
+            tenant_id: tenantId,
+            stale: (stale || []).map((s) => s.name),
+          });
         }
       }, { continueOnError: true });
     } catch (e) {
-      console.error('[freshness] runForActiveTenants error:', e?.message || e);
+      log.error({ msg: 'freshness_run_failed', err: e?.message || String(e) });
     }
   }
 
