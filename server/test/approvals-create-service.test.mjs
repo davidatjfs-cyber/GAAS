@@ -641,3 +641,157 @@ test('createApproval: promotion 资格成功；payment 走 flow 审批链', asyn
   assert.deepEqual(payChain.map((c) => c.assignee), ['cashier1', 'admin1']);
   assert.ok(payNotifs.some((n) => n.u === 'cashier1'));
 });
+
+test('createApproval: promotion track 校验 + formalApplied；missing_admin；monthly 模板；server_error', async () => {
+  const emptyPool = makePool({ query: async () => ({ rows: [] }) });
+
+  const { deps: badTrack } = makeCreateDeps({
+    state: {
+      employees: [{ username: 'emp1', store: '测试店', managerUsername: 'mgr1' }],
+      promotionTracks: [{ id: 't1', applicantUsername: 'other', assessmentStatus: 'passed' }],
+    },
+    params: {
+      type: 'promotion',
+      payload: { reason: '正式', promotionStage: 'formal', promotionTrackId: 't1' },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...badTrack })).error, 'invalid_promotion_track');
+
+  const { deps: notPassed } = makeCreateDeps({
+    state: {
+      employees: [{ username: 'emp1', store: '测试店', managerUsername: 'mgr1' }],
+      promotionTracks: [{ id: 't2', applicantUsername: 'emp1', assessmentStatus: 'pending' }],
+    },
+    params: {
+      type: 'promotion',
+      payload: { reason: '正式', promotionStage: 'formal', promotionTrackId: 't2' },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...notPassed })).error, 'track_not_passed');
+
+  let savedState = null;
+  const formalPool = makePool({
+    query: async (sql, params) => {
+      if (sql.includes('select id from approval_requests') && sql.includes('pending')) {
+        return { rows: [] };
+      }
+      if (sql.includes('insert into approval_requests')) {
+        return {
+          rows: [{
+            id: 'formal-1',
+            type: 'promotion',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: params[3],
+            chain: JSON.parse(params[4]),
+            payload: JSON.parse(params[5]),
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  });
+  const formalState = {
+    employees: [{ username: 'emp1', name: '甲', store: '测试店', managerUsername: 'mgr1' }],
+    promotionTracks: [{
+      id: 't3',
+      applicantUsername: 'emp1',
+      assessmentStatus: 'passed',
+    }],
+  };
+  const { deps: formalOk } = makeCreateDeps({
+    state: formalState,
+    params: {
+      type: 'promotion',
+      payload: {
+        reason: '正式晋升',
+        promotionStage: 'formal',
+        promotionTrackId: 't3',
+        newLevel: 'T2',
+      },
+      resolveDutyApproverForStore: async () => 'sm1',
+      saveSharedState: async (s) => { savedState = s; },
+    },
+  });
+  const formalR = await createApproval({ pool: formalPool, ...formalOk });
+  assert.equal(formalR.ok, true);
+  assert.equal(savedState?.promotionTracks?.[0]?.formalApplied, true);
+  assert.equal(savedState?.promotionTracks?.[0]?.formalApprovalId, 'formal-1');
+
+  const { deps: noAdmin } = makeCreateDeps({
+    adminUsername: '',
+    params: {
+      role: 'store_manager',
+      type: 'payment',
+      payload: {
+        store: '测试店',
+        date: '2026-07-25',
+        amount: 50,
+        category: '物料',
+      },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...noAdmin })).error, 'missing_admin');
+
+  const templateSql = [];
+  const rpPool = makePool({
+    query: async (sql, params) => {
+      if (sql.includes("type = 'payment'") || sql.includes('select id from approval_requests')) {
+        return { rows: [] };
+      }
+      if (sql.includes('insert into approval_requests')) {
+        return {
+          rows: [{
+            id: 'rp-m1',
+            type: 'reward_punishment',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: params[3],
+            chain: JSON.parse(params[4]),
+            payload: JSON.parse(params[5]),
+          }],
+        };
+      }
+      if (sql.includes('recurring_reward_templates')) {
+        templateSql.push({ sql, params });
+        return { rows: [] };
+      }
+      return { rows: [] };
+    },
+  });
+  const { deps: monthly } = makeCreateDeps({
+    params: {
+      role: 'store_manager',
+      type: 'reward_punishment',
+      recurringFrequencyReward: 'monthly',
+      payload: {
+        targetUsername: 'emp2',
+        reason: '月奖',
+        result: '表扬',
+        amount: 100,
+        rpType: '奖励',
+      },
+    },
+    state: {
+      employees: [
+        { username: 'emp1', store: '测试店', managerUsername: 'mgr1' },
+        { username: 'emp2', store: '测试店', name: '乙' },
+      ],
+    },
+  });
+  const monthlyR = await createApproval({ pool: rpPool, ...monthly });
+  assert.equal(monthlyR.ok, true);
+  assert.equal(templateSql.length, 1);
+  assert.match(templateSql[0].sql, /recurring_reward_templates/);
+
+  const { deps: boom } = makeCreateDeps({
+    params: {
+      type: 'leave',
+      payload: { startDate: '2026-07-25', endDate: '2026-07-26' },
+      getSharedState: async () => { throw new Error('boom'); },
+    },
+  });
+  const boomR = await createApproval({ pool: emptyPool, ...boom });
+  assert.equal(boomR.error, 'server_error');
+  assert.equal(boomR.status, 500);
+});
