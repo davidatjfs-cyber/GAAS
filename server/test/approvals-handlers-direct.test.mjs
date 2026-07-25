@@ -3537,7 +3537,7 @@ test('L1 falsy：points/onboarding 空字段与 null state 回落', async () => 
     deps.stateFindUserRecord = () => ({ username: 'hr1', name: '' });
     deps.pool.query = async () => ({ rows: [] });
     let notifBoom = false;
-    deps.mergeSharedStateFields = async (patch, keys) => {
+    deps.mergeSharedStateFields = async (patch) => {
       if (Array.isArray(patch.notifications)) {
         if (!notifBoom) {
           notifBoom = true;
