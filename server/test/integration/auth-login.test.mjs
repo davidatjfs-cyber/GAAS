@@ -177,6 +177,75 @@ test('POST /api/auth/logout + heartbeat：登录后 200', async () => {
   assert.equal(out.status, 200, JSON.stringify(outBody));
 });
 
+test('POST /api/auth/login-as：非 admin→403；缺参→400；目标不存在→404；成功→200', async () => {
+  const db = testDb();
+  const emp = uniqueId('las_emp');
+  const admin = uniqueId('las_admin');
+  const hash = await bcrypt.hash('Pass12345', 10);
+  await db.query(
+    `insert into users (username, password_hash, real_name, role, is_active, tenant_id)
+     values
+       ($1, $2, '员工', 'store_employee', true, 'default'),
+       ($3, $2, '管理员', 'admin', true, 'default')`,
+    [emp, hash, admin]
+  );
+
+  const empToken = await loginOk(emp, 'Pass12345');
+  const forbidden = await fetch(app.baseUrl + '/api/auth/login-as', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + empToken },
+    body: JSON.stringify({ username: admin, reason: '试探' }),
+  });
+  assert.equal(forbidden.status, 403);
+
+  const adminToken = await loginOk(admin, 'Pass12345');
+  const noUser = await fetch(app.baseUrl + '/api/auth/login-as', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + adminToken },
+    body: JSON.stringify({ reason: '排查' }),
+  });
+  const noUserBody = await noUser.json();
+  assert.equal(noUser.status, 400, JSON.stringify(noUserBody));
+  assert.equal(noUserBody.error, 'missing_username');
+
+  const noReason = await fetch(app.baseUrl + '/api/auth/login-as', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + adminToken },
+    body: JSON.stringify({ username: emp }),
+  });
+  const noReasonBody = await noReason.json();
+  assert.equal(noReason.status, 400, JSON.stringify(noReasonBody));
+  assert.equal(noReasonBody.error, 'missing_reason');
+
+  const missing = await fetch(app.baseUrl + '/api/auth/login-as', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + adminToken },
+    body: JSON.stringify({ username: uniqueId('ghost'), reason: '排查' }),
+  });
+  const missingBody = await missing.json();
+  assert.equal(missing.status, 404, JSON.stringify(missingBody));
+  assert.equal(missingBody.error, 'user_not_found');
+
+  const okRes = await fetch(app.baseUrl + '/api/auth/login-as', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + adminToken },
+    body: JSON.stringify({ username: emp, reason: '客服排查' }),
+  });
+  const okBody = await okRes.json();
+  assert.equal(okRes.status, 200, JSON.stringify(okBody));
+  assert.ok(okBody.token);
+  assert.equal(okBody.loginAs, true);
+  assert.equal(okBody.loginAsBy, admin);
+  assert.equal(okBody.user?.username, emp);
+
+  const me = await fetch(app.baseUrl + '/api/auth/me', {
+    headers: { Authorization: 'Bearer ' + okBody.token },
+  });
+  const meBody = await me.json();
+  assert.equal(me.status, 200, JSON.stringify(meBody));
+  assert.equal(meBody.user?.username, emp);
+});
+
 test('POST /api/auth/switch-store：缺 store→400；越权→403；允许门店→200 新 token', async () => {
   const db = testDb();
   const username = uniqueId('sw_mgr');
