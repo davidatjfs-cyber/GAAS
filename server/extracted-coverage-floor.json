@@ -19,6 +19,7 @@
     "domains/agent-message/store-resolve.js",
     "domains/stores/profile.js",
     "domains/leave-attendance/penalties.js",
-    "domains/stores/routes-brands.js"
+    "domains/stores/routes-brands.js",
+    "domains/stores/routes-crud.js"
   ]
 }
