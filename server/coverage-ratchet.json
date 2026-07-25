@@ -1,7 +1,7 @@
 {
   "lines": 41,
-  "branches": 58,
+  "branches": 59,
   "functions": 44,
   "updated": "2026-07-25",
-  "note": "Phase 1i：审批指派解析 + sales 记录级权限 + leave-balance 假期余额。实测约 lines 41.05 / branches 58.83 / functions 44.15。lines≥41、functions≥44；branches 整数档未升。只升不降。"
+  "note": "Phase 1j：decide 多级/飞书/离职生效日 + attendance-day API/reconcile 全路径 + promotion recipients。实测约 lines 41.41 / branches 59.06 / functions 44.50。branches 升至 59；lines/functions 整数档未升。只升不降。"
 }

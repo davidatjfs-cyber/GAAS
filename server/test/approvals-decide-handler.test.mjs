@@ -211,3 +211,186 @@ test('decide: 末级同意 → status approved 并 UPDATE', async () => {
   assert.equal(res.body.item.status, 'approved');
   assert.ok(queries.some((q) => /^update approval_requests/i.test(q.sql.trim())));
 });
+
+test('decide: 多级同意推进下一审批人 + 飞书通知 next', async () => {
+  const lark = [];
+  const { deps } = baseDeps({
+    poolQuery: async (sql, params) => {
+      if (/^select /i.test(sql.trim())) {
+        return {
+          rows: [{
+            id: 'a4',
+            type: 'leave',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: 'mgr1',
+            chain: [
+              { assignee: 'mgr1', status: 'pending' },
+              { assignee: 'hq1', status: 'queued' },
+            ],
+            payload: { leaveType: '事假', startDate: '2026-08-01', endDate: '2026-08-01' },
+            effective_date: null,
+          }],
+        };
+      }
+      if (/^update approval_requests/i.test(sql.trim())) {
+        return {
+          rows: [{
+            id: 'a4',
+            type: 'leave',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: params?.[2] || 'hq1',
+            chain: [
+              { assignee: 'mgr1', status: 'approved' },
+              { assignee: 'hq1', status: 'pending' },
+            ],
+            payload: {},
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+    depsExtra: {
+      lookupFeishuUserByUsername: async (u) => (u === 'hq1' ? { open_id: 'ou_hq1' } : null),
+      sendLarkMessage: async (openId, msg) => {
+        lark.push({ openId, msg });
+        return { ok: true };
+      },
+    },
+  });
+  const res = mockRes();
+  await handleApprovalDecide(
+    {
+      user: { username: 'mgr1', role: 'store_manager' },
+      params: { id: 'a4' },
+      body: { approved: true },
+    },
+    res,
+    deps
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.item.status, 'pending');
+  assert.equal(res.body.item.current_assignee_username, 'hq1');
+  await new Promise((r) => setTimeout(r, 30));
+  assert.ok(lark.some((x) => x.openId === 'ou_hq1' && /待审批提醒/.test(x.msg)));
+});
+
+test('decide: 拒绝 → rejected + 飞书通知申请人', async () => {
+  const lark = [];
+  const { deps } = baseDeps({
+    poolQuery: async (sql) => {
+      if (/^select /i.test(sql.trim())) {
+        return {
+          rows: [{
+            id: 'a5',
+            type: 'leave',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: 'mgr1',
+            chain: [{ assignee: 'mgr1', status: 'pending' }],
+            payload: {},
+          }],
+        };
+      }
+      if (/^update approval_requests/i.test(sql.trim())) {
+        return {
+          rows: [{
+            id: 'a5',
+            type: 'leave',
+            status: 'rejected',
+            applicant_username: 'emp1',
+            current_assignee_username: null,
+            chain: [{ assignee: 'mgr1', status: 'rejected' }],
+            payload: {},
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+    depsExtra: {
+      lookupFeishuUserByUsername: async (u) => (u === 'emp1' ? { open_id: 'ou_emp' } : null),
+      sendLarkMessage: async (openId, msg) => {
+        lark.push({ openId, msg });
+        return { ok: true };
+      },
+    },
+  });
+  const res = mockRes();
+  await handleApprovalDecide(
+    {
+      user: { username: 'mgr1', role: 'store_manager' },
+      params: { id: 'a5' },
+      body: { approved: false, note: '材料不全' },
+    },
+    res,
+    deps
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.item.status, 'rejected');
+  await new Promise((r) => setTimeout(r, 30));
+  assert.ok(lark.some((x) => x.openId === 'ou_emp' && /被拒绝/.test(x.msg) && /材料不全/.test(x.msg)));
+});
+
+test('decide: offboarding 终审写 effectiveDate；pool 抛错 → 500', async () => {
+  const { deps } = baseDeps({
+    poolQuery: async (sql, params) => {
+      if (/^select /i.test(sql.trim())) {
+        return {
+          rows: [{
+            id: 'a6',
+            type: 'offboarding',
+            status: 'pending',
+            applicant_username: 'emp2',
+            current_assignee_username: 'mgr1',
+            chain: [{ assignee: 'mgr1', status: 'pending' }],
+            payload: { resignDate: '2026-08-15' },
+            effective_date: null,
+          }],
+        };
+      }
+      if (/^update approval_requests/i.test(sql.trim())) {
+        assert.equal(params[4], '2026-08-15'); // effective_date
+        return {
+          rows: [{
+            id: 'a6',
+            type: 'offboarding',
+            status: 'approved',
+            applicant_username: 'emp2',
+            current_assignee_username: null,
+            chain: [{ assignee: 'mgr1', status: 'approved' }],
+            payload: { resignDate: '2026-08-15', departureType: 'voluntary' },
+            effective_date: '2026-08-15',
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  });
+  const res = mockRes();
+  await handleApprovalDecide(
+    {
+      user: { username: 'mgr1', role: 'store_manager' },
+      params: { id: 'a6' },
+      body: { approved: true, departureType: 'voluntary' },
+    },
+    res,
+    deps
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.item.status, 'approved');
+
+  const { deps: badDeps } = baseDeps({
+    poolQuery: async () => {
+      throw new Error('db_boom');
+    },
+  });
+  const res500 = mockRes();
+  await handleApprovalDecide(
+    { user: { username: 'mgr1', role: 'admin' }, params: { id: 'x' }, body: { approved: true } },
+    res500,
+    badDeps
+  );
+  assert.equal(res500.statusCode, 500);
+  assert.equal(res500.body.error, 'server_error');
+});
