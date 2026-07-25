@@ -26,6 +26,10 @@ import {
 } from './v2-store-alignment.js';
 import { getBrandForStoreSync } from './utils/brand-config-loader.js';
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'performance-jobs', handler: 'jobs' });
+
 
 function roleLabelZh(r) {
   const x = String(r || '').trim();
@@ -185,10 +189,10 @@ async function notifyHrmsPerfAdmins(taskName, err) {
     for (const h of hq.rows || []) {
       const fu = await lookupFeishuUserByUsername(h.username);
       if (!fu?.open_id) continue;
-      await sendLarkMessage(fu.open_id, text).catch((e2) => console.error('[perf-jobs] notifyHrmsPerfAdmins send failed:', h.username, e2?.message || e2));
+      await sendLarkMessage(fu.open_id, text).catch((e2) => log.error({ msg: 'perf_jobs_notifyhrmsperfadmins_send_failed', detail: [h.username, e2?.message || e2] }));
     }
   } catch (e) {
-    console.error('[perf-jobs] notifyHrmsPerfAdmins failed', e?.message || e);
+    log.error({ msg: 'perf_jobs_notifyhrmsperfadmins_failed', err: e?.message || e });
   }
 }
 
@@ -286,10 +290,10 @@ export async function runMonthlyPerformanceClose() {
           ]
         );
     } catch (e) {
-      console.error('[perf-jobs] upsert agent_scores monthly failed:', u.username, e?.message);
+      log.error({ msg: 'perf_jobs_upsert_agent_scores_monthly_failed', detail: [u.username, e?.message] });
     }
   }
-  console.log('[perf-jobs] monthly close done', period, 'eligible_users', eligible.length);
+  log.info({ msg: 'perf_jobs_monthly_close_done', detail: [period, 'eligible_users', eligible.length] });
   return { period, users: (users.rows || []).length };
 }
 
@@ -314,7 +318,7 @@ async function sendFeishuPerformanceDigest(period) {
       `工作能力：${b.ability_rating || '—'}\n` +
       `门店级别：${fmtStoreLevelLabel(b.store_rating)}\n\n` +
       `${row.summary || ''}\n\n如有异议请回复「申诉」说明原因。`;
-    await sendLarkMessage(fu.open_id, text).catch((e) => console.error('[perf-jobs] performance notify send failed:', row.username, e?.message || e));
+    await sendLarkMessage(fu.open_id, text).catch((e) => log.error({ msg: 'perf_jobs_performance_notify_send_failed', detail: [row.username, e?.message || e] }));
   }
 
   // 管理员侧「全员汇总」文本已移除：与 agents-service 每月 10 日「月度评级汇总」飞书卡片重复，避免噪音。
@@ -564,7 +568,7 @@ async function sendDishReportCardsToHq(fullMd, cardHeaderTitle, tenantId = 'defa
         ]
       };
       await sendLarkCard(fu.open_id, card).catch((e) =>
-        console.error('[perf-jobs] sendLarkCard failed', h.username, e?.message || e)
+        log.error({ msg: 'perf_jobs_sendlarkcard_failed', detail: [h.username, e?.message || e] })
       );
     }
   }
@@ -579,15 +583,15 @@ export async function sendMonthlyDishOptimizationReport(period, tenantId = 'defa
     if (typeof mod.buildDishOptimizationMarkdown === 'function') {
       const md = await mod.buildDishOptimizationMarkdown({ start, end, reportTitle: title, tenantId });
       await sendDishReportCardsToHq(md, title, tenantId);
-      console.log('[perf-jobs] dish MONTHLY (agents builder)', period);
+      log.info({ msg: 'perf_jobs_dish_monthly_agents_builder', detail: [period] });
       return;
     }
   } catch (e) {
-    console.warn('[perf-jobs] agents dish-optimization import failed, fallback:', e?.message || e);
+    log.warn({ msg: 'perf_jobs_agents_dish_optimization_import_failed_fallback', err: e?.message || e });
   }
   const md = await buildDishOptimizationMarkdown({ start, end, reportTitle: title, tenantId });
   await sendDishReportCardsToHq(md, title, tenantId);
-  console.log('[perf-jobs] dish MONTHLY cards sent for', period);
+  log.info({ msg: 'perf_jobs_dish_monthly_cards_sent_for', detail: [period] });
 }
 
 export async function sendWeeklyDishOptimizationReport(weekStart, weekEnd, tenantId = 'default') {
@@ -603,11 +607,11 @@ export async function sendWeeklyDishOptimizationReport(weekStart, weekEnd, tenan
         tenantId
       });
       await sendDishReportCardsToHq(md, `🍽 菜品优化周报 ${weekStart}～${weekEnd}`, tenantId);
-      console.log('[perf-jobs] dish WEEKLY (agents builder)', weekStart, weekEnd);
+      log.info({ msg: 'perf_jobs_dish_weekly_agents_builder', detail: [weekStart, weekEnd] });
       return;
     }
   } catch (e) {
-    console.warn('[perf-jobs] agents dish-optimization import failed, fallback:', e?.message || e);
+    log.warn({ msg: 'perf_jobs_agents_dish_optimization_import_failed_fallback', err: e?.message || e });
   }
   const md = await buildDishOptimizationMarkdown({
     start: weekStart,
@@ -616,13 +620,13 @@ export async function sendWeeklyDishOptimizationReport(weekStart, weekEnd, tenan
     tenantId
   });
   await sendDishReportCardsToHq(md, `🍽 菜品优化周报 ${weekStart}～${weekEnd}`, tenantId);
-  console.log('[perf-jobs] dish WEEKLY cards sent (local fallback)', weekStart, weekEnd);
+  log.info({ msg: 'perf_jobs_dish_weekly_cards_sent_local_fallback', detail: [weekStart, weekEnd] });
 }
 
 export function startHrmsPerformanceJobs(options = {}) {
   const onHeartbeat = typeof options?.onHeartbeat === 'function' ? options.onHeartbeat : null;
   if (String(process.env.DISABLE_HRMS_PERFORMANCE_JOBS || '').toLowerCase() === 'true') {
-    console.log('[perf-jobs] DISABLE_HRMS_PERFORMANCE_JOBS=true — skipped');
+    log.info({ msg: 'perf_jobs_disable_hrms_performance_jobs_true_skipped' });
     return;
   }
   setInterval(async () => {
@@ -651,7 +655,7 @@ export function startHrmsPerformanceJobs(options = {}) {
               try {
                 await sendMonthlyDishOptimizationReport(period, tenantId);
               } catch (e) {
-                console.error('[perf-jobs] monthly dish report failed', e?.message || e);
+                log.error({ msg: 'perf_jobs_monthly_dish_report_failed', err: e?.message || e });
                 await notifyHrmsPerfAdmins(`菜品优化月报（每月1日·${period}·${tenantId}）`, e);
               }
             });
@@ -672,7 +676,7 @@ export function startHrmsPerformanceJobs(options = {}) {
               try {
                 await sendWeeklyDishOptimizationReport(wkStart, wkEnd, tenantId);
               } catch (e) {
-                console.error('[perf-jobs] weekly dish report failed', e?.message || e);
+                log.error({ msg: 'perf_jobs_weekly_dish_report_failed', err: e?.message || e });
                 await notifyHrmsPerfAdmins(`菜品优化周报（${wkStart}～${wkEnd}·${tenantId}）`, e);
               }
             });
@@ -681,13 +685,11 @@ export function startHrmsPerformanceJobs(options = {}) {
         }
       }
     } catch (e) {
-      console.error('[perf-jobs] tick error:', e?.message || e);
+      log.error({ msg: 'perf_jobs_tick_error', err: e?.message || e });
       await notifyHrmsPerfAdmins('HRMS 绩效/菜品调度 tick', e);
     }
   }, 5 * 60 * 1000);
-  console.log(
-    '[perf-jobs] scheduler on (5m tick): monthly close 10th 01:00; digest 10th 08:00; dish reports: only if HRMS_ENABLE_DISH_OPTIMIZATION_CRON=true (else agents-service-v2)'
-  );
+  log.info({ msg: 'perf_jobs_scheduler_on_5m_tick_monthly_close_10th_01_00_digest_10th_08_00_dish_r' });
 }
 
 /** 文档/运维：本模块内向管理员发飞书失败告警的任务名（与代码 try/catch 一致） */

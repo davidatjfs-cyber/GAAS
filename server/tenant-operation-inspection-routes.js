@@ -33,6 +33,10 @@ import {
   sendSlaReminders,
 } from './services/tenant-health-incident-service.js';
 import { tenantContext } from './utils/database.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'tenant-operation-inspection', handler: 'routes' });
+
 
 const ALLOWED_ROLES = new Set([
   'admin',
@@ -69,7 +73,7 @@ function buildHandlers(pool) {
       });
       return res.json({ ok: true, ...overview });
     } catch (e) {
-      console.error('[tenant-inspection] overview failed:', e?.message || e);
+      log.error({ msg: 'tenant_inspection_overview_failed', err: e?.message || e });
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
   };
@@ -84,7 +88,7 @@ function buildHandlers(pool) {
       });
       return res.json(result);
     } catch (e) {
-      console.error('[tenant-inspection] run failed:', e?.message || e);
+      log.error({ msg: 'tenant_inspection_run_failed', err: e?.message || e });
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
   };
@@ -100,7 +104,7 @@ function buildHandlers(pool) {
       });
       return res.json({ ok: true, items });
     } catch (e) {
-      console.error('[tenant-inspection] list items failed:', e?.message || e);
+      log.error({ msg: 'tenant_inspection_list_items_failed', err: e?.message || e });
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
   };
@@ -135,7 +139,7 @@ function buildHandlers(pool) {
         report_status_label: statusLabel,
       });
     } catch (e) {
-      console.error('[tenant-inspection] report failed:', e?.message || e);
+      log.error({ msg: 'tenant_inspection_report_failed', err: e?.message || e });
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
   };
@@ -146,7 +150,7 @@ function buildHandlers(pool) {
       const status = result.ok ? 200 : (result.error === 'inspection_item_not_found' ? 404 : 400);
       return res.status(status).json(result);
     } catch (e) {
-      console.error('[tenant-inspection] generate task failed:', e?.message || e);
+      log.error({ msg: 'tenant_inspection_generate_task_failed', err: e?.message || e });
       const status = String(e?.message || '') === 'inspection_item_not_found' ? 404 : 500;
       return res.status(status).json({ ok: false, error: status === 404 ? 'not_found' : 'server_error' });
     }
@@ -163,7 +167,7 @@ function buildHandlers(pool) {
       });
       return res.status(result.ok ? 200 : 400).json(result);
     } catch (e) {
-      console.error('[tenant-inspection] generate batch tasks failed:', e?.message || e);
+      log.error({ msg: 'tenant_inspection_generate_batch_tasks_failed', err: e?.message || e });
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
   };
@@ -177,7 +181,7 @@ function buildHandlers(pool) {
       });
       return res.json({ ok: true, items });
     } catch (e) {
-      console.error('[tenant-inspection] trends failed:', e?.message || e);
+      log.error({ msg: 'tenant_inspection_trends_failed', err: e?.message || e });
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
   };
@@ -186,7 +190,7 @@ function buildHandlers(pool) {
       const items = await listInspectionReports(pool, { tenantId: tenantIdFrom(req) });
       return res.json({ ok: true, items });
     } catch (e) {
-      console.error('[tenant-inspection] reports failed:', e?.message || e);
+      log.error({ msg: 'tenant_inspection_reports_failed', err: e?.message || e });
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
   };
@@ -200,7 +204,7 @@ function buildHandlers(pool) {
       res.setHeader('Content-Disposition', `attachment; filename="tenant-operation-rectification-report-${report.id}.html"`);
       return res.send(html);
     } catch (e) {
-      console.error('[tenant-inspection] export pdf failed:', e?.message || e);
+      log.error({ msg: 'tenant_inspection_export_pdf_failed', err: e?.message || e });
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
   };
@@ -209,7 +213,7 @@ function buildHandlers(pool) {
       const result = await markInspectionReportSent(pool, { reportId: req.params.id, tenantId: tenantIdFrom(req) });
       return res.status(result.ok ? 200 : 404).json(result.ok ? result : { ok: false, error: 'not_found' });
     } catch (e) {
-      console.error('[tenant-inspection] mark sent failed:', e?.message || e);
+      log.error({ msg: 'tenant_inspection_mark_sent_failed', err: e?.message || e });
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
   };
@@ -258,7 +262,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         const data = await getHealthCenterBoard(pool, { light: req.query?.light || 'red' });
         return res.json(data);
       } catch (e) {
-        console.error('[health-center] board failed:', e?.message || e);
+        log.error({ msg: 'health_center_board_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'board_failed' });
       }
     });
@@ -270,7 +274,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         const data = await getHealthCenterTenantDetail(pool, req.params.tenantId);
         return res.json(data);
       } catch (e) {
-        console.error('[health-center] tenant detail failed:', e?.message || e);
+        log.error({ msg: 'health_center_tenant_detail_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'detail_failed' });
       }
     });
@@ -284,7 +288,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         }));
         return res.json({ ...data, incidents_sync: synced });
       } catch (e) {
-        console.error('[health-center] scan failed:', e?.message || e);
+        log.error({ msg: 'health_center_scan_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'scan_failed' });
       }
     });
@@ -298,7 +302,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         });
         return res.json(data);
       } catch (e) {
-        console.error('[health-center] incidents sync failed:', e?.message || e);
+        log.error({ msg: 'health_center_incidents_sync_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'sync_failed' });
       }
     });
@@ -312,7 +316,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         });
         return res.json(data);
       } catch (e) {
-        console.error('[health-center] incidents list failed:', e?.message || e);
+        log.error({ msg: 'health_center_incidents_list_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'list_failed' });
       }
     });
@@ -324,7 +328,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         const ops_stats = await getIncidentOpsStats(pool);
         return res.json({ ok: true, ops_stats });
       } catch (e) {
-        console.error('[health-center] ops-stats failed:', e?.message || e);
+        log.error({ msg: 'health_center_ops_stats_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error' });
       }
     });
@@ -332,7 +336,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
       try {
         return res.json(await buildQueueDigests(pool));
       } catch (e) {
-        console.error('[health-center] digest failed:', e?.message || e);
+        log.error({ msg: 'health_center_digest_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error' });
       }
     });
@@ -342,7 +346,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         const sla = await sendSlaReminders(pool);
         return res.json({ ok: true, ...digests, sla });
       } catch (e) {
-        console.error('[health-center] digest send failed:', e?.message || e);
+        log.error({ msg: 'health_center_digest_send_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error' });
       }
     });
@@ -350,7 +354,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
       try {
         return res.json(await listSlaBreaches(pool, { limit: req.query?.limit }));
       } catch (e) {
-        console.error('[health-center] sla list failed:', e?.message || e);
+        log.error({ msg: 'health_center_sla_list_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error' });
       }
     });
@@ -359,7 +363,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         const data = await ackIncident(pool, req.params.id, { note: req.body?.note });
         return res.status(data.ok ? 200 : 404).json(data);
       } catch (e) {
-        console.error('[health-center] ack failed:', e?.message || e);
+        log.error({ msg: 'health_center_ack_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error' });
       }
     });
@@ -368,7 +372,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         const data = await resolveIncident(pool, req.params.id, { note: req.body?.note });
         return res.status(data.ok ? 200 : 404).json(data);
       } catch (e) {
-        console.error('[health-center] resolve failed:', e?.message || e);
+        log.error({ msg: 'health_center_resolve_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error' });
       }
     });
@@ -377,7 +381,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         const data = await escalateIncident(pool, req.params.id, { note: req.body?.note });
         return res.status(data.ok ? 200 : 404).json(data);
       } catch (e) {
-        console.error('[health-center] escalate failed:', e?.message || e);
+        log.error({ msg: 'health_center_escalate_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error' });
       }
     });
@@ -386,7 +390,7 @@ export function registerTenantOperationInspectionRoutes(app, pool, authRequired,
         const data = await healIncident(pool, req.params.id, { action: req.body?.action });
         return res.status(data.ok ? 200 : 400).json(data);
       } catch (e) {
-        console.error('[health-center] heal failed:', e?.message || e);
+        log.error({ msg: 'health_center_heal_failed', err: e?.message || e });
         return res.status(500).json({ ok: false, error: 'server_error', message: e?.message || 'heal_failed' });
       }
     });

@@ -6,6 +6,10 @@ import { calculateStoreRating, calculateEmployeeScore } from './new-scoring-mode
 import { inferBrandFromStoreName } from './agents.js';
 import { pool, resolveTenantIdDefault } from './utils/database.js';
 import { safeExecute } from './utils/error-handler.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'new-scoring', handler: 'api' });
+
 
 // ─────────────────────────────────────────────
 // 门店评级API
@@ -42,7 +46,7 @@ export function registerNewScoringRoutes(app, authRequired) {
       });
       
     } catch (error) {
-      console.error('[api] store_rating error:', error);
+      log.error({ msg: 'api_store_rating_error', err: error?.message || String(error) });
       res.status(500).json({ 
         error: 'server_error',
         message: error.message
@@ -79,7 +83,7 @@ export function registerNewScoringRoutes(app, authRequired) {
       });
       
     } catch (error) {
-      console.error('[api] employee_score error:', error);
+      log.error({ msg: 'api_employee_score_error', err: error?.message || String(error) });
       res.status(500).json({ 
         error: 'server_error',
         message: error.message
@@ -121,7 +125,7 @@ export function registerNewScoringRoutes(app, authRequired) {
       });
       
     } catch (error) {
-      console.error('[api] daily_reports error:', error);
+      log.error({ msg: 'api_daily_reports_error', err: error?.message || String(error) });
       res.status(500).json({ 
         error: 'server_error',
         message: error.message
@@ -158,7 +162,7 @@ export function registerNewScoringRoutes(app, authRequired) {
       });
       
     } catch (error) {
-      console.error('[api] revenue_targets error:', error);
+      log.error({ msg: 'api_revenue_targets_error', err: error?.message || String(error) });
       res.status(500).json({ 
         error: 'server_error',
         message: error.message
@@ -195,7 +199,7 @@ export function registerNewScoringRoutes(app, authRequired) {
       });
       
     } catch (error) {
-      console.error('[api] margin_targets error:', error);
+      log.error({ msg: 'api_margin_targets_error', err: error?.message || String(error) });
       res.status(500).json({ 
         error: 'server_error',
         message: error.message
@@ -228,7 +232,7 @@ export function registerNewScoringRoutes(app, authRequired) {
       });
       
     } catch (error) {
-      console.error('[api] set_revenue_targets error:', error);
+      log.error({ msg: 'api_set_revenue_targets_error', err: error?.message || String(error) });
       res.status(500).json({ 
         error: 'server_error',
         message: error.message
@@ -261,7 +265,7 @@ export function registerNewScoringRoutes(app, authRequired) {
       });
       
     } catch (error) {
-      console.error('[api] set_margin_targets error:', error);
+      log.error({ msg: 'api_set_margin_targets_error', err: error?.message || String(error) });
       res.status(500).json({ 
         error: 'server_error',
         message: error.message
@@ -402,7 +406,7 @@ export function registerNewScoringRoutes(app, authRequired) {
           WHERE key = $4
         `, [store, stateDate, JSON.stringify(stateItem), tenantId]);
       } catch (e) {
-        console.error('[api] daily_reports state sync failed:', e?.message);
+        log.error({ msg: 'api_daily_reports_state_sync_failed', err: e?.message });
       }
 
       res.json({
@@ -411,7 +415,7 @@ export function registerNewScoringRoutes(app, authRequired) {
       });
       
     } catch (error) {
-      console.error('[api] update_daily_reports error:', error);
+      log.error({ msg: 'api_update_daily_reports_error', err: error?.message || String(error) });
       res.status(500).json({ 
         error: 'server_error',
         message: error.message
@@ -419,5 +423,5 @@ export function registerNewScoringRoutes(app, authRequired) {
     }
   });
   
-  console.log('[api] 新评分模型API路由已注册');
+  log.info({ msg: 'api_api' });
 }

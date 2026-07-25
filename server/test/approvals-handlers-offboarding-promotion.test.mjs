@@ -279,6 +279,49 @@ test('offboarding afterDecide：员工不在 state 仍通知；拒绝无 note；
   assert.equal(notifs.length, 0);
 });
 
+test('offboarding afterDecide：payload.date 别名；用户名大小写匹配', async () => {
+  const merges = [];
+  const notifs = [];
+  const deps = {
+    hrmsNowISO: () => '2026-07-25T12:00:00+08:00',
+    shanghaiTodayDateOnly: () => '2026-07-25',
+    safeDateOnly: (d) => (d ? String(d).slice(0, 10) : ''),
+    makeNotif: (u, title, msg, meta) => ({ u, title, msg, meta }),
+    appendNotifications: async (items) => {
+      notifs.push(...items);
+    },
+    getSharedState: async () => ({
+      employees: [
+        { username: 'Emp1', name: '员工甲', managerUsername: 'Mgr1', status: 'active' },
+      ],
+      users: [{ username: 'EMP1', status: 'active' }],
+    }),
+    mergeSharedStateFields: async (patch, idFields) => {
+      merges.push({ patch, idFields });
+    },
+    stateFindUserRecord: (_s, u) =>
+      String(u).toLowerCase() === 'emp1'
+        ? { username: 'emp1', name: '员工甲', managerUsername: 'mgr1' }
+        : null,
+    uniqUsernames: (a) => [...new Set(a.filter(Boolean))],
+  };
+
+  await offboarding.afterDecide({
+    deps,
+    updated: {
+      id: 'ob-date-alias',
+      type: 'offboarding',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: { date: '2026-07-25' },
+    },
+    note: '',
+  });
+  assert.ok(notifs.some((n) => /系统已关闭/.test(n.msg)));
+  assert.ok(merges.some((m) => m.patch.employees?.[0]?.status === '离职'));
+  assert.ok(merges.some((m) => m.patch.users?.[0]?.status === '离职'));
+});
+
 test('offboarding afterDecide：resignationDate；员工缺失不 merge；外层 catch', async () => {
   const merges = [];
   const notifs = [];

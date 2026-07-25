@@ -8,6 +8,10 @@
 import { createHash, createDecipheriv } from 'crypto';
 import { transcribeAmrVoice } from './sales-asr.js';
 import { synthesizeSpeechAmr } from './sales-tts.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'sales-kf' });
+
 
 const tokenCache = { token: '', expireAt: 0 };
 let _fetch = (...args) => globalThis.fetch(...args);
@@ -299,12 +303,12 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
           try {
             const sendResult = await sendKfText({ openKfid: String(m.open_kfid || m.event?.open_kfid || kfId), externalUserid, content: turn.reply });
             await recordKfDelivery(pool, turn, { status: 'sent', channel: 'text', result: sendResult });
-            console.log('[sales-kf] sendKfText ok (welcome):', JSON.stringify(sendResult));
+            log.info({ msg: 'sales_kf_sendkftext_ok_welcome', detail: [JSON.stringify(sendResult)] });
           } catch (e) {
             await recordKfDelivery(pool, turn, { status: 'failed', channel: 'text', error: e }).catch(() => null);
             await alertDeliveryFailure(turn, e);
             turn.send_error = e?.message || String(e);
-            console.error('[sales-kf] sendKfText failed (welcome):', turn.send_error);
+            log.error({ msg: 'sales_kf_sendkftext_failed_welcome', detail: [turn.send_error] });
           }
         }
         results.push(turn);
@@ -320,9 +324,9 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
         const amrBuffer = await downloadKfMedia(m.voice.media_id);
         const transcribed = await transcribeAmrVoice(amrBuffer);
         if (transcribed) { text = transcribed; fromVoice = true; }
-        console.log('[sales-kf] voice transcribed:', JSON.stringify({ media_id: m.voice.media_id, text: transcribed }));
+        log.info({ msg: 'sales_kf_voice_transcribed', detail: [JSON.stringify({ media_id: m.voice.media_id, text: transcribed })] });
       } catch (e) {
-        console.error('[sales-kf] voice handling failed:', e?.message || e);
+        log.error({ msg: 'sales_kf_voice_handling_failed', err: e?.message || e });
       }
       if (!text) {
         // 识别失败：走一遍handleInbound只是为了让客户AI能自然地说"没听清"，不当成普通文本消息处理评分等副作用
@@ -361,23 +365,23 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
             const mediaId = await uploadKfMedia(amr, { type: 'voice', filename: 'reply.amr' });
             const sendResult = await sendKfVoice({ openKfid: replyOpenKfid, externalUserid, mediaId });
             await recordKfDelivery(pool, turn, { status: 'sent', channel: 'voice', result: sendResult, meta: ttsMeta });
-            console.log('[sales-kf] sendKfVoice ok:', JSON.stringify({ ...sendResult, speech_chars: voiceReply.length, speech_mode: turn.speech_reply ? 'conversational' : 'original' }));
+            log.info({ msg: 'sales_kf_sendkfvoice_ok', detail: [JSON.stringify({ ...sendResult, speech_chars: voiceReply.length, speech_mode: turn.speech_reply ? 'conversational' : 'original' })] });
             sentAsVoice = true;
           }
         } catch (e) {
-          console.error('[sales-kf] sendKfVoice failed, falling back to text:', e?.message || e);
+          log.error({ msg: 'sales_kf_sendkfvoice_failed_falling_back_to_text', err: e?.message || e });
         }
       }
       if (!sentAsVoice) {
         try {
           const sendResult = await sendKfText({ openKfid: replyOpenKfid, externalUserid, content: turn.reply });
           await recordKfDelivery(pool, turn, { status: 'sent', channel: 'text', result: sendResult });
-          console.log('[sales-kf] sendKfText ok:', JSON.stringify(sendResult));
+          log.info({ msg: 'sales_kf_sendkftext_ok', detail: [JSON.stringify(sendResult)] });
         } catch (e) {
           await recordKfDelivery(pool, turn, { status: 'failed', channel: 'text', error: e }).catch(() => null);
           await alertDeliveryFailure(turn, e);
           turn.send_error = e?.message || String(e);
-          console.error('[sales-kf] sendKfText failed:', turn.send_error);
+          log.error({ msg: 'sales_kf_sendkftext_failed', detail: [turn.send_error] });
         }
       }
     }

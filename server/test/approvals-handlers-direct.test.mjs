@@ -3001,6 +3001,146 @@ test('points/onboarding/leave：occurMonth；feishuOpenId；拒绝无 note；申
   }
 });
 
+test('leave/points/promotion：reqDays=0 走 auto；alreadyApplied；formal skill_bump', async () => {
+  {
+    const { deps, notifs, queries } = makeDeps();
+    deps.safeNumber = (n) => {
+      const x = Number(n);
+      return Number.isFinite(x) ? x : null;
+    };
+    deps.calcDateSpanDaysInclusive = () => 4;
+    deps.stateFindUserRecord = () => ({
+      username: 'emp1',
+      name: '',
+      managerUsername: '',
+      store: '甲',
+      brand: '洪潮',
+    });
+    deps.pool.query = async (...a) => {
+      queries.push(a);
+      return { rows: [] };
+    };
+    await leave.afterDecide({
+      req: {},
+      deps,
+      username: 'a1',
+      note: '人手不足',
+      updated: {
+        id: 'lv-zero-days',
+        type: 'leave',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: {
+          days: 0,
+          leaveDays: 0,
+          leaveReason: '事假',
+          startDate: '2026-10-01',
+          endDate: '2026-10-04',
+          type: '',
+        },
+      },
+    });
+    const ins = queries.find((q) => /INSERT INTO hrms_leave_records/i.test(String(q[0])));
+    assert.equal(ins[1][7], 4);
+    assert.equal(ins[1][8], 'leave');
+    assert.ok(notifs.some((n) => n.title === '休假申请已通过' && n.u === 'emp1'));
+
+    const rej = makeDeps();
+    rej.deps.stateFindUserRecord = () => null;
+    await leave.afterDecide({
+      req: { tenantId: 'default' },
+      deps: rej.deps,
+      username: 'a1',
+      note: '冲突',
+      updated: {
+        id: 'lv-rej-note2',
+        type: 'leave',
+        status: 'rejected',
+        applicant_username: 'ghost',
+        payload: { fromDate: '2026-10-01', toDate: '2026-10-02' },
+      },
+    });
+    assert.ok(rej.notifs.some((n) => /因为冲突/.test(n.msg)));
+  }
+  {
+    const { deps, notifs, ledgerCalls, merges } = makeDeps({
+      state: { pointsAppliedApprovals: { 'pts-done': true }, pointRecords: [] },
+    });
+    deps.stateFindUserRecord = () => ({ username: 'emp1', name: '甲', managerUsername: 'mgr1', store: '店' });
+    await points.afterDecide({
+      req: { user: { username: 'a1' } },
+      deps,
+      updated: {
+        id: 'pts-done',
+        type: 'points',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: { points: 5, eventDate: '2026-04-15', itemName: '' },
+        updated_at: '2026-04-01T00:00:00Z',
+      },
+    });
+    assert.equal(ledgerCalls.length, 0);
+    assert.equal(merges.length, 0);
+    assert.ok(notifs.some((n) => n.title === '积分申请已通过' && /5积分/.test(n.msg) && /2026-04/.test(n.msg)));
+  }
+  {
+    const trainings = [];
+    const { deps, merges } = makeDeps({
+      state: {
+        employees: [{
+          username: 'emp1',
+          name: '技师',
+          level: '中级',
+          position: '技师',
+          salary: 5000,
+          store: '测试店',
+          department: '前厅',
+          promotionHistory: [],
+        }],
+        promotionTracks: [{ id: 'trk-skill', status: 'qualification_approved' }],
+      },
+    });
+    deps.findUserSalary = () => 5000;
+    deps.insertSalaryTimeline = async () => {};
+    deps.applyPromotionSalaryNextMonth = async () => {};
+    deps.getPromotionRequiredTopics = async () => [{ id: 3, title: '技能课' }];
+    deps.getPromotionTrackProgress = async () => ({ items: [{ topicId: 3, certified: false }] });
+    deps.createTrainingAssignment = async (a) => { trainings.push(a); };
+    deps.normalizePromotionTrainingPeriods = () => [];
+    deps.isKitchenByRoleOrPosition = () => false;
+    deps.pickHqManagerUsername = async () => '';
+    deps.pickStoreRoleUsernameByStore = () => '';
+    await promotion.afterDecide({
+      req: { tenantId: 'default' },
+      deps,
+      username: 'approver1',
+      updated: {
+        id: 'ap-skill-formal',
+        type: 'promotion',
+        status: 'approved',
+        applicant_username: 'emp1',
+        chain: null,
+        payload: {
+          promotionStage: 'formal',
+          promoTier: 'skill_bump',
+          level: '高级',
+          position: '高级技师',
+          promotedSalary: 6000,
+          promotionTrackId: 'trk-skill',
+          store: '测试店',
+        },
+      },
+    });
+    const emp = merges.find((m) => m.patch.employees)?.patch.employees[0];
+    assert.equal(emp?.level, '中级', 'skill_bump 不改职级');
+    assert.equal(emp?.position, '技师', 'skill_bump 不改岗位');
+    assert.equal(emp?.salary, 6000);
+    assert.equal(trainings.length, 0, 'formal skill_bump 不按新岗位下发培训');
+    assert.ok(merges.some((m) => m.patch.salaryChangeHistory?.[0]?.chain?.length === 0));
+    assert.ok(merges.some((m) => m.patch.promotionTracks?.[0]?.status === 'promoted'));
+  }
+});
+
 test('onboarding：空员工名失败日志；仅提交人通知；pending 默认新员工；外层吞错', async () => {
   {
     const decideExtras = {};

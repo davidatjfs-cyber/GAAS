@@ -17,6 +17,10 @@
 
 import { pool as getUnifiedPool, resolveTenantIdDefault, tenantContext } from './utils/database.js';
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'auto-ops-engine', handler: 'engine' });
+
 
 let _pool = null;
 let _sendLarkMessage = null;
@@ -184,11 +188,11 @@ export async function inspectionClosedLoopTick(tenantId = 'default') {
       }
     }
   } catch (e) {
-    console.error('[auto-ops] inspection reminder error:', e?.message);
+    log.error({ msg: 'auto_ops_inspection_reminder_error', err: e?.message });
   }
   } else if (!globalThis.__hrmsInspectionLoopDisabledLogged) {
     globalThis.__hrmsInspectionLoopDisabledLogged = true;
-    console.log('[auto-ops] 巡检催办/任务升级已关闭（未设置 HRMS_ENABLE_INSPECTION_CLOSED_LOOP=true）');
+    log.info({ msg: 'auto_ops_hrms_enable_inspection_closed_loop_true' });
   }
 
   // ── 1b. 自动验收跟踪: 任务resolved后记录闭环时间（纯按行更新元数据，不跨租户聚合，不需要按租户过滤）──
@@ -210,7 +214,7 @@ export async function inspectionClosedLoopTick(tenantId = 'default') {
       );
     }
   } catch (e) {
-    console.error('[auto-ops] closed loop log error:', e?.message);
+    log.error({ msg: 'auto_ops_closed_loop_log_error', err: e?.message });
   }
 
   return actions;
@@ -243,7 +247,7 @@ async function sendReminder(task, reminderNum, hoursWaiting) {
       `UPDATE ${SHARED_TABLES.MASTER_TASKS} SET source_data = COALESCE(source_data, '{}'::jsonb) || $1::jsonb WHERE task_id = $2`,
       [JSON.stringify({ reminder_count: reminderNum, last_reminder_at: new Date().toISOString() }), task.task_id]
     );
-    console.log(`[auto-ops] reminder #${reminderNum} sent for ${task.task_id} to ${task.assignee_username}`);
+    log.info({ msg: 'auto_ops_reminder_sent_for_to' });
   }
 }
 
@@ -284,11 +288,11 @@ async function escalateTask(task, hoursWaiting, tenantId = 'default') {
       };
     }
   } catch (e) {
-    console.warn('[auto-ops] escalate admin lookup failed:', e?.message);
+    log.warn({ msg: 'auto_ops_escalate_admin_lookup_failed', err: e?.message });
   }
 
   if (!escalateTo?.open_id) {
-    console.warn('[auto-ops] escalate skipped: no admin open_id for task', task?.task_id);
+    log.warn({ msg: 'auto_ops_escalate_skipped_no_admin_open_id_for_task', detail: [task?.task_id] });
     return;
   }
 
@@ -322,7 +326,7 @@ async function escalateTask(task, hoursWaiting, tenantId = 'default') {
         escalate_reason: `超过${hoursWaiting.toFixed(1)}小时未回复（仅通知管理员）`
       }), task.task_id]
     );
-    console.log(`[auto-ops] task ${task.task_id} escalated to admin ${escalateTo.username}`);
+    log.info({ msg: 'auto_ops_task_escalated_to_admin' });
   }
 }
 
@@ -377,7 +381,7 @@ export async function biProactivePushTick(tenantId = 'default') {
       for (const row of (badAllR.rows || [])) {
         badReviewByStore[row.store_name] = parseInt(row.cnt || 0);
       }
-    } catch (e) { console.error('[auto-ops] bad review aggregate error:', e?.message); }
+    } catch (e) { log.error({ msg: 'auto_ops_bad_review_aggregate_error', err: e?.message }); }
 
     // 将差评门店名映射到系统门店名（支持模糊匹配）
     function matchBadReviewStore(badStoreName) {
@@ -488,16 +492,16 @@ export async function biProactivePushTick(tenantId = 'default') {
           pushed++;
         }
       } catch (e) {
-        console.error('[auto-ops] HQ BI summary push error:', e?.message);
+        log.error({ msg: 'auto_ops_hq_bi_summary_push_error', err: e?.message });
       }
     }
 
     // 记录推送事件
     await appendAutoOpsEvent('bi_proactive_push', `BI-PUSH-${yesterday}`, { date: yesterday, storesChecked: stores.length, alertsPushed: pushed, hqSummaryCount: hqSummaries.length });
     await markAutoOpsRun('bi_proactive_push', runKey, { date: yesterday, storesChecked: stores.length, alertsPushed: pushed, hqSummaryCount: hqSummaries.length, tenant_id: tenantId }, tenantId);
-    console.log(`[auto-ops] BI proactive push: ${stores.length} stores checked, ${pushed} alerts pushed`);
+    log.info({ msg: 'auto_ops_bi_proactive_push_stores_checked_alerts_pushed' });
   } catch (e) {
-    console.error('[auto-ops] BI push error:', e?.message);
+    log.error({ msg: 'auto_ops_bi_push_error', err: e?.message });
   }
 
   return pushed;
@@ -600,9 +604,9 @@ export async function laborEfficiencyTick(tenantId = 'default') {
       await appendAutoOpsEvent('labor_efficiency_push', `LABOR-${cstDateString(now, 0)}`, { pushed });
     }
     await markAutoOpsRun('labor_efficiency_push', runKey, { pushed, tenant_id: tenantId }, tenantId);
-    console.log(`[auto-ops] labor efficiency: ${pushed} suggestions pushed`);
+    log.info({ msg: 'auto_ops_labor_efficiency_suggestions_pushed' });
   } catch (e) {
-    console.error('[auto-ops] labor efficiency error:', e?.message);
+    log.error({ msg: 'auto_ops_labor_efficiency_error', err: e?.message });
   }
 
   return pushed;
@@ -696,7 +700,7 @@ export async function trainingClosedLoopTick(tenantId = 'default') {
           ]
         );
         created++;
-        console.log(`[auto-ops] training task created: ${category} for ${store} (${cnt} anomalies)`);
+        log.info({ msg: 'auto_ops_training_task_created_for_anomalies' });
 
         // 通知责任人
         const fu = await _lookupFeishuUser?.(mgr.username);
@@ -716,7 +720,7 @@ export async function trainingClosedLoopTick(tenantId = 'default') {
           await _sendLarkCard(fu.open_id, card);
         }
       } catch (e) {
-        console.error('[auto-ops] create training task error:', e?.message);
+        log.error({ msg: 'auto_ops_create_training_task_error', err: e?.message });
       }
     }
 
@@ -750,9 +754,9 @@ export async function trainingClosedLoopTick(tenantId = 'default') {
       await appendAutoOpsEvent('training_closed_loop', `TRAIN-${cstDateString(now, 0)}`, { created });
     }
     await markAutoOpsRun('training_closed_loop', runKey, { created, tenant_id: tenantId }, tenantId);
-    console.log(`[auto-ops] training closed loop: ${created} training tasks created`);
+    log.info({ msg: 'auto_ops_training_closed_loop_training_tasks_created' });
   } catch (e) {
-    console.error('[auto-ops] training closed loop error:', e?.message);
+    log.error({ msg: 'auto_ops_training_closed_loop_error', err: e?.message });
   }
 
   return created;

@@ -1,6 +1,10 @@
 import { pool } from './agents.js';
 import { isHrmsAgentV1Enabled } from './safety.js';
 import { resolveTenantIdDefault } from './utils/database.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'agent-config-manager', handler: 'manager' });
+
 
 // ─── Feature Flags（降级开关）────────────────────────────────
 // 通过环境变量覆盖，例如 FEATURE_DISABLE_METRIC_DICTIONARY=true
@@ -618,7 +622,7 @@ export async function ensureAgentConfigTables() {
     // 删除已移除的规则类别
     if (REMOVED_RULE_CATEGORIES.length) {
       await pool().query(`DELETE FROM agent_rules WHERE category = ANY($1)`, [REMOVED_RULE_CATEGORIES]);
-      console.log('[AgentConfig] Removed deprecated rule categories:', REMOVED_RULE_CATEGORIES.join(', '));
+      log.info({ msg: 'agentconfig_removed_deprecated_rule_categories', detail: [REMOVED_RULE_CATEGORIES.join(', ')] });
     }
 
     // 初始化默认 Rule 数据
@@ -651,9 +655,9 @@ export async function ensureAgentConfigTables() {
       [JSON.stringify(DEFAULT_BI_AGENT_CONFIG), resolveTenantIdDefault()]
     );
     
-    console.log('[AgentConfig] Tables ensured and default data seeded.');
+    log.info({ msg: 'agentconfig_tables_ensured_and_default_data_seeded' });
   } catch (e) {
-    console.error('[AgentConfig] Init error:', e);
+    log.error({ msg: 'agentconfig_init_error', err: e?.message || String(e) });
   }
 }
 
@@ -1036,10 +1040,10 @@ export function registerAgentConfigRoutes(app, authRequired) {
             await agentsRuntime.startScheduledTasks();
           }
         } catch (runtimeErr) {
-          console.error('[ops-config] scheduler reload failed:', runtimeErr?.message || runtimeErr);
+          log.error({ msg: 'ops_config_scheduler_reload_failed', err: runtimeErr?.message || runtimeErr });
         }
       } else {
-        console.log('[ops-config] HRMS_AGENT_V1_ENABLED≠true — 已跳过 startScheduledTasks 热重载');
+        log.info({ msg: 'ops_config_hrms_agent_v1_enabled_true_startscheduledtasks' });
       }
       return res.json({ config: r.rows[0].config, enabled: r.rows[0].enabled, updated_at: r.rows[0].updated_at });
     } catch (e) {
@@ -1123,7 +1127,7 @@ export async function getAgentRules() {
     rulesLastFetched = now;
     return cachedRules;
   } catch (e) {
-    console.error('[getAgentRules] Error:', e);
+    log.error({ msg: 'getagentrules_error', err: e?.message || String(e) });
     return [];
   }
 }
@@ -1175,7 +1179,7 @@ export async function getOpsAgentConfig() {
       opsAgentConfigCache = normalizeOpsAgentConfig(DEFAULT_OPS_AGENT_CONFIG);
     }
   } catch (e) {
-    console.error('[AgentConfig] getOpsAgentConfig error:', e);
+    log.error({ msg: 'agentconfig_getopsagentconfig_error', err: e?.message || String(e) });
     opsAgentConfigCache = normalizeOpsAgentConfig(DEFAULT_OPS_AGENT_CONFIG);
   }
   opsAgentConfigLastFetch = now;
@@ -1200,7 +1204,7 @@ export async function getBiAgentConfig() {
       biAgentConfigCache = normalizeBiAgentConfig(DEFAULT_BI_AGENT_CONFIG);
     }
   } catch (e) {
-    console.error('[AgentConfig] getBiAgentConfig error:', e);
+    log.error({ msg: 'agentconfig_getbiagentconfig_error', err: e?.message || String(e) });
     biAgentConfigCache = normalizeBiAgentConfig(DEFAULT_BI_AGENT_CONFIG);
   }
   biAgentConfigLastFetch = now;
@@ -1227,7 +1231,7 @@ export async function getAgentConfigs() {
     configsLastFetched = now;
     return cachedConfigs;
   } catch (e) {
-    console.error('[getAgentConfigs] Error:', e);
+    log.error({ msg: 'getagentconfigs_error', err: e?.message || String(e) });
     return {};
   }
 }
@@ -1263,7 +1267,7 @@ export async function getEmployeeRatingConfig() {
     employeeRatingLastFetched = now;
     return cachedEmployeeRatingConfig;
   } catch (e) {
-    console.error('[getEmployeeRatingConfig] Error:', e);
+    log.error({ msg: 'getemployeeratingconfig_error', err: e?.message || String(e) });
     return DEFAULT_EMPLOYEE_RATING_CONFIG;
   }
 }

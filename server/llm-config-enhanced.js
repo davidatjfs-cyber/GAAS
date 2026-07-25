@@ -11,6 +11,10 @@ import {
   MODEL_TIERS,
   ROLE_TIER_MAP 
 } from './hq-brain-config.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'llm-config', handler: 'enhanced' });
+
 
 // 扩展模型配置 - 支持多模型降级策略
 export const ENHANCED_MODEL_CONFIG = {
@@ -338,7 +342,7 @@ export class SmartModelRouter {
       // 检查是否到了半开状态的时间
       if (Date.now() - breaker.lastFailure > 30000) { // 30秒后尝试恢复
         breaker.state = 'half-open';
-        console.log(`[SmartModelRouter] Circuit breaker for ${model} moved to half-open`);
+        log.info({ msg: 'smartmodelrouter_circuit_breaker_for_moved_to_half_open' });
       }
       return breaker.state === 'open';
     }
@@ -363,7 +367,7 @@ export class SmartModelRouter {
       if (breaker.state === 'half-open') {
         // 半开状态下成功调用，关闭熔断器
         this.circuitBreakers.delete(model);
-        console.log(`[SmartModelRouter] Circuit breaker for ${model} closed`);
+        log.info({ msg: 'smartmodelrouter_circuit_breaker_for_closed' });
       }
     }
 
@@ -392,7 +396,7 @@ export class SmartModelRouter {
       // 连续3次失败，打开熔断器
       if (breaker.failures >= 3) {
         breaker.state = 'open';
-        console.warn(`[SmartModelRouter] Circuit breaker OPENED for ${model} due to ${breaker.failures} consecutive failures`);
+        log.warn({ msg: 'smartmodelrouter_circuit_breaker_opened_for_due_to_consecutive_failures' });
       }
     } else {
       breaker.failures = 0;
@@ -463,7 +467,7 @@ export class ResilientLLMCaller {
           lastError = e;
           const latency = Date.now() - startTime;
           
-          console.warn(`[ResilientLLMCaller] Attempt ${attempt + 1} failed for ${model}:`, e.message);
+          log.warn({ msg: 'resilientllmcaller_attempt_failed_for', err: e.message });
           
           // 记录失败
           this.router.recordCallResult(model, context.taskType || 'unknown', false, latency, e);
@@ -475,7 +479,7 @@ export class ResilientLLMCaller {
         }
       }
       
-      console.log(`[ResilientLLMCaller] Moving to fallback model from ${model}`);
+      log.info({ msg: 'resilientllmcaller_moving_to_fallback_model_from' });
     }
 
     // 所有模型都失败了
@@ -565,20 +569,20 @@ export function evaluateLLMConfiguration() {
  * 初始化增强LLM配置
  */
 export function initializeEnhancedLLMConfig() {
-  console.log('[EnhancedLLMConfig] Initializing...');
+  log.info({ msg: 'enhancedllmconfig_initializing' });
   
   // 运行配置评估
   const evaluation = evaluateLLMConfiguration();
   
   if (evaluation.issues.length > 0) {
-    console.warn('[EnhancedLLMConfig] Configuration issues detected:', evaluation.issues);
+    log.warn({ msg: 'enhancedllmconfig_configuration_issues_detected', detail: [evaluation.issues] });
   }
   
   if (evaluation.recommendations.length > 0) {
-    console.log('[EnhancedLLMConfig] Recommendations:', evaluation.recommendations);
+    log.info({ msg: 'enhancedllmconfig_recommendations', detail: [evaluation.recommendations] });
   }
   
-  console.log(`[EnhancedLLMConfig] Initialized. Overall health: ${evaluation.overallHealth}`);
+  log.info({ msg: 'enhancedllmconfig_initialized_overall_health' });
   
   return evaluation;
 }

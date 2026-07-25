@@ -12,6 +12,10 @@ import {
 import { getDefaultThreshold } from './rule-identity.js';
 import { getBenchmarkForStore } from './benchmark-service.js';
 import { recordDataQuality } from './data-trust-service.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'diagnosis-tree' });
+
 
 function num(v) {
   const n = Number(v);
@@ -146,7 +150,7 @@ async function loadDiagnosisRulesSafe(pool, { tenantId, storeId }) {
     const rules = await loadEffectiveRules(pool, { tenantId, storeId, ruleType: 'diagnosis' });
     return { rules, byId: new Map(rules.map(rule => [rule.rule_id, rule])) };
   } catch (e) {
-    console.warn('[ontology-rules] load failed, fallback to code rules:', e?.message || e);
+    log.warn({ msg: 'ontology_rules_load_failed_fallback_to_code_rules', err: e?.message || e });
     return { rules: [], byId: new Map(), error: e };
   }
 }
@@ -308,7 +312,7 @@ export async function runDailyDiagnosis(pool, options = {}) {
       roots: ['new_customer_not_followed', 'second_visit_invitation_missing'],
       impact: Math.round(newCustomerSecondVisit.noSecondVisit * Math.max(newCustomerSecondVisit.avgFirstSpend, 80) * 0.12),
     }));
-    console.log('New customer second visit diagnosis generated');
+    log.info({ msg: 'new_customer_second_visit_diagnosis_generated' });
   }
   const dormantRule = rules.get('dormant_customer_reactivation');
   const dormantEvaluated = await applyRule(pool, dormantRule, {
@@ -324,7 +328,7 @@ export async function runDailyDiagnosis(pool, options = {}) {
       severity: dormantRule?.severity || (repeat.riskCustomers >= 3 ? 'P1' : 'P2'), confidence: Number(dormantRule?.confidence_base || 0.8),
       evidence: ruleEvidence(dormantRule, dormantEvaluated.matchedConditions, { ...repeat, ...dormant }), roots: ['vip_churn', 'stored_value_inactive'], impact: 0,
     }));
-    if (dormantRule) console.log('Dormant customer rule evaluated from config');
+    if (dormantRule) log.info({ msg: 'dormant_customer_rule_evaluated_from_config' });
   }
   if (employee.lowCount >= 1) {
     issues.push(issueRow({
@@ -350,7 +354,7 @@ export async function runDailyDiagnosis(pool, options = {}) {
         ruleId: 'employee_score_vs_actual_revenue',
         result: conflict ? 'conflict' : 'consistent',
       }],
-    }).catch((e) => console.warn('[data-trust] record employee score check failed:', e?.message || e));
+    }).catch((e) => log.warn({ msg: 'data_trust_record_employee_score_check_failed', err: e?.message || e }));
   }
   if (marketing.touched > 0 && marketing.conversionRate !== null) {
     const rule = rules.get('marketing_conversion_low');
@@ -365,7 +369,7 @@ export async function runDailyDiagnosis(pool, options = {}) {
     }
   } else if (marketing.touched === 0) {
     // 诚实降级：没有可关联的客户触达明细时，不产出营销转化结论，也不假装“转化正常”。
-    console.log('[ontology] marketing_conversion skipped: no resolvable touches for store', storeId);
+    log.info({ msg: 'ontology_marketing_conversion_skipped_no_resolvable_touches_for_store', detail: [storeId] });
   }
 
   const dataGaps = [];
@@ -440,15 +444,15 @@ export async function runDailyDiagnosis(pool, options = {}) {
         }
         saved.boss_language_summary = bossLanguageOutput;
       } catch (e) {
-        console.warn('[ontology-rules] record hit failed:', e?.message || e);
+        log.warn({ msg: 'ontology_rules_record_hit_failed', err: e?.message || e });
       }
     }
     savedIssues.push(saved);
     opportunities.push(...await createOpportunitiesForIssue(pool, saved));
   }
-  console.log('Daily diagnosis generated');
-  console.log('Issues generated');
-  console.log('Opportunities generated');
+  log.info({ msg: 'daily_diagnosis_generated' });
+  log.info({ msg: 'issues_generated' });
+  log.info({ msg: 'opportunities_generated' });
   return {
     ontologyStatus: savedIssues.length ? 'ok' : 'no_issue_detected',
     issues: savedIssues,

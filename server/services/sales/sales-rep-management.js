@@ -3,6 +3,10 @@
  * 销售人员不登录后台，仅通过 rep_key 字符串与 sales_leads.owner_username / sales_tasks.assignee 关联。
  */
 import { getTrainingStats } from './sales-training.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'sales-rep-management' });
+
 
 // final_score 三段权重，集中定义方便调整
 const SCORE_WEIGHTS = { outcome: 0.5, behavior: 0.4, manager: 0.1 };
@@ -61,7 +65,7 @@ export async function listSalesReps(pool, { status } = {}) {
     );
     return r.rows || [];
   } catch (e) {
-    console.error('[sales-rep] listSalesReps failed:', e?.message || e);
+    log.error({ msg: 'sales_rep_listsalesreps_failed', err: e?.message || e });
     throw e;
   }
 }
@@ -86,7 +90,7 @@ export async function createOrUpdateSalesRep(pool, { repKey, displayName, role, 
     );
     return r.rows?.[0] || null;
   } catch (e) {
-    console.error('[sales-rep] createOrUpdateSalesRep failed:', e?.message || e);
+    log.error({ msg: 'sales_rep_createorupdatesalesrep_failed', err: e?.message || e });
     throw e;
   }
 }
@@ -169,7 +173,7 @@ export async function computeDailyActivityForRep(pool, repKey, dateStr) {
       price_guard_triggers: Number(priceGuardRes.rows?.[0]?.cnt || 0),
     };
   } catch (e) {
-    console.error('[sales-rep] computeDailyActivityForRep failed:', e?.message || e);
+    log.error({ msg: 'sales_rep_computedailyactivityforrep_failed', err: e?.message || e });
     throw e;
   }
 }
@@ -207,12 +211,12 @@ export async function runDailyActivityRollup(pool, { dateStr } = {}) {
         );
         results.push(r.rows?.[0] || null);
       } catch (e) {
-        console.warn(`[sales-rep] rollup failed for rep ${rep.rep_key}:`, e?.message || e);
+        log.warn({ msg: 'sales_rep_rollup_failed_for_rep', err: e?.message || e });
       }
     }
     return results;
   } catch (e) {
-    console.error('[sales-rep] runDailyActivityRollup failed:', e?.message || e);
+    log.error({ msg: 'sales_rep_rundailyactivityrollup_failed', err: e?.message || e });
     throw e;
   }
 }
@@ -234,7 +238,7 @@ export async function upsertKpiTarget(pool, { repId, periodType, periodKey, targ
     );
     return r.rows?.[0] || null;
   } catch (e) {
-    console.error('[sales-rep] upsertKpiTarget failed:', e?.message || e);
+    log.error({ msg: 'sales_rep_upsertkpitarget_failed', err: e?.message || e });
     throw e;
   }
 }
@@ -363,7 +367,7 @@ export async function computeAndSaveKpiScore(pool, { repId, periodType, periodKe
     );
     return r.rows?.[0] || null;
   } catch (e) {
-    console.error('[sales-rep] computeAndSaveKpiScore failed:', e?.message || e);
+    log.error({ msg: 'sales_rep_computeandsavekpiscore_failed', err: e?.message || e });
     throw e;
   }
 }
@@ -386,7 +390,7 @@ export async function getRepScorecard(pool, repId, periodType, periodKey) {
       period_range: { start, end },
     };
   } catch (e) {
-    console.error('[sales-rep] getRepScorecard failed:', e?.message || e);
+    log.error({ msg: 'sales_rep_getrepscorecard_failed', err: e?.message || e });
     throw e;
   }
 }
@@ -404,7 +408,7 @@ export async function getTeamLeaderboard(pool, { periodType, periodKey } = {}) {
     );
     return r.rows || [];
   } catch (e) {
-    console.error('[sales-rep] getTeamLeaderboard failed:', e?.message || e);
+    log.error({ msg: 'sales_rep_getteamleaderboard_failed', err: e?.message || e });
     throw e;
   }
 }
@@ -442,7 +446,7 @@ export async function runAutoKpiRollupAndNotify(pool, sendOpsAlert, periodType) 
       const score = await computeAndSaveKpiScore(pool, { repId: rep.id, periodType, periodKey });
       results.push({ ...rep, ...score });
     } catch (e) {
-      console.warn(`[sales-rep] auto kpi rollup failed for rep ${rep.rep_key}:`, e?.message || e);
+      log.warn({ msg: 'sales_rep_auto_kpi_rollup_failed_for_rep', err: e?.message || e });
     }
   }
   if (typeof sendOpsAlert === 'function' && results.length) {
