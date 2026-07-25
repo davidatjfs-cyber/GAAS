@@ -101,6 +101,15 @@
     "domains/growth-ops/helpers.js",
     "domains/employees/mirror-tx.js",
     "domains/reports/helpers.js",
-    "domains/inventory-forecast/ai-forecast.js"
+    "domains/inventory-forecast/ai-forecast.js",
+    "domains/rag/profile.js",
+    "domains/health/process-health-monitor.js",
+    "domains/inventory-forecast/history-from-pos.js",
+    "domains/feishu-bitable/map.js",
+    "domains/growth-sms/helpers.js",
+    "domains/shared/has-column.js",
+    "domains/feishu-bitable/table-visit-upsert.js",
+    "domains/agent-message/helpers.js",
+    "domains/shared/state-client-shaping.js"
   ]
 }
