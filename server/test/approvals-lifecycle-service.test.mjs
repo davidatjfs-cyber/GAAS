@@ -451,6 +451,96 @@ test('resubmitApproval: points 条目校验与成功重提', async () => {
   assert.deepEqual(updatedPayload.evidenceUrls, ['https://x/a.jpg']);
 });
 
+test('resubmitApproval: points missing_store / rule_disabled / too_many_items', async () => {
+  const baseRow = {
+    id: 'pts-r2',
+    type: 'points',
+    status: 'returned',
+    applicant_username: 'applicant1',
+    chain: [{ assignee: 'mgr1', status: 'returned' }],
+    payload: {},
+  };
+  const pool = makePool({ query: async () => ({ rows: [baseRow] }) });
+
+  const { deps: noStore } = makeLifecycleDeps({
+    state: {
+      employees: [{ username: 'applicant1', store: '' }],
+      pointRules: [{ id: 'r1', points: 1, enabled: true }],
+    },
+    depsExtra: {
+      stateFindUserRecord: () => ({ username: 'applicant1', store: '' }),
+    },
+  });
+  assert.equal(
+    (await resubmitApproval({
+      pool,
+      ...noStore,
+      id: 'pts-r2',
+      username: 'applicant1',
+      bodyPayload: { items: [{ ruleId: 'r1', reason: 'x' }] },
+    })).error,
+    'missing_store'
+  );
+
+  const { deps: disabled } = makeLifecycleDeps({
+    state: {
+      employees: [{ username: 'applicant1', store: '测试店' }],
+      pointRules: [{ id: 'r1', points: 1, enabled: false, store: '测试店' }],
+    },
+  });
+  assert.equal(
+    (await resubmitApproval({
+      pool,
+      ...disabled,
+      id: 'pts-r2',
+      username: 'applicant1',
+      bodyPayload: { items: [{ ruleId: 'r1', reason: 'x' }] },
+    })).error,
+    'rule_disabled'
+  );
+
+  const many = Array.from({ length: 21 }, (_, i) => ({ ruleId: 'r1', reason: `r${i}` }));
+  const { deps: tooMany } = makeLifecycleDeps({
+    state: {
+      employees: [{ username: 'applicant1', store: '测试店' }],
+      pointRules: [{ id: 'r1', points: 1, enabled: true, store: '测试店' }],
+    },
+  });
+  assert.equal(
+    (await resubmitApproval({
+      pool,
+      ...tooMany,
+      id: 'pts-r2',
+      username: 'applicant1',
+      bodyPayload: { items: many },
+    })).error,
+    'too_many_items'
+  );
+});
+
+test('repairOnboardingEmployee: not_found / missing username', async () => {
+  const empty = makePool({ query: async () => ({ rows: [] }) });
+  const { deps } = makeLifecycleDeps();
+  assert.equal(
+    (await repairOnboardingEmployee({ pool: empty, ...deps, id: 'x' })).error,
+    'not_found'
+  );
+
+  const badEmp = makePool({
+    query: async () => ({
+      rows: [{
+        id: 'onb-bad',
+        type: 'onboarding',
+        status: 'approved',
+        payload: { employee: {} },
+      }],
+    }),
+  });
+  const r = await repairOnboardingEmployee({ pool: badEmp, ...deps, id: 'onb-bad' });
+  assert.equal(r.error, 'missing_employee_username');
+  assert.equal(r.status, 400);
+});
+
 test('resubmitApproval: onboarding 合并 employee；飞书通知', async () => {
   let payloadOut = null;
   const feishu = [];
