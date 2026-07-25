@@ -54,6 +54,7 @@ import {
   isShortOptionReply,
 } from './domains/agent-message/helpers.js';
 import { tryHandleTrainingFlows } from './domains/agent-message/training-flow.js';
+import { tryBiDeterministicCascade } from './domains/agent-message/bi-deterministic-cascade.js';
 import {
   maybeInheritRecentRoute,
   resolveDataAuditorStore,
@@ -9243,101 +9244,30 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
           }
         }
 
-        const deterministicCoverageReply = await buildBiDeterministicDataSourceCoverageReply(text);
-        if (deterministicCoverageReply) {
-          response = deterministicCoverageReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'bi_data_source_coverage' };
-          break;
-        }
-
-        const deterministicDailyReportReply = await buildBiDeterministicDailyReportReply(resolvedStore, text);
-        if (deterministicDailyReportReply) {
-          response = deterministicDailyReportReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'daily_reports' };
-          break;
-        }
-
-        const deterministicTableVisitReply = await buildBiDeterministicTableVisitReply(resolvedStore, text);
-        if (deterministicTableVisitReply) {
-          response = deterministicTableVisitReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'table_visit' };
-          break;
-        }
-
-        const deterministicSalesRawTopReply = await buildBiDeterministicSalesRawTopReply(resolvedStore, text);
-        if (deterministicSalesRawTopReply) {
-          response = deterministicSalesRawTopReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'pos_sales_detail' };
-          break;
-        }
-
-        // 预测备货销售明细（堂食/外卖×时段销量占比）
-        if (/(堂食|外卖|销售明细|时段.*销|销.*时段|午市|晚市|菜品.*销量|销量.*排|热销|畅销|备货|点单)/.test(String(text||''))) {
-          try {
-            const st = await getSharedState();
-            const allH = Array.isArray(st?.inventoryForecastHistory) ? st.inventoryForecastHistory : [];
-            const storeH = allH.filter(x => normalizeStoreKey(x?.store) === normalizeStoreKey(resolvedStore));
-            if (storeH.length) {
-              const p = resolveDateRangeFromQuestion(text, 7);
-              const filt = storeH.filter(x => { const d=String(x?.date||''); return d>=p.start&&d<=p.end; });
-              if (filt.length) {
-                const rpt = buildSalesReport(filt, store, p);
-                if (rpt) { response = rpt; agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'inventory_forecast' }; break; }
-              } else {
-                const dates = storeH.map(x=>x?.date).filter(Boolean).sort();
-                response = `📦 ${p.label}暂无销售明细数据（${store}）。已有数据范围：${dates[0]} ~ ${dates[dates.length-1]}`;
-                agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'inventory_forecast' }; break;
-              }
-            }
-          } catch(e) { console.error('[bi] sales detail error:', e?.message); }
-        }
-
-        const deterministicBadReviewReply = await buildBiDeterministicBadReviewReportReply(resolvedStore, text);
-        if (deterministicBadReviewReply) {
-          response = deterministicBadReviewReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'bad_reviews' };
-          break;
-        }
-
-        const deterministicClosingReply = await buildBiDeterministicClosingReportReply(resolvedStore, text);
-        if (deterministicClosingReply) {
-          response = deterministicClosingReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'closing_reports' };
-          break;
-        }
-
-        const deterministicOpeningReply = await buildBiDeterministicOpeningReportReply(resolvedStore, text);
-        if (deterministicOpeningReply) {
-          response = deterministicOpeningReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'opening_reports' };
-          break;
-        }
-
-        const deterministicMaterialReply = await buildBiDeterministicMaterialReportReply(resolvedStore, text);
-        if (deterministicMaterialReply) {
-          response = deterministicMaterialReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'material_reports' };
-          break;
-        }
-
-        const deterministicMeetingReply = await buildBiDeterministicMeetingReportReply(resolvedStore, text);
-        if (deterministicMeetingReply) {
-          response = deterministicMeetingReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'meeting_reports' };
-          break;
-        }
-
-        const deterministicOpsCountReply = await buildBiDeterministicOpsReportCountReply(resolvedStore, text);
-        if (deterministicOpsCountReply) {
-          response = deterministicOpsCountReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'ops_reports' };
-          break;
-        }
-
-        const deterministicLossReply = await buildBiDeterministicLossReportReply(resolvedStore, text);
-        if (deterministicLossReply) {
-          response = deterministicLossReply;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: true, deterministic: true, source: 'loss_reports' };
+        // ── BI 确定性级联（domains/agent-message）──
+        const biDet = await tryBiDeterministicCascade(
+          { text, resolvedStore, route, store, brand, brandId, brandConfig },
+          {
+            buildCoverage: buildBiDeterministicDataSourceCoverageReply,
+            buildDailyReport: buildBiDeterministicDailyReportReply,
+            buildTableVisit: buildBiDeterministicTableVisitReply,
+            buildSalesRawTop: buildBiDeterministicSalesRawTopReply,
+            buildBadReview: buildBiDeterministicBadReviewReportReply,
+            buildClosing: buildBiDeterministicClosingReportReply,
+            buildOpening: buildBiDeterministicOpeningReportReply,
+            buildMaterial: buildBiDeterministicMaterialReportReply,
+            buildMeeting: buildBiDeterministicMeetingReportReply,
+            buildOpsCount: buildBiDeterministicOpsReportCountReply,
+            buildLoss: buildBiDeterministicLossReportReply,
+            getSharedState,
+            normalizeStoreKey,
+            resolveDateRangeFromQuestion,
+            buildSalesReport,
+          }
+        );
+        if (biDet.handled) {
+          response = biDet.response;
+          agentData = biDet.agentData;
           break;
         }
 
