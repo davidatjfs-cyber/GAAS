@@ -818,7 +818,7 @@ test('onboarding.afterDecide：通知 merge 失败不抛；仍保留员工同步
   deps.toNullableUuid = () => null;
   deps.insertSalaryTimeline = async () => {};
   deps.safeErrMessage = (e) => String(e?.message || e);
-  deps.mergeSharedStateFields = async (patch, keys) => {
+  deps.mergeSharedStateFields = async (patch, _keys) => {
     if (patch.notifications) {
       notifMergeAttempts += 1;
       throw new Error('notif merge boom');
