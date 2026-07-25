@@ -93,7 +93,7 @@ test('runTenantAcceptance: tenant 不存在；基础 checks', async () => {
 
   const calls = [];
   const pool = {
-    query: async (sql, params) => {
+    query: async (sql, _params) => {
       calls.push(sql);
       if (sql.includes('FROM tenants')) {
         return { rows: [{ tenant_id: 't1', name: '甲', mode: 'demo', status: 'active' }] };

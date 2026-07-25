@@ -8,6 +8,7 @@ import {
   switchStore,
   loginAs,
   getAuthMe,
+  logout,
   heartbeat,
 } from '../domains/auth/service.js';
 
@@ -249,6 +250,168 @@ test('loginAs: non-admin → forbidden', async () => {
   );
   assert.equal(result.status, 403);
   assert.equal(result.body.error, 'forbidden');
+});
+
+test('loginAs: missing_username / missing_reason；成功代登；跨租户 404', async () => {
+  const noUser = await loginAs(
+    { user: { username: 'admin', role: 'admin' }, tenantId: 'default', body: { reason: 'x' } },
+    baseDeps()
+  );
+  assert.equal(noUser.status, 400);
+  assert.equal(noUser.body.error, 'missing_username');
+
+  const noReason = await loginAs(
+    { user: { username: 'admin', role: 'admin' }, tenantId: 'default', body: { username: 'bob' } },
+    baseDeps()
+  );
+  assert.equal(noReason.status, 400);
+  assert.equal(noReason.body.error, 'missing_reason');
+
+  const cross = await loginAs(
+    {
+      user: { username: 'admin', role: 'admin' },
+      tenantId: 'default',
+      body: { username: 'bob', reason: '排查' },
+    },
+    baseDeps({
+      pool: {
+        query: async (sql) => {
+          if (/FROM users/i.test(String(sql))) {
+            return {
+              rows: [{
+                id: 2,
+                username: 'bob',
+                real_name: 'Bob',
+                role: 'store_manager',
+                is_active: true,
+                tenant_id: 'other-tenant',
+              }],
+            };
+          }
+          return { rows: [] };
+        },
+      },
+    })
+  );
+  assert.equal(cross.status, 404);
+  assert.equal(cross.body.error, 'user_not_found');
+
+  let recorded = null;
+  const okAs = await loginAs(
+    {
+      user: { username: 'admin', role: 'admin' },
+      tenantId: 'default',
+      body: { username: 'bob', reason: '客服排查' },
+      reqLike: { ip: '127.0.0.1' },
+    },
+    baseDeps({
+      pool: {
+        query: async (sql) => {
+          if (/FROM users/i.test(String(sql))) {
+            return {
+              rows: [{
+                id: 3,
+                username: 'bob',
+                real_name: 'Bob',
+                role: 'store_manager',
+                is_active: true,
+                tenant_id: 'default',
+              }],
+            };
+          }
+          return { rows: [] };
+        },
+      },
+      recordLogin: (u, meta) => { recorded = { u, meta }; },
+      storeSessionNonce: async () => true,
+    })
+  );
+  assert.equal(okAs.status, 200);
+  assert.ok(okAs.body.token);
+  assert.equal(okAs.body.user.username, 'bob');
+  assert.equal(okAs.body.loginAsBy, 'admin');
+  assert.equal(okAs.body.loginAs, true);
+  assert.ok(recorded);
+});
+
+test('changePassword: weak_password；DB 成功；state 回落 not_found', async () => {
+  const weak = await changePassword(
+    {
+      user: { username: 'alice' },
+      tenantId: 'default',
+      body: { oldPassword: 'old-pass-1', newPassword: 'short' },
+    },
+    baseDeps()
+  );
+  assert.equal(weak.status, 400);
+  assert.equal(weak.body.error, 'weak_password');
+
+  const hash = await bcrypt.hash('old-pass-1', 4);
+  let updated = false;
+  const dbOk = await changePassword(
+    {
+      user: { username: 'alice' },
+      tenantId: 'default',
+      body: { oldPassword: 'old-pass-1', newPassword: 'Newpass12' },
+    },
+    baseDeps({
+      pool: {
+        query: async (sql) => {
+          if (String(sql).includes('select id, username, password_hash')) {
+            return { rows: [{ id: 1, username: 'alice', password_hash: hash }] };
+          }
+          if (String(sql).includes('update users set password_hash')) {
+            updated = true;
+            return { rows: [] };
+          }
+          return { rows: [] };
+        },
+      },
+    })
+  );
+  assert.equal(dbOk.status, 200);
+  assert.equal(dbOk.body.mode, 'db');
+  assert.equal(updated, true);
+
+  const missing = await changePassword(
+    {
+      user: { username: 'ghost' },
+      tenantId: 'default',
+      body: { oldPassword: 'x', newPassword: 'Newpass12' },
+    },
+    baseDeps({
+      pool: {
+        query: async () => ({ rows: [] }),
+      },
+      getSharedState: async () => ({ users: [], employees: [] }),
+    })
+  );
+  assert.equal(missing.status, 404);
+  assert.equal(missing.body.error, 'not_found');
+});
+
+test('logout / switchStore 成功换店', async () => {
+  let loggedOut = null;
+  const out = await logout(
+    { user: { username: 'admin' } },
+    baseDeps({ recordLogout: async (u) => { loggedOut = u; } })
+  );
+  assert.equal(out.status, 200);
+  assert.equal(loggedOut, 'admin');
+
+  const switched = await switchStore(
+    { user: { username: 'u1', role: 'store_manager', store: 'A店' }, body: { store: 'B店' } },
+    baseDeps({
+      getUserStoreAccessContext: async () => ({
+        allowedStores: ['A店', 'B店'],
+        currentStore: 'A店',
+        primaryStore: 'A店',
+      }),
+      storeSessionNonce: async () => true,
+    })
+  );
+  assert.equal(switched.status, 200);
+  assert.equal(switched.body.user.current_store, 'B店');
 });
 
 test('getAuthMe and heartbeat: ok structure', async () => {

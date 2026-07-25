@@ -1077,6 +1077,157 @@ test('reward_punishment.afterDecide rejected notifies applicant only', async () 
   assert.match(notifs[0].msg, /证据不足/);
 });
 
+test('reward_punishment.afterDecide pending+nextAssignee；双写失败；无 target 只通知申请人', async () => {
+  const { deps: pendingDeps, notifs: pendingNotifs } = makeDeps();
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: pendingDeps,
+    updated: {
+      id: 'appr-rp-pend',
+      type: 'reward_punishment',
+      status: 'pending',
+      applicant_username: 'mgr1',
+      payload: { targetUsername: 'emp1', rpType: '奖励', amount: 20 },
+    },
+    nextAssignee: 'hq1',
+    note: '',
+    username: 'boss',
+  });
+  assert.equal(pendingNotifs.length, 1);
+  assert.equal(pendingNotifs[0].u, 'hq1');
+  assert.equal(pendingNotifs[0].meta.type, 'reward_punishment_request');
+
+  const dualFails = [];
+  const ledgerFails = [];
+  const { deps: failDeps, notifs: failNotifs, dualWriteFails } = makeDeps({
+    depsExtra: {
+      pool: {
+        query: async () => {
+          throw new Error('dual_write_boom');
+        },
+      },
+      upsertPayrollLedgerEntry: async () => {
+        ledgerFails.push(1);
+        throw new Error('ledger_boom');
+      },
+      notifyAdminsDualWriteFailure: (...a) => dualFails.push(a),
+    },
+  });
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: failDeps,
+    updated: {
+      id: 'appr-rp-fail',
+      type: 'reward_punishment',
+      status: 'approved',
+      applicant_username: 'mgr1',
+      payload: { targetUsername: 'emp1', rpType: '奖励', amount: 30, reason: '好' },
+    },
+    nextAssignee: null,
+    note: '',
+    username: 'boss',
+  });
+  assert.equal(dualFails.length, 1);
+  assert.match(String(dualFails[0][0]), /hrms_reward_punishment_records/);
+  assert.equal(ledgerFails.length, 1);
+  assert.ok(failNotifs.some((n) => n.u === 'emp1'));
+  void dualWriteFails;
+
+  const { deps: noTargetDeps, notifs: noTargetNotifs, ledgerCalls } = makeDeps();
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: noTargetDeps,
+    updated: {
+      id: 'appr-rp-nt',
+      type: 'reward_punishment',
+      status: 'approved',
+      applicant_username: 'mgr1',
+      payload: { rpType: '奖励', amount: 15, reason: '自奖' },
+    },
+    nextAssignee: null,
+    note: '',
+    username: 'boss',
+  });
+  assert.equal(ledgerCalls.length, 1);
+  assert.ok(noTargetNotifs.every((n) => n.u === 'mgr1' || n.meta.type === 'reward_punishment_result'));
+  assert.ok(noTargetNotifs.some((n) => n.u === 'mgr1' && /已审批通过/.test(n.msg)));
+  assert.equal(noTargetNotifs.filter((n) => n.title === '奖励通知').length, 0);
+});
+
+test('monthly-confirm.afterDecide pending；无 confirmationId 静默；payload JSON 字符串可解析', async () => {
+  const { deps: pendDeps, notifs: pendNotifs, merges: pendMerges } = makeDeps({
+    state: {
+      employees: [{ username: 'hr1', name: '人事甲' }],
+      monthlyConfirmations: [],
+    },
+  });
+  pendDeps.stateFindUserRecord = (_s, u) =>
+    (u === 'hr1' ? { username: 'hr1', name: '人事甲' } : { username: u });
+  await monthlyConfirm.afterDecide({
+    req: { user: { username: 'admin1' } },
+    deps: pendDeps,
+    updated: {
+      id: 'appr-mc-pend',
+      type: 'monthly_confirm',
+      status: 'pending',
+      applicant_username: 'hr1',
+      payload: { month: '2026-07', store: '测试店' },
+    },
+    nextAssignee: 'hq1',
+    note: '',
+  });
+  assert.equal(pendMerges.length, 0);
+  assert.equal(pendNotifs.length, 1);
+  assert.equal(pendNotifs[0].u, 'hq1');
+  assert.equal(pendNotifs[0].meta.type, 'monthly_confirm_request');
+  assert.match(pendNotifs[0].msg, /人事甲/);
+
+  const { deps: noIdDeps, notifs: noIdNotifs, merges: noIdMerges } = makeDeps({
+    state: { monthlyConfirmations: [{ id: 'other', status: 'pending', history: [] }] },
+  });
+  await monthlyConfirm.afterDecide({
+    req: { user: { username: 'admin1' } },
+    deps: noIdDeps,
+    updated: {
+      id: 'appr-mc-noid',
+      type: 'monthly_confirm',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: JSON.stringify({ month: '2026-07', store: '洪潮' }),
+    },
+    nextAssignee: null,
+    note: '',
+  });
+  assert.equal(noIdMerges.length, 0);
+  assert.equal(noIdNotifs.length, 0);
+
+  const mc = { id: 'mc-json', status: 'pending', history: [] };
+  const { deps: jsonDeps, notifs: jsonNotifs, merges: jsonMerges } = makeDeps({
+    state: { monthlyConfirmations: [mc] },
+  });
+  await monthlyConfirm.afterDecide({
+    req: { user: { username: 'admin1' } },
+    deps: jsonDeps,
+    updated: {
+      id: 'appr-mc-json',
+      type: 'monthly_confirm',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: JSON.stringify({
+        confirmationId: 'mc-json',
+        month: '2026-07',
+        store: '洪潮',
+      }),
+    },
+    nextAssignee: null,
+    note: '',
+  });
+  assert.equal(mc.status, 'approved');
+  assert.equal(jsonMerges.length, 1);
+  assert.equal(jsonNotifs.length, 1);
+  assert.match(jsonNotifs[0].msg, /洪潮/);
+});
+
 test('isKitchenByRoleOrPosition: 出品经理与职位关键词', () => {
   const { isKitchenByRoleOrPosition } = createPromotionRecipientsHelpers({
     pickStoreRoleUsernameByStore: () => '',
