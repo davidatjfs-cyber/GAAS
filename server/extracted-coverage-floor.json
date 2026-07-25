@@ -256,6 +256,7 @@
     "domains/growth-ab/routes.js",
     "domains/growth-pos/routes.js",
     "domains/daily-reports/routes.js",
-    "domains/sales-ai/routes-admin-meta.js"
+    "domains/sales-ai/routes-admin-meta.js",
+    "domains/shared/startup-tenant-reconcile.js"
   ]
 }
