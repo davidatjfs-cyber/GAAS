@@ -33,6 +33,20 @@
     "domains/stores/brand-scope.js",
     "domains/leave-attendance/date-math.js",
     "domains/inventory-forecast/product-normalize.js",
-    "domains/inventory-forecast/state-upsert.js"
+    "domains/inventory-forecast/state-upsert.js",
+    "domains/growth-pos/keruyun.js",
+    "domains/growth-ab/ab-templates.js",
+    "domains/ops-tasks/config.js",
+    "domains/ops-tasks/feedback.js",
+    "domains/ops-tasks/create-task.js",
+    "domains/birthday/helpers.js",
+    "domains/growth-metrics/helpers.js",
+    "domains/employees/salary-helpers.js",
+    "domains/shared/role-access.js",
+    "domains/uploads/ownership.js",
+    "domains/health/express-error-middleware.js",
+    "domains/agent-message/training-context.js",
+    "domains/approvals/promotion-recipients.js",
+    "domains/store-duty-bindings/resolve-approver.js"
   ]
 }
