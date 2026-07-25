@@ -31,6 +31,8 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'agents.js|UPDATE|agent_messages',
   'agents.js|UPDATE|feishu_users',
   'agents.js|UPDATE|master_tasks',
+  // handleAgentMessage 培训考核通过：master_tasks INSERT 部分迁入 agent-message
+  'domains/agent-message/training-flow.js|INSERT INTO|master_tasks',
   'auto-ops-engine.js|UPDATE|master_tasks',
   'fix_bad_review_code.js|INSERT INTO|agent_messages',
   'fix_bitable_process.js|INSERT INTO|agent_messages',
@@ -82,6 +84,7 @@ const REPATH_NOTES = [
   'index.js → domains/feishu-bitable/records.js | INSERT INTO|feishu_generic_records',
   'index.js → services/feishu-bitable-schema-ensure.js | DELETE FROM|agent_messages',
   'performance-invalidation-api.js → domains/performance-invalidation/service.js | UPDATE|agent_scores',
+  'agents.js → domains/agent-message/training-flow.js | INSERT INTO|master_tasks',
 ];
 
 const OWNER = 'gaas';
