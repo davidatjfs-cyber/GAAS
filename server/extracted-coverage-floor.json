@@ -232,6 +232,13 @@
     "domains/health/routes.js",
     "domains/uploads/routes.js",
     "domains/tenant-settings/routes.js",
-    "domains/growth-ops/routes.js"
+    "domains/growth-ops/routes.js",
+    "domains/admin-ops/routes.js",
+    "domains/ops-tasks/routes.js",
+    "domains/agent-ops/routes.js",
+    "domains/agent-data-center/routes.js",
+    "domains/payment-config/routes.js",
+    "domains/stores/routes.js",
+    "domains/agent-records/routes.js"
   ]
 }
