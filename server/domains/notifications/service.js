@@ -4,7 +4,9 @@
  */
 
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from '../../utils/logger.js';
 
+const log = childLogger({ domain: 'notifications', handler: 'service' });
 const TABLE = SHARED_TABLES.HRMS_USER_NOTIFICATIONS;
 
 export function notificationRowToStateShape(row) {
@@ -60,7 +62,7 @@ export async function hydrateNotificationsFromTable(pool, state, tenantId) {
     const stateOnly = existing.filter((n) => n?.id && !dbIds.has(String(n.id)));
     base.notifications = [...fromTable, ...stateOnly];
   } catch (e) {
-    console.error('[notifications-domain] hydrate failed:', e?.message || e);
+    log.error({ msg: 'notifications_hydrate_failed', err: e?.message || String(e) });
   }
   return base;
 }

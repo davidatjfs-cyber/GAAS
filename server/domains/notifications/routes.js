@@ -2,6 +2,9 @@
  * DELETE /api/notifications/:id, POST /api/notifications/batch
  * (behavior-preserving extract from index.js ~12473–12515).
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'notifications', handler: 'routes' });
 
 /**
  * @param {import('express').Express} app
@@ -27,7 +30,7 @@ export function registerNotificationsWriteRoutes(app, authRequired, deps) {
       }
       res.json({ ok: true, deleted: r.rowCount });
     } catch (e) {
-      console.error('[DELETE /api/notifications/:id] error:', e?.message);
+      log.error({ msg: 'notifications_delete_failed', err: e?.message });
       res.status(500).json({ error: 'db_error' });
     }
   });
@@ -53,7 +56,7 @@ export function registerNotificationsWriteRoutes(app, authRequired, deps) {
       }
       return res.json({ ok: true, ids });
     } catch (e) {
-      console.error('[POST /api/notifications/batch]', e?.message);
+      log.error({ msg: 'notifications_batch_failed', err: e?.message });
       return res.status(500).json({ error: 'server_error' });
     }
   });

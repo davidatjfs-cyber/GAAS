@@ -2,6 +2,9 @@
  * Account disable / login gate helpers.
  * Pure status checks are named exports; DB sync / assert need the factory.
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'employees', handler: 'account-gate' });
 
 export function isInactiveStatus(input) {
   const v = String(input || '').trim().toLowerCase();
@@ -85,7 +88,12 @@ export function createAccountGateHelpers({
       }
       });
     } catch (e) {
-      console.error('[account-gate]', uname, disable ? 'disable' : 'enable', e?.message || e);
+      log.error({
+        msg: 'account_gate_sync_failed',
+        username: uname,
+        action: disable ? 'disable' : 'enable',
+        err: e?.message || String(e),
+      });
     }
   }
 

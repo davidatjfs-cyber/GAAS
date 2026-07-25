@@ -1,4 +1,5 @@
 import express from 'express';
+import { childLogger } from '../../utils/logger.js';
 import {
   deleteEmployeeFromTable,
   loadEmployeesFromTable,
@@ -12,6 +13,8 @@ import {
   withEmployeesWriteTx,
 } from './mirror-tx.js';
 import { registerEmployeeAttachmentsRoutes } from './routes-attachments.js';
+
+const log = childLogger({ domain: 'employees', handler: 'routes' });
 
 function canManageEmployees(role) {
   const r = String(role || '');
@@ -93,7 +96,7 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
         try {
           await applyAccountGate(saved);
         } catch (e) {
-          console.error('[employees-api] account-gate', username, e?.message || e);
+          log.error({ msg: 'employees_account_gate_failed', username, err: e?.message || String(e) });
         }
       }
       return res.status(201).json({ ok: true, employee: saved });
@@ -143,7 +146,7 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
         try {
           await applyAccountGate(saved);
         } catch (e) {
-          console.error('[employees-api] account-gate', nextUser, e?.message || e);
+          log.error({ msg: 'employees_account_gate_failed', username: nextUser, err: e?.message || String(e) });
         }
       }
       return res.json({ ok: true, employee: saved });
@@ -172,7 +175,7 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
         try {
           await applyAccountGate(saved);
         } catch (e) {
-          console.error('[employees-api] account-gate', username, e?.message || e);
+          log.error({ msg: 'employees_account_gate_failed', username, err: e?.message || String(e) });
         }
       }
       return res.json({ ok: true, employee: saved });

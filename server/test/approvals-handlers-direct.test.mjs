@@ -2360,3 +2360,142 @@ test('promotion.afterDecide：无必修课题跳过培训；拒绝无 trackId；
   assert.ok(skill.merges.some((m) => Array.isArray(m.patch.promotionTracks)));
   assert.equal(skill.notifs.some((n) => n.title === '晋升培训任务已生成'), false);
 });
+
+test('points.afterDecide：rate=0 合法；offboarding 立即关登录并打 users；promotion pending 带教提示', async () => {
+  {
+    const { deps, ledgerCalls, notifs } = makeDeps({
+      depsExtra: {
+        resolveAttendancePayrollRules: async () => ({ rules: { pointsYuanPerPoint: 0 } }),
+      },
+    });
+    await points.afterDecide({
+      req: { tenantId: 'default', user: { username: 'a1' } },
+      deps,
+      updated: {
+        id: 'pts-zero-rate',
+        type: 'points',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: { points: 10, itemName: '零折算', store: '测试店' },
+      },
+    });
+    assert.equal(ledgerCalls[0][0].amount, 0);
+    assert.ok(notifs.some((n) => /¥0\.00/.test(n.msg)));
+  }
+
+  {
+    const { deps, notifs, merges } = makeDeps({
+      state: {
+        employees: [{ username: 'emp1', name: '员工甲', store: '测试店', status: 'active' }],
+        users: [{ username: 'emp1', status: 'active' }],
+      },
+    });
+    deps.stateFindUserRecord = () => ({
+      username: 'emp1',
+      name: '员工甲',
+      managerUsername: 'mgr1',
+      store: '测试店',
+    });
+    deps.shanghaiTodayDateOnly = () => '2026-07-26';
+    deps.safeDateOnly = (d) => String(d || '').slice(0, 10) || '';
+    await offboarding.afterDecide({
+      req: {},
+      deps,
+      updated: {
+        id: 'ob-now',
+        type: 'offboarding',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: { resignationDate: '2026-07-20' },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '离职申请已通过' && /已关闭 HRMS 登录/.test(n.msg)));
+    assert.ok(merges.some((m) => m.patch.employees?.[0]?.status === '离职'));
+    assert.ok(merges.some((m) => m.patch.users?.[0]?.status === '离职'));
+  }
+
+  {
+    const { deps, notifs } = makeDeps();
+    deps.stateFindUserRecord = (_s, u) => {
+      if (u === 'sm1') return { username: 'sm1', role: 'store_manager', name: '店长' };
+      return { username: u, name: '申请人', managerUsername: 'mgr1' };
+    };
+    deps.findUserSalary = () => null;
+    deps.insertSalaryTimeline = async () => {};
+    deps.applyPromotionSalaryNextMonth = async () => {};
+    deps.getPromotionRequiredTopics = async () => [];
+    deps.getPromotionTrackProgress = async () => ({ items: [] });
+    deps.createTrainingAssignment = async () => {};
+    deps.normalizePromotionTrainingPeriods = () => [];
+    deps.isKitchenByRoleOrPosition = () => false;
+    deps.pickHqManagerUsername = async () => '';
+    deps.pickStoreRoleUsernameByStore = () => '';
+    await promotion.afterDecide({
+      req: { tenantId: 'default' },
+      deps,
+      username: 'a1',
+      nextAssignee: 'sm1',
+      updated: {
+        id: 'ap-pend-tip',
+        type: 'promotion',
+        status: 'pending',
+        applicant_username: 'emp1',
+        payload: { promotionStage: 'qualification' },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '晋升申请待审批' && /带教人/.test(n.msg)));
+  }
+});
+
+test('leave.beforeUpdate：非有限 remainingLeaveDays 不写；onboarding openId 别名', async () => {
+  const updatedPayload = {};
+  await leave.beforeUpdate({
+    row: { type: 'leave' },
+    remainingLeaveDaysRaw: 'NaN',
+    username: 'mgr1',
+    updatedPayload,
+  });
+  assert.equal(updatedPayload.remainingLeaveDays, undefined);
+
+  const queries = [];
+  const { deps } = makeDeps();
+  deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+    ok: true,
+    nextEmp: {
+      username: 'newoid2',
+      name: '别名',
+      role: 'store_employee',
+      department: '',
+      position: '',
+      store: '',
+      managerUsername: '',
+      salary: 0,
+    },
+    newUsername: 'newoid2',
+    empName: '别名',
+    empPassword: 'Temp',
+  });
+  deps.bcrypt = { hash: async () => 'h' };
+  deps.toNullableUuid = (v) => (String(v || '').includes('open') ? 'uuid-open' : null);
+  deps.insertSalaryTimeline = async () => {};
+  deps.pool.query = async (...a) => {
+    queries.push(a);
+    return { rows: [] };
+  };
+  const decideExtras = {};
+  await onboarding.afterDecide({
+    req: { tenantId: 'default' },
+    deps,
+    updated: {
+      id: 'onb-openid',
+      type: 'onboarding',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { employee: { name: '别名', openId: 'openid-x' } },
+    },
+    username: 'a1',
+    decideExtras,
+  });
+  assert.equal(decideExtras.feishuUsersCreated, true);
+  assert.ok(queries.some((q) => /feishu_users/i.test(String(q[0]))));
+});

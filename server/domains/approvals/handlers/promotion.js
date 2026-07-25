@@ -1,3 +1,7 @@
+import { childLogger } from '../../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'promotion' });
+
 export async function beforeUpdate(ctx) {
   const {
     res,
@@ -210,7 +214,7 @@ export async function afterDecide(ctx) {
             createdBy: username
           });
         } catch (tlErr) {
-          console.error('[promotion] salary timeline failed:', tlErr?.message);
+          log.error({ msg: 'promotion_salary_timeline_failed', err: tlErr?.message });
         }
       }
 
@@ -380,7 +384,7 @@ export async function afterDecide(ctx) {
               tracksF[tIdx] = { ...tracksF[tIdx], status: 'formal_rejected', formalApplied: false, updatedAt: hrmsNowISO() };
               await mergeSharedStateFields({ promotionTracks: tracksF }, { promotionTracks: 'id' });
             }
-          } catch (p3e) { console.warn('[promotion-p3] track update failed:', p3e?.message); }
+          } catch (p3e) { log.warn({ msg: 'promotion_track_update_failed', err: p3e?.message }); }
         }
       }
     }

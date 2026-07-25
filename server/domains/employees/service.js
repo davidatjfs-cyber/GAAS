@@ -7,6 +7,9 @@
  */
 
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'employees', handler: 'service' });
 
 const STRUCTURED_KEYS = new Set([
   'id',
@@ -93,7 +96,7 @@ export async function hydrateEmployeesFromTable(pool, state, tenantId) {
       base.employees = fromTable;
     }
   } catch (e) {
-    console.error('[employees-domain] load employees failed:', e?.message || e);
+    log.error({ msg: 'employees_hydrate_failed', err: e?.message || String(e) });
   }
   return base;
 }
