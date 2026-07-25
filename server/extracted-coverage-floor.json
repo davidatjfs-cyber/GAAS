@@ -239,6 +239,13 @@
     "domains/agent-data-center/routes.js",
     "domains/payment-config/routes.js",
     "domains/stores/routes.js",
-    "domains/agent-records/routes.js"
+    "domains/agent-records/routes.js",
+    "domains/flow-config/routes.js",
+    "domains/reads/routes.js",
+    "domains/agent-triggers/routes.js",
+    "domains/birthday/routes.js",
+    "domains/feishu-webhook/process-data-change.js",
+    "domains/feishu-sync/manual-bitable-sync.js",
+    "domains/feishu-webhook/routes.js"
   ]
 }
