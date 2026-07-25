@@ -52,6 +52,17 @@ test('inferContentType prefers mime then ext/declared', () => {
     'video/mp4'
   );
   assert.equal(
+    inferContentType({ declaredType: 'video', originalName: 'x', mimeType: '' }),
+    'video/mp4'
+  );
+  assert.equal(inferContentType({ originalName: 'a.mov' }), 'video/quicktime');
+  assert.equal(inferContentType({ declaredType: 'img', originalName: 'a' }), 'image/png');
+  assert.equal(inferContentType({ originalName: 'a.jpg' }), 'image/jpeg');
+  assert.equal(inferContentType({ originalName: 'a.webp' }), 'image/webp');
+  assert.equal(inferContentType({ originalName: 'a.txt' }), 'text/plain; charset=utf-8');
+  assert.equal(inferContentType({ originalName: 'a.doc' }), 'application/msword');
+  assert.match(inferContentType({ originalName: 'a.docx' }), /wordprocessingml/);
+  assert.equal(
     inferContentType({ declaredType: '', originalName: 'x.unknown', mimeType: '' }),
     'application/octet-stream'
   );

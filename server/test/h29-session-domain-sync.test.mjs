@@ -35,6 +35,21 @@ test('storeSessionNonce upserts and returns true', async () => {
   assert.equal(released, 1);
 });
 
+test('storeSessionNonce：query 失败 → false；release 抛错仍吞掉', async () => {
+  const client = {
+    async query() {
+      throw new Error('db');
+    },
+    release() {
+      throw new Error('release');
+    },
+  };
+  const { storeSessionNonce } = createSessionNonceHelpers({
+    pool: { connect: async () => client },
+    resolveTenantIdDefault: () => 'default',
+  });
+  assert.equal(await storeSessionNonce('bob', 'n'), false);
+});
 test('upsertPayrollDomainFromState writes tenant-keyed row', async () => {
   let sql = '';
   let params = null;
