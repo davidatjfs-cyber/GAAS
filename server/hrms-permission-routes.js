@@ -15,6 +15,9 @@ import {
   checkHrmsPermission,
   ENFORCEMENT_MODES,
 } from './services/hrms-permission-engine.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'hrms-permission-routes' });
 
 export function registerHrmsPermissionRoutes(app, deps = {}) {
   const {
@@ -54,7 +57,7 @@ export function registerHrmsPermissionRoutes(app, deps = {}) {
         enforcement_modes: ENFORCEMENT_MODES,
       });
     } catch (e) {
-      console.error('[permissions/catalog]', e?.message);
+      log.error({ msg: 'permissions_catalog_failed', err: e?.message || String(e) });
       return res.status(500).json({ error: 'server_error' });
     }
   });

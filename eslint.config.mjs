@@ -100,15 +100,14 @@ export default [
       'no-unused-vars': ['error', unusedVarsRule],
     },
   },
-  // P2.2 domains：禁止 console.log；warn/error/info/debug 迁移期暂允
+  // P2.2 domains：已清零 → 全禁 console.*（含 warn/error）；baseline 块仅在有存量时启用
   {
     files: ['server/domains/**/*.js', 'server/domains/**/*.mjs'],
     rules: {
-      'no-console': ['error', { allow: ['warn', 'error', 'info', 'debug'] }],
+      'no-console': 'error',
     },
   },
-  // 存量仍含 console.log 的 domains 文件：允许 log，靠 console-log-ratchet 只降不升。
-  // files 为空时不得生成该块（ESLint flat config 拒绝空 files 数组）。
+  // 存量仍含 console.log 的 domains 文件（历史）；files 为空时不得生成该块。
   ...(DOMAINS_CONSOLE_LOG_BASELINE.length
     ? [{
         files: DOMAINS_CONSOLE_LOG_BASELINE,

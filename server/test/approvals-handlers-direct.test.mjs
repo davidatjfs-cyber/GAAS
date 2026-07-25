@@ -3000,3 +3000,76 @@ test('points/onboarding/leave：occurMonth；feishuOpenId；拒绝无 note；申
     assert.ok(notifs.some((n) => n.title === '休假申请未通过' && /相关原因/.test(n.msg)));
   }
 });
+
+test('leave/points：autoDays；payload.store；pending 多条；rejected 有 note', async () => {
+  {
+    const { deps, notifs, queries } = makeDeps({ state: { leaveRecords: [] } });
+    deps.calcDateSpanDaysInclusive = () => 3;
+    deps.safeNumber = () => null;
+    deps.pool.query = async (...a) => {
+      queries.push(a);
+      return { rows: [] };
+    };
+    await leave.afterDecide({
+      req: { tenantId: 'default' },
+      deps,
+      username: 'a1',
+      updated: {
+        id: 'lv-auto',
+        type: 'leave',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: { beginDate: '2026-09-01', finishDate: '2026-09-03' },
+      },
+    });
+    const ins = queries.find((q) => /INSERT INTO hrms_leave_records/i.test(String(q[0])));
+    assert.equal(ins[1][7], 3);
+    assert.ok(notifs.some((n) => n.title === '休假申请已通过'));
+  }
+  {
+    const { deps, notifs, ledgerCalls } = makeDeps({
+      depsExtra: {
+        resolveAttendancePayrollRules: async () => ({ rules: { pointsYuanPerPoint: 1 } }),
+      },
+    });
+    deps.stateFindUserRecord = () => ({ username: 'emp1', name: '甲', store: '旧店' });
+    await points.afterDecide({
+      req: { user: { username: 'a1', tenant_id: 't2' } },
+      deps,
+      nextAssignee: 'mgr1',
+      updated: {
+        id: 'pts-pend-multi',
+        type: 'points',
+        status: 'pending',
+        applicant_username: 'emp1',
+        payload: {
+          store: '新店',
+          items: [{ points: 1 }, { points: 2, reason: '二' }],
+        },
+      },
+    });
+    assert.equal(ledgerCalls.length, 0);
+    assert.ok(notifs.some((n) => n.title === '积分申请待审批' && /2条积分事项/.test(n.msg)));
+  }
+  {
+    const { deps, notifs, ledgerCalls } = makeDeps({
+      depsExtra: {
+        resolveAttendancePayrollRules: async () => ({ rules: { pointsYuanPerPoint: 2 } }),
+      },
+    });
+    await points.afterDecide({
+      req: { tenantId: 'default', user: { username: 'a1' } },
+      deps,
+      note: '超额',
+      updated: {
+        id: 'pts-rej-note',
+        type: 'points',
+        status: 'rejected',
+        applicant_username: 'emp1',
+        payload: { points: 9, store: '新店' },
+      },
+    });
+    assert.equal(ledgerCalls.length, 0);
+    assert.ok(notifs.some((n) => n.title === '积分申请未通过' && /超额/.test(n.msg)));
+  }
+});

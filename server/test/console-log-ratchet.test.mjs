@@ -1,6 +1,6 @@
 /**
- * P2.2：domains 内 console.log 棘轮 + 新文件禁令。
- * ESLint 对 domains 的 console.log 为 error；本闸门防「改 eslint 绕过」与数量回升。
+ * P2.2：domains 内 console.log|warn|error 棘轮 + 新文件禁令。
+ * ESLint domains 已全禁 no-console；本闸门防「改 eslint 绕过」与数量回升。
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,13 +22,17 @@ function walkJs(dir, out = []) {
   return out;
 }
 
-function countConsoleLog(src) {
+function countConsoleCalls(src, methods = ['log', 'warn', 'error']) {
+  const re = new RegExp(
+    `(?:^|[^.\\w])console\\.(?:${methods.map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\s*\\(`,
+    'g'
+  );
   let n = 0;
   for (const line of src.split('\n')) {
     const t = line.trim();
     if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) continue;
-    // 匹配 console.log( …；忽略字符串里的字面讨论
-    if (/(?:^|[^.\w])console\.log\s*\(/.test(line)) n += 1;
+    const matches = line.match(re);
+    if (matches) n += matches.length;
   }
   return n;
 }
@@ -40,12 +44,14 @@ test('console-log-ratchet.json 只降不升（地板）', () => {
   assert.equal(typeof ratchet.maxCount, 'number');
   assert.ok(ratchet.maxCount <= 35, `maxCount=${ratchet.maxCount} 禁止上调超过已冻结 35`);
   assert.ok(ratchet.maxCount >= 0);
+  assert.ok(Array.isArray(ratchet.methods) && ratchet.methods.includes('log'));
 });
 
-test('domains/** console.log 数量 ≤ 棘轮；新文件不得含 console.log', () => {
+test('domains/** console.log|warn|error 数量 ≤ 棘轮；新文件不得含', () => {
   const ratchet = JSON.parse(
     fs.readFileSync(path.join(serverRoot, 'console-log-ratchet.json'), 'utf8')
   );
+  const methods = ratchet.methods || ['log', 'warn', 'error'];
   const baselinePath = path.join(serverRoot, 'console-log-baseline.json');
   let baselineFiles = new Set();
   if (fs.existsSync(baselinePath)) {
@@ -60,7 +66,7 @@ test('domains/** console.log 数量 ≤ 棘轮；新文件不得含 console.log'
   for (const abs of files) {
     const rel = path.relative(serverRoot, abs).replace(/\\/g, '/');
     const src = fs.readFileSync(abs, 'utf8');
-    const n = countConsoleLog(src);
+    const n = countConsoleCalls(src, methods);
     if (n > 0) {
       total += n;
       byFile.push(`${rel}:${n}`);
@@ -72,11 +78,11 @@ test('domains/** console.log 数量 ≤ 棘轮；新文件不得含 console.log'
 
   assert.ok(
     total <= ratchet.maxCount,
-    `domains console.log=${total} > maxCount=${ratchet.maxCount}\n${byFile.join('\n')}`
+    `domains console(${methods.join('|')})=${total} > maxCount=${ratchet.maxCount}\n${byFile.join('\n')}`
   );
   assert.deepEqual(
     offendersNew,
     [],
-    `新 domains 文件禁止 console.log（请改用 utils/logger）：\n${offendersNew.join('\n')}`
+    `新 domains 文件禁止 console.*（请改用 utils/logger）：\n${offendersNew.join('\n')}`
   );
 });

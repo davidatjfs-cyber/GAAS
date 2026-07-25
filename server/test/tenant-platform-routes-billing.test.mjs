@@ -317,3 +317,77 @@ test('billing/pdf：有签约价与账期；池抛错 500；headersSent 后只 e
     assert.equal(ended, true);
   }
 });
+
+test('billing/pdf：非法 brand_color；季付账期；签约价≤0；general_manager 可读账户', async () => {
+  {
+    const { routes } = register(async (sql) => {
+      const s = String(sql);
+      if (s.includes('FROM tenants')) return { rows: [{ name: '季付店' }] };
+      if (s.includes("config_key = 'platform_profile'")) {
+        return {
+          rows: [{
+            config_value: {
+              brand_color: 'not-a-color',
+              billing: {
+                plan_name: '季付',
+                next_invoice_at: 'not-a-date',
+                delivery_method: 'email',
+              },
+            },
+          }],
+        };
+      }
+      if (s.includes('FROM sales_leads')) {
+        return {
+          rows: [{
+            id: 2,
+            contract_price_fen: 99000,
+            contract_billing_cycle: 'quarterly',
+            contract_billing_day: 1,
+          }],
+        };
+      }
+      if (s.includes("config_key = 'billing_account'")) return { rows: [{}] };
+      return { rows: [] };
+    });
+    const res = mockPdfRes();
+    await invoke(routes.get('GET /api/admin/tenants/:tenantId/billing/pdf'), {
+      params: { tenantId: 't-q' },
+      platformAdmin: { username: 'sales1', role: 'sales' },
+    }, res);
+    const pdf = await res.done;
+    assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
+  }
+  {
+    const { routes } = register(async (sql) => {
+      const s = String(sql);
+      if (s.includes('FROM tenants')) return { rows: [{ name: '零价' }] };
+      if (s.includes("config_key = 'platform_profile'")) {
+        return { rows: [{ config_value: { billing: {} } }] };
+      }
+      if (s.includes('FROM sales_leads')) {
+        return { rows: [{ id: 3, contract_price_fen: 0, contract_billing_cycle: 'yearly' }] };
+      }
+      if (s.includes("config_key = 'billing_account'")) return { rows: [{}] };
+      return { rows: [] };
+    });
+    const res = mockPdfRes();
+    await invoke(routes.get('GET /api/admin/tenants/:tenantId/billing/pdf'), {
+      params: { tenantId: 't-zero' },
+      platformAdmin: { username: 'sales1', role: 'sales' },
+    }, res);
+    const pdf = await res.done;
+    assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
+  }
+  {
+    const { routes } = register(async () => ({
+      rows: [{ config_value: { account_name: '总经办' } }],
+    }));
+    const res = mockRes();
+    await invoke(routes.get('GET /api/admin/platform/billing-account'), {
+      platformAdmin: { username: 'gm1', role: 'general_manager' },
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.account.account_name, '总经办');
+  }
+});

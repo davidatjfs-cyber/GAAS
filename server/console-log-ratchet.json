@@ -1,6 +1,7 @@
 {
   "updated": "2026-07-26",
-  "note": "domains/** 内 console.log 数量棘轮：只降不升。已清零，新增 console.log 禁止。",
+  "note": "domains/** 内 console.log|warn|error 数量棘轮：只降不升。已清零，新增禁止（请用 utils/logger）。",
   "maxCount": 0,
-  "scope": "server/domains"
+  "scope": "server/domains",
+  "methods": ["log", "warn", "error"]
 }

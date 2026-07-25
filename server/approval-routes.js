@@ -8,6 +8,9 @@
  * index.js里那些被广泛复用、不属于审批模块本身的工具函数。
  */
 import { canAccessApprovalCenter } from './store-duty-bindings.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'approval-routes' });
 
 function canUserViewApprovalRow(user, row, state0, pickMyStoreFromState) {
   if (!user || !row) return false;
@@ -271,7 +274,9 @@ export function registerApprovalRoutes(app, authRequired, deps) {
         try {
           const dlr = await pool.query('delete from hrms_leave_records where approval_id = $1 returning id', [id]);
           deletedLeaveRecordIds = (dlr.rows || []).map(r => String(r.id));
-        } catch (e2) { console.error('[delete approval] cascade hrms_leave_records:', e2?.message); }
+        } catch (e2) {
+          log.error({ msg: 'delete_approval_cascade_leave_records_failed', err: e2?.message || String(e2) });
+        }
 
         try {
           const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
@@ -288,7 +293,9 @@ export function registerApprovalRoutes(app, authRequired, deps) {
               await pool.query("update hrms_state set data = $1 where key = $2", [sd, tenantIdQ]);
             }
           }
-        } catch (e3) { console.error('[delete approval] cascade state.leaveRecords:', e3?.message); }
+        } catch (e3) {
+          log.error({ msg: 'delete_approval_cascade_state_leave_records_failed', err: e3?.message || String(e3) });
+        }
 
         try { scheduleLeaveDomainSync(); } catch (_) { /* ignore */ }
       }

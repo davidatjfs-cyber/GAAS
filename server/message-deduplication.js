@@ -1,6 +1,9 @@
 /**
  * 消息去重机制
  */
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'message-deduplication' });
 
 // 消息去重缓存
 const messageCache = new Map();
@@ -15,7 +18,7 @@ export function deduplicateMessage(content, sender = 'system') {
   if (messageCache.has(key)) {
     const lastSent = messageCache.get(key);
     if (now - lastSent < CACHE_TTL) {
-      console.log(`[dedup] 消息被去重: ${content.substring(0, 50)}...`);
+      log.info({ msg: 'message_deduplicated', preview: String(content || '').substring(0, 50) });
       return false; // 不发送
     }
   }

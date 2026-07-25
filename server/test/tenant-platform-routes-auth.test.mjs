@@ -308,6 +308,97 @@ test('POST accounts：invalid_input / invalid_role / 成功 / duplicate 409 / �
   }
 });
 
+test('login：账号不存在；role 空回落 super_admin；last_login 更新失败仍 200', async () => {
+  const hash = await bcrypt.hash('Pass12345', 10);
+  {
+    const { routes } = register({
+      queryImpl: async () => ({ rows: [] }),
+    });
+    const res = mockRes();
+    await invoke(routes.get('POST /api/admin/auth/login'), {
+      body: { username: 'ghost', password: 'Pass12345' },
+      headers: {},
+    }, res);
+    assert.equal(res.statusCode, 401);
+    assert.equal(res.body.error, 'invalid_credentials');
+  }
+  {
+    const { routes } = register({
+      queryImpl: async (sql) => {
+        if (String(sql).includes('SELECT id, username')) {
+          return {
+            rows: [{
+              id: 9,
+              username: 'norole',
+              password_hash: hash,
+              real_name: '无角色',
+              status: 'active',
+              role: null,
+            }],
+          };
+        }
+        if (String(sql).includes('last_login_at')) {
+          throw new Error('update fail');
+        }
+        return { rows: [] };
+      },
+    });
+    const res = mockRes();
+    await invoke(routes.get('POST /api/admin/auth/login'), {
+      body: { username: 'norole', password: 'Pass12345' },
+      headers: {},
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.admin.role, 'super_admin');
+    assert.ok(res.body.token);
+  }
+});
+
+test('bootstrap 缺 header；accounts 无 real_name；audit 默认 limit / super_admin', async () => {
+  {
+    const { routes } = register();
+    const res = mockRes();
+    await invoke(routes.get('POST /api/admin/auth/bootstrap'), {
+      headers: {},
+      body: { username: 'a', password: '12345678' },
+    }, res);
+    assert.equal(res.statusCode, 401);
+  }
+  {
+    const { routes, calls } = register();
+    const res = mockRes();
+    await invoke(routes.get('POST /api/admin/auth/accounts'), {
+      body: { username: 'new2', password: '12345678', role: 'finance' },
+      platformAdmin: { username: 'super1', role: 'super_admin' },
+    }, res);
+    assert.equal(res.statusCode, 200);
+    const ins = calls.find((c) => String(c[0]).includes('INSERT INTO platform_admins'));
+    assert.equal(ins[1][2], 'new2');
+  }
+  {
+    const { routes, calls } = register({
+      platformAdminSessionRequired: (req, _res, next) => {
+        req.platformAdmin = { username: 'super1', role: 'super_admin' };
+        next();
+      },
+      queryImpl: async () => ({ rows: [] }),
+    });
+    const res = mockRes();
+    await invoke(routes.get('GET /api/admin/auth/audit-log'), {
+      query: {},
+      platformAdmin: { username: 'super1', role: 'super_admin' },
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls[0][1][0], 200);
+  }
+  {
+    const { routes } = register();
+    const res = mockRes();
+    await invoke(routes.get('GET /sales-crm/'), {}, res);
+    assert.ok(res.sentFile);
+  }
+});
+
 test('GET accounts catch → 500；audit-log 403/200/limit clamp/500', async () => {
   {
     const { routes } = register({
