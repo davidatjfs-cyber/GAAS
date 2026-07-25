@@ -3,8 +3,16 @@ import assert from 'node:assert/strict';
 import {
   validateLeaveCreate,
   validateOnboardingCreate,
+  validatePaymentFieldsSync,
+  validatePointsPayloadSync,
   validatePromotionStageSync,
+  validateRewardPunishmentSync,
 } from '../domains/approvals/create-validators.js';
+
+const safeNumber = (n) => {
+  const x = Number(n);
+  return Number.isFinite(x) ? x : null;
+};
 
 const safeDateOnly = (v) => {
   const m = String(v || '').match(/^(\d{4}-\d{2}-\d{2})/);
@@ -115,4 +123,116 @@ test('validatePromotionStageSync: stage/reason/track', () => {
   assert.equal(r.ok, true);
   assert.equal(r.stage, 'qualification');
   assert.equal(p.promotionStage, 'qualification');
+});
+
+test('validatePaymentFieldsSync: forbidden / missing / front_manager store', () => {
+  assert.equal(
+    validatePaymentFieldsSync({
+      role: 'store_employee',
+      payload: {},
+      applicant: {},
+      allowedStores: [],
+      safeDateOnly,
+      safeNumber,
+    }).error,
+    'forbidden'
+  );
+  assert.equal(
+    validatePaymentFieldsSync({
+      role: 'store_manager',
+      payload: { store: '店A', date: '2026-08-01', amount: 10 },
+      applicant: {},
+      allowedStores: [],
+      safeDateOnly,
+      safeNumber,
+    }).error,
+    'missing_category'
+  );
+  assert.equal(
+    validatePaymentFieldsSync({
+      role: 'front_manager',
+      payload: { store: '别店', date: '2026-08-01', amount: 10, category: '物料' },
+      applicant: { store: '本店' },
+      allowedStores: [],
+      safeDateOnly,
+      safeNumber,
+    }).error,
+    'store_not_allowed'
+  );
+  const ok = validatePaymentFieldsSync({
+    role: 'store_manager',
+    payload: { store: '店A', date: '2026-08-01', amount: 10, category: '水电' },
+    applicant: {},
+    allowedStores: [],
+    safeDateOnly,
+    safeNumber,
+  });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.amount, 10);
+});
+
+test('validateRewardPunishmentSync / validatePointsPayloadSync', () => {
+  assert.equal(
+    validateRewardPunishmentSync({
+      role: 'store_employee',
+      payload: {},
+      recurringFrequencyReward: '',
+      state: {},
+      stateFindUserRecord: () => null,
+      safeNumber,
+    }).error,
+    'forbidden'
+  );
+  assert.equal(
+    validateRewardPunishmentSync({
+      role: 'store_manager',
+      payload: { targetUsername: 't1', reason: 'r', result: 'ok', amount: 0 },
+      recurringFrequencyReward: '',
+      state: {},
+      stateFindUserRecord: () => null,
+      safeNumber,
+    }).error,
+    'missing_amount'
+  );
+  assert.equal(
+    validateRewardPunishmentSync({
+      role: 'hq_manager',
+      payload: { targetUsername: 't1', reason: 'r', result: 'ok', amount: 100, rpType: '惩罚' },
+      recurringFrequencyReward: 'monthly',
+      state: {},
+      stateFindUserRecord: () => ({ store: '店A' }),
+      safeNumber,
+    }).error,
+    'recurring_reward_only'
+  );
+
+  assert.equal(
+    validatePointsPayloadSync({
+      role: 'admin',
+      applicantManager: 'm',
+      applicant: { store: '店A' },
+      username: 'u',
+      payload: {},
+      state: {},
+      safeNumber,
+    }).error,
+    'forbidden'
+  );
+  const payload = {
+    items: [{ ruleId: 'r1', reason: '好' }],
+  };
+  assert.equal(
+    validatePointsPayloadSync({
+      role: 'store_employee',
+      applicantManager: 'm',
+      applicant: { store: '店A', name: '甲' },
+      username: 'u1',
+      payload,
+      state: { pointRules: [{ id: 'r1', points: 3, itemName: '卫生', store: '店A' }] },
+      safeNumber,
+    }),
+    null
+  );
+  assert.equal(payload.totalPoints, 3);
+  assert.equal(payload.itemName, '卫生');
 });

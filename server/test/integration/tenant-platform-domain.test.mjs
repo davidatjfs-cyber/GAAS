@@ -224,3 +224,45 @@ test('PATCH /api/admin/tenants/:id：空更新 → 400；未知租户 profile �
   assert.equal(profRes.status, 404, JSON.stringify(profBody));
   assert.equal(profBody.error, 'tenant_not_found');
 });
+
+test('GET /api/admin/tenants/overview：超管 200；sales_manager 403', async () => {
+  const admin = uniqueId('padmin_ov');
+  await createPlatformAdmin(admin);
+  const { body: adminLogin } = await platformLogin(admin);
+  const okRes = await fetch(app.baseUrl + '/api/admin/tenants/overview', {
+    headers: { Authorization: 'Bearer ' + adminLogin.token },
+  });
+  const okBody = await okRes.json();
+  assert.equal(okRes.status, 200, JSON.stringify(okBody).slice(0, 300));
+  assert.ok(okBody.summary || Array.isArray(okBody.items),
+    'overview 应有 summary/items: ' + JSON.stringify(okBody).slice(0, 400));
+
+  const sm = uniqueId('padmin_ovsm');
+  await createPlatformAdmin(sm, { role: 'sales_manager' });
+  const { body: smLogin } = await platformLogin(sm);
+  const forbid = await fetch(app.baseUrl + '/api/admin/tenants/overview', {
+    headers: { Authorization: 'Bearer ' + smLogin.token },
+  });
+  assert.equal(forbid.status, 403);
+});
+
+test('GET/POST /api/admin/auth/accounts：非超管 403；超管 GET 200', async () => {
+  const sm = uniqueId('padmin_accsm');
+  await createPlatformAdmin(sm, { role: 'sales_manager' });
+  const { body: smLogin } = await platformLogin(sm);
+  const forbid = await fetch(app.baseUrl + '/api/admin/auth/accounts', {
+    headers: { Authorization: 'Bearer ' + smLogin.token },
+  });
+  assert.equal(forbid.status, 403);
+
+  const admin = uniqueId('padmin_acc');
+  await createPlatformAdmin(admin);
+  const { body: adminLogin } = await platformLogin(admin);
+  const list = await fetch(app.baseUrl + '/api/admin/auth/accounts', {
+    headers: { Authorization: 'Bearer ' + adminLogin.token },
+  });
+  const listBody = await list.json();
+  assert.equal(list.status, 200, JSON.stringify(listBody).slice(0, 300));
+  assert.equal(listBody.ok, true);
+  assert.ok(Array.isArray(listBody.accounts), JSON.stringify(listBody).slice(0, 300));
+});

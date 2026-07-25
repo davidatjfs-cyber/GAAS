@@ -77,7 +77,8 @@ export async function bootApp(envOverrides = {}, attempt = 0) {
   async function stop() {
     // 合并覆盖率依赖子进程正常退出才能落盘 V8 coverage；采集模式下拉长优雅退出，并先 SIGINT 再 SIGTERM
     const collecting = Boolean(process.env.NODE_V8_COVERAGE || process.env.GAAS_COVERAGE_GRACEFUL);
-    const gracefulMs = collecting ? 30000 : 3000;
+    // coverage wrapper 会 process.exit(0)，通常秒退；超时只需兜底，不必 30s
+    const gracefulMs = collecting ? 8000 : 3000;
     if (collecting) {
       child.kill('SIGINT');
       await new Promise((r) => setTimeout(r, 500));

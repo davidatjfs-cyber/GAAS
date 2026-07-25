@@ -82,25 +82,16 @@ if (!unitTests.length || !integTests.length) {
 const excludes = loadExcludes();
 const env = {
   ...process.env,
+  NODE_V8_COVERAGE: coverDir,
   GAAS_COVERAGE_GRACEFUL: '1',
 };
 
-function runUnderC8(label, nodeArgs, { clean }) {
-  const args = [
-    c8bin,
-    `--temp-directory=${coverDir}`,
-    `--reports-dir=${path.join(outDir, 'merged-tmp')}`,
-    '--reporter=none',
-    clean ? '--clean' : '--clean=false',
-  ];
-  for (const g of excludes) {
-    args.push(`--exclude=${g}`);
-  }
-  // c8 默认会排除 test；我们要的是业务代码覆盖，测试文件本身已在 exclude 里
-  args.push(process.execPath, ...nodeArgs);
-
-  console.log(`[merged-coverage] ${label}: c8 node ${nodeArgs.slice(0, 3).join(' ')} ... (${nodeArgs.length - 2} files)`);
-  const r = spawnSync(process.execPath, args, {
+/** 直接 node --test + NODE_V8_COVERAGE（比 c8 包住整次单测快；integ 靠 boot-app wrapper 落盘） */
+function runTests(label, nodeArgs) {
+  console.log(
+    `[merged-coverage] ${label}: node ${nodeArgs.slice(0, 3).join(' ')} ... (${Math.max(0, nodeArgs.length - 2)} files)`
+  );
+  const r = spawnSync(process.execPath, nodeArgs, {
     cwd: serverRoot,
     stdio: 'inherit',
     env,
@@ -114,17 +105,13 @@ function runUnderC8(label, nodeArgs, { clean }) {
 console.log(`[merged-coverage] temp=${coverDir}`);
 console.log(`[merged-coverage] unit=${unitTests.length} integration=${integTests.length}`);
 
-runUnderC8(
-  'unit',
-  ['--test', '--test-force-exit', ...unitTests],
-  { clean: true }
-);
-
-runUnderC8(
-  'integration',
-  ['--test', '--test-concurrency=2', '--test-force-exit', ...integTests],
-  { clean: false }
-);
+runTests('unit', ['--test', '--test-force-exit', ...unitTests]);
+runTests('integration', [
+  '--test',
+  '--test-concurrency=2',
+  '--test-force-exit',
+  ...integTests,
+]);
 
 const reportArgs = [
   c8bin,
