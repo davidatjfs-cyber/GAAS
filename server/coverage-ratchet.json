@@ -3,5 +3,5 @@
   "branches": 58,
   "functions": 42,
   "updated": "2026-07-25",
-  "note": "Phase 1f：薪资引擎 computePayrollLine/month-run/buildPayroll + rules seed/upsert + flow-config 读写 + 敏感脱敏/LLM 净化/审计日志。实测约 lines 40.00 / branches 58.37 / functions 42.22。lines≥40、functions≥42；branches 整数档未升。只升不降。"
+  "note": "Phase 1g：service-payroll legacy/closed_loop 边角 + payroll domain upsert + store-duty-bindings service。实测约 lines 40.44 / branches 58.26 / functions 42.83。整数档未升（仍 lines≥40 / branches≥58 / functions≥42）。只升不降。"
 }
