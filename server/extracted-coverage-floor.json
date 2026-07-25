@@ -156,6 +156,16 @@
     "domains/growth-payment-rules/service.js",
     "domains/growth-sync-failures/routes.js",
     "domains/growth-wechat-work/service.js",
-    "domains/hrms-state/routes.js"
+    "domains/hrms-state/routes.js",
+    "domains/approvals/handlers/promotion.js",
+    "domains/approvals/service-create.js",
+    "domains/approvals/service-lifecycle.js",
+    "domains/inventory-forecast/create-helpers.js",
+    "domains/reports/service-payroll.js",
+    "domains/daily-reports/service.js",
+    "domains/training/service-sessions.js",
+    "domains/tenant-platform/helpers.js",
+    "domains/agent-records/service.js",
+    "domains/growth-menu-health/service.js"
   ]
 }
