@@ -215,6 +215,16 @@
     "domains/rag/routes.js",
     "domains/growth-content-calendar/routes.js",
     "domains/tenant-platform/routes.js",
-    "domains/growth-winback/service.js"
+    "domains/growth-winback/service.js",
+    "domains/bitable-sync/routes.js",
+    "domains/growth-menu-health/routes.js",
+    "domains/growth-wechat-work/routes.js",
+    "domains/usage-weekly/routes.js",
+    "domains/exam-results/routes.js",
+    "domains/permission-groups/routes.js",
+    "domains/attention-scores/routes.js",
+    "domains/employees/routes-attachments.js",
+    "domains/sales-ai/routes-kf.js",
+    "domains/growth-payment-rules/routes.js"
   ]
 }
