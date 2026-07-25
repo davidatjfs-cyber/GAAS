@@ -117,3 +117,62 @@ test('hrms_state兜底登录：密码错误应拒绝，且不产生迁移', asyn
   const after = await db.query(`select 1 from users where username = $1`, [username]);
   assert.equal(after.rows.length, 0, '密码错误不应该产生迁移');
 });
+
+async function loginOk(username, password) {
+  const res = await fetch(app.baseUrl + '/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  return body.token;
+}
+
+test('GET /api/auth/me：无 token → 401；有 token → 200 含 username', async () => {
+  const noAuth = await fetch(app.baseUrl + '/api/auth/me');
+  assert.equal(noAuth.status, 401);
+
+  const db = testDb();
+  const username = uniqueId('me_ok');
+  const hash = await bcrypt.hash('Pass12345', 10);
+  await db.query(
+    `insert into users (username, password_hash, real_name, role, is_active, tenant_id)
+     values ($1, $2, '我', 'store_employee', true, 'default')`,
+    [username, hash]
+  );
+  const token = await loginOk(username, 'Pass12345');
+  const res = await fetch(app.baseUrl + '/api/auth/me', {
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  assert.equal(body.user?.username, username);
+});
+
+test('POST /api/auth/logout + heartbeat：登录后 200', async () => {
+  const db = testDb();
+  const username = uniqueId('lo_ok');
+  const hash = await bcrypt.hash('Pass12345', 10);
+  await db.query(
+    `insert into users (username, password_hash, real_name, role, is_active, tenant_id)
+     values ($1, $2, '退', 'store_employee', true, 'default')`,
+    [username, hash]
+  );
+  const token = await loginOk(username, 'Pass12345');
+
+  const beat = await fetch(app.baseUrl + '/api/auth/heartbeat', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  const beatBody = await beat.json();
+  assert.equal(beat.status, 200, JSON.stringify(beatBody));
+  assert.equal(beatBody.ok, true);
+
+  const out = await fetch(app.baseUrl + '/api/auth/logout', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  const outBody = await out.json();
+  assert.equal(out.status, 200, JSON.stringify(outBody));
+});

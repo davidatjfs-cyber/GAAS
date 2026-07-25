@@ -10,6 +10,8 @@
     "domains/health/scheduler-heartbeat.js",
     "domains/leave-attendance/clock-window.js",
     "domains/ops-tasks/access.js",
-    "domains/points/helpers.js"
+    "domains/points/helpers.js",
+    "domains/growth-ab/dates.js",
+    "domains/leave-attendance/daily-report-rest.js"
   ]
 }
