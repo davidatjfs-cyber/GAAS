@@ -35,9 +35,12 @@ function getDashscopeTtsConfig() {
 /**
  * Qwen-Audio-3.0 新增的内联标签白名单。未被模型支持的标签会被逐字念出来("方括号 breath")，
  * 比不加标签更糟，所以只放行有明确出处的标签，其余在合成前剥掉。
+ *
+ * 注意 `[breathing]` 不能写成 `[breath]`：实测 `[breath]` 是静默 no-op(合成时长与无标签
+ * 逐字节一致)，`[breathing]` 才真的产生换气(+0.67s，高于 ±0.35s 的抖动)。
  */
 const SPEECH_TAG_ALLOWLIST = new Set([
-  'breath', 'sighs', 'giggles', 'laughing', 'gasp', 'clears throat', 'coughing',
+  'breathing', 'sighs', 'giggles', 'laughing', 'gasp', 'clears throat', 'coughing',
   'whispers', 'excited', 'sad', 'angry', 'asmr',
 ]);
 
@@ -59,7 +62,7 @@ export function buildTaggedSpeechText(text = '', tone = 'conversation') {
   if (tone === 'explain' && clean.length > 40) {
     const boundary = clean.slice(8).search(/[。！？!?]/);
     const at = boundary >= 0 ? 8 + boundary + 1 : -1;
-    if (at > 0 && at < clean.length - 10) return `${clean.slice(0, at)}[breath]${clean.slice(at)}`;
+    if (at > 0 && at < clean.length - 10) return `${clean.slice(0, at)}[breathing]${clean.slice(at)}`;
   }
   return clean;
 }

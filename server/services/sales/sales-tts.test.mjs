@@ -97,7 +97,7 @@ test('0%保持当前基线，100%使用胜出音色并配置当前音色动态�
 });
 
 test('未知内联标签必须剥掉——模型不支持的标签会被逐字念出来', () => {
-  assert.equal(stripUnknownSpeechTags('[breath]好的[bogus_tag]，没问题。'), '[breath]好的，没问题。');
+  assert.equal(stripUnknownSpeechTags('[breathing]好的[bogus_tag]，没问题。'), '[breathing]好的，没问题。');
   assert.equal(stripUnknownSpeechTags('[sighs]我理解。'), '[sighs]我理解。');
 });
 
@@ -106,8 +106,8 @@ test('共情语气加叹气，长解释在首句后换气，短句不加标签',
 
   const long = '这个功能可以直接对接您现在的收银系统。装好之后每天的营业额和菜品销量都会自动汇总，不用人工去导表。';
   const tagged = buildTaggedSpeechText(long, 'explain');
-  assert.match(tagged, /\[breath\]/);
-  assert.equal(tagged.replace('[breath]', ''), long);
+  assert.match(tagged, /\[breathing\]/);
+  assert.equal(tagged.replace('[breathing]', ''), long);
 
   assert.equal(buildTaggedSpeechText('好的，没问题。', 'quick'), '好的，没问题。');
 });
