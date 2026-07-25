@@ -10,17 +10,18 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
 
-const PHASE0_FLOOR = { lines: 38, branches: 56, functions: 40 };
+/** 历史地板：只升不降（随 Phase 上调整数档） */
+const RATCHET_FLOOR = { lines: 38, branches: 57, functions: 40 };
 
-test('coverage-ratchet.json 只升不降（不低于 Phase 0 地板）', () => {
+test('coverage-ratchet.json 只升不降（不低于已冻结地板）', () => {
   const ratchet = JSON.parse(
     fs.readFileSync(path.join(serverRoot, 'coverage-ratchet.json'), 'utf8')
   );
   for (const key of ['lines', 'branches', 'functions']) {
     assert.equal(typeof ratchet[key], 'number', `${key} must be number`);
     assert.ok(
-      ratchet[key] >= PHASE0_FLOOR[key],
-      `${key}=${ratchet[key]} < Phase0 floor ${PHASE0_FLOOR[key]}（棘轮禁止下调）`
+      ratchet[key] >= RATCHET_FLOOR[key],
+      `${key}=${ratchet[key]} < floor ${RATCHET_FLOOR[key]}（棘轮禁止下调）`
     );
   }
 });
