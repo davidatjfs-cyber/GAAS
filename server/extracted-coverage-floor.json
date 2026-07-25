@@ -89,6 +89,9 @@
     "domains/agent-message/evaluator-helpers.js",
     "domains/flow-config/reconcile.js",
     "domains/employees/account-gate.js",
-    "domains/employees/pick-usernames.js"
+    "domains/employees/pick-usernames.js",
+    "domains/agent-message/training-flow.js",
+    "domains/growth-sms/reconcile.js",
+    "domains/shared/mirror-reconcile-scheduler.js"
   ]
 }
