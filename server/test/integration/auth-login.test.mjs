@@ -176,3 +176,63 @@ test('POST /api/auth/logout + heartbeat：登录后 200', async () => {
   const outBody = await out.json();
   assert.equal(out.status, 200, JSON.stringify(outBody));
 });
+
+test('POST /api/auth/switch-store：缺 store→400；越权→403；允许门店→200 新 token', async () => {
+  const db = testDb();
+  const username = uniqueId('sw_mgr');
+  const storeA = uniqueId('店A');
+  const storeB = uniqueId('店B');
+  const storeC = uniqueId('店C');
+  const hash = await bcrypt.hash('Pass12345', 10);
+  await db.query(
+    `insert into users (username, password_hash, real_name, role, is_active, tenant_id)
+     values ($1, $2, '店长', 'store_manager', true, 'default')`,
+    [username, hash]
+  );
+  await appendStateEmployee('default', {
+    username,
+    role: 'store_manager',
+    store: storeA,
+    name: '换店店长',
+  });
+  await db.query(
+    `insert into store_duty_bindings
+       (username, store, access_level, is_primary_store, enabled, tenant_id)
+     values
+       ($1, $2, 'primary', true, true, 'default'),
+       ($1, $3, 'support', false, true, 'default')
+     on conflict (username, store, tenant_id) do update
+       set enabled = true, is_primary_store = excluded.is_primary_store`,
+    [username, storeA, storeB]
+  );
+
+  const token = await loginOk(username, 'Pass12345');
+
+  const missing = await fetch(app.baseUrl + '/api/auth/switch-store', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({}),
+  });
+  const missingBody = await missing.json();
+  assert.equal(missing.status, 400, JSON.stringify(missingBody));
+  assert.equal(missingBody.error, 'missing_store');
+
+  const forbidden = await fetch(app.baseUrl + '/api/auth/switch-store', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ store: storeC }),
+  });
+  const forbiddenBody = await forbidden.json();
+  assert.equal(forbidden.status, 403, JSON.stringify(forbiddenBody));
+  assert.equal(forbiddenBody.error, 'store_forbidden');
+
+  const okRes = await fetch(app.baseUrl + '/api/auth/switch-store', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ store: storeB }),
+  });
+  const okBody = await okRes.json();
+  assert.equal(okRes.status, 200, JSON.stringify(okBody));
+  assert.ok(okBody.token);
+  assert.equal(okBody.user?.current_store, storeB);
+});

@@ -12,6 +12,7 @@
     "domains/ops-tasks/access.js",
     "domains/points/helpers.js",
     "domains/growth-ab/dates.js",
-    "domains/leave-attendance/daily-report-rest.js"
+    "domains/leave-attendance/daily-report-rest.js",
+    "domains/inventory-forecast/scope.js"
   ]
 }
