@@ -5,7 +5,10 @@
 import { querySmsTemplate } from '../../sms.js';
 import { listSmsTemplates } from '../../sms-templates.js';
 import { getSendGrowthAlert } from '../../growth-api.js';
+import { childLogger } from '../../utils/logger.js';
 import { normalizeSmsContent } from './helpers.js';
+
+const log = childLogger({ domain: 'growth-sms', handler: 'reconcile' });
 
 /**
  * @param {any} pool
@@ -52,11 +55,11 @@ export async function runSmsTemplateReconcile(pool, deps = {}) {
 
   if (mismatches.length) {
     const msg = `⚠️ 短信模板每日核对发现 ${mismatches.length} 处不一致，请核实：\n\n${mismatches.join('\n\n')}`;
-    console.warn('[sms-reconcile]', msg);
+    log.warn({ msg: 'sms_template_reconcile_mismatch', mismatch_count: mismatches.length, detail: msg });
     const sendAlert = getAlert();
     if (sendAlert) await sendAlert(msg).catch(() => null);
   } else {
-    console.log(`[sms-reconcile] ok: ${byCode.size} 个模板code与阿里云报备一致`);
+    log.info({ msg: 'sms_template_reconcile_ok', template_code_count: byCode.size });
   }
   return { checked: byCode.size, mismatches: mismatches.length };
 }
@@ -65,12 +68,12 @@ export function registerSmsReconcileJob(pool) {
   if (globalThis.__smsReconcileTimer) return;
   globalThis.__smsReconcileTimer = setInterval(() => {
     runSmsTemplateReconcile(pool).catch((e) =>
-      console.warn('[sms-reconcile] run failed:', e?.message)
+      log.warn({ msg: 'sms_template_reconcile_run_failed', err: e?.message })
     );
   }, 24 * 60 * 60 * 1000);
   setTimeout(() => {
     runSmsTemplateReconcile(pool).catch((e) =>
-      console.warn('[sms-reconcile] initial run failed:', e?.message)
+      log.warn({ msg: 'sms_template_reconcile_initial_failed', err: e?.message })
     );
   }, 10 * 60 * 1000);
 }

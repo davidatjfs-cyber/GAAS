@@ -2,6 +2,7 @@
  * Training reminder + certification expiry schedulers.
  */
 import { runForActiveTenants } from '../../utils/database.js';
+import { childLogger } from '../../utils/logger.js';
 import {
   pool,
   getShanghaiDateKey,
@@ -12,6 +13,7 @@ import {
 } from './shared.js';
 import { createTrainingAssignment } from './service.js';
 
+const log = childLogger({ domain: 'training', handler: 'scheduler' });
 const TRAINING_REMINDER_INTERVAL_MS = Math.max(30 * 60 * 1000, Number(process.env.TRAINING_REMINDER_INTERVAL_MS || 60 * 60 * 1000));
 let _trainingReminderSchedulerStarted = false;
 
@@ -129,12 +131,16 @@ export async function runTrainingReminderSweep() {
       overdueEscalated++;
     }
   } catch (e) {
-    console.error('[Training] reminder sweep error:', e?.message || e);
+    log.error({ msg: 'training_reminder_sweep_failed', err: e?.message || String(e) });
     return { ok: false, error: e?.message || String(e), preDueSent, overdueEscalated };
   }
 
   if (preDueSent || overdueEscalated) {
-    console.log(`[Training] reminder sweep complete: preDue=${preDueSent}, overdue=${overdueEscalated}`);
+    log.info({
+      msg: 'training_reminder_sweep_complete',
+      pre_due_sent: preDueSent,
+      overdue_escalated: overdueEscalated,
+    });
   }
   return { ok: true, preDueSent, overdueEscalated };
 }
@@ -201,7 +207,7 @@ export async function runCertificationExpirySweep() {
           recertAssignedBy = mgrRow.rows[0]?.username || null;
         }
       } catch (e) {
-        console.warn('[Training] recert assignedBy lookup failed:', e?.message);
+        log.warn({ msg: 'training_recert_assigned_by_lookup_failed', err: e?.message });
       }
 
       await createTrainingAssignment({
@@ -217,12 +223,16 @@ export async function runCertificationExpirySweep() {
       recertAssigned++;
     }
   } catch (e) {
-    console.error('[Training] certification expiry sweep error:', e?.message || e);
+    log.error({ msg: 'training_cert_expiry_sweep_failed', err: e?.message || String(e) });
     return { ok: false, error: e?.message || String(e), expired, recertAssigned };
   }
 
   if (expired || recertAssigned) {
-    console.log(`[Training] certification expiry sweep complete: expired=${expired}, recertAssigned=${recertAssigned}`);
+    log.info({
+      msg: 'training_cert_expiry_sweep_complete',
+      expired,
+      recert_assigned: recertAssigned,
+    });
   }
   return { ok: true, expired, recertAssigned };
 }
@@ -237,26 +247,34 @@ export function startTrainingReminderScheduler() {
       {
         continueOnError: true,
         onError: ({ tenantId, error }) => {
-          console.error(`[Training] reminder scheduler tick error (tenant=${tenantId}):`, error?.message || error);
+          log.error({
+            msg: 'training_reminder_scheduler_tick_failed',
+            tenant_id: tenantId,
+            err: error?.message || String(error),
+          });
         }
       }
     ).catch((e) => {
-      console.error('[Training] reminder scheduler bootstrap error:', e?.message || e);
+      log.error({ msg: 'training_reminder_scheduler_bootstrap_failed', err: e?.message || String(e) });
     });
     runForActiveTenants(
       (tenantId) => runCertificationExpirySweep().then((value) => ({ tenantId, ...value })),
       {
         continueOnError: true,
         onError: ({ tenantId, error }) => {
-          console.error(`[Training] certification expiry scheduler tick error (tenant=${tenantId}):`, error?.message || error);
+          log.error({
+            msg: 'training_cert_expiry_scheduler_tick_failed',
+            tenant_id: tenantId,
+            err: error?.message || String(error),
+          });
         }
       }
     ).catch((e) => {
-      console.error('[Training] certification expiry scheduler bootstrap error:', e?.message || e);
+      log.error({ msg: 'training_cert_expiry_scheduler_bootstrap_failed', err: e?.message || String(e) });
     });
   };
 
   setTimeout(tick, 90 * 1000);
   setInterval(tick, TRAINING_REMINDER_INTERVAL_MS);
-  console.log('[Training] reminder scheduler started');
+  log.info({ msg: 'training_reminder_scheduler_started' });
 }

@@ -3,19 +3,14 @@
   "note": "domains 内仍含 console.log 的存量文件。新文件不得出现在此列表之外。",
   "files": [
     "domains/agent-message/store-resolve.js",
-    "domains/birthday/scheduler.js",
     "domains/feishu-bitable/map.js",
     "domains/feishu-webhook/process-data-change.js",
     "domains/feishu-webhook/routes.js",
     "domains/growth-metrics/service.js",
     "domains/growth-pos/feishu-service.js",
-    "domains/growth-sms/reconcile.js",
     "domains/inventory-forecast/pdf-parse.js",
     "domains/inventory-forecast/service.js",
-    "domains/knowledge/service.js",
-    "domains/performance-invalidation/routes.js",
-    "domains/shared/mirror-reconcile-scheduler.js",
-    "domains/training/scheduler.js"
+    "domains/knowledge/service.js"
   ],
-  "countAtFreeze": 35
+  "countAtFreeze": 25
 }

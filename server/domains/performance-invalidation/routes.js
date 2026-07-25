@@ -5,7 +5,10 @@
 import { pool } from '../../utils/database.js';
 import { calculateEmployeeScore, getIncompleteTaskCount } from '../../new-scoring-model.js';
 import { sendLarkCard, sendLarkMessage } from '../../agents.js';
+import { childLogger } from '../../utils/logger.js';
 import { listPerformanceRecords, invalidatePerformanceRecord } from './service.js';
+
+const log = childLogger({ domain: 'performance-invalidation', handler: 'routes' });
 
 function sendFail(res, result) {
   const { ok: _ok, status, ...body } = result;
@@ -67,5 +70,5 @@ export function registerPerformanceInvalidationRoutes(app, authRequired) {
     return sendOk(res, result);
   });
 
-  console.log('[api] 绩效审核失效API路由已注册');
+  log.info({ msg: 'performance_invalidation_routes_registered' });
 }

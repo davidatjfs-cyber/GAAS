@@ -4,6 +4,9 @@
  * - payment-config / stores / remaining-state：无独立表 SoT，做 hrms_state 形状完整性日检
  *   （见 state-only-integrity.js；待未来有表权威后再升级为表↔镜像对账）
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'shared', handler: 'mirror-reconcile-scheduler' });
 
 /**
  * @param {{
@@ -32,14 +35,18 @@ export function createMirrorReconcileScheduler(deps) {
         if (!report.ok) {
           const driftSample = (report.fieldDrift || []).slice(0, 10).map((d) => d.username).join(',');
           const msg = `employees mirror drift tenant=${report.tenantId} table=${report.tableCount} mirror=${report.mirrorCount} onlyTable=${report.onlyTable.slice(0, 20).join(',')} onlyMirror=${report.onlyMirror.slice(0, 20).join(',')} fieldDrift=${driftSample}`;
-          console.error('[employees-mirror-reconcile]', msg);
+          log.error({ msg: 'employees_mirror_reconcile_drift', detail: msg, tenant_id: report.tenantId });
           void notifyAdminsDualWriteFailure('employees（表/镜像对账）', new Error(msg));
         } else {
-          console.log('[employees-mirror-reconcile] ok', report.tenantId, report.tableCount);
+          log.info({
+            msg: 'employees_mirror_reconcile_ok',
+            tenant_id: report.tenantId,
+            table_count: report.tableCount,
+          });
         }
       }
     } catch (e) {
-      console.error('[employees-mirror-reconcile] failed', e?.message || e);
+      log.error({ msg: 'employees_mirror_reconcile_failed', err: e?.message || String(e) });
     }
   }
 
@@ -53,14 +60,14 @@ export function createMirrorReconcileScheduler(deps) {
             .slice(0, 20)
             .join(',');
           const msg = `flow-config mirror drift tenant=${report.tenantId} drifts=${driftSummary}`;
-          console.error('[flow-config-mirror-reconcile]', msg);
+          log.error({ msg: 'flow_config_mirror_reconcile_drift', detail: msg, tenant_id: report.tenantId });
           void notifyAdminsDualWriteFailure('flow-config（表/镜像对账）', new Error(msg));
         } else {
-          console.log('[flow-config-mirror-reconcile] ok', report.tenantId);
+          log.info({ msg: 'flow_config_mirror_reconcile_ok', tenant_id: report.tenantId });
         }
       }
     } catch (e) {
-      console.error('[flow-config-mirror-reconcile] failed', e?.message || e);
+      log.error({ msg: 'flow_config_mirror_reconcile_failed', err: e?.message || String(e) });
     }
   }
 
@@ -75,14 +82,14 @@ export function createMirrorReconcileScheduler(deps) {
             .map((d) => `${d.domain}:${(d.issues || []).map((i) => `${i.field}:${i.reason}`).join('|')}`)
             .join(';');
           const msg = `state-only integrity fail tenant=${report.tenantId} ${bad}`;
-          console.error('[state-only-integrity]', msg);
+          log.error({ msg: 'state_only_integrity_fail', detail: msg, tenant_id: report.tenantId });
           void notifyAdminsDualWriteFailure('state-only（payment/stores/remaining 形状日检）', new Error(msg));
         } else {
-          console.log('[state-only-integrity] ok', report.tenantId);
+          log.info({ msg: 'state_only_integrity_ok', tenant_id: report.tenantId });
         }
       }
     } catch (e) {
-      console.error('[state-only-integrity] failed', e?.message || e);
+      log.error({ msg: 'state_only_integrity_failed', err: e?.message || String(e) });
     }
   }
 

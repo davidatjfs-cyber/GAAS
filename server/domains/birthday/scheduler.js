@@ -1,4 +1,7 @@
+import { childLogger } from '../../utils/logger.js';
 import { parseBirthdayMonthDay, getNextMonth, isEndOfMonth } from './helpers.js';
+
+const log = childLogger({ domain: 'birthday', handler: 'scheduler' });
 
 export function createBirthdayScheduler({
   getSharedState,
@@ -62,7 +65,11 @@ export function createBirthdayScheduler({
               );
               birthdayGreetingsSent[greetingKey] = hrmsNowISO();
               changed = true;
-              console.log(`Birthday greeting sent to ${empName} (${empUsername})`);
+              log.info({
+                msg: 'birthday_greeting_sent',
+                employee_name: empName,
+                username: empUsername,
+              });
             }
           }
 
@@ -188,11 +195,15 @@ export function createBirthdayScheduler({
             await saveSharedState(state, tenantId);
           }
         } catch (e) {
-          console.log('birthday greeting job failed:', tenantId, e?.message || e);
+          log.error({
+            msg: 'birthday_greeting_tenant_failed',
+            tenant_id: tenantId,
+            err: e?.message || String(e),
+          });
         }
       }, { continueOnError: true });
     } catch (e) {
-      console.error('[birthday-greeting] runForActiveTenants error:', e?.message || e);
+      log.error({ msg: 'birthday_greeting_run_failed', err: e?.message || String(e) });
     }
   }
 
@@ -203,7 +214,7 @@ export function createBirthdayScheduler({
     // Do not run immediately on start (legacy: setInterval only, no immediate tick)
     setInterval(() => {
       runBirthdayGreetingTick().catch((e) =>
-        console.error('[birthday-greeting] tick error:', e?.message || e)
+        log.error({ msg: 'birthday_greeting_tick_failed', err: e?.message || String(e) })
       );
     }, 60 * 60 * 1000);
   }

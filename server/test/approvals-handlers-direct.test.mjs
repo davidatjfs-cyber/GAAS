@@ -1594,3 +1594,215 @@ test('onboarding.afterDecide：employee 非 object；users 成功 flag；rejecte
     decideExtras: {},
   });
 });
+
+test('onboarding.afterDecide：非法 salary/joinDate；有门店无店长；非法 open_id 跳过飞书', async () => {
+  const timeline = [];
+  const { deps, queries, merges } = makeDeps({
+    state: {
+      employees: [
+        { username: 'other', store: '甲店', role: 'store_employee' },
+      ],
+    },
+  });
+  deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+    ok: true,
+    nextEmp: {
+      username: 'newbad',
+      name: '坏薪',
+      role: 'store_employee',
+      department: '',
+      position: '',
+      store: '甲店',
+      managerUsername: 'mgr1',
+      salary: 'bad',
+      joinDate: 'not-a-date',
+    },
+    newUsername: 'newbad',
+    empName: '坏薪',
+    empPassword: 'Temp1234',
+  });
+  deps.bcrypt = { hash: async () => 'hash' };
+  deps.toNullableUuid = () => null;
+  deps.safeDateOnly = () => '';
+  deps.hrmsNowISO = () => '2026-07-25T08:00:00+08:00';
+  deps.insertSalaryTimeline = async (a) => {
+    timeline.push(a);
+  };
+  deps.safeErrMessage = (e) => String(e?.message || e);
+
+  const decideExtras = {};
+  await onboarding.afterDecide({
+    req: { tenantId: 'default' },
+    deps,
+    updated: {
+      id: 'onb-bad-sal',
+      type: 'onboarding',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { employee: { name: '坏薪', open_id: 'not-uuid' } },
+    },
+    username: 'a1',
+    decideExtras,
+  });
+  assert.equal(decideExtras.onboardingEmployeeSync?.ok, true);
+  assert.equal(decideExtras.userAccountCreated, true);
+  assert.equal(timeline.length, 0);
+  assert.equal(queries.some((q) => /feishu_users/i.test(String(q[0]))), false);
+  const notifMerge = merges.find((m) => Array.isArray(m.patch.notifications));
+  const recipients = (notifMerge?.patch.notifications || []).map((n) => n.u);
+  assert.ok(recipients.includes('hr1'));
+  assert.ok(recipients.includes('mgr1'));
+  assert.equal(recipients.includes('store_mgr'), false);
+});
+
+test('points.afterDecide：NaN rate 回落 0.5；item 字段回落；第2条双写失败仍通知', async () => {
+  let uuidSeq = 0;
+  const { deps, notifs, ledgerCalls, dualWriteFails, queries, merges } = makeDeps({
+    depsExtra: {
+      randomUUID: () => `00000000-0000-4000-8000-00000000000${++uuidSeq}`,
+      resolveAttendancePayrollRules: async () => ({ rules: { pointsYuanPerPoint: Number.NaN } }),
+    },
+  });
+  let insertCount = 0;
+  deps.pool.query = async (...a) => {
+    queries.push(a);
+    if (/INSERT INTO point_records/i.test(String(a[0]))) {
+      insertCount += 1;
+      if (insertCount >= 2) throw new Error('second insert boom');
+    }
+    return { rows: [] };
+  };
+
+  await points.afterDecide({
+    req: { tenantId: 'default', user: { username: 'approver1' } },
+    deps,
+    updated: {
+      id: 'pts-fallback',
+      type: 'points',
+      status: 'approved',
+      applicant_username: 'emp1',
+      created_at: '2026-06-15T00:00:00+08:00',
+      payload: {
+        store: '默认店',
+        items: [
+          { points: 2 },
+          { points: 4, username: 'other', name: '李四', store: '乙店', itemName: '', reason: '', bizMonth: '' },
+        ],
+      },
+    },
+  });
+
+  assert.equal(ledgerCalls.length, 2);
+  assert.equal(ledgerCalls[0][0].amount, 1);
+  assert.equal(ledgerCalls[1][0].amount, 2);
+  assert.equal(ledgerCalls[0][0].username, 'emp1');
+  assert.equal(ledgerCalls[0][0].store, '默认店');
+  assert.equal(ledgerCalls[0][0].title, '积分事项');
+  assert.equal(dualWriteFails.length, 1);
+  assert.ok(notifs.some((n) => n.title === '积分申请已通过'));
+  assert.ok(merges.some((m) => m.patch.pointsAppliedApprovals?.['pts-fallback'] === true));
+  const firstInsert = queries.find((q) => /INSERT INTO point_records/i.test(String(q[0])));
+  assert.ok(firstInsert);
+  assert.ok(firstInsert[1][9]);
+});
+
+test('promotion.afterDecide：oldSalary=0 跳过 timeline 仍调 next-month；拒轨不存在不抛', async () => {
+  const timeline = [];
+  const salaryCalls = [];
+  const { deps, merges } = makeDeps({
+    state: {
+      employees: [{
+        username: 'emp1',
+        name: '员工',
+        level: '初级',
+        position: '服务员',
+        salary: 0,
+        store: '测试店',
+        department: '前厅',
+        promotionHistory: null,
+      }],
+      promotionTracks: [],
+    },
+  });
+  deps.findUserSalary = () => 0;
+  deps.insertSalaryTimeline = async (a) => {
+    timeline.push(a);
+  };
+  deps.applyPromotionSalaryNextMonth = async (a) => {
+    salaryCalls.push(a);
+  };
+  deps.getPromotionRequiredTopics = async () => [];
+  deps.getPromotionTrackProgress = async () => ({ items: [] });
+  deps.createTrainingAssignment = async () => {};
+  deps.normalizePromotionTrainingPeriods = () => [];
+  deps.isKitchenByRoleOrPosition = () => false;
+  deps.pickHqManagerUsername = async () => '';
+  deps.pickStoreRoleUsernameByStore = () => '';
+  deps.safeErrMessage = (e) => String(e?.message || e);
+
+  await promotion.afterDecide({
+    req: { tenantId: 'default', user: {} },
+    deps,
+    username: 'approver1',
+    note: '',
+    nextAssignee: null,
+    updated: {
+      id: 'ap-zero-sal',
+      type: 'promotion',
+      status: 'approved',
+      applicant_username: 'emp1',
+      chain: [],
+      payload: {
+        promotionStage: 'formal',
+        promoTier: 'level_promotion',
+        newLevel: '中级',
+        newPosition: '',
+        promotedSalary: 6000,
+        promotionTrackId: 'missing-track',
+      },
+    },
+  });
+  assert.equal(timeline.length, 0);
+  assert.equal(salaryCalls.length, 1);
+  assert.equal(salaryCalls[0].newSalary, 6000);
+  assert.ok(merges.some((m) => Array.isArray(m.patch.employees?.[0]?.promotionHistory)));
+
+  const rej = makeDeps({
+    state: {
+      employees: [{ username: 'emp1', name: '员工', store: '测试店' }],
+      promotionTracks: [{ id: 'gone', status: 'qualification_approved' }],
+    },
+  });
+  rej.deps.findUserSalary = () => null;
+  rej.deps.insertSalaryTimeline = async () => {};
+  rej.deps.applyPromotionSalaryNextMonth = async () => {};
+  rej.deps.getPromotionRequiredTopics = async () => [];
+  rej.deps.getPromotionTrackProgress = async () => ({ items: [] });
+  rej.deps.createTrainingAssignment = async () => {};
+  rej.deps.normalizePromotionTrainingPeriods = () => [];
+  rej.deps.isKitchenByRoleOrPosition = () => false;
+  rej.deps.pickHqManagerUsername = async () => '';
+  rej.deps.pickStoreRoleUsernameByStore = () => '';
+  rej.deps.mergeSharedStateFields = async () => {
+    throw new Error('merge boom');
+  };
+
+  await promotion.afterDecide({
+    req: { tenantId: 'default' },
+    deps: rej.deps,
+    username: 'approver1',
+    note: '不够格',
+    nextAssignee: null,
+    updated: {
+      id: 'ap-rej-missing-track',
+      type: 'promotion',
+      status: 'rejected',
+      applicant_username: 'emp1',
+      payload: {
+        promotionStage: 'formal',
+        promotionTrackId: 'gone',
+      },
+    },
+  });
+  assert.ok(rej.notifs.some((n) => n.title === '晋升申请未通过'));
+});
