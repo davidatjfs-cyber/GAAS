@@ -16,6 +16,7 @@
     "assert:ci-runtime": "node scripts/assert-ci-runtime.mjs",
     "test": "npm run assert:ci-runtime && npm --workspace server run test",
     "test:coverage": "npm run assert:ci-runtime && npm --workspace server run test:coverage",
+    "test:coverage:merged": "npm run assert:ci-runtime && npm --workspace server run test:coverage:merged",
     "lint": "eslint \"server/**/*.js\" \"server/**/*.mjs\" --max-warnings 80",
     "bundle:frontend": "node scripts/bundle-frontend.mjs",
     "build:shell": "node scripts/build-shell.mjs",

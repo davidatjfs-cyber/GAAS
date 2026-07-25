@@ -64,9 +64,13 @@ export async function bootApp(envOverrides = {}, attempt = 0) {
   }
 
   async function stop() {
+    // 合并覆盖率采集时依赖进程正常退出落盘 V8 coverage；给更长优雅退出窗口，避免 SIGKILL 丢数据
+    const gracefulMs = process.env.NODE_V8_COVERAGE || process.env.GAAS_COVERAGE_GRACEFUL
+      ? 15000
+      : 3000;
     child.kill('SIGTERM');
     await new Promise((resolve) => {
-      const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(); }, 3000);
+      const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(); }, gracefulMs);
       child.once('exit', () => { clearTimeout(timer); resolve(); });
     });
   }

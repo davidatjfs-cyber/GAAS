@@ -66,4 +66,19 @@ jobs:
         working-directory: server
       - name: 创建被测应用专用的非superuser角色（否则RLS测试形同虚设）
         run: psql "$TEST_DATABASE_URL" -f server/test/integration/helpers/setup-test-role.sql
-      - run: npm --workspace server run test:integration
+      # Wave A：一次跑单测+集成并采集合并覆盖率（观测口径，不改单测棘轮）。
+      # 本 job 用合并脚本替代单独的 test:integration，避免集成套件跑两遍。
+      - name: Unit + integration (merged coverage observe)
+        run: npm run test:coverage:merged
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/gaas_test
+          TEST_APP_DATABASE_URL: postgres://gaas_app_test:gaas_app_test_pw@localhost:5432/gaas_test
+      - name: Upload merged coverage summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merged-coverage-summary
+          path: |
+            server/coverage/merged-summary.json
+            server/coverage/merged/coverage-summary.json
+          if-no-files-found: warn

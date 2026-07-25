@@ -52,3 +52,10 @@ test('run-unit-coverage.mjs 与 package.json test:coverage 存在', () => {
   assert.equal(typeof pkg.scripts?.['test:coverage'], 'string');
   assert.match(pkg.scripts['test:coverage'], /run-unit-coverage/);
 });
+
+test('run-merged-coverage.mjs 与 package.json test:coverage:merged 存在（Wave A 观测）', () => {
+  assert.ok(fs.existsSync(path.join(serverRoot, 'scripts/run-merged-coverage.mjs')));
+  const pkg = JSON.parse(fs.readFileSync(path.join(serverRoot, 'package.json'), 'utf8'));
+  assert.equal(typeof pkg.scripts?.['test:coverage:merged'], 'string');
+  assert.match(pkg.scripts['test:coverage:merged'], /run-merged-coverage/);
+});

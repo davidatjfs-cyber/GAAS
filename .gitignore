@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Coverage (unit ratchet / merged V8 raw)
+server/coverage/
+
 # Environment files
 server/.env
 .env

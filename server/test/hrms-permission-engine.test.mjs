@@ -89,7 +89,7 @@ test('setTenantEnforcementMode：非法 mode / hybrid 触发 seed', async () => 
   });
   assert.deepEqual(bad, { ok: false, error: 'invalid_mode' });
 
-  const db = mockDb(async (sql) => ({ rows: [] }));
+  const db = mockDb(async (_sql) => ({ rows: [] }));
   const ok = await setTenantEnforcementMode({
     tenantId: 't-hybrid',
     mode: 'hybrid',

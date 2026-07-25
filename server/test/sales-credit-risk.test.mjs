@@ -171,7 +171,7 @@ test('scanCreditRisks: 仅收集超授信并 notify', async () => {
 });
 
 test('scanCreditRisks: notify 抛错不中断扫描', async () => {
-  const pool = mockPool((sql, params) => {
+  const pool = mockPool((sql, _params) => {
     if (sql.includes("WHERE payment_type='credit'")) {
       return { rows: [{ lead_id: 21 }] };
     }
