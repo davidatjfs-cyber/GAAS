@@ -204,6 +204,17 @@
     "domains/reports/routes-turnover.js",
     "domains/approvals/routes.js",
     "domains/training/routes.js",
-    "domains/inventory-forecast/estimate.js"
+    "domains/inventory-forecast/estimate.js",
+    "domains/reports/routes-bi.js",
+    "domains/reports/routes.js",
+    "domains/dedup/routes.js",
+    "domains/notifications/routes.js",
+    "domains/diagnosis/routes.js",
+    "domains/gm-mailbox/routes.js",
+    "domains/store-duty-bindings/routes.js",
+    "domains/rag/routes.js",
+    "domains/growth-content-calendar/routes.js",
+    "domains/tenant-platform/routes.js",
+    "domains/growth-winback/service.js"
   ]
 }
