@@ -232,11 +232,12 @@ export async function uploadKfMedia(buffer, { type = 'voice', filename = 'voice.
   return data.media_id;
 }
 
-export async function recordKfDelivery(pool, turn, { status, channel = 'text', result = null, error = null } = {}) {
+export async function recordKfDelivery(pool, turn, { status, channel = 'text', result = null, error = null, meta = null } = {}) {
   const messageId = Number(turn?.outbound_message_id || 0);
   if (!messageId || !['sent', 'failed'].includes(status)) return { updated: false };
   const errorText = error ? String(error?.message || error).slice(0, 1000) : null;
   const patch = {
+    ...(meta && typeof meta === 'object' ? meta : {}),
     delivery_status: status,
     delivery_channel: channel,
     delivery_updated_at: new Date().toISOString(),
@@ -355,11 +356,11 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
         // 不能因为语音链路故障让客户完全收不到回复。
         try {
           const voiceReply = voiceReplyForTurn(turn);
-          const amr = await synthesizeSpeechAmr(voiceReply, { rolloutKey: externalUserid });
+          const { amr, meta: ttsMeta } = await synthesizeSpeechAmr(voiceReply, { rolloutKey: externalUserid });
           if (amr) {
             const mediaId = await uploadKfMedia(amr, { type: 'voice', filename: 'reply.amr' });
             const sendResult = await sendKfVoice({ openKfid: replyOpenKfid, externalUserid, mediaId });
-            await recordKfDelivery(pool, turn, { status: 'sent', channel: 'voice', result: sendResult });
+            await recordKfDelivery(pool, turn, { status: 'sent', channel: 'voice', result: sendResult, meta: ttsMeta });
             console.log('[sales-kf] sendKfVoice ok:', JSON.stringify({ ...sendResult, speech_chars: voiceReply.length, speech_mode: turn.speech_reply ? 'conversational' : 'original' }));
             sentAsVoice = true;
           }

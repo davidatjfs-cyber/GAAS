@@ -4,10 +4,12 @@ import {
   buildDashscopeTtsHttpUrl,
   buildDashscopeTtsWsUrl,
   buildNaturalSpeechDirection,
+  buildTaggedSpeechText,
   buildTtsCandidateConfigs,
   buildTtsParameters,
   prepareSpeechText,
   stableRolloutBucket,
+  stripUnknownSpeechTags,
 } from './sales-tts.js';
 
 test('buildDashscopeTtsWsUrl adds wss protocol and inference path to a workspace host', () => {
@@ -92,4 +94,33 @@ test('0%保持当前基线，100%使用胜出音色并配置当前音色动态�
 
   const naturalWithoutKey = buildTtsCandidateConfigs('好的。', { rolloutPercent: 100, baseConfig: {} });
   assert.equal(naturalWithoutKey[0].variant, 'natural_v1');
+});
+
+test('未知内联标签必须剥掉——模型不支持的标签会被逐字念出来', () => {
+  assert.equal(stripUnknownSpeechTags('[breathing]好的[bogus_tag]，没问题。'), '[breathing]好的，没问题。');
+  assert.equal(stripUnknownSpeechTags('[sighs]我理解。'), '[sighs]我理解。');
+});
+
+test('共情语气加叹气，长解释在首句后换气，短句不加标签', () => {
+  assert.equal(buildTaggedSpeechText('我理解您的顾虑。', 'empathy'), '[sighs]我理解您的顾虑。');
+
+  const long = '这个功能可以直接对接您现在的收银系统。装好之后每天的营业额和菜品销量都会自动汇总，不用人工去导表。';
+  const tagged = buildTaggedSpeechText(long, 'explain');
+  assert.match(tagged, /\[breathing\]/);
+  assert.equal(tagged.replace('[breathing]', ''), long);
+
+  assert.equal(buildTaggedSpeechText('好的，没问题。', 'quick'), '好的，没问题。');
+});
+
+test('标签灰度关闭时不产生标签候选，打开时标签候选排在无标签候选之前', () => {
+  const off = buildTtsCandidateConfigs('我理解您的顾虑。', { rolloutKey: 'c1', rolloutPercent: 100, tagPercent: 0, baseConfig: {} });
+  assert.deepEqual(off.map((c) => c.variant), ['natural_v1', 'natural_fallback']);
+
+  const on = buildTtsCandidateConfigs('我理解您的顾虑。', { rolloutKey: 'c1', rolloutPercent: 100, tagPercent: 100, baseConfig: {} });
+  assert.deepEqual(on.map((c) => c.variant), ['natural_v1_tag', 'natural_v1', 'natural_fallback']);
+  assert.equal(on[0].speechText, '[sighs]我理解您的顾虑。');
+  assert.equal(on[0].tagged, true);
+  // 标签候选失败必须能退回同音色的无标签版本，否则一个不支持的标签会毁掉整通语音
+  assert.equal(on[1].model, on[0].model);
+  assert.equal(on[1].speechText, undefined);
 });

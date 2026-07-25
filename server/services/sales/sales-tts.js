@@ -28,7 +28,43 @@ function getDashscopeTtsConfig() {
     instruction: String(process.env.DASHSCOPE_TTS_INSTRUCTION || DEFAULT_INSTRUCTION).trim(),
     rate: Number(process.env.DASHSCOPE_TTS_RATE || 0.96),
     naturalRolloutPercent: Number(process.env.DASHSCOPE_TTS_NATURAL_ROLLOUT_PERCENT || 0),
+    tagRolloutPercent: Number(process.env.DASHSCOPE_TTS_TAG_ROLLOUT_PERCENT || 0),
   };
+}
+
+/**
+ * Qwen-Audio-3.0 新增的内联标签白名单。未被模型支持的标签会被逐字念出来("方括号 breath")，
+ * 比不加标签更糟，所以只放行有明确出处的标签，其余在合成前剥掉。
+ *
+ * 注意 `[breathing]` 不能写成 `[breath]`：实测 `[breath]` 是静默 no-op(合成时长与无标签
+ * 逐字节一致)，`[breathing]` 才真的产生换气(+0.67s，高于 ±0.35s 的抖动)。
+ */
+const SPEECH_TAG_ALLOWLIST = new Set([
+  'breathing', 'sighs', 'giggles', 'laughing', 'gasp', 'clears throat', 'coughing',
+  'whispers', 'excited', 'sad', 'angry', 'asmr',
+]);
+
+export function stripUnknownSpeechTags(text = '') {
+  return String(text || '').replace(/\[([^\]]{1,20})\]/g, (full, name) => (
+    SPEECH_TAG_ALLOWLIST.has(name.trim().toLowerCase()) ? full : ''
+  ));
+}
+
+/**
+ * 企微语音是 AMR-NB 8kHz/12.2kbps 窄带，Qwen-Audio-3.0 的 48kHz 音质升级传不到客户耳朵里，
+ * 能过来的只有韵律。所以标签只做两件在窄带下确定听得出来的事：共情开头的叹气、长句中间的换气，
+ * 不猜模型不一定支持的花哨标签。
+ */
+export function buildTaggedSpeechText(text = '', tone = 'conversation') {
+  const clean = stripUnknownSpeechTags(text).trim();
+  if (!clean) return clean;
+  if (tone === 'empathy') return `[sighs]${clean}`;
+  if (tone === 'explain' && clean.length > 40) {
+    const boundary = clean.slice(8).search(/[。！？!?]/);
+    const at = boundary >= 0 ? 8 + boundary + 1 : -1;
+    if (at > 0 && at < clean.length - 10) return `${clean.slice(0, at)}[breathing]${clean.slice(at)}`;
+  }
+  return clean;
 }
 
 export function prepareSpeechText(text = '') {
@@ -90,13 +126,23 @@ export function stableRolloutBucket(value = '') {
   return createHash('sha256').update(key).digest().readUInt32BE(0) % 100;
 }
 
-export function buildTtsCandidateConfigs(text = '', { rolloutKey = '', rolloutPercent = 0, baseConfig = {} } = {}) {
+function inRollout(rolloutKey, rolloutPercent) {
   const percent = Number.isFinite(Number(rolloutPercent)) ? Math.min(100, Math.max(0, Number(rolloutPercent))) : 0;
-  if (percent < 100 && stableRolloutBucket(rolloutKey) >= percent) return [{ ...baseConfig, variant: 'baseline' }];
+  return percent >= 100 || stableRolloutBucket(rolloutKey) < percent;
+}
+
+export function buildTtsCandidateConfigs(text = '', { rolloutKey = '', rolloutPercent = 0, tagPercent = 0, baseConfig = {} } = {}) {
+  if (!inRollout(rolloutKey, rolloutPercent)) return [{ ...baseConfig, variant: 'baseline' }];
   const direction = buildNaturalSpeechDirection(text);
+  const tagged = inRollout(`tag:${rolloutKey}`, tagPercent);
+  // 标签失败时要能退回"同音色但不带标签"，否则一个不支持的标签会把整通语音毁掉。
+  const speechText = tagged ? buildTaggedSpeechText(text, direction.tone) : '';
+  const shared = { ...baseConfig, instruction: direction.instruction, rate: direction.rate, tone: direction.tone };
+  const primary = { ...shared, model: NATURAL_TTS_MODEL, voice: NATURAL_TTS_VOICE };
   return [
-    { ...baseConfig, model: NATURAL_TTS_MODEL, voice: NATURAL_TTS_VOICE, instruction: direction.instruction, rate: direction.rate, variant: 'natural_v1', tone: direction.tone },
-    { ...baseConfig, model: DEFAULT_TTS_MODEL, voice: DEFAULT_VOICE, instruction: direction.instruction, rate: direction.rate, variant: 'natural_fallback', tone: direction.tone },
+    ...(tagged ? [{ ...primary, variant: 'natural_v1_tag', speechText, tagged: true }] : []),
+    { ...primary, variant: 'natural_v1' },
+    { ...shared, model: DEFAULT_TTS_MODEL, voice: DEFAULT_VOICE, variant: 'natural_fallback' },
   ];
 }
 
@@ -127,6 +173,11 @@ export function buildDashscopeTtsHttpUrl(wsHost) {
   wsUrl.pathname = '/api/v1/services/audio/tts/SpeechSynthesizer';
   wsUrl.search = '';
   return wsUrl.toString();
+}
+
+/** 带标签的候选用 speechText，其余用原文；截断长度对齐接口上限 */
+function resolveSpeechText(text, config) {
+  return prepareSpeechText(config?.speechText || text).slice(0, 500);
 }
 
 function mp3ToAmr(mp3Buffer) {
@@ -202,7 +253,7 @@ function synthesizeMp3(text, { timeoutMs = 20000, config = null } = {}) {
       if (event === 'task-started') {
         ws.send(JSON.stringify({
           header: { action: 'continue-task', task_id: taskId, streaming: 'duplex' },
-          payload: { input: { text: prepareSpeechText(text).slice(0, 500) } },
+          payload: { input: { text: resolveSpeechText(text, resolved) } },
         }));
         ws.send(JSON.stringify({
           header: { action: 'finish-task', task_id: taskId, streaming: 'duplex' },
@@ -243,7 +294,7 @@ async function synthesizeHttpMp3(text, { timeoutMs = 30000, config = null } = {}
       body: JSON.stringify({
         model: task.model,
         input: {
-          text: prepareSpeechText(text).slice(0, 500),
+          text: resolveSpeechText(text, resolved),
           voice: task.voice,
           format: task.parameters.format,
           sample_rate: task.parameters.sample_rate,
@@ -267,17 +318,22 @@ async function synthesizeHttpMp3(text, { timeoutMs = 30000, config = null } = {}
   }
 }
 
-/** 文本 → amr语音Buffer；失败返回 null，调用方应回退到文字回复而不是让客户没收到任何消息 */
+/**
+ * 文本 → { amr, meta }；amr 为 null 表示全部候选都失败，调用方应回退到文字回复而不是让客户没收到任何消息。
+ * meta 记录真正发声的那个候选，用于事后按变体统计真人感效果(见 sales-voice-quality.js)。
+ */
 export async function synthesizeSpeechAmr(text, { rolloutKey = '' } = {}) {
   const primary = getDashscopeTtsConfig();
   const candidates = buildTtsCandidateConfigs(text, {
     rolloutKey,
     rolloutPercent: primary.naturalRolloutPercent,
+    tagPercent: primary.tagRolloutPercent,
     baseConfig: primary,
   });
   if (!candidates.some((candidate) => candidate.model === 'cosyvoice-v2')) {
     candidates.push({ ...primary, model: 'cosyvoice-v2', voice: 'longwan_v2', instruction: '', rate: 0.98, variant: 'legacy_fallback' });
   }
+  const failures = [];
   for (const config of candidates) {
     try {
       const mp3 = /^qwen-audio-/.test(config.model)
@@ -285,11 +341,21 @@ export async function synthesizeSpeechAmr(text, { rolloutKey = '' } = {}) {
         : await synthesizeMp3(text, { config });
       if (!mp3?.length) throw new Error('tts_empty_audio');
       const amr = await mp3ToAmr(mp3);
-      console.log(`[sales-tts] synthesized variant=${config.variant || 'baseline'} model=${config.model} tone=${config.tone || 'static'}`);
-      return amr;
+      const meta = {
+        tts_variant: config.variant || 'baseline',
+        tts_model: config.model,
+        tts_voice: config.voice,
+        tts_tone: config.tone || null,
+        tts_tagged: Boolean(config.tagged),
+        tts_fallbacks: failures.length,
+      };
+      console.log(`[sales-tts] synthesized ${JSON.stringify(meta)}`);
+      return { amr, meta };
     } catch (e) {
-      console.error(`[sales-tts] synthesize failed model=${config.model}:`, e?.message || e);
+      const reason = e?.message || String(e);
+      failures.push(`${config.variant || 'baseline'}:${reason}`);
+      console.error(`[sales-tts] synthesize failed model=${config.model}:`, reason);
     }
   }
-  return null;
+  return { amr: null, meta: { tts_variant: null, tts_error: failures.join(' | ').slice(0, 500) } };
 }
