@@ -55,6 +55,10 @@ import {
 } from './domains/agent-message/helpers.js';
 import { tryHandleTrainingFlows } from './domains/agent-message/training-flow.js';
 import { tryBiDeterministicCascade } from './domains/agent-message/bi-deterministic-cascade.js';
+import {
+  loadChiefEvaluatorEmployeeContext,
+  tryHandleChiefEvaluatorScore,
+} from './domains/agent-message/evaluator-helpers.js';
 import { applyPostRouteQualityGates } from './domains/agent-message/post-route-quality.js';
 import {
   buildEvidencePackage,
@@ -67,6 +71,10 @@ import {
   resolveDataAuditorStore,
   resolveHqStoreFromText,
 } from './domains/agent-message/store-resolve.js';
+import {
+  formatKnowledgeBaseContext,
+  formatTrainingTasksContext,
+} from './domains/agent-message/training-context.js';
 import { buildSalesReport } from './bi-sales-detail.js';
 import {
   generateWeeklyReport,
@@ -9354,56 +9362,37 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
       }
 
       case 'chief_evaluator': {
-        // 判断是否在问绩效分数（走数据查询），还是HR流程问题（走LLM）
-        const isScoreQuery = /分数|绩效|考核|得分|扣分|排名|评价|评级|奖金/.test(text);
-
-        // 获取员工资料上下文（权限控制：店长可查本店员工，HR/admin可查全部）
-        let employeeContext = '';
-        try {
-          const hrState = await getSharedState();
-          const allEmps = Array.isArray(hrState?.employees) ? hrState.employees : (Array.isArray(hrState?.data?.employees) ? hrState.data.employees : []);
-          const canSeeAll = ['admin', 'hr_manager', 'hq_manager'].includes(senderRole);
-          const visibleEmps = canSeeAll ? allEmps.filter(e => e.status === 'active') : allEmps.filter(e => e.status === 'active' && e.store === store);
-          if (visibleEmps.length > 0) {
-            const roleLabel = { admin: '管理员', store_manager: '店长', store_production_manager: '出品经理', store_employee: '员工', hr_manager: 'HR', hq_manager: '总部营运', cashier: '出纳' };
-            employeeContext = '\n\n当前可查询的员工资料（共' + visibleEmps.length + '人）：\n' + visibleEmps.map(e => `- ${e.name}（${e.username}）| ${roleLabel[e.role] || e.role} | ${e.store || '总部'} | ${e.position || '-'} | ${e.department || '-'}`).join('\n');
-          }
-        } catch (e) { /* ignore */ }
-        
-        if (isScoreQuery) {
-          // 绩效查询：查数据库
-          const scoresR = await pool().query(
-            `SELECT * FROM agent_scores WHERE username = $1 ORDER BY created_at DESC LIMIT 1`, [senderUsername]
-          );
-          const score = scoresR.rows?.[0];
-          if (score) {
-            const bd = score.breakdown || {};
-            const storeRatingText = bd.store_rating ? `${bd.store_rating}级` : '-';
-            const execRatingText = bd.execution_rating ? `${bd.execution_rating}级` : '-';
-            const attRatingText = bd.attitude_rating ? `${bd.attitude_rating}级` : '-';
-            const abiRatingText = bd.ability_rating ? `${bd.ability_rating}级` : '-';
-            
-            response = `HR: ${senderName}，你在${score.store}（${score.brand}）的最新考核：\n\n📊 绩效得分：${score.total_score} 分\n🏪 门店评级：${storeRatingText}\n📈 执行力：${execRatingText}\n💪 工作态度：${attRatingText}\n🎯 工作能力：${abiRatingText}\n\n${score.summary || ''}`;
-          } else {
-            response = `${senderName}，暂无你的考核记录。考核将在月末自动生成。`;
-          }
-        } else {
-          // HR流程问题：用LLM回答（带Check Agent质检）
-          const hrSystemPrompt = `你是"小年"，年年有喜餐饮集团AI助理，当前协助人事管理。当前时间：${new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}。门店：${store}（${brand}）。用户：${senderName}（${senderRole === 'store_manager' ? '店长' : senderRole === 'store_production_manager' ? '出品经理' : '员工'}）。\n\n职责：离职/入职/转正/晋升/调岗流程、薪资咨询、请假/休假/考勤、社保/档案、绩效规则、员工信息查询。\n\n严格约束：\n- 只能基于下方员工资料回答员工相关问题，禁止编造不在列表中的员工信息。\n- 禁止编造日期，当前真实日期以上方为准。\n- 可以说明一般流程和政策框架，但涉及具体数字必须基于数据。\n回复不超过300字。${employeeContext}${activeTaskContext}`;
-          const hrContext = getContext(senderUsername).slice(-4);
-          response = await runWithCheckAgent(text, 'chief_evaluator', async (checkFeedback) => {
-            const extraNote = checkFeedback ? `\n\n【质检反馈，请修正后重新回答】${checkFeedback}` : '';
-            const hrLlm = await callLLM([
-              { role: 'system', content: hrSystemPrompt + extraNote },
-              ...hrContext,
-              { role: 'user', content: text }
-            ], { role: senderRole, purpose: 'reasoning', temperature: 0.05, max_tokens: 420 });
-            return hrLlm.content || '收到，我会为您查询相关信息并尽快回复。';
-          });
-          updateContext(senderUsername, 'user', text);
-          updateContext(senderUsername, 'assistant', response);
+        // 绩效分数查询（domains/agent-message）
+        const scoreHit = await tryHandleChiefEvaluatorScore(pool(), {
+          text,
+          senderUsername,
+          senderName,
+        });
+        if (scoreHit.handled) {
+          response = scoreHit.response;
+          agentData = { route, brandId, brandConfig, dataBacked: true };
+          break;
         }
-        agentData = { route, brandId, brandConfig, dataBacked: isScoreQuery };
+
+        // HR流程问题：员工上下文 + LLM（带 Check Agent 质检）
+        const employeeContext = await loadChiefEvaluatorEmployeeContext(getSharedState, {
+          senderRole,
+          store,
+        });
+        const hrSystemPrompt = `你是"小年"，年年有喜餐饮集团AI助理，当前协助人事管理。当前时间：${new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}。门店：${store}（${brand}）。用户：${senderName}（${senderRole === 'store_manager' ? '店长' : senderRole === 'store_production_manager' ? '出品经理' : '员工'}）。\n\n职责：离职/入职/转正/晋升/调岗流程、薪资咨询、请假/休假/考勤、社保/档案、绩效规则、员工信息查询。\n\n严格约束：\n- 只能基于下方员工资料回答员工相关问题，禁止编造不在列表中的员工信息。\n- 禁止编造日期，当前真实日期以上方为准。\n- 可以说明一般流程和政策框架，但涉及具体数字必须基于数据。\n回复不超过300字。${employeeContext}${activeTaskContext}`;
+        const hrContext = getContext(senderUsername).slice(-4);
+        response = await runWithCheckAgent(text, 'chief_evaluator', async (checkFeedback) => {
+          const extraNote = checkFeedback ? `\n\n【质检反馈，请修正后重新回答】${checkFeedback}` : '';
+          const hrLlm = await callLLM([
+            { role: 'system', content: hrSystemPrompt + extraNote },
+            ...hrContext,
+            { role: 'user', content: text }
+          ], { role: senderRole, purpose: 'reasoning', temperature: 0.05, max_tokens: 420 });
+          return hrLlm.content || '收到，我会为您查询相关信息并尽快回复。';
+        });
+        updateContext(senderUsername, 'user', text);
+        updateContext(senderUsername, 'assistant', response);
+        agentData = { route, brandId, brandConfig, dataBacked: false };
         break;
       }
 
@@ -9449,13 +9438,10 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
             userStore: store,
             userPosition: kbPos
           });
-          if (kbResults.length) {
-            kbContext = '\n\n相关知识库内容：\n' + 
-              kbResults.map(r => `【${r.title}】${String(r.content || '').slice(0, 300)}...`).join('\n');
-          }
+          kbContext = formatKnowledgeBaseContext(kbResults);
         } catch (e) { /* ignore */ }
 
-        // 查阅该用户的培训记录
+        // 查阅该用户的培训记录（domains/agent-message）
         let trainingTasksContext = '';
         try {
           const tasks = await pool().query(
@@ -9463,11 +9449,7 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
              WHERE assignee_username = $1 ORDER BY created_at DESC LIMIT 5`,
             [senderUsername]
           );
-          if (tasks.rows && tasks.rows.length > 0) {
-            trainingTasksContext = '\n\n该用户近期的培训任务：\n' + tasks.rows.map(t => 
-              `- [${t.task_id}] ${t.title} (${t.type}) | 状态：${t.status} | 截止：${t.due_date ? new Date(t.due_date).toLocaleDateString() : '无'}`
-            ).join('\n');
-          }
+          trainingTasksContext = formatTrainingTasksContext(tasks.rows);
         } catch (e) {
           console.error('[train_advisor] fetch training tasks error:', e?.message);
         }
