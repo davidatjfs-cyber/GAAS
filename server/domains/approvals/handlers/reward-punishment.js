@@ -1,3 +1,7 @@
+import { childLogger } from '../../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'reward-punishment' });
+
 export async function beforeUpdate(_ctx) {}
 
 export async function afterDecide(ctx) {
@@ -78,7 +82,7 @@ export async function afterDecide(ctx) {
            req.tenantId || req.user?.tenant_id || 'default']
         );
       } catch (e) {
-        console.error('[reward_punishment_records] dual-write failed:', e?.message);
+        log.error({ msg: 'reward_punishment_records_dual_write_failed', err: e?.message });
         void notifyAdminsDualWriteFailure('hrms_reward_punishment_records（奖惩审批双写）', e);
       }
 
@@ -102,7 +106,7 @@ export async function afterDecide(ctx) {
           createdBy: username
         });
       } catch (ledErr) {
-        console.error('[reward_punishment] payroll ledger failed:', ledErr?.message);
+        log.error({ msg: 'reward_punishment_payroll_ledger_failed', err: ledErr?.message });
       }
 
       const notifications = [];

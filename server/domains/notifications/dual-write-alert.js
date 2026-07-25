@@ -3,17 +3,25 @@
  * (behavior-preserving extract from index.js)
  *
  * 双写失败告警（系统底线）：任何 hrms_state ↔ PostgreSQL 不同步风险必须调用本函数。
- * - 先入运维日志（console.error，便于采集/巡检），再尽最大努力发飞书。
+ * - 先入运维结构化日志（pino），再尽最大努力发飞书。
  * - 飞书接收人：feishu_users 中 admin / hq_manager（及常见中文管理员别名），避免仅有英文 admin 导致漏告。
  *
  * 已接入范围见仓库内对此函数的引用（遗漏新增双写时请同步调用）。
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'notifications', handler: 'dual-write-alert' });
 
 export function createNotifyAdminsDualWriteFailure({ pool, sendLarkMessage }) {
   return async function notifyAdminsDualWriteFailure(scopeLabel, err) {
     const reason = String(err?.message || err || 'unknown').slice(0, 500);
     const timeStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
-    console.error('[dual-write][CRITICAL]', scopeLabel, '|', reason, '|', timeStr, 'Asia/Shanghai');
+    log.error({
+      msg: 'dual_write_critical',
+      scope: scopeLabel,
+      err: reason,
+      time: timeStr,
+    });
 
     try {
       const r = await pool.query(
@@ -30,10 +38,10 @@ export function createNotifyAdminsDualWriteFailure({ pool, sendLarkMessage }) {
       );
       const rows = r.rows || [];
       if (!rows.length) {
-        console.error(
-          '[dual-write][CRITICAL] 双写失败但无可投递飞书账号（请检查 feishu_users.registered / role / open_id）。范围:',
-          scopeLabel
-        );
+        log.error({
+          msg: 'dual_write_no_feishu_recipients',
+          scope: scopeLabel,
+        });
         return;
       }
       const msg =
@@ -47,10 +55,18 @@ export function createNotifyAdminsDualWriteFailure({ pool, sendLarkMessage }) {
       const settled = await Promise.all(sends);
       const failed = settled.filter((x) => x && x.err);
       if (failed.length) {
-        console.error('[dual-write][CRITICAL] 部分飞书告警发送失败:', failed.length, failed[0]?.err);
+        log.error({
+          msg: 'dual_write_feishu_partial_fail',
+          failed: failed.length,
+          err: failed[0]?.err || null,
+        });
       }
     } catch (e) {
-      console.error('[dual-write][CRITICAL] notifyAdminsDualWriteFailure 自身异常:', scopeLabel, e?.message);
+      log.error({
+        msg: 'dual_write_notify_failed',
+        scope: scopeLabel,
+        err: e?.message,
+      });
     }
   };
 }

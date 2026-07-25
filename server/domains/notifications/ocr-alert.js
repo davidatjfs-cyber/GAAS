@@ -7,6 +7,9 @@
  * @param {string} fileType    类型描述（如图片、PDF、PDF 扫描件）
  * @param {string} reason      失败原因
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'notifications', handler: 'ocr-alert' });
 
 export function createNotifyAdminsOcrFailed({ pool, sendLarkMessage }) {
   return async function notifyAdminsOcrFailed(itemTitle, fileType, reason) {
@@ -20,7 +23,7 @@ export function createNotifyAdminsOcrFailed({ pool, sendLarkMessage }) {
       );
       const rows = r.rows || [];
       if (!rows.length) {
-        console.warn('[knowledge-ocr] no admin open_id for Feishu alert');
+        log.warn({ msg: 'knowledge_ocr_no_admin_openid' });
         return;
       }
       const timeStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
@@ -37,10 +40,14 @@ export function createNotifyAdminsOcrFailed({ pool, sendLarkMessage }) {
       const settled = await Promise.all(sends);
       const failed = settled.filter((x) => x && x.err);
       if (failed.length) {
-        console.error('[knowledge-ocr] some Feishu admin alerts failed:', failed.length, failed[0]?.err);
+        log.error({
+          msg: 'knowledge_ocr_feishu_partial_fail',
+          failed: failed.length,
+          err: failed[0]?.err || null,
+        });
       }
     } catch (e) {
-      console.error('[knowledge-ocr] notify admins failed:', e?.message);
+      log.error({ msg: 'knowledge_ocr_notify_failed', err: e?.message });
     }
   };
 }

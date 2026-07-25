@@ -92,7 +92,10 @@ export function registerStateRoutes(app, authRequired, deps) {
       const existingState = (await getSharedState()) || {};
       const { next: data, ignoredKeys } = applyStatePutWhitelist(existingState, repaired);
       if (ignoredKeys.length) {
-        console.warn('[state] PUT ignored non-whitelist keys:', ignoredKeys.slice(0, 30).join(','));
+        log.warn({
+          msg: 'state_put_ignored_keys',
+          keys: ignoredKeys.slice(0, 30),
+        });
       }
       await pool.query(
         `insert into hrms_state (key, data, updated_at)
@@ -105,7 +108,7 @@ export function registerStateRoutes(app, authRequired, deps) {
         try {
           await upsertPayrollDomainFromState(data);
         } catch (e) {
-          console.error('[hrms_payroll_domain] PUT /api/state sync failed (non-fatal):', e?.message);
+          log.error({ msg: 'state_put_payroll_sync_failed', err: e?.message });
           void notifyAdminsDualWriteFailure('hrms_payroll_domain（PUT /api/state）', e);
         }
       });
@@ -119,11 +122,11 @@ export function registerStateRoutes(app, authRequired, deps) {
             try {
               await applyHrmsUserAccountGateFromEmployee(emp);
             } catch (e) {
-              console.error('[state][account-gate]', uname, e?.message || e);
+              log.error({ msg: 'state_put_account_gate_failed', username: uname, err: e?.message || String(e) });
             }
           }
         } catch (syncErr) {
-          console.error('[state] account gate sync error:', syncErr?.message);
+          log.error({ msg: 'state_put_account_gate_sync_failed', err: syncErr?.message });
         }
       });
       return res.json({ ok: true, ignoredKeys });

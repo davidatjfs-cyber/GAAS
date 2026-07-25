@@ -2499,3 +2499,104 @@ test('leave.beforeUpdate：非有限 remainingLeaveDays 不写；onboarding open
   assert.equal(decideExtras.feishuUsersCreated, true);
   assert.ok(queries.some((q) => /feishu_users/i.test(String(q[0]))));
 });
+
+test('monthly_confirm：payload JSON 字符串；confirmation 缺失仍通知；外层 catch 吞错', async () => {
+  const { deps, notifs, merges } = makeDeps({
+    state: { monthlyConfirmations: [] },
+  });
+  await monthlyConfirm.afterDecide({
+    req: { user: { username: 'approver1' } },
+    deps,
+    updated: {
+      id: 'mc-json',
+      type: 'monthly_confirm',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: JSON.stringify({ confirmationId: 'missing-id', month: '2026-07', store: '甲店' }),
+    },
+  });
+  assert.equal(merges.length, 0);
+  assert.ok(notifs.some((n) => n.title === '月度考勤确认已通过' && /甲店/.test(n.msg)));
+
+  const boom = makeDeps();
+  boom.deps.getSharedState = async () => {
+    throw new Error('state boom');
+  };
+  await monthlyConfirm.afterDecide({
+    req: {},
+    deps: boom.deps,
+    updated: {
+      id: 'mc-boom',
+      type: 'monthly_confirm',
+      status: 'pending',
+      applicant_username: 'emp1',
+      payload: { confirmationId: 'x', month: '2026-07' },
+    },
+    nextAssignee: 'mgr1',
+  });
+  assert.equal(boom.notifs.length, 0);
+});
+
+test('leave pending；offboarding pending 写通知；promotion 资格拒绝文案', async () => {
+  {
+    const { deps, notifs } = makeDeps();
+    await leave.afterDecide({
+      req: {},
+      deps,
+      nextAssignee: 'mgr1',
+      updated: {
+        id: 'lv-pend',
+        type: 'leave',
+        status: 'pending',
+        applicant_username: 'emp1',
+        payload: { startDate: '2026-08-01', endDate: '2026-08-02' },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '休假申请待审批'));
+  }
+  {
+    const { deps, merges } = makeDeps();
+    await offboarding.afterDecide({
+      req: {},
+      deps,
+      nextAssignee: 'hr1',
+      updated: {
+        id: 'ob-pend',
+        type: 'offboarding',
+        status: 'pending',
+        applicant_username: 'emp1',
+        payload: {},
+      },
+    });
+    assert.ok(merges.some((m) =>
+      Array.isArray(m.patch.notifications)
+      && m.patch.notifications.some((n) => n.title === '离职申请待审批')));
+  }
+  {
+    const { deps, notifs } = makeDeps();
+    deps.findUserSalary = () => null;
+    deps.insertSalaryTimeline = async () => {};
+    deps.applyPromotionSalaryNextMonth = async () => {};
+    deps.getPromotionRequiredTopics = async () => [];
+    deps.getPromotionTrackProgress = async () => ({ items: [] });
+    deps.createTrainingAssignment = async () => {};
+    deps.normalizePromotionTrainingPeriods = () => [];
+    deps.isKitchenByRoleOrPosition = () => false;
+    deps.pickHqManagerUsername = async () => '';
+    deps.pickStoreRoleUsernameByStore = () => '';
+    await promotion.afterDecide({
+      req: { tenantId: 'default' },
+      deps,
+      username: 'a1',
+      note: '',
+      updated: {
+        id: 'ap-qual-rej',
+        type: 'promotion',
+        status: 'rejected',
+        applicant_username: 'emp1',
+        payload: { promotionStage: 'qualification' },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '晋升申请未通过' && /晋升资格/.test(n.msg) && /相关原因/.test(n.msg)));
+  }
+});

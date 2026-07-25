@@ -1,6 +1,10 @@
 /**
  * Admin ops HTTP routes (Wave 4q — behavior-preserving extract from index.js).
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'admin-ops', handler: 'routes' });
+
 export function registerAdminOpsRoutes(app, authRequired, deps) {
   const {
     pool,
@@ -135,7 +139,7 @@ export function registerAdminOpsRoutes(app, authRequired, deps) {
       });
       return res.json({ ok: true, ...result, targetUsername: target.username });
     } catch (error) {
-      console.error('[admin system alert test] Error:', error);
+      log.error({ msg: 'admin_system_alert_test_failed', err: safeErrMessage(error) });
       return res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
     }
   });

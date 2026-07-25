@@ -1,3 +1,7 @@
+import { childLogger } from '../../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'monthly-confirm' });
+
 export async function beforeUpdate(_ctx) {}
 
 export async function afterDecide(ctx) {
@@ -61,5 +65,5 @@ export async function afterDecide(ctx) {
       const msg = `${applicantName} 提交了 ${mcMonth} ${mcStore || '全部门店'} 的月度考勤确认，需要您审批。`;
       await appendNotifications([makeNotif(nextAssignee, '月度考勤确认待审批', msg, { type: 'monthly_confirm_request', approvalId: updated.id })]);
     }
-  } catch (e) { console.error('monthly_confirm post-approval error:', e); }
+  } catch (e) { log.error({ msg: 'monthly_confirm_post_approval_failed', err: e?.message || String(e) }); }
 }

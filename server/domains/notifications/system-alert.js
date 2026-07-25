@@ -2,6 +2,9 @@
  * systemAlertTitle / sendAdminSystemAlert
  * (behavior-preserving extract from index.js)
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'notifications', handler: 'system-alert' });
 
 export function systemAlertTitle(msg) {
   const firstLine = String(msg || '').split(/\r?\n/).map((s) => String(s || '').trim()).find(Boolean) || '';
@@ -52,7 +55,7 @@ export function createSendAdminSystemAlert({
         await appendNotifications(notifs);
         await insertHrmsUserNotifications(notifs);
       } catch (e) {
-        console.error('[system-alert] persist company notification failed:', e?.message || e);
+        log.error({ msg: 'system_alert_persist_failed', err: e?.message || String(e) });
       }
     }
 
@@ -96,7 +99,7 @@ export function createSendAdminSystemAlert({
           sendTargets.push(oid);
         }
       } catch (e) {
-        console.error('[system-alert] feishu role fallback query failed:', e?.message || e);
+        log.error({ msg: 'system_alert_role_fallback_failed', err: e?.message || String(e) });
       }
     }
 
@@ -110,7 +113,12 @@ export function createSendAdminSystemAlert({
       feishuFailed = recipients.length || 1;
     }
     if (feishuSent === 0) {
-      console.error('[system-alert] feishu send all failed:', { recipients, sendTargetsCount: sendTargets.length, feishuFailed });
+      log.error({
+        msg: 'system_alert_feishu_all_failed',
+        recipients,
+        send_targets: sendTargets.length,
+        feishu_failed: feishuFailed,
+      });
     }
 
     return { recipients, feishuSent, feishuFailed };
