@@ -1,6 +1,9 @@
 /**
  * user_login_log write helpers (no DDL — table via ensureLoginLogTable / migrations).
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'auth', handler: 'login-log' });
 
 export function createLoginLogHelpers({ pool, tenantContext }) {
   async function recordLogin(username, sessionNonce, req, tenantId = 'default') {
@@ -28,7 +31,7 @@ export function createLoginLogHelpers({ pool, tenantContext }) {
           [key, sessionNonce, ip, ua, tid]
         );
       } catch (e) {
-        console.error('recordLogin failed:', e?.message || e);
+        log.error({ msg: 'record_login_failed', err: e?.message || String(e) });
       } finally {
         try {
           if (client) client.release();
@@ -51,7 +54,7 @@ export function createLoginLogHelpers({ pool, tenantContext }) {
         [key]
       );
     } catch (e) {
-      console.error('recordLogout failed:', e?.message || e);
+      log.error({ msg: 'record_logout_failed', err: e?.message || String(e) });
     } finally {
       try {
         if (client) client.release();

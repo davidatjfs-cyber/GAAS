@@ -83,9 +83,9 @@ const L1_FILE_FLOOR = {
   'domains/approvals/handlers/offboarding.js': { branches: 77, lines: 95 },
   'domains/approvals/handlers/points.js': { branches: 72, lines: 95 },
   'domains/approvals/handlers/onboarding.js': { branches: 72, lines: 95 },
-  'domains/approvals/handlers/promotion.js': { branches: 74, lines: 95 },
-  'domains/tenant-platform/routes-billing.js': { branches: 68, lines: 95 },
-  'domains/tenant-platform/routes-auth.js': { branches: 83, lines: 90 },
+  'domains/approvals/handlers/promotion.js': { branches: 76, lines: 95 },
+  'domains/tenant-platform/routes-billing.js': { branches: 70, lines: 95 },
+  'domains/tenant-platform/routes-auth.js': { branches: 84, lines: 90 },
 };
 
 test('l1-coverage-floor.json 只升不降且含全部 L1 目标文件', () => {

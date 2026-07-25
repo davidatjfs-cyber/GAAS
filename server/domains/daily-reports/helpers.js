@@ -4,6 +4,9 @@
  */
 import { randomUUID } from 'crypto';
 import { reconcileDailyReportAttendanceRegister } from '../../daily-attendance-register.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'daily-reports', handler: 'helpers' });
 
 export let pool;
 export let hrmsNowISO;
@@ -208,7 +211,7 @@ export async function recalcWechatMonthTotalsForStoreMonth(pool, store, anchorDa
       [st, monthStart, tid]
     );
   } catch (e) {
-    console.error('[wechat_month_total recalc]', e?.message);
+    log.error({ msg: 'wechat_month_total_recalc_failed', err: e?.message || String(e) });
   }
 }
 
@@ -369,7 +372,12 @@ export async function upsertDailyReportPgFromStateReport(dr, tenantId) {
       tenantId: tenantId || 'default'
     });
   } catch (re) {
-    console.warn('[daily_report_attendance_register]', store, date, re?.message);
+    log.warn({
+      msg: 'daily_report_attendance_register_failed',
+      store,
+      date,
+      err: re?.message || String(re),
+    });
   }
   // 闭环：日报保存后同步重算权威日结果（排班+打卡+休假）
   try {
@@ -383,6 +391,11 @@ export async function upsertDailyReportPgFromStateReport(dr, tenantId) {
       getSharedState
     });
   } catch (adErr) {
-    console.warn('[hrms_attendance_day] reconcile after daily report:', store, date, adErr?.message);
+    log.warn({
+      msg: 'hrms_attendance_day_reconcile_after_daily_report_failed',
+      store,
+      date,
+      err: adErr?.message || String(adErr),
+    });
   }
 }

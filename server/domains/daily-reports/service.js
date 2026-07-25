@@ -2,12 +2,15 @@
  * Pure daily-reports logic (no req/res).
  */
 import { randomUUID } from 'crypto';
+import { childLogger } from '../../utils/logger.js';
 import {
   formatPgDateOnly,
   dailyReportMergeKey,
   dailyReportItemFromPgRow,
   mergeDailyReportItemWithPgRow,
 } from './helpers.js';
+
+const log = childLogger({ domain: 'daily-reports', handler: 'service' });
 
 const PG_SYNC_FAILED_HINT =
   'PostgreSQL 表 daily_reports 双写失败：前端状态未保存。晨报/考勤/Agent 均依赖该表与 hrms_state 一致；请重试提交或联系管理员查看 HRMS 日志 [daily_report_*]、数据库约束与 DATABASE_URL。';
@@ -143,7 +146,12 @@ export async function syncDailyReportRowToPg({
       tenantId: tenantIdQ,
     });
   } catch (re) {
-    console.warn('[daily_report_attendance_register]', store, date, re?.message);
+    log.warn({
+      msg: 'daily_report_attendance_register_failed',
+      store,
+      date,
+      err: re?.message || String(re),
+    });
   }
 }
 
@@ -216,7 +224,7 @@ export async function upsertDailyReport({
       });
     } catch (e) {
       lastPgDualWriteError = lastPgDualWriteError || e;
-      console.error(`[daily_report_${pgNotifyLabel}]`, e.message);
+      log.error({ msg: `daily_report_${pgNotifyLabel}_failed`, err: e?.message || String(e) });
       void notifyAdminsDualWriteFailure(`daily_reports（营业日报 PG 同步·${pgNotifyLabel === 'update' ? '更新' : '新建'} ${store} ${date}）`, e);
     }
   };
@@ -454,7 +462,7 @@ export async function listDailyReports({
         else items[idx] = mergeDailyReportItemWithPgRow(items[idx], row);
       }
     } catch (e) {
-      console.error('[daily-reports pg merge]', e?.message);
+      log.error({ msg: 'daily_reports_pg_merge_failed', err: e?.message || String(e) });
     }
   } else if (pgMergeLatestLimit > 0) {
     try {
@@ -486,7 +494,7 @@ export async function listDailyReports({
         else items[idx] = mergeDailyReportItemWithPgRow(items[idx], row);
       }
     } catch (e) {
-      console.error('[daily-reports pg merge latest]', e?.message);
+      log.error({ msg: 'daily_reports_pg_merge_latest_failed', err: e?.message || String(e) });
     }
   }
 
@@ -524,7 +532,7 @@ export async function listDailyReports({
         }
       }
     } catch (e) {
-      console.error('[daily-reports db enrichment]', e?.message || e);
+      log.error({ msg: 'daily_reports_db_enrichment_failed', err: e?.message || String(e) });
     }
 
     items = items.map(item => {

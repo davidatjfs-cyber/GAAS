@@ -159,6 +159,23 @@ test('bootstrap：未配置 SECRET / 错 secret / 已存在 / 短密码 / 成功
     assert.equal(res.body.ok, true);
     assert.ok(calls.some((c) => String(c[0]).includes('INSERT INTO platform_admins')));
   }
+  {
+    const { routes } = register({
+      queryImpl: async (sql) => {
+        if (String(sql).includes('INSERT INTO platform_admins')) {
+          throw new Error('insert boom');
+        }
+        return { rows: [] };
+      },
+    });
+    const res = mockRes();
+    await invoke(routes.get('POST /api/admin/auth/bootstrap'), {
+      headers: { 'x-platform-admin-secret': 'bootstrap-secret' },
+      body: { username: 'rootadmin', password: '12345678' },
+    }, res);
+    assert.equal(res.statusCode, 500);
+    assert.equal(res.body.error, 'server_error');
+  }
 });
 
 test('login：缺凭证 / inactive / 错密 / 成功 / 池抛错', async () => {
@@ -292,6 +309,20 @@ test('POST accounts：invalid_input / invalid_role / 成功 / duplicate 409 / �
 });
 
 test('GET accounts catch → 500；audit-log 403/200/limit clamp/500', async () => {
+  {
+    const { routes } = register({
+      queryImpl: async () => ({
+        rows: [{ username: 'super1', real_name: '超管', status: 'active', role: 'super_admin' }],
+      }),
+    });
+    const res = mockRes();
+    await invoke(routes.get('GET /api/admin/auth/accounts'), {
+      platformAdmin: { username: 'super1', role: 'super_admin' },
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.accounts.length, 1);
+  }
   {
     const { routes } = register({
       queryImpl: async () => {

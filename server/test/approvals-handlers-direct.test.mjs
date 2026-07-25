@@ -2600,3 +2600,134 @@ test('leave pending；offboarding pending 写通知；promotion 资格拒绝文�
     assert.ok(notifs.some((n) => n.title === '晋升申请未通过' && /晋升资格/.test(n.msg) && /相关原因/.test(n.msg)));
   }
 });
+
+test('promotion.afterDecide：formal 有 chain/课题；qualification 厨房+周期培训', async () => {
+  const trainings = [];
+  const timeline = [];
+  const { deps, merges, notifs } = makeDeps({
+    state: {
+      employees: [{
+        username: 'emp1',
+        name: '员工',
+        level: '初级',
+        position: '服务员',
+        salary: 4500,
+        store: '测试店',
+        department: '前厅',
+        joinDate: '2025-01-01',
+        promotionHistory: [],
+        managerUsername: 'mgr1',
+      }],
+      promotionTracks: [{ id: 'trk-1', status: 'qualification_approved' }],
+      salaryChangeHistory: [{ id: 'old' }],
+    },
+  });
+  deps.findUserSalary = () => 4500;
+  deps.insertSalaryTimeline = async (a) => { timeline.push(a); };
+  deps.applyPromotionSalaryNextMonth = async () => {};
+  deps.getPromotionRequiredTopics = async () => [
+    { id: 1, title: '已认证课' },
+    { id: 2, title: '待训课' },
+  ];
+  deps.getPromotionTrackProgress = async () => ({
+    items: [
+      { topicId: 1, certified: true },
+      { topicId: 2, certified: false },
+    ],
+  });
+  deps.createTrainingAssignment = async (a) => { trainings.push(a); };
+  deps.normalizePromotionTrainingPeriods = () => [];
+  deps.isKitchenByRoleOrPosition = () => false;
+  deps.pickHqManagerUsername = async () => '';
+  deps.pickStoreRoleUsernameByStore = () => '';
+
+  await promotion.afterDecide({
+    req: { tenantId: 'default', user: { username: 'approver1' } },
+    deps,
+    username: 'approver1',
+    updated: {
+      id: 'ap-formal-chain',
+      type: 'promotion',
+      status: 'approved',
+      applicant_username: 'emp1',
+      chain: [
+        { step: 1, assignee: 'sm1', status: 'approved', decidedAt: '2026-07-01' },
+        { step: null, assignee: '', status: '', decidedAt: '' },
+      ],
+      payload: {
+        promotionStage: 'formal',
+        promoTier: 'level_promotion',
+        newLevel: '中级',
+        newPosition: '领班',
+        promotedSalary: 5500,
+        promotionTrackId: 'trk-1',
+        reason: '表现优秀',
+      },
+    },
+  });
+  assert.equal(timeline.some((t) => t.source === 'profile_baseline'), true);
+  assert.equal(trainings.length, 1);
+  assert.equal(trainings[0].topicId, 2);
+  assert.ok(merges.some((m) =>
+    Array.isArray(m.patch.salaryChangeHistory)
+    && m.patch.salaryChangeHistory[0]?.chain?.length === 2
+    && m.patch.salaryChangeHistory[0].chain[0].assignee === 'sm1'));
+  assert.ok(merges.some((m) => m.patch.promotionTracks?.[0]?.status === 'promoted'));
+
+  const qTrain = [];
+  const q = makeDeps({
+    state: {
+      employees: [{
+        username: 'cook1',
+        name: '厨工',
+        role: 'kitchen_staff',
+        position: '厨师',
+        department: '后厨',
+        store: '测试店',
+      }],
+      promotionTracks: [],
+    },
+  });
+  q.deps.findUserSalary = () => null;
+  q.deps.insertSalaryTimeline = async () => {};
+  q.deps.applyPromotionSalaryNextMonth = async () => {};
+  q.deps.getPromotionRequiredTopics = async () => [{ id: 9, title: '刀工' }];
+  q.deps.getPromotionTrackProgress = async () => ({ items: [] });
+  q.deps.createTrainingAssignment = async (a) => { qTrain.push(a); };
+  q.deps.normalizePromotionTrainingPeriods = () => [
+    { startDate: '2026-08-01', endDate: '2026-08-15' },
+  ];
+  q.deps.isKitchenByRoleOrPosition = () => true;
+  q.deps.pickHqManagerUsername = async () => 'hq1';
+  q.deps.pickStoreRoleUsernameByStore = (_s, _store, roles) =>
+    (roles.includes('store_production_manager') ? 'pm1' : 'sm1');
+
+  await promotion.afterDecide({
+    req: { tenantId: 'default' },
+    deps: q.deps,
+    username: 'approver1',
+    updated: {
+      id: 'ap-qual-kitchen',
+      type: 'promotion',
+      status: 'approved',
+      applicant_username: 'cook1',
+      payload: {
+        promotionStage: 'qualification',
+        promoTier: 'level_promotion',
+        targetPosition: '主厨',
+        targetLevel: '中级',
+        mentorUsername: 'mentor1',
+        mentorName: '带教甲',
+        trainingStartDate: '2026-08-01',
+        trainingDays: 3,
+        trainingPeriods: [{ startDate: '2026-08-01', endDate: '2026-08-15' }],
+      },
+    },
+  });
+  assert.equal(qTrain.length, 1);
+  assert.equal(qTrain[0].dueDate, '2026-08-15');
+  assert.ok(q.notifs.some((n) => n.title === '晋升资格申请已批准' && n.u === 'pm1'));
+  assert.ok(q.notifs.some((n) => n.title === '晋升培训任务已生成'));
+  assert.ok(q.merges.some((m) => m.patch.promotionTracks?.[0]?.trainingDueDate === '2026-08-15'));
+  void notifs;
+});

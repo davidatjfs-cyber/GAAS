@@ -3,6 +3,9 @@
  * Factory closes over pool so call sites stay:
  *   recordUploadOwnership(filenames, tenantId, uploadedBy)
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'uploads', handler: 'ownership' });
 
 /**
  * @param {import('pg').Pool} pool
@@ -21,7 +24,7 @@ export function createRecordUploadOwnership(pool) {
         );
       }
     } catch (e) {
-      console.warn('[uploads] recordUploadOwnership failed:', e?.message);
+      log.warn({ msg: 'record_upload_ownership_failed', err: e?.message || String(e) });
     }
   };
 }

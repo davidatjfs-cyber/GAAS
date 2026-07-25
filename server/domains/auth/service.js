@@ -514,7 +514,7 @@ export async function loginAs(ctx, deps) {
           [targetId, targetUsernameNorm, hash, finalName, finalRole, targetTenantId]
         );
       } catch (createErr) {
-        console.error('[login-as] create user failed:', createErr?.message || createErr);
+        log.error({ msg: 'login_as_create_user_failed', err: createErr?.message || String(createErr) });
         try {
           await pool.query(
             `UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE lower(username) = lower($1) AND tenant_id = $2`,

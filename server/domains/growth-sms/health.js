@@ -4,11 +4,14 @@
  */
 import { inSmsQuietHours, getSendGrowthAlert } from '../../growth-api.js';
 import { isAliyunSmsAutoSendEnabled } from '../../sms.js';
+import { childLogger } from '../../utils/logger.js';
 import {
   STALE_HOURS,
   STALE_JOB_MIN_AGE_MIN,
   buildSilentFailureMessage,
 } from './helpers.js';
+
+const log = childLogger({ domain: 'growth-sms', handler: 'health' });
 
 /**
  * @param {any} pool
@@ -41,7 +44,7 @@ export async function checkSmsSilentFailure(pool, deps = {}) {
 
   if (hoursSinceLastSent > STALE_HOURS) {
     const msg = buildSilentFailureMessage(pendingCount, lastSent, hoursSinceLastSent);
-    console.warn('[sms-health]', msg);
+    log.warn({ msg: 'sms_silent_failure', detail: msg, pending: pendingCount });
     const sendAlert = getAlert();
     if (sendAlert) await sendAlert(msg).catch(() => null);
     return { ok: false, pending: pendingCount, hours_since_last_sent: hoursSinceLastSent };
@@ -52,11 +55,13 @@ export async function checkSmsSilentFailure(pool, deps = {}) {
 export function registerSmsHealthMonitor(pool) {
   if (globalThis.__smsHealthMonitorTimer) return;
   globalThis.__smsHealthMonitorTimer = setInterval(() => {
-    checkSmsSilentFailure(pool).catch((e) => console.warn('[sms-health] check failed:', e?.message));
+    checkSmsSilentFailure(pool).catch((e) =>
+      log.warn({ msg: 'sms_health_check_failed', err: e?.message || String(e) })
+    );
   }, 30 * 60 * 1000);
   setTimeout(() => {
     checkSmsSilentFailure(pool).catch((e) =>
-      console.warn('[sms-health] initial check failed:', e?.message)
+      log.warn({ msg: 'sms_health_initial_check_failed', err: e?.message || String(e) })
     );
   }, 5 * 60 * 1000);
 }

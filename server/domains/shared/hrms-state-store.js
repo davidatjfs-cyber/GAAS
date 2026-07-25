@@ -3,6 +3,9 @@
  * Instantiated after account-gate + payroll/leave schedule + dual-write;
  * index keeps late-bind wrappers for early register*(..., getSharedState).
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'shared', handler: 'hrms-state-store' });
 
 export function createHrmsStateStoreHelpers({
   pool,
@@ -139,12 +142,20 @@ export function createHrmsStateStoreHelpers({
                 try {
                   await applyHrmsUserAccountGateFromEmployee(rec);
                 } catch (e) {
-                  console.error('[mergeSharedStateFields][account-gate]', u, e?.message || e);
+                  log.error({
+                    msg: 'merge_shared_state_account_gate_failed',
+                    username: u,
+                    err: e?.message || String(e),
+                  });
                 }
                 try {
                   await upsertEmployeeFromStateShape(pool, key, rec);
                 } catch (e) {
-                  console.error('[mergeSharedStateFields][employees-table]', u, e?.message || e);
+                  log.error({
+                    msg: 'merge_shared_state_employees_table_failed',
+                    username: u,
+                    err: e?.message || String(e),
+                  });
                   void notifyAdminsDualWriteFailure('employees（mergeSharedStateFields）', e);
                 }
               }

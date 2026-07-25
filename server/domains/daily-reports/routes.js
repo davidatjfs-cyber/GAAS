@@ -18,6 +18,9 @@ import {
 } from './service.js';
 import { randomUUID } from 'crypto';
 import { reconcileDailyReportAttendanceRegister } from '../../daily-attendance-register.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'daily-reports', handler: 'routes' });
 
 export { canAccessDailyReports, canWriteDailyReports, dailyReportItemFromPgRow } from './helpers.js';
 
@@ -63,7 +66,7 @@ export function registerDailyReportsRoutes(app, deps) {
       });
       return res.json({ total });
     } catch (e) {
-      console.error('[private-room-month-total]', e?.message);
+      log.error({ msg: 'private_room_month_total_failed', err: e?.message || String(e) });
       return res.json({ total: 0 });
     }
   });

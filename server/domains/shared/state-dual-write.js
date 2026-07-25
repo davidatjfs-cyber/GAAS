@@ -2,6 +2,9 @@
  * Full dual-write: hrms_state blob → authoritative domain tables.
  * Called after successful saveSharedState / merge commits.
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'shared', handler: 'state-dual-write' });
 
 export function createStateDualWriteHelpers({
   pool,
@@ -106,11 +109,11 @@ export function createStateDualWriteHelpers({
         );
       }
     } catch (e) {
-      console.error(
-        '[dualWriteStateToDB] ⚠️ 双写失败！DB 表与 hrms_state 可能不一致，重启后可能丢失数据:',
-        e?.message
-      );
-      console.error('[dualWriteStateToDB] 失败堆栈:', e?.stack || 'no stack');
+      log.error({
+        msg: 'dual_write_state_to_db_failed',
+        err: e?.message || String(e),
+        stack: e?.stack || null,
+      });
       void notifyAdminsDualWriteFailure(
         '全量双写（employees / hrms_leave_records / hrms_reward_punishment_records / hrms_user_notifications）',
         e

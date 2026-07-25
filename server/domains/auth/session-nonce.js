@@ -2,6 +2,9 @@
  * Persist single-device session nonce to user_sessions.
  * Failure must block JWT issue (caller checks boolean return).
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'auth', handler: 'session-nonce' });
 
 export function createSessionNonceHelpers({ pool, resolveTenantIdDefault }) {
   /** @returns {Promise<boolean>} 是否已成功持久化 */
@@ -23,7 +26,7 @@ export function createSessionNonceHelpers({ pool, resolveTenantIdDefault }) {
       );
       return true;
     } catch (e) {
-      console.error('storeSessionNonce failed:', e?.message || e);
+      log.error({ msg: 'store_session_nonce_failed', err: e?.message || String(e) });
       return false;
     } finally {
       try {

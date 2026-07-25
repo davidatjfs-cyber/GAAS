@@ -1,7 +1,10 @@
 /**
  * Payroll report / audit / adjustment — pure logic (no req/res).
  */
+import { childLogger } from '../../utils/logger.js';
 import { isEmployeeDepartedForPayroll } from './helpers.js';
+
+const log = childLogger({ domain: 'reports', handler: 'payroll' });
 
 /**
  * @param {object} ctx
@@ -167,7 +170,7 @@ export async function getPayrollReportPayload(ctx, {
           };
         }
       } catch (engineErr) {
-        console.warn('[payroll] closed-loop engine failed, fallback legacy:', engineErr?.message);
+        log.warn({ msg: 'payroll_closed_loop_engine_failed', err: engineErr?.message || String(engineErr) });
       }
     }
 
@@ -256,7 +259,7 @@ export async function getPayrollReportPayload(ctx, {
       }));
       attendanceRows = buildAttendanceFromCheckinRecords(normalizedCheckins, { start, end, knownUsers });
     } catch (e) {
-      console.warn('[payroll] checkin_records attendance fallback to daily reports:', e?.message);
+      log.warn({ msg: 'payroll_checkin_attendance_fallback', err: e?.message || String(e) });
       let items = Array.isArray(state0.dailyReports) ? state0.dailyReports.slice() : [];
       items = items.filter((r) => inDateRange(String(r?.date || '').trim(), start, end));
       if (store) items = items.filter((r) => String(r?.store || '').trim() === store);
@@ -296,7 +299,7 @@ export async function getPayrollReportPayload(ctx, {
       );
       for (const r of (arRows.rows || [])) approvalMonthById.set(String(r.id), String(r.ym || ''));
     } catch (e) {
-      console.warn('[payroll] load approval months failed:', e?.message);
+      log.warn({ msg: 'payroll_load_approval_months_failed', err: e?.message || String(e) });
     }
 
     const adjustmentMap = new Map();
@@ -589,7 +592,7 @@ export async function adjustPayrollRow(ctx, {
           createdBy: username,
         });
       } catch (e) {
-        console.warn('[payroll/adjustment] ledger write failed:', e?.message);
+        log.warn({ msg: 'payroll_adjustment_ledger_write_failed', err: e?.message || String(e) });
       }
     }
     return { ok: true, item };

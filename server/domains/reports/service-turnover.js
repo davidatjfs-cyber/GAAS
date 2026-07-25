@@ -1,6 +1,7 @@
 /**
  * Turnover analysis report — pure logic (no req/res).
  */
+import { childLogger } from '../../utils/logger.js';
 import {
   resolveAgentCanonicalStore,
   normalizeEmployeeDepartureDateForTurnover,
@@ -9,6 +10,8 @@ import {
   isEmployeeActiveLikeForTurnoverReport,
   isEmployeeCoreTalentForTurnoverReport,
 } from './helpers.js';
+
+const log = childLogger({ domain: 'reports', handler: 'turnover' });
 
 /**
  * @param {object} ctx
@@ -207,7 +210,7 @@ export async function getTurnoverReportPayload(ctx, {
         empByLower.set(un, syn);
       }
     } catch (e) {
-      console.warn('[reports/turnover] employment_records merge:', e?.message);
+      log.warn({ msg: 'turnover_employment_records_merge_failed', err: e?.message || String(e) });
     }
 
     // ── Identify departed employees this month ──
