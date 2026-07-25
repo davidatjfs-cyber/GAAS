@@ -48,6 +48,17 @@ import {
 import { handleMarginMessage } from './margin-message-handler.js';
 import { deduplicateMessage } from './message-deduplication.js';
 import { getOpsAgentConfig, getBiAgentConfig, getCategoryAssigneeRoleMap, AGENT_FEATURE_FLAGS } from './agent-config-manager.js';
+import {
+  buildOpsChecklistResponse,
+  formatActiveTaskContext,
+  isShortOptionReply,
+} from './domains/agent-message/helpers.js';
+import { tryHandleTrainingFlows } from './domains/agent-message/training-flow.js';
+import {
+  maybeInheritRecentRoute,
+  resolveDataAuditorStore,
+  resolveHqStoreFromText,
+} from './domains/agent-message/store-resolve.js';
 import { buildSalesReport } from './bi-sales-detail.js';
 import {
   generateWeeklyReport,
@@ -9040,23 +9051,9 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
 
   let store = senderStore;
 
-  // 【Q6】HQ/admin 用户的 store 通常为"总部"或空，从消息文本中提取门店名
+  // 【Q6】HQ/admin：从消息文本解析门店（domains/agent-message）
   if (!store || store === '总部') {
-    try {
-      const storeR = await pool().query(`SELECT DISTINCT store FROM feishu_users WHERE store IS NOT NULL AND store != '' AND store != '总部'`);
-      const knownStores = (storeR.rows || []).map(r => r.store).filter(Boolean);
-      const txt = String(text || '');
-      for (const s of knownStores) {
-        if (txt.includes(s)) { store = s; break; }
-      }
-      // 模糊匹配品牌前缀（如"洪潮" → "洪潮大宁久光店"）
-      if (!store || store === '总部') {
-        for (const s of knownStores) {
-          const prefix = txt.match(/(洪潮|马己仙|年年有喜)/)?.[0];
-          if (prefix && s.includes(prefix)) { store = s; break; }
-        }
-      }
-    } catch (e) { /* ignore */ }
+    store = await resolveHqStoreFromText(pool(), text, store);
   }
 
   // 【Q5】查询用户近期活跃任务，注入上下文提升交互质量
@@ -9066,26 +9063,12 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
       `SELECT task_id, category, severity, title, detail, status, created_at FROM master_tasks WHERE assignee_username=$1 AND status IN ('pending','pending_response','in_progress') ORDER BY created_at DESC LIMIT 3`,
       [senderUsername]
     );
-    if (taskR.rows?.length) {
-      activeTaskContext = '\n\n【该用户当前活跃任务】\n' + taskR.rows.map((t,i) => `${i+1}. [${t.severity||'medium'}] ${t.title}（状态:${t.status}，类别:${t.category}）${t.detail ? '\n   详情: '+String(t.detail).substring(0,100) : ''}`).join('\n');
-    }
+    activeTaskContext = formatActiveTaskContext(taskR.rows);
   } catch(e) { /* ignore */ }
   
-  // 【修复】继承上一轮的 Agent，解决多轮对话中断（例如用户回复选项 1, 2）的问题
-  // 仅继承5分钟内的最近一条非general路由，避免跨对话污染
-  if (route === 'general' && (/^\d+$/.test(text) || /^[一二三四五六七八九十]$/.test(text))) {
-    try {
-      const lastRouteResult = await pool().query(
-        `SELECT routed_to FROM agent_messages WHERE sender_username = $1 AND direction = 'in' AND content_type IN ('text','image') AND routed_to IS NOT NULL AND routed_to != 'general' AND created_at > NOW() - INTERVAL '5 minutes' ORDER BY created_at DESC LIMIT 1`,
-        [senderUsername]
-      );
-      if (lastRouteResult.rows && lastRouteResult.rows.length > 0) {
-        route = lastRouteResult.rows[0].routed_to;
-        console.log(`[route] Inherited recent route: ${route} for short input: ${text}`);
-      }
-    } catch (e) {
-      console.error('[route] inherit route error:', e?.message);
-    }
+  // 【修复】短回复继承上一轮 Agent（domains/agent-message）
+  if (route === 'general' && isShortOptionReply(text)) {
+    route = await maybeInheritRecentRoute(pool(), senderUsername, route);
   }
 
   // ── HQ Brain 路由: 总部角色优先走决策大脑 ──
@@ -9102,68 +9085,15 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
     console.error('[agents] HQ Brain routing error:', e?.message, e?.stack?.split('\n')[1]);
   }
 
-  // 检查是否为培训任务审批（管理员审核下发）
-  if (text.includes('审核通过') && text.includes('下发') && (senderRole === 'admin' || senderRole === 'hr_manager')) {
-    const pendingTasks = await pool().query(
-      `SELECT * FROM training_tasks WHERE status = 'pending_approval' ORDER BY updated_at DESC LIMIT 1`
-    );
-    if (pendingTasks.rows && pendingTasks.rows.length > 0) {
-      const task = pendingTasks.rows[0];
-      await pool().query(`UPDATE training_tasks SET status = 'pending', updated_at = NOW() WHERE id = $1`, [task.id]);
-      return `已将【${task.title}】的培训任务加入调度队列，Master 将尽快推送给 ${task.assignee_username} 进行学习。`;
-    }
-  }
-
-  // 检查是否为培训考核消息
-  if (text.includes('开始考核') || text.includes('培训考核')) {
-    const tasks = await pool().query(
-      `SELECT * FROM training_tasks WHERE assignee_username = $1 AND status = 'in_progress' ORDER BY created_at DESC LIMIT 1`,
-      [senderUsername]
-    );
-    if (tasks.rows && tasks.rows.length > 0) {
-      const task = tasks.rows[0];
-      return `收到！您正在进行【${task.title}】的考核。请回答以下问题：\n\n1. 针对本课程，您认为最重要的三个实操要点是什么？\n2. 在实际工作场景中，您会如何应用所学内容？\n\n请直接回复您的答案，我将为您进行评估。`;
-    }
-  }
-
-  // 检查是否为培训答卷提交
-  if (text.includes('1.') && text.includes('2.') && route === 'train_advisor') {
-    const tasks = await pool().query(
-      `SELECT * FROM training_tasks WHERE assignee_username = $1 AND status = 'in_progress' ORDER BY created_at DESC LIMIT 1`,
-      [senderUsername]
-    );
-    if (tasks.rows && tasks.rows.length > 0) {
-      const task = tasks.rows[0];
-      
-      // Train Agent 评估成绩（这里简化逻辑，通常可以用 LLM 评估）
-      const passed = text.length > 20; // 简单判断回答字数
-      
-      if (passed) {
-        // 更新任务状态为已完成
-        await pool().query(
-          `UPDATE training_tasks SET status = 'completed', completed_at = NOW(), progress_data = jsonb_set(progress_data, '{exam_answer}', $1::jsonb) WHERE id = $2`,
-          [JSON.stringify(text), task.id]
-        );
-        
-        // 将结果记入个人档案 (写入 exam_results)
-        await pool().query(
-          `INSERT INTO exam_results (user_key, score, pass, created_at) VALUES ($1, $2, $3, NOW())`,
-          [senderUsername, 100, true]
-        );
-
-        // 反馈给 Chief Evaluator，增加绩效积分 (写入 master_tasks 作为加分项)
-        const evalTaskId = `EVAL-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6)}`;
-        await pool().query(
-          `INSERT INTO master_tasks (task_id, status, source, category, severity, store, brand, title, assignee_username, score_impact, current_agent)
-           VALUES ($1, 'settled', 'train_agent', '培训加分', 'low', $2, $3, $4, $5, 5, 'chief_evaluator')`,
-          [evalTaskId, task.store, task.brand, `完成培训考核：${task.title}`, senderUsername]
-        );
-
-        return `✅ 恭喜您，【${task.title}】考核通过！\n\n您的评估结果已记入 HRMS 个人培训档案，并将同步反馈至您的当周绩效中（+5分）。继续保持！`;
-      } else {
-        return `❌ 【${task.title}】考核未通过。\n\n您的回答过于简短，请结合实际工作场景，重新详细回答以上两个问题。`;
-      }
-    }
+  // 培训审批 / 考核 / 答卷（domains/agent-message）
+  {
+    const training = await tryHandleTrainingFlows(pool(), {
+      text,
+      senderRole,
+      senderUsername,
+      route,
+    });
+    if (training.handled) return training.response;
   }
 
   // 检查是否为毛利率消息
@@ -9197,50 +9127,12 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
     switch (route) {
       case 'data_auditor': {
 
-        // ── [顶层门店解析] 任何用户都可以通过文本提及门店名来查询不同门店的数据 ──
-        let resolvedStore = store;
-        {
-          // 1. 先检查用户是否在文本中明确提及了某个门店品牌
-          let textMentionedStore = '';
-          try {
-            for (const entry of STORE_CANONICAL_MAP) {
-              for (const kw of entry.keywords) {
-                if (new RegExp(kw, 'i').test(text)) {
-                  textMentionedStore = entry.canonical;
-                  break;
-                }
-              }
-              if (textMentionedStore) break;
-            }
-            // 如果文本提及的门店与用户绑定门店不同品牌，则覆盖
-            if (textMentionedStore) {
-              const mentionedBrand = inferBrandFromStoreName(textMentionedStore);
-              const boundBrand = inferBrandFromStoreName(resolvedStore);
-              if (mentionedBrand && mentionedBrand !== boundBrand) {
-                resolvedStore = textMentionedStore;
-                console.log(`[data_auditor] store override from text: ${store} → ${resolvedStore} (brand: ${mentionedBrand})`);
-              } else if (!resolvedStore || resolvedStore === '总部') {
-                resolvedStore = textMentionedStore;
-                console.log(`[data_auditor] store resolved from text: ${store} → ${resolvedStore}`);
-              }
-            }
-          } catch (_e) { /* ignore */ }
-          // 2. 兜底：HQ用户未提及门店时，尝试从数据库查
-          if (!resolvedStore || resolvedStore === '总部') {
-            try {
-              if (/洪潮/.test(text)) {
-                const r = await pool().query(`SELECT store FROM pos_sales_detail WHERE store LIKE '%洪潮%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
-                resolvedStore = r.rows?.[0]?.store || resolvedStore;
-              } else if (/马己仙/.test(text)) {
-                const r = await pool().query(`SELECT store FROM pos_sales_detail WHERE store LIKE '%马己仙%' GROUP BY store ORDER BY COUNT(*) DESC LIMIT 1`);
-                resolvedStore = r.rows?.[0]?.store || resolvedStore;
-              }
-            } catch (_e) { /* ignore */ }
-            if (resolvedStore && resolvedStore !== '总部') {
-              console.log(`[data_auditor] HQ store fallback: ${store} → ${resolvedStore}`);
-            }
-          }
-        }
+        // ── [顶层门店解析] domains/agent-message ──
+        const resolvedStore = await resolveDataAuditorStore(pool(), {
+          text,
+          boundStore: store,
+          inferBrandFromStoreName,
+        });
 
         // ── [Data Executor 层] Feature Flag 保护 ─────────────────
         if (AGENT_FEATURE_FLAGS.enable_data_executor && AGENT_FEATURE_FLAGS.enable_metric_dictionary) {
@@ -9549,30 +9441,17 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
           agentData = { route, auditResults, brandId, brandConfig };
         } else {
           let knowledgeSupport = null;
-          // 检查是否为检查表请求
-          let checklistResponse = '';
-          
-          if (text.includes('开市') || text.includes('开档')) {
-            const dbChecklist = (brand === '洪潮' || brand === '马己仙') ? getBrandConfigSync(brand, resolveTenantIdDefault())?.checklist : null;
-            const items = dbChecklist?.opening
-              || (brand === '洪潮'
-                ? ['地面清洁无积水', '所有设备正常开启', '食材新鲜度检查', '餐具消毒完成', '灯光亮度适中', '背景音乐开启', '空调温度设置合适', '员工仪容仪表检查']
-                : brand === '马己仙'
-                ? ['地面清洁', '设备开启', '食材准备', '餐具消毒', '迎宾准备']
-                : ['地面清洁', '设备开启', '食材准备', '餐具消毒']);
-            checklistResponse = `📋 开市检查表（${brand} · ${store}）\n\n检查项目：\n${items.map((item, i) => `${i + 1}. ${item}`).join('\n')}\n\n请逐项完成后拍照发送至本对话。`;
-          } else if (text.includes('收档') || text.includes('闭市') || text.includes('收市')) {
-            const dbChecklist = (brand === '洪潮' || brand === '马己仙') ? getBrandConfigSync(brand, resolveTenantIdDefault())?.checklist : null;
-            const items = dbChecklist?.closing
-              || (brand === '洪潮'
-                ? ['食材封存', '设备关闭', '垃圾清理', '安全检查', '门窗锁好']
-                : brand === '马己仙'
-                ? ['食材封存', '设备关闭', '垃圾清理', '安全检查', '门窗锁好', '电源关闭']
-                : ['食材封存', '设备关闭', '垃圾清理', '安全检查']);
-            checklistResponse = `📋 收档检查表（${brand} · ${store}）\n\n检查项目：\n${items.map((item, i) => `${i + 1}. ${item}`).join('\n')}\n\n请逐项完成后拍照发送至本对话。`;
-          } else if (text.includes('巡检')) {
-            checklistResponse = `📋 营运巡检（${store}）\n\n检查项目：\n1. 大厅环境整洁\n2. 服务台规范\n3. 卫生间清洁\n4. 后厨卫生\n5. 安全设施\n\n请拍照发送至本对话。`;
-          }
+          // 检查是否为检查表请求（domains/agent-message）
+          const dbChecklist =
+            brand === '洪潮' || brand === '马己仙'
+              ? getBrandConfigSync(brand, resolveTenantIdDefault())?.checklist
+              : null;
+          const checklistResponse = buildOpsChecklistResponse({
+            text,
+            brand,
+            store,
+            brandChecklist: dbChecklist,
+          });
           
           if (checklistResponse) {
             response = checklistResponse;
