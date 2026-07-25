@@ -17,9 +17,9 @@ test('dualWriteStateToDB no-ops on non-object', async () => {
   assert.equal(calls, 0);
 });
 
-test('dualWriteStateToDB upserts employees / leave / reward / notifications', async () => {
+test('dualWriteStateToDB：不再回灌 employees；仍写 leave / reward / notifications', async () => {
   const sqls = [];
-  let empCall = null;
+  let empCalls = 0;
   const { dualWriteStateToDB } = createStateDualWriteHelpers({
     pool: {
       async query(sql, params) {
@@ -27,8 +27,8 @@ test('dualWriteStateToDB upserts employees / leave / reward / notifications', as
       },
     },
     resolveTenantIdDefault: () => 't1',
-    upsertEmployeesFromStateShape: async (pool, tid, emps) => {
-      empCall = { tid, n: emps.length };
+    upsertEmployeesFromStateShape: async () => {
+      empCalls += 1;
     },
     hrmsNowISO: () => '2026-07-24T12:00:00+08:00',
     toNullableUuid: (v) => (v ? String(v) : null),
@@ -76,7 +76,7 @@ test('dualWriteStateToDB upserts employees / leave / reward / notifications', as
     ],
   });
 
-  assert.deepEqual(empCall, { tid: 't1', n: 2 });
+  assert.equal(empCalls, 0);
   assert.ok(sqls.some((q) => /hrms_leave_records/.test(q.sql)));
   assert.ok(sqls.some((q) => /hrms_reward_punishment_records/.test(q.sql)));
   assert.ok(sqls.some((q) => /hrms_user_notifications/.test(q.sql)));
@@ -106,7 +106,14 @@ test('dualWriteStateToDB alerts on failure without throwing', async () => {
       alerted = { label, msg: e?.message };
     },
   });
-  await dualWriteStateToDB({ employees: [{ username: 'a' }] });
+  await dualWriteStateToDB({
+    leaveRecords: [{
+      id: 'lr-fail',
+      applicant: 'a',
+      startDate: '2026-07-01',
+      endDate: '2026-07-02',
+    }],
+  });
   assert.match(alerted.label, /全量双写/);
-  assert.equal(alerted.msg, 'emp fail');
+  assert.equal(alerted.msg, 'db down');
 });

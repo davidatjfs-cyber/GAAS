@@ -35,8 +35,15 @@ const STRUCTURED_KEYS = new Set([
 
 export function employeeRowToStateShape(row) {
   if (!row) return null;
-  const extra = row.extra_json && typeof row.extra_json === 'object' ? row.extra_json : {};
+  const extraRaw = row.extra_json && typeof row.extra_json === 'object' ? row.extra_json : {};
+  // extra 不得覆盖结构化列（否则历史 extra_json.status 会盖掉表上的 inactive）
+  const extra = {};
+  for (const [k, v] of Object.entries(extraRaw)) {
+    if (STRUCTURED_KEYS.has(k)) continue;
+    extra[k] = v;
+  }
   return {
+    ...extra,
     id: row.id,
     username: String(row.username || '').trim(),
     name: String(row.name || '').trim(),
@@ -58,7 +65,6 @@ export function employeeRowToStateShape(row) {
     bankCard: String(row.bank_card || '').trim(),
     createdAt: row.created_at ? String(row.created_at) : '',
     updatedAt: row.updated_at ? String(row.updated_at) : '',
-    ...extra,
   };
 }
 

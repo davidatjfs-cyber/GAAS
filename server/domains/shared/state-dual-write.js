@@ -6,7 +6,8 @@
 export function createStateDualWriteHelpers({
   pool,
   resolveTenantIdDefault,
-  upsertEmployeesFromStateShape,
+  // A1：employees 表权威；保留参数以兼容 index 注入，但不再整表回灌（见下方注释）。
+  upsertEmployeesFromStateShape: _upsertEmployeesFromStateShape,
   hrmsNowISO,
   toNullableUuid,
   notifyAdminsDualWriteFailure,
@@ -14,13 +15,11 @@ export function createStateDualWriteHelpers({
   async function dualWriteStateToDB(state) {
     if (!state || typeof state !== 'object') return;
     try {
-      // 1. employees → employees 表（A1：走 domain service）
-      const empArr = Array.isArray(state.employees) ? state.employees : [];
-      if (empArr.length) {
-        await upsertEmployeesFromStateShape(pool, resolveTenantIdDefault(), empArr);
-      }
+      // A1：employees 由窄 API / mergeSharedStateFields 写表+镜像。
+      // 禁止在此把整份 state.employees 回灌表——并发 saveSharedState 会用过期镜像
+      // 覆盖刚 PATCH 的 status（集成测 flake：inactive→active）。
 
-      // 2. leaveRecords → hrms_leave_records 表
+      // 1. leaveRecords → hrms_leave_records 表
       const lrArr = Array.isArray(state.leaveRecords) ? state.leaveRecords : [];
       for (const lr of lrArr) {
         const rid = String(lr?.id || '').trim();

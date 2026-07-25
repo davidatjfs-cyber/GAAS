@@ -14,7 +14,7 @@ test('employeeRowToStateShape 映射结构化列与 extra_json', () => {
     store: '洪潮',
     department: '前厅',
     position: '店长',
-    status: 'active',
+    status: 'inactive',
     gender: '女',
     phone: '138',
     email: 'a@b.c',
@@ -25,7 +25,7 @@ test('employeeRowToStateShape 映射结构化列与 extra_json', () => {
     manager_username: 'boss',
     id_card_number: 'X',
     bank_card: 'Y',
-    extra_json: { level: 'L3', coreTalent: true },
+    extra_json: { level: 'L3', coreTalent: true, status: 'active', role: 'hack' },
     created_at: '2024-01-01T00:00:00.000Z',
     updated_at: '2024-02-01T00:00:00.000Z',
   });
@@ -34,6 +34,8 @@ test('employeeRowToStateShape 映射结构化列与 extra_json', () => {
   assert.equal(shape.joinDate, '2024-01-01');
   assert.equal(shape.level, 'L3');
   assert.equal(shape.coreTalent, true);
+  assert.equal(shape.status, 'inactive');
+  assert.equal(shape.role, 'store_manager');
 });
 
 test('hydrateEmployeesFromTable：表有数据时覆盖 state', async () => {
