@@ -75,6 +75,15 @@ import {
   formatKnowledgeBaseContext,
   formatTrainingTasksContext,
 } from './domains/agent-message/training-context.js';
+import {
+  buildOpsSupervisorLlmSystemPrompt,
+  tryHandleOpsSupervisorImages,
+} from './domains/agent-message/ops-supervisor-helpers.js';
+import {
+  buildAppealSystemPrompt,
+  buildAppealUserMessage,
+  buildGeneralAssistantSystemPrompt,
+} from './domains/agent-message/prompt-helpers.js';
 import { buildSalesReport } from './bi-sales-detail.js';
 import {
   generateWeeklyReport,
@@ -9302,62 +9311,51 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
       }
 
       case 'ops_supervisor': {
+        // 图片审核（domains/agent-message）
         if (hasImage) {
-          const auditResults = [];
-          for (const imgUrl of imageUrls) {
-            const result = await auditImage(imgUrl, 'general', { store, brand, username: senderUsername });
-            auditResults.push(result);
+          const imgHit = await tryHandleOpsSupervisorImages(
+            { imageUrls, store, brand, senderUsername, route, brandId, brandConfig },
+            { auditImage }
+          );
+          if (imgHit.handled) {
+            response = imgHit.response;
+            agentData = imgHit.agentData;
+            break;
           }
-          const anyDuplicate = auditResults.some(r => r.duplicate);
-          const allPass = auditResults.every(r => r.result === 'pass');
-          const anyFail = auditResults.some(r => r.result === 'fail');
-
-          if (anyDuplicate) {
-            response = `⚠️ 检测到重复图片，请重新拍摄并上传。系统已记录此次异常。`;
-          } else if (allPass) {
-            const summaries = auditResults.map(r => r.findings).filter(Boolean).join('；');
-            response = `收到，照片识别合格 ✅\n${summaries || '图片内容符合要求。'}\n已记录整改措施，感谢配合。`;
-          } else if (anyFail) {
-            const failFindings = auditResults.filter(r => r.result === 'fail').map(r => r.findings).join('；');
-            response = `照片审核未通过 ❌\n${failFindings}\n请整改后重新拍照上传。`;
-          } else {
-            response = `照片已收到，正在审核中。部分图片无法自动判定，已转交值班经理人工复核。`;
-          }
-          agentData = { route, auditResults, brandId, brandConfig };
-        } else {
-          let knowledgeSupport = null;
-          // 检查是否为检查表请求（domains/agent-message）
-          const dbChecklist =
-            brand === '洪潮' || brand === '马己仙'
-              ? getBrandConfigSync(brand, resolveTenantIdDefault())?.checklist
-              : null;
-          const checklistResponse = buildOpsChecklistResponse({
-            text,
-            brand,
-            store,
-            brandChecklist: dbChecklist,
-          });
-          
-          if (checklistResponse) {
-            response = checklistResponse;
-          } else {
-            // 检查是否需要知识支援
-            knowledgeSupport = await getOpsKnowledgeSupport(text, { store, brand });
-            
-            if (knowledgeSupport.type === 'standard' || knowledgeSupport.type === 'knowledge_base') {
-              response = knowledgeSupport.response;
-            } else {
-              // 使用LLM生成专业回复
-              const llm = await callLLM([
-                { role: 'system', content: `你是"小年"，年年有喜餐饮集团AI助理，当前协助营运检查。当前时间：${new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}。门店：${store}（${brand}）。简洁专业，注重实操。严格约束：禁止编造任何数据（员工人数、日期等），无数据时说明"暂无数据"。${activeTaskContext}` },
-                { role: 'user', content: text }
-              ], { model: getOpsReasoningModel(), role: senderRole, purpose: 'reasoning', temperature: 0.05, max_tokens: 360 });
-              response = llm.content || '收到，我会跟进处理。';
-            }
-          }
-          
-          agentData = { route, knowledgeSupport: knowledgeSupport?.type, brandId, brandConfig };
         }
+
+        let knowledgeSupport = null;
+        // 检查是否为检查表请求（domains/agent-message）
+        const dbChecklist =
+          brand === '洪潮' || brand === '马己仙'
+            ? getBrandConfigSync(brand, resolveTenantIdDefault())?.checklist
+            : null;
+        const checklistResponse = buildOpsChecklistResponse({
+          text,
+          brand,
+          store,
+          brandChecklist: dbChecklist,
+        });
+
+        if (checklistResponse) {
+          response = checklistResponse;
+        } else {
+          knowledgeSupport = await getOpsKnowledgeSupport(text, { store, brand });
+          if (knowledgeSupport.type === 'standard' || knowledgeSupport.type === 'knowledge_base') {
+            response = knowledgeSupport.response;
+          } else {
+            const llm = await callLLM([
+              {
+                role: 'system',
+                content: buildOpsSupervisorLlmSystemPrompt({ store, brand, activeTaskContext }),
+              },
+              { role: 'user', content: text },
+            ], { model: getOpsReasoningModel(), role: senderRole, purpose: 'reasoning', temperature: 0.05, max_tokens: 360 });
+            response = llm.content || '收到，我会跟进处理。';
+          }
+        }
+
+        agentData = { route, knowledgeSupport: knowledgeSupport?.type, brandId, brandConfig };
         break;
       }
 
@@ -9397,12 +9395,9 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
       }
 
       case 'appeal': {
-        const appealSystemPrompt = `你是"小年"，年年有喜餐饮集团AI助理，当前协助投诉与申诉处理。当前时间：${new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}。
-1. 投诉（对店长、同事、服务等）：确认内容，转交负责人核实，保护隐私，给出流程和预计时间。
-2. 申诉（对绩效扣分、处罚等）：确认内容，核实数据，给出预计处理时间。
-严格约束：禁止编造任何数据（员工人数、日期等），无数据时说"暂无此信息"。回复专业、公正、简短。${activeTaskContext}`;
+        const appealSystemPrompt = buildAppealSystemPrompt({ activeTaskContext });
         const appealContext = getContext(senderUsername);
-        const appealUserMsg = `${senderName}（${store}门店，${senderRole === 'store_manager' ? '店长' : senderRole === 'store_production_manager' ? '出品经理' : '员工'}）说：${text}`;
+        const appealUserMsg = buildAppealUserMessage({ senderName, store, senderRole, text });
         response = await runWithCheckAgent(text, 'appeal', async (checkFeedback) => {
           const extraNote = checkFeedback ? `\n\n【质检反馈，请修正后重新回答】${checkFeedback}` : '';
           const llm = await callLLM([
@@ -9505,25 +9500,19 @@ ${kbContext}${trainingTasksContext}${activeTaskContext}
       }
 
       default: {
-        const roleText = senderRole === 'store_manager' ? '店长' : senderRole === 'store_production_manager' ? '出品经理' : '员工';
-
         const llm = await callLLM([
-          { role: 'system', content: `你是"小年"，年年有喜餐饮集团的AI助理。当前时间：${new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}。门店：${store}（${brand}）。用户：${roleText}（${senderName}）。
-
-可以帮助：数据审计、营运检查、绩效查询、SOP咨询、申诉处理、营销活动规划引导。
-
-严格约束：
-- 禁止编造任何数据（员工人数、薪资日期、职级、品牌数等），如无确切数据必须回复"这个信息我暂时无法查到，建议联系HR或查看系统"。
-- 禁止编造日期，当前真实日期以上方为准。
-- 如果用户有活跃任务且在提问，结合任务背景给出专业指导。
-
-重要规则（以下情况禁止回复"无法查到"）：
-- 若用户要求"做营销方案""推广方案""新品方案""活动策划""行动方案"，必须主动告知可通过系统【运营任务中心】创建营销活动任务，任务创建后系统会自动调取销售数据并生成方案。
-- 若用户咨询流程、规范等知识性问题，可基于常识给出合理指引。
-
-回复极其简短。${activeTaskContext}` },
+          {
+            role: 'system',
+            content: buildGeneralAssistantSystemPrompt({
+              store,
+              brand,
+              senderName,
+              senderRole,
+              activeTaskContext,
+            }),
+          },
           ...getContext(senderUsername),
-          { role: 'user', content: text }
+          { role: 'user', content: text },
         ], { role: senderRole, purpose: 'reasoning', temperature: 0.05, max_tokens: 260 });
         response = llm.content || '收到你的消息。你可以问我数据审计、营运检查、绩效考核等问题，也可以直接发照片给我审核。';
         agentData = { route: 'general', contextUsed: getContext(senderUsername).length, brandId };
