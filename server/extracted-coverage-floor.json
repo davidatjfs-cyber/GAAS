@@ -260,6 +260,7 @@
     "domains/shared/startup-tenant-reconcile.js",
     "domains/health/startup-monitors.js",
     "domains/shared/startup-role-cleanup.js",
-    "domains/shared/startup-module-schedulers.js"
+    "domains/shared/startup-module-schedulers.js",
+    "domains/shared/startup-agent-schema.js"
   ]
 }
