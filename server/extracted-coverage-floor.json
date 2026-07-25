@@ -173,6 +173,13 @@
     "domains/growth-profiles/service.js",
     "domains/growth-content-library/service.js",
     "domains/growth-content/service.js",
-    "domains/reports/service-turnover.js"
+    "domains/reports/service-turnover.js",
+    "domains/auth/service.js",
+    "domains/agent-data-center/service.js",
+    "domains/growth-ops/service.js",
+    "domains/growth-actions/service.js",
+    "domains/daily-reports/helpers.js",
+    "domains/leave-attendance/attendance-build.js",
+    "domains/performance-invalidation/helpers.js"
   ]
 }
