@@ -302,4 +302,61 @@ test('authRequiredOrQueryToken + session_replaced / account_disabled', async () 
   const resCfg = mockRes();
   await noSecret({ originalUrl: '/api/x', headers: { authorization: 'Bearer t' }, query: {} }, resCfg, () => {});
   assert.equal(resCfg.statusCode, 500);
+
+  // wecom kf bypass + query-token 成功 enrichment + session/users 查询失败仍放行
+  const { authRequired: a2, authRequiredOrQueryToken: qOk } = createAuthMiddlewareHelpers({
+    ...baseDeps,
+    pool: {
+      async query(sql) {
+        if (/session_nonce/.test(sql)) throw new Error('db_down');
+        if (/FROM users/i.test(sql)) throw new Error('db_down');
+        return { rows: [] };
+      },
+    },
+    jwt: {
+      verify: () => ({
+        username: 'carol',
+        sn: 'n1',
+        role: 'store_employee',
+        store: '洪潮',
+        current_store: '洪潮',
+      }),
+    },
+    getSharedState: async () => ({ employees: [{ username: 'carol', store: '洪潮' }] }),
+    pickMyStoreFromState: () => '洪潮',
+    getUserStoreAccessContext: async () => ({
+      primaryStore: '洪潮',
+      currentStore: '洪潮',
+      allowedStores: ['洪潮'],
+    }),
+  });
+  let kfNext = 0;
+  await a2({ originalUrl: '/api/wecom/kf/callback?x=1', headers: {} }, mockRes(), () => {
+    kfNext += 1;
+  });
+  assert.equal(kfNext, 1);
+
+  const reqQ = { headers: {}, query: { access_token: 'tok' } };
+  let qNext = 0;
+  await qOk(reqQ, mockRes(), () => {
+    qNext += 1;
+  });
+  assert.equal(qNext, 1);
+  assert.equal(reqQ.user.store, '洪潮');
+
+  // enrichment 外层 catch：getUserStoreAccessContext 抛错时回落 payload
+  const { authRequiredOrQueryToken: qFallback } = createAuthMiddlewareHelpers({
+    ...baseDeps,
+    jwt: { verify: () => ({ username: 'd', sn: 'n', role: 'admin' }) },
+    getUserStoreAccessContext: async () => {
+      throw new Error('ctx_fail');
+    },
+  });
+  const reqFb = { headers: { authorization: 'Bearer t' }, query: {} };
+  let fbNext = 0;
+  await qFallback(reqFb, mockRes(), () => {
+    fbNext += 1;
+  });
+  assert.equal(fbNext, 1);
+  assert.equal(reqFb.user.username, 'd');
 });
