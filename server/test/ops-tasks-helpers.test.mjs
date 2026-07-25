@@ -66,6 +66,32 @@ test('opsDateOnly returns YYYY-MM-DD', () => {
   assert.equal(d, '2026-07-24');
 });
 
+test('opsDateAt：合法日期+hm → Date；坏输入 → null', () => {
+  const ok = helpers.opsDateAt('2026-07-24', '11:00');
+  assert.ok(ok instanceof Date);
+  assert.ok(Number.isFinite(ok.getTime()));
+  assert.equal(helpers.opsDateAt('bad', '11:00'), null);
+  assert.equal(helpers.opsDateAt('2026-07-24', '9:00'), null);
+  assert.equal(helpers.opsDateAt('2026-07-24', ''), null);
+});
+
+test('resolveOpsStoreBrand：state 优先，否则 map，空店名空串', () => {
+  const state = { stores: [{ name: '洪潮大宁久光店', brand: '洪潮传统潮汕菜' }] };
+  assert.equal(helpers.resolveOpsStoreBrand(state, '洪潮大宁久光店'), '洪潮传统潮汕菜');
+  assert.equal(helpers.resolveOpsStoreBrand({}, ''), '');
+  // map 兜底：未知店若不在 map 则空串
+  assert.equal(typeof helpers.resolveOpsStoreBrand({ stores: [] }, '不存在的店'), 'string');
+});
+
+test('getOpsManagedStores：state ∪ map 去重', () => {
+  const stores = helpers.getOpsManagedStores({
+    stores: [{ name: '洪潮大宁久光店' }, { name: '洪潮大宁久光店' }, { name: '' }],
+  });
+  assert.ok(stores.includes('洪潮大宁久光店'));
+  assert.equal(stores.filter((s) => s === '洪潮大宁久光店').length, 1);
+  assert.ok(stores.length >= 1);
+});
+
 test('createOpsTaskIfAbsent with empty dedupeKey does not call pool.query', async () => {
   queryCalls = 0;
   await helpers.createOpsTaskIfAbsent({ dedupeKey: '' });
