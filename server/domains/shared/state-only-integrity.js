@@ -16,8 +16,9 @@ import { normalizeUserRecord } from '../remaining-state/service.js';
  * @returns {Promise<object|null>}
  */
 async function loadHrmsStateData(pool, tenantId) {
+  // hrms_state 主键是 key（租户 id / 特殊配置键），没有 tenant_id 列
   const r = await pool.query(
-    `SELECT data FROM hrms_state WHERE tenant_id = $1 LIMIT 1`,
+    `SELECT data FROM hrms_state WHERE key = $1 LIMIT 1`,
     [tenantId]
   );
   const data = r.rows[0]?.data;
