@@ -189,6 +189,12 @@
     "domains/birthday/scheduler.js",
     "domains/feishu-bitable/api.js",
     "domains/employees/service.js",
-    "domains/growth-pos/ingest.js"
+    "domains/growth-pos/ingest.js",
+    "domains/wecom/routes-callback.js",
+    "domains/tenant-platform/routes-branding.js",
+    "domains/promotion/routes-tracks.js",
+    "domains/remaining-state/routes-announcement-extra.js",
+    "domains/growth-coupons/routes.js",
+    "domains/growth-stored-value/service.js"
   ]
 }
