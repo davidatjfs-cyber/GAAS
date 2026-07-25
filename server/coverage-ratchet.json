@@ -1,7 +1,7 @@
 {
-  "lines": 39,
+  "lines": 40,
   "branches": 58,
-  "functions": 41,
+  "functions": 42,
   "updated": "2026-07-25",
-  "note": "Phase 1e：growth-phase-auth + payroll-rules 纯函数/resolve mock + attendance classify + payment-config 边角。实测约 lines 39.21 / branches 58.09 / functions 41.42。branches 升至 58；lines/functions 整数档未升。只升不降。"
+  "note": "Phase 1f：薪资引擎 computePayrollLine/month-run/buildPayroll + rules seed/upsert + flow-config 读写 + 敏感脱敏/LLM 净化/审计日志。实测约 lines 40.00 / branches 58.37 / functions 42.22。lines≥40、functions≥42；branches 整数档未升。只升不降。"
 }

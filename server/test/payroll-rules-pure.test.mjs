@@ -8,6 +8,8 @@ import {
   safeBizMonth,
   resolveAttendancePayrollRules,
   listAttendancePayrollRules,
+  seedDefaultBrandPayrollRules,
+  upsertAttendancePayrollRules,
 } from '../services/hrms-payroll-rules.js';
 
 test('cloneDefaultRules 深拷贝且可改', () => {
@@ -104,4 +106,55 @@ test('listAttendancePayrollRules 走 mock db', async () => {
   const rows = await listAttendancePayrollRules('default', db);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].scope_type, 'tenant');
+});
+
+test('seedDefaultBrandPayrollRules：洪潮/马己仙 + tenant 兜底', async () => {
+  const inserts = [];
+  const db = {
+    query: async (sql, params) => {
+      if (String(sql).includes('INSERT INTO hrms_attendance_payroll_rules')) {
+        inserts.push(params);
+      }
+      return { rows: [] };
+    },
+  };
+  await seedDefaultBrandPayrollRules('t1', db);
+  assert.equal(inserts.length, 3);
+  const brands = inserts.filter((p) => p.length === 3).map((p) => p[1]).sort();
+  assert.deepEqual(brands, ['hongchao', 'majixian']);
+  assert.equal(inserts.filter((p) => p.length === 2 && p[0] === 't1').length, 1);
+});
+
+test('upsertAttendancePayrollRules：合并默认并 RETURNING', async () => {
+  const db = {
+    query: async (sql, params) => {
+      if (String(sql).includes('RETURNING')) {
+        return {
+          rows: [{
+            id: 9,
+            tenant_id: params[0],
+            scope_type: params[1],
+            scope_key: params[2],
+            rules_json: JSON.parse(params[3]),
+            active: true,
+            updated_by: params[4],
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+  const row = await upsertAttendancePayrollRules({
+    tenantId: 'default',
+    scopeType: 'store',
+    scopeKey: '洪潮',
+    rules: { monthlyRestDays: 3 },
+    updatedBy: 'admin',
+    db,
+  });
+  assert.equal(row.scope_type, 'store');
+  assert.equal(row.scope_key, '洪潮');
+  assert.equal(row.rules_json.monthlyRestDays, 3);
+  assert.equal(row.rules_json.payDayOfMonth, DEFAULT_ATTENDANCE_PAYROLL_RULES.payDayOfMonth);
+  assert.equal(row.updated_by, 'admin');
 });

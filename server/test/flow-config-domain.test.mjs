@@ -8,6 +8,12 @@ import {
   normalizePaymentFlowByStore,
   normalizeRoleModules,
   hydrateFlowConfigFromTable,
+  loadConfigByKey,
+  upsertConfigByKey,
+  loadFlowConfigBundle,
+  saveRoleModules,
+  saveApprovalFlows,
+  savePaymentFlowByStore,
 } from '../domains/flow-config/service.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -56,4 +62,68 @@ test('hydrateFlowConfigFromTable：表有数据时覆盖', async () => {
   assert.ok(out.roleModules.hq_manager.includes('training'));
   assert.deepEqual(out.approvalFlows.leave.steps, ['admin']);
   assert.deepEqual(out.paymentFlowByStore['洪潮'].approvers, ['x']);
+});
+
+test('loadConfigByKey：空 key / JSON 字符串 / 坏 JSON', async () => {
+  assert.equal(await loadConfigByKey({ query: async () => ({ rows: [] }) }, 't', ''), null);
+  const ok = await loadConfigByKey(
+    {
+      query: async () => ({ rows: [{ config: '{"a":1}' }] }),
+    },
+    't',
+    'k'
+  );
+  assert.deepEqual(ok, { a: 1 });
+  const bad = await loadConfigByKey(
+    {
+      query: async () => ({ rows: [{ config: '{not-json' }] }),
+    },
+    't',
+    'k'
+  );
+  assert.equal(bad, null);
+});
+
+test('upsertConfigByKey / save* / loadFlowConfigBundle', async () => {
+  const writes = [];
+  const pool = {
+    async query(sql, params) {
+      if (/INSERT INTO/i.test(String(sql))) {
+        writes.push(params);
+        return { rows: [] };
+      }
+      const key = params?.[0];
+      if (key === 'role_module_config') return { rows: [{ config: { store_manager: ['employees'] } }] };
+      return { rows: [] };
+    },
+  };
+  await assert.rejects(() => upsertConfigByKey(pool, 't', '', {}), /missing_config_key/);
+  const payload = await upsertConfigByKey(pool, 't', 'custom_key', { x: 1 });
+  assert.deepEqual(payload, { x: 1 });
+
+  const rm = await saveRoleModules(pool, 't', { store_manager: ['employees'] });
+  assert.ok(rm.store_manager.includes('training'));
+  const af = await saveApprovalFlows(pool, 't', { leave: ['admin'] });
+  assert.deepEqual(af.leave.steps, ['admin']);
+  const pf = await savePaymentFlowByStore(pool, 't', { 洪潮: ['u1'] });
+  assert.deepEqual(pf['洪潮'].approvers, ['u1']);
+  assert.ok(writes.length >= 4);
+
+  const bundle = await loadFlowConfigBundle(pool, 't');
+  assert.ok(bundle.roleModules.store_manager.includes('training'));
+  assert.equal(bundle.approvalFlows, null);
+});
+
+test('hydrateFlowConfigFromTable：pool 失败保留原 state', async () => {
+  const out = await hydrateFlowConfigFromTable(
+    {
+      query: async () => {
+        throw new Error('db_down');
+      },
+    },
+    { roleModules: { keep: ['a'] }, settings: { ok: 1 } },
+    'default'
+  );
+  assert.deepEqual(out.roleModules, { keep: ['a'] });
+  assert.equal(out.settings.ok, 1);
 });
