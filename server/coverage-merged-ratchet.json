@@ -3,8 +3,8 @@
   "branches": 62,
   "functions": 45,
   "requireIndexJs": true,
-  "minIndexJsLines": 58,
+  "minIndexJsLines": 55,
   "tolerancePct": 0.5,
   "updated": "2026-07-26",
-  "note": "合并棘轮。Wave M2 外提 listen monitors 后预计 index.js 行覆盖再降；minIndexJsLines 65→58（仅巨石外提允许下调）。overall lines/branches/functions 仍只升不降。"
+  "note": "合并棘轮。Wave M3 外提 role cleanup 后预计 index.js 行覆盖再降；minIndexJsLines 58→55（仅巨石外提允许下调）。overall 仍只升不降。"
 }

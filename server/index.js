@@ -45,7 +45,6 @@ import {
 } from './domains/shared/state-client-shaping.js';
 import {
   isLegacyTestUsername,
-  cleanupLegacyTestState,
 } from './domains/shared/legacy-test-cleanup.js';
 import {
   isInactiveStatus,
@@ -69,6 +68,7 @@ import { createAgentsServiceAuthHelpers } from './domains/shared/agents-service-
 import { createListenMonitors } from './domains/health/startup-monitors.js';
 import { safeErrMessage } from './domains/shared/safe-err-message.js';
 import { createStartupTenantReconcileRunner } from './domains/shared/startup-tenant-reconcile.js';
+import { runStartupRoleCleanup } from './domains/shared/startup-role-cleanup.js';
 import {
   inferContentType,
   buildInlineContentDisposition,
@@ -2179,7 +2179,7 @@ app.listen(PORT, HOST, async () => {
     // Wave M2: listen monitors → domains/health/startup-monitors.js
     await startListenMonitors();
 
-    startRecurringRewardScheduler();    startRecurringRewardScheduler();
+    startRecurringRewardScheduler();
 
     // Initialize enhanced autonomous agent systems
     try {
@@ -2283,150 +2283,12 @@ app.listen(PORT, HOST, async () => {
     console.error('[agents] init failed:', e?.message || e);
   }
 
-  // Migration: normalize all roles to 7 built-in roles + set specific user assignments
-  try {
-    // 这里包含马己仙/洪潮历史员工姓名映射，只属于 default 租户，不能扩散到商业租户。
-    await runWithBootstrapTenantContext(async () => {
-    const state = (await getSharedState()) || {};
-    let changed = false;
-    const cleanup = cleanupLegacyTestState(state);
-    if (cleanup.changed) {
-      Object.assign(state, cleanup.state);
-      changed = true;
-      console.log('[migration] Removed legacy built-in test accounts/data');
-    }
-    const ALLOWED_ROLES = ['admin', 'hq_manager', 'store_manager', 'store_employee', 'cashier', 'hr_manager', 'store_production_manager', 'front_manager'];
-    const ROLE_MAP = {
-      'hq_employee': 'hr_manager',
-      '总部人员': 'hr_manager',
-      '总部人事': 'hr_manager',
-      '人事经理': 'hr_manager',
-      '总部HR': 'hr_manager',
-      '总部营运': 'hq_manager',
-      '总部经理': 'hq_manager',
-      '总部管理层': 'hq_manager',
-      '总部管理': 'hq_manager',
-      '出纳': 'cashier',
-      'custom_出纳': 'cashier',
-      '总部出纳': 'cashier',
-      '门店店长': 'store_manager',
-      '店长': 'store_manager',
-      '门店出品经理': 'store_production_manager',
-      '出品经理': 'store_production_manager',
-      '门店员工': 'store_employee',
-      '员工': 'store_employee',
-      '管理员': 'admin',
-      '系统管理员': 'admin',
-      '前厅经理': 'front_manager',
-      '门店前厅经理': 'front_manager'
-    };
-    // Specific user role assignments
-    const USER_ROLE_OVERRIDES = {
-      '徐彬': 'hq_manager',
-      '李艳玲': 'cashier',
-      '高赟': 'hr_manager',
-      '喻峰': 'store_manager',
-      '黎永荣': 'store_production_manager',
-      '李丽丽': 'store_employee',
-      '田海伶': 'front_manager',
-      '武静静': 'front_manager'
-    };
-    for (const list of [state.users, state.employees]) {
-      if (!Array.isArray(list)) continue;
-      for (const u of list) {
-        const name = String(u?.name || '').trim();
-        const oldRole = String(u?.role || '').trim();
-        // Apply specific user overrides first
-        if (USER_ROLE_OVERRIDES[name]) {
-          if (oldRole !== USER_ROLE_OVERRIDES[name]) {
-            console.log(`[migration] ${name}: ${oldRole} -> ${USER_ROLE_OVERRIDES[name]}`);
-            u.role = USER_ROLE_OVERRIDES[name];
-            changed = true;
-          }
-          continue;
-        }
-        // Normalize known legacy/Chinese role names
-        if (ROLE_MAP[oldRole]) {
-          console.log(`[migration] ${name}: ${oldRole} -> ${ROLE_MAP[oldRole]}`);
-          u.role = ROLE_MAP[oldRole];
-          changed = true;
-          continue;
-        }
-        // Any custom_ or unknown role -> default to store_employee
-        if (oldRole && !ALLOWED_ROLES.includes(oldRole)) {
-          console.log(`[migration] ${name}: ${oldRole} -> store_employee (unknown role)`);
-          u.role = 'store_employee';
-          changed = true;
-        }
-      }
-    }
-
-    // Normalize approvalFlows step tokens to built-in roles
-    const normalizeFlowToken = (tok) => {
-      const t = String(tok || '').trim();
-      if (!t) return '';
-      if (t === 'manager') return 'manager';
-      if (t.startsWith('username:')) return t;
-      if (t.startsWith('role:')) {
-        const rid0 = t.slice('role:'.length).trim();
-        const rid = ROLE_MAP[rid0] || rid0;
-        if (rid === 'store_employee') return 'role:store_employee';
-        if (ALLOWED_ROLES.includes(rid)) return 'role:' + rid;
-        return 'role:store_employee';
-      }
-      const mapped = ROLE_MAP[t] || t;
-      if (ALLOWED_ROLES.includes(mapped)) return mapped;
-      // legacy labels
-      if (mapped === 'hr_manager') return 'hr_manager';
-      if (mapped === 'hq_manager') return 'hq_manager';
-      if (mapped === 'cashier') return 'cashier';
-      if (mapped === 'store_manager') return 'store_manager';
-      if (mapped === 'store_production_manager') return 'store_production_manager';
-      if (mapped === 'store_employee') return 'store_employee';
-      return 'store_employee';
-    };
-    if (state.approvalFlows && typeof state.approvalFlows === 'object') {
-      const flows = state.approvalFlows;
-      Object.keys(flows).forEach((k) => {
-        const cfg = flows[k];
-        if (!cfg || typeof cfg !== 'object') return;
-        const steps = Array.isArray(cfg.steps) ? cfg.steps : [];
-        if (!steps.length) return;
-        const nextSteps = steps.map(s => normalizeFlowToken(s)).filter(Boolean);
-        const same = nextSteps.length === steps.length && nextSteps.every((v, i) => String(v) === String(steps[i]));
-        if (!same) {
-          flows[k] = { ...cfg, steps: nextSteps };
-          changed = true;
-          console.log(`[migration] Normalized approvalFlows.${k}.steps`);
-        }
-      });
-      state.approvalFlows = flows;
-    }
-
-    // Also clean up orgDict custom roles if present
-    if (state.orgDict && Array.isArray(state.orgDict.roles)) {
-      const before = state.orgDict.roles.length;
-      state.orgDict.roles = [];
-      if (before > 0) { changed = true; console.log(`[migration] Cleared ${before} custom roles from orgDict`); }
-    }
-    if (changed) {
-      // CRITICAL: Re-read fresh state and merge only the modified arrays
-      // to avoid overwriting dailyReports or other data changed concurrently.
-      const freshState = (await getSharedState()) || {};
-      if (state.users) freshState.users = state.users;
-      if (state.employees) freshState.employees = state.employees;
-      if (state.approvalFlows) freshState.approvalFlows = state.approvalFlows;
-      if (state.orgDict) freshState.orgDict = state.orgDict;
-      if (state.pointRecords) freshState.pointRecords = state.pointRecords;
-      if (state.salaryAdjustments) freshState.salaryAdjustments = state.salaryAdjustments;
-      if (state.payrollAdjustments) freshState.payrollAdjustments = state.payrollAdjustments;
-      await saveSharedState(freshState);
-      console.log('[migration] Role cleanup complete');
-    }
-    });
-  } catch (e) {
-    console.error('[migration] role cleanup failed:', e?.message || e);
-  }
+  // Wave M3: role cleanup → domains/shared/startup-role-cleanup.js
+  await runStartupRoleCleanup({
+    getSharedState,
+    saveSharedState,
+    runWithBootstrapTenantContext,
+  });
 });
 }
 
