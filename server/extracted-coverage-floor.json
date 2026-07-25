@@ -16,6 +16,8 @@
     "domains/inventory-forecast/scope.js",
     "domains/health/pm2-exit-classify.js",
     "domains/sales-ai/gates.js",
-    "domains/agent-message/store-resolve.js"
+    "domains/agent-message/store-resolve.js",
+    "domains/stores/profile.js",
+    "domains/leave-attendance/penalties.js"
   ]
 }
