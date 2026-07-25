@@ -44,12 +44,6 @@ async function jsonFetch(base, pathName, opts = {}) {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
-function emptyPool() {
-  return {
-    query: async () => ({ rows: [{}] }),
-  };
-}
-
 function mirrorPool(initialState = {}) {
   let state = { ...initialState };
   return {
@@ -363,7 +357,7 @@ test('ops-tasks routes: list / read / complete', async () => {
 // —— agent-ops ——
 test('agent-ops routes: role gates + deps', async () => {
   const poolFn = () => ({
-    query: async (sql, params) => {
+    query: async (sql) => {
       if (/FROM agent_autonomous_tasks WHERE id/i.test(String(sql))) {
         return { rows: [{ owner_username: 'a1', requester_username: 'a1' }] };
       }
