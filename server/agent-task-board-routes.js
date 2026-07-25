@@ -2,6 +2,11 @@
  * Agent Task Board proxy routes (extracted from index.js — monolith split).
  * registerAgentTaskBoardRoutes(app, deps) — behavior-preserving move.
  */
+import { agentsOutboundHeaders } from './domains/shared/agents-service-auth.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'agent-task-board' });
+
 export function registerAgentTaskBoardRoutes(app, deps) {
   const {
     authRequired,
@@ -26,13 +31,16 @@ export function registerAgentTaskBoardRoutes(app, deps) {
         data: body,
         timeout: 15000,
         validateStatus: () => true,
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+        headers: agentsOutboundHeaders(req, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
       });
       if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'agent_task_board_proxy_failed' });
       return res.json(r.data || { ok: true });
     } catch (e) {
       const msg = String(e?.message || e || '');
-      console.error('[proxyAgentTaskBoard]', method, pathSuffix, msg.slice(0, 500));
+      log.error({ msg: 'proxy_agent_task_board_failed', method, path: pathSuffix, err: msg.slice(0, 500) });
       return res.status(502).json({ error: 'internal_error', detail: msg.slice(0, 240) });
     }
   }

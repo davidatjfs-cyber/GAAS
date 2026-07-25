@@ -1,6 +1,6 @@
 {
   "updated": "2026-07-25",
   "note": "domains/** 内 console.log 数量棘轮：只降不升。迁移到 pino 后下调 maxCount；新文件禁止出现 console.log。",
-  "maxCount": 49,
+  "maxCount": 43,
   "scope": "server/domains"
 }

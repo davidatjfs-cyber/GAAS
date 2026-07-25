@@ -66,6 +66,12 @@ import {
 } from './domains/shared/time-number.js';
 import { shanghaiTodayDateOnly } from './domains/leave-attendance/attendance-build.js';
 import { createAgentsServiceAuthHelpers } from './domains/shared/agents-service-auth.js';
+import {
+  DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN,
+  filterStaleHeartbeats,
+  formatStaleHeartbeatDeadLabel,
+  staleHeartbeatDedupeKey,
+} from './domains/health/scheduler-heartbeat.js';
 import { safeErrMessage } from './domains/shared/safe-err-message.js';
 import { domainJsonFieldEmpty } from './domains/shared/domain-json-empty.js';
 import {
@@ -2695,12 +2701,7 @@ app.listen(PORT, HOST, async () => {
       }
     }
 
-    const HEARTBEAT_ALERT_THRESHOLDS_MIN = {
-      cache_purge: 390, // cache_purge 每 2 小时一次，放宽到 6.5 小时避免夜间误报
-      // 销售完整性检查每天23:30只执行一次；连续72小时未更新才告警。
-      pos_sales_check: 72 * 60,
-      default: 180
-    };
+    const HEARTBEAT_ALERT_THRESHOLDS_MIN = DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN;
     const heartbeatAlertDedup = new Map();
 
     // 带心跳的缓存清理（覆盖原 setInterval）
@@ -2727,19 +2728,10 @@ app.listen(PORT, HOST, async () => {
                    EXTRACT(EPOCH FROM (NOW() - last_beat)) / 60 AS minutes_ago
             FROM scheduler_heartbeat
           `);
-          const staleRows = (r.rows || []).filter((row) => {
-            const name = String(row?.task_name || '').trim();
-            const mins = Number(row?.minutes_ago || 0);
-            const th = Number(HEARTBEAT_ALERT_THRESHOLDS_MIN[name] || HEARTBEAT_ALERT_THRESHOLDS_MIN.default);
-            return Number.isFinite(mins) && mins >= th;
-          });
+          const staleRows = filterStaleHeartbeats(r.rows || [], HEARTBEAT_ALERT_THRESHOLDS_MIN);
           if (staleRows.length > 0) {
-            const dead = staleRows
-              .map(row => `${row.task_name}（${Math.floor(Number(row.minutes_ago || 0))}分钟前）`)
-              .join('、');
-            const dedupeKey = staleRows
-              .map((row) => `${row.task_name}:${Math.floor(Number(row.minutes_ago || 0) / 30)}`)
-              .join('|');
+            const dead = formatStaleHeartbeatDeadLabel(staleRows);
+            const dedupeKey = staleHeartbeatDedupeKey(staleRows);
             const lastSent = Number(heartbeatAlertDedup.get(dedupeKey) || 0);
             if (Date.now() - lastSent < 2 * 60 * 60 * 1000) return;
             heartbeatAlertDedup.set(dedupeKey, Date.now());

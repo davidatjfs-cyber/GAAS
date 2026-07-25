@@ -144,10 +144,11 @@ test('billing/pdf：有签约价 + 收款账户支行 + wechat 送达备注 → 
   assert.equal(putBill.status, 200, await putBill.text());
 
   // 写入签约价（机密字段）以覆盖 hasContractPrice 分支
+  const leadKey = uniqueId('lead_bill');
   await db.query(
-    `INSERT INTO sales_leads (name, tenant_id, contract_price_fen, contract_billing_cycle, contract_billing_day)
-     VALUES ($1, 'default', 128000, 'monthly', 1)`,
-    [uniqueId('lead_bill')]
+    `INSERT INTO sales_leads (lead_key, name, tenant_id, contract_price_fen, contract_billing_cycle, contract_billing_day)
+     VALUES ($1, $2, 'default', 128000, 'monthly', 1)`,
+    [leadKey, leadKey]
   );
 
   // platform_profile.billing：微信送达 + 备注 + 非法 brand_color 回落

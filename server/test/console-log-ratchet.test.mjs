@@ -38,7 +38,7 @@ test('console-log-ratchet.json 只降不升（地板）', () => {
     fs.readFileSync(path.join(serverRoot, 'console-log-ratchet.json'), 'utf8')
   );
   assert.equal(typeof ratchet.maxCount, 'number');
-  assert.ok(ratchet.maxCount <= 49, `maxCount=${ratchet.maxCount} 禁止上调超过已冻结 49`);
+  assert.ok(ratchet.maxCount <= 43, `maxCount=${ratchet.maxCount} 禁止上调超过已冻结 43`);
   assert.ok(ratchet.maxCount >= 0);
 });
 

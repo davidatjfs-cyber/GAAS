@@ -1,0 +1,101 @@
+# P3.3：手动 CD（workflow_dispatch）。默认 dry_run，需配置 DEPLOY_SSH_KEY。
+# 勿在 Free 私有仓未配 secrets 时改成 push main 自动部署。
+name: CD server (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      files:
+        description: '空格分隔的 server/* 相对路径（例：server/domains/health/process-health-monitor.js）'
+        required: true
+        type: string
+      dry_run:
+        description: '仅对比生产、不上传（推荐先 true）'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # 可选：在 Settings → Environments 建 production 并加审阅后取消下一行注释
+    # environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          check-latest: false
+
+      - name: Assert Node runtime
+        run: node scripts/assert-ci-runtime.mjs
+
+      - name: Allowlist paths
+        env:
+          FILES: ${{ inputs.files }}
+        run: |
+          set -euo pipefail
+          for f in $FILES; do
+            case "$f" in
+              server/*) ;;
+              *) echo "reject (must be server/*): $f"; exit 1 ;;
+            esac
+            case "$f" in
+              server/.env*|server/**/.env*|*.env)
+                echo "reject env file: $f"; exit 1 ;;
+            esac
+            # 巨石入口默认禁止从 CD 直接覆盖（需本地 deploy-server-files + 人工 diff）
+            case "$f" in
+              server/index.js|server/agents.js|server/growth-api.js)
+                echo "reject monolith via CD (use local deploy with prod diff): $f"
+                exit 1
+                ;;
+            esac
+            test -f "$f" || { echo "missing locally: $f"; exit 1; }
+          done
+          echo "allowlist ok: $FILES"
+
+      - name: Require deploy secrets
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          if [ -z "${DEPLOY_SSH_KEY:-}" ]; then
+            echo "::error::缺少 secrets.DEPLOY_SSH_KEY。在仓库 Settings → Secrets 添加后重试。"
+            echo "文档见 docs/cd-server.md"
+            exit 1
+          fi
+          echo "DEPLOY_HOST=${DEPLOY_HOST:-root@47.100.96.30}"
+
+      - name: SSH setup
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if [ -n "${DEPLOY_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -T 10 47.100.96.30 >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy via deploy-server-files.sh
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+          FILES: ${{ inputs.files }}
+        run: |
+          set -euo pipefail
+          export DEPLOY_HOST="${DEPLOY_HOST:-root@47.100.96.30}"
+          if [ "$DRY_RUN_INPUT" = "true" ]; then export DRY_RUN=1; else export DRY_RUN=0; fi
+          # shellcheck disable=SC2086
+          bash scripts/deploy-server-files.sh $FILES

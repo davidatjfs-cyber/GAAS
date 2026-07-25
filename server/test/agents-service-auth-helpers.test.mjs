@@ -1,6 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAgentsServiceAuthHelpers } from '../domains/shared/agents-service-auth.js';
+import {
+  agentsOutboundHeaders,
+  createAgentsServiceAuthHelpers,
+} from '../domains/shared/agents-service-auth.js';
+
+test('agentsOutboundHeaders 透传 requestId / x-request-id', () => {
+  assert.deepEqual(
+    agentsOutboundHeaders({ requestId: 'rid-1' }, { Authorization: 'Bearer t' }),
+    { Authorization: 'Bearer t', 'X-Request-Id': 'rid-1' }
+  );
+  assert.deepEqual(
+    agentsOutboundHeaders({ headers: { 'x-request-id': 'rid-2' } }),
+    { 'X-Request-Id': 'rid-2' }
+  );
+  assert.deepEqual(agentsOutboundHeaders({}, { 'Content-Type': 'application/json' }), {
+    'Content-Type': 'application/json',
+  });
+});
 
 test('getAgentsServiceBaseUrl strips trailing slash and defaults', () => {
   const prev = process.env.AGENTS_SERVICE_BASE_URL;

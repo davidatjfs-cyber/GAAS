@@ -3,6 +3,7 @@
  * 从 index.js 拆出（P0-A1）；类型业务在 handlers/，依赖经 deps 注入。
  */
 import { canAccessApprovalCenter } from '../../store-duty-bindings.js';
+import { childLogger } from '../../utils/logger.js';
 import * as onboardingHandler from './handlers/onboarding.js';
 import * as leaveHandler from './handlers/leave.js';
 import * as offboardingHandler from './handlers/offboarding.js';
@@ -10,6 +11,8 @@ import * as promotionHandler from './handlers/promotion.js';
 import * as rewardPunishmentHandler from './handlers/reward-punishment.js';
 import * as pointsHandler from './handlers/points.js';
 import * as monthlyConfirmHandler from './handlers/monthly-confirm.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'decide' });
 
 const BEFORE_UPDATE_BY_TYPE = {
   leave: leaveHandler,
@@ -195,10 +198,21 @@ export async function handleApprovalDecide(req, res, deps) {
     } catch (e) { /* ignore */ }
 
     const __decideMs = Date.now() - __decideStartedAt;
-    console.log('[approval-decide] ok', { id, ms: __decideMs, status: updated?.status, type: updated?.type });
+    log.info({
+      msg: 'approval_decide_ok',
+      id,
+      ms: __decideMs,
+      status: updated?.status,
+      type: updated?.type,
+    });
     return res.json(Object.keys(decideExtras).length ? { item: updated, decideMs: __decideMs, ...decideExtras } : { item: updated, decideMs: __decideMs });
   } catch (e) {
-    console.log('[approval-decide] error', { id, ms: Date.now() - __decideStartedAt, err: safeErrMessage(e) });
+    log.error({
+      msg: 'approval_decide_error',
+      id,
+      ms: Date.now() - __decideStartedAt,
+      err: safeErrMessage(e),
+    });
     return res.status(500).json({ error: 'server_error', message: 'internal_error' });
   }
 }

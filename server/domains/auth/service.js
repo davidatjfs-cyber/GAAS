@@ -10,7 +10,10 @@ import { resolveExplicitTenantId } from '../../tenant-login.js';
 import { resolveUserPermissionContext } from '../../services/hrms-permission-engine.js';
 import { pickEffectiveStore } from '../../store-duty-bindings.js';
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from '../../utils/logger.js';
 import { LOCAL_TEST_ACCOUNTS, buildLoginUserPayload } from './login-helpers.js';
+
+const log = childLogger({ domain: 'auth' });
 
 function ok(body, status = 200) {
   return { status, body };
@@ -165,7 +168,7 @@ export async function loginInTenant(ctx, deps, tenantId) {
         return ok({ token, user: loginUser });
       }
     } catch (dbErr) {
-      console.log('DB login failed, falling back to local accounts:', dbErr.message);
+      log.warn({ msg: 'db_login_fallback', err: dbErr.message });
     }
   }
 
@@ -199,7 +202,7 @@ export async function loginInTenant(ctx, deps, tenantId) {
             [username, migrateHash, migrateRealName, migrateRole, tenantId]
           );
         } catch (migrateErr) {
-          console.log('[password-migrate] login-time migration failed (non-fatal):', migrateErr?.message);
+          log.warn({ msg: 'password_migrate_failed', err: migrateErr?.message });
         }
 
         const role = normalizeRoleForJwt(found.role);
@@ -235,7 +238,7 @@ export async function loginInTenant(ctx, deps, tenantId) {
       }
     }
   } catch (e) {
-    console.log('State login failed:', e?.message || e);
+    log.warn({ msg: 'state_login_failed', err: String(e?.message || e) });
   }
 
   // H4-FIX: 本地测试账号仅在开发环境可用
@@ -568,7 +571,12 @@ export async function loginAs(ctx, deps) {
       { expiresIn: '7d' }
     );
     recordLogin(targetUsernameNorm, sn, reqLike, targetTenantId);
-    console.log(`[login-as] admin=${adminUsername} logged in as ${targetUsernameNorm} (reason: ${reason})`);
+    log.info({
+      msg: 'login_as_ok',
+      admin: adminUsername,
+      as: targetUsernameNorm,
+      reason,
+    });
     return ok({
       token,
       user: { id: targetId, username: targetUsernameNorm, name: finalName, role: finalRole },
@@ -576,7 +584,7 @@ export async function loginAs(ctx, deps) {
       loginAsBy: adminUsername,
     });
   } catch (e) {
-    console.error('[login-as] error:', e?.message || e);
+    log.error({ msg: 'login_as_failed', err: String(e?.message || e) });
     return fail(500, { error: 'server_error' });
   }
 }

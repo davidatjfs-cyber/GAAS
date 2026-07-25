@@ -1,6 +1,7 @@
 /**
  * Tenant settings & chairman config proxy routes (Wave 4o — behavior-preserving extract from index.js).
  */
+import { agentsOutboundHeaders } from '../shared/agents-service-auth.js';
 
 function canManageChairmanConfig(user) {
   const role = String(user?.role || '').trim();
@@ -26,15 +27,22 @@ function canManageTenantSettings(user) {
 export function registerTenantSettingsRoutes(app, authRequired, deps) {
   const { axios, getAgentsServiceBaseUrl, getAgentsServiceAdminToken } = deps;
 
+  async function agentsAuthHeaders(req, extra = {}) {
+    const token = await getAgentsServiceAdminToken();
+    return agentsOutboundHeaders(req, {
+      Authorization: `Bearer ${token}`,
+      ...extra,
+    });
+  }
+
   app.get('/api/chairman/config', authRequired, async (req, res) => {
     if (!canManageChairmanConfig(req.user)) return res.status(403).json({ error: 'forbidden' });
     try {
       const url = getAgentsServiceBaseUrl() + '/api/chairman/config';
-      const token = await getAgentsServiceAdminToken();
       const r = await axios.get(url, {
         timeout: 8000,
         validateStatus: () => true,
-        headers: { Authorization: `Bearer ${token}` }
+        headers: await agentsAuthHeaders(req),
       });
       if (r.status < 200 || r.status >= 300) {
         return res.status(r.status || 502).json(r.data || { error: 'chairman_config_proxy_failed' });
@@ -49,14 +57,10 @@ export function registerTenantSettingsRoutes(app, authRequired, deps) {
     if (!canManageChairmanConfig(req.user)) return res.status(403).json({ error: 'forbidden' });
     try {
       const url = getAgentsServiceBaseUrl() + '/api/chairman/config';
-      const token = await getAgentsServiceAdminToken();
       const r = await axios.post(url, req.body || {}, {
         timeout: 10000,
         validateStatus: () => true,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
+        headers: await agentsAuthHeaders(req, { 'Content-Type': 'application/json' }),
       });
       if (r.status < 200 || r.status >= 300) {
         return res.status(r.status || 502).json(r.data || { error: 'chairman_config_proxy_failed' });
@@ -73,11 +77,14 @@ export function registerTenantSettingsRoutes(app, authRequired, deps) {
   app.get('/api/tenant-settings/kpi-targets', authRequired, async (req, res) => {
     if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
     try {
-      const token = await getAgentsServiceAdminToken();
       const qs = new URLSearchParams();
       ['store', 'brand', 'metric_key'].forEach(k => { if (req.query?.[k]) qs.set(k, String(req.query[k])); });
       const url = getAgentsServiceBaseUrl() + '/api/kpi/targets' + (qs.toString() ? `?${qs}` : '');
-      const r = await axios.get(url, { timeout: 8000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}` } });
+      const r = await axios.get(url, {
+        timeout: 8000,
+        validateStatus: () => true,
+        headers: await agentsAuthHeaders(req),
+      });
       if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'kpi_targets_proxy_failed' });
       return res.json(r.data || { targets: [] });
     } catch (e) {
@@ -88,12 +95,11 @@ export function registerTenantSettingsRoutes(app, authRequired, deps) {
   app.put('/api/tenant-settings/kpi-targets', authRequired, async (req, res) => {
     if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
     try {
-      const token = await getAgentsServiceAdminToken();
       const url = getAgentsServiceBaseUrl() + '/api/kpi/targets';
       const r = await axios.put(url, req.body || {}, {
         timeout: 8000,
         validateStatus: () => true,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+        headers: await agentsAuthHeaders(req, { 'Content-Type': 'application/json' }),
       });
       if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'kpi_targets_proxy_failed' });
       return res.json(r.data || { ok: true });
@@ -105,9 +111,12 @@ export function registerTenantSettingsRoutes(app, authRequired, deps) {
   app.delete('/api/tenant-settings/kpi-targets/:id', authRequired, async (req, res) => {
     if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
     try {
-      const token = await getAgentsServiceAdminToken();
       const url = getAgentsServiceBaseUrl() + '/api/kpi/targets/' + encodeURIComponent(req.params.id);
-      const r = await axios.delete(url, { timeout: 8000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}` } });
+      const r = await axios.delete(url, {
+        timeout: 8000,
+        validateStatus: () => true,
+        headers: await agentsAuthHeaders(req),
+      });
       if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'kpi_targets_proxy_failed' });
       return res.json(r.data || { ok: true });
     } catch (e) {
@@ -120,9 +129,12 @@ export function registerTenantSettingsRoutes(app, authRequired, deps) {
     const key = String(req.params.key || '').trim();
     if (!TENANT_SETTINGS_ALLOWED_KEYS.has(key)) return res.status(400).json({ error: 'unknown_settings_key' });
     try {
-      const token = await getAgentsServiceAdminToken();
       const url = getAgentsServiceBaseUrl() + '/api/config/' + encodeURIComponent(key);
-      const r = await axios.get(url, { timeout: 8000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}` } });
+      const r = await axios.get(url, {
+        timeout: 8000,
+        validateStatus: () => true,
+        headers: await agentsAuthHeaders(req),
+      });
       if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'tenant_settings_proxy_failed' });
       return res.json(r.data || { config_key: key, config_value: null });
     } catch (e) {
@@ -137,12 +149,11 @@ export function registerTenantSettingsRoutes(app, authRequired, deps) {
     const { config_value, description } = req.body || {};
     if (config_value === undefined) return res.status(400).json({ error: 'config_value is required' });
     try {
-      const token = await getAgentsServiceAdminToken();
       const url = getAgentsServiceBaseUrl() + '/api/config/' + encodeURIComponent(key);
       const r = await axios.put(url, { config_value, description }, {
         timeout: 8000,
         validateStatus: () => true,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+        headers: await agentsAuthHeaders(req, { 'Content-Type': 'application/json' }),
       });
       if (r.status < 200 || r.status >= 300) return res.status(r.status || 502).json(r.data || { error: 'tenant_settings_proxy_failed' });
       return res.json(r.data || { ok: true });

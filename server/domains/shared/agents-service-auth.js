@@ -3,6 +3,22 @@
  * Avoids concurrent summary+tasks each hitting /api/login.
  */
 
+/**
+ * 出站 headers：透传 X-Request-Id，便于 GAAS↔v2 端到端串日志。
+ * @param {{ requestId?: string, headers?: Record<string, string> } | null | undefined} req
+ * @param {Record<string, string>} [extra]
+ */
+export function agentsOutboundHeaders(req, extra = {}) {
+  const fromReq = req?.requestId
+    || req?.headers?.['x-request-id']
+    || req?.headers?.['X-Request-Id']
+    || '';
+  const requestId = String(fromReq || '').trim();
+  const headers = { ...extra };
+  if (requestId) headers['X-Request-Id'] = requestId;
+  return headers;
+}
+
 export function createAgentsServiceAuthHelpers({ axios, nowFn = Date.now }) {
   function getAgentsServiceBaseUrl() {
     return String(process.env.AGENTS_SERVICE_BASE_URL || 'http://127.0.0.1:3101').trim().replace(/\/$/, '');

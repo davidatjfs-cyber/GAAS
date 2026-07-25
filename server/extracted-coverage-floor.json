@@ -5,7 +5,8 @@
   "tolerancePct": 0.5,
   "files": [
     "domains/approvals/create-assignees.js",
+    "domains/approvals/create-notify-message.js",
     "domains/approvals/create-validators.js",
-    "domains/approvals/create-notify-message.js"
+    "domains/health/scheduler-heartbeat.js"
   ]
 }
