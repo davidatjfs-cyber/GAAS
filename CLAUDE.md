@@ -175,7 +175,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
    返回 200，必须看 body 是不是 SPA 壳子来判断是否真的堵住了）。
 
 **必须做、但只有账号持有人能做的事（本次没有代替执行）**：`.env` 里出现过的所有密钥/密码**必须视为已泄露
-并轮换**，不能因为"现在挡住了"就当没事发生过：
+并轮换**，不能因为"现在挡住了"就当没事发生过。可执行波次、双边对照与验证命令见
+[`docs/key-rotation-runbook.md`](docs/key-rotation-runbook.md)；只读复检：`./scripts/verify-secret-presence.sh`。
 - `JWT_SECRET` / `PLATFORM_ADMIN_JWT_SECRET`：换新值 → 会导致所有现有登录 session 失效，需提前告知用户重新登录。
 - `ADMIN_PASSWORD` / `AGENTS_ADMIN_PASSWORD`：改密码。
 - `DEEPSEEK_API_KEY` / `QWEN_API_KEY` / `DOUBAO_API_KEY` / `OPENAI_API_KEY`：去对应控制台吊销旧 key、生成新 key。

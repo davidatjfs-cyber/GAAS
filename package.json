@@ -24,7 +24,8 @@
     "deploy:server": "bash scripts/deploy-server-files.sh",
     "deploy:prod-deps": "bash scripts/install-prod-deps.sh",
     "deploy:prod-deps:verify": "VERIFY_ONLY=1 bash scripts/install-prod-deps.sh",
-    "deploy:check": "bash scripts/deploy-hrms-safe.sh"
+    "deploy:check": "bash scripts/deploy-hrms-safe.sh",
+    "secrets:verify": "bash scripts/verify-secret-presence.sh"
   },
   "dependencies": {
     "mammoth": "^1.12.0"
