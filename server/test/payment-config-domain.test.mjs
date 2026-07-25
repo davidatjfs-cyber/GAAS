@@ -52,6 +52,28 @@ test('loadPaymentConfigFromState', () => {
   assert.deepEqual(cfg.paymentSettings.payees, ['A']);
 });
 
+test('normalizePaymentSettings：legacy categories + payeeDetails', () => {
+  const s = normalizePaymentSettings({
+    categories: ['食材', '水电'],
+    payeeDetails: [
+      { name: '供应商甲', account: '6222', bank: '工行' },
+      { name: '供应商甲', account: '999' },
+      { name: '  ' },
+      null,
+    ],
+  });
+  assert.deepEqual(s.primaryCategories, ['食材', '水电']);
+  assert.equal(s.payeeDetails.length, 1);
+  assert.equal(s.payeeDetails[0].account, '6222');
+});
+
+test('normalizePaymentBudgets / loadPaymentConfigFromState：非数组与空 state', () => {
+  assert.deepEqual(normalizePaymentBudgets(null), []);
+  const cfg = loadPaymentConfigFromState(null);
+  assert.ok(Array.isArray(cfg.paymentSettings.primaryCategories));
+  assert.deepEqual(cfg.paymentBudgets, []);
+});
+
 test('promotionTracks / roles 不在白名单且 PUT 不能覆盖', () => {
   assert.equal(STATE_PUT_WHITELIST.includes('promotionTracks'), false);
   assert.equal(STATE_PUT_WHITELIST.includes('roles'), false);

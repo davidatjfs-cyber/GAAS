@@ -1,7 +1,7 @@
 {
   "lines": 39,
-  "branches": 57,
+  "branches": 58,
   "functions": 41,
   "updated": "2026-07-25",
-  "note": "Phase 1d：薪资账本/底薪时间线 + 登录失败路径后实测约 lines 39.03 / branches 57.77 / functions 41.13。引入 hrms-payroll-engine 分母变大，整数档未升。只升不降。"
+  "note": "Phase 1e：growth-phase-auth + payroll-rules 纯函数/resolve mock + attendance classify + payment-config 边角。实测约 lines 39.21 / branches 58.09 / functions 41.42。branches 升至 58；lines/functions 整数档未升。只升不降。"
 }
