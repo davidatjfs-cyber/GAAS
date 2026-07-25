@@ -10,6 +10,10 @@
  */
 
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'payroll', handler: 'service' });
+
 
 export async function loadPointRecordsFromTable(pool, tenantId) {
   const tid = String(tenantId || 'default');
@@ -65,7 +69,7 @@ export async function hydrateStateFromAuthoritativeTables(pool, state, tenantId)
     const points = await loadPointRecordsFromTable(pool, tid);
     if (Array.isArray(points)) base.pointRecords = points;
   } catch (e) {
-    console.error('[payroll-domain] load point_records failed:', e?.message || e);
+    log.error({ msg: 'payroll_domain_load_point_records_failed', err: e?.message || e });
   }
 
   try {
@@ -77,7 +81,7 @@ export async function hydrateStateFromAuthoritativeTables(pool, state, tenantId)
       base.monthlyConfirmations = domain.monthlyConfirmations;
     }
   } catch (e) {
-    console.error('[payroll-domain] load hrms_payroll_domain failed:', e?.message || e);
+    log.error({ msg: 'payroll_domain_load_hrms_payroll_domain_failed', err: e?.message || e });
   }
 
   return base;

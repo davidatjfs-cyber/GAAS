@@ -178,7 +178,7 @@ export async function handleApprovalDecide(req, res, deps) {
                 const feishuMsg = `📋 【HRMS 待审批提醒】\n\n${feishuApplicantName} 提交了${feishuLabel}申请，需要您审批。\n\n请登录 HRMS 系统处理：https://nnyx.cc`;
                 await sendLarkMessage(fu.open_id, feishuMsg, { skipDedup: true });
               }
-            } catch (e) { console.error('[approval-decide] feishu notify next error:', e?.message); }
+            } catch (e) { log.error({ msg: 'approval_decide_feishu_notify_next_error', err: e?.message }); }
           })();
         }
 
@@ -191,7 +191,7 @@ export async function handleApprovalDecide(req, res, deps) {
                 const feishuMsg = `📋 【HRMS 审批结果】\n\n${feishuApplicantName}，您的${feishuLabel}申请${resultText}。${note ? `\n原因：${note}` : ''}\n\n请登录 HRMS 查看详情：https://nnyx.cc`;
                 await sendLarkMessage(fu.open_id, feishuMsg, { skipDedup: true });
               }
-            } catch (e) { console.error('[approval-decide] feishu notify applicant error:', e?.message); }
+            } catch (e) { log.error({ msg: 'approval_decide_feishu_notify_applicant_error', err: e?.message }); }
           })();
         }
       }

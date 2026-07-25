@@ -7,6 +7,10 @@
  */
 
 import { HR_RATING_CONFIG_KEYS, SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'flow-config', handler: 'service' });
+
 
 export const FLOW_CONFIG_KEYS = Object.freeze({
   roleModules: HR_RATING_CONFIG_KEYS.ROLE_MODULES,
@@ -136,7 +140,7 @@ export async function hydrateFlowConfigFromTable(pool, state, tenantId) {
       base.paymentFlowByStore = bundle.paymentFlowByStore;
     }
   } catch (e) {
-    console.error('[flow-config] hydrate failed:', e?.message || e);
+    log.error({ msg: 'flow_config_hydrate_failed', err: e?.message || e });
   }
   return base;
 }

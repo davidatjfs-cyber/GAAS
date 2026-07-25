@@ -1,5 +1,9 @@
 import jwt from 'jsonwebtoken';
 import { SYSTEM_TENANT_ID, tenantContext } from '../../utils/database.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'tenant-platform', handler: 'auth-guards' });
+
 
 export const PLATFORM_ADMIN_ROLES = ['super_admin', 'general_manager', 'sales_manager', 'sales', 'customer_service', 'finance', 'implementation', 'auditor'];
 
@@ -42,7 +46,7 @@ export function createPlatformAdminRequired(pool, platformAdminJwtSecret) {
         `INSERT INTO platform_admin_audit_log (admin_username, method, path, target_tenant_id, detail, ip)
          VALUES ($1,$2,$3,$4,$5,$6)`,
         [payload.username, req.method, req.originalUrl, targetTenantId, JSON.stringify(detail).slice(0, 4000), req.ip || '']
-      )).catch((e) => console.warn('[platform-admin] audit log write failed:', e?.message));
+      )).catch((e) => log.warn({ msg: 'platform_admin_audit_log_write_failed', err: e?.message }));
     }
     return nextInSystemContext();
   };

@@ -5,6 +5,10 @@ import {
   applyFactDemandGuardrail,
   enrichAgentEvidenceMeta,
 } from './quality-helpers.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'agent-message', handler: 'post-route-quality' });
+
 
 /**
  * @param {{
@@ -43,7 +47,7 @@ export async function applyPostRouteQualityGates(ctx, deps) {
     response = qg.response;
     agentData = qg.agentData;
   } catch (e) {
-    console.error('[agents] enforceUnifiedQualityGate error:', e?.message || e);
+    log.error({ msg: 'agents_enforceunifiedqualitygate_error', err: e?.message || e });
   }
 
   return enrichAgentEvidenceMeta({

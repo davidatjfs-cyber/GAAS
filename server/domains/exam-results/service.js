@@ -4,6 +4,10 @@
  */
 
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'exam-results', handler: 'service' });
+
 
 const TABLE = SHARED_TABLES.EXAM_RESULTS;
 
@@ -64,7 +68,7 @@ export async function hydrateExamResultsFromTable(pool, state, tenantId) {
       base.examResults = fromTable;
     }
   } catch (e) {
-    console.error('[exam-results-domain] hydrate failed:', e?.message || e);
+    log.error({ msg: 'exam_results_domain_hydrate_failed', err: e?.message || e });
   }
   return base;
 }

@@ -5,6 +5,10 @@ import { brandKey, getCreditPoolRisk } from '../../services/sales/sales-order-cr
 import { canAccessLead, isManager } from '../../services/sales/sales-permissions.js';
 import { completeDeployCheck } from '../../services/sales/onboarding-sla-service.js';
 import { deliverHealthCheckReport } from '../../services/sales/health-check-period-service.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales-ai', handler: 'routes-finance' });
+
 
 /** @param {{ app: any, pool: any, platformAdminRequired: Function, gates: object }} ctx */
 export function registerSalesAiFinanceRoutes(ctx) {
@@ -392,7 +396,7 @@ export function registerSalesAiFinanceRoutes(ctx) {
       });
       res.status(201).json({ ok: true, customer });
     } catch (e) {
-      console.error('[sales] create manual customer failed:', e?.message || e);
+      log.error({ msg: 'sales_create_manual_customer_failed', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error', message: '客户建档失败，请稍后重试' });
     }
   });

@@ -1,4 +1,8 @@
 import { syncPermissionGroupGrants } from '../../services/hrms-permission-engine.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'permission-groups', handler: 'routes' });
+
 
 /**
  * @param {import('express').Express} app
@@ -40,7 +44,7 @@ export function registerPermissionGroupsRoutes(app, authRequired, deps) {
           db: pool,
         });
       } catch (syncErr) {
-        console.warn('[permission-groups] grant sync failed (non-fatal):', syncErr?.message);
+        log.warn({ msg: 'permission_groups_grant_sync_failed_non_fatal', err: syncErr?.message });
       }
       return res.json({ ok: true });
     } catch (e) {

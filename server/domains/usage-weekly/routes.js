@@ -7,6 +7,10 @@
  * @param {(req,res,next)=>void} authRequired
  * @param {{ pool: import('pg').Pool }} deps
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'usage-weekly', handler: 'routes' });
+
 export function registerUsageWeeklyRoutes(app, authRequired, deps) {
   const { pool } = deps;
 
@@ -69,7 +73,7 @@ export function registerUsageWeeklyRoutes(app, authRequired, deps) {
 
       res.json({ periodStart, periodEnd, data: result.rows });
     } catch (e) {
-      console.error('GET /api/admin/usage-weekly error:', e);
+      log.error({ msg: 'get_api_admin_usage_weekly_error', err: e?.message || String(e) });
       res.status(500).json({ error: 'internal_error' });
     }
   });

@@ -1,4 +1,8 @@
 import { statfs as defaultStatfs } from 'node:fs/promises';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'health', handler: 'disk' });
+
 
 /** 根分区空间（供 /api/health 与磁盘告警）；阈值偏保守，避免再次写满导致 PostgreSQL 宕机 */
 export async function buildRootDiskHealthInfo(statfsImpl = defaultStatfs) {
@@ -68,7 +72,7 @@ export function createDiskPressureNotifier({ sendLarkMessage }) {
       try {
         await sendLarkMessage(id, text);
       } catch (e) {
-        console.error('HRMS disk lark notify failed:', e?.message || e);
+        log.error({ msg: 'hrms_disk_lark_notify_failed', err: e?.message || e });
       }
     }
   };

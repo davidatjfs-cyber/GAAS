@@ -3,6 +3,10 @@
  * No DDL here — leave ensureLeaveDomainTable in index (legacy listen-time).
  */
 
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'payroll', handler: 'domain-sync' });
+
 export function createPayrollLeaveDomainSyncHelpers({
   pool,
   resolveTenantIdDefault,
@@ -67,7 +71,7 @@ export function createPayrollLeaveDomainSyncHelpers({
         const s = await getSharedState();
         await upsertPayrollDomainFromState(s);
       } catch (e) {
-        console.error('[hrms_payroll_domain] async sync failed (non-fatal):', e?.message);
+        log.error({ msg: 'hrms_payroll_domain_async_sync_failed_non_fatal', err: e?.message });
         void notifyAdminsDualWriteFailure('hrms_payroll_domain（异步薪资域双写）', e);
       }
     });
@@ -79,7 +83,7 @@ export function createPayrollLeaveDomainSyncHelpers({
         const s = await getSharedState();
         await upsertLeaveDomainFromState(s);
       } catch (e) {
-        console.error('[hrms_leave_domain] async sync failed (non-fatal):', e?.message);
+        log.error({ msg: 'hrms_leave_domain_async_sync_failed_non_fatal', err: e?.message });
         void notifyAdminsDualWriteFailure('hrms_leave_domain（异步欠休域双写）', e);
       }
     });

@@ -1,3 +1,7 @@
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'feishu-bitable', handler: 'api' });
+
 export async function getFeishuAccessToken({ axios, isExternalEnabled, safeErrMessage, feishuEnv = {}, appId, appSecret } = {}) {
   if (!isExternalEnabled()) return '';
   const resolvedAppId = appId || feishuEnv.appId;
@@ -19,7 +23,7 @@ export async function getFeishuAccessToken({ axios, isExternalEnabled, safeErrMe
     }
     throw new Error(`Feishu API error: ${response.data?.msg || 'Unknown error'} (code: ${response.data?.code})`);
   } catch (error) {
-    console.error('[getFeishuAccessToken] Error:', safeErrMessage(error));
+    log.error({ msg: 'getfeishuaccesstoken_error', detail: [safeErrMessage(error)] });
     if (error?.response?.data) {
       const code = error.response.data?.code;
       const msg = error.response.data?.msg;
@@ -58,7 +62,7 @@ export async function createFeishuBitableRecord({ axios, isExternalEnabled, safe
     }
     return response.data?.data?.record || null;
   } catch (error) {
-    console.error('[createFeishuBitableRecord] Error:', safeErrMessage(error));
+    log.error({ msg: 'createfeishubitablerecord_error', detail: [safeErrMessage(error)] });
     if (error?.response?.data) {
       const code = error.response.data?.code;
       const msg = error.response.data?.msg;
@@ -111,7 +115,7 @@ export async function getFeishuBitableData({ axios, isExternalEnabled, safeErrMe
 
     return { items: allItems, has_more: false };
   } catch (error) {
-    console.error('[getFeishuBitableData] Error:', safeErrMessage(error));
+    log.error({ msg: 'getfeishubitabledata_error', detail: [safeErrMessage(error)] });
     if (error?.response?.data) {
       const code = error.response.data?.code;
       const msg = error.response.data?.msg;

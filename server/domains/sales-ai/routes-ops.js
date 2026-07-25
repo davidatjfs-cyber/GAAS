@@ -29,6 +29,10 @@ import {
   getRepScorecard,
   getTeamLeaderboard,
 } from '../../services/sales/sales-rep-management.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales-ai', handler: 'routes-ops' });
+
 
 /** @param {{ app: any, pool: any, platformAdminRequired: Function, gates: object, sendOpsAlert?: Function }} ctx */
 export function registerSalesAiOpsRoutes(ctx) {
@@ -58,7 +62,7 @@ export function registerSalesAiOpsRoutes(ctx) {
       await ensureSalesTables(pool);
       res.json(await buildVoiceQualityReport(pool, { days: req.query?.days }));
     } catch (e) {
-      console.error('[sales-ai] voice quality report failed:', e?.message || e);
+      log.error({ msg: 'sales_ai_voice_quality_report_failed', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -389,7 +393,7 @@ export function registerSalesAiOpsRoutes(ctx) {
       const data = await buildTrialProgressSummary(pool, trialId);
       res.status(data.ok ? 200 : 400).json(data);
     } catch (e) {
-      console.error('[sales] trial progress', e?.message || e);
+      log.error({ msg: 'sales_trial_progress', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });

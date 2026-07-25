@@ -1,6 +1,10 @@
 /**
  * Bitable admin HTTP routes (Wave 4p — behavior-preserving extract from index.js).
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'bitable-admin', handler: 'routes' });
+
 export function registerBitableAdminRoutes(app, authRequired, deps) {
   const { getBitableSubmissionStats, archiveOldBitableSubmissions } = deps;
 
@@ -14,7 +18,7 @@ export function registerBitableAdminRoutes(app, authRequired, deps) {
       const stats = await getBitableSubmissionStats();
       res.json({ ok: true, data: stats });
     } catch (e) {
-      console.error('[api] bitable stats error:', e?.message);
+      log.error({ msg: 'api_bitable_stats_error', err: e?.message });
       res.status(500).json({ error: 'internal_error', message: 'internal_error' });
     }
   });
@@ -29,7 +33,7 @@ export function registerBitableAdminRoutes(app, authRequired, deps) {
       const result = await archiveOldBitableSubmissions();
       res.json({ ok: true, data: result });
     } catch (e) {
-      console.error('[api] bitable archive error:', e?.message);
+      log.error({ msg: 'api_bitable_archive_error', err: e?.message });
       res.status(500).json({ error: 'internal_error', message: 'internal_error' });
     }
   });

@@ -1,4 +1,8 @@
 import { canViewContractPrice } from '../../services/sales/sales-privacy.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales-ai', handler: 'gates' });
+
 
 /**
  * @param {any} pool
@@ -38,7 +42,7 @@ export function createSalesAiGates(pool, requireSalesManagerOrAbove) {
         [order.contract_id, order.id, order.amount_fen, requestedBy]
       );
     } catch (e) {
-      console.warn('[sales-ai] auto invoice request failed:', e?.message || e);
+      log.warn({ msg: 'sales_ai_auto_invoice_request_failed', err: e?.message || e });
     }
   }
   const generalManagerGate = (req, res, next) => {

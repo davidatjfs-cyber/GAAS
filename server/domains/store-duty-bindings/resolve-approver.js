@@ -1,4 +1,8 @@
 import { ensureReady as defaultEnsureReady } from './service.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'store-duty-bindings', handler: 'resolve-approver' });
+
 
 // Wave H14: store_manager fallback via can_approve_hrms duty binder.
 // Optional ensureReady is for unit tests; production uses service.js ensureReady.
@@ -23,7 +27,7 @@ export function createDutyApproverResolver({ pool, ensureReady = defaultEnsureRe
       );
       return r.rows?.[0]?.username ? String(r.rows[0].username).trim() : '';
     } catch (e) {
-      console.warn('[store-duty-bindings] resolveDutyApproverForStore failed:', e?.message || e);
+      log.warn({ msg: 'store_duty_bindings_resolvedutyapproverforstore_failed', err: e?.message || e });
       return '';
     }
   }

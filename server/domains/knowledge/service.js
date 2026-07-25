@@ -40,7 +40,7 @@ async function resolveKnowledgeGroupName(pool, groupId, providedName, fallbackNa
       const existing = normalizeKnowledgeGroupName(row.group_name || row.title || '');
       if (existing) return existing;
     } catch (e) {
-      console.warn('[knowledge] resolve group name failed:', e?.message || e);
+      log.warn({ msg: 'knowledge_resolve_group_name_failed', err: e?.message || e });
     }
   }
   return normalizeKnowledgeGroupName(fallbackName) || '未命名项目组';
@@ -390,7 +390,7 @@ ${contentForPrompt}
     } catch (e) {
       const msg = String(e?.message || e);
       if (/invalid input syntax for type uuid/i.test(msg)) return { ok: false, status: 400, error: 'invalid_id' };
-      console.error('[knowledge] explanation error:', msg);
+      log.error({ msg: 'knowledge_explanation_error', detail: [msg] });
       return { ok: false, status: 500, error: 'server_error', message: msg };
     }
   
@@ -417,7 +417,7 @@ export async function putKnowledgeExplanation(ctx, { role, id, explanation, user
         `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role, tenant_id)
          VALUES ($1::uuid, 'ai_explanation', $2, $3, $4, $5, $6)`,
         [id, oldVal, explanation, username || null, role || null, resolveTenantIdDefault()]
-      ).catch((e) => console.error('[knowledge] edit-history(explanation) failed:', e?.message));
+      ).catch((e) => log.error({ msg: 'knowledge_edit_history_explanation_failed', err: e?.message }));
       return { ok: true, success: true, locked: true };
     } catch (e) {
       return { ok: false, status: 500, error: 'server_error', message: String(e?.message || e) };
@@ -461,12 +461,12 @@ ${oldVal.slice(0, 20000)}` }
         `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role, tenant_id)
          VALUES ($1::uuid, 'ai_explanation', $2, $3, $4, $5, $6)`,
         [id, oldVal, reformatted, username || null, role || null, resolveTenantIdDefault()]
-      ).catch((e) => console.error('[knowledge] edit-history(reformat) failed:', e?.message));
+      ).catch((e) => log.error({ msg: 'knowledge_edit_history_reformat_failed', err: e?.message }));
       return { ok: true, success: true, explanation: reformatted };
     } catch (e) {
       const msg = String(e?.message || e);
       if (/invalid input syntax for type uuid/i.test(msg)) return { ok: false, status: 400, error: 'invalid_id' };
-      console.error('[knowledge] explanation reformat error:', msg);
+      log.error({ msg: 'knowledge_explanation_reformat_error', detail: [msg] });
       return { ok: false, status: 500, error: 'server_error', message: msg };
     }
   
@@ -582,7 +582,7 @@ export async function deleteGroup(ctx, { role, groupId }) {
       await pool.query('DELETE FROM knowledge_base WHERE group_id = $1::uuid', [groupId]);
       return { ok: true, ok: true, deleted: rows.length };
     } catch (e) {
-      console.error('DELETE /api/knowledge/group/:groupId error:', e);
+      log.error({ msg: 'delete_api_knowledge_group_groupid_error', err: e?.message || String(e) });
       return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
     }
   
@@ -621,7 +621,7 @@ export async function deleteKnowledge(ctx, { role, id }) {
       await pool.query('DELETE FROM knowledge_base WHERE id = $1', [id]);
       return { ok: true, ok: true };
     } catch (e) {
-      console.error('DELETE /api/knowledge/:id error:', e);
+      log.error({ msg: 'delete_api_knowledge_id_error', err: e?.message || String(e) });
       return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
     }
   
@@ -701,7 +701,7 @@ export async function putKnowledge(ctx, { role, id, body, username }) {
           `INSERT INTO knowledge_edit_history (knowledge_id, field, old_value, new_value, editor, editor_role, tenant_id)
            VALUES ($1::uuid, 'content', $2, $3, $4, $5, $6)`,
           [id, oldContent, content, username || null, role || null, resolveTenantIdDefault()]
-        ).catch((e) => console.error('[knowledge] edit-history(content) failed:', e?.message));
+        ).catch((e) => log.error({ msg: 'knowledge_edit_history_content_failed', err: e?.message }));
       }
       if (targetGroupId && groupName) {
         await pool.query(
@@ -714,7 +714,7 @@ export async function putKnowledge(ctx, { role, id, body, username }) {
       }
       return { ok: true, item: row };
     } catch (e) {
-      console.error('PUT /api/knowledge/:id error:', e);
+      log.error({ msg: 'put_api_knowledge_id_error', err: e?.message || String(e) });
       return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
     }
   
@@ -1081,12 +1081,12 @@ export async function runCreateKnowledgeBackground(ctx, { inserted, localPath, t
                 parseSuccess = true;
               } else {
                 const reason = vr?.error || '视觉模型返回内容为空';
-                console.warn('[knowledge] image OCR failed:', reason);
+                log.warn({ msg: 'knowledge_image_ocr_failed', detail: [reason] });
                 void notifyAdminsOcrFailed(itemTitle, '图片', reason);
               }
             } catch (ocrErr) {
               const reason = String(ocrErr?.message || ocrErr);
-              console.warn('[knowledge] image OCR error:', reason);
+              log.warn({ msg: 'knowledge_image_ocr_error', detail: [reason] });
               void notifyAdminsOcrFailed(itemTitle, '图片', reason);
             }
           }
@@ -1161,7 +1161,7 @@ export async function runCreateKnowledgeBackground(ctx, { inserted, localPath, t
                   await pool.query('UPDATE knowledge_base SET content = $1, updated_at = now() WHERE id = $2', [finalText, inserted.id]);
                   parseSuccess = true;
                 } else {
-                  console.warn('[knowledge] video analysis returned empty');
+                  log.warn({ msg: 'knowledge_video_analysis_returned_empty' });
                   void notifyAdminsOcrFailed(itemTitle, '视频', '视觉模型返回为空');
                 }
               } else {
@@ -1169,7 +1169,7 @@ export async function runCreateKnowledgeBackground(ctx, { inserted, localPath, t
               }
             } catch (vidErr) {
               const reason = String(vidErr?.message || vidErr);
-              console.warn('[knowledge] video process error:', reason);
+              log.warn({ msg: 'knowledge_video_process_error', detail: [reason] });
               void notifyAdminsOcrFailed(itemTitle, '视频', reason);
             } finally {
               if (tmpDir) {
@@ -1215,7 +1215,7 @@ export async function runCreateKnowledgeBackground(ctx, { inserted, localPath, t
                       parseSuccess = true;
                     } else {
                       const reason = vr?.error || 'PDF 图片转换后视觉模型返回为空';
-                      console.warn('[knowledge] PDF OCR failed:', reason);
+                      log.warn({ msg: 'knowledge_pdf_ocr_failed', detail: [reason] });
                       void notifyAdminsOcrFailed(itemTitle, 'PDF 扫描件', reason);
                     }
                   } else {
@@ -1229,7 +1229,7 @@ export async function runCreateKnowledgeBackground(ctx, { inserted, localPath, t
               }
             } catch (pdfErr) {
               const reason = String(pdfErr?.message || pdfErr);
-              console.warn('[knowledge] PDF parse error:', reason);
+              log.warn({ msg: 'knowledge_pdf_parse_error', detail: [reason] });
               void notifyAdminsOcrFailed(itemTitle, 'PDF', reason);
             }
           }
@@ -1244,18 +1244,18 @@ export async function runCreateKnowledgeBackground(ctx, { inserted, localPath, t
                 await pool.query('UPDATE knowledge_base SET content = $1, updated_at = now() WHERE id = $2', [docText, inserted.id]);
                 parseSuccess = true;
               } else {
-                console.warn('[knowledge] Word document returned empty text:', itemTitle);
+                log.warn({ msg: 'knowledge_word_document_returned_empty_text', detail: [itemTitle] });
                 void notifyAdminsOcrFailed(itemTitle, 'Word文档', 'mammoth提取文本为空');
               }
             } catch (docErr) {
               const reason = String(docErr?.message || docErr);
-              console.warn('[knowledge] Word document parse error:', reason);
+              log.warn({ msg: 'knowledge_word_document_parse_error', detail: [reason] });
               void notifyAdminsOcrFailed(itemTitle, 'Word文档', reason);
             }
           }
         }
       } catch (e) {
-        console.warn('[knowledge] file parse block:', e?.message || e);
+        log.warn({ msg: 'knowledge_file_parse_block', err: e?.message || e });
       }
       try {
         if (!localPath || !inserted?.id) return;

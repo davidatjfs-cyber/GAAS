@@ -1,6 +1,10 @@
 /**
  * Attention scores HTTP routes (Wave 4n — behavior-preserving extract from index.js).
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'attention-scores', handler: 'routes' });
+
 export function registerAttentionScoresRoutes(app, authRequired, deps) {
   const { pool, getSharedState, resolveTenantIdDefault } = deps;
 
@@ -38,7 +42,7 @@ export function registerAttentionScoresRoutes(app, authRequired, deps) {
 
       res.json({ ok: true, id, score });
     } catch (e) {
-      console.error('POST /api/attention-scores error:', e);
+      log.error({ msg: 'post_api_attention_scores_error', err: e?.message || String(e) });
       res.status(500).json({ error: 'internal_error' });
     }
   });
@@ -77,7 +81,7 @@ export function registerAttentionScoresRoutes(app, authRequired, deps) {
       const r = await pool.query(query, params);
       res.json({ scores: r.rows || [] });
     } catch (e) {
-      console.error('GET /api/attention-scores error:', e);
+      log.error({ msg: 'get_api_attention_scores_error', err: e?.message || String(e) });
       res.status(500).json({ error: 'internal_error' });
     }
   });
@@ -101,7 +105,7 @@ export function registerAttentionScoresRoutes(app, authRequired, deps) {
     `);
       res.json({ summary: r.rows || [] });
     } catch (e) {
-      console.error('GET /api/attention-scores/summary error:', e);
+      log.error({ msg: 'get_api_attention_scores_summary_error', err: e?.message || String(e) });
       res.status(500).json({ error: 'internal_error' });
     }
   });

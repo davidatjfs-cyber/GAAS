@@ -2,6 +2,10 @@
  * Agent 手动触发 / 诊断测试：run/*、test-*、route-test、llm-health。
  */
 
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'agent-triggers', handler: 'service' });
+
 export const TRIGGER_HQ_ROLES = Object.freeze(['admin', 'hq_manager']);
 
 export function isTriggerAdminRole(role) {
@@ -83,7 +87,7 @@ export async function runManualAudit(deps) {
     try {
       masterSynced = await deps.syncDataAuditorIssuesToMasterTasks(newIssueIds);
     } catch (e) {
-      console.error('[agent-triggers/run/audit] master sync:', e?.message || e);
+      log.error({ msg: 'agent_triggers_run_audit_master_sync', err: e?.message || e });
     }
   }
   return { issuesCreated, newIssueIds, feishuPushed: pushed, masterSynced };

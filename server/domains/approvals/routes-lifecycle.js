@@ -13,6 +13,10 @@ import {
   returnApproval,
   resubmitApproval,
 } from './service-lifecycle.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'routes-lifecycle' });
+
 
 /**
  * @param {import('express').Express} app
@@ -152,7 +156,7 @@ export function registerApprovalLifecycleRoutes(app, authRequired, deps) {
         name: result.name,
       });
     } catch (e) {
-      console.error('[admin/repair-onboarding-employee]', e);
+      log.error({ msg: 'admin_repair_onboarding_employee', err: e?.message || String(e) });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });

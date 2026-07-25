@@ -94,9 +94,7 @@ export async function ingestMiniprogramEvent(ctx, { body, req }) {
       if (eventType === 'coupon_redeemed') {
         const sanitized = sanitizeRedeemAmountFen(amountFen, metadata);
         if (sanitized.cleared) {
-          console.warn(
-            `[growth] coupon_redeemed amount_fen 异常(疑似核销码/金额混淆)，已清零待回填：raw=${sanitized.raw} short_code=${sanitized.shortCode}`
-          );
+          log.warn({ msg: 'growth-metrics_service_warn', detail: [`[growth] coupon_redeemed amount_fen 异常(疑似核销码/金额混淆)，已清零待回填：raw=${sanitized.raw} short_code=${sanitized.shortCode}`] });
           amountFen = 0;
         }
       }
@@ -168,7 +166,7 @@ export async function ingestMiniprogramEvent(ctx, { body, req }) {
                   AND payload->>'coupon_code' = $1`,
               [redeemShortCode]
             )
-            .catch((e) => console.warn('[growth] delivery redeem flip failed:', e?.message));
+            .catch((e) => log.warn({ msg: 'growth_delivery_redeem_flip_failed', err: e?.message }));
         }
       }
 

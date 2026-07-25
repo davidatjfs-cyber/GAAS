@@ -7,6 +7,10 @@ import {
   deriveReach,
   scoreActionFeedback,
 } from './helpers.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'growth-actions', handler: 'service' });
+
 
 export async function runRuleEngine(ctx, tenantId, body) {
   const result = await ctx.tenantContext.run(tenantId, () =>
@@ -332,7 +336,7 @@ export async function submitActionFeedback(ctx, tenantId, actionKeyRaw, operator
           ]
         )
         .catch((e) => {
-          console.warn('[growth] deposit learning failed:', e?.message || e);
+          log.warn({ msg: 'growth_deposit_learning_failed', err: e?.message || e });
         });
     }
 

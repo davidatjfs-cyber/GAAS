@@ -10,6 +10,10 @@ import {
   buildWeeklyScoreInvalidationCard,
   buildChangeCard,
 } from './helpers.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'performance-invalidation', handler: 'service' });
+
 
 function resolvePool(ctx) {
   return typeof ctx.pool === 'function' ? ctx.pool() : ctx.pool;
@@ -141,7 +145,7 @@ export async function listPerformanceRecords(ctx, { username, period, tenantId }
       }
     };
   } catch (e) {
-    console.error('[performance-records] error:', e?.message);
+    log.error({ msg: 'performance_records_error', err: e?.message });
     return { ok: false, status: 500, error: String(e?.message || e) };
   }
 }
@@ -240,7 +244,7 @@ export async function invalidatePerformanceRecord(ctx, {
       try {
         filingMonthlyCountBefore = await getIncompleteTaskCount(username, period);
       } catch (e) {
-        console.warn('[performance-invalidate] filingMonthlyCountBefore:', e?.message);
+        log.warn({ msg: 'performance_invalidate_filingmonthlycountbefore', err: e?.message });
       }
     }
 
@@ -289,7 +293,7 @@ export async function invalidatePerformanceRecord(ctx, {
       try {
         afterData = await calculateEmployeeScore(empStore, username, empRole, period);
       } catch (calcErr) {
-        console.error('[performance-invalidate] recalc error:', calcErr?.message);
+        log.error({ msg: 'performance_invalidate_recalc_error', err: calcErr?.message });
       }
     }
 
@@ -311,7 +315,7 @@ export async function invalidatePerformanceRecord(ctx, {
       try {
         countAfter = await getIncompleteTaskCount(username, period);
       } catch (e) {
-        console.warn('[performance-invalidate] getIncompleteTaskCount after:', e?.message);
+        log.warn({ msg: 'performance_invalidate_getincompletetaskcount_after', err: e?.message });
       }
       const countBefore =
         typeof filingMonthlyCountBefore === 'number' && !Number.isNaN(filingMonthlyCountBefore)
@@ -373,7 +377,7 @@ export async function invalidatePerformanceRecord(ctx, {
           ]
         );
       } catch (e) {
-        console.warn('[performance-invalidate] filing notification insert failed:', e?.message);
+        log.warn({ msg: 'performance_invalidate_filing_notification_insert_failed', err: e?.message });
       }
 
       const openFiling = await p.query(
@@ -392,7 +396,7 @@ export async function invalidatePerformanceRecord(ctx, {
             return r;
           })
           .catch(() => sendLarkMessage(oid, inAppMsgAssignee, { skipDedup: true }))
-          .catch((e) => console.warn('[performance-invalidate] filing assignee lark failed:', e?.message));
+          .catch((e) => log.warn({ msg: 'performance_invalidate_filing_assignee_lark_failed', err: e?.message }));
       }
 
       try {
@@ -418,7 +422,7 @@ export async function invalidatePerformanceRecord(ctx, {
           ]
         );
       } catch (e) {
-        console.warn('[performance-invalidate] admin in-app copy failed:', e?.message);
+        log.warn({ msg: 'performance_invalidate_admin_in_app_copy_failed', err: e?.message });
       }
       const admOpen = await p.query(
         `SELECT open_id FROM feishu_users
@@ -437,7 +441,7 @@ export async function invalidatePerformanceRecord(ctx, {
             return r;
           })
           .catch(() => sendLarkMessage(oidA, inAppMsgAdmin, { skipDedup: true }))
-          .catch((e) => console.warn('[performance-invalidate] admin lark failed:', e?.message));
+          .catch((e) => log.warn({ msg: 'performance_invalidate_admin_lark_failed', err: e?.message }));
       }
     }
 
@@ -467,7 +471,7 @@ export async function invalidatePerformanceRecord(ctx, {
           recordSummary = (s || d).replace(/\s+/g, ' ').slice(0, 280);
         }
       } catch (e) {
-        console.warn('[performance-invalidate] weekly record summary:', e?.message);
+        log.warn({ msg: 'performance_invalidate_weekly_record_summary', err: e?.message });
       }
 
       const weeklyPayload = {
@@ -503,7 +507,7 @@ export async function invalidatePerformanceRecord(ctx, {
             ]
           );
         } catch (e) {
-          console.warn('[performance-invalidate] weekly assignee notification:', e?.message);
+          log.warn({ msg: 'performance_invalidate_weekly_assignee_notification', err: e?.message });
         }
       }
 
@@ -529,7 +533,7 @@ export async function invalidatePerformanceRecord(ctx, {
               { skipDedup: true }
             )
           )
-          .catch((e) => console.warn('[performance-invalidate] weekly card assignee failed:', e?.message));
+          .catch((e) => log.warn({ msg: 'performance_invalidate_weekly_card_assignee_failed', err: e?.message }));
       }
 
       try {
@@ -546,7 +550,7 @@ export async function invalidatePerformanceRecord(ctx, {
           ]
         );
       } catch (e) {
-        console.warn('[performance-invalidate] weekly admin in-app:', e?.message);
+        log.warn({ msg: 'performance_invalidate_weekly_admin_in_app', err: e?.message });
       }
 
       const adminOpenIdW = await p.query(
@@ -566,7 +570,7 @@ export async function invalidatePerformanceRecord(ctx, {
             return r;
           })
           .catch(() => sendLarkMessage(oidAd, wPlainAd, { skipDedup: true }))
-          .catch((e) => console.warn('[performance-invalidate] weekly card admin failed:', e?.message));
+          .catch((e) => log.warn({ msg: 'performance_invalidate_weekly_card_admin_failed', err: e?.message }));
       }
     } else if (hasChange && source_type !== 'master_tasks_filing') {
       const nameRow = await p.query(
@@ -599,7 +603,7 @@ export async function invalidatePerformanceRecord(ctx, {
         );
         if (openIdRow.rows?.[0]?.open_id) {
           sendLarkCard(openIdRow.rows[0].open_id, card).catch((e) =>
-            console.warn('[performance-invalidate] feishu card to user failed:', e?.message)
+            log.warn({ msg: 'performance_invalidate_feishu_card_to_user_failed', err: e?.message })
           );
         }
 
@@ -612,7 +616,7 @@ export async function invalidatePerformanceRecord(ctx, {
         );
         if (adminOpenId.rows?.[0]?.open_id) {
           sendLarkCard(adminOpenId.rows[0].open_id, card).catch((e) =>
-            console.warn('[performance-invalidate] feishu card to admin failed:', e?.message)
+            log.warn({ msg: 'performance_invalidate_feishu_card_to_admin_failed', err: e?.message })
           );
         }
       }
@@ -630,7 +634,7 @@ export async function invalidatePerformanceRecord(ctx, {
       }
     };
   } catch (e) {
-    console.error('[performance-invalidate] error:', e?.message);
+    log.error({ msg: 'performance_invalidate_error', err: e?.message });
     return { ok: false, status: 500, error: String(e?.message || e) };
   }
 }

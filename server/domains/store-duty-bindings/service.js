@@ -1,4 +1,8 @@
 import { ensureStoreDutyBindingsTable } from '../../store-duty-bindings.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'store-duty-bindings', handler: 'service' });
+
 
 let __storeDutyBindingsReady = false;
 
@@ -8,7 +12,7 @@ export async function ensureReady(pool) {
     await ensureStoreDutyBindingsTable(pool);
     __storeDutyBindingsReady = true;
   } catch (e) {
-    console.warn('[store-duty-bindings] ensure table failed:', e?.message || e);
+    log.warn({ msg: 'store_duty_bindings_ensure_table_failed', err: e?.message || e });
   }
 }
 

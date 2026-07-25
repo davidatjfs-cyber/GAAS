@@ -1,4 +1,8 @@
 // 考勤缺失扣假规则起始日（含）：2026-06-01 之前不统计
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'leave-attendance', handler: 'penalties' });
+
 export const ATTENDANCE_PENALTY_START_DATE = '2026-06-01';
 
 /**
@@ -54,7 +58,7 @@ export function createPenaltiesHelpers({ pool, safeMonthOnly }) {
         entry.details.push({ date: w.d, days: 1, type: '考勤缺失扣假', source: `有出勤·${miss}` });
       }
     } catch (e) {
-      console.error('[attendance-penalty] compute failed:', e?.message);
+      log.error({ msg: 'attendance_penalty_compute_failed', err: e?.message });
     }
     return out;
   }

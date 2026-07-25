@@ -1,3 +1,7 @@
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'remaining-state', handler: 'routes' });
+
 export { registerAnnouncementExtraRoutes } from './routes-announcement-extra.js';
 
 import {
@@ -75,7 +79,7 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
       });
       return res.json({ ok: true, item });
     } catch (e) {
-      console.error('[POST /api/announcements]', e?.message || e);
+      log.error({ msg: 'post_api_announcements', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -99,7 +103,7 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
       return res.json({ ok: true });
     } catch (e) {
       if (e?.code === 'not_found') return res.status(404).json({ error: 'not_found' });
-      console.error('[DELETE /api/announcements/:id]', e?.message || e);
+      log.error({ msg: 'delete_api_announcements_id', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -129,7 +133,7 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
       });
       return res.json({ ok: true, questionBank, questionSets });
     } catch (e) {
-      console.error('[PUT /api/exam/question-bank]', e?.message || e);
+      log.error({ msg: 'put_api_exam_question_bank', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -162,7 +166,7 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
       });
       return res.json({ ok: true, item });
     } catch (e) {
-      console.error('[POST /api/exam/assignments]', e?.message || e);
+      log.error({ msg: 'post_api_exam_assignments', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -192,7 +196,7 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
       });
       return res.json({ ok: true, items });
     } catch (e) {
-      console.error('[PUT /api/training-materials]', e?.message || e);
+      log.error({ msg: 'put_api_training_materials', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -221,7 +225,7 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
       });
       return res.json({ ok: true, item: user });
     } catch (e) {
-      console.error('[PUT /api/hrms-users/:username]', e?.message || e);
+      log.error({ msg: 'put_api_hrms_users_username', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -245,7 +249,7 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
       return res.json({ ok: true });
     } catch (e) {
       if (e?.code === 'not_found') return res.status(404).json({ error: 'not_found' });
-      console.error('[DELETE /api/hrms-users/:username]', e?.message || e);
+      log.error({ msg: 'delete_api_hrms_users_username', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -264,7 +268,7 @@ export function registerRemainingStateRoutes(app, authRequired, deps) {
       });
       return res.json({ ok: true, count: result.upserted.length, items: result.list });
     } catch (e) {
-      console.error('[POST /api/hrms-users/import]', e?.message || e);
+      log.error({ msg: 'post_api_hrms_users_import', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });

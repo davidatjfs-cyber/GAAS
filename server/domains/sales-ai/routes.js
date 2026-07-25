@@ -28,6 +28,10 @@ import { registerSalesAiAdminMetaRoutes } from './routes-admin-meta.js';
 import { registerSalesAiFinanceRoutes } from './routes-finance.js';
 import { registerSalesAiLeadsRoutes } from './routes-leads.js';
 import { registerSalesAiOpsRoutes } from './routes-ops.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales-ai', handler: 'routes' });
+
 
 export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLLM, sendOpsAlert, requireSalesManagerOrAbove, upload } = {}) {
   const gates = createSalesAiGates(pool, requireSalesManagerOrAbove);
@@ -41,13 +45,13 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   }
   if (typeof sendOpsAlert === 'function') setSalesNotify(sendOpsAlert);
 
-  refreshSalesPermissionConfigCache(pool).catch((e) => console.warn('[sales-ai] permission config warm-up failed:', e?.message || e));
+  refreshSalesPermissionConfigCache(pool).catch((e) => log.warn({ msg: 'sales_ai_permission_config_warm_up_failed', err: e?.message || e }));
 
   if (!globalThis.__salesStaleLeadReminderTimer) {
     globalThis.__salesStaleLeadReminderTimer = setInterval(() => {
       ensureSalesTables(pool)
         .then(() => remindStaleHighIntentLeads(pool, sendOpsAlert))
-        .catch((e) => console.warn('[sales-ai] stale lead reminder run failed:', e?.message || e));
+        .catch((e) => log.warn({ msg: 'sales_ai_stale_lead_reminder_run_failed', err: e?.message || e }));
     }, 30 * 60 * 1000);
   }
 
@@ -55,31 +59,31 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     globalThis.__salesRiskAlertTimer = setInterval(() => {
       ensureSalesTables(pool)
         .then(() => runRiskAlerts(pool, sendOpsAlert))
-        .catch((e) => console.warn('[sales-ai] risk alert run failed:', e?.message || e));
+        .catch((e) => log.warn({ msg: 'sales_ai_risk_alert_run_failed', err: e?.message || e }));
     }, 60 * 60 * 1000);
   }
 
   if (!globalThis.__salesSlaTimer) {
     globalThis.__salesSlaTimer = setInterval(() => {
-      ensureSalesTables(pool).then(() => runSalesSlaScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] SLA scan failed:', e?.message || e));
+      ensureSalesTables(pool).then(() => runSalesSlaScan(pool, sendOpsAlert)).catch((e) => log.warn({ msg: 'sales_ai_sla_scan_failed', err: e?.message || e }));
     }, 5 * 60 * 1000);
   }
 
   if (!globalThis.__salesDeployCheckSlaTimer) {
     globalThis.__salesDeployCheckSlaTimer = setInterval(() => {
-      ensureSalesTables(pool).then(() => runDeployCheckSlaScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] deploy check SLA scan failed:', e?.message || e));
+      ensureSalesTables(pool).then(() => runDeployCheckSlaScan(pool, sendOpsAlert)).catch((e) => log.warn({ msg: 'sales_ai_deploy_check_sla_scan_failed', err: e?.message || e }));
     }, 30 * 60 * 1000);
   }
 
   if (!globalThis.__salesHealthCheckPeriodTimer) {
     globalThis.__salesHealthCheckPeriodTimer = setInterval(() => {
-      ensureSalesTables(pool).then(() => runHealthCheckPeriodScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] health check period scan failed:', e?.message || e));
+      ensureSalesTables(pool).then(() => runHealthCheckPeriodScan(pool, sendOpsAlert)).catch((e) => log.warn({ msg: 'sales_ai_health_check_period_scan_failed', err: e?.message || e }));
     }, 60 * 60 * 1000);
   }
 
   if (!globalThis.__salesProvisioningRetryTimer) {
     globalThis.__salesProvisioningRetryTimer = setInterval(() => {
-      ensureSalesTables(pool).then(() => runProvisioningRetryScan(pool, sendOpsAlert)).catch((e) => console.warn('[sales-ai] provisioning retry scan failed:', e?.message || e));
+      ensureSalesTables(pool).then(() => runProvisioningRetryScan(pool, sendOpsAlert)).catch((e) => log.warn({ msg: 'sales_ai_provisioning_retry_scan_failed', err: e?.message || e }));
     }, 5 * 60 * 1000);
   }
 
@@ -87,13 +91,13 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     globalThis.__salesNurtureCadenceTimer = setInterval(() => {
       ensureSalesTables(pool)
         .then(() => runNurtureCadence(pool))
-        .catch((e) => console.warn('[sales-ai] nurture cadence run failed:', e?.message || e));
+        .catch((e) => log.warn({ msg: 'sales_ai_nurture_cadence_run_failed', err: e?.message || e }));
     }, 60 * 60 * 1000);
   }
 
   if (!globalThis.__salesCreditRiskTimer) {
     globalThis.__salesCreditRiskTimer = setInterval(() => {
-      scanCreditRisks(pool, sendOpsAlert).catch((e) => console.warn('[sales-ai] credit risk scan failed:', e?.message || e));
+      scanCreditRisks(pool, sendOpsAlert).catch((e) => log.warn({ msg: 'sales_ai_credit_risk_scan_failed', err: e?.message || e }));
     }, 30 * 60 * 1000);
   }
 
@@ -101,13 +105,13 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
     globalThis.__salesCsTaskSyncTimer = setInterval(() => {
       ensureSalesTables(pool)
         .then(() => syncCustomerSuccessTasks(pool))
-        .catch((e) => console.warn('[sales-ai] CS task sync failed:', e?.message || e));
+        .catch((e) => log.warn({ msg: 'sales_ai_cs_task_sync_failed', err: e?.message || e }));
     }, 6 * 60 * 60 * 1000);
   }
 
   if (!globalThis.__salesRenewalBillReminderTimer) {
     globalThis.__salesRenewalBillReminderTimer = setInterval(() => {
-      runRenewalBillReminders15d(pool, sendOpsAlert).catch((e) => console.warn('[sales-ai] renewal bill reminder failed:', e?.message || e));
+      runRenewalBillReminders15d(pool, sendOpsAlert).catch((e) => log.warn({ msg: 'sales_ai_renewal_bill_reminder_failed', err: e?.message || e }));
     }, 6 * 60 * 60 * 1000);
   }
 
@@ -126,7 +130,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
             { title: '待开票提醒', audience: 'sales' }
           );
         })
-        .catch((e) => console.warn('[sales-ai] invoice reminder failed:', e?.message || e));
+        .catch((e) => log.warn({ msg: 'sales_ai_invoice_reminder_failed', err: e?.message || e }));
     }, 6 * 60 * 60 * 1000);
   }
 
@@ -142,7 +146,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
             );
           }
         })
-        .catch((e) => console.warn('[sales-ai] trial validation failed:', e?.message || e));
+        .catch((e) => log.warn({ msg: 'sales_ai_trial_validation_failed', err: e?.message || e }));
     }, 6 * 60 * 60 * 1000);
   }
 
@@ -159,7 +163,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
             await sendOpsAlert(report.text, { title: '销售AI日报', audience: 'sales' });
           }
         } catch (e) {
-          console.warn('[sales-ai] daily report send failed:', e?.message || e);
+          log.warn({ msg: 'sales_ai_daily_report_send_failed', err: e?.message || e });
         }
         scheduleSalesDailyReport();
       }, next - now);
@@ -177,7 +181,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         try {
           await runDailyActivityRollup(pool, {});
         } catch (e) {
-          console.warn('[sales-ai] rep activity rollup failed:', e?.message || e);
+          log.warn({ msg: 'sales_ai_rep_activity_rollup_failed', err: e?.message || e });
         }
         scheduleSalesRepActivityRollup();
       }, next - now);
@@ -192,7 +196,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
       req.salesLead = lead;
       next();
-    } catch (e) { console.error('[sales] lead scope check failed:', e?.message || e); res.status(500).json({ ok: false, error: 'server_error' }); }
+    } catch (e) { log.error({ msg: 'sales_lead_scope_check_failed', err: e?.message || e }); res.status(500).json({ ok: false, error: 'server_error' }); }
   });
 
   // P3：每周一 08:00 自动结算上一周KPI；每月1号 08:15 自动结算上个月KPI（都不含主管主观分，
@@ -210,7 +214,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         try {
           await runAutoKpiRollupAndNotify(pool, sendOpsAlert, 'week');
         } catch (e) {
-          console.warn('[sales-ai] weekly kpi rollup failed:', e?.message || e);
+          log.warn({ msg: 'sales_ai_weekly_kpi_rollup_failed', err: e?.message || e });
         }
         scheduleWeeklyKpi();
       }, next - now);
@@ -227,7 +231,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         try {
           await runAutoKpiRollupAndNotify(pool, sendOpsAlert, 'month');
         } catch (e) {
-          console.warn('[sales-ai] monthly kpi rollup failed:', e?.message || e);
+          log.warn({ msg: 'sales_ai_monthly_kpi_rollup_failed', err: e?.message || e });
         }
         scheduleMonthlyKpi();
       }, next - now);
@@ -240,7 +244,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       if (!kfConfigured()) return;
       const env = kfEnv();
       processKfCallbackEvent(pool, { token: '', openKfid: env.openKfid }, (payload) => handleInboundMessage(pool, payload), { notify: sendOpsAlert })
-        .catch((e) => console.warn('[sales-ai] kf compensating sync failed:', e?.message || e));
+        .catch((e) => log.warn({ msg: 'sales_ai_kf_compensating_sync_failed', err: e?.message || e }));
     }, 5 * 60 * 1000);
   }
 
@@ -252,7 +256,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
       if (!lead || !canAccessLead(req.platformAdmin, lead)) return res.status(404).json({ ok: false, error: 'not_found' });
       req.salesLead = lead;
       next();
-    } catch (e) { console.error('[sales] lead scope check failed:', e?.message || e); res.status(500).json({ ok: false, error: 'server_error' }); }
+    } catch (e) { log.error({ msg: 'sales_lead_scope_check_failed', err: e?.message || e }); res.status(500).json({ ok: false, error: 'server_error' }); }
   });
 
   if (!globalThis.__salesWeeklyKpiTimer) {
@@ -268,7 +272,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         try {
           await runAutoKpiRollupAndNotify(pool, sendOpsAlert, 'week');
         } catch (e) {
-          console.warn('[sales-ai] weekly kpi rollup failed:', e?.message || e);
+          log.warn({ msg: 'sales_ai_weekly_kpi_rollup_failed', err: e?.message || e });
         }
         scheduleWeeklyKpi();
       }, next - now);
@@ -285,7 +289,7 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
         try {
           await runAutoKpiRollupAndNotify(pool, sendOpsAlert, 'month');
         } catch (e) {
-          console.warn('[sales-ai] monthly kpi rollup failed:', e?.message || e);
+          log.warn({ msg: 'sales_ai_monthly_kpi_rollup_failed', err: e?.message || e });
         }
         scheduleMonthlyKpi();
       }, next - now);

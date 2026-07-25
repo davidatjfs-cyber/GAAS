@@ -18,6 +18,10 @@ import { maskLeadContact, maskLeadListContact, canViewFullContact } from '../../
 import { sensitiveRateLimit } from '../../services/sales/sales-rate-limit.js';
 import { leadScopeSql, canAccessLead, canAccessTenant } from '../../services/sales/sales-permissions.js';
 import { kfConfigured } from '../../services/sales/sales-kf.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales-ai', handler: 'routes-leads' });
+
 
 /** @param {{ app: any, pool: any, platformAdminRequired: Function, gates: object }} ctx */
 export function registerSalesAiLeadsRoutes(ctx) {
@@ -31,7 +35,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       const leads = await listLeads(pool, { stage: req.query?.stage, min_score: req.query?.min_score, limit: req.query?.limit }, scope);
       res.json({ ok: true, leads: maskLeadListContact(leads, req.platformAdmin) });
     } catch (e) {
-      console.error('[sales] list leads', e?.message || e);
+      log.error({ msg: 'sales_list_leads', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -46,7 +50,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       data.lead = maskLeadContact(data.lead, req.platformAdmin);
       res.status(200).json(data);
     } catch (e) {
-      console.error('[sales] lead detail', e?.message || e);
+      log.error({ msg: 'sales_lead_detail', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -103,7 +107,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       if (!canViewFullContact(req.platformAdmin, lead)) return res.status(403).json({ ok: false, error: 'forbidden' });
       res.json({ ok: true, phone: lead.phone || null, legal_contact_phone: lead.legal_contact_phone || null });
     } catch (e) {
-      console.error('[sales] reveal contact', e?.message || e);
+      log.error({ msg: 'sales_reveal_contact', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -118,7 +122,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       const data = await getUnifiedCustomerTimeline(pool, leadId);
       res.status(data.ok ? 200 : 404).json(data);
     } catch (e) {
-      console.error('[sales] unified timeline', e?.message || e);
+      log.error({ msg: 'sales_unified_timeline', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -133,7 +137,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       const data = await getOnboardingChecklist(pool, req.body?.tenant_id);
       res.status(data.ok ? 200 : 400).json(data);
     } catch (e) {
-      console.error('[sales] internal onboarding checklist', e?.message || e);
+      log.error({ msg: 'sales_internal_onboarding_checklist', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -145,7 +149,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       const data = await getOnboardingChecklist(pool, req.params.tenantId);
       res.status(data.ok ? 200 : 400).json(data);
     } catch (e) {
-      console.error('[sales] onboarding checklist', e?.message || e);
+      log.error({ msg: 'sales_onboarding_checklist', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -157,7 +161,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       const data = await computeRenewalHealth(pool, req.params.tenantId);
       res.status(data.ok ? 200 : 400).json(data);
     } catch (e) {
-      console.error('[sales] renewal health', e?.message || e);
+      log.error({ msg: 'sales_renewal_health', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -172,7 +176,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       }
       res.json({ ok: true, items });
     } catch (e) {
-      console.error('[sales] renewal risks', e?.message || e);
+      log.error({ msg: 'sales_renewal_risks', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -187,7 +191,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       }
       res.json({ ok: true, items });
     } catch (e) {
-      console.error('[sales] referral candidates', e?.message || e);
+      log.error({ msg: 'sales_referral_candidates', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -199,7 +203,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       const data = await buildTenantMonthlyValueReport(pool, req.params.tenantId, { month: req.query.month });
       res.status(data.ok ? 200 : 400).json(data);
     } catch (e) {
-      console.error('[sales] tenant value report', e?.message || e);
+      log.error({ msg: 'sales_tenant_value_report', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -285,7 +289,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       const due = calculateSla(lead.handoff_level || lead.intent_level);
       await pool.query(`UPDATE sales_leads SET assigned_to=$2, assigned_at=NOW(), sla_due_at=$3::timestamptz, sla_status=CASE WHEN $3::timestamptz IS NULL THEN 'not_required' ELSE 'open' END, updated_at=NOW() WHERE id=$1`, [leadId, username, due]);
       res.json({ ok: true, lead_id: leadId, assigned_to: username, sla_due_at: due });
-    } catch (e) { console.error('[sales] assign lead failed:', e?.message || e); res.status(500).json({ ok: false, error: 'server_error' }); }
+    } catch (e) { log.error({ msg: 'sales_assign_lead_failed', err: e?.message || e }); res.status(500).json({ ok: false, error: 'server_error' }); }
   });
 
   app.post('/api/admin/sales/leads/:id/stage', platformAdminRequired, async (req, res) => {
@@ -365,7 +369,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       const data = await handleInboundMessage(pool, { text: welcome && !text ? '' : text, openKfid: 'sandbox', externalUserid, sourceChannel: 'sandbox', welcome, inputMode });
       res.json(data);
     } catch (e) {
-      console.error('[sales] sandbox chat', e?.message || e);
+      log.error({ msg: 'sales_sandbox_chat', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
     }
   });
@@ -419,7 +423,7 @@ export function registerSalesAiLeadsRoutes(ctx) {
       if (!draft.ok) return res.json({ ok: false, error: draft.error, message: '暂无法生成草稿，请手动编写' });
       res.json({ ok: true, text: draft.text });
     } catch (e) {
-      console.error('[sales] draft reply', e?.message || e);
+      log.error({ msg: 'sales_draft_reply', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });

@@ -2,6 +2,10 @@
  * data_auditor 路径上的 BI 确定性级联编排（builder 本体仍在 agents.js，经 deps 注入）。
  */
 
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'agent-message', handler: 'bi-deterministic-cascade' });
+
 const INVENTORY_SALES_DETAIL_RE =
   /(堂食|外卖|销售明细|时段.*销|销.*时段|午市|晚市|菜品.*销量|销量.*排|热销|畅销|备货|点单)/;
 
@@ -91,7 +95,7 @@ export async function tryBiDeterministicCascade(ctx, deps) {
         }
       }
     } catch (e) {
-      console.error('[bi] sales detail error:', e?.message);
+      log.error({ msg: 'bi_sales_detail_error', err: e?.message });
     }
   }
 

@@ -27,6 +27,10 @@ import {
   abcDistribution,
   abcBlacklistSummary,
 } from './service.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'growth-metrics', handler: 'routes' });
+
 
 function buildCtx(pool) {
   return {
@@ -61,12 +65,12 @@ export function registerGrowthMetricsRoutes(app, pool) {
   if (!globalThis.__growthSegmentTimer) {
     globalThis.__growthSegmentTimer = setInterval(() => {
       runForActiveTenants(() => recomputeDiningSegments(pool)).catch((e) =>
-        console.warn('[segments] recompute failed:', e?.message)
+        log.warn({ msg: 'segments_recompute_failed', err: e?.message })
       );
     }, 24 * 60 * 60 * 1000);
     setTimeout(() => {
       runForActiveTenants(() => recomputeDiningSegments(pool)).catch((e) =>
-        console.warn('[segments] initial recompute failed:', e?.message)
+        log.warn({ msg: 'segments_initial_recompute_failed', err: e?.message })
       );
     }, 30000);
   }

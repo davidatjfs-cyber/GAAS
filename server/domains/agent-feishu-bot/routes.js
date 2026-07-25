@@ -9,6 +9,10 @@ import {
 } from '../../utils/feishu-webhook-verify.js';
 import { tenantContext } from '../../utils/database.js';
 import { getTenantFeishuBotIntegration } from '../../tenant-integrations.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'agent-feishu-bot', handler: 'routes' });
+
 
 /**
  * @param {import('express').Express} app
@@ -48,7 +52,7 @@ export function registerAgentFeishuBotRoutes(app, deps) {
         requireSignature: requireWebhookSignatureEnabled(),
       });
       if (!sigCheck.ok) {
-        console.warn('[feishu webhook] rejected:', sigCheck.reason);
+        log.warn({ msg: 'feishu_webhook_rejected', detail: [sigCheck.reason] });
         return res.status(401).json({ ok: false, error: sigCheck.reason || 'unauthorized' });
       }
       const result = tenantId
@@ -56,7 +60,7 @@ export function registerAgentFeishuBotRoutes(app, deps) {
         : await onFeishuEvent(parsed);
       return res.json(result);
     } catch (e) {
-      console.error('[feishu webhook] error:', e?.message);
+      log.error({ msg: 'feishu_webhook_error', err: e?.message });
       return res.status(200).json({ ok: true, error: String(e?.message || e) });
     }
   }
@@ -84,10 +88,8 @@ export function registerAgentFeishuBotRoutes(app, deps) {
       cfg = await tenantContext
         .run(tenantId, () => getTenantFeishuBotIntegration(pool(), tenantId, encKey))
         .catch((e) => {
-          console.warn(
-            `[feishu webhook] tenant ${tenantId} feishu_bot config unusable:`,
-            e?.message
-          );
+          log.warn({ msg: 'agent-feishu-bot_routes_warn', detail: [`[feishu webhook] tenant ${tenantId} feishu_bot config unusable:`,
+            e?.message] });
           return null;
         });
     }

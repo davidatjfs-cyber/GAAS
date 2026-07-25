@@ -5,6 +5,10 @@ import {
   normalizePaymentSettings,
 } from './service.js';
 import { patchHrmsStateFieldsOnClient, readHrmsStateForUpdate, withMirrorWriteTx } from '../shared/mirror-tx.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'payment-config', handler: 'routes' });
+
 
 /**
  * @param {import('express').Express} app
@@ -25,7 +29,7 @@ export function registerPaymentConfigRoutes(app, authRequired, deps) {
       const state0 = (await getSharedState(tid)) || {};
       return res.json(loadPaymentConfigFromState(state0));
     } catch (e) {
-      console.error('[GET /api/payment-config]', e?.message || e);
+      log.error({ msg: 'get_api_payment_config', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -53,7 +57,7 @@ export function registerPaymentConfigRoutes(app, authRequired, deps) {
       });
       return res.json({ ok: true, paymentSettings, paymentBudgets });
     } catch (e) {
-      console.error('[PUT /api/payment-config]', e?.message || e);
+      log.error({ msg: 'put_api_payment_config', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });

@@ -7,6 +7,10 @@ import {
   decryptKfMessage,
   processKfCallbackEvent,
 } from '../../services/sales/sales-kf.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales-ai', handler: 'routes-kf' });
+
 
 /** @param {{ app: any, pool: any, sendOpsAlert?: Function }} ctx */
 export function registerSalesAiKfRoutes(ctx) {
@@ -32,7 +36,7 @@ export function registerSalesAiKfRoutes(ctx) {
     res.send('success');
     try {
       if (!kfConfigured()) {
-        console.warn('[sales-kf] callback received but KF not configured');
+        log.warn({ msg: 'sales_kf_callback_received_but_kf_not_configured' });
         return;
       }
       const env = kfEnv();
@@ -43,7 +47,7 @@ export function registerSalesAiKfRoutes(ctx) {
       if (env.token && encrypt && msg_signature) {
         const expect = verifyKfSignature(env.token, timestamp, nonce, encrypt);
         if (expect !== String(msg_signature)) {
-          console.warn('[sales-kf] callback signature mismatch, ignoring');
+          log.warn({ msg: 'sales_kf_callback_signature_mismatch_ignoring' });
           return;
         }
       }
@@ -60,13 +64,13 @@ export function registerSalesAiKfRoutes(ctx) {
           if (tokenM) token = tokenM[1];
           if (kfM) openKfid = kfM[1];
         } catch (e) {
-          console.error('[sales-kf] decrypt body failed', e?.message || e);
+          log.error({ msg: 'sales_kf_decrypt_body_failed', err: e?.message || e });
         }
       }
       token = token || String(req.body?.Token || req.query?.token || '');
       await processKfCallbackEvent(pool, { token, openKfid }, (payload) => handleInboundMessage(pool, payload), { notify: sendOpsAlert });
     } catch (e) {
-      console.error('[sales-kf] callback handle failed', e?.message || e);
+      log.error({ msg: 'sales_kf_callback_handle_failed', err: e?.message || e });
     }
   });
 }

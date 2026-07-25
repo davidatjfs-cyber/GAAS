@@ -2885,3 +2885,118 @@ test('leave/points/onboarding：无日期天数空串；规则抛错；open_id/�
     assert.ok(notifs.some((n) => n.title === '新员工入职审批被拒绝' && /资料不全/.test(n.msg)));
   }
 });
+
+test('points/onboarding/leave：occurMonth；feishuOpenId；拒绝无 note；申请人无名', async () => {
+  {
+    const { deps, ledgerCalls, notifs } = makeDeps({
+      state: { pointsAppliedApprovals: {} },
+      depsExtra: {
+        resolveAttendancePayrollRules: async () => ({ rules: { pointsYuanPerPoint: Number.NaN } }),
+      },
+    });
+    deps.stateFindUserRecord = () => ({ username: 'emp1', name: '', store: '丙店' });
+    await points.afterDecide({
+      req: { tenantId: 't1', user: { username: 'a1' } },
+      deps,
+      updated: {
+        id: 'pts-occur',
+        type: 'points',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: {
+          occurMonth: '2026-05',
+          items: [
+            { points: 2, reason: 'A', bizMonth: '2026-05', username: 'emp2', name: '乙' },
+            { points: 1, itemName: 'B', occurDate: '2026-05-20' },
+          ],
+        },
+      },
+    });
+    assert.equal(ledgerCalls.length, 2);
+    assert.equal(ledgerCalls[0][0].bizMonth, '2026-05');
+    assert.equal(ledgerCalls[1][0].bizMonth, '2026-05');
+    assert.ok(notifs.some((n) => /2条积分事项/.test(n.msg) && n.u === 'emp1'));
+  }
+  {
+    const { deps, notifs } = makeDeps();
+    deps.stateFindUserRecord = () => null;
+    await points.afterDecide({
+      req: {},
+      deps,
+      note: '',
+      updated: {
+        id: 'pts-rej',
+        type: 'points',
+        status: 'rejected',
+        applicant_username: 'nobody',
+        payload: { points: 1 },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '积分申请未通过' && /相关原因/.test(n.msg) && n.u === 'nobody'));
+  }
+  {
+    const queries = [];
+    const { deps } = makeDeps({ state: { employees: [] } });
+    const decideExtras = {};
+    deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+      ok: true,
+      nextEmp: {
+        username: 'newf',
+        name: '飞书名',
+        role: 'store_employee',
+        store: '',
+        department: '',
+        position: '',
+        salary: 'abc',
+        joinDate: 'bad',
+        managerUsername: '',
+      },
+      newUsername: 'newf',
+      empName: '飞书名',
+      empPassword: 'p',
+    });
+    deps.bcrypt = { hash: async () => 'h' };
+    deps.toNullableUuid = (v) => (String(v) === 'feishu-uuid' ? 'feishu-uuid' : null);
+    deps.safeDateOnly = () => '';
+    deps.insertSalaryTimeline = async () => {
+      throw new Error('no salary');
+    };
+    deps.pool.query = async (...a) => {
+      queries.push(a);
+      return { rows: [] };
+    };
+    await onboarding.afterDecide({
+      req: { tenantId: 'default' },
+      deps,
+      username: 'hr1',
+      decideExtras,
+      updated: {
+        id: 'onb-feishu-alias',
+        type: 'onboarding',
+        status: 'approved',
+        applicant_username: '',
+        payload: { employee: { name: '飞书名', feishuOpenId: 'feishu-uuid' } },
+      },
+    });
+    assert.equal(decideExtras.feishuUsersCreated, true);
+    assert.ok(queries.some((q) => /feishu_users/i.test(String(q[0]))));
+  }
+  {
+    const { deps, notifs } = makeDeps();
+    deps.stateFindUserRecord = () => ({ username: 'emp1' });
+    await leave.afterDecide({
+      req: { tenantId: 'default' },
+      deps,
+      note: '',
+      username: 'a1',
+      updated: {
+        id: 'lv-rej-nonote',
+        type: 'leave',
+        status: 'rejected',
+        applicant_username: 'emp1',
+        payload: { fromDate: '2026-08-01', toDate: '2026-08-02' },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '休假申请未通过' && /相关原因/.test(n.msg)));
+  }
+});

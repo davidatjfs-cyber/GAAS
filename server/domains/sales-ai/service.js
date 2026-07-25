@@ -2,6 +2,10 @@
  * 销售 AI 后台定时任务辅助函数
  */
 // 超时未跟进：高意向线索若2小时内无人工接管/回复，且4小时内未提醒过，则再次提醒
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales-ai', handler: 'service' });
+
 export async function remindStaleHighIntentLeads(pool, sendOpsAlert) {
   if (typeof sendOpsAlert !== 'function') return;
   const r = await pool.query(
@@ -28,7 +32,7 @@ export async function remindStaleHighIntentLeads(pool, sendOpsAlert) {
       );
       await pool.query(`UPDATE sales_leads SET last_reminder_at = NOW() WHERE id = $1`, [lead.id]);
     } catch (e) {
-      console.warn('[sales-ai] stale lead reminder failed:', e?.message || e);
+      log.warn({ msg: 'sales_ai_stale_lead_reminder_failed', err: e?.message || e });
     }
   }
 }
@@ -66,7 +70,7 @@ export async function runRiskAlerts(pool, sendOpsAlert) {
           { title: '销售风险客户提醒', audience: 'sales' }
         );
       } catch (e) {
-        console.warn('[sales-ai] risk alert failed:', e?.message || e);
+        log.warn({ msg: 'sales_ai_risk_alert_failed', err: e?.message || e });
       }
     }
     checked.push(lead.id);

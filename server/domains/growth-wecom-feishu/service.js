@@ -9,6 +9,10 @@ import {
   extractWecomContactPhone,
   resolveCallbackSecret,
 } from './helpers.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'growth-wecom-feishu', handler: 'service' });
+
 
 export async function syncWecomContactsForStore(ctx, pool, storeConfig) {
   try {
@@ -21,7 +25,7 @@ export async function syncWecomContactsForStore(ctx, pool, storeConfig) {
     );
     const listData = await listResp.json();
     if (Number(listData?.errcode) !== 0 || !Array.isArray(listData?.external_userid)) {
-      console.warn(`[wecom] list contacts failed for store=${storeId}:`, listData?.errmsg);
+      log.warn({ msg: 'growth-wecom-feishu_service_warn', detail: [`[wecom] list contacts failed for store=${storeId}:`, listData?.errmsg] });
       return 0;
     }
     const eids = listData.external_userid.filter(Boolean);
@@ -63,7 +67,7 @@ export async function syncWecomContactsForStore(ctx, pool, storeConfig) {
     });
     return synced;
   } catch (e) {
-    console.warn(`[wecom] sync contacts failed for store=${storeConfig.store_id}:`, e?.message);
+    log.warn({ msg: 'growth-wecom-feishu_service_warn', detail: [`[wecom] sync contacts failed for store=${storeConfig.store_id}:`, e?.message] });
     return 0;
   }
 }

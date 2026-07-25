@@ -3,6 +3,10 @@
  */
 import { sendLarkMessage } from '../../agents.js';
 import { cleanText } from '../growth-phase-auth.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'growth-content', handler: 'service' });
+
 
 function todayShanghaiYmd() {
   return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
@@ -191,7 +195,7 @@ export async function pushWeeklySuggestionToFeishu(pool, suggestionRow) {
   let pushed = 0;
   for (const row of rec.rows || []) {
     const sent = await sendLarkMessage(String(row.open_id || '').trim(), text, { skipDedup: true }).catch((e) => {
-      console.error('[growth-content-suggestion] feishu send failed:', e?.message || e);
+      log.error({ msg: 'growth_content_suggestion_feishu_send_failed', err: e?.message || e });
       return { ok: false };
     });
     if (sent?.ok) pushed += 1;

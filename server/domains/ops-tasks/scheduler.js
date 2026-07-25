@@ -1,3 +1,7 @@
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'ops-tasks', handler: 'scheduler' });
+
 export function createOpsTaskScheduler({
   pool,
   runForActiveTenants,
@@ -22,11 +26,11 @@ export function createOpsTaskScheduler({
                and due_at < now()`
           );
         } catch (e) {
-          console.error('[ops scheduler] tick failed:', tenantId, e?.message || e);
+          log.error({ msg: 'ops_scheduler_tick_failed', detail: [tenantId, e?.message || e] });
         }
       }, { continueOnError: true });
     } catch (e) {
-      console.error('[ops scheduler] runForActiveTenants error:', e?.message || e);
+      log.error({ msg: 'ops_scheduler_runforactivetenants_error', err: e?.message || e });
     }
   }
 

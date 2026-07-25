@@ -6,6 +6,10 @@ import { resolveTenantIdDefault } from '../../utils/database.js';
 import { maybeNotifyRegularCustomerFromPosOrder } from '../../pos-regular-arrival-feishu.js';
 import { cleanText } from '../growth-phase-auth.js';
 import { cnDate, parseKeruyunDateTime, parseKeruyunPhone, parseNum } from './keruyun.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'growth-pos', handler: 'ingest' });
+
 
 export async function refreshSalesGrowthSnapshot(pool, days = 3, tenantId = resolveTenantIdDefault()) {
   const effectiveTenantId = resolveTenantIdDefault(tenantId);
@@ -152,7 +156,7 @@ export async function ingestPosOrders(pool, tenantId, { orders = [], items = [],
           tableNo: cleanText(o.table_no || '', 40),
           bizDate: bizDate || '',
           checkoutTime: parseKeruyunDateTime(o.checkout_time),
-        }).catch((e) => console.warn('[pos-regular-arrival]', e?.message || e));
+        }).catch((e) => log.warn({ msg: 'pos_regular_arrival', err: e?.message || e }));
       }
     }
   }

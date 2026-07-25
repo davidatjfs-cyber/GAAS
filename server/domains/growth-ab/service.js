@@ -7,6 +7,10 @@ import { checkTextGrounding } from '../../ontology/plan-grounding-check.js';
 import { cleanPhone, cleanText } from '../growth-phase-auth.js';
 import { AB_TEMPLATES, getAbTemplate } from './ab-templates.js';
 import { safeDateOnly, todayShanghaiYmd, ymdAddDays } from './dates.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'growth-ab', handler: 'service' });
+
 
 export { AB_TEMPLATES, getAbTemplate } from './ab-templates.js';
 export { safeDateOnly, todayShanghaiYmd, ymdAddDays } from './dates.js';
@@ -543,7 +547,7 @@ export async function promoteAbWinner(pool, task, operatorName, tenantId = 'defa
     `INSERT INTO decision_log (store, brand, decision_type, title, content, agent, source_task_id, created_by, status, tenant_id)
      VALUES ($1, NULL, 'ab_test_promotion', $2, $3, 'growth-ab', $4, $5, 'active', $6)`,
     [cleanText(task.store_code, 200) || 'unknown', cleanText(task.test_name || 'A/B测试', 500), content, String(task.id), operator, tenantId]
-  ).catch(e => console.error('[growth-ab] decision_log write failed:', e?.message));
+  ).catch(e => log.error({ msg: 'growth_ab_decision_log_write_failed', err: e?.message }));
 
   if (targetRuleKey && (targetKind === 'touch_rule' || targetKind === 'payment_rule')) {
     if (winner === 'A') {

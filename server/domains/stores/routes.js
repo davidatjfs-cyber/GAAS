@@ -1,6 +1,10 @@
 import express from 'express';
 import { removeStoreFromList } from './service.js';
 import { patchHrmsStateFieldsOnClient, readHrmsStateForUpdate, withMirrorWriteTx } from '../shared/mirror-tx.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'stores', handler: 'routes' });
+
 
 /**
  * @param {import('express').Express} app
@@ -37,7 +41,7 @@ export function registerStoresDomainRoutes(app, authRequired, deps) {
       return res.json({ ok: true, removed });
     } catch (e) {
       if (e?.code === 'not_found') return res.status(404).json({ error: 'not_found' });
-      console.error('[DELETE /api/stores/:id]', e?.message || e);
+      log.error({ msg: 'delete_api_stores_id', err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });

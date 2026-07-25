@@ -1,4 +1,8 @@
 // 字段名与 agents-service-v2 chairman_config 的 store profile 保持一致，方便 syncStoreProfileToChairmanConfig 直接映射。
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'stores', handler: 'profile' });
+
 export function extractStoreProfileFields(body = {}) {
   const s = (v) => String(v || '').trim();
   const n = (v) => (v === undefined || v === null || v === '' ? undefined : Number(v));
@@ -45,6 +49,6 @@ export async function syncStoreProfileToChairmanConfig(pool, storeName, brandNam
       [JSON.stringify(next)]
     );
   } catch (e) {
-    console.warn('[stores] chairman_config sync skipped:', e?.message);
+    log.warn({ msg: 'stores_chairman_config_sync_skipped', err: e?.message });
   }
 }

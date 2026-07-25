@@ -1,4 +1,8 @@
 import { parseBirthdayMonthDay, getNextMonth, isEndOfMonth } from './helpers.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'birthday', handler: 'routes' });
+
 
 /**
  * @param {import('express').Express} app
@@ -185,7 +189,7 @@ export function registerBirthdayRoutes(app, authRequired, deps) {
 
       res.json({ ok: true, date: todayStr, isEndOfMonth: isEndOfMonth(now), results });
     } catch (e) {
-      console.error('POST /api/birthday/check error:', e);
+      log.error({ msg: 'post_api_birthday_check_error', err: e?.message || String(e) });
       res.status(500).json({ error: 'internal_error' });
     }
   });
@@ -247,7 +251,7 @@ export function registerBirthdayRoutes(app, authRequired, deps) {
       results.sort((a, b) => a.daysUntil - b.daysUntil);
       res.json({ ok: true, upcoming: results });
     } catch (e) {
-      console.error('GET /api/birthday/upcoming error:', e);
+      log.error({ msg: 'get_api_birthday_upcoming_error', err: e?.message || String(e) });
       res.status(500).json({ error: 'internal_error' });
     }
   });

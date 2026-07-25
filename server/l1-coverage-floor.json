@@ -1,15 +1,15 @@
 {
   "updated": "2026-07-26",
-  "note": "L1 关键路径合并覆盖地板：只升不降。目标 branches/lines ≥85；本轮 leave/offboarding/points/onboarding/promotion 按单测样本保守抬升。",
+  "note": "L1 关键路径合并覆盖地板：只升不降。目标 branches/lines ≥85；本轮 points/onboarding/offboarding/promotion 按单测样本保守抬升。",
   "targetBranches": 85,
   "targetLines": 85,
   "tolerancePct": 0.5,
   "files": {
     "domains/approvals/handlers/leave.js": { "branches": 80, "lines": 95 },
-    "domains/approvals/handlers/offboarding.js": { "branches": 79, "lines": 95 },
-    "domains/approvals/handlers/points.js": { "branches": 74, "lines": 95 },
-    "domains/approvals/handlers/onboarding.js": { "branches": 73, "lines": 95 },
-    "domains/approvals/handlers/promotion.js": { "branches": 77, "lines": 95 },
+    "domains/approvals/handlers/offboarding.js": { "branches": 80, "lines": 95 },
+    "domains/approvals/handlers/points.js": { "branches": 77, "lines": 95 },
+    "domains/approvals/handlers/onboarding.js": { "branches": 75, "lines": 95 },
+    "domains/approvals/handlers/promotion.js": { "branches": 78, "lines": 95 },
     "domains/tenant-platform/routes-billing.js": { "branches": 70, "lines": 95 },
     "domains/tenant-platform/routes-auth.js": { "branches": 84, "lines": 90 }
   }

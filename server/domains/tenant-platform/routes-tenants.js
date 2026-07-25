@@ -17,6 +17,10 @@ import {
   saveTenantPlatformAcceptanceReport,
   saveTenantPlatformProfile,
 } from './helpers.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'tenant-platform', handler: 'routes-tenants' });
+
 
 /**
  * @param {import('express').Express} app
@@ -151,7 +155,7 @@ export function registerTenantPlatformTenantsRoutes(app, deps) {
           finalStatus = 'active';
         }
       } catch (accErr) {
-        console.warn('[provision] acceptance failed (tenant stays provisioning):', accErr?.message || accErr);
+        log.warn({ msg: 'provision_acceptance_failed_tenant_stays_provisioning', err: accErr?.message || accErr });
         acceptance = { ok: false, error: accErr?.message || 'acceptance_error' };
       }
 
