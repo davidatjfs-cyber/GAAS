@@ -62,9 +62,9 @@ test('run-merged-coverage.mjs 与 package.json test:coverage:merged 存在（Wav
 
 /**
  * 合并口径地板：与单测棘轮并存，只升不降。
- * Wave M1 外提 index.js listen 块后 minIndexJsLines 70→65（分母变化，非覆盖回退）。
+ * Wave M1/M2 外提 index.js listen 块后 minIndexJsLines 70→65→58（分母变化，非覆盖回退）。
  */
-const MERGED_RATCHET_FLOOR = { lines: 45, branches: 61, functions: 44, minIndexJsLines: 65 };
+const MERGED_RATCHET_FLOOR = { lines: 45, branches: 61, functions: 44, minIndexJsLines: 58 };
 
 test('coverage-merged-ratchet.json 只升不降且要求 index.js', () => {
   const mr = JSON.parse(
