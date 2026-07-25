@@ -143,6 +143,58 @@ test('mergeSharedStateFields array id merge + employee side effects', async () =
   assert.equal(scheduled, 2);
 });
 
+test('mergeSharedStateFields：表已 inactive 时不被镜像 active 冲回', async () => {
+  const upserted = [];
+  const handlers = {
+    async clientQuery(sql, params) {
+      if (/BEGIN/.test(sql)) return {};
+      if (/SELECT data, updated_at/.test(sql)) {
+        return {
+          rows: [{
+            data: { employees: [{ username: 'bob', status: 'active' }] },
+            updated_at: 't0',
+          }],
+        };
+      }
+      if (/UPDATE hrms_state/.test(sql)) {
+        handlers.saved = JSON.parse(params[1]);
+        return { rowCount: 1 };
+      }
+      if (/COMMIT/.test(sql)) return {};
+      return {};
+    },
+    async poolQuery(sql) {
+      if (/SELECT status FROM employees/i.test(sql)) {
+        return { rows: [{ status: 'inactive' }] };
+      }
+      return { rows: [] };
+    },
+  };
+  const { mergeSharedStateFields } = createHrmsStateStoreHelpers({
+    pool: {
+      connect: async () => ({
+        query: (sql, params) => handlers.clientQuery(sql, params),
+        release: () => {},
+      }),
+      query: (sql, params) => handlers.poolQuery(sql, params),
+    },
+    resolveTenantIdDefault: () => 'default',
+    schedulePayrollDomainSync: () => {},
+    scheduleLeaveDomainSync: () => {},
+    dualWriteStateToDB: async () => {},
+    applyHrmsUserAccountGateFromEmployee: async () => {},
+    upsertEmployeeFromStateShape: async (_pool, key, rec) => {
+      upserted.push({ key, status: rec.status });
+    },
+    notifyAdminsDualWriteFailure: () => {},
+  });
+  await mergeSharedStateFields(
+    { employees: [{ username: 'bob', status: 'active' }] },
+    { employees: 'username' }
+  );
+  assert.equal(upserted[0]?.status, 'inactive');
+});
+
 test('removeEmployeesFromSharedState filters employees and users', async () => {
   const handlers = {
     async clientQuery(sql, params) {

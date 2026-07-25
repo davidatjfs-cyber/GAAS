@@ -4,6 +4,7 @@
  * index keeps late-bind wrappers for early register*(..., getSharedState).
  */
 import { childLogger } from '../../utils/logger.js';
+import { isInactiveStatus } from '../employees/account-gate.js';
 
 const log = childLogger({ domain: 'shared', handler: 'hrms-state-store' });
 
@@ -149,7 +150,19 @@ export function createHrmsStateStoreHelpers({
                   });
                 }
                 try {
-                  await upsertEmployeeFromStateShape(pool, key, rec);
+                  // 表为权威：并发 merge 常带陈旧镜像，禁止把表上的 inactive 冲回 active
+                  let toUpsert = rec;
+                  try {
+                    const curR = await pool.query(
+                      `SELECT status FROM employees WHERE lower(username) = lower($1) AND tenant_id = $2 LIMIT 1`,
+                      [u, key]
+                    );
+                    const tableStatus = String(curR.rows?.[0]?.status || '').trim();
+                    if (isInactiveStatus(tableStatus) && !isInactiveStatus(rec?.status)) {
+                      toUpsert = { ...rec, status: tableStatus };
+                    }
+                  } catch (_e) { /* ignore; fall through to upsert */ }
+                  await upsertEmployeeFromStateShape(pool, key, toUpsert);
                 } catch (e) {
                   log.error({
                     msg: 'merge_shared_state_employees_table_failed',
