@@ -1,0 +1,29 @@
+{
+  "updated": "2026-07-25",
+  "note": "domains 内仍含 console.log 的存量文件。新文件不得出现在此列表之外。",
+  "files": [
+    "domains/agent-message/store-resolve.js",
+    "domains/approvals/decide-handler.js",
+    "domains/approvals/scheduler-offboarding-promotion.js",
+    "domains/approvals/service-create.js",
+    "domains/auth/service.js",
+    "domains/birthday/scheduler.js",
+    "domains/feishu-bitable/map.js",
+    "domains/feishu-webhook/process-data-change.js",
+    "domains/feishu-webhook/routes.js",
+    "domains/growth-metrics/service.js",
+    "domains/growth-pos/feishu-service.js",
+    "domains/growth-sms/reconcile.js",
+    "domains/hrms-state/routes.js",
+    "domains/inventory-forecast/pdf-parse.js",
+    "domains/inventory-forecast/service.js",
+    "domains/knowledge/service.js",
+    "domains/notifications/scheduler-cleanup.js",
+    "domains/performance-invalidation/routes.js",
+    "domains/points/helpers.js",
+    "domains/shared/mirror-reconcile-scheduler.js",
+    "domains/stores/routes-crud.js",
+    "domains/training/scheduler.js"
+  ],
+  "countAtFreeze": 49
+}

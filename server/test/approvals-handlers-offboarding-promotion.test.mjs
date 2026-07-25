@@ -112,6 +112,173 @@ test('offboarding afterDecide：通过立即关闭 / 拒绝通知 / 待审批', 
   assert.ok(merges.some((m) => m.patch.notifications?.[0]?.u === 'hq1'));
 });
 
+test('offboarding afterDecide：未来离职日只打标不关登录；无日期立即关闭', async () => {
+  const merges = [];
+  const notifs = [];
+  const deps = {
+    hrmsNowISO: () => '2026-07-25T12:00:00+08:00',
+    shanghaiTodayDateOnly: () => '2026-07-25',
+    safeDateOnly: (d) => (d ? String(d).slice(0, 10) : ''),
+    makeNotif: (u, title, msg, meta) => ({ u, title, msg, meta }),
+    appendNotifications: async (items) => {
+      notifs.push(...items);
+    },
+    getSharedState: async () => ({
+      employees: [
+        { username: 'emp1', name: '员工甲', managerUsername: 'mgr1', status: 'active' },
+      ],
+      users: [{ username: 'emp1', status: 'active' }],
+    }),
+    mergeSharedStateFields: async (patch, idFields) => {
+      merges.push({ patch, idFields });
+    },
+    stateFindUserRecord: (_s, u) =>
+      u === 'emp1' ? { username: 'emp1', name: '员工甲', managerUsername: 'mgr1' } : null,
+    uniqUsernames: (a) => [...new Set(a.filter(Boolean))],
+  };
+
+  await offboarding.afterDecide({
+    deps,
+    updated: {
+      id: 'ob-future',
+      type: 'offboarding',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: { resignDate: '2026-12-31' },
+    },
+    nextAssignee: null,
+    note: '',
+  });
+  assert.ok(notifs.some((n) => /将于该日起自动关闭/.test(n.msg)));
+  const empPatch = merges.find((m) => m.patch.employees)?.patch.employees[0];
+  assert.equal(empPatch?.offboardingApproved, true);
+  assert.equal(empPatch?.offboardingDate, '2026-12-31');
+  assert.notEqual(empPatch?.status, '离职');
+  assert.ok(!merges.some((m) => m.patch.users), '未来离职日不应改 users.status');
+
+  notifs.length = 0;
+  merges.length = 0;
+  await offboarding.afterDecide({
+    deps,
+    updated: {
+      id: 'ob-nodate',
+      type: 'offboarding',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: {},
+    },
+    note: '',
+  });
+  assert.ok(notifs.some((n) => /系统已关闭/.test(n.msg)));
+  assert.ok(merges.some((m) => m.patch.employees?.[0]?.status === '离职'));
+  assert.ok(merges.some((m) => m.patch.users?.[0]?.status === '离职'));
+});
+
+test('offboarding beforeUpdate：involuntary；非法类型不写；非 offboarding 早退', async () => {
+  const payload = {};
+  await offboarding.beforeUpdate({
+    row: { type: 'offboarding' },
+    departureType: 'involuntary',
+    updatedPayload: payload,
+    nextStatus: 'pending',
+    beforeChain: true,
+    deps: { safeDateOnly: (d) => String(d || '').slice(0, 10) },
+  });
+  assert.equal(payload.departureType, 'involuntary');
+
+  const bad = {};
+  await offboarding.beforeUpdate({
+    row: { type: 'offboarding' },
+    departureType: 'other',
+    updatedPayload: bad,
+    nextStatus: 'pending',
+    beforeChain: true,
+    deps: { safeDateOnly: (d) => String(d || '').slice(0, 10) },
+  });
+  assert.equal(bad.departureType, undefined);
+
+  const skip = {};
+  await offboarding.beforeUpdate({
+    row: { type: 'leave' },
+    departureType: 'voluntary',
+    updatedPayload: skip,
+    nextStatus: 'approved',
+    beforeChain: true,
+    deps: { safeDateOnly: (d) => String(d || '').slice(0, 10) },
+  });
+  assert.deepEqual(skip, {});
+
+  const ctx = {
+    row: { type: 'offboarding' },
+    departureType: '',
+    updatedPayload: {},
+    nextStatus: 'rejected',
+    beforeChain: false,
+    deps: { safeDateOnly: (d) => (d ? String(d).slice(0, 10) : '') },
+  };
+  await offboarding.beforeUpdate(ctx);
+  assert.equal(ctx.effectiveDate, undefined);
+});
+
+test('offboarding afterDecide：员工不在 state 仍通知；拒绝无 note；非 offboarding 早退', async () => {
+  const merges = [];
+  const notifs = [];
+  const deps = {
+    hrmsNowISO: () => '2026-07-25T12:00:00+08:00',
+    shanghaiTodayDateOnly: () => '2026-07-25',
+    safeDateOnly: (d) => (d ? String(d).slice(0, 10) : ''),
+    makeNotif: (u, title, msg, meta) => ({ u, title, msg, meta }),
+    appendNotifications: async (items) => {
+      notifs.push(...items);
+    },
+    getSharedState: async () => ({ employees: [], users: [] }),
+    mergeSharedStateFields: async (patch, idFields) => {
+      merges.push({ patch, idFields });
+    },
+    stateFindUserRecord: () => null,
+    uniqUsernames: (a) => [...new Set(a.filter(Boolean))],
+  };
+
+  await offboarding.afterDecide({
+    deps,
+    updated: {
+      id: 'ob-ghost',
+      type: 'offboarding',
+      status: 'approved',
+      applicant_username: 'ghost1',
+      payload: { resignDate: '2026-07-20' },
+    },
+    note: '',
+  });
+  assert.ok(notifs.some((n) => n.title === '离职申请已通过'));
+  assert.equal(merges.length, 0);
+
+  notifs.length = 0;
+  await offboarding.afterDecide({
+    deps,
+    updated: {
+      id: 'ob-rej',
+      type: 'offboarding',
+      status: 'rejected',
+      applicant_username: 'ghost1',
+      payload: {},
+    },
+    note: '',
+  });
+  assert.ok(notifs.some((n) => n.title === '离职申请被拒绝' && !/：/.test(n.msg)));
+
+  notifs.length = 0;
+  await offboarding.afterDecide({
+    deps,
+    updated: { id: 'x', type: 'leave', status: 'approved', applicant_username: 'ghost1', payload: {} },
+    note: '',
+  });
+  assert.equal(notifs.length, 0);
+
+  await offboarding.afterDecide({ deps, updated: null, note: '' });
+  assert.equal(notifs.length, 0);
+});
+
 test('promotion beforeUpdate：缺带教 / 带教不存在 / 正式晋升缺薪资', async () => {
   const res = mockRes();
   const missMentor = await promotion.beforeUpdate({
@@ -515,4 +682,247 @@ test('promotion afterDecide：正式通过写职级/薪资/培训；资格通过
     n.u === 'sm1'
     && n.title === '晋升申请待审批'
     && /指定带教人/.test(n.msg)));
+});
+
+test('promotion beforeUpdate：非 promotion 早退；非店长正式通过不校验薪资；培训边界', async () => {
+  const skip = { promotionStage: 'qualification' };
+  await promotion.beforeUpdate({
+    res: mockRes(),
+    row: { type: 'leave' },
+    role: 'store_manager',
+    username: 'mgr1',
+    nowIso: '2026-07-25T12:00:00+08:00',
+    approved: true,
+    mentorUsernameRaw: '',
+    mentorNameRaw: '',
+    trainingStartDateRaw: '2026-08-01',
+    trainingDaysRaw: 7,
+    trainingPeriodsRaw: [],
+    promotedSalaryRaw: null,
+    updatedPayload: skip,
+    deps: {
+      pool: { query: async () => ({ rows: [] }) },
+      safeDateOnly: (d) => (d ? String(d).slice(0, 10) : ''),
+      normalizePromotionTrainingPeriods: () => [],
+    },
+  });
+  assert.equal(skip.mentorUsername, undefined);
+
+  const formalNonSm = { promotionStage: 'formal' };
+  await promotion.beforeUpdate({
+    res: mockRes(),
+    row: { type: 'promotion' },
+    role: 'hq_manager',
+    username: 'hq1',
+    nowIso: '2026-07-25T12:00:00+08:00',
+    approved: true,
+    mentorUsernameRaw: '',
+    mentorNameRaw: '',
+    trainingStartDateRaw: '',
+    trainingDaysRaw: 0,
+    trainingPeriodsRaw: [],
+    promotedSalaryRaw: null,
+    updatedPayload: formalNonSm,
+    deps: {
+      pool: { query: async () => ({ rows: [] }) },
+      safeDateOnly: () => '',
+      normalizePromotionTrainingPeriods: () => [],
+    },
+  });
+  assert.equal(formalNonSm.promotedSalary, undefined);
+
+  const qualEdge = { promotionStage: 'qualification' };
+  await promotion.beforeUpdate({
+    res: mockRes(),
+    row: { type: 'promotion' },
+    role: 'hq_manager',
+    username: 'hq1',
+    nowIso: '2026-07-25T12:00:00+08:00',
+    approved: true,
+    mentorUsernameRaw: 'mentor1',
+    mentorNameRaw: '',
+    trainingStartDateRaw: 'bad-date',
+    trainingDaysRaw: -3,
+    trainingPeriodsRaw: [],
+    promotedSalaryRaw: null,
+    updatedPayload: qualEdge,
+    deps: {
+      pool: { query: async () => ({ rows: [{ '?column?': 1 }] }) },
+      safeDateOnly: () => '',
+      normalizePromotionTrainingPeriods: () => [],
+    },
+  });
+  assert.equal(qualEdge.mentorUsername, 'mentor1');
+  assert.equal(qualEdge.mentorName, undefined);
+  assert.equal(qualEdge.trainingStartDate, undefined);
+  assert.equal(qualEdge.trainingDays, undefined);
+});
+
+test('promotion afterDecide：员工缺失；课题已认证跳过；资格无 periods；拒绝资格；pending 无带教 tip', async () => {
+  // formal：员工不在 state
+  const missing = makePromotionAfterDeps({
+    state: { employees: [], promotionTracks: [], salaryChangeHistory: [] },
+  });
+  await promotion.afterDecide({
+    req: { tenantId: 'default' },
+    deps: missing.deps,
+    username: 'a1',
+    note: '',
+    nextAssignee: null,
+    updated: {
+      id: 'ap-miss',
+      type: 'promotion',
+      status: 'approved',
+      applicant_username: 'ghost',
+      payload: {
+        promotionStage: 'formal',
+        newLevel: '中级',
+        newPosition: '领班',
+        promotedSalary: 6000,
+        promotionTrackId: 'no-track',
+      },
+    },
+  });
+  assert.ok(missing.notifs.some((n) => n.title === '晋升申请已通过')
+    || missing.merges.some((m) => m.patch.notifications?.some((n) => n.title === '晋升申请已通过')));
+  assert.ok(!missing.merges.some((m) => m.patch.promotionTracks));
+
+  // formal：课题已全部 certified → 不建培训
+  const certified = makePromotionAfterDeps();
+  certified.deps.getPromotionTrackProgress = async () => ({
+    items: [{ topicId: 11, certified: true }],
+  });
+  await promotion.afterDecide({
+    req: { tenantId: 'default' },
+    deps: certified.deps,
+    username: 'a1',
+    note: '',
+    nextAssignee: null,
+    updated: {
+      id: 'ap-cert',
+      type: 'promotion',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: {
+        promotionStage: 'formal',
+        promoTier: 'level_promotion',
+        newLevel: '中级',
+        newPosition: '领班',
+        promotedSalary: 6500,
+        promotionTrackId: 'track-1',
+      },
+    },
+  });
+  assert.equal(certified.trainings.length, 0);
+
+  // qualification：无 trainingPeriods → 用 trainingDays 算 due；skill_bump 空 selectedTopicIds
+  const noPeriod = makePromotionAfterDeps({
+    state: {
+      employees: [{
+        username: 'emp1', name: '甲', managerUsername: 'mgr1', store: '测试店',
+        role: 'store_employee', position: '服务员', department: '前厅',
+      }],
+      promotionTracks: [],
+    },
+  });
+  await promotion.afterDecide({
+    req: {},
+    deps: noPeriod.deps,
+    username: 'sm1',
+    note: '',
+    nextAssignee: null,
+    updated: {
+      id: 'ap-nop',
+      type: 'promotion',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: {
+        promotionStage: 'qualification',
+        promoTier: 'skill_bump',
+        selectedTopicIds: [],
+        targetPosition: '服务员',
+        trainingStartDate: '2026-08-01',
+        trainingDays: 3,
+      },
+    },
+  });
+  assert.equal(noPeriod.trainings.length, 0);
+  assert.ok(!noPeriod.notifs.some((n) => n.title === '晋升培训任务已生成'));
+  const track = noPeriod.merges.find((m) => m.patch.promotionTracks)?.patch.promotionTracks[0];
+  // due = start + (trainingDays-1) 天；用本地 Date 再 toISOString，时区会差一天，只断言落在窗口内
+  assert.match(String(track?.trainingDueDate || ''), /^2026-08-0[123]$/);
+
+  // rejected qualification：不回写 track
+  const rejQ = makePromotionAfterDeps();
+  await promotion.afterDecide({
+    req: {},
+    deps: rejQ.deps,
+    username: 'hq1',
+    note: '',
+    nextAssignee: null,
+    updated: {
+      id: 'ap-rejq',
+      type: 'promotion',
+      status: 'rejected',
+      applicant_username: 'emp1',
+      payload: { promotionStage: 'qualification' },
+    },
+  });
+  assert.ok(rejQ.notifs.some((n) => /相关原因/.test(n.msg) && /晋升资格/.test(n.msg)));
+  assert.ok(!rejQ.merges.some((m) => m.patch.promotionTracks));
+
+  // pending：下一审批人非店长 → 无带教 tip；formal 文案
+  const pendHq = makePromotionAfterDeps();
+  await promotion.afterDecide({
+    req: {},
+    deps: pendHq.deps,
+    username: 'mgr1',
+    note: '',
+    nextAssignee: 'hq1',
+    updated: {
+      id: 'ap-pend-hq',
+      type: 'promotion',
+      status: 'pending',
+      applicant_username: 'emp1',
+      payload: { promotionStage: 'formal' },
+    },
+  });
+  const pendMsg = pendHq.notifs.find((n) => n.u === 'hq1')?.msg || '';
+  assert.match(pendMsg, /正式晋升申请/);
+  assert.ok(!/指定带教人/.test(pendMsg));
+
+  // timeline 失败不抛；非 promotion 早退
+  const tlFail = makePromotionAfterDeps();
+  tlFail.deps.insertSalaryTimeline = async () => {
+    throw new Error('tl down');
+  };
+  await promotion.afterDecide({
+    req: { tenantId: 'default' },
+    deps: tlFail.deps,
+    username: 'a1',
+    note: '',
+    nextAssignee: null,
+    updated: {
+      id: 'ap-tl',
+      type: 'promotion',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: {
+        promotionStage: 'formal',
+        newLevel: '中级',
+        newPosition: '领班',
+        promotedSalary: 7000,
+        promotionTrackId: 'track-1',
+      },
+    },
+  });
+  assert.ok(tlFail.merges.some((m) => m.patch.employees?.[0]?.salary === 7000));
+
+  await promotion.afterDecide({
+    req: {},
+    deps: makePromotionAfterDeps().deps,
+    username: 'a1',
+    updated: null,
+    note: '',
+  });
 });

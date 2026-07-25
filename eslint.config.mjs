@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 /** Week1 卫生：存量 warn+棘轮；新 server 文件 no-unused-vars 默认 error（legacy 除外）。 */
 const unusedVarsRule = {
   args: 'after-used',
@@ -5,6 +9,19 @@ const unusedVarsRule = {
   varsIgnorePattern: '^_',
   caughtErrors: 'none',
 };
+
+const __eslintDir = dirname(fileURLToPath(import.meta.url));
+/** domains 存量仍含 console.log 的文件：允许 log；新 domains 文件禁止（见下方 rules）。 */
+const DOMAINS_CONSOLE_LOG_BASELINE = (() => {
+  try {
+    const raw = JSON.parse(
+      readFileSync(join(__eslintDir, 'server/console-log-baseline.json'), 'utf8')
+    );
+    return (raw.files || []).map((f) => `server/${f}`);
+  } catch {
+    return [];
+  }
+})();
 
 /** 存量巨石 / 仍有 unused-vars 的文件：保持 warn，避免 CI 硬失败。只增不减前请先清 warn。 */
 const LEGACY_SERVER_UNUSED_VARS_WARN = [
@@ -81,6 +98,20 @@ export default [
     files: ['server/**/*.js', 'server/**/*.mjs'],
     rules: {
       'no-unused-vars': ['error', unusedVarsRule],
+    },
+  },
+  // P2.2 domains：禁止 console.log；warn/error/info/debug 迁移期暂允
+  {
+    files: ['server/domains/**/*.js', 'server/domains/**/*.mjs'],
+    rules: {
+      'no-console': ['error', { allow: ['warn', 'error', 'info', 'debug'] }],
+    },
+  },
+  // 存量仍含 console.log 的 domains 文件：允许 log，靠 console-log-ratchet 只降不升
+  {
+    files: DOMAINS_CONSOLE_LOG_BASELINE,
+    rules: {
+      'no-console': ['error', { allow: ['warn', 'error', 'info', 'debug', 'log'] }],
     },
   },
   // legacy 巨石：override 回 warn（exclude-style 白名单）

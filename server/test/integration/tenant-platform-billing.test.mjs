@@ -119,3 +119,64 @@ test('billing/pdf：default 租户 → PDF', async () => {
   assert.ok(buf.length > 100);
   assert.equal(buf.subarray(0, 4).toString(), '%PDF');
 });
+
+test('billing/pdf：有签约价 + 收款账户支行 + wechat 送达备注 → PDF', async () => {
+  const db = testDb();
+  const username = uniqueId('padmin_pdf_contract');
+  await createPlatformAdmin(username);
+  const token = await platformToken(username);
+
+  const putBill = await fetch(app.baseUrl + '/api/admin/platform/billing-account', {
+    method: 'PUT',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      account: {
+        account_name: '收款测试公司',
+        bank_name: '测试银行',
+        bank_branch: '陆家嘴支行',
+        bank_account_no: '6222000099998888',
+      },
+    }),
+  });
+  assert.equal(putBill.status, 200, await putBill.text());
+
+  // 写入签约价（机密字段）以覆盖 hasContractPrice 分支
+  await db.query(
+    `INSERT INTO sales_leads (name, tenant_id, contract_price_fen, contract_billing_cycle, contract_billing_day)
+     VALUES ($1, 'default', 128000, 'monthly', 1)`,
+    [uniqueId('lead_bill')]
+  );
+
+  // platform_profile.billing：微信送达 + 备注 + 非法 brand_color 回落
+  await db.query(
+    `INSERT INTO tenant_config (tenant_key, config_key, config_value)
+     VALUES ('default', 'platform_profile', $1::jsonb)
+     ON CONFLICT (tenant_key, config_key)
+     DO UPDATE SET config_value = tenant_config.config_value || EXCLUDED.config_value, updated_at = NOW()`,
+    [JSON.stringify({
+      brand_color: 'not-a-color',
+      billing: {
+        plan_name: '标准版',
+        billing_cycle: '按月',
+        next_invoice_at: '2026-08-01',
+        billing_contact: '财务甲',
+        billing_contact_email: 'a@example.com',
+        billing_contact_wechat: 'wx_a',
+        delivery_method: 'wechat',
+        notes: '集成测备注：含签约价路径',
+      },
+    })]
+  );
+
+  const res = await fetch(app.baseUrl + '/api/admin/tenants/default/billing/pdf', {
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  const buf = Buffer.from(await res.arrayBuffer());
+  assert.equal(res.status, 200, `status=${res.status} bytes=${buf.length}`);
+  assert.match(String(res.headers.get('content-type') || ''), /pdf/i);
+  assert.ok(buf.length > 200);
+  assert.equal(buf.subarray(0, 4).toString(), '%PDF');
+});

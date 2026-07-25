@@ -76,3 +76,43 @@ test('coverage-merged-ratchet.json 只升不降且要求 index.js', () => {
   }
   assert.equal(mr.requireIndexJs, true);
 });
+
+/** L1 分支攻坚地板：只升不降（与 l1-coverage-floor.json 同步） */
+const L1_FILE_FLOOR = {
+  'domains/approvals/handlers/leave.js': { branches: 65, lines: 95 },
+  'domains/approvals/handlers/offboarding.js': { branches: 70, lines: 95 },
+  'domains/approvals/handlers/points.js': { branches: 58, lines: 95 },
+  'domains/approvals/handlers/onboarding.js': { branches: 55, lines: 95 },
+  'domains/approvals/handlers/promotion.js': { branches: 60, lines: 95 },
+  'domains/tenant-platform/routes-billing.js': { branches: 45, lines: 80 },
+  'domains/tenant-platform/routes-auth.js': { branches: 75, lines: 90 },
+};
+
+test('l1-coverage-floor.json 只升不降且含全部 L1 目标文件', () => {
+  const floor = JSON.parse(
+    fs.readFileSync(path.join(serverRoot, 'l1-coverage-floor.json'), 'utf8')
+  );
+  assert.equal(typeof floor.targetBranches, 'number');
+  assert.ok(floor.targetBranches >= 85);
+  for (const [rel, mins] of Object.entries(L1_FILE_FLOOR)) {
+    const entry = floor.files?.[rel];
+    assert.ok(entry, `missing L1 file ${rel}`);
+    for (const [metric, min] of Object.entries(mins)) {
+      assert.ok(
+        Number(entry[metric]) >= min,
+        `${rel}.${metric}=${entry[metric]} < frozen ${min}`
+      );
+    }
+  }
+});
+
+test('extracted-coverage-floor.json 新拆文件 ≥80 lines 捆绑', () => {
+  const floor = JSON.parse(
+    fs.readFileSync(path.join(serverRoot, 'extracted-coverage-floor.json'), 'utf8')
+  );
+  assert.ok(Number(floor.minLines) >= 80);
+  assert.ok(Array.isArray(floor.files) && floor.files.length >= 3);
+  for (const rel of floor.files) {
+    assert.ok(fs.existsSync(path.join(serverRoot, rel)), `extracted file missing: ${rel}`);
+  }
+});

@@ -28,11 +28,12 @@ jobs:
           set -e
           # 重新跑闸门文件并要求至少 1 条 pass，防止 find/脚本漂移导致「npm test 绿但闸门没进进程」
           cd server
-          out=$(node --test --test-force-exit test/shared-table-writers-gate.test.mjs test/ensure-ddl-freeze.test.mjs test/coverage-ratchet-gate.test.mjs)
+          out=$(node --test --test-force-exit test/shared-table-writers-gate.test.mjs test/ensure-ddl-freeze.test.mjs test/coverage-ratchet-gate.test.mjs test/console-log-ratchet.test.mjs)
           echo "$out"
           echo "$out" | grep -q 'SHARED_TABLE_WRITERS'
           echo "$out" | grep -q 'domains/ 不得在 ensure'
           echo "$out" | grep -q 'coverage-ratchet'
+          echo "$out" | grep -q 'console.log'
           echo "$out" | grep -Eq 'fail 0'
 
   test-integration:

@@ -177,6 +177,7 @@ console.log(
 );
 
 const mergedRatchetPath = path.join(serverRoot, 'coverage-merged-ratchet.json');
+let failed = false;
 if (fs.existsSync(mergedRatchetPath)) {
   const mr = JSON.parse(fs.readFileSync(mergedRatchetPath, 'utf8'));
   // 合并覆盖对子进程落盘敏感，允许小幅波动（默认 0.5pp）
@@ -186,7 +187,6 @@ if (fs.existsSync(mergedRatchetPath)) {
     ['branches', payload.branches, Number(mr.branches)],
     ['functions', payload.functions, Number(mr.functions)],
   ];
-  let failed = false;
   for (const [name, actual, floor] of checks) {
     if (!Number.isFinite(floor)) continue;
     if (actual + tol + 1e-9 < floor) {
@@ -203,7 +203,60 @@ if (fs.existsSync(mergedRatchetPath)) {
     );
     failed = true;
   }
-  if (failed) process.exit(1);
 }
 
+/** 按相对路径后缀匹配 c8 summary 里的绝对/相对 key */
+function findSummaryEntry(summary, relPath) {
+  const norm = relPath.replace(/\\/g, '/');
+  const key = Object.keys(summary).find((k) => {
+    const nk = k.replace(/\\/g, '/');
+    return nk.endsWith(`/${norm}`) || nk.endsWith(norm) || nk === norm;
+  });
+  return key ? summary[key] : null;
+}
+
+function checkFileFloors(label, floorPath, metricFn) {
+  if (!fs.existsSync(floorPath)) return;
+  const cfg = JSON.parse(fs.readFileSync(floorPath, 'utf8'));
+  const tol = Number.isFinite(Number(cfg.tolerancePct)) ? Number(cfg.tolerancePct) : 0.5;
+  const entries = metricFn(cfg);
+  for (const { rel, floors } of entries) {
+    const entry = findSummaryEntry(raw, rel);
+    if (!entry) {
+      console.error(`[merged-coverage] ${label} FAIL missing file in report: ${rel}`);
+      failed = true;
+      continue;
+    }
+    for (const [metric, floor] of Object.entries(floors)) {
+      if (!Number.isFinite(floor)) continue;
+      const actual = Number(entry[metric]?.pct);
+      if (!Number.isFinite(actual)) {
+        console.error(`[merged-coverage] ${label} FAIL ${rel} ${metric}=NaN`);
+        failed = true;
+        continue;
+      }
+      if (actual + tol + 1e-9 < floor) {
+        console.error(
+          `[merged-coverage] ${label} FAIL ${rel} ${metric}=${actual} < ${floor} (tol=${tol})`
+        );
+        failed = true;
+      } else {
+        console.log(
+          `[merged-coverage] ${label} ok ${rel} ${metric}=${actual} >= ${floor}`
+        );
+      }
+    }
+  }
+}
+
+checkFileFloors('L1-floor', path.join(serverRoot, 'l1-coverage-floor.json'), (cfg) =>
+  Object.entries(cfg.files || {}).map(([rel, floors]) => ({ rel, floors }))
+);
+
+checkFileFloors('extracted-floor', path.join(serverRoot, 'extracted-coverage-floor.json'), (cfg) => {
+  const minLines = Number(cfg.minLines) || 80;
+  return (cfg.files || []).map((rel) => ({ rel, floors: { lines: minLines } }));
+});
+
+if (failed) process.exit(1);
 process.exit(0);

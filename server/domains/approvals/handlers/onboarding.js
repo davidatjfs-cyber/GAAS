@@ -1,3 +1,7 @@
+import { childLogger } from '../../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'onboarding' });
+
 export async function beforeUpdate(_ctx) {}
 
 export async function afterDecide(ctx) {
@@ -32,10 +36,11 @@ export async function afterDecide(ctx) {
     const stateForId = (await getSharedState()) || {};
     const built = buildOnboardingEmployeeRecordFromPayload(emp, stateForId);
     if (!built.ok) {
-      console.error('[approval/onboarding] 审批已通过但无法构建员工记录', {
-        approvalId: updated.id,
+      log.error({
+        msg: 'onboarding_build_employee_failed',
+        approval_id: updated.id,
         reason: built.reason,
-        employeeName: String(emp?.name || '').trim() || null
+        employee_name: String(emp?.name || '').trim() || null,
       });
       decideExtras.onboardingEmployeeSync = { ok: false, reason: built.reason };
     } else {
@@ -44,10 +49,11 @@ export async function afterDecide(ctx) {
         await mergeSharedStateFields({ employees: [nextEmp] }, { employees: 'username' });
         decideExtras.onboardingEmployeeSync = { ok: true, username: newUsername };
       } catch (mergeErr) {
-        console.error('[approval/onboarding] mergeSharedStateFields(employees) 失败', {
-          approvalId: updated.id,
+        log.error({
+          msg: 'onboarding_merge_employees_failed',
+          approval_id: updated.id,
           username: newUsername,
-          err: safeErrMessage(mergeErr)
+          err: safeErrMessage(mergeErr),
         });
         decideExtras.onboardingEmployeeSync = { ok: false, reason: 'merge_failed', username: newUsername };
       }
@@ -67,13 +73,14 @@ export async function afterDecide(ctx) {
                  is_active = true`,
             [newUsername, hash, empName, nextEmp.role, nextEmp.department || '', nextEmp.position || '', req.tenantId || req.user?.tenant_id || 'default']
           );
-          console.log('[approval/onboarding] users account created:', newUsername);
+          log.info({ msg: 'onboarding_users_account_created', username: newUsername });
           decideExtras.userAccountCreated = true;
         } catch (userErr) {
-          console.error('[approval/onboarding] 创建 users 账号失败', {
-            approvalId: updated.id,
+          log.error({
+            msg: 'onboarding_users_insert_failed',
+            approval_id: updated.id,
             username: newUsername,
-            err: String(userErr?.message || userErr)
+            err: String(userErr?.message || userErr),
           });
         }
         const onboardingOpenId = toNullableUuid(emp?.open_id || emp?.openId || emp?.feishuOpenId);
@@ -96,19 +103,21 @@ export async function afterDecide(ctx) {
                WHERE NOT EXISTS (SELECT 1 FROM updated)`,
               [newUsername, empName, nextEmp.store || '', nextEmp.role || '', req.tenantId || req.user?.tenant_id || 'default', onboardingOpenId]
             );
-            console.log('[approval/onboarding] feishu_users record created:', newUsername);
+            log.info({ msg: 'onboarding_feishu_users_created', username: newUsername });
             decideExtras.feishuUsersCreated = true;
           } catch (feishuErr) {
-            console.error('[approval/onboarding] 创建 feishu_users 记录失败', {
-              approvalId: updated.id,
+            log.error({
+              msg: 'onboarding_feishu_users_failed',
+              approval_id: updated.id,
               username: newUsername,
-              err: String(feishuErr?.message || feishuErr)
+              err: String(feishuErr?.message || feishuErr),
             });
           }
         } else {
-          console.info('[approval/onboarding] 跳过 feishu_users 创建：缺少 open_id', {
-            approvalId: updated.id,
-            username: newUsername
+          log.info({
+            msg: 'onboarding_feishu_users_skipped_no_open_id',
+            approval_id: updated.id,
+            username: newUsername,
           });
         }
       }
@@ -130,7 +139,7 @@ export async function afterDecide(ctx) {
             });
           }
         } catch (tlOnbErr) {
-          console.error('[onboarding] salary timeline failed:', tlOnbErr?.message);
+          log.error({ msg: 'onboarding_salary_timeline_failed', err: tlOnbErr?.message });
         }
 
         const state = (await getSharedState()) || {};
@@ -153,9 +162,10 @@ export async function afterDecide(ctx) {
         try {
           await mergeSharedStateFields({ notifications: notifs }, { notifications: 'id' });
         } catch (notifErr) {
-          console.error('[approval/onboarding] mergeSharedStateFields(notifications) 失败', {
-            approvalId: updated.id,
-            err: String(notifErr?.message || notifErr)
+          log.error({
+            msg: 'onboarding_merge_notifications_failed',
+            approval_id: updated.id,
+            err: String(notifErr?.message || notifErr),
           });
         }
       }
