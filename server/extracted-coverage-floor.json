@@ -180,6 +180,12 @@
     "domains/growth-actions/service.js",
     "domains/daily-reports/helpers.js",
     "domains/leave-attendance/attendance-build.js",
-    "domains/performance-invalidation/helpers.js"
+    "domains/performance-invalidation/helpers.js",
+    "domains/inventory-forecast/heuristic.js",
+    "domains/training/shared.js",
+    "domains/approvals/scheduler-offboarding-promotion.js",
+    "domains/growth-metrics/service.js",
+    "domains/performance-invalidation/service.js",
+    "domains/birthday/scheduler.js"
   ]
 }
