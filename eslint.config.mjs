@@ -107,13 +107,16 @@ export default [
       'no-console': ['error', { allow: ['warn', 'error', 'info', 'debug'] }],
     },
   },
-  // 存量仍含 console.log 的 domains 文件：允许 log，靠 console-log-ratchet 只降不升
-  {
-    files: DOMAINS_CONSOLE_LOG_BASELINE,
-    rules: {
-      'no-console': ['error', { allow: ['warn', 'error', 'info', 'debug', 'log'] }],
-    },
-  },
+  // 存量仍含 console.log 的 domains 文件：允许 log，靠 console-log-ratchet 只降不升。
+  // files 为空时不得生成该块（ESLint flat config 拒绝空 files 数组）。
+  ...(DOMAINS_CONSOLE_LOG_BASELINE.length
+    ? [{
+        files: DOMAINS_CONSOLE_LOG_BASELINE,
+        rules: {
+          'no-console': ['error', { allow: ['warn', 'error', 'info', 'debug', 'log'] }],
+        },
+      }]
+    : []),
   // legacy 巨石：override 回 warn（exclude-style 白名单）
   {
     files: LEGACY_SERVER_UNUSED_VARS_WARN,

@@ -1,9 +1,6 @@
 {
   "updated": "2026-07-26",
-  "note": "domains 内仍含 console.log 的存量文件。新文件不得出现在此列表之外。",
-  "files": [
-    "domains/inventory-forecast/pdf-parse.js",
-    "domains/inventory-forecast/service.js"
-  ],
-  "countAtFreeze": 9
+  "note": "domains 内仍含 console.log 的存量文件。已清空；新文件禁止出现 console.log。",
+  "files": [],
+  "countAtFreeze": 0
 }

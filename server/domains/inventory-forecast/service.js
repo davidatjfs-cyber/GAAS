@@ -6,6 +6,9 @@ import fs from 'fs';
 import path from 'path';
 import XLSX from 'xlsx';
 import { randomUUID } from 'crypto';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'inventory-forecast', handler: 'service' });
 
 export async function listHistory(ctx, input) {
 
@@ -157,7 +160,11 @@ export async function uploadHistoryFile(ctx, input) {
           const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
           if (!__debugMatrixSample.length && matrix.length) {
             __debugMatrixSample = matrix.slice(0, 12).map(r => Array.isArray(r) ? r.map(c => String(c ?? '').slice(0, 40)) : []);
-            console.log('[inventory-upload] Excel matrix sample (first 12 rows):', JSON.stringify(__debugMatrixSample));
+            log.debug({
+              msg: 'inventory_upload_excel_matrix_sample',
+              rows: __debugMatrixSample.length,
+              sample: JSON.stringify(__debugMatrixSample).slice(0, 500),
+            });
           }
           const out = ctx.parseInventoryForecastRowsFromTableMatrix(matrix, fallbackBizType, {
             fallbackDate: fallbackDateFromName,
@@ -200,24 +207,24 @@ export async function uploadHistoryFile(ctx, input) {
         if (extLooksPdf || mimeLooksPdf) {
           parseMode = parseMode ? `${parseMode}|pdf_attempt` : 'pdf_attempt';
           try {
-            console.log('[inventory-upload] Trying pdftotext path for:', file.path);
+            log.debug({ msg: 'inventory_upload_pdftotext_attempt', path: file.path });
             parsedRows = ctx.parseInventoryForecastRowsFromPdfPath(file.path, fallbackBizType, {
               fallbackDate: fallbackDateFromName,
               allowTodayFallbackDate: true
             });
-            console.log('[inventory-upload] pdftotext result rows:', parsedRows.length);
+            log.debug({ msg: 'inventory_upload_pdftotext_rows', rows: parsedRows.length });
             if (!parsedRows.length) {
-              console.log('[inventory-upload] Trying built-in PDF buffer parser');
+              log.debug({ msg: 'inventory_upload_pdf_buffer_attempt' });
               const pdfBuffer = fs.readFileSync(file.path);
               parsedRows = ctx.parseInventoryForecastRowsFromPdfBuffer(pdfBuffer, fallbackBizType, {
                 fallbackDate: fallbackDateFromName,
                 allowTodayFallbackDate: true
               });
-              console.log('[inventory-upload] buffer parser result rows:', parsedRows.length);
+              log.debug({ msg: 'inventory_upload_pdf_buffer_rows', rows: parsedRows.length });
             }
             if (parsedRows.length) parseMode = 'pdf';
           } catch (e) {
-            console.log('[inventory-upload] PDF parse error:', String(e?.message || e));
+            log.warn({ msg: 'inventory_upload_pdf_parse_failed', err: String(e?.message || e) });
             parseErrors.push(`pdf:${String(e?.message || e)}`);
           }
         }
@@ -264,7 +271,11 @@ export async function uploadHistoryFile(ctx, input) {
       }
 
       // Always use user-selected bizType — user controls store & bizType, system only validates field structure
-      console.log(`[inventory-upload] Applying user-selected bizType: ${selectedBizType} to all ${parsedRows.length} rows`);
+      log.info({
+        msg: 'inventory_upload_apply_biz_type',
+        biz_type: selectedBizType,
+        rows: parsedRows.length,
+      });
       parsedRows.forEach((row) => { row.bizType = selectedBizType; });
 
       // Store validation: also trust user selection, just log if file has different store info
@@ -275,7 +286,11 @@ export async function uploadHistoryFile(ctx, input) {
         const selectedStoreKey = ctx.normalizeForecastStoreKey(store);
         const fileStoreKeys = Array.from(new Set(fileStores.map((x) => ctx.normalizeForecastStoreKey(x)).filter(Boolean)));
         if (fileStoreKeys.length && fileStoreKeys[0] !== selectedStoreKey) {
-          console.log(`[inventory-upload] File store(s) [${fileStores.join(',')}] differ from selected [${store}], using user selection`);
+          log.info({
+            msg: 'inventory_upload_store_override',
+            file_stores: fileStores.slice(0, 5),
+            selected_store: store,
+          });
         }
         // No longer reject — trust user selection for store too
       }
@@ -1064,7 +1079,7 @@ export async function listGrossProfitProfiles(ctx, input) {
             existingKeys.add(ek);
           }
         }
-      } catch(e) { console.error('[profiles] dish_library_costs merge error:', e?.message||e); }
+      } catch (e) { log.error({ msg: 'inventory_profiles_dish_costs_merge_failed', err: e?.message || String(e) }); }
 
       items.sort((a, b) => String(a?.product || '').localeCompare(String(b?.product || ''), 'zh-Hans-CN'));
 
@@ -1319,7 +1334,7 @@ export async function estimateGrossMargin(ctx, input) {
         const dlR = await ctx.pool.query(`SELECT biz_type,dish_name,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=ANY($1) OR store='*')${dlBrandClause}`, dlParams);
         const ek = new Set(profiles.map(x => `${normalizeForecastBizType(x?.bizType)||''}||${normalizeProductName(String(x?.product||'').trim())}`));
         for (const r of (dlR.rows||[])) { const b=ctx.normalizeForecastBizType(r.biz_type)||''; const n=String(r.dish_name||'').trim(); const nNorm=ctx.normalizeProductName(n); const c=ctx.safeNumber(r.unit_cost); if(!nNorm||!Number.isFinite(c)||c<0) continue; const k=`${b}||${nNorm}`; if(!ek.has(k)){profiles.push({product:n,bizType:b,costPerUnit:Number(c.toFixed(4))});ek.add(k);} }
-      } catch(e) { console.error('[margin-est] dish_library_costs merge error:', e?.message||e); }
+      } catch (e) { log.error({ msg: 'inventory_margin_dish_costs_merge_failed', err: e?.message || String(e) }); }
       const aliasLookup = ctx.buildForecastProductAliasLookup(state0, { store: scope.store, brandId: scope.brandId });
 
       const estimate = ctx.estimateGrossMarginByHistory({

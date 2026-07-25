@@ -1916,3 +1916,163 @@ test('promotion.afterDecide：pending 且 nextAssignee 无档案 → 不附带�
   assert.ok(n);
   assert.equal(/带教人/.test(n.msg), false);
 });
+
+test('onboarding.beforeUpdate no-op；afterDecide 边界：feishuOpenId / tenant 回落 / 空店长名 / 空员工名', async () => {
+  await onboarding.beforeUpdate({});
+
+  const queries = [];
+  const timeline = [];
+  const { deps, merges } = makeDeps({
+    state: {
+      employees: [
+        { username: '  ', store: '乙店', role: 'store_manager' },
+        { username: 'cook1', store: '乙店', role: 'store_employee' },
+      ],
+    },
+  });
+  deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+    ok: true,
+    nextEmp: {
+      username: 'newoid',
+      name: '飞书入职',
+      role: 'store_employee',
+      department: '前厅',
+      position: '服务员',
+      store: '乙店',
+      managerUsername: '',
+      salary: 5000,
+      joinDate: '2026-08-01',
+    },
+    newUsername: 'newoid',
+    empName: '飞书入职',
+    empPassword: 'Temp9999',
+  });
+  deps.bcrypt = { hash: async () => 'hash' };
+  deps.toNullableUuid = (v) => (String(v || '').startsWith('oid-') ? String(v) : null);
+  deps.safeDateOnly = (d) => String(d || '').slice(0, 10) || '';
+  deps.insertSalaryTimeline = async (a) => {
+    timeline.push(a);
+  };
+  deps.pool.query = async (...a) => {
+    queries.push(a);
+    return { rows: [] };
+  };
+  deps.safeErrMessage = (e) => String(e?.message || e);
+  deps.stateFindUserRecord = () => null;
+
+  const decideExtras = {};
+  await onboarding.afterDecide({
+    req: { user: { tenant_id: 'tenant-b' } },
+    deps,
+    updated: {
+      id: 'onb-oid',
+      type: 'onboarding',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { employee: { name: '飞书入职', feishuOpenId: 'oid-abc' } },
+    },
+    username: 'a1',
+    decideExtras,
+  });
+  assert.equal(decideExtras.userAccountCreated, true);
+  assert.equal(decideExtras.feishuUsersCreated, true);
+  assert.equal(timeline[0]?.tenantId, 'tenant-b');
+  assert.equal(timeline[0]?.effectiveFrom, '2026-08-01');
+  assert.ok(queries.some((q) => /feishu_users/i.test(String(q[0]))));
+  const recipients = (merges.find((m) => Array.isArray(m.patch.notifications))?.patch.notifications || [])
+    .map((x) => x.u);
+  assert.ok(recipients.includes('hr1'));
+  assert.equal(recipients.includes('cook1'), false);
+
+  const { deps: d2, notifs: n2 } = makeDeps();
+  d2.stateFindUserRecord = () => null;
+  await onboarding.afterDecide({
+    req: {},
+    deps: d2,
+    updated: {
+      id: 'onb-empty-name',
+      type: 'onboarding',
+      status: 'rejected',
+      applicant_username: 'hr2',
+      payload: { employee: {} },
+    },
+    note: '资料不全',
+    decideExtras: {},
+  });
+  assert.ok(n2.some((x) => x.title === '新员工入职审批被拒绝' && /新员工「新员工」/.test(x.msg) && /资料不全/.test(x.msg)));
+
+  const { deps: d3, notifs: n3 } = makeDeps();
+  d3.getSharedState = async () => ({ employees: null });
+  d3.stateFindUserRecord = () => null;
+  await onboarding.afterDecide({
+    req: {},
+    deps: d3,
+    updated: {
+      id: 'onb-pend-anon',
+      type: 'onboarding',
+      status: 'pending',
+      applicant_username: 'hr3',
+      payload: { employee: 'bad' },
+    },
+    nextAssignee: 'mgr9',
+    decideExtras: {},
+  });
+  assert.ok(n3.some((x) => x.title === '新员工入职审批待处理' && /「新员工」/.test(x.msg)));
+
+  await onboarding.afterDecide({
+    req: {},
+    deps: d3,
+    updated: null,
+    decideExtras: {},
+  });
+  await onboarding.afterDecide({
+    req: {},
+    deps: d3,
+    updated: { id: 'x', type: 'points', status: 'approved', payload: {} },
+    decideExtras: {},
+  });
+});
+
+test('leave.afterDecide：finishDate/leaveDays 别名；tenant 回落 user；leaveRecords 非数组', async () => {
+  const { deps, notifs, queries, dualWriteFails } = makeDeps({
+    state: { leaveRecords: null },
+  });
+  deps.stateFindUserRecord = () => ({
+    username: 'emp1',
+    name: '',
+    managerUsername: '',
+    store: '',
+    brand: '',
+    department: '',
+    position: '',
+  });
+  deps.calcDateSpanDaysInclusive = () => null;
+  deps.pool.query = async (...a) => {
+    queries.push(a);
+    throw new Error('leave dw boom');
+  };
+
+  await leave.afterDecide({
+    req: { user: { tenant_id: 't-leave' } },
+    deps,
+    username: 'approver1',
+    updated: {
+      id: 'lv-alias',
+      type: 'leave',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: {
+        beginDate: '2026-08-10',
+        finishDate: '2026-08-12',
+        leaveDays: 3,
+        leaveReason: '事假',
+        type: 'personal',
+      },
+    },
+  });
+  assert.equal(dualWriteFails.length, 1);
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0][1][7], 3);
+  assert.equal(queries[0][1][14], 't-leave');
+  assert.ok(notifs.some((n) => n.title === '休假申请已通过'));
+});

@@ -1,4 +1,7 @@
+import { childLogger } from '../../../utils/logger.js';
 import { fmtLeaveDate } from './shared.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'leave' });
 
 export async function beforeUpdate(ctx) {
   const { row, remainingLeaveDaysRaw, username, updatedPayload } = ctx;
@@ -90,7 +93,7 @@ export async function afterDecide(ctx) {
            req.tenantId || req.user?.tenant_id || 'default']
         );
       } catch (e) {
-        console.error('[leave_records] dual-write failed:', e?.message);
+        log.error({ msg: 'leave_records_dual_write_failed', err: e?.message });
         void notifyAdminsDualWriteFailure('hrms_leave_records（休假审批双写）', e);
       }
 

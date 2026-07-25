@@ -82,7 +82,7 @@ const L1_FILE_FLOOR = {
   'domains/approvals/handlers/leave.js': { branches: 79, lines: 95 },
   'domains/approvals/handlers/offboarding.js': { branches: 77, lines: 95 },
   'domains/approvals/handlers/points.js': { branches: 69, lines: 95 },
-  'domains/approvals/handlers/onboarding.js': { branches: 60, lines: 95 },
+  'domains/approvals/handlers/onboarding.js': { branches: 70, lines: 95 },
   'domains/approvals/handlers/promotion.js': { branches: 74, lines: 95 },
   'domains/tenant-platform/routes-billing.js': { branches: 68, lines: 95 },
   'domains/tenant-platform/routes-auth.js': { branches: 83, lines: 90 },

@@ -1,5 +1,8 @@
 import zlib from 'zlib';
 import { execFileSync } from 'child_process';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'inventory-forecast', handler: 'pdf-parse' });
 
 export function createPdfParseHelpers({
   parseInventoryForecastRowsFromTableMatrix,
@@ -224,7 +227,11 @@ export function createPdfParseHelpers({
       });
       const text = nfkcNormalize(String(out || '')).trim();
       if (!text) return [];
-      console.log('[pdf-parse] pdftotext output length:', text.length, 'first 300 chars:', text.slice(0, 300));
+      log.debug({
+        msg: 'inventory_pdftotext_output',
+        length: text.length,
+        preview: text.slice(0, 300),
+      });
       const lines = text.split(/\r?\n/).map((x) => String(x || '').trim()).filter(Boolean);
       if (!lines.length) return [];
       const matrix = lines.map((line) => {
