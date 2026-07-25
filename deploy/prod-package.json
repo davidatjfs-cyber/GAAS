@@ -1,0 +1,24 @@
+{
+  "name": "hrms-prod",
+  "private": true,
+  "type": "module",
+  "description": "生产 /opt/hrms 的 npm 依赖清单。@gaas/shared 不走 npm，由 install-prod-deps.sh 软链到 packages/gaas-shared。禁止在无本文件时对 /opt/hrms 执行 npm install <单包> --no-save（会 prune 掉全部依赖）。",
+  "dependencies": {
+    "ali-oss": "^6.22.0",
+    "archiver": "^7.0.1",
+    "axios": "^1.13.5",
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "cos-nodejs-sdk-v5": "^2.14.7",
+    "dotenv": "^17.2.3",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "pdfkit": "^0.15.2",
+    "pg": "^8.11.3",
+    "pino": "^9.14.0",
+    "ws": "^8.21.1",
+    "xlsx": "^0.18.5"
+  }
+}
