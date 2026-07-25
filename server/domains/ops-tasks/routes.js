@@ -73,7 +73,7 @@ export function registerOpsTasksRoutes(app, authRequired, deps) {
       await pool.query(
         `insert into user_reads (username, module, item_key, read_at)
          values ($1, 'ops_tasks', $2, now())
-         on conflict (username, module, item_key)
+         on conflict (username, module, item_key, tenant_id)
          do update set read_at = excluded.read_at`,
         [username, id]
       );
@@ -133,7 +133,7 @@ export function registerOpsTasksRoutes(app, authRequired, deps) {
       await pool.query(
         `insert into user_reads (username, module, item_key, read_at)
          values ($1, 'ops_tasks', $2, now())
-         on conflict (username, module, item_key)
+         on conflict (username, module, item_key, tenant_id)
          do update set read_at = excluded.read_at`,
         [username, id]
       );

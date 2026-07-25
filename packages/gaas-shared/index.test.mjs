@@ -41,6 +41,19 @@ test('shared: table writer matrix covers master_tasks / hrms_state / employees',
   assert.equal(HR_RATING_CONFIG_KEYS.APPROVAL_FLOWS, 'approval_flows');
 });
 
+test('shared: SHARED_TABLE_WRITERS 全表覆盖且写入方仅 gaas|agents', () => {
+  const allowed = new Set(['gaas', 'agents']);
+  const tables = Object.values(SHARED_TABLES);
+  assert.ok(tables.length >= 15);
+  for (const table of tables) {
+    assert.ok(Object.prototype.hasOwnProperty.call(SHARED_TABLE_WRITERS, table), table);
+    assert.ok(allowed.has(SHARED_TABLE_WRITERS[table]), `${table}=${SHARED_TABLE_WRITERS[table]}`);
+  }
+  for (const table of Object.keys(SHARED_TABLE_WRITERS)) {
+    assert.ok(tables.includes(table), `unknown ${table}`);
+  }
+});
+
 test('shared: fetchFeishuTenantAccessToken uses fetchImpl', async () => {
   const token = await fetchFeishuTenantAccessToken({
     appId: 'id',

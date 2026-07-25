@@ -127,6 +127,65 @@ test('DELETE /api/approvals/:id: 只有admin能删除，删除后确实从数据
   assert.equal(row.rows.length, 0, '删除后数据库里不应该还有这条记录');
 });
 
+test('POST /api/approvals/:id/read：有审批中心权限 → 200 且 user_reads 落库', async () => {
+  const db = testDb();
+  const manager = await createUser('hq_manager');
+  const applicant = await createUser('store_employee');
+  await appendStateEmployee('default', {
+    username: applicant,
+    role: 'store_employee',
+    store: '测试门店',
+    managerUsername: manager,
+  });
+
+  const applicantToken = await login(applicant);
+  const approvalId = await createLeaveApproval(applicantToken);
+
+  const managerToken = await login(manager);
+  const res = await fetch(app.baseUrl + `/api/approvals/${approvalId}/read`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + managerToken },
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  assert.equal(body.ok, true);
+
+  const row = await db.query(
+    `select 1 from user_reads
+      where username = $1 and module = 'approval' and item_key = $2`,
+    [manager, approvalId]
+  );
+  assert.equal(row.rows.length, 1, '应写入 user_reads(module=approval)');
+
+  // 幂等：再标记一次仍 200
+  const again = await fetch(app.baseUrl + `/api/approvals/${approvalId}/read`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + managerToken },
+  });
+  assert.equal(again.status, 200);
+});
+
+test('POST /api/approvals/:id/read：无审批中心权限 → 403', async () => {
+  const manager = await createUser('hq_manager');
+  const applicant = await createUser('store_employee');
+  await appendStateEmployee('default', {
+    username: applicant,
+    role: 'store_employee',
+    store: '测试门店',
+    managerUsername: manager,
+  });
+
+  const applicantToken = await login(applicant);
+  const approvalId = await createLeaveApproval(applicantToken);
+
+  // store_employee 无 duty can_approve_hrms → 不能进审批中心
+  const forbidden = await fetch(app.baseUrl + `/api/approvals/${approvalId}/read`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + applicantToken },
+  });
+  assert.equal(forbidden.status, 403);
+});
+
 test('PUT /api/approval-flows: 只有admin能配置，配置正确写入hrms_state', async () => {
   const nonAdmin = await createUser('hq_manager');
   const nonAdminToken = await login(nonAdmin);

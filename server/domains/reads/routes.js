@@ -29,7 +29,7 @@ export function registerReadsRoutes(app, authRequired, deps) {
       await pool.query(
         `insert into user_reads (username, module, item_key, read_at)
          values ${values.join(',')}
-         on conflict (username, module, item_key) do update set read_at = excluded.read_at`,
+         on conflict (username, module, item_key, tenant_id) do update set read_at = excluded.read_at`,
         params
       );
       return res.json({ ok: true, inserted: sliced.length });

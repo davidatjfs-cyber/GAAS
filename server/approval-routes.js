@@ -246,7 +246,7 @@ export function registerApprovalRoutes(app, authRequired, deps) {
       await pool.query(
         `insert into user_reads (username, module, item_key, read_at)
          values ($1,$2,$3, now())
-         on conflict (username, module, item_key) do update set read_at = excluded.read_at`,
+         on conflict (username, module, item_key, tenant_id) do update set read_at = excluded.read_at`,
         [username, 'approval', id]
       );
       return res.json({ ok: true });

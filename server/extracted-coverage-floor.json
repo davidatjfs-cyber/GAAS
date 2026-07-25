@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-25",
+  "updated": "2026-07-26",
   "note": "新拆文件合并覆盖捆绑闸门：列入本表的文件 lines 必须 ≥ minLines（默认 80），只升不降。拆出新模块时必须同时补测并登记。",
   "minLines": 80,
   "tolerancePct": 0.5,
@@ -7,6 +7,7 @@
     "domains/approvals/create-assignees.js",
     "domains/approvals/create-notify-message.js",
     "domains/approvals/create-validators.js",
-    "domains/health/scheduler-heartbeat.js"
+    "domains/health/scheduler-heartbeat.js",
+    "domains/leave-attendance/clock-window.js"
   ]
 }
