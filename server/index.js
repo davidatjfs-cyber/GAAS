@@ -180,9 +180,11 @@ pg.types.setTypeParser(1184, str => {
 
 import XLSX from 'xlsx';
 import axios from 'axios';
-import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, getAgentPerformanceMetrics, getScheduledTaskStatus, clearAgentCache, runAgentEvalSuite, pool as agentPool, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache, getBitableSubmissionStats, archiveOldBitableSubmissions } from './agents.js';
+import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, getAgentPerformanceMetrics, getScheduledTaskStatus, clearAgentCache, runAgentEvalSuite, getSharedState as getAgentSharedState, inferBrandFromStoreName, fetchStoreRatingForProfileDisplay, registerFeishuUser, pool as agentPool, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache, getBitableSubmissionStats, archiveOldBitableSubmissions } from './agents.js';
 import { registerAgentDataCenterRoutes } from './domains/agent-data-center/routes.js';
 import { registerAgentOpsRoutes } from './domains/agent-ops/routes.js';
+import { registerAgentRecordsRoutes } from './domains/agent-records/routes.js';
+import { calculateStoreRating } from './new-scoring-model.js';
 import { cronJobLabelZh } from './cron-job-label-zh.js';
 import { ensureAgentConfigTables, registerAgentConfigRoutes } from "./agent-config-manager.js";
 import { initBrandConfigCache, getBrandForStoreSync, getBrandConfigSync } from './utils/brand-config-loader.js';
@@ -1847,6 +1849,14 @@ registerAgentOpsRoutes(app, authRequired, {
   runAgentEvalSuite,
   getScheduledTaskStatus,
   clearAgentCache,
+});
+registerAgentRecordsRoutes(app, authRequired, {
+  pool: agentPool,
+  getSharedState: getAgentSharedState,
+  inferBrandFromStoreName,
+  fetchStoreRatingForProfileDisplay,
+  calculateStoreRating,
+  registerFeishuUser,
 });
 registerAgentRoutes(app, authRequired);
 registerAgentConfigRoutes(app, authRequired);
