@@ -2,11 +2,11 @@
 /**
  * Wave A：单测 + 集成测试合并覆盖率（观测口径，不改棘轮）。
  *
- * 共享 NODE_V8_COVERAGE 目录，让 bootApp 子进程(index.js)的执行量也进报告。
- * 现有 test:coverage / coverage-ratchet.json 仍是权威闸门；本脚本只产出
- * coverage/merged-summary.json 供对照，失败仅因测试本身失败。
+ * 用 c8 包住两次 node --test，共享 temp-directory，确保 bootApp 子进程
+ * （index.js）继承 NODE_V8_COVERAGE 并写入同一目录。
  *
- * 依赖：Postgres 测试库已 migrate + setup-test-role（与 CI test-integration 相同）。
+ * 验收：报告中必须出现 server/index.js；否则视为采集失败（exit 2）。
+ * 现有 test:coverage / coverage-ratchet.json 仍是权威闸门。
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -56,8 +56,15 @@ function loadExcludes() {
     .map((p) => String(p.glob || '').trim())
     .filter(Boolean)
     .map((g) => g.replace(/\\/g, '/'))
-    // 合并口径要看见 integration 跑到的业务代码；测试文件本身仍排除
     .filter((g) => g !== 'test/integration/**');
+}
+
+let c8bin;
+try {
+  c8bin = require.resolve('c8/bin/c8.js');
+} catch {
+  console.error('[merged-coverage] c8 not installed; run npm ci in repo root');
+  process.exit(2);
 }
 
 const coverDir = path.join(serverRoot, 'coverage', 'v8-raw');
@@ -72,43 +79,52 @@ if (!unitTests.length || !integTests.length) {
   process.exit(2);
 }
 
+const excludes = loadExcludes();
 const env = {
   ...process.env,
-  NODE_V8_COVERAGE: coverDir,
   GAAS_COVERAGE_GRACEFUL: '1',
 };
 
-console.log(`[merged-coverage] NODE_V8_COVERAGE=${coverDir}`);
+function runUnderC8(label, nodeArgs, { clean }) {
+  const args = [
+    c8bin,
+    `--temp-directory=${coverDir}`,
+    `--reports-dir=${path.join(outDir, 'merged-tmp')}`,
+    '--reporter=none',
+    clean ? '--clean' : '--clean=false',
+  ];
+  for (const g of excludes) {
+    args.push(`--exclude=${g}`);
+  }
+  // c8 默认会排除 test；我们要的是业务代码覆盖，测试文件本身已在 exclude 里
+  args.push(process.execPath, ...nodeArgs);
+
+  console.log(`[merged-coverage] ${label}: c8 node ${nodeArgs.slice(0, 3).join(' ')} ... (${nodeArgs.length - 2} files)`);
+  const r = spawnSync(process.execPath, args, {
+    cwd: serverRoot,
+    stdio: 'inherit',
+    env,
+  });
+  if (r.status !== 0) {
+    console.error(`[merged-coverage] ${label} failed`);
+    process.exit(r.status == null ? 1 : r.status);
+  }
+}
+
+console.log(`[merged-coverage] temp=${coverDir}`);
 console.log(`[merged-coverage] unit=${unitTests.length} integration=${integTests.length}`);
 
-const unit = spawnSync(
-  process.execPath,
+runUnderC8(
+  'unit',
   ['--test', '--test-force-exit', ...unitTests],
-  { cwd: serverRoot, stdio: 'inherit', env }
+  { clean: true }
 );
-if (unit.status !== 0) {
-  console.error('[merged-coverage] unit tests failed');
-  process.exit(unit.status == null ? 1 : unit.status);
-}
 
-const integ = spawnSync(
-  process.execPath,
+runUnderC8(
+  'integration',
   ['--test', '--test-concurrency=2', '--test-force-exit', ...integTests],
-  { cwd: serverRoot, stdio: 'inherit', env }
+  { clean: false }
 );
-if (integ.status !== 0) {
-  console.error('[merged-coverage] integration tests failed');
-  process.exit(integ.status == null ? 1 : integ.status);
-}
-
-const excludes = loadExcludes();
-let c8bin;
-try {
-  c8bin = require.resolve('c8/bin/c8.js');
-} catch {
-  console.error('[merged-coverage] c8 not installed; run npm ci in repo root');
-  process.exit(2);
-}
 
 const reportArgs = [
   c8bin,
@@ -117,7 +133,6 @@ const reportArgs = [
   `--reports-dir=${path.join(outDir, 'merged')}`,
   '--reporter=text-summary',
   '--reporter=json-summary',
-  // 与单测棘轮同一套 exclude 语义（去掉 integration 目录豁免）
 ];
 for (const g of excludes) {
   reportArgs.push(`--exclude=${g}`);
@@ -141,6 +156,22 @@ if (!fs.existsSync(summaryPath)) {
 }
 const raw = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
 const total = raw.total || {};
+
+const indexKey = Object.keys(raw).find((k) =>
+  /(^|\/)index\.js$/.test(k.replace(/\\/g, '/')) && !k.includes('node_modules')
+);
+if (!indexKey) {
+  console.error(
+    '[merged-coverage] FAIL: server/index.js 未出现在合并报告中——子进程覆盖未采到。'
+    + ' 检查 boot-app 优雅退出 / NODE_V8_COVERAGE 继承。'
+  );
+  process.exit(2);
+}
+const indexLines = raw[indexKey]?.lines || {};
+console.log(
+  `[merged-coverage] index.js lines=${indexLines.pct}% (${indexLines.covered}/${indexLines.total})`
+);
+
 const payload = {
   mode: 'merged-unit+integration',
   generatedAt: new Date().toISOString(),
@@ -148,7 +179,9 @@ const payload = {
   branches: Number(total.branches?.pct) || 0,
   functions: Number(total.functions?.pct) || 0,
   statements: Number(total.statements?.pct) || 0,
-  note: '观测口径，不驱动棘轮。Wave B 稳定后再把 coverage-ratchet 切到此口径。',
+  indexJsLinesPct: Number(indexLines.pct) || 0,
+  indexJsKey: indexKey,
+  note: '观测口径，不驱动棘轮。报告必须含 index.js。Wave B 需同 commit 波动稳定后再切。',
 };
 fs.writeFileSync(summaryOut, `${JSON.stringify(payload, null, 2)}\n`);
 console.log('[merged-coverage] summary → coverage/merged-summary.json');

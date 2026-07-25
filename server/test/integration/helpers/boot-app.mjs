@@ -13,6 +13,16 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_ROOT = path.resolve(__dirname, '../../..');
+const COVERAGE_ENTRY = path.join(__dirname, 'run-app-with-coverage.mjs');
+
+/** 采集覆盖率时走 wrapper（SIGTERM→process.exit 才能落盘 V8 coverage） */
+function resolveAppSpawnArgs(env) {
+  const collecting = Boolean(env.NODE_V8_COVERAGE || env.GAAS_COVERAGE_GRACEFUL);
+  if (collecting) {
+    return { exec: process.execPath, args: [COVERAGE_ENTRY] };
+  }
+  return { exec: process.execPath, args: ['index.js'] };
+}
 
 // node --test 会把不同测试文件当独立进程/模块实例并行跑，模块级计数器在文件间不共享，
 // 用随机端口+启动失败重试，比"每个文件从固定端口起跳"更不容易撞。
@@ -42,7 +52,8 @@ export async function bootApp(envOverrides = {}, attempt = 0) {
     ...envOverrides
   };
 
-  const child = spawn(process.execPath, ['index.js'], {
+  const spawnSpec = resolveAppSpawnArgs(env);
+  const child = spawn(spawnSpec.exec, spawnSpec.args, {
     cwd: SERVER_ROOT,
     env,
     stdio: ['ignore', 'pipe', 'pipe']
@@ -64,13 +75,28 @@ export async function bootApp(envOverrides = {}, attempt = 0) {
   }
 
   async function stop() {
-    // 合并覆盖率采集时依赖进程正常退出落盘 V8 coverage；给更长优雅退出窗口，避免 SIGKILL 丢数据
-    const gracefulMs = process.env.NODE_V8_COVERAGE || process.env.GAAS_COVERAGE_GRACEFUL
-      ? 15000
-      : 3000;
-    child.kill('SIGTERM');
+    // 合并覆盖率依赖子进程正常退出才能落盘 V8 coverage；采集模式下拉长优雅退出，并先 SIGINT 再 SIGTERM
+    const collecting = Boolean(process.env.NODE_V8_COVERAGE || process.env.GAAS_COVERAGE_GRACEFUL);
+    const gracefulMs = collecting ? 30000 : 3000;
+    if (collecting) {
+      child.kill('SIGINT');
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (child.exitCode === null && child.signalCode == null) {
+      child.kill('SIGTERM');
+    }
     await new Promise((resolve) => {
-      const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(); }, gracefulMs);
+      if (child.exitCode != null || child.signalCode != null) {
+        resolve();
+        return;
+      }
+      const timer = setTimeout(() => {
+        if (collecting) {
+          console.warn('[boot-app] coverage mode: SIGKILL after graceful timeout; coverage may be incomplete');
+        }
+        child.kill('SIGKILL');
+        resolve();
+      }, gracefulMs);
       child.once('exit', () => { clearTimeout(timer); resolve(); });
     });
   }

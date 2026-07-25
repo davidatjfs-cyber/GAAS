@@ -3,5 +3,5 @@
   "branches": 59,
   "functions": 44,
   "updated": "2026-07-25",
-  "note": "Phase 1l：promotion afterDecide 正式/资格/拒绝/待审 + create promotion/payment 成功链。实测约 lines 42.05 / branches 59.27 / functions 44.87。lines 升至 42；branches/functions 整数档未升。只升不降。"
+  "note": "单测棘轮仍权威（42/59/44）。合并覆盖率 Wave A：首版未采到 index.js 子进程；已用 run-app-with-coverage wrapper 修复。Wave B 等 CI 合并数字稳定后再切。只升不降。"
 }

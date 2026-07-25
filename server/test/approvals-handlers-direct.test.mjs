@@ -194,6 +194,71 @@ test('leave.afterDecide pending with nextAssignee sends leave_request', async ()
   assert.equal(notifs[0].title, '休假申请待审批');
 });
 
+test('leave.beforeUpdate：空/非数字 remainingLeaveDays 不写；非 leave 已覆盖', async () => {
+  const empty = {};
+  await leave.beforeUpdate({
+    row: { type: 'leave' },
+    remainingLeaveDaysRaw: '',
+    username: 'mgr1',
+    updatedPayload: empty,
+  });
+  assert.deepEqual(empty, {});
+
+  const bad = {};
+  await leave.beforeUpdate({
+    row: { type: 'leave' },
+    remainingLeaveDaysRaw: 'NaN-ish',
+    username: 'mgr1',
+    updatedPayload: bad,
+  });
+  assert.deepEqual(bad, {});
+});
+
+test('leave.afterDecide：fromDate/toDate + autoDays；双写失败告警；拒绝无 note', async () => {
+  const { deps, notifs, queries, dualWriteFails } = makeDeps();
+  deps.calcDateSpanDaysInclusive = () => 3;
+  deps.pool.query = async (...a) => {
+    queries.push(a);
+    throw new Error('dup leave');
+  };
+
+  await leave.afterDecide({
+    req: { tenantId: 't1', user: {} },
+    deps,
+    updated: {
+      id: 'appr-leave-auto',
+      type: 'leave',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: { fromDate: '2026-08-01', toDate: '2026-08-03', leaveReason: '年假' },
+    },
+    nextAssignee: null,
+    note: '',
+    username: 'approver1',
+  });
+  assert.equal(dualWriteFails.length, 1);
+  assert.match(String(dualWriteFails[0][0]), /hrms_leave_records/);
+  assert.ok(notifs.some((n) => n.title === '休假申请已通过'));
+  assert.equal(queries[0][1][7], 3); // days 参数
+
+  notifs.length = 0;
+  const { deps: deps2, notifs: n2 } = makeDeps();
+  await leave.afterDecide({
+    req: {},
+    deps: deps2,
+    updated: {
+      id: 'appr-leave-rej',
+      type: 'leave',
+      status: 'rejected',
+      applicant_username: 'emp1',
+      payload: { beginDate: '2026-08-10', finishDate: '2026-08-11' },
+    },
+    note: '',
+    username: 'a1',
+  });
+  assert.ok(n2.some((n) => /相关原因/.test(n.msg)));
+});
+
 test('monthly-confirm.afterDecide approved merges status and notifies monthly_confirm_result', async () => {
   const mc = {
     id: 'mc-1',
@@ -632,6 +697,159 @@ test('onboarding.afterDecide pending with nextAssignee sends pending notificatio
   assert.equal(notifs[0].title, '新员工入职审批待处理');
   assert.equal(notifs[0].meta.type, 'onboarding_request');
   assert.match(notifs[0].msg, /钱七/);
+});
+
+test('onboarding.afterDecide：merge 失败 / users 失败 / 飞书成功 / 定薪 / 店长通知', async () => {
+  // merge employees 失败
+  {
+    const { deps } = makeDeps({ state: { employees: [] } });
+    const decideExtras = {};
+    deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+      ok: true,
+      nextEmp: { username: 'n1', role: 'waiter', store: '测试店' },
+      newUsername: 'n1',
+      empName: '甲',
+      empPassword: 'p',
+    });
+    deps.mergeSharedStateFields = async () => {
+      throw new Error('merge boom');
+    };
+    deps.safeErrMessage = (e) => String(e?.message || e);
+    deps.bcrypt = { hash: async () => 'h' };
+    deps.toNullableUuid = () => null;
+    await onboarding.afterDecide({
+      req: { tenantId: 'default' },
+      deps,
+      updated: {
+        id: 'onb-m1',
+        type: 'onboarding',
+        status: 'approved',
+        applicant_username: 'hr1',
+        payload: { employee: { name: '甲' } },
+      },
+      username: 'admin1',
+      decideExtras,
+    });
+    assert.equal(decideExtras.onboardingEmployeeSync?.ok, false);
+    assert.equal(decideExtras.onboardingEmployeeSync?.reason, 'merge_failed');
+  }
+
+  // 成功路径：users 失败不阻断飞书/定薪；有 open_id；有店长
+  {
+    const timeline = [];
+    const { deps, merges, queries } = makeDeps({
+      state: {
+        employees: [
+          { username: 'sm1', store: '测试店', role: 'store_manager', name: '店长' },
+        ],
+      },
+    });
+    const decideExtras = {};
+    deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+      ok: true,
+      nextEmp: {
+        username: 'new2',
+        role: 'waiter',
+        department: '前厅',
+        position: '服务员',
+        store: '测试店',
+        managerUsername: 'mgr1',
+        salary: 4800,
+        joinDate: '2026-08-01',
+      },
+      newUsername: 'new2',
+      empName: '乙',
+      empPassword: 'Secret9',
+    });
+    deps.bcrypt = { hash: async () => 'hashed2' };
+    deps.toNullableUuid = (v) => (v ? String(v) : null);
+    deps.insertSalaryTimeline = async (args) => {
+      timeline.push(args);
+    };
+    deps.safeErrMessage = (e) => String(e?.message || e);
+    let userInserts = 0;
+    deps.pool.query = async (sql, params) => {
+      queries.push([sql, params]);
+      if (/INSERT INTO users/i.test(sql)) {
+        userInserts += 1;
+        throw new Error('users conflict');
+      }
+      return { rows: [] };
+    };
+
+    await onboarding.afterDecide({
+      req: { tenantId: 't-onb', user: { tenant_id: 't-onb' } },
+      deps,
+      updated: {
+        id: 'onb-ok',
+        type: 'onboarding',
+        status: 'approved',
+        applicant_username: 'hr1',
+        payload: {
+          employee: {
+            name: '乙',
+            open_id: 'ou_abc1234567890123456789012345',
+          },
+        },
+      },
+      username: 'admin1',
+      decideExtras,
+    });
+
+    assert.equal(decideExtras.onboardingEmployeeSync?.ok, true);
+    assert.equal(userInserts, 1);
+    assert.equal(decideExtras.userAccountCreated, undefined);
+    assert.equal(decideExtras.feishuUsersCreated, true);
+    assert.ok(queries.some((q) => /feishu_users/i.test(String(q[0]))));
+    assert.equal(timeline.length, 1);
+    assert.equal(timeline[0].amount, 4800);
+    assert.ok(merges.some((m) => Array.isArray(m.patch.notifications)
+      && m.patch.notifications.some((n) => n.u === 'sm1')));
+  }
+
+  // 飞书写入失败不抛；定薪失败吞掉
+  {
+    const { deps } = makeDeps({ state: { employees: [] } });
+    const decideExtras = {};
+    deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+      ok: true,
+      nextEmp: {
+        username: 'new3',
+        role: 'waiter',
+        store: '店A',
+        salary: 100,
+        joinDate: '2026-08-02',
+      },
+      newUsername: 'new3',
+      empName: '丙',
+      empPassword: 'p',
+    });
+    deps.bcrypt = { hash: async () => 'h' };
+    deps.toNullableUuid = () => 'ou_fail';
+    deps.insertSalaryTimeline = async () => {
+      throw new Error('timeline down');
+    };
+    deps.safeErrMessage = (e) => String(e?.message || e);
+    deps.pool.query = async (sql) => {
+      if (/feishu_users/i.test(sql)) throw new Error('feishu down');
+      return { rows: [] };
+    };
+    await onboarding.afterDecide({
+      req: { tenantId: 'default' },
+      deps,
+      updated: {
+        id: 'onb-feishu-fail',
+        type: 'onboarding',
+        status: 'approved',
+        applicant_username: 'hr1',
+        payload: { employee: { name: '丙', openId: 'ou_fail' } },
+      },
+      username: 'a1',
+      decideExtras,
+    });
+    assert.equal(decideExtras.onboardingEmployeeSync?.ok, true);
+    assert.equal(decideExtras.feishuUsersCreated, undefined);
+  }
 });
 
 test('reward_punishment.afterDecide approved reward: +signedAmount + ledger reward', async () => {
