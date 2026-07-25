@@ -5,6 +5,9 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getMigrationDriftReport } from './schema-migrations.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'schema-migration-drift' });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,9 +25,7 @@ export async function runSchemaMigrationDriftCheck(pool, opts = {}) {
     migrationsDir: opts.migrationsDir || path.join(__dirname, 'migrations'),
   });
   if (report.ok) {
-    console.log(
-      `[schema-migration-drift] ok repo=${report.repoCount} applied=${report.appliedCount}`
-    );
+    log.info({ msg: 'drift_ok', repo: report.repoCount, applied: report.appliedCount });
     return { ok: true, report };
   }
 
@@ -43,12 +44,12 @@ export async function runSchemaMigrationDriftCheck(pool, opts = {}) {
     .filter(Boolean)
     .join('\n');
 
-  console.error('[schema-migration-drift]', msg.replace(/\n/g, ' | '));
+  log.error({ msg: 'drift_detected', detail: msg.replace(/\n/g, ' | ') });
   if (typeof opts.notifyFn === 'function') {
     try {
       await opts.notifyFn(msg);
     } catch (e) {
-      console.error('[schema-migration-drift] notify failed:', e?.message || e);
+      log.error({ msg: 'drift_notify_failed', err: e?.message || String(e) });
     }
   }
   return { ok: false, report };
@@ -61,7 +62,7 @@ export async function runSchemaMigrationDriftCheck(pool, opts = {}) {
 export function startSchemaMigrationDriftMonitor(pool, opts = {}) {
   const tick = () => {
     runSchemaMigrationDriftCheck(pool, opts).catch((e) => {
-      console.error('[schema-migration-drift] tick error:', e?.message || e);
+      log.error({ msg: 'drift_tick_error', err: e?.message || String(e) });
     });
   };
   // 启动后 2 分钟首次，之后每 6 小时（与 freshness 同频）

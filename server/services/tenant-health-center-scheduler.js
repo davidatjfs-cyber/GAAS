@@ -2,6 +2,9 @@
  * 健康中心每日全量扫描：CST 07:00–07:14 窗口内跑一次，保证客服上班前红名单就绪。
  */
 import { scanHealthCenter } from './tenant-health-center-service.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'tenant-health', handler: 'center-scheduler' });
 
 export function shanghaiParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -41,20 +44,18 @@ export function startHealthCenterDailyScanScheduler(pool, opts = {}) {
     running = true;
     lastScanYmd = ymd;
     try {
-      console.log(`[health-center] daily scan start date=${ymd}`);
+      log.info({ msg: 'daily_scan_start', date: ymd });
       const result = await scanHealthCenter(pool, { date: ymd });
-      console.log(
-        `[health-center] daily scan done scanned=${result.scanned} success=${result.success} failed=${result.failed}`
-      );
+      log.info({ msg: 'daily_scan_done', scanned: result.scanned, success: result.success, failed: result.failed });
       try {
         const { syncIncidentsFromInspections } = await import('./tenant-health-incident-service.js');
         const synced = await syncIncidentsFromInspections(pool, {});
-        console.log(`[health-center] incidents sync upserted=${synced?.upserted ?? 0}`);
+        log.info({ msg: 'incidents_sync_done', upserted: synced?.upserted ?? 0 });
       } catch (e) {
-        console.error('[health-center] incidents sync after scan failed:', e?.message || e);
+        log.error({ msg: 'incidents_sync_failed', err: e?.message || String(e) });
       }
     } catch (e) {
-      console.error('[health-center] daily scan failed:', e?.message || e);
+      log.error({ msg: 'daily_scan_failed', err: e?.message || String(e) });
       lastScanYmd = '';
     } finally {
       running = false;
@@ -67,6 +68,6 @@ export function startHealthCenterDailyScanScheduler(pool, opts = {}) {
 
   setTimeout(() => { tick().catch(() => {}); }, 120 * 1000);
   setInterval(() => { tick().catch(() => {}); }, intervalMs);
-  console.log(`[health-center] daily scan scheduler armed (CST ${String(windowHour).padStart(2, '0')}:00–${String(windowHour).padStart(2, '0')}:${String(windowMinuteEnd).padStart(2, '0')})`);
+  log.info({ msg: 'daily_scan_scheduler_armed', window_hour: windowHour, window_minute_end: windowMinuteEnd });
   return { tick, shanghaiParts };
 }

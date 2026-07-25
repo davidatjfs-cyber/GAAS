@@ -60,6 +60,9 @@ import { storeNameToId as _storeNameToIdFromConfig, STORE_ID_TO_NAME, STORES as 
 import { runForActiveTenants, tenantContext, resolveTenantIdDefault } from './utils/database.js';
 import { getSmsSlot, initSmsTemplatesCache } from './sms-templates.js';
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'growth-api' });
 const _storeId = (brandName) => _ALL_STORES.find(s => s.brandName === brandName)?.storeId || '';
 
 // 订阅消息推送网关（方案B）：HRMS 自己没有小程序 access_token，发不了订阅消息，
@@ -159,7 +162,7 @@ let _growthTablesDeprecationLogged = false;
 
 export async function ensureGrowthTables(pool) {
   if (!_growthTablesDeprecationLogged) {
-    console.warn('[growth] ensureGrowthTables is deprecated; schema via migrations');
+    log.warn({ msg: 'ensure_growth_tables_deprecated' });
     _growthTablesDeprecationLogged = true;
   }
   // 营销矩阵：生命周期阶段 × 价值分级 → 差异化动作
@@ -920,7 +923,7 @@ async function autoBackfillSmsActions(pool) {
       }
       count++;
     } catch (e) {
-      console.warn('[sms-backfill] error for', action.action_key, e?.message);
+      log.warn({ msg: 'sms_backfill_action_error', action_key: action.action_key, err: e?.message });
     }
   }
   return count;
@@ -1330,7 +1333,7 @@ export async function handleSmsFailure(pool, phone, errMsg, tenantId = 'default'
         [alertKey, JSON.stringify({ error: msg.slice(0, 200) }), tenantId]
       );
     }
-  } catch (e) { console.warn('[growth] handleSmsFailure error:', e?.message); }
+  } catch (e) { log.warn({ msg: 'handle_sms_failure_error', err: e?.message }); }
 }
 
 // 触达上限：同一手机号同一活动累计成功发送 N 次（默认3）仍未回店则永久停发该活动，
@@ -2442,7 +2445,7 @@ export async function runTouchRuleEngine(pool, options = {}) {
     // 活动制规则(action_payload.campaign_key)：不逐人直发，改为聚合候选→冻结发券任务(可核销可归因)。
     const ruleCampaignKey = cleanText((rule.action_payload || {}).campaign_key || '', 64);
     if (ruleCampaignKey && CAMPAIGN_TYPES[ruleCampaignKey]) {
-      await enqueueCampaignJobsForRule(pool, rule, candidates, ruleCampaignKey, claimedPhones).catch((e) => console.warn('[growth] enqueue campaign job failed:', rule.rule_key, e?.message));
+      await enqueueCampaignJobsForRule(pool, rule, candidates, ruleCampaignKey, claimedPhones).catch((e) => log.warn({ msg: 'enqueue_campaign_job_failed', rule_key: rule.rule_key, err: e?.message }));
       await pool.query(`UPDATE growth_touch_rules SET last_run_at = NOW() WHERE rule_key = $1`, [rule.rule_key]).catch(() => {});
       continue;
     }
@@ -2886,7 +2889,7 @@ export function registerGrowthRoutes(app, pool) {
     globalThis.__growthRemindWorker = true;
     setInterval(() => {
       runForActiveTenants(() => processOneRemindJob())
-        .catch((e) => console.warn('[svremind] worker failed:', e?.message));
+        .catch((e) => log.warn({ msg: 'svremind_worker_failed', err: e?.message }));
     }, 30 * 1000);
   }
 
@@ -2939,10 +2942,10 @@ export function registerGrowthRoutes(app, pool) {
   }
   if (!globalThis.__growthRemindAutoTimer) {
     globalThis.__growthRemindAutoTimer = setInterval(() => {
-      runForActiveTenants(() => enqueueAutoStoredValueReminds()).catch((e) => console.warn('[svremind] auto enqueue failed:', e?.message));
+      runForActiveTenants(() => enqueueAutoStoredValueReminds()).catch((e) => log.warn({ msg: 'svremind_auto_enqueue_failed', err: e?.message }));
     }, 60 * 60 * 1000);
     setTimeout(() => {
-      runForActiveTenants(() => enqueueAutoStoredValueReminds()).catch((e) => console.warn('[svremind] initial auto enqueue failed:', e?.message));
+      runForActiveTenants(() => enqueueAutoStoredValueReminds()).catch((e) => log.warn({ msg: 'svremind_initial_auto_enqueue_failed', err: e?.message }));
     }, 20000);
   }
 
@@ -2951,14 +2954,14 @@ export function registerGrowthRoutes(app, pool) {
     globalThis.__smsBackfillTimer = setInterval(() => {
       runForActiveTenants(() => autoBackfillSmsActions(pool)).then((rows) => {
         const n = rows.reduce((sum, value) => sum + (Number(value) || 0), 0);
-        if (n > 0) console.log(`[sms-backfill] auto-backfilled ${n} actions`);
-      }).catch((e) => console.warn('[sms-backfill] failed:', e?.message));
+        if (n > 0) log.info({ msg: 'sms_backfill_auto', actions: n });
+      }).catch((e) => log.warn({ msg: 'sms_backfill_failed', err: e?.message }));
     }, 24 * 60 * 60 * 1000);
     setTimeout(() => {
       runForActiveTenants(() => autoBackfillSmsActions(pool)).then((rows) => {
         const n = rows.reduce((sum, value) => sum + (Number(value) || 0), 0);
-        if (n > 0) console.log(`[sms-backfill] initial run: backfilled ${n} actions`);
-      }).catch((e) => console.warn('[sms-backfill] initial failed:', e?.message));
+        if (n > 0) log.info({ msg: 'sms_backfill_initial', actions: n });
+      }).catch((e) => log.warn({ msg: 'sms_backfill_initial_failed', err: e?.message }));
     }, 60000);
   }
 
@@ -3082,7 +3085,7 @@ export function registerGrowthRoutes(app, pool) {
   if (!globalThis.__growthProfileTimer) {
     const runProfileRecompute = () => runForActiveTenants((tenantId) => recomputeCustomerProfiles(pool, 90)
       .then(() => refreshTouchRulesAudienceCache(tenantId)))
-      .catch((e) => console.warn('[profiles] recompute failed:', e?.message));
+      .catch((e) => log.warn({ msg: 'profiles_recompute_failed', err: e?.message }));
     setTimeout(runProfileRecompute, 20000);
     globalThis.__growthProfileTimer = setInterval(runProfileRecompute, 24 * 60 * 60 * 1000);
   }
@@ -3096,19 +3099,19 @@ export function registerGrowthRoutes(app, pool) {
       if (nowCst.getUTCHours() < 2 || __growthRedemptionBackfillLastYmd === ymd) return;
       __growthRedemptionBackfillLastYmd = ymd;
       runForActiveTenants(() => backfillRedemptionAmounts(pool))
-        .then((rows) => console.log(`[growth] redemption amount backfill: ${rows.reduce((sum, value) => sum + (Number(value) || 0), 0)} rows updated`))
-        .catch((e) => console.warn('[growth] redemption amount backfill failed:', e?.message));
+        .then((rows) => log.info({ msg: 'redemption_amount_backfill', rows: rows.reduce((sum, value) => sum + (Number(value) || 0), 0) }))
+        .catch((e) => log.warn({ msg: 'redemption_amount_backfill_failed', err: e?.message }));
     };
     globalThis.__growthRedemptionBackfillTimer = setInterval(runBackfill, 10 * 60 * 1000);
   }
   if (!globalThis.__growthTouchRuleTimer) {
     globalThis.__growthTouchRuleTimer = setInterval(() => {
       runForActiveTenants((tenantId) => runTouchRuleEngine(pool, { limit_per_rule: 5000, tenantId }))
-        .catch((e) => console.warn('[growth] rule engine run failed:', e?.message));
+        .catch((e) => log.warn({ msg: 'rule_engine_run_failed', err: e?.message }));
     }, 15 * 60 * 1000);
     setTimeout(() => {
       runForActiveTenants((tenantId) => runTouchRuleEngine(pool, { limit_per_rule: 5000, tenantId }))
-        .catch((e) => console.warn('[growth] initial rule engine run failed:', e?.message));
+        .catch((e) => log.warn({ msg: 'rule_engine_initial_run_failed', err: e?.message }));
     }, 10000);
   }
 
@@ -3122,7 +3125,7 @@ export function registerGrowthRoutes(app, pool) {
           }
         });
       } catch (e) {
-        console.warn('[growth] wecom contact sync failed:', e?.message);
+        log.warn({ msg: 'wecom_contact_sync_failed', err: e?.message });
       }
     }, 24 * 60 * 60 * 1000); // 实时事件回调(wecom-contact-events.js)已是主力数据源，这里降为每日兜底对账
     setTimeout(async () => {
@@ -3134,7 +3137,7 @@ export function registerGrowthRoutes(app, pool) {
           }
         });
       } catch (e) {
-        console.warn('[growth] initial wecom contact sync failed:', e?.message);
+        log.warn({ msg: 'wecom_contact_sync_initial_failed', err: e?.message });
       }
     }, 30000);
   }
@@ -3158,7 +3161,7 @@ export function registerGrowthRoutes(app, pool) {
               {
                 continueOnError: true,
                 onError: ({ tenantId, error }) => {
-                  console.warn(`[growth] daily report failed (tenant=${tenantId}):`, error?.message || error);
+                  log.warn({ msg: 'daily_report_tenant_failed', tenant_id: tenantId, err: error?.message || String(error) });
                 }
               }
             );
@@ -3167,7 +3170,7 @@ export function registerGrowthRoutes(app, pool) {
             }
           }
         } catch (e) {
-          console.warn('[growth] daily report failed:', e?.message);
+          log.warn({ msg: 'daily_report_failed', err: e?.message });
         }
         scheduleDailyReport();
       }, delay);

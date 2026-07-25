@@ -15,6 +15,9 @@
 import fs from 'fs';
 import path from 'path';
 import XLSX from 'xlsx';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'sales-raw-folder' });
 
 const _LOCK = { running: false };
 
@@ -104,15 +107,13 @@ export async function runSalesRawFolderImportOnce() {
 export function startSalesRawFolderImporter() {
   const dir = String(process.env.SALES_RAW_IMPORT_DIR || '').trim();
   if (!dir) {
-    console.log(
-      '[sales-raw-folder] 未设置 SALES_RAW_IMPORT_DIR — 不从磁盘自动入库。Mac Desktop/HRMS 不会同步到 ECS，请后台上传或在服务器目录+rsync 并配置该变量。'
-    );
+    log.info({ msg: 'import_dir_unset_skip' });
     return;
   }
   const ms = Math.max(60_000, Number(process.env.SALES_RAW_IMPORT_INTERVAL_MS || 900_000));
   setInterval(() => {
     runSalesRawFolderImportOnce().catch((e) => {
-      console.error('[sales-raw-folder] tick error:', e?.message || e);
+      log.error({ msg: 'tick_error', err: e?.message || String(e) });
       try {
         void _importFailureNotifier?.(e, { dir, tick: true });
       } catch (_e2) {
@@ -122,7 +123,7 @@ export function startSalesRawFolderImporter() {
   }, ms);
   setTimeout(() => {
     runSalesRawFolderImportOnce().catch((e) => {
-      console.error('[sales-raw-folder] startup run:', e?.message || e);
+      log.error({ msg: 'startup_run_error', err: e?.message || String(e) });
       try {
         void _importFailureNotifier?.(e, { dir, startup: true });
       } catch (_e2) {
@@ -130,7 +131,5 @@ export function startSalesRawFolderImporter() {
       }
     });
   }, 30_000);
-  console.log(
-    `[sales-raw-folder] 已启用：每 ${Math.round(ms / 60000)} 分钟扫描 ${dir}；成功→imported/，失败→failed/；SALES_RAW_IMPORT_FORCE=true 可跳过成本门槛`
-  );
+  log.info({ msg: 'importer_armed', interval_min: Math.round(ms / 60000), dir });
 }

@@ -1,10 +1,10 @@
 {
   "lines": 44,
-  "branches": 59,
+  "branches": 61,
   "functions": 44,
   "requireIndexJs": true,
   "minIndexJsLines": 60,
   "tolerancePct": 0.5,
-  "updated": "2026-07-25",
-  "note": "合并棘轮：CI 2eb62b1 实测 lines 44.5 / branches 59.38 / functions 44.15，index.js 71%。branches→59、functions→44。与单测棘轮并存。只升不降。"
+  "updated": "2026-07-26",
+  "note": "合并棘轮：CI 7f69854 实测 lines 44.83 / branches 61.39 / functions 44.33，index.js 71%。branches→61。与单测棘轮并存。只升不降。"
 }

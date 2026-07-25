@@ -6,6 +6,9 @@
 import { spawn } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import WebSocket from 'ws';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'tts' });
 
 const DEFAULT_TTS_MODEL = 'qwen-audio-3.0-tts-plus';
 const DEFAULT_VOICE = 'longanlingxin'; // Qwen Audio Plus兼容的25岁“温暖共情”真人音色
@@ -262,12 +265,12 @@ function synthesizeMp3(text, { timeoutMs = 20000, config = null } = {}) {
       } else if (event === 'task-finished') {
         finish(null);
       } else if (event === 'task-failed') {
-        console.error('[sales-tts] task-failed raw message:', JSON.stringify(msg));
+        log.error({ msg: 'tts_task_failed', raw: JSON.stringify(msg) });
         finish(new Error(msg?.header?.error_message || 'tts_task_failed'));
       } else if (event === 'result-generated') {
         // 音频数据通过二进制帧接收，该事件只是正常进度通知。
       } else if (event) {
-        console.log('[sales-tts] unhandled event:', event, JSON.stringify(msg).slice(0, 300));
+        log.info({ msg: 'tts_unhandled_event', event, raw: JSON.stringify(msg).slice(0, 300) });
       }
     });
 
@@ -349,12 +352,12 @@ export async function synthesizeSpeechAmr(text, { rolloutKey = '' } = {}) {
         tts_tagged: Boolean(config.tagged),
         tts_fallbacks: failures.length,
       };
-      console.log(`[sales-tts] synthesized ${JSON.stringify(meta)}`);
+      log.info({ msg: 'tts_synthesized', ...meta });
       return { amr, meta };
     } catch (e) {
       const reason = e?.message || String(e);
       failures.push(`${config.variant || 'baseline'}:${reason}`);
-      console.error(`[sales-tts] synthesize failed model=${config.model}:`, reason);
+      log.error({ msg: 'tts_synthesize_failed', model: config.model, err: reason });
     }
   }
   return { amr: null, meta: { tts_variant: null, tts_error: failures.join(' | ').slice(0, 500) } };

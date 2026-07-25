@@ -3,6 +3,9 @@
  * 统一数据库连接和基础操作
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { childLogger } from './logger.js';
+
+const log = childLogger({ domain: 'database' });
 
 // 跨文件共享的租户上下文：index.js的authRequired中间件按请求设置(tenantContext.run)，
 // agents.js/performance-jobs.js等没有HTTP req对象的深层工具函数靠resolveTenantIdDefault()
@@ -173,7 +176,7 @@ export async function reconcileTenantRegistryFromState(p) {
     const inserted = (r.rows || []).map((row) => String(row.tenant_id || '').trim()).filter(Boolean);
     if (inserted.length > 0) {
       _activeTenantIdsLoadedAt = 0;
-      console.warn('[database] repaired missing tenants registry rows:', inserted.join(','));
+      log.warn({ msg: 'repaired_missing_tenants_registry', tenants: inserted.join(',') });
     }
     return inserted;
   });
@@ -196,7 +199,7 @@ export async function getActiveTenantIds(p) {
     // A tenant-owned background job must never quietly process `default` when
     // tenant discovery is unavailable. Keep the last confirmed list; at cold
     // start it is empty and callers must fail closed.
-    console.error('[database] getActiveTenantIds failed, retaining previous tenant list:', e?.message || e);
+    log.error({ msg: 'get_active_tenant_ids_failed', err: e?.message || String(e) });
   }
   return _activeTenantIds;
 }
@@ -248,9 +251,7 @@ export async function safeQuery(query, params = []) {
     const result = await pool().query(query, params);
     return result;
   } catch (error) {
-    console.error('[database] Query failed:', error.message);
-    console.error('[database] Query:', query);
-    console.error('[database] Params:', params);
+    log.error({ msg: 'query_failed', err: error.message, query, params });
     throw error;
   }
 }
@@ -265,7 +266,7 @@ export async function safeTransaction(callback) {
     return result;
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('[database] Transaction failed:', error.message);
+    log.error({ msg: 'transaction_failed', err: error.message });
     throw error;
   } finally {
     client.release();

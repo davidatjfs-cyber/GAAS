@@ -22,6 +22,9 @@ import { pool as getUnifiedPool, getActiveTenantIds, tenantContext } from './uti
 import { resolveTenantIdForStore } from './growth-api.js';
 import axios from 'axios';
 import { createAgentsServiceAuthHelpers } from './domains/shared/agents-service-auth.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'hq-planner' });
 import {
   traceCausalChain,
   getStoreHealthOverview,
@@ -421,9 +424,9 @@ ${scoresSummary || '(无绩效数据)'}
         status === 'pending_review' ? 'active' : 'rejected',
         tenantId
       ]
-    ).catch(e => console.error('[hq-planner] decision_log write failed:', e?.message));
+    ).catch(e => log.error({ msg: 'decision_log_write_failed', err: e?.message }));
 
-    console.log(`[hq-planner] Plan ${planId} created for ${store}, status: ${status}`);
+    log.info({ msg: 'plan_created', plan_id: planId, store, status });
     return {
       ok: true,
       planId,
@@ -433,7 +436,7 @@ ${scoresSummary || '(无绩效数据)'}
       healthScore: storeHealth.healthScore
     };
   } catch (e) {
-    console.error('[hq-planner] generateActionPlan error:', e?.message);
+    log.error({ msg: 'generate_action_plan_failed', err: e?.message });
     return { ok: false, error: 'internal', message: e?.message };
   }
 }
@@ -507,7 +510,7 @@ ${JSON.stringify(planData, null, 2)}
       };
     }
   } catch (e) {
-    console.error('[hq-planner] compliance check error:', e?.message);
+    log.error({ msg: 'compliance_check_failed', err: e?.message });
     return { passed: false, error: 'compliance_error', checks: {}, overallComment: e?.message };
   }
 }
@@ -558,9 +561,9 @@ export async function approvePlan(planId, approvedBy) {
           createdByRole: 'hq_manager'
         });
         if (v2result.ok) createdTasks++;
-        else console.error(`[hq-planner] v2 createBoardTask failed for action:`, v2result.error);
+        else log.error({ msg: 'v2_create_board_task_failed', err: v2result.error });
       } catch (e) {
-        console.error(`[hq-planner] Failed to create task from plan action:`, e?.message);
+        log.error({ msg: 'create_task_from_plan_action_failed', err: e?.message });
       }
     }
 
@@ -569,11 +572,11 @@ export async function approvePlan(planId, approvedBy) {
       [planId]
     );
 
-    console.log(`[hq-planner] Plan ${planId} approved, created ${createdTasks} tasks`);
+    log.info({ msg: 'plan_approved', plan_id: planId, tasks_created: createdTasks });
     return { ok: true, planId, createdTasks };
     });
   } catch (e) {
-    console.error('[hq-planner] approvePlan error:', e?.message);
+    log.error({ msg: 'approve_plan_failed', err: e?.message });
     return { ok: false, error: e?.message };
   }
 }

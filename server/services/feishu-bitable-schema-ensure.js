@@ -1,3 +1,7 @@
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'feishu-bitable-schema' });
+
 export async function ensureFeishuGenericRecordsTable(pool) {
   try {
     await pool.query('create extension if not exists pgcrypto');
@@ -20,7 +24,7 @@ export async function ensureFeishuGenericRecordsTable(pool) {
     await pool.query('create index if not exists idx_feishu_generic_record on feishu_generic_records (record_id)');
     await pool.query('create index if not exists idx_feishu_generic_config on feishu_generic_records (config_key, updated_at desc)');
   } catch (e) {
-    console.error('[ensureFeishuGenericRecordsTable] Error:', e?.message || e);
+    log.error({ msg: 'ensure_feishu_generic_records_failed', err: e?.message || String(e) });
     throw e;
   }
 }
@@ -71,9 +75,9 @@ FOR EACH ROW`;
         `CREATE TRIGGER trg_feishu_generic_records_bitable_notify ${trigBody} EXECUTE PROCEDURE feishu_generic_records_bitable_notify();`
       );
     }
-    console.log('[schema] feishu_generic_records → pg_notify(bitable_records_updated) trigger ready');
+    log.info({ msg: 'feishu_generic_records_notify_trigger_ready' });
   } catch (e) {
-    console.error('[ensureFeishuGenericRecordsNotifyTrigger] Error:', e?.message || e);
+    log.error({ msg: 'ensure_feishu_generic_records_notify_trigger_failed', err: e?.message || String(e) });
     void notifyAdminsDualWriteFailure('feishu_generic_records（NOTIFY 触发器安装/更新失败）', e);
     throw e;
   }
@@ -99,7 +103,7 @@ export async function ensureFeishuSyncTable(pool, safeErrMessage) {
     await pool.query(`create index if not exists idx_feishu_sync_table on feishu_sync_logs (table_id, created_at)`);
   } catch (e) {
     if (safeErrMessage(e).includes('already exists')) return;
-    console.error('[ensureFeishuSyncTable] Error:', e?.message || e);
+    log.error({ msg: 'ensure_feishu_sync_table_failed', err: e?.message || String(e) });
     throw e;
   }
 }
@@ -113,7 +117,7 @@ export async function ensureDedupIndexes(pool) {
   } catch (e) {
     // If duplicates already exist, clean them first then retry
     if (/duplicate key|could not create unique index/i.test(String(e?.message || ''))) {
-      console.log('[dedup] cleaning existing duplicates in agent_messages...');
+      log.info({ msg: 'agent_messages_dedup_cleanup_start' });
       try {
         await pool.query(`
           DELETE FROM agent_messages a USING agent_messages b
@@ -123,12 +127,12 @@ export async function ensureDedupIndexes(pool) {
         await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_messages_record_content
           ON agent_messages (record_id, content_type)
           WHERE record_id IS NOT NULL AND record_id != ''`);
-        console.log('[dedup] agent_messages unique index created after cleanup');
+        log.info({ msg: 'agent_messages_unique_index_created' });
       } catch (e2) {
-        console.warn('[dedup] could not create unique index:', e2?.message);
+        log.warn({ msg: 'agent_messages_unique_index_failed', err: e2?.message });
       }
     } else {
-      console.warn('[dedup] index creation skipped:', e?.message);
+      log.warn({ msg: 'agent_messages_index_creation_skipped', err: e?.message });
     }
   }
 }
@@ -285,9 +289,9 @@ export async function ensureTableVisitRecordsTable(pool, safeErrMessage) {
         if (!columnNames.includes(column.name)) {
           try {
             await pool.query(`alter table table_visit_records add column ${column.name} ${column.type}`);
-            console.log(`[ensureTableVisitRecordsTable] Added column: ${column.name}`);
+            log.info({ msg: 'table_visit_column_added', column: column.name });
           } catch (e) {
-            console.log(`[ensureTableVisitRecordsTable] Failed to add column ${column.name}:`, e?.message || e);
+            log.warn({ msg: 'table_visit_column_add_failed', column: column.name, err: e?.message || String(e) });
           }
         }
       }
@@ -302,18 +306,18 @@ export async function ensureTableVisitRecordsTable(pool, safeErrMessage) {
     try {
       await pool.query(`create index if not exists idx_table_visit_satisfaction on table_visit_records (satisfaction_level)`);
     } catch (e) {
-      console.log('[ensureTableVisitRecordsTable] Satisfaction index skipped (column may not exist)');
+      log.info({ msg: 'table_visit_satisfaction_index_skipped' });
     }
 
     try {
       await pool.query(`create index if not exists idx_table_visit_rating on table_visit_records (service_rating, food_rating, environment_rating)`);
     } catch (e) {
-      console.log('[ensureTableVisitRecordsTable] Rating index skipped (columns may not exist)');
+      log.info({ msg: 'table_visit_rating_index_skipped' });
     }
 
   } catch (e) {
     if (safeErrMessage(e).includes('already exists')) return;
-    console.error('[ensureTableVisitRecordsTable] Error:', e?.message || e);
+    log.error({ msg: 'ensure_table_visit_records_failed', err: e?.message || String(e) });
     throw e;
   }
 }

@@ -8,8 +8,10 @@ import { runForActiveTenants } from '../utils/database.js';
 import { ensureGrowthOntologyCore } from './growth-ontology-schema.js';
 import { syncOntologyDataFromProduction } from './real-data-sync.js';
 import { runDailyDiagnosis } from './diagnosis-tree-service.js';
+import { childLogger } from '../utils/logger.js';
 
-const LOG = '[ontology-daily]';
+const log = childLogger({ domain: 'ontology', handler: 'daily-diagnosis-scheduler' });
+
 const FIRE_HOUR = 8;
 const FIRE_MINUTE_MIN = 0;
 const FIRE_MINUTE_MAX = 14;
@@ -90,13 +92,16 @@ export async function runOntologyDailyDiagnosisTick(pool, options = {}) {
     try {
       const summary = await runOntologyDailyDiagnosisForTenant(pool, tenantId, { date: dateKey });
       summaries.push(summary);
-      console.log(
-        `${LOG} done tenant=${tenantId} date=${dateKey} stores=${summary.storesDiagnosed}` +
-          ` sync.touches=${summary.syncResult?.touches ?? 0}` +
-          ` issues=${summary.stores.reduce((n, s) => n + s.issues, 0)}`
-      );
+      log.info({
+        msg: 'daily_diagnosis_done',
+        tenant_id: tenantId,
+        date: dateKey,
+        stores: summary.storesDiagnosed,
+        sync_touches: summary.syncResult?.touches ?? 0,
+        issues: summary.stores.reduce((n, s) => n + s.issues, 0),
+      });
     } catch (e) {
-      console.error(`${LOG} tenant=${tenantId} failed:`, e?.message || e);
+      log.error({ msg: 'daily_diagnosis_tenant_failed', tenant_id: tenantId, err: e?.message || String(e) });
       _firedByTenantDate.delete(tenantId);
     }
   }, { continueOnError: true });
@@ -106,23 +111,23 @@ export async function runOntologyDailyDiagnosisTick(pool, options = {}) {
 
 export function startOntologyDailyDiagnosisScheduler(pool) {
   if (!pool) {
-    console.warn(`${LOG} scheduler not started: missing pool`);
+    log.warn({ msg: 'scheduler_not_started_missing_pool' });
     return;
   }
   if (globalThis.__ontologyDailyDiagnosisSchedulerStarted) {
-    console.log(`${LOG} scheduler already started, skip`);
+    log.info({ msg: 'scheduler_already_started' });
     return;
   }
   globalThis.__ontologyDailyDiagnosisSchedulerStarted = true;
 
   const tick = () => {
     runOntologyDailyDiagnosisTick(pool).catch((e) => {
-      console.error(`${LOG} tick error:`, e?.message || e);
+      log.error({ msg: 'scheduler_tick_error', err: e?.message || String(e) });
     });
   };
 
   // 启动约 2 分钟后先探一次窗口（若刚好在 08:00–08:14 会立刻跑）
   setTimeout(tick, 120 * 1000);
   setInterval(tick, TICK_MS);
-  console.log(`${LOG} scheduler started (CST ${FIRE_HOUR}:00–${String(FIRE_HOUR).padStart(2, '0')}:${String(FIRE_MINUTE_MAX).padStart(2, '0')}, every ${TICK_MS / 60000}min)`);
+  log.info({ msg: 'scheduler_started', fire_hour: FIRE_HOUR, fire_minute_max: FIRE_MINUTE_MAX, tick_min: TICK_MS / 60000 });
 }

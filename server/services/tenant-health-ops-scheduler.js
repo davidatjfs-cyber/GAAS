@@ -9,6 +9,9 @@ import {
   sendSlaReminders,
 } from './tenant-health-incident-service.js';
 import { shanghaiParts } from './tenant-health-center-scheduler.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'tenant-health', handler: 'ops-scheduler' });
 
 /**
  * @param {import('pg').Pool} pool
@@ -37,9 +40,9 @@ export function startHealthOpsLoopScheduler(pool, opts = {}) {
     lastDigestYmd = ymd;
     try {
       const sent = await sendQueueDigests(pool);
-      console.log(`[health-ops] digest sent cs=${sent.digests?.cs?.count ?? 0} eng=${sent.digests?.eng?.count ?? 0}`);
+      log.info({ msg: 'digest_sent', cs: sent.digests?.cs?.count ?? 0, eng: sent.digests?.eng?.count ?? 0 });
     } catch (e) {
-      console.error('[health-ops] digest failed:', e?.message || e);
+      log.error({ msg: 'digest_failed', err: e?.message || String(e) });
       lastDigestYmd = '';
     } finally {
       runningDigest = false;
@@ -55,9 +58,9 @@ export function startHealthOpsLoopScheduler(pool, opts = {}) {
     lastSlaYmd = ymd;
     try {
       const r = await sendSlaReminders(pool);
-      if (r.count > 0) console.log(`[health-ops] sla reminder count=${r.count} sent=${r.sent}`);
+      if (r.count > 0) log.info({ msg: 'sla_reminder', count: r.count, sent: r.sent });
     } catch (e) {
-      console.error('[health-ops] sla reminder failed:', e?.message || e);
+      log.error({ msg: 'sla_reminder_failed', err: e?.message || String(e) });
       lastSlaYmd = '';
     } finally {
       runningSla = false;
@@ -75,6 +78,6 @@ export function startHealthOpsLoopScheduler(pool, opts = {}) {
 
   setTimeout(() => { tick().catch(() => {}); }, 180 * 1000);
   setInterval(() => { tick().catch(() => {}); }, intervalMs);
-  console.log(`[health-ops] loop armed（队列摘要：上海时间${String(digestHour).padStart(2, '0')}:30–${String(digestHour).padStart(2, '0')}:${String(digestMinuteEnd).padStart(2, '0')}；SLA每日09:00后提醒一次）`);
+  log.info({ msg: 'health_ops_loop_armed', digest_hour: digestHour, digest_minute_end: digestMinuteEnd });
   return { tick, runDigest, runSla, shanghaiParts };
 }

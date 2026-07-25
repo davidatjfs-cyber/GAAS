@@ -10,6 +10,9 @@ import { getTenantFeishuIntegration, saveTenantFeishuIntegration } from './tenan
 import { allowLegacyFeishuFallback } from './safety.js';
 import { fetchFeishuTenantAccessToken } from '@gaas/shared/feishu-token.js';
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'feishu-sync' });
 
 let _feishuSyncFailureNotifier = null;
 /** 由 index 注册：飞书→PG 定时/按表同步失败时立刻通知 admin */
@@ -40,7 +43,7 @@ function sleep(ms) {
 function notifyFeishuSyncFailure(label, error) {
   const msg = String(error?.message || error || '');
   if (isTransientFeishuBitableError(msg)) {
-    console.warn(`[feishu-sync] 飞书瞬态错误，跳过双写失败告警: ${label}`, msg.slice(0, 320));
+    log.warn({ msg: 'transient_feishu_error_skip_alert', label, err: msg.slice(0, 320) });
     return;
   }
   try {
@@ -104,7 +107,7 @@ async function loadTenantFeishuConfig(tenantId) {
   const configured = await getTenantFeishuIntegration(pool(), tenantId, key);
   if (configured) return configured;
   if (!allowLegacyFeishuFallback()) {
-    console.warn('[feishu-sync] integration missing and legacy fallback disabled for tenant', tenantId);
+    log.warn({ msg: 'integration_missing_legacy_fallback_disabled', tenant_id: tenantId });
     return null;
   }
   if (tenantId !== 'default') return null;
@@ -150,7 +153,7 @@ export async function resolveWebhookTenantId(appToken) {
       _appTokenTenantCache = newMap;
       _appTokenTenantCacheAt = now;
     } catch (e) {
-      console.error('[feishu-sync] resolveWebhookTenantId cache build failed:', e?.message);
+      log.error({ msg: 'resolve_webhook_tenant_cache_failed', err: e?.message });
     }
   }
   return _appTokenTenantCache.get(String(appToken).trim()) || 'default';
@@ -392,7 +395,7 @@ async function fetchTableRecordsPage(tableConfig, accessToken, queryParams) {
         : isInt
           ? Math.min(60000, 10000 * Math.pow(2, attempt - 1))
           : Math.min(20000, 2000 * attempt);
-      console.warn(`[fetchTableRecords] ${lastErr}, attempt ${attempt}/${MAX_ATTEMPTS}, sleep ${delay}ms`);
+      log.warn({ msg: 'fetch_table_records_retry', err: lastErr, attempt, max_attempts: MAX_ATTEMPTS, sleep_ms: delay });
       await sleep(delay);
       continue;
     }
@@ -444,7 +447,7 @@ export async function syncKitchenReports(tableConfig, accessToken, reportType, t
       const { store, date, station, responsible, submit_time } = extractedFields;
       
       if (!store || !date || !station) {
-        console.warn(`[sync] 跳过无效记录: 缺少门店、日期或档口信息`);
+        log.warn({ msg: 'skip_invalid_record', reason: 'missing_store_date_or_slot' });
         continue;
       }
       
@@ -471,10 +474,10 @@ export async function syncKitchenReports(tableConfig, accessToken, reportType, t
       syncedCount++;
     }
     
-    console.log(`[sync] ${tableConfig.name} 同步完成: ${syncedCount}/${records.length} 条记录`);
+    log.info({ msg: 'table_sync_done', table: tableConfig.name, synced: syncedCount, total: records.length });
     
   } catch (error) {
-    console.error(`[sync] 同步 ${tableConfig.name} 失败:`, error);
+    log.error({ msg: 'table_sync_failed', table: tableConfig.name, err: error?.message || String(error) });
     notifyFeishuSyncFailure(tableConfig?.name || '厨房报告', error);
   }
 }
@@ -492,7 +495,7 @@ export async function syncMeetingReports(tableConfig, accessToken, tenantId) {
       const { store, date, meeting_score, reporter, submit_time, meeting_content } = extractedFields;
       
       if (!store || !date) {
-        console.warn(`[sync] 跳过无效记录: 缺少门店或日期信息`);
+        log.warn({ msg: 'skip_invalid_record', reason: 'missing_store_or_date' });
         continue;
       }
       
@@ -520,10 +523,10 @@ export async function syncMeetingReports(tableConfig, accessToken, tenantId) {
       syncedCount++;
     }
     
-    console.log(`[sync] ${tableConfig.name} 同步完成: ${syncedCount}/${records.length} 条记录`);
+    log.info({ msg: 'table_sync_done', table: tableConfig.name, synced: syncedCount, total: records.length });
     
   } catch (error) {
-    console.error(`[sync] 同步 ${tableConfig.name} 失败:`, error);
+    log.error({ msg: 'table_sync_failed', table: tableConfig.name, err: error?.message || String(error) });
     notifyFeishuSyncFailure(tableConfig?.name || '例会报告', error);
   }
 }
@@ -541,7 +544,7 @@ export async function syncMaterialReports(tableConfig, accessToken, brand, tenan
       const { store, date, receiver, submit_time } = extractedFields;
       
       if (!store || !date) {
-        console.warn(`[sync] 跳过无效记录: 缺少门店或日期信息`);
+        log.warn({ msg: 'skip_invalid_record', reason: 'missing_store_or_date' });
         continue;
       }
       
@@ -566,10 +569,10 @@ export async function syncMaterialReports(tableConfig, accessToken, brand, tenan
       syncedCount++;
     }
     
-    console.log(`[sync] ${tableConfig.name} 同步完成: ${syncedCount}/${records.length} 条记录`);
+    log.info({ msg: 'table_sync_done', table: tableConfig.name, synced: syncedCount, total: records.length });
     
   } catch (error) {
-    console.error(`[sync] 同步 ${tableConfig.name} 失败:`, error);
+    log.error({ msg: 'table_sync_failed', table: tableConfig.name, err: error?.message || String(error) });
     notifyFeishuSyncFailure(tableConfig?.name || '原料收货日报', error);
   }
 }
@@ -615,11 +618,11 @@ async function ensureDishLibraryTable() {
 
 export async function syncDishLibraryCosts(tenantId = resolveTenantIdDefault()) {
   try {
-    console.log('[sync] 开始同步菜品库...');
+    log.info({ msg: 'dish_library_sync_start' });
     await ensureDishLibraryTable();
     const integration = await loadTenantFeishuConfig(tenantId);
     if (!integration) {
-      console.warn(`[sync] skip dish library for tenant=${tenantId}: missing integration`);
+      log.warn({ msg: 'dish_library_skip_missing_integration', tenant_id: tenantId });
       return { ok: false, skipped: 'integration_not_configured' };
     }
     const accessToken = await getFeishuAccessToken(integration);
@@ -668,10 +671,10 @@ export async function syncDishLibraryCosts(tenantId = resolveTenantIdDefault()) 
       }
     }
 
-    console.log(`[sync] 菜品库同步完成: ${upserted} 条成本记录（来源${recordCount}条飞书记录）`);
+    log.info({ msg: 'dish_library_sync_done', upserted, source_records: recordCount });
     return { ok: true, records: recordCount, upserted };
   } catch (error) {
-    console.error('[sync] 菜品库同步失败:', error);
+    log.error({ msg: 'dish_library_sync_failed', err: error?.message || String(error) });
     notifyFeishuSyncFailure('菜品库成本', error);
     return { ok: false, error: String(error?.message || error) };
   }
@@ -718,10 +721,10 @@ function extractSopStepFields(fields, recordId) {
 
 export async function syncSopSteps(tenantId = resolveTenantIdDefault()) {
   try {
-    console.log('[sync] 开始同步SOP步骤库...');
+    log.info({ msg: 'sop_steps_sync_start' });
     const integration = await loadTenantFeishuConfig(tenantId);
     if (!integration) {
-      console.warn(`[sync] skip sop steps for tenant=${tenantId}: missing integration`);
+      log.warn({ msg: 'sop_steps_skip_missing_integration', tenant_id: tenantId });
       return { ok: false, skipped: 'integration_not_configured' };
     }
     const accessToken = await getFeishuAccessToken(integration);
@@ -758,10 +761,10 @@ export async function syncSopSteps(tenantId = resolveTenantIdDefault()) {
       upserted++;
     }
 
-    console.log(`[sync] SOP步骤库同步完成: ${upserted} 条，跳过 ${skipped} 条（字段不完整）`);
+    log.info({ msg: 'sop_steps_sync_done', upserted, skipped });
     return { ok: true, total: records.length, upserted, skipped };
   } catch (error) {
-    console.error('[sync] SOP步骤库同步失败:', error);
+    log.error({ msg: 'sop_steps_sync_failed', err: error?.message || String(error) });
     notifyFeishuSyncFailure('SOP步骤库', error);
     return { ok: false, error: String(error?.message || error) };
   }
@@ -773,10 +776,10 @@ export async function syncSopSteps(tenantId = resolveTenantIdDefault()) {
 
 export async function syncAllFeishuTables(tenantId = resolveTenantIdDefault()) {
   try {
-    console.log('[sync] 开始同步飞书表格数据...');
+    log.info({ msg: 'feishu_tables_sync_start' });
     const integration = await loadTenantFeishuConfig(tenantId);
     if (!integration) {
-      console.warn(`[sync] skip tenant ${tenantId}: feishu integration is not configured`);
+      log.warn({ msg: 'skip_tenant_missing_integration', tenant_id: tenantId });
       return { ok: false, skipped: 'integration_not_configured' };
     }
     const accessToken = await getFeishuAccessToken(integration);
@@ -800,10 +803,10 @@ export async function syncAllFeishuTables(tenantId = resolveTenantIdDefault()) {
     // 6. 同步SOP步骤库（厨房打点卡数据源）
     await syncSopSteps(tenantId);
 
-    console.log('[sync] 飞书表格数据同步完成');
+    log.info({ msg: 'feishu_tables_sync_done' });
     
   } catch (error) {
-    console.error('[sync] 飞书同步失败:', error);
+    log.error({ msg: 'feishu_sync_failed', err: error?.message || String(error) });
     notifyFeishuSyncFailure('全量 syncAllFeishuTables', error);
   }
 }
@@ -822,14 +825,14 @@ export function startDailyFeishuSync() {
     
     const delay = nextSync.getTime() - now.getTime();
     
-    console.log(`[scheduler] 下次同步时间: ${nextSync.toLocaleString()}`);
+    log.info({ msg: 'next_sync_at', at: nextSync.toLocaleString() });
     
     setTimeout(async () => {
       try {
         await runForActiveTenants((tenantId) => syncAllFeishuTables(tenantId));
-        console.log('[scheduler] 每日同步完成');
+        log.info({ msg: 'daily_sync_done' });
       } catch (error) {
-        console.error('[scheduler] 每日同步失败:', error);
+        log.error({ msg: 'daily_sync_failed', err: error?.message || String(error) });
         notifyFeishuSyncFailure('每日凌晨定时', error);
       }
       
@@ -840,7 +843,7 @@ export function startDailyFeishuSync() {
   
   // 启动调度器
   scheduleNextSync();
-  console.log('[scheduler] 每日凌晨1点飞书同步调度器已启动');
+  log.info({ msg: 'daily_sync_scheduler_started', schedule: '01:00 CST' });
 
   const localDateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -856,15 +859,15 @@ export function startDailyFeishuSync() {
           const dishRows = await runForActiveTenants((tenantId) => syncDishLibraryCosts(tenantId));
           const dishOk = dishRows.every((row) => row?.ok);
           if (dishOk) {
-            console.log('[scheduler] 每周菜品库同步完成');
+            log.info({ msg: 'weekly_dish_library_sync_done' });
           }
           // 失败时已在 syncDishLibraryCosts 内 notifyFeishuSyncFailure
         }
       }
     } catch (error) {
-      console.error('[scheduler] 每周菜品库同步失败:', error?.message || error);
+      log.error({ msg: 'weekly_dish_library_sync_failed', err: error?.message || String(error) });
       notifyFeishuSyncFailure('每周菜品库调度', error);
     }
   }, 60 * 1000);
-  console.log('[scheduler] 每周六00:00菜品库同步调度器已启动');
+  log.info({ msg: 'weekly_dish_library_scheduler_started', schedule: 'Sat 00:00 CST' });
 }

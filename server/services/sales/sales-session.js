@@ -16,6 +16,9 @@ import {
   recordObjection,
 } from './sales-store.js';
 import { runCustomerAiTurn } from './sales-customer-ai.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'session' });
 import { loadKnowledgeItems } from './sales-knowledge-store.js';
 import { extractSlotsFromText, detectEvents } from './sales-strategy.js';
 import {
@@ -496,7 +499,7 @@ export async function handleInboundMessage(pool, {
       updatedLead = { ...updatedLead, assigned_to: conversionAssignee };
     }
   } catch (e) {
-    console.error('[sales-session] conversion assignee bookkeeping failed', { leadId: lead.id, error: e?.message });
+    log.error({ msg: 'conversion_assignee_bookkeeping_failed', lead_id: lead.id, err: e?.message });
   }
   const advice = buildSalesAdvice(updatedLead, score);
   const next = buildNextAction(updatedLead, score);
@@ -512,13 +515,13 @@ export async function handleInboundMessage(pool, {
     evidence: content,
     controller: nextController,
   }).catch((e) => {
-    console.error('[sales-session] record conversion intent failed', { leadId: lead.id, error: e?.message });
+    log.error({ msg: 'record_conversion_intent_failed', lead_id: lead.id, err: e?.message });
   });
   if (nextStage && nextStage !== lead.stage && STAGES_REQUIRING_COMPLETE_INFO.has(nextStage) && !completeness.complete) {
     // 门店基础信息还没收全就不让AI把线索推进到"已确认"往后的阶段——两条建档入口(AI对话/
     // 销售手工表单)现在共用同一份完整性判断，不再各自为政。不阻断人工接管本身，客户仍然
     // 可以立刻转人工，只是转阶段要等信息收全，销售看得到具体缺哪些字段。
-    console.warn('[sales-session] stage transition blocked, lead info incomplete', { leadId: lead.id, to: nextStage, missing: completeness.missing });
+    log.warn({ msg: 'stage_transition_blocked_incomplete', lead_id: lead.id, to: nextStage, missing: completeness.missing });
     await addEvent(pool, lead.id, {
       event_type: 'STAGE_TRANSITION_BLOCKED_INCOMPLETE_INFO',
       summary: `门店信息未收全(缺：${completeness.missing.join('、')})，暂不推进到「${nextStage}」`,
@@ -538,7 +541,7 @@ export async function handleInboundMessage(pool, {
       metadata: { score, events: normalizedEvents },
     });
     if (!stageResult.ok) {
-      console.warn('[sales-session] customer AI stage transition rejected', { leadId: lead.id, from: lead.stage, to: nextStage, error: stageResult.error });
+      log.warn({ msg: 'customer_ai_stage_transition_rejected', lead_id: lead.id, from: lead.stage, to: nextStage, err: stageResult.error });
       await addEvent(pool, lead.id, { event_type: 'STAGE_TRANSITION_REJECTED', summary: stageResult.error, priority: 'normal', recommended_action: 'continue', payload: { from_stage: lead.stage, to_stage: nextStage } });
     }
   }
@@ -571,7 +574,7 @@ export async function handleInboundMessage(pool, {
           : qrUrl ? await sendKfConsultantCard({ openKfid: handoffLead.open_kfid, externalUserid: handoffLead.external_userid, consultantName: process.env.WECOM_SALES_CONSULTANT_NAME || '专属顾问', qrUrl }) : null;
         if (card?.ok) await addEvent(pool, lead.id, { event_type: 'CONSULTANT_QR_SENT', summary: '客户AI已发送专属销售企业微信二维码', priority: 'high', recommended_action: 'wait_customer_add' });
       } catch (e) {
-        console.warn('[sales-session] consultant QR handoff failed:', e?.message || e);
+        log.warn({ msg: 'consultant_qr_handoff_failed', err: e?.message || String(e) });
       }
     }
     if (typeof _notify === 'function') {

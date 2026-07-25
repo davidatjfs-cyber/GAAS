@@ -22,6 +22,9 @@ import {
   resolveAgentCanonicalStore,
   toFeishuStoreName
 } from './v2-store-alignment.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'new-scoring-model' });
 
 /** 评分用门店匹配：合并日报口径 + 飞书/目标表常见简称（洪潮目标行常为「洪潮久光」等，仅 daily 模式会漏） */
 function scoringStoreMatchPatterns(storeLabel) {
@@ -258,7 +261,7 @@ export async function calculateStoreRating(store, brand, period) {
     return { rating, achievementRate, actualRevenue, targetRevenue };
     
   } catch (error) {
-    console.error('[store_rating] 计算失败:', error);
+    log.error({ msg: 'store_rating_failed', err: error?.message || String(error) });
     return { rating: null, reason: error.message };
   }
 }
@@ -316,7 +319,7 @@ export async function calculateEmployeeScore(store, username, role, period) {
     try {
       executionRating = (await calculateExecutionRating(store, username, role, period)) ?? EMPLOYEE_RATING_PENDING;
     } catch (e) {
-      console.warn('[employee_score] execution rating error:', e?.message);
+      log.warn({ msg: 'employee_score_execution_rating_error', err: e?.message });
       executionRating = EMPLOYEE_RATING_PENDING;
     }
 
@@ -324,7 +327,7 @@ export async function calculateEmployeeScore(store, username, role, period) {
     try {
       attitudeRating = (await calculateAttitudeRating(username, period)) ?? EMPLOYEE_RATING_PENDING;
     } catch (e) {
-      console.warn('[employee_score] attitude rating error:', e?.message);
+      log.warn({ msg: 'employee_score_attitude_rating_error', err: e?.message });
       attitudeRating = EMPLOYEE_RATING_PENDING;
     }
 
@@ -332,7 +335,7 @@ export async function calculateEmployeeScore(store, username, role, period) {
     try {
       abilityRating = (await calculateAbilityRating(store, username, role, period)) ?? EMPLOYEE_RATING_PENDING;
     } catch (e) {
-      console.warn('[employee_score] ability rating error:', e?.message);
+      log.warn({ msg: 'employee_score_ability_rating_error', err: e?.message });
       abilityRating = EMPLOYEE_RATING_PENDING;
     }
     
@@ -347,7 +350,7 @@ export async function calculateEmployeeScore(store, username, role, period) {
         attitude_rating: attitudeRating,
         ability_rating: abilityRating
       });
-    } catch (e) { console.warn('[employee_score] save error:', e?.message); }
+    } catch (e) { log.warn({ msg: 'employee_score_save_error', err: e?.message }); }
     
     return {
       base_score: baseScore,
@@ -358,7 +361,7 @@ export async function calculateEmployeeScore(store, username, role, period) {
     };
     
   } catch (error) {
-    console.error('[employee_score] 计算失败:', error);
+    log.error({ msg: 'employee_score_failed', err: error?.message || String(error) });
     return {
       base_score: null,
       total_score: null,
@@ -429,7 +432,7 @@ export async function calculateExecutionRating(store, username, role, period) {
     return null;
 
   } catch (error) {
-    console.error('[execution_rating] 计算失败:', error);
+    log.error({ msg: 'execution_rating_failed', err: error?.message || String(error) });
     return null;
   }
 }
@@ -451,7 +454,7 @@ export async function calculateAttitudeRating(username, period) {
     else return 'D';
     
   } catch (error) {
-    console.error('[attitude_rating] 计算失败:', error);
+    log.error({ msg: 'attitude_rating_failed', err: error?.message || String(error) });
     return null;
   }
 }
@@ -500,7 +503,7 @@ export async function calculateAbilityRating(store, username, role, period) {
     return null;
 
   } catch (error) {
-    console.error('[ability_rating] 计算失败:', error);
+    log.error({ msg: 'ability_rating_failed', err: error?.message || String(error) });
     return null;
   }
 }
@@ -952,7 +955,7 @@ async function getMonthlyNewWechatMembers(store, period) {
     
     return Number(result.rows[0]?.total || 0);
   } catch (e) {
-    console.warn('[wechat_members] query error:', e?.message);
+    log.warn({ msg: 'wechat_members_query_error', err: e?.message });
     return 0;
   }
 }

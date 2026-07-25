@@ -13,6 +13,9 @@
 import { getAllStoreWecomConfigs, getWecomAccessToken, resolveTenantIdForStore } from '../../growth-api.js';
 import { newLeadKey } from './sales-store.js';
 import { tenantContext } from '../../utils/database.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'wecom-contact-events' });
 
 function parseXmlTag(xml, tag) {
   const m = String(xml || '').match(new RegExp(`<${tag}><!\\[CDATA\\[(.*?)\\]\\]></${tag}>`));
@@ -78,13 +81,13 @@ export async function handleExternalContactChangeEvent(pool, decryptedXml) {
   const userId = parseXmlTag(decryptedXml, 'UserID');
   if (!externalUserid) return true;
   if (changeType === 'del_external_contact' || changeType === 'del_follow_user') {
-    await pool.query(`UPDATE wechat_work_customers SET updated_at=NOW(), note=COALESCE(note,'') || ' [已删除好友]' WHERE external_userid=$1`, [externalUserid]).catch((e) => console.warn('[wecom-contact-events] del update failed:', e?.message || e));
+    await pool.query(`UPDATE wechat_work_customers SET updated_at=NOW(), note=COALESCE(note,'') || ' [已删除好友]' WHERE external_userid=$1`, [externalUserid]).catch((e) => log.warn({ msg: 'del_update_failed', err: e?.message || String(e) }));
     return true;
   }
   const storeId = await resolveStoreIdByUserId(pool, userId);
-  if (!storeId) { console.warn('[wecom-contact-events] no store matched for userId:', userId); return true; }
+  if (!storeId) { log.warn({ msg: 'no_store_matched_for_userid', user_id: userId }); return true; }
   const tenantId = await resolveTenantIdForStore(pool, storeId);
   await tenantContext.run(tenantId, () => upsertContactRealtime(pool, { storeId, externalUserid, tenantId }))
-    .catch((e) => console.error('[wecom-contact-events] add upsert failed:', e?.message || e));
+    .catch((e) => log.error({ msg: 'add_upsert_failed', err: e?.message || String(e) }));
   return true;
 }

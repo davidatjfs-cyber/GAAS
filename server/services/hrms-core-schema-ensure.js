@@ -1,3 +1,7 @@
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'hrms-core-schema' });
+
 export async function ensureEmployeeAttachmentsTable(pool) {
   try {
     await pool.query(`
@@ -26,7 +30,7 @@ export async function ensureHrmsStateTable(pool) {
       )`
     );
   } catch (e) {
-    console.error('ensureHrmsStateTable failed:', e);
+    log.error({ msg: 'ensure_hrms_state_table_failed', err: e?.message || String(e) });
   }
 }
 
@@ -65,7 +69,7 @@ export async function ensureApprovalTables(pool) {
       `create index if not exists idx_recurring_reward_templates_active on recurring_reward_templates (active, frequency)`
     );
   } catch (e) {
-    console.error('ensureApprovalTables failed:', e);
+    log.error({ msg: 'ensure_approval_tables_failed', err: e?.message || String(e) });
   }
 }
 
@@ -86,7 +90,7 @@ export async function ensureUserSessionsTable(pool, databaseUrl) {
     await client.query(`alter table user_sessions add column if not exists tenant_id varchar(80) not null default 'default'`);
     await client.query(`create unique index if not exists user_sessions_username_tenant_idx on user_sessions (username, tenant_id)`);
   } catch (e) {
-    console.error('ensureUserSessionsTable failed:', e);
+    log.error({ msg: 'ensure_user_sessions_table_failed', err: e?.message || String(e) });
   } finally {
     try {
       if (client) client.release();
@@ -133,7 +137,7 @@ export async function ensureTenantRuntimeTables(pool, databaseUrl) {
       VALUES ('default', '本地默认租户', 'managed', 'active')
       ON CONFLICT (tenant_id) DO UPDATE SET status='active', updated_at=NOW()`);
   } catch (e) {
-    console.error('ensureTenantRuntimeTables failed:', e?.message || e);
+    log.error({ msg: 'ensure_tenant_runtime_tables_failed', err: e?.message || String(e) });
   }
 }
 
@@ -150,7 +154,7 @@ export async function ensureUserReadsTable(pool) {
     );
     await pool.query(`create index if not exists idx_user_reads_username_module on user_reads (username, module)`);
   } catch (e) {
-    console.error('ensureUserReadsTable failed:', e);
+    log.error({ msg: 'ensure_user_reads_table_failed', err: e?.message || String(e) });
   }
 }
 
@@ -172,6 +176,6 @@ export async function ensureLoginLogTable(pool) {
     await pool.query(`create index if not exists idx_ull_login_at on user_login_log (login_at)`);
     await pool.query(`create index if not exists idx_ull_open_session on user_login_log (username, logout_at) where logout_at is null`);
   } catch (e) {
-    console.error('ensureLoginLogTable failed:', e);
+    log.error({ msg: 'ensure_login_log_table_failed', err: e?.message || String(e) });
   }
 }

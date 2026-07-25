@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { summarizeOpportunityForBoss } from './boss-language-service.js';
 import { recordRuleHit } from './ontology-rule-service.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'action-plan' });
 
 function dueDate(days = 7) {
   const d = new Date();
@@ -77,7 +80,7 @@ export async function generateTasksForOpportunity(pool, opportunityId, options =
   );
   if (existingTasks.rows?.length > 0) {
     const existing = existingTasks.rows[0];
-    console.log(`[action-plan] skip duplicate task generation for opportunity=${opportunityId}, existing task=${existing.task_id}`);
+    log.info({ msg: 'skip_duplicate_task_generation', opportunity_id: opportunityId, task_id: existing.task_id });
     return { ok: true, existing: true, taskId: existing.task_id, tasks: existingTasks.rows };
   }
 
@@ -133,12 +136,12 @@ export async function generateTasksForOpportunity(pool, opportunityId, options =
           severity: draft.priority,
           bossLanguageOutput: draft.expectedResult,
         },
-      }).catch(e => console.warn('[ontology-rules] task hit failed:', e?.message || e));
+      }).catch(e => log.warn({ msg: 'task_rule_hit_failed', err: e?.message || String(e) }));
     }
     created.push(saved);
   }
   await pool.query(`UPDATE growth_ontology_opportunities SET status='task_generated', updated_at=now() WHERE opportunity_id=$1`, [opportunityId]);
-  console.log('Tasks generated');
-  if (opportunity.opportunity_type === 'new_customer_second_visit') console.log('New customer second visit task generated');
+  log.info({ msg: 'tasks_generated' });
+  if (opportunity.opportunity_type === 'new_customer_second_visit') log.info({ msg: 'new_customer_second_visit_task_generated' });
   return { ok: true, taskDrafts: drafts, tasks: created };
 }
