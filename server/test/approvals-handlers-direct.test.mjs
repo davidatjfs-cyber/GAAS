@@ -3459,7 +3459,7 @@ test('L1 falsy：points/onboarding 空字段与 null state 回落', async () => 
     await onboarding.afterDecide({ req: {}, deps, updated: null, decideExtras: {} });
   }
   {
-    const { deps, merges } = makeDeps();
+    const { deps } = makeDeps();
     deps.getSharedState = async () => null;
     deps.buildOnboardingEmployeeRecordFromPayload = () => ({
       ok: true,
