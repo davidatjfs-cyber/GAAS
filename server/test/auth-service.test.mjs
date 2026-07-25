@@ -52,6 +52,91 @@ test('login: missing username/password → missing_credentials', async () => {
   assert.equal(result2.body.error, 'missing_credentials');
 });
 
+test('login: 非法 tenant_id → invalid_tenant_id', async () => {
+  const result = await login(
+    { body: { username: 'a', password: 'b', tenant_id: '__system__' } },
+    baseDeps({ DATABASE_URL: 'postgres://mock' })
+  );
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error, 'invalid_tenant_id');
+});
+
+test('loginInTenant: tenant 不可用 → 403', async () => {
+  const result = await loginInTenant(
+    { body: { username: 'bob', password: 'x' } },
+    baseDeps({
+      DATABASE_URL: 'postgres://mock',
+      loadTenantRuntimeStatus: async () => ({ loginAllowed: false, reason: 'tenant_suspended' }),
+    }),
+    'default'
+  );
+  assert.equal(result.status, 403);
+  assert.equal(result.body.error, 'tenant_suspended');
+});
+
+test('loginInTenant: is_active=false → user_inactive', async () => {
+  const hash = await bcrypt.hash('ok-pass', 4);
+  const result = await loginInTenant(
+    { body: { username: 'bob', password: 'ok-pass' } },
+    baseDeps({
+      DATABASE_URL: 'postgres://mock',
+      pool: {
+        query: async (sql) => {
+          if (/from users/i.test(String(sql))) {
+            return {
+              rows: [{
+                id: 1,
+                username: 'bob',
+                password_hash: hash,
+                real_name: 'Bob',
+                role: 'admin',
+                is_active: false,
+                tenant_id: 'default',
+              }],
+            };
+          }
+          return { rows: [] };
+        },
+      },
+    }),
+    'default'
+  );
+  assert.equal(result.status, 403);
+  assert.equal(result.body.error, 'user_inactive');
+});
+
+test('loginInTenant: session_persist_failed → 503', async () => {
+  const hash = await bcrypt.hash('ok-pass', 4);
+  const result = await loginInTenant(
+    { body: { username: 'bob', password: 'ok-pass' } },
+    baseDeps({
+      DATABASE_URL: 'postgres://mock',
+      storeSessionNonce: async () => false,
+      pool: {
+        query: async (sql) => {
+          if (/from users/i.test(String(sql))) {
+            return {
+              rows: [{
+                id: 1,
+                username: 'bob',
+                password_hash: hash,
+                real_name: 'Bob',
+                role: 'store_manager',
+                is_active: true,
+                tenant_id: 'default',
+              }],
+            };
+          }
+          return { rows: [] };
+        },
+      },
+    }),
+    'default'
+  );
+  assert.equal(result.status, 503);
+  assert.equal(result.body.error, 'session_persist_failed');
+});
+
 test('login: LOCAL_TEST_ACCOUNTS path when DATABASE_URL empty (non-production)', async () => {
   const prev = process.env.NODE_ENV;
   process.env.NODE_ENV = 'test';
