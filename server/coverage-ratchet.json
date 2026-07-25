@@ -3,5 +3,5 @@
   "branches": 59,
   "functions": 44,
   "updated": "2026-07-25",
-  "note": "Phase 1j：decide 多级/飞书/离职生效日 + attendance-day API/reconcile 全路径 + promotion recipients。实测约 lines 41.41 / branches 59.06 / functions 44.50。branches 升至 59；lines/functions 整数档未升。只升不降。"
+  "note": "Phase 1k：approvals create 校验路径 + lifecycle resubmit(points/onboarding) + offboarding/promotion handlers beforeUpdate/afterDecide。实测约 lines 41.66 / branches 59.54 / functions 44.67。整数档 42/60/45 未到，地板仍 41/59/44。只升不降。"
 }

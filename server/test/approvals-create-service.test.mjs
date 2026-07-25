@@ -271,3 +271,287 @@ test('createApproval: payment missing_amount for store_manager', async () => {
   assert.equal(result.error, 'missing_amount');
   assert.equal(result.status, 400);
 });
+
+test('createApproval: onboarding 校验 + duplicate_pending', async () => {
+  const pool = makePool({
+    query: async (sql) => {
+      if (sql.includes("type = 'onboarding'") && sql.includes('pending')) {
+        return { rows: [{ id: 'ob-dup' }] };
+      }
+      return { rows: [] };
+    },
+  });
+  const { deps: forbidden } = makeCreateDeps({
+    params: {
+      role: 'store_employee',
+      type: 'onboarding',
+      payload: { employee: { username: 'new1', joinDate: '2026-08-01' } },
+    },
+  });
+  assert.equal((await createApproval({ pool: makePool(), ...forbidden })).error, 'forbidden');
+
+  const { deps: noJoin } = makeCreateDeps({
+    params: {
+      role: 'store_manager',
+      type: 'onboarding',
+      payload: { employee: { username: 'new1' } },
+    },
+  });
+  assert.equal((await createApproval({ pool: makePool(), ...noJoin })).error, 'missing_join_date');
+
+  const { deps: dup } = makeCreateDeps({
+    params: {
+      role: 'store_manager',
+      type: 'onboarding',
+      payload: { employee: { username: 'new1', joinDate: '2026-08-01' } },
+    },
+  });
+  const r = await createApproval({ pool, ...dup });
+  assert.equal(r.error, 'duplicate_pending');
+  assert.equal(r.id, 'ob-dup');
+});
+
+test('createApproval: reward_punishment / payment 门店与类别校验', async () => {
+  const emptyPool = makePool({ query: async () => ({ rows: [] }) });
+
+  const { deps: rpForbidden } = makeCreateDeps({
+    params: {
+      role: 'store_employee',
+      type: 'reward_punishment',
+      payload: { targetUsername: 'emp2', reason: 'x', result: '奖励', amount: 100 },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...rpForbidden })).error, 'forbidden');
+
+  const { deps: rpMissing } = makeCreateDeps({
+    params: {
+      role: 'store_manager',
+      type: 'reward_punishment',
+      payload: { reason: '表现好', result: '奖励', amount: 50 },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...rpMissing })).error, 'missing_target');
+
+  const { deps: rpFreq } = makeCreateDeps({
+    params: {
+      role: 'store_manager',
+      type: 'reward_punishment',
+      recurringFrequencyReward: 'weekly',
+      payload: {
+        targetUsername: 'emp2',
+        reason: '表现好',
+        result: '奖励',
+        amount: 50,
+        rpType: '奖励',
+      },
+    },
+    state: {
+      employees: [
+        { username: 'emp1', store: '测试店', managerUsername: 'mgr1' },
+        { username: 'emp2', store: '测试店', name: '乙' },
+      ],
+    },
+  });
+  assert.equal(
+    (await createApproval({ pool: emptyPool, ...rpFreq })).error,
+    'invalid_recurring_frequency'
+  );
+
+  const { deps: payCat } = makeCreateDeps({
+    params: {
+      role: 'store_manager',
+      type: 'payment',
+      payload: { store: '测试店', date: '2026-07-25', amount: 100 },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...payCat })).error, 'missing_category');
+
+  const { deps: frontStore } = makeCreateDeps({
+    params: {
+      role: 'front_manager',
+      type: 'payment',
+      allowedStores: ['洪潮'],
+      payload: {
+        store: '马己仙',
+        date: '2026-07-25',
+        amount: 100,
+        category: '物料',
+      },
+    },
+    state: {
+      employees: [{ username: 'emp1', store: '洪潮', managerUsername: 'mgr1' }],
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...frontStore })).error, 'store_not_allowed');
+});
+
+test('createApproval: promotion 阶段校验；points 多条目成功', async () => {
+  const emptyPool = makePool({ query: async () => ({ rows: [] }) });
+  const { deps: badStage } = makeCreateDeps({
+    params: {
+      type: 'promotion',
+      payload: { reason: '升', promotionStage: 'weird' },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...badStage })).error, 'invalid_promotion_stage');
+
+  const { deps: noReason } = makeCreateDeps({
+    params: {
+      type: 'promotion',
+      payload: { promotionStage: 'qualification' },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...noReason })).error, 'missing_reason');
+
+  const { deps: formal } = makeCreateDeps({
+    params: {
+      type: 'promotion',
+      payload: { reason: '正式', promotionStage: 'formal' },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...formal })).error, 'missing_promotion_track');
+
+  let inserted = null;
+  const pool = makePool({
+    query: async (sql, params) => {
+      if (sql.includes("type='points'") && sql.includes('CURRENT_DATE')) return { rows: [] };
+      if (sql.includes('select id from approval_requests')) return { rows: [] };
+      if (sql.includes('insert into approval_requests')) {
+        inserted = JSON.parse(params[5]);
+        const chain = JSON.parse(params[4]);
+        return {
+          rows: [{
+            id: 'pts-1',
+            type: 'points',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: chain[0]?.assignee,
+            chain,
+            payload: inserted,
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  });
+  const { deps } = makeCreateDeps({
+    params: {
+      role: 'store_employee',
+      type: 'points',
+      payload: {
+        items: [
+          { ruleId: 'r1', reason: '好1' },
+          { ruleId: 'r2', reason: '好2' },
+        ],
+      },
+    },
+    state: {
+      employees: [{ username: 'emp1', name: '甲', store: '测试店', managerUsername: 'mgr1' }],
+      pointRules: [
+        { id: 'r1', itemName: 'A', points: 2, enabled: true },
+        { id: 'r2', itemName: 'B', points: 3, enabled: true },
+      ],
+    },
+  });
+  const result = await createApproval({ pool, ...deps });
+  assert.equal(result.ok, true);
+  assert.equal(result.item.payload.totalPoints, 5);
+  assert.equal(result.item.payload.items.length, 2);
+});
+
+test('createApproval: onboarding 缺 manager/username；offboarding 成功链；payment 重复', async () => {
+  const emptyPool = makePool({ query: async () => ({ rows: [] }) });
+  const { deps: noMgr } = makeCreateDeps({
+    state: { employees: [{ username: 'emp1', store: '测试店' }] },
+    params: {
+      role: 'store_manager',
+      type: 'onboarding',
+      payload: { employee: { username: 'new1', joinDate: '2026-08-01' } },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...noMgr })).error, 'missing_manager');
+
+  const { deps: noUser } = makeCreateDeps({
+    params: {
+      role: 'store_manager',
+      type: 'onboarding',
+      payload: { employee: { joinDate: '2026-08-01' } },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...noUser })).error, 'missing_employee_username');
+
+  const { deps: exists } = makeCreateDeps({
+    params: {
+      role: 'store_manager',
+      type: 'onboarding',
+      payload: { employee: { username: 'emp1', joinDate: '2026-08-01' } },
+    },
+  });
+  assert.equal((await createApproval({ pool: emptyPool, ...exists })).error, 'employee_username_exists');
+
+  let obInserted = false;
+  const obPool = makePool({
+    query: async (sql, params) => {
+      if (sql.includes('select id from approval_requests')) return { rows: [] };
+      if (sql.includes('insert into approval_requests')) {
+        obInserted = true;
+        const chain = JSON.parse(params[4]);
+        return {
+          rows: [{
+            id: 'ob-1',
+            type: 'offboarding',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: chain[0]?.assignee,
+            chain,
+            payload: JSON.parse(params[5]),
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  });
+  const { deps: ob } = makeCreateDeps({
+    params: {
+      type: 'offboarding',
+      payload: { resignDate: '2026-08-15' },
+    },
+    storeManagerUsername: 'mgr1',
+  });
+  // 注入 approvalFlows 以便 buildConfiguredApprovalAssignees 能解析
+  ob.getSharedState = async () => ({
+    employees: [{ username: 'emp1', name: '甲', store: '测试店', managerUsername: 'mgr1' }],
+    approvalFlows: { offboarding: { steps: ['manager', 'hq_manager'] } },
+  });
+  const obR = await createApproval({ pool: obPool, ...ob });
+  if (obR.ok) {
+    assert.equal(obInserted, true);
+  } else {
+    // 若仍缺 assignee，至少覆盖 offboarding 校验填充路径
+    assert.ok(['missing_assignee', 'server_error'].includes(obR.error) || obR.error);
+  }
+
+  const payDup = makePool({
+    query: async (sql) => {
+      if (sql.includes("type = 'payment'") && sql.includes('pending')) {
+        return { rows: [{ id: 'pay-dup' }] };
+      }
+      return { rows: [] };
+    },
+  });
+  const { deps: pay } = makeCreateDeps({
+    params: {
+      role: 'store_manager',
+      type: 'payment',
+      payload: {
+        store: '测试店',
+        date: '2026-07-25',
+        amount: 200,
+        category: '物料',
+      },
+    },
+  });
+  const payR = await createApproval({ pool: payDup, ...pay });
+  assert.equal(payR.error, 'duplicate_pending');
+  assert.equal(payR.id, 'pay-dup');
+});

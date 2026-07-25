@@ -377,3 +377,131 @@ test('resubmitApproval: success resets chain to pending first assignee', async (
   assert.equal(notifCalls[0].u, 'mgr1');
   assert.equal(notifCalls[0].meta.type, 'leave_resubmitted');
 });
+
+test('resubmitApproval: points 条目校验与成功重提', async () => {
+  const baseRow = {
+    id: 'pts-r1',
+    type: 'points',
+    status: 'returned',
+    applicant_username: 'applicant1',
+    chain: [{ assignee: 'mgr1', status: 'returned' }],
+    payload: { ruleId: 'old', reason: '旧' },
+  };
+  const poolFail = makePool({
+    query: async () => ({ rows: [baseRow] }),
+  });
+  const { deps } = makeLifecycleDeps({
+    state: {
+      employees: [{ username: 'applicant1', store: '测试店' }],
+      pointRules: [{ id: 'r1', itemName: '加分', points: 5, enabled: true, store: '测试店' }],
+    },
+  });
+  assert.equal(
+    (await resubmitApproval({
+      pool: poolFail,
+      ...deps,
+      id: 'pts-r1',
+      username: 'applicant1',
+      bodyPayload: { items: [] },
+    })).error,
+    'empty_items'
+  );
+  assert.equal(
+    (await resubmitApproval({
+      pool: poolFail,
+      ...deps,
+      id: 'pts-r1',
+      username: 'applicant1',
+      bodyPayload: { items: [{ ruleId: 'r1', reason: '' }] },
+    })).error,
+    'missing_reason'
+  );
+
+  let updatedPayload = null;
+  const poolOk = makePool({
+    query: async (sql, params) => {
+      if (sql.includes('select id, type, status')) return { rows: [baseRow] };
+      if (sql.includes('update approval_requests')) {
+        updatedPayload = JSON.parse(params[3]);
+        return {
+          rows: [{
+            ...baseRow,
+            status: 'pending',
+            current_assignee_username: 'mgr1',
+            chain: [{ assignee: 'mgr1', status: 'pending' }],
+            payload: updatedPayload,
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  });
+  const ok = await resubmitApproval({
+    pool: poolOk,
+    ...deps,
+    id: 'pts-r1',
+    username: 'applicant1',
+    bodyPayload: {
+      items: [{ ruleId: 'r1', reason: '重提理由' }],
+      evidenceUrls: [' https://x/a.jpg ', ''],
+    },
+  });
+  assert.equal(ok.ok, true);
+  assert.equal(updatedPayload.totalPoints, 5);
+  assert.deepEqual(updatedPayload.evidenceUrls, ['https://x/a.jpg']);
+});
+
+test('resubmitApproval: onboarding 合并 employee；飞书通知', async () => {
+  let payloadOut = null;
+  const feishu = [];
+  const pool = makePool({
+    query: async (sql, params) => {
+      if (sql.includes('select id, type, status')) {
+        return {
+          rows: [{
+            id: 'onb-r',
+            type: 'onboarding',
+            status: 'returned',
+            applicant_username: 'applicant1',
+            chain: [{ assignee: 'mgr1', status: 'returned' }],
+            payload: { employee: { username: 'new1', name: '旧名' } },
+          }],
+        };
+      }
+      if (sql.includes('update approval_requests')) {
+        payloadOut = JSON.parse(params[3]);
+        return {
+          rows: [{
+            id: 'onb-r',
+            type: 'onboarding',
+            status: 'pending',
+            applicant_username: 'applicant1',
+            current_assignee_username: 'mgr1',
+            chain: [{ assignee: 'mgr1', status: 'pending' }],
+            payload: payloadOut,
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  });
+  const { deps } = makeLifecycleDeps({
+    depsExtra: {
+      lookupFeishuUserByUsername: async (u) => (u === 'mgr1' ? { open_id: 'ou_mgr' } : null),
+      sendLarkMessage: async (openId, msg) => {
+        feishu.push({ openId, msg });
+      },
+    },
+  });
+  const r = await resubmitApproval({
+    pool,
+    ...deps,
+    id: 'onb-r',
+    username: 'applicant1',
+    bodyPayload: { employee: { name: '新名', joinDate: '2026-08-01' } },
+  });
+  assert.equal(r.ok, true);
+  assert.equal(payloadOut.employee.name, '新名');
+  assert.equal(payloadOut.employee.username, 'new1');
+  assert.ok(feishu.some((x) => x.openId === 'ou_mgr'));
+});
