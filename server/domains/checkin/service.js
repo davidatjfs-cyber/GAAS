@@ -3,6 +3,10 @@
  * Returns { ok, status?, error?, message?, ...payload }.
  */
 
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'checkin', handler: 'service' });
+
 function defaultGetShanghaiHour() {
   const shNow = new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai', hour12: false });
   const timeStr = shNow.split(', ')[1] || '';
@@ -172,7 +176,7 @@ export async function createCheckin(ctx, {
     );
     const inserted = r.rows[0];
     upsertEmployeeAttendanceMirrorFromCheckinRow(inserted, tid).catch((e) => {
-      console.error('[employee_attendance_records] dual-write failed (non-fatal):', e?.message);
+      log.error({ msg: 'employee_attendance_mirror_dual_write_failed', err: e?.message || String(e) });
       void notifyAdminsDualWriteFailure('employee_attendance_records（打卡写入镜像）', e);
     });
     return { ok: true, record: inserted };
@@ -362,7 +366,7 @@ export async function confirmCheckin(ctx, {
     if (!r.rows?.length) return { ok: false, status: 404, error: 'not_found' };
     const updated = r.rows[0];
     upsertEmployeeAttendanceMirrorFromCheckinRow(updated, tid).catch((e) => {
-      console.error('[employee_attendance_records] confirm sync failed (non-fatal):', e?.message);
+      log.error({ msg: 'employee_attendance_mirror_confirm_sync_failed', err: e?.message || String(e) });
       void notifyAdminsDualWriteFailure('employee_attendance_records（打卡确认同步镜像）', e);
     });
     return { ok: true, record: updated };
@@ -903,7 +907,7 @@ export async function confirmMonthlyAttendance(ctx, {
           ]
         );
       } catch (dbErr) {
-        console.error('Failed to create monthly confirm approval:', dbErr);
+        log.error({ msg: 'monthly_confirm_approval_create_failed', err: dbErr?.message || String(dbErr) });
       }
     } else {
       confirmation.status = 'approved';

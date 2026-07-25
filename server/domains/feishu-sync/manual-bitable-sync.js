@@ -1,6 +1,10 @@
 /**
  * 全量拉取指定多维表并写入 feishu_generic_records；桌访表同时 upsert table_visit_records（供 HTTP 与 CLI 共用）。
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'feishu-sync', handler: 'manual-bitable-sync' });
+
 export async function runManualFeishuBitableSync(
   ctx,
   { appToken, tableId, appId, appSecret }
@@ -56,7 +60,7 @@ export async function runManualFeishuBitableSync(
           }
         };
         if (failedDetails.length < 30) failedDetails.push(detail);
-        console.warn('[Manual Sync] Skipped record:', detail);
+        log.warn({ msg: 'feishu_manual_sync_skipped_record', detail });
       }
     } catch (error) {
       const detail = {
@@ -64,7 +68,7 @@ export async function runManualFeishuBitableSync(
         reason: error?.message || String(error || 'unknown_error')
       };
       if (failedDetails.length < 30) failedDetails.push(detail);
-      console.error('[Manual Sync] Record error:', detail);
+      log.error({ msg: 'feishu_manual_sync_record_error', detail });
       failed++;
     }
   }

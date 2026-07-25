@@ -279,6 +279,63 @@ test('offboarding afterDecide：员工不在 state 仍通知；拒绝无 note；
   assert.equal(notifs.length, 0);
 });
 
+test('offboarding afterDecide：resignationDate；员工缺失不 merge；外层 catch', async () => {
+  const merges = [];
+  const notifs = [];
+  const deps = {
+    hrmsNowISO: () => '2026-07-25T12:00:00+08:00',
+    shanghaiTodayDateOnly: () => '2026-07-25',
+    safeDateOnly: (d) => (d ? String(d).slice(0, 10) : ''),
+    makeNotif: (u, title, msg, meta) => ({ u, title, msg, meta }),
+    appendNotifications: async (items) => {
+      notifs.push(...items);
+    },
+    getSharedState: async () => ({
+      employees: 'bad',
+      users: null,
+    }),
+    mergeSharedStateFields: async (patch, idFields) => {
+      merges.push({ patch, idFields });
+    },
+    stateFindUserRecord: () => null,
+    uniqUsernames: (a) => [...new Set(a.filter(Boolean))],
+  };
+
+  await offboarding.afterDecide({
+    deps,
+    updated: {
+      id: 'ob-alias',
+      type: 'offboarding',
+      status: 'approved',
+      applicant_username: 'missing1',
+      payload: { resignationDate: '2026-07-01' },
+    },
+    note: '',
+  });
+  assert.ok(notifs.some((n) => /系统已关闭/.test(n.msg) && /2026-07-01/.test(n.msg)));
+  assert.equal(merges.length, 0, '员工不在列表时不应 merge');
+
+  const boom = {
+    ...deps,
+    getSharedState: async () => {
+      throw new Error('state down');
+    },
+  };
+  notifs.length = 0;
+  await offboarding.afterDecide({
+    deps: boom,
+    updated: {
+      id: 'ob-boom',
+      type: 'offboarding',
+      status: 'approved',
+      applicant_username: 'x',
+      payload: {},
+    },
+    note: '',
+  });
+  assert.equal(notifs.length, 0);
+});
+
 test('promotion beforeUpdate：缺带教 / 带教不存在 / 正式晋升缺薪资', async () => {
   const res = mockRes();
   const missMentor = await promotion.beforeUpdate({

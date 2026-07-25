@@ -2731,3 +2731,157 @@ test('promotion.afterDecide：formal 有 chain/课题；qualification 厨房+周
   assert.ok(q.merges.some((m) => m.patch.promotionTracks?.[0]?.trainingDueDate === '2026-08-15'));
   void notifs;
 });
+
+test('leave/points/onboarding：无日期天数空串；规则抛错；open_id/空店长名', async () => {
+  {
+    const queries = [];
+    const { deps, notifs } = makeDeps({
+      state: { leaveRecords: null },
+    });
+    deps.stateFindUserRecord = () => ({ username: '', store: '', brand: '', department: '', position: '' });
+    deps.calcDateSpanDaysInclusive = () => null;
+    deps.safeNumber = () => null;
+    deps.pool.query = async (...a) => {
+      queries.push(a);
+      return { rows: [] };
+    };
+    await leave.afterDecide({
+      req: { user: { tenant_id: 'from-user' } },
+      deps,
+      username: 'approver1',
+      updated: {
+        id: 'lv-empty-days',
+        type: 'leave',
+        status: 'approved',
+        applicant_username: 'ghost',
+        payload: { type: 'sick', reason: '感冒' },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '休假申请已通过'));
+    const ins = queries.find((q) => /INSERT INTO hrms_leave_records/i.test(String(q[0])));
+    assert.ok(ins);
+    assert.equal(ins[1][7], 0);
+    assert.equal(ins[1][8], 'sick');
+    assert.equal(ins[1][14], 'from-user');
+  }
+  {
+    const { deps, notifs, ledgerCalls } = makeDeps({
+      state: {},
+      depsExtra: {
+        resolveAttendancePayrollRules: async () => {
+          throw new Error('rules down');
+        },
+      },
+    });
+    deps.stateFindUserRecord = () => ({
+      username: 'emp1',
+      name: '甲',
+      store: '乙店',
+      managerUsername: 'mgr1',
+    });
+    await points.afterDecide({
+      req: { user: { username: 'approver1', tenant_id: 't-pts' } },
+      deps,
+      updated: {
+        id: '',
+        type: 'points',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: {
+          points: 3,
+          businessMonth: '2026-06',
+          itemName: '加分',
+        },
+        created_at: 'bad',
+      },
+    });
+    assert.equal(ledgerCalls[0][0].amount, 1.5);
+    assert.equal(ledgerCalls[0][0].bizMonth, '2026-06');
+    assert.equal(ledgerCalls[0][0].store, '乙店');
+    assert.ok(notifs.some((n) => n.title === '积分申请已通过' && /¥1\.50/.test(n.msg)));
+  }
+  {
+    const { deps, notifs } = makeDeps({ state: {} });
+    deps.getSharedState = async () => {
+      throw new Error('state boom');
+    };
+    await points.afterDecide({
+      req: {},
+      deps,
+      updated: { id: 'p1', type: 'points', status: 'rejected', applicant_username: 'emp1', payload: {} },
+      note: '',
+    });
+    assert.equal(notifs.length, 0);
+  }
+  {
+    const queries = [];
+    const { deps, merges } = makeDeps({
+      state: {
+        employees: [
+          { username: '', store: '甲店', role: 'store_manager', name: '空名店长' },
+        ],
+      },
+    });
+    deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+      ok: true,
+      nextEmp: {
+        username: 'newoid3',
+        name: '新员工丙',
+        role: 'store_employee',
+        store: '甲店',
+        department: '',
+        position: '',
+        salary: 0,
+        joinDate: '',
+        managerUsername: 'mgrX',
+      },
+      newUsername: 'newoid3',
+      empName: '新员工丙',
+      empPassword: 'pwd',
+    });
+    deps.bcrypt = { hash: async () => 'hash' };
+    deps.toNullableUuid = (v) => (v === 'uuid-open' ? 'uuid-open' : null);
+    deps.insertSalaryTimeline = async () => {
+      throw new Error('should not run for salary 0');
+    };
+    deps.pool.query = async (...a) => {
+      queries.push(a);
+      return { rows: [] };
+    };
+    const decideExtras = {};
+    await onboarding.afterDecide({
+      req: { user: { tenant_id: 't-onb' } },
+      deps,
+      username: 'hr1',
+      decideExtras,
+      updated: {
+        id: 'onb-open-id',
+        type: 'onboarding',
+        status: 'approved',
+        applicant_username: 'hr1',
+        payload: { employee: { name: '新员工丙', open_id: 'uuid-open' } },
+      },
+    });
+    assert.equal(decideExtras.feishuUsersCreated, true);
+    assert.ok(queries.some((q) => /feishu_users/i.test(String(q[0])) && q[1].includes('uuid-open')));
+    assert.ok(merges.some((m) =>
+      Array.isArray(m.patch.notifications)
+      && m.patch.notifications.some((n) => n.u === 'mgrX')));
+  }
+  {
+    const { deps, notifs } = makeDeps();
+    await onboarding.afterDecide({
+      req: {},
+      deps,
+      note: '资料不全',
+      updated: {
+        id: 'onb-rej-note',
+        type: 'onboarding',
+        status: 'rejected',
+        applicant_username: 'hr1',
+        payload: { employee: { name: '丁' } },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '新员工入职审批被拒绝' && /资料不全/.test(n.msg)));
+  }
+});

@@ -105,21 +105,21 @@ export function createOffboardingPromotionScheduler({
                 try {
                   await applyHrmsUserAccountGateFromEmployee(rec2);
                 } catch (ge) {
-                  console.error(
-                    '[offboarding-cron][account-gate]',
-                    tenantId,
-                    empUsername,
-                    ge?.message || ge
-                  );
+                  log.error({
+                    msg: 'offboarding_cron_account_gate_failed',
+                    tenant_id: tenantId,
+                    username: empUsername,
+                    err: ge?.message || String(ge),
+                  });
                 }
               }
             }
           } catch (eGate) {
-            console.error(
-              '[offboarding-cron] account gate batch failed:',
-              tenantId,
-              eGate?.message || eGate
-            );
+            log.error({
+              msg: 'offboarding_cron_account_gate_batch_failed',
+              tenant_id: tenantId,
+              err: eGate?.message || String(eGate),
+            });
           }
 
           // P1/P2/P5: 晋升进度每日扫描
@@ -245,7 +245,7 @@ export function createOffboardingPromotionScheduler({
         }
       }, { continueOnError: true });
     } catch (e) {
-      console.error('[offboarding-cron] runForActiveTenants error:', e?.message || e);
+      log.error({ msg: 'offboarding_cron_run_for_active_tenants_failed', err: e?.message || String(e) });
     }
   }
 
@@ -255,7 +255,7 @@ export function createOffboardingPromotionScheduler({
     started = true;
     setInterval(() => {
       void runOffboardingPromotionTick().catch((e) =>
-        console.error('[offboarding-cron] tick error:', e?.message || e)
+        log.error({ msg: 'offboarding_cron_tick_failed', err: e?.message || String(e) })
       );
     }, 30 * 60 * 1000);
   }

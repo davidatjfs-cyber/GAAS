@@ -1,3 +1,7 @@
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'scheduler-recurring-reward' });
+
 export function createRecurringRewardScheduler({
   pool,
   getSharedState,
@@ -180,11 +184,11 @@ export function createRecurringRewardScheduler({
                     await sendLarkMessage(fu.open_id, feishuMsg, { skipDedup: true });
                   }
                 } catch (feishuErr) {
-                  console.error('[recurring-reward] feishu notify error:', feishuErr?.message);
+                  log.error({ msg: 'recurring_reward_feishu_notify_failed', err: feishuErr?.message || String(feishuErr) });
                 }
               })();
             } catch (ne) {
-              console.error('[recurring-reward] notify error:', ne?.message || ne);
+              log.error({ msg: 'recurring_reward_notify_failed', err: ne?.message || String(ne) });
             }
           }
           await pool.query(
@@ -192,7 +196,7 @@ export function createRecurringRewardScheduler({
             [ym, tpl.id]
           );
         } catch (e) {
-          console.error('[recurring-reward] template', tpl.id, e?.message || e);
+          log.error({ msg: 'recurring_reward_template_failed', template_id: tpl.id, err: e?.message || String(e) });
         }
       });
     }
@@ -204,7 +208,7 @@ export function createRecurringRewardScheduler({
     started = true;
     setInterval(() => {
       void runMonthlyRecurringRewardTemplatesJob().catch((e) =>
-        console.error('[recurring-reward] tick error:', e?.message || e)
+        log.error({ msg: 'recurring_reward_tick_failed', err: e?.message || String(e) })
       );
     }, 5 * 60 * 1000);
   }

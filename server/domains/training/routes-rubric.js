@@ -14,6 +14,10 @@ import {
   serverDir,
   resolveTenantIdDefault,
 } from './shared.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'training', handler: 'routes-rubric' });
+
 
 export function registerTrainingRubricRoutes(app, authMiddleware, _uploadMiddleware) {
   // ═══════════════════════════════════════════════════════════
@@ -118,10 +122,10 @@ export function registerTrainingRubricRoutes(app, authMiddleware, _uploadMiddlew
          VALUES ($1::uuid, 'step_rubric', $2, $3, $4, $5, $6)`,
         [id, article.step_rubric ? JSON.stringify(article.step_rubric) : null, JSON.stringify(rubric),
          req.user?.username || null, req.user?.role || null, resolveTenantIdDefault()]
-      ).catch((e) => console.error('[Training] edit-history(rubric) failed:', e?.message));
+      ).catch((e) => log.error({ msg: 'training_edit_history_rubric_failed', err: e?.message || String(e) }));
       res.json({ success: true, rubric });
     } catch (e) {
-      console.error('[Training] analyze-rubric error:', e?.message);
+      log.error({ msg: 'training_analyze_rubric_failed', err: e?.message || String(e) });
       res.json({ success: false, error: e?.message });
     }
   });
@@ -252,7 +256,7 @@ export function registerTrainingRubricRoutes(app, authMiddleware, _uploadMiddlew
       await pool().query(`UPDATE training_topics SET step_rubric = $1 WHERE id = $2`, [JSON.stringify(rubric), id]);
       res.json({ success: true, rubric, source_kb: { id: kbArticle.id, title: kbArticle.title }, warning: warningMsg });
     } catch (e) {
-      console.error('[Training] generate-rubric error:', e?.message);
+      log.error({ msg: 'training_generate_rubric_failed', err: e?.message || String(e) });
       res.json({ success: false, error: e?.message });
     }
   });

@@ -3,6 +3,10 @@
  * getFeishuAccessToken / createFeishuBitableRecord / findConfigKeyByTableInfo / upsertFeishuGenericRecord:
  * index 本地函数，接线时从 index 注入 deps。
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'agent-data', handler: 'routes' });
+
 export function registerAgentDataRoutes(app, authRequired, deps) {
   const {
     pool,
@@ -60,7 +64,7 @@ export function registerAgentDataRoutes(app, authRequired, deps) {
         query: { appToken, tableId, q: q || '' },
       });
     } catch (e) {
-      console.error('[Agent Feishu Table Data] Error:', e);
+      log.error({ msg: 'agent_feishu_table_data_failed', err: e?.message || String(e) });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -134,7 +138,7 @@ export function registerAgentDataRoutes(app, authRequired, deps) {
         failedDetails,
       });
     } catch (error) {
-      console.error('[Agent Feishu Table Write] Error:', error);
+      log.error({ msg: 'agent_feishu_table_write_failed', err: error?.message || String(error) });
       return res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
     }
   });
@@ -259,7 +263,7 @@ export function registerAgentDataRoutes(app, authRequired, deps) {
         },
       });
     } catch (error) {
-      console.error('[Agent Table Visit Data] Error:', error);
+      log.error({ msg: 'agent_table_visit_data_failed', err: error?.message || String(error) });
       res.status(500).json({
         success: false,
         error: 'server_error',
@@ -355,7 +359,7 @@ export function registerAgentDataRoutes(app, authRequired, deps) {
         weather_impact: weatherResult.rows || [],
       });
     } catch (error) {
-      console.error('[Agent Table Visit Summary] Error:', error);
+      log.error({ msg: 'agent_table_visit_summary_failed', err: error?.message || String(error) });
       res.status(500).json({
         success: false,
         error: 'server_error',

@@ -5,6 +5,10 @@ import { pool as getPool, resolveTenantIdDefault } from '../../utils/database.js
 import { callLLM, lookupFeishuUserByUsername, sendLarkMessage } from '../../agents.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'training', handler: 'shared' });
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Absolute path to server/ (parent of domains/training). */
@@ -304,14 +308,15 @@ export async function generateQuizQuestionsForSession({ topic, username, kbQuizC
       if (questions.length >= 5) {
         return { questions, source: 'ai', attempt: attempt + 1 };
       }
-      console.warn('[Training] Quiz AI parse attempt failed:', {
+      log.warn({
+        msg: 'training_quiz_ai_parse_failed',
         attempt: attempt + 1,
         ok: aiResponse?.ok,
         preview: quizText.slice(0, 400),
         parsedCount: questions.length
       });
     } catch (e) {
-      console.warn('[Training] Quiz AI call failed:', e?.message);
+      log.warn({ msg: 'training_quiz_ai_call_failed', err: e?.message || String(e) });
     }
   }
 

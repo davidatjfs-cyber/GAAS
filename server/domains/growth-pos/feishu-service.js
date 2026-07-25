@@ -275,10 +275,10 @@ export async function syncPosFromFeishu(pool, tenantId, { config: override = nul
             tableNo: cleanText(o.table_no || '', 40),
             bizDate: bizDate || '',
             checkoutTime: parseKeruyunDateTime(o.checkout_time),
-          }).catch((e) => console.warn('[pos-regular-arrival]', e?.message || e));
+          }).catch((e) => log.warn({ msg: 'pos_regular_arrival_notify_failed', err: e?.message || String(e) }));
         }
       } catch (e) {
-        console.error('[pos-feishu-sync] order upsert error:', e.message, o.order_no);
+        log.error({ msg: 'pos_feishu_order_upsert_failed', err: e?.message || String(e), order_no: o.order_no });
       }
     }
   }
@@ -355,7 +355,7 @@ export async function syncPosFromFeishu(pool, tenantId, { config: override = nul
           );
           totalItems++;
         } catch (e) {
-          console.error('[pos-feishu-sync] item upsert error:', e.message, it.order_no);
+          log.error({ msg: 'pos_feishu_item_upsert_failed', err: e?.message || String(e), order_no: it.order_no });
         }
       }
       pageToken = rd.data?.has_more && rd.data?.page_token ? rd.data.page_token : '';
@@ -364,7 +364,7 @@ export async function syncPosFromFeishu(pool, tenantId, { config: override = nul
 
   const totalLinked = await linkPosOrdersToCustomers(pool);
   const snapshotRows = await refreshSalesGrowthSnapshot(pool, 7).catch((e) => {
-    console.error('[pos-feishu-sync] snapshot refresh error:', e.message);
+    log.error({ msg: 'pos_feishu_snapshot_refresh_failed', err: e?.message || String(e) });
     return 0;
   });
 

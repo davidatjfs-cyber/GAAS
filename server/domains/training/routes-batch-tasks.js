@@ -2,6 +2,10 @@
  * POST /api/training/tasks/batch (behavior-preserving extract from index.js).
  */
 import { pool, resolveTenantIdDefault } from './shared.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'training', handler: 'routes-batch-tasks' });
+
 
 export function registerTrainingBatchTasksRoutes(app, authRequired, deps) {
   const { getSharedState } = deps;
@@ -64,7 +68,7 @@ export function registerTrainingBatchTasksRoutes(app, authRequired, deps) {
 
       res.json({ success: true, count: inserted, message: `成功为 ${inserted} 名员工下发了培训任务。Master Agent 将会在调度后通过飞书自动通知他们。` });
     } catch (e) {
-      console.error('[API] /api/training/tasks/batch error:', e?.message);
+      log.error({ msg: 'training_tasks_batch_failed', err: e?.message || String(e) });
       res.status(500).json({ error: 'server_error', message: '内部服务器错误' });
     }
   });

@@ -3,6 +3,10 @@
  * 不接触 req/res；由 routes-lifecycle.js 注入 deps。
  */
 
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'service-lifecycle' });
+
 export async function repairOnboardingEmployee({
   pool,
   getSharedState,
@@ -113,10 +117,10 @@ export async function returnApproval({
         await sendLarkMessage(fu.open_id, feishuMsg, { skipDedup: true });
       }
     } catch (e) {
-      console.error('[approval-return] feishu notify error:', e?.message);
+      log.error({ msg: 'approval_return_feishu_notify_failed', err: e?.message || String(e) });
     }
   } catch (e) {
-    console.error('[approval-return] notification error:', e?.message);
+    log.error({ msg: 'approval_return_notification_failed', err: e?.message || String(e) });
   }
 
   return { ok: true, item: updated };
@@ -268,11 +272,11 @@ export async function resubmitApproval({
           await sendLarkMessage(fu.open_id, feishuMsg, { skipDedup: true });
         }
       } catch (e) {
-        console.error('[approval-resubmit] feishu notify error:', e?.message);
+        log.error({ msg: 'approval_resubmit_feishu_notify_failed', err: e?.message || String(e) });
       }
     }
   } catch (e) {
-    console.error('[approval-resubmit] notification error:', e?.message);
+    log.error({ msg: 'approval_resubmit_notification_failed', err: e?.message || String(e) });
   }
 
   return { ok: true, item: updated };

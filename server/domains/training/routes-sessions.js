@@ -26,6 +26,10 @@ import {
   getKbArticleExplanation,
   uploadPracticeMedia,
 } from './service-sessions.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'training', handler: 'routes-sessions' });
+
 
 export function registerTrainingSessionsRoutes(app, authMiddleware, uploadMiddleware) {
   // GET /api/training/my-topics - 我的培训任务
@@ -73,7 +77,7 @@ export function registerTrainingSessionsRoutes(app, authMiddleware, uploadMiddle
       res.setHeader('Content-Disposition', 'inline');
       return res.sendFile(resolved.abs);
     } catch (e) {
-      console.error('[Training] kb-file error:', e?.message);
+      log.error({ msg: 'training_kb_file_failed', err: e?.message || String(e) });
       res.status(500).json({ error: e?.message });
     }
   });
@@ -90,7 +94,7 @@ export function registerTrainingSessionsRoutes(app, authMiddleware, uploadMiddle
     });
     if (result.httpStatus) {
       if (result.httpStatus === 500) {
-        console.error('[Training] explanation error:', result.error);
+        log.error({ msg: 'training_explanation_failed', err: result.error });
         return res.status(500).json({ error: result.error });
       }
       const { httpStatus, ...body } = result;
@@ -111,7 +115,7 @@ export function registerTrainingSessionsRoutes(app, authMiddleware, uploadMiddle
       });
       res.json(result);
     } catch (e) {
-      console.error('[Training] Chat error:', e?.message);
+      log.error({ msg: 'training_chat_failed', err: e?.message || String(e) });
       res.json({ success: false, error: e?.message });
     }
   });
@@ -128,7 +132,7 @@ export function registerTrainingSessionsRoutes(app, authMiddleware, uploadMiddle
       });
       res.json(result);
     } catch (e) {
-      console.error('[Training] Start quiz error:', e?.message);
+      log.error({ msg: 'training_start_quiz_failed', err: e?.message || String(e) });
       res.json({ success: false, error: e?.message });
     }
   });
@@ -143,7 +147,7 @@ export function registerTrainingSessionsRoutes(app, authMiddleware, uploadMiddle
       });
       res.json(result);
     } catch (e) {
-      console.error('[Training] Submit quiz error:', e?.message);
+      log.error({ msg: 'training_submit_quiz_failed', err: e?.message || String(e) });
       res.json({ success: false, error: e?.message });
     }
   });
@@ -168,7 +172,7 @@ export function registerTrainingSessionsRoutes(app, authMiddleware, uploadMiddle
       });
       res.json(result);
     } catch (e) {
-      console.error('[Training] Upload practice error:', e?.message);
+      log.error({ msg: 'training_upload_practice_failed', err: e?.message || String(e) });
       res.json({ success: false, error: e?.message });
     }
   });

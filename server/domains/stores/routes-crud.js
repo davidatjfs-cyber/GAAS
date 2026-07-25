@@ -115,7 +115,7 @@ export function registerStoresCrudRoutes(app, authRequired, deps) {
       log.debug({ msg: 'stores_list', names: items.map((s) => s.name) });
       return res.json({ items });
     } catch (e) {
-      console.error('[/api/stores] Error:', e?.message || e);
+      log.error({ msg: 'stores_list_failed', err: e?.message || String(e) });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -144,7 +144,7 @@ export function registerStoresCrudRoutes(app, authRequired, deps) {
         return res.status(423).json({ error: 'credit_account_locked', message });
       }
     } catch (e) {
-      console.error('[/api/stores] credit risk check failed:', e?.message || e);
+      log.error({ msg: 'stores_credit_risk_check_failed', err: e?.message || String(e) });
       return res.status(500).json({ error: 'server_error', message: 'credit_risk_check_failed' });
     }
 
@@ -166,7 +166,7 @@ export function registerStoresCrudRoutes(app, authRequired, deps) {
         }
       }
     } catch (e) {
-      console.error('[/api/stores] quota check failed:', e?.message || e);
+      log.error({ msg: 'stores_quota_check_failed', err: e?.message || String(e) });
       return res.status(500).json({ error: 'server_error', message: 'quota_check_failed' });
     }
 

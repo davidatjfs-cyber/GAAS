@@ -172,7 +172,7 @@ export async function createApproval({
             return { error: 'duplicate_pending', status: 409, id: dupPay.rows[0].id };
           }
         } catch (dupErr) {
-          console.warn('[approvals] payment duplicate check failed:', dupErr?.message);
+          log.warn({ msg: 'approval_payment_duplicate_check_failed', err: dupErr?.message || String(dupErr) });
         }
       } else if (type === 'reward_punishment') {
         const rpErr = validateRewardPunishmentSync({
@@ -323,7 +323,7 @@ export async function createApproval({
               }
             }
           } catch (feishuErr) {
-            console.error('[approval] feishu notify error:', feishuErr?.message);
+            log.error({ msg: 'approval_create_feishu_notify_failed', err: feishuErr?.message || String(feishuErr) });
           }
         })();
       }
@@ -342,7 +342,7 @@ export async function createApproval({
           );
           log.info({ msg: 'recurring_reward_template_saved', username });
         } catch (re) {
-          console.error('[recurring-reward] save template failed:', re?.message || re);
+          log.error({ msg: 'recurring_reward_save_template_failed', err: re?.message || String(re) });
         }
       }
     }
