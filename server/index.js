@@ -68,6 +68,7 @@ import { createAgentsServiceAuthHelpers } from './domains/shared/agents-service-
 import { createListenMonitors } from './domains/health/startup-monitors.js';
 import { safeErrMessage } from './domains/shared/safe-err-message.js';
 import { createStartupTenantReconcileRunner } from './domains/shared/startup-tenant-reconcile.js';
+import { runStartupModuleSchedulers } from './domains/shared/startup-module-schedulers.js';
 import { runStartupRoleCleanup } from './domains/shared/startup-role-cleanup.js';
 import {
   inferContentType,
@@ -2181,104 +2182,30 @@ app.listen(PORT, HOST, async () => {
 
     startRecurringRewardScheduler();
 
-    // Initialize enhanced autonomous agent systems
-    try {
-      const { initializeAutonomousTasks } = await import('./agent-autonomous.js');
-      initializeAutonomousTasks();
-      console.log('[autonomous] Agent autonomous capabilities initialized');
-    } catch (e) {
-      console.error('[autonomous] Failed to initialize:', e?.message);
-    }
-
-    // Initialize regression protection
-    try {
-      const { initializeRegressionProtection } = await import('./regression-protection.js');
-      await initializeRegressionProtection();
-      console.log('[regression] Regression protection initialized');
-    } catch (e) {
-      console.error('[regression] Failed to initialize:', e?.message);
-    }
-
-    // Initialize enhanced LLM configuration
-    try {
-      const { initializeEnhancedLLMConfig } = await import('./llm-config-enhanced.js');
-      initializeEnhancedLLMConfig();
-      console.log('[llm] Enhanced LLM configuration initialized');
-    } catch (e) {
-      console.error('[llm] Failed to initialize:', e?.message);
-    }
-
-    // Initialize new modules (RAG, TaskBoard, HRMS API, SOP Distribution)
-    await ensureRAGSchema();
-    await ensureTaskBoardSchema();
-    await ensureHRMSApiSchema();
-    await ensureSOPDistributionSchema();
-    await ensureKitchenExecutionSchema();
-    await ensureRecipeSchema();
-    await ensureTrainingSchema();
-    console.log('[modules] RAG + TaskBoard + HRMS-API + SOP-Distribution + KitchenExec + Recipe + Training initialized');
-    startTrainingReminderScheduler();
-    await ensureGrowthSolutionsSchema();
-    startSolutionSweepScheduler();
-    console.log('[modules] GrowthSolutions initialized');
-
-
-    // 飞书表格→PG 与 sales_raw 目录入库：失败第一时间通知 admin（见 notifyAdminsDualWriteFailure 注释）
-    setFeishuSyncFailureNotifier((label, err) => {
-      void notifyAdminsDualWriteFailure(`飞书表格→PG（${label}）`, err);
+    // Wave M4: module schemas + feishu/sales/perf/snapshot schedulers → domains/shared/startup-module-schedulers.js
+    await runStartupModuleSchedulers({
+      ensureRAGSchema,
+      ensureTaskBoardSchema,
+      ensureHRMSApiSchema,
+      ensureSOPDistributionSchema,
+      ensureKitchenExecutionSchema,
+      ensureRecipeSchema,
+      ensureTrainingSchema,
+      ensureGrowthSolutionsSchema,
+      startTrainingReminderScheduler,
+      startSolutionSweepScheduler,
+      setFeishuSyncFailureNotifier,
+      setSalesRawFolderImportFailureNotifier,
+      notifyAdminsDualWriteFailure,
+      startDailyFeishuSync,
+      startWeeklyReportScheduler,
+      startHrmsPerformanceJobs,
+      startSalesRawFolderImporter,
+      beatHeartbeat,
+      runForActiveTenants,
+      captureHrmsStateSnapshotToDb,
+      safeErrMessage,
     });
-    setSalesRawFolderImportFailureNotifier((err, ctx) => {
-      const where = ctx?.tick ? '定时扫描' : ctx?.startup ? '启动后首次扫描' : '目录入库';
-      const dirHint = ctx?.dir ? `·${String(ctx.dir).slice(0, 120)}` : '';
-      void notifyAdminsDualWriteFailure(`sales_raw（${where}${dirHint}）`, err);
-    });
-
-    // Start Feishu daily sync
-    startDailyFeishuSync();
-    console.log('[feishu] Daily sync scheduler started');
-
-    // Weekly BI report (Monday 10:00 CST)
-    startWeeklyReportScheduler();
-
-    startHrmsPerformanceJobs({
-      onHeartbeat: beatHeartbeat
-    });
-    startSalesRawFolderImporter();
-
-    // hrms_state → 快照表（定时 INSERT；环境变量：HRMS_STATE_SNAPSHOT_INTERVAL_MINUTES / _MAX_ROWS / _RETAIN_DAYS / HRMS_STATE_SNAPSHOT_DISABLED）
-    const snapIntervalMin = Math.max(5, Math.min(24 * 60, Number(process.env.HRMS_STATE_SNAPSHOT_INTERVAL_MINUTES || 15)));
-    // hrms_state.key 本身就是租户标识（如 'default'、未来新租户的 tenant_id），
-    // captureHrmsStateSnapshotToDb 原来固定只快照 stateKey='default'，遍历租户改为每个租户各自快照自己的 key。
-    const runHrmsStateSnapshot = () => {
-      void runForActiveTenants(
-        (tenantId) => captureHrmsStateSnapshotToDb({ source: 'scheduled', stateKey: tenantId }),
-        { continueOnError: true, onError: ({ tenantId, error }) => {
-          console.error('[hrms_state_snapshot] tick:', tenantId, safeErrMessage(error));
-          void notifyAdminsDualWriteFailure(`hrms_state 定时快照（hrms_state_snapshots）租户=${tenantId}`, error);
-        } }
-      ).catch((e) => {
-        console.error('[hrms_state_snapshot] tick:', e?.message || e);
-        void notifyAdminsDualWriteFailure('hrms_state 定时快照（hrms_state_snapshots）', e);
-      });
-    };
-    if (String(process.env.HRMS_STATE_SNAPSHOT_DISABLED || '').toLowerCase() !== 'true') {
-      setTimeout(() => {
-        runHrmsStateSnapshot();
-      }, 120_000);
-      setInterval(() => {
-        runHrmsStateSnapshot();
-      }, snapIntervalMin * 60 * 1000);
-      console.log(
-        '[hrms_state_snapshot] scheduler on, interval_min=',
-        snapIntervalMin,
-        'retain_days=',
-        process.env.HRMS_STATE_SNAPSHOT_RETAIN_DAYS || 30,
-        'max_rows=',
-        process.env.HRMS_STATE_SNAPSHOT_MAX_ROWS || 400
-      );
-    } else {
-      console.log('[hrms_state_snapshot] disabled (HRMS_STATE_SNAPSHOT_DISABLED=true)');
-    }
   } catch (e) {
     console.error('[agents] init failed:', e?.message || e);
   }
