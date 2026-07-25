@@ -92,3 +92,193 @@ test('computeAttendanceMissingClockPenalties empty query → days 0', async () =
   assert.ok(map instanceof Map);
   assert.equal(map.size, 0);
 });
+
+test('resolveEmployeeLeaveCalcStartMonth：日报休息/休假/覆盖取最早月', () => {
+  const state = {
+    dailyReports: [
+      {
+        date: '2026-05-10',
+        store: '洪潮',
+        data: { staff: { restStaff: [{ user: 'alice' }] } },
+      },
+    ],
+    leaveRecords: [{ applicant: 'alice', startDate: '2026-06-01', endDate: '2026-06-02' }],
+    leaveBalanceOverrides: { 'alice_2026-04': { mode: 'carryover', value: 1 } },
+  };
+  // create-helpers 需暴露该函数；若未导出则走 calcCarryover 间接覆盖
+  if (typeof helpers.resolveEmployeeLeaveCalcStartMonth === 'function') {
+    assert.equal(
+      helpers.resolveEmployeeLeaveCalcStartMonth(state, { username: 'alice', name: 'Alice' }, '2026-07'),
+      '2026-04'
+    );
+  }
+});
+
+test('calcEmployeeMonthlyApprovedLeaveDays：同月 rawDays / 跨月 overlap', () => {
+  if (typeof helpers.calcEmployeeMonthlyApprovedLeaveDays !== 'function') return;
+  const days = helpers.calcEmployeeMonthlyApprovedLeaveDays(
+    {
+      leaveRecords: [
+        {
+          applicant: 'alice',
+          status: 'approved',
+          startDate: '2026-07-10',
+          endDate: '2026-07-12',
+          days: 2.5,
+        },
+        {
+          applicant: 'alice',
+          status: 'approved',
+          startDate: '2026-07-28',
+          endDate: '2026-08-02',
+        },
+        {
+          applicant: 'alice',
+          status: 'rejected',
+          startDate: '2026-07-01',
+          endDate: '2026-07-02',
+          days: 2,
+        },
+      ],
+    },
+    { username: 'alice' },
+    '2026-07'
+  );
+  // 2.5 + overlap Jul28-31 (=4) = 6.5
+  assert.equal(days, 6.5);
+});
+
+test('calcEmployeeMonthlyLeaveBalance：日结果明细 + penalty + remaining 覆盖', () => {
+  const bal = helpers.calcEmployeeMonthlyLeaveBalance(
+    {
+      dailyReports: [],
+      leaveRecords: [],
+      leaveBalanceOverrides: {},
+      leaveBalanceAdjustments: [
+        { key: 'alice_2026-07', note: '校准', targetUsername: 'alice', month: '2026-07' },
+      ],
+    },
+    { username: 'alice', name: 'Alice' },
+    '2026-07',
+    {
+      attendanceRestDetails: [
+        { date: '2026-07-03', days: 1, type: '周休' },
+        { date: '2026-07-10', days: 1, type: '休息' },
+      ],
+      penalty: {
+        days: 1,
+        details: [{ date: '2026-07-05', days: 1, type: '缺卡扣假', source: 'penalty' }],
+      },
+    }
+  );
+  assert.equal(bal.usedLeave, 3);
+  assert.ok(bal.usedLeaveDetails.some((d) => d.source === 'penalty' || d.type === '缺卡扣假'));
+  assert.ok(bal.lastAdjustment);
+
+  const withAttRest = helpers.calcEmployeeMonthlyLeaveBalance(
+    { dailyReports: [], leaveRecords: [], leaveBalanceOverrides: {} },
+    { username: 'bob', name: 'Bob' },
+    '2026-07',
+    { attendanceRestDays: 2 }
+  );
+  assert.equal(withAttRest.usedLeave, 2);
+  assert.ok(withAttRest.usedLeaveDetails.some((d) => d.source === '日结果汇总'));
+});
+
+test('calcEmployeeMonthlyCarryover：滚动与 carryover 覆盖', () => {
+  if (typeof helpers.calcEmployeeMonthlyCarryover !== 'function') return;
+  const state = {
+    dailyReports: [],
+    leaveRecords: [],
+    leaveBalanceOverrides: {
+      'alice_2026-07': { mode: 'carryover', value: 8 },
+    },
+  };
+  const carry = helpers.calcEmployeeMonthlyCarryover(
+    state,
+    { username: 'alice', name: 'Alice' },
+    '2026-07'
+  );
+  assert.equal(carry, 8);
+  const ignore = helpers.calcEmployeeMonthlyCarryover(
+    state,
+    { username: 'alice', name: 'Alice' },
+    '2026-07',
+    { ignoreEndCarryoverOverride: true }
+  );
+  assert.notEqual(ignore, 8);
+
+  // 从有覆盖的起始月滚到目标月（覆盖 while cur < m）
+  const roll = helpers.calcEmployeeMonthlyCarryover(
+    {
+      dailyReports: [],
+      leaveRecords: [{ applicant: 'carol', startDate: '2026-05-01' }],
+      leaveBalanceOverrides: {
+        'carol_2026-05': { mode: 'carryover', value: 2 },
+      },
+    },
+    { username: 'carol', name: 'Carol' },
+    '2026-07',
+    { ignoreEndCarryoverOverride: true }
+  );
+  // 5月起点2 +4 -0 =6；6月 6+4-0=10
+  assert.equal(roll, 10);
+});
+
+test('calcEmployeeMonthlyLeaveBalance：attRest+日报 byDay；纯日报休息', () => {
+  const withByDay = helpers.calcEmployeeMonthlyLeaveBalance(
+    {
+      dailyReports: [
+        {
+          date: '2026-07-08',
+          store: '洪潮',
+          data: { staff: { restStaff: [{ user: 'dave', days: 1 }] } },
+        },
+      ],
+      leaveRecords: [],
+      leaveBalanceOverrides: {},
+    },
+    { username: 'dave', name: 'Dave' },
+    '2026-07',
+    { attendanceRestDays: 1 }
+  );
+  assert.equal(withByDay.usedLeave, 1);
+  assert.ok(withByDay.usedLeaveDetails.some((d) => d.source === '日报休息'));
+
+  const fromReports = helpers.calcEmployeeMonthlyLeaveBalance(
+    {
+      dailyReports: [
+        {
+          date: '2026-07-15',
+          store: '洪潮',
+          data: { staff: { restStaff: [{ user: 'erin', days: 1 }] } },
+        },
+      ],
+      leaveRecords: [],
+      leaveBalanceOverrides: {},
+    },
+    { username: 'erin', name: 'Erin' },
+    '2026-07'
+  );
+  assert.ok(fromReports.usedLeave >= 1);
+  assert.ok(fromReports.usedLeaveDetails.some((d) => d.source === '日报休息'));
+});
+
+test('calcEmployeeMonthlyApprovedLeaveDays：仅 start 月 + rawDays 回落', () => {
+  const days = helpers.calcEmployeeMonthlyApprovedLeaveDays(
+    {
+      leaveRecords: [
+        {
+          applicant: 'fay',
+          status: 'approved',
+          startDate: '2026-07-20',
+          endDate: '2026-06-01', // overlap 0，但 rawDays+同月 start
+          days: 1.5,
+        },
+      ],
+    },
+    { username: 'fay' },
+    '2026-07'
+  );
+  assert.equal(days, 1.5);
+});

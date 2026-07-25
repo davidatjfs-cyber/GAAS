@@ -1,7 +1,7 @@
 {
-  "lines": 40,
+  "lines": 41,
   "branches": 58,
-  "functions": 43,
+  "functions": 44,
   "updated": "2026-07-25",
-  "note": "Phase 1h：hrms-permission-engine legacy/hybrid/strict + grants/audit/require。实测约 lines 40.77 / branches 58.47 / functions 43.45。functions 升至 43；lines/branches 整数档未升。只升不降。"
+  "note": "Phase 1i：审批指派解析 + sales 记录级权限 + leave-balance 假期余额。实测约 lines 41.05 / branches 58.83 / functions 44.15。lines≥41、functions≥44；branches 整数档未升。只升不降。"
 }

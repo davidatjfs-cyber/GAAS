@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
 
 /** 历史地板：只升不降（随 Phase 上调整数档） */
-const RATCHET_FLOOR = { lines: 40, branches: 58, functions: 43 };
+const RATCHET_FLOOR = { lines: 41, branches: 58, functions: 44 };
 
 test('coverage-ratchet.json 只升不降（不低于已冻结地板）', () => {
   const ratchet = JSON.parse(
