@@ -89,6 +89,19 @@ test('platformAdminRequired: 坏 token → 401', async () => {
   assert.equal(res.statusCode, 401);
 });
 
+test('platformAdminRequired: 过期 JWT → 401', async () => {
+  const mw = createPlatformAdminRequired({ query: async () => ({ rows: [] }) }, SECRET);
+  const token = jwt.sign(
+    { role: 'platform_admin', username: 'root', account_role: 'super_admin' },
+    SECRET,
+    { expiresIn: '-10s' }
+  );
+  const res = mockRes();
+  await mw(mockReq({ headers: { authorization: `Bearer ${token}` } }), res, () => assert.fail('no'));
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body?.error, 'unauthorized');
+});
+
 test('platformAdminRequired: role 不是 platform_admin → 401', async () => {
   const mw = createPlatformAdminRequired({ query: async () => ({ rows: [] }) }, SECRET);
   const token = jwt.sign({ role: 'user', username: 'x' }, SECRET);

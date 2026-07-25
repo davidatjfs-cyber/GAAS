@@ -109,3 +109,24 @@ test('弱密码（不足8位或缺字母/数字）应被拒绝', async () => {
   assert.equal(res.status, 400);
   assert.equal(body.error, 'weak_password');
 });
+
+test('旧密码错误 → 400 old_password_invalid', async () => {
+  const db = testDb();
+  const username = uniqueId('chpwd_badold');
+  const oldHash = await bcrypt.hash('OldPass1234', 10);
+  await db.query(
+    `insert into users (username, password_hash, real_name, role, is_active, tenant_id)
+     values ($1, $2, '测试', 'store_employee', true, 'default')`,
+    [username, oldHash]
+  );
+  const token = await loginAndGetToken(app.baseUrl, username, 'OldPass1234');
+
+  const res = await fetch(app.baseUrl + '/api/auth/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ oldPassword: 'WrongOld9999', newPassword: 'NewPass5678' }),
+  });
+  const body = await res.json();
+  assert.equal(res.status, 400, JSON.stringify(body));
+  assert.equal(body.error, 'old_password_invalid');
+});

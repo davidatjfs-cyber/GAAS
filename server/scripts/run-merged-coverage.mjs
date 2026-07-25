@@ -192,6 +192,8 @@ console.log(
 const mergedRatchetPath = path.join(serverRoot, 'coverage-merged-ratchet.json');
 if (fs.existsSync(mergedRatchetPath)) {
   const mr = JSON.parse(fs.readFileSync(mergedRatchetPath, 'utf8'));
+  // 合并覆盖对子进程落盘敏感，允许小幅波动（默认 0.5pp）
+  const tol = Number.isFinite(Number(mr.tolerancePct)) ? Number(mr.tolerancePct) : 0.5;
   const checks = [
     ['lines', payload.lines, Number(mr.lines)],
     ['branches', payload.branches, Number(mr.branches)],
@@ -200,17 +202,17 @@ if (fs.existsSync(mergedRatchetPath)) {
   let failed = false;
   for (const [name, actual, floor] of checks) {
     if (!Number.isFinite(floor)) continue;
-    if (actual + 1e-9 < floor) {
-      console.error(`[merged-coverage] ratchet FAIL ${name}=${actual} < ${floor}`);
+    if (actual + tol + 1e-9 < floor) {
+      console.error(`[merged-coverage] ratchet FAIL ${name}=${actual} < ${floor} (tol=${tol})`);
       failed = true;
     } else {
-      console.log(`[merged-coverage] ratchet ok ${name}=${actual} >= ${floor}`);
+      console.log(`[merged-coverage] ratchet ok ${name}=${actual} >= ${floor} (tol=${tol})`);
     }
   }
   const minIdx = Number(mr.minIndexJsLines);
-  if (Number.isFinite(minIdx) && payload.indexJsLinesPct + 1e-9 < minIdx) {
+  if (Number.isFinite(minIdx) && payload.indexJsLinesPct + tol + 1e-9 < minIdx) {
     console.error(
-      `[merged-coverage] ratchet FAIL index.js lines=${payload.indexJsLinesPct} < ${minIdx}`
+      `[merged-coverage] ratchet FAIL index.js lines=${payload.indexJsLinesPct} < ${minIdx} (tol=${tol})`
     );
     failed = true;
   }

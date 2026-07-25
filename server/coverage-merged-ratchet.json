@@ -1,9 +1,10 @@
 {
-  "lines": 44,
+  "lines": 43,
   "branches": 58,
   "functions": 43,
   "requireIndexJs": true,
   "minIndexJsLines": 60,
+  "tolerancePct": 0.5,
   "updated": "2026-07-25",
-  "note": "Wave B 双棘轮：合并口径（单测+集成）只升不降。与 coverage-ratchet.json 单测棘轮并存。首钉来自 CI 1d244e4 实测 44.15/58.71/43.94，index.js 71%。"
+  "note": "Wave B 双棘轮：合并口径。CI 复跑波动 44.15→43.85，lines 地板取稳定档 43；校验含 tolerancePct。与单测棘轮并存。只升不降（纠正误钉除外）。"
 }

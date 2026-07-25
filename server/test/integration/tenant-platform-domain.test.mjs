@@ -5,6 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { bootApp } from './helpers/boot-app.mjs';
 import { testDb, uniqueId, ensureDefaultTenant } from './helpers/db.mjs';
 
@@ -167,4 +168,59 @@ test('POST /api/admin/tenants：合法开通 → 200/201 且可再查到', async
     listBody.items.some((t) => String(t.tenant_id) === tid),
     '列表应包含新建租户: ' + JSON.stringify(listBody).slice(0, 400)
   );
+});
+
+test('GET /api/admin/tenants：sales_manager → 403', async () => {
+  const username = uniqueId('padmin_sm');
+  await createPlatformAdmin(username, { role: 'sales_manager' });
+  const { body: loginBody } = await platformLogin(username);
+  const res = await fetch(app.baseUrl + '/api/admin/tenants', {
+    headers: { Authorization: 'Bearer ' + loginBody.token },
+  });
+  const body = await res.json();
+  assert.equal(res.status, 403, JSON.stringify(body));
+  assert.equal(body.error, 'forbidden');
+});
+
+test('GET /api/admin/tenants：过期 platform token → 401', async () => {
+  // bootApp 默认 JWT_SECRET；PLATFORM_ADMIN_JWT_SECRET 回落到同一值
+  const secret = process.env.PLATFORM_ADMIN_JWT_SECRET
+    || 'test-jwt-secret-not-for-production-use-only-in-tests';
+  const token = jwt.sign(
+    { role: 'platform_admin', username: 'expired_admin', account_role: 'super_admin' },
+    secret,
+    { expiresIn: '-30s' }
+  );
+  const res = await fetch(app.baseUrl + '/api/admin/tenants', {
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  const body = await res.json();
+  assert.equal(res.status, 401, JSON.stringify(body));
+  assert.equal(body.error, 'unauthorized');
+});
+
+test('PATCH /api/admin/tenants/:id：空更新 → 400；未知租户 profile → 404', async () => {
+  const username = uniqueId('padmin_patch');
+  await createPlatformAdmin(username);
+  const { body: loginBody } = await platformLogin(username);
+  const headers = {
+    Authorization: 'Bearer ' + loginBody.token,
+    'Content-Type': 'application/json',
+  };
+
+  const patchRes = await fetch(app.baseUrl + '/api/admin/tenants/default', {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({}),
+  });
+  const patchBody = await patchRes.json();
+  assert.equal(patchRes.status, 400, JSON.stringify(patchBody));
+  assert.equal(patchBody.error, 'nothing_to_update');
+
+  const profRes = await fetch(app.baseUrl + '/api/admin/tenants/no-such-tenant-zzz/profile', {
+    headers: { Authorization: 'Bearer ' + loginBody.token },
+  });
+  const profBody = await profRes.json();
+  assert.equal(profRes.status, 404, JSON.stringify(profBody));
+  assert.equal(profBody.error, 'tenant_not_found');
 });

@@ -404,6 +404,101 @@ test('points.afterDecide rejected sends 未通过 points_result notification', a
   assert.match(notifs[0].msg, /未通过审批/);
 });
 
+test('points.afterDecide pending with nextAssignee sends points_request', async () => {
+  const { deps, notifs } = makeDeps();
+  await points.afterDecide({
+    req: { tenantId: 'default', user: {} },
+    deps,
+    updated: {
+      id: 'appr-pts-pend',
+      type: 'points',
+      status: 'pending',
+      applicant_username: 'emp1',
+      payload: { points: 8, itemName: '卫生检查' },
+    },
+    nextAssignee: 'mgr1',
+    note: '',
+  });
+  assert.equal(notifs.length, 1);
+  assert.equal(notifs[0].u, 'mgr1');
+  assert.equal(notifs[0].meta.type, 'points_request');
+  assert.equal(notifs[0].title, '积分申请待审批');
+});
+
+test('points.afterDecide：双写失败告警；ledger 失败仍 merge/通知；rules 抛错回落 0.5', async () => {
+  // dual-write fail
+  {
+    const { deps, notifs, dualWriteFails, merges } = makeDeps();
+    deps.pool.query = async () => {
+      throw new Error('point_records down');
+    };
+    await points.afterDecide({
+      req: { tenantId: 'default', user: { username: 'a1' } },
+      deps,
+      updated: {
+        id: 'appr-pts-dw',
+        type: 'points',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: { points: 4, itemName: '巡店', store: '测试店', bizMonth: '2026-07' },
+      },
+      nextAssignee: null,
+      note: '',
+    });
+    assert.equal(dualWriteFails.length, 1);
+    assert.match(String(dualWriteFails[0][0]), /point_records/);
+    assert.ok(merges.some((m) => m.patch.pointsAppliedApprovals?.['appr-pts-dw']));
+    assert.ok(notifs.some((n) => n.title === '积分申请已通过'));
+  }
+
+  // ledger fail still notifies
+  {
+    const { deps, notifs, merges, ledgerCalls } = makeDeps();
+    deps.upsertPayrollLedgerEntry = async () => {
+      ledgerCalls.push('boom');
+      throw new Error('ledger down');
+    };
+    await points.afterDecide({
+      req: { tenantId: 'default', user: { username: 'a1' } },
+      deps,
+      updated: {
+        id: 'appr-pts-led',
+        type: 'points',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: { points: 2, itemName: '表扬', store: '测试店', bizMonth: '2026-07' },
+      },
+      nextAssignee: null,
+      note: '',
+    });
+    assert.equal(ledgerCalls.length, 1);
+    assert.ok(merges.length >= 1);
+    assert.ok(notifs.some((n) => n.title === '积分申请已通过'));
+  }
+
+  // rules throw → rate 0.5
+  {
+    const { deps, merges } = makeDeps();
+    deps.resolveAttendancePayrollRules = async () => {
+      throw new Error('rules down');
+    };
+    await points.afterDecide({
+      req: { tenantId: 'default', user: { username: 'a1' } },
+      deps,
+      updated: {
+        id: 'appr-pts-rate',
+        type: 'points',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: { points: 10, itemName: '默认汇率', store: '测试店', bizMonth: '2026-07' },
+      },
+      nextAssignee: null,
+      note: '',
+    });
+    assert.equal(merges[0].patch.pointRecords[0].amount, 5);
+  }
+});
+
 test('points.afterDecide alreadyApplied skips new pointRecords merge but still notifies', async () => {
   const { deps, notifs, merges, queries, ledgerCalls } = makeDeps({
     state: { pointsAppliedApprovals: { 'appr-pts-3': true } },
