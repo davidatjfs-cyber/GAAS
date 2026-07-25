@@ -225,6 +225,13 @@
     "domains/attention-scores/routes.js",
     "domains/employees/routes-attachments.js",
     "domains/sales-ai/routes-kf.js",
-    "domains/growth-payment-rules/routes.js"
+    "domains/growth-payment-rules/routes.js",
+    "domains/ai/routes-chat-completions.js",
+    "domains/auth/routes.js",
+    "domains/growth-campaigns/routes.js",
+    "domains/health/routes.js",
+    "domains/uploads/routes.js",
+    "domains/tenant-settings/routes.js",
+    "domains/growth-ops/routes.js"
   ]
 }
