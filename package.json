@@ -17,7 +17,11 @@
     "test": "npm run assert:ci-runtime && npm --workspace server run test",
     "lint": "eslint \"server/**/*.js\" \"server/**/*.mjs\" --max-warnings 80",
     "bundle:frontend": "node scripts/bundle-frontend.mjs",
-    "build:shell": "node scripts/build-shell.mjs"
+    "build:shell": "node scripts/build-shell.mjs",
+    "compare:prod-frontend": "node scripts/compare-prod-frontend.mjs",
+    "deploy:frontend": "bash scripts/deploy-frontend.sh",
+    "deploy:server": "bash scripts/deploy-server-files.sh",
+    "deploy:check": "bash scripts/deploy-hrms-safe.sh"
   },
   "dependencies": {
     "mammoth": "^1.12.0"

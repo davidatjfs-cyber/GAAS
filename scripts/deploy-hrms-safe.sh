@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# 标准安全部署入口（GAAS → 阿里云 ECS）
-# 注意：原 monorepo 根 scripts/deploy-hrms-*.sh 已随拆仓退役；
-# 本脚本仅做本地结构校验。实际部署请按 CLAUDE.md：build-shell → scp hash 资源 → 换 shell → pm2。
+# GAAS 安全部署入口：本地结构校验 + 前端 dist/prod 对比口径说明 + 指向专用脚本。
+# 实际上传：
+#   前端：./scripts/deploy-frontend.sh
+#   后端：./scripts/deploy-server-files.sh server/foo.js ...
 set -euo pipefail
 HRMS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo ">>> deploy-hrms-safe: 本地结构校验（移动端导航 / 主入口）"
-# 真源入口是 working-fixed.html（mobile-nav-production.html 已于 B6 退役）
 rg -n 'mobile-nav-label">首页<' "${HRMS_DIR}/working-fixed.html" >/dev/null
 rg -n 'mobile-nav-label">增长<' "${HRMS_DIR}/working-fixed.html" >/dev/null
 rg -n 'mobile-nav-label">知识库<' "${HRMS_DIR}/working-fixed.html" >/dev/null
@@ -15,4 +15,25 @@ rg -n 'mobile-nav-label">更多<' "${HRMS_DIR}/working-fixed.html" >/dev/null
 test -f "${HRMS_DIR}/working-fixed.html"
 test ! -f "${HRMS_DIR}/mobile-nav-production.html"
 
-echo ">>> deploy-hrms-safe: 校验通过。请按 CLAUDE.md 手动 scp + pm2 部署（本脚本不再 rsync monorepo 根脚本）。"
+echo ">>> deploy-hrms-safe: build:shell + 与生产对比（dist 口径，不是 monolith md5）"
+cd "${HRMS_DIR}"
+npm run build:shell
+set +e
+node scripts/compare-prod-frontend.mjs
+FE_RC=$?
+set -e
+
+echo ""
+echo ">>> 下一步（按需）："
+echo "  前端漂移时: ./scripts/deploy-frontend.sh"
+echo "  后端文件:   ./scripts/deploy-server-files.sh server/<file.js> [...]"
+echo "  仅预览后端: DRY_RUN=1 ./scripts/deploy-server-files.sh server/<file.js>"
+echo "  bak 归档目录永远用 /opt/hrms-archive/deploy-bak/（禁止写在 /opt/hrms 下）"
+echo "  进程重启优先 pm2 reload；deploy-server-files.sh 已默认 reload"
+
+if [[ "$FE_RC" -eq 0 ]]; then
+  echo ">>> 前端：本地 dist 与生产一致 ✅"
+  exit 0
+fi
+echo ">>> 前端：本地 dist 与生产不一致 ⚠️ 请运行 ./scripts/deploy-frontend.sh"
+exit 1
