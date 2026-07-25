@@ -186,6 +186,9 @@
     "domains/approvals/scheduler-offboarding-promotion.js",
     "domains/growth-metrics/service.js",
     "domains/performance-invalidation/service.js",
-    "domains/birthday/scheduler.js"
+    "domains/birthday/scheduler.js",
+    "domains/feishu-bitable/api.js",
+    "domains/employees/service.js",
+    "domains/growth-pos/ingest.js"
   ]
 }
