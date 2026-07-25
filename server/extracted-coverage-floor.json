@@ -29,6 +29,10 @@
     "domains/notifications/dual-write-alert.js",
     "domains/notifications/make-notif.js",
     "domains/notifications/append.js",
-    "domains/shared/hrms-state-store.js"
+    "domains/shared/hrms-state-store.js",
+    "domains/stores/brand-scope.js",
+    "domains/leave-attendance/date-math.js",
+    "domains/inventory-forecast/product-normalize.js",
+    "domains/inventory-forecast/state-upsert.js"
   ]
 }
