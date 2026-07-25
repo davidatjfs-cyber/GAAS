@@ -47,6 +47,15 @@
     "domains/health/express-error-middleware.js",
     "domains/agent-message/training-context.js",
     "domains/approvals/promotion-recipients.js",
-    "domains/store-duty-bindings/resolve-approver.js"
+    "domains/store-duty-bindings/resolve-approver.js",
+    "domains/health/process-guards.js",
+    "domains/uploads/ensure-dir.js",
+    "domains/uploads/content-type.js",
+    "domains/auth/session-nonce.js",
+    "domains/growth-profiles/helpers.js",
+    "domains/growth-content-library/helpers.js",
+    "domains/shared/role-normalize.js",
+    "domains/leave-attendance/checkin-geo.js",
+    "domains/notifications/scheduler-cleanup.js"
   ]
 }
