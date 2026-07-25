@@ -1,7 +1,13 @@
 /**
- * Agent 数据中心只读聚合：dashboard / brief / activity-detail / score-provenance。
+ * Agent 数据中心只读聚合：dashboard / brief / activity-detail / score-provenance /
+ * employee-live-dashboard。
  * 纯逻辑 + SQL，不碰 req/res。
  */
+
+import {
+  pgGetMonthlyAttitudeFilingCount,
+  pgGetMonthlyExecutionFilingCount,
+} from '../../lib/performance-filing-counts-pg.js';
 
 export const DASHBOARD_ROLES = Object.freeze([
   'admin',
@@ -462,6 +468,184 @@ export async function getScoreProvenance(pool, opts) {
       resolvedName: resolved.resolvedName,
       scores: scoresR.rows || [],
       notifications: notif.rows || [],
+    },
+  };
+}
+
+export function resolvePeriodYm(period, todayYmd = shanghaiYmd()) {
+  const p = String(period || '').trim();
+  if (/^\d{4}-\d{2}$/.test(p)) return p;
+  return String(todayYmd || '').slice(0, 7);
+}
+
+export function monthBoundsFromPeriod(period) {
+  const [py, pm] = String(period || '').split('-');
+  const monthStart = `${py}-${pm}-01`;
+  const monthLastDay = String(new Date(Number(py), Number(pm), 0).getDate()).padStart(2, '0');
+  const monthEnd = `${py}-${pm}-${monthLastDay}`;
+  const monthKey = `${py}${String(pm).padStart(2, '0')}`;
+  return { monthStart, monthEnd, monthKey, py, pm };
+}
+
+export function parseRollupBreakdown(bd) {
+  if (bd == null) return {};
+  if (typeof bd === 'string') {
+    try {
+      const o = JSON.parse(bd);
+      return o && typeof o === 'object' ? o : {};
+    } catch {
+      return {};
+    }
+  }
+  return bd && typeof bd === 'object' ? bd : {};
+}
+
+/**
+ * Prefer「本月累计扣分」from latest rollup; else sum「本周扣分」across weeks.
+ * @param {object|null|undefined} latestRollupRow
+ * @param {Array<{breakdown?: unknown}>} weekRows
+ */
+export function computeMonthBiDeducted(latestRollupRow, weekRows) {
+  let monthBiDeducted = null;
+  if (latestRollupRow) {
+    const b0 = parseRollupBreakdown(latestRollupRow.breakdown);
+    const cum = Number(b0['本月累计扣分']);
+    if (Number.isFinite(cum)) monthBiDeducted = cum;
+  }
+  if (monthBiDeducted == null || !Number.isFinite(monthBiDeducted)) {
+    let sumWeek = 0;
+    for (const rw of weekRows || []) {
+      const b = parseRollupBreakdown(rw.breakdown);
+      const w = Number(b['本周扣分']);
+      if (Number.isFinite(w)) sumWeek += w;
+    }
+    monthBiDeducted = sumWeek;
+  }
+  if (!Number.isFinite(monthBiDeducted)) monthBiDeducted = 0;
+  return monthBiDeducted;
+}
+
+const MONTH_ROLLUP_WHERE = `LOWER(TRIM(username)) = LOWER(TRIM($1))
+       AND score_model = 'anomaly_rollups_v2'
+       AND COALESCE(is_invalidated, false) = false
+       AND period LIKE 'week_%'
+       AND (
+         (POSITION('__' IN period) = 0
+           AND substring(period from 6 for 10)::date >= $2::date
+           AND substring(period from 6 for 10)::date <= $3::date)
+         OR
+         (POSITION('__' IN period) > 0 AND split_part(period, '__', 2) = $4)
+       )
+       AND tenant_id = $5`;
+
+/**
+ * @param {import('pg').Pool} pool
+ * @param {{ query: string, tenantId?: string, period?: string }} opts
+ * @returns {Promise<{ ok: true, body: object } | { ok: false, status: number, body: object }>}
+ */
+export async function getEmployeeLiveDashboard(pool, opts) {
+  const raw = String(opts.query || '').trim();
+  const asOf = shanghaiYmd();
+  const period = resolvePeriodYm(opts.period, asOf);
+  const resolved = await resolveFeishuUserFromQuery(pool, raw);
+  if (!resolved.ok) return resolved;
+
+  const resolvedUsername = resolved.username;
+  const tenantIdQ = opts.tenantId || 'default';
+  const { monthStart, monthEnd, monthKey } = monthBoundsFromPeriod(period);
+
+  const prof = await pool
+    .query(
+      `SELECT store, role
+           FROM feishu_users
+           WHERE registered = true AND LOWER(TRIM(username)) = LOWER(TRIM($1))
+           ORDER BY updated_at DESC NULLS LAST
+           LIMIT 1`,
+      [resolvedUsername]
+    )
+    .catch(() => ({ rows: [] }));
+  const store = String(prof.rows?.[0]?.store || '').trim();
+  const feishuRole = String(prof.rows?.[0]?.role || '').trim();
+
+  const latestRollupInMonth = await pool
+    .query(
+      `SELECT total_score, breakdown, period, updated_at
+           FROM agent_scores
+           WHERE ${MONTH_ROLLUP_WHERE}
+           ORDER BY updated_at DESC NULLS LAST
+           LIMIT 1`,
+      [resolvedUsername, monthStart, monthEnd, monthKey, tenantIdQ]
+    )
+    .catch(() => ({ rows: [] }));
+
+  const rollupHead = latestRollupInMonth.rows?.[0];
+  let weekRows = [];
+  const headCum = rollupHead
+    ? Number(parseRollupBreakdown(rollupHead.breakdown)['本月累计扣分'])
+    : NaN;
+  if (!Number.isFinite(headCum)) {
+    const allWeeks = await pool
+      .query(
+        `SELECT breakdown FROM agent_scores WHERE ${MONTH_ROLLUP_WHERE} ORDER BY period ASC`,
+        [resolvedUsername, monthStart, monthEnd, monthKey, tenantIdQ]
+      )
+      .catch(() => ({ rows: [] }));
+    weekRows = allWeeks.rows || [];
+  }
+  const monthBiDeducted = computeMonthBiDeducted(rollupHead, weekRows);
+  const latestPerformanceScore = 100 - monthBiDeducted;
+
+  const empR = await pool
+    .query(
+      `SELECT store, role, total_score, execution_rating, attitude_rating, ability_rating,
+                  base_score, exception_bonus, exception_deduction, updated_at
+           FROM employee_scores
+           WHERE LOWER(TRIM(username)) = LOWER(TRIM($1)) AND period = $2
+           ORDER BY updated_at DESC NULLS LAST`,
+      [resolvedUsername, period]
+    )
+    .catch(() => ({ rows: [] }));
+
+  const latestWeek = await pool
+    .query(
+      `SELECT period, total_score, updated_at, LEFT(COALESCE(summary, ''), 200) AS summary
+           FROM agent_scores
+           WHERE LOWER(TRIM(username)) = LOWER(TRIM($1))
+             AND score_model = 'anomaly_rollups_v2'
+             AND period LIKE 'week_%'
+             AND tenant_id = $2
+           ORDER BY updated_at DESC NULLS LAST
+           LIMIT 1`,
+      [resolvedUsername, tenantIdQ]
+    )
+    .catch(() => ({ rows: [] }));
+
+  let executionFiling = 0;
+  if (store) {
+    executionFiling = await pgGetMonthlyExecutionFilingCount(pool, resolvedUsername, store, asOf);
+  }
+  const attitudeFiling = await pgGetMonthlyAttitudeFilingCount(pool, resolvedUsername, asOf);
+
+  return {
+    ok: true,
+    body: {
+      query: raw,
+      period,
+      as_of_shanghai: asOf,
+      username: resolvedUsername,
+      resolvedName: resolved.resolvedName,
+      store,
+      feishu_role: feishuRole,
+      month_bi_deducted_total: monthBiDeducted,
+      latest_performance_score: latestPerformanceScore,
+      rollup_breakdown_source_period: rollupHead?.period || null,
+      employee_scores_rows: empR.rows || [],
+      latest_weekly_anomaly_row: latestWeek.rows?.[0] || null,
+      execution_filing_count: executionFiling,
+      attitude_filing_count: attitudeFiling,
+      ability_filing_count: 0,
+      ability_filing_note:
+        '能力维度为毛利率/点评等指标评级，当前无与「能力」对应的独立备案任务计数（与飞书绩效卡一致仅统计执行力日评 + 态度任务备案）。',
     },
   };
 }

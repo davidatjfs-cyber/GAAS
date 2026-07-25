@@ -13,6 +13,11 @@ import {
   buildDashboardPayload,
   resolveFeishuUserFromQuery,
   getScoreProvenance,
+  resolvePeriodYm,
+  monthBoundsFromPeriod,
+  parseRollupBreakdown,
+  computeMonthBiDeducted,
+  getEmployeeLiveDashboard,
 } from '../domains/agent-data-center/service.js';
 
 test('role lists are non-empty and brief ⊆ dashboard-ish', () => {
@@ -148,4 +153,68 @@ test('getScoreProvenance: happy path returns scores + notifications', async () =
   assert.equal(r.body.username, 'bob');
   assert.equal(r.body.scores.length, 1);
   assert.equal(r.body.notifications.length, 1);
+});
+
+test('resolvePeriodYm / monthBoundsFromPeriod', () => {
+  assert.equal(resolvePeriodYm('2026-06', '2026-07-25'), '2026-06');
+  assert.equal(resolvePeriodYm('bad', '2026-07-25'), '2026-07');
+  const b = monthBoundsFromPeriod('2026-02');
+  assert.equal(b.monthStart, '2026-02-01');
+  assert.equal(b.monthEnd, '2026-02-28');
+  assert.equal(b.monthKey, '202602');
+});
+
+test('parseRollupBreakdown + computeMonthBiDeducted', () => {
+  assert.deepEqual(parseRollupBreakdown('{"本月累计扣分":3}'), { 本月累计扣分: 3 });
+  assert.equal(
+    computeMonthBiDeducted({ breakdown: { 本月累计扣分: 5 } }, [{ breakdown: { 本周扣分: 9 } }]),
+    5
+  );
+  assert.equal(
+    computeMonthBiDeducted({ breakdown: {} }, [
+      { breakdown: { 本周扣分: 2 } },
+      { breakdown: { 本周扣分: 3 } },
+    ]),
+    5
+  );
+  assert.equal(computeMonthBiDeducted(null, []), 0);
+});
+
+test('getEmployeeLiveDashboard: uses 本月累计扣分 and filings', async () => {
+  const pool = {
+    async query(sql) {
+      const s = String(sql);
+      if (s.includes('FROM feishu_users') && s.includes('LOWER(TRIM(username))')) {
+        if (s.includes('SELECT store, role')) {
+          return { rows: [{ store: '洪潮', role: '店长' }] };
+        }
+        return { rows: [{ username: 'carol', disp: 'Carol' }] };
+      }
+      if (s.includes('FROM agent_scores') && s.includes('ORDER BY updated_at DESC') && s.includes('LIMIT 1')) {
+        if (s.includes('total_score, breakdown')) {
+          return {
+            rows: [{ total_score: 95, breakdown: { 本月累计扣分: 4 }, period: 'week_2026-07-01' }],
+          };
+        }
+        return { rows: [{ period: 'week_2026-07-01', total_score: 96 }] };
+      }
+      if (s.includes('FROM employee_scores')) {
+        return { rows: [{ total_score: 88 }] };
+      }
+      if (s.includes('FROM ops_tasks')) return { rows: [{ cnt: 2 }] };
+      if (s.includes('FROM master_tasks')) return { rows: [{ cnt: 1 }] };
+      return { rows: [] };
+    },
+  };
+  const r = await getEmployeeLiveDashboard(pool, {
+    query: 'carol',
+    period: '2026-07',
+    tenantId: 'default',
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.body.month_bi_deducted_total, 4);
+  assert.equal(r.body.latest_performance_score, 96);
+  assert.equal(r.body.store, '洪潮');
+  assert.equal(r.body.execution_filing_count, 2);
+  assert.equal(r.body.attitude_filing_count, 1);
 });

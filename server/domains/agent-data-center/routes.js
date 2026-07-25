@@ -8,6 +8,7 @@ import {
   getActivityDetail,
   getDashboardSummary,
   getDataCenterBrief,
+  getEmployeeLiveDashboard,
   getScoreProvenance,
 } from './service.js';
 
@@ -83,6 +84,24 @@ export function registerAgentDataCenterRoutes(app, authRequired, deps) {
         query: req.query?.q || req.query?.username,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
         limit: req.query?.limit,
+      });
+      if (!result.ok) return res.status(result.status).json(result.body);
+      return res.json(result.body);
+    } catch (e) {
+      return res.status(500).json({ error: String(e?.message || e) });
+    }
+  });
+
+  app.get('/api/agents/employee-live-dashboard', authRequired, async (req, res) => {
+    const role = String(req.user?.role || '').trim();
+    if (!BRIEF_ROLES.includes(role)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    try {
+      const result = await getEmployeeLiveDashboard(pool(), {
+        query: req.query?.q || req.query?.username,
+        period: req.query?.period,
+        tenantId: req.tenantId || req.user?.tenant_id || 'default',
       });
       if (!result.ok) return res.status(result.status).json(result.body);
       return res.json(result.body);
