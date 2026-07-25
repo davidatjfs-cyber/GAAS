@@ -195,6 +195,15 @@
     "domains/promotion/routes-tracks.js",
     "domains/remaining-state/routes-announcement-extra.js",
     "domains/growth-coupons/routes.js",
-    "domains/growth-stored-value/service.js"
+    "domains/growth-stored-value/service.js",
+    "domains/perf-admin/routes.js",
+    "domains/metrics-admin/routes.js",
+    "domains/bitable-admin/routes.js",
+    "domains/payroll/routes.js",
+    "domains/growth-churn/routes.js",
+    "domains/reports/routes-turnover.js",
+    "domains/approvals/routes.js",
+    "domains/training/routes.js",
+    "domains/inventory-forecast/estimate.js"
   ]
 }
