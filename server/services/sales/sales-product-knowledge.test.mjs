@@ -7,6 +7,7 @@ import {
   classifyProductQuery,
   formatProductAnswer,
   formatProductSpeechAnswer,
+  isOurSystemFeatureQuestion,
   searchProductKnowledge,
 } from './sales-product-knowledge.js';
 import { runCustomerAiTurn, setSalesCustomerAiLlm } from './sales-customer-ai.js';
@@ -170,6 +171,38 @@ test('命中答案包含可执行步骤和权限边界', () => {
   assert.match(answer, /操作路径/);
   assert.match(answer, /权限说明/);
   assert.doesNotMatch(answer, /密码|密钥|服务器/);
+});
+
+// 线上真实事故(2026-07-25)：客户说"我对你们系统蛮感兴趣的"——一句购买意向，
+// 却因为含"系统"二字被判成产品问答，又没有知识卡命中，回了一句"没找到系统说明"，
+// 把最该承接的一轮堵死。同批被堵死的还有"外卖平台抽成太高怎么办"等经营问题。
+test('含"系统/平台"字样但不是功能提问的话，不能被产品问答堵死', () => {
+  for (const text of [
+    '我对你们系统蛮感兴趣的。',
+    '外卖平台抽成费用太高了怎么办？',
+    '自动你去盯员工怎么盯啊？',
+    '你们的AI客服功能有什么？',
+  ]) {
+    const r = classifyProductQuery(text);
+    assert.equal(r.isProductQuery, false, `${text} 不该判成已命中知识卡`);
+    assert.equal(isOurSystemFeatureQuestion(text), false, `${text} 不该判成系统功能提问`);
+  }
+});
+
+test('购买意向不会收到"没找到系统说明"的死胡同回复', async () => {
+  const turn = await runCustomerAiTurn({
+    userText: '我对你们系统蛮感兴趣的。',
+    extracted: {}, history: [], intentScore: 0, controller: 'ai', inputMode: 'text',
+  });
+  assert.notEqual(turn.source, 'product_knowledge_unanswered');
+  assert.doesNotMatch(turn.reply, /没有找到足够准确|不想凭印象/);
+  assert.ok(turn.reply.length > 0);
+});
+
+test('明确问"你们系统某功能"仍然如实说查不到，不编造', () => {
+  for (const text of ['系统里的量子排班按钮怎么用？', '供应商合同也能存系统里吗？']) {
+    assert.equal(isOurSystemFeatureQuestion(text), true, `${text} 应判成系统功能提问`);
+  }
 });
 
 test('未收录的明确系统问题不编造答案', async () => {

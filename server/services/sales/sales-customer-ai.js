@@ -23,6 +23,7 @@ import {
   classifyProductQuery,
   formatProductAnswer,
   formatProductSpeechAnswer,
+  isOurSystemFeatureQuestion,
   logProductQuestion,
 } from './sales-product-knowledge.js';
 
@@ -578,12 +579,28 @@ export async function runCustomerAiTurn({ userText, extracted, history, intentSc
     };
   }
   const productQuery = classifyProductQuery(userText);
+  // 没命中知识卡时，只有客户确实在问"你们系统的某个功能"才如实说查不到(防编造)；
+  // 购买意向、经营痛点这些同样含"系统/平台"字样的话，必须交回正常销售流程，
+  // 不能再用一句"没找到系统说明"把对话堵死。
+  if (!productQuery.isProductQuery && productQuery.productTopic) {
+    await logProductQuestion(pool, { query: userText, match: null });
+    if (isOurSystemFeatureQuestion(userText)) {
+      const reply = '这个问题我暂时没有找到足够准确的系统说明，所以不想凭印象回答。您可以把具体页面、按钮名称或报错文字发给我，我会按实际功能继续核对；这个问题也会记录下来补充到系统手册。';
+      return {
+        ok: true,
+        reply,
+        speechReply: reply,
+        source: 'product_knowledge_unanswered',
+        plan: { ...plan, mode: 'product_query', next_question: null },
+        guidance,
+        productKnowledge: { confidence: 0, matched: null, candidates: [] },
+      };
+    }
+  }
   if (productQuery.isProductQuery) {
     const best = productQuery.matches[0] || null;
     await logProductQuestion(pool, { query: userText, match: best });
-    const reply = best
-      ? formatProductAnswer(productQuery.matches, userText)
-      : '这个问题我暂时没有找到足够准确的系统说明，所以不想凭印象回答。您可以把具体页面、按钮名称或报错文字发给我，我会按实际功能继续核对；这个问题也会记录下来补充到系统手册。';
+    const reply = formatProductAnswer(productQuery.matches, userText);
     const speechReply = formatProductSpeechAnswer(productQuery.matches, userText);
     return {
       ok: true,

@@ -277,7 +277,34 @@ export function classifyProductQuery(text = '') {
     : lexicalMatches;
   const best = matches[0];
   const explicit = PRODUCT_SIGNAL_RE.test(String(text));
-  return { isProductQuery: Boolean(explicit || intentMatch || (best && best.score >= 32)), confidence: best ? Math.min(1, best.score / 50) : 0, matches };
+  // `explicit` 只说明这句话里出现了"系统/平台/功能/员工"这类词，说明话题可能跟产品有关，
+  // 不代表我们真的有对应的知识卡。以前它单独就能把本轮判成产品问答，于是任何含这些词、
+  // 又没命中知识卡的话都会被回一句"没找到系统说明"把对话堵死——"我对你们系统蛮感兴趣的"
+  // (购买意向)、"外卖平台抽成太高怎么办"(经营诊断)都是这么被堵死的。
+  // 现在 explicit 只负责放宽命中门槛，不能单独成立：没有任何知识卡命中时一律交回正常
+  // 销售/诊断流程，由 LLM 带着公开知识和既有质量校验去回应。
+  const hasKnowledge = Boolean(intentMatch || (best && (explicit || best.score >= 32)));
+  return {
+    isProductQuery: hasKnowledge,
+    productTopic: explicit,
+    confidence: best ? Math.min(1, best.score / 50) : 0,
+    matches,
+  };
+}
+
+const QUESTION_SHAPE_RE = /[？?]|吗|呢|怎么|咋|如何|能不能|可不可以|有没有|是否|哪里|在哪|什么|哪些|多少/;
+// 必须明确指向"我们这套系统"才算产品功能提问。"外卖平台抽成太高"里的"平台"是第三方，
+// "我对你们系统蛮感兴趣"没有提问结构，两者都不该走"查不到就不回答"那条路。
+const OUR_SYSTEM_RE = /(?:你们|贵司|这个|该|咱们)[^。，,！!？?]{0,4}(?:系统|平台|产品|软件)|系统里|系统中|系统内|后台|页面|按钮|菜单|模块/;
+
+/**
+ * 客户是不是在问"你们系统的某个具体功能怎么用/有没有"。
+ * 只有这种情况，在没有任何知识卡命中时才允许如实说"查不到"——这是防编造的底线；
+ * 其余情况(购买意向、经营痛点、闲聊)一律交回正常销售流程，不能用一句"没找到说明"堵死。
+ */
+export function isOurSystemFeatureQuestion(text = '') {
+  const value = String(text || '');
+  return QUESTION_SHAPE_RE.test(value) && OUR_SYSTEM_RE.test(value);
 }
 
 export function formatProductAnswer(matches = [], userText = '') {
