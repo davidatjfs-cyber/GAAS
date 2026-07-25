@@ -1,8 +1,8 @@
 /**
- * 日对账调度：employees + flow-config（表权威 vs hrms_state 镜像）。
- *
- * payment-config / stores / remaining-state 尚无独立表 SoT（仍仅 hrms_state + withMirrorWriteTx），
- * 此处 intentionally 跳过，待未来有表权威后再扩展 reconcile。
+ * 日对账调度：
+ * - employees / flow-config：表权威 vs hrms_state 镜像
+ * - payment-config / stores / remaining-state：无独立表 SoT，做 hrms_state 形状完整性日检
+ *   （见 state-only-integrity.js；待未来有表权威后再升级为表↔镜像对账）
  */
 
 /**
@@ -12,6 +12,7 @@
  *   notifyAdminsDualWriteFailure: (scopeLabel: string, err: Error) => void | Promise<void>,
  *   reconcileEmployeesMirrorAllTenants: typeof import('../employees/mirror-tx.js').reconcileEmployeesMirrorAllTenants,
  *   reconcileFlowConfigMirrorAllTenants: typeof import('../flow-config/reconcile.js').reconcileFlowConfigMirrorAllTenants,
+ *   checkStateOnlyDomainsIntegrityAllTenants?: typeof import('./state-only-integrity.js').checkStateOnlyDomainsIntegrityAllTenants,
  * }} deps
  */
 export function createMirrorReconcileScheduler(deps) {
@@ -21,6 +22,7 @@ export function createMirrorReconcileScheduler(deps) {
     notifyAdminsDualWriteFailure,
     reconcileEmployeesMirrorAllTenants,
     reconcileFlowConfigMirrorAllTenants,
+    checkStateOnlyDomainsIntegrityAllTenants,
   } = deps;
 
   async function runEmployeesMirrorReconcile() {
@@ -62,9 +64,32 @@ export function createMirrorReconcileScheduler(deps) {
     }
   }
 
+  async function runStateOnlyIntegrityChecks() {
+    if (typeof checkStateOnlyDomainsIntegrityAllTenants !== 'function') return;
+    try {
+      const reports = await checkStateOnlyDomainsIntegrityAllTenants(pool, getActiveTenantIds);
+      for (const report of reports) {
+        if (!report.ok) {
+          const bad = (report.domains || [])
+            .filter((d) => !d.ok)
+            .map((d) => `${d.domain}:${(d.issues || []).map((i) => `${i.field}:${i.reason}`).join('|')}`)
+            .join(';');
+          const msg = `state-only integrity fail tenant=${report.tenantId} ${bad}`;
+          console.error('[state-only-integrity]', msg);
+          void notifyAdminsDualWriteFailure('state-only（payment/stores/remaining 形状日检）', new Error(msg));
+        } else {
+          console.log('[state-only-integrity] ok', report.tenantId);
+        }
+      }
+    } catch (e) {
+      console.error('[state-only-integrity] failed', e?.message || e);
+    }
+  }
+
   async function runMirrorReconcile() {
     await runEmployeesMirrorReconcile();
     await runFlowConfigMirrorReconcile();
+    await runStateOnlyIntegrityChecks();
   }
 
   function startMirrorReconcileScheduler() {

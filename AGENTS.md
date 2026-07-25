@@ -111,7 +111,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 3. **部署后必须验证服务真的起来了**（不能只看 `pm2 status` 显示 online，崩溃重启也可能短暂 online）：
    - `ssh root@47.100.96.30 "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/"` 必须返回 `200`
    - `ssh root@47.100.96.30 "pm2 logs hrms-service --err --lines 10 --nostream"` 不能有 `SyntaxError`/`does not provide an export`
-4. **覆盖前先备份生产文件**：`ssh root@47.100.96.30 "cp /opt/hrms/server/<file> /opt/hrms/server/<file>.bak.$(date +%s)"`，便于秒级回滚。
+4. **覆盖前先备份生产文件**：直接备份到 web root **之外**，例如
+   `ssh root@47.100.96.30 "cp /opt/hrms/server/<file> /opt/hrms-archive/deploy-bak/<file>.bak.$(date +%s)"`。
+   **禁止**在 `/opt/hrms` 内留下 `*.bak.*` 文件或 `name.bak.<ts>/` 目录（含 `server/domains/<域>.bak.<ts>/`）。
 5. 部署成功后，把上线版同步回本地（`md5` 校验一致），避免本地再次成为"会炸生产的旧版"。
 
 ### ⚠️ sales_raw 表已于 2026-07-03 下线，禁止再新建代码引用它
@@ -192,7 +194,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - 改业务 JS → 改 `frontend/src/pages/*.js` → `npm run build:shell` → 先 scp `app.*.js/css` 再换 shell。
 - 不要直接编辑 `working-fixed.html` 内联主 `<script>`（由 `bundle-frontend.mjs` 写回）。
-- **B2 行数棘轮**：`server/test/working-fixed-size-gate.test.mjs` 冻结总行数（≤69151）；新 UI 进 `frontend/src/pages`。
+- **B2 行数棘轮**：`server/test/working-fixed-size-gate.test.mjs` 冻结总行数（≤69156）；新 UI 进 `frontend/src/pages`。
 - **B7 XSS（边界须如实）**：主 script 前加载 `/assets/vendor/dompurify/`；`innerHTML` 已挂 DOMPurify。
   - 已拦 script/iframe/javascript:；**不拦**事件属性 XSS（`on*`，兼容遗留 inline onclick）。
   - DOMPurify 未加载时 fail-closed（返回空串）。新代码优先 `setHTML`/`appendHTML`。

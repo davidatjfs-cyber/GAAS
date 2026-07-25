@@ -111,13 +111,87 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 3. **部署后必须验证服务真的起来了**（不能只看 `pm2 status` 显示 online，崩溃重启也可能短暂 online）：
    - `ssh root@47.100.96.30 "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/"` 必须返回 `200`
    - `ssh root@47.100.96.30 "pm2 logs hrms-service --err --lines 10 --nostream"` 不能有 `SyntaxError`/`does not provide an export`
-4. **覆盖前先备份生产文件**：`ssh root@47.100.96.30 "cp /opt/hrms/server/<file> /opt/hrms/server/<file>.bak.$(date +%s)"`，便于秒级回滚。
+4. **覆盖前先备份生产文件**：直接备份到 web root **之外**，例如
+   `ssh root@47.100.96.30 "cp /opt/hrms/server/<file> /opt/hrms-archive/deploy-bak/<file>.bak.$(date +%s)"`，
+   便于秒级回滚。**禁止**在 `/opt/hrms` 内留下 `*.bak.*` 文件或 `name.bak.<ts>/` 目录。
 5. 部署成功后，把上线版同步回本地（`md5` 校验一致），避免本地再次成为"会炸生产的旧版"。
+
+### ⚠️ `.bak.*` 备份（文件与目录）不能留在 `/opt/hrms`（web root）里
+
+`/opt/hrms` 是 nginx 的 `root`，任何放进去的文件默认都能被 `https://nnyx.cc/<文件名>` 直接访问到。
+覆盖前备份是对的，但**备份不能留在 web root 原地**——2026-07-24 实测发现 `/opt/hrms` 下堆积了 146 个历史部署产生的
+`working-fixed.html.bak.*`、`app.*.js.bak.*`、`agents-admin.html.bak.` 等文件，其中至少两个可以被匿名
+`curl` 直接 200 下载到，泄露历史前端源码。nginx 已有的黑名单（`\.(sql|md|env|log|sh)$` 等，见上方
+2026-06-25 那条）**没有覆盖 `.bak` 这个命名模式**，所以这批文件一直在裸奔。
+
+**已修复**：`/etc/nginx/sites-enabled/hrms` 加了 `location ~* \.bak { return 404; }`；146 个历史 `.bak` 文件
+已移到 `/opt/hrms-archive/frontend-bak/`（保留未删，web root 之外）。
+
+**2026-07-25 追加（目录形态）**：拆分部署时还出现过 `server/domains/<域>.bak.<timestamp>/` 这种**目录**备份
+（如 `approvals.bak.1784864013/`）。`\.bak` 规则已能 404，但纪律仍是「备份不进 web root」——已全部
+`mv` 到 `/opt/hrms-archive/deploy-bak/`；nginx 另加 `location ~* /[^/]+\.bak\.[0-9]+(/|$)` 双保险。
+**整目录备份**同样禁止留在 `/opt/hrms` 内。
+
+**以后的纪律**：任何"覆盖前备份"产生的 `.bak` 文件或 `*.bak.<ts>/` 目录，要么直接放 `/opt/hrms` 之外
+（如 `/opt/hrms-archive/deploy-bak/`），要么生成后立刻 `mv` 出 web root，不要指望"忘了清理也没事"
+——nginx 黑名单是按名字匹配的，新增一种备份命名习惯就可能绕开它。
+
+**附带修复**：`server/index.js` 里配置的 CSP/HSTS/X-Frame-Options/X-Content-Type-Options 这些安全头
+只在请求打到 Node 进程时生效（主要是 `/api/*`）；nginx 直接从磁盘吐 `index.html`/`working-fixed.html`/
+`app.*.js/css` 这些静态文件时完全不带这些头。已在 `sites-enabled/hrms` 里给静态资源的 location 也补上
+同样的安全头，两边（Node 和 nginx 静态服务）现在保持一致。
+
+### 🔴 2026-07-24 事故：`/opt/hrms` web root 大面积裸奔，真实 `.env` 泄露超过3天——已修复，但泄露过的密钥必须轮换
+
+上面那条 `.bak` 修复上线后，重新做了一次彻底排查，发现问题比最初以为的严重得多，是**真实发生过的凭据泄露**，
+不是"有风险"这种程度：
+
+- **`.env.ORPHANED_UNUSED_2026-07-21_see_server_env`**——文件名看着像"废弃不用"，实际内容是完整的生产
+  `.env`，`curl https://nnyx.cc/.env.ORPHANED_UNUSED_2026-07-21_see_server_env` 之前直接 200 返回全部内容：
+  `JWT_SECRET`、`PLATFORM_ADMIN_JWT_SECRET`、`ADMIN_PASSWORD`、`AGENTS_ADMIN_PASSWORD`、
+  `DEEPSEEK_API_KEY`、`QWEN_API_KEY`、`DOUBAO_API_KEY`、`OPENAI_API_KEY`、`DATABASE_URL`、
+  `ALIYUN_SMS_ACCESS_KEY_ID`/`SECRET`、`WECOM_KF_SECRET`/`AES_KEY`、`MINIPROGRAM_SYNC_SECRET` 等。
+  文件名日期 2026-07-21，即**在公网裸奔了 3 天以上**，必须假定已被扫描/爬取过，不能只靠"看起来没人访问"。
+- 同时 `member_consumption.json`（真实会员姓名/手机号/卡号）、`default_op_config.json`、以及
+  `sales-ai-routes.js`/`sales-customer-ai.js`/`store-diagnosis.js`/`import-member-consumption.js`/
+  `sync-pos-feishu-feb.cjs` 等一批**后端源码文件**，连同几十个 `*.md`/`*.sql`/`test-*.js`/`db-check*.js`/
+  部署脚本（`dev.sh`/`prod.sh`/`staging.sh`）**直接堆在 `/opt/hrms` 根目录**，均可被 `curl` 原样下载。
+- 更进一步：`backups/`、`.backups/`、`_bak/`、`bak.<timestamp>/`、`migration-backups/`、
+  `.codex-stage-*/`、`incoming-sales/`、`packages/`、`hr-management-system/`、`.windsurf/`、`_dead_archive/`、
+  `dist/` 这些**目录**也直接摆在 web root 下，目录名不在 nginx 黑名单里。目录本身没开 `autoindex`（列目录返
+  403），但只要知道/猜到具体文件名，单个文件照样能直接下载——实测 `backups/hrms_payroll_state_*.json.gz`
+  （工资单）、`migration-backups/*.sql.gz`（DB 迁移备份）都曾 200 可下载。
+
+**根因**：这套部署方式是"把整个项目目录当 web root"，靠 nginx 黑名单挡不该公开的东西——黑名单只能挡"已知
+命名模式"，新增一种备份/暂存命名习惯（如 `.codex-stage-*`、`ORPHANED_UNUSED` 这种一次性改名）就会绕开它。
+2026-06-25 修过一次（`server/`、`node_modules/` 等目录），2026-07-24 早些时候又修过 `.bak` 文件，这次是
+第三轮，说明黑名单模式本身有系统性缺陷，不是"这次全补上了就一劳永逸"。
+
+**已修复**：
+1. 上述所有暴露的文件/目录已从 `/opt/hrms` 移到 `/opt/hrms-archive/leaked-2026-07-24/`（保留未删）。
+2. `sites-enabled/hrms` 追加了目录黑名单（`backups?|\.backups|_bak|bak\.[0-9]+|\.codex-stage-.*|
+   _dead_archive|migration-backups|incoming-sales|packages|hr-management-system|\.windsurf|dist`）。
+3. 修复后逐条用真实内容校验（不只看 HTTP 状态码——本站 `try_files` 兜底到 `index.html`，不存在的路径也会
+   返回 200，必须看 body 是不是 SPA 壳子来判断是否真的堵住了）。
+
+**必须做、但只有账号持有人能做的事（本次没有代替执行）**：`.env` 里出现过的所有密钥/密码**必须视为已泄露
+并轮换**，不能因为"现在挡住了"就当没事发生过：
+- `JWT_SECRET` / `PLATFORM_ADMIN_JWT_SECRET`：换新值 → 会导致所有现有登录 session 失效，需提前告知用户重新登录。
+- `ADMIN_PASSWORD` / `AGENTS_ADMIN_PASSWORD`：改密码。
+- `DEEPSEEK_API_KEY` / `QWEN_API_KEY` / `DOUBAO_API_KEY` / `OPENAI_API_KEY`：去对应控制台吊销旧 key、生成新 key。
+- `ALIYUN_SMS_ACCESS_KEY_ID` / `_SECRET`：阿里云控制台轮换 AK/SK（顺带检查这期间有没有异常短信发送记录/账单）。
+- `WECOM_KF_SECRET` / `WECOM_KF_AES_KEY`：企业微信管理后台重新生成。
+- `MINIPROGRAM_SYNC_SECRET`：按小程序侧约定换新值，两边同步更新。
+- `DATABASE_URL` 里的 DB 密码：如果和其他地方复用，也建议换。
+- 换完每一个都要 `pm2 restart hrms-service --update-env`，并验证对应功能（登录、AI 对话、短信、客服）没有因为轮换而失效。
+- 建议顺手查一下这期间（至少 2026-07-21 之后）服务器访问日志里有没有对 `.env*`、`backups/`、
+  `migration-backups/` 等路径的异常请求，判断是否已经被人下载过。
 
 ### ⚠️ sales_raw 表已于 2026-07-03 下线，禁止再新建代码引用它
 
 `sales_raw` 已从生产库 **DROP TABLE**（177,284行/101MB，已备份：本地 `/tmp/sales_raw_full_backup_before_drop.sql` +
-服务器 `/opt/hrms/sales_raw_backup_20260703.sql`）。**POS 销售数据的唯一权威来源是 `pos_order_items`**（明细表，含堂食+外卖全渠道）。
+服务器 `/opt/hrms-archive/leaked-2026-07-24/sales_raw_backup_20260703.sql`，2026-07-24 因 web root 泄露事件从
+`/opt/hrms/` 迁出，见下方「web root 大面积泄露」条目）。**POS 销售数据的唯一权威来源是 `pos_order_items`**（明细表，含堂食+外卖全渠道）。
 
 - **绝大多数查询场景**（营收/销量/菜品统计等聚合查询）应查 **`pos_sales_detail` 视图**——它是 `pos_order_items` 的同构视图，
   列结构（`store, date, biz_type, dish_name, dish_code, category, qty, sales_amount, revenue, discount, slot, order_time,
@@ -249,7 +323,7 @@ agents-service-v2 通过 `file:packages/gaas-shared` 引用**同步副本**；�
 - **拼回**：`node scripts/bundle-frontend.mjs` → 写回 `working-fixed.html` 主 `<script>`。
 - **部署产物**：`node scripts/build-shell.mjs`（内部先 bundle）→ `dist/`（shell + `app.<hash>.js/.css`）。
 - HTML/CSS 结构仍以 `working-fixed.html` 为载体；**不要**直接在内联 `<script>` 里改业务逻辑。
-- **B2 行数棘轮**：`server/test/working-fixed-size-gate.test.mjs` 冻结 `working-fixed.html` 总行数（当前 ≤69151）；
+- **B2 行数棘轮**：`server/test/working-fixed-size-gate.test.mjs` 冻结 `working-fixed.html` 总行数（当前 ≤69156）；
   只减不增；新 UI 进 `frontend/src/pages/*.js` 再 bundle，勿直接堆 inline script/HTML。
 - **B7 XSS（边界须如实）**：`/assets/vendor/dompurify/` 在主 script 前加载；`Element.innerHTML` setter 已挂 DOMPurify。
   - **已拦**：`<script>` / `<iframe>` / `javascript:` 等。

@@ -30,6 +30,7 @@ import {
 import { reconcileEmployeesMirrorAllTenants } from './domains/employees/mirror-tx.js';
 import { reconcileFlowConfigMirrorAllTenants } from './domains/flow-config/reconcile.js';
 import { createMirrorReconcileScheduler } from './domains/shared/mirror-reconcile-scheduler.js';
+import { checkStateOnlyDomainsIntegrityAllTenants } from './domains/shared/state-only-integrity.js';
 import { createPickUsernameHelpers } from './domains/employees/pick-usernames.js';
 import { createUserLookupHelpers } from './domains/employees/user-lookup.js';
 import { findUserSalary } from './domains/employees/salary-helpers.js';
@@ -1580,7 +1581,7 @@ registerEmployeesDomainRoutes(app, authRequired, {
   resolveTenantIdDefault,
 });
 
-// 表权威 vs hrms_state 镜像日对账（employees + flow-config；见 mirror-reconcile-scheduler 注释）
+// 表权威 vs hrms_state 镜像日对账 + state-only 三域形状日检（见 mirror-reconcile-scheduler）
 {
   const { startMirrorReconcileScheduler } = createMirrorReconcileScheduler({
     pool,
@@ -1588,6 +1589,7 @@ registerEmployeesDomainRoutes(app, authRequired, {
     notifyAdminsDualWriteFailure,
     reconcileEmployeesMirrorAllTenants,
     reconcileFlowConfigMirrorAllTenants,
+    checkStateOnlyDomainsIntegrityAllTenants,
   });
   startMirrorReconcileScheduler();
 }
