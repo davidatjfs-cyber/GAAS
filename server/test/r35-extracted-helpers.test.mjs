@@ -38,7 +38,6 @@ import {
   createNormalizeForecastUploadDate,
   inferForecastUploadDateFromFilename,
   normalizeForecastWeather,
-  normalizeForecastStoreName,
   normalizeForecastStoreKey,
   createShiftForecastDate,
   forecastHistoryRowKey,
