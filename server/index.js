@@ -180,8 +180,9 @@ pg.types.setTypeParser(1184, str => {
 
 import XLSX from 'xlsx';
 import axios from 'axios';
-import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, getAgentPerformanceMetrics, pool as agentPool, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache, getBitableSubmissionStats, archiveOldBitableSubmissions } from './agents.js';
+import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, getAgentPerformanceMetrics, getScheduledTaskStatus, clearAgentCache, runAgentEvalSuite, pool as agentPool, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache, getBitableSubmissionStats, archiveOldBitableSubmissions } from './agents.js';
 import { registerAgentDataCenterRoutes } from './domains/agent-data-center/routes.js';
+import { registerAgentOpsRoutes } from './domains/agent-ops/routes.js';
 import { cronJobLabelZh } from './cron-job-label-zh.js';
 import { ensureAgentConfigTables, registerAgentConfigRoutes } from "./agent-config-manager.js";
 import { initBrandConfigCache, getBrandForStoreSync, getBrandConfigSync } from './utils/brand-config-loader.js';
@@ -1839,6 +1840,13 @@ registerAgentDataCenterRoutes(app, authRequired, {
   pool: agentPool,
   getAgentPerformanceMetrics,
   cronJobLabelZh,
+});
+registerAgentOpsRoutes(app, authRequired, {
+  pool: agentPool,
+  getAgentPerformanceMetrics,
+  runAgentEvalSuite,
+  getScheduledTaskStatus,
+  clearAgentCache,
 });
 registerAgentRoutes(app, authRequired);
 registerAgentConfigRoutes(app, authRequired);

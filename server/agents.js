@@ -11888,7 +11888,7 @@ export function clearAgentCache() {
   console.log('[agents] Cache cleared');
 }
 
-async function runAgentEvalSuite({ createdBy = '', suiteName = 'default', tenantId = 'default' } = {}) {
+export async function runAgentEvalSuite({ createdBy = '', suiteName = 'default', tenantId = 'default' } = {}) {
   const rows = [];
   for (const c of AGENT_EVAL_CASES) {
     let routed = 'general';
@@ -12031,154 +12031,8 @@ export function registerAgentRoutes(app, authRequired) {
   // dashboard / brief / activity-detail / score-provenance / employee-live-dashboard
   // → server/domains/agent-data-center/（由 index.js 注册）
 
-  // ── Performance Monitoring API ──
-  app.get('/api/agents/performance', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    try {
-      const metrics = getAgentPerformanceMetrics();
-      res.json({ metrics });
-    } catch (e) {
-      res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
-
-  app.post('/api/agents/eval-suite/run', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    try {
-      const suiteName = String(req.body?.suiteName || 'default').trim() || 'default';
-      const result = await runAgentEvalSuite({ createdBy: String(req.user?.username || ''), suiteName, tenantId: req.tenantId || req.user?.tenant_id || 'default' });
-      return res.json({ ok: true, result });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
-
-  app.get('/api/agents/eval-suite/runs', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    const limit = Math.max(1, Math.min(50, Number(req.query?.limit) || 10));
-    try {
-      const r = await pool().query(
-        `SELECT id, suite_name, summary, created_by, created_at
-         FROM agent_eval_runs
-         WHERE tenant_id = $2
-         ORDER BY created_at DESC
-         LIMIT $1`,
-        [limit, req.tenantId || req.user?.tenant_id || 'default']
-      );
-      return res.json({ items: r.rows || [] });
-    } catch (e) {
-      return res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
-
-  app.get('/api/agents/autonomous-tasks', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    const username = String(req.user?.username || '').trim();
-    const status = String(req.query?.status || 'open').trim();
-    const limit = Math.max(1, Math.min(200, Number(req.query?.limit) || 50));
-    try {
-      const params = [];
-      const push = (v) => { params.push(v); return `$${params.length}`; };
-      const where = [];
-      if (status && status !== 'all') where.push(`status = ${push(status)}`);
-      if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) {
-        where.push(`(owner_username = ${push(username)} OR requester_username = ${push(username)})`);
-      }
-      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
-      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-      const r = await pool().query(
-        `SELECT id, task_type, status, store, brand, requester_username, route, reason, owner_username, notify_count, due_at, created_at, updated_at
-         FROM agent_autonomous_tasks
-         ${whereSql}
-         ORDER BY updated_at DESC
-         LIMIT ${push(limit)}`,
-        params
-      );
-      return res.json({ items: r.rows || [] });
-    } catch (e) {
-      return res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
-
-  app.post('/api/agents/autonomous-tasks/:id/resolve', authRequired, async (req, res) => {
-    const id = String(req.params?.id || '').trim();
-    if (!id) return res.status(400).json({ error: 'missing_id' });
-    const role = String(req.user?.role || '').trim();
-    const username = String(req.user?.username || '').trim();
-    const note = String(req.body?.note || '').trim();
-    try {
-      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
-      const owned = await pool().query(`SELECT owner_username, requester_username FROM agent_autonomous_tasks WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tenantIdQ]);
-      const row = owned.rows?.[0] || {};
-      const allowed = ['admin', 'hq_manager', 'hr_manager'].includes(role)
-        || String(row.owner_username || '') === username
-        || String(row.requester_username || '') === username;
-      if (!allowed) return res.status(403).json({ error: 'forbidden' });
-
-      await pool().query(
-        `UPDATE agent_autonomous_tasks
-         SET status = 'resolved',
-             action_plan = jsonb_set(COALESCE(action_plan, '{}'::jsonb), '{resolutionNote}', to_jsonb($1::text), true),
-             updated_at = NOW()
-         WHERE id = $2 AND tenant_id = $3`,
-        [note || 'resolved', id, tenantIdQ]
-      );
-      return res.json({ ok: true });
-    } catch (e) {
-      return res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
-
-  app.get('/api/agents/quality-audits', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    const limit = Math.max(1, Math.min(200, Number(req.query?.limit) || 50));
-    const route = String(req.query?.route || '').trim();
-    try {
-      const params = [];
-      const push = (v) => { params.push(v); return `$${params.length}`; };
-      const where = [];
-      if (route) where.push(`route = ${push(route)}`);
-      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
-      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-      const r = await pool().query(
-        `SELECT id, route, username, query_text, passed, rewrite_count, created_at
-         FROM agent_quality_audits
-         ${whereSql}
-         ORDER BY created_at DESC
-         LIMIT ${push(limit)}`,
-        params
-      );
-      return res.json({ items: r.rows || [] });
-    } catch (e) {
-      return res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
-
-  app.get('/api/agents/scheduler-status', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    try {
-      res.json({ scheduler: getScheduledTaskStatus() });
-    } catch (e) {
-      res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
-
-  // ── Clear Cache API ──
-  app.post('/api/agents/clear-cache', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    try {
-      clearAgentCache();
-      return res.json({ ok: true, message: 'Cache cleared successfully' });
-    } catch (e) {
-      return res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
+  // performance / eval / autonomous-tasks / quality-audits / scheduler / clear-cache
+  // → server/domains/agent-ops/（由 index.js 注册）
 
   // ── Issues list ──
   app.get('/api/agents/issues', authRequired, async (req, res) => {
