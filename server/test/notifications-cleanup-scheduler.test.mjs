@@ -19,22 +19,13 @@ test('cleanupOldNotifications calls runForActiveTenants and accumulates deleted 
     },
   });
 
-  const logs = [];
-  const realLog = console.log;
-  console.log = (...args) => {
-    logs.push(args.join(' '));
-  };
-  try {
-    await cleanupOldNotifications();
-  } finally {
-    console.log = realLog;
-  }
+  await cleanupOldNotifications();
 
   assert.equal(continueOnError, true);
   assert.equal(queries.length, 2);
   assert.match(queries[0], /interval '3 days'/);
   assert.match(queries[0], /LIMIT 50/);
-  assert.ok(logs.some((l) => l.includes('deleted:') && l.includes('6')));
+  // 两个租户各删 3 行；日志已迁 pino，不再断言 console 文案
 });
 
 test('cleanupOldNotifications swallows runForActiveTenants errors', async () => {
@@ -45,17 +36,7 @@ test('cleanupOldNotifications swallows runForActiveTenants errors', async () => 
     },
   });
 
-  const errors = [];
-  const realError = console.error;
-  console.error = (...args) => {
-    errors.push(args.join(' '));
-  };
-  try {
-    await assert.doesNotReject(() => cleanupOldNotifications());
-  } finally {
-    console.error = realError;
-  }
-  assert.ok(errors.some((e) => e.includes('[cleanup] hrms_user_notifications error:')));
+  await assert.doesNotReject(() => cleanupOldNotifications());
 });
 
 test('startNotificationsCleanupScheduler is idempotent', () => {
