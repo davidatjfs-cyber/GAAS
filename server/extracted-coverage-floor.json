@@ -80,6 +80,15 @@
     "domains/growth-stored-value/helpers.js",
     "domains/growth-actions/helpers.js",
     "domains/growth-sms/health.js",
-    "domains/notifications/scheduler-freshness.js"
+    "domains/notifications/scheduler-freshness.js",
+    "domains/health/web-static.js",
+    "domains/payroll/domain-sync.js",
+    "domains/ops-tasks/templates.js",
+    "domains/agent-message/ops-supervisor-helpers.js",
+    "domains/agent-message/post-route-quality.js",
+    "domains/agent-message/evaluator-helpers.js",
+    "domains/flow-config/reconcile.js",
+    "domains/employees/account-gate.js",
+    "domains/employees/pick-usernames.js"
   ]
 }

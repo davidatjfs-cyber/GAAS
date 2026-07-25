@@ -102,3 +102,47 @@ test('upsert* no-ops on non-object state', async () => {
   await helpers.upsertLeaveDomainFromState(undefined);
   assert.equal(calls, 0);
 });
+
+test('schedulePayroll/LeaveDomainSync：成功 upsert；失败告警', async () => {
+  const notified = [];
+  let payrollQ = 0;
+  let leaveQ = 0;
+  const helpers = createPayrollLeaveDomainSyncHelpers({
+    pool: {
+      async query(sql) {
+        if (/hrms_payroll_domain/.test(sql)) payrollQ += 1;
+        if (/hrms_leave_domain/.test(sql)) leaveQ += 1;
+      },
+    },
+    resolveTenantIdDefault: () => 'default',
+    getSharedState: async () => ({ payrollAdjustments: { x: 1 }, leaveBalanceOverrides: { a: 1 } }),
+    notifyAdminsDualWriteFailure: (scope) => {
+      notified.push(scope);
+    },
+  });
+  helpers.schedulePayrollDomainSync();
+  helpers.scheduleLeaveDomainSync();
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(payrollQ, 1);
+  assert.equal(leaveQ, 1);
+
+  const fail = createPayrollLeaveDomainSyncHelpers({
+    pool: {
+      async query() {
+        throw new Error('pg');
+      },
+    },
+    resolveTenantIdDefault: () => 'default',
+    getSharedState: async () => ({ payrollAdjustments: {} }),
+    notifyAdminsDualWriteFailure: (scope) => {
+      notified.push(scope);
+    },
+  });
+  fail.schedulePayrollDomainSync();
+  fail.scheduleLeaveDomainSync();
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.ok(notified.some((s) => /payroll/.test(s)));
+  assert.ok(notified.some((s) => /leave/.test(s)));
+});
