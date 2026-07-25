@@ -92,6 +92,15 @@
     "domains/employees/pick-usernames.js",
     "domains/agent-message/training-flow.js",
     "domains/growth-sms/reconcile.js",
-    "domains/shared/mirror-reconcile-scheduler.js"
+    "domains/shared/mirror-reconcile-scheduler.js",
+    "domains/agent-message/bi-deterministic-cascade.js",
+    "domains/agent-message/quality-helpers.js",
+    "domains/shared/state-dual-write.js",
+    "domains/shared/mirror-tx.js",
+    "domains/shared/state-only-integrity.js",
+    "domains/growth-ops/helpers.js",
+    "domains/employees/mirror-tx.js",
+    "domains/reports/helpers.js",
+    "domains/inventory-forecast/ai-forecast.js"
   ]
 }
