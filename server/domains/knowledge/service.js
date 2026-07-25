@@ -9,6 +9,7 @@ import { execFileSync } from 'child_process';
 import axios from 'axios';
 import { ragUpdateScope } from '../../rag-tool.js';
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from '../../utils/logger.js';
 import {
   normalizeCreatedByUuid,
   normalizeKnowledgeGroupName,
@@ -18,6 +19,8 @@ import {
   canViewerSeeKnowledgeAudience,
   resolveUploadsFile,
 } from './helpers.js';
+
+const log = childLogger({ domain: 'knowledge', handler: 'service' });
 
 async function resolveKnowledgeGroupName(pool, groupId, providedName, fallbackName) {
   const named = normalizeKnowledgeGroupName(providedName);
@@ -573,7 +576,7 @@ export async function deleteGroup(ctx, { role, groupId }) {
             if (fs.existsSync(abs)) fs.unlinkSync(abs);
           }
         } catch (e) {
-          console.log('knowledge group delete file cleanup (non-fatal):', e?.message || e);
+          log.warn({ msg: 'knowledge_group_delete_file_cleanup_failed', err: e?.message || String(e) });
         }
       }
       await pool.query('DELETE FROM knowledge_base WHERE group_id = $1::uuid', [groupId]);
@@ -611,7 +614,7 @@ export async function deleteKnowledge(ctx, { role, id }) {
             if (fs.existsSync(abs)) fs.unlinkSync(abs);
           }
         } catch (e) {
-          console.log('knowledge delete file cleanup (non-fatal):', e?.message || e);
+          log.warn({ msg: 'knowledge_delete_file_cleanup_failed', err: e?.message || String(e) });
         }
       }
 
@@ -829,7 +832,11 @@ export async function batchUploadKnowledge(ctx, { role, files, body, username, u
               try { fs.unlinkSync(localPath); } catch (e) { /* ignore */ }
             }
           } catch (e) {
-            console.log('Batch knowledge cloud upload failed for', insertedId, e?.message || e);
+            log.warn({
+              msg: 'knowledge_batch_cloud_upload_failed',
+              knowledge_id: insertedId,
+              err: e?.message || String(e),
+            });
           }
         })(r.rows?.[0]?.id, String(f.path || ''), String(normalizedOriginalName || ''), String(f.mimetype || ''));
       } catch (e) {
@@ -1324,7 +1331,7 @@ export async function runCreateKnowledgeBackground(ctx, { inserted, localPath, t
           fs.unlinkSync(localPath);
         } catch (e) { /* ignore */ }
       } catch (e) {
-        console.log('Async knowledge cloud upload failed:', e?.message || e);
+        log.warn({ msg: 'knowledge_async_cloud_upload_failed', err: e?.message || String(e) });
       }
     
 }

@@ -1806,3 +1806,113 @@ test('promotion.afterDecide：oldSalary=0 跳过 timeline 仍调 next-month；�
   });
   assert.ok(rej.notifs.some((n) => n.title === '晋升申请未通过'));
 });
+
+test('onboarding.afterDecide：正薪 + joinDate 回落 hrmsNow；有店长进通知名单', async () => {
+  const timeline = [];
+  const { deps, merges } = makeDeps({
+    state: {
+      employees: [
+        { username: 'sm1', store: '甲店', role: 'store_manager', name: '店长甲' },
+      ],
+    },
+  });
+  deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+    ok: true,
+    nextEmp: {
+      username: 'newpay',
+      name: '有薪',
+      role: 'store_employee',
+      department: '',
+      position: '',
+      store: '甲店',
+      managerUsername: 'mgr1',
+      salary: 8000,
+      joinDate: '',
+    },
+    newUsername: 'newpay',
+    empName: '有薪',
+    empPassword: 'Temp1234',
+  });
+  deps.bcrypt = { hash: async () => 'hash' };
+  deps.toNullableUuid = () => null;
+  deps.safeDateOnly = () => '';
+  deps.hrmsNowISO = () => '2026-07-26T09:00:00+08:00';
+  deps.insertSalaryTimeline = async (a) => {
+    timeline.push(a);
+  };
+  deps.safeErrMessage = (e) => String(e?.message || e);
+
+  await onboarding.afterDecide({
+    req: { tenantId: 'default' },
+    deps,
+    updated: {
+      id: 'onb-pay',
+      type: 'onboarding',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { employee: { name: '有薪' } },
+    },
+    username: 'a1',
+    decideExtras: {},
+  });
+  assert.equal(timeline.length, 1);
+  assert.equal(timeline[0].amount, 8000);
+  assert.equal(timeline[0].effectiveFrom, '2026-07-26');
+  const recipients = (merges.find((m) => Array.isArray(m.patch.notifications))?.patch.notifications || [])
+    .map((n) => n.u);
+  assert.ok(recipients.includes('sm1'));
+  assert.ok(recipients.includes('hr1'));
+  assert.ok(recipients.includes('mgr1'));
+});
+
+test('points.afterDecide：pointsAppliedApprovals 缺失仍入账；空 approvalId 不误判已应用', async () => {
+  const { deps, ledgerCalls, merges } = makeDeps({
+    state: {},
+  });
+  await points.afterDecide({
+    req: { tenantId: 'default', user: { username: 'approver1' } },
+    deps,
+    updated: {
+      id: '',
+      type: 'points',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: { points: 3, itemName: '空ID积分', store: '测试店' },
+    },
+  });
+  assert.equal(ledgerCalls.length, 1);
+  assert.equal(ledgerCalls[0][0].points, 3);
+  assert.ok(merges.some((m) => m.patch.pointsAppliedApprovals?.[''] === true));
+});
+
+test('promotion.afterDecide：pending 且 nextAssignee 无档案 → 不附带教提示', async () => {
+  const { deps, notifs } = makeDeps();
+  deps.stateFindUserRecord = () => null;
+  deps.findUserSalary = () => null;
+  deps.insertSalaryTimeline = async () => {};
+  deps.applyPromotionSalaryNextMonth = async () => {};
+  deps.getPromotionRequiredTopics = async () => [];
+  deps.getPromotionTrackProgress = async () => ({ items: [] });
+  deps.createTrainingAssignment = async () => {};
+  deps.normalizePromotionTrainingPeriods = () => [];
+  deps.isKitchenByRoleOrPosition = () => false;
+  deps.pickHqManagerUsername = async () => '';
+  deps.pickStoreRoleUsernameByStore = () => '';
+
+  await promotion.afterDecide({
+    req: { tenantId: 'default' },
+    deps,
+    username: 'approver1',
+    nextAssignee: 'unknown_mgr',
+    updated: {
+      id: 'ap-pend-no-rec',
+      type: 'promotion',
+      status: 'pending',
+      applicant_username: 'emp1',
+      payload: { promotionStage: 'qualification' },
+    },
+  });
+  const n = notifs.find((x) => x.title === '晋升申请待审批');
+  assert.ok(n);
+  assert.equal(/带教人/.test(n.msg), false);
+});

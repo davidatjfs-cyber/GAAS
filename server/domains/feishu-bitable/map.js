@@ -1,3 +1,7 @@
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'feishu-bitable', handler: 'map' });
+
 export function stripAttachmentLikeFields(fields) {
   const src = fields && typeof fields === 'object' ? fields : {};
   const out = {};
@@ -175,10 +179,11 @@ export function mapFeishuFieldToHrms(feishuRecord, fieldType) {
     mapped.rushDishContent = pickText('今天催菜内容', '催菜内容');
     mapped.recordId = feishuRecord?.record_id;
 
-    console.log('[mapFeishuFieldToHrms] mapped required fields:', {
-      recordId: mapped.recordId,
-      mappedDate: mapped.date,
-      mappedStore: mapped.store
+    log.info({
+      msg: 'feishu_table_visit_mapped',
+      record_id: mapped.recordId || null,
+      mapped_date: mapped.date || null,
+      mapped_store: mapped.store || null,
     });
   }
 

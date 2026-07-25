@@ -1,6 +1,6 @@
 {
-  "updated": "2026-07-25",
-  "note": "domains/** 内 console.log 数量棘轮：只降不升。",
-  "maxCount": 25,
+  "updated": "2026-07-26",
+  "note": "domains/** 内 console.log 数量棘轮：只降不升。剩余均为 inventory-forecast 调试日志。",
+  "maxCount": 9,
   "scope": "server/domains"
 }

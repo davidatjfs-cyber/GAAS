@@ -4,9 +4,12 @@
 import axios from 'axios';
 import { getBrandForStoreSync } from '../../utils/brand-config-loader.js';
 import { maybeNotifyRegularCustomerFromPosOrder } from '../../pos-regular-arrival-feishu.js';
+import { childLogger } from '../../utils/logger.js';
 import { cleanText } from '../growth-phase-auth.js';
 import { linkPosOrdersToCustomers, refreshSalesGrowthSnapshot } from './ingest.js';
 import { cnDate, parseKeruyunDateTime, parseKeruyunPhone, parseNum } from './keruyun.js';
+
+const log = childLogger({ domain: 'growth-pos', handler: 'feishu-service' });
 
 const ORDERS_FIELD_MAP = {
   编号: 'seq_no',
@@ -298,9 +301,13 @@ export async function syncPosFromFeishu(pool, tenantId, { config: override = nul
       }
       const records = rd.data?.items || [];
       itemsPageCount++;
-      console.log(
-        `[pos-feishu-sync] items page ${itemsPageCount}: got ${records.length} records, has_more=${rd.data?.has_more}, total=${rd.data?.total}`
-      );
+      log.info({
+        msg: 'pos_feishu_items_page',
+        page: itemsPageCount,
+        records: records.length,
+        has_more: !!rd.data?.has_more,
+        total: rd.data?.total ?? null,
+      });
 
       for (const rec of records) {
         const f = rec.fields || {};

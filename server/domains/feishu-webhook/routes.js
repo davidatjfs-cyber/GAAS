@@ -1,7 +1,10 @@
 /**
  * Feishu webhook HTTP endpoint (Wave 4q — behavior-preserving extract from index.js ~8348–8459).
  */
+import { childLogger } from '../../utils/logger.js';
 import { processFeishuDataChange } from './process-data-change.js';
+
+const log = childLogger({ domain: 'feishu-webhook', handler: 'routes' });
 
 /**
  * @param {import('express').Express} app
@@ -50,7 +53,10 @@ export function registerFeishuWebhookRoutes(app, deps) {
 
   app.post('/api/webhook/feishu', express.raw({ type: 'application/json' }), async (req, res) => {
     if (!isWebhookEnabled()) return res.status(404).send('Not found');
-    console.log('[Feishu Webhook] Received request:', req.headers['x-lark-request-timestamp']);
+    log.info({
+      msg: 'feishu_webhook_received',
+      request_timestamp: req.headers['x-lark-request-timestamp'] || null,
+    });
 
     try {
       const body = req.body;
@@ -72,13 +78,13 @@ export function registerFeishuWebhookRoutes(app, deps) {
         requireSignature: requireWebhookSignature(),
       });
       if (!sigCheck.ok) {
-        console.warn('[Feishu Webhook] signature/token rejected:', sigCheck.reason);
+        log.warn({ msg: 'feishu_webhook_sig_rejected', reason: sigCheck.reason || null });
         return res.status(401).json({ code: 401, message: sigCheck.reason || 'unauthorized' });
       }
       if (sigCheck.mode === 'skipped' && requireWebhookSignature() === false && (encryptKey || verificationToken)) {
         // 非强制模式：有密钥但未带签名时仅告警，保持现网兼容
         if (!req.headers['x-lark-signature']) {
-          console.warn('[Feishu Webhook] signature skipped (REQUIRE_WEBHOOK_SIGNATURE!=true)');
+          log.warn({ msg: 'feishu_webhook_sig_skipped' });
         }
       }
 
@@ -89,7 +95,7 @@ export function registerFeishuWebhookRoutes(app, deps) {
           const parsed = tryParseJson(decrypted);
           if (parsed) data = parsed;
         } catch (e) {
-          console.error('[Feishu Webhook] decrypt failed:', e?.message || e);
+          log.error({ msg: 'feishu_webhook_decrypt_failed', err: e?.message || String(e) });
           return res.status(400).json({ code: 400, message: 'decrypt_failed' });
         }
       }
@@ -104,7 +110,7 @@ export function registerFeishuWebhookRoutes(app, deps) {
 
       // URL验证模式（飞书首次配置webhook时）
       if (data.type === 'url_verification') {
-        console.log('[Feishu Webhook] URL verification challenge:', data.challenge);
+        log.info({ msg: 'feishu_webhook_url_verification' });
         return res.json({ challenge: data.challenge });
       }
 
@@ -129,7 +135,7 @@ export function registerFeishuWebhookRoutes(app, deps) {
             try {
               await processFeishuDataChange(event, logId, dataChangeCtx);
             } catch (error) {
-              console.error('[Feishu Webhook] Async processing error:', error);
+              log.error({ msg: 'feishu_webhook_async_failed', err: safeErrMessage(error) });
               await pool.query(
                 'update feishu_sync_logs set sync_status = $1, error_message = $2, processed_at = now() where id = $3',
                 ['failed', safeErrMessage(error), logId]
@@ -147,15 +153,15 @@ export function registerFeishuWebhookRoutes(app, deps) {
         const resp = await onFeishuEvent(data);
         return res.json(resp || { ok: true });
       } catch (e) {
-        console.error('[Feishu Webhook] onFeishuEvent error:', e?.message || e);
+        log.error({ msg: 'feishu_webhook_on_event_failed', err: e?.message || String(e) });
         return res.status(500).json({ code: 500, message: 'agent_error' });
       }
 
-      // 其他事件类型
-      console.log('[Feishu Webhook] Unhandled event type:', data.header?.event_type);
+      // 其他事件类型（onFeishuEvent 正常返回后不可达；保留以防未来改动）
+      log.info({ msg: 'feishu_webhook_unhandled_event', event_type: data.header?.event_type || null });
       return res.json({ code: 0, message: 'ignored' });
     } catch (error) {
-      console.error('[Feishu Webhook] Error:', error);
+      log.error({ msg: 'feishu_webhook_failed', err: error?.message || String(error) });
       return res.status(500).json({ code: 500, message: 'internal error' });
     }
   });

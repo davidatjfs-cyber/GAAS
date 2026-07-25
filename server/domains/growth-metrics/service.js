@@ -1,7 +1,10 @@
 /**
  * Growth metrics / events / alerts / ABC distribution — pure logic (no req/res).
  */
+import { childLogger } from '../../utils/logger.js';
 import { cleanText, cleanPhone, parseOccurredAt, EVENT_TYPES } from './helpers.js';
+
+const log = childLogger({ domain: 'growth-metrics', handler: 'service' });
 
 export async function recomputeDailyMetrics(pool, days = 7) {
   const safeDays = Math.min(Math.max(Number(days) || 7, 1), 90);
@@ -179,12 +182,13 @@ export async function ingestMiniprogramEvent(ctx, { body, req }) {
             [customer?.id, matchPhone]
           );
           if (wwMatch.rows.length) {
-            console.log(
-              `[growth] wechat_work customer matched: phone=${matchPhone}, customer_id=${customer?.id}`
-            );
+            log.info({
+              msg: 'growth_wechat_work_customer_matched',
+              customer_id: customer?.id || null,
+            });
           }
         } catch (e) {
-          console.warn('[growth] wechat_work match failed:', e?.message);
+          log.warn({ msg: 'growth_wechat_work_match_failed', err: e?.message });
         }
       }
 
@@ -196,7 +200,7 @@ export async function ingestMiniprogramEvent(ctx, { body, req }) {
       body: { ok: true, inserted: result.inserted, customer_id: result.customer_id },
     };
   } catch (e) {
-    console.error('[growth] miniprogram event failed:', e?.message || e);
+    log.error({ msg: 'growth_miniprogram_event_failed', err: e?.message || String(e) });
     return { status: 500, body: { ok: false, error: 'server_error' } };
   }
 }

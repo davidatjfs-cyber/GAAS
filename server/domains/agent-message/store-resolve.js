@@ -2,11 +2,14 @@
  * handleAgentMessage 门店解析（HQ 文本提及 + data_auditor canonical）。
  */
 import { STORE_CANONICAL_MAP } from '../../brands-config.js';
+import { childLogger } from '../../utils/logger.js';
 import {
   brandPrefixFromText,
   resolveStoreFromCanonicalMap,
   resolveStoreFromKnownList,
 } from './helpers.js';
+
+const log = childLogger({ domain: 'agent-message', handler: 'store-resolve' });
 
 /**
  * HQ/admin：从 feishu_users 已知门店列表解析文本中的门店。
@@ -48,11 +51,18 @@ export async function resolveDataAuditorStore(pool, opts) {
   if (overridden && textMentionedStore) {
     const mentionedBrand = opts.inferBrandFromStoreName(textMentionedStore);
     if (mentionedBrand && mentionedBrand !== opts.inferBrandFromStoreName(opts.boundStore)) {
-      console.log(
-        `[data_auditor] store override from text: ${opts.boundStore} → ${resolvedStore} (brand: ${mentionedBrand})`
-      );
+      log.info({
+        msg: 'data_auditor_store_override',
+        from_store: opts.boundStore,
+        to_store: resolvedStore,
+        brand: mentionedBrand,
+      });
     } else {
-      console.log(`[data_auditor] store resolved from text: ${opts.boundStore} → ${resolvedStore}`);
+      log.info({
+        msg: 'data_auditor_store_resolved_from_text',
+        from_store: opts.boundStore,
+        to_store: resolvedStore,
+      });
     }
   }
 
@@ -70,7 +80,11 @@ export async function resolveDataAuditorStore(pool, opts) {
       /* ignore */
     }
     if (resolvedStore && resolvedStore !== '总部') {
-      console.log(`[data_auditor] HQ store fallback: ${opts.boundStore} → ${resolvedStore}`);
+      log.info({
+        msg: 'data_auditor_hq_store_fallback',
+        from_store: opts.boundStore,
+        to_store: resolvedStore,
+      });
     }
   }
   return resolvedStore;
@@ -92,11 +106,11 @@ export async function maybeInheritRecentRoute(pool, senderUsername, currentRoute
     );
     if (lastRouteResult.rows?.length) {
       const route = lastRouteResult.rows[0].routed_to;
-      console.log(`[route] Inherited recent route: ${route}`);
+      log.info({ msg: 'agent_route_inherited', route });
       return route;
     }
   } catch (e) {
-    console.error('[route] inherit route error:', e?.message);
+    log.error({ msg: 'agent_route_inherit_failed', err: e?.message });
   }
   return currentRoute;
 }

@@ -1,3 +1,7 @@
+import { childLogger } from '../../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'points' });
+
 export async function beforeUpdate(_ctx) {}
 
 export async function afterDecide(ctx) {
@@ -116,7 +120,7 @@ export async function afterDecide(ctx) {
             });
           }
         } catch (ledPtsErr) {
-          console.error('[points] payroll ledger failed:', ledPtsErr?.message);
+          log.error({ msg: 'points_payroll_ledger_failed', err: ledPtsErr?.message });
         }
 
         await mergeSharedStateFields({
@@ -142,7 +146,7 @@ export async function afterDecide(ctx) {
             );
           }
         } catch (e2) {
-          console.error('[point_records] dual-write failed (non-fatal):', e2?.message);
+          log.error({ msg: 'point_records_dual_write_failed', err: e2?.message });
           void notifyAdminsDualWriteFailure('point_records（积分审批双写）', e2);
         }
       }

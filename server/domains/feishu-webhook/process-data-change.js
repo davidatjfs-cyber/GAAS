@@ -2,6 +2,10 @@
  * Feishu bitable.record.changed async handler (Wave 4q — behavior-preserving extract from index.js ~8461–8639).
  * ctx 字段均为 index 本地函数或从 feishu-sync / utils/database 等模块注入。
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'feishu-webhook', handler: 'process-data-change' });
+
 export async function processFeishuDataChange(event, logId, ctx) {
   const {
     pool,
@@ -45,7 +49,7 @@ export async function processFeishuDataChange(event, logId, ctx) {
       const configKey = findConfigKeyByTableInfo(appToken, tableId);
       await upsertFeishuGenericRecord({ appToken, tableId, record, configKey });
     } catch (e) {
-      console.log('[processFeishuDataChange] generic upsert failed:', e?.message || e);
+      log.error({ msg: 'feishu_generic_upsert_failed', err: e?.message || String(e) });
       void notifyAdminsDualWriteFailure(
         `飞书 Webhook → feishu_generic_records（table ${String(tableId || '').slice(0, 16)} record ${String(recordId || '').slice(0, 24)}）`,
         e
@@ -76,7 +80,7 @@ export async function processFeishuDataChange(event, logId, ctx) {
         logId,
       ]);
 
-      console.log('[Feishu Webhook] Data synced successfully:', hrmsData.recordId);
+      log.info({ msg: 'feishu_table_visit_synced', record_id: hrmsData.recordId || null });
     } else {
       throw new Error('Missing required fields: date or store');
     }
