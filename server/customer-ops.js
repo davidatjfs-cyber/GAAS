@@ -18,6 +18,10 @@ import { runDailyDiagnosis } from './ontology/diagnosis-tree-service.js';
 import { ensureGrowthOntologyCore } from './ontology/growth-ontology-schema.js';
 import { tenantContext } from './utils/database.js';
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'customer-ops', handler: 'service' });
+
 
 const PYTHON_BIN = process.env.CUSTOMER_OPS_PYTHON_BIN || process.env.CODEX_PYTHON_BIN || 'python3';
 
@@ -71,7 +75,7 @@ async function resolveCustomerOpsStoreFilter(pool, tenantId, rawStoreId = '') {
     const r = await pool.query(`SELECT data->'stores' AS stores FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 LIMIT 1`, [tenantId || 'default']);
     stateStores = Array.isArray(r.rows?.[0]?.stores) ? r.rows[0].stores : [];
   } catch (e) {
-    console.warn('[customer-ops] store state lookup skipped:', e?.message);
+    log.warn({ msg: 'customer_ops_store_state_lookup_skipped', err: e?.message });
   }
 
   const stateStore = stateStores.find((s) => cleanText(s?.id, 120) === raw || cleanText(s?.name, 160) === raw || cleanText(s?.brandName || s?.brand, 160) === raw);
@@ -103,7 +107,7 @@ async function resolveCustomerOpsStoreFilter(pool, tenantId, rawStoreId = '') {
       LIMIT 20`, [candidates, patterns]);
     posRows = r.rows || [];
   } catch (e) {
-    console.warn('[customer-ops] POS store lookup skipped:', e?.message);
+    log.warn({ msg: 'customer_ops_pos_store_lookup_skipped', err: e?.message });
   }
 
   const posStoreIds = uniqueClean([...posRows.map((r) => r.store_id), configuredId, raw]);
@@ -688,7 +692,7 @@ async function saveCampaignResultAsLearning(pool, tenantId, campaign, result) {
       confidence,
       tenantId,
     ]
-  ).catch((e) => console.warn('[customer-ops] save learning failed:', e?.message));
+  ).catch((e) => log.warn({ msg: 'customer_ops_save_learning_failed', err: e?.message }));
 }
 
 function maskAttributionPhone(phone) {
@@ -737,7 +741,7 @@ async function buildAttributionReport(pool, tenantId, opts = {}) {
   const storeFilter = await resolveCustomerOpsStoreFilter(pool, tenantId, storeId);
 
   await ensureCustomerOpsTables(pool);
-  await syncAutoCampaignsFromDeliveryLogs(pool, tenantId).catch((e) => console.warn('[customer-ops] auto campaign sync failed:', e?.message));
+  await syncAutoCampaignsFromDeliveryLogs(pool, tenantId).catch((e) => log.warn({ msg: 'customer_ops_auto_campaign_sync_failed', err: e?.message }));
 
   const touchParams = [tenantId, dateFrom, dateTo, storeFilter.posStoreIds, storeId];
   const touchesSql = `
@@ -968,7 +972,7 @@ async function safeReportQuery(pool, sql, params = [], fallback = []) {
     const r = await pool.query(sql, params);
     return r.rows || [];
   } catch (e) {
-    console.warn('[customer-ops] report query skipped:', e?.message);
+    log.warn({ msg: 'customer_ops_report_query_skipped', err: e?.message });
     return fallback;
   }
 }
@@ -1725,7 +1729,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
           ontologySync.stores_diagnosed = storeIds.length;
         }
       } catch (e) {
-        console.warn('[customer-ops] pos_orders/ontology sync skipped:', e?.message);
+        log.warn({ msg: 'customer_ops_pos_orders_ontology_sync_skipped', err: e?.message });
       }
       res.json({ ok: true, diagnosis_id: diagnosisId, imported_records: batchRecords.length, merged_records: orders.length, pos_sync: posSync, ontology_sync: ontologySync, report: { ...report, customers: undefined } });
     } catch (e) {
@@ -1990,7 +1994,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
     try {
       await ensureCustomerOpsTables(pool);
       const tenantId = getTenantId(req);
-      await syncAutoCampaignsFromDeliveryLogs(pool, tenantId).catch((e) => console.warn('[customer-ops] auto campaign sync failed:', e?.message));
+      await syncAutoCampaignsFromDeliveryLogs(pool, tenantId).catch((e) => log.warn({ msg: 'customer_ops_auto_campaign_sync_failed', err: e?.message }));
       const status = cleanText(req.query.status || '', 20);
       const dateFrom = cleanText(req.query.date_from || '', 20);
       const dateTo = cleanText(req.query.date_to || '', 20);
@@ -2061,7 +2065,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       });
       res.json(report);
     } catch (e) {
-      console.error('[customer-ops] attribution report failed:', e);
+      log.error({ msg: 'customer_ops_attribution_report_failed', err: e?.message || String(e) });
       res.status(500).json({ ok: false, error: e?.message || 'attribution_report_failed' });
     }
   });
@@ -2079,7 +2083,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       enriched.customerNonExecution = await buildExecutionLedger(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, dateFrom: req.query.date_from, dateTo: req.query.date_to }).catch((e) => ({ ok: false, statement: e?.message || 'ledger_unavailable', items: [] }));
       res.json({ ...report, report: enriched });
     } catch (e) {
-      console.error('[customer-ops] customer asset report failed:', e);
+      log.error({ msg: 'customer_ops_customer_asset_report_failed', err: e?.message || String(e) });
       res.status(500).json({ ok: false, error: e?.message || 'customer_asset_report_failed' });
     }
   });
@@ -2097,7 +2101,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       enriched.customerNonExecution = await buildExecutionLedger(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, dateFrom: req.query.date_from, dateTo: req.query.date_to }).catch((e) => ({ ok: false, statement: e?.message || 'ledger_unavailable', items: [] }));
       res.json({ ...report, report: enriched });
     } catch (e) {
-      console.error('[customer-ops] ops rectification report failed:', e);
+      log.error({ msg: 'customer_ops_ops_rectification_report_failed', err: e?.message || String(e) });
       res.status(500).json({ ok: false, error: e?.message || 'ops_rectification_report_failed' });
     }
   });
@@ -2115,7 +2119,7 @@ export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploa
       enriched.customerNonExecution = await buildExecutionLedger(pool, { tenantId: getTenantId(req), storeId: req.query.store_id || req.query.storeId, dateFrom: req.query.date_from, dateTo: req.query.date_to }).catch((e) => ({ ok: false, statement: e?.message || 'ledger_unavailable', items: [] }));
       res.json({ ...report, report: enriched });
     } catch (e) {
-      console.error('[customer-ops] talent growth report failed:', e);
+      log.error({ msg: 'customer_ops_talent_growth_report_failed', err: e?.message || String(e) });
       res.status(500).json({ ok: false, error: e?.message || 'talent_growth_report_failed' });
     }
   });

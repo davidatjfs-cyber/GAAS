@@ -21,6 +21,10 @@ import {
   getAllTags,
   validatePOSSalesFile
 } from './file-manager.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'file-routes', handler: 'routes' });
+
 
 const router = express.Router();
 
@@ -57,7 +61,7 @@ router.get('/files', async (req, res) => {
     const result = await listFiles(filters, pagination);
     res.json({ ok: true, ...result });
   } catch (e) {
-    console.error('[file-routes] GET /files error:', e);
+    log.error({ msg: 'file_routes_get_files_error', err: e?.message || String(e) });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -124,7 +128,7 @@ router.post('/files/upload', upload.single('file'), async (req, res) => {
       message: '文件上传成功'
     });
   } catch (e) {
-    console.error('[file-routes] POST /files/upload error:', e);
+    log.error({ msg: 'file_routes_post_files_upload_error', err: e?.message || String(e) });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -140,7 +144,7 @@ router.get('/files/:fileId', async (req, res) => {
     
     res.json({ ok: true, file });
   } catch (e) {
-    console.error('[file-routes] GET /files/:fileId error:', e);
+    log.error({ msg: 'file_routes_get_files_fileid_error', err: e?.message || String(e) });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -176,7 +180,7 @@ router.get('/files/:fileId/download', async (req, res) => {
     // 发送文件
     res.download(filePath, file.original_name);
   } catch (e) {
-    console.error('[file-routes] GET /files/:fileId/download error:', e);
+    log.error({ msg: 'file_routes_get_files_fileid_download_error', err: e?.message || String(e) });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -206,7 +210,7 @@ router.delete('/files/:fileId', async (req, res) => {
     
     res.json({ ok: true, message: '文件已删除' });
   } catch (e) {
-    console.error('[file-routes] DELETE /files/:fileId error:', e);
+    log.error({ msg: 'file_routes_delete_files_fileid_error', err: e?.message || String(e) });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -220,7 +224,7 @@ router.get('/files/tags/all', async (req, res) => {
     const tags = await getAllTags();
     res.json({ ok: true, tags });
   } catch (e) {
-    console.error('[file-routes] GET /files/tags/all error:', e);
+    log.error({ msg: 'file_routes_get_files_tags_all_error', err: e?.message || String(e) });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -262,7 +266,7 @@ router.post('/files/:fileId/validate', async (req, res) => {
       message: validationResult.passed ? '校验通过' : '校验失败'
     });
   } catch (e) {
-    console.error('[file-routes] POST /files/:fileId/validate error:', e);
+    log.error({ msg: 'file_routes_post_files_fileid_validate_error', err: e?.message || String(e) });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -305,7 +309,7 @@ router.post('/files/batch-download', async (req, res) => {
     
     archive.finalize();
   } catch (e) {
-    console.error('[file-routes] POST /files/batch-download error:', e);
+    log.error({ msg: 'file_routes_post_files_batch_download_error', err: e?.message || String(e) });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -349,7 +353,7 @@ router.get('/files/search', async (req, res) => {
       files: filesResult.rows
     });
   } catch (e) {
-    console.error('[file-routes] GET /files/search error:', e);
+    log.error({ msg: 'file_routes_get_files_search_error', err: e?.message || String(e) });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -373,7 +377,7 @@ router.post('/files/:fileId/link-task', async (req, res) => {
     
     res.json({ ok: true, message: '文件已关联到任务' });
   } catch (e) {
-    console.error('[file-routes] POST /files/:fileId/link-task error:', e);
+    log.error({ msg: 'file_routes_post_files_fileid_link_task_error', err: e?.message || String(e) });
     res.status(500).json({ ok: false, error: e.message });
   }
 });

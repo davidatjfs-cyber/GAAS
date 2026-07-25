@@ -3001,6 +3001,117 @@ test('points/onboarding/leave：occurMonth；feishuOpenId；拒绝无 note；申
   }
 });
 
+test('onboarding：空员工名失败日志；仅提交人通知；pending 默认新员工；外层吞错', async () => {
+  {
+    const decideExtras = {};
+    const { deps } = makeDeps({ state: {} });
+    deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+      ok: false,
+      reason: 'missing_name',
+    });
+    await onboarding.afterDecide({
+      req: {},
+      deps,
+      decideExtras,
+      updated: {
+        id: 'onb-noname',
+        type: 'onboarding',
+        status: 'approved',
+        applicant_username: 'hr1',
+        payload: { employee: {} },
+      },
+      username: 'a1',
+    });
+    assert.equal(decideExtras.onboardingEmployeeSync?.ok, false);
+    assert.equal(decideExtras.onboardingEmployeeSync?.reason, 'missing_name');
+  }
+  {
+    const { deps, merges } = makeDeps({
+      state: { employees: 'bad' },
+    });
+    deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+      ok: true,
+      nextEmp: {
+        username: 'solo1',
+        name: '独行',
+        role: 'store_employee',
+        store: '幽灵店',
+        department: 'd',
+        position: 'p',
+        salary: 3000,
+        joinDate: '2026-07-01',
+        managerUsername: '',
+      },
+      newUsername: 'solo1',
+      empName: '独行',
+      empPassword: 'pw',
+    });
+    deps.bcrypt = { hash: async () => 'h' };
+    deps.toNullableUuid = () => null;
+    deps.insertSalaryTimeline = async () => {};
+    deps.stateFindUserRecord = () => ({ username: 'hr1', name: '' });
+    const decideExtras = {};
+    await onboarding.afterDecide({
+      req: { tenantId: 'default' },
+      deps,
+      username: 'a1',
+      decideExtras,
+      updated: {
+        id: 'onb-solo',
+        type: 'onboarding',
+        status: 'approved',
+        applicant_username: 'hr1',
+        payload: { employee: { name: '独行' } },
+      },
+    });
+    const notifMerge = merges.find((m) => Array.isArray(m.patch.notifications));
+    assert.ok(notifMerge);
+    assert.equal(notifMerge.patch.notifications.length, 1);
+    assert.equal(notifMerge.patch.notifications[0].u, 'hr1');
+    assert.match(notifMerge.patch.notifications[0].msg, /独行/);
+  }
+  {
+    const { deps, notifs } = makeDeps();
+    deps.stateFindUserRecord = () => null;
+    await onboarding.afterDecide({
+      req: {},
+      deps,
+      nextAssignee: 'mgr1',
+      updated: {
+        id: 'onb-pend-default',
+        type: 'onboarding',
+        status: 'pending',
+        applicant_username: 'hr1',
+        payload: {},
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '新员工入职审批待处理' && /「新员工」/.test(n.msg)));
+  }
+  {
+    const { deps, notifs } = makeDeps();
+    deps.getSharedState = async () => {
+      throw new Error('boom');
+    };
+    await onboarding.afterDecide({
+      req: {},
+      deps,
+      nextAssignee: 'mgr1',
+      updated: {
+        id: 'onb-outer',
+        type: 'onboarding',
+        status: 'pending',
+        applicant_username: 'hr1',
+        payload: { employee: { name: '甲' } },
+      },
+    });
+    assert.equal(notifs.length, 0);
+  }
+  {
+    await points.beforeUpdate({});
+    await onboarding.beforeUpdate({});
+  }
+});
+
 test('leave/points：autoDays；payload.store；pending 多条；rejected 有 note', async () => {
   {
     const { deps, notifs, queries } = makeDeps({ state: { leaveRecords: [] } });

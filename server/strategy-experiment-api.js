@@ -7,6 +7,10 @@
 
 import { Router } from 'express';
 import { resolveAgentCanonicalStore } from './v2-store-alignment.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'strategy-experiment', handler: 'api' });
+
 
 export default function strategyExperimentRoutes(pool, authRequired) {
   const r = Router();
@@ -50,7 +54,7 @@ r.get('/api/strategy-experiments', authRequired, async (req, res) => {
 
     res.json({ ok: true, experiments: rows.rows, total: parseInt(total.rows[0]?.cnt || 0) });
   } catch (e) {
-    console.error('list strategy experiments failed:', e?.message);
+    log.error({ msg: 'list_strategy_experiments_failed', err: e?.message });
     res.status(500).json({ ok: false, error: e?.message });
   }
 });
@@ -71,7 +75,7 @@ r.get('/api/strategy-experiments/pending-for-store', authRequired, async (req, r
     `, [`%${canonical}%`]);
     res.json({ ok: true, variants: variants.rows });
   } catch (e) {
-    console.error('get pending variants failed:', e?.message);
+    log.error({ msg: 'get_pending_variants_failed', err: e?.message });
     res.status(500).json({ ok: false, error: e?.message });
   }
 });
@@ -83,7 +87,7 @@ r.get('/api/strategy-experiments/:code', authRequired, async (req, res) => {
     const variants = await pool.query(`SELECT * FROM strategy_variants WHERE experiment_id = $1 ORDER BY variant_code`, [exp.rows[0].id]);
     res.json({ ok: true, experiment: exp.rows[0], variants: variants.rows });
   } catch (e) {
-    console.error('get strategy experiment failed:', e?.message);
+    log.error({ msg: 'get_strategy_experiment_failed', err: e?.message });
     res.status(500).json({ ok: false, error: e?.message });
   }
 });
@@ -99,7 +103,7 @@ r.post('/api/strategy-experiments/:code/variants/:variant/start', authRequired, 
     `, [exp.rows[0].id, req.params.variant]);
     res.json({ ok: true });
   } catch (e) {
-    console.error('start variant failed:', e?.message);
+    log.error({ msg: 'start_variant_failed', err: e?.message });
     res.status(500).json({ ok: false, error: e?.message });
   }
 });
@@ -151,7 +155,7 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
 
     res.json({ ok: true });
   } catch (e) {
-    console.error('submit variant result failed:', e?.message);
+    log.error({ msg: 'submit_variant_result_failed', err: e?.message });
     res.status(500).json({ ok: false, error: e?.message });
   }
 });
@@ -183,7 +187,7 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
         });
         return res.json(resp.data);
       } catch (proxyErr) {
-        console.error('proxy approve to agents-service failed, falling back to local:', proxyErr?.message);
+        log.error({ msg: 'proxy_approve_to_agents_service_failed_falling_back_to_local', err: proxyErr?.message });
       }
 
       await pool.query(`
@@ -209,7 +213,7 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
       const variants = await pool.query(`SELECT * FROM strategy_variants WHERE experiment_id = $1 ORDER BY variant_code`, [exp.rows[0].id]);
       res.json({ ok: true, experiment: updated.rows[0], variants: variants.rows });
     } catch (e) {
-      console.error('approve experiment failed:', e?.message);
+      log.error({ msg: 'approve_experiment_failed', err: e?.message });
       res.status(500).json({ ok: false, error: e?.message });
     }
   });
@@ -227,7 +231,7 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
       const updated = await pool.query(`SELECT * FROM strategy_experiments WHERE id = $1`, [exp.rows[0].id]);
       res.json({ ok: true, experiment: updated.rows[0] });
     } catch (e) {
-      console.error('reject experiment failed:', e?.message);
+      log.error({ msg: 'reject_experiment_failed', err: e?.message });
       res.status(500).json({ ok: false, error: e?.message });
     }
   });
@@ -244,7 +248,7 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
       });
       res.json(resp.data);
     } catch (e) {
-      console.error('evaluate experiment failed:', e?.message);
+      log.error({ msg: 'evaluate_experiment_failed', err: e?.message });
       res.status(500).json({ ok: false, error: e?.message });
     }
   });
@@ -270,7 +274,7 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
 
     res.json({ ok: true });
   } catch (e) {
-    console.error('update variant result failed:', e?.message);
+    log.error({ msg: 'update_variant_result_failed', err: e?.message });
     res.status(500).json({ ok: false, error: e?.message });
   }
 });

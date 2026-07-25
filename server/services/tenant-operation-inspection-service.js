@@ -1,4 +1,8 @@
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'tenant-operation-inspection', handler: 'service' });
+
 const STATUS = {
   ok: '正常',
   abnormal: '异常',
@@ -154,7 +158,7 @@ async function tableExists(pool, table) {
     );
     return (r.rows || []).length > 0;
   } catch (e) {
-    console.warn('[tenant-inspection] tableExists failed:', table, e?.message || e);
+    log.warn({ msg: 'tenant_inspection_tableexists_failed', detail: [table, e?.message || e] });
     return false;
   }
 }
@@ -167,7 +171,7 @@ async function tableColumns(pool, table) {
     );
     return new Set((r.rows || []).map((row) => String(row.column_name || '').trim()).filter(Boolean));
   } catch (e) {
-    console.warn('[tenant-inspection] tableColumns failed:', table, e?.message || e);
+    log.warn({ msg: 'tenant_inspection_tablecolumns_failed', detail: [table, e?.message || e] });
     return new Set();
   }
 }
@@ -178,7 +182,7 @@ async function queryIfTable(pool, table, sql, params = []) {
     const r = await pool.query(sql, params);
     return { exists: true, rows: r.rows || [], error: null, evidence: { table_exists: true } };
   } catch (e) {
-    console.warn('[tenant-inspection] query failed:', table, e?.message || e);
+    log.warn({ msg: 'tenant_inspection_query_failed', detail: [table, e?.message || e] });
     return { exists: true, rows: [], error: String(e?.message || e), evidence: { table_exists: true, field_missing: String(e?.message || e) } };
   }
 }
@@ -199,7 +203,7 @@ async function resolveStoreIdFromHrmsState(pool, tenantId, storeId) {
     if (!name) return null;
     return { store_id: storeId, store_name: name };
   } catch (e) {
-    console.warn('[tenant-operation-inspection] hrms_state store lookup skipped:', e?.message);
+    log.warn({ msg: 'tenant_operation_inspection_hrms_state_store_lookup_skipped', err: e?.message });
     return null;
   }
 }
@@ -312,7 +316,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
       businessHoursByStore[name] = String(profile?.businessHours || '').trim();
     }
   } catch (e) {
-    console.warn('[tenant-inspection] chairman_config business hours lookup skipped:', e?.message);
+    log.warn({ msg: 'tenant_inspection_chairman_config_business_hours_lookup_skipped', err: e?.message });
   }
   try {
     const r2 = await pool.query(`SELECT data->'stores' AS stores FROM ${SHARED_TABLES.HRMS_STATE} WHERE key=$1 LIMIT 1`, [ctx.tenantId || 'default']);
@@ -322,7 +326,7 @@ async function checkBaseConfiguration(pool, ctx, stores) {
       if (hours && s?.name) businessHoursByStore[s.name] = hours;
     }
   } catch (e) {
-    console.warn('[tenant-inspection] store businessHours lookup skipped:', e?.message);
+    log.warn({ msg: 'tenant_inspection_store_businesshours_lookup_skipped', err: e?.message });
   }
   for (const store of stores.length ? stores : [{}]) {
     const hours = businessHoursByStore[store.store_name] || '';
@@ -937,7 +941,7 @@ async function persistRun(pool, ctx, overview, items) {
      RETURNING id`,
     [ctx.tenantId, ctx.storeId || null, ctx.date, overview.raw_health_score ?? overview.health_score ?? 0, overview.risk_level, overview.data_completeness, overview.data_freshness, overview.task_completion_rate, overview.ai_runnable_rate, overview.attribution_completeness, summary, overview.inspection_status || 'completed', overview.operation_stage || 'active', overview.customer_success_risk || 'low']
   ).catch((e) => {
-    console.warn('[tenant-inspection] persist run failed:', e?.message || e);
+    log.warn({ msg: 'tenant_inspection_persist_run_failed', err: e?.message || e });
     return { rows: [] };
   });
   const runId = runR.rows?.[0]?.id || null;
@@ -950,7 +954,7 @@ async function persistRun(pool, ctx, overview, items) {
        RETURNING id`,
       [runId, ctx.tenantId, item.store_id || null, item.category, item.item_key, item.item_name, item.status, item.severity, item.owner_role, item.responsible_party || responsibleParty(item.owner_role), JSON.stringify(item.impact_modules || []), item.impact_description, item.suggestion, JSON.stringify(item.evidence || {}), !!item.can_generate_task]
     ).catch((e) => {
-      console.warn('[tenant-inspection] persist item failed:', e?.message || e);
+      log.warn({ msg: 'tenant_inspection_persist_item_failed', err: e?.message || e });
       return { rows: [] };
     });
     item.id = r.rows?.[0]?.id || item.id;

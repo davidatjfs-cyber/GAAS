@@ -10,6 +10,10 @@ import { pool } from './utils/database.js';
 import { saveFile, createFileRecord } from './file-manager.js';
 import axios from 'axios';
 import { isExternalEnabled } from './safety.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'file-auto-backup', handler: 'backup' });
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +22,7 @@ const __dirname = path.dirname(__filename);
 export async function backupFeishuTable(appToken, tableId, tableName) {
   if (!isExternalEnabled()) return;
   try {
-    console.log(`[file-backup] Starting Feishu table backup: ${tableName}`);
+    log.info({ msg: 'file_backup_starting_feishu_table_backup' });
     
     const FEISHU_APP_ID = process.env.FEISHU_APP_ID;
     const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET;
@@ -84,10 +88,10 @@ export async function backupFeishuTable(appToken, tableId, tableName) {
       ip: '127.0.0.1'
     });
     
-    console.log(`[file-backup] Feishu backup completed: ${fileName}, ${records.length} records`);
+    log.info({ msg: 'file_backup_feishu_backup_completed_records' });
     return fileRecord;
   } catch (e) {
-    console.error(`[file-backup] Feishu backup error for ${tableName}:`, e.message);
+    log.error({ msg: 'file_backup_feishu_backup_error_for', err: e.message });
     throw e;
   }
 }
@@ -95,7 +99,7 @@ export async function backupFeishuTable(appToken, tableId, tableName) {
 // POS数据备份：从数据库导出
 export async function backupPOSSalesData(store, startDate, endDate) {
   try {
-    console.log(`[file-backup] Starting POS backup: ${store}, ${startDate} to ${endDate}`);
+    log.info({ msg: 'file_backup_starting_pos_backup_to' });
     
     // sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图(pos_order_items的同构视图)。
     // 原ORDER BY引用的'time'列在sales_raw里本就不存在，一并修正为order_time。
@@ -143,10 +147,10 @@ export async function backupPOSSalesData(store, startDate, endDate) {
       ip: '127.0.0.1'
     });
     
-    console.log(`[file-backup] POS backup completed: ${fileName}, ${records.length} records`);
+    log.info({ msg: 'file_backup_pos_backup_completed_records' });
     return fileRecord;
   } catch (e) {
-    console.error(`[file-backup] POS backup error for ${store}:`, e.message);
+    log.error({ msg: 'file_backup_pos_backup_error_for', err: e.message });
     throw e;
   }
 }
@@ -154,7 +158,7 @@ export async function backupPOSSalesData(store, startDate, endDate) {
 // 营业日报备份
 export async function backupDailyReports(store, startDate, endDate) {
   try {
-    console.log(`[file-backup] Starting daily reports backup: ${store}, ${startDate} to ${endDate}`);
+    log.info({ msg: 'file_backup_starting_daily_reports_backup_to' });
     
     const result = await pool().query(
       `SELECT * FROM daily_reports 
@@ -200,10 +204,10 @@ export async function backupDailyReports(store, startDate, endDate) {
       ip: '127.0.0.1'
     });
     
-    console.log(`[file-backup] Daily reports backup completed: ${fileName}, ${records.length} records`);
+    log.info({ msg: 'file_backup_daily_reports_backup_completed_records' });
     return fileRecord;
   } catch (e) {
-    console.error(`[file-backup] Daily reports backup error for ${store}:`, e.message);
+    log.error({ msg: 'file_backup_daily_reports_backup_error_for', err: e.message });
     throw e;
   }
 }
@@ -211,7 +215,7 @@ export async function backupDailyReports(store, startDate, endDate) {
 // 定时备份任务（每周执行）
 export async function runWeeklyBackup() {
   try {
-    console.log('[file-backup] Starting weekly backup task...');
+    log.info({ msg: 'file_backup_starting_weekly_backup_task' });
     
     const endDate = new Date();
     const startDate = new Date();
@@ -227,20 +231,20 @@ export async function runWeeklyBackup() {
       try {
         await backupPOSSalesData(store, startDateStr, endDateStr);
       } catch (e) {
-        console.error(`[file-backup] Failed to backup POS for ${store}:`, e.message);
+        log.error({ msg: 'file_backup_failed_to_backup_pos_for', err: e.message });
       }
       
       // 备份营业日报
       try {
         await backupDailyReports(store, startDateStr, endDateStr);
       } catch (e) {
-        console.error(`[file-backup] Failed to backup daily reports for ${store}:`, e.message);
+        log.error({ msg: 'file_backup_failed_to_backup_daily_reports_for', err: e.message });
       }
     }
     
-    console.log('[file-backup] Weekly backup task completed');
+    log.info({ msg: 'file_backup_weekly_backup_task_completed' });
   } catch (e) {
-    console.error('[file-backup] Weekly backup task error:', e);
+    log.error({ msg: 'file_backup_weekly_backup_task_error', err: e?.message || String(e) });
   }
 }
 
@@ -250,9 +254,9 @@ export function startAutoBackupScheduler() {
   
   // 每周日凌晨3点执行
   schedule.schedule('0 3 * * 0', async () => {
-    console.log('[file-backup] Scheduled weekly backup triggered');
+    log.info({ msg: 'file_backup_scheduled_weekly_backup_triggered' });
     await runWeeklyBackup();
   });
   
-  console.log('[file-backup] Auto backup scheduler started (weekly at 3:00 AM on Sunday)');
+  log.info({ msg: 'file_backup_auto_backup_scheduler_started_weekly_at_3_00_am_on_sunday' });
 }

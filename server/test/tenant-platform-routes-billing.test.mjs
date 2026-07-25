@@ -318,6 +318,97 @@ test('billing/pdf：有签约价与账期；池抛错 500；headersSent 后只 e
   }
 });
 
+test('billing/pdf：年付有账期；有价但无账期；空租户名回落；PUT 扁平 body', async () => {
+  {
+    const { routes } = register(async (sql) => {
+      const s = String(sql);
+      if (s.includes('FROM tenants')) return { rows: [{ name: '' }] };
+      if (s.includes("config_key = 'platform_profile'")) {
+        return {
+          rows: [{
+            config_value: {
+              brand_color: '#abcdef',
+              billing: {
+                next_invoice_at: '2026-12-01T00:00:00.000Z',
+                delivery_method: 'wechat',
+                notes: '',
+              },
+            },
+          }],
+        };
+      }
+      if (s.includes('FROM sales_leads')) {
+        return {
+          rows: [{
+            id: 9,
+            contract_price_fen: 365000,
+            contract_billing_cycle: 'yearly',
+            contract_billing_day: 1,
+          }],
+        };
+      }
+      if (s.includes("config_key = 'billing_account'")) {
+        return {
+          rows: [{
+            config_value: {
+              account_name: '年付收款',
+              bank_name: '中行',
+              bank_branch: '',
+              bank_account_no: '6229',
+            },
+          }],
+        };
+      }
+      return { rows: [] };
+    });
+    const res = mockPdfRes();
+    await invoke(routes.get('GET /api/admin/tenants/:tenantId/billing/pdf'), {
+      params: { tenantId: 't-year' },
+      platformAdmin: { username: 'sales1', role: 'sales' },
+    }, res);
+    const pdf = await res.done;
+    assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
+    assert.match(String(res.headers['Content-Disposition'] || ''), /billing-t-year/);
+  }
+  {
+    const { routes } = register(async (sql) => {
+      const s = String(sql);
+      if (s.includes('FROM tenants')) return { rows: [{ name: '无账期' }] };
+      if (s.includes("config_key = 'platform_profile'")) {
+        return { rows: [{ config_value: { billing: { next_invoice_at: null } } }] };
+      }
+      if (s.includes('FROM sales_leads')) {
+        return {
+          rows: [{
+            id: 10,
+            contract_price_fen: 50000,
+            contract_billing_cycle: 'monthly',
+          }],
+        };
+      }
+      if (s.includes("config_key = 'billing_account'")) return { rows: [{}] };
+      return { rows: [] };
+    });
+    const res = mockPdfRes();
+    await invoke(routes.get('GET /api/admin/tenants/:tenantId/billing/pdf'), {
+      params: { tenantId: 't-noperiod' },
+      platformAdmin: { username: 'sales1', role: 'sales' },
+    }, res);
+    const pdf = await res.done;
+    assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
+  }
+  {
+    const { routes } = register(async () => ({ rows: [] }));
+    const res = mockRes();
+    await invoke(routes.get('PUT /api/admin/platform/billing-account'), {
+      platformAdmin: { username: 'fin1', role: 'finance' },
+      body: { account_name: '扁平', bank_name: '交行', bank_account_no: '1' },
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.account.account_name, '扁平');
+  }
+});
+
 test('billing/pdf：非法 brand_color；季付账期；签约价≤0；general_manager 可读账户', async () => {
   {
     const { routes } = register(async (sql) => {

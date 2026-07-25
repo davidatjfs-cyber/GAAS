@@ -1,4 +1,8 @@
 import { URL } from 'url';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'safety', handler: 'safety' });
+
 
 export function getAppEnv() {
   const v = String(process.env.APP_ENV || process.env.NODE_ENV || 'development').trim().toLowerCase();
@@ -57,11 +61,19 @@ export function enforceRuntimeSafetyOrExit({ serviceName }) {
   // 1) 防误连生产：development 必须只连本机
   if (appEnv === 'development') {
     if (dbHost && !isLocalHost(dbHost)) {
-      console.error(`[safety] REFUSE_START: ${serviceName} in development with non-local DB host: ${dbHost}`);
+      log.error({
+        msg: 'safety_refuse_start_non_local_db',
+        service: serviceName,
+        db_host: dbHost,
+      });
       process.exit(2);
     }
     if (redisHost && !isLocalHost(redisHost)) {
-      console.error(`[safety] REFUSE_START: ${serviceName} in development with non-local Redis host: ${redisHost}`);
+      log.error({
+        msg: 'safety_refuse_start_non_local_redis',
+        service: serviceName,
+        redis_host: redisHost,
+      });
       process.exit(2);
     }
   }
@@ -69,7 +81,10 @@ export function enforceRuntimeSafetyOrExit({ serviceName }) {
   // 2) 防误上线：production 必须显式确认才允许运行（避免把本地直接指到生产）
   if (appEnv === 'production') {
     if (process.env.CONFIRM_PRODUCTION !== 'true') {
-      console.error(`[safety] REFUSE_START: ${serviceName} APP_ENV=production without CONFIRM_PRODUCTION=true`);
+      log.error({
+        msg: 'safety_refuse_start_production_unconfirmed',
+        service: serviceName,
+      });
       process.exit(2);
     }
   }
@@ -78,10 +93,13 @@ export function enforceRuntimeSafetyOrExit({ serviceName }) {
   const jwtSecret = process.env.JWT_SECRET;
   if (isWeakJwtSecret(jwtSecret)) {
     if (appEnv === 'production' || appEnv === 'staging') {
-      console.error(`[safety] REFUSE_START: ${serviceName} JWT_SECRET missing or weak (dev/local_dev_secret/<16chars)`);
+      log.error({
+        msg: 'safety_refuse_start_weak_jwt_secret',
+        service: serviceName,
+      });
       process.exit(2);
     }
-    console.warn(`[safety] ${serviceName} JWT_SECRET is missing/weak — ok for local only`);
+    log.warn({ msg: 'safety_weak_jwt_secret_local_ok', service: serviceName });
   }
 }
 
@@ -94,10 +112,18 @@ export function configureDbSessionSafety(pool, { serviceName }) {
       // 防误操作：默认全局只读（DDL/DML都会被阻止）
       if (!enableDbWrite) {
         await client.query('SET default_transaction_read_only = on');
-        console.warn(`[safety] ${serviceName} DB is READ-ONLY (ENABLE_DB_WRITE!=true, APP_ENV=${appEnv})`);
+        log.warn({
+          msg: 'safety_db_read_only',
+          service: serviceName,
+          app_env: appEnv,
+        });
       }
     } catch (e) {
-      console.error(`[safety] Failed to set DB safety mode: ${e?.message || e}`);
+      log.error({
+        msg: 'safety_failed_to_set_db_mode',
+        service: serviceName,
+        err: e?.message || String(e),
+      });
       // 安全起见：无法确保只读时，直接拒绝启动
       if (!enableDbWrite) process.exit(2);
     }
