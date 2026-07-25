@@ -76,6 +76,49 @@ test('GET /api/ops/tasks：store_employee → 403', async () => {
   assert.equal(body.error, 'forbidden');
 });
 
+test('POST /api/ops/tasks/:id/read：登录 → 200 且 user_reads 落库', async () => {
+  const db = testDb();
+  const manager = uniqueId('ops_read');
+  await createUser(manager, 'hq_manager');
+  const taskId = await seedOpenOpsTask(manager);
+  const token = await login(manager);
+
+  const res = await fetch(app.baseUrl + '/api/ops/tasks/' + encodeURIComponent(taskId) + '/read', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  assert.equal(body.ok, true);
+
+  const row = await db.query(
+    `select 1 from user_reads
+      where username = $1 and module = 'ops_tasks' and item_key = $2`,
+    [manager, taskId]
+  );
+  assert.equal(row.rows.length, 1);
+
+  const again = await fetch(app.baseUrl + '/api/ops/tasks/' + encodeURIComponent(taskId) + '/read', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  assert.equal(again.status, 200);
+});
+
+test('GET /api/ops/tasks：hq_manager → 200 且能看到种子任务', async () => {
+  const manager = uniqueId('ops_list');
+  await createUser(manager, 'hq_manager');
+  const taskId = await seedOpenOpsTask(manager);
+  const token = await login(manager);
+  const res = await fetch(app.baseUrl + '/api/ops/tasks?status=open', {
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  assert.ok(Array.isArray(body.items));
+  assert.ok(body.items.some((t) => t.id === taskId), '列表应含刚种子的 open 任务');
+});
+
 test('POST /api/ops/tasks/:id/complete：hq_manager 缺 evidence → 400 missing_evidence', async () => {
   const manager = uniqueId('ops_hq');
   const assignee = uniqueId('ops_assignee');

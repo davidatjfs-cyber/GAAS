@@ -83,6 +83,48 @@ test('POST /api/reads/batch：空 keys → 200 inserted 0', async () => {
   assert.equal(body.inserted, 0);
 });
 
+test('POST /api/reads/batch：有 keys → 200 且 user_reads 落库；再写幂等', async () => {
+  const db = testDb();
+  const u = uniqueId('rd_ins');
+  await createUser(u, 'hq_manager');
+  const token = await login(u);
+  const keys = [uniqueId('k1'), uniqueId('k2'), '', '  '].map(String);
+  const res = await fetch(app.baseUrl + '/api/reads/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ module: 'approval', keys }),
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  assert.equal(body.ok, true);
+  assert.equal(body.inserted, 2, '空 key 应被过滤');
+
+  const rows = await db.query(
+    `select item_key from user_reads
+      where username = $1 and module = 'approval'
+      order by item_key`,
+    [u]
+  );
+  assert.deepEqual(
+    rows.rows.map((r) => r.item_key).sort(),
+    keys.filter((k) => k.trim()).sort()
+  );
+
+  const again = await fetch(app.baseUrl + '/api/reads/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ module: 'approval', keys: keys.filter((k) => k.trim()) }),
+  });
+  assert.equal(again.status, 200);
+  const againBody = await again.json();
+  assert.equal(againBody.inserted, 2);
+  const count = await db.query(
+    `select count(*)::int as n from user_reads where username = $1 and module = 'approval'`,
+    [u]
+  );
+  assert.equal(count.rows[0].n, 2, 'upsert 不应复制行');
+});
+
 test('GET /api/unread-counts：登录 → 200 含七字段', async () => {
   const u = uniqueId('rd_cnt');
   await createUser(u, 'hq_manager');
