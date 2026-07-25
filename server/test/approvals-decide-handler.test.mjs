@@ -332,6 +332,84 @@ test('decide: 拒绝 → rejected + 飞书通知申请人', async () => {
   assert.ok(lark.some((x) => x.openId === 'ou_emp' && /被拒绝/.test(x.msg) && /材料不全/.test(x.msg)));
 });
 
+test('decide: beforeUpdate abort — missing_mentor / missing_promoted_salary', async () => {
+  const { deps: mentorDeps, queries: mentorQueries } = baseDeps({
+    poolQuery: async (sql) => {
+      if (/^select /i.test(sql.trim())) {
+        return {
+          rows: [{
+            id: 'p-abort-1',
+            type: 'promotion',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: 'mgr1',
+            chain: [{ assignee: 'mgr1', status: 'pending' }],
+            payload: { promotionStage: 'qualification', reason: '升' },
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+    depsExtra: {
+      normalizePromotionTrainingPeriods: () => [],
+    },
+  });
+  const resMentor = mockRes();
+  await handleApprovalDecide(
+    {
+      user: { username: 'mgr1', role: 'store_manager' },
+      params: { id: 'p-abort-1' },
+      body: { approved: true },
+    },
+    resMentor,
+    mentorDeps
+  );
+  assert.equal(resMentor.statusCode, 400);
+  assert.equal(resMentor.body.error, 'missing_mentor');
+  assert.equal(
+    mentorQueries.filter((q) => /^update approval_requests/i.test(q.sql.trim())).length,
+    0
+  );
+
+  const { deps: salaryDeps, queries: salaryQueries } = baseDeps({
+    poolQuery: async (sql) => {
+      if (/^select /i.test(sql.trim())) {
+        return {
+          rows: [{
+            id: 'p-abort-2',
+            type: 'promotion',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: 'mgr1',
+            chain: [{ assignee: 'mgr1', status: 'pending' }],
+            payload: { promotionStage: 'formal', reason: '正式', promotionTrackId: 't1' },
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+    depsExtra: {
+      normalizePromotionTrainingPeriods: () => [],
+    },
+  });
+  const resSalary = mockRes();
+  await handleApprovalDecide(
+    {
+      user: { username: 'mgr1', role: 'store_manager' },
+      params: { id: 'p-abort-2' },
+      body: { approved: true },
+    },
+    resSalary,
+    salaryDeps
+  );
+  assert.equal(resSalary.statusCode, 400);
+  assert.equal(resSalary.body.error, 'missing_promoted_salary');
+  assert.equal(
+    salaryQueries.filter((q) => /^update approval_requests/i.test(q.sql.trim())).length,
+    0
+  );
+});
+
 test('decide: offboarding 终审写 effectiveDate；pool 抛错 → 500', async () => {
   const { deps } = baseDeps({
     poolQuery: async (sql, params) => {
