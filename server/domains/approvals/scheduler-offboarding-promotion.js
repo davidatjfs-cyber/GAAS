@@ -2,6 +2,10 @@
  * Offboarding auto-disable + promotion-track progress sweep (every 30 min).
  * Wave H8 peel from index.js setInterval.
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'offboarding-promotion-scheduler' });
+
 export function createOffboardingPromotionScheduler({
   pool,
   runForActiveTenants,
@@ -223,7 +227,7 @@ export function createOffboardingPromotionScheduler({
               if (changedTrack) await saveSharedState(state2, tenantId);
             }
           } catch (e) {
-            console.log('[promotion-sweep] failed:', tenantId, e?.message || e);
+            log.error({ msg: 'promotion_sweep_failed', tenant_id: tenantId, err: String(e?.message || e) });
           }
 
           for (const it of items) {
@@ -237,7 +241,7 @@ export function createOffboardingPromotionScheduler({
             }
           }
         } catch (e) {
-          console.log('offboarding auto-disable job failed:', tenantId, e?.message || e);
+          log.error({ msg: 'offboarding_auto_disable_failed', tenant_id: tenantId, err: String(e?.message || e) });
         }
       }, { continueOnError: true });
     } catch (e) {

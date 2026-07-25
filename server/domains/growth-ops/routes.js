@@ -63,7 +63,7 @@ export function registerGrowthOpsRoutes(app, pool) {
 
   app.post('/api/growth/generate-selling-point', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    return send(res, await generateSellingPoint(ctx, req.body || {}));
+    return send(res, await generateSellingPoint({ ...ctx, requestId: req.requestId }, req.body || {}));
   });
 
   app.post('/api/growth/daily-report/send', async (req, res) => {

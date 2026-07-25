@@ -206,6 +206,7 @@ export async function semanticParse(ctx, body) {
               process.env.JWT_SECRET ||
               ''
           ).trim(),
+          ...(ctx?.requestId ? { 'X-Request-Id': String(ctx.requestId) } : {}),
         },
         body: JSON.stringify({ text }),
       }

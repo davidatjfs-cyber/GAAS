@@ -17,6 +17,9 @@ import {
   validateRewardPunishmentSync,
 } from './create-validators.js';
 import { buildCreateApprovalNotifyMessage } from './create-notify-message.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'create' });
 
 /**
  * @param {object} params
@@ -337,7 +340,7 @@ export async function createApproval({
              values (true, $1, 'monthly', $2::jsonb, $3, now(), $4)`,
             [username, JSON.stringify(snap), ymSh, resolveTenantIdDefault()]
           );
-          console.log('[recurring-reward] saved monthly template for applicant', username);
+          log.info({ msg: 'recurring_reward_template_saved', username });
         } catch (re) {
           console.error('[recurring-reward] save template failed:', re?.message || re);
         }

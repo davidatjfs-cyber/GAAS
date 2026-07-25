@@ -235,6 +235,7 @@ export async function generateSellingPoint(ctx, body) {
           ...(agentsInternal
             ? { 'X-Internal-Secret': agentsInternal, Authorization: 'Bearer ' + agentsInternal }
             : {}),
+          ...(ctx?.requestId ? { 'X-Request-Id': String(ctx.requestId) } : {}),
         },
         body: JSON.stringify({
           title: body?.title || '',
