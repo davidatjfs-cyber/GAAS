@@ -70,7 +70,7 @@ test('formatActiveTaskContext', () => {
 test('tryHandleTrainingFlows: approval path', async () => {
   const queries = [];
   const pool = {
-    async query(sql, params) {
+    async query(sql, _params) {
       queries.push(String(sql).slice(0, 40));
       if (String(sql).includes('pending_approval')) {
         return {
