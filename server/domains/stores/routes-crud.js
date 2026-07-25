@@ -1,4 +1,7 @@
 import { extractStoreProfileFields, syncStoreProfileToChairmanConfig } from './profile.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'stores' });
 
 /**
  * @param {import('express').Express} app
@@ -109,7 +112,7 @@ export function registerStoresCrudRoutes(app, authRequired, deps) {
         is_active: String(s.status || 'active') === 'active'
       }));
 
-      console.log('[/api/stores] Returning stores:', items.map(s => s.name));
+      log.debug({ msg: 'stores_list', names: items.map((s) => s.name) });
       return res.json({ items });
     } catch (e) {
       console.error('[/api/stores] Error:', e?.message || e);

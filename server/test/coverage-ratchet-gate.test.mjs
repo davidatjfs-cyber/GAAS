@@ -79,13 +79,13 @@ test('coverage-merged-ratchet.json 只升不降且要求 index.js', () => {
 
 /** L1 分支攻坚地板：只升不降（与 l1-coverage-floor.json 同步） */
 const L1_FILE_FLOOR = {
-  'domains/approvals/handlers/leave.js': { branches: 65, lines: 95 },
-  'domains/approvals/handlers/offboarding.js': { branches: 70, lines: 95 },
-  'domains/approvals/handlers/points.js': { branches: 58, lines: 95 },
-  'domains/approvals/handlers/onboarding.js': { branches: 55, lines: 95 },
-  'domains/approvals/handlers/promotion.js': { branches: 60, lines: 95 },
+  'domains/approvals/handlers/leave.js': { branches: 70, lines: 95 },
+  'domains/approvals/handlers/offboarding.js': { branches: 72, lines: 95 },
+  'domains/approvals/handlers/points.js': { branches: 62, lines: 95 },
+  'domains/approvals/handlers/onboarding.js': { branches: 58, lines: 95 },
+  'domains/approvals/handlers/promotion.js': { branches: 65, lines: 95 },
   'domains/tenant-platform/routes-billing.js': { branches: 45, lines: 80 },
-  'domains/tenant-platform/routes-auth.js': { branches: 75, lines: 90 },
+  'domains/tenant-platform/routes-auth.js': { branches: 78, lines: 90 },
 };
 
 test('l1-coverage-floor.json 只升不降且含全部 L1 目标文件', () => {

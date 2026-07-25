@@ -2,6 +2,9 @@
  * GET/PUT /api/state (Wave H34 — behavior-preserving extract from index.js).
  * Handlers kept intact; do not expand PUT whitelist here.
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'hrms-state' });
 
 /**
  * @param {import('express').Express} app
@@ -39,14 +42,14 @@ export function registerStateRoutes(app, authRequired, deps) {
       const origJson = JSON.stringify(data);
       const repairedJson = JSON.stringify(repaired);
       if (origJson !== repairedJson) {
-        console.log('[state] Auto-repaired garbled UTF-8 strings in shared state');
+        log.info({ msg: 'state_utf8_auto_repaired', tenant_id: tenantIdQ });
         try {
           await pool.query(
             `update hrms_state set data = $1::jsonb, updated_at = now() where key = $2`,
             [repairedJson, tenantIdQ]
           );
         } catch (saveErr) {
-          console.error('[state] Failed to persist repaired state:', saveErr?.message || saveErr);
+          log.error({ msg: 'state_utf8_repair_persist_failed', err: String(saveErr?.message || saveErr) });
         }
       }
       // 积分/薪资/员工/流程配置/通知/考试成绩以表为权威，覆盖 state 镜像

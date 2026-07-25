@@ -10,16 +10,12 @@
     "domains/growth-metrics/service.js",
     "domains/growth-pos/feishu-service.js",
     "domains/growth-sms/reconcile.js",
-    "domains/hrms-state/routes.js",
     "domains/inventory-forecast/pdf-parse.js",
     "domains/inventory-forecast/service.js",
     "domains/knowledge/service.js",
-    "domains/notifications/scheduler-cleanup.js",
     "domains/performance-invalidation/routes.js",
-    "domains/points/helpers.js",
     "domains/shared/mirror-reconcile-scheduler.js",
-    "domains/stores/routes-crud.js",
     "domains/training/scheduler.js"
   ],
-  "countAtFreeze": 40
+  "countAtFreeze": 35
 }

@@ -2,6 +2,9 @@
  * Points domain helpers (behavior-preserving extract from index.js).
  * bindPointsRuntimeDeps(deps) must be called from registerPointsRoutes.
  */
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'points' });
 
 export let getSharedState;
 export let saveSharedState;
@@ -96,9 +99,9 @@ export async function dedupeGlobalSocialMediaPointRules() {
       updatedAt: hrmsNowISO()
     };
     await saveSharedState({ ...state0, pointRules: [canonical, ...non] });
-    console.log('[points] deduped triple-social point rules, removed', hits.length - 1, 'extra');
+    log.info({ msg: 'points_deduped_social_rules', removed: hits.length - 1 });
   } catch (e) {
-    console.error('[points] dedupeGlobalSocialMediaPointRules:', e?.message || e);
+    log.error({ msg: 'points_dedupe_social_rules_failed', err: String(e?.message || e) });
   }
 }
 
@@ -129,9 +132,9 @@ export async function ensureGlobalSocialMediaPointRule() {
       },
       { pointRules: 'id' }
     );
-    console.log('[points] upserted global social media point rule (all stores, id=' + GLOBAL_SOCIAL_POINT_RULE_ID + ')');
+    log.info({ msg: 'points_global_social_rule_upserted', id: GLOBAL_SOCIAL_POINT_RULE_ID });
   } catch (e) {
-    console.error('[points] ensureGlobalSocialMediaPointRule:', e?.message || e);
+    log.error({ msg: 'points_ensure_global_social_rule_failed', err: String(e?.message || e) });
   }
 }
 
