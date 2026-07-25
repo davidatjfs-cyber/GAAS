@@ -18,6 +18,7 @@
     "domains/sales-ai/gates.js",
     "domains/agent-message/store-resolve.js",
     "domains/stores/profile.js",
-    "domains/leave-attendance/penalties.js"
+    "domains/leave-attendance/penalties.js",
+    "domains/stores/routes-brands.js"
   ]
 }

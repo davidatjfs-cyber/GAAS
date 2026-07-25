@@ -95,6 +95,29 @@ test('POST /api/brands：store_employee → 403', async () => {
   assert.equal(res.status, 403, JSON.stringify(body));
 });
 
+test('GET/POST /api/brands：admin 创建后列表可见', async () => {
+  const admin = await createAdmin();
+  const token = await login(admin);
+  const name = uniqueId('品牌');
+  const create = await fetch(app.baseUrl + '/api/brands', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ name }),
+  });
+  const created = await create.json();
+  assert.equal(create.status, 200, JSON.stringify(created));
+  assert.equal(created.ok, true);
+  assert.equal(created.item?.name, name);
+
+  const list = await fetch(app.baseUrl + '/api/brands', {
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  const body = await list.json();
+  assert.equal(list.status, 200, JSON.stringify(body));
+  assert.ok(Array.isArray(body.items));
+  assert.ok(body.items.some((b) => b.name === name), '新建品牌应出现在列表');
+});
+
 test('POST /api/stores/:name/location：store_employee → 403', async () => {
   const username = uniqueId('loc_emp');
   await createUser(username, 'store_employee');
