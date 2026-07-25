@@ -1,0 +1,7 @@
+{
+  "lines": 38,
+  "branches": 56,
+  "functions": 40,
+  "updated": "2026-07-25",
+  "note": "Phase 0 冻结基线（实测约 lines 38.38 / branches 56.47 / functions 40.37）。只升不降；每阶段结束上调并写进提交说明。"
+}

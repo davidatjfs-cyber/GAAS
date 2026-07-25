@@ -13,6 +13,7 @@
     "migrate": "node migrate.js",
     "seed:growth-demo": "node scripts/seed-growth-demo.js",
     "test": "node --test --test-force-exit $(find . -name '*.test.mjs' -not -path './test/integration/*' -not -path './node_modules/*' -print)",
+    "test:coverage": "node scripts/run-unit-coverage.mjs",
     "test:integration": "node --test --test-concurrency=2 --test-force-exit $(find test/integration -name '*.test.mjs' -print)"
   },
   "dependencies": {

@@ -1,0 +1,49 @@
+{
+  "description": "L4 边缘路径显式豁免——不计入覆盖率棘轮分母。新增豁免必须写 reason；禁止把 domains/** 或资金/鉴权路径写进这里。",
+  "patterns": [
+    {
+      "glob": "scripts/**",
+      "reason": "运维/一次性脚本，非运行时热路径"
+    },
+    {
+      "glob": "migrations/**",
+      "reason": "SQL migration，由 migrate 账本闸门覆盖"
+    },
+    {
+      "glob": "fix_*.js",
+      "reason": "历史一次性修复脚本"
+    },
+    {
+      "glob": "test-*.js",
+      "reason": "手工探测脚本，非 CI 单测"
+    },
+    {
+      "glob": "test-*.mjs",
+      "reason": "手工探测脚本，非 CI 单测"
+    },
+    {
+      "glob": "force_*.js",
+      "reason": "运维强制同步脚本"
+    },
+    {
+      "glob": "**/node_modules/**",
+      "reason": "第三方依赖"
+    },
+    {
+      "glob": "**/*.test.mjs",
+      "reason": "测试文件本身"
+    },
+    {
+      "glob": "test/integration/**",
+      "reason": "集成测试另跑，不进单测覆盖率分母"
+    }
+  ],
+  "forbiddenPrefixes": [
+    "domains/",
+    "auth-routes.js",
+    "domains/approvals/",
+    "domains/tenant-platform/",
+    "services/sales/sales-credit-risk.js",
+    "services/sales/sales-order-credit.js"
+  ]
+}
