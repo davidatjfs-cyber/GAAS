@@ -12,6 +12,7 @@ import {
 } from '../../services/sales/sales-ops.js';
 import { provisionTenantFromLead, listPendingProvisioningCompensations } from '../../services/sales-provisioning.js';
 import { buildSalesBossDashboard } from '../../services/sales/sales-boss-metrics.js';
+import { buildVoiceQualityReport } from '../../services/sales/sales-voice-quality.js';
 import { listCaseAssets, recommendCasesForLead, formatCaseForSend, getCaseAsset } from '../../services/sales/sales-case-library.js';
 import { generateSalesProposal, runDeepDiagnosis } from '../../services/sales/sales-proposal.js';
 import { TRAINING_SCENARIOS, scoreTrainingResponse, recordTrainingSession, getTrainingStats } from '../../services/sales/sales-training.js';
@@ -48,6 +49,16 @@ export function registerSalesAiOpsRoutes(ctx) {
       if (typeof sendOpsAlert === 'function') await sendOpsAlert(report.text, { title: '销售AI日报', audience: 'sales' });
       res.json({ ok: true, report });
     } catch (e) {
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/admin/sales/voice-quality', platformAdminRequired, async (req, res) => {
+    try {
+      await ensureSalesTables(pool);
+      res.json(await buildVoiceQualityReport(pool, { days: req.query?.days }));
+    } catch (e) {
+      console.error('[sales-ai] voice quality report failed:', e?.message || e);
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
