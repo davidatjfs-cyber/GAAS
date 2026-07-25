@@ -8,6 +8,11 @@ import {
 } from '../../approval-assignee-resolution.js';
 import { getPromotionTrackProgress, getCrossTrackTechnicianStatus } from '../../training.js';
 import { resolveTenantIdDefault } from '../../utils/database.js';
+import {
+  validateLeaveCreate,
+  validateOnboardingCreate,
+  validatePromotionStageSync,
+} from './create-validators.js';
 
 /**
  * @param {object} params
@@ -78,20 +83,15 @@ export async function createApproval({
 
     // validations (independent of configured flow)
     if (type === 'onboarding') {
-      if (role !== 'store_manager') {
-        return { error: 'forbidden', status: 403 };
-      }
-      if (!applicantManager) {
-        return { error: 'missing_manager', status: 400 };
-      }
-      const emp = payload?.employee && typeof payload.employee === 'object' ? payload.employee : {};
-      const newUsername = String(emp?.username || '').trim();
-      if (!newUsername) return { error: 'missing_employee_username', status: 400 };
-      const joinDate = safeDateOnly(emp?.joinDate || emp?.hireDate || emp?.startDate || emp?.entryDate || emp?.onboardDate || emp?.joiningDate);
-      if (!joinDate) return { error: 'missing_join_date', status: 400 };
-      payload.employee = { ...emp, joinDate };
-      const exists = stateFindUserRecord(state, newUsername);
-      if (exists) return { error: 'employee_username_exists', status: 400 };
+      const onbErr = validateOnboardingCreate({
+        role,
+        applicantManager,
+        payload,
+        state,
+        stateFindUserRecord,
+        safeDateOnly,
+      });
+      if (onbErr) return onbErr;
     } else if (type === 'offboarding') {
       if (!applicantManager) {
         return { error: 'missing_manager', status: 400 };
@@ -109,28 +109,14 @@ export async function createApproval({
       );
       if (join0) payload.applicantJoinDate = join0;
     } else if (type === 'leave') {
-      if (!applicantManager) {
-        return { error: 'missing_manager', status: 400 };
-      }
-      const startDate = safeDateOnly(payload?.startDate || payload?.fromDate || payload?.beginDate);
-      const endDate = safeDateOnly(payload?.endDate || payload?.toDate || payload?.finishDate);
-      if (!startDate || !endDate) {
-        return { error: 'missing_leave_date', status: 400 };
-      }
+      const leaveErr = validateLeaveCreate({ applicantManager, payload, safeDateOnly });
+      if (leaveErr) return leaveErr;
     } else if (type === 'promotion') {
-      if (!applicantManager) {
-        return { error: 'missing_manager', status: 400 };
-      }
-      const stage = String(payload?.promotionStage || 'qualification').trim().toLowerCase();
-      if (!['qualification', 'formal'].includes(stage)) {
-        return { error: 'invalid_promotion_stage', status: 400 };
-      }
-      const reason = String(payload?.reason || '').trim();
-      if (!reason) return { error: 'missing_reason', status: 400 };
-      payload.promotionStage = stage;
+      const stageSync = validatePromotionStageSync({ applicantManager, payload });
+      if (stageSync.error) return stageSync;
+      const stage = stageSync.stage;
       if (stage === 'formal') {
         const trackId = String(payload?.promotionTrackId || '').trim();
-        if (!trackId) return { error: 'missing_promotion_track', status: 400 };
         const tracks = Array.isArray(state?.promotionTracks) ? state.promotionTracks : [];
         const track = tracks.find(t => String(t?.id || '').trim() === trackId && String(t?.applicantUsername || '').trim().toLowerCase() === username.toLowerCase());
         if (!track) return { error: 'invalid_promotion_track', status: 400 };
