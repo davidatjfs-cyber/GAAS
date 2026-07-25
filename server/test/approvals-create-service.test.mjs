@@ -555,3 +555,89 @@ test('createApproval: onboarding 缺 manager/username；offboarding 成功链；
   assert.equal(payR.error, 'duplicate_pending');
   assert.equal(payR.id, 'pay-dup');
 });
+
+test('createApproval: promotion 资格成功；payment 走 flow 审批链', async () => {
+  let promoPayload = null;
+  const promoPool = makePool({
+    query: async (sql, params) => {
+      if (sql.includes('select id from approval_requests') && sql.includes('pending')) {
+        return { rows: [] };
+      }
+      if (sql.includes('insert into approval_requests')) {
+        promoPayload = JSON.parse(params[5]);
+        return {
+          rows: [{
+            id: 'promo-ok',
+            type: 'promotion',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: params[3],
+            chain: JSON.parse(params[4]),
+            payload: promoPayload,
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  });
+  const { deps: promo, notifCalls } = makeCreateDeps({
+    params: {
+      type: 'promotion',
+      payload: {
+        promotionStage: 'qualification',
+        reason: '能力达标',
+        targetPosition: '领班',
+        targetLevel: '中级',
+        newLevel: '中级',
+      },
+      resolveDutyApproverForStore: async () => 'sm_duty',
+      lookupFeishuUserByUsername: async (u) =>
+        (u === 'sm_duty' ? { open_id: 'ou_sm' } : null),
+      sendLarkMessage: async () => {},
+    },
+  });
+  const promoR = await createApproval({ pool: promoPool, ...promo });
+  assert.equal(promoR.ok, true);
+  assert.equal(promoR.item.current_assignee_username, 'sm_duty');
+  assert.equal(promoPayload.promotionStage, 'qualification');
+  assert.ok(notifCalls.some((n) => /晋升/.test(n.title) || /晋升/.test(n.msg)));
+
+  let payChain = null;
+  const payPool = makePool({
+    query: async (sql, params) => {
+      if (sql.includes("type = 'payment'") && sql.includes('pending')) return { rows: [] };
+      if (sql.includes('insert into approval_requests')) {
+        payChain = JSON.parse(params[4]);
+        return {
+          rows: [{
+            id: 'pay-ok',
+            type: 'payment',
+            status: 'pending',
+            applicant_username: 'emp1',
+            current_assignee_username: params[3],
+            chain: payChain,
+            payload: JSON.parse(params[5]),
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  });
+  const { deps: payOk, notifCalls: payNotifs } = makeCreateDeps({
+    params: {
+      role: 'store_manager',
+      type: 'payment',
+      payload: {
+        store: '测试店',
+        date: '2026-07-25',
+        amount: 300,
+        category: '水电',
+      },
+      getPaymentFlowForStore: () => ({ approvers: ['cashier1', 'admin1'] }),
+    },
+  });
+  const payR = await createApproval({ pool: payPool, ...payOk });
+  assert.equal(payR.ok, true);
+  assert.deepEqual(payChain.map((c) => c.assignee), ['cashier1', 'admin1']);
+  assert.ok(payNotifs.some((n) => n.u === 'cashier1'));
+});
