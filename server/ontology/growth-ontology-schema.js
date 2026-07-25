@@ -1,3 +1,7 @@
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'growth-ontology-schema' });
+
 let initialized = false;
 
 const statements = [
@@ -128,6 +132,6 @@ export async function ensureGrowthOntologyCore(pool) {
   for (const sql of alters) await pool.query(sql).catch(() => {});
   for (const sql of indexes) await pool.query(sql);
   initialized = true;
-  console.log('Growth ontology core initialized');
+  log.info({ msg: 'growth_ontology_core_initialized' });
   return { ok: true };
 }

@@ -1,4 +1,7 @@
 import fs from 'node:fs/promises';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'baseline-schema-health' });
 
 let initialized = false;
 
@@ -53,10 +56,10 @@ export async function ensureBaselineSchemaHealth(pool) {
       await pool.query(stmt);
     } catch (e) {
       failCount += 1;
-      console.warn('[schema] baseline health statement failed (continuing):', e?.message || e);
+      log.warn({ msg: 'baseline_statement_failed', err: e?.message || String(e) });
     }
   }
   initialized = true;
-  console.log(`[schema] baseline schema health ready (${statements.length - failCount}/${statements.length} statements ok)`);
+  log.info({ msg: 'baseline_schema_health_ready', ok: statements.length - failCount, total: statements.length });
   return { ok: true, total: statements.length, failed: failCount };
 }

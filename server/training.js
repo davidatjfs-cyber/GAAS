@@ -3,6 +3,9 @@
  * ensureTrainingSchema stays here: domains/ 禁止 ensure* + CREATE TABLE（DDL 冻结门禁）。
  */
 import { pool } from './domains/training/shared.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'training', handler: 'schema' });
 
 export {
   getPromotionRequiredTopics,
@@ -150,8 +153,8 @@ export async function ensureTrainingSchema() {
     await pool().query(`ALTER TABLE training_certifications ADD COLUMN IF NOT EXISTS valid_until DATE`);
     await pool().query(`ALTER TABLE training_certifications ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'valid'`);
 
-    console.log('[Training] Schema ensured');
+    log.info({ msg: 'schema_ensured' });
   } catch (e) {
-    console.error('[Training] Schema error:', e?.message);
+    log.error({ msg: 'schema_error', err: e?.message });
   }
 }

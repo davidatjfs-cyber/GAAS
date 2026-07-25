@@ -1,7 +1,8 @@
 import { callOntologyForAgent } from './tools/ontology-tool-client.js';
+import { childLogger } from '../utils/logger.js';
 
+const pinoLog = childLogger({ domain: 'operation-diagnosis-agent' });
 
-const LOG_PREFIX = '[OntologyAgent]';
 
 const BUSINESS_DOMAINS = {
   revenue_decline: 'operation_improvement',
@@ -35,8 +36,7 @@ const OWNER_ROLE_BY_OPP = {
 };
 
 function log(message, extra = {}) {
-  const extraStr = Object.keys(extra).length ? ' ' + JSON.stringify(extra) : '';
-  console.log(`${LOG_PREFIX} ${message}${extraStr}`);
+  pinoLog.info({ msg: message, ...extra });
 }
 
 function severityPriority(severity) {

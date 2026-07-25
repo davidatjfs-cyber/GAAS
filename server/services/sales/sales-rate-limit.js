@@ -1,3 +1,7 @@
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'rate-limit' });
+
 /**
  * 内存级限流：不引入新依赖，只是给敏感只读接口(线索详情/时间线/续费健康度/提成等)加一道
  * "连续遍历自增ID"的粗粒度防护。单进程内存计数，重启清零——这符合当前部署规模，
@@ -30,7 +34,7 @@ export function sensitiveRateLimit(routeFamily) {
     }
     entry.count += 1;
     if (entry.count > MAX_PER_WINDOW) {
-      console.warn(`[sales-rate-limit] ${username} 在 ${routeFamily} 上1分钟内请求${entry.count}次，已限流`);
+      log.warn({ msg: 'rate_limited', username, route_family: routeFamily, count: entry.count });
       return res.status(429).json({ ok: false, error: 'rate_limited' });
     }
     next();

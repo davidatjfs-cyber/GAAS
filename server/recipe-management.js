@@ -18,6 +18,9 @@ import { randomUUID } from 'crypto';
 import multer from 'multer';
 import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
 import XLSX from 'xlsx';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'recipe' });
 function pool() { return getPool(); }
 
 const RECIPE_ADMIN_ROLES = new Set(['admin', 'hq_manager', 'store_manager', 'store_production_manager']);
@@ -154,9 +157,9 @@ export async function ensureRecipeSchema() {
     await pool().query(`ALTER TABLE recipe_component_steps ADD COLUMN IF NOT EXISTS media_url VARCHAR(500)`);
     await pool().query(`ALTER TABLE recipe_component_steps ADD COLUMN IF NOT EXISTS media_type VARCHAR(20)`);
 
-    console.log('[Recipe] Schema ensured (v3: steps media_url + media_type)');
+    log.info({ msg: 'schema_ensured', version: 'v3' });
   } catch (e) {
-    console.error('[Recipe] schema error:', e?.message);
+    log.error({ msg: 'schema_error', err: e?.message });
   }
 }
 
@@ -675,5 +678,5 @@ export function registerRecipeRoutes(app, authMiddleware, deps = {}) {
     });
   }
 
-  console.log('[Recipe] Routes registered (admin-only, with categories + ingredient library)');
+  log.info({ msg: 'routes_registered' });
 }

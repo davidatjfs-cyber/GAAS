@@ -4,6 +4,9 @@
  */
 
 import { listObjectTypes } from './objects.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'routes' });
 import { queryObject } from './query.js';
 import {
   generateActionPlanFromInsights,
@@ -43,7 +46,7 @@ function withOntologyError(logLabel, handler) {
     try {
       return await handler(req, res);
     } catch (e) {
-      console.error(logLabel, e?.message || e);
+      log.error({ msg: 'ontology_route_error', label: logLabel, err: e?.message || String(e) });
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   };

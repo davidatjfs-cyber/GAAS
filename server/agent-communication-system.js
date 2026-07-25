@@ -6,6 +6,9 @@
 // 使用现有的数据库连接
 import { pool } from './master-agent.js';
 import { resolveTenantIdDefault, tenantContext } from './utils/database.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'agent-communication' });
 
 // ─────────────────────────────────────────────
 // 1. 问题类型定义
@@ -118,7 +121,7 @@ export class AgentCommunicationSystem {
   static async reportIssue(agentType, issueType, details, context = {}) {
     // 校验 issueType 合法性，避免 undefined.severity 抛 TypeError
     if (!AGENT_ISSUE_TYPES[issueType]) {
-      console.error(`[communication] Unknown issueType: ${issueType}`);
+      log.error({ msg: 'unknown_issue_type', issue_type: issueType });
       return { success: false, error: `unknown_issue_type: ${issueType}` };
     }
 
@@ -159,11 +162,11 @@ export class AgentCommunicationSystem {
             }), tenantId]
           );
         } catch (e) {
-          console.error('[communication] Failed to emit event:', e?.message);
+          log.error({ msg: 'emit_event_failed', err: e?.message });
         }
       });
       
-      console.log(`[communication] ${agentType} reported issue: ${issueType} (${issueId})`);
+      log.info({ msg: 'issue_reported', agent_type: agentType, issue_type: issueType, issue_id: issueId });
       
       return {
         success: true,
@@ -172,7 +175,7 @@ export class AgentCommunicationSystem {
       };
       
     } catch (error) {
-      console.error('[communication] Failed to report issue:', error);
+      log.error({ msg: 'report_issue_failed', err: error?.message || String(error) });
       return {
         success: false,
         error: error.message
@@ -200,12 +203,12 @@ export class AgentCommunicationSystem {
         message: `Master 分配了新问题需要处理: ${issueId}`
       });
       
-      console.log(`[communication] Master assigned issue ${issueId} to ${assignedAgent}`);
+      log.info({ msg: 'issue_assigned', issue_id: issueId, assigned_agent: assignedAgent });
       
       return { success: true };
       
     } catch (error) {
-      console.error('[communication] Failed to assign issue:', error);
+      log.error({ msg: 'assign_issue_failed', err: error?.message || String(error) });
       return { success: false, error: error.message };
     }
   }
@@ -230,15 +233,15 @@ export class AgentCommunicationSystem {
           [issueId, 'issue_status_updated', agentType, 'master', status, status, JSON.stringify(updateDetails), resolveTenantIdDefault()]
         );
       } catch (e) {
-        console.error('[communication] Failed to emit event:', e?.message);
+        log.error({ msg: 'emit_event_failed', err: e?.message });
       }
       
-      console.log(`[communication] ${agentType} updated issue ${issueId} to ${status}`);
+      log.info({ msg: 'issue_status_updated', agent_type: agentType, issue_id: issueId, status });
       
       return { success: true };
       
     } catch (error) {
-      console.error('[communication] Failed to update issue status:', error);
+      log.error({ msg: 'update_issue_status_failed', err: error?.message || String(error) });
       return { success: false, error: error.message };
     }
   }
@@ -266,12 +269,12 @@ export class AgentCommunicationSystem {
         message: `${agentType} 提交了优化方案，请审核`
       });
       
-      console.log(`[communication] ${agentType} submitted optimization plan for ${issueId}`);
+      log.info({ msg: 'optimization_plan_submitted', agent_type: agentType, issue_id: issueId });
       
       return { success: true };
       
     } catch (error) {
-      console.error('[communication] Failed to submit optimization plan:', error);
+      log.error({ msg: 'submit_optimization_plan_failed', err: error?.message || String(error) });
       return { success: false, error: error.message };
     }
   }
@@ -316,12 +319,12 @@ export class AgentCommunicationSystem {
         }
       }
       
-      console.log(`[communication] Master approved optimization for ${issueId}`);
+      log.info({ msg: 'optimization_approved', issue_id: issueId });
       
       return { success: true };
       
     } catch (error) {
-      console.error('[communication] Failed to approve optimization:', error);
+      log.error({ msg: 'approve_optimization_failed', err: error?.message || String(error) });
       return { success: false, error: error.message };
     }
   }
@@ -348,12 +351,12 @@ export class AgentCommunicationSystem {
         message: `${agentType} 完成了优化: ${issueId}`
       });
       
-      console.log(`[communication] ${agentType} completed optimization for ${issueId}`);
+      log.info({ msg: 'optimization_completed', agent_type: agentType, issue_id: issueId });
       
       return { success: true };
       
     } catch (error) {
-      console.error('[communication] Failed to report optimization completion:', error);
+      log.error({ msg: 'report_optimization_completion_failed', err: error?.message || String(error) });
       return { success: false, error: error.message };
     }
   }
@@ -373,13 +376,13 @@ export class AgentCommunicationSystem {
       // 如果是飞书用户，发送飞书通知
       if (agentType === 'ops_supervisor' || agentType === 'data_auditor') {
         // 这里可以集成飞书通知逻辑
-        console.log(`[communication] Would send Feishu notification to ${agentType}:`, notification.message);
+        log.info({ msg: 'feishu_notification_stub', agent_type: agentType, message: notification.message });
       }
       
       return { success: true };
       
     } catch (error) {
-      console.error('[communication] Failed to notify agent:', error);
+      log.error({ msg: 'notify_agent_failed', err: error?.message || String(error) });
       return { success: false, error: error.message };
     }
   }
@@ -398,7 +401,7 @@ export class AgentCommunicationSystem {
       return result.rows || [];
       
     } catch (error) {
-      console.error('[communication] Failed to get agent issues:', error);
+      log.error({ msg: 'get_agent_issues_failed', err: error?.message || String(error) });
       return [];
     }
   }
@@ -428,7 +431,7 @@ export class AgentCommunicationSystem {
       return result.rows || [];
       
     } catch (error) {
-      console.error('[communication] Failed to get issue statistics:', error);
+      log.error({ msg: 'get_issue_statistics_failed', err: error?.message || String(error) });
       return [];
     }
   }
@@ -530,7 +533,7 @@ export class AgentCommunicationHelper {
         };
       }
     } catch (e) {
-      console.error('[communication] reportDataSourceIssue dedup check failed:', e?.message || e);
+      log.error({ msg: 'report_data_source_issue_dedup_failed', err: e?.message || String(e) });
       // 限流检查失败不阻断主流程
     }
 

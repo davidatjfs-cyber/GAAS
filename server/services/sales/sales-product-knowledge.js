@@ -7,6 +7,9 @@
 
 import { createHash } from 'node:crypto';
 import { PRODUCT_KNOWLEDGE_DETAIL_DEFINITIONS } from './sales-product-knowledge-details.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'product-knowledge' });
 
 const MODULE_SOURCE_REFS = {
   account: ['working-fixed.html#main-app', 'working-fixed.html#canAccessModulePage'],
@@ -376,7 +379,7 @@ export async function logProductQuestion(pool, { query, match = null, source = '
        (question, matched_card_id, match_score, answered, source)
      VALUES ($1,$2,$3,$4,$5)`,
     [String(query).slice(0, 1000), match?.id || null, Number(match?.score || 0), Boolean(match), source]
-  ).catch((error) => console.warn('[sales-product-knowledge] question log failed:', error?.message || error));
+  ).catch((error) => log.warn({ msg: 'question_log_failed', err: error?.message || String(error) }));
 }
 
 export function buildProductBenchmark() {

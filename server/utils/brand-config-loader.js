@@ -24,6 +24,9 @@
  * config_key，每行数据打上其来源tenant_key，供按租户查找用。
  */
 import { pool } from './database.js';
+import { childLogger } from './logger.js';
+
+const log = childLogger({ domain: 'brand-config-loader' });
 
 const REFRESH_MS = 5 * 60 * 1000;
 const DEFAULT_TENANT = 'default';
@@ -52,9 +55,7 @@ function warnAmbiguous(kind, key, tenantIds) {
   const last = _ambiguityWarnedAt.get(mapKey) || 0;
   if (now - last < 10 * 60 * 1000) return;
   _ambiguityWarnedAt.set(mapKey, now);
-  console.warn(
-    `[brand-config-loader] 裸查找(未传tenantId)"${key}"在多个租户下都有匹配(${kind})：${tenantIds.join(',')}——已按第一个匹配返回，调用方应尽快补上明确的tenantId参数，避免数据被错误归到其它租户。`
-  );
+  log.warn({ msg: 'ambiguous_lookup_without_tenant', key, kind, tenant_ids: tenantIds });
 }
 
 async function refresh() {
@@ -86,7 +87,7 @@ async function refresh() {
       }
       _lastLoadAt = Date.now();
     } catch (e) {
-      console.error('[brand-config-loader] refresh failed, keep using previous cache:', e?.message || e);
+      log.error({ msg: 'refresh_failed', err: e?.message || String(e) });
     } finally {
       _loadingPromise = null;
     }

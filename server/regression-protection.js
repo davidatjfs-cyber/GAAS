@@ -5,6 +5,9 @@
 
 import { pool } from './master-agent.js';
 import { tenantContext } from './utils/database.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'regression-protection' });
 
 // 关键函数保护清单 - 这些函数是Agent系统的核心，必须存在且正常工作
 export const CRITICAL_FUNCTIONS = [
@@ -89,7 +92,7 @@ export class RegressionDetector {
    * 执行完整的回归检查
    */
   async runFullCheck() {
-    console.log('[RegressionDetector] Starting full regression check...');
+    log.info({ msg: 'regression_check_start' });
     
     const results = {
       timestamp: new Date().toISOString(),
@@ -123,7 +126,7 @@ export class RegressionDetector {
     // 保存检查结果
     await this.saveCheckResult(results);
     
-    console.log(`[RegressionDetector] Check completed. Passed: ${results.passed}`);
+    log.info({ msg: 'regression_check_done', passed: results.passed });
     
     return results;
   }
@@ -238,7 +241,7 @@ export class RegressionDetector {
         );
       });
     } catch (e) {
-      console.error('[RegressionDetector] Error saving check result:', e);
+      log.error({ msg: 'save_check_result_failed', err: e?.message || String(e) });
     }
   }
 
@@ -256,7 +259,7 @@ export class RegressionDetector {
       );
       return result.rows || [];
     } catch (e) {
-      console.error('[RegressionDetector] Error getting check history:', e);
+      log.error({ msg: 'get_check_history_failed', err: e?.message || String(e) });
       return [];
     }
   }
@@ -342,7 +345,7 @@ export class AutomatedTestRunner {
    * 运行所有测试
    */
   async runAllTests() {
-    console.log('[AutomatedTestRunner] Running all tests...');
+    log.info({ msg: 'automated_tests_start' });
     
     const results = {
       timestamp: new Date().toISOString(),
@@ -379,7 +382,7 @@ export class AutomatedTestRunner {
           critical: test.critical
         });
         
-        console.error(`[AutomatedTestRunner] Test failed: ${test.name}`, e);
+        log.error({ msg: 'automated_test_failed', test: test.name, err: e?.message || String(e) });
       }
     }
 
@@ -388,7 +391,7 @@ export class AutomatedTestRunner {
     // 保存测试结果
     await this.saveTestResults(results);
     
-    console.log(`[AutomatedTestRunner] Tests completed. Passed: ${results.passed}/${results.total}`);
+    log.info({ msg: 'automated_tests_done', passed: results.passed, total: results.total });
     
     return results;
   }
@@ -398,7 +401,7 @@ export class AutomatedTestRunner {
    */
   async runCriticalPathTests() {
     const criticalTests = this.tests.filter(t => t.critical);
-    console.log(`[AutomatedTestRunner] Running ${criticalTests.length} critical tests...`);
+    log.info({ msg: 'critical_tests_start', count: criticalTests.length });
     
     const results = [];
     for (const test of criticalTests) {
@@ -407,7 +410,7 @@ export class AutomatedTestRunner {
         results.push({ name: test.name, status: 'passed' });
       } catch (e) {
         results.push({ name: test.name, status: 'failed', error: e?.message });
-        console.error(`[AutomatedTestRunner] Critical test failed: ${test.name}`, e);
+        log.error({ msg: 'critical_test_failed', test: test.name, err: e?.message || String(e) });
       }
     }
     
@@ -426,7 +429,7 @@ export class AutomatedTestRunner {
         [JSON.stringify(results)]
       );
     } catch (e) {
-      console.error('[AutomatedTestRunner] Error saving test results:', e);
+      log.error({ msg: 'save_test_results_failed', err: e?.message || String(e) });
     }
   }
 
@@ -520,7 +523,7 @@ automatedTestRunner.registerTest('critical_tables_exist', async () => {
 
 // 初始化函数
 export async function initializeRegressionProtection() {
-  console.log('[RegressionProtection] Initializing...');
+  log.info({ msg: 'regression_protection_init_start' });
   
   // 运行初始检查
   await regressionDetector.runFullCheck();
@@ -528,7 +531,7 @@ export async function initializeRegressionProtection() {
   // 运行关键测试
   await automatedTestRunner.runCriticalPathTests();
   
-  console.log('[RegressionProtection] Initialized successfully');
+  log.info({ msg: 'regression_protection_initialized' });
 }
 
 export default {

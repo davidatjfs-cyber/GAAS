@@ -8,6 +8,9 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { pool, resolveTenantIdDefault } from './utils/database.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'file-manager' });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +31,7 @@ function ensureStorageDir() {
   dirs.forEach(dir => {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
-      console.log(`[file-manager] Created directory: ${dir}`);
+      log.info({ msg: 'directory_created', dir });
     }
   });
 }

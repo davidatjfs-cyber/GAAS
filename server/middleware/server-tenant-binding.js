@@ -1,3 +1,7 @@
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'tenant-binding' });
+
 export async function verifyServerTenantBinding(pool, req, { tenantId, storeId } = {}) {
   const tid = String(tenantId || '').trim() || 'default';
   const sid = String(storeId || '').trim();
@@ -20,7 +24,7 @@ export async function verifyServerTenantBinding(pool, req, { tenantId, storeId }
     if (!result.rows.length) return { ok: false, status: 403, error: 'server_tenant_binding_inactive' };
     return { ok: true, serverCode, tenantId: tid, storeId: sid };
   } catch (error) {
-    console.error('[tenant-binding] fail closed:', error?.message || error);
+    log.error({ msg: 'fail_closed', err: error?.message || String(error) });
     return { ok: false, status: 503, error: 'tenant_binding_unavailable' };
   }
 }

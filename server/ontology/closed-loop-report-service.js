@@ -1,4 +1,7 @@
 import { buildBossReportFields, summarizeIssueForBoss, summarizeOpportunityForBoss } from './boss-language-service.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'closed-loop-report' });
 
 export async function buildClosedLoopReport(pool, options = {}) {
   const tenantId = options.tenantId || 'default';
@@ -53,8 +56,8 @@ export async function buildClosedLoopReport(pool, options = {}) {
       ? `本期已触达 ${Number(secondVisitResult.newCustomerTouchedCount || 0)} 位新客，二次回店 ${Number(secondVisitResult.secondVisitCustomerCount || 0)} 位，二次消费 ${Number(secondVisitResult.secondVisitRevenue || 0).toFixed(0)} 元。`
       : attributionRevenue > 0 ? `当前已有真实订单归因营业额 ${attributionRevenue.toFixed(0)} 元。` : '',
   });
-  console.log('Closed loop report generated');
-  console.log('Boss language output verified');
+  log.info({ msg: 'closed_loop_report_generated' });
+  log.info({ msg: 'boss_language_output_verified' });
   return {
     ok: true,
     period,

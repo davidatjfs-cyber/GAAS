@@ -4,6 +4,9 @@
  * 保证客户AI不会因为这张表的问题而失去知识内容。
  */
 import { PUBLIC_KNOWLEDGE } from './sales-knowledge.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'knowledge-store' });
 
 let ensured = false;
 async function ensureTable(pool) {
@@ -50,7 +53,7 @@ export async function loadKnowledgeItems(pool) {
     cacheAt = Date.now();
     return cache;
   } catch (e) {
-    console.warn('[sales-knowledge-store] loadKnowledgeItems failed, using built-in defaults:', e?.message || e);
+    log.warn({ msg: 'load_knowledge_items_failed_using_defaults', err: e?.message || String(e) });
     return PUBLIC_KNOWLEDGE;
   }
 }

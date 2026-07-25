@@ -41,7 +41,7 @@ export function safeErrorLog(context, error, details = {}) {
     
   } catch (logError) {
     // 连错误记录都失败了，只能静默处理
-    console.error('[error-handler] Failed to log error:', logError?.message || logError);
+    logger.error({ msg: 'failed_to_log_error', err: logError?.message || String(logError) });
   }
 }
 

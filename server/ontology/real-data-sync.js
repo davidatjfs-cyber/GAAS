@@ -22,6 +22,10 @@
  * marketing.touched=0 时标记 dataGaps.marketing_touches，而不是假装算过转化率。
  */
 
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'real-data-sync' });
+
 const ALIAS_MAP_CTE = `
   alias_map AS (
     SELECT alias_name, canonical_name FROM store_name_aliases WHERE tenant_id = $1 AND enabled = true
@@ -166,7 +170,7 @@ export async function syncOntologyDataFromProduction(pool, tenantId = 'default')
         AND payload->>'phone' IS NOT NULL
         AND payload->>'phone' <> ''`,
     [tenantId]
-  ).catch((e) => console.warn('[ontology-sync] phone backfill skipped:', e?.message || e));
+  ).catch((e) => log.warn({ msg: 'phone_backfill_skipped', err: e?.message || String(e) }));
 
   // 只同步能落到 ontology 客户 ID 的触达：marketingStats 用 customer_id DISTINCT 计数，
   // 无客户 ID 的行进表也计不进 touched，白占空间。

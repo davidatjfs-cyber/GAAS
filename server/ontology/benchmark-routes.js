@@ -6,6 +6,9 @@
  */
 import { classifyAllStores, computeAllBenchmarks, getBenchmarkForStore, getKpiWeightsForBusinessType } from './benchmark-service.js';
 import { listBusinessTypes } from './store-segments.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'benchmark-routes' });
 
 export function registerBenchmarkRoutes(app, pool, authRequired, platformAdminRequired) {
   app.get('/api/ontology/benchmarks/business-types', authRequired, async (_req, res) => {
@@ -28,7 +31,7 @@ export function registerBenchmarkRoutes(app, pool, authRequired, platformAdminRe
       if (!benchmark) return res.status(404).json({ ok: false, error: 'no_benchmark_available' });
       res.json({ ok: true, benchmark });
     } catch (e) {
-      console.error('[ontology-benchmarks] lookup failed:', e?.message || e);
+      log.error({ msg: 'benchmark_lookup_failed', err: e?.message || String(e) });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -40,7 +43,7 @@ export function registerBenchmarkRoutes(app, pool, authRequired, platformAdminRe
       const result = await classifyAllStores(pool);
       res.json(result);
     } catch (e) {
-      console.error('[ontology-benchmarks] classify failed:', e?.message || e);
+      log.error({ msg: 'benchmark_classify_failed', err: e?.message || String(e) });
       res.status(500).json({ ok: false, error: e?.message || 'server_error' });
     }
   });
@@ -50,7 +53,7 @@ export function registerBenchmarkRoutes(app, pool, authRequired, platformAdminRe
       const result = await computeAllBenchmarks(pool);
       res.json(result);
     } catch (e) {
-      console.error('[ontology-benchmarks] recompute failed:', e?.message || e);
+      log.error({ msg: 'benchmark_recompute_failed', err: e?.message || String(e) });
       res.status(500).json({ ok: false, error: e?.message || 'server_error' });
     }
   });

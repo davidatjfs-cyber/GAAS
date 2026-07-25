@@ -11,6 +11,9 @@ import {
   safeBizMonth
 } from './hrms-payroll-rules.js';
 import { summarizeAttendanceDaysForMonth, reconcileAttendanceDays } from './hrms-attendance-day.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'hrms-payroll-engine' });
 
 function safeDateOnly(d) {
   const s = String(d || '').trim();
@@ -427,7 +430,7 @@ export async function buildPayrollForMonth({
           getSharedState
         });
       } catch (e) {
-        console.warn('[payroll] reconcile attendance_day failed:', storeName, e?.message);
+        log.warn({ msg: 'reconcile_attendance_day_failed', store: storeName, err: e?.message });
       }
     }
   }

@@ -1,4 +1,7 @@
 import { pool as getPool } from './utils/database.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'task-board' });
 function pool() { return getPool(); }
 
 export async function ensureTaskBoardSchema() {
@@ -9,6 +12,6 @@ export async function ensureTaskBoardSchema() {
     await p.query(`DO $$ BEGIN ALTER TABLE master_tasks ADD COLUMN IF NOT EXISTS escalated_to TEXT; EXCEPTION WHEN others THEN NULL; END $$;`);
     await p.query(`DO $$ BEGIN ALTER TABLE master_tasks ADD COLUMN IF NOT EXISTS escalation_history JSONB DEFAULT '[]'::jsonb; EXCEPTION WHEN others THEN NULL; END $$;`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_mt_timeout ON master_tasks (timeout_at) WHERE timeout_at IS NOT NULL AND status NOT IN ('resolved','closed','settled');`);
-    console.log('[TaskBoard] Schema ensured');
-  } catch (e) { console.error('[TaskBoard] schema error:', e?.message); }
+    log.info({ msg: 'schema_ensured' });
+  } catch (e) { log.error({ msg: 'schema_error', err: e?.message }); }
 }

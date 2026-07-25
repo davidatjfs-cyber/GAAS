@@ -11,6 +11,9 @@ import { getLead, addEvent } from './sales/sales-store.js';
 import { getCreditRisk } from './sales/sales-credit-risk.js';
 import { computeDueAt } from './sales/sla-utils.js';
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'sales-provision' });
 
 const DEFAULT_PROFILE = {
   system_name: 'GAAS 增长平台',
@@ -164,7 +167,7 @@ export async function provisionTenantFromLead(pool, leadId, {
     }, tenantId));
     growthCustomerId = gc?.id || growthCustomerId;
   } catch (e) {
-    console.warn('[sales-provision] growth_customer bridge failed:', e?.message || e);
+    log.warn({ msg: 'growth_customer_bridge_failed', err: e?.message || String(e) });
     failedSteps.push({ step: 'upsertCustomer', error: e?.message || String(e), at: new Date().toISOString() });
   }
 
@@ -201,7 +204,7 @@ export async function provisionTenantFromLead(pool, leadId, {
     );
   } catch (e) {
     failedSteps.push({ step: 'writeback_sales_tables', error: e?.message || String(e), at: new Date().toISOString() });
-    console.error('[sales-provision] writeback failed, tenant already created:', tenantId, e?.message || e);
+    log.error({ msg: 'writeback_failed_tenant_created', tenant_id: tenantId, err: e?.message || String(e) });
   }
 
   // 已开通的客户自动进入交付项目；这里不把“开通”伪装成“已交付”，客服/实施必须逐步推进。
@@ -224,7 +227,7 @@ export async function provisionTenantFromLead(pool, leadId, {
        VALUES ($1,$2,'pending',$3,$4,$5,$6,NOW(),NOW())
        ON CONFLICT (lead_id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,cs_owner=COALESCE(sales_delivery_projects.cs_owner,EXCLUDED.cs_owner),implementation_owner=COALESCE(sales_delivery_projects.implementation_owner,EXCLUDED.implementation_owner),deploy_check_due_at=COALESCE(sales_delivery_projects.deploy_check_due_at,EXCLUDED.deploy_check_due_at),health_check_due_at=COALESCE(sales_delivery_projects.health_check_due_at,EXCLUDED.health_check_due_at),updated_at=NOW()`,
       [leadId, tenantId, csOwner, implementationOwner, deployCheckDueAt, healthCheckDueAt]
-    ).catch((e) => console.warn('[sales-provision] delivery project creation failed:', e?.message || e));
+    ).catch((e) => log.warn({ msg: 'delivery_project_creation_failed', err: e?.message || String(e) }));
   }
 
   await addEvent(pool, leadId, {

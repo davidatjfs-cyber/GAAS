@@ -3,6 +3,9 @@
  * 与 agents-service-v2 策略一致：用当前 tenant token 调 contact/v3/users/batch_get_id 换本应用 open_id 并回写 feishu_users。
  */
 import axios from 'axios';
+import { childLogger } from './logger.js';
+
+const log = childLogger({ domain: 'feishu-open-id' });
 
 const FEISHU_OPEN_API = 'https://open.feishu.cn/open-apis';
 
@@ -39,8 +42,8 @@ export function feishuSkipOpenIdResolveHrms() {
  * @param {{ username?: string, open_id?: string, mobile?: string }} row
  */
 export async function resolveOpenIdForCurrentFeishuAppHrms(deps, tenantToken, row) {
-  const warn = deps.warn || ((...a) => console.warn('[feishu/resolve]', ...a));
-  const info = deps.info || ((...a) => console.log('[feishu/resolve]', ...a));
+  const warn = deps.warn || ((...a) => log.warn({ msg: 'resolve', detail: a.map(String).join(' ') }));
+  const info = deps.info || ((...a) => log.info({ msg: 'resolve', detail: a.map(String).join(' ') }));
   const query = deps.query;
 
   const username = String(row?.username || '').trim();
@@ -157,7 +160,7 @@ export async function resolveOpenIdForCurrentFeishuAppHrms(deps, tenantToken, ro
  * @returns {Promise<string|null>} 新的 open_id，无法解析时 null
  */
 export async function refreshFeishuUserOpenIdForImDeliveryHrms(deps, tenantToken, staleOpenId) {
-  const warn = deps.warn || ((...a) => console.warn('[feishu/refresh]', ...a));
+  const warn = deps.warn || ((...a) => log.warn({ msg: 'refresh', detail: a.map(String).join(' ') }));
   const query = deps.query;
   const stale = String(staleOpenId || '').trim();
   if (!stale) return null;

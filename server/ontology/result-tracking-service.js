@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'result-tracking' });
 
 export async function trackGrowthResults(pool, options = {}) {
   const tenantId = options.tenantId || 'default';
@@ -55,7 +58,7 @@ export async function trackGrowthResults(pool, options = {}) {
       RETURNING *`,
       [id, tenantId, storeId, opportunityId, revenue, revenue - cost, JSON.stringify(evidence)]
     );
-    console.log('New customer second visit results tracked');
+    log.info({ msg: 'new_customer_second_visit_results_tracked' });
     return saved.rows[0];
   }
   const r = await pool.query(
@@ -78,6 +81,6 @@ export async function trackGrowthResults(pool, options = {}) {
     RETURNING *`,
     [id, tenantId, storeId, opportunityId, before, after, after - before, JSON.stringify({ beforeDays, afterDays })]
   );
-  console.log('Results tracked');
+  log.info({ msg: 'results_tracked' });
   return saved.rows[0];
 }

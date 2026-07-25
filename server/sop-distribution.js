@@ -1,5 +1,8 @@
 // SOP 动态分发 API + 阅读回执 + 小测验 (TRAIN 接入)
 import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'sop-distribution' });
 function pool() { return getPool(); }
 
 export async function ensureSOPDistributionSchema() {
@@ -60,8 +63,8 @@ export async function ensureSOPDistributionSchema() {
     await p.query(`CREATE INDEX IF NOT EXISTS idx_sop_dist_ver ON sop_distributions (sop_version_id)`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_sop_ver_id ON sop_versions (sop_id, version)`);
 
-    console.log('[SOP-Distribution] Tables ensured');
-  } catch (e) { console.error('[SOP-Distribution] schema error:', e?.message); }
+    log.info({ msg: 'tables_ensured' });
+  } catch (e) { log.error({ msg: 'schema_error', err: e?.message }); }
 }
 
 // ─── SOP 版本管理 ───

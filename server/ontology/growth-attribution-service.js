@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'growth-attribution' });
 import { matchTouchToOrders } from '../marketing/marketing-attribution-service.js';
 
 export async function generateGrowthAttribution(pool, options = {}) {
@@ -41,8 +44,8 @@ export async function generateGrowthAttribution(pool, options = {}) {
     );
     saved.push(r.rows[0]);
   }
-  console.log('Attribution generated');
-  if (options.scenario === 'new_customer_second_visit') console.log('New customer second visit attribution generated');
+  log.info({ msg: 'attribution_generated' });
+  if (options.scenario === 'new_customer_second_visit') log.info({ msg: 'new_customer_second_visit_attribution_generated' });
   return {
     ontologyStatus: touches.rows.length ? 'ok' : 'insufficient_data',
     attributedOrderCount: saved.length,

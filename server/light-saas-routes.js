@@ -11,6 +11,9 @@ import {
 } from './services/tenant-onboarding-service.js';
 import { createDemandRequest, listDemandRequests, DEMAND_VERDICTS } from './services/demand-governance-service.js';
 import { listHealthFaqs } from './services/tenant-health-faq.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'light-saas' });
 
 export function registerLightSaasRoutes(app, pool, platformAdminRequired) {
   if (!platformAdminRequired) return;
@@ -28,7 +31,7 @@ export function registerLightSaasRoutes(app, pool, platformAdminRequired) {
       });
       return res.json(data);
     } catch (e) {
-      console.error('[execution-ledger] failed:', e?.message || e);
+      log.error({ msg: 'execution_ledger_failed', err: e?.message || String(e) });
       return res.status(500).json({ ok: false, error: 'server_error', message: e?.message });
     }
   });

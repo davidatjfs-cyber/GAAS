@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { recordRuleHit } from './ontology-rule-service.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'growth-opportunity' });
 
 const OPPORTUNITY_BY_ISSUE = {
   revenue_decline: ['lunch_revenue_recovery', 'low_repeat_dish_optimization'],
@@ -122,7 +125,7 @@ export async function createOpportunitiesForIssue(pool, issue) {
           bossLanguageOutput: saved.description,
           matchedConditions: saved.evidence_json.matched_conditions || [],
         },
-      }).catch(e => console.warn('[ontology-rules] opportunity hit failed:', e?.message || e));
+      }).catch(e => log.warn({ msg: 'opportunity_rule_hit_failed', err: e?.message || String(e) }));
     }
     created.push(saved);
   }

@@ -1,6 +1,9 @@
 // 厨房备料执行模块
 // 功能：岗位菜品映射 + 每日备料确认 + SOP步骤打点卡 + 完成率看板
 import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'kitchen-execution' });
 import { resolveTenantIdForStore } from './growth-api.js';
 function pool() { return getPool(); }
 
@@ -163,9 +166,9 @@ export async function ensureKitchenExecutionSchema() {
         ON kitchen_step_logs (store, dish_name, step_seq, employee_username, task_date, schedule_time)
     `);
 
-    console.log('[KitchenExec] Schema ensured');
+    log.info({ msg: 'schema_ensured' });
   } catch (e) {
-    console.error('[KitchenExec] schema error:', e?.message);
+    log.error({ msg: 'schema_error', err: e?.message });
   }
 }
 

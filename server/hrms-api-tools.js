@@ -1,5 +1,8 @@
 // HRMS 排班/打卡/入离职 API 工具 (HR & OP 接入)
 import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'hrms-api-tools' });
 function pool() { return getPool(); }
 
 // ─── 确保表结构 ───
@@ -89,8 +92,8 @@ export async function ensureHRMSApiSchema() {
     await p.query(`CREATE INDEX IF NOT EXISTS idx_employ_user ON employment_records (employee_username, action_type)`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_temp_staff_store ON temp_staffing_requests (store, status)`);
 
-    console.log('[HRMS-API] Tables ensured');
-  } catch (e) { console.error('[HRMS-API] schema error:', e?.message); }
+    log.info({ msg: 'tables_ensured' });
+  } catch (e) { log.error({ msg: 'schema_error', err: e?.message }); }
 }
 
 // ─── 排班 CRUD ───

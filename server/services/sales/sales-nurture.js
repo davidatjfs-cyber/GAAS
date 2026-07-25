@@ -4,6 +4,9 @@
 import { ensureSalesTables, upsertTask } from './sales-store.js';
 import { formatCaseBlurb, recommendCasesForLead } from './sales-case-library.js';
 import { listSendableContentAssets, sendContentAssetToLead } from './sales-content-delivery.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'nurture' });
 
 const NURTURE_SCHEDULE = [
   { step: 1, afterHours: 24, title: '培育Day1：发送针对性案例', build: (lead) => `给「${lead.company || lead.name || lead.lead_key}」发一条与其痛点(${lead.extracted?.pain_point || '未明'})接近的客户案例，先建立信任，不要催单。` },
@@ -83,7 +86,7 @@ export async function runNurtureCadence(pool) {
           await sendContentAssetToLead(pool, lead, approved, { deliveryType: 'ai_nurture', sentBy: 'customer_ai' });
           autoSent = true;
         } catch (e) {
-          console.warn('[sales-nurture] auto delivery failed:', e?.message || e);
+          log.warn({ msg: 'auto_delivery_failed', err: e?.message || String(e) });
         }
       }
     }

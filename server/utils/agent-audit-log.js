@@ -1,3 +1,7 @@
+import { childLogger } from './logger.js';
+
+const log = childLogger({ domain: 'agent-audit-log' });
+
 /**
  * Agent 操作审计日志
  * 记录 Agent 执行工具调用（尤其是写操作）时"谁在什么时候用什么参数执行了什么工具/产生了什么结果"，
@@ -46,6 +50,6 @@ export async function logAgentOperation(pool, {
       [tenantId, operatorUsername, operatorRole, toolName, storeId, args ? JSON.stringify(args) : null, resultSummary, status, errorMessage]
     );
   } catch (e) {
-    console.warn('[agent-audit-log] logAgentOperation failed:', e?.message);
+    log.warn({ msg: 'log_agent_operation_failed', err: e?.message });
   }
 }

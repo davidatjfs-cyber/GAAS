@@ -2,6 +2,9 @@
  * 销售域表 ensure + 基础 CRUD 辅助
  */
 import { canTransition } from './sales-collaboration-service.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'store' });
 
 let ensurePromise = null;
 
@@ -64,7 +67,7 @@ export async function ensureSalesTables(pool) {
     // 那样会导致 ensureSalesTables 整体失败、销售AI全线不可用，所以这一条单独兜底不让它拖垮启动，
     // 只是这种情况下去重保护要等 migration 里先清理重复数据才能补上（见 migration 说明）。
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_leads_external_uid ON sales_leads (external_userid) WHERE external_userid IS NOT NULL`)
-      .catch((e) => console.warn('[sales-store] idx_sales_leads_external_uid create skipped (likely duplicate external_userid rows, needs cleanup migration):', e?.message || e));
+      .catch((e) => log.warn({ msg: 'idx_sales_leads_external_uid_skipped', err: e?.message || String(e) }));
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_leads_owner ON sales_leads (owner_username, updated_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_sales_leads_reminder ON sales_leads (last_reminder_at NULLS LAST)`);
     await pool.query(`
@@ -138,7 +141,7 @@ export async function ensureSalesTables(pool) {
     // 同样道理：如果之前的竞态已经产生了重复的(lead_id,title,status='open')行，建唯一索引会报错，
     // 单独兜底避免拖垮 ensureSalesTables；重复数据清理见 migration。
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_tasks_dedup_open ON sales_tasks (lead_id, title) WHERE status='open'`)
-      .catch((e) => console.warn('[sales-store] idx_sales_tasks_dedup_open create skipped (likely duplicate open tasks, needs cleanup migration):', e?.message || e));
+      .catch((e) => log.warn({ msg: 'idx_sales_tasks_dedup_open_skipped', err: e?.message || String(e) }));
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sales_opportunities (

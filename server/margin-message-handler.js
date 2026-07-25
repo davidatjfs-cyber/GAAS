@@ -5,6 +5,9 @@
 import { pool, tenantContext } from './utils/database.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
 import { resolveTenantIdForStore } from './growth-api.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'margin-message' });
 
 // ─────────────────────────────────────────────
 // 毛利率消息解析
@@ -59,7 +62,7 @@ export async function saveMarginData(marginData) {
         updated_at = NOW()
     `, [store, brand, period, actual_margin, tenantId]));
     
-    console.log(`[margin] 已保存毛利率数据: ${store} ${period} ${actual_margin}%`);
+    log.info({ msg: 'margin_saved', store, period, actual_margin });
     
     return { success: true };
   });
@@ -70,12 +73,12 @@ export async function saveMarginData(marginData) {
 // ─────────────────────────────────────────────
 export async function handleMarginMessage(message) {
   try {
-    console.log(`[margin] 收到毛利率消息: ${message}`);
+    log.info({ msg: 'margin_message_received', message });
     
     // 解析消息
     const marginData = parseMarginMessage(message);
     if (!marginData) {
-      console.log('[margin] 消息格式无法解析:', message);
+      log.info({ msg: 'margin_message_unparsed', message });
       return { success: false, error: 'message_format_invalid' };
     }
     

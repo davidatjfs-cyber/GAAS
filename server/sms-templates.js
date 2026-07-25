@@ -8,6 +8,9 @@
 // 或写入后立即生效，永远不需要重启进程。
 // 找不到DB配置时（表还没灌数据/新slot还没建）回退读 env，兼容过渡期。
 import { getStoreSmsEnvSuffix } from './brands-config.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'sms-templates' });
 
 let _pool = null;
 let _cache = new Map(); // key: `${tenant_id}:${brand_suffix}:${slot}` -> row
@@ -29,10 +32,10 @@ export async function refreshSmsTemplatesCache() {
 
 export function initSmsTemplatesCache(pool) {
   _pool = pool;
-  refreshSmsTemplatesCache().catch((e) => console.warn('[sms-templates] initial cache load failed:', e?.message));
+  refreshSmsTemplatesCache().catch((e) => log.warn({ msg: 'initial_cache_load_failed', err: e?.message }));
   if (!_timer) {
     _timer = setInterval(() => {
-      refreshSmsTemplatesCache().catch((e) => console.warn('[sms-templates] cache refresh failed:', e?.message));
+      refreshSmsTemplatesCache().catch((e) => log.warn({ msg: 'cache_refresh_failed', err: e?.message }));
     }, REFRESH_MS);
   }
 }

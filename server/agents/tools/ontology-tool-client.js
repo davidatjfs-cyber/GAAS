@@ -3,8 +3,9 @@ import { listOpportunities } from '../../ontology/growth-opportunity-service.js'
 import { generateTasksForOpportunity, buildTaskDraftsForOpportunity } from '../../ontology/action-plan-service.js';
 import { buildClosedLoopReport } from '../../ontology/closed-loop-report-service.js';
 import { syncOntologyDataFromProduction } from '../../ontology/real-data-sync.js';
+import { childLogger } from '../../utils/logger.js';
 
-const LOG_PREFIX = '[OntologyToolClient]';
+const pinoLog = childLogger({ domain: 'ontology-tool-client' });
 
 function normalizeParams(options = {}) {
   const tenantId = String(options.tenantId || options.tenant_id || 'default').trim() || 'default';
@@ -15,12 +16,11 @@ function normalizeParams(options = {}) {
 }
 
 function log(message, extra = {}) {
-  const extraStr = Object.keys(extra).length ? ' ' + JSON.stringify(extra) : '';
-  console.log(`${LOG_PREFIX} ${message}${extraStr}`);
+  pinoLog.info({ msg: message, ...extra });
 }
 
 function logError(message, error, extra = {}) {
-  console.error(`${LOG_PREFIX} ${message}`, error?.message || error, Object.keys(extra).length ? extra : '');
+  pinoLog.error({ msg: message, err: error?.message || String(error), ...extra });
 }
 
 export async function getDailyDiagnosis(pool, options) {

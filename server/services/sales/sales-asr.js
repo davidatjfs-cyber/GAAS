@@ -6,6 +6,9 @@
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import WebSocket from 'ws';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'sales', handler: 'asr' });
 
 const DASHSCOPE_WS_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference';
 const ASR_MODEL = 'paraformer-realtime-v2';
@@ -112,7 +115,7 @@ export async function transcribeAmrVoice(amrBuffer) {
     const text = await recognizePcm(pcm);
     return text || null;
   } catch (e) {
-    console.error('[sales-asr] transcribe failed:', e?.message || e);
+    log.error({ msg: 'transcribe_failed', err: e?.message || String(e) });
     return null;
   }
 }

@@ -1,4 +1,7 @@
 import { calculateCampaignAttribution } from './marketing-attribution-service.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'marketing', handler: 'attribution-routes' });
 
 export function registerMarketingAttributionRoutes(app, pool, authRequired, opts = {}) {
   const getTenantId = opts.getTenantId || ((req) => req.tenantId || 'default');
@@ -11,7 +14,7 @@ export function registerMarketingAttributionRoutes(app, pool, authRequired, opts
       });
       return res.json({ ok: true, attribution });
     } catch (e) {
-      console.error('[marketing-attribution] calculate failed:', e?.message || e);
+      log.error({ msg: 'calculate_failed', err: e?.message || String(e) });
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
@@ -26,7 +29,7 @@ export function registerMarketingAttributionRoutes(app, pool, authRequired, opts
       });
       return res.json({ ok: true, attribution });
     } catch (e) {
-      console.error('[marketing-attribution] preview failed:', e?.message || e);
+      log.error({ msg: 'preview_failed', err: e?.message || String(e) });
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });

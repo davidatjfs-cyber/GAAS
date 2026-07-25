@@ -6,6 +6,9 @@
 import { pool } from './master-agent.js';
 import { getActiveTenantIds, tenantContext } from './utils/database.js';
 import AgentCommunicationSystem from './agent-communication-system.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'agent-autonomous' });
 
 // Agent 自主任务类型
 export const AUTONOMOUS_TASK_TYPES = {
@@ -73,7 +76,7 @@ export class AgentAutonomousScheduler {
     // 每分钟检查一次是否有任务需要执行
     this.checkInterval = setInterval(() => this.checkScheduledTasks(), 60000);
     
-    console.log('[AgentAutonomousScheduler] Started');
+    log.info({ msg: 'scheduler_started' });
   }
 
   /**
@@ -85,7 +88,7 @@ export class AgentAutonomousScheduler {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
     }
-    console.log('[AgentAutonomousScheduler] Stopped');
+    log.info({ msg: 'scheduler_stopped' });
   }
 
   /**
@@ -99,7 +102,7 @@ export class AgentAutonomousScheduler {
       runCount: 0,
       errorCount: 0
     });
-    console.log(`[AgentAutonomousScheduler] Registered task: ${taskType.id}`);
+    log.info({ msg: 'task_registered', task_id: taskType.id });
   }
 
   /**
@@ -111,11 +114,11 @@ export class AgentAutonomousScheduler {
     for (const [taskId, task] of this.tasks) {
       try {
         if (this.shouldRunTask(task, now)) {
-          console.log(`[AgentAutonomousScheduler] Executing task: ${taskId}`);
+          log.info({ msg: 'task_executing', task_id: taskId });
           await this.executeTask(taskId);
         }
       } catch (e) {
-        console.error(`[AgentAutonomousScheduler] Error checking task ${taskId}:`, e);
+        log.error({ msg: 'task_check_failed', task_id: taskId, err: e?.message || String(e) });
       }
     }
   }
@@ -189,11 +192,11 @@ export class AgentAutonomousScheduler {
       // 记录任务执行结果
       await this.logTaskExecution(taskId, 'success', result);
       
-      console.log(`[AgentAutonomousScheduler] Task ${taskId} completed successfully`);
+      log.info({ msg: 'task_completed', task_id: taskId });
     } catch (e) {
       task.errorCount++;
       await this.logTaskExecution(taskId, 'error', { error: e?.message });
-      console.error(`[AgentAutonomousScheduler] Task ${taskId} failed:`, e);
+      log.error({ msg: 'task_failed', task_id: taskId, err: e?.message || String(e) });
     }
   }
 
@@ -213,7 +216,7 @@ export class AgentAutonomousScheduler {
         );
       });
     } catch (e) {
-      console.error('[AgentAutonomousScheduler] Error logging task execution:', e);
+      log.error({ msg: 'task_execution_log_failed', err: e?.message || String(e) });
     }
   }
 
@@ -271,7 +274,7 @@ export class AgentCollaborationOrchestrator {
       context
     });
     
-    console.log(`[AgentCollaboration] Started session ${sessionId}: ${topic}`);
+    log.info({ msg: 'collaboration_session_started', session_id: sessionId, topic });
     return sessionId;
   }
 
@@ -341,7 +344,7 @@ export class AgentCollaborationOrchestrator {
    * Data Auditor 消息处理：检查指定数据源近期是否有新记录
    */
   async handleDataAuditorMessage(sessionId, message) {
-    console.log(`[AgentCollaboration] Data Auditor processing message in ${sessionId}`);
+    log.info({ msg: 'collaboration_data_auditor', session_id: sessionId });
     const dataSource = message?.metadata?.dataSource || message?.content;
     if (!dataSource) return;
 
@@ -364,7 +367,7 @@ export class AgentCollaborationOrchestrator {
         { dataSource: table, recordCount: count, checkedAt: new Date().toISOString() }
       );
     } catch (e) {
-      console.error('[AgentCollaboration] Data Auditor query failed:', e?.message);
+      log.error({ msg: 'collaboration_data_auditor_query_failed', err: e?.message });
     }
   }
 
@@ -372,7 +375,7 @@ export class AgentCollaborationOrchestrator {
    * Ops Supervisor 消息处理：统计当前积压任务数
    */
   async handleOpsSupervisorMessage(sessionId, _message) {
-    console.log(`[AgentCollaboration] Ops Supervisor processing message in ${sessionId}`);
+    log.info({ msg: 'collaboration_ops_supervisor', session_id: sessionId });
     try {
       const db = pool();
       const r = await db.query(
@@ -386,7 +389,7 @@ export class AgentCollaborationOrchestrator {
         { taskSummary: r.rows, checkedAt: new Date().toISOString() }
       );
     } catch (e) {
-      console.error('[AgentCollaboration] Ops Supervisor query failed:', e?.message);
+      log.error({ msg: 'collaboration_ops_supervisor_query_failed', err: e?.message });
     }
   }
 
@@ -394,7 +397,7 @@ export class AgentCollaborationOrchestrator {
    * Chief Evaluator 消息处理：统计近7天评分任务完成率
    */
   async handleChiefEvaluatorMessage(sessionId, _message) {
-    console.log(`[AgentCollaboration] Chief Evaluator processing message in ${sessionId}`);
+    log.info({ msg: 'collaboration_chief_evaluator', session_id: sessionId });
     try {
       const db = pool();
       const r = await db.query(
@@ -412,7 +415,7 @@ export class AgentCollaborationOrchestrator {
         { total, done, completionRate: rate, checkedAt: new Date().toISOString() }
       );
     } catch (e) {
-      console.error('[AgentCollaboration] Chief Evaluator query failed:', e?.message);
+      log.error({ msg: 'collaboration_chief_evaluator_query_failed', err: e?.message });
     }
   }
 
@@ -420,7 +423,7 @@ export class AgentCollaborationOrchestrator {
    * Train Advisor 消息处理：返回知识库启用文章数
    */
   async handleTrainAdvisorMessage(sessionId, _message) {
-    console.log(`[AgentCollaboration] Train Advisor processing message in ${sessionId}`);
+    log.info({ msg: 'collaboration_train_advisor', session_id: sessionId });
     try {
       const db = pool();
       const r = await db.query(
@@ -434,7 +437,7 @@ export class AgentCollaborationOrchestrator {
         { total: row?.total, enabled: row?.enabled_cnt, checkedAt: new Date().toISOString() }
       );
     } catch (e) {
-      console.error('[AgentCollaboration] Train Advisor query failed:', e?.message);
+      log.error({ msg: 'collaboration_train_advisor_query_failed', err: e?.message });
     }
   }
 
@@ -455,7 +458,7 @@ export class AgentCollaborationOrchestrator {
       content: summary || '协作会话已结束'
     });
 
-    console.log(`[AgentCollaboration] Ended session ${sessionId}`);
+    log.info({ msg: 'collaboration_session_ended', session_id: sessionId });
     
     // 将会话归档到数据库
     await this.archiveCollaboration(sessionId);
@@ -492,7 +495,7 @@ export class AgentCollaborationOrchestrator {
 
       this.activeCollaborations.delete(sessionId);
     } catch (e) {
-      console.error('[AgentCollaboration] Error archiving collaboration:', e);
+      log.error({ msg: 'collaboration_archive_failed', err: e?.message || String(e) });
     }
   }
 
@@ -557,7 +560,7 @@ export class AgentSelfOptimizationEngine {
         activeDays: parseInt(stats.active_days) || 0
       };
     } catch (e) {
-      console.error('[AgentSelfOptimization] Error analyzing performance:', e);
+      log.error({ msg: 'self_opt_analyze_performance_failed', err: e?.message || String(e) });
       return null;
     }
   }
@@ -601,7 +604,7 @@ export class AgentSelfOptimizationEngine {
         }
       }
     } catch (e) {
-      console.error('[AgentSelfOptimization] Error analyzing data quality:', e);
+      log.error({ msg: 'self_opt_analyze_data_quality_failed', err: e?.message || String(e) });
     }
 
     this.recommendations = recommendations;
@@ -643,7 +646,7 @@ export class AgentSelfOptimizationEngine {
    * 优化数据质量
    */
   async optimizeDataQuality(dataSource) {
-    console.log(`[AgentSelfOptimization] Optimizing data quality for: ${dataSource}`);
+    log.info({ msg: 'self_opt_data_quality', data_source: dataSource });
     // 触发数据质量检查任务
     await AgentCommunicationSystem.reportDataSourceIssue(dataSource, 'quality_check', {
       triggeredBy: 'self_optimization'
@@ -654,7 +657,7 @@ export class AgentSelfOptimizationEngine {
    * 优化性能
    */
   async optimizePerformance(agentId) {
-    console.log(`[AgentSelfOptimization] Optimizing performance for agent: ${agentId}`);
+    log.info({ msg: 'self_opt_performance', agent_id: agentId });
     // 实现性能优化逻辑
   }
 
@@ -662,7 +665,7 @@ export class AgentSelfOptimizationEngine {
    * 优化协作
    */
   async optimizeCollaboration(aspect) {
-    console.log(`[AgentSelfOptimization] Optimizing collaboration: ${aspect}`);
+    log.info({ msg: 'self_opt_collaboration', aspect });
     // 实现协作优化逻辑
   }
 }
@@ -701,7 +704,7 @@ export function initializeAutonomousTasks() {
               });
             }
           } catch (e) {
-            console.error(`[AutonomousTask] Error checking ${source} (tenant=${tenantId}):`, e);
+            log.error({ msg: 'autonomous_check_source_failed', source, tenant_id: tenantId, err: e?.message || String(e) });
           }
         }
       });
@@ -735,7 +738,7 @@ export function initializeAutonomousTasks() {
           });
         }
       }).catch((e) => {
-        console.error(`[AutonomousTask] Error checking pending tasks (tenant=${tenantId}):`, e);
+        log.error({ msg: 'autonomous_check_pending_tasks_failed', tenant_id: tenantId, err: e?.message || String(e) });
       });
     }
     
@@ -745,7 +748,7 @@ export function initializeAutonomousTasks() {
   // 启动调度器
   autonomousScheduler.start();
   
-  console.log('[AgentAutonomousSystem] Autonomous tasks initialized');
+  log.info({ msg: 'autonomous_tasks_initialized' });
 }
 
 export default {

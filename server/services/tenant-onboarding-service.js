@@ -5,6 +5,9 @@
 import { runInspection } from './tenant-operation-inspection-service.js';
 import { tenantContext } from '../utils/database.js';
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'tenant-onboarding' });
 
 export const ONBOARDING_STEPS = [
   { step_key: 'create_store', step_order: 1, title: '创建门店', owner_role: 'platform_team', inspection_keys: ['tenant_has_stores'], impact: '无门店则无法经营诊断与派单' },
@@ -167,7 +170,7 @@ export async function refreshOnboarding(pool, runId) {
     const insp = await latestInspectionByKey(pool, tenantId);
     byKey = insp.byKey;
   } catch (e) {
-    console.warn('[onboarding] inspection failed:', e?.message || e);
+    log.warn({ msg: 'inspection_failed', err: e?.message || String(e) });
   }
 
   let current = 'go_live';

@@ -4,6 +4,9 @@ import {
   runForActiveTenants,
   runWithSystemTenantContext,
 } from '../utils/database.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ai-quality-learning' });
 
 const MAX_LEARNING_TEXT = 6000;
 const PURPOSE_RE = /^[a-zA-Z0-9_.:-]{1,80}$/;
@@ -914,9 +917,9 @@ export function startAiQualityLearningScheduler(pool, {
     running = true;
     try {
       const result = await runAiQualityLearningCycle(pool, { generateCandidate, evaluateCandidate });
-      console.log('[ai-quality-learning] cycle complete:', JSON.stringify({ dataset: result.dataset, proposals: result.proposals?.length || 0, canaries: result.canaries?.length || 0, errors: result.tenantRun?.errors?.length || 0 }));
+      log.info({ msg: 'cycle_complete', dataset: result.dataset, proposals: result.proposals?.length || 0, canaries: result.canaries?.length || 0, errors: result.tenantRun?.errors?.length || 0 });
     } catch (error) {
-      console.error('[ai-quality-learning] cycle failed:', error?.message || error);
+      log.error({ msg: 'cycle_failed', err: error?.message || String(error) });
     } finally {
       running = false;
     }
@@ -1037,7 +1040,7 @@ export async function runPlatformQualityModelTask(pool, {
         Number(result?.raw?.usage?.prompt_tokens || 0) || null,
         Number(result?.raw?.usage?.completion_tokens || 0) || null,
         result?.ok === true ? null : String(result?.error || 'quality_model_call_failed').slice(0, 120)]
-    )).catch((error) => console.error('[ai-quality-learning] model call audit failed:', error?.message || error));
+    )).catch((error) => log.error({ msg: 'model_call_audit_failed', err: error?.message || String(error) }));
   }
 }
 

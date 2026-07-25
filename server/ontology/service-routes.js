@@ -3,6 +3,9 @@
  */
 
 import { lintMetrics } from './metric-lint.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'service-routes' });
 import {
   generateActionPlanFromInsights,
   generateBossSummary,
@@ -29,7 +32,7 @@ export async function ensureGrowth(pool) {
     await ensureGrowthOntologyCore(pool);
     await ensureOntologyRuleConfig(pool);
   } catch (e) {
-    console.error('[ontology] growth ontology init error:', e?.message || e);
+    log.error({ msg: 'growth_ontology_init_error', err: e?.message || String(e) });
     throw e;
   }
 }

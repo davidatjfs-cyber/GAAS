@@ -13,6 +13,9 @@
  * "数据库还没就绪"不会导致和现在不一样的结果。
  */
 import { pool, runWithSystemTenantContext } from './database.js';
+import { childLogger } from './logger.js';
+
+const log = childLogger({ domain: 'store-alias-cache' });
 
 const REFRESH_MS = 5 * 60 * 1000;
 const DEFAULT_TENANT = 'default';
@@ -45,9 +48,7 @@ function warnAmbiguous(key, tenantIds) {
   const last = _ambiguityWarnedAt.get(key) || 0;
   if (now - last < 10 * 60 * 1000) return;
   _ambiguityWarnedAt.set(key, now);
-  console.warn(
-    `[store-alias-cache] 裸查找(未传tenantId)"${key}"在多个租户下都有匹配：${tenantIds.join(',')}——已按第一个匹配返回，调用方应尽快补上明确的tenantId参数。`
-  );
+  log.warn({ msg: 'ambiguous_alias_without_tenant', key, tenant_ids: tenantIds });
 }
 
 async function refresh() {
@@ -62,7 +63,7 @@ async function refresh() {
       if (res.rows?.length) _aliases = res.rows;
       _lastLoadAt = Date.now();
     } catch (e) {
-      console.error('[store-alias-cache] refresh failed, keep using previous cache:', e?.message || e);
+      log.error({ msg: 'refresh_failed', err: e?.message || String(e) });
     } finally {
       _loadingPromise = null;
     }

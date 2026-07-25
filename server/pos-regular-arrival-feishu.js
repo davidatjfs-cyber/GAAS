@@ -1,3 +1,7 @@
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'pos-regular-arrival' });
+
 /**
  * POS 订单入库后直连飞书「熟客到店」提醒。
  * HRMS pos_orders upsert 完成 → 手机号历史 ≥2 单 → 飞书群（HTTP 网关或 HRMS 直连）。
@@ -70,7 +74,7 @@ async function loadStoreFeishuConfigs(pool) {
       byStore.set(sid, row);
     }
   } catch (e) {
-    console.warn('[pos-regular-arrival] load feishu configs failed:', e?.message || e);
+    log.warn({ msg: 'load_feishu_configs_failed', err: e?.message || String(e) });
   }
   feishuConfigCache = { loadedAt: now, byStore };
   return byStore;
@@ -343,7 +347,7 @@ export async function maybeNotifyRegularCustomerFromPosOrder(pool, orderCtx = {}
   );
 
   if (!pushOk) {
-    console.warn('[pos-regular-arrival] push failed', storeId, phone.slice(-4), pushError);
+    log.warn({ msg: 'push_failed', store_id: storeId, phone_tail: phone.slice(-4), err: pushError });
     return { skipped: false, notified: false, error: pushError, visit_date: visitDate };
   }
 

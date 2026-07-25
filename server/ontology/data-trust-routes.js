@@ -4,6 +4,9 @@
  * 各业务模块(打卡/培训/库存等)接入调用时机是下一步，不在本次范围内。
  */
 import { listConflictRules, getUsagePolicy } from './data-trust-service.js';
+import { childLogger } from '../utils/logger.js';
+
+const log = childLogger({ domain: 'ontology', handler: 'data-trust-routes' });
 
 export function registerDataTrustRoutes(app, pool, authRequired, platformAdminRequired) {
   app.get('/api/ontology/data-trust/conflict-rules', authRequired, async (_req, res) => {
@@ -22,7 +25,7 @@ export function registerDataTrustRoutes(app, pool, authRequired, platformAdminRe
       );
       res.json({ ok: true, records: (r.rows || []).map((row) => ({ ...row, usage_policy: getUsagePolicy(Number(row.trust_score)) })) });
     } catch (e) {
-      console.error('[data-trust] records query failed:', e?.message || e);
+      log.error({ msg: 'records_query_failed', err: e?.message || String(e) });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -36,7 +39,7 @@ export function registerDataTrustRoutes(app, pool, authRequired, platformAdminRe
       );
       res.json({ ok: true, conflicts: r.rows || [] });
     } catch (e) {
-      console.error('[data-trust] conflicts query failed:', e?.message || e);
+      log.error({ msg: 'conflicts_query_failed', err: e?.message || String(e) });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
@@ -52,7 +55,7 @@ export function registerDataTrustRoutes(app, pool, authRequired, platformAdminRe
       if (!r.rows?.[0]) return res.status(404).json({ ok: false, error: 'not_found' });
       res.json({ ok: true, record: r.rows[0] });
     } catch (e) {
-      console.error('[data-trust] review failed:', e?.message || e);
+      log.error({ msg: 'review_failed', err: e?.message || String(e) });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
