@@ -21,7 +21,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { isAiQualityExternalEnabled, isExternalEnabled, isWebhookEnabled } from './safety.js';
+import { isAiQualityExternalEnabled, isExternalEnabled } from './safety.js';
 import crypto from 'crypto';
 import { 
   calculateStoreRating, 
@@ -32,9 +32,8 @@ import {
   AgentCommunicationHelper 
 } from './agent-communication-system.js';
 import { pool as agentPool, setPool as setUnifiedAgentPool, getActiveTenantIds, resolveTenantIdDefault, tenantContext } from './utils/database.js'
-import { getTenantAiModelConfig, getTenantFeishuBotIntegration } from './tenant-integrations.js';
+import { getTenantAiModelConfig } from './tenant-integrations.js';
 import { getLarkTenantToken as getTenantLarkToken } from './feishu-messaging.js';
-import { verifyFeishuWebhookRequest, requireWebhookSignatureEnabled } from './utils/feishu-webhook-verify.js';
 import { getBrandConfigSync, getBrandForStoreSync, getAllBrandNamesSync } from './utils/brand-config-loader.js';
 import { safeExecute, safeErrorLog } from './utils/error-handler.js';
 import { maskLLMMessages } from './utils/sensitive-mask.js';
@@ -4854,7 +4853,7 @@ let _bitableTenantTokens = new Map(); // 支持多个配置的 token
 
 // 获取飞书租户token；tenantId 有独立配置的 feishu_bot(app_id/app_secret) 就用租户自己的应用身份，
 // 否则回退到平台全局 LARK_APP_ID/LARK_APP_SECRET（历史行为，向后兼容不传tenantId的调用方）
-async function getLarkTenantToken(tenantId) {
+export async function getLarkTenantToken(tenantId) {
   // 未显式传tenantId时，跟随当前 AsyncLocalStorage 租户上下文（跟RLS用的是同一套上下文），
   // 这样绝大多数已经跑在 tenantContext.run(tenantId, ...) 里的业务调用（审批提醒/检查表提醒等）
   // 不需要逐个调用点手动传tenantId也能自动按租户选择飞书应用；没有任何租户上下文时(或该租户未
@@ -8843,7 +8842,7 @@ function checkAgentPermission(role, route) {
   return { allowed: false, reason: `您的角色（${r}）暂无权限使用该功能，请联系管理员。` };
 }
 
-async function routeMessage(text, hasImage, senderUsername) {
+export async function routeMessage(text, hasImage, senderUsername) {
   const t = String(text || '').trim();
 
   // ── P0: 规划类请求最高优先——直接路由到 data_auditor（BI），跳过规则引擎走方案生成路径
@@ -11384,7 +11383,7 @@ export async function onFeishuEvent(body) {
 // ─────────────────────────────────────────────
 
 // Push new issues to their assignees via Feishu
-async function pushIssuesToFeishu(tenantId = 'default') {
+export async function pushIssuesToFeishu(tenantId = 'default') {
   try {
     const r = await pool().query(
       `SELECT ai.id, ai.title, ai.detail, ai.severity, ai.store, ai.category, ai.assignee_username
@@ -11480,7 +11479,7 @@ function currentAndPrevMonthPeriodStrForPush() {
 }
 
 // Push performance scores to users via Feishu
-async function pushScoresToFeishu() {
+export async function pushScoresToFeishu() {
   try {
     console.log('[perf] pushScoresToFeishu disabled: agents-service-v2 owns weekly/monthly score delivery');
     return 0;
@@ -11957,274 +11956,12 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000); // 每10分钟清理一次
 
-export function registerAgentRoutes(app, authRequired) {
-
-  // ── Feishu Webhook (public, no auth) ──
-  // 事件订阅回调：机器人收到的消息(im.message.receive_v1)/审批卡片按钮点击(card.action.trigger)。
-  // 这个是"平台全局应用"的固定地址，飞书自建应用一个应用只能配一个Request URL，所以外部租户
-  // 自己的飞书应用必须配一个不同的URL——见下面的 /api/feishu/webhook/:tenantId。
-  async function handleFeishuWebhookRequest(req, res, { encryptKey, verificationToken, tenantId }) {
-    // 飞书机器人事件回调实际由 agents-service-v2(独立进程/端口) 接收处理，这里默认关闭，
-    // 避免留一个没人维护、未鉴权就能调用的公网入口(风险面)。确认过nginx改指回GAAS再显式
-    // 设置 ENABLE_WEBHOOK=true 打开——跟同文件里 index.js 的另一个飞书webhook用同一个开关，
-    // 默认关闭时行为不变(生产环境本来就没设这个变量)。
-    if (!isWebhookEnabled()) {
-      return res.status(404).json({ ok: false, error: 'webhook_disabled' });
-    }
-    try {
-      const body = req.body;
-      const rawBuf = Buffer.isBuffer(body)
-        ? body
-        : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body || {}), 'utf8');
-      const parsed = (body && typeof body === 'object' && !Buffer.isBuffer(body))
-        ? body
-        : (() => { try { return JSON.parse(rawBuf.toString('utf8')); } catch { return {}; } })();
-      const sigCheck = verifyFeishuWebhookRequest({
-        headers: req.headers,
-        rawBody: rawBuf,
-        parsedBody: parsed,
-        encryptKey,
-        verificationToken,
-        requireSignature: requireWebhookSignatureEnabled(),
-      });
-      if (!sigCheck.ok) {
-        console.warn('[feishu webhook] rejected:', sigCheck.reason);
-        return res.status(401).json({ ok: false, error: sigCheck.reason || 'unauthorized' });
-      }
-      // 包一层租户上下文：onFeishuEvent 内部的 sendLarkMessage/RLS查询都会跟随这个上下文，
-      // 自动使用该租户自己的飞书应用身份回复、自动落到该租户自己的数据里。
-      const result = tenantId
-        ? await tenantContext.run(tenantId, () => onFeishuEvent(parsed))
-        : await onFeishuEvent(parsed);
-      return res.json(result);
-    } catch (e) {
-      console.error('[feishu webhook] error:', e?.message);
-      return res.status(200).json({ ok: true, error: String(e?.message || e) });
-    }
-  }
-
-  app.post('/api/feishu/webhook', async (req, res) => {
-    const encryptKey = String(process.env.FEISHU_ENCRYPT_KEY || process.env.LARK_ENCRYPT_KEY || '').trim();
-    const verificationToken = String(process.env.FEISHU_VERIFICATION_TOKEN || process.env.LARK_VERIFICATION_TOKEN || '').trim();
-    return handleFeishuWebhookRequest(req, res, { encryptKey, verificationToken, tenantId: null });
-  });
-
-  // 租户自己的飞书应用事件订阅地址：在 tenant_integrations(feishu_bot) 里配置了
-  // encrypt_key/verification_token 才能用；没配就跟平台全局应用的Verification Token/Encrypt Key
-  // 校验（等于还没做入站事件隔离，仅回退，不报错，避免误配置直接把请求全部拒绝）。
-  app.post('/api/feishu/webhook/:tenantId', async (req, res) => {
-    const tenantId = String(req.params.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant_id' });
-    const encKey = String(process.env.TENANT_INTEGRATION_ENCRYPTION_KEY || '').trim();
-    let cfg = null;
-    if (encKey) {
-      cfg = await tenantContext.run(tenantId, () => getTenantFeishuBotIntegration(pool(), tenantId, encKey)).catch((e) => {
-        console.warn(`[feishu webhook] tenant ${tenantId} feishu_bot config unusable:`, e?.message);
-        return null;
-      });
-    }
-    const encryptKey = cfg?.encrypt_key || String(process.env.FEISHU_ENCRYPT_KEY || process.env.LARK_ENCRYPT_KEY || '').trim();
-    const verificationToken = cfg?.verification_token || String(process.env.FEISHU_VERIFICATION_TOKEN || process.env.LARK_VERIFICATION_TOKEN || '').trim();
-    return handleFeishuWebhookRequest(req, res, { encryptKey, verificationToken, tenantId });
-  });
-
-  // dashboard / brief / activity-detail / score-provenance / employee-live-dashboard
-  // → server/domains/agent-data-center/（由 index.js 注册）
-
-  // performance / eval / autonomous-tasks / quality-audits / scheduler / clear-cache
-  // → server/domains/agent-ops/（由 index.js 注册）
-
-  // issues / scores / appeals / messages / feishu-users / agent-scores/me
-  // → server/domains/agent-records/（由 index.js 注册）
-
-  // ── Manual triggers (admin) ──
-  app.post('/api/agents/run/audit', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (role !== 'admin' && role !== 'hq_manager') return res.status(403).json({ error: 'forbidden' });
-    try {
-      const mode = String(req.body?.mode || 'full').trim().toLowerCase();
-      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
-      let issuesCreated = 0;
-      let newIssueIds = [];
-      if (mode === 'daily') {
-        const r = await runDataAuditor('daily', tenantIdQ);
-        issuesCreated = r.issuesCreated;
-        newIssueIds = r.newIssueIds || [];
-      } else if (mode === 'weekly') {
-        const r = await runDataAuditor('weekly', tenantIdQ);
-        issuesCreated = r.issuesCreated;
-        newIssueIds = r.newIssueIds || [];
-      } else {
-        const d = await runDataAuditor('daily', tenantIdQ);
-        const w = await runDataAuditor('weekly', tenantIdQ);
-        issuesCreated = d.issuesCreated + w.issuesCreated;
-        newIssueIds = [...(d.newIssueIds || []), ...(w.newIssueIds || [])];
-      }
-      const pushed = await pushIssuesToFeishu();
-      let masterSynced = 0;
-      try {
-        const { syncDataAuditorIssuesToMasterTasks } = await import('./master-agent.js');
-        masterSynced = await syncDataAuditorIssuesToMasterTasks(newIssueIds);
-      } catch (e) {
-        console.error('[agents/run/audit] master sync:', e?.message);
-      }
-      return res.json({ issuesCreated, newIssueIds, feishuPushed: pushed, masterSynced });
-    } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
-  });
-
-  /** 按门店重算并写入 store_ratings（规范店名 + 宽匹配目标营业额）；用于洪潮等门店级别未及时落库时手工触发 */
-  app.post('/api/agents/run/store-ratings', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (role !== 'admin' && role !== 'hq_manager') return res.status(403).json({ error: 'forbidden' });
-    try {
-      let period = String(req.body?.period || '').trim();
-      if (!period || !/^\d{4}-\d{2}$/.test(period)) {
-        const sh = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-        period = `${sh.getFullYear()}-${String(sh.getMonth() + 1).padStart(2, '0')}`;
-      }
-      const ur = await pool().query(
-        `SELECT DISTINCT TRIM(store) AS store FROM feishu_users
-         WHERE registered = true AND TRIM(COALESCE(store,'')) <> ''
-           AND role IN ('store_manager','store_production_manager')`
-      );
-      const seen = new Set();
-      const results = [];
-      for (const row of ur.rows || []) {
-        const st = String(row.store || '').trim();
-        const k = st.toLowerCase().replace(/\s+/g, '');
-        if (!st || seen.has(k)) continue;
-        seen.add(k);
-        const brand = inferBrandFromStoreName(st);
-        const r = await calculateStoreRating(st, brand, period);
-        results.push({
-          store: st,
-          brand,
-          period,
-          rating: r.rating ?? null,
-          reason: r.reason,
-          achievementRate: r.achievementRate,
-          actualRevenue: r.actualRevenue,
-          targetRevenue: r.targetRevenue
-        });
-      }
-      return res.json({ ok: true, period, count: results.length, results });
-    } catch (e) {
-      return res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
-
-  app.post('/api/agents/run/evaluate', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (role !== 'admin' && role !== 'hq_manager') return res.status(403).json({ error: 'forbidden' });
-    const period = String(req.body?.period || '').trim();
-    if (!period) return res.status(400).json({ error: 'missing_period' });
-    try {
-      const result = await runChiefEvaluator(period, req.tenantId || req.user?.tenant_id || 'default');
-      const pushed = await pushScoresToFeishu();
-      return res.json({ ...result, feishuPushed: pushed });
-    } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
-  });
-
-  // ── Send test message to Feishu (admin) ── H2-FIX: 修复断裂的路由处理器
-  app.post('/api/agents/test-feishu', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (role !== 'admin') return res.status(403).json({ error: 'forbidden' });
-    const openId = String(req.body?.openId || '').trim();
-    const text = String(req.body?.text || 'HRMS Agent 测试消息').trim();
-    if (!openId) return res.status(400).json({ error: 'missing_openId' });
-    try {
-      const result = await sendLarkMessage(openId, text);
-      return res.json(result);
-    } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
-  });
-
-  // ── Vision LLM Test (admin) ──
-  app.post('/api/agents/test-vision', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (role !== 'admin') return res.status(403).json({ error: 'forbidden' });
-    const imageUrl = String(req.body?.imageUrl || '').trim();
-    const prompt = String(req.body?.prompt || '请识别这张图片中的内容，判断是否为餐厅厨房环境或整改照片').trim();
-    if (!imageUrl) return res.status(400).json({ error: 'missing_imageUrl' });
-    try {
-      const result = await callVisionLLM(imageUrl, prompt);
-      return res.json({ ok: result.ok, content: result.content, error: result.error || null });
-    } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
-  });
-
-  // ── LLM Test (admin) ──
-  app.post('/api/agents/test-llm', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (role !== 'admin') return res.status(403).json({ error: 'forbidden' });
-    const prompt = String(req.body?.prompt || '请用一句话介绍潮汕菜的特点').trim();
-    const model = String(req.body?.model || DEEPSEEK_MODEL).trim() || DEEPSEEK_MODEL;
-    try {
-      const result = await callLLM(
-        [{ role: 'user', content: prompt }],
-        { model, temperature: 0, max_tokens: 120, skipCache: true }
-      );
-      return res.json({ ok: result.ok, model, content: result.content, error: result.error || null });
-    } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
-  });
-
-  // ── Run full LLM health check now (admin/hq_manager) ──
-  app.post('/api/agents/llm-health-check', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    try {
-      const result = await verifyLLMHealth({ notifyOnFailure: true, notifyOnRecovery: true, forceNotify: true });
-      return res.json({ ok: true, ...result });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
-
-  // ── Test endpoints (admin only) ──
-
-  // Test: get feishu tenant token
-  app.get('/api/agents/feishu-token-test', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    try {
-      const token = await getLarkTenantToken();
-      if (!token) return res.json({ ok: false, error: 'no_token — check LARK_APP_ID / LARK_APP_SECRET in .env' });
-      return res.json({ ok: true, token: token.slice(0, 8) + '...' + token.slice(-4), length: token.length });
-    } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e) }); }
-  });
-
-  // Test: send arbitrary message to a feishu open_id
-  app.post('/api/agents/feishu-send-test', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    const openId = String(req.body?.openId || '').trim();
-    const message = String(req.body?.message || 'HRMS Agent 测试消息').trim();
-    if (!openId) return res.status(400).json({ error: 'missing openId' });
-    try {
-      const result = await sendLarkMessage(openId, message);
-      return res.json(result);
-    } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e) }); }
-  });
-
-  // Test: message routing logic (no side effects)
-  app.post('/api/agents/route-test', authRequired, async (req, res) => {
-    const text = String(req.body?.text || '').trim();
-    const hasImage = !!req.body?.hasImage;
-    const route = await routeMessage(text, hasImage, String(req.user?.username || '').trim());
-    const AUDIT_KEYWORDS = ['损耗', '盘点', '毛利', '牛肉', '成本', '差评', '折扣', '营收', '对账', '异常'];
-    const OPS_KEYWORDS = ['图片', '卫生', '检查', '拍照', '摆盘', '收货', '消毒', '开市', '闭市', '巡检'];
-    const EVAL_KEYWORDS = ['分数', '绩效', '考核', '奖金', '得分', '扣分', '排名', '评价', '这周'];
-    const HR_KEYWORDS = ['离职', '辞职', '入职', '转正', '晋升', '调岗', '加薪', '薪资', '工资', '请假', '休假', '社保', '人事', '档案', '考勤'];
-    const APPEAL_KEYWORDS = ['申诉', '取消扣分', '不公平', '误判', '恢复', '投诉', '举报'];
-    const SOP_KEYWORDS = ['SOP', '赔付', '退款', '培训', '入职培训', '课件', '带教', '讲师', '考核培训', '技能培训', '标准作业'];
-    const matched = [
-      ...AUDIT_KEYWORDS.filter(k => text.includes(k)).map(k => `audit:${k}`),
-      ...OPS_KEYWORDS.filter(k => text.includes(k)).map(k => `ops:${k}`),
-      ...HR_KEYWORDS.filter(k => text.includes(k)).map(k => `hr:${k}`),
-      ...EVAL_KEYWORDS.filter(k => text.includes(k)).map(k => `eval:${k}`),
-      ...APPEAL_KEYWORDS.filter(k => text.includes(k)).map(k => `appeal:${k}`),
-      ...SOP_KEYWORDS.filter(k => text.includes(k)).map(k => `train:${k}`),
-    ];
-    return res.json({ route, text, hasImage, matchedKeywords: matched });
-  });
+/**
+ * 兼容入口：路由已迁至 domains/agent-*（feishu-bot / data-center / ops / records / triggers）。
+ * index.js 分别注册各域；保留此函数以免旧调用点断裂。
+ */
+export function registerAgentRoutes(_app, _authRequired) {
+  // no-op — see domains/agent-feishu-bot, agent-data-center, agent-ops, agent-records, agent-triggers
 }
 
 // ─────────────────────────────────────────────

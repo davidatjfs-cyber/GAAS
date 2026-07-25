@@ -180,17 +180,19 @@ pg.types.setTypeParser(1184, str => {
 
 import XLSX from 'xlsx';
 import axios from 'axios';
-import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, getAgentPerformanceMetrics, getScheduledTaskStatus, clearAgentCache, runAgentEvalSuite, getSharedState as getAgentSharedState, inferBrandFromStoreName, fetchStoreRatingForProfileDisplay, registerFeishuUser, pool as agentPool, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache, getBitableSubmissionStats, archiveOldBitableSubmissions } from './agents.js';
+import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, getAgentPerformanceMetrics, getScheduledTaskStatus, clearAgentCache, runAgentEvalSuite, getSharedState as getAgentSharedState, inferBrandFromStoreName, fetchStoreRatingForProfileDisplay, registerFeishuUser, runDataAuditor, runChiefEvaluator, pushIssuesToFeishu, pushScoresToFeishu, getLarkTenantToken, routeMessage, callVisionLLM, pool as agentPool, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache, getBitableSubmissionStats, archiveOldBitableSubmissions } from './agents.js';
 import { registerAgentDataCenterRoutes } from './domains/agent-data-center/routes.js';
 import { registerAgentOpsRoutes } from './domains/agent-ops/routes.js';
 import { registerAgentRecordsRoutes } from './domains/agent-records/routes.js';
+import { registerAgentTriggersRoutes } from './domains/agent-triggers/routes.js';
+import { registerAgentFeishuBotRoutes } from './domains/agent-feishu-bot/routes.js';
 import { calculateStoreRating } from './new-scoring-model.js';
 import { cronJobLabelZh } from './cron-job-label-zh.js';
 import { ensureAgentConfigTables, registerAgentConfigRoutes } from "./agent-config-manager.js";
 import { initBrandConfigCache, getBrandForStoreSync, getBrandConfigSync } from './utils/brand-config-loader.js';
 import { initStoreAliasCache } from './utils/store-alias-cache.js';
 
-import { setMasterPool, ensureMasterTables, startMasterAgent, registerMasterRoutes, handleTaskResponse } from './master-agent.js';
+import { setMasterPool, ensureMasterTables, startMasterAgent, registerMasterRoutes, handleTaskResponse, syncDataAuditorIssuesToMasterTasks } from './master-agent.js';
 import { setReportPool } from './bi-weekly-report.js';
 import { setSalesRawPool } from './sales-raw-upload.js';
 import { startSalesRawFolderImporter, runSalesRawFolderImportOnce, setSalesRawFolderImportFailureNotifier } from './sales-raw-folder-importer.js';
@@ -1857,6 +1859,27 @@ registerAgentRecordsRoutes(app, authRequired, {
   fetchStoreRatingForProfileDisplay,
   calculateStoreRating,
   registerFeishuUser,
+});
+registerAgentTriggersRoutes(app, authRequired, {
+  pool: agentPool,
+  runDataAuditor,
+  pushIssuesToFeishu,
+  syncDataAuditorIssuesToMasterTasks,
+  runChiefEvaluator,
+  pushScoresToFeishu,
+  sendLarkMessage,
+  callVisionLLM,
+  callLLM,
+  verifyLLMHealth,
+  getLarkTenantToken,
+  routeMessage,
+  inferBrandFromStoreName,
+  calculateStoreRating,
+  defaultLlmModel: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+});
+registerAgentFeishuBotRoutes(app, {
+  pool: agentPool,
+  onFeishuEvent,
 });
 registerAgentRoutes(app, authRequired);
 registerAgentConfigRoutes(app, authRequired);
