@@ -1,7 +1,7 @@
 {
   "lines": 38,
   "branches": 57,
-  "functions": 40,
+  "functions": 41,
   "updated": "2026-07-25",
-  "note": "Phase 1 部分：授信/租户登录补测后实测约 lines 38.71 / branches 57.06 / functions 40.86。branches 56→57；lines/functions 未到下一整数档。只升不降。"
+  "note": "Phase 1b：入职 payload / 奖惩 ledger / 账单 profile 门禁后实测约 lines 38.94 / branches 57.39 / functions 41.03。functions 40→41。只升不降。"
 }

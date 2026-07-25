@@ -7,6 +7,8 @@ import * as offboarding from '../domains/approvals/handlers/offboarding.js';
 import * as points from '../domains/approvals/handlers/points.js';
 import * as promotion from '../domains/approvals/handlers/promotion.js';
 import * as onboarding from '../domains/approvals/handlers/onboarding.js';
+import * as rewardPunishment from '../domains/approvals/handlers/reward-punishment.js';
+import { createPromotionRecipientsHelpers } from '../domains/approvals/promotion-recipients.js';
 
 function makeRes() {
   return {
@@ -592,4 +594,99 @@ test('onboarding.afterDecide pending with nextAssignee sends pending notificatio
   assert.equal(notifs[0].title, '新员工入职审批待处理');
   assert.equal(notifs[0].meta.type, 'onboarding_request');
   assert.match(notifs[0].msg, /钱七/);
+});
+
+test('reward_punishment.afterDecide approved reward: +signedAmount + ledger reward', async () => {
+  const { deps, notifs, ledgerCalls, merges } = makeDeps({
+    state: { salaryAdjustments: [] },
+  });
+  // afterDecide mutates via getSharedState only — merges not used; capture via getSharedState side effect
+  let stateSnap = { salaryAdjustments: [] };
+  deps.getSharedState = async () => stateSnap;
+  // handler does `state = { ...state, salaryAdjustments }` locally then never mergeSharedStateFields —
+  // it only uses local state for notifications. Assert ledger + notifications + pool insert.
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default', user: { tenant_id: 'default' } },
+    deps,
+    updated: {
+      id: 'appr-rp-1',
+      type: 'reward_punishment',
+      status: 'approved',
+      applicant_username: 'mgr1',
+      payload: {
+        targetUsername: 'emp1',
+        rpType: '奖励',
+        amount: 200,
+        reason: '表现优秀',
+        bizMonth: '2026-07',
+      },
+    },
+    nextAssignee: null,
+    note: '',
+    username: 'boss',
+  });
+  assert.equal(ledgerCalls.length, 1);
+  assert.equal(ledgerCalls[0][0].entryType, 'reward');
+  assert.equal(ledgerCalls[0][0].amount, 200);
+  assert.ok(notifs.some((n) => n.meta.type === 'reward_punishment_result' && /奖励/.test(n.title)));
+  void merges;
+});
+
+test('reward_punishment.afterDecide approved punishment: negative signedAmount + ledger punishment', async () => {
+  const { deps, ledgerCalls } = makeDeps({ state: {} });
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps,
+    updated: {
+      id: 'appr-rp-2',
+      type: 'reward_punishment',
+      status: 'approved',
+      applicant_username: 'mgr1',
+      payload: {
+        employeeUsername: 'emp2',
+        category: '惩罚',
+        amount: 50,
+        reason: '迟到',
+      },
+    },
+    nextAssignee: null,
+    note: '',
+    username: 'boss',
+  });
+  assert.equal(ledgerCalls[0][0].entryType, 'punishment');
+  assert.equal(ledgerCalls[0][0].amount, -50);
+});
+
+test('reward_punishment.afterDecide rejected notifies applicant only', async () => {
+  const { deps, notifs, ledgerCalls } = makeDeps();
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps,
+    updated: {
+      id: 'appr-rp-3',
+      type: 'reward_punishment',
+      status: 'rejected',
+      applicant_username: 'mgr1',
+      payload: { targetUsername: 'emp1', rpType: '奖励', amount: 10 },
+    },
+    nextAssignee: null,
+    note: '证据不足',
+    username: 'boss',
+  });
+  assert.equal(ledgerCalls.length, 0);
+  assert.equal(notifs.length, 1);
+  assert.equal(notifs[0].u, 'mgr1');
+  assert.match(notifs[0].msg, /证据不足/);
+});
+
+test('isKitchenByRoleOrPosition: 出品经理与职位关键词', () => {
+  const { isKitchenByRoleOrPosition } = createPromotionRecipientsHelpers({
+    pickStoreRoleUsernameByStore: () => '',
+    pickHqManagerUsername: async () => '',
+    uniqUsernames: (a) => a,
+    stateFindUserRecord: () => ({}),
+  });
+  assert.equal(isKitchenByRoleOrPosition('store_production_manager', '', ''), true);
+  assert.equal(isKitchenByRoleOrPosition('store_employee', '后厨主管', ''), true);
+  assert.equal(isKitchenByRoleOrPosition('store_employee', '服务员', '前厅'), false);
 });
