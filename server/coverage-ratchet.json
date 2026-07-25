@@ -1,7 +1,7 @@
 {
-  "lines": 41,
+  "lines": 42,
   "branches": 59,
   "functions": 44,
   "updated": "2026-07-25",
-  "note": "Phase 1k：approvals create 校验路径 + lifecycle resubmit(points/onboarding) + offboarding/promotion handlers beforeUpdate/afterDecide。实测约 lines 41.66 / branches 59.54 / functions 44.67。整数档 42/60/45 未到，地板仍 41/59/44。只升不降。"
+  "note": "Phase 1l：promotion afterDecide 正式/资格/拒绝/待审 + create promotion/payment 成功链。实测约 lines 42.05 / branches 59.27 / functions 44.87。lines 升至 42；branches/functions 整数档未升。只升不降。"
 }
