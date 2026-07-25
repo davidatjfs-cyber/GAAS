@@ -1026,3 +1026,350 @@ test('promotion afterDecide：员工缺失；课题已认证跳过；资格无 p
     note: '',
   });
 });
+
+test('L1 falsy：offboarding/promotion 空字段与 null state', async () => {
+  // beforeUpdate：type 空；resignDate 链仅 resignationDate
+  await offboarding.beforeUpdate({
+    beforeChain: true,
+    departureType: 'voluntary',
+    row: { type: '' },
+    updatedPayload: {},
+    deps: { safeDateOnly: (d) => (d ? String(d).slice(0, 10) : '') },
+  });
+  const payload = { resignationDate: '2026-09-01' };
+  const ctx = {
+    beforeChain: false,
+    nextStatus: 'approved',
+    row: { type: 'offboarding' },
+    updatedPayload: payload,
+    deps: { safeDateOnly: (d) => (d ? String(d).slice(0, 10) : '') },
+  };
+  await offboarding.beforeUpdate(ctx);
+  assert.equal(ctx.effectiveDate, '2026-09-01');
+
+  // afterDecide：state null；申请人无名；空 username 员工槽；status 空
+  {
+    const merges = [];
+    const notifs = [];
+    const deps = {
+      hrmsNowISO: () => '2026-07-25T12:00:00+08:00',
+      shanghaiTodayDateOnly: () => '2026-07-25',
+      safeDateOnly: (d) => (d ? String(d).slice(0, 10) : ''),
+      makeNotif: (u, title, msg, meta) => ({ u, title, msg, meta }),
+      appendNotifications: async (items) => {
+        notifs.push(...items);
+      },
+      getSharedState: async () => null,
+      mergeSharedStateFields: async (patch, idFields) => {
+        merges.push({ patch, idFields });
+      },
+      stateFindUserRecord: () => ({ username: 'emp1', name: '' }),
+      uniqUsernames: (a) => [...new Set(a.filter(Boolean))],
+    };
+    await offboarding.afterDecide({
+      deps,
+      updated: {
+        id: 'ob-falsy',
+        type: 'offboarding',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: { resignDate: '2026-07-20' },
+      },
+      nextAssignee: null,
+      note: '',
+    });
+    assert.ok(notifs.some((n) => n.title === '离职申请已通过'));
+    // state 为 null → 无 employees/users 可改
+    assert.equal(merges.length, 0);
+  }
+  {
+    const merges = [];
+    const notifs = [];
+    const deps = {
+      hrmsNowISO: () => '2026-07-25T12:00:00+08:00',
+      shanghaiTodayDateOnly: () => '2026-07-25',
+      safeDateOnly: (d) => (d ? String(d).slice(0, 10) : ''),
+      makeNotif: (u, title, msg, meta) => ({ u, title, msg, meta }),
+      appendNotifications: async (items) => {
+        notifs.push(...items);
+      },
+      getSharedState: async () => ({
+        employees: [{ username: '', name: '空名' }, { username: 'EMP1', name: '甲', status: 'active' }],
+        users: [{ username: 'emp1', status: 'active' }],
+      }),
+      mergeSharedStateFields: async (patch, idFields) => {
+        merges.push({ patch, idFields });
+      },
+      stateFindUserRecord: () => ({ username: 'emp1', name: '甲', managerUsername: '' }),
+      uniqUsernames: (a) => [...new Set(a.filter(Boolean))],
+    };
+    await offboarding.afterDecide({
+      deps,
+      updated: {
+        id: 'ob-case',
+        type: 'offboarding',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: { date: '2026-07-20' },
+      },
+      note: '',
+    });
+    assert.ok(merges.some((m) => m.patch.employees?.[0]?.status === '离职'));
+  }
+  {
+    const merges = [];
+    const deps = {
+      hrmsNowISO: () => '2026-07-25T12:00:00+08:00',
+      shanghaiTodayDateOnly: () => '2026-07-25',
+      safeDateOnly: () => '',
+      makeNotif: (u, title, msg, meta) => ({ u, title, msg, meta }),
+      appendNotifications: async () => {},
+      getSharedState: async () => ({}),
+      mergeSharedStateFields: async (patch) => {
+        merges.push(patch);
+      },
+      stateFindUserRecord: () => null,
+      uniqUsernames: (a) => a,
+    };
+    await offboarding.afterDecide({
+      deps,
+      nextAssignee: 'mgr1',
+      updated: {
+        id: 'ob-pend-empty-status',
+        type: 'offboarding',
+        status: '',
+        applicant_username: 'emp1',
+        payload: {},
+      },
+    });
+    assert.equal(merges.length, 0);
+  }
+
+  // promotion：type/role/stage 空串；state null；拒绝通知（无 stage → 资格文案）
+  {
+    const res = mockRes();
+    await promotion.beforeUpdate({
+      res,
+      row: { type: '' },
+      role: '',
+      username: 'mgr1',
+      nowIso: '2026-07-25T12:00:00+08:00',
+      approved: true,
+      mentorUsernameRaw: '',
+      mentorNameRaw: '',
+      trainingStartDateRaw: '',
+      trainingDaysRaw: null,
+      trainingPeriodsRaw: null,
+      promotedSalaryRaw: null,
+      updatedPayload: { promotionStage: '' },
+      deps: {
+        pool: { query: async () => ({ rows: [] }) },
+        safeDateOnly: () => '',
+        normalizePromotionTrainingPeriods: () => [],
+      },
+    });
+    assert.equal(res.statusCode, 200);
+  }
+  {
+    const rej = makePromotionAfterDeps({
+      depsExtra: {
+        getSharedState: async () => null,
+        stateFindUserRecord: () => ({ username: 'emp1', name: '' }),
+      },
+    });
+    await promotion.afterDecide({
+      req: { user: {} },
+      deps: rej.deps,
+      username: 'a1',
+      note: '',
+      nextAssignee: null,
+      updated: {
+        id: '',
+        type: 'promotion',
+        status: 'rejected',
+        applicant_username: 'emp1',
+        payload: { promotionStage: '' },
+      },
+    });
+    assert.ok(rej.notifs.some((n) => n.title === '晋升申请未通过' && /晋升资格/.test(n.msg)));
+  }
+});
+
+test('L1 falsy：promotion formal/qualification 更多空字段回落', async () => {
+  // type/status 空串早退或跳过；role 空
+  await promotion.beforeUpdate({
+    res: mockRes(),
+    row: { type: 'promotion' },
+    role: '',
+    username: 'mgr1',
+    nowIso: '2026-07-25T12:00:00+08:00',
+    approved: true,
+    mentorUsernameRaw: 'mentor1',
+    mentorNameRaw: '',
+    trainingStartDateRaw: '',
+    trainingDaysRaw: 0,
+    trainingPeriodsRaw: null,
+    promotedSalaryRaw: null,
+    updatedPayload: { promotionStage: 'qualification' },
+    deps: {
+      pool: { query: async () => ({ rows: [{ '?column?': 1 }] }) },
+      safeDateOnly: () => '',
+      normalizePromotionTrainingPeriods: () => [],
+    },
+  });
+  await promotion.beforeUpdate({
+    res: mockRes(),
+    row: { type: 'promotion' },
+    role: '',
+    username: 'mgr1',
+    nowIso: '2026-07-25T12:00:00+08:00',
+    approved: true,
+    mentorUsernameRaw: '',
+    mentorNameRaw: '',
+    trainingStartDateRaw: '',
+    trainingDaysRaw: null,
+    trainingPeriodsRaw: null,
+    promotedSalaryRaw: 8000,
+    updatedPayload: { promotionStage: 'formal' },
+    deps: {
+      pool: { query: async () => ({ rows: [] }) },
+      safeDateOnly: () => '',
+      normalizePromotionTrainingPeriods: () => [],
+    },
+  });
+
+  // formal：employees 非数组；level 走 payload.level；无 id；tenant 缺省；薪资非有限旧值
+  const formal = makePromotionAfterDeps({
+    state: {
+      employees: 'bad',
+      promotionTracks: 'bad',
+      salaryChangeHistory: [],
+    },
+    depsExtra: {
+      findUserSalary: () => 'x',
+    },
+  });
+  await promotion.afterDecide({
+    req: { user: { username: 'a1' } },
+    deps: formal.deps,
+    username: 'a1',
+    note: '',
+    updated: {
+      id: '',
+      type: 'promotion',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: {
+        promotionStage: 'formal',
+        promoTier: 'skill_bump',
+        level: '中级',
+        position: '领班',
+        promotedSalary: 6000,
+        promotionTrackId: 'track-1',
+        reason: '',
+      },
+      chain: [{ step: null, assignee: null, status: null, decidedAt: null }],
+    },
+  });
+  assert.ok(formal.salaryCalls.length >= 1 || formal.notifs.length >= 1);
+
+  // formal 拒绝：track 更新；getSharedState 二次为 null
+  let gs = 0;
+  const rejF = makePromotionAfterDeps({
+    depsExtra: {
+      getSharedState: async () => {
+        gs += 1;
+        if (gs === 1) {
+          return {
+            employees: [{ username: 'emp1', name: '甲', managerUsername: 'mgr1' }],
+            promotionTracks: [{ id: 'track-1', status: 'formal_applied' }],
+          };
+        }
+        return null;
+      },
+    },
+  });
+  await promotion.afterDecide({
+    req: {},
+    deps: rejF.deps,
+    username: 'a1',
+    note: '',
+    updated: {
+      id: 'ap-rej-f',
+      type: 'promotion',
+      status: 'rejected',
+      applicant_username: 'emp1',
+      payload: { promotionStage: 'formal', promotionTrackId: 'track-1' },
+    },
+  });
+  assert.ok(rejF.notifs.some((n) => n.title === '晋升申请未通过' && /正式晋升/.test(n.msg)));
+
+  // qualification：targetPosition←newPosition；trainingDays 空；mentor 空→username；tenant 缺
+  const qual = makePromotionAfterDeps({
+    state: {
+      employees: [{
+        username: 'emp1',
+        name: '甲',
+        managerUsername: 'mgr1',
+        store: '店A',
+        role: 'store_employee',
+        position: '',
+        level: '',
+        department: '',
+      }],
+      promotionTracks: [],
+    },
+    depsExtra: {
+      getPromotionRequiredTopics: async () => [{ id: 21, title: '必修A' }],
+    },
+  });
+  await promotion.afterDecide({
+    req: { user: {} },
+    deps: qual.deps,
+    username: 'decider1',
+    note: '',
+    updated: {
+      id: '',
+      type: 'promotion',
+      status: 'approved',
+      applicant_username: 'emp1',
+      payload: {
+        promotionStage: 'qualification',
+        newPosition: '副店长',
+        trainingDays: '',
+        promoTier: '',
+        mentorUsername: '',
+      },
+    },
+  });
+  assert.ok(qual.trainings.some((t) => t.assignedBy === 'decider1'));
+  assert.ok(qual.trainings.some((t) => t.tenantId == null || t.tenantId === undefined));
+
+  // pending status 空；外层 catch
+  const boom = makePromotionAfterDeps({
+    depsExtra: {
+      getSharedState: async () => {
+        throw new Error('state boom');
+      },
+    },
+  });
+  await promotion.afterDecide({
+    req: {},
+    deps: boom.deps,
+    nextAssignee: 'sm1',
+    updated: {
+      id: 'ap-boom',
+      type: 'promotion',
+      status: 'pending',
+      applicant_username: 'emp1',
+      payload: {},
+    },
+  });
+  assert.equal(boom.notifs.length, 0);
+
+  await promotion.afterDecide({
+    req: {},
+    deps: makePromotionAfterDeps().deps,
+    updated: { type: '', status: 'approved', applicant_username: 'emp1', payload: {} },
+  });
+});

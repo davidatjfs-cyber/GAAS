@@ -14,6 +14,9 @@
 
 import { pool as getUnifiedPool } from './utils/database.js';
 import { getStoreAliasSetSync } from './utils/store-alias-cache.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'knowledge-graph' });
 
 let _pool = null;
 export function setKGPool(p) { _pool = p; }
@@ -109,11 +112,11 @@ export async function ensureKnowledgeGraphTables() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_ap_store ON action_plans(store, status)`);
 
     await client.query('COMMIT');
-    console.log('[knowledge-graph] Tables ensured');
+    log.info({ msg: 'tables_ensured' });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     if (String(e?.code) === '23505') return; // duplicate
-    console.error('[knowledge-graph] ensureTables failed:', e?.message);
+    log.error({ msg: 'ensure_tables_failed', err: e?.message });
   } finally {
     client.release();
   }
@@ -139,7 +142,7 @@ async function upsertRelation({ sourceType, sourceId, sourceLabel, targetType, t
   } catch (e) {
     // 极低概率并发冲突（约束创建后几乎不会触发），静默跳过
     if (!String(e?.message || '').includes('duplicate')) {
-      console.error('[knowledge-graph] upsertRelation error:', e?.message);
+      log.error({ msg: 'upsert_relation_failed', err: e?.message });
     }
   }
 }
@@ -282,7 +285,7 @@ export async function extractRelationsFromBitableRecord(record, configKey) {
       extractInspectionRelations(record, configKey)
     ]);
   } catch (e) {
-    console.error('[knowledge-graph] extractRelations error:', e?.message);
+    log.error({ msg: 'extract_relations_failed', err: e?.message });
   }
 }
 
@@ -538,10 +541,10 @@ export async function refreshEntityHealthSnapshots(tenantId = 'default') {
       );
       updated++;
     }
-    console.log(`[knowledge-graph] Refreshed health snapshots for ${updated} stores`);
+    log.info({ msg: 'health_snapshots_refreshed', stores: updated });
     return updated;
   } catch (e) {
-    console.error('[knowledge-graph] refreshHealthSnapshots error:', e?.message);
+    log.error({ msg: 'refresh_health_snapshots_failed', err: e?.message });
     return 0;
   }
 }

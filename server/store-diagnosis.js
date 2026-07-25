@@ -7,6 +7,9 @@
 import jwt from 'jsonwebtoken';
 import { fetchDineMetrics, storeNameToId } from './utils/dine-metrics.js';
 import { runOperationDiagnosisAgent, generateOperationDiagnosisTasks } from './agents/operation-diagnosis-agent.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'store-diagnosis' });
 
 /**
  * agents-service-v2 的 ontology-client.js 用 PLATFORM_ADMIN_JWT_SECRET 签发服务token调这两个
@@ -1219,7 +1222,7 @@ export async function getAllStoresDiagnosis(pool, dateRange) {
         action_suggestion_count: diag.action_suggestions?.length || 0,
       });
     } catch (e) {
-      console.error(`[diagnosis] store ${s.store} failed:`, e?.message || e);
+      log.error({ msg: 'store_diagnosis_failed', store: s.store, err: e?.message || String(e) });
     }
   }
   return results;
@@ -1240,7 +1243,7 @@ export function registerDiagnosisRoutes(app, pool, authRequired, callLLM = null)
       const result = await getStoreDiagnosis(pool, store, dateRange);
       return res.json({ ok: true, diagnosis: result });
     } catch (e) {
-      console.error('[diagnosis] store error:', e?.message || e);
+      log.error({ msg: 'store_diagnosis_route_error', err: e?.message || String(e) });
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
@@ -1253,7 +1256,7 @@ export function registerDiagnosisRoutes(app, pool, authRequired, callLLM = null)
       const result = await getAllStoresDiagnosis(pool, dateRange);
       return res.json({ ok: true, stores: result });
     } catch (e) {
-      console.error('[diagnosis] overview error:', e?.message || e);
+      log.error({ msg: 'diagnosis_overview_error', err: e?.message || String(e) });
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
@@ -1267,7 +1270,7 @@ export function registerDiagnosisRoutes(app, pool, authRequired, callLLM = null)
       const result = await runOperationDiagnosisAgent(pool, { tenantId, storeId, storeName, date }, callLLM);
       return res.json({ ok: true, ...result });
     } catch (e) {
-      console.error('[diagnosis] operation-diagnosis error:', e?.message || e);
+      log.error({ msg: 'operation_diagnosis_error', err: e?.message || String(e) });
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
@@ -1283,7 +1286,7 @@ export function registerDiagnosisRoutes(app, pool, authRequired, callLLM = null)
       if (!result.ok) return res.status(400).json(result);
       return res.json({ ok: true, ...result });
     } catch (e) {
-      console.error('[diagnosis] generate operation-diagnosis tasks error:', e?.message || e);
+      log.error({ msg: 'operation_diagnosis_tasks_error', err: e?.message || String(e) });
       return res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });

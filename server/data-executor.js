@@ -22,6 +22,9 @@
 import { randomUUID } from 'crypto';
 import { resolveTenantIdDefault } from './utils/database.js';
 import { getRuntimePromptPatch, recordAiInteraction } from './services/ai-quality-learning-service.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'data-executor' });
 
 let _pool = null;
 export function setDataExecutorPool(p) { _pool = p; }
@@ -48,7 +51,7 @@ export async function getMetricDef(metricId) {
     if (def) _dictCache.set(cacheKey, { def, ts: Date.now() });
     return def;
   } catch (e) {
-    console.error('[data-executor] getMetricDef error:', e?.message);
+    log.error({ msg: 'get_metric_def_failed', err: e?.message });
     return null;
   }
 }
@@ -105,7 +108,7 @@ async function setCachedResult(taskId, metricId, timeRange, store, result, metri
       [taskId, metricId, timeRange, store || '', JSON.stringify(result), metricVersion || 1, ttl, tenantId]
     );
   } catch (e) {
-    console.error('[data-executor] setCachedResult error:', e?.message);
+    log.error({ msg: 'set_cached_result_failed', err: e?.message });
   }
 }
 
@@ -149,7 +152,7 @@ export async function updateMetricVersion(metricId, changes, changedBy) {
     });
     return { ok: true, metric_id: metricId, new_version: newVersion, cache_cleared: deleted.rowCount || 0 };
   } catch (e) {
-    console.error('[data-executor] updateMetricVersion error:', e?.message);
+    log.error({ msg: 'update_metric_version_failed', err: e?.message });
     return { ok: false, error: e?.message };
   }
 }
@@ -257,7 +260,7 @@ async function executeOneMetric(metricId, timeRange, store, depResults) {
       notes: def.include_discount === false ? '已扣优惠' : '含优惠前金额'
     };
   } catch (e) {
-    console.error(`[data-executor] executeOneMetric error for ${metricId}:`, e?.message);
+    log.error({ msg: 'execute_one_metric_failed', metric_id: metricId, err: e?.message });
     return {
       metric_id: metricId,
       name: def?.name || metricId,
@@ -682,7 +685,7 @@ export async function setSessionState(username, state) {
       [u, JSON.stringify(payload), resolveTenantIdDefault()]
     );
   } catch (e) {
-    console.error('[data-executor] setSessionState error:', e?.message);
+    log.error({ msg: 'set_session_state_failed', err: e?.message });
   }
 }
 
@@ -712,12 +715,11 @@ export async function purgeExpiredCache() {
 // ── 14. 结构化日志 ─────────────────────────────────────────────
 
 export function logExecutorEvent(event, data) {
-  const ts = new Date().toISOString();
   const safe = {};
   for (const [k, v] of Object.entries(data || {})) {
     safe[k] = v === undefined ? null : v;
   }
-  console.log(JSON.stringify({ ts, event, ...safe }));
+  log.info({ msg: 'executor_event', event, ...safe });
 }
 
 // ── 15. 自然语言时间范围提取 ─────────────────────────────────

@@ -6,6 +6,9 @@ import {
   PRODUCT_MODULES,
   searchProductKnowledge,
 } from './services/sales/sales-product-knowledge.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'rag-tool' });
 function pool() { return getPool(); }
 
 export const KB_SCOPES = { PUBLIC: 'public', BUSINESS: 'business', SENSITIVE: 'sensitive' };
@@ -52,12 +55,12 @@ export async function ensureRAGSchema() {
       await p.query(
         `CREATE INDEX IF NOT EXISTS idx_kb_content_trgm ON knowledge_base USING gin (content gin_trgm_ops)`
       );
-      console.log('[RAG] pg_trgm extension + indexes ensured');
+      log.info({ msg: 'pg_trgm_ensured' });
     } catch (e2) {
-      console.warn('[RAG] pg_trgm ensure skipped:', e2?.message);
+      log.warn({ msg: 'pg_trgm_ensure_skipped', err: e2?.message });
     }
-    console.log('[RAG] Schema ensured');
-  } catch (e) { console.error('[RAG] ensureRAGSchema error:', e?.message); }
+    log.info({ msg: 'rag_schema_ensured' });
+  } catch (e) { log.error({ msg: 'ensure_rag_schema_failed', err: e?.message }); }
 }
 
 let trgmProbe = null;
@@ -179,7 +182,7 @@ export async function ragQuery(params = {}) {
       .filter((item, index, all) => all.findIndex((other) => String(other.id) === String(item.id)) === index)
       .slice(0, Math.min(limit, 20));
     return { success: true, results, accessScopes: allowed, productKnowledgeVersion: PRODUCT_KNOWLEDGE_VERSION };
-  } catch (e) { console.error('[RAG] query error:', e?.message); return { success: false, results: [], error: e?.message }; }
+  } catch (e) { log.error({ msg: 'rag_query_failed', err: e?.message }); return { success: false, results: [], error: e?.message }; }
 }
 
 export async function ragMultiQuery(params = {}) {

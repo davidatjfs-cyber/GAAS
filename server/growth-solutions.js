@@ -4,6 +4,9 @@
 
 import { pool as getPool } from './utils/database.js';
 import { SHARED_TABLES } from '@gaas/shared';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'growth-solutions' });
 
 function pool() { return getPool(); }
 
@@ -579,7 +582,7 @@ async function saveQueryHistory(tenantId, store, question, resultPayload, userna
       [tenantId || 'default', store, question, JSON.stringify({ title: resultPayload?.title || question, mode: resultPayload?.mode }), username || null]
     );
   } catch (e) {
-    console.error('[growth-solutions] saveQueryHistory failed:', e?.message || e);
+    log.error({ msg: 'save_query_history_failed', err: e?.message || String(e) });
   }
 }
 
@@ -865,7 +868,7 @@ export async function runSolutionSweep() {
       );
       await notify(`【增长方案·复盘】${round.store}「${round.problem_title}」第${round.round_no}轮:目标 ${round.target_value}${round.unit},实际 ${review.actual_value}${round.unit},达成率 ${(review.achievement_rate * 100).toFixed(1)}%(${review.success ? '达成✅' : '未达成'})。请在经营诊断页确认下一步。`);
     } catch (e) {
-      console.error('[growth-solutions] review failed for round', round.id, e?.message);
+      log.error({ msg: 'review_failed', round_id: round.id, err: e?.message });
     }
   }
 }
@@ -1020,7 +1023,7 @@ ${templateList}
         const end = s.lastIndexOf('}');
         if (start >= 0 && end > start) parsed = JSON.parse(s.slice(start, end + 1));
       } catch (parseErr) {
-        console.error('[growth-solutions] custom analyze JSON parse failed:', parseErr?.message, 'raw length:', String(raw || '').length);
+        log.error({ msg: 'custom_analyze_json_parse_failed', err: parseErr?.message, raw_length: String(raw || '').length });
       }
       if (!parsed || !parsed.mode) return res.status(502).json({ ok: false, error: 'AI 返回无法解析,请重试' });
 
@@ -1044,7 +1047,7 @@ ${realDataSummary}
 请基于以上真实数据，写一段150-250字的经营分析，必须包含：①这些真实数字说明了什么问题；②可能的根因；③建议老板重点关注哪个方向。只输出分析文字，不要输出JSON、不要输出标题，直接是一段话。`;
           existingAnalysis = String(await _llm(analysisPrompt) || '').trim();
         } catch (e) {
-          console.error('[growth-solutions] existing-mode analysis generation failed:', e?.message || e);
+          log.error({ msg: 'existing_mode_analysis_failed', err: e?.message || String(e) });
         }
         const existingPayload = { ok: true, mode: 'existing', problem_key: existingKey, reason: parsed.reason || '', analysis: existingAnalysis };
         saveQueryHistory(req.tenantId, store, question, existingPayload, req.user?.username);

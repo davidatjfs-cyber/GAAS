@@ -31,6 +31,9 @@ import {
   cleanText,
   getPhaseApiTenantId,
 } from './domains/growth-phase-auth.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'growth-phases' });
 
 
 export async function ensurePhaseTables(pool) {
@@ -444,7 +447,7 @@ export function registerPhaseRoutes(app, pool, deps = {}) {
               if (evaluated?.finalized && evTask && evTask.status === 'completed' && !evTask.promoted_rule_key) {
                 const w = String(evTask.winner || '').toUpperCase();
                 if (w === 'A' || w === 'B') {
-                  await promoteAbWinner(pool, evTask, 'auto', taskTenantId).catch((e) => console.warn('[growth-phase4] ab auto-promote failed:', e?.message));
+                  await promoteAbWinner(pool, evTask, 'auto', taskTenantId).catch((e) => log.warn({ msg: 'ab_auto_promote_failed', err: e?.message }));
                 }
               }
             }
@@ -452,7 +455,7 @@ export function registerPhaseRoutes(app, pool, deps = {}) {
           });
         }
       } catch (e) {
-        console.warn('[growth-phase4] ab cron failed:', e?.message);
+        log.warn({ msg: 'ab_cron_failed', err: e?.message });
       }
       try {
         const now = new Date(Date.now() + 8 * 3600000);
@@ -471,7 +474,7 @@ export function registerPhaseRoutes(app, pool, deps = {}) {
           }
         }
       } catch (e) {
-        console.warn('[growth-phase5] weekly content cron failed:', e?.message);
+        log.warn({ msg: 'weekly_content_cron_failed', err: e?.message });
       }
       // Phase 7a: weekly churn scoring (Monday 02:00 CST = UTC weekday 1, hour 18)
       try {
@@ -499,10 +502,10 @@ export function registerPhaseRoutes(app, pool, deps = {}) {
               }
             }).catch(() => null);
           }
-          console.log(`[growth-phase7a] weekly churn scores computed for ${totalStores} stores`);
+          log.info({ msg: 'weekly_churn_scores_computed', stores: totalStores });
         }
       } catch (e) {
-        console.warn('[growth-phase7a] churn cron failed:', e?.message);
+        log.warn({ msg: 'churn_cron_failed', err: e?.message });
       }
       // Phase 7b: monthly menu health report (1st of month at 03:00 CST = UTC day 1 of month, hour 19)
       try {
@@ -527,10 +530,10 @@ export function registerPhaseRoutes(app, pool, deps = {}) {
               }
             }).catch(() => null);
           }
-          console.log(`[growth-phase7b] monthly menu health reports generated for ${totalStores} stores`);
+          log.info({ msg: 'monthly_menu_health_reports_generated', stores: totalStores });
         }
       } catch (e) {
-        console.warn('[growth-phase7b] menu health cron failed:', e?.message);
+        log.warn({ msg: 'menu_health_cron_failed', err: e?.message });
       }
       // Daily snapshot safety-net: 02:15 CST = UTC 18:15 (runs even if pos-feishu-sync missed)
       try {
@@ -541,15 +544,15 @@ export function registerPhaseRoutes(app, pool, deps = {}) {
           let totalRows = 0;
           for (const tenantId of await getActiveTenantIds(pool)) {
             const rows = await tenantContext.run(tenantId, () => refreshSalesGrowthSnapshot(pool, 3, tenantId)).catch(e => {
-              console.error(`[growth-snapshot] cron error (tenant=${tenantId}):`, e.message);
+              log.error({ msg: 'snapshot_cron_tenant_error', tenant_id: tenantId, err: e.message });
               return 0;
             });
             totalRows += rows;
           }
-          console.log(`[growth-snapshot] daily refresh: ${totalRows} rows upserted`);
+          log.info({ msg: 'snapshot_daily_refresh', rows: totalRows });
         }
       } catch (e) {
-        console.warn('[growth-snapshot] cron failed:', e?.message);
+        log.warn({ msg: 'snapshot_cron_failed', err: e?.message });
       }
     }, 10 * 60 * 1000);
   }
@@ -567,7 +570,7 @@ export function registerPhaseRoutes(app, pool, deps = {}) {
     if (!shouldRunPosSync()) return;
     const now = new Date(Date.now() + 8 * 3600000);
     lastPosSyncDate = now.toISOString().slice(0, 10);
-    console.log(`[pos-sync-cron] Starting daily POS Feishu sync at ${now.toISOString()}`);
+    log.info({ msg: 'pos_sync_cron_start', at: now.toISOString() });
     try {
       for (const tenantId of await getActiveTenantIds(pool)) {
         const resp = await axios.post(`http://127.0.0.1:${process.env.PORT || 3000}/api/growth/pos-feishu-sync`, {}, {
@@ -580,13 +583,13 @@ export function registerPhaseRoutes(app, pool, deps = {}) {
         });
         const data = resp.data;
         if (data && data.ok) {
-          console.log(`[pos-sync-cron] Success tenant=${tenantId}: ${data.orders_synced} orders, ${data.items_synced} items, ${data.customers_linked} linked`);
+          log.info({ msg: 'pos_sync_cron_success', tenant_id: tenantId, orders: data.orders_synced, items: data.items_synced, customers_linked: data.customers_linked });
           continue;
         }
         throw new Error(`tenant=${tenantId} ${data?.error || 'unknown_error'}`);
       }
     } catch (e) {
-      console.error('[pos-sync-cron] Failed:', e.message);
+      log.error({ msg: 'pos_sync_cron_failed', err: e.message });
       try {
         const failedTenant = String((e.message || '').match(/tenant=([A-Za-z0-9_-]+)/)?.[1] || '').trim();
         if (failedTenant) {
@@ -602,5 +605,5 @@ export function registerPhaseRoutes(app, pool, deps = {}) {
       } catch (_) { /* ignore */ }
     }
   }, 60 * 1000);
-  console.log('[pos-sync-cron] Scheduled: daily at ~01:10 CST, failure alerts to growth_sync_failures');
+  log.info({ msg: 'pos_sync_cron_scheduled', schedule: 'daily ~01:10 CST' });
 }

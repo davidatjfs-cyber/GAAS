@@ -10,6 +10,9 @@ import {
   cloneDefaultRules,
   DEFAULT_ATTENDANCE_PAYROLL_RULES
 } from './services/hrms-payroll-rules.js';
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'hrms-payroll', handler: 'routes' });
 import {
   reconcileAttendanceDays,
   confirmAttendanceDayAbnormal,
@@ -107,7 +110,7 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
         rows
       });
     } catch (e) {
-      console.error('[attendance-payroll-rules] list', e?.message);
+      log.error({ msg: 'attendance_payroll_rules_list_failed', err: e?.message });
       return res.status(500).json({ error: 'server_error' });
     }
   });
@@ -146,7 +149,7 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
       });
       return res.json({ ok: true, row });
     } catch (e) {
-      console.error('[attendance-payroll-rules] upsert', e?.message);
+      log.error({ msg: 'attendance_payroll_rules_upsert_failed', err: e?.message });
       return res.status(500).json({ error: 'server_error' });
     }
   });
@@ -178,7 +181,7 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
       }
       return res.json(result);
     } catch (e) {
-      console.error('[attendance-day] reconcile', e?.message);
+      log.error({ msg: 'attendance_day_reconcile_failed', err: e?.message });
       return res.status(500).json({ error: 'server_error', message: e?.message });
     }
   });
@@ -256,7 +259,7 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
       if (!result.ok) return res.status(400).json(result);
       return res.json(result);
     } catch (e) {
-      console.error('[month-run] status', e?.message);
+      log.error({ msg: 'month_run_status_failed', err: e?.message });
       return res.status(500).json({ error: 'server_error' });
     }
   });
@@ -303,7 +306,7 @@ export function registerHrmsPayrollClosedLoopRoutes(app, deps = {}) {
       });
       return res.json(result);
     } catch (e) {
-      console.error('[payroll/compute]', e?.message);
+      log.error({ msg: 'payroll_compute_failed', err: e?.message });
       return res.status(500).json({ error: 'server_error', message: e?.message });
     }
   });

@@ -3324,3 +3324,275 @@ test('leave/points：autoDays；payload.store；pending 多条；rejected 有 no
     assert.ok(notifs.some((n) => n.title === '积分申请未通过' && /超额/.test(n.msg)));
   }
 });
+
+test('L1 falsy：points/onboarding 空字段与 null state 回落', async () => {
+  // type 空串：走 type||'' 后早退
+  {
+    const { deps, notifs } = makeDeps();
+    await points.afterDecide({
+      req: {},
+      deps,
+      updated: { id: 'pts-empty-type', type: '', status: 'approved', payload: { points: 1 } },
+    });
+    assert.equal(notifs.length, 0);
+  }
+  // getSharedState=null；申请人无名/无 manager；单条 points/itemName 空；tenant 全缺 → default
+  {
+    const { deps, notifs, queries, ledgerCalls } = makeDeps({
+      depsExtra: {
+        resolveAttendancePayrollRules: async () => ({ rules: { pointsYuanPerPoint: 1 } }),
+      },
+    });
+    deps.getSharedState = async () => null;
+    deps.stateFindUserRecord = () => ({ username: 'emp1', name: '' });
+    deps.safeNumber = (n) => {
+      const x = Number(n);
+      return Number.isFinite(x) ? x : null;
+    };
+    deps.pool.query = async (...a) => {
+      queries.push(a);
+      return { rows: [] };
+    };
+    await points.afterDecide({
+      req: { user: { username: 'a1' } },
+      deps,
+      updated: {
+        id: '',
+        type: 'points',
+        status: 'approved',
+        applicant_username: 'emp1',
+        payload: { points: null, itemName: '', reason: '', store: '' },
+      },
+    });
+    assert.ok(ledgerCalls.length >= 1);
+    assert.ok(notifs.some((n) => n.title === '积分申请已通过' && /积分事项/.test(n.msg)));
+    const ins = queries.find((q) => /INSERT INTO point_records/i.test(String(q[0])));
+    assert.ok(ins);
+    assert.equal(ins[1][11], 'default');
+  }
+  // multi items：空 username/name/store/points；bizMonth 链空回落 month；pending 空 status
+  {
+    const { deps, notifs, ledgerCalls } = makeDeps({
+      depsExtra: {
+        resolveAttendancePayrollRules: async () => ({ rules: { pointsYuanPerPoint: 0.5 } }),
+        safeBizMonth: () => '',
+      },
+    });
+    deps.getSharedState = async () => ({});
+    deps.stateFindUserRecord = () => ({ username: 'emp1', name: '甲', store: '店A' });
+    deps.safeNumber = () => null;
+    deps.pool.query = async () => ({ rows: [] });
+    await points.afterDecide({
+      req: { tenantId: 't1', user: { username: 'a1' } },
+      deps,
+      updated: {
+        id: 'pts-empty-items',
+        type: 'points',
+        status: 'approved',
+        applicant_username: 'emp1',
+        created_at: '',
+        updated_at: '',
+        payload: {
+          items: [
+            { username: '', name: '', store: '', points: null, itemName: '', reason: '', bizMonth: '', occurDate: '', date: '' },
+          ],
+        },
+      },
+    });
+    assert.ok(ledgerCalls.length >= 1);
+    assert.ok(notifs.some((n) => n.title === '积分申请已通过'));
+  }
+  {
+    const { deps, notifs } = makeDeps();
+    await points.afterDecide({
+      req: {},
+      deps,
+      nextAssignee: 'mgr1',
+      updated: {
+        id: 'pts-status-empty',
+        type: 'points',
+        status: '',
+        applicant_username: 'emp1',
+        payload: { itemName: '', items: [{ reason: '', points: 1 }] },
+      },
+    });
+    // status 空：非 approved/rejected/pending，不通知
+    assert.equal(notifs.length, 0);
+  }
+  // pending 单条：无 itemName，走 rawItems[0].reason；再测全空 → 积分事项
+  {
+    const { deps, notifs } = makeDeps();
+    await points.afterDecide({
+      req: {},
+      deps,
+      nextAssignee: 'mgr1',
+      updated: {
+        id: 'pts-pend-reason',
+        type: 'points',
+        status: 'pending',
+        applicant_username: 'emp1',
+        payload: { items: [{ points: 2, reason: '加班' }] },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '积分申请待审批' && /加班/.test(n.msg)));
+  }
+  {
+    const { deps, notifs } = makeDeps();
+    await points.afterDecide({
+      req: {},
+      deps,
+      nextAssignee: 'mgr1',
+      updated: {
+        id: 'pts-pend-fallback',
+        type: 'points',
+        status: 'pending',
+        applicant_username: 'emp1',
+        payload: { items: [{ points: 1 }] },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '积分申请待审批' && /积分事项/.test(n.msg)));
+  }
+
+  // onboarding：updated=null；getSharedState=null；err 无 message；空 dept/position/store/role
+  {
+    const { deps } = makeDeps();
+    await onboarding.afterDecide({ req: {}, deps, updated: null, decideExtras: {} });
+  }
+  {
+    const { deps, merges } = makeDeps();
+    deps.getSharedState = async () => null;
+    deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+      ok: true,
+      nextEmp: {
+        username: 'newf1',
+        name: '空档',
+        role: '',
+        department: '',
+        position: '',
+        store: '',
+        salary: 1000,
+        joinDate: '',
+        managerUsername: '',
+      },
+      newUsername: 'newf1',
+      empName: '空档',
+      empPassword: 'pw',
+    });
+    deps.bcrypt = { hash: async () => 'h' };
+    deps.toNullableUuid = () => '00000000-0000-4000-8000-000000000099';
+    deps.insertSalaryTimeline = async () => {};
+    let userCalls = 0;
+    deps.pool.query = async (sql) => {
+      userCalls += 1;
+      if (userCalls === 1) throw 42; // 无 message，走 String(userErr)
+      if (/feishu_users/i.test(String(sql))) throw 'feishu bare';
+      return { rows: [] };
+    };
+    const decideExtras = {};
+    await onboarding.afterDecide({
+      req: { user: {} },
+      deps,
+      username: 'a1',
+      decideExtras,
+      updated: {
+        id: 'onb-falsy',
+        type: 'onboarding',
+        status: 'approved',
+        applicant_username: '',
+        payload: { employee: { name: '空档', open_id: 'x' } },
+      },
+    });
+    // users 失败后仍可能尝试飞书；sync 成功才进飞书——users 失败不挡 sync.ok
+    assert.equal(decideExtras.onboardingEmployeeSync?.ok, true);
+  }
+  {
+    const { deps } = makeDeps();
+    deps.getSharedState = async () => ({
+      employees: [
+        { username: 'sm1', store: '', role: 'store_manager' },
+        { username: 'sm2', store: '目标店', role: '' },
+        { username: 'sm3', store: '目标店', role: 'store_manager' },
+      ],
+    });
+    deps.buildOnboardingEmployeeRecordFromPayload = () => ({
+      ok: true,
+      nextEmp: {
+        username: 'newsm',
+        name: '店长测',
+        role: 'store_employee',
+        department: 'd',
+        position: 'p',
+        store: '目标店',
+        salary: 2000,
+        joinDate: '2026-07-01',
+        managerUsername: '',
+      },
+      newUsername: 'newsm',
+      empName: '店长测',
+      empPassword: 'pw',
+    });
+    deps.bcrypt = { hash: async () => 'h' };
+    deps.toNullableUuid = () => null;
+    deps.insertSalaryTimeline = async () => {};
+    deps.stateFindUserRecord = () => ({ username: 'hr1', name: '' });
+    deps.pool.query = async () => ({ rows: [] });
+    let notifBoom = false;
+    deps.mergeSharedStateFields = async (patch, keys) => {
+      if (Array.isArray(patch.notifications)) {
+        if (!notifBoom) {
+          notifBoom = true;
+          throw 'notif bare';
+        }
+      }
+    };
+    const decideExtras = {};
+    await onboarding.afterDecide({
+      req: { tenantId: 'default' },
+      deps,
+      username: 'a1',
+      decideExtras,
+      updated: {
+        id: 'onb-sm-find',
+        type: 'onboarding',
+        status: 'approved',
+        applicant_username: 'hr1',
+        payload: { employee: { name: '店长测' } },
+      },
+    });
+    assert.equal(decideExtras.onboardingEmployeeSync?.ok, true);
+  }
+  {
+    const { deps, notifs } = makeDeps();
+    deps.getSharedState = async () => null;
+    deps.stateFindUserRecord = () => null;
+    await onboarding.afterDecide({
+      req: {},
+      deps,
+      nextAssignee: 'mgr1',
+      note: '',
+      updated: {
+        id: 'onb-pend-falsy',
+        type: 'onboarding',
+        status: 'pending',
+        applicant_username: '',
+        payload: { employee: null },
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '新员工入职审批待处理'));
+  }
+  {
+    const { deps, notifs } = makeDeps();
+    await onboarding.afterDecide({
+      req: {},
+      deps,
+      updated: {
+        id: 'onb-rej-status',
+        type: 'onboarding',
+        status: 'rejected',
+        applicant_username: 'hr1',
+        payload: {},
+      },
+    });
+    assert.ok(notifs.some((n) => n.title === '新员工入职审批被拒绝'));
+  }
+});
