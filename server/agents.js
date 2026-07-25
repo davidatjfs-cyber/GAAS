@@ -55,6 +55,13 @@ import {
 } from './domains/agent-message/helpers.js';
 import { tryHandleTrainingFlows } from './domains/agent-message/training-flow.js';
 import { tryBiDeterministicCascade } from './domains/agent-message/bi-deterministic-cascade.js';
+import { applyPostRouteQualityGates } from './domains/agent-message/post-route-quality.js';
+import {
+  buildEvidencePackage,
+  detectFactDemand,
+  isDataBackedReply,
+  needsAutonomousDataTask,
+} from './domains/agent-message/quality-helpers.js';
 import {
   maybeInheritRecentRoute,
   resolveDataAuditorStore,
@@ -129,8 +136,6 @@ const AI_QUALITY_LLM_BASE_URL = String(process.env.AI_QUALITY_LLM_BASE_URL || 'h
 const DOUBAO_API_KEY = process.env.ARK_API_KEY || process.env.DOUBAO_API_KEY || '';
 const DOUBAO_BASE_URL = process.env.DOUBAO_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
 
-const FACTUAL_DATA_UNAVAILABLE_MESSAGE = '抱歉，我当前无法从数据库中获取相关凭证/数据，请您登录系统手动核查。';
-
 // ── Provider 健康状态追踪 & 自动降级 ──
 const _providerHealth = {
   deepseek: { healthy: true, failCount: 0, lastFailTime: 0, cooldownMs: 3 * 60 * 1000 },
@@ -201,8 +206,6 @@ const _biLastToolCtx = new Map();
 const BI_CONV_CTX_TTL = 10 * 60 * 1000;
 const BI_CONV_CTX_MAX = 4;
 
-const HARD_FACT_QUERY_PATTERNS = /(多少|几次|几天|几条|总数|占比|同比|环比|排名|top|倒数|趋势|营业额|营收|毛利|客诉|差评|桌访|达成率|人效|预测)/i;
-const FACT_TOPIC_PATTERNS = /(营业额|营收|毛利|桌访|差评|收档|开档|原料|报损|投诉|考核|绩效|评分|门店|菜品|产品|订单|充值)/i;
 const FOLLOWUP_HINT_PATTERNS = /(继续|还有|上面|那个|再说|再查|补充|详细|展开)/i;
 
 const _agentQualityMetrics = {
@@ -240,14 +243,6 @@ function normalizePlainText(text, maxLen = 1200) {
   return String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
 }
 
-function detectFactDemand(text) {
-  const q = String(text || '').trim();
-  if (!q) return 'none';
-  if (FACT_TOPIC_PATTERNS.test(q) && HARD_FACT_QUERY_PATTERNS.test(q)) return 'hard';
-  if (FACT_TOPIC_PATTERNS.test(q)) return 'soft';
-  return 'none';
-}
-
 function inferRouteByRules(text, hasImage = false) {
   if (hasImage) return { route: 'ops_supervisor', confidence: 1, reason: 'image_input' };
   const t = String(text || '').trim();
@@ -276,44 +271,6 @@ function inferRouteByRules(text, hasImage = false) {
 function extractNumericLiterals(text) {
   const vals = String(text || '').match(/-?\d+(?:\.\d+)?%?/g) || [];
   return vals.slice(0, 24);
-}
-
-function computeSourceCoverage(agentData = {}) {
-  const rows = Array.isArray(agentData?.sourceAuditRows) ? agentData.sourceAuditRows : [];
-  if (rows.length > 0) {
-    const ok = rows.filter((x) => x?.status === 'ok').length;
-    return Number((ok / rows.length).toFixed(2));
-  }
-  if (agentData?.deterministic || agentData?.grounded || agentData?.source) return 1;
-  return 0;
-}
-
-function computeResponseConfidence(route, response, agentData = {}) {
-  let score = 0.45;
-  if (String(response || '').trim().length >= 18) score += 0.1;
-  if (agentData?.deterministic) score += 0.25;
-  if (agentData?.grounded) score += 0.2;
-  if (agentData?.source) score += 0.1;
-  if (agentData?.factualGuardrailBlocked) score -= 0.2;
-  if (route === 'general') score -= 0.05;
-  const coverage = computeSourceCoverage(agentData);
-  score = score * 0.75 + coverage * 0.25;
-  return Number(Math.max(0.05, Math.min(0.99, score)).toFixed(2));
-}
-
-function buildEvidencePackage(agentData = {}, context = {}) {
-  const sourceAuditRows = Array.isArray(agentData?.sourceAuditRows) ? agentData.sourceAuditRows : [];
-  return {
-    route: String(agentData?.route || context?.route || '').trim(),
-    store: String(context?.store || agentData?.store || '').trim(),
-    brand: String(context?.brand || agentData?.brand || '').trim(),
-    source: String(agentData?.source || '').trim(),
-    deterministic: !!agentData?.deterministic,
-    grounded: !!agentData?.grounded,
-    sourceCoverage: computeSourceCoverage(agentData),
-    sourceAudit: sourceAuditRows.slice(0, 8).map((x) => ({ key: x?.key, status: x?.status, count: x?.count, latest: x?.latest })),
-    generatedAt: new Date().toISOString()
-  };
 }
 
 function verifyNumericGrounding(responseText, evidenceText) {
@@ -1434,16 +1391,6 @@ function resolveDateRangeFromQuestion(text, dd = 7) {
   const nm = q.match(/近\s*(\d+)\s*天/);
   if (nm) { const n=parseInt(nm[1],10)||dd; return {label:`近${n}天`,start:formatDate(new Date(today-(n-1)*ms)),end:formatDate(today)}; }
   return {label:`近${dd}天`,start:formatDate(new Date(today-(dd-1)*ms)),end:formatDate(today)};
-}
-
-function isDataBackedReply(d) {
-  return !!(d && (
-    d.dataBacked === true ||
-    d.deterministic === true ||
-    d.grounded === true ||
-    d.functionCalling === true ||
-    !!d.source
-  ));
 }
 
 function isFactLikeQuestion(text) {
@@ -9607,42 +9554,16 @@ ${kbContext}${trainingTasksContext}${activeTaskContext}
     agentData = { route, error: String(e?.message || e) };
   }
 
-  const factDemand = detectFactDemand(text);
-  if (factDemand === 'hard' && !isDataBackedReply(agentData)) {
-    response = FACTUAL_DATA_UNAVAILABLE_MESSAGE;
-    agentData = { ...agentData, factualGuardrailBlocked: true, factDemand };
-    markQualityMetric('factualBlocks', 1);
-  } else {
-    agentData = { ...agentData, factDemand };
+  // ── post-route：事实护栏 + 统一质检 + evidence（domains/agent-message）──
+  {
+    const postQ = await applyPostRouteQualityGates(
+      { text, route, response, agentData, senderUsername, senderRole, store, brand },
+      { markQualityMetric, enforceUnifiedQualityGate }
+    );
+    response = postQ.response;
+    agentData = postQ.agentData;
   }
-
-  try {
-    const qg = await enforceUnifiedQualityGate({
-      userQuery: text,
-      route,
-      response,
-      agentData,
-      senderUsername,
-      senderRole,
-      store,
-      brand
-    });
-    response = qg.response;
-    agentData = qg.agentData;
-  } catch (e) {
-    console.error('[agents] enforceUnifiedQualityGate error:', e?.message || e);
-  }
-
-  const evidence = buildEvidencePackage(agentData, { route, store, brand });
-  agentData = {
-    ...agentData,
-    route,
-    store,
-    brand,
-    evidence,
-    sourceCoverage: computeSourceCoverage(agentData),
-    confidence: computeResponseConfidence(route, response, agentData)
-  };
+  const evidence = agentData?.evidence || buildEvidencePackage(agentData, { route, store, brand });
 
   try {
     await setAgentLongMemory(senderUsername, 'last_route', {
@@ -9667,13 +9588,7 @@ ${kbContext}${trainingTasksContext}${activeTaskContext}
     await setSessionState(senderUsername, sessionState);
   } catch (e) { /* ignore */ }
 
-  const needsAutonomousTask = !!(
-    agentData?.factualGuardrailBlocked ||
-    agentData?.reason === 'insufficient_sources' ||
-    agentData?.reason === 'insufficient_facts' ||
-    agentData?.numericGroundingBlocked
-  );
-  if (needsAutonomousTask && store && store !== '总部') {
+  if (needsAutonomousDataTask(agentData) && store && store !== '总部') {
     try {
       const state = await getSharedState();
       const owner = await findStoreManager(state, store);
