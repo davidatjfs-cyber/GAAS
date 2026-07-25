@@ -251,6 +251,11 @@
     "domains/agent-data/routes.js",
     "domains/feishu-sync/routes.js",
     "domains/remaining-state/routes.js",
-    "domains/growth-content/routes.js"
+    "domains/growth-content/routes.js",
+    "domains/agent-feishu-bot/routes.js",
+    "domains/growth-ab/routes.js",
+    "domains/growth-pos/routes.js",
+    "domains/daily-reports/routes.js",
+    "domains/sales-ai/routes-admin-meta.js"
   ]
 }
