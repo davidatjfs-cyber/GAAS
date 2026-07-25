@@ -166,6 +166,13 @@
     "domains/training/service-sessions.js",
     "domains/tenant-platform/helpers.js",
     "domains/agent-records/service.js",
-    "domains/growth-menu-health/service.js"
+    "domains/growth-menu-health/service.js",
+    "domains/sales-ai/service.js",
+    "domains/growth-wecom-feishu/service.js",
+    "domains/growth-queries/service.js",
+    "domains/growth-profiles/service.js",
+    "domains/growth-content-library/service.js",
+    "domains/growth-content/service.js",
+    "domains/reports/service-turnover.js"
   ]
 }
