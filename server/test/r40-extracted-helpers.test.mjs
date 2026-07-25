@@ -381,7 +381,7 @@ test('growth-metrics: ingest coupon_redeemed + phone_authorized + posConsumption
   const queries = [];
   const ctx = metricsCtx({
     pool: {
-      async query(sql, params) {
+      async query(sql) {
         queries.push(String(sql).slice(0, 80));
         const s = String(sql);
         if (s.includes('INSERT INTO growth_events')) {
