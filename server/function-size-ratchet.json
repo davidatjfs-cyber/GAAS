@@ -1,8 +1,8 @@
 {
   "updated": "2026-07-26",
-  "note": "P2.1 单函数体积闸门：>maxLines 必须在 allowlist；只降不升。外提时若函数>200行须同批切分，禁止整体包进 createXxx 闭包。2026-07-26 P5.4：recomputeCustomerProfiles 迁至 growth-profiles/recompute.js 后自 allowlist 移除。 2026-07-26 P5.4：registerCustomerOpsRoutes 拆出后自 allowlist 移除。 2026-07-26 P5.4：registerSalesAiOpsRoutes 拆为 reports/pipeline/enablement/assistant/reps/commission 后自 allowlist 移除。 2026-07-26 P5.4：registerGrowthSolutionRoutes / registerSalesAiLeadsRoutes 拆分后自 allowlist 移除。 2026-07-26 P5.4：finance/agent-config/tenants/invalidatePerformanceRecord 拆分后自 allowlist 移除。 2026-07-26 P5.4：createEstimateHelpers 具名化；registerNewScoringRoutes / registerAgentDataRoutes 拆分后自 allowlist 移除。 2026-07-26 P5.4：executeGrowthActionRecord 按通道拆分；createListenMonitors 调度块外提后自 allowlist 移除。 2026-07-26 P5.4：handleInboundMessage / getDefaultPosStats / registerGrowthRoutes 拆分后自 allowlist 移除。 2026-07-26 P5.4：points/inventory-forecast routes、ensurePhaseTables、startAgentScheduler、createHandleDataAuditorCase 拆分后自 allowlist 移除。",
+  "note": "P2.1 单函数体积闸门：>maxLines 必须在 allowlist；只降不升。外提时若函数>200行须同批切分，禁止整体包进 createXxx 闭包。2026-07-26 P5.4：recomputeCustomerProfiles 迁至 growth-profiles/recompute.js 后自 allowlist 移除。 2026-07-26 P5.4：registerCustomerOpsRoutes 拆出后自 allowlist 移除。 2026-07-26 P5.4：registerSalesAiOpsRoutes 拆为 reports/pipeline/enablement/assistant/reps/commission 后自 allowlist 移除。 2026-07-26 P5.4：registerGrowthSolutionRoutes / registerSalesAiLeadsRoutes 拆分后自 allowlist 移除。 2026-07-26 P5.4：finance/agent-config/tenants/invalidatePerformanceRecord 拆分后自 allowlist 移除。 2026-07-26 P5.4：createEstimateHelpers 具名化；registerNewScoringRoutes / registerAgentDataRoutes 拆分后自 allowlist 移除。 2026-07-26 P5.4：executeGrowthActionRecord 按通道拆分；createListenMonitors 调度块外提后自 allowlist 移除。 2026-07-26 P5.4：handleInboundMessage / getDefaultPosStats / registerGrowthRoutes 拆分后自 allowlist 移除。 2026-07-26 P5.4：points/inventory-forecast routes、ensurePhaseTables、startAgentScheduler、createHandleDataAuditorCase 拆分后自 allowlist 移除。 2026-07-26 P5.4：inventory-forecast create-helpers/table-parse/accuracy/pdf-parse 具名化拆分后自 allowlist 移除。",
   "maxLines": 200,
-  "maxAllowlistSize": 48,
+  "maxAllowlistSize": 44,
   "allowlist": [
     "server/approval-routes.js::registerApprovalRoutes",
     "server/bi-weekly-report.js::formatReportMarkdown",
@@ -24,12 +24,8 @@
     "server/domains/daily-reports/service.js::listDailyReports",
     "server/domains/daily-reports/service.js::upsertDailyReport",
     "server/domains/feishu-bitable/poll-submissions.js::createPollBitableSubmissions",
-    "server/domains/inventory-forecast/accuracy.js::createAccuracyHelpers",
-    "server/domains/inventory-forecast/create-helpers.js::createInventoryForecastHelpers",
-    "server/domains/inventory-forecast/pdf-parse.js::createPdfParseHelpers",
     "server/domains/inventory-forecast/service.js::predictForecast",
     "server/domains/inventory-forecast/service.js::uploadHistoryFile",
-    "server/domains/inventory-forecast/table-parse.js::createParseInventoryForecastRowsFromTableMatrix",
     "server/domains/knowledge/routes.js::registerKnowledgeRoutes",
     "server/domains/knowledge/service.js::runCreateKnowledgeBackground",
     "server/domains/leave-attendance/attendance-build.js::createAttendanceBuildHelpers",

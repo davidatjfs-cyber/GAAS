@@ -51,6 +51,98 @@ import { createHistoryFromPosHelpers } from './history-from-pos.js';
 import { createStateUpsertHelpers } from './state-upsert.js';
 import { createAiForecastHelpers } from './ai-forecast.js';
 
+export function buildInventoryForecastHelperExports(ctx) {
+  return {
+    // scope
+    resolveForecastScope: ctx.resolveForecastScope,
+    isForecastStoreScopedRole,
+
+    // product normalize
+    normalizeProductName,
+    resolveForecastProductName,
+    forecastDayTypeLabel,
+    normalizeForecastWeatherTag,
+    buildForecastProductAliasLookup: ctx.buildForecastProductAliasLookup,
+    canonicalizeForecastProductQuantities: ctx.canonicalizeForecastProductQuantities,
+    canonicalizeForecastRows: ctx.canonicalizeForecastRows,
+
+    // calendar / store forecast config
+    STORE_FORECAST_CONFIG,
+    getStoreForecastConfig: ctx.getStoreForecastConfig,
+    isCNYPeriod,
+    KNOWN_PUBLIC_HOLIDAYS,
+    isKnownPublicHoliday,
+    isNormalWorkday,
+
+    // estimate / profiles
+    estimateRevenueByHistory: ctx.estimateRevenueByHistory,
+    normalizeGrossProfitProfileItem: ctx.normalizeGrossProfitProfileItem,
+    computeAvgPricePerProduct: ctx.computeAvgPricePerProduct,
+    canManageGrossProfitProfiles: ctx.canManageGrossProfitProfiles,
+    normalizeDishAliasBizType: ctx.normalizeDishAliasBizType,
+    estimateGrossMarginByHistory: ctx.estimateGrossMarginByHistory,
+
+    // accuracy
+    normalizePredictionItems: ctx.normalizePredictionItems,
+    forecastPredictionToProductMap: ctx.forecastPredictionToProductMap,
+    calcForecastAccuracyMetrics: ctx.calcForecastAccuracyMetrics,
+    buildForecastCalibrationFactors: ctx.buildForecastCalibrationFactors,
+    applyForecastCalibration: ctx.applyForecastCalibration,
+    summarizeForecastAccuracyRows: ctx.summarizeForecastAccuracyRows,
+
+    // normalize / slots / history keys
+    normalizeForecastBizType,
+    forecastBrandToken: ctx.forecastBrandToken,
+    STORE_SLOT_CONFIG,
+    getStoreSlotConfig: ctx.getStoreSlotConfig,
+    normalizeForecastSlot,
+    resolveSlotForHour,
+    normalizeForecastSlotFromHourRange: ctx.normalizeForecastSlotFromHourRange,
+    normalizeForecastUploadDate: ctx.normalizeForecastUploadDate,
+    inferForecastUploadDateFromFilename,
+    normalizeForecastWeather,
+    normalizeForecastStoreName,
+    normalizeForecastStoreKey,
+    shiftForecastDate: ctx.shiftForecastDate,
+    forecastHistoryRowKey,
+    sortForecastHistoryRows,
+    mergePreferredForecastHistoryRows,
+
+    // table parse
+    parseInventoryForecastRowsFromTableMatrix: ctx.parseInventoryForecastRowsFromTableMatrix,
+
+    // pdf parse
+    parseInventoryForecastRowsFromPdfBuffer: ctx.parseInventoryForecastRowsFromPdfBuffer,
+    parseInventoryForecastRowsFromPdfPath: ctx.parseInventoryForecastRowsFromPdfPath,
+
+    // POS history
+    resolvePosStoreKeys: ctx.resolvePosStoreKeys,
+    loadInventoryForecastHistoryFromSalesRaw: ctx.loadInventoryForecastHistoryFromSalesRaw,
+    longestCommonRun: ctx.longestCommonRun,
+    stripStoreGenericWords: ctx.stripStoreGenericWords,
+
+    // state upsert
+    parseForecastHistoryRow: ctx.parseForecastHistoryRow,
+    upsertInventoryForecastHistoryInState: ctx.upsertInventoryForecastHistoryInState,
+
+    // AI forecast
+    normalizeArkBaseUrl: ctx.normalizeArkBaseUrl,
+    resolveTenantAiConfigFromState: ctx.resolveTenantAiConfigFromState,
+    resolveForecastArkConfig: ctx.resolveForecastArkConfig,
+    buildForecastByAI: ctx.buildForecastByAI,
+
+    // heuristic / products
+    FORECAST_EXCLUDED_PRODUCTS,
+    isExcludedForecastProduct,
+    normalizeForecastProducts: ctx.normalizeForecastProducts,
+    scoreForecastRow,
+    buildForecastByHeuristic,
+    extractHistoryProductUniverse,
+    constrainPredictionsToHistory: ctx.constrainPredictionsToHistory,
+    computeSlotRevenueShare: ctx.computeSlotRevenueShare,
+  };
+}
+
 export function createInventoryForecastHelpers({
   safeDateOnly,
   safeNumber,
@@ -210,93 +302,44 @@ export function createInventoryForecastHelpers({
     getStoreNamesByBrand,
   });
 
-  return {
-    // scope
+  return buildInventoryForecastHelperExports({
     resolveForecastScope,
-    isForecastStoreScopedRole,
-
-    // product normalize
-    normalizeProductName,
-    resolveForecastProductName,
-    forecastDayTypeLabel,
-    normalizeForecastWeatherTag,
     buildForecastProductAliasLookup,
     canonicalizeForecastProductQuantities,
     canonicalizeForecastRows,
-
-    // calendar / store forecast config
-    STORE_FORECAST_CONFIG,
     getStoreForecastConfig,
-    isCNYPeriod,
-    KNOWN_PUBLIC_HOLIDAYS,
-    isKnownPublicHoliday,
-    isNormalWorkday,
-
-    // estimate / profiles
     estimateRevenueByHistory,
     normalizeGrossProfitProfileItem,
     computeAvgPricePerProduct,
     canManageGrossProfitProfiles,
     normalizeDishAliasBizType,
     estimateGrossMarginByHistory,
-
-    // accuracy
     normalizePredictionItems,
     forecastPredictionToProductMap,
     calcForecastAccuracyMetrics,
     buildForecastCalibrationFactors,
     applyForecastCalibration,
     summarizeForecastAccuracyRows,
-
-    // normalize / slots / history keys
-    normalizeForecastBizType,
     forecastBrandToken,
-    STORE_SLOT_CONFIG,
     getStoreSlotConfig,
-    normalizeForecastSlot,
-    resolveSlotForHour,
     normalizeForecastSlotFromHourRange,
     normalizeForecastUploadDate,
-    inferForecastUploadDateFromFilename,
-    normalizeForecastWeather,
-    normalizeForecastStoreName,
-    normalizeForecastStoreKey,
     shiftForecastDate,
-    forecastHistoryRowKey,
-    sortForecastHistoryRows,
-    mergePreferredForecastHistoryRows,
-
-    // table parse
     parseInventoryForecastRowsFromTableMatrix,
-
-    // pdf parse
     parseInventoryForecastRowsFromPdfBuffer,
     parseInventoryForecastRowsFromPdfPath,
-
-    // POS history
     resolvePosStoreKeys,
     loadInventoryForecastHistoryFromSalesRaw,
     longestCommonRun,
     stripStoreGenericWords,
-
-    // state upsert
     parseForecastHistoryRow,
     upsertInventoryForecastHistoryInState,
-
-    // AI forecast
     normalizeArkBaseUrl,
     resolveTenantAiConfigFromState,
     resolveForecastArkConfig,
     buildForecastByAI,
-
-    // heuristic / products
-    FORECAST_EXCLUDED_PRODUCTS,
-    isExcludedForecastProduct,
     normalizeForecastProducts,
-    scoreForecastRow,
-    buildForecastByHeuristic,
-    extractHistoryProductUniverse,
     constrainPredictionsToHistory,
     computeSlotRevenueShare,
-  };
+  });
 }
