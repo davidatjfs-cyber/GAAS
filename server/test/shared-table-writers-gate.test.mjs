@@ -68,10 +68,13 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   // Wave H19：account-gate 从 index.js 迁出（同 OP+表换路径）
   'domains/employees/account-gate.js|UPDATE|feishu_users',
   // Wave M5：listen-time knowledge_base.group_name backfill 从 index.js 迁出
-  'domains/shared/startup-agent-schema.js|UPDATE|knowledge_base',
+  // P5.4：startup-agent-schema.js → startup-agent-schema-helpers.js（同 OP+表换路径）
+  'domains/shared/startup-agent-schema-helpers.js|UPDATE|knowledge_base',
   'domains/knowledge/service.js|DELETE FROM|knowledge_base',
   'domains/knowledge/service.js|INSERT INTO|knowledge_base',
   'domains/knowledge/service.js|UPDATE|knowledge_base',
+  // P5.4：runCreateKnowledgeBackground → create-knowledge-background-helpers.js
+  'domains/knowledge/create-knowledge-background-helpers.js|UPDATE|knowledge_base',
   'master-agent.js|INSERT INTO|agent_messages',
   'master-agent.js|INSERT INTO|master_tasks',
   'master-agent.js|UPDATE|master_tasks',
@@ -96,6 +99,7 @@ const REPATH_NOTES = [
   'index.js → domains/approvals/handlers/onboarding.js | UPDATE|feishu_users',
   'index.js → domains/employees/account-gate.js | UPDATE|feishu_users',
   'index.js → domains/shared/startup-agent-schema.js | UPDATE|knowledge_base',
+  'domains/shared/startup-agent-schema.js → startup-agent-schema-helpers.js | UPDATE|knowledge_base',
   'training.js → domains/training/routes-rubric.js | UPDATE|knowledge_base',
   'domains/training/routes-rubric.js → domains/training/routes-rubric-analyze.js | UPDATE|knowledge_base',
   'training.js → domains/training/routes-sessions.js | UPDATE|knowledge_base',
@@ -103,6 +107,7 @@ const REPATH_NOTES = [
   'knowledge-routes.js → domains/knowledge/service.js | DELETE FROM|knowledge_base',
   'knowledge-routes.js → domains/knowledge/service.js | INSERT INTO|knowledge_base',
   'knowledge-routes.js → domains/knowledge/service.js | UPDATE|knowledge_base',
+  'domains/knowledge/service.js → create-knowledge-background-helpers.js | UPDATE|knowledge_base',
   'index.js → domains/dedup/routes.js | DELETE FROM|agent_messages',
   'index.js → domains/feishu-bitable/records.js | INSERT INTO|feishu_generic_records',
   'index.js → services/feishu-bitable-schema-ensure.js | DELETE FROM|agent_messages',

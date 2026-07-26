@@ -179,3 +179,22 @@ test('slot dedupe: second run same window does not re-query templates', async ()
   await runMonthlyRecurringRewardTemplatesJob();
   assert.equal(templateSelects, 1);
 });
+
+test('startRecurringRewardScheduler: registers interval once and is idempotent', () => {
+  const timers = [];
+  const realSetInterval = global.setInterval;
+  global.setInterval = (fn, ms) => {
+    timers.push({ fn, ms });
+    return 1;
+  };
+  try {
+    const api = createRecurringRewardScheduler(makeBaseDeps());
+    api.startRecurringRewardScheduler();
+    api.startRecurringRewardScheduler();
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0].ms, 5 * 60 * 1000);
+    assert.equal(typeof timers[0].fn, 'function');
+  } finally {
+    global.setInterval = realSetInterval;
+  }
+});
