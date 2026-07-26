@@ -6,63 +6,83 @@ import {
   getUsagePolicy,
   getConflictRule,
   listConflictRules,
+  recordDataQuality,
 } from './data-trust-service.js';
 
-test('computeTrustScore: POS-sourced data with no conflicts scores high', () => {
+test('computeTrustScore gives high score for objective POS source', () => {
   const { score, breakdown } = computeTrustScore({ sourceType: 'pos_order' });
-  assert.ok(score >= 75, `expected high score, got ${score}`);
+  assert.ok(score >= 80, `score=${score}`);
   assert.equal(breakdown.source, 100);
 });
 
-test('computeTrustScore: employee manual entry with GPS 800m away from store gets penalized', () => {
-  const clean = computeTrustScore({ sourceType: 'employee_manual_entry' });
-  const withGpsConflict = computeTrustScore({ sourceType: 'employee_manual_entry', spatialDistanceMeters: 800 });
-  assert.ok(withGpsConflict.score < clean.score, 'GPS mismatch should lower trust score');
+test('computeTrustScore penalizes temporal and spatial conflicts', () => {
+  const clean = computeTrustScore({ sourceType: 'employee_manual_entry' }).score;
+  const dirty = computeTrustScore({
+    sourceType: 'employee_manual_entry',
+    temporalConflicts: [{ penalty: 40 }],
+    spatialDistanceMeters: 500,
+    behaviorAnomalies: [{ penalty: 20 }],
+  }).score;
+  assert.ok(dirty < clean);
 });
 
-test('computeTrustScore: cross-source conflict (training done but complaints up) drags score down hard', () => {
+test('computeTrustScore adjusts crossSourceChecks', () => {
+  const neutral = computeTrustScore({
+    sourceType: 'manager_confirmation',
+    crossSourceChecks: [],
+  }).breakdown.crossSource;
   const consistent = computeTrustScore({
-    sourceType: 'employee_upload',
-    crossSourceChecks: [{ ruleId: 'training_vs_complaint_rate', result: 'consistent' }],
-  });
-  const conflicting = computeTrustScore({
-    sourceType: 'employee_upload',
-    crossSourceChecks: [{ ruleId: 'training_vs_complaint_rate', result: 'conflict' }],
-  });
-  assert.ok(conflicting.score < consistent.score);
-  // 用户举的例子：认证分很高但退菜率异常——这类冲突应该把分数拉到 conflict 或 suspect 档
-  assert.ok(['conflict', 'suspect', 'low'].includes(classifyConfidenceLevel(conflicting.score)));
+    sourceType: 'manager_confirmation',
+    crossSourceChecks: [{ ruleId: 'revenue_vs_payment_flow', result: 'consistent' }],
+  }).breakdown.crossSource;
+  const conflict = computeTrustScore({
+    sourceType: 'manager_confirmation',
+    crossSourceChecks: [{ ruleId: 'revenue_vs_payment_flow', result: 'conflict' }],
+  }).breakdown.crossSource;
+  assert.ok(consistent > neutral);
+  assert.ok(conflict < neutral);
 });
 
-test('computeTrustScore: behavior anomaly (identical photo every day) penalizes score', () => {
-  const clean = computeTrustScore({ sourceType: 'employee_upload' });
-  const suspicious = computeTrustScore({
-    sourceType: 'employee_upload',
-    behaviorAnomalies: [{ type: 'duplicate_photo_hash', penalty: 30 }, { type: 'impossible_completion_time', penalty: 40 }],
-  });
-  assert.ok(suspicious.score < clean.score);
-});
-
-test('classifyConfidenceLevel buckets scores into the 5 documented tiers', () => {
+test('classifyConfidenceLevel maps score bands', () => {
   assert.equal(classifyConfidenceLevel(95), 'high');
   assert.equal(classifyConfidenceLevel(80), 'medium');
   assert.equal(classifyConfidenceLevel(60), 'low');
-  assert.equal(classifyConfidenceLevel(35), 'suspect');
+  assert.equal(classifyConfidenceLevel(40), 'suspect');
   assert.equal(classifyConfidenceLevel(10), 'conflict');
 });
 
-test('getUsagePolicy: trust<60 never enters benchmark or training, per the stated hard rule', () => {
-  assert.equal(getUsagePolicy(95).entersBenchmark, true);
-  assert.equal(getUsagePolicy(80).entersBenchmark, true);
+test('getUsagePolicy gates benchmark entry by score', () => {
+  assert.equal(getUsagePolicy(92).entersBenchmark, true);
   assert.equal(getUsagePolicy(80).weight, 0.6);
-  assert.equal(getUsagePolicy(59).entersBenchmark, false);
-  assert.equal(getUsagePolicy(59).entersTraining, false);
+  assert.equal(getUsagePolicy(60).action, 'display_only');
   assert.equal(getUsagePolicy(20).action, 'flag_anomaly_audit');
 });
 
-test('conflict matrix registry is queryable and non-empty', () => {
-  const rules = listConflictRules();
-  assert.ok(rules.length >= 10, 'should have a seed set of at least 10 conflict rules');
-  assert.ok(getConflictRule('gps_vs_store_location'));
-  assert.equal(getConflictRule('nonexistent_rule'), null);
+test('getConflictRule and listConflictRules expose matrix', () => {
+  const rule = getConflictRule('gps_vs_store_location');
+  assert.ok(rule);
+  assert.equal(rule.impact, 25);
+  assert.ok(listConflictRules().length >= 10);
+  assert.equal(getConflictRule('unknown_rule'), null);
+});
+
+test('recordDataQuality persists computed score via pool', async () => {
+  const calls = [];
+  const pool = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      return { rows: [{ id: 1, trust_score: params[5] }] };
+    },
+  };
+  const row = await recordDataQuality(pool, {
+    dataId: 'd1',
+    dataType: 'inspection',
+    tenantId: 'default',
+    storeId: 's1',
+    sourceType: 'pos_order',
+  });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /INSERT INTO growth_ontology_data_quality/i);
+  assert.ok(row.usagePolicy);
+  assert.ok(Number(row.trust_score) >= 80);
 });

@@ -51,3 +51,30 @@ test('reviewOntologyTaskHistory returns insufficient_data when no completed metr
   assert.equal(review.resultReviewStatus, 'insufficient_data');
   assert.equal(review.tasksCreated, 1);
 });
+
+test('buildOntologyTaskInsert maps P2/P3 severities', () => {
+  assert.equal(buildOntologyTaskInsert({ ...draft, priority: 'P2' }).severity, 'medium');
+  assert.equal(buildOntologyTaskInsert({ ...draft, priority: 'P3' }).severity, 'low');
+});
+
+test('createOntologyTaskFromDraft rejects missing title', async () => {
+  await assert.rejects(
+    () => createOntologyTaskFromDraft({ query: async () => ({ rows: [] }) }, { title: '' }),
+    /taskDraft.title_required/
+  );
+});
+
+test('reviewOntologyTaskHistory returns improved when completed tasks have review data', async () => {
+  const fakePool = {
+    query: async () => ({
+      rows: [{
+        task_id: 'ONT-2',
+        status: 'done',
+        source_data: { resultReview: { actualResult: '回店+3', actualMetrics: { visits: 3 } } },
+      }],
+    }),
+  };
+  const review = await reviewOntologyTaskHistory(fakePool, { storeId: 'test_store' });
+  assert.equal(review.resultReviewStatus, 'improved');
+  assert.equal(review.tasksCompleted, 1);
+});

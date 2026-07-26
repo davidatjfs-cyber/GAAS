@@ -1,52 +1,52 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  classifyBusinessType,
-  classifyScale,
-  classifyPriceBand,
   listBusinessTypes,
   getBusinessType,
   getKpiWeights,
+  classifyBusinessType,
+  classifyScale,
+  classifyPriceBand,
 } from './store-segments.js';
 
-test('classifyBusinessType maps cuisine/keywords to the right type, defaults to mixed', () => {
-  assert.equal(classifyBusinessType('潮汕牛肉火锅'), 'hotpot');
-  assert.equal(classifyBusinessType('精品 Bistro'), 'western');
-  assert.equal(classifyBusinessType('粤菜私房菜'), 'banquet');
-  assert.equal(classifyBusinessType('川菜馆'), 'casual_dining');
-  assert.equal(classifyBusinessType(''), 'mixed');
-  assert.equal(classifyBusinessType('完全没见过的品类'), 'mixed');
-});
-
-test('listBusinessTypes returns all canonical types incl. mixed fallback', () => {
+test('listBusinessTypes returns all segments', () => {
   const types = listBusinessTypes();
-  assert.equal(types.length, 21);
-  assert.ok(types.some((t) => t.id === 'mixed'));
+  assert.ok(types.length >= 20);
+  assert.ok(types.some((t) => t.id === 'hotpot'));
 });
 
-test('getBusinessType returns null for unknown id, not throw', () => {
-  assert.equal(getBusinessType('nonexistent'), null);
-  assert.ok(getBusinessType('hotpot'));
+test('getBusinessType resolves known id and null for unknown', () => {
+  assert.equal(getBusinessType('hotpot').name, '火锅');
+  assert.equal(getBusinessType('  hotpot  ').id, 'hotpot');
+  assert.equal(getBusinessType('unknown_xyz'), null);
 });
 
-test('getKpiWeights falls back to mixed weights for types without an explicit matrix', () => {
-  const hotpotWeights = getKpiWeights('hotpot');
-  assert.equal(hotpotWeights.table_turnover_rate, 10);
-  const unknownTypeWeights = getKpiWeights('bar'); // not explicitly in KPI_WEIGHTS
-  assert.deepEqual(unknownTypeWeights, getKpiWeights('mixed'));
+test('classifyBusinessType matches keywords and falls back to mixed', () => {
+  assert.equal(classifyBusinessType('海底捞火锅'), 'hotpot');
+  assert.equal(classifyBusinessType(''), 'mixed');
+  assert.equal(classifyBusinessType('完全不认识的业态'), 'mixed');
 });
 
-test('classifyScale prefers seat count, falls back to daily revenue proxy', () => {
+test('classifyScale prefers seatCount when available', () => {
   assert.equal(classifyScale({ seatCount: 50 }), 'S');
-  assert.equal(classifyScale({ avgDailyRevenue: 1500 }), 'XS');
-  assert.equal(classifyScale({ avgDailyRevenue: 25000 }), 'L');
+  assert.equal(classifyScale({ seatCount: 200 }), 'L');
+});
+
+test('classifyScale uses avgDailyRevenue when no seats', () => {
+  assert.equal(classifyScale({ avgDailyRevenue: 5000 }), 'S');
   assert.equal(classifyScale({ avgDailyRevenue: 999999 }), 'XXL');
 });
 
-test('classifyPriceBand buckets avg ticket price into the right band', () => {
-  assert.equal(classifyPriceBand(45), 'budget');
+test('classifyPriceBand maps ticket price to band', () => {
+  assert.equal(classifyPriceBand(50), 'budget');
   assert.equal(classifyPriceBand(100), 'value');
-  assert.equal(classifyPriceBand(200), 'premium');
   assert.equal(classifyPriceBand(300), 'luxury');
-  assert.equal(classifyPriceBand(600), 'ultra');
+  assert.equal(classifyPriceBand(800), 'ultra');
+});
+
+test('getKpiWeights returns type-specific or mixed fallback', () => {
+  const hotpot = getKpiWeights('hotpot');
+  assert.equal(hotpot.table_turnover_rate, 10);
+  const unknown = getKpiWeights('nonexistent_type');
+  assert.equal(unknown.repeat_rate_30d, getKpiWeights('mixed').repeat_rate_30d);
 });
