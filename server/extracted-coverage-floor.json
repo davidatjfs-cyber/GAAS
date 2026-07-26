@@ -81,6 +81,8 @@
     "domains/agent-ops/submission-validation-helpers.js",
     "domains/agent-ops/submission-validation-io.js",
     "domains/feishu-bitable/field-normalization.js",
+    "domains/agent-brand/runtime-context.js",
+    "domains/agent-brand/runtime-context-helpers.js",
     "domains/agent-ops/capture-checklist-detail.js",
     "domains/agent-ops/execute-scheduled-task.js",
     "domains/agent-ops/follow-up-overdue-tasks.js",
