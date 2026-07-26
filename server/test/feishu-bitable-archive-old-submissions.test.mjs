@@ -4,11 +4,9 @@ import { createArchiveOldBitableSubmissions } from '../domains/feishu-bitable/ar
 
 function makeArchiver(overrides = {}) {
   const calls = { sql: [], released: 0 };
-  let clientQuerySeq = 0;
   const client = {
     query: async (sql, params) => {
       calls.sql.push({ sql: String(sql), params, via: 'client' });
-      clientQuerySeq++;
       if (/BEGIN|COMMIT|ROLLBACK/i.test(sql)) return {};
       if (/INSERT INTO bitable_submissions_archive/.test(sql)) {
         if (params?.[0] === 'bad') throw new Error('insert fail');
