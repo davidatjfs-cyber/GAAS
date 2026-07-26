@@ -12,6 +12,20 @@ export function maskPhone(phone) {
   return s.slice(0, 3) + '****' + s.slice(-4);
 }
 
+/** 储值余额提醒目标查询（HRMS 直发 {balance}，无券无码）。 */
+export function buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets) {
+  return {
+    sql: `SELECT card_no, member_name, phone, balance_fen FROM growth_stored_value_members m
+            WHERE m.phone IS NOT NULL AND m.phone <> '' AND m.store_id = $2 AND m.balance_fen >= $3
+              AND (m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))
+              AND NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
+                WHERE d.channel='sms' AND d.rule_key='stored_value_remind' AND d.status IN ('sent','redeemed')
+                  AND d.payload->>'phone' = m.phone AND d.created_at > now() - ($1 || ' days')::interval)
+            ORDER BY m.balance_fen DESC LIMIT ${maxTargets}`,
+    params: [String(freqDays), storeId, minBalanceFen],
+  };
+}
+
 export function parseCampaignCriteria(src) {
   const num = (v) => (v === '' || v == null || isNaN(Number(v)) ? NaN : Math.floor(Number(v)));
   return {

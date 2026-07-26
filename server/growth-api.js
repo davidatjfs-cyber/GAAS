@@ -6,47 +6,6 @@ function cleanPhone(value) {
   return cleanText(value, 32).replace(/[^0-9+]/g, '');
 }
 
-// 阿里云短信「个人姓名」变量仅接受中文姓名/称谓；英文名、微信昵称、emoji、符号、空值会被
-// 运营商以「变量不符合个人姓名规范」拒发。信息完善前先用统称「顾客」兜底，
-// 待门店补全姓+性别后可正常用「张先生」「王哥」等中文称谓。
-function smsSafeName(value) {
-  const s = cleanText(value, 20);
-  return /^[一-龥·]{2,15}$/.test(s) ? s : '顾客';
-}
-
-// 自动营销规则发券短信：阿里云已报备模板的可用英文变量及其取值口径。
-// 模板正文(content_template)须与阿里云模板逐字一致，本函数按正文里出现的 {var} 精确组装
-// templateParam，确保「参数名/个数」与阿里云严格匹配（不匹配会被整批拒收）。
-const SMS_DERIVED_VARS = new Set(['name', 'value', 'date', 'code', 'balance', 'days']);
-
-// 券有效期 → 「M月D日」（到店报码时客人一眼能看懂的中文日期；以 valid_days 自当日顺延）。
-export function formatSmsValidDate(validDays) {
-  const d = new Date();
-  d.setDate(d.getDate() + Math.max(1, Math.floor(Number(validDays) || 7)));
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
-}
-
-// 唯一券码：6 位数字，便于客人口述、店员在核销台输入。带时间熵降低碰撞，核销按本码配对。
-function genSmsShortCode() {
-  const n = (Date.now() % 1000000) ^ Math.floor(Math.random() * 1000000);
-  return String(100000 + (Math.abs(n) % 900000));
-}
-
-// 储值余额(元)：按手机号(可选门店)取储值会员当前余额，供储值维护模板的 {balance} 变量。
-async function getStoredValueBalanceYuan(pool, phone, storeId) {
-  const p = cleanPhone(phone);
-  if (!p) return 0;
-  const params = [p];
-  let where = "phone = $1 AND phone <> ''";
-  const sid = cleanText(storeId, 128);
-  if (sid) { params.push(sid); where += ` AND store_id = $${params.length}`; }
-  const r = await pool.query(
-    `SELECT balance_fen FROM growth_stored_value_members WHERE ${where} ORDER BY balance_fen DESC LIMIT 1`,
-    params
-  ).catch(() => ({ rows: [] }));
-  return Math.max(0, Math.round((r.rows[0]?.balance_fen || 0) / 100));
-}
-
 export function parseOccurredAt(value) {
   if (!value) return new Date();
   const d = new Date(value);
@@ -56,7 +15,7 @@ export function parseOccurredAt(value) {
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from './sms.js';
-import { STORE_ID_TO_NAME, STORES as _ALL_STORES } from './brands-config.js';
+import { STORES as _ALL_STORES } from './brands-config.js';
 import {
   buildActionMessage,
   pickSmsTemplateByStore,
@@ -64,7 +23,17 @@ import {
   phoneAbBucket,
   holdoutPct,
   interpolateTemplate,
+  CAMPAIGN_TYPES,
+  ABC_ROTATION_ORDER,
+  ABC_STEP_DEFS,
+  freqDaysEnv,
+  globalSmsCapped,
+  inSmsQuietHours,
+  isPhoneSuppressed,
+  handleSmsFailure,
+  pickBalanceTemplateByStore,
 } from './domains/growth-campaigns/helpers.js';
+import { buildSmsTemplateParam } from './domains/growth-campaigns/sms-params.js';
 export {
   pickCampaignSmsSign,
   pickWinbackTemplateByStore,
@@ -86,6 +55,28 @@ export {
   buildCampaignTargetQuery,
   mapStoreNameToId,
 } from './domains/growth-campaigns/helpers.js';
+export { formatSmsValidDate } from './domains/growth-campaigns/sms-params.js';
+import { recomputeCustomerProfiles } from './domains/growth-profiles/recompute.js';
+export { recomputeCustomerProfiles } from './domains/growth-profiles/recompute.js';
+import {
+  fmtYmd,
+  buildRuleActionKey,
+  buildRulePeriodKey,
+  filterGenericRuleCandidates,
+  fetchGenericRuleCandidates,
+  loadSegmentPhoneSet,
+  loadRuleCandidates,
+} from './domains/growth-touch-rules/helpers.js';
+export {
+  fmtYmd,
+  loadRuleCandidates,
+  filterGenericRuleCandidates,
+  fetchGenericRuleCandidates,
+} from './domains/growth-touch-rules/helpers.js';
+import { buildGrowthDailyReport } from './domains/growth-ops/daily-report.js';
+export { buildGrowthDailyReport } from './domains/growth-ops/daily-report.js';
+import { buildRemindTargetsQuery } from './domains/growth-stored-value/helpers.js';
+export { buildRemindTargetsQuery } from './domains/growth-stored-value/helpers.js';
 import { runForActiveTenants, tenantContext, resolveTenantIdDefault } from './utils/database.js';
 import { initSmsTemplatesCache } from './sms-templates.js';
 import { SHARED_TABLES } from '@gaas/shared';
@@ -572,260 +563,6 @@ export async function upsertCustomer(pool, payload, tenantId = 'default') {
   return existing;
 }
 
-export async function recomputeCustomerProfiles(pool, days = 90, tenantId = 'default') {
-  // 画像重算含 value_tier：VIP=各门店折前人均消费金额(avg_check)排名前15%，regular=15–50分位，low=后50%或未消费
-  const safeDays = Math.min(Math.max(Number(days) || 90, 7), 365);
-  // 将所有留过手机号的POS消费客自动建档进会员表，使散客也纳入分类（不再只统计小程序会员）。
-  // 幂等：已存在的手机号 DO NOTHING，不覆盖会员既有信息；门店取其首单/末单所在门店。
-  await pool.query(`
-    INSERT INTO growth_customers (phone, first_store_id, last_store_id, first_seen_at, last_seen_at, meta, tenant_id)
-    SELECT s.phone, s.first_store, s.last_store, s.first_at, s.last_at, '{"source":"pos_auto"}'::jsonb, $1
-    FROM (
-      SELECT phone,
-             (ARRAY_AGG(NULLIF(store_id,'') ORDER BY biz_date ASC) FILTER (WHERE NULLIF(store_id,'') IS NOT NULL))[1] AS first_store,
-             (ARRAY_AGG(NULLIF(store_id,'') ORDER BY biz_date DESC) FILTER (WHERE NULLIF(store_id,'') IS NOT NULL))[1] AS last_store,
-             MIN(biz_date)::timestamptz AS first_at,
-             MAX(biz_date)::timestamptz AS last_at
-      FROM pos_orders
-      WHERE phone IS NOT NULL AND phone <> '' AND tenant_id = $1
-      GROUP BY phone
-    ) s
-    ON CONFLICT (phone, tenant_id) WHERE phone IS NOT NULL AND phone <> '' DO NOTHING
-  `, [tenantId]);
-  await pool.query(
-    `WITH event_base AS (
-       SELECT
-         c.id AS customer_id,
-         c.phone,
-         c.openid,
-         COALESCE(c.last_store_id, c.first_store_id, '') AS store_id,
-         MAX(e.occurred_at) AS last_event_at,
-         COUNT(*) FILTER (WHERE e.event_type = 'payment_success')::int AS payment_count,
-         COUNT(*) FILTER (WHERE e.event_type IN ('coupon_claimed','coupon_purchased','marketing_triggered'))::int AS discount_touch_count,
-         COUNT(*) FILTER (WHERE e.event_type = 'coupon_redeemed')::int AS discount_convert_count,
-         AVG(NULLIF((e.metadata ->> 'party_size')::numeric, 0)) FILTER (WHERE e.metadata ? 'party_size') AS avg_party_size,
-         AVG(NULLIF((e.metadata ->> 'spicy_level')::numeric, 0)) FILTER (WHERE e.metadata ? 'spicy_level') AS spicy_level,
-         MODE() WITHIN GROUP (ORDER BY CASE
-           WHEN EXTRACT(HOUR FROM e.occurred_at) BETWEEN 10 AND 14 THEN '午市'
-           WHEN EXTRACT(HOUR FROM e.occurred_at) BETWEEN 17 AND 21 THEN '晚市'
-           ELSE '夜间'
-         END) AS preferred_visit_time
-       FROM growth_customers c
-       LEFT JOIN growth_events e ON e.customer_id = c.id
-         AND e.occurred_at >= CURRENT_DATE - ($1::int || ' days')::interval
-       WHERE c.tenant_id = $2
-       GROUP BY c.id, c.phone, c.openid, COALESCE(c.last_store_id, c.first_store_id, '')
-     ), signal_base AS (
-       SELECT
-         s.customer_id,
-         AVG(s.signal_score) FILTER (WHERE s.signal_key = 'price_sensitivity') AS signal_price_sensitivity,
-         AVG(s.signal_score) FILTER (WHERE s.signal_key = 'adventurous_score') AS adventurous_score,
-         AVG(s.signal_score) FILTER (WHERE s.signal_key = 'health_conscious_score') AS health_conscious_score,
-         AVG(s.signal_score) FILTER (WHERE s.signal_key = 'response_to_discount') AS response_to_discount,
-         COUNT(*) FILTER (WHERE s.signal_key = 'occasion' AND s.signal_value = 'date')::numeric AS occasion_date_score,
-         COUNT(*) FILTER (WHERE s.signal_key = 'occasion' AND s.signal_value = 'family')::numeric AS occasion_family_score,
-         COUNT(*) FILTER (WHERE s.signal_key = 'occasion' AND s.signal_value = 'business')::numeric AS occasion_business_score,
-         COUNT(*) FILTER (WHERE s.signal_key = 'occasion' AND s.signal_value = 'solo')::numeric AS occasion_solo_score,
-         COUNT(*) FILTER (WHERE s.signal_key = 'occasion' AND s.signal_value = 'friends')::numeric AS occasion_friends_score,
-         ARRAY_REMOVE(ARRAY_AGG(DISTINCT s.signal_value) FILTER (WHERE s.signal_key = 'favorite_dish' AND COALESCE(s.signal_value,'') <> ''), NULL) AS favorite_dishes,
-         ARRAY_REMOVE(ARRAY_AGG(DISTINCT s.signal_value) FILTER (WHERE s.signal_type = 'semantic_tag' AND COALESCE(s.signal_value,'') <> ''), NULL) AS semantic_tags
-        FROM growth_profile_signals s
-        WHERE s.occurred_at >= CURRENT_DATE - ($1::int || ' days')::interval
-        GROUP BY s.customer_id
-      ), pos_order_base AS (
-        SELECT
-          gc.id AS customer_id,
-          COUNT(DISTINCT po.order_no)::int AS pos_order_count,
-          COALESCE(SUM(po.amount_after_discount), 0) AS pos_total_spend,
-          COALESCE(SUM(po.amount_before_discount), 0) AS pos_total_before_spend,
-          COALESCE(SUM(COALESCE(NULLIF(po.diners, 0), 1)), 0) AS pos_total_diners,
-          ROUND(SUM(po.amount_before_discount) / NULLIF(SUM(COALESCE(NULLIF(po.diners, 0), 1)), 0), 2) AS avg_check, -- 折前人均消费金额，VIP 排名依据
-          COUNT(*) FILTER (WHERE po.order_type = '堂食')::numeric / NULLIF(COUNT(*)::numeric, 0) AS pos_dine_in_ratio,
-          MAX(po.biz_date) AS pos_last_order_at
-        FROM growth_customers gc
-        INNER JOIN pos_orders po ON gc.phone = po.phone AND po.phone <> ''
-        WHERE gc.tenant_id = $2
-        GROUP BY gc.id
-      ), pos_dish_base AS (
-        SELECT
-          gc.id AS customer_id,
-          ARRAY_REMOVE(ARRAY_AGG(DISTINCT poi.dish_name) FILTER (WHERE poi.dish_name IS NOT NULL AND poi.dish_name <> '-' AND poi.category <> '-'), NULL) AS pos_favorite_dishes
-        FROM growth_customers gc
-        INNER JOIN pos_orders po ON gc.phone = po.phone AND po.phone <> ''
-        INNER JOIN pos_order_items poi ON poi.order_no = po.order_no AND poi.category IS NOT NULL AND poi.category <> '-'
-        WHERE gc.tenant_id = $2
-        GROUP BY gc.id
-      ), pos_base AS (
-        SELECT
-          pob.*,
-          COALESCE(pdb.pos_favorite_dishes, '{}') AS pos_favorite_dishes
-        FROM pos_order_base pob
-        LEFT JOIN pos_dish_base pdb ON pdb.customer_id = pob.customer_id
-      )
-      INSERT INTO growth_customer_profiles (
-        customer_id, phone, openid, store_id, lifecycle_stage,
-        next_visit_probability, best_contact_window, preferred_visit_time,
-        avg_party_size, response_to_discount, price_sensitivity,
-        adventurous_score, health_conscious_score, spicy_level,
-        occasion_date_score, occasion_family_score, occasion_business_score,
-        occasion_solo_score, occasion_friends_score,
-        favorite_dishes, semantic_tags, source_signals, last_profiled_at, updated_at,
-        pos_order_count, pos_total_spend, avg_check, pos_dine_in_ratio, pos_last_order_at, tenant_id
-      )
-     SELECT
-       e.customer_id,
-       e.phone,
-       e.openid,
-       NULLIF(e.store_id, ''),
-        CASE
-          -- 潜在新客：扫码/被触达但从未下单（陪客等）
-          WHEN GREATEST(e.payment_count, COALESCE(p.pos_order_count, 0)) = 0 THEN 'prospect'
-          -- 新客：累计下单1次 且 最近14天内有到店
-          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) >= NOW() - INTERVAL '14 days'
-               AND GREATEST(e.payment_count, COALESCE(p.pos_order_count, 0)) = 1 THEN 'new'
-          -- 活跃客：累计下单≥2次 且 最近14天内有到店
-          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) >= NOW() - INTERVAL '14 days'
-               AND GREATEST(e.payment_count, COALESCE(p.pos_order_count, 0)) >= 2 THEN 'active'
-          -- 临界客：14-30天未到店
-          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) >= NOW() - INTERVAL '30 days' THEN 'at_risk'
-          -- 长期流失客：90天以上未到店，按时长细分（资料再利用，分批触达试召回）
-          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) < NOW() - INTERVAL '365 days' THEN 'lost_365'
-          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) < NOW() - INTERVAL '180 days' THEN 'lost_180'
-          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) < NOW() - INTERVAL '90 days' THEN 'lost_90'
-          -- 沉睡老客：30-90天未到店 且 曾累计下单≥2次（值得花力气召回）
-          WHEN GREATEST(e.payment_count, COALESCE(p.pos_order_count, 0)) >= 2 THEN 'dormant'
-          -- 流失低频客：30-90天未到店 且 只下过1单
-          ELSE 'churned'
-        END,
-        CASE
-          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) >= NOW() - INTERVAL '7 days' THEN 0.85
-          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) >= NOW() - INTERVAL '14 days' THEN 0.65
-          WHEN GREATEST(e.last_event_at, p.pos_last_order_at) >= NOW() - INTERVAL '30 days' THEN 0.35
-          ELSE 0.1
-        END,
-       CASE COALESCE(e.preferred_visit_time, '晚市')
-         WHEN '午市' THEN '周四 11:00-13:00'
-         WHEN '夜间' THEN '周五 20:00-22:00'
-         ELSE '周五 17:00-19:00'
-       END,
-       COALESCE(e.preferred_visit_time, '晚市'),
-       COALESCE(e.avg_party_size, 1),
-       COALESCE(s.response_to_discount,
-         CASE WHEN e.discount_touch_count > 0 THEN ROUND(e.discount_convert_count::numeric / e.discount_touch_count, 4) ELSE 0 END),
-       COALESCE(s.signal_price_sensitivity,
-         CASE WHEN e.discount_touch_count > 0 THEN ROUND(LEAST(1, e.discount_convert_count::numeric / e.discount_touch_count), 4) ELSE 0.2 END),
-       COALESCE(s.adventurous_score, 0.5),
-       COALESCE(s.health_conscious_score, 0.5),
-       COALESCE(e.spicy_level, 0.5),
-       COALESCE(s.occasion_date_score, 0),
-       COALESCE(s.occasion_family_score, 0),
-       COALESCE(s.occasion_business_score, 0),
-       COALESCE(s.occasion_solo_score, 0),
-       COALESCE(s.occasion_friends_score, 0),
-        COALESCE(to_jsonb(ARRAY(SELECT DISTINCT unnest(COALESCE(s.favorite_dishes, '{}') || COALESCE(p.pos_favorite_dishes, '{}')))), '[]'::jsonb),
-        COALESCE(to_jsonb(s.semantic_tags), '[]'::jsonb),
-        jsonb_build_object(
-          'payment_count', e.payment_count,
-          'discount_touch_count', e.discount_touch_count,
-          'discount_convert_count', e.discount_convert_count,
-          'pos_order_count', COALESCE(p.pos_order_count, 0),
-          'pos_total_spend', COALESCE(p.pos_total_spend, 0),
-          'pos_total_before_spend', COALESCE(p.pos_total_before_spend, 0),
-          'pos_total_diners', COALESCE(p.pos_total_diners, 0),
-          'source_days', $1
-        ),
-        NOW(), NOW(),
-        COALESCE(p.pos_order_count, 0),
-        COALESCE(p.pos_total_spend, 0),
-        COALESCE(p.avg_check, ROUND(e.avg_party_size, 2)),
-        p.pos_dine_in_ratio,
-        p.pos_last_order_at,
-        $2
-      FROM event_base e
-      LEFT JOIN signal_base s ON s.customer_id = e.customer_id
-      LEFT JOIN pos_base p ON p.customer_id = e.customer_id
-      ON CONFLICT (customer_id, tenant_id) DO UPDATE SET
-        phone = EXCLUDED.phone,
-        openid = EXCLUDED.openid,
-        store_id = EXCLUDED.store_id,
-        lifecycle_stage = EXCLUDED.lifecycle_stage,
-        next_visit_probability = EXCLUDED.next_visit_probability,
-        best_contact_window = EXCLUDED.best_contact_window,
-        preferred_visit_time = EXCLUDED.preferred_visit_time,
-        avg_party_size = EXCLUDED.avg_party_size,
-        response_to_discount = EXCLUDED.response_to_discount,
-        price_sensitivity = EXCLUDED.price_sensitivity,
-        adventurous_score = EXCLUDED.adventurous_score,
-        health_conscious_score = EXCLUDED.health_conscious_score,
-        spicy_level = EXCLUDED.spicy_level,
-        occasion_date_score = EXCLUDED.occasion_date_score,
-        occasion_family_score = EXCLUDED.occasion_family_score,
-        occasion_business_score = EXCLUDED.occasion_business_score,
-        occasion_solo_score = EXCLUDED.occasion_solo_score,
-        occasion_friends_score = EXCLUDED.occasion_friends_score,
-        favorite_dishes = EXCLUDED.favorite_dishes,
-        semantic_tags = EXCLUDED.semantic_tags,
-        source_signals = EXCLUDED.source_signals,
-        pos_order_count = EXCLUDED.pos_order_count,
-        pos_total_spend = EXCLUDED.pos_total_spend,
-        avg_check = EXCLUDED.avg_check,
-        pos_dine_in_ratio = EXCLUDED.pos_dine_in_ratio,
-        pos_last_order_at = EXCLUDED.pos_last_order_at,
-        last_profiled_at = NOW(),
-        updated_at = NOW()`,
-    [safeDays, tenantId]
-  );
-
-  // 价值分级：VIP = 各门店折前人均消费金额排名前 15%（avg_check = 折前营业额/客流量，与自动营销统一）
-  await pool.query(`
-    WITH customer_avg AS (
-      SELECT
-        customer_id,
-        COALESCE(NULLIF(store_id, ''), '*') AS store_id,
-        COALESCE(
-          NULLIF(avg_check, 0),
-          COALESCE((source_signals ->> 'pos_total_before_spend')::numeric, pos_total_spend)
-            / NULLIF(COALESCE((source_signals ->> 'pos_total_diners')::numeric, 0), 0)
-        ) AS avg_spend_per_person
-      FROM growth_customer_profiles
-      WHERE COALESCE(pos_total_spend, 0) > 0
-    ), ranked AS (
-      SELECT
-        customer_id,
-        PERCENT_RANK() OVER (
-          PARTITION BY store_id
-          ORDER BY avg_spend_per_person DESC, customer_id
-        ) AS spend_pct
-      FROM customer_avg
-      WHERE avg_spend_per_person IS NOT NULL AND avg_spend_per_person > 0
-    )
-    UPDATE growth_customer_profiles p
-      SET value_tier = CASE
-          WHEN r.spend_pct <= 0.15 THEN 'vip'
-          WHEN r.spend_pct <= 0.50 THEN 'regular'
-          ELSE 'low'
-        END
-    FROM ranked r
-    WHERE p.customer_id = r.customer_id
-  `);
-  // 未消费客户（潜在新客）固定为 low
-  await pool.query(`UPDATE growth_customer_profiles SET value_tier = 'low' WHERE COALESCE(pos_total_spend, 0) = 0`);
-
-  // 价格敏感标签：价格敏感度>0.5 或 折扣响应率>0.4
-  await pool.query(`
-    UPDATE growth_customer_profiles
-    SET price_sensitive = (COALESCE(price_sensitivity, 0) > 0.5 OR COALESCE(response_to_discount, 0) > 0.4)
-  `);
-
-  return safeDays;
-}
-
-// 核销时小程序常未填消费金额（amount_fen=0），且POS数据是按天批量同步、核销当时查不到。
-// 每天凌晨批量补算：按"同门店+同手机号+核销时间前后2小时内最近一单"匹配 pos_orders 回填，
-// 匹配不到则保持0（不影响现有数据）。
-// 2026-07 起去掉"只扫近7天"的年龄限制：之前发现只要某条核销的匹配POS订单超过7天才同步/
-// 补录，就会被永久跳过、再也不会重扫，导致部分活动的营收/ROI被永久低估。WHERE gr.amount_fen=0
-// 本身已把扫描范围限定在"仍未补上金额"的记录，表体量也小（数百行级），去掉年龄限制不影响性能。
 async function backfillRedemptionAmounts(pool) {
   const r = await pool.query(`
     WITH matched AS (
@@ -985,27 +722,6 @@ export async function appendExecutionLog(pool, payload) {
 async function getStateValue(pool, key) {
   const r = await pool.query(`SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 LIMIT 1`, [key]);
   return r.rows?.[0]?.data || null;
-}
-
-export function fmtYmd(value) {
-  const d = value ? new Date(value) : new Date();
-  if (Number.isNaN(d.getTime())) return 'unknown';
-  return d.toISOString().slice(0, 10);
-}
-
-function fmtYm(value) {
-  const d = value ? new Date(value) : new Date();
-  if (Number.isNaN(d.getTime())) return 'unknown';
-  return d.toISOString().slice(0, 7);
-}
-
-function deriveBirthdayMonth(meta = {}) {
-  const monthRaw = cleanText(meta?.birthday_month, 2);
-  if (/^(0?[1-9]|1[0-2])$/.test(monthRaw)) return monthRaw.padStart(2, '0');
-  const birthday = cleanText(meta?.birthday, 32);
-  const m = birthday.match(/^(?:\d{4}[-/])?(\d{1,2})[-/](\d{1,2})$/);
-  if (!m) return '';
-  return String(m[1]).padStart(2, '0');
 }
 
 export async function insertGrowthEvent(pool, payload, tenantId = 'default') {
@@ -1382,65 +1098,15 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
         }, tenantId);
       }
     } else if (cleanText(payload.channel || '', 80) === 'sms' && cleanPhone(payload.phone)) {
-      const smsPhone = cleanPhone(payload.phone);
-      const deliveryKey = `${actionKey}:${smsPhone}:${Date.now()}`;
-      const couponValueFen = Math.max(0, Math.floor(Number(payload.coupon_value_fen || payload.value_fen) || 0));
-      // 阿里云短信走「模板+参数」，且参数名/个数必须与已报备模板严格一致，否则被判
-      // 「请检查模板内容与模板参数是否匹配」直接拒收（2026-05-31 整批失败即此原因：
-      // 旧逻辑多传 dishes/count、无券时又把 value 删掉）。
-      // 现按门店选模板（马己仙 SMS_507400089 / 洪潮 SMS_507130081），二者变量均为
-      // name/days/value 三个，缺一不可、不得多传。
-      // 同一触达段在两店是不同的已报备模板(CODE 不同)，而规则是「不分店」的一条，
-      // 故支持 payload.sms_template_code_by_store = {"51866138":"SMS_xxx","64822111":"SMS_yyy"}，
-      // 发送时按客人门店取；其次单一 sms_template_code；最后回退门店默认模板。
+      const deliveryKey = `${actionKey}:${cleanPhone(payload.phone)}:${Date.now()}`;
       const smsTplByStore = (payload.sms_template_code_by_store && typeof payload.sms_template_code_by_store === 'object')
         ? cleanText(payload.sms_template_code_by_store[storeId], 64) : '';
       const smsTemplateCode = smsTplByStore || cleanText(payload.sms_template_code, 64) || pickSmsTemplateByStore(storeId);
 
-      // 解析模板正文（content_template，与阿里云已报备模板逐字一致）中的 {var} 占位符，
-      // 仅当出现的变量都属于受支持的英文变量集时走「按需精确组装」新模式；
-      // 否则（如旧规则用 {customer_name} 等展示型变量）回退到旧的 name/days/value 固定三变量。
-      const tplText = cleanText(payload.content_template || payload.message_template, 1800);
-      const neededVars = Array.from(new Set((tplText.match(/\{([a-zA-Z0-9_]+)\}/g) || []).map((s) => s.slice(1, -1))));
-      const useDerivedParams = neededVars.length > 0 && neededVars.every((v) => SMS_DERIVED_VARS.has(v));
+      const { templateParam, generatedCode, skipReason: builtSkip, smsPhone } = await buildSmsTemplateParam(pool, payload, storeId);
+      let skipReason = builtSkip;
 
-      let templateParam = null;
-      let generatedCode = '';
-      let skipReason = '';
-      if (useDerivedParams) {
-        const param = {};
-        for (const v of neededVars) {
-          if (v === 'name') param.name = smsSafeName(payload.customer_name) || '顾客';
-          else if (v === 'days') param.days = String(Math.max(0, Math.floor(Number(payload.days_since_last_visit) || 0)));
-          else if (v === 'value') {
-            if (couponValueFen <= 0) { skipReason = 'no_coupon_value'; break; }
-            param.value = String(Math.round(couponValueFen / 100));
-          } else if (v === 'date') {
-            param.date = formatSmsValidDate(payload.valid_days);
-          } else if (v === 'code') {
-            generatedCode = genSmsShortCode();
-            param.code = generatedCode;
-          } else if (v === 'balance') {
-            const balYuan = await getStoredValueBalanceYuan(pool, smsPhone, storeId);
-            if (balYuan <= 0) { skipReason = 'no_balance'; break; }
-            param.balance = String(balYuan);
-          }
-        }
-        if (!skipReason) templateParam = param;
-      } else if (couponValueFen <= 0) {
-        // 旧模板本质是「优惠券召回」，无券面额时既无 value 可填、也不应发「0元券」短信。
-        skipReason = 'no_coupon_value';
-      } else {
-        templateParam = {
-          name: smsSafeName(payload.customer_name) || '顾客',
-          days: String(Math.max(0, Math.floor(Number(payload.days_since_last_visit) || 0))),
-          value: String(Math.round(couponValueFen / 100))
-        };
-      }
-
-      // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
       if (!skipReason && await globalSmsCapped(pool, smsPhone, tenantId)) skipReason = 'global_capped';
-      // 永久抑制名单：停机/空号/黑名单号码不再发送
       if (!skipReason && await isPhoneSuppressed(pool, smsPhone, tenantId)) skipReason = 'suppressed';
 
       if (skipReason) {
@@ -1740,10 +1406,6 @@ export async function executeGrowthActionRecord(pool, before, operator, extraPay
   return { action: result.rows[0], execution: executionResults };
 }
 
-function buildRuleActionKey(ruleKey, customerId, periodKey) {
-  return `rule:${cleanText(ruleKey, 128)}:${Number(customerId) || 0}:${cleanText(periodKey, 40)}`;
-}
-
 async function createChurnAlert(pool, rule, row) {
   const days = Math.max(0, Math.floor(Number(row.days_since_last_visit) || 0));
   const alertKey = `churn:${cleanText(rule.rule_key, 128)}:${Number(row.customer_id) || 0}:${fmtYmd(row.last_visit_at)}`;
@@ -1763,137 +1425,6 @@ async function createChurnAlert(pool, rule, row) {
   );
 }
 
-export async function loadRuleCandidates(pool, rule, tenantId = 'default') {
-  if (rule.rule_key === 'loyal_birthday_month') {
-    const r = await pool.query(
-      `SELECT cp.customer_id, cp.store_id, cp.phone, cp.pos_order_count, cp.pos_last_order_at, cp.visit_interval_days,
-              gc.meta AS customer_meta, gc.last_seen_at, gc.openid, gc.external_userid AS customer_external_userid,
-              COALESCE(ww.external_userid, gc.external_userid) AS external_userid,
-              COALESCE(NULLIF(gc.meta->>'title',''), NULLIF(ww.name,''), NULLIF(gc.meta->>'name',''), cp.phone, '') AS customer_name
-       FROM growth_customer_profiles cp
-       JOIN growth_customers gc ON gc.id = cp.customer_id
-       LEFT JOIN wechat_work_customers ww ON ww.bind_customer_id = cp.customer_id
-       WHERE cp.tenant_id = $1 AND gc.tenant_id = $1
-         AND (COALESCE(ww.external_userid, gc.external_userid) IS NOT NULL
-          OR (cp.phone IS NOT NULL AND cp.phone <> ''))
-       LIMIT 500`,
-      [tenantId]
-    );
-    const currentMonth = fmtYm(new Date()).slice(5, 7);
-    return r.rows.filter((row) => {
-      const visits = Math.max(0, Math.floor(Number(row.pos_order_count) || 0));
-      const interval = Number(row.visit_interval_days);
-      return deriveBirthdayMonth(row.customer_meta || {}) === currentMonth && visits >= 3 && Number.isFinite(interval) && interval <= 10;
-    });
-  }
-  const rows = await fetchGenericRuleCandidates(pool, tenantId);
-  const segmentSet = await loadSegmentPhoneSet(pool, (rule.criteria || {}).segment_key, tenantId);
-  return filterGenericRuleCandidates(rows, rule, segmentSet);
-}
-
-// 通用候选集扫描：除生日规则(loyal_birthday_month)外所有规则共用同一份 profiles 扫描结果。
-// 抽离为独立函数，使 audience 端点可「一次扫描、内存复用」，避免 19 条规则各扫一遍 13k 行
-// （旧实现导致自动营销页加载约 30 秒）。
-async function fetchGenericRuleCandidates(pool, tenantId = 'default') {
-  const r = await pool.query(
-    `SELECT cp.customer_id, cp.store_id, cp.phone, cp.price_sensitivity, cp.response_to_discount,
-            cp.lifecycle_stage, cp.value_tier, cp.price_sensitive,
-            cp.pos_order_count, cp.pos_total_spend, cp.pos_last_order_at, cp.visit_interval_days, cp.favorite_dishes, gc.last_seen_at, gc.openid,
-            COALESCE(cp.pos_last_order_at::date, gc.last_seen_at::date) AS last_visit_at,
-            (CURRENT_DATE - COALESCE(cp.pos_last_order_at::date, gc.last_seen_at::date))::int AS days_since_last_visit,
-            gc.meta AS customer_meta,
-            COALESCE(ww.external_userid, gc.external_userid) AS external_userid,
-            COALESCE(NULLIF(gc.meta->>'title',''), NULLIF(ww.name,''), NULLIF(gc.meta->>'name',''), cp.phone, '') AS customer_name
-     FROM growth_customer_profiles cp
-     JOIN growth_customers gc ON gc.id = cp.customer_id
-     LEFT JOIN wechat_work_customers ww ON ww.bind_customer_id = cp.customer_id
-     WHERE cp.tenant_id = $1 AND gc.tenant_id = $1
-       AND (COALESCE(ww.external_userid, gc.external_userid) IS NOT NULL
-        OR (cp.phone IS NOT NULL AND cp.phone <> ''))
-     LIMIT 50000`,
-    [tenantId]
-  );
-  return r.rows;
-}
-
-// 就餐时段标签成员(growth_segment_members)按 segment_key 取手机号集合，供 criteria.segment_key 命中。
-async function loadSegmentPhoneSet(pool, segmentKey, tenantId = 'default') {
-  if (!segmentKey) return null;
-  const r = await pool.query(`SELECT phone FROM growth_segment_members WHERE segment_key = $1 AND tenant_id = $2`, [segmentKey, tenantId]);
-  return new Set((r.rows || []).map((x) => String(x.phone || '')));
-}
-
-// 规则所属门店：criteria 与 action_payload 均可能携带 store_id
-function resolveRuleStoreId(rule) {
-  const criteria = rule?.criteria || {};
-  const payload = rule?.action_payload || {};
-  return cleanText(criteria.store_id || payload.store_id || '', 128);
-}
-
-// 在内存中按规则 criteria 过滤通用候选集（与 loadRuleCandidates 同口径，供 audience 批量复用）。
-// segmentSet: 当 criteria.segment_key 存在时，传入该标签的手机号集合(loadSegmentPhoneSet)，否则 null。
-function filterGenericRuleCandidates(rows, rule, segmentSet, storeFilterOverride = '') {
-  // 旧版基于访问/天数的规则（企微分支保留），先于生命周期匹配处理
-  const criteria = rule.criteria || {};
-  const ruleStoreId = resolveRuleStoreId(rule);
-  const effectiveStoreId = cleanText(storeFilterOverride || ruleStoreId || '', 128);
-  return rows.filter((row) => {
-    const days = Math.max(0, Math.floor(Number(row.days_since_last_visit) || 0));
-    const visits = Math.max(0, Math.floor(Number(row.pos_order_count) || 0));
-    // 新客回头·8天(seven_days_no_visit)已并入活动制，按其 criteria(lifecycle_stage=new + 天数窗口)筛选，
-    // 不再用旧版「任意≥2次访问」硬编码命中(否则会把大量老客误当新客发新客券)。
-    if (rule.rule_key === 'new_dish_launch_notify') return visits >= 4 && days >= 5 && days <= 20;
-    // 新分类规则：按生命周期阶段 + 价值分级筛选候选人，对齐营销矩阵
-    const stage = row.lifecycle_stage || '';
-    const tier = row.value_tier || 'low';
-    // 门店限定：规则自带 store_id 时只命中本店；UI 选了门店范围时进一步收窄到该店
-    if (effectiveStoreId && String(row.store_id || '') !== String(effectiveStoreId)) return false;
-    if (criteria.lifecycle_stage && stage !== criteria.lifecycle_stage) return false;
-    if (criteria.lifecycle_stage_not && stage === criteria.lifecycle_stage_not) return false;
-    if (criteria.value_tier && tier !== criteria.value_tier) return false;
-    if (criteria.value_tier_not && tier === criteria.value_tier_not) return false;
-    if (Number.isFinite(Number(criteria.max_days_since_last_visit)) && days > Number(criteria.max_days_since_last_visit)) return false;
-    if (Number.isFinite(Number(criteria.min_days_since_last_visit)) && days < Number(criteria.min_days_since_last_visit)) return false;
-    if (Number.isFinite(Number(criteria.min_visit_count)) && visits < Number(criteria.min_visit_count)) return false;
-    if (Number.isFinite(Number(criteria.max_visit_count)) && visits > Number(criteria.max_visit_count)) return false;
-    // 个人复购周期超时：interval_overdue_multiplier=2 表示「距上次到店 ≥ 个人平均到店间隔×2」才命中。
-    // 比固定天窗更精准（周客超14天即异常，月客45天才算）。要求有稳定周期数据(visit_interval_days>0)。
-    if (Number.isFinite(Number(criteria.interval_overdue_multiplier))) {
-      const interval = Number(row.visit_interval_days);
-      if (!Number.isFinite(interval) || interval <= 0) return false;
-      if (days < interval * Number(criteria.interval_overdue_multiplier)) return false;
-    }
-    // 就餐时段标签：criteria.segment_key 命中 growth_segment_members(按手机号)。
-    if (criteria.segment_key) {
-      if (!segmentSet || !segmentSet.has(String(row.phone || ''))) return false;
-    }
-    // 券类型A/B分桶：同一人群拆成两条「可见可控」的规则(现金组/免费菜组)，各取一半。
-    // ab_bucket=0/1 按手机号哈希(与 holdout 不同片段)分流，两组统计等同、唯一变量是券种。
-    if (criteria.ab_bucket === 0 || criteria.ab_bucket === 1) {
-      if (phoneAbBucket(cleanPhone(row.phone), 2) !== criteria.ab_bucket) return false;
-    }
-    // 必须至少有一个「人群」维度筛选（生命周期/价值/天数/到店次数/周期超时/时段标签），
-    // 否则视为无条件全量，拒绝命中以防误群发（store_id 不算人群筛选）。
-    const hasAudienceFilter = !!(criteria.lifecycle_stage || criteria.lifecycle_stage_not || criteria.value_tier || criteria.value_tier_not
-      || criteria.segment_key
-      || Number.isFinite(Number(criteria.max_days_since_last_visit))
-      || Number.isFinite(Number(criteria.min_days_since_last_visit))
-      || Number.isFinite(Number(criteria.min_visit_count))
-      || Number.isFinite(Number(criteria.max_visit_count))
-      || Number.isFinite(Number(criteria.interval_overdue_multiplier)));
-    return hasAudienceFilter;
-  });
-}
-
-function buildRulePeriodKey(ruleKey, row) {
-  if (ruleKey === 'loyal_birthday_month') return fmtYm(new Date());
-  return fmtYmd(row.last_visit_at || row.pos_last_order_at || row.last_seen_at);
-}
-
-// 就餐时段标签重算：从 pos_orders.order_time(北京时间) 聚合，刷新 growth_segment_members。
-// 随 POS 数据更新需定期重算(每日)。口径：
-//  - mj_dinner_weekend_repeat: 马己仙 晚市(≥16点)≥2次 或 周末(周六日)≥2次 的复购客；
-//  - hc_weekday_lunch:        洪潮 平日(排除周末+法定节假日,含调休补班) 午市(10-15点) ≥1次。
 export async function recomputeDiningSegments(pool, tenantId = 'default') {
   const BJ = "AT TIME ZONE 'Asia/Shanghai'";
   const hj = `LEFT JOIN cn_holiday_calendar h ON h.day=(order_time ${BJ})::date AND h.day_type='holiday'
@@ -2319,170 +1850,6 @@ export function setSyncWecomContactsForStore(fn) { _syncWecomContactsForStore = 
 async function syncWecomContactsForStore(pool, storeConfig) {
   if (!_syncWecomContactsForStore) throw new Error('sync_wecom_contacts_not_ready');
   return _syncWecomContactsForStore(pool, storeConfig);
-}
-
-function cnHour(ts) {
-  if (!ts) return null;
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return null;
-  return ((d.getUTCHours() + 8) % 24);
-}
-
-function shiftDate(dateStr, days) {
-  // Safe date arithmetic: parse as UTC midnight, shift, return YYYY-MM-DD
-  const d = new Date(dateStr + 'T00:00:00Z');
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-// 门店编号（企微/POS code）→ 门店名称。映射源见 brands-config.js。
-const GROWTH_STORE_CODE_TO_NAME = STORE_ID_TO_NAME;
-function growthStoreName(storeCode) {
-  const k = String(storeCode || '').trim();
-  return GROWTH_STORE_CODE_TO_NAME[k] || k;
-}
-
-// Build report for ONE store using sales_growth_snapshot + pos_orders
-async function buildStoreReport(pool, storeCode, yd) {
-  const dbd = shiftDate(yd, -1);
-  const lwSame = shiftDate(yd, -7);
-
-  function pct(a, b) {
-    if (!b) return null;
-    const v = (a - b) / b * 100;
-    return (v >= 0 ? '▲' : '▼') + Math.abs(v).toFixed(1) + '%';
-  }
-  function fmtMoney(n) { return '¥' + Number(n).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
-
-  // Revenue from snapshot (most accurate per-store breakdown)
-  const [snapYd, snapDbd, snapLw, topDishes] = await Promise.all([
-    pool.query(`SELECT COALESCE(SUM(revenue),0)::numeric AS rev, COALESCE(SUM(lunch_qty),0)::int AS lunch_qty, COALESCE(SUM(dinner_qty),0)::int AS dinner_qty
-                FROM sales_growth_snapshot WHERE snapshot_date=$1 AND store_code=$2`, [yd, storeCode]),
-    pool.query(`SELECT COALESCE(SUM(revenue),0)::numeric AS rev FROM sales_growth_snapshot WHERE snapshot_date=$1 AND store_code=$2`, [dbd, storeCode]),
-    pool.query(`SELECT COALESCE(SUM(revenue),0)::numeric AS rev FROM sales_growth_snapshot WHERE snapshot_date=$1 AND store_code=$2`, [lwSame, storeCode]),
-    pool.query(`SELECT dish_name, revenue::numeric AS rev, qty AS qty FROM sales_growth_snapshot
-                WHERE snapshot_date=$1 AND store_code=$2 AND dish_name IS NOT NULL AND dish_name<>''
-                ORDER BY revenue DESC LIMIT 5`, [yd, storeCode])
-  ]);
-
-  const rev = Number(snapYd.rows[0]?.rev || 0);
-  const prevRev = Number(snapDbd.rows[0]?.rev || 0);
-  const lwRev = Number(snapLw.rows[0]?.rev || 0);
-  const lunchQty = Number(snapYd.rows[0]?.lunch_qty || 0);
-  const dinnerQty = Number(snapYd.rows[0]?.dinner_qty || 0);
-
-  // Order count and period revenue from pos_orders (order-level)
-  const [ordersYd, periodOrders, weekOrders, memberMiss] = await Promise.all([
-    pool.query(`SELECT COUNT(*)::int AS cnt FROM pos_orders
-                WHERE biz_date=$1 AND store_id=$2 AND order_status NOT IN ('cancelled','voided')`, [yd, storeCode]),
-    pool.query(`SELECT order_time, amount_after_discount FROM pos_orders
-                WHERE biz_date=$1 AND store_id=$2 AND order_status NOT IN ('cancelled','voided') AND order_time IS NOT NULL`,
-                [yd, storeCode]),
-    pool.query(`SELECT biz_date, order_time, amount_after_discount FROM pos_orders
-                WHERE biz_date >= $1 AND biz_date <= $2 AND store_id=$3
-                  AND order_status NOT IN ('cancelled','voided') AND order_time IS NOT NULL
-                ORDER BY biz_date ASC`, [lwSame, yd, storeCode]),
-    pool.query(`SELECT COUNT(*)::int AS cnt FROM growth_customer_profiles
-                WHERE (CURRENT_DATE - COALESCE(pos_last_order_at::date, NOW()::date)) BETWEEN 7 AND 20`)
-  ]);
-
-  const orderCnt = Number(ordersYd.rows[0]?.cnt || 0);
-  let lunchRev = 0, lunchCnt = 0, dinnerRev = 0, dinnerCnt = 0;
-  for (const row of periodOrders.rows) {
-    const h = cnHour(row.order_time);
-    if (h == null) continue;
-    const v = Number(row.amount_after_discount || 0);
-    if (h >= 11 && h < 14) { lunchRev += v; lunchCnt++; }
-    if (h >= 17 && h < 21) { dinnerRev += v; dinnerCnt++; }
-  }
-
-  // weekly lunch trend
-  const dayLunch = {};
-  for (const row of weekOrders.rows) {
-    const h = cnHour(row.order_time);
-    if (h == null || h < 11 || h >= 14) continue;
-    const k = String(row.biz_date).slice(0, 10);
-    dayLunch[k] = (dayLunch[k] || 0) + Number(row.amount_after_discount || 0);
-  }
-  const lunchDays = Object.keys(dayLunch).sort().slice(-4);
-  let lunchTrend = '';
-  if (lunchDays.length >= 3) {
-    const vals = lunchDays.map(d => dayLunch[d]);
-    const drops = vals.slice(1).filter((v, i) => v < vals[i]).length;
-    if (drops >= 2) lunchTrend = `午市连续${drops + 1}天下滑 ⚠️`;
-  }
-
-  const missCount = Number(memberMiss.rows[0]?.cnt || 0);
-  const totalRev = rev || 1;
-
-  const lines = [
-    `【增长日报 · ${growthStoreName(storeCode)} · ${yd}】`,
-    '',
-    '━━ 昨日销售 ━━',
-    `总营收：${fmtMoney(rev)}  订单数：${orderCnt}单`,
-    prevRev > 0 ? `环比昨日：${pct(rev, prevRev) || '-'}（前日${fmtMoney(prevRev)}）` : '环比昨日：暂无数据',
-    lwRev > 0 ? `环比上周同期：${pct(rev, lwRev) || '-'}` : '环比上周同期：暂无数据',
-  ];
-
-  if (topDishes.rows.length) {
-    lines.push('', '━━ TOP菜品（按营收）━━');
-    ['①','②','③','④','⑤'].forEach((n, i) => {
-      const r = topDishes.rows[i]; if (!r) return;
-      // strip suffix starting with a digit/punctuation to clean POS dish names like "xxx11:00&16:30出炉"
-      const clean = r.dish_name.replace(/[\d&（(【\[].{0,20}$/, '').trim() || r.dish_name.slice(0, 10);
-      lines.push(`${n} ${clean.slice(0,10).padEnd(10)}  ${fmtMoney(r.rev)}  ${Math.round(Number(r.qty))}单`);
-    });
-  }
-
-  lines.push('', '━━ 时段分析 ━━');
-  if (lunchCnt > 0) lines.push(`午市(11-14): ${fmtMoney(lunchRev)} / ${lunchCnt}单（占比${(lunchRev / totalRev * 100).toFixed(0)}%）`);
-  if (dinnerCnt > 0) lines.push(`晚市(17-21): ${fmtMoney(dinnerRev)} / ${dinnerCnt}单（占比${(dinnerRev / totalRev * 100).toFixed(0)}%）`);
-  if (!lunchCnt && !dinnerCnt) lines.push(`午市菜品${lunchQty}份 / 晚市菜品${dinnerQty}份（快照数据）`);
-
-  lines.push('', '━━ 本周规律 ━━');
-  lines.push(lunchTrend || '数据积累中，暂无规律');
-
-  lines.push('', '━━ 今日建议 ━━');
-  const sugg = [];
-  if (lunchTrend) sugg.push('① 午市弱势，建议今日推荐单人套餐');
-  if (topDishes.rows[0] && Number(topDishes.rows[0].qty) > 30)
-    sugg.push(`${sugg.length ? '②' : '①'} ${topDishes.rows[0].dish_name.slice(0,8)}昨日售出${Math.round(Number(topDishes.rows[0].qty))}单，接近上限，提前备货`);
-  if (missCount > 0)
-    sugg.push(`${['①','②','③'][sugg.length] || (sugg.length+1+'.')} 有${missCount}名会员7天未到店，建议今日触达`);
-  if (!sugg.length) sugg.push('① 今日经营正常，保持当前节奏');
-  lines.push(...sugg);
-
-  return lines.join('\n');
-}
-
-export async function buildGrowthDailyReport(pool, targetDate) {
-  // yesterday in CST: add 8h to UTC then subtract 1 day
-  const yd = targetDate || shiftDate(new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10), -1);
-
-  // find all stores with data for that day
-  const storesRes = await pool.query(
-    `SELECT DISTINCT store_code FROM sales_growth_snapshot WHERE snapshot_date=$1 ORDER BY store_code`, [yd]
-  );
-  if (!storesRes.rows.length) return `【增长日报 · ${yd}】\n暂无 ${yd} 的 POS 数据`;
-
-  const reports = await Promise.all(storesRes.rows.map(r => buildStoreReport(pool, r.store_code, yd)));
-  return reports.join('\n\n' + '━'.repeat(20) + '\n\n');
-}
-
-// 储值余额提醒（HRMS 自身后台直发，只发 {balance}，无券无码）：
-// 目标口径：有余额(≥min) + 久未消费(dormant_days) + 频控(remind 类 N 天内不重发)。
-// 与「储值召回(发券)」共用 growth_campaign_jobs 表，kind='stored_value_remind' 区分。
-export function buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets) {
-  return {
-    sql: `SELECT card_no, member_name, phone, balance_fen FROM growth_stored_value_members m
-            WHERE m.phone IS NOT NULL AND m.phone <> '' AND m.store_id = $2 AND m.balance_fen >= $3
-              AND (m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))
-              AND NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
-                WHERE d.channel='sms' AND d.rule_key='stored_value_remind' AND d.status IN ('sent','redeemed')
-                  AND d.payload->>'phone' = m.phone AND d.created_at > now() - ($1 || ' days')::interval)
-            ORDER BY m.balance_fen DESC LIMIT ${maxTargets}`,
-    params: [String(freqDays), storeId, minBalanceFen]
-  };
 }
 
 export function registerGrowthRoutes(app, pool) {

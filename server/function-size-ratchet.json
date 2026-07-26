@@ -1,8 +1,8 @@
 {
   "updated": "2026-07-26",
-  "note": "P2.1 单函数体积闸门：>maxLines 必须在 allowlist；只降不升。外提时若函数>200行须同批切分，禁止整体包进 createXxx 闭包。",
+  "note": "P2.1 单函数体积闸门：>maxLines 必须在 allowlist；只降不升。外提时若函数>200行须同批切分，禁止整体包进 createXxx 闭包。2026-07-26 P5.4：recomputeCustomerProfiles 迁至 growth-profiles/recompute.js 后自 allowlist 移除。",
   "maxLines": 200,
-  "maxAllowlistSize": 70,
+  "maxAllowlistSize": 69,
   "allowlist": [
     "server/agent-config-manager.js::registerAgentConfigRoutes",
     "server/agents.js::startAgentScheduler",
@@ -61,7 +61,6 @@
     "server/domains/training/service-sessions.js::uploadPracticeMedia",
     "server/growth-api.js::ensureGrowthTables",
     "server/growth-api.js::executeGrowthActionRecord",
-    "server/growth-api.js::recomputeCustomerProfiles",
     "server/growth-api.js::registerGrowthRoutes",
     "server/growth-phases.js::ensurePhaseTables",
     "server/growth-phases.js::registerPhaseRoutes",
