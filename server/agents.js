@@ -87,6 +87,7 @@ import { createBiQueryHelpersApi } from './domains/agent-bi/bi-query-helpers.js'
 import { createSendPeriodReportsApi } from './domains/agent-bi/send-period-reports.js';
 import { createDeterministicCascadeReplies } from './domains/agent-bi/deterministic-cascade-replies.js';
 import { createPollBitableSubmissions } from './domains/feishu-bitable/poll-submissions.js';
+import { createOpsSubmissionValidation } from './domains/agent-ops/submission-validation.js';
 import { createNotifyBitablePipelineFailure } from './domains/feishu-bitable/pipeline-failure-notify.js';
 import { createTaskResponseApi } from './domains/feishu-bitable/task-response.js';
 import { createProcessBitableData } from './domains/feishu-bitable/process-bitable-data.js';
@@ -1662,131 +1663,6 @@ async function sendSafetyCheck(config) {
 }
 
 
-// 辅助函数：从AI回复中提取分数
-function extractScore(text) {
-  if (!text) return 0;
-  const match = text.match(/(\d+(?:\.\d+)?)\s*\/\s*10|评分[：:]\s*(\d+(?:\d+)?)/i);
-  return match ? parseFloat(match[1] || match[2]) : 0;
-}
-
-// 照片真实性验证
-async function validatePhotoAuthenticity(imageUrl, expectedLocation, submitTime) {
-  log.info('[ops] validating photo authenticity...');
-  
-  try {
-    // 1. 调用视觉 AI 分析照片内容
-    const visionResult = await callVisionLLM([
-      { type: 'image', image_url: imageUrl },
-      { type: 'text', text: `请分析这张照片：1.拍摄地点是否为${expectedLocation} 2.照片中的环境特征 3.是否有时间显示 4.照片真实性评估` }
-    ]);
-    
-    // 2. 模拟 EXIF 和 GPS 验证（实际需要更复杂的实现）
-    const now = Date.now();
-    const timeDiff = Math.abs(now - submitTime);
-    const isTimeValid = timeDiff < 5 * 60 * 1000; // 5分钟内
-    
-    // 3. 照片 Hash 简单验证（实际需要更复杂的实现）
-    const photoHash = imageUrl.split('/').pop(); // 简化实现
-    const isDuplicate = await checkPhotoDuplicate(photoHash);
-    
-    const validation = {
-      isAuthentic: isTimeValid && !isDuplicate,
-      timeValid: isTimeValid,
-      notDuplicate: !isDuplicate,
-      locationMatch: visionResult.content?.includes(expectedLocation) || false,
-      confidence: 0.8 // 简化实现
-    };
-    
-    log.info('[ops] photo validation result:', validation);
-    return validation;
-  } catch (e) {
-    log.error('[ops] photo validation failed:', e?.message);
-    return { isAuthentic: false, error: e?.message };
-  }
-}
-
-// 检查照片重复
-async function checkPhotoDuplicate(photoHash) {
-  try {
-    const result = await pool().query(
-      'SELECT COUNT(*) as count FROM agent_messages WHERE content_type LIKE %image% AND agent_data::text ILIKE $1',
-      [`%${photoHash}%`]
-    );
-    return (result.rows[0]?.count || 0) > 1;
-  } catch (e) {
-    log.error('[ops] check duplicate failed:', e?.message);
-    return false;
-  }
-}
-
-// 强化催办逻辑
-async function handleTaskEscalation(taskId, assignee, taskType, overdueMinutes) {
-  log.info(`[ops] handling escalation for task ${taskId}, overdue: ${overdueMinutes}min`);
-  
-  let escalationLevel = 'reminder';
-  let message = '';
-  
-  if (overdueMinutes >= 60) {
-    escalationLevel = 'performance_mark';
-    message = `⚠️ 任务超时 ${overdueMinutes} 分钟，已标记绩效问题\n任务ID: ${taskId}\n请立即处理！`;
-    
-    // 标记绩效问题
-    try {
-      await pool().query(
-        `INSERT INTO agent_messages (direction, channel, content_type, content, agent_data, tenant_id)
-         VALUES ('system','feishu','performance_issue',$1,$2::jsonb,$3)`,
-        [`任务响应迟缓 - ${taskType}`, JSON.stringify({ taskId, assignee, overdueMinutes }), resolveTenantIdDefault()]
-      );
-    } catch (e) { /* ignore */ }
-    
-  } else if (overdueMinutes >= 15) {
-    escalationLevel = 'strong_reminder';
-    message = `🔔 任务已超时 ${overdueMinutes} 分钟\n任务ID: ${taskId}\n请尽快处理！`;
-  } else {
-    message = `💡 温馨提醒：任务待处理\n任务ID: ${taskId}`;
-  }
-  
-  // 发送催办消息
-  if (assignee?.id) {
-    await sendLarkMessage(assignee.id, prefixWithAgentName('ops_supervisor', message));
-  }
-  
-  return { escalationLevel, message };
-}
-
-// 逻辑纠偏检查
-async function validateSubmissionLogic(submission) {
-  log.info('[ops] validating submission logic...');
-  
-  const issues = [];
-  
-  // 1. 检查数据逻辑一致性
-  if (submission.checkType === '开档检查' && submission.checkStatus === '不合格') {
-    if (!submission.checkRemark || submission.checkRemark.length < 10) {
-      issues.push('不合格项需要详细说明原因');
-    }
-  }
-  
-  // 2. 检查照片与描述的一致性
-  if (submission.checkPhotos && submission.checkPhotos.length > 0) {
-    if (submission.checkRemark.includes('干净') && submission.checkPhotos.length === 0) {
-      issues.push('描述环境干净但未提供照片验证');
-    }
-  }
-  
-  // 3. 检查时间逻辑
-  const submitHour = new Date(submission.submitTime).getHours();
-  if (submission.checkType === '开档检查' && (submitHour < 8 || submitHour > 12)) {
-    issues.push('开档检查时间异常，应在上午8-12点进行');
-  }
-  
-  return {
-    isValid: issues.length === 0,
-    issues,
-    suggestion: issues.length > 0 ? `检测到以下问题：${issues.join('；')}。请核实后重新提交。` : ''
-  }
-}
-
 /** 档案绩效展示周期：每月 10 日（上海）起展示上月整月；10 日前仍展示上上月（冻结） */
 function profilePerformanceDisplayPeriodShanghai() {
   const ymd = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
@@ -3122,6 +2998,16 @@ _onFeishuEvent = createOnFeishuEvent({
   tryFeishuMarketingCopyRound,
   detectOpsChecklistType,
   getTaskResponseHook: () => _taskResponseHook,
+});
+
+const {
+  extractScore,
+  validatePhotoAuthenticity,
+  validateSubmissionLogic,
+} = createOpsSubmissionValidation({
+  pool,
+  callVisionLLM,
+  log,
 });
 
 _pollBitableSubmissions = createPollBitableSubmissions({
