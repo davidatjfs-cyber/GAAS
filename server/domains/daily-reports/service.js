@@ -9,6 +9,11 @@ import {
   dailyReportItemFromPgRow,
   mergeDailyReportItemWithPgRow,
 } from './helpers.js';
+import {
+  resolveDailyReportStore,
+  applyScheduleNotifications,
+  upsertDailyReportItem,
+} from './upsert-schedule-notify-helpers.js';
 
 const log = childLogger({ domain: 'daily-reports', handler: 'service' });
 
@@ -182,14 +187,13 @@ export async function upsertDailyReport({
   const me = stateFindUserRecord(state0, username) || {};
   const myStore = String(me?.store || '').trim();
 
-  let store = String(bodyStore || '').trim();
-  const _allowedStoresDR = Array.isArray(allowedStores) ? allowedStores : [];
-  const _currentStoreDR = String(currentStore || '').trim();
-  if (role === 'store_manager') {
-    store = (store && _allowedStoresDR.includes(store)) ? store : (_currentStoreDR || myStore);
-  } else if (role === 'store_production_manager' || role === 'front_manager') {
-    store = myStore;
-  }
+  const store = resolveDailyReportStore({
+    role,
+    bodyStore,
+    allowedStores,
+    currentStore,
+    myStore,
+  });
   if (!store) return { error: 'missing_store', status: 400 };
 
   const payload = dataPayload && typeof dataPayload === 'object' ? dataPayload : {};
@@ -205,9 +209,7 @@ export async function upsertDailyReport({
   const list = Array.isArray(state0.dailyReports) ? state0.dailyReports.slice() : [];
   const idx = list.findIndex(r => String(r?.store || '').trim() === store && String(r?.date || '').trim() === date);
 
-  let item;
   let lastPgDualWriteError = null;
-  let shouldNotifySchedule = false;
 
   const syncPg = async (pgNotifyLabel) => {
     try {
@@ -229,65 +231,23 @@ export async function upsertDailyReport({
     }
   };
 
-  if (idx >= 0) {
-    const prev = list[idx] || {};
+  const upsertResult = await upsertDailyReportItem({
+    list,
+    idx,
+    prev: idx >= 0 ? list[idx] : null,
+    store,
+    date,
+    payload,
+    username,
+    now,
+    wantSubmit,
+    role,
+    uuidFn,
+    syncPg,
+  });
+  if (upsertResult.error) return upsertResult;
 
-    const alreadySubmitted = !!(prev?.submittedAt || prev?.submitted);
-    if (alreadySubmitted && role === 'store_manager') {
-      return { error: 'locked', status: 403 };
-    }
-
-    const submittedAt = prev?.submittedAt || prev?.submitted_at || null;
-    const submittedBy = prev?.submittedBy || prev?.submitted_by || null;
-    const nextSubmittedAt = (wantSubmit && !submittedAt) ? now : submittedAt;
-    const nextSubmittedBy = (wantSubmit && !submittedBy) ? username : submittedBy;
-    shouldNotifySchedule = !!(wantSubmit && !submittedAt);
-
-    item = {
-      ...prev,
-      store,
-      date,
-      data: payload,
-      updatedAt: now,
-      updatedBy: username,
-    };
-
-    const shouldSyncDailyReportsPg = !!wantSubmit || alreadySubmitted;
-    if (shouldSyncDailyReportsPg) {
-      await syncPg('update');
-    }
-
-    if (wantSubmit || submittedAt) {
-      item.submittedAt = nextSubmittedAt;
-      item.submittedBy = nextSubmittedBy;
-    }
-    list.splice(idx, 1);
-    list.unshift(item);
-  } else {
-    item = {
-      id: uuidFn(),
-      store,
-      date,
-      data: payload,
-      createdAt: now,
-      createdBy: username,
-      updatedAt: now,
-      updatedBy: username,
-    };
-
-    if (wantSubmit) {
-      item.submittedAt = now;
-      item.submittedBy = username;
-    }
-
-    const shouldSyncNewDailyReportPg = !!wantSubmit;
-    if (shouldSyncNewDailyReportPg) {
-      await syncPg('insert');
-    }
-
-    shouldNotifySchedule = !!wantSubmit;
-    list.unshift(item);
-  }
+  const { item, shouldNotifySchedule } = upsertResult;
 
   if (lastPgDualWriteError) {
     return {
@@ -301,55 +261,17 @@ export async function upsertDailyReport({
   let nextState = { ...state0, dailyReports: list };
 
   if (shouldNotifySchedule) {
-    const allUsers = [
-      ...(Array.isArray(state0.employees) ? state0.employees : []),
-      ...(Array.isArray(state0.users) ? state0.users : []),
-    ];
-    const byName = new Map();
-    allUsers.forEach((x) => {
-      const name = String(x?.name || '').trim();
-      if (!name) return;
-      byName.set(name.toLowerCase(), x);
+    nextState = applyScheduleNotifications({
+      state0,
+      nextState,
+      payload,
+      store,
+      date,
+      item,
+      stateFindUserRecord,
+      addStateNotification,
+      makeNotif,
     });
-
-    const resolveRecipient = (raw) => {
-      const username0 = String(raw?.user || raw?.username || raw?.userName || '').trim();
-      const name0 = String(raw?.name || raw?.employeeName || '').trim();
-      if (username0) {
-        const rec = stateFindUserRecord(state0, username0) || {};
-        const displayName = String(rec?.name || name0 || username0).trim() || username0;
-        return { username: username0, name: displayName };
-      }
-      if (!name0) return null;
-      const rec = byName.get(name0.toLowerCase()) || null;
-      const username1 = String(rec?.username || '').trim();
-      if (!username1) return null;
-      const displayName = String(rec?.name || name0).trim() || username1;
-      return { username: username1, name: displayName };
-    };
-
-    const notifyShift = (arr, shiftLabel, shiftKey) => {
-      const seen = new Set();
-      (Array.isArray(arr) ? arr : []).forEach((x) => {
-        const rec = resolveRecipient(x);
-        if (!rec?.username) return;
-        const k = String(rec.username || '').trim().toLowerCase() + '||' + shiftKey;
-        if (seen.has(k)) return;
-        seen.add(k);
-        const msg = `亲爱的${rec.name}，你是明天${shiftLabel}，请准时到岗并准时完成打卡考勤。`;
-        nextState = addStateNotification(nextState, makeNotif(rec.username, '排班通知', msg, {
-          type: 'schedule_notice',
-          store,
-          date,
-          shift: shiftKey,
-          reportId: item?.id || '',
-        }));
-      });
-    };
-
-    const schedule = payload?.scheduleNextDay && typeof payload.scheduleNextDay === 'object' ? payload.scheduleNextDay : {};
-    notifyShift(schedule?.morningStaff, '早班', 'morning');
-    notifyShift(schedule?.afternoonStaff, '午班', 'afternoon');
   }
 
   const drPatches = Array.isArray(nextState.dailyReports) ? nextState.dailyReports : [];
