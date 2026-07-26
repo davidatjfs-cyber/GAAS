@@ -1,10 +1,10 @@
 {
-  "lines": 62,
+  "lines": 69,
   "branches": 68,
-  "functions": 61,
+  "functions": 70,
   "requireIndexJs": true,
   "minIndexJsLines": 48,
   "tolerancePct": 0.5,
-  "updated": "2026-07-26",
-  "note": "合并棘轮：本地 merged-summary 62.67/68.76/61.74（审计实测约 63.5）。抬至 62/68/61（约 1pp 缓冲）。70% 行仍为阶段目标。只升不降。"
+  "updated": "2026-07-27",
+  "note": "合并棘轮：本地 merged-summary 70.04/69.02/71.02。抬至 69/68/70（约 1pp 缓冲）。阶段目标 70% 行已达成。只升不降。"
 }
