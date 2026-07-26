@@ -47,14 +47,13 @@ import {
 } from './utils/feishu-open-id-cross-app.js';
 import { deduplicateMessage } from './message-deduplication.js';
 import { getOpsAgentConfig, getBiAgentConfig, AGENT_FEATURE_FLAGS } from './agent-config-manager.js';
-import { tryBiDeterministicCascade } from './domains/agent-message/bi-deterministic-cascade.js';
 import {
   buildEvidencePackage,
   detectFactDemand,
   isDataBackedReply,
 } from './domains/agent-message/quality-helpers.js';
-import { resolveDataAuditorStore } from './domains/agent-message/store-resolve.js';
 import { createHandleAgentMessage } from './domains/agent-message/handle-agent-message.js';
+import { createHandleDataAuditorCase } from './domains/agent-message/handle-data-auditor-case.js';
 import {
   buildKpiRadarAlertJson,
   createRunDataAuditor,
@@ -90,11 +89,7 @@ import {
   isTierBudgetExceeded
 } from './hq-brain-config.js';
 import {
-  executeMetrics,
   matchAnalysisRule,
-  setSessionState,
-  extractTimeRangeFromText,
-  runBusinessDiagnosis,
   setCallLLMBridge,
   logExecutorEvent
 } from './data-executor.js';
@@ -8480,232 +8475,9 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
   return _handleAgentMessage(senderUsername, senderName, senderStore, senderRole, senderBrandContext, text, imageUrls);
 }
 
-async function handleDataAuditorCase(ctx) {
-  const {
-    text, route, routeRes, store, brand, brandId, brandConfig,
-    senderRole, senderUsername, senderName, sessionState, activeTaskContext,
-  } = ctx;
-  let response = '';
-  let agentData = { route, brandId, brandConfig };
+// Wave A2b: handleDataAuditorCase → domains/agent-message/handle-data-auditor-case.js (wired below)
+let handleDataAuditorCase;
 
-
-        // ── [顶层门店解析] domains/agent-message ──
-        const resolvedStore = await resolveDataAuditorStore(pool(), {
-          text,
-          boundStore: store,
-          inferBrandFromStoreName,
-        });
-
-        // ── [Data Executor 层] Feature Flag 保护 ─────────────────
-        if (AGENT_FEATURE_FLAGS.enable_data_executor && AGENT_FEATURE_FLAGS.enable_metric_dictionary) {
-          const ruleMetrics = Array.isArray(routeRes.required_metrics) ? routeRes.required_metrics : [];
-          if (ruleMetrics.length > 0) {
-            try {
-              // G: 复用顶层已解析的 resolvedStore（不再重复查询数据库）
-              const execStore = resolvedStore;
-
-              // F+H: 时间范围——每次从文本重新提取，不复用session缓存
-              const extracted = extractTimeRangeFromText(text);
-              let resolvedTimeRange = extracted.timeRange;
-              const userSpecifiedTime = extracted.label !== '近7天'; // 用户是否明确指定了时间
-              let staleDataNotice = '';
-              // 不再静默改写查询窗口，只提示数据滞后，避免“1月/2月结果一样”的误导
-              if (!userSpecifiedTime && execStore && execStore !== '总部') {
-                try {
-                  const latestDateRes = await pool().query(
-                    `SELECT MAX(date) as latest FROM pos_sales_detail WHERE store = $1`, [execStore]
-                  );
-                  const latestDate = latestDateRes.rows?.[0]?.latest;
-                  if (latestDate) {
-                    const latestMs = new Date(latestDate).getTime();
-                    const nowMs = Date.now();
-                    const dayDiff = Math.floor((nowMs - latestMs) / 86400000);
-                    if (dayDiff > 7) {
-                      staleDataNotice = `${execStore} 最新销售数据为 ${latestDate}（滞后 ${dayDiff} 天）`;
-                      console.warn(`[data_auditor] stale source detected: ${staleDataNotice}`);
-                    }
-                  }
-                } catch (_e) { /* ignore */ }
-              }
-              sessionState.time_range = resolvedTimeRange;
-              logExecutorEvent('time_range_extracted', {
-                task_id: sessionState.task_id,
-                text_snippet: text.slice(0, 60),
-                time_range: resolvedTimeRange
-              });
-
-              const execResult = await executeMetrics(
-                ruleMetrics, resolvedTimeRange, execStore, sessionState.task_id
-              );
-              // 更新 session state
-              sessionState.metrics_requested = [...new Set([...(sessionState.metrics_requested || []), ...ruleMetrics])];
-              sessionState.metrics_returned = [...new Set([...(sessionState.metrics_returned || []), ...execResult.metrics_returned])];
-              sessionState.metric_versions = { ...(sessionState.metric_versions || {}), ...execResult.metric_versions };
-              setSessionState(senderUsername, sessionState).catch(() => {});
-
-              const validResults = execResult.results.filter(r => r.value !== null && r.value !== undefined);
-              if (validResults.length > 0) {
-                // 组装数据层回复
-                const lines = validResults.map(r => {
-                  const isRatio = r.metric_id.includes('率') || r.name?.includes('率');
-                  const v = typeof r.value === 'number'
-                    ? (isRatio ? `${r.value}%` : r.value.toLocaleString('zh-CN'))
-                    : r.value;
-                  return `- **${r.name}**：${v}${r.notes ? `（${r.notes}）` : ''}`;
-                });
-                const failedResults = execResult.results.filter(r => r.value === null || r.value === undefined);
-                const failNote = failedResults.length > 0
-                  ? `\n\n⚠️ 以下指标暂无数据：${failedResults.map(r => r.name || r.metric_id).join('、')}`
-                  : '';
-                const intentLabel = routeRes.intent_label || routeRes.intent || '';
-                const { label: timeLabel } = extractTimeRangeFromText(text);
-                const displayStore = resolvedStore && resolvedStore !== '总部' ? resolvedStore : (store || '全部门店');
-                let dataBlock = `📊 ${intentLabel}（${displayStore}｜${timeLabel}）\n\n${lines.join('\n')}${failNote}`;
-                if (staleDataNotice) {
-                  dataBlock += `\n\n⚠️ 数据新鲜度提醒：${staleDataNotice}`;
-                }
-
-                // G: Business Diagnosis Agent — 仅当 Feature Flag 开启时叠加分析层
-                if (AGENT_FEATURE_FLAGS.enable_business_diagnosis) {
-                  try {
-                    const diagResult = await runBusinessDiagnosis(execResult, text, { username: senderUsername });
-                    if (diagResult?.diagnosis) {
-                      dataBlock += `\n\n💡 **经营诊断**\n${diagResult.diagnosis}`;
-                      logExecutorEvent('diagnosis_injected', {
-                        task_id: execResult.task_id,
-                        data_basis: diagResult.data_basis
-                      });
-                    }
-                  } catch (de) {
-                    logExecutorEvent('diagnosis_inject_error', { task_id: execResult.task_id, error: de?.message });
-                  }
-                }
-
-                // Save as fallback; prefer deterministic handlers below for richer format
-                var _dxFallbackResponse = dataBlock;
-                var _dxFallbackAgentData = {
-                  route, store, brand, brandId, brandConfig,
-                  grounded: true, deterministic: true,
-                  source: 'data_executor',
-                  task_id: execResult.task_id,
-                  intent: routeRes.intent,
-                  metrics_returned: execResult.metrics_returned,
-                  metric_versions: execResult.metric_versions
-                };
-                // Don't break — let deterministic handlers try first
-              }
-            } catch (e) {
-              logExecutorEvent('executor_fallthrough', {
-                task_id: sessionState.task_id,
-                error: e?.message,
-                metrics: routeRes.required_metrics
-              });
-              console.error('[data_executor] rule-engine query failed, falling through:', e?.message);
-            }
-          }
-        }
-
-        // ── BI 确定性级联（domains/agent-message）──
-        const biDet = await tryBiDeterministicCascade(
-          { text, resolvedStore, route, store, brand, brandId, brandConfig },
-          {
-            buildCoverage: buildBiDeterministicDataSourceCoverageReply,
-            buildDailyReport: buildBiDeterministicDailyReportReply,
-            buildTableVisit: buildBiDeterministicTableVisitReply,
-            buildSalesRawTop: buildBiDeterministicSalesRawTopReply,
-            buildBadReview: buildBiDeterministicBadReviewReportReply,
-            buildClosing: buildBiDeterministicClosingReportReply,
-            buildOpening: buildBiDeterministicOpeningReportReply,
-            buildMaterial: buildBiDeterministicMaterialReportReply,
-            buildMeeting: buildBiDeterministicMeetingReportReply,
-            buildOpsCount: buildBiDeterministicOpsReportCountReply,
-            buildLoss: buildBiDeterministicLossReportReply,
-            getSharedState,
-            normalizeStoreKey,
-            resolveDateRangeFromQuestion,
-            buildSalesReport,
-          }
-        );
-        if (biDet.handled) {
-          response = biDet.response;
-          agentData = biDet.agentData;
-        return { response, agentData };
-        }
-
-        // ── Function Calling fallback (after deterministic handlers) ──
-        const fcHandled = await tryHandleBiByFunctionCalling({
-          text,
-          store: resolvedStore,
-          brand,
-          senderRole,
-          senderUsername
-        });
-        if (fcHandled?.response) {
-          response = fcHandled.response;
-          agentData = {
-            route, store, brand, brandId, brandConfig,
-            deterministic: true, functionCalling: true,
-            ...fcHandled.meta
-          };
-        return { response, agentData };
-        }
-
-        // ── Data Executor fallback: use if no deterministic handler matched ──
-        if (typeof _dxFallbackResponse === 'string' && _dxFallbackResponse) {
-          response = _dxFallbackResponse;
-          agentData = _dxFallbackAgentData;
-        return { response, agentData };
-        }
-
-        const isFactQuestion = isFactLikeQuestion(text);
-        const sourceAuditRows = isFactQuestion ? await buildBiFactSourceAudit(store, text) : [];
-        const hasUsableSource = sourceAuditRows.some((x) => x.status === 'ok');
-        if (isFactQuestion && sourceAuditRows.length > 0 && !hasUsableSource) {
-          const auditText = buildBiSourceAuditText(sourceAuditRows);
-          response = `当前问题需要的数据源暂无可用样本，无法给出确定性结论。\n\n数据源检查：\n${auditText}\n\n请先完成数据同步/启用后重试。`;
-          agentData = { route, store, brand, brandId, brandConfig, grounded: false, reason: 'insufficient_sources', sourceAuditRows };
-        return { response, agentData };
-        }
-
-        // 先查异常数据作为上下文
-        let issueContext = '';
-        try {
-          const issuesR = await pool().query(
-            `SELECT severity, title, created_at FROM agent_issues WHERE store = $1 AND status != 'resolved' ORDER BY created_at DESC LIMIT 5`, [store]
-          );
-          if (issuesR.rows?.length) {
-            issueContext = '\n\n当前门店未解决的审计异常：\n' + issuesR.rows.map((i, idx) => `${idx+1}. [${i.severity}] ${i.title}`).join('\n');
-          }
-        } catch (e) { /* ignore */ }
-
-        const groundingFacts = await buildBiGroundingFacts(store, text);
-        const sourceAuditText = buildBiSourceAuditText(sourceAuditRows);
-        const hasInsufficientFacts = /无差评样本|无桌访不满意菜品样本|查询失败|不可用/.test(groundingFacts);
-        const askReviewLike = /(差评|点评|评论|桌访|产品问题|反馈|口味|出品|上菜|服务)/.test(String(text || ''));
-
-        if (askReviewLike && hasInsufficientFacts && !issueContext) {
-          response = '当前系统可用样本不足，暂时无法给出准确的“近7天差评/桌访问题次数”结论。建议先确认飞书差评表与桌访表是否已入库，再让我输出精确明细（含桌号/时段/原文）。';
-          agentData = { route, store, brand, brandId, brandConfig, grounded: false, reason: 'insufficient_facts' };
-        return { response, agentData };
-        }
-
-        const biLlm = await callLLM([
-          { role: 'system', content: `你是"小年"，年年有喜餐饮集团AI助理，当前协助数据分析。当前时间：${new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}。门店：${store}（${brand}）。用户：${senderName}（${senderRole === 'store_manager' ? '店长' : senderRole === 'store_production_manager' ? '出品经理' : '员工'}）。
-数据说明：系统中"expectedRevenue"=折前营业额（销售金额），"actualRevenue"=实收营业额（菜品收入）。洪潮品牌仅堂食，无外卖业务。
-严格约束：只能基于下方事实作答，绝对禁止编造数字/日期/菜品排名。若无事实必须说"当前系统无此数据"。禁止提及"卤鹅"为热销菜品。禁止编造员工人数/薪资日期等非BI信息。
-${issueContext}${activeTaskContext}
-${sourceAuditText ? '数据源：'+sourceAuditText : ''}
-${groundingFacts ? '可用事实：'+groundingFacts : ''}
-严格基于事实回复，不超300字。` },
-          ...getContext(senderUsername).slice(-4),
-          { role: 'user', content: text }
-        ], { role: senderRole, purpose: 'analysis', temperature: 0.05, max_tokens: 420 });
-        response = biLlm.content || '收到，我会查看门店数据并尽快回复。';
-        updateContext(senderUsername, 'user', text);
-        updateContext(senderUsername, 'assistant', response);
-        agentData = { route, store, brand, brandId, brandConfig, sourceAuditRows, grounded: !!groundingFacts, groundingFacts };
-  return { response, agentData };
-}
 
 
 
@@ -10863,6 +10635,35 @@ _runDataAuditor = createRunDataAuditor({
   checkDataSourceQuality,
   normalizeStoreKey,
   normalizeCanonicalStoreName,
+});
+
+handleDataAuditorCase = createHandleDataAuditorCase({
+  pool,
+  inferBrandFromStoreName,
+  tryHandleBiByFunctionCalling,
+  isFactLikeQuestion,
+  buildBiFactSourceAudit,
+  buildBiSourceAuditText,
+  buildBiGroundingFacts,
+  callLLM,
+  getContext,
+  updateContext,
+  getSharedState,
+  normalizeStoreKey,
+  resolveDateRangeFromQuestion,
+  buildSalesReport,
+  buildBiDeterministicDataSourceCoverageReply,
+  buildBiDeterministicDailyReportReply,
+  buildBiDeterministicTableVisitReply,
+  buildBiDeterministicSalesRawTopReply,
+  buildBiDeterministicBadReviewReportReply,
+  buildBiDeterministicClosingReportReply,
+  buildBiDeterministicOpeningReportReply,
+  buildBiDeterministicMaterialReportReply,
+  buildBiDeterministicMeetingReportReply,
+  buildBiDeterministicOpsReportCountReply,
+  buildBiDeterministicLossReportReply,
+  getFeatureFlags: () => AGENT_FEATURE_FLAGS,
 });
 
 _handleAgentMessage = createHandleAgentMessage({
