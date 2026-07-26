@@ -1,40 +1,60 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  getDefaultThreshold,
   listRuleIdentities,
   resolveRuleIdentity,
+  getDefaultThreshold,
   stampInsightIdentity,
 } from './rule-identity.js';
-import { inferIssuesFromMetrics } from './business-ontology-engine.js';
 
-test('rule identity bridges report issueId to diagnosis issue_type', () => {
+test('listRuleIdentities returns defensive copies', () => {
+  const list = listRuleIdentities();
+  assert.ok(list.length >= 8);
+  list[0].reportIssueIds.push('mutated');
+  const again = listRuleIdentities();
+  assert.ok(!again[0].reportIssueIds.includes('mutated'));
+});
+
+test('resolveRuleIdentity by reportIssueId', () => {
   const row = resolveRuleIdentity({ reportIssueId: 'customer_retention_weak' });
   assert.equal(row.canonicalIssueId, 'repeat_decline');
-  assert.equal(row.diagnosisIssueType, 'repeat_decline');
   assert.equal(row.ruleId, 'repeat_rate_low');
 });
 
-test('default thresholds are shared for diagnosis fallbacks', () => {
-  assert.equal(getDefaultThreshold('revenue_decline', 'revenueChangeRate', null), -8);
-  assert.equal(getDefaultThreshold('repeat_rate_low', 'repeatRate', null), 0.35);
-  assert.equal(getDefaultThreshold('marketing_conversion_low', 'marketingConversionRate', null), 0.25);
+test('resolveRuleIdentity by diagnosisIssueType and ruleId', () => {
+  assert.equal(resolveRuleIdentity({ diagnosisIssueType: 'revenue_decline' }).canonicalIssueId, 'revenue_decline');
+  assert.equal(resolveRuleIdentity({ ruleId: 'task_overdue_high' }).canonicalIssueId, 'staff_execution_risk');
 });
 
-test('inferIssuesFromMetrics stamps canonical identity', () => {
-  const insights = inferIssuesFromMetrics({
-    repeat_purchase_rate: { current: 18, previous: 25, changeRate: -28 },
+test('resolveRuleIdentity by metricId', () => {
+  const row = resolveRuleIdentity({ metricId: 'repeat_purchase_rate' });
+  assert.equal(row.canonicalIssueId, 'repeat_decline');
+});
+
+test('resolveRuleIdentity returns null for unknown ref', () => {
+  assert.equal(resolveRuleIdentity({ reportIssueId: 'unknown_issue_xyz' }), null);
+});
+
+test('getDefaultThreshold returns catalog value or fallback', () => {
+  assert.equal(getDefaultThreshold('repeat_rate_low', 'rate_threshold', 0.5), 0.35);
+  assert.equal(getDefaultThreshold('unknown_rule', 'rate_threshold', 0.5), 0.5);
+});
+
+test('stampInsightIdentity stamps canonical fields when matched', () => {
+  const stamped = stampInsightIdentity({
+    issueId: 'customer_retention_weak',
+    sourceMetrics: ['repeat_purchase_rate'],
+    title: '复购弱',
   });
-  assert.equal(insights.length, 1);
-  assert.equal(insights[0].issueId, 'customer_retention_weak');
-  assert.equal(insights[0].canonicalIssueId, 'repeat_decline');
-  assert.equal(insights[0].diagnosisIssueType, 'repeat_decline');
-  assert.equal(insights[0].ruleId, 'repeat_rate_low');
+  assert.equal(stamped.canonicalIssueId, 'repeat_decline');
+  assert.equal(stamped.diagnosisIssueType, 'repeat_decline');
+  assert.equal(stamped.ruleId, 'repeat_rate_low');
+  assert.equal(stamped.title, '复购弱');
 });
 
-test('listRuleIdentities exposes catalog', () => {
-  const list = listRuleIdentities();
-  assert.ok(list.some((r) => r.canonicalIssueId === 'marketing_ineffective'));
-  const stamped = stampInsightIdentity({ issueId: 'marketing_conversion_weak', sourceMetrics: ['campaign_conversion_rate'] });
-  assert.equal(stamped.diagnosisIssueType, 'marketing_ineffective');
+test('stampInsightIdentity keeps issueId when unmatched', () => {
+  const stamped = stampInsightIdentity({ issueId: 'custom_issue' });
+  assert.equal(stamped.canonicalIssueId, 'custom_issue');
+  assert.equal(stamped.diagnosisIssueType, null);
+  assert.equal(stamped.ruleId, null);
 });

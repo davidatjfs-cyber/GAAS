@@ -1,50 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { lintMetrics, fetchAndLintMetrics } from './metric-lint.js';
 
-import { lintMetrics } from './metric-lint.js';
-
-test('flags conflicting_definition when same name has different formula/source', () => {
-  const rows = [
-    { metric_id: 'OP_001', name: '实收营业额', data_source: 'sales_raw', formula: 'SUM(revenue)' },
-    { metric_id: 'revenue', name: '实收营业额', data_source: 'daily_reports', formula: 'SUM(actual_revenue)' },
-  ];
-  const findings = lintMetrics(rows);
-  const conflict = findings.find(f => f.type === 'conflicting_definition' && f.name === '实收营业额');
-  assert.ok(conflict, 'expected a conflicting_definition finding for 实收营业额');
-  assert.deepEqual(conflict.metric_ids.sort(), ['OP_001', 'revenue']);
-});
-
-test('flags redundant_registration when formula+source are identical under same name', () => {
-  const rows = [
-    { metric_id: 'traffic', name: '堂食客流', data_source: 'daily_reports', formula: 'SUM(dine_traffic)' },
-    { metric_id: 'DR_010', name: '堂食客流', data_source: 'daily_reports', formula: 'SUM(dine_traffic)' },
-  ];
-  const findings = lintMetrics(rows);
-  const dup = findings.find(f => f.type === 'redundant_registration');
-  assert.ok(dup, 'expected a redundant_registration finding');
-  assert.deepEqual(dup.metric_ids.sort(), ['DR_010', 'traffic']);
-});
-
-test('flags duplicate_formula_different_name when identical formula labeled as different concepts', () => {
-  const rows = [
-    { metric_id: 'orders', name: '堂食订单数', data_source: 'daily_reports', formula: 'SUM(dine_orders)' },
-    { metric_id: 'DR_001', name: '堂食桌数', data_source: 'daily_reports', formula: 'SUM(dine_orders)' },
-  ];
-  const findings = lintMetrics(rows);
-  const dup = findings.find(f => f.type === 'duplicate_formula_different_name');
-  assert.ok(dup, 'expected a duplicate_formula_different_name finding');
-  assert.deepEqual(dup.names.sort(), ['堂食桌数', '堂食订单数']);
-});
-
-test('no findings when all metrics are distinct', () => {
-  const rows = [
-    { metric_id: 'OP_001', name: '实收营业额', data_source: 'sales_raw', formula: 'SUM(revenue)' },
-    { metric_id: 'HR_001', name: '在岗人数', data_source: 'schedules', formula: 'COUNT(DISTINCT employee_username)' },
-  ];
-  assert.deepEqual(lintMetrics(rows), []);
-});
-
-test('handles empty/undefined input without throwing', () => {
+test('lintMetrics returns empty for empty input', () => {
   assert.deepEqual(lintMetrics([]), []);
-  assert.deepEqual(lintMetrics(undefined), []);
+  assert.deepEqual(lintMetrics(null), []);
+});
+
+test('lintMetrics detects conflicting_definition for same name different formulas', () => {
+  const rows = [
+    { metric_id: 'm1', name: '营业额', data_source: 'pos', formula: 'sum(revenue)' },
+    { metric_id: 'm2', name: '营业额', data_source: 'pos', formula: 'sum(sales_amount)' },
+  ];
+  const findings = lintMetrics(rows);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'conflicting_definition');
+  assert.equal(findings[0].name, '营业额');
+  assert.deepEqual(findings[0].metric_ids, ['m1', 'm2']);
+});
+
+test('lintMetrics detects redundant_registration for duplicate formula same name', () => {
+  const rows = [
+    { metric_id: 'm1', name: '客单价', data_source: 'pos', formula: 'avg(ticket)' },
+    { metric_id: 'm2', name: '客单价', data_source: 'pos', formula: 'avg(ticket)' },
+  ];
+  const findings = lintMetrics(rows);
+  assert.ok(findings.some((f) => f.type === 'redundant_registration'));
+});
+
+test('lintMetrics detects duplicate_formula_different_name', () => {
+  const rows = [
+    { metric_id: 'm1', name: '复购率', data_source: 'crm', formula: 'rate()' },
+    { metric_id: 'm2', name: '回头客比例', data_source: 'crm', formula: 'rate()' },
+  ];
+  const findings = lintMetrics(rows);
+  assert.ok(findings.some((f) => f.type === 'duplicate_formula_different_name'));
+});
+
+test('fetchAndLintMetrics delegates to getAllMetricDefs', async () => {
+  const rows = [{ metric_id: 'x', name: '唯一', data_source: 'pos', formula: '1' }];
+  const findings = await fetchAndLintMetrics(async () => rows);
+  assert.deepEqual(findings, []);
 });

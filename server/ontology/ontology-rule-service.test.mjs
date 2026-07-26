@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
   evaluateRule,
+  evaluateRules,
+  loadEffectiveRules,
   renderBossLanguage,
   getRuleSourceNote,
   confidenceNoteForRule,
@@ -282,6 +284,46 @@ describe('ontology-rule-service', () => {
       assert.strictEqual(confidenceNoteForRule({ store_id: 's' }), '使用本门店专属经营规则判断');
       assert.strictEqual(confidenceNoteForRule({ tenant_id: 't' }), '使用本品牌经营规则判断');
       assert.strictEqual(confidenceNoteForRule(null), '使用系统默认经营规则判断');
+    });
+  });
+
+  describe('loadEffectiveRules / evaluateRules', () => {
+    it('should prefer store scope over tenant and system', async () => {
+      const pool = {
+        __unwrappedQuery: async (sql) => {
+          if (/store_id = \$2/i.test(sql)) {
+            return { rows: [{ rule_id: 'r1', version: 2, is_active: true, condition_json: { field: 'x', comparator: '>=', value: 1 }, severity: 'P1', priority: 'P1', confidence_base: 0.9, business_domain: 'customer_growth' }] };
+          }
+          if (/tenant_id = \$1 AND store_id IS NULL/i.test(sql)) {
+            return { rows: [{ rule_id: 'r1', version: 1, is_active: true, condition_json: { field: 'x', comparator: '>=', value: 99 }, severity: 'P2', priority: 'P2', confidence_base: 0.8, business_domain: 'customer_growth' }] };
+          }
+          return { rows: [{ rule_id: 'r1', version: 0, is_active: true, condition_json: { field: 'x', comparator: '>=', value: 999 }, severity: 'P2', priority: 'P2', confidence_base: 0.7, business_domain: 'customer_growth' }] };
+        },
+        query: async () => ({ rows: [] }),
+      };
+      const rules = await loadEffectiveRules(pool, { tenantId: 'default', storeId: 's1' });
+      assert.strictEqual(rules.length, 1);
+      assert.strictEqual(rules[0].version, 2);
+    });
+
+    it('should evaluate matched and unmatched rules', async () => {
+      const pool = {
+        query: async () => ({
+          rows: [
+            { rule_id: 'hit', version: 1, is_active: true, condition_json: { field: 'rate', comparator: '<', value: 0.5 }, severity: 'P1', priority: 'P1', confidence_base: 0.9, business_domain: 'customer_growth' },
+            { rule_id: 'miss', version: 1, is_active: true, condition_json: { field: 'rate', comparator: '<', value: 0.1 }, severity: 'P2', priority: 'P2', confidence_base: 0.8, business_domain: 'customer_growth' },
+          ],
+        }),
+      };
+      const result = await evaluateRules(pool, {
+        tenantId: 'default',
+        storeId: '',
+        businessDomain: 'customer_growth',
+        inputContext: { rate: 0.3 },
+      });
+      assert.strictEqual(result.matchedRules.length, 1);
+      assert.strictEqual(result.unmatchedRules.length, 1);
+      assert.strictEqual(result.evaluationSummary.topSeverity, 'P1');
     });
   });
 });
