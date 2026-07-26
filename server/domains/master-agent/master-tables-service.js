@@ -1,9 +1,9 @@
 /**
  * ensureMasterTables orchestration (P4 peel from master-agent.js).
  */
-import { ensureCoreMasterTables } from './ensure-tables-core.js';
-import { ensureTrainingRelatedTables } from './ensure-tables-training.js';
-import { ensureAgentMonitorTables } from './ensure-tables-monitor.js';
+import { applyCoreMasterTablesDdl } from './master-tables-ddl-core.js';
+import { applyTrainingRelatedTablesDdl } from './master-tables-ddl-training.js';
+import { applyAgentMonitorTablesDdl } from './master-tables-ddl-monitor.js';
 
 /**
  * @param {{
@@ -12,16 +12,16 @@ import { ensureAgentMonitorTables } from './ensure-tables-monitor.js';
  *   ensureKnowledgeGraphTables: () => Promise<void>,
  * }} deps
  */
-export function createEnsureMasterTables(deps) {
+export function createMasterTablesEnsuring(deps) {
   const { getPool, log, ensureKnowledgeGraphTables } = deps;
 
   return async function ensureMasterTables() {
     const client = await getPool().connect();
     try {
       await client.query('BEGIN');
-      await ensureCoreMasterTables(client);
-      await ensureTrainingRelatedTables(client);
-      await ensureAgentMonitorTables(client);
+      await applyCoreMasterTablesDdl(client);
+      await applyTrainingRelatedTablesDdl(client);
+      await applyAgentMonitorTablesDdl(client);
       await client.query('COMMIT');
       log.info('[master] Tables ensured (including autonomous, regression, LLM monitoring)');
     } catch (e) {

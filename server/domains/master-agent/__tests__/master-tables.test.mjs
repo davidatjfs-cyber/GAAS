@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ensureCoreMasterTables } from '../ensure-tables-core.js';
-import { ensureTrainingRelatedTables } from '../ensure-tables-training.js';
-import { ensureAgentMonitorTables } from '../ensure-tables-monitor.js';
-import { createEnsureMasterTables } from '../ensure-tables.js';
+import { applyCoreMasterTablesDdl } from '../master-tables-ddl-core.js';
+import { applyTrainingRelatedTablesDdl } from '../master-tables-ddl-training.js';
+import { applyAgentMonitorTablesDdl } from '../master-tables-ddl-monitor.js';
+import { createMasterTablesEnsuring } from '../master-tables-service.js';
 
 function trackingClient() {
   const sqls = [];
@@ -17,24 +17,24 @@ function trackingClient() {
   };
 }
 
-test('ensureCoreMasterTables creates tasks/events + indexes', async () => {
+test('applyCoreMasterTablesDdl creates tasks/events + indexes', async () => {
   const client = trackingClient();
-  await ensureCoreMasterTables(client);
+  await applyCoreMasterTablesDdl(client);
   assert.ok(client.sqls.some((s) => /CREATE TABLE IF NOT EXISTS master_tasks/i.test(s)));
   assert.ok(client.sqls.some((s) => /CREATE TABLE IF NOT EXISTS master_events/i.test(s)));
   assert.ok(client.sqls.some((s) => /idx_master_tasks_status/i.test(s)));
 });
 
-test('ensureTrainingRelatedTables creates sop + training', async () => {
+test('applyTrainingRelatedTablesDdl creates sop + training', async () => {
   const client = trackingClient();
-  await ensureTrainingRelatedTables(client);
+  await applyTrainingRelatedTablesDdl(client);
   assert.ok(client.sqls.some((s) => /sop_cases/i.test(s)));
   assert.ok(client.sqls.some((s) => /training_tasks/i.test(s)));
 });
 
-test('ensureAgentMonitorTables creates monitor tables', async () => {
+test('applyAgentMonitorTablesDdl creates monitor tables', async () => {
   const client = trackingClient();
-  await ensureAgentMonitorTables(client);
+  await applyAgentMonitorTablesDdl(client);
   assert.ok(client.sqls.some((s) => /agent_autonomous_logs/i.test(s)));
   assert.ok(client.sqls.some((s) => /agent_collaboration_archives/i.test(s)));
   assert.ok(client.sqls.some((s) => /regression_check_results/i.test(s)));
@@ -43,13 +43,13 @@ test('ensureAgentMonitorTables creates monitor tables', async () => {
   assert.ok(client.sqls.some((s) => /data_quality_logs/i.test(s)));
 });
 
-test('createEnsureMasterTables commits happy path and runs KG', async () => {
+test('createMasterTablesEnsuring commits happy path and runs KG', async () => {
   const client = trackingClient();
   let released = false;
   client.release = () => { released = true; };
   const logs = [];
   let kg = 0;
-  const ensure = createEnsureMasterTables({
+  const ensure = createMasterTablesEnsuring({
     getPool: () => ({
       connect: async () => client,
     }),
@@ -67,7 +67,7 @@ test('createEnsureMasterTables commits happy path and runs KG', async () => {
   assert.ok(logs.some((l) => l[0] === 'info'));
 });
 
-test('createEnsureMasterTables rolls back on error; ignores 23505', async () => {
+test('createMasterTablesEnsuring rolls back on error; ignores 23505', async () => {
   const client = trackingClient();
   let n = 0;
   client.query = async (sql) => {
@@ -81,7 +81,7 @@ test('createEnsureMasterTables rolls back on error; ignores 23505', async () => 
     return { rows: [] };
   };
   const logs = [];
-  const ensure = createEnsureMasterTables({
+  const ensure = createMasterTablesEnsuring({
     getPool: () => ({ connect: async () => client }),
     log: {
       info: (...a) => logs.push(a),
@@ -102,7 +102,7 @@ test('createEnsureMasterTables rolls back on error; ignores 23505', async () => 
     return { rows: [] };
   };
   const errors = [];
-  const ensure2 = createEnsureMasterTables({
+  const ensure2 = createMasterTablesEnsuring({
     getPool: () => ({ connect: async () => client2 }),
     log: {
       info() {},

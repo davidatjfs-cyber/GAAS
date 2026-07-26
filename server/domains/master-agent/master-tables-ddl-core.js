@@ -3,7 +3,7 @@
  */
 
 /** @param {{ query: Function }} client */
-export async function ensureCoreMasterTables(client) {
+export async function applyCoreMasterTablesDdl(client) {
   await client.query(`
     CREATE TABLE IF NOT EXISTS master_tasks (
       id SERIAL PRIMARY KEY,

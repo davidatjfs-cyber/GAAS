@@ -62,7 +62,7 @@ import { registerMasterRoutes as registerMasterRoutesImpl } from './domains/mast
 import { STATUS_FLOW } from './domains/master-agent/status-flow.js';
 import { createMasterTaskLifecycle } from './domains/master-agent/lifecycle-service.js';
 import { createMasterListeners } from './domains/master-agent/listeners-service.js';
-import { createEnsureMasterTables } from './domains/master-agent/ensure-tables.js';
+import { createMasterTablesEnsuring } from './domains/master-agent/master-tables-service.js';
 
 const log = childLogger({ domain: 'master-agent' });
 
@@ -111,7 +111,7 @@ const {
 // 1. Table Creation
 // ─────────────────────────────────────────────
 
-export const ensureMasterTables = createEnsureMasterTables({
+export const ensureMasterTables = createMasterTablesEnsuring({
   getPool: pool,
   log,
   ensureKnowledgeGraphTables,

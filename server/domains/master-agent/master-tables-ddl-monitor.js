@@ -3,7 +3,7 @@
  */
 
 /** @param {{ query: Function }} client */
-export async function ensureAgentMonitorTables(client) {
+export async function applyAgentMonitorTablesDdl(client) {
   await client.query(`
     CREATE TABLE IF NOT EXISTS agent_autonomous_logs (
       id SERIAL PRIMARY KEY,

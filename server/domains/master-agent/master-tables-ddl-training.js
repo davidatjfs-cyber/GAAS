@@ -3,7 +3,7 @@
  */
 
 /** @param {{ query: Function }} client */
-export async function ensureTrainingRelatedTables(client) {
+export async function applyTrainingRelatedTablesDdl(client) {
   await client.query(`
     CREATE TABLE IF NOT EXISTS sop_cases (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
