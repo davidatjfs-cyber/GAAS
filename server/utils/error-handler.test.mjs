@@ -51,3 +51,31 @@ test('resetErrorStats clears counters', () => {
   assert.deepEqual(stats.byType, {});
   assert.deepEqual(stats.recent, []);
 });
+
+test('safeErrorLog keeps only 10 recent errors', () => {
+  resetErrorStats();
+  for (let i = 0; i < 12; i += 1) {
+    safeErrorLog('many', new Error(`e${i}`));
+  }
+  const stats = getErrorStats();
+  assert.equal(stats.recent.length, 10);
+  assert.match(stats.recent[0].message, /e11/);
+});
+
+test('safeExecute fallback failure is logged and returns null', async () => {
+  resetErrorStats();
+  const v = await safeExecute(
+    'dual-fail',
+    async () => { throw new Error('primary'); },
+    async () => { throw new Error('fallback'); }
+  );
+  assert.equal(v, null);
+  assert.ok(getErrorStats().byType['dual-fail'] >= 1);
+  assert.ok(getErrorStats().byType['dual-fail-fallback'] >= 1);
+});
+
+test('safeErrorLog accepts non-Error values', () => {
+  resetErrorStats();
+  safeErrorLog('plain', 'string failure');
+  assert.equal(getErrorStats().recent[0].message, 'string failure');
+});

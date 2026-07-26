@@ -1,7 +1,7 @@
 {
-  "lines": 63,
+  "lines": 64,
   "branches": 67,
-  "functions": 66,
+  "functions": 67,
   "updated": "2026-07-26",
-  "note": "单测棘轮：本地实测约 64.70/68.17/67.16（+error-handler/dine-metrics/sla-utils/knowledge-helpers/diagnosis-tree 单测）。抬至 63/67/66（约 1pp 缓冲）。只升不降。"
+  "note": "单测棘轮：本地实测约 65.06/68.26/67.50（+ontology闭环/归因/基准/boss-language/brand-config 等单测）。抬至 64/67/67（约 1pp 缓冲）。只升不降。"
 }
