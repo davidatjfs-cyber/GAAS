@@ -45,7 +45,12 @@ import {
   refreshFeishuUserOpenIdForImDeliveryHrms
 } from './utils/feishu-open-id-cross-app.js';
 import { deduplicateMessage } from './message-deduplication.js';
-import { getOpsAgentConfig, getBiAgentConfig, AGENT_FEATURE_FLAGS } from './agent-config-manager.js';
+import {
+  getOpsAgentConfig as loadOpsAgentConfigRemote,
+  getBiAgentConfig as loadBiAgentConfigRemote,
+  AGENT_FEATURE_FLAGS,
+} from './agent-config-manager.js';
+import { createAgentRuntimeConfig } from './domains/agent-runtime/runtime-config.js';
 import {
   buildEvidencePackage,
   detectFactDemand,
@@ -181,6 +186,23 @@ const QWEN_BASE_URL = process.env.QWEN_BASE_URL || 'https://dashscope.aliyuncs.c
 const QWEN_MODEL = process.env.QWEN_MODEL || 'qwen-max';
 const DOUBAO_API_KEY = process.env.ARK_API_KEY || process.env.DOUBAO_API_KEY || '';
 const DOUBAO_BASE_URL = process.env.DOUBAO_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
+
+const {
+  refreshBiAgentRuntimeConfig,
+  refreshOpsAgentRuntimeConfig,
+  getStoreThreshold,
+  isBiSourceEnabled,
+  getBiReasoningModel,
+  getOpsReasoningModel,
+  getOpsVisionModel,
+  getOpsAgentConfig,
+} = createAgentRuntimeConfig({
+  getBiAgentConfig: loadBiAgentConfigRemote,
+  getOpsAgentConfig: loadOpsAgentConfigRemote,
+  log,
+  deepseekModel: DEEPSEEK_MODEL,
+  deepseekVisionModel: DEEPSEEK_VISION_MODEL,
+});
 
 // Provider health / fallback chain → domains/ai/llm-provider-helpers.js
 
@@ -629,97 +651,6 @@ const BITABLE_CONFIGS = {
   }
 };
 
-let BI_AGENT_CONFIG = {
-  dataSources: [
-    { key: 'daily_reports', enabled: true },
-    { key: 'table_visit_records', enabled: true },
-    { key: 'table_visit_bitable', enabled: true },
-    { key: 'opening_reports_bitable', enabled: true },
-    { key: 'closing_reports_bitable', enabled: true },
-    { key: 'meeting_reports_bitable', enabled: true },
-    { key: 'bad_reviews', enabled: true },
-    { key: 'material_majixian_bitable', enabled: true },
-    { key: 'material_hongchao_bitable', enabled: true },
-    { key: 'ops_checklist_bitable', enabled: true },
-    { key: 'loss_reports_bitable', enabled: true }
-  ],
-  anomalyTriggers: {
-    global: {
-      revenueGapMedium: 0.10,
-      revenueGapHigh: 0.20,
-      efficiencyMedium: 1100,
-      efficiencyHigh: 1000,
-      marginMedium: 0.69,
-      marginHigh: 0.68,
-      tableVisitProductMedium: 2,
-      tableVisitProductHigh: 4,
-      tableVisitRatioMedium: 0.5,
-      tableVisitRatioHigh: 0.4,
-      badReviewMedium: 1,
-      badReviewHigh: 2,
-      rechargeStreakHighDays: 2
-    },
-    storeOverrides: {}
-  }
-};
-
-// 获取门店级别的异常阈值，门店覆盖 > 全局默认
-function getStoreThreshold(storeName, key, fallback) {
-  const triggers = BI_AGENT_CONFIG?.anomalyTriggers || {};
-  const overrides = triggers.storeOverrides && typeof triggers.storeOverrides === 'object' ? triggers.storeOverrides : {};
-  const storeConfig = overrides[storeName];
-  if (storeConfig && storeConfig[key] !== undefined && storeConfig[key] !== null) {
-    return Number(storeConfig[key]);
-  }
-  const globalConfig = triggers.global && typeof triggers.global === 'object' ? triggers.global : {};
-  if (globalConfig[key] !== undefined && globalConfig[key] !== null) {
-    return Number(globalConfig[key]);
-  }
-  return fallback;
-}
-
-async function refreshBiAgentRuntimeConfig() {
-  try {
-    const remote = await getBiAgentConfig();
-    if (remote && typeof remote === 'object') {
-      const remoteT = remote.anomalyTriggers || {};
-      const localT = BI_AGENT_CONFIG?.anomalyTriggers || {};
-      BI_AGENT_CONFIG = {
-        ...BI_AGENT_CONFIG,
-        ...remote,
-        anomalyTriggers: {
-          global: { ...(localT.global || {}), ...(remoteT.global || {}) },
-          storeOverrides: { ...(localT.storeOverrides || {}), ...(remoteT.storeOverrides || {}) }
-        }
-      };
-    }
-  } catch (e) {
-    log.error('[bi] refresh runtime config failed:', e?.message || e);
-  }
-}
-
-function isBiSourceEnabled(key) {
-  const list = Array.isArray(BI_AGENT_CONFIG?.dataSources) ? BI_AGENT_CONFIG.dataSources : [];
-  const hit = list.find((x) => String(x?.key || '').trim() === String(key || '').trim());
-  return hit ? hit.enabled !== false : true;
-}
-
-function getOpsReasoningModel() {
-  const model = String(OPS_AGENT_CONFIG?.llmModels?.reasoningModel || '').trim();
-  return model || DEEPSEEK_MODEL;
-}
-
-function getOpsVisionModel() {
-  const model = String(OPS_AGENT_CONFIG?.llmModels?.visionModel || '').trim();
-  if (model.startsWith('doubao-') || model.startsWith('ep-')) return model;
-  return String(DEEPSEEK_VISION_MODEL || '').startsWith('doubao-') || String(DEEPSEEK_VISION_MODEL || '').startsWith('ep-') ? DEEPSEEK_VISION_MODEL : 'ep-20260424183833-7lr9g';
-}
-
-function getBiReasoningModel() {
-  const model = String(BI_AGENT_CONFIG?.llmModels?.reasoningModel || '').trim();
-  return model || DEEPSEEK_MODEL;
-}
-
 function formatChecklistTypeLabel(checkType) {
   return _opsChecklistCardsApi.formatChecklistTypeLabel(checkType);
 }
@@ -731,24 +662,6 @@ function isBlockedOpsChecklistPattern(checkType, taskKey = '') {
 }
 function shouldSkipHrmsScheduledChecklist(config) {
   return _scheduledTaskRuntimeApi.shouldSkipHrmsScheduledChecklist(config);
-}
-
-async function refreshOpsAgentRuntimeConfig() {
-  try {
-    const remote = await getOpsAgentConfig();
-    if (remote && typeof remote === 'object') {
-      OPS_AGENT_CONFIG = {
-        ...OPS_AGENT_CONFIG,
-        ...remote,
-        scheduledTasks: {
-          ...(OPS_AGENT_CONFIG?.scheduledTasks || {}),
-          ...(remote?.scheduledTasks || {})
-        }
-      };
-    }
-  } catch (e) {
-    log.error('[ops] refresh runtime config failed:', e?.message || e);
-  }
 }
 
 // 向后兼容的默认配置
@@ -1498,121 +1411,6 @@ export async function runDataAuditor(checkMode = 'daily', tenantId = 'default') 
 // 7. Agent 2: Operational Supervisor (营运督导员)
 // ─────────────────────────────────────────────
 
-// 营运督导员工作职责配置
-let OPS_AGENT_CONFIG = {
-  llmModels: {
-    reasoningModel: 'deepseek-chat',
-    visionModel: 'ep-20260424183833-7lr9g'
-  },
-  // 任务调度与主动触发
-  scheduledTasks: {
-    // 开/收市巡检
-    dailyInspections: [
-      
-    ],
-    // 食安抽检
-    randomInspections: [
-      
-    ],
-    // 数据联动触发阈值（配合BI异常检测规则）
-    dataTriggers: {
-      // 产品投诉阈值：1周内同一产品投诉>2次触发medium，>4次触发high
-      productComplaintThreshold: 2, 
-      // 毛利偏差阈值：马己仙<64%/洪潮<69%为medium
-      marginDeviationThreshold: 0.01, // 使用较小的容差确保能触发
-      // 桌访率阈值：桌访率<50%触发medium，<40%触发high
-      tableVisitRatioThreshold: 0.50  
-    }
-  },
-
-  // 多模态视觉审核标准
-  visualInspection: {
-    // 环境检查标准
-    environment: {
-      floorWater: 'detect_water_or_oil_on_floor',
-      trashCovered: 'trash_bin_lid_closed',
-      lightingAdequate: 'lighting_sufficient_for_clear_photos'
-    },
-    // 产品检查标准  
-    product: {
-      platingAesthetics: '洪潮切配摆盘美学标准',
-      portionSize: '分量是否达标',
-      garnishPlacement: '装饰配菜摆放规范'
-    },
-    // 物料检查标准
-    materials: {
-      fridgeLabelExpiry: '冰箱标签是否过期',
-      rawCookedSeparation: '生熟分装检查',
-      storageTemperature: '储存温度合规'
-    },
-    // 视觉准确度要求
-    accuracyThresholds: {
-      labelClarity: 0.8,      // 标识清晰度 > 80%
-      foodCoverage: 0.9,     // 食材遮盖率达标
-      photoQuality: 0.85     // 照片质量要求
-    }
-  },
-
-  // 执行闭环追踪
-  loopManagement: {
-    // 催办逻辑
-    followUpRules: {
-      firstReminder: 60,  // 60分钟内未读信
-      secondReminder: 90, // 90分钟内未首次反馈
-      escalationDelay: 120, // 2小时后升级
-      maxReminders: 3      // 最多提醒3次
-    },
-    // 逻辑纠偏检查
-    logicValidation: {
-      photoLocationRadius: 500, // 门店500米内
-      exifTimeTolerance: 5,     // Exif时间误差<5分钟
-      hashDuplicateCheck: true, // Hash重复检查
-      dataConsistency: true     // 数据一致性检查
-    }
-  },
-
-  // 判定逻辑标准
-  judgmentStandards: {
-    timeliness: {
-      readDeadline: 15,    // 15分钟内读信
-      responseDeadline: 60, // 60分钟内首次反馈
-      latePenalty: 'mark_slow_response' // 超时标记响应迟缓
-    },
-    authenticity: {
-      locationRadius: 500,
-      exifTolerance: 300,  // 5分钟=300秒
-      hashCheck: true,
-      fraudAction: 'block_and_report' // 作假直接封禁并上报
-    },
-    visualAccuracy: {
-      minClarity: 0.8,
-      minCoverage: 0.9,
-      poorQualityResponse: '环境光线不足，请打开补光灯重拍'
-    },
-    logicConsistency: {
-      dataTolerance: 0.1,   // 10%数据偏差容忍度
-      inconsistencyResponse: '检测到数据偏差较大，请核实后再提交'
-    }
-  },
-
-  // 现场知识支援
-  knowledgeSupport: {
-    // SOP知识库调用规则
-    sopQueryRules: {
-      productQuality: '产品质量问题处理流程',
-      ingredientHandling: '食材处理标准',
-      equipmentOperation: '设备操作规范',
-      emergencyProcedures: '紧急情况处理'
-    },
-    // 常见问题标准回复
-    standardResponses: {
-      smallOysters: '根据洪潮验收SOP第3条，超过20%不达标需拍图留存并做退货登记。请拍摄对比照片。',
-      fridgeTemperature: '冰箱温度应保持在4°C以下，请检查温控设置并记录当前温度。',
-      handWashing: '洗手必须满20秒，请使用洗手液并冲洗至手腕部位。'
-    }
-  }
-};
-
 let _auditImage;
 export async function auditImage(imageUrl, auditType, context = {}) {
   return _auditImage(imageUrl, auditType, context);
@@ -1625,7 +1423,7 @@ export async function getOpsKnowledgeSupport(query, context = {}) {
 
 // 任务调度与主动触发
 export async function scheduleOpsTasks() {
-  const config = OPS_AGENT_CONFIG.scheduledTasks;
+  const config = getOpsAgentConfig().scheduledTasks;
   const now = new Date();
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   
@@ -1653,7 +1451,7 @@ export async function scheduleOpsTasks() {
 
 // 数据联动触发检查
 export async function checkDataTriggers() {
-  const config = OPS_AGENT_CONFIG.scheduledTasks.dataTriggers;
+  const config = getOpsAgentConfig().scheduledTasks.dataTriggers;
   const triggers = [];
   
   // 检查产品投诉阈值
@@ -2218,14 +2016,14 @@ _auditImage = createAuditImage({
   pool,
   log,
   callVisionLLM,
-  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+  getOpsAgentConfig,
 });
 
 _getOpsKnowledgeSupport = createGetOpsKnowledgeSupport({
   log,
   callLLM,
   queryAgentData,
-  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+  getOpsAgentConfig,
   getOpsReasoningModel,
 });
 
@@ -2548,7 +2346,7 @@ _scheduledTaskRuntimeApi = createScheduledTaskRuntimeApi({
 });
 
 _buildScheduledTasksFromConfig = createBuildScheduledTasksFromConfig({
-  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+  getOpsAgentConfig,
   isBlockedOpsChecklistPattern,
 });
 
@@ -2558,7 +2356,7 @@ _executeScheduledTask = createExecuteScheduledTask({
   refreshOpsAgentRuntimeConfig,
   buildScheduledTasksFromConfig,
   isBlockedOpsChecklistPattern,
-  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+  getOpsAgentConfig,
   scheduledTaskRuntimeStatus: _scheduledTaskRuntimeApi.scheduledTaskRuntimeStatus,
 });
 
@@ -2606,7 +2404,7 @@ _sendScheduledChecklist = createSendScheduledChecklist({
 });
 
 _opsChecklistCardsApi = createOpsChecklistCardsApi({
-  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+  getOpsAgentConfig,
 });
 _opsChecklistProgress = _opsChecklistCardsApi.opsChecklistProgress;
 _tryCaptureOpsChecklistDetailFromChat = createTryCaptureOpsChecklistDetailFromChat({
@@ -2618,7 +2416,7 @@ _tryCaptureOpsChecklistDetailFromChat = createTryCaptureOpsChecklistDetailFromCh
 
 _followUpOverdueTasks = createFollowUpOverdueTasks({
   pool,
-  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+  getOpsAgentConfig,
   sendLarkMessage,
   prefixWithAgentName,
   log,
