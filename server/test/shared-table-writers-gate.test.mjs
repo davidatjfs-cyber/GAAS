@@ -23,14 +23,14 @@ const serverRoot = path.resolve(__dirname, '..');
  * 文件搬家时：删除旧路径键、加入新路径键，并在 REPATH_NOTES 记一笔。
  */
 const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
-  'agents.js|INSERT INTO|agent_messages',
+  // P2：删除死代码 handleTaskEscalation 后 agents.js 已无 agent_messages INSERT
   // Wave A11a：archiveOldBitableSubmissions 迁出；agents.js 已无 DELETE agent_messages
   'domains/feishu-bitable/archive-old-submissions.js|DELETE FROM|agent_messages',
   // Wave A1：KPI radar INSERT 从 agents.js runDataAuditor 迁出；A1-split 再迁到 persist 子模块
   'domains/agent-auditor/run-data-auditor-persist.js|INSERT INTO|agent_messages',
-  // Wave A7：handleOpsChecklistCardAction 迁出（agents.js 仍有其它 agent_messages INSERT）
+  // Wave A7：handleOpsChecklistCardAction 迁出
   'domains/agent-ops/handle-checklist-card-action.js|INSERT INTO|agent_messages',
-  // Wave A3：onFeishuEvent 迁出（agents.js 仍有其它 agent_messages / feishu_users 写入）
+  // Wave A3：onFeishuEvent 迁出
   // Wave A3-split：on-feishu-event.js 同批切分 → registration/employee/checklist/agent-route
   'domains/agent-feishu-bot/on-feishu-event-registration.js|INSERT INTO|feishu_users',
   'domains/agent-feishu-bot/on-feishu-event-employee.js|UPDATE|feishu_users',
@@ -43,7 +43,7 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   // P5.4：poll-submissions.js → poll-submissions-helpers.js（同 OP+表换路径）
   'domains/feishu-bitable/poll-submissions-helpers.js|INSERT INTO|feishu_generic_records',
   'domains/feishu-bitable/poll-submissions-helpers.js|INSERT INTO|agent_messages',
-  // P2：processBitableData 类型处理器迁出（agents.js 仍有其它 agent_messages 写入）
+  // P2：processBitableData 类型处理器迁出
   'domains/feishu-bitable/process-bitable-data-helpers.js|INSERT INTO|agent_messages',
   'domains/feishu-bitable/process-bitable-data-helpers.js|UPDATE|agent_messages',
   // P2：registerFeishuUser 迁出 lark-send-io（agents.js 不再写 feishu_users）
@@ -148,6 +148,8 @@ const REPATH_NOTES = [
   'agents.js → domains/agent-feishu-bot/push-issues.js | INSERT INTO|agent_messages',
   'agents.js → domains/agent-feishu-bot/lark-send-io.js | INSERT INTO|feishu_users',
   'agents.js → domains/agent-feishu-bot/lark-send-io.js | UPDATE|feishu_users',
+  // P2：删除死代码 handleTaskEscalation（agents.js 唯一残留 agent_messages INSERT）
+  'agents.js → (deleted handleTaskEscalation) | INSERT INTO|agent_messages',
 ];
 
 const OWNER = 'gaas';
