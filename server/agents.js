@@ -75,6 +75,7 @@ import { createDeterministicCascadeReplies } from './domains/agent-bi/determinis
 import { createPollBitableSubmissions } from './domains/feishu-bitable/poll-submissions.js';
 import { createTaskResponseApi } from './domains/feishu-bitable/task-response.js';
 import { createProcessBitableData } from './domains/feishu-bitable/process-bitable-data.js';
+import { createBitableRecordsClient } from './domains/feishu-bitable/bitable-records-client.js';
 import { createBitablePollingController } from './domains/feishu-bitable/start-bitable-polling.js';
 import {
   buildKpiRadarAlertJson,
@@ -2447,8 +2448,6 @@ async function loadTableVisitMetricsByStore(store, startDate, endDate) {
 // 4. Feishu Client
 // ─────────────────────────────────────────────
 
-let _bitableTenantTokens = new Map(); // 支持多个配置的 token
-
 // 获取飞书租户token；tenantId 有独立配置的 feishu_bot(app_id/app_secret) 就用租户自己的应用身份，
 // 否则回退到平台全局 LARK_APP_ID/LARK_APP_SECRET（历史行为，向后兼容不传tenantId的调用方）
 export async function getLarkTenantToken(tenantId) {
@@ -2464,200 +2463,19 @@ export async function getLarkTenantToken(tenantId) {
   });
 }
 
+let _bitableRecordsClient;
 async function getBitableTenantToken(configKey = 'ops_checklist') {
-  const config = BITABLE_CONFIGS[configKey];
-  if (!config) {
-    log.error(`[bitable] invalid config key: ${configKey}`);
-    return '';
-  }
-  
-  // 检查缓存的 token
-  const cached = _bitableTenantTokens.get(configKey);
-  if (cached && Date.now() < cached.expires) {
-    return cached.token;
-  }
-  
-  try {
-    const resp = await axios.post('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-      app_id: config.appId, app_secret: config.appSecret
-    }, { timeout: 10000 });
-    
-    const token = resp.data?.tenant_access_token || '';
-    const expires = Date.now() + (resp.data?.expire || 7000) * 1000;
-    
-    _bitableTenantTokens.set(configKey, { token, expires });
-    log.info(`[bitable][${configKey}] tenant token refreshed, expires in`, resp.data?.expire, 's');
-    return token;
-  } catch (e) {
-    log.error(`[bitable][${configKey}] get tenant token failed:`, e?.message);
-    return '';
-  }
-}
-
-// ─────────────────────────────────────────────
-// Bitable API Client
-// ─────────────────────────────────────────────
-
-function isDataNotReadyError(errText) {
-  return /1254607|data not ready|try again later/i.test(String(errText || ''));
-}
-
-function isFeishuInternalError(errText) {
-  return /1255001|1255002|1255003|1255004|1255005|1255040|feishu_code_2200|internal[\s_]?error|rpc[\s_]?error|marshal[\s_]?error/i.test(String(errText || ''));
-}
-
-function isTransientBitableError(errText) {
-  const s = String(errText || '');
-  return /1254607|1255001|1255002|1255003|1255004|1255005|1255040|1254200|feishu_code_2200|internal[\s_]?error|rpc[\s_]?error|marshal[\s_]?error|data not ready|try again later|timeout|ECONNABORTED|ECONNRESET|ETIMEDOUT|socket hang up|EAI_AGAIN|429|502|503|504/i.test(s);
+  return _bitableRecordsClient.getBitableTenantToken(configKey);
 }
 
 export async function getBitableRecords(configKey = 'ops_checklist', options = {}) {
-  const config = BITABLE_CONFIGS[configKey];
-  if (!config) {
-    log.error(`[bitable] invalid config key: ${configKey}`);
-    return { ok: false, error: 'invalid_config' };
-  }
-
-  const MAX_RETRIES_NORMAL = 3;
-  const MAX_RETRIES_DATA_NOT_READY = 1;
-  let _isDataNotReady = false;
-  let lastErr = 'unknown';
-
-  for (let attempt = 1; ; attempt++) {
-    const maxRetries = _isDataNotReady ? MAX_RETRIES_DATA_NOT_READY : MAX_RETRIES_NORMAL;
-    if (attempt > maxRetries) break;
-
-    const token = await getBitableTenantToken(configKey);
-    if (!token) {
-      log.error(`[bitable][${configKey}] cannot get records: no token`);
-      return { ok: false, error: 'no_token' };
-    }
-
-    const { pageSize = 200, pageToken, filter, sort = [] } = options;
-    const params = {
-      page_size: pageSize,
-      user_id_type: 'open_id'
-    };
-
-    if (pageToken) params.page_token = pageToken;
-    if (filter) params.filter = filter;
-    if (sort.length > 0) {
-      params.sort = JSON.stringify(sort);
-    } else if (config.sortField) {
-      params.sort = config.sortField;
-    } else {
-      params.sort = JSON.stringify(["_id DESC"]);
-    }
-
-    try {
-      const resp = await axios.get(
-        `https://open.feishu.cn/open-apis/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` },
-          params,
-          timeout: 10000
-        }
-      );
-
-      const records = resp.data?.data?.items || [];
-      const hasMore = resp.data?.data?.has_more || false;
-      const nextPageToken = resp.data?.data?.page_token || '';
-      const total = resp.data?.data?.total || 0;
-
-      return { ok: true, records, hasMore, nextPageToken, total };
-    } catch (e) {
-      const errBody = e?.response?.data;
-      const bizCode = errBody?.code;
-      lastErr = String(e?.message || e);
-
-      if (bizCode || (errBody && typeof errBody === 'object')) {
-        const _code = Number(bizCode);
-        if (bizCode === 1254607 || bizCode === '1254607' || /data not ready/i.test(String(errBody?.msg || ''))) {
-          _isDataNotReady = true;
-          if (attempt >= maxRetries) {
-            return { ok: false, error: '1254607_data_not_ready' };
-          }
-          await sleep(30000);
-          continue;
-        }
-        if (isTransientBitableError(String(bizCode) + ' ' + String(errBody?.msg || ''))) {
-          if (attempt >= maxRetries) {
-            return { ok: false, error: String(bizCode) };
-          }
-          const isInternal = isFeishuInternalError(String(bizCode));
-          const delay = isInternal ? Math.min(60000, 10000 * Math.pow(2, attempt - 1)) : Math.min(15000, 2000 * attempt);
-          await sleep(delay);
-          continue;
-        }
-        return { ok: false, error: String(bizCode || lastErr) };
-      }
-
-      if (isTransientBitableError(lastErr)) {
-        _isDataNotReady = _isDataNotReady || isDataNotReadyError(lastErr);
-        const maxNow = _isDataNotReady ? MAX_RETRIES_DATA_NOT_READY : MAX_RETRIES_NORMAL;
-        if (attempt >= maxNow) {
-          return { ok: false, error: lastErr };
-        }
-        const delay = _isDataNotReady ? 30000 : Math.min(15000, 2000 * attempt);
-        await sleep(delay);
-        continue;
-      }
-
-      return { ok: false, error: lastErr };
-    }
-  }
-
-  return { ok: false, error: lastErr };
+  return _bitableRecordsClient.getBitableRecords(configKey, options);
 }
 
 export async function getBitableRecordImageDownloadUrl(configKey = 'ops_checklist', fileToken) {
-  const token = await getBitableTenantToken();
-  if (!token) {
-    log.error('[bitable] cannot get image url: no token');
-    return null;
-  }
-
-  try {
-    // 方法1：使用 drive API 获取下载链接
-    const resp = await axios.get(
-      `https://open.feishu.cn/open-apis/drive/v1/files/${fileToken}/download_url`,
-      {
-        headers: { 'Authorization': `Bearer ${token}` },
-        timeout: 10000
-      }
-    );
-
-    const downloadUrl = resp.data?.data?.download_url || '';
-    if (downloadUrl) {
-      log.info('[bitable] got image download url for token:', fileToken);
-      return downloadUrl;
-    }
-    return null;
-  } catch (e) {
-    log.error('[bitable] get image download url failed:', e?.response?.data || e?.message);
-    
-    // 方法2：尝试使用 media API
-    try {
-      const mediaResp = await axios.get(
-        `https://open.feishu.cn/open-apis/drive/v1/medias/${fileToken}/download`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` },
-          timeout: 10000
-        }
-      );
-      
-      if (mediaResp.data) {
-        log.info('[bitable] got media download for token:', fileToken);
-        // 直接返回图片数据或临时URL
-        return `data:image/jpeg;base64,${Buffer.from(mediaResp.data).toString('base64')}`;
-      }
-    } catch (e2) {
-      log.error('[bitable] media download also failed:', e2?.response?.data || e2?.message);
-    }
-    
-    return null;
-  }
+  return _bitableRecordsClient.getBitableRecordImageDownloadUrl(configKey, fileToken);
 }
+
 
 let _processBitableData;
 export async function processBitableData(configKey, records) {
@@ -5691,6 +5509,12 @@ _archiveOldBitableSubmissions = createArchiveOldBitableSubmissions({
   pool,
   archiveThresholdDays: 7,
   deleteThresholdDays: 60,
+});
+
+_bitableRecordsClient = createBitableRecordsClient({
+  bitableConfigs: BITABLE_CONFIGS,
+  axios,
+  sleep,
 });
 
 _processBitableData = createProcessBitableData({

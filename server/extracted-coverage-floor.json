@@ -126,6 +126,7 @@
     "domains/exam-results/routes.js",
     "domains/exam-results/service.js",
     "domains/feishu-bitable/api.js",
+    "domains/feishu-bitable/bitable-records-client.js",
     "domains/feishu-bitable/archive-old-submissions.js",
     "domains/feishu-bitable/config-lookup.js",
     "domains/feishu-bitable/create-helpers.js",
