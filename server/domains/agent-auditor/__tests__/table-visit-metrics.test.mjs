@@ -38,7 +38,7 @@ test('loadUnified prefers structured rows then falls back to bitable cache', asy
   const sqls = [];
   const api = createTableVisitMetricsApi({
     pool: () => ({
-      query: async (sql, params) => {
+      query: async (sql) => {
         sqls.push(sql);
         if (/table_visit_records/i.test(sql) && /ILIKE ANY/i.test(sql)) {
           return {
