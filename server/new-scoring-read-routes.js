@@ -4,12 +4,11 @@
 
 import { calculateStoreRating, calculateEmployeeScore } from './new-scoring-model.js';
 import { inferBrandFromStoreName } from './agents.js';
-import { pool, resolveTenantIdDefault } from './utils/database.js';
+import { pool } from './utils/database.js';
 import { safeExecute } from './utils/error-handler.js';
 import { childLogger } from './utils/logger.js';
 
 const log = childLogger({ domain: 'new-scoring', handler: 'api' });
-
 
 // ─────────────────────────────────────────────
 // 门店评级API

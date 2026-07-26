@@ -167,6 +167,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **`PUT /api/state`**：白名单写入（`server/hrms-state-put.js`）；业务事实落表后从白名单删除。
 - **外提切分**：若函数 >200 行，必须同批切分，禁止整体包进 `createXxx(deps)` 闭包（见
   `server/function-size-ratchet.json`）。工厂只做装配；业务步骤提成具名导出函数。
+- **拆分收尾必跑 lint**：外提常复制死 `deps` 解构 → `no-unused-vars` error。合入前 `npm run lint`
+  （0 errors），或 `node scripts/fix-unused-vars-from-eslint.mjs` 机械收尾后再 lint。
+- 棘轮跳过目录须用路径前缀（`server/test/walk-server-js.mjs`），禁止 basename 裸匹配（如 `'reports'`
+  会误跳过 `domains/reports/`）。
 
 ### ⚠️ 共享表唯一写入方（GAAS ↔ agents-service-v2）
 

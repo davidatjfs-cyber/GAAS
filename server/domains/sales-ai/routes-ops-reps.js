@@ -1,26 +1,6 @@
-import { ensureSalesTables, listLeads, getLead } from '../../services/sales/sales-store.js';
-import { getLeadDetail } from '../../services/sales/sales-session.js';
-import {
-  buildBossDailyReport,
-  buildSalesTodoList,
-  buildRiskCustomers,
-  buildFunnelStats,
-  buildTomorrowActions,
-  buildTopHighLeads,
-  buildDemoBrief,
-  summarizeMeeting,
-} from '../../services/sales/sales-ops.js';
-import { provisionTenantFromLead, listPendingProvisioningCompensations } from '../../services/sales-provisioning.js';
-import { buildSalesBossDashboard } from '../../services/sales/sales-boss-metrics.js';
-import { buildVoiceQualityReport } from '../../services/sales/sales-voice-quality.js';
-import { listCaseAssets, recommendCasesForLead, formatCaseForSend, getCaseAsset } from '../../services/sales/sales-case-library.js';
-import { generateSalesProposal, runDeepDiagnosis } from '../../services/sales/sales-proposal.js';
-import { TRAINING_SCENARIOS, scoreTrainingResponse, recordTrainingSession, getTrainingStats } from '../../services/sales/sales-training.js';
-import { runSalesAssistantTurn, listAssistantThreads, listAssistantMessages } from '../../services/sales/sales-internal-assistant.js';
-import { validateTrialProgress, buildTrialProgressSummary } from '../../services/sales/sales-trial-monitor.js';
-import { getCreditRisk } from '../../services/sales/sales-credit-risk.js';
-import { sensitiveRateLimit } from '../../services/sales/sales-rate-limit.js';
-import { leadScopeSql, canAccessLead, canAccessRepMetrics, isManager } from '../../services/sales/sales-permissions.js';
+
+
+import { leadScopeSql, canAccessRepMetrics, isManager } from '../../services/sales/sales-permissions.js';
 import {
   listSalesReps,
   createOrUpdateSalesRep,
@@ -31,13 +11,11 @@ import {
 } from '../../services/sales/sales-rep-management.js';
 import { childLogger } from '../../utils/logger.js';
 
-const log = childLogger({ domain: 'sales-ai', handler: 'routes-ops' });
-
-
+const _log = childLogger({ domain: 'sales-ai', handler: 'routes-ops' });
 
 /** @param {{ app: any, pool: any, platformAdminRequired: Function, gates: object, sendOpsAlert?: Function }} ctx */
 export function registerSalesAiOpsRepRoutes(ctx) {
-  const { app, pool, platformAdminRequired, gates, sendOpsAlert } = ctx;
+  const { app, pool, platformAdminRequired, gates, sendOpsAlert: _sendOpsAlert } = ctx;
   const { managerGate } = gates;
 
   app.get('/api/admin/sales/reps', platformAdminRequired, async (req, res) => {

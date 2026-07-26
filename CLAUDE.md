@@ -264,6 +264,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **外提时若函数 >200 行，必须同批切分为多个具名函数/模块**，不允许整体包进 `createXxx` 闭包后合入。
 - 工厂闭包只做依赖装配与薄编排；业务步骤提成同文件或同域的具名导出函数（可单测）。
 - 存量超大函数进 allowlist 冻结（只降不升）；新增超大函数 CI 红，禁止靠扩大 allowlist 过关。
+- **拆分收尾必跑 lint**：外提会把原 `deps` 解构原样复制进新文件，极易留下死 import / 未使用解构字段（`no-unused-vars` 在非 legacy 文件是 **error**，会直接打红 CI）。合入前对改动文件执行：
+  1. `npm run lint`（须 0 errors；warnings 受 `--max-warnings` 约束）
+  2. 或机械收尾：`npx eslint "server/domains/<域>/**/*.js" -f json -o /tmp/eslint.json && node scripts/fix-unused-vars-from-eslint.mjs /tmp/eslint.json`，再 `node --check` 抽查语法后复跑 lint
+- 棘轮 `SKIP_DIRS` / exempt **禁止按目录 basename 裸匹配**（如字面量 `'reports'` 会误跳过 `domains/reports/`）。统一用 `server/test/walk-server-js.mjs` 的路径前缀跳过。
 
 ### ⚠️ @gaas/shared（跨仓共享包）
 

@@ -2,15 +2,6 @@
  * Points HTTP routes (behavior-preserving extract from index.js).
  * registerPointsRoutes(app, deps)
  */
-import {
-  bindPointsRuntimeDeps,
-  normalizePointsAdminRecordStatus,
-  mapApprovalRowToPointsAdminItem,
-  isTripleSocialMediaPointRuleItem,
-  dedupePointRulesApiItems,
-  canonicalizeStoreKeyForPoints,
-} from './helpers.js';
-
 export {
   canApplyPointsByRole,
   dedupeGlobalSocialMediaPointRules,
@@ -19,17 +10,10 @@ export {
 
 export function registerPointsMyRoutes(app, deps) {
   const {
-    pool,
     authRequired,
     getSharedState,
-    saveSharedState,
-    mergeSharedStateFields,
-    pickMyStoreFromState,
-    safeDateOnly,
-    safeMonthOnly,
     safeNumber,
     hrmsNowISO,
-    randomUUID,
   } = deps;
 
   app.get('/api/points/my', authRequired, async (req, res) => {

@@ -4,11 +4,11 @@
 export async function deliverGrowthActionWecom(ctx) {
   const {
     pool, before, payload, storeId, campaignId, actionKey, tenantId, executionResults,
-    cleanText, cleanPhone, buildActionMessage, sendWecomExternalMessage,
-    upsertDeliveryLog, insertGrowthEvent, buildSmsTemplateParam, pickSmsTemplateByStore,
-    globalSmsCapped, isPhoneSuppressed, sendAliyunSms, handleSmsFailure,
-    isSubscribePushConfigured, postSubscribePush,
-    isMemberCouponPushConfigured, postMemberCouponPush,
+    cleanText, cleanPhone: _cleanPhone, buildActionMessage, sendWecomExternalMessage,
+    upsertDeliveryLog, insertGrowthEvent, buildSmsTemplateParam: _buildSmsTemplateParam, pickSmsTemplateByStore: _pickSmsTemplateByStore,
+    globalSmsCapped: _globalSmsCapped, isPhoneSuppressed: _isPhoneSuppressed, sendAliyunSms: _sendAliyunSms, handleSmsFailure: _handleSmsFailure,
+    isSubscribePushConfigured: _isSubscribePushConfigured, postSubscribePush: _postSubscribePush,
+    isMemberCouponPushConfigured: _isMemberCouponPushConfigured, postMemberCouponPush: _postMemberCouponPush,
   } = ctx;
 
   const deliveryKey = `${actionKey}:${cleanText(payload.external_userid, 128)}:${Date.now()}`;

@@ -1,26 +1,15 @@
-import bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
-import { SYSTEM_TENANT_ID, tenantContext } from '../../utils/database.js';
-import { createEmptyTenantState } from '../../tenant-login.js';
+
+import { tenantContext } from '../../utils/database.js';
+
 import { getTenantIntegrationSummary } from '../../tenant-integrations.js';
 import {
-  agentsAdminHtmlPath,
-  platformAdminHtmlPath,
   buildTenantAlerts,
-  buildTenantLoginAccess,
   computeLicenseCountdown,
-  DEFAULT_PLATFORM_PROFILE,
-  getTenantPlatformAcceptanceReport,
-  getTenantPlatformProfile,
   mergePlatformProfile,
-  runTenantAcceptance,
-  saveTenantPlatformAcceptanceReport,
-  saveTenantPlatformProfile,
 } from './helpers.js';
 import { childLogger } from '../../utils/logger.js';
 
-const log = childLogger({ domain: 'tenant-platform', handler: 'routes-tenants' });
-
+const _log = childLogger({ domain: 'tenant-platform', handler: 'routes-tenants' });
 
 /**
  * @param {import('express').Express} app
@@ -35,7 +24,7 @@ export function registerTenantPlatformTenantsOverviewRoutes(app, deps) {
     REQUIRED_TENANT_FEISHU_TABLE_KEYS,
   } = deps;
 
-  const acceptanceOpts = {
+  const _acceptanceOpts = {
     tenantIntegrationEncryptionKey: TENANT_INTEGRATION_ENCRYPTION_KEY,
     requiredTenantFeishuTableKeys: REQUIRED_TENANT_FEISHU_TABLE_KEYS,
   };

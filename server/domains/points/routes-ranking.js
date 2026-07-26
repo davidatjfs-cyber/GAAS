@@ -3,11 +3,6 @@
  * registerPointsRoutes(app, deps)
  */
 import {
-  bindPointsRuntimeDeps,
-  normalizePointsAdminRecordStatus,
-  mapApprovalRowToPointsAdminItem,
-  isTripleSocialMediaPointRuleItem,
-  dedupePointRulesApiItems,
   canonicalizeStoreKeyForPoints,
 } from './helpers.js';
 
@@ -22,14 +17,8 @@ export function registerPointsRankingRoutes(app, deps) {
     pool,
     authRequired,
     getSharedState,
-    saveSharedState,
-    mergeSharedStateFields,
-    pickMyStoreFromState,
-    safeDateOnly,
     safeMonthOnly,
-    safeNumber,
     hrmsNowISO,
-    randomUUID,
   } = deps;
 
   app.get('/api/points/ranking', authRequired, async (req, res) => {

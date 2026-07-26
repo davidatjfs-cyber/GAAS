@@ -6,7 +6,6 @@ export function startGrowthRemindWorkers(deps) {
     pool,
     log,
     runForActiveTenants,
-    tenantContext,
     resolveTenantIdDefault,
     cleanText,
     cleanPhone,
@@ -24,16 +23,6 @@ export function startGrowthRemindWorkers(deps) {
     freqDaysEnv,
     buildRemindTargetsQuery,
     autoBackfillSmsActions,
-    recomputeCustomerProfiles,
-    backfillRedemptionAmounts,
-    runTouchRuleEngine,
-    getAllStoreWecomConfigs,
-    syncWecomContactsForStore,
-    buildGrowthDailyReport,
-    setTouchRulesAudienceGetter,
-    getSendGrowthAlert,
-    loadSegmentPhoneSet,
-    fetchGenericRuleCandidates,
   } = deps;
 
   // 后台 worker：认领 pending 的储值余额提醒任务并由 HRMS 自身逐条下发(不经小程序)。

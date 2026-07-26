@@ -2,17 +2,10 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { SYSTEM_TENANT_ID, tenantContext } from '../../utils/database.js';
 import { createEmptyTenantState } from '../../tenant-login.js';
-import { getTenantIntegrationSummary } from '../../tenant-integrations.js';
+
 import {
-  agentsAdminHtmlPath,
-  platformAdminHtmlPath,
-  buildTenantAlerts,
   buildTenantLoginAccess,
-  computeLicenseCountdown,
   DEFAULT_PLATFORM_PROFILE,
-  getTenantPlatformAcceptanceReport,
-  getTenantPlatformProfile,
-  mergePlatformProfile,
   runTenantAcceptance,
   saveTenantPlatformAcceptanceReport,
   saveTenantPlatformProfile,
@@ -20,7 +13,6 @@ import {
 import { childLogger } from '../../utils/logger.js';
 
 const log = childLogger({ domain: 'tenant-platform', handler: 'routes-tenants' });
-
 
 /**
  * @param {import('express').Express} app

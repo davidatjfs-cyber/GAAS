@@ -13,6 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { SHARED_TABLES, SHARED_TABLE_WRITERS } from '@gaas/shared';
+import { walkServerJs } from './walk-server-js.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
@@ -127,16 +128,8 @@ const REPATH_NOTES = [
 const OWNER = 'gaas';
 const keyToTable = Object.fromEntries(Object.entries(SHARED_TABLES));
 
-function walkJs(dir, out = []) {
-  if (!fs.existsSync(dir)) return out;
-  for (const name of fs.readdirSync(dir)) {
-    if (['node_modules', 'migrations', 'coverage', 'test', '.stryker-tmp', 'reports'].includes(name)) continue;
-    const p = path.join(dir, name);
-    const st = fs.statSync(p);
-    if (st.isDirectory()) walkJs(p, out);
-    else if (/\.(js|mjs)$/.test(name) && !name.includes('.test.')) out.push(p);
-  }
-  return out;
+function walkJs(dir) {
+  return walkServerJs(serverRoot, { root: dir, skipTestFiles: true });
 }
 
 function scanCrossWrites(rootAbs, owner) {

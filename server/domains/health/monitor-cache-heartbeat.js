@@ -6,15 +6,15 @@ const log = childLogger({ domain: 'health', handler: 'startup-monitors' });
 
 export async function scheduleCacheAndHeartbeat(deps) {
   const {
-    pool, runForActiveTenants, runWithBootstrapTenantContext, getSharedState,
-    mergeSharedStateFields, purgeExpiredCache, upsertLeaveDomainFromState,
-    upsertPayrollDomainFromState, getExpectedMonthlyPerformancePeriodShanghai,
-    countEligibleMonthlyPerformanceUsers, leaveAttendanceHelpers, safeErrMessage,
+    pool, runForActiveTenants, runWithBootstrapTenantContext, getSharedState: _getSharedState,
+    mergeSharedStateFields: _mergeSharedStateFields, purgeExpiredCache, upsertLeaveDomainFromState: _upsertLeaveDomainFromState,
+    upsertPayrollDomainFromState: _upsertPayrollDomainFromState, getExpectedMonthlyPerformancePeriodShanghai: _getExpectedMonthlyPerformancePeriodShanghai,
+    countEligibleMonthlyPerformanceUsers: _countEligibleMonthlyPerformanceUsers, leaveAttendanceHelpers: _leaveAttendanceHelpers, safeErrMessage: _safeErrMessage,
     allowSchemaChanges, setIntervalFn = setInterval, setTimeoutFn = setTimeout,
     beatHeartbeat, sendSystemAlert,
-    isPosSalesCheckWindow, isLeaveCumulativeSnapshotWindow,
-    findMissingPosStores, expectedStoresFromState,
-    dailyReportItemFromPgRow,
+    isPosSalesCheckWindow: _isPosSalesCheckWindow, isLeaveCumulativeSnapshotWindow: _isLeaveCumulativeSnapshotWindow,
+    findMissingPosStores: _findMissingPosStores, expectedStoresFromState: _expectedStoresFromState,
+    dailyReportItemFromPgRow: _dailyReportItemFromPgRow,
     DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN, filterStaleHeartbeats,
     formatStaleHeartbeatDeadLabel, staleHeartbeatDedupeKey,
   } = deps;

@@ -3,12 +3,8 @@
  * registerPointsRoutes(app, deps)
  */
 import {
-  bindPointsRuntimeDeps,
-  normalizePointsAdminRecordStatus,
-  mapApprovalRowToPointsAdminItem,
   isTripleSocialMediaPointRuleItem,
   dedupePointRulesApiItems,
-  canonicalizeStoreKeyForPoints,
 } from './helpers.js';
 
 export {
@@ -19,14 +15,10 @@ export {
 
 export function registerPointsRulesRoutes(app, deps) {
   const {
-    pool,
     authRequired,
     getSharedState,
     saveSharedState,
-    mergeSharedStateFields,
     pickMyStoreFromState,
-    safeDateOnly,
-    safeMonthOnly,
     safeNumber,
     hrmsNowISO,
     randomUUID,

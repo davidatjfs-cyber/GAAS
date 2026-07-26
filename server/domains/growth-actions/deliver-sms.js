@@ -3,12 +3,12 @@
  */
 export async function deliverGrowthActionSms(ctx) {
   const {
-    pool, before, payload, storeId, campaignId, actionKey, tenantId, executionResults,
-    cleanText, cleanPhone, buildActionMessage, sendWecomExternalMessage,
+    pool, before: _before, payload, storeId, campaignId, actionKey, tenantId, executionResults,
+    cleanText, cleanPhone, buildActionMessage: _buildActionMessage, sendWecomExternalMessage: _sendWecomExternalMessage,
     upsertDeliveryLog, insertGrowthEvent, buildSmsTemplateParam, pickSmsTemplateByStore,
     globalSmsCapped, isPhoneSuppressed, sendAliyunSms, handleSmsFailure,
-    isSubscribePushConfigured, postSubscribePush,
-    isMemberCouponPushConfigured, postMemberCouponPush,
+    isSubscribePushConfigured: _isSubscribePushConfigured, postSubscribePush: _postSubscribePush,
+    isMemberCouponPushConfigured: _isMemberCouponPushConfigured, postMemberCouponPush: _postMemberCouponPush,
   } = ctx;
 
   const deliveryKey = `${actionKey}:${cleanPhone(payload.phone)}:${Date.now()}`;

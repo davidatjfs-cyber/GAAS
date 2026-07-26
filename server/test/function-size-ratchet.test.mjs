@@ -3,40 +3,23 @@
  * - 声明式 function（含 export/async）超过 maxLines → 必须在 allowlist
  * - allowlist 只降不升（禁止新增超大函数后把名单做大）
  * - 外提纪律配套：createXxx 工厂闭包不得整块搬 >200 行而不切分
+ *
+ * Walk skip audit (2026-07-26): basename-only 'reports' blinded domains/reports/ — fixed via walk-server-js.mjs.
+ * Same pattern fixed in console-log-ratchet.test.mjs and shared-table-writers-gate.test.mjs.
+ * coverage-exempt.json uses path globs + forbiddenPrefixes (no basename collision).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { walkServerJs } from './walk-server-js.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
-const SKIP_DIRS = new Set([
-  'node_modules',
-  'coverage',
-  'dist',
-  '.git',
-  'tmp',
-  'test',
-  '.stryker-tmp',
-  'reports',
-]);
 
 const FN_RE =
   /^(?<indent>\s*)(?:export\s+)?(?:async\s+)?function\s+(?<name>\w+)\s*\(/;
-
-function walkJs(dir, out = []) {
-  if (!fs.existsSync(dir)) return out;
-  for (const name of fs.readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const p = path.join(dir, name);
-    const st = fs.statSync(p);
-    if (st.isDirectory()) walkJs(p, out);
-    else if (/\.(js|mjs)$/.test(name)) out.push(p);
-  }
-  return out;
-}
 
 function scanOversizedFunctions(absPath, maxLines) {
   const lines = fs.readFileSync(absPath, 'utf8').split('\n');
@@ -97,9 +80,8 @@ test('server 运行时单函数 >maxLines 必须在 allowlist；allowlist 无幽
   const offenders = [];
   const present = new Set();
 
-  for (const abs of walkJs(serverRoot)) {
+  for (const abs of walkServerJs(serverRoot)) {
     const rel = path.relative(serverRoot, abs).replace(/\\/g, '/');
-    // package root relative key matches ratchet: server/...
     const keyPrefix = `server/${rel}`;
     for (const fn of scanOversizedFunctions(abs, maxLines)) {
       const key = `${keyPrefix}::${fn.name}`;

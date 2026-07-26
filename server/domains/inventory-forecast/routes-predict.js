@@ -2,33 +2,7 @@
  * Inventory forecast HTTP routes — thin handlers.
  * Business logic lives in service.js; multer upload stays here.
  */
-import fs from 'fs';
 import {
-  listHistory,
-  clearHistory,
-  batchHistory,
-  uploadHistoryFile,
-  uploadHistoryImage,
-  uploadSalesRaw,
-  listDishAliases,
-  createDishAlias,
-  updateDishAlias,
-  deleteDishAlias,
-  listCoreProducts,
-  createCoreProduct,
-  deleteCoreProduct,
-  listProductAliases,
-  createProductAlias,
-  updateProductAlias,
-  deleteProductAlias,
-  getCoreProductSales,
-  getAnalytics,
-  estimateRevenue,
-  listGrossProfitProfiles,
-  upsertGrossProfitProfiles,
-  updateGrossProfitProfile,
-  deleteGrossProfitProfile,
-  estimateGrossMargin,
   getAccuracy,
   predictForecast
 } from './service.js';
@@ -46,7 +20,7 @@ function sendOk(res, result, { keepOk = false } = {}) {
 }
 
 export function registerInventoryForecastPredictRoutes(app, deps) {
-  const { authRequired, upload, ...rest } = deps;
+  const { authRequired, upload: _upload, ...rest } = deps;
   const ctx = { ...rest };
 
   app.get('/api/reports/inventory-forecast/accuracy', authRequired, async (req, res) => {

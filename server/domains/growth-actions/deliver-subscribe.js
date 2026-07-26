@@ -3,12 +3,12 @@
  */
 export async function deliverGrowthActionSubscribe(ctx) {
   const {
-    pool, before, payload, storeId, campaignId, actionKey, tenantId, executionResults,
-    cleanText, cleanPhone, buildActionMessage, sendWecomExternalMessage,
-    upsertDeliveryLog, insertGrowthEvent, buildSmsTemplateParam, pickSmsTemplateByStore,
-    globalSmsCapped, isPhoneSuppressed, sendAliyunSms, handleSmsFailure,
+    pool, before: _before, payload, storeId, campaignId, actionKey, tenantId, executionResults,
+    cleanText, cleanPhone, buildActionMessage: _buildActionMessage, sendWecomExternalMessage: _sendWecomExternalMessage,
+    upsertDeliveryLog, insertGrowthEvent, buildSmsTemplateParam: _buildSmsTemplateParam, pickSmsTemplateByStore: _pickSmsTemplateByStore,
+    globalSmsCapped: _globalSmsCapped, isPhoneSuppressed: _isPhoneSuppressed, sendAliyunSms: _sendAliyunSms, handleSmsFailure: _handleSmsFailure,
     isSubscribePushConfigured, postSubscribePush,
-    isMemberCouponPushConfigured, postMemberCouponPush,
+    isMemberCouponPushConfigured: _isMemberCouponPushConfigured, postMemberCouponPush: _postMemberCouponPush,
   } = ctx;
 
   // 订阅消息通道：POST 到云函数代发网关。订阅消息平台硬约束——只能发给已点过

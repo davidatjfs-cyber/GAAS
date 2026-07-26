@@ -3,11 +3,11 @@
  */
 export async function deliverGrowthActionMember(ctx) {
   const {
-    pool, before, payload, storeId, campaignId, actionKey, tenantId, executionResults,
-    cleanText, cleanPhone, buildActionMessage, sendWecomExternalMessage,
-    upsertDeliveryLog, insertGrowthEvent, buildSmsTemplateParam, pickSmsTemplateByStore,
-    globalSmsCapped, isPhoneSuppressed, sendAliyunSms, handleSmsFailure,
-    isSubscribePushConfigured, postSubscribePush,
+    pool, before: _before, payload, storeId, campaignId, actionKey, tenantId, executionResults,
+    cleanText, cleanPhone, buildActionMessage: _buildActionMessage, sendWecomExternalMessage: _sendWecomExternalMessage,
+    upsertDeliveryLog, insertGrowthEvent, buildSmsTemplateParam: _buildSmsTemplateParam, pickSmsTemplateByStore: _pickSmsTemplateByStore,
+    globalSmsCapped: _globalSmsCapped, isPhoneSuppressed: _isPhoneSuppressed, sendAliyunSms: _sendAliyunSms, handleSmsFailure: _handleSmsFailure,
+    isSubscribePushConfigured: _isSubscribePushConfigured, postSubscribePush: _postSubscribePush,
     isMemberCouponPushConfigured, postMemberCouponPush,
   } = ctx;
 
