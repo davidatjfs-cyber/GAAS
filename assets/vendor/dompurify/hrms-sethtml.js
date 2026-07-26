@@ -3,9 +3,9 @@
  *
  * ⚠️ 防护边界（务必如实）：
  * - 已拦：`<script>` / `<iframe>` / `javascript:` 等。
- * - **不拦**：事件属性 XSS（`onerror` / `onload` / `onclick` / `onfocus` …）。
- *   因前端仍有大量 inline `onclick` 等，ADD_ATTR 放行了全部 `on*`；在消灭这些
- *   inline handler 之前，**不能**把 B7 当成「XSS 已解决」。
+ * - 已拦：`onclick` / `onerror` / `onload` 等危险事件属性（P5.1 onclick 清零后收紧）。
+ * - **仍放行（过渡）**：`onchange` / `oninput` / `onsubmit` / `onfocus` / `onblur`
+ *   ——前端模板里仍有遗留 inline handler；迁完后再从 ADD_ATTR 移除，才能宣称事件属性 XSS 已关。
  * - 前提：写入 innerHTML 的内容须来自可信模板/服务端，不能把用户原文当 HTML 拼进去。
  *
  * fail-closed：DOMPurify 未加载时返回空串（并 console.error），禁止原样放行。
@@ -14,16 +14,14 @@
 (function (global) {
   'use strict';
 
-  var EVENT_ATTRS = [
-    'onclick', 'ondblclick', 'onchange', 'oninput', 'onsubmit',
-    'onfocus', 'onblur', 'onkeyup', 'onkeydown', 'onkeypress',
-    'onmousedown', 'onmouseup', 'onmouseover', 'onmouseout', 'onmousemove',
-    'ontouchstart', 'ontouchend', 'ontouchmove',
-    'onload', 'onerror', 'onscroll', 'onpaste', 'oncut', 'oncopy',
+  /** 过渡白名单：仅保留 working-fixed / pages 仍在使用的 inline 事件属性。 */
+  var LEGACY_EVENT_ATTRS = [
+    'onchange', 'oninput', 'onsubmit',
+    'onfocus', 'onblur',
   ];
 
   var CFG = {
-    ADD_ATTR: EVENT_ATTRS.concat(['target', 'rel', 'download']),
+    ADD_ATTR: LEGACY_EVENT_ATTRS.concat(['target', 'rel', 'download']),
     ADD_DATA_URI_TAGS: ['a', 'img'],
     ALLOW_DATA_ATTR: true,
     FORCE_BODY: false,
