@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
 
 /** 历史地板：只升不降（随 Phase 上调整数档） */
-const RATCHET_FLOOR = { lines: 59, branches: 66, functions: 62 };
+const RATCHET_FLOOR = { lines: 66, branches: 67, functions: 70 };
 
 /** 合并棘轮历史地板：追平 CI 实测后抬升 */
 const MERGED_RATCHET_FLOOR = { lines: 62, branches: 68, functions: 61, minIndexJsLines: 48 };

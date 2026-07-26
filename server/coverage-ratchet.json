@@ -1,7 +1,7 @@
 {
-  "lines": 65,
+  "lines": 66,
   "branches": 67,
-  "functions": 68,
+  "functions": 70,
   "updated": "2026-07-26",
-  "note": "单测棘轮：本地实测约 66.49/67.90/69.69（+tenant-operation-inspection/tenant-onboarding/tenant-health-center、sales-ops、sms 等单测）。抬至 65/67/68（约 1pp 缓冲）。只升不降。"
+  "note": "单测棘轮：本地实测约 67.40/68.46/71.33（+demand-governance/execution-ledger、sales privacy/scoring/tags/timeline/SLA/trial/price/rate-limit、inventory-forecast accuracy 等单测）。抬至 66/67/70（约 1pp 缓冲）。只升不降。"
 }
