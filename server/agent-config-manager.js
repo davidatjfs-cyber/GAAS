@@ -22,37 +22,49 @@ export { DEFAULT_BI_AGENT_CONFIG, DEFAULT_OPS_AGENT_CONFIG };
 
 const log = childLogger({ domain: 'agent-config-manager', handler: 'manager' });
 
-const {
-  clearAgentRuleCache,
-  getAgentRules,
-  getCategoryAssigneeRoleMap,
-  getIssueScoreRulesMap,
-  clearAgentConfigCache,
-  getAgentConfigs,
-  getAgentConfig,
-  getOpsAgentConfig,
-  clearOpsAgentConfigCache,
-  getBiAgentConfig,
-  clearBiAgentConfigCache,
-  getEmployeeRatingConfig,
-  clearEmployeeRatingConfigCache,
-} = createAgentConfigLoaders({ pool, log });
+// Function exports (not const re-exports): keep live bindings hoisted so
+// agents.js ↔ master-agent ↔ agent-config-manager cycles do not hit TDZ.
+const loaders = createAgentConfigLoaders({ pool, log });
 
-export {
-  clearAgentRuleCache,
-  getAgentRules,
-  getCategoryAssigneeRoleMap,
-  getIssueScoreRulesMap,
-  clearAgentConfigCache,
-  getAgentConfigs,
-  getAgentConfig,
-  getOpsAgentConfig,
-  clearOpsAgentConfigCache,
-  getBiAgentConfig,
-  clearBiAgentConfigCache,
-  getEmployeeRatingConfig,
-  clearEmployeeRatingConfigCache,
-};
+export function clearAgentRuleCache() {
+  return loaders.clearAgentRuleCache();
+}
+export function getAgentRules() {
+  return loaders.getAgentRules();
+}
+export function getCategoryAssigneeRoleMap() {
+  return loaders.getCategoryAssigneeRoleMap();
+}
+export function getIssueScoreRulesMap() {
+  return loaders.getIssueScoreRulesMap();
+}
+export function clearAgentConfigCache() {
+  return loaders.clearAgentConfigCache();
+}
+export function getAgentConfigs() {
+  return loaders.getAgentConfigs();
+}
+export function getAgentConfig(agentId) {
+  return loaders.getAgentConfig(agentId);
+}
+export function getOpsAgentConfig() {
+  return loaders.getOpsAgentConfig();
+}
+export function clearOpsAgentConfigCache() {
+  return loaders.clearOpsAgentConfigCache();
+}
+export function getBiAgentConfig() {
+  return loaders.getBiAgentConfig();
+}
+export function clearBiAgentConfigCache() {
+  return loaders.clearBiAgentConfigCache();
+}
+export function getEmployeeRatingConfig() {
+  return loaders.getEmployeeRatingConfig();
+}
+export function clearEmployeeRatingConfigCache() {
+  return loaders.clearEmployeeRatingConfigCache();
+}
 
 
 // ─── Feature Flags（降级开关）────────────────────────────────
