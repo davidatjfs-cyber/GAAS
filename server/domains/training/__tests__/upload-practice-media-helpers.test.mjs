@@ -52,7 +52,7 @@ test('buildJudgmentPrompt includes practice task', () => {
 });
 
 test('scorePracticeMediaWithRubric: image with parsed JSON', async () => {
-  const parseScoringJson = (raw) => ({
+  const parseScoringJson = (_raw) => ({
     aiVerdict: 'passed',
     aiFeedback: '很好',
     aiStepScores: [{ name: '切配', score: 10 }],
