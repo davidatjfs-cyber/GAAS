@@ -65,6 +65,12 @@ export async function runSolutionSweep(deps) {
 
 let _sweepTimer = null;
 
+/** @internal test-only */
+export function __resetSolutionSweepSchedulerForTests() {
+  if (_sweepTimer) clearInterval(_sweepTimer);
+  _sweepTimer = null;
+}
+
 export function startSolutionSweepScheduler(runSweep) {
   if (_sweepTimer) return;
   _sweepTimer = setInterval(() => {
