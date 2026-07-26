@@ -1,6 +1,7 @@
 /**
  * Customer-ops report builders (P5.4 extract from customer-ops.js).
  */
+import { SHARED_TABLES } from '@gaas/shared';
 import {
   cleanText,
   resolveCustomerOpsStoreFilter,

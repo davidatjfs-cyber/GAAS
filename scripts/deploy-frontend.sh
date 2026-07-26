@@ -90,3 +90,26 @@ if [[ "$HTTP_ASSET" != "200" || "$HTTP_ROOT" != "200" ]]; then
   exit 1
 fi
 echo "✅ 前端部署成功：$JS_HASH / $CSS_HASH"
+
+# === 6. 归档历史哈希资源（防止 web root 无限堆积）===
+# 2026-07-27 清理前实测：web root 积压 157 个 app.*.js/css 共 318MB，从 6 月起从未清理。
+# 策略：保留「当前 shell 引用的」+「最近 KEEP_RECENT 个」，其余 mv 到 web root 之外的归档目录。
+# 只移动不删除；保留最近若干份是为了回滚，以及给仍持有旧 shell 的浏览器留缓冲。
+KEEP_RECENT="${FRONTEND_ASSET_KEEP_RECENT:-3}"
+echo "=== 6. 归档历史资源（保留当前引用 + 最近 ${KEEP_RECENT} 个）==="
+"${SSH[@]}" "set -e
+cd '$REMOTE_DIR'
+ARCH=/opt/hrms-archive/frontend-assets-\$(date +%s)
+INUSE=\$(grep -oE 'app\.[a-f0-9]+\.(js|css)' working-fixed.html 2>/dev/null | sort -u)
+# 必须压成单行空格分隔：ls/grep 输出是换行分隔，直接用会让下面的 case 空格匹配失效，
+# 从而把「正在使用的」文件也归档掉（干跑时实测踩到过，会导致站点白屏）。
+KEEP=\$(printf '%s %s %s' \"\$INUSE\" \"\$(ls -t app.*.js 2>/dev/null | head -${KEEP_RECENT})\" \"\$(ls -t app.*.css 2>/dev/null | head -${KEEP_RECENT})\" | tr '\n' ' ' | tr -s ' ')
+moved=0
+for f in app.*.js app.*.css; do
+  [ -e \"\$f\" ] || continue
+  case \" \$KEEP \" in *\" \$f \"*) continue;; esac
+  mkdir -p \$ARCH && mv \"\$f\" \$ARCH/ && moved=\$((moved+1))
+done
+if [ \$moved -gt 0 ]; then echo \"  已归档 \$moved 个历史资源 → \$ARCH\"; else echo '  无需归档'; fi
+echo \"  web root 现存: \$(ls app.*.js app.*.css 2>/dev/null | wc -l) 个\"
+"
