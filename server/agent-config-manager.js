@@ -661,17 +661,7 @@ export async function ensureAgentConfigTables() {
   }
 }
 
-export function registerAgentConfigRoutes(app, authRequired) {
-  const assertAdmin = (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager', 'hr_manager'].includes(role) && !role.startsWith('custom_')) {
-      res.status(403).json({ error: 'forbidden' });
-      return false;
-    }
-    return true;
-  };
-
-  // === Agent Configs ===
+function registerAgentConfigCoreRoutes(app, authRequired) {
   app.get('/api/admin/agents/configs', authRequired, async (req, res) => {
     if (!assertAdmin(req, res)) return;
     try {
@@ -826,6 +816,9 @@ export function registerAgentConfigRoutes(app, authRequired) {
   });
 
   // === Prompt Templates ===
+}
+
+function registerAgentTemplateRoutes(app, authRequired) {
   app.get('/api/admin/agents/templates', authRequired, async (req, res) => {
     if (!assertAdmin(req, res)) return;
     const agentId = String(req.query?.agent_id || '').trim();
@@ -922,6 +915,9 @@ export function registerAgentConfigRoutes(app, authRequired) {
   });
 
   // === HR 员工评级模型配置 ===
+}
+
+function registerAgentDomainConfigRoutes(app, authRequired) {
   app.get('/api/admin/hr/employee-rating-config', authRequired, async (req, res) => {
     if (!assertAdmin(req, res)) return;
     try {
@@ -1051,6 +1047,9 @@ export function registerAgentConfigRoutes(app, authRequired) {
     }
   });
 
+}
+
+function registerAgentRulesRoutes(app, authRequired) {
   app.get('/api/admin/agents/rules', authRequired, async (req, res) => {
     if (!assertAdmin(req, res)) return;
     try {
@@ -1105,6 +1104,14 @@ export function registerAgentConfigRoutes(app, authRequired) {
   // 角色模块权限：唯一权威为 domains/flow-config（GET/PUT /api/role-modules）。
   // 此处不再注册影子 GET /api/role-modules 与 PUT /api/admin/role-modules，避免双写/无镜像。
 }
+
+export function registerAgentConfigRoutes(app, authRequired) {
+  registerAgentConfigCoreRoutes(app, authRequired);
+  registerAgentTemplateRoutes(app, authRequired);
+  registerAgentDomainConfigRoutes(app, authRequired);
+  registerAgentRulesRoutes(app, authRequired);
+}
+
 
 // 缓存相关的辅助函数
 let cachedRules = null;
