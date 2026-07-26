@@ -1,7 +1,7 @@
 {
-  "lines": 61,
-  "branches": 66,
-  "functions": 64,
+  "lines": 63,
+  "branches": 67,
+  "functions": 66,
   "updated": "2026-07-26",
-  "note": "单测棘轮：本地实测约 62.06/67.22/64.99（+P5.4 helper 单测）。抬至 61/66/64（约 1pp 缓冲）。只升不降。"
+  "note": "单测棘轮：本地实测约 64.70/68.17/67.16（+error-handler/dine-metrics/sla-utils/knowledge-helpers/diagnosis-tree 单测）。抬至 63/67/66（约 1pp 缓冲）。只升不降。"
 }
