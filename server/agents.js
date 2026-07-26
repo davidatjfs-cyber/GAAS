@@ -45,45 +45,16 @@ import {
   isOpenIdCrossAppFeishuError,
   refreshFeishuUserOpenIdForImDeliveryHrms
 } from './utils/feishu-open-id-cross-app.js';
-import { handleMarginMessage } from './margin-message-handler.js';
 import { deduplicateMessage } from './message-deduplication.js';
 import { getOpsAgentConfig, getBiAgentConfig, AGENT_FEATURE_FLAGS } from './agent-config-manager.js';
-import {
-  buildOpsChecklistResponse,
-  formatActiveTaskContext,
-  isShortOptionReply,
-} from './domains/agent-message/helpers.js';
-import { tryHandleTrainingFlows } from './domains/agent-message/training-flow.js';
 import { tryBiDeterministicCascade } from './domains/agent-message/bi-deterministic-cascade.js';
-import {
-  loadChiefEvaluatorEmployeeContext,
-  tryHandleChiefEvaluatorScore,
-} from './domains/agent-message/evaluator-helpers.js';
-import { applyPostRouteQualityGates } from './domains/agent-message/post-route-quality.js';
 import {
   buildEvidencePackage,
   detectFactDemand,
   isDataBackedReply,
-  needsAutonomousDataTask,
 } from './domains/agent-message/quality-helpers.js';
-import {
-  maybeInheritRecentRoute,
-  resolveDataAuditorStore,
-  resolveHqStoreFromText,
-} from './domains/agent-message/store-resolve.js';
-import {
-  formatKnowledgeBaseContext,
-  formatTrainingTasksContext,
-} from './domains/agent-message/training-context.js';
-import {
-  buildOpsSupervisorLlmSystemPrompt,
-  tryHandleOpsSupervisorImages,
-} from './domains/agent-message/ops-supervisor-helpers.js';
-import {
-  buildAppealSystemPrompt,
-  buildAppealUserMessage,
-  buildGeneralAssistantSystemPrompt,
-} from './domains/agent-message/prompt-helpers.js';
+import { resolveDataAuditorStore } from './domains/agent-message/store-resolve.js';
+import { createHandleAgentMessage } from './domains/agent-message/handle-agent-message.js';
 import {
   buildKpiRadarAlertJson,
   createRunDataAuditor,
@@ -101,7 +72,6 @@ import {
   calendarLastCompletedWeekMonSunShanghai
 } from './bi-weekly-report.js';
 import { extractRelationsFromBitableRecord } from './knowledge-graph.js';
-import { handleHqBrainMessage } from './hq-planner-agent.js';
 import {
   feishuStoreSearchPatterns,
   dailyReportIlikePatterns,
@@ -8507,124 +8477,21 @@ ${contextStr}
 // 10. Agent Response Generator
 // ─────────────────────────────────────────────
 
+// Wave A2a: orchestration → domains/agent-message/handle-agent-message.js
+// data_auditor case body remains here as handleDataAuditorCase (inject).
+let _handleAgentMessage;
 export async function handleAgentMessage(senderUsername, senderName, senderStore, senderRole, senderBrandContext, text, imageUrls) {
-  const hasImage = Array.isArray(imageUrls) && imageUrls.length > 0;
-  let routeRes = await routeMessage(text, hasImage, senderUsername);
-  let route = routeRes.route;
-  
-  if (route === 'clarify') {
-    return prefixWithAgentName('master', routeRes.message || '请问您具体想咨询哪个方面的问题？');
-  }
+  return _handleAgentMessage(senderUsername, senderName, senderStore, senderRole, senderBrandContext, text, imageUrls);
+}
 
-  // ── Session State 管理（Feature Flag 保护）───────────────────
-  let sessionState = null;
-  if (AGENT_FEATURE_FLAGS.enable_session_state) {
-    try {
-      sessionState = await getSessionState(senderUsername);
-      // 若会话超过2小时或状态已关闭，重置为新会话
-      if (sessionState && sessionState.created_at) {
-        const ageMs = Date.now() - new Date(sessionState.created_at).getTime();
-        if (ageMs > 2 * 60 * 60 * 1000 || sessionState.status === 'closed') {
-          sessionState = null;
-        }
-      }
-    } catch (e) {
-      logExecutorEvent('session_state_load_error', { username: senderUsername, error: e?.message });
-    }
-  }
-
-  if (!sessionState) {
-    sessionState = {
-      task_id: randomUUID(),
-      route: null,
-      intent: null,
-      metrics_requested: [],
-      metrics_returned: [],
-      metric_versions: {},
-      time_range: null,
-      store: null,
-      status: 'active',
-      created_at: new Date().toISOString()
-    };
-  }
-
-  let store = senderStore;
-
-  // 【Q6】HQ/admin：从消息文本解析门店（domains/agent-message）
-  if (!store || store === '总部') {
-    store = await resolveHqStoreFromText(pool(), text, store);
-  }
-
-  // 【Q5】查询用户近期活跃任务，注入上下文提升交互质量
-  let activeTaskContext = '';
-  try {
-    const taskR = await pool().query(
-      `SELECT task_id, category, severity, title, detail, status, created_at FROM master_tasks WHERE assignee_username=$1 AND status IN ('pending','pending_response','in_progress') ORDER BY created_at DESC LIMIT 3`,
-      [senderUsername]
-    );
-    activeTaskContext = formatActiveTaskContext(taskR.rows);
-  } catch(e) { /* ignore */ }
-  
-  // 【修复】短回复继承上一轮 Agent（domains/agent-message）
-  if (route === 'general' && isShortOptionReply(text)) {
-    route = await maybeInheritRecentRoute(pool(), senderUsername, route);
-  }
-
-  // ── HQ Brain 路由: 总部角色优先走决策大脑 ──
-  try {
-    console.log(`[agents] HQ Brain check: role=${senderRole}, text="${text?.slice(0, 40)}"`);
-    const hqResult = await handleHqBrainMessage({
-      text, role: senderRole, username: senderUsername, store
-    });
-    if (hqResult?.handled) {
-      console.log(`[agents] HQ Brain handled: ${hqResult.response?.slice(0, 60)}`);
-      return prefixWithAgentName('master', hqResult.response || '');
-    }
-  } catch (e) {
-    console.error('[agents] HQ Brain routing error:', e?.message, e?.stack?.split('\n')[1]);
-  }
-
-  // 培训审批 / 考核 / 答卷（domains/agent-message）
-  {
-    const training = await tryHandleTrainingFlows(pool(), {
-      text,
-      senderRole,
-      senderUsername,
-      route,
-    });
-    if (training.handled) return training.response;
-  }
-
-  // 检查是否为毛利率消息
-  if (text.includes('毛利率') && text.includes('%')) {
-    try {
-      const result = await handleMarginMessage(text);
-      if (result.success) {
-        return `毛利率数据已收到并保存：${JSON.stringify(result)}`;
-      }
-    } catch (e) {
-      console.error('[agents] margin message error:', e?.message);
-    }
-  }
-  
-  const brand = String(senderBrandContext?.brandName || '').trim();
-  const brandId = String(senderBrandContext?.brandId || '').trim();
-  const brandTag = brandId ? `brand:${brandId}` : '';
-  const brandConfig = getBrandRuntimeConfig(await getSharedState(), senderBrandContext);
-
+async function handleDataAuditorCase(ctx) {
+  const {
+    text, route, routeRes, store, brand, brandId, brandConfig,
+    senderRole, senderUsername, senderName, sessionState, activeTaskContext,
+  } = ctx;
   let response = '';
   let agentData = { route, brandId, brandConfig };
 
-  // ── 更新 session state 中的 route/intent/store ───────────
-  sessionState.route = route;
-  sessionState.intent = routeRes.intent || sessionState.intent;
-  sessionState.store = store || sessionState.store;
-  if (routeRes.time_range) sessionState.time_range = routeRes.time_range;
-  setSessionState(senderUsername, sessionState).catch(() => {});
-
-  try {
-    switch (route) {
-      case 'data_auditor': {
 
         // ── [顶层门店解析] domains/agent-message ──
         const resolvedStore = await resolveDataAuditorStore(pool(), {
@@ -8766,7 +8633,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
         if (biDet.handled) {
           response = biDet.response;
           agentData = biDet.agentData;
-          break;
+        return { response, agentData };
         }
 
         // ── Function Calling fallback (after deterministic handlers) ──
@@ -8784,14 +8651,14 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
             deterministic: true, functionCalling: true,
             ...fcHandled.meta
           };
-          break;
+        return { response, agentData };
         }
 
         // ── Data Executor fallback: use if no deterministic handler matched ──
         if (typeof _dxFallbackResponse === 'string' && _dxFallbackResponse) {
           response = _dxFallbackResponse;
           agentData = _dxFallbackAgentData;
-          break;
+        return { response, agentData };
         }
 
         const isFactQuestion = isFactLikeQuestion(text);
@@ -8801,7 +8668,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
           const auditText = buildBiSourceAuditText(sourceAuditRows);
           response = `当前问题需要的数据源暂无可用样本，无法给出确定性结论。\n\n数据源检查：\n${auditText}\n\n请先完成数据同步/启用后重试。`;
           agentData = { route, store, brand, brandId, brandConfig, grounded: false, reason: 'insufficient_sources', sourceAuditRows };
-          break;
+        return { response, agentData };
         }
 
         // 先查异常数据作为上下文
@@ -8823,7 +8690,7 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
         if (askReviewLike && hasInsufficientFacts && !issueContext) {
           response = '当前系统可用样本不足，暂时无法给出准确的“近7天差评/桌访问题次数”结论。建议先确认飞书差评表与桌访表是否已入库，再让我输出精确明细（含桌号/时段/原文）。';
           agentData = { route, store, brand, brandId, brandConfig, grounded: false, reason: 'insufficient_facts' };
-          break;
+        return { response, agentData };
         }
 
         const biLlm = await callLLM([
@@ -8841,285 +8708,10 @@ ${groundingFacts ? '可用事实：'+groundingFacts : ''}
         updateContext(senderUsername, 'user', text);
         updateContext(senderUsername, 'assistant', response);
         agentData = { route, store, brand, brandId, brandConfig, sourceAuditRows, grounded: !!groundingFacts, groundingFacts };
-        break;
-      }
-
-      case 'ops_supervisor': {
-        // 图片审核（domains/agent-message）
-        if (hasImage) {
-          const imgHit = await tryHandleOpsSupervisorImages(
-            { imageUrls, store, brand, senderUsername, route, brandId, brandConfig },
-            { auditImage }
-          );
-          if (imgHit.handled) {
-            response = imgHit.response;
-            agentData = imgHit.agentData;
-            break;
-          }
-        }
-
-        let knowledgeSupport = null;
-        // 检查是否为检查表请求（domains/agent-message）
-        const dbChecklist =
-          brand === '洪潮' || brand === '马己仙'
-            ? getBrandConfigSync(brand, resolveTenantIdDefault())?.checklist
-            : null;
-        const checklistResponse = buildOpsChecklistResponse({
-          text,
-          brand,
-          store,
-          brandChecklist: dbChecklist,
-        });
-
-        if (checklistResponse) {
-          response = checklistResponse;
-        } else {
-          knowledgeSupport = await getOpsKnowledgeSupport(text, { store, brand });
-          if (knowledgeSupport.type === 'standard' || knowledgeSupport.type === 'knowledge_base') {
-            response = knowledgeSupport.response;
-          } else {
-            const llm = await callLLM([
-              {
-                role: 'system',
-                content: buildOpsSupervisorLlmSystemPrompt({ store, brand, activeTaskContext }),
-              },
-              { role: 'user', content: text },
-            ], { model: getOpsReasoningModel(), role: senderRole, purpose: 'reasoning', temperature: 0.05, max_tokens: 360 });
-            response = llm.content || '收到，我会跟进处理。';
-          }
-        }
-
-        agentData = { route, knowledgeSupport: knowledgeSupport?.type, brandId, brandConfig };
-        break;
-      }
-
-      case 'chief_evaluator': {
-        // 绩效分数查询（domains/agent-message）
-        const scoreHit = await tryHandleChiefEvaluatorScore(pool(), {
-          text,
-          senderUsername,
-          senderName,
-        });
-        if (scoreHit.handled) {
-          response = scoreHit.response;
-          agentData = { route, brandId, brandConfig, dataBacked: true };
-          break;
-        }
-
-        // HR流程问题：员工上下文 + LLM（带 Check Agent 质检）
-        const employeeContext = await loadChiefEvaluatorEmployeeContext(getSharedState, {
-          senderRole,
-          store,
-        });
-        const hrSystemPrompt = `你是"小年"，年年有喜餐饮集团AI助理，当前协助人事管理。当前时间：${new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}。门店：${store}（${brand}）。用户：${senderName}（${senderRole === 'store_manager' ? '店长' : senderRole === 'store_production_manager' ? '出品经理' : '员工'}）。\n\n职责：离职/入职/转正/晋升/调岗流程、薪资咨询、请假/休假/考勤、社保/档案、绩效规则、员工信息查询。\n\n严格约束：\n- 只能基于下方员工资料回答员工相关问题，禁止编造不在列表中的员工信息。\n- 禁止编造日期，当前真实日期以上方为准。\n- 可以说明一般流程和政策框架，但涉及具体数字必须基于数据。\n回复不超过300字。${employeeContext}${activeTaskContext}`;
-        const hrContext = getContext(senderUsername).slice(-4);
-        response = await runWithCheckAgent(text, 'chief_evaluator', async (checkFeedback) => {
-          const extraNote = checkFeedback ? `\n\n【质检反馈，请修正后重新回答】${checkFeedback}` : '';
-          const hrLlm = await callLLM([
-            { role: 'system', content: hrSystemPrompt + extraNote },
-            ...hrContext,
-            { role: 'user', content: text }
-          ], { role: senderRole, purpose: 'reasoning', temperature: 0.05, max_tokens: 420 });
-          return hrLlm.content || '收到，我会为您查询相关信息并尽快回复。';
-        });
-        updateContext(senderUsername, 'user', text);
-        updateContext(senderUsername, 'assistant', response);
-        agentData = { route, brandId, brandConfig, dataBacked: false };
-        break;
-      }
-
-      case 'appeal': {
-        const appealSystemPrompt = buildAppealSystemPrompt({ activeTaskContext });
-        const appealContext = getContext(senderUsername);
-        const appealUserMsg = buildAppealUserMessage({ senderName, store, senderRole, text });
-        response = await runWithCheckAgent(text, 'appeal', async (checkFeedback) => {
-          const extraNote = checkFeedback ? `\n\n【质检反馈，请修正后重新回答】${checkFeedback}` : '';
-          const llm = await callLLM([
-            { role: 'system', content: appealSystemPrompt + extraNote },
-            ...appealContext,
-            { role: 'user', content: appealUserMsg }
-          ], { role: senderRole, purpose: 'reasoning', temperature: 0.05, max_tokens: 360 });
-          return llm.content || '已记录，我们将在24小时内核实并回复。';
-        });
-        try {
-          await pool().query(`INSERT INTO agent_appeals (username, reason, status) VALUES ($1, $2, 'pending')`, [senderUsername, text]);
-        } catch (e) { /* ignore */ }
-        agentData = { route, appealRecorded: true };
-        break;
-      }
-
-      case 'train_advisor':
-      case 'sop_advisor': {
-        // Query knowledge base for relevant SOP & training content
-        let kbContext = '';
-        let kbResults = [];
-        try {
-          let kbPos = '';
-          try {
-            kbPos = await getEmployeePositionForKb(senderUsername);
-          } catch (e) {
-            kbPos = '';
-          }
-          kbResults = await queryKnowledgeBase(['sop', '流程', '标准', '规范', '培训', '课件', '带教'], text, 3, {
-            brandTag,
-            skipKnowledgeAudienceFilter: false,
-            userRole: senderRole,
-            userStore: store,
-            userPosition: kbPos
-          });
-          kbContext = formatKnowledgeBaseContext(kbResults);
-        } catch (e) { /* ignore */ }
-
-        // 查阅该用户的培训记录（domains/agent-message）
-        let trainingTasksContext = '';
-        try {
-          const tasks = await pool().query(
-            `SELECT task_id, type, title, status, due_date, progress_data FROM training_tasks 
-             WHERE assignee_username = $1 ORDER BY created_at DESC LIMIT 5`,
-            [senderUsername]
-          );
-          trainingTasksContext = formatTrainingTasksContext(tasks.rows);
-        } catch (e) {
-          console.error('[train_advisor] fetch training tasks error:', e?.message);
-        }
-
-        // 构建增强的prompt（SOP + 培训双能力）
-        const trainingFocusText = brandConfig?.trainingFocus?.length ? `\n品牌培训重点：${brandConfig.trainingFocus.join('；')}` : '';
-        const systemPrompt = `你是"小年"，年年有喜餐饮集团AI助理，当前协助培训与标准化咨询。当前时间：${new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}。严格约束：禁止编造任何数据（员工人数、薪资日期等），无数据时说明"暂无此信息"。严格执行品牌隔离。${brandConfig?.sopKeypoints?.length ? `\n品牌SOP关键点：${brandConfig.sopKeypoints.join('；')}` : ''}${trainingFocusText}
-
-你的核心能力：
-【SOP标准咨询】流程规范查询、操作指导、赔付退款处理、品牌差异化SOP
-【培训战略体系】制定培训战略、搭建人才发展与梯队培养框架、领导力发展、管培生/内训师体系设计、年度培训预算与计划、对接业务部门做培训需求分析、主导管理层培训与关键岗位赋能、企业文化落地、管理培训团队与讲师资源、评估培训效果与ROI
-【基础培训执行】组织新员工入职培训与岗位技能培训、制作整理更新培训课件资料、安排培训场地设备签到与现场支持、收集培训反馈记录培训数据归档、协助完成培训计划与通知下发、对接讲师学员保障培训正常开展
-【培训跟踪评估】跟进员工的培训任务进度，解答培训过程中的疑惑，进行线上知识考核与效果评估
-
-当前信息：
-- 门店：${store}（${brand}，brand_id=${brandId || 'n/a'}）
-- 用户：${senderName}（${senderUsername}，角色：${senderRole}）
-- 查询：${text}
-
-${kbContext}${trainingTasksContext}${activeTaskContext}
-
-请根据问题类型选择合适的回复结构：
-如果是SOP/流程问题：
-1. **问题判断**：简要确认理解的问题
-2. **标准流程**：分步骤说明具体操作（1-2-3格式）
-3. **注意事项**：关键提醒和常见错误
-4. **参考依据**：相关SOP条款或标准
-
-如果是培训咨询/任务问题：
-1. **进度跟进**：结合用户的培训任务，指出当前进度或待办
-2. **专业解答**：解答用户关于课件或技能的疑惑
-3. **下一步建议**：给出接下来的学习或实操建议
-4. **效果评估**：如果是完成阶段，可以向用户提问1-2个关键知识点进行检验
-
-要求：简洁实用，总回复不超过400字。`;
-
-        const contextHistory = getContext(senderUsername);
-        const messages = [
-          { role: 'system', content: systemPrompt },
-          ...contextHistory.slice(-4), // 最近4轮对话
-          { role: 'user', content: text }
-        ];
-
-        const llm = await callLLM(messages, { role: senderRole, purpose: 'reasoning', temperature: 0.05, max_tokens: 800 });
-        response = llm.content || '这个问题我需要查阅最新的SOP手册或培训资料，稍后回复你。';
-        
-        // 更新上下文
-        updateContext(senderUsername, 'user', text);
-        updateContext(senderUsername, 'assistant', response);
-        
-        agentData = { route: 'train_advisor', kbResults: kbResults.length, contextUsed: contextHistory.length, brandId, brandConfig };
-        break;
-      }
-
-      default: {
-        const llm = await callLLM([
-          {
-            role: 'system',
-            content: buildGeneralAssistantSystemPrompt({
-              store,
-              brand,
-              senderName,
-              senderRole,
-              activeTaskContext,
-            }),
-          },
-          ...getContext(senderUsername),
-          { role: 'user', content: text },
-        ], { role: senderRole, purpose: 'reasoning', temperature: 0.05, max_tokens: 260 });
-        response = llm.content || '收到你的消息。你可以问我数据审计、营运检查、绩效考核等问题，也可以直接发照片给我审核。';
-        agentData = { route: 'general', contextUsed: getContext(senderUsername).length, brandId };
-        break;
-      }
-    }
-  } catch (e) {
-    console.error('[agents] handleAgentMessage error:', e?.message || e);
-    response = '抱歉，处理消息时出现错误，请稍后重试。';
-    agentData = { route, error: String(e?.message || e) };
-  }
-
-  // ── post-route：事实护栏 + 统一质检 + evidence（domains/agent-message）──
-  {
-    const postQ = await applyPostRouteQualityGates(
-      { text, route, response, agentData, senderUsername, senderRole, store, brand },
-      { markQualityMetric, enforceUnifiedQualityGate }
-    );
-    response = postQ.response;
-    agentData = postQ.agentData;
-  }
-  const evidence = agentData?.evidence || buildEvidencePackage(agentData, { route, store, brand });
-
-  try {
-    await setAgentLongMemory(senderUsername, 'last_route', {
-      route,
-      store,
-      brand,
-      confidence: agentData.confidence,
-      updatedAt: new Date().toISOString()
-    });
-  } catch (e) { /* ignore */ }
-
-  // ── 最终持久化 session state ────────────────────────────────
-  try {
-    if (agentData.metrics_returned?.length) {
-      sessionState.metrics_returned = [...new Set([...(sessionState.metrics_returned || []), ...agentData.metrics_returned])];
-    }
-    if (agentData.metric_versions) {
-      sessionState.metric_versions = { ...(sessionState.metric_versions || {}), ...agentData.metric_versions };
-    }
-    sessionState.route = route;
-    sessionState.store = store || sessionState.store;
-    await setSessionState(senderUsername, sessionState);
-  } catch (e) { /* ignore */ }
-
-  if (needsAutonomousDataTask(agentData) && store && store !== '总部') {
-    try {
-      const state = await getSharedState();
-      const owner = await findStoreManager(state, store);
-      const task = await createOrUpdateAutonomousDataTask({
-        taskType: 'data_gap',
-        store,
-        brand,
-        requesterUsername: senderUsername,
-        route,
-        queryText: text,
-        reason: String(agentData?.reason || (agentData?.factualGuardrailBlocked ? 'factual_guardrail_blocked' : 'insufficient_evidence')).slice(0, 120),
-        evidence,
-        ownerUsername: owner || '',
-        dueHours: 8
-      });
-      if (task) {
-        agentData.autonomousTaskId = task.id;
-        notifyAutonomousDataTaskOwner(task).catch(() => {});
-      }
-    } catch (e) {
-      console.error('[agents] autonomous data-gap task failed:', e?.message || e);
-    }
-  }
-
-  return { route, response, agentData };
+  return { response, agentData };
 }
+
+
 
 // ─────────────────────────────────────────────
 // 11. Check Agent - Self-Reflection Quality Gate
@@ -11275,6 +10867,31 @@ _runDataAuditor = createRunDataAuditor({
   checkDataSourceQuality,
   normalizeStoreKey,
   normalizeCanonicalStoreName,
+});
+
+_handleAgentMessage = createHandleAgentMessage({
+  pool,
+  routeMessage,
+  prefixWithAgentName,
+  callLLM,
+  getContext,
+  updateContext,
+  getBrandRuntimeConfig,
+  getSharedState,
+  inferBrandFromStoreName,
+  runWithCheckAgent,
+  enforceUnifiedQualityGate,
+  markQualityMetric,
+  setAgentLongMemory,
+  getEmployeePositionForKb,
+  queryKnowledgeBase,
+  getOpsKnowledgeSupport,
+  getOpsReasoningModel,
+  auditImage,
+  findStoreManager,
+  createOrUpdateAutonomousDataTask,
+  notifyAutonomousDataTaskOwner,
+  handleDataAuditorCase,
 });
 
 async function getLastSyncTime(configKey) {
