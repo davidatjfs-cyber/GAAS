@@ -74,6 +74,7 @@ import { createBuildScheduledTasksFromConfig } from './domains/agent-ops/build-s
 import { createHandleDataAuditorCase } from './domains/agent-message/handle-data-auditor-case.js';
 import { createOnFeishuEvent } from './domains/agent-feishu-bot/on-feishu-event.js';
 import { createFeishuUserMessagingApi } from './domains/agent-feishu-bot/feishu-user-messaging.js';
+import { createLarkSendApi } from './domains/agent-feishu-bot/lark-send.js';
 import { createPushIssuesToFeishu } from './domains/agent-feishu-bot/push-issues.js';
 import { createTryHandleBiByFunctionCalling } from './domains/agent-bi/try-handle-bi-by-function-calling.js';
 import { clampInt } from './domains/agent-bi/bi-tool-period.js';
@@ -2149,65 +2150,10 @@ function profilePerformanceDisplayPeriodShanghai() {
   return subMonth(y, m, -2);
 }
 
-/**
- * 飞书绩效类文本统一中文化：内部字段名、模型 key、英文「分」→「级」、通知标题改名
- */
+// 飞书发送 / 注册 / 绩效文案清洗 → domains/agent-feishu-bot/lark-send*.js
+let _larkSendApi;
 export function sanitizePerformanceZhText(text) {
-  if (typeof text !== 'string' || !text) return text;
-  if (!/(绩效|考核|评分|总分|扣分明细|store_rating|execution_rating|attitude_rating|ability_rating|new_model|anomaly_rollups|task_reminder|模型|门店级别|门店评级)/i.test(text)) {
-    return text;
-  }
-  let t = text;
-  t = t.replace(/📊\s*绩效考核通知/g, '📊 绩效考核周报');
-  t = t.replace(/(^|[\n\u200b])绩效考核通知/g, '$1绩效考核周报');
-  t = t.replace(/📊\s*绩效考核日报/g, '📊 绩效考核周报');
-  t = t.replace(/(^|[\n\u200b])绩效考核日报/g, '$1绩效考核周报');
-  t = t.replace(/📋\s*模型[：:]\s*`?new_model_monthly`?/gi, '📋 评分类型：月度自动评分');
-  t = t.replace(/📋\s*模型[：:]\s*`?new_model`?/gi, '📋 评分类型：人力资源综合模型');
-  t = t.replace(/\*\*📋\s*模型\*\*\s*[：:]\s*`?new_model_monthly`?/gi, '**📋 评分类型**：月度自动评分');
-  t = t.replace(/\bnew_model_monthly\b/g, '月度自动评分');
-  t = t.replace(/\bnew_model\b/g, '人力资源综合模型');
-  t = t.replace(/\banomaly_rollups_v2\b/g, '周度异常汇总');
-  t = t.replace(/\btask_reminder_v1\b/g, '任务催办绩效记录');
-  t = t.replace(/\bmonthly_anomaly_bonus_v1\b/g, '月度异常免罚加分');
-  t = t.replace(/\bstore_production_manager\b/g, '出品经理');
-  t = t.replace(/\bstore_manager\b/g, '店长');
-  t = t.replace(/\bstore_rating\b\s*[:：]\s*null\b/gi, '门店级别：待评估');
-  t = t.replace(/\bstore_rating\b\s*[:：]\s*'?(A|B|C|D)'?\s*分\b/gi, '门店级别：$1级');
-  t = t.replace(/\bstore_rating\b\s*[:：]\s*'?(A|B|C|D)'?\b(?!级)/gi, '门店级别：$1级');
-  t = t.replace(/\bexecution_rating\b\s*[:：]\s*'?(待定)'?\s*分?\b/gi, '执行力：$1');
-  t = t.replace(/\bexecution_rating\b\s*[:：]\s*'?(A|B|C|D)'?\s*分\b/gi, '执行力：$1级');
-  t = t.replace(/\bexecution_rating\b\s*[:：]\s*'?(A|B|C|D)'?\b(?!级)/gi, '执行力：$1级');
-  t = t.replace(/\battitude_rating\b\s*[:：]\s*'?(待定)'?\s*分?\b/gi, '工作态度：$1');
-  t = t.replace(/\battitude_rating\b\s*[:：]\s*'?(A|B|C|D)'?\s*分\b/gi, '工作态度：$1级');
-  t = t.replace(/\battitude_rating\b\s*[:：]\s*'?(A|B|C|D)'?\b(?!级)/gi, '工作态度：$1级');
-  t = t.replace(/\bability_rating\b\s*[:：]\s*'?(待定)'?\s*分?\b/gi, '工作能力：$1');
-  t = t.replace(/\bability_rating\b\s*[:：]\s*'?(A|B|C|D)'?\s*分\b/gi, '工作能力：$1级');
-  t = t.replace(/\bability_rating\b\s*[:：]\s*'?(A|B|C|D)'?\b(?!级)/gi, '工作能力：$1级');
-  t = t.replace(/^[ \t]*[•\-*]\s*store_rating\s*[:：]\s*null\s*$/gim, '• 门店级别：待评估');
-  t = t.replace(/^[ \t]*[•\-*]\s*store_rating\s*[:：]\s*([A-D])\s*分?\b/gim, '• 门店级别：$1级');
-  t = t.replace(/^[ \t]*[•\-*]\s*ability_rating\s*[:：]\s*([A-D])\s*分?\b/gim, '• 工作能力：$1级');
-  t = t.replace(/^[ \t]*[•\-*]\s*attitude_rating\s*[:：]\s*([A-D])\s*分?\b/gim, '• 工作态度：$1级');
-  t = t.replace(/^[ \t]*[•\-*]\s*execution_rating\s*[:：]\s*([A-D])\s*分?\b/gim, '• 执行力：$1级');
-  return t;
-}
-
-function deepSanitizeFeishuCardStrings(node, fn) {
-  if (node == null) return;
-  if (Array.isArray(node)) {
-    for (let i = 0; i < node.length; i++) {
-      if (typeof node[i] === 'string') node[i] = fn(node[i]);
-      else deepSanitizeFeishuCardStrings(node[i], fn);
-    }
-    return;
-  }
-  if (typeof node === 'object') {
-    for (const k of Object.keys(node)) {
-      const v = node[k];
-      if (typeof v === 'string') node[k] = fn(v);
-      else deepSanitizeFeishuCardStrings(v, fn);
-    }
-  }
+  return _larkSendApi.sanitizePerformanceZhText(text);
 }
 
 /**
@@ -2219,229 +2165,20 @@ export async function fetchStoreRatingForProfileDisplay(storeLabel, lockedPeriod
 }
 
 
-function feishuOpenIdResolveDeps() {
-  return {
-    query: (sql, params) => pool().query(sql, params),
-    warn: (...args) => log.warn(...args),
-    info: (...args) => log.info(...args)
-  };
-}
-
-// ─────────────────────────────────────────────
-// Send plain text message to a user by open_id
 export async function sendLarkMessage(openId, text, options = {}) {
-  if (typeof text === 'string' && /绩效|考核|评分|总分|扣分明细|store_rating|模型/.test(text)) {
-    text = sanitizePerformanceZhText(text);
-  }
-  // 消息去重检查（BI确定性回复跳过去重，因为用户可能重复查同一指标）
-  if (!options.skipDedup && !deduplicateMessage(text, openId)) {
-    return { ok: true, deduplicated: true };
-  }
-
-  const token = await getLarkTenantToken(options.tenantId);
-  if (!token) {
-    log.error('[feishu] cannot send: no token');
-    return { ok: false, error: 'no_token' };
-  }
-
-  const deps = feishuOpenIdResolveDeps();
-  const postTextOnce = async (rid) => {
-    const ridTrim = String(rid || '').trim();
-    try {
-      const resp = await axios.post(
-        'https://open.feishu.cn/open-apis/im/v1/messages',
-        { receive_id: ridTrim, msg_type: 'text', content: JSON.stringify({ text }) },
-        {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          params: { receive_id_type: 'open_id' },
-          timeout: 10000
-        }
-      );
-      const ok = resp.data?.code === 0;
-      log.info('[feishu] message sent to', ridTrim, '→', ok ? 'ok' : resp.data?.msg);
-      return { ok, data: resp.data, errText: String(resp.data?.msg || '') };
-    } catch (e) {
-      const d = e?.response?.data;
-      log.error('[feishu] send message failed:', d || e?.message);
-      const code = Number(d?.code || 0);
-      const errText = String(d?.msg || e?.message || '');
-      return { ok: false, data: d, errText, httpCode: code };
-    }
-  };
-
-  let rid = String(openId || '').trim();
-  let out = await postTextOnce(rid);
-  if (!out.ok && !feishuSkipOpenIdResolveHrms()) {
-    const code = Number(out.data?.code ?? out.httpCode ?? 0);
-    const errStr = String(out.errText || out.data?.msg || '');
-    if (isOpenIdCrossAppFeishuError(code, errStr)) {
-      const fixed = await refreshFeishuUserOpenIdForImDeliveryHrms(deps, token, rid);
-      if (fixed && fixed !== rid) {
-        log.warn('[feishu] open_id cross app: retry text after resolve');
-        out = await postTextOnce(fixed);
-      }
-    }
-  }
-
-  return { ok: !!out.ok, data: out.data, error: out.ok ? undefined : String(out.errText || out.data?.msg || '') };
+  return _larkSendApi.sendLarkMessage(openId, text, options);
 }
-
-// Send interactive card (rich message) to a user
 export async function sendLarkCard(openId, card, options = {}) {
-  try {
-    deepSanitizeFeishuCardStrings(card, sanitizePerformanceZhText);
-  } catch (e) {
-    log.warn('[feishu] card sanitize skipped:', e?.message);
-  }
-  const token = await getLarkTenantToken(options.tenantId);
-  if (!token) return { ok: false, error: 'no_token' };
-
-  const deps = feishuOpenIdResolveDeps();
-  const postCardOnce = async (rid) => {
-    const ridTrim = String(rid || '').trim();
-    try {
-      const resp = await axios.post(
-        'https://open.feishu.cn/open-apis/im/v1/messages',
-        { receive_id: ridTrim, msg_type: 'interactive', content: JSON.stringify(card) },
-        {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          params: { receive_id_type: 'open_id' },
-          timeout: 10000
-        }
-      );
-      const ok = resp.data?.code === 0;
-      return { ok, data: resp.data, errText: String(resp.data?.msg || '') };
-    } catch (e) {
-      const d = e?.response?.data;
-      log.error('[feishu] send card failed:', d || e?.message);
-      const code = Number(d?.code || 0);
-      const errText = String(d?.msg || e?.message || '');
-      return { ok: false, data: d, errText, httpCode: code };
-    }
-  };
-
-  let rid = String(openId || '').trim();
-  let out = await postCardOnce(rid);
-  if (!out.ok && !feishuSkipOpenIdResolveHrms()) {
-    const code = Number(out.data?.code ?? out.httpCode ?? 0);
-    const errStr = String(out.errText || out.data?.msg || '');
-    if (isOpenIdCrossAppFeishuError(code, errStr)) {
-      const fixed = await refreshFeishuUserOpenIdForImDeliveryHrms(deps, token, rid);
-      if (fixed && fixed !== rid) {
-        log.warn('[feishu] open_id cross app: retry card after resolve');
-        out = await postCardOnce(fixed);
-      }
-    }
-  }
-
-  return { ok: !!out.ok, data: out.data, error: out.ok ? undefined : String(out.errText || out.data?.msg || '') };
+  return _larkSendApi.sendLarkCard(openId, card, options);
 }
-
-// Download image from Feishu message
 export async function getLarkImageUrl(messageId, imageKey) {
-  const token = await getLarkTenantToken();
-  if (!token) return null;
-  try {
-    const resp = await axios.get(
-      `https://open.feishu.cn/open-apis/im/v1/messages/${messageId}/resources/${imageKey}`,
-      { headers: { 'Authorization': `Bearer ${token}` }, params: { type: 'image' }, responseType: 'arraybuffer', timeout: 30000 }
-    );
-    const b64 = Buffer.from(resp.data).toString('base64');
-    return `data:image/jpeg;base64,${b64}`;
-  } catch (e) {
-    log.error('[feishu] get image failed:', e?.message);
-    return null;
-  }
+  return _larkSendApi.getLarkImageUrl(messageId, imageKey);
 }
-
-// ── 飞书语音识别 / 用户映射 / 督办推送 → domains/agent-feishu-bot/feishu-user-messaging*.js ──
-let _feishuUserMessagingApi;
-async function recognizeLarkAudio(messageId, fileKey) {
-  return _feishuUserMessagingApi.recognizeLarkAudio(messageId, fileKey);
-}
-async function replyLarkMessage(messageId, text) {
-  return _feishuUserMessagingApi.replyLarkMessage(messageId, text);
-}
-async function lookupFeishuUser(openId) {
-  return _feishuUserMessagingApi.lookupFeishuUser(openId);
-}
-async function getFeishuUserInfo(openId) {
-  return _feishuUserMessagingApi.getFeishuUserInfo(openId);
-}
-async function tryAutoBindByName(openId) {
-  return _feishuUserMessagingApi.tryAutoBindByName(openId);
-}
-export async function lookupFeishuUserByUsername(username) {
-  return _feishuUserMessagingApi.lookupFeishuUserByUsername(username);
-}
-async function pushIssueToAssignee(issue, message, tenantId = 'default') {
-  return _feishuUserMessagingApi.pushIssueToAssignee(issue, message, tenantId);
-}
-
 export async function registerFeishuUser(openId, username) {
-  const state = await getSharedState();
-  const user = findUserInState(state, username);
-  if (!user) return { ok: false, error: 'user_not_found' };
-
-  const uname = String(user.username || username).trim();
-  const name = String(user.name || '').trim();
-  const store = String(user.store || '').trim();
-  const brandCtx = resolveBrandContextByStore(state, store);
-  const role = String(user.role || '').trim();
-
-  try {
-    // 飞书机器人消息webhook没有JWT/ALS上下文，按username反查users表得到真实租户，
-    // 整段用tenantContext.run()包裹，避免会话变量跟下面显式写的tenant_id列值不一致。
-    let tenantId = 'default';
-    try {
-      const tr = await pool().query('SELECT tenant_id FROM users WHERE lower(username) = lower($1) LIMIT 1', [uname]);
-      tenantId = String(tr.rows?.[0]?.tenant_id || '').trim() || 'default';
-    } catch (_e) { /* ignore */ }
-
-    await tenantContext.run(tenantId, async () => {
-      await pool().query(
-        `UPDATE feishu_users
-         SET registered = FALSE, updated_at = NOW()
-         WHERE username = $1 AND open_id <> $2`,
-        [uname, openId]
-      );
-
-      await pool().query(
-        `INSERT INTO feishu_users (open_id, username, name, store, role, registered, tenant_id)
-         VALUES ($1, $2, $3, $4, $5, TRUE, $6)
-         ON CONFLICT (open_id, tenant_id) DO UPDATE SET username = $2, name = $3, store = $4, role = $5, registered = TRUE, updated_at = NOW()`,
-        [openId, uname, name, store, role, tenantId]
-      );
-    });
-    return { ok: true, user: { username: uname, name, store, role, brandId: brandCtx.brandId, brandName: brandCtx.brandName } };
-  } catch (e) {
-    log.error('[feishu] register user failed:', e?.message);
-    return { ok: false, error: String(e?.message) };
-  }
+  return _larkSendApi.registerFeishuUser(openId, username);
 }
-
-// Build an alert card for Feishu
 function buildAlertCard(title, severity, detail, actions) {
-  const color = severity === 'high' ? 'red' : 'orange';
-  const elements = [
-    { tag: 'div', text: { tag: 'lark_md', content: detail } }
-  ];
-  if (actions && actions.length) {
-    elements.push({
-      tag: 'action',
-      actions: actions.map(a => ({
-        tag: 'button',
-        text: { tag: 'plain_text', content: a.text },
-        type: a.type || 'default',
-        value: a.value || {}
-      }))
-    });
-  }
-  return {
-    config: { wide_screen_mode: true },
-    header: { title: { tag: 'plain_text', content: title }, template: color },
-    elements
-  };
+  return _larkSendApi.buildAlertCard(title, severity, detail, actions);
 }
 
 // ─────────────────────────────────────────────
@@ -2828,6 +2565,21 @@ async function notifyBitablePipelineFailure(scopeLabel, err, opts = {}) {
 }
 
 // Wave P2: Bitable LISTEN / catchup / archive → domains/feishu-bitable/*
+_larkSendApi = createLarkSendApi({
+  axios,
+  pool,
+  tenantContext,
+  getLarkTenantToken,
+  deduplicateMessage,
+  feishuSkipOpenIdResolveHrms,
+  isOpenIdCrossAppFeishuError,
+  refreshFeishuUserOpenIdForImDeliveryHrms,
+  getSharedState,
+  findUserInState,
+  resolveBrandContextByStore,
+  log,
+});
+
 _notifyBitablePipelineFailure = createNotifyBitablePipelineFailure({
   pool,
   sendLarkMessage,
