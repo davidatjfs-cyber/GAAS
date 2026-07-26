@@ -432,20 +432,18 @@ export async function importRecipeFromExcel(buffer, username, store) {
  *   recordUploadOwnership?: (filenames: string | (string | undefined)[], tenantId: string, uploadedBy: string) => Promise<void>,
  * }} [deps]
  */
-export function registerRecipeRoutes(app, authMiddleware, deps = {}) {
-  const { upload, uploadsDir, ensureUploadsDir, recordUploadOwnership } = deps || {};
-  const recipeMediaUpload = (uploadsDir && ensureUploadsDir)
-    ? createRecipeMediaUpload({ uploadsDir, ensureUploadsDir })
-    : null;
-
-  function requireRecipeAdmin(req, res, next) {
+function createRequireRecipeAdmin() {
+  return function requireRecipeAdmin(req, res, next) {
     if (!isRecipeAdmin(req.user?.role)) {
       return res.status(403).json({ error: '配方为机密资料，无访问权限' });
     }
     next();
-  }
+  };
+}
 
-  // 配方列表
+function registerRecipeCrudRoutes(app, authMiddleware, requireRecipeAdmin, deps = {}) {
+  const { upload, recipeMediaUpload, recordUploadOwnership } = deps;
+
   app.get('/api/recipes', authMiddleware, requireRecipeAdmin, async (req, res) => {
     try {
       const store = req.user?.store || req.query.store || '*';
@@ -525,7 +523,55 @@ export function registerRecipeRoutes(app, authMiddleware, deps = {}) {
     }
   });
 
-  // ── 原料分类：列表 ────────────────────────────────────────
+  if (recipeMediaUpload && recordUploadOwnership) {
+    app.post('/api/recipes/upload-step-media', authMiddleware, recipeMediaUpload.single('file'), async (req, res) => {
+      const role = String(req.user?.role || '').trim();
+      if (!['admin', 'hq_manager', 'store_manager', 'store_production_manager'].includes(role)) {
+        return res.status(403).json({ error: 'forbidden' });
+      }
+      try {
+        if (!req.file?.filename) return res.status(400).json({ error: 'missing_file' });
+        await recordUploadOwnership(req.file.filename, req.tenantId, req.user?.username);
+        const ext = path.extname(req.file.filename).toLowerCase();
+        const videoExts = new Set(['.mp4', '.mov', '.webm']);
+        const mediaType = videoExts.has(ext) ? 'video' : 'image';
+        return res.json({ ok: true, url: `/uploads/${req.file.filename}`, type: mediaType });
+      } catch (e) {
+        return res.status(500).json({ error: e?.message });
+      }
+    });
+  }
+
+  app.get('/api/recipes/template', authMiddleware, (req, res) => {
+    if (!RECIPE_ADMIN_ROLES.has(req.user?.role)) return res.status(403).json({ error: 'forbidden' });
+    try {
+      const buf = generateRecipeTemplate();
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename*=UTF-8\'\'%E9%85%8D%E6%96%B9%E5%AF%BC%E5%85%A5%E6%A8%A1%E7%89%88.xlsx');
+      res.send(buf);
+    } catch (e) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
+  if (upload) {
+    app.post('/api/recipes/import', authMiddleware, upload.single('file'), async (req, res) => {
+      if (!RECIPE_ADMIN_ROLES.has(req.user?.role)) return res.status(403).json({ error: 'forbidden' });
+      try {
+        if (!req.file?.path) return res.status(400).json({ error: 'missing_file' });
+        const buffer = fs.readFileSync(req.file.path);
+        const result = await importRecipeFromExcel(buffer, req.user.username, req.user?.store || '*');
+        if (!result.success) return res.json({ success: false, error: result.error });
+        const row = await import('./utils/database.js').then((m) => m.pool().query('SELECT dish_name FROM recipes WHERE id=$1', [result.id]));
+        return res.json({ success: true, id: result.id, dishName: row.rows[0]?.dish_name || '' });
+      } catch (e) {
+        return res.status(500).json({ success: false, error: e?.message });
+      }
+    });
+  }
+}
+
+function registerIngredientLibraryRoutes(app, authMiddleware, requireRecipeAdmin) {
   app.get('/api/ingredient-categories', authMiddleware, requireRecipeAdmin, async (req, res) => {
     try {
       const rows = await pool().query(
@@ -627,56 +673,16 @@ export function registerRecipeRoutes(app, authMiddleware, deps = {}) {
       res.json({ success: false, error: e?.message });
     }
   });
+}
 
-  if (recipeMediaUpload && recordUploadOwnership) {
-    app.post('/api/recipes/upload-step-media', authMiddleware, recipeMediaUpload.single('file'), async (req, res) => {
-      const role = String(req.user?.role || '').trim();
-      if (!['admin', 'hq_manager', 'store_manager', 'store_production_manager'].includes(role)) {
-        return res.status(403).json({ error: 'forbidden' });
-      }
-      try {
-        if (!req.file?.filename) return res.status(400).json({ error: 'missing_file' });
-        await recordUploadOwnership(req.file.filename, req.tenantId, req.user?.username);
-        const ext = path.extname(req.file.filename).toLowerCase();
-        const videoExts = new Set(['.mp4', '.mov', '.webm']);
-        const mediaType = videoExts.has(ext) ? 'video' : 'image';
-        return res.json({ ok: true, url: `/uploads/${req.file.filename}`, type: mediaType });
-      } catch (e) {
-        return res.status(500).json({ error: e?.message });
-      }
-    });
-  }
+export function registerRecipeRoutes(app, authMiddleware, deps = {}) {
+  const { upload, uploadsDir, ensureUploadsDir, recordUploadOwnership } = deps || {};
+  const recipeMediaUpload = (uploadsDir && ensureUploadsDir)
+    ? createRecipeMediaUpload({ uploadsDir, ensureUploadsDir })
+    : null;
+  const requireRecipeAdmin = createRequireRecipeAdmin();
 
-  // 配方 Excel 模版下载
-  app.get('/api/recipes/template', authMiddleware, (req, res) => {
-    if (!RECIPE_ADMIN_ROLES.has(req.user?.role)) return res.status(403).json({ error: 'forbidden' });
-    try {
-      const buf = generateRecipeTemplate();
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename*=UTF-8\'\'%E9%85%8D%E6%96%B9%E5%AF%BC%E5%85%A5%E6%A8%A1%E7%89%88.xlsx');
-      res.send(buf);
-    } catch (e) {
-      res.status(500).json({ error: e?.message });
-    }
-  });
-
-  // 配方 Excel 导入
-  if (upload) {
-    app.post('/api/recipes/import', authMiddleware, upload.single('file'), async (req, res) => {
-      if (!RECIPE_ADMIN_ROLES.has(req.user?.role)) return res.status(403).json({ error: 'forbidden' });
-      try {
-        if (!req.file?.path) return res.status(400).json({ error: 'missing_file' });
-        const buffer = fs.readFileSync(req.file.path);
-        const result = await importRecipeFromExcel(buffer, req.user.username, req.user?.store || '*');
-        if (!result.success) return res.json({ success: false, error: result.error });
-        // Read back dish name from the import for the response
-        const row = await import('./utils/database.js').then(m => m.pool().query('SELECT dish_name FROM recipes WHERE id=$1', [result.id]));
-        return res.json({ success: true, id: result.id, dishName: row.rows[0]?.dish_name || '' });
-      } catch (e) {
-        return res.status(500).json({ success: false, error: e?.message });
-      }
-    });
-  }
-
+  registerRecipeCrudRoutes(app, authMiddleware, requireRecipeAdmin, { upload, recipeMediaUpload, recordUploadOwnership });
+  registerIngredientLibraryRoutes(app, authMiddleware, requireRecipeAdmin);
   log.info({ msg: 'routes_registered' });
 }
