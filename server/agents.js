@@ -106,6 +106,7 @@ import {
   resolveModelProvider,
   sleep,
 } from './domains/ai/llm-provider-helpers.js';
+import { createLlmHealthSchedulerApi } from './domains/ai/llm-health-scheduler.js';
 import { createLoadTenantAiConfig } from './domains/ai/load-tenant-ai-config.js';
 import { createTenantLlmConfigCache } from './domains/ai/tenant-llm-config.js';
 import { createCallLLM } from './domains/ai/call-llm.js';
@@ -153,15 +154,6 @@ import {
 } from './brands-config.js';
 
 import { childLogger } from './utils/logger.js';
-import {
-  runAuditTick,
-  runWeeklyAuditTick,
-  runEvalTick,
-  runWeeklyOpsTick,
-  runDailyRechargeTick,
-  runPushTick,
-} from './domains/agent-ops/scheduler-ticks.js';
-
 export { getProviderHealthStatus };
 
 const log = childLogger({ domain: 'agents' });
@@ -2395,69 +2387,12 @@ export async function pushScoresToFeishu() {
 }
 
 // ─────────────────────────────────────────────
-// 13. Scheduler
+// 13. Scheduler / LLM health → domains/ai/llm-health-scheduler*.js
 // ─────────────────────────────────────────────
 
-let _schedulerStarted = false;
-
-// ── 防护措施：启动断言 + LLM健康检查 + 连续错误告警 ──
-const _errorTracker = { consecutiveLLMErrors: 0, lastAlertTime: 0, alertCooldownMs: 10 * 60 * 1000 };
-const _llmHealthState = { lastAllOk: null, lastSummary: '' };
-
+let _llmHealthSchedulerApi;
 export async function verifyLLMHealth(options = {}) {
-  if (!isExternalEnabled()) {
-    return { allOk: false, results: [{ name: 'External', ok: false, error: 'external_disabled' }] };
-  }
-  const notifyOnFailure = options.notifyOnFailure !== false;
-  const notifyOnRecovery = options.notifyOnRecovery !== false;
-  const forceNotify = !!options.forceNotify;
-  const results = [];
-  const providers = [
-    { name: 'DeepSeek', model: DEEPSEEK_MODEL, apiKey: DEEPSEEK_API_KEY, baseUrl: DEEPSEEK_BASE_URL },
-    { name: 'Qwen', model: QWEN_MODEL, apiKey: QWEN_API_KEY, baseUrl: QWEN_BASE_URL },
-    { name: 'Doubao(Vision)', model: DEEPSEEK_VISION_MODEL, apiKey: DOUBAO_API_KEY, baseUrl: DOUBAO_BASE_URL }
-  ];
-  const providerKeyMap = { DeepSeek: 'deepseek', Qwen: 'qwen', 'Doubao(Vision)': 'doubao' };
-  for (const p of providers) {
-    if (!p.apiKey) { results.push({ name: p.name, ok: false, error: 'API_KEY未配置' }); continue; }
-    try {
-      const resp = await axios.post(`${p.baseUrl}/chat/completions`, {
-        model: p.model, messages: [{ role: 'user', content: '回复OK' }], max_tokens: 5, temperature: 0
-      }, { headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' }, timeout: 15000 });
-      const content = resp.data?.choices?.[0]?.message?.content || '';
-      results.push({ name: p.name, model: p.model, ok: true, reply: content.slice(0, 20) });
-      markProviderOk(providerKeyMap[p.name] || '');
-    } catch (e) {
-      const status = e?.response?.status || 'timeout';
-      const msg = e?.response?.data?.error?.message || e?.message || '未知错误';
-      results.push({ name: p.name, model: p.model, ok: false, error: `HTTP ${status}: ${msg.slice(0, 100)}` });
-      markProviderFail(providerKeyMap[p.name] || '');
-      markProviderFail(providerKeyMap[p.name] || '');
-    }
-  }
-  const allOk = results.every(r => r.ok);
-  const summary = results.map(r => `${r.ok ? '✅' : '❌'} ${r.name}(${r.model || '?'}): ${r.ok ? r.reply : r.error}`).join('\n');
-  const prevAllOk = _llmHealthState.lastAllOk;
-  _llmHealthState.lastAllOk = allOk;
-  _llmHealthState.lastSummary = summary;
-  log.info(`[LLM-HEALTH] Startup check:\n${summary}`);
-  const healthyProviders = results.filter(r => r.ok).map(r => r.name);
-  const downProviders = results.filter(r => !r.ok).map(r => r.name);
-  if (!allOk && notifyOnFailure && (forceNotify || prevAllOk !== false)) {
-    const fallbackNote = healthyProviders.length > 0
-      ? `\n\n🔄 自动降级已激活：${downProviders.join('、')} 不可用时，Agent 将自动切换到 ${healthyProviders.join('、')} 继续工作。`
-      : '\n\n⚠️ 所有 Provider 均不可用，Agent 将完全无法响应！';
-    log.error('[LLM-HEALTH] ⚠️ 部分LLM不可用，自动降级已激活');
-    try {
-      await sendErrorAlertToAdmin(`⚠️ 【系统告警】LLM健康检查未通过:\n${summary}${fallbackNote}\n\n请检查 API Key / 模型配置 / 网络连通性。`);
-    } catch (_) { /* ignore */ }
-  }
-  if (allOk && notifyOnRecovery && prevAllOk === false) {
-    try {
-      await sendErrorAlertToAdmin(`✅ 【系统恢复】LLM健康检查已恢复正常:\n${summary}`);
-    } catch (_) { /* ignore */ }
-  }
-  return { allOk, results };
+  return _llmHealthSchedulerApi.verifyLLMHealth(options);
 }
 
 export function assertCriticalFunctions() {
@@ -2486,105 +2421,16 @@ export function assertCriticalFunctions() {
   log.info('[agents] Startup assertion passed: all critical functions defined');
 }
 
-async function sendErrorAlertToAdmin(errorMsg) {
-  const now = Date.now();
-  if (now - _errorTracker.lastAlertTime < _errorTracker.alertCooldownMs) return;
-  _errorTracker.lastAlertTime = now;
-  try {
-    const state = await getSharedState();
-    const allUsers = [
-      ...(Array.isArray(state?.employees) ? state.employees : []),
-      ...(Array.isArray(state?.users) ? state.users : [])
-    ];
-    const recipients = allUsers.filter(u => ['admin', 'hq_manager'].includes(String(u?.role || '').trim()));
-    for (const admin of recipients) {
-      const fu = await lookupFeishuUserByUsername(String(admin.username || '').trim());
-      if (fu?.open_id) {
-        await sendLarkMessage(
-          fu.open_id,
-          `🚨 系统告警\n\n${errorMsg}\n\n时间：${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n请尽快检查服务状态。`,
-          { skipDedup: true }
-        );
-      }
-    }
-  } catch (e) {
-    log.error('[alert] Failed to send admin alert:', e?.message);
-  }
-}
-
 export function trackLLMResult(ok) {
-  if (ok) {
-    _errorTracker.consecutiveLLMErrors = 0;
-  } else {
-    _errorTracker.consecutiveLLMErrors++;
-    if (_errorTracker.consecutiveLLMErrors >= 5) {
-      sendErrorAlertToAdmin(
-        `LLM 连续调用失败 ${_errorTracker.consecutiveLLMErrors} 次，Agent 可能无法正常回复。\n\n` +
-        `说明：厂商控制台「账号正常」不等于 ECS 上 hrms-service 能调通 API（密钥、模型名、出网、429/欠费均会导致失败）。\n` +
-        `健康检查会测 DeepSeek、通义(Qwen)、豆包(Vision) 三条链路，任一条失败都会计入。\n\n` +
-        `请 SSH 到服务器执行：pm2 logs hrms-service --lines 80\n搜索 [LLM-FALLBACK]、401、429、timeout 定位具体 Provider。`
-      );
-    }
-  }
+  return _llmHealthSchedulerApi.trackLLMResult(ok);
 }
 
 export function getAgentHealthStatus() {
-  const schedulingDelegated = process.env.DISABLE_AGENT_SCHEDULING === 'true';
-  return {
-    schedulerRunning: _schedulerStarted,
-    /** 为 true 时 HRMS 进程不跑本地 Agent 定时调度，由 Agent V2 承担；schedulerRunning 为 false 属预期 */
-    schedulingDelegated,
-    consecutiveLLMErrors: _errorTracker.consecutiveLLMErrors,
-    performanceMetrics: { ..._performanceMetrics },
-    llmHealthy: _errorTracker.consecutiveLLMErrors < 5,
-    scheduledTaskStatus: getScheduledTaskStatus()
-  };
+  return _llmHealthSchedulerApi.getAgentHealthStatus();
 }
 
 export function startAgentScheduler() {
-  if (_schedulerStarted) return;
-  _schedulerStarted = true;
-
-  // 启动后做一次延迟健康检查 + 周期检查（防止DeepSeek挂了无告警）
-  setTimeout(() => {
-    verifyLLMHealth({ notifyOnFailure: true, notifyOnRecovery: true }).catch((e) => {
-      log.error('[LLM-HEALTH] periodic check error:', e?.message);
-    });
-  }, 30000);
-  setInterval(() => {
-    verifyLLMHealth({ notifyOnFailure: true, notifyOnRecovery: true }).catch((e) => {
-      log.error('[LLM-HEALTH] periodic check error:', e?.message);
-    });
-  }, 10 * 60 * 1000);
-
-  const tickDeps = {
-    pool,
-    tenantContext,
-    getActiveTenantIds,
-    runDataAuditor,
-    pushIssuesToFeishu,
-    pushIssueToAssignee,
-    pushScoresToFeishu,
-    log,
-  };
-  const auditTick = () => runAuditTick(tickDeps);
-  const weeklyAuditTick = () => runWeeklyAuditTick(tickDeps);
-  const evalTick = () => runEvalTick(tickDeps);
-  const weeklyOpsTick = () => runWeeklyOpsTick(tickDeps);
-  const dailyRechargeTick = () => runDailyRechargeTick(tickDeps);
-  const pushTick = () => runPushTick(tickDeps);
-
-  // Initial run after 15 seconds
-  setTimeout(auditTick, 15000);
-
-  // Periodic runs
-  setInterval(auditTick, 30 * 60 * 1000);   // every 30 min (daily checks)
-  setInterval(weeklyAuditTick, 30 * 60 * 1000); // every 30 min (checks if Mon 00:00 CST)
-  setInterval(evalTick, 60 * 60 * 1000);     // every hour
-  setInterval(weeklyOpsTick, 60 * 60 * 1000); // every hour (checks if Monday 10am)
-  setInterval(dailyRechargeTick, 60 * 60 * 1000); // every hour (checks if 10am)
-  setInterval(pushTick, 5 * 60 * 1000);      // every 5 min
-
+  return _llmHealthSchedulerApi.startAgentScheduler();
 }
 
 // ─────────────────────────────────────────────
@@ -2819,6 +2665,37 @@ _runBiFunctionTool = createRunBiFunctionTool({
   isLikelySameStore,
   inDateRangeInclusive,
   loadUnifiedTableVisitRowsByStore,
+});
+
+_llmHealthSchedulerApi = createLlmHealthSchedulerApi({
+  isExternalEnabled,
+  axios,
+  markProviderOk,
+  markProviderFail,
+  getSharedState,
+  lookupFeishuUserByUsername,
+  sendLarkMessage,
+  getScheduledTaskStatus,
+  getPerformanceMetrics: () => _performanceMetrics,
+  pool,
+  tenantContext,
+  getActiveTenantIds,
+  runDataAuditor,
+  pushIssuesToFeishu,
+  pushIssueToAssignee,
+  pushScoresToFeishu,
+  log,
+  providerConfig: {
+    deepseekModel: DEEPSEEK_MODEL,
+    deepseekApiKey: DEEPSEEK_API_KEY,
+    deepseekBaseUrl: DEEPSEEK_BASE_URL,
+    qwenModel: QWEN_MODEL,
+    qwenApiKey: QWEN_API_KEY,
+    qwenBaseUrl: QWEN_BASE_URL,
+    doubaoModel: DEEPSEEK_VISION_MODEL,
+    doubaoApiKey: DOUBAO_API_KEY,
+    doubaoBaseUrl: DOUBAO_BASE_URL,
+  },
 });
 
 // Wave P2: LLM client cluster → domains/ai/*
