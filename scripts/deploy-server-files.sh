@@ -148,8 +148,25 @@ ROOT_CODE="$(ssh_retry "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:
 HEALTH_CODE="$(ssh_retry "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/health")"
 echo "ROOT=$ROOT_CODE HEALTH=$HEALTH_CODE"
 if [[ "$ROOT_CODE" != "200" || "$HEALTH_CODE" != "200" ]]; then
-  echo "健康检查失败。bak=$BAK_REMOTE"
+  echo "健康检查失败 → 自动回滚 bak=$BAK_REMOTE"
   ssh_retry 'pm2 logs hrms-service --err --lines 20 --nostream' || true
+  for f in "${FILES[@]}"; do
+    rel="${f#"$ROOT"/}"
+    base="$(basename "$f")"
+    remote_path="$REMOTE/$rel"
+    bak_file="$BAK_REMOTE/$base"
+    if ssh_retry "test -f '$bak_file'"; then
+      echo "  rollback $rel"
+      ssh_retry "cp -a '$bak_file' '$remote_path'"
+    else
+      echo "  no bak for $rel (was NEW) — leave in place"
+    fi
+  done
+  ssh_retry 'pm2 reload hrms-service || pm2 restart hrms-service'
+  sleep 5
+  ROOT_CODE2="$(ssh_retry "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/")"
+  HEALTH_CODE2="$(ssh_retry "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/health")"
+  echo "after rollback ROOT=$ROOT_CODE2 HEALTH=$HEALTH_CODE2"
   exit 1
 fi
 echo "✅ deploy-server-files OK bak=$BAK_REMOTE"

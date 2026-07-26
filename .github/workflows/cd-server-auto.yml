@@ -1,0 +1,114 @@
+# P1.3：CI 绿 → 自动部署变更的 server/domains|utils|services 文件 → 健康检查 → 失败回滚
+# 默认关闭：需在仓库 Settings → Variables 设 CD_AUTO_ENABLED=true，并配置 DEPLOY_SSH_KEY。
+# 巨石入口（index/agents/growth-api）永不自动覆盖。
+name: CD server (auto)
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  deploy:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      vars.CD_AUTO_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout the green commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          check-latest: false
+
+      - name: Assert Node runtime
+        run: node scripts/assert-ci-runtime.mjs
+
+      - name: Resolve changed allowlisted server files
+        id: files
+        run: |
+          set -euo pipefail
+          BEFORE="${{ github.event.workflow_run.head_sha }}~1"
+          AFTER="${{ github.event.workflow_run.head_sha }}"
+          mapfile -t CHANGED < <(git diff --name-only --diff-filter=AM "$BEFORE" "$AFTER" -- \
+            'server/domains/' 'server/utils/' 'server/services/' 'server/ontology/' \
+            || true)
+          ALLOWED=()
+          for f in "${CHANGED[@]:-}"; do
+            [[ -z "$f" ]] && continue
+            [[ -f "$f" ]] || continue
+            case "$f" in
+              *.js|*.mjs) ;;
+              *) echo "skip non-js: $f"; continue ;;
+            esac
+            case "$f" in
+              server/index.js|server/agents.js|server/growth-api.js|server/.env*|*.env)
+                echo "reject monolith/env via auto CD: $f"
+                exit 1
+                ;;
+            esac
+            ALLOWED+=("$f")
+          done
+          if [[ ${#ALLOWED[@]} -eq 0 ]]; then
+            echo "no allowlisted server files changed — skip deploy"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "files=${ALLOWED[*]}" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          printf 'will deploy:\n'
+          printf '  %s\n' "${ALLOWED[@]}"
+
+      - name: Require deploy secrets
+        if: steps.files.outputs.skip != 'true'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          if [ -z "${DEPLOY_SSH_KEY:-}" ]; then
+            echo "::error::缺少 secrets.DEPLOY_SSH_KEY。见 docs/cd-server.md"
+            exit 1
+          fi
+          echo "DEPLOY_HOST=${DEPLOY_HOST:-root@47.100.96.30}"
+
+      - name: SSH setup
+        if: steps.files.outputs.skip != 'true'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if [ -n "${DEPLOY_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -T 10 47.100.96.30 >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy via deploy-server-files.sh (auto-rollback on health fail)
+        if: steps.files.outputs.skip != 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          FILES: ${{ steps.files.outputs.files }}
+        run: |
+          set -euo pipefail
+          export DEPLOY_HOST="${DEPLOY_HOST:-root@47.100.96.30}"
+          export DRY_RUN=0
+          # shellcheck disable=SC2086
+          bash scripts/deploy-server-files.sh $FILES
