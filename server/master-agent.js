@@ -55,7 +55,7 @@ import {
   laborEfficiencyTick, trainingClosedLoopTick
 } from './auto-ops-engine.js';
 import { childLogger } from './utils/logger.js';
-import { pickAssigneeForCategory } from './domains/master-agent/resolve-assignee.js';
+import { getCategoryAssigneeRoleMap } from './agent-config-manager.js';
 import {
   buildReviewNotificationMessage,
   buildReviewResultPayload,
@@ -70,6 +70,8 @@ import {
   registerMasterIntervals,
 } from './domains/master-agent/scheduler.js';
 import { registerMasterRoutes as registerMasterRoutesImpl } from './domains/master-agent/routes.js';
+import { STATUS_FLOW } from './domains/master-agent/status-flow.js';
+import { createMasterTaskLifecycle } from './domains/master-agent/lifecycle-service.js';
 
 const log = childLogger({ domain: 'master-agent' });
 
@@ -101,30 +103,18 @@ export function pool() {
 }
 
 // 责任人角色映射已移至 agent-config-manager.js 动态读取
-import { getCategoryAssigneeRoleMap } from './agent-config-manager.js';
 
-// 状态机定义
-const STATUS_FLOW = {
-  pending_audit:      { next: ['auditing', 'pending_dispatch'],           agent: 'data_auditor' },
-  auditing:           { next: ['pending_dispatch', 'closed'], agent: 'data_auditor' },
-  pending_dispatch:   { next: ['dispatched'],         agent: 'master' },
-  dispatched:         { next: ['pending_response'],   agent: 'ops_supervisor' },
-  pending_response:   { next: ['pending_review'],     agent: 'master' },
-  pending_review:     { next: ['resolved', 'rejected'], agent: 'ops_supervisor' },
-  resolved:           { next: ['pending_settlement'], agent: 'master' },
-  rejected:           { next: ['closed'],   agent: 'master' },
-  pending_settlement: { next: ['settled'],            agent: 'chief_evaluator' },
-  settled:            { next: ['closed'],             agent: 'master' },
-  closed:             { next: [],                     agent: null },
-  
-  // 新增：Agent沟通状态
-  agent_issue_reported: { next: ['pending_review'], agent: 'master' },
-  issue_assigned:      { next: ['optimization_proposed'], agent: 'data_auditor' },
-  optimization_proposed: { next: ['optimization_approved', 'optimization_rejected'], agent: 'master' },
-  optimization_approved: { next: ['optimization_implemented'], agent: 'data_auditor' },
-  optimization_implemented: { next: ['completed'], agent: 'master' },
-  optimization_completed: { next: ['closed'], agent: 'master' }
-};
+const {
+  transitionTask,
+  createTask,
+  resolveAssignee,
+} = createMasterTaskLifecycle({
+  getPool: pool,
+  log,
+  getSharedState,
+  getCategoryAssigneeRoleMap,
+  extractAnomalyRelations,
+});
 
 // ─────────────────────────────────────────────
 // 1. Table Creation
@@ -327,182 +317,6 @@ export async function ensureMasterTables() {
   }
   // 知识图谱 & 行动计划表
   try { await ensureKnowledgeGraphTables(); } catch (e) { log.error('[master] ensureKGTables failed:', e?.message); }
-}
-
-// ─────────────────────────────────────────────
-// 2. Event System
-// ─────────────────────────────────────────────
-
-let _taskSeq = 0;
-
-function generateTaskId() {
-  const now = new Date();
-  const ds = now.toISOString().slice(0, 10).replace(/-/g, '');
-  _taskSeq++;
-  return `MT-${ds}-${String(_taskSeq).padStart(4, '0')}`;
-}
-
-// 记录事件日志
-async function emitEvent(taskId, eventType, fromAgent, toAgent, statusBefore, statusAfter, payload = {}, tenantId = 'default') {
-  try {
-    await pool().query(
-      `INSERT INTO master_events (task_id, event_type, from_agent, to_agent, status_before, status_after, payload, tenant_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
-      [taskId, eventType, fromAgent, toAgent, statusBefore, statusAfter, JSON.stringify(payload), tenantId]
-    );
-  } catch (e) {
-    log.error('[master] emitEvent failed:', e?.message);
-  }
-}
-
-// 状态转换：验证合法性 + 更新任务 + 记录事件
-async function transitionTask(taskId, newStatus, agentName, data = {}, tenantId = 'default') {
-  try {
-    const r = await pool().query(`SELECT * FROM master_tasks WHERE task_id = $1 AND tenant_id = $2`, [taskId, tenantId]);
-    const task = r.rows?.[0];
-    if (!task) { log.error('[master] task not found:', taskId); return null; }
-
-    const currentStatus = task.status;
-    const flow = STATUS_FLOW[currentStatus];
-    if (!flow || !flow.next.includes(newStatus)) {
-      log.error(`[master] invalid transition: ${currentStatus} → ${newStatus} for task ${taskId}`);
-      return null;
-    }
-
-    // 动态构建 UPDATE 语句
-    const sets = ['status = $2', 'current_agent = $3', 'updated_at = NOW()'];
-    const params = [taskId, newStatus, agentName];
-    let idx = 4;
-
-    if (data.audit_result)    { sets.push(`audit_result = $${idx}::jsonb`);    params.push(JSON.stringify(data.audit_result)); idx++; }
-    if (data.dispatch_data)   { sets.push(`dispatch_data = $${idx}::jsonb`);   params.push(JSON.stringify(data.dispatch_data)); idx++; }
-    if (data.response_text !== undefined) { sets.push(`response_text = $${idx}`); params.push(data.response_text); idx++; }
-    if (data.response_images) { sets.push(`response_images = $${idx}::jsonb`); params.push(JSON.stringify(data.response_images)); idx++; }
-    if (data.review_result)   { sets.push(`review_result = $${idx}::jsonb`);   params.push(JSON.stringify(data.review_result)); idx++; }
-    if (data.settlement_data) { sets.push(`settlement_data = $${idx}::jsonb`); params.push(JSON.stringify(data.settlement_data)); idx++; }
-    if (data.score_impact !== undefined) { sets.push(`score_impact = $${idx}`); params.push(data.score_impact); idx++; }
-    if (data.assignee_username) { sets.push(`assignee_username = $${idx}`); params.push(data.assignee_username); idx++; }
-    if (data.assignee_role)   { sets.push(`assignee_role = $${idx}`);     params.push(data.assignee_role); idx++; }
-    if (data.title)           { sets.push(`title = $${idx}`);             params.push(data.title); idx++; }
-    if (data.detail)          { sets.push(`detail = $${idx}`);            params.push(data.detail); idx++; }
-    if (data.severity)        { sets.push(`severity = $${idx}`);          params.push(data.severity); idx++; }
-    if (data.feishu_msg_id)   { sets.push(`feishu_msg_ids = feishu_msg_ids || $${idx}::jsonb`); params.push(JSON.stringify([data.feishu_msg_id])); idx++; }
-
-    // 时间戳
-    if (newStatus === 'dispatched')   sets.push(`dispatched_at = NOW()`);
-    if (newStatus === 'pending_review') sets.push(`responded_at = NOW()`);
-    if (newStatus === 'resolved' || newStatus === 'rejected') sets.push(`resolved_at = NOW()`);
-    if (newStatus === 'settled')      sets.push(`settled_at = NOW()`);
-    if (newStatus === 'closed')       sets.push(`closed_at = NOW()`);
-
-    await pool().query(`UPDATE master_tasks SET ${sets.join(', ')} WHERE task_id = $1 AND tenant_id = $${params.length + 1}`, [...params, tenantId]);
-
-    // BI 异常：飞书任务结案后，将对应 anomaly_triggers 从 open 标为 closed（与列表展示一致；食安走总部单独判罚不归此路径）
-    if (['closed', 'resolved', 'settled', 'completed'].includes(newStatus) && String(task.source || '').trim() === 'bi_anomaly') {
-      try {
-        const sdRaw = task.source_data;
-        const sd =
-          sdRaw && typeof sdRaw === 'object' && !Array.isArray(sdRaw)
-            ? sdRaw
-            : (() => {
-                try {
-                  return JSON.parse(String(sdRaw || '{}'));
-                } catch {
-                  return {};
-                }
-              })();
-        const ak = String(sd.anomaly_key || task.category || '').trim();
-        const td = String(sd.bi_trigger_date || '').slice(0, 10);
-        if (ak && ak !== 'food_safety' && /^\d{4}-\d{2}-\d{2}$/.test(td)) {
-          await pool().query(
-            `UPDATE anomaly_triggers SET status = 'closed', updated_at = NOW()
-             WHERE anomaly_key = $1 AND store = $2 AND trigger_date = $3::date
-               AND COALESCE(status, 'open') IN ('open', 'pending_data')`,
-            [ak, task.store, td]
-          );
-        }
-      } catch (e) {
-        log.warn('[master] sync anomaly_triggers on bi_anomaly close:', e?.message || e);
-      }
-    }
-
-    // 记录事件
-    await emitEvent(taskId, `status_${newStatus}`, agentName, STATUS_FLOW[newStatus]?.agent || null, currentStatus, newStatus, data, tenantId);
-
-    log.info(`[master] ${taskId}: ${currentStatus} → ${newStatus} (by ${agentName})`);
-    return { ...task, status: newStatus };
-  } catch (e) {
-    log.error('[master] transitionTask failed:', e?.message);
-    return null;
-  }
-}
-
-// ─────────────────────────────────────────────
-// 3. Task Creation
-// ─────────────────────────────────────────────
-
-// 创建新任务（由 Data Auditor 发现异常时调用）
-async function createTask({ source, sourceRef, category, severity, store, brand, title, detail, sourceData }, tenantId = 'default') {
-  const taskId = generateTaskId();
-  try {
-    await pool().query(
-      `INSERT INTO master_tasks (task_id, status, source, source_ref, current_agent, category, severity, store, brand, title, detail, source_data, tenant_id)
-       VALUES ($1, 'pending_dispatch', $2, $3, 'master', $4, $5, $6, $7, $8, $9, $10::jsonb, $11)`,
-      [taskId, source || 'scheduled_audit', sourceRef || '', category, severity || 'medium',
-       store, brand, title, detail, JSON.stringify(sourceData || {}), tenantId]
-    );
-    await emitEvent(taskId, 'task_created', 'data_auditor', 'master', null, 'pending_dispatch', { category, severity, store }, tenantId);
-    // 知识图谱: 写入异常→门店关系
-    try { await extractAnomalyRelations({ task_id: taskId, category, severity, store, brand, title, detail, created_at: new Date() }); } catch (e) { /* ignore */ }
-    log.info(`[master] Task created: ${taskId} [${category}] ${store}`);
-    return taskId;
-  } catch (e) {
-    log.error('[master] createTask failed:', e?.message);
-    return null;
-  }
-}
-
-// ─────────────────────────────────────────────
-// 4. Responsibility Resolver
-// ─────────────────────────────────────────────
-
-// 根据异常类型和门店找到责任人
-async function resolveAssignee(category, store, existingAssignee, sourceData) {
-  const state = await getSharedState();
-  const roleMap = await getCategoryAssigneeRoleMap();
-  const { assignee, warnings } = pickAssigneeForCategory({
-    category,
-    store,
-    existingAssignee,
-    sourceData,
-    state,
-    roleMap,
-  });
-
-  for (const w of warnings) {
-    if (w.startsWith('cross_store:')) {
-      const [, username, userStore] = w.split(':');
-      log.warn(
-        `[resolveAssignee] ⚠️ 跨门店分派告警: 用户 ${username} 属于 ${userStore}，不属于目标门店 ${store}。自动重新匹配...`
-      );
-    } else if (w.startsWith('missing_user:')) {
-      log.warn(
-        `[resolveAssignee] ⚠️ 用户 ${w.slice('missing_user:'.length)} 不存在，自动重新匹配...`
-      );
-    } else if (w.startsWith('no_match:')) {
-      const [, storeName, targetRole] = w.split(':');
-      log.error(
-        `[resolveAssignee] ❌ 未找到门店 ${storeName} 的责任人（目标角色: ${targetRole}）`
-      );
-    }
-  }
-
-  if (!assignee) return null;
-
-  log.info(
-    `[resolveAssignee] ✅ 已匹配责任人: ${assignee.name}(${assignee.username}) - ${assignee.role} @ ${store}`
-  );
-  return assignee;
 }
 
 // ─────────────────────────────────────────────
