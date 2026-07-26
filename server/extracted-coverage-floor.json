@@ -266,6 +266,7 @@
     "domains/agent-message/handle-agent-message.js",
     "domains/agent-message/handle-data-auditor-case.js",
     "domains/agent-feishu-bot/on-feishu-event.js",
-    "domains/agent-bi/try-handle-bi-by-function-calling.js"
+    "domains/agent-bi/try-handle-bi-by-function-calling.js",
+    "domains/feishu-bitable/poll-submissions.js"
   ]
 }

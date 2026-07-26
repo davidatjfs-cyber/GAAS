@@ -32,7 +32,9 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'domains/agent-feishu-bot/on-feishu-event.js|INSERT INTO|agent_messages',
   'domains/agent-feishu-bot/on-feishu-event.js|UPDATE|agent_messages',
   'agents.js|INSERT INTO|agent_scores',
-  'agents.js|INSERT INTO|feishu_generic_records',
+  // Wave A4b：pollBitableSubmissions 迁出（agents.js 不再写 feishu_generic_records）
+  'domains/feishu-bitable/poll-submissions.js|INSERT INTO|feishu_generic_records',
+  'domains/feishu-bitable/poll-submissions.js|INSERT INTO|agent_messages',
   'agents.js|INSERT INTO|feishu_users',
   'agents.js|INSERT INTO|master_tasks',
   'agents.js|UPDATE|agent_messages',
@@ -99,6 +101,8 @@ const REPATH_NOTES = [
   'agents.js → domains/agent-feishu-bot/on-feishu-event.js | UPDATE|feishu_users',
   'agents.js → domains/agent-feishu-bot/on-feishu-event.js | INSERT INTO|agent_messages',
   'agents.js → domains/agent-feishu-bot/on-feishu-event.js | UPDATE|agent_messages',
+  'agents.js → domains/feishu-bitable/poll-submissions.js | INSERT INTO|feishu_generic_records',
+  'agents.js → domains/feishu-bitable/poll-submissions.js | INSERT INTO|agent_messages',
 ];
 
 const OWNER = 'gaas';
