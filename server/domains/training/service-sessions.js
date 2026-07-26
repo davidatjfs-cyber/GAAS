@@ -5,6 +5,11 @@
 import path from 'path';
 import fs from 'fs';
 import { pool } from './shared.js';
+import {
+  resolvePracticeMediaType,
+  scorePracticeMediaWithRubric,
+  scorePracticeMediaWithoutRubric,
+} from './upload-practice-media-helpers.js';
 
 function resolveQuery(query) {
   return query || ((sql, params) => pool().query(sql, params));
@@ -662,7 +667,7 @@ export async function uploadPracticeMedia({
     ).catch((e) => log.warn?.('[training] recordUploadOwnership failed:', e?.message));
 
     const originalExt = pathModule.extname(file.originalname).toLowerCase();
-    const mediaType = ['.mp4', '.mov', '.webm'].includes(originalExt) ? 'video' : 'image';
+    const mediaType = resolvePracticeMediaType(originalExt);
     const baseUrl = serverBaseUrl || process.env.SERVER_BASE_URL || 'https://nnyx.cc';
 
     let aiVerdict = 'review';
@@ -672,125 +677,45 @@ export async function uploadPracticeMedia({
     let aiTotalScore = null;
 
     if (rubric && Array.isArray(rubric.items) && rubric.items.length) {
-      const dishInfo = rubric.dish_name ? `考核菜品：${rubric.dish_name}（${rubric.station || '未知工位'}）` : '';
-      const scoringPrompt = `你是餐饮实操考试审评官。请根据以下步骤评分表，逐项判断员工操作是否合格，给出具体得分和扣分原因。
-
-【评分表】
-${dishInfo}
-项目：
-${rubric.items.map((item, i) => {
-        const name = item.action || item.name || `步骤${i + 1}`;
-        const checks = item.checks || [];
-        const quality = item.quality_standard ? `质量标准：${item.quality_standard}` : '';
-        const failure = item.common_failure ? `常见失败：${item.common_failure}` : '';
-        const critical = item.is_critical ? '【关键步骤】' : '';
-        return `  ${i + 1}. ${critical} ${name}（${item.weight}分）: ${checks.join('；')}${quality ? `\n     质量：${quality}` : ''}${failure ? `\n     注意：${failure}` : ''}`;
-      }).join('\n')}
-一票否决项：${(rubric.fail_criteria || []).join('；')}
-合格线：${rubric.pass_threshold || 80}分
-实操科目：${topicTitle}
-
-请先认真观看${mediaType === 'video' ? '完整视频' : '图片'}，然后逐项评分。严格返回JSON：
-{
-  "steps": [{"name":"步骤名称","score":12,"max":15,"feedback":"得分或扣分具体原因"}],
-  "total_score": 88,
-  "verdict": "passed/review/failed",
-  "fail_reason": "一票否决原因（无则填null）",
-  "summary": "整体评价，50字以内"
-}
-verdict说明：passed=总分≥${rubric.pass_threshold || 80}且无一票否决，review=总分60-79或存疑，failed=总分<60或有一票否决。
-注意：只能输出JSON，不要任何额外文字。`;
-
-      try {
-        if (mediaType === 'image') {
-          const visionResult = await callVisionLLM(filePath, scoringPrompt);
-          aiRawResponse = visionResult;
-          const text = visionResult?.content || '';
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const p = parseScoringJson(jsonMatch[0]);
-            aiVerdict = p.aiVerdict;
-            aiFeedback = p.aiFeedback;
-            aiStepScores = p.aiStepScores;
-            aiTotalScore = p.aiTotalScore;
-          }
-        } else {
-          const videoUrl = `${baseUrl}${mediaUrl}`;
-          let visionResult = await callVisionLLMVideo(videoUrl, scoringPrompt);
-          if (!visionResult?.ok) {
-            const frames = [];
-            const frameDir = pathModule.join(uploadsDir, `frames-${randomUUID()}`);
-            fsModule.mkdirSync(frameDir, { recursive: true });
-            try {
-              execFileSync('ffmpeg', ['-i', filePath, '-vf', 'fps=1/5,scale=480:-1', '-frames:v', '8', pathModule.join(frameDir, '%03d.jpg')], { timeout: 60000 });
-              const frameFiles = fsModule.readdirSync(frameDir).sort().slice(0, 8);
-              for (const f of frameFiles) {
-                const buf = fsModule.readFileSync(pathModule.join(frameDir, f));
-                frames.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${buf.toString('base64')}` } });
-              }
-              frames.push({ type: 'text', text: scoringPrompt });
-              visionResult = await callVisionLLM(frames, '');
-            } finally {
-              try { fsModule.rmSync(frameDir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
-            }
-          }
-          aiRawResponse = visionResult;
-          const text = visionResult?.content || '';
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const p = parseScoringJson(jsonMatch[0]);
-            aiVerdict = p.aiVerdict;
-            aiFeedback = p.aiFeedback;
-            aiStepScores = p.aiStepScores;
-            aiTotalScore = p.aiTotalScore;
-          }
-        }
-      } catch (scoreErr) {
-        log.error?.('[Training] Rubric scoring error:', scoreErr?.message);
-        aiVerdict = 'review';
-        aiFeedback = 'AI评分失败，需人工审核';
-      }
+      const scored = await scorePracticeMediaWithRubric({
+        rubric,
+        topicTitle,
+        mediaType,
+        filePath,
+        mediaUrl,
+        uploadsDir,
+        pathModule,
+        fsModule,
+        execFileSync,
+        callVisionLLM,
+        callVisionLLMVideo,
+        parseScoringJson,
+        randomUUID,
+        serverBaseUrl: baseUrl,
+        log,
+      });
+      aiVerdict = scored.aiVerdict;
+      aiFeedback = scored.aiFeedback;
+      aiRawResponse = scored.aiRawResponse;
+      aiStepScores = scored.aiStepScores;
+      aiTotalScore = scored.aiTotalScore;
     } else {
-      const judgmentPrompt = `你是餐饮培训评审官。请根据以下实操任务要求，判断图片/视频帧中的操作是否合格。
-任务要求：${session.practice_task || '按要求完成操作'}
-考核要点：${JSON.stringify(session.key_points)}
-请返回JSON：{"verdict":"passed/review/failed","feedback":"具体说明，50字以内"}
-verdict说明：passed=合格，review=需人工复核，failed=不合格需重练。`;
-
-      try {
-        if (mediaType === 'image') {
-          const visionResult = await callVisionLLM(filePath, judgmentPrompt);
-          aiRawResponse = visionResult;
-          const text = visionResult?.content || '';
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            aiVerdict = parsed.verdict || 'review';
-            aiFeedback = parsed.feedback || '';
-          }
-        } else {
-          try {
-            const framePath = pathModule.join(uploadsDir, `frame-${randomUUID()}.jpg`);
-            execFileSync('ffmpeg', ['-i', filePath, '-ss', '00:00:05', '-frames:v', '1', framePath], { timeout: 30000 });
-            const visionResult = await callVisionLLM(framePath, judgmentPrompt);
-            aiRawResponse = visionResult;
-            const text = visionResult?.content || '';
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              const parsed = JSON.parse(jsonMatch[0]);
-              aiVerdict = parsed.verdict || 'review';
-              aiFeedback = parsed.feedback || '';
-            }
-            try { fsModule.unlinkSync(framePath); } catch (_) { /* ignore */ }
-          } catch (ffmpegErr) {
-            aiVerdict = 'review';
-            aiFeedback = '视频处理失败，需人工审核';
-          }
-        }
-      } catch (aiErr) {
-        aiVerdict = 'review';
-        aiFeedback = 'AI 判定失败，需人工审核';
-      }
+      const scored = await scorePracticeMediaWithoutRubric({
+        session,
+        mediaType,
+        filePath,
+        uploadsDir,
+        pathModule,
+        fsModule,
+        execFileSync,
+        callVisionLLM,
+        randomUUID,
+      });
+      aiVerdict = scored.aiVerdict;
+      aiFeedback = scored.aiFeedback;
+      aiRawResponse = scored.aiRawResponse;
+      aiStepScores = scored.aiStepScores;
+      aiTotalScore = scored.aiTotalScore;
     }
 
     const certTenantId = String(tenantId || 'default').trim() || 'default';
