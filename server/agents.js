@@ -81,6 +81,8 @@ import {
   buildKpiRadarAlertJson,
   createRunDataAuditor,
 } from './domains/agent-auditor/run-data-auditor.js';
+import { createTableVisitMetricsApi } from './domains/agent-auditor/table-visit-metrics.js';
+import { createMarginMetricsApi } from './domains/agent-auditor/margin-metrics.js';
 import {
   getLLMClientConfig,
   getProviderHealthStatus,
@@ -2026,423 +2028,29 @@ function extractTableVisitItems(row) {
   return dishItems.filter((x) => x && !/卤鹅/.test(String(x)));
 }
 
-/** 与 agents-service-v2 tableVisitReasonImpliesDissatisfaction 同源（HRMS 侧不落 npm 依赖） */
-function tableVisitReasonImpliesDissatisfactionHrms(text) {
-  const t = String(text || '').trim();
-  if (t.length < 2) return false;
-  if (/很满意|非常满意|太满意|十分满意/.test(t) && !/不满意|不好|太|不够|没|糊|冷|少|骨头|差评|失望|投诉|还行|一般/.test(t)) {
-    return false;
-  }
-  if (
-    /不满意|不好|不太满意|不够满意|很差|糟糕|差劲|一般般|较差|糊味|糊了|不怎么热|不热|太冷|骨头太多|没肉|量少|差评|失望|投诉|太少|太多骨头|有骨头|量太少/.test(
-      t
-    )
-  ) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * 桌访一行是否计为「不满意」（与 agents-service-v2 tableVisitEntryIsDissatisfied 同源）：
- * - 满意度明确为好 → 否
- * - 满意度明确为差 → 有不满意菜品 或 有主要原因/反馈
- * - 其它 → 须同时有不满意菜品 + 有意义的主要原因（对齐「今天不满意的菜品」「不满意的主要原因是什么」）
- */
-function tableVisitRowIsDissatisfied(row) {
-  const sat = String(row?.satisfaction_level || '').trim();
-  if (sat && /满意|挺好的|挺好|很好|不错|好|赞|^是$/i.test(sat) && !/不满意|很差|糟糕/.test(sat)) return false;
-
-  const dishes = extractTableVisitDishes(row);
-  const reason = String(row?.unsatisfied_items || row?.feedback || '').trim();
-  const reasonMeaningful =
-    reason.length >= 2 && !/^(无|没有|暂无|不详|未知|-|—|你好|谢谢|ok|OK)$/i.test(reason);
-
-  if (sat && /不满意|不好|不太满意|不够满意|很差|糟糕|差劲|较差|^否$/i.test(sat)) {
-    return dishes.length > 0 || reasonMeaningful;
-  }
-
-  if (!sat && tableVisitReasonImpliesDissatisfactionHrms(reason) && dishes.length > 0) return true;
-
-  return dishes.length > 0 && reasonMeaningful;
-}
-
-function extractTableVisitSatisfactionFromFields(fields) {
-  const candidates = [
-    fields['用餐满意度'],
-    fields['今天用餐满意度'],
-    fields['今天用餐是否满意'],
-    fields['满意度等级'],
-    fields['满意度'],
-  ];
-  for (const v of candidates) {
-    const text = extractBitableFieldText(v);
-    if (text) return text;
-  }
-  return '';
-}
+let _tableVisitMetricsApi;
+let _marginMetricsApi;
 
 function extractTableVisitDishes(row) {
-  const raw = String(row?.dissatisfaction_dish || '').trim();
-  if (!raw) return [];
-  const blocked = new Set(['无', '没有', '暂无', '无菜品', '不清楚', '未知', '其他']);
-  return raw
-    .split(/[，,、\/;；|\n\r\t\s]+/)
-    .map((k) => String(k || '').trim())
-    .filter((k) => k && !blocked.has(k));
+  return _tableVisitMetricsApi.extractTableVisitDishes(row);
 }
 
 async function loadUnifiedTableVisitRowsByStore(store, startDate, endDate) {
-  if (!String(store || '').trim()) return [];
-  const pats = feishuStoreSearchPatterns(store);
-
-  // 1) Structured table first（门店过滤与 agents-service-v2 的 ILIKE ANY 口径一致）
-  let structured = [];
-  try {
-    let r;
-    try {
-      r = await pool().query(
-        `SELECT date::text AS date, store, dissatisfaction_dish, unsatisfied_items,
-                COALESCE(satisfaction_level::text, '') AS satisfaction_level
-         FROM table_visit_records
-         WHERE date >= $1::date
-           AND date <= $2::date
-           AND store ILIKE ANY($3::text[])
-         ORDER BY date DESC
-         LIMIT 5000`,
-        [startDate, endDate, pats]
-      );
-    } catch (_colErr) {
-      r = await pool().query(
-        `SELECT date::text AS date, store, dissatisfaction_dish, unsatisfied_items, ''::text AS satisfaction_level
-         FROM table_visit_records
-         WHERE date >= $1::date
-           AND date <= $2::date
-         ORDER BY date DESC
-         LIMIT 5000`,
-        [startDate, endDate]
-      );
-    }
-    const candidates = Array.isArray(r.rows) ? r.rows : [];
-    structured = candidates.filter((row) => feishuTableRowMatches(store, row?.store));
-  } catch (e) {
-    structured = [];
-  }
-  if (structured.length) return structured;
-
-  // 2) Fallback to generic sync cache（与 V2 一致的门店匹配，不再混用 isLikely 宽松规则）
-  try {
-    const tableId = String(BITABLE_CONFIGS?.table_visit?.tableId || '').trim();
-    if (!tableId) return [];
-
-    const g = await pool().query(
-      `SELECT record_id, fields, created_at
-       FROM feishu_generic_records
-       WHERE table_id = $1
-       ORDER BY updated_at DESC
-       LIMIT 2000`,
-      [tableId]
-    );
-
-    const seenRecordIds = new Set();
-    const out = [];
-    for (const row of (g.rows || [])) {
-      const recordId = String(row?.record_id || '').trim();
-      if (!recordId || seenRecordIds.has(recordId)) continue;
-      seenRecordIds.add(recordId);
-      const fields = row?.fields && typeof row.fields === 'object' ? row.fields : {};
-      const rowStore = String(fields['所属门店'] || fields['门店'] || '').trim();
-      if (!feishuTableRowMatches(store, rowStore)) continue;
-      const date = normalizeBitableDateValue(
-        fields['记录日期'] || fields['提交时间'] || fields['日期'] || fields['营业日期'],
-        row?.created_at
-      );
-      if (!inDateRangeInclusive(date, startDate, endDate)) continue;
-      out.push({
-        date,
-        dissatisfaction_dish: extractDissatisfactionDishFromFields(fields),
-        unsatisfied_items: extractDissatisfactionReasonFromFields(fields),
-        satisfaction_level: extractTableVisitSatisfactionFromFields(fields)
-      });
-    }
-    return out;
-  } catch (e) {
-    return [];
-  }
-}
-
-function getActualRevenueFromHistoryRow(row) {
-  let actual = Math.max(0, toNum(row?.actualRevenue, 0));
-  let expected = Math.max(0, toNum(row?.expectedRevenue, 0));
-  // 安全校验：折前>=实收，若反了则交换
-  if (actual > 0 && expected > 0 && actual > expected) {
-    const tmp = actual; actual = expected; expected = tmp;
-  }
-  if (actual > 0) return actual;
-  const discount = Math.max(0, toNum(row?.totalDiscount, 0));
-  return Math.max(0, expected - discount);
-}
-
-function buildGrossProfileMap(profiles, store) {
-  const map = new Map();
-  (Array.isArray(profiles) ? profiles : [])
-    .filter((x) => dailyReportRowMatches(store, x?.store))
-    .forEach((x) => {
-      const bizType = String(x?.bizType || '').trim().toLowerCase();
-      const productKey = normProductKey(x?.product);
-      if (!productKey) return;
-      const key = `${bizType}||${productKey}`;
-      map.set(key, {
-        costPerUnit: toNum(x?.costPerUnit ?? x?.cost, NaN),
-        grossPerUnit: toNum(x?.grossPerUnit ?? x?.grossProfit ?? x?.profitPerUnit, NaN)
-      });
-      if (bizType) {
-        map.set(`||${productKey}`, {
-          costPerUnit: toNum(x?.costPerUnit ?? x?.cost, NaN),
-          grossPerUnit: toNum(x?.grossPerUnit ?? x?.grossProfit ?? x?.profitPerUnit, NaN)
-        });
-      }
-    });
-  return map;
-}
-
-/** 基于备货预测历史 + 成本库的估算；数据审计「总实收毛利率异常」已改用 resolveTrustedNetMarginForAuditorIssue（pos_sales_detail/日报），勿混用。 */
-async function estimateMarginMetricsForRange({ state, store, startDate, endDate }) {
-  const historyRows = (Array.isArray(state?.inventoryForecastHistory) ? state.inventoryForecastHistory : [])
-    .filter((x) => dailyReportRowMatches(store, x?.store))
-    .filter((x) => inDateRangeInclusive(x?.date, startDate, endDate));
-  const profiles = Array.isArray(state?.forecastGrossProfitProfiles) ? state.forecastGrossProfitProfiles : [];
-  const profileMap = buildGrossProfileMap(profiles, store);
-  try {
-    // 按品牌过滤成本，避免两品牌同名菜成本互相污染（品牌从门店名前缀推断；'*' 通用兜底）。
-    const dlBrand = getBrandForStoreSync(store, resolveTenantIdDefault())?.brandName
-      || (String(store||'').includes('洪潮') ? '洪潮' : (String(store||'').includes('马己仙') ? '马己仙' : ''));
-    const dlParams = [normalizeStoreKey(store)];
-    let dlBrandClause = '';
-    if (dlBrand) { dlParams.push(dlBrand); dlBrandClause = ` AND (brand=$${dlParams.length} OR brand='*')`; }
-    const dlR = await pool().query(
-      `SELECT biz_type,dish_name,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=$1 OR store='*')${dlBrandClause}`,
-      dlParams
-    );
-    for (const r of (dlR.rows||[])) { const biz=String(r.biz_type||'').trim().toLowerCase(); const pk=normProductKey(r.dish_name); const c=toNum(r.unit_cost,NaN); if(!pk||!Number.isFinite(c)||c<0) continue; if(!profileMap.has(`${biz}||${pk}`)) profileMap.set(`${biz}||${pk}`,{costPerUnit:c,grossPerUnit:NaN}); if(!profileMap.has(`||${pk}`)) profileMap.set(`||${pk}`,{costPerUnit:c,grossPerUnit:NaN}); }
-  } catch(e) { log.error('[margin] dish_library_costs query error:', e?.message||e); }
-
-  const out = {
-    takeaway: { actualRevenue: 0, estimatedCost: 0, marginRate: 0 },
-    dinein: { actualRevenue: 0, estimatedCost: 0, marginRate: 0 },
-    total: { actualRevenue: 0, estimatedCost: 0, marginRate: 0 }
-  };
-
-  for (const row of historyRows) {
-    const bizTypeRaw = String(row?.bizType || '').trim().toLowerCase();
-    const bizType = bizTypeRaw === 'takeaway' || bizTypeRaw === 'delivery' || bizTypeRaw === '外卖'
-      ? 'takeaway'
-      : (bizTypeRaw === 'dinein' || bizTypeRaw === 'dine_in' || bizTypeRaw === '堂食' ? 'dinein' : '');
-    if (!bizType) continue;
-
-    const actualRevenue = getActualRevenueFromHistoryRow(row);
-    out[bizType].actualRevenue += actualRevenue;
-    out.total.actualRevenue += actualRevenue;
-
-    const products = row?.productQuantities && typeof row.productQuantities === 'object' ? row.productQuantities : {};
-    const entries = Object.entries(products)
-      .map(([name, qtyRaw]) => ({ name, qty: toNum(qtyRaw, 0) }))
-      .filter((x) => x.qty > 0);
-    const totalQty = entries.reduce((s, x) => s + x.qty, 0);
-    if (!totalQty) continue;
-
-    const expectedRevenue = Math.max(0, toNum(row?.expectedRevenue, 0));
-    for (const entry of entries) {
-      const key = normProductKey(entry.name);
-      if (!key) continue;
-      const profile = profileMap.get(`${bizType}||${key}`) || profileMap.get(`||${key}`) || null;
-      if (!profile) continue;
-
-      let estimatedCost = 0;
-      if (Number.isFinite(profile.costPerUnit) && profile.costPerUnit >= 0) {
-        estimatedCost = entry.qty * profile.costPerUnit;
-      } else if (Number.isFinite(profile.grossPerUnit) && profile.grossPerUnit >= 0 && expectedRevenue > 0) {
-        const allocRevenue = (entry.qty / totalQty) * expectedRevenue;
-        estimatedCost = Math.max(0, allocRevenue - entry.qty * profile.grossPerUnit);
-      }
-
-      const cR = expectedRevenue > 0 ? (entry.qty/totalQty)*expectedRevenue : 0;
-      out[bizType].estimatedCost += estimatedCost;
-      out[bizType].covRev = (out[bizType].covRev||0)+cR;
-      out.total.estimatedCost += estimatedCost;
-      out.total.covRev = (out.total.covRev||0)+cR;
-    }
-  }
-
-  const calcRate = (rev, cost) => {
-    if (!(rev > 0)) return 0;
-    return Math.max(0, 1 - cost / rev);
-  };
-
-  const xCost = (o) => o.covRev > 0 ? o.estimatedCost * (o.actualRevenue / o.covRev) : o.estimatedCost;
-  out.takeaway.marginRate = calcRate(out.takeaway.actualRevenue, xCost(out.takeaway));
-  out.dinein.marginRate = calcRate(out.dinein.actualRevenue, xCost(out.dinein));
-  out.total.marginRate = calcRate(out.total.actualRevenue, xCost(out.total));
-
-  return out;
-}
-
-/**
- * 数据审计「总实收毛利率异常」专用：只使用可核对的数据源，与 bi-weekly-report 对齐。
- * 1) 优先 pos_sales_detail + dish_library_costs（周报同款 SQL），并要求成本覆盖实收 ≥ 阈值、实收字段完整；
- * 2) 否则使用 PostgreSQL daily_reports.actual_margin（日报有填报的天数）；
- * 3) 不再用 inventoryForecastHistory 触发该类告警，避免「未提供销售明细却出毛利率」的质疑。
- */
-async function resolveTrustedNetMarginForAuditorIssue(storeName, startDate, endDate) {
-  const minCovPct = Math.min(100, Math.max(50, Number(process.env.DATA_AUDITOR_MIN_MARGIN_COST_COVERAGE_PCT || 85)));
-  const maxMissingRevPct = Math.min(50, Math.max(0, Number(process.env.DATA_AUDITOR_MAX_MISSING_REVENUE_ROW_PCT || 10)));
-  try {
-    setReportPool(pool());
-  } catch (e) {
-    return { ok: false, reason: 'pool', message: e?.message || String(e) };
-  }
-  let align;
-  try {
-    align = await resolveStoreKeyForReports(storeName);
-  } catch (e) {
-    return { ok: false, reason: 'align_failed', message: e?.message || String(e) };
-  }
-  const storeDbKey = String(align?.useStore || storeName).trim() || String(storeName).trim();
-
-  const rq = await pool().query(
-    `SELECT COUNT(*)::int AS n,
-            COALESCE(SUM(COALESCE(revenue,0)),0)::numeric AS sum_rev,
-            COUNT(*) FILTER (WHERE COALESCE(revenue,0)=0 AND COALESCE(sales_amount,0)>0)::int AS missing_rev_rows,
-            COUNT(*) FILTER (WHERE COALESCE(sales_amount,0)>0)::int AS valid_sales_rows
-     FROM pos_sales_detail
-     WHERE store = $1 AND date >= $2::date AND date <= $3::date`,
-    [storeDbKey, startDate, endDate]
-  );
-  const row = rq.rows?.[0] || {};
-  const rawRows = Number(row.n || 0);
-  const rawRev = Number(row.sum_rev || 0);
-  const validSalesRows = Number(row.valid_sales_rows || 0);
-  const missingRevRows = Number(row.missing_rev_rows || 0);
-  const missingRevPct = validSalesRows > 0 ? (missingRevRows / validSalesRows) * 100 : 0;
-
-  if (rawRows > 0 && rawRev > 0) {
-    if (missingRevPct > maxMissingRevPct) {
-      return {
-        ok: false,
-        reason: 'pos_sales_incomplete_revenue',
-        storeDbKey,
-        alignNote: align?.note || null,
-        message: `pos_sales_detail 中 ${missingRevRows}/${validSalesRows} 行(${missingRevPct.toFixed(1)}%)实收(revenue)为0，超过审计允许上限 ${maxMissingRevPct}%，不触发毛利率异常（请先修正导入）。`
-      };
-    }
-    let cov;
-    let marginPack;
-    try {
-      cov = await queryCostCoverageDiagnostics(storeDbKey, startDate, endDate, 8);
-      marginPack = await queryMarginByBiz(storeDbKey, startDate, endDate);
-    } catch (e) {
-      return { ok: false, reason: 'query_failed', storeDbKey, message: e?.message || String(e) };
-    }
-    const revCov = cov?.total?.revenueCoveragePct;
-    if (revCov == null || !Number.isFinite(revCov) || revCov < minCovPct) {
-      return {
-        ok: false,
-        reason: 'low_cost_coverage',
-        storeDbKey,
-        alignNote: align?.note || null,
-        coverage: cov?.total || null,
-        message: `菜品成本库对实收营收覆盖率 ${revCov != null && Number.isFinite(revCov) ? revCov.toFixed(1) : '—'}%，低于审计门槛 ${minCovPct}%（与周报「仅命中成本」口径一致），不触发毛利率异常。请补齐 dish_library_costs / dish_name_aliases。`
-      };
-    }
-    const netPct = marginPack?.margins?.totalNetMarginPct;
-    if (netPct == null || !Number.isFinite(netPct)) {
-      return { ok: false, reason: 'no_margin', storeDbKey, message: 'pos_sales_detail 有数据但无法计算总实收毛利率（请检查销售额与成本匹配）。' };
-    }
-    return {
-      ok: true,
-      source: 'pos_sales_detail_plus_cost_library',
-      marginRate: netPct / 100,
-      actualRevenue: Number(marginPack.total.revenue || 0),
-      estimatedCost: Number(marginPack.total.cost || 0),
-      coverage: cov.total,
-      storeDbKey,
-      alignNote: align?.note || null,
-      summary: `数据源：pos_sales_detail + dish_library_costs（与经营周报一致）；门店库键「${storeDbKey}」；成本覆盖实收 ${Number(revCov).toFixed(1)}%。${align?.note ? ` ${align.note}` : ''}`
-    };
-  }
-
-  try {
-    const dr = await pool().query(
-      `SELECT ROUND(AVG(actual_margin)::numeric, 4) AS av_g,
-              COUNT(*)::int AS days_n
-       FROM daily_reports
-       WHERE TRIM(store) = $1 AND date >= $2::date AND date <= $3::date
-         AND actual_margin IS NOT NULL AND actual_margin > 0`,
-      [storeDbKey, startDate, endDate]
-    );
-    const av = parseFloat(dr.rows?.[0]?.av_g);
-    const daysN = Number(dr.rows?.[0]?.days_n || 0);
-    if (Number.isFinite(av) && av > 0 && daysN >= 1) {
-      return {
-        ok: true,
-        source: 'daily_reports_pg',
-        marginRate: av / 100,
-        actualRevenue: null,
-        estimatedCost: null,
-        drDays: daysN,
-        storeDbKey,
-        alignNote: align?.note || null,
-        summary: `数据源：PostgreSQL daily_reports.actual_margin（${daysN} 天有值）；未使用备货预测。门店库键「${storeDbKey}」。${align?.note ? ` ${align.note}` : ''}`
-      };
-    }
-  } catch (e) {
-    return { ok: false, reason: 'daily_reports_failed', storeDbKey, message: e?.message || String(e) };
-  }
-
-  return {
-    ok: false,
-    reason: 'no_trusted_source',
-    storeDbKey,
-    alignNote: align?.note || null,
-    message: '周期内无可用 pos_sales_detail 实收，且 daily_reports 无有效 actual_margin，不触发「总实收毛利率异常」（避免不可核实数据）。'
-  };
+  return _tableVisitMetricsApi.loadUnifiedTableVisitRowsByStore(store, startDate, endDate);
 }
 
 async function loadTableVisitMetricsByStore(store, startDate, endDate) {
-  const out = {
-    countByDate: new Map(),
-    dissatisfiedProducts: new Map(),
-    dissatisfiedByDate: new Map(),
-    productLabelByKey: new Map()
-  };
-  try {
-    const normalizedStore = normalizeStoreKey(store);
-    if (!normalizedStore) return out;
-
-    const rows = await loadUnifiedTableVisitRowsByStore(store, startDate, endDate);
-    for (const row of rows) {
-      const d = String(row?.date || '').slice(0, 10);
-      if (!d) continue;
-      out.countByDate.set(d, (out.countByDate.get(d) || 0) + 1);
-
-      if (!tableVisitRowIsDissatisfied(row)) continue;
-      extractTableVisitDishes(row).forEach((product) => {
-        if (/卤鹅/.test(String(product || ''))) return;
-        const productKey = normProductKey(product);
-        if (!productKey) return;
-        const key = `${normalizedStore}||${productKey}`;
-        out.dissatisfiedProducts.set(key, (out.dissatisfiedProducts.get(key) || 0) + 1);
-        if (!out.productLabelByKey.has(productKey)) out.productLabelByKey.set(productKey, product);
-        const dateSet = out.dissatisfiedByDate.get(d) || new Set();
-        dateSet.add(productKey);
-        out.dissatisfiedByDate.set(d, dateSet);
-      });
-    }
-  } catch (e) {
-    // table may not exist in some envs; keep auditor running
-  }
-  return out;
+  return _tableVisitMetricsApi.loadTableVisitMetricsByStore(store, startDate, endDate);
 }
+
+async function estimateMarginMetricsForRange(args) {
+  return _marginMetricsApi.estimateMarginMetricsForRange(args);
+}
+
+async function resolveTrustedNetMarginForAuditorIssue(storeName, startDate, endDate) {
+  return _marginMetricsApi.resolveTrustedNetMarginForAuditorIssue(storeName, startDate, endDate);
+}
+
 
 // ─────────────────────────────────────────────
 // 4. Feishu Client
@@ -5287,6 +4895,28 @@ async function checkDataSourceQuality() {
     return issues;
   }, []);
 }
+
+_tableVisitMetricsApi = createTableVisitMetricsApi({
+  pool,
+  bitableConfigs: BITABLE_CONFIGS,
+  normalizeBitableDateValue,
+  extractDissatisfactionDishFromFields,
+  extractDissatisfactionReasonFromFields,
+  extractBitableFieldText,
+  inDateRangeInclusive,
+  normalizeStoreKey,
+  normProductKey,
+});
+
+_marginMetricsApi = createMarginMetricsApi({
+  pool,
+  log,
+  toNum,
+  normProductKey,
+  inDateRangeInclusive,
+  normalizeStoreKey,
+  setReportPool,
+});
 
 _runDataAuditor = createRunDataAuditor({
   pool,
