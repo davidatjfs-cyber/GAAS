@@ -26,7 +26,6 @@ test('helpers summarize and fallback notes', () => {
 
 test('verifyLLMHealth external disabled + probe success/fail paths', async () => {
   const fails = [];
-  const alerts = [];
   const api = createLlmHealthSchedulerApi({
     isExternalEnabled: () => true,
     axios: {
