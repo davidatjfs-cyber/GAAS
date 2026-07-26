@@ -2981,8 +2981,8 @@
                     <div class="tp-grid-4">
                         <div class="tp-field">范围<div style="color:#fff; font-size:13px;">${escapeHtml(t.store || t.brand || '公司级')}</div></div>
                         <div class="tp-field">指标<div style="color:#fff; font-size:13px; font-family:monospace;">${escapeHtml(t.metric_key)}</div></div>
-                        <label class="tp-field">目标值<input type="number" step="0.01" class="tp-input" value="${t.target_value ?? ''}" onchange="updateTpKpiTargetField('${t.id}','target_value',this.value)"></label>
-                        <label class="tp-field">预警值<input type="number" step="0.01" class="tp-input" value="${t.warning_value ?? ''}" onchange="updateTpKpiTargetField('${t.id}','warning_value',this.value)"></label>
+                        <label class="tp-field">目标值<input type="number" step="0.01" class="tp-input" value="${t.target_value ?? ''}" data-change="updateTpKpiTargetField" data-arg="${t.id}" data-arg2="target_value" data-pass-value></label>
+                        <label class="tp-field">预警值<input type="number" step="0.01" class="tp-input" value="${t.warning_value ?? ''}" data-change="updateTpKpiTargetField" data-arg="${t.id}" data-arg2="warning_value" data-pass-value></label>
                     </div>
                     <div style="font-size:11px; color:rgba(255,255,255,0.4); margin-top:6px;">单位:${escapeHtml(t.unit||'-')} · ${t.direction==='lower_better'?'越低越好':'越高越好'} · ${({daily:'每日',weekly:'每周',monthly:'每月'})[t.period]||t.period}</div>
                     <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="deleteTpKpiTarget" data-arg="${t.id}">删除</button></div>
@@ -3082,7 +3082,7 @@
             box.innerHTML = list.map((item, idx) => `
                 <div class="tp-row-item">
                     <div class="tp-grid-3" style="grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));">
-                        ${fields.map(([f, label]) => `<label class="tp-field">${label}<input type="text" class="tp-input" value="${escapeHtml(String(item[f] ?? ''))}" onchange="updateTpRefItem('${key}',${idx},'${f}',this.value)"></label>`).join('')}
+                        ${fields.map(([f, label]) => `<label class="tp-field">${label}<input type="text" class="tp-input" value="${escapeHtml(String(item[f] ?? ''))}" data-change="updateTpRefItem" data-arg="${key}" data-arg2="${idx}" data-arg2-type="number" data-arg3="${f}" data-pass-value></label>`).join('')}
                     </div>
                     <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="removeTpRefItem" data-arg="${key}" data-arg2="${idx}" data-arg2-type="number">删除</button></div>
                 </div>`).join('');
@@ -3120,9 +3120,9 @@
             if (!box) return;
             box.innerHTML = _tpRhythmItems.map((it, idx) => `
                 <div class="tp-row-item" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                    <label style="display:flex; align-items:center; gap:4px; font-size:12px;"><input type="checkbox" ${it.enabled !== false ? 'checked' : ''} onchange="updateTpRhythmItem(${idx},'enabled',this.checked)">启用</label>
-                    <input type="text" placeholder="名称" class="tp-input" style="flex:1; min-width:100px;" value="${escapeHtml(it.label || '')}" onchange="updateTpRhythmItem(${idx},'label',this.value)">
-                    <input type="text" placeholder="说明" class="tp-input" style="flex:2; min-width:140px;" value="${escapeHtml(it.desc || '')}" onchange="updateTpRhythmItem(${idx},'desc',this.value)">
+                    <label style="display:flex; align-items:center; gap:4px; font-size:12px;"><input type="checkbox" ${it.enabled !== false ? 'checked' : ''} data-change="updateTpRhythmItem" data-arg="${idx}" data-arg-type="number" data-arg2="enabled" data-pass-checked>启用</label>
+                    <input type="text" placeholder="名称" class="tp-input" style="flex:1; min-width:100px;" value="${escapeHtml(it.label || '')}" data-change="updateTpRhythmItem" data-arg="${idx}" data-arg-type="number" data-arg2="label" data-pass-value>
+                    <input type="text" placeholder="说明" class="tp-input" style="flex:2; min-width:140px;" value="${escapeHtml(it.desc || '')}" data-change="updateTpRhythmItem" data-arg="${idx}" data-arg-type="number" data-arg2="desc" data-pass-value>
                     <button type="button" class="btn btn-danger" data-click="removeTpRhythmItem" data-arg="${idx}" data-arg-type="number">删除</button>
                 </div>`).join('');
         }
@@ -3163,23 +3163,23 @@
             box.innerHTML = _tpInspections.map((item, idx) => `
                 <div class="tp-row-item">
                     <div class="tp-grid-4">
-                        <label class="tp-field">门店（留空=按品牌）<input type="text" class="tp-input" value="${escapeHtml(item.store || '')}" onchange="updateTpInspection(${idx},'store',this.value)"></label>
-                        <label class="tp-field">品牌<select class="tp-input" onchange="updateTpInspection(${idx},'brand',this.value)">
+                        <label class="tp-field">门店（留空=按品牌）<input type="text" class="tp-input" value="${escapeHtml(item.store || '')}" data-change="updateTpInspection" data-arg="${idx}" data-arg-type="number" data-arg2="store" data-pass-value></label>
+                        <label class="tp-field">品牌<select class="tp-input" data-change="updateTpInspection" data-arg="${idx}" data-arg-type="number" data-arg2="brand" data-pass-value>
                             <option value="">（全部品牌）</option>
                             ${['洪潮','马己仙'].map(b => `<option value="${b}" ${item.brand===b?'selected':''}>${b}</option>`).join('')}
                         </select></label>
-                        <label class="tp-field">任务类型<select class="tp-input" onchange="updateTpInspection(${idx},'type',this.value)">
+                        <label class="tp-field">任务类型<select class="tp-input" data-change="updateTpInspection" data-arg="${idx}" data-arg-type="number" data-arg2="type" data-pass-value>
                             ${_tpRhythmItems.map(it => `<option value="${escapeHtml(it.key)}" ${item.type===it.key?'selected':''}>${escapeHtml(it.label||it.key)}</option>`).join('')}
                         </select></label>
-                        <label class="tp-field">时间(北京)<input type="time" class="tp-input" value="${escapeHtml(item.time || '09:00')}" onchange="updateTpInspection(${idx},'time',this.value)"></label>
+                        <label class="tp-field">时间(北京)<input type="time" class="tp-input" value="${escapeHtml(item.time || '09:00')}" data-change="updateTpInspection" data-arg="${idx}" data-arg-type="number" data-arg2="time" data-pass-value></label>
                     </div>
                     <div class="tp-grid-2" style="margin-top:8px;">
-                        <label class="tp-field">频率<select class="tp-input" onchange="updateTpInspection(${idx},'frequency',this.value)">
+                        <label class="tp-field">频率<select class="tp-input" data-change="updateTpInspection" data-arg="${idx}" data-arg-type="number" data-arg2="frequency" data-pass-value>
                             ${['daily','weekly','biweekly','monthly'].map(f => `<option value="${f}" ${((item.frequency||'daily')===f)?'selected':''}>${({daily:'每天',weekly:'每周',biweekly:'每两周',monthly:'每月'})[f]}</option>`).join('')}
                         </select></label>
                         <div class="tp-field">发送对象
                             <div style="display:flex; gap:10px; flex-wrap:wrap; padding-top:4px;">
-                                ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} onchange="toggleTpInspectionRole(${idx},'${role}',this.checked)">${label}</label>`).join('')}
+                                ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} data-change="toggleTpInspectionRole" data-arg="${idx}" data-arg-type="number" data-arg2="${role}" data-pass-checked>${label}</label>`).join('')}
                             </div>
                         </div>
                     </div>
@@ -3229,20 +3229,20 @@
             box.innerHTML = _tpRandomItems.map((item, idx) => `
                 <div class="tp-row-item">
                     <div class="tp-grid-4">
-                        <label class="tp-field">检查项名称<input type="text" class="tp-input" value="${escapeHtml(item.type || '')}" onchange="updateTpRandom(${idx},'type',this.value)"></label>
-                        <label class="tp-field">描述<input type="text" class="tp-input" value="${escapeHtml(item.description || '')}" onchange="updateTpRandom(${idx},'description',this.value)"></label>
-                        <label class="tp-field">限时(分)<input type="number" class="tp-input" value="${item.timeWindow ?? 15}" onchange="updateTpRandom(${idx},'timeWindow',Number(this.value))"></label>
+                        <label class="tp-field">检查项名称<input type="text" class="tp-input" value="${escapeHtml(item.type || '')}" data-change="updateTpRandom" data-arg="${idx}" data-arg-type="number" data-arg2="type" data-pass-value></label>
+                        <label class="tp-field">描述<input type="text" class="tp-input" value="${escapeHtml(item.description || '')}" data-change="updateTpRandom" data-arg="${idx}" data-arg-type="number" data-arg2="description" data-pass-value></label>
+                        <label class="tp-field">限时(分)<input type="number" class="tp-input" value="${item.timeWindow ?? 15}" data-change="updateTpRandom" data-arg="${idx}" data-arg-type="number" data-arg2="timeWindow" data-pass-number></label>
                         <div class="tp-field">间隔(小时)
                             <div style="display:flex; gap:4px; align-items:center;">
-                                <input type="number" class="tp-input" value="${item.intervalMinHours ?? 2}" onchange="updateTpRandom(${idx},'intervalMinHours',Number(this.value))">
+                                <input type="number" class="tp-input" value="${item.intervalMinHours ?? 2}" data-change="updateTpRandom" data-arg="${idx}" data-arg-type="number" data-arg2="intervalMinHours" data-pass-number>
                                 <span>~</span>
-                                <input type="number" class="tp-input" value="${item.intervalMaxHours ?? 4}" onchange="updateTpRandom(${idx},'intervalMaxHours',Number(this.value))">
+                                <input type="number" class="tp-input" value="${item.intervalMaxHours ?? 4}" data-change="updateTpRandom" data-arg="${idx}" data-arg-type="number" data-arg2="intervalMaxHours" data-pass-number>
                             </div>
                         </div>
                     </div>
                     <div class="tp-field" style="margin-top:8px;">发送对象（绩效归属）
                         <div style="display:flex; gap:10px; flex-wrap:wrap; padding-top:4px;">
-                            ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} onchange="toggleTpRandomRole(${idx},'${role}',this.checked)">${label}</label>`).join('')}
+                            ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} data-change="toggleTpRandomRole" data-arg="${idx}" data-arg-type="number" data-arg2="${role}" data-pass-checked>${label}</label>`).join('')}
                         </div>
                     </div>
                     <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="removeTpRandomItem" data-arg="${idx}" data-arg-type="number">删除</button></div>
@@ -4136,7 +4136,7 @@
                     <div class="af-card-body" style="display:none; padding: 0 16px 14px; border-top: 1px solid rgba(255,255,255,0.05);">
                         <div style="padding-top: 12px;">
                             <div style="font-size: 11px; color: rgba(200,215,230,0.6); font-weight: 600; margin-bottom: 6px;">适用门店</div>
-                            <select id="af-store-${m.type}" class="settings-input" multiple style="width:100%; min-height:34px; font-size:13px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(226,232,240,0.9); padding:6px 8px;" onchange="afOnStoreChange('${m.type}')">${storeOptsHtml}</select>
+                            <select id="af-store-${m.type}" class="settings-input" multiple style="width:100%; min-height:34px; font-size:13px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(226,232,240,0.9); padding:6px 8px;" data-change="afOnStoreChange" data-arg="${m.type}">${storeOptsHtml}</select>
                         </div>
                         <div style="margin-top: 10px;">
                             <div style="font-size: 11px; color: rgba(200,215,230,0.6); font-weight: 600; margin-bottom: 6px;">审批链路</div>

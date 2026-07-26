@@ -1789,7 +1789,7 @@
             if (tpl.scope === 'bound') {
                 dyn.innerHTML = ''
                     + '<div class="rep-field"><label>绑定规则 *（' + escapeHtml(tpl.bind_kind === 'payment_rule' ? '支付发券' : '规则引擎/订阅') + '）</label>'
-                    + '<select id="abtest-target-rule" class="dr-store-select" onchange="onAbBindRuleChange()"><option value="">加载中…</option></select></div>'
+                    + '<select id="abtest-target-rule" class="dr-store-select" data-change="onAbBindRuleChange"><option value="">加载中…</option></select></div>'
                     + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">A组 · 当前版本（只读）</div>'
                     + '<textarea id="abtest-variant-a" class="dr-store-select" readonly placeholder="选择绑定规则后自动带出当前版本" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:rgba(226,232,240,0.7);background:rgba(255,255,255,0.03);resize:vertical;"></textarea>'
                     + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">B组 · 挑战版本 *（' + (tpl.bind_kind === 'payment_rule' ? '券模板ID / 触发门槛' : '短信文案，可用 {name}/{姓名} 占位') + '）</div>'
@@ -1840,7 +1840,7 @@
             var row = document.createElement('div');
             row.id = 'abcf-row-' + key;
             row.style.cssText = 'display:grid;grid-template-columns:1fr 110px 36px;gap:6px;margin-bottom:6px;';
-            row.innerHTML = '<input id="abcf-' + key + '-label" class="dr-store-select" placeholder="字段名（如 浏览量）" style="padding:8px;color:var(--rep-text);font-size:12px;" oninput="abRefreshCustomMetric()">'
+            row.innerHTML = '<input id="abcf-' + key + '-label" class="dr-store-select" placeholder="字段名（如 浏览量）" style="padding:8px;color:var(--rep-text);font-size:12px;" data-input="abRefreshCustomMetric">'
                 + '<select id="abcf-' + key + '-type" class="dr-store-select" style="font-size:12px;"><option value="int">计数</option><option value="money">金额</option></select>'
                 + '<button type="button" class="rep-seg-btn" style="padding:0;" data-click="abRemoveCustomField" data-arg="' + key + '">×</button>';
             host.appendChild(row);
@@ -3369,11 +3369,11 @@
                             '<div class="amr-sec">'
                           +   '<div class="amr-sec-title">📡 投放渠道</div>'
                           +   '<div class="amr-field">'
-                          +     '<select id="am-ch-' + rk + '" class="amr-ctrl" onchange="amOnChannelChange(\'' + rk + '\')">' + channelOpts + '</select>'
+                          +     '<select id="am-ch-' + rk + '" class="amr-ctrl" data-change="amOnChannelChange" data-arg="' + rk + '">' + channelOpts + '</select>'
                           +   '</div>'
                           +   '<div id="am-ch-sms-' + rk + '" class="amr-field" style="display:' + (curChannel === 'sms' ? 'block' : 'none') + ';">'
                           +     '<label class="amr-label">营销活动（自动绑定门店双模板＋同步规则标题）</label>'
-                          +     '<select id="am-campaign-' + rk + '" class="amr-ctrl" onchange="amOnCampaignChange(\'' + rk + '\')">' + campaignOpts + '</select>'
+                          +     '<select id="am-campaign-' + rk + '" class="amr-ctrl" data-change="amOnCampaignChange" data-arg="' + rk + '">' + campaignOpts + '</select>'
                           +     '<div class="amr-hint" id="am-campaign-tip-' + rk + '">' + escapeHtml(campaignTip) + '</div>'
                           +   '</div>'
                           +   '<button type="button" class="amr-btn amr-btn--ghost" data-click="amSetChannel" data-arg="' + rk + '">保存渠道</button>'

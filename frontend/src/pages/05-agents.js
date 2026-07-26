@@ -76,6 +76,8 @@
             { key: 'hand_washing_duration', label: '洗手时长检查' }
         ];
 
+        window.hrmsOpsInspectionTypeChange = function(el) { if (el.value !== 'custom') return; const n = prompt('请输入自定义巡检类型英文标识(如 fire_safety)'); if (n) { const o = document.createElement('option'); o.value = n; o.text = n; o.selected = true; el.appendChild(o); } else el.value = 'opening'; }; window.hrmsSetBiAnomalyRuleEnabled = function(idx, checked) { if (__BI_ANOMALY_RULES[idx]) __BI_ANOMALY_RULES[idx].enabled = checked; }; window.hrmsSetBiAnomalyRuleMedium = function(idx, value) { if (__BI_ANOMALY_RULES[idx]) __BI_ANOMALY_RULES[idx].medium = Number(value); }; window.hrmsSetBiAnomalyRuleHigh = function(idx, value) { if (__BI_ANOMALY_RULES[idx]) __BI_ANOMALY_RULES[idx].high = Number(value); }; window.hrmsSetHrRatingDimWeight = function(i, value) { if (__HR_RATING_CURRENT_DIMS[i]) __HR_RATING_CURRENT_DIMS[i].weight = Number(value); }; window.hrmsSetHrRatingDimThreshold = function(i, grade, value) { if (__HR_RATING_CURRENT_DIMS[i]) { if (!__HR_RATING_CURRENT_DIMS[i].thresholds) __HR_RATING_CURRENT_DIMS[i].thresholds = {}; __HR_RATING_CURRENT_DIMS[i].thresholds[grade] = Number(value); } };
+
         async function fetchWithAgentAbort(key, url, options = {}) {
             const prev = __AGENT_REQUEST_CONTROLLERS[key];
             if (prev) prev.abort();
@@ -109,7 +111,7 @@
             const isCustom = !OP_INSPECTION_TYPE_OPTIONS.includes(v);
             let opts = OP_INSPECTION_TYPE_OPTIONS.map((k)=>`<option value="${k}" ${k===v?'selected':''}>${label[k]||k}</option>`).join('');
             if (isCustom) opts += `<option value="${v}" selected>${v}</option>`;
-            return `<select class="${cls}" style="width:100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff;" onchange="if(this.value==='custom'){const n=prompt('请输入自定义巡检类型英文标识(如 fire_safety)');if(n){const o=document.createElement('option');o.value=n;o.text=n;o.selected=true;this.appendChild(o);}else{this.value='opening';}}">${opts}</select>`;
+            return `<select class="${cls}" style="width:100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff;" data-change="hrmsOpsInspectionTypeChange" data-arg-self>${opts}</select>`;
         }
 
         function getOpRandomTypeSelectHtml(value, cls) {
@@ -487,7 +489,7 @@
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                         <div style="font-weight:600;color:#e2e8f0;font-size:13px;">${escapeHtml(label)}</div>
                         <div style="display:flex;gap:6px;align-items:center;">
-                            <label style="font-size:11px;color:#94a3b8;"><input type="checkbox" ${rule.enabled !== false ? 'checked' : ''} onchange="__BI_ANOMALY_RULES[${idx}].enabled=this.checked"> 启用</label>
+                            <label style="font-size:11px;color:#94a3b8;"><input type="checkbox" ${rule.enabled !== false ? 'checked' : ''} data-change="hrmsSetBiAnomalyRuleEnabled" data-arg="${idx}" data-arg-type="number" data-pass-checked> 启用</label>
                             <button data-click="removeBiAnomalyRule" data-arg="${idx}" data-arg-type="number" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:2px;" title="删除">✕</button>
                         </div>
                     </div>
@@ -495,11 +497,11 @@
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
                         <div>
                             <label class="acm-lbl">🟡 中优先级 (${escapeHtml(unitLabel)})</label>
-                            <input type="number" class="acm-inp acm-inp-sm" value="${rule.medium ?? ''}" onchange="__BI_ANOMALY_RULES[${idx}].medium=Number(this.value)" step="any">
+                            <input type="number" class="acm-inp acm-inp-sm" value="${rule.medium ?? ''}" data-change="hrmsSetBiAnomalyRuleMedium" data-arg="${idx}" data-arg-type="number" data-pass-number step="any">
                         </div>
                         <div>
                             <label class="acm-lbl">🔴 高优先级 (${escapeHtml(unitLabel)})</label>
-                            <input type="number" class="acm-inp acm-inp-sm" value="${rule.high ?? ''}" onchange="__BI_ANOMALY_RULES[${idx}].high=Number(this.value)" step="any">
+                            <input type="number" class="acm-inp acm-inp-sm" value="${rule.high ?? ''}" data-change="hrmsSetBiAnomalyRuleHigh" data-arg="${idx}" data-arg-type="number" data-pass-number step="any">
                         </div>
                     </div>
                 </div>`;
@@ -548,8 +550,8 @@
                     var mv=ov[mk]!=null?(ip?+(ov[mk]*100).toFixed(2):ov[mk]):'';
                     var hv=ov[hk]!=null?(ip?+(ov[hk]*100).toFixed(2):ov[hk]):'';
                     cells+='<div style="display:flex;gap:4px;align-items:center;margin:2px 0"><span style="font-size:10px;color:#64748b;width:68px;flex-shrink:0">'+escapeHtml(p.label.slice(0,6))+'</span>';
-                    cells+='<input type="number" class="acm-inp acm-inp-sm" style="width:58px;font-size:11px" placeholder="中" value="'+mv+'" onchange="setBiStoreOverride(\''+s.replace(/'/g,"\\'")+'\',\''+mk+'\',this.value,'+ip+')" step="any">';
-                    cells+='<input type="number" class="acm-inp acm-inp-sm" style="width:58px;font-size:11px" placeholder="高" value="'+hv+'" onchange="setBiStoreOverride(\''+s.replace(/'/g,"\\'")+'\',\''+hk+'\',this.value,'+ip+')" step="any"></div>';
+                    cells+='<input type="number" class="acm-inp acm-inp-sm" style="width:58px;font-size:11px" placeholder="中" value="'+mv+'" data-change="setBiStoreOverride" data-arg="'+s.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" data-arg2="'+mk+'" data-pass-value data-arg3="'+(ip?1:0)+'" data-arg3-type="number" step="any">';
+                    cells+='<input type="number" class="acm-inp acm-inp-sm" style="width:58px;font-size:11px" placeholder="高" value="'+hv+'" data-change="setBiStoreOverride" data-arg="'+s.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" data-arg2="'+hk+'" data-pass-value data-arg3="'+(ip?1:0)+'" data-arg3-type="number" step="any"></div>';
                 }
                 h+='<div style="background:#1e293b;border-radius:8px;padding:10px;border:1px solid #334155;margin-bottom:8px"><div style="font-weight:600;color:#e2e8f0;font-size:12px;margin-bottom:4px">🏪 '+escapeHtml(s)+'</div><div style="font-size:10px;color:#64748b;margin-bottom:4px">留空=使用全局默认值</div>'+cells+'</div>';
             }
@@ -987,30 +989,30 @@
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
                         <div>
                             <label class="acm-lbl">评估指标</label>
-                            <select class="acm-inp acm-inp-sm" onchange="updateHrDimMetric(${i}, this.value)">${metricOpts}</select>
+                            <select class="acm-inp acm-inp-sm" data-change="updateHrDimMetric" data-arg="${i}" data-arg-type="number" data-pass-value>${metricOpts}</select>
                         </div>
                         <div>
                             <label class="acm-lbl">权重</label>
-                            <select class="acm-inp acm-inp-sm" onchange="__HR_RATING_CURRENT_DIMS[${i}].weight=Number(this.value)">${weightOpts}</select>
+                            <select class="acm-inp acm-inp-sm" data-change="hrmsSetHrRatingDimWeight" data-arg="${i}" data-arg-type="number" data-pass-number>${weightOpts}</select>
                         </div>
                     </div>
                     <div style="font-size:11px;color:#64748b;margin-bottom:6px;">ABCD 评级阈值 <span style="color:#818cf8;">(${dirLabel})</span></div>
                     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
                         <div style="text-align:center;">
                             <span class="acm-badge acm-ba" style="display:inline-block;margin-bottom:4px;">A</span>
-                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.A ?? ''}" onchange="__HR_RATING_CURRENT_DIMS[${i}].thresholds.A=Number(this.value)" placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
+                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.A ?? ''}" data-change="hrmsSetHrRatingDimThreshold" data-arg="${i}" data-arg-type="number" data-arg2="A" data-pass-number placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
                         </div>
                         <div style="text-align:center;">
                             <span class="acm-badge acm-bb" style="display:inline-block;margin-bottom:4px;">B</span>
-                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.B ?? ''}" onchange="__HR_RATING_CURRENT_DIMS[${i}].thresholds.B=Number(this.value)" placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
+                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.B ?? ''}" data-change="hrmsSetHrRatingDimThreshold" data-arg="${i}" data-arg-type="number" data-arg2="B" data-pass-number placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
                         </div>
                         <div style="text-align:center;">
                             <span class="acm-badge acm-bc" style="display:inline-block;margin-bottom:4px;">C</span>
-                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.C ?? ''}" onchange="__HR_RATING_CURRENT_DIMS[${i}].thresholds.C=Number(this.value)" placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
+                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.C ?? ''}" data-change="hrmsSetHrRatingDimThreshold" data-arg="${i}" data-arg-type="number" data-arg2="C" data-pass-number placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
                         </div>
                         <div style="text-align:center;">
                             <span class="acm-badge" style="background:#ef4444;display:inline-block;margin-bottom:4px;">D</span>
-                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.D ?? ''}" onchange="__HR_RATING_CURRENT_DIMS[${i}].thresholds.D=Number(this.value)" placeholder="${dir === 'higher_better' ? '<' : '>'}">
+                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.D ?? ''}" data-change="hrmsSetHrRatingDimThreshold" data-arg="${i}" data-arg-type="number" data-arg2="D" data-pass-number placeholder="${dir === 'higher_better' ? '<' : '>'}">
                         </div>
                     </div>
                 </div>`;
@@ -1365,7 +1367,7 @@
                             <div>
                                 <label class="acm-lbl">提示词模板</label>
                                 <div style="display:flex;gap:8px;align-items:center;">
-                                    <select id="cfg-template-${escapeHtml(c.agent_id)}" onchange="onConfigTemplateChange('${escapeHtml(c.agent_id)}')" class="acm-inp acm-inp-sm" style="flex:1;">
+                                    <select id="cfg-template-${escapeHtml(c.agent_id)}" data-change="onConfigTemplateChange" data-arg="${escapeHtml(c.agent_id)}" class="acm-inp acm-inp-sm" style="flex:1;">
                                         <option value="">手动提示词</option>
                                         ${(Array.isArray(__AGENT_TEMPLATE_MAP?.[c.agent_id]) ? __AGENT_TEMPLATE_MAP[c.agent_id] : []).map((t) => `<option value="${escapeHtml(t.id)}" ${String(c.prompt_template_id || '') === String(t.id || '') ? 'selected' : ''}>${escapeHtml(t.name || '')}${t.is_builtin ? '（系统）' : ''}</option>`).join('')}
                                     </select>

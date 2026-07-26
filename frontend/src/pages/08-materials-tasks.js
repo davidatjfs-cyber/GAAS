@@ -63,7 +63,7 @@
                         <div class="mt-field-row__hint">${escapeHtml(meta.group)} · ${escapeHtml(meta.unit)}</div>
                     </div>
                     <input type="number" class="mt-field-row__input" inputmode="decimal" placeholder="目标值" value="${escapeHtml(String(val))}"
-                        onchange="mtUpdateFieldValue(${idx}, this.value)" oninput="mtUpdateFieldValue(${idx}, this.value)" />
+                        data-change="mtUpdateFieldValue" data-input="mtUpdateFieldValue" data-arg="${idx}" data-arg-type="number" data-pass-value />
                     <button type="button" class="mt-field-row__remove" data-click="mtRemoveField" data-arg="${idx}" data-arg-type="number" title="移除">✕</button>
                 </div>`;
             }).join('');

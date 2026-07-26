@@ -3,9 +3,10 @@
  *
  * ⚠️ 防护边界（务必如实）：
  * - 已拦：`<script>` / `<iframe>` / `javascript:` 等。
- * - 已拦：`onclick` / `onerror` / `onload` 等危险事件属性（P5.1 onclick 清零后收紧）。
- * - **仍放行（过渡）**：`onchange` / `oninput` / `onsubmit` / `onfocus` / `onblur`
- *   ——前端模板里仍有遗留 inline handler；迁完后再从 ADD_ATTR 移除，才能宣称事件属性 XSS 已关。
+ * - 已拦：全部 `on*` 事件属性（含 onchange/oninput/onsubmit/onfocus/onblur）。
+ *   动态模板已迁到 data-change / data-input / data-submit / data-focus / data-blur 委托。
+ * - 静态 HTML shell 里仍可能有遗留 inline onchange/oninput（不经 DOMPurify，页面加载原生生效）；
+ *   新 UI 禁止再往 innerHTML 模板写 on*。
  * - 前提：写入 innerHTML 的内容须来自可信模板/服务端，不能把用户原文当 HTML 拼进去。
  *
  * fail-closed：DOMPurify 未加载时返回空串（并 console.error），禁止原样放行。
@@ -14,14 +15,8 @@
 (function (global) {
   'use strict';
 
-  /** 过渡白名单：仅保留 working-fixed / pages 仍在使用的 inline 事件属性。 */
-  var LEGACY_EVENT_ATTRS = [
-    'onchange', 'oninput', 'onsubmit',
-    'onfocus', 'onblur',
-  ];
-
   var CFG = {
-    ADD_ATTR: LEGACY_EVENT_ATTRS.concat(['target', 'rel', 'download']),
+    ADD_ATTR: ['target', 'rel', 'download'],
     ADD_DATA_URI_TAGS: ['a', 'img'],
     ALLOW_DATA_ATTR: true,
     FORCE_BODY: false,
