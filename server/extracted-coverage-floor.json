@@ -7,6 +7,8 @@
     "domains/approvals/create-assignees.js",
     "domains/approvals/create-notify-message.js",
     "domains/approvals/create-validators.js",
+    "domains/approvals/create-approval-helpers.js",
+    "domains/approvals/promotion-after-decide-helpers.js",
     "domains/health/scheduler-heartbeat.js",
     "domains/leave-attendance/clock-window.js",
     "domains/ops-tasks/access.js",
