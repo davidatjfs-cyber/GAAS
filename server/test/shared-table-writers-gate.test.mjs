@@ -49,7 +49,9 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'domains/agent-ops/send-scheduled-checklist-helpers.js|INSERT INTO|master_tasks',
   'agents.js|UPDATE|agent_messages',
   'agents.js|UPDATE|feishu_users',
+  // followUpOverdueTasks 仍写 reminder；task-response 回复闭环已迁出 helpers
   'agents.js|UPDATE|master_tasks',
+  'domains/feishu-bitable/task-response-helpers.js|UPDATE|master_tasks',
   // handleAgentMessage 培训考核通过：master_tasks INSERT 部分迁入 agent-message
   'domains/agent-message/training-flow.js|INSERT INTO|master_tasks',
   'auto-ops-engine.js|UPDATE|master_tasks',
@@ -133,6 +135,7 @@ const REPATH_NOTES = [
   'domains/agent-ops/send-scheduled-checklist.js → send-scheduled-checklist-helpers.js | INSERT INTO|master_tasks',
   'agents.js → domains/agent-evaluator/run-chief-evaluator.js | INSERT INTO|agent_scores',
   'agents.js → domains/feishu-bitable/archive-old-submissions.js | DELETE FROM|agent_messages',
+  'agents.js → domains/feishu-bitable/task-response-helpers.js | UPDATE|master_tasks',
 ];
 
 const OWNER = 'gaas';
