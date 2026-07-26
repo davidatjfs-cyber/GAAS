@@ -17,6 +17,11 @@ export function resetTaskIdSequenceForTests() {
   _taskSeq = 0;
 }
 
+/** Seed sequence from MAX(master_tasks.id) at master startup (global, not per-tenant). */
+export function seedTaskIdSequence(maxId) {
+  _taskSeq = Number(maxId || 0);
+}
+
 export function generateTaskId(now = new Date()) {
   const ds = now.toISOString().slice(0, 10).replace(/-/g, '');
   _taskSeq += 1;

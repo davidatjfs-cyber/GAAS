@@ -58,6 +58,7 @@ import { seedDefaultTouchRules } from './domains/growth-touch-rules/seed-default
 import { upsertCustomer as upsertCustomerImpl } from './domains/growth-customers/upsert.js';
 import { autoBackfillSmsActions as autoBackfillSmsActionsImpl } from './domains/growth-customers/sms-backfill.js';
 import { backfillRedemptionAmounts as backfillRedemptionAmountsImpl } from './domains/growth-customers/redemption-backfill.js';
+import { createGrowthWecom } from './domains/growth-wecom/service.js';
 import {
   loadSegmentPhoneSet,
   fetchGenericRuleCandidates,
@@ -78,7 +79,6 @@ import { buildRemindTargetsQuery } from './domains/growth-stored-value/helpers.j
 export { buildRemindTargetsQuery } from './domains/growth-stored-value/helpers.js';
 import { runForActiveTenants, tenantContext, resolveTenantIdDefault } from './utils/database.js';
 import { initSmsTemplatesCache } from './sms-templates.js';
-import { SHARED_TABLES } from '@gaas/shared';
 import { childLogger } from './utils/logger.js';
 
 const log = childLogger({ domain: 'growth-api' });
@@ -225,11 +225,6 @@ export async function appendExecutionLog(pool, payload) {
   );
 }
 
-async function getStateValue(pool, key) {
-  const r = await pool.query(`SELECT data FROM ${SHARED_TABLES.HRMS_STATE} WHERE key = $1 LIMIT 1`, [key]);
-  return r.rows?.[0]?.data || null;
-}
-
 export async function insertGrowthEvent(pool, payload, tenantId = 'default') {
   const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
   await pool.query(
@@ -291,126 +286,26 @@ export async function upsertDeliveryLog(pool, payload, tenantId = 'default') {
   return r.rows[0] || null;
 }
 
-let __growthWecomTokenCache = { token: '', expiresAt: 0, store_id: '' };
-let __storeWecomTokenCaches = {};
+const {
+  getWecomConfig,
+  getStoreWecomConfig,
+  getAllStoreWecomConfigs,
+  getWecomAccessToken,
+  sendWecomExternalMessage,
+  resolveTenantIdForStore,
+  resetGrowthWecomTokenCache,
+  clearStoreWecomTokenCache,
+} = createGrowthWecom({ cleanText });
 
-export async function getWecomConfig(pool) {
-  const config = await getStateValue(pool, 'growth_wecom_config');
-  return config && typeof config === 'object' ? config : null;
-}
-
-export async function getStoreWecomConfig(pool, storeId) {
-  if (!storeId) return null;
-  const r = await pool.query('SELECT * FROM store_wecom_configs WHERE store_id = $1 LIMIT 1', [storeId]);
-  return r.rows[0] || null;
-}
-
-// 桥接：企微 token 缓存是本模块内的可变共享状态，供已搬到 growth-wecom-feishu-routes.js
-// 的路由（重置全局 token / 清除门店 token）复用，不直接导出可变 let 变量。
-export function resetGrowthWecomTokenCache() {
-  __growthWecomTokenCache = { token: '', expiresAt: 0, store_id: '' };
-}
-
-export function clearStoreWecomTokenCache(storeId) {
-  delete __storeWecomTokenCaches[storeId];
-}
-
-// 企微小程序/webhook 等无 JWT 上下文的入口，通过 store 反查其所属租户（employees.store → tenant_id）。
-// 查不到（如全新门店尚无员工档案）时回退 'default'，与全库其它表的默认行为一致。
-let __storeTenantCache = {};
-let __storeTenantCacheAt = 0;
-export async function resolveTenantIdForStore(pool, storeId) {
-  const sid = String(storeId || '').trim();
-  if (!sid) return 'default';
-  const now = Date.now();
-  if (now - __storeTenantCacheAt > 300000) { __storeTenantCache = {}; __storeTenantCacheAt = now; }
-  if (__storeTenantCache[sid]) return __storeTenantCache[sid];
-  try {
-    const r = await pool.query(`SELECT tenant_id FROM ${SHARED_TABLES.EMPLOYEES} WHERE store = $1 AND tenant_id IS NOT NULL LIMIT 1`, [sid]);
-    const tid = String(r.rows?.[0]?.tenant_id || '').trim() || 'default';
-    __storeTenantCache[sid] = tid;
-    return tid;
-  } catch (_e) {
-    return 'default';
-  }
-}
-
-export async function getAllStoreWecomConfigs(pool) {
-  const r = await pool.query('SELECT * FROM store_wecom_configs ORDER BY store_id');
-  return r.rows;
-}
-
-export async function getWecomAccessToken(pool, storeId) {
-  const now = Date.now();
-  let corpId, corpSecret;
-
-  if (storeId) {
-    const cached = __storeWecomTokenCaches[storeId];
-    if (cached && cached.token && cached.expiresAt > now + 10000) return cached.token;
-    const storeConfig = await getStoreWecomConfig(pool, storeId);
-    if (storeConfig) {
-      corpId = cleanText(storeConfig.corp_id, 200);
-      corpSecret = cleanText(storeConfig.corp_secret, 500);
-    } else {
-      const globalConfig = await getWecomConfig(pool);
-      corpId = cleanText(globalConfig?.corp_id, 200);
-      corpSecret = cleanText(globalConfig?.corp_secret, 500);
-    }
-  } else {
-    if (__growthWecomTokenCache.token && __growthWecomTokenCache.expiresAt > now + 10000) return __growthWecomTokenCache.token;
-    const config = await getWecomConfig(pool);
-    corpId = cleanText(config?.corp_id, 200);
-    corpSecret = cleanText(config?.corp_secret, 500);
-  }
-
-  if (!corpId || !corpSecret) throw new Error('missing_wecom_config');
-  const url = `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(corpId)}&corpsecret=${encodeURIComponent(corpSecret)}`;
-  const resp = await fetch(url, { method: 'GET' });
-  const data = await resp.json();
-  if (!resp.ok || Number(data?.errcode) !== 0 || !data?.access_token) throw new Error(data?.errmsg || 'wecom_token_failed');
-
-  const token = cleanText(data.access_token, 500);
-  const expiresAt = now + Math.max(300, Number(data.expires_in) || 7200) * 1000;
-
-  if (storeId) {
-    __storeWecomTokenCaches[storeId] = { token, expiresAt };
-  } else {
-    __growthWecomTokenCache = { token, expiresAt, store_id: '' };
-  }
-  return token;
-}
-
-async function sendWecomExternalMessage(pool, payload) {
-  const storeId = cleanText(payload.store_id, 128);
-  let config;
-  if (storeId) {
-    config = await getStoreWecomConfig(pool, storeId);
-  }
-  if (!config) {
-    config = await getWecomConfig(pool);
-  }
-  const senderUserId = cleanText(payload.sender_userid || config?.sender_userid, 128);
-  const externalUserId = cleanText(payload.external_userid, 128);
-  const content = cleanText(payload.content, 1800);
-  if (!senderUserId) throw new Error('missing_wecom_sender_userid');
-  if (!externalUserId) throw new Error('missing_external_userid');
-  if (!content) throw new Error('missing_message_content');
-  const accessToken = await getWecomAccessToken(pool, storeId);
-  const resp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/externalcontact/add_msg_template?access_token=${encodeURIComponent(accessToken)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_type: 'single',
-      external_userid: [externalUserId],
-      sender: senderUserId,
-      allow_select: false,
-      text: { content }
-    })
-  });
-  const data = await resp.json();
-  if (!resp.ok || Number(data?.errcode) !== 0) throw new Error(data?.errmsg || 'wecom_send_failed');
-  return { provider_msg_id: cleanText(data?.msgid || data?.msgid_list?.[0], 255), raw: data };
-}
+export {
+  getWecomConfig,
+  getStoreWecomConfig,
+  getAllStoreWecomConfigs,
+  getWecomAccessToken,
+  resolveTenantIdForStore,
+  resetGrowthWecomTokenCache,
+  clearStoreWecomTokenCache,
+};
 
 // 飞书多维表字段值解析(文本/数字/日期/电话)
 export function bitText(v) {

@@ -54,15 +54,11 @@ import {
 } from './auto-ops-engine.js';
 import { childLogger } from './utils/logger.js';
 import { getCategoryAssigneeRoleMap } from './agent-config-manager.js';
-import {
-  createTenantScopedTick,
-  registerMasterIntervals,
-} from './domains/master-agent/scheduler.js';
 import { registerMasterRoutes as registerMasterRoutesImpl } from './domains/master-agent/routes.js';
 import { STATUS_FLOW } from './domains/master-agent/status-flow.js';
 import { createMasterTaskLifecycle } from './domains/master-agent/lifecycle-service.js';
-import { createMasterListeners } from './domains/master-agent/listeners-service.js';
 import { createMasterTablesEnsuring } from './domains/master-agent/master-tables-service.js';
+import { createStartMasterAgent } from './domains/master-agent/start-service.js';
 
 const log = childLogger({ domain: 'master-agent' });
 
@@ -267,196 +263,40 @@ export async function handleTaskResponse(username, text, imageUrls, parentMessag
 // 7. Master Orchestration Loop
 // ─────────────────────────────────────────────
 
-let _masterStarted = false;
-
+// Lazy: AgentCommunicationSystem ↔ master-agent cycle can TDZ a top-level factory call.
+let _startMasterAgentImpl = null;
 export function startMasterAgent() {
-  if (_masterStarted) return;
-  _masterStarted = true;
-  log.info('[master] Starting event-driven orchestration...');
-
-  // 初始化任务序号
-  (async () => {
-    try {
-      // 全局自增序号，不按租户区分——避免多租户共享同一计数器时task_id撞号
-      const r = await pool().query(`SELECT MAX(id) as maxid FROM master_tasks`);
-      _taskSeq = Number(r.rows?.[0]?.maxid || 0);
-    } catch (e) { /* ignore */ }
-  })();
-
-  const tenantTick = createTenantScopedTick({
-    pool,
-    getActiveTenantIds,
-    tenantContext,
-    log,
-  });
-
-  const {
-    dataAuditorListener,
-    masterDispatcher,
-    opsAgentListener,
-    masterPostResolution,
-    masterHandleRejected,
-    chiefEvaluatorListener,
-    masterFinalNotification,
-    trainAgentListener,
-    masterIssuesListener,
-    masterOptimizationCoordinator,
-    trainTaskDispatcher,
-  } = createMasterListeners({
-    pool,
-    log,
-    transitionTask,
-    sendLarkCard,
-    sendLarkMessage,
-    lookupFeishuUserByUsername,
-    writeTaskToBitable,
-    getTaskResponseFormUrl,
-    buildTaskDispatchCard,
-    callLLM,
-    callVisionLLM,
-    queryKnowledgeBase,
-    prefixWithAgentName,
-    resolveAssignee,
-    getSharedState,
-    runDataAuditor,
-    syncDataAuditorIssuesToMasterTasks,
-    AgentCommunicationSystem,
-  });
-
-  // ── Tick 1: Data Auditor — 含手动创建任务自动过审 ──
-  const auditTick = tenantTick('Data Auditor created', async (tenantId) => {
-    const created = await dataAuditorListener(tenantId);
-    const manualTasks = await pool().query(
-      `SELECT * FROM master_tasks
-       WHERE status = 'pending_audit'
-       AND source IN ('manual_campaign', 'manual', 'hq_planning')
-       AND tenant_id = $1
-       ORDER BY created_at ASC LIMIT 5`,
-      [tenantId]
-    );
-    for (const task of manualTasks.rows || []) {
-      await transitionTask(task.task_id, 'pending_dispatch', 'data_auditor', {
-        audit_result: {
-          approved: true,
-          reason: '手动创建任务自动通过审计',
-          timestamp: new Date().toISOString(),
-        },
-      }, tenantId);
-      log.info(`[master:audit] Auto-approved manual task ${task.task_id}`);
-    }
-    return created;
-  }, { formatMessage: (n) => `${n} tasks` });
-
-  // ── Tick 2: Master Dispatcher — 含超时升级 ──
-  const dispatchTick = tenantTick('Dispatched', async (tenantId) => {
-    await pool().query(`
-      UPDATE master_tasks
-      SET severity = CASE
-        WHEN severity = 'low' THEN 'medium'
-        WHEN severity = 'medium' THEN 'high'
-        ELSE severity
-      END,
-      escalation_level = escalation_level + 1,
-      escalation_history = COALESCE(escalation_history, '[]'::jsonb) ||
-        jsonb_build_object(
-          'timestamp', NOW()::text,
-          'from', severity,
-          'to', CASE WHEN severity = 'low' THEN 'medium' WHEN severity = 'medium' THEN 'high' ELSE severity END,
-          'reason', '任务超时自动升级'
-        )::jsonb
-      WHERE status IN ('pending_dispatch', 'dispatched', 'pending_response')
-      AND timeout_at IS NOT NULL
-      AND timeout_at < NOW()
-      AND escalation_level < 3
-      AND tenant_id = $1
-    `, [tenantId]);
-    return masterDispatcher(tenantId);
-  }, { formatMessage: (n) => `${n} tasks` });
-
-  const opsTick = tenantTick('Ops processed', (tenantId) => opsAgentListener(tenantId), {
-    formatMessage: (n) => `${n} tasks`,
-  });
-
-  const postResTick = tenantTick('Post-resolution', async (tenantId) => {
-    const resolved = await masterPostResolution(tenantId);
-    const rejected = await masterHandleRejected(tenantId);
-    if (rejected > 0) {
-      log.info(`[master:tick] Re-dispatched rejected(${tenantId}): ${rejected}`);
-    }
-    return resolved;
-  });
-
-  const evalTick = tenantTick('Evaluator settled', (tenantId) => chiefEvaluatorListener(tenantId), {
-    formatMessage: (n) => `${n} tasks`,
-  });
-
-  const finalTick = tenantTick('Closed', (tenantId) => masterFinalNotification(tenantId), {
-    formatMessage: (n) => `${n} tasks`,
-  });
-
-  const trainTick = tenantTick('Train processed', (tenantId) => trainAgentListener(tenantId), {
-    formatMessage: (n) => `${n} cases`,
-  });
-
-  const issuesTick = tenantTick('Issues coordinator processed', (tenantId) => masterIssuesListener(tenantId), {
-    formatMessage: (n) => `${n} issues`,
-  });
-
-  const optimizationTick = tenantTick('Optimization coordinator processed', (tenantId) => masterOptimizationCoordinator(tenantId), {
-    formatMessage: (n) => `${n} proposals`,
-  });
-
-  const trainDispatchTick = tenantTick('Train task dispatcher sent', (tenantId) => trainTaskDispatcher(tenantId), {
-    formatMessage: (n) => `${n} tasks`,
-  });
-
-  // 全局飞书 Bitable 凭证，不按租户区分
-  const taskResponseTick = async () => {
-    try {
-      await pollTaskResponseBitable();
-    } catch (e) {
-      log.error('[master:tick] task response poll error:', e?.message);
-    }
-  };
-
-  const kgHealthTick = tenantTick('KG health snapshots refreshed for', (tenantId) => refreshEntityHealthSnapshots(tenantId), {
-    formatMessage: (n) => `${n} stores`,
-  });
-
-  const inspectionLoopTick = tenantTick('Inspection closed loop', (tenantId) => inspectionClosedLoopTick(tenantId), {
-    formatMessage: (n) => `${n} actions`,
-  });
-
-  const biPushTick = tenantTick('BI proactive push', (tenantId) => biProactivePushTick(tenantId), {
-    formatMessage: (n) => `${n} alerts`,
-  });
-
-  const laborTick = tenantTick('Labor efficiency', (tenantId) => laborEfficiencyTick(tenantId), {
-    formatMessage: (n) => `${n} suggestions`,
-  });
-
-  const trainingLoopTick = tenantTick('Training closed loop', (tenantId) => trainingClosedLoopTick(tenantId), {
-    formatMessage: (n) => `${n} tasks created`,
-  });
-
-  registerMasterIntervals([
-    { fn: auditTick, intervalMs: 15 * 1000, startupDelayMs: 10 * 1000 },
-    { fn: dispatchTick, intervalMs: 15 * 1000, startupDelayMs: 15 * 1000 },
-    { fn: opsTick, intervalMs: 20 * 1000, startupDelayMs: 20 * 1000 },
-    { fn: postResTick, intervalMs: 20 * 1000, startupDelayMs: 25 * 1000 },
-    { fn: evalTick, intervalMs: 30 * 1000, startupDelayMs: 30 * 1000 },
-    { fn: finalTick, intervalMs: 30 * 1000, startupDelayMs: 35 * 1000 },
-    { fn: trainTick, intervalMs: 60 * 1000, startupDelayMs: 40 * 1000 },
-    { fn: issuesTick, intervalMs: 30 * 1000, startupDelayMs: 45 * 1000 },
-    { fn: trainDispatchTick, intervalMs: 10 * 60 * 1000, startupDelayMs: 50 * 1000 },
-    { fn: optimizationTick, intervalMs: 60 * 1000, startupDelayMs: 55 * 1000 },
-    { fn: taskResponseTick, intervalMs: 60 * 1000, startupDelayMs: 60 * 1000 },
-    { fn: kgHealthTick, intervalMs: 6 * 60 * 60 * 1000, startupDelayMs: 90 * 1000 },
-    { fn: inspectionLoopTick, intervalMs: 15 * 60 * 1000, startupDelayMs: 120 * 1000 },
-    { fn: biPushTick, intervalMs: 15 * 60 * 1000, startupDelayMs: 150 * 1000 },
-    { fn: laborTick, intervalMs: 15 * 60 * 1000, startupDelayMs: 180 * 1000 },
-    { fn: trainingLoopTick, intervalMs: 15 * 60 * 1000, startupDelayMs: 210 * 1000 },
-  ], log);
+  if (!_startMasterAgentImpl) {
+    _startMasterAgentImpl = createStartMasterAgent({
+      pool,
+      log,
+      getActiveTenantIds,
+      tenantContext,
+      transitionTask,
+      sendLarkCard,
+      sendLarkMessage,
+      lookupFeishuUserByUsername,
+      writeTaskToBitable,
+      getTaskResponseFormUrl,
+      buildTaskDispatchCard,
+      callLLM,
+      callVisionLLM,
+      queryKnowledgeBase,
+      prefixWithAgentName,
+      resolveAssignee,
+      getSharedState,
+      runDataAuditor,
+      syncDataAuditorIssuesToMasterTasks,
+      AgentCommunicationSystem,
+      pollTaskResponseBitable,
+      refreshEntityHealthSnapshots,
+      inspectionClosedLoopTick,
+      biProactivePushTick,
+      laborEfficiencyTick,
+      trainingClosedLoopTick,
+    });
+  }
+  return _startMasterAgentImpl();
 }
 
 // ─────────────────────────────────────────────
