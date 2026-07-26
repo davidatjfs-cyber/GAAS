@@ -158,7 +158,7 @@ test('structured query falls back when satisfaction_level column missing', async
     extractDissatisfactionReasonFromFields: () => '',
     extractBitableFieldText: () => '',
     inDateRangeInclusive: () => true,
-    normalizeStoreKey: (s) => 'hongchao',
+    normalizeStoreKey: () => 'hongchao',
     normProductKey: (s) => s,
   });
   const rows = await api.loadUnifiedTableVisitRowsByStore('洪潮店', '2026-07-01', '2026-07-07');
