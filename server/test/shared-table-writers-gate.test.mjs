@@ -26,6 +26,8 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'agents.js|INSERT INTO|agent_messages',
   // Wave A1：KPI radar INSERT 从 agents.js runDataAuditor 迁出（agents.js 仍有其它 agent_messages INSERT）
   'domains/agent-auditor/run-data-auditor.js|INSERT INTO|agent_messages',
+  // Wave A7：handleOpsChecklistCardAction 迁出（agents.js 仍有其它 agent_messages INSERT）
+  'domains/agent-ops/handle-checklist-card-action.js|INSERT INTO|agent_messages',
   // Wave A3：onFeishuEvent 迁出（agents.js 仍有其它 agent_messages / feishu_users 写入）
   'domains/agent-feishu-bot/on-feishu-event.js|INSERT INTO|feishu_users',
   'domains/agent-feishu-bot/on-feishu-event.js|UPDATE|feishu_users',
@@ -103,6 +105,7 @@ const REPATH_NOTES = [
   'agents.js → domains/agent-feishu-bot/on-feishu-event.js | UPDATE|agent_messages',
   'agents.js → domains/feishu-bitable/poll-submissions.js | INSERT INTO|feishu_generic_records',
   'agents.js → domains/feishu-bitable/poll-submissions.js | INSERT INTO|agent_messages',
+  'agents.js → domains/agent-ops/handle-checklist-card-action.js | INSERT INTO|agent_messages',
 ];
 
 const OWNER = 'gaas';
