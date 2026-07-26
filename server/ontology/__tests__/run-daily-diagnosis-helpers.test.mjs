@@ -14,6 +14,12 @@ import {
   supersedeOpenDiagnosisRecords,
   persistDiagnosisIssues,
   orderStats,
+  repeatStats,
+  marketingStats,
+  employeeStats,
+  dormantCustomerStats,
+  newCustomerSecondVisitStats,
+  loadDiagnosisThresholds,
 } from '../run-daily-diagnosis-helpers.js';
 
 function makePool(queryFn) {
@@ -229,4 +235,81 @@ test('orderStats returns zeros when no rows', async () => {
   const r = await orderStats(pool, { tenantId: 'default', storeId: 's1', start: 'a', end: 'b' });
   assert.equal(r.revenue, 0);
   assert.equal(r.orders, 0);
+});
+
+test('repeatStats / marketingStats / employeeStats compute ratios', async () => {
+  const pool = makePool(async (sql) => {
+    if (/repeat_customers/i.test(sql)) {
+      return { rows: [{ repeat_customers: 3, customers: 10, risk_customers: 2 }] };
+    }
+    if (/growth_ontology_touches/i.test(sql)) {
+      return { rows: [{ touched: 4, returned: 1 }] };
+    }
+    if (/growth_ontology_employees/i.test(sql)) {
+      return { rows: [{ avg_score: 72.5, low_count: 1 }] };
+    }
+    return { rows: [] };
+  });
+  const repeat = await repeatStats(pool, { tenantId: 'default', storeId: 's1' });
+  assert.equal(repeat.repeatRate, 0.3);
+  assert.equal(repeat.riskCustomers, 2);
+  const marketing = await marketingStats(pool, { tenantId: 'default', storeId: 's1' });
+  assert.equal(marketing.conversionRate, 0.25);
+  const employee = await employeeStats(pool, { tenantId: 'default', storeId: 's1' });
+  assert.equal(employee.avgScore, 72.5);
+  assert.equal(employee.lowCount, 1);
+});
+
+test('dormantCustomerStats / newCustomerSecondVisitStats shape defaults', async () => {
+  const pool = makePool(async (sql) => {
+    if (/dormant_count/i.test(sql)) {
+      return {
+        rows: [{
+          dormant_count: 5,
+          priority_customer_count: 2,
+          max_visit_count: 4,
+          max_total_spend: 600,
+          avg_total_spend: 200,
+          min_last_visit_days: 95,
+        }],
+      };
+    }
+    if (/first_visit AS/i.test(sql)) {
+      return {
+        rows: [{
+          candidates: 6,
+          no_second_visit: 3,
+          signature_dish_customers: 1,
+          avg_first_spend: 88,
+        }],
+      };
+    }
+    return { rows: [] };
+  });
+  const dormant = await dormantCustomerStats(pool, {
+    tenantId: 'default', storeId: 's1', date: '2026-07-26',
+  });
+  assert.equal(dormant.dormantCustomerCount, 5);
+  assert.equal(dormant.daysMin, 90);
+  const ncs = await newCustomerSecondVisitStats(pool, {
+    tenantId: 'default', storeId: 's1', date: '2026-07-26',
+  });
+  assert.equal(ncs.noSecondVisit, 3);
+  assert.equal(ncs.avgFirstSpend, 88);
+});
+
+test('loadDiagnosisThresholds returns defaults when pool errors', async () => {
+  const pool = makePool(async () => { throw new Error('no rules'); });
+  const t = await loadDiagnosisThresholds(pool, { tenantId: 'default', storeId: 's1' });
+  assert.equal(t.dormantDaysMin, 90);
+  assert.equal(t.newFirstVisitDaysMax, 14);
+  assert.equal(t.revenueDeclineFallback, -8);
+});
+
+test('loadDiagnosisRulesSafe swallows pool errors via loadEffectiveRules', async () => {
+  const pool = makePool(async () => { throw new Error('rules table missing'); });
+  const state = await loadDiagnosisRulesSafe(pool, { tenantId: 'default', storeId: 's1' });
+  assert.equal(state.rules.length, 0);
+  assert.equal(state.byId.size, 0);
+  assert.equal(state.error, undefined);
 });
