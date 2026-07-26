@@ -3,15 +3,14 @@
 // 规则:达成率 = 实际/目标,≥90% 算达成;同一(门店,问题)同时只允许一个未关闭轮次
 
 import { pool as getPool } from './utils/database.js';
-import { SHARED_TABLES } from '@gaas/shared';
 import { childLogger } from './utils/logger.js';
 import { PROBLEMS } from './domains/growth-solutions/problems.js';
 import { createGrowthSolutionMetrics } from './domains/growth-solutions/metrics.js';
+import { createGrowthSolutionService } from './domains/growth-solutions/service.js';
+import { METRIC_WINDOW_DAYS, ROLE_POSITIONS, SUCCESS_RATE } from './domains/growth-solutions/constants.js';
 import {
-  brandKeyOf,
   daysAgo,
   nextTarget,
-  round2,
   summarizeCard,
   summarizeMetricForAnalysis,
   ymd,
@@ -22,21 +21,30 @@ const log = childLogger({ domain: 'growth-solutions' });
 function pool() { return getPool(); }
 
 const { computeMetric } = createGrowthSolutionMetrics({ pool });
+const svc = createGrowthSolutionService({ pool, computeMetric, log });
 
 export { PROBLEMS, computeMetric, nextTarget };
+export const {
+  setSolutionNotifier,
+  setSolutionLLM,
+  setTrainingAssigner,
+  runSolutionSweep,
+  startSolutionSweepScheduler,
+} = svc;
 
-const OBSERVATION_DAYS = 30;   // 任务全部完成后的观察期
-const METRIC_WINDOW_DAYS = 30; // 指标统计窗口
-const SUCCESS_RATE = 0.9;      // 达成率≥90%算成功
-
-// 责任角色 → 岗位关键词(用于预填候选人)
-const ROLE_POSITIONS = {
-  store_manager: ['店长', '主管', '前厅经理'],
-  production_manager: ['出品经理', '厨师长'],
-  kitchen_staff: ['炒锅', '砧板', '烧味', '刺身', '汤档', '打荷', '蒸笼'],
-  front_staff: ['服务员', '传菜', '水吧', '迎宾'],
-  hr: ['人事'],
-};
+const {
+  suggestAssignees,
+  saveQueryHistory,
+  fetchRecentComplaints,
+  fetchTurnoverSnapshot,
+  buildPlan,
+  getOpenRound,
+  getClosedRounds,
+  generateReview,
+  notify,
+  getLlm,
+  getTrainingAssigner,
+} = svc;
 
 // ─── 任务模板库(种子数据) ────────────────────────────────
 const TASK_TEMPLATE_SEED = [
@@ -166,336 +174,6 @@ export async function ensureGrowthSolutionsSchema() {
   );
 }
 
-// ─── 责任人候选 ─────────────────────────────────────────
-async function suggestAssignees(store, role) {
-  const brand = brandKeyOf(store);
-  const positions = ROLE_POSITIONS[role] || ROLE_POSITIONS.store_manager;
-  const clauses = positions.map((_, i) => `position ILIKE '%' || $${i + 2} || '%'`).join(' OR ');
-  const r = await pool().query(
-    `SELECT username, name, position FROM ${SHARED_TABLES.EMPLOYEES}
-     WHERE store ILIKE '%' || $1 || '%'
-       AND coalesce(status,'') NOT IN ('inactive','disabled','resigned','离职','禁用','停用')
-       AND (${clauses})
-     ORDER BY position, name LIMIT 20`,
-    [brand, ...positions]
-  );
-  // 按角色岗位优先级排序(如 店长 优先于 主管/前厅经理)
-  const prio = (p) => {
-    const idx = positions.findIndex((kw) => String(p || '').includes(kw));
-    return idx === -1 ? 999 : idx;
-  };
-  return r.rows.sort((a, b) => prio(a.position) - prio(b.position));
-}
-
-// ─── 自定义问题分析历史存档——只留"问过什么问题"，不留"当时的结果" ──────
-// 用户明确要求：点历史记录要重新生成，不要回放旧结果，所以这里不再存完整result_json，
-// 只存title(列表展示用)，避免有人以后不小心又把它当"缓存"用。
-async function saveQueryHistory(tenantId, store, question, resultPayload, username) {
-  try {
-    await pool().query(
-      `INSERT INTO growth_custom_query_history (tenant_id, store, question, result_json, created_by)
-       VALUES ($1,$2,$3,$4::jsonb,$5)`,
-      [tenantId || 'default', store, question, JSON.stringify({ title: resultPayload?.title || question, mode: resultPayload?.mode }), username || null]
-    );
-  } catch (e) {
-    log.error({ msg: 'save_query_history_failed', err: e?.message || String(e) });
-  }
-}
-
-// ─── 真实差评/投诉数据(大众点评/美团截图，经视觉LLM提取后落在agent_messages) ──
-// bad_reviews表本身是空的(同步链路没跑通)，真正有数据的是agent_messages里
-// content_type='negative_review'的记录，agent_data里带reason/product/rating等结构化字段。
-// 提取环节本身会把"截图里其实不是差评"的情况也存进来(reason里写"不存在符合要求的差评"这类话)，
-// 这里过滤掉，只留真实差评。
-async function fetchRecentComplaints(store, days = 30) {
-  const brand = brandKeyOf(store);
-  const r = await pool().query(
-    `SELECT created_at::date AS date, agent_data->>'reason' AS reason,
-            agent_data->>'product' AS product, agent_data->>'rating' AS rating,
-            agent_data->>'platform' AS platform
-       FROM ${SHARED_TABLES.AGENT_MESSAGES}
-      WHERE content_type = 'negative_review'
-        AND agent_data->>'store' ILIKE '%' || $1 || '%'
-        AND created_at > now() - ($2 || ' days')::interval
-        AND coalesce(agent_data->>'reason','') NOT ILIKE '%不存在符合要求%'
-        AND coalesce(agent_data->>'reason','') NOT ILIKE '%无差评%'
-        AND coalesce(agent_data->>'reason','') NOT IN ('无', '', '该评价为好评，不属于差评，无法提取差评原因。')
-      ORDER BY created_at DESC LIMIT 30`,
-    [brand, String(days)]
-  );
-  return r.rows;
-}
-
-// ─── 真实员工流动快照(employees.status，没有离职日期字段，只能给全量在职/离职快照) ──
-async function fetchTurnoverSnapshot(store) {
-  const brand = brandKeyOf(store);
-  const r = await pool().query(
-    `SELECT count(*) FILTER (WHERE coalesce(status,'') NOT IN ('inactive','disabled','resigned','离职','禁用','停用')) AS active,
-            count(*) FILTER (WHERE coalesce(status,'') IN ('inactive','resigned','离职')) AS left_count,
-            count(*) AS total
-       FROM ${SHARED_TABLES.EMPLOYEES} WHERE store ILIKE '%' || $1 || '%'`,
-    [brand]
-  );
-  const row = r.rows[0] || {};
-  return {
-    active: Number(row.active || 0),
-    left: Number(row.left_count || 0),
-    total: Number(row.total || 0),
-  };
-}
-
-// ─── 方案生成(模板 + 真实数据缺口 → 任务清单) ─────────────
-async function buildPlan(problemKey, store, currentDetail) {
-  const templates = await pool().query(
-    `SELECT code, title, description, assignee_role, phase, sort, why, acceptance_criteria
-     FROM growth_task_templates WHERE problem_key = $1 AND enabled = TRUE ORDER BY sort`,
-    [problemKey]
-  );
-  const plan = [];
-  for (const t of templates.rows) {
-    let description = t.description || '';
-    // 用真实数据充实任务描述
-    if (t.code === 'assign_cert_training' || t.code === 'batch_assign') {
-      const gapCount = currentDetail?.gap_count;
-      if (gapCount > 0) description += `(当前共 ${gapCount} 项认证缺口)`;
-    }
-    if (t.code === 'launch_recall_campaign' && currentDetail?.sleeping_customers > 0) {
-      description += `(可召回沉睡池 ${currentDetail.sleeping_customers} 位:高风险 ${currentDetail.sleeping_high || 0} + 中风险 ${currentDetail.sleeping_medium || 0})`;
-    }
-    if (t.code === 'complete_cost_library' && currentDetail?.unmatched_dishes > 0) {
-      description += `(当前 ${currentDetail.unmatched_dishes} 道在售菜品缺成本)`;
-    }
-    if (t.code === 'review_complaint_dishes' && Array.isArray(currentDetail?.complaint_dishes) && currentDetail.complaint_dishes.length) {
-      const top = currentDetail.complaint_dishes.slice(0, 5).map((c) => `${c.dish}(${c.count}次)`).join('、');
-      description += `(高投诉:${top})`;
-    }
-    const suggested = await suggestAssignees(store, t.assignee_role);
-    plan.push({
-      template_code: t.code,
-      title: t.title,
-      description,
-      phase: t.phase,
-      why: t.why || '',
-      acceptance_criteria: t.acceptance_criteria || '',
-      assignee_role: t.assignee_role,
-      suggested_assignees: suggested,
-      default_assignee: suggested[0] || null,
-    });
-  }
-  return plan;
-}
-
-// ─── 轮次查询 ───────────────────────────────────────────
-async function getOpenRound(store, problemKey) {
-  const r = await pool().query(
-    `SELECT * FROM growth_solution_rounds WHERE store = $1 AND problem_key = $2 AND status <> 'closed' LIMIT 1`,
-    [store, problemKey]
-  );
-  if (!r.rows.length) return null;
-  const round = r.rows[0];
-  const tasks = await pool().query(
-    `SELECT * FROM growth_solution_tasks WHERE round_id = $1 ORDER BY sort, id`,
-    [round.id]
-  );
-  round.tasks = tasks.rows;
-  return round;
-}
-
-async function getClosedRounds(store, problemKey) {
-  const r = await pool().query(
-    `SELECT * FROM growth_solution_rounds
-     WHERE store = $1 AND problem_key = $2 AND status = 'closed'
-     ORDER BY round_no`,
-    [store, problemKey]
-  );
-  return r.rows;
-}
-
-// ─── 通知钩子(index.js 注入,复用 Lark 发送) ─────────────
-let _notify = null;
-export function setSolutionNotifier(fn) { _notify = fn; }
-async function notify(msg) {
-  if (_notify) { try { await _notify(msg); } catch { /* ignore */ } }
-}
-
-// LLM 归因钩子(可选注入;未注入时用确定性文本)
-let _llm = null;
-export function setSolutionLLM(fn) { _llm = fn; }
-
-// ─── 培训任务下发钩子(index.js 注入 createTrainingAssignment) ──
-let _createTrainingAssignment = null;
-export function setTrainingAssigner(fn) { _createTrainingAssignment = fn; }
-
-// ─── 复盘 ───────────────────────────────────────────────
-async function generateReview(round) {
-  const endDate = ymd(new Date());
-  const startDate = daysAgo(METRIC_WINDOW_DAYS - 1);
-  const metricKey = round.metric_key || round.problem_key;
-  const metric = await computeMetric(metricKey, round.store, startDate, endDate);
-  let actual = metric.value;
-  // count 型(菜单优化):实际 = 问题菜品减少数(基线 - 当前),下限0
-  if (PROBLEMS[metricKey]?.ladder?.type === 'count') {
-    actual = Math.max(0, Number(round.baseline_value) - metric.value);
-  }
-  const target = Number(round.target_value) || 0;
-  const rate = target > 0 ? actual / target : 0;
-  const success = rate >= SUCCESS_RATE;
-
-  const tasks = await pool().query(
-    `SELECT title, assignee_name, assignee_username, status, done_at, due_date, reminder_count
-     FROM growth_solution_tasks WHERE round_id = $1 ORDER BY sort`, [round.id]
-  );
-  const today = new Date();
-  const taskRows = tasks.rows.map((t) => {
-    const due = t.due_date ? new Date(String(t.due_date).slice(0, 10) + 'T23:59:59') : null;
-    const doneAt = t.done_at ? new Date(t.done_at) : null;
-    let daysLate = 0;
-    if (due && doneAt && doneAt > due) daysLate = Math.ceil((doneAt - due) / 86400000);
-    if (due && !doneAt && today > due) daysLate = Math.ceil((today - due) / 86400000);
-    return {
-      title: t.title, assignee: t.assignee_name || t.assignee_username,
-      assignee_username: t.assignee_username,
-      status: t.status, done_at: t.done_at, due_date: t.due_date,
-      on_time: due && doneAt ? doneAt <= due : (doneAt ? true : null),
-      days_late: daysLate,
-      reminder_count: Number(t.reminder_count || 0),
-    };
-  });
-
-  // ── 执行力问责:逐条点名,达成与否都必须客观直说 ──
-  const execFindings = [];
-  const perPerson = new Map();
-  for (const t of taskRows) {
-    if (!perPerson.has(t.assignee)) perPerson.set(t.assignee, { assignee: t.assignee, total: 0, done: 0, on_time: 0, late: 0, undone: 0, reminders: 0, max_days_late: 0 });
-    const p = perPerson.get(t.assignee);
-    p.total += 1;
-    p.reminders += t.reminder_count;
-    if (t.status === 'done') {
-      p.done += 1;
-      if (t.on_time === false) {
-        p.late += 1;
-        p.max_days_late = Math.max(p.max_days_late, t.days_late);
-        if (t.reminder_count > 0) {
-          execFindings.push(`任务「${t.title}」责任人 ${t.assignee}:逾期 ${t.days_late} 天,系统催促 ${t.reminder_count} 次后才完成`);
-        } else {
-          execFindings.push(`任务「${t.title}」责任人 ${t.assignee}:逾期 ${t.days_late} 天完成`);
-        }
-      } else {
-        p.on_time += 1;
-      }
-    } else {
-      p.undone += 1;
-      execFindings.push(`任务「${t.title}」责任人 ${t.assignee}:至复盘时仍未完成${t.days_late > 0 ? `(已逾期 ${t.days_late} 天` : '('}${t.reminder_count > 0 ? `,催促 ${t.reminder_count} 次无果)` : ')'}`);
-    }
-  }
-  const doneCount = taskRows.filter((t) => t.status === 'done').length;
-  const onTimeCount = taskRows.filter((t) => t.status === 'done' && t.on_time !== false).length;
-  const execution = {
-    total: taskRows.length,
-    done: doneCount,
-    on_time: onTimeCount,
-    on_time_rate: taskRows.length ? Math.round((onTimeCount / taskRows.length) * 1000) / 10 : 0,
-    per_person: Array.from(perPerson.values()),
-    findings: execFindings,
-    verdict: execFindings.length === 0
-      ? '全部任务按时完成,本轮结果差异与执行力无关,可直接归因于方案本身。'
-      : `本轮存在 ${execFindings.length} 项执行问题(见上),方案与结果的差异需优先从执行力找原因。`,
-  };
-
-  let attribution = `本轮共 ${taskRows.length} 项任务,已完成 ${doneCount} 项,按时完成率 ${execution.on_time_rate}%。`
-    + `基线 ${round.baseline_value}${round.unit},目标 ${round.target_value}${round.unit},观察期实际 ${actual}${round.unit},达成率 ${(rate * 100).toFixed(1)}%。`;
-  if (_llm) {
-    try {
-      const prompt = `你是餐厅经营分析师。请基于以下事实,用中文写一段150字以内的归因分析,要求:客观、直截了当、不留情面也不夸大。`
-        + `必须明确回答:结果与目标的差异,多大程度是执行力问题(逾期/催促无果/未完成),多大程度是方案本身问题。有执行问题就点名说清,没有就明说执行到位。`
-        + `⚠️ 归因只能基于下方传入的执行数据,禁止引入任何传入数据以外的推测原因（如节假日影响、天气因素、竞争对手等）。\n`
-        + `问题:${round.problem_title};指标:${round.metric_label};基线:${round.baseline_value}${round.unit};目标:${round.target_value}${round.unit};实际:${actual}${round.unit};达成率:${(rate * 100).toFixed(1)}%\n`
-        + `任务执行明细:${JSON.stringify(taskRows)}\n执行问题清单:${JSON.stringify(execFindings)}`;
-      const llmText = await _llm(prompt);
-      if (llmText) attribution = String(llmText).trim();
-    } catch { /* 用确定性文本兜底 */ }
-  }
-
-  return {
-    actual_value: round2(actual),
-    achievement_rate: Math.round(rate * 10000) / 10000,
-    success,
-    report: {
-      baseline: Number(round.baseline_value),
-      target: Number(round.target_value),
-      actual: round2(actual),
-      achievement_rate: Math.round(rate * 1000) / 10,
-      success,
-      unit: round.unit,
-      tasks: taskRows,
-      execution,
-      attribution,
-      suggestion: success
-        ? '达成目标,建议确认进入下一轮(新基线=本轮实际值,目标上一档)'
-        : '未达成目标,建议同目标重跑一轮,系统将重组任务方案(未起效动作将被替换)',
-      metric_snapshot: metric.detail,
-      generated_at: new Date().toISOString(),
-    },
-  };
-}
-
-// 观察期扫描:任务全部完成→observing;observing 到期→reviewing+生成报告
-export async function runSolutionSweep() {
-  const active = await pool().query(`SELECT * FROM growth_solution_rounds WHERE status = 'active'`);
-  for (const round of active.rows) {
-    // 逾期催促:每任务每天最多1次,记录催促次数(复盘时逐条点名)
-    const overdue = await pool().query(
-      `UPDATE growth_solution_tasks
-       SET reminder_count = reminder_count + 1, last_reminded_at = NOW()
-       WHERE round_id = $1 AND status <> 'done' AND due_date < CURRENT_DATE
-         AND (last_reminded_at IS NULL OR last_reminded_at::date < CURRENT_DATE)
-       RETURNING title, assignee_name, assignee_username, due_date, reminder_count`,
-      [round.id]
-    );
-    if (overdue.rows.length) {
-      const lines = overdue.rows.map((t) =>
-        `· ${t.title} — ${t.assignee_name || t.assignee_username},截止 ${String(t.due_date).slice(0, 10)},第 ${t.reminder_count} 次催促`
-      ).join('\n');
-      await notify(`【增长方案·逾期催促】${round.store}「${round.problem_title}」第${round.round_no}轮有 ${overdue.rows.length} 项任务逾期未完成:\n${lines}\n催促次数将如实写入复盘报告。`);
-    }
-    const t = await pool().query(
-      `SELECT COUNT(*) FILTER (WHERE status <> 'done') AS open, COUNT(*) AS total
-       FROM growth_solution_tasks WHERE round_id = $1`, [round.id]
-    );
-    if (Number(t.rows[0].total) > 0 && Number(t.rows[0].open) === 0) {
-      const measureEnd = ymd(new Date(Date.now() + OBSERVATION_DAYS * 86400000));
-      await pool().query(
-        `UPDATE growth_solution_rounds SET status='observing', tasks_done_at=NOW(), measure_end_date=$2 WHERE id=$1`,
-        [round.id, measureEnd]
-      );
-      await notify(`【增长方案】${round.store}「${round.problem_title}」第${round.round_no}轮任务全部完成,进入${OBSERVATION_DAYS}天观察期,${measureEnd} 自动复盘。`);
-    }
-  }
-  const observing = await pool().query(
-    `SELECT * FROM growth_solution_rounds WHERE status = 'observing' AND measure_end_date <= CURRENT_DATE`
-  );
-  for (const round of observing.rows) {
-    try {
-      const review = await generateReview(round);
-      await pool().query(
-        `UPDATE growth_solution_rounds
-         SET status='reviewing', actual_value=$2, achievement_rate=$3, review_report=$4 WHERE id=$1`,
-        [round.id, review.actual_value, review.achievement_rate, JSON.stringify(review.report)]
-      );
-      await notify(`【增长方案·复盘】${round.store}「${round.problem_title}」第${round.round_no}轮:目标 ${round.target_value}${round.unit},实际 ${review.actual_value}${round.unit},达成率 ${(review.achievement_rate * 100).toFixed(1)}%(${review.success ? '达成✅' : '未达成'})。请在经营诊断页确认下一步。`);
-    } catch (e) {
-      log.error({ msg: 'review_failed', round_id: round.id, err: e?.message });
-    }
-  }
-}
-
-let _sweepTimer = null;
-export function startSolutionSweepScheduler() {
-  if (_sweepTimer) return;
-  _sweepTimer = setInterval(() => { runSolutionSweep().catch(() => {}); }, 6 * 3600 * 1000);
-  setTimeout(() => { runSolutionSweep().catch(() => {}); }, 60 * 1000);
-}
-
 // ─── 路由 ───────────────────────────────────────────────
 function registerGrowthSolutionOverviewRoutes(app, authRequired) {
   // 六卡片总览
@@ -569,7 +247,7 @@ function registerGrowthSolutionCustomRoutes(app, authRequired) {
       const store = String(req.body?.store || '').trim();
       const question = String(req.body?.question || '').trim();
       if (!store || !question) return res.status(400).json({ ok: false, error: 'store 与 question 必填' });
-      if (!_llm) return res.status(503).json({ ok: false, error: 'AI 服务未配置' });
+      if (!getLlm()) return res.status(503).json({ ok: false, error: 'AI 服务未配置' });
 
       const templates = await pool().query(
         `SELECT problem_key, code, title, description, assignee_role, phase FROM growth_task_templates WHERE enabled = TRUE ORDER BY problem_key, sort`
@@ -634,7 +312,7 @@ ${templateList}
 ⚠️ 任务描述要假设门店可能已经部分做了类似的事(比如积分激励规则、培训制度这类常见管理动作，很多店多少都有一些)，措辞要用"优化/新增XX规则/加强XX"而不是"上线/从零开始建立"这种假设完全没做过的说法，除非老板的问题原文明确说了"没有"或"从来没做过"。
 ⚠️ 涉及"积分"激励的任务：本系统的积分是直接发放现金，不是代金券/兑换券，不存在"兑换"环节，acceptance_criteria禁止出现"兑换率""兑换记录""满意度"这类不存在或无法核实的指标，应使用可从系统数据核实的客观指标，例如"员工实际参与/申报积分的人数占比≥90%"。`;
 
-      const raw = await _llm(prompt);
+      const raw = await getLlm()(prompt);
       let parsed = null;
       try {
         const s = String(raw || '');
@@ -664,7 +342,7 @@ ${templateList}
 ${realDataSummary}
 
 请基于以上真实数据，写一段150-250字的经营分析，必须包含：①这些真实数字说明了什么问题；②可能的根因；③建议老板重点关注哪个方向。只输出分析文字，不要输出JSON、不要输出标题，直接是一段话。`;
-          existingAnalysis = String(await _llm(analysisPrompt) || '').trim();
+          existingAnalysis = String(await getLlm()(analysisPrompt) || '').trim();
         } catch (e) {
           log.error({ msg: 'existing_mode_analysis_failed', err: e?.message || String(e) });
         }
@@ -982,10 +660,11 @@ function registerGrowthSolutionMutationRoutes(app, authRequired) {
            t.assignee_name || '', t.due_date || null, t.phase || '', sort, t.why || null, t.acceptance_criteria || null]
         );
         // 培训类任务:同步创建真实培训指派
-        if ((t.template_code === 'assign_cert_training' || t.template_code === 'batch_assign') && _createTrainingAssignment && Array.isArray(t.training_targets)) {
+        const createTrainingAssignment = getTrainingAssigner();
+        if ((t.template_code === 'assign_cert_training' || t.template_code === 'batch_assign') && createTrainingAssignment && Array.isArray(t.training_targets)) {
           for (const tt of t.training_targets) {
             try {
-              await _createTrainingAssignment({
+              await createTrainingAssignment({
                 employeeUsername: tt.username, topicId: tt.topic_id,
                 assignedBy: req.user?.username || 'growth-solution',
                 dueDate: t.due_date || null, note: `增长方案第${roundNo}轮任务`, source: 'growth_solution',
