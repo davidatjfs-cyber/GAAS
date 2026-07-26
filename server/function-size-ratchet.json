@@ -1,8 +1,8 @@
 {
   "updated": "2026-07-26",
-  "note": "P2.1 单函数体积闸门：>maxLines 必须在 allowlist；只降不升。外提时若函数>200行须同批切分，禁止整体包进 createXxx 闭包。2026-07-26 P5.4：recomputeCustomerProfiles 迁至 growth-profiles/recompute.js 后自 allowlist 移除。 2026-07-26 P5.4：registerCustomerOpsRoutes 拆出后自 allowlist 移除。",
+  "note": "P2.1 单函数体积闸门：>maxLines 必须在 allowlist；只降不升。外提时若函数>200行须同批切分，禁止整体包进 createXxx 闭包。2026-07-26 P5.4：recomputeCustomerProfiles 迁至 growth-profiles/recompute.js 后自 allowlist 移除。 2026-07-26 P5.4：registerCustomerOpsRoutes 拆出后自 allowlist 移除。 2026-07-26 P5.4：registerSalesAiOpsRoutes 拆为 reports/pipeline/enablement/assistant/reps/commission 后自 allowlist 移除。",
   "maxLines": 200,
-  "maxAllowlistSize": 69,
+  "maxAllowlistSize": 67,
   "allowlist": [
     "server/agent-config-manager.js::registerAgentConfigRoutes",
     "server/agents.js::startAgentScheduler",
@@ -48,7 +48,6 @@
     "server/domains/remaining-state/routes.js::registerRemainingStateRoutes",
     "server/domains/sales-ai/routes-finance.js::registerSalesAiFinanceRoutes",
     "server/domains/sales-ai/routes-leads.js::registerSalesAiLeadsRoutes",
-    "server/domains/sales-ai/routes-ops.js::registerSalesAiOpsRoutes",
     "server/domains/sales-ai/routes.js::registerSalesAiRoutes",
     "server/domains/shared/hrms-state-store.js::createHrmsStateStoreHelpers",
     "server/domains/shared/startup-agent-schema.js::runStartupAgentSchemaBootstrap",
