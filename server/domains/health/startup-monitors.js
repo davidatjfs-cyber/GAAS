@@ -17,7 +17,7 @@ import { scheduleCriticalDataReconcile } from './monitor-critical-reconcile.js';
 import { schedulePosSalesCheck } from './monitor-pos-sales.js';
 import { scheduleLeaveCumulativeSnapshot } from './monitor-leave-snapshot.js';
 
-const log = childLogger({ domain: 'health', handler: 'startup-monitors' });
+const _log = childLogger({ domain: 'health', handler: 'startup-monitors' });
 
 /** Pure: POS sales check fires 23:30–23:34 local clock. */
 export function isPosSalesCheckWindow(now = new Date()) {
@@ -75,21 +75,8 @@ export function expectedStoresFromState(state) {
 export function createListenMonitors(deps) {
   const {
     pool,
-    runForActiveTenants,
-    runWithBootstrapTenantContext,
-    tenantContext,
     getSharedState,
-    mergeSharedStateFields,
-    purgeExpiredCache,
-    sendAdminSystemAlert,
-    upsertLeaveDomainFromState,
-    upsertPayrollDomainFromState,
-    getExpectedMonthlyPerformancePeriodShanghai,
-    countEligibleMonthlyPerformanceUsers,
-    leaveAttendanceHelpers,
-    safeErrMessage,
     hrmsNowISO,
-    allowSchemaChanges,
     setIntervalFn = setInterval,
     setTimeoutFn = setTimeout,
   } = deps;

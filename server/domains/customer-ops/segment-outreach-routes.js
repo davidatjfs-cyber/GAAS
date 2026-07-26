@@ -5,7 +5,7 @@ import { cleanText } from './ops-helpers.js';
 export function registerCustomerOpsSegmentOutreachRoutes(app, deps) {
   const {
     pool, authRequired, callLLM, basePath, getTenantId, ensureCustomerOpsTables,
-    applySegmentCriteria, suggestOfferStrategy, generateOutreachCopy,
+    applySegmentCriteria: _applySegmentCriteria, suggestOfferStrategy, generateOutreachCopy
   } = deps;
   app.get(`${basePath}/segments`, authRequired, async (req, res) => {
     try {

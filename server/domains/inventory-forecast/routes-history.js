@@ -10,27 +10,6 @@ import {
   uploadHistoryFile,
   uploadHistoryImage,
   uploadSalesRaw,
-  listDishAliases,
-  createDishAlias,
-  updateDishAlias,
-  deleteDishAlias,
-  listCoreProducts,
-  createCoreProduct,
-  deleteCoreProduct,
-  listProductAliases,
-  createProductAlias,
-  updateProductAlias,
-  deleteProductAlias,
-  getCoreProductSales,
-  getAnalytics,
-  estimateRevenue,
-  listGrossProfitProfiles,
-  upsertGrossProfitProfiles,
-  updateGrossProfitProfile,
-  deleteGrossProfitProfile,
-  estimateGrossMargin,
-  getAccuracy,
-  predictForecast
 } from './service.js';
 
 function sendFail(res, result) {

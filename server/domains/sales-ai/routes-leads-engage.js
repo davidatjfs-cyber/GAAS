@@ -1,4 +1,4 @@
-import { ensureSalesTables, listLeads, getLead, upsertTask, transitionLeadStage } from '../../services/sales/sales-store.js';
+
 import {
   handleInboundMessage,
   takeoverConversation,
@@ -9,26 +9,18 @@ import {
 } from '../../services/sales/sales-session.js';
 import { draftCustomerReply, draftStandardResponse, draftQuickReplyByScenario } from '../../services/sales/sales-reply-draft.js';
 import { checkPricePermission } from '../../services/sales/sales-price-policy.js';
-import { buildLeadSummary, calculateSla } from '../../services/sales/sales-collaboration-service.js';
-import { getUnifiedCustomerTimeline } from '../../services/sales/sales-timeline.js';
-import { buildTenantMonthlyValueReport } from '../../services/sales/tenant-value-report.js';
-import { getOnboardingChecklist } from '../../services/sales/tenant-onboarding.js';
-import { computeRenewalHealth, listRenewalRisks, listReferralCandidates } from '../../services/sales/tenant-renewal-service.js';
-import { maskLeadContact, maskLeadListContact, canViewFullContact } from '../../services/sales/sales-privacy.js';
-import { sensitiveRateLimit } from '../../services/sales/sales-rate-limit.js';
-import { leadScopeSql, canAccessLead, canAccessTenant } from '../../services/sales/sales-permissions.js';
+
 import { kfConfigured } from '../../services/sales/sales-kf.js';
 import { childLogger } from '../../utils/logger.js';
 
 const log = childLogger({ domain: 'sales-ai', handler: 'routes-leads' });
-
 
 /** @param {{ app: any, pool: any, platformAdminRequired: Function, gates: object }} ctx */
 
 /** @param { app: any, pool: any, platformAdminRequired: Function, gates: object } ctx */
 export function registerSalesAiLeadsEngageRoutes(ctx) {
   const { app, pool, platformAdminRequired, gates } = ctx;
-  const { contractPriceGate } = gates;
+  const { contractPriceGate: _contractPriceGate } = gates;
 
   app.post('/api/admin/sales/sandbox/chat', platformAdminRequired, async (req, res) => {
     try {

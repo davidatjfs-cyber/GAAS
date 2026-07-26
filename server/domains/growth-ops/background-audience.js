@@ -4,38 +4,15 @@
 export function startGrowthAudienceWorkers(deps) {
   const {
     pool,
-    log,
     runForActiveTenants,
     tenantContext,
     resolveTenantIdDefault,
     cleanText,
     cleanPhone,
-    inSmsQuietHours,
-    isPhoneSuppressed,
-    globalSmsCapped,
-    upsertDeliveryLog,
-    insertGrowthEvent,
-    sendAliyunSms,
-    handleSmsFailure,
-    upsertCustomer,
-    resolveTenantIdForStore,
-    pickBalanceTemplateByStore,
-    isAliyunSmsAutoSendEnabled,
-    freqDaysEnv,
-    buildRemindTargetsQuery,
-    autoBackfillSmsActions,
-    recomputeCustomerProfiles,
-    backfillRedemptionAmounts,
-    runTouchRuleEngine,
-    getAllStoreWecomConfigs,
-    syncWecomContactsForStore,
-    buildGrowthDailyReport,
     setTouchRulesAudienceGetter,
-    getSendGrowthAlert,
     loadSegmentPhoneSet,
     fetchGenericRuleCandidates,
   } = deps;
-
 
   // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
   // 用于前台展示活动覆盖范围，让管理员审核前清楚知道这次会发给多少人。

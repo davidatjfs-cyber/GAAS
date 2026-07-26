@@ -1,7 +1,6 @@
 /**
  * Customer-ops customer profile routes (P5.4).
  */
-import { cleanText } from './ops-helpers.js';
 
 export function registerCustomerOpsCustomerRoutes(app, deps) {
   const {

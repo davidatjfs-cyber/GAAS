@@ -2,7 +2,7 @@
  * Default POS stats SQL bundles — P5.4 split from getDefaultPosStats.
  */
 
-export async function queryDefaultPosStatsCore(pool, { posCond, itemsCond, reportStoreCond, statsParams }) {
+export async function queryDefaultPosStatsCore(pool, { posCond, itemsCond: _itemsCond, reportStoreCond, statsParams }) {
   const [
     summaryR, storeR, hourR, payR, dishR, repeatR, reportSummaryR,
   ] = await Promise.all([

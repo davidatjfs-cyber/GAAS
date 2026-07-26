@@ -11,10 +11,6 @@ export function registerAgentDataVisitSummaryRoutes(app, authRequired, deps) {
   const {
     pool,
     safeErrMessage,
-    getFeishuAccessToken,
-    createFeishuBitableRecord,
-    findConfigKeyByTableInfo,
-    upsertFeishuGenericRecord,
   } = deps;
 
   // ─── Agent API - 通用查询飞书多维表数据（已落库的 generic records）

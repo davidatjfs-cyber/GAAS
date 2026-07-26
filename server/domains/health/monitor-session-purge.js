@@ -6,17 +6,17 @@ const log = childLogger({ domain: 'health', handler: 'startup-monitors' });
 
 export function scheduleSessionStatePurge(deps) {
   const {
-    pool, runForActiveTenants, runWithBootstrapTenantContext, getSharedState,
-    mergeSharedStateFields, purgeExpiredCache, upsertLeaveDomainFromState,
-    upsertPayrollDomainFromState, getExpectedMonthlyPerformancePeriodShanghai,
-    countEligibleMonthlyPerformanceUsers, leaveAttendanceHelpers, safeErrMessage,
-    allowSchemaChanges, setIntervalFn = setInterval, setTimeoutFn = setTimeout,
-    beatHeartbeat, sendSystemAlert,
-    isPosSalesCheckWindow, isLeaveCumulativeSnapshotWindow,
-    findMissingPosStores, expectedStoresFromState,
-    dailyReportItemFromPgRow,
-    DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN, filterStaleHeartbeats,
-    formatStaleHeartbeatDeadLabel, staleHeartbeatDedupeKey,
+    pool, runForActiveTenants, runWithBootstrapTenantContext: _runWithBootstrapTenantContext, getSharedState: _getSharedState,
+    mergeSharedStateFields: _mergeSharedStateFields, purgeExpiredCache: _purgeExpiredCache, upsertLeaveDomainFromState: _upsertLeaveDomainFromState,
+    upsertPayrollDomainFromState: _upsertPayrollDomainFromState, getExpectedMonthlyPerformancePeriodShanghai: _getExpectedMonthlyPerformancePeriodShanghai,
+    countEligibleMonthlyPerformanceUsers: _countEligibleMonthlyPerformanceUsers, leaveAttendanceHelpers: _leaveAttendanceHelpers, safeErrMessage: _safeErrMessage,
+    allowSchemaChanges: _allowSchemaChanges, setIntervalFn = setInterval, setTimeoutFn: _setTimeoutFn = setTimeout,
+    beatHeartbeat: _beatHeartbeat, sendSystemAlert: _sendSystemAlert,
+    isPosSalesCheckWindow: _isPosSalesCheckWindow, isLeaveCumulativeSnapshotWindow: _isLeaveCumulativeSnapshotWindow,
+    findMissingPosStores: _findMissingPosStores, expectedStoresFromState: _expectedStoresFromState,
+    dailyReportItemFromPgRow: _dailyReportItemFromPgRow,
+    DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN: _DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN, filterStaleHeartbeats: _filterStaleHeartbeats,
+    formatStaleHeartbeatDeadLabel: _formatStaleHeartbeatDeadLabel, staleHeartbeatDedupeKey: _staleHeartbeatDedupeKey,
   } = deps;
 
 // P0B: Purge expired session states every hour

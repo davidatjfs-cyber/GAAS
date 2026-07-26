@@ -241,7 +241,7 @@ export function createMasterEventsHandler({ pool }) {
   };
 }
 
-export function createManualMasterTaskHandler({ pool, createTask, inferBrandFromStoreName }) {
+export function createManualMasterTaskHandler({ pool: _pool, createTask, inferBrandFromStoreName }) {
   return async (req, res) => {
     const role = String(req.user?.role || '').trim();
     if (!['admin', 'hq_manager'].includes(role)) {

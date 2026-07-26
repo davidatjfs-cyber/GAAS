@@ -1,14 +1,12 @@
-import { ensureSalesTables, getLead, addEvent, newLeadKey } from '../../services/sales/sales-store.js';
-import { provisionTenantFromOrder, rotateTenantAdminCredentials } from '../../services/sales-provisioning.js';
+import { getLead } from '../../services/sales/sales-store.js';
+
 import { getCreditRisk } from '../../services/sales/sales-credit-risk.js';
-import { brandKey, getCreditPoolRisk } from '../../services/sales/sales-order-credit.js';
+import { getCreditPoolRisk } from '../../services/sales/sales-order-credit.js';
 import { canAccessLead, isManager } from '../../services/sales/sales-permissions.js';
-import { completeDeployCheck } from '../../services/sales/onboarding-sla-service.js';
-import { deliverHealthCheckReport } from '../../services/sales/health-check-period-service.js';
+
 import { childLogger } from '../../utils/logger.js';
 
-const log = childLogger({ domain: 'sales-ai', handler: 'routes-finance' });
-
+const _log = childLogger({ domain: 'sales-ai', handler: 'routes-finance' });
 
 /** @param {{ app: any, pool: any, platformAdminRequired: Function, gates: object }} ctx */
 
@@ -18,9 +16,6 @@ export function registerSalesAiFinanceContractRoutes(ctx) {
   const {
     financeGate,
     financeOrCsGate,
-    generalManagerGate,
-    salesCreateCustomerGate,
-    ensureInvoiceRequestForOrder,
     autoProvisionIfEligible,
   } = gates;
 

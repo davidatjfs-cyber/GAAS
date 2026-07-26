@@ -8,32 +8,11 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { walkServerJs } from './walk-server-js.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
 const domainsRoot = path.join(serverRoot, 'domains');
-
-const SKIP_DIRS = new Set([
-  'node_modules',
-  'coverage',
-  'dist',
-  '.git',
-  'tmp',
-  '.stryker-tmp',
-  'reports',
-]);
-
-function walkJs(dir, out = []) {
-  if (!fs.existsSync(dir)) return out;
-  for (const name of fs.readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const p = path.join(dir, name);
-    const st = fs.statSync(p);
-    if (st.isDirectory()) walkJs(p, out);
-    else if (/\.(js|mjs)$/.test(name)) out.push(p);
-  }
-  return out;
-}
 
 function countConsoleCalls(src, methods = ['log', 'warn', 'error']) {
   const re = new RegExp(
@@ -91,7 +70,7 @@ test('domains/** console.log|warn|error 数量 ≤ 棘轮；新文件不得含',
     baselineFiles = new Set(bl.files || []);
   }
 
-  const files = walkJs(domainsRoot);
+  const files = walkServerJs(serverRoot, { root: domainsRoot });
   let total = 0;
   const offendersNew = [];
   const byFile = [];
@@ -123,13 +102,12 @@ test('非巨石运行时 server/** console.log|warn|error = 0', () => {
   const ratchet = loadRatchet();
   const methods = ratchet.methods || ['log', 'warn', 'error'];
   const max = Number.isFinite(ratchet.runtimeMaxCount) ? ratchet.runtimeMaxCount : 0;
-  const files = walkJs(serverRoot);
+  const files = walkServerJs(serverRoot);
   let total = 0;
   const byFile = [];
   for (const abs of files) {
     const rel = path.relative(serverRoot, abs).replace(/\\/g, '/');
     if (isRuntimeExempt(rel, ratchet)) continue;
-    // domains 已由上一测覆盖；此处仍计入，保持「运行时整体」口径
     const src = fs.readFileSync(abs, 'utf8');
     const n = countConsoleCalls(src, methods);
     if (n > 0) {

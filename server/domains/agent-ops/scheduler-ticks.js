@@ -4,7 +4,7 @@
 export async function runAuditTick(deps) {
   const {
     pool, tenantContext, getActiveTenantIds, runDataAuditor, pushIssuesToFeishu,
-    pushIssueToAssignee, pushScoresToFeishu, log,
+    pushIssueToAssignee: _pushIssueToAssignee, pushScoresToFeishu: _pushScoresToFeishu, log,
   } = deps;
   for (const tenantId of await getActiveTenantIds(pool())) {
     await tenantContext.run(tenantId, async () => {
@@ -33,7 +33,7 @@ export async function runAuditTick(deps) {
 export async function runWeeklyAuditTick(deps) {
   const {
     pool, tenantContext, getActiveTenantIds, runDataAuditor, pushIssuesToFeishu,
-    pushIssueToAssignee, pushScoresToFeishu, log,
+    pushIssueToAssignee: _pushIssueToAssignee, pushScoresToFeishu: _pushScoresToFeishu, log,
   } = deps;
   for (const tenantId of await getActiveTenantIds(pool())) {
     await tenantContext.run(tenantId, async () => {
@@ -62,8 +62,8 @@ export async function runWeeklyAuditTick(deps) {
 // 此处若继续跑 runChiefEvaluator(2026-Wxx) 会重新制造错误的 new_model 周评行。
 export async function runEvalTick(deps) {
   const {
-    pool, tenantContext, getActiveTenantIds, runDataAuditor, pushIssuesToFeishu,
-    pushIssueToAssignee, pushScoresToFeishu, log,
+    pool: _pool, tenantContext: _tenantContext, getActiveTenantIds: _getActiveTenantIds, runDataAuditor: _runDataAuditor, pushIssuesToFeishu: _pushIssuesToFeishu,
+    pushIssueToAssignee: _pushIssueToAssignee, pushScoresToFeishu: _pushScoresToFeishu, log,
   } = deps;
   try {
     const now = new Date();
@@ -78,8 +78,8 @@ export async function runEvalTick(deps) {
 // OP Agent: 每周一早上10点督办周异常（实收营收、人效值、桌访产品、桌访占比、产品/服务差评）
 export async function runWeeklyOpsTick(deps) {
   const {
-    pool, tenantContext, getActiveTenantIds, runDataAuditor, pushIssuesToFeishu,
-    pushIssueToAssignee, pushScoresToFeishu, log,
+    pool, tenantContext, getActiveTenantIds, runDataAuditor: _runDataAuditor, pushIssuesToFeishu: _pushIssuesToFeishu,
+    pushIssueToAssignee, pushScoresToFeishu: _pushScoresToFeishu, log,
   } = deps;
   for (const tenantId of await getActiveTenantIds(pool())) {
     await tenantContext.run(tenantId, async () => {
@@ -146,8 +146,8 @@ export async function runWeeklyOpsTick(deps) {
 // OP Agent: 每天早上10点督办充值异常
 export async function runDailyRechargeTick(deps) {
   const {
-    pool, tenantContext, getActiveTenantIds, runDataAuditor, pushIssuesToFeishu,
-    pushIssueToAssignee, pushScoresToFeishu, log,
+    pool, tenantContext, getActiveTenantIds, runDataAuditor: _runDataAuditor, pushIssuesToFeishu: _pushIssuesToFeishu,
+    pushIssueToAssignee, pushScoresToFeishu: _pushScoresToFeishu, log,
   } = deps;
   for (const tenantId of await getActiveTenantIds(pool())) {
     await tenantContext.run(tenantId, async () => {
@@ -206,8 +206,8 @@ export async function runDailyRechargeTick(deps) {
 // Retry pushing un-notified items every 5 minutes
 export async function runPushTick(deps) {
   const {
-    pool, tenantContext, getActiveTenantIds, runDataAuditor, pushIssuesToFeishu,
-    pushIssueToAssignee, pushScoresToFeishu, log,
+    pool, tenantContext, getActiveTenantIds, runDataAuditor: _runDataAuditor, pushIssuesToFeishu,
+    pushIssueToAssignee: _pushIssueToAssignee, pushScoresToFeishu, log,
   } = deps;
   for (const tenantId of await getActiveTenantIds(pool())) {
     await tenantContext.run(tenantId, async () => {
