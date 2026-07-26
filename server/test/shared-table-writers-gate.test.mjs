@@ -48,7 +48,8 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'domains/approvals/handlers/onboarding.js|UPDATE|feishu_users',
   // Wave H19：account-gate 从 index.js 迁出（同 OP+表换路径）
   'domains/employees/account-gate.js|UPDATE|feishu_users',
-  'index.js|UPDATE|knowledge_base',
+  // Wave M5：listen-time knowledge_base.group_name backfill 从 index.js 迁出
+  'domains/shared/startup-agent-schema.js|UPDATE|knowledge_base',
   'domains/knowledge/service.js|DELETE FROM|knowledge_base',
   'domains/knowledge/service.js|INSERT INTO|knowledge_base',
   'domains/knowledge/service.js|UPDATE|knowledge_base',
@@ -74,6 +75,7 @@ const REPATH_NOTES = [
   'index.js → domains/approvals/handlers/onboarding.js | INSERT INTO|feishu_users',
   'index.js → domains/approvals/handlers/onboarding.js | UPDATE|feishu_users',
   'index.js → domains/employees/account-gate.js | UPDATE|feishu_users',
+  'index.js → domains/shared/startup-agent-schema.js | UPDATE|knowledge_base',
   'training.js → domains/training/routes-rubric.js | UPDATE|knowledge_base',
   'training.js → domains/training/routes-sessions.js | UPDATE|knowledge_base',
   'domains/training/routes-sessions.js → domains/training/service-sessions.js | UPDATE|knowledge_base',
