@@ -270,6 +270,7 @@
     "domains/feishu-bitable/poll-submissions.js",
     "domains/agent-bi/build-daily-report-reply.js",
     "domains/agent-bi/build-sales-raw-top-reply.js",
-    "domains/agent-bi/build-bad-review-report-reply.js"
+    "domains/agent-bi/build-bad-review-report-reply.js",
+    "domains/agent-bi/deterministic-cascade-replies.js"
   ]
 }
