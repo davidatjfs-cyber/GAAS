@@ -313,6 +313,14 @@
     "domains/leave-attendance/daily-attendance-register-helpers.js",
     "domains/leave-attendance/reconcile-attendance-days-helpers.js",
     "services/check-data-integration-helpers.js",
-    "ontology/run-daily-diagnosis-helpers.js"
+    "ontology/run-daily-diagnosis-helpers.js",
+    "domains/ai/llm-provider-helpers.js",
+    "domains/ai/load-tenant-ai-config-helpers.js",
+    "domains/ai/load-tenant-ai-config.js",
+    "domains/ai/tenant-llm-config.js",
+    "domains/ai/call-llm-helpers.js",
+    "domains/ai/call-llm.js",
+    "domains/ai/call-vision-llm-helpers.js",
+    "domains/ai/call-vision-llm.js"
   ]
 }
