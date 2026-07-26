@@ -80,7 +80,8 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'rag-tool.js|UPDATE|knowledge_base',
   'test-tenant-operation-inspection.mjs|INSERT INTO|master_tasks',
   // Wave 2：training.js → domains/training/*（同 OP+表换路径；会话/图谱两处仍写 knowledge_base）
-  'domains/training/routes-rubric.js|UPDATE|knowledge_base',
+  // P5.4：routes-rubric.js → routes-rubric-analyze.js（同 OP+表换路径）
+  'domains/training/routes-rubric-analyze.js|UPDATE|knowledge_base',
   // Wave H44：sessions UPDATE knowledge_base 从 routes-sessions 抽到 service-sessions
   'domains/training/service-sessions.js|UPDATE|knowledge_base',
   'utils/feishu-open-id-cross-app.js|UPDATE|feishu_users',
@@ -93,6 +94,7 @@ const REPATH_NOTES = [
   'index.js → domains/employees/account-gate.js | UPDATE|feishu_users',
   'index.js → domains/shared/startup-agent-schema.js | UPDATE|knowledge_base',
   'training.js → domains/training/routes-rubric.js | UPDATE|knowledge_base',
+  'domains/training/routes-rubric.js → domains/training/routes-rubric-analyze.js | UPDATE|knowledge_base',
   'training.js → domains/training/routes-sessions.js | UPDATE|knowledge_base',
   'domains/training/routes-sessions.js → domains/training/service-sessions.js | UPDATE|knowledge_base',
   'knowledge-routes.js → domains/knowledge/service.js | DELETE FROM|knowledge_base',
