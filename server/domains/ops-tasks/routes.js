@@ -1,4 +1,12 @@
+import { childLogger } from '../../utils/logger.js';
 import { canAccessOpsTasks } from './access.js';
+
+const log = childLogger({ domain: 'ops-tasks', handler: 'routes' });
+
+function fail500(req, res, msg, err) {
+  log.error({ msg, request_id: req.requestId, err: err?.message || String(err || msg) });
+  return res.status(500).json({ error: 'server_error', message: 'internal_error', request_id: req.requestId || null });
+}
 
 /**
  * @param {import('express').Express} app
@@ -60,7 +68,7 @@ export function registerOpsTasksRoutes(app, authRequired, deps) {
       );
       return res.json({ items: r.rows || [] });
     } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+      return fail500(req, res, 'ops_tasks_list_failed', e);
     }
   });
 
@@ -79,7 +87,7 @@ export function registerOpsTasksRoutes(app, authRequired, deps) {
       );
       return res.json({ ok: true });
     } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+      return fail500(req, res, 'ops_tasks_read_failed', e);
     }
   });
 
@@ -140,7 +148,7 @@ export function registerOpsTasksRoutes(app, authRequired, deps) {
 
       return res.json({ item: r.rows?.[0] || null });
     } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+      return fail500(req, res, 'ops_tasks_complete_failed', e);
     }
   });
 }

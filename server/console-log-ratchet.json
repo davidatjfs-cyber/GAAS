@@ -1,13 +1,15 @@
 {
   "updated": "2026-07-26",
-  "note": "console.log|warn|error 棘轮：domains 与非巨石运行时均已清零；只降不升。巨石 agents/index/master 与 scripts/一次性工具除外。",
+  "note": "console.log|warn|error 棘轮：domains 与运行时（含 agents.js/index.js/master-agent.js）均已清零；只降不升。仅 migrate.js 与 scripts/一次性工具除外。",
   "maxCount": 0,
   "domainsMaxCount": 0,
   "runtimeMaxCount": 0,
-  "methods": ["log", "warn", "error"],
+  "methods": [
+    "log",
+    "warn",
+    "error"
+  ],
   "runtimeExemptExact": [
-    "agents.js",
-    "master-agent.js",
     "migrate.js"
   ],
   "runtimeExemptPrefixes": [

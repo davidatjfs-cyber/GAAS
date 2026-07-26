@@ -30,7 +30,7 @@ export function registerNotificationsWriteRoutes(app, authRequired, deps) {
       }
       res.json({ ok: true, deleted: r.rowCount });
     } catch (e) {
-      log.error({ msg: 'notifications_delete_failed', err: e?.message });
+      log.error({ msg: 'notifications_delete_failed', request_id: req.requestId, err: e?.message });
       res.status(500).json({ error: 'db_error' });
     }
   });
@@ -56,7 +56,7 @@ export function registerNotificationsWriteRoutes(app, authRequired, deps) {
       }
       return res.json({ ok: true, ids });
     } catch (e) {
-      log.error({ msg: 'notifications_batch_failed', err: e?.message });
+      log.error({ msg: 'notifications_batch_failed', request_id: req.requestId, err: e?.message });
       return res.status(500).json({ error: 'server_error' });
     }
   });

@@ -258,5 +258,9 @@ checkFileFloors('extracted-floor', path.join(serverRoot, 'extracted-coverage-flo
   return (cfg.files || []).map((rel) => ({ rel, floors: { lines: minLines } }));
 });
 
+checkFileFloors('L2-floor', path.join(serverRoot, 'l2-coverage-floor.json'), (cfg) =>
+  Object.entries(cfg.files || {}).map(([rel, floors]) => ({ rel, floors }))
+);
+
 if (failed) process.exit(1);
 process.exit(0);

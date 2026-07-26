@@ -11,6 +11,9 @@ import {
   FLOW_CONFIG_KEYS,
 } from './service.js';
 import { patchHrmsStateFieldsOnClient, withMirrorWriteTx } from '../shared/mirror-tx.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'flow-config', handler: 'routes' });
 
 /**
  * @param {import('express').Express} app
@@ -44,7 +47,8 @@ export function registerFlowConfigRoutes(app, authRequired, deps) {
       if (!config || !Object.keys(config).length) config = null;
       return res.json({ config });
     } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+      log.error({ msg: 'flow_config_role_modules_get_failed', request_id: req.requestId, err: e?.message || String(e) });
+      return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error', request_id: req.requestId || null });
     }
   });
 
@@ -65,7 +69,8 @@ export function registerFlowConfigRoutes(app, authRequired, deps) {
       });
       return res.json({ ok: true, config: saved });
     } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+      log.error({ msg: 'flow_config_role_modules_put_failed', request_id: req.requestId, err: e?.message || String(e) });
+      return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error', request_id: req.requestId || null });
     }
   });
 
@@ -98,7 +103,8 @@ export function registerFlowConfigRoutes(app, authRequired, deps) {
         paymentFlowByStore: bundle.paymentFlowByStore || {},
       });
     } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+      log.error({ msg: 'flow_config_approval_flows_get_failed', request_id: req.requestId, err: e?.message || String(e) });
+      return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error', request_id: req.requestId || null });
     }
   });
 
@@ -128,7 +134,8 @@ export function registerFlowConfigRoutes(app, authRequired, deps) {
       });
       return res.json({ ok: true, ...mirror });
     } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+      log.error({ msg: 'flow_config_approval_flows_put_failed', request_id: req.requestId, err: e?.message || String(e) });
+      return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error', request_id: req.requestId || null });
     }
   });
 

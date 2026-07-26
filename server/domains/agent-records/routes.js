@@ -15,6 +15,10 @@ import {
   resolveAgentIssue,
 } from './service.js';
 
+function withRequestId(req, extra = {}) {
+  return { ...extra, requestId: req.requestId };
+}
+
 /**
  * @param {import('express').Express} app
  * @param {(req,res,next)=>void} authRequired
@@ -39,13 +43,13 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
 
   app.get('/api/agents/issues', authRequired, async (req, res) => {
     try {
-      const items = await listAgentIssues(pool(), {
+      const items = await listAgentIssues(pool(), withRequestId(req, {
         role: req.user?.role,
         username: req.user?.username,
         status: req.query?.status,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
         limit: req.query?.limit,
-      });
+      }));
       return res.json({ items });
     } catch (e) {
       return res.status(500).json({ error: String(e?.message || e) });
@@ -54,11 +58,11 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
 
   app.post('/api/agents/issues/:id/resolve', authRequired, async (req, res) => {
     try {
-      const result = await resolveAgentIssue(pool(), {
+      const result = await resolveAgentIssue(pool(), withRequestId(req, {
         id: req.params?.id,
         resolution: req.body?.resolution,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
-      });
+      }));
       if (!result.ok) return res.status(result.status).json({ error: result.error });
       return res.json({ ok: true });
     } catch (e) {
@@ -68,14 +72,14 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
 
   app.get('/api/agent-scores/me', authRequired, async (req, res) => {
     try {
-      const result = await getMyAgentScore(pool(), {
+      const result = await getMyAgentScore(pool(), withRequestId(req, {
         username: req.user?.username,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
         getSharedState,
         inferBrandFromStoreName,
         fetchStoreRatingForProfileDisplay,
         calculateStoreRating,
-      });
+      }));
       if (!result.ok) return res.status(result.status).json({ error: result.error });
       return res.json(result.body);
     } catch (e) {
@@ -95,12 +99,12 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
 
   app.get('/api/agents/scores', authRequired, async (req, res) => {
     try {
-      const items = await listAgentScores(pool(), {
+      const items = await listAgentScores(pool(), withRequestId(req, {
         role: req.user?.role,
         username: req.user?.username,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
         limit: req.query?.limit,
-      });
+      }));
       return res.json({ items });
     } catch (e) {
       return res.status(500).json({ error: String(e?.message || e) });
@@ -109,12 +113,12 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
 
   app.get('/api/agents/audits', authRequired, async (req, res) => {
     try {
-      const items = await listVisualAudits(pool(), {
+      const items = await listVisualAudits(pool(), withRequestId(req, {
         role: req.user?.role,
         username: req.user?.username,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
         limit: req.query?.limit,
-      });
+      }));
       return res.json({ items });
     } catch (e) {
       return res.status(500).json({ error: String(e?.message || e) });
@@ -123,11 +127,11 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
 
   app.post('/api/agents/appeals', authRequired, async (req, res) => {
     try {
-      const result = await createAppeal(pool(), {
+      const result = await createAppeal(pool(), withRequestId(req, {
         username: req.user?.username,
         reason: req.body?.reason,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
-      });
+      }));
       if (!result.ok) return res.status(result.status).json({ error: result.error });
       return res.json({ ok: true, id: result.id });
     } catch (e) {
@@ -137,12 +141,12 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
 
   app.get('/api/agents/appeals', authRequired, async (req, res) => {
     try {
-      const items = await listAppeals(pool(), {
+      const items = await listAppeals(pool(), withRequestId(req, {
         role: req.user?.role,
         username: req.user?.username,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
         limit: req.query?.limit,
-      });
+      }));
       return res.json({ items });
     } catch (e) {
       return res.status(500).json({ error: String(e?.message || e) });
@@ -151,12 +155,12 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
 
   app.get('/api/agents/messages', authRequired, async (req, res) => {
     try {
-      const items = await listAgentMessages(pool(), {
+      const items = await listAgentMessages(pool(), withRequestId(req, {
         role: req.user?.role,
         username: req.user?.username,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
         limit: req.query?.limit,
-      });
+      }));
       return res.json({ items });
     } catch (e) {
       return res.status(500).json({ error: String(e?.message || e) });

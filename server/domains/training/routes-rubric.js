@@ -6,6 +6,7 @@ import fs from 'fs';
 import axios from 'axios';
 import { randomUUID } from 'crypto';
 import { execFileSync } from 'child_process';
+import { agentsOutboundHeaders } from '../shared/agents-service-auth.js';
 import { callVisionLLM, callVisionLLMVideo } from '../../agents.js';
 import {
   pool,
@@ -241,7 +242,7 @@ export function registerTrainingRubricRoutes(app, authMiddleware, _uploadMiddlew
             const analyzeRes = await axios.post(
               `http://localhost:3000/api/knowledge/${kbArticle.id}/analyze-rubric`,
               {},
-              { headers: { 'Authorization': req.headers['authorization'] || '' } }
+              { headers: agentsOutboundHeaders(req, { Authorization: req.headers['authorization'] || '' }) }
             );
             if (!analyzeRes.data?.success) {
               return res.json({ success: false, error: '步骤图谱生成失败: ' + (analyzeRes.data?.error || '') });
@@ -256,7 +257,7 @@ export function registerTrainingRubricRoutes(app, authMiddleware, _uploadMiddlew
       await pool().query(`UPDATE training_topics SET step_rubric = $1 WHERE id = $2`, [JSON.stringify(rubric), id]);
       res.json({ success: true, rubric, source_kb: { id: kbArticle.id, title: kbArticle.title }, warning: warningMsg });
     } catch (e) {
-      log.error({ msg: 'training_generate_rubric_failed', err: e?.message || String(e) });
+      log.error({ msg: 'training_generate_rubric_failed', request_id: req.requestId, err: e?.message || String(e) });
       res.json({ success: false, error: e?.message });
     }
   });

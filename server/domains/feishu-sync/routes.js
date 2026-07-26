@@ -68,7 +68,7 @@ export function registerFeishuSyncRoutes(app, authRequired, deps) {
         }
       });
     } catch (error) {
-      log.error({ msg: 'feishu_sync_status_failed', err: error?.message || String(error) });
+      log.error({ msg: 'feishu_sync_status_failed', request_id: req.requestId, err: error?.message || String(error) });
       res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
     }
   });
@@ -84,7 +84,7 @@ export function registerFeishuSyncRoutes(app, authRequired, deps) {
       if (!appToken || !tableId) {
         return res.status(400).json({ error: 'missing_app_token_or_table_id' });
       }
-      const result = await runManualFeishuBitableSync(manualSyncCtx, {
+      const result = await runManualFeishuBitableSync({ ...manualSyncCtx, requestId: req.requestId }, {
         appToken,
         tableId,
         appId,
@@ -92,7 +92,7 @@ export function registerFeishuSyncRoutes(app, authRequired, deps) {
       });
       res.json(result);
     } catch (error) {
-      log.error({ msg: 'feishu_manual_sync_failed', err: error?.message || String(error) });
+      log.error({ msg: 'feishu_manual_sync_failed', request_id: req.requestId, err: error?.message || String(error) });
       void notifyAdminsDualWriteFailure('飞书多维表手动同步（整次失败）', error);
       res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
     }
@@ -115,7 +115,7 @@ export function registerFeishuSyncRoutes(app, authRequired, deps) {
         upserted: Number(result.upserted || 0)
       });
     } catch (error) {
-      log.error({ msg: 'dish_library_sync_failed', err: error?.message || String(error) });
+      log.error({ msg: 'dish_library_sync_failed', request_id: req.requestId, err: error?.message || String(error) });
       void notifyAdminsDualWriteFailure('菜品库成本同步（HTTP 接口抛错）', error);
       res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
     }
@@ -133,7 +133,7 @@ export function registerFeishuSyncRoutes(app, authRequired, deps) {
       }
       res.json({ message: 'SOP步骤库同步完成', ...result });
     } catch (error) {
-      log.error({ msg: 'sop_steps_sync_failed', err: error?.message || String(error) });
+      log.error({ msg: 'sop_steps_sync_failed', request_id: req.requestId, err: error?.message || String(error) });
       res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
     }
   });
@@ -154,7 +154,7 @@ export function registerFeishuSyncRoutes(app, authRequired, deps) {
       const accessToken = await getFeishuAccessToken({ appId, appSecret });
       res.json({ success: true, message: '连接成功', accessToken: accessToken ? 'valid' : 'invalid' });
     } catch (error) {
-      log.error({ msg: 'feishu_test_connection_failed', err: error?.message || String(error) });
+      log.error({ msg: 'feishu_test_connection_failed', request_id: req.requestId, err: error?.message || String(error) });
       res.status(500).json({ success: false, message: safeErrMessage(error) });
     }
   });
@@ -190,7 +190,7 @@ export function registerFeishuSyncRoutes(app, authRequired, deps) {
       const result = await sendLarkMessage(openId, message, { skipDedup: true });
       return res.json({ ok: Boolean(result?.ok), openId, result });
     } catch (error) {
-      log.error({ msg: 'feishu_test_message_failed', err: error?.message || String(error) });
+      log.error({ msg: 'feishu_test_message_failed', request_id: req.requestId, err: error?.message || String(error) });
       return res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
     }
   });

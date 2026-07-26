@@ -35,6 +35,10 @@ function buildCtx(pool) {
   };
 }
 
+function withReqCtx(ctx, req) {
+  return { ...ctx, requestId: req.requestId };
+}
+
 function send(res, result) {
   return res.status(result.status).json(result.body);
 }
@@ -43,33 +47,33 @@ export function registerGrowthOpsRoutes(app, pool) {
   const ctx = buildCtx(pool);
 
   app.get('/api/growth/weather-context', async (req, res) => {
-    return send(res, await getWeatherContext(ctx, req.query || {}));
+    return send(res, await getWeatherContext(withReqCtx(ctx, req), req.query || {}));
   });
 
   app.get('/api/growth/active-window', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    return send(res, await getActiveWindow(ctx, getGrowthTenantId(req), req.query || {}));
+    return send(res, await getActiveWindow(withReqCtx(ctx, req), getGrowthTenantId(req), req.query || {}));
   });
 
   app.post('/api/growth/repurchase-trigger', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    return send(res, await triggerRepurchase(ctx, getGrowthTenantId(req), req.body || {}));
+    return send(res, await triggerRepurchase(withReqCtx(ctx, req), getGrowthTenantId(req), req.body || {}));
   });
 
   app.get('/api/growth/user-clusters', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    return send(res, await listUserClusters(ctx, getGrowthTenantId(req), req.query || {}));
+    return send(res, await listUserClusters(withReqCtx(ctx, req), getGrowthTenantId(req), req.query || {}));
   });
 
   app.post('/api/growth/generate-selling-point', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    return send(res, await generateSellingPoint({ ...ctx, requestId: req.requestId }, req.body || {}));
+    return send(res, await generateSellingPoint(withReqCtx(ctx, req), req.body || {}));
   });
 
   app.post('/api/growth/daily-report/send', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     try {
-      return send(res, await sendDailyReport(ctx, getGrowthTenantId(req), req.body || {}));
+      return send(res, await sendDailyReport(withReqCtx(ctx, req), getGrowthTenantId(req), req.body || {}));
     } catch (e) {
       return res.status(500).json({ ok: false, error: e?.message });
     }
@@ -78,7 +82,7 @@ export function registerGrowthOpsRoutes(app, pool) {
   app.get('/api/growth/daily-report/preview', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
     try {
-      return send(res, await previewDailyReport(ctx, getGrowthTenantId(req), req.query || {}));
+      return send(res, await previewDailyReport(withReqCtx(ctx, req), getGrowthTenantId(req), req.query || {}));
     } catch (e) {
       return res.status(500).json({ ok: false, error: e?.message });
     }
@@ -86,16 +90,16 @@ export function registerGrowthOpsRoutes(app, pool) {
 
   app.get('/api/growth/content-performance', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    return send(res, await listContentPerformance(ctx, req.query || {}));
+    return send(res, await listContentPerformance(withReqCtx(ctx, req), req.query || {}));
   });
 
   app.post('/api/growth/content-performance', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    return send(res, await upsertContentPerformance(ctx, req.body || {}));
+    return send(res, await upsertContentPerformance(withReqCtx(ctx, req), req.body || {}));
   });
 
   app.delete('/api/growth/content-performance/:id', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    return send(res, await deleteContentPerformance(ctx, req.params.id));
+    return send(res, await deleteContentPerformance(withReqCtx(ctx, req), req.params.id));
   });
 }

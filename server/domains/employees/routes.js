@@ -96,7 +96,7 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
         try {
           await applyAccountGate(saved);
         } catch (e) {
-          log.error({ msg: 'employees_account_gate_failed', username, err: e?.message || String(e) });
+          log.error({ msg: 'employees_account_gate_failed', request_id: req.requestId, username, err: e?.message || String(e) });
         }
       }
       return res.status(201).json({ ok: true, employee: saved });
@@ -146,7 +146,7 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
         try {
           await applyAccountGate(saved);
         } catch (e) {
-          log.error({ msg: 'employees_account_gate_failed', username: nextUser, err: e?.message || String(e) });
+          log.error({ msg: 'employees_account_gate_failed', request_id: req.requestId, username: nextUser, err: e?.message || String(e) });
         }
       }
       return res.json({ ok: true, employee: saved });
@@ -175,7 +175,7 @@ export function registerEmployeesDomainRoutes(app, authRequired, deps) {
         try {
           await applyAccountGate(saved);
         } catch (e) {
-          log.error({ msg: 'employees_account_gate_failed', username, err: e?.message || String(e) });
+          log.error({ msg: 'employees_account_gate_failed', request_id: req.requestId, username, err: e?.message || String(e) });
         }
       }
       return res.json({ ok: true, employee: saved });

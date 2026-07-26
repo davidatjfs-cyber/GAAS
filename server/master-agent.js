@@ -54,7 +54,9 @@ import {
   inspectionClosedLoopTick, biProactivePushTick,
   laborEfficiencyTick, trainingClosedLoopTick
 } from './auto-ops-engine.js';
+import { childLogger } from './utils/logger.js';
 
+const log = childLogger({ domain: 'master-agent' });
 
 function normalizeStoreKey(v) {
   return String(v || '').trim().toLowerCase().replace(/\s+/g, '');
@@ -304,16 +306,16 @@ export async function ensureMasterTables() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_data_quality_source ON data_quality_logs (data_source, created_at)`);
 
     await client.query('COMMIT');
-    console.log('[master] Tables ensured (including autonomous, regression, LLM monitoring)');
+    log.info('[master] Tables ensured (including autonomous, regression, LLM monitoring)');
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     if (String(e?.code || '') === '23505') return;
-    console.error('[master] ensureMasterTables failed:', e?.message);
+    log.error('[master] ensureMasterTables failed:', e?.message);
   } finally {
     client.release();
   }
   // 知识图谱 & 行动计划表
-  try { await ensureKnowledgeGraphTables(); } catch (e) { console.error('[master] ensureKGTables failed:', e?.message); }
+  try { await ensureKnowledgeGraphTables(); } catch (e) { log.error('[master] ensureKGTables failed:', e?.message); }
 }
 
 // ─────────────────────────────────────────────
@@ -338,7 +340,7 @@ async function emitEvent(taskId, eventType, fromAgent, toAgent, statusBefore, st
       [taskId, eventType, fromAgent, toAgent, statusBefore, statusAfter, JSON.stringify(payload), tenantId]
     );
   } catch (e) {
-    console.error('[master] emitEvent failed:', e?.message);
+    log.error('[master] emitEvent failed:', e?.message);
   }
 }
 
@@ -347,12 +349,12 @@ async function transitionTask(taskId, newStatus, agentName, data = {}, tenantId 
   try {
     const r = await pool().query(`SELECT * FROM master_tasks WHERE task_id = $1 AND tenant_id = $2`, [taskId, tenantId]);
     const task = r.rows?.[0];
-    if (!task) { console.error('[master] task not found:', taskId); return null; }
+    if (!task) { log.error('[master] task not found:', taskId); return null; }
 
     const currentStatus = task.status;
     const flow = STATUS_FLOW[currentStatus];
     if (!flow || !flow.next.includes(newStatus)) {
-      console.error(`[master] invalid transition: ${currentStatus} → ${newStatus} for task ${taskId}`);
+      log.error(`[master] invalid transition: ${currentStatus} → ${newStatus} for task ${taskId}`);
       return null;
     }
 
@@ -409,17 +411,17 @@ async function transitionTask(taskId, newStatus, agentName, data = {}, tenantId 
           );
         }
       } catch (e) {
-        console.warn('[master] sync anomaly_triggers on bi_anomaly close:', e?.message || e);
+        log.warn('[master] sync anomaly_triggers on bi_anomaly close:', e?.message || e);
       }
     }
 
     // 记录事件
     await emitEvent(taskId, `status_${newStatus}`, agentName, STATUS_FLOW[newStatus]?.agent || null, currentStatus, newStatus, data, tenantId);
 
-    console.log(`[master] ${taskId}: ${currentStatus} → ${newStatus} (by ${agentName})`);
+    log.info(`[master] ${taskId}: ${currentStatus} → ${newStatus} (by ${agentName})`);
     return { ...task, status: newStatus };
   } catch (e) {
-    console.error('[master] transitionTask failed:', e?.message);
+    log.error('[master] transitionTask failed:', e?.message);
     return null;
   }
 }
@@ -441,10 +443,10 @@ async function createTask({ source, sourceRef, category, severity, store, brand,
     await emitEvent(taskId, 'task_created', 'data_auditor', 'master', null, 'pending_dispatch', { category, severity, store }, tenantId);
     // 知识图谱: 写入异常→门店关系
     try { await extractAnomalyRelations({ task_id: taskId, category, severity, store, brand, title, detail, created_at: new Date() }); } catch (e) { /* ignore */ }
-    console.log(`[master] Task created: ${taskId} [${category}] ${store}`);
+    log.info(`[master] Task created: ${taskId} [${category}] ${store}`);
     return taskId;
   } catch (e) {
-    console.error('[master] createTask failed:', e?.message);
+    log.error('[master] createTask failed:', e?.message);
     return null;
   }
 }
@@ -503,10 +505,10 @@ async function resolveAssignee(category, store, existingAssignee, sourceData) {
         store 
       };
     } else if (user) {
-      console.warn(`[resolveAssignee] ⚠️ 跨门店分派告警: 用户 ${existingAssignee}(${user.name}) 属于 ${user.store}，不属于目标门店 ${store}。自动重新匹配...`);
+      log.warn(`[resolveAssignee] ⚠️ 跨门店分派告警: 用户 ${existingAssignee}(${user.name}) 属于 ${user.store}，不属于目标门店 ${store}。自动重新匹配...`);
       // 继续按门店自动匹配
     } else {
-      console.warn(`[resolveAssignee] ⚠️ 用户 ${existingAssignee} 不存在，自动重新匹配...`);
+      log.warn(`[resolveAssignee] ⚠️ 用户 ${existingAssignee} 不存在，自动重新匹配...`);
     }
   }
 
@@ -538,11 +540,11 @@ async function resolveAssignee(category, store, existingAssignee, sourceData) {
   }
 
   if (!assignee) {
-    console.error(`[resolveAssignee] ❌ 未找到门店 ${store} 的责任人（目标角色: ${targetRole}）`);
+    log.error(`[resolveAssignee] ❌ 未找到门店 ${store} 的责任人（目标角色: ${targetRole}）`);
     return null;
   }
   
-  console.log(`[resolveAssignee] ✅ 已匹配责任人: ${assignee.name}(${assignee.username}) - ${assignee.role} @ ${store}`);
+  log.info(`[resolveAssignee] ✅ 已匹配责任人: ${assignee.name}(${assignee.username}) - ${assignee.role} @ ${store}`);
   return {
     username: String(assignee.username || '').trim(),
     name: String(assignee.name || '').trim(),
@@ -583,14 +585,14 @@ export async function syncDataAuditorIssuesToMasterTasks(newIssueIds, tenantId =
       // 旧 data_auditor 的 BI 异常已整体迁移到 agents-service-v2（ANO-*）。
       // 若继续同步为 MT-*，会与新链路并行催办，最终造成重复任务与重复备案。
       if (disabledLegacyBiCategories.some((name) => cat.includes(name))) {
-        console.log('[master:data_auditor] skip deprecated anomaly → master_tasks', issueId, cat, ttl.slice(0, 80));
+        log.info('[master:data_auditor] skip deprecated anomaly → master_tasks', issueId, cat, ttl.slice(0, 80));
         continue;
       }
       if (
         cat.includes('原料收货') ||
         /近\s*\d+\s*天.*原料|条原料.*异常|原料异常反馈/i.test(ttl)
       ) {
-        console.log('[master:data_auditor] skip deprecated material issue → master_tasks', issueId, ttl.slice(0, 80));
+        log.info('[master:data_auditor] skip deprecated material issue → master_tasks', issueId, ttl.slice(0, 80));
         continue;
       }
 
@@ -613,10 +615,10 @@ export async function syncDataAuditorIssuesToMasterTasks(newIssueIds, tenantId =
       }, tenantId);
       if (taskId) created++;
     } catch (e) {
-      console.error('[master:data_auditor] Failed to sync issue to master_tasks:', e?.message);
+      log.error('[master:data_auditor] Failed to sync issue to master_tasks:', e?.message);
     }
   }
-  if (created > 0) console.log(`[master:data_auditor] Created ${created} new tasks`);
+  if (created > 0) log.info(`[master:data_auditor] Created ${created} new tasks`);
   return created;
 }
 
@@ -627,7 +629,7 @@ async function dataAuditorListener(tenantId = 'default') {
     const result = await runDataAuditor('daily', tenantId);
     return await syncDataAuditorIssuesToMasterTasks(result.newIssueIds || [], tenantId);
   } catch (e) {
-    console.error('[master:data_auditor] listener error:', e?.message);
+    log.error('[master:data_auditor] listener error:', e?.message);
     return 0;
   }
 }
@@ -653,10 +655,10 @@ async function masterIssuesListener(tenantId = 'default') {
       );
     }
     
-    console.log(`[master:issues] Processed ${r.rows.length} agent issues`);
+    log.info(`[master:issues] Processed ${r.rows.length} agent issues`);
     return r.rows.length;
   } catch (e) {
-    console.error('[master:issues] listener error:', e?.message);
+    log.error('[master:issues] listener error:', e?.message);
     return 0;
   }
 }
@@ -682,10 +684,10 @@ async function masterOptimizationCoordinator(tenantId = 'default') {
       }
     }
     
-    console.log(`[master:optimization] Processed ${r.rows.length} optimization proposals`);
+    log.info(`[master:optimization] Processed ${r.rows.length} optimization proposals`);
     return r.rows.length;
   } catch (e) {
-    console.error('[master:optimization] coordinator error:', e?.message);
+    log.error('[master:optimization] coordinator error:', e?.message);
     return 0;
   }
 }
@@ -715,7 +717,7 @@ async function masterDispatcher(tenantId = 'default') {
       // 解析责任人 (优先使用已有的 assignee_username)
       const assignee = await resolveAssignee(task.category, task.store, task.assignee_username, task.source_data);
       if (!assignee) {
-        console.warn(`[master] No assignee found for ${task.task_id} (${task.category}, ${task.store})`);
+        log.warn(`[master] No assignee found for ${task.task_id} (${task.category}, ${task.store})`);
         continue;
       }
 
@@ -729,7 +731,7 @@ async function masterDispatcher(tenantId = 'default') {
     }
     return dispatched;
   } catch (e) {
-    console.error('[master] dispatcher error:', e?.message);
+    log.error('[master] dispatcher error:', e?.message);
     return 0;
   }
 }
@@ -763,7 +765,7 @@ async function opsAgentListener(tenantId = 'default') {
               [JSON.stringify({ task_response_record_id: bitableRecord.record_id }), task.task_id, tenantId]
             );
           } catch (e) {
-            console.error('[master:ops] persist task_response_record_id failed:', e?.message);
+            log.error('[master:ops] persist task_response_record_id failed:', e?.message);
           }
         }
         _bitableWrittenTaskIds.add(task.task_id);
@@ -776,11 +778,11 @@ async function opsAgentListener(tenantId = 'default') {
         const retries = (_dispatchRetryCount.get(task.task_id) || 0) + 1;
         _dispatchRetryCount.set(task.task_id, retries);
         if (retries <= 1) {
-          console.warn(`[master:ops] No Feishu user for ${task.assignee_username} (task ${task.task_id}), will auto-transition after 3 retries`);
+          log.warn(`[master:ops] No Feishu user for ${task.assignee_username} (task ${task.task_id}), will auto-transition after 3 retries`);
         }
         // After 3 retries, force transition to pending_response so the task doesn't loop forever
         if (retries >= 3) {
-          console.warn(`[master:ops] Forcing ${task.task_id} to pending_response (no Feishu user after ${retries} retries)`);
+          log.warn(`[master:ops] Forcing ${task.task_id} to pending_response (no Feishu user after ${retries} retries)`);
           await transitionTask(task.task_id, 'pending_response', 'ops_supervisor', {
             note: `Auto-transitioned: no Feishu user found for ${task.assignee_username}`
           }, tenantId);
@@ -810,9 +812,9 @@ async function opsAgentListener(tenantId = 'default') {
 
       if (sendResult?.ok) {
         // 调试日志：记录飞书返回的完整结构
-        console.log('[master:ops] sendLarkCard result:', JSON.stringify(sendResult.data));
+        log.info('[master:ops] sendLarkCard result:', JSON.stringify(sendResult.data));
         const msgId = sendResult.data?.data?.message_id || sendResult.data?.message_id || '';
-        console.log('[master:ops] extracted message_id:', msgId);
+        log.info('[master:ops] extracted message_id:', msgId);
         await transitionTask(task.task_id, 'pending_response', 'ops_supervisor', {
           feishu_msg_id: msgId
         }, tenantId);
@@ -829,7 +831,7 @@ async function opsAgentListener(tenantId = 'default') {
       }
     }
   } catch (e) {
-    console.error('[master:ops] dispatch notify error:', e?.message);
+    log.error('[master:ops] dispatch notify error:', e?.message);
   }
 
   // ── Part 2: 审核反馈 ──
@@ -959,7 +961,7 @@ async function opsAgentListener(tenantId = 'default') {
       }
     }
   } catch (e) {
-    console.error('[master:ops] review error:', e?.message);
+    log.error('[master:ops] review error:', e?.message);
   }
 
   return actions;
@@ -982,7 +984,7 @@ async function masterPostResolution(tenantId = 'default') {
     }
     return count;
   } catch (e) {
-    console.error('[master] post-resolution error:', e?.message);
+    log.error('[master] post-resolution error:', e?.message);
     return 0;
   }
 }
@@ -1009,7 +1011,7 @@ async function masterHandleRejected(tenantId = 'default') {
     }
     return count;
   } catch (e) {
-    console.error('[master] handle-rejected error:', e?.message);
+    log.error('[master] handle-rejected error:', e?.message);
     return 0;
   }
 }
@@ -1048,7 +1050,7 @@ async function chiefEvaluatorListener(tenantId = 'default') {
     }
     return count;
   } catch (e) {
-    console.error('[master:evaluator] settlement error:', e?.message);
+    log.error('[master:evaluator] settlement error:', e?.message);
     return 0;
   }
 }
@@ -1078,7 +1080,7 @@ async function trainAgentListener(tenantId = 'default') {
           trainingOutline += `【需补充资料】未在知识库中找到关于"${queryTerm}"的详细资料，请管理员补充。`;
         }
       } catch (e) {
-        console.error('[master:train] auto-preparation failed:', e?.message);
+        log.error('[master:train] auto-preparation failed:', e?.message);
       }
 
       // 组装进度数据，包括备课大纲
@@ -1108,7 +1110,7 @@ async function trainAgentListener(tenantId = 'default') {
         await sendLarkMessage(fu.open_id, msg);
       }
       actions++;
-      console.log(`[master:train] Auto-prepared training ${task.task_id} for ${task.assignee_username}`);
+      log.info(`[master:train] Auto-prepared training ${task.task_id} for ${task.assignee_username}`);
     }
 
     // 2. 检测有详细事件过程的差评
@@ -1156,7 +1158,7 @@ async function trainAgentListener(tenantId = 'default') {
           }
         }
         actions++;
-        console.log(`[master:sop] Created SOP case ${caseId} for review ${review.id}`);
+        log.info(`[master:sop] Created SOP case ${caseId} for review ${review.id}`);
       }
     }
 
@@ -1215,7 +1217,7 @@ async function trainAgentListener(tenantId = 'default') {
             createdAt: new Date().toISOString()
           };
           // 这里可以调用queryKnowledgeBase的写入接口
-          console.log(`[master:sop] Case ${sopCase.case_id} published to SOP library`);
+          log.info(`[master:sop] Case ${sopCase.case_id} published to SOP library`);
         }
       } catch (e) { /* ignore */ }
 
@@ -1223,7 +1225,7 @@ async function trainAgentListener(tenantId = 'default') {
     }
 
   } catch (e) {
-    console.error('[master:sop] listener error:', e?.message);
+    log.error('[master:sop] listener error:', e?.message);
   }
 
   return actions;
@@ -1254,7 +1256,7 @@ async function masterFinalNotification(tenantId = 'default') {
     }
     return count;
   } catch (e) {
-    console.error('[master] final notification error:', e?.message);
+    log.error('[master] final notification error:', e?.message);
     return 0;
   }
 }
@@ -1279,7 +1281,7 @@ export async function handleTaskResponse(username, text, imageUrls, parentMessag
         [username, parentMessageId, 'default']
       );
       task = r.rows?.[0];
-      console.log(`[master] Task lookup by parent_message_id: ${parentMessageId}, found: ${task?.task_id || 'none'}`);
+      log.info(`[master] Task lookup by parent_message_id: ${parentMessageId}, found: ${task?.task_id || 'none'}`);
     }
 
     // 降级1：通过 parentMessageId 查找但忽略 feishu_msg_ids 检查（处理空数组情况）
@@ -1292,7 +1294,7 @@ export async function handleTaskResponse(username, text, imageUrls, parentMessag
         [username, 'default']
       );
       task = r.rows?.[0];
-      console.log(`[master] Task lookup fallback (has parent_id): found: ${task?.task_id || 'none'}`);
+      log.info(`[master] Task lookup fallback (has parent_id): found: ${task?.task_id || 'none'}`);
     }
 
     // 降级2：无 parentMessageId 时，只处理明确的回复关键词
@@ -1307,7 +1309,7 @@ export async function handleTaskResponse(username, text, imageUrls, parentMessag
           [username, 'default']
         );
         task = r.rows?.[0];
-        console.log(`[master] Task lookup by keyword/image: found: ${task?.task_id || 'none'}`);
+        log.info(`[master] Task lookup by keyword/image: found: ${task?.task_id || 'none'}`);
       }
     }
 
@@ -1321,7 +1323,7 @@ export async function handleTaskResponse(username, text, imageUrls, parentMessag
     }, 'default');
 
     if (updated) {
-      console.log(`[master] Task ${task.task_id} response received from ${username} via reply`);
+      log.info(`[master] Task ${task.task_id} response received from ${username} via reply`);
       return {
         handled: true,
         taskId: task.task_id,
@@ -1330,7 +1332,7 @@ export async function handleTaskResponse(username, text, imageUrls, parentMessag
     }
     return null;
   } catch (e) {
-    console.error('[master] handleTaskResponse error:', e?.message);
+    log.error('[master] handleTaskResponse error:', e?.message);
     return null;
   }
 }
@@ -1368,10 +1370,10 @@ async function trainTaskDispatcher(tenantId = 'default') {
       // 标记为进行中
       await pool().query(`UPDATE training_tasks SET status = 'in_progress', updated_at = NOW() WHERE id = $1`, [task.id]);
       dispatched++;
-      console.log(`[master:train] Dispatched training task ${task.task_id} to ${task.assignee_username}`);
+      log.info(`[master:train] Dispatched training task ${task.task_id} to ${task.assignee_username}`);
     }
   } catch (e) {
-    console.error('[master:train] task dispatcher error:', e?.message);
+    log.error('[master:train] task dispatcher error:', e?.message);
   }
   return dispatched;
 }
@@ -1408,7 +1410,7 @@ let _masterStarted = false;
 export function startMasterAgent() {
   if (_masterStarted) return;
   _masterStarted = true;
-  console.log('[master] Starting event-driven orchestration...');
+  log.info('[master] Starting event-driven orchestration...');
 
   // 初始化任务序号
   (async () => {
@@ -1428,7 +1430,7 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const created = await dataAuditorListener(tenantId);
-        if (created > 0) console.log(`[master:tick] Data Auditor(${tenantId}) created ${created} tasks`);
+        if (created > 0) log.info(`[master:tick] Data Auditor(${tenantId}) created ${created} tasks`);
 
         // 新增：处理手动创建的 pending_audit 任务（如营销活动）
         const manualTasks = await pool().query(
@@ -1449,10 +1451,10 @@ export function startMasterAgent() {
               timestamp: new Date().toISOString()
             }
           }, tenantId);
-          console.log(`[master:audit] Auto-approved manual task ${task.task_id}`);
+          log.info(`[master:audit] Auto-approved manual task ${task.task_id}`);
         }
       } catch (e) {
-        console.error(`[master:tick] audit error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] audit error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1487,9 +1489,9 @@ export function startMasterAgent() {
         `, [tenantId]);
 
         const d = await masterDispatcher(tenantId);
-        if (d > 0) console.log(`[master:tick] Dispatched(${tenantId}) ${d} tasks`);
+        if (d > 0) log.info(`[master:tick] Dispatched(${tenantId}) ${d} tasks`);
       } catch (e) {
-        console.error(`[master:tick] dispatch error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] dispatch error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1501,9 +1503,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const a = await opsAgentListener(tenantId);
-        if (a > 0) console.log(`[master:tick] Ops(${tenantId}) processed ${a} tasks`);
+        if (a > 0) log.info(`[master:tick] Ops(${tenantId}) processed ${a} tasks`);
       } catch (e) {
-        console.error(`[master:tick] ops error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] ops error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1516,10 +1518,10 @@ export function startMasterAgent() {
       try {
         const resolved = await masterPostResolution(tenantId);
         const rejected = await masterHandleRejected(tenantId);
-        if (resolved > 0) console.log(`[master:tick] Post-resolution(${tenantId}): ${resolved}`);
-        if (rejected > 0) console.log(`[master:tick] Re-dispatched rejected(${tenantId}): ${rejected}`);
+        if (resolved > 0) log.info(`[master:tick] Post-resolution(${tenantId}): ${resolved}`);
+        if (rejected > 0) log.info(`[master:tick] Re-dispatched rejected(${tenantId}): ${rejected}`);
       } catch (e) {
-        console.error(`[master:tick] post-res error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] post-res error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1531,9 +1533,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const s = await chiefEvaluatorListener(tenantId);
-        if (s > 0) console.log(`[master:tick] Evaluator(${tenantId}) settled ${s} tasks`);
+        if (s > 0) log.info(`[master:tick] Evaluator(${tenantId}) settled ${s} tasks`);
       } catch (e) {
-        console.error(`[master:tick] eval error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] eval error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1545,9 +1547,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const c = await masterFinalNotification(tenantId);
-        if (c > 0) console.log(`[master:tick] Closed(${tenantId}) ${c} tasks`);
+        if (c > 0) log.info(`[master:tick] Closed(${tenantId}) ${c} tasks`);
       } catch (e) {
-        console.error(`[master:tick] final error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] final error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1559,8 +1561,8 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const a = await trainAgentListener(tenantId);
-        if (a > 0) console.log(`[master:tick] Train(${tenantId}) processed ${a} cases`);
-      } catch (e) { console.error(`trainTick (tenant=${tenantId}):`, e); }
+        if (a > 0) log.info(`[master:tick] Train(${tenantId}) processed ${a} cases`);
+      } catch (e) { log.error(`trainTick (tenant=${tenantId}):`, e); }
     });
     }
   };
@@ -1571,9 +1573,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const i = await masterIssuesListener(tenantId);
-        if (i > 0) console.log(`[master:tick] Issues coordinator(${tenantId}) processed ${i} issues`);
+        if (i > 0) log.info(`[master:tick] Issues coordinator(${tenantId}) processed ${i} issues`);
       } catch (e) {
-        console.error(`[master:tick] issues error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] issues error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1585,9 +1587,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const o = await masterOptimizationCoordinator(tenantId);
-        if (o > 0) console.log(`[master:tick] Optimization coordinator(${tenantId}) processed ${o} proposals`);
+        if (o > 0) log.info(`[master:tick] Optimization coordinator(${tenantId}) processed ${o} proposals`);
       } catch (e) {
-        console.error(`[master:tick] optimization error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] optimization error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1599,9 +1601,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const d = await trainTaskDispatcher(tenantId);
-        if (d > 0) console.log(`[master:tick] Train task dispatcher(${tenantId}) sent ${d} tasks`);
+        if (d > 0) log.info(`[master:tick] Train task dispatcher(${tenantId}) sent ${d} tasks`);
       } catch (e) {
-        console.error(`[master:tick] train dispatch error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] train dispatch error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1614,7 +1616,7 @@ export function startMasterAgent() {
     try {
       await pollTaskResponseBitable();
     } catch (e) {
-      console.error('[master:tick] task response poll error:', e?.message);
+      log.error('[master:tick] task response poll error:', e?.message);
     }
   };
 
@@ -1624,9 +1626,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const updated = await refreshEntityHealthSnapshots(tenantId);
-        if (updated > 0) console.log(`[master:tick] KG health snapshots(${tenantId}) refreshed for ${updated} stores`);
+        if (updated > 0) log.info(`[master:tick] KG health snapshots(${tenantId}) refreshed for ${updated} stores`);
       } catch (e) {
-        console.error(`[master:tick] KG health error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] KG health error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1638,9 +1640,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const a = await inspectionClosedLoopTick(tenantId);
-        if (a > 0) console.log(`[master:tick] Inspection closed loop(${tenantId}): ${a} actions`);
+        if (a > 0) log.info(`[master:tick] Inspection closed loop(${tenantId}): ${a} actions`);
       } catch (e) {
-        console.error(`[master:tick] inspection loop error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] inspection loop error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1652,9 +1654,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const p = await biProactivePushTick(tenantId);
-        if (p > 0) console.log(`[master:tick] BI proactive push(${tenantId}): ${p} alerts`);
+        if (p > 0) log.info(`[master:tick] BI proactive push(${tenantId}): ${p} alerts`);
       } catch (e) {
-        console.error(`[master:tick] BI push error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] BI push error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1666,9 +1668,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const p = await laborEfficiencyTick(tenantId);
-        if (p > 0) console.log(`[master:tick] Labor efficiency(${tenantId}): ${p} suggestions`);
+        if (p > 0) log.info(`[master:tick] Labor efficiency(${tenantId}): ${p} suggestions`);
       } catch (e) {
-        console.error(`[master:tick] labor efficiency error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] labor efficiency error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1680,9 +1682,9 @@ export function startMasterAgent() {
       await tenantContext.run(tenantId, async () => {
       try {
         const c = await trainingClosedLoopTick(tenantId);
-        if (c > 0) console.log(`[master:tick] Training closed loop(${tenantId}): ${c} tasks created`);
+        if (c > 0) log.info(`[master:tick] Training closed loop(${tenantId}): ${c} tasks created`);
       } catch (e) {
-        console.error(`[master:tick] training loop error (tenant=${tenantId}):`, e?.message);
+        log.error(`[master:tick] training loop error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -1724,7 +1726,7 @@ export function startMasterAgent() {
   setTimeout(laborTick, 180 * 1000);          // 启动后3分钟检查排班建议
   setTimeout(trainingLoopTick, 210 * 1000);   // 启动后3.5分钟检查培训闭环
 
-  console.log('[master] All agent listeners started (including KG health tick + auto-ops engine)');
+  log.info('[master] All agent listeners started (including KG health tick + auto-ops engine)');
 }
 
 // ─────────────────────────────────────────────

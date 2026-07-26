@@ -3,6 +3,7 @@
  */
 import { agentsOutboundHeaders } from '../shared/agents-service-auth.js';
 import { METRIC_NAMES, recordMetric } from '../shared/metrics.js';
+import { getMetricAlerts } from '../shared/metric-alerts.js';
 
 /**
  * Normalize OpenAI-compatible API base URLs (incl. Volcengine Ark quirks).
@@ -77,6 +78,11 @@ export function registerAiChatCompletionsRoutes(app, authRequired) {
       });
       if (!upstream.ok) {
         recordMetric(METRIC_NAMES.LLM_CALL_FAILURE, { tags: { provider: providerTag, reason: 'upstream_http' } });
+        getMetricAlerts().onLlmFailure({
+          provider: providerTag,
+          reason: 'upstream_http',
+          durationMs,
+        });
         return res.status(upstream.status).json({
           error: 'upstream_error',
           message: String(data?.error?.message || data?.message || text || `HTTP ${upstream.status}`),
@@ -87,11 +93,17 @@ export function registerAiChatCompletionsRoutes(app, authRequired) {
       if (data && typeof data === 'object') return res.json(data);
       return res.json({ raw: text });
     } catch (e) {
+      const durationMs = Date.now() - t0;
       recordMetric(METRIC_NAMES.LLM_CALL_DURATION_MS, {
-        value: Date.now() - t0,
+        value: durationMs,
         tags: { provider: providerTag, ok: false },
       });
       recordMetric(METRIC_NAMES.LLM_CALL_FAILURE, { tags: { provider: providerTag, reason: 'unreachable' } });
+      getMetricAlerts().onLlmFailure({
+        provider: providerTag,
+        reason: 'unreachable',
+        durationMs,
+      });
       return res.status(502).json({ error: 'upstream_unreachable', message: 'internal_error' });
     } finally {
       clearTimeout(timer);

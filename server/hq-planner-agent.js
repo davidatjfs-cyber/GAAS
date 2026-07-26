@@ -21,7 +21,7 @@
 import { pool as getUnifiedPool, getActiveTenantIds, tenantContext } from './utils/database.js';
 import { resolveTenantIdForStore } from './growth-api.js';
 import axios from 'axios';
-import { createAgentsServiceAuthHelpers } from './domains/shared/agents-service-auth.js';
+import { createAgentsServiceAuthHelpers, agentsOutboundHeaders } from './domains/shared/agents-service-auth.js';
 import { childLogger } from './utils/logger.js';
 
 const log = childLogger({ domain: 'hq-planner' });
@@ -55,10 +55,17 @@ function pool() {
 // Wave H26: reuse H23 agents-service auth (45s JWT cache)
 const { getAgentsServiceBaseUrl, getAgentsServiceAdminToken } = createAgentsServiceAuthHelpers({ axios });
 
-async function createBoardTaskViaV2({ content, priority, store, createdBy, createdByRole }) {
+async function createBoardTaskViaV2({ content, priority, store, createdBy, createdByRole, requestId }) {
   try {
     const token = await getAgentsServiceAdminToken();
-    const r = await axios.post(getAgentsServiceBaseUrl() + '/api/agent-task-board/tasks', { content, priority, store }, { timeout: 10000, validateStatus: () => true, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
+    const r = await axios.post(getAgentsServiceBaseUrl() + '/api/agent-task-board/tasks', { content, priority, store }, {
+      timeout: 10000,
+      validateStatus: () => true,
+      headers: agentsOutboundHeaders({ requestId }, {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      }),
+    });
     if (r.status < 200 || r.status >= 300) return { ok: false, error: `v2_api_${r.status}` };
     return r.data;
   } catch (e) {
@@ -533,7 +540,7 @@ async function findActionPlanTenant(planId) {
 }
 
 // 审批通过 → 拆解为 OP 任务
-export async function approvePlan(planId, approvedBy) {
+export async function approvePlan(planId, approvedBy, opts = {}) {
   try {
     const { tenantId, plan } = await findActionPlanTenant(planId);
     if (!plan) return { ok: false, error: 'not_found' };
@@ -558,10 +565,11 @@ export async function approvePlan(planId, approvedBy) {
           priority: action.priority || 'medium',
           store: plan.store,
           createdBy: approvedBy,
-          createdByRole: 'hq_manager'
+          createdByRole: 'hq_manager',
+          requestId: opts.requestId,
         });
         if (v2result.ok) createdTasks++;
-        else log.error({ msg: 'v2_create_board_task_failed', err: v2result.error });
+        else log.error({ msg: 'v2_create_board_task_failed', request_id: opts.requestId || null, err: v2result.error });
       } catch (e) {
         log.error({ msg: 'create_task_from_plan_action_failed', err: e?.message });
       }
@@ -824,7 +832,7 @@ export function registerHqPlannerRoutes(app, authRequired) {
   app.post('/api/hq/plans/:planId/approve', authRequired, async (req, res) => {
     const role = String(req.user?.role || '').trim();
     if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    const result = await approvePlan(req.params.planId, req.user?.username);
+    const result = await approvePlan(req.params.planId, req.user?.username, { requestId: req.requestId });
     return res.json(result);
   });
 

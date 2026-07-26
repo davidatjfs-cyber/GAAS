@@ -64,7 +64,7 @@ export function registerAgentDataRoutes(app, authRequired, deps) {
         query: { appToken, tableId, q: q || '' },
       });
     } catch (e) {
-      log.error({ msg: 'agent_feishu_table_data_failed', err: e?.message || String(e) });
+      log.error({ msg: 'agent_feishu_table_data_failed', request_id: req.requestId, err: e?.message || String(e) });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
@@ -138,7 +138,7 @@ export function registerAgentDataRoutes(app, authRequired, deps) {
         failedDetails,
       });
     } catch (error) {
-      log.error({ msg: 'agent_feishu_table_write_failed', err: error?.message || String(error) });
+      log.error({ msg: 'agent_feishu_table_write_failed', request_id: req.requestId, err: error?.message || String(error) });
       return res.status(500).json({ error: 'server_error', message: safeErrMessage(error) });
     }
   });
@@ -263,7 +263,7 @@ export function registerAgentDataRoutes(app, authRequired, deps) {
         },
       });
     } catch (error) {
-      log.error({ msg: 'agent_table_visit_data_failed', err: error?.message || String(error) });
+      log.error({ msg: 'agent_table_visit_data_failed', request_id: req.requestId, err: error?.message || String(error) });
       res.status(500).json({
         success: false,
         error: 'server_error',
@@ -359,7 +359,7 @@ export function registerAgentDataRoutes(app, authRequired, deps) {
         weather_impact: weatherResult.rows || [],
       });
     } catch (error) {
-      log.error({ msg: 'agent_table_visit_summary_failed', err: error?.message || String(error) });
+      log.error({ msg: 'agent_table_visit_summary_failed', request_id: req.requestId, err: error?.message || String(error) });
       res.status(500).json({
         success: false,
         error: 'server_error',

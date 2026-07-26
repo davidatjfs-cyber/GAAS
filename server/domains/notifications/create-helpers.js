@@ -7,6 +7,7 @@ import { createAppendHelpers } from './append.js';
 import { systemAlertTitle, createSendAdminSystemAlert } from './system-alert.js';
 import { createNotifyAdminsDualWriteFailure } from './dual-write-alert.js';
 import { createNotifyAdminsOcrFailed } from './ocr-alert.js';
+import { createMetricAlerts, setMetricAlerts } from '../shared/metric-alerts.js';
 
 export function createNotificationsHelpers({
   pool,
@@ -33,6 +34,7 @@ export function createNotificationsHelpers({
     lookupFeishuUserByUsername,
     sendLarkMessage,
   });
+  setMetricAlerts(createMetricAlerts({ sendAdminSystemAlert }));
   const notifyAdminsDualWriteFailure = createNotifyAdminsDualWriteFailure({ pool, sendLarkMessage });
   const notifyAdminsOcrFailed = createNotifyAdminsOcrFailed({ pool, sendLarkMessage });
 

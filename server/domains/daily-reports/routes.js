@@ -66,7 +66,7 @@ export function registerDailyReportsRoutes(app, deps) {
       });
       return res.json({ total });
     } catch (e) {
-      log.error({ msg: 'private_room_month_total_failed', err: e?.message || String(e) });
+      log.error({ msg: 'private_room_month_total_failed', request_id: req.requestId, err: e?.message || String(e) });
       return res.json({ total: 0 });
     }
   });

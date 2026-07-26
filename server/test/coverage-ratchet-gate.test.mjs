@@ -11,10 +11,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
 
 /** 历史地板：只升不降（随 Phase 上调整数档） */
-const RATCHET_FLOOR = { lines: 42, branches: 60, functions: 45 };
+const RATCHET_FLOOR = { lines: 59, branches: 66, functions: 62 };
 
-/** 合并棘轮历史地板：第九轮追平实测后抬升 */
-const MERGED_RATCHET_FLOOR = { lines: 56, branches: 67, functions: 52, minIndexJsLines: 48 };
+/** 合并棘轮历史地板：追平 CI 实测后抬升 */
+const MERGED_RATCHET_FLOOR = { lines: 57, branches: 68, functions: 53, minIndexJsLines: 48 };
 
 test('coverage-ratchet.json 只升不降（不低于已冻结地板）', () => {
   const ratchet = JSON.parse(
@@ -125,4 +125,20 @@ test('extracted-coverage-floor.json 新拆文件 ≥80 lines 捆绑', () => {
   for (const rel of floor.files) {
     assert.ok(fs.existsSync(path.join(serverRoot, rel)), `extracted file missing: ${rel}`);
   }
+});
+
+test('l2-coverage-floor.json 含 service*.js 且地板只升不降', () => {
+  const floor = JSON.parse(
+    fs.readFileSync(path.join(serverRoot, 'l2-coverage-floor.json'), 'utf8')
+  );
+  assert.ok(Number(floor.targetLines) >= 80);
+  assert.ok(floor.files && typeof floor.files === 'object');
+  const keys = Object.keys(floor.files);
+  assert.ok(keys.length >= 40, `expected many L2 files, got ${keys.length}`);
+  for (const [rel, entry] of Object.entries(floor.files)) {
+    assert.ok(fs.existsSync(path.join(serverRoot, rel)), `L2 file missing: ${rel}`);
+    assert.ok(Number(entry.lines) >= 1, `${rel} lines floor missing`);
+  }
+  assert.ok(Number(floor.files['domains/training/service.js']?.lines) >= 55);
+  assert.ok(Number(floor.files['domains/checkin/service.js']?.lines) >= 55);
 });

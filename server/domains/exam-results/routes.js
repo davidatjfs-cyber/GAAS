@@ -38,7 +38,7 @@ export function registerExamResultsRoutes(app, authRequired, deps) {
       );
       return res.json({ items: r.rows || [] });
     } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+      return res.status(500).json({ error: 'server_error', message: 'internal_error', request_id: req.requestId || null });
     }
   });
 
@@ -82,7 +82,7 @@ export function registerExamResultsRoutes(app, authRequired, deps) {
       );
       return res.json({ item: r.rows?.[0] || null });
     } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+      return res.status(500).json({ error: 'server_error', message: 'internal_error', request_id: req.requestId || null });
     }
   });
 }

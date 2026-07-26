@@ -16,6 +16,7 @@ export function registerRagRoutes(app, authRequired, deps) {
     const profile = await getKnowledgeViewerProfile(req, getSharedState);
     const adminRag = profile.role === 'admin';
     const result = await ragQuery({
+      requestId: req.requestId,
       agentName: req.body.agentName || 'master_agent',
       userRole: profile.role || req.user?.role,
       userStore: profile.store,
@@ -36,6 +37,7 @@ export function registerRagRoutes(app, authRequired, deps) {
     const profile = await getKnowledgeViewerProfile(req, getSharedState);
     const adminRag = profile.role === 'admin';
     const result = await ragMultiQuery({
+      requestId: req.requestId,
       agentName: req.body.agentName || 'master_agent',
       userRole: profile.role || req.user?.role,
       userStore: profile.store,

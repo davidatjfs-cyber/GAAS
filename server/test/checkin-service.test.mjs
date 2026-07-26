@@ -2,10 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createCheckin,
+  listTodayCheckins,
   listCheckinRecords,
+  confirmCheckin,
+  getCheckinSummary,
   getAttendanceOverview,
   setLeaveBalance,
   confirmMonthlyAttendance,
+  getMonthlyConfirm,
 } from '../domains/checkin/service.js';
 
 const LONG_PHOTO = 'x'.repeat(100);
@@ -192,6 +196,219 @@ test('setLeaveBalance: missing_params', async () => {
   assert.equal(result.ok, false);
   assert.equal(result.status, 400);
   assert.equal(result.error, 'missing_params');
+});
+
+test('listTodayCheckins: missing_user', async () => {
+  const result = await listTodayCheckins({ pool: makePool() }, { username: '' });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 400);
+  assert.equal(result.error, 'missing_user');
+});
+
+test('listTodayCheckins: returns today records', async () => {
+  const pool = makePool(async (sql, params) => {
+    if (/checkin_records.*current_date/i.test(sql)) {
+      assert.equal(params[0], 'alice');
+      return {
+        rows: [
+          { id: 'c1', username: 'alice', type: 'clock_in', check_time: '2026-07-26T09:00:00Z' },
+          { id: 'c2', username: 'alice', type: 'clock_out', check_time: '2026-07-26T18:00:00Z' },
+        ],
+      };
+    }
+    return { rows: [] };
+  });
+  const result = await listTodayCheckins({ pool }, { username: 'alice' });
+  assert.equal(result.ok, true);
+  assert.equal(result.records.length, 2);
+  assert.equal(result.records[0].type, 'clock_in');
+});
+
+test('confirmCheckin: forbidden for employee role', async () => {
+  const result = await confirmCheckin(
+    {
+      pool: makePool(),
+      upsertEmployeeAttendanceMirrorFromCheckinRow: async () => {},
+      notifyAdminsDualWriteFailure: () => {},
+    },
+    {
+      username: 'alice',
+      role: 'employee',
+      id: 'rec-1',
+      status: 'confirmed',
+      note: '',
+      tenantId: 'default',
+    }
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 403);
+  assert.equal(result.error, 'forbidden');
+});
+
+test('confirmCheckin: happy path updates record', async () => {
+  const updated = {
+    id: 'rec-1',
+    username: 'alice',
+    status: 'confirmed',
+    confirmed_by: 'mgr1',
+  };
+  const pool = makePool(async (sql, params) => {
+    if (/update checkin_records/i.test(sql)) {
+      assert.equal(params[0], 'confirmed');
+      assert.equal(params[1], 'mgr1');
+      assert.equal(params[3], 'rec-1');
+      return { rows: [updated] };
+    }
+    return { rows: [] };
+  });
+  let mirrorCalled = false;
+  const result = await confirmCheckin(
+    {
+      pool,
+      upsertEmployeeAttendanceMirrorFromCheckinRow: async () => { mirrorCalled = true; },
+      notifyAdminsDualWriteFailure: () => {},
+    },
+    {
+      username: 'mgr1',
+      role: 'store_manager',
+      id: 'rec-1',
+      status: 'confirmed',
+      note: '正常',
+      tenantId: 'default',
+    }
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.record, updated);
+  assert.equal(mirrorCalled, true);
+});
+
+test('confirmCheckin: not_found when id missing', async () => {
+  const pool = makePool(async () => ({ rows: [] }));
+  const result = await confirmCheckin(
+    {
+      pool,
+      upsertEmployeeAttendanceMirrorFromCheckinRow: async () => {},
+      notifyAdminsDualWriteFailure: () => {},
+    },
+    {
+      username: 'admin',
+      role: 'admin',
+      id: 'missing-id',
+      status: 'confirmed',
+      tenantId: 'default',
+    }
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 404);
+  assert.equal(result.error, 'not_found');
+});
+
+test('getCheckinSummary: missing_user / missing_month', async () => {
+  const ctx = {
+    pool: makePool(),
+    getSharedState: async () => ({}),
+    pickMyStoreFromState: () => '',
+    calcEmployeeMonthlyLeaveBalance: () => null,
+  };
+  const noUser = await getCheckinSummary(ctx, { username: '', month: '2026-07' });
+  assert.equal(noUser.ok, false);
+  assert.equal(noUser.error, 'missing_user');
+
+  const noMonth = await getCheckinSummary(ctx, { username: 'alice', month: '' });
+  assert.equal(noMonth.ok, false);
+  assert.equal(noMonth.error, 'missing_month');
+});
+
+test('getCheckinSummary: empty month data returns records and leaveBalances', async () => {
+  const pool = makePool(async (sql) => {
+    if (/from checkin_records/i.test(sql)) return { rows: [] };
+    return { rows: [] };
+  });
+  const result = await getCheckinSummary(
+    {
+      pool,
+      getSharedState: async () => ({ users: [], employees: [] }),
+      pickMyStoreFromState: () => '',
+      calcEmployeeMonthlyLeaveBalance: () => null,
+    },
+    { username: 'alice', role: 'employee', month: '2026-07', tenantId: 'default' }
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.records, []);
+  assert.deepEqual(result.leaveBalances, {});
+});
+
+test('getCheckinSummary: employee records include display_name and leave balance', async () => {
+  const pool = makePool(async (sql) => {
+    if (/from checkin_records/i.test(sql)) {
+      return {
+        rows: [{
+          username: 'alice',
+          day: '2026-07-15',
+          type: 'clock_in',
+          status: 'normal',
+          check_time: '2026-07-15T01:00:00Z',
+        }],
+      };
+    }
+    return { rows: [] };
+  });
+  const result = await getCheckinSummary(
+    {
+      pool,
+      getSharedState: async () => ({
+        users: [{ username: 'alice', name: '爱丽丝' }],
+        employees: [],
+      }),
+      pickMyStoreFromState: () => '',
+      calcEmployeeMonthlyLeaveBalance: () => ({
+        baseLeave: 4,
+        annualLeave: 0,
+        usedLeave: 1,
+        totalLeave: 4,
+        cumulativeLeaveDays: 0,
+        computedRemaining: 3,
+        remaining: 3,
+        overridden: false,
+        cumulativeLeaveManualLock: false,
+        weeklyDetails: [],
+        lastAdjustment: null,
+      }),
+    },
+    { username: 'alice', role: 'employee', month: '2026-07', tenantId: 'default' }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.records.length, 1);
+  assert.equal(result.records[0].display_name, '爱丽丝');
+  assert.ok(result.leaveBalances.alice);
+  assert.equal(result.leaveBalances.alice.remaining, 3);
+});
+
+test('getMonthlyConfirm: returns all confirmations when month omitted', async () => {
+  const confirmations = [
+    { id: 'MC-1', month: '2026-06', store: '洪潮', status: 'approved' },
+    { id: 'MC-2', month: '2026-07', store: '马己仙', status: 'pending_supervisor' },
+  ];
+  const result = await getMonthlyConfirm(
+    { getSharedState: async () => ({ monthlyConfirmations: confirmations }) },
+    { month: '' }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.confirmations.length, 2);
+});
+
+test('getMonthlyConfirm: filters by month', async () => {
+  const confirmations = [
+    { id: 'MC-1', month: '2026-06', store: '洪潮', status: 'approved' },
+    { id: 'MC-2', month: '2026-07', store: '马己仙', status: 'pending_supervisor' },
+  ];
+  const result = await getMonthlyConfirm(
+    { getSharedState: async () => ({ monthlyConfirmations: confirmations }) },
+    { month: '2026-07' }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.confirmations.length, 1);
+  assert.equal(result.confirmations[0].id, 'MC-2');
 });
 
 test('confirmMonthlyAttendance: only_managers_can_confirm for employee', async () => {

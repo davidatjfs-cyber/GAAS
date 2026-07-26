@@ -5,6 +5,7 @@
 import { canAccessApprovalCenter } from '../../store-duty-bindings.js';
 import { childLogger } from '../../utils/logger.js';
 import { recordMetric, METRIC_NAMES } from '../shared/metrics.js';
+import { getMetricAlerts } from '../shared/metric-alerts.js';
 import * as onboardingHandler from './handlers/onboarding.js';
 import * as leaveHandler from './handlers/leave.js';
 import * as offboardingHandler from './handlers/offboarding.js';
@@ -205,6 +206,11 @@ export async function handleApprovalDecide(req, res, deps) {
         status: String(updated?.status || 'unknown'),
         type: String(updated?.type || 'unknown'),
       },
+    });
+    getMetricAlerts().onApprovalDecide(__decideMs, {
+      id,
+      status: String(updated?.status || 'unknown'),
+      type: String(updated?.type || 'unknown'),
     });
     log.info({
       msg: 'approval_decide_ok',

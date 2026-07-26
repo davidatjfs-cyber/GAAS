@@ -1,4 +1,7 @@
 import { randomUUID } from 'crypto';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'gm-mailbox', handler: 'routes' });
 
 /**
  * @param {import('express').Express} app
@@ -60,7 +63,8 @@ export function registerGmMailboxRoutes(app, authRequired, deps) {
       await saveSharedState(state);
       return res.json({ ok: true, id: item.id });
     } catch (e) {
-      return res.status(500).json({ error: 'server_error', message: 'internal_error' });
+      log.error({ msg: 'gm_mailbox_post_failed', request_id: req.requestId, err: e?.message || String(e) });
+      return res.status(500).json({ error: 'server_error', message: 'internal_error', request_id: req.requestId || null });
     }
   });
 }

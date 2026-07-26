@@ -15,7 +15,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const serverDir = path.join(__dirname, '../..');
 export const uploadsDir = path.join(serverDir, 'uploads', 'training');
 
-export function pool() { return getPool(); }
+let _poolForTests = null;
+export function pool() { return _poolForTests || getPool(); }
+export function __setPoolForTests(p) { _poolForTests = p; }
 
 export const MANAGER_ROLES = ['admin', 'hq_manager', 'store_manager', 'store_production_manager', 'hr_manager'];
 export function isManager(role) { return MANAGER_ROLES.includes(role); }

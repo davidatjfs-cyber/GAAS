@@ -117,6 +117,10 @@ import {
   STORE_ID_TO_NAME as _STORE_ID_TO_NAME_IMPL,
 } from './brands-config.js';
 
+import { childLogger } from './utils/logger.js';
+
+const log = childLogger({ domain: 'agents' });
+
 // ─────────────────────────────────────────────
 // 0. Config
 // ─────────────────────────────────────────────
@@ -151,7 +155,7 @@ function markProviderFail(provider) {
   h.lastFailTime = Date.now();
   if (h.failCount >= PROVIDER_FAIL_THRESHOLD) {
     h.healthy = false;
-    console.error(`[LLM-FALLBACK] Provider ${provider} marked UNHEALTHY after ${h.failCount} consecutive failures`);
+    log.error(`[LLM-FALLBACK] Provider ${provider} marked UNHEALTHY after ${h.failCount} consecutive failures`);
   }
 }
 
@@ -161,7 +165,7 @@ function markProviderOk(provider) {
   const wasDown = !h.healthy;
   h.healthy = true;
   h.failCount = 0;
-  if (wasDown) console.log(`[LLM-FALLBACK] Provider ${provider} recovered to HEALTHY`);
+  if (wasDown) log.info(`[LLM-FALLBACK] Provider ${provider} recovered to HEALTHY`);
 }
 
 function isProviderHealthy(provider) {
@@ -1358,7 +1362,7 @@ async function loadTenantAiConfig(featureKey = 'default') {
       model: String(m.model).trim()
     };
   } catch (e) {
-    console.warn('[agents] loadTenantAiConfig failed, falling back to platform config:', e?.message);
+    log.warn('[agents] loadTenantAiConfig failed, falling back to platform config:', e?.message);
     return null;
   }
 }
@@ -1572,7 +1576,7 @@ async function refreshBiAgentRuntimeConfig() {
       };
     }
   } catch (e) {
-    console.error('[bi] refresh runtime config failed:', e?.message || e);
+    log.error('[bi] refresh runtime config failed:', e?.message || e);
   }
 }
 
@@ -1632,11 +1636,11 @@ function shouldSkipHrmsScheduledChecklist(config) {
   }
   const dis = String(process.env.HRMS_DISABLE_SCHEDULED_CHECKLIST || '').trim().toLowerCase();
   if (dis === '1' || dis === 'true' || dis === 'yes') {
-    console.log('[ops] sendScheduledChecklist skipped (HRMS_DISABLE_SCHEDULED_CHECKLIST)');
+    log.info('[ops] sendScheduledChecklist skipped (HRMS_DISABLE_SCHEDULED_CHECKLIST)');
     return true;
   }
   if (isBlockedOpsChecklistPattern(config?.checkType, config?.taskKey)) {
-    console.log('[ops] sendScheduledChecklist skipped (test/legacy pattern):', config?.checkType, config?.taskKey || '');
+    log.info('[ops] sendScheduledChecklist skipped (test/legacy pattern):', config?.checkType, config?.taskKey || '');
     return true;
   }
   return false;
@@ -1656,7 +1660,7 @@ async function refreshOpsAgentRuntimeConfig() {
       };
     }
   } catch (e) {
-    console.error('[ops] refresh runtime config failed:', e?.message || e);
+    log.error('[ops] refresh runtime config failed:', e?.message || e);
   }
 }
 
@@ -1838,7 +1842,7 @@ setInterval(() => {
       cleaned++;
     }
   }
-  if (cleaned > 0) console.log(`[ops] cleaned ${cleaned} expired checklist progress entries`);
+  if (cleaned > 0) log.info(`[ops] cleaned ${cleaned} expired checklist progress entries`);
 }, 30 * 60 * 1000);
 
 function getOpsChecklistProgressKey(openId, checkType, storeName) {
@@ -2076,23 +2080,23 @@ export async function ensureAgentTables() {
     const migrationFile = path.join(dir, 'migrations', name);
     const sql = fs.readFileSync(migrationFile, 'utf-8');
     await pool().query(sql);
-    console.log('[agents] Migration', name, 'applied successfully');
+    log.info('[agents] Migration', name, 'applied successfully');
   };
   try {
     await runMig('005_agent_p0p2_tables.sql');
   } catch (e) {
     const code = String(e?.code || '');
-    if (code !== '23505') console.error('[agents] ensureAgentTables 005 failed:', e?.message || e);
+    if (code !== '23505') log.error('[agents] ensureAgentTables 005 failed:', e?.message || e);
   }
   try {
     await runMig('010_hrms_perf_notifications.sql');
   } catch (e) {
-    console.error('[agents] ensureAgentTables 010 failed:', e?.message || e);
+    log.error('[agents] ensureAgentTables 010 failed:', e?.message || e);
   }
   try {
     await runMig('012_agent_scores_base_score.sql');
   } catch (e) {
-    console.error('[agents] ensureAgentTables 012 failed:', e?.message || e);
+    log.error('[agents] ensureAgentTables 012 failed:', e?.message || e);
   }
 }
 
@@ -2215,7 +2219,7 @@ async function setAgentLongMemory(userKey, memoryKey, value) {
       [u, k, JSON.stringify(payload), resolveTenantIdDefault()]
     );
   } catch (e) {
-    console.error('[agents] setAgentLongMemory failed:', e?.message || e);
+    log.error('[agents] setAgentLongMemory failed:', e?.message || e);
   }
 }
 
@@ -2234,7 +2238,7 @@ async function recordAgentQualityAudit({ route, username, queryText, responseTex
       qualityMetrics: { ...(auditResult || {}), passed: passed === true, rewrite_count: rewriteCount },
     });
   } catch (e) {
-    console.error('[agents] record AI interaction trace failed:', e?.message || e);
+    log.error('[agents] record AI interaction trace failed:', e?.message || e);
   }
   try {
     await pool().query(
@@ -2254,7 +2258,7 @@ async function recordAgentQualityAudit({ route, username, queryText, responseTex
       ]
     );
   } catch (e) {
-    console.error('[agents] recordAgentQualityAudit failed:', e?.message || e);
+    log.error('[agents] recordAgentQualityAudit failed:', e?.message || e);
     try {
       await pool().query(
         `INSERT INTO agent_quality_audits (id, route, username, query_text, response_text, audit_result, passed, rewrite_count, tenant_id)
@@ -2264,7 +2268,7 @@ async function recordAgentQualityAudit({ route, username, queryText, responseTex
           Math.max(0, Number(rewriteCount) || 0), resolveTenantIdDefault()]
       );
     } catch (fallbackError) {
-      console.error('[agents] recordAgentQualityAudit legacy fallback failed:', fallbackError?.message || fallbackError);
+      log.error('[agents] recordAgentQualityAudit legacy fallback failed:', fallbackError?.message || fallbackError);
     }
   }
   if (traceId) {
@@ -2279,7 +2283,7 @@ async function recordAgentQualityAudit({ route, username, queryText, responseTex
         idempotencyKey: `quality-audit:${auditId}`,
       });
     } catch (e) {
-      console.error('[agents] record AI quality feedback failed:', e?.message || e);
+      log.error('[agents] record AI quality feedback failed:', e?.message || e);
     }
   }
 }
@@ -2338,7 +2342,7 @@ async function createOrUpdateAutonomousDataTask({
     markQualityMetric('autonomousTasks', 1);
     return r.rows?.[0] || null;
   } catch (e) {
-    console.error('[agents] createOrUpdateAutonomousDataTask failed:', e?.message || e);
+    log.error('[agents] createOrUpdateAutonomousDataTask failed:', e?.message || e);
     return null;
   }
 }
@@ -2366,7 +2370,7 @@ async function notifyAutonomousDataTaskOwner(task) {
       [t.id]
     );
   } catch (e) {
-    console.error('[agents] notifyAutonomousDataTaskOwner failed:', e?.message || e);
+    log.error('[agents] notifyAutonomousDataTaskOwner failed:', e?.message || e);
   }
 }
 
@@ -2485,7 +2489,7 @@ export async function callLLM(messages, options = {}) {
 
   for (const candidate of fallbackChain) {
     if (!isProviderHealthy(candidate.provider)) {
-      console.log(`[LLM-FALLBACK] Skipping unhealthy provider: ${candidate.provider}`);
+      log.info(`[LLM-FALLBACK] Skipping unhealthy provider: ${candidate.provider}`);
       continue;
     }
     const fbCfg = getLLMClientConfig(candidate.model, candidate.provider ? { forceProvider: candidate.provider } : {});
@@ -2525,7 +2529,7 @@ export async function callLLM(messages, options = {}) {
         lastErr = e;
         if (attempt < maxAttempts && isRetryableLLMError(e)) {
           const waitMs = 600 * attempt;
-          console.warn(`[LLM-FALLBACK] ${candidate.provider} transient error (attempt ${attempt}/${maxAttempts}), retry in ${waitMs}ms:`, e?.message || e);
+          log.warn(`[LLM-FALLBACK] ${candidate.provider} transient error (attempt ${attempt}/${maxAttempts}), retry in ${waitMs}ms:`, e?.message || e);
           await sleep(waitMs);
           continue;
         }
@@ -2559,17 +2563,17 @@ export async function callLLM(messages, options = {}) {
 
       trackLLMResult(true);
       const isFallback = candidate.provider !== resolveModelProvider(model);
-      if (isFallback) console.log(`[LLM-FALLBACK] ✅ Succeeded via fallback: ${candidate.provider}/${fbCfg.model} (primary was ${resolveModelProvider(model)}/${model})`);
+      if (isFallback) log.info(`[LLM-FALLBACK] ✅ Succeeded via fallback: ${candidate.provider}/${fbCfg.model} (primary was ${resolveModelProvider(model)}/${model})`);
       return { ok: true, content, message: messageObj, raw: resp.data, responseTime, budgetExceeded, fallbackUsed: isFallback ? candidate.provider : undefined, actualModel: usedModel };
     }
 
     markProviderFail(candidate.provider);
-    console.warn(`[LLM-FALLBACK] ❌ Provider ${candidate.provider}/${fbCfg.model} failed: ${lastErr?.message || 'unknown'}`);
+    log.warn(`[LLM-FALLBACK] ❌ Provider ${candidate.provider}/${fbCfg.model} failed: ${lastErr?.message || 'unknown'}`);
   }
 
   _performanceMetrics.errorCount++;
   trackLLMResult(false);
-  console.error('[agents] callLLM ALL providers failed for model chain:', fallbackChain.map(c => c.provider).join(' → '));
+  log.error('[agents] callLLM ALL providers failed for model chain:', fallbackChain.map(c => c.provider).join(' → '));
   return { ok: false, error: 'all_providers_failed', content: '', providerHealth: getProviderHealthStatus() };
 }
 
@@ -2631,7 +2635,7 @@ export async function callVisionLLM(imageUrl, prompt, opts = {}) {
         lastErr = e;
         if (attempt < maxAttempts && isRetryableLLMError(e)) {
           const waitMs = 800 * attempt;
-          console.warn(`[agents] callVisionLLM transient error (attempt ${attempt}/${maxAttempts}), retry in ${waitMs}ms:`, e?.message || e);
+          log.warn(`[agents] callVisionLLM transient error (attempt ${attempt}/${maxAttempts}), retry in ${waitMs}ms:`, e?.message || e);
           await sleep(waitMs);
           continue;
         }
@@ -2642,7 +2646,7 @@ export async function callVisionLLM(imageUrl, prompt, opts = {}) {
     return { ok: true, content: resp.data?.choices?.[0]?.message?.content || '', raw: resp.data };
   } catch (e) {
     trackLLMResult(false);
-    console.error('[agents] callVisionLLM error:', e?.message || e);
+    log.error('[agents] callVisionLLM error:', e?.message || e);
     return { ok: false, error: String(e?.message || e), content: '' };
   }
 }
@@ -2701,7 +2705,7 @@ export async function callVisionLLMVideo(videoUrl, prompt, opts = {}) {
     return { ok: true, content, raw: resp.data };
   } catch (e) {
     trackLLMResult(false);
-    console.error('[agents] callVisionLLMVideo error (native API):', e?.message);
+    log.error('[agents] callVisionLLMVideo error (native API):', e?.message);
   }
 
   // Fallback: try compatible API with video_url
@@ -2737,7 +2741,7 @@ export async function callVisionLLMVideo(videoUrl, prompt, opts = {}) {
     };
   } catch (e) {
     trackLLMResult(false);
-    console.error('[agents] callVisionLLMVideo error (compatible API):', e?.message);
+    log.error('[agents] callVisionLLMVideo error (compatible API):', e?.message);
     return { ok: false, error: String(e?.message || e), content: '' };
   }
 }
@@ -2793,7 +2797,7 @@ export async function queryKnowledgeBase(agent, query, limit = 5, options = {}) 
     );
     return r.rows || [];
   } catch (e) {
-    console.error('[agents] queryKnowledgeBase error:', e?.message);
+    log.error('[agents] queryKnowledgeBase error:', e?.message);
     return [];
   }
 }
@@ -2829,7 +2833,7 @@ export async function queryBitableData(agent, query, limit = 10, options = {}) {
     
     return r.rows || [];
   } catch (e) {
-    console.error('[agents] queryBitableData error:', e?.message);
+    log.error('[agents] queryBitableData error:', e?.message);
     return [];
   }
 }
@@ -3274,7 +3278,7 @@ async function estimateMarginMetricsForRange({ state, store, startDate, endDate 
       dlParams
     );
     for (const r of (dlR.rows||[])) { const biz=String(r.biz_type||'').trim().toLowerCase(); const pk=normProductKey(r.dish_name); const c=toNum(r.unit_cost,NaN); if(!pk||!Number.isFinite(c)||c<0) continue; if(!profileMap.has(`${biz}||${pk}`)) profileMap.set(`${biz}||${pk}`,{costPerUnit:c,grossPerUnit:NaN}); if(!profileMap.has(`||${pk}`)) profileMap.set(`||${pk}`,{costPerUnit:c,grossPerUnit:NaN}); }
-  } catch(e) { console.error('[margin] dish_library_costs query error:', e?.message||e); }
+  } catch(e) { log.error('[margin] dish_library_costs query error:', e?.message||e); }
 
   const out = {
     takeaway: { actualRevenue: 0, estimatedCost: 0, marginRate: 0 },
@@ -3517,7 +3521,7 @@ export async function getLarkTenantToken(tenantId) {
 async function getBitableTenantToken(configKey = 'ops_checklist') {
   const config = BITABLE_CONFIGS[configKey];
   if (!config) {
-    console.error(`[bitable] invalid config key: ${configKey}`);
+    log.error(`[bitable] invalid config key: ${configKey}`);
     return '';
   }
   
@@ -3536,10 +3540,10 @@ async function getBitableTenantToken(configKey = 'ops_checklist') {
     const expires = Date.now() + (resp.data?.expire || 7000) * 1000;
     
     _bitableTenantTokens.set(configKey, { token, expires });
-    console.log(`[bitable][${configKey}] tenant token refreshed, expires in`, resp.data?.expire, 's');
+    log.info(`[bitable][${configKey}] tenant token refreshed, expires in`, resp.data?.expire, 's');
     return token;
   } catch (e) {
-    console.error(`[bitable][${configKey}] get tenant token failed:`, e?.message);
+    log.error(`[bitable][${configKey}] get tenant token failed:`, e?.message);
     return '';
   }
 }
@@ -3564,7 +3568,7 @@ function isTransientBitableError(errText) {
 export async function getBitableRecords(configKey = 'ops_checklist', options = {}) {
   const config = BITABLE_CONFIGS[configKey];
   if (!config) {
-    console.error(`[bitable] invalid config key: ${configKey}`);
+    log.error(`[bitable] invalid config key: ${configKey}`);
     return { ok: false, error: 'invalid_config' };
   }
 
@@ -3579,7 +3583,7 @@ export async function getBitableRecords(configKey = 'ops_checklist', options = {
 
     const token = await getBitableTenantToken(configKey);
     if (!token) {
-      console.error(`[bitable][${configKey}] cannot get records: no token`);
+      log.error(`[bitable][${configKey}] cannot get records: no token`);
       return { ok: false, error: 'no_token' };
     }
 
@@ -3663,7 +3667,7 @@ export async function getBitableRecords(configKey = 'ops_checklist', options = {
 export async function getBitableRecordImageDownloadUrl(configKey = 'ops_checklist', fileToken) {
   const token = await getBitableTenantToken();
   if (!token) {
-    console.error('[bitable] cannot get image url: no token');
+    log.error('[bitable] cannot get image url: no token');
     return null;
   }
 
@@ -3679,12 +3683,12 @@ export async function getBitableRecordImageDownloadUrl(configKey = 'ops_checklis
 
     const downloadUrl = resp.data?.data?.download_url || '';
     if (downloadUrl) {
-      console.log('[bitable] got image download url for token:', fileToken);
+      log.info('[bitable] got image download url for token:', fileToken);
       return downloadUrl;
     }
     return null;
   } catch (e) {
-    console.error('[bitable] get image download url failed:', e?.response?.data || e?.message);
+    log.error('[bitable] get image download url failed:', e?.response?.data || e?.message);
     
     // 方法2：尝试使用 media API
     try {
@@ -3697,12 +3701,12 @@ export async function getBitableRecordImageDownloadUrl(configKey = 'ops_checklis
       );
       
       if (mediaResp.data) {
-        console.log('[bitable] got media download for token:', fileToken);
+        log.info('[bitable] got media download for token:', fileToken);
         // 直接返回图片数据或临时URL
         return `data:image/jpeg;base64,${Buffer.from(mediaResp.data).toString('base64')}`;
       }
     } catch (e2) {
-      console.error('[bitable] media download also failed:', e2?.response?.data || e2?.message);
+      log.error('[bitable] media download also failed:', e2?.response?.data || e2?.message);
     }
     
     return null;
@@ -3711,7 +3715,7 @@ export async function getBitableRecordImageDownloadUrl(configKey = 'ops_checklis
 
 // 桌访数据处理
 async function processTableVisitData(records) {
-  console.log(`[table_visit] processing ${records.length} records`);
+  log.info(`[table_visit] processing ${records.length} records`);
   
   for (const record of records) {
     const fields = record.fields || {};
@@ -3733,7 +3737,7 @@ async function processTableVisitData(records) {
       fields
     };
     
-    console.log(`[table_visit] new record:`, tableVisitData);
+    log.info(`[table_visit] new record:`, tableVisitData);
     
     // 存储到数据库
     try {
@@ -3753,7 +3757,7 @@ async function processTableVisitData(records) {
         resolveTenantIdDefault()
       ]);
       
-      console.log(`[table_visit] saved record: ${tableVisitData.recordId}`);
+      log.info(`[table_visit] saved record: ${tableVisitData.recordId}`);
 
       // 稳定同步：同时写入结构化表，便于BI精确查询
       const visitDate = normalizeBitableDateValue(
@@ -3807,7 +3811,7 @@ async function processTableVisitData(records) {
     } catch (e) {
       // 忽略重复记录错误
       if (!e?.message?.includes('duplicate')) {
-        console.error(`[table_visit] save failed for ${tableVisitData.recordId}:`, e?.message);
+        log.error(`[table_visit] save failed for ${tableVisitData.recordId}:`, e?.message);
       }
     }
   }
@@ -3854,14 +3858,14 @@ async function processBadReviewData(records) {
         resolveTenantIdDefault()
       ]);
     } catch(e) {
-      console.error('[bitable] bad review process error:', e?.message);
+      log.error('[bitable] bad review process error:', e?.message);
     }
   }
 }
 
 // 检查表数据处理（保持原有逻辑）
 async function processChecklistData(records) {
-  console.log(`[checklist] processing ${records.length} records`);
+  log.info(`[checklist] processing ${records.length} records`);
   // ... 原有的检查表处理逻辑
 }
 
@@ -3869,7 +3873,7 @@ async function processChecklistData(records) {
 export async function processBitableData(configKey, records) {
   const config = BITABLE_CONFIGS[configKey];
   if (!config) {
-    console.error(`[bitable] invalid config key: ${configKey}`);
+    log.error(`[bitable] invalid config key: ${configKey}`);
     return;
   }
 
@@ -3895,7 +3899,7 @@ export async function processBitableData(configKey, records) {
       case 'material_report':
         return await processMaterialReportData(records, config.brand);
       default:
-        console.log(`[bitable][${configKey}] unknown type: ${config.type}, processing as generic`);
+        log.info(`[bitable][${configKey}] unknown type: ${config.type}, processing as generic`);
         return await processGenericData(records, configKey);
     }
   });
@@ -3904,7 +3908,7 @@ export async function processBitableData(configKey, records) {
 // 通用数据处理
 async function processGenericData(records, configKey) {
   for (const record of records) {
-    console.log(`[bitable][${configKey}] generic record:`, record.record_id);
+    log.info(`[bitable][${configKey}] generic record:`, record.record_id);
     
     try {
       await pool().query(`
@@ -3928,7 +3932,7 @@ async function processGenericData(records, configKey) {
         resolveTenantIdDefault()
       ]);
     } catch (e) {
-      console.error(`[bitable][${configKey}] save generic record failed:`, e?.message);
+      log.error(`[bitable][${configKey}] save generic record failed:`, e?.message);
     }
   }
 }
@@ -3936,7 +3940,7 @@ async function processGenericData(records, configKey) {
 // 收档报告数据处理
 async function processClosingReportData(records) {
   for (const record of records) {
-    console.log(`[bitable] closing report record:`, record.record_id);
+    log.info(`[bitable] closing report record:`, record.record_id);
     
     try {
       const fields = record.fields || {};
@@ -3979,7 +3983,7 @@ async function processClosingReportData(records) {
         resolveTenantIdDefault()
       ]);
     } catch (e) {
-      console.error(`[bitable] save closing report record failed:`, e?.message);
+      log.error(`[bitable] save closing report record failed:`, e?.message);
     }
   }
 }
@@ -3987,7 +3991,7 @@ async function processClosingReportData(records) {
 // 开档报告数据处理
 async function processOpeningReportData(records) {
   for (const record of records) {
-    console.log(`[bitable] opening report record:`, record.record_id);
+    log.info(`[bitable] opening report record:`, record.record_id);
     
     try {
       const fields = record.fields || {};
@@ -4029,7 +4033,7 @@ async function processOpeningReportData(records) {
         resolveTenantIdDefault()
       ]);
     } catch (e) {
-      console.error(`[bitable] save opening report record failed:`, e?.message);
+      log.error(`[bitable] save opening report record failed:`, e?.message);
     }
   }
 }
@@ -4037,7 +4041,7 @@ async function processOpeningReportData(records) {
 // 例会报告数据处理
 async function processMeetingReportData(records) {
   for (const record of records) {
-    console.log(`[bitable] meeting report record:`, record.record_id);
+    log.info(`[bitable] meeting report record:`, record.record_id);
     
     try {
       const fields = record.fields || {};
@@ -4079,7 +4083,7 @@ async function processMeetingReportData(records) {
         resolveTenantIdDefault()
       ]);
     } catch (e) {
-      console.error(`[bitable] save meeting report record failed:`, e?.message);
+      log.error(`[bitable] save meeting report record failed:`, e?.message);
     }
   }
 }
@@ -4087,7 +4091,7 @@ async function processMeetingReportData(records) {
 // 原料收货报告数据处理
 async function processMaterialReportData(records, brand) {
   for (const record of records) {
-    console.log(`[bitable] material report record (${brand}):`, record.record_id);
+    log.info(`[bitable] material report record (${brand}):`, record.record_id);
     
     try {
       const fields = record.fields || {};
@@ -4132,7 +4136,7 @@ async function processMaterialReportData(records, brand) {
         resolveTenantIdDefault()
       ]);
     } catch (e) {
-      console.error(`[bitable] save material report record failed:`, e?.message);
+      log.error(`[bitable] save material report record failed:`, e?.message);
     }
   }
 }
@@ -4200,9 +4204,9 @@ async function seedBitableDedup() {
         _bitableLastProcessedTime.set(pk, safeMs);
       }
     }
-    console.log(`[bitable] seeded dedup set with ${_bitableProcessedRecordIds.size} keys from DB`);
+    log.info(`[bitable] seeded dedup set with ${_bitableProcessedRecordIds.size} keys from DB`);
   } catch (e) {
-    console.error('[bitable] seed dedup failed:', e?.message);
+    log.error('[bitable] seed dedup failed:', e?.message);
   }
 }
 
@@ -4232,7 +4236,7 @@ export async function pollAllBitableSubmissions() {
     try {
       await pollBitableSubmissions(configKey);
     } catch (e) {
-      console.error(`[bitable][${configKey}] poll error:`, e?.message);
+      log.error(`[bitable][${configKey}] poll error:`, e?.message);
     }
     await new Promise(r => setImmediate(r));
   }
@@ -4268,13 +4272,13 @@ export async function ensureTaskResponseBitable() {
   if (config?.tableId) {
     _taskResponseBitableState.tableId = config.tableId;
     _taskResponseBitableState.initialized = true;
-    console.log('[task_response] Using configured table:', config.tableId);
+    log.info('[task_response] Using configured table:', config.tableId);
     await _ensureTaskResponseFormView(configKey);
     return true;
   }
 
   const token = await getBitableTenantToken(configKey);
-  if (!token) { console.error('[task_response] No tenant token'); return false; }
+  if (!token) { log.error('[task_response] No tenant token'); return false; }
 
   try {
     // Skip list-tables (requires permissions we may not have) — go straight to create
@@ -4284,11 +4288,11 @@ export async function ensureTaskResponseBitable() {
       { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
     );
     const newId = createResp.data?.data?.table_id;
-    if (!newId) { console.error('[task_response] Table creation returned no ID:', createResp.data); return false; }
+    if (!newId) { log.error('[task_response] Table creation returned no ID:', createResp.data); return false; }
     _taskResponseBitableState.tableId = newId;
     config.tableId = newId;
     _taskResponseBitableState.failCount = 0;
-    console.log('[task_response] Created new table:', newId);
+    log.info('[task_response] Created new table:', newId);
 
     await _ensureTaskResponseFormView(configKey);
     _taskResponseBitableState.initialized = true;
@@ -4298,14 +4302,14 @@ export async function ensureTaskResponseBitable() {
     const errCode = e?.response?.data?.code;
     const errMsg = e?.response?.data?.msg || e?.message;
     if (_taskResponseBitableState.failCount <= 2) {
-      console.error(`[task_response] ensureTaskResponseBitable failed (${_taskResponseBitableState.failCount}/3): code=${errCode} msg=${errMsg}`);
+      log.error(`[task_response] ensureTaskResponseBitable failed (${_taskResponseBitableState.failCount}/3): code=${errCode} msg=${errMsg}`);
     }
     // After 3 failures, disable permanently to stop log spam
     if (_taskResponseBitableState.failCount >= 3) {
       if (errCode === 1254302) {
-        console.error('[task_response] ⚠️ Feishu app lacks bitable:app permission — Bitable task response DISABLED. Tasks will still be sent via Feishu messages. To enable: grant permission in Feishu Developer Console or set BITABLE_TASK_RESP_TABLE_ID env var.');
+        log.error('[task_response] ⚠️ Feishu app lacks bitable:app permission — Bitable task response DISABLED. Tasks will still be sent via Feishu messages. To enable: grant permission in Feishu Developer Console or set BITABLE_TASK_RESP_TABLE_ID env var.');
       } else {
-        console.error(`[task_response] Bitable task response DISABLED after 3 failures. Last error: code=${errCode} msg=${errMsg}`);
+        log.error(`[task_response] Bitable task response DISABLED after 3 failures. Last error: code=${errCode} msg=${errMsg}`);
       }
       _taskResponseBitableState.disabled = true;
     }
@@ -4321,7 +4325,7 @@ async function _ensureTaskResponseFormView(configKey) {
   const envFormUrl = process.env.BITABLE_TASK_RESP_FORM_URL || 'https://qcniocx2wuu8.feishu.cn/base/BTAjbflrlaMRHesADUfc8usznqh?table=tblT86H1uuTJydne&view=vewOvsJql9';
   if (envFormUrl) {
     _taskResponseBitableState.formUrl = envFormUrl;
-    console.log('[task_response] Using form URL from env:', envFormUrl);
+    log.info('[task_response] Using form URL from env:', envFormUrl);
     return;
   }
 
@@ -4330,7 +4334,7 @@ async function _ensureTaskResponseFormView(configKey) {
   if (forcedViewId) {
     _taskResponseBitableState.formViewId = forcedViewId;
     _taskResponseBitableState.formUrl = `https://${host}/base/${config.appToken}?table=${tableId}&view=${forcedViewId}`;
-    console.log('[task_response] Using view ID from env, form URL:', _taskResponseBitableState.formUrl);
+    log.info('[task_response] Using view ID from env, form URL:', _taskResponseBitableState.formUrl);
     return;
   }
 
@@ -4354,7 +4358,7 @@ async function _ensureTaskResponseFormView(configKey) {
         );
         formView = cvResp.data?.data?.view || null;
       } catch (e) {
-        console.log('[task_response] Could not create form view:', e?.response?.data?.msg || e?.message);
+        log.info('[task_response] Could not create form view:', e?.response?.data?.msg || e?.message);
       }
     }
 
@@ -4365,16 +4369,16 @@ async function _ensureTaskResponseFormView(configKey) {
     } else {
       _taskResponseBitableState.formUrl = `https://${host}/base/${config.appToken}?table=${tableId}`;
     }
-    console.log('[task_response] Form URL:', _taskResponseBitableState.formUrl);
+    log.info('[task_response] Form URL:', _taskResponseBitableState.formUrl);
   } catch (e) {
     _taskResponseBitableState.formUrl = `https://${host}/base/${config.appToken}?table=${tableId}`;
-    console.log('[task_response] Fallback to table URL:', _taskResponseBitableState.formUrl);
+    log.info('[task_response] Fallback to table URL:', _taskResponseBitableState.formUrl);
   }
 }
 
 export async function createBitableRecord(configKey, fields) {
   const config = BITABLE_CONFIGS[configKey];
-  if (!config?.tableId) { console.error(`[bitable] createBitableRecord: no table_id for ${configKey}`); return null; }
+  if (!config?.tableId) { log.error(`[bitable] createBitableRecord: no table_id for ${configKey}`); return null; }
 
   const token = await getBitableTenantToken(configKey);
   if (!token) return null;
@@ -4387,13 +4391,13 @@ export async function createBitableRecord(configKey, fields) {
     );
     const record = resp.data?.data?.record;
     if (!record?.record_id) {
-      console.warn(`[bitable][${configKey}] createBitableRecord: no record_id in response. code=${resp.data?.code} msg=${resp.data?.msg} keys=${Object.keys(resp.data?.data || {}).join(',')}`);
+      log.warn(`[bitable][${configKey}] createBitableRecord: no record_id in response. code=${resp.data?.code} msg=${resp.data?.msg} keys=${Object.keys(resp.data?.data || {}).join(',')}`);
     } else {
-      console.log(`[bitable][${configKey}] created record: ${record.record_id}`);
+      log.info(`[bitable][${configKey}] created record: ${record.record_id}`);
     }
     return record;
   } catch (e) {
-    console.error(`[bitable][${configKey}] createBitableRecord failed:`, e?.response?.data || e?.message);
+    log.error(`[bitable][${configKey}] createBitableRecord failed:`, e?.response?.data || e?.message);
     return null;
   }
 }
@@ -4413,14 +4417,14 @@ export async function updateBitableRecord(configKey, recordId, fields) {
     );
     return resp.data?.data?.record || null;
   } catch (e) {
-    console.error(`[bitable][${configKey}] updateBitableRecord failed:`, e?.response?.data || e?.message);
+    log.error(`[bitable][${configKey}] updateBitableRecord failed:`, e?.response?.data || e?.message);
     return null;
   }
 }
 
 export async function writeTaskToBitable(task) {
   const ready = await ensureTaskResponseBitable();
-  if (!ready) { console.warn('[task_response] Bitable not ready, skipping write'); return null; }
+  if (!ready) { log.warn('[task_response] Bitable not ready, skipping write'); return null; }
 
   const fields = {
     '任务编号': String(task.task_id || ''),
@@ -4515,7 +4519,7 @@ export async function pollTaskResponseBitable() {
   const ready = await ensureTaskResponseBitable();
   if (!ready) return;
 
-  console.log('[task_response] polling for responses...');
+  log.info('[task_response] polling for responses...');
 
   try {
     // Read from feishu_generic_records instead of Feishu API (Agent V2 handles polling)
@@ -4558,7 +4562,7 @@ export async function pollTaskResponseBitable() {
         continue;
       }
 
-      console.log(`[task_response] Found response for task ${taskId}: ${responseText.slice(0, 80)}...`);
+      log.info(`[task_response] Found response for task ${taskId}: ${responseText.slice(0, 80)}...`);
 
       try {
         const taskResult = await pool().query(
@@ -4568,7 +4572,7 @@ export async function pollTaskResponseBitable() {
         const task = taskResult.rows?.[0];
 
         if (!task) {
-          console.log(`[task_response] Task ${taskId} not found or not in pending_response`);
+          log.info(`[task_response] Task ${taskId} not found or not in pending_response`);
           _processedTaskResponseIds.add(processedKey);
           continue;
         }
@@ -4599,15 +4603,15 @@ export async function pollTaskResponseBitable() {
         // Update Bitable record status
         await updateBitableRecord('task_responses', recordId, { '处理状态': '已处理' });
         processed++;
-        console.log(`[task_response] Processed response for ${taskId}`);
+        log.info(`[task_response] Processed response for ${taskId}`);
       } catch (e) {
-        console.error(`[task_response] Error processing ${taskId}:`, e?.message);
+        log.error(`[task_response] Error processing ${taskId}:`, e?.message);
       }
 
       _processedTaskResponseIds.add(processedKey);
     }
 
-    if (processed > 0) console.log(`[task_response] Processed ${processed} new responses`);
+    if (processed > 0) log.info(`[task_response] Processed ${processed} new responses`);
 
     // Cleanup processed set if too large
     if (_processedTaskResponseIds.size > 5000) {
@@ -4615,7 +4619,7 @@ export async function pollTaskResponseBitable() {
       old.forEach(k => _processedTaskResponseIds.delete(k));
     }
   } catch (e) {
-    console.error('[task_response] poll error:', e?.message);
+    log.error('[task_response] poll error:', e?.message);
   }
 }
 
@@ -4664,7 +4668,7 @@ export function getScheduledTaskStatus() {
 }
 
 async function startScheduledTasks() {
-  console.log('[ops] starting scheduled tasks...');
+  log.info('[ops] starting scheduled tasks...');
   await refreshOpsAgentRuntimeConfig();
   const runtimeTasks = buildScheduledTasksFromConfig();
   
@@ -4724,7 +4728,7 @@ function scheduleFixedTask(taskKey, config) {
     }, msUntilExecution);
     _scheduledTaskIntervals.set(taskKey, timer);
     
-    console.log(`[ops] scheduled ${taskKey} for: ${nextExecution.toISOString()}`);
+    log.info(`[ops] scheduled ${taskKey} for: ${nextExecution.toISOString()}`);
   };
   
   scheduleNext();
@@ -4759,7 +4763,7 @@ function scheduleRandomTask(taskKey, config) {
     }, intervalMs);
     _scheduledTaskIntervals.set(taskKey, timer);
     
-    console.log(`[ops] scheduled random ${taskKey} for: ${nextExecution.toISOString()} (interval: ${intervalHours}h)`);
+    log.info(`[ops] scheduled random ${taskKey} for: ${nextExecution.toISOString()} (interval: ${intervalHours}h)`);
   };
   
   scheduleNext();
@@ -4792,7 +4796,7 @@ function extractScore(text) {
 
 // 照片真实性验证
 async function validatePhotoAuthenticity(imageUrl, expectedLocation, submitTime) {
-  console.log('[ops] validating photo authenticity...');
+  log.info('[ops] validating photo authenticity...');
   
   try {
     // 1. 调用视觉 AI 分析照片内容
@@ -4818,10 +4822,10 @@ async function validatePhotoAuthenticity(imageUrl, expectedLocation, submitTime)
       confidence: 0.8 // 简化实现
     };
     
-    console.log('[ops] photo validation result:', validation);
+    log.info('[ops] photo validation result:', validation);
     return validation;
   } catch (e) {
-    console.error('[ops] photo validation failed:', e?.message);
+    log.error('[ops] photo validation failed:', e?.message);
     return { isAuthentic: false, error: e?.message };
   }
 }
@@ -4835,14 +4839,14 @@ async function checkPhotoDuplicate(photoHash) {
     );
     return (result.rows[0]?.count || 0) > 1;
   } catch (e) {
-    console.error('[ops] check duplicate failed:', e?.message);
+    log.error('[ops] check duplicate failed:', e?.message);
     return false;
   }
 }
 
 // 强化催办逻辑
 async function handleTaskEscalation(taskId, assignee, taskType, overdueMinutes) {
-  console.log(`[ops] handling escalation for task ${taskId}, overdue: ${overdueMinutes}min`);
+  log.info(`[ops] handling escalation for task ${taskId}, overdue: ${overdueMinutes}min`);
   
   let escalationLevel = 'reminder';
   let message = '';
@@ -4877,7 +4881,7 @@ async function handleTaskEscalation(taskId, assignee, taskType, overdueMinutes) 
 
 // 逻辑纠偏检查
 async function validateSubmissionLogic(submission) {
-  console.log('[ops] validating submission logic...');
+  log.info('[ops] validating submission logic...');
   
   const issues = [];
   
@@ -5003,8 +5007,8 @@ export async function fetchStoreRatingForProfileDisplay(storeLabel, lockedPeriod
 function feishuOpenIdResolveDeps() {
   return {
     query: (sql, params) => pool().query(sql, params),
-    warn: (...args) => console.warn(...args),
-    info: (...args) => console.log(...args)
+    warn: (...args) => log.warn(...args),
+    info: (...args) => log.info(...args)
   };
 }
 
@@ -5021,7 +5025,7 @@ export async function sendLarkMessage(openId, text, options = {}) {
 
   const token = await getLarkTenantToken(options.tenantId);
   if (!token) {
-    console.error('[feishu] cannot send: no token');
+    log.error('[feishu] cannot send: no token');
     return { ok: false, error: 'no_token' };
   }
 
@@ -5039,11 +5043,11 @@ export async function sendLarkMessage(openId, text, options = {}) {
         }
       );
       const ok = resp.data?.code === 0;
-      console.log('[feishu] message sent to', ridTrim, '→', ok ? 'ok' : resp.data?.msg);
+      log.info('[feishu] message sent to', ridTrim, '→', ok ? 'ok' : resp.data?.msg);
       return { ok, data: resp.data, errText: String(resp.data?.msg || '') };
     } catch (e) {
       const d = e?.response?.data;
-      console.error('[feishu] send message failed:', d || e?.message);
+      log.error('[feishu] send message failed:', d || e?.message);
       const code = Number(d?.code || 0);
       const errText = String(d?.msg || e?.message || '');
       return { ok: false, data: d, errText, httpCode: code };
@@ -5058,7 +5062,7 @@ export async function sendLarkMessage(openId, text, options = {}) {
     if (isOpenIdCrossAppFeishuError(code, errStr)) {
       const fixed = await refreshFeishuUserOpenIdForImDeliveryHrms(deps, token, rid);
       if (fixed && fixed !== rid) {
-        console.warn('[feishu] open_id cross app: retry text after resolve');
+        log.warn('[feishu] open_id cross app: retry text after resolve');
         out = await postTextOnce(fixed);
       }
     }
@@ -5072,7 +5076,7 @@ export async function sendLarkCard(openId, card, options = {}) {
   try {
     deepSanitizeFeishuCardStrings(card, sanitizePerformanceZhText);
   } catch (e) {
-    console.warn('[feishu] card sanitize skipped:', e?.message);
+    log.warn('[feishu] card sanitize skipped:', e?.message);
   }
   const token = await getLarkTenantToken(options.tenantId);
   if (!token) return { ok: false, error: 'no_token' };
@@ -5094,7 +5098,7 @@ export async function sendLarkCard(openId, card, options = {}) {
       return { ok, data: resp.data, errText: String(resp.data?.msg || '') };
     } catch (e) {
       const d = e?.response?.data;
-      console.error('[feishu] send card failed:', d || e?.message);
+      log.error('[feishu] send card failed:', d || e?.message);
       const code = Number(d?.code || 0);
       const errText = String(d?.msg || e?.message || '');
       return { ok: false, data: d, errText, httpCode: code };
@@ -5109,7 +5113,7 @@ export async function sendLarkCard(openId, card, options = {}) {
     if (isOpenIdCrossAppFeishuError(code, errStr)) {
       const fixed = await refreshFeishuUserOpenIdForImDeliveryHrms(deps, token, rid);
       if (fixed && fixed !== rid) {
-        console.warn('[feishu] open_id cross app: retry card after resolve');
+        log.warn('[feishu] open_id cross app: retry card after resolve');
         out = await postCardOnce(fixed);
       }
     }
@@ -5130,7 +5134,7 @@ export async function getLarkImageUrl(messageId, imageKey) {
     const b64 = Buffer.from(resp.data).toString('base64');
     return `data:image/jpeg;base64,${b64}`;
   } catch (e) {
-    console.error('[feishu] get image failed:', e?.message);
+    log.error('[feishu] get image failed:', e?.message);
     return null;
   }
 }
@@ -5156,11 +5160,11 @@ async function recognizeLarkAudio(messageId, fileKey) {
       }
     })() : '';
     if (recognition.trim()) {
-      console.log(`[feishu-asr] IM API recognition: "${recognition.trim().slice(0, 80)}"`);
+      log.info(`[feishu-asr] IM API recognition: "${recognition.trim().slice(0, 80)}"`);
       return recognition.trim();
     }
   } catch (e) {
-    console.log(`[feishu-asr] IM API fallback skipped: ${e?.response?.status || e?.message}`);
+    log.info(`[feishu-asr] IM API fallback skipped: ${e?.response?.status || e?.message}`);
   }
 
   // 方案2: 下载语音文件 → 调用飞书 Speech API
@@ -5170,7 +5174,7 @@ async function recognizeLarkAudio(messageId, fileKey) {
       { headers: { 'Authorization': `Bearer ${token}` }, params: { type: 'file' }, responseType: 'arraybuffer', timeout: 30000 }
     );
     const audioBase64 = Buffer.from(audioResp.data).toString('base64');
-    console.log(`[feishu-asr] audio downloaded: ${audioResp.data.byteLength} bytes`);
+    log.info(`[feishu-asr] audio downloaded: ${audioResp.data.byteLength} bytes`);
 
     const asrPayload = {
       speech: { speech: audioBase64 },
@@ -5189,7 +5193,7 @@ async function recognizeLarkAudio(messageId, fileKey) {
         );
         const recognized = asrResp.data?.data?.recognition_text || asrResp.data?.data?.text || '';
         if (recognized.trim()) {
-          console.log(`[feishu-asr] Speech API recognized via ${endpoint}: "${recognized.slice(0, 80)}"`);
+          log.info(`[feishu-asr] Speech API recognized via ${endpoint}: "${recognized.slice(0, 80)}"`);
           return recognized.trim();
         }
       } catch (ee) {
@@ -5200,9 +5204,9 @@ async function recognizeLarkAudio(messageId, fileKey) {
   } catch (e) {
     const status = e?.response?.status;
     if (status === 404 || status === 403) {
-      console.warn(`[feishu-asr] Speech API ${status} — 需在飞书开放平台开通"语音识别"权限 (speech:speech)`);
+      log.warn(`[feishu-asr] Speech API ${status} — 需在飞书开放平台开通"语音识别"权限 (speech:speech)`);
     } else {
-      console.error('[feishu-asr] Speech API error:', e?.response?.data?.msg || e?.message);
+      log.error('[feishu-asr] Speech API error:', e?.response?.data?.msg || e?.message);
     }
   }
 
@@ -5221,7 +5225,7 @@ async function replyLarkMessage(messageId, text) {
     );
     return { ok: resp.data?.code === 0 };
   } catch (e) {
-    console.error('[feishu] reply failed:', e?.message);
+    log.error('[feishu] reply failed:', e?.message);
     return { ok: false };
   }
 }
@@ -5256,7 +5260,7 @@ async function getFeishuUserInfo(openId) {
     });
     return resp.data?.data?.user || null;
   } catch (e) {
-    console.warn('[feishu] getFeishuUserInfo failed:', e?.message);
+    log.warn('[feishu] getFeishuUserInfo failed:', e?.message);
     return null;
   }
 }
@@ -5266,7 +5270,7 @@ async function tryAutoBindByName(openId) {
     // Step 1: Try Feishu contact API to get display name
     const feishuInfo = await getFeishuUserInfo(openId);
     const displayName = String(feishuInfo?.name || '').trim();
-    console.log(`[feishu] tryAutoBindByName: openId=${openId}, feishuName="${displayName}"`);
+    log.info(`[feishu] tryAutoBindByName: openId=${openId}, feishuName="${displayName}"`);
 
     const state = await getSharedState();
     const allEmp = [
@@ -5283,13 +5287,13 @@ async function tryAutoBindByName(openId) {
         const emp = matches[0];
         const regResult = await registerFeishuUser(openId, emp.username);
         if (regResult.ok) {
-          console.log(`[feishu] auto-bind success: ${displayName} -> ${emp.username} (${emp.store})`);
+          log.info(`[feishu] auto-bind success: ${displayName} -> ${emp.username} (${emp.store})`);
           return regResult;
         }
       } else if (matches.length > 1) {
-        console.log(`[feishu] auto-bind: multiple matches for "${displayName}" (${matches.length}), fallback to manual`);
+        log.info(`[feishu] auto-bind: multiple matches for "${displayName}" (${matches.length}), fallback to manual`);
       } else {
-        console.log(`[feishu] auto-bind: no exact match for "${displayName}"`);
+        log.info(`[feishu] auto-bind: no exact match for "${displayName}"`);
       }
     }
 
@@ -5303,7 +5307,7 @@ async function tryAutoBindByName(openId) {
       if (phoneMatch) {
         const regResult = await registerFeishuUser(openId, phoneMatch.username);
         if (regResult.ok) {
-          console.log(`[feishu] auto-bind by phone success: ${feishuMobile} -> ${phoneMatch.username} (${phoneMatch.store})`);
+          log.info(`[feishu] auto-bind by phone success: ${feishuMobile} -> ${phoneMatch.username} (${phoneMatch.store})`);
           return regResult;
         }
       }
@@ -5311,7 +5315,7 @@ async function tryAutoBindByName(openId) {
 
     return null;
   } catch (e) {
-    console.warn('[feishu] tryAutoBindByName error:', e?.message);
+    log.warn('[feishu] tryAutoBindByName error:', e?.message);
     return null;
   }
 }
@@ -5328,10 +5332,10 @@ export async function lookupFeishuUserByUsername(username) {
       [username]
     );
     if (!r.rows?.[0]) {
-      console.log('[feishu] lookupFeishuUserByUsername: no registered user found for', username);
+      log.info('[feishu] lookupFeishuUserByUsername: no registered user found for', username);
     }
     return r.rows?.[0] || null;
-  } catch (e) { console.error('[feishu] lookupFeishuUserByUsername error:', e?.message); return null; }
+  } catch (e) { log.error('[feishu] lookupFeishuUserByUsername error:', e?.message); return null; }
 }
 
 // 推送督办消息给责任人；仅高优先级异常才抄送总部营运和管理员
@@ -5376,7 +5380,7 @@ async function pushIssueToAssignee(issue, message, tenantId = 'default') {
         }
       }
     } catch (e) {
-      console.error('[pushIssue] 查找抄送人失败:', e?.message);
+      log.error('[pushIssue] 查找抄送人失败:', e?.message);
     }
   }
   
@@ -5398,7 +5402,7 @@ async function pushIssueToAssignee(issue, message, tenantId = 'default') {
       const result = await sendLarkMessage(recipient.openId, fullMessage);
       results.push({ ...recipient, success: result.ok });
     } catch (e) {
-      console.error(`[pushIssue] 发送给${recipient.username}失败:`, e?.message);
+      log.error(`[pushIssue] 发送给${recipient.username}失败:`, e?.message);
       results.push({ ...recipient, success: false, error: e?.message });
     }
   }
@@ -5443,7 +5447,7 @@ export async function registerFeishuUser(openId, username) {
     });
     return { ok: true, user: { username: uname, name, store, role, brandId: brandCtx.brandId, brandName: brandCtx.brandName } };
   } catch (e) {
-    console.error('[feishu] register user failed:', e?.message);
+    log.error('[feishu] register user failed:', e?.message);
     return { ok: false, error: String(e?.message) };
   }
 }
@@ -5740,7 +5744,7 @@ JSON回复：{"result":"pass/fail/unclear","confidence":0.0-1.0,"findings":"具�
        findings, imageHash || null, duplicateOf || null, JSON.stringify(agentRaw), resolveTenantIdDefault()]
     );
     auditId = r.rows?.[0]?.id || null;
-  } catch (e) { console.error('[ops_supervisor] insert audit failed:', e?.message); }
+  } catch (e) { log.error('[ops_supervisor] insert audit failed:', e?.message); }
 
   // 图片审核不合格异常记录 - 已按用户要求取消自动创建
 
@@ -5791,7 +5795,7 @@ export async function getOpsKnowledgeSupport(query, context = {}) {
       );
     }
   } catch (e) {
-    console.error('[ops_supervisor] data query failed:', e?.message);
+    log.error('[ops_supervisor] data query failed:', e?.message);
   }
   
   if (kbResults.length > 0) {
@@ -5822,7 +5826,7 @@ export async function getOpsKnowledgeSupport(query, context = {}) {
       };
     }
   } catch (e) {
-    console.error('[ops_supervisor] llm advice failed:', e?.message);
+    log.error('[ops_supervisor] llm advice failed:', e?.message);
   }
   
   return { 
@@ -5886,7 +5890,7 @@ export async function checkDataTriggers() {
       });
     }
   } catch (e) {
-    console.error('[ops_supervisor] data trigger check failed:', e?.message);
+    log.error('[ops_supervisor] data trigger check failed:', e?.message);
   }
   
   return triggers;
@@ -5932,11 +5936,11 @@ export async function followUpOverdueTasks() {
           reminderCount: task.reminder_count + 1
         });
       } catch (e) {
-        console.error('[ops_supervisor] follow-up failed:', e?.message);
+        log.error('[ops_supervisor] follow-up failed:', e?.message);
       }
     }
   } catch (e) {
-    console.error('[ops_supervisor] overdue tasks check failed:', e?.message);
+    log.error('[ops_supervisor] overdue tasks check failed:', e?.message);
   }
   
   return followUps;
@@ -6246,7 +6250,7 @@ ${evidenceText || '暂无'}
     }
     return fallbackQualityAudit(userQuery, agentResponse);
   } catch (e) {
-    console.error('[check_agent] audit error:', e?.message);
+    log.error('[check_agent] audit error:', e?.message);
     return fallbackQualityAudit(userQuery, agentResponse);
   }
 }
@@ -6287,14 +6291,14 @@ async function runWithCheckAgent(userQuery, route, generateFn, maxRetries = 2) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const audit = await checkAgentAudit(userQuery, response, route);
     lastAudit = audit;
-    console.log(`[check_agent] route=${route} attempt=${attempt + 1} pass=${audit.pass} total=${audit.total}`);
+    log.info(`[check_agent] route=${route} attempt=${attempt + 1} pass=${audit.pass} total=${audit.total}`);
     markQualityMetric('audits', 1);
     
     if (audit.pass !== false) break; // 通过则直接返回
     markQualityMetric('failedAudits', 1);
 
     // 不通过：带着 Check Agent 的反馈让子 Agent 重写
-    console.log(`[check_agent] rewriting: ${audit.feedback}`);
+    log.info(`[check_agent] rewriting: ${audit.feedback}`);
     response = await generateFn(audit.feedback);
     rewriteCount += 1;
     markQualityMetric('rewrites', 1);
@@ -6416,7 +6420,7 @@ async function notifyBitablePipelineFailure(scopeLabel, err, opts = {}) {
     );
     const rows = r.rows || [];
     if (!rows.length) {
-      console.warn('[bitable-alert] no admin/hq_manager open_id for Feishu alert:', scopeLabel, reason);
+      log.warn('[bitable-alert] no admin/hq_manager open_id for Feishu alert:', scopeLabel, reason);
       return;
     }
     const timeStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
@@ -6430,12 +6434,12 @@ async function notifyBitablePipelineFailure(scopeLabel, err, opts = {}) {
     await Promise.all(
       (rows || []).map((row) =>
         sendLarkMessage(row.open_id, msg, { skipDedup: true }).catch((e) =>
-          console.error('[bitable-alert] sendLarkMessage failed:', e?.message)
+          log.error('[bitable-alert] sendLarkMessage failed:', e?.message)
         )
       )
     );
   } catch (e) {
-    console.error('[bitable-alert] notifyBitablePipelineFailure failed:', e?.message);
+    log.error('[bitable-alert] notifyBitablePipelineFailure failed:', e?.message);
   }
 }
 
@@ -6487,11 +6491,11 @@ function scheduleBitableNotifyProcessing(payloadRaw) {
       _bitableNotifyDebounceTimers.delete(debounceKey);
       const ck = resolveBitableConfigKeyFromNotifyPayload(raw);
       if (!ck) {
-        console.warn('[bitable] NOTIFY payload not mapped to any BITABLE_CONFIGS (ignored):', raw);
+        log.warn('[bitable] NOTIFY payload not mapped to any BITABLE_CONFIGS (ignored):', raw);
         return;
       }
       runBitableListenerHandler(ck).catch((e) =>
-        console.error(`[bitable] LISTEN handler error for ${ck}:`, e?.message)
+        log.error(`[bitable] LISTEN handler error for ${ck}:`, e?.message)
       );
     }, BITABLE_NOTIFY_DEBOUNCE_MS)
   );
@@ -6502,7 +6506,7 @@ export function startBitablePolling(intervalMs = 60000) {
     clearInterval(_bitablePollingInterval);
   }
 
-  console.log('[bitable] ⚡ PG LISTEN + DB trigger notify — Agent V2 writes feishu_generic_records, HRMS reacts on NOTIFY');
+  log.info('[bitable] ⚡ PG LISTEN + DB trigger notify — Agent V2 writes feishu_generic_records, HRMS reacts on NOTIFY');
 
   // 1. PG LISTEN: real-time processing when DB trigger fires (all writers: Agent / HRMS Webhook 等)
   startBitableListener();
@@ -6510,13 +6514,13 @@ export function startBitablePolling(intervalMs = 60000) {
   // 2. Periodic catch-up：补偿 NOTIFY / LISTEN 丢失或处理失败（略缩短间隔以提高数据时效）
   if (_bitableCatchupInterval) clearInterval(_bitableCatchupInterval);
   _bitableCatchupInterval = setInterval(() => {
-    runBitableCatchup().catch(e => console.error('[bitable] catchup error:', e?.message));
+    runBitableCatchup().catch(e => log.error('[bitable] catchup error:', e?.message));
   }, BITABLE_CATCHUP_INTERVAL_MS);
 
   // 3. Run initial catchup on startup（略提前，尽快与库对齐）
   setTimeout(() => {
     runBitableCatchup().catch((e) => {
-      console.error('[bitable] initial catchup error:', e?.message);
+      log.error('[bitable] initial catchup error:', e?.message);
       void notifyBitablePipelineFailure('Bitable 启动后首次 catchup 失败', e, { minIntervalMs: 0 });
     });
   }, BITABLE_INITIAL_CATCHUP_MS);
@@ -6530,7 +6534,7 @@ async function startBitableListener() {
   try { pgModule = await import('pg'); } catch (e) { pgModule = null; }
   const connectionString = process.env.DATABASE_URL;
   if (!pgModule || !connectionString) {
-    console.error('[bitable] No pg module or DATABASE_URL, cannot LISTEN — falling back to polling');
+    log.error('[bitable] No pg module or DATABASE_URL, cannot LISTEN — falling back to polling');
     void notifyBitablePipelineFailure(
       'Bitable LISTEN（缺少 pg 或 DATABASE_URL）',
       new Error('cannot LISTEN: no pg module or DATABASE_URL'),
@@ -6566,12 +6570,12 @@ async function startBitableListener() {
     _bitableListenKeepaliveFailStreak = 0;
     client.on('notification', (msg) => {
       if (msg.channel === 'bitable_records_updated' && msg.payload) {
-        console.log(`[bitable] PG NOTIFY received: payload=${msg.payload}`);
+        log.info(`[bitable] PG NOTIFY received: payload=${msg.payload}`);
         scheduleBitableNotifyProcessing(msg.payload);
       }
     });
     client.on('error', (err) => {
-      console.error('[bitable] LISTEN client error:', err?.message);
+      log.error('[bitable] LISTEN client error:', err?.message);
       void notifyBitablePipelineFailure('Bitable LISTEN 连接 error 事件', err, {
         minIntervalMs: 30_000,
         dedupeKey: 'listen_client_error'
@@ -6586,7 +6590,7 @@ async function startBitableListener() {
       if (_bitableListenClient === client) _bitableListenClient = null;
       const delay = Math.min(Math.max(_bitableListenBackoffMs, BITABLE_LISTEN_BACKOFF_MIN_MS), BITABLE_LISTEN_BACKOFF_MAX_MS);
       _bitableListenBackoffMs = Math.min(_bitableListenBackoffMs * 2, BITABLE_LISTEN_BACKOFF_MAX_MS);
-      console.log(`[bitable] LISTEN disconnected, reconnect in ${delay}ms (backoff max ${BITABLE_LISTEN_BACKOFF_MAX_MS}ms)`);
+      log.info(`[bitable] LISTEN disconnected, reconnect in ${delay}ms (backoff max ${BITABLE_LISTEN_BACKOFF_MAX_MS}ms)`);
       void notifyBitablePipelineFailure(
         'Bitable LISTEN 连接已断开（将自动重连）',
         new Error(`LISTEN client end; next reconnect in ${delay}ms, backoff=${_bitableListenBackoffMs}ms`),
@@ -6596,7 +6600,7 @@ async function startBitableListener() {
       _bitableListenReconnectTimer = setTimeout(() => {
         _bitableListenReconnectTimer = null;
         startBitableListener().catch((e) => {
-          console.error('[bitable] LISTEN reconnect failed:', e?.message);
+          log.error('[bitable] LISTEN reconnect failed:', e?.message);
           void notifyBitablePipelineFailure('Bitable LISTEN 重连尝试失败', e, {
             minIntervalMs: 60_000,
             dedupeKey: 'listen_reconnect'
@@ -6612,14 +6616,14 @@ async function startBitableListener() {
         await c.query('SELECT 1');
         _bitableListenKeepaliveFailStreak = 0;
       } catch (e) {
-        console.error('[bitable] LISTEN keepalive failed:', e?.message);
+        log.error('[bitable] LISTEN keepalive failed:', e?.message);
         void notifyBitablePipelineFailure('Bitable LISTEN keepalive 失败', e, {
           minIntervalMs: 45_000,
           dedupeKey: 'keepalive'
         });
         _bitableListenKeepaliveFailStreak += 1;
         if (_bitableListenKeepaliveFailStreak >= BITABLE_KEEPALIVE_FAIL_THRESHOLD) {
-          console.warn(
+          log.warn(
             `[bitable] LISTEN keepalive failed ${BITABLE_KEEPALIVE_FAIL_THRESHOLD} times consecutively — scheduling aggressive catchup within ${BITABLE_AGGRESSIVE_CATCHUP_DEADLINE_MS}ms`
           );
           void notifyBitablePipelineFailure(
@@ -6638,38 +6642,38 @@ async function startBitableListener() {
         try { _bitableListenClient?.end(); } catch (_) { /* ignore */ }
       }
     }, BITABLE_LISTEN_HEALTH_MS);
-    console.log('[bitable] PG LISTEN setup complete for bitable_records_updated (keepalive every ' + BITABLE_LISTEN_HEALTH_MS + 'ms)');
+    log.info('[bitable] PG LISTEN setup complete for bitable_records_updated (keepalive every ' + BITABLE_LISTEN_HEALTH_MS + 'ms)');
   } catch (e) {
-    console.error('[bitable] PG LISTEN setup failed, falling back to polling:', e?.message);
+    log.error('[bitable] PG LISTEN setup failed, falling back to polling:', e?.message);
     void notifyBitablePipelineFailure('Bitable LISTEN 初始化失败（已回退飞书直连轮询）', e, { minIntervalMs: 0 });
     startBitableFallbackPolling(60000);
   }
 }
 
 function startBitableFallbackPolling(intervalMs) {
-  console.log('[bitable] ⚠️ Falling back to Feishu API polling (higher latency, more API calls)');
+  log.info('[bitable] ⚠️ Falling back to Feishu API polling (higher latency, more API calls)');
   const runPollingOnce = async () => {
-    if (_bitablePollingInProgress) { console.log('[bitable] previous cycle still running, skip'); return; }
+    if (_bitablePollingInProgress) { log.info('[bitable] previous cycle still running, skip'); return; }
     _bitablePollingInProgress = true;
     try {
       await pollAllBitableSubmissions();
     } catch (e) {
-      console.error('[bitable] poll error:', e?.message);
+      log.error('[bitable] poll error:', e?.message);
       void notifyBitablePipelineFailure('Bitable 飞书直连轮询（回退模式）单次失败', e, {
         minIntervalMs: 15 * 60 * 1000,
         dedupeKey: 'fallback_poll_once'
       });
     } finally { _bitablePollingInProgress = false; }
   };
-  runPollingOnce().catch(console.error);
-  _bitablePollingInterval = setInterval(() => { runPollingOnce().catch(console.error); }, intervalMs);
+  runPollingOnce().catch(log.error);
+  _bitablePollingInterval = setInterval(() => { runPollingOnce().catch(log.error); }, intervalMs);
 }
 
 async function runBitableListenerHandler(configKeyOrPayload) {
   const configKey =
     resolveBitableConfigKeyFromNotifyPayload(configKeyOrPayload) || String(configKeyOrPayload || '').trim();
   if (!configKey || !BITABLE_CONFIGS[configKey]?.tableId) {
-    console.warn('[bitable] runBitableListenerHandler: unknown configKey / payload:', configKeyOrPayload);
+    log.warn('[bitable] runBitableListenerHandler: unknown configKey / payload:', configKeyOrPayload);
     void notifyBitablePipelineFailure(
       'Bitable NOTIFY payload 无法映射到 BITABLE_CONFIGS',
       new Error(String(configKeyOrPayload || 'empty')),
@@ -6678,7 +6682,7 @@ async function runBitableListenerHandler(configKeyOrPayload) {
     return;
   }
   if (_bitablePollingInProgress) {
-    console.log('[bitable] NOTIFY skipped — handler busy; catchup will pick up:', configKey);
+    log.info('[bitable] NOTIFY skipped — handler busy; catchup will pick up:', configKey);
     return;
   }
   _bitablePollingInProgress = true;
@@ -6686,7 +6690,7 @@ async function runBitableListenerHandler(configKeyOrPayload) {
     await seedBitableDedup();
     await processBitableRecordsFromDB(configKey);
   } catch (e) {
-    console.error(`[bitable] LISTEN handler error for ${configKey}:`, e?.message);
+    log.error(`[bitable] LISTEN handler error for ${configKey}:`, e?.message);
     void notifyBitablePipelineFailure(`Bitable NOTIFY 处理失败（configKey=${configKey}）`, e, {
       minIntervalMs: 120_000,
       dedupeKey: configKey
@@ -6698,7 +6702,7 @@ async function runBitableListenerHandler(configKeyOrPayload) {
 
 async function runBitableCatchup() {
   if (_bitablePollingInProgress) {
-    console.log('[bitable] catchup skipped — handler already running');
+    log.info('[bitable] catchup skipped — handler already running');
     return;
   }
   _bitablePollingInProgress = true;
@@ -6709,7 +6713,7 @@ async function runBitableCatchup() {
       try {
         await processBitableRecordsFromDB(configKey);
       } catch (e) {
-        console.error(`[bitable] catchup error for ${configKey}:`, e?.message);
+        log.error(`[bitable] catchup error for ${configKey}:`, e?.message);
         void notifyBitablePipelineFailure(`Bitable catchup 单表失败（${configKey}）`, e, {
           minIntervalMs: 180_000,
           dedupeKey: `catchup_${configKey}`
@@ -6717,9 +6721,9 @@ async function runBitableCatchup() {
       }
       await new Promise(r => setImmediate(r));
     }
-    console.log('[bitable] catchup cycle complete');
+    log.info('[bitable] catchup cycle complete');
   } catch (e) {
-    console.error('[bitable] catchup cycle error:', e?.message);
+    log.error('[bitable] catchup cycle error:', e?.message);
     void notifyBitablePipelineFailure('Bitable 定时 catchup 整轮失败', e, {
       minIntervalMs: 180_000,
       dedupeKey: 'catchup_cycle'
@@ -6735,20 +6739,20 @@ async function runBitableCatchup() {
  */
 function scheduleBitableAggressiveCatchup(reason) {
   if (_bitableAggressiveCatchupTimer) {
-    console.log('[bitable] aggressive catchup already queued, skip:', reason);
+    log.info('[bitable] aggressive catchup already queued, skip:', reason);
     return;
   }
   const delay = Math.min(
     BITABLE_AGGRESSIVE_CATCHUP_DEADLINE_MS - 500,
     1500 + Math.floor(Math.random() * 9000)
   );
-  console.warn(`[bitable] aggressive catchup scheduled in ${delay}ms (${reason})`);
+  log.warn(`[bitable] aggressive catchup scheduled in ${delay}ms (${reason})`);
   _bitableAggressiveCatchupTimer = setTimeout(() => {
     _bitableAggressiveCatchupTimer = null;
     runBitableCatchup()
-      .then(() => console.log('[bitable] aggressive catchup cycle complete'))
+      .then(() => log.info('[bitable] aggressive catchup cycle complete'))
       .catch((err) => {
-        console.error('[bitable] aggressive catchup error:', err?.message);
+        log.error('[bitable] aggressive catchup error:', err?.message);
         void notifyBitablePipelineFailure('Bitable 加密 catchup（keepalive 降级触发）失败', err, {
           minIntervalMs: 0,
           dedupeKey: 'aggressive_catchup'
@@ -6785,7 +6789,7 @@ async function processBitableRecordsFromDB(configKey) {
       };
     });
   } catch (e) {
-    console.error(`[bitable][${configKey}] query feishu_generic_records failed:`, e?.message);
+    log.error(`[bitable][${configKey}] query feishu_generic_records failed:`, e?.message);
     return;
   }
 
@@ -6821,7 +6825,7 @@ async function processBitableRecordsFromDB(configKey) {
   }
 
   if (newSubmissions.length === 0) return;
-  console.log(`[bitable][${configKey}] processed ${newSubmissions.length} new records from DB (via NOTIFY/catchup)`);
+  log.info(`[bitable][${configKey}] processed ${newSubmissions.length} new records from DB (via NOTIFY/catchup)`);
 
   // 知识图谱
   for (const record of newRecords) {
@@ -6837,7 +6841,7 @@ async function processBitableRecordsFromDB(configKey) {
       try {
         await processChecklistConfirmation(sub);
       } catch (e) {
-        console.error(`[bitable] ops_checklist confirmation error:`, e?.message);
+        log.error(`[bitable] ops_checklist confirmation error:`, e?.message);
       }
       await new Promise(r => setImmediate(r));
     }
@@ -6866,9 +6870,9 @@ export function startArchiveScheduler() {
     const msUntilArchive = tomorrow.getTime() - now.getTime();
     
     setTimeout(async () => {
-      console.log('[bitable] running daily archive task');
+      log.info('[bitable] running daily archive task');
       const result = await archiveOldBitableSubmissions();
-      console.log('[bitable] archive result:', result);
+      log.info('[bitable] archive result:', result);
       
       // 检查容量告警
       await checkBitableCapacity();
@@ -6877,7 +6881,7 @@ export function startArchiveScheduler() {
       scheduleNextArchive();
     }, msUntilArchive);
     
-    console.log('[bitable] next archive scheduled for:', tomorrow.toISOString());
+    log.info('[bitable] next archive scheduled for:', tomorrow.toISOString());
   };
   
   scheduleNextArchive();
@@ -6889,23 +6893,23 @@ export async function checkBitableCapacity() {
     const mainCount = stats.main.total || 0;
     const totalCount = stats.total || 0;
     
-    console.log(`[bitable] capacity check: main=${mainCount}, total=${totalCount}`);
+    log.info(`[bitable] capacity check: main=${mainCount}, total=${totalCount}`);
     
     // 容量告警（调整阈值）
     if (mainCount > 1000) {
       const warning = `⚠️ Bitable 容量提醒\n主表记录数：${mainCount}/2000\n总记录数：${totalCount}\n系统已启用自动归档，7天后数据移至归档表，60天后自动删除`;
-      console.warn('[bitable] CAPACITY WARNING:', warning);
+      log.warn('[bitable] CAPACITY WARNING:', warning);
       // await sendLarkMessage(adminOpenId, prefixWithAgentName('system', warning));
     }
     
     if (mainCount > 1500) {
       const critical = `🚨 Bitable 容量预警\n主表记录数：${mainCount}/2000\n系统将自动清理旧数据，无需手动干预`;
-      console.error('[bitable] CAPACITY CRITICAL:', critical);
+      log.error('[bitable] CAPACITY CRITICAL:', critical);
       // await sendLarkMessage(adminOpenId, prefixWithAgentName('system', critical));
     }
     
   } catch (e) {
-    console.error('[bitable] capacity check failed:', e?.message);
+    log.error('[bitable] capacity check failed:', e?.message);
   }
 }
 
@@ -6913,7 +6917,7 @@ export function stopBitablePolling() {
   if (_bitablePollingInterval) {
     clearInterval(_bitablePollingInterval);
     _bitablePollingInterval = null;
-    console.log('[bitable] polling stopped');
+    log.info('[bitable] polling stopped');
   }
 }
 
@@ -7229,7 +7233,7 @@ async function tryFeishuMarketingCopyRound({ openId, feishuUser, text, imageUrls
       const clipped = out.length > 16000 ? `${out.slice(0, 16000)}\n\n…（内容过长已截断，可减少「文案套数」或缩短菜名后重试）` : out;
       await sendLarkMessage(openId, prefixWithAgentName('master', clipped), { skipDedup: true });
     } catch (e) {
-      console.error('[feishu] marketing copy generation error:', e?.message || e);
+      log.error('[feishu] marketing copy generation error:', e?.message || e);
       await sendLarkMessage(
         openId,
         prefixWithAgentName('master', '营销文案生成失败，请稍后重试或减少图片数量。'),
@@ -7319,7 +7323,7 @@ export async function pushIssuesToFeishu(tenantId = 'default') {
     }
     return pushed;
   } catch (e) {
-    console.error('[feishu] push issues failed:', e?.message);
+    log.error('[feishu] push issues failed:', e?.message);
     return 0;
   }
 }
@@ -7363,10 +7367,10 @@ function currentAndPrevMonthPeriodStrForPush() {
 // Push performance scores to users via Feishu
 export async function pushScoresToFeishu() {
   try {
-    console.log('[perf] pushScoresToFeishu disabled: agents-service-v2 owns weekly/monthly score delivery');
+    log.info('[perf] pushScoresToFeishu disabled: agents-service-v2 owns weekly/monthly score delivery');
     return 0;
   } catch (e) {
-    console.error('[feishu] push scores disabled path failed:', e?.message);
+    log.error('[feishu] push scores disabled path failed:', e?.message);
     return 0;
   }
 }
@@ -7417,14 +7421,14 @@ export async function verifyLLMHealth(options = {}) {
   const prevAllOk = _llmHealthState.lastAllOk;
   _llmHealthState.lastAllOk = allOk;
   _llmHealthState.lastSummary = summary;
-  console.log(`[LLM-HEALTH] Startup check:\n${summary}`);
+  log.info(`[LLM-HEALTH] Startup check:\n${summary}`);
   const healthyProviders = results.filter(r => r.ok).map(r => r.name);
   const downProviders = results.filter(r => !r.ok).map(r => r.name);
   if (!allOk && notifyOnFailure && (forceNotify || prevAllOk !== false)) {
     const fallbackNote = healthyProviders.length > 0
       ? `\n\n🔄 自动降级已激活：${downProviders.join('、')} 不可用时，Agent 将自动切换到 ${healthyProviders.join('、')} 继续工作。`
       : '\n\n⚠️ 所有 Provider 均不可用，Agent 将完全无法响应！';
-    console.error('[LLM-HEALTH] ⚠️ 部分LLM不可用，自动降级已激活');
+    log.error('[LLM-HEALTH] ⚠️ 部分LLM不可用，自动降级已激活');
     try {
       await sendErrorAlertToAdmin(`⚠️ 【系统告警】LLM健康检查未通过:\n${summary}${fallbackNote}\n\n请检查 API Key / 模型配置 / 网络连通性。`);
     } catch (_) { /* ignore */ }
@@ -7457,10 +7461,10 @@ export function assertCriticalFunctions() {
   const missing = critical.filter(([, t]) => t !== 'function');
   if (missing.length > 0) {
     const msg = `[CRITICAL] Missing functions at startup: ${missing.map(([n]) => n).join(', ')}`;
-    console.error(msg);
+    log.error(msg);
     throw new Error(msg);
   }
-  console.log('[agents] Startup assertion passed: all critical functions defined');
+  log.info('[agents] Startup assertion passed: all critical functions defined');
 }
 
 async function sendErrorAlertToAdmin(errorMsg) {
@@ -7485,7 +7489,7 @@ async function sendErrorAlertToAdmin(errorMsg) {
       }
     }
   } catch (e) {
-    console.error('[alert] Failed to send admin alert:', e?.message);
+    log.error('[alert] Failed to send admin alert:', e?.message);
   }
 }
 
@@ -7525,12 +7529,12 @@ export function startAgentScheduler() {
   // 启动后做一次延迟健康检查 + 周期检查（防止DeepSeek挂了无告警）
   setTimeout(() => {
     verifyLLMHealth({ notifyOnFailure: true, notifyOnRecovery: true }).catch((e) => {
-      console.error('[LLM-HEALTH] periodic check error:', e?.message);
+      log.error('[LLM-HEALTH] periodic check error:', e?.message);
     });
   }, 30000);
   setInterval(() => {
     verifyLLMHealth({ notifyOnFailure: true, notifyOnRecovery: true }).catch((e) => {
-      console.error('[LLM-HEALTH] periodic check error:', e?.message);
+      log.error('[LLM-HEALTH] periodic check error:', e?.message);
     });
   }, 10 * 60 * 1000);
 
@@ -7541,19 +7545,19 @@ export function startAgentScheduler() {
       try {
         const result = await runDataAuditor('daily', tenantId);
         if (result.issuesCreated > 0) {
-          console.log(`[scheduler] Data Auditor(daily,${tenantId}): ${result.issuesCreated} new issues`);
+          log.info(`[scheduler] Data Auditor(daily,${tenantId}): ${result.issuesCreated} new issues`);
         }
         try {
           const { syncDataAuditorIssuesToMasterTasks } = await import('./master-agent.js');
           const n = await syncDataAuditorIssuesToMasterTasks(result.newIssueIds || [], tenantId);
-          if (n > 0) console.log(`[scheduler] Data Auditor(daily,${tenantId}): synced ${n} to master_tasks`);
+          if (n > 0) log.info(`[scheduler] Data Auditor(daily,${tenantId}): synced ${n} to master_tasks`);
         } catch (e) {
-          console.error('[scheduler] daily master sync:', e?.message);
+          log.error('[scheduler] daily master sync:', e?.message);
         }
         const pushed = await pushIssuesToFeishu(tenantId);
-        if (pushed > 0) console.log(`[scheduler] Pushed(${tenantId}) ${pushed} issues to Feishu`);
+        if (pushed > 0) log.info(`[scheduler] Pushed(${tenantId}) ${pushed} issues to Feishu`);
       } catch (e) {
-        console.error(`[scheduler] audit tick error (tenant=${tenantId}):`, e?.message);
+        log.error(`[scheduler] audit tick error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -7566,19 +7570,19 @@ export function startAgentScheduler() {
       try {
         const c = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Shanghai'}));
         if (c.getDay()===1 && c.getHours()===0) {
-          console.log(`[scheduler] Weekly audit(${tenantId}) running...`);
+          log.info(`[scheduler] Weekly audit(${tenantId}) running...`);
           const r = await runDataAuditor('weekly', tenantId);
-          console.log(`[scheduler] Weekly audit(${tenantId}): ${r.issuesCreated} issues`);
+          log.info(`[scheduler] Weekly audit(${tenantId}): ${r.issuesCreated} issues`);
           await pushIssuesToFeishu(tenantId);
           try {
             const { syncDataAuditorIssuesToMasterTasks } = await import('./master-agent.js');
             const n = await syncDataAuditorIssuesToMasterTasks(r.newIssueIds || [], tenantId);
-            if (n > 0) console.log(`[scheduler] Weekly audit(${tenantId}): synced ${n} issues to master_tasks`);
+            if (n > 0) log.info(`[scheduler] Weekly audit(${tenantId}): synced ${n} issues to master_tasks`);
           } catch (e) {
-            console.error('[scheduler] weekly master sync:', e?.message);
+            log.error('[scheduler] weekly master sync:', e?.message);
           }
         }
-      } catch(e){ console.error(`[scheduler] weekly audit err (tenant=${tenantId}):`, e?.message); }
+      } catch(e){ log.error(`[scheduler] weekly audit err (tenant=${tenantId}):`, e?.message); }
     });
     }
   };
@@ -7590,10 +7594,10 @@ export function startAgentScheduler() {
     try {
       const now = new Date();
       if (now.getDay() === 1 && now.getHours() === 9) {
-        console.log('[scheduler] Chief Evaluator weekly legacy disabled; anomaly_rollups_v2 owns weekly performance');
+        log.info('[scheduler] Chief Evaluator weekly legacy disabled; anomaly_rollups_v2 owns weekly performance');
       }
     } catch (e) {
-      console.error('[scheduler] eval tick error:', e?.message);
+      log.error('[scheduler] eval tick error:', e?.message);
     }
   };
 
@@ -7605,7 +7609,7 @@ export function startAgentScheduler() {
         const now = new Date();
         // 周一且10点执行
         if (now.getDay() === 1 && now.getHours() === 10 && now.getMinutes() < 5) {
-          console.log(`[scheduler] OP Agent(${tenantId}): 开始督办周异常...`);
+          log.info(`[scheduler] OP Agent(${tenantId}): 开始督办周异常...`);
 
           // 查询过去7天的周异常（未解决的）
           const weeklyCategories = [
@@ -7628,7 +7632,7 @@ export function startAgentScheduler() {
           );
 
           if (result.rows?.length > 0) {
-            console.log(`[scheduler] OP Agent(${tenantId}): 发现 ${result.rows.length} 条周异常待督办`);
+            log.info(`[scheduler] OP Agent(${tenantId}): 发现 ${result.rows.length} 条周异常待督办`);
 
             // 按门店分组并发送督办通知
             const byStore = {};
@@ -7646,16 +7650,16 @@ export function startAgentScheduler() {
                 try {
                   await pushIssueToAssignee(issue, message, tenantId);
                 } catch (e) {
-                  console.error(`[scheduler] OP周督办推送失败: ${issue.assignee_username}`, e?.message);
+                  log.error(`[scheduler] OP周督办推送失败: ${issue.assignee_username}`, e?.message);
                 }
               }
             }
           } else {
-            console.log(`[scheduler] OP Agent(${tenantId}): 本周无周异常需督办`);
+            log.info(`[scheduler] OP Agent(${tenantId}): 本周无周异常需督办`);
           }
         }
       } catch (e) {
-        console.error(`[scheduler] OP周督办 tick error (tenant=${tenantId}):`, e?.message);
+        log.error(`[scheduler] OP周督办 tick error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -7669,7 +7673,7 @@ export function startAgentScheduler() {
         const now = new Date();
         // 每天10点执行（分钟数<5避免重复执行）
         if (now.getHours() === 10 && now.getMinutes() < 5) {
-          console.log(`[scheduler] OP Agent(${tenantId}): 开始督办充值异常...`);
+          log.info(`[scheduler] OP Agent(${tenantId}): 开始督办充值异常...`);
 
           // 查询过去24小时的充值异常（未解决的）
           const result = await pool().query(
@@ -7683,7 +7687,7 @@ export function startAgentScheduler() {
           );
 
           if (result.rows?.length > 0) {
-            console.log(`[scheduler] OP Agent(${tenantId}): 发现 ${result.rows.length} 条充值异常待督办`);
+            log.info(`[scheduler] OP Agent(${tenantId}): 发现 ${result.rows.length} 条充值异常待督办`);
 
             // 按门店分组
             const byStore = {};
@@ -7702,16 +7706,16 @@ export function startAgentScheduler() {
                 try {
                   await pushIssueToAssignee(issue, message, tenantId);
                 } catch (e) {
-                  console.error(`[scheduler] OP日督办推送失败: ${issue.assignee_username}`, e?.message);
+                  log.error(`[scheduler] OP日督办推送失败: ${issue.assignee_username}`, e?.message);
                 }
               }
             }
           } else {
-            console.log(`[scheduler] OP Agent(${tenantId}): 今日无充值异常需督办`);
+            log.info(`[scheduler] OP Agent(${tenantId}): 今日无充值异常需督办`);
           }
         }
       } catch (e) {
-        console.error(`[scheduler] OP日督办 tick error (tenant=${tenantId}):`, e?.message);
+        log.error(`[scheduler] OP日督办 tick error (tenant=${tenantId}):`, e?.message);
       }
     });
     }
@@ -7725,7 +7729,7 @@ export function startAgentScheduler() {
         const pushedIssues = await pushIssuesToFeishu(tenantId);
         const pushedScores = await pushScoresToFeishu();
         if (pushedIssues || pushedScores) {
-          console.log(`[scheduler] Push retry(${tenantId}): ${pushedIssues} issues, ${pushedScores} scores`);
+          log.info(`[scheduler] Push retry(${tenantId}): ${pushedIssues} issues, ${pushedScores} scores`);
         }
       } catch (e) { /* ignore */ }
     });
@@ -7743,7 +7747,7 @@ export function startAgentScheduler() {
   setInterval(dailyRechargeTick, 60 * 60 * 1000); // every hour (checks if 10am)
   setInterval(pushTick, 5 * 60 * 1000);      // every 5 min
 
-  console.log('[agents] Feishu-first multi-agent scheduler started (with OP daily/weekly supervision)');
+  log.info('[agents] Feishu-first multi-agent scheduler started (with OP daily/weekly supervision)');
 }
 
 // ─────────────────────────────────────────────
@@ -7766,7 +7770,7 @@ export function getAgentPerformanceMetrics() {
 export function clearAgentCache() {
   _responseCache.clear();
   _conversationContext.clear();
-  console.log('[agents] Cache cleared');
+  log.info('[agents] Cache cleared');
 }
 
 export async function runAgentEvalSuite({ createdBy = '', suiteName = 'default', tenantId = 'default' } = {}) {
@@ -7815,7 +7819,7 @@ export async function runAgentEvalSuite({ createdBy = '', suiteName = 'default',
       [String(suiteName || 'default'), JSON.stringify(summary), String(createdBy || ''), tenantId]
     );
   } catch (e) {
-    console.error('[agents] runAgentEvalSuite persist failed:', e?.message || e);
+    log.error('[agents] runAgentEvalSuite persist failed:', e?.message || e);
   }
 
   return summary;
@@ -7834,7 +7838,7 @@ setInterval(() => {
   }
   
   if (cleaned > 0) {
-    console.log(`[agents] Cleaned ${cleaned} expired cache entries`);
+    log.info(`[agents] Cleaned ${cleaned} expired cache entries`);
   }
 }, 10 * 60 * 1000); // 每10分钟清理一次
 
@@ -8246,7 +8250,7 @@ async function getRecentAuditCount(storeName, days) {
     
     return Number(result.rows[0]?.count || 0);
   } catch (error) {
-    console.error('[ops_agent] Failed to get audit count:', error);
+    log.error('[ops_agent] Failed to get audit count:', error);
     return 0;
   }
 }
@@ -8271,7 +8275,7 @@ async function getReportStoresForBiReports(tenantId = 'default') {
     const set = new Set([...seed, ...fromDb]);
     return Array.from(set).sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
   } catch (e) {
-    console.error('[bi-report] getReportStoresForBiReports failed:', e?.message);
+    log.error('[bi-report] getReportStoresForBiReports failed:', e?.message);
     return seed;
   }
 }
@@ -8333,7 +8337,7 @@ async function feishuStoreManagersForMonthlyReport(storeDisplayName) {
     }
     return out;
   } catch (e) {
-    console.error('[bi-report] feishuStoreManagersForMonthlyReport failed:', e?.message);
+    log.error('[bi-report] feishuStoreManagersForMonthlyReport failed:', e?.message);
     return [];
   }
 }
@@ -8374,7 +8378,7 @@ async function sendBiReportToAdmins({ admins, title, note, md, cardTemplate = 'b
 }
 
 export async function sendWeeklyReports(tenantId = 'default') {
-  console.log(`[bi-report] generating weekly reports (tenant=${tenantId})...`);
+  log.info(`[bi-report] generating weekly reports (tenant=${tenantId})...`);
   const { wsS, weS } = calendarLastCompletedWeekMonSunShanghai();
   const state = await getSharedState(tenantId);
   const adminsRaw = [...(state?.employees||[]),...(state?.users||[])].filter(u => ['admin','hq_manager'].includes(u?.role));
@@ -8391,13 +8395,13 @@ export async function sendWeeklyReports(tenantId = 'default') {
         md,
         cardTemplate: 'blue'
       });
-      console.log(`[bi-report] sent ${store} report to ${admins.length} admins`);
-    } catch (e) { console.error(`[bi-report] ${store} failed:`, e?.message); }
+      log.info(`[bi-report] sent ${store} report to ${admins.length} admins`);
+    } catch (e) { log.error(`[bi-report] ${store} failed:`, e?.message); }
   }
 }
 
 export async function sendMonthlyReports(tenantId = 'default') {
-  console.log(`[bi-report] generating monthly reports (tenant=${tenantId})...`);
+  log.info(`[bi-report] generating monthly reports (tenant=${tenantId})...`);
   const { msS, meS } = calendarPreviousMonthRangeShanghai();
   const state = await getSharedState(tenantId);
   const adminsRaw2 = [...(state?.employees || []), ...(state?.users || [])].filter(u => ['admin','hq_manager'].includes(u?.role));
@@ -8416,16 +8420,16 @@ export async function sendMonthlyReports(tenantId = 'default') {
         md,
         cardTemplate: 'turquoise'
       });
-      console.log(`[bi-report] sent ${store} monthly report to ${admins.length} recipients (admin/hq + store managers)`);
-    } catch (e) { console.error(`[bi-report] ${store} monthly failed:`, e?.message); }
+      log.info(`[bi-report] sent ${store} monthly report to ${admins.length} recipients (admin/hq + store managers)`);
+    } catch (e) { log.error(`[bi-report] ${store} monthly failed:`, e?.message); }
   }
 }
 
 export async function sendTestReportsToUser(targetUsername, tenantId = 'default') {
-  console.log('[bi-report] test send to user:', targetUsername);
+  log.info('[bi-report] test send to user:', targetUsername);
   const fu = await lookupFeishuUserByUsername(targetUsername);
   if (!fu?.open_id) {
-    console.error('[bi-report] user not found or not bound to Feishu:', targetUsername);
+    log.error('[bi-report] user not found or not bound to Feishu:', targetUsername);
     return { ok: false, error: 'user_not_found_or_not_bound', username: targetUsername };
   }
   const testAdmins = [{ username: targetUsername }];
@@ -8440,10 +8444,10 @@ export async function sendTestReportsToUser(targetUsername, tenantId = 'default'
       const md = formatReportMarkdown(r);
       await sendBiReportToAdmins({ admins: testAdmins, title: `📊 ${store} 周报`, note: `小年·BI周报·${wsS}~${weS}`, md, cardTemplate: 'blue' });
       results.push({ type: 'weekly', store, ok: true });
-      console.log(`[bi-report] test weekly sent: ${store} → ${targetUsername}`);
+      log.info(`[bi-report] test weekly sent: ${store} → ${targetUsername}`);
     } catch (e) {
       results.push({ type: 'weekly', store, ok: false, error: e?.message });
-      console.error(`[bi-report] test weekly failed: ${store}`, e?.message);
+      log.error(`[bi-report] test weekly failed: ${store}`, e?.message);
     }
   }
 
@@ -8455,10 +8459,10 @@ export async function sendTestReportsToUser(targetUsername, tenantId = 'default'
       const md = formatReportMarkdown(r);
       await sendBiReportToAdmins({ admins: testAdmins, title: `📈 ${store} 月报`, note: `小年·BI月报·${msS}~${meS}`, md, cardTemplate: 'turquoise' });
       results.push({ type: 'monthly', store, ok: true });
-      console.log(`[bi-report] test monthly sent: ${store} → ${targetUsername}`);
+      log.info(`[bi-report] test monthly sent: ${store} → ${targetUsername}`);
     } catch (e) {
       results.push({ type: 'monthly', store, ok: false, error: e?.message });
-      console.error(`[bi-report] test monthly failed: ${store}`, e?.message);
+      log.error(`[bi-report] test monthly failed: ${store}`, e?.message);
     }
   }
 
@@ -8468,5 +8472,5 @@ export async function sendTestReportsToUser(targetUsername, tenantId = 'default'
 export function startWeeklyReportScheduler() {
   // DISABLED 2026-04-21: 周报/月报已合并到 Agents v2 本周运营周报（周一10:06飞书卡片）和本月运营月报（每月10日10:18飞书卡片）
   // 原来 HRMS 侧的纯文本周报(周一10:00)和月报(每月1日10:00)不再单独发送
-  console.log('[bi-report] weekly/monthly report scheduler DISABLED — merged into Agents v2 rhythm-engine');
+  log.info('[bi-report] weekly/monthly report scheduler DISABLED — merged into Agents v2 rhythm-engine');
 }

@@ -41,7 +41,7 @@ export function registerStoresDomainRoutes(app, authRequired, deps) {
       return res.json({ ok: true, removed });
     } catch (e) {
       if (e?.code === 'not_found') return res.status(404).json({ error: 'not_found' });
-      log.error({ msg: 'delete_api_stores_id', err: e?.message || e });
+      log.error({ msg: 'delete_api_stores_id', request_id: req.requestId, err: e?.message || e });
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
     }
   });
