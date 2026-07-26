@@ -77,6 +77,18 @@ import {
   buildKpiRadarAlertJson,
   createRunDataAuditor,
 } from './domains/agent-auditor/run-data-auditor.js';
+import {
+  getLLMClientConfig,
+  getProviderHealthStatus,
+  markProviderFail,
+  markProviderOk,
+  resolveModelProvider,
+  sleep,
+} from './domains/ai/llm-provider-helpers.js';
+import { createLoadTenantAiConfig } from './domains/ai/load-tenant-ai-config.js';
+import { createTenantLlmConfigCache } from './domains/ai/tenant-llm-config.js';
+import { createCallLLM } from './domains/ai/call-llm.js';
+import { createCallVisionLLM, createCallVisionLLMVideo } from './domains/ai/call-vision-llm.js';
 import { buildSalesReport } from './bi-sales-detail.js';
 import {
   generateWeeklyReport,
@@ -129,6 +141,8 @@ import {
   runPushTick,
 } from './domains/agent-ops/scheduler-ticks.js';
 
+export { getProviderHealthStatus };
+
 const log = childLogger({ domain: 'agents' });
 
 // ─────────────────────────────────────────────
@@ -142,71 +156,10 @@ const DEEPSEEK_VISION_MODEL = process.env.DEEPSEEK_VISION_MODEL || 'ep-202604241
 const QWEN_API_KEY = process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY || '';
 const QWEN_BASE_URL = process.env.QWEN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const QWEN_MODEL = process.env.QWEN_MODEL || 'qwen-max';
-const AI_QUALITY_LLM_PROVIDER = String(process.env.AI_QUALITY_LLM_PROVIDER || 'deepseek').trim();
-const AI_QUALITY_LLM_MODEL = String(process.env.AI_QUALITY_LLM_MODEL || 'deepseek-chat').trim();
-const AI_QUALITY_LLM_API_KEY = String(process.env.AI_QUALITY_LLM_API_KEY || '').trim();
-const AI_QUALITY_LLM_BASE_URL = String(process.env.AI_QUALITY_LLM_BASE_URL || 'https://api.deepseek.com').trim();
 const DOUBAO_API_KEY = process.env.ARK_API_KEY || process.env.DOUBAO_API_KEY || '';
 const DOUBAO_BASE_URL = process.env.DOUBAO_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
 
-// ── Provider 健康状态追踪 & 自动降级 ──
-const _providerHealth = {
-  deepseek: { healthy: true, failCount: 0, lastFailTime: 0, cooldownMs: 3 * 60 * 1000 },
-  qwen:     { healthy: true, failCount: 0, lastFailTime: 0, cooldownMs: 3 * 60 * 1000 },
-  doubao:   { healthy: true, failCount: 0, lastFailTime: 0, cooldownMs: 3 * 60 * 1000 }
-};
-const PROVIDER_FAIL_THRESHOLD = 2;
-const PROVIDER_RECOVERY_CHECK_MS = 3 * 60 * 1000;
-
-function markProviderFail(provider) {
-  const h = _providerHealth[provider];
-  if (!h) return;
-  h.failCount += 1;
-  h.lastFailTime = Date.now();
-  if (h.failCount >= PROVIDER_FAIL_THRESHOLD) {
-    h.healthy = false;
-    log.error(`[LLM-FALLBACK] Provider ${provider} marked UNHEALTHY after ${h.failCount} consecutive failures`);
-  }
-}
-
-function markProviderOk(provider) {
-  const h = _providerHealth[provider];
-  if (!h) return;
-  const wasDown = !h.healthy;
-  h.healthy = true;
-  h.failCount = 0;
-  if (wasDown) log.info(`[LLM-FALLBACK] Provider ${provider} recovered to HEALTHY`);
-}
-
-function isProviderHealthy(provider) {
-  const h = _providerHealth[provider];
-  if (!h) return true;
-  if (h.healthy) return true;
-  if (Date.now() - h.lastFailTime > PROVIDER_RECOVERY_CHECK_MS) return true;
-  return false;
-}
-
-function getTextFallbackChain(primaryModel) {
-  const primary = resolveModelProvider(primaryModel);
-  const chain = [{ provider: primary, model: primaryModel }];
-  if (primary !== 'qwen' && QWEN_API_KEY) chain.push({ provider: 'qwen', model: QWEN_MODEL });
-  if (primary !== 'deepseek' && DEEPSEEK_API_KEY) chain.push({ provider: 'deepseek', model: DEEPSEEK_MODEL });
-  return chain;
-}
-
-export function getProviderHealthStatus() {
-  const now = Date.now();
-  const result = {};
-  for (const [k, v] of Object.entries(_providerHealth)) {
-    result[k] = {
-      healthy: v.healthy,
-      failCount: v.failCount,
-      lastFailAgo: v.lastFailTime ? `${Math.round((now - v.lastFailTime) / 1000)}s ago` : 'never',
-      effectivelyAvailable: isProviderHealthy(k)
-    };
-  }
-  return result;
-}
+// Provider health / fallback chain → domains/ai/llm-provider-helpers.js
 
 function formatDate(d) {
   const dt = d instanceof Date ? d : new Date(d);
@@ -726,89 +679,7 @@ async function buildBiDeterministicBadReviewReportReply(store, text) {
   return _buildBiDeterministicBadReviewReportReply(store, text);
 }
 
-function resolveModelProvider(modelName, forceProvider) {
-  if (forceProvider) return forceProvider;
-  const m = String(modelName || '').trim().toLowerCase();
-  if (m.startsWith('qwen') || m.includes('dashscope')) return 'qwen';
-  if (m.startsWith('doubao') || m.startsWith('ep-') || m.includes('volces') || m.includes('ark')) return 'doubao';
-  return 'deepseek';
-}
-
-function normalizeOpenAiCompatibleBaseUrlForTenant(raw) {
-  const trimmed = String(raw || '').trim().replace(/\/+$/, '');
-  if (!trimmed) return '';
-  if (/ark\.cn-beijing\.volces\.com/i.test(trimmed)) {
-    if (/\/api\/v3$/i.test(trimmed)) return trimmed;
-    if (/\/v1$/i.test(trimmed)) return trimmed.replace(/\/v1$/i, '/api/v3');
-    return `${trimmed}/api/v3`;
-  }
-  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
-}
-
-/**
- * 从租户自己在 HRMS「系统设置 → AI 配置」里填的模型/绑定（hrms_state.settings.llm）解析出
- * 某个功能（featureKey）应该用哪个模型。跟下方多厂商固定配置(QWEN_API_KEY等环境变量)是
- * 两条独立路径：租户配了自己的 key 就用租户的，未配置（如现有 default 租户）完全不受影响。
- */
-async function loadTenantAiConfig(featureKey = 'default') {
-  try {
-    const tenantId = resolveTenantIdDefault();
-    if (!tenantId || tenantId === 'default') return null;
-    const r = await agentPool.query('SELECT data FROM hrms_state WHERE key = $1 LIMIT 1', [tenantId]);
-    const llm = r.rows?.[0]?.data?.settings?.llm;
-    if (!llm || typeof llm !== 'object') return null;
-
-    let models = Array.isArray(llm.models) ? llm.models : [];
-    let bindings = { ...(llm.bindings || {}) };
-    if (!models.length) {
-      const legacyKey = String(llm.apiKey || '').trim();
-      if (!legacyKey && !llm.baseUrl && !llm.model) return null;
-      models = [{ id: 'legacy_default', baseUrl: llm.baseUrl, model: llm.model, apiKey: legacyKey, enabled: true }];
-      bindings = { default: 'legacy_default' };
-    }
-
-    const key = String(featureKey || 'default').trim() || 'default';
-    const boundId = String(bindings?.[key] || bindings?.default || '').trim();
-    let m = models.find((x) => x?.id === boundId && x?.enabled !== false);
-    if (!m) m = models.find((x) => x?.enabled !== false);
-    if (!m?.apiKey || !m?.baseUrl || !m?.model) return null;
-
-    return {
-      apiKey: String(m.apiKey).trim(),
-      baseUrl: normalizeOpenAiCompatibleBaseUrlForTenant(m.baseUrl),
-      model: String(m.model).trim()
-    };
-  } catch (e) {
-    log.warn('[agents] loadTenantAiConfig failed, falling back to platform config:', e?.message);
-    return null;
-  }
-}
-
-function getLLMClientConfig(modelName, options = {}) {
-  const provider = resolveModelProvider(modelName, options.forceProvider || '');
-  if (provider === 'qwen') {
-    return {
-      provider,
-      model: String(modelName || '').trim() || QWEN_MODEL,
-      apiKey: QWEN_API_KEY,
-      baseUrl: QWEN_BASE_URL
-    };
-  }
-  if (provider === 'doubao') {
-    return {
-      provider,
-      model: String(modelName || '').trim() || DEEPSEEK_VISION_MODEL,
-      apiKey: DOUBAO_API_KEY,
-      baseUrl: DOUBAO_BASE_URL
-    };
-  }
-  return {
-    provider: 'deepseek',
-    model: String(modelName || '').trim() || DEEPSEEK_MODEL,
-    apiKey: DEEPSEEK_API_KEY,
-    baseUrl: DEEPSEEK_BASE_URL
-  };
-}
+// resolveModelProvider / loadTenantAiConfig / getLLMClientConfig → domains/ai/*
 
 const _isProd = String(process.env.NODE_ENV || '').trim() === 'production';
 const LARK_APP_ID = process.env.LARK_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : '');
@@ -1791,377 +1662,32 @@ async function notifyAutonomousDataTaskOwner(task) {
   }
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isRetryableLLMError(err) {
-  const status = Number(err?.response?.status || 0);
-  if ([408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 524].includes(status)) return true;
-  const code = String(err?.code || '').toLowerCase();
-  if (['econnreset', 'etimedout', 'eai_again', 'enotfound', 'ecanceled'].includes(code)) return true;
-  const msg = String(err?.message || '').toLowerCase();
-  return (
-    msg.includes('timeout') ||
-    msg.includes('socket hang up') ||
-    msg.includes('network error') ||
-    msg.includes('bad record mac') ||
-    msg.includes('incomplete envelope') ||
-    msg.includes('tls')
-  );
-}
+// sleep / isRetryableLLMError → domains/ai/llm-provider-helpers.js
 
 // ── LLM Bridge for data-executor (避免循环依赖，延迟注入) ──
-// 注意：此行必须在 callLLM 定义之后，利用函数提升不适用于表达式，
-// 所以用 setTimeout(0) 延迟注入，等模块完全加载后再绑定
 setTimeout(() => { try { setCallLLMBridge(callLLM); } catch (_) { /* ignore */ } }, 0);
 
-// ── 租户自定义AI模型：解析+短TTL缓存，DB/未配置时静默回退全局默认，不影响任何现有行为 ──
-const _tenantLlmConfigCache = new Map(); // tenantId -> { value, at }
-const TENANT_LLM_CONFIG_TTL_MS = 30_000;
-
+// ── Tenant LLM config cache + callLLM / vision → domains/ai/* (wired at bottom) ──
+let _invalidateTenantLlmConfigCache;
 export function invalidateTenantLlmConfigCache(tenantId) {
-  if (tenantId) _tenantLlmConfigCache.delete(String(tenantId).trim());
-  else _tenantLlmConfigCache.clear();
+  return _invalidateTenantLlmConfigCache(tenantId);
 }
 
-async function resolveTenantLlmConfig(tenantId) {
-  const id = String(tenantId || '').trim();
-  if (!id) return null;
-  const cached = _tenantLlmConfigCache.get(id);
-  if (cached && Date.now() - cached.at < TENANT_LLM_CONFIG_TTL_MS) return cached.value;
-  const encKey = String(process.env.TENANT_INTEGRATION_ENCRYPTION_KEY || '').trim();
-  if (!encKey) return null;
-  let value = null;
-  try {
-    value = await getTenantAiModelConfig(pool(), id, encKey);
-  } catch (e) {
-    value = null;
-  }
-  _tenantLlmConfigCache.set(id, { value, at: Date.now() });
-  return value;
-}
-
+let _callLLM;
 export async function callLLM(messages, options = {}) {
-  const platformQuality = options.platformQuality === true;
-  if (!isExternalEnabled() && !(platformQuality && isAiQualityExternalEnabled())) {
-    return { ok: false, error: 'external_disabled', content: '' };
-  }
-  const role = String(options.role || '').trim();
-  const purpose = String(options.purpose || 'reasoning').trim();
-  const tier = role ? getModelTier(role) : '';
-  const tierModel = role ? getModelForRole(role, purpose) : '';
-  const tenantId = String(options.tenantId || tenantContext.getStore() || '').trim();
-  const tenantLlmConfig = !platformQuality && tenantId ? await resolveTenantLlmConfig(tenantId) : null;
-  const tenantModels = Array.isArray(tenantLlmConfig?.models) ? tenantLlmConfig.models : [];
-  const selectedModel = String(platformQuality ? AI_QUALITY_LLM_MODEL : (options.model || tenantModels[0]?.model || tierModel || QWEN_MODEL)).trim() || QWEN_MODEL;
-  const cfg = getLLMClientConfig(selectedModel, platformQuality
-    ? { forceProvider: AI_QUALITY_LLM_PROVIDER }
-    : (tenantModels[0]?.provider ? { forceProvider: tenantModels[0].provider } : {}));
-  if (platformQuality) {
-    cfg.apiKey = AI_QUALITY_LLM_API_KEY;
-    cfg.baseUrl = AI_QUALITY_LLM_BASE_URL;
-  }
-  const model = cfg.model;
-  const apiKey = platformQuality ? AI_QUALITY_LLM_API_KEY : (tenantModels[0]?.api_key || cfg.apiKey);
-  if (!apiKey) return { ok: false, error: 'no_api_key', content: '' };
-
-  const budgetExceeded = !!(tier && isTierBudgetExceeded(tier));
-  const defaultTemp = role ? getTemperatureForRole(role) : 0.1;
-  const requestedTemp = Number(options.temperature ?? defaultTemp);
-  const temperature = Number.isFinite(requestedTemp)
-    ? (budgetExceeded ? Math.min(0.05, requestedTemp) : requestedTemp)
-    : (budgetExceeded ? 0 : 0.1);
-  const roleMaxTokens = role ? getMaxTokensForRole(role) : 1500;
-  // Accept both max_tokens (snake_case) and maxTokens (camelCase) for compatibility
-  const requestedMax = Number(options.max_tokens ?? options.maxTokens ?? roleMaxTokens);
-  const maxTokens = Number.isFinite(requestedMax)
-    ? (budgetExceeded ? Math.max(256, Math.min(600, requestedMax)) : requestedMax)
-    : (budgetExceeded ? 512 : 1500);
-  
-  // 生成缓存键
-  const cacheKey = `${tenantId || '__platform__'}:${model}:${JSON.stringify(messages.slice(-2))}:${temperature}:${purpose}:${role}`;
-  
-  // 检查缓存
-  const cachedResponse = getCachedResponse(cacheKey);
-  if (cachedResponse && !options.skipCache) {
-    return { ok: true, content: cachedResponse, cached: true };
-  }
-  
-  const startTime = Date.now();
-  _performanceMetrics.totalCalls++;
-  
-  // ── Provider 级别自动降级：primary → fallback ──
-  // 租户配置了2-3个模型时，按其数组顺序逐个降级(第1个失败/不健康->试第2个->试第3个)，
-  // 全部试完仍不行才落到平台全局默认链路兜底，不会让租户的请求彻底失败。
-  const hasTools = !!(options.tools && options.tools.length > 0);
-  const tenantChain = tenantModels.map((m) => ({ provider: m.provider, model: m.model, apiKeyOverride: m.api_key || null }));
-  const fallbackChain = platformQuality
-    ? [{ provider: AI_QUALITY_LLM_PROVIDER, model: AI_QUALITY_LLM_MODEL, apiKeyOverride: AI_QUALITY_LLM_API_KEY, baseUrlOverride: AI_QUALITY_LLM_BASE_URL }]
-    : hasTools
-    ? [{ provider: resolveModelProvider(model), model }]
-    : (tenantChain.length ? [...tenantChain, ...getTextFallbackChain(model)] : getTextFallbackChain(model));
-  let usedModel = model;
-  let usedProvider = resolveModelProvider(model);
-
-  for (const candidate of fallbackChain) {
-    if (!isProviderHealthy(candidate.provider)) {
-      log.info(`[LLM-FALLBACK] Skipping unhealthy provider: ${candidate.provider}`);
-      continue;
-    }
-    const fbCfg = getLLMClientConfig(candidate.model, candidate.provider ? { forceProvider: candidate.provider } : {});
-    if (candidate.apiKeyOverride) fbCfg.apiKey = candidate.apiKeyOverride;
-    if (candidate.baseUrlOverride) fbCfg.baseUrl = candidate.baseUrlOverride;
-    if (!fbCfg.apiKey) continue;
-
-    const payload = {
-      model: fbCfg.model,
-      messages: maskLLMMessages(messages),
-      temperature,
-      max_tokens: maxTokens,
-      top_p: budgetExceeded ? 0.7 : 0.9,
-      frequency_penalty: 0.1,
-      presence_penalty: 0.1
-    };
-    if (hasTools) {
-      payload.tools = options.tools;
-      if (options.tool_choice) payload.tool_choice = options.tool_choice;
-    }
-
-    const maxAttempts = candidate.provider === usedProvider ? 2 : 1;
-    let resp = null;
-    let lastErr = null;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        resp = await axios.post(
-          `${fbCfg.baseUrl}/chat/completions`,
-          payload,
-          {
-            headers: { 'Authorization': `Bearer ${fbCfg.apiKey}`, 'Content-Type': 'application/json' },
-            timeout: Number(options.timeout) > 0 ? Number(options.timeout) : 60000
-          }
-        );
-        break;
-      } catch (e) {
-        lastErr = e;
-        if (attempt < maxAttempts && isRetryableLLMError(e)) {
-          const waitMs = 600 * attempt;
-          log.warn(`[LLM-FALLBACK] ${candidate.provider} transient error (attempt ${attempt}/${maxAttempts}), retry in ${waitMs}ms:`, e?.message || e);
-          await sleep(waitMs);
-          continue;
-        }
-      }
-    }
-
-    if (resp) {
-      markProviderOk(candidate.provider);
-      usedModel = fbCfg.model;
-      usedProvider = candidate.provider;
-
-      const messageObj = resp.data?.choices?.[0]?.message || {};
-      let content = messageObj.content || '';
-      try {
-        content = await sanitizeLLMOutputWithAudit(pool(), content, { operatorRole: role || null });
-      } catch (e) {
-        content = sanitizeLLMOutput(content);
-      }
-      const responseTime = Date.now() - startTime;
-
-      _performanceMetrics.avgResponseTime =
-        (_performanceMetrics.avgResponseTime * (_performanceMetrics.totalCalls - 1) + responseTime) /
-        _performanceMetrics.totalCalls;
-
-      if (!options.skipCache && content && !messageObj.tool_calls) {
-        setCachedResponse(cacheKey, content);
-      }
-      if (tier && options.trackTier === true) {
-        try { trackLLMCall(tier, Number(resp.data?.usage?.total_tokens || 0)); } catch (e) { /* ignore */ }
-      }
-
-      trackLLMResult(true);
-      const isFallback = candidate.provider !== resolveModelProvider(model);
-      if (isFallback) log.info(`[LLM-FALLBACK] ✅ Succeeded via fallback: ${candidate.provider}/${fbCfg.model} (primary was ${resolveModelProvider(model)}/${model})`);
-      return { ok: true, content, message: messageObj, raw: resp.data, responseTime, budgetExceeded, fallbackUsed: isFallback ? candidate.provider : undefined, actualModel: usedModel };
-    }
-
-    markProviderFail(candidate.provider);
-    log.warn(`[LLM-FALLBACK] ❌ Provider ${candidate.provider}/${fbCfg.model} failed: ${lastErr?.message || 'unknown'}`);
-  }
-
-  _performanceMetrics.errorCount++;
-  trackLLMResult(false);
-  log.error('[agents] callLLM ALL providers failed for model chain:', fallbackChain.map(c => c.provider).join(' → '));
-  return { ok: false, error: 'all_providers_failed', content: '', providerHealth: getProviderHealthStatus() };
+  return _callLLM(messages, options);
 }
 
+let _callVisionLLM;
 export async function callVisionLLM(imageUrl, prompt, opts = {}) {
-  const tenantCfg = await loadTenantAiConfig('vision_scoring');
-  const model = tenantCfg ? tenantCfg.model : getOpsVisionModel();
-  const cfg = tenantCfg || getLLMClientConfig(model, { forceProvider: 'doubao' });
-  const apiKey = cfg.apiKey;
-  if (!apiKey) return { ok: false, error: 'no_api_key', content: '' };
-  const maxTokens = Math.max(256, Math.min(16384, Number(opts.maxTokens ?? opts.max_tokens ?? 1500)));
-  try {
-    const content = [];
-    if (Array.isArray(imageUrl)) {
-      for (const item of imageUrl) {
-        if (!item || typeof item !== 'object') continue;
-        if (item.type === 'text') {
-          content.push({ type: 'text', text: String(item.text || '').trim() });
-        } else if (item.type === 'image' && item.image_url) {
-          content.push({ type: 'image_url', image_url: { url: String(item.image_url) } });
-        } else if (item.type === 'image_url') {
-          const url = typeof item.image_url === 'string' ? item.image_url : item.image_url?.url;
-          if (url) content.push({ type: 'image_url', image_url: { url: String(url) } });
-        }
-      }
-    } else {
-      const imagePath = String(imageUrl || '').trim();
-      let imageContent;
-      if (imagePath.startsWith('data:') || imagePath.startsWith('http')) {
-        imageContent = { type: 'image_url', image_url: { url: imagePath } };
-      } else {
-        const buf = fs.readFileSync(imagePath);
-        const b64 = buf.toString('base64');
-        const ext = path.extname(imagePath).replace('.', '') || 'jpeg';
-        imageContent = { type: 'image_url', image_url: { url: `data:image/${ext};base64,${b64}` } };
-      }
-      content.push(imageContent);
-      if (prompt) content.push({ type: 'text', text: String(prompt) });
-    }
-
-    if (!content.length && prompt) content.push({ type: 'text', text: String(prompt) });
-    if (!content.length) return { ok: false, error: 'invalid_vision_input', content: '' };
-
-    let resp = null;
-    let lastErr = null;
-    const maxAttempts = 2;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        resp = await axios.post(
-          `${cfg.baseUrl}/chat/completions`,
-          {
-            model: cfg.model,
-            messages: [{ role: 'user', content }],
-            temperature: 0.2, max_tokens: maxTokens
-          },
-          { headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 90000 }
-        );
-        break;
-      } catch (e) {
-        lastErr = e;
-        if (attempt < maxAttempts && isRetryableLLMError(e)) {
-          const waitMs = 800 * attempt;
-          log.warn(`[agents] callVisionLLM transient error (attempt ${attempt}/${maxAttempts}), retry in ${waitMs}ms:`, e?.message || e);
-          await sleep(waitMs);
-          continue;
-        }
-      }
-    }
-    if (!resp) throw lastErr || new Error('vision_request_failed');
-    trackLLMResult(true);
-    return { ok: true, content: resp.data?.choices?.[0]?.message?.content || '', raw: resp.data };
-  } catch (e) {
-    trackLLMResult(false);
-    log.error('[agents] callVisionLLM error:', e?.message || e);
-    return { ok: false, error: String(e?.message || e), content: '' };
-  }
+  return _callVisionLLM(imageUrl, prompt, opts);
 }
 
+let _callVisionLLMVideo;
 export async function callVisionLLMVideo(videoUrl, prompt, opts = {}) {
-  // 租户自带 AI（通用 OpenAI 兼容端点）不支持 DashScope 专有的原生视频分析格式；
-  // 直接跳过，让调用方走已有的"抽帧再走 callVisionLLM"回退路径（那条路径已接入租户配置）。
-  if (await loadTenantAiConfig('vision_scoring')) {
-    return { ok: false, error: 'tenant_custom_ai_no_native_video', content: '' };
-  }
-  const apiKey = process.env.QWEN_API_KEY;
-  if (!apiKey) {
-    return { ok: false, error: 'no_qwen_api_key', content: '' };
-  }
-  if (!videoUrl) {
-    return { ok: false, error: 'no_video_url', content: '' };
-  }
-  const maxTokens = Math.max(256, Math.min(8192, Number(opts.maxTokens ?? opts.max_tokens ?? 3000)));
-
-  // Try native DashScope multimodal API (supports full video analysis)
-  try {
-    const resp = await axios.post(
-      'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
-      {
-        model: 'qwen-vl-max',
-        input: {
-          messages: [{
-            role: 'user',
-            content: [
-              { video: String(videoUrl) },
-              { text: String(prompt) }
-            ]
-          }]
-        },
-        parameters: { max_tokens: maxTokens, temperature: 0.2 }
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 300000
-      }
-    );
-    const output = resp.data?.output;
-    let content = '';
-    if (output) {
-      const msg = output.choices?.[0]?.message;
-      if (Array.isArray(msg?.content)) {
-        content = msg.content.map(c => c.text || '').join('').trim();
-      } else if (typeof msg?.content === 'string') {
-        content = msg.content;
-      }
-    }
-    trackLLMResult(true);
-    return { ok: true, content, raw: resp.data };
-  } catch (e) {
-    trackLLMResult(false);
-    log.error('[agents] callVisionLLMVideo error (native API):', e?.message);
-  }
-
-  // Fallback: try compatible API with video_url
-  try {
-    const cfg = getLLMClientConfig('qwen-vl-max', { forceProvider: 'doubao' });
-    const resp = await axios.post(
-      `${cfg.baseUrl}/chat/completions`,
-      {
-        model: cfg.model,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'video_url', video_url: { url: String(videoUrl) } },
-            { type: 'text', text: String(prompt) }
-          ]
-        }],
-        max_tokens: maxTokens,
-        temperature: 0.2
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${cfg.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 300000
-      }
-    );
-    trackLLMResult(true);
-    return {
-      ok: true,
-      content: resp.data?.choices?.[0]?.message?.content || '',
-      raw: resp.data
-    };
-  } catch (e) {
-    trackLLMResult(false);
-    log.error('[agents] callVisionLLMVideo error (compatible API):', e?.message);
-    return { ok: false, error: String(e?.message || e), content: '' };
-  }
+  return _callVisionLLMVideo(videoUrl, prompt, opts);
 }
+
 
 async function getEmployeePositionForKb(username) {
   const u = String(username || '').trim().toLowerCase();
@@ -7181,6 +6707,55 @@ _runBiFunctionTool = createRunBiFunctionTool({
   inDateRangeInclusive,
   loadUnifiedTableVisitRowsByStore,
 });
+
+// Wave P2: LLM client cluster → domains/ai/*
+{
+  const tenantLlm = createTenantLlmConfigCache({
+    pool,
+    getTenantAiModelConfig,
+  });
+  _invalidateTenantLlmConfigCache = tenantLlm.invalidateTenantLlmConfigCache;
+
+  const loadTenantAiConfig = createLoadTenantAiConfig({
+    resolveTenantIdDefault,
+    agentPool,
+  });
+
+  _callLLM = createCallLLM({
+    isExternalEnabled,
+    isAiQualityExternalEnabled,
+    getModelTier,
+    getModelForRole,
+    getTemperatureForRole,
+    getMaxTokensForRole,
+    isTierBudgetExceeded,
+    tenantContext,
+    resolveTenantLlmConfig: tenantLlm.resolveTenantLlmConfig,
+    getCachedResponse,
+    setCachedResponse,
+    performanceMetrics: _performanceMetrics,
+    maskLLMMessages,
+    axios,
+    sanitizeLLMOutputWithAudit,
+    sanitizeLLMOutput,
+    pool,
+    trackLLMCall,
+    trackLLMResult,
+  });
+
+  _callVisionLLM = createCallVisionLLM({
+    loadTenantAiConfig,
+    getOpsVisionModel,
+    axios,
+    trackLLMResult,
+  });
+
+  _callVisionLLMVideo = createCallVisionLLMVideo({
+    loadTenantAiConfig,
+    axios,
+    trackLLMResult,
+  });
+}
 
 _tryHandleBiByFunctionCalling = createTryHandleBiByFunctionCalling({
   pool,
