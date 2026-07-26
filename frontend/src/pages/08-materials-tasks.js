@@ -2646,7 +2646,7 @@ ${String(text || '').slice(0, 9000)}`;
 
                         const searchKey = [username, name, store, dept, pos, level, manager, role, statusBadge, joinDate, phone, email, gender, birthday, salary, tenure].join(' ');
 
-                        const click = `try{this.classList.toggle('expanded')}catch(e){}`;
+                        const click = null; // data-click on card
                         const actions = `
                             <button class="btn btn-secondary" type="button" data-click="viewEmployee" data-arg="${escapeJsString(empKey)}" data-stop>查看</button>
                             ${isAdminUser() ? `<button class="btn btn-secondary" type="button" data-click="editEmployee" data-arg="${escapeJsString(empKey)}" data-stop>编辑</button>` : ''}
@@ -2656,7 +2656,7 @@ ${String(text || '').slice(0, 9000)}`;
 
                         const stCls = emp.status === 'active' ? 'st-active' : (emp.status === 'inactive' ? 'st-inactive' : 'st-pending');
                         return `
-                            <div class="emp-card" data-search="${escapeHtml(searchKey)}" onclick="${click}">
+                            <div class="emp-card" data-search="${escapeHtml(searchKey)}" data-click="hrmsToggleSelfClass" data-arg="expanded" data-arg-self data-click-self-only>
                                 <div class="emp-card-head">
                                     <div class="emp-card-name">${escapeHtml(name)}${newBadge}${coreTalentBadge}</div>
                                     <div class="emp-card-status ${stCls}">${escapeHtml(statusBadge)}</div>

@@ -3459,7 +3459,7 @@
                                     ${t.quiz_score !== null && t.quiz_score !== undefined ? ' &nbsp;·&nbsp; 测验 '+t.quiz_score+'分' : ''}
                                 </div>
                             </div>
-                            <button onclick="${btnDisabled ? '' : 'openTrainingSession('+t.topic_id+')'}"
+                            <button ${btnDisabled ? '' : 'data-click="hrmsOpenTrainingSession" data-arg="'+t.topic_id+'" data-arg-type="number"'}
                                 style="width:100%;padding:13px;border:none;border-top:1px solid var(--pf-line);background:${btnDisabled ? 'rgba(255,255,255,0.03)' : 'rgba(99,102,241,0.8)'};color:${btnDisabled ? 'rgba(255,255,255,0.3)' : '#fff'};font-size:14px;font-weight:600;cursor:${btnDisabled ? 'default' : 'pointer'};letter-spacing:.3px;">
                                 ${btnLabel}
                             </button>
@@ -3792,10 +3792,7 @@
             }).join('');
 
             const actionBtn = passed
-                ? `<button onclick="(function(){
-                        if('${data.next_status}'==='certified'){showTrainingCertifiedScreen();}
-                        else{showTrainingPracticeScreen();}
-                   })()" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(52,211,153,0.9),rgba(16,185,129,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
+                ? `<button data-click="hrmsTrainingQuizContinue" data-arg="${data.next_status}" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(52,211,153,0.9),rgba(16,185,129,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
                         🎉 继续
                    </button>`
                 : `<button data-click="startTrainingQuiz" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(99,102,241,0.9),rgba(139,92,246,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">

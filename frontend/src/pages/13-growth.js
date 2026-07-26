@@ -873,7 +873,7 @@
                         }
                         host.innerHTML = '<div style="font-size:12px;color:rgba(226,232,240,0.55);margin-bottom:8px;">来自最近POS清洗诊断 · 点击查看360档案</div>' + opsRows.slice(0, 80).map(function(c) {
                             var tags = (c.scene_tags || []).map(custSceneLabel).join('、') || custStageLabel(c.lifecycle_stage);
-                            return '<div onclick=\'openCustomer360(' + JSON.stringify(c).replace(/'/g, '&#39;') + ')\' style="cursor:pointer;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
+                            return '<div data-click="hrmsOpenJsonArg" data-arg="openCustomer360" data-arg2="' + encodeURIComponent(JSON.stringify(c)) + '" style="cursor:pointer;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
                                 + '<div style="display:flex;justify-content:space-between;gap:12px;">'
                                 + '<div style="color:#fff;font-weight:700;">' + escapeHtml(c.customer_id || '-') + ' · ' + escapeHtml(c.phone || '-') + '</div>'
                                 + '<div style="color:#38bdf8;">' + escapeHtml(tags) + '</div>'
@@ -1191,7 +1191,7 @@
                             return '<div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px;margin-bottom:6px;">'
                                 + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
                                 + '<span style="color:#fff;font-weight:600;font-size:13px;">' + escapeHtml(res.store_name || res.store_id || '-') + (effLabel ? ' <span style="font-size:10px;font-weight:700;color:' + effColor + ';background:rgba(255,255,255,.06);border-radius:5px;padding:2px 6px;margin-left:4px;">' + effLabel + '</span>' : '') + '</span>'
-                                + '<button onclick="openCampaignResultModal(' + c.id + ',' + res.id + ',\'' + escapeHtml(res.store_id || '') + '\',\'' + escapeHtml(res.store_name || '') + '\')" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.8);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">编辑</button>'
+                                + '<button data-click="openCampaignResultModal" data-arg="' + c.id + '" data-arg-type="number" data-arg2="' + res.id + '" data-arg2-type="number" data-arg3="' + escapeHtml(res.store_id || '') + '" data-arg4="' + escapeHtml(res.store_name || '') + '" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.8);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">编辑</button>'
                                 + '</div>'
                                 + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;">'
                                 + '<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#38bdf8;">' + (res.actual_conversion_count || 0) + '</div><div style="font-size:10px;color:var(--rep-muted);">到店</div></div>'
@@ -1217,7 +1217,7 @@
                         + (results.length ? '<div style="font-size:12px;color:#22c55e;margin-top:4px;">✅ ' + results.length + ' 家门店已复盘' + (totalRevenue ? '  ·  总收入 ' + fmtCustMoney(totalRevenue) : '') + (totalConv ? '  ·  总到店 ' + totalConv + ' 人' : '') + '</div>' : '')
                         + '</div>'
                         + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">'
-                        + '<button onclick="openCreateCampaignModal(' + JSON.stringify(c).replace(/\\/g,'\\\\').replace(/'/g,'&#39;').replace(/"/g,'&quot;') + ')" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.9);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">✏️ 编辑</button>'
+                        + '<button data-click="hrmsOpenJsonArg" data-arg="openCreateCampaignModal" data-arg2="' + encodeURIComponent(JSON.stringify(c)) + '" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.9);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">✏️ 编辑</button>'
                         + '<button data-click="openCampaignResultModal" data-arg="' + c.id + '" data-arg-type="number" style="border:none;background:rgba(56,189,248,.15);color:#38bdf8;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📊 复盘</button>'
                         + ((c.status === 'completed' && results.length) ? '<button data-click="openCampaignReportModal" data-arg="' + c.id + '" data-arg-type="number" style="border:none;background:rgba(201,169,106,.15);color:#c9a96a;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📄 评估报告</button>' : '')
                         + '</div>'
@@ -2393,7 +2393,7 @@
                         + '</div>'
                         + kpiHtml
                         + readyCopyHtml
-                        + (readyCopy ? '' : (function(){ var fullText = payload.execution_action || x.detail || ''; var eid = 'exp-' + key.replace(/[^a-z0-9]/gi,'_'); var isLong = fullText.length > 150; var preview = isLong ? fullText.slice(0,150) + '…' : fullText; return '<div style="margin-top:4px;color:rgba(226,232,240,0.6);line-height:1.6;">' + '<span id="' + eid + '-txt" style="white-space:pre-wrap;">' + escapeHtml(preview) + '</span>' + (isLong ? '<span id="' + eid + '-full" style="white-space:pre-wrap;display:none;">' + escapeHtml(fullText) + '</span>' + '<button onclick="event.stopPropagation();var t=document.getElementById(\'' + eid + '-txt\'),f=document.getElementById(\'' + eid + '-full\'),b=this;if(f.style.display===\'none\'){t.style.display=\'none\';f.style.display=\'\';b.textContent=\'收起\';}else{t.style.display=\'\';f.style.display=\'none\';b.textContent=\'展开全文\';}" style="margin-left:6px;padding:1px 8px;border:none;border-radius:6px;background:rgba(167,139,250,0.15);color:#a78bfa;font-size:10px;cursor:pointer;">展开全文</button>' : '') + '</div>'; })())
+                        + (readyCopy ? '' : (function(){ var fullText = payload.execution_action || x.detail || ''; var eid = 'exp-' + key.replace(/[^a-z0-9]/gi,'_'); var isLong = fullText.length > 150; var preview = isLong ? fullText.slice(0,150) + '…' : fullText; return '<div style="margin-top:4px;color:rgba(226,232,240,0.6);line-height:1.6;">' + '<span id="' + eid + '-txt" style="white-space:pre-wrap;">' + escapeHtml(preview) + '</span>' + (isLong ? '<span id="' + eid + '-full" style="white-space:pre-wrap;display:none;">' + escapeHtml(fullText) + '</span>' + '<button data-click="hrmsExpandCollapsePair" data-arg="' + eid + '-txt" data-arg2="' + eid + '-full" data-arg-self data-stop style="margin-left:6px;padding:1px 8px;border:none;border-radius:6px;background:rgba(167,139,250,0.15);color:#a78bfa;font-size:10px;cursor:pointer;">展开全文</button>' : '') + '</div>'; })())
                         + ocHtml
                         + '</div>';
                     var posterHtml;

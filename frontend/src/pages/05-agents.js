@@ -1190,7 +1190,7 @@
                             </div>
                             <div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">${escapeHtml(w.period)} · ${escapeHtml(w.store)}</div>
                             ${dedLines ? `<div style="font-size:12px;color:#fb923c;margin-bottom:4px;">${dedLines}</div>` : ''}
-                            ${inv ? '<div style="font-size:12px;color:#ef4444;font-weight:600;">已失效</div>' : `<button onclick="invalidatePerformanceRecord('agent_scores_weekly','${escapeHtml(String(w.id))}','${escapeHtml(w.username)}','${escapeHtml(w.store || '')}','${escapeHtml(period)}')" style="margin-top:6px;font-size:12px;padding:4px 12px;border-radius:6px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);cursor:pointer;">标记失效</button>`}
+                            ${inv ? '<div style="font-size:12px;color:#ef4444;font-weight:600;">已失效</div>' : `<button data-click="invalidatePerformanceRecord" data-arg="agent_scores_weekly" data-arg2="${escapeHtml(String(w.id))}" data-arg3="${escapeHtml(w.username)}" data-arg4="${escapeHtml(w.store || '')}" data-arg5="${escapeHtml(period)}" style="margin-top:6px;font-size:12px;padding:4px 12px;border-radius:6px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);cursor:pointer;">标记失效</button>`}
                         </div>`;
                     }).join('');
                 }
@@ -1243,7 +1243,7 @@
                             </div>
                             <div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">${escapeHtml(f.title || f.category || '')}</div>
                             <div style="font-size:11px;color:#64748b;margin-bottom:4px;">${dt} · ${escapeHtml(f.store || '')}</div>
-                            ${inv ? '<div style="font-size:12px;color:#ef4444;font-weight:600;">已失效</div>' : `<button onclick="invalidatePerformanceRecord('master_tasks_filing','${escapeHtml(f.task_id)}','${escapeHtml(f.assignee_username || '')}','${escapeHtml(f.store || '')}','${period}')" style="margin-top:6px;font-size:12px;padding:4px 12px;border-radius:6px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);cursor:pointer;">标记失效</button>`}
+                            ${inv ? '<div style="font-size:12px;color:#ef4444;font-weight:600;">已失效</div>' : `<button data-click="invalidatePerformanceRecord" data-arg="master_tasks_filing" data-arg2="${escapeHtml(f.task_id)}" data-arg3="${escapeHtml(f.assignee_username || '')}" data-arg4="${escapeHtml(f.store || '')}" data-arg5="${period}" style="margin-top:6px;font-size:12px;padding:4px 12px;border-radius:6px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);cursor:pointer;">标记失效</button>`}
                         </div>`;
                     }).join('');
                 }

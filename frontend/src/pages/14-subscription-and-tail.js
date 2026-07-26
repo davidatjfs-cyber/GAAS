@@ -888,8 +888,8 @@
                     + '<div style="margin-top:5px;"><span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(56,189,248,0.14);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);">' + storeLabel + '</span></div>'
                     + '<div style="font-size:12px;color:rgba(226,232,240,0.66);margin-top:6px;line-height:1.55;">' + (a.message || '').slice(0, 120) + '</div>'
                     + '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'
-                    + '<button onclick="alertActionRecall(\'' + storeId + '\',\'' + (a.alert_key || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;border-radius:6px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:11px;"> 发送召回券</button>'
-                    + '<button data-click="alertActionDismiss" data-arg="' + (a.alert_key || '').replace(/'/g, "\\'") + '" style="padding:4px 10px;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;font-size:11px;">✅ 标记已处理</button>'
+                    + '<button data-click="alertActionRecall" data-arg="' + storeId + '" data-arg2="' + String(a.alert_key || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="padding:4px 10px;border-radius:6px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:11px;"> 发送召回券</button>'
+                    + '<button data-click="alertActionDismiss" data-arg="' + String(a.alert_key || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="padding:4px 10px;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;font-size:11px;">✅ 标记已处理</button>'
                     + '</div></div>';
             }).join('');
         }
@@ -1793,7 +1793,7 @@
             + '<div style="color:rgba(226,232,240,0.5);margin-top:3px;">' + escapeHtml(growthChannelLabel(t.channel_key || '-')) + (t.store_id ? ' · ' + escapeHtml(growthStoreName(t.store_id)) : '') + '</div>'
             + (t.content_brief ? '<div style="color:rgba(226,232,240,0.42);margin-top:4px;line-height:1.5;">' + escapeHtml(String(t.content_brief).slice(0, 56)) + '</div>' : '')
             + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">'
-            + '<button onclick="copyPublicTaskText(' + JSON.stringify(String(t.copy_text || '')) + ')" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(99,102,241,0.18);color:#c4b5fd;cursor:pointer;font-size:11px;">复制文案</button>'
+            + '<button data-click="copyPublicTaskText" data-arg="' + String(t.copy_text || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(99,102,241,0.18);color:#c4b5fd;cursor:pointer;font-size:11px;">复制文案</button>'
             + (t.poster_url ? '<button data-click="hrmsWindowOpen" data-arg="' + String(t.poster_url || '') + '" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(14,165,233,0.18);color:#7dd3fc;cursor:pointer;font-size:11px;">打开海报</button>' : '')
             + '</div>'
             + '</div>';
@@ -2650,7 +2650,7 @@
               ">${_punchCountdownSecs}</div>`;
           } else {
             btnHtml = `
-              <button onclick="startStepCountdown('${dishEsc}','${s.step_seq}','${actEsc}','${station}','${store}','${scheduleEsc}')"
+              <button data-click="startStepCountdown" data-arg="${dishEsc}" data-arg2="${s.step_seq}" data-arg3="${actEsc}" data-arg4="${station}" data-arg5="${store}" data-arg6="${scheduleEsc}"
                 style="flex-shrink:0;height:40px;padding:0 16px;border-radius:9px;border:none;
                        background:linear-gradient(135deg,#6366f1,#4f46e5);
                        color:#fff;font-size:13px;font-weight:600;cursor:pointer;
@@ -2937,7 +2937,7 @@
                 ${m.is_prep ? `<div class="kitchen-mapping-card__meta">类型：预制料 / 半成品任务</div>` : ''}
               </div>
               <div class="kitchen-mapping-card__actions">
-                <button class="btn btn-secondary" type="button" onclick='kitchenEditMappingFromJson("${encodeURIComponent(JSON.stringify(m)).replace(/"/g, '&quot;')}")' style="font-size:12px;white-space:nowrap;">编辑</button>
+                <button class="btn btn-secondary" type="button" data-click="hrmsKitchenEditMapping" data-arg="${encodeURIComponent(JSON.stringify(m)).replace(/"/g, '&quot;')}" style="font-size:12px;white-space:nowrap;">编辑</button>
                 <button class="btn btn-secondary" type="button" data-click="kitchenRemoveMapping" data-arg="${m.id}" style="font-size:12px;white-space:nowrap;">删除</button>
               </div>
             </div>
@@ -3149,7 +3149,7 @@
       el.innerHTML = _categoryCache.map(c => `
         <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:20px;font-size:12px;color:var(--rep-text);">
           ${c.name}
-          <button type="button" onclick="deleteCategoryItem(${c.id},'${c.name.replace(/'/g,"\\'")}',this)"
+          <button type="button" data-click="deleteCategoryItem" data-arg="${c.id}" data-arg-type="number" data-arg2="${String(c.name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" data-arg-self
             style="background:none;border:none;color:#f87171;cursor:pointer;font-size:13px;line-height:1;padding:0;">×</button>
         </span>`).join('');
     }
@@ -3252,7 +3252,7 @@
                   </div>
                   <button type="button" data-click="toggleIngredientEdit" data-arg="${i.id}" data-arg-type="number"
                     style="flex-shrink:0;font-size:11px;padding:4px 9px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);border-radius:6px;color:#a5b4fc;cursor:pointer;">编辑</button>
-                  <button type="button" onclick="deleteIngredientLibItem(${i.id},'${i.name.replace(/'/g,"\\'")}',this)"
+                  <button type="button" data-click="deleteIngredientLibItem" data-arg="${i.id}" data-arg-type="number" data-arg2="${String(i.name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" data-arg-self
                     style="flex-shrink:0;font-size:11px;padding:4px 9px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:6px;color:#f87171;cursor:pointer;">删</button>
                 </div>
                 <!-- 编辑行（默认隐藏）-->
@@ -3456,13 +3456,13 @@
             <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
               ${r.status !== 'active' ? `<button type="button" data-click="approveRecipe" data-arg="${r.id}" data-arg-type="number" data-arg-self="1"
                 style="font-size:12px;padding:6px 12px;background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.35);border-radius:8px;color:#86efac;cursor:pointer;">✓ 生效</button>` : ''}
-              <button type="button" onclick="downloadRecipePdf(${r.id},'${r.dish_name.replace(/'/g,"\\'")}')"
+              <button type="button" data-click="downloadRecipePdf" data-arg="${r.id}" data-arg-type="number" data-arg2="${String(r.dish_name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"
                 style="font-size:12px;padding:6px 12px;background:rgba(148,163,184,0.1);border:1px solid rgba(148,163,184,0.25);border-radius:8px;color:#94a3b8;cursor:pointer;">⬇ PDF</button>
-              <button type="button" onclick="openRecipeStepViewer(${r.id},'${r.dish_name.replace(/'/g,"\\'")}')"
+              <button type="button" data-click="openRecipeStepViewer" data-arg="${r.id}" data-arg-type="number" data-arg2="${String(r.dish_name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"
                 style="font-size:12px;padding:6px 12px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);border-radius:8px;color:#fcd34d;cursor:pointer;">👁 工艺</button>
               <button type="button" data-click="openRecipeEditor" data-arg="${r.id}" data-arg-type="number"
                 style="font-size:12px;padding:6px 12px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);border-radius:8px;color:#a5b4fc;cursor:pointer;">编辑</button>
-              <button type="button" onclick="confirmDeleteRecipe(${r.id},'${r.dish_name.replace(/'/g,"\\'")}',this)"
+              <button type="button" data-click="confirmDeleteRecipe" data-arg="${r.id}" data-arg-type="number" data-arg2="${String(r.dish_name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" data-arg-self
                 style="font-size:12px;padding:6px 10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;color:#f87171;cursor:pointer;">删</button>
             </div>
           </div>`).join('');

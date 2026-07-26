@@ -1864,7 +1864,7 @@
                 if (actions.length > 0) {
                     html += '<div class="mobile-card-actions">';
                     actions.forEach(action => {
-                        html += `<button class="btn btn-sm" onclick="${action.onclick}">${action.label}</button>`;
+                        html += `<button class="btn btn-sm" type="button" data-click="${action.fn || 'hrmsNoop'}">${action.label}</button>`;
                     });
                     html += '</div>';
                 }
@@ -1879,7 +1879,7 @@
                 
                 let swipeActions = '';
                 actions.forEach(action => {
-                    swipeActions += `<div class="swipe-action ${action.type}" onclick="${action.onclick}">${action.label}</div>`;
+                    swipeActions += `<div class="swipe-action ${action.type}" data-click="${action.fn || 'hrmsNoop'}">${action.label}</div>`;
                 });
                 
                 container.innerHTML = `
