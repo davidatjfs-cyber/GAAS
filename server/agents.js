@@ -4501,17 +4501,6 @@ async function loadUnifiedTableVisitRowsByStore(store, startDate, endDate) {
   }
 }
 
-function getMonthlyTarget(state, ym, store) {
-  const settings = state?.settings && typeof state.settings === 'object' ? state.settings : {};
-  const monthlyTargets = Array.isArray(settings?.monthlyTargets)
-    ? settings.monthlyTargets
-    : (Array.isArray(state?.monthlyTargets) ? state.monthlyTargets : []);
-  return monthlyTargets.find((x) =>
-    String(x?.ym || x?.month || '').trim() === ym &&
-    dailyReportRowMatches(store, x?.store)
-  ) || null;
-}
-
 function getActualRevenueFromHistoryRow(row) {
   let actual = Math.max(0, toNum(row?.actualRevenue, 0));
   let expected = Math.max(0, toNum(row?.expectedRevenue, 0));
@@ -4522,25 +4511,6 @@ function getActualRevenueFromHistoryRow(row) {
   if (actual > 0) return actual;
   const discount = Math.max(0, toNum(row?.totalDiscount, 0));
   return Math.max(0, expected - discount);
-}
-
-function daysInMonth(dateStr) {
-  const d = toDateOnly(dateStr);
-  if (!d) return 30;
-  const y = Number(d.slice(0, 4));
-  const m = Number(d.slice(5, 7));
-  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return 30;
-  return new Date(y, m, 0).getDate();
-}
-
-function isConsecutiveDate(prevDate, currDate) {
-  const p = toDateOnly(prevDate);
-  const c = toDateOnly(currDate);
-  if (!p || !c) return false;
-  const d1 = new Date(`${p}T00:00:00`).getTime();
-  const d2 = new Date(`${c}T00:00:00`).getTime();
-  if (!Number.isFinite(d1) || !Number.isFinite(d2)) return false;
-  return (d2 - d1) === 86400000;
 }
 
 function buildGrossProfileMap(profiles, store) {
