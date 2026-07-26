@@ -24,6 +24,8 @@ const serverRoot = path.resolve(__dirname, '..');
 const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'agents.js|DELETE FROM|agent_messages',
   'agents.js|INSERT INTO|agent_messages',
+  // Wave A1：KPI radar INSERT 从 agents.js runDataAuditor 迁出（agents.js 仍有其它 agent_messages INSERT）
+  'domains/agent-auditor/run-data-auditor.js|INSERT INTO|agent_messages',
   'agents.js|INSERT INTO|agent_scores',
   'agents.js|INSERT INTO|feishu_generic_records',
   'agents.js|INSERT INTO|feishu_users',
@@ -87,6 +89,7 @@ const REPATH_NOTES = [
   'index.js → services/feishu-bitable-schema-ensure.js | DELETE FROM|agent_messages',
   'performance-invalidation-api.js → domains/performance-invalidation/service.js | UPDATE|agent_scores',
   'agents.js → domains/agent-message/training-flow.js | INSERT INTO|master_tasks',
+  'agents.js → domains/agent-auditor/run-data-auditor.js | INSERT INTO|agent_messages',
 ];
 
 const OWNER = 'gaas';
