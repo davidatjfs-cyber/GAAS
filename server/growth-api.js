@@ -59,6 +59,8 @@ import { upsertCustomer as upsertCustomerImpl } from './domains/growth-customers
 import { autoBackfillSmsActions as autoBackfillSmsActionsImpl } from './domains/growth-customers/sms-backfill.js';
 import { backfillRedemptionAmounts as backfillRedemptionAmountsImpl } from './domains/growth-customers/redemption-backfill.js';
 import { createGrowthWecom } from './domains/growth-wecom/service.js';
+import { createStoredValueBitableReader } from './domains/growth-bitable/read-stored-value.js';
+export { bitText, bitNum, bitDateMs, bitPhone } from './domains/growth-bitable/helpers.js';
 import {
   loadSegmentPhoneSet,
   fetchGenericRuleCandidates,
@@ -307,57 +309,9 @@ export {
   clearStoreWecomTokenCache,
 };
 
-// 飞书多维表字段值解析(文本/数字/日期/电话)
-export function bitText(v) {
-  if (v == null) return '';
-  if (Array.isArray(v)) return v.map((x) => (x && (x.text || x.name)) || x).join(',');
-  if (typeof v === 'object') return String(v.text || v.name || '');
-  return String(v);
-}
-export function bitNum(v) {
-  if (v == null) return 0;
-  if (typeof v === 'object' && v.text != null) return Number(v.text) || 0;
-  const n = Number(v);
-  return isNaN(n) ? 0 : n;
-}
-export function bitDateMs(v) {
-  if (v == null) return 0;
-  if (typeof v === 'number') return v;
-  const n = Number(v);
-  if (!isNaN(n) && n > 1e10) return n; // epoch ms
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? 0 : d.getTime();
-}
-export function bitPhone(v) { return bitText(v).replace(/[^0-9]/g, ''); }
-
-// 用 BITABLE_TASK_RESP 飞书应用获取 tenant_access_token(该应用对储值客户表有读权限)
-async function getBitableTenantToken() {
-  const id = process.env.BITABLE_TASK_RESP_APP_ID;
-  const secret = process.env.BITABLE_TASK_RESP_APP_SECRET;
-  if (!id || !secret) throw new Error('bitable_app_not_configured');
-  const r = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ app_id: id, app_secret: secret })
-  });
-  const d = await r.json();
-  if (!d.tenant_access_token) throw new Error('bitable_token_failed:' + (d.code || '') + ' ' + (d.msg || ''));
-  return d.tenant_access_token;
-}
-// 分页读「储值客户」多维表全部记录
+const readStoredValueBitableRecordsImpl = createStoredValueBitableReader();
 export async function readStoredValueBitableRecords() {
-  const appToken = process.env.STORED_VALUE_BITABLE_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe';
-  const tableId = process.env.STORED_VALUE_BITABLE_TABLE_ID || 'tblvAcEjXHmEYQGZ';
-  const token = await getBitableTenantToken();
-  let all = [];
-  let pageToken = '';
-  for (let i = 0; i < 500; i++) {
-    const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records?page_size=500` + (pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : '');
-    const d = await (await fetch(url, { headers: { Authorization: 'Bearer ' + token } })).json();
-    if (d.code !== 0) throw new Error('bitable_read_failed:' + d.code + ' ' + d.msg);
-    all = all.concat((d.data && d.data.items) || []);
-    if (d.data && d.data.has_more && d.data.page_token) pageToken = d.data.page_token; else break;
-  }
-  return all;
+  return readStoredValueBitableRecordsImpl();
 }
 
 export async function executeGrowthActionRecord(pool, before, operator, extraPayload = {}, reason = '') {
