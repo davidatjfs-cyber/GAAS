@@ -183,3 +183,65 @@ test('predictForecast: missing_date (no LLM); estimateRevenue: missing_date', as
   assert.equal(revenue.ok, false);
   assert.equal(revenue.error, 'missing_date');
 });
+
+test('predictForecast: happy path orchestrates helpers and persists state', async () => {
+  let saved = null;
+  const result = await predictForecast(
+    baseCtx({
+      getSharedState: async () => ({
+        forecastCoreProducts: [{ store: '洪潮店', product: '招牌牛腩', targetQty: 10 }],
+        inventoryForecastPredictions: [],
+        inventoryForecastEvaluations: [],
+      }),
+      saveSharedState: async (s) => { saved = s; },
+      buildForecastProductAliasLookup: () => new Map(),
+      canonicalizeForecastRows: (rows) => rows,
+      computeSlotRevenueShare: () => ({ slotShare: 0.5, splitMode: 'history' }),
+      buildForecastCalibrationFactors: () => ({ globalFactor: 1, sampleCount: 0 }),
+      buildForecastByHeuristic: () => ({
+        predictions: [{ product: '招牌牛腩', qty: 8 }],
+        confidence: 0.75,
+        summary: '启发式',
+      }),
+      buildForecastByAI: async () => null,
+      applyForecastCalibration: (preds) => preds,
+      constrainPredictionsToHistory: (preds) => preds,
+      isExcludedForecastProduct: () => false,
+      resolveForecastProductName: (name) => ({ display: name, key: name }),
+      calcForecastAccuracyMetrics: () => ({
+        totalPredQty: 8,
+        totalActualQty: 7,
+        totalAbsError: 1,
+        totalAccuracy: 0.875,
+        mape: 0.125,
+        hitRate20: 1,
+        productCount: 1,
+        perProduct: [],
+        topDiffProducts: [],
+      }),
+      loadInventoryForecastHistoryFromSalesRaw: async ({ slot }) => (
+        slot
+          ? [{ date: '2026-07-24', productQuantities: { 招牌牛腩: 7 } }]
+          : [{ date: '2026-07-24' }]
+      ),
+    }),
+    {
+      username: 'admin',
+      role: 'admin',
+      body: {
+        store: '洪潮店',
+        bizType: 'dine_in',
+        slot: 'dinner',
+        date: '2026-07-24',
+        expectedRevenue: 2000,
+        topN: 10,
+      },
+    }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.store, '洪潮店');
+  assert.equal(result.source, 'heuristic');
+  assert.equal(result.historyCount, 1);
+  assert.ok(Array.isArray(result.predictions));
+  assert.ok(saved?.inventoryForecastPredictions?.length >= 1);
+});
