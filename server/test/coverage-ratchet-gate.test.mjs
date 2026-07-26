@@ -14,7 +14,7 @@ const serverRoot = path.resolve(__dirname, '..');
 const RATCHET_FLOOR = { lines: 59, branches: 66, functions: 62 };
 
 /** 合并棘轮历史地板：追平 CI 实测后抬升 */
-const MERGED_RATCHET_FLOOR = { lines: 57, branches: 68, functions: 53, minIndexJsLines: 48 };
+const MERGED_RATCHET_FLOOR = { lines: 62, branches: 68, functions: 61, minIndexJsLines: 48 };
 
 test('coverage-ratchet.json 只升不降（不低于已冻结地板）', () => {
   const ratchet = JSON.parse(
