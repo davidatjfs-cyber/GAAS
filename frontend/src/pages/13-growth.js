@@ -67,7 +67,7 @@
                         + '</div>'
                         + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
                         +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" data-click="editPaymentRule" data-arg="'+rk+'">编辑</button>'
-                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" onclick="togglePaymentRule(\''+rk+'\','+(rule.active?'false':'true')+')">'+(rule.active?'停用':'启用')+'</button>'
+                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" data-click="togglePaymentRule" data-arg="'+rk+'" data-arg2="'+(rule.active?'false':'true')+'">'+(rule.active?'停用':'启用')+'</button>'
                         +   '<button class="btn btn-secondary" type="button" style="font-size:12px;color:#ef4444;" data-click="deletePaymentRule" data-arg="'+rk+'">删除</button>'
                         + '</div></div>';
                 }).join('');
@@ -985,7 +985,7 @@
                     + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(t.title || '-') + '</b><span style="color:#38bdf8;">draft</span></div>'
                     + '<div style="color:rgba(226,232,240,.62);">责任：' + escapeHtml(t.ownerRole || '-') + ' · 到期：' + escapeHtml(String(t.dueDate || '').slice(0, 10)) + '</div>'
                     + '<div style="color:rgba(226,232,240,.5);">' + escapeHtml(t.expectedResult || '-') + '</div>'
-                    + '<div style="display:flex;gap:8px;margin-top:8px;"><button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" onclick="confirmCreateOntologyTask(decodeURIComponent(\'' + encoded + '\'), this)">确认创建任务</button><button class="rep-seg-btn" style="width:auto;padding:7px 12px;" onclick="this.closest(\'div\').innerHTML=\'<span style=&quot;color:var(--rep-muted)&quot;>已暂不处理</span>\'">暂不处理</button></div>'
+                    + '<div style="display:flex;gap:8px;margin-top:8px;"><button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" data-click="hrmsConfirmOntologyTask" data-arg="' + encoded + '" data-arg-self="1">确认创建任务</button><button class="rep-seg-btn" style="width:auto;padding:7px 12px;" data-click="hrmsDismissClosestInner" data-arg-self="1">暂不处理</button></div>'
                     + '</div>';
             }).join('');
             var review = report.previousActionReview || null;
@@ -1251,7 +1251,7 @@
             ov.innerHTML = '<div style="width:100%;max-width:600px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding:0 0 env(safe-area-inset-bottom,0);">'
                 + '<div style="position:sticky;top:0;background:#0f172a;border-bottom:1px solid rgba(255,255,255,.08);padding:16px 16px 12px;z-index:1;display:flex;justify-content:space-between;align-items:center;">'
                 + '<div style="font-size:17px;font-weight:900;color:#fff;">' + (isEdit ? '编辑活动' : '新建营销活动') + '</div>'
-                + '<button onclick="document.getElementById(\'campaign-modal-overlay\').remove()" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="campaign-modal-overlay" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
                 + '</div>'
                 + '<div style="padding:16px;">'
                 // 活动名称
@@ -1294,7 +1294,7 @@
                 + '<div style="margin-bottom:20px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">活动目标 / 预期效果</div><input id="cpm-goal" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:14px;box-sizing:border-box;" placeholder="如：带动复购50人 / 储值增加10万" value="' + escapeHtml(c.goal || '') + '"></div>'
                 // 底部按钮
                 + '<div style="display:flex;gap:10px;padding-bottom:16px;">'
-                + '<button onclick="submitCampaignForm(' + (isEdit ? c.id : 'null') + ')" style="flex:1;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">保存活动</button>'
+                + '<button data-click="submitCampaignForm" data-arg="' + (isEdit ? c.id : '') + '" style="flex:1;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">保存活动</button>'
                 + (isEdit ? '<button data-click="deleteCampaign" data-arg="' + c.id + '" data-arg-type="number" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:14px 18px;font-size:14px;cursor:pointer;">删除</button>' : '')
                 + '</div>'
                 + '</div>'
@@ -1378,7 +1378,7 @@
             ov.innerHTML = '<div style="width:100%;max-width:520px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom,0);">'
                 + '<div style="position:sticky;top:0;background:#0f172a;padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;z-index:1;">'
                 + '<div style="font-size:16px;font-weight:900;color:#fff;">' + (isEdit ? '编辑复盘' : '+ 添加门店复盘') + '</div>'
-                + '<button onclick="document.getElementById(\'result-modal-overlay\').remove()" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="result-modal-overlay" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
                 + '</div>'
                 + '<div style="padding:16px;">'
                 + (campaign.goal ? '<div style="background:rgba(201,169,106,.08);border:1px solid rgba(201,169,106,.25);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:#c9a96a;">🎯 活动目标：' + escapeHtml(campaign.goal) + '</div>' : '')
@@ -1401,7 +1401,7 @@
                 + '</div>'
                 + '<div style="margin-bottom:16px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;">活动效果评级</div><div style="display:flex;flex-wrap:wrap;gap:8px;">' + effectOpts + '</div></div>'
                 + '<div style="margin-bottom:16px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">复盘备注</div><textarea id="crm-note" style="' + iStyle + 'min-height:80px;resize:vertical;" placeholder="执行情况、问题点、改进建议…">' + escapeHtml(existing.result_note || '') + '</textarea></div>'
-                + '<button onclick="submitCampaignResult(' + campaignId + ',' + (resultId || 'null') + ')" style="width:100%;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;">保存复盘结果</button>'
+                + '<button data-click="submitCampaignResult" data-arg="' + campaignId + '" data-arg2="' + (resultId || '') + '" style="width:100%;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;">保存复盘结果</button>'
                 + '</div>'
                 + '</div>';
             ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
@@ -1486,7 +1486,7 @@
             ov.innerHTML = '<div style="width:100%;max-width:600px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom,0);">'
                 + '<div style="position:sticky;top:0;background:#0f172a;padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;z-index:1;">'
                 + '<div style="font-size:17px;font-weight:900;color:#fff;">活动评估报告</div>'
-                + '<button onclick="document.getElementById(\'report-modal-overlay\').remove()" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="report-modal-overlay" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
                 + '</div>'
                 + '<div style="padding:16px;">'
                 + '<div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:4px;">' + escapeHtml(c.title) + '</div>'
@@ -1744,7 +1744,7 @@
                         + ((winner === 'A' || winner === 'B')
                             ? (t.promoted_rule_key
                                 ? '<button class="rep-seg-btn" style="flex:1.4;opacity:0.6;cursor:default;" disabled>✅ ' + (isBound ? (winner === 'A' ? '已采用(维持当前)' : '已采用(挑战者)') : '已沉淀经验库') + '</button>'
-                                : '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1.4;" onclick="promoteGrowthAbTest(' + id + ',\'' + String(winner) + '\')">' + (isBound ? '🚀 采用胜者' : '📚 沉淀经验库') + '</button>')
+                                : '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1.4;" data-click="promoteGrowthAbTest" data-arg="' + id + '" data-arg2="' + String(winner) + '">' + (isBound ? '🚀 采用胜者' : '📚 沉淀经验库') + '</button>')
                             : '')
                         + '</div>'
                         + abResultFormHtml(id)
@@ -2375,7 +2375,7 @@
                         '<div style="margin-top:6px;padding:8px 10px;background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.18);border-radius:8px;">'
                         + '<div style="font-size:10px;color:#22c55e;font-weight:700;margin-bottom:4px;">📝 成品文案（可直接使用）</div>'
                         + '<div style="font-size:11px;color:rgba(226,232,240,0.85);line-height:1.6;white-space:pre-wrap;">' + escapeHtml(readyCopy) + '</div>'
-                        + '<button onclick="event.stopPropagation();copyReadyCopy(this)" data-copy="' + escapeHtml(readyCopy) + '" style="margin-top:6px;padding:3px 10px;border:none;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;font-size:10px;cursor:pointer;">📋 复制文案</button>'
+                        + '<button data-click="hrmsCopyReadyCopy" data-arg-self="1" data-stop data-copy="' + escapeHtml(readyCopy) + '" style="margin-top:6px;padding:3px 10px;border:none;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;font-size:10px;cursor:pointer;">📋 复制文案</button>'
                         + '</div>' : '';
                     var oc = payload.outcome_summary || null;
                     var ocHtml = (oc && oc.effectiveness_score != null) ?
@@ -2597,7 +2597,7 @@
                 + '<textarea id="rf-note" rows="2" placeholder="执行情况/复盘" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:14px;box-sizing:border-box;resize:vertical;">' + escapeHtml(payload.feedback_note || '') + '</textarea>'
                 + '<div style="display:flex;gap:8px;">'
                 + '<button data-click="submitResultFeedback" data-arg="' + actionKey + '" style="flex:1;padding:10px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-weight:700;cursor:pointer;">提交并打分</button>'
-                + '<button onclick="document.getElementById(\'result-feedback-overlay\').remove()" style="padding:10px 16px;border:none;border-radius:10px;background:rgba(255,255,255,0.08);color:#fff;cursor:pointer;">取消</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="result-feedback-overlay" style="padding:10px 16px;border:none;border-radius:10px;background:rgba(255,255,255,0.08);color:#fff;cursor:pointer;">取消</button>'
                 + '</div></div>';
             ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
             document.body.appendChild(ov);
@@ -2668,7 +2668,7 @@
             if (payload.poster_url || payload.output_url) {
                 host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.06);"><div style="font-size:12px;color:rgba(226,232,240,0.55);margin-bottom:8px;">来源海报</div><img src="' + escapeHtml(payload.poster_url || payload.output_url) + '" style="max-width:100%;max-height:320px;object-fit:contain;border-radius:8px;border:1px solid rgba(255,255,255,0.08);"></div>';
             } else if (x.status === 'proposed' && (actionType === 'send_voucher' || actionType === 'campaign_activate')) {
-                host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(245,158,11,0.06);border:1px dashed rgba(245,158,11,0.3);border-radius:10px;font-size:12px;color:#f59e0b;cursor:pointer;" onclick="closeActionDetailModal();openPosterPicker(\'' + key + '\')">🖼️ 尚未绑定海报 — 点击选择海报</div>';
+                host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(245,158,11,0.06);border:1px dashed rgba(245,158,11,0.3);border-radius:10px;font-size:12px;color:#f59e0b;cursor:pointer;" data-click="hrmsCloseActionOpenPoster" data-arg="' + key + '">🖼️ 尚未绑定海报 — 点击选择海报</div>';
             }
             var detailIsLlm = (payload.source === 'llm_campaign_autopilot') || !!payload.expected_kpi || !!payload.confidence_level;
             var execBtn = document.getElementById('growth-action-detail-execute');
@@ -2916,7 +2916,7 @@
                         + (imgUrl ? '<img src="' + escapeHtml(imgUrl) + '" style="width:100%;height:120px;object-fit:cover;border-bottom:1px solid rgba(255,255,255,0.06);">' : '<div style="width:100%;height:120px;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(226,232,240,0.3);">无预览</div>')
                         + '<div style="padding:6px 8px;font-size:11px;color:rgba(226,232,240,0.7);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">' + escapeHtml(title) + '</div>'
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);grid-column:1/-1;padding:20px;text-align:center;">暂无已生成海报，<span style="color:#38bdf8;cursor:pointer;" onclick="closePosterPicker();showGrowthTab(\'posters\')">去生成</span></div>';
+                }).join('') : '<div style="color:rgba(226,232,240,0.4);grid-column:1/-1;padding:20px;text-align:center;">暂无已生成海报，<span style="color:#38bdf8;cursor:pointer;" data-click="hrmsClosePosterShowGrowth">去生成</span></div>';
             } catch (e) {
                 host.innerHTML = '<div style="color:#ef4444;grid-column:1/-1;padding:20px;">加载失败：' + escapeHtml(e.message) + '</div>';
             }
@@ -3444,7 +3444,7 @@
                         +   '<span class="amr-foot-by">' + escapeHtml(approver) + '</span>'
                         +   '<div class="amr-foot-btns">'
                         +     (isSubscribe ? '<button type="button" class="amr-btn amr-btn--ghost" data-click="amEditSubscribeRule" data-arg="' + rk + '">编辑内容</button>' : '')
-                        +     '<button type="button" class="amr-btn amr-btn--ghost" onclick="amToggleEnabled(\'' + rk + '\',' + (rule.enabled ? 'true' : 'false') + ')">' + (rule.enabled ? '停用' : '启用') + '</button>'
+                        +     '<button type="button" class="amr-btn amr-btn--ghost" data-click="amToggleEnabled" data-arg="' + rk + '" data-arg2="' + (rule.enabled ? 'true' : 'false') + '">' + (rule.enabled ? '停用' : '启用') + '</button>'
                         +     (approved
                               ? '<button type="button" class="amr-btn amr-btn--ghost" data-click="amUnapprove" data-arg="' + rk + '">撤销审核</button>'
                               : '<button type="button" class="amr-btn" data-click="amApprove" data-arg="' + rk + '">审核通过 → 允许自动执行</button>')

@@ -3447,7 +3447,7 @@ ${ok
                             <div class="rep-pay-cell ${diffCellClass(r, m)}"><span class="k">${escapeHtml(monthTag(m))}</span><span class="v">${diffText(r, m)}</span></div>
                         `).join('');
                         const adjBtn = canAdjust
-                            ? `<div class="rep-pay-card__actions"><button class="btn btn-secondary" type="button" onclick="event.stopPropagation(); repAdjustLeaveBalance('${escapeJsString(String(r?.username || ''))}', '${escapeJsString(latestM)}', ${Number(r?.cumulativeLeaveDays || 0)})">调整累计假期</button></div>`
+                            ? `<div class="rep-pay-card__actions"><button class="btn btn-secondary" type="button" data-click="repAdjustLeaveBalance" data-arg="${escapeJsString(String(r?.username || ''))}" data-arg2="${escapeJsString(latestM)}" data-arg3="${Number(r?.cumulativeLeaveDays || 0)}" data-arg3-type="number" data-stop>调整累计假期</button></div>`
                             : '';
                         const personName = escapeHtml(String(r?.name || r?.username || ''));
                         const personMeta = escapeHtml(String(r?.username || '')) + ' · ' + escapeHtml(String(r?.store || '-')) + ' · ' + escapeHtml(String(r?.position || '-'));
@@ -3847,7 +3847,7 @@ ${ok
             }
             overlay.innerHTML = `
                 <div style="position:sticky;top:0;z-index:10;background:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e2e8f0;">
-                    <button onclick="document.getElementById('rep-pdf-overlay').style.display='none';" style="padding:8px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;font-size:14px;font-weight:700;cursor:pointer;">← 返回</button>
+                    <button data-click="hrmsHideById" data-arg="rep-pdf-overlay" style="padding:8px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;font-size:14px;font-weight:700;cursor:pointer;">← 返回</button>
                     <button data-click="print" style="padding:8px 16px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🖨 打印/PDF</button>
                 </div>
                 <style>@media print{#rep-pdf-overlay>div:first-child{display:none!important;}}</style>

@@ -1794,7 +1794,7 @@
             + (t.content_brief ? '<div style="color:rgba(226,232,240,0.42);margin-top:4px;line-height:1.5;">' + escapeHtml(String(t.content_brief).slice(0, 56)) + '</div>' : '')
             + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">'
             + '<button onclick="copyPublicTaskText(' + JSON.stringify(String(t.copy_text || '')) + ')" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(99,102,241,0.18);color:#c4b5fd;cursor:pointer;font-size:11px;">复制文案</button>'
-            + (t.poster_url ? '<button onclick="window.open(' + JSON.stringify(String(t.poster_url)) + ')" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(14,165,233,0.18);color:#7dd3fc;cursor:pointer;font-size:11px;">打开海报</button>' : '')
+            + (t.poster_url ? '<button data-click="hrmsWindowOpen" data-arg="' + String(t.poster_url || '') + '" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(14,165,233,0.18);color:#7dd3fc;cursor:pointer;font-size:11px;">打开海报</button>' : '')
             + '</div>'
             + '</div>';
         }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:16px;">暂无品宣任务</div>';
@@ -2200,7 +2200,7 @@
       lb.id = 'media-lightbox';
       lb.style.cssText = 'display:none;position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,0.92);align-items:center;justify-content:center;';
       lb.innerHTML = `
-        <button onclick="document.getElementById(\'media-lightbox\').style.display=\'none\'" style="position:absolute;top:16px;right:20px;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;line-height:1;">×</button>
+        <button data-click="hrmsHideById" data-arg="media-lightbox" style="position:absolute;top:16px;right:20px;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;line-height:1;">×</button>
         <img id="lightbox-img" src="" style="max-width:94vw;max-height:90vh;border-radius:10px;object-fit:contain;display:none;">
         <video id="lightbox-vid" src="" controls style="max-width:94vw;max-height:90vh;border-radius:10px;display:none;"></video>`;
       document.body.appendChild(lb);
@@ -2502,7 +2502,7 @@
       const accent = done ? '#5eead4' : timing.overdue ? '#ff7a90' : timing.label === '进行中' ? '#ffc46b' : '#6d7cff';
       const bgColor = done ? 'rgba(94,234,212,0.08)' : timing.overdue ? 'rgba(255,122,144,0.08)' : timing.label === '进行中' ? 'rgba(255,196,107,0.08)' : 'rgba(109,124,255,0.08)';
       return `
-        <div onclick="openPunchCard('${dishEsc}','${station}','${store}','${scheduleEsc}')" style="
+        <div data-click="openPunchCard" data-arg="${dishEsc}" data-arg2="${station}" data-arg3="${store}" data-arg4="${scheduleEsc}" style="
           background:${bgColor};border-color:${done ? 'rgba(94,234,212,0.28)' : timing.overdue ? 'rgba(255,122,144,0.28)' : 'rgba(255,255,255,0.12)'};
           ${done ? 'opacity:0.7;' : ''}
         " class="kitchen-task-card">
@@ -2788,7 +2788,7 @@
           document.getElementById('kitchen-dashboard-store-picker').style.display = '';
           document.getElementById('kitchen-dashboard-store-picker').innerHTML =
             KITCHEN_VALID_STORES.map(s => `
-              <button class="kitchen-store-pick" onclick="_kitchenStore='${s}';loadKitchenDashboard();">📍 ${s}</button>
+              <button class="kitchen-store-pick" data-click="hrmsPickKitchenStore" data-arg="${s}">📍 ${s}</button>
             `).join('');
           document.getElementById('kitchen-dashboard-overview').innerHTML = '';
           document.getElementById('kitchen-dashboard-cards').innerHTML = '';
@@ -3285,7 +3285,7 @@
                   <div style="display:flex;gap:6px;justify-content:flex-end;">
                     <button type="button" data-click="toggleIngredientEdit" data-arg="${i.id}" data-arg-type="number"
                       style="font-size:12px;padding:5px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:7px;color:var(--rep-muted);cursor:pointer;">取消</button>
-                    <button type="button" onclick="saveIngredientLibEdit(${i.id},this)"
+                    <button type="button" data-click="saveIngredientLibEdit" data-arg="${i.id}" data-arg-type="number" data-arg-self="1"
                       style="font-size:12px;padding:5px 14px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);border-radius:7px;color:#a5b4fc;cursor:pointer;">保存</button>
                   </div>
                 </div>
@@ -3454,7 +3454,7 @@
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
-              ${r.status !== 'active' ? `<button type="button" onclick="approveRecipe(${r.id},this)"
+              ${r.status !== 'active' ? `<button type="button" data-click="approveRecipe" data-arg="${r.id}" data-arg-type="number" data-arg-self="1"
                 style="font-size:12px;padding:6px 12px;background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.35);border-radius:8px;color:#86efac;cursor:pointer;">✓ 生效</button>` : ''}
               <button type="button" onclick="downloadRecipePdf(${r.id},'${r.dish_name.replace(/'/g,"\\'")}')"
                 style="font-size:12px;padding:6px 12px;background:rgba(148,163,184,0.1);border:1px solid rgba(148,163,184,0.25);border-radius:8px;color:#94a3b8;cursor:pointer;">⬇ PDF</button>
@@ -3697,12 +3697,12 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
 
         <div style="font-size:12px;color:var(--rep-muted);font-weight:600;letter-spacing:.5px;margin-bottom:2px;">原料配比</div>
         <div class="comp-ingredients" style="display:flex;flex-direction:column;gap:5px;"></div>
-        <button type="button" onclick="addIngredientRow(this.previousElementSibling)"
+        <button type="button" data-click="hrmsAddIngredientRow" data-arg-self="1"
           style="align-self:flex-start;font-size:12px;padding:5px 12px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);border-radius:8px;color:#a5b4fc;cursor:pointer;">+ 添加原料</button>
 
         <div style="font-size:12px;color:var(--rep-muted);font-weight:600;letter-spacing:.5px;margin-top:4px;margin-bottom:2px;">工艺步骤</div>
         <div class="comp-steps" style="display:flex;flex-direction:column;gap:5px;"></div>
-        <button type="button" onclick="addProcessStepRow(this.previousElementSibling)"
+        <button type="button" data-click="hrmsAddProcessStepRow" data-arg-self="1"
           style="align-self:flex-start;font-size:12px;padding:5px 12px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);border-radius:8px;color:#6ee7b7;cursor:pointer;">+ 添加工艺步骤</button>
       `;
       compList.appendChild(card);

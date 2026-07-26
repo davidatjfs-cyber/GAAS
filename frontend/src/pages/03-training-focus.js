@@ -1603,7 +1603,7 @@
                                 <option value="">${targetOptions ? '选择目标项目组...' : '暂无其他项目组'}</option>
                                 ${targetOptions}
                             </select>
-                            <button class="kb-org-move-btn" type="button" onclick="moveKnowledgeFromOrganizer('${escapeHtml(id)}', '${escapeHtml(gid)}')">转移</button>
+                            <button class="kb-org-move-btn" type="button" data-click="moveKnowledgeFromOrganizer" data-arg="${escapeHtml(id)}" data-arg2="${escapeHtml(gid)}">转移</button>
                         </div>
                     </div>`;
                 }).join('');

@@ -24419,7 +24419,7 @@
                 };
             }
         } catch (e) {}
-        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (!el) return; var fn = el.getAttribute('data-click'); if (!fn || typeof window[fn] !== 'function') return; if (el.hasAttribute('data-click-self-only') && e.target !== el) return; if (el.hasAttribute('data-stop')) e.stopPropagation(); var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); parseArg('data-arg3', 'data-arg3-type'); if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; window.hrmsRemoveClosest = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n) n.remove(); } catch (err) {} }; window.hrmsRemoveClosestParent = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n && n.parentElement) n.parentElement.remove(); } catch (err) {} }; window.hrmsRemoveParent = function (el) { try { if (el && el.parentElement) el.parentElement.remove(); } catch (err) {} }; window.hrmsSelectPointsRule = function (idx, el) { if (typeof selectPointsRule === 'function') selectPointsRule(el, idx); }; window.hrmsSelectPointsReturnedRule = function (idx, el) { if (typeof selectPointsReturnedRule === 'function') selectPointsReturnedRule(el, idx); }; window.hrmsToggleNotifFull = function (el) { try { var n = el && el.querySelector && el.querySelector('.notif-full-msg'); if (n) n.classList.toggle('notif-msg-show'); } catch (err) {} }; window.hrmsToggleByIdDisplay = function (id) { var d = document.getElementById(id); if (d) d.style.display = d.style.display === 'none' ? '' : 'none'; }; window.hrmsRemoveGrandparent = function (el) { try { if (el && el.parentElement && el.parentElement.parentElement) el.parentElement.parentElement.remove(); } catch (err) {} }; window.hrmsNoop = function () {}; window.hrmsSwitchAgentTemplates = function (kind) { if (typeof switchAgentTemplateKind === 'function') switchAgentTemplateKind(kind); if (typeof switchAgentConfigTab === 'function') switchAgentConfigTab('templates'); }; window.hrmsToggleParentOpen = function (el) { if (el && el.parentElement) el.parentElement.open = !el.parentElement.open; }; window.hrmsToggleParentClass = function (cls, el) { if (el && el.parentElement) el.parentElement.classList.toggle(cls); }; window.hrmsHideById = function (id) { var n = document.getElementById(id); if (n) n.style.display = 'none'; }; window.hrmsClearDailyReportDates = function () { var a = document.getElementById('dr-list-start'); if (a) a.value = ''; var b = document.getElementById('dr-list-end'); if (b) b.value = ''; if (typeof loadDailyReportData === 'function') loadDailyReportData(); }; window.hrmsToggleKitchenConfigForm = function (el) { var f = document.getElementById('kitchen-config-form'); if (!f) return; f.style.display = f.style.display === 'none' ? '' : 'none'; var s = el && el.querySelector ? el.querySelector('span') : null; if (s) s.textContent = f.style.display === 'none' ? '展开表单' : '收起表单'; }; window.hrmsSubmitPointsApplication = function () { return uploadPointsEvidence().then(function () { return submitPointsApplication(); }); }; // P5.1：data-click(+data-arg[+data-arg2][+data-arg3][+data-click2][+data-arg-self][+data-click-self-only][+data-stop]) 委托
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (!el) return; var fn = el.getAttribute('data-click'); if (!fn || typeof window[fn] !== 'function') return; if (el.hasAttribute('data-click-self-only') && e.target !== el) return; if (el.hasAttribute('data-stop')) e.stopPropagation(); var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); parseArg('data-arg3', 'data-arg3-type'); parseArg('data-arg4', 'data-arg4-type'); if (el.hasAttribute('data-arg-self')) args.push(el); if (el.hasAttribute('data-pass-event')) args.push(e); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; window.hrmsRemoveClosest = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n) n.remove(); } catch (err) {} }; window.hrmsRemoveClosestParent = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n && n.parentElement) n.parentElement.remove(); } catch (err) {} }; window.hrmsRemoveParent = function (el) { try { if (el && el.parentElement) el.parentElement.remove(); } catch (err) {} }; window.hrmsSelectPointsRule = function (idx, el) { if (typeof selectPointsRule === 'function') selectPointsRule(el, idx); }; window.hrmsSelectPointsReturnedRule = function (idx, el) { if (typeof selectPointsReturnedRule === 'function') selectPointsReturnedRule(el, idx); }; window.hrmsToggleNotifFull = function (el) { try { var n = el && el.querySelector && el.querySelector('.notif-full-msg'); if (n) n.classList.toggle('notif-msg-show'); } catch (err) {} }; window.hrmsToggleByIdDisplay = function (id) { var d = document.getElementById(id); if (d) d.style.display = d.style.display === 'none' ? '' : 'none'; }; window.hrmsRemoveGrandparent = function (el) { try { if (el && el.parentElement && el.parentElement.parentElement) el.parentElement.parentElement.remove(); } catch (err) {} }; window.hrmsNoop = function () {}; window.hrmsWindowOpen = function (url) { try { window.open(url); } catch (err) {} }; window.hrmsRemoveById = function (id) { var n = document.getElementById(id); if (n) n.remove(); }; window.hrmsDismissClosestInner = function (el) { try { var n = el && el.closest && el.closest('div'); if (n) n.innerHTML = '<span style="color:var(--rep-muted)">已暂不处理</span>'; } catch (err) {} }; window.hrmsConfirmOntologyTask = function (encoded, el) { if (typeof confirmCreateOntologyTask === 'function') confirmCreateOntologyTask(decodeURIComponent(encoded || ''), el); }; window.hrmsCopyReadyCopy = function (el) { if (typeof copyReadyCopy === 'function') copyReadyCopy(el); }; window.hrmsAddIngredientRow = function (el) { if (typeof addIngredientRow === 'function') addIngredientRow(el && el.previousElementSibling); }; window.hrmsAddProcessStepRow = function (el) { if (typeof addProcessStepRow === 'function') addProcessStepRow(el && el.previousElementSibling); }; window.hrmsPickKitchenStore = function (store) { window._kitchenStore = store; if (typeof loadKitchenDashboard === 'function') loadKitchenDashboard(); }; window.hrmsCloseActionOpenPoster = function (key) { if (typeof closeActionDetailModal === 'function') closeActionDetailModal(); if (typeof openPosterPicker === 'function') openPosterPicker(key); }; window.hrmsClosePosterShowGrowth = function () { if (typeof closePosterPicker === 'function') closePosterPicker(); if (typeof showGrowthTab === 'function') showGrowthTab('posters'); }; window.hrmsMobileNav = function (el, e) { if (typeof mobileNavigateTo === 'function') mobileNavigateTo(el && el.dataset ? el.dataset.page : '', e, el); }; window.hrmsMobileNavMore = function (el, e) { if (typeof mobileNavigateTo === 'function') mobileNavigateTo('more', e, el); }; window.hrmsSwitchAgentTemplates = function (kind) { if (typeof switchAgentTemplateKind === 'function') switchAgentTemplateKind(kind); if (typeof switchAgentConfigTab === 'function') switchAgentConfigTab('templates'); }; window.hrmsToggleParentOpen = function (el) { if (el && el.parentElement) el.parentElement.open = !el.parentElement.open; }; window.hrmsToggleParentClass = function (cls, el) { if (el && el.parentElement) el.parentElement.classList.toggle(cls); }; window.hrmsHideById = function (id) { var n = document.getElementById(id); if (n) n.style.display = 'none'; }; window.hrmsClearDailyReportDates = function () { var a = document.getElementById('dr-list-start'); if (a) a.value = ''; var b = document.getElementById('dr-list-end'); if (b) b.value = ''; if (typeof loadDailyReportData === 'function') loadDailyReportData(); }; window.hrmsToggleKitchenConfigForm = function (el) { var f = document.getElementById('kitchen-config-form'); if (!f) return; f.style.display = f.style.display === 'none' ? '' : 'none'; var s = el && el.querySelector ? el.querySelector('span') : null; if (s) s.textContent = f.style.display === 'none' ? '展开表单' : '收起表单'; }; window.hrmsSubmitPointsApplication = function () { return uploadPointsEvidence().then(function () { return submitPointsApplication(); }); }; // P5.1：data-click(+data-arg[+data-arg2][+data-arg3][+data-click2][+data-arg-self][+data-click-self-only][+data-stop]) 委托
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -33827,7 +33827,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                                 <option value="">${targetOptions ? '选择目标项目组...' : '暂无其他项目组'}</option>
                                 ${targetOptions}
                             </select>
-                            <button class="kb-org-move-btn" type="button" onclick="moveKnowledgeFromOrganizer('${escapeHtml(id)}', '${escapeHtml(gid)}')">转移</button>
+                            <button class="kb-org-move-btn" type="button" data-click="moveKnowledgeFromOrganizer" data-arg="${escapeHtml(id)}" data-arg2="${escapeHtml(gid)}">转移</button>
                         </div>
                     </div>`;
                 }).join('');
@@ -52141,8 +52141,8 @@ tr:nth-child(even) td { background: #fafafa; }
                             <div class="dr-staff-meta">${escapeHtml(meta || '')}</div>
                         </div>
                         <div class="dr-staff-actions">
-                            <button class="btn" type="button" onclick="toggleDailyReportStaffDays('${escapeHtml(kind)}', ${idx})" style="padding: 8px 12px; background: #f97316;">${escapeHtml(dayText)}</button>
-                            <button class="btn" type="button" onclick="removeDailyReportStaffItem('${escapeHtml(kind)}', ${idx})" style="padding: 8px 12px; background: #ef4444;">删除</button>
+                            <button class="btn" type="button" data-click="toggleDailyReportStaffDays" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #f97316;">${escapeHtml(dayText)}</button>
+                            <button class="btn" type="button" data-click="removeDailyReportStaffItem" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #ef4444;">删除</button>
                         </div>
                     </div>
                 `;
@@ -56277,7 +56277,7 @@ ${ok
                             <div class="rep-pay-cell ${diffCellClass(r, m)}"><span class="k">${escapeHtml(monthTag(m))}</span><span class="v">${diffText(r, m)}</span></div>
                         `).join('');
                         const adjBtn = canAdjust
-                            ? `<div class="rep-pay-card__actions"><button class="btn btn-secondary" type="button" onclick="event.stopPropagation(); repAdjustLeaveBalance('${escapeJsString(String(r?.username || ''))}', '${escapeJsString(latestM)}', ${Number(r?.cumulativeLeaveDays || 0)})">调整累计假期</button></div>`
+                            ? `<div class="rep-pay-card__actions"><button class="btn btn-secondary" type="button" data-click="repAdjustLeaveBalance" data-arg="${escapeJsString(String(r?.username || ''))}" data-arg2="${escapeJsString(latestM)}" data-arg3="${Number(r?.cumulativeLeaveDays || 0)}" data-arg3-type="number" data-stop>调整累计假期</button></div>`
                             : '';
                         const personName = escapeHtml(String(r?.name || r?.username || ''));
                         const personMeta = escapeHtml(String(r?.username || '')) + ' · ' + escapeHtml(String(r?.store || '-')) + ' · ' + escapeHtml(String(r?.position || '-'));
@@ -56677,7 +56677,7 @@ ${ok
             }
             overlay.innerHTML = `
                 <div style="position:sticky;top:0;z-index:10;background:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e2e8f0;">
-                    <button onclick="document.getElementById('rep-pdf-overlay').style.display='none';" style="padding:8px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;font-size:14px;font-weight:700;cursor:pointer;">← 返回</button>
+                    <button data-click="hrmsHideById" data-arg="rep-pdf-overlay" style="padding:8px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;font-size:14px;font-weight:700;cursor:pointer;">← 返回</button>
                     <button data-click="print" style="padding:8px 16px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🖨 打印/PDF</button>
                 </div>
                 <style>@media print{#rep-pdf-overlay>div:first-child{display:none!important;}}</style>
@@ -58457,7 +58457,7 @@ ${body}
             const grid = document.getElementById('mobile-more-grid');
             if (grid) {
                 grid.innerHTML = visibleItems.map(item => `
-                    <div onclick="handleMobileMoreItemClick('${item.page || ''}','${item.href || ''}');" style="
+                    <div data-click="handleMobileMoreItemClick" data-arg="${item.page || ''}" data-arg2="${item.href || ''}" style="
                         display:flex;flex-direction:column;align-items:center;gap:6px;
                         padding:12px 4px;border-radius:14px;cursor:pointer;
                         background:rgba(255,255,255,0.05);
@@ -60391,7 +60391,7 @@ ${body}
                     `<div class="dx-rec"><span class="dx-source ${escapeHtml(r.sourceClass)}">${escapeHtml(r.sourceLabel)}</span><span>${escapeHtml(r.title)}</span></div>`
                 ).join('');
                 const moreRecs = recs.length > 3 ? `<div class="dx-more">还有${recs.length - 3}条建议，点击查看完整报告 →</div>` : (recs.length > 0 ? `<div class="dx-more">点击查看完整诊断报告 →</div>` : '');
-                return `<div class="dx-card ${isDecline ? 'dx-card--decline' : ''}" onclick="openDiagnosisDetail('${encodeURIComponent(s.store)}', '${start}', '${end}')">
+                return `<div class="dx-card ${isDecline ? 'dx-card--decline' : ''}" data-click="openDiagnosisDetail" data-arg="${encodeURIComponent(s.store)}" data-arg2="${start}" data-arg3="${end}">
                   <div class="dx-card__top">
                     <span class="dx-card__store">${escapeHtml(s.store)}</span>
                     <span class="dx-pill ${isDecline ? 'dx-pill--bad' : 'dx-pill--ok'}">${isDecline ? '营收下降' : '营收正常'}</span>
@@ -60757,7 +60757,7 @@ ${body}
                     return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);">'
                         + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.title || '-') + '</b><span style="color:#38bdf8;">' + escapeHtml(x.priority || '-') + '</span></div>'
                         + '<div style="font-size:12px;color:rgba(226,232,240,.58);margin:4px 0 8px;">' + escapeHtml(x.description || '') + '</div>'
-                        + '<button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" onclick="generateGrowthOpportunityTasks(\'' + escapeHtml(x.opportunity_id || '') + '\', this)">生成任务草稿并确认创建</button>'
+                        + '<button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" data-click="generateGrowthOpportunityTasks" data-arg="' + escapeHtml(x.opportunity_id || '') + '" data-arg-self="1">生成任务草稿并确认创建</button>'
                         + '</div>';
                 }).join('');
                 var taskHtml = (report.tasks || []).slice(0, 8).map(function(t) {
@@ -61058,7 +61058,7 @@ ${body}
                         + '</div>'
                         + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
                         +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" data-click="editPaymentRule" data-arg="'+rk+'">编辑</button>'
-                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" onclick="togglePaymentRule(\''+rk+'\','+(rule.active?'false':'true')+')">'+(rule.active?'停用':'启用')+'</button>'
+                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" data-click="togglePaymentRule" data-arg="'+rk+'" data-arg2="'+(rule.active?'false':'true')+'">'+(rule.active?'停用':'启用')+'</button>'
                         +   '<button class="btn btn-secondary" type="button" style="font-size:12px;color:#ef4444;" data-click="deletePaymentRule" data-arg="'+rk+'">删除</button>'
                         + '</div></div>';
                 }).join('');
@@ -61976,7 +61976,7 @@ ${body}
                     + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(t.title || '-') + '</b><span style="color:#38bdf8;">draft</span></div>'
                     + '<div style="color:rgba(226,232,240,.62);">责任：' + escapeHtml(t.ownerRole || '-') + ' · 到期：' + escapeHtml(String(t.dueDate || '').slice(0, 10)) + '</div>'
                     + '<div style="color:rgba(226,232,240,.5);">' + escapeHtml(t.expectedResult || '-') + '</div>'
-                    + '<div style="display:flex;gap:8px;margin-top:8px;"><button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" onclick="confirmCreateOntologyTask(decodeURIComponent(\'' + encoded + '\'), this)">确认创建任务</button><button class="rep-seg-btn" style="width:auto;padding:7px 12px;" onclick="this.closest(\'div\').innerHTML=\'<span style=&quot;color:var(--rep-muted)&quot;>已暂不处理</span>\'">暂不处理</button></div>'
+                    + '<div style="display:flex;gap:8px;margin-top:8px;"><button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" data-click="hrmsConfirmOntologyTask" data-arg="' + encoded + '" data-arg-self="1">确认创建任务</button><button class="rep-seg-btn" style="width:auto;padding:7px 12px;" data-click="hrmsDismissClosestInner" data-arg-self="1">暂不处理</button></div>'
                     + '</div>';
             }).join('');
             var review = report.previousActionReview || null;
@@ -62242,7 +62242,7 @@ ${body}
             ov.innerHTML = '<div style="width:100%;max-width:600px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding:0 0 env(safe-area-inset-bottom,0);">'
                 + '<div style="position:sticky;top:0;background:#0f172a;border-bottom:1px solid rgba(255,255,255,.08);padding:16px 16px 12px;z-index:1;display:flex;justify-content:space-between;align-items:center;">'
                 + '<div style="font-size:17px;font-weight:900;color:#fff;">' + (isEdit ? '编辑活动' : '新建营销活动') + '</div>'
-                + '<button onclick="document.getElementById(\'campaign-modal-overlay\').remove()" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="campaign-modal-overlay" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
                 + '</div>'
                 + '<div style="padding:16px;">'
                 // 活动名称
@@ -62285,7 +62285,7 @@ ${body}
                 + '<div style="margin-bottom:20px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">活动目标 / 预期效果</div><input id="cpm-goal" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:14px;box-sizing:border-box;" placeholder="如：带动复购50人 / 储值增加10万" value="' + escapeHtml(c.goal || '') + '"></div>'
                 // 底部按钮
                 + '<div style="display:flex;gap:10px;padding-bottom:16px;">'
-                + '<button onclick="submitCampaignForm(' + (isEdit ? c.id : 'null') + ')" style="flex:1;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">保存活动</button>'
+                + '<button data-click="submitCampaignForm" data-arg="' + (isEdit ? c.id : '') + '" style="flex:1;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">保存活动</button>'
                 + (isEdit ? '<button data-click="deleteCampaign" data-arg="' + c.id + '" data-arg-type="number" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:14px 18px;font-size:14px;cursor:pointer;">删除</button>' : '')
                 + '</div>'
                 + '</div>'
@@ -62369,7 +62369,7 @@ ${body}
             ov.innerHTML = '<div style="width:100%;max-width:520px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom,0);">'
                 + '<div style="position:sticky;top:0;background:#0f172a;padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;z-index:1;">'
                 + '<div style="font-size:16px;font-weight:900;color:#fff;">' + (isEdit ? '编辑复盘' : '+ 添加门店复盘') + '</div>'
-                + '<button onclick="document.getElementById(\'result-modal-overlay\').remove()" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="result-modal-overlay" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
                 + '</div>'
                 + '<div style="padding:16px;">'
                 + (campaign.goal ? '<div style="background:rgba(201,169,106,.08);border:1px solid rgba(201,169,106,.25);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:#c9a96a;">🎯 活动目标：' + escapeHtml(campaign.goal) + '</div>' : '')
@@ -62392,7 +62392,7 @@ ${body}
                 + '</div>'
                 + '<div style="margin-bottom:16px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;">活动效果评级</div><div style="display:flex;flex-wrap:wrap;gap:8px;">' + effectOpts + '</div></div>'
                 + '<div style="margin-bottom:16px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">复盘备注</div><textarea id="crm-note" style="' + iStyle + 'min-height:80px;resize:vertical;" placeholder="执行情况、问题点、改进建议…">' + escapeHtml(existing.result_note || '') + '</textarea></div>'
-                + '<button onclick="submitCampaignResult(' + campaignId + ',' + (resultId || 'null') + ')" style="width:100%;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;">保存复盘结果</button>'
+                + '<button data-click="submitCampaignResult" data-arg="' + campaignId + '" data-arg2="' + (resultId || '') + '" style="width:100%;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;">保存复盘结果</button>'
                 + '</div>'
                 + '</div>';
             ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
@@ -62477,7 +62477,7 @@ ${body}
             ov.innerHTML = '<div style="width:100%;max-width:600px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom,0);">'
                 + '<div style="position:sticky;top:0;background:#0f172a;padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;z-index:1;">'
                 + '<div style="font-size:17px;font-weight:900;color:#fff;">活动评估报告</div>'
-                + '<button onclick="document.getElementById(\'report-modal-overlay\').remove()" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="report-modal-overlay" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
                 + '</div>'
                 + '<div style="padding:16px;">'
                 + '<div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:4px;">' + escapeHtml(c.title) + '</div>'
@@ -62735,7 +62735,7 @@ ${body}
                         + ((winner === 'A' || winner === 'B')
                             ? (t.promoted_rule_key
                                 ? '<button class="rep-seg-btn" style="flex:1.4;opacity:0.6;cursor:default;" disabled>✅ ' + (isBound ? (winner === 'A' ? '已采用(维持当前)' : '已采用(挑战者)') : '已沉淀经验库') + '</button>'
-                                : '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1.4;" onclick="promoteGrowthAbTest(' + id + ',\'' + String(winner) + '\')">' + (isBound ? '🚀 采用胜者' : '📚 沉淀经验库') + '</button>')
+                                : '<button class="rep-seg-btn rep-seg-btn--active" style="flex:1.4;" data-click="promoteGrowthAbTest" data-arg="' + id + '" data-arg2="' + String(winner) + '">' + (isBound ? '🚀 采用胜者' : '📚 沉淀经验库') + '</button>')
                             : '')
                         + '</div>'
                         + abResultFormHtml(id)
@@ -63366,7 +63366,7 @@ ${body}
                         '<div style="margin-top:6px;padding:8px 10px;background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.18);border-radius:8px;">'
                         + '<div style="font-size:10px;color:#22c55e;font-weight:700;margin-bottom:4px;">📝 成品文案（可直接使用）</div>'
                         + '<div style="font-size:11px;color:rgba(226,232,240,0.85);line-height:1.6;white-space:pre-wrap;">' + escapeHtml(readyCopy) + '</div>'
-                        + '<button onclick="event.stopPropagation();copyReadyCopy(this)" data-copy="' + escapeHtml(readyCopy) + '" style="margin-top:6px;padding:3px 10px;border:none;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;font-size:10px;cursor:pointer;">📋 复制文案</button>'
+                        + '<button data-click="hrmsCopyReadyCopy" data-arg-self="1" data-stop data-copy="' + escapeHtml(readyCopy) + '" style="margin-top:6px;padding:3px 10px;border:none;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;font-size:10px;cursor:pointer;">📋 复制文案</button>'
                         + '</div>' : '';
                     var oc = payload.outcome_summary || null;
                     var ocHtml = (oc && oc.effectiveness_score != null) ?
@@ -63588,7 +63588,7 @@ ${body}
                 + '<textarea id="rf-note" rows="2" placeholder="执行情况/复盘" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:14px;box-sizing:border-box;resize:vertical;">' + escapeHtml(payload.feedback_note || '') + '</textarea>'
                 + '<div style="display:flex;gap:8px;">'
                 + '<button data-click="submitResultFeedback" data-arg="' + actionKey + '" style="flex:1;padding:10px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-weight:700;cursor:pointer;">提交并打分</button>'
-                + '<button onclick="document.getElementById(\'result-feedback-overlay\').remove()" style="padding:10px 16px;border:none;border-radius:10px;background:rgba(255,255,255,0.08);color:#fff;cursor:pointer;">取消</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="result-feedback-overlay" style="padding:10px 16px;border:none;border-radius:10px;background:rgba(255,255,255,0.08);color:#fff;cursor:pointer;">取消</button>'
                 + '</div></div>';
             ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
             document.body.appendChild(ov);
@@ -63659,7 +63659,7 @@ ${body}
             if (payload.poster_url || payload.output_url) {
                 host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.06);"><div style="font-size:12px;color:rgba(226,232,240,0.55);margin-bottom:8px;">来源海报</div><img src="' + escapeHtml(payload.poster_url || payload.output_url) + '" style="max-width:100%;max-height:320px;object-fit:contain;border-radius:8px;border:1px solid rgba(255,255,255,0.08);"></div>';
             } else if (x.status === 'proposed' && (actionType === 'send_voucher' || actionType === 'campaign_activate')) {
-                host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(245,158,11,0.06);border:1px dashed rgba(245,158,11,0.3);border-radius:10px;font-size:12px;color:#f59e0b;cursor:pointer;" onclick="closeActionDetailModal();openPosterPicker(\'' + key + '\')">🖼️ 尚未绑定海报 — 点击选择海报</div>';
+                host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(245,158,11,0.06);border:1px dashed rgba(245,158,11,0.3);border-radius:10px;font-size:12px;color:#f59e0b;cursor:pointer;" data-click="hrmsCloseActionOpenPoster" data-arg="' + key + '">🖼️ 尚未绑定海报 — 点击选择海报</div>';
             }
             var detailIsLlm = (payload.source === 'llm_campaign_autopilot') || !!payload.expected_kpi || !!payload.confidence_level;
             var execBtn = document.getElementById('growth-action-detail-execute');
@@ -63907,7 +63907,7 @@ ${body}
                         + (imgUrl ? '<img src="' + escapeHtml(imgUrl) + '" style="width:100%;height:120px;object-fit:cover;border-bottom:1px solid rgba(255,255,255,0.06);">' : '<div style="width:100%;height:120px;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(226,232,240,0.3);">无预览</div>')
                         + '<div style="padding:6px 8px;font-size:11px;color:rgba(226,232,240,0.7);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">' + escapeHtml(title) + '</div>'
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);grid-column:1/-1;padding:20px;text-align:center;">暂无已生成海报，<span style="color:#38bdf8;cursor:pointer;" onclick="closePosterPicker();showGrowthTab(\'posters\')">去生成</span></div>';
+                }).join('') : '<div style="color:rgba(226,232,240,0.4);grid-column:1/-1;padding:20px;text-align:center;">暂无已生成海报，<span style="color:#38bdf8;cursor:pointer;" data-click="hrmsClosePosterShowGrowth">去生成</span></div>';
             } catch (e) {
                 host.innerHTML = '<div style="color:#ef4444;grid-column:1/-1;padding:20px;">加载失败：' + escapeHtml(e.message) + '</div>';
             }
@@ -64435,7 +64435,7 @@ ${body}
                         +   '<span class="amr-foot-by">' + escapeHtml(approver) + '</span>'
                         +   '<div class="amr-foot-btns">'
                         +     (isSubscribe ? '<button type="button" class="amr-btn amr-btn--ghost" data-click="amEditSubscribeRule" data-arg="' + rk + '">编辑内容</button>' : '')
-                        +     '<button type="button" class="amr-btn amr-btn--ghost" onclick="amToggleEnabled(\'' + rk + '\',' + (rule.enabled ? 'true' : 'false') + ')">' + (rule.enabled ? '停用' : '启用') + '</button>'
+                        +     '<button type="button" class="amr-btn amr-btn--ghost" data-click="amToggleEnabled" data-arg="' + rk + '" data-arg2="' + (rule.enabled ? 'true' : 'false') + '">' + (rule.enabled ? '停用' : '启用') + '</button>'
                         +     (approved
                               ? '<button type="button" class="amr-btn amr-btn--ghost" data-click="amUnapprove" data-arg="' + rk + '">撤销审核</button>'
                               : '<button type="button" class="amr-btn" data-click="amApprove" data-arg="' + rk + '">审核通过 → 允许自动执行</button>')
@@ -66489,7 +66489,7 @@ ${body}
             + (t.content_brief ? '<div style="color:rgba(226,232,240,0.42);margin-top:4px;line-height:1.5;">' + escapeHtml(String(t.content_brief).slice(0, 56)) + '</div>' : '')
             + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">'
             + '<button onclick="copyPublicTaskText(' + JSON.stringify(String(t.copy_text || '')) + ')" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(99,102,241,0.18);color:#c4b5fd;cursor:pointer;font-size:11px;">复制文案</button>'
-            + (t.poster_url ? '<button onclick="window.open(' + JSON.stringify(String(t.poster_url)) + ')" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(14,165,233,0.18);color:#7dd3fc;cursor:pointer;font-size:11px;">打开海报</button>' : '')
+            + (t.poster_url ? '<button data-click="hrmsWindowOpen" data-arg="' + String(t.poster_url || '') + '" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(14,165,233,0.18);color:#7dd3fc;cursor:pointer;font-size:11px;">打开海报</button>' : '')
             + '</div>'
             + '</div>';
         }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:16px;">暂无品宣任务</div>';
@@ -66895,7 +66895,7 @@ ${body}
       lb.id = 'media-lightbox';
       lb.style.cssText = 'display:none;position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,0.92);align-items:center;justify-content:center;';
       lb.innerHTML = `
-        <button onclick="document.getElementById(\'media-lightbox\').style.display=\'none\'" style="position:absolute;top:16px;right:20px;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;line-height:1;">×</button>
+        <button data-click="hrmsHideById" data-arg="media-lightbox" style="position:absolute;top:16px;right:20px;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;line-height:1;">×</button>
         <img id="lightbox-img" src="" style="max-width:94vw;max-height:90vh;border-radius:10px;object-fit:contain;display:none;">
         <video id="lightbox-vid" src="" controls style="max-width:94vw;max-height:90vh;border-radius:10px;display:none;"></video>`;
       document.body.appendChild(lb);
@@ -67197,7 +67197,7 @@ ${body}
       const accent = done ? '#5eead4' : timing.overdue ? '#ff7a90' : timing.label === '进行中' ? '#ffc46b' : '#6d7cff';
       const bgColor = done ? 'rgba(94,234,212,0.08)' : timing.overdue ? 'rgba(255,122,144,0.08)' : timing.label === '进行中' ? 'rgba(255,196,107,0.08)' : 'rgba(109,124,255,0.08)';
       return `
-        <div onclick="openPunchCard('${dishEsc}','${station}','${store}','${scheduleEsc}')" style="
+        <div data-click="openPunchCard" data-arg="${dishEsc}" data-arg2="${station}" data-arg3="${store}" data-arg4="${scheduleEsc}" style="
           background:${bgColor};border-color:${done ? 'rgba(94,234,212,0.28)' : timing.overdue ? 'rgba(255,122,144,0.28)' : 'rgba(255,255,255,0.12)'};
           ${done ? 'opacity:0.7;' : ''}
         " class="kitchen-task-card">
@@ -67483,7 +67483,7 @@ ${body}
           document.getElementById('kitchen-dashboard-store-picker').style.display = '';
           document.getElementById('kitchen-dashboard-store-picker').innerHTML =
             KITCHEN_VALID_STORES.map(s => `
-              <button class="kitchen-store-pick" onclick="_kitchenStore='${s}';loadKitchenDashboard();">📍 ${s}</button>
+              <button class="kitchen-store-pick" data-click="hrmsPickKitchenStore" data-arg="${s}">📍 ${s}</button>
             `).join('');
           document.getElementById('kitchen-dashboard-overview').innerHTML = '';
           document.getElementById('kitchen-dashboard-cards').innerHTML = '';
@@ -67980,7 +67980,7 @@ ${body}
                   <div style="display:flex;gap:6px;justify-content:flex-end;">
                     <button type="button" data-click="toggleIngredientEdit" data-arg="${i.id}" data-arg-type="number"
                       style="font-size:12px;padding:5px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:7px;color:var(--rep-muted);cursor:pointer;">取消</button>
-                    <button type="button" onclick="saveIngredientLibEdit(${i.id},this)"
+                    <button type="button" data-click="saveIngredientLibEdit" data-arg="${i.id}" data-arg-type="number" data-arg-self="1"
                       style="font-size:12px;padding:5px 14px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);border-radius:7px;color:#a5b4fc;cursor:pointer;">保存</button>
                   </div>
                 </div>
@@ -68149,7 +68149,7 @@ ${body}
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
-              ${r.status !== 'active' ? `<button type="button" onclick="approveRecipe(${r.id},this)"
+              ${r.status !== 'active' ? `<button type="button" data-click="approveRecipe" data-arg="${r.id}" data-arg-type="number" data-arg-self="1"
                 style="font-size:12px;padding:6px 12px;background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.35);border-radius:8px;color:#86efac;cursor:pointer;">✓ 生效</button>` : ''}
               <button type="button" onclick="downloadRecipePdf(${r.id},'${r.dish_name.replace(/'/g,"\\'")}')"
                 style="font-size:12px;padding:6px 12px;background:rgba(148,163,184,0.1);border:1px solid rgba(148,163,184,0.25);border-radius:8px;color:#94a3b8;cursor:pointer;">⬇ PDF</button>
@@ -68392,12 +68392,12 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
 
         <div style="font-size:12px;color:var(--rep-muted);font-weight:600;letter-spacing:.5px;margin-bottom:2px;">原料配比</div>
         <div class="comp-ingredients" style="display:flex;flex-direction:column;gap:5px;"></div>
-        <button type="button" onclick="addIngredientRow(this.previousElementSibling)"
+        <button type="button" data-click="hrmsAddIngredientRow" data-arg-self="1"
           style="align-self:flex-start;font-size:12px;padding:5px 12px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);border-radius:8px;color:#a5b4fc;cursor:pointer;">+ 添加原料</button>
 
         <div style="font-size:12px;color:var(--rep-muted);font-weight:600;letter-spacing:.5px;margin-top:4px;margin-bottom:2px;">工艺步骤</div>
         <div class="comp-steps" style="display:flex;flex-direction:column;gap:5px;"></div>
-        <button type="button" onclick="addProcessStepRow(this.previousElementSibling)"
+        <button type="button" data-click="hrmsAddProcessStepRow" data-arg-self="1"
           style="align-self:flex-start;font-size:12px;padding:5px 12px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);border-radius:8px;color:#6ee7b7;cursor:pointer;">+ 添加工艺步骤</button>
       `;
       compList.appendChild(card);
@@ -69101,23 +69101,23 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
 
     <!-- Mobile Bottom Navigation -->
     <nav class="mobile-nav" id="mobile-nav">
-        <div class="mobile-nav-item active" id="mobile-nav-slot-1" data-page="dashboard" onclick="mobileNavigateTo(this.dataset.page, event, this)">
+        <div class="mobile-nav-item active" id="mobile-nav-slot-1" data-page="dashboard" data-click="hrmsMobileNav" data-arg-self="1" data-pass-event>
             <span class="mobile-nav-icon">🏠</span>
             <span class="mobile-nav-label">首页</span>
         </div>
-        <div class="mobile-nav-item growth-mobile-nav" id="mobile-nav-slot-2" data-page="growth" onclick="mobileNavigateTo(this.dataset.page, event, this)" style="display:none;">
+        <div class="mobile-nav-item growth-mobile-nav" id="mobile-nav-slot-2" data-page="growth" data-click="hrmsMobileNav" data-arg-self="1" data-pass-event style="display:none;">
             <span class="mobile-nav-icon">📈</span>
             <span class="mobile-nav-label">增长</span>
         </div>
-        <div class="mobile-nav-item" id="mobile-nav-slot-3" data-page="knowledge" onclick="mobileNavigateTo(this.dataset.page, event, this)">
+        <div class="mobile-nav-item" id="mobile-nav-slot-3" data-page="knowledge" data-click="hrmsMobileNav" data-arg-self="1" data-pass-event>
             <span class="mobile-nav-icon">📚</span>
             <span class="mobile-nav-label">知识库</span>
         </div>
-        <div class="mobile-nav-item" id="mobile-nav-slot-4" data-page="exam" onclick="mobileNavigateTo(this.dataset.page, event, this)" style="display:none;">
+        <div class="mobile-nav-item" id="mobile-nav-slot-4" data-page="exam" data-click="hrmsMobileNav" data-arg-self="1" data-pass-event style="display:none;">
             <span class="mobile-nav-icon">📝</span>
             <span class="mobile-nav-label">考试</span>
         </div>
-        <div class="mobile-nav-item" data-page="more" onclick="mobileNavigateTo('more', event, this)">
+        <div class="mobile-nav-item" data-page="more" data-click="hrmsMobileNavMore" data-arg-self="1" data-pass-event>
             <span class="mobile-nav-icon">☰</span>
             <span class="mobile-nav-label">更多</span>
         </div>

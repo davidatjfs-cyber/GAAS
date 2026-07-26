@@ -1266,7 +1266,7 @@
             const grid = document.getElementById('mobile-more-grid');
             if (grid) {
                 grid.innerHTML = visibleItems.map(item => `
-                    <div onclick="handleMobileMoreItemClick('${item.page || ''}','${item.href || ''}');" style="
+                    <div data-click="handleMobileMoreItemClick" data-arg="${item.page || ''}" data-arg2="${item.href || ''}" style="
                         display:flex;flex-direction:column;align-items:center;gap:6px;
                         padding:12px 4px;border-radius:14px;cursor:pointer;
                         background:rgba(255,255,255,0.05);

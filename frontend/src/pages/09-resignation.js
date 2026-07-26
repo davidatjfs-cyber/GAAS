@@ -2069,8 +2069,8 @@
                             <div class="dr-staff-meta">${escapeHtml(meta || '')}</div>
                         </div>
                         <div class="dr-staff-actions">
-                            <button class="btn" type="button" onclick="toggleDailyReportStaffDays('${escapeHtml(kind)}', ${idx})" style="padding: 8px 12px; background: #f97316;">${escapeHtml(dayText)}</button>
-                            <button class="btn" type="button" onclick="removeDailyReportStaffItem('${escapeHtml(kind)}', ${idx})" style="padding: 8px 12px; background: #ef4444;">删除</button>
+                            <button class="btn" type="button" data-click="toggleDailyReportStaffDays" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #f97316;">${escapeHtml(dayText)}</button>
+                            <button class="btn" type="button" data-click="removeDailyReportStaffItem" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #ef4444;">删除</button>
                         </div>
                     </div>
                 `;

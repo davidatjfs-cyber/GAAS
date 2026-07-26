@@ -1159,7 +1159,7 @@
                     `<div class="dx-rec"><span class="dx-source ${escapeHtml(r.sourceClass)}">${escapeHtml(r.sourceLabel)}</span><span>${escapeHtml(r.title)}</span></div>`
                 ).join('');
                 const moreRecs = recs.length > 3 ? `<div class="dx-more">还有${recs.length - 3}条建议，点击查看完整报告 →</div>` : (recs.length > 0 ? `<div class="dx-more">点击查看完整诊断报告 →</div>` : '');
-                return `<div class="dx-card ${isDecline ? 'dx-card--decline' : ''}" onclick="openDiagnosisDetail('${encodeURIComponent(s.store)}', '${start}', '${end}')">
+                return `<div class="dx-card ${isDecline ? 'dx-card--decline' : ''}" data-click="openDiagnosisDetail" data-arg="${encodeURIComponent(s.store)}" data-arg2="${start}" data-arg3="${end}">
                   <div class="dx-card__top">
                     <span class="dx-card__store">${escapeHtml(s.store)}</span>
                     <span class="dx-pill ${isDecline ? 'dx-pill--bad' : 'dx-pill--ok'}">${isDecline ? '营收下降' : '营收正常'}</span>
@@ -1525,7 +1525,7 @@
                     return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);">'
                         + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.title || '-') + '</b><span style="color:#38bdf8;">' + escapeHtml(x.priority || '-') + '</span></div>'
                         + '<div style="font-size:12px;color:rgba(226,232,240,.58);margin:4px 0 8px;">' + escapeHtml(x.description || '') + '</div>'
-                        + '<button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" onclick="generateGrowthOpportunityTasks(\'' + escapeHtml(x.opportunity_id || '') + '\', this)">生成任务草稿并确认创建</button>'
+                        + '<button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" data-click="generateGrowthOpportunityTasks" data-arg="' + escapeHtml(x.opportunity_id || '') + '" data-arg-self="1">生成任务草稿并确认创建</button>'
                         + '</div>';
                 }).join('');
                 var taskHtml = (report.tasks || []).slice(0, 8).map(function(t) {
