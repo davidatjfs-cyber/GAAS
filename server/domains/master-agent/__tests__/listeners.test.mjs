@@ -12,6 +12,10 @@ import {
   chiefEvaluatorListener,
   dataAuditorListener,
   masterDispatcher,
+  masterFinalNotification,
+  masterHandleRejected,
+  masterIssuesListener,
+  masterOptimizationCoordinator,
   masterPostResolution,
   trainTaskDispatcher,
 } from '../master-listeners.js';
@@ -499,6 +503,211 @@ test('trainTaskDispatcher sends pending training tasks', async () => {
   assert.equal(count, 1);
   assert.equal(updates.length, 1);
   assert.ok(messages[0].includes('培训任务下发'));
+});
+
+test('masterIssuesListener assigns pending agent issues', async () => {
+  const assigned = [];
+  const getPool = mockPool([
+    {
+      rows: [
+        { issue_id: 'iss-1', issue_type: 'unknown_type_xyz' },
+        { issue_id: 'iss-2', issue_type: 'data_quality' },
+      ],
+    },
+  ]);
+  const { log } = mockLog();
+  const count = await masterIssuesListener(
+    {
+      pool: getPool,
+      log,
+      AgentCommunicationSystem: {
+        assignIssue: async (id, agent, priority) => {
+          assigned.push({ id, agent, priority });
+        },
+      },
+    },
+    'default'
+  );
+  assert.equal(count, 2);
+  assert.equal(assigned.length, 2);
+  assert.equal(assigned[0].agent, 'master'); // unknown type falls back
+  assert.equal(assigned[0].priority, 'normal');
+});
+
+test('masterIssuesListener returns 0 on query failure', async () => {
+  const { log, entries } = mockLog();
+  const count = await masterIssuesListener(
+    {
+      pool: () => ({
+        query: async () => {
+          throw new Error('db down');
+        },
+      }),
+      log,
+      AgentCommunicationSystem: { assignIssue: async () => {} },
+    },
+    'default'
+  );
+  assert.equal(count, 0);
+  assert.ok(entries.error.some((e) => /listener error/.test(e)));
+});
+
+test('masterOptimizationCoordinator auto-approves low priority proposals', async () => {
+  const approved = [];
+  const getPool = mockPool([
+    {
+      rows: [
+        { issue_id: 'opt-1', priority: 'low', requires_manual_review: false },
+        { issue_id: 'opt-2', priority: 'high', requires_manual_review: false },
+        { issue_id: 'opt-3', priority: 'low', requires_manual_review: true },
+      ],
+    },
+  ]);
+  const { log } = mockLog();
+  const count = await masterOptimizationCoordinator(
+    {
+      pool: getPool,
+      log,
+      AgentCommunicationSystem: {
+        approveOptimization: async (id, by, reason) => {
+          approved.push({ id, by, reason });
+        },
+      },
+    },
+    'default'
+  );
+  assert.equal(count, 3);
+  assert.equal(approved.length, 1);
+  assert.equal(approved[0].id, 'opt-1');
+  assert.equal(approved[0].by, 'master');
+});
+
+test('masterHandleRejected re-queues rejected tasks', async () => {
+  const transitions = [];
+  const getPool = mockPool([{ rows: [{ task_id: 'MT-RJ-1' }] }]);
+  const { log } = mockLog();
+  const count = await masterHandleRejected(
+    {
+      pool: getPool,
+      log,
+      transitionTask: async (taskId, status) => {
+        transitions.push({ taskId, status });
+        return { status };
+      },
+    },
+    'default'
+  );
+  assert.equal(count, 1);
+  assert.equal(transitions[0].status, 'pending_dispatch');
+});
+
+test('masterFinalNotification notifies assignee and closes settled tasks', async () => {
+  const transitions = [];
+  const messages = [];
+  const getPool = mockPool([
+    {
+      rows: [
+        { task_id: 'MT-F-1', title: '完成项', assignee_username: 'sm1' },
+        { task_id: 'MT-F-2', title: '无人认领', assignee_username: null },
+      ],
+    },
+  ]);
+  const { log } = mockLog();
+  const count = await masterFinalNotification(
+    {
+      pool: getPool,
+      log,
+      lookupFeishuUserByUsername: async (u) => (u === 'sm1' ? { open_id: 'ou_sm' } : null),
+      sendLarkMessage: async (openId, msg) => {
+        messages.push({ openId, msg });
+      },
+      prefixWithAgentName: (_a, msg) => `PREFIX:${msg}`,
+      transitionTask: async (taskId, status) => {
+        transitions.push({ taskId, status });
+        return { status };
+      },
+    },
+    'default'
+  );
+  assert.equal(count, 2);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].openId, 'ou_sm');
+  assert.match(messages[0].msg, /PREFIX:.*任务完成通知/);
+  assert.deepEqual(
+    transitions.map((t) => t.status),
+    ['closed', 'closed']
+  );
+});
+
+test('masterDispatcher skips tasks without assignee and returns 0 when empty', async () => {
+  const { log, entries } = mockLog();
+  const empty = await masterDispatcher(
+    {
+      pool: mockPool([{ rows: [] }]),
+      log,
+      resolveAssignee: async () => ({ username: 'x' }),
+      transitionTask: async () => ({ status: 'dispatched' }),
+    },
+    'default'
+  );
+  assert.equal(empty, 0);
+
+  const skipped = await masterDispatcher(
+    {
+      pool: mockPool([
+        {
+          rows: [{ task_id: 'MT-NA', category: 'x', store: 's', assignee_username: null, source_data: {} }],
+        },
+      ]),
+      log,
+      resolveAssignee: async () => null,
+      transitionTask: async () => {
+        throw new Error('should not transition');
+      },
+    },
+    'default'
+  );
+  assert.equal(skipped, 0);
+  assert.ok(entries.warn.some((w) => /No assignee found/.test(w)));
+});
+
+test('chiefEvaluatorListener handles missing response timestamps as N/A', async () => {
+  const payloads = [];
+  const getPool = mockPool([
+    {
+      rows: [{ task_id: 'MT-E-2', category: 'c', severity: 'low', dispatched_at: null, responded_at: null }],
+    },
+  ]);
+  const { log } = mockLog();
+  const count = await chiefEvaluatorListener(
+    {
+      pool: getPool,
+      log,
+      transitionTask: async (_id, _s, _a, payload) => {
+        payloads.push(payload);
+        return { status: 'settled' };
+      },
+    },
+    'default'
+  );
+  assert.equal(count, 1);
+  assert.equal(payloads[0].settlement_data.responseTime, 'N/A');
+});
+
+test('dataAuditorListener returns 0 on auditor failure', async () => {
+  const { log, entries } = mockLog();
+  const count = await dataAuditorListener(
+    {
+      runDataAuditor: async () => {
+        throw new Error('auditor boom');
+      },
+      syncDataAuditorIssuesToMasterTasks: async () => 9,
+      log,
+    },
+    'default'
+  );
+  assert.equal(count, 0);
+  assert.ok(entries.error.some((e) => /listener error/.test(e)));
 });
 
 test('train listener: auto-prepares draft_need training task', async () => {
