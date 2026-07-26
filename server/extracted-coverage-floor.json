@@ -276,6 +276,8 @@
     "domains/feishu-bitable/poll-submissions.js",
     "domains/feishu-bitable/listen-helpers.js",
     "domains/feishu-bitable/process-records-from-db.js",
+    "domains/feishu-bitable/start-bitable-polling-constants.js",
+    "domains/feishu-bitable/start-bitable-polling-helpers.js",
     "domains/feishu-bitable/start-bitable-polling.js",
     "domains/agent-bi/build-daily-report-reply.js",
     "domains/agent-bi/build-sales-raw-top-reply.js",

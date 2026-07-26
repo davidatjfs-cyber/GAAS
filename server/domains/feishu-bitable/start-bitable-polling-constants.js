@@ -1,0 +1,10 @@
+/** Timing / backoff constants for Bitable LISTEN polling (P2 peel). */
+
+export const BITABLE_NOTIFY_DEBOUNCE_MS = 300;
+export const BITABLE_CATCHUP_INTERVAL_MS = 2 * 60 * 1000;
+export const BITABLE_INITIAL_CATCHUP_MS = 8000;
+export const BITABLE_LISTEN_HEALTH_MS = 45_000;
+export const BITABLE_LISTEN_BACKOFF_MIN_MS = 2000;
+export const BITABLE_LISTEN_BACKOFF_MAX_MS = 90_000;
+export const BITABLE_KEEPALIVE_FAIL_THRESHOLD = 3;
+export const BITABLE_AGGRESSIVE_CATCHUP_DEADLINE_MS = 28_000;
