@@ -55,6 +55,9 @@ import { recomputeCustomerProfiles } from './domains/growth-profiles/recompute.j
 export { recomputeCustomerProfiles } from './domains/growth-profiles/recompute.js';
 import { runTouchRuleEngine as runTouchRuleEngineImpl } from './domains/growth-touch-rules/engine.js';
 import { seedDefaultTouchRules } from './domains/growth-touch-rules/seed-default-rules.js';
+import { upsertCustomer as upsertCustomerImpl } from './domains/growth-customers/upsert.js';
+import { autoBackfillSmsActions as autoBackfillSmsActionsImpl } from './domains/growth-customers/sms-backfill.js';
+import { backfillRedemptionAmounts as backfillRedemptionAmountsImpl } from './domains/growth-customers/redemption-backfill.js';
 import {
   loadSegmentPhoneSet,
   fetchGenericRuleCandidates,
@@ -185,214 +188,17 @@ export async function ensureGrowthTables(pool) {
 }
 
 export async function upsertCustomer(pool, payload, tenantId = 'default') {
-  const phone = cleanPhone(payload.phone);
-  const openid = cleanText(payload.openid, 128);
-  const externalUserId = cleanText(payload.external_userid, 128);
-  const storeId = cleanText(payload.store_id, 128);
-  const meta = payload.customer_meta && typeof payload.customer_meta === 'object' ? payload.customer_meta : {};
-
-  if (!phone && !openid && !externalUserId) return null;
-
-  let existing = null;
-  if (phone) {
-    const r = await pool.query('SELECT * FROM growth_customers WHERE phone = $1 AND tenant_id = $2 LIMIT 1', [phone, tenantId]);
-    existing = r.rows[0] || null;
-  }
-  if (!existing && openid) {
-    const r = await pool.query('SELECT * FROM growth_customers WHERE openid = $1 AND tenant_id = $2 LIMIT 1', [openid, tenantId]);
-    existing = r.rows[0] || null;
-  }
-
-  // 若按手机号匹配到的记录将把 openid 改写为另一条记录已占用的值（同一 openid 此前绑定在不同/无手机号的记录上），
-  // 先释放该记录的 openid，避免下面的 UPDATE 触发 uq_growth_customers_openid 冲突。
-  if (existing && openid && existing.openid !== openid) {
-    const conflict = await pool.query('SELECT id FROM growth_customers WHERE openid = $1 AND tenant_id = $2 LIMIT 1', [openid, tenantId]);
-    const conflictId = conflict.rows[0]?.id;
-    if (conflictId && conflictId !== existing.id) {
-      await pool.query('UPDATE growth_customers SET openid = NULL, updated_at = NOW() WHERE id = $1', [conflictId]);
-    }
-  }
-
-  if (existing) {
-    const r = await pool.query(
-      `UPDATE growth_customers SET
-         phone = COALESCE(NULLIF($2,''), phone),
-         openid = COALESCE(NULLIF($3,''), openid),
-         external_userid = COALESCE(NULLIF($4,''), external_userid),
-         first_store_id = COALESCE(first_store_id, NULLIF($5,'')),
-         last_store_id = COALESCE(NULLIF($5,''), last_store_id),
-         last_seen_at = NOW(),
-         meta = COALESCE(meta, '{}'::jsonb) || $6::jsonb,
-         updated_at = NOW()
-       WHERE id = $1 RETURNING *`,
-      [existing.id, phone, openid, externalUserId, storeId, JSON.stringify(meta)]
-    );
-    existing = r.rows[0];
-  } else {
-    const r = await pool.query(
-      `INSERT INTO growth_customers (phone, openid, external_userid, first_store_id, last_store_id, meta, tenant_id)
-       VALUES (NULLIF($1,''), NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($4,''), $5::jsonb, $6)
-       ON CONFLICT (openid, tenant_id) WHERE openid IS NOT NULL AND openid <> '' DO UPDATE SET
-         phone = COALESCE(growth_customers.phone, EXCLUDED.phone),
-         external_userid = COALESCE(EXCLUDED.external_userid, growth_customers.external_userid),
-         last_store_id = COALESCE(EXCLUDED.last_store_id, growth_customers.last_store_id),
-         last_seen_at = NOW(),
-         meta = COALESCE(growth_customers.meta, '{}'::jsonb) || EXCLUDED.meta,
-         updated_at = NOW()
-       RETURNING *`,
-      [phone, openid, externalUserId, storeId, JSON.stringify(meta), tenantId]
-    );
-    existing = r.rows[0];
-  }
-
-  const identities = [
-    ['phone', phone],
-    ['openid', openid],
-    ['external_userid', externalUserId]
-  ].filter(([, value]) => value);
-  for (const [type, value] of identities) {
-    await pool.query(
-      `INSERT INTO customer_identities (customer_id, identity_type, identity_value, source, tenant_id)
-       VALUES ($1,$2,$3,'miniprogram',$4)
-       ON CONFLICT (identity_type, identity_value, tenant_id)
-       DO UPDATE SET customer_id = EXCLUDED.customer_id, updated_at = NOW()`,
-      [existing.id, type, value, tenantId]
-    );
-  }
-
-  return existing;
+  return upsertCustomerImpl(pool, payload, tenantId, { cleanText, cleanPhone });
 }
 
 async function backfillRedemptionAmounts(pool) {
-  const r = await pool.query(`
-    WITH matched AS (
-      SELECT DISTINCT ON (gr.id) gr.id AS redemption_id, po.amount_after_discount
-      FROM growth_redemptions gr
-      JOIN growth_customers gc ON gc.id = gr.customer_id
-      JOIN pos_orders po ON po.store_id = gr.store_id AND po.phone = gc.phone
-        AND po.order_time BETWEEN gr.redeemed_at - INTERVAL '2 hours' AND gr.redeemed_at + INTERVAL '30 minutes'
-      WHERE gr.amount_fen = 0
-        AND NULLIF(gc.phone, '') IS NOT NULL
-        AND NULLIF(gr.store_id, '') IS NOT NULL
-      ORDER BY gr.id, ABS(EXTRACT(EPOCH FROM (po.order_time - gr.redeemed_at)))
-    )
-    UPDATE growth_redemptions gr
-    SET amount_fen = GREATEST(0, ROUND(matched.amount_after_discount * 100))
-    FROM matched
-    WHERE gr.id = matched.redemption_id
-    RETURNING gr.id
-  `);
-  // 同步把对应的 coupon_redeemed 事件记录一起补齐，保持两表一致。
-  await pool.query(`
-    UPDATE growth_events ge
-    SET amount_fen = gr.amount_fen
-    FROM growth_redemptions gr
-    WHERE ge.event_type = 'coupon_redeemed' AND ge.amount_fen = 0 AND gr.amount_fen > 0
-      AND ge.customer_id = gr.customer_id AND ge.coupon_id = gr.coupon_id AND ge.occurred_at = gr.redeemed_at
-  `).catch(() => {});
-  return r.rows.length;
+  return backfillRedemptionAmountsImpl(pool);
 }
 
 // T+7 SMS自动回填：找已发送7天以上且无outcome_summary的短信AI建议，
 // 按customer_id+store_id+7天窗口匹配核销数据，自动打分写回并沉淀经验库(is_verified=true)。
 async function autoBackfillSmsActions(pool) {
-  const candidates = await pool.query(`
-    SELECT a.action_key, a.store_id, a.payload
-    FROM growth_actions a
-    WHERE a.payload->>'channel' = 'sms'
-      AND (a.payload->'outcome_summary') IS NULL
-      AND a.updated_at <= NOW() - INTERVAL '7 days'
-      AND EXISTS (
-        SELECT 1 FROM growth_delivery_logs dl
-        WHERE dl.action_key = a.action_key AND dl.status = 'sent'
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM growth_learnings gl
-        WHERE gl.source_type = 'ai_suggestion' AND gl.source_id = a.action_key
-      )
-    LIMIT 50
-  `);
-  let count = 0;
-  for (const action of candidates.rows) {
-    try {
-      const { action_key, store_id, payload } = action;
-      const reachR = await pool.query(
-        `SELECT COUNT(*)::int AS reach, MIN(created_at) AS first_sent
-         FROM growth_delivery_logs WHERE action_key=$1 AND status='sent'`,
-        [action_key]
-      );
-      const reach = reachR.rows[0]?.reach || 0;
-      const firstSent = reachR.rows[0]?.first_sent;
-      if (reach === 0 || !firstSent) continue;
-
-      const redR = await pool.query(
-        `SELECT COUNT(*)::int AS redemptions, COALESCE(SUM(gr.amount_fen),0)::bigint AS revenue_fen
-         FROM growth_redemptions gr
-         WHERE gr.customer_id IN (
-           SELECT customer_id FROM growth_delivery_logs WHERE action_key=$1 AND status='sent' AND customer_id IS NOT NULL
-         )
-         AND gr.store_id = $2
-         AND gr.redeemed_at BETWEEN $3::timestamptz AND $3::timestamptz + INTERVAL '7 days'`,
-        [action_key, store_id, firstSent]
-      );
-      const redemptions = redR.rows[0]?.redemptions || 0;
-      const revenue_fen = Number(redR.rows[0]?.revenue_fen || 0);
-
-      const expected = (payload.expected_kpi && typeof payload.expected_kpi === 'object') ? payload.expected_kpi : {};
-      const parts = [];
-      if (Number(expected.reach) > 0) parts.push(Math.min(2, reach / Number(expected.reach)));
-      const actualRate = reach > 0 ? (redemptions / reach) * 100 : 0;
-      if (Number(expected.redemption_rate) > 0) parts.push(Math.min(2, actualRate / Number(expected.redemption_rate)));
-      if (Number(expected.revenue_fen) > 0) parts.push(Math.min(2, revenue_fen / Number(expected.revenue_fen)));
-      const achievement = parts.length ? parts.reduce((a, c) => a + c, 0) / parts.length : null;
-      const score = achievement != null ? Math.round(Math.min(100, achievement * 80)) : null;
-      const effectiveness = score == null ? '已回填' : score >= 70 ? '有效' : score >= 40 ? '部分有效' : '无效';
-
-      const scorePayload = {
-        actual: { reach, redemptions, revenue_fen },
-        actual_redemption_rate: reach > 0 ? Number((redemptions / reach * 100).toFixed(1)) : 0,
-        achievement: achievement != null ? Number(achievement.toFixed(2)) : null,
-        effectiveness_score: score,
-        effectiveness,
-        scored_at: new Date().toISOString(),
-        auto_backfill: true
-      };
-      await pool.query(
-        `UPDATE growth_actions SET payload = COALESCE(payload,'{}') || $2::jsonb, updated_at=NOW() WHERE action_key=$1`,
-        [action_key, JSON.stringify({ outcome_summary: scorePayload })]
-      );
-
-      const approach = cleanText(payload.ready_copy || payload.execution_action || '', 500);
-      if (approach) {
-        const isWin = score != null && score >= 70;
-        const effectDesc = cleanText(
-          `${effectiveness}｜核销率${Number(actualRate.toFixed(1))}%，实收¥${Math.round(revenue_fen / 100)}，达成${achievement != null ? Math.round(achievement * 100) + '%' : '-'}(自动回填)`,
-          255
-        );
-        await pool.query(
-          `INSERT INTO growth_learnings (source_type, source_id, store_code, channel, scene, audience_tag, variable, winning_value, losing_value, effect_desc, sample_size, confidence, valid_until, is_verified, tenant_id)
-           VALUES ('ai_suggestion',$1,$2,'sms',NULL,$3,'AI建议方案有效性',$4,$5,$6,$7,$8,$9,true,$10)
-           ON CONFLICT DO NOTHING`,
-          [
-            action_key,
-            cleanText(store_id, 128),
-            cleanText(payload.target_audience || '', 120) || null,
-            isWin ? approach : '换其它方向（避免重复）',
-            isWin ? null : approach,
-            effectDesc,
-            Math.min(reach, 99999),
-            reach >= 100 ? 'high' : reach >= 30 ? 'medium' : 'low',
-            new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10),
-            resolveTenantIdDefault()
-          ]
-        ).catch(() => {});
-      }
-      count++;
-    } catch (e) {
-      log.warn({ msg: 'sms_backfill_action_error', action_key: action.action_key, err: e?.message });
-    }
-  }
-  return count;
+  return autoBackfillSmsActionsImpl(pool, { cleanText, resolveTenantIdDefault, log });
 }
 
 export async function appendExecutionLog(pool, payload) {
