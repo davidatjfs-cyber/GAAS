@@ -92,11 +92,7 @@ import {
 import {
   executeMetrics,
   matchAnalysisRule,
-  getSessionState,
   setSessionState,
-
-
-
   extractTimeRangeFromText,
   runBusinessDiagnosis,
   setCallLLMBridge,
