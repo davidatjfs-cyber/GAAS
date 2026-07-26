@@ -300,7 +300,7 @@ test('computeAndSaveKpiScore handles missing rep_key with zero outcomes', async 
 });
 
 test('getRepScorecard week period returns assembled payload', async () => {
-  const pool = mockPool((sql, params) => {
+  const pool = mockPool((sql, _params) => {
     if (sql.includes('FROM sales_reps WHERE id')) return { rows: [SAMPLE_REP] };
     if (sql.includes('FROM sales_kpi_targets')) return { rows: [SAMPLE_TARGET] };
     if (sql.includes('FROM sales_kpi_scores')) {
