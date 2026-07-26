@@ -15956,7 +15956,7 @@
                                 <input id="dr-list-end" type="date" class="dr-date-input" onchange="loadDailyReportData()" />
                             </div>
                             <div class="rep-filters__full rep-field rep-filters__clear" style="display:flex; justify-content:flex-end;">
-                                <button class="btn btn-secondary" type="button" onclick="document.getElementById('dr-list-start').value=''; document.getElementById('dr-list-end').value=''; loadDailyReportData();">清除日期</button>
+                                <button class="btn btn-secondary" type="button" data-click="hrmsClearDailyReportDates">清除日期</button>
                             </div>
                         </div>
                     </section>
@@ -16920,7 +16920,7 @@
                             📷 点击上传图片
                         </button>
                     </div>
-                    <button class="btn" type="button" onclick="uploadPointsEvidence().then(()=>submitPointsApplication())" style="width:100%; margin-top:14px; padding:14px; border-radius:14px; background:linear-gradient(135deg, #2563eb, #6366f1); color:#fff; font-size:15px; font-weight:700; border:none; cursor:pointer; box-shadow:0 4px 16px rgba(37,99,235,0.3); letter-spacing:0.5px;">
+                    <button class="btn" type="button" data-click="hrmsSubmitPointsApplication" style="width:100%; margin-top:14px; padding:14px; border-radius:14px; background:linear-gradient(135deg, #2563eb, #6366f1); color:#fff; font-size:15px; font-weight:700; border:none; cursor:pointer; box-shadow:0 4px 16px rgba(37,99,235,0.3); letter-spacing:0.5px;">
                         提交申请
                     </button>
                 </div>
@@ -20794,12 +20794,12 @@
                 <div id="gs-custom-history" style="margin-top:12px;"></div>
               </div>
             </div>
-            <div class="gs-modal" id="gs-modal" onclick="if(event.target===this)gsCloseModal()">
+            <div class="gs-modal" id="gs-modal" data-click="gsCloseModal" data-click-self-only>
               <div class="gs-modal__box">
                 <div class="dx-anomaly-modal__head">
                   <h3 class="dx-anomaly-modal__title" id="gs-modal-title">增长方案</h3>
                   <div style="display:flex;gap:6px;align-items:center;">
-                    <button type="button" class="ga-btn ga-btn--ghost ga-btn--sm gs-no-print" id="gs-export-pdf-btn" onclick="gsExportPdf(this)">导出PDF</button>
+                    <button type="button" class="ga-btn ga-btn--ghost ga-btn--sm gs-no-print" id="gs-export-pdf-btn" data-click="gsExportPdf" data-arg-self="1">导出PDF</button>
                     <button type="button" class="dx-anomaly-modal__close gs-no-print" data-click="gsCloseModal">×</button>
                   </div>
                 </div>
@@ -20811,7 +20811,7 @@
               <button class="dx-panel-close" type="button" data-click="closeDiagnosisDetail">×</button>
               <div id="dx-detail-content"></div>
             </div>
-            <div class="dx-anomaly-modal" id="dx-anomaly-modal" onclick="if(event.target===this)dxCloseAnomalyDetail()">
+            <div class="dx-anomaly-modal" id="dx-anomaly-modal" data-click="dxCloseAnomalyDetail" data-click-self-only>
               <div class="dx-anomaly-modal__box">
                 <div class="dx-anomaly-modal__head">
                   <h3 class="dx-anomaly-modal__title" id="dx-anomaly-modal-title">异常详情</h3>
@@ -21004,7 +21004,7 @@
                             </div>
                             <div id="store-wecom-configs-list" style="max-height:60vh;overflow-y:auto;"></div>
                         </div>
-                        <div id="store-wecom-config-modal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;flex-direction:column;" onclick="if(event.target===this)closeStoreWecomConfigModal()">
+                        <div id="store-wecom-config-modal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;flex-direction:column;" data-click="closeStoreWecomConfigModal" data-click-self-only>
                             <div style="background:#0f0f14;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px;width:400px;max-width:90vw;">
                                 <div style="font-size:14px;font-weight:700;color:var(--rep-gold);margin-bottom:16px;" id="wecom-config-modal-title">新增门店企微配置</div>
                                 <div class="rep-field"><label>门店ID</label><input id="wecom-store-id" class="dr-store-select" placeholder="例如：store_maijixian"></div>
@@ -21055,7 +21055,7 @@
                                 <div class="rep-field" style="margin-top:10px;"><label>活动详情</label><textarea id="camp-detail" placeholder="活动详细描述" class="dr-store-select" style="min-height:60px;resize:vertical;"></textarea></div>
                                 <div class="rep-seg" style="margin-top:14px;">
                                     <button data-click="createCampaignFromForm" class="rep-seg-btn rep-seg-btn--active" style="flex:1;">创建活动</button>
-                                    <button onclick="document.getElementById('campaign-create-form').style.display='none'" class="rep-seg-btn" style="flex:1;">取消</button>
+                                    <button data-click="hrmsHideById" data-arg="campaign-create-form" class="rep-seg-btn" style="flex:1;">取消</button>
                                 </div>
                             </div>
                         </div>
@@ -22031,7 +22031,7 @@
                 <!-- 管理视图：菜品配置 -->
                 <div id="kitchen-manage-view" class="kitchen-view-panel" style="display:none;">
                   <div class="rep-filters" style="margin-bottom:14px;">
-                    <div class="kitchen-manage-topbar" style="cursor:pointer;" onclick="document.getElementById('kitchen-config-form').style.display=document.getElementById('kitchen-config-form').style.display==='none'?'':'none';this.querySelector('span').textContent=document.getElementById('kitchen-config-form').style.display==='none'?'展开表单':'收起表单';">
+                    <div class="kitchen-manage-topbar" style="cursor:pointer;" data-click="hrmsToggleKitchenConfigForm" data-arg-self="1">
                       <div>
                         <h3 id="kitchen-form-title" class="kitchen-panel-title" style="margin:0;">添加岗位负责菜品</h3>
                         <div class="kitchen-panel-subtitle" id="kitchen-form-subtitle">按档口、执行人、时间和关键控制点快速完成厨房排布。</div>
@@ -22123,7 +22123,7 @@
                         <label style="font-size:12px;padding:6px 12px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:8px;color:#fcd34d;cursor:pointer;">
                           📂 导入<input type="file" accept=".xlsx,.xls" style="display:none;" onchange="importRecipeTemplate(this)">
                         </label>
-                        <button class="btn" type="button" onclick="openRecipeEditor(null)" style="font-size:12px;padding:6px 14px;">+ 新建配方</button>
+                        <button class="btn" type="button" data-click="openRecipeEditor" style="font-size:12px;padding:6px 14px;">+ 新建配方</button>
                       </div>
                     </div>
                     <div id="recipe-list" style="display:grid;gap:8px;">
@@ -24419,7 +24419,7 @@
                 };
             }
         } catch (e) {}
-        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function' && !(el.hasAttribute('data-click-self-only') && e.target !== el)) { var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); } } }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; // P5.1：data-click(+data-arg[+data-arg2][+data-click2][+data-arg-self][+data-click-self-only]) 委托
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (!el) return; var fn = el.getAttribute('data-click'); if (!fn || typeof window[fn] !== 'function') return; if (el.hasAttribute('data-click-self-only') && e.target !== el) return; if (el.hasAttribute('data-stop')) e.stopPropagation(); var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; window.hrmsRemoveClosest = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n) n.remove(); } catch (err) {} }; window.hrmsRemoveClosestParent = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n && n.parentElement) n.parentElement.remove(); } catch (err) {} }; window.hrmsRemoveParent = function (el) { try { if (el && el.parentElement) el.parentElement.remove(); } catch (err) {} }; window.hrmsToggleParentOpen = function (el) { if (el && el.parentElement) el.parentElement.open = !el.parentElement.open; }; window.hrmsToggleParentClass = function (cls, el) { if (el && el.parentElement) el.parentElement.classList.toggle(cls); }; window.hrmsHideById = function (id) { var n = document.getElementById(id); if (n) n.style.display = 'none'; }; window.hrmsClearDailyReportDates = function () { var a = document.getElementById('dr-list-start'); if (a) a.value = ''; var b = document.getElementById('dr-list-end'); if (b) b.value = ''; if (typeof loadDailyReportData === 'function') loadDailyReportData(); }; window.hrmsToggleKitchenConfigForm = function (el) { var f = document.getElementById('kitchen-config-form'); if (!f) return; f.style.display = f.style.display === 'none' ? '' : 'none'; var s = el && el.querySelector ? el.querySelector('span') : null; if (s) s.textContent = f.style.display === 'none' ? '展开表单' : '收起表单'; }; window.hrmsSubmitPointsApplication = function () { return uploadPointsEvidence().then(function () { return submitPointsApplication(); }); }; // P5.1：data-click(+data-arg[+data-arg2][+data-click2][+data-arg-self][+data-click-self-only][+data-stop]) 委托
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -26677,7 +26677,7 @@
                     +   '<span class="ap-card__time">' + escapeHtml(timeStr) + '</span>'
                     +   '<div class="ap-card__actions">'
                     +     (canBulk ? '<label class="ap-card__checkbox-wrap"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleApprovalSelection(\'' + escapeHtml(id) + '\', this.checked)">批量选择</label>' : '<span></span>')
-                    +     '<button class="ga-btn ga-btn--ghost ga-btn--sm" type="button" onclick="event.stopPropagation();openApprovalDetailModal(\'' + escapeHtml(id) + '\')">查看详情</button>'
+                    +     '<button class="ga-btn ga-btn--ghost ga-btn--sm" type="button" data-click="openApprovalDetailModal" data-arg="' + escapeHtml(id) + '" data-stop>查看详情</button>'
                     +   '</div>'
                     + '</div>'
                     + '</div>';
@@ -27222,7 +27222,7 @@
                             </summary>
                             <div class="rep-row-details__body">
                                 <div style="font-size:12px; color:rgba(200,215,230,0.65); margin-bottom:10px;">展开后可查看审批详情。</div>
-                                <button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" onclick="event.stopPropagation(); openApprovalDetailModal('${escapeHtml(String(it?.id || ''))}')">查看详情</button>
+                                <button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" data-click="openApprovalDetailModal" data-arg="${escapeHtml(String(it?.id || ''))}" data-stop>查看详情</button>
                             </div>
                         </details>`;
                     }).join('');
@@ -27404,7 +27404,7 @@ const role = String(currentUser?.role || '').trim();
                                     </span>
                                 </summary>
                                 <div class="rep-row-details__body">
-                                    ${aid ? `<button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" onclick="event.stopPropagation(); openApprovalDetailModal('${escapeHtml(aid)}')">查看审批详情</button>` : '<div style="font-size:12px;color:rgba(200,215,230,0.6);">无关联审批单</div>'}
+                                    ${aid ? `<button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" data-click="openApprovalDetailModal" data-arg="${escapeHtml(aid)}" data-stop>查看审批详情</button>` : '<div style="font-size:12px;color:rgba(200,215,230,0.6);">无关联审批单</div>'}
                                 </div>
                             </details>`;
                         }).join('');
@@ -28223,7 +28223,7 @@ th { background: #f5f5f5; font-weight: 700; }
                     <input type="text" class="form-input promo-period-title" placeholder="如：岗位基础/高峰实战" value="${escapeHtml(String(seed?.title || `培训周期${idx}`))}">
                 </div>
                 <div>
-                    <button type="button" class="btn btn-secondary" style="width:100%; padding:8px 10px; font-size:12px;" onclick="this.closest('.promo-period-row').remove();">删除</button>
+                    <button type="button" class="btn btn-secondary" style="width:100%; padding:8px 10px; font-size:12px;" data-click="hrmsRemoveClosest" data-arg=".promo-period-row" data-arg-self="1">删除</button>
                 </div>
             `;
             box.appendChild(row);
@@ -34039,7 +34039,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     if (!grp.length) return;
                     const catIcon = (KB_CATEGORY_ICON || {})[cat] || '📂';
                     html += `<div class="kb-v2-cat-group">
-                        <div class="kb-v2-cat-hdr" onclick="this.parentElement.classList.toggle('kb-v2-collapsed')">
+                        <div class="kb-v2-cat-hdr" data-click="hrmsToggleParentClass" data-arg="kb-v2-collapsed" data-arg-self="1">
                             <span class="kb-v2-cat-hdr-icon">${catIcon}</span>
                             <span class="kb-v2-cat-hdr-name">${escapeHtml(cat)}</span>
                             <span class="kb-v2-cat-count">${grp.length}</span>
@@ -34050,7 +34050,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 });
                 if (uncategorized.length) {
                     html += `<div class="kb-v2-cat-group">
-                        <div class="kb-v2-cat-hdr" onclick="this.parentElement.classList.toggle('kb-v2-collapsed')">
+                        <div class="kb-v2-cat-hdr" data-click="hrmsToggleParentClass" data-arg="kb-v2-collapsed" data-arg-self="1">
                             <span class="kb-v2-cat-hdr-icon">📂</span>
                             <span class="kb-v2-cat-hdr-name">其他</span>
                             <span class="kb-v2-cat-count">${uncategorized.length}</span>
@@ -34395,7 +34395,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                                     ${promotionBadge}
                                 </div>
                             </summary>
-                            <button class="training-admin-toggle" type="button" onclick="this.parentElement.open = !this.parentElement.open;">查看详情</button>
+                            <button class="training-admin-toggle" type="button" data-click="hrmsToggleParentOpen" data-arg-self="1">查看详情</button>
                             <div class="training-admin-details">
                                 <div class="training-admin-sub">${t.practice_task ? escapeHtml(t.practice_task) : '未填写实操目标'}</div>
                                 ${editBtns}
@@ -34511,7 +34511,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                                     <div class="tt-kb-result-meta">${excerpt}${(a.excerpt||'').length > 90 ? '…' : ''}</div>
                                 </div>
                                 <div class="tt-kb-result-side">
-                                    <button type="button" class="tt-kb-result-add-btn" onclick="event.stopPropagation(); addKbArticleFromSearch('${a.id}')">加入</button>
+                                    <button type="button" class="tt-kb-result-add-btn" data-click="addKbArticleFromSearch" data-arg="${a.id}" data-stop>加入</button>
                                     <div class="tt-kb-result-hint">加入当前知识点</div>
                                 </div>
                             </div>`;
@@ -35057,7 +35057,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                                     ${deadlineBadge}
                                 </div>
                             </summary>
-                            <button class="training-admin-toggle" type="button" onclick="this.parentElement.open = !this.parentElement.open;">查看详情</button>
+                            <button class="training-admin-toggle" type="button" data-click="hrmsToggleParentOpen" data-arg-self="1">查看详情</button>
                             <div class="training-admin-details">
                                 <div class="training-admin-sub">指派人：${escapeHtml(a.assigned_by || '系统')} · 员工账号：${escapeHtml(a.employee_username || '')}</div>
                                 ${deadline.isOverdue ? `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(127,29,29,0.22);border:1px solid rgba(248,113,113,0.24);font-size:12px;line-height:1.6;color:#fecaca;">该培训任务已逾期，系统会继续在进度看板中高亮，并向指派人发送飞书催办提醒。</div>` : ''}
@@ -35351,7 +35351,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                                     </div>
                                 </div>
                             </summary>
-                            <button class="training-admin-toggle" type="button" onclick="this.parentElement.open = !this.parentElement.open;">查看成员进度</button>
+                            <button class="training-admin-toggle" type="button" data-click="hrmsToggleParentOpen" data-arg-self="1">查看成员进度</button>
                             <div class="training-admin-details">
                                 ${overdueBanner}
                                 <div style="height:6px;border-radius:999px;background:rgba(255,255,255,0.1);overflow:hidden;margin-bottom:12px;">
@@ -35482,7 +35482,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 const dialog = document.createElement('div');
                 dialog.innerHTML = `
                     <div class="modal show" style="display:flex;z-index:9999;">
-                        <div class="modal-backdrop" onclick="this.parentElement.remove()"></div>
+                        <div class="modal-backdrop" data-click="hrmsRemoveParent" data-arg-self="1"></div>
                         <div class="modal-content" style="width:min(480px,calc(100vw-20px));max-height:90vh;overflow-y:auto;border-radius:18px;padding:24px;background:linear-gradient(180deg,rgba(30,41,59,0.98),rgba(15,23,42,0.98));border:1px solid rgba(148,163,184,0.16);">
                             <h3 style="color:#fff;margin:0 0 4px;">手动覆盖评分</h3>
                             <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:16px;">AI评分：${total}分。你可以逐项调整分数。</div>
@@ -35492,7 +35492,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                                 <textarea id="override-note" rows="2" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:12px;resize:vertical;"></textarea>
                             </div>
                             <div style="display:flex;gap:8px;margin-top:16px;">
-                                <button onclick="this.closest('.modal').remove()" style="flex:1;padding:12px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;">取消</button>
+                                <button data-click="hrmsRemoveClosest" data-arg=".modal" data-arg-self="1" style="flex:1;padding:12px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;">取消</button>
                                 <button data-click="submitOverride" data-arg="${id}" data-arg-type="number" style="flex:1;padding:12px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">提交人工评分</button>
                             </div>
                         </div>
@@ -38283,7 +38283,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                                 <input class="op-daily-formurl" value="${item.formUrl || ''}" placeholder="https://xxx.feishu.cn/base/..." style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
                             </div>
                             <div style="display:flex;align-items:flex-end;">
-                                <button class="btn btn-secondary" onclick="this.closest('[data-checklist]').remove()" style="width:100%;padding:10px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                                <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg="[data-checklist]" data-arg-self="1" style="width:100%;padding:10px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
                             </div>
                         </div>
                     </div>
@@ -38328,7 +38328,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                                 <div>${getOpRandomRoleChecksHtml(item.assigneeRoles || [])}</div>
                             </div>
                             <div style="grid-column:span 2;display:flex;justify-content:flex-end;">
-                                <button class="btn btn-secondary" onclick="this.closest('.am-card').remove()" style="padding:10px 20px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                                <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="padding:10px 20px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
                             </div>
                         </div>
                     </div>
@@ -38372,7 +38372,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                             <input class="op-daily-formurl" value="" placeholder="https://xxx.feishu.cn/base/..." style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
                         </div>
                         <div style="display:flex;align-items:flex-end;">
-                            <button class="btn btn-secondary" onclick="this.closest('.am-card').remove()" style="width:100%;padding:10px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                            <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="width:100%;padding:10px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
                         </div>
                     </div>
                 </div>
@@ -38420,7 +38420,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                             <div>${getOpRandomRoleChecksHtml([])}</div>
                         </div>
                         <div style="grid-column:span 2;display:flex;justify-content:flex-end;">
-                            <button class="btn btn-secondary" onclick="this.closest('.am-card').remove()" style="padding:10px 20px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                            <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="padding:10px 20px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
                         </div>
                     </div>
                 </div>
@@ -68385,7 +68385,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
         <div style="display:flex;align-items:center;gap:8px;">
           <input type="text" placeholder="半成品名称，如：烧鹅皮水" value="${nameVal}"
             style="${inputS}flex:1;font-weight:600;" class="comp-name">
-          <button type="button" onclick="this.closest('.recipe-comp-card').remove()"
+          <button type="button" data-click="hrmsRemoveClosest" data-arg=".recipe-comp-card" data-arg-self="1"
             style="flex-shrink:0;width:30px;height:30px;border-radius:8px;border:none;background:rgba(239,68,68,0.12);color:#f87171;cursor:pointer;font-size:16px;line-height:1;">×</button>
         </div>
         <input type="text" placeholder="备注（选填）" value="${notesVal}" style="${inputS}" class="comp-notes">
@@ -68432,7 +68432,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
           <input type="checkbox" ${ing.is_pack?'checked':''} style="accent-color:#6366f1;" class="ri-pack">
           <span style="font-size:10px;color:var(--rep-muted);">料包</span>
         </label>
-        <button type="button" onclick="this.closest('[style*=grid]').remove()"
+        <button type="button" data-click="hrmsRemoveClosest" data-arg="[style*=grid]" data-arg-self="1"
           style="width:26px;height:26px;margin-top:2px;border-radius:6px;border:none;background:rgba(239,68,68,0.1);color:#f87171;cursor:pointer;font-size:14px;line-height:1;">×</button>`;
       container.appendChild(row);
 
@@ -68497,7 +68497,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
           <label title="上传图片或视频" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(99,102,241,0.4);background:rgba(99,102,241,0.08);color:#a5b4fc;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
             📷<input type="file" accept="image/*,video/*" style="display:none;" onchange="uploadStepMedia(this)">
           </label>
-          <button type="button" onclick="this.closest('div').parentElement.remove()"
+          <button type="button" data-click="hrmsRemoveClosestParent" data-arg="div" data-arg-self="1"
             style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(239,68,68,0.1);color:#f87171;cursor:pointer;font-size:14px;flex-shrink:0;">×</button>
         </div>
         <div class="rs-media-preview" style="${step.media_url ? '' : 'display:none;'}">${mediaHtml}</div>`;

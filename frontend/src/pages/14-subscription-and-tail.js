@@ -3690,7 +3690,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
         <div style="display:flex;align-items:center;gap:8px;">
           <input type="text" placeholder="半成品名称，如：烧鹅皮水" value="${nameVal}"
             style="${inputS}flex:1;font-weight:600;" class="comp-name">
-          <button type="button" onclick="this.closest('.recipe-comp-card').remove()"
+          <button type="button" data-click="hrmsRemoveClosest" data-arg=".recipe-comp-card" data-arg-self="1"
             style="flex-shrink:0;width:30px;height:30px;border-radius:8px;border:none;background:rgba(239,68,68,0.12);color:#f87171;cursor:pointer;font-size:16px;line-height:1;">×</button>
         </div>
         <input type="text" placeholder="备注（选填）" value="${notesVal}" style="${inputS}" class="comp-notes">
@@ -3737,7 +3737,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
           <input type="checkbox" ${ing.is_pack?'checked':''} style="accent-color:#6366f1;" class="ri-pack">
           <span style="font-size:10px;color:var(--rep-muted);">料包</span>
         </label>
-        <button type="button" onclick="this.closest('[style*=grid]').remove()"
+        <button type="button" data-click="hrmsRemoveClosest" data-arg="[style*=grid]" data-arg-self="1"
           style="width:26px;height:26px;margin-top:2px;border-radius:6px;border:none;background:rgba(239,68,68,0.1);color:#f87171;cursor:pointer;font-size:14px;line-height:1;">×</button>`;
       container.appendChild(row);
 
@@ -3802,7 +3802,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
           <label title="上传图片或视频" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(99,102,241,0.4);background:rgba(99,102,241,0.08);color:#a5b4fc;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
             📷<input type="file" accept="image/*,video/*" style="display:none;" onchange="uploadStepMedia(this)">
           </label>
-          <button type="button" onclick="this.closest('div').parentElement.remove()"
+          <button type="button" data-click="hrmsRemoveClosestParent" data-arg="div" data-arg-self="1"
             style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(239,68,68,0.1);color:#f87171;cursor:pointer;font-size:14px;flex-shrink:0;">×</button>
         </div>
         <div class="rs-media-preview" style="${step.media_url ? '' : 'display:none;'}">${mediaHtml}</div>`;

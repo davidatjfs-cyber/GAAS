@@ -1815,7 +1815,7 @@
                     if (!grp.length) return;
                     const catIcon = (KB_CATEGORY_ICON || {})[cat] || '📂';
                     html += `<div class="kb-v2-cat-group">
-                        <div class="kb-v2-cat-hdr" onclick="this.parentElement.classList.toggle('kb-v2-collapsed')">
+                        <div class="kb-v2-cat-hdr" data-click="hrmsToggleParentClass" data-arg="kb-v2-collapsed" data-arg-self="1">
                             <span class="kb-v2-cat-hdr-icon">${catIcon}</span>
                             <span class="kb-v2-cat-hdr-name">${escapeHtml(cat)}</span>
                             <span class="kb-v2-cat-count">${grp.length}</span>
@@ -1826,7 +1826,7 @@
                 });
                 if (uncategorized.length) {
                     html += `<div class="kb-v2-cat-group">
-                        <div class="kb-v2-cat-hdr" onclick="this.parentElement.classList.toggle('kb-v2-collapsed')">
+                        <div class="kb-v2-cat-hdr" data-click="hrmsToggleParentClass" data-arg="kb-v2-collapsed" data-arg-self="1">
                             <span class="kb-v2-cat-hdr-icon">📂</span>
                             <span class="kb-v2-cat-hdr-name">其他</span>
                             <span class="kb-v2-cat-count">${uncategorized.length}</span>
@@ -2171,7 +2171,7 @@
                                     ${promotionBadge}
                                 </div>
                             </summary>
-                            <button class="training-admin-toggle" type="button" onclick="this.parentElement.open = !this.parentElement.open;">查看详情</button>
+                            <button class="training-admin-toggle" type="button" data-click="hrmsToggleParentOpen" data-arg-self="1">查看详情</button>
                             <div class="training-admin-details">
                                 <div class="training-admin-sub">${t.practice_task ? escapeHtml(t.practice_task) : '未填写实操目标'}</div>
                                 ${editBtns}
@@ -2287,7 +2287,7 @@
                                     <div class="tt-kb-result-meta">${excerpt}${(a.excerpt||'').length > 90 ? '…' : ''}</div>
                                 </div>
                                 <div class="tt-kb-result-side">
-                                    <button type="button" class="tt-kb-result-add-btn" onclick="event.stopPropagation(); addKbArticleFromSearch('${a.id}')">加入</button>
+                                    <button type="button" class="tt-kb-result-add-btn" data-click="addKbArticleFromSearch" data-arg="${a.id}" data-stop>加入</button>
                                     <div class="tt-kb-result-hint">加入当前知识点</div>
                                 </div>
                             </div>`;
@@ -2833,7 +2833,7 @@
                                     ${deadlineBadge}
                                 </div>
                             </summary>
-                            <button class="training-admin-toggle" type="button" onclick="this.parentElement.open = !this.parentElement.open;">查看详情</button>
+                            <button class="training-admin-toggle" type="button" data-click="hrmsToggleParentOpen" data-arg-self="1">查看详情</button>
                             <div class="training-admin-details">
                                 <div class="training-admin-sub">指派人：${escapeHtml(a.assigned_by || '系统')} · 员工账号：${escapeHtml(a.employee_username || '')}</div>
                                 ${deadline.isOverdue ? `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(127,29,29,0.22);border:1px solid rgba(248,113,113,0.24);font-size:12px;line-height:1.6;color:#fecaca;">该培训任务已逾期，系统会继续在进度看板中高亮，并向指派人发送飞书催办提醒。</div>` : ''}
@@ -3127,7 +3127,7 @@
                                     </div>
                                 </div>
                             </summary>
-                            <button class="training-admin-toggle" type="button" onclick="this.parentElement.open = !this.parentElement.open;">查看成员进度</button>
+                            <button class="training-admin-toggle" type="button" data-click="hrmsToggleParentOpen" data-arg-self="1">查看成员进度</button>
                             <div class="training-admin-details">
                                 ${overdueBanner}
                                 <div style="height:6px;border-radius:999px;background:rgba(255,255,255,0.1);overflow:hidden;margin-bottom:12px;">
@@ -3258,7 +3258,7 @@
                 const dialog = document.createElement('div');
                 dialog.innerHTML = `
                     <div class="modal show" style="display:flex;z-index:9999;">
-                        <div class="modal-backdrop" onclick="this.parentElement.remove()"></div>
+                        <div class="modal-backdrop" data-click="hrmsRemoveParent" data-arg-self="1"></div>
                         <div class="modal-content" style="width:min(480px,calc(100vw-20px));max-height:90vh;overflow-y:auto;border-radius:18px;padding:24px;background:linear-gradient(180deg,rgba(30,41,59,0.98),rgba(15,23,42,0.98));border:1px solid rgba(148,163,184,0.16);">
                             <h3 style="color:#fff;margin:0 0 4px;">手动覆盖评分</h3>
                             <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:16px;">AI评分：${total}分。你可以逐项调整分数。</div>
@@ -3268,7 +3268,7 @@
                                 <textarea id="override-note" rows="2" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:12px;resize:vertical;"></textarea>
                             </div>
                             <div style="display:flex;gap:8px;margin-top:16px;">
-                                <button onclick="this.closest('.modal').remove()" style="flex:1;padding:12px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;">取消</button>
+                                <button data-click="hrmsRemoveClosest" data-arg=".modal" data-arg-self="1" style="flex:1;padding:12px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;">取消</button>
                                 <button data-click="submitOverride" data-arg="${id}" data-arg-type="number" style="flex:1;padding:12px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">提交人工评分</button>
                             </div>
                         </div>

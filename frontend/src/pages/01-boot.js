@@ -26,7 +26,7 @@
                 };
             }
         } catch (e) {}
-        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function' && !(el.hasAttribute('data-click-self-only') && e.target !== el)) { var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); } } }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; // P5.1：data-click(+data-arg[+data-arg2][+data-click2][+data-arg-self][+data-click-self-only]) 委托
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (!el) return; var fn = el.getAttribute('data-click'); if (!fn || typeof window[fn] !== 'function') return; if (el.hasAttribute('data-click-self-only') && e.target !== el) return; if (el.hasAttribute('data-stop')) e.stopPropagation(); var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; window.hrmsRemoveClosest = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n) n.remove(); } catch (err) {} }; window.hrmsRemoveClosestParent = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n && n.parentElement) n.parentElement.remove(); } catch (err) {} }; window.hrmsRemoveParent = function (el) { try { if (el && el.parentElement) el.parentElement.remove(); } catch (err) {} }; window.hrmsToggleParentOpen = function (el) { if (el && el.parentElement) el.parentElement.open = !el.parentElement.open; }; window.hrmsToggleParentClass = function (cls, el) { if (el && el.parentElement) el.parentElement.classList.toggle(cls); }; window.hrmsHideById = function (id) { var n = document.getElementById(id); if (n) n.style.display = 'none'; }; window.hrmsClearDailyReportDates = function () { var a = document.getElementById('dr-list-start'); if (a) a.value = ''; var b = document.getElementById('dr-list-end'); if (b) b.value = ''; if (typeof loadDailyReportData === 'function') loadDailyReportData(); }; window.hrmsToggleKitchenConfigForm = function (el) { var f = document.getElementById('kitchen-config-form'); if (!f) return; f.style.display = f.style.display === 'none' ? '' : 'none'; var s = el && el.querySelector ? el.querySelector('span') : null; if (s) s.textContent = f.style.display === 'none' ? '展开表单' : '收起表单'; }; window.hrmsSubmitPointsApplication = function () { return uploadPointsEvidence().then(function () { return submitPointsApplication(); }); }; // P5.1：data-click(+data-arg[+data-arg2][+data-click2][+data-arg-self][+data-click-self-only][+data-stop]) 委托
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -2284,7 +2284,7 @@
                     +   '<span class="ap-card__time">' + escapeHtml(timeStr) + '</span>'
                     +   '<div class="ap-card__actions">'
                     +     (canBulk ? '<label class="ap-card__checkbox-wrap"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleApprovalSelection(\'' + escapeHtml(id) + '\', this.checked)">批量选择</label>' : '<span></span>')
-                    +     '<button class="ga-btn ga-btn--ghost ga-btn--sm" type="button" onclick="event.stopPropagation();openApprovalDetailModal(\'' + escapeHtml(id) + '\')">查看详情</button>'
+                    +     '<button class="ga-btn ga-btn--ghost ga-btn--sm" type="button" data-click="openApprovalDetailModal" data-arg="' + escapeHtml(id) + '" data-stop>查看详情</button>'
                     +   '</div>'
                     + '</div>'
                     + '</div>';
@@ -2829,7 +2829,7 @@
                             </summary>
                             <div class="rep-row-details__body">
                                 <div style="font-size:12px; color:rgba(200,215,230,0.65); margin-bottom:10px;">展开后可查看审批详情。</div>
-                                <button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" onclick="event.stopPropagation(); openApprovalDetailModal('${escapeHtml(String(it?.id || ''))}')">查看详情</button>
+                                <button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" data-click="openApprovalDetailModal" data-arg="${escapeHtml(String(it?.id || ''))}" data-stop>查看详情</button>
                             </div>
                         </details>`;
                     }).join('');
@@ -3011,7 +3011,7 @@ const role = String(currentUser?.role || '').trim();
                                     </span>
                                 </summary>
                                 <div class="rep-row-details__body">
-                                    ${aid ? `<button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" onclick="event.stopPropagation(); openApprovalDetailModal('${escapeHtml(aid)}')">查看审批详情</button>` : '<div style="font-size:12px;color:rgba(200,215,230,0.6);">无关联审批单</div>'}
+                                    ${aid ? `<button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" data-click="openApprovalDetailModal" data-arg="${escapeHtml(aid)}" data-stop>查看审批详情</button>` : '<div style="font-size:12px;color:rgba(200,215,230,0.6);">无关联审批单</div>'}
                                 </div>
                             </details>`;
                         }).join('');
@@ -3830,7 +3830,7 @@ th { background: #f5f5f5; font-weight: 700; }
                     <input type="text" class="form-input promo-period-title" placeholder="如：岗位基础/高峰实战" value="${escapeHtml(String(seed?.title || `培训周期${idx}`))}">
                 </div>
                 <div>
-                    <button type="button" class="btn btn-secondary" style="width:100%; padding:8px 10px; font-size:12px;" onclick="this.closest('.promo-period-row').remove();">删除</button>
+                    <button type="button" class="btn btn-secondary" style="width:100%; padding:8px 10px; font-size:12px;" data-click="hrmsRemoveClosest" data-arg=".promo-period-row" data-arg-self="1">删除</button>
                 </div>
             `;
             box.appendChild(row);

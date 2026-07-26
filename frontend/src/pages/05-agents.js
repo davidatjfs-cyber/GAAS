@@ -237,7 +237,7 @@
                                 <input class="op-daily-formurl" value="${item.formUrl || ''}" placeholder="https://xxx.feishu.cn/base/..." style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
                             </div>
                             <div style="display:flex;align-items:flex-end;">
-                                <button class="btn btn-secondary" onclick="this.closest('[data-checklist]').remove()" style="width:100%;padding:10px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                                <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg="[data-checklist]" data-arg-self="1" style="width:100%;padding:10px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
                             </div>
                         </div>
                     </div>
@@ -282,7 +282,7 @@
                                 <div>${getOpRandomRoleChecksHtml(item.assigneeRoles || [])}</div>
                             </div>
                             <div style="grid-column:span 2;display:flex;justify-content:flex-end;">
-                                <button class="btn btn-secondary" onclick="this.closest('.am-card').remove()" style="padding:10px 20px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                                <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="padding:10px 20px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
                             </div>
                         </div>
                     </div>
@@ -326,7 +326,7 @@
                             <input class="op-daily-formurl" value="" placeholder="https://xxx.feishu.cn/base/..." style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
                         </div>
                         <div style="display:flex;align-items:flex-end;">
-                            <button class="btn btn-secondary" onclick="this.closest('.am-card').remove()" style="width:100%;padding:10px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                            <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="width:100%;padding:10px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
                         </div>
                     </div>
                 </div>
@@ -374,7 +374,7 @@
                             <div>${getOpRandomRoleChecksHtml([])}</div>
                         </div>
                         <div style="grid-column:span 2;display:flex;justify-content:flex-end;">
-                            <button class="btn btn-secondary" onclick="this.closest('.am-card').remove()" style="padding:10px 20px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                            <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="padding:10px 20px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
                         </div>
                     </div>
                 </div>
