@@ -83,6 +83,7 @@ import { createBuildBiDeterministicDailyReportReply } from './domains/agent-bi/b
 import { createBuildBiDeterministicSalesRawTopReply } from './domains/agent-bi/build-sales-raw-top-reply.js';
 import { createBuildBiDeterministicBadReviewReportReply } from './domains/agent-bi/build-bad-review-report-reply.js';
 import { createBiQueryHelpersApi } from './domains/agent-bi/bi-query-helpers.js';
+import { createSendPeriodReportsApi } from './domains/agent-bi/send-period-reports.js';
 import { createDeterministicCascadeReplies } from './domains/agent-bi/deterministic-cascade-replies.js';
 import { createPollBitableSubmissions } from './domains/feishu-bitable/poll-submissions.js';
 import { createNotifyBitablePipelineFailure } from './domains/feishu-bitable/pipeline-failure-notify.js';
@@ -3518,6 +3519,26 @@ _feishuUserMessagingApi = createFeishuUserMessagingApi({
   log,
 });
 
+let _sendPeriodReportsApi;
+_sendPeriodReportsApi = createSendPeriodReportsApi({
+  agentPool,
+  pool,
+  reportStoresSeed: ALL_STORE_NAMES,
+  getSharedState,
+  lookupFeishuUserByUsername,
+  sendLarkCard,
+  sendLarkMessage,
+  prefixWithAgentName,
+  generateWeeklyReport,
+  generateMonthlyReport,
+  formatReportMarkdown,
+  calendarLastCompletedWeekMonSunShanghai,
+  calendarPreviousMonthRangeShanghai,
+  resolveAgentCanonicalStore,
+  dailyReportIlikePatterns,
+  log,
+});
+
 _onFeishuEvent = createOnFeishuEvent({
   pool,
   lookupFeishuUser,
@@ -3615,222 +3636,16 @@ async function getRecentAuditCount(storeName, days) {
   }
 }
 
-// 13. Weekly BI Report Scheduler (Monday 10am CST)
-/** 种子店名（与 DB 中实际名称可能不一致时，仍会与库中 DISTINCT 店名合并） */
-const REPORT_STORES_SEED = ALL_STORE_NAMES;
-
-async function getReportStoresForBiReports(tenantId = 'default') {
-  const seed = REPORT_STORES_SEED.slice();
-  try {
-    const r = await agentPool.query(`
-      SELECT DISTINCT TRIM(store) AS store FROM pos_sales_detail
-      WHERE date >= (CURRENT_DATE - INTERVAL '120 days')
-        AND TRIM(COALESCE(store, '')) <> '' AND tenant_id = $1
-      UNION
-      SELECT DISTINCT TRIM(store) AS store FROM daily_reports
-      WHERE date >= (CURRENT_DATE - INTERVAL '120 days')
-        AND TRIM(COALESCE(store, '')) <> '' AND tenant_id = $1
-    `, [tenantId]);
-    const fromDb = (r.rows || []).map((x) => String(x.store || '').trim()).filter(Boolean);
-    const set = new Set([...seed, ...fromDb]);
-    return Array.from(set).sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
-  } catch (e) {
-    log.error('[bi-report] getReportStoresForBiReports failed:', e?.message);
-    return seed;
-  }
-}
-function splitMarkdownForCard(md, maxLen = 3600) {
-  const text = String(md || '');
-  if (!text) return [''];
-  if (text.length <= maxLen) return [text];
-  const lines = text.split('\n');
-  const chunks = [];
-  let cur = '';
-  for (const line of lines) {
-    const next = cur ? `${cur}\n${line}` : line;
-    const isSectionStart = /^##\s/.test(line) || /^###\s/.test(line);
-    if (next.length > maxLen && cur) {
-      chunks.push(cur);
-      cur = line;
-      continue;
-    }
-    if (isSectionStart && cur.length > Math.floor(maxLen * 0.75)) {
-      chunks.push(cur);
-      cur = line;
-      continue;
-    }
-    cur = next;
-  }
-  if (cur) chunks.push(cur);
-  return chunks;
-}
-
-/** 月报投递：匹配该门店的飞书店长（店名字段与 canonical / 日报别名对齐） */
-async function feishuStoreManagersForMonthlyReport(storeDisplayName) {
-  const canon = String(resolveAgentCanonicalStore(storeDisplayName) || storeDisplayName).trim();
-  const pats = [...new Set([
-    ...dailyReportIlikePatterns(storeDisplayName),
-    ...dailyReportIlikePatterns(canon)
-  ])].filter((x) => x && String(x).length > 1);
-  const patArr = pats.length ? pats : [`%${String(storeDisplayName).replace(/%/g, '')}%`];
-  try {
-    const r = await pool().query(
-      `SELECT username FROM feishu_users
-       WHERE COALESCE(registered, false) = true
-         AND TRIM(COALESCE(open_id, '')) <> ''
-         AND role = 'store_manager'
-         AND (
-           TRIM(COALESCE(store, '')) = $1
-           OR TRIM(COALESCE(store, '')) = $2
-           OR TRIM(COALESCE(store, '')) ILIKE ANY($3::text[])
-         )`,
-      [storeDisplayName, canon, patArr]
-    );
-    const seen = new Set();
-    const out = [];
-    for (const row of r.rows || []) {
-      const u = String(row.username || '').trim();
-      const k = u.toLowerCase();
-      if (!k || seen.has(k)) continue;
-      seen.add(k);
-      out.push({ username: u });
-    }
-    return out;
-  } catch (e) {
-    log.error('[bi-report] feishuStoreManagersForMonthlyReport failed:', e?.message);
-    return [];
-  }
-}
-
-function uniqBiReportRecipients(list) {
-  const seen = new Set();
-  return (list || []).filter((u) => {
-    const k = String(u?.username || '').trim().toLowerCase();
-    if (!k || seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-}
-
-async function sendBiReportToAdmins({ admins, title, note, md, cardTemplate = 'blue' }) {
-  const chunks = splitMarkdownForCard(md, 3600);
-  for (const a of admins) {
-    const fu = await lookupFeishuUserByUsername(a.username);
-    if (!fu?.open_id) continue;
-    for (let i = 0; i < chunks.length; i += 1) {
-      const card = {
-        config: { wide_screen_mode: true },
-        header: {
-          title: { tag: 'plain_text', content: chunks.length > 1 ? `${title} (${i + 1}/${chunks.length})` : title },
-          template: cardTemplate
-        },
-        elements: [
-          { tag: 'div', text: { tag: 'lark_md', content: chunks[i] } },
-          { tag: 'note', elements: [{ tag: 'plain_text', content: note }] }
-        ]
-      };
-      const s = await sendLarkCard(fu.open_id, card);
-      if (!s.ok) {
-        await sendLarkMessage(fu.open_id, prefixWithAgentName('data_auditor', chunks[i].slice(0, 3000)));
-      }
-    }
-  }
-}
-
+// 13. Weekly BI Report Scheduler → domains/agent-bi/send-period-reports*.js
 export async function sendWeeklyReports(tenantId = 'default') {
-  log.info(`[bi-report] generating weekly reports (tenant=${tenantId})...`);
-  const { wsS, weS } = calendarLastCompletedWeekMonSunShanghai();
-  const state = await getSharedState(tenantId);
-  const adminsRaw = [...(state?.employees||[]),...(state?.users||[])].filter(u => ['admin','hq_manager'].includes(u?.role));
-  const admins = uniqBiReportRecipients(adminsRaw);
-  const stores = await getReportStoresForBiReports(tenantId);
-  for (const store of stores) {
-    try {
-      const r = await generateWeeklyReport(store, wsS, weS);
-      const md = formatReportMarkdown(r);
-      await sendBiReportToAdmins({
-        admins,
-        title: `📊 ${store} 周报`,
-        note: `小年·BI周报·${wsS}~${weS}`,
-        md,
-        cardTemplate: 'blue'
-      });
-      log.info(`[bi-report] sent ${store} report to ${admins.length} admins`);
-    } catch (e) { log.error(`[bi-report] ${store} failed:`, e?.message); }
-  }
+  return _sendPeriodReportsApi.sendWeeklyReports(tenantId);
 }
-
 export async function sendMonthlyReports(tenantId = 'default') {
-  log.info(`[bi-report] generating monthly reports (tenant=${tenantId})...`);
-  const { msS, meS } = calendarPreviousMonthRangeShanghai();
-  const state = await getSharedState(tenantId);
-  const adminsRaw2 = [...(state?.employees || []), ...(state?.users || [])].filter(u => ['admin','hq_manager'].includes(u?.role));
-  const baseRecipients = uniqBiReportRecipients(adminsRaw2);
-  const stores = await getReportStoresForBiReports(tenantId);
-  for (const store of stores) {
-    try {
-      const r = await generateMonthlyReport(store, msS, meS);
-      const md = formatReportMarkdown(r);
-      const managers = await feishuStoreManagersForMonthlyReport(store);
-      const admins = uniqBiReportRecipients([...baseRecipients, ...managers]);
-      await sendBiReportToAdmins({
-        admins,
-        title: `📈 ${store} 月报`,
-        note: `小年·BI月报·${msS}~${meS}`,
-        md,
-        cardTemplate: 'turquoise'
-      });
-      log.info(`[bi-report] sent ${store} monthly report to ${admins.length} recipients (admin/hq + store managers)`);
-    } catch (e) { log.error(`[bi-report] ${store} monthly failed:`, e?.message); }
-  }
+  return _sendPeriodReportsApi.sendMonthlyReports(tenantId);
 }
-
 export async function sendTestReportsToUser(targetUsername, tenantId = 'default') {
-  log.info('[bi-report] test send to user:', targetUsername);
-  const fu = await lookupFeishuUserByUsername(targetUsername);
-  if (!fu?.open_id) {
-    log.error('[bi-report] user not found or not bound to Feishu:', targetUsername);
-    return { ok: false, error: 'user_not_found_or_not_bound', username: targetUsername };
-  }
-  const testAdmins = [{ username: targetUsername }];
-  const results = [];
-
-  // 周报：上一完整自然周（上海历）
-  const { wsS, weS } = calendarLastCompletedWeekMonSunShanghai();
-  const stores = await getReportStoresForBiReports(tenantId);
-  for (const store of stores) {
-    try {
-      const r = await generateWeeklyReport(store, wsS, weS);
-      const md = formatReportMarkdown(r);
-      await sendBiReportToAdmins({ admins: testAdmins, title: `📊 ${store} 周报`, note: `小年·BI周报·${wsS}~${weS}`, md, cardTemplate: 'blue' });
-      results.push({ type: 'weekly', store, ok: true });
-      log.info(`[bi-report] test weekly sent: ${store} → ${targetUsername}`);
-    } catch (e) {
-      results.push({ type: 'weekly', store, ok: false, error: e?.message });
-      log.error(`[bi-report] test weekly failed: ${store}`, e?.message);
-    }
-  }
-
-  // 月报：上一自然月（上海历）
-  const { msS, meS } = calendarPreviousMonthRangeShanghai();
-  for (const store of stores) {
-    try {
-      const r = await generateMonthlyReport(store, msS, meS);
-      const md = formatReportMarkdown(r);
-      await sendBiReportToAdmins({ admins: testAdmins, title: `📈 ${store} 月报`, note: `小年·BI月报·${msS}~${meS}`, md, cardTemplate: 'turquoise' });
-      results.push({ type: 'monthly', store, ok: true });
-      log.info(`[bi-report] test monthly sent: ${store} → ${targetUsername}`);
-    } catch (e) {
-      results.push({ type: 'monthly', store, ok: false, error: e?.message });
-      log.error(`[bi-report] test monthly failed: ${store}`, e?.message);
-    }
-  }
-
-  return { ok: true, results, targetUsername };
+  return _sendPeriodReportsApi.sendTestReportsToUser(targetUsername, tenantId);
 }
-
 export function startWeeklyReportScheduler() {
-  // DISABLED 2026-04-21: 周报/月报已合并到 Agents v2 本周运营周报（周一10:06飞书卡片）和本月运营月报（每月10日10:18飞书卡片）
-  // 原来 HRMS 侧的纯文本周报(周一10:00)和月报(每月1日10:00)不再单独发送
-  log.info('[bi-report] weekly/monthly report scheduler DISABLED — merged into Agents v2 rhythm-engine');
+  return _sendPeriodReportsApi.startWeeklyReportScheduler();
 }
