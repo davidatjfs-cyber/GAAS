@@ -73,6 +73,7 @@ import { createBuildBiDeterministicSalesRawTopReply } from './domains/agent-bi/b
 import { createBuildBiDeterministicBadReviewReportReply } from './domains/agent-bi/build-bad-review-report-reply.js';
 import { createDeterministicCascadeReplies } from './domains/agent-bi/deterministic-cascade-replies.js';
 import { createPollBitableSubmissions } from './domains/feishu-bitable/poll-submissions.js';
+import { createTaskResponseApi } from './domains/feishu-bitable/task-response.js';
 import { createBitablePollingController } from './domains/feishu-bitable/start-bitable-polling.js';
 import {
   buildKpiRadarAlertJson,
@@ -3179,384 +3180,44 @@ export async function pollAllBitableSubmissions() {
 }
 
 // ─────────────────────────────────────────────
-// Task Response via Bitable Collection Form
+// Task Response via Bitable Collection Form → domains/feishu-bitable/task-response*
 // ─────────────────────────────────────────────
-const _taskResponseBitableState = { tableId: '', formViewId: '', formUrl: '', initialized: false, failCount: 0, disabled: false };
-const _processedTaskResponseIds = new Set();
-
-const TASK_RESPONSE_TABLE_NAME = '异常任务回复';
-const TASK_RESPONSE_FIELDS = [
-  { field_name: '任务编号', type: 1 },
-  { field_name: '异常类型', type: 1 },
-  { field_name: '门店', type: 1 },
-  { field_name: '品牌', type: 1 },
-  { field_name: '严重程度', type: 1 },
-  { field_name: '异常描述', type: 1 },
-  { field_name: '回复说明', type: 1 },
-  { field_name: '整改照片', type: 17 },
-  { field_name: '处理状态', type: 3, property: { options: [{ name: '待回复' }, { name: '已回复' }, { name: '已处理' }] } }
-];
+let _taskResponseApi;
+function taskResponseApi() {
+  if (!_taskResponseApi) {
+    _taskResponseApi = createTaskResponseApi({
+      pool,
+      axios,
+      bitableConfigs: BITABLE_CONFIGS,
+      getBitableTenantToken,
+      getBitableRecordImageDownloadUrl,
+      extractBitableFieldText,
+      getTaskResponseHook: () => _taskResponseHook,
+    });
+  }
+  return _taskResponseApi;
+}
 
 export async function ensureTaskResponseBitable() {
-  if (_taskResponseBitableState.initialized && _taskResponseBitableState.tableId) return true;
-  if (_taskResponseBitableState.disabled) return false; // permanently failed, stop retrying
-
-  const configKey = 'task_responses';
-  const config = BITABLE_CONFIGS[configKey];
-
-  // If table_id is set via env var, use directly
-  if (config?.tableId) {
-    _taskResponseBitableState.tableId = config.tableId;
-    _taskResponseBitableState.initialized = true;
-    log.info('[task_response] Using configured table:', config.tableId);
-    await _ensureTaskResponseFormView(configKey);
-    return true;
-  }
-
-  const token = await getBitableTenantToken(configKey);
-  if (!token) { log.error('[task_response] No tenant token'); return false; }
-
-  try {
-    // Skip list-tables (requires permissions we may not have) — go straight to create
-    const createResp = await axios.post(
-      `https://open.feishu.cn/open-apis/bitable/v1/apps/${config.appToken}/tables`,
-      { table: { name: TASK_RESPONSE_TABLE_NAME, default_view_name: '默认视图', fields: TASK_RESPONSE_FIELDS } },
-      { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
-    );
-    const newId = createResp.data?.data?.table_id;
-    if (!newId) { log.error('[task_response] Table creation returned no ID:', createResp.data); return false; }
-    _taskResponseBitableState.tableId = newId;
-    config.tableId = newId;
-    _taskResponseBitableState.failCount = 0;
-    log.info('[task_response] Created new table:', newId);
-
-    await _ensureTaskResponseFormView(configKey);
-    _taskResponseBitableState.initialized = true;
-    return true;
-  } catch (e) {
-    _taskResponseBitableState.failCount++;
-    const errCode = e?.response?.data?.code;
-    const errMsg = e?.response?.data?.msg || e?.message;
-    if (_taskResponseBitableState.failCount <= 2) {
-      log.error(`[task_response] ensureTaskResponseBitable failed (${_taskResponseBitableState.failCount}/3): code=${errCode} msg=${errMsg}`);
-    }
-    // After 3 failures, disable permanently to stop log spam
-    if (_taskResponseBitableState.failCount >= 3) {
-      if (errCode === 1254302) {
-        log.error('[task_response] ⚠️ Feishu app lacks bitable:app permission — Bitable task response DISABLED. Tasks will still be sent via Feishu messages. To enable: grant permission in Feishu Developer Console or set BITABLE_TASK_RESP_TABLE_ID env var.');
-      } else {
-        log.error(`[task_response] Bitable task response DISABLED after 3 failures. Last error: code=${errCode} msg=${errMsg}`);
-      }
-      _taskResponseBitableState.disabled = true;
-    }
-    return false;
-  }
+  return taskResponseApi().ensureTaskResponseBitable();
 }
-
-async function _ensureTaskResponseFormView(configKey) {
-  const config = BITABLE_CONFIGS[configKey];
-  const tableId = _taskResponseBitableState.tableId;
-  if (!tableId) return;
-
-  const envFormUrl = process.env.BITABLE_TASK_RESP_FORM_URL || 'https://qcniocx2wuu8.feishu.cn/base/BTAjbflrlaMRHesADUfc8usznqh?table=tblT86H1uuTJydne&view=vewOvsJql9';
-  if (envFormUrl) {
-    _taskResponseBitableState.formUrl = envFormUrl;
-    log.info('[task_response] Using form URL from env:', envFormUrl);
-    return;
-  }
-
-  const host = String(process.env.BITABLE_TASK_RESP_HOST || 'qcniocx2wuu8.feishu.cn').trim() || 'qcniocx2wuu8.feishu.cn';
-  const forcedViewId = String(process.env.BITABLE_TASK_RESP_VIEW_ID || 'vewOvsJql9').trim();
-  if (forcedViewId) {
-    _taskResponseBitableState.formViewId = forcedViewId;
-    _taskResponseBitableState.formUrl = `https://${host}/base/${config.appToken}?table=${tableId}&view=${forcedViewId}`;
-    log.info('[task_response] Using view ID from env, form URL:', _taskResponseBitableState.formUrl);
-    return;
-  }
-
-  const token = await getBitableTenantToken(configKey);
-  if (!token) return;
-
-  try {
-    const viewsResp = await axios.get(
-      `https://open.feishu.cn/open-apis/bitable/v1/apps/${config.appToken}/tables/${tableId}/views`,
-      { headers: { 'Authorization': `Bearer ${token}` }, timeout: 10000 }
-    );
-    const views = viewsResp.data?.data?.items || [];
-    let formView = views.find(v => v.view_type === 'form');
-
-    if (!formView) {
-      try {
-        const cvResp = await axios.post(
-          `https://open.feishu.cn/open-apis/bitable/v1/apps/${config.appToken}/tables/${tableId}/views`,
-          { view_name: '任务回复表单', view_type: 'form' },
-          { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 10000 }
-        );
-        formView = cvResp.data?.data?.view || null;
-      } catch (e) {
-        log.info('[task_response] Could not create form view:', e?.response?.data?.msg || e?.message);
-      }
-    }
-
-    const viewId = formView?.view_id || _taskResponseBitableState.formViewId;
-    if (viewId) {
-      _taskResponseBitableState.formViewId = viewId;
-      _taskResponseBitableState.formUrl = `https://${host}/base/${config.appToken}?table=${tableId}&view=${viewId}`;
-    } else {
-      _taskResponseBitableState.formUrl = `https://${host}/base/${config.appToken}?table=${tableId}`;
-    }
-    log.info('[task_response] Form URL:', _taskResponseBitableState.formUrl);
-  } catch (e) {
-    _taskResponseBitableState.formUrl = `https://${host}/base/${config.appToken}?table=${tableId}`;
-    log.info('[task_response] Fallback to table URL:', _taskResponseBitableState.formUrl);
-  }
-}
-
 export async function createBitableRecord(configKey, fields) {
-  const config = BITABLE_CONFIGS[configKey];
-  if (!config?.tableId) { log.error(`[bitable] createBitableRecord: no table_id for ${configKey}`); return null; }
-
-  const token = await getBitableTenantToken(configKey);
-  if (!token) return null;
-
-  try {
-    const resp = await axios.post(
-      `https://open.feishu.cn/open-apis/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records`,
-      { fields },
-      { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 10000 }
-    );
-    const record = resp.data?.data?.record;
-    if (!record?.record_id) {
-      log.warn(`[bitable][${configKey}] createBitableRecord: no record_id in response. code=${resp.data?.code} msg=${resp.data?.msg} keys=${Object.keys(resp.data?.data || {}).join(',')}`);
-    } else {
-      log.info(`[bitable][${configKey}] created record: ${record.record_id}`);
-    }
-    return record;
-  } catch (e) {
-    log.error(`[bitable][${configKey}] createBitableRecord failed:`, e?.response?.data || e?.message);
-    return null;
-  }
+  return taskResponseApi().createBitableRecord(configKey, fields);
 }
-
 export async function updateBitableRecord(configKey, recordId, fields) {
-  const config = BITABLE_CONFIGS[configKey];
-  if (!config?.tableId) return null;
-
-  const token = await getBitableTenantToken(configKey);
-  if (!token) return null;
-
-  try {
-    const resp = await axios.put(
-      `https://open.feishu.cn/open-apis/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${recordId}`,
-      { fields },
-      { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 10000 }
-    );
-    return resp.data?.data?.record || null;
-  } catch (e) {
-    log.error(`[bitable][${configKey}] updateBitableRecord failed:`, e?.response?.data || e?.message);
-    return null;
-  }
+  return taskResponseApi().updateBitableRecord(configKey, recordId, fields);
 }
-
 export async function writeTaskToBitable(task) {
-  const ready = await ensureTaskResponseBitable();
-  if (!ready) { log.warn('[task_response] Bitable not ready, skipping write'); return null; }
-
-  const fields = {
-    '任务编号': String(task.task_id || ''),
-    '异常类型': String(task.category || ''),
-    '门店': String(task.store || ''),
-    '品牌': String(task.brand || ''),
-    '严重程度': String(task.severity || 'medium'),
-    '异常描述': String(task.title || '') + (task.detail ? '\n' + task.detail : ''),
-    '回复说明': '',
-    '处理状态': '待回复'
-  };
-
-  const record = await createBitableRecord('task_responses', fields);
-  if (record) {
-    _processedTaskResponseIds.add(`task_responses_${record.record_id}`);
-  }
-  return record;
+  return taskResponseApi().writeTaskToBitable(task);
 }
-
 export function getTaskResponseFormUrl(task) {
-  const baseUrl = _taskResponseBitableState.formUrl;
-  if (!baseUrl) return '';
-
-  const params = new URLSearchParams();
-  if (task?.task_id) params.set('prefill_任务编号', task.task_id);
-  if (task?.category) params.set('prefill_异常类型', task.category);
-  if (task?.store) params.set('prefill_门店', task.store);
-  if (task?.brand) params.set('prefill_品牌', task.brand);
-  if (task?.severity) params.set('prefill_严重程度', task.severity);
-  const desc = String(task?.title || '') + (task?.detail ? '\n' + task.detail : '');
-  if (desc.trim()) params.set('prefill_异常描述', desc.trim().slice(0, 500));
-
-  const sep = baseUrl.includes('?') ? '&' : '?';
-  return `${baseUrl}${sep}${params.toString()}`;
+  return taskResponseApi().getTaskResponseFormUrl(task);
 }
-
-export function buildTaskDispatchCard(task, formUrl, { isFirstDispatch = true } = {}) {
-  const sev = task.severity === 'high' ? '🔴 高' : '🟡 中';
-  const roleLabel = task.assignee_role === 'store_production_manager' ? '出品经理' : '店长';
-  const timeNow = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-  const newBadge = isFirstDispatch ? '🆕 新任务 · ' : '🔄 追踪 · ';
-
-  return {
-    config: { wide_screen_mode: true },
-    header: {
-      title: { tag: 'plain_text', content: `${newBadge}⚠️ 异常通知 [${task.task_id}]` },
-      template: isFirstDispatch ? (task.severity === 'high' ? 'red' : 'orange') : 'blue'
-    },
-    elements: [
-      {
-        tag: 'div',
-        fields: [
-          { is_short: true, text: { tag: 'lark_md', content: `**门店**\n${task.store || '-'}` } },
-          { is_short: true, text: { tag: 'lark_md', content: `**品牌**\n${task.brand || '-'}` } },
-          { is_short: true, text: { tag: 'lark_md', content: `**严重程度**\n${sev}` } },
-          { is_short: true, text: { tag: 'lark_md', content: `**时间**\n${timeNow}` } }
-        ]
-      },
-      { tag: 'hr' },
-      {
-        tag: 'div',
-        text: { tag: 'lark_md', content: `**异常类型**：${task.category || '-'}\n\n**详情**：${task.title || '-'}\n${task.detail || ''}` }
-      },
-      { tag: 'hr' },
-      {
-        tag: 'div',
-        text: { tag: 'lark_md', content: `${roleLabel}您好，请点击下方按钮打开回复表单，说明原因并提交整改措施：` }
-      },
-      {
-        tag: 'action',
-        actions: [
-          {
-            tag: 'button',
-            text: { tag: 'plain_text', content: '📝 填写回复表单' },
-            type: 'primary',
-            url: formUrl
-          }
-        ]
-      },
-      { tag: 'hr' },
-      {
-        tag: 'note',
-        elements: [
-          { tag: 'plain_text', content: `任务编号：${task.task_id} · 请在表单中填写回复说明和上传整改照片 · 小年` }
-        ]
-      }
-    ]
-  };
+export function buildTaskDispatchCard(task, formUrl, opts) {
+  return taskResponseApi().buildTaskDispatchCard(task, formUrl, opts);
 }
-
 export async function pollTaskResponseBitable() {
-  const ready = await ensureTaskResponseBitable();
-  if (!ready) return;
-
-  log.info('[task_response] polling for responses...');
-
-  try {
-    // Read from feishu_generic_records instead of Feishu API (Agent V2 handles polling)
-    const config = BITABLE_CONFIGS['task_responses'];
-    if (!config?.tableId) return;
-
-    const cutoff = new Date(Date.now() - 30 * 60 * 1000);
-    const result = await pool().query(
-      `SELECT record_id, fields, raw, created_at, updated_at
-       FROM feishu_generic_records
-       WHERE table_id = $1
-         AND (created_at > $2 OR updated_at > $2)
-       ORDER BY COALESCE(updated_at, created_at) DESC
-       LIMIT 100`,
-      [config.tableId, cutoff]
-    );
-
-    const records = (result.rows || []).map(r => {
-      const raw = (() => { try { return typeof r.raw === 'string' ? JSON.parse(r.raw) : (r.raw || {}); } catch { return {}; } })();
-      const fields = (() => { try { return typeof r.fields === 'string' ? JSON.parse(r.fields) : (r.fields || {}); } catch { return {}; } })();
-      return { record_id: r.record_id, fields, ...raw };
-    });
-
-    let processed = 0;
-
-    for (const record of records) {
-      const recordId = record.record_id;
-      const fields = record.fields || {};
-      const processedKey = `task_responses_${recordId}`;
-
-      if (_processedTaskResponseIds.has(processedKey)) continue;
-
-      const taskId = extractBitableFieldText(fields['任务编号']);
-      const responseText = extractBitableFieldText(fields['回复说明']);
-      const status = extractBitableFieldText(fields['处理状态']);
-
-      // Only process records with a response that haven't been processed yet
-      if (!taskId || !responseText || status === '已处理') {
-        _processedTaskResponseIds.add(processedKey);
-        continue;
-      }
-
-      log.info(`[task_response] Found response for task ${taskId}: ${responseText.slice(0, 80)}...`);
-
-      try {
-        const taskResult = await pool().query(
-          `SELECT * FROM master_tasks WHERE task_id = $1 AND status = 'pending_response' LIMIT 1`,
-          [taskId]
-        );
-        const task = taskResult.rows?.[0];
-
-        if (!task) {
-          log.info(`[task_response] Task ${taskId} not found or not in pending_response`);
-          _processedTaskResponseIds.add(processedKey);
-          continue;
-        }
-
-        // Extract photo URLs if any
-        const photos = fields['整改照片'];
-        const photoUrls = [];
-        if (Array.isArray(photos)) {
-          for (const p of photos) {
-            if (p?.file_token) {
-              const url = await getBitableRecordImageDownloadUrl('task_responses', p.file_token);
-              if (url) photoUrls.push(url);
-            }
-          }
-        }
-
-        // Use the task response hook (set by master-agent.js)
-        if (_taskResponseHook) {
-          await _taskResponseHook(task.assignee_username, responseText, photoUrls);
-        } else {
-          // Direct DB update fallback
-          await pool().query(
-            `UPDATE master_tasks SET response_text = $1, response_images = $2::jsonb, status = 'pending_review', responded_at = NOW(), updated_at = NOW() WHERE task_id = $3`,
-            [responseText, JSON.stringify(photoUrls), taskId]
-          );
-        }
-
-        // Update Bitable record status
-        await updateBitableRecord('task_responses', recordId, { '处理状态': '已处理' });
-        processed++;
-        log.info(`[task_response] Processed response for ${taskId}`);
-      } catch (e) {
-        log.error(`[task_response] Error processing ${taskId}:`, e?.message);
-      }
-
-      _processedTaskResponseIds.add(processedKey);
-    }
-
-    if (processed > 0) log.info(`[task_response] Processed ${processed} new responses`);
-
-    // Cleanup processed set if too large
-    if (_processedTaskResponseIds.size > 5000) {
-      const old = Array.from(_processedTaskResponseIds).slice(0, 2000);
-      old.forEach(k => _processedTaskResponseIds.delete(k));
-    }
-  } catch (e) {
-    log.error('[task_response] poll error:', e?.message);
-  }
+  return taskResponseApi().pollTaskResponseBitable();
 }
 
 // 导出定时任务函数
