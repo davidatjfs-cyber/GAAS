@@ -55,6 +55,7 @@ import {
 import { createHandleAgentMessage } from './domains/agent-message/handle-agent-message.js';
 import { createRouteMessage } from './domains/agent-message/route-message.js';
 import { createHandleOpsChecklistCardAction } from './domains/agent-ops/handle-checklist-card-action.js';
+import { createSendScheduledChecklist } from './domains/agent-ops/send-scheduled-checklist.js';
 import { createHandleDataAuditorCase } from './domains/agent-message/handle-data-auditor-case.js';
 import { createOnFeishuEvent } from './domains/agent-feishu-bot/on-feishu-event.js';
 import { createTryHandleBiByFunctionCalling } from './domains/agent-bi/try-handle-bi-by-function-calling.js';
@@ -5059,131 +5060,11 @@ async function executeScheduledTask(taskKey, config) {
   }
 }
 
+let _sendScheduledChecklist;
 export async function sendScheduledChecklist(config) {
-  if (shouldSkipHrmsScheduledChecklist(config)) return;
-  // 优先按门店发送；未配置门店时，按品牌发送
-  const sharedState = await getSharedState();
-  // stores 可能是数组（hrms_state中的格式）或对象
-  const rawStores = sharedState.stores || [];
-  const storeList = Array.isArray(rawStores) ? rawStores : Object.values(rawStores);
-  const configStore = String(config?.store || '').trim();
-  const configBrand = String(config?.brand || '').trim();
-  const targetStores = configStore
-    ? storeList.filter(s => isLikelySameStore(s?.name, configStore))
-    : storeList.filter(s => String(s?.brand || '').trim() === configBrand);
-  
-  if (targetStores.length === 0) {
-    console.log(`[ops] no stores found for config: store=${configStore}, brand=${configBrand}`);
-    return;
-  }
-  
-  // 提取所有员工信息以寻找店长和出品经理
-  const allStaff = [
-    ...(Array.isArray(sharedState.employees) ? sharedState.employees : []),
-    ...(Array.isArray(sharedState.users) ? sharedState.users : [])
-  ];
-
-  // 向每个门店发送检查表
-  for (const store of targetStores) {
-    try {
-      // 同时查找该门店的 店长(store_manager) 和 出品经理(store_production_manager)
-      const targets = allStaff.filter(u =>
-        normalizeStoreKey(u?.store) === normalizeStoreKey(store.name) &&
-        (u.role === 'store_manager' || u.role === 'store_production_manager')
-      );
-      const uniqueUsernames = [...new Set(targets.map(u => String(u.username || '').trim()).filter(Boolean))];
-      if (!uniqueUsernames.length) {
-        console.log(`[ops] no staff found for store=${store.name}, allStaff=${allStaff.length}`);
-      }
-      
-      for (const username of uniqueUsernames) {
-        const feishuUser = await lookupFeishuUserByUsername(username);
-        if (feishuUser?.open_id) {
-          const DEFAULT_FORM_URLS = {
-            opening: 'https://ycnp8e71t8x8.feishu.cn/base/PtVObRtoPaMAP3stIIFc8DnJngd?table=tblxHI9ZAKONOTpp&view=vewjuqywQu',
-            closing: 'https://ycnp8e71t8x8.feishu.cn/base/PtVObRtoPaMAP3stIIFc8DnJngd?table=tblxHI9ZAKONOTpp&view=vewjuqywQu'
-          };
-          const formUrl = String(config.formUrl || '').trim() || DEFAULT_FORM_URLS[config.checkType] || '';
-          const typeLabel = formatChecklistTypeLabel(config.checkType);
-          const headerColor = config.checkType === 'closing' ? 'orange' : 'blue';
-          const timeNow = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-          const timeWindow = Math.max(5, Math.floor(Number(config?.timeWindow) || 60));
-          const deadlineAt = new Date(Date.now() + timeWindow * 60 * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-          
-          const infoFields = [
-            { is_short: true, text: { tag: 'lark_md', content: `**门店**\n${store.name}` } },
-            { is_short: true, text: { tag: 'lark_md', content: `**品牌**\n${configBrand || store?.brand || '-'}` } },
-            { is_short: true, text: { tag: 'lark_md', content: `**检查类型**\n${typeLabel}检查` } },
-            { is_short: true, text: { tag: 'lark_md', content: `**发送时间**\n${timeNow}` } },
-            { is_short: true, text: { tag: 'lark_md', content: `**完成时限**\n${timeWindow}分钟` } },
-            { is_short: true, text: { tag: 'lark_md', content: `**截止时间**\n${deadlineAt}` } }
-          ];
-          
-          const elements = [{ tag: 'div', fields: infoFields }, { tag: 'hr' }];
-          
-          if (formUrl) {
-            elements.push({ tag: 'div', text: { tag: 'lark_md', content: '请点击下方按钮打开检查表，逐项检查并提交：' } });
-            elements.push({ tag: 'action', actions: [{ tag: 'button', text: { tag: 'plain_text', content: '📝 打开检查表' }, type: 'primary', url: formUrl }] });
-          } else {
-            const items = getOpsChecklistItems(config.checkType, store.name, configBrand);
-            const listMd = items.length
-              ? items.map((it, i) => `${i+1}. ${it}`).join('\n')
-              : '请在现场完成巡检并通过聊天窗口回复检查结果（文字+照片）';
-            elements.push({ tag: 'div', text: { tag: 'lark_md', content: `**检查项目：**\n${listMd}` } });
-            elements.push({ tag: 'div', text: { tag: 'lark_md', content: '\n💡 请直接在聊天中回复检查结果（可附照片），小年将自动记录。' } });
-          }
-          elements.push({ tag: 'hr' });
-          elements.push({ tag: 'div', text: { tag: 'lark_md', content: OPS_TASK_REPLY_AUDIT_LARK_MD } });
-          elements.push({ tag: 'hr' });
-          elements.push({ tag: 'note', elements: [{ tag: 'plain_text', content: `请在截止时间前完成提交 · 小年` }] });
-          
-          const card = {
-            config: { wide_screen_mode: true },
-            header: { title: { tag: 'plain_text', content: `📋 ${typeLabel}检查通知` }, template: headerColor },
-            elements
-          };
-          
-          const cardResult = await sendLarkCard(feishuUser.open_id, card);
-          if (cardResult.ok) {
-            console.log(`[ops] sent scheduled checklist to ${store.name} (${username})`);
-            
-            // 创建 master_task 记录，以便用户回复时能被正确处理
-            try {
-              const taskId = `OPS-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(Math.floor(Math.random()*10000)).padStart(4,'0')}`;
-              const msgId = cardResult.data?.data?.message_id || cardResult.data?.message_id || '';
-              
-              await pool().query(
-                `INSERT INTO master_tasks (
-                  task_id, status, source, category, store, brand,
-                  assignee_username, assignee_role, title, detail,
-                  feishu_msg_ids, dispatched_at, timeout_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW(), NOW() + INTERVAL '${timeWindow} minutes')`,
-                [
-                  taskId,
-                  'pending_response',
-                  'scheduled_checklist',
-                  `${typeLabel}检查`,
-                  store.name,
-                  configBrand || store?.brand || '',
-                  username,
-                  targets.find(t => t.username === username)?.role || 'store_manager',
-                  `${store.name} ${typeLabel}检查通知`,
-                  `检查类型：${typeLabel}\n完成时限：${timeWindow}分钟\n截止时间：${deadlineAt}`,
-                  msgId ? JSON.stringify([msgId]) : '[]'
-                ]
-              );
-              console.log(`[ops] created master_task ${taskId} for scheduled checklist`);
-            } catch (e) {
-              console.error(`[ops] failed to create master_task for checklist:`, e?.message);
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.error(`[ops] failed to send checklist to ${store?.name}:`, e?.message);
-    }
-  }
+  return _sendScheduledChecklist(config);
 }
+
 
 async function sendSafetyCheck(config) {
   if (config?.enabled === false) {
@@ -8763,6 +8644,19 @@ _handleAgentMessage = createHandleAgentMessage({
   createOrUpdateAutonomousDataTask,
   notifyAutonomousDataTaskOwner,
   handleDataAuditorCase,
+});
+
+_sendScheduledChecklist = createSendScheduledChecklist({
+  pool,
+  getSharedState,
+  isLikelySameStore,
+  normalizeStoreKey,
+  lookupFeishuUserByUsername,
+  sendLarkCard,
+  formatChecklistTypeLabel,
+  getOpsChecklistItems,
+  opsTaskReplyAuditLarkMd: OPS_TASK_REPLY_AUDIT_LARK_MD,
+  shouldSkipHrmsScheduledChecklist,
 });
 
 _handleOpsChecklistCardAction = createHandleOpsChecklistCardAction({

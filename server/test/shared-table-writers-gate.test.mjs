@@ -39,6 +39,8 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'domains/feishu-bitable/poll-submissions.js|INSERT INTO|agent_messages',
   'agents.js|INSERT INTO|feishu_users',
   'agents.js|INSERT INTO|master_tasks',
+  // Wave A8：sendScheduledChecklist 迁出（agents.js 仍有其它 master_tasks INSERT）
+  'domains/agent-ops/send-scheduled-checklist.js|INSERT INTO|master_tasks',
   'agents.js|UPDATE|agent_messages',
   'agents.js|UPDATE|feishu_users',
   'agents.js|UPDATE|master_tasks',
@@ -106,6 +108,7 @@ const REPATH_NOTES = [
   'agents.js → domains/feishu-bitable/poll-submissions.js | INSERT INTO|feishu_generic_records',
   'agents.js → domains/feishu-bitable/poll-submissions.js | INSERT INTO|agent_messages',
   'agents.js → domains/agent-ops/handle-checklist-card-action.js | INSERT INTO|agent_messages',
+  'agents.js → domains/agent-ops/send-scheduled-checklist.js | INSERT INTO|master_tasks',
 ];
 
 const OWNER = 'gaas';
