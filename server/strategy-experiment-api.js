@@ -7,6 +7,7 @@
 
 import { Router } from 'express';
 import { resolveAgentCanonicalStore } from './v2-store-alignment.js';
+import { agentsOutboundHeaders } from './domains/shared/agents-service-auth.js';
 import { childLogger } from './utils/logger.js';
 
 const log = childLogger({ domain: 'strategy-experiment', handler: 'api' });
@@ -183,7 +184,10 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
       const agentsUrl = process.env.AGENTS_SERVICE_URL || 'http://127.0.0.1:3101';
       try {
         const resp = await axios.post(`${agentsUrl}/api/strategy/experiments/${req.params.code}/approve`, { storeAssignments }, {
-          headers: { Authorization: req.headers.authorization || '', 'Content-Type': 'application/json' }
+          headers: agentsOutboundHeaders(req, {
+            Authorization: req.headers.authorization || '',
+            'Content-Type': 'application/json',
+          }),
         });
         return res.json(resp.data);
       } catch (proxyErr) {
@@ -244,7 +248,9 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
       const { default: axios } = await import('axios');
       const agentsUrl = (process.env.AGENTS_SERVICE_URL || 'http://127.0.0.1:3101');
       const resp = await axios.post(`${agentsUrl}/api/strategy/experiments/${req.params.code}/evaluate`, {}, {
-        headers: { 'Authorization': req.headers['authorization'] || '' }
+        headers: agentsOutboundHeaders(req, {
+          Authorization: req.headers['authorization'] || '',
+        }),
       });
       res.json(resp.data);
     } catch (e) {

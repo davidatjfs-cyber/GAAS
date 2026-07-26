@@ -65,6 +65,6 @@ export function registerGrowthQueriesRoutes(app, pool) {
 
   app.post('/api/growth/semantic-writeback', async (req, res) => {
     if (!requireGrowthAuth(req, res)) return;
-    return send(res, await semanticWriteback(ctx, getGrowthTenantId(req), req.body || {}));
+    return send(res, await semanticWriteback({ ...ctx, requestId: req.requestId }, getGrowthTenantId(req), req.body || {}));
   });
 }

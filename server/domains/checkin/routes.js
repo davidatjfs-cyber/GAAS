@@ -20,13 +20,17 @@ function sendFail(res, result) {
   return res.status(status).json(body);
 }
 
+function withRequestId(ctx, req) {
+  return { ...ctx, requestId: req.requestId };
+}
+
 export function registerCheckinRoutes(app, deps) {
   const { authRequired, ...rest } = deps;
   const ctx = { ...rest };
 
   app.post('/api/checkin', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
-    const result = await createCheckin(ctx, {
+    const result = await createCheckin(withRequestId(ctx, req), {
       username,
       type: req.body?.type,
       latitude: req.body?.latitude,
@@ -44,7 +48,7 @@ export function registerCheckinRoutes(app, deps) {
 
   app.get('/api/checkin/today', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
-    const result = await listTodayCheckins(ctx, { username });
+    const result = await listTodayCheckins(withRequestId(ctx, req), { username });
     if (!result.ok) return sendFail(res, result);
     return res.json({ records: result.records });
   });
@@ -52,7 +56,7 @@ export function registerCheckinRoutes(app, deps) {
   app.get('/api/checkin/records', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
-    const result = await listCheckinRecords(ctx, {
+    const result = await listCheckinRecords(withRequestId(ctx, req), {
       username,
       role,
       filterUser: String(req.query?.username || '').trim(),
@@ -70,7 +74,7 @@ export function registerCheckinRoutes(app, deps) {
   app.post('/api/checkin/:id/confirm', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
-    const result = await confirmCheckin(ctx, {
+    const result = await confirmCheckin(withRequestId(ctx, req), {
       username,
       role,
       id: req.params?.id,
@@ -85,7 +89,7 @@ export function registerCheckinRoutes(app, deps) {
   app.get('/api/checkin/summary', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
-    const result = await getCheckinSummary(ctx, {
+    const result = await getCheckinSummary(withRequestId(ctx, req), {
       username,
       role,
       filterStore: String(req.query?.store || '').trim(),
@@ -138,7 +142,7 @@ export function registerCheckinRoutes(app, deps) {
   app.post('/api/checkin/monthly-confirm', authRequired, async (req, res) => {
     const username = String(req.user?.username || '').trim();
     const role = String(req.user?.role || '').trim();
-    const result = await confirmMonthlyAttendance(ctx, {
+    const result = await confirmMonthlyAttendance(withRequestId(ctx, req), {
       username,
       role,
       month: req.body?.month,

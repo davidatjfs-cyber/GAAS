@@ -4,14 +4,19 @@
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import { agentsOutboundHeaders } from '../shared/agents-service-auth.js';
 import { buildRootDiskHealthInfo, createDiskPressureNotifier } from './disk.js';
 
 /** 与 agents-service-v2 /health 对齐；生产在 .env 设置 AGENTS_SERVICE_HEALTH_URL=http://127.0.0.1:3101/health */
-async function fetchAgentsServiceHealthSnapshot() {
+async function fetchAgentsServiceHealthSnapshot(req) {
   const raw = String(process.env.AGENTS_SERVICE_HEALTH_URL || '').trim();
   if (!raw) return null;
   try {
-    const r = await axios.get(raw, { timeout: 4500, validateStatus: () => true });
+    const r = await axios.get(raw, {
+      timeout: 4500,
+      validateStatus: () => true,
+      headers: agentsOutboundHeaders(req),
+    });
     if (r.status !== 200 || r.data == null) {
       return { ok: false, httpStatus: r.status, error: 'agents health non-200 or empty' };
     }
@@ -68,7 +73,7 @@ export function registerHealthRoutes(app, deps) {
       try { agentHealth = getAgentHealthStatus(); } catch (e) { /* ignore */ }
       let agentsService = null;
       try {
-        agentsService = await fetchAgentsServiceHealthSnapshot();
+        agentsService = await fetchAgentsServiceHealthSnapshot(req);
       } catch (e) {
         agentsService = { ok: false, error: 'internal_error' };
       }

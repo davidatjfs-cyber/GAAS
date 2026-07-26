@@ -31,6 +31,7 @@ export function registerStateRoutes(app, authRequired, deps) {
   } = deps;
 
   app.get('/api/state', authRequired, async (req, res) => {
+    const requestId = req.requestId || null;
     try {
       const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
       const r = await pool.query('select data from hrms_state where key = $1 limit 1', [tenantIdQ]);
@@ -42,7 +43,7 @@ export function registerStateRoutes(app, authRequired, deps) {
       const origJson = JSON.stringify(data);
       const repairedJson = JSON.stringify(repaired);
       if (origJson !== repairedJson) {
-        log.info({ msg: 'state_utf8_auto_repaired', tenant_id: tenantIdQ });
+        log.info({ msg: 'state_utf8_auto_repaired', tenant_id: tenantIdQ, request_id: requestId });
         try {
           await pool.query(
             `update hrms_state set data = $1::jsonb, updated_at = now() where key = $2`,
@@ -94,6 +95,7 @@ export function registerStateRoutes(app, authRequired, deps) {
       if (ignoredKeys.length) {
         log.warn({
           msg: 'state_put_ignored_keys',
+          request_id: req.requestId || null,
           keys: ignoredKeys.slice(0, 30),
         });
       }

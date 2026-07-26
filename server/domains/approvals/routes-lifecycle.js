@@ -118,6 +118,7 @@ export function registerApprovalLifecycleRoutes(app, authRequired, deps) {
       recurringFrequencyReward,
       tenantId,
       allowedStores,
+      requestId: req.requestId,
     });
 
     if (result.error) {

@@ -1,6 +1,7 @@
 /**
  * AI OpenAI-compatible chat-completions proxy (behavior-preserving extract from index.js).
  */
+import { agentsOutboundHeaders } from '../shared/agents-service-auth.js';
 
 /**
  * Normalize OpenAI-compatible API base URLs (incl. Volcengine Ark quirks).
@@ -54,10 +55,10 @@ export function registerAiChatCompletionsRoutes(app, authRequired) {
     try {
       const upstream = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
+        headers: agentsOutboundHeaders(req, {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`
-        },
+          Authorization: `Bearer ${apiKey}`,
+        }),
         body: JSON.stringify(payload),
         signal: controller.signal
       });

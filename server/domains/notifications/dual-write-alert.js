@@ -9,6 +9,7 @@
  * 已接入范围见仓库内对此函数的引用（遗漏新增双写时请同步调用）。
  */
 import { childLogger } from '../../utils/logger.js';
+import { recordMetric, METRIC_NAMES } from '../shared/metrics.js';
 
 const log = childLogger({ domain: 'notifications', handler: 'dual-write-alert' });
 
@@ -16,6 +17,10 @@ export function createNotifyAdminsDualWriteFailure({ pool, sendLarkMessage }) {
   return async function notifyAdminsDualWriteFailure(scopeLabel, err) {
     const reason = String(err?.message || err || 'unknown').slice(0, 500);
     const timeStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
+    recordMetric(METRIC_NAMES.HRMS_STATE_DUAL_WRITE_FAILURE, {
+      value: 1,
+      tags: { scope: String(scopeLabel || 'unknown').slice(0, 120) },
+    });
     log.error({
       msg: 'dual_write_critical',
       scope: scopeLabel,

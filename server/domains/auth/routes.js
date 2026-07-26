@@ -20,7 +20,7 @@ function send(res, result) {
 export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
   async function handleLogin(req, res) {
     const result = await login(
-      { body: req.body, headers: req.headers, reqLike: req },
+      { body: req.body, headers: req.headers, reqLike: req, requestId: req.requestId },
       deps
     );
     return send(res, result);
@@ -28,7 +28,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
 
   app.get('/api/auth/me', authRequired, async (req, res) => {
     const result = await getAuthMe(
-      { user: req.user, tenantId: req.tenantId },
+      { user: req.user, tenantId: req.tenantId, requestId: req.requestId },
       deps
     );
     return send(res, result);
@@ -36,7 +36,7 @@ export function registerAuthRoutes(app, authRequired, loginRateLimit, deps) {
 
   app.get('/api/me', authRequired, async (req, res) => {
     const result = await getMe(
-      { user: req.user, tenantId: req.tenantId, reqLike: req },
+      { user: req.user, tenantId: req.tenantId, reqLike: req, requestId: req.requestId },
       deps
     );
     return send(res, result);

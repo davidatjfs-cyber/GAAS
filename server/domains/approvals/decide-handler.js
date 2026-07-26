@@ -4,6 +4,7 @@
  */
 import { canAccessApprovalCenter } from '../../store-duty-bindings.js';
 import { childLogger } from '../../utils/logger.js';
+import { recordMetric, METRIC_NAMES } from '../shared/metrics.js';
 import * as onboardingHandler from './handlers/onboarding.js';
 import * as leaveHandler from './handlers/leave.js';
 import * as offboardingHandler from './handlers/offboarding.js';
@@ -198,9 +199,17 @@ export async function handleApprovalDecide(req, res, deps) {
     } catch (e) { /* ignore */ }
 
     const __decideMs = Date.now() - __decideStartedAt;
+    recordMetric(METRIC_NAMES.APPROVAL_DECIDE_DURATION_MS, {
+      value: __decideMs,
+      tags: {
+        status: String(updated?.status || 'unknown'),
+        type: String(updated?.type || 'unknown'),
+      },
+    });
     log.info({
       msg: 'approval_decide_ok',
       id,
+      request_id: req.requestId || null,
       ms: __decideMs,
       status: updated?.status,
       type: updated?.type,

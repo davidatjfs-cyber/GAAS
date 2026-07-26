@@ -99,6 +99,7 @@ export function registerDailyReportsRoutes(app, deps) {
         allowedStores: Array.isArray(req.user?.allowed_stores) ? req.user.allowed_stores : [],
         currentStore: String(req.user?.current_store || '').trim(),
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
+        requestId: req.requestId,
       });
       return res.json(payload);
     } catch (e) {
@@ -125,6 +126,7 @@ export function registerDailyReportsRoutes(app, deps) {
         dataPayload: req.body?.data,
         wantSubmit: !!req.body?.submitted,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
+        requestId: req.requestId,
       });
       if (result.error) {
         return res.status(result.status).json({
