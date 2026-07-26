@@ -186,7 +186,7 @@
                 const reasonShort = String(r.reason || '').length > 16 ? String(r.reason).slice(0, 14) + '…' : String(r.reason || '');
                 
                 return `<tr>
-                    <td><span class="rw-id">${escapeHtml(idShort)}</span><button type="button" class="btn btn-secondary rw-mini-btn" onclick="openApprovalDetailModal('${escapeJsString(rid)}')">详情</button></td>
+                    <td><span class="rw-id">${escapeHtml(idShort)}</span><button type="button" class="btn btn-secondary rw-mini-btn" data-click="openApprovalDetailModal" data-arg="${escapeHtml(rid)}">详情</button></td>
                     <td>${typeLabel}</td>
                     <td>${escapeHtml(empName)}</td>
                     <td>${escapeHtml(r.store || '-')}</td>
@@ -195,7 +195,7 @@
                     <td style="color:${amountColor};font-weight:700;font-family:ui-monospace,monospace;">${amountText}</td>
                     <td><span class="rw-st ${stCls}">${statusText}</span></td>
                     <td style="font-family:ui-monospace,monospace;">${r.createdAt ? r.createdAt.slice(0, 10) : '-'}</td>
-                    <td><button class="btn btn-secondary rw-mini-btn" type="button" onclick="openApprovalDetailModal('${escapeJsString(rid)}')">查看</button></td>
+                    <td><button class="btn btn-secondary rw-mini-btn" type="button" data-click="openApprovalDetailModal" data-arg="${escapeHtml(rid)}">查看</button></td>
                 </tr>`;
             }).join('');
         }
@@ -713,7 +713,7 @@
                 const statusColor = r.status === 'normal' || r.status === 'confirmed' || r.status === 'no_gps' ? 'rgba(34,197,94,0.9)' : 'rgba(234,179,8,0.9)';
                 const canConfirm = (currentUser?.role === 'admin' || currentUser?.role === 'hq_manager' || currentUser?.role === 'store_manager' || currentUser?.role === 'hr_manager') && r.status !== 'normal' && r.status !== 'confirmed';
                 const actionText = canConfirm
-                    ? `<button class="btn btn-secondary" style="font-size:11px; padding:3px 8px;" onclick="attConfirmRecord('${r.id}')">确认</button>`
+                    ? `<button class="btn btn-secondary" style="font-size:11px; padding:3px 8px;" data-click="attConfirmRecord" data-arg="${r.id}">确认</button>`
                     : (r.confirmed_by ? `<span class="att-list-sub">${r.confirmed_by}确认</span>` : '<span class="att-list-sub">-</span>');
                 return `<div class="att-list-item">
                     <div class="att-list-row"><span class="att-list-main">${r.display_name || r.username}</span><span class="att-list-sub">${r.store || '-'}</span></div>
@@ -741,7 +741,7 @@
                 const expanded = !!__attDayExpandState[day];
                 const abnormal = items.filter(r => r.status !== 'normal' && r.status !== 'confirmed' && r.status !== 'no_gps').length;
                 return `<div class="att-day-group">
-                    <button class="att-day-group-head" type="button" onclick="attToggleDayGroup('${day}')">
+                    <button class="att-day-group-head" type="button" data-click="attToggleDayGroup" data-arg="${day}">
                         <span>${day}</span>
                         <span class="meta">${items.length}条${abnormal ? ` · 异常${abnormal}` : ''} ${expanded ? '▾' : '▸'}</span>
                     </button>
@@ -784,7 +784,7 @@
                     const statusLabel = statusMap[r.status] || r.status;
                     const statusColor = r.status === 'normal' || r.status === 'confirmed' || r.status === 'no_gps' ? 'rgba(34,197,94,0.8)' : 'rgba(234,179,8,0.8)';
                     const canConfirm = (currentUser?.role === 'admin' || currentUser?.role === 'hq_manager' || currentUser?.role === 'store_manager' || currentUser?.role === 'hr_manager') && r.status !== 'normal' && r.status !== 'confirmed';
-                    const actions = canConfirm ? `<button class="btn btn-secondary" style="font-size:11px; padding:2px 8px;" onclick="attConfirmRecord('${r.id}')">确认</button>` : (r.confirmed_by ? `<span style="font-size:11px; color:rgba(200,215,230,0.5);">${r.confirmed_by}确认</span>` : '-');
+                    const actions = canConfirm ? `<button class="btn btn-secondary" style="font-size:11px; padding:2px 8px;" data-click="attConfirmRecord" data-arg="${r.id}">确认</button>` : (r.confirmed_by ? `<span style="font-size:11px; color:rgba(200,215,230,0.5);">${r.confirmed_by}确认</span>` : '-');
                     return `<tr>
                         <td>${r.display_name || r.username}</td>
                         <td>${r.store || '-'}</td>
@@ -1052,8 +1052,8 @@
                         ${addr ? `<div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:2px;">${addr}</div>` : ''}
                     </div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                        <button class="btn btn-secondary" style="font-size:11px; padding:4px 10px;" onclick="attSetStoreLocationCurrent('${(s.name || '').replace(/'/g, "\\'")}')">用当前位置</button>
-                        <button class="btn btn-secondary" style="font-size:11px; padding:4px 10px;" onclick="attSetStoreLocationManual('${(s.name || '').replace(/'/g, "\\'")}')">手动输入</button>
+                        <button class="btn btn-secondary" style="font-size:11px; padding:4px 10px;" data-click="attSetStoreLocationCurrent" data-arg="${escapeHtml(s.name || '')}">用当前位置</button>
+                        <button class="btn btn-secondary" style="font-size:11px; padding:4px 10px;" data-click="attSetStoreLocationManual" data-arg="${escapeHtml(s.name || '')}">手动输入</button>
                     </div>
                 </div>`;
             }).join('');

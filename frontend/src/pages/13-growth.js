@@ -1218,8 +1218,8 @@
                         + '</div>'
                         + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">'
                         + '<button onclick="openCreateCampaignModal(' + JSON.stringify(c).replace(/\\/g,'\\\\').replace(/'/g,'&#39;').replace(/"/g,'&quot;') + ')" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.9);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">✏️ 编辑</button>'
-                        + '<button onclick="openCampaignResultModal(' + c.id + ')" style="border:none;background:rgba(56,189,248,.15);color:#38bdf8;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📊 复盘</button>'
-                        + ((c.status === 'completed' && results.length) ? '<button onclick="openCampaignReportModal(' + c.id + ')" style="border:none;background:rgba(201,169,106,.15);color:#c9a96a;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📄 评估报告</button>' : '')
+                        + '<button data-click="openCampaignResultModal" data-arg="' + c.id + '" data-arg-type="number" style="border:none;background:rgba(56,189,248,.15);color:#38bdf8;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📊 复盘</button>'
+                        + ((c.status === 'completed' && results.length) ? '<button data-click="openCampaignReportModal" data-arg="' + c.id + '" data-arg-type="number" style="border:none;background:rgba(201,169,106,.15);color:#c9a96a;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📄 评估报告</button>' : '')
                         + '</div>'
                         + '</div>'
                         + resultsHtml
@@ -1295,7 +1295,7 @@
                 // 底部按钮
                 + '<div style="display:flex;gap:10px;padding-bottom:16px;">'
                 + '<button onclick="submitCampaignForm(' + (isEdit ? c.id : 'null') + ')" style="flex:1;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">保存活动</button>'
-                + (isEdit ? '<button onclick="deleteCampaign(' + c.id + ')" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:14px 18px;font-size:14px;cursor:pointer;">删除</button>' : '')
+                + (isEdit ? '<button data-click="deleteCampaign" data-arg="' + c.id + '" data-arg-type="number" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:14px 18px;font-size:14px;cursor:pointer;">删除</button>' : '')
                 + '</div>'
                 + '</div>'
                 + '</div>';
@@ -1740,7 +1740,7 @@
                         + '</div>'
                         + '<div style="margin-top:10px;font-size:12px;color:rgba(226,232,240,0.78);line-height:1.6;">' + escapeHtml(t.ai_summary || '尚未生成总结') + '</div>'
                         + '<div style="margin-top:10px;display:flex;gap:8px;">'
-                        + '<button class="rep-seg-btn" style="flex:1;" onclick="toggleAbResultForm(' + id + ')">✏️ 录入结果</button>'
+                        + '<button class="rep-seg-btn" style="flex:1;" data-click="toggleAbResultForm" data-arg="' + id + '" data-arg-type="number">✏️ 录入结果</button>'
                         + ((winner === 'A' || winner === 'B')
                             ? (t.promoted_rule_key
                                 ? '<button class="rep-seg-btn" style="flex:1.4;opacity:0.6;cursor:default;" disabled>✅ ' + (isBound ? (winner === 'A' ? '已采用(维持当前)' : '已采用(挑战者)') : '已沉淀经验库') + '</button>'
@@ -2009,7 +2009,7 @@
                 + '<div style="' + gridStyle + '">' + cells('a') + '</div>'
                 + '<div style="font-size:12px;font-weight:700;color:#fff;margin:8px 0 4px;">B组</div>'
                 + '<div style="' + gridStyle + '">' + cells('b') + '</div>'
-                + '<div class="rep-seg" style="margin-top:10px;"><button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" onclick="submitAbResult(' + id + ')">提交结果并判定</button></div>'
+                + '<div class="rep-seg" style="margin-top:10px;"><button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" data-click="submitAbResult" data-arg="' + id + '" data-arg-type="number">提交结果并判定</button></div>'
                 + '</div>';
         }
 
@@ -2912,7 +2912,7 @@
                 host.innerHTML = posters.length ? posters.map(function(p) {
                     var imgUrl = p.image_url || p.output_url || p.thumbnail_url || '';
                     var title = p.name || p.title || p.prompt || '未命名';
-                    return '<div onclick="bindPosterToAction(' + p.id + ')" style="cursor:pointer;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;background:rgba(255,255,255,0.02);transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'#22c55e\'" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.08)\'">'
+                    return '<div data-click="bindPosterToAction" data-arg="' + p.id + '" data-arg-type="number" style="cursor:pointer;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;background:rgba(255,255,255,0.02);transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'#22c55e\'" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.08)\'">'
                         + (imgUrl ? '<img src="' + escapeHtml(imgUrl) + '" style="width:100%;height:120px;object-fit:cover;border-bottom:1px solid rgba(255,255,255,0.06);">' : '<div style="width:100%;height:120px;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(226,232,240,0.3);">无预览</div>')
                         + '<div style="padding:6px 8px;font-size:11px;color:rgba(226,232,240,0.7);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">' + escapeHtml(title) + '</div>'
                         + '</div>';

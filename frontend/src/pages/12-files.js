@@ -99,12 +99,12 @@
                                     <i>⬇️</i> 下载
                                 </button>
                                 ${file.validation_status === 'pending' ? `
-                                    <button class="btn btn-sm btn-secondary" onclick="validateFile('${file.file_id}')">
+                                    <button class="btn btn-sm btn-secondary" data-click="validateFile" data-arg="${file.file_id}">
                                         <i>✓</i> 校验
                                     </button>
                                 ` : ''}
                                 ${currentUser?.role === 'admin' || currentUser?.username === file.uploader_username ? `
-                                    <button class="btn btn-sm btn-danger" onclick="deleteFile('${file.file_id}')">
+                                    <button class="btn btn-sm btn-danger" data-click="deleteFile" data-arg="${file.file_id}">
                                         <i>🗑️</i>
                                     </button>
                                 ` : ''}
@@ -740,7 +740,7 @@
                     let targetLine = '';
                     if (c.round) targetLine = `本轮目标 ${Number(c.round.target_value).toLocaleString('zh-CN')}${escapeHtml(c.unit)} · 任务 ${c.round.tasks_done}/${c.round.tasks_total}`;
                     else if (c.next_target != null) targetLine = `建议目标 ${Number(c.next_target).toLocaleString('zh-CN')}${escapeHtml(c.unit)} →`;
-                    return `<div class="gs-card" onclick="gsOpenDetail('${escapeHtml(c.problem_key)}')">
+                    return `<div class="gs-card" data-click="gsOpenDetail" data-arg="${escapeHtml(c.problem_key)}">
                       <div class="gs-card__top"><span class="gs-card__title">${GS_PROBLEM_ICONS[c.problem_key] || ''} ${escapeHtml(c.title)}</span>${badge}</div>
                       <div class="gs-card__metric">${escapeHtml(c.metric)}</div>
                       <div class="gs-card__value">${val} <small>${escapeHtml(c.unit)}</small></div>
@@ -858,7 +858,7 @@
             }).join('');
             return analysisHtml + priorityHtml + stageHtml + evidenceHtml + gsExtraDetailHtml(data) + histHtml +
               `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">任务方案(每项必须指定责任人)</div>${tasks}</div>
-               <div class="gs-actions"><button class="ga-btn ga-btn--primary" onclick="gsDispatch('${escapeHtml(data.problem_key)}')">一键下发全部任务</button></div>`;
+               <div class="gs-actions"><button class="ga-btn ga-btn--primary" data-click="gsDispatch" data-arg="${escapeHtml(data.problem_key)}">一键下发全部任务</button></div>`;
         }
 
         function gsRenderRound(data) {
@@ -1050,7 +1050,7 @@
                 const statusLabel = { active: '执行中', observing: '观察期', reviewing: '待复盘确认' };
                 host.innerHTML = '<div style="font-size:11px;color:#5B6597;margin-bottom:6px;">📌 进行中的自定义任务(点击查看进度)</div>' +
                   '<div style="display:flex;flex-direction:column;gap:6px;">' +
-                  data.rounds.map(r => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="justify-content:space-between;width:100%;" onclick="gsOpenDetail('${escapeHtml(r.problem_key)}')">
+                  data.rounds.map(r => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="justify-content:space-between;width:100%;" data-click="gsOpenDetail" data-arg="${escapeHtml(r.problem_key)}">
                     <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.problem_title)} · 第${r.round_no}轮</span>
                     <span style="flex-shrink:0;margin-left:8px;color:#A5B0FF;">${statusLabel[r.status] || r.status} ${r.tasks_done}/${r.tasks_total}</span>
                   </button>`).join('') +
@@ -1068,7 +1068,7 @@
                 if (!data.ok || !(data.history || []).length) { host.innerHTML = ''; return; }
                 host.innerHTML = '<div style="font-size:11px;color:#5B6597;margin-bottom:6px;">最近查询记录(点击直接查看，不用重新输入)</div>' +
                   '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-                  data.history.map(h => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="gsRerunFromHistory('${escapeHtml(h.question).replace(/'/g, "\\'")}')" title="${escapeHtml(h.question)}">${escapeHtml(h.title || h.question)}</button>`).join('') +
+                  data.history.map(h => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" data-click="gsRerunFromHistory" data-arg="${escapeHtml(h.question)}" title="${escapeHtml(h.question)}">${escapeHtml(h.title || h.question)}</button>`).join('') +
                   '</div>';
             } catch (e) { host.innerHTML = ''; }
         }

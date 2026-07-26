@@ -2,7 +2,7 @@
   "updated": "2026-07-26",
   "note": "P2.1 单函数体积闸门：>maxLines 必须在 allowlist；只降不升。外提时若函数>200行须同批切分，禁止整体包进 createXxx 闭包。",
   "maxLines": 200,
-  "maxAllowlistSize": 75,
+  "maxAllowlistSize": 73,
   "allowlist": [
     "server/agent-config-manager.js::registerAgentConfigRoutes",
     "server/agents.js::startAgentScheduler",
@@ -10,7 +10,6 @@
     "server/bi-weekly-report.js::formatReportMarkdown",
     "server/bi-weekly-report.js::generatePeriodReport",
     "server/bi-weekly-report.js::queryCostCoverageDiagnostics",
-    "server/customer-ops.js::buildAttributionReport",
     "server/customer-ops.js::registerCustomerOpsRoutes",
     "server/daily-attendance-register.js::reconcileDailyReportAttendanceRegister",
     "server/domains/agent-bi/build-daily-report-reply.js::createBuildBiDeterministicDailyReportReply",
@@ -77,7 +76,6 @@
     "server/services/hrms-attendance-day.js::reconcileAttendanceDays",
     "server/services/sales/sales-session.js::handleInboundMessage",
     "server/services/sales/sales-store.js::ensureSalesTables",
-    "server/services/tenant-operation-inspection-service.js::checkDataIntegration",
-    "server/store-diagnosis.js::generateRecommendations"
+    "server/services/tenant-operation-inspection-service.js::checkDataIntegration"
   ]
 }

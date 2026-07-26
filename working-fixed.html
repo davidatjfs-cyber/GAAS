@@ -17310,7 +17310,7 @@
                     </div>
 
                     <div class="pay-form-sticky">
-                        <button class="btn" type="button" onclick="submitPaymentForm()" style="width: 100%; justify-content:center; padding: 14px 16px; font-size: 15px; font-weight: 700; border-radius: 12px; background:linear-gradient(135deg,#e8d48b,#c9a227); border:none; color:#0a0c10;">提交请款单</button>
+                        <button class="btn" type="button" data-click="submitPaymentForm" style="width: 100%; justify-content:center; padding: 14px 16px; font-size: 15px; font-weight: 700; border-radius: 12px; background:linear-gradient(135deg,#e8d48b,#c9a227); border:none; color:#0a0c10;">提交请款单</button>
                     </div>
                 </div>
                 </div>
@@ -24419,7 +24419,7 @@
                 };
             }
         } catch (e) {}
-        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function') window[fn](); } }); // P5.1：data-click 委托，替代逐个迁移的 inline onclick
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function') { if (el.hasAttribute('data-arg')) { var raw = el.getAttribute('data-arg'); var arg = raw === 'true' ? true : raw === 'false' ? false : el.getAttribute('data-arg-type') === 'number' ? Number(raw) : raw; window[fn](arg); } else { window[fn](); } } } }); // P5.1：data-click(+data-arg[+data-arg-type=number]) 委托，替代逐个迁移的 inline onclick；默认原样传字符串（避免数字型用户名被误转成 Number），仅原先未加引号内联传数字的场景显式标 data-arg-type=number
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -27652,10 +27652,10 @@ const role = String(currentUser?.role || '').trim();
                     <div id="offboarding-departure-type-box" style="margin-top: 12px; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(234,88,12,0.06);">
                         <div style="font-weight: 900; font-size: 13px; color: rgba(226,232,240,0.95); margin-bottom: 8px;">⚠️ 请确认离职类型<span style="font-size:11px; color:rgba(200,215,230,0.6); font-weight:400; margin-left:6px;">（审批通过时将记录此分类）</span></div>
                         <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                            <button type="button" class="btn btn-secondary offb-dep-type-btn" data-dep-type="voluntary" onclick="selectOffbDepType('voluntary')" style="flex:1; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:700; border:2px solid transparent; min-width:120px;">
+                            <button type="button" class="btn btn-secondary offb-dep-type-btn" data-dep-type="voluntary" data-click="selectOffbDepType" data-arg="voluntary" style="flex:1; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:700; border:2px solid transparent; min-width:120px;">
                                 🙋 主动离职<div style="font-size:10px; font-weight:400; margin-top:2px; color:rgba(200,215,230,0.6);">员工辞职</div>
                             </button>
-                            <button type="button" class="btn btn-secondary offb-dep-type-btn" data-dep-type="involuntary" onclick="selectOffbDepType('involuntary')" style="flex:1; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:700; border:2px solid transparent; min-width:120px;">
+                            <button type="button" class="btn btn-secondary offb-dep-type-btn" data-dep-type="involuntary" data-click="selectOffbDepType" data-arg="involuntary" style="flex:1; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:700; border:2px solid transparent; min-width:120px;">
                                 📋 被动离职<div style="font-size:10px; font-weight:400; margin-top:2px; color:rgba(200,215,230,0.6);">劝退/裁员</div>
                             </button>
                         </div>
@@ -29548,7 +29548,7 @@ var __storeDutyBindingsCache = [];
 function renderDutyBindingStoreOptions(){var sel=document.getElementById('duty-binding-store');if(!sel)return;var stores=(HRMS_STORE.getStores&&HRMS_STORE.getStores())||[];sel.innerHTML=(stores||[]).map(function(s){var name=String(s?.name||s?.id||'').trim();return name?'<option value=\"'+escapeHtml(name)+'\">'+escapeHtml(name)+'</option>':'';}).join('')||'<option value=\"\">暂无门店</option>';}
 function resetStoreDutyBindingForm(){var ids=['duty-binding-username','duty-binding-effective-from','duty-binding-effective-to'];ids.forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});var level=document.getElementById('duty-binding-access-level');if(level)level.value='support';var primary=document.getElementById('db-is-primary-store');if(primary)primary.checked=false;var enabled=document.getElementById('db-enabled');if(enabled)enabled.checked=true;['db-can-receive-ops','db-can-receive-performance','db-can-receive-food-safety','db-can-handle-ops','db-can-handle-food-safety'].forEach(function(id){var el=document.getElementById(id);if(el)el.checked=true;});['db-can-receive-approval','db-can-approve-hrms','db-can-view-employees'].forEach(function(id){var el=document.getElementById(id);if(el)el.checked=false;});var status=document.getElementById('store-duty-bindings-status');if(status)status.textContent='';}
 function fillStoreDutyBindingForm(item){if(!item)return;var set=function(id,val){var el=document.getElementById(id);if(el)el.value=val||'';};set('duty-binding-username',item.username);set('duty-binding-store',item.store);set('duty-binding-access-level',item.access_level||'support');set('duty-binding-effective-from',String(item.effective_from||'').slice(0,16));set('duty-binding-effective-to',String(item.effective_to||'').slice(0,16));var boolIds={'db-is-primary-store':'is_primary_store','db-enabled':'enabled','db-can-receive-ops':'can_receive_ops','db-can-receive-performance':'can_receive_performance','db-can-receive-food-safety':'can_receive_food_safety','db-can-receive-approval':'can_receive_approval','db-can-handle-ops':'can_handle_ops','db-can-handle-food-safety':'can_handle_food_safety','db-can-approve-hrms':'can_approve_hrms','db-can-view-employees':'can_view_employees'};Object.keys(boolIds).forEach(function(id){var el=document.getElementById(id);if(el)el.checked=!!item[boolIds[id]];});var status=document.getElementById('store-duty-bindings-status');if(status)status.textContent='正在编辑：'+String(item.username||'')+' · '+String(item.store||'');}
-function renderStoreDutyBindings(){var box=document.getElementById('store-duty-bindings-list');if(!box)return;var items=Array.isArray(__storeDutyBindingsCache)?__storeDutyBindingsCache:[];if(!items.length){box.innerHTML='<div class=\"settings-hint\">暂无职责绑定，保存后会优先用于消息接收和门店切换。</div>';return;}box.innerHTML='<div style=\"display:flex;flex-direction:column;gap:10px;\">'+items.map(function(item){var tags=[];if(item.is_primary_store)tags.push('主门店');if(item.can_receive_approval)tags.push('审批消息');if(item.can_approve_hrms)tags.push('可审批');if(item.can_view_employees)tags.push('可看员工');if(!item.enabled)tags.push('已停用');return '<div style=\"padding:12px 14px;border-radius:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);\"><div style=\"display:flex;justify-content:space-between;gap:10px;align-items:flex-start;\"><div><div style=\"font-weight:700;color:#fff;\">'+escapeHtml(String(item.username||''))+' · '+escapeHtml(String(item.store||''))+'</div><div style=\"margin-top:4px;font-size:12px;color:rgba(200,215,230,0.72);\">级别：'+escapeHtml(String(item.access_level||'support'))+' · '+escapeHtml(tags.join(' / ')||'基础协同')+'</div></div><div style=\"display:flex;gap:8px;\"><button class=\"btn btn-secondary\" type=\"button\" onclick=\"fillStoreDutyBindingForm(__storeDutyBindingsCache['+items.indexOf(item)+'])\">编辑</button><button class=\"btn btn-secondary\" type=\"button\" onclick=\"deleteStoreDutyBinding('+Number(item.id||0)+')\">删除</button></div></div></div>';}).join('')+'</div>';}
+function renderStoreDutyBindings(){var box=document.getElementById('store-duty-bindings-list');if(!box)return;var items=Array.isArray(__storeDutyBindingsCache)?__storeDutyBindingsCache:[];if(!items.length){box.innerHTML='<div class=\"settings-hint\">暂无职责绑定，保存后会优先用于消息接收和门店切换。</div>';return;}box.innerHTML='<div style=\"display:flex;flex-direction:column;gap:10px;\">'+items.map(function(item){var tags=[];if(item.is_primary_store)tags.push('主门店');if(item.can_receive_approval)tags.push('审批消息');if(item.can_approve_hrms)tags.push('可审批');if(item.can_view_employees)tags.push('可看员工');if(!item.enabled)tags.push('已停用');return '<div style=\"padding:12px 14px;border-radius:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);\"><div style=\"display:flex;justify-content:space-between;gap:10px;align-items:flex-start;\"><div><div style=\"font-weight:700;color:#fff;\">'+escapeHtml(String(item.username||''))+' · '+escapeHtml(String(item.store||''))+'</div><div style=\"margin-top:4px;font-size:12px;color:rgba(200,215,230,0.72);\">级别：'+escapeHtml(String(item.access_level||'support'))+' · '+escapeHtml(tags.join(' / ')||'基础协同')+'</div></div><div style=\"display:flex;gap:8px;\"><button class=\"btn btn-secondary\" type=\"button\" onclick=\"fillStoreDutyBindingForm(__storeDutyBindingsCache['+items.indexOf(item)+'])\">编辑</button><button class=\"btn btn-secondary\" type=\"button\" data-click=\"deleteStoreDutyBinding\" data-arg=\"'+Number(item.id||0)+'\" data-arg-type=\"number\">删除</button></div></div></div>';}).join('')+'</div>';}
 async function loadStoreDutyBindings(){if(!isAdminUser())return;renderDutyBindingStoreOptions();var status=document.getElementById('store-duty-bindings-status');try{if(status)status.textContent='加载中...';var resp=await HRMS_API.listStoreDutyBindings();__storeDutyBindingsCache=Array.isArray(resp?.items)?resp.items:[];renderStoreDutyBindings();if(status)status.textContent='';}catch(e){if(status)status.textContent='加载失败：'+(e?.message||e);}}
 async function saveStoreDutyBindingFromUI(){try{var payload={username:String(document.getElementById('duty-binding-username')?.value||'').trim(),store:String(document.getElementById('duty-binding-store')?.value||'').trim(),access_level:String(document.getElementById('duty-binding-access-level')?.value||'support').trim(),effective_from:String(document.getElementById('duty-binding-effective-from')?.value||'').trim(),effective_to:String(document.getElementById('duty-binding-effective-to')?.value||'').trim(),is_primary_store:!!document.getElementById('db-is-primary-store')?.checked,enabled:!!document.getElementById('db-enabled')?.checked,can_receive_ops:!!document.getElementById('db-can-receive-ops')?.checked,can_receive_performance:!!document.getElementById('db-can-receive-performance')?.checked,can_receive_food_safety:!!document.getElementById('db-can-receive-food-safety')?.checked,can_receive_approval:!!document.getElementById('db-can-receive-approval')?.checked,can_handle_ops:!!document.getElementById('db-can-handle-ops')?.checked,can_handle_food_safety:!!document.getElementById('db-can-handle-food-safety')?.checked,can_approve_hrms:!!document.getElementById('db-can-approve-hrms')?.checked,can_view_employees:!!document.getElementById('db-can-view-employees')?.checked};if(!payload.username||!payload.store)throw new Error('请先填写用户名和门店');await HRMS_API.saveStoreDutyBinding(payload);showNotification('职责绑定已保存','success');resetStoreDutyBindingForm();await loadStoreDutyBindings();}catch(e){showNotification('保存失败: '+(e?.message||e),'error');}}
 async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm({title:'删除职责绑定',message:'确认删除这条职责绑定？',okText:'确认删除',icon:'🗑️'});if(!ok)return;try{await HRMS_API.deleteStoreDutyBinding(id);showNotification('职责绑定已删除','success');await loadStoreDutyBindings();}catch(e){showNotification('删除失败: '+(e?.message||e),'error');}}
@@ -30960,10 +30960,10 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
             const sumFmt = Number(sum || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
             statsEl.innerHTML = `
                 <div class="rep-grid">
-                    <div class="rep-metric" onclick="filterPaymentByStatus('')"><div class="k">总数</div><div class="v">${total}</div></div>
-                    <div class="rep-metric" onclick="filterPaymentByStatus('pending')"><div class="k">待审批</div><div class="v">${pending}</div></div>
-                    <div class="rep-metric" onclick="filterPaymentByStatus('approved')"><div class="k">已审批</div><div class="v">${approved}</div></div>
-                    <div class="rep-metric" onclick="filterPaymentByStatus('paid')"><div class="k">已付款</div><div class="v">${paid}</div></div>
+                    <div class="rep-metric" data-click="filterPaymentByStatus" data-arg=""><div class="k">总数</div><div class="v">${total}</div></div>
+                    <div class="rep-metric" data-click="filterPaymentByStatus" data-arg="pending"><div class="k">待审批</div><div class="v">${pending}</div></div>
+                    <div class="rep-metric" data-click="filterPaymentByStatus" data-arg="approved"><div class="k">已审批</div><div class="v">${approved}</div></div>
+                    <div class="rep-metric" data-click="filterPaymentByStatus" data-arg="paid"><div class="k">已付款</div><div class="v">${paid}</div></div>
                     <div class="rep-metric rep-metric--gold" style="grid-column:1/-1; cursor:default;"><div class="k">金额合计</div><div class="v">¥${sumFmt}</div></div>
                 </div>`;
         }
@@ -31013,7 +31013,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 const canPay = String(it?.type || '') === 'payment'
                     && String(it?.status || '') === 'approved'
                     && (String(currentUser?.role || '') === ROLES.CASHIER || String(currentUser?.role || '') === ROLES.HQ_MANAGER || String(currentUser?.role || '') === ROLES.HR_MANAGER || isAdminUser());
-                const payBtn = canPay ? `<button class="btn" type="button" onclick="payPaymentById('${escapeHtml(id)}')" style="padding: 6px 10px; background: linear-gradient(135deg,#2563eb,#60a5fa); border:none;">付款</button>` : '';
+                const payBtn = canPay ? `<button class="btn" type="button" data-click="payPaymentById" data-arg="${escapeHtml(id)}" style="padding: 6px 10px; background: linear-gradient(135deg,#2563eb,#60a5fa); border:none;">付款</button>` : '';
 
                 const metaBits = [];
                 if (store) metaBits.push(store);
@@ -31045,7 +31045,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                     </div>
                     ${payeeBlock}
                     <div class="rep-pay-card__actions">
-                        <button class="btn btn-secondary" type="button" onclick="openApprovalDetailModal('${escapeHtml(id)}')">查看</button>
+                        <button class="btn btn-secondary" type="button" data-click="openApprovalDetailModal" data-arg="${escapeHtml(id)}">查看</button>
                         ${payBtn}
                     </div>
                 </article>`;
@@ -31279,7 +31279,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         <span style="font-weight:800; font-size:13px;">${label}</span>
                         <span style="font-size:11px; color:rgba(200,215,230,0.6); margin-left:6px;">${secCount}个二级</span>
                     </div>
-                    <button class="btn btn-secondary" type="button" onclick="removePrimaryCategory(${idx})" style="padding:4px 8px; border-radius:8px; font-size:11px;">删除</button>
+                    <button class="btn btn-secondary" type="button" data-click="removePrimaryCategory" data-arg="${idx}" data-arg-type="number" style="padding:4px 8px; border-radius:8px; font-size:11px;">删除</button>
                 </div>`;
             }).join('');
         }
@@ -31297,7 +31297,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         <span style="font-weight:800; font-size:13px;">${name}</span>
                         ${primary ? `<span style="font-size:11px; color:rgba(96,165,250,0.8); margin-left:6px;">← ${primary}</span>` : '<span style="font-size:11px; color:rgba(239,68,68,0.7); margin-left:6px;">未归属</span>'}
                     </div>
-                    <button class="btn btn-secondary" type="button" onclick="removeSecondaryCategory(${idx})" style="padding:4px 8px; border-radius:8px; font-size:11px;">删除</button>
+                    <button class="btn btn-secondary" type="button" data-click="removeSecondaryCategory" data-arg="${idx}" data-arg-type="number" style="padding:4px 8px; border-radius:8px; font-size:11px;">删除</button>
                 </div>`;
             }).join('');
         }
@@ -31460,7 +31460,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         ${a ? `<div style="font-size: 11px; color: rgba(200,215,230,0.7); margin-top: 2px;">账号: ${a}</div>` : ''}
                         ${b ? `<div style="font-size: 11px; color: rgba(200,215,230,0.7); margin-top: 1px;">开户行: ${b}</div>` : ''}
                     </div>
-                    <button class="btn btn-secondary" type="button" onclick="removePaymentPayeeDetail(${idx})" style="padding: 4px 10px; border-radius: 8px; font-size: 11px;">删除</button>
+                    <button class="btn btn-secondary" type="button" data-click="removePaymentPayeeDetail" data-arg="${idx}" data-arg-type="number" style="padding: 4px 10px; border-radius: 8px; font-size: 11px;">删除</button>
                 </div>`;
             }).join('');
         }
@@ -31801,7 +31801,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 return `<span style="display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:8px; background:rgba(59,130,246,0.15); color:rgba(226,232,240,0.95); font-size:13px; font-weight:700;">
                     <span style="color:rgba(200,215,230,0.6); font-size:11px; margin-right:2px;">${idx + 1}.</span>
                     ${escapeHtml(displayName)}
-                    <button type="button" onclick="pfRemoveApprover('${escapeHtml(u)}')" style="background:none; border:none; color:rgba(239,68,68,0.8); cursor:pointer; font-size:14px; padding:0 2px; line-height:1;">×</button>
+                    <button type="button" data-click="pfRemoveApprover" data-arg="${escapeHtml(u)}" style="background:none; border:none; color:rgba(239,68,68,0.8); cursor:pointer; font-size:14px; padding:0 2px; line-height:1;">×</button>
                 </span>`;
             }).join('');
         }
@@ -31926,7 +31926,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
             }
 
             __paymentSubmitting = true;
-            const paySubmitBtn = document.querySelector('#payment-create-view button[onclick="submitPaymentForm()"]');
+            const paySubmitBtn = document.querySelector('#payment-create-view button[data-click="submitPaymentForm"]');
             try { if (paySubmitBtn) paySubmitBtn.disabled = true; } catch (e0) {}
 
             HRMS_API.createApproval('payment', { date, amount, store, category, payee, payeeName, payeeAccount, payeeBank, urgency, note })
@@ -33623,7 +33623,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 const title = String(g.title || '未命名SOP');
                 const fileCount = g.file_count || 0;
                 const updated = g.updated_at ? String(g.updated_at).slice(0, 10) : '';
-                return `<div class="kb-v2-item" onclick="openKnowledgeGroup('${escapeHtml(gid)}')">
+                return `<div class="kb-v2-item" data-click="openKnowledgeGroup" data-arg="${escapeHtml(gid)}">
                     <div class="kb-v2-item-icon" style="font-size:22px;">📁</div>
                     <div class="kb-v2-item-body">
                         <div class="kb-v2-item-title">${escapeHtml(title)}</div>
@@ -33695,7 +33695,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     const icon = typeIcon2(it.type);
                     const badge = typeBadge(it.type);
                     const date = it.createdAt ? it.createdAt.slice(0,10) : '';
-                    return `<div class="kb-v2-item" onclick="openKnowledgeItem('${escapeHtml(it.id)}')">
+                    return `<div class="kb-v2-item" data-click="openKnowledgeItem" data-arg="${escapeHtml(it.id)}">
                         <div class="kb-v2-item-icon" data-type="${escapeHtml(it.type)}">${icon}</div>
                         <div class="kb-v2-item-body">
                             <div class="kb-v2-item-title">${escapeHtml(it.title)}</div>
@@ -34085,7 +34085,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             const tags = [];
             if (isRequired) tags.push('<span class="kb-v2-chip kb-v2-chip-req">必读</span>');
             if (quizEnabled) tags.push('<span class="kb-v2-chip kb-v2-chip-quiz">测验</span>');
-            return `<div class="kb-v2-item" onclick="openKnowledgeItem('${escapeHtml(id)}')">
+            return `<div class="kb-v2-item" data-click="openKnowledgeItem" data-arg="${escapeHtml(id)}">
                 <div class="kb-v2-item-icon" data-type="${escapeHtml(t)}">${icon}</div>
                 <div class="kb-v2-item-body">
                     <div class="kb-v2-item-title">${escapeHtml(title)}</div>
@@ -34281,8 +34281,8 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                         当前 <b style="color:#a5b4fc">${reqCount}</b> 个设为晋升必须认证
                     </div>
                     <div style="display:flex;gap:8px;">
-                        <button onclick="promoReqSelectAll(true)" style="padding:6px 12px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;cursor:pointer;">全选</button>
-                        <button onclick="promoReqSelectAll(false)" style="padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;">全不选</button>
+                        <button data-click="promoReqSelectAll" data-arg="true" style="padding:6px 12px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;cursor:pointer;">全选</button>
+                        <button data-click="promoReqSelectAll" data-arg="false" style="padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;">全不选</button>
                         <button data-click="savePromoReqTopics" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
                     </div>
                 </div>
@@ -34375,8 +34375,8 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     const promotionBadge = t.promotion_required ? `<span class="training-admin-chip">🎯 晋升要求${t.level ? ' · ' + escapeHtml(t.level) : ''} · 有效期${t.validity_days || 180}天</span>` : '';
                     const editBtns = canEdit ? `
                         <div class="training-admin-actions">
-                            <button onclick="editTrainingTopic(${t.id})" class="training-admin-btn">✏️ 编辑</button>
-                            <button onclick="deleteTrainingTopic(${t.id})" class="training-admin-btn training-admin-btn--danger">🗑 删除</button>
+                            <button data-click="editTrainingTopic" data-arg="${t.id}" data-arg-type="number" class="training-admin-btn">✏️ 编辑</button>
+                            <button data-click="deleteTrainingTopic" data-arg="${t.id}" data-arg-type="number" class="training-admin-btn training-admin-btn--danger">🗑 删除</button>
                         </div>` : '';
                     return `
                     <div class="training-admin-card">
@@ -34579,7 +34579,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                             <span>可在右侧随时移除</span>
                         </div>
                     </div>
-                    <span onclick="removeKbArticle('${a.id}')" class="tt-kb-chip-remove">×</span>
+                    <span data-click="removeKbArticle" data-arg="${a.id}" class="tt-kb-chip-remove">×</span>
                 </div>`
             ).join('');
             container.innerHTML = head + `<div class="tt-kb-selected-grid">${cards}</div>`;
@@ -35033,7 +35033,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     const deadline = getTrainingDeadlineState(a);
                     const displayName = escapeHtml(a.employee_name || a.employee_username);
                     const canRevoke = isAdminOrHQ() || a.assigned_by === currentUser?.username;
-                    const revokeBtn = canRevoke ? `<button onclick="deleteTrainingAssignment(${a.id})" style="width:100%;padding:8px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);color:#f87171;font-size:13px;cursor:pointer;">撤销指派</button>` : '';
+                    const revokeBtn = canRevoke ? `<button data-click="deleteTrainingAssignment" data-arg="${a.id}" data-arg-type="number" style="width:100%;padding:8px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);color:#f87171;font-size:13px;cursor:pointer;">撤销指派</button>` : '';
                     const badge = `<span class="training-admin-badge" style="background:rgba(255,255,255,0.07);color:${color};">${sMap[st]||'未开始'}</span>`;
                     const deadlineBadge = getTrainingDeadlineBadge(deadline);
                     const cardStyle = deadline.isOverdue
@@ -35425,7 +35425,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                         ${scoreHtml}
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
                             <button onclick="reviewCertWithScore(${c.id},'confirm')" style="padding:12px;border-radius:10px;background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.3);color:#34d399;font-size:14px;font-weight:600;cursor:pointer;">✓ 确认AI评分</button>
-                            <button onclick="reviewCertWithOverride(${c.id})" style="padding:12px;border-radius:10px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.25);color:#fbbf24;font-size:14px;font-weight:600;cursor:pointer;">✎ 手动评分</button>
+                            <button data-click="reviewCertWithOverride" data-arg="${c.id}" data-arg-type="number" style="padding:12px;border-radius:10px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.25);color:#fbbf24;font-size:14px;font-weight:600;cursor:pointer;">✎ 手动评分</button>
                         </div>
                     </div>`;
                 }).join('');
@@ -35493,7 +35493,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                             </div>
                             <div style="display:flex;gap:8px;margin-top:16px;">
                                 <button onclick="this.closest('.modal').remove()" style="flex:1;padding:12px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;">取消</button>
-                                <button onclick="submitOverride(${id})" style="flex:1;padding:12px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">提交人工评分</button>
+                                <button data-click="submitOverride" data-arg="${id}" data-arg-type="number" style="flex:1;padding:12px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">提交人工评分</button>
                             </div>
                         </div>
                     </div>`;
@@ -35764,7 +35764,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     if (articles.length > 1) {
                         tabsDiv.style.display = 'flex';
                         tabsDiv.innerHTML = articles.map((a, i) => `
-                            <button id="training-article-tab-${i}" onclick="showTrainingArticle(${i})"
+                            <button id="training-article-tab-${i}" data-click="showTrainingArticle" data-arg="${i}" data-arg-type="number"
                                 style="padding:6px 14px;border-radius:20px;border:1px solid rgba(255,255,255,0.18);
                                        background:${i === 0 ? 'rgba(167,139,250,0.25)' : 'rgba(255,255,255,0.06)'};
                                        color:${i === 0 ? '#c4b5fd' : 'rgba(255,255,255,0.6)'};
@@ -36993,8 +36993,8 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 if (r.status === 409 && j.candidates && j.candidates.length) {
                     const btns = j.candidates
                         .map((c) => {
-                            const uj = JSON.stringify(String(c.username || ''));
-                            return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" onclick="loadDcScoreProvenance(${uj})">${escapeHtml(
+                            const uj = escapeHtml(String(c.username || ''));
+                            return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" data-click="loadDcScoreProvenance" data-arg="${uj}">${escapeHtml(
                                 String(c.name || '')
                             )} <span style="color:#64748b;">(${escapeHtml(String(c.username || ''))})</span></button>`;
                         })
@@ -37133,8 +37133,8 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 if (r.status === 409 && j.candidates && j.candidates.length) {
                     const btns = j.candidates
                         .map((c) => {
-                            const uj = JSON.stringify(String(c.username || ''));
-                            return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" onclick="loadDcScoreProvenance(${uj})">${escapeHtml(String(c.name || ''))} <span style="color:#64748b;">(${escapeHtml(String(c.username || ''))})</span></button>`;
+                            const uj = escapeHtml(String(c.username || ''));
+                            return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" data-click="loadDcScoreProvenance" data-arg="${uj}">${escapeHtml(String(c.name || ''))} <span style="color:#64748b;">(${escapeHtml(String(c.username || ''))})</span></button>`;
                         })
                         .join('');
                     out.innerHTML =
@@ -37266,7 +37266,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             const btnHtml = (label, value) => {
                 const isOn = String(value || '') === active;
                 const cls = isOn ? 'btn' : 'btn btn-secondary';
-                return `<button class="${cls}" type="button" onclick="setKbCategory('${escapeHtml(value)}')">${escapeHtml(label)}</button>`;
+                return `<button class="${cls}" type="button" data-click="setKbCategory" data-arg="${escapeHtml(value)}">${escapeHtml(label)}</button>`;
             };
 
             const parts = [btnHtml('全部分类', '')].concat(cats.map(c => btnHtml(c, c)));
@@ -37663,7 +37663,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                 const name = it.title || it.name || '未命名';
                 const isSelected = kbChatSelectedSources.has(it.id);
                 const typeIcon = it.type === 'pdf' ? '📄' : (it.type === 'doc' ? '📝' : (it.type === 'img' ? '🖼️' : '📃'));
-                return `<button type="button" class="kb-chat-source-chip ${isSelected ? 'selected' : ''}" data-id="${escapeHtml(it.id)}" onclick="toggleKbChatSource('${escapeHtml(it.id)}')">
+                return `<button type="button" class="kb-chat-source-chip ${isSelected ? 'selected' : ''}" data-id="${escapeHtml(it.id)}" data-click="toggleKbChatSource" data-arg="${escapeHtml(it.id)}">
                     <span class="kb-src-ic" aria-hidden="true">${typeIcon}</span>
                     <span class="kb-src-name">${escapeHtml(name)}</span>
                     <span class="kb-src-cat">${escapeHtml(cat)}</span>
@@ -37720,9 +37720,9 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                         <div class="kb-rpt-welcome-title">欢迎使用 AI 培训助手</div>
                         <div style="margin-top: 8px; font-size: 13px;">选择资料后提问；建议先用快捷指令建立上下文。</div>
                         <div class="kb-rpt-welcome-actions">
-                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" onclick="insertKbChatSuggestion('请总结这份资料的主要内容')">总结内容</button>
-                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" onclick="insertKbChatSuggestion('这份资料的关键要点有哪些？')">关键要点</button>
-                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" onclick="insertKbChatSuggestion('帮我出几道测试题检验学习效果')">出测试题</button>
+                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" data-click="insertKbChatSuggestion" data-arg="请总结这份资料的主要内容">总结内容</button>
+                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" data-click="insertKbChatSuggestion" data-arg="这份资料的关键要点有哪些？">关键要点</button>
+                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" data-click="insertKbChatSuggestion" data-arg="帮我出几道测试题检验学习效果">出测试题</button>
                         </div>
                     </div>
                 `;
@@ -38534,7 +38534,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                         <div style="font-weight:600;color:#e2e8f0;font-size:13px;">${escapeHtml(label)}</div>
                         <div style="display:flex;gap:6px;align-items:center;">
                             <label style="font-size:11px;color:#94a3b8;"><input type="checkbox" ${rule.enabled !== false ? 'checked' : ''} onchange="__BI_ANOMALY_RULES[${idx}].enabled=this.checked"> 启用</label>
-                            <button onclick="removeBiAnomalyRule(${idx})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:2px;" title="删除">✕</button>
+                            <button data-click="removeBiAnomalyRule" data-arg="${idx}" data-arg-type="number" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:2px;" title="删除">✕</button>
                         </div>
                     </div>
                     <div style="font-size:11px;color:#64748b;margin-bottom:8px;">${escapeHtml(preset?.description || rule.description || '')}　|　比较方式: ${escapeHtml(modeLabel)}</div>
@@ -38845,8 +38845,8 @@ ${knowledgeContent.slice(0, 30000)}`;
                         <input id="tpl-name-${escapeHtml(t.id)}" value="${escapeHtml(t.name || '')}" placeholder="模板名称" class="acm-inp acm-inp-sm" style="margin-top:10px;">
                         <textarea id="tpl-content-${escapeHtml(t.id)}" ${locked ? 'readonly' : ''} class="acm-inp" style="min-height:80px;resize:vertical;margin-top:8px;">${escapeHtml(t.content || '')}</textarea>
                         <div class="acm-tpl-footer">
-                            ${locked ? '' : `<button class="acm-tpl-del" onclick="deleteAgentTemplate('${escapeHtml(t.id)}')">删除</button>`}
-                            <button class="acm-edit-btn" onclick="saveAgentTemplate('${escapeHtml(t.id)}')">保存</button>
+                            ${locked ? '' : `<button class="acm-tpl-del" data-click="deleteAgentTemplate" data-arg="${escapeHtml(t.id)}">删除</button>`}
+                            <button class="acm-edit-btn" data-click="saveAgentTemplate" data-arg="${escapeHtml(t.id)}">保存</button>
                         </div>
                     </div>
                 `;
@@ -39028,7 +39028,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                             <span style="background:rgba(99,102,241,0.15);color:#818cf8;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;">${escapeHtml(catLabel)}</span>
                             <span style="font-size:13px;font-weight:700;color:#e2e8f0;">${escapeHtml(dim.label || preset.label || '')}</span>
                         </div>
-                        <button onclick="removeHrRatingDim(${i})" style="background:none;border:none;color:#ef4444;font-size:16px;cursor:pointer;padding:2px 6px;">✕</button>
+                        <button data-click="removeHrRatingDim" data-arg="${i}" data-arg-type="number" style="background:none;border:none;color:#ef4444;font-size:16px;cursor:pointer;padding:2px 6px;">✕</button>
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
                         <div>
@@ -39433,7 +39433,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                                 <textarea id="cfg-prompt-${escapeHtml(c.agent_id)}" class="acm-inp" style="min-height:80px;resize:vertical;">${escapeHtml(c.system_prompt || '')}</textarea>
                             </div>
                         </div>
-                        <button class="acm-save" onclick="saveAgentConfig('${escapeHtml(c.agent_id)}')" style="margin-top:12px;">保存配置</button>
+                        <button class="acm-save" data-click="saveAgentConfig" data-arg="${escapeHtml(c.agent_id)}" style="margin-top:12px;">保存配置</button>
                     </div>
                 `).join('');
             } catch (e) {
@@ -39507,7 +39507,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                             <div class="acm-rule-meta">${roleLabel[r.assignee_role] || escapeHtml(r.assignee_role || '')} · ${r.enabled ? '启用' : '<span style="color:#f87171">停用</span>'}</div>
                         </div>
                         <span class="acm-rule-deduct">中-${Number(r.normal_deduction||0)} / 重-${Number(r.major_deduction||0)}</span>
-                        <button class="acm-edit-btn" onclick="openAgentRuleEditor('${escapeHtml(String(r.id))}')">编辑</button>
+                        <button class="acm-edit-btn" data-click="openAgentRuleEditor" data-arg="${escapeHtml(String(r.id))}">编辑</button>
                     </div>
                 `).join('');
             } catch (e) {
@@ -39683,7 +39683,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                         ${i.detail ? `<div class="am-card-detail">${escapeHtml(i.detail)}</div>` : ''}
                         ${i.status !== 'resolved' ? `<div class="am-resolve-row">
                             <input id="resolve-${i.id}" placeholder="整改说明...">
-                            <button class="btn" onclick="resolveAmIssue('${i.id}')">解决</button>
+                            <button class="btn" data-click="resolveAmIssue" data-arg="${i.id}">解决</button>
                         </div>` : (i.resolution ? `<div class="am-card-detail" style="color:#4ade80;">✓ ${escapeHtml(i.resolution)}</div>` : '')}
                     </div>`;
                 }).join('');
@@ -40889,7 +40889,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                     const created = String(req?.created_at || req?.createdAt || '').slice(0, 10);
                     const status = String(req?.status || '');
                     const badgeClass = status === 'pending' ? 'pending' : (status === 'approved' ? 'approved' : (status === 'rejected' ? 'rejected' : ''));
-                    return `<div class="pr-card" onclick="openApprovalDetailModal('${escapeHtml(String(req?.id || ''))}')" style="cursor:pointer;">
+                    return `<div class="pr-card" data-click="openApprovalDetailModal" data-arg="${escapeHtml(String(req?.id || ''))}" style="cursor:pointer;">
                         <div class="pr-card-head">
                             <div style="min-width:0;">
                                 <div class="pr-card-title">${escapeHtml(hrmsDisplayName(req?.applicant_username))}</div>
@@ -41625,7 +41625,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                         <div style="font-weight: 900; color: rgba(226,232,240,0.95);">${escapeHtml(title)}</div>
                         <div style="margin-top:4px; font-size:12px; color: rgba(200,215,230,0.78);">${escapeHtml(meta)}</div>
                     </div>
-                    <button class="btn btn-secondary" type="button" onclick="startAssignedExam('${escapeHtml(id)}')">开始</button>
+                    <button class="btn btn-secondary" type="button" data-click="startAssignedExam" data-arg="${escapeHtml(id)}">开始</button>
                 </div>`;
             }).join('');
         }
@@ -43413,7 +43413,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                         <label class="tp-field">预警值<input type="number" step="0.01" class="tp-input" value="${t.warning_value ?? ''}" onchange="updateTpKpiTargetField('${t.id}','warning_value',this.value)"></label>
                     </div>
                     <div style="font-size:11px; color:rgba(255,255,255,0.4); margin-top:6px;">单位:${escapeHtml(t.unit||'-')} · ${t.direction==='lower_better'?'越低越好':'越高越好'} · ${({daily:'每日',weekly:'每周',monthly:'每月'})[t.period]||t.period}</div>
-                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" onclick="deleteTpKpiTarget('${t.id}')">删除</button></div>
+                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="deleteTpKpiTarget" data-arg="${t.id}">删除</button></div>
                 </div>`).join('');
         }
 
@@ -43551,7 +43551,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                     <label style="display:flex; align-items:center; gap:4px; font-size:12px;"><input type="checkbox" ${it.enabled !== false ? 'checked' : ''} onchange="updateTpRhythmItem(${idx},'enabled',this.checked)">启用</label>
                     <input type="text" placeholder="名称" class="tp-input" style="flex:1; min-width:100px;" value="${escapeHtml(it.label || '')}" onchange="updateTpRhythmItem(${idx},'label',this.value)">
                     <input type="text" placeholder="说明" class="tp-input" style="flex:2; min-width:140px;" value="${escapeHtml(it.desc || '')}" onchange="updateTpRhythmItem(${idx},'desc',this.value)">
-                    <button type="button" class="btn btn-danger" onclick="removeTpRhythmItem(${idx})">删除</button>
+                    <button type="button" class="btn btn-danger" data-click="removeTpRhythmItem" data-arg="${idx}" data-arg-type="number">删除</button>
                 </div>`).join('');
         }
 
@@ -43611,7 +43611,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                             </div>
                         </div>
                     </div>
-                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" onclick="removeTpInspectionItem(${idx})">删除</button></div>
+                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="removeTpInspectionItem" data-arg="${idx}" data-arg-type="number">删除</button></div>
                 </div>`).join('');
         }
 
@@ -43673,7 +43673,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                             ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} onchange="toggleTpRandomRole(${idx},'${role}',this.checked)">${label}</label>`).join('')}
                         </div>
                     </div>
-                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" onclick="removeTpRandomItem(${idx})">删除</button></div>
+                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="removeTpRandomItem" data-arg="${idx}" data-arg-type="number">删除</button></div>
                 </div>`).join('');
         }
 
@@ -43945,7 +43945,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                 const bid = normalizeBrandIdInput(b?.id);
                 const active = bid === __BRAND_FORM_EDITING_ID;
                 return `
-                    <button type="button" onclick="selectBrandForEdit('${escapeHtml(bid)}')" style="text-align:left; padding:10px; border-radius:10px; border:1px solid ${active ? 'rgba(34,197,94,0.45)' : 'rgba(255,255,255,0.10)'}; background:${active ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.04)'}; color:#fff; cursor:pointer;">
+                    <button type="button" data-click="selectBrandForEdit" data-arg="${escapeHtml(bid)}" style="text-align:left; padding:10px; border-radius:10px; border:1px solid ${active ? 'rgba(34,197,94,0.45)' : 'rgba(255,255,255,0.10)'}; background:${active ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.04)'}; color:#fff; cursor:pointer;">
                         <div style="font-weight:800;">${escapeHtml(String(b?.name || '-'))}</div>
                         <div style="font-size:11px; color:rgba(200,215,230,0.7); margin-top:2px;">${escapeHtml(String(b?.id || '-'))}</div>
                     </button>
@@ -44571,7 +44571,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                             <div class="af-tags" id="af-tags-${m.type}" style="display:flex; flex-wrap:wrap; gap:6px; min-height:34px; padding:8px 10px; background:rgba(255,255,255,0.04); border-radius:10px; border:1px solid rgba(255,255,255,0.08); margin-bottom:8px;"></div>
                             <div style="display:flex; gap:6px;">
                                 <select id="af-select-${m.type}" class="settings-input" style="flex:1; font-size:13px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(226,232,240,0.9); padding:8px 10px;">${approverOptsHtml}</select>
-                                <button class="btn btn-secondary" type="button" onclick="afAddStep('${m.type}')" style="padding:8px 14px; font-size:13px; border-radius:10px; white-space:nowrap; font-weight:600;">+ 添加</button>
+                                <button class="btn btn-secondary" type="button" data-click="afAddStep" data-arg="${m.type}" style="padding:8px 14px; font-size:13px; border-radius:10px; white-space:nowrap; font-weight:600;">+ 添加</button>
                             </div>
                         </div>
                     </div>
@@ -45162,9 +45162,9 @@ ${knowledgeContent.slice(0, 30000)}`;
                             <span class="pill ${m.enabled !== false ? 'ok' : 'bad'}">${m.enabled !== false ? '启用' : '停用'}</span>
                         </div>
                         <div class="ai-model-card__actions">
-                            <button type="button" class="btn btn-secondary" onclick="openAiModelModal('${escapeHtml(m.id)}')">编辑</button>
-                            <button type="button" class="btn btn-secondary" onclick="testAiModelById('${escapeHtml(m.id)}')">测试</button>
-                            <button type="button" class="btn btn-secondary" onclick="deleteAiModel('${escapeHtml(m.id)}')">删除</button>
+                            <button type="button" class="btn btn-secondary" data-click="openAiModelModal" data-arg="${escapeHtml(m.id)}">编辑</button>
+                            <button type="button" class="btn btn-secondary" data-click="testAiModelById" data-arg="${escapeHtml(m.id)}">测试</button>
+                            <button type="button" class="btn btn-secondary" data-click="deleteAiModel" data-arg="${escapeHtml(m.id)}">删除</button>
                         </div>
                     </div>
                 `).join('');
@@ -47277,9 +47277,9 @@ ${String(text || '').slice(0, 9000)}`;
                     <td>${status}</td>
                     <td>
                         <div class="action-buttons" style="display:flex;gap:6px;flex-wrap:nowrap;">
-                            <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;" onclick="viewEmployee('${escapeJsString(empKey)}')">查看</button>
-                            ${isAdminUser() ? `<button class="btn" style="padding:6px 10px;font-size:12px;" onclick="editEmployee('${escapeJsString(empKey)}')">编辑</button>` : ''}
-                            ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#ef4444;" onclick="deleteEmployee('${escapeJsString(empKey)}')">删除</button>` : ''}
+                            <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;" data-click="viewEmployee" data-arg="${escapeHtml(empKey)}">查看</button>
+                            ${isAdminUser() ? `<button class="btn" style="padding:6px 10px;font-size:12px;" data-click="editEmployee" data-arg="${escapeHtml(empKey)}">编辑</button>` : ''}
+                            ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#ef4444;" data-click="deleteEmployee" data-arg="${escapeHtml(empKey)}">删除</button>` : ''}
                             ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" onclick="loginAsEmployee('${escapeJsString(empKey)}','${escapeJsString(emp.name || empKey)}')">代登录</button>` : ''}
                         </div>
                     </td>
@@ -49177,11 +49177,11 @@ ${String(text || '').slice(0, 9000)}`;
                 const createdAt = u?.createdAt ? String(u.createdAt).slice(0, 10) : '-';
                 const lastLogin = u?.lastLogin ? String(u.lastLogin).slice(0, 10) : '-';
                 const act = canManage ? `
-                    <button class="btn" style="padding:4px 8px;font-size:12px;" onclick="editUser('${escapeHtml(uname)}')">编辑</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;" onclick="resetUserPassword('${escapeHtml(uname)}')">重置密码</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;background:#3b82f6;border-color:#3b82f6;" onclick="viewEmployeePassword('${escapeHtml(uname)}')">查看密码</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;" onclick="toggleUserStatus('${escapeHtml(uname)}')">启用/禁用</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;color:#ef4444;" onclick="deleteUser('${escapeHtml(uname)}')">删除</button>
+                    <button class="btn" style="padding:4px 8px;font-size:12px;" data-click="editUser" data-arg="${escapeHtml(uname)}">编辑</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;" data-click="resetUserPassword" data-arg="${escapeHtml(uname)}">重置密码</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;background:#3b82f6;border-color:#3b82f6;" data-click="viewEmployeePassword" data-arg="${escapeHtml(uname)}">查看密码</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;" data-click="toggleUserStatus" data-arg="${escapeHtml(uname)}">启用/禁用</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;color:#ef4444;" data-click="deleteUser" data-arg="${escapeHtml(uname)}">删除</button>
                 ` : '-';
                 return `<tr>
                     <td>${escapeHtml(uname)}</td>
@@ -49208,11 +49208,11 @@ ${String(text || '').slice(0, 9000)}`;
                         const stText = st === 'inactive' ? '离职' : '在职';
                         const stClass = st === 'inactive' ? 'inactive' : 'active';
                         const act = isAdminUser() ? `
-                            <button class="btn" type="button" style="padding:10px 14px;font-size:14px;" onclick="editUser('${escapeHtml(uname)}')">编辑</button>
-                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;" onclick="resetUserPassword('${escapeHtml(uname)}')">重置密码</button>
-                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;background:#3b82f6;border-color:#3b82f6;" onclick="viewEmployeePassword('${escapeHtml(uname)}')">查看密码</button>
-                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;" onclick="toggleUserStatus('${escapeHtml(uname)}')">启用/禁用</button>
-                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;color:#ef4444;" onclick="deleteUser('${escapeHtml(uname)}')">删除</button>
+                            <button class="btn" type="button" style="padding:10px 14px;font-size:14px;" data-click="editUser" data-arg="${escapeHtml(uname)}">编辑</button>
+                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;" data-click="resetUserPassword" data-arg="${escapeHtml(uname)}">重置密码</button>
+                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;background:#3b82f6;border-color:#3b82f6;" data-click="viewEmployeePassword" data-arg="${escapeHtml(uname)}">查看密码</button>
+                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;" data-click="toggleUserStatus" data-arg="${escapeHtml(uname)}">启用/禁用</button>
+                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;color:#ef4444;" data-click="deleteUser" data-arg="${escapeHtml(uname)}">删除</button>
                         ` : '';
                         return `
                             <div class="us-card">
@@ -49269,9 +49269,9 @@ ${String(text || '').slice(0, 9000)}`;
                         <div>📅 开业：${escapeHtml(store.openDate || '-')}</div>
                     </div>
                     <div style="display:flex;gap:8px;margin-top:12px;">
-                        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="viewStoreDetail('${store.id}')">查看</button>
-                        ${isAdminUser() ? `<button class="btn" style="padding:6px 12px;font-size:12px;" onclick="editStore('${store.id}')">编辑</button>` : ''}
-                        ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;color:#ef4444;" onclick="deleteStore('${store.id}')">删除</button>` : ''}
+                        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;" data-click="viewStoreDetail" data-arg="${store.id}">查看</button>
+                        ${isAdminUser() ? `<button class="btn" style="padding:6px 12px;font-size:12px;" data-click="editStore" data-arg="${store.id}">编辑</button>` : ''}
+                        ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;color:#ef4444;" data-click="deleteStore" data-arg="${store.id}">删除</button>` : ''}
                     </div>
                 </div>`;
             }).join('');
@@ -50421,7 +50421,7 @@ tr:nth-child(even) td { background: #fafafa; }
                 } else if (m.path && m.path.note) {
                     pathHtml = `<div class="pf2-path" style="font-size:12px;color:var(--pf-faint);">${esc(m.path.note)}</div>`;
                 }
-                const ctaHtml = m.cta ? `<span onclick="showPage('promotion')" style="display:inline-block;margin-left:8px;padding:3px 10px;border-radius:8px;background:var(--pf-ac);color:var(--pf-acx);font-weight:600;font-size:11.5px;cursor:pointer;white-space:nowrap;">${esc(m.cta.text)} ›</span>` : '';
+                const ctaHtml = m.cta ? `<span data-click="showPage" data-arg="promotion" style="display:inline-block;margin-left:8px;padding:3px 10px;border-radius:8px;background:var(--pf-ac);color:var(--pf-acx);font-weight:600;font-size:11.5px;cursor:pointer;white-space:nowrap;">${esc(m.cta.text)} ›</span>` : '';
                 const nextHtml = m.nextStep ? `<div class="pf2-nx"><svg class="pfi"><use href="#pfi-flag"/></svg><span>${esc(m.nextStep)}${ctaHtml}</span></div>` : '';
                 box.innerHTML = `
                     <div style="font-size:11.5px;color:var(--pf-faint);margin-bottom:12px;">当前岗位 <b style="color:var(--pf-tx);font-weight:600;">${esc(m.positionDisplay)}</b>${m.currentLevel ? ' \u00b7 ' + esc(m.currentLevel) : ''}</div>
@@ -55690,7 +55690,7 @@ tr:nth-child(even) td { background: #fafafa; }
                             <div class="rep-hero" style="background: linear-gradient(135deg, #1d4ed8, #6366f1);">
                                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                                     <div style="font-weight: 900; font-size: 16px;flex:1;">出勤表（营业日报核对）</div>
-                                    ${isAdminUser() && totalAnomalies > 0 ? `<button onclick="notifyAttendanceAnomalies('${escapeHtml(notifyDateVal)}')" style="padding:6px 14px;border-radius:10px;background:rgba(251,146,60,0.2);border:1px solid rgba(251,146,60,0.4);color:#fdba74;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📣 通知异常员工 (${totalAnomalies})</button>` : ''}
+                                    ${isAdminUser() && totalAnomalies > 0 ? `<button data-click="notifyAttendanceAnomalies" data-arg="${escapeHtml(notifyDateVal)}" style="padding:6px 14px;border-radius:10px;background:rgba(251,146,60,0.2);border:1px solid rgba(251,146,60,0.4);color:#fdba74;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📣 通知异常员工 (${totalAnomalies})</button>` : ''}
                                 </div>
                                 <div class="meta" style="margin-top: 8px;">数据来源：<strong>正式提交</strong>营业日报。在职人员与打卡、已通过休假比对；<strong>休息</strong>以日报为准（本休/调休不要求休假流程）。门店名册中未列入出勤/休息且无已通过休假者标为<strong>缺勤</strong>。</div>
                                 <div class="meta" style="margin-top: 6px;">统计周期：${escapeHtml(start)} - ${escapeHtml(end)} · 每日默认折叠，点击标题展开明细</div>`;
@@ -57377,7 +57377,7 @@ ${body}
                 const reasonShort = String(r.reason || '').length > 16 ? String(r.reason).slice(0, 14) + '…' : String(r.reason || '');
                 
                 return `<tr>
-                    <td><span class="rw-id">${escapeHtml(idShort)}</span><button type="button" class="btn btn-secondary rw-mini-btn" onclick="openApprovalDetailModal('${escapeJsString(rid)}')">详情</button></td>
+                    <td><span class="rw-id">${escapeHtml(idShort)}</span><button type="button" class="btn btn-secondary rw-mini-btn" data-click="openApprovalDetailModal" data-arg="${escapeHtml(rid)}">详情</button></td>
                     <td>${typeLabel}</td>
                     <td>${escapeHtml(empName)}</td>
                     <td>${escapeHtml(r.store || '-')}</td>
@@ -57386,7 +57386,7 @@ ${body}
                     <td style="color:${amountColor};font-weight:700;font-family:ui-monospace,monospace;">${amountText}</td>
                     <td><span class="rw-st ${stCls}">${statusText}</span></td>
                     <td style="font-family:ui-monospace,monospace;">${r.createdAt ? r.createdAt.slice(0, 10) : '-'}</td>
-                    <td><button class="btn btn-secondary rw-mini-btn" type="button" onclick="openApprovalDetailModal('${escapeJsString(rid)}')">查看</button></td>
+                    <td><button class="btn btn-secondary rw-mini-btn" type="button" data-click="openApprovalDetailModal" data-arg="${escapeHtml(rid)}">查看</button></td>
                 </tr>`;
             }).join('');
         }
@@ -57904,7 +57904,7 @@ ${body}
                 const statusColor = r.status === 'normal' || r.status === 'confirmed' || r.status === 'no_gps' ? 'rgba(34,197,94,0.9)' : 'rgba(234,179,8,0.9)';
                 const canConfirm = (currentUser?.role === 'admin' || currentUser?.role === 'hq_manager' || currentUser?.role === 'store_manager' || currentUser?.role === 'hr_manager') && r.status !== 'normal' && r.status !== 'confirmed';
                 const actionText = canConfirm
-                    ? `<button class="btn btn-secondary" style="font-size:11px; padding:3px 8px;" onclick="attConfirmRecord('${r.id}')">确认</button>`
+                    ? `<button class="btn btn-secondary" style="font-size:11px; padding:3px 8px;" data-click="attConfirmRecord" data-arg="${r.id}">确认</button>`
                     : (r.confirmed_by ? `<span class="att-list-sub">${r.confirmed_by}确认</span>` : '<span class="att-list-sub">-</span>');
                 return `<div class="att-list-item">
                     <div class="att-list-row"><span class="att-list-main">${r.display_name || r.username}</span><span class="att-list-sub">${r.store || '-'}</span></div>
@@ -57932,7 +57932,7 @@ ${body}
                 const expanded = !!__attDayExpandState[day];
                 const abnormal = items.filter(r => r.status !== 'normal' && r.status !== 'confirmed' && r.status !== 'no_gps').length;
                 return `<div class="att-day-group">
-                    <button class="att-day-group-head" type="button" onclick="attToggleDayGroup('${day}')">
+                    <button class="att-day-group-head" type="button" data-click="attToggleDayGroup" data-arg="${day}">
                         <span>${day}</span>
                         <span class="meta">${items.length}条${abnormal ? ` · 异常${abnormal}` : ''} ${expanded ? '▾' : '▸'}</span>
                     </button>
@@ -57975,7 +57975,7 @@ ${body}
                     const statusLabel = statusMap[r.status] || r.status;
                     const statusColor = r.status === 'normal' || r.status === 'confirmed' || r.status === 'no_gps' ? 'rgba(34,197,94,0.8)' : 'rgba(234,179,8,0.8)';
                     const canConfirm = (currentUser?.role === 'admin' || currentUser?.role === 'hq_manager' || currentUser?.role === 'store_manager' || currentUser?.role === 'hr_manager') && r.status !== 'normal' && r.status !== 'confirmed';
-                    const actions = canConfirm ? `<button class="btn btn-secondary" style="font-size:11px; padding:2px 8px;" onclick="attConfirmRecord('${r.id}')">确认</button>` : (r.confirmed_by ? `<span style="font-size:11px; color:rgba(200,215,230,0.5);">${r.confirmed_by}确认</span>` : '-');
+                    const actions = canConfirm ? `<button class="btn btn-secondary" style="font-size:11px; padding:2px 8px;" data-click="attConfirmRecord" data-arg="${r.id}">确认</button>` : (r.confirmed_by ? `<span style="font-size:11px; color:rgba(200,215,230,0.5);">${r.confirmed_by}确认</span>` : '-');
                     return `<tr>
                         <td>${r.display_name || r.username}</td>
                         <td>${r.store || '-'}</td>
@@ -58243,8 +58243,8 @@ ${body}
                         ${addr ? `<div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:2px;">${addr}</div>` : ''}
                     </div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                        <button class="btn btn-secondary" style="font-size:11px; padding:4px 10px;" onclick="attSetStoreLocationCurrent('${(s.name || '').replace(/'/g, "\\'")}')">用当前位置</button>
-                        <button class="btn btn-secondary" style="font-size:11px; padding:4px 10px;" onclick="attSetStoreLocationManual('${(s.name || '').replace(/'/g, "\\'")}')">手动输入</button>
+                        <button class="btn btn-secondary" style="font-size:11px; padding:4px 10px;" data-click="attSetStoreLocationCurrent" data-arg="${escapeHtml(s.name || '')}">用当前位置</button>
+                        <button class="btn btn-secondary" style="font-size:11px; padding:4px 10px;" data-click="attSetStoreLocationManual" data-arg="${escapeHtml(s.name || '')}">手动输入</button>
                     </div>
                 </div>`;
             }).join('');
@@ -59331,12 +59331,12 @@ ${body}
                                     <i>⬇️</i> 下载
                                 </button>
                                 ${file.validation_status === 'pending' ? `
-                                    <button class="btn btn-sm btn-secondary" onclick="validateFile('${file.file_id}')">
+                                    <button class="btn btn-sm btn-secondary" data-click="validateFile" data-arg="${file.file_id}">
                                         <i>✓</i> 校验
                                     </button>
                                 ` : ''}
                                 ${currentUser?.role === 'admin' || currentUser?.username === file.uploader_username ? `
-                                    <button class="btn btn-sm btn-danger" onclick="deleteFile('${file.file_id}')">
+                                    <button class="btn btn-sm btn-danger" data-click="deleteFile" data-arg="${file.file_id}">
                                         <i>🗑️</i>
                                     </button>
                                 ` : ''}
@@ -59972,7 +59972,7 @@ ${body}
                     let targetLine = '';
                     if (c.round) targetLine = `本轮目标 ${Number(c.round.target_value).toLocaleString('zh-CN')}${escapeHtml(c.unit)} · 任务 ${c.round.tasks_done}/${c.round.tasks_total}`;
                     else if (c.next_target != null) targetLine = `建议目标 ${Number(c.next_target).toLocaleString('zh-CN')}${escapeHtml(c.unit)} →`;
-                    return `<div class="gs-card" onclick="gsOpenDetail('${escapeHtml(c.problem_key)}')">
+                    return `<div class="gs-card" data-click="gsOpenDetail" data-arg="${escapeHtml(c.problem_key)}">
                       <div class="gs-card__top"><span class="gs-card__title">${GS_PROBLEM_ICONS[c.problem_key] || ''} ${escapeHtml(c.title)}</span>${badge}</div>
                       <div class="gs-card__metric">${escapeHtml(c.metric)}</div>
                       <div class="gs-card__value">${val} <small>${escapeHtml(c.unit)}</small></div>
@@ -60090,7 +60090,7 @@ ${body}
             }).join('');
             return analysisHtml + priorityHtml + stageHtml + evidenceHtml + gsExtraDetailHtml(data) + histHtml +
               `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">任务方案(每项必须指定责任人)</div>${tasks}</div>
-               <div class="gs-actions"><button class="ga-btn ga-btn--primary" onclick="gsDispatch('${escapeHtml(data.problem_key)}')">一键下发全部任务</button></div>`;
+               <div class="gs-actions"><button class="ga-btn ga-btn--primary" data-click="gsDispatch" data-arg="${escapeHtml(data.problem_key)}">一键下发全部任务</button></div>`;
         }
 
         function gsRenderRound(data) {
@@ -60282,7 +60282,7 @@ ${body}
                 const statusLabel = { active: '执行中', observing: '观察期', reviewing: '待复盘确认' };
                 host.innerHTML = '<div style="font-size:11px;color:#5B6597;margin-bottom:6px;">📌 进行中的自定义任务(点击查看进度)</div>' +
                   '<div style="display:flex;flex-direction:column;gap:6px;">' +
-                  data.rounds.map(r => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="justify-content:space-between;width:100%;" onclick="gsOpenDetail('${escapeHtml(r.problem_key)}')">
+                  data.rounds.map(r => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="justify-content:space-between;width:100%;" data-click="gsOpenDetail" data-arg="${escapeHtml(r.problem_key)}">
                     <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.problem_title)} · 第${r.round_no}轮</span>
                     <span style="flex-shrink:0;margin-left:8px;color:#A5B0FF;">${statusLabel[r.status] || r.status} ${r.tasks_done}/${r.tasks_total}</span>
                   </button>`).join('') +
@@ -60300,7 +60300,7 @@ ${body}
                 if (!data.ok || !(data.history || []).length) { host.innerHTML = ''; return; }
                 host.innerHTML = '<div style="font-size:11px;color:#5B6597;margin-bottom:6px;">最近查询记录(点击直接查看，不用重新输入)</div>' +
                   '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-                  data.history.map(h => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="gsRerunFromHistory('${escapeHtml(h.question).replace(/'/g, "\\'")}')" title="${escapeHtml(h.question)}">${escapeHtml(h.title || h.question)}</button>`).join('') +
+                  data.history.map(h => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" data-click="gsRerunFromHistory" data-arg="${escapeHtml(h.question)}" title="${escapeHtml(h.question)}">${escapeHtml(h.title || h.question)}</button>`).join('') +
                   '</div>';
             } catch (e) { host.innerHTML = ''; }
         }
@@ -62209,8 +62209,8 @@ ${body}
                         + '</div>'
                         + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">'
                         + '<button onclick="openCreateCampaignModal(' + JSON.stringify(c).replace(/\\/g,'\\\\').replace(/'/g,'&#39;').replace(/"/g,'&quot;') + ')" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.9);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">✏️ 编辑</button>'
-                        + '<button onclick="openCampaignResultModal(' + c.id + ')" style="border:none;background:rgba(56,189,248,.15);color:#38bdf8;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📊 复盘</button>'
-                        + ((c.status === 'completed' && results.length) ? '<button onclick="openCampaignReportModal(' + c.id + ')" style="border:none;background:rgba(201,169,106,.15);color:#c9a96a;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📄 评估报告</button>' : '')
+                        + '<button data-click="openCampaignResultModal" data-arg="' + c.id + '" data-arg-type="number" style="border:none;background:rgba(56,189,248,.15);color:#38bdf8;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📊 复盘</button>'
+                        + ((c.status === 'completed' && results.length) ? '<button data-click="openCampaignReportModal" data-arg="' + c.id + '" data-arg-type="number" style="border:none;background:rgba(201,169,106,.15);color:#c9a96a;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📄 评估报告</button>' : '')
                         + '</div>'
                         + '</div>'
                         + resultsHtml
@@ -62286,7 +62286,7 @@ ${body}
                 // 底部按钮
                 + '<div style="display:flex;gap:10px;padding-bottom:16px;">'
                 + '<button onclick="submitCampaignForm(' + (isEdit ? c.id : 'null') + ')" style="flex:1;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">保存活动</button>'
-                + (isEdit ? '<button onclick="deleteCampaign(' + c.id + ')" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:14px 18px;font-size:14px;cursor:pointer;">删除</button>' : '')
+                + (isEdit ? '<button data-click="deleteCampaign" data-arg="' + c.id + '" data-arg-type="number" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:14px 18px;font-size:14px;cursor:pointer;">删除</button>' : '')
                 + '</div>'
                 + '</div>'
                 + '</div>';
@@ -62731,7 +62731,7 @@ ${body}
                         + '</div>'
                         + '<div style="margin-top:10px;font-size:12px;color:rgba(226,232,240,0.78);line-height:1.6;">' + escapeHtml(t.ai_summary || '尚未生成总结') + '</div>'
                         + '<div style="margin-top:10px;display:flex;gap:8px;">'
-                        + '<button class="rep-seg-btn" style="flex:1;" onclick="toggleAbResultForm(' + id + ')">✏️ 录入结果</button>'
+                        + '<button class="rep-seg-btn" style="flex:1;" data-click="toggleAbResultForm" data-arg="' + id + '" data-arg-type="number">✏️ 录入结果</button>'
                         + ((winner === 'A' || winner === 'B')
                             ? (t.promoted_rule_key
                                 ? '<button class="rep-seg-btn" style="flex:1.4;opacity:0.6;cursor:default;" disabled>✅ ' + (isBound ? (winner === 'A' ? '已采用(维持当前)' : '已采用(挑战者)') : '已沉淀经验库') + '</button>'
@@ -63000,7 +63000,7 @@ ${body}
                 + '<div style="' + gridStyle + '">' + cells('a') + '</div>'
                 + '<div style="font-size:12px;font-weight:700;color:#fff;margin:8px 0 4px;">B组</div>'
                 + '<div style="' + gridStyle + '">' + cells('b') + '</div>'
-                + '<div class="rep-seg" style="margin-top:10px;"><button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" onclick="submitAbResult(' + id + ')">提交结果并判定</button></div>'
+                + '<div class="rep-seg" style="margin-top:10px;"><button class="rep-seg-btn rep-seg-btn--active" style="flex:1;" data-click="submitAbResult" data-arg="' + id + '" data-arg-type="number">提交结果并判定</button></div>'
                 + '</div>';
         }
 
@@ -63903,7 +63903,7 @@ ${body}
                 host.innerHTML = posters.length ? posters.map(function(p) {
                     var imgUrl = p.image_url || p.output_url || p.thumbnail_url || '';
                     var title = p.name || p.title || p.prompt || '未命名';
-                    return '<div onclick="bindPosterToAction(' + p.id + ')" style="cursor:pointer;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;background:rgba(255,255,255,0.02);transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'#22c55e\'" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.08)\'">'
+                    return '<div data-click="bindPosterToAction" data-arg="' + p.id + '" data-arg-type="number" style="cursor:pointer;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;background:rgba(255,255,255,0.02);transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'#22c55e\'" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.08)\'">'
                         + (imgUrl ? '<img src="' + escapeHtml(imgUrl) + '" style="width:100%;height:120px;object-fit:cover;border-bottom:1px solid rgba(255,255,255,0.06);">' : '<div style="width:100%;height:120px;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(226,232,240,0.3);">无预览</div>')
                         + '<div style="padding:6px 8px;font-size:11px;color:rgba(226,232,240,0.7);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">' + escapeHtml(title) + '</div>'
                         + '</div>';
@@ -65961,7 +65961,7 @@ ${body}
           + '<div style="flex:1;min-width:0;color:#fff;font-weight:600;">' + escapeHtml(nameLabel) + '</div>'
           + '<div style="color:rgba(226,232,240,0.4);font-size:10px;margin-right:6px;">' + escapeHtml(t.category || '') + '</div>'
           + '<button onclick="editPosterTemplate(\'' + t.template_key + '\')" style="padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.15);color:#a5b4fc;border:none;cursor:pointer;font-size:10px;">编辑</button>'
-          + (isBuiltin ? '' : '<button onclick="deletePosterTemplate(' + t.id + ')" style="padding:2px 6px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:none;cursor:pointer;font-size:10px;">删除</button>')
+          + (isBuiltin ? '' : '<button data-click="deletePosterTemplate" data-arg="' + t.id + '" data-arg-type="number" style="padding:2px 6px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:none;cursor:pointer;font-size:10px;">删除</button>')
           + '</div>';
       }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:8px 0;font-size:11px;">暂无模板</div>';
     }
@@ -66616,7 +66616,7 @@ ${body}
            return '<div style="position:relative;border:1px solid rgba(255,255,255,0.06);border-radius:8px;overflow:hidden;">'
              + thumb
              + '<div style="padding:4px 6px;font-size:10px;color:rgba(226,232,240,0.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(a.name || '-') + '</div>'
-             + '<button onclick="deleteCreativeAsset(' + a.id + ')" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>'
+             + '<button data-click="deleteCreativeAsset" data-arg="' + a.id + '" data-arg-type="number" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>'
              + '</div>';
          }).join('') + '</div>' : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;font-size:12px;">暂无素材</div>';
       } catch (e) {
@@ -67142,7 +67142,7 @@ ${body}
           var tDone = tasks.filter(x => x.schedule_time === t && x.confirmed).length;
           var tTotal = tasks.filter(x => x.schedule_time === t).length;
           var isActive = t === activeTime;
-          return `<button class="kitchen-time-chip ${isActive ? 'kitchen-time-chip--active' : ''}" onclick="scrollToTimeGroup('${t}')">🕒 ${t} <span class="kitchen-time-chip__count">${tDone}/${tTotal}</span></button>`;
+          return `<button class="kitchen-time-chip ${isActive ? 'kitchen-time-chip--active' : ''}" data-click="scrollToTimeGroup" data-arg="${t}">🕒 ${t} <span class="kitchen-time-chip__count">${tDone}/${tTotal}</span></button>`;
         }).join('');
 
         // 按时段分组渲染任务卡
@@ -67633,7 +67633,7 @@ ${body}
               </div>
               <div class="kitchen-mapping-card__actions">
                 <button class="btn btn-secondary" type="button" onclick='kitchenEditMappingFromJson("${encodeURIComponent(JSON.stringify(m)).replace(/"/g, '&quot;')}")' style="font-size:12px;white-space:nowrap;">编辑</button>
-                <button class="btn btn-secondary" type="button" onclick="kitchenRemoveMapping('${m.id}')" style="font-size:12px;white-space:nowrap;">删除</button>
+                <button class="btn btn-secondary" type="button" data-click="kitchenRemoveMapping" data-arg="${m.id}" style="font-size:12px;white-space:nowrap;">删除</button>
               </div>
             </div>
           </div>

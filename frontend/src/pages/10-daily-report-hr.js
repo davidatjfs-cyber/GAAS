@@ -2860,7 +2860,7 @@
                             <div class="rep-hero" style="background: linear-gradient(135deg, #1d4ed8, #6366f1);">
                                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                                     <div style="font-weight: 900; font-size: 16px;flex:1;">出勤表（营业日报核对）</div>
-                                    ${isAdminUser() && totalAnomalies > 0 ? `<button onclick="notifyAttendanceAnomalies('${escapeHtml(notifyDateVal)}')" style="padding:6px 14px;border-radius:10px;background:rgba(251,146,60,0.2);border:1px solid rgba(251,146,60,0.4);color:#fdba74;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📣 通知异常员工 (${totalAnomalies})</button>` : ''}
+                                    ${isAdminUser() && totalAnomalies > 0 ? `<button data-click="notifyAttendanceAnomalies" data-arg="${escapeHtml(notifyDateVal)}" style="padding:6px 14px;border-radius:10px;background:rgba(251,146,60,0.2);border:1px solid rgba(251,146,60,0.4);color:#fdba74;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📣 通知异常员工 (${totalAnomalies})</button>` : ''}
                                 </div>
                                 <div class="meta" style="margin-top: 8px;">数据来源：<strong>正式提交</strong>营业日报。在职人员与打卡、已通过休假比对；<strong>休息</strong>以日报为准（本休/调休不要求休假流程）。门店名册中未列入出勤/休息且无已通过休假者标为<strong>缺勤</strong>。</div>
                                 <div class="meta" style="margin-top: 6px;">统计周期：${escapeHtml(start)} - ${escapeHtml(end)} · 每日默认折叠，点击标题展开明细</div>`;

@@ -29,7 +29,7 @@ const L1_MUTATE = Object.keys(l1Floor.files).sort();
 const L1_TEST_FILES = [
   'test/account-gate-helpers.test.mjs',
   'test/agents-service-auth-helpers.test.mjs',
-  'test/approval-normalize-helpers.test.mjs',
+  'domains/approvals/__tests__/normalize-helpers.test.mjs',
   'test/approvals-handlers-direct.test.mjs',
   'test/approvals-handlers-offboarding-promotion.test.mjs',
   'test/onboarding-payload.test.mjs',
@@ -37,7 +37,7 @@ const L1_TEST_FILES = [
   'test/tenant-platform-auth-guards.test.mjs',
   'test/tenant-platform-routes-auth.test.mjs',
   'test/tenant-platform-routes-billing.test.mjs',
-  'test/time-number-helpers.test.mjs',
+  'domains/shared/__tests__/time-number.test.mjs',
   'domains/employees/__tests__/user-lookup.test.mjs',
 ];
 
@@ -67,6 +67,8 @@ export default {
   thresholds: {
     high: 80,
     low: 60,
+    // break left null: only time-number.js (91.6%) and normalize-helpers.js (94.4%)
+    // spot-checked 2026-07-26; set break (e.g. 50) after broader L1 file sampling.
     break: null,
   },
   concurrency: process.env.MUTATION_CONCURRENCY

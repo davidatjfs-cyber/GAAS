@@ -1266,7 +1266,7 @@
           + '<div style="flex:1;min-width:0;color:#fff;font-weight:600;">' + escapeHtml(nameLabel) + '</div>'
           + '<div style="color:rgba(226,232,240,0.4);font-size:10px;margin-right:6px;">' + escapeHtml(t.category || '') + '</div>'
           + '<button onclick="editPosterTemplate(\'' + t.template_key + '\')" style="padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.15);color:#a5b4fc;border:none;cursor:pointer;font-size:10px;">编辑</button>'
-          + (isBuiltin ? '' : '<button onclick="deletePosterTemplate(' + t.id + ')" style="padding:2px 6px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:none;cursor:pointer;font-size:10px;">删除</button>')
+          + (isBuiltin ? '' : '<button data-click="deletePosterTemplate" data-arg="' + t.id + '" data-arg-type="number" style="padding:2px 6px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:none;cursor:pointer;font-size:10px;">删除</button>')
           + '</div>';
       }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:8px 0;font-size:11px;">暂无模板</div>';
     }
@@ -1921,7 +1921,7 @@
            return '<div style="position:relative;border:1px solid rgba(255,255,255,0.06);border-radius:8px;overflow:hidden;">'
              + thumb
              + '<div style="padding:4px 6px;font-size:10px;color:rgba(226,232,240,0.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(a.name || '-') + '</div>'
-             + '<button onclick="deleteCreativeAsset(' + a.id + ')" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>'
+             + '<button data-click="deleteCreativeAsset" data-arg="' + a.id + '" data-arg-type="number" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>'
              + '</div>';
          }).join('') + '</div>' : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;font-size:12px;">暂无素材</div>';
       } catch (e) {
@@ -2447,7 +2447,7 @@
           var tDone = tasks.filter(x => x.schedule_time === t && x.confirmed).length;
           var tTotal = tasks.filter(x => x.schedule_time === t).length;
           var isActive = t === activeTime;
-          return `<button class="kitchen-time-chip ${isActive ? 'kitchen-time-chip--active' : ''}" onclick="scrollToTimeGroup('${t}')">🕒 ${t} <span class="kitchen-time-chip__count">${tDone}/${tTotal}</span></button>`;
+          return `<button class="kitchen-time-chip ${isActive ? 'kitchen-time-chip--active' : ''}" data-click="scrollToTimeGroup" data-arg="${t}">🕒 ${t} <span class="kitchen-time-chip__count">${tDone}/${tTotal}</span></button>`;
         }).join('');
 
         // 按时段分组渲染任务卡
@@ -2938,7 +2938,7 @@
               </div>
               <div class="kitchen-mapping-card__actions">
                 <button class="btn btn-secondary" type="button" onclick='kitchenEditMappingFromJson("${encodeURIComponent(JSON.stringify(m)).replace(/"/g, '&quot;')}")' style="font-size:12px;white-space:nowrap;">编辑</button>
-                <button class="btn btn-secondary" type="button" onclick="kitchenRemoveMapping('${m.id}')" style="font-size:12px;white-space:nowrap;">删除</button>
+                <button class="btn btn-secondary" type="button" data-click="kitchenRemoveMapping" data-arg="${m.id}" style="font-size:12px;white-space:nowrap;">删除</button>
               </div>
             </div>
           </div>

@@ -488,7 +488,7 @@
                         <div style="font-weight:600;color:#e2e8f0;font-size:13px;">${escapeHtml(label)}</div>
                         <div style="display:flex;gap:6px;align-items:center;">
                             <label style="font-size:11px;color:#94a3b8;"><input type="checkbox" ${rule.enabled !== false ? 'checked' : ''} onchange="__BI_ANOMALY_RULES[${idx}].enabled=this.checked"> 启用</label>
-                            <button onclick="removeBiAnomalyRule(${idx})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:2px;" title="删除">✕</button>
+                            <button data-click="removeBiAnomalyRule" data-arg="${idx}" data-arg-type="number" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:2px;" title="删除">✕</button>
                         </div>
                     </div>
                     <div style="font-size:11px;color:#64748b;margin-bottom:8px;">${escapeHtml(preset?.description || rule.description || '')}　|　比较方式: ${escapeHtml(modeLabel)}</div>
@@ -799,8 +799,8 @@
                         <input id="tpl-name-${escapeHtml(t.id)}" value="${escapeHtml(t.name || '')}" placeholder="模板名称" class="acm-inp acm-inp-sm" style="margin-top:10px;">
                         <textarea id="tpl-content-${escapeHtml(t.id)}" ${locked ? 'readonly' : ''} class="acm-inp" style="min-height:80px;resize:vertical;margin-top:8px;">${escapeHtml(t.content || '')}</textarea>
                         <div class="acm-tpl-footer">
-                            ${locked ? '' : `<button class="acm-tpl-del" onclick="deleteAgentTemplate('${escapeHtml(t.id)}')">删除</button>`}
-                            <button class="acm-edit-btn" onclick="saveAgentTemplate('${escapeHtml(t.id)}')">保存</button>
+                            ${locked ? '' : `<button class="acm-tpl-del" data-click="deleteAgentTemplate" data-arg="${escapeHtml(t.id)}">删除</button>`}
+                            <button class="acm-edit-btn" data-click="saveAgentTemplate" data-arg="${escapeHtml(t.id)}">保存</button>
                         </div>
                     </div>
                 `;
@@ -982,7 +982,7 @@
                             <span style="background:rgba(99,102,241,0.15);color:#818cf8;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;">${escapeHtml(catLabel)}</span>
                             <span style="font-size:13px;font-weight:700;color:#e2e8f0;">${escapeHtml(dim.label || preset.label || '')}</span>
                         </div>
-                        <button onclick="removeHrRatingDim(${i})" style="background:none;border:none;color:#ef4444;font-size:16px;cursor:pointer;padding:2px 6px;">✕</button>
+                        <button data-click="removeHrRatingDim" data-arg="${i}" data-arg-type="number" style="background:none;border:none;color:#ef4444;font-size:16px;cursor:pointer;padding:2px 6px;">✕</button>
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
                         <div>
@@ -1387,7 +1387,7 @@
                                 <textarea id="cfg-prompt-${escapeHtml(c.agent_id)}" class="acm-inp" style="min-height:80px;resize:vertical;">${escapeHtml(c.system_prompt || '')}</textarea>
                             </div>
                         </div>
-                        <button class="acm-save" onclick="saveAgentConfig('${escapeHtml(c.agent_id)}')" style="margin-top:12px;">保存配置</button>
+                        <button class="acm-save" data-click="saveAgentConfig" data-arg="${escapeHtml(c.agent_id)}" style="margin-top:12px;">保存配置</button>
                     </div>
                 `).join('');
             } catch (e) {
@@ -1461,7 +1461,7 @@
                             <div class="acm-rule-meta">${roleLabel[r.assignee_role] || escapeHtml(r.assignee_role || '')} · ${r.enabled ? '启用' : '<span style="color:#f87171">停用</span>'}</div>
                         </div>
                         <span class="acm-rule-deduct">中-${Number(r.normal_deduction||0)} / 重-${Number(r.major_deduction||0)}</span>
-                        <button class="acm-edit-btn" onclick="openAgentRuleEditor('${escapeHtml(String(r.id))}')">编辑</button>
+                        <button class="acm-edit-btn" data-click="openAgentRuleEditor" data-arg="${escapeHtml(String(r.id))}">编辑</button>
                     </div>
                 `).join('');
             } catch (e) {
@@ -1637,7 +1637,7 @@
                         ${i.detail ? `<div class="am-card-detail">${escapeHtml(i.detail)}</div>` : ''}
                         ${i.status !== 'resolved' ? `<div class="am-resolve-row">
                             <input id="resolve-${i.id}" placeholder="整改说明...">
-                            <button class="btn" onclick="resolveAmIssue('${i.id}')">解决</button>
+                            <button class="btn" data-click="resolveAmIssue" data-arg="${i.id}">解决</button>
                         </div>` : (i.resolution ? `<div class="am-card-detail" style="color:#4ade80;">✓ ${escapeHtml(i.resolution)}</div>` : '')}
                     </div>`;
                 }).join('');

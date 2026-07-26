@@ -71,7 +71,7 @@ var __storeDutyBindingsCache = [];
 function renderDutyBindingStoreOptions(){var sel=document.getElementById('duty-binding-store');if(!sel)return;var stores=(HRMS_STORE.getStores&&HRMS_STORE.getStores())||[];sel.innerHTML=(stores||[]).map(function(s){var name=String(s?.name||s?.id||'').trim();return name?'<option value=\"'+escapeHtml(name)+'\">'+escapeHtml(name)+'</option>':'';}).join('')||'<option value=\"\">暂无门店</option>';}
 function resetStoreDutyBindingForm(){var ids=['duty-binding-username','duty-binding-effective-from','duty-binding-effective-to'];ids.forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});var level=document.getElementById('duty-binding-access-level');if(level)level.value='support';var primary=document.getElementById('db-is-primary-store');if(primary)primary.checked=false;var enabled=document.getElementById('db-enabled');if(enabled)enabled.checked=true;['db-can-receive-ops','db-can-receive-performance','db-can-receive-food-safety','db-can-handle-ops','db-can-handle-food-safety'].forEach(function(id){var el=document.getElementById(id);if(el)el.checked=true;});['db-can-receive-approval','db-can-approve-hrms','db-can-view-employees'].forEach(function(id){var el=document.getElementById(id);if(el)el.checked=false;});var status=document.getElementById('store-duty-bindings-status');if(status)status.textContent='';}
 function fillStoreDutyBindingForm(item){if(!item)return;var set=function(id,val){var el=document.getElementById(id);if(el)el.value=val||'';};set('duty-binding-username',item.username);set('duty-binding-store',item.store);set('duty-binding-access-level',item.access_level||'support');set('duty-binding-effective-from',String(item.effective_from||'').slice(0,16));set('duty-binding-effective-to',String(item.effective_to||'').slice(0,16));var boolIds={'db-is-primary-store':'is_primary_store','db-enabled':'enabled','db-can-receive-ops':'can_receive_ops','db-can-receive-performance':'can_receive_performance','db-can-receive-food-safety':'can_receive_food_safety','db-can-receive-approval':'can_receive_approval','db-can-handle-ops':'can_handle_ops','db-can-handle-food-safety':'can_handle_food_safety','db-can-approve-hrms':'can_approve_hrms','db-can-view-employees':'can_view_employees'};Object.keys(boolIds).forEach(function(id){var el=document.getElementById(id);if(el)el.checked=!!item[boolIds[id]];});var status=document.getElementById('store-duty-bindings-status');if(status)status.textContent='正在编辑：'+String(item.username||'')+' · '+String(item.store||'');}
-function renderStoreDutyBindings(){var box=document.getElementById('store-duty-bindings-list');if(!box)return;var items=Array.isArray(__storeDutyBindingsCache)?__storeDutyBindingsCache:[];if(!items.length){box.innerHTML='<div class=\"settings-hint\">暂无职责绑定，保存后会优先用于消息接收和门店切换。</div>';return;}box.innerHTML='<div style=\"display:flex;flex-direction:column;gap:10px;\">'+items.map(function(item){var tags=[];if(item.is_primary_store)tags.push('主门店');if(item.can_receive_approval)tags.push('审批消息');if(item.can_approve_hrms)tags.push('可审批');if(item.can_view_employees)tags.push('可看员工');if(!item.enabled)tags.push('已停用');return '<div style=\"padding:12px 14px;border-radius:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);\"><div style=\"display:flex;justify-content:space-between;gap:10px;align-items:flex-start;\"><div><div style=\"font-weight:700;color:#fff;\">'+escapeHtml(String(item.username||''))+' · '+escapeHtml(String(item.store||''))+'</div><div style=\"margin-top:4px;font-size:12px;color:rgba(200,215,230,0.72);\">级别：'+escapeHtml(String(item.access_level||'support'))+' · '+escapeHtml(tags.join(' / ')||'基础协同')+'</div></div><div style=\"display:flex;gap:8px;\"><button class=\"btn btn-secondary\" type=\"button\" onclick=\"fillStoreDutyBindingForm(__storeDutyBindingsCache['+items.indexOf(item)+'])\">编辑</button><button class=\"btn btn-secondary\" type=\"button\" onclick=\"deleteStoreDutyBinding('+Number(item.id||0)+')\">删除</button></div></div></div>';}).join('')+'</div>';}
+function renderStoreDutyBindings(){var box=document.getElementById('store-duty-bindings-list');if(!box)return;var items=Array.isArray(__storeDutyBindingsCache)?__storeDutyBindingsCache:[];if(!items.length){box.innerHTML='<div class=\"settings-hint\">暂无职责绑定，保存后会优先用于消息接收和门店切换。</div>';return;}box.innerHTML='<div style=\"display:flex;flex-direction:column;gap:10px;\">'+items.map(function(item){var tags=[];if(item.is_primary_store)tags.push('主门店');if(item.can_receive_approval)tags.push('审批消息');if(item.can_approve_hrms)tags.push('可审批');if(item.can_view_employees)tags.push('可看员工');if(!item.enabled)tags.push('已停用');return '<div style=\"padding:12px 14px;border-radius:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);\"><div style=\"display:flex;justify-content:space-between;gap:10px;align-items:flex-start;\"><div><div style=\"font-weight:700;color:#fff;\">'+escapeHtml(String(item.username||''))+' · '+escapeHtml(String(item.store||''))+'</div><div style=\"margin-top:4px;font-size:12px;color:rgba(200,215,230,0.72);\">级别：'+escapeHtml(String(item.access_level||'support'))+' · '+escapeHtml(tags.join(' / ')||'基础协同')+'</div></div><div style=\"display:flex;gap:8px;\"><button class=\"btn btn-secondary\" type=\"button\" onclick=\"fillStoreDutyBindingForm(__storeDutyBindingsCache['+items.indexOf(item)+'])\">编辑</button><button class=\"btn btn-secondary\" type=\"button\" data-click=\"deleteStoreDutyBinding\" data-arg=\"'+Number(item.id||0)+'\" data-arg-type=\"number\">删除</button></div></div></div>';}).join('')+'</div>';}
 async function loadStoreDutyBindings(){if(!isAdminUser())return;renderDutyBindingStoreOptions();var status=document.getElementById('store-duty-bindings-status');try{if(status)status.textContent='加载中...';var resp=await HRMS_API.listStoreDutyBindings();__storeDutyBindingsCache=Array.isArray(resp?.items)?resp.items:[];renderStoreDutyBindings();if(status)status.textContent='';}catch(e){if(status)status.textContent='加载失败：'+(e?.message||e);}}
 async function saveStoreDutyBindingFromUI(){try{var payload={username:String(document.getElementById('duty-binding-username')?.value||'').trim(),store:String(document.getElementById('duty-binding-store')?.value||'').trim(),access_level:String(document.getElementById('duty-binding-access-level')?.value||'support').trim(),effective_from:String(document.getElementById('duty-binding-effective-from')?.value||'').trim(),effective_to:String(document.getElementById('duty-binding-effective-to')?.value||'').trim(),is_primary_store:!!document.getElementById('db-is-primary-store')?.checked,enabled:!!document.getElementById('db-enabled')?.checked,can_receive_ops:!!document.getElementById('db-can-receive-ops')?.checked,can_receive_performance:!!document.getElementById('db-can-receive-performance')?.checked,can_receive_food_safety:!!document.getElementById('db-can-receive-food-safety')?.checked,can_receive_approval:!!document.getElementById('db-can-receive-approval')?.checked,can_handle_ops:!!document.getElementById('db-can-handle-ops')?.checked,can_handle_food_safety:!!document.getElementById('db-can-handle-food-safety')?.checked,can_approve_hrms:!!document.getElementById('db-can-approve-hrms')?.checked,can_view_employees:!!document.getElementById('db-can-view-employees')?.checked};if(!payload.username||!payload.store)throw new Error('请先填写用户名和门店');await HRMS_API.saveStoreDutyBinding(payload);showNotification('职责绑定已保存','success');resetStoreDutyBindingForm();await loadStoreDutyBindings();}catch(e){showNotification('保存失败: '+(e?.message||e),'error');}}
 async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm({title:'删除职责绑定',message:'确认删除这条职责绑定？',okText:'确认删除',icon:'🗑️'});if(!ok)return;try{await HRMS_API.deleteStoreDutyBinding(id);showNotification('职责绑定已删除','success');await loadStoreDutyBindings();}catch(e){showNotification('删除失败: '+(e?.message||e),'error');}}
@@ -1483,10 +1483,10 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
             const sumFmt = Number(sum || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
             statsEl.innerHTML = `
                 <div class="rep-grid">
-                    <div class="rep-metric" onclick="filterPaymentByStatus('')"><div class="k">总数</div><div class="v">${total}</div></div>
-                    <div class="rep-metric" onclick="filterPaymentByStatus('pending')"><div class="k">待审批</div><div class="v">${pending}</div></div>
-                    <div class="rep-metric" onclick="filterPaymentByStatus('approved')"><div class="k">已审批</div><div class="v">${approved}</div></div>
-                    <div class="rep-metric" onclick="filterPaymentByStatus('paid')"><div class="k">已付款</div><div class="v">${paid}</div></div>
+                    <div class="rep-metric" data-click="filterPaymentByStatus" data-arg=""><div class="k">总数</div><div class="v">${total}</div></div>
+                    <div class="rep-metric" data-click="filterPaymentByStatus" data-arg="pending"><div class="k">待审批</div><div class="v">${pending}</div></div>
+                    <div class="rep-metric" data-click="filterPaymentByStatus" data-arg="approved"><div class="k">已审批</div><div class="v">${approved}</div></div>
+                    <div class="rep-metric" data-click="filterPaymentByStatus" data-arg="paid"><div class="k">已付款</div><div class="v">${paid}</div></div>
                     <div class="rep-metric rep-metric--gold" style="grid-column:1/-1; cursor:default;"><div class="k">金额合计</div><div class="v">¥${sumFmt}</div></div>
                 </div>`;
         }
@@ -1536,7 +1536,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 const canPay = String(it?.type || '') === 'payment'
                     && String(it?.status || '') === 'approved'
                     && (String(currentUser?.role || '') === ROLES.CASHIER || String(currentUser?.role || '') === ROLES.HQ_MANAGER || String(currentUser?.role || '') === ROLES.HR_MANAGER || isAdminUser());
-                const payBtn = canPay ? `<button class="btn" type="button" onclick="payPaymentById('${escapeHtml(id)}')" style="padding: 6px 10px; background: linear-gradient(135deg,#2563eb,#60a5fa); border:none;">付款</button>` : '';
+                const payBtn = canPay ? `<button class="btn" type="button" data-click="payPaymentById" data-arg="${escapeHtml(id)}" style="padding: 6px 10px; background: linear-gradient(135deg,#2563eb,#60a5fa); border:none;">付款</button>` : '';
 
                 const metaBits = [];
                 if (store) metaBits.push(store);
@@ -1568,7 +1568,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                     </div>
                     ${payeeBlock}
                     <div class="rep-pay-card__actions">
-                        <button class="btn btn-secondary" type="button" onclick="openApprovalDetailModal('${escapeHtml(id)}')">查看</button>
+                        <button class="btn btn-secondary" type="button" data-click="openApprovalDetailModal" data-arg="${escapeHtml(id)}">查看</button>
                         ${payBtn}
                     </div>
                 </article>`;
@@ -1802,7 +1802,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         <span style="font-weight:800; font-size:13px;">${label}</span>
                         <span style="font-size:11px; color:rgba(200,215,230,0.6); margin-left:6px;">${secCount}个二级</span>
                     </div>
-                    <button class="btn btn-secondary" type="button" onclick="removePrimaryCategory(${idx})" style="padding:4px 8px; border-radius:8px; font-size:11px;">删除</button>
+                    <button class="btn btn-secondary" type="button" data-click="removePrimaryCategory" data-arg="${idx}" data-arg-type="number" style="padding:4px 8px; border-radius:8px; font-size:11px;">删除</button>
                 </div>`;
             }).join('');
         }
@@ -1820,7 +1820,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         <span style="font-weight:800; font-size:13px;">${name}</span>
                         ${primary ? `<span style="font-size:11px; color:rgba(96,165,250,0.8); margin-left:6px;">← ${primary}</span>` : '<span style="font-size:11px; color:rgba(239,68,68,0.7); margin-left:6px;">未归属</span>'}
                     </div>
-                    <button class="btn btn-secondary" type="button" onclick="removeSecondaryCategory(${idx})" style="padding:4px 8px; border-radius:8px; font-size:11px;">删除</button>
+                    <button class="btn btn-secondary" type="button" data-click="removeSecondaryCategory" data-arg="${idx}" data-arg-type="number" style="padding:4px 8px; border-radius:8px; font-size:11px;">删除</button>
                 </div>`;
             }).join('');
         }
@@ -1983,7 +1983,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         ${a ? `<div style="font-size: 11px; color: rgba(200,215,230,0.7); margin-top: 2px;">账号: ${a}</div>` : ''}
                         ${b ? `<div style="font-size: 11px; color: rgba(200,215,230,0.7); margin-top: 1px;">开户行: ${b}</div>` : ''}
                     </div>
-                    <button class="btn btn-secondary" type="button" onclick="removePaymentPayeeDetail(${idx})" style="padding: 4px 10px; border-radius: 8px; font-size: 11px;">删除</button>
+                    <button class="btn btn-secondary" type="button" data-click="removePaymentPayeeDetail" data-arg="${idx}" data-arg-type="number" style="padding: 4px 10px; border-radius: 8px; font-size: 11px;">删除</button>
                 </div>`;
             }).join('');
         }
@@ -2324,7 +2324,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 return `<span style="display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:8px; background:rgba(59,130,246,0.15); color:rgba(226,232,240,0.95); font-size:13px; font-weight:700;">
                     <span style="color:rgba(200,215,230,0.6); font-size:11px; margin-right:2px;">${idx + 1}.</span>
                     ${escapeHtml(displayName)}
-                    <button type="button" onclick="pfRemoveApprover('${escapeHtml(u)}')" style="background:none; border:none; color:rgba(239,68,68,0.8); cursor:pointer; font-size:14px; padding:0 2px; line-height:1;">×</button>
+                    <button type="button" data-click="pfRemoveApprover" data-arg="${escapeHtml(u)}" style="background:none; border:none; color:rgba(239,68,68,0.8); cursor:pointer; font-size:14px; padding:0 2px; line-height:1;">×</button>
                 </span>`;
             }).join('');
         }
@@ -2449,7 +2449,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
             }
 
             __paymentSubmitting = true;
-            const paySubmitBtn = document.querySelector('#payment-create-view button[onclick="submitPaymentForm()"]');
+            const paySubmitBtn = document.querySelector('#payment-create-view button[data-click="submitPaymentForm"]');
             try { if (paySubmitBtn) paySubmitBtn.disabled = true; } catch (e0) {}
 
             HRMS_API.createApproval('payment', { date, amount, store, category, payee, payeeName, payeeAccount, payeeBank, urgency, note })

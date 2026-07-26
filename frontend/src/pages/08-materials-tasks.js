@@ -474,9 +474,9 @@
                             <span class="pill ${m.enabled !== false ? 'ok' : 'bad'}">${m.enabled !== false ? '启用' : '停用'}</span>
                         </div>
                         <div class="ai-model-card__actions">
-                            <button type="button" class="btn btn-secondary" onclick="openAiModelModal('${escapeHtml(m.id)}')">编辑</button>
-                            <button type="button" class="btn btn-secondary" onclick="testAiModelById('${escapeHtml(m.id)}')">测试</button>
-                            <button type="button" class="btn btn-secondary" onclick="deleteAiModel('${escapeHtml(m.id)}')">删除</button>
+                            <button type="button" class="btn btn-secondary" data-click="openAiModelModal" data-arg="${escapeHtml(m.id)}">编辑</button>
+                            <button type="button" class="btn btn-secondary" data-click="testAiModelById" data-arg="${escapeHtml(m.id)}">测试</button>
+                            <button type="button" class="btn btn-secondary" data-click="deleteAiModel" data-arg="${escapeHtml(m.id)}">删除</button>
                         </div>
                     </div>
                 `).join('');
@@ -2589,9 +2589,9 @@ ${String(text || '').slice(0, 9000)}`;
                     <td>${status}</td>
                     <td>
                         <div class="action-buttons" style="display:flex;gap:6px;flex-wrap:nowrap;">
-                            <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;" onclick="viewEmployee('${escapeJsString(empKey)}')">查看</button>
-                            ${isAdminUser() ? `<button class="btn" style="padding:6px 10px;font-size:12px;" onclick="editEmployee('${escapeJsString(empKey)}')">编辑</button>` : ''}
-                            ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#ef4444;" onclick="deleteEmployee('${escapeJsString(empKey)}')">删除</button>` : ''}
+                            <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;" data-click="viewEmployee" data-arg="${escapeHtml(empKey)}">查看</button>
+                            ${isAdminUser() ? `<button class="btn" style="padding:6px 10px;font-size:12px;" data-click="editEmployee" data-arg="${escapeHtml(empKey)}">编辑</button>` : ''}
+                            ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#ef4444;" data-click="deleteEmployee" data-arg="${escapeHtml(empKey)}">删除</button>` : ''}
                             ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" onclick="loginAsEmployee('${escapeJsString(empKey)}','${escapeJsString(emp.name || empKey)}')">代登录</button>` : ''}
                         </div>
                     </td>
@@ -4489,11 +4489,11 @@ ${String(text || '').slice(0, 9000)}`;
                 const createdAt = u?.createdAt ? String(u.createdAt).slice(0, 10) : '-';
                 const lastLogin = u?.lastLogin ? String(u.lastLogin).slice(0, 10) : '-';
                 const act = canManage ? `
-                    <button class="btn" style="padding:4px 8px;font-size:12px;" onclick="editUser('${escapeHtml(uname)}')">编辑</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;" onclick="resetUserPassword('${escapeHtml(uname)}')">重置密码</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;background:#3b82f6;border-color:#3b82f6;" onclick="viewEmployeePassword('${escapeHtml(uname)}')">查看密码</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;" onclick="toggleUserStatus('${escapeHtml(uname)}')">启用/禁用</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;color:#ef4444;" onclick="deleteUser('${escapeHtml(uname)}')">删除</button>
+                    <button class="btn" style="padding:4px 8px;font-size:12px;" data-click="editUser" data-arg="${escapeHtml(uname)}">编辑</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;" data-click="resetUserPassword" data-arg="${escapeHtml(uname)}">重置密码</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;background:#3b82f6;border-color:#3b82f6;" data-click="viewEmployeePassword" data-arg="${escapeHtml(uname)}">查看密码</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;" data-click="toggleUserStatus" data-arg="${escapeHtml(uname)}">启用/禁用</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;color:#ef4444;" data-click="deleteUser" data-arg="${escapeHtml(uname)}">删除</button>
                 ` : '-';
                 return `<tr>
                     <td>${escapeHtml(uname)}</td>
@@ -4520,11 +4520,11 @@ ${String(text || '').slice(0, 9000)}`;
                         const stText = st === 'inactive' ? '离职' : '在职';
                         const stClass = st === 'inactive' ? 'inactive' : 'active';
                         const act = isAdminUser() ? `
-                            <button class="btn" type="button" style="padding:10px 14px;font-size:14px;" onclick="editUser('${escapeHtml(uname)}')">编辑</button>
-                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;" onclick="resetUserPassword('${escapeHtml(uname)}')">重置密码</button>
-                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;background:#3b82f6;border-color:#3b82f6;" onclick="viewEmployeePassword('${escapeHtml(uname)}')">查看密码</button>
-                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;" onclick="toggleUserStatus('${escapeHtml(uname)}')">启用/禁用</button>
-                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;color:#ef4444;" onclick="deleteUser('${escapeHtml(uname)}')">删除</button>
+                            <button class="btn" type="button" style="padding:10px 14px;font-size:14px;" data-click="editUser" data-arg="${escapeHtml(uname)}">编辑</button>
+                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;" data-click="resetUserPassword" data-arg="${escapeHtml(uname)}">重置密码</button>
+                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;background:#3b82f6;border-color:#3b82f6;" data-click="viewEmployeePassword" data-arg="${escapeHtml(uname)}">查看密码</button>
+                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;" data-click="toggleUserStatus" data-arg="${escapeHtml(uname)}">启用/禁用</button>
+                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;color:#ef4444;" data-click="deleteUser" data-arg="${escapeHtml(uname)}">删除</button>
                         ` : '';
                         return `
                             <div class="us-card">
@@ -4581,9 +4581,9 @@ ${String(text || '').slice(0, 9000)}`;
                         <div>📅 开业：${escapeHtml(store.openDate || '-')}</div>
                     </div>
                     <div style="display:flex;gap:8px;margin-top:12px;">
-                        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="viewStoreDetail('${store.id}')">查看</button>
-                        ${isAdminUser() ? `<button class="btn" style="padding:6px 12px;font-size:12px;" onclick="editStore('${store.id}')">编辑</button>` : ''}
-                        ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;color:#ef4444;" onclick="deleteStore('${store.id}')">删除</button>` : ''}
+                        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;" data-click="viewStoreDetail" data-arg="${store.id}">查看</button>
+                        ${isAdminUser() ? `<button class="btn" style="padding:6px 12px;font-size:12px;" data-click="editStore" data-arg="${store.id}">编辑</button>` : ''}
+                        ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;color:#ef4444;" data-click="deleteStore" data-arg="${store.id}">删除</button>` : ''}
                     </div>
                 </div>`;
             }).join('');

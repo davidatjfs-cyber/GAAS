@@ -349,7 +349,7 @@
                 } else if (m.path && m.path.note) {
                     pathHtml = `<div class="pf2-path" style="font-size:12px;color:var(--pf-faint);">${esc(m.path.note)}</div>`;
                 }
-                const ctaHtml = m.cta ? `<span onclick="showPage('promotion')" style="display:inline-block;margin-left:8px;padding:3px 10px;border-radius:8px;background:var(--pf-ac);color:var(--pf-acx);font-weight:600;font-size:11.5px;cursor:pointer;white-space:nowrap;">${esc(m.cta.text)} ›</span>` : '';
+                const ctaHtml = m.cta ? `<span data-click="showPage" data-arg="promotion" style="display:inline-block;margin-left:8px;padding:3px 10px;border-radius:8px;background:var(--pf-ac);color:var(--pf-acx);font-weight:600;font-size:11.5px;cursor:pointer;white-space:nowrap;">${esc(m.cta.text)} ›</span>` : '';
                 const nextHtml = m.nextStep ? `<div class="pf2-nx"><svg class="pfi"><use href="#pfi-flag"/></svg><span>${esc(m.nextStep)}${ctaHtml}</span></div>` : '';
                 box.innerHTML = `
                     <div style="font-size:11.5px;color:var(--pf-faint);margin-bottom:12px;">当前岗位 <b style="color:var(--pf-tx);font-weight:600;">${esc(m.positionDisplay)}</b>${m.currentLevel ? ' \u00b7 ' + esc(m.currentLevel) : ''}</div>

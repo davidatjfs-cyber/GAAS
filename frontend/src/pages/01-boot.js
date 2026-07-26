@@ -26,7 +26,7 @@
                 };
             }
         } catch (e) {}
-        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function') window[fn](); } }); // P5.1：data-click 委托，替代逐个迁移的 inline onclick
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function') { if (el.hasAttribute('data-arg')) { var raw = el.getAttribute('data-arg'); var arg = raw === 'true' ? true : raw === 'false' ? false : el.getAttribute('data-arg-type') === 'number' ? Number(raw) : raw; window[fn](arg); } else { window[fn](); } } } }); // P5.1：data-click(+data-arg[+data-arg-type=number]) 委托，替代逐个迁移的 inline onclick；默认原样传字符串（避免数字型用户名被误转成 Number），仅原先未加引号内联传数字的场景显式标 data-arg-type=number
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -3259,10 +3259,10 @@ const role = String(currentUser?.role || '').trim();
                     <div id="offboarding-departure-type-box" style="margin-top: 12px; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(234,88,12,0.06);">
                         <div style="font-weight: 900; font-size: 13px; color: rgba(226,232,240,0.95); margin-bottom: 8px;">⚠️ 请确认离职类型<span style="font-size:11px; color:rgba(200,215,230,0.6); font-weight:400; margin-left:6px;">（审批通过时将记录此分类）</span></div>
                         <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                            <button type="button" class="btn btn-secondary offb-dep-type-btn" data-dep-type="voluntary" onclick="selectOffbDepType('voluntary')" style="flex:1; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:700; border:2px solid transparent; min-width:120px;">
+                            <button type="button" class="btn btn-secondary offb-dep-type-btn" data-dep-type="voluntary" data-click="selectOffbDepType" data-arg="voluntary" style="flex:1; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:700; border:2px solid transparent; min-width:120px;">
                                 🙋 主动离职<div style="font-size:10px; font-weight:400; margin-top:2px; color:rgba(200,215,230,0.6);">员工辞职</div>
                             </button>
-                            <button type="button" class="btn btn-secondary offb-dep-type-btn" data-dep-type="involuntary" onclick="selectOffbDepType('involuntary')" style="flex:1; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:700; border:2px solid transparent; min-width:120px;">
+                            <button type="button" class="btn btn-secondary offb-dep-type-btn" data-dep-type="involuntary" data-click="selectOffbDepType" data-arg="involuntary" style="flex:1; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:700; border:2px solid transparent; min-width:120px;">
                                 📋 被动离职<div style="font-size:10px; font-weight:400; margin-top:2px; color:rgba(200,215,230,0.6);">劝退/裁员</div>
                             </button>
                         </div>

@@ -56,7 +56,7 @@
                 const name = it.title || it.name || '未命名';
                 const isSelected = kbChatSelectedSources.has(it.id);
                 const typeIcon = it.type === 'pdf' ? '📄' : (it.type === 'doc' ? '📝' : (it.type === 'img' ? '🖼️' : '📃'));
-                return `<button type="button" class="kb-chat-source-chip ${isSelected ? 'selected' : ''}" data-id="${escapeHtml(it.id)}" onclick="toggleKbChatSource('${escapeHtml(it.id)}')">
+                return `<button type="button" class="kb-chat-source-chip ${isSelected ? 'selected' : ''}" data-id="${escapeHtml(it.id)}" data-click="toggleKbChatSource" data-arg="${escapeHtml(it.id)}">
                     <span class="kb-src-ic" aria-hidden="true">${typeIcon}</span>
                     <span class="kb-src-name">${escapeHtml(name)}</span>
                     <span class="kb-src-cat">${escapeHtml(cat)}</span>
@@ -113,9 +113,9 @@
                         <div class="kb-rpt-welcome-title">欢迎使用 AI 培训助手</div>
                         <div style="margin-top: 8px; font-size: 13px;">选择资料后提问；建议先用快捷指令建立上下文。</div>
                         <div class="kb-rpt-welcome-actions">
-                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" onclick="insertKbChatSuggestion('请总结这份资料的主要内容')">总结内容</button>
-                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" onclick="insertKbChatSuggestion('这份资料的关键要点有哪些？')">关键要点</button>
-                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" onclick="insertKbChatSuggestion('帮我出几道测试题检验学习效果')">出测试题</button>
+                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" data-click="insertKbChatSuggestion" data-arg="请总结这份资料的主要内容">总结内容</button>
+                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" data-click="insertKbChatSuggestion" data-arg="这份资料的关键要点有哪些？">关键要点</button>
+                            <button type="button" class="btn btn-secondary kb-rpt-btn-ghost" data-click="insertKbChatSuggestion" data-arg="帮我出几道测试题检验学习效果">出测试题</button>
                         </div>
                     </div>
                 `;

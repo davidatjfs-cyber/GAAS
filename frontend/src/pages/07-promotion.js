@@ -461,7 +461,7 @@
                     const created = String(req?.created_at || req?.createdAt || '').slice(0, 10);
                     const status = String(req?.status || '');
                     const badgeClass = status === 'pending' ? 'pending' : (status === 'approved' ? 'approved' : (status === 'rejected' ? 'rejected' : ''));
-                    return `<div class="pr-card" onclick="openApprovalDetailModal('${escapeHtml(String(req?.id || ''))}')" style="cursor:pointer;">
+                    return `<div class="pr-card" data-click="openApprovalDetailModal" data-arg="${escapeHtml(String(req?.id || ''))}" style="cursor:pointer;">
                         <div class="pr-card-head">
                             <div style="min-width:0;">
                                 <div class="pr-card-title">${escapeHtml(hrmsDisplayName(req?.applicant_username))}</div>
@@ -1197,7 +1197,7 @@
                         <div style="font-weight: 900; color: rgba(226,232,240,0.95);">${escapeHtml(title)}</div>
                         <div style="margin-top:4px; font-size:12px; color: rgba(200,215,230,0.78);">${escapeHtml(meta)}</div>
                     </div>
-                    <button class="btn btn-secondary" type="button" onclick="startAssignedExam('${escapeHtml(id)}')">开始</button>
+                    <button class="btn btn-secondary" type="button" data-click="startAssignedExam" data-arg="${escapeHtml(id)}">开始</button>
                 </div>`;
             }).join('');
         }
@@ -2985,7 +2985,7 @@
                         <label class="tp-field">预警值<input type="number" step="0.01" class="tp-input" value="${t.warning_value ?? ''}" onchange="updateTpKpiTargetField('${t.id}','warning_value',this.value)"></label>
                     </div>
                     <div style="font-size:11px; color:rgba(255,255,255,0.4); margin-top:6px;">单位:${escapeHtml(t.unit||'-')} · ${t.direction==='lower_better'?'越低越好':'越高越好'} · ${({daily:'每日',weekly:'每周',monthly:'每月'})[t.period]||t.period}</div>
-                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" onclick="deleteTpKpiTarget('${t.id}')">删除</button></div>
+                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="deleteTpKpiTarget" data-arg="${t.id}">删除</button></div>
                 </div>`).join('');
         }
 
@@ -3123,7 +3123,7 @@
                     <label style="display:flex; align-items:center; gap:4px; font-size:12px;"><input type="checkbox" ${it.enabled !== false ? 'checked' : ''} onchange="updateTpRhythmItem(${idx},'enabled',this.checked)">启用</label>
                     <input type="text" placeholder="名称" class="tp-input" style="flex:1; min-width:100px;" value="${escapeHtml(it.label || '')}" onchange="updateTpRhythmItem(${idx},'label',this.value)">
                     <input type="text" placeholder="说明" class="tp-input" style="flex:2; min-width:140px;" value="${escapeHtml(it.desc || '')}" onchange="updateTpRhythmItem(${idx},'desc',this.value)">
-                    <button type="button" class="btn btn-danger" onclick="removeTpRhythmItem(${idx})">删除</button>
+                    <button type="button" class="btn btn-danger" data-click="removeTpRhythmItem" data-arg="${idx}" data-arg-type="number">删除</button>
                 </div>`).join('');
         }
 
@@ -3183,7 +3183,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" onclick="removeTpInspectionItem(${idx})">删除</button></div>
+                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="removeTpInspectionItem" data-arg="${idx}" data-arg-type="number">删除</button></div>
                 </div>`).join('');
         }
 
@@ -3245,7 +3245,7 @@
                             ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} onchange="toggleTpRandomRole(${idx},'${role}',this.checked)">${label}</label>`).join('')}
                         </div>
                     </div>
-                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" onclick="removeTpRandomItem(${idx})">删除</button></div>
+                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="removeTpRandomItem" data-arg="${idx}" data-arg-type="number">删除</button></div>
                 </div>`).join('');
         }
 
@@ -3517,7 +3517,7 @@
                 const bid = normalizeBrandIdInput(b?.id);
                 const active = bid === __BRAND_FORM_EDITING_ID;
                 return `
-                    <button type="button" onclick="selectBrandForEdit('${escapeHtml(bid)}')" style="text-align:left; padding:10px; border-radius:10px; border:1px solid ${active ? 'rgba(34,197,94,0.45)' : 'rgba(255,255,255,0.10)'}; background:${active ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.04)'}; color:#fff; cursor:pointer;">
+                    <button type="button" data-click="selectBrandForEdit" data-arg="${escapeHtml(bid)}" style="text-align:left; padding:10px; border-radius:10px; border:1px solid ${active ? 'rgba(34,197,94,0.45)' : 'rgba(255,255,255,0.10)'}; background:${active ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.04)'}; color:#fff; cursor:pointer;">
                         <div style="font-weight:800;">${escapeHtml(String(b?.name || '-'))}</div>
                         <div style="font-size:11px; color:rgba(200,215,230,0.7); margin-top:2px;">${escapeHtml(String(b?.id || '-'))}</div>
                     </button>
@@ -4143,7 +4143,7 @@
                             <div class="af-tags" id="af-tags-${m.type}" style="display:flex; flex-wrap:wrap; gap:6px; min-height:34px; padding:8px 10px; background:rgba(255,255,255,0.04); border-radius:10px; border:1px solid rgba(255,255,255,0.08); margin-bottom:8px;"></div>
                             <div style="display:flex; gap:6px;">
                                 <select id="af-select-${m.type}" class="settings-input" style="flex:1; font-size:13px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(226,232,240,0.9); padding:8px 10px;">${approverOptsHtml}</select>
-                                <button class="btn btn-secondary" type="button" onclick="afAddStep('${m.type}')" style="padding:8px 14px; font-size:13px; border-radius:10px; white-space:nowrap; font-weight:600;">+ 添加</button>
+                                <button class="btn btn-secondary" type="button" data-click="afAddStep" data-arg="${m.type}" style="padding:8px 14px; font-size:13px; border-radius:10px; white-space:nowrap; font-weight:600;">+ 添加</button>
                             </div>
                         </div>
                     </div>

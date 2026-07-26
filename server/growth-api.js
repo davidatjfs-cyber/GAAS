@@ -56,9 +56,38 @@ export function parseOccurredAt(value) {
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from './sms.js';
-import { storeNameToId as _storeNameToIdFromConfig, STORE_ID_TO_NAME, STORES as _ALL_STORES } from './brands-config.js';
+import { STORE_ID_TO_NAME, STORES as _ALL_STORES } from './brands-config.js';
+import {
+  buildActionMessage,
+  pickSmsTemplateByStore,
+  phoneHashPct,
+  phoneAbBucket,
+  holdoutPct,
+  interpolateTemplate,
+} from './domains/growth-campaigns/helpers.js';
+export {
+  pickCampaignSmsSign,
+  pickWinbackTemplateByStore,
+  pickBalanceTemplateByStore,
+  CAMPAIGN_TYPES,
+  pickCampaignTemplate,
+  freqDaysEnv,
+  globalSmsCapped,
+  inSmsQuietHours,
+  isPhoneSuppressed,
+  handleSmsFailure,
+  campaignTouchCapped,
+  ABC_ROTATION_ORDER,
+  ABC_STEP_DEFS,
+  pickAbcTemplate,
+  deriveAbcStep,
+  countCampaignSent,
+  marketingFatigueCapped,
+  buildCampaignTargetQuery,
+  mapStoreNameToId,
+} from './domains/growth-campaigns/helpers.js';
 import { runForActiveTenants, tenantContext, resolveTenantIdDefault } from './utils/database.js';
-import { getSmsSlot, initSmsTemplatesCache } from './sms-templates.js';
+import { initSmsTemplatesCache } from './sms-templates.js';
 import { SHARED_TABLES } from '@gaas/shared';
 import { childLogger } from './utils/logger.js';
 
@@ -979,13 +1008,6 @@ function deriveBirthdayMonth(meta = {}) {
   return String(m[1]).padStart(2, '0');
 }
 
-function interpolateTemplate(template, context) {
-  return String(template || '').replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => {
-    const value = context[key];
-    return value == null ? '' : String(value);
-  });
-}
-
 export async function insertGrowthEvent(pool, payload, tenantId = 'default') {
   const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
   await pool.query(
@@ -1168,356 +1190,6 @@ async function sendWecomExternalMessage(pool, payload) {
   return { provider_msg_id: cleanText(data?.msgid || data?.msgid_list?.[0], 255), raw: data };
 }
 
-function buildActionMessage(actionRow, payload) {
-  const couponValueFen = Math.max(0, Math.floor(Number(payload.coupon_value_fen || payload.value_fen) || 0));
-  const favoriteDishesText = cleanText(payload.favorite_dishes_text || '', 200) || '店内推荐菜';
-  const context = {
-    customer_name: cleanText(payload.customer_name || '您好', 80) || '您好',
-    days_since_last_visit: Math.max(0, Math.floor(Number(payload.days_since_last_visit) || 0)),
-    visit_count: Math.max(0, Math.floor(Number(payload.visit_count) || 0)),
-    coupon_value_text: couponValueFen > 0 ? `¥${(couponValueFen / 100).toFixed(0)}` : '',
-    valid_days: Math.max(0, Math.floor(Number(payload.valid_days) || 0)),
-    favorite_dishes_text: favoriteDishesText
-  };
-  const template = cleanText(payload.content_template || payload.message_template, 1800);
-  if (template) return interpolateTemplate(template, context);
-  return cleanText(actionRow.detail || actionRow.title || '', 1800);
-}
-
-// 门店→已报备短信模板（每店一个独立模板，模板正文里写死了对应门店名，绝不能发错店）。
-// 配置来源：sms_templates 表（DB优先，找不到才回退env）—— 见 sms-templates.js 顶部注释：
-// 改用DB是因为env改完必须重启进程才生效，曾导致改配置后仍继续发了几天旧模板而无人发现。
-function pickSmsTemplateByStore(storeId) {
-  return getSmsSlot({ storeId, slot: 'TEMPLATE' }).template_code;
-}
-
-// 门店→短信签名。2026-07 起 CAMPAIGN_TYPES/ABC 系列新模板按品牌分别报备了短签名
-// (马己仙店签"马己仙"/洪潮店2026-07-13起改签"上海连年由喜餐饮管理")，与旧模板复用的公司名签名
-// (ALIYUN_SMS_SIGN_NAME="上海连年由喜餐饮管理有限")不是同一个，必须按模板类型各自传参，
-// 传错签名会被阿里云判"签名与模板不匹配"整批拒收。仅供 /campaign/send-sms(ABC/CAMPAIGN_TYPES
-// 模板)使用；旧的通用引擎直发路径、winback_sms、储值提醒仍用全局默认签名，不受影响。
-export function pickCampaignSmsSign(storeId) {
-  return getSmsSlot({ storeId, slot: 'SIGN' }).sign_name;
-}
-
-// 沉睡客召回券「现金抵用券」新模板（变量 name/value/date/code，含券码到店报码核销）。
-export function pickWinbackTemplateByStore(storeId) {
-  return getSmsSlot({ storeId, slot: 'WINBACK_TEMPLATE' }).template_code;
-}
-
-// 储值余额提醒模板（变量仅 balance；无券无码，提醒客人用余额+推荐菜促复购）。
-// 可被规则/任务里的 sms_template_code 覆盖。
-export function pickBalanceTemplateByStore(storeId) {
-  return getSmsSlot({ storeId, slot: 'BALANCE_TEMPLATE' }).template_code;
-}
-
-// 通用「营销发券一键发起」段配置。所有带券码段统一走召回任务管道：
-// HRMS 冻结 job(kind=段key) → 小程序 runWinbackJobs 生成短码+写 user_vouchers → 调 HRMS 发短信。
-// 券码因此在小程序 user_vouchers 落地，核销台 verifyVoucher 可校验+统计。
-// source='profiles' 取 growth_customer_profiles(到店次数/天数/价值分级)；'stored' 取储值客户表。
-// 沉睡60-90 沿用现有「储值召回」页(winback)，不在此注册。
-// vars: 该段阿里云模板的变量集合(须与已报备模板逐字一致，否则整批拒收)。
-// 赠菜/赠糖水类只有 date+code(无门槛礼品券)；长期流失是 value+date+code 的满额回归券(2张/1码核销2次)。
-export const CAMPAIGN_TYPES = {
-  vip_gift:       { label: 'VIP客户维护',          source: 'profiles', tplPrefix: 'VIP',       coupon_count: 1, vars: ['date', 'code'] },
-  newcomer_4d:    { label: '新客回头·4天',         source: 'profiles', tplPrefix: 'NEW4',      coupon_count: 1, vars: ['date', 'code'] },
-  newcomer_8d:    { label: '新客回头·8天',         source: 'profiles', tplPrefix: 'NEW8',      coupon_count: 1, vars: ['date', 'code'] },
-  // 新客二次召回(21-60天,到店1次,现金券): env ALIYUN_SMS_NEWRECALL_* (SMS_507205142/SMS_507240155)
-  newcomer_recall:{ label: '新客二次召回·21-60天',  source: 'profiles', tplPrefix: 'NEWRECALL', coupon_count: 1, vars: ['value', 'date', 'code'] },
-  // 常客降温唤醒(21-60天,到店≥2次,赠品券,复用活跃模板): env ALIYUN_SMS_COOLING_* (SMS_507100271/SMS_507400282)
-  regular_cooling:{ label: '常客降温唤醒·21-60天',  source: 'profiles', tplPrefix: 'COOLING',   coupon_count: 1, vars: ['date', 'code'] },
-  active:         { label: '活跃客经营',           source: 'profiles', tplPrefix: 'ACTIVE',    coupon_count: 1, vars: ['date', 'code'] },
-  // VIP专属召回(61-365天,VIP,现金券): env ALIYUN_SMS_VIPWB_* (SMS_507220292/SMS_507240296)
-  vip_winback:    { label: 'VIP专属召回·61-365天', source: 'profiles', tplPrefix: 'VIPWB',     coupon_count: 1, vars: ['value', 'date', 'code'] },
-  // 沉睡召回60-90：沿用现有 winback 已报备模板(SMS_507220292/SMS_507240296)，env 见 ALIYUN_SMS_DORM6090_*
-  dormant_60_90:  { label: '沉睡召回·60-90天',     source: 'profiles', tplPrefix: 'DORM6090',  coupon_count: 1, vars: ['value', 'date', 'code'] },
-  // 沉睡召回90-180：短信后补，未配 env → pickCampaignTemplate 返回 '' → 不可发(launch/send 报 sms_template_not_configured)
-  dormant_90_180: { label: '沉睡召回·90-180天',    source: 'profiles', tplPrefix: 'DORM90180', coupon_count: 1, vars: ['value', 'date', 'code'] },
-  lost_long:      { label: '长期流失召回·181-365天', source: 'profiles', tplPrefix: 'LOSTLONG',  coupon_count: 2, vars: ['value', 'date', 'code'] },
-  // 长期流失超1年(>365天)：与181-365分开运营，频次30天/有效期30天。env ALIYUN_SMS_LOSTOVER365_* (洪潮SMS_507890076/马己仙SMS_507105250)
-  lost_over365:   { label: '长期流失超1年召回',      source: 'profiles', tplPrefix: 'LOSTOVER365', coupon_count: 2, vars: ['value', 'date', 'code'] },
-  // 就餐时段标签(基于 growth_segment_members，按 criteria.segment_key 命中)：
-  // 马己仙晚市/周末复购客(现金券) env ALIYUN_SMS_MJDINNERWK_MAJIXIAN=SMS_508075082
-  mj_dinner_weekend: { label: '马己仙晚市/周末复购客', source: 'profiles', tplPrefix: 'MJDINNERWK', coupon_count: 1, vars: ['value', 'date', 'code'] },
-  // 洪潮平日午市客唤醒(赠菜券,无面额) env ALIYUN_SMS_HCWDLUNCH_HONGCHAO=SMS_508135078
-  hc_weekday_lunch:  { label: '洪潮平日午市客唤醒',   source: 'profiles', tplPrefix: 'HCWDLUNCH',  coupon_count: 1, vars: ['date', 'code'] },
-  // 券类型A/B「免费菜组」：复用活跃客马己仙赠菜模板(SMS_507100271)，但独立 campaign_key 保证打分不混。
-  // env ALIYUN_SMS_MJDWGIFT_MAJIXIAN=SMS_507100271
-  mj_dinner_weekend_gift: { label: '马己仙晚市赠菜券(A/B免费菜组)', source: 'profiles', tplPrefix: 'MJDWGIFT', coupon_count: 1, vars: ['date', 'code'] },
-  // 到店未买单潜客召回：扫码/陪客但从未下单，先券后菜促首单。走 ABC 轮换(复用 ABC 6模板，无新模板)。
-  prospect_recall: { label: '到店未买单潜客召回', source: 'profiles', tplPrefix: 'PROSPECT', coupon_count: 1, vars: ['value', 'date', 'code'] },
-};
-// 按段+门店解析阿里云模板 code（slot = cfg.tplPrefix，即原来env变量的中间段）
-export function pickCampaignTemplate(campaignKey, storeId) {
-  const cfg = CAMPAIGN_TYPES[campaignKey];
-  if (!cfg) return '';
-  return getSmsSlot({ storeId, slot: cfg.tplPrefix }).template_code;
-}
-
-// 解析「天数」类环境变量：未配置(缺省/空串)用默认值；显式填 0 表示「关闭频控」。
-// 修复老坑：旧写法 `Number(env) || 30` 把 0 当假值会回落成 30，导致频控永远关不掉。
-export function freqDaysEnv(name, def) {
-  const raw = process.env[name];
-  if (raw === undefined || raw === null || String(raw).trim() === '') return def;
-  const n = Math.floor(Number(raw));
-  return Number.isFinite(n) && n >= 0 ? n : def;
-}
-
-// 全局短信总闸：同一手机号 N 天内最多收 1 条「任意类型」营销短信，跨所有触达段叠加防骚扰。
-// 默认 7 天(每周最多 1 条)，由 ALIYUN_SMS_GLOBAL_FREQUENCY_DAYS 配置，设 0 关闭。
-// 只统计真正发出(status='sent')的记录；命中返回 days(>0)，未命中返回 0。
-export async function globalSmsCapped(pool, phone, tenantId = 'default') {
-  const days = freqDaysEnv('ALIYUN_SMS_GLOBAL_FREQUENCY_DAYS', 7);
-  const p = String(phone || '').trim();
-  if (days <= 0 || !p) return 0;
-  const r = await pool.query(
-    `SELECT 1 FROM growth_delivery_logs
-       WHERE channel = 'sms' AND status = 'sent' AND payload->>'phone' = $1
-         AND created_at > now() - ($2 || ' days')::interval
-         AND tenant_id = $3
-       LIMIT 1`,
-    [p, String(days), tenantId]
-  );
-  return r.rows.length ? days : 0;
-}
-
-// 允许发送时段：SMS_SEND_WINDOWS（逗号分隔多段，格式 HH:MM-HH:MM，北京时间）。
-// 默认两个窗口：午市前 10:30-12:00 + 晚市前 17:00-20:30。
-// 窗口外均为禁发时段，任务保持 pending，窗口内自动续跑。
-export function inSmsQuietHours(now = new Date()) {
-  const toMins = (s) => { const [h, m] = (s || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
-  const bjMins = (() => {
-    const p = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(now);
-    const h = Number((p.find((x) => x.type === 'hour') || {}).value || 0);
-    const m = Number((p.find((x) => x.type === 'minute') || {}).value || 0);
-    return h * 60 + m;
-  })();
-  const raw = cleanText(process.env.SMS_SEND_WINDOWS || '10:30-12:00,17:00-20:30', 200);
-  const windows = raw.split(',').map((w) => { const [s, e] = w.trim().split('-'); return [toMins(s), toMins(e)]; });
-  return !windows.some(([s, e]) => bjMins >= s && bjMins < e);
-}
-
-// 永久性失败判别 → 入抑制名单，后续一切营销短信跳过。
-// 注意：「业务停机」不算永久失败！实测停机号码绝大多数之前都成功发过，属临时状态
-// （关机/临时欠费），下次照常重试（7天频控自然控制节奏）。只有空号/号码非法/黑名单退订
-// 才是真正不可达或客人明确拒收，需永久抑制。
-const SMS_PERMANENT_FAIL_RE = /空号|黑名单|号码状态错误|MOBILE_NUMBER_ILLEGAL|MOBILE_NUMBER_NULL|BLACK_KEY_CONTROL_LIMIT/i;
-// 账户级故障判别：余额不足 → 写 growth_alerts 高优告警（前台已有告警展示）。
-const SMS_BALANCE_FAIL_RE = /余额不足|AMOUNT_NOT_ENOUGH|OUT_OF_SERVICE/i;
-
-export async function isPhoneSuppressed(pool, phone, tenantId = 'default') {
-  const p = String(phone || '').trim();
-  if (!p) return false;
-  const r = await pool.query(`SELECT 1 FROM growth_sms_suppression WHERE phone = $1 AND tenant_id = $2 LIMIT 1`, [p, tenantId]);
-  return r.rows.length > 0;
-}
-
-// 发送失败后调用：永久性失败入抑制名单；余额不足写告警。容错（自身失败不影响主流程）。
-export async function handleSmsFailure(pool, phone, errMsg, tenantId = 'default') {
-  const msg = String(errMsg || '');
-  try {
-    const p = String(phone || '').trim();
-    if (p && SMS_PERMANENT_FAIL_RE.test(msg)) {
-      await pool.query(
-        `INSERT INTO growth_sms_suppression (phone, reason, error_message, tenant_id) VALUES ($1, 'permanent_failure', $2, $3)
-         ON CONFLICT (phone, tenant_id) DO UPDATE SET error_message = EXCLUDED.error_message, updated_at = NOW()`,
-        [p, msg.slice(0, 500), tenantId]
-      );
-    }
-    if (SMS_BALANCE_FAIL_RE.test(msg)) {
-      const alertKey = `sms_account_balance:${new Date().toISOString().slice(0, 10)}`;
-      await pool.query(
-        `INSERT INTO growth_alerts (alert_key, alert_type, severity, store_id, title, message, suggested_action, metrics, tenant_id)
-         VALUES ($1,'sms_account','high','','阿里云短信账户余额不足，发送已失败','短信发送返回「${msg.slice(0, 120)}」。在余额恢复前所有营销短信都会失败。','前往阿里云控制台为短信账户充值，并核对今日失败记录是否需要补发',$2::jsonb,$3)
-         ON CONFLICT (alert_key, tenant_id) DO UPDATE SET message = EXCLUDED.message, status = 'open', updated_at = NOW()`,
-        [alertKey, JSON.stringify({ error: msg.slice(0, 200) }), tenantId]
-      );
-    }
-  } catch (e) { log.warn({ msg: 'handle_sms_failure_error', err: e?.message }); }
-}
-
-// 触达上限：同一手机号同一活动累计成功发送 N 次（默认3）仍未回店则永久停发该活动，
-// 防止对明确不响应的客人无限期发券。回店后 days_since 重置、自然脱离人群，不受此限影响。
-export async function campaignTouchCapped(pool, campaignKey, phone, tenantId = 'default') {
-  const cap = Math.max(0, Math.floor(Number(process.env.ALIYUN_SMS_CAMPAIGN_MAX_TOUCHES) || 3));
-  if (cap <= 0) return false;
-  const r = await pool.query(
-    `SELECT count(*)::int n FROM growth_delivery_logs
-      WHERE channel='sms' AND status='sent' AND rule_key = $1 AND payload->>'phone' = $2 AND tenant_id = $3`,
-    [campaignKey, String(phone || '').trim(), tenantId]
-  );
-  return (Number(r.rows[0]?.n) || 0) >= cap;
-}
-
-const ABC_DEFAULT_LADDER_DAYS = [15, 30, 45, 60, 75, 90];
-
-// ABC方案轮换(活动制)：8条常规段「赠菜A/B/C + 赠券30/50/2X50」共6个模板按固定顺序轮换
-// (顺序差异=先菜后券 vs 先券后菜)；马己仙晚市2条拆分段各自只含本组3个模板。
-// 顺序即"该客户在本活动下累计成功发送次数 % 模板数"对应到第几个模板。
-export const ABC_ROTATION_ORDER = {
-  vip_gift:               ['giftA', 'giftB', 'giftC', 'coupon30', 'coupon50', 'coupon2x50'], // VIP客户维护：先菜后券
-  active:                 ['giftA', 'giftB', 'giftC', 'coupon30', 'coupon50', 'coupon2x50'], // 活跃客经营：先菜后券
-  regular_cooling:        ['giftA', 'giftB', 'giftC', 'coupon30', 'coupon50', 'coupon2x50'], // 常客降温唤醒21-60天：先菜后券
-  dormant_90_180:         ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 沉睡召回90-180天：先券后菜
-  newcomer_recall:        ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 新客二次召回21-60天：先券后菜
-  dormant_60_90:          ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 沉睡召回60-90天：先券后菜
-  vip_winback:            ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // VIP专属召回61-365天：先券后菜
-  lost_long:              ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 长期流失召回181-365天：先券后菜
-  lost_over365:           ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 长期流失超1年召回：先券后菜
-  prospect_recall:        ['coupon30', 'coupon50', 'coupon2x50', 'giftA', 'giftB', 'giftC'], // 到店未买单潜客：先券后菜
-  // 马己仙晚市赠菜组/赠券组、洪潮平日午市客唤醒(见 CAMPAIGN_TYPES 的 mj_dinner_weekend_gift/
-  // mj_dinner_weekend/hc_weekday_lunch)固定只用各自单一已报备模板，不参与 ABC 滚动，
-  // 故不在此表中列出——它们走下面 pickCampaignTemplate() 的固定模板分支。
-};
-
-// 6个模板各自的短信变量集合与券面额/张数。2X50=2张50元券(coupon_count:2)，
-// 与现有 lost_long/lost_over365 的「2张/1码核销2次」模式一致。
-// 2026-07 起 coupon30/50/2x50 改用「面额写死在已报备模板正文里」的新模板(阿里云审核更快过)，
-// 不再需要 {value} 变量；仍需 date+code。
-export const ABC_STEP_DEFS = {
-  giftA:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
-  giftB:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
-  giftC:      { vars: ['date', 'code'], coupon_value_fen: 0, coupon_count: 1 },
-  coupon30:   { vars: ['date', 'code'], coupon_value_fen: 3000, coupon_count: 1 },
-  coupon50:   { vars: ['date', 'code'], coupon_value_fen: 5000, coupon_count: 1 },
-  coupon2x50: { vars: ['date', 'code'], coupon_value_fen: 5000, coupon_count: 2 },
-};
-
-// 按模板步骤+门店解析阿里云模板code：ALIYUN_SMS_ABC<STEP>_<MAJIXIAN|HONGCHAO|DEFAULT>
-const ABC_STEP_TPL_PREFIX = {
-  giftA: 'ABCGIFTA', giftB: 'ABCGIFTB', giftC: 'ABCGIFTC',
-  coupon30: 'ABCCOUPON30', coupon50: 'ABCCOUPON50', coupon2x50: 'ABCCOUPON2X50',
-};
-export function pickAbcTemplate(step, storeId) {
-  const pfx = ABC_STEP_TPL_PREFIX[step];
-  if (!pfx) return '';
-  return getSmsSlot({ storeId, slot: pfx }).template_code;
-}
-
-// 按"该手机号在本活动下累计成功发送次数"纯推导当前应发的模板步骤+降频阶梯天数。
-// 节奏：A发完后15天发B，再过30天发C，再过45天发下一轮A，再过60天发B，再过75天发C，
-// 到90天仍未到店回应 → 该客户对本活动进入"红名单"，不再自动触达(即最多6次触达，
-// 每次触达间隔按15/30/45/60/75逐次变慢；第1次触达无历史可比对，不设门槛)。
-// 模板步骤仍按 order 长度独立循环(常规段6条/马己仙拆分段3条)，与频控阶梯的推进各自独立。
-// 中途到店消费会清零 totalSent(见 countCampaignSent)，从头开始计。
-export function deriveAbcStep(campaignKey, totalSent) {
-  const order = ABC_ROTATION_ORDER[campaignKey];
-  if (!order) return { step: null, freqDaysOverride: null, blacklisted: false };
-  const ladder = ABC_DEFAULT_LADDER_DAYS; // [15,30,45,60,75,90]
-  const perCycle = order.length;
-  const maxTouches = ladder.length; // 6次触达仍未回应 → 红名单(90天为最后一档等待期)
-  if (totalSent >= maxTouches) return { step: null, freqDaysOverride: null, blacklisted: true };
-  const posInCycle = totalSent % perCycle;
-  // 第1次发送(totalSent=0)无历史可比对，此处取值不影响实际发送时机；
-  // 第2次起(totalSent>=1)按上一次发送起算15/30/45/60/75天逐次变慢。
-  const freqDaysOverride = ladder[Math.max(0, totalSent - 1)];
-  return { step: order[posInCycle], freqDaysOverride, blacklisted: false };
-}
-
-// 「到店即清零」：轮换计数只统计客户「最近一次到店(pos_last_order_at)之后」的成功发送数。
-// 这样自循环段(VIP客户维护/活跃客经营)里每次回头消费都会让轮换从头开始、不会把忠诚回头客
-// 误推进降频阶梯/红名单；而真正不回头的客户发送数持续累积，照常走阶梯并最终入红名单。
-// 从未到店(pos_last_order_at 为空)的潜客则统计全部发送数(无到店可清零)。
-export async function countCampaignSent(pool, campaignKey, phone, tenantId = 'default') {
-  const p = String(phone || '').trim();
-  const r = await pool.query(
-    `SELECT count(*)::int n FROM growth_delivery_logs
-      WHERE channel='sms' AND status='sent' AND rule_key = $1 AND payload->>'phone' = $2 AND tenant_id = $3
-        AND created_at > COALESCE(
-          (SELECT MAX(pos_last_order_at) FROM growth_customer_profiles WHERE phone = $2 AND tenant_id = $3),
-          '1970-01-01'::timestamptz)`,
-    [campaignKey, p, tenantId]
-  );
-  return Number(r.rows[0]?.n) || 0;
-}
-
-// 跨活动疲劳总闸：某号码在 MARKETING_FATIGUE_WINDOW_DAYS(默认90)天内、且「最近一次到店之后」
-// 累计收到的【任意活动】营销短信达到 MARKETING_FATIGUE_MAX(默认8)条仍未回店 → 暂停其所有营销短信。
-// 解决「不回应客人随距今天数变大滑过多个标签、每段ABC计数清零导致跨标签累计轰炸」的问题。
-// 一旦到店消费，post-visit 计数归零，疲劳状态自动解除。返回 true=已疲劳应暂停。
-function marketingFatigueMax() {
-  const v = Number(process.env.MARKETING_FATIGUE_MAX);
-  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 8;
-}
-function marketingFatigueWindowDays() {
-  const v = Number(process.env.MARKETING_FATIGUE_WINDOW_DAYS);
-  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 90;
-}
-export async function marketingFatigueCapped(pool, phone, tenantId = 'default') {
-  const p = String(phone || '').trim();
-  if (!p) return false;
-  const max = marketingFatigueMax();
-  const win = marketingFatigueWindowDays();
-  const r = await pool.query(
-    `SELECT count(*)::int n FROM growth_delivery_logs
-      WHERE channel='sms' AND status='sent' AND payload->>'phone' = $1
-        AND created_at > now() - ($2 || ' days')::interval
-        AND tenant_id = $3
-        AND created_at > COALESCE(
-          (SELECT MAX(pos_last_order_at) FROM growth_customer_profiles WHERE phone = $1 AND tenant_id = $3),
-          '1970-01-01'::timestamptz)`,
-    [p, String(win), tenantId]
-  );
-  return (Number(r.rows[0]?.n) || 0) >= max;
-}
-
-// holdout 对照组：md5(phone) 前4位十六进制 %100 < pct 即入对照组（确定性、与活动无关的均匀抽样）。
-function holdoutPct() {
-  const v = Number(process.env.GROWTH_HOLDOUT_PCT);
-  return Number.isFinite(v) ? Math.min(Math.max(Math.floor(v), 0), 50) : 10;
-}
-function phoneHashPct(phone) {
-  const h = crypto.createHash('md5').update(String(phone || '')).digest('hex');
-  return parseInt(h.slice(0, 4), 16) % 100;
-}
-// A/B 分桶：用 md5 的不同片段(slice 8-12)，与 holdout(slice 0-4) 独立，避免两者抽样相关联。
-function phoneAbBucket(phone, n) {
-  const h = crypto.createHash('md5').update(String(phone || '')).digest('hex');
-  return parseInt(h.slice(8, 12), 16) % Math.max(1, n);
-}
-
-// 通用发券人群(profiles)取数：可编辑筛选(门店/价值分级/生命周期/到店次数/未消费天数)+频控。
-// 返回 SQL 与参数，preview 与 launch 共用，保证「预览即所发」。
-// 至少需一个人群维度，否则视为全量、拒绝(防误群发)。
-export function buildCampaignTargetQuery(opts) {
-  const { storeId, valueTier, lifecycleStage, minVisits, maxVisits, minDays, maxDays, ruleKey, freqDays, limit } = opts;
-  const hasAudience = !!(valueTier || lifecycleStage
-    || Number.isFinite(minVisits) || Number.isFinite(maxVisits)
-    || Number.isFinite(minDays) || Number.isFinite(maxDays));
-  if (!hasAudience) return null;
-  const params = [String(Math.max(0, Math.floor(Number(freqDays) || 0)))];
-  const daysExpr = '(CURRENT_DATE - COALESCE(cp.pos_last_order_at::date, gc.last_seen_at::date))';
-  const clauses = ["cp.phone IS NOT NULL AND cp.phone <> ''"];
-  if (storeId) { params.push(storeId); clauses.push(`cp.store_id = $${params.length}`); }
-  if (valueTier) { params.push(valueTier); clauses.push(`cp.value_tier = $${params.length}`); }
-  if (lifecycleStage) { params.push(lifecycleStage); clauses.push(`cp.lifecycle_stage = $${params.length}`); }
-  if (Number.isFinite(minVisits)) clauses.push(`COALESCE(cp.pos_order_count,0) >= ${Math.floor(minVisits)}`);
-  if (Number.isFinite(maxVisits)) clauses.push(`COALESCE(cp.pos_order_count,0) <= ${Math.floor(maxVisits)}`);
-  if (Number.isFinite(minDays)) clauses.push(`${daysExpr} >= ${Math.floor(minDays)}`);
-  if (Number.isFinite(maxDays)) clauses.push(`${daysExpr} <= ${Math.floor(maxDays)}`);
-  params.push(ruleKey);
-  const ruleIdx = params.length;
-  const lim = Math.min(Math.max(Math.floor(Number(limit) || 500), 1), 5000);
-  const sql = `
-    SELECT cp.customer_id, cp.store_id, cp.phone,
-           COALESCE(cp.pos_order_count,0) AS visits,
-           ${daysExpr}::int AS days,
-           COALESCE(NULLIF(gc.meta->>'title',''), NULLIF(gc.meta->>'name',''), '') AS name,
-           (NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
-              WHERE d.channel='sms' AND d.rule_key=$${ruleIdx} AND d.status='sent'
-                AND d.payload->>'phone' = cp.phone
-                AND d.created_at > now() - ($1 || ' days')::interval)) AS sendable
-    FROM growth_customer_profiles cp
-    JOIN growth_customers gc ON gc.id = cp.customer_id
-    WHERE ${clauses.join(' AND ')}
-    ORDER BY days ASC LIMIT ${lim}`;
-  return { sql, params };
-}
-
-// 门店名 → POS门店号(储值客户表里的开卡/交易门店是中文名)
-export function mapStoreNameToId(name) {
-  return _storeNameToIdFromConfig(name);
-}
 // 飞书多维表字段值解析(文本/数字/日期/电话)
 export function bitText(v) {
   if (v == null) return '';

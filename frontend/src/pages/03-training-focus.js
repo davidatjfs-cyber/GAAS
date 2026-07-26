@@ -1399,7 +1399,7 @@
                 const title = String(g.title || '未命名SOP');
                 const fileCount = g.file_count || 0;
                 const updated = g.updated_at ? String(g.updated_at).slice(0, 10) : '';
-                return `<div class="kb-v2-item" onclick="openKnowledgeGroup('${escapeHtml(gid)}')">
+                return `<div class="kb-v2-item" data-click="openKnowledgeGroup" data-arg="${escapeHtml(gid)}">
                     <div class="kb-v2-item-icon" style="font-size:22px;">📁</div>
                     <div class="kb-v2-item-body">
                         <div class="kb-v2-item-title">${escapeHtml(title)}</div>
@@ -1471,7 +1471,7 @@
                     const icon = typeIcon2(it.type);
                     const badge = typeBadge(it.type);
                     const date = it.createdAt ? it.createdAt.slice(0,10) : '';
-                    return `<div class="kb-v2-item" onclick="openKnowledgeItem('${escapeHtml(it.id)}')">
+                    return `<div class="kb-v2-item" data-click="openKnowledgeItem" data-arg="${escapeHtml(it.id)}">
                         <div class="kb-v2-item-icon" data-type="${escapeHtml(it.type)}">${icon}</div>
                         <div class="kb-v2-item-body">
                             <div class="kb-v2-item-title">${escapeHtml(it.title)}</div>
@@ -1861,7 +1861,7 @@
             const tags = [];
             if (isRequired) tags.push('<span class="kb-v2-chip kb-v2-chip-req">必读</span>');
             if (quizEnabled) tags.push('<span class="kb-v2-chip kb-v2-chip-quiz">测验</span>');
-            return `<div class="kb-v2-item" onclick="openKnowledgeItem('${escapeHtml(id)}')">
+            return `<div class="kb-v2-item" data-click="openKnowledgeItem" data-arg="${escapeHtml(id)}">
                 <div class="kb-v2-item-icon" data-type="${escapeHtml(t)}">${icon}</div>
                 <div class="kb-v2-item-body">
                     <div class="kb-v2-item-title">${escapeHtml(title)}</div>
@@ -2057,8 +2057,8 @@
                         当前 <b style="color:#a5b4fc">${reqCount}</b> 个设为晋升必须认证
                     </div>
                     <div style="display:flex;gap:8px;">
-                        <button onclick="promoReqSelectAll(true)" style="padding:6px 12px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;cursor:pointer;">全选</button>
-                        <button onclick="promoReqSelectAll(false)" style="padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;">全不选</button>
+                        <button data-click="promoReqSelectAll" data-arg="true" style="padding:6px 12px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;cursor:pointer;">全选</button>
+                        <button data-click="promoReqSelectAll" data-arg="false" style="padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;">全不选</button>
                         <button data-click="savePromoReqTopics" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
                     </div>
                 </div>
@@ -2151,8 +2151,8 @@
                     const promotionBadge = t.promotion_required ? `<span class="training-admin-chip">🎯 晋升要求${t.level ? ' · ' + escapeHtml(t.level) : ''} · 有效期${t.validity_days || 180}天</span>` : '';
                     const editBtns = canEdit ? `
                         <div class="training-admin-actions">
-                            <button onclick="editTrainingTopic(${t.id})" class="training-admin-btn">✏️ 编辑</button>
-                            <button onclick="deleteTrainingTopic(${t.id})" class="training-admin-btn training-admin-btn--danger">🗑 删除</button>
+                            <button data-click="editTrainingTopic" data-arg="${t.id}" data-arg-type="number" class="training-admin-btn">✏️ 编辑</button>
+                            <button data-click="deleteTrainingTopic" data-arg="${t.id}" data-arg-type="number" class="training-admin-btn training-admin-btn--danger">🗑 删除</button>
                         </div>` : '';
                     return `
                     <div class="training-admin-card">
@@ -2355,7 +2355,7 @@
                             <span>可在右侧随时移除</span>
                         </div>
                     </div>
-                    <span onclick="removeKbArticle('${a.id}')" class="tt-kb-chip-remove">×</span>
+                    <span data-click="removeKbArticle" data-arg="${a.id}" class="tt-kb-chip-remove">×</span>
                 </div>`
             ).join('');
             container.innerHTML = head + `<div class="tt-kb-selected-grid">${cards}</div>`;
@@ -2809,7 +2809,7 @@
                     const deadline = getTrainingDeadlineState(a);
                     const displayName = escapeHtml(a.employee_name || a.employee_username);
                     const canRevoke = isAdminOrHQ() || a.assigned_by === currentUser?.username;
-                    const revokeBtn = canRevoke ? `<button onclick="deleteTrainingAssignment(${a.id})" style="width:100%;padding:8px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);color:#f87171;font-size:13px;cursor:pointer;">撤销指派</button>` : '';
+                    const revokeBtn = canRevoke ? `<button data-click="deleteTrainingAssignment" data-arg="${a.id}" data-arg-type="number" style="width:100%;padding:8px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);color:#f87171;font-size:13px;cursor:pointer;">撤销指派</button>` : '';
                     const badge = `<span class="training-admin-badge" style="background:rgba(255,255,255,0.07);color:${color};">${sMap[st]||'未开始'}</span>`;
                     const deadlineBadge = getTrainingDeadlineBadge(deadline);
                     const cardStyle = deadline.isOverdue
@@ -3201,7 +3201,7 @@
                         ${scoreHtml}
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
                             <button onclick="reviewCertWithScore(${c.id},'confirm')" style="padding:12px;border-radius:10px;background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.3);color:#34d399;font-size:14px;font-weight:600;cursor:pointer;">✓ 确认AI评分</button>
-                            <button onclick="reviewCertWithOverride(${c.id})" style="padding:12px;border-radius:10px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.25);color:#fbbf24;font-size:14px;font-weight:600;cursor:pointer;">✎ 手动评分</button>
+                            <button data-click="reviewCertWithOverride" data-arg="${c.id}" data-arg-type="number" style="padding:12px;border-radius:10px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.25);color:#fbbf24;font-size:14px;font-weight:600;cursor:pointer;">✎ 手动评分</button>
                         </div>
                     </div>`;
                 }).join('');
@@ -3269,7 +3269,7 @@
                             </div>
                             <div style="display:flex;gap:8px;margin-top:16px;">
                                 <button onclick="this.closest('.modal').remove()" style="flex:1;padding:12px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;">取消</button>
-                                <button onclick="submitOverride(${id})" style="flex:1;padding:12px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">提交人工评分</button>
+                                <button data-click="submitOverride" data-arg="${id}" data-arg-type="number" style="flex:1;padding:12px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">提交人工评分</button>
                             </div>
                         </div>
                     </div>`;
@@ -3540,7 +3540,7 @@
                     if (articles.length > 1) {
                         tabsDiv.style.display = 'flex';
                         tabsDiv.innerHTML = articles.map((a, i) => `
-                            <button id="training-article-tab-${i}" onclick="showTrainingArticle(${i})"
+                            <button id="training-article-tab-${i}" data-click="showTrainingArticle" data-arg="${i}" data-arg-type="number"
                                 style="padding:6px 14px;border-radius:20px;border:1px solid rgba(255,255,255,0.18);
                                        background:${i === 0 ? 'rgba(167,139,250,0.25)' : 'rgba(255,255,255,0.06)'};
                                        color:${i === 0 ? '#c4b5fd' : 'rgba(255,255,255,0.6)'};
@@ -4769,8 +4769,8 @@
                 if (r.status === 409 && j.candidates && j.candidates.length) {
                     const btns = j.candidates
                         .map((c) => {
-                            const uj = JSON.stringify(String(c.username || ''));
-                            return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" onclick="loadDcScoreProvenance(${uj})">${escapeHtml(
+                            const uj = escapeHtml(String(c.username || ''));
+                            return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" data-click="loadDcScoreProvenance" data-arg="${uj}">${escapeHtml(
                                 String(c.name || '')
                             )} <span style="color:#64748b;">(${escapeHtml(String(c.username || ''))})</span></button>`;
                         })
@@ -4909,8 +4909,8 @@
                 if (r.status === 409 && j.candidates && j.candidates.length) {
                     const btns = j.candidates
                         .map((c) => {
-                            const uj = JSON.stringify(String(c.username || ''));
-                            return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" onclick="loadDcScoreProvenance(${uj})">${escapeHtml(String(c.name || ''))} <span style="color:#64748b;">(${escapeHtml(String(c.username || ''))})</span></button>`;
+                            const uj = escapeHtml(String(c.username || ''));
+                            return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" data-click="loadDcScoreProvenance" data-arg="${uj}">${escapeHtml(String(c.name || ''))} <span style="color:#64748b;">(${escapeHtml(String(c.username || ''))})</span></button>`;
                         })
                         .join('');
                     out.innerHTML =
@@ -5042,7 +5042,7 @@
             const btnHtml = (label, value) => {
                 const isOn = String(value || '') === active;
                 const cls = isOn ? 'btn' : 'btn btn-secondary';
-                return `<button class="${cls}" type="button" onclick="setKbCategory('${escapeHtml(value)}')">${escapeHtml(label)}</button>`;
+                return `<button class="${cls}" type="button" data-click="setKbCategory" data-arg="${escapeHtml(value)}">${escapeHtml(label)}</button>`;
             };
 
             const parts = [btnHtml('全部分类', '')].concat(cats.map(c => btnHtml(c, c)));
