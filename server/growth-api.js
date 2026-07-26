@@ -14,12 +14,11 @@ export function parseOccurredAt(value) {
 
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import { sendAliyunSms, isAliyunSmsConfigured, isAliyunSmsAutoSendEnabled } from './sms.js';
+import { sendAliyunSms, isAliyunSmsAutoSendEnabled } from './sms.js';
 import { STORES as _ALL_STORES } from './brands-config.js';
 import {
   buildActionMessage,
   pickSmsTemplateByStore,
-  phoneAbBucket,
   freqDaysEnv,
   globalSmsCapped,
   inSmsQuietHours,
