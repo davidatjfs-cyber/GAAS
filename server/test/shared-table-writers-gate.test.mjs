@@ -26,6 +26,11 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'agents.js|INSERT INTO|agent_messages',
   // Wave A1：KPI radar INSERT 从 agents.js runDataAuditor 迁出（agents.js 仍有其它 agent_messages INSERT）
   'domains/agent-auditor/run-data-auditor.js|INSERT INTO|agent_messages',
+  // Wave A3：onFeishuEvent 迁出（agents.js 仍有其它 agent_messages / feishu_users 写入）
+  'domains/agent-feishu-bot/on-feishu-event.js|INSERT INTO|feishu_users',
+  'domains/agent-feishu-bot/on-feishu-event.js|UPDATE|feishu_users',
+  'domains/agent-feishu-bot/on-feishu-event.js|INSERT INTO|agent_messages',
+  'domains/agent-feishu-bot/on-feishu-event.js|UPDATE|agent_messages',
   'agents.js|INSERT INTO|agent_scores',
   'agents.js|INSERT INTO|feishu_generic_records',
   'agents.js|INSERT INTO|feishu_users',
@@ -90,6 +95,10 @@ const REPATH_NOTES = [
   'performance-invalidation-api.js → domains/performance-invalidation/service.js | UPDATE|agent_scores',
   'agents.js → domains/agent-message/training-flow.js | INSERT INTO|master_tasks',
   'agents.js → domains/agent-auditor/run-data-auditor.js | INSERT INTO|agent_messages',
+  'agents.js → domains/agent-feishu-bot/on-feishu-event.js | INSERT INTO|feishu_users',
+  'agents.js → domains/agent-feishu-bot/on-feishu-event.js | UPDATE|feishu_users',
+  'agents.js → domains/agent-feishu-bot/on-feishu-event.js | INSERT INTO|agent_messages',
+  'agents.js → domains/agent-feishu-bot/on-feishu-event.js | UPDATE|agent_messages',
 ];
 
 const OWNER = 'gaas';

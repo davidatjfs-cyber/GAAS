@@ -264,6 +264,7 @@
     "domains/shared/startup-agent-schema.js",
     "domains/agent-auditor/run-data-auditor.js",
     "domains/agent-message/handle-agent-message.js",
-    "domains/agent-message/handle-data-auditor-case.js"
+    "domains/agent-message/handle-data-auditor-case.js",
+    "domains/agent-feishu-bot/on-feishu-event.js"
   ]
 }
