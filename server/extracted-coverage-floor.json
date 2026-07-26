@@ -14,6 +14,7 @@
     "domains/agent-auditor/table-visit-metrics-helpers.js",
     "domains/agent-auditor/table-visit-metrics.js",
     "domains/agent-config/defaults.js",
+    "domains/agent-config/config-loaders.js",
     "domains/agent-config/normalize-helpers.js",
     "domains/agent-config/normalize.js",
     "domains/agent-auditor/margin-metrics-helpers.js",

@@ -11,6 +11,8 @@ import {
   normalizeOpsAgentConfig,
   validateEmployeeRatingConfig,
 } from './domains/agent-config/normalize.js';
+import { toJson } from './domains/agent-config/config-loaders.js';
+import { createAgentConfigLoaders } from './domains/agent-config/loaders-service.js';
 import { FALLBACK_MODEL, normalizeModelName } from './domains/agent-config/normalize-helpers.js';
 import { isHrmsAgentV1Enabled } from './safety.js';
 import { resolveTenantIdDefault } from './utils/database.js';
@@ -19,6 +21,50 @@ import { childLogger } from './utils/logger.js';
 export { DEFAULT_BI_AGENT_CONFIG, DEFAULT_OPS_AGENT_CONFIG };
 
 const log = childLogger({ domain: 'agent-config-manager', handler: 'manager' });
+
+// Function exports (not const re-exports): keep live bindings hoisted so
+// agents.js ↔ master-agent ↔ agent-config-manager cycles do not hit TDZ.
+const loaders = createAgentConfigLoaders({ pool, log });
+
+export function clearAgentRuleCache() {
+  return loaders.clearAgentRuleCache();
+}
+export function getAgentRules() {
+  return loaders.getAgentRules();
+}
+export function getCategoryAssigneeRoleMap() {
+  return loaders.getCategoryAssigneeRoleMap();
+}
+export function getIssueScoreRulesMap() {
+  return loaders.getIssueScoreRulesMap();
+}
+export function clearAgentConfigCache() {
+  return loaders.clearAgentConfigCache();
+}
+export function getAgentConfigs() {
+  return loaders.getAgentConfigs();
+}
+export function getAgentConfig(agentId) {
+  return loaders.getAgentConfig(agentId);
+}
+export function getOpsAgentConfig() {
+  return loaders.getOpsAgentConfig();
+}
+export function clearOpsAgentConfigCache() {
+  return loaders.clearOpsAgentConfigCache();
+}
+export function getBiAgentConfig() {
+  return loaders.getBiAgentConfig();
+}
+export function clearBiAgentConfigCache() {
+  return loaders.clearBiAgentConfigCache();
+}
+export function getEmployeeRatingConfig() {
+  return loaders.getEmployeeRatingConfig();
+}
+export function clearEmployeeRatingConfigCache() {
+  return loaders.clearEmployeeRatingConfigCache();
+}
 
 
 // ─── Feature Flags（降级开关）────────────────────────────────
@@ -116,10 +162,6 @@ const DEFAULT_REPLY_TEMPLATES = [
   { template_key: 'reply_ops_supervisor_default_v1', agent_id: 'ops_supervisor', name: 'OP 巡检回复', content: '巡检任务已下发，请按清单逐项完成并回传证明材料。', enabled: true, is_builtin: true },
   { template_key: 'reply_chief_evaluator_default_v1', agent_id: 'chief_evaluator', name: '考核结果回复', content: '本期考核已完成，分数与扣分项已同步，可在绩效页面查看详情。', enabled: true, is_builtin: true }
 ];
-
-function toJson(v, fallback = {}) {
-  try { return typeof v === 'string' ? JSON.parse(v) : (v || fallback); } catch (_) { return fallback; }
-}
 
 export async function ensureAgentConfigTables() {
   try {
@@ -761,171 +803,4 @@ export function registerAgentConfigRoutes(app, authRequired) {
   registerAgentTemplateRoutes(app, authRequired);
   registerAgentDomainConfigRoutes(app, authRequired);
   registerAgentRulesRoutes(app, authRequired);
-}
-
-
-// 缓存相关的辅助函数
-let cachedRules = null;
-let rulesLastFetched = 0;
-const CACHE_TTL = 60 * 1000; // 1 分钟缓存
-
-export function clearAgentRuleCache() {
-  cachedRules = null;
-  rulesLastFetched = 0;
-}
-
-export async function getAgentRules() {
-  const now = Date.now();
-  if (cachedRules && (now - rulesLastFetched < CACHE_TTL)) {
-    return cachedRules;
-  }
-  try {
-    const r = await pool().query('select * from agent_rules where enabled = true');
-    cachedRules = r.rows;
-    rulesLastFetched = now;
-    return cachedRules;
-  } catch (e) {
-    log.error({ msg: 'getagentrules_error', err: e?.message || String(e) });
-    return [];
-  }
-}
-
-export async function getCategoryAssigneeRoleMap() {
-  const rules = await getAgentRules();
-  const map = {};
-  for (const rule of rules) {
-    map[rule.category] = rule.assignee_role;
-  }
-  return map;
-}
-
-export async function getIssueScoreRulesMap() {
-  const rules = await getAgentRules();
-  const map = {};
-  for (const rule of rules) {
-    map[rule.category] = {
-      normal: rule.normal_deduction,
-      major: rule.major_deduction
-    };
-  }
-  return map;
-}
-
-let cachedConfigs = null;
-let configsLastFetched = 0;
-
-export function clearAgentConfigCache() {
-  cachedConfigs = null;
-  configsLastFetched = 0;
-}
-
-let opsAgentConfigCache = null;
-let opsAgentConfigLastFetch = 0;
-let biAgentConfigCache = null;
-let biAgentConfigLastFetch = 0;
-
-export async function getOpsAgentConfig() {
-  const now = Date.now();
-  if (opsAgentConfigCache && (now - opsAgentConfigLastFetch < 60000)) {
-    return opsAgentConfigCache;
-  }
-  try {
-    const r = await pool().query(`select config from hr_rating_configs where config_key = 'ops_agent' and enabled = true limit 1`);
-    if (r.rows?.length > 0 && r.rows[0].config) {
-      opsAgentConfigCache = normalizeOpsAgentConfig(toJson(r.rows[0].config, DEFAULT_OPS_AGENT_CONFIG));
-    } else {
-      opsAgentConfigCache = normalizeOpsAgentConfig(DEFAULT_OPS_AGENT_CONFIG);
-    }
-  } catch (e) {
-    log.error({ msg: 'agentconfig_getopsagentconfig_error', err: e?.message || String(e) });
-    opsAgentConfigCache = normalizeOpsAgentConfig(DEFAULT_OPS_AGENT_CONFIG);
-  }
-  opsAgentConfigLastFetch = now;
-  return opsAgentConfigCache;
-}
-
-export function clearOpsAgentConfigCache() {
-  opsAgentConfigCache = null;
-  opsAgentConfigLastFetch = 0;
-}
-
-export async function getBiAgentConfig() {
-  const now = Date.now();
-  if (biAgentConfigCache && (now - biAgentConfigLastFetch < 60000)) {
-    return biAgentConfigCache;
-  }
-  try {
-    const r = await pool().query(`select config from hr_rating_configs where config_key = 'bi_agent' and enabled = true limit 1`);
-    if (r.rows?.length > 0 && r.rows[0].config) {
-      biAgentConfigCache = normalizeBiAgentConfig(toJson(r.rows[0].config, DEFAULT_BI_AGENT_CONFIG));
-    } else {
-      biAgentConfigCache = normalizeBiAgentConfig(DEFAULT_BI_AGENT_CONFIG);
-    }
-  } catch (e) {
-    log.error({ msg: 'agentconfig_getbiagentconfig_error', err: e?.message || String(e) });
-    biAgentConfigCache = normalizeBiAgentConfig(DEFAULT_BI_AGENT_CONFIG);
-  }
-  biAgentConfigLastFetch = now;
-  return biAgentConfigCache;
-}
-
-export function clearBiAgentConfigCache() {
-  biAgentConfigCache = null;
-  biAgentConfigLastFetch = 0;
-}
-
-export async function getAgentConfigs() {
-  const now = Date.now();
-  if (cachedConfigs && (now - configsLastFetched < CACHE_TTL)) {
-    return cachedConfigs;
-  }
-  try {
-    const r = await pool().query('select * from agent_configs');
-    const map = {};
-    for (const row of r.rows) {
-      map[row.agent_id] = row;
-    }
-    cachedConfigs = map;
-    configsLastFetched = now;
-    return cachedConfigs;
-  } catch (e) {
-    log.error({ msg: 'getagentconfigs_error', err: e?.message || String(e) });
-    return {};
-  }
-}
-
-export async function getAgentConfig(agentId) {
-  const configs = await getAgentConfigs();
-  return configs[agentId] || null;
-}
-
-let cachedEmployeeRatingConfig = null;
-let employeeRatingLastFetched = 0;
-
-export function clearEmployeeRatingConfigCache() {
-  cachedEmployeeRatingConfig = null;
-  employeeRatingLastFetched = 0;
-}
-
-export async function getEmployeeRatingConfig() {
-  const now = Date.now();
-  if (cachedEmployeeRatingConfig && (now - employeeRatingLastFetched < CACHE_TTL)) {
-    return cachedEmployeeRatingConfig;
-  }
-  try {
-    const r = await pool().query(`
-      select config
-      from hr_rating_configs
-      where config_key = 'employee_rating' and enabled = true
-      limit 1
-    `);
-    cachedEmployeeRatingConfig = r.rows?.[0]?.config
-      ? normalizeEmployeeRatingConfig(toJson(r.rows[0].config, DEFAULT_EMPLOYEE_RATING_CONFIG))
-      : DEFAULT_EMPLOYEE_RATING_CONFIG;
-    employeeRatingLastFetched = now;
-    return cachedEmployeeRatingConfig;
-  } catch (e) {
-    log.error({ msg: 'getemployeeratingconfig_error', err: e?.message || String(e) });
-    return DEFAULT_EMPLOYEE_RATING_CONFIG;
-  }
 }
