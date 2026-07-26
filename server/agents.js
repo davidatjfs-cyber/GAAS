@@ -16,7 +16,6 @@
  *   店长在飞书回复文字/照片/语音 → webhook → Agent 处理 → 飞书回复
  */
 
-import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -61,6 +60,7 @@ import { createFollowUpOverdueTasks } from './domains/agent-ops/follow-up-overdu
 import { createAuditImage } from './domains/agent-ops/audit-image.js';
 import { createTryFeishuMarketingCopyRound } from './domains/agent-message/marketing-copy.js';
 import { createCheckAgentQualityApi } from './domains/agent-message/check-agent-quality.js';
+import { createAgentQualityAutonomyApi } from './domains/agent-message/agent-quality-autonomy.js';
 import { parseFeishuMarketingCopyTemplate } from './domains/agent-message/marketing-copy-helpers.js';
 import { createGetOpsKnowledgeSupport } from './domains/agent-ops/knowledge-support.js';
 import { createSendScheduledChecklist } from './domains/agent-ops/send-scheduled-checklist.js';
@@ -190,16 +190,6 @@ function formatDate(d) {
 const _biConversationCtx = new Map();
 const BI_CONV_CTX_TTL = 10 * 60 * 1000;
 const BI_CONV_CTX_MAX = 4;
-
-const _agentQualityMetrics = {
-  audits: 0,
-  rewrites: 0,
-  failedAudits: 0,
-  numericViolations: 0,
-  factualBlocks: 0,
-  autonomousTasks: 0,
-  lastUpdatedAt: ''
-};
 
 const AGENT_EVAL_CASES = [
   { text: '近7天门店营业额达成率怎么样', route: 'data_auditor', demand: 'hard' },
@@ -1093,195 +1083,25 @@ function getContext(userId) {
   return _conversationContext.get(contextKey) || [];
 }
 
+// 质量审计 / 长期记忆 / 自治任务 → domains/agent-message/agent-quality-autonomy*.js
+let _agentQualityAutonomyApi;
 function markQualityMetric(field, delta = 1) {
-  if (!Object.prototype.hasOwnProperty.call(_agentQualityMetrics, field)) return;
-  _agentQualityMetrics[field] = Number(_agentQualityMetrics[field] || 0) + Number(delta || 0);
-  _agentQualityMetrics.lastUpdatedAt = new Date().toISOString();
+  return _agentQualityAutonomyApi.markQualityMetric(field, delta);
 }
-
 async function getAgentLongMemory(userKey, memoryKey) {
-  const u = String(userKey || '').trim().toLowerCase();
-  const k = String(memoryKey || '').trim();
-  if (!u || !k) return null;
-  try {
-    const r = await pool().query(
-      `SELECT memory_value FROM agent_long_memory WHERE user_key = $1 AND memory_key = $2 LIMIT 1`,
-      [u, k]
-    );
-    const row = r.rows?.[0];
-    return row?.memory_value && typeof row.memory_value === 'object' ? row.memory_value : null;
-  } catch (e) {
-    return null;
-  }
+  return _agentQualityAutonomyApi.getAgentLongMemory(userKey, memoryKey);
 }
-
 async function setAgentLongMemory(userKey, memoryKey, value) {
-  const u = String(userKey || '').trim().toLowerCase();
-  const k = String(memoryKey || '').trim();
-  if (!u || !k) return;
-  const payload = value && typeof value === 'object' ? value : { value: String(value || '') };
-  try {
-    await pool().query(
-      `INSERT INTO agent_long_memory (user_key, memory_key, memory_value, created_at, updated_at, tenant_id)
-       VALUES ($1, $2, $3::jsonb, NOW(), NOW(), $4)
-       ON CONFLICT (user_key, memory_key, tenant_id)
-       DO UPDATE SET memory_value = EXCLUDED.memory_value, updated_at = NOW()`,
-      [u, k, JSON.stringify(payload), resolveTenantIdDefault()]
-    );
-  } catch (e) {
-    log.error('[agents] setAgentLongMemory failed:', e?.message || e);
-  }
+  return _agentQualityAutonomyApi.setAgentLongMemory(userKey, memoryKey, value);
 }
-
-async function recordAgentQualityAudit({ route, username, queryText, responseText, auditResult, passed, rewriteCount = 0 }) {
-  const auditId = randomUUID();
-  let traceId = null;
-  try {
-    traceId = await recordAiInteraction(pool(), {
-      source: 'agent_quality_audit',
-      sourceRecordId: auditId,
-      route,
-      purpose: 'user_response',
-      actorId: username,
-      input: queryText,
-      output: responseText,
-      qualityMetrics: { ...(auditResult || {}), passed: passed === true, rewrite_count: rewriteCount },
-    });
-  } catch (e) {
-    log.error('[agents] record AI interaction trace failed:', e?.message || e);
-  }
-  try {
-    await pool().query(
-      `INSERT INTO agent_quality_audits (id, route, username, query_text, response_text, audit_result, passed, rewrite_count, tenant_id, trace_id)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)`,
-      [
-        auditId,
-        String(route || '').trim(),
-        String(username || '').trim(),
-        String(queryText || '').slice(0, 1000),
-        String(responseText || '').slice(0, 4000),
-        JSON.stringify(auditResult || {}),
-        passed === true,
-        Math.max(0, Number(rewriteCount) || 0),
-        resolveTenantIdDefault(),
-        traceId,
-      ]
-    );
-  } catch (e) {
-    log.error('[agents] recordAgentQualityAudit failed:', e?.message || e);
-    try {
-      await pool().query(
-        `INSERT INTO agent_quality_audits (id, route, username, query_text, response_text, audit_result, passed, rewrite_count, tenant_id)
-         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)`,
-        [auditId, String(route || '').trim(), String(username || '').trim(), String(queryText || '').slice(0, 1000),
-          String(responseText || '').slice(0, 4000), JSON.stringify(auditResult || {}), passed === true,
-          Math.max(0, Number(rewriteCount) || 0), resolveTenantIdDefault()]
-      );
-    } catch (fallbackError) {
-      log.error('[agents] recordAgentQualityAudit legacy fallback failed:', fallbackError?.message || fallbackError);
-    }
-  }
-  if (traceId) {
-    try {
-      await recordAiFeedback(pool(), {
-        traceId,
-        actorId: 'quality_gate',
-        feedbackType: 'quality_audit',
-        rating: passed === true ? 1 : -1,
-        input: queryText,
-        output: responseText,
-        idempotencyKey: `quality-audit:${auditId}`,
-      });
-    } catch (e) {
-      log.error('[agents] record AI quality feedback failed:', e?.message || e);
-    }
-  }
+async function recordAgentQualityAudit(args) {
+  return _agentQualityAutonomyApi.recordAgentQualityAudit(args);
 }
-
-function buildAutonomousTaskFingerprint({ taskType, store, route, queryText }) {
-  const raw = `${String(taskType || '').trim()}|${normalizeStoreKey(store)}|${String(route || '').trim()}|${normalizePlainText(queryText || '', 300)}`;
-  return crypto.createHash('sha1').update(raw).digest('hex');
+async function createOrUpdateAutonomousDataTask(args) {
+  return _agentQualityAutonomyApi.createOrUpdateAutonomousDataTask(args);
 }
-
-async function createOrUpdateAutonomousDataTask({
-  taskType,
-  store,
-  brand,
-  requesterUsername,
-  route,
-  queryText,
-  reason,
-  evidence,
-  ownerUsername,
-  dueHours = 8
-}) {
-  const fingerprint = buildAutonomousTaskFingerprint({ taskType, store, route, queryText });
-  try {
-    const r = await pool().query(
-      `INSERT INTO agent_autonomous_tasks (
-         fingerprint, task_type, status, store, brand, requester_username, route,
-         query_text, reason, evidence, action_plan, owner_username, notify_count, due_at, created_at, updated_at, tenant_id
-       )
-       VALUES (
-         $1, $2, 'open', $3, $4, $5, $6,
-         $7, $8, $9::jsonb, $10::jsonb, $11, 0, NOW() + make_interval(hours => $12), NOW(), NOW(), $13
-       )
-       ON CONFLICT (fingerprint, tenant_id)
-       DO UPDATE SET
-         reason = EXCLUDED.reason,
-         evidence = EXCLUDED.evidence,
-         owner_username = COALESCE(agent_autonomous_tasks.owner_username, EXCLUDED.owner_username),
-         updated_at = NOW()
-       RETURNING *`,
-      [
-        fingerprint,
-        String(taskType || 'data_gap').trim() || 'data_gap',
-        String(store || '').trim(),
-        String(brand || '').trim(),
-        String(requesterUsername || '').trim(),
-        String(route || '').trim(),
-        String(queryText || '').slice(0, 2000),
-        String(reason || '').slice(0, 500),
-        JSON.stringify(evidence || {}),
-        JSON.stringify({ suggestedAction: '同步/补齐数据源后自动回访用户', createdBy: 'agent_autonomy' }),
-        String(ownerUsername || '').trim(),
-        Math.max(1, Math.min(72, Number(dueHours) || 8)),
-        resolveTenantIdDefault()
-      ]
-    );
-    markQualityMetric('autonomousTasks', 1);
-    return r.rows?.[0] || null;
-  } catch (e) {
-    log.error('[agents] createOrUpdateAutonomousDataTask failed:', e?.message || e);
-    return null;
-  }
-}
-
 async function notifyAutonomousDataTaskOwner(task) {
-  const t = task && typeof task === 'object' ? task : null;
-  if (!t) return;
-  const owner = String(t.owner_username || '').trim();
-  if (!owner) return;
-  try {
-    const fu = await lookupFeishuUserByUsername(owner);
-    if (!fu?.open_id) return;
-    const msg = [
-      `📌 自治任务提醒 [${t.task_type}]`,
-      `门店：${t.store || '-'}`,
-      `原因：${t.reason || '数据不足'}`,
-      `用户问题：${String(t.query_text || '').slice(0, 120)}`,
-      `请补齐数据源后在系统内关闭任务。`
-    ].join('\n');
-    await sendLarkMessage(fu.open_id, prefixWithAgentName('master', msg));
-    await pool().query(
-      `UPDATE agent_autonomous_tasks
-       SET notify_count = COALESCE(notify_count, 0) + 1, updated_at = NOW()
-       WHERE id = $1`,
-      [t.id]
-    );
-  } catch (e) {
-    log.error('[agents] notifyAutonomousDataTaskOwner failed:', e?.message || e);
-  }
+  return _agentQualityAutonomyApi.notifyAutonomousDataTaskOwner(task);
 }
 
 // sleep / isRetryableLLMError → domains/ai/llm-provider-helpers.js
@@ -2932,7 +2752,7 @@ export function getAgentPerformanceMetrics() {
       (_performanceMetrics.cacheHits / _performanceMetrics.totalCalls * 100).toFixed(2) + '%' : '0%',
     contextSize: _conversationContext.size,
     cacheSize: _responseCache.size,
-    quality: { ..._agentQualityMetrics },
+    quality: _agentQualityAutonomyApi ? _agentQualityAutonomyApi.getAgentQualityMetrics() : {},
     providerHealth: getProviderHealthStatus(),
     uptime: process.uptime()
   };
@@ -3322,6 +3142,19 @@ handleDataAuditorCase = createHandleDataAuditorCase({
   buildBiDeterministicOpsReportCountReply,
   buildBiDeterministicLossReportReply,
   getFeatureFlags: () => AGENT_FEATURE_FLAGS,
+});
+
+_agentQualityAutonomyApi = createAgentQualityAutonomyApi({
+  pool,
+  resolveTenantIdDefault,
+  normalizeStoreKey,
+  normalizePlainText,
+  recordAiInteraction,
+  recordAiFeedback,
+  lookupFeishuUserByUsername,
+  sendLarkMessage,
+  prefixWithAgentName,
+  log,
 });
 
 _routeMessage = createRouteMessage({
