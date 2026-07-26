@@ -58,6 +58,7 @@ import { createHandleOpsChecklistCardAction } from './domains/agent-ops/handle-c
 import { createOpsChecklistCardsApi } from './domains/agent-ops/checklist-cards.js';
 import { createAuditImage } from './domains/agent-ops/audit-image.js';
 import { createTryFeishuMarketingCopyRound } from './domains/agent-message/marketing-copy.js';
+import { createCheckAgentQualityApi } from './domains/agent-message/check-agent-quality.js';
 import { parseFeishuMarketingCopyTemplate } from './domains/agent-message/marketing-copy-helpers.js';
 import { createGetOpsKnowledgeSupport } from './domains/agent-ops/knowledge-support.js';
 import { createSendScheduledChecklist } from './domains/agent-ops/send-scheduled-checklist.js';
@@ -3112,233 +3113,14 @@ let handleDataAuditorCase;
 
 // ─────────────────────────────────────────────
 // 11. Check Agent - Self-Reflection Quality Gate
+// → domains/agent-message/check-agent-quality*.js
 // ─────────────────────────────────────────────
-
-function fallbackQualityAudit(userQuery, agentResponse) {
-  const q = normalizePlainText(userQuery || '', 300);
-  const a = normalizePlainText(agentResponse || '', 1200);
-  let accuracy = 6;
-  let relevance = 6;
-  let tone = 7;
-
-  if (!a) {
-    return {
-      accuracy: 2,
-      relevance: 2,
-      tone: 5,
-      total: 3,
-      pass: false,
-      feedback: '回答为空，请直接回答用户问题并给出可执行下一步。'
-    };
-  }
-
-  if (a.length < 20) relevance -= 2;
-  if (/抱歉|稍后|无法|不清楚/.test(a) && /(多少|排名|趋势|分析|绩效|SOP)/.test(q)) relevance -= 2;
-  if (/不知道|随便|你看着办/.test(a)) tone -= 3;
-  if (/\d/.test(q) && !/\d/.test(a) && detectFactDemand(q) === 'hard') accuracy -= 2;
-
-  const total = Number(((accuracy + relevance + tone) / 3).toFixed(1));
-  return {
-    accuracy,
-    relevance,
-    tone,
-    total,
-    pass: total >= 7,
-    feedback: total >= 7 ? '' : '请更贴合问题、补充关键事实或明确说明缺失数据来源。'
-  };
-}
-
-async function checkAgentAudit(userQuery, agentResponse, route, options = {}) {
-  const evidenceText = String(options?.evidenceText || '').trim();
-  const role = String(options?.role || '').trim();
-  const auditPrompt = `你是HRMS系统的质检Agent（Check Agent）。你的任务是审核子Agent的回答质量。
-
-【用户问题】
-${userQuery}
-
-【子Agent（${route}）的回答】
-${agentResponse}
-
-请从以下3个维度评分（每项1-10分），并给出综合判断：
-1. **准确性**：回答是否基于事实，有无幻觉或编造内容？
-2. **相关性**：回答是否真正解决了用户的问题？
-3. **语气**：语气是否专业、得当、不冷漠也不过度？
-
-请严格输出JSON格式：
-{
-  "accuracy": 分数,
-  "relevance": 分数,
-  "tone": 分数,
-  "total": 综合分数(三项平均),
-  "pass": true或false（total>=7为pass）,
-  "feedback": "如果不通过，给出具体的修改建议，指出哪里有问题以及如何改进"
-}
-
-补充要求：
-- 如果回答中出现数字/比例/排名，请检查是否与可用事实一致
-- 若“可用事实”为空，不得鼓励编造，请要求明确说明数据缺失
-
-【可用事实】
-${evidenceText || '暂无'}
-
-仅返回JSON。`;
-
-  try {
-    const llm = await callLLM([
-      { role: 'system', content: auditPrompt }
-    ], { temperature: 0.05, max_tokens: 420, role, purpose: 'analysis', skipCache: true });
-
-    const parsed = safeJsonParse(llm.content || '', null);
-    if (parsed && typeof parsed === 'object') {
-      const total = Number(parsed.total);
-      return {
-        accuracy: Number(parsed.accuracy) || 0,
-        relevance: Number(parsed.relevance) || 0,
-        tone: Number(parsed.tone) || 0,
-        total: Number.isFinite(total) ? total : Number((((Number(parsed.accuracy) || 0) + (Number(parsed.relevance) || 0) + (Number(parsed.tone) || 0)) / 3).toFixed(1)),
-        pass: parsed.pass !== false,
-        feedback: String(parsed.feedback || '').trim()
-      };
-    }
-    return fallbackQualityAudit(userQuery, agentResponse);
-  } catch (e) {
-    log.error('[check_agent] audit error:', e?.message);
-    return fallbackQualityAudit(userQuery, agentResponse);
-  }
-}
-
-async function rewriteResponseByAudit({ userQuery, response, route, feedback, evidenceText, role }) {
-  const llm = await callLLM([
-    {
-      role: 'system',
-      content: `你是HRMS回复重写器。请在不编造事实的前提下重写回答。
-要求：
-1) 优先回应用户核心问题
-2) 仅使用可用事实，不得新增数据
-3) 不超过280字，语言专业直接
-4) 若事实不足，明确写“当前系统无此数据”，并给下一步建议
-可用事实：${evidenceText || '暂无'}
-质检反馈：${feedback || '无'}`
-    },
-    { role: 'user', content: `用户问题：${String(userQuery || '')}\n原回答：${String(response || '')}` }
-  ], {
-    temperature: 0.05,
-    max_tokens: 420,
-    role,
-    purpose: 'reasoning',
-    skipCache: true
-  });
-  return normalizePlainText(llm?.content || response || '', 1500) || String(response || '');
-}
-
+let _checkAgentQualityApi;
 async function runWithCheckAgent(userQuery, route, generateFn, maxRetries = 2) {
-  let response = await generateFn(null);
-  
-  // 仅对关键Agent启用Check Agent（避免增加general/ops的延迟）
-  const checkEnabledRoutes = ['chief_evaluator', 'data_auditor', 'appeal', 'train_advisor'];
-  if (!checkEnabledRoutes.includes(route)) return response;
-
-  let lastAudit = null;
-  let rewriteCount = 0;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const audit = await checkAgentAudit(userQuery, response, route);
-    lastAudit = audit;
-    log.info(`[check_agent] route=${route} attempt=${attempt + 1} pass=${audit.pass} total=${audit.total}`);
-    markQualityMetric('audits', 1);
-    
-    if (audit.pass !== false) break; // 通过则直接返回
-    markQualityMetric('failedAudits', 1);
-
-    // 不通过：带着 Check Agent 的反馈让子 Agent 重写
-    log.info(`[check_agent] rewriting: ${audit.feedback}`);
-    response = await generateFn(audit.feedback);
-    rewriteCount += 1;
-    markQualityMetric('rewrites', 1);
-  }
-
-  try {
-    await recordAgentQualityAudit({
-      route,
-      username: '',
-      queryText: userQuery,
-      responseText: response,
-      auditResult: lastAudit || {},
-      passed: lastAudit?.pass !== false,
-      rewriteCount
-    });
-  } catch (e) { /* ignore */ }
-
-  return response;
+  return _checkAgentQualityApi.runWithCheckAgent(userQuery, route, generateFn, maxRetries);
 }
-
-async function enforceUnifiedQualityGate({
-  userQuery,
-  route,
-  response,
-  agentData,
-  senderUsername,
-  senderRole,
-  store,
-  brand
-}) {
-  const checkEnabledRoutes = ['chief_evaluator', 'data_auditor', 'ops_supervisor', 'appeal', 'train_advisor'];
-  if (!checkEnabledRoutes.includes(route)) return { response, agentData };
-  if (agentData?.deterministic === true) {
-    return { response, agentData: { ...(agentData || {}), qualityAudit: { pass: true, total: 0, rewriteCount: 0, skipped: 'deterministic' } } };
-  }
-
-  let nextResponse = String(response || '');
-  const nextAgentData = { ...(agentData || {}) };
-  const evidence = buildEvidencePackage(nextAgentData, { route, store, brand });
-  const evidenceText = JSON.stringify(evidence);
-
-  let audit = await checkAgentAudit(userQuery, nextResponse, route, { evidenceText, role: senderRole });
-  let rewriteCount = 0;
-  markQualityMetric('audits', 1);
-
-  if (audit.pass === false) {
-    markQualityMetric('failedAudits', 1);
-    nextResponse = await rewriteResponseByAudit({
-      userQuery,
-      response: nextResponse,
-      route,
-      feedback: audit.feedback,
-      evidenceText,
-      role: senderRole
-    });
-    rewriteCount += 1;
-    markQualityMetric('rewrites', 1);
-    audit = await checkAgentAudit(userQuery, nextResponse, route, { evidenceText, role: senderRole });
-    markQualityMetric('audits', 1);
-  }
-
-  if (route === 'data_auditor' && detectFactDemand(userQuery) === 'hard') {
-    const numericCheck = verifyNumericGrounding(nextResponse, evidenceText + '\n' + String(nextAgentData?.groundingFacts || ''));
-    if (!numericCheck.ok) {
-      markQualityMetric('numericViolations', 1);
-      nextResponse = `当前问题需要精确数字支撑，我暂时无法在现有证据中完成可靠计算。建议先补齐数据后重试。`;
-      nextAgentData.numericGroundingBlocked = true;
-      nextAgentData.numericMissing = numericCheck.missing;
-      audit = { ...(audit || {}), pass: false, feedback: 'numeric_grounding_failed' };
-    }
-  }
-
-  await recordAgentQualityAudit({
-    route,
-    username: senderUsername,
-    queryText: userQuery,
-    responseText: nextResponse,
-    auditResult: { ...(audit || {}), evidence },
-    passed: audit?.pass !== false,
-    rewriteCount
-  });
-
-  nextAgentData.qualityAudit = {
-    pass: audit?.pass !== false,
-    total: Number(audit?.total || 0),
-    rewriteCount
-  };
-  return { response: nextResponse, agentData: nextAgentData };
+async function enforceUnifiedQualityGate(args) {
+  return _checkAgentQualityApi.enforceUnifiedQualityGate(args);
 }
 
 /** Bitable 管道类告警去重：同一 key 在 minIntervalMs 内只发一次（避免 keepalive 死循环刷屏） */
@@ -4202,6 +3984,13 @@ _routeMessage = createRouteMessage({
   logExecutorEvent,
   getFeatureFlags: () => AGENT_FEATURE_FLAGS,
   getAgentLongMemory,
+});
+
+_checkAgentQualityApi = createCheckAgentQualityApi({
+  callLLM,
+  log,
+  markQualityMetric,
+  recordAgentQualityAudit,
 });
 
 _handleAgentMessage = createHandleAgentMessage({
