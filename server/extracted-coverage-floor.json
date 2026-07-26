@@ -59,6 +59,8 @@
     "domains/agent-ops/build-scheduled-tasks-from-config.js",
     "domains/agent-ops/execute-scheduled-task.js",
     "domains/agent-ops/handle-checklist-card-action.js",
+    "domains/agent-ops/checklist-cards.js",
+    "domains/agent-ops/checklist-cards-helpers.js",
     "domains/agent-ops/routes.js",
     "domains/agent-ops/send-safety-check.js",
     "domains/agent-ops/send-scheduled-checklist.js",
