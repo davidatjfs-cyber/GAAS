@@ -38,9 +38,12 @@ test('normalizeRoleModules 自动补 training', () => {
 
 test('影子 API 已拆除：agent-config-manager 不再注册 role-modules', () => {
   const src = readFileSync(join(__dirname, '../../../agent-config-manager.js'), 'utf8');
+  const rulesSrc = readFileSync(join(__dirname, '../../agent-config/routes-rules.js'), 'utf8');
   assert.equal(src.includes("app.get('/api/role-modules'"), false);
   assert.equal(src.includes("app.put('/api/admin/role-modules'"), false);
-  assert.ok(src.includes('domains/flow-config'));
+  assert.equal(rulesSrc.includes("app.get('/api/role-modules'"), false);
+  assert.equal(rulesSrc.includes("app.put('/api/admin/role-modules'"), false);
+  assert.ok(rulesSrc.includes('domains/flow-config'));
 });
 
 test('hydrateFlowConfigFromTable：表有数据时覆盖', async () => {
