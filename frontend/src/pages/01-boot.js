@@ -26,7 +26,7 @@
                 };
             }
         } catch (e) {}
-        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function') { if (el.hasAttribute('data-arg')) { var raw = el.getAttribute('data-arg'); var arg = raw === 'true' ? true : raw === 'false' ? false : el.getAttribute('data-arg-type') === 'number' ? Number(raw) : raw; window[fn](arg); } else { window[fn](); } } } }); // P5.1：data-click(+data-arg[+data-arg-type=number]) 委托，替代逐个迁移的 inline onclick；默认原样传字符串（避免数字型用户名被误转成 Number），仅原先未加引号内联传数字的场景显式标 data-arg-type=number
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function' && !(el.hasAttribute('data-click-self-only') && e.target !== el)) { var args = []; if (el.hasAttribute('data-arg')) { var raw = el.getAttribute('data-arg'); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute('data-arg-type') === 'number' ? Number(raw) : raw); } if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); } } }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; // P5.1：data-click(+data-arg[+data-arg-type=number][+data-arg-self 传this][+data-click-self-only 仅目标===自身时触发]) 委托，替代逐个迁移的 inline onclick；hrmsTriggerClick(id) 替代 document.getElementById(id).click() 内联写法
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -2520,7 +2520,7 @@
             itemDiv.innerHTML = `
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                     <span class="pts-ret-seq" style="font-size:12px;font-weight:700;color:#a5b4fc;">第 ${count + 1} 条</span>
-                    ${count > 0 ? `<button type="button" onclick="removePointsReturnedResubmitRow(this)" style="background:none;border:none;color:rgba(239,68,68,0.85);font-size:16px;cursor:pointer;padding:0 4px;line-height:1;" title="删除此条">✕</button>` : ''}
+                    ${count > 0 ? `<button type="button" data-click="removePointsReturnedResubmitRow" data-arg-self="1" style="background:none;border:none;color:rgba(239,68,68,0.85);font-size:16px;cursor:pointer;padding:0 4px;line-height:1;" title="删除此条">✕</button>` : ''}
                 </div>
                 <div style="margin-bottom:8px;">
                     <label style="display:block;font-size:11px;font-weight:600;color:rgba(200,215,230,0.72);margin-bottom:6px;">申请事项</label>
@@ -2626,7 +2626,7 @@
             itemDiv.innerHTML = `
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                     <span style="font-size:12px;font-weight:700;color:rgba(201,169,106,0.85);">第 ${count+1} 条</span>
-                    ${count>0?`<button type="button" onclick="removePointsApplyItem(this)" style="background:none;border:none;color:rgba(239,68,68,0.75);font-size:18px;cursor:pointer;padding:0 4px;line-height:1;" title="删除此条">✕</button>`:''}
+                    ${count>0?`<button type="button" data-click="removePointsApplyItem" data-arg-self="1" style="background:none;border:none;color:rgba(239,68,68,0.75);font-size:18px;cursor:pointer;padding:0 4px;line-height:1;" title="删除此条">✕</button>`:''}
                 </div>
                 <div style="margin-bottom:10px;">
                     <label style="display:block;font-size:12px;font-weight:600;color:rgba(200,215,230,0.7);margin-bottom:8px;">申请事项</label>

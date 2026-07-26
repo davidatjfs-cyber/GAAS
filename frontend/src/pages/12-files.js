@@ -339,7 +339,7 @@
                              ondragover="event.preventDefault();this.classList.add('dragover')"
                              ondragleave="this.classList.remove('dragover')"
                              ondrop="ufHandleDrop(event)"
-                             onclick="document.getElementById('upload-file-input').click()">
+                             data-click="hrmsTriggerClick" data-arg="upload-file-input">
                             <div class="uf-drop-icon">📂</div>
                             <div class="uf-drop-text">拖放文件到此处，或点击选择</div>
                             <div class="uf-drop-hint">支持 Excel / CSV / PDF / ZIP / 图片，最大 50MB</div>
@@ -358,12 +358,12 @@
                         <div class="uf-field">
                             <label class="uf-label">文件类型 <span style="color:#f43f5e;">*</span></label>
                             <div class="uf-type-grid" id="uf-type-grid">
-                                <button class="uf-type-btn active" data-val="pos_sales" onclick="ufSelectType(this)">📊<br><span>POS销售</span></button>
-                                <button class="uf-type-btn" data-val="feishu_export" onclick="ufSelectType(this)">🪶<br><span>飞书导出</span></button>
-                                <button class="uf-type-btn" data-val="daily_report" onclick="ufSelectType(this)">📋<br><span>营业日报</span></button>
-                                <button class="uf-type-btn" data-val="inventory" onclick="ufSelectType(this)">📦<br><span>库存数据</span></button>
-                                <button class="uf-type-btn" data-val="hr_doc" onclick="ufSelectType(this)">👥<br><span>HR文档</span></button>
-                                <button class="uf-type-btn" data-val="other" onclick="ufSelectType(this)">📄<br><span>其他</span></button>
+                                <button class="uf-type-btn active" data-val="pos_sales" data-click="ufSelectType" data-arg-self="1">📊<br><span>POS销售</span></button>
+                                <button class="uf-type-btn" data-val="feishu_export" data-click="ufSelectType" data-arg-self="1">🪶<br><span>飞书导出</span></button>
+                                <button class="uf-type-btn" data-val="daily_report" data-click="ufSelectType" data-arg-self="1">📋<br><span>营业日报</span></button>
+                                <button class="uf-type-btn" data-val="inventory" data-click="ufSelectType" data-arg-self="1">📦<br><span>库存数据</span></button>
+                                <button class="uf-type-btn" data-val="hr_doc" data-click="ufSelectType" data-arg-self="1">👥<br><span>HR文档</span></button>
+                                <button class="uf-type-btn" data-val="other" data-click="ufSelectType" data-arg-self="1">📄<br><span>其他</span></button>
                             </div>
                             <input type="hidden" id="upload-file-type" value="pos_sales">
                         </div>

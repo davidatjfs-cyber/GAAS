@@ -745,12 +745,12 @@
 
                     const isAdmin = isAdminUser();
                     const editBtnHtml = isAdmin
-                        ? `<button onclick="editKnowledgeExplanation('${escapeHtml(itemId)}', this)" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>`
+                        ? `<button data-click="editKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>`
                         : '';
                     const regenBtnHtml = isAdmin && data.cached
-                        ? `<button onclick="regenKnowledgeExplanation('${escapeHtml(itemId)}', this)" style="padding:4px 12px;border-radius:8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);color:#fde68a;font-size:11px;cursor:pointer;">🔄 重新生成</button>`
+                        ? `<button data-click="regenKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);color:#fde68a;font-size:11px;cursor:pointer;">🔄 重新生成</button>`
                         : '';
-                    const copyBtnHtml = `<button onclick="copyKnowledgeExplanation(this)" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">📋 复制</button>`;
+                    const copyBtnHtml = `<button data-click="copyKnowledgeExplanation" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">📋 复制</button>`;
 
                     container.innerHTML = `
                         <div class="kb-ai-card">
@@ -785,7 +785,7 @@
                             <div style="font-size:36px;margin-bottom:12px;">${isMedia ? '🖼️' : '📄'}</div>
                             <div style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.6);margin-bottom:6px;">${isMedia ? '图片/视频文件' : '暂无可解析内容'}</div>
                             <div style="font-size:12px;color:rgba(255,255,255,0.35);line-height:1.7;margin-bottom:${canGenRubric ? '16px' : '0'};">${isMedia ? 'AI 可分析此文件并生成实操评分标准（步骤图谱）' : '文件正在处理中，通常需要 1-2 分钟<br>视频请确保管理员已填写内容摘要'}</div>
-                            ${canGenRubric ? `<button onclick="analyzeKnowledgeRubric('${escapeHtml(itemId)}', this)" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:12px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:0.02em;">🎯 生成步骤图谱</button>` : ''}
+                            ${canGenRubric ? `<button data-click="analyzeKnowledgeRubric" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:12px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:0.02em;">🎯 生成步骤图谱</button>` : ''}
                             ${opts.showFileBtn && opts.fileSrc ? `<a href="${escapeHtml(opts.fileSrc)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:16px;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);font-size:12px;text-decoration:none;">📎 查看原文件</a>` : ''}
                         </div>`;
                 } else {
@@ -1005,8 +1005,8 @@
             const actions = card?.querySelector('.kb-ai-card-actions');
             if (actions) {
                 actions.innerHTML = `
-                    <button onclick="saveKnowledgeExplanation('${escapeHtml(itemId)}', this)" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
-                    <button onclick="cancelEditKnowledgeExplanation(this)" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
+                    <button data-click="saveKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
+                    <button data-click="cancelEditKnowledgeExplanation" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
                 `;
             }
         }
@@ -1115,7 +1115,7 @@
                     <details class="kb-ai-card kb-content-card">
                         <summary style="cursor:pointer;font-weight:700;color:#EEF1FA;font-size:13px;">📄 教材原文（${content.length}字，可编辑）</summary>
                         <div class="kb-ai-card-actions" style="margin-top:12px;">
-                            <button onclick="editKnowledgeContent('${escapeHtml(itemId)}', this)" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>
+                            <button data-click="editKnowledgeContent" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>
                         </div>
                         <div class="kb-ai-content" style="margin-top:12px;font-size:12px;white-space:pre-wrap;max-height:400px;overflow-y:auto;">${esc(content)}</div>
                     </details>`;
@@ -1148,8 +1148,8 @@
             const actions = card.querySelector('.kb-ai-card-actions');
             if (actions) {
                 actions.innerHTML = `
-                    <button onclick="saveKnowledgeContent('${escapeHtml(itemId)}', this)" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
-                    <button onclick="cancelEditKnowledgeContent(this)" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
+                    <button data-click="saveKnowledgeContent" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
+                    <button data-click="cancelEditKnowledgeContent" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
                 `;
             }
         }

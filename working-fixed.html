@@ -15900,22 +15900,22 @@
                         <div class="atb-stat"><b id="atb-stat-evidence">-</b><span>证据覆盖</span></div>
                     </div>
                     <div class="atb-toolbar" id="atb-filters">
-                        <button class="atb-chip active" data-filter="" onclick="setAgentTaskFilter('', this)">全部</button>
-                        <button class="atb-chip" data-filter="pending_audit,auditing" onclick="setAgentTaskFilter('pending_audit,auditing', this)">待解析</button>
-                        <button class="atb-chip" data-filter="pending_dispatch" onclick="setAgentTaskFilter('pending_dispatch', this)">已领取</button>
-                        <button class="atb-chip" data-filter="dispatched,viewed" onclick="setAgentTaskFilter('dispatched,viewed', this)">已分配</button>
-                        <button class="atb-chip" data-filter="in_progress,waiting_evidence" onclick="setAgentTaskFilter('in_progress,waiting_evidence', this)">已执行</button>
-                        <button class="atb-chip" data-filter="pending_response" onclick="setAgentTaskFilter('pending_response', this)">已完成</button>
-                        <button class="atb-chip" data-filter="pending_review" onclick="setAgentTaskFilter('pending_review', this)">待验收</button>
-                        <button class="atb-chip" data-filter="rejected" onclick="setAgentTaskFilter('rejected', this)">已打回</button>
-                        <button class="atb-chip" data-filter="escalated" onclick="setAgentTaskFilter('escalated', this)">已升级</button>
-                        <button class="atb-chip" data-filter="hr_filed" onclick="setAgentTaskFilter('hr_filed', this)">已备案</button>
-                        <button class="atb-chip" data-filter="resolved,pending_settlement,settled,closed" onclick="setAgentTaskFilter('resolved,pending_settlement,settled,closed', this)">已结案</button>
-                        <button class="atb-chip" onclick="loadAgentTaskBoard(true)">刷新</button>
+                        <button class="atb-chip active" data-filter="" data-click="setAgentTaskFilter" data-arg="" data-arg-self="1">全部</button>
+                        <button class="atb-chip" data-filter="pending_audit,auditing" data-click="setAgentTaskFilter" data-arg="pending_audit,auditing" data-arg-self="1">待解析</button>
+                        <button class="atb-chip" data-filter="pending_dispatch" data-click="setAgentTaskFilter" data-arg="pending_dispatch" data-arg-self="1">已领取</button>
+                        <button class="atb-chip" data-filter="dispatched,viewed" data-click="setAgentTaskFilter" data-arg="dispatched,viewed" data-arg-self="1">已分配</button>
+                        <button class="atb-chip" data-filter="in_progress,waiting_evidence" data-click="setAgentTaskFilter" data-arg="in_progress,waiting_evidence" data-arg-self="1">已执行</button>
+                        <button class="atb-chip" data-filter="pending_response" data-click="setAgentTaskFilter" data-arg="pending_response" data-arg-self="1">已完成</button>
+                        <button class="atb-chip" data-filter="pending_review" data-click="setAgentTaskFilter" data-arg="pending_review" data-arg-self="1">待验收</button>
+                        <button class="atb-chip" data-filter="rejected" data-click="setAgentTaskFilter" data-arg="rejected" data-arg-self="1">已打回</button>
+                        <button class="atb-chip" data-filter="escalated" data-click="setAgentTaskFilter" data-arg="escalated" data-arg-self="1">已升级</button>
+                        <button class="atb-chip" data-filter="hr_filed" data-click="setAgentTaskFilter" data-arg="hr_filed" data-arg-self="1">已备案</button>
+                        <button class="atb-chip" data-filter="resolved,pending_settlement,settled,closed" data-click="setAgentTaskFilter" data-arg="resolved,pending_settlement,settled,closed" data-arg-self="1">已结案</button>
+                        <button class="atb-chip" data-click="loadAgentTaskBoard" data-arg="true">刷新</button>
                     </div>
                     <div class="atb-grid" id="atb-list"></div>
                 </div>
-                <div class="atb-detail" id="atb-detail" onclick="if(event.target===this)closeAgentTaskDetail()">
+                <div class="atb-detail" id="atb-detail" data-click="closeAgentTaskDetail" data-click-self-only="1">
                     <div class="atb-panel" id="atb-panel"></div>
                 </div>
             </div>
@@ -24419,7 +24419,7 @@
                 };
             }
         } catch (e) {}
-        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function') { if (el.hasAttribute('data-arg')) { var raw = el.getAttribute('data-arg'); var arg = raw === 'true' ? true : raw === 'false' ? false : el.getAttribute('data-arg-type') === 'number' ? Number(raw) : raw; window[fn](arg); } else { window[fn](); } } } }); // P5.1：data-click(+data-arg[+data-arg-type=number]) 委托，替代逐个迁移的 inline onclick；默认原样传字符串（避免数字型用户名被误转成 Number），仅原先未加引号内联传数字的场景显式标 data-arg-type=number
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function' && !(el.hasAttribute('data-click-self-only') && e.target !== el)) { var args = []; if (el.hasAttribute('data-arg')) { var raw = el.getAttribute('data-arg'); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute('data-arg-type') === 'number' ? Number(raw) : raw); } if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); } } }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; // P5.1：data-click(+data-arg[+data-arg-type=number][+data-arg-self 传this][+data-click-self-only 仅目标===自身时触发]) 委托，替代逐个迁移的 inline onclick；hrmsTriggerClick(id) 替代 document.getElementById(id).click() 内联写法
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -26913,7 +26913,7 @@
             itemDiv.innerHTML = `
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                     <span class="pts-ret-seq" style="font-size:12px;font-weight:700;color:#a5b4fc;">第 ${count + 1} 条</span>
-                    ${count > 0 ? `<button type="button" onclick="removePointsReturnedResubmitRow(this)" style="background:none;border:none;color:rgba(239,68,68,0.85);font-size:16px;cursor:pointer;padding:0 4px;line-height:1;" title="删除此条">✕</button>` : ''}
+                    ${count > 0 ? `<button type="button" data-click="removePointsReturnedResubmitRow" data-arg-self="1" style="background:none;border:none;color:rgba(239,68,68,0.85);font-size:16px;cursor:pointer;padding:0 4px;line-height:1;" title="删除此条">✕</button>` : ''}
                 </div>
                 <div style="margin-bottom:8px;">
                     <label style="display:block;font-size:11px;font-weight:600;color:rgba(200,215,230,0.72);margin-bottom:6px;">申请事项</label>
@@ -27019,7 +27019,7 @@
             itemDiv.innerHTML = `
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                     <span style="font-size:12px;font-weight:700;color:rgba(201,169,106,0.85);">第 ${count+1} 条</span>
-                    ${count>0?`<button type="button" onclick="removePointsApplyItem(this)" style="background:none;border:none;color:rgba(239,68,68,0.75);font-size:18px;cursor:pointer;padding:0 4px;line-height:1;" title="删除此条">✕</button>`:''}
+                    ${count>0?`<button type="button" data-click="removePointsApplyItem" data-arg-self="1" style="background:none;border:none;color:rgba(239,68,68,0.75);font-size:18px;cursor:pointer;padding:0 4px;line-height:1;" title="删除此条">✕</button>`:''}
                 </div>
                 <div style="margin-bottom:10px;">
                     <label style="display:block;font-size:12px;font-weight:600;color:rgba(200,215,230,0.7);margin-bottom:8px;">申请事项</label>
@@ -32969,12 +32969,12 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
 
                     const isAdmin = isAdminUser();
                     const editBtnHtml = isAdmin
-                        ? `<button onclick="editKnowledgeExplanation('${escapeHtml(itemId)}', this)" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>`
+                        ? `<button data-click="editKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>`
                         : '';
                     const regenBtnHtml = isAdmin && data.cached
-                        ? `<button onclick="regenKnowledgeExplanation('${escapeHtml(itemId)}', this)" style="padding:4px 12px;border-radius:8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);color:#fde68a;font-size:11px;cursor:pointer;">🔄 重新生成</button>`
+                        ? `<button data-click="regenKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);color:#fde68a;font-size:11px;cursor:pointer;">🔄 重新生成</button>`
                         : '';
-                    const copyBtnHtml = `<button onclick="copyKnowledgeExplanation(this)" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">📋 复制</button>`;
+                    const copyBtnHtml = `<button data-click="copyKnowledgeExplanation" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">📋 复制</button>`;
 
                     container.innerHTML = `
                         <div class="kb-ai-card">
@@ -33009,7 +33009,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                             <div style="font-size:36px;margin-bottom:12px;">${isMedia ? '🖼️' : '📄'}</div>
                             <div style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.6);margin-bottom:6px;">${isMedia ? '图片/视频文件' : '暂无可解析内容'}</div>
                             <div style="font-size:12px;color:rgba(255,255,255,0.35);line-height:1.7;margin-bottom:${canGenRubric ? '16px' : '0'};">${isMedia ? 'AI 可分析此文件并生成实操评分标准（步骤图谱）' : '文件正在处理中，通常需要 1-2 分钟<br>视频请确保管理员已填写内容摘要'}</div>
-                            ${canGenRubric ? `<button onclick="analyzeKnowledgeRubric('${escapeHtml(itemId)}', this)" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:12px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:0.02em;">🎯 生成步骤图谱</button>` : ''}
+                            ${canGenRubric ? `<button data-click="analyzeKnowledgeRubric" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:12px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:0.02em;">🎯 生成步骤图谱</button>` : ''}
                             ${opts.showFileBtn && opts.fileSrc ? `<a href="${escapeHtml(opts.fileSrc)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:16px;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);font-size:12px;text-decoration:none;">📎 查看原文件</a>` : ''}
                         </div>`;
                 } else {
@@ -33229,8 +33229,8 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             const actions = card?.querySelector('.kb-ai-card-actions');
             if (actions) {
                 actions.innerHTML = `
-                    <button onclick="saveKnowledgeExplanation('${escapeHtml(itemId)}', this)" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
-                    <button onclick="cancelEditKnowledgeExplanation(this)" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
+                    <button data-click="saveKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
+                    <button data-click="cancelEditKnowledgeExplanation" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
                 `;
             }
         }
@@ -33339,7 +33339,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     <details class="kb-ai-card kb-content-card">
                         <summary style="cursor:pointer;font-weight:700;color:#EEF1FA;font-size:13px;">📄 教材原文（${content.length}字，可编辑）</summary>
                         <div class="kb-ai-card-actions" style="margin-top:12px;">
-                            <button onclick="editKnowledgeContent('${escapeHtml(itemId)}', this)" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>
+                            <button data-click="editKnowledgeContent" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>
                         </div>
                         <div class="kb-ai-content" style="margin-top:12px;font-size:12px;white-space:pre-wrap;max-height:400px;overflow-y:auto;">${esc(content)}</div>
                     </details>`;
@@ -33372,8 +33372,8 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             const actions = card.querySelector('.kb-ai-card-actions');
             if (actions) {
                 actions.innerHTML = `
-                    <button onclick="saveKnowledgeContent('${escapeHtml(itemId)}', this)" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
-                    <button onclick="cancelEditKnowledgeContent(this)" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
+                    <button data-click="saveKnowledgeContent" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
+                    <button data-click="cancelEditKnowledgeContent" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
                 `;
             }
         }
@@ -44553,7 +44553,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             if (!container) return;
             container.innerHTML = afTypeMeta.map(m => `
                 <div style="border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); overflow: hidden;" data-af-type="${m.type}">
-                    <div style="padding: 14px 16px; display:flex; align-items:center; gap: 10px; cursor:pointer; user-select:none;" onclick="afToggleCard(this)">
+                    <div style="padding: 14px 16px; display:flex; align-items:center; gap: 10px; cursor:pointer; user-select:none;" data-click="afToggleCard" data-arg-self="1">
                         <span style="font-size: 18px; width: 28px; text-align:center;">${m.icon}</span>
                         <div style="flex:1; min-width:0;">
                             <div style="font-weight: 700; font-size: 14px;">${m.label}</div>
@@ -59571,7 +59571,7 @@ ${body}
                              ondragover="event.preventDefault();this.classList.add('dragover')"
                              ondragleave="this.classList.remove('dragover')"
                              ondrop="ufHandleDrop(event)"
-                             onclick="document.getElementById('upload-file-input').click()">
+                             data-click="hrmsTriggerClick" data-arg="upload-file-input">
                             <div class="uf-drop-icon">📂</div>
                             <div class="uf-drop-text">拖放文件到此处，或点击选择</div>
                             <div class="uf-drop-hint">支持 Excel / CSV / PDF / ZIP / 图片，最大 50MB</div>
@@ -59590,12 +59590,12 @@ ${body}
                         <div class="uf-field">
                             <label class="uf-label">文件类型 <span style="color:#f43f5e;">*</span></label>
                             <div class="uf-type-grid" id="uf-type-grid">
-                                <button class="uf-type-btn active" data-val="pos_sales" onclick="ufSelectType(this)">📊<br><span>POS销售</span></button>
-                                <button class="uf-type-btn" data-val="feishu_export" onclick="ufSelectType(this)">🪶<br><span>飞书导出</span></button>
-                                <button class="uf-type-btn" data-val="daily_report" onclick="ufSelectType(this)">📋<br><span>营业日报</span></button>
-                                <button class="uf-type-btn" data-val="inventory" onclick="ufSelectType(this)">📦<br><span>库存数据</span></button>
-                                <button class="uf-type-btn" data-val="hr_doc" onclick="ufSelectType(this)">👥<br><span>HR文档</span></button>
-                                <button class="uf-type-btn" data-val="other" onclick="ufSelectType(this)">📄<br><span>其他</span></button>
+                                <button class="uf-type-btn active" data-val="pos_sales" data-click="ufSelectType" data-arg-self="1">📊<br><span>POS销售</span></button>
+                                <button class="uf-type-btn" data-val="feishu_export" data-click="ufSelectType" data-arg-self="1">🪶<br><span>飞书导出</span></button>
+                                <button class="uf-type-btn" data-val="daily_report" data-click="ufSelectType" data-arg-self="1">📋<br><span>营业日报</span></button>
+                                <button class="uf-type-btn" data-val="inventory" data-click="ufSelectType" data-arg-self="1">📦<br><span>库存数据</span></button>
+                                <button class="uf-type-btn" data-val="hr_doc" data-click="ufSelectType" data-arg-self="1">👥<br><span>HR文档</span></button>
+                                <button class="uf-type-btn" data-val="other" data-click="ufSelectType" data-arg-self="1">📄<br><span>其他</span></button>
                             </div>
                             <input type="hidden" id="upload-file-type" value="pos_sales">
                         </div>
@@ -68508,13 +68508,13 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
       if (type === 'video') {
         return `<div style="position:relative;display:inline-block;">
           <video src="${url}" style="max-height:120px;max-width:100%;border-radius:8px;display:block;" controls preload="metadata"></video>
-          <button onclick="_removeStepMedia(this)" title="移除视频"
+          <button data-click="_removeStepMedia" data-arg-self="1" title="移除视频"
             style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.6);color:#fff;font-size:12px;cursor:pointer;line-height:22px;text-align:center;padding:0;">×</button>
         </div>`;
       }
       return `<div style="position:relative;display:inline-block;">
         <img src="${url}" style="max-height:120px;max-width:100%;border-radius:8px;display:block;cursor:pointer;" onclick="openMediaLightbox('${url}','image')" title="点击查看大图">
-        <button onclick="_removeStepMedia(this)" title="移除图片"
+        <button data-click="_removeStepMedia" data-arg-self="1" title="移除图片"
           style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.6);color:#fff;font-size:12px;cursor:pointer;line-height:22px;text-align:center;padding:0;">×</button>
       </div>`;
     }

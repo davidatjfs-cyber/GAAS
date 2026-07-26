@@ -4125,7 +4125,7 @@
             if (!container) return;
             container.innerHTML = afTypeMeta.map(m => `
                 <div style="border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); overflow: hidden;" data-af-type="${m.type}">
-                    <div style="padding: 14px 16px; display:flex; align-items:center; gap: 10px; cursor:pointer; user-select:none;" onclick="afToggleCard(this)">
+                    <div style="padding: 14px 16px; display:flex; align-items:center; gap: 10px; cursor:pointer; user-select:none;" data-click="afToggleCard" data-arg-self="1">
                         <span style="font-size: 18px; width: 28px; text-align:center;">${m.icon}</span>
                         <div style="flex:1; min-width:0;">
                             <div style="font-weight: 700; font-size: 14px;">${m.label}</div>

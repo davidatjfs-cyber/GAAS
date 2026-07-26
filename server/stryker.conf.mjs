@@ -27,17 +27,17 @@ const L1_MUTATE = Object.keys(l1Floor.files).sort();
  * @type {string[]}
  */
 const L1_TEST_FILES = [
-  'test/account-gate-helpers.test.mjs',
-  'test/account-gate-log.test.mjs',
+  'domains/employees/__tests__/account-gate-helpers.test.mjs',
+  'domains/employees/__tests__/account-gate-log.test.mjs',
   'domains/shared/__tests__/agents-service-auth-helpers.test.mjs',
   'domains/approvals/__tests__/normalize-helpers.test.mjs',
   'domains/approvals/__tests__/approvals-handlers-direct.test.mjs',
   'domains/approvals/__tests__/approvals-handlers-offboarding-promotion.test.mjs',
   'domains/approvals/__tests__/onboarding-payload.test.mjs',
-  'test/store-access-context-helpers.test.mjs',
-  'test/tenant-platform-auth-guards.test.mjs',
-  'test/tenant-platform-routes-auth.test.mjs',
-  'test/tenant-platform-routes-billing.test.mjs',
+  'domains/store-duty-bindings/__tests__/store-access-context-helpers.test.mjs',
+  'domains/tenant-platform/__tests__/tenant-platform-auth-guards.test.mjs',
+  'domains/tenant-platform/__tests__/tenant-platform-routes-auth.test.mjs',
+  'domains/tenant-platform/__tests__/tenant-platform-routes-billing.test.mjs',
   'domains/shared/__tests__/time-number.test.mjs',
   'domains/employees/__tests__/user-lookup.test.mjs',
 ];
@@ -69,7 +69,8 @@ export default {
     high: 80,
     low: 60,
     // break 50: time-number.js (91.6%), normalize-helpers.js (94.4%),
-    // account-gate.js (91.4%), agents-service-auth.js (94.8%) spot-checked 2026-07-26.
+    // account-gate.js (91.4%), agents-service-auth.js (94.8%),
+    // user-lookup.js (91.5%) spot-checked 2026-07-26.
     break: 50,
   },
   concurrency: process.env.MUTATION_CONCURRENCY

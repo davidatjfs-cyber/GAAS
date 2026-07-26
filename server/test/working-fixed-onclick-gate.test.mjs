@@ -13,7 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
 
 /** 冻结基线（2026-07-26 P5.1 静态 HTML 零参/单参 onclick 批量迁移 data-click+data-arg 委托后实测 rg -o 'onclick=' working-fixed.html | wc -l） */
-const MAX_ONCLICK = 191;
+const MAX_ONCLICK = 157;
 
 function countOnclickAttributes(content) {
   return (content.match(/onclick=/g) || []).length;

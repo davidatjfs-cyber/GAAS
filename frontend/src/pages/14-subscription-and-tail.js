@@ -3813,13 +3813,13 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
       if (type === 'video') {
         return `<div style="position:relative;display:inline-block;">
           <video src="${url}" style="max-height:120px;max-width:100%;border-radius:8px;display:block;" controls preload="metadata"></video>
-          <button onclick="_removeStepMedia(this)" title="移除视频"
+          <button data-click="_removeStepMedia" data-arg-self="1" title="移除视频"
             style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.6);color:#fff;font-size:12px;cursor:pointer;line-height:22px;text-align:center;padding:0;">×</button>
         </div>`;
       }
       return `<div style="position:relative;display:inline-block;">
         <img src="${url}" style="max-height:120px;max-width:100%;border-radius:8px;display:block;cursor:pointer;" onclick="openMediaLightbox('${url}','image')" title="点击查看大图">
-        <button onclick="_removeStepMedia(this)" title="移除图片"
+        <button data-click="_removeStepMedia" data-arg-self="1" title="移除图片"
           style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.6);color:#fff;font-size:12px;cursor:pointer;line-height:22px;text-align:center;padding:0;">×</button>
       </div>`;
     }
