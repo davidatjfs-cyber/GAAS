@@ -40,11 +40,13 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   // Wave A9：runChiefEvaluator 迁出；agents.js 已无 agent_scores INSERT
   'domains/agent-evaluator/run-chief-evaluator.js|INSERT INTO|agent_scores',
   // Wave A4b：pollBitableSubmissions 迁出（agents.js 不再写 feishu_generic_records）
-  'domains/feishu-bitable/poll-submissions.js|INSERT INTO|feishu_generic_records',
-  'domains/feishu-bitable/poll-submissions.js|INSERT INTO|agent_messages',
+  // P5.4：poll-submissions.js → poll-submissions-helpers.js（同 OP+表换路径）
+  'domains/feishu-bitable/poll-submissions-helpers.js|INSERT INTO|feishu_generic_records',
+  'domains/feishu-bitable/poll-submissions-helpers.js|INSERT INTO|agent_messages',
   'agents.js|INSERT INTO|feishu_users',
   // Wave A8：sendScheduledChecklist 迁出；agents.js 已无 master_tasks INSERT（另见 training-flow）
-  'domains/agent-ops/send-scheduled-checklist.js|INSERT INTO|master_tasks',
+  // P5.4：send-scheduled-checklist.js → send-scheduled-checklist-helpers.js（同 OP+表换路径）
+  'domains/agent-ops/send-scheduled-checklist-helpers.js|INSERT INTO|master_tasks',
   'agents.js|UPDATE|agent_messages',
   'agents.js|UPDATE|feishu_users',
   'agents.js|UPDATE|master_tasks',
@@ -119,8 +121,11 @@ const REPATH_NOTES = [
   'domains/agent-feishu-bot/on-feishu-event.js → on-feishu-event-agent-route.js | UPDATE|agent_messages',
   'agents.js → domains/feishu-bitable/poll-submissions.js | INSERT INTO|feishu_generic_records',
   'agents.js → domains/feishu-bitable/poll-submissions.js | INSERT INTO|agent_messages',
+  'domains/feishu-bitable/poll-submissions.js → poll-submissions-helpers.js | INSERT INTO|feishu_generic_records',
+  'domains/feishu-bitable/poll-submissions.js → poll-submissions-helpers.js | INSERT INTO|agent_messages',
   'agents.js → domains/agent-ops/handle-checklist-card-action.js | INSERT INTO|agent_messages',
   'agents.js → domains/agent-ops/send-scheduled-checklist.js | INSERT INTO|master_tasks',
+  'domains/agent-ops/send-scheduled-checklist.js → send-scheduled-checklist-helpers.js | INSERT INTO|master_tasks',
   'agents.js → domains/agent-evaluator/run-chief-evaluator.js | INSERT INTO|agent_scores',
   'agents.js → domains/feishu-bitable/archive-old-submissions.js | DELETE FROM|agent_messages',
 ];
