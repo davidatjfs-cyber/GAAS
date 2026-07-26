@@ -279,6 +279,8 @@
     "domains/agent-ops/send-safety-check.js",
     "domains/agent-evaluator/fetch-store-rating-for-profile.js",
     "domains/feishu-bitable/archive-old-submissions.js",
-    "domains/agent-ops/execute-scheduled-task.js"
+    "domains/agent-ops/execute-scheduled-task.js",
+    "domains/feishu-bitable/get-submission-stats.js",
+    "domains/agent-ops/build-scheduled-tasks-from-config.js"
   ]
 }

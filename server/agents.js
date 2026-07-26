@@ -61,6 +61,8 @@ import { createSendSafetyCheck } from './domains/agent-ops/send-safety-check.js'
 import { createFetchStoreRatingForProfileDisplay } from './domains/agent-evaluator/fetch-store-rating-for-profile.js';
 import { createArchiveOldBitableSubmissions } from './domains/feishu-bitable/archive-old-submissions.js';
 import { createExecuteScheduledTask } from './domains/agent-ops/execute-scheduled-task.js';
+import { createGetBitableSubmissionStats } from './domains/feishu-bitable/get-submission-stats.js';
+import { createBuildScheduledTasksFromConfig } from './domains/agent-ops/build-scheduled-tasks-from-config.js';
 import { createHandleDataAuditorCase } from './domains/agent-message/handle-data-auditor-case.js';
 import { createOnFeishuEvent } from './domains/agent-feishu-bot/on-feishu-event.js';
 import { createTryHandleBiByFunctionCalling } from './domains/agent-bi/try-handle-bi-by-function-calling.js';
@@ -4142,38 +4144,11 @@ export async function archiveOldBitableSubmissions() {
 }
 
 
+let _getBitableSubmissionStats;
 export async function getBitableSubmissionStats() {
-  try {
-    // 主表统计
-    const mainStats = await pool().query(`
-      SELECT 
-        COUNT(*) as total,
-        COUNT(CASE WHEN created_at > NOW() - INTERVAL '7 days' THEN 1 END) as last_7_days,
-        COUNT(CASE WHEN created_at > NOW() - INTERVAL '30 days' THEN 1 END) as last_30_days,
-        MIN(created_at) as oldest,
-        MAX(created_at) as newest
-      FROM agent_messages 
-      WHERE content_type = 'bitable_submission'
-    `);
-    
-    // 归档表统计
-    const archiveStats = await pool().query(`
-      SELECT 
-        COUNT(*) as total,
-        COUNT(CASE WHEN created_at > NOW() - INTERVAL '30 days' THEN 1 END) as last_30_days
-      FROM bitable_submissions_archive
-    `);
-    
-    return {
-      main: mainStats.rows[0] || {},
-      archive: archiveStats.rows[0] || {},
-      total: (mainStats.rows[0]?.total || 0) + (archiveStats.rows[0]?.total || 0)
-    };
-  } catch (e) {
-    console.error('[bitable] get stats failed:', e?.message);
-    return { main: {}, archive: {}, total: 0 };
-  }
+  return _getBitableSubmissionStats();
 }
+
 
 // ─────────────────────────────────────────────
 // Bitable Integration for Checklist (continued)
@@ -4651,10 +4626,6 @@ export { startScheduledTasks };
 // 定时任务调度器
 // ─────────────────────────────────────────────
 
-const DEFAULT_SCHEDULED_TASKS = {
-  
-};
-
 /** 与 agents-service-v2 任务审核口径一致（仅 HRMS 内建调度启用时使用） */
 const OPS_TASK_REPLY_AUDIT_LARK_MD =
   '**系统审核要求**\n' +
@@ -4665,98 +4636,11 @@ const OPS_TASK_REPLY_AUDIT_LARK_MD =
 let _scheduledTaskIntervals = new Map();
 const _scheduledTaskRuntimeStatus = new Map();
 
+let _buildScheduledTasksFromConfig;
 function buildScheduledTasksFromConfig() {
-  const legacyEnable = String(process.env.HRMS_ENABLE_LEGACY_SCHEDULED_CHECKLIST || '').trim().toLowerCase();
-  if (!(legacyEnable === '1' || legacyEnable === 'true' || legacyEnable === 'yes')) {
-    console.log('[ops] legacy scheduled checklist disabled; skip registering HRMS scheduled tasks');
-    return {};
-  }
-  const runtime = {};
-  const inspections = Array.isArray(OPS_AGENT_CONFIG?.scheduledTasks?.dailyInspections)
-    ? OPS_AGENT_CONFIG.scheduledTasks.dailyInspections
-    : [];
-  const randomInspections = Array.isArray(OPS_AGENT_CONFIG?.scheduledTasks?.randomInspections)
-    ? OPS_AGENT_CONFIG.scheduledTasks.randomInspections
-    : [];
-
-  for (const inspection of inspections) {
-    if (inspection?.enabled === false) continue;
-    const store = String(inspection?.store || '').trim();
-    const brand = String(inspection?.brand || '').trim();
-    const type = String(inspection?.type || '').trim();
-    const time = String(inspection?.time || '').trim();
-    const timeWindow = Math.max(5, Math.floor(Number(inspection?.timeWindow) || 60));
-    if (!type || !time || (!brand && !store)) continue;
-    const identity = store || brand;
-    const key = `${identity}_${type === 'opening' ? '开市' : type === 'closing' ? '收档' : type}`;
-    if (isBlockedOpsChecklistPattern(type, key)) {
-      console.log('[ops] skip registering OP daily inspection (test/legacy):', key);
-      continue;
-    }
-    runtime[key] = {
-      store,
-      time,
-      frequency: String(inspection?.frequency || 'daily').trim(),
-      customIntervalDays: Math.max(1, Math.floor(Number(inspection?.customIntervalDays) || 1)),
-      action: 'send_checklist',
-      brand,
-      timeWindow,
-      checkType: type
-    };
-  }
-
-  for (let i = 0; i < randomInspections.length; i += 1) {
-    const inspection = randomInspections[i] || {};
-    if (inspection?.enabled === false) continue;
-    const type = String(inspection?.type || '').trim();
-    if (!type) continue;
-    const store = String(inspection?.store || '').trim();
-    const brand = String(inspection?.brand || '').trim();
-    const minH = Math.max(1, Math.floor(Number(inspection?.intervalMinHours) || Number(inspection?.interval?.[0]) || 2));
-    const maxH = Math.max(minH, Math.floor(Number(inspection?.intervalMaxHours) || Number(inspection?.interval?.[1]) || 4));
-    const key = `随机抽检_${store || brand || '全门店'}_${type}_${i + 1}`;
-    if (isBlockedOpsChecklistPattern(type, key)) {
-      console.log('[ops] skip registering OP random inspection (test/legacy):', key);
-      continue;
-    }
-    runtime[key] = {
-      random: true,
-      interval: [minH, maxH],
-      action: 'safety_check',
-      type,
-      description: String(inspection?.description || '食安抽检').trim(),
-      timeWindow: Math.max(1, Math.floor(Number(inspection?.timeWindow) || 15)),
-      store,
-      brand,
-      assigneeRoles: Array.isArray(inspection?.assigneeRoles) && inspection.assigneeRoles.length
-        ? inspection.assigneeRoles.map((r) => String(r || '').trim()).filter(Boolean)
-        : ['store_manager', 'store_production_manager']
-    };
-  }
-
-  if (Object.keys(runtime).length === 0) {
-    // 仅当没有任何显式配置时才使用默认值（首次启动且DB无配置）
-    // 如果配置中心已保存过配置（哪怕是空数组），尊重用户设置
-    const hasExplicitDailyConfig = Array.isArray(OPS_AGENT_CONFIG?.scheduledTasks?.dailyInspections);
-    const hasExplicitRandomConfig = Array.isArray(OPS_AGENT_CONFIG?.scheduledTasks?.randomInspections);
-    const dailyLen = hasExplicitDailyConfig ? OPS_AGENT_CONFIG.scheduledTasks.dailyInspections.length : -1;
-    const randomLen = hasExplicitRandomConfig ? OPS_AGENT_CONFIG.scheduledTasks.randomInspections.length : -1;
-    // 如果两个数组都存在且都为空 → 用户主动清空了所有任务
-    if (dailyLen === 0 && randomLen === 0) {
-      console.log('[ops] All scheduled tasks cleared by user configuration');
-      return {};
-    }
-    // 如果数组存在但产出0个有效key（例如随机任务的type为空），也尊重配置
-    if (hasExplicitDailyConfig || hasExplicitRandomConfig) {
-      console.log('[ops] No valid scheduled tasks produced from configuration (daily:', dailyLen, 'random:', randomLen, ')');
-      return {};
-    }
-    // 真正没有配置时才使用默认值
-    console.log('[ops] No configuration found, using default scheduled tasks');
-    return { ...DEFAULT_SCHEDULED_TASKS };
-  }
-  return runtime;
+  return _buildScheduledTasksFromConfig();
 }
+
 
 function getInspectionIntervalDays(config) {
   const frequency = String(config?.frequency || 'daily').trim();
@@ -8189,6 +8073,15 @@ _archiveOldBitableSubmissions = createArchiveOldBitableSubmissions({
   pool,
   archiveThresholdDays: 7,
   deleteThresholdDays: 60,
+});
+
+_getBitableSubmissionStats = createGetBitableSubmissionStats({
+  pool,
+});
+
+_buildScheduledTasksFromConfig = createBuildScheduledTasksFromConfig({
+  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+  isBlockedOpsChecklistPattern,
 });
 
 _executeScheduledTask = createExecuteScheduledTask({
