@@ -56,6 +56,8 @@ import { createHandleAgentMessage } from './domains/agent-message/handle-agent-m
 import { createRouteMessage } from './domains/agent-message/route-message.js';
 import { createHandleOpsChecklistCardAction } from './domains/agent-ops/handle-checklist-card-action.js';
 import { createOpsChecklistCardsApi } from './domains/agent-ops/checklist-cards.js';
+import { createAuditImage } from './domains/agent-ops/audit-image.js';
+import { createGetOpsKnowledgeSupport } from './domains/agent-ops/knowledge-support.js';
 import { createSendScheduledChecklist } from './domains/agent-ops/send-scheduled-checklist.js';
 import { createRunChiefEvaluator } from './domains/agent-evaluator/run-chief-evaluator.js';
 import { createSendSafetyCheck } from './domains/agent-ops/send-safety-check.js';
@@ -3020,207 +3022,14 @@ let OPS_AGENT_CONFIG = {
   }
 };
 
+let _auditImage;
 export async function auditImage(imageUrl, auditType, context = {}) {
-  const store = context.store || '';
-  const brand = context.brand || '';
-  const username = context.username || '';
-  const config = OPS_AGENT_CONFIG;
-
-  // Anti-cheat: image hash
-  let imageHash = '';
-  let exifData = {};
-  try {
-    let buf;
-    if (imageUrl.startsWith('/') || imageUrl.startsWith('.')) {
-      buf = fs.readFileSync(imageUrl);
-    } else if (imageUrl.startsWith('data:')) {
-      const b64 = imageUrl.split(',')[1] || '';
-      buf = Buffer.from(b64, 'base64');
-    }
-    if (buf) {
-      imageHash = crypto.createHash('sha256').update(buf).digest('hex');
-      // TODO: 提取Exif数据用于时间验证
-      exifData = { timestamp: new Date().toISOString() }; // 临时使用当前时间
-    }
-  } catch (e) { /* ignore */ }
-
-  let duplicateOf = null;
-  if (imageHash) {
-    try {
-      const dup = await pool().query(
-        `SELECT id FROM agent_visual_audits WHERE image_hash = $1 LIMIT 1`, [imageHash]
-      );
-      if (dup.rows?.length) duplicateOf = dup.rows[0].id;
-    } catch (e) { /* ignore */ }
-  }
-
-  // 根据审核类型选择Prompt
-  const typePrompts = {
-    hygiene: `你是餐饮卫生检查专家。严格审核这张图片。如果是手机截图/屏幕录制/非实拍照片/与卫生无关的图片，必须判定fail。只有清晰的餐厅现场卫生实拍照片才可能pass。1.是否为真实卫生相关实拍 2.卫生状况如何 3.给出pass/fail/unclear。JSON回复：{"result":"pass/fail/unclear","confidence":0.0-1.0,"findings":"具体发现","clarity":0.0-1.0}`,
-    plating: `你是餐饮出品专家。严格审核这张图片。如果是手机截图/屏幕录制/非实拍照片/与菜品出品无关的图片，必须判定fail。只有清晰的菜品实拍照片才可能pass。1.摆盘是否规范 2.分量是否达标 3.美学标准。JSON回复：{"result":"pass/fail/unclear","confidence":0.0-1.0,"findings":"具体发现","clarity":0.0-1.0}`,
-    general: `你是餐饮门店食品安全与卫生审核专家。你的任务是严格审核食安巡检照片。
-
-【必须判定为fail的情况】：
-- 手机截图、屏幕录制、非实拍照片
-- 与食品安全/卫生/餐饮现场完全无关的照片（如系统界面、聊天记录、风景照等）
-- 照片模糊无法辨认内容
-- 明显不是在门店现场拍摄的照片
-
-【可以判定为pass的情况】：
-- 清晰的餐厅现场实拍照片（厨房、前厅、仓库、冷柜、操作台等）
-- 照片中可见真实的食品、餐具、设备等实物
-
-请严格审核，宁可误判为unclear也不要轻易pass。
-JSON回复：{"result":"pass/fail/unclear","confidence":0.0-1.0,"findings":"具体发现","type":"照片类型","clarity":0.0-1.0}`,
-    seafood_pool_temperature: `你是海鲜池管理专家。审核这张水温计照片：1.温度是否清晰可见 2.温度是否在标准范围内(18-22°C) 3.水温计是否正常工作。JSON回复：{"result":"pass/fail/unclear","confidence":0.0-1.0,"findings":"具体发现","temperature":"数值"}`
-  };
-
-  const prompt = typePrompts[auditType] || typePrompts.general;
-  const llmResult = await callVisionLLM(imageUrl, prompt);
-
-  let result = 'unclear', confidence = 0, findings = '', agentRaw = {}, clarity = 0;
-  if (llmResult.ok && llmResult.content) {
-    try {
-      const jsonMatch = llmResult.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        result = String(parsed.result || 'unclear').trim().toLowerCase();
-        confidence = Math.max(0, Math.min(1, Number(parsed.confidence || 0)));
-        findings = String(parsed.findings || '').trim();
-        clarity = Math.max(0, Math.min(1, Number(parsed.clarity || 0)));
-        agentRaw = parsed;
-      }
-    } catch (e) { findings = llmResult.content; }
-  } else {
-    findings = `视觉审核API调用失败: ${llmResult.error || '未知错误'}`;
-  }
-
-  // 安全兜底：pass但低置信度 → 降级为unclear
-  if (result === 'pass' && confidence < 0.7) {
-    result = 'unclear';
-    findings = `照片内容不够明确，无法自动判定合格（置信度${(confidence*100).toFixed(0)}%）。请重新拍摄清晰的现场照片。` + (findings ? ' 原始分析: ' + findings : '');
-  }
-
-  // 应用判定逻辑标准
-  if (duplicateOf) {
-    result = 'fail';
-    findings = `⚠️ 重复图片（与历史记录重复），疑似作弊。${findings ? ' 原始审核: ' + findings : ''}`;
-    confidence = 0.95;
-  } else if (clarity < config.visualInspection.accuracyThresholds.labelClarity) {
-    result = 'fail';
-    findings = config.judgmentStandards.visualAccuracy.poorQualityResponse;
-    confidence = 0.9;
-  }
-
-  // 时间验证（基于Exif数据）
-  const now = new Date();
-  const exifTime = new Date(exifData.timestamp || now);
-  const timeDiff = Math.abs(now - exifTime) / 1000; // 秒
-  if (timeDiff > config.judgmentStandards.authenticity.exifTolerance) {
-    result = 'fail';
-    findings = `照片拍摄时间异常（误差${Math.round(timeDiff/60)}分钟），请重新拍摄。`;
-    confidence = 0.95;
-  }
-
-  let auditId = null;
-  try {
-    const r = await pool().query(
-      `INSERT INTO agent_visual_audits (store, brand, username, image_url, audit_type, result, confidence, findings, image_hash, duplicate_of, agent_raw, tenant_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12) RETURNING id`,
-      [store, brand, username, imageUrl, auditType || 'general', result, confidence,
-       findings, imageHash || null, duplicateOf || null, JSON.stringify(agentRaw), resolveTenantIdDefault()]
-    );
-    auditId = r.rows?.[0]?.id || null;
-  } catch (e) { log.error('[ops_supervisor] insert audit failed:', e?.message); }
-
-  // 图片审核不合格异常记录 - 已按用户要求取消自动创建
-
-  return { auditId, result, confidence, findings, duplicate: !!duplicateOf, imageHash, clarity };
+  return _auditImage(imageUrl, auditType, context);
 }
 
-// ─────────────────────────────────────────────
-// 营运督导员知识支援功能
-// ─────────────────────────────────────────────
-
-// 现场知识支援 - 根据问题类型调用SOP知识库
+let _getOpsKnowledgeSupport;
 export async function getOpsKnowledgeSupport(query, context = {}) {
-  const store = context.store || '';
-  const brand = context.brand || '';
-  const config = OPS_AGENT_CONFIG.knowledgeSupport;
-  
-  // 检查是否为常见问题，返回标准回复
-  const standardAnswers = {
-    '生蚝个头偏小': config.standardResponses.smallOysters,
-    '冰箱温度': config.standardResponses.fridgeTemperature,
-    '洗手': config.standardResponses.handWashing
-  };
-  
-  for (const [key, answer] of Object.entries(standardAnswers)) {
-    if (query.includes(key)) {
-      return { type: 'standard', response: answer, source: 'standard_responses' };
-    }
-  }
-  
-  // 查询SOP知识库
-  let kbResults = [];
-  try {
-    // 查询知识库和 Bitable 数据
-    const brandTag = brand ? `brand:${brand}` : '';
-    const agentData = await queryAgentData(['sop', '流程', '标准', '规范'], query, 5, { brandTag });
-    
-    kbResults = agentData.knowledge || [];
-    const bitableResults = agentData.bitable || [];
-    
-    // 合并结果
-    if (bitableResults.length > 0) {
-      kbResults = kbResults.concat(
-        bitableResults.map(r => ({
-          title: `Bitable数据 - ${r.content_type}`,
-          content: `${r.content}\n数据时间: ${new Date(r.created_at).toLocaleString()}`,
-          source: 'bitable'
-        }))
-      );
-    }
-  } catch (e) {
-    log.error('[ops_supervisor] data query failed:', e?.message);
-  }
-  
-  if (kbResults.length > 0) {
-    const kbContent = kbResults.map(r => `【${r.title}】${r.content}`).join('\n\n');
-    return { 
-      type: 'knowledge_base', 
-      response: `根据相关SOP标准：\n\n${kbContent}`,
-      source: 'knowledge_base',
-      results: kbResults 
-    };
-  }
-  
-  // 使用LLM生成专业建议
-  try {
-    const llmResult = await callLLM([
-      {
-        role: 'system',
-        content: `你是小年，年年有喜餐饮集团AI助理，精通${getAllBrandNamesSync(resolveTenantIdDefault()).join('和') || '本集团'}品牌标准。当前门店：${store}（${brand}）。请提供专业、可操作的建议。`
-      },
-      { role: 'user', content: query }
-    ], { model: getOpsReasoningModel() });
-    
-    if (llmResult.ok && llmResult.content) {
-      return { 
-        type: 'llm_generated', 
-        response: llmResult.content,
-        source: 'ai_advisor'
-      };
-    }
-  } catch (e) {
-    log.error('[ops_supervisor] llm advice failed:', e?.message);
-  }
-  
-  return { 
-    type: 'fallback', 
-    response: '这个问题需要进一步核实，请联系值班经理处理。',
-    source: 'fallback'
-  };
+  return _getOpsKnowledgeSupport(query, context);
 }
 
 // 任务调度与主动触发
@@ -4702,6 +4511,21 @@ _marginMetricsApi = createMarginMetricsApi({
   inDateRangeInclusive,
   normalizeStoreKey,
   setReportPool,
+});
+
+_auditImage = createAuditImage({
+  pool,
+  log,
+  callVisionLLM,
+  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+});
+
+_getOpsKnowledgeSupport = createGetOpsKnowledgeSupport({
+  log,
+  callLLM,
+  queryAgentData,
+  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+  getOpsReasoningModel,
 });
 
 _runDataAuditor = createRunDataAuditor({
