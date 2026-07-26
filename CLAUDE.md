@@ -337,6 +337,8 @@ agents-service-v2 通过 `file:packages/gaas-shared` 引用**同步副本**；�
 - HTML/CSS 结构仍以 `working-fixed.html` 为载体；**不要**直接在内联 `<script>` 里改业务逻辑。
 - **B2 行数棘轮**：`server/test/working-fixed-size-gate.test.mjs` 冻结 `working-fixed.html` 总行数（当前 ≤69156）；
   只减不增；新 UI 进 `frontend/src/pages/*.js` 再 bundle，勿直接堆 inline script/HTML。
+- **P5.1 onclick 棘轮**：`server/test/working-fixed-onclick-gate.test.mjs` 冻结 inline `onclick=` 数量（当前 ≤902，只减不增）；
+  新 UI 禁止新增 inline onclick，应逐步迁到 `frontend/src/pages` 事件绑定。
 - **B7 XSS（边界须如实）**：`/assets/vendor/dompurify/` 在主 script 前加载；`Element.innerHTML` setter 已挂 DOMPurify。
   - **已拦**：`<script>` / `<iframe>` / `javascript:` 等。
   - **不拦**：事件属性 XSS（`onerror`/`onload`/`onclick`/…）。因遗留 inline handler，`ADD_ATTR` 放行了 `on*`；

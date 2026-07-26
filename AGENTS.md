@@ -197,6 +197,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 改业务 JS → 改 `frontend/src/pages/*.js` → `npm run build:shell` → 先 scp `app.*.js/css` 再换 shell。
 - 不要直接编辑 `working-fixed.html` 内联主 `<script>`（由 `bundle-frontend.mjs` 写回）。
 - **B2 行数棘轮**：`server/test/working-fixed-size-gate.test.mjs` 冻结总行数（≤69156）；新 UI 进 `frontend/src/pages`。
+- **P5.1 onclick 棘轮**：`server/test/working-fixed-onclick-gate.test.mjs` 冻结 inline `onclick=` 数量（≤902，只减不增）；新 UI 禁止新增 inline onclick，应逐步迁到 `frontend/src/pages` 事件绑定。
 - **B7 XSS（边界须如实）**：主 script 前加载 `/assets/vendor/dompurify/`；`innerHTML` 已挂 DOMPurify。
   - 已拦 script/iframe/javascript:；**不拦**事件属性 XSS（`on*`，兼容遗留 inline onclick）。
   - DOMPurify 未加载时 fail-closed（返回空串）。新代码优先 `setHTML`/`appendHTML`。
