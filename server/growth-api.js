@@ -55,11 +55,16 @@ export { formatSmsValidDate } from './domains/growth-campaigns/sms-params.js';
 import { recomputeCustomerProfiles } from './domains/growth-profiles/recompute.js';
 export { recomputeCustomerProfiles } from './domains/growth-profiles/recompute.js';
 import { runTouchRuleEngine as runTouchRuleEngineImpl } from './domains/growth-touch-rules/engine.js';
+import {
+  loadSegmentPhoneSet,
+  fetchGenericRuleCandidates,
+} from './domains/growth-touch-rules/helpers.js';
 export {
   fmtYmd,
   loadRuleCandidates,
   filterGenericRuleCandidates,
   fetchGenericRuleCandidates,
+  loadSegmentPhoneSet,
 } from './domains/growth-touch-rules/helpers.js';
 import { buildGrowthDailyReport } from './domains/growth-ops/daily-report.js';
 import { startGrowthRemindWorkers } from './domains/growth-ops/background-remind.js';
