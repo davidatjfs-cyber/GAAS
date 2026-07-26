@@ -2174,6 +2174,31 @@ export async function sendLarkCard(openId, card, options = {}) {
 export async function getLarkImageUrl(messageId, imageKey) {
   return _larkSendApi.getLarkImageUrl(messageId, imageKey);
 }
+
+// ── 飞书语音识别 / 用户映射 / 督办推送 → domains/agent-feishu-bot/feishu-user-messaging*.js ──
+let _feishuUserMessagingApi;
+async function recognizeLarkAudio(messageId, fileKey) {
+  return _feishuUserMessagingApi.recognizeLarkAudio(messageId, fileKey);
+}
+async function replyLarkMessage(messageId, text) {
+  return _feishuUserMessagingApi.replyLarkMessage(messageId, text);
+}
+async function lookupFeishuUser(openId) {
+  return _feishuUserMessagingApi.lookupFeishuUser(openId);
+}
+async function getFeishuUserInfo(openId) {
+  return _feishuUserMessagingApi.getFeishuUserInfo(openId);
+}
+async function tryAutoBindByName(openId) {
+  return _feishuUserMessagingApi.tryAutoBindByName(openId);
+}
+export async function lookupFeishuUserByUsername(username) {
+  return _feishuUserMessagingApi.lookupFeishuUserByUsername(username);
+}
+async function pushIssueToAssignee(issue, message, tenantId = 'default') {
+  return _feishuUserMessagingApi.pushIssueToAssignee(issue, message, tenantId);
+}
+
 export async function registerFeishuUser(openId, username) {
   return _larkSendApi.registerFeishuUser(openId, username);
 }
