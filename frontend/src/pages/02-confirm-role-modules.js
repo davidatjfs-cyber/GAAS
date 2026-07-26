@@ -1753,7 +1753,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 const label = escapeHtml(String(x || '').trim());
                 return `<span style="display:inline-flex; align-items:center; gap: 8px; padding: 8px 10px; border-radius: 999px; margin: 0 8px 8px 0; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.04);">
                     <span style="font-weight: 800;">${label}</span>
-                    <button class="btn btn-secondary" type="button" onclick="removePaymentSettingItem('${String(type || '').replace(/'/g, "\\'")}', ${idx})" style="padding: 4px 8px; border-radius: 999px;">删除</button>
+                    <button class="btn btn-secondary" type="button" data-click="removePaymentSettingItem" data-arg="${String(type || '').replace(/'/g, "\\'")}" data-arg2="${idx}" data-arg2-type="number" style="padding: 4px 8px; border-radius: 999px;">删除</button>
                 </span>`;
             }).join('');
         }
@@ -2152,7 +2152,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                                 <td style="padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); color: rgba(226,232,240,0.9);">${c}</td>
                                 <td style="padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); color: rgba(59,130,246,0.95); font-weight: 900;">¥${amtText}</td>
                                 <td style="padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                                    <button class="btn btn-secondary" type="button" onclick="removePaymentBudgetRow('${sJs}','${mJs}','${cJs}')" style="padding: 8px 12px;">删除</button>
+                                    <button class="btn btn-secondary" type="button" data-click="removePaymentBudgetRow" data-arg="${sJs}" data-arg2="${mJs}" data-arg3="${cJs}" style="padding: 8px 12px;">删除</button>
                                 </td>
                             </tr>`;
                         }).join('')}

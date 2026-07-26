@@ -1932,7 +1932,7 @@
             notification.innerHTML = `
                 <div class="notification-content">
                     <span class="notification-message">${message}</span>
-                    <button class="notification-close" onclick="this.parentElement.parentElement.remove()">×</button>
+                    <button class="notification-close" data-click="hrmsRemoveGrandparent" data-arg-self="1">×</button>
                 </div>
             `;
             

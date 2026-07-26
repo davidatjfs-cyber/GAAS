@@ -2525,7 +2525,7 @@
             container.innerHTML = _TRAINING_POSITIONS.map(p => {
                 const checked = selected.has(p);
                 if (containerId === 'training-assign-positions') {
-                    return `<label onclick="togglePositionBox('${containerId}','${p}',this)"
+                    return `<label data-click="togglePositionBox" data-arg="${containerId}" data-arg2="${p}" data-arg-self="1"
                         class="ta-position-pill${checked ? ' is-active' : ''}"
                         data-pos="${p}" data-checked="${checked ? '1' : '0'}">
                         <span class="ta-position-icon">${checked ? '✓' : '+'}</span>
@@ -2533,14 +2533,14 @@
                     </label>`;
                 }
                 if (containerId === 'training-topic-positions') {
-                    return `<label onclick="togglePositionBox('${containerId}','${p}',this)"
+                    return `<label data-click="togglePositionBox" data-arg="${containerId}" data-arg2="${p}" data-arg-self="1"
                         class="ta-position-pill${checked ? ' is-active' : ''}"
                         data-pos="${p}" data-checked="${checked ? '1' : '0'}">
                         <span class="ta-position-icon">${checked ? '✓' : '+'}</span>
                         <span>${p}</span>
                     </label>`;
                 }
-                return `<label onclick="togglePositionBox('${containerId}','${p}',this)"
+                return `<label data-click="togglePositionBox" data-arg="${containerId}" data-arg2="${p}" data-arg-self="1"
                     style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;cursor:pointer;font-size:13px;
                     background:${checked ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)'};
                     border:1px solid ${checked ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.12)'};
@@ -3077,7 +3077,7 @@
                         }).join('') : '';
                         const historyId = `dash-hist-${idx}-${mi}`;
                         const toggleBtn = attemptCount > 0
-                            ? `<button onclick="(function(e){e.stopPropagation();var d=document.getElementById('${historyId}');d.style.display=d.style.display==='none'?'':'none';})(event)" style="font-size:10px;padding:2px 7px;border-radius:8px;border:none;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.5);cursor:pointer;margin-left:6px;">历史</button>`
+                            ? `<button data-click="hrmsToggleByIdDisplay" data-arg="${historyId}" data-stop style="font-size:10px;padding:2px 7px;border-radius:8px;border:none;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.5);cursor:pointer;margin-left:6px;">历史</button>`
                             : '';
                         const memberStyle = deadline.isOverdue
                             ? 'background:rgba(127,29,29,0.26);border:1px solid rgba(248,113,113,0.26);'

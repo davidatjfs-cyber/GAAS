@@ -24419,7 +24419,7 @@
                 };
             }
         } catch (e) {}
-        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (!el) return; var fn = el.getAttribute('data-click'); if (!fn || typeof window[fn] !== 'function') return; if (el.hasAttribute('data-click-self-only') && e.target !== el) return; if (el.hasAttribute('data-stop')) e.stopPropagation(); var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); parseArg('data-arg3', 'data-arg3-type'); if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; window.hrmsRemoveClosest = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n) n.remove(); } catch (err) {} }; window.hrmsRemoveClosestParent = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n && n.parentElement) n.parentElement.remove(); } catch (err) {} }; window.hrmsRemoveParent = function (el) { try { if (el && el.parentElement) el.parentElement.remove(); } catch (err) {} }; window.hrmsToggleParentOpen = function (el) { if (el && el.parentElement) el.parentElement.open = !el.parentElement.open; }; window.hrmsToggleParentClass = function (cls, el) { if (el && el.parentElement) el.parentElement.classList.toggle(cls); }; window.hrmsHideById = function (id) { var n = document.getElementById(id); if (n) n.style.display = 'none'; }; window.hrmsClearDailyReportDates = function () { var a = document.getElementById('dr-list-start'); if (a) a.value = ''; var b = document.getElementById('dr-list-end'); if (b) b.value = ''; if (typeof loadDailyReportData === 'function') loadDailyReportData(); }; window.hrmsToggleKitchenConfigForm = function (el) { var f = document.getElementById('kitchen-config-form'); if (!f) return; f.style.display = f.style.display === 'none' ? '' : 'none'; var s = el && el.querySelector ? el.querySelector('span') : null; if (s) s.textContent = f.style.display === 'none' ? '展开表单' : '收起表单'; }; window.hrmsSubmitPointsApplication = function () { return uploadPointsEvidence().then(function () { return submitPointsApplication(); }); }; // P5.1：data-click(+data-arg[+data-arg2][+data-arg3][+data-click2][+data-arg-self][+data-click-self-only][+data-stop]) 委托
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (!el) return; var fn = el.getAttribute('data-click'); if (!fn || typeof window[fn] !== 'function') return; if (el.hasAttribute('data-click-self-only') && e.target !== el) return; if (el.hasAttribute('data-stop')) e.stopPropagation(); var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); parseArg('data-arg3', 'data-arg3-type'); if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; window.hrmsRemoveClosest = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n) n.remove(); } catch (err) {} }; window.hrmsRemoveClosestParent = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n && n.parentElement) n.parentElement.remove(); } catch (err) {} }; window.hrmsRemoveParent = function (el) { try { if (el && el.parentElement) el.parentElement.remove(); } catch (err) {} }; window.hrmsSelectPointsRule = function (idx, el) { if (typeof selectPointsRule === 'function') selectPointsRule(el, idx); }; window.hrmsSelectPointsReturnedRule = function (idx, el) { if (typeof selectPointsReturnedRule === 'function') selectPointsReturnedRule(el, idx); }; window.hrmsToggleNotifFull = function (el) { try { var n = el && el.querySelector && el.querySelector('.notif-full-msg'); if (n) n.classList.toggle('notif-msg-show'); } catch (err) {} }; window.hrmsToggleByIdDisplay = function (id) { var d = document.getElementById(id); if (d) d.style.display = d.style.display === 'none' ? '' : 'none'; }; window.hrmsRemoveGrandparent = function (el) { try { if (el && el.parentElement && el.parentElement.parentElement) el.parentElement.parentElement.remove(); } catch (err) {} }; window.hrmsNoop = function () {}; window.hrmsSwitchAgentTemplates = function (kind) { if (typeof switchAgentTemplateKind === 'function') switchAgentTemplateKind(kind); if (typeof switchAgentConfigTab === 'function') switchAgentConfigTab('templates'); }; window.hrmsToggleParentOpen = function (el) { if (el && el.parentElement) el.parentElement.open = !el.parentElement.open; }; window.hrmsToggleParentClass = function (cls, el) { if (el && el.parentElement) el.parentElement.classList.toggle(cls); }; window.hrmsHideById = function (id) { var n = document.getElementById(id); if (n) n.style.display = 'none'; }; window.hrmsClearDailyReportDates = function () { var a = document.getElementById('dr-list-start'); if (a) a.value = ''; var b = document.getElementById('dr-list-end'); if (b) b.value = ''; if (typeof loadDailyReportData === 'function') loadDailyReportData(); }; window.hrmsToggleKitchenConfigForm = function (el) { var f = document.getElementById('kitchen-config-form'); if (!f) return; f.style.display = f.style.display === 'none' ? '' : 'none'; var s = el && el.querySelector ? el.querySelector('span') : null; if (s) s.textContent = f.style.display === 'none' ? '展开表单' : '收起表单'; }; window.hrmsSubmitPointsApplication = function () { return uploadPointsEvidence().then(function () { return submitPointsApplication(); }); }; // P5.1：data-click(+data-arg[+data-arg2][+data-arg3][+data-click2][+data-arg-self][+data-click-self-only][+data-stop]) 委托
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -26899,7 +26899,7 @@
             const idx = __POINTS_RET_ROW_SEQ;
             const rules = __POINTS_RULES_CACHE || [];
             const rulesHtml = rules.length
-                ? rules.map((r, ri) => `<div class="pts-rule-opt pts-ret-rule-opt" data-rid="${escapeHtml(String(r?.id||''))}" data-pts="${Number(r?.points||0)}" onclick="selectPointsReturnedRule(this,${idx})" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;${ri < rules.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : ''}cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background 0.18s ease;"><span style="flex:1;font-size:13px;color:rgba(226,232,240,0.9);line-height:1.5;padding-right:10px;">${escapeHtml(String(r?.itemName||'-'))}<span style="display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:rgba(201,169,106,0.82);">+${Number(r?.points||0)}分</span></span><div class="pts-radio-dot" style="width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s ease;background:rgba(255,255,255,0.04);"></div></div>`).join('')
+                ? rules.map((r, ri) => `<div class="pts-rule-opt pts-ret-rule-opt" data-rid="${escapeHtml(String(r?.id||''))}" data-pts="${Number(r?.points||0)}" data-click="hrmsSelectPointsReturnedRule" data-arg="${idx}" data-arg-type="number" data-arg-self="1" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;${ri < rules.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : ''}cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background 0.18s ease;"><span style="flex:1;font-size:13px;color:rgba(226,232,240,0.9);line-height:1.5;padding-right:10px;">${escapeHtml(String(r?.itemName||'-'))}<span style="display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:rgba(201,169,106,0.82);">+${Number(r?.points||0)}分</span></span><div class="pts-radio-dot" style="width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s ease;background:rgba(255,255,255,0.04);"></div></div>`).join('')
                 : '<div style="padding:18px;text-align:center;color:rgba(200,215,230,0.45);font-size:13px;">暂无可用事项</div>';
             const itemDiv = document.createElement('div');
             itemDiv.className = 'pts-ret-item';
@@ -27005,7 +27005,7 @@
             const idx = __POINTS_APPLY_COUNTER;
             const rules = __POINTS_RULES_CACHE || [];
             const rulesHtml = rules.length
-                ? rules.map((r, ri) => `<div class="pts-rule-opt" data-rid="${escapeHtml(String(r?.id||''))}" data-pts="${Number(r?.points||0)}" onclick="selectPointsRule(this,${idx})" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;${ri < rules.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : ''}cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background 0.18s ease;"><span style="flex:1;font-size:13px;color:rgba(226,232,240,0.9);line-height:1.5;padding-right:10px;">${escapeHtml(String(r?.itemName||'-'))}<span style="display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:rgba(201,169,106,0.82);">+${Number(r?.points||0)}分</span></span><div class="pts-radio-dot" style="width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s ease;background:rgba(255,255,255,0.04);"></div></div>`).join('')
+                ? rules.map((r, ri) => `<div class="pts-rule-opt" data-rid="${escapeHtml(String(r?.id||''))}" data-pts="${Number(r?.points||0)}" data-click="hrmsSelectPointsRule" data-arg="${idx}" data-arg-type="number" data-arg-self="1" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;${ri < rules.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : ''}cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background 0.18s ease;"><span style="flex:1;font-size:13px;color:rgba(226,232,240,0.9);line-height:1.5;padding-right:10px;">${escapeHtml(String(r?.itemName||'-'))}<span style="display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:rgba(201,169,106,0.82);">+${Number(r?.points||0)}分</span></span><div class="pts-radio-dot" style="width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s ease;background:rgba(255,255,255,0.04);"></div></div>`).join('')
                 : '<div style="padding:18px;text-align:center;color:rgba(200,215,230,0.45);font-size:13px;">暂无可用事项</div>';
             const itemDiv = document.createElement('div');
             itemDiv.className = 'points-apply-item';
@@ -31230,7 +31230,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 const label = escapeHtml(String(x || '').trim());
                 return `<span style="display:inline-flex; align-items:center; gap: 8px; padding: 8px 10px; border-radius: 999px; margin: 0 8px 8px 0; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.04);">
                     <span style="font-weight: 800;">${label}</span>
-                    <button class="btn btn-secondary" type="button" onclick="removePaymentSettingItem('${String(type || '').replace(/'/g, "\\'")}', ${idx})" style="padding: 4px 8px; border-radius: 999px;">删除</button>
+                    <button class="btn btn-secondary" type="button" data-click="removePaymentSettingItem" data-arg="${String(type || '').replace(/'/g, "\\'")}" data-arg2="${idx}" data-arg2-type="number" style="padding: 4px 8px; border-radius: 999px;">删除</button>
                 </span>`;
             }).join('');
         }
@@ -31629,7 +31629,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                                 <td style="padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); color: rgba(226,232,240,0.9);">${c}</td>
                                 <td style="padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); color: rgba(59,130,246,0.95); font-weight: 900;">¥${amtText}</td>
                                 <td style="padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                                    <button class="btn btn-secondary" type="button" onclick="removePaymentBudgetRow('${sJs}','${mJs}','${cJs}')" style="padding: 8px 12px;">删除</button>
+                                    <button class="btn btn-secondary" type="button" data-click="removePaymentBudgetRow" data-arg="${sJs}" data-arg2="${mJs}" data-arg3="${cJs}" style="padding: 8px 12px;">删除</button>
                                 </td>
                             </tr>`;
                         }).join('')}
@@ -34749,7 +34749,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
             container.innerHTML = _TRAINING_POSITIONS.map(p => {
                 const checked = selected.has(p);
                 if (containerId === 'training-assign-positions') {
-                    return `<label onclick="togglePositionBox('${containerId}','${p}',this)"
+                    return `<label data-click="togglePositionBox" data-arg="${containerId}" data-arg2="${p}" data-arg-self="1"
                         class="ta-position-pill${checked ? ' is-active' : ''}"
                         data-pos="${p}" data-checked="${checked ? '1' : '0'}">
                         <span class="ta-position-icon">${checked ? '✓' : '+'}</span>
@@ -34757,14 +34757,14 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     </label>`;
                 }
                 if (containerId === 'training-topic-positions') {
-                    return `<label onclick="togglePositionBox('${containerId}','${p}',this)"
+                    return `<label data-click="togglePositionBox" data-arg="${containerId}" data-arg2="${p}" data-arg-self="1"
                         class="ta-position-pill${checked ? ' is-active' : ''}"
                         data-pos="${p}" data-checked="${checked ? '1' : '0'}">
                         <span class="ta-position-icon">${checked ? '✓' : '+'}</span>
                         <span>${p}</span>
                     </label>`;
                 }
-                return `<label onclick="togglePositionBox('${containerId}','${p}',this)"
+                return `<label data-click="togglePositionBox" data-arg="${containerId}" data-arg2="${p}" data-arg-self="1"
                     style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;cursor:pointer;font-size:13px;
                     background:${checked ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)'};
                     border:1px solid ${checked ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.12)'};
@@ -35301,7 +35301,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                         }).join('') : '';
                         const historyId = `dash-hist-${idx}-${mi}`;
                         const toggleBtn = attemptCount > 0
-                            ? `<button onclick="(function(e){e.stopPropagation();var d=document.getElementById('${historyId}');d.style.display=d.style.display==='none'?'':'none';})(event)" style="font-size:10px;padding:2px 7px;border-radius:8px;border:none;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.5);cursor:pointer;margin-left:6px;">历史</button>`
+                            ? `<button data-click="hrmsToggleByIdDisplay" data-arg="${historyId}" data-stop style="font-size:10px;padding:2px 7px;border-radius:8px;border:none;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.5);cursor:pointer;margin-left:6px;">历史</button>`
                             : '';
                         const memberStyle = deadline.isOverdue
                             ? 'background:rgba(127,29,29,0.26);border:1px solid rgba(248,113,113,0.26);'
@@ -39415,7 +39415,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                                         <option value="">手动提示词</option>
                                         ${(Array.isArray(__AGENT_TEMPLATE_MAP?.[c.agent_id]) ? __AGENT_TEMPLATE_MAP[c.agent_id] : []).map((t) => `<option value="${escapeHtml(t.id)}" ${String(c.prompt_template_id || '') === String(t.id || '') ? 'selected' : ''}>${escapeHtml(t.name || '')}${t.is_builtin ? '（系统）' : ''}</option>`).join('')}
                                     </select>
-                                    <button class="acm-add-btn" onclick="switchAgentTemplateKind('prompt');switchAgentConfigTab('templates')" style="white-space:nowrap;">管理模板</button>
+                                    <button class="acm-add-btn" data-click="hrmsSwitchAgentTemplates" data-arg="prompt" style="white-space:nowrap;">管理模板</button>
                                 </div>
                             </div>
                             <div>
@@ -39425,7 +39425,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                                         <option value="">不指定</option>
                                         ${(Array.isArray(__AGENT_REPLY_TEMPLATE_MAP?.[c.agent_id]) ? __AGENT_REPLY_TEMPLATE_MAP[c.agent_id] : []).map((t) => `<option value="${escapeHtml(t.id)}" ${String(c.reply_template_id || '') === String(t.id || '') ? 'selected' : ''}>${escapeHtml(t.name || '')}${t.is_builtin ? '（系统）' : ''}</option>`).join('')}
                                     </select>
-                                    <button class="acm-add-btn" onclick="switchAgentTemplateKind('reply');switchAgentConfigTab('templates')" style="white-space:nowrap;">管理模板</button>
+                                    <button class="acm-add-btn" data-click="hrmsSwitchAgentTemplates" data-arg="reply" style="white-space:nowrap;">管理模板</button>
                                 </div>
                             </div>
                             <div>
@@ -44468,7 +44468,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                 return '<span style="display:inline-flex; align-items:center; gap:4px; background:rgba(59,130,246,0.2); color:#93c5fd; border:1px solid rgba(59,130,246,0.3); border-radius:6px; padding:4px 8px; font-size:12px; white-space:nowrap;">'
                     + '<span style="color:rgba(200,215,230,0.6); font-size:10px; margin-right:2px;">' + (idx + 1) + '.</span>'
                     + label
-                    + '<button type="button" onclick="afRemoveStep(\'' + type + '\',' + idx + ')" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:14px; padding:0 2px; line-height:1;">×</button>'
+                    + '<button type="button" data-click="afRemoveStep" data-arg="' + type + '" data-arg2="' + idx + '" data-arg2-type="number" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:14px; padding:0 2px; line-height:1;">×</button>'
                     + '</span>';
             }).join('');
         }
@@ -47336,10 +47336,10 @@ ${String(text || '').slice(0, 9000)}`;
 
                         const click = `try{this.classList.toggle('expanded')}catch(e){}`;
                         const actions = `
-                            <button class="btn btn-secondary" type="button" onclick="try{event.stopPropagation();}catch(e){};viewEmployee('${escapeJsString(empKey)}');">查看</button>
-                            ${isAdminUser() ? `<button class="btn btn-secondary" type="button" onclick="try{event.stopPropagation();}catch(e){};editEmployee('${escapeJsString(empKey)}');">编辑</button>` : ''}
-                            ${isAdminUser() ? `<button class="btn btn-secondary" type="button" style="color:#fca5a5;border-color:rgba(248,113,113,0.35);" onclick="try{event.stopPropagation();}catch(e){};deleteEmployee('${escapeJsString(empKey)}');">删除</button>` : ''}
-                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" type="button" style="color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" onclick="try{event.stopPropagation();}catch(e){};loginAsEmployee('${escapeJsString(empKey)}','${escapeJsString(emp.name || empKey)}');">代登录</button>` : ''}
+                            <button class="btn btn-secondary" type="button" data-click="viewEmployee" data-arg="${escapeJsString(empKey)}" data-stop>查看</button>
+                            ${isAdminUser() ? `<button class="btn btn-secondary" type="button" data-click="editEmployee" data-arg="${escapeJsString(empKey)}" data-stop>编辑</button>` : ''}
+                            ${isAdminUser() ? `<button class="btn btn-secondary" type="button" style="color:#fca5a5;border-color:rgba(248,113,113,0.35);" data-click="deleteEmployee" data-arg="${escapeJsString(empKey)}" data-stop>删除</button>` : ''}
+                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" type="button" style="color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" data-click="loginAsEmployee" data-arg="${escapeJsString(empKey)}" data-arg2="${escapeJsString(emp.name || empKey)}" data-stop>代登录</button>` : ''}
                         `;
 
                         const stCls = emp.status === 'active' ? 'st-active' : (emp.status === 'inactive' ? 'st-inactive' : 'st-pending');
@@ -50810,7 +50810,7 @@ tr:nth-child(even) td { background: #fafafa; }
                             <div class="pf-approval-meta">${meta}${due}${rem}</div>
                         </div>
                         <div class="pf-approval-actions">
-                            <button class="ga-btn ga-btn--primary ga-btn--sm" onclick="profileCompleteMyTask(${t.round_id},${t.task_id},this)">完成</button>
+                            <button class="ga-btn ga-btn--primary ga-btn--sm" data-click="profileCompleteMyTask" data-arg="${t.round_id}" data-arg-type="number" data-arg2="${t.task_id}" data-arg2-type="number" data-arg-self="1">完成</button>
                         </div>
                     </div>`;
                 }).join('');
@@ -50842,7 +50842,7 @@ tr:nth-child(even) td { background: #fafafa; }
                                 <div style="font-size:12.5px;color:var(--pf-tx);">${escapeHtml(t.title)}</div>
                                 <div style="font-size:11px;color:${t.overdue ? 'var(--pf-neg)' : 'var(--pf-faint)'};margin-top:2px;">${escapeHtml(t.store)} · ${escapeHtml(t.problem_title)}${t.due_date ? ` · 截止${String(t.due_date).slice(0, 10)}${t.overdue ? '(已逾期)' : ''}` : ''}${Number(t.reminder_count) > 0 ? ` · 已提醒${t.reminder_count}次` : ''}</div>
                             </div>
-                            <button class="ga-btn ga-btn--ghost ga-btn--sm" style="flex-shrink:0;" onclick="gsRemindTask(${t.task_id}, this)">提醒</button>
+                            <button class="ga-btn ga-btn--ghost ga-btn--sm" style="flex-shrink:0;" data-click="gsRemindTask" data-arg="${t.task_id}" data-arg-type="number" data-arg-self="1">提醒</button>
                         </div>`).join('');
                     return `<details style="margin-bottom:8px;">
                         <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--pf-line);">
@@ -51145,17 +51145,17 @@ tr:nth-child(even) td { background: #fafafa; }
 
                 const srcId = a._src + '|' + a._id;
                 const delBtn = isAdmin
-                    ? '<button type="button" onclick="event.stopPropagation();deleteProfileNotification(\'' + srcId + '\')" class="ga-btn ga-btn--danger ga-btn--sm" style="height:26px;font-size:11px;">删除</button>'
+                    ? '<button type="button" data-click="deleteProfileNotification" data-arg="' + srcId + '" data-stop class="ga-btn ga-btn--danger ga-btn--sm" style="height:26px;font-size:11px;">删除</button>'
                     : '';
                 const receiptBtn = (isAdmin && !isSys && a._id)
-                    ? '<button type="button" onclick="event.stopPropagation();showAnnouncementReceipts(\'' + escapeHtml(String(a._id)) + '\')" class="ga-btn ga-btn--sm" style="height:26px;font-size:11px;">已读情况</button>'
+                    ? '<button type="button" data-click="showAnnouncementReceipts" data-arg="' + escapeHtml(String(a._id)) + '" data-stop class="ga-btn ga-btn--sm" style="height:26px;font-size:11px;">已读情况</button>'
                     : '';
 
                 const isLong = rawMsg.length > 80;
                 const preview = isLong ? escapeHtml(rawMsg.slice(0, 80)) + '…' : msg;
 
                 const cardCls = 'pf-notif-card' + (isUrgent ? ' pf-notif-card--urgent' : '') + (!isSys && !isRead ? ' pf-notif-card--unread' : '');
-                return '<div class="' + cardCls + '"' + (isLong ? ' onclick="this.querySelector(\'.notif-full-msg\').classList.toggle(\'notif-msg-show\')"' : '') + '>'
+                return '<div class="' + cardCls + '"' + (isLong ? ' data-click="hrmsToggleNotifFull" data-arg-self="1"' : '') + '>'
                     + '<div class="pf-notif-head">'
                     +   '<div class="pf-notif-main">'
                     +     '<span class="pf-notif-icon">' + typeIcon + '</span>'
@@ -52269,7 +52269,7 @@ tr:nth-child(even) td { background: #fafafa; }
                                 <div class="dr-staff-meta">${pos ? ('岗位：' + pos) : ''}</div>
                             </div>
                         </div>
-                        <div class="dr-staff-actions" onclick="event.stopPropagation();">
+                        <div class="dr-staff-actions" data-click="hrmsNoop" data-stop>
                             <button type="button" class="dr-staff-pick-row__day" data-click="toggleDailyReportStaffPickDays" data-arg="${idx}" data-arg-type="number">${escapeHtml(dayText)}</button>
                         </div>
                     </div>
@@ -55901,10 +55901,10 @@ ${ok
                                     const baseWarn = r?.baseAmountOverridden ? ' rep-pay-cell--warn' : '';
                                     const actParts = [];
                                     if (canEditPayroll) {
-                                        actParts.push(`<button class="btn btn-secondary" type="button" onclick="event.stopPropagation(); editPayrollBaseAmount('${un}', '${sto}', ${Number(r?.baseAmount || 0)})">基础应发</button>`);
-                                        actParts.push(`<button class="btn btn-secondary" type="button" onclick="event.stopPropagation(); editPayrollSubsidy('${un}', '${sto}', ${Number(r?.subsidy || 0)})">补贴</button>`);
+                                        actParts.push(`<button class="btn btn-secondary" type="button" data-click="editPayrollBaseAmount" data-arg="${un}" data-arg2="${sto}" data-arg3="${Number(r?.baseAmount || 0)}" data-arg3-type="number" data-stop>基础应发</button>`);
+                                        actParts.push(`<button class="btn btn-secondary" type="button" data-click="editPayrollSubsidy" data-arg="${un}" data-arg2="${sto}" data-arg3="${Number(r?.subsidy || 0)}" data-arg3-type="number" data-stop>补贴</button>`);
                                     }
-                                    actParts.push(`<button class="btn btn-secondary" type="button" onclick="event.stopPropagation(); openSalaryChangeHistoryModal('${un}', '${nm}')">薪资记录</button>`);
+                                    actParts.push(`<button class="btn btn-secondary" type="button" data-click="openSalaryChangeHistoryModal" data-arg="${un}" data-arg2="${nm}" data-stop>薪资记录</button>`);
                                     const act = actParts.length ? `<div class="rep-pay-card__actions">${actParts.join('')}</div>` : '';
                                     return `
                                     <details class="rep-pay-card rep-row-details">
@@ -59123,7 +59123,7 @@ ${body}
             notification.innerHTML = `
                 <div class="notification-content">
                     <span class="notification-message">${message}</span>
-                    <button class="notification-close" onclick="this.parentElement.parentElement.remove()">×</button>
+                    <button class="notification-close" data-click="hrmsRemoveGrandparent" data-arg-self="1">×</button>
                 </div>
             `;
             
@@ -60107,7 +60107,7 @@ ${body}
                   ${t.due_date ? `<span class="gs-task__phase">截止 ${String(t.due_date).slice(0, 10)}</span>` : ''}
                   <span class="gs-task__status gs-task__status--${t.status === 'done' ? 'done' : 'pending'}">${t.status === 'done' ? '✓ 已完成' : (t.due_date && String(t.due_date).slice(0, 10) < new Date().toISOString().slice(0, 10) ? '⚠️ 已逾期' : '进行中')}</span>
                   ${Number(t.reminder_count) > 0 ? `<span class="gs-task__phase" style="color:#FF8A7A;">已催促 ${t.reminder_count} 次</span>` : ''}
-                  ${t.status !== 'done' && r.status === 'active' ? `<button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsRemindTask(${t.id}, this)">提醒</button>` : ''}
+                  ${t.status !== 'done' && r.status === 'active' ? `<button class="ga-btn ga-btn--ghost ga-btn--sm" data-click="gsRemindTask" data-arg="${t.id}" data-arg-type="number" data-arg-self="1">提醒</button>` : ''}
                 </div>
               </div>
             </div>`).join('');
@@ -62598,7 +62598,7 @@ ${body}
                 return '<li style="margin:4px 0;color:rgba(226,232,240,.78);">' + escapeHtml(x) + '</li>';
             }).join('');
             ov.innerHTML = '<div style="width:min(560px,100%);max-height:90vh;overflow:auto;background:#0f172a;border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:18px;">'
-                + '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div style="font-size:12px;color:#38bdf8;font-weight:800;">360 CUSTOMER PROFILE</div><div style="font-size:22px;color:#fff;font-weight:900;margin-top:4px;">' + escapeHtml(c.customer_id || '-') + '</div></div><button onclick="this.closest(\'div[style*=fixed]\').remove()" style="border:none;background:rgba(255,255,255,0.08);color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;">关闭</button></div>'
+                + '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div style="font-size:12px;color:#38bdf8;font-weight:800;">360 CUSTOMER PROFILE</div><div style="font-size:22px;color:#fff;font-weight:900;margin-top:4px;">' + escapeHtml(c.customer_id || '-') + '</div></div><button data-click="hrmsRemoveClosest" data-arg="div[style*=fixed]" data-arg-self="1" style="border:none;background:rgba(255,255,255,0.08);color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;">关闭</button></div>'
                 + '<div class="rep-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px;">'
                 + '<div class="rep-metric"><div class="k">手机号</div><div class="v" style="font-size:18px;">' + escapeHtml(c.phone || '-') + '</div></div>'
                 + '<div class="rep-metric"><div class="k">会员号/企微</div><div class="v" style="font-size:18px;">' + escapeHtml(c.member_no || c.external_userid || '-') + '</div></div>'
@@ -66385,7 +66385,7 @@ ${body}
             if (!host) return;
             host.innerHTML = posters.length ? '<div style="grid-column:1/-1;font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:4px;">共 ' + posters.length + ' 张</div>' + posters.slice(0, 30).map(function(p) {
               return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;cursor:pointer;position:relative;" data-click="open" data-arg="' + (p.output_url || '#') + '">'
-                + (p.id ? '<button onclick="event.stopPropagation();deleteGeneratedPoster(' + p.id + ')" style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:6px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:2;">✕</button>' : '')
+                + (p.id ? '<button data-click="deleteGeneratedPoster" data-arg="' + p.id + '" data-arg-type="number" data-stop style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:6px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:2;">✕</button>' : '')
                 + '<div style="aspect-ratio:3/4;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;overflow:hidden;">'
                 + (p.output_url ? '<img src="' + p.output_url + '" loading="lazy" style="width:100%;height:100%;object-fit:cover;">' : '<span style="color:rgba(226,232,240,0.3);font-size:11px;">无预览</span>')
                 + '</div><div style="padding:6px;font-size:11px;color:rgba(226,232,240,0.6);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">'
@@ -66977,7 +66977,7 @@ ${body}
             <div style="display:flex;gap:10px;align-items:flex-start;">
               <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</div>
               <div style="font-size:13px;color:#e2e8f0;line-height:1.6;flex:1;">${s.instruction}</div>
-              ${s.media_url ? `<button onclick="openMediaLightbox('${s.media_url}','${s.media_type||'image'}')" title="查看${s.media_type==='video'?'视频':'图片'}"
+              ${s.media_url ? `<button data-click="openMediaLightbox" data-arg="${s.media_url}" data-arg2="${s.media_type||'image'}" title="查看${s.media_type==='video'?'视频':'图片'}"
                 style="width:30px;height:30px;border-radius:8px;border:none;background:rgba(99,102,241,0.15);color:#a5b4fc;cursor:pointer;font-size:14px;flex-shrink:0;">${s.media_type==='video'?'▶':'🔍'}</button>` : ''}
             </div>
             ${mediaHtml}
@@ -68781,8 +68781,8 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 }
                 if (isAdminOrHq && exp.status === 'pending_approval') {
                     html += '<div class="sp-actions">';
-                    html += '<button class="sp-btn sp-btn--primary" onclick="event.stopPropagation();approveStrategyExperiment(\'' + exp.experiment_code + '\')">审批通过</button>';
-                    html += '<button class="sp-btn sp-btn--secondary" onclick="event.stopPropagation();rejectStrategyExperiment(\'' + exp.experiment_code + '\')">拒绝</button>';
+                    html += '<button class="sp-btn sp-btn--primary" data-click="approveStrategyExperiment" data-arg="' + exp.experiment_code + '" data-stop>审批通过</button>';
+                    html += '<button class="sp-btn sp-btn--secondary" data-click="rejectStrategyExperiment" data-arg="' + exp.experiment_code + '" data-stop>拒绝</button>';
                     html += '</div>';
                 }
                 html += '</div>';
@@ -68821,7 +68821,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 html += '<div class="sp-row"><span class="label">执行指南</span><span class="value">' + (v.execution_guide || '—') + '</span></div>';
                 html += '<div class="sp-row"><span class="label">截止日期</span><span class="value">' + (v.planned_end || '—').toString().slice(0,10) + '</span></div>';
                 if (v.status === 'pending') {
-                    html += '<div class="sp-actions"><button class="sp-btn sp-btn--primary" onclick="startVariantExecution(\'' + v.experiment_code + '\',\'' + v.variant_code + '\')">开始执行</button></div>';
+                    html += '<div class="sp-actions"><button class="sp-btn sp-btn--primary" data-click="startVariantExecution" data-arg="' + v.experiment_code + '" data-arg2="' + v.variant_code + '">开始执行</button></div>';
                 }
                 if (v.status === 'executing' || v.status === 'pending') {
                     html += '<div class="sp-result-form" id="sp-result-form-' + v.experiment_code + '-' + v.variant_code + '">';
@@ -68834,7 +68834,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                     html += '<div class="sp-form-group"><label>新增客户数（选填）</label><input type="number" id="sp-new-cust-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：30"></div>';
                     html += '<div class="sp-form-group"><label>执行保真度</label><select id="sp-fidelity-' + v.experiment_code + '-' + v.variant_code + '"><option value="full">完全执行</option><option value="partial" selected>部分执行</option><option value="failed">执行失败</option></select></div>';
                     html += '<div class="sp-form-group"><label>补充说明</label><textarea id="sp-feedback-' + v.experiment_code + '-' + v.variant_code + '" placeholder="执行情况备注"></textarea></div>';
-                    html += '<button class="sp-btn sp-btn--primary" onclick="submitStrategyVariantResult(\'' + v.experiment_code + '\',\'' + v.variant_code + '\')">提交结果</button>';
+                    html += '<button class="sp-btn sp-btn--primary" data-click="submitStrategyVariantResult" data-arg="' + v.experiment_code + '" data-arg2="' + v.variant_code + '">提交结果</button>';
                     html += '</div>';
                 }
                 html += '</div>';

@@ -875,7 +875,7 @@
                   ${t.due_date ? `<span class="gs-task__phase">截止 ${String(t.due_date).slice(0, 10)}</span>` : ''}
                   <span class="gs-task__status gs-task__status--${t.status === 'done' ? 'done' : 'pending'}">${t.status === 'done' ? '✓ 已完成' : (t.due_date && String(t.due_date).slice(0, 10) < new Date().toISOString().slice(0, 10) ? '⚠️ 已逾期' : '进行中')}</span>
                   ${Number(t.reminder_count) > 0 ? `<span class="gs-task__phase" style="color:#FF8A7A;">已催促 ${t.reminder_count} 次</span>` : ''}
-                  ${t.status !== 'done' && r.status === 'active' ? `<button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsRemindTask(${t.id}, this)">提醒</button>` : ''}
+                  ${t.status !== 'done' && r.status === 'active' ? `<button class="ga-btn ga-btn--ghost ga-btn--sm" data-click="gsRemindTask" data-arg="${t.id}" data-arg-type="number" data-arg-self="1">提醒</button>` : ''}
                 </div>
               </div>
             </div>`).join('');

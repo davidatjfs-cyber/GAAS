@@ -1690,7 +1690,7 @@
             if (!host) return;
             host.innerHTML = posters.length ? '<div style="grid-column:1/-1;font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:4px;">共 ' + posters.length + ' 张</div>' + posters.slice(0, 30).map(function(p) {
               return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;cursor:pointer;position:relative;" data-click="open" data-arg="' + (p.output_url || '#') + '">'
-                + (p.id ? '<button onclick="event.stopPropagation();deleteGeneratedPoster(' + p.id + ')" style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:6px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:2;">✕</button>' : '')
+                + (p.id ? '<button data-click="deleteGeneratedPoster" data-arg="' + p.id + '" data-arg-type="number" data-stop style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:6px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:2;">✕</button>' : '')
                 + '<div style="aspect-ratio:3/4;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;overflow:hidden;">'
                 + (p.output_url ? '<img src="' + p.output_url + '" loading="lazy" style="width:100%;height:100%;object-fit:cover;">' : '<span style="color:rgba(226,232,240,0.3);font-size:11px;">无预览</span>')
                 + '</div><div style="padding:6px;font-size:11px;color:rgba(226,232,240,0.6);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">'
@@ -2282,7 +2282,7 @@
             <div style="display:flex;gap:10px;align-items:flex-start;">
               <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</div>
               <div style="font-size:13px;color:#e2e8f0;line-height:1.6;flex:1;">${s.instruction}</div>
-              ${s.media_url ? `<button onclick="openMediaLightbox('${s.media_url}','${s.media_type||'image'}')" title="查看${s.media_type==='video'?'视频':'图片'}"
+              ${s.media_url ? `<button data-click="openMediaLightbox" data-arg="${s.media_url}" data-arg2="${s.media_type||'image'}" title="查看${s.media_type==='video'?'视频':'图片'}"
                 style="width:30px;height:30px;border-radius:8px;border:none;background:rgba(99,102,241,0.15);color:#a5b4fc;cursor:pointer;font-size:14px;flex-shrink:0;">${s.media_type==='video'?'▶':'🔍'}</button>` : ''}
             </div>
             ${mediaHtml}
@@ -4086,8 +4086,8 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 }
                 if (isAdminOrHq && exp.status === 'pending_approval') {
                     html += '<div class="sp-actions">';
-                    html += '<button class="sp-btn sp-btn--primary" onclick="event.stopPropagation();approveStrategyExperiment(\'' + exp.experiment_code + '\')">审批通过</button>';
-                    html += '<button class="sp-btn sp-btn--secondary" onclick="event.stopPropagation();rejectStrategyExperiment(\'' + exp.experiment_code + '\')">拒绝</button>';
+                    html += '<button class="sp-btn sp-btn--primary" data-click="approveStrategyExperiment" data-arg="' + exp.experiment_code + '" data-stop>审批通过</button>';
+                    html += '<button class="sp-btn sp-btn--secondary" data-click="rejectStrategyExperiment" data-arg="' + exp.experiment_code + '" data-stop>拒绝</button>';
                     html += '</div>';
                 }
                 html += '</div>';
@@ -4126,7 +4126,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 html += '<div class="sp-row"><span class="label">执行指南</span><span class="value">' + (v.execution_guide || '—') + '</span></div>';
                 html += '<div class="sp-row"><span class="label">截止日期</span><span class="value">' + (v.planned_end || '—').toString().slice(0,10) + '</span></div>';
                 if (v.status === 'pending') {
-                    html += '<div class="sp-actions"><button class="sp-btn sp-btn--primary" onclick="startVariantExecution(\'' + v.experiment_code + '\',\'' + v.variant_code + '\')">开始执行</button></div>';
+                    html += '<div class="sp-actions"><button class="sp-btn sp-btn--primary" data-click="startVariantExecution" data-arg="' + v.experiment_code + '" data-arg2="' + v.variant_code + '">开始执行</button></div>';
                 }
                 if (v.status === 'executing' || v.status === 'pending') {
                     html += '<div class="sp-result-form" id="sp-result-form-' + v.experiment_code + '-' + v.variant_code + '">';
@@ -4139,7 +4139,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                     html += '<div class="sp-form-group"><label>新增客户数（选填）</label><input type="number" id="sp-new-cust-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：30"></div>';
                     html += '<div class="sp-form-group"><label>执行保真度</label><select id="sp-fidelity-' + v.experiment_code + '-' + v.variant_code + '"><option value="full">完全执行</option><option value="partial" selected>部分执行</option><option value="failed">执行失败</option></select></div>';
                     html += '<div class="sp-form-group"><label>补充说明</label><textarea id="sp-feedback-' + v.experiment_code + '-' + v.variant_code + '" placeholder="执行情况备注"></textarea></div>';
-                    html += '<button class="sp-btn sp-btn--primary" onclick="submitStrategyVariantResult(\'' + v.experiment_code + '\',\'' + v.variant_code + '\')">提交结果</button>';
+                    html += '<button class="sp-btn sp-btn--primary" data-click="submitStrategyVariantResult" data-arg="' + v.experiment_code + '" data-arg2="' + v.variant_code + '">提交结果</button>';
                     html += '</div>';
                 }
                 html += '</div>';

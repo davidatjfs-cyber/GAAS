@@ -1369,7 +1369,7 @@
                                         <option value="">手动提示词</option>
                                         ${(Array.isArray(__AGENT_TEMPLATE_MAP?.[c.agent_id]) ? __AGENT_TEMPLATE_MAP[c.agent_id] : []).map((t) => `<option value="${escapeHtml(t.id)}" ${String(c.prompt_template_id || '') === String(t.id || '') ? 'selected' : ''}>${escapeHtml(t.name || '')}${t.is_builtin ? '（系统）' : ''}</option>`).join('')}
                                     </select>
-                                    <button class="acm-add-btn" onclick="switchAgentTemplateKind('prompt');switchAgentConfigTab('templates')" style="white-space:nowrap;">管理模板</button>
+                                    <button class="acm-add-btn" data-click="hrmsSwitchAgentTemplates" data-arg="prompt" style="white-space:nowrap;">管理模板</button>
                                 </div>
                             </div>
                             <div>
@@ -1379,7 +1379,7 @@
                                         <option value="">不指定</option>
                                         ${(Array.isArray(__AGENT_REPLY_TEMPLATE_MAP?.[c.agent_id]) ? __AGENT_REPLY_TEMPLATE_MAP[c.agent_id] : []).map((t) => `<option value="${escapeHtml(t.id)}" ${String(c.reply_template_id || '') === String(t.id || '') ? 'selected' : ''}>${escapeHtml(t.name || '')}${t.is_builtin ? '（系统）' : ''}</option>`).join('')}
                                     </select>
-                                    <button class="acm-add-btn" onclick="switchAgentTemplateKind('reply');switchAgentConfigTab('templates')" style="white-space:nowrap;">管理模板</button>
+                                    <button class="acm-add-btn" data-click="hrmsSwitchAgentTemplates" data-arg="reply" style="white-space:nowrap;">管理模板</button>
                                 </div>
                             </div>
                             <div>

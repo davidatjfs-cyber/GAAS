@@ -3071,10 +3071,10 @@ ${ok
                                     const baseWarn = r?.baseAmountOverridden ? ' rep-pay-cell--warn' : '';
                                     const actParts = [];
                                     if (canEditPayroll) {
-                                        actParts.push(`<button class="btn btn-secondary" type="button" onclick="event.stopPropagation(); editPayrollBaseAmount('${un}', '${sto}', ${Number(r?.baseAmount || 0)})">基础应发</button>`);
-                                        actParts.push(`<button class="btn btn-secondary" type="button" onclick="event.stopPropagation(); editPayrollSubsidy('${un}', '${sto}', ${Number(r?.subsidy || 0)})">补贴</button>`);
+                                        actParts.push(`<button class="btn btn-secondary" type="button" data-click="editPayrollBaseAmount" data-arg="${un}" data-arg2="${sto}" data-arg3="${Number(r?.baseAmount || 0)}" data-arg3-type="number" data-stop>基础应发</button>`);
+                                        actParts.push(`<button class="btn btn-secondary" type="button" data-click="editPayrollSubsidy" data-arg="${un}" data-arg2="${sto}" data-arg3="${Number(r?.subsidy || 0)}" data-arg3-type="number" data-stop>补贴</button>`);
                                     }
-                                    actParts.push(`<button class="btn btn-secondary" type="button" onclick="event.stopPropagation(); openSalaryChangeHistoryModal('${un}', '${nm}')">薪资记录</button>`);
+                                    actParts.push(`<button class="btn btn-secondary" type="button" data-click="openSalaryChangeHistoryModal" data-arg="${un}" data-arg2="${nm}" data-stop>薪资记录</button>`);
                                     const act = actParts.length ? `<div class="rep-pay-card__actions">${actParts.join('')}</div>` : '';
                                     return `
                                     <details class="rep-pay-card rep-row-details">

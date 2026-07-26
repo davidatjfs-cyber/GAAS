@@ -738,7 +738,7 @@
                             <div class="pf-approval-meta">${meta}${due}${rem}</div>
                         </div>
                         <div class="pf-approval-actions">
-                            <button class="ga-btn ga-btn--primary ga-btn--sm" onclick="profileCompleteMyTask(${t.round_id},${t.task_id},this)">完成</button>
+                            <button class="ga-btn ga-btn--primary ga-btn--sm" data-click="profileCompleteMyTask" data-arg="${t.round_id}" data-arg-type="number" data-arg2="${t.task_id}" data-arg2-type="number" data-arg-self="1">完成</button>
                         </div>
                     </div>`;
                 }).join('');
@@ -770,7 +770,7 @@
                                 <div style="font-size:12.5px;color:var(--pf-tx);">${escapeHtml(t.title)}</div>
                                 <div style="font-size:11px;color:${t.overdue ? 'var(--pf-neg)' : 'var(--pf-faint)'};margin-top:2px;">${escapeHtml(t.store)} · ${escapeHtml(t.problem_title)}${t.due_date ? ` · 截止${String(t.due_date).slice(0, 10)}${t.overdue ? '(已逾期)' : ''}` : ''}${Number(t.reminder_count) > 0 ? ` · 已提醒${t.reminder_count}次` : ''}</div>
                             </div>
-                            <button class="ga-btn ga-btn--ghost ga-btn--sm" style="flex-shrink:0;" onclick="gsRemindTask(${t.task_id}, this)">提醒</button>
+                            <button class="ga-btn ga-btn--ghost ga-btn--sm" style="flex-shrink:0;" data-click="gsRemindTask" data-arg="${t.task_id}" data-arg-type="number" data-arg-self="1">提醒</button>
                         </div>`).join('');
                     return `<details style="margin-bottom:8px;">
                         <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--pf-line);">
@@ -1073,17 +1073,17 @@
 
                 const srcId = a._src + '|' + a._id;
                 const delBtn = isAdmin
-                    ? '<button type="button" onclick="event.stopPropagation();deleteProfileNotification(\'' + srcId + '\')" class="ga-btn ga-btn--danger ga-btn--sm" style="height:26px;font-size:11px;">删除</button>'
+                    ? '<button type="button" data-click="deleteProfileNotification" data-arg="' + srcId + '" data-stop class="ga-btn ga-btn--danger ga-btn--sm" style="height:26px;font-size:11px;">删除</button>'
                     : '';
                 const receiptBtn = (isAdmin && !isSys && a._id)
-                    ? '<button type="button" onclick="event.stopPropagation();showAnnouncementReceipts(\'' + escapeHtml(String(a._id)) + '\')" class="ga-btn ga-btn--sm" style="height:26px;font-size:11px;">已读情况</button>'
+                    ? '<button type="button" data-click="showAnnouncementReceipts" data-arg="' + escapeHtml(String(a._id)) + '" data-stop class="ga-btn ga-btn--sm" style="height:26px;font-size:11px;">已读情况</button>'
                     : '';
 
                 const isLong = rawMsg.length > 80;
                 const preview = isLong ? escapeHtml(rawMsg.slice(0, 80)) + '…' : msg;
 
                 const cardCls = 'pf-notif-card' + (isUrgent ? ' pf-notif-card--urgent' : '') + (!isSys && !isRead ? ' pf-notif-card--unread' : '');
-                return '<div class="' + cardCls + '"' + (isLong ? ' onclick="this.querySelector(\'.notif-full-msg\').classList.toggle(\'notif-msg-show\')"' : '') + '>'
+                return '<div class="' + cardCls + '"' + (isLong ? ' data-click="hrmsToggleNotifFull" data-arg-self="1"' : '') + '>'
                     + '<div class="pf-notif-head">'
                     +   '<div class="pf-notif-main">'
                     +     '<span class="pf-notif-icon">' + typeIcon + '</span>'
@@ -2197,7 +2197,7 @@
                                 <div class="dr-staff-meta">${pos ? ('岗位：' + pos) : ''}</div>
                             </div>
                         </div>
-                        <div class="dr-staff-actions" onclick="event.stopPropagation();">
+                        <div class="dr-staff-actions" data-click="hrmsNoop" data-stop>
                             <button type="button" class="dr-staff-pick-row__day" data-click="toggleDailyReportStaffPickDays" data-arg="${idx}" data-arg-type="number">${escapeHtml(dayText)}</button>
                         </div>
                     </div>

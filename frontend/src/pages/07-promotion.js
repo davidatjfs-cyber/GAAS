@@ -4040,7 +4040,7 @@
                 return '<span style="display:inline-flex; align-items:center; gap:4px; background:rgba(59,130,246,0.2); color:#93c5fd; border:1px solid rgba(59,130,246,0.3); border-radius:6px; padding:4px 8px; font-size:12px; white-space:nowrap;">'
                     + '<span style="color:rgba(200,215,230,0.6); font-size:10px; margin-right:2px;">' + (idx + 1) + '.</span>'
                     + label
-                    + '<button type="button" onclick="afRemoveStep(\'' + type + '\',' + idx + ')" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:14px; padding:0 2px; line-height:1;">×</button>'
+                    + '<button type="button" data-click="afRemoveStep" data-arg="' + type + '" data-arg2="' + idx + '" data-arg2-type="number" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:14px; padding:0 2px; line-height:1;">×</button>'
                     + '</span>';
             }).join('');
         }

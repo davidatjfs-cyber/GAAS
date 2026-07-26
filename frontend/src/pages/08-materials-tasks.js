@@ -2648,10 +2648,10 @@ ${String(text || '').slice(0, 9000)}`;
 
                         const click = `try{this.classList.toggle('expanded')}catch(e){}`;
                         const actions = `
-                            <button class="btn btn-secondary" type="button" onclick="try{event.stopPropagation();}catch(e){};viewEmployee('${escapeJsString(empKey)}');">查看</button>
-                            ${isAdminUser() ? `<button class="btn btn-secondary" type="button" onclick="try{event.stopPropagation();}catch(e){};editEmployee('${escapeJsString(empKey)}');">编辑</button>` : ''}
-                            ${isAdminUser() ? `<button class="btn btn-secondary" type="button" style="color:#fca5a5;border-color:rgba(248,113,113,0.35);" onclick="try{event.stopPropagation();}catch(e){};deleteEmployee('${escapeJsString(empKey)}');">删除</button>` : ''}
-                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" type="button" style="color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" onclick="try{event.stopPropagation();}catch(e){};loginAsEmployee('${escapeJsString(empKey)}','${escapeJsString(emp.name || empKey)}');">代登录</button>` : ''}
+                            <button class="btn btn-secondary" type="button" data-click="viewEmployee" data-arg="${escapeJsString(empKey)}" data-stop>查看</button>
+                            ${isAdminUser() ? `<button class="btn btn-secondary" type="button" data-click="editEmployee" data-arg="${escapeJsString(empKey)}" data-stop>编辑</button>` : ''}
+                            ${isAdminUser() ? `<button class="btn btn-secondary" type="button" style="color:#fca5a5;border-color:rgba(248,113,113,0.35);" data-click="deleteEmployee" data-arg="${escapeJsString(empKey)}" data-stop>删除</button>` : ''}
+                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" type="button" style="color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" data-click="loginAsEmployee" data-arg="${escapeJsString(empKey)}" data-arg2="${escapeJsString(emp.name || empKey)}" data-stop>代登录</button>` : ''}
                         `;
 
                         const stCls = emp.status === 'active' ? 'st-active' : (emp.status === 'inactive' ? 'st-inactive' : 'st-pending');
