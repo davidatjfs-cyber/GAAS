@@ -68,10 +68,9 @@ export default {
   thresholds: {
     high: 80,
     low: 60,
-    // break 50: time-number.js (91.6%), normalize-helpers.js (94.4%),
-    // account-gate.js (91.4%), agents-service-auth.js (94.8%),
-    // user-lookup.js (91.5%) spot-checked 2026-07-26.
-    break: 50,
+    // break 70: 2026-07-26 MUTATION_MUTATE=domains/shared/time-number.js → 91.56%
+    // (141 killed / 13 survived). Spot-checks above remain valid floor.
+    break: 70,
   },
   concurrency: process.env.MUTATION_CONCURRENCY
     ? Number(process.env.MUTATION_CONCURRENCY)

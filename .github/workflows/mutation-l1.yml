@@ -1,0 +1,34 @@
+# P4：L1 变异测试（Stryker）——验证高覆盖文件的断言是否真的在测东西。
+# 默认仅 workflow_dispatch / 周调度，避免拖慢每次 PR CI。
+name: Mutation L1
+
+on:
+  workflow_dispatch:
+    inputs:
+      mutate:
+        description: '可选：逗号分隔 mutate 路径（默认 l1-coverage-floor 全量）'
+        required: false
+        default: ''
+  schedule:
+    # 每周一 03:17 UTC
+    - cron: '17 3 * * 1'
+
+jobs:
+  mutation-l1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          check-latest: false
+      - name: Assert Node runtime
+        run: node scripts/assert-ci-runtime.mjs
+      - run: npm ci
+      - name: Run Stryker L1 mutation
+        working-directory: server
+        env:
+          MUTATION_MUTATE: ${{ inputs.mutate }}
+          MUTATION_CONCURRENCY: '2'
+        run: npm run test:mutation:l1
