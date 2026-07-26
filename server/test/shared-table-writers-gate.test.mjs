@@ -84,8 +84,10 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   // P5.4：runCreateKnowledgeBackground → create-knowledge-background-helpers.js
   'domains/knowledge/create-knowledge-background-helpers.js|UPDATE|knowledge_base',
   'master-agent.js|INSERT INTO|agent_messages',
-  'master-agent.js|INSERT INTO|master_tasks',
   'master-agent.js|UPDATE|master_tasks',
+  // P4：createTask/transitionTask → domains/master-agent/task-lifecycle.js
+  'domains/master-agent/task-lifecycle.js|INSERT INTO|master_tasks',
+  'domains/master-agent/task-lifecycle.js|UPDATE|master_tasks',
   'ontology/action-plan-service.js|INSERT INTO|master_tasks',
   'ontology/ontology-task-adapter.js|INSERT INTO|master_tasks',
   'domains/performance-invalidation/service.js|UPDATE|agent_scores',
@@ -150,6 +152,8 @@ const REPATH_NOTES = [
   'agents.js → domains/agent-feishu-bot/lark-send-io.js | UPDATE|feishu_users',
   // P2：删除死代码 handleTaskEscalation（agents.js 唯一残留 agent_messages INSERT）
   'agents.js → (deleted handleTaskEscalation) | INSERT INTO|agent_messages',
+  'master-agent.js → domains/master-agent/task-lifecycle.js | INSERT INTO|master_tasks',
+  'master-agent.js → domains/master-agent/task-lifecycle.js | UPDATE|master_tasks',
 ];
 
 const OWNER = 'gaas';
