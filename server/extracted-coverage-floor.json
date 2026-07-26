@@ -308,6 +308,8 @@
     "domains/bi-weekly-report/generate-period-report-helpers.js",
     "domains/daily-reports/list-daily-reports-helpers.js",
     "domains/inventory-forecast/upload-history-file-helpers.js",
+    "domains/leave-attendance/daily-attendance-register-helpers.js",
+    "domains/leave-attendance/reconcile-attendance-days-helpers.js",
     "services/check-data-integration-helpers.js"
   ]
 }
