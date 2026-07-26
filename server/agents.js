@@ -59,6 +59,8 @@ import { createSendScheduledChecklist } from './domains/agent-ops/send-scheduled
 import { createRunChiefEvaluator } from './domains/agent-evaluator/run-chief-evaluator.js';
 import { createSendSafetyCheck } from './domains/agent-ops/send-safety-check.js';
 import { createFetchStoreRatingForProfileDisplay } from './domains/agent-evaluator/fetch-store-rating-for-profile.js';
+import { createArchiveOldBitableSubmissions } from './domains/feishu-bitable/archive-old-submissions.js';
+import { createExecuteScheduledTask } from './domains/agent-ops/execute-scheduled-task.js';
 import { createHandleDataAuditorCase } from './domains/agent-message/handle-data-auditor-case.js';
 import { createOnFeishuEvent } from './domains/agent-feishu-bot/on-feishu-event.js';
 import { createTryHandleBiByFunctionCalling } from './domains/agent-bi/try-handle-bi-by-function-calling.js';
@@ -4133,96 +4135,12 @@ async function processMaterialReportData(records, brand) {
   }
 }
 
-const _bitableArchiveThresholdDays = 7; // 7天后归档（更激进）
-const _bitableDeleteThresholdDays = 60; // 60天后删除（2个月）
 
+let _archiveOldBitableSubmissions;
 export async function archiveOldBitableSubmissions() {
-  console.log('[bitable] starting data archive process...');
-  
-  try {
-    // 1. 创建归档表（如果不存在）
-    await pool().query(`
-      CREATE TABLE IF NOT EXISTS bitable_submissions_archive (
-        LIKE agent_messages INCLUDING ALL
-      )
-    `);
-    
-    // 2. 查找需要归档的记录
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - _bitableArchiveThresholdDays);
-    
-    const oldRecords = await pool().query(`
-      SELECT * FROM agent_messages 
-      WHERE content_type = 'bitable_submission' 
-        AND created_at < $1
-        AND record_id NOT IN (SELECT record_id FROM bitable_submissions_archive)
-      ORDER BY created_at ASC
-      LIMIT 5000
-    `, [cutoffDate.toISOString()]);
-    
-    if (oldRecords.rows.length === 0) {
-      console.log('[bitable] no records to archive');
-      return { archived: 0, deleted: 0 };
-    }
-    
-    console.log(`[bitable] found ${oldRecords.rows.length} records to archive`);
-    
-    // 3. 批量移动到归档表（事务包裹）
-    let archivedCount = 0;
-    const client = await pool().connect();
-    try {
-      await client.query('BEGIN');
-      for (const record of oldRecords.rows) {
-        try {
-          await client.query(`
-            INSERT INTO bitable_submissions_archive (
-              id, direction, channel, feishu_open_id, sender_username, sender_name, 
-              sender_role, routed_to, content_type, content, agent_data, 
-              created_at, updated_at, feishu_message_id, image_urls
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-          `, [
-            record.id, record.direction, record.channel, record.feishu_open_id,
-            record.sender_username, record.sender_name, record.sender_role,
-            record.routed_to, record.content_type, record.content, record.agent_data,
-            record.created_at, record.updated_at, record.feishu_message_id,
-            record.image_urls
-          ]);
-          await client.query('DELETE FROM agent_messages WHERE id = $1', [record.id]);
-          archivedCount++;
-        } catch (e) {
-          console.error(`[bitable] failed to archive record ${record.id}:`, e?.message);
-          // 单条失败继续处理下一条，不回滚整个批次
-        }
-      }
-      await client.query('COMMIT');
-    } catch (e) {
-      await client.query('ROLLBACK').catch(() => {});
-      console.error('[bitable] archive transaction failed:', e?.message);
-      throw e;
-    } finally {
-      client.release();
-    }
-    
-    // 4. 删除超过删除阈值的记录
-    const deleteCutoffDate = new Date();
-    deleteCutoffDate.setDate(deleteCutoffDate.getDate() - _bitableDeleteThresholdDays);
-    
-    const deleteResult = await pool().query(`
-      DELETE FROM bitable_submissions_archive 
-      WHERE created_at < $1
-    `, [deleteCutoffDate.toISOString()]);
-    
-    const deletedCount = deleteResult.rowCount || 0;
-    
-    console.log(`[bitable] archive completed: ${archivedCount} archived, ${deletedCount} deleted`);
-    
-    return { archived: archivedCount, deleted: deletedCount };
-    
-  } catch (e) {
-    console.error('[bitable] archive process failed:', e?.message);
-    return { archived: 0, deleted: 0, error: String(e?.message) };
-  }
+  return _archiveOldBitableSubmissions();
 }
+
 
 export async function getBitableSubmissionStats() {
   try {
@@ -4963,105 +4881,11 @@ function scheduleRandomTask(taskKey, config) {
   scheduleNext();
 }
 
-function isWithinWorkingHours() {
-  const now = new Date();
-  const hour = Number(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', hour: 'numeric', hour12: false }));
-  return hour >= 8 && hour <= 23;
-}
-
+let _executeScheduledTask;
 async function executeScheduledTask(taskKey, config) {
-  if (!isWithinWorkingHours()) {
-    console.log(`[ops] skipping task ${taskKey}: outside working hours (08:00-23:00 CST)`);
-    return;
-  }
-  const disAllChecklist = String(process.env.HRMS_DISABLE_SCHEDULED_CHECKLIST || '').trim().toLowerCase();
-  if (
-    config?.action === 'send_checklist' &&
-    (disAllChecklist === '1' || disAllChecklist === 'true' || disAllChecklist === 'yes')
-  ) {
-    console.log(`[ops] skipping task ${taskKey}: HRMS_DISABLE_SCHEDULED_CHECKLIST (executeScheduledTask)`);
-    return;
-  }
-  console.log(`[ops] executing scheduled task: ${taskKey}`);
-
-  // 定时检查单：与随机抽检一致，执行前刷新 DB 并按当前配置重建 task map；若 taskKey 已不在配置中则跳过（修复「配置中心/控制台已删仍发 测试112233」的僵尸定时器）
-  if (config?.action === 'send_checklist' && !config?.random) {
-    await refreshOpsAgentRuntimeConfig();
-    const fresh = buildScheduledTasksFromConfig();
-    const live = fresh[taskKey];
-    if (!live || live.action !== 'send_checklist') {
-      console.log(`[ops] skip scheduled checklist (stale timer / removed from OP config): ${taskKey}`);
-      return;
-    }
-    config = { ...config, ...live, taskKey };
-  }
-
-  // 随机抽检：执行前刷新 DB 配置并按任务 key 尾号对齐下标，避免「V1 已清空」后仍发旧任务；可用 HRMS_DISABLE_RANDOM_INSPECTION 彻底关 HRMS 侧下发
-  if (config?.random && config?.action === 'safety_check') {
-    const dis = String(process.env.HRMS_DISABLE_RANDOM_INSPECTION || '').trim().toLowerCase();
-    if (dis === '1' || dis === 'true' || dis === 'yes') {
-      console.log('[ops] skip random inspection (HRMS_DISABLE_RANDOM_INSPECTION)');
-      return;
-    }
-    await refreshOpsAgentRuntimeConfig();
-    const m = taskKey.match(/_(\d+)$/);
-    const idx = m ? parseInt(m[1], 10) - 1 : -1;
-    const list = Array.isArray(OPS_AGENT_CONFIG?.scheduledTasks?.randomInspections)
-      ? OPS_AGENT_CONFIG.scheduledTasks.randomInspections
-      : [];
-    const live = idx >= 0 && idx < list.length ? list[idx] : null;
-    if (!live || live.enabled === false || !String(live.type || '').trim()) {
-      console.log('[ops] random inspection slot empty/disabled, skip:', taskKey, 'idx', idx);
-      return;
-    }
-    if (isBlockedOpsChecklistPattern(live.type, taskKey)) {
-      console.log('[ops] skip random inspection (test/legacy):', taskKey);
-      return;
-    }
-    config = {
-      ...config,
-      type: String(live.type || '').trim(),
-      description: String(live.description || '').trim(),
-      timeWindow: Math.max(1, Math.floor(Number(live.timeWindow) || 15)),
-      store: String(live.store || '').trim(),
-      brand: String(live.brand || '').trim(),
-      assigneeRoles:
-        Array.isArray(live.assigneeRoles) && live.assigneeRoles.length
-          ? live.assigneeRoles.map((r) => String(r || '').trim()).filter(Boolean)
-          : config.assigneeRoles
-    };
-  }
-
-  const status = _scheduledTaskRuntimeStatus.get(taskKey) || {
-    taskKey,
-    action: config?.action || '',
-    nextExecutionAt: null,
-    lastRunAt: null,
-    runCount: 0,
-    lastError: null
-  };
-  status.lastRunAt = new Date().toISOString();
-  status.runCount = Number(status.runCount || 0) + 1;
-  status.lastError = null;
-  
-  try {
-    switch (config.action) {
-      case 'send_checklist':
-        await sendScheduledChecklist(config);
-        break;
-      case 'safety_check':
-        await sendSafetyCheck(config);
-        break;
-      default:
-        console.log(`[ops] unknown task action: ${config.action}`);
-    }
-  } catch (e) {
-    status.lastError = String(e?.message || e);
-    console.error(`[ops] scheduled task ${taskKey} failed:`, e?.message);
-  } finally {
-    _scheduledTaskRuntimeStatus.set(taskKey, status);
-  }
+  return _executeScheduledTask(taskKey, config);
 }
+
 
 let _sendScheduledChecklist;
 export async function sendScheduledChecklist(config) {
@@ -8359,6 +8183,22 @@ _handleAgentMessage = createHandleAgentMessage({
   createOrUpdateAutonomousDataTask,
   notifyAutonomousDataTaskOwner,
   handleDataAuditorCase,
+});
+
+_archiveOldBitableSubmissions = createArchiveOldBitableSubmissions({
+  pool,
+  archiveThresholdDays: 7,
+  deleteThresholdDays: 60,
+});
+
+_executeScheduledTask = createExecuteScheduledTask({
+  sendScheduledChecklist,
+  sendSafetyCheck,
+  refreshOpsAgentRuntimeConfig,
+  buildScheduledTasksFromConfig,
+  isBlockedOpsChecklistPattern,
+  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+  scheduledTaskRuntimeStatus: _scheduledTaskRuntimeStatus,
 });
 
 _sendSafetyCheck = createSendSafetyCheck({

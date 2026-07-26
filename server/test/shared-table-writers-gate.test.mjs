@@ -22,8 +22,9 @@ const serverRoot = path.resolve(__dirname, '..');
  * 文件搬家时：删除旧路径键、加入新路径键，并在 REPATH_NOTES 记一笔。
  */
 const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
-  'agents.js|DELETE FROM|agent_messages',
   'agents.js|INSERT INTO|agent_messages',
+  // Wave A11a：archiveOldBitableSubmissions 迁出；agents.js 已无 DELETE agent_messages
+  'domains/feishu-bitable/archive-old-submissions.js|DELETE FROM|agent_messages',
   // Wave A1：KPI radar INSERT 从 agents.js runDataAuditor 迁出（agents.js 仍有其它 agent_messages INSERT）
   'domains/agent-auditor/run-data-auditor.js|INSERT INTO|agent_messages',
   // Wave A7：handleOpsChecklistCardAction 迁出（agents.js 仍有其它 agent_messages INSERT）
@@ -110,6 +111,7 @@ const REPATH_NOTES = [
   'agents.js → domains/agent-ops/handle-checklist-card-action.js | INSERT INTO|agent_messages',
   'agents.js → domains/agent-ops/send-scheduled-checklist.js | INSERT INTO|master_tasks',
   'agents.js → domains/agent-evaluator/run-chief-evaluator.js | INSERT INTO|agent_scores',
+  'agents.js → domains/feishu-bitable/archive-old-submissions.js | DELETE FROM|agent_messages',
 ];
 
 const OWNER = 'gaas';
