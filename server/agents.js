@@ -69,6 +69,7 @@ import { createSendSafetyCheck } from './domains/agent-ops/send-safety-check.js'
 import { createFetchStoreRatingForProfileDisplay } from './domains/agent-evaluator/fetch-store-rating-for-profile.js';
 import { createArchiveOldBitableSubmissions } from './domains/feishu-bitable/archive-old-submissions.js';
 import { createExecuteScheduledTask } from './domains/agent-ops/execute-scheduled-task.js';
+import { createScheduledTaskRuntimeApi } from './domains/agent-ops/scheduled-task-runtime.js';
 import { createGetBitableSubmissionStats } from './domains/feishu-bitable/get-submission-stats.js';
 import { createBuildScheduledTasksFromConfig } from './domains/agent-ops/build-scheduled-tasks-from-config.js';
 import { createHandleDataAuditorCase } from './domains/agent-message/handle-data-auditor-case.js';
@@ -721,42 +722,13 @@ function formatChecklistTypeLabel(checkType) {
   return _opsChecklistCardsApi.formatChecklistTypeLabel(checkType);
 }
 
-/** 全角数字 → 半角，避免「１１２２３３」绕过测试过滤 */
-function normalizeDigitsForOpsFilter(input) {
-  return String(input || '').replace(/[\uFF10-\uFF19]/g, (ch) => String(ch.charCodeAt(0) - 0xff10));
-}
-
-/**
- * 测试/遗留 V1 巡检项：不注册定时器、不下发飞书（与 agents-service-v2 deterministic-replies 口径对齐）
- */
+// checklist skip filters + timers → domains/agent-ops/scheduled-task-runtime*.js
+let _scheduledTaskRuntimeApi;
 function isBlockedOpsChecklistPattern(checkType, taskKey = '') {
-  const blob = normalizeDigitsForOpsFilter(`${checkType || ''}\n${taskKey || ''}`);
-  const t = String(checkType || '').trim();
-  if (/112233/i.test(blob)) return true;
-  if (/测试\s*112233|112233\s*检查/i.test(blob)) return true;
-  // 「测试 … 检查」且含 112233 的变体（空格/中间插入字）
-  if (/测试/.test(t) && /检查/.test(t) && /112233/i.test(blob)) return true;
-  if (/agent[\s_-]*v1/i.test(blob)) return true;
-  if (/^test$/i.test(t) || /^测试$/i.test(t)) return true;
-  return false;
+  return _scheduledTaskRuntimeApi.isBlockedOpsChecklistPattern(checkType, taskKey);
 }
-
-/** 阻止 HRMS 定时「检查单」下发与 OPS-* master_tasks（默认关闭旧链路，仅保留 agents-v2 控制台下发） */
 function shouldSkipHrmsScheduledChecklist(config) {
-  const legacyEnable = String(process.env.HRMS_ENABLE_LEGACY_SCHEDULED_CHECKLIST || '').trim().toLowerCase();
-  if (!(legacyEnable === '1' || legacyEnable === 'true' || legacyEnable === 'yes')) {
-    return true;
-  }
-  const dis = String(process.env.HRMS_DISABLE_SCHEDULED_CHECKLIST || '').trim().toLowerCase();
-  if (dis === '1' || dis === 'true' || dis === 'yes') {
-    log.info('[ops] sendScheduledChecklist skipped (HRMS_DISABLE_SCHEDULED_CHECKLIST)');
-    return true;
-  }
-  if (isBlockedOpsChecklistPattern(config?.checkType, config?.taskKey)) {
-    log.info('[ops] sendScheduledChecklist skipped (test/legacy pattern):', config?.checkType, config?.taskKey || '');
-    return true;
-  }
-  return false;
+  return _scheduledTaskRuntimeApi.shouldSkipHrmsScheduledChecklist(config);
 }
 
 async function refreshOpsAgentRuntimeConfig() {
@@ -1660,13 +1632,6 @@ export async function pollTaskResponseBitable() {
   return taskResponseApi().pollTaskResponseBitable();
 }
 
-// 导出定时任务函数
-export { startScheduledTasks };
-
-// ─────────────────────────────────────────────
-// 定时任务调度器
-// ─────────────────────────────────────────────
-
 /** 与 agents-service-v2 任务审核口径一致（仅 HRMS 内建调度启用时使用） */
 const OPS_TASK_REPLY_AUDIT_LARK_MD =
   '**系统审核要求**\n' +
@@ -1674,136 +1639,17 @@ const OPS_TASK_REPLY_AUDIT_LARK_MD =
   '• 须说明 **现场情况**、**处理措施**；抽检/巡检类须写 **发现与处理结果**\n' +
   '• 勿仅用「收到」「无」「OK」等占位回复（易被退回；累计 3 次不合格记入绩效）';
 
-let _scheduledTaskIntervals = new Map();
-const _scheduledTaskRuntimeStatus = new Map();
-
 let _buildScheduledTasksFromConfig;
 function buildScheduledTasksFromConfig() {
   return _buildScheduledTasksFromConfig();
 }
 
-
-function getInspectionIntervalDays(config) {
-  const frequency = String(config?.frequency || 'daily').trim();
-  if (frequency === 'weekly') return 7;
-  if (frequency === 'biweekly') return 14;
-  if (frequency === 'monthly') return 30;
-  if (frequency === 'custom') return Math.max(1, Math.floor(Number(config?.customIntervalDays) || 1));
-  return 1;
-}
-
 export function getScheduledTaskStatus() {
-  const tasks = Array.from(_scheduledTaskRuntimeStatus.entries()).map(([taskKey, status]) => ({
-    taskKey,
-    ...status
-  }));
-  return {
-    started: _scheduledTaskIntervals.size > 0,
-    activeTimers: _scheduledTaskIntervals.size,
-    tasks
-  };
+  return _scheduledTaskRuntimeApi.getScheduledTaskStatus();
 }
 
-async function startScheduledTasks() {
-  log.info('[ops] starting scheduled tasks...');
-  await refreshOpsAgentRuntimeConfig();
-  const runtimeTasks = buildScheduledTasksFromConfig();
-  
-  // 清除现有定时器
-  for (const [, timer] of _scheduledTaskIntervals) {
-    clearTimeout(timer);
-  }
-  _scheduledTaskIntervals.clear();
-  _scheduledTaskRuntimeStatus.clear();
-  
-  // 设置定时任务
-  for (const [taskKey, config] of Object.entries(runtimeTasks)) {
-    _scheduledTaskRuntimeStatus.set(taskKey, {
-      taskKey,
-      action: config.action,
-      nextExecutionAt: null,
-      lastRunAt: null,
-      runCount: 0,
-      lastError: null
-    });
-    if (config.random) {
-      // 随机任务
-      scheduleRandomTask(taskKey, config);
-    } else {
-      // 定时任务
-      scheduleFixedTask(taskKey, config);
-    }
-  }
-}
-
-function scheduleFixedTask(taskKey, config) {
-  const [hour, minute] = config.time.split(':').map(Number);
-  const intervalDays = getInspectionIntervalDays(config);
-
-  const scheduleNext = () => {
-    const now = new Date();
-    // 配置时间是CST(+08:00)，正确转换
-    const cst = new Date(now.toLocaleString('en-US',{timeZone:'Asia/Shanghai'}));
-    const ds = `${cst.getFullYear()}-${String(cst.getMonth()+1).padStart(2,'0')}-${String(cst.getDate()).padStart(2,'0')}T${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:00+08:00`;
-    let nextExecution = new Date(ds);
-    
-    // 如果CST时间已过，按频率顺延
-    if (nextExecution.getTime() <= now.getTime()) {
-      nextExecution = new Date(nextExecution.getTime() + intervalDays * 86400000);
-    }
-    
-    const msUntilExecution = nextExecution.getTime() - now.getTime();
-    const status = _scheduledTaskRuntimeStatus.get(taskKey);
-    if (status) {
-      status.nextExecutionAt = nextExecution.toISOString();
-      _scheduledTaskRuntimeStatus.set(taskKey, status);
-    }
-    
-    const timer = setTimeout(() => {
-      executeScheduledTask(taskKey, config);
-      scheduleNext(); // 递归调度下一次
-    }, msUntilExecution);
-    _scheduledTaskIntervals.set(taskKey, timer);
-    
-    log.info(`[ops] scheduled ${taskKey} for: ${nextExecution.toISOString()}`);
-  };
-  
-  scheduleNext();
-}
-
-function scheduleRandomTask(taskKey, config) {
-  const [minHours, maxHours] = config.interval;
-  
-  const scheduleNext = () => {
-    const intervalHours = minHours + Math.random() * (maxHours - minHours);
-    let nextExecution = new Date(Date.now() + intervalHours * 3600000);
-    // 确保在工作时间08:00-23:00 CST内执行，否则推到次日08:00+随机偏移
-    const cstH = Number(nextExecution.toLocaleString('en-US',{timeZone:'Asia/Shanghai',hour:'numeric',hour12:false}));
-    if (cstH < 8 || cstH >= 23) {
-      // 计算推迟到下一个CST 08:00的毫秒数（纯UTC算术，避免setHours混淆CST/UTC）
-      const hoursUntilNext = cstH >= 23 ? (24 - cstH + 8) : (8 - cstH);
-      const baseNext = new Date(nextExecution.getTime() + hoursUntilNext * 3600000);
-      // 对齐到整点（清掉分秒）
-      baseNext.setMinutes(0, 0, 0);
-      nextExecution = new Date(baseNext.getTime() + Math.random() * 6 * 3600000);
-    }
-    const intervalMs = nextExecution.getTime() - Date.now();
-    const status = _scheduledTaskRuntimeStatus.get(taskKey);
-    if (status) {
-      status.nextExecutionAt = nextExecution.toISOString();
-      _scheduledTaskRuntimeStatus.set(taskKey, status);
-    }
-    
-    const timer = setTimeout(() => {
-      executeScheduledTask(taskKey, config);
-      scheduleNext(); // 递归调度下一次
-    }, intervalMs);
-    _scheduledTaskIntervals.set(taskKey, timer);
-    
-    log.info(`[ops] scheduled random ${taskKey} for: ${nextExecution.toISOString()} (interval: ${intervalHours}h)`);
-  };
-  
-  scheduleNext();
+export async function startScheduledTasks() {
+  return _scheduledTaskRuntimeApi.startScheduledTasks();
 }
 
 let _executeScheduledTask;
@@ -3226,6 +3072,13 @@ _getBitableSubmissionStats = createGetBitableSubmissionStats({
   pool,
 });
 
+_scheduledTaskRuntimeApi = createScheduledTaskRuntimeApi({
+  refreshOpsAgentRuntimeConfig,
+  buildScheduledTasksFromConfig,
+  executeScheduledTask,
+  log,
+});
+
 _buildScheduledTasksFromConfig = createBuildScheduledTasksFromConfig({
   getOpsAgentConfig: () => OPS_AGENT_CONFIG,
   isBlockedOpsChecklistPattern,
@@ -3238,7 +3091,7 @@ _executeScheduledTask = createExecuteScheduledTask({
   buildScheduledTasksFromConfig,
   isBlockedOpsChecklistPattern,
   getOpsAgentConfig: () => OPS_AGENT_CONFIG,
-  scheduledTaskRuntimeStatus: _scheduledTaskRuntimeStatus,
+  scheduledTaskRuntimeStatus: _scheduledTaskRuntimeApi.scheduledTaskRuntimeStatus,
 });
 
 _sendSafetyCheck = createSendSafetyCheck({
