@@ -2,14 +2,50 @@
 /**
  * 部署前验证脚本
  * 每次修改 working-fixed.html 后运行：node scripts/pre-deploy-check.mjs
- * 全部通过后再 scp 上传到服务器
+ *
+ * 后端断言一律走「全树搜索」而不是钉死单个文件：
+ * 2026-07 巨石拆分后，growth-api.js 里的路由/函数陆续迁到 domains/**，
+ * 内联 DDL 迁到 migrations/**。旧版把 server/growth-api.js 读成一个字符串再
+ * includes()，重构后必然假阳性（实测报 3 项"失败"，实为代码只是换了位置）。
+ * 现在按「功能是否还存在于代码库」判断，位置随便改都不会误报。
  */
 
 import fs from 'fs';
+import path from 'path';
 import assert from 'assert';
 
 const html = fs.readFileSync('working-fixed.html', 'utf8');
-const api = fs.readFileSync('server/growth-api.js', 'utf8');
+
+/** 递归收集 server/ 下的源码与 migration，拼成一个可搜索的语料 */
+function loadServerCorpus() {
+  const SKIP = new Set(['node_modules', 'coverage', 'dist', '.git', 'uploads', '.stryker-tmp']);
+  const parts = [];
+  (function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (SKIP.has(e.name)) continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(js|mjs|sql)$/.test(e.name)) {
+        try {
+          parts.push(fs.readFileSync(p, 'utf8'));
+        } catch {
+          /* 读不到就跳过 */
+        }
+      }
+    }
+  })('server');
+  return parts.join('\n');
+}
+
+const serverCorpus = loadServerCorpus();
+/** 后端功能是否仍存在于代码库任意位置（不关心在哪个文件） */
+const backendHas = (needle) => serverCorpus.includes(needle);
 
 let passed = 0;
 let failed = 0;
@@ -141,10 +177,29 @@ requiredFeatures.forEach(f => {
 
 // 5. 后端API检查
 console.log('\n5. 后端API检查');
+// 只断言「功能还在」，不绑定所在文件——拆分/搬家不应触发假阳性
 const requiredApis = [
-  { name: 'resolve接口', check: () => assert(api.includes("app.post('/api/growth/alerts/:alertKey/resolve'")) },
-  { name: 'resolved_by字段', check: () => assert(api.includes('resolved_by TEXT')) },
-  { name: 'recomputeDailyMetrics', check: () => assert(api.includes('recomputeDailyMetrics')) },
+  {
+    name: 'resolve接口',
+    check: () => assert(
+      backendHas("'/api/growth/alerts/:alertKey/resolve'"),
+      '未在 server/ 任何位置找到告警 resolve 路由'
+    ),
+  },
+  {
+    name: 'resolved_by字段',
+    check: () => assert(
+      backendHas('resolved_by'),
+      '未在 server/ 源码或 migrations 中找到 resolved_by 列'
+    ),
+  },
+  {
+    name: 'recomputeDailyMetrics',
+    check: () => assert(
+      backendHas('recomputeDailyMetrics'),
+      '未在 server/ 任何位置找到 recomputeDailyMetrics'
+    ),
+  },
 ];
 requiredApis.forEach(apiCheck => {
   try {
@@ -183,8 +238,10 @@ if (failed > 0) {
 }
 
 console.log('\n✅ 所有验证通过！可以安全部署。');
-console.log('\n部署步骤：');
-console.log('  1. scp working-fixed.html root@47.100.96.30:/opt/hrms/');
-console.log('  2. scp server/growth-api.js root@47.100.96.30:/opt/hrms/server/');
-console.log('  3. ssh root@47.100.96.30 "pm2 restart hrms-service"');
-console.log('  4. ssh root@47.100.96.30 "curl -s -o /dev/null -w \'%{http_code}\' http://127.0.0.1:3000/"');
+console.log('\n部署步骤（勿再手工 scp 单文件——已有带备份/md5/健康检查/自动回滚的脚本）：');
+console.log('  前端: npm run build:shell && ./scripts/deploy-frontend.sh');
+console.log('        （先传 app.<hash>.js/.css 再换 shell，否则瞬间 404）');
+console.log('  后端: ./scripts/deploy-server-files.sh server/<file.js> [...]');
+console.log('        预览: DRY_RUN=1 ./scripts/deploy-server-files.sh server/<file.js>');
+console.log('  依赖: npm run deploy:prod-deps:verify   （改过 package.json 才需 deploy:prod-deps）');
+console.log('  备份统一落 /opt/hrms-archive/deploy-bak/，禁止留在 web root。');
