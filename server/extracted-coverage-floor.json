@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-26",
+  "updated": "2026-07-27",
   "note": "新拆文件合并覆盖捆绑闸门：列入本表的文件 lines 必须 ≥ minLines（默认 80），只升不降。拆出新模块时必须同时补测并登记。",
   "minLines": 80,
   "tolerancePct": 0.5,
@@ -13,6 +13,9 @@
     "domains/agent-auditor/table-visit-metrics-pure.js",
     "domains/agent-auditor/table-visit-metrics-helpers.js",
     "domains/agent-auditor/table-visit-metrics.js",
+    "domains/agent-config/defaults.js",
+    "domains/agent-config/normalize-helpers.js",
+    "domains/agent-config/normalize.js",
     "domains/agent-auditor/margin-metrics-helpers.js",
     "domains/agent-auditor/margin-metrics.js",
     "domains/agent-bi/bi-query-helpers.js",
