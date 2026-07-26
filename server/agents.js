@@ -96,6 +96,7 @@ import {
   extractTableVisitItems,
 } from './domains/feishu-bitable/field-normalization.js';
 import { createAgentBrandRuntimeContext } from './domains/agent-brand/runtime-context.js';
+import { createAgentStoreIdentity } from './domains/agent-store/identity.js';
 import { createNotifyBitablePipelineFailure } from './domains/feishu-bitable/pipeline-failure-notify.js';
 import { createTaskResponseApi } from './domains/feishu-bitable/task-response.js';
 import { createProcessBitableData } from './domains/feishu-bitable/process-bitable-data.js';
@@ -1119,121 +1120,29 @@ export async function getSharedState(tenantId = 'default') {
   return r.rows?.[0]?.data && typeof r.rows[0].data === 'object' ? r.rows[0].data : {};
 }
 
-function findUserInState(state, username) {
-  const u = String(username || '').trim().toLowerCase();
-  if (!u) return null;
-  const all = [
-    ...(Array.isArray(state?.employees) ? state.employees : []),
-    ...(Array.isArray(state?.users) ? state.users : [])
-  ];
-  return all.find(x => String(x?.username || '').trim().toLowerCase() === u) || null;
-}
-
-export function getStoresFromState(state) {
-  const stores = Array.isArray(state?.stores) ? state.stores : [];
-  return stores.map(s => ({
-    id: String(s?.id || '').trim(),
-    name: String(s?.name || '').trim(),
-    brand: String(s?.brand || s?.brandName || '').trim(),
-    brandId: normalizeBrandId(s?.brandId || s?.brand || s?.brandName)
-  })).filter(s => s.name);
-}
-
 export function inferBrandFromStoreName(storeName) {
   return _inferBrandFromStoreNameImpl(storeName);
 }
 
-function resolveBrand(state, store) {
-  const ctx = resolveBrandContextByStore(state, store);
-  return ctx?.brandName || inferBrandFromStoreName(store) || '洪潮';
-}
-
-export async function findStoreManager(state, storeName) {
-  const all = [
-    ...(Array.isArray(state?.employees) ? state.employees : []),
-    ...(Array.isArray(state?.users) ? state.users : [])
-  ];
-  const normalizedStoreName = normalizeStoreKey(storeName);
-  const mgr = all.find(u =>
-    normalizeStoreKey(u?.store) === normalizedStoreName &&
-    String(u?.role || '').trim() === 'store_manager'
-  );
-  return mgr ? String(mgr.username || '').trim() : null;
-}
-
-function toNum(v, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function toDateOnly(v) {
-  const s = String(v || '').trim();
-  if (!s) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  try {
-    const d = new Date(s);
-    if (!Number.isFinite(d.getTime())) return '';
-    return d.toISOString().slice(0, 10);
-  } catch (e) {
-    return '';
-  }
-}
-
-function inDateRangeInclusive(v, start, end) {
-  const d = toDateOnly(v);
-  if (!d) return false;
-  const s = toDateOnly(start);
-  const e = toDateOnly(end);
-  if (s && d < s) return false;
-  if (e && d > e) return false;
-  return true;
-}
-
-function normProductKey(v) {
-  return String(v || '').trim().toLowerCase().replace(/\s+/g, '');
-}
-
-function normalizeStoreKey(v) {
-  return String(v || '').trim().toLowerCase().replace(/\s+/g, '');
-}
-
-// 用于 SQL LIKE 的模糊门店匹配参数
-function normalizeStoreLike(v) {
-  return `%${normalizeStoreKey(v)}%`;
-}
-
-// 将飞书/外部门店名变体统一为系统标准名称（映射维护在 brands-config.js）
-const STORE_CANONICAL_MAP = _STORE_CANONICAL_MAP_IMPL;
-function normalizeCanonicalStoreName(store) {
-  if (!store) return store;
-  const s = store.trim();
-  for (const entry of STORE_CANONICAL_MAP) {
-    for (const kw of entry.keywords) {
-      if (new RegExp(kw, 'i').test(s)) return entry.canonical;
-    }
-  }
-  return s;
-}
-
-function normalizeStoreAliasKey(v) {
-  return normalizeStoreKey(v).replace(/(上海|北京|深圳|广州|大宁|门店|店铺|店|商场|广场|购物中心)/g, '');
-}
-
-function isExactSameStore(a, b) {
-  return normalizeStoreKey(a) && normalizeStoreKey(a) === normalizeStoreKey(b);
-}
-
-function isLikelySameStore(a, b) {
-  const x = normalizeStoreKey(a);
-  const y = normalizeStoreKey(b);
-  if (!x || !y) return false;
-  if (x === y) return true;
-  if (x.includes(y) || y.includes(x)) return true;
-  const ax = normalizeStoreAliasKey(a);
-  const by = normalizeStoreAliasKey(b);
-  if (ax && by && (ax === by || ax.includes(by) || by.includes(ax))) return true;
-  return false;
-}
+const {
+  findUserInState,
+  getStoresFromState,
+  findStoreManager,
+  normalizeStoreKey,
+  normalizeStoreLike,
+  normalizeCanonicalStoreName,
+  isLikelySameStore,
+  toNum,
+  toDateOnly,
+  inDateRangeInclusive,
+  normProductKey,
+} = createAgentStoreIdentity({
+  normalizeBrandId,
+  resolveBrandContextByStore,
+  inferBrandFromStoreName: _inferBrandFromStoreNameImpl,
+  storeCanonicalMap: _STORE_CANONICAL_MAP_IMPL,
+});
+export { getStoresFromState, findStoreManager };
 
 let _tableVisitMetricsApi;
 let _marginMetricsApi;
