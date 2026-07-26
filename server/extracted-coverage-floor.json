@@ -135,6 +135,8 @@
     "domains/feishu-bitable/map.js",
     "domains/feishu-bitable/poll-submissions.js",
     "domains/feishu-bitable/process-records-from-db.js",
+    "domains/feishu-bitable/process-bitable-data-helpers.js",
+    "domains/feishu-bitable/process-bitable-data.js",
     "domains/feishu-bitable/records.js",
     "domains/feishu-bitable/start-bitable-polling-constants.js",
     "domains/feishu-bitable/start-bitable-polling-helpers.js",
