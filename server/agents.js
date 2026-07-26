@@ -88,6 +88,13 @@ import { createSendPeriodReportsApi } from './domains/agent-bi/send-period-repor
 import { createDeterministicCascadeReplies } from './domains/agent-bi/deterministic-cascade-replies.js';
 import { createPollBitableSubmissions } from './domains/feishu-bitable/poll-submissions.js';
 import { createOpsSubmissionValidation } from './domains/agent-ops/submission-validation.js';
+import {
+  normalizeBitableDateValue,
+  extractBitableFieldText,
+  extractDissatisfactionDishFromFields,
+  extractDissatisfactionReasonFromFields,
+  extractTableVisitItems,
+} from './domains/feishu-bitable/field-normalization.js';
 import { createNotifyBitablePipelineFailure } from './domains/feishu-bitable/pipeline-failure-notify.js';
 import { createTaskResponseApi } from './domains/feishu-bitable/task-response.js';
 import { createProcessBitableData } from './domains/feishu-bitable/process-bitable-data.js';
@@ -1333,100 +1340,6 @@ function isLikelySameStore(a, b) {
   const by = normalizeStoreAliasKey(b);
   if (ax && by && (ax === by || ax.includes(by) || by.includes(ax))) return true;
   return false;
-}
-
-function normalizeBitableDateValue(v, fallback = '') {
-  if (v === null || v === undefined || v === '') return toDateOnly(fallback);
-  if (typeof v === 'number' && Number.isFinite(v)) {
-    const ms = v > 1e12 ? v : v * 1000;
-    return toDateOnly(new Date(ms).toISOString());
-  }
-  const s = String(v || '').trim();
-  if (!s) return toDateOnly(fallback);
-  if (/^\d{13}$/.test(s) || /^\d{10}$/.test(s)) {
-    const n = Number(s);
-    if (Number.isFinite(n)) {
-      const ms = s.length === 13 ? n : n * 1000;
-      return toDateOnly(new Date(ms).toISOString());
-    }
-  }
-  return toDateOnly(s) || toDateOnly(fallback);
-}
-
-// 从飞书多维表格的复杂字段值中提取纯文本
-// 支持格式: string, [{text_arr:[...]}, ...], [{text:"..."}], array等
-function extractBitableFieldText(val) {
-  if (!val) return '';
-  if (typeof val === 'string') return val.trim();
-  if (typeof val === 'number') return String(val);
-  if (Array.isArray(val)) {
-    const parts = [];
-    for (const item of val) {
-      if (typeof item === 'string') { parts.push(item); continue; }
-      if (item && typeof item === 'object') {
-        if (Array.isArray(item.text_arr) && item.text_arr.length) {
-          parts.push(...item.text_arr.map(t => String(t || '').trim()).filter(Boolean));
-        } else if (item.text) {
-          parts.push(String(item.text).trim());
-        }
-      }
-    }
-    return parts.join('，').trim();
-  }
-  if (typeof val === 'object' && val.text) return String(val.text).trim();
-  return String(val).trim();
-}
-
-// 从飞书 fields 中按优先级提取桌访不满意菜品字段
-function extractDissatisfactionDishFromFields(fields) {
-  // 优先级：精确匹配 > 模糊匹配
-  const candidates = [
-    fields['今天不满意的菜品'],
-    fields['今天 不满意菜品'],        // 实际飞书字段名(有空格)
-    fields['今天不满意菜品'],          // 无空格变体
-    fields['今日不满意菜品'],          // 旧代码变体
-    fields['不满意菜品'],
-    fields['不满意菜品/问题'],
-  ];
-  for (const v of candidates) {
-    const text = extractBitableFieldText(v);
-    if (text) return text;
-  }
-  return '';
-}
-
-// 从飞书 fields 中提取不满意原因
-function extractDissatisfactionReasonFromFields(fields) {
-  const candidates = [
-    fields['不满意的主要原因是什么'],
-    fields['不满意的主要原因'],
-    fields['满意/不满意的主要原因'],
-    fields['满意或不满意的主要原因是什么？'],
-    fields['满意或不满意的主要原因'],
-    fields['不满意项'],
-    fields['不满意原因'],
-    fields['备注'],
-  ];
-  for (const v of candidates) {
-    const text = extractBitableFieldText(v);
-    if (text) return text;
-  }
-  return '';
-}
-
-function extractTableVisitItems(row) {
-  const dishText = String(row?.dissatisfaction_dish || '').trim();
-  const _reasonText = String(row?.unsatisfied_items || '').trim();
-
-  const dishItems = dishText
-    ? dishText
-        .split(/[，,、\/;；|\n\r\t\s]+/)
-        .map((k) => String(k || '').trim())
-        .filter(Boolean)
-    : [];
-
-  // 只用dissatisfaction_dish统计产品投诉，unsatisfied_items是原因描述不是菜品名
-  return dishItems.filter((x) => x && !/卤鹅/.test(String(x)));
 }
 
 let _tableVisitMetricsApi;
