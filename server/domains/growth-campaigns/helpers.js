@@ -231,12 +231,12 @@ export async function countCampaignSent(pool, campaignKey, phone, tenantId = 'de
   return Number(r.rows[0]?.n) || 0;
 }
 
-function marketingFatigueMax() {
+export function marketingFatigueMax() {
   const v = Number(process.env.MARKETING_FATIGUE_MAX);
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : 8;
 }
 
-function marketingFatigueWindowDays() {
+export function marketingFatigueWindowDays() {
   const v = Number(process.env.MARKETING_FATIGUE_WINDOW_DAYS);
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : 90;
 }
