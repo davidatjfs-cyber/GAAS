@@ -47,8 +47,9 @@ export const CRITICAL_FUNCTIONS = [
     criticalPath: 'daily_report_query'
   },
   {
+    // P2：agents.js 重复定义已外提；真源在 shared/time-number（agent-store 再 export）
     name: 'normalizeStoreKey',
-    file: 'agents.js',
+    file: 'domains/shared/time-number.js',
     type: 'function',
     required: true,
     criticalPath: 'data_normalization'
