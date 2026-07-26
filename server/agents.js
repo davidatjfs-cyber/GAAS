@@ -57,6 +57,8 @@ import { createRouteMessage } from './domains/agent-message/route-message.js';
 import { createHandleOpsChecklistCardAction } from './domains/agent-ops/handle-checklist-card-action.js';
 import { createSendScheduledChecklist } from './domains/agent-ops/send-scheduled-checklist.js';
 import { createRunChiefEvaluator } from './domains/agent-evaluator/run-chief-evaluator.js';
+import { createSendSafetyCheck } from './domains/agent-ops/send-safety-check.js';
+import { createFetchStoreRatingForProfileDisplay } from './domains/agent-evaluator/fetch-store-rating-for-profile.js';
 import { createHandleDataAuditorCase } from './domains/agent-message/handle-data-auditor-case.js';
 import { createOnFeishuEvent } from './domains/agent-feishu-bot/on-feishu-event.js';
 import { createTryHandleBiByFunctionCalling } from './domains/agent-bi/try-handle-bi-by-function-calling.js';
@@ -5067,89 +5069,11 @@ export async function sendScheduledChecklist(config) {
 }
 
 
+let _sendSafetyCheck;
 async function sendSafetyCheck(config) {
-  if (config?.enabled === false) {
-    console.log('[ops] safety check skipped: item disabled');
-    return;
-  }
-  const sharedState = await getSharedState();
-  const rawStores = sharedState.stores || [];
-  const storeList = Array.isArray(rawStores) ? rawStores : Object.values(rawStores);
-
-  if (!storeList.length) {
-    console.log('[ops] no stores available for safety check');
-    return;
-  }
-
-  const configStore = String(config?.store || '').trim();
-  const configBrand = String(config?.brand || '').trim();
-  const targetStores = configStore
-    ? storeList.filter(s => isLikelySameStore(s?.name, configStore))
-    : (configBrand ? storeList.filter(s => String(s?.brand || '').trim() === configBrand) : storeList);
-  if (!targetStores.length) {
-    console.log(`[ops] no stores matched safety check config: store=${configStore}, brand=${configBrand}`);
-    return;
-  }
-
-  const pickedStore = targetStores[Math.floor(Math.random() * targetStores.length)];
-  const roles = Array.isArray(config?.assigneeRoles) && config.assigneeRoles.length
-    ? config.assigneeRoles.map((r) => String(r || '').trim()).filter(Boolean)
-    : ['store_manager', 'store_production_manager'];
-  const allStaff = [
-    ...(Array.isArray(sharedState.employees) ? sharedState.employees : []),
-    ...(Array.isArray(sharedState.users) ? sharedState.users : [])
-  ];
-  const assignees = allStaff.filter((u) =>
-    normalizeStoreKey(u?.store) === normalizeStoreKey(pickedStore?.name) &&
-    roles.includes(String(u?.role || '').trim())
-  );
-  const usernames = [...new Set(assignees.map((u) => String(u?.username || '').trim()).filter(Boolean))];
-
-  const taskDesc = String(config?.description || '').trim() || '请完成本次食安抽检';
-  const replyExtra = String(config?.replyRequirements || config?.replyHint || '').trim();
-  const auditBlock = replyExtra
-    ? `${OPS_TASK_REPLY_AUDIT_LARK_MD}\n\n**本任务补充**：${replyExtra}`
-    : OPS_TASK_REPLY_AUDIT_LARK_MD;
-  const timeWindow = Math.max(1, Math.floor(Number(config?.timeWindow) || 15));
-  const taskType = String(config?.type || '').trim() || '食安抽检';
-  const timeNow = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-  const deadlineAt = new Date(Date.now() + timeWindow * 60 * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-  const message = `🔔 随机抽检通知\n\n门店：${pickedStore?.name || '-'}\n类型：${taskType}\n任务：${taskDesc}\n时间：${timeNow}\n时限：${timeWindow}分钟内完成\n截止：${deadlineAt}\n\n请在本对话回复文字说明（建议附照片）。\n${auditBlock.replace(/\*\*/g, '')}`;
-  const safetyCard = {
-    config: { wide_screen_mode: true },
-    header: { title: { tag: 'plain_text', content: `🔔 随机抽检 · ${taskType}` }, template: 'yellow' },
-    elements: [
-      { tag: 'div', text: { tag: 'lark_md', content: `**门店**：${pickedStore?.name || '-'}\n**类型**：${taskType}\n**任务**：${taskDesc}` } },
-      { tag: 'hr' },
-      { tag: 'div', text: { tag: 'lark_md', content: `**时间**：${timeNow}\n**时限**：${timeWindow}分钟内完成\n**截止**：${deadlineAt}` } },
-      { tag: 'hr' },
-      { tag: 'div', text: { tag: 'lark_md', content: '📸 请在本对话直接回复：**文字说明**（建议附照片）。' } },
-      { tag: 'hr' },
-      { tag: 'div', text: { tag: 'lark_md', content: auditBlock } },
-      { tag: 'note', elements: [{ tag: 'plain_text', content: `小年 · ${taskType}` }] }
-    ]
-  };
-
-  if (!usernames.length) {
-    const fallbackUser = await lookupFeishuUserByUsername(String(pickedStore?.manager || '').trim());
-    if (!fallbackUser?.open_id) {
-      console.log(`[ops] no assignee found for safety check: store=${pickedStore?.name || '-'}, roles=${roles.join(',')}`);
-      return;
-    }
-    let r = await sendLarkCard(fallbackUser.open_id, safetyCard);
-    if (!r.ok) await sendLarkMessage(fallbackUser.open_id, prefixWithAgentName('ops_supervisor', message));
-    console.log(`[ops] sent safety check to fallback manager of ${pickedStore?.name || '-'}: ${taskType} - ${taskDesc}`);
-    return;
-  }
-
-  for (const username of usernames) {
-    const feishuUser = await lookupFeishuUserByUsername(username);
-    if (!feishuUser?.open_id) continue;
-    let r = await sendLarkCard(feishuUser.open_id, safetyCard);
-    if (!r.ok) await sendLarkMessage(feishuUser.open_id, prefixWithAgentName('ops_supervisor', message));
-  }
-  console.log(`[ops] sent safety check to ${pickedStore?.name || '-'} (${usernames.join(',')}): ${taskType} - ${taskDesc}`);
+  return _sendSafetyCheck(config);
 }
+
 
 // 辅助函数：从AI回复中提取分数
 function extractScore(text) {
@@ -5276,23 +5200,6 @@ async function validateSubmissionLogic(submission) {
   }
 }
 
-/** 上海日历当前 YYYY-MM（档案门店级别：本月展示上月数据用） */
-function shanghaiCalendarYm() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 7);
-}
-
-function shanghaiPrevCalendarYm() {
-  const cur = shanghaiCalendarYm();
-  const [y, m] = cur.split('-').map((x) => parseInt(x, 10));
-  let mm = m - 1;
-  let yy = y;
-  if (mm < 1) {
-    mm = 12;
-    yy -= 1;
-  }
-  return `${yy}-${String(mm).padStart(2, '0')}`;
-}
-
 /** 档案绩效展示周期：每月 10 日（上海）起展示上月整月；10 日前仍展示上上月（冻结） */
 function profilePerformanceDisplayPeriodShanghai() {
   const ymd = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
@@ -5379,128 +5286,11 @@ function deepSanitizeFeishuCardStrings(node, fn) {
 /**
  * 档案「门店级别」：默认取上月闭合月；若传入 lockedPeriodYm 则只查该月（不回落到「任意最新」，与档案冻结展示一致）
  */
+let _fetchStoreRatingForProfileDisplay;
 export async function fetchStoreRatingForProfileDisplay(storeLabel, lockedPeriodYm = null) {
-  const raw = String(storeLabel || '').trim();
-  if (!raw) return { rating: null, period: null };
-  const canon = String(resolveAgentCanonicalStore(raw) || raw).trim();
-  const patSets = [...new Set([
-    ...dailyReportIlikePatterns(raw),
-    ...feishuStoreSearchPatterns(raw),
-    ...dailyReportIlikePatterns(canon),
-    ...feishuStoreSearchPatterns(canon)
-  ])];
-  const curYm = shanghaiCalendarYm();
-  const prevYm = shanghaiPrevCalendarYm();
-  const wantYm = String(lockedPeriodYm || '').trim() || prevYm;
-  const strictPeriod = !!String(lockedPeriodYm || '').trim();
-
-  const keys = [canon, raw].filter((k, i, a) => k && a.indexOf(k) === i);
-
-  for (const key of keys) {
-    const r = await pool().query(
-      `SELECT rating, period FROM store_ratings WHERE store = $1 AND period = $2 LIMIT 1`,
-      [key, wantYm]
-    );
-    if (r.rows?.[0]?.rating) return { rating: r.rows[0].rating, period: r.rows[0].period };
-  }
-
-  let r = await pool().query(
-    `SELECT rating, period FROM store_ratings
-     WHERE period = $1 AND store ILIKE ANY($2::text[])
-     ORDER BY (actual_revenue > 0) DESC,
-       actual_revenue DESC NULLS LAST,
-       LENGTH(store) DESC NULLS LAST
-     LIMIT 1`,
-    [wantYm, patSets]
-  );
-  if (r.rows?.[0]?.rating) return { rating: r.rows[0].rating, period: r.rows[0].period, requestedPeriod: wantYm, isFallback: false };
-
-  if (strictPeriod) {
-    // 展示月尚无闭合评级：回落到该门店「不晚于展示月」的最近一期（同店，不跨店）
-    for (const key of keys) {
-      r = await pool().query(
-        `SELECT rating, period FROM store_ratings
-         WHERE store = $1 AND period <= $2
-         ORDER BY period DESC NULLS LAST
-         LIMIT 1`,
-        [key, wantYm]
-      );
-      if (r.rows?.[0]?.rating) {
-        const row = r.rows[0];
-        return {
-          rating: row.rating,
-          period: row.period,
-          requestedPeriod: wantYm,
-          isFallback: row.period !== wantYm
-        };
-      }
-    }
-    r = await pool().query(
-      `SELECT rating, period FROM store_ratings
-       WHERE store ILIKE ANY($1::text[]) AND period <= $2
-       ORDER BY period DESC NULLS LAST,
-         (actual_revenue > 0) DESC,
-         actual_revenue DESC NULLS LAST,
-         LENGTH(store) DESC NULLS LAST
-       LIMIT 1`,
-      [patSets, wantYm]
-    );
-    if (r.rows?.[0]?.rating) {
-      const row = r.rows[0];
-      return {
-        rating: row.rating,
-        period: row.period,
-        requestedPeriod: wantYm,
-        isFallback: row.period !== wantYm
-      };
-    }
-    return { rating: null, period: wantYm, requestedPeriod: wantYm, isFallback: false };
-  }
-
-  for (const key of keys) {
-    r = await pool().query(
-      `SELECT rating, period FROM store_ratings
-       WHERE store = $1 AND period < $2
-       ORDER BY period DESC NULLS LAST
-       LIMIT 1`,
-      [key, curYm]
-    );
-    if (r.rows?.[0]?.rating) return { rating: r.rows[0].rating, period: r.rows[0].period };
-  }
-
-  r = await pool().query(
-    `SELECT rating, period FROM store_ratings
-     WHERE store ILIKE ANY($1::text[]) AND period < $2
-     ORDER BY period DESC NULLS LAST,
-       (actual_revenue > 0) DESC,
-       actual_revenue DESC NULLS LAST,
-       LENGTH(store) DESC NULLS LAST
-     LIMIT 1`,
-    [patSets, curYm]
-  );
-  if (r.rows?.[0]?.rating) return { rating: r.rows[0].rating, period: r.rows[0].period };
-
-  for (const key of keys) {
-    r = await pool().query(
-      `SELECT rating, period FROM store_ratings WHERE store = $1 ORDER BY period DESC NULLS LAST LIMIT 1`,
-      [key]
-    );
-    if (r.rows?.[0]?.rating) return { rating: r.rows[0].rating, period: r.rows[0].period };
-  }
-
-  r = await pool().query(
-    `SELECT rating, period FROM store_ratings
-     WHERE store ILIKE ANY($1::text[])
-     ORDER BY period DESC NULLS LAST,
-       (actual_revenue > 0) DESC,
-       actual_revenue DESC NULLS LAST,
-       LENGTH(store) DESC NULLS LAST
-     LIMIT 1`,
-    [patSets]
-  );
-  const row = r.rows?.[0];
-  return { rating: row?.rating || null, period: row?.period || null, requestedPeriod: wantYm, isFallback: !!(row?.period && row.period !== wantYm) };
+  return _fetchStoreRatingForProfileDisplay(storeLabel, lockedPeriodYm);
 }
+
 
 function feishuOpenIdResolveDeps() {
   return {
@@ -8569,6 +8359,24 @@ _handleAgentMessage = createHandleAgentMessage({
   createOrUpdateAutonomousDataTask,
   notifyAutonomousDataTaskOwner,
   handleDataAuditorCase,
+});
+
+_sendSafetyCheck = createSendSafetyCheck({
+  getSharedState,
+  isLikelySameStore,
+  normalizeStoreKey,
+  lookupFeishuUserByUsername,
+  sendLarkCard,
+  sendLarkMessage,
+  prefixWithAgentName,
+  opsTaskReplyAuditLarkMd: OPS_TASK_REPLY_AUDIT_LARK_MD,
+});
+
+_fetchStoreRatingForProfileDisplay = createFetchStoreRatingForProfileDisplay({
+  pool,
+  resolveAgentCanonicalStore,
+  dailyReportIlikePatterns,
+  feishuStoreSearchPatterns,
 });
 
 _runChiefEvaluator = createRunChiefEvaluator({

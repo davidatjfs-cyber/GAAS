@@ -275,6 +275,8 @@
     "domains/agent-message/route-message.js",
     "domains/agent-ops/handle-checklist-card-action.js",
     "domains/agent-ops/send-scheduled-checklist.js",
-    "domains/agent-evaluator/run-chief-evaluator.js"
+    "domains/agent-evaluator/run-chief-evaluator.js",
+    "domains/agent-ops/send-safety-check.js",
+    "domains/agent-evaluator/fetch-store-rating-for-profile.js"
   ]
 }
