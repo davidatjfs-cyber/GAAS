@@ -73,6 +73,7 @@ import { createBuildBiDeterministicSalesRawTopReply } from './domains/agent-bi/b
 import { createBuildBiDeterministicBadReviewReportReply } from './domains/agent-bi/build-bad-review-report-reply.js';
 import { createDeterministicCascadeReplies } from './domains/agent-bi/deterministic-cascade-replies.js';
 import { createPollBitableSubmissions } from './domains/feishu-bitable/poll-submissions.js';
+import { createBitablePollingController } from './domains/feishu-bitable/start-bitable-polling.js';
 import {
   buildKpiRadarAlertJson,
   createRunDataAuditor,
@@ -3107,14 +3108,6 @@ const BITABLE_DEDUP_CLEAN_COUNT = 8000;
 let _bitableDedupsSeeded = false;
 
 // 启动时从数据库种子化dedup集合，避免重启后重复发送确认消息
-function _bitableRowUpdatedAtMs(record) {
-  const t = record?.updated_at ?? record?.created_at ?? record?.created_time;
-  if (!t) return 0;
-  const d = t instanceof Date ? t : new Date(t);
-  const ms = d.getTime();
-  return Number.isFinite(ms) ? ms : 0;
-}
-
 async function seedBitableDedup() {
   if (_bitableDedupsSeeded) return;
   _bitableDedupsSeeded = true;
@@ -5386,482 +5379,41 @@ async function notifyBitablePipelineFailure(scopeLabel, err, opts = {}) {
   }
 }
 
-const BITABLE_NOTIFY_DEBOUNCE_MS = 300;
-const BITABLE_CATCHUP_INTERVAL_MS = 2 * 60 * 1000;
-const BITABLE_INITIAL_CATCHUP_MS = 8000;
-const BITABLE_LISTEN_HEALTH_MS = 45_000;
-const BITABLE_LISTEN_BACKOFF_MIN_MS = 2000;
-const BITABLE_LISTEN_BACKOFF_MAX_MS = 90_000;
-/** LISTEN 专用连接 keepalive 连续失败次数，达到阈值则触发加密 catchup（补偿可能丢的 NOTIFY） */
-const BITABLE_KEEPALIVE_FAIL_THRESHOLD = 3;
-/** 触发加密 catchup 时，在至多该时间内执行一轮（秒级抖动，避免与重连同时抢锁） */
-const BITABLE_AGGRESSIVE_CATCHUP_DEADLINE_MS = 28_000;
-
-let _bitablePollingInterval = null;
-let _bitablePollingInProgress = false;
-let _bitableListenClient = null;
-let _bitableCatchupInterval = null;
-let _bitableListenKeepaliveTimer = null;
-let _bitableListenReconnectTimer = null;
-let _bitableListenBackoffMs = BITABLE_LISTEN_BACKOFF_MIN_MS;
-const _bitableNotifyDebounceTimers = new Map();
-let _bitableListenKeepaliveFailStreak = 0;
-let _bitableAggressiveCatchupTimer = null;
-
-/** NOTIFY payload 为 config_key 或 table_id 时解析为 BITABLE_CONFIGS 的 key */
-function resolveBitableConfigKeyFromNotifyPayload(payload) {
-  const p = String(payload || '').trim();
-  if (!p) return null;
-  if (BITABLE_CONFIGS[p]?.tableId) return p;
-  for (const [k, cfg] of Object.entries(BITABLE_CONFIGS)) {
-    if (cfg?.type === 'task_response') continue;
-    const tid = String(cfg?.tableId || '').trim();
-    if (tid && tid === p) return k;
-  }
-  return null;
-}
-
-/** 合并短时间内的重复 NOTIFY，降低 LISTEN 端突发与下游锁竞争 */
-function scheduleBitableNotifyProcessing(payloadRaw) {
-  const raw = String(payloadRaw || '').trim();
-  if (!raw) return;
-  const debounceKey = resolveBitableConfigKeyFromNotifyPayload(raw) || raw;
-  const prev = _bitableNotifyDebounceTimers.get(debounceKey);
-  if (prev) clearTimeout(prev);
-  _bitableNotifyDebounceTimers.set(
-    debounceKey,
-    setTimeout(() => {
-      _bitableNotifyDebounceTimers.delete(debounceKey);
-      const ck = resolveBitableConfigKeyFromNotifyPayload(raw);
-      if (!ck) {
-        log.warn('[bitable] NOTIFY payload not mapped to any BITABLE_CONFIGS (ignored):', raw);
-        return;
-      }
-      runBitableListenerHandler(ck).catch((e) =>
-        log.error(`[bitable] LISTEN handler error for ${ck}:`, e?.message)
-      );
-    }, BITABLE_NOTIFY_DEBOUNCE_MS)
-  );
-}
+// Wave P2: Bitable LISTEN / catchup / archive → domains/feishu-bitable/*
+const _bitablePolling = createBitablePollingController({
+  pool,
+  bitableConfigs: BITABLE_CONFIGS,
+  processedRecordIds: _bitableProcessedRecordIds,
+  lastProcessedTime: _bitableLastProcessedTime,
+  dedupMaxKeys: BITABLE_DEDUP_MAX_KEYS,
+  dedupCleanCount: BITABLE_DEDUP_CLEAN_COUNT,
+  seedBitableDedup,
+  extractRelationsFromBitableRecord,
+  processBitableData,
+  // Prior agents.js called an unbound processChecklistConfirmation (caught + logged).
+  // Keep injectable; Feishu-poll confirmation lives in processOpsChecklistSubmissions.
+  processChecklistConfirmation: null,
+  pollAllBitableSubmissions,
+  archiveOldBitableSubmissions,
+  getBitableSubmissionStats,
+  notifyBitablePipelineFailure,
+  log,
+});
 
 export function startBitablePolling(intervalMs = 60000) {
-  if (_bitablePollingInterval) {
-    clearInterval(_bitablePollingInterval);
-  }
-
-  log.info('[bitable] ⚡ PG LISTEN + DB trigger notify — Agent V2 writes feishu_generic_records, HRMS reacts on NOTIFY');
-
-  // 1. PG LISTEN: real-time processing when DB trigger fires (all writers: Agent / HRMS Webhook 等)
-  startBitableListener();
-
-  // 2. Periodic catch-up：补偿 NOTIFY / LISTEN 丢失或处理失败（略缩短间隔以提高数据时效）
-  if (_bitableCatchupInterval) clearInterval(_bitableCatchupInterval);
-  _bitableCatchupInterval = setInterval(() => {
-    runBitableCatchup().catch(e => log.error('[bitable] catchup error:', e?.message));
-  }, BITABLE_CATCHUP_INTERVAL_MS);
-
-  // 3. Run initial catchup on startup（略提前，尽快与库对齐）
-  setTimeout(() => {
-    runBitableCatchup().catch((e) => {
-      log.error('[bitable] initial catchup error:', e?.message);
-      void notifyBitablePipelineFailure('Bitable 启动后首次 catchup 失败', e, { minIntervalMs: 0 });
-    });
-  }, BITABLE_INITIAL_CATCHUP_MS);
-
-  // 4. Archive scheduler still needed
-  startArchiveScheduler();
-}
-
-async function startBitableListener() {
-  let pgModule;
-  try { pgModule = await import('pg'); } catch (e) { pgModule = null; }
-  const connectionString = process.env.DATABASE_URL;
-  if (!pgModule || !connectionString) {
-    log.error('[bitable] No pg module or DATABASE_URL, cannot LISTEN — falling back to polling');
-    void notifyBitablePipelineFailure(
-      'Bitable LISTEN（缺少 pg 或 DATABASE_URL）',
-      new Error('cannot LISTEN: no pg module or DATABASE_URL'),
-      { minIntervalMs: 0 }
-    );
-    startBitableFallbackPolling(60000);
-    return;
-  }
-  try {
-    if (_bitableListenReconnectTimer) {
-      clearTimeout(_bitableListenReconnectTimer);
-      _bitableListenReconnectTimer = null;
-    }
-    if (_bitableAggressiveCatchupTimer) {
-      clearTimeout(_bitableAggressiveCatchupTimer);
-      _bitableAggressiveCatchupTimer = null;
-    }
-    if (_bitableListenKeepaliveTimer) {
-      clearInterval(_bitableListenKeepaliveTimer);
-      _bitableListenKeepaliveTimer = null;
-    }
-    if (_bitableListenClient) {
-      try {
-        _bitableListenClient.removeAllListeners();
-        await _bitableListenClient.end();
-      } catch (_) { /* ignore */ }
-      _bitableListenClient = null;
-    }
-    const client = new pgModule.Client({ connectionString });
-    await client.connect();
-    await client.query('LISTEN bitable_records_updated');
-    _bitableListenBackoffMs = BITABLE_LISTEN_BACKOFF_MIN_MS;
-    _bitableListenKeepaliveFailStreak = 0;
-    client.on('notification', (msg) => {
-      if (msg.channel === 'bitable_records_updated' && msg.payload) {
-        log.info(`[bitable] PG NOTIFY received: payload=${msg.payload}`);
-        scheduleBitableNotifyProcessing(msg.payload);
-      }
-    });
-    client.on('error', (err) => {
-      log.error('[bitable] LISTEN client error:', err?.message);
-      void notifyBitablePipelineFailure('Bitable LISTEN 连接 error 事件', err, {
-        minIntervalMs: 30_000,
-        dedupeKey: 'listen_client_error'
-      });
-      try { client.end(); } catch (_) { /* ignore */ }
-    });
-    client.on('end', () => {
-      if (_bitableListenKeepaliveTimer) {
-        clearInterval(_bitableListenKeepaliveTimer);
-        _bitableListenKeepaliveTimer = null;
-      }
-      if (_bitableListenClient === client) _bitableListenClient = null;
-      const delay = Math.min(Math.max(_bitableListenBackoffMs, BITABLE_LISTEN_BACKOFF_MIN_MS), BITABLE_LISTEN_BACKOFF_MAX_MS);
-      _bitableListenBackoffMs = Math.min(_bitableListenBackoffMs * 2, BITABLE_LISTEN_BACKOFF_MAX_MS);
-      log.info(`[bitable] LISTEN disconnected, reconnect in ${delay}ms (backoff max ${BITABLE_LISTEN_BACKOFF_MAX_MS}ms)`);
-      void notifyBitablePipelineFailure(
-        'Bitable LISTEN 连接已断开（将自动重连）',
-        new Error(`LISTEN client end; next reconnect in ${delay}ms, backoff=${_bitableListenBackoffMs}ms`),
-        { minIntervalMs: 120_000, dedupeKey: 'listen_end' }
-      );
-      if (_bitableListenReconnectTimer) clearTimeout(_bitableListenReconnectTimer);
-      _bitableListenReconnectTimer = setTimeout(() => {
-        _bitableListenReconnectTimer = null;
-        startBitableListener().catch((e) => {
-          log.error('[bitable] LISTEN reconnect failed:', e?.message);
-          void notifyBitablePipelineFailure('Bitable LISTEN 重连尝试失败', e, {
-            minIntervalMs: 60_000,
-            dedupeKey: 'listen_reconnect'
-          });
-        });
-      }, delay);
-    });
-    _bitableListenClient = client;
-    _bitableListenKeepaliveTimer = setInterval(async () => {
-      try {
-        const c = _bitableListenClient;
-        if (!c || c._ending) return;
-        await c.query('SELECT 1');
-        _bitableListenKeepaliveFailStreak = 0;
-      } catch (e) {
-        log.error('[bitable] LISTEN keepalive failed:', e?.message);
-        void notifyBitablePipelineFailure('Bitable LISTEN keepalive 失败', e, {
-          minIntervalMs: 45_000,
-          dedupeKey: 'keepalive'
-        });
-        _bitableListenKeepaliveFailStreak += 1;
-        if (_bitableListenKeepaliveFailStreak >= BITABLE_KEEPALIVE_FAIL_THRESHOLD) {
-          log.warn(
-            `[bitable] LISTEN keepalive failed ${BITABLE_KEEPALIVE_FAIL_THRESHOLD} times consecutively — scheduling aggressive catchup within ${BITABLE_AGGRESSIVE_CATCHUP_DEADLINE_MS}ms`
-          );
-          void notifyBitablePipelineFailure(
-            `Bitable LISTEN keepalive 连续失败（≥${BITABLE_KEEPALIVE_FAIL_THRESHOLD} 次，已调度加密 catchup）`,
-            e,
-            {
-              minIntervalMs: 0,
-              extraLines: [
-                `已连续 ${BITABLE_KEEPALIVE_FAIL_THRESHOLD} 次 keepalive 失败，已在约 ${BITABLE_AGGRESSIVE_CATCHUP_DEADLINE_MS}ms 内调度额外 DB catchup。`
-              ]
-            }
-          );
-          _bitableListenKeepaliveFailStreak = 0;
-          scheduleBitableAggressiveCatchup('listen_keepalive_degraded');
-        }
-        try { _bitableListenClient?.end(); } catch (_) { /* ignore */ }
-      }
-    }, BITABLE_LISTEN_HEALTH_MS);
-    log.info('[bitable] PG LISTEN setup complete for bitable_records_updated (keepalive every ' + BITABLE_LISTEN_HEALTH_MS + 'ms)');
-  } catch (e) {
-    log.error('[bitable] PG LISTEN setup failed, falling back to polling:', e?.message);
-    void notifyBitablePipelineFailure('Bitable LISTEN 初始化失败（已回退飞书直连轮询）', e, { minIntervalMs: 0 });
-    startBitableFallbackPolling(60000);
-  }
-}
-
-function startBitableFallbackPolling(intervalMs) {
-  log.info('[bitable] ⚠️ Falling back to Feishu API polling (higher latency, more API calls)');
-  const runPollingOnce = async () => {
-    if (_bitablePollingInProgress) { log.info('[bitable] previous cycle still running, skip'); return; }
-    _bitablePollingInProgress = true;
-    try {
-      await pollAllBitableSubmissions();
-    } catch (e) {
-      log.error('[bitable] poll error:', e?.message);
-      void notifyBitablePipelineFailure('Bitable 飞书直连轮询（回退模式）单次失败', e, {
-        minIntervalMs: 15 * 60 * 1000,
-        dedupeKey: 'fallback_poll_once'
-      });
-    } finally { _bitablePollingInProgress = false; }
-  };
-  runPollingOnce().catch(log.error);
-  _bitablePollingInterval = setInterval(() => { runPollingOnce().catch(log.error); }, intervalMs);
-}
-
-async function runBitableListenerHandler(configKeyOrPayload) {
-  const configKey =
-    resolveBitableConfigKeyFromNotifyPayload(configKeyOrPayload) || String(configKeyOrPayload || '').trim();
-  if (!configKey || !BITABLE_CONFIGS[configKey]?.tableId) {
-    log.warn('[bitable] runBitableListenerHandler: unknown configKey / payload:', configKeyOrPayload);
-    void notifyBitablePipelineFailure(
-      'Bitable NOTIFY payload 无法映射到 BITABLE_CONFIGS',
-      new Error(String(configKeyOrPayload || 'empty')),
-      { minIntervalMs: 60 * 60 * 1000, dedupeKey: 'unknown_notify_payload' }
-    );
-    return;
-  }
-  if (_bitablePollingInProgress) {
-    log.info('[bitable] NOTIFY skipped — handler busy; catchup will pick up:', configKey);
-    return;
-  }
-  _bitablePollingInProgress = true;
-  try {
-    await seedBitableDedup();
-    await processBitableRecordsFromDB(configKey);
-  } catch (e) {
-    log.error(`[bitable] LISTEN handler error for ${configKey}:`, e?.message);
-    void notifyBitablePipelineFailure(`Bitable NOTIFY 处理失败（configKey=${configKey}）`, e, {
-      minIntervalMs: 120_000,
-      dedupeKey: configKey
-    });
-  } finally {
-    _bitablePollingInProgress = false;
-  }
-}
-
-async function runBitableCatchup() {
-  if (_bitablePollingInProgress) {
-    log.info('[bitable] catchup skipped — handler already running');
-    return;
-  }
-  _bitablePollingInProgress = true;
-  try {
-    await seedBitableDedup();
-    const configKeys = Object.keys(BITABLE_CONFIGS).filter(k => BITABLE_CONFIGS[k]?.tableId && BITABLE_CONFIGS[k]?.type !== 'task_response');
-    for (const configKey of configKeys) {
-      try {
-        await processBitableRecordsFromDB(configKey);
-      } catch (e) {
-        log.error(`[bitable] catchup error for ${configKey}:`, e?.message);
-        void notifyBitablePipelineFailure(`Bitable catchup 单表失败（${configKey}）`, e, {
-          minIntervalMs: 180_000,
-          dedupeKey: `catchup_${configKey}`
-        });
-      }
-      await new Promise(r => setImmediate(r));
-    }
-    log.info('[bitable] catchup cycle complete');
-  } catch (e) {
-    log.error('[bitable] catchup cycle error:', e?.message);
-    void notifyBitablePipelineFailure('Bitable 定时 catchup 整轮失败', e, {
-      minIntervalMs: 180_000,
-      dedupeKey: 'catchup_cycle'
-    });
-  } finally {
-    _bitablePollingInProgress = false;
-  }
-}
-
-/**
- * LISTEN 连接不健康时：在约 30s 内额外跑一轮全量 DB catchup（与周期 catchup 独立，已防并发）。
- * 若已有待执行的加密 catchup，不重复排队。
- */
-function scheduleBitableAggressiveCatchup(reason) {
-  if (_bitableAggressiveCatchupTimer) {
-    log.info('[bitable] aggressive catchup already queued, skip:', reason);
-    return;
-  }
-  const delay = Math.min(
-    BITABLE_AGGRESSIVE_CATCHUP_DEADLINE_MS - 500,
-    1500 + Math.floor(Math.random() * 9000)
-  );
-  log.warn(`[bitable] aggressive catchup scheduled in ${delay}ms (${reason})`);
-  _bitableAggressiveCatchupTimer = setTimeout(() => {
-    _bitableAggressiveCatchupTimer = null;
-    runBitableCatchup()
-      .then(() => log.info('[bitable] aggressive catchup cycle complete'))
-      .catch((err) => {
-        log.error('[bitable] aggressive catchup error:', err?.message);
-        void notifyBitablePipelineFailure('Bitable 加密 catchup（keepalive 降级触发）失败', err, {
-          minIntervalMs: 0,
-          dedupeKey: 'aggressive_catchup'
-        });
-      });
-  }, Math.max(800, delay));
-}
-
-async function processBitableRecordsFromDB(configKey) {
-  const config = BITABLE_CONFIGS[configKey];
-  if (!config?.tableId) return;
-
-  const cutoff = new Date(Date.now() - 30 * 60 * 1000);
-  let records;
-  try {
-    const result = await pool().query(
-      `SELECT record_id, fields, raw, created_at, updated_at
-       FROM feishu_generic_records
-       WHERE table_id = $1
-         AND (created_at > $2 OR updated_at > $2)
-       ORDER BY COALESCE(updated_at, created_at) DESC
-       LIMIT 500`,
-      [config.tableId, cutoff]
-    );
-    records = (result.rows || []).map(r => {
-      const raw = (() => { try { return typeof r.raw === 'string' ? JSON.parse(r.raw) : (r.raw || {}); } catch { return {}; } })();
-      const fields = (() => { try { return typeof r.fields === 'string' ? JSON.parse(r.fields) : (r.fields || {}); } catch { return {}; } })();
-      return {
-        record_id: r.record_id,
-        fields,
-        created_at: r.created_at,
-        updated_at: r.updated_at,
-        ...raw
-      };
-    });
-  } catch (e) {
-    log.error(`[bitable][${configKey}] query feishu_generic_records failed:`, e?.message);
-    return;
-  }
-
-  if (records.length === 0) return;
-
-  const newSubmissions = [];
-  const newRecords = [];
-
-  for (const record of records) {
-    const recordId = record.record_id;
-    const processedKey = `${configKey}_${recordId}`;
-    const rowMs = _bitableRowUpdatedAtMs(record);
-    const seenMs = _bitableLastProcessedTime.get(processedKey);
-    if (seenMs != null && rowMs > 0 && rowMs <= seenMs) continue;
-
-    const fields = record.fields || {};
-    const submission = {
-      configKey,
-      recordId,
-      createdTime: record.created_time || record.created_at,
-      submitter: fields['提交人'] || '',
-      store: fields['所属门店'] || fields['门店'] || '',
-      checkType: fields['检查类型'] || '',
-      checkStatus: fields['检查状态'] || '',
-      checkRemark: fields['检查说明'] || '',
-      checkPhotos: fields['检查照片'] || [],
-      submitTime: fields['提交日期'] || record.created_time || record.created_at,
-      fields
-    };
-
-    newSubmissions.push(submission);
-    newRecords.push(record);
-  }
-
-  if (newSubmissions.length === 0) return;
-  log.info(`[bitable][${configKey}] processed ${newSubmissions.length} new records from DB (via NOTIFY/catchup)`);
-
-  // 知识图谱
-  for (const record of newRecords) {
-    try { await extractRelationsFromBitableRecord(record, configKey); } catch (e) { /* ignore */ }
-  }
-
-  // 业务处理
-  await processBitableData(configKey, newRecords);
-
-  // ops_checklist 确认消息
-  if (configKey === 'ops_checklist') {
-    for (const sub of newSubmissions) {
-      try {
-        await processChecklistConfirmation(sub);
-      } catch (e) {
-        log.error(`[bitable] ops_checklist confirmation error:`, e?.message);
-      }
-      await new Promise(r => setImmediate(r));
-    }
-  }
-
-  for (const record of newRecords) {
-    const pk = `${configKey}_${record.record_id}`;
-    const rowMs = _bitableRowUpdatedAtMs(record);
-    _bitableProcessedRecordIds.add(pk);
-    _bitableLastProcessedTime.set(pk, rowMs > 0 ? rowMs : Date.now());
-    if (_bitableProcessedRecordIds.size > BITABLE_DEDUP_MAX_KEYS) {
-      const oldestIds = Array.from(_bitableProcessedRecordIds).slice(0, BITABLE_DEDUP_CLEAN_COUNT);
-      oldestIds.forEach(id => { _bitableProcessedRecordIds.delete(id); _bitableLastProcessedTime.delete(id); });
-    }
-  }
+  return _bitablePolling.startBitablePolling(intervalMs);
 }
 
 export function startArchiveScheduler() {
-  // 每天凌晨 3 点执行归档
-  const scheduleNextArchive = () => {
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(3, 0, 0, 0);
-    
-    const msUntilArchive = tomorrow.getTime() - now.getTime();
-    
-    setTimeout(async () => {
-      log.info('[bitable] running daily archive task');
-      const result = await archiveOldBitableSubmissions();
-      log.info('[bitable] archive result:', result);
-      
-      // 检查容量告警
-      await checkBitableCapacity();
-      
-      // 递归调度下一次
-      scheduleNextArchive();
-    }, msUntilArchive);
-    
-    log.info('[bitable] next archive scheduled for:', tomorrow.toISOString());
-  };
-  
-  scheduleNextArchive();
+  return _bitablePolling.startArchiveScheduler();
 }
 
 export async function checkBitableCapacity() {
-  try {
-    const stats = await getBitableSubmissionStats();
-    const mainCount = stats.main.total || 0;
-    const totalCount = stats.total || 0;
-    
-    log.info(`[bitable] capacity check: main=${mainCount}, total=${totalCount}`);
-    
-    // 容量告警（调整阈值）
-    if (mainCount > 1000) {
-      const warning = `⚠️ Bitable 容量提醒\n主表记录数：${mainCount}/2000\n总记录数：${totalCount}\n系统已启用自动归档，7天后数据移至归档表，60天后自动删除`;
-      log.warn('[bitable] CAPACITY WARNING:', warning);
-      // await sendLarkMessage(adminOpenId, prefixWithAgentName('system', warning));
-    }
-    
-    if (mainCount > 1500) {
-      const critical = `🚨 Bitable 容量预警\n主表记录数：${mainCount}/2000\n系统将自动清理旧数据，无需手动干预`;
-      log.error('[bitable] CAPACITY CRITICAL:', critical);
-      // await sendLarkMessage(adminOpenId, prefixWithAgentName('system', critical));
-    }
-    
-  } catch (e) {
-    log.error('[bitable] capacity check failed:', e?.message);
-  }
+  return _bitablePolling.checkBitableCapacity();
 }
 
 export function stopBitablePolling() {
-  if (_bitablePollingInterval) {
-    clearInterval(_bitablePollingInterval);
-    _bitablePollingInterval = null;
-    log.info('[bitable] polling stopped');
-  }
+  return _bitablePolling.stopBitablePolling();
 }
 
 // ─────────────────────────────────────────────
