@@ -12,7 +12,16 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
-const SKIP_DIRS = new Set(['node_modules', 'coverage', 'dist', '.git', 'tmp', 'test']);
+const SKIP_DIRS = new Set([
+  'node_modules',
+  'coverage',
+  'dist',
+  '.git',
+  'tmp',
+  'test',
+  '.stryker-tmp',
+  'reports',
+]);
 
 const FN_RE =
   /^(?<indent>\s*)(?:export\s+)?(?:async\s+)?function\s+(?<name>\w+)\s*\(/;

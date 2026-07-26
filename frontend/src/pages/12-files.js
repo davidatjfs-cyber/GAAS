@@ -324,14 +324,14 @@
             const container = document.createElement('div');
             container.id = 'upload-file-dialog';
             container.innerHTML = `
-                <div class="uf-backdrop" onclick="closeUploadFileDialog()"></div>
+                <div class="uf-backdrop" data-click="closeUploadFileDialog"></div>
                 <div class="uf-modal">
                     <div class="uf-header">
                         <div>
                             <div class="uf-eyebrow">DATA FILES</div>
                             <h3 class="uf-title">上传数据文件</h3>
                         </div>
-                        <button class="uf-close" onclick="closeUploadFileDialog()">×</button>
+                        <button class="uf-close" data-click="closeUploadFileDialog">×</button>
                     </div>
                     <div class="uf-body">
                         <!-- 拖拽区 -->
@@ -351,7 +351,7 @@
                             <span class="uf-file-icon" id="uf-file-icon">📄</span>
                             <span class="uf-file-name" id="uf-file-name"></span>
                             <span class="uf-file-size" id="uf-file-size"></span>
-                            <button class="uf-file-clear" onclick="ufClearFile()">×</button>
+                            <button class="uf-file-clear" data-click="ufClearFile">×</button>
                         </div>
 
                         <!-- 文件类型 -->
@@ -385,8 +385,8 @@
                         </div>
                     </div>
                     <div class="uf-footer">
-                        <button class="btn btn-secondary" onclick="closeUploadFileDialog()">取消</button>
-                        <button class="btn" id="uf-submit-btn" onclick="submitFileUpload()">⬆️ 上传</button>
+                        <button class="btn btn-secondary" data-click="closeUploadFileDialog">取消</button>
+                        <button class="btn" id="uf-submit-btn" data-click="submitFileUpload">⬆️ 上传</button>
                     </div>
                 </div>
             `;
@@ -704,7 +704,7 @@
                 dxRenderCards(data.stores, start, end);
                 gsInitStores((data.stores || []).map(s => s.store));
             } catch (e) {
-                container.innerHTML = `<div class="dx-empty">❌ 加载失败: ${escapeHtml(e.message)}<br><br><button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="loadDiagnosisData()">重试</button></div>`;
+                container.innerHTML = `<div class="dx-empty">❌ 加载失败: ${escapeHtml(e.message)}<br><br><button class="ga-btn ga-btn--ghost ga-btn--sm" data-click="loadDiagnosisData">重试</button></div>`;
             }
         }
 
@@ -749,7 +749,7 @@
                     </div>`;
                 }).join('');
             } catch (e) {
-                container.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsLoadCards()">重试</button></div>`;
+                container.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" data-click="gsLoadCards">重试</button></div>`;
             }
         }
 
@@ -1035,7 +1035,7 @@
                 body.innerHTML = reasonNote + scopeNote + gsRenderPlan(data);
                 gsLoadCustomHistory(); gsLoadCustomActiveRounds();
             } catch (e) {
-                body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsAnalyzeCustom()">重试</button></div>`;
+                body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" data-click="gsAnalyzeCustom">重试</button></div>`;
             }
         }
 

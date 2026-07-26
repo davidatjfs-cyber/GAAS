@@ -13,7 +13,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
 const domainsRoot = path.join(serverRoot, 'domains');
 
-const SKIP_DIRS = new Set(['node_modules', 'coverage', 'dist', '.git', 'tmp']);
+const SKIP_DIRS = new Set([
+  'node_modules',
+  'coverage',
+  'dist',
+  '.git',
+  'tmp',
+  '.stryker-tmp',
+  'reports',
+]);
 
 function walkJs(dir, out = []) {
   if (!fs.existsSync(dir)) return out;

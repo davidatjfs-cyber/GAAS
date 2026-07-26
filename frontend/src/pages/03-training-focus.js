@@ -1466,7 +1466,7 @@
                     updateKnowledgeHeroStats([], '空分组', `当前分组「${getKnowledgeGroupLabel(groupId) || '未命名分组'}」还没有文件。`);
                     return;
                 }
-                const backHtml = `<div style="margin-bottom:16px;"><button onclick="kbBackToGroups()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);padding:6px 14px;border-radius:8px;font-size:12px;cursor:pointer;">‹ 返回所有分组</button></div>`;
+                const backHtml = `<div style="margin-bottom:16px;"><button data-click="kbBackToGroups" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);padding:6px 14px;border-radius:8px;font-size:12px;cursor:pointer;">‹ 返回所有分组</button></div>`;
                 if (cardsEl) cardsEl.innerHTML = backHtml + itemsMapped.map(it => {
                     const icon = typeIcon2(it.type);
                     const badge = typeBadge(it.type);
@@ -2059,7 +2059,7 @@
                     <div style="display:flex;gap:8px;">
                         <button onclick="promoReqSelectAll(true)" style="padding:6px 12px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;cursor:pointer;">全选</button>
                         <button onclick="promoReqSelectAll(false)" style="padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;">全不选</button>
-                        <button onclick="savePromoReqTopics()" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
+                        <button data-click="savePromoReqTopics" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
                     </div>
                 </div>
                 <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-bottom:12px;">✓ 勾选 = 员工晋升到「${position} ${level}」时必须通过此知识点认证；取消勾选 = 不强制要求</div>
@@ -2084,7 +2084,7 @@
 
                 html += `</div>
                 <div style="margin-top:14px;text-align:right;">
-                    <button onclick="savePromoReqTopics()" style="padding:8px 20px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">💾 保存晋升认证要求</button>
+                    <button data-click="savePromoReqTopics" style="padding:8px 20px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">💾 保存晋升认证要求</button>
                 </div>`;
 
                 body.innerHTML = html;
@@ -2948,7 +2948,7 @@
                     <div class="ta-store-group">
                         <div class="ta-store-name">门店 / 部门 · ${escapeHtml(storeName)}</div>
                         ${emps.map(e => `
-                            <label class="ta-employee-item" onclick="updateEmpSelectionSummary()">
+                            <label class="ta-employee-item" data-click="updateEmpSelectionSummary">
                                 <input type="checkbox" value="${escapeHtml(e.username)}" data-name="${escapeHtml(e.name||e.username)}"
                                     style="cursor:pointer;">
                                 <span class="ta-employee-name">${escapeHtml(e.name||e.username)}</span>
@@ -3798,7 +3798,7 @@
                    })()" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(52,211,153,0.9),rgba(16,185,129,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
                         🎉 继续
                    </button>`
-                : `<button onclick="startTrainingQuiz()" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(99,102,241,0.9),rgba(139,92,246,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
+                : `<button data-click="startTrainingQuiz" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(99,102,241,0.9),rgba(139,92,246,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
                         🔄 重新生成题目再考一次
                    </button>`;
 

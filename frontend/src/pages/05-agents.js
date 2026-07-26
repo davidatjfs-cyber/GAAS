@@ -1580,8 +1580,8 @@
                     </div>`;
                 if (actionsBox && ['admin', 'hq_manager'].includes(currentUser?.role)) {
                     actionsBox.innerHTML = `
-                        <button class="btn" onclick="triggerAmAudit()">数据审计</button>
-                        <button class="btn" onclick="triggerAmEval()">绩效评估</button>`;
+                        <button class="btn" data-click="triggerAmAudit">数据审计</button>
+                        <button class="btn" data-click="triggerAmEval">绩效评估</button>`;
                 } else if (actionsBox) { actionsBox.innerHTML = ''; }
             } catch (e) { box.innerHTML = '<div class="am-stat-card" style="grid-column:1/-1; text-align:center; color:#f87171;">加载失败</div>'; }
         }

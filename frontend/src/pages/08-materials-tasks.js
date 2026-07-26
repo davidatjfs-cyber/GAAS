@@ -1588,7 +1588,7 @@
                 : '';
 
             const toggleHtml = needsToggle
-                ? `<button type="button" class="btn btn-secondary" onclick="toggleExamQuestionExpanded()" style="padding: 6px 10px; border-radius: 999px;">${isExpanded ? '收起' : '展开'}</button>`
+                ? `<button type="button" class="btn btn-secondary" data-click="toggleExamQuestionExpanded" style="padding: 6px 10px; border-radius: 999px;">${isExpanded ? '收起' : '展开'}</button>`
                 : '';
 
             const optionsHtml = (t === 'blank')
@@ -1637,9 +1637,9 @@
                         <div class="exam-submitbar">
                             <div class="hint" id="exam-submit-hint">--</div>
                             <div style="display:flex; gap: 8px; align-items:center; flex-wrap: wrap;">
-                                <button type="button" class="btn btn-secondary" ${prevDisabled ? 'disabled' : ''} onclick="examPrevQuestion()" style="padding: 10px 12px;">上一题</button>
-                                <button type="button" class="btn btn-secondary" ${nextDisabled ? 'disabled' : ''} onclick="examNextQuestion()" style="padding: 10px 12px;">下一题</button>
-                                <button id="exam-submit-btn" type="button" class="btn" onclick="submitExam()">提交</button>
+                                <button type="button" class="btn btn-secondary" ${prevDisabled ? 'disabled' : ''} data-click="examPrevQuestion" style="padding: 10px 12px;">上一题</button>
+                                <button type="button" class="btn btn-secondary" ${nextDisabled ? 'disabled' : ''} data-click="examNextQuestion" style="padding: 10px 12px;">下一题</button>
+                                <button id="exam-submit-btn" type="button" class="btn" data-click="submitExam">提交</button>
                             </div>
                         </div>
                     </form>

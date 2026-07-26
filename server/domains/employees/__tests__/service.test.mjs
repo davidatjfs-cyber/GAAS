@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   employeeRowToStateShape,
   hydrateEmployeesFromTable,
-} from '../domains/employees/service.js';
+} from '../service.js';
 
 test('employeeRowToStateShape 映射结构化列与 extra_json', () => {
   const shape = employeeRowToStateShape({

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   extractStoreProfileFields,
   syncStoreProfileToChairmanConfig,
-} from '../domains/stores/profile.js';
+} from '../profile.js';
 
 test('extractStoreProfileFields：字符串/数组/数字/布尔与对象字段', () => {
   const out = extractStoreProfileFields({

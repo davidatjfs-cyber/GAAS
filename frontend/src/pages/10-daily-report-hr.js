@@ -1305,7 +1305,7 @@
 
                 // 添加详细记录按钮
                 html += '<div style="margin-top:16px; text-align:center;">';
-                html += '<button class="btn btn-secondary" type="button" onclick="loadAttentionDetail()" style="padding:8px 18px; font-size:12px; border-radius:8px;">查看详细记录</button>';
+                html += '<button class="btn btn-secondary" type="button" data-click="loadAttentionDetail" style="padding:8px 18px; font-size:12px; border-radius:8px;">查看详细记录</button>';
                 html += '</div>';
                 html += '<div id="rep-attention-detail" style="margin-top:12px;"></div>';
 
@@ -1827,8 +1827,8 @@
                     <div style="font-size:12px; font-weight:800; color:rgba(226,232,240,0.92); margin-bottom:8px;">产品毛利配置（品牌：${escapeHtml(brandName || '-')}; 每行：产品,业务类型(可空),单份毛利）</div>
                     <textarea id="rep-gross-profile-editor" rows="6" style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff; font-size:12px;">${escapeHtml(grossProfileText)}</textarea>
                     <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
-                        <button class="btn" type="button" onclick="repSaveGrossProfitProfiles()" style="padding:8px 12px; border-radius:8px;">保存毛利配置</button>
-                        <button class="btn btn-secondary" type="button" onclick="repInventoryForecastRun()" style="padding:8px 12px; border-radius:8px;">刷新预估结果</button>
+                        <button class="btn" type="button" data-click="repSaveGrossProfitProfiles" style="padding:8px 12px; border-radius:8px;">保存毛利配置</button>
+                        <button class="btn btn-secondary" type="button" data-click="repInventoryForecastRun" style="padding:8px 12px; border-radius:8px;">刷新预估结果</button>
                     </div>
                 </div>
 
@@ -1836,8 +1836,8 @@
                     <div style="font-size:12px; font-weight:800; color:rgba(226,232,240,0.92); margin-bottom:8px;">自定义模糊名称归类（品牌：${escapeHtml(brandName || '-')}; 每行：标准名 => 别名1、别名2）</div>
                     <textarea id="rep-product-alias-editor" rows="6" style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff; font-size:12px;" placeholder="例如：\n九秒生炒鱼片 => 9秒生炒鱼片、九秒生炒魚片\n白灼虾">${escapeHtml(productAliasText)}</textarea>
                     <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
-                        <button class="btn" type="button" onclick="repSaveProductAliasRules()" style="padding:8px 12px; border-radius:8px;">保存归类规则</button>
-                        <button class="btn btn-secondary" type="button" onclick="loadReportsData()" style="padding:8px 12px; border-radius:8px;">刷新规则</button>
+                        <button class="btn" type="button" data-click="repSaveProductAliasRules" style="padding:8px 12px; border-radius:8px;">保存归类规则</button>
+                        <button class="btn btn-secondary" type="button" data-click="loadReportsData" style="padding:8px 12px; border-radius:8px;">刷新规则</button>
                     </div>
                 </div>
 
@@ -1865,7 +1865,7 @@
                         <input id="rep-inv-holiday" type="checkbox" ${state.isHoliday ? 'checked' : ''} /> 是否假日
                     </label>
                     <div style="display:flex; gap:8px;">
-                        <button class="btn" type="button" onclick="repInventoryForecastRun()" style="padding:8px 12px; border-radius:8px;">更新预测</button>
+                        <button class="btn" type="button" data-click="repInventoryForecastRun" style="padding:8px 12px; border-radius:8px;">更新预测</button>
                     </div>
                 </div>
 
@@ -1937,7 +1937,7 @@
                         </select>
                     </div>
                     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                        <button class="btn btn-secondary" type="button" onclick="repInventoryForecastRun()" style="padding:8px 12px; border-radius:8px;">刷新销售明细样本</button>
+                        <button class="btn btn-secondary" type="button" data-click="repInventoryForecastRun" style="padding:8px 12px; border-radius:8px;">刷新销售明细样本</button>
                     </div>
                     <div style="margin-top:8px; font-size:11px; color:rgba(200,215,230,0.62);">智能助手现在直接按所选门店、业态与日期范围汇总销售明细（pos_sales_detail），不再依赖手工上传第二份历史文件。</div>
                 </div>` : ''}

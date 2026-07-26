@@ -1113,7 +1113,7 @@
                 const moreCards = visible.slice(COLLAPSE_LIMIT).map((a, i) => renderCard(a, i + COLLAPSE_LIMIT, 0)).join('');
                 html += `<div id="profile-notif-more" class="notif-expand-area">${moreCards}</div>`;
                 if (expandFooter) {
-                    expandFooter.innerHTML = `<button type="button" id="profile-notif-toggle" class="notif-more-btn" onclick="toggleProfileNotifications()">
+                    expandFooter.innerHTML = `<button type="button" id="profile-notif-toggle" class="notif-more-btn" data-click="toggleProfileNotifications">
                     查看更多通知（${visible.length - COLLAPSE_LIMIT}条）▾
                 </button>`;
                 }

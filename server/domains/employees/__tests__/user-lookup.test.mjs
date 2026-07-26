@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createUserLookupHelpers } from '../domains/employees/user-lookup.js';
+import { createUserLookupHelpers } from '../user-lookup.js';
 
 function makeHelpers({ pool, expandAgentStoreLabels } = {}) {
   return createUserLookupHelpers({

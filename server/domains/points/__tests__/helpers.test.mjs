@@ -14,7 +14,7 @@ import {
   dedupeGlobalSocialMediaPointRules,
   ensureGlobalSocialMediaPointRule,
   canonicalizeStoreKeyForPoints,
-} from '../domains/points/helpers.js';
+} from '../helpers.js';
 
 test('normalizePointsAdminRecordStatus：pending/applied/默认 approved', () => {
   assert.equal(normalizePointsAdminRecordStatus('pending'), 'pending');

@@ -24419,7 +24419,7 @@
                 };
             }
         } catch (e) {}
-
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function') window[fn](); } }); // P5.1：data-click 委托，替代逐个迁移的 inline onclick
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -27604,7 +27604,7 @@ const role = String(currentUser?.role || '').trim();
                         <div style="margin-top:10px; border-top:1px dashed rgba(255,255,255,0.12); padding-top:10px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
                                 <div style="font-size:12px; color:rgba(200,215,230,0.78);">灵活培训周期（选择日期 + 输入内容）*</div>
-                                <button type="button" class="btn btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="promoAddTrainingPeriodRow()">+ 添加周期</button>
+                                <button type="button" class="btn btn-secondary" style="padding:6px 10px; font-size:12px;" data-click="promoAddTrainingPeriodRow">+ 添加周期</button>
                             </div>
                             <div id="promotion-training-periods-editor" style="display:grid; gap:8px;"></div>
                             <div style="margin-top:6px; font-size:11px; color:rgba(200,215,230,0.62);">无需手输日期格式，直接选择开始/结束日期；内容可自由输入。</div>
@@ -27821,7 +27821,7 @@ const role = String(currentUser?.role || '').trim();
                         <div style="font-weight:800;color:#a5b4fc;margin-bottom:8px;">退回修改</div>
                         <div style="font-size:12px;color:rgba(200,215,230,0.72);margin-bottom:10px;">可删除填错的条目、点击「添加积分项」补充新事项；每条需选择事项并填写理由。重新提交不占用当天新建申报次数。</div>
                         <div id="points-returned-rows" style="display:flex;flex-direction:column;gap:12px;"></div>
-                        <button type="button" class="btn btn-secondary" onclick="addPointsReturnedResubmitRow()" style="width:100%;margin-top:10px;padding:10px;border-radius:12px;border:1px dashed rgba(148,163,184,0.35);font-size:13px;font-weight:600;">+ 添加积分项</button>
+                        <button type="button" class="btn btn-secondary" data-click="addPointsReturnedResubmitRow" style="width:100%;margin-top:10px;padding:10px;border-radius:12px;border:1px dashed rgba(148,163,184,0.35);font-size:13px;font-weight:600;">+ 添加积分项</button>
                     </div>`;
                 }
             } else if (String(item?.type || '') === 'payment') {
@@ -30068,7 +30068,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 const data = await atbFetch('/api/agent-task-board/tasks/' + encodeURIComponent(taskId));
                 renderAgentTaskDetail(data.task || {});
             } catch (e) {
-                if (panel) panel.innerHTML = '<button class="atb-action" onclick="closeAgentTaskDetail()">关闭</button><div class="atb-section">加载失败：' + atbEscape(e.message) + '</div>';
+                if (panel) panel.innerHTML = '<button class="atb-action" data-click="closeAgentTaskDetail">关闭</button><div class="atb-section">加载失败：' + atbEscape(e.message) + '</div>';
             }
         }
 
@@ -30084,16 +30084,16 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 const link = e.file_url ? '<br><a href="' + atbEscape(e.file_url) + '" target="_blank" style="color:#fbbf24;">查看文件</a>' : '';
                 return '<div class="atb-line"><b>' + atbEscape({photo:'照片',text:'文字',document:'文档',link:'链接'}[e.evidence_type] || e.evidence_type) + '</b> ' + atbEscape(e.content || '') + link + '<br>' + atbEscape(atbFmtTime(e.created_at)) + '</div>';
             }).join('') || '<div class="atb-line">暂无证据</div>';
-            panel.innerHTML = '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;"><div><div class="atb-kicker">任务详情</div><h2 style="margin:6px 0 0;font-size:24px;line-height:1.15;">' + atbEscape(t.title || t.task_id) + '</h2></div><button class="atb-action" style="width:auto;padding:8px 12px;" onclick="closeAgentTaskDetail()">关闭</button></div>'
+            panel.innerHTML = '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;"><div><div class="atb-kicker">任务详情</div><h2 style="margin:6px 0 0;font-size:24px;line-height:1.15;">' + atbEscape(t.title || t.task_id) + '</h2></div><button class="atb-action" style="width:auto;padding:8px 12px;" data-click="closeAgentTaskDetail">关闭</button></div>'
                 + '<div class="atb-meta" style="margin-top:12px;"><span>状态：' + atbEscape(board) + '</span><span>负责人：' + atbEscape({ops_supervisor:'运营督导',food_quality:'食安专员',train_advisor:'培训顾问',marketing_planner:'营销策划',marketing_executor:'营销执行',data_auditor:'数据审计'}[t.assignee_agent || t.current_agent] || t.assignee_agent || t.current_agent || '待分配') + '</span><span>门店：' + atbEscape(t.store || '-') + '</span><span>类型：' + atbEscape(atbCategoryZh(t.category)) + '</span><span>优先级：' + atbEscape(atbPriorityZh(t.priority || t.severity)) + '</span></div>'
                 + atbRenderStatusPath(board, rawEvents)
                 + '<div class="atb-section"><b>任务内容</b><p style="margin-top:8px;color:rgba(226,232,240,.72);white-space:pre-wrap;">' + atbEscape(t.detail || '') + '</p></div>'
-                + '<div class="atb-section"><b>补充证据/反馈</b><textarea id="atb-evidence-text" class="atb-input" style="margin-top:10px;min-height:82px;" placeholder="输入门店反馈、检查说明或证据描述"></textarea><div id="atb-evidence-files-wrap" style="margin-top:8px;"><label style="display:flex;align-items:center;gap:8px;padding:12px;border:2px dashed rgba(255,255,255,0.15);border-radius:12px;cursor:pointer;color:rgba(226,232,240,0.6);font-size:14px;transition:border-color .2s;"><span>点击或拖拽上传照片/文件</span><input id="atb-evidence-files" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt" style="display:none;" onchange="atbPreviewFiles()"></label><div id="atb-evidence-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div></div><button class="atb-action" style="margin-top:8px;width:100%;" onclick="submitAgentTaskEvidence()">提交证据/反馈</button></div>'
+                + '<div class="atb-section"><b>补充证据/反馈</b><textarea id="atb-evidence-text" class="atb-input" style="margin-top:10px;min-height:82px;" placeholder="输入门店反馈、检查说明或证据描述"></textarea><div id="atb-evidence-files-wrap" style="margin-top:8px;"><label style="display:flex;align-items:center;gap:8px;padding:12px;border:2px dashed rgba(255,255,255,0.15);border-radius:12px;cursor:pointer;color:rgba(226,232,240,0.6);font-size:14px;transition:border-color .2s;"><span>点击或拖拽上传照片/文件</span><input id="atb-evidence-files" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt" style="display:none;" onchange="atbPreviewFiles()"></label><div id="atb-evidence-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div></div><button class="atb-action" style="margin-top:8px;width:100%;" data-click="submitAgentTaskEvidence">提交证据/反馈</button></div>'
                 + '<div class="atb-section"><b>证据</b><div class="atb-timeline">' + evidences + '</div></div>'
                 + '<div class="atb-section"><b>审计时间线</b><div class="atb-timeline">' + events + '</div></div>'
-                + '<div class="atb-section"><b>重新分配负责人</b><select id="atb-reassign-agent" class="atb-input" style="margin-top:8px;width:100%;"><option value="">选择负责人...</option><option value="ops_supervisor">运营督导</option><option value="food_quality">食安专员</option><option value="train_advisor">培训顾问</option><option value="marketing_planner">营销策划</option><option value="marketing_executor">营销执行</option><option value="data_auditor">数据审计</option></select><button class="atb-action" style="margin-top:8px;width:100%;" onclick="reassignAgentTask()">确认重分配</button></div>'
-                + '<div class="atb-section"><b>质量评分 (0-10)</b><input id="atb-quality-score" class="atb-input" type="number" min="0" max="10" step="0.5" style="margin-top:8px;width:100%;" placeholder="输入0-10的质量评分"><button class="atb-action" style="margin-top:8px;width:100%;" onclick="submitQualityScore()">提交评分</button></div>'
-                + '<div class="atb-panel-actions"><button class="atb-action good" onclick="reviewAgentTask(\'approved\')">通过并关闭</button><button class="atb-action bad" onclick="reviewAgentTask(\'rejected\')">打回并修订</button><button class="atb-action" onclick="deriveAgentTask()">创建衍生任务</button></div>';
+                + '<div class="atb-section"><b>重新分配负责人</b><select id="atb-reassign-agent" class="atb-input" style="margin-top:8px;width:100%;"><option value="">选择负责人...</option><option value="ops_supervisor">运营督导</option><option value="food_quality">食安专员</option><option value="train_advisor">培训顾问</option><option value="marketing_planner">营销策划</option><option value="marketing_executor">营销执行</option><option value="data_auditor">数据审计</option></select><button class="atb-action" style="margin-top:8px;width:100%;" data-click="reassignAgentTask">确认重分配</button></div>'
+                + '<div class="atb-section"><b>质量评分 (0-10)</b><input id="atb-quality-score" class="atb-input" type="number" min="0" max="10" step="0.5" style="margin-top:8px;width:100%;" placeholder="输入0-10的质量评分"><button class="atb-action" style="margin-top:8px;width:100%;" data-click="submitQualityScore">提交评分</button></div>'
+                + '<div class="atb-panel-actions"><button class="atb-action good" onclick="reviewAgentTask(\'approved\')">通过并关闭</button><button class="atb-action bad" onclick="reviewAgentTask(\'rejected\')">打回并修订</button><button class="atb-action" data-click="deriveAgentTask">创建衍生任务</button></div>';
         }
 
         function closeAgentTaskDetail() {
@@ -33690,7 +33690,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     updateKnowledgeHeroStats([], '空分组', `当前分组「${getKnowledgeGroupLabel(groupId) || '未命名分组'}」还没有文件。`);
                     return;
                 }
-                const backHtml = `<div style="margin-bottom:16px;"><button onclick="kbBackToGroups()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);padding:6px 14px;border-radius:8px;font-size:12px;cursor:pointer;">‹ 返回所有分组</button></div>`;
+                const backHtml = `<div style="margin-bottom:16px;"><button data-click="kbBackToGroups" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);padding:6px 14px;border-radius:8px;font-size:12px;cursor:pointer;">‹ 返回所有分组</button></div>`;
                 if (cardsEl) cardsEl.innerHTML = backHtml + itemsMapped.map(it => {
                     const icon = typeIcon2(it.type);
                     const badge = typeBadge(it.type);
@@ -34283,7 +34283,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     <div style="display:flex;gap:8px;">
                         <button onclick="promoReqSelectAll(true)" style="padding:6px 12px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;cursor:pointer;">全选</button>
                         <button onclick="promoReqSelectAll(false)" style="padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;">全不选</button>
-                        <button onclick="savePromoReqTopics()" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
+                        <button data-click="savePromoReqTopics" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
                     </div>
                 </div>
                 <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-bottom:12px;">✓ 勾选 = 员工晋升到「${position} ${level}」时必须通过此知识点认证；取消勾选 = 不强制要求</div>
@@ -34308,7 +34308,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
 
                 html += `</div>
                 <div style="margin-top:14px;text-align:right;">
-                    <button onclick="savePromoReqTopics()" style="padding:8px 20px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">💾 保存晋升认证要求</button>
+                    <button data-click="savePromoReqTopics" style="padding:8px 20px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">💾 保存晋升认证要求</button>
                 </div>`;
 
                 body.innerHTML = html;
@@ -35172,7 +35172,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                     <div class="ta-store-group">
                         <div class="ta-store-name">门店 / 部门 · ${escapeHtml(storeName)}</div>
                         ${emps.map(e => `
-                            <label class="ta-employee-item" onclick="updateEmpSelectionSummary()">
+                            <label class="ta-employee-item" data-click="updateEmpSelectionSummary">
                                 <input type="checkbox" value="${escapeHtml(e.username)}" data-name="${escapeHtml(e.name||e.username)}"
                                     style="cursor:pointer;">
                                 <span class="ta-employee-name">${escapeHtml(e.name||e.username)}</span>
@@ -36022,7 +36022,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                    })()" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(52,211,153,0.9),rgba(16,185,129,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
                         🎉 继续
                    </button>`
-                : `<button onclick="startTrainingQuiz()" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(99,102,241,0.9),rgba(139,92,246,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
+                : `<button data-click="startTrainingQuiz" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(99,102,241,0.9),rgba(139,92,246,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
                         🔄 重新生成题目再考一次
                    </button>`;
 
@@ -39626,8 +39626,8 @@ ${knowledgeContent.slice(0, 30000)}`;
                     </div>`;
                 if (actionsBox && ['admin', 'hq_manager'].includes(currentUser?.role)) {
                     actionsBox.innerHTML = `
-                        <button class="btn" onclick="triggerAmAudit()">数据审计</button>
-                        <button class="btn" onclick="triggerAmEval()">绩效评估</button>`;
+                        <button class="btn" data-click="triggerAmAudit">数据审计</button>
+                        <button class="btn" data-click="triggerAmEval">绩效评估</button>`;
                 } else if (actionsBox) { actionsBox.innerHTML = ''; }
             } catch (e) { box.innerHTML = '<div class="am-stat-card" style="grid-column:1/-1; text-align:center; color:#f87171;">加载失败</div>'; }
         }
@@ -46276,7 +46276,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                 : '';
 
             const toggleHtml = needsToggle
-                ? `<button type="button" class="btn btn-secondary" onclick="toggleExamQuestionExpanded()" style="padding: 6px 10px; border-radius: 999px;">${isExpanded ? '收起' : '展开'}</button>`
+                ? `<button type="button" class="btn btn-secondary" data-click="toggleExamQuestionExpanded" style="padding: 6px 10px; border-radius: 999px;">${isExpanded ? '收起' : '展开'}</button>`
                 : '';
 
             const optionsHtml = (t === 'blank')
@@ -46325,9 +46325,9 @@ ${knowledgeContent.slice(0, 30000)}`;
                         <div class="exam-submitbar">
                             <div class="hint" id="exam-submit-hint">--</div>
                             <div style="display:flex; gap: 8px; align-items:center; flex-wrap: wrap;">
-                                <button type="button" class="btn btn-secondary" ${prevDisabled ? 'disabled' : ''} onclick="examPrevQuestion()" style="padding: 10px 12px;">上一题</button>
-                                <button type="button" class="btn btn-secondary" ${nextDisabled ? 'disabled' : ''} onclick="examNextQuestion()" style="padding: 10px 12px;">下一题</button>
-                                <button id="exam-submit-btn" type="button" class="btn" onclick="submitExam()">提交</button>
+                                <button type="button" class="btn btn-secondary" ${prevDisabled ? 'disabled' : ''} data-click="examPrevQuestion" style="padding: 10px 12px;">上一题</button>
+                                <button type="button" class="btn btn-secondary" ${nextDisabled ? 'disabled' : ''} data-click="examNextQuestion" style="padding: 10px 12px;">下一题</button>
+                                <button id="exam-submit-btn" type="button" class="btn" data-click="submitExam">提交</button>
                             </div>
                         </div>
                     </form>
@@ -51185,7 +51185,7 @@ tr:nth-child(even) td { background: #fafafa; }
                 const moreCards = visible.slice(COLLAPSE_LIMIT).map((a, i) => renderCard(a, i + COLLAPSE_LIMIT, 0)).join('');
                 html += `<div id="profile-notif-more" class="notif-expand-area">${moreCards}</div>`;
                 if (expandFooter) {
-                    expandFooter.innerHTML = `<button type="button" id="profile-notif-toggle" class="notif-more-btn" onclick="toggleProfileNotifications()">
+                    expandFooter.innerHTML = `<button type="button" id="profile-notif-toggle" class="notif-more-btn" data-click="toggleProfileNotifications">
                     查看更多通知（${visible.length - COLLAPSE_LIMIT}条）▾
                 </button>`;
                 }
@@ -54135,7 +54135,7 @@ tr:nth-child(even) td { background: #fafafa; }
 
                 // 添加详细记录按钮
                 html += '<div style="margin-top:16px; text-align:center;">';
-                html += '<button class="btn btn-secondary" type="button" onclick="loadAttentionDetail()" style="padding:8px 18px; font-size:12px; border-radius:8px;">查看详细记录</button>';
+                html += '<button class="btn btn-secondary" type="button" data-click="loadAttentionDetail" style="padding:8px 18px; font-size:12px; border-radius:8px;">查看详细记录</button>';
                 html += '</div>';
                 html += '<div id="rep-attention-detail" style="margin-top:12px;"></div>';
 
@@ -54657,8 +54657,8 @@ tr:nth-child(even) td { background: #fafafa; }
                     <div style="font-size:12px; font-weight:800; color:rgba(226,232,240,0.92); margin-bottom:8px;">产品毛利配置（品牌：${escapeHtml(brandName || '-')}; 每行：产品,业务类型(可空),单份毛利）</div>
                     <textarea id="rep-gross-profile-editor" rows="6" style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff; font-size:12px;">${escapeHtml(grossProfileText)}</textarea>
                     <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
-                        <button class="btn" type="button" onclick="repSaveGrossProfitProfiles()" style="padding:8px 12px; border-radius:8px;">保存毛利配置</button>
-                        <button class="btn btn-secondary" type="button" onclick="repInventoryForecastRun()" style="padding:8px 12px; border-radius:8px;">刷新预估结果</button>
+                        <button class="btn" type="button" data-click="repSaveGrossProfitProfiles" style="padding:8px 12px; border-radius:8px;">保存毛利配置</button>
+                        <button class="btn btn-secondary" type="button" data-click="repInventoryForecastRun" style="padding:8px 12px; border-radius:8px;">刷新预估结果</button>
                     </div>
                 </div>
 
@@ -54666,8 +54666,8 @@ tr:nth-child(even) td { background: #fafafa; }
                     <div style="font-size:12px; font-weight:800; color:rgba(226,232,240,0.92); margin-bottom:8px;">自定义模糊名称归类（品牌：${escapeHtml(brandName || '-')}; 每行：标准名 => 别名1、别名2）</div>
                     <textarea id="rep-product-alias-editor" rows="6" style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff; font-size:12px;" placeholder="例如：\n九秒生炒鱼片 => 9秒生炒鱼片、九秒生炒魚片\n白灼虾">${escapeHtml(productAliasText)}</textarea>
                     <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
-                        <button class="btn" type="button" onclick="repSaveProductAliasRules()" style="padding:8px 12px; border-radius:8px;">保存归类规则</button>
-                        <button class="btn btn-secondary" type="button" onclick="loadReportsData()" style="padding:8px 12px; border-radius:8px;">刷新规则</button>
+                        <button class="btn" type="button" data-click="repSaveProductAliasRules" style="padding:8px 12px; border-radius:8px;">保存归类规则</button>
+                        <button class="btn btn-secondary" type="button" data-click="loadReportsData" style="padding:8px 12px; border-radius:8px;">刷新规则</button>
                     </div>
                 </div>
 
@@ -54695,7 +54695,7 @@ tr:nth-child(even) td { background: #fafafa; }
                         <input id="rep-inv-holiday" type="checkbox" ${state.isHoliday ? 'checked' : ''} /> 是否假日
                     </label>
                     <div style="display:flex; gap:8px;">
-                        <button class="btn" type="button" onclick="repInventoryForecastRun()" style="padding:8px 12px; border-radius:8px;">更新预测</button>
+                        <button class="btn" type="button" data-click="repInventoryForecastRun" style="padding:8px 12px; border-radius:8px;">更新预测</button>
                     </div>
                 </div>
 
@@ -54767,7 +54767,7 @@ tr:nth-child(even) td { background: #fafafa; }
                         </select>
                     </div>
                     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                        <button class="btn btn-secondary" type="button" onclick="repInventoryForecastRun()" style="padding:8px 12px; border-radius:8px;">刷新销售明细样本</button>
+                        <button class="btn btn-secondary" type="button" data-click="repInventoryForecastRun" style="padding:8px 12px; border-radius:8px;">刷新销售明细样本</button>
                     </div>
                     <div style="margin-top:8px; font-size:11px; color:rgba(200,215,230,0.62);">智能助手现在直接按所选门店、业态与日期范围汇总销售明细（pos_sales_detail），不再依赖手工上传第二份历史文件。</div>
                 </div>` : ''}
@@ -59556,14 +59556,14 @@ ${body}
             const container = document.createElement('div');
             container.id = 'upload-file-dialog';
             container.innerHTML = `
-                <div class="uf-backdrop" onclick="closeUploadFileDialog()"></div>
+                <div class="uf-backdrop" data-click="closeUploadFileDialog"></div>
                 <div class="uf-modal">
                     <div class="uf-header">
                         <div>
                             <div class="uf-eyebrow">DATA FILES</div>
                             <h3 class="uf-title">上传数据文件</h3>
                         </div>
-                        <button class="uf-close" onclick="closeUploadFileDialog()">×</button>
+                        <button class="uf-close" data-click="closeUploadFileDialog">×</button>
                     </div>
                     <div class="uf-body">
                         <!-- 拖拽区 -->
@@ -59583,7 +59583,7 @@ ${body}
                             <span class="uf-file-icon" id="uf-file-icon">📄</span>
                             <span class="uf-file-name" id="uf-file-name"></span>
                             <span class="uf-file-size" id="uf-file-size"></span>
-                            <button class="uf-file-clear" onclick="ufClearFile()">×</button>
+                            <button class="uf-file-clear" data-click="ufClearFile">×</button>
                         </div>
 
                         <!-- 文件类型 -->
@@ -59617,8 +59617,8 @@ ${body}
                         </div>
                     </div>
                     <div class="uf-footer">
-                        <button class="btn btn-secondary" onclick="closeUploadFileDialog()">取消</button>
-                        <button class="btn" id="uf-submit-btn" onclick="submitFileUpload()">⬆️ 上传</button>
+                        <button class="btn btn-secondary" data-click="closeUploadFileDialog">取消</button>
+                        <button class="btn" id="uf-submit-btn" data-click="submitFileUpload">⬆️ 上传</button>
                     </div>
                 </div>
             `;
@@ -59936,7 +59936,7 @@ ${body}
                 dxRenderCards(data.stores, start, end);
                 gsInitStores((data.stores || []).map(s => s.store));
             } catch (e) {
-                container.innerHTML = `<div class="dx-empty">❌ 加载失败: ${escapeHtml(e.message)}<br><br><button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="loadDiagnosisData()">重试</button></div>`;
+                container.innerHTML = `<div class="dx-empty">❌ 加载失败: ${escapeHtml(e.message)}<br><br><button class="ga-btn ga-btn--ghost ga-btn--sm" data-click="loadDiagnosisData">重试</button></div>`;
             }
         }
 
@@ -59981,7 +59981,7 @@ ${body}
                     </div>`;
                 }).join('');
             } catch (e) {
-                container.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsLoadCards()">重试</button></div>`;
+                container.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" data-click="gsLoadCards">重试</button></div>`;
             }
         }
 
@@ -60267,7 +60267,7 @@ ${body}
                 body.innerHTML = reasonNote + scopeNote + gsRenderPlan(data);
                 gsLoadCustomHistory(); gsLoadCustomActiveRounds();
             } catch (e) {
-                body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" onclick="gsAnalyzeCustom()">重试</button></div>`;
+                body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)} <button class="ga-btn ga-btn--ghost ga-btn--sm" data-click="gsAnalyzeCustom">重试</button></div>`;
             }
         }
 
@@ -62800,7 +62800,7 @@ ${body}
                     + '<div class="rep-field" style="margin-top:8px;"><label>渠道名称 *（如 抖音团购 / 私域社群）</label><input id="abtest-channel" class="dr-store-select" placeholder="渠道名称" style="padding:10px;color:var(--rep-text);"></div>'
                     + '<div style="font-size:12px;font-weight:700;color:#fff;margin:12px 0 4px;">自定义录入字段（至少1个）</div>'
                     + '<div id="abtest-custom-fields"></div>'
-                    + '<button type="button" class="rep-seg-btn" style="margin-top:6px;" onclick="abAddCustomField()">+ 添加字段</button>'
+                    + '<button type="button" class="rep-seg-btn" style="margin-top:6px;" data-click="abAddCustomField">+ 添加字段</button>'
                     + '<div style="font-size:12px;font-weight:700;color:#fff;margin:12px 0 4px;">主判定指标 *（决定胜负）</div>'
                     + '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">'
                     + '<div class="rep-field"><label style="font-size:11px;">指标名称</label><input id="abtest-primary-label" class="dr-store-select" placeholder="如 转化率" style="padding:8px;color:var(--rep-text);"></div>'
@@ -66838,7 +66838,7 @@ ${body}
                 <div id="punch-dish-name" style="font-size:17px;font-weight:700;color:#fff;"></div>
                 <div id="punch-dish-station" style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:2px;"></div>
               </div>
-              <button onclick="closePunchCard()" style="
+              <button data-click="closePunchCard" style="
                 width:32px;height:32px;border-radius:50%;border:none;
                 background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);
                 font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;
@@ -66853,7 +66853,7 @@ ${body}
           <div id="punch-components" style="display:none;margin:0 16px 10px;padding:10px 14px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.18);border-radius:10px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
               <div style="font-size:11px;font-weight:700;color:#6ee7b7;letter-spacing:.05em;">📋 配方组成</div>
-              <button id="punch-view-steps-btn" style="display:none;padding:4px 10px;border-radius:16px;border:1px solid rgba(251,191,36,0.35);background:rgba(251,191,36,0.1);color:#fcd34d;font-size:11px;cursor:pointer;" onclick="openRecipeStepViewerFromPunch()">👁 查看工艺</button>
+              <button id="punch-view-steps-btn" style="display:none;padding:4px 10px;border-radius:16px;border:1px solid rgba(251,191,36,0.35);background:rgba(251,191,36,0.1);color:#fcd34d;font-size:11px;cursor:pointer;" data-click="openRecipeStepViewerFromPunch">👁 查看工艺</button>
             </div>
             <div id="punch-components-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
           </div>
@@ -66880,7 +66880,7 @@ ${body}
               <div id="rsv-dish-name" style="font-size:16px;font-weight:700;color:#e2e8f0;"></div>
               <div id="rsv-comp-name" style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:2px;"></div>
             </div>
-            <button onclick="closeRecipeStepViewer()" style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);cursor:pointer;font-size:18px;">×</button>
+            <button data-click="closeRecipeStepViewer" style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);cursor:pointer;font-size:18px;">×</button>
           </div>
           <!-- comp tabs -->
           <div id="rsv-comp-tabs" style="display:flex;gap:6px;padding:10px 16px 0;overflow-x:auto;flex-shrink:0;"></div>
@@ -69041,7 +69041,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 '<div class="sp-form-group"><label>策略动作</label><textarea id="sp-new-vb-action" placeholder="详细描述策略内容"></textarea></div>' +
                 '<div class="sp-form-group"><label>执行门店</label><input type="text" id="sp-new-vb-store" placeholder="门店名称"></div>' +
                 '<div class="sp-form-group"><label>执行指南（选填）</label><textarea id="sp-new-vb-guide" placeholder="具体执行步骤"></textarea></div></div>' +
-                '<div class="sp-actions"><button class="sp-btn sp-btn--primary" onclick="createStrategyExperiment()">创建实验</button>' +
+                '<div class="sp-actions"><button class="sp-btn sp-btn--primary" data-click="createStrategyExperiment">创建实验</button>' +
                 '<button class="sp-btn sp-btn--secondary" onclick="switchStrategyTab(\'experiments\')">取消</button></div>' +
                 '</div>';
         }

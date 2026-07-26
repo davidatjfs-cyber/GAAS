@@ -10,7 +10,7 @@ import {
   setLeaveBalance,
   confirmMonthlyAttendance,
   getMonthlyConfirm,
-} from '../domains/checkin/service.js';
+} from '../service.js';
 
 const LONG_PHOTO = 'x'.repeat(100);
 

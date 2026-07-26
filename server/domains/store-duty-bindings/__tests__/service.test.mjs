@@ -5,7 +5,7 @@ import {
   listBindings,
   upsertBinding,
   deleteBinding,
-} from '../domains/store-duty-bindings/service.js';
+} from '../service.js';
 
 test('ensureReady：成功与失败均可吞', async () => {
   await ensureReady({

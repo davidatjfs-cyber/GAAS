@@ -1809,7 +1809,7 @@
                     + '<div class="rep-field" style="margin-top:8px;"><label>渠道名称 *（如 抖音团购 / 私域社群）</label><input id="abtest-channel" class="dr-store-select" placeholder="渠道名称" style="padding:10px;color:var(--rep-text);"></div>'
                     + '<div style="font-size:12px;font-weight:700;color:#fff;margin:12px 0 4px;">自定义录入字段（至少1个）</div>'
                     + '<div id="abtest-custom-fields"></div>'
-                    + '<button type="button" class="rep-seg-btn" style="margin-top:6px;" onclick="abAddCustomField()">+ 添加字段</button>'
+                    + '<button type="button" class="rep-seg-btn" style="margin-top:6px;" data-click="abAddCustomField">+ 添加字段</button>'
                     + '<div style="font-size:12px;font-weight:700;color:#fff;margin:12px 0 4px;">主判定指标 *（决定胜负）</div>'
                     + '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">'
                     + '<div class="rep-field"><label style="font-size:11px;">指标名称</label><input id="abtest-primary-label" class="dr-store-select" placeholder="如 转化率" style="padding:8px;color:var(--rep-text);"></div>'

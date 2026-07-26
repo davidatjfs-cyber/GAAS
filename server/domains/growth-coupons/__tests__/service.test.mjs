@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { upsertGrowthCoupon } from '../domains/growth-coupons/service.js';
+import { upsertGrowthCoupon } from '../service.js';
 
 test('upsertGrowthCoupon: stock 缺失时用 -1，不传 NaN', async () => {
   const calls = [];

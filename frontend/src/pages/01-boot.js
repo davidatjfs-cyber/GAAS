@@ -26,7 +26,7 @@
                 };
             }
         } catch (e) {}
-
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function') window[fn](); } }); // P5.1：data-click 委托，替代逐个迁移的 inline onclick
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -3211,7 +3211,7 @@ const role = String(currentUser?.role || '').trim();
                         <div style="margin-top:10px; border-top:1px dashed rgba(255,255,255,0.12); padding-top:10px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
                                 <div style="font-size:12px; color:rgba(200,215,230,0.78);">灵活培训周期（选择日期 + 输入内容）*</div>
-                                <button type="button" class="btn btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="promoAddTrainingPeriodRow()">+ 添加周期</button>
+                                <button type="button" class="btn btn-secondary" style="padding:6px 10px; font-size:12px;" data-click="promoAddTrainingPeriodRow">+ 添加周期</button>
                             </div>
                             <div id="promotion-training-periods-editor" style="display:grid; gap:8px;"></div>
                             <div style="margin-top:6px; font-size:11px; color:rgba(200,215,230,0.62);">无需手输日期格式，直接选择开始/结束日期；内容可自由输入。</div>
@@ -3428,7 +3428,7 @@ const role = String(currentUser?.role || '').trim();
                         <div style="font-weight:800;color:#a5b4fc;margin-bottom:8px;">退回修改</div>
                         <div style="font-size:12px;color:rgba(200,215,230,0.72);margin-bottom:10px;">可删除填错的条目、点击「添加积分项」补充新事项；每条需选择事项并填写理由。重新提交不占用当天新建申报次数。</div>
                         <div id="points-returned-rows" style="display:flex;flex-direction:column;gap:12px;"></div>
-                        <button type="button" class="btn btn-secondary" onclick="addPointsReturnedResubmitRow()" style="width:100%;margin-top:10px;padding:10px;border-radius:12px;border:1px dashed rgba(148,163,184,0.35);font-size:13px;font-weight:600;">+ 添加积分项</button>
+                        <button type="button" class="btn btn-secondary" data-click="addPointsReturnedResubmitRow" style="width:100%;margin-top:10px;padding:10px;border-radius:12px;border:1px dashed rgba(148,163,184,0.35);font-size:13px;font-weight:600;">+ 添加积分项</button>
                     </div>`;
                 }
             } else if (String(item?.type || '') === 'payment') {

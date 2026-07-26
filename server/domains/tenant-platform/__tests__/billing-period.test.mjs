@@ -3,7 +3,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeBillingPeriod } from '../domains/tenant-platform/billing-period.js';
+import { computeBillingPeriod } from '../billing-period.js';
 
 test('computeBillingPeriod: 非法日期 → null', () => {
   assert.equal(computeBillingPeriod(null, 'monthly'), null);

@@ -4,6 +4,10 @@ node_modules/
 # Coverage (unit ratchet / merged V8 raw)
 server/coverage/
 
+# Stryker mutation temp
+server/.stryker-tmp/
+server/reports/mutation/
+
 # Environment files
 server/.env
 .env

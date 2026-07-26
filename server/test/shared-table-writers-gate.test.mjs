@@ -128,7 +128,7 @@ const keyToTable = Object.fromEntries(Object.entries(SHARED_TABLES));
 function walkJs(dir, out = []) {
   if (!fs.existsSync(dir)) return out;
   for (const name of fs.readdirSync(dir)) {
-    if (['node_modules', 'migrations', 'coverage', 'test'].includes(name)) continue;
+    if (['node_modules', 'migrations', 'coverage', 'test', '.stryker-tmp', 'reports'].includes(name)) continue;
     const p = path.join(dir, name);
     const st = fs.statSync(p);
     if (st.isDirectory()) walkJs(p, out);

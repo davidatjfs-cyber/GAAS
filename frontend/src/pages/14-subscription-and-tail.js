@@ -2143,7 +2143,7 @@
                 <div id="punch-dish-name" style="font-size:17px;font-weight:700;color:#fff;"></div>
                 <div id="punch-dish-station" style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:2px;"></div>
               </div>
-              <button onclick="closePunchCard()" style="
+              <button data-click="closePunchCard" style="
                 width:32px;height:32px;border-radius:50%;border:none;
                 background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);
                 font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;
@@ -2158,7 +2158,7 @@
           <div id="punch-components" style="display:none;margin:0 16px 10px;padding:10px 14px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.18);border-radius:10px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
               <div style="font-size:11px;font-weight:700;color:#6ee7b7;letter-spacing:.05em;">📋 配方组成</div>
-              <button id="punch-view-steps-btn" style="display:none;padding:4px 10px;border-radius:16px;border:1px solid rgba(251,191,36,0.35);background:rgba(251,191,36,0.1);color:#fcd34d;font-size:11px;cursor:pointer;" onclick="openRecipeStepViewerFromPunch()">👁 查看工艺</button>
+              <button id="punch-view-steps-btn" style="display:none;padding:4px 10px;border-radius:16px;border:1px solid rgba(251,191,36,0.35);background:rgba(251,191,36,0.1);color:#fcd34d;font-size:11px;cursor:pointer;" data-click="openRecipeStepViewerFromPunch">👁 查看工艺</button>
             </div>
             <div id="punch-components-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
           </div>
@@ -2185,7 +2185,7 @@
               <div id="rsv-dish-name" style="font-size:16px;font-weight:700;color:#e2e8f0;"></div>
               <div id="rsv-comp-name" style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:2px;"></div>
             </div>
-            <button onclick="closeRecipeStepViewer()" style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);cursor:pointer;font-size:18px;">×</button>
+            <button data-click="closeRecipeStepViewer" style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);cursor:pointer;font-size:18px;">×</button>
           </div>
           <!-- comp tabs -->
           <div id="rsv-comp-tabs" style="display:flex;gap:6px;padding:10px 16px 0;overflow-x:auto;flex-shrink:0;"></div>
@@ -4346,7 +4346,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 '<div class="sp-form-group"><label>策略动作</label><textarea id="sp-new-vb-action" placeholder="详细描述策略内容"></textarea></div>' +
                 '<div class="sp-form-group"><label>执行门店</label><input type="text" id="sp-new-vb-store" placeholder="门店名称"></div>' +
                 '<div class="sp-form-group"><label>执行指南（选填）</label><textarea id="sp-new-vb-guide" placeholder="具体执行步骤"></textarea></div></div>' +
-                '<div class="sp-actions"><button class="sp-btn sp-btn--primary" onclick="createStrategyExperiment()">创建实验</button>' +
+                '<div class="sp-actions"><button class="sp-btn sp-btn--primary" data-click="createStrategyExperiment">创建实验</button>' +
                 '<button class="sp-btn sp-btn--secondary" onclick="switchStrategyTab(\'experiments\')">取消</button></div>' +
                 '</div>';
         }
