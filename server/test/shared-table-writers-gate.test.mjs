@@ -83,8 +83,9 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'domains/knowledge/service.js|UPDATE|knowledge_base',
   // P5.4：runCreateKnowledgeBackground → create-knowledge-background-helpers.js
   'domains/knowledge/create-knowledge-background-helpers.js|UPDATE|knowledge_base',
-  'master-agent.js|INSERT INTO|agent_messages',
   'master-agent.js|UPDATE|master_tasks',
+  'domains/master-agent/ops-dispatch.js|INSERT INTO|agent_messages',
+  'domains/master-agent/ops-dispatch.js|UPDATE|master_tasks',
   // P4：createTask/transitionTask → domains/master-agent/task-lifecycle.js
   'domains/master-agent/task-lifecycle.js|INSERT INTO|master_tasks',
   'domains/master-agent/task-lifecycle.js|UPDATE|master_tasks',
@@ -154,6 +155,8 @@ const REPATH_NOTES = [
   'agents.js → (deleted handleTaskEscalation) | INSERT INTO|agent_messages',
   'master-agent.js → domains/master-agent/task-lifecycle.js | INSERT INTO|master_tasks',
   'master-agent.js → domains/master-agent/task-lifecycle.js | UPDATE|master_tasks',
+  'master-agent.js → domains/master-agent/ops-dispatch.js | INSERT INTO|agent_messages',
+  'master-agent.js → domains/master-agent/ops-dispatch.js | UPDATE|master_tasks',
 ];
 
 const OWNER = 'gaas';
