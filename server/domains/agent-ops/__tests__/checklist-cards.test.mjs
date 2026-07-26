@@ -107,3 +107,16 @@ test('factory exposes progress map and wrappers', () => {
   assert.equal(api.opsChecklistProgress.has('k'), true);
   assert.equal(api.formatChecklistTypeLabel('closing'), '收档');
 });
+
+test('sweepExpiredChecklistProgress removes stale entries', () => {
+  const api = createOpsChecklistCardsApi({
+    getOpsAgentConfig: () => ({ scheduledTasks: { dailyInspections: [] } }),
+    startProgressCleanup: false,
+  });
+  const now = Date.now();
+  api.opsChecklistProgress.set('old', { createdAt: now - 3 * 60 * 60 * 1000 });
+  api.opsChecklistProgress.set('new', { createdAt: now });
+  assert.equal(api.sweepExpiredChecklistProgress(now), 1);
+  assert.equal(api.opsChecklistProgress.has('old'), false);
+  assert.equal(api.opsChecklistProgress.has('new'), true);
+});

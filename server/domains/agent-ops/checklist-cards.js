@@ -27,20 +27,22 @@ export function createOpsChecklistCardsApi(deps) {
   const { getOpsAgentConfig, startProgressCleanup = true } = deps;
   const opsChecklistProgress = new Map();
 
+  function sweepExpiredChecklistProgress(now = Date.now()) {
+    let cleaned = 0;
+    for (const [key, progress] of opsChecklistProgress.entries()) {
+      const createdAt = progress?.createdAt || 0;
+      if (now - createdAt > 2 * 60 * 60 * 1000) {
+        opsChecklistProgress.delete(key);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) log.info(`[ops] cleaned ${cleaned} expired checklist progress entries`);
+    return cleaned;
+  }
+
   if (startProgressCleanup) {
     // M3-FIX: 定期清理过期的检查表进度（每30分钟清理超过2小时的条目）
-    setInterval(() => {
-      const now = Date.now();
-      let cleaned = 0;
-      for (const [key, progress] of opsChecklistProgress.entries()) {
-        const createdAt = progress?.createdAt || 0;
-        if (now - createdAt > 2 * 60 * 60 * 1000) {
-          opsChecklistProgress.delete(key);
-          cleaned++;
-        }
-      }
-      if (cleaned > 0) log.info(`[ops] cleaned ${cleaned} expired checklist progress entries`);
-    }, 30 * 60 * 1000).unref?.();
+    setInterval(() => sweepExpiredChecklistProgress(), 30 * 60 * 1000).unref?.();
   }
 
   const getOpsChecklistItems = (checkType, storeName = '', brandName = '') =>
@@ -59,5 +61,7 @@ export function createOpsChecklistCardsApi(deps) {
     buildOpsChecklistAbnormalItemsCard: (args) => buildAbnormalItemsCardBody(getOpsAgentConfig, args),
     buildOpsChecklistCard: (args) => buildCardBody(getOpsAgentConfig, args),
     buildOpsChecklistTemplateText: (args) => buildTemplateTextBody(getOpsAgentConfig, args),
+    /** @internal */
+    sweepExpiredChecklistProgress,
   };
 }
