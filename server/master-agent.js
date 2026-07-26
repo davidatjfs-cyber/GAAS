@@ -48,19 +48,30 @@ import {
 import { AgentCommunicationSystem } from './agent-communication-system.js';
 import { setPool as setUnifiedMasterPool, getActiveTenantIds, tenantContext } from './utils/database.js';
 import { extractAnomalyRelations, refreshEntityHealthSnapshots, ensureKnowledgeGraphTables, setKGPool } from './knowledge-graph.js';
-import { registerHqPlannerRoutes, setHqPlannerPool, setHqPlannerLLM } from './hq-planner-agent.js';
+import { setHqPlannerPool, setHqPlannerLLM } from './hq-planner-agent.js';
 import {
   setAutoOpsPool, setAutoOpsDeps,
   inspectionClosedLoopTick, biProactivePushTick,
   laborEfficiencyTick, trainingClosedLoopTick
 } from './auto-ops-engine.js';
 import { childLogger } from './utils/logger.js';
+import { pickAssigneeForCategory } from './domains/master-agent/resolve-assignee.js';
+import {
+  buildReviewNotificationMessage,
+  buildReviewResultPayload,
+  buildTextReviewSystemPrompt,
+  buildVisionReviewPrompt,
+  decideReviewOutcome,
+  formatSopContext,
+  parseLlmValidReview,
+} from './domains/master-agent/ops-review-helpers.js';
+import {
+  createTenantScopedTick,
+  registerMasterIntervals,
+} from './domains/master-agent/scheduler.js';
+import { registerMasterRoutes as registerMasterRoutesImpl } from './domains/master-agent/routes.js';
 
 const log = childLogger({ domain: 'master-agent' });
-
-function normalizeStoreKey(v) {
-  return String(v || '').trim().toLowerCase().replace(/\s+/g, '');
-}
 
 // ─────────────────────────────────────────────
 // 0. Pool & Config
@@ -455,102 +466,43 @@ async function createTask({ source, sourceRef, category, severity, store, brand,
 // 4. Responsibility Resolver
 // ─────────────────────────────────────────────
 
-function normalizeTaskSourceData(sourceData) {
-  if (!sourceData) return {};
-  if (typeof sourceData === 'string') {
-    try {
-      return JSON.parse(sourceData);
-    } catch (_e) {
-      return {};
-    }
-  }
-  return sourceData;
-}
-
-/** 数据审计 → master_tasks：厨房/出品类只派出品经理；服务/前厅类只派店长（禁止缺岗时交叉顶替，避免发错任务卡） */
-const MASTER_TASK_PM_EXCLUSIVE_CATEGORIES = new Set([
-  '桌访产品异常',
-  '产品差评异常',
-  '总实收毛利率异常'
-]);
-const MASTER_TASK_SM_EXCLUSIVE_CATEGORIES = new Set([
-  '服务差评异常',
-  '桌访占比异常',
-  '充值异常',
-  '实收营收异常',
-  '洪潮久光包房使用异常'
-]);
-
 // 根据异常类型和门店找到责任人
 async function resolveAssignee(category, store, existingAssignee, sourceData) {
   const state = await getSharedState();
-  const normalizedStore = normalizeStoreKey(store);
-  const sd = normalizeTaskSourceData(sourceData);
-  
-  const all = [
-    ...(Array.isArray(state?.employees) ? state.employees : []),
-    ...(Array.isArray(state?.users) ? state.users : [])
-  ];
+  const roleMap = await getCategoryAssigneeRoleMap();
+  const { assignee, warnings } = pickAssigneeForCategory({
+    category,
+    store,
+    existingAssignee,
+    sourceData,
+    state,
+    roleMap,
+  });
 
-  // 如果有指定责任人，验证其是否属于目标门店
-  if (existingAssignee) {
-    const user = all.find(u => String(u?.username || '').trim() === String(existingAssignee).trim());
-    
-    // 验证门店匹配
-    if (user && normalizeStoreKey(user.store) === normalizedStore) {
-      return { 
-        username: String(user.username || '').trim(),
-        name: String(user.name || '').trim(),
-        role: String(user.role || '').trim(),
-        store 
-      };
-    } else if (user) {
-      log.warn(`[resolveAssignee] ⚠️ 跨门店分派告警: 用户 ${existingAssignee}(${user.name}) 属于 ${user.store}，不属于目标门店 ${store}。自动重新匹配...`);
-      // 继续按门店自动匹配
-    } else {
-      log.warn(`[resolveAssignee] ⚠️ 用户 ${existingAssignee} 不存在，自动重新匹配...`);
+  for (const w of warnings) {
+    if (w.startsWith('cross_store:')) {
+      const [, username, userStore] = w.split(':');
+      log.warn(
+        `[resolveAssignee] ⚠️ 跨门店分派告警: 用户 ${username} 属于 ${userStore}，不属于目标门店 ${store}。自动重新匹配...`
+      );
+    } else if (w.startsWith('missing_user:')) {
+      log.warn(
+        `[resolveAssignee] ⚠️ 用户 ${w.slice('missing_user:'.length)} 不存在，自动重新匹配...`
+      );
+    } else if (w.startsWith('no_match:')) {
+      const [, storeName, targetRole] = w.split(':');
+      log.error(
+        `[resolveAssignee] ❌ 未找到门店 ${storeName} 的责任人（目标角色: ${targetRole}）`
+      );
     }
   }
 
-  const roleMap = await getCategoryAssigneeRoleMap();
-  let targetRole = roleMap[category] || 'store_manager';
-  const auditeeRole = String(sd?._auditee_role || '').trim();
-  if (category === '人效值异常' && ['store_manager', 'store_production_manager'].includes(auditeeRole)) {
-    targetRole = auditeeRole;
-  }
-  const storeMembers = all.filter(u => normalizeStoreKey(u?.store) === normalizedStore);
+  if (!assignee) return null;
 
-  // 先按目标角色找
-  let assignee = storeMembers.find(u => String(u?.role || '').trim() === targetRole);
-
-  const cat = String(category || '').trim();
-  const pmExclusive = MASTER_TASK_PM_EXCLUSIVE_CATEGORIES.has(cat);
-  const smExclusive = MASTER_TASK_SM_EXCLUSIVE_CATEGORIES.has(cat);
-  const allowCrossRoleFallback = !pmExclusive && !smExclusive;
-
-  // 降级：仅对非「岗位锁定」类目允许跨岗（避免桌访产品/产品差评派给出品经理失败时误发给店长）
-  if (!assignee && targetRole === 'store_production_manager' && allowCrossRoleFallback) {
-    assignee = storeMembers.find(u => String(u?.role || '').trim() === 'store_manager');
-  }
-  if (!assignee && targetRole === 'store_manager' && allowCrossRoleFallback) {
-    assignee = storeMembers.find(u => String(u?.role || '').trim() === 'store_production_manager');
-  }
-  if (!assignee && allowCrossRoleFallback) {
-    assignee = storeMembers.find(u => ['store_manager', 'store_production_manager'].includes(String(u?.role || '').trim()));
-  }
-
-  if (!assignee) {
-    log.error(`[resolveAssignee] ❌ 未找到门店 ${store} 的责任人（目标角色: ${targetRole}）`);
-    return null;
-  }
-  
-  log.info(`[resolveAssignee] ✅ 已匹配责任人: ${assignee.name}(${assignee.username}) - ${assignee.role} @ ${store}`);
-  return {
-    username: String(assignee.username || '').trim(),
-    name: String(assignee.name || '').trim(),
-    role: String(assignee.role || '').trim(),
-    store
-  };
+  log.info(
+    `[resolveAssignee] ✅ 已匹配责任人: ${assignee.name}(${assignee.username}) - ${assignee.role} @ ${store}`
+  );
+  return assignee;
 }
 
 // ─────────────────────────────────────────────
@@ -847,29 +799,17 @@ async function opsAgentListener(tenantId = 'default') {
       if (!responseText && !responseImages.length) continue;
 
       // 构建审核 prompt
-      let reviewDecision = 'resolved';
       let reviewNotes = '';
 
       // 图片审核（如有图片）
       let imageReviewOk = true;
       if (responseImages.length) {
         for (const imgUrl of responseImages) {
-          const vr = await callVisionLLM(imgUrl,
-            `你是小年，年年有喜餐饮集团AI助理，正在审核员工提交的整改照片。
-任务：${task.title || '整改'}
-要求：判断照片是否为真实有效的整改证据。
-判断标准：1)照片内容与任务相关 2)能看到实际整改结果 3)非模糊/黑屏/无关图片
-请回复JSON：{"valid":true/false,"reason":"具体判断理由，说明照片中看到了什么"}`
-          );
-          try {
-            const parsed = JSON.parse(vr.content.replace(/```json?\n?/g, '').replace(/```/g, '').trim());
-            if (!parsed.valid) { imageReviewOk = false; reviewNotes += `图片不合格: ${parsed.reason}; `; }
-          } catch (e) {
-            // LLM 返回非 JSON，尝试文本解析
-            if (vr.content?.includes('不合格') || vr.content?.includes('无效') || vr.content?.includes('false')) {
-              imageReviewOk = false;
-              reviewNotes += `图片审核: ${vr.content?.slice(0, 100)}; `;
-            }
+          const vr = await callVisionLLM(imgUrl, buildVisionReviewPrompt(task));
+          const parsed = parseLlmValidReview(vr.content, ['不合格', '无效', 'false']);
+          if (!parsed.valid) {
+            imageReviewOk = false;
+            reviewNotes += `图片不合格: ${parsed.reason}; `;
           }
         }
       }
@@ -877,58 +817,34 @@ async function opsAgentListener(tenantId = 'default') {
       // 文字审核
       let textReviewOk = true;
       if (responseText) {
-        // 查询SOP知识库获取判罚依据
         let sopContext = '';
         try {
           const sopResults = await queryKnowledgeBase(['sop', '整改', '标准'], task.category || '', 2);
-          if (sopResults.length) {
-            sopContext = '\n\n参考SOP标准：\n' + sopResults.map(r => `【${r.title}】${String(r.content || '').slice(0, 200)}`).join('\n');
-          }
+          sopContext = formatSopContext(sopResults);
         } catch (e) { /* ignore */ }
 
         const llm = await callLLM([
-          { role: 'system', content: `你是小年，年年有喜餐饮集团AI助理。请审核员工对异常问题的回复，仅判断回复是否包含了有效的事实描述和整改措施。
-
-审核标准：
-1. 回复是否包含对问题的具体调查结果（不能只说"不知道"或"好的"等无实质内容的回复）
-2. 回复是否包含具体的整改措施或解决方案
-3. 如有照片，是否与问题相关
-
-重要规则：
-- 你只负责判断回复是否有效，不要自己编造任何具体的调查建议或产品操作建议
-- 不要在reason或suggestion中提及具体产品名称、原料名称、制作流程等你无法确认的信息
-- suggestion只能是通用的格式要求，如"请提供具体的调查结果和整改措施"
-
-异常问题：${task.title}
-问题详情：${task.detail || ''}${sopContext}
-
-请回复JSON：{"valid":true/false,"reason":"判断理由（不要编造具体建议）","suggestion":"通用改进要求（如有）"}` },
+          { role: 'system', content: buildTextReviewSystemPrompt(task, sopContext) },
           { role: 'user', content: `员工回复：${responseText}` }
         ], { skipCache: true, temperature: 0.05 });
 
-        try {
-          const parsed = JSON.parse(llm.content.replace(/```json?\n?/g, '').replace(/```/g, '').trim());
-          if (!parsed.valid) { textReviewOk = false; reviewNotes += `回复不足: ${parsed.reason}; `; }
-          if (parsed.suggestion) reviewNotes += `建议: ${parsed.suggestion}; `;
-        } catch (e) {
-          if (llm.content?.includes('无效') || llm.content?.includes('不够') || llm.content?.includes('false')) {
-            textReviewOk = false;
-            reviewNotes += `文字审核: ${llm.content?.slice(0, 100)}; `;
-          }
+        const parsed = parseLlmValidReview(llm.content);
+        if (!parsed.valid) {
+          textReviewOk = false;
+          reviewNotes += `回复不足: ${parsed.reason}; `;
         }
+        if (parsed.suggestion) reviewNotes += `建议: ${parsed.suggestion}; `;
       }
 
-      // 最终判定
-      reviewDecision = (imageReviewOk && textReviewOk) ? 'resolved' : 'rejected';
+      const reviewDecision = decideReviewOutcome(imageReviewOk, textReviewOk);
 
       const result = await transitionTask(task.task_id, reviewDecision, 'ops_supervisor', {
-        review_result: {
-          decision: reviewDecision,
+        review_result: buildReviewResultPayload({
+          reviewDecision,
           imageReviewOk,
           textReviewOk,
-          notes: reviewNotes.trim(),
-          reviewedAt: new Date().toISOString()
-        }
+          reviewNotes,
+        }).review_result
       }, tenantId);
 
       if (result) {
@@ -936,25 +852,16 @@ async function opsAgentListener(tenantId = 'default') {
         if (task.assignee_username) {
           const fu = await lookupFeishuUserByUsername(task.assignee_username);
           if (fu?.open_id) {
-            const lines = [];
-            if (reviewDecision === 'resolved') {
-              lines.push(`📋 任务审核结果\n`);
-              lines.push(`任务编号：${task.task_id}`);
-              lines.push(`审核结论：✅ 通过`);
-              if (responseImages.length) lines.push(`照片审核：合格（${responseImages.length}张）`);
-              if (responseText) lines.push(`文字回复：已确认有效`);
-              lines.push(`\n${reviewNotes || '整改措施已确认，感谢配合。'}`);
-            } else {
-              lines.push(`📋 任务审核结果\n`);
-              lines.push(`任务编号：${task.task_id}`);
-              lines.push(`审核结论：❌ 未通过`);
-              lines.push(`\n未通过原因：`);
-              if (!imageReviewOk) lines.push(`· 照片不符合要求`);
-              if (!textReviewOk) lines.push(`· 文字回复不满足整改标准`);
-              if (reviewNotes) lines.push(`\n详细说明：${reviewNotes}`);
-              lines.push(`\n请根据以上反馈重新提交整改结果。`);
-            }
-            await sendLarkMessage(fu.open_id, prefixWithAgentName('ops_supervisor', lines.join('\n')));
+            const message = buildReviewNotificationMessage({
+              task,
+              reviewDecision,
+              imageReviewOk,
+              textReviewOk,
+              reviewNotes,
+              responseImages,
+              responseText,
+            });
+            await sendLarkMessage(fu.open_id, prefixWithAgentName('ops_supervisor', message));
           }
         }
         actions++;
@@ -1421,197 +1328,101 @@ export function startMasterAgent() {
     } catch (e) { /* ignore */ }
   })();
 
-  // ── Tick 1: Data Auditor (每30分钟扫描一次) ──
-  // 多租户：每个tick对getActiveTenantIds()返回的每个激活租户各跑一遍。
-  // 今天生产里只有'default'(真实数据)+'test_tenant_2'(几乎空)，所以这层循环
-  // 对现有洪潮/马己仙行为是零变化——和改造前对'default'硬编码执行的内容逐字节相同。
-  const auditTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const created = await dataAuditorListener(tenantId);
-        if (created > 0) log.info(`[master:tick] Data Auditor(${tenantId}) created ${created} tasks`);
+  const tenantTick = createTenantScopedTick({
+    pool,
+    getActiveTenantIds,
+    tenantContext,
+    log,
+  });
 
-        // 新增：处理手动创建的 pending_audit 任务（如营销活动）
-        const manualTasks = await pool().query(
-          `SELECT * FROM master_tasks
-           WHERE status = 'pending_audit'
-           AND source IN ('manual_campaign', 'manual', 'hq_planning')
-           AND tenant_id = $1
-           ORDER BY created_at ASC LIMIT 5`,
-          [tenantId]
-        );
-
-        for (const task of (manualTasks.rows || [])) {
-          // 自动推进到 pending_dispatch 状态
-          await transitionTask(task.task_id, 'pending_dispatch', 'data_auditor', {
-            audit_result: {
-              approved: true,
-              reason: '手动创建任务自动通过审计',
-              timestamp: new Date().toISOString()
-            }
-          }, tenantId);
-          log.info(`[master:audit] Auto-approved manual task ${task.task_id}`);
-        }
-      } catch (e) {
-        log.error(`[master:tick] audit error (tenant=${tenantId}):`, e?.message);
-      }
-    });
+  // ── Tick 1: Data Auditor — 含手动创建任务自动过审 ──
+  const auditTick = tenantTick('Data Auditor created', async (tenantId) => {
+    const created = await dataAuditorListener(tenantId);
+    const manualTasks = await pool().query(
+      `SELECT * FROM master_tasks
+       WHERE status = 'pending_audit'
+       AND source IN ('manual_campaign', 'manual', 'hq_planning')
+       AND tenant_id = $1
+       ORDER BY created_at ASC LIMIT 5`,
+      [tenantId]
+    );
+    for (const task of manualTasks.rows || []) {
+      await transitionTask(task.task_id, 'pending_dispatch', 'data_auditor', {
+        audit_result: {
+          approved: true,
+          reason: '手动创建任务自动通过审计',
+          timestamp: new Date().toISOString(),
+        },
+      }, tenantId);
+      log.info(`[master:audit] Auto-approved manual task ${task.task_id}`);
     }
-  };
+    return created;
+  }, { formatMessage: (n) => `${n} tasks` });
 
-  // ── Tick 2: Master Dispatcher (每15秒扫描一次) ──
-  const dispatchTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        // 新增：动态调整任务优先级（超时任务自动升级）
-        await pool().query(`
-          UPDATE master_tasks
-          SET severity = CASE
-            WHEN severity = 'low' THEN 'medium'
-            WHEN severity = 'medium' THEN 'high'
-            ELSE severity
-          END,
-          escalation_level = escalation_level + 1,
-          escalation_history = COALESCE(escalation_history, '[]'::jsonb) ||
-            jsonb_build_object(
-              'timestamp', NOW()::text,
-              'from', severity,
-              'to', CASE WHEN severity = 'low' THEN 'medium' WHEN severity = 'medium' THEN 'high' ELSE severity END,
-              'reason', '任务超时自动升级'
-            )::jsonb
-          WHERE status IN ('pending_dispatch', 'dispatched', 'pending_response')
-          AND timeout_at IS NOT NULL
-          AND timeout_at < NOW()
-          AND escalation_level < 3
-          AND tenant_id = $1
-        `, [tenantId]);
+  // ── Tick 2: Master Dispatcher — 含超时升级 ──
+  const dispatchTick = tenantTick('Dispatched', async (tenantId) => {
+    await pool().query(`
+      UPDATE master_tasks
+      SET severity = CASE
+        WHEN severity = 'low' THEN 'medium'
+        WHEN severity = 'medium' THEN 'high'
+        ELSE severity
+      END,
+      escalation_level = escalation_level + 1,
+      escalation_history = COALESCE(escalation_history, '[]'::jsonb) ||
+        jsonb_build_object(
+          'timestamp', NOW()::text,
+          'from', severity,
+          'to', CASE WHEN severity = 'low' THEN 'medium' WHEN severity = 'medium' THEN 'high' ELSE severity END,
+          'reason', '任务超时自动升级'
+        )::jsonb
+      WHERE status IN ('pending_dispatch', 'dispatched', 'pending_response')
+      AND timeout_at IS NOT NULL
+      AND timeout_at < NOW()
+      AND escalation_level < 3
+      AND tenant_id = $1
+    `, [tenantId]);
+    return masterDispatcher(tenantId);
+  }, { formatMessage: (n) => `${n} tasks` });
 
-        const d = await masterDispatcher(tenantId);
-        if (d > 0) log.info(`[master:tick] Dispatched(${tenantId}) ${d} tasks`);
-      } catch (e) {
-        log.error(`[master:tick] dispatch error (tenant=${tenantId}):`, e?.message);
-      }
-    });
+  const opsTick = tenantTick('Ops processed', (tenantId) => opsAgentListener(tenantId), {
+    formatMessage: (n) => `${n} tasks`,
+  });
+
+  const postResTick = tenantTick('Post-resolution', async (tenantId) => {
+    const resolved = await masterPostResolution(tenantId);
+    const rejected = await masterHandleRejected(tenantId);
+    if (rejected > 0) {
+      log.info(`[master:tick] Re-dispatched rejected(${tenantId}): ${rejected}`);
     }
-  };
+    return resolved;
+  });
 
-  // ── Tick 3: Ops Agent (每20秒扫描一次) ──
-  const opsTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const a = await opsAgentListener(tenantId);
-        if (a > 0) log.info(`[master:tick] Ops(${tenantId}) processed ${a} tasks`);
-      } catch (e) {
-        log.error(`[master:tick] ops error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
+  const evalTick = tenantTick('Evaluator settled', (tenantId) => chiefEvaluatorListener(tenantId), {
+    formatMessage: (n) => `${n} tasks`,
+  });
 
-  // ── Tick 4: Master Post-Resolution + Rejected (每20秒) ──
-  const postResTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const resolved = await masterPostResolution(tenantId);
-        const rejected = await masterHandleRejected(tenantId);
-        if (resolved > 0) log.info(`[master:tick] Post-resolution(${tenantId}): ${resolved}`);
-        if (rejected > 0) log.info(`[master:tick] Re-dispatched rejected(${tenantId}): ${rejected}`);
-      } catch (e) {
-        log.error(`[master:tick] post-res error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
+  const finalTick = tenantTick('Closed', (tenantId) => masterFinalNotification(tenantId), {
+    formatMessage: (n) => `${n} tasks`,
+  });
 
-  // ── Tick 5: Chief Evaluator (每30秒) ──
-  const evalTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const s = await chiefEvaluatorListener(tenantId);
-        if (s > 0) log.info(`[master:tick] Evaluator(${tenantId}) settled ${s} tasks`);
-      } catch (e) {
-        log.error(`[master:tick] eval error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
+  const trainTick = tenantTick('Train processed', (tenantId) => trainAgentListener(tenantId), {
+    formatMessage: (n) => `${n} cases`,
+  });
 
-  // ── Tick 6: Master Final Notification (每30秒) ──
-  const finalTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const c = await masterFinalNotification(tenantId);
-        if (c > 0) log.info(`[master:tick] Closed(${tenantId}) ${c} tasks`);
-      } catch (e) {
-        log.error(`[master:tick] final error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
+  const issuesTick = tenantTick('Issues coordinator processed', (tenantId) => masterIssuesListener(tenantId), {
+    formatMessage: (n) => `${n} issues`,
+  });
 
-  // ── Tick 7: Train Agent (每60秒扫描详细差评) ──
-  const trainTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const a = await trainAgentListener(tenantId);
-        if (a > 0) log.info(`[master:tick] Train(${tenantId}) processed ${a} cases`);
-      } catch (e) { log.error(`trainTick (tenant=${tenantId}):`, e); }
-    });
-    }
-  };
+  const optimizationTick = tenantTick('Optimization coordinator processed', (tenantId) => masterOptimizationCoordinator(tenantId), {
+    formatMessage: (n) => `${n} proposals`,
+  });
 
-  // ── Tick 8: 部门问题/知识库纠错分配 (每30秒) ──
-  const issuesTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const i = await masterIssuesListener(tenantId);
-        if (i > 0) log.info(`[master:tick] Issues coordinator(${tenantId}) processed ${i} issues`);
-      } catch (e) {
-        log.error(`[master:tick] issues error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
+  const trainDispatchTick = tenantTick('Train task dispatcher sent', (tenantId) => trainTaskDispatcher(tenantId), {
+    formatMessage: (n) => `${n} tasks`,
+  });
 
-  // ── Tick 9: Master Optimization Coordinator (每60秒) ──
-  const optimizationTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const o = await masterOptimizationCoordinator(tenantId);
-        if (o > 0) log.info(`[master:tick] Optimization coordinator(${tenantId}) processed ${o} proposals`);
-      } catch (e) {
-        log.error(`[master:tick] optimization error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
-
-  // ── Tick 10: Train Task Dispatcher (每10分钟) ──
-  const trainDispatchTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const d = await trainTaskDispatcher(tenantId);
-        if (d > 0) log.info(`[master:tick] Train task dispatcher(${tenantId}) sent ${d} tasks`);
-      } catch (e) {
-        log.error(`[master:tick] train dispatch error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
-
-  // ── Tick 11: Task Response Bitable Polling (每60秒) ──
-  // 注意：这绑定的是单一一套全局飞书Bitable凭证(BITABLE_CONFIGS)，不是按租户区分的外部集成，
-  // 暂不在本轮循环改造范围内——多租户飞书凭证是单独的Phase 3设计问题。
+  // 全局飞书 Bitable 凭证，不按租户区分
   const taskResponseTick = async () => {
     try {
       await pollTaskResponseBitable();
@@ -1620,113 +1431,44 @@ export function startMasterAgent() {
     }
   };
 
-  // ── Tick 12: Knowledge Graph Health Snapshot (每6小时刷新) ──
-  const kgHealthTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const updated = await refreshEntityHealthSnapshots(tenantId);
-        if (updated > 0) log.info(`[master:tick] KG health snapshots(${tenantId}) refreshed for ${updated} stores`);
-      } catch (e) {
-        log.error(`[master:tick] KG health error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
+  const kgHealthTick = tenantTick('KG health snapshots refreshed for', (tenantId) => refreshEntityHealthSnapshots(tenantId), {
+    formatMessage: (n) => `${n} stores`,
+  });
 
-  // ── Tick 13: 巡检闭环自动化 (每15分钟: 催办 + 升级) ──
-  const inspectionLoopTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const a = await inspectionClosedLoopTick(tenantId);
-        if (a > 0) log.info(`[master:tick] Inspection closed loop(${tenantId}): ${a} actions`);
-      } catch (e) {
-        log.error(`[master:tick] inspection loop error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
+  const inspectionLoopTick = tenantTick('Inspection closed loop', (tenantId) => inspectionClosedLoopTick(tenantId), {
+    formatMessage: (n) => `${n} actions`,
+  });
 
-  // ── Tick 14: BI主动推送 (每15分钟检查, 仅CST 10:00执行) ──
-  const biPushTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const p = await biProactivePushTick(tenantId);
-        if (p > 0) log.info(`[master:tick] BI proactive push(${tenantId}): ${p} alerts`);
-      } catch (e) {
-        log.error(`[master:tick] BI push error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
+  const biPushTick = tenantTick('BI proactive push', (tenantId) => biProactivePushTick(tenantId), {
+    formatMessage: (n) => `${n} alerts`,
+  });
 
-  // ── Tick 15: 排班人效建议 (每15分钟检查, 仅周一CST 09:00执行) ──
-  const laborTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const p = await laborEfficiencyTick(tenantId);
-        if (p > 0) log.info(`[master:tick] Labor efficiency(${tenantId}): ${p} suggestions`);
-      } catch (e) {
-        log.error(`[master:tick] labor efficiency error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
+  const laborTick = tenantTick('Labor efficiency', (tenantId) => laborEfficiencyTick(tenantId), {
+    formatMessage: (n) => `${n} suggestions`,
+  });
 
-  // ── Tick 16: 培训闭环 (每15分钟检查, 仅CST 11:00执行) ──
-  const trainingLoopTick = async () => {
-    for (const tenantId of await getActiveTenantIds(pool())) {
-      await tenantContext.run(tenantId, async () => {
-      try {
-        const c = await trainingClosedLoopTick(tenantId);
-        if (c > 0) log.info(`[master:tick] Training closed loop(${tenantId}): ${c} tasks created`);
-      } catch (e) {
-        log.error(`[master:tick] training loop error (tenant=${tenantId}):`, e?.message);
-      }
-    });
-    }
-  };
+  const trainingLoopTick = tenantTick('Training closed loop', (tenantId) => trainingClosedLoopTick(tenantId), {
+    formatMessage: (n) => `${n} tasks created`,
+  });
 
-  // 启动定时器
-  setInterval(auditTick, 15 * 1000);        // 15s (优化：从30min改为15s，快速处理手动创建的任务)
-  setInterval(dispatchTick, 15 * 1000);     // 15s
-  setInterval(opsTick, 20 * 1000);          // 20s
-  setInterval(postResTick, 20 * 1000);      // 20s
-  setInterval(evalTick, 30 * 1000);         // 30s
-  setInterval(finalTick, 30 * 1000);        // 30s
-  setInterval(trainTick, 60 * 1000);        // 60s
-  setInterval(issuesTick, 30 * 1000);       // 30s
-  setInterval(trainDispatchTick, 10 * 60 * 1000); // 10min
-  setInterval(optimizationTick, 60 * 1000);   // 60s
-  setInterval(taskResponseTick, 60 * 1000);  // 60s
-  setInterval(kgHealthTick, 6 * 60 * 60 * 1000); // 6h
-  setInterval(inspectionLoopTick, 15 * 60 * 1000); // 15min
-  setInterval(biPushTick, 15 * 60 * 1000);         // 15min (内部仅CST 10:00执行)
-  setInterval(laborTick, 15 * 60 * 1000);           // 15min (内部仅周一CST 09:00执行)
-  setInterval(trainingLoopTick, 15 * 60 * 1000);    // 15min (内部仅CST 11:00执行)
-
-  // 首次启动延迟执行
-  setTimeout(auditTick, 10 * 1000);
-  setTimeout(dispatchTick, 15 * 1000);
-  setTimeout(opsTick, 20 * 1000);
-  setTimeout(postResTick, 25 * 1000);
-  setTimeout(evalTick, 30 * 1000);
-  setTimeout(finalTick, 35 * 1000);
-  setTimeout(trainTick, 40 * 1000);
-  setTimeout(issuesTick, 45 * 1000);
-  setTimeout(trainDispatchTick, 50 * 1000);
-  setTimeout(optimizationTick, 55 * 1000);
-  setTimeout(taskResponseTick, 60 * 1000);
-  setTimeout(kgHealthTick, 90 * 1000);      // 启动后90秒首次刷新
-  setTimeout(inspectionLoopTick, 120 * 1000); // 启动后2分钟首次巡检闭环
-  setTimeout(biPushTick, 150 * 1000);         // 启动后2.5分钟检查BI推送
-  setTimeout(laborTick, 180 * 1000);          // 启动后3分钟检查排班建议
-  setTimeout(trainingLoopTick, 210 * 1000);   // 启动后3.5分钟检查培训闭环
-
-  log.info('[master] All agent listeners started (including KG health tick + auto-ops engine)');
+  registerMasterIntervals([
+    { fn: auditTick, intervalMs: 15 * 1000, startupDelayMs: 10 * 1000 },
+    { fn: dispatchTick, intervalMs: 15 * 1000, startupDelayMs: 15 * 1000 },
+    { fn: opsTick, intervalMs: 20 * 1000, startupDelayMs: 20 * 1000 },
+    { fn: postResTick, intervalMs: 20 * 1000, startupDelayMs: 25 * 1000 },
+    { fn: evalTick, intervalMs: 30 * 1000, startupDelayMs: 30 * 1000 },
+    { fn: finalTick, intervalMs: 30 * 1000, startupDelayMs: 35 * 1000 },
+    { fn: trainTick, intervalMs: 60 * 1000, startupDelayMs: 40 * 1000 },
+    { fn: issuesTick, intervalMs: 30 * 1000, startupDelayMs: 45 * 1000 },
+    { fn: trainDispatchTick, intervalMs: 10 * 60 * 1000, startupDelayMs: 50 * 1000 },
+    { fn: optimizationTick, intervalMs: 60 * 1000, startupDelayMs: 55 * 1000 },
+    { fn: taskResponseTick, intervalMs: 60 * 1000, startupDelayMs: 60 * 1000 },
+    { fn: kgHealthTick, intervalMs: 6 * 60 * 60 * 1000, startupDelayMs: 90 * 1000 },
+    { fn: inspectionLoopTick, intervalMs: 15 * 60 * 1000, startupDelayMs: 120 * 1000 },
+    { fn: biPushTick, intervalMs: 15 * 60 * 1000, startupDelayMs: 150 * 1000 },
+    { fn: laborTick, intervalMs: 15 * 60 * 1000, startupDelayMs: 180 * 1000 },
+    { fn: trainingLoopTick, intervalMs: 15 * 60 * 1000, startupDelayMs: 210 * 1000 },
+  ], log);
 }
 
 // ─────────────────────────────────────────────
@@ -1734,240 +1476,11 @@ export function startMasterAgent() {
 // ─────────────────────────────────────────────
 
 export function registerMasterRoutes(app, authRequired) {
-
-  const _exportCsv = (rows = [], columns = []) => {
-    const esc = (v) => {
-      const s = v == null ? '' : String(v);
-      if (!/[",\n]/.test(s)) return s;
-      return `"${s.replace(/"/g, '""')}"`;
-    };
-    const header = columns.join(',');
-    const body = rows.map((r) => columns.map((c) => esc(r?.[c])).join(',')).join('\n');
-    return `${header}\n${body}`;
-  };
-
-  // ── Master Dashboard ──
-  app.get('/api/master/dashboard', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    try {
-      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
-      const [tasksR, eventsR] = await Promise.all([
-        pool().query(`
-          SELECT status, COUNT(*) as cnt,
-                 COUNT(*) FILTER (WHERE severity='high') as high_cnt
-          FROM master_tasks
-          WHERE created_at > NOW() - INTERVAL '30 days'
-            AND tenant_id = $1
-          GROUP BY status ORDER BY status
-        `, [tenantIdQ]),
-        pool().query(`SELECT COUNT(*) as total FROM master_events WHERE created_at > NOW() - INTERVAL '7 days' AND tenant_id = $1`, [tenantIdQ])
-      ]);
-
-      const statusCounts = {};
-      for (const row of (tasksR.rows || [])) {
-        statusCounts[row.status] = { total: Number(row.cnt), high: Number(row.high_cnt) };
-      }
-
-      return res.json({
-        tasks: statusCounts,
-        events_7d: Number(eventsR.rows?.[0]?.total || 0),
-        stateMachine: STATUS_FLOW
-      });
-    } catch (e) {
-      return res.status(500).json({ error: String(e?.message || e) });
-    }
+  return registerMasterRoutesImpl(app, {
+    pool,
+    authRequired,
+    statusFlow: STATUS_FLOW,
+    createTask,
+    inferBrandFromStoreName,
   });
-
-  // ── Task List ──
-  app.get('/api/master/tasks', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    const username = String(req.user?.username || '').trim();
-    const status = String(req.query?.status || '').trim();
-    const limit = Math.max(1, Math.min(200, Number(req.query?.limit) || 50));
-    try {
-      let where = ['1=1'], params = [];
-      const push = v => { params.push(v); return `$${params.length}`; };
-
-      if (['store_manager', 'store_production_manager'].includes(role)) {
-        where.push(`assignee_username = ${push(username)}`);
-      }
-      if (status && status !== 'all') where.push(`status = ${push(status)}`);
-      where.push(`tenant_id = ${push(req.tenantId || req.user?.tenant_id || 'default')}`);
-
-      const r = await pool().query(
-        `SELECT * FROM master_tasks WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ${push(limit)}`,
-        params
-      );
-      return res.json({ items: r.rows || [] });
-    } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
-  });
-
-  // ── Data Source Health Snapshot ──
-  app.get('/api/master/data-source-health', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    const hours = Math.max(1, Math.min(24 * 30, Number(req.query?.hours) || 24));
-    // sales_raw已下线(2026-07-03)，POS数据改用pos_sales_detail视图(pos_order_items的同构视图)，
-    // 该视图无created_at列，用checkout_time代替。
-    const tables = ['daily_reports', 'pos_sales_detail', 'table_visit_records', 'master_tasks'];
-    const TIME_COLUMNS = { pos_sales_detail: 'checkout_time' };
-    const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
-    try {
-      const tableCounts = [];
-      for (const table of tables) {
-        const timeCol = TIME_COLUMNS[table] || 'created_at';
-        const tenantClause = table === 'master_tasks' ? ' AND tenant_id = $2' : '';
-        const r = await pool().query(
-          `SELECT COUNT(*)::int AS cnt, MAX(${timeCol}) AS latest
-             FROM ${table}
-            WHERE ${timeCol} >= NOW() - ($1::text || ' hours')::interval${tenantClause}`,
-          tenantClause ? [String(hours), tenantIdQ] : [String(hours)]
-        );
-        tableCounts.push({
-          table,
-          rows: Number(r.rows?.[0]?.cnt || 0),
-          latest: r.rows?.[0]?.latest || null,
-          ok: Number(r.rows?.[0]?.cnt || 0) > 0
-        });
-      }
-
-      const issueR = await pool().query(
-        `SELECT
-           COALESCE(details::jsonb->>'dataSourceType', 'unknown') AS data_source,
-           COALESCE(context->>'store', '') AS store,
-           COUNT(*)::int AS issue_count,
-           MAX(created_at) AS latest
-         FROM agent_issues_reports
-         WHERE issue_type = 'DATA_SOURCE_INSUFFICIENT'
-           AND created_at >= NOW() - ($1::text || ' hours')::interval
-           AND tenant_id = $2
-         GROUP BY COALESCE(details::jsonb->>'dataSourceType', 'unknown'), COALESCE(context->>'store', '')
-         ORDER BY issue_count DESC, data_source ASC, store ASC
-         LIMIT 200`,
-        [String(hours), tenantIdQ]
-      );
-
-      return res.json({
-        windowHours: hours,
-        generatedAt: new Date().toISOString(),
-        tables: tableCounts,
-        insufficientIssues: issueR.rows || []
-      });
-    } catch (e) {
-      return res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
-
-  // ── One-click Evidence Export (tasks + events) ──
-  app.get('/api/master/evidence/export', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    const taskLimit = Math.max(1, Math.min(20000, Number(req.query?.taskLimit) || 5000));
-    const eventLimit = Math.max(1, Math.min(50000, Number(req.query?.eventLimit) || 10000));
-    const format = String(req.query?.format || 'json').trim().toLowerCase();
-    try {
-      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
-      const [tasksR, eventsR] = await Promise.all([
-        pool().query(`SELECT * FROM master_tasks WHERE tenant_id = $2 ORDER BY created_at DESC LIMIT $1`, [taskLimit, tenantIdQ]),
-        pool().query(`SELECT * FROM master_events WHERE tenant_id = $2 ORDER BY created_at DESC LIMIT $1`, [eventLimit, tenantIdQ])
-      ]);
-
-      const tasks = tasksR.rows || [];
-      const events = eventsR.rows || [];
-      const byStatus = {};
-      for (const t of tasks) {
-        const k = String(t?.status || 'unknown');
-        byStatus[k] = (byStatus[k] || 0) + 1;
-      }
-      const byEventType = {};
-      for (const e of events) {
-        const k = String(e?.event_type || 'unknown');
-        byEventType[k] = (byEventType[k] || 0) + 1;
-      }
-
-      if (format === 'csv') {
-        const taskColumns = ['task_id', 'source', 'category', 'severity', 'store', 'brand', 'title', 'status', 'assignee_role', 'assignee_username', 'created_at', 'updated_at'];
-        const eventColumns = ['task_id', 'event_type', 'from_agent', 'to_agent', 'status_before', 'status_after', 'created_at'];
-        const taskCsv = _exportCsv(tasks, taskColumns);
-        const eventCsv = _exportCsv(events, eventColumns);
-        const csv = [
-          '# master_tasks',
-          taskCsv,
-          '',
-          '# master_events',
-          eventCsv
-        ].join('\n');
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="master-evidence-${Date.now()}.csv"`);
-        return res.send(csv);
-      }
-
-      return res.json({
-        generatedAt: new Date().toISOString(),
-        limits: { taskLimit, eventLimit },
-        summary: {
-          taskCount: tasks.length,
-          eventCount: events.length,
-          byStatus,
-          byEventType
-        },
-        tasks,
-        events
-      });
-    } catch (e) {
-      return res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
-
-  // ── Task Detail with Events ──
-  app.get('/api/master/tasks/:taskId', authRequired, async (req, res) => {
-    const taskId = String(req.params?.taskId || '').trim();
-    if (!taskId) return res.status(400).json({ error: 'missing_task_id' });
-    try {
-      const tenantIdQ = req.tenantId || req.user?.tenant_id || 'default';
-      const [taskR, eventsR] = await Promise.all([
-        pool().query(`SELECT * FROM master_tasks WHERE task_id = $1 AND tenant_id = $2`, [taskId, tenantIdQ]),
-        pool().query(`SELECT * FROM master_events WHERE task_id = $1 AND tenant_id = $2 ORDER BY created_at ASC`, [taskId, tenantIdQ])
-      ]);
-      if (!taskR.rows?.length) return res.status(404).json({ error: 'not_found' });
-      return res.json({ task: taskR.rows[0], events: eventsR.rows || [] });
-    } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
-  });
-
-  // ── Event Log ──
-  app.get('/api/master/events', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager', 'hr_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    const limit = Math.max(1, Math.min(200, Number(req.query?.limit) || 50));
-    try {
-      const r = await pool().query(
-        `SELECT * FROM master_events WHERE tenant_id = $2 ORDER BY created_at DESC LIMIT $1`, [limit, req.tenantId || req.user?.tenant_id || 'default']
-      );
-      return res.json({ items: r.rows || [] });
-    } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
-  });
-
-  // ── Manual Task Creation (admin) ──
-  app.post('/api/master/tasks', authRequired, async (req, res) => {
-    const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
-    try {
-      const { category, severity, store, brand, title, detail } = req.body || {};
-      if (!store || !title) return res.status(400).json({ error: 'missing store or title' });
-      const taskId = await createTask({
-        source: 'manual',
-        sourceRef: `manual-${req.user?.username}`,
-        category: category || '手动创建',
-        severity: severity || 'medium',
-        store, brand: brand || inferBrandFromStoreName(store),
-        title, detail: detail || '',
-        sourceData: { createdBy: req.user?.username }
-      }, req.tenantId || req.user?.tenant_id || 'default');
-      return res.json({ ok: true, taskId });
-    } catch (e) { return res.status(500).json({ error: String(e?.message || e) }); }
-  });
-
-  // 注册 HQ Planner 路由 (行动计划/门店健康/因果链/算力统计)
-  registerHqPlannerRoutes(app, authRequired);
 }

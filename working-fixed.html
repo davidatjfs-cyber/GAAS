@@ -26663,7 +26663,7 @@
                 const metaParts = [];
                 if (assignee && assignee !== '-') metaParts.push('<span>审批人<br>' + escapeHtml(assignee) + '</span>');
 
-                return '<div class="' + cardClasses.join(' ') + '" onclick="openApprovalDetailModal(\'' + escapeHtml(id) + '\')">'
+                return '<div class="' + cardClasses.join(' ') + '" data-click="openApprovalDetailModal" data-arg="' + escapeHtml(id) + '">'
                     + '<div class="ap-card__top">'
                     +   '<div class="ap-card__icon ap-card__icon--' + escapeHtml(rawType) + '">' + iconChar + '</div>'
                     +   '<div class="ap-card__info">'
@@ -29053,7 +29053,7 @@ th { background: #f5f5f5; font-weight: 700; }
                 const picked = idx >= 0;
                 const bg = picked ? 'background:#f59e0b;color:#1c1c1e;border-color:#f59e0b;' : 'background:rgba(255,255,255,0.06);color:rgba(226,232,240,0.85);border-color:rgba(255,255,255,0.15);';
                 const tag = picked ? ('(' + (idx + 1) + ') ') : '';
-                return '<button type="button" onclick="pgToggleBottomNavItem(\'' + escapeHtml(m.p) + '\')" ' +
+                return '<button type="button" data-click="pgToggleBottomNavItem" data-arg="' + escapeHtml(m.p) + '" ' +
                     'style="padding:4px 10px;font-size:12px;border-radius:14px;border:1px solid;cursor:pointer;' + bg + '">' +
                     escapeHtml(tag + m.l) + '</button>';
             }).join('');
@@ -29095,8 +29095,8 @@ th { background: #f5f5f5; font-weight: 700; }
                         '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + (Array.isArray(g.modules) ? g.modules.length : 0) + '</td>' +
                         '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + escapeHtml(__pgScopeSummary(g.storeScope)) + '</td>' +
                         '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);text-align:right;">' +
-                            '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" onclick="openPermissionGroupEditor(\'' + escapeHtml(String(g.id)) + '\')">编辑</button> ' +
-                            '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" onclick="deletePermissionGroup(\'' + escapeHtml(String(g.id)) + '\')">删除</button>' +
+                            '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" data-click="openPermissionGroupEditor" data-arg="' + escapeHtml(String(g.id)) + '">编辑</button> ' +
+                            '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" data-click="deletePermissionGroup" data-arg="' + escapeHtml(String(g.id)) + '">删除</button>' +
                         '</td>' +
                     '</tr>';
                 }).join('') +
@@ -30028,7 +30028,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 const lastAct = new Date(t.last_activity_at || t.updated_at || t.created_at);
                 const staleHours = (Date.now() - lastAct.getTime()) / 3600000;
                 const isStale = staleHours > 4 && !['已结案','已打回','已升级','已备案','closed','settled','resolved'].includes(board);
-                return '<article class="atb-card' + (isStale ? ' atb-card-stale' : '') + '" onclick="openAgentTaskDetail(\'' + atbEscape(t.task_id) + '\')">'
+                return '<article class="atb-card' + (isStale ? ' atb-card-stale' : '') + '" data-click="openAgentTaskDetail" data-arg="' + atbEscape(t.task_id) + '">'
                     + '<div class="atb-card-head"><span class="atb-badge ' + atbBadgeClass(board) + '">' + atbEscape(board) + '</span><span class="atb-badge">' + atbEscape(t.assignee_agent || t.current_agent || '待分配') + '</span>' + (isStale ? '<span class="atb-badge" style="background:rgba(239,68,68,0.25);color:#fca5a5;">超时</span>' : '') + '</div>'
                     + '<h3>' + atbEscape(t.title || t.task_id) + '</h3>'
                     + '<p>' + atbEscape(t.detail || '') + '</p>'
@@ -30093,7 +30093,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 + '<div class="atb-section"><b>审计时间线</b><div class="atb-timeline">' + events + '</div></div>'
                 + '<div class="atb-section"><b>重新分配负责人</b><select id="atb-reassign-agent" class="atb-input" style="margin-top:8px;width:100%;"><option value="">选择负责人...</option><option value="ops_supervisor">运营督导</option><option value="food_quality">食安专员</option><option value="train_advisor">培训顾问</option><option value="marketing_planner">营销策划</option><option value="marketing_executor">营销执行</option><option value="data_auditor">数据审计</option></select><button class="atb-action" style="margin-top:8px;width:100%;" data-click="reassignAgentTask">确认重分配</button></div>'
                 + '<div class="atb-section"><b>质量评分 (0-10)</b><input id="atb-quality-score" class="atb-input" type="number" min="0" max="10" step="0.5" style="margin-top:8px;width:100%;" placeholder="输入0-10的质量评分"><button class="atb-action" style="margin-top:8px;width:100%;" data-click="submitQualityScore">提交评分</button></div>'
-                + '<div class="atb-panel-actions"><button class="atb-action good" onclick="reviewAgentTask(\'approved\')">通过并关闭</button><button class="atb-action bad" onclick="reviewAgentTask(\'rejected\')">打回并修订</button><button class="atb-action" data-click="deriveAgentTask">创建衍生任务</button></div>';
+                + '<div class="atb-panel-actions"><button class="atb-action good" data-click="reviewAgentTask" data-arg="approved">通过并关闭</button><button class="atb-action bad" data-click="reviewAgentTask" data-arg="rejected">打回并修订</button><button class="atb-action" data-click="deriveAgentTask">创建衍生任务</button></div>';
         }
 
         function closeAgentTaskDetail() {
@@ -44752,7 +44752,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                     </div>
                     <input type="number" class="mt-field-row__input" inputmode="decimal" placeholder="目标值" value="${escapeHtml(String(val))}"
                         onchange="mtUpdateFieldValue(${idx}, this.value)" oninput="mtUpdateFieldValue(${idx}, this.value)" />
-                    <button type="button" class="mt-field-row__remove" onclick="mtRemoveField(${idx})" title="移除">✕</button>
+                    <button type="button" class="mt-field-row__remove" data-click="mtRemoveField" data-arg="${idx}" data-arg-type="number" title="移除">✕</button>
                 </div>`;
             }).join('');
             mtPopulateFieldSelect();
@@ -46184,7 +46184,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             const pager = (() => {
                 const makeBtn = (label, page, disabled) => {
                     const dis = disabled ? 'disabled' : '';
-                    return `<button type="button" class="btn btn-secondary" ${dis} onclick="setQuestionBankPreviewPage(${page})" style="padding: 6px 10px;">${label}</button>`;
+                    return `<button type="button" class="btn btn-secondary" ${dis} data-click="setQuestionBankPreviewPage" data-arg="${page}" data-arg-type="number" style="padding: 6px 10px;">${label}</button>`;
                 };
                 const btnPrev = makeBtn('上一页', cur - 1, cur <= 1);
                 const btnNext = makeBtn('下一页', cur + 1, cur >= totalPages);
@@ -46196,7 +46196,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                 from = Math.max(1, to - maxButtons + 1);
                 for (let p = from; p <= to; p += 1) {
                     const active = p === cur;
-                    pages.push(`<button type="button" class="btn ${active ? '' : 'btn-secondary'}" onclick="setQuestionBankPreviewPage(${p})" style="padding: 6px 10px;">${p}</button>`);
+                    pages.push(`<button type="button" class="btn ${active ? '' : 'btn-secondary'}" data-click="setQuestionBankPreviewPage" data-arg="${p}" data-arg-type="number" style="padding: 6px 10px;">${p}</button>`);
                 }
                 return `
                     <div style="margin-top: 10px; display:flex; gap: 8px; align-items: center; flex-wrap: wrap;">
@@ -48233,7 +48233,7 @@ ${String(text || '').slice(0, 9000)}`;
                         <div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:2px;">${escapeHtml(fileName)}${uploadedAt ? ' · ' + uploadedAt : ''}</div>
                     </div>
                     <a href="${escapeHtml(absUrl)}" target="_blank" class="btn btn-secondary" style="padding:5px 10px; font-size:12px; white-space:nowrap;">查看</a>
-                    <button type="button" class="btn" style="padding:5px 10px; font-size:12px; background:rgba(239,68,68,0.2); color:#f87171; border:1px solid rgba(239,68,68,0.3); white-space:nowrap;" onclick="deleteEmployeeAttachment(${id})">删除</button>
+                    <button type="button" class="btn" style="padding:5px 10px; font-size:12px; background:rgba(239,68,68,0.2); color:#f87171; border:1px solid rgba(239,68,68,0.3); white-space:nowrap;" data-click="deleteEmployeeAttachment" data-arg="${id}" data-arg-type="number">删除</button>
                 `;
                 container.appendChild(row);
             });
@@ -51431,7 +51431,7 @@ tr:nth-child(even) td { background: #fafafa; }
                         + '<div class="pf-approval-actions">'
                         +   '<button class="ga-btn ga-btn--primary ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" onclick="profileQuickApprove(\'' + id + '\', true)">通过</button>'
                         +   '<button class="ga-btn ga-btn--danger ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" onclick="profileQuickApprove(\'' + id + '\', false)">拒绝</button>'
-                        +   '<button class="ga-btn ga-btn--ghost ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" onclick="openApprovalDetailModal(\'' + id + '\')">详情</button>'
+                        +   '<button class="ga-btn ga-btn--ghost ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" data-click="openApprovalDetailModal" data-arg="' + id + '">详情</button>'
                         + '</div>'
                         + '</div>';
                 }).join('') + (pending.length > 5 ? '<div style="text-align:center;margin-top:8px;font-size:12px;color:var(--dim);">还有 ' + (pending.length - 5) + ' 条待处理…</div>' : '');
@@ -52261,7 +52261,7 @@ tr:nth-child(even) td { background: #fafafa; }
                 const chkCls = checked ? 'dr-staff-pick-row__chk is-on' : 'dr-staff-pick-row__chk';
                 const chkInner = checked ? '✓' : '';
                 return `
-                    <div class="dr-staff-pick-row dr-staff-row" onclick="toggleDailyReportStaffPick(${idx})">
+                    <div class="dr-staff-pick-row dr-staff-row" data-click="toggleDailyReportStaffPick" data-arg="${idx}" data-arg-type="number">
                         <div class="dr-staff-pick-row__main">
                             <div class="${chkCls}">${chkInner}</div>
                             <div style="min-width:0; flex:1;">
@@ -52270,7 +52270,7 @@ tr:nth-child(even) td { background: #fafafa; }
                             </div>
                         </div>
                         <div class="dr-staff-actions" onclick="event.stopPropagation();">
-                            <button type="button" class="dr-staff-pick-row__day" onclick="toggleDailyReportStaffPickDays(${idx})">${escapeHtml(dayText)}</button>
+                            <button type="button" class="dr-staff-pick-row__day" data-click="toggleDailyReportStaffPickDays" data-arg="${idx}" data-arg-type="number">${escapeHtml(dayText)}</button>
                         </div>
                     </div>
                 `;
@@ -52609,7 +52609,7 @@ tr:nth-child(even) td { background: #fafafa; }
                 return `
                     <div style="position: relative; width: 96px; height: 96px; border-radius: 12px; overflow:hidden; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.03);">
                         <img alt="日结单" src="${src}" loading="lazy" decoding="async" referrerpolicy="no-referrer" style="width: 100%; height: 100%; object-fit: cover;" />
-                        <button class="btn btn-secondary" type="button" onclick="removeDailyReportPhoto(${idx})" style="position:absolute; top: 6px; right: 6px; padding: 4px 8px; font-size: 12px; border-radius: 999px;">×</button>
+                        <button class="btn btn-secondary" type="button" data-click="removeDailyReportPhoto" data-arg="${idx}" data-arg-type="number" style="position:absolute; top: 6px; right: 6px; padding: 4px 8px; font-size: 12px; border-radius: 999px;">×</button>
                     </div>
                 `;
             }).join('');
@@ -56678,7 +56678,7 @@ ${ok
             overlay.innerHTML = `
                 <div style="position:sticky;top:0;z-index:10;background:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e2e8f0;">
                     <button onclick="document.getElementById('rep-pdf-overlay').style.display='none';" style="padding:8px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;font-size:14px;font-weight:700;cursor:pointer;">← 返回</button>
-                    <button onclick="window.print();" style="padding:8px 16px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🖨 打印/PDF</button>
+                    <button data-click="print" style="padding:8px 16px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🖨 打印/PDF</button>
                 </div>
                 <style>@media print{#rep-pdf-overlay>div:first-child{display:none!important;}}</style>
                 <div style="max-width:820px;margin:0 auto;padding:16px;">
@@ -59464,13 +59464,13 @@ ${body}
 
             let html = '';
             if (page > 1) {
-                html += `<button class="btn btn-sm" onclick="loadFilesList(${page - 1})">上一页</button>`;
+                html += `<button class="btn btn-sm" data-click="loadFilesList" data-arg="${page - 1}" data-arg-type="number">上一页</button>`;
             }
             
             html += `<span style="padding:8px 16px;color:#666;">第 ${page} / ${totalPages} 页 (共 ${total} 个文件)</span>`;
             
             if (page < totalPages) {
-                html += `<button class="btn btn-sm" onclick="loadFilesList(${page + 1})">下一页</button>`;
+                html += `<button class="btn btn-sm" data-click="loadFilesList" data-arg="${page + 1}" data-arg-type="number">下一页</button>`;
             }
 
             container.innerHTML = html;
@@ -60117,7 +60117,7 @@ ${body}
                 const hasOverdue = (r.tasks || []).some(t => t.status !== 'done' && t.due_date && String(t.due_date).slice(0, 10) < todayYmd);
                 if (hasOverdue) {
                     stateHtml = `<div class="gs-report" style="border-color:rgba(255,138,122,0.35);">⚠️ 存在逾期未完成任务,系统每日自动催促并记录次数。若持续无进展,可直接强制复盘——报告将如实点名未完成任务与催促次数。
-                      <div class="gs-actions"><button class="ga-btn ga-btn--ghost" onclick="gsForceReview(${r.id})">强制复盘(点名未执行)</button></div></div>`;
+                      <div class="gs-actions"><button class="ga-btn ga-btn--ghost" data-click="gsForceReview" data-arg="${r.id}" data-arg-type="number">强制复盘(点名未执行)</button></div></div>`;
                 }
             } else if (r.status === 'observing') {
                 stateHtml = `<div class="gs-report">✅ 任务已全部完成,处于观察期,<b>${escapeHtml(String(r.measure_end_date).slice(0, 10))}</b> 自动复盘(观察期实际值以最后30天数据计算)。</div>`;
@@ -60484,7 +60484,7 @@ ${body}
 
             const anomHTML = anomalies.length
                 ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🔴 本周异常（${anomalies.length}项）</div><div class="dx-board__meta">点击查看每条异常的基础信息与触发记录</div></div></div><div class="dx-section-grid dx-section-grid--2">${anomalies.map((a, idx) =>
-                    `<div class="dx-metric-card dx-anomaly-card" onclick="dxShowAnomalyDetail(${idx})" role="button" tabindex="0">
+                    `<div class="dx-metric-card dx-anomaly-card" data-click="dxShowAnomalyDetail" data-arg="${idx}" data-arg-type="number" role="button" tabindex="0">
                         <div class="k">${escapeHtml(a.type)}</div>
                         <div class="v" style="font-size:16px;color:${a.severity === 'high' ? '#FF7A90' : '#FFC46B'}">${escapeHtml(a.count != null ? String(a.count) : '-') }</div>
                         <div class="s">${escapeHtml(a.detail || a.description || '')}</div>
@@ -60918,14 +60918,14 @@ ${body}
                     var on = m === cur;
                     var label = (typeof GROWTH_MEMBER_LABEL !== 'undefined' && GROWTH_MEMBER_LABEL[m]) || m;
                     html += '<button type="button" class="gx-item' + (on ? ' is-on' : '') + '"'
-                         + ' onclick="gxPick(\'' + m + '\')">'
+                         + ' data-click="gxPick" data-arg="' + m + '">'
                          + '<span class="gx-item__dot"></span>' + escapeHtml(label) + '</button>';
                 });
                 html += '</div>';
             });
             html += '<div class="gx-grp"><div class="gx-grp__t">手动工具</div>';
             GX_EXTERNAL.forEach(function (x) {
-                html += '<button type="button" class="gx-item" onclick="gxOpenExternal(\'' + x.url + '\')">'
+                html += '<button type="button" class="gx-item" data-click="gxOpenExternal" data-arg="' + x.url + '">'
                      + '<span class="gx-item__dot"></span>' + escapeHtml(x.label)
                      + '<span class="gx-item__ext">新窗口</span></button>';
             });
@@ -60992,7 +60992,7 @@ ${body}
             host.style.display = '';
             host.innerHTML = group.members.map(function(m) {
                 var on = m === activeMember;
-                return '<button type="button" class="rep-subtab' + (on ? ' rep-subtab--active' : '') + '" onclick="showGrowthTab(\'' + m + '\')">' + (GROWTH_MEMBER_LABEL[m] || m) + '</button>';
+                return '<button type="button" class="rep-subtab' + (on ? ' rep-subtab--active' : '') + '" data-click="showGrowthTab" data-arg="' + m + '">' + (GROWTH_MEMBER_LABEL[m] || m) + '</button>';
             }).join('');
         }
 
@@ -61057,9 +61057,9 @@ ${body}
                         +   (lim.length ? '限额：'+escapeHtml(lim.join(' · '))+'<br>' : '')
                         + '</div>'
                         + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
-                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" onclick="editPaymentRule(\''+rk+'\')">编辑</button>'
+                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" data-click="editPaymentRule" data-arg="'+rk+'">编辑</button>'
                         +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" onclick="togglePaymentRule(\''+rk+'\','+(rule.active?'false':'true')+')">'+(rule.active?'停用':'启用')+'</button>'
-                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;color:#ef4444;" onclick="deletePaymentRule(\''+rk+'\')">删除</button>'
+                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;color:#ef4444;" data-click="deletePaymentRule" data-arg="'+rk+'">删除</button>'
                         + '</div></div>';
                 }).join('');
             } catch(e){
@@ -61506,8 +61506,8 @@ ${body}
                         + '<div><strong style="color:var(--rep-gold);">' + escHtml(c.store_id) + '</strong>'
                         + '<div style="font-size:12px;color:var(--rep-muted);margin-top:2px;">CorpID: ' + escHtml(c.corp_id) + ' | AgentID: ' + escHtml(c.agent_id || '-') + '</div></div>'
                         + '<div style="display:flex;gap:6px;">'
-                        + '<button onclick="editStoreWecomConfig(\'' + escHtml(c.store_id) + '\')" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;background:transparent;color:var(--rep-text);cursor:pointer;">编辑</button>'
-                        + '<button onclick="deleteStoreWecomConfig(\'' + escHtml(c.store_id) + '\')" style="padding:6px 12px;border:1px solid rgba(239,68,68,0.4);border-radius:8px;background:transparent;color:#ef4444;cursor:pointer;">删除</button>'
+                        + '<button data-click="editStoreWecomConfig" data-arg="' + escHtml(c.store_id) + '" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;background:transparent;color:var(--rep-text);cursor:pointer;">编辑</button>'
+                        + '<button data-click="deleteStoreWecomConfig" data-arg="' + escHtml(c.store_id) + '" style="padding:6px 12px;border:1px solid rgba(239,68,68,0.4);border-radius:8px;background:transparent;color:#ef4444;cursor:pointer;">删除</button>'
                         + '</div></div>';
                 }).join('');
                 host.innerHTML = html;
@@ -61698,10 +61698,10 @@ ${body}
                     var statusColor = x.status === 'active' ? '#22c55e' : x.status === 'draft' ? '#f59e0b' : x.status === 'executed' ? '#38bdf8' : x.status === 'cancelled' ? '#ef4444' : '#f59e0b';
                     var actionsHtml = '';
                     if (x.status === 'draft') {
-                        actionsHtml = '<button onclick="activateCampaignPlan(\'' + cid.replace(/'/g, '\\\'') + '\')" style="padding:3px 8px;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;font-size:11px;">激活</button>'
-                            + '<button onclick="cancelCampaignPlan(\'' + cid.replace(/'/g, '\\\'') + '\')" style="padding:3px 8px;border-radius:6px;background:rgba(239,68,68,0.10);color:#f87171;border:1px solid rgba(239,68,68,0.2);cursor:pointer;font-size:11px;">取消</button>';
+                        actionsHtml = '<button data-click="activateCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:3px 8px;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;font-size:11px;">激活</button>'
+                            + '<button data-click="cancelCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:3px 8px;border-radius:6px;background:rgba(239,68,68,0.10);color:#f87171;border:1px solid rgba(239,68,68,0.2);cursor:pointer;font-size:11px;">取消</button>';
                     } else if (x.status === 'active') {
-                        actionsHtml = '<button onclick="completeCampaignPlan(\'' + cid.replace(/'/g, '\\\'') + '\')" style="padding:3px 8px;border-radius:6px;background:rgba(56,189,248,0.12);color:#38bdf8;border:1px solid rgba(56,189,248,0.25);cursor:pointer;font-size:11px;">完结</button>';
+                        actionsHtml = '<button data-click="completeCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:3px 8px;border-radius:6px;background:rgba(56,189,248,0.12);color:#38bdf8;border:1px solid rgba(56,189,248,0.25);cursor:pointer;font-size:11px;">完结</button>';
                     }
                     var posterHtml = '';
                     if (poster && (poster.output_url || poster.image_url)) {
@@ -61724,10 +61724,10 @@ ${body}
                         + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;background:' + statusColor + '22;color:' + statusColor + ';font-weight:600;">' + statusLabel + '</span>'
                         + '</div>'
                         + '<div style="display:flex;gap:4px;flex-shrink:0;align-items:center;">'
-                        + (cid ? '<button onclick="showCampaignFunnelDashboard(\'' + cid.replace(/'/g, '\\\'') + '\')" style="padding:4px 8px;border-radius:8px;background:rgba(14,165,233,0.1);color:#38bdf8;border:none;cursor:pointer;font-size:10px;font-weight:600;">📊</button>' : '')
-                        + (x.status === 'draft' ? '<button onclick="activateCampaignPlan(\'' + cid.replace(/'/g, '\\\'') + '\')" style="padding:4px 10px;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.25);cursor:pointer;font-size:11px;font-weight:600;">激活</button>'
-                            + '<button onclick="cancelCampaignPlan(\'' + cid.replace(/'/g, '\\\'') + '\')" style="padding:4px 10px;border-radius:8px;background:transparent;color:#f87171;border:1px solid rgba(239,68,68,0.2);cursor:pointer;font-size:11px;">取消</button>' : '')
-                        + (x.status === 'active' ? '<button onclick="completeCampaignPlan(\'' + cid.replace(/'/g, '\\\'') + '\')" style="padding:4px 10px;border-radius:8px;background:rgb(56,189,248,0.12);color:#38bdf8;border:none;cursor:pointer;font-size:11px;font-weight:600;">完结</button>' : '')
+                        + (cid ? '<button data-click="showCampaignFunnelDashboard" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 8px;border-radius:8px;background:rgba(14,165,233,0.1);color:#38bdf8;border:none;cursor:pointer;font-size:10px;font-weight:600;">📊</button>' : '')
+                        + (x.status === 'draft' ? '<button data-click="activateCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 10px;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.25);cursor:pointer;font-size:11px;font-weight:600;">激活</button>'
+                            + '<button data-click="cancelCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 10px;border-radius:8px;background:transparent;color:#f87171;border:1px solid rgba(239,68,68,0.2);cursor:pointer;font-size:11px;">取消</button>' : '')
+                        + (x.status === 'active' ? '<button data-click="completeCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 10px;border-radius:8px;background:rgb(56,189,248,0.12);color:#38bdf8;border:none;cursor:pointer;font-size:11px;font-weight:600;">完结</button>' : '')
                         + '</div></div>'
                         + '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-size:12px;color:var(--rep-muted);">'
                         + '<span>' + growthStoreName(x.store_id) + '</span>'
@@ -62833,7 +62833,7 @@ ${body}
             row.style.cssText = 'display:grid;grid-template-columns:1fr 110px 36px;gap:6px;margin-bottom:6px;';
             row.innerHTML = '<input id="abcf-' + key + '-label" class="dr-store-select" placeholder="字段名（如 浏览量）" style="padding:8px;color:var(--rep-text);font-size:12px;" oninput="abRefreshCustomMetric()">'
                 + '<select id="abcf-' + key + '-type" class="dr-store-select" style="font-size:12px;"><option value="int">计数</option><option value="money">金额</option></select>'
-                + '<button type="button" class="rep-seg-btn" style="padding:0;" onclick="abRemoveCustomField(\'' + key + '\')">×</button>';
+                + '<button type="button" class="rep-seg-btn" style="padding:0;" data-click="abRemoveCustomField" data-arg="' + key + '">×</button>';
             host.appendChild(row);
             abRefreshCustomMetric();
         }
@@ -63339,8 +63339,8 @@ ${body}
                             + (x.detail ? '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:6px;line-height:1.5;">' + escapeHtml(x.detail) + '</div>' : '')
                             + variantHtml
                             + '<div style="display:flex;gap:8px;margin-top:10px;">'
-                            + '<button onclick="approvePllmExp(\'' + expCode + '\')" style="flex:1;padding:7px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">✅ 采纳·我要执行</button>'
-                            + '<button onclick="rejectPllmExp(\'' + expCode + '\')" style="flex-shrink:0;padding:7px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">不适合</button>'
+                            + '<button data-click="approvePllmExp" data-arg="' + expCode + '" style="flex:1;padding:7px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">✅ 采纳·我要执行</button>'
+                            + '<button data-click="rejectPllmExp" data-arg="' + expCode + '" style="flex-shrink:0;padding:7px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">不适合</button>'
                             + '</div>'
                             + '</div>';
                     }
@@ -63391,7 +63391,7 @@ ${body}
                     if (posterUrl) {
                         posterHtml = '<div style="margin-top:8px;display:flex;gap:10px;align-items:center;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:10px;"><img src="' + escapeHtml(posterUrl) + '" style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.08);"><div style="font-size:11px;color:rgba(226,232,240,0.58);">已绑定海报</div></div>';
                     } else if (x.status === 'proposed' && (x.action_type === 'send_voucher' || x.action_type === 'campaign_activate')) {
-                        posterHtml = '<div style="margin-top:8px;padding:8px 10px;background:rgba(245,158,11,0.06);border:1px dashed rgba(245,158,11,0.3);border-radius:10px;font-size:11px;color:#f59e0b;cursor:pointer;" onclick="openPosterPicker(\'' + key + '\')">🖼️ 未绑定海报 — 点此选择海报</div>';
+                        posterHtml = '<div style="margin-top:8px;padding:8px 10px;background:rgba(245,158,11,0.06);border:1px dashed rgba(245,158,11,0.3);border-radius:10px;font-size:11px;color:#f59e0b;cursor:pointer;" data-click="openPosterPicker" data-arg="' + key + '">🖼️ 未绑定海报 — 点此选择海报</div>';
                     } else {
                         posterHtml = '';
                     }
@@ -63400,27 +63400,27 @@ ${body}
                     var actionButtons;
                     if (isLlm) {
                         if (x.status === 'proposed') {
-                            actionButtons = '<button onclick="adoptGrowthSuggestion(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">✅ 采纳·我要执行</button>'
-                                + '<button onclick="ignoreGrowthAction(\'' + key + '\')" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">忽略</button>';
+                            actionButtons = '<button data-click="adoptGrowthSuggestion" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">✅ 采纳·我要执行</button>'
+                                + '<button data-click="ignoreGrowthAction" data-arg="' + key + '" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">忽略</button>';
                         } else if (x.status === 'executing' || x.status === 'adopted') {
-                            actionButtons = '<button onclick="openResultFeedbackForm(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(245,158,11,0.15);color:#f59e0b;cursor:pointer;font-size:11px;font-weight:700;">⏳ 回填活动结果</button>';
+                            actionButtons = '<button data-click="openResultFeedbackForm" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(245,158,11,0.15);color:#f59e0b;cursor:pointer;font-size:11px;font-weight:700;">⏳ 回填活动结果</button>';
                         } else if (x.status === 'measured') {
-                            actionButtons = '<button onclick="openResultFeedbackForm(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(255,255,255,0.06);color:rgba(226,232,240,0.7);cursor:pointer;font-size:11px;">✏️ 修正结果</button>';
+                            actionButtons = '<button data-click="openResultFeedbackForm" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(255,255,255,0.06);color:rgba(226,232,240,0.7);cursor:pointer;font-size:11px;">✏️ 修正结果</button>';
                         } else {
                             actionButtons = '';
                         }
                     } else {
                         actionButtons = !isFinal ?
-                            '<button onclick="executeGrowthAction(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">批准执行</button>'
-                            + '<button onclick="openEditExecuteForm(\'' + key + '\')" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(14,165,233,0.12);color:#38bdf8;cursor:pointer;font-size:11px;font-weight:600;">修改后执行</button>'
-                            + '<button onclick="ignoreGrowthAction(\'' + key + '\')" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">忽略</button>'
+                            '<button data-click="executeGrowthAction" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">批准执行</button>'
+                            + '<button data-click="openEditExecuteForm" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(14,165,233,0.12);color:#38bdf8;cursor:pointer;font-size:11px;font-weight:600;">修改后执行</button>'
+                            + '<button data-click="ignoreGrowthAction" data-arg="' + key + '" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">忽略</button>'
                             : '';
                     }
                     var statusBadge = x.status === 'executed' ? '✅ 已执行' : x.status === 'ignored' ? '⛔ 已忽略' : x.status === 'proposed' ? '⚡ 可执行' : x.status === 'executing' || x.status === 'adopted' ? '⏳ 执行中·待回填' : x.status === 'measured' ? '📊 已测评' : x.status || '-';
                     var statusBadgeStyle = x.status === 'executed' || x.status === 'measured' ? 'background:rgba(34,197,94,0.15);color:#22c55e' : x.status === 'ignored' ? 'background:rgba(239,68,68,0.12);color:#ef4444' : 'background:rgba(245,158,11,0.15);color:#f59e0b';
                     return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);' + (isPllm ? 'border-left:3px solid #a78bfa;padding-left:10px;' : '') + '">'
                         + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'
-                        + '<div style="flex:1;min-width:0;cursor:pointer;" onclick="openActionDetailModal(\'' + key + '\')">'
+                        + '<div style="flex:1;min-width:0;cursor:pointer;" data-click="openActionDetailModal" data-arg="' + key + '">'
                         + (isPllm ? '<span style="display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(167,139,250,0.18);color:#a78bfa;font-weight:700;margin-right:6px;vertical-align:middle;">🤖 PLLM智能检测</span>' : '')
                         + '<span style="font-weight:700;color:#fff;font-size:14px;">' + (isPllm ? '' : typeLabel + ' ') + (x.title || '-') + '</span>'
                         + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;' + statusBadgeStyle + ';font-weight:600;">' + statusBadge + '</span>'
@@ -63587,7 +63587,7 @@ ${body}
                 + '<label style="font-size:12px;color:rgba(226,232,240,0.7);display:block;margin-bottom:4px;">备注（可选）</label>'
                 + '<textarea id="rf-note" rows="2" placeholder="执行情况/复盘" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:14px;box-sizing:border-box;resize:vertical;">' + escapeHtml(payload.feedback_note || '') + '</textarea>'
                 + '<div style="display:flex;gap:8px;">'
-                + '<button onclick="submitResultFeedback(\'' + actionKey + '\')" style="flex:1;padding:10px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-weight:700;cursor:pointer;">提交并打分</button>'
+                + '<button data-click="submitResultFeedback" data-arg="' + actionKey + '" style="flex:1;padding:10px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-weight:700;cursor:pointer;">提交并打分</button>'
                 + '<button onclick="document.getElementById(\'result-feedback-overlay\').remove()" style="padding:10px 16px;border:none;border-radius:10px;background:rgba(255,255,255,0.08);color:#fff;cursor:pointer;">取消</button>'
                 + '</div></div>';
             ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
@@ -64367,7 +64367,7 @@ ${body}
                           +     '<select id="am-campaign-' + rk + '" class="amr-ctrl" onchange="amOnCampaignChange(\'' + rk + '\')">' + campaignOpts + '</select>'
                           +     '<div class="amr-hint" id="am-campaign-tip-' + rk + '">' + escapeHtml(campaignTip) + '</div>'
                           +   '</div>'
-                          +   '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetChannel(\'' + rk + '\')">保存渠道</button>'
+                          +   '<button type="button" class="amr-btn amr-btn--ghost" data-click="amSetChannel" data-arg="' + rk + '">保存渠道</button>'
                           + '</div>'))
                         // —— 发送频率 ——
                         + (isBalance ? '' : (isAbcCampaign ? (
@@ -64389,7 +64389,7 @@ ${body}
                           +     '<span class="amr-suffix-txt">天最多1次</span>'
                           +   '</div>'
                           +   '<div class="amr-hint">填 0 = 按到店周期自动判定。另有全局总闸：每号码每周最多 1 条短信。</div>'
-                          +   '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetFrequency(\'' + rk + '\')">保存频率</button>'
+                          +   '<button type="button" class="amr-btn amr-btn--ghost" data-click="amSetFrequency" data-arg="' + rk + '">保存频率</button>'
                           + '</div>')))
                         // —— 券与文案 ——
                         + ((isSubscribe || isBalance) ? '' : (
@@ -64409,7 +64409,7 @@ ${body}
                           +       '<textarea id="am-tpl-' + rk + '" class="amr-ctrl"' + (__tplReadonly ? ' readonly style="opacity:0.85;"' : '') + ' placeholder="短信文案，可用占位符：{customer_name} {coupon_value_text}（自动填券面额）{valid_days}（自动填有效天数）{days_since_last_visit} {favorite_dishes_text}">' + escapeHtml(__tplShown) + '</textarea>'
                           +       '<div class="amr-hint">' + (__tplReadonly ? '文案为阿里云已报备模板真实内容（客人实收即此文）。${value}=券面额、${date}=有效期(按上方天数)、${code}=券码，发送时自动填充。' : '金额写文案用 {coupon_value_text}（自动=¥券面额）；到期天数用 {valid_days}，避免写死天数对不上券有效期。') + '</div>'
                           +     '</div>'
-                          +     '<button type="button" class="amr-btn amr-btn--ghost" onclick="amSetCoupon(\'' + rk + '\')">保存券面额/有效期/文案</button>'
+                          +     '<button type="button" class="amr-btn amr-btn--ghost" data-click="amSetCoupon" data-arg="' + rk + '">保存券面额/有效期/文案</button>'
                           +   '</div>'
                           + '</div>'))
                         // —— 效果统计 ——
@@ -64434,11 +64434,11 @@ ${body}
                         + '<div class="amr-foot">'
                         +   '<span class="amr-foot-by">' + escapeHtml(approver) + '</span>'
                         +   '<div class="amr-foot-btns">'
-                        +     (isSubscribe ? '<button type="button" class="amr-btn amr-btn--ghost" onclick="amEditSubscribeRule(\'' + rk + '\')">编辑内容</button>' : '')
+                        +     (isSubscribe ? '<button type="button" class="amr-btn amr-btn--ghost" data-click="amEditSubscribeRule" data-arg="' + rk + '">编辑内容</button>' : '')
                         +     '<button type="button" class="amr-btn amr-btn--ghost" onclick="amToggleEnabled(\'' + rk + '\',' + (rule.enabled ? 'true' : 'false') + ')">' + (rule.enabled ? '停用' : '启用') + '</button>'
                         +     (approved
-                              ? '<button type="button" class="amr-btn amr-btn--ghost" onclick="amUnapprove(\'' + rk + '\')">撤销审核</button>'
-                              : '<button type="button" class="amr-btn" onclick="amApprove(\'' + rk + '\')">审核通过 → 允许自动执行</button>')
+                              ? '<button type="button" class="amr-btn amr-btn--ghost" data-click="amUnapprove" data-arg="' + rk + '">撤销审核</button>'
+                              : '<button type="button" class="amr-btn" data-click="amApprove" data-arg="' + rk + '">审核通过 → 允许自动执行</button>')
                         +   '</div>'
                         + '</div>'
                         + '</div>';
@@ -65584,7 +65584,7 @@ ${body}
                     + '<div style="font-size:12px;color:rgba(226,232,240,0.66);margin-top:6px;line-height:1.55;">' + (a.message || '').slice(0, 120) + '</div>'
                     + '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'
                     + '<button onclick="alertActionRecall(\'' + storeId + '\',\'' + (a.alert_key || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;border-radius:6px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:11px;"> 发送召回券</button>'
-                    + '<button onclick="alertActionDismiss(\'' + (a.alert_key || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;font-size:11px;">✅ 标记已处理</button>'
+                    + '<button data-click="alertActionDismiss" data-arg="' + (a.alert_key || '').replace(/'/g, "\\'") + '" style="padding:4px 10px;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;font-size:11px;">✅ 标记已处理</button>'
                     + '</div></div>';
             }).join('');
         }
@@ -65661,7 +65661,7 @@ ${body}
             var indicatorHtml = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">'
                 + '<span style="font-size:11px;color:rgba(226,232,240,0.5);">指标：</span>'
                 + trendIndicators.map(function(ind) {
-                    return '<button onclick="switchTrendIndicator(\'' + ind.key + '\')" style="padding:3px 8px;border-radius:4px;font-size:11px;border:1px solid ' + (ind.key === activeKey ? ind.color : 'rgba(255,255,255,0.1)') + ';background:' + (ind.key === activeKey ? ind.color + '33' : 'transparent') + ';color:' + (ind.key === activeKey ? ind.color : 'rgba(226,232,240,0.5)') + ';cursor:pointer;">' + ind.label + '</button>';
+                    return '<button data-click="switchTrendIndicator" data-arg="' + ind.key + '" style="padding:3px 8px;border-radius:4px;font-size:11px;border:1px solid ' + (ind.key === activeKey ? ind.color : 'rgba(255,255,255,0.1)') + ';background:' + (ind.key === activeKey ? ind.color + '33' : 'transparent') + ';color:' + (ind.key === activeKey ? ind.color : 'rgba(226,232,240,0.5)') + ';cursor:pointer;">' + ind.label + '</button>';
                 }).join('')
                 + '<span style="margin-left:auto;font-size:11px;color:' + changeColor + ';">' + changeDir + ' ' + changePct + '%（较前一日）</span>'
                 + '</div>';
@@ -65753,7 +65753,7 @@ ${body}
                 + '<div style="flex:1;text-align:center;background:rgba(239,68,68,0.08);border-radius:10px;padding:10px 4px;"><div style="font-size:24px;font-weight:800;color:#ef4444;">' + churnedCount + '</div><div style="font-size:11px;color:rgba(226,232,240,0.6);margin-top:2px;">流失客户</div></div>'
                 + '</div>';
             if (total > 0) {
-                html += '<button onclick="triggerRepurchase(\'' + (storeId || '') + '\')" style="display:block;width:100%;box-sizing:border-box;min-height:44px;padding:11px 14px;border-radius:10px;background:rgba(245,158,11,0.2);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:14px;font-weight:700;">🚀 立即触发复购行动</button>'
+                html += '<button data-click="triggerRepurchase" data-arg="' + (storeId || '') + '" style="display:block;width:100%;box-sizing:border-box;min-height:44px;padding:11px 14px;border-radius:10px;background:rgba(245,158,11,0.2);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:14px;font-weight:700;">🚀 立即触发复购行动</button>'
                     + '<div style="font-size:10px;color:rgba(226,232,240,0.35);margin-top:6px;line-height:1.4;">⚡ 点击后将自动为这些客户创建「发券/内容触达」待办行动，请到「AI建议」Tab中逐条确认后执行，不会自动发送</div>';
             } else {
                 html += '<div style="font-size:12px;color:rgba(226,232,240,0.4);">当前无复购临界客户</div>';
@@ -65921,7 +65921,7 @@ ${body}
         var savedTpl = _savedPosterTemplates.find(function(st) { return st.template_key === t.key; });
         var imgUrl = savedTpl && savedTpl.image_url ? savedTpl.image_url : (t.image_url || '');
         if (imgUrl) thumbHtml = '<img src="' + escapeHtml(imgUrl) + '" style="width:100%;height:60px;object-fit:cover;border-radius:6px;margin-bottom:4px;">';
-        return '<button onclick="selectPosterTemplate(\''+t.key+'\')" style="padding:8px;border-radius:8px;text-align:left;width:100%;'
+        return '<button data-click="selectPosterTemplate" data-arg="'+t.key+'" style="padding:8px;border-radius:8px;text-align:left;width:100%;'
           + (sel ? 'background:'+(t.colors?.bg1||'#334155')+';color:#fff;border:2px solid '+(t.colors?.accent||'#a78bfa')+';' : 'background:rgba(255,255,255,0.06);color:rgba(226,232,240,0.7);border:1px solid rgba(255,255,255,0.12);')
           + 'cursor:pointer;font-size:12px;font-weight:'+(sel?'700':'400')+';">'
           + thumbHtml
@@ -65960,7 +65960,7 @@ ${body}
           + thumb
           + '<div style="flex:1;min-width:0;color:#fff;font-weight:600;">' + escapeHtml(nameLabel) + '</div>'
           + '<div style="color:rgba(226,232,240,0.4);font-size:10px;margin-right:6px;">' + escapeHtml(t.category || '') + '</div>'
-          + '<button onclick="editPosterTemplate(\'' + t.template_key + '\')" style="padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.15);color:#a5b4fc;border:none;cursor:pointer;font-size:10px;">编辑</button>'
+          + '<button data-click="editPosterTemplate" data-arg="' + t.template_key + '" style="padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.15);color:#a5b4fc;border:none;cursor:pointer;font-size:10px;">编辑</button>'
           + (isBuiltin ? '' : '<button data-click="deletePosterTemplate" data-arg="' + t.id + '" data-arg-type="number" style="padding:2px 6px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:none;cursor:pointer;font-size:10px;">删除</button>')
           + '</div>';
       }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:8px 0;font-size:11px;">暂无模板</div>';
@@ -66384,7 +66384,7 @@ ${body}
             var host = document.getElementById('poster-history-list');
             if (!host) return;
             host.innerHTML = posters.length ? '<div style="grid-column:1/-1;font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:4px;">共 ' + posters.length + ' 张</div>' + posters.slice(0, 30).map(function(p) {
-              return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;cursor:pointer;position:relative;" onclick="window.open(\'' + (p.output_url || '#') + '\')">'
+              return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;cursor:pointer;position:relative;" data-click="open" data-arg="' + (p.output_url || '#') + '">'
                 + (p.id ? '<button onclick="event.stopPropagation();deleteGeneratedPoster(' + p.id + ')" style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:6px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:2;">✕</button>' : '')
                 + '<div style="aspect-ratio:3/4;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;overflow:hidden;">'
                 + (p.output_url ? '<img src="' + p.output_url + '" loading="lazy" style="width:100%;height:100%;object-fit:cover;">' : '<span style="color:rgba(226,232,240,0.3);font-size:11px;">无预览</span>')
@@ -66941,7 +66941,7 @@ ${body}
       const comps = _rsvRecipe?.components || [];
       const tabs = document.getElementById('rsv-comp-tabs');
       tabs.innerHTML = comps.map((c, i) => `
-        <button id="rsv-tab-${i}" onclick="_renderRsvSteps(${i})"
+        <button id="rsv-tab-${i}" data-click="_renderRsvSteps" data-arg="${i}" data-arg-type="number"
           style="padding:6px 14px;border-radius:20px;border:1px solid rgba(99,102,241,0.3);background:${i===0?'rgba(99,102,241,0.18)':'rgba(255,255,255,0.04)'};color:${i===0?'#a5b4fc':'rgba(255,255,255,0.5)'};font-size:12px;cursor:pointer;white-space:nowrap;flex-shrink:0;">
           ${c.name}
         </button>`).join('');
@@ -67945,7 +67945,7 @@ ${body}
                       ${[i.category, i.brand, i.spec, i.default_unit ? '单位：'+i.default_unit : ''].filter(Boolean).join(' · ')}
                     </div>
                   </div>
-                  <button type="button" onclick="toggleIngredientEdit(${i.id})"
+                  <button type="button" data-click="toggleIngredientEdit" data-arg="${i.id}" data-arg-type="number"
                     style="flex-shrink:0;font-size:11px;padding:4px 9px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);border-radius:6px;color:#a5b4fc;cursor:pointer;">编辑</button>
                   <button type="button" onclick="deleteIngredientLibItem(${i.id},'${i.name.replace(/'/g,"\\'")}',this)"
                     style="flex-shrink:0;font-size:11px;padding:4px 9px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:6px;color:#f87171;cursor:pointer;">删</button>
@@ -67978,7 +67978,7 @@ ${body}
                     </div>
                   </div>
                   <div style="display:flex;gap:6px;justify-content:flex-end;">
-                    <button type="button" onclick="toggleIngredientEdit(${i.id})"
+                    <button type="button" data-click="toggleIngredientEdit" data-arg="${i.id}" data-arg-type="number"
                       style="font-size:12px;padding:5px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:7px;color:var(--rep-muted);cursor:pointer;">取消</button>
                     <button type="button" onclick="saveIngredientLibEdit(${i.id},this)"
                       style="font-size:12px;padding:5px 14px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);border-radius:7px;color:#a5b4fc;cursor:pointer;">保存</button>
@@ -68155,7 +68155,7 @@ ${body}
                 style="font-size:12px;padding:6px 12px;background:rgba(148,163,184,0.1);border:1px solid rgba(148,163,184,0.25);border-radius:8px;color:#94a3b8;cursor:pointer;">⬇ PDF</button>
               <button type="button" onclick="openRecipeStepViewer(${r.id},'${r.dish_name.replace(/'/g,"\\'")}')"
                 style="font-size:12px;padding:6px 12px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);border-radius:8px;color:#fcd34d;cursor:pointer;">👁 工艺</button>
-              <button type="button" onclick="openRecipeEditor(${r.id})"
+              <button type="button" data-click="openRecipeEditor" data-arg="${r.id}" data-arg-type="number"
                 style="font-size:12px;padding:6px 12px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);border-radius:8px;color:#a5b4fc;cursor:pointer;">编辑</button>
               <button type="button" onclick="confirmDeleteRecipe(${r.id},'${r.dish_name.replace(/'/g,"\\'")}',this)"
                 style="font-size:12px;padding:6px 10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;color:#f87171;cursor:pointer;">删</button>
@@ -68763,7 +68763,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
             var html = '';
             __strategyExperiments.forEach(function(exp) {
                 var variants = Array.isArray(exp.variants) ? exp.variants : [];
-                html += '<div class="sp-card" onclick="showStrategyDetail(\'' + exp.experiment_code + '\')" style="cursor:pointer;">';
+                html += '<div class="sp-card" data-click="showStrategyDetail" data-arg="' + exp.experiment_code + '" style="cursor:pointer;">';
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
                 html += '<h3>' + (exp.title || exp.experiment_code) + '</h3>';
                 html += '<span class="sp-badge ' + statusBadgeClass(exp.status) + '">' + statusLabelZh(exp.status) + '</span>';
@@ -68864,7 +68864,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
             var isAdminOrHq = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER);
             var html = '<div class="sp-card">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
-            html += '<div><button class="sp-btn sp-btn--secondary" onclick="switchStrategyTab(\'experiments\')">&larr; 返回列表</button></div>';
+            html += '<div><button class="sp-btn sp-btn--secondary" data-click="switchStrategyTab" data-arg="experiments">&larr; 返回列表</button></div>';
             html += '<span class="sp-badge ' + statusBadgeClass(exp.status) + '">' + statusLabelZh(exp.status) + '</span>';
             html += '</div>';
             html += '<h3>' + (exp.title || exp.experiment_code) + '</h3>';
@@ -68908,13 +68908,13 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
 
             if (isAdminOrHq && exp.status === 'pending_approval') {
                 html += '<div class="sp-actions">';
-                html += '<button class="sp-btn sp-btn--primary" onclick="approveStrategyExperiment(\'' + exp.experiment_code + '\')">审批通过并启动</button>';
-                html += '<button class="sp-btn sp-btn--secondary" onclick="rejectStrategyExperiment(\'' + exp.experiment_code + '\')">拒绝</button>';
+                html += '<button class="sp-btn sp-btn--primary" data-click="approveStrategyExperiment" data-arg="' + exp.experiment_code + '">审批通过并启动</button>';
+                html += '<button class="sp-btn sp-btn--secondary" data-click="rejectStrategyExperiment" data-arg="' + exp.experiment_code + '">拒绝</button>';
                 html += '</div>';
             }
             if (isAdminOrHq && exp.status === 'reviewing') {
                 html += '<div class="sp-actions">';
-                html += '<button class="sp-btn sp-btn--primary" onclick="evaluateStrategyExperiment(\'' + exp.experiment_code + '\')">评估实验</button>';
+                html += '<button class="sp-btn sp-btn--primary" data-click="evaluateStrategyExperiment" data-arg="' + exp.experiment_code + '">评估实验</button>';
                 html += '</div>';
             }
             el.innerHTML = html;
@@ -69042,7 +69042,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 '<div class="sp-form-group"><label>执行门店</label><input type="text" id="sp-new-vb-store" placeholder="门店名称"></div>' +
                 '<div class="sp-form-group"><label>执行指南（选填）</label><textarea id="sp-new-vb-guide" placeholder="具体执行步骤"></textarea></div></div>' +
                 '<div class="sp-actions"><button class="sp-btn sp-btn--primary" data-click="createStrategyExperiment">创建实验</button>' +
-                '<button class="sp-btn sp-btn--secondary" onclick="switchStrategyTab(\'experiments\')">取消</button></div>' +
+                '<button class="sp-btn sp-btn--secondary" data-click="switchStrategyTab" data-arg="experiments">取消</button></div>' +
                 '</div>';
         }
 

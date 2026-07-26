@@ -28,10 +28,11 @@ const L1_MUTATE = Object.keys(l1Floor.files).sort();
  */
 const L1_TEST_FILES = [
   'test/account-gate-helpers.test.mjs',
+  'test/account-gate-log.test.mjs',
   'test/agents-service-auth-helpers.test.mjs',
   'domains/approvals/__tests__/normalize-helpers.test.mjs',
-  'test/approvals-handlers-direct.test.mjs',
-  'test/approvals-handlers-offboarding-promotion.test.mjs',
+  'domains/approvals/__tests__/approvals-handlers-direct.test.mjs',
+  'domains/approvals/__tests__/approvals-handlers-offboarding-promotion.test.mjs',
   'test/onboarding-payload.test.mjs',
   'test/store-access-context-helpers.test.mjs',
   'test/tenant-platform-auth-guards.test.mjs',
@@ -41,7 +42,7 @@ const L1_TEST_FILES = [
   'domains/employees/__tests__/user-lookup.test.mjs',
 ];
 
-const DEFAULT_TEST_CMD = `node --test --test-force-exit ${L1_TEST_FILES.join(' ')}`;
+const DEFAULT_TEST_CMD = `node --experimental-test-module-mocks --test --test-force-exit ${L1_TEST_FILES.join(' ')}`;
 
 const mutateOverride = process.env.MUTATION_MUTATE?.trim();
 const mutate = mutateOverride
@@ -67,9 +68,9 @@ export default {
   thresholds: {
     high: 80,
     low: 60,
-    // break left null: only time-number.js (91.6%) and normalize-helpers.js (94.4%)
-    // spot-checked 2026-07-26; set break (e.g. 50) after broader L1 file sampling.
-    break: null,
+    // break 50: time-number.js (91.6%), normalize-helpers.js (94.4%),
+    // account-gate.js (91.4%) spot-checked 2026-07-26.
+    break: 50,
   },
   concurrency: process.env.MUTATION_CONCURRENCY
     ? Number(process.env.MUTATION_CONCURRENCY)

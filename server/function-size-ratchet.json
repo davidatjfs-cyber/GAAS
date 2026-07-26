@@ -2,7 +2,7 @@
   "updated": "2026-07-26",
   "note": "P2.1 单函数体积闸门：>maxLines 必须在 allowlist；只降不升。外提时若函数>200行须同批切分，禁止整体包进 createXxx 闭包。",
   "maxLines": 200,
-  "maxAllowlistSize": 73,
+  "maxAllowlistSize": 70,
   "allowlist": [
     "server/agent-config-manager.js::registerAgentConfigRoutes",
     "server/agents.js::startAgentScheduler",
@@ -67,9 +67,6 @@
     "server/growth-phases.js::registerPhaseRoutes",
     "server/growth-solutions.js::registerGrowthSolutionRoutes",
     "server/hrms-payroll-routes.js::registerHrmsPayrollClosedLoopRoutes",
-    "server/master-agent.js::opsAgentListener",
-    "server/master-agent.js::registerMasterRoutes",
-    "server/master-agent.js::startMasterAgent",
     "server/new-scoring-api.js::registerNewScoringRoutes",
     "server/ontology/diagnosis-tree-service.js::runDailyDiagnosis",
     "server/recipe-management.js::registerRecipeRoutes",

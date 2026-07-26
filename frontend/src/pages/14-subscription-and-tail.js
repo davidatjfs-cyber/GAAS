@@ -889,7 +889,7 @@
                     + '<div style="font-size:12px;color:rgba(226,232,240,0.66);margin-top:6px;line-height:1.55;">' + (a.message || '').slice(0, 120) + '</div>'
                     + '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'
                     + '<button onclick="alertActionRecall(\'' + storeId + '\',\'' + (a.alert_key || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;border-radius:6px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:11px;"> 发送召回券</button>'
-                    + '<button onclick="alertActionDismiss(\'' + (a.alert_key || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;font-size:11px;">✅ 标记已处理</button>'
+                    + '<button data-click="alertActionDismiss" data-arg="' + (a.alert_key || '').replace(/'/g, "\\'") + '" style="padding:4px 10px;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;font-size:11px;">✅ 标记已处理</button>'
                     + '</div></div>';
             }).join('');
         }
@@ -966,7 +966,7 @@
             var indicatorHtml = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">'
                 + '<span style="font-size:11px;color:rgba(226,232,240,0.5);">指标：</span>'
                 + trendIndicators.map(function(ind) {
-                    return '<button onclick="switchTrendIndicator(\'' + ind.key + '\')" style="padding:3px 8px;border-radius:4px;font-size:11px;border:1px solid ' + (ind.key === activeKey ? ind.color : 'rgba(255,255,255,0.1)') + ';background:' + (ind.key === activeKey ? ind.color + '33' : 'transparent') + ';color:' + (ind.key === activeKey ? ind.color : 'rgba(226,232,240,0.5)') + ';cursor:pointer;">' + ind.label + '</button>';
+                    return '<button data-click="switchTrendIndicator" data-arg="' + ind.key + '" style="padding:3px 8px;border-radius:4px;font-size:11px;border:1px solid ' + (ind.key === activeKey ? ind.color : 'rgba(255,255,255,0.1)') + ';background:' + (ind.key === activeKey ? ind.color + '33' : 'transparent') + ';color:' + (ind.key === activeKey ? ind.color : 'rgba(226,232,240,0.5)') + ';cursor:pointer;">' + ind.label + '</button>';
                 }).join('')
                 + '<span style="margin-left:auto;font-size:11px;color:' + changeColor + ';">' + changeDir + ' ' + changePct + '%（较前一日）</span>'
                 + '</div>';
@@ -1058,7 +1058,7 @@
                 + '<div style="flex:1;text-align:center;background:rgba(239,68,68,0.08);border-radius:10px;padding:10px 4px;"><div style="font-size:24px;font-weight:800;color:#ef4444;">' + churnedCount + '</div><div style="font-size:11px;color:rgba(226,232,240,0.6);margin-top:2px;">流失客户</div></div>'
                 + '</div>';
             if (total > 0) {
-                html += '<button onclick="triggerRepurchase(\'' + (storeId || '') + '\')" style="display:block;width:100%;box-sizing:border-box;min-height:44px;padding:11px 14px;border-radius:10px;background:rgba(245,158,11,0.2);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:14px;font-weight:700;">🚀 立即触发复购行动</button>'
+                html += '<button data-click="triggerRepurchase" data-arg="' + (storeId || '') + '" style="display:block;width:100%;box-sizing:border-box;min-height:44px;padding:11px 14px;border-radius:10px;background:rgba(245,158,11,0.2);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:14px;font-weight:700;">🚀 立即触发复购行动</button>'
                     + '<div style="font-size:10px;color:rgba(226,232,240,0.35);margin-top:6px;line-height:1.4;">⚡ 点击后将自动为这些客户创建「发券/内容触达」待办行动，请到「AI建议」Tab中逐条确认后执行，不会自动发送</div>';
             } else {
                 html += '<div style="font-size:12px;color:rgba(226,232,240,0.4);">当前无复购临界客户</div>';
@@ -1226,7 +1226,7 @@
         var savedTpl = _savedPosterTemplates.find(function(st) { return st.template_key === t.key; });
         var imgUrl = savedTpl && savedTpl.image_url ? savedTpl.image_url : (t.image_url || '');
         if (imgUrl) thumbHtml = '<img src="' + escapeHtml(imgUrl) + '" style="width:100%;height:60px;object-fit:cover;border-radius:6px;margin-bottom:4px;">';
-        return '<button onclick="selectPosterTemplate(\''+t.key+'\')" style="padding:8px;border-radius:8px;text-align:left;width:100%;'
+        return '<button data-click="selectPosterTemplate" data-arg="'+t.key+'" style="padding:8px;border-radius:8px;text-align:left;width:100%;'
           + (sel ? 'background:'+(t.colors?.bg1||'#334155')+';color:#fff;border:2px solid '+(t.colors?.accent||'#a78bfa')+';' : 'background:rgba(255,255,255,0.06);color:rgba(226,232,240,0.7);border:1px solid rgba(255,255,255,0.12);')
           + 'cursor:pointer;font-size:12px;font-weight:'+(sel?'700':'400')+';">'
           + thumbHtml
@@ -1265,7 +1265,7 @@
           + thumb
           + '<div style="flex:1;min-width:0;color:#fff;font-weight:600;">' + escapeHtml(nameLabel) + '</div>'
           + '<div style="color:rgba(226,232,240,0.4);font-size:10px;margin-right:6px;">' + escapeHtml(t.category || '') + '</div>'
-          + '<button onclick="editPosterTemplate(\'' + t.template_key + '\')" style="padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.15);color:#a5b4fc;border:none;cursor:pointer;font-size:10px;">编辑</button>'
+          + '<button data-click="editPosterTemplate" data-arg="' + t.template_key + '" style="padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.15);color:#a5b4fc;border:none;cursor:pointer;font-size:10px;">编辑</button>'
           + (isBuiltin ? '' : '<button data-click="deletePosterTemplate" data-arg="' + t.id + '" data-arg-type="number" style="padding:2px 6px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:none;cursor:pointer;font-size:10px;">删除</button>')
           + '</div>';
       }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:8px 0;font-size:11px;">暂无模板</div>';
@@ -1689,7 +1689,7 @@
             var host = document.getElementById('poster-history-list');
             if (!host) return;
             host.innerHTML = posters.length ? '<div style="grid-column:1/-1;font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:4px;">共 ' + posters.length + ' 张</div>' + posters.slice(0, 30).map(function(p) {
-              return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;cursor:pointer;position:relative;" onclick="window.open(\'' + (p.output_url || '#') + '\')">'
+              return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;cursor:pointer;position:relative;" data-click="open" data-arg="' + (p.output_url || '#') + '">'
                 + (p.id ? '<button onclick="event.stopPropagation();deleteGeneratedPoster(' + p.id + ')" style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:6px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:2;">✕</button>' : '')
                 + '<div style="aspect-ratio:3/4;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;overflow:hidden;">'
                 + (p.output_url ? '<img src="' + p.output_url + '" loading="lazy" style="width:100%;height:100%;object-fit:cover;">' : '<span style="color:rgba(226,232,240,0.3);font-size:11px;">无预览</span>')
@@ -2246,7 +2246,7 @@
       const comps = _rsvRecipe?.components || [];
       const tabs = document.getElementById('rsv-comp-tabs');
       tabs.innerHTML = comps.map((c, i) => `
-        <button id="rsv-tab-${i}" onclick="_renderRsvSteps(${i})"
+        <button id="rsv-tab-${i}" data-click="_renderRsvSteps" data-arg="${i}" data-arg-type="number"
           style="padding:6px 14px;border-radius:20px;border:1px solid rgba(99,102,241,0.3);background:${i===0?'rgba(99,102,241,0.18)':'rgba(255,255,255,0.04)'};color:${i===0?'#a5b4fc':'rgba(255,255,255,0.5)'};font-size:12px;cursor:pointer;white-space:nowrap;flex-shrink:0;">
           ${c.name}
         </button>`).join('');
@@ -3250,7 +3250,7 @@
                       ${[i.category, i.brand, i.spec, i.default_unit ? '单位：'+i.default_unit : ''].filter(Boolean).join(' · ')}
                     </div>
                   </div>
-                  <button type="button" onclick="toggleIngredientEdit(${i.id})"
+                  <button type="button" data-click="toggleIngredientEdit" data-arg="${i.id}" data-arg-type="number"
                     style="flex-shrink:0;font-size:11px;padding:4px 9px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);border-radius:6px;color:#a5b4fc;cursor:pointer;">编辑</button>
                   <button type="button" onclick="deleteIngredientLibItem(${i.id},'${i.name.replace(/'/g,"\\'")}',this)"
                     style="flex-shrink:0;font-size:11px;padding:4px 9px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:6px;color:#f87171;cursor:pointer;">删</button>
@@ -3283,7 +3283,7 @@
                     </div>
                   </div>
                   <div style="display:flex;gap:6px;justify-content:flex-end;">
-                    <button type="button" onclick="toggleIngredientEdit(${i.id})"
+                    <button type="button" data-click="toggleIngredientEdit" data-arg="${i.id}" data-arg-type="number"
                       style="font-size:12px;padding:5px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:7px;color:var(--rep-muted);cursor:pointer;">取消</button>
                     <button type="button" onclick="saveIngredientLibEdit(${i.id},this)"
                       style="font-size:12px;padding:5px 14px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);border-radius:7px;color:#a5b4fc;cursor:pointer;">保存</button>
@@ -3460,7 +3460,7 @@
                 style="font-size:12px;padding:6px 12px;background:rgba(148,163,184,0.1);border:1px solid rgba(148,163,184,0.25);border-radius:8px;color:#94a3b8;cursor:pointer;">⬇ PDF</button>
               <button type="button" onclick="openRecipeStepViewer(${r.id},'${r.dish_name.replace(/'/g,"\\'")}')"
                 style="font-size:12px;padding:6px 12px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);border-radius:8px;color:#fcd34d;cursor:pointer;">👁 工艺</button>
-              <button type="button" onclick="openRecipeEditor(${r.id})"
+              <button type="button" data-click="openRecipeEditor" data-arg="${r.id}" data-arg-type="number"
                 style="font-size:12px;padding:6px 12px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);border-radius:8px;color:#a5b4fc;cursor:pointer;">编辑</button>
               <button type="button" onclick="confirmDeleteRecipe(${r.id},'${r.dish_name.replace(/'/g,"\\'")}',this)"
                 style="font-size:12px;padding:6px 10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;color:#f87171;cursor:pointer;">删</button>
@@ -4068,7 +4068,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
             var html = '';
             __strategyExperiments.forEach(function(exp) {
                 var variants = Array.isArray(exp.variants) ? exp.variants : [];
-                html += '<div class="sp-card" onclick="showStrategyDetail(\'' + exp.experiment_code + '\')" style="cursor:pointer;">';
+                html += '<div class="sp-card" data-click="showStrategyDetail" data-arg="' + exp.experiment_code + '" style="cursor:pointer;">';
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
                 html += '<h3>' + (exp.title || exp.experiment_code) + '</h3>';
                 html += '<span class="sp-badge ' + statusBadgeClass(exp.status) + '">' + statusLabelZh(exp.status) + '</span>';
@@ -4169,7 +4169,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
             var isAdminOrHq = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER);
             var html = '<div class="sp-card">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
-            html += '<div><button class="sp-btn sp-btn--secondary" onclick="switchStrategyTab(\'experiments\')">&larr; 返回列表</button></div>';
+            html += '<div><button class="sp-btn sp-btn--secondary" data-click="switchStrategyTab" data-arg="experiments">&larr; 返回列表</button></div>';
             html += '<span class="sp-badge ' + statusBadgeClass(exp.status) + '">' + statusLabelZh(exp.status) + '</span>';
             html += '</div>';
             html += '<h3>' + (exp.title || exp.experiment_code) + '</h3>';
@@ -4213,13 +4213,13 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
 
             if (isAdminOrHq && exp.status === 'pending_approval') {
                 html += '<div class="sp-actions">';
-                html += '<button class="sp-btn sp-btn--primary" onclick="approveStrategyExperiment(\'' + exp.experiment_code + '\')">审批通过并启动</button>';
-                html += '<button class="sp-btn sp-btn--secondary" onclick="rejectStrategyExperiment(\'' + exp.experiment_code + '\')">拒绝</button>';
+                html += '<button class="sp-btn sp-btn--primary" data-click="approveStrategyExperiment" data-arg="' + exp.experiment_code + '">审批通过并启动</button>';
+                html += '<button class="sp-btn sp-btn--secondary" data-click="rejectStrategyExperiment" data-arg="' + exp.experiment_code + '">拒绝</button>';
                 html += '</div>';
             }
             if (isAdminOrHq && exp.status === 'reviewing') {
                 html += '<div class="sp-actions">';
-                html += '<button class="sp-btn sp-btn--primary" onclick="evaluateStrategyExperiment(\'' + exp.experiment_code + '\')">评估实验</button>';
+                html += '<button class="sp-btn sp-btn--primary" data-click="evaluateStrategyExperiment" data-arg="' + exp.experiment_code + '">评估实验</button>';
                 html += '</div>';
             }
             el.innerHTML = html;
@@ -4347,7 +4347,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 '<div class="sp-form-group"><label>执行门店</label><input type="text" id="sp-new-vb-store" placeholder="门店名称"></div>' +
                 '<div class="sp-form-group"><label>执行指南（选填）</label><textarea id="sp-new-vb-guide" placeholder="具体执行步骤"></textarea></div></div>' +
                 '<div class="sp-actions"><button class="sp-btn sp-btn--primary" data-click="createStrategyExperiment">创建实验</button>' +
-                '<button class="sp-btn sp-btn--secondary" onclick="switchStrategyTab(\'experiments\')">取消</button></div>' +
+                '<button class="sp-btn sp-btn--secondary" data-click="switchStrategyTab" data-arg="experiments">取消</button></div>' +
                 '</div>';
         }
 

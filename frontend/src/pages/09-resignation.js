@@ -1359,7 +1359,7 @@
                         + '<div class="pf-approval-actions">'
                         +   '<button class="ga-btn ga-btn--primary ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" onclick="profileQuickApprove(\'' + id + '\', true)">通过</button>'
                         +   '<button class="ga-btn ga-btn--danger ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" onclick="profileQuickApprove(\'' + id + '\', false)">拒绝</button>'
-                        +   '<button class="ga-btn ga-btn--ghost ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" onclick="openApprovalDetailModal(\'' + id + '\')">详情</button>'
+                        +   '<button class="ga-btn ga-btn--ghost ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" data-click="openApprovalDetailModal" data-arg="' + id + '">详情</button>'
                         + '</div>'
                         + '</div>';
                 }).join('') + (pending.length > 5 ? '<div style="text-align:center;margin-top:8px;font-size:12px;color:var(--dim);">还有 ' + (pending.length - 5) + ' 条待处理…</div>' : '');
@@ -2189,7 +2189,7 @@
                 const chkCls = checked ? 'dr-staff-pick-row__chk is-on' : 'dr-staff-pick-row__chk';
                 const chkInner = checked ? '✓' : '';
                 return `
-                    <div class="dr-staff-pick-row dr-staff-row" onclick="toggleDailyReportStaffPick(${idx})">
+                    <div class="dr-staff-pick-row dr-staff-row" data-click="toggleDailyReportStaffPick" data-arg="${idx}" data-arg-type="number">
                         <div class="dr-staff-pick-row__main">
                             <div class="${chkCls}">${chkInner}</div>
                             <div style="min-width:0; flex:1;">
@@ -2198,7 +2198,7 @@
                             </div>
                         </div>
                         <div class="dr-staff-actions" onclick="event.stopPropagation();">
-                            <button type="button" class="dr-staff-pick-row__day" onclick="toggleDailyReportStaffPickDays(${idx})">${escapeHtml(dayText)}</button>
+                            <button type="button" class="dr-staff-pick-row__day" data-click="toggleDailyReportStaffPickDays" data-arg="${idx}" data-arg-type="number">${escapeHtml(dayText)}</button>
                         </div>
                     </div>
                 `;
@@ -2537,7 +2537,7 @@
                 return `
                     <div style="position: relative; width: 96px; height: 96px; border-radius: 12px; overflow:hidden; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.03);">
                         <img alt="日结单" src="${src}" loading="lazy" decoding="async" referrerpolicy="no-referrer" style="width: 100%; height: 100%; object-fit: cover;" />
-                        <button class="btn btn-secondary" type="button" onclick="removeDailyReportPhoto(${idx})" style="position:absolute; top: 6px; right: 6px; padding: 4px 8px; font-size: 12px; border-radius: 999px;">×</button>
+                        <button class="btn btn-secondary" type="button" data-click="removeDailyReportPhoto" data-arg="${idx}" data-arg-type="number" style="position:absolute; top: 6px; right: 6px; padding: 4px 8px; font-size: 12px; border-radius: 999px;">×</button>
                     </div>
                 `;
             }).join('');

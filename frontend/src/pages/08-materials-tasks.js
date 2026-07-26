@@ -64,7 +64,7 @@
                     </div>
                     <input type="number" class="mt-field-row__input" inputmode="decimal" placeholder="目标值" value="${escapeHtml(String(val))}"
                         onchange="mtUpdateFieldValue(${idx}, this.value)" oninput="mtUpdateFieldValue(${idx}, this.value)" />
-                    <button type="button" class="mt-field-row__remove" onclick="mtRemoveField(${idx})" title="移除">✕</button>
+                    <button type="button" class="mt-field-row__remove" data-click="mtRemoveField" data-arg="${idx}" data-arg-type="number" title="移除">✕</button>
                 </div>`;
             }).join('');
             mtPopulateFieldSelect();
@@ -1496,7 +1496,7 @@
             const pager = (() => {
                 const makeBtn = (label, page, disabled) => {
                     const dis = disabled ? 'disabled' : '';
-                    return `<button type="button" class="btn btn-secondary" ${dis} onclick="setQuestionBankPreviewPage(${page})" style="padding: 6px 10px;">${label}</button>`;
+                    return `<button type="button" class="btn btn-secondary" ${dis} data-click="setQuestionBankPreviewPage" data-arg="${page}" data-arg-type="number" style="padding: 6px 10px;">${label}</button>`;
                 };
                 const btnPrev = makeBtn('上一页', cur - 1, cur <= 1);
                 const btnNext = makeBtn('下一页', cur + 1, cur >= totalPages);
@@ -1508,7 +1508,7 @@
                 from = Math.max(1, to - maxButtons + 1);
                 for (let p = from; p <= to; p += 1) {
                     const active = p === cur;
-                    pages.push(`<button type="button" class="btn ${active ? '' : 'btn-secondary'}" onclick="setQuestionBankPreviewPage(${p})" style="padding: 6px 10px;">${p}</button>`);
+                    pages.push(`<button type="button" class="btn ${active ? '' : 'btn-secondary'}" data-click="setQuestionBankPreviewPage" data-arg="${p}" data-arg-type="number" style="padding: 6px 10px;">${p}</button>`);
                 }
                 return `
                     <div style="margin-top: 10px; display:flex; gap: 8px; align-items: center; flex-wrap: wrap;">
@@ -3545,7 +3545,7 @@ ${String(text || '').slice(0, 9000)}`;
                         <div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:2px;">${escapeHtml(fileName)}${uploadedAt ? ' · ' + uploadedAt : ''}</div>
                     </div>
                     <a href="${escapeHtml(absUrl)}" target="_blank" class="btn btn-secondary" style="padding:5px 10px; font-size:12px; white-space:nowrap;">查看</a>
-                    <button type="button" class="btn" style="padding:5px 10px; font-size:12px; background:rgba(239,68,68,0.2); color:#f87171; border:1px solid rgba(239,68,68,0.3); white-space:nowrap;" onclick="deleteEmployeeAttachment(${id})">删除</button>
+                    <button type="button" class="btn" style="padding:5px 10px; font-size:12px; background:rgba(239,68,68,0.2); color:#f87171; border:1px solid rgba(239,68,68,0.3); white-space:nowrap;" data-click="deleteEmployeeAttachment" data-arg="${id}" data-arg-type="number">删除</button>
                 `;
                 container.appendChild(row);
             });

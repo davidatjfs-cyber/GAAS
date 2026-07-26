@@ -551,7 +551,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 const lastAct = new Date(t.last_activity_at || t.updated_at || t.created_at);
                 const staleHours = (Date.now() - lastAct.getTime()) / 3600000;
                 const isStale = staleHours > 4 && !['已结案','已打回','已升级','已备案','closed','settled','resolved'].includes(board);
-                return '<article class="atb-card' + (isStale ? ' atb-card-stale' : '') + '" onclick="openAgentTaskDetail(\'' + atbEscape(t.task_id) + '\')">'
+                return '<article class="atb-card' + (isStale ? ' atb-card-stale' : '') + '" data-click="openAgentTaskDetail" data-arg="' + atbEscape(t.task_id) + '">'
                     + '<div class="atb-card-head"><span class="atb-badge ' + atbBadgeClass(board) + '">' + atbEscape(board) + '</span><span class="atb-badge">' + atbEscape(t.assignee_agent || t.current_agent || '待分配') + '</span>' + (isStale ? '<span class="atb-badge" style="background:rgba(239,68,68,0.25);color:#fca5a5;">超时</span>' : '') + '</div>'
                     + '<h3>' + atbEscape(t.title || t.task_id) + '</h3>'
                     + '<p>' + atbEscape(t.detail || '') + '</p>'
@@ -616,7 +616,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 + '<div class="atb-section"><b>审计时间线</b><div class="atb-timeline">' + events + '</div></div>'
                 + '<div class="atb-section"><b>重新分配负责人</b><select id="atb-reassign-agent" class="atb-input" style="margin-top:8px;width:100%;"><option value="">选择负责人...</option><option value="ops_supervisor">运营督导</option><option value="food_quality">食安专员</option><option value="train_advisor">培训顾问</option><option value="marketing_planner">营销策划</option><option value="marketing_executor">营销执行</option><option value="data_auditor">数据审计</option></select><button class="atb-action" style="margin-top:8px;width:100%;" data-click="reassignAgentTask">确认重分配</button></div>'
                 + '<div class="atb-section"><b>质量评分 (0-10)</b><input id="atb-quality-score" class="atb-input" type="number" min="0" max="10" step="0.5" style="margin-top:8px;width:100%;" placeholder="输入0-10的质量评分"><button class="atb-action" style="margin-top:8px;width:100%;" data-click="submitQualityScore">提交评分</button></div>'
-                + '<div class="atb-panel-actions"><button class="atb-action good" onclick="reviewAgentTask(\'approved\')">通过并关闭</button><button class="atb-action bad" onclick="reviewAgentTask(\'rejected\')">打回并修订</button><button class="atb-action" data-click="deriveAgentTask">创建衍生任务</button></div>';
+                + '<div class="atb-panel-actions"><button class="atb-action good" data-click="reviewAgentTask" data-arg="approved">通过并关闭</button><button class="atb-action bad" data-click="reviewAgentTask" data-arg="rejected">打回并修订</button><button class="atb-action" data-click="deriveAgentTask">创建衍生任务</button></div>';
         }
 
         function closeAgentTaskDetail() {

@@ -3848,7 +3848,7 @@ ${ok
             overlay.innerHTML = `
                 <div style="position:sticky;top:0;z-index:10;background:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e2e8f0;">
                     <button onclick="document.getElementById('rep-pdf-overlay').style.display='none';" style="padding:8px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;font-size:14px;font-weight:700;cursor:pointer;">← 返回</button>
-                    <button onclick="window.print();" style="padding:8px 16px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🖨 打印/PDF</button>
+                    <button data-click="print" style="padding:8px 16px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🖨 打印/PDF</button>
                 </div>
                 <style>@media print{#rep-pdf-overlay>div:first-child{display:none!important;}}</style>
                 <div style="max-width:820px;margin:0 auto;padding:16px;">

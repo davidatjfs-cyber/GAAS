@@ -2270,7 +2270,7 @@
                 const metaParts = [];
                 if (assignee && assignee !== '-') metaParts.push('<span>审批人<br>' + escapeHtml(assignee) + '</span>');
 
-                return '<div class="' + cardClasses.join(' ') + '" onclick="openApprovalDetailModal(\'' + escapeHtml(id) + '\')">'
+                return '<div class="' + cardClasses.join(' ') + '" data-click="openApprovalDetailModal" data-arg="' + escapeHtml(id) + '">'
                     + '<div class="ap-card__top">'
                     +   '<div class="ap-card__icon ap-card__icon--' + escapeHtml(rawType) + '">' + iconChar + '</div>'
                     +   '<div class="ap-card__info">'
@@ -4660,7 +4660,7 @@ th { background: #f5f5f5; font-weight: 700; }
                 const picked = idx >= 0;
                 const bg = picked ? 'background:#f59e0b;color:#1c1c1e;border-color:#f59e0b;' : 'background:rgba(255,255,255,0.06);color:rgba(226,232,240,0.85);border-color:rgba(255,255,255,0.15);';
                 const tag = picked ? ('(' + (idx + 1) + ') ') : '';
-                return '<button type="button" onclick="pgToggleBottomNavItem(\'' + escapeHtml(m.p) + '\')" ' +
+                return '<button type="button" data-click="pgToggleBottomNavItem" data-arg="' + escapeHtml(m.p) + '" ' +
                     'style="padding:4px 10px;font-size:12px;border-radius:14px;border:1px solid;cursor:pointer;' + bg + '">' +
                     escapeHtml(tag + m.l) + '</button>';
             }).join('');
@@ -4702,8 +4702,8 @@ th { background: #f5f5f5; font-weight: 700; }
                         '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + (Array.isArray(g.modules) ? g.modules.length : 0) + '</td>' +
                         '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:#e0e8f0">' + escapeHtml(__pgScopeSummary(g.storeScope)) + '</td>' +
                         '<td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);text-align:right;">' +
-                            '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" onclick="openPermissionGroupEditor(\'' + escapeHtml(String(g.id)) + '\')">编辑</button> ' +
-                            '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" onclick="deletePermissionGroup(\'' + escapeHtml(String(g.id)) + '\')">删除</button>' +
+                            '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" data-click="openPermissionGroupEditor" data-arg="' + escapeHtml(String(g.id)) + '">编辑</button> ' +
+                            '<button class="btn btn-secondary" type="button" style="padding:4px 10px;font-size:12px;" data-click="deletePermissionGroup" data-arg="' + escapeHtml(String(g.id)) + '">删除</button>' +
                         '</td>' +
                     '</tr>';
                 }).join('') +

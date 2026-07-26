@@ -232,13 +232,13 @@
 
             let html = '';
             if (page > 1) {
-                html += `<button class="btn btn-sm" onclick="loadFilesList(${page - 1})">上一页</button>`;
+                html += `<button class="btn btn-sm" data-click="loadFilesList" data-arg="${page - 1}" data-arg-type="number">上一页</button>`;
             }
             
             html += `<span style="padding:8px 16px;color:#666;">第 ${page} / ${totalPages} 页 (共 ${total} 个文件)</span>`;
             
             if (page < totalPages) {
-                html += `<button class="btn btn-sm" onclick="loadFilesList(${page + 1})">下一页</button>`;
+                html += `<button class="btn btn-sm" data-click="loadFilesList" data-arg="${page + 1}" data-arg-type="number">下一页</button>`;
             }
 
             container.innerHTML = html;
@@ -885,7 +885,7 @@
                 const hasOverdue = (r.tasks || []).some(t => t.status !== 'done' && t.due_date && String(t.due_date).slice(0, 10) < todayYmd);
                 if (hasOverdue) {
                     stateHtml = `<div class="gs-report" style="border-color:rgba(255,138,122,0.35);">⚠️ 存在逾期未完成任务,系统每日自动催促并记录次数。若持续无进展,可直接强制复盘——报告将如实点名未完成任务与催促次数。
-                      <div class="gs-actions"><button class="ga-btn ga-btn--ghost" onclick="gsForceReview(${r.id})">强制复盘(点名未执行)</button></div></div>`;
+                      <div class="gs-actions"><button class="ga-btn ga-btn--ghost" data-click="gsForceReview" data-arg="${r.id}" data-arg-type="number">强制复盘(点名未执行)</button></div></div>`;
                 }
             } else if (r.status === 'observing') {
                 stateHtml = `<div class="gs-report">✅ 任务已全部完成,处于观察期,<b>${escapeHtml(String(r.measure_end_date).slice(0, 10))}</b> 自动复盘(观察期实际值以最后30天数据计算)。</div>`;
@@ -1252,7 +1252,7 @@
 
             const anomHTML = anomalies.length
                 ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🔴 本周异常（${anomalies.length}项）</div><div class="dx-board__meta">点击查看每条异常的基础信息与触发记录</div></div></div><div class="dx-section-grid dx-section-grid--2">${anomalies.map((a, idx) =>
-                    `<div class="dx-metric-card dx-anomaly-card" onclick="dxShowAnomalyDetail(${idx})" role="button" tabindex="0">
+                    `<div class="dx-metric-card dx-anomaly-card" data-click="dxShowAnomalyDetail" data-arg="${idx}" data-arg-type="number" role="button" tabindex="0">
                         <div class="k">${escapeHtml(a.type)}</div>
                         <div class="v" style="font-size:16px;color:${a.severity === 'high' ? '#FF7A90' : '#FFC46B'}">${escapeHtml(a.count != null ? String(a.count) : '-') }</div>
                         <div class="s">${escapeHtml(a.detail || a.description || '')}</div>
@@ -1686,14 +1686,14 @@
                     var on = m === cur;
                     var label = (typeof GROWTH_MEMBER_LABEL !== 'undefined' && GROWTH_MEMBER_LABEL[m]) || m;
                     html += '<button type="button" class="gx-item' + (on ? ' is-on' : '') + '"'
-                         + ' onclick="gxPick(\'' + m + '\')">'
+                         + ' data-click="gxPick" data-arg="' + m + '">'
                          + '<span class="gx-item__dot"></span>' + escapeHtml(label) + '</button>';
                 });
                 html += '</div>';
             });
             html += '<div class="gx-grp"><div class="gx-grp__t">手动工具</div>';
             GX_EXTERNAL.forEach(function (x) {
-                html += '<button type="button" class="gx-item" onclick="gxOpenExternal(\'' + x.url + '\')">'
+                html += '<button type="button" class="gx-item" data-click="gxOpenExternal" data-arg="' + x.url + '">'
                      + '<span class="gx-item__dot"></span>' + escapeHtml(x.label)
                      + '<span class="gx-item__ext">新窗口</span></button>';
             });
@@ -1760,7 +1760,7 @@
             host.style.display = '';
             host.innerHTML = group.members.map(function(m) {
                 var on = m === activeMember;
-                return '<button type="button" class="rep-subtab' + (on ? ' rep-subtab--active' : '') + '" onclick="showGrowthTab(\'' + m + '\')">' + (GROWTH_MEMBER_LABEL[m] || m) + '</button>';
+                return '<button type="button" class="rep-subtab' + (on ? ' rep-subtab--active' : '') + '" data-click="showGrowthTab" data-arg="' + m + '">' + (GROWTH_MEMBER_LABEL[m] || m) + '</button>';
             }).join('');
         }
 
