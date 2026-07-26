@@ -1,10 +1,10 @@
 {
-  "lines": 45,
-  "branches": 62,
-  "functions": 45,
+  "lines": 56,
+  "branches": 67,
+  "functions": 52,
   "requireIndexJs": true,
   "minIndexJsLines": 48,
   "tolerancePct": 0.5,
   "updated": "2026-07-26",
-  "note": "合并棘轮。Wave M5 外提 agent/schema bootstrap 后预计 index.js 行覆盖再降；minIndexJsLines 52→48（仅巨石外提允许下调）。overall 仍只升不降。"
+  "note": "合并棘轮追平第九轮实测（约 57.13/67.76/53.27）。地板抬至 56/67/52（留约 1pp 缓冲）。minIndexJsLines 仍 48。只升不降。"
 }

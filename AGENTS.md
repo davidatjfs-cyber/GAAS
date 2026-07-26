@@ -165,6 +165,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **新 API**：`server/domains/<域>/routes.js`（handler ≤30 行）+ `service.js`（纯逻辑、不碰 req/res）；
   禁止再造 2000 行 `registerXxxRoutes` 闭包。`server/` 根目录禁止继续平铺新文件。
 - **`PUT /api/state`**：白名单写入（`server/hrms-state-put.js`）；业务事实落表后从白名单删除。
+- **外提切分**：若函数 >200 行，必须同批切分，禁止整体包进 `createXxx(deps)` 闭包（见
+  `server/function-size-ratchet.json`）。工厂只做装配；业务步骤提成具名导出函数。
 
 ### ⚠️ 共享表唯一写入方（GAAS ↔ agents-service-v2）
 

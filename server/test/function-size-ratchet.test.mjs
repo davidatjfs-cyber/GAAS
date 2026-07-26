@@ -1,0 +1,116 @@
+/**
+ * P2.1：单函数体积闸门。
+ * - 声明式 function（含 export/async）超过 maxLines → 必须在 allowlist
+ * - allowlist 只降不升（禁止新增超大函数后把名单做大）
+ * - 外提纪律配套：createXxx 工厂闭包不得整块搬 >200 行而不切分
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const serverRoot = path.resolve(__dirname, '..');
+const SKIP_DIRS = new Set(['node_modules', 'coverage', 'dist', '.git', 'tmp', 'test']);
+
+const FN_RE =
+  /^(?<indent>\s*)(?:export\s+)?(?:async\s+)?function\s+(?<name>\w+)\s*\(/;
+
+function walkJs(dir, out = []) {
+  if (!fs.existsSync(dir)) return out;
+  for (const name of fs.readdirSync(dir)) {
+    if (SKIP_DIRS.has(name)) continue;
+    const p = path.join(dir, name);
+    const st = fs.statSync(p);
+    if (st.isDirectory()) walkJs(p, out);
+    else if (/\.(js|mjs)$/.test(name)) out.push(p);
+  }
+  return out;
+}
+
+function scanOversizedFunctions(absPath, maxLines) {
+  const lines = fs.readFileSync(absPath, 'utf8').split('\n');
+  const found = [];
+  let i = 0;
+  while (i < lines.length) {
+    const m = lines[i].match(FN_RE);
+    if (!m) {
+      i += 1;
+      continue;
+    }
+    const name = m.groups.name;
+    let j = i;
+    let depth = 0;
+    let started = false;
+    while (j < lines.length) {
+      const line = lines[j];
+      depth += (line.match(/\{/g) || []).length;
+      depth -= (line.match(/\}/g) || []).length;
+      if (line.includes('{')) started = true;
+      if (started && depth <= 0) {
+        const span = j - i + 1;
+        if (span > maxLines) {
+          found.push({ name, start: i + 1, end: j + 1, lines: span });
+        }
+        break;
+      }
+      j += 1;
+    }
+    i = started ? j + 1 : i + 1;
+  }
+  return found;
+}
+
+function loadRatchet() {
+  return JSON.parse(
+    fs.readFileSync(path.join(serverRoot, 'function-size-ratchet.json'), 'utf8')
+  );
+}
+
+test('function-size-ratchet.json 只降不升（maxLines≤200，allowlist 不膨胀）', () => {
+  const r = loadRatchet();
+  assert.equal(typeof r.maxLines, 'number');
+  assert.ok(r.maxLines <= 200, `maxLines=${r.maxLines} 禁止放宽超过 200`);
+  assert.ok(r.maxLines >= 100, `maxLines=${r.maxLines} 异常过低`);
+  assert.ok(Array.isArray(r.allowlist));
+  assert.equal(typeof r.maxAllowlistSize, 'number');
+  assert.ok(
+    r.allowlist.length <= r.maxAllowlistSize,
+    `allowlist=${r.allowlist.length} > maxAllowlistSize=${r.maxAllowlistSize}（禁止膨胀）`
+  );
+});
+
+test('server 运行时单函数 >maxLines 必须在 allowlist；allowlist 无幽灵条目', () => {
+  const r = loadRatchet();
+  const maxLines = r.maxLines;
+  const allow = new Set(r.allowlist);
+  const offenders = [];
+  const present = new Set();
+
+  for (const abs of walkJs(serverRoot)) {
+    const rel = path.relative(serverRoot, abs).replace(/\\/g, '/');
+    // package root relative key matches ratchet: server/...
+    const keyPrefix = `server/${rel}`;
+    for (const fn of scanOversizedFunctions(abs, maxLines)) {
+      const key = `${keyPrefix}::${fn.name}`;
+      present.add(key);
+      if (!allow.has(key)) {
+        offenders.push(`${key} (${fn.lines} lines @L${fn.start}-L${fn.end})`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `新增/扩大超大函数（>${maxLines} 行）未进 allowlist，且禁止扩大名单——请同批切分：\n${offenders.join('\n')}`
+  );
+
+  const stale = r.allowlist.filter((k) => !present.has(k));
+  assert.deepEqual(
+    stale,
+    [],
+    `allowlist 含已消失的条目（请删除以只降不升）：\n${stale.join('\n')}`
+  );
+});

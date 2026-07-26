@@ -3596,3 +3596,460 @@ test('L1 falsy：points/onboarding 空字段与 null state 回落', async () => 
     assert.ok(notifs.some((n) => n.title === '新员工入职审批被拒绝'));
   }
 });
+
+test('monthly-confirm L1 分支：越权类型/缺参/空店/无 note/无 next/申请人名回退', async () => {
+  await monthlyConfirm.beforeUpdate({});
+
+  const { deps: wrongDeps, notifs: wrongNotifs } = makeDeps();
+  await monthlyConfirm.afterDecide({
+    req: {},
+    deps: wrongDeps,
+    updated: null,
+  });
+  await monthlyConfirm.afterDecide({
+    req: {},
+    deps: wrongDeps,
+    updated: { type: 'leave', status: 'approved', payload: {} },
+  });
+  assert.equal(wrongNotifs.length, 0);
+
+  const mc = { id: 'mc-empty-store', status: 'pending', history: [] };
+  const { deps: storeDeps, notifs: storeNotifs, merges: storeMerges } = makeDeps({
+    state: { monthlyConfirmations: [mc] },
+  });
+  storeDeps.stateFindUserRecord = () => ({ username: 'hr1' }); // 无 name → 回退 username
+  await monthlyConfirm.afterDecide({
+    req: { user: { username: 'admin1' } },
+    deps: storeDeps,
+    updated: {
+      id: 'appr-mc-store',
+      type: 'monthly_confirm',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { confirmationId: 'mc-empty-store', month: '2026-08', store: '' },
+    },
+  });
+  assert.equal(mc.status, 'approved');
+  assert.equal(storeMerges.length, 1);
+  assert.match(storeNotifs[0].msg, /全部门店/);
+
+  const mcRej = { id: 'mc-rej-nonote', status: 'pending', history: [] };
+  const { deps: rejDeps, notifs: rejNotifs } = makeDeps({
+    state: { monthlyConfirmations: [mcRej] },
+  });
+  await monthlyConfirm.afterDecide({
+    req: { user: { username: 'admin1' } },
+    deps: rejDeps,
+    updated: {
+      id: 'appr-mc-rej',
+      type: 'monthly_confirm',
+      status: 'rejected',
+      applicant_username: 'hr1',
+      payload: { confirmationId: 'mc-rej-nonote', month: '2026-08', store: '甲店' },
+    },
+    note: '',
+  });
+  assert.equal(mcRej.status, 'rejected');
+  assert.match(rejNotifs[0].msg, /被驳回$/);
+
+  const { deps: missDeps, notifs: missNotifs, merges: missMerges } = makeDeps({
+    state: { monthlyConfirmations: [] },
+  });
+  await monthlyConfirm.afterDecide({
+    req: { user: { username: 'admin1' } },
+    deps: missDeps,
+    updated: {
+      id: 'appr-mc-miss-rej',
+      type: 'monthly_confirm',
+      status: 'rejected',
+      applicant_username: 'hr1',
+      payload: { confirmationId: 'gone', month: '2026-08', store: '乙店' },
+    },
+    note: '缺卡',
+  });
+  assert.equal(missMerges.length, 0);
+  assert.match(missNotifs[0].msg, /缺卡/);
+
+  const { deps: noNextDeps, notifs: noNextNotifs } = makeDeps({
+    state: { monthlyConfirmations: [] },
+  });
+  await monthlyConfirm.afterDecide({
+    req: {},
+    deps: noNextDeps,
+    updated: {
+      id: 'appr-mc-nonext',
+      type: 'monthly_confirm',
+      status: 'pending',
+      applicant_username: 'hr1',
+      payload: { confirmationId: 'x', month: '2026-08', store: '丙店' },
+    },
+    nextAssignee: null,
+  });
+  assert.equal(noNextNotifs.length, 0);
+});
+
+test('reward-punishment L1 分支：类型守卫/英文 reward/无 note/无 next/外层 catch/tenant 回退', async () => {
+  await rewardPunishment.beforeUpdate({});
+
+  const { deps: guardDeps, notifs: guardNotifs, ledgerCalls: guardLedger } = makeDeps();
+  await rewardPunishment.afterDecide({
+    req: {},
+    deps: guardDeps,
+    updated: null,
+    username: 'boss',
+  });
+  await rewardPunishment.afterDecide({
+    req: {},
+    deps: guardDeps,
+    updated: { type: 'leave', status: 'approved', payload: {} },
+    username: 'boss',
+  });
+  assert.equal(guardNotifs.length, 0);
+  assert.equal(guardLedger.length, 0);
+
+  const { deps: enDeps, ledgerCalls: enLedger, notifs: enNotifs } = makeDeps({
+    state: { salaryAdjustments: [] },
+  });
+  await rewardPunishment.afterDecide({
+    req: { user: { tenant_id: 't-from-user' } }, // 无 tenantId → 走 user.tenant_id
+    deps: enDeps,
+    updated: {
+      id: 'appr-rp-en',
+      type: 'reward_punishment',
+      status: 'approved',
+      applicant_username: 'mgr1',
+      payload: {
+        targetUsername: 'emp1',
+        rpType: 'reward',
+        amount: 0,
+        // reason 空 → 默认文案；occurDate → safeBizMonth
+        occurDate: '2026-06-15',
+        result: '口头表扬',
+      },
+    },
+    nextAssignee: null,
+    note: '',
+    username: 'boss',
+  });
+  assert.equal(enLedger.length, 1);
+  assert.equal(enLedger[0][0].entryType, 'reward');
+  assert.equal(enLedger[0][0].tenantId, 't-from-user');
+  assert.ok(enNotifs.some((n) => /工作表现优秀/.test(n.msg)));
+
+  const { deps: rejDeps, notifs: rejNotifs } = makeDeps();
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: rejDeps,
+    updated: {
+      id: 'appr-rp-rej-nonote',
+      type: 'reward_punishment',
+      status: 'rejected',
+      applicant_username: 'mgr1',
+      payload: { targetUsername: 'emp1', rpType: '惩罚', amount: 10 },
+    },
+    nextAssignee: null,
+    note: '',
+    username: 'boss',
+  });
+  assert.match(rejNotifs[0].msg, /相关原因/);
+  assert.match(rejNotifs[0].title, /惩罚/);
+
+  const { deps: pendDeps, notifs: pendNotifs } = makeDeps();
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: pendDeps,
+    updated: {
+      id: 'appr-rp-pend-none',
+      type: 'reward_punishment',
+      status: 'pending',
+      applicant_username: 'mgr1',
+      payload: { targetUsername: 'emp1', category: '惩罚', amount: 5, reason: '' },
+    },
+    nextAssignee: '',
+    note: '',
+    username: 'boss',
+  });
+  assert.equal(pendNotifs.length, 0);
+
+  const boom = makeDeps();
+  boom.deps.getSharedState = async () => {
+    throw new Error('rp state boom');
+  };
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: boom.deps,
+    updated: {
+      id: 'appr-rp-boom',
+      type: 'reward_punishment',
+      status: 'approved',
+      applicant_username: 'mgr1',
+      payload: { targetUsername: 'emp1', rpType: '奖励', amount: 1 },
+    },
+    username: 'boss',
+  });
+  assert.equal(boom.notifs.length, 0);
+  assert.equal(boom.ledgerCalls.length, 0);
+
+  const { deps: punDeps, notifs: punNotifs, ledgerCalls: punLedger } = makeDeps();
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: punDeps,
+    updated: {
+      id: 'appr-rp-pun-default-reason',
+      type: 'reward_punishment',
+      status: 'approved',
+      applicant_username: 'mgr1',
+      payload: {
+        targetUsername: 'emp9',
+        rpType: '惩罚',
+        amount: 8,
+        businessMonth: '2026-05',
+      },
+    },
+    username: 'boss',
+  });
+  assert.equal(punLedger[0][0].entryType, 'punishment');
+  assert.ok(punNotifs.some((n) => n.u === 'emp9' && /相关原因/.test(n.msg)));
+});
+
+test('monthly-confirm L1 短路分支：null state/非数组确认/history 已有/无 user/非 Error catch', async () => {
+  const mc = { id: 'mc-hist', status: 'pending', history: [{ action: 'submit' }] };
+  const { deps, notifs, merges } = makeDeps({
+    state: { monthlyConfirmations: [mc] },
+  });
+  deps.getSharedState = async () => null; // || {}
+  deps.stateFindUserRecord = () => null; // || {}
+  await monthlyConfirm.afterDecide({
+    req: {}, // 无 user → username ''
+    deps,
+    updated: {
+      id: 'appr-mc-short',
+      type: 'monthly_confirm',
+      status: 'rejected',
+      applicant_username: '',
+      payload: undefined, // || {}
+    },
+    note: 'x',
+  });
+  // confirmationId 空 → 不进 rejected 合并，但仍可能无通知
+  assert.equal(merges.length, 0);
+
+  const mc2 = { id: 'mc-arr', status: 'pending' }; // history undefined → || []
+  const { deps: d2, merges: m2, notifs: n2 } = makeDeps({
+    state: { monthlyConfirmations: 'bad' }, // 非数组 → []
+  });
+  // 覆盖 approved 路径的非数组 + 找不到 mc 仍通知
+  await monthlyConfirm.afterDecide({
+    req: { user: { username: 'a1' } },
+    deps: d2,
+    updated: {
+      id: 'appr-mc-arr',
+      type: 'monthly_confirm',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { confirmationId: 'mc-arr', month: '', store: null },
+    },
+  });
+  assert.equal(m2.length, 0);
+  assert.ok(n2.some((n) => /全部门店/.test(n.msg)));
+
+  const { deps: d3, merges: m3 } = makeDeps({
+    state: { monthlyConfirmations: [mc2] },
+  });
+  await monthlyConfirm.afterDecide({
+    req: { user: { username: 'a1' } },
+    deps: d3,
+    updated: {
+      id: 'appr-mc-hist2',
+      type: 'monthly_confirm',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { confirmationId: 'mc-arr', month: '2026-09', store: '丁店' },
+    },
+  });
+  assert.equal(mc2.status, 'approved');
+  assert.ok(Array.isArray(mc2.history) && mc2.history.length >= 1);
+  assert.equal(m3.length, 1);
+
+  const mc4 = { id: 'mc-rej2', status: 'pending', history: [{ action: 'x' }] };
+  const { deps: d4, merges: m4, notifs: n4 } = makeDeps({
+    state: { monthlyConfirmations: [mc4] },
+  });
+  await monthlyConfirm.afterDecide({
+    req: {},
+    deps: d4,
+    updated: {
+      id: 'appr-mc-rej2',
+      type: 'monthly_confirm',
+      status: 'rejected',
+      applicant_username: 'hr1',
+      payload: { confirmationId: 'mc-rej2', month: '2026-09', store: '' },
+    },
+    note: null,
+  });
+  assert.equal(mc4.status, 'rejected');
+  assert.equal(m4.length, 1);
+  assert.match(n4[0].msg, /全部门店.*被驳回$/);
+
+  // pending + 空 store + 申请人名三段回退
+  const { deps: d5, notifs: n5 } = makeDeps({ state: {} });
+  d5.stateFindUserRecord = () => ({ username: 'hr1', name: '' });
+  await monthlyConfirm.afterDecide({
+    req: {},
+    deps: d5,
+    updated: {
+      id: 'appr-mc-pend2',
+      type: 'monthly_confirm',
+      status: 'pending',
+      applicant_username: 'hr1',
+      payload: { confirmationId: 'z', month: '2026-09' }, // store undefined
+    },
+    nextAssignee: 'hq9',
+  });
+  assert.match(n5[0].msg, /hr1.*全部门店/);
+
+  // status 其它值：三分支皆不进
+  const { deps: d6, notifs: n6, merges: m6 } = makeDeps({
+    state: { monthlyConfirmations: [{ id: 'mc-x', status: 'pending', history: [] }] },
+  });
+  await monthlyConfirm.afterDecide({
+    req: {},
+    deps: d6,
+    updated: {
+      id: 'appr-mc-cancel',
+      type: 'monthly_confirm',
+      status: 'cancelled',
+      applicant_username: 'hr1',
+      payload: { confirmationId: 'mc-x', month: '2026-09', store: '戊店' },
+    },
+    nextAssignee: 'hq9',
+  });
+  assert.equal(n6.length, 0);
+  assert.equal(m6.length, 0);
+
+  // catch：抛非 Error（无 .message）
+  const boom = makeDeps();
+  boom.deps.mergeSharedStateFields = async () => {
+    throw 'bare-string-err';
+  };
+  boom.deps.getSharedState = async () => ({
+    monthlyConfirmations: [{ id: 'mc-e', status: 'pending', history: [] }],
+  });
+  await monthlyConfirm.afterDecide({
+    req: { user: { username: 'a1' } },
+    deps: boom.deps,
+    updated: {
+      id: 'appr-mc-bare',
+      type: 'monthly_confirm',
+      status: 'approved',
+      applicant_username: 'hr1',
+      payload: { confirmationId: 'mc-e', month: '2026-09', store: '己店' },
+    },
+  });
+  void notifs;
+});
+
+test('reward-punishment L1 短路：null state/空 payload/default tenant/safeNumber null/无 reason 惩罚文案', async () => {
+  const { deps, ledgerCalls, notifs, queries } = makeDeps();
+  deps.getSharedState = async () => null;
+  deps.stateFindUserRecord = () => null;
+  deps.safeNumber = () => null;
+  deps.safeBizMonth = () => '';
+  await rewardPunishment.afterDecide({
+    req: {}, // 无 tenantId/user → default
+    deps,
+    updated: {
+      id: 'appr-rp-short',
+      type: 'reward_punishment',
+      status: 'approved',
+      applicant_username: '',
+      payload: {}, // 全空字段
+    },
+    username: 'boss',
+  });
+  assert.equal(ledgerCalls.length, 1);
+  assert.equal(ledgerCalls[0][0].tenantId, 'default');
+  assert.equal(ledgerCalls[0][0].entryType, 'punishment'); // 非 reward
+  assert.ok(queries.some((q) => /hrms_reward_punishment_records/i.test(String(q[0]))));
+  assert.ok(notifs.some((n) => /已审批通过/.test(n.msg)));
+
+  // eventDate 路径 + result 空 + 惩罚默认相关原因
+  const { deps: d2, notifs: n2, ledgerCalls: l2 } = makeDeps();
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: d2,
+    updated: {
+      id: 'appr-rp-ev',
+      type: 'reward_punishment',
+      status: 'approved',
+      applicant_username: 'mgr1',
+      payload: {
+        targetUsername: 'emp3',
+        rpType: '扣款',
+        amount: 12,
+        eventDate: '2026-04-01',
+        result: '',
+      },
+    },
+    username: 'boss',
+  });
+  assert.equal(l2[0][0].entryType, 'punishment');
+  assert.ok(n2.some((n) => n.u === 'emp3' && /相关原因/.test(n.msg)));
+
+  // date 字段 + 奖励英文外的「奖励」已覆盖；这里 cover occurMonth
+  const { deps: d3, ledgerCalls: l3 } = makeDeps();
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: d3,
+    updated: {
+      id: 'appr-rp-om',
+      type: 'reward_punishment',
+      status: 'approved',
+      applicant_username: 'mgr1',
+      payload: {
+        employeeUsername: 'emp4',
+        category: 'reward',
+        amount: 3,
+        occurMonth: '2026-03',
+        reason: '加班',
+      },
+    },
+    username: 'boss',
+  });
+  assert.equal(l3[0][0].entryType, 'reward');
+
+  // rejected 无 targetName 回退申请人名；status 其它
+  const { deps: d4, notifs: n4 } = makeDeps();
+  d4.stateFindUserRecord = () => ({});
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: d4,
+    updated: {
+      id: 'appr-rp-rej2',
+      type: 'reward_punishment',
+      status: 'rejected',
+      applicant_username: 'mgr1',
+      payload: { rpType: '奖励', amount: 1 },
+    },
+    note: undefined,
+    username: 'boss',
+  });
+  assert.ok(n4.some((n) => /相关原因/.test(n.msg)));
+
+  const { deps: d5, notifs: n5, ledgerCalls: l5 } = makeDeps();
+  await rewardPunishment.afterDecide({
+    req: { tenantId: 'default' },
+    deps: d5,
+    updated: {
+      id: 'appr-rp-other',
+      type: 'reward_punishment',
+      status: 'cancelled',
+      applicant_username: 'mgr1',
+      payload: { targetUsername: 'emp1', rpType: '奖励', amount: 9 },
+    },
+    nextAssignee: 'hq1',
+    username: 'boss',
+  });
+  assert.equal(n5.length, 0);
+  assert.equal(l5.length, 0);
+});

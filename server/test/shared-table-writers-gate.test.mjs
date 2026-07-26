@@ -25,15 +25,17 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'agents.js|INSERT INTO|agent_messages',
   // Wave A11a：archiveOldBitableSubmissions 迁出；agents.js 已无 DELETE agent_messages
   'domains/feishu-bitable/archive-old-submissions.js|DELETE FROM|agent_messages',
-  // Wave A1：KPI radar INSERT 从 agents.js runDataAuditor 迁出（agents.js 仍有其它 agent_messages INSERT）
-  'domains/agent-auditor/run-data-auditor.js|INSERT INTO|agent_messages',
+  // Wave A1：KPI radar INSERT 从 agents.js runDataAuditor 迁出；A1-split 再迁到 persist 子模块
+  'domains/agent-auditor/run-data-auditor-persist.js|INSERT INTO|agent_messages',
   // Wave A7：handleOpsChecklistCardAction 迁出（agents.js 仍有其它 agent_messages INSERT）
   'domains/agent-ops/handle-checklist-card-action.js|INSERT INTO|agent_messages',
   // Wave A3：onFeishuEvent 迁出（agents.js 仍有其它 agent_messages / feishu_users 写入）
-  'domains/agent-feishu-bot/on-feishu-event.js|INSERT INTO|feishu_users',
-  'domains/agent-feishu-bot/on-feishu-event.js|UPDATE|feishu_users',
-  'domains/agent-feishu-bot/on-feishu-event.js|INSERT INTO|agent_messages',
-  'domains/agent-feishu-bot/on-feishu-event.js|UPDATE|agent_messages',
+  // Wave A3-split：on-feishu-event.js 同批切分 → registration/employee/checklist/agent-route
+  'domains/agent-feishu-bot/on-feishu-event-registration.js|INSERT INTO|feishu_users',
+  'domains/agent-feishu-bot/on-feishu-event-employee.js|UPDATE|feishu_users',
+  'domains/agent-feishu-bot/on-feishu-event-checklist.js|INSERT INTO|agent_messages',
+  'domains/agent-feishu-bot/on-feishu-event-agent-route.js|INSERT INTO|agent_messages',
+  'domains/agent-feishu-bot/on-feishu-event-agent-route.js|UPDATE|agent_messages',
   // Wave A9：runChiefEvaluator 迁出；agents.js 已无 agent_scores INSERT
   'domains/agent-evaluator/run-chief-evaluator.js|INSERT INTO|agent_scores',
   // Wave A4b：pollBitableSubmissions 迁出（agents.js 不再写 feishu_generic_records）
@@ -102,10 +104,16 @@ const REPATH_NOTES = [
   'performance-invalidation-api.js → domains/performance-invalidation/service.js | UPDATE|agent_scores',
   'agents.js → domains/agent-message/training-flow.js | INSERT INTO|master_tasks',
   'agents.js → domains/agent-auditor/run-data-auditor.js | INSERT INTO|agent_messages',
+  'domains/agent-auditor/run-data-auditor.js → run-data-auditor-persist.js | INSERT INTO|agent_messages',
   'agents.js → domains/agent-feishu-bot/on-feishu-event.js | INSERT INTO|feishu_users',
   'agents.js → domains/agent-feishu-bot/on-feishu-event.js | UPDATE|feishu_users',
   'agents.js → domains/agent-feishu-bot/on-feishu-event.js | INSERT INTO|agent_messages',
   'agents.js → domains/agent-feishu-bot/on-feishu-event.js | UPDATE|agent_messages',
+  'domains/agent-feishu-bot/on-feishu-event.js → on-feishu-event-registration.js | INSERT INTO|feishu_users',
+  'domains/agent-feishu-bot/on-feishu-event.js → on-feishu-event-employee.js | UPDATE|feishu_users',
+  'domains/agent-feishu-bot/on-feishu-event.js → on-feishu-event-checklist.js | INSERT INTO|agent_messages',
+  'domains/agent-feishu-bot/on-feishu-event.js → on-feishu-event-agent-route.js | INSERT INTO|agent_messages',
+  'domains/agent-feishu-bot/on-feishu-event.js → on-feishu-event-agent-route.js | UPDATE|agent_messages',
   'agents.js → domains/feishu-bitable/poll-submissions.js | INSERT INTO|feishu_generic_records',
   'agents.js → domains/feishu-bitable/poll-submissions.js | INSERT INTO|agent_messages',
   'agents.js → domains/agent-ops/handle-checklist-card-action.js | INSERT INTO|agent_messages',

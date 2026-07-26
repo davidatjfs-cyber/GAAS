@@ -11,7 +11,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..');
 
 /** 历史地板：只升不降（随 Phase 上调整数档） */
-const RATCHET_FLOOR = { lines: 42, branches: 59, functions: 45 };
+const RATCHET_FLOOR = { lines: 42, branches: 60, functions: 45 };
+
+/** 合并棘轮历史地板：第九轮追平实测后抬升 */
+const MERGED_RATCHET_FLOOR = { lines: 56, branches: 67, functions: 52, minIndexJsLines: 48 };
 
 test('coverage-ratchet.json 只升不降（不低于已冻结地板）', () => {
   const ratchet = JSON.parse(
@@ -60,12 +63,6 @@ test('run-merged-coverage.mjs 与 package.json test:coverage:merged 存在（Wav
   assert.match(pkg.scripts['test:coverage:merged'], /run-merged-coverage/);
 });
 
-/**
- * 合并口径地板：与单测棘轮并存，只升不降。
- * Wave M1/M2 外提 index.js listen 块后 minIndexJsLines 70→65→58→55→52→48（分母变化，非覆盖回退）。
- */
-const MERGED_RATCHET_FLOOR = { lines: 45, branches: 61, functions: 44, minIndexJsLines: 48 };
-
 test('coverage-merged-ratchet.json 只升不降且要求 index.js', () => {
   const mr = JSON.parse(
     fs.readFileSync(path.join(serverRoot, 'coverage-merged-ratchet.json'), 'utf8')
@@ -89,6 +86,8 @@ const L1_FILE_FLOOR = {
   'domains/approvals/handlers/promotion.js': { branches: 85, lines: 95 },
   'domains/tenant-platform/routes-billing.js': { branches: 85, lines: 95 },
   'domains/tenant-platform/routes-auth.js': { branches: 85, lines: 95 },
+  'domains/approvals/handlers/monthly-confirm.js': { branches: 85, lines: 95 },
+  'domains/approvals/handlers/reward-punishment.js': { branches: 85, lines: 95 },
   'domains/shared/time-number.js': { branches: 95, lines: 95 },
   'domains/approvals/onboarding-payload.js': { branches: 95, lines: 95 },
   'domains/approvals/normalize-helpers.js': { branches: 90, lines: 95 },

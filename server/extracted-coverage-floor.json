@@ -258,6 +258,8 @@
     "domains/daily-reports/routes.js",
     "domains/sales-ai/routes-admin-meta.js",
     "domains/shared/startup-tenant-reconcile.js",
+    "domains/shared/startup-tenant-reconcile-merge.js",
+    "domains/shared/startup-tenant-reconcile-steps.js",
     "domains/health/startup-monitors.js",
     "domains/shared/startup-role-cleanup.js",
     "domains/shared/startup-module-schedulers.js",
@@ -281,6 +283,23 @@
     "domains/feishu-bitable/archive-old-submissions.js",
     "domains/agent-ops/execute-scheduled-task.js",
     "domains/feishu-bitable/get-submission-stats.js",
-    "domains/agent-ops/build-scheduled-tasks-from-config.js"
+    "domains/agent-ops/build-scheduled-tasks-from-config.js",
+    "domains/agent-message/handle-agent-message-prep.js",
+    "domains/agent-message/handle-agent-message-routes.js",
+    "domains/agent-message/handle-agent-message-finalize.js",
+    "domains/agent-feishu-bot/on-feishu-event-registration.js",
+    "domains/agent-feishu-bot/on-feishu-event-employee.js",
+    "domains/agent-feishu-bot/on-feishu-event-message-content.js",
+    "domains/agent-feishu-bot/on-feishu-event-checklist.js",
+    "domains/agent-feishu-bot/on-feishu-event-agent-route.js",
+    "domains/agent-feishu-bot/on-feishu-event-im-message.js",
+    "domains/agent-bi/deterministic-cascade-data-source-coverage.js",
+    "domains/agent-bi/deterministic-cascade-table-visit.js",
+    "domains/agent-bi/deterministic-cascade-ops-report-count.js",
+    "domains/agent-bi/deterministic-cascade-feishu-reports.js",
+    "domains/agent-auditor/run-data-auditor-period.js",
+    "domains/agent-auditor/run-data-auditor-recharge.js",
+    "domains/agent-auditor/run-data-auditor-scan.js",
+    "domains/agent-auditor/run-data-auditor-persist.js"
   ]
 }

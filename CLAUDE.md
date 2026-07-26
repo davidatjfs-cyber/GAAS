@@ -254,6 +254,17 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 违反这条纪律的表现：`git diff --stat` 里 `index.js`/`agents.js` 一次改动新增几十上百行"新逻辑"（不是"新增两行注册"），
 或新增又一个 >500 行的 `registerXxxRoutes` 闭包——应停下来按 routes/service 拆。
 
+### ⚠️ 外提切分纪律（禁止「闭包整体搬运」）
+
+外提巨石函数到 `domains/` 时，**搬家合规 ≠ 复杂度下降**。已反复出现三次的反模式：
+把 400–500 行整块塞进 `createXxx(deps) { ... }` 工厂闭包、闭包内零子函数——依赖方向对了，但
+`>150` 行函数占比与巨石数不降反升。
+
+硬约束（与 `server/function-size-ratchet.json` / `test/function-size-ratchet.test.mjs` 闸门一致）：
+- **外提时若函数 >200 行，必须同批切分为多个具名函数/模块**，不允许整体包进 `createXxx` 闭包后合入。
+- 工厂闭包只做依赖装配与薄编排；业务步骤提成同文件或同域的具名导出函数（可单测）。
+- 存量超大函数进 allowlist 冻结（只降不升）；新增超大函数 CI 红，禁止靠扩大 allowlist 过关。
+
 ### ⚠️ @gaas/shared（跨仓共享包）
 
 权威路径：`packages/gaas-shared`（飞书验签、tenant token、共享表名常量）。
