@@ -3800,7 +3800,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
         <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;">
           <input type="text" placeholder="工艺步骤，如：顺时针搅拌至均匀" value="${instrVal}" style="${inputStyle}" class="rs-instruction">
           <label title="上传图片或视频" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(99,102,241,0.4);background:rgba(99,102,241,0.08);color:#a5b4fc;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
-            📷<input type="file" accept="image/*,video/*" style="display:none;" onchange="uploadStepMedia(this)">
+            📷<input type="file" accept="image/*,video/*" style="display:none;" data-change="uploadStepMedia" data-arg-self>
           </label>
           <button type="button" data-click="hrmsRemoveClosestParent" data-arg="div" data-arg-self="1"
             style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(239,68,68,0.1);color:#f87171;cursor:pointer;font-size:14px;flex-shrink:0;">×</button>

@@ -71,7 +71,7 @@
                     <div class="card" style="margin-bottom:12px;${isSelected ? 'border:2px solid #3b82f6;' : ''}">
                         <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;">
                             <div style="display:flex;align-items:start;gap:12px;flex:1;min-width:0;">
-                                <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleFileSelection('${file.file_id}')" style="margin-top:4px;">
+                                <input type="checkbox" ${isSelected ? 'checked' : ''} data-change="toggleFileSelection" data-arg="${file.file_id}" style="margin-top:4px;">
                                 <div style="flex:1;min-width:0;">
                                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
                                         <span style="font-size:20px;">📄</span>
@@ -126,7 +126,7 @@
             updateBatchDownloadButton();
             // 重新渲染以更新复选框状态
             const container = document.getElementById('files-list-container');
-            const checkbox = container.querySelector(`input[onchange*="${fileId}"]`);
+            const checkbox = container.querySelector(`input[data-change="toggleFileSelection"][data-arg="${fileId}"]`);
             if (checkbox) {
                 const card = checkbox.closest('.card');
                 if (selectedFiles.has(fileId)) {
@@ -345,7 +345,7 @@
                             <div class="uf-drop-hint">支持 Excel / CSV / PDF / ZIP / 图片，最大 50MB</div>
                             <input type="file" id="upload-file-input" style="display:none;"
                                    accept=".xlsx,.xls,.csv,.pdf,.zip,.png,.jpg,.jpeg,.doc,.docx,.txt"
-                                   onchange="ufShowSelected(this)">
+                                   data-change="ufShowSelected" data-arg-self>
                         </div>
                         <div class="uf-selected" id="uf-selected" style="display:none;">
                             <span class="uf-file-icon" id="uf-file-icon">📄</span>

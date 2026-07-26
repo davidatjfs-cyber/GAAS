@@ -15697,7 +15697,7 @@
             </header>
             <div class="login-rep-card">
                 <div class="login-rep-card-inner">
-                    <form onsubmit="doLogin(event)">
+                    <form data-submit="doLogin" data-pass-event>
                         <div class="form-group">
                             <label>用户名</label>
                             <input type="text" id="username" required autocomplete="username" placeholder="请输入用户名">
@@ -19830,7 +19830,7 @@
                                     <div class="tt-kb-search-wrap">
                                         <input type="text" id="training-kb-search" placeholder="输入关键词搜索文章…" autocomplete="off"
                                         oninput="searchKbArticles(this.value)"
-                                        onfocus="if(!this.value)searchKbArticles('')"
+                                        data-focus="hrmsSearchKbIfEmpty" data-arg-self
                                         class="tt-input" style="border:none;border-radius:14px;background:rgba(255,255,255,0.04);">
                                         <div class="tt-kb-help">可直接搜标题、培训关键词、岗位名。搜索结果里点“加入”即可，不会打乱上面的已选区。</div>
                                     </div>
@@ -21772,7 +21772,7 @@
                             </div>
                             <div class="exam-card-body">
                                 <div class="exam-kb-source">
-                                    <select id="exam-kb-material" class="exam-select" multiple size="4" style="padding: 10px; min-height: 140px; width: 100%;" onfocus="try{populateExamMaterialSources();}catch(e){console.error(e);}">
+                                    <select id="exam-kb-material" class="exam-select" multiple size="4" style="padding: 10px; min-height: 140px; width: 100%;" data-focus="hrmsPopulateExamMaterialSources">
                                         <option value="" disabled selected>请先点击「加载」拉取知识库列表</option>
                                     </select>
                                     <button class="btn" type="button" data-click="loadExamMaterialFromKnowledge">加载</button>
@@ -24420,6 +24420,7 @@
             }
         } catch (e) {}
         document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (!el) return; var fn = el.getAttribute('data-click'); if (!fn || typeof window[fn] !== 'function') return; if (el.hasAttribute('data-click-self-only') && e.target !== el) return; if (el.hasAttribute('data-stop')) e.stopPropagation(); var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); parseArg('data-arg3', 'data-arg3-type'); parseArg('data-arg4', 'data-arg4-type'); parseArg('data-arg5', 'data-arg5-type'); parseArg('data-arg6', 'data-arg6-type'); if (el.hasAttribute('data-arg-self')) args.push(el); if (el.hasAttribute('data-pass-event')) args.push(e); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; window.hrmsRemoveClosest = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n) n.remove(); } catch (err) {} }; window.hrmsRemoveClosestParent = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n && n.parentElement) n.parentElement.remove(); } catch (err) {} }; window.hrmsRemoveParent = function (el) { try { if (el && el.parentElement) el.parentElement.remove(); } catch (err) {} }; window.hrmsSelectPointsRule = function (idx, el) { if (typeof selectPointsRule === 'function') selectPointsRule(el, idx); }; window.hrmsSelectPointsReturnedRule = function (idx, el) { if (typeof selectPointsReturnedRule === 'function') selectPointsReturnedRule(el, idx); }; window.hrmsToggleNotifFull = function (el) { try { var n = el && el.querySelector && el.querySelector('.notif-full-msg'); if (n) n.classList.toggle('notif-msg-show'); } catch (err) {} }; window.hrmsToggleByIdDisplay = function (id) { var d = document.getElementById(id); if (d) d.style.display = d.style.display === 'none' ? '' : 'none'; }; window.hrmsRemoveGrandparent = function (el) { try { if (el && el.parentElement && el.parentElement.parentElement) el.parentElement.parentElement.remove(); } catch (err) {} }; window.hrmsNoop = function () {}; window.hrmsWindowOpen = function (url) { try { window.open(url); } catch (err) {} }; window.hrmsRemoveById = function (id) { var n = document.getElementById(id); if (n) n.remove(); }; window.hrmsDismissClosestInner = function (el) { try { var n = el && el.closest && el.closest('div'); if (n) n.innerHTML = '<span style="color:var(--rep-muted)">已暂不处理</span>'; } catch (err) {} }; window.hrmsConfirmOntologyTask = function (encoded, el) { if (typeof confirmCreateOntologyTask === 'function') confirmCreateOntologyTask(decodeURIComponent(encoded || ''), el); }; window.hrmsCopyReadyCopy = function (el) { if (typeof copyReadyCopy === 'function') copyReadyCopy(el); }; window.hrmsAddIngredientRow = function (el) { if (typeof addIngredientRow === 'function') addIngredientRow(el && el.previousElementSibling); }; window.hrmsAddProcessStepRow = function (el) { if (typeof addProcessStepRow === 'function') addProcessStepRow(el && el.previousElementSibling); }; window.hrmsPickKitchenStore = function (store) { window._kitchenStore = store; if (typeof loadKitchenDashboard === 'function') loadKitchenDashboard(); }; window.hrmsCloseActionOpenPoster = function (key) { if (typeof closeActionDetailModal === 'function') closeActionDetailModal(); if (typeof openPosterPicker === 'function') openPosterPicker(key); }; window.hrmsClosePosterShowGrowth = function () { if (typeof closePosterPicker === 'function') closePosterPicker(); if (typeof showGrowthTab === 'function') showGrowthTab('posters'); }; window.hrmsMobileNav = function (el, e) { if (typeof mobileNavigateTo === 'function') mobileNavigateTo(el && el.dataset ? el.dataset.page : '', e, el); }; window.hrmsMobileNavMore = function (el, e) { if (typeof mobileNavigateTo === 'function') mobileNavigateTo('more', e, el); }; window.hrmsToggleSelfClass = function (cls, el) { try { if (el && cls) el.classList.toggle(cls); } catch (err) {} }; window.hrmsTrainingQuizContinue = function (next) { if (next === 'certified') { if (typeof showTrainingCertifiedScreen === 'function') showTrainingCertifiedScreen(); } else if (typeof showTrainingPracticeScreen === 'function') showTrainingPracticeScreen(); }; window.hrmsOpenJsonArg = function (fnName, encoded) { try { var data = JSON.parse(decodeURIComponent(encoded || '')); if (typeof window[fnName] === 'function') window[fnName](data); } catch (err) {} }; window.hrmsKitchenEditMapping = function (encoded) { if (typeof kitchenEditMappingFromJson === 'function') kitchenEditMappingFromJson(encoded); }; window.hrmsExpandCollapsePair = function (txtId, fullId, el) { var a = document.getElementById(txtId), b = document.getElementById(fullId); if (!a || !b) return; if (b.style.display === 'none') { a.style.display = 'none'; b.style.display = ''; if (el) el.textContent = '收起'; } else { a.style.display = ''; b.style.display = 'none'; if (el) el.textContent = '展开全文'; } }; window.hrmsOpenTrainingSession = function (id) { if (id === '' || id == null) return; if (typeof openTrainingSession === 'function') openTrainingSession(Number(id)); }; window.hrmsFillStoreDutyBinding = function (idx) { if (typeof fillStoreDutyBindingForm === 'function' && Array.isArray(__storeDutyBindingsCache)) fillStoreDutyBindingForm(__storeDutyBindingsCache[idx]); }; window.hrmsSwitchAgentTemplates = function (kind) { if (typeof switchAgentTemplateKind === 'function') switchAgentTemplateKind(kind); if (typeof switchAgentConfigTab === 'function') switchAgentConfigTab('templates'); }; window.hrmsToggleParentOpen = function (el) { if (el && el.parentElement) el.parentElement.open = !el.parentElement.open; }; window.hrmsToggleParentClass = function (cls, el) { if (el && el.parentElement) el.parentElement.classList.toggle(cls); }; window.hrmsHideById = function (id) { var n = document.getElementById(id); if (n) n.style.display = 'none'; }; window.hrmsClearDailyReportDates = function () { var a = document.getElementById('dr-list-start'); if (a) a.value = ''; var b = document.getElementById('dr-list-end'); if (b) b.value = ''; if (typeof loadDailyReportData === 'function') loadDailyReportData(); }; window.hrmsToggleKitchenConfigForm = function (el) { var f = document.getElementById('kitchen-config-form'); if (!f) return; f.style.display = f.style.display === 'none' ? '' : 'none'; var s = el && el.querySelector ? el.querySelector('span') : null; if (s) s.textContent = f.style.display === 'none' ? '展开表单' : '收起表单'; }; window.hrmsSubmitPointsApplication = function () { return uploadPointsEvidence().then(function () { return submitPointsApplication(); }); }; // P5.1：data-click(+data-arg[+data-arg2][+data-arg3][+data-click2][+data-arg-self][+data-click-self-only][+data-stop]) 委托
+        /* B7 data-change/input/submit/focus/blur */ (function () { function dispatchDataEvent(e, attrName) { var t = e.target; if (!t || t.nodeType !== 1) return; var el = (t.hasAttribute && t.hasAttribute(attrName)) ? t : (t.closest ? t.closest('[' + attrName + ']') : null); if (!el) return; var fn = el.getAttribute(attrName); if (!fn || typeof window[fn] !== 'function') return; if (el.hasAttribute('data-stop')) e.stopPropagation(); var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); parseArg('data-arg3', 'data-arg3-type'); parseArg('data-arg4', 'data-arg4-type'); parseArg('data-arg5', 'data-arg5-type'); parseArg('data-arg6', 'data-arg6-type'); if (el.hasAttribute('data-arg-self')) args.push(el); if (el.hasAttribute('data-pass-value')) args.push(el.value); if (el.hasAttribute('data-pass-number')) args.push(Number(el.value)); if (el.hasAttribute('data-pass-checked')) args.push(!!el.checked); if (el.hasAttribute('data-pass-event')) args.push(e); window[fn].apply(null, args); } document.addEventListener('change', function (e) { dispatchDataEvent(e, 'data-change'); }); document.addEventListener('input', function (e) { dispatchDataEvent(e, 'data-input'); }); document.addEventListener('submit', function (e) { dispatchDataEvent(e, 'data-submit'); }); document.addEventListener('focusin', function (e) { dispatchDataEvent(e, 'data-focus'); }); document.addEventListener('focusout', function (e) { dispatchDataEvent(e, 'data-blur'); }); })(); window.hrmsSearchKbIfEmpty = function (el) { try { if (el && !el.value && typeof searchKbArticles === 'function') searchKbArticles(''); } catch (err) {} }; window.hrmsPopulateExamMaterialSources = function () { try { if (typeof populateExamMaterialSources === 'function') populateExamMaterialSources(); } catch (err) { console.error(err); } };
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -26676,7 +26677,7 @@
                     + '<div class="ap-card__bottom">'
                     +   '<span class="ap-card__time">' + escapeHtml(timeStr) + '</span>'
                     +   '<div class="ap-card__actions">'
-                    +     (canBulk ? '<label class="ap-card__checkbox-wrap"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleApprovalSelection(\'' + escapeHtml(id) + '\', this.checked)">批量选择</label>' : '<span></span>')
+                    +     (canBulk ? '<label class="ap-card__checkbox-wrap"><input type="checkbox" ' + (checked ? 'checked' : '') + ' data-change="toggleApprovalSelection" data-arg="' + escapeHtml(id) + '" data-pass-checked>批量选择</label>' : '<span></span>')
                     +     '<button class="ga-btn ga-btn--ghost ga-btn--sm" type="button" data-click="openApprovalDetailModal" data-arg="' + escapeHtml(id) + '" data-stop>查看详情</button>'
                     +   '</div>'
                     + '</div>'
@@ -29785,7 +29786,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
             const allowedStores = getAllowedStoresForUser();
             const storeSuffix = allowedStores.length > 1 ? ` · 可切换${allowedStores.length}店` : '';
             const switcherHtml = allowedStores.length > 1 ? `
-                <select onchange="switchCurrentUserStore(this.value)" style="margin-top:8px;width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.75);color:#fff;font-size:12px;">
+                <select data-change="switchCurrentUserStore" data-pass-value style="margin-top:8px;width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.75);color:#fff;font-size:12px;">
                     ${allowedStores.map(store => `<option value="${escapeHtml(store)}" ${store === activeStore ? 'selected' : ''}>${escapeHtml(store)}</option>`).join('')}
                 </select>
             ` : '';
@@ -30088,7 +30089,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 + '<div class="atb-meta" style="margin-top:12px;"><span>状态：' + atbEscape(board) + '</span><span>负责人：' + atbEscape({ops_supervisor:'运营督导',food_quality:'食安专员',train_advisor:'培训顾问',marketing_planner:'营销策划',marketing_executor:'营销执行',data_auditor:'数据审计'}[t.assignee_agent || t.current_agent] || t.assignee_agent || t.current_agent || '待分配') + '</span><span>门店：' + atbEscape(t.store || '-') + '</span><span>类型：' + atbEscape(atbCategoryZh(t.category)) + '</span><span>优先级：' + atbEscape(atbPriorityZh(t.priority || t.severity)) + '</span></div>'
                 + atbRenderStatusPath(board, rawEvents)
                 + '<div class="atb-section"><b>任务内容</b><p style="margin-top:8px;color:rgba(226,232,240,.72);white-space:pre-wrap;">' + atbEscape(t.detail || '') + '</p></div>'
-                + '<div class="atb-section"><b>补充证据/反馈</b><textarea id="atb-evidence-text" class="atb-input" style="margin-top:10px;min-height:82px;" placeholder="输入门店反馈、检查说明或证据描述"></textarea><div id="atb-evidence-files-wrap" style="margin-top:8px;"><label style="display:flex;align-items:center;gap:8px;padding:12px;border:2px dashed rgba(255,255,255,0.15);border-radius:12px;cursor:pointer;color:rgba(226,232,240,0.6);font-size:14px;transition:border-color .2s;"><span>点击或拖拽上传照片/文件</span><input id="atb-evidence-files" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt" style="display:none;" onchange="atbPreviewFiles()"></label><div id="atb-evidence-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div></div><button class="atb-action" style="margin-top:8px;width:100%;" data-click="submitAgentTaskEvidence">提交证据/反馈</button></div>'
+                + '<div class="atb-section"><b>补充证据/反馈</b><textarea id="atb-evidence-text" class="atb-input" style="margin-top:10px;min-height:82px;" placeholder="输入门店反馈、检查说明或证据描述"></textarea><div id="atb-evidence-files-wrap" style="margin-top:8px;"><label style="display:flex;align-items:center;gap:8px;padding:12px;border:2px dashed rgba(255,255,255,0.15);border-radius:12px;cursor:pointer;color:rgba(226,232,240,0.6);font-size:14px;transition:border-color .2s;"><span>点击或拖拽上传照片/文件</span><input id="atb-evidence-files" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt" style="display:none;" data-change="atbPreviewFiles"></label><div id="atb-evidence-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div></div><button class="atb-action" style="margin-top:8px;width:100%;" data-click="submitAgentTaskEvidence">提交证据/反馈</button></div>'
                 + '<div class="atb-section"><b>证据</b><div class="atb-timeline">' + evidences + '</div></div>'
                 + '<div class="atb-section"><b>审计时间线</b><div class="atb-timeline">' + events + '</div></div>'
                 + '<div class="atb-section"><b>重新分配负责人</b><select id="atb-reassign-agent" class="atb-input" style="margin-top:8px;width:100%;"><option value="">选择负责人...</option><option value="ops_supervisor">运营督导</option><option value="food_quality">食安专员</option><option value="train_advisor">培训顾问</option><option value="marketing_planner">营销策划</option><option value="marketing_executor">营销执行</option><option value="data_auditor">数据审计</option></select><button class="atb-action" style="margin-top:8px;width:100%;" data-click="reassignAgentTask">确认重分配</button></div>'
@@ -38119,6 +38120,8 @@ ${knowledgeContent.slice(0, 30000)}`;
             { key: 'hand_washing_duration', label: '洗手时长检查' }
         ];
 
+        window.hrmsOpsInspectionTypeChange = function(el) { if (el.value !== 'custom') return; const n = prompt('请输入自定义巡检类型英文标识(如 fire_safety)'); if (n) { const o = document.createElement('option'); o.value = n; o.text = n; o.selected = true; el.appendChild(o); } else el.value = 'opening'; }; window.hrmsSetBiAnomalyRuleEnabled = function(idx, checked) { if (__BI_ANOMALY_RULES[idx]) __BI_ANOMALY_RULES[idx].enabled = checked; }; window.hrmsSetBiAnomalyRuleMedium = function(idx, value) { if (__BI_ANOMALY_RULES[idx]) __BI_ANOMALY_RULES[idx].medium = Number(value); }; window.hrmsSetBiAnomalyRuleHigh = function(idx, value) { if (__BI_ANOMALY_RULES[idx]) __BI_ANOMALY_RULES[idx].high = Number(value); }; window.hrmsSetHrRatingDimWeight = function(i, value) { if (__HR_RATING_CURRENT_DIMS[i]) __HR_RATING_CURRENT_DIMS[i].weight = Number(value); }; window.hrmsSetHrRatingDimThreshold = function(i, grade, value) { if (__HR_RATING_CURRENT_DIMS[i]) { if (!__HR_RATING_CURRENT_DIMS[i].thresholds) __HR_RATING_CURRENT_DIMS[i].thresholds = {}; __HR_RATING_CURRENT_DIMS[i].thresholds[grade] = Number(value); } };
+
         async function fetchWithAgentAbort(key, url, options = {}) {
             const prev = __AGENT_REQUEST_CONTROLLERS[key];
             if (prev) prev.abort();
@@ -38152,7 +38155,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             const isCustom = !OP_INSPECTION_TYPE_OPTIONS.includes(v);
             let opts = OP_INSPECTION_TYPE_OPTIONS.map((k)=>`<option value="${k}" ${k===v?'selected':''}>${label[k]||k}</option>`).join('');
             if (isCustom) opts += `<option value="${v}" selected>${v}</option>`;
-            return `<select class="${cls}" style="width:100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff;" onchange="if(this.value==='custom'){const n=prompt('请输入自定义巡检类型英文标识(如 fire_safety)');if(n){const o=document.createElement('option');o.value=n;o.text=n;o.selected=true;this.appendChild(o);}else{this.value='opening';}}">${opts}</select>`;
+            return `<select class="${cls}" style="width:100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff;" data-change="hrmsOpsInspectionTypeChange" data-arg-self>${opts}</select>`;
         }
 
         function getOpRandomTypeSelectHtml(value, cls) {
@@ -38530,7 +38533,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                         <div style="font-weight:600;color:#e2e8f0;font-size:13px;">${escapeHtml(label)}</div>
                         <div style="display:flex;gap:6px;align-items:center;">
-                            <label style="font-size:11px;color:#94a3b8;"><input type="checkbox" ${rule.enabled !== false ? 'checked' : ''} onchange="__BI_ANOMALY_RULES[${idx}].enabled=this.checked"> 启用</label>
+                            <label style="font-size:11px;color:#94a3b8;"><input type="checkbox" ${rule.enabled !== false ? 'checked' : ''} data-change="hrmsSetBiAnomalyRuleEnabled" data-arg="${idx}" data-arg-type="number" data-pass-checked> 启用</label>
                             <button data-click="removeBiAnomalyRule" data-arg="${idx}" data-arg-type="number" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:2px;" title="删除">✕</button>
                         </div>
                     </div>
@@ -38538,11 +38541,11 @@ ${knowledgeContent.slice(0, 30000)}`;
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
                         <div>
                             <label class="acm-lbl">🟡 中优先级 (${escapeHtml(unitLabel)})</label>
-                            <input type="number" class="acm-inp acm-inp-sm" value="${rule.medium ?? ''}" onchange="__BI_ANOMALY_RULES[${idx}].medium=Number(this.value)" step="any">
+                            <input type="number" class="acm-inp acm-inp-sm" value="${rule.medium ?? ''}" data-change="hrmsSetBiAnomalyRuleMedium" data-arg="${idx}" data-arg-type="number" data-pass-number step="any">
                         </div>
                         <div>
                             <label class="acm-lbl">🔴 高优先级 (${escapeHtml(unitLabel)})</label>
-                            <input type="number" class="acm-inp acm-inp-sm" value="${rule.high ?? ''}" onchange="__BI_ANOMALY_RULES[${idx}].high=Number(this.value)" step="any">
+                            <input type="number" class="acm-inp acm-inp-sm" value="${rule.high ?? ''}" data-change="hrmsSetBiAnomalyRuleHigh" data-arg="${idx}" data-arg-type="number" data-pass-number step="any">
                         </div>
                     </div>
                 </div>`;
@@ -38591,8 +38594,8 @@ ${knowledgeContent.slice(0, 30000)}`;
                     var mv=ov[mk]!=null?(ip?+(ov[mk]*100).toFixed(2):ov[mk]):'';
                     var hv=ov[hk]!=null?(ip?+(ov[hk]*100).toFixed(2):ov[hk]):'';
                     cells+='<div style="display:flex;gap:4px;align-items:center;margin:2px 0"><span style="font-size:10px;color:#64748b;width:68px;flex-shrink:0">'+escapeHtml(p.label.slice(0,6))+'</span>';
-                    cells+='<input type="number" class="acm-inp acm-inp-sm" style="width:58px;font-size:11px" placeholder="中" value="'+mv+'" onchange="setBiStoreOverride(\''+s.replace(/'/g,"\\'")+'\',\''+mk+'\',this.value,'+ip+')" step="any">';
-                    cells+='<input type="number" class="acm-inp acm-inp-sm" style="width:58px;font-size:11px" placeholder="高" value="'+hv+'" onchange="setBiStoreOverride(\''+s.replace(/'/g,"\\'")+'\',\''+hk+'\',this.value,'+ip+')" step="any"></div>';
+                    cells+='<input type="number" class="acm-inp acm-inp-sm" style="width:58px;font-size:11px" placeholder="中" value="'+mv+'" data-change="setBiStoreOverride" data-arg="'+s.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" data-arg2="'+mk+'" data-pass-value data-arg3="'+(ip?1:0)+'" data-arg3-type="number" step="any">';
+                    cells+='<input type="number" class="acm-inp acm-inp-sm" style="width:58px;font-size:11px" placeholder="高" value="'+hv+'" data-change="setBiStoreOverride" data-arg="'+s.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" data-arg2="'+hk+'" data-pass-value data-arg3="'+(ip?1:0)+'" data-arg3-type="number" step="any"></div>';
                 }
                 h+='<div style="background:#1e293b;border-radius:8px;padding:10px;border:1px solid #334155;margin-bottom:8px"><div style="font-weight:600;color:#e2e8f0;font-size:12px;margin-bottom:4px">🏪 '+escapeHtml(s)+'</div><div style="font-size:10px;color:#64748b;margin-bottom:4px">留空=使用全局默认值</div>'+cells+'</div>';
             }
@@ -39030,30 +39033,30 @@ ${knowledgeContent.slice(0, 30000)}`;
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
                         <div>
                             <label class="acm-lbl">评估指标</label>
-                            <select class="acm-inp acm-inp-sm" onchange="updateHrDimMetric(${i}, this.value)">${metricOpts}</select>
+                            <select class="acm-inp acm-inp-sm" data-change="updateHrDimMetric" data-arg="${i}" data-arg-type="number" data-pass-value>${metricOpts}</select>
                         </div>
                         <div>
                             <label class="acm-lbl">权重</label>
-                            <select class="acm-inp acm-inp-sm" onchange="__HR_RATING_CURRENT_DIMS[${i}].weight=Number(this.value)">${weightOpts}</select>
+                            <select class="acm-inp acm-inp-sm" data-change="hrmsSetHrRatingDimWeight" data-arg="${i}" data-arg-type="number" data-pass-number>${weightOpts}</select>
                         </div>
                     </div>
                     <div style="font-size:11px;color:#64748b;margin-bottom:6px;">ABCD 评级阈值 <span style="color:#818cf8;">(${dirLabel})</span></div>
                     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
                         <div style="text-align:center;">
                             <span class="acm-badge acm-ba" style="display:inline-block;margin-bottom:4px;">A</span>
-                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.A ?? ''}" onchange="__HR_RATING_CURRENT_DIMS[${i}].thresholds.A=Number(this.value)" placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
+                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.A ?? ''}" data-change="hrmsSetHrRatingDimThreshold" data-arg="${i}" data-arg-type="number" data-arg2="A" data-pass-number placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
                         </div>
                         <div style="text-align:center;">
                             <span class="acm-badge acm-bb" style="display:inline-block;margin-bottom:4px;">B</span>
-                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.B ?? ''}" onchange="__HR_RATING_CURRENT_DIMS[${i}].thresholds.B=Number(this.value)" placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
+                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.B ?? ''}" data-change="hrmsSetHrRatingDimThreshold" data-arg="${i}" data-arg-type="number" data-arg2="B" data-pass-number placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
                         </div>
                         <div style="text-align:center;">
                             <span class="acm-badge acm-bc" style="display:inline-block;margin-bottom:4px;">C</span>
-                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.C ?? ''}" onchange="__HR_RATING_CURRENT_DIMS[${i}].thresholds.C=Number(this.value)" placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
+                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.C ?? ''}" data-change="hrmsSetHrRatingDimThreshold" data-arg="${i}" data-arg-type="number" data-arg2="C" data-pass-number placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
                         </div>
                         <div style="text-align:center;">
                             <span class="acm-badge" style="background:#ef4444;display:inline-block;margin-bottom:4px;">D</span>
-                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.D ?? ''}" onchange="__HR_RATING_CURRENT_DIMS[${i}].thresholds.D=Number(this.value)" placeholder="${dir === 'higher_better' ? '<' : '>'}">
+                            <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.D ?? ''}" data-change="hrmsSetHrRatingDimThreshold" data-arg="${i}" data-arg-type="number" data-arg2="D" data-pass-number placeholder="${dir === 'higher_better' ? '<' : '>'}">
                         </div>
                     </div>
                 </div>`;
@@ -39408,7 +39411,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                             <div>
                                 <label class="acm-lbl">提示词模板</label>
                                 <div style="display:flex;gap:8px;align-items:center;">
-                                    <select id="cfg-template-${escapeHtml(c.agent_id)}" onchange="onConfigTemplateChange('${escapeHtml(c.agent_id)}')" class="acm-inp acm-inp-sm" style="flex:1;">
+                                    <select id="cfg-template-${escapeHtml(c.agent_id)}" data-change="onConfigTemplateChange" data-arg="${escapeHtml(c.agent_id)}" class="acm-inp acm-inp-sm" style="flex:1;">
                                         <option value="">手动提示词</option>
                                         ${(Array.isArray(__AGENT_TEMPLATE_MAP?.[c.agent_id]) ? __AGENT_TEMPLATE_MAP[c.agent_id] : []).map((t) => `<option value="${escapeHtml(t.id)}" ${String(c.prompt_template_id || '') === String(t.id || '') ? 'selected' : ''}>${escapeHtml(t.name || '')}${t.is_builtin ? '（系统）' : ''}</option>`).join('')}
                                     </select>
@@ -43406,8 +43409,8 @@ ${knowledgeContent.slice(0, 30000)}`;
                     <div class="tp-grid-4">
                         <div class="tp-field">范围<div style="color:#fff; font-size:13px;">${escapeHtml(t.store || t.brand || '公司级')}</div></div>
                         <div class="tp-field">指标<div style="color:#fff; font-size:13px; font-family:monospace;">${escapeHtml(t.metric_key)}</div></div>
-                        <label class="tp-field">目标值<input type="number" step="0.01" class="tp-input" value="${t.target_value ?? ''}" onchange="updateTpKpiTargetField('${t.id}','target_value',this.value)"></label>
-                        <label class="tp-field">预警值<input type="number" step="0.01" class="tp-input" value="${t.warning_value ?? ''}" onchange="updateTpKpiTargetField('${t.id}','warning_value',this.value)"></label>
+                        <label class="tp-field">目标值<input type="number" step="0.01" class="tp-input" value="${t.target_value ?? ''}" data-change="updateTpKpiTargetField" data-arg="${t.id}" data-arg2="target_value" data-pass-value></label>
+                        <label class="tp-field">预警值<input type="number" step="0.01" class="tp-input" value="${t.warning_value ?? ''}" data-change="updateTpKpiTargetField" data-arg="${t.id}" data-arg2="warning_value" data-pass-value></label>
                     </div>
                     <div style="font-size:11px; color:rgba(255,255,255,0.4); margin-top:6px;">单位:${escapeHtml(t.unit||'-')} · ${t.direction==='lower_better'?'越低越好':'越高越好'} · ${({daily:'每日',weekly:'每周',monthly:'每月'})[t.period]||t.period}</div>
                     <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="deleteTpKpiTarget" data-arg="${t.id}">删除</button></div>
@@ -43507,7 +43510,7 @@ ${knowledgeContent.slice(0, 30000)}`;
             box.innerHTML = list.map((item, idx) => `
                 <div class="tp-row-item">
                     <div class="tp-grid-3" style="grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));">
-                        ${fields.map(([f, label]) => `<label class="tp-field">${label}<input type="text" class="tp-input" value="${escapeHtml(String(item[f] ?? ''))}" onchange="updateTpRefItem('${key}',${idx},'${f}',this.value)"></label>`).join('')}
+                        ${fields.map(([f, label]) => `<label class="tp-field">${label}<input type="text" class="tp-input" value="${escapeHtml(String(item[f] ?? ''))}" data-change="updateTpRefItem" data-arg="${key}" data-arg2="${idx}" data-arg2-type="number" data-arg3="${f}" data-pass-value></label>`).join('')}
                     </div>
                     <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="removeTpRefItem" data-arg="${key}" data-arg2="${idx}" data-arg2-type="number">删除</button></div>
                 </div>`).join('');
@@ -43545,9 +43548,9 @@ ${knowledgeContent.slice(0, 30000)}`;
             if (!box) return;
             box.innerHTML = _tpRhythmItems.map((it, idx) => `
                 <div class="tp-row-item" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                    <label style="display:flex; align-items:center; gap:4px; font-size:12px;"><input type="checkbox" ${it.enabled !== false ? 'checked' : ''} onchange="updateTpRhythmItem(${idx},'enabled',this.checked)">启用</label>
-                    <input type="text" placeholder="名称" class="tp-input" style="flex:1; min-width:100px;" value="${escapeHtml(it.label || '')}" onchange="updateTpRhythmItem(${idx},'label',this.value)">
-                    <input type="text" placeholder="说明" class="tp-input" style="flex:2; min-width:140px;" value="${escapeHtml(it.desc || '')}" onchange="updateTpRhythmItem(${idx},'desc',this.value)">
+                    <label style="display:flex; align-items:center; gap:4px; font-size:12px;"><input type="checkbox" ${it.enabled !== false ? 'checked' : ''} data-change="updateTpRhythmItem" data-arg="${idx}" data-arg-type="number" data-arg2="enabled" data-pass-checked>启用</label>
+                    <input type="text" placeholder="名称" class="tp-input" style="flex:1; min-width:100px;" value="${escapeHtml(it.label || '')}" data-change="updateTpRhythmItem" data-arg="${idx}" data-arg-type="number" data-arg2="label" data-pass-value>
+                    <input type="text" placeholder="说明" class="tp-input" style="flex:2; min-width:140px;" value="${escapeHtml(it.desc || '')}" data-change="updateTpRhythmItem" data-arg="${idx}" data-arg-type="number" data-arg2="desc" data-pass-value>
                     <button type="button" class="btn btn-danger" data-click="removeTpRhythmItem" data-arg="${idx}" data-arg-type="number">删除</button>
                 </div>`).join('');
         }
@@ -43588,23 +43591,23 @@ ${knowledgeContent.slice(0, 30000)}`;
             box.innerHTML = _tpInspections.map((item, idx) => `
                 <div class="tp-row-item">
                     <div class="tp-grid-4">
-                        <label class="tp-field">门店（留空=按品牌）<input type="text" class="tp-input" value="${escapeHtml(item.store || '')}" onchange="updateTpInspection(${idx},'store',this.value)"></label>
-                        <label class="tp-field">品牌<select class="tp-input" onchange="updateTpInspection(${idx},'brand',this.value)">
+                        <label class="tp-field">门店（留空=按品牌）<input type="text" class="tp-input" value="${escapeHtml(item.store || '')}" data-change="updateTpInspection" data-arg="${idx}" data-arg-type="number" data-arg2="store" data-pass-value></label>
+                        <label class="tp-field">品牌<select class="tp-input" data-change="updateTpInspection" data-arg="${idx}" data-arg-type="number" data-arg2="brand" data-pass-value>
                             <option value="">（全部品牌）</option>
                             ${['洪潮','马己仙'].map(b => `<option value="${b}" ${item.brand===b?'selected':''}>${b}</option>`).join('')}
                         </select></label>
-                        <label class="tp-field">任务类型<select class="tp-input" onchange="updateTpInspection(${idx},'type',this.value)">
+                        <label class="tp-field">任务类型<select class="tp-input" data-change="updateTpInspection" data-arg="${idx}" data-arg-type="number" data-arg2="type" data-pass-value>
                             ${_tpRhythmItems.map(it => `<option value="${escapeHtml(it.key)}" ${item.type===it.key?'selected':''}>${escapeHtml(it.label||it.key)}</option>`).join('')}
                         </select></label>
-                        <label class="tp-field">时间(北京)<input type="time" class="tp-input" value="${escapeHtml(item.time || '09:00')}" onchange="updateTpInspection(${idx},'time',this.value)"></label>
+                        <label class="tp-field">时间(北京)<input type="time" class="tp-input" value="${escapeHtml(item.time || '09:00')}" data-change="updateTpInspection" data-arg="${idx}" data-arg-type="number" data-arg2="time" data-pass-value></label>
                     </div>
                     <div class="tp-grid-2" style="margin-top:8px;">
-                        <label class="tp-field">频率<select class="tp-input" onchange="updateTpInspection(${idx},'frequency',this.value)">
+                        <label class="tp-field">频率<select class="tp-input" data-change="updateTpInspection" data-arg="${idx}" data-arg-type="number" data-arg2="frequency" data-pass-value>
                             ${['daily','weekly','biweekly','monthly'].map(f => `<option value="${f}" ${((item.frequency||'daily')===f)?'selected':''}>${({daily:'每天',weekly:'每周',biweekly:'每两周',monthly:'每月'})[f]}</option>`).join('')}
                         </select></label>
                         <div class="tp-field">发送对象
                             <div style="display:flex; gap:10px; flex-wrap:wrap; padding-top:4px;">
-                                ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} onchange="toggleTpInspectionRole(${idx},'${role}',this.checked)">${label}</label>`).join('')}
+                                ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} data-change="toggleTpInspectionRole" data-arg="${idx}" data-arg-type="number" data-arg2="${role}" data-pass-checked>${label}</label>`).join('')}
                             </div>
                         </div>
                     </div>
@@ -43654,20 +43657,20 @@ ${knowledgeContent.slice(0, 30000)}`;
             box.innerHTML = _tpRandomItems.map((item, idx) => `
                 <div class="tp-row-item">
                     <div class="tp-grid-4">
-                        <label class="tp-field">检查项名称<input type="text" class="tp-input" value="${escapeHtml(item.type || '')}" onchange="updateTpRandom(${idx},'type',this.value)"></label>
-                        <label class="tp-field">描述<input type="text" class="tp-input" value="${escapeHtml(item.description || '')}" onchange="updateTpRandom(${idx},'description',this.value)"></label>
-                        <label class="tp-field">限时(分)<input type="number" class="tp-input" value="${item.timeWindow ?? 15}" onchange="updateTpRandom(${idx},'timeWindow',Number(this.value))"></label>
+                        <label class="tp-field">检查项名称<input type="text" class="tp-input" value="${escapeHtml(item.type || '')}" data-change="updateTpRandom" data-arg="${idx}" data-arg-type="number" data-arg2="type" data-pass-value></label>
+                        <label class="tp-field">描述<input type="text" class="tp-input" value="${escapeHtml(item.description || '')}" data-change="updateTpRandom" data-arg="${idx}" data-arg-type="number" data-arg2="description" data-pass-value></label>
+                        <label class="tp-field">限时(分)<input type="number" class="tp-input" value="${item.timeWindow ?? 15}" data-change="updateTpRandom" data-arg="${idx}" data-arg-type="number" data-arg2="timeWindow" data-pass-number></label>
                         <div class="tp-field">间隔(小时)
                             <div style="display:flex; gap:4px; align-items:center;">
-                                <input type="number" class="tp-input" value="${item.intervalMinHours ?? 2}" onchange="updateTpRandom(${idx},'intervalMinHours',Number(this.value))">
+                                <input type="number" class="tp-input" value="${item.intervalMinHours ?? 2}" data-change="updateTpRandom" data-arg="${idx}" data-arg-type="number" data-arg2="intervalMinHours" data-pass-number>
                                 <span>~</span>
-                                <input type="number" class="tp-input" value="${item.intervalMaxHours ?? 4}" onchange="updateTpRandom(${idx},'intervalMaxHours',Number(this.value))">
+                                <input type="number" class="tp-input" value="${item.intervalMaxHours ?? 4}" data-change="updateTpRandom" data-arg="${idx}" data-arg-type="number" data-arg2="intervalMaxHours" data-pass-number>
                             </div>
                         </div>
                     </div>
                     <div class="tp-field" style="margin-top:8px;">发送对象（绩效归属）
                         <div style="display:flex; gap:10px; flex-wrap:wrap; padding-top:4px;">
-                            ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} onchange="toggleTpRandomRole(${idx},'${role}',this.checked)">${label}</label>`).join('')}
+                            ${Object.entries(TP_ROLE_LABELS).map(([role,label]) => `<label style="font-size:12px; display:flex; align-items:center; gap:2px;"><input type="checkbox" ${((item.assigneeRoles||[]).includes(role))?'checked':''} data-change="toggleTpRandomRole" data-arg="${idx}" data-arg-type="number" data-arg2="${role}" data-pass-checked>${label}</label>`).join('')}
                         </div>
                     </div>
                     <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="removeTpRandomItem" data-arg="${idx}" data-arg-type="number">删除</button></div>
@@ -44561,7 +44564,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                     <div class="af-card-body" style="display:none; padding: 0 16px 14px; border-top: 1px solid rgba(255,255,255,0.05);">
                         <div style="padding-top: 12px;">
                             <div style="font-size: 11px; color: rgba(200,215,230,0.6); font-weight: 600; margin-bottom: 6px;">适用门店</div>
-                            <select id="af-store-${m.type}" class="settings-input" multiple style="width:100%; min-height:34px; font-size:13px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(226,232,240,0.9); padding:6px 8px;" onchange="afOnStoreChange('${m.type}')">${storeOptsHtml}</select>
+                            <select id="af-store-${m.type}" class="settings-input" multiple style="width:100%; min-height:34px; font-size:13px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(226,232,240,0.9); padding:6px 8px;" data-change="afOnStoreChange" data-arg="${m.type}">${storeOptsHtml}</select>
                         </div>
                         <div style="margin-top: 10px;">
                             <div style="font-size: 11px; color: rgba(200,215,230,0.6); font-weight: 600; margin-bottom: 6px;">审批链路</div>
@@ -44748,7 +44751,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                         <div class="mt-field-row__hint">${escapeHtml(meta.group)} · ${escapeHtml(meta.unit)}</div>
                     </div>
                     <input type="number" class="mt-field-row__input" inputmode="decimal" placeholder="目标值" value="${escapeHtml(String(val))}"
-                        onchange="mtUpdateFieldValue(${idx}, this.value)" oninput="mtUpdateFieldValue(${idx}, this.value)" />
+                        data-change="mtUpdateFieldValue" data-input="mtUpdateFieldValue" data-arg="${idx}" data-arg-type="number" data-pass-value />
                     <button type="button" class="mt-field-row__remove" data-click="mtRemoveField" data-arg="${idx}" data-arg-type="number" title="移除">✕</button>
                 </div>`;
             }).join('');
@@ -58103,7 +58106,7 @@ ${body}
                     const leaveRemaining = lb.remaining != null ? lb.remaining : '-';
                     const leaveTitle = lb.totalLeave != null ? `总假期: ${lb.totalLeave}天 (周休${lb.baseLeave} + 年假${lb.annualLeave})\\n已用: ${lb.usedLeave}天` : '';
                     const leaveCell = canEditLeave
-                        ? `<input type="number" step="0.5" value="${leaveRemaining}" style="width:76px; text-align:center; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:rgba(226,232,240,0.9); font-size:12px; padding:4px 6px;" title="${leaveTitle}" onchange="attSaveLeaveBalance('${u}','${month}',this.value)">${lb.overridden ? ' <span style="color:rgba(234,179,8,0.7); font-size:10px;" title="已手动修改">改</span>' : ''}`
+                        ? `<input type="number" step="0.5" value="${leaveRemaining}" style="width:76px; text-align:center; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:rgba(226,232,240,0.9); font-size:12px; padding:4px 6px;" title="${leaveTitle}" data-change="attSaveLeaveBalance" data-arg="${u}" data-arg2="${month}" data-pass-value>${lb.overridden ? ' <span style="color:rgba(234,179,8,0.7); font-size:10px;" title="已手动修改">改</span>' : ''}`
                         : `<span title="${leaveTitle}" style="color:rgba(96,165,250,0.9); font-weight:700;">${leaveRemaining}</span>`;
                     html += `<div class="att-list-item">
                         <div class="att-list-row"><span class="att-list-main">${nameMap[u] || u}</span><span class="att-list-sub">${month}</span></div>
@@ -58399,7 +58402,7 @@ ${body}
                     switchWrap.innerHTML = `
                         <div style="margin-top:12px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);">
                             <div style="font-size:11px;color:rgba(255,255,255,0.58);margin-bottom:6px;">当前操作门店</div>
-                            <select id="mobile-store-switch-select" onchange="switchCurrentUserStore(this.value)" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.86);color:#fff;">
+                            <select id="mobile-store-switch-select" data-change="switchCurrentUserStore" data-pass-value style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.86);color:#fff;">
                                 ${stores.map(function (store) {
                                     const selected = String(currentUser?.current_store || currentUser?.store || '') === String(store) ? 'selected' : '';
                                     return `<option value="${escapeHtml(store)}" ${selected}>${escapeHtml(store)}</option>`;
@@ -59300,7 +59303,7 @@ ${body}
                     <div class="card" style="margin-bottom:12px;${isSelected ? 'border:2px solid #3b82f6;' : ''}">
                         <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;">
                             <div style="display:flex;align-items:start;gap:12px;flex:1;min-width:0;">
-                                <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleFileSelection('${file.file_id}')" style="margin-top:4px;">
+                                <input type="checkbox" ${isSelected ? 'checked' : ''} data-change="toggleFileSelection" data-arg="${file.file_id}" style="margin-top:4px;">
                                 <div style="flex:1;min-width:0;">
                                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
                                         <span style="font-size:20px;">📄</span>
@@ -59355,7 +59358,7 @@ ${body}
             updateBatchDownloadButton();
             // 重新渲染以更新复选框状态
             const container = document.getElementById('files-list-container');
-            const checkbox = container.querySelector(`input[onchange*="${fileId}"]`);
+            const checkbox = container.querySelector(`input[data-change="toggleFileSelection"][data-arg="${fileId}"]`);
             if (checkbox) {
                 const card = checkbox.closest('.card');
                 if (selectedFiles.has(fileId)) {
@@ -59574,7 +59577,7 @@ ${body}
                             <div class="uf-drop-hint">支持 Excel / CSV / PDF / ZIP / 图片，最大 50MB</div>
                             <input type="file" id="upload-file-input" style="display:none;"
                                    accept=".xlsx,.xls,.csv,.pdf,.zip,.png,.jpg,.jpeg,.doc,.docx,.txt"
-                                   onchange="ufShowSelected(this)">
+                                   data-change="ufShowSelected" data-arg-self>
                         </div>
                         <div class="uf-selected" id="uf-selected" style="display:none;">
                             <span class="uf-file-icon" id="uf-file-icon">📄</span>
@@ -62777,7 +62780,7 @@ ${body}
             if (tpl.scope === 'bound') {
                 dyn.innerHTML = ''
                     + '<div class="rep-field"><label>绑定规则 *（' + escapeHtml(tpl.bind_kind === 'payment_rule' ? '支付发券' : '规则引擎/订阅') + '）</label>'
-                    + '<select id="abtest-target-rule" class="dr-store-select" onchange="onAbBindRuleChange()"><option value="">加载中…</option></select></div>'
+                    + '<select id="abtest-target-rule" class="dr-store-select" data-change="onAbBindRuleChange"><option value="">加载中…</option></select></div>'
                     + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">A组 · 当前版本（只读）</div>'
                     + '<textarea id="abtest-variant-a" class="dr-store-select" readonly placeholder="选择绑定规则后自动带出当前版本" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:rgba(226,232,240,0.7);background:rgba(255,255,255,0.03);resize:vertical;"></textarea>'
                     + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">B组 · 挑战版本 *（' + (tpl.bind_kind === 'payment_rule' ? '券模板ID / 触发门槛' : '短信文案，可用 {name}/{姓名} 占位') + '）</div>'
@@ -62828,7 +62831,7 @@ ${body}
             var row = document.createElement('div');
             row.id = 'abcf-row-' + key;
             row.style.cssText = 'display:grid;grid-template-columns:1fr 110px 36px;gap:6px;margin-bottom:6px;';
-            row.innerHTML = '<input id="abcf-' + key + '-label" class="dr-store-select" placeholder="字段名（如 浏览量）" style="padding:8px;color:var(--rep-text);font-size:12px;" oninput="abRefreshCustomMetric()">'
+            row.innerHTML = '<input id="abcf-' + key + '-label" class="dr-store-select" placeholder="字段名（如 浏览量）" style="padding:8px;color:var(--rep-text);font-size:12px;" data-input="abRefreshCustomMetric">'
                 + '<select id="abcf-' + key + '-type" class="dr-store-select" style="font-size:12px;"><option value="int">计数</option><option value="money">金额</option></select>'
                 + '<button type="button" class="rep-seg-btn" style="padding:0;" data-click="abRemoveCustomField" data-arg="' + key + '">×</button>';
             host.appendChild(row);
@@ -64357,11 +64360,11 @@ ${body}
                             '<div class="amr-sec">'
                           +   '<div class="amr-sec-title">📡 投放渠道</div>'
                           +   '<div class="amr-field">'
-                          +     '<select id="am-ch-' + rk + '" class="amr-ctrl" onchange="amOnChannelChange(\'' + rk + '\')">' + channelOpts + '</select>'
+                          +     '<select id="am-ch-' + rk + '" class="amr-ctrl" data-change="amOnChannelChange" data-arg="' + rk + '">' + channelOpts + '</select>'
                           +   '</div>'
                           +   '<div id="am-ch-sms-' + rk + '" class="amr-field" style="display:' + (curChannel === 'sms' ? 'block' : 'none') + ';">'
                           +     '<label class="amr-label">营销活动（自动绑定门店双模板＋同步规则标题）</label>'
-                          +     '<select id="am-campaign-' + rk + '" class="amr-ctrl" onchange="amOnCampaignChange(\'' + rk + '\')">' + campaignOpts + '</select>'
+                          +     '<select id="am-campaign-' + rk + '" class="amr-ctrl" data-change="amOnCampaignChange" data-arg="' + rk + '">' + campaignOpts + '</select>'
                           +     '<div class="amr-hint" id="am-campaign-tip-' + rk + '">' + escapeHtml(campaignTip) + '</div>'
                           +   '</div>'
                           +   '<button type="button" class="amr-btn amr-btn--ghost" data-click="amSetChannel" data-arg="' + rk + '">保存渠道</button>'
@@ -68492,7 +68495,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
         <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;">
           <input type="text" placeholder="工艺步骤，如：顺时针搅拌至均匀" value="${instrVal}" style="${inputStyle}" class="rs-instruction">
           <label title="上传图片或视频" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(99,102,241,0.4);background:rgba(99,102,241,0.08);color:#a5b4fc;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
-            📷<input type="file" accept="image/*,video/*" style="display:none;" onchange="uploadStepMedia(this)">
+            📷<input type="file" accept="image/*,video/*" style="display:none;" data-change="uploadStepMedia" data-arg-self>
           </label>
           <button type="button" data-click="hrmsRemoveClosestParent" data-arg="div" data-arg-self="1"
             style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(239,68,68,0.1);color:#f87171;cursor:pointer;font-size:14px;flex-shrink:0;">×</button>

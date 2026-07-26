@@ -30,7 +30,7 @@ function loadSetHtmlEnv() {
   return window;
 }
 
-test('B7 hrms-sethtml：剥离 script/onclick/onerror；过渡保留 onchange；fail-closed', async (t) => {
+test('B7 hrms-sethtml：剥离 script 与全部 on* 事件属性；fail-closed', async (t) => {
   const window = loadSetHtmlEnv();
   if (!window) {
     t.skip('需要 jsdom + dompurify（npm i -D jsdom dompurify）');
@@ -41,13 +41,18 @@ test('B7 hrms-sethtml：剥离 script/onclick/onerror；过渡保留 onchange；
     '<button onclick="foo()" data-rid="x1">ok</button>' +
     '<script>alert(1)</script>' +
     '<img src=x onerror=alert(2)>' +
-    '<input onchange="bar()" data-x="1">';
-  assert.equal(/onclick=/i.test(el.innerHTML), false, 'onclick 已收紧剥离');
-  assert.equal(/onerror=/i.test(el.innerHTML), false, 'onerror 已收紧剥离');
+    '<svg onload=alert(3)></svg>' +
+    '<input onchange="bar()" data-x="1">' +
+    '<input onfocus=alert(4) autofocus>' +
+    '<form onsubmit="baz()"><button>go</button></form>';
+  assert.equal(/onclick=/i.test(el.innerHTML), false, 'onclick 已剥离');
+  assert.equal(/onerror=/i.test(el.innerHTML), false, 'onerror 已剥离');
+  assert.equal(/onload=/i.test(el.innerHTML), false, 'onload 已剥离');
+  assert.equal(/onchange=/i.test(el.innerHTML), false, 'onchange 已剥离');
+  assert.equal(/onfocus=/i.test(el.innerHTML), false, 'onfocus 已剥离');
+  assert.equal(/onsubmit=/i.test(el.innerHTML), false, 'onsubmit 已剥离');
   assert.equal(/<script/i.test(el.innerHTML), false);
   assert.match(el.innerHTML, /data-rid="x1"/i);
-  // 过渡：onchange 仍放行（前端模板未迁完）
-  assert.match(el.innerHTML, /onchange=/i);
   assert.equal(typeof window.setHTML, 'function');
   window.setHTML(el, '<p>hi<script>x</script></p>');
   assert.equal(/<script/i.test(el.innerHTML), false);
@@ -60,18 +65,14 @@ test('B7 hrms-sethtml：剥离 script/onclick/onerror；过渡保留 onchange；
   window.DOMPurify = prev;
 });
 
-test('B7 vendor 文件与 HTML 引用存在', () => {
+test('B7 vendor 文件与 HTML 引用存在；ADD_ATTR 不含 on*', () => {
   const purify = readFileSync(join(ROOT, 'assets/vendor/dompurify/purify.min.js'), 'utf8');
   assert.ok(purify.includes('DOMPurify'));
   const hook = readFileSync(join(ROOT, 'assets/vendor/dompurify/hrms-sethtml.js'), 'utf8');
   assert.ok(hook.includes('setHTML'));
   assert.ok(hook.includes('innerHTML'));
-  assert.ok(hook.includes('LEGACY_EVENT_ATTRS'), '过渡白名单须显式命名');
-  assert.equal(
-    /LEGACY_EVENT_ATTRS\s*=\s*\[[^\]]*onclick/s.test(hook),
-    false,
-    'LEGACY_EVENT_ATTRS 不得包含 onclick'
-  );
+  assert.equal(/LEGACY_EVENT_ATTRS/.test(hook), false, '过渡白名单已移除');
+  assert.equal(/\bon[a-z]+\b/.test(hook.match(/ADD_ATTR:\s*\[[^\]]*\]/)?.[0] || ''), false, 'ADD_ATTR 不得含 on*');
   const html = readFileSync(join(ROOT, 'working-fixed.html'), 'utf8');
   assert.ok(html.includes('/assets/vendor/dompurify/purify.min.js'));
   assert.ok(html.includes('/assets/vendor/dompurify/hrms-sethtml.js'));
@@ -81,4 +82,17 @@ test('B7 vendor 文件与 HTML 引用存在', () => {
   const second = html.indexOf(open, first + 1);
   assert.notEqual(first, -1);
   assert.equal(second, -1);
+});
+
+test('B7：frontend pages 动态模板不得再写 onchange/oninput/onsubmit/onfocus/onblur=', () => {
+  const pagesDir = join(ROOT, 'frontend/src/pages');
+  const { readdirSync } = require('fs');
+  const re = /\bon(change|input|submit|focus|blur)=/i;
+  const hits = [];
+  for (const name of readdirSync(pagesDir)) {
+    if (!name.endsWith('.js')) continue;
+    const src = readFileSync(join(pagesDir, name), 'utf8');
+    if (re.test(src)) hits.push(name);
+  }
+  assert.deepEqual(hits, [], `pages 仍含过渡 on* 属性: ${hits.join(', ')}`);
 });

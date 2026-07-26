@@ -915,7 +915,7 @@
                     const leaveRemaining = lb.remaining != null ? lb.remaining : '-';
                     const leaveTitle = lb.totalLeave != null ? `总假期: ${lb.totalLeave}天 (周休${lb.baseLeave} + 年假${lb.annualLeave})\\n已用: ${lb.usedLeave}天` : '';
                     const leaveCell = canEditLeave
-                        ? `<input type="number" step="0.5" value="${leaveRemaining}" style="width:76px; text-align:center; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:rgba(226,232,240,0.9); font-size:12px; padding:4px 6px;" title="${leaveTitle}" onchange="attSaveLeaveBalance('${u}','${month}',this.value)">${lb.overridden ? ' <span style="color:rgba(234,179,8,0.7); font-size:10px;" title="已手动修改">改</span>' : ''}`
+                        ? `<input type="number" step="0.5" value="${leaveRemaining}" style="width:76px; text-align:center; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:rgba(226,232,240,0.9); font-size:12px; padding:4px 6px;" title="${leaveTitle}" data-change="attSaveLeaveBalance" data-arg="${u}" data-arg2="${month}" data-pass-value>${lb.overridden ? ' <span style="color:rgba(234,179,8,0.7); font-size:10px;" title="已手动修改">改</span>' : ''}`
                         : `<span title="${leaveTitle}" style="color:rgba(96,165,250,0.9); font-weight:700;">${leaveRemaining}</span>`;
                     html += `<div class="att-list-item">
                         <div class="att-list-row"><span class="att-list-main">${nameMap[u] || u}</span><span class="att-list-sub">${month}</span></div>
@@ -1211,7 +1211,7 @@
                     switchWrap.innerHTML = `
                         <div style="margin-top:12px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);">
                             <div style="font-size:11px;color:rgba(255,255,255,0.58);margin-bottom:6px;">当前操作门店</div>
-                            <select id="mobile-store-switch-select" onchange="switchCurrentUserStore(this.value)" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.86);color:#fff;">
+                            <select id="mobile-store-switch-select" data-change="switchCurrentUserStore" data-pass-value style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.86);color:#fff;">
                                 ${stores.map(function (store) {
                                     const selected = String(currentUser?.current_store || currentUser?.store || '') === String(store) ? 'selected' : '';
                                     return `<option value="${escapeHtml(store)}" ${selected}>${escapeHtml(store)}</option>`;
