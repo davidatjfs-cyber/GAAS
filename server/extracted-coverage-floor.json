@@ -305,6 +305,9 @@
     "domains/agent-auditor/run-data-auditor-persist.js",
     "domains/bi-weekly-report/query-cost-coverage-helpers.js",
     "domains/bi-weekly-report/format-report-markdown-helpers.js",
+    "domains/bi-weekly-report/generate-period-report-helpers.js",
+    "domains/daily-reports/list-daily-reports-helpers.js",
+    "domains/inventory-forecast/upload-history-file-helpers.js",
     "services/check-data-integration-helpers.js"
   ]
 }
