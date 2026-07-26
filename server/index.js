@@ -477,7 +477,7 @@ async function ensureOpsTasksTable() {
       const rel = await pool.query(`select to_regclass('public.ops_tasks') as rel`).catch(() => null);
       if (rel?.rows?.[0]?.rel === 'ops_tasks') return;
     }
-    console.error('[ensureOpsTasksTable] Error:', e?.message || e);
+    logger.error({ msg: 'ensure_ops_tasks_table_failed', err: e?.message || String(e) });
     throw e;
   }
 }
@@ -507,11 +507,11 @@ async function ensureDataGovernanceTables() {
 try {
   fs.mkdirSync(uploadsDir, { recursive: true });
   fs.accessSync(uploadsDir, fs.constants.R_OK | fs.constants.W_OK);
-  console.log('[uploads] Uploads dir ready:', uploadsDir);
+  logger.info({ msg: 'uploads_dir_ready', uploadsDir });
 } catch (e) {
-  console.error('[uploads] Cannot ensure uploads dir writable:', e?.message || e);
+  logger.error({ msg: 'uploads_dir_not_writable', err: e?.message || String(e) });
   try { fs.chmodSync(uploadsDir, 0o755); } catch (e2) {
-    console.error('[uploads] chmod fallback also failed:', e2?.message || e2);
+    logger.error({ msg: 'uploads_dir_chmod_failed', err: e2?.message || String(e2) });
   }
 }
 
@@ -670,7 +670,7 @@ const { captureHrmsStateSnapshotToDb } = createHrmsStateSnapshotHelpers({ pool }
 const loadTenantRuntimeStatus = (tenantId) => loadTenantRuntimeStatusFromModule(pool, tenantId);
 
 setAgentPool(pool);
-initBrandConfigCache().catch((e) => console.error('initBrandConfigCache failed:', e?.message || e));
+initBrandConfigCache().catch((e) => logger.error({ msg: 'init_brand_config_cache_failed', err: e?.message || String(e) }));
 configureDbSessionSafety(pool, { serviceName: 'hrms-server' });
 const __ALLOW_SCHEMA_CHANGES__ = isSchemaChangeAllowed();
 registerGrowthRoutes(app, pool);
@@ -700,11 +700,11 @@ const FEISHU_ALERT_ADMIN_GROWTH = process.env.FEISHU_ALERT_ADMIN_GROWTH || FEISH
 const FEISHU_ALERT_ADMIN_HEALTH = process.env.FEISHU_ALERT_ADMIN_HEALTH || FEISHU_ALERT_ADMIN_DEFAULT;
 const FEISHU_ALERT_ADMIN_SALES = process.env.FEISHU_ALERT_ADMIN_SALES || FEISHU_ALERT_ADMIN_DEFAULT;
 setSendGrowthAlert(async (msg) => {
-  return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true }).catch((e) => { console.error('[feishu-alert-growth] send failed:', e?.message || e); return { ok: false }; });
+  return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true }).catch((e) => { logger.error({ msg: 'feishu_alert_growth_send_failed', err: e?.message || String(e) }); return { ok: false }; });
 });
 registerGrowthSolutionRoutes(app, authRequired);
 setSolutionNotifier(async (msg) => {
-  return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true }).catch((e) => { console.error('[feishu-alert-growth] send failed:', e?.message || e); return { ok: false }; });
+  return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true }).catch((e) => { logger.error({ msg: 'feishu_alert_growth_send_failed', err: e?.message || String(e) }); return { ok: false }; });
 });
 setSolutionLLM(async (prompt) => {
   const r = await callLLM([{ role: 'user', content: prompt }], { purpose: 'reasoning' });
@@ -722,7 +722,7 @@ setHealthIncidentNotifiers({
     // 健康中心 SLA/队列摘要属于平台运营信息，不按租户 users.role 群发。
     // sendAdminSystemAlert() 会跨租户扫描 admin/hq_manager/hr_manager，
     // 从而把销售/系统运营告警发给马己仙、洪潮的门店管理员。
-    const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_HEALTH, String(msg || ''), { skipDedup: true }).catch((e) => { console.error('[feishu-alert-health] send failed:', e?.message || e); return { ok: false }; });
+    const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_HEALTH, String(msg || ''), { skipDedup: true }).catch((e) => { logger.error({ msg: 'feishu_alert_health_send_failed', err: e?.message || String(e) }); return { ok: false }; });
     return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [FEISHU_ALERT_ADMIN_HEALTH] };
   },
 });
@@ -736,7 +736,7 @@ registerSalesAiRoutes(app, pool, platformAdminRequired, {
   // 团队自己的飞书账号，不查任何tenant的users表。收件人由 FEISHU_ALERT_ADMIN_SALES 配置，
   // 销售公司新租户建好后改这一个环境变量即可切换收件人，无需再动代码。
   sendOpsAlert: async (msg, _opts = {}) => {
-    const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_SALES, String(msg || ''), { skipDedup: true }).catch((e) => { console.error('[feishu-alert-sales] send failed:', e?.message || e); return { ok: false }; });
+    const r = await sendLarkMessage(FEISHU_ALERT_ADMIN_SALES, String(msg || ''), { skipDedup: true }).catch((e) => { logger.error({ msg: 'feishu_alert_sales_send_failed', err: e?.message || String(e) }); return { ok: false }; });
     return { ok: !!r?.ok, feishuSent: r?.ok ? 1 : 0, feishuFailed: r?.ok ? 0 : 1, recipients: [FEISHU_ALERT_ADMIN_SALES] };
   },
   requireSalesManagerOrAbove,
@@ -869,7 +869,7 @@ async function ensureCheckinTable() {
     await pool.query(`create index if not exists idx_checkin_store_time on checkin_records (store, check_time)`);
     await pool.query(`create index if not exists idx_checkin_time on checkin_records (check_time)`);
   } catch (e) {
-    console.error('ensureCheckinTable failed:', e);
+    logger.error({ msg: 'ensure_checkin_table_failed', err: e?.message || String(e) });
   }
 }
 
@@ -1221,7 +1221,7 @@ async function ensureExamResultsTable() {
       );
     }
   } catch (e) {
-    console.error('ensureExamResultsTable failed:', e);
+    logger.error({ msg: 'ensure_exam_results_table_failed', err: e?.message || String(e) });
   }
 }
 
@@ -1929,10 +1929,10 @@ if (String(process.env.HRMS_CLI_SYNC_TABLE_VISIT || '').trim() === '1') {
         appId: process.env.FEISHU_APP_ID,
         appSecret: process.env.FEISHU_APP_SECRET
       });
-      console.log('[HRMS_CLI_SYNC_TABLE_VISIT]', JSON.stringify(r, null, 2));
+      logger.info({ msg: 'hrms_cli_sync_table_visit', result: r });
       process.exit(0);
     } catch (e) {
-      console.error('[HRMS_CLI_SYNC_TABLE_VISIT]', e?.message || e);
+      logger.error({ msg: 'hrms_cli_sync_table_visit_failed', err: e?.message || String(e) });
       process.exit(1);
     }
   })();
@@ -2052,7 +2052,7 @@ app.listen(PORT, HOST, async () => {
       safeErrMessage,
     });
   } catch (e) {
-    console.error('[agents] init failed:', e?.message || e);
+    logger.error({ msg: 'agents_init_failed', err: e?.message || String(e) });
   }
 
   // Wave M3: role cleanup → domains/shared/startup-role-cleanup.js
@@ -2068,7 +2068,7 @@ app.use(createExpressErrorMiddleware({ multer }));
 
 if (__ALLOW_SCHEMA_CHANGES__) {
   void runWithBootstrapTenantContext(async () => {
-    await ensureBaselineSchemaHealth(pool).catch(e => console.warn('[schema] baseline health:', e?.message || e));
+    await ensureBaselineSchemaHealth(pool).catch(e => logger.warn({ msg: 'schema_baseline_health', err: e?.message || String(e) }));
     await ensureExamResultsTable();
     await ensureHrmsStateTable();
     await ensureApprovalTables();
@@ -2085,11 +2085,11 @@ if (__ALLOW_SCHEMA_CHANGES__) {
     await ensureTableVisitRecordsTable();
     await ensureDedupIndexes();
   }).catch((e) =>
-    console.error('[startup/bootstrap-schema]', e?.message || e)
+    logger.error({ msg: 'startup_bootstrap_schema_failed', err: e?.message || String(e) })
   );
   startOpsTaskScheduler();
 } else {
-  console.warn(`[safety] APP_ENV=${APP_ENV}: skip auto schema/ensure tables (ALLOW_SCHEMA_CHANGES!=true)`);
+  logger.warn({ msg: 'skip_auto_schema_ensure', appEnv: APP_ENV });
 }
 
 // Wave H8: offboarding auto-disable + promotion sweep → domains/approvals/scheduler-offboarding-promotion.js
@@ -2181,7 +2181,7 @@ startHealthOpsLoopScheduler(pool);
 // evaluation data. Low-risk prompt patches pass offline and live canary gates
 // automatically; any regression rolls back without employee interaction.
 if (!String(process.env.AI_QUALITY_LLM_API_KEY || '').trim()) {
-  console.error('[ai-quality-learning] AI_QUALITY_LLM_API_KEY missing: signal capture and redaction remain active, but proposal generation/evaluation is paused');
+  logger.error({ msg: 'ai_quality_llm_api_key_missing' });
 }
 startAiQualityLearningScheduler(pool, {
   generateCandidate: async ({ route, samples, evidence }) => {

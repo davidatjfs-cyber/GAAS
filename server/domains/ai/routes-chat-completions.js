@@ -2,6 +2,7 @@
  * AI OpenAI-compatible chat-completions proxy (behavior-preserving extract from index.js).
  */
 import { agentsOutboundHeaders } from '../shared/agents-service-auth.js';
+import { METRIC_NAMES, recordMetric } from '../shared/metrics.js';
 
 /**
  * Normalize OpenAI-compatible API base URLs (incl. Volcengine Ark quirks).
@@ -52,6 +53,10 @@ export function registerAiChatCompletionsRoutes(app, authRequired) {
     const controller = new AbortController();
     /** 出题/长上下文等场景上游常 >25s；过短会 502 + 浏览器 aborted */
     const timer = setTimeout(() => controller.abort(), 120000);
+    const t0 = Date.now();
+    const providerTag = /ark\.cn-beijing\.volces\.com/i.test(baseUrl)
+      ? 'ark'
+      : (/deepseek/i.test(baseUrl) ? 'deepseek' : 'openai_compat');
     try {
       const upstream = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
@@ -65,16 +70,28 @@ export function registerAiChatCompletionsRoutes(app, authRequired) {
       const text = await upstream.text();
       let data = null;
       try { data = JSON.parse(text); } catch (e) { /* ignore */ }
+      const durationMs = Date.now() - t0;
+      recordMetric(METRIC_NAMES.LLM_CALL_DURATION_MS, {
+        value: durationMs,
+        tags: { provider: providerTag, ok: upstream.ok },
+      });
       if (!upstream.ok) {
+        recordMetric(METRIC_NAMES.LLM_CALL_FAILURE, { tags: { provider: providerTag, reason: 'upstream_http' } });
         return res.status(upstream.status).json({
           error: 'upstream_error',
           message: String(data?.error?.message || data?.message || text || `HTTP ${upstream.status}`),
           upstreamStatus: upstream.status
         });
       }
+      recordMetric(METRIC_NAMES.LLM_CALL_SUCCESS, { tags: { provider: providerTag } });
       if (data && typeof data === 'object') return res.json(data);
       return res.json({ raw: text });
     } catch (e) {
+      recordMetric(METRIC_NAMES.LLM_CALL_DURATION_MS, {
+        value: Date.now() - t0,
+        tags: { provider: providerTag, ok: false },
+      });
+      recordMetric(METRIC_NAMES.LLM_CALL_FAILURE, { tags: { provider: providerTag, reason: 'unreachable' } });
       return res.status(502).json({ error: 'upstream_unreachable', message: 'internal_error' });
     } finally {
       clearTimeout(timer);

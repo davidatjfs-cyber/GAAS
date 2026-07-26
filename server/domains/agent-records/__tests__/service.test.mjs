@@ -13,7 +13,7 @@ import {
   resolveAgentIssue,
   createAppeal,
   getMyAgentScore,
-} from '../domains/agent-records/service.js';
+} from '../service.js';
 
 test('letterGradeOnly / mergeProfileDim', () => {
   assert.equal(letterGradeOnly('a'), 'A');

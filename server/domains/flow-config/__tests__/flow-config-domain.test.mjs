@@ -14,7 +14,7 @@ import {
   saveRoleModules,
   saveApprovalFlows,
   savePaymentFlowByStore,
-} from '../domains/flow-config/service.js';
+} from '../service.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -37,7 +37,7 @@ test('normalizeRoleModules 自动补 training', () => {
 });
 
 test('影子 API 已拆除：agent-config-manager 不再注册 role-modules', () => {
-  const src = readFileSync(join(__dirname, '../agent-config-manager.js'), 'utf8');
+  const src = readFileSync(join(__dirname, '../../../agent-config-manager.js'), 'utf8');
   assert.equal(src.includes("app.get('/api/role-modules'"), false);
   assert.equal(src.includes("app.put('/api/admin/role-modules'"), false);
   assert.ok(src.includes('domains/flow-config'));

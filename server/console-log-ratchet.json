@@ -7,7 +7,6 @@
   "methods": ["log", "warn", "error"],
   "runtimeExemptExact": [
     "agents.js",
-    "index.js",
     "master-agent.js",
     "migrate.js"
   ],
