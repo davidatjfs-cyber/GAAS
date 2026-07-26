@@ -553,7 +553,7 @@
                 const safeDate = escapeHtml(rawDate).replace(/'/g, '&#39;');
 
                 return `
-                    <div class="dr-report-card" onclick="openDailyReport('${safeStore}', '${safeDate}')">
+                    <div class="dr-report-card" data-click="openDailyReport" data-arg="${safeStore}" data-arg2="${safeDate}">
                         <div class="dr-report-card__in">
                             <div class="dr-report-head">
                                 <div class="dr-report-date">${title}${submittedBadge}</div>
@@ -2998,8 +2998,8 @@ ${ok
                                     const n = escapeHtml(String(x.name || x.username || ''));
                                     return `<div style="margin:4px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                                       <span>${n} · ${d}</span>
-                                      <button class="btn btn-secondary" type="button" style="padding:2px 8px;font-size:12px;" onclick="confirmPayrollAttendanceAbnormal('${u}','${d}','work')">记出勤</button>
-                                      <button class="btn btn-secondary" type="button" style="padding:2px 8px;font-size:12px;" onclick="confirmPayrollAttendanceAbnormal('${u}','${d}','rest')">记休息</button>
+                                      <button class="btn btn-secondary" type="button" style="padding:2px 8px;font-size:12px;" data-click="confirmPayrollAttendanceAbnormal" data-arg="${u}" data-arg2="${d}" data-arg3="work">记出勤</button>
+                                      <button class="btn btn-secondary" type="button" style="padding:2px 8px;font-size:12px;" data-click="confirmPayrollAttendanceAbnormal" data-arg="${u}" data-arg2="${d}" data-arg3="rest">记休息</button>
                                     </div>`;
                                   }).join('');
                             }).catch(() => { abBox.style.display = 'none'; });

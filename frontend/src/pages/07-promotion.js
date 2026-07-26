@@ -3084,7 +3084,7 @@
                     <div class="tp-grid-3" style="grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));">
                         ${fields.map(([f, label]) => `<label class="tp-field">${label}<input type="text" class="tp-input" value="${escapeHtml(String(item[f] ?? ''))}" onchange="updateTpRefItem('${key}',${idx},'${f}',this.value)"></label>`).join('')}
                     </div>
-                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" onclick="removeTpRefItem('${key}',${idx})">删除</button></div>
+                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="removeTpRefItem" data-arg="${key}" data-arg2="${idx}" data-arg2-type="number">删除</button></div>
                 </div>`).join('');
         }
 
@@ -3651,7 +3651,7 @@
                             <div style="font-weight:800; color:rgba(226,232,240,0.95);">${escapeHtml(String(r?.itemName || '-'))} · ${Number(r?.points || 0)}分</div>
                             <div style="font-size:12px; color:rgba(200,215,230,0.75);">${escapeHtml(store)}</div>
                         </div>
-                        <button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" onclick="togglePointRuleEnabled('${escapeHtml(id)}', ${enabled ? 'false' : 'true'})">${enabled ? '禁用' : '启用'}</button>
+                        <button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" data-click="togglePointRuleEnabled" data-arg="${escapeHtml(id)}" data-arg2="${enabled ? 'false' : 'true'}">${enabled ? '禁用' : '启用'}</button>
                     </div>`;
                 }).join('');
             } catch (e) {

@@ -1,6 +1,6 @@
 {
   "updated": "2026-07-26",
-  "note": "P2.1 单函数体积闸门：>maxLines 必须在 allowlist；只降不升。外提时若函数>200行须同批切分，禁止整体包进 createXxx 闭包。2026-07-26 P5.4：recomputeCustomerProfiles 迁至 growth-profiles/recompute.js 后自 allowlist 移除。",
+  "note": "P2.1 单函数体积闸门：>maxLines 必须在 allowlist；只降不升。外提时若函数>200行须同批切分，禁止整体包进 createXxx 闭包。2026-07-26 P5.4：recomputeCustomerProfiles 迁至 growth-profiles/recompute.js 后自 allowlist 移除。 2026-07-26 P5.4：registerCustomerOpsRoutes 拆出后自 allowlist 移除。",
   "maxLines": 200,
   "maxAllowlistSize": 69,
   "allowlist": [
@@ -10,7 +10,6 @@
     "server/bi-weekly-report.js::formatReportMarkdown",
     "server/bi-weekly-report.js::generatePeriodReport",
     "server/bi-weekly-report.js::queryCostCoverageDiagnostics",
-    "server/customer-ops.js::registerCustomerOpsRoutes",
     "server/daily-attendance-register.js::reconcileDailyReportAttendanceRegister",
     "server/domains/agent-bi/build-daily-report-reply.js::createBuildBiDeterministicDailyReportReply",
     "server/domains/agent-bi/try-handle-bi-by-function-calling.js::createTryHandleBiByFunctionCalling",

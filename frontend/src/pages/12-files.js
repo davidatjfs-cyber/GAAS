@@ -95,7 +95,7 @@
                                 </div>
                             </div>
                             <div style="display:flex;gap:8px;flex-shrink:0;">
-                                <button class="btn btn-sm" onclick="downloadFile('${file.file_id}', '${file.original_name}')">
+                                <button class="btn btn-sm" data-click="downloadFile" data-arg="${file.file_id}" data-arg2="${file.original_name}">
                                     <i>⬇️</i> 下载
                                 </button>
                                 ${file.validation_status === 'pending' ? `
@@ -912,8 +912,8 @@
                   <div style="margin-top:10px;">${escapeHtml(rp.attribution || '')}</div>
                   <div style="margin-top:8px;color:#9AA3C7;">${escapeHtml(rp.suggestion || '')}</div>
                   <div class="gs-actions">
-                    ${ok ? `<button class="ga-btn ga-btn--primary" onclick="gsConfirm(${r.id},'advance')">确认达成,进入下一轮</button>` : ''}
-                    <button class="ga-btn ga-btn--ghost" onclick="gsConfirm(${r.id},'retry')">同目标重跑一轮</button>
+                    ${ok ? `<button class="ga-btn ga-btn--primary" data-click="gsConfirm" data-arg="${r.id}" data-arg-type="number" data-arg2="advance">确认达成,进入下一轮</button>` : ''}
+                    <button class="ga-btn ga-btn--ghost" data-click="gsConfirm" data-arg="${r.id}" data-arg-type="number" data-arg2="retry">同目标重跑一轮</button>
                   </div>
                 </div>`;
             }

@@ -1,30 +1,19 @@
 import path from 'path';
 import { storeNameToId } from './brands-config.js';
-import { ingestPosOrders } from './growth-phases.js';
-import { recomputeCustomerProfiles } from './growth-api.js';
-import { syncOntologyDataFromProduction } from './ontology/real-data-sync.js';
-import { runDailyDiagnosis } from './ontology/diagnosis-tree-service.js';
-import { ensureGrowthOntologyCore } from './ontology/growth-ontology-schema.js';
-import { tenantContext } from './utils/database.js';
 import { SHARED_TABLES } from '@gaas/shared';
 import { createBuildAttributionReport } from './domains/customer-ops/attribution-report.js';
-import { analyzeOrders, normalizeWorkbook } from './domains/customer-ops/workbook-analysis.js';
 import { childLogger } from './utils/logger.js';
 import {
   cleanText,
-  cleanPhone,
-  num,
-  uniqueClean,
   resolveCustomerOpsStoreFilter,
-  posStoreFilterSql,
   safeReportQuery,
-  latestDiagnosis,
-  runPdfGenerator,
   runCampaignReportPdfGenerator,
   syncAutoCampaignsFromDeliveryLogs,
-  saveCampaignResultAsLearning,
 } from './domains/customer-ops/ops-helpers.js';
 import { registerCustomerOpsReportCampaignRoutes } from './domains/customer-ops/report-campaign-routes.js';
+import { registerCustomerOpsDiagnosisRoutes } from './domains/customer-ops/diagnosis-routes.js';
+import { registerCustomerOpsCustomerRoutes } from './domains/customer-ops/customer-routes.js';
+import { registerCustomerOpsSegmentOutreachRoutes } from './domains/customer-ops/segment-outreach-routes.js';
 
 const log = childLogger({ domain: 'customer-ops', handler: 'service' });
 
@@ -260,7 +249,7 @@ function mergeDiagnostics(parts) {
 
 function dedupeRecords(records) {
   const map = new Map();
-  for (const r of records || []) { const key = r.recordKey || recordKeyOf(r); if (!key) continue; map.set(key, { ...r, recordKey: key }); }
+  for (const r of records || []) { const key = r.recordKey || ''; if (!key) continue; map.set(key, { ...r, recordKey: key }); }
   return Array.from(map.values());
 }
 
@@ -349,329 +338,15 @@ function applySegmentCriteria(profiles, criteria) {
 export function registerCustomerOpsRoutes(app, pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM, opts = {}) {
   const basePath = opts.basePath || '/api/customer-ops';
   const getTenantId = opts.getTenantId || ((req) => req.tenantId || 'default');
-  // ── 模块1：快速诊断 ──────────────────────────────────────────────
-
-  app.post(`${basePath}/diagnosis/upload`, authRequired, upload.fields([{ name: 'files', maxCount: 20 }, { name: 'file', maxCount: 1 }]), async (req, res) => {
-    try {
-      const files = [...(req.files?.files || []), ...(req.files?.file || [])].filter(Boolean);
-      if (!files.length) return res.status(400).json({ ok: false, error: 'no_file' });
-      await ensureCustomerOpsTables(pool);
-      await recordUploadOwnership(files.map((f) => f.filename), getTenantId(req), req.user?.username);
-      const tenantId = getTenantId(req);
-      const parsed = files.map((file) => normalizeWorkbook(file.path, { sourceFile: file.originalname || file.filename }));
-      const batchRecords = dedupeRecords(parsed.flatMap((x) => x.orders || []));
-      const mergePrevious = String(req.body?.merge_previous ?? 'true') !== 'false';
-      const existingRecords = mergePrevious ? await loadExistingSourceRecords(pool, tenantId) : [];
-      const orders = dedupeRecords([...existingRecords, ...batchRecords]);
-      const diagnostics = mergeDiagnostics(parsed.map((x) => x.diagnostics));
-      diagnostics.batch_files = files.map((f) => f.originalname || f.filename);
-      diagnostics.batch_records = batchRecords.length;
-      diagnostics.historical_records = existingRecords.length;
-      diagnostics.total_records_after_merge = orders.length;
-      const report = analyzeOrders(orders, { storeName: req.body?.store_name || '', diagnostics });
-      const ins = await pool.query(
-        `INSERT INTO customer_ops_diagnoses (tenant_id, store_name, source_filename, report_json, created_by) VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING id, created_at`,
-        [tenantId, report.store_name, files.map((f) => f.originalname || f.filename).join('、'), JSON.stringify(report), req.user?.username || '']
-      );
-      const diagnosisId = ins.rows[0].id;
-      for (const r of batchRecords) {
-        await pool.query(
-          `INSERT INTO customer_ops_source_records (tenant_id, diagnosis_id, source_filename, record_key, phone, member_no, record_kind, record_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) ON CONFLICT (tenant_id, record_key) DO UPDATE SET diagnosis_id=EXCLUDED.diagnosis_id, source_filename=EXCLUDED.source_filename, phone=EXCLUDED.phone, member_no=EXCLUDED.member_no, record_kind=EXCLUDED.record_kind, record_json=EXCLUDED.record_json`,
-          [tenantId, diagnosisId, r.sourceFile || '', r.recordKey || recordKeyOf(r), r.phone || '', r.memberNo || '', r.kind || 'unknown', JSON.stringify(r)]
-        );
-      }
-      for (const c of report.customers) {
-        await pool.query(
-          `INSERT INTO customer_ops_profiles (tenant_id, diagnosis_id, customer_id, customer_key, phone, profile_json) VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
-          [tenantId, diagnosisId, c.customer_id, c.customer_key, c.phone || '', JSON.stringify(c)]
-        );
-      }
-      let posSync = { orders_synced: 0, items_synced: 0 };
-      let ontologySync = { profiles_recomputed: false, ontology_synced: false, issues: 0, opportunities: 0, stores_diagnosed: 0 };
-      try {
-        const posPayload = toPosOrderPayload(batchRecords);
-        if (posPayload.orders.length) {
-          const synced = await tenantContext.run(tenantId, () => ingestPosOrders(pool, tenantId, posPayload));
-          posSync = { orders_synced: synced.ordersUpserted, items_synced: synced.itemsUpserted };
-        }
-        // 有新订单落库后，把「pos_orders -> growth_customer_profiles -> growth_ontology_* -> 每日诊断/机会清单」
-        // 这条链路整体跑一遍，否则诊断服务读的表要等到下一次定时任务才会更新，客户上传完看到的仍是空数据。
-        // 触达明细由 syncOntologyDataFromProduction 从 growth_delivery_logs 同步进 growth_ontology_touches。
-        if (posSync.orders_synced > 0) {
-          await tenantContext.run(tenantId, () => recomputeCustomerProfiles(pool, 90, tenantId));
-          ontologySync.profiles_recomputed = true;
-          await ensureGrowthOntologyCore(pool);
-          await syncOntologyDataFromProduction(pool, tenantId);
-          ontologySync.ontology_synced = true;
-          // runDailyDiagnosis 是按单店跑的（不传 store_id 会直接返回 insufficient_data），
-          // 所以要对本批数据涉及的每个门店各跑一次，而不是整租户跑一次。
-          const storeIds = Array.from(new Set(posPayload.orders.map((o) => o.store_id).filter(Boolean)));
-          for (const storeId of storeIds) {
-            const diagResult = await runDailyDiagnosis(pool, { tenantId, storeId });
-            ontologySync.issues += (diagResult?.issues || []).length;
-            ontologySync.opportunities += (diagResult?.opportunities || []).length;
-          }
-          ontologySync.stores_diagnosed = storeIds.length;
-        }
-      } catch (e) {
-        log.warn({ msg: 'customer_ops_pos_orders_ontology_sync_skipped', err: e?.message });
-      }
-      res.json({ ok: true, diagnosis_id: diagnosisId, imported_records: batchRecords.length, merged_records: orders.length, pos_sync: posSync, ontology_sync: ontologySync, report: { ...report, customers: undefined } });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message || 'diagnosis_failed' });
-    }
-  });
-
-  app.get(`${basePath}/diagnosis/latest`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const r = await pool.query(`SELECT id, store_name, source_filename, report_json, created_at FROM customer_ops_diagnoses WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`, [getTenantId(req)]);
-      res.json({ ok: true, diagnosis: r.rows[0] || null });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  app.get(`${basePath}/diagnosis/:id/pdf`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const r = await pool.query(`SELECT * FROM customer_ops_diagnoses WHERE id = $1 AND tenant_id = $2`, [req.params.id, getTenantId(req)]);
-      if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
-      const report = r.rows[0].report_json;
-      // 生成AI诊断叙述（失败不阻塞PDF生成）
-      const narrative = callLLM ? await generateDiagnosisNarrative(report, callLLM).catch(() => null) : null;
-      const reportWithNarrative = narrative ? { ...report, narrative } : report;
-      const filename = `customer_ops_report_${req.params.id}.pdf`;
-      const outputPath = path.join(uploadsDir, filename);
-      await runPdfGenerator(reportWithNarrative, outputPath);
-      await recordUploadOwnership(filename, getTenantId(req), req.user?.username);
-      res.json({ ok: true, url: `/uploads/${filename}` });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message || 'pdf_failed' });
-    }
-  });
-
-  // ── 模块2：360度客人档案 ─────────────────────────────────────────
-
-  app.get(`${basePath}/customers`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const tenantId = getTenantId(req);
-      const diagnosisId = Number(req.query.diagnosis_id || 0);
-      const limit = Math.min(500, Number(req.query.limit || 200));
-      const params = [tenantId];
-      let where = 'tenant_id = $1';
-      if (diagnosisId) { params.push(diagnosisId); where += ` AND diagnosis_id = $${params.length}`; }
-      const r = await pool.query(`SELECT profile_json FROM customer_ops_profiles WHERE ${where} ORDER BY (profile_json->>'total_spend')::numeric DESC NULLS LAST LIMIT ${limit}`, params);
-      res.json({ ok: true, customers: r.rows.map((x) => x.profile_json) });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  app.get(`${basePath}/customers/dashboard`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const tenantId = getTenantId(req);
-      const diagnosisId = Number(req.query.diagnosis_id || 0);
-      const params = [tenantId];
-      let where = 'tenant_id = $1';
-      if (diagnosisId) { params.push(diagnosisId); where += ` AND diagnosis_id = $${params.length}`; }
-      // 只取最新一个diagnosis的所有profile
-      if (!diagnosisId) {
-        const latest = await pool.query(`SELECT id FROM customer_ops_diagnoses WHERE tenant_id=$1 ORDER BY id DESC LIMIT 1`, [tenantId]);
-        if (latest.rows.length) { params.push(latest.rows[0].id); where += ` AND diagnosis_id = $${params.length}`; }
-      }
-      const r = await pool.query(`SELECT profile_json FROM customer_ops_profiles WHERE ${where}`, params);
-      const profiles = r.rows.map((x) => x.profile_json || {});
-      const total = profiles.length;
-      const byLifecycle = {};
-      const byValueTier = {};
-      const byScene = {};
-      let totalSpend = 0;
-      let totalVip = 0;
-      let totalDormant = 0;
-      let totalWithPhone = 0;
-      for (const c of profiles) {
-        byLifecycle[c.lifecycle_stage] = (byLifecycle[c.lifecycle_stage] || 0) + 1;
-        byValueTier[c.value_tier] = (byValueTier[c.value_tier] || 0) + 1;
-        for (const tag of c.scene_tags || []) byScene[tag] = (byScene[tag] || 0) + 1;
-        totalSpend += Number(c.total_spend || 0);
-        if (c.value_tier === 'vip') totalVip++;
-        if (c.lifecycle_stage === 'dormant') totalDormant++;
-        if (c.phone) totalWithPhone++;
-      }
-      res.json({ ok: true, total, total_spend: Math.round(totalSpend), vip_count: totalVip, dormant_count: totalDormant, reachable_count: totalWithPhone, by_lifecycle: byLifecycle, by_value_tier: byValueTier, by_scene: byScene });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  app.post(`${basePath}/customers/filter`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const tenantId = getTenantId(req);
-      const criteria = req.body?.criteria || {};
-      const diagnosisId = Number(req.body?.diagnosis_id || 0);
-      const params = [tenantId];
-      let where = 'tenant_id = $1';
-      if (diagnosisId) { params.push(diagnosisId); where += ` AND diagnosis_id = $${params.length}`; }
-      else {
-        const latest = await pool.query(`SELECT id FROM customer_ops_diagnoses WHERE tenant_id=$1 ORDER BY id DESC LIMIT 1`, [tenantId]);
-        if (latest.rows.length) { params.push(latest.rows[0].id); where += ` AND diagnosis_id = $${params.length}`; }
-      }
-      const r = await pool.query(`SELECT profile_json FROM customer_ops_profiles WHERE ${where}`, params);
-      const all = r.rows.map((x) => x.profile_json || {});
-      const matched = applySegmentCriteria(all, criteria);
-      res.json({ ok: true, total: all.length, matched: matched.length, customers: matched.slice(0, 200) });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  app.get(`${basePath}/customers/:customerId`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const r = await pool.query(`SELECT profile_json FROM customer_ops_profiles WHERE tenant_id = $1 AND customer_id = $2 ORDER BY diagnosis_id DESC LIMIT 1`, [getTenantId(req), req.params.customerId]);
-      if (!r.rows.length) return res.status(404).json({ ok: false, error: 'not_found' });
-      res.json({ ok: true, customer: r.rows[0].profile_json });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  // 保存自定义客群分层
-  app.get(`${basePath}/segments`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const r = await pool.query(`SELECT * FROM customer_segments WHERE tenant_id=$1 ORDER BY created_at DESC`, [getTenantId(req)]);
-      res.json({ ok: true, segments: r.rows });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  app.post(`${basePath}/segments`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const name = cleanText(req.body?.name || '', 80);
-      const criteria = req.body?.criteria || {};
-      if (!name) return res.status(400).json({ ok: false, error: 'name_required' });
-      const r = await pool.query(`INSERT INTO customer_segments (tenant_id, name, criteria_json, created_by) VALUES ($1,$2,$3::jsonb,$4) RETURNING *`, [getTenantId(req), name, JSON.stringify(criteria), req.user?.username || '']);
-      res.json({ ok: true, segment: r.rows[0] });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  app.delete(`${basePath}/segments/:id`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      await pool.query(`DELETE FROM customer_segments WHERE id=$1 AND tenant_id=$2`, [req.params.id, getTenantId(req)]);
-      res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  // 可触达/不可触达客户池：短信是当前唯一稳定的自动化触达渠道（企微因域名主体限制在租赁场景
-  // 下无法自动发送），所以“可触达”按有效手机号判断，不再按企微绑定(external_userid)判断。
-  // 同时把 value_tier=vip 的客户单独摘出来，对应“高价值客户人工跟进名单”。
-  app.get(`${basePath}/reachability-pools`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const tenantId = getTenantId(req);
-      const limit = Math.min(2000, Number(req.query.limit || 500));
-      const [reachableR, unreachableR, vipR, summaryR] = await Promise.all([
-        pool.query(
-          `SELECT phone, store_id, lifecycle_stage, value_tier, pos_order_count, pos_total_spend, pos_last_order_at
-             FROM growth_customer_profiles
-            WHERE tenant_id=$1 AND COALESCE(phone,'') ~ '^1[0-9]{10}$'
-            ORDER BY updated_at DESC LIMIT $2`,
-          [tenantId, limit]
-        ),
-        pool.query(
-          `SELECT customer_id, store_id, lifecycle_stage, value_tier, pos_order_count, pos_total_spend, pos_last_order_at
-             FROM growth_customer_profiles
-            WHERE tenant_id=$1 AND NOT (COALESCE(phone,'') ~ '^1[0-9]{10}$')
-            ORDER BY updated_at DESC LIMIT $2`,
-          [tenantId, limit]
-        ),
-        pool.query(
-          `SELECT phone, store_id, lifecycle_stage, pos_order_count, pos_total_spend, pos_last_order_at
-             FROM growth_customer_profiles
-            WHERE tenant_id=$1 AND value_tier='vip' AND COALESCE(phone,'') <> ''
-            ORDER BY pos_total_spend DESC NULLS LAST LIMIT $2`,
-          [tenantId, limit]
-        ),
-        pool.query(
-          `SELECT COUNT(*)::int AS total,
-                  COUNT(*) FILTER (WHERE COALESCE(phone,'') ~ '^1[0-9]{10}$')::int AS reachable,
-                  COUNT(*) FILTER (WHERE value_tier='vip')::int AS vip
-             FROM growth_customer_profiles WHERE tenant_id=$1`,
-          [tenantId]
-        ),
-      ]);
-      const summary = summaryR.rows?.[0] || {};
-      res.json({
-        ok: true,
-        summary: {
-          total: Number(summary.total || 0),
-          reachable: Number(summary.reachable || 0),
-          unreachable: Math.max(0, Number(summary.total || 0) - Number(summary.reachable || 0)),
-          vip: Number(summary.vip || 0),
-        },
-        reachable_pool: reachableR.rows,
-        unreachable_pool: unreachableR.rows,
-        vip_manual_followup: vipR.rows,
-      });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  // 优惠策略生成：按客群（lifecycle_stage x value_tier）汇总现有客户，给出规则化的优惠/权益建议。
-  app.get(`${basePath}/offer-strategy`, authRequired, async (req, res) => {
-    try {
-      await ensureCustomerOpsTables(pool);
-      const tenantId = getTenantId(req);
-      const r = await pool.query(
-        `SELECT lifecycle_stage, value_tier, COUNT(*)::int AS customer_count,
-                COALESCE(SUM(pos_total_spend), 0)::numeric AS total_spend
-           FROM growth_customer_profiles
-          WHERE tenant_id=$1
-          GROUP BY lifecycle_stage, value_tier
-          ORDER BY total_spend DESC`,
-        [tenantId]
-      );
-      const strategies = r.rows.map((row) => ({
-        lifecycle_stage: row.lifecycle_stage,
-        value_tier: row.value_tier,
-        customer_count: Number(row.customer_count || 0),
-        total_spend: Number(row.total_spend || 0),
-        ...suggestOfferStrategy(row),
-      }));
-      res.json({ ok: true, strategies });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
-
-  // 触达文案生成：给定客群标签和本次权益，用 LLM 生成短信合规文案候选。
-  app.post(`${basePath}/copy/generate`, authRequired, async (req, res) => {
-    try {
-      if (!callLLM) return res.status(503).json({ ok: false, error: 'llm_unavailable' });
-      const segmentLabel = cleanText(req.body?.segment_label || req.body?.lifecycle_stage || '', 80);
-      const offerText = cleanText(req.body?.offer_text || '', 120);
-      const storeName = cleanText(req.body?.store_name || '', 80);
-      const signName = cleanText(req.body?.sign_name || '', 20);
-      const result = await generateOutreachCopy({ segmentLabel, storeName, offerText, signName }, callLLM);
-      if (!result.ok) return res.status(502).json(result);
-      res.json(result);
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e?.message });
-    }
-  });
+  const sharedRouteDeps = {
+    pool, authRequired, upload, uploadsDir, recordUploadOwnership, callLLM,
+    basePath, getTenantId, ensureCustomerOpsTables,
+    dedupeRecords, loadExistingSourceRecords, mergeDiagnostics, toPosOrderPayload,
+    generateDiagnosisNarrative, applySegmentCriteria, suggestOfferStrategy, generateOutreachCopy,
+  };
+  registerCustomerOpsDiagnosisRoutes(app, sharedRouteDeps);
+  registerCustomerOpsCustomerRoutes(app, sharedRouteDeps);
+  registerCustomerOpsSegmentOutreachRoutes(app, sharedRouteDeps);
 
   // ── 模块3：营销活动台账 ──────────────────────────────────────────
 

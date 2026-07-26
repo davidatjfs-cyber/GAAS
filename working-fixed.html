@@ -24419,7 +24419,7 @@
                 };
             }
         } catch (e) {}
-        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (!el) return; var fn = el.getAttribute('data-click'); if (!fn || typeof window[fn] !== 'function') return; if (el.hasAttribute('data-click-self-only') && e.target !== el) return; if (el.hasAttribute('data-stop')) e.stopPropagation(); var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; window.hrmsRemoveClosest = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n) n.remove(); } catch (err) {} }; window.hrmsRemoveClosestParent = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n && n.parentElement) n.parentElement.remove(); } catch (err) {} }; window.hrmsRemoveParent = function (el) { try { if (el && el.parentElement) el.parentElement.remove(); } catch (err) {} }; window.hrmsToggleParentOpen = function (el) { if (el && el.parentElement) el.parentElement.open = !el.parentElement.open; }; window.hrmsToggleParentClass = function (cls, el) { if (el && el.parentElement) el.parentElement.classList.toggle(cls); }; window.hrmsHideById = function (id) { var n = document.getElementById(id); if (n) n.style.display = 'none'; }; window.hrmsClearDailyReportDates = function () { var a = document.getElementById('dr-list-start'); if (a) a.value = ''; var b = document.getElementById('dr-list-end'); if (b) b.value = ''; if (typeof loadDailyReportData === 'function') loadDailyReportData(); }; window.hrmsToggleKitchenConfigForm = function (el) { var f = document.getElementById('kitchen-config-form'); if (!f) return; f.style.display = f.style.display === 'none' ? '' : 'none'; var s = el && el.querySelector ? el.querySelector('span') : null; if (s) s.textContent = f.style.display === 'none' ? '展开表单' : '收起表单'; }; window.hrmsSubmitPointsApplication = function () { return uploadPointsEvidence().then(function () { return submitPointsApplication(); }); }; // P5.1：data-click(+data-arg[+data-arg2][+data-click2][+data-arg-self][+data-click-self-only][+data-stop]) 委托
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (!el) return; var fn = el.getAttribute('data-click'); if (!fn || typeof window[fn] !== 'function') return; if (el.hasAttribute('data-click-self-only') && e.target !== el) return; if (el.hasAttribute('data-stop')) e.stopPropagation(); var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); parseArg('data-arg3', 'data-arg3-type'); if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; window.hrmsRemoveClosest = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n) n.remove(); } catch (err) {} }; window.hrmsRemoveClosestParent = function (sel, el) { try { var n = el && el.closest && el.closest(sel); if (n && n.parentElement) n.parentElement.remove(); } catch (err) {} }; window.hrmsRemoveParent = function (el) { try { if (el && el.parentElement) el.parentElement.remove(); } catch (err) {} }; window.hrmsToggleParentOpen = function (el) { if (el && el.parentElement) el.parentElement.open = !el.parentElement.open; }; window.hrmsToggleParentClass = function (cls, el) { if (el && el.parentElement) el.parentElement.classList.toggle(cls); }; window.hrmsHideById = function (id) { var n = document.getElementById(id); if (n) n.style.display = 'none'; }; window.hrmsClearDailyReportDates = function () { var a = document.getElementById('dr-list-start'); if (a) a.value = ''; var b = document.getElementById('dr-list-end'); if (b) b.value = ''; if (typeof loadDailyReportData === 'function') loadDailyReportData(); }; window.hrmsToggleKitchenConfigForm = function (el) { var f = document.getElementById('kitchen-config-form'); if (!f) return; f.style.display = f.style.display === 'none' ? '' : 'none'; var s = el && el.querySelector ? el.querySelector('span') : null; if (s) s.textContent = f.style.display === 'none' ? '展开表单' : '收起表单'; }; window.hrmsSubmitPointsApplication = function () { return uploadPointsEvidence().then(function () { return submitPointsApplication(); }); }; // P5.1：data-click(+data-arg[+data-arg2][+data-arg3][+data-click2][+data-arg-self][+data-click-self-only][+data-stop]) 委托
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -35424,7 +35424,7 @@ ${r.approvalNote ? '审批备注：' + r.approvalNote : ''}
                         ${c.ai_feedback ? `<div style="background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;font-size:13px;color:rgba(255,255,255,0.7);margin-bottom:10px;line-height:1.5;">💬 ${escapeHtml(c.ai_feedback)}</div>` : ''}
                         ${scoreHtml}
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                            <button onclick="reviewCertWithScore(${c.id},'confirm')" style="padding:12px;border-radius:10px;background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.3);color:#34d399;font-size:14px;font-weight:600;cursor:pointer;">✓ 确认AI评分</button>
+                            <button data-click="reviewCertWithScore" data-arg="${c.id}" data-arg-type="number" data-arg2="confirm" style="padding:12px;border-radius:10px;background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.3);color:#34d399;font-size:14px;font-weight:600;cursor:pointer;">✓ 确认AI评分</button>
                             <button data-click="reviewCertWithOverride" data-arg="${c.id}" data-arg-type="number" style="padding:12px;border-radius:10px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.25);color:#fbbf24;font-size:14px;font-weight:600;cursor:pointer;">✎ 手动评分</button>
                         </div>
                     </div>`;
@@ -43512,7 +43512,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                     <div class="tp-grid-3" style="grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));">
                         ${fields.map(([f, label]) => `<label class="tp-field">${label}<input type="text" class="tp-input" value="${escapeHtml(String(item[f] ?? ''))}" onchange="updateTpRefItem('${key}',${idx},'${f}',this.value)"></label>`).join('')}
                     </div>
-                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" onclick="removeTpRefItem('${key}',${idx})">删除</button></div>
+                    <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="removeTpRefItem" data-arg="${key}" data-arg2="${idx}" data-arg2-type="number">删除</button></div>
                 </div>`).join('');
         }
 
@@ -44079,7 +44079,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                             <div style="font-weight:800; color:rgba(226,232,240,0.95);">${escapeHtml(String(r?.itemName || '-'))} · ${Number(r?.points || 0)}分</div>
                             <div style="font-size:12px; color:rgba(200,215,230,0.75);">${escapeHtml(store)}</div>
                         </div>
-                        <button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" onclick="togglePointRuleEnabled('${escapeHtml(id)}', ${enabled ? 'false' : 'true'})">${enabled ? '禁用' : '启用'}</button>
+                        <button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" data-click="togglePointRuleEnabled" data-arg="${escapeHtml(id)}" data-arg2="${enabled ? 'false' : 'true'}">${enabled ? '禁用' : '启用'}</button>
                     </div>`;
                 }).join('');
             } catch (e) {
@@ -44989,7 +44989,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                 }
                 el.innerHTML = items.map((it, idx) => {
                     const safe = escapeHtml(String(it));
-                    return `<span class="tag">${safe}<span class="del-btn" onclick="removeOrgDictItem('${type}', ${idx})">×</span></span>`;
+                    return `<span class="tag">${safe}<span class="del-btn" data-click="removeOrgDictItem" data-arg="${type}" data-arg2="${idx}" data-arg2-type="number">×</span></span>`;
                 }).join('');
             };
             renderList('org-dict-departments', dict.departments, 'departments');
@@ -51429,8 +51429,8 @@ tr:nth-child(even) td { background: #fafafa; }
                         +   (summary ? '<div class="pf-approval-summary">' + summary + '</div>' : '')
                         + '</div>'
                         + '<div class="pf-approval-actions">'
-                        +   '<button class="ga-btn ga-btn--primary ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" onclick="profileQuickApprove(\'' + id + '\', true)">通过</button>'
-                        +   '<button class="ga-btn ga-btn--danger ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" onclick="profileQuickApprove(\'' + id + '\', false)">拒绝</button>'
+                        +   '<button class="ga-btn ga-btn--primary ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" data-click="profileQuickApprove" data-arg="' + id + '" data-arg2="true">通过</button>'
+                        +   '<button class="ga-btn ga-btn--danger ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" data-click="profileQuickApprove" data-arg="' + id + '" data-arg2="false">拒绝</button>'
                         +   '<button class="ga-btn ga-btn--ghost ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" data-click="openApprovalDetailModal" data-arg="' + id + '">详情</button>'
                         + '</div>'
                         + '</div>';
@@ -53383,7 +53383,7 @@ tr:nth-child(even) td { background: #fafafa; }
                 const safeDate = escapeHtml(rawDate).replace(/'/g, '&#39;');
 
                 return `
-                    <div class="dr-report-card" onclick="openDailyReport('${safeStore}', '${safeDate}')">
+                    <div class="dr-report-card" data-click="openDailyReport" data-arg="${safeStore}" data-arg2="${safeDate}">
                         <div class="dr-report-card__in">
                             <div class="dr-report-head">
                                 <div class="dr-report-date">${title}${submittedBadge}</div>
@@ -55828,8 +55828,8 @@ ${ok
                                     const n = escapeHtml(String(x.name || x.username || ''));
                                     return `<div style="margin:4px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                                       <span>${n} · ${d}</span>
-                                      <button class="btn btn-secondary" type="button" style="padding:2px 8px;font-size:12px;" onclick="confirmPayrollAttendanceAbnormal('${u}','${d}','work')">记出勤</button>
-                                      <button class="btn btn-secondary" type="button" style="padding:2px 8px;font-size:12px;" onclick="confirmPayrollAttendanceAbnormal('${u}','${d}','rest')">记休息</button>
+                                      <button class="btn btn-secondary" type="button" style="padding:2px 8px;font-size:12px;" data-click="confirmPayrollAttendanceAbnormal" data-arg="${u}" data-arg2="${d}" data-arg3="work">记出勤</button>
+                                      <button class="btn btn-secondary" type="button" style="padding:2px 8px;font-size:12px;" data-click="confirmPayrollAttendanceAbnormal" data-arg="${u}" data-arg2="${d}" data-arg3="rest">记休息</button>
                                     </div>`;
                                   }).join('');
                             }).catch(() => { abBox.style.display = 'none'; });
@@ -59327,7 +59327,7 @@ ${body}
                                 </div>
                             </div>
                             <div style="display:flex;gap:8px;flex-shrink:0;">
-                                <button class="btn btn-sm" onclick="downloadFile('${file.file_id}', '${file.original_name}')">
+                                <button class="btn btn-sm" data-click="downloadFile" data-arg="${file.file_id}" data-arg2="${file.original_name}">
                                     <i>⬇️</i> 下载
                                 </button>
                                 ${file.validation_status === 'pending' ? `
@@ -60144,8 +60144,8 @@ ${body}
                   <div style="margin-top:10px;">${escapeHtml(rp.attribution || '')}</div>
                   <div style="margin-top:8px;color:#9AA3C7;">${escapeHtml(rp.suggestion || '')}</div>
                   <div class="gs-actions">
-                    ${ok ? `<button class="ga-btn ga-btn--primary" onclick="gsConfirm(${r.id},'advance')">确认达成,进入下一轮</button>` : ''}
-                    <button class="ga-btn ga-btn--ghost" onclick="gsConfirm(${r.id},'retry')">同目标重跑一轮</button>
+                    ${ok ? `<button class="ga-btn ga-btn--primary" data-click="gsConfirm" data-arg="${r.id}" data-arg-type="number" data-arg2="advance">确认达成,进入下一轮</button>` : ''}
+                    <button class="ga-btn ga-btn--ghost" data-click="gsConfirm" data-arg="${r.id}" data-arg-type="number" data-arg2="retry">同目标重跑一轮</button>
                   </div>
                 </div>`;
             }

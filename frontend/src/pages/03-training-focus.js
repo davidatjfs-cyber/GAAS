@@ -3200,7 +3200,7 @@
                         ${c.ai_feedback ? `<div style="background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;font-size:13px;color:rgba(255,255,255,0.7);margin-bottom:10px;line-height:1.5;">💬 ${escapeHtml(c.ai_feedback)}</div>` : ''}
                         ${scoreHtml}
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                            <button onclick="reviewCertWithScore(${c.id},'confirm')" style="padding:12px;border-radius:10px;background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.3);color:#34d399;font-size:14px;font-weight:600;cursor:pointer;">✓ 确认AI评分</button>
+                            <button data-click="reviewCertWithScore" data-arg="${c.id}" data-arg-type="number" data-arg2="confirm" style="padding:12px;border-radius:10px;background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.3);color:#34d399;font-size:14px;font-weight:600;cursor:pointer;">✓ 确认AI评分</button>
                             <button data-click="reviewCertWithOverride" data-arg="${c.id}" data-arg-type="number" style="padding:12px;border-radius:10px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.25);color:#fbbf24;font-size:14px;font-weight:600;cursor:pointer;">✎ 手动评分</button>
                         </div>
                     </div>`;

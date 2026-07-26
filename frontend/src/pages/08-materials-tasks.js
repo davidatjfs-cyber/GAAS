@@ -301,7 +301,7 @@
                 }
                 el.innerHTML = items.map((it, idx) => {
                     const safe = escapeHtml(String(it));
-                    return `<span class="tag">${safe}<span class="del-btn" onclick="removeOrgDictItem('${type}', ${idx})">×</span></span>`;
+                    return `<span class="tag">${safe}<span class="del-btn" data-click="removeOrgDictItem" data-arg="${type}" data-arg2="${idx}" data-arg2-type="number">×</span></span>`;
                 }).join('');
             };
             renderList('org-dict-departments', dict.departments, 'departments');

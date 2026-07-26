@@ -1357,8 +1357,8 @@
                         +   (summary ? '<div class="pf-approval-summary">' + summary + '</div>' : '')
                         + '</div>'
                         + '<div class="pf-approval-actions">'
-                        +   '<button class="ga-btn ga-btn--primary ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" onclick="profileQuickApprove(\'' + id + '\', true)">通过</button>'
-                        +   '<button class="ga-btn ga-btn--danger ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" onclick="profileQuickApprove(\'' + id + '\', false)">拒绝</button>'
+                        +   '<button class="ga-btn ga-btn--primary ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" data-click="profileQuickApprove" data-arg="' + id + '" data-arg2="true">通过</button>'
+                        +   '<button class="ga-btn ga-btn--danger ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" data-click="profileQuickApprove" data-arg="' + id + '" data-arg2="false">拒绝</button>'
                         +   '<button class="ga-btn ga-btn--ghost ga-btn--sm" style="height:28px;font-size:11px;border-radius:8px;" data-click="openApprovalDetailModal" data-arg="' + id + '">详情</button>'
                         + '</div>'
                         + '</div>';
