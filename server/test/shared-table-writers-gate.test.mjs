@@ -43,11 +43,14 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   // P5.4：poll-submissions.js → poll-submissions-helpers.js（同 OP+表换路径）
   'domains/feishu-bitable/poll-submissions-helpers.js|INSERT INTO|feishu_generic_records',
   'domains/feishu-bitable/poll-submissions-helpers.js|INSERT INTO|agent_messages',
+  // P2：processBitableData 类型处理器迁出（agents.js 仍有其它 agent_messages 写入）
+  'domains/feishu-bitable/process-bitable-data-helpers.js|INSERT INTO|agent_messages',
+  'domains/feishu-bitable/process-bitable-data-helpers.js|UPDATE|agent_messages',
   'agents.js|INSERT INTO|feishu_users',
   // Wave A8：sendScheduledChecklist 迁出；agents.js 已无 master_tasks INSERT（另见 training-flow）
   // P5.4：send-scheduled-checklist.js → send-scheduled-checklist-helpers.js（同 OP+表换路径）
   'domains/agent-ops/send-scheduled-checklist-helpers.js|INSERT INTO|master_tasks',
-  'agents.js|UPDATE|agent_messages',
+  // processBitableData 迁出后 agents.js 不再 UPDATE agent_messages（见 helpers）
   'agents.js|UPDATE|feishu_users',
   // followUpOverdueTasks 仍写 reminder；task-response 回复闭环已迁出 helpers
   'agents.js|UPDATE|master_tasks',
@@ -136,6 +139,8 @@ const REPATH_NOTES = [
   'agents.js → domains/agent-evaluator/run-chief-evaluator.js | INSERT INTO|agent_scores',
   'agents.js → domains/feishu-bitable/archive-old-submissions.js | DELETE FROM|agent_messages',
   'agents.js → domains/feishu-bitable/task-response-helpers.js | UPDATE|master_tasks',
+  'agents.js → domains/feishu-bitable/process-bitable-data-helpers.js | INSERT INTO|agent_messages',
+  'agents.js → domains/feishu-bitable/process-bitable-data-helpers.js | UPDATE|agent_messages',
 ];
 
 const OWNER = 'gaas';
