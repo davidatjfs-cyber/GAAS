@@ -56,6 +56,8 @@ import { createHandleAgentMessage } from './domains/agent-message/handle-agent-m
 import { createRouteMessage } from './domains/agent-message/route-message.js';
 import { createHandleOpsChecklistCardAction } from './domains/agent-ops/handle-checklist-card-action.js';
 import { createOpsChecklistCardsApi } from './domains/agent-ops/checklist-cards.js';
+import { createTryCaptureOpsChecklistDetailFromChat } from './domains/agent-ops/capture-checklist-detail.js';
+import { createFollowUpOverdueTasks } from './domains/agent-ops/follow-up-overdue-tasks.js';
 import { createAuditImage } from './domains/agent-ops/audit-image.js';
 import { createTryFeishuMarketingCopyRound } from './domains/agent-message/marketing-copy.js';
 import { createCheckAgentQualityApi } from './domains/agent-message/check-agent-quality.js';
@@ -72,6 +74,7 @@ import { createBuildScheduledTasksFromConfig } from './domains/agent-ops/build-s
 import { createHandleDataAuditorCase } from './domains/agent-message/handle-data-auditor-case.js';
 import { createOnFeishuEvent } from './domains/agent-feishu-bot/on-feishu-event.js';
 import { createFeishuUserMessagingApi } from './domains/agent-feishu-bot/feishu-user-messaging.js';
+import { createPushIssuesToFeishu } from './domains/agent-feishu-bot/push-issues.js';
 import { createTryHandleBiByFunctionCalling } from './domains/agent-bi/try-handle-bi-by-function-calling.js';
 import { clampInt } from './domains/agent-bi/bi-tool-period.js';
 import { createRunBiFunctionTool } from './domains/agent-bi/run-bi-function-tool.js';
@@ -80,6 +83,7 @@ import { createBuildBiDeterministicSalesRawTopReply } from './domains/agent-bi/b
 import { createBuildBiDeterministicBadReviewReportReply } from './domains/agent-bi/build-bad-review-report-reply.js';
 import { createDeterministicCascadeReplies } from './domains/agent-bi/deterministic-cascade-replies.js';
 import { createPollBitableSubmissions } from './domains/feishu-bitable/poll-submissions.js';
+import { createNotifyBitablePipelineFailure } from './domains/feishu-bitable/pipeline-failure-notify.js';
 import { createTaskResponseApi } from './domains/feishu-bitable/task-response.js';
 import { createProcessBitableData } from './domains/feishu-bitable/process-bitable-data.js';
 import { createBitableRecordsClient } from './domains/feishu-bitable/bitable-records-client.js';
@@ -2849,54 +2853,10 @@ export async function checkDataTriggers() {
   return triggers;
 }
 
-// 执行闭环追踪 - 催办逻辑
+// 执行闭环追踪 - 催办逻辑 → domains/agent-ops/follow-up-overdue-tasks.js
+let _followUpOverdueTasks;
 export async function followUpOverdueTasks() {
-  const config = OPS_AGENT_CONFIG.loopManagement.followUpRules;
-  const now = new Date();
-  const followUps = [];
-  
-  // 检查超时未读的任务
-  try {
-    const unreadTasks = await pool().query(`
-      SELECT t.*, u.open_id, u.name
-      FROM master_tasks t
-      JOIN users u ON t.assignee_username = u.username
-      WHERE t.status = 'dispatched' 
-        AND t.created_at < NOW() - make_interval(mins => $2)
-        AND t.reminder_count < $1
-    `, [config.maxReminders, Math.max(1, Math.floor(Number(config.firstReminder) || 60))]);
-    
-    for (const task of unreadTasks.rows) {
-      // 发送飞书提醒
-      const reminderMsg = prefixWithAgentName('ops_supervisor', 
-        `【任务提醒】${task.assignee_username}，你有任务已超时${Math.round((now - new Date(task.created_at)) / 60000)}分钟未查看，请及时处理：${task.title}`);
-      
-      try {
-        await sendLarkMessage(task.open_id, reminderMsg);
-        
-        // 更新提醒次数
-        await pool().query(`
-          UPDATE master_tasks 
-          SET reminder_count = reminder_count + 1, 
-              last_reminded_at = NOW()
-          WHERE id = $1
-        `, [task.id]);
-        
-        followUps.push({
-          taskId: task.id,
-          type: 'unread_reminder',
-          assignee: task.assignee_username,
-          reminderCount: task.reminder_count + 1
-        });
-      } catch (e) {
-        log.error('[ops_supervisor] follow-up failed:', e?.message);
-      }
-    }
-  } catch (e) {
-    log.error('[ops_supervisor] overdue tasks check failed:', e?.message);
-  }
-  
-  return followUps;
+  return _followUpOverdueTasks();
 }
 
 // 辅助函数：根据品牌获取门店列表
@@ -3123,61 +3083,19 @@ async function enforceUnifiedQualityGate(args) {
   return _checkAgentQualityApi.enforceUnifiedQualityGate(args);
 }
 
-/** Bitable 管道类告警去重：同一 key 在 minIntervalMs 内只发一次（避免 keepalive 死循环刷屏） */
-const _bitablePipelineAlertLast = new Map();
-
-/**
- * LISTEN / keepalive / catchup / NOTIFY 解析等故障 → 第一时间飞书通知 admin/hq_manager（与双写告警同 open_id 查询口径）。
- * @param {string} scopeLabel
- * @param {unknown} err
- * @param {{ minIntervalMs?: number, dedupeKey?: string, extraLines?: string[] }} [opts]
- */
+// Bitable 管道告警 → domains/feishu-bitable/pipeline-failure-notify.js
+let _notifyBitablePipelineFailure;
 async function notifyBitablePipelineFailure(scopeLabel, err, opts = {}) {
-  try {
-    const reason = String(err?.message || err || 'unknown').slice(0, 900);
-    const stack = err?.stack ? String(err.stack).split('\n').slice(0, 8).join('\n').slice(0, 1500) : '';
-    const dedupeKey = String(opts?.dedupeKey || scopeLabel || 'default');
-    const minI = Number(opts?.minIntervalMs);
-    if (Number.isFinite(minI) && minI > 0) {
-      const k = `${scopeLabel}|${dedupeKey}`;
-      const now = Date.now();
-      const last = _bitablePipelineAlertLast.get(k) || 0;
-      if (now - last < minI) return;
-      _bitablePipelineAlertLast.set(k, now);
-    }
-    const r = await pool().query(
-      `SELECT open_id FROM feishu_users
-       WHERE registered = true AND open_id IS NOT NULL
-         AND role IN ('admin', 'hq_manager')
-         AND open_id NOT LIKE '%probe%'
-       LIMIT 20`
-    );
-    const rows = r.rows || [];
-    if (!rows.length) {
-      log.warn('[bitable-alert] no admin/hq_manager open_id for Feishu alert:', scopeLabel, reason);
-      return;
-    }
-    const timeStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
-    const extra = Array.isArray(opts?.extraLines) ? opts.extraLines.filter(Boolean).join('\n') : '';
-    const msg =
-      `【HRMS Bitable 实时链故障】\n范围：${scopeLabel}\n原因：${reason}\n时间：${timeStr}（上海）\n` +
-      (extra ? `补充：\n${extra}\n` : '') +
-      (stack ? `堆栈摘要：\n${stack}\n` : '') +
-      `影响：多维表同步后的知识图谱 / 照片验证 / 巡店处理可能延迟；系统会 catchup、LISTEN 重连或回退飞书轮询。\n` +
-      `请查 hrms-service 日志 [bitable]、[bitable-alert] 与 DATABASE_URL / PG 权限。`;
-    await Promise.all(
-      (rows || []).map((row) =>
-        sendLarkMessage(row.open_id, msg, { skipDedup: true }).catch((e) =>
-          log.error('[bitable-alert] sendLarkMessage failed:', e?.message)
-        )
-      )
-    );
-  } catch (e) {
-    log.error('[bitable-alert] notifyBitablePipelineFailure failed:', e?.message);
-  }
+  return _notifyBitablePipelineFailure(scopeLabel, err, opts);
 }
 
 // Wave P2: Bitable LISTEN / catchup / archive → domains/feishu-bitable/*
+_notifyBitablePipelineFailure = createNotifyBitablePipelineFailure({
+  pool,
+  sendLarkMessage,
+  log,
+});
+
 const _bitablePolling = createBitablePollingController({
   pool,
   bitableConfigs: BITABLE_CONFIGS,
@@ -3218,58 +3136,10 @@ export function stopBitablePolling() {
 // 13. Feishu Webhook Event Handler
 // ─────────────────────────────────────────────
 
+// 检查单聊天补录 → domains/agent-ops/capture-checklist-detail.js
+let _tryCaptureOpsChecklistDetailFromChat;
 async function tryCaptureOpsChecklistDetailFromChat(openId, feishuUser, text, imageUrls) {
-  const storeName = String(feishuUser?.store || '').trim();
-  if (!openId || !storeName) return { handled: false };
-
-  const candidates = [];
-  const today = new Date().toISOString().slice(0, 10);
-  candidates.push(`${openId}||${storeName}||opening||${today}`);
-  candidates.push(`${openId}||${storeName}||closing||${today}`);
-
-  let matchedKey = '';
-  let progress = null;
-  for (const key of candidates) {
-    const p = _opsChecklistProgress.get(key);
-    if (p && Number.isFinite(p.pendingItemIndex) && p.pendingItemIndex >= 0) {
-      matchedKey = key;
-      progress = p;
-      break;
-    }
-  }
-  if (!progress) return { handled: false };
-
-  const idx = progress.pendingItemIndex;
-  const itemName = String(progress.pendingItemName || '').trim() || `第${idx + 1}项`;
-  if (!progress.itemDetails[idx]) progress.itemDetails[idx] = { status: '', remark: '', photoCount: 0 };
-
-  let changed = false;
-  if (text) {
-    const normalized = text.replace(/^说明[：:]/, '').trim();
-    if (normalized) {
-      progress.itemDetails[idx].remark = normalized;
-      changed = true;
-    }
-  }
-  if (Array.isArray(imageUrls) && imageUrls.length) {
-    progress.itemDetails[idx].photoCount = (Number(progress.itemDetails[idx].photoCount) || 0) + imageUrls.length;
-    changed = true;
-  }
-
-  if (!changed) return { handled: false };
-
-  const abnormalCount = countOpsChecklistAbnormal(progress);
-  const detail = progress.itemDetails[idx] || {};
-  const statusText = detail.status === 'pass' ? '合格' : detail.status === 'fail' ? '异常' : '未标记';
-  const remarkText = String(detail.remark || '').trim() ? '已填写' : '未填写';
-  const photoText = `${Number(detail.photoCount) || 0}张`;
-
-  await sendLarkMessage(
-    openId,
-    prefixWithAgentName('ops_supervisor', `已更新【${itemName}】\n状态：${statusText}\n说明：${remarkText}\n照片：${photoText}\n\n当前已记录异常：${abnormalCount}项`)
-  );
-
-  return { handled: true, progressKey: matchedKey, abnormalCount };
+  return _tryCaptureOpsChecklistDetailFromChat(openId, feishuUser, text, imageUrls);
 }
 
 // ── 飞书：固定格式「营销文案」+ 菜名/品牌/推荐理由 → 可选配图 → 生成多平台多套文案 ──
@@ -3289,64 +3159,10 @@ export async function onFeishuEvent(body) {
 // 12. Feishu Push Notifications
 // ─────────────────────────────────────────────
 
-// Push new issues to their assignees via Feishu
+// Push new issues → domains/agent-feishu-bot/push-issues.js
+let _pushIssuesToFeishu;
 export async function pushIssuesToFeishu(tenantId = 'default') {
-  try {
-    const r = await pool().query(
-      `SELECT ai.id, ai.title, ai.detail, ai.severity, ai.store, ai.category, ai.assignee_username
-       FROM agent_issues ai
-       WHERE ai.feishu_notified = FALSE AND ai.assignee_username IS NOT NULL
-         AND COALESCE(ai.agent, '') <> 'data_auditor'
-         AND ai.tenant_id = $1
-       ORDER BY ai.created_at DESC LIMIT 20`,
-      [tenantId]
-    );
-    if (!r.rows?.length) return 0;
-
-    let pushed = 0;
-    for (const issue of r.rows) {
-      const fu = await lookupFeishuUserByUsername(issue.assignee_username);
-      if (!fu?.open_id) continue;
-
-      const sev = issue.severity === 'high' ? '🔴 高优先级' : '🟡 中优先级';
-      const sevTemplate = issue.severity === 'high' ? 'red' : 'orange';
-      const anomalyCard = {
-        config: { wide_screen_mode: true },
-        header: { title: { tag: 'plain_text', content: `${sev} 异常通知` }, template: sevTemplate },
-        elements: [
-          { tag: 'div', text: { tag: 'lark_md', content: `**门店**：${issue.store || '-'}\n**类别**：${issue.category || '-'}` } },
-          { tag: 'hr' },
-          { tag: 'div', text: { tag: 'lark_md', content: `📋 **${issue.title}**\n\n${issue.detail || ''}` } },
-          { tag: 'hr' },
-          { tag: 'div', text: { tag: 'lark_md', content: `⏰ 请在 **1小时内** 查看并回复整改措施。\n直接回复文字说明整改情况，或发送整改照片。` } },
-          { tag: 'note', elements: [{ tag: 'plain_text', content: `小年 · 异常检测` }] }
-        ]
-      };
-
-      let sendResult = await sendLarkCard(fu.open_id, anomalyCard);
-      if (!sendResult.ok) {
-        const msg = prefixWithAgentName('data_auditor', `${sev} 异常通知\n\n📋 ${issue.title}\n\n${issue.detail || ''}\n\n⏰ 请在1小时内查看并回复整改措施。`);
-        sendResult = await sendLarkMessage(fu.open_id, msg);
-      }
-      if (sendResult.ok) {
-        await pool().query(`UPDATE agent_issues SET feishu_notified = TRUE WHERE id = $1`, [issue.id]);
-        pushed++;
-
-        // Log outbound message
-        try {
-          await pool().query(
-            `INSERT INTO agent_messages (direction, channel, feishu_open_id, sender_username, sender_name, routed_to, content_type, content, tenant_id)
-             VALUES ('out','feishu',$1,$2,$3,'data_auditor','text',$4,$5)`,
-            [fu.open_id, 'system', 'HRMS Agent', `${sev} 异常通知: ${issue.title}`, resolveTenantIdDefault()]
-          );
-        } catch (e) { /* ignore */ }
-      }
-    }
-    return pushed;
-  } catch (e) {
-    log.error('[feishu] push issues failed:', e?.message);
-    return 0;
-  }
+  return _pushIssuesToFeishu(tenantId);
 }
 
 /** 周度异常汇总（anomaly_rollups_v2）的「绩效考核周报」仅周一推送，避免与即时「BI异常情况扣分」卡重复轰炸；非周一积压行保留 feishu_notified=false 至下周一再推。 */
@@ -4108,6 +3924,22 @@ _opsChecklistCardsApi = createOpsChecklistCardsApi({
   getOpsAgentConfig: () => OPS_AGENT_CONFIG,
 });
 _opsChecklistProgress = _opsChecklistCardsApi.opsChecklistProgress;
+_tryCaptureOpsChecklistDetailFromChat = createTryCaptureOpsChecklistDetailFromChat({
+  opsChecklistProgress: _opsChecklistProgress,
+  countOpsChecklistAbnormal,
+  sendLarkMessage,
+  prefixWithAgentName,
+});
+
+_followUpOverdueTasks = createFollowUpOverdueTasks({
+  pool,
+  getOpsAgentConfig: () => OPS_AGENT_CONFIG,
+  sendLarkMessage,
+  prefixWithAgentName,
+  log,
+});
+
+
 
 _handleOpsChecklistCardAction = createHandleOpsChecklistCardAction({
   pool,
@@ -4131,6 +3963,16 @@ _tryFeishuMarketingCopyRound = createTryFeishuMarketingCopyRound({
   callVisionLLM,
   sendLarkMessage,
   prefixWithAgentName,
+  log,
+});
+
+_pushIssuesToFeishu = createPushIssuesToFeishu({
+  pool,
+  lookupFeishuUserByUsername,
+  sendLarkCard,
+  sendLarkMessage,
+  prefixWithAgentName,
+  resolveTenantIdDefault,
   log,
 });
 

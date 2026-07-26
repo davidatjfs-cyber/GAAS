@@ -52,9 +52,11 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   'domains/agent-ops/send-scheduled-checklist-helpers.js|INSERT INTO|master_tasks',
   // processBitableData 迁出后 agents.js 不再 UPDATE agent_messages（见 helpers）
   'agents.js|UPDATE|feishu_users',
-  // followUpOverdueTasks 仍写 reminder；task-response 回复闭环已迁出 helpers
-  'agents.js|UPDATE|master_tasks',
+  // followUpOverdueTasks 催办 reminder；task-response 回复闭环已迁出 helpers
+  'domains/agent-ops/follow-up-overdue-tasks.js|UPDATE|master_tasks',
   'domains/feishu-bitable/task-response-helpers.js|UPDATE|master_tasks',
+  // P2：pushIssuesToFeishu 迁出（agents.js 仍有其它 agent_messages INSERT）
+  'domains/agent-feishu-bot/push-issues.js|INSERT INTO|agent_messages',
   // handleAgentMessage 培训考核通过：master_tasks INSERT 部分迁入 agent-message
   'domains/agent-message/training-flow.js|INSERT INTO|master_tasks',
   'auto-ops-engine.js|UPDATE|master_tasks',
@@ -141,6 +143,8 @@ const REPATH_NOTES = [
   'agents.js → domains/feishu-bitable/task-response-helpers.js | UPDATE|master_tasks',
   'agents.js → domains/feishu-bitable/process-bitable-data-helpers.js | INSERT INTO|agent_messages',
   'agents.js → domains/feishu-bitable/process-bitable-data-helpers.js | UPDATE|agent_messages',
+  'agents.js → domains/agent-ops/follow-up-overdue-tasks.js | UPDATE|master_tasks',
+  'agents.js → domains/agent-feishu-bot/push-issues.js | INSERT INTO|agent_messages',
 ];
 
 const OWNER = 'gaas';
