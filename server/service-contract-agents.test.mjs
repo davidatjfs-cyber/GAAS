@@ -19,7 +19,9 @@ test('HRMS growth-api / agents proxy must send internal auth header when calling
 
 test('agents /health gates detailed payload via allowDetailedHealth', { skip: !hasAgentsCheckout }, () => {
   const index = fs.readFileSync(path.join(agentsRoot, 'src/index.js'), 'utf8');
-  assert.match(index, /registerHealthRoutes/);
+  assert.match(index, /registerHttpApp/);
+  const httpApp = fs.readFileSync(path.join(agentsRoot, 'src/routes/register-http-app.js'), 'utf8');
+  assert.match(httpApp, /registerHealthRoutes/);
   const health = fs.readFileSync(path.join(agentsRoot, 'src/routes/health-api.js'), 'utf8');
   assert.match(health, /allowDetailedHealth/);
   assert.match(health, /app\.get\(['"]\/health['"]/);

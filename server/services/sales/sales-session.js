@@ -259,6 +259,417 @@ async function pauseAutoNurtureOnCustomerReply(pool, leadId) {
   }
 }
 
+export async function handleHumanControllerInbound(pool, {
+  content, msgId, inputMode, lead, conv,
+} = {}) {
+if (content) {
+  const m = await addMessage(pool, {
+    conversationId: conv.id,
+    leadId: lead.id,
+    direction: 'inbound',
+    sender: 'customer',
+    content,
+    msgId,
+    meta: { input_mode: inputMode },
+  });
+  if (msgId && !m.inserted) {
+    return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id };
+  }
+  await pauseAutoNurtureOnCustomerReply(pool, lead.id);
+}
+await pool.query(`UPDATE sales_leads SET last_message_at=NOW(), updated_at=NOW() WHERE id=$1`, [lead.id]);
+return { ok: true, replied: false, reason: 'human_controller', lead_id: lead.id, conversation_id: conv.id };
+}
+
+export async function handleWaitingHumanInbound(pool, {
+  content, msgId, inputMode, lead, conv, sourceChannel,
+} = {}) {
+let inboundMsg = null;
+if (content) {
+  inboundMsg = await addMessage(pool, {
+    conversationId: conv.id,
+    leadId: lead.id,
+    direction: 'inbound',
+    sender: 'customer',
+    content,
+    msgId,
+    meta: { input_mode: inputMode },
+  });
+  if (msgId && !inboundMsg.inserted) {
+    return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: 'waiting_human' };
+  }
+  await pauseAutoNurtureOnCustomerReply(pool, lead.id);
+}
+const slots = extractSlotsFromText(content, lead.extracted || {});
+const events = detectEvents(content);
+const eventTypes = events.map((e) => e.event_type);
+const score = scoreLead({ extracted: slots, eventTypes });
+await applyLeadUpdates(pool, lead.id, {
+  extracted: slots,
+  events: events.map((e) => ({ ...e, evidence: content.slice(0, 200), summary: e.event_type })),
+  score,
+  controller: 'waiting_human',
+});
+const updatedLead = await getLead(pool, lead.id);
+const advice = buildSalesAdvice(updatedLead, score);
+const diagnosis = buildDiagnosisReport(updatedLead);
+const history = (await listMessages(pool, conv.id, 30)).filter((m) => m.id !== inboundMsg?.id);
+const knowledgeItems = await loadKnowledgeItems(pool);
+const mergedProfile = {
+  ...(updatedLead.extracted || slots || {}),
+  name: updatedLead.name || updatedLead.extracted?.name || undefined,
+  company: updatedLead.company || updatedLead.extracted?.company || undefined,
+  phone: updatedLead.phone || updatedLead.extracted?.phone || undefined,
+  contact_phone: updatedLead.phone || updatedLead.extracted?.contact_phone || undefined,
+};
+const turn = await runCustomerAiTurn({
+  userText: content,
+  extracted: mergedProfile,
+  history,
+  intentScore: score.intent_score,
+  controller: 'waiting_human',
+  knowledgeItems,
+  pool,
+  inputMode,
+}).catch(() => null);
+const reply = turn?.reply || buildWaitingHumanBridgeReply({ content, lead: updatedLead });
+const outboundMsg = await addMessage(pool, {
+  conversationId: conv.id,
+  leadId: lead.id,
+  direction: 'outbound',
+  sender: 'ai',
+  content: reply,
+  meta: {
+    source: turn?.source || 'waiting_human_bridge_fallback',
+    mode: 'waiting_human_bridge',
+    speech_reply: turn?.speechReply || null,
+    delivery_status: sourceChannel === 'wecom_kf' ? 'pending' : 'local',
+  },
+});
+await addEvent(pool, lead.id, {
+  event_type: 'CUSTOMER_FOLLOWUP_WAITING_HUMAN',
+  summary: '客户在等待人工时继续追问',
+  evidence: content.slice(0, 200),
+  priority: 'high',
+  recommended_action: 'takeover',
+});
+if (typeof _notify === 'function') {
+  await _notify(
+    ['【销售AI·待接管客户继续追问】', `线索 ${lead.lead_key}`, `客户：${content.slice(0, 160)}`, '请尽快人工接管，AI已先行回应防止冷场。'].join('\n'),
+    { title: '待接管客户继续追问', audience: 'sales' }
+  ).catch(() => null);
+}
+await pool.query(`UPDATE sales_leads SET last_message_at=NOW(), updated_at=NOW() WHERE id=$1`, [lead.id]);
+return {
+  ok: true,
+  replied: true,
+  reply,
+  speech_reply: turn?.speechReply || null,
+  reason: 'waiting_human_bridge',
+  lead_id: lead.id,
+  conversation_id: conv.id,
+  outbound_message_id: outboundMsg.id || null,
+  controller: 'waiting_human',
+  score,
+  advice,
+  diagnosis,
+  source: turn?.source || 'waiting_human_bridge_fallback',
+  plan: { extracted: slots, events },
+};
+}
+
+export async function handleWelcomeInbound(pool, {
+  lead, conv, sourceChannel,
+} = {}) {
+const already = await pool.query(
+  `SELECT id FROM sales_messages WHERE conversation_id=$1 AND meta->>'kind'='welcome' LIMIT 1`,
+  [conv.id]
+);
+if (already.rows?.length) {
+  return { ok: true, replied: false, reason: 'already_welcomed', lead_id: lead.id, conversation_id: conv.id, controller: 'ai' };
+}
+const welcomeText = '您好，我是李娟娟，负责餐厅经营顾问这块。可以聊聊客户维护、门店管理或者人才培养这些，您目前有几家门店？';
+const outboundMsg = await addMessage(pool, {
+  conversationId: conv.id,
+  leadId: lead.id,
+  direction: 'outbound',
+  sender: 'ai',
+  content: welcomeText,
+  meta: { kind: 'welcome', delivery_status: sourceChannel === 'wecom_kf' ? 'pending' : 'local' },
+});
+return { ok: true, replied: true, reply: welcomeText, lead_id: lead.id, conversation_id: conv.id, outbound_message_id: outboundMsg.id || null, controller: 'ai' };
+}
+
+export async function runAiInboundDecision(pool, {
+  content, msgId, inputMode, lead, conv, sourceChannel,
+} = {}) {
+const inboundMsg = await addMessage(pool, {
+  conversationId: conv.id,
+  leadId: lead.id,
+  direction: 'inbound',
+  sender: 'customer',
+  content,
+  msgId,
+  meta: { input_mode: inputMode },
+});
+if (msgId && !inboundMsg.inserted) {
+  // 企微/cron重推了同一条消息：这条inbound记录已经处理过，不再重跑评分/LLM回复/线索更新/
+  // 通知——否则客户会收到两条几乎相同的AI回复，销售会收到重复的高意向通知。
+  return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: conv.controller };
+}
+await pauseAutoNurtureOnCustomerReply(pool, lead.id);
+
+// 当前 inbound 已写入数据库，但不能又作为“历史”传给模型，否则同一句会同时出现在
+// 历史和“客户本轮说”两个位置，放大模型对重复话术的关注。
+const history = (await listMessages(pool, conv.id, 30)).filter((m) => m.id !== inboundMsg.id);
+const activeGuidanceRow = await getActiveSalesGuidance(pool, lead.id);
+const activeGuidance = activeGuidanceRow?.guidance || null;
+const knowledgeItems = await loadKnowledgeItems(pool);
+const turn = await runCustomerAiTurn({
+  userText: content,
+  extracted: lead.extracted || {},
+  history,
+  intentScore: lead.intent_score || 0,
+  controller: conv.controller,
+  guidance: activeGuidance,
+  knowledgeItems,
+  pool,
+  inputMode,
+});
+
+const normalizedEvents = (turn.plan.events || []).map((e) => normalizeCustomerAiEvent(e, content));
+const eventTypes = normalizedEvents.map((e) => e.event_type);
+const score = scoreLead({ extracted: turn.plan.extracted, eventTypes });
+const decision = buildSalesDecision({ lead: { ...lead, extracted: turn.plan.extracted }, score, events: normalizedEvents });
+const handoffRequested = decision.controller_recommendation === 'handoff_now';
+const handoffRep = handoffRequested ? await findAssignableSalesRep(pool, lead) : null;
+const handoffResolution = resolveHandoffController({ requested: handoffRequested, repKey: handoffRep, currentController: conv.controller });
+const takeover = handoffResolution.takeover;
+const handoffDeferred = handoffResolution.deferred;
+if (handoffDeferred) {
+  turn.reply = buildDeferredHandoffReply(turn.reply, { preserveAnswer: Boolean(turn.plan?.answer_before_handoff) });
+  turn.speechReply = turn.reply;
+  turn.source = 'handoff_deferred_no_active_sales';
+  turn.plan.mode = 'handoff_deferred';
+  turn.plan.takeover = { ...(turn.plan.takeover || {}), takeover: false, deferred: true, reason: 'no_active_sales' };
+} else if (takeover && turn.plan?.answer_before_handoff) {
+  const directAnswer = String(turn.reply || '').trim();
+  const separator = /[。！？!?]$/.test(directAnswer) ? '' : '。';
+  turn.reply = `${directAnswer}${separator}我现在为您安排顾问继续确认。`;
+  turn.speechReply = turn.reply;
+}
+const nextController = handoffResolution.controller;
+const nextStage = decision.sales_stage;
+
+const effectiveDecision = handoffDeferred
+  ? {
+      ...decision,
+      controller_recommendation: 'notify_and_continue',
+      requested_controller_recommendation: 'handoff_now',
+      handoff_deferred_reason: 'no_active_sales',
+      next_action: '配置可接管销售并尽快联系客户；配置完成前由客户AI继续接待',
+    }
+  : decision;
+
+await applyLeadUpdates(pool, lead.id, {
+  extracted: turn.plan.extracted,
+  events: normalizedEvents,
+  score,
+  controller: nextController,
+  handoff_level: decision.intent_level,
+  last_sales_decision: effectiveDecision,
+});
+
+let updatedLead = await getLead(pool, lead.id);
+// 转化归属/落库是锦上添花,任何一步失败都不允许拖垮"客户必须收到回复"的主链路。
+let conversionAssignee = handoffRep || updatedLead.assigned_to || updatedLead.owner_username || null;
+try {
+  if (!conversionAssignee && turn.plan?.conversion?.task_title) {
+    conversionAssignee = await findAssignableSalesRep(pool, updatedLead);
+  }
+  if (conversionAssignee && !updatedLead.assigned_to) {
+    await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=COALESCE(assigned_at,NOW()),updated_at=NOW() WHERE id=$1`, [lead.id, conversionAssignee]);
+    updatedLead = { ...updatedLead, assigned_to: conversionAssignee };
+  }
+} catch (e) {
+  log.error({ msg: 'conversion_assignee_bookkeeping_failed', lead_id: lead.id, err: e?.message });
+}
+const advice = buildSalesAdvice(updatedLead, score);
+const next = buildNextAction(updatedLead, score);
+const diagnosis = buildDiagnosisReport(updatedLead);
+const customerGuidance = buildCustomerAiGuidance(effectiveDecision);
+await saveSalesGuidance(pool, { leadId: lead.id, conversationId: conv.id, guidance: customerGuidance, expiresInTurns: customerGuidance.expires_in_turns });
+const completeness = checkLeadCompleteness(updatedLead);
+await recordCustomerConversionIntent(pool, {
+  leadId: lead.id,
+  leadKey: lead.lead_key,
+  assignee: conversionAssignee || null,
+  conversion: turn.plan?.conversion || null,
+  evidence: content,
+  controller: nextController,
+}).catch((e) => {
+  log.error({ msg: 'record_conversion_intent_failed', lead_id: lead.id, err: e?.message });
+});
+if (nextStage && nextStage !== lead.stage && STAGES_REQUIRING_COMPLETE_INFO.has(nextStage) && !completeness.complete) {
+  // 门店基础信息还没收全就不让AI把线索推进到"已确认"往后的阶段——两条建档入口(AI对话/
+  // 销售手工表单)现在共用同一份完整性判断，不再各自为政。不阻断人工接管本身，客户仍然
+  // 可以立刻转人工，只是转阶段要等信息收全，销售看得到具体缺哪些字段。
+  log.warn({ msg: 'stage_transition_blocked_incomplete', lead_id: lead.id, to: nextStage, missing: completeness.missing });
+  await addEvent(pool, lead.id, {
+    event_type: 'STAGE_TRANSITION_BLOCKED_INCOMPLETE_INFO',
+    summary: `门店信息未收全(缺：${completeness.missing.join('、')})，暂不推进到「${nextStage}」`,
+    priority: 'normal',
+    recommended_action: 'collect_missing_info',
+    payload: { to_stage: nextStage, missing: completeness.missing },
+  });
+} else if (nextStage && nextStage !== lead.stage) {
+  const stageResult = await transitionLeadStage(pool, {
+    leadId: lead.id,
+    toStage: nextStage,
+    actorType: 'customer_ai',
+    actorId: conv.session_key || String(conv.id),
+    reason: decision.next_action,
+    sourceType: 'customer_ai_session',
+    sourceId: String(conv.id),
+    metadata: { score, events: normalizedEvents },
+  });
+  if (!stageResult.ok) {
+    log.warn({ msg: 'customer_ai_stage_transition_rejected', lead_id: lead.id, from: lead.stage, to: nextStage, err: stageResult.error });
+    await addEvent(pool, lead.id, { event_type: 'STAGE_TRANSITION_REJECTED', summary: stageResult.error, priority: 'normal', recommended_action: 'continue', payload: { from_stage: lead.stage, to_stage: nextStage } });
+  }
+}
+
+  return {
+    content,
+    lead,
+    conv,
+    sourceChannel,
+    turn,
+    normalizedEvents,
+    score,
+    decision,
+    handoffRep,
+    takeover,
+    handoffDeferred,
+    nextController,
+    nextStage,
+    effectiveDecision,
+    updatedLead,
+    conversionAssignee,
+    advice,
+    next,
+    diagnosis,
+    customerGuidance,
+    completeness,
+  };
+}
+
+export async function finalizeAiInboundTurn(pool, ctx) {
+  const {
+    content, lead, conv, sourceChannel, turn, normalizedEvents, score, decision,
+    handoffRep, takeover, handoffDeferred, nextController, updatedLead,
+    advice, next, diagnosis, customerGuidance, completeness, effectiveDecision,
+  } = ctx;
+if (takeover) {
+  await pool.query(`UPDATE sales_conversations SET controller='waiting_human', updated_at=NOW() WHERE id=$1`, [conv.id]);
+  await ensureFollowupTask(pool, lead.id, '高意向客户待接管', advice, 0.2, handoffRep);
+  await addEvent(pool, lead.id, {
+    event_type: 'HANDOFF_REQUESTED',
+    summary: turn.plan.takeover.reason,
+    evidence: content.slice(0, 200),
+    priority: 'high',
+    recommended_action: 'takeover',
+    payload: { score, advice, diagnosis },
+  });
+  // 多销售按当前开放线索数最少者自动分配；同负载时按销售ID轮询，避免永远分给第一人。
+  let handoffLead = updatedLead;
+  if (handoffLead.assigned_to !== handoffRep) {
+    await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=NOW(),updated_at=NOW() WHERE id=$1`, [lead.id, handoffRep]);
+    handoffLead = { ...handoffLead, assigned_to: handoffRep };
+  }
+  // 客户AI完成人格化接待与判断后，明确把客户交给具名顾问；不让销售继续假扮AI客服。
+  const qrUrl = String(process.env.WECOM_SALES_CONSULTANT_QR_URL || '').trim();
+  if (handoffLead.handoff_mode === 'consultant_qr' && kfConfigured() && handoffLead.open_kfid && handoffLead.external_userid) {
+    try {
+      const rep = handoffLead.assigned_to ? await pool.query(`SELECT r.wecom_name,a.* FROM sales_reps r LEFT JOIN sales_content_assets a ON a.id=r.wecom_qr_asset_id WHERE r.rep_key=$1 AND r.status='active' LIMIT 1`, [handoffLead.assigned_to]) : { rows: [] };
+      const repAsset = rep.rows?.[0]?.id ? rep.rows[0] : null;
+      const card = repAsset
+        ? await sendContentAssetToLead(pool, handoffLead, repAsset, { deliveryType: 'handoff', sentBy: 'customer_ai' })
+        : qrUrl ? await sendKfConsultantCard({ openKfid: handoffLead.open_kfid, externalUserid: handoffLead.external_userid, consultantName: process.env.WECOM_SALES_CONSULTANT_NAME || '专属顾问', qrUrl }) : null;
+      if (card?.ok) await addEvent(pool, lead.id, { event_type: 'CONSULTANT_QR_SENT', summary: '客户AI已发送专属销售企业微信二维码', priority: 'high', recommended_action: 'wait_customer_add' });
+    } catch (e) {
+      log.warn({ msg: 'consultant_qr_handoff_failed', err: e?.message || String(e) });
+    }
+  }
+  if (typeof _notify === 'function') {
+    await _notify(
+      [
+        '【销售AI·高意向待接管】',
+        `线索 ${lead.lead_key}`,
+        `评分 ${score.intent_score}（${score.intent_level}）`,
+        `门店 ${turn.plan.extracted.store_count ?? '未明'}｜痛点 ${turn.plan.extracted.pain_point || '未明'}`,
+        `原因：${decision.next_action}`,
+        advice,
+        `诊断：${diagnosis.surface_problem}`,
+        completeness.complete ? '门店信息：已收全' : `门店信息缺口：${completeness.missing.join('、')}（跟进时请先补齐）`,
+      ].join('\n'),
+      { title: '高意向销售线索', audience: 'sales' }
+    ).catch(() => null);
+  }
+} else if (handoffDeferred) {
+  await ensureFollowupTask(pool, lead.id, '高意向客户待配置销售', advice, 0.2);
+  await addEvent(pool, lead.id, {
+    event_type: 'HANDOFF_DEFERRED_NO_ACTIVE_SALES',
+    summary: '客户触发转人工，但没有可接管销售；客户AI继续接待',
+    evidence: content.slice(0, 200),
+    priority: 'critical',
+    recommended_action: 'configure_sales_and_takeover',
+    payload: { score, advice, diagnosis },
+  });
+  if (typeof _notify === 'function') {
+    await _notify(
+      ['【客户AI·转人工失败】', `线索 ${lead.lead_key}`, '当前没有可用销售人员，客户AI已继续接待以避免失联。', `客户：${content.slice(0, 160)}`, '请立即配置销售人员并接管。'].join('\n'),
+      { title: '客户转人工无人接管', audience: 'sales' }
+    ).catch(() => null);
+  }
+} else if (next.priority === 'medium' && !updatedLead.next_action) {
+  await ensureFollowupTask(pool, lead.id, next.next_action, advice, next.due_hours || 48);
+}
+
+const outboundMsg = await addMessage(pool, {
+  conversationId: conv.id,
+  leadId: lead.id,
+  direction: 'outbound',
+  sender: 'ai',
+  content: turn.reply,
+  meta: { source: turn.source, mode: turn.plan.mode, speech_reply: turn.speechReply || null, delivery_status: sourceChannel === 'wecom_kf' ? 'pending' : 'local' },
+});
+
+await pool.query(
+  `UPDATE sales_leads SET first_response_at=COALESCE(first_response_at, NOW()), first_contact_at=COALESCE(first_contact_at, NOW()), updated_at=NOW() WHERE id=$1`,
+  [lead.id]
+);
+
+return {
+  ok: true,
+  replied: true,
+  reply: turn.reply,
+  speech_reply: turn.speechReply || null,
+  lead_id: lead.id,
+  conversation_id: conv.id,
+  outbound_message_id: outboundMsg.id || null,
+  controller: nextController,
+  score,
+  advice,
+  diagnosis,
+  next_action: next.next_action,
+  plan: { mode: turn.plan.mode, extracted: turn.plan.extracted, takeover: turn.plan.takeover, events: normalizedEvents, conversion: turn.plan.conversion || null },
+  sales_decision: effectiveDecision,
+  customer_ai_guidance: customerGuidance,
+  source: turn.source,
+};
+}
+
 export async function handleInboundMessage(pool, {
   text,
   openKfid = 'sandbox',
@@ -276,375 +687,19 @@ export async function handleInboundMessage(pool, {
   const conv = await upsertConversation(pool, { openKfid, externalUserid: lead.external_userid, leadId: lead.id });
 
   if (conv.controller === 'human') {
-    if (content) {
-      const m = await addMessage(pool, {
-        conversationId: conv.id,
-        leadId: lead.id,
-        direction: 'inbound',
-        sender: 'customer',
-        content,
-        msgId,
-        meta: { input_mode: inputMode },
-      });
-      if (msgId && !m.inserted) {
-        return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id };
-      }
-      await pauseAutoNurtureOnCustomerReply(pool, lead.id);
-    }
-    await pool.query(`UPDATE sales_leads SET last_message_at=NOW(), updated_at=NOW() WHERE id=$1`, [lead.id]);
-    return { ok: true, replied: false, reason: 'human_controller', lead_id: lead.id, conversation_id: conv.id };
+    return handleHumanControllerInbound(pool, { content, msgId, inputMode, lead, conv });
   }
-
   if (conv.controller === 'waiting_human') {
-    let inboundMsg = null;
-    if (content) {
-      inboundMsg = await addMessage(pool, {
-        conversationId: conv.id,
-        leadId: lead.id,
-        direction: 'inbound',
-        sender: 'customer',
-        content,
-        msgId,
-        meta: { input_mode: inputMode },
-      });
-      if (msgId && !inboundMsg.inserted) {
-        return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: 'waiting_human' };
-      }
-      await pauseAutoNurtureOnCustomerReply(pool, lead.id);
-    }
-    const slots = extractSlotsFromText(content, lead.extracted || {});
-    const events = detectEvents(content);
-    const eventTypes = events.map((e) => e.event_type);
-    const score = scoreLead({ extracted: slots, eventTypes });
-    await applyLeadUpdates(pool, lead.id, {
-      extracted: slots,
-      events: events.map((e) => ({ ...e, evidence: content.slice(0, 200), summary: e.event_type })),
-      score,
-      controller: 'waiting_human',
-    });
-    const updatedLead = await getLead(pool, lead.id);
-    const advice = buildSalesAdvice(updatedLead, score);
-    const diagnosis = buildDiagnosisReport(updatedLead);
-    const history = (await listMessages(pool, conv.id, 30)).filter((m) => m.id !== inboundMsg?.id);
-    const knowledgeItems = await loadKnowledgeItems(pool);
-    const mergedProfile = {
-      ...(updatedLead.extracted || slots || {}),
-      name: updatedLead.name || updatedLead.extracted?.name || undefined,
-      company: updatedLead.company || updatedLead.extracted?.company || undefined,
-      phone: updatedLead.phone || updatedLead.extracted?.phone || undefined,
-      contact_phone: updatedLead.phone || updatedLead.extracted?.contact_phone || undefined,
-    };
-    const turn = await runCustomerAiTurn({
-      userText: content,
-      extracted: mergedProfile,
-      history,
-      intentScore: score.intent_score,
-      controller: 'waiting_human',
-      knowledgeItems,
-      pool,
-      inputMode,
-    }).catch(() => null);
-    const reply = turn?.reply || buildWaitingHumanBridgeReply({ content, lead: updatedLead });
-    const outboundMsg = await addMessage(pool, {
-      conversationId: conv.id,
-      leadId: lead.id,
-      direction: 'outbound',
-      sender: 'ai',
-      content: reply,
-      meta: {
-        source: turn?.source || 'waiting_human_bridge_fallback',
-        mode: 'waiting_human_bridge',
-        speech_reply: turn?.speechReply || null,
-        delivery_status: sourceChannel === 'wecom_kf' ? 'pending' : 'local',
-      },
-    });
-    await addEvent(pool, lead.id, {
-      event_type: 'CUSTOMER_FOLLOWUP_WAITING_HUMAN',
-      summary: '客户在等待人工时继续追问',
-      evidence: content.slice(0, 200),
-      priority: 'high',
-      recommended_action: 'takeover',
-    });
-    if (typeof _notify === 'function') {
-      await _notify(
-        ['【销售AI·待接管客户继续追问】', `线索 ${lead.lead_key}`, `客户：${content.slice(0, 160)}`, '请尽快人工接管，AI已先行回应防止冷场。'].join('\n'),
-        { title: '待接管客户继续追问', audience: 'sales' }
-      ).catch(() => null);
-    }
-    await pool.query(`UPDATE sales_leads SET last_message_at=NOW(), updated_at=NOW() WHERE id=$1`, [lead.id]);
-    return {
-      ok: true,
-      replied: true,
-      reply,
-      speech_reply: turn?.speechReply || null,
-      reason: 'waiting_human_bridge',
-      lead_id: lead.id,
-      conversation_id: conv.id,
-      outbound_message_id: outboundMsg.id || null,
-      controller: 'waiting_human',
-      score,
-      advice,
-      diagnosis,
-      source: turn?.source || 'waiting_human_bridge_fallback',
-      plan: { extracted: slots, events },
-    };
+    return handleWaitingHumanInbound(pool, { content, msgId, inputMode, lead, conv, sourceChannel });
   }
-
   if (welcome && !content) {
-    const already = await pool.query(
-      `SELECT id FROM sales_messages WHERE conversation_id=$1 AND meta->>'kind'='welcome' LIMIT 1`,
-      [conv.id]
-    );
-    if (already.rows?.length) {
-      return { ok: true, replied: false, reason: 'already_welcomed', lead_id: lead.id, conversation_id: conv.id, controller: 'ai' };
-    }
-    const welcomeText = '您好，我是李娟娟，负责餐厅经营顾问这块。可以聊聊客户维护、门店管理或者人才培养这些，您目前有几家门店？';
-    const outboundMsg = await addMessage(pool, {
-      conversationId: conv.id,
-      leadId: lead.id,
-      direction: 'outbound',
-      sender: 'ai',
-      content: welcomeText,
-      meta: { kind: 'welcome', delivery_status: sourceChannel === 'wecom_kf' ? 'pending' : 'local' },
-    });
-    return { ok: true, replied: true, reply: welcomeText, lead_id: lead.id, conversation_id: conv.id, outbound_message_id: outboundMsg.id || null, controller: 'ai' };
+    return handleWelcomeInbound(pool, { lead, conv, sourceChannel });
   }
-
-  const inboundMsg = await addMessage(pool, {
-    conversationId: conv.id,
-    leadId: lead.id,
-    direction: 'inbound',
-    sender: 'customer',
-    content,
-    msgId,
-    meta: { input_mode: inputMode },
-  });
-  if (msgId && !inboundMsg.inserted) {
-    // 企微/cron重推了同一条消息：这条inbound记录已经处理过，不再重跑评分/LLM回复/线索更新/
-    // 通知——否则客户会收到两条几乎相同的AI回复，销售会收到重复的高意向通知。
-    return { ok: true, replied: false, reason: 'duplicate_message', lead_id: lead.id, conversation_id: conv.id, controller: conv.controller };
-  }
-  await pauseAutoNurtureOnCustomerReply(pool, lead.id);
-
-  // 当前 inbound 已写入数据库，但不能又作为“历史”传给模型，否则同一句会同时出现在
-  // 历史和“客户本轮说”两个位置，放大模型对重复话术的关注。
-  const history = (await listMessages(pool, conv.id, 30)).filter((m) => m.id !== inboundMsg.id);
-  const activeGuidanceRow = await getActiveSalesGuidance(pool, lead.id);
-  const activeGuidance = activeGuidanceRow?.guidance || null;
-  const knowledgeItems = await loadKnowledgeItems(pool);
-  const turn = await runCustomerAiTurn({
-    userText: content,
-    extracted: lead.extracted || {},
-    history,
-    intentScore: lead.intent_score || 0,
-    controller: conv.controller,
-    guidance: activeGuidance,
-    knowledgeItems,
-    pool,
-    inputMode,
-  });
-
-  const normalizedEvents = (turn.plan.events || []).map((e) => normalizeCustomerAiEvent(e, content));
-  const eventTypes = normalizedEvents.map((e) => e.event_type);
-  const score = scoreLead({ extracted: turn.plan.extracted, eventTypes });
-  const decision = buildSalesDecision({ lead: { ...lead, extracted: turn.plan.extracted }, score, events: normalizedEvents });
-  const handoffRequested = decision.controller_recommendation === 'handoff_now';
-  const handoffRep = handoffRequested ? await findAssignableSalesRep(pool, lead) : null;
-  const handoffResolution = resolveHandoffController({ requested: handoffRequested, repKey: handoffRep, currentController: conv.controller });
-  const takeover = handoffResolution.takeover;
-  const handoffDeferred = handoffResolution.deferred;
-  if (handoffDeferred) {
-    turn.reply = buildDeferredHandoffReply(turn.reply, { preserveAnswer: Boolean(turn.plan?.answer_before_handoff) });
-    turn.speechReply = turn.reply;
-    turn.source = 'handoff_deferred_no_active_sales';
-    turn.plan.mode = 'handoff_deferred';
-    turn.plan.takeover = { ...(turn.plan.takeover || {}), takeover: false, deferred: true, reason: 'no_active_sales' };
-  } else if (takeover && turn.plan?.answer_before_handoff) {
-    const directAnswer = String(turn.reply || '').trim();
-    const separator = /[。！？!?]$/.test(directAnswer) ? '' : '。';
-    turn.reply = `${directAnswer}${separator}我现在为您安排顾问继续确认。`;
-    turn.speechReply = turn.reply;
-  }
-  const nextController = handoffResolution.controller;
-  const nextStage = decision.sales_stage;
-
-  const effectiveDecision = handoffDeferred
-    ? {
-        ...decision,
-        controller_recommendation: 'notify_and_continue',
-        requested_controller_recommendation: 'handoff_now',
-        handoff_deferred_reason: 'no_active_sales',
-        next_action: '配置可接管销售并尽快联系客户；配置完成前由客户AI继续接待',
-      }
-    : decision;
-
-  await applyLeadUpdates(pool, lead.id, {
-    extracted: turn.plan.extracted,
-    events: normalizedEvents,
-    score,
-    controller: nextController,
-    handoff_level: decision.intent_level,
-    last_sales_decision: effectiveDecision,
-  });
-
-  let updatedLead = await getLead(pool, lead.id);
-  // 转化归属/落库是锦上添花,任何一步失败都不允许拖垮"客户必须收到回复"的主链路。
-  let conversionAssignee = handoffRep || updatedLead.assigned_to || updatedLead.owner_username || null;
-  try {
-    if (!conversionAssignee && turn.plan?.conversion?.task_title) {
-      conversionAssignee = await findAssignableSalesRep(pool, updatedLead);
-    }
-    if (conversionAssignee && !updatedLead.assigned_to) {
-      await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=COALESCE(assigned_at,NOW()),updated_at=NOW() WHERE id=$1`, [lead.id, conversionAssignee]);
-      updatedLead = { ...updatedLead, assigned_to: conversionAssignee };
-    }
-  } catch (e) {
-    log.error({ msg: 'conversion_assignee_bookkeeping_failed', lead_id: lead.id, err: e?.message });
-  }
-  const advice = buildSalesAdvice(updatedLead, score);
-  const next = buildNextAction(updatedLead, score);
-  const diagnosis = buildDiagnosisReport(updatedLead);
-  const customerGuidance = buildCustomerAiGuidance(effectiveDecision);
-  await saveSalesGuidance(pool, { leadId: lead.id, conversationId: conv.id, guidance: customerGuidance, expiresInTurns: customerGuidance.expires_in_turns });
-  const completeness = checkLeadCompleteness(updatedLead);
-  await recordCustomerConversionIntent(pool, {
-    leadId: lead.id,
-    leadKey: lead.lead_key,
-    assignee: conversionAssignee || null,
-    conversion: turn.plan?.conversion || null,
-    evidence: content,
-    controller: nextController,
-  }).catch((e) => {
-    log.error({ msg: 'record_conversion_intent_failed', lead_id: lead.id, err: e?.message });
-  });
-  if (nextStage && nextStage !== lead.stage && STAGES_REQUIRING_COMPLETE_INFO.has(nextStage) && !completeness.complete) {
-    // 门店基础信息还没收全就不让AI把线索推进到"已确认"往后的阶段——两条建档入口(AI对话/
-    // 销售手工表单)现在共用同一份完整性判断，不再各自为政。不阻断人工接管本身，客户仍然
-    // 可以立刻转人工，只是转阶段要等信息收全，销售看得到具体缺哪些字段。
-    log.warn({ msg: 'stage_transition_blocked_incomplete', lead_id: lead.id, to: nextStage, missing: completeness.missing });
-    await addEvent(pool, lead.id, {
-      event_type: 'STAGE_TRANSITION_BLOCKED_INCOMPLETE_INFO',
-      summary: `门店信息未收全(缺：${completeness.missing.join('、')})，暂不推进到「${nextStage}」`,
-      priority: 'normal',
-      recommended_action: 'collect_missing_info',
-      payload: { to_stage: nextStage, missing: completeness.missing },
-    });
-  } else if (nextStage && nextStage !== lead.stage) {
-    const stageResult = await transitionLeadStage(pool, {
-      leadId: lead.id,
-      toStage: nextStage,
-      actorType: 'customer_ai',
-      actorId: conv.session_key || String(conv.id),
-      reason: decision.next_action,
-      sourceType: 'customer_ai_session',
-      sourceId: String(conv.id),
-      metadata: { score, events: normalizedEvents },
-    });
-    if (!stageResult.ok) {
-      log.warn({ msg: 'customer_ai_stage_transition_rejected', lead_id: lead.id, from: lead.stage, to: nextStage, err: stageResult.error });
-      await addEvent(pool, lead.id, { event_type: 'STAGE_TRANSITION_REJECTED', summary: stageResult.error, priority: 'normal', recommended_action: 'continue', payload: { from_stage: lead.stage, to_stage: nextStage } });
-    }
-  }
-
-  if (takeover) {
-    await pool.query(`UPDATE sales_conversations SET controller='waiting_human', updated_at=NOW() WHERE id=$1`, [conv.id]);
-    await ensureFollowupTask(pool, lead.id, '高意向客户待接管', advice, 0.2, handoffRep);
-    await addEvent(pool, lead.id, {
-      event_type: 'HANDOFF_REQUESTED',
-      summary: turn.plan.takeover.reason,
-      evidence: content.slice(0, 200),
-      priority: 'high',
-      recommended_action: 'takeover',
-      payload: { score, advice, diagnosis },
-    });
-    // 多销售按当前开放线索数最少者自动分配；同负载时按销售ID轮询，避免永远分给第一人。
-    let handoffLead = updatedLead;
-    if (handoffLead.assigned_to !== handoffRep) {
-      await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=NOW(),updated_at=NOW() WHERE id=$1`, [lead.id, handoffRep]);
-      handoffLead = { ...handoffLead, assigned_to: handoffRep };
-    }
-    // 客户AI完成人格化接待与判断后，明确把客户交给具名顾问；不让销售继续假扮AI客服。
-    const qrUrl = String(process.env.WECOM_SALES_CONSULTANT_QR_URL || '').trim();
-    if (handoffLead.handoff_mode === 'consultant_qr' && kfConfigured() && handoffLead.open_kfid && handoffLead.external_userid) {
-      try {
-        const rep = handoffLead.assigned_to ? await pool.query(`SELECT r.wecom_name,a.* FROM sales_reps r LEFT JOIN sales_content_assets a ON a.id=r.wecom_qr_asset_id WHERE r.rep_key=$1 AND r.status='active' LIMIT 1`, [handoffLead.assigned_to]) : { rows: [] };
-        const repAsset = rep.rows?.[0]?.id ? rep.rows[0] : null;
-        const card = repAsset
-          ? await sendContentAssetToLead(pool, handoffLead, repAsset, { deliveryType: 'handoff', sentBy: 'customer_ai' })
-          : qrUrl ? await sendKfConsultantCard({ openKfid: handoffLead.open_kfid, externalUserid: handoffLead.external_userid, consultantName: process.env.WECOM_SALES_CONSULTANT_NAME || '专属顾问', qrUrl }) : null;
-        if (card?.ok) await addEvent(pool, lead.id, { event_type: 'CONSULTANT_QR_SENT', summary: '客户AI已发送专属销售企业微信二维码', priority: 'high', recommended_action: 'wait_customer_add' });
-      } catch (e) {
-        log.warn({ msg: 'consultant_qr_handoff_failed', err: e?.message || String(e) });
-      }
-    }
-    if (typeof _notify === 'function') {
-      await _notify(
-        [
-          '【销售AI·高意向待接管】',
-          `线索 ${lead.lead_key}`,
-          `评分 ${score.intent_score}（${score.intent_level}）`,
-          `门店 ${turn.plan.extracted.store_count ?? '未明'}｜痛点 ${turn.plan.extracted.pain_point || '未明'}`,
-          `原因：${decision.next_action}`,
-          advice,
-          `诊断：${diagnosis.surface_problem}`,
-          completeness.complete ? '门店信息：已收全' : `门店信息缺口：${completeness.missing.join('、')}（跟进时请先补齐）`,
-        ].join('\n'),
-        { title: '高意向销售线索', audience: 'sales' }
-      ).catch(() => null);
-    }
-  } else if (handoffDeferred) {
-    await ensureFollowupTask(pool, lead.id, '高意向客户待配置销售', advice, 0.2);
-    await addEvent(pool, lead.id, {
-      event_type: 'HANDOFF_DEFERRED_NO_ACTIVE_SALES',
-      summary: '客户触发转人工，但没有可接管销售；客户AI继续接待',
-      evidence: content.slice(0, 200),
-      priority: 'critical',
-      recommended_action: 'configure_sales_and_takeover',
-      payload: { score, advice, diagnosis },
-    });
-    if (typeof _notify === 'function') {
-      await _notify(
-        ['【客户AI·转人工失败】', `线索 ${lead.lead_key}`, '当前没有可用销售人员，客户AI已继续接待以避免失联。', `客户：${content.slice(0, 160)}`, '请立即配置销售人员并接管。'].join('\n'),
-        { title: '客户转人工无人接管', audience: 'sales' }
-      ).catch(() => null);
-    }
-  } else if (next.priority === 'medium' && !updatedLead.next_action) {
-    await ensureFollowupTask(pool, lead.id, next.next_action, advice, next.due_hours || 48);
-  }
-
-  const outboundMsg = await addMessage(pool, {
-    conversationId: conv.id,
-    leadId: lead.id,
-    direction: 'outbound',
-    sender: 'ai',
-    content: turn.reply,
-    meta: { source: turn.source, mode: turn.plan.mode, speech_reply: turn.speechReply || null, delivery_status: sourceChannel === 'wecom_kf' ? 'pending' : 'local' },
-  });
-
-  await pool.query(
-    `UPDATE sales_leads SET first_response_at=COALESCE(first_response_at, NOW()), first_contact_at=COALESCE(first_contact_at, NOW()), updated_at=NOW() WHERE id=$1`,
-    [lead.id]
-  );
-
-  return {
-    ok: true,
-    replied: true,
-    reply: turn.reply,
-    speech_reply: turn.speechReply || null,
-    lead_id: lead.id,
-    conversation_id: conv.id,
-    outbound_message_id: outboundMsg.id || null,
-    controller: nextController,
-    score,
-    advice,
-    diagnosis,
-    next_action: next.next_action,
-    plan: { mode: turn.plan.mode, extracted: turn.plan.extracted, takeover: turn.plan.takeover, events: normalizedEvents, conversion: turn.plan.conversion || null },
-    sales_decision: effectiveDecision,
-    customer_ai_guidance: customerGuidance,
-    source: turn.source,
-  };
+  const ctx = await runAiInboundDecision(pool, { content, msgId, inputMode, lead, conv, sourceChannel });
+  if (ctx.ok === true || ctx.ok === false) return ctx; // early duplicate return shape
+  return finalizeAiInboundTurn(pool, ctx);
 }
+
 
 export async function takeoverConversation(pool, leadId, { ownerUsername } = {}) {
   await ensureSalesTables(pool);

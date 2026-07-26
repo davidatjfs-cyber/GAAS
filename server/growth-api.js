@@ -76,6 +76,9 @@ export {
   fetchGenericRuleCandidates,
 } from './domains/growth-touch-rules/helpers.js';
 import { buildGrowthDailyReport } from './domains/growth-ops/daily-report.js';
+import { startGrowthRemindWorkers } from './domains/growth-ops/background-remind.js';
+import { startGrowthAudienceWorkers } from './domains/growth-ops/background-audience.js';
+import { startGrowthMiscTimers } from './domains/growth-ops/background-timers.js';
 export { buildGrowthDailyReport } from './domains/growth-ops/daily-report.js';
 import { buildRemindTargetsQuery } from './domains/growth-stored-value/helpers.js';
 export { buildRemindTargetsQuery } from './domains/growth-stored-value/helpers.js';
@@ -1461,366 +1464,42 @@ async function syncWecomContactsForStore(pool, storeConfig) {
 
 export function registerGrowthRoutes(app, pool) {
   initSmsTemplatesCache(pool);
-  // 后台 worker：认领 pending 的储值余额提醒任务并由 HRMS 自身逐条下发(不经小程序)。
-  // 每 30s 跑一次；同一时刻只处理一个任务，发送结果写 delivery_logs + marketing_triggered。
-  async function processOneRemindJob() {
-    if (inSmsQuietHours()) return; // 禁发时段：任务保持 pending，窗口外自动续跑
-    const claim = await pool.query(
-      `UPDATE growth_campaign_jobs SET status='running', updated_at=now()
-        WHERE id = (SELECT id FROM growth_campaign_jobs WHERE status='pending' AND kind='stored_value_remind' ORDER BY created_at ASC LIMIT 1)
-        RETURNING id, campaign_id, store_id, targets, result`
-    );
-    const job = claim.rows[0];
-    if (!job) return;
-    const storeId = cleanText(job.store_id, 128);
-    const tenantId = await resolveTenantIdForStore(pool, storeId);
-    const templateCode = cleanText(job.result?.template_code, 64) || pickBalanceTemplateByStore(storeId);
-    const targets = Array.isArray(job.targets) ? job.targets : [];
-    let sent = 0, failed = 0;
-    if (!templateCode) {
-      await pool.query(`UPDATE growth_campaign_jobs SET status='failed', failed=$2, result=result||$3::jsonb, updated_at=now() WHERE id=$1`,
-        [job.id, targets.length, JSON.stringify({ error: 'balance_template_not_configured' })]);
-      return;
-    }
-    for (const t of targets) {
-      const phone = cleanPhone(t.phone);
-      const balanceYuan = Math.max(0, Math.floor(Number(t.balance_yuan) || 0));
-      if (!phone || balanceYuan <= 0) { failed++; continue; }
-      const deliveryKey = `svremind:${job.id}:${phone}`;
-      const templateParam = { balance: String(balanceYuan) };
-      // 永久抑制名单：停机/空号/黑名单号码不再发送
-      if (await isPhoneSuppressed(pool, phone, tenantId)) continue;
-      // 全局总闸：同一号码每周(默认7天)最多 1 条任意类型短信
-      const gCap = await globalSmsCapped(pool, phone, tenantId);
-      if (gCap) {
-        await upsertDeliveryLog(pool, {
-          delivery_key: deliveryKey, action_key: job.campaign_id || 'svremind', rule_key: 'stored_value_remind',
-          customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'skipped',
-          payload: { phone, template_param: templateParam, campaign_id: job.campaign_id, reason: 'global_capped' },
-          result: {}, error_message: '触发全局短信总闸(每周最多1条)，已跳过'
-        }, tenantId).catch(() => null);
-        continue;
-      }
-      try {
-        const result = await sendAliyunSms({ phoneNumbers: phone, templateCode, templateParam });
-        const cust = await upsertCustomer(pool, { phone, store_id: storeId }, tenantId).catch(() => null);
-        await upsertDeliveryLog(pool, {
-          delivery_key: deliveryKey, action_key: job.campaign_id || 'svremind', rule_key: 'stored_value_remind',
-          customer_id: cust?.id || null, store_id: storeId, channel: 'sms', external_userid: '',
-          provider_msg_id: result.provider_msg_id, status: 'sent',
-          payload: { phone, template_param: templateParam, campaign_id: job.campaign_id }, result: result.raw || {}
-        }, tenantId);
-        await insertGrowthEvent(pool, {
-          event_type: 'marketing_triggered', customer_id: cust?.id || null, phone, external_userid: null,
-          store_id: storeId, campaign_id: job.campaign_id, channel: 'sms', coupon_id: null,
-          idempotency_key: `marketing_triggered:svremind:${job.id}:${phone}`,
-          metadata: { rule_key: 'stored_value_remind', delivery_key: deliveryKey, provider_msg_id: result.provider_msg_id, template_code: templateCode, template_param: templateParam }
-        }, tenantId);
-        sent++;
-      } catch (err) {
-        await upsertDeliveryLog(pool, {
-          delivery_key: deliveryKey, action_key: job.campaign_id || 'svremind', rule_key: 'stored_value_remind',
-          customer_id: null, store_id: storeId, channel: 'sms', external_userid: '', status: 'failed',
-          payload: { phone, template_param: templateParam, campaign_id: job.campaign_id }, result: {},
-          error_message: err?.message || 'sms_send_failed'
-        }, tenantId).catch(() => null);
-        await handleSmsFailure(pool, phone, err?.message, tenantId);
-        failed++;
-      }
-    }
-    await pool.query(`UPDATE growth_campaign_jobs SET sent=$2, failed=$3, status='done', updated_at=now() WHERE id=$1`,
-      [job.id, sent, failed]);
-  }
-  if (!globalThis.__growthRemindWorker) {
-    globalThis.__growthRemindWorker = true;
-    setInterval(() => {
-      runForActiveTenants(() => processOneRemindJob())
-        .catch((e) => log.warn({ msg: 'svremind_worker_failed', err: e?.message }));
-    }, 30 * 1000);
-  }
-
-  // 储值余额提醒·定时自动触发器：每日为每个有储值客的门店自动冻结一条 remind 任务，
-  // 由上面的 processOneRemindJob worker 认领下发(只发 {balance}，无券无码)。
-  // 治理门：仅在短信总闸(ALIYUN_SMS_ENABLED)开启时才冻结(开关默认关 → 全部静默)。
-  // 口径与频控同 /remind/launch：余额≥min + 久未消费(dormant_days) + remind 类 N 天不重发 + 全局总闸。
-  // 幂等：同店同日一条任务(campaign_id=auto_svremind_<store>_<日期>)，定时器多跑也不会重复冻结。
-  async function enqueueAutoStoredValueReminds() {
-    if (!isAliyunSmsAutoSendEnabled()) return { enqueued: 0, skipped: 'sms_switch_off' };
-    // 治理门：把「储值余额提醒」收编为自动营销里的一条规则(rule_key='stored_value_remind')，
-    // 必须 规则启用 + 已审核 + auto_execute 才自动跑(与其它活动制规则同一治理口径)。
-    const rr = await pool.query(
-      `SELECT enabled, approved_at, auto_execute, criteria FROM growth_touch_rules WHERE rule_key = 'stored_value_remind' LIMIT 1`
-    );
-    const rule = rr.rows[0];
-    if (!rule || !rule.enabled || !rule.approved_at || rule.auto_execute === false) {
-      return { enqueued: 0, skipped: 'governance' };
-    }
-    const crit = (rule.criteria && typeof rule.criteria === 'object') ? rule.criteria : {};
-    const dormantDays = Math.max(0, Math.floor(Number(crit.dormant_days) || Number(process.env.ALIYUN_SMS_REMIND_AUTO_DORMANT_DAYS) || 30));
-    const minBalanceFen = Math.max(0, Math.floor((Number(crit.min_balance_yuan) || Number(process.env.ALIYUN_SMS_REMIND_AUTO_MIN_BALANCE_YUAN) || 1) * 100));
-    const maxTargets = Math.min(Math.max(Number(process.env.ALIYUN_SMS_REMIND_AUTO_MAX_TARGETS) || 1000, 1), 2000);
-    const freqDays = freqDaysEnv('ALIYUN_SMS_REMIND_FREQUENCY_DAYS', 30);
-    const today = new Date().toISOString().slice(0, 10);
-    const stores = await pool.query(
-      `SELECT DISTINCT store_id FROM growth_stored_value_members WHERE store_id IS NOT NULL AND store_id <> ''`
-    );
-    let enqueued = 0;
-    for (const s of stores.rows) {
-      const storeId = String(s.store_id || '').trim();
-      if (!storeId) continue;
-      const templateCode = pickBalanceTemplateByStore(storeId);
-      if (!templateCode) continue; // 该门店余额模板未配置 → 跳过，防整批拒收
-      const campaignId = `auto_svremind_${storeId}_${today}`;
-      const exist = await pool.query(`SELECT 1 FROM growth_campaign_jobs WHERE campaign_id = $1 LIMIT 1`, [campaignId]);
-      if (exist.rows.length) continue; // 当日已冻结
-      const q = buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, freqDays, maxTargets);
-      const r = await pool.query(q.sql, q.params);
-      const targets = r.rows.map((x) => ({ phone: x.phone, name: x.member_name || '', card_no: x.card_no, balance_yuan: Math.round((x.balance_fen || 0) / 100) }));
-      if (!targets.length) continue;
-      await pool.query(
-        `INSERT INTO growth_campaign_jobs (campaign_id, store_id, value_yuan, valid_days, dormant_days, min_balance_fen, targets, total, status, kind, created_by, result, tenant_id)
-         VALUES ($1,$2,0,0,$3,$4,$5::jsonb,$6,'pending','stored_value_remind',$7,$8::jsonb,$9)`,
-        [campaignId, storeId, dormantDays, minBalanceFen, JSON.stringify(targets), targets.length, 'auto_scheduler', JSON.stringify({ template_code: templateCode }), resolveTenantIdDefault()]
-      );
-      enqueued += targets.length;
-    }
-    return { enqueued };
-  }
-  if (!globalThis.__growthRemindAutoTimer) {
-    globalThis.__growthRemindAutoTimer = setInterval(() => {
-      runForActiveTenants(() => enqueueAutoStoredValueReminds()).catch((e) => log.warn({ msg: 'svremind_auto_enqueue_failed', err: e?.message }));
-    }, 60 * 60 * 1000);
-    setTimeout(() => {
-      runForActiveTenants(() => enqueueAutoStoredValueReminds()).catch((e) => log.warn({ msg: 'svremind_initial_auto_enqueue_failed', err: e?.message }));
-    }, 20000);
-  }
-
-  // T+7 SMS自动回填：每天跑一次；启动后延迟60s首跑（等DB连接稳定）
-  if (!globalThis.__smsBackfillTimer) {
-    globalThis.__smsBackfillTimer = setInterval(() => {
-      runForActiveTenants(() => autoBackfillSmsActions(pool)).then((rows) => {
-        const n = rows.reduce((sum, value) => sum + (Number(value) || 0), 0);
-        if (n > 0) log.info({ msg: 'sms_backfill_auto', actions: n });
-      }).catch((e) => log.warn({ msg: 'sms_backfill_failed', err: e?.message }));
-    }, 24 * 60 * 60 * 1000);
-    setTimeout(() => {
-      runForActiveTenants(() => autoBackfillSmsActions(pool)).then((rows) => {
-        const n = rows.reduce((sum, value) => sum + (Number(value) || 0), 0);
-        if (n > 0) log.info({ msg: 'sms_backfill_initial', actions: n });
-      }).catch((e) => log.warn({ msg: 'sms_backfill_initial_failed', err: e?.message }));
-    }, 60000);
-  }
-
-  // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
-  // 用于前台展示活动覆盖范围，让管理员审核前清楚知道这次会发给多少人。
-  //
-  // 性能要点：这是一次全量人群扫描(冷启动约5秒，占用一个数据库连接)。绝不能放在
-  // 用户请求(尤其是"保存规则")的同步路径上——否则该扫描会和保存抢连接池，让保存也卡5秒，
-  // 表现为"一改发送频率/有效期就死机"。因此这里改为：后台定时刷新缓存，HTTP 请求只读缓存、
-  // 永不同步触发重算(仅服务刚启动、缓存还空时兜底算一次)。
-  const __touchRulesAudienceCache = new Map();
-  const __touchRulesAudienceComputing = new Map();
-
-  function audienceCacheKey(tenantId, storeId = '') {
-    return `${resolveTenantIdDefault(tenantId)}::${cleanText(storeId, 128) || 'ALL'}`;
-  }
-
-  function invalidateTouchRulesAudienceCache(tenantId = resolveTenantIdDefault()) {
-    const prefix = `${resolveTenantIdDefault(tenantId)}::`;
-    for (const key of __touchRulesAudienceCache.keys()) {
-      if (key.startsWith(prefix)) __touchRulesAudienceCache.delete(key);
-    }
-  }
-
-  async function computeTouchRulesAudience(options = {}) {
-    const storeFilter = cleanText(options.storeId || '', 128);
-    const rulesResult = await pool.query(`SELECT * FROM growth_touch_rules ORDER BY rule_key ASC`);
-    const audience = {};
-    // 性能：通用人群表只扫一次，19 条规则在内存复用过滤，避免逐规则各扫 13k 行(旧版~30s)。
-    // 生日规则(loyal_birthday_month) / 余额规则(channel=balance)人群口径不同，仍各自单独查询(均很轻)。
-    let genericRows = null;
-    const segmentCache = new Map(); // segment_key → 手机号Set，多条同标签规则复用
-    for (const rule of (rulesResult.rows || [])) {
-      try {
-        // 储值余额提醒(channel=balance)的人群在 growth_stored_value_members，不在 customer_profiles，
-        // 口径=有手机号 + 余额≥min + 久未消费(dormant_days)，与短信直发目标一致。
-        if (String((rule.action_payload || {}).channel || '') === 'balance') {
-          const crit = (rule.criteria && typeof rule.criteria === 'object') ? rule.criteria : {};
-          const dormantDays = Math.max(0, Math.floor(Number(crit.dormant_days) || 30));
-          const minBalanceFen = Math.max(0, Math.floor((Number(crit.min_balance_yuan) || 1) * 100));
-          const br = await pool.query(
-            `SELECT count(*)::int AS n FROM growth_stored_value_members m
-               WHERE m.phone IS NOT NULL AND m.phone <> '' AND m.balance_fen >= $1
-                 AND (m.last_consume_date IS NULL OR m.last_consume_date <= (CURRENT_DATE - ${dormantDays}))`,
-            [minBalanceFen]
-          );
-          const n = Number(br.rows?.[0]?.n) || 0;
-          audience[rule.rule_key] = { total: n, sms: n, subscribe: 0, member: 0, wecom: 0 };
-          continue;
-        }
-        let candidates;
-        if (rule.rule_key === 'loyal_birthday_month') {
-          // 生日规则有独立(轻量 LIMIT 500)查询口径，仍走原函数
-          candidates = await loadRuleCandidates(pool, rule);
-        } else {
-          if (!genericRows) genericRows = await fetchGenericRuleCandidates(pool);
-          // 时段标签规则：取该 segment 的手机号集合(按 segment_key 缓存，避免重复查询)
-          const segKey = (rule.criteria || {}).segment_key || '';
-          let segSet = null;
-          if (segKey) {
-            if (!segmentCache.has(segKey)) segmentCache.set(segKey, await loadSegmentPhoneSet(pool, segKey));
-            segSet = segmentCache.get(segKey);
-          }
-          candidates = filterGenericRuleCandidates(genericRows, rule, segSet, storeFilter);
-        }
-        // 分渠道覆盖：短信=有手机号；订阅消息/小程序站内券=有 openid（上限，订阅另受授权限制）；企微=有外部联系人。
-        let sms = 0, subscribe = 0, member = 0, wecom = 0;
-        for (const c of (candidates || [])) {
-          if (cleanPhone(c.phone)) sms++;
-          if (cleanText(c.openid || '', 128)) { subscribe++; member++; }
-          if (c.external_userid) wecom++;
-        }
-        audience[rule.rule_key] = { total: (candidates || []).length, sms, subscribe, member, wecom };
-      } catch (e) {
-        audience[rule.rule_key] = null; // 计算失败标记为未知，不阻断
-      }
-    }
-    return audience;
-  }
-  // 后台刷新缓存（去重并发；按 tenant+store 分桶，避免切换门店仍命中全店缓存）。
-  function refreshTouchRulesAudienceCache(tenantId = resolveTenantIdDefault(), storeId = '') {
-    const effectiveTenantId = resolveTenantIdDefault(tenantId);
-    const cacheKey = audienceCacheKey(effectiveTenantId, storeId);
-    if (__touchRulesAudienceComputing.has(cacheKey)) return __touchRulesAudienceComputing.get(cacheKey);
-    const pending = computeTouchRulesAudience({ storeId })
-      .then((a) => {
-        __touchRulesAudienceCache.set(cacheKey, { data: a, at: Date.now() });
-        return a;
-      })
-      .finally(() => { __touchRulesAudienceComputing.delete(cacheKey); });
-    __touchRulesAudienceComputing.set(cacheKey, pending);
-    return pending;
-  }
-  // 供拆分出的 growth-winback-routes.js 的 /api/growth/touch-rules/audience 路由读取同一份缓存。
-  setTouchRulesAudienceGetter(async (tenantId, storeId, forceRefresh) => {
-    const cacheKey = audienceCacheKey(tenantId, storeId);
-    const cachedAudience = __touchRulesAudienceCache.get(cacheKey);
-    if (!forceRefresh && cachedAudience?.data) {
-      const stale = Date.now() - cachedAudience.at > 180000;
-      if (stale) tenantContext.run(tenantId, () => refreshTouchRulesAudienceCache(tenantId, storeId)).catch(() => {});
-      return { audience: cachedAudience.data, cached: true, stale };
-    }
-    const a = await tenantContext.run(tenantId, () => refreshTouchRulesAudienceCache(tenantId, storeId));
-    return { audience: a };
-  });
-  // 暴露给 POST 规则改动后触发后台重算（见 /api/growth/touch-rules）。
-  globalThis.__refreshGrowthAudience = (tenantId) => {
-    invalidateTouchRulesAudienceCache(tenantId);
-    tenantContext.run(resolveTenantIdDefault(tenantId), () => refreshTouchRulesAudienceCache(tenantId)).catch(() => {});
+  const deps = {
+    pool,
+    log,
+    runForActiveTenants,
+    tenantContext,
+    resolveTenantIdDefault,
+    cleanText,
+    cleanPhone,
+    inSmsQuietHours,
+    isPhoneSuppressed,
+    globalSmsCapped,
+    upsertDeliveryLog,
+    insertGrowthEvent,
+    sendAliyunSms,
+    handleSmsFailure,
+    upsertCustomer,
+    resolveTenantIdForStore,
+    pickBalanceTemplateByStore,
+    isAliyunSmsAutoSendEnabled,
+    freqDaysEnv,
+    buildRemindTargetsQuery,
+    autoBackfillSmsActions,
+    recomputeCustomerProfiles,
+    backfillRedemptionAmounts,
+    runTouchRuleEngine,
+    getAllStoreWecomConfigs,
+    syncWecomContactsForStore,
+    buildGrowthDailyReport,
+    setTouchRulesAudienceGetter,
+    sendGrowthAlert: (...args) => (_sendGrowthAlert ? _sendGrowthAlert(...args) : null),
+    hasSendGrowthAlert: () => !!_sendGrowthAlert,
+    loadSegmentPhoneSet,
+    fetchGenericRuleCandidates,
   };
-  // 服务启动后预热一次，并每 10 分钟后台刷新，确保 HTTP 请求始终命中缓存、不阻塞。
-  if (!globalThis.__growthAudienceTimer) {
-    setTimeout(() => runForActiveTenants((tenantId) => refreshTouchRulesAudienceCache(tenantId)).catch(() => {}), 15000);
-    globalThis.__growthAudienceTimer = setInterval(() => {
-      runForActiveTenants((tenantId) => refreshTouchRulesAudienceCache(tenantId)).catch(() => {});
-    }, 10 * 60 * 1000);
-  }
-  // 客户画像（生命周期/价值分级等，决定"涉及会员"人数）每日自动重算，避免依赖人工触发而过期；
-  // 价值分级 VIP 口径：各门店折前人均消费金额(avg_check=折前营业额÷客流量) PERCENT_RANK 前15%
-  // 重算后顺带刷新人群缓存，使"涉及会员"数据始终与画像同步。
-  if (!globalThis.__growthProfileTimer) {
-    const runProfileRecompute = () => runForActiveTenants((tenantId) => recomputeCustomerProfiles(pool, 90)
-      .then(() => refreshTouchRulesAudienceCache(tenantId)))
-      .catch((e) => log.warn({ msg: 'profiles_recompute_failed', err: e?.message }));
-    setTimeout(runProfileRecompute, 20000);
-    globalThis.__growthProfileTimer = setInterval(runProfileRecompute, 24 * 60 * 60 * 1000);
-  }
-  // 核销消费金额每天凌晨2点(北京时间)批量补算一次：POS数据是按天同步的，核销当时大概率查不到，
-  // 等次日POS数据到位后统一回填近7天内仍为0的核销记录。
-  if (!globalThis.__growthRedemptionBackfillTimer) {
-    let __growthRedemptionBackfillLastYmd = '';
-    const runBackfill = () => {
-      const nowCst = new Date(Date.now() + 8 * 3600000);
-      const ymd = nowCst.toISOString().slice(0, 10);
-      if (nowCst.getUTCHours() < 2 || __growthRedemptionBackfillLastYmd === ymd) return;
-      __growthRedemptionBackfillLastYmd = ymd;
-      runForActiveTenants(() => backfillRedemptionAmounts(pool))
-        .then((rows) => log.info({ msg: 'redemption_amount_backfill', rows: rows.reduce((sum, value) => sum + (Number(value) || 0), 0) }))
-        .catch((e) => log.warn({ msg: 'redemption_amount_backfill_failed', err: e?.message }));
-    };
-    globalThis.__growthRedemptionBackfillTimer = setInterval(runBackfill, 10 * 60 * 1000);
-  }
-  if (!globalThis.__growthTouchRuleTimer) {
-    globalThis.__growthTouchRuleTimer = setInterval(() => {
-      runForActiveTenants((tenantId) => runTouchRuleEngine(pool, { limit_per_rule: 5000, tenantId }))
-        .catch((e) => log.warn({ msg: 'rule_engine_run_failed', err: e?.message }));
-    }, 15 * 60 * 1000);
-    setTimeout(() => {
-      runForActiveTenants((tenantId) => runTouchRuleEngine(pool, { limit_per_rule: 5000, tenantId }))
-        .catch((e) => log.warn({ msg: 'rule_engine_initial_run_failed', err: e?.message }));
-    }, 10000);
-  }
-
-  if (!globalThis.__wecomContactSyncTimer) {
-    globalThis.__wecomContactSyncTimer = setInterval(async () => {
-      try {
-        await runForActiveTenants(async () => {
-          const configs = await getAllStoreWecomConfigs(pool);
-          for (const cfg of configs) {
-            await syncWecomContactsForStore(pool, cfg);
-          }
-        });
-      } catch (e) {
-        log.warn({ msg: 'wecom_contact_sync_failed', err: e?.message });
-      }
-    }, 24 * 60 * 60 * 1000); // 实时事件回调(wecom-contact-events.js)已是主力数据源，这里降为每日兜底对账
-    setTimeout(async () => {
-      try {
-        await runForActiveTenants(async () => {
-          const configs = await getAllStoreWecomConfigs(pool);
-          for (const cfg of configs) {
-            await syncWecomContactsForStore(pool, cfg);
-          }
-        });
-      } catch (e) {
-        log.warn({ msg: 'wecom_contact_sync_initial_failed', err: e?.message });
-      }
-    }, 30000);
-  }
-
-  // 每日增长日报（每天 09:05 发送）
-  if (!globalThis.__growthDailyReportTimer) {
-    function scheduleDailyReport() {
-      const now = new Date();
-      const next = new Date(now);
-      next.setHours(8, 0, 0, 0);
-      if (next <= now) next.setDate(next.getDate() + 1);
-      const delay = next - now;
-      globalThis.__growthDailyReportTimer = setTimeout(async () => {
-        try {
-          if (_sendGrowthAlert) {
-            const reportRuns = await runForActiveTenants(
-              async (tenantId) => ({
-                tenantId,
-                message: await buildGrowthDailyReport(pool)
-              }),
-              {
-                continueOnError: true,
-                onError: ({ tenantId, error }) => {
-                  log.warn({ msg: 'daily_report_tenant_failed', tenant_id: tenantId, err: error?.message || String(error) });
-                }
-              }
-            );
-            for (const row of reportRuns.results || []) {
-              await _sendGrowthAlert(`[租户 ${row.tenantId}]\n${row.value.message}`, 'growth_daily_report');
-            }
-          }
-        } catch (e) {
-          log.warn({ msg: 'daily_report_failed', err: e?.message });
-        }
-        scheduleDailyReport();
-      }, delay);
-    }
-    scheduleDailyReport();
-  }
+  startGrowthRemindWorkers(deps);
+  startGrowthAudienceWorkers(deps);
+  startGrowthMiscTimers(deps);
 }
+
