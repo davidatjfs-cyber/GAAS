@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ensureAgentAuditLogTable,
   logAgentOperation,
-} from '../utils/agent-audit-log.js';
+} from '../../../utils/agent-audit-log.js';
 
 test('ensureAgentAuditLogTable：建表 + 索引', async () => {
   const sqls = [];

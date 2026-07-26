@@ -15720,13 +15720,13 @@
                     <h3 class="ui-modal-title">考试记录详情</h3>
                     <div id="exam-result-detail-subtitle" class="ui-modal-subtitle">--</div>
                 </div>
-                <button class="modal-close" onclick="closeExamResultDetailModal()">×</button>
+                <button class="modal-close" data-click="closeExamResultDetailModal">×</button>
             </div>
             <div class="modal-body">
                 <div id="exam-result-detail-body" style="padding: 16px 20px; max-height: 70vh; overflow-y: auto; overflow-x: hidden;"></div>
             </div>
             <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; padding: 12px 20px; border-top: 1px solid rgba(255,255,255,0.08);">
-                <button class="btn btn-secondary" type="button" onclick="closeExamResultDetailModal()">关闭</button>
+                <button class="btn btn-secondary" type="button" data-click="closeExamResultDetailModal">关闭</button>
             </div>
         </div>
     </div>
@@ -16916,7 +16916,7 @@
                         <input id="points-apply-evidence-files" type="file" accept="image/*" multiple style="display:none;">
                         <div id="points-apply-evidence-hint" style="display:none;"></div>
                         <div id="points-evidence-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
-                        <button class="btn" type="button" onclick="document.getElementById('points-apply-evidence-files').click()" style="width:100%; padding:10px; border-radius:12px; background:rgba(255,255,255,0.05); border:1px dashed rgba(255,255,255,0.15); color:rgba(200,215,230,0.7); font-size:13px; font-weight:500; cursor:pointer;">
+                        <button class="btn" type="button" data-click="hrmsTriggerClick" data-arg="points-apply-evidence-files" style="width:100%; padding:10px; border-radius:12px; background:rgba(255,255,255,0.05); border:1px dashed rgba(255,255,255,0.15); color:rgba(200,215,230,0.7); font-size:13px; font-weight:500; cursor:pointer;">
                             📷 点击上传图片
                         </button>
                     </div>
@@ -17395,14 +17395,14 @@
                     </section>
                     <div class="rep-tabs-wrap">
                     <nav class="rep-tabs rep-tabs--many" role="tablist" aria-label="报表类型">
-                        <button id="rep-tab-business" class="rep-tab rep-tab--active" type="button" role="tab" aria-selected="true" onclick="showReportsTab('business'); loadReportsData();">业务</button>
-                        <button id="rep-tab-attendance" class="rep-tab" type="button" role="tab" aria-selected="false" onclick="showReportsTab('attendance'); loadReportsData();">考勤</button>
-                        <button id="rep-tab-daily-attendance-register" class="rep-tab" type="button" role="tab" aria-selected="false" onclick="showReportsTab('daily-attendance-register'); loadReportsData();" style="display:none;">出勤表</button>
-                        <button id="rep-tab-payroll" class="rep-tab" type="button" role="tab" aria-selected="false" onclick="showReportsTab('payroll'); loadReportsData();">薪资</button>
-                        <button id="rep-tab-inventory-forecast" class="rep-tab" type="button" role="tab" aria-selected="false" onclick="showReportsTab('inventory-forecast'); loadReportsData();">预测</button>
-                        <button id="rep-tab-promotions" class="rep-tab" type="button" role="tab" aria-selected="false" onclick="showReportsTab('promotions'); loadReportsData();" style="display:none;">晋升</button>
-                        <button id="rep-tab-turnover" class="rep-tab" type="button" role="tab" aria-selected="false" onclick="showReportsTab('turnover'); loadReportsData();">离职</button>
-                        <button id="rep-tab-leave-owed" class="rep-tab" type="button" role="tab" aria-selected="false" onclick="showReportsTab('leave-owed'); loadReportsData();">欠休</button>
+                        <button id="rep-tab-business" class="rep-tab rep-tab--active" type="button" role="tab" aria-selected="true" data-click="showReportsTab" data-arg="business" data-click2="loadReportsData">业务</button>
+                        <button id="rep-tab-attendance" class="rep-tab" type="button" role="tab" aria-selected="false" data-click="showReportsTab" data-arg="attendance" data-click2="loadReportsData">考勤</button>
+                        <button id="rep-tab-daily-attendance-register" class="rep-tab" type="button" role="tab" aria-selected="false" data-click="showReportsTab" data-arg="daily-attendance-register" data-click2="loadReportsData" style="display:none;">出勤表</button>
+                        <button id="rep-tab-payroll" class="rep-tab" type="button" role="tab" aria-selected="false" data-click="showReportsTab" data-arg="payroll" data-click2="loadReportsData">薪资</button>
+                        <button id="rep-tab-inventory-forecast" class="rep-tab" type="button" role="tab" aria-selected="false" data-click="showReportsTab" data-arg="inventory-forecast" data-click2="loadReportsData">预测</button>
+                        <button id="rep-tab-promotions" class="rep-tab" type="button" role="tab" aria-selected="false" data-click="showReportsTab" data-arg="promotions" data-click2="loadReportsData" style="display:none;">晋升</button>
+                        <button id="rep-tab-turnover" class="rep-tab" type="button" role="tab" aria-selected="false" data-click="showReportsTab" data-arg="turnover" data-click2="loadReportsData">离职</button>
+                        <button id="rep-tab-leave-owed" class="rep-tab" type="button" role="tab" aria-selected="false" data-click="showReportsTab" data-arg="leave-owed" data-click2="loadReportsData">欠休</button>
                     </nav>
                     </div>
                     </div>
@@ -17953,7 +17953,7 @@
                     <div class="kb-upload-body">
 
                         <!-- 文件选择区（最醒目，放最上）-->
-                        <div class="kb-upload-file-zone" onclick="document.getElementById('knowledge-upload-file').click()">
+                        <div class="kb-upload-file-zone" data-click="hrmsTriggerClick" data-arg="knowledge-upload-file">
                             <input id="knowledge-upload-file" type="file" multiple onchange="handleKnowledgeFileSelect(event)" class="ui-file-input" style="display:none;">
                             <div class="kb-upload-file-icon" id="kb-upload-file-icon">📎</div>
                             <div class="kb-upload-file-label" id="kb-upload-file-label">点击选择文件</div>
@@ -17962,7 +17962,7 @@
                         </div>
 
                         <!-- 批量上传开关 -->
-                        <label class="kb-upload-toggle-row" onclick="document.getElementById('knowledge-upload-batch').click();event.preventDefault()">
+                        <label class="kb-upload-toggle-row" data-click="hrmsTriggerClick" data-arg="knowledge-upload-batch">
                             <span class="kb-upload-toggle-txt">批量上传多个文件</span>
                             <span class="kb-upload-pill-toggle">
                                 <input id="knowledge-upload-batch" type="checkbox" style="display:none;" onchange="toggleKnowledgeBatchMode()">
@@ -18245,7 +18245,7 @@
                         <button class="btn" id="approval-detail-pay" type="button" style="display:none; background: linear-gradient(135deg, #3b82f6, #2563eb);" data-click="payCurrentApproval">标记已付款</button>
                         <button class="btn" id="approval-detail-return" type="button" style="display:none; background: linear-gradient(135deg, #f59e0b, #d97706);" data-click="promptReturnApproval">退回</button>
                         <button class="btn btn-secondary" id="approval-detail-reject" type="button" style="display:none;" data-click="promptRejectApproval">拒绝</button>
-                        <button class="btn" id="approval-detail-approve" type="button" style="display:none; background: linear-gradient(135deg, #22c55e, #16a34a);" onclick="decideApproval(true)">通过</button>
+                        <button class="btn" id="approval-detail-approve" type="button" style="display:none; background: linear-gradient(135deg, #22c55e, #16a34a);" data-click="decideApproval" data-arg="true">通过</button>
                         <button class="btn" id="approval-detail-resubmit" type="button" style="display:none; background: linear-gradient(135deg, #6366f1, #4f46e5);" data-click="resubmitReturnedApproval">重新提交</button>
                     </div>
                 </div>
@@ -18934,7 +18934,7 @@
                             </div>
                             <!-- 大点击区上传 -->
                             <input type="file" id="training-practice-file" accept="image/*,video/*" style="display:none;" onchange="trainingFileSelected(this)">
-                            <div onclick="document.getElementById('training-practice-file').click()" id="training-upload-area"
+                            <div data-click="hrmsTriggerClick" data-arg="training-practice-file" id="training-upload-area"
                                 style="border:2px dashed rgba(255,255,255,0.2);border-radius:14px;padding:32px 20px;text-align:center;cursor:pointer;background:rgba(255,255,255,0.03);margin-bottom:14px;-webkit-tap-highlight-color:rgba(99,102,241,0.15);">
                                 <div style="font-size:48px;margin-bottom:10px;">📹</div>
                                 <div style="font-size:15px;font-weight:600;color:rgba(255,255,255,0.85);">点击拍摄 / 选择文件</div>
@@ -20241,8 +20241,8 @@
                             <label class="ta-field-label">② 选择员工（可多选）</label>
                             <div class="ta-toolbar">
                                 <button type="button" data-click="loadAssignableEmployees" class="ta-btn ta-btn--primary">加载员工</button>
-                                <button type="button" onclick="selectAllAssignEmployees(true)" class="ta-btn">全选</button>
-                                <button type="button" onclick="selectAllAssignEmployees(false)" class="ta-btn">清空</button>
+                                <button type="button" data-click="selectAllAssignEmployees" data-arg="true" class="ta-btn">全选</button>
+                                <button type="button" data-click="selectAllAssignEmployees" data-arg="false" class="ta-btn">清空</button>
                             </div>
                             <div id="training-assign-emp-list" class="ta-employee-list">
                                 <div class="ta-employee-empty">请先选择门店或岗位范围，再点击“加载员工”</div>
@@ -20883,9 +20883,9 @@
                   <button class="rep-tab" data-click="showGrowthTab" data-arg="content" id="growth-tab-content">海报创意</button>
                   <button class="rep-tab" data-click="showGrowthTab" data-arg="execution" id="growth-tab-execution">执行中心</button>
                   <button class="rep-tab" data-click="showGrowthTab" data-arg="settings" id="growth-tab-settings">设置治理</button>
-                  <button class="rep-tab" onclick="window.open('/campaign.html','_blank')" id="growth-tab-campaign">🎟️ 营销发券（手动补发）</button>
-                  <button class="rep-tab" onclick="window.open('/winback.html','_blank')" id="growth-tab-winback">💎 储值召回（手动）</button>
-                  <button class="rep-tab" onclick="window.open('/svremind.html','_blank')" id="growth-tab-svremind">💰 储值提醒（手动测试）</button>
+                  <button class="rep-tab" data-click="open" data-arg="/campaign.html" id="growth-tab-campaign">🎟️ 营销发券（手动补发）</button>
+                  <button class="rep-tab" data-click="open" data-arg="/winback.html" id="growth-tab-winback">💎 储值召回（手动）</button>
+                  <button class="rep-tab" data-click="open" data-arg="/svremind.html" id="growth-tab-svremind">💰 储值提醒（手动测试）</button>
                 </nav>
                 <div id="growth-subnav" class="rep-subtabs" style="display:none;margin-bottom:14px;"></div>
                 <div class="gx-sheet" id="gx-sheet" aria-hidden="true">
@@ -21299,7 +21299,7 @@
                                   <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
                                     <input id="poster-final-image-url" readonly placeholder="上传图片自动填充" class="dr-store-select" style="flex:1;font-size:13px;">
                                     <input type="file" id="poster-image-upload-input" accept="image/*" style="display:none;" onchange="uploadPosterImage(event)">
-                                    <button onclick="document.getElementById('poster-image-upload-input').click()" class="rep-seg-btn rep-seg-btn--active" style="white-space:nowrap;">上传图片</button>
+                                    <button data-click="hrmsTriggerClick" data-arg="poster-image-upload-input" class="rep-seg-btn rep-seg-btn--active" style="white-space:nowrap;">上传图片</button>
                                   </div>
                                   <div id="poster-upload-preview" style="display:none;margin-bottom:8px;"><img id="poster-upload-preview-img" style="max-height:140px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);width:100%;object-fit:contain;"></div>
                                   <div class="rep-field"><label>营销用途（可复选）</label>
@@ -21354,7 +21354,7 @@
                                      <div style="display:flex;gap:6px;align-items:center;">
                                       <input id="poster-template-image-url" placeholder="缩略图URL" readonly style="flex:1;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:12px;box-sizing:border-box;">
                                       <input type="file" id="poster-template-image-upload" accept="image/*" style="display:none;" onchange="uploadTemplateImage(event)">
-                                      <button onclick="document.getElementById('poster-template-image-upload').click()" style="padding:6px 10px;border-radius:6px;background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.3);cursor:pointer;font-size:11px;white-space:nowrap;">上传</button>
+                                      <button data-click="hrmsTriggerClick" data-arg="poster-template-image-upload" style="padding:6px 10px;border-radius:6px;background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.3);cursor:pointer;font-size:11px;white-space:nowrap;">上传</button>
                                     </div>
                                     <div id="poster-template-image-preview" style="display:none;"><img id="poster-template-image-preview-img" style="max-height:80px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);"></div>
                                   </div>
@@ -21387,7 +21387,7 @@
                                          <div style="display:flex;gap:6px;align-items:center;">
                                              <input id="creative-asset-url" placeholder="上传后自动填充" readonly style="flex:1;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:12px;box-sizing:border-box;">
                                              <input type="file" id="creative-asset-file-upload" accept="image/*" multiple style="display:none;" onchange="uploadAssetFiles(event)">
-                                             <button onclick="document.getElementById('creative-asset-file-upload').click()" style="padding:8px 10px;border-radius:6px;background:#ec4899;color:#fff;border:none;cursor:pointer;font-size:11px;white-space:nowrap;">上传</button>
+                                             <button data-click="hrmsTriggerClick" data-arg="creative-asset-file-upload" style="padding:8px 10px;border-radius:6px;background:#ec4899;color:#fff;border:none;cursor:pointer;font-size:11px;white-space:nowrap;">上传</button>
                                              <span id="creative-asset-upload-count" style="font-size:11px;color:rgba(226,232,240,0.4);"></span>
                                          </div>
                                          <div id="creative-asset-upload-preview" style="display:none;margin-top:4px;"><img id="creative-asset-upload-preview-img" style="max-height:80px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);"></div>
@@ -24419,7 +24419,7 @@
                 };
             }
         } catch (e) {}
-        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function' && !(el.hasAttribute('data-click-self-only') && e.target !== el)) { var args = []; if (el.hasAttribute('data-arg')) { var raw = el.getAttribute('data-arg'); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute('data-arg-type') === 'number' ? Number(raw) : raw); } if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); } } }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; // P5.1：data-click(+data-arg[+data-arg-type=number][+data-arg-self 传this][+data-click-self-only 仅目标===自身时触发]) 委托，替代逐个迁移的 inline onclick；hrmsTriggerClick(id) 替代 document.getElementById(id).click() 内联写法
+        document.addEventListener('click', function (e) { var el = e.target && e.target.closest ? e.target.closest('[data-click]') : null; if (el) { var fn = el.getAttribute('data-click'); if (fn && typeof window[fn] === 'function' && !(el.hasAttribute('data-click-self-only') && e.target !== el)) { var args = []; function parseArg(name, typeName) { if (!el.hasAttribute(name)) return; var raw = el.getAttribute(name); args.push(raw === 'true' ? true : raw === 'false' ? false : el.getAttribute(typeName) === 'number' ? Number(raw) : raw); } parseArg('data-arg', 'data-arg-type'); parseArg('data-arg2', 'data-arg2-type'); if (el.hasAttribute('data-arg-self')) args.push(el); window[fn].apply(null, args); var fn2 = el.getAttribute('data-click2'); if (fn2 && typeof window[fn2] === 'function') window[fn2](); } } }); window.hrmsTriggerClick = function (id) { var t = document.getElementById(id); if (t) t.click(); }; // P5.1：data-click(+data-arg[+data-arg2][+data-click2][+data-arg-self][+data-click-self-only]) 委托
         // 登录页按租户展示自定义系统名称/页面标题/logo——平台管理后台设置的profile.system_name/
         // logo_url此前只存进数据库，没有任何前端真正读取展示；这里在登录前就拉一次公开只读接口应用。
         function resolveHrmsLoginTenantId() {
@@ -44815,7 +44815,7 @@ ${knowledgeContent.slice(0, 30000)}`;
                         <span class="mt-reg-row__store">${store}</span>
                         <div class="mt-reg-row__sum">${summary}</div>
                     </div>
-                    <button type="button" class="mt-reg-row__del" onclick="mtDeleteTarget('${ym}','${store}')" title="删除">🗑</button>
+                    <button type="button" class="mt-reg-row__del" data-click="mtDeleteTarget" data-arg="${ym}" data-arg2="${store}" title="删除">🗑</button>
                 </div>`;
             });
             el.innerHTML = lines.join('');
@@ -47280,7 +47280,7 @@ ${String(text || '').slice(0, 9000)}`;
                             <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;" data-click="viewEmployee" data-arg="${escapeHtml(empKey)}">查看</button>
                             ${isAdminUser() ? `<button class="btn" style="padding:6px 10px;font-size:12px;" data-click="editEmployee" data-arg="${escapeHtml(empKey)}">编辑</button>` : ''}
                             ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#ef4444;" data-click="deleteEmployee" data-arg="${escapeHtml(empKey)}">删除</button>` : ''}
-                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" onclick="loginAsEmployee('${escapeJsString(empKey)}','${escapeJsString(emp.name || empKey)}')">代登录</button>` : ''}
+                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" data-click="loginAsEmployee" data-arg="${escapeJsString(empKey)}" data-arg2="${escapeJsString(emp.name || empKey)}">代登录</button>` : ''}
                         </div>
                     </td>
                 </tr>`;
@@ -58117,7 +58117,7 @@ ${body}
                             <div class="att-summary-metric"><div class="k">剩余假期</div><div class="v">${typeof leaveRemaining === 'number' ? leaveRemaining : leaveRemaining}</div></div>
                         </div>
                         <div class="att-list-row" style="margin-top:8px;"><span class="att-list-sub">假期调整</span><span>${leaveCell}</span></div>
-                        <div class="att-list-row"><span class="att-list-sub">详情</span><span><button class="btn btn-secondary" style="font-size:11px; padding:3px 10px;" onclick="attShowUserDetail('${u}','${month}')">查看</button></span></div>
+                        <div class="att-list-row"><span class="att-list-sub">详情</span><span><button class="btn btn-secondary" style="font-size:11px; padding:3px 10px;" data-click="attShowUserDetail" data-arg="${u}" data-arg2="${month}">查看</button></span></div>
                     </div>`;
                 });
                 html += '</div>';
@@ -66969,7 +66969,7 @@ ${body}
           <div style="margin-top:8px;">
             ${s.media_type === 'video'
               ? `<video src="${s.media_url}" controls preload="metadata" style="width:100%;max-height:200px;border-radius:10px;display:block;"></video>`
-              : `<img src="${s.media_url}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;cursor:pointer;" onclick="openMediaLightbox('${s.media_url}','image')">`
+              : `<img src="${s.media_url}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;cursor:pointer;" data-click="openMediaLightbox" data-arg="${s.media_url}" data-arg2="image">`
             }
           </div>` : '';
         return `
@@ -68513,7 +68513,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
         </div>`;
       }
       return `<div style="position:relative;display:inline-block;">
-        <img src="${url}" style="max-height:120px;max-width:100%;border-radius:8px;display:block;cursor:pointer;" onclick="openMediaLightbox('${url}','image')" title="点击查看大图">
+        <img src="${url}" style="max-height:120px;max-width:100%;border-radius:8px;display:block;cursor:pointer;" data-click="openMediaLightbox" data-arg="${url}" data-arg2="image" title="点击查看大图">
         <button data-click="_removeStepMedia" data-arg-self="1" title="移除图片"
           style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.6);color:#fff;font-size:12px;cursor:pointer;line-height:22px;text-align:center;padding:0;">×</button>
       </div>`;

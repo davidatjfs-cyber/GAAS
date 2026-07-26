@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   sanitizeLLMOutput,
   sanitizeLLMOutputWithAudit,
-} from '../utils/llm-output-sanitize.js';
+} from '../../../utils/llm-output-sanitize.js';
 
 test('sanitizeLLMOutput：剥离零宽与控制字符，保留换行', async () => {
   assert.equal(sanitizeLLMOutput(''), '');

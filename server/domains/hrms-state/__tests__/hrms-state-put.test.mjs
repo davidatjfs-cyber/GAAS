@@ -5,7 +5,7 @@ import {
   STATE_PUT_SERVER_OWNED,
   applyStatePutWhitelist,
   mergeEmployeesForStatePut,
-} from '../hrms-state-put.js';
+} from '../../../hrms-state-put.js';
 
 test('白名单与服务端权威字段不重叠', () => {
   const overlap = STATE_PUT_WHITELIST.filter((k) => STATE_PUT_SERVER_OWNED.includes(k));

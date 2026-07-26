@@ -2274,7 +2274,7 @@
           <div style="margin-top:8px;">
             ${s.media_type === 'video'
               ? `<video src="${s.media_url}" controls preload="metadata" style="width:100%;max-height:200px;border-radius:10px;display:block;"></video>`
-              : `<img src="${s.media_url}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;cursor:pointer;" onclick="openMediaLightbox('${s.media_url}','image')">`
+              : `<img src="${s.media_url}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;cursor:pointer;" data-click="openMediaLightbox" data-arg="${s.media_url}" data-arg2="image">`
             }
           </div>` : '';
         return `
@@ -3818,7 +3818,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
         </div>`;
       }
       return `<div style="position:relative;display:inline-block;">
-        <img src="${url}" style="max-height:120px;max-width:100%;border-radius:8px;display:block;cursor:pointer;" onclick="openMediaLightbox('${url}','image')" title="点击查看大图">
+        <img src="${url}" style="max-height:120px;max-width:100%;border-radius:8px;display:block;cursor:pointer;" data-click="openMediaLightbox" data-arg="${url}" data-arg2="image" title="点击查看大图">
         <button data-click="_removeStepMedia" data-arg-self="1" title="移除图片"
           style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.6);color:#fff;font-size:12px;cursor:pointer;line-height:22px;text-align:center;padding:0;">×</button>
       </div>`;

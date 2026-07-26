@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { safeErrMessage } from '../domains/shared/safe-err-message.js';
-import { domainJsonFieldEmpty } from '../domains/shared/domain-json-empty.js';
+import { safeErrMessage } from '../safe-err-message.js';
+import { domainJsonFieldEmpty } from '../domain-json-empty.js';
 import {
   encodeRFC5987ValueChars,
   buildInlineContentDisposition,
   inferContentType,
-} from '../domains/uploads/content-type.js';
+} from '../../uploads/content-type.js';
 
 test('safeErrMessage: production redacts', () => {
   const prev = process.env.NODE_ENV;

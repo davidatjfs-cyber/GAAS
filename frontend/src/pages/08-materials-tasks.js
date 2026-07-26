@@ -127,7 +127,7 @@
                         <span class="mt-reg-row__store">${store}</span>
                         <div class="mt-reg-row__sum">${summary}</div>
                     </div>
-                    <button type="button" class="mt-reg-row__del" onclick="mtDeleteTarget('${ym}','${store}')" title="删除">🗑</button>
+                    <button type="button" class="mt-reg-row__del" data-click="mtDeleteTarget" data-arg="${ym}" data-arg2="${store}" title="删除">🗑</button>
                 </div>`;
             });
             el.innerHTML = lines.join('');
@@ -2592,7 +2592,7 @@ ${String(text || '').slice(0, 9000)}`;
                             <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;" data-click="viewEmployee" data-arg="${escapeHtml(empKey)}">查看</button>
                             ${isAdminUser() ? `<button class="btn" style="padding:6px 10px;font-size:12px;" data-click="editEmployee" data-arg="${escapeHtml(empKey)}">编辑</button>` : ''}
                             ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#ef4444;" data-click="deleteEmployee" data-arg="${escapeHtml(empKey)}">删除</button>` : ''}
-                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" onclick="loginAsEmployee('${escapeJsString(empKey)}','${escapeJsString(emp.name || empKey)}')">代登录</button>` : ''}
+                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" data-click="loginAsEmployee" data-arg="${escapeJsString(empKey)}" data-arg2="${escapeJsString(emp.name || empKey)}">代登录</button>` : ''}
                         </div>
                     </td>
                 </tr>`;

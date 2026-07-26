@@ -926,7 +926,7 @@
                             <div class="att-summary-metric"><div class="k">剩余假期</div><div class="v">${typeof leaveRemaining === 'number' ? leaveRemaining : leaveRemaining}</div></div>
                         </div>
                         <div class="att-list-row" style="margin-top:8px;"><span class="att-list-sub">假期调整</span><span>${leaveCell}</span></div>
-                        <div class="att-list-row"><span class="att-list-sub">详情</span><span><button class="btn btn-secondary" style="font-size:11px; padding:3px 10px;" onclick="attShowUserDetail('${u}','${month}')">查看</button></span></div>
+                        <div class="att-list-row"><span class="att-list-sub">详情</span><span><button class="btn btn-secondary" style="font-size:11px; padding:3px 10px;" data-click="attShowUserDetail" data-arg="${u}" data-arg2="${month}">查看</button></span></div>
                     </div>`;
                 });
                 html += '</div>';
