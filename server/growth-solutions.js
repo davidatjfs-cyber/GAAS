@@ -881,7 +881,7 @@ export function startSolutionSweepScheduler() {
 }
 
 // ─── 路由 ───────────────────────────────────────────────
-export function registerGrowthSolutionRoutes(app, authRequired) {
+function registerGrowthSolutionOverviewRoutes(app, authRequired) {
   // 六卡片总览
   app.get('/api/diagnosis/solutions/overview', authRequired, async (req, res) => {
     try {
@@ -944,6 +944,9 @@ export function registerGrowthSolutionRoutes(app, authRequired) {
     }
   });
 
+}
+
+function registerGrowthSolutionCustomRoutes(app, authRequired) {
   // 自定义问题分析:输入"目前遇到的问题" → 归类到六大问题 或 生成自定义方案
   app.post('/api/diagnosis/solutions/custom/analyze', authRequired, async (req, res) => {
     try {
@@ -1130,7 +1133,10 @@ ${realDataSummary}
   });
 
   // 自定义问题分析历史列表:不用每次重新输入问题,可以直接从历史记录里点开之前的结果
-  app.get('/api/diagnosis/solutions/custom/history', authRequired, async (req, res) => {
+}
+
+function registerGrowthSolutionTaskViewRoutes(app, authRequired) {
+app.get('/api/diagnosis/solutions/custom/history', authRequired, async (req, res) => {
     try {
       const store = String(req.query?.store || '').trim();
       if (!store) return res.status(400).json({ ok: false, error: 'store 必填' });
@@ -1173,6 +1179,7 @@ ${realDataSummary}
   // 我的增长方案任务(六大标准问题+自定义问题共用一套growth_solution_tasks表)——
   // 之前分派完任务后责任人自己完全没有入口能看到"我有什么任务要做"，只能靠店长/管理员
   // 在诊断页里手动点"标记完成"，放在"我的档案"页面供员工自己更新执行进度。
+
   app.get('/api/diagnosis/solutions/my-tasks', authRequired, async (req, res) => {
     try {
       const username = req.user?.username;
@@ -1297,6 +1304,9 @@ ${realDataSummary}
   });
 
   // 创建轮次(下发):所有任务必须有责任人
+}
+
+function registerGrowthSolutionMutationRoutes(app, authRequired) {
   app.post('/api/diagnosis/solutions/:key/rounds', authRequired, async (req, res) => {
     try {
       const key = req.params.key;
@@ -1481,6 +1491,14 @@ ${realDataSummary}
     }
   });
 }
+
+export function registerGrowthSolutionRoutes(app, authRequired) {
+  registerGrowthSolutionOverviewRoutes(app, authRequired);
+  registerGrowthSolutionCustomRoutes(app, authRequired);
+  registerGrowthSolutionTaskViewRoutes(app, authRequired);
+  registerGrowthSolutionMutationRoutes(app, authRequired);
+}
+
 
 function summarizeCard(key, current) {
   if (!current) return '';
