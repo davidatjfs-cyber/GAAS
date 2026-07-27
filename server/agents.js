@@ -56,45 +56,10 @@ import {
   detectFactDemand,
   isDataBackedReply,
 } from './domains/agent-message/quality-helpers.js';
-import { createHandleAgentMessage } from './domains/agent-message/handle-agent-message.js';
-import { createRouteMessage } from './domains/agent-message/route-message.js';
-import { createHandleOpsChecklistCardAction } from './domains/agent-ops/handle-checklist-card-action.js';
-import { createOpsChecklistCardsApi } from './domains/agent-ops/checklist-cards.js';
-import { createTryCaptureOpsChecklistDetailFromChat } from './domains/agent-ops/capture-checklist-detail.js';
-import { createFollowUpOverdueTasks } from './domains/agent-ops/follow-up-overdue-tasks.js';
-import { createAuditImage } from './domains/agent-ops/audit-image.js';
-import { createTryFeishuMarketingCopyRound } from './domains/agent-message/marketing-copy.js';
-import { createCheckAgentQualityApi } from './domains/agent-message/check-agent-quality.js';
-import { createAgentQualityAutonomyApi } from './domains/agent-message/agent-quality-autonomy.js';
 import { createAgentMessageRuntime } from './domains/agent-message/runtime.js';
 import { parseFeishuMarketingCopyTemplate } from './domains/agent-message/marketing-copy-helpers.js';
-import { createGetOpsKnowledgeSupport } from './domains/agent-ops/knowledge-support.js';
-import { createSendScheduledChecklist } from './domains/agent-ops/send-scheduled-checklist.js';
-import { createRunChiefEvaluator } from './domains/agent-evaluator/run-chief-evaluator.js';
-import { createSendSafetyCheck } from './domains/agent-ops/send-safety-check.js';
-import { createFetchStoreRatingForProfileDisplay } from './domains/agent-evaluator/fetch-store-rating-for-profile.js';
-import { createArchiveOldBitableSubmissions } from './domains/feishu-bitable/archive-old-submissions.js';
-import { createExecuteScheduledTask } from './domains/agent-ops/execute-scheduled-task.js';
-import { createScheduledTaskRuntimeApi } from './domains/agent-ops/scheduled-task-runtime.js';
-import { createGetBitableSubmissionStats } from './domains/feishu-bitable/get-submission-stats.js';
-import { createBuildScheduledTasksFromConfig } from './domains/agent-ops/build-scheduled-tasks-from-config.js';
-import { createHandleDataAuditorCase } from './domains/agent-message/handle-data-auditor-case.js';
-import { createOnFeishuEvent } from './domains/agent-feishu-bot/on-feishu-event.js';
-import { createFeishuUserMessagingApi } from './domains/agent-feishu-bot/feishu-user-messaging.js';
 import { createLarkSendApi } from './domains/agent-feishu-bot/lark-send.js';
-import { createPushIssuesToFeishu } from './domains/agent-feishu-bot/push-issues.js';
-import { createTryHandleBiByFunctionCalling } from './domains/agent-bi/try-handle-bi-by-function-calling.js';
 import { clampInt } from './domains/agent-bi/bi-tool-period.js';
-import { createRunBiFunctionTool } from './domains/agent-bi/run-bi-function-tool.js';
-import { createBiFunctionCallingSupport } from './domains/agent-bi/function-calling-support.js';
-import { createBuildBiDeterministicDailyReportReply } from './domains/agent-bi/build-daily-report-reply.js';
-import { createBuildBiDeterministicSalesRawTopReply } from './domains/agent-bi/build-sales-raw-top-reply.js';
-import { createBuildBiDeterministicBadReviewReportReply } from './domains/agent-bi/build-bad-review-report-reply.js';
-import { createBiQueryHelpersApi } from './domains/agent-bi/bi-query-helpers.js';
-import { createSendPeriodReportsApi } from './domains/agent-bi/send-period-reports.js';
-import { createDeterministicCascadeReplies } from './domains/agent-bi/deterministic-cascade-replies.js';
-import { createPollBitableSubmissions } from './domains/feishu-bitable/poll-submissions.js';
-import { createOpsSubmissionValidation } from './domains/agent-ops/submission-validation.js';
 import {
   normalizeBitableDateValue,
   extractBitableFieldText,
@@ -106,15 +71,10 @@ import { createAgentBrandRuntimeContext } from './domains/agent-brand/runtime-co
 import { createAgentStoreIdentity } from './domains/agent-store/identity.js';
 import { createNotifyBitablePipelineFailure } from './domains/feishu-bitable/pipeline-failure-notify.js';
 import { createTaskResponseApi } from './domains/feishu-bitable/task-response.js';
-import { createProcessBitableData } from './domains/feishu-bitable/process-bitable-data.js';
-import { createBitableRecordsClient } from './domains/feishu-bitable/bitable-records-client.js';
 import { createBitablePollingController } from './domains/feishu-bitable/start-bitable-polling.js';
 import {
   buildKpiRadarAlertJson,
-  createRunDataAuditor,
 } from './domains/agent-auditor/run-data-auditor.js';
-import { createTableVisitMetricsApi } from './domains/agent-auditor/table-visit-metrics.js';
-import { createMarginMetricsApi } from './domains/agent-auditor/margin-metrics.js';
 import {
   getLLMClientConfig,
   getProviderHealthStatus,
@@ -123,11 +83,6 @@ import {
   resolveModelProvider,
   sleep,
 } from './domains/ai/llm-provider-helpers.js';
-import { createLlmHealthSchedulerApi } from './domains/ai/llm-health-scheduler.js';
-import { createLoadTenantAiConfig } from './domains/ai/load-tenant-ai-config.js';
-import { createTenantLlmConfigCache } from './domains/ai/tenant-llm-config.js';
-import { createCallLLM } from './domains/ai/call-llm.js';
-import { createCallVisionLLM, createCallVisionLLMVideo } from './domains/ai/call-vision-llm.js';
 import { buildSalesReport } from './bi-sales-detail.js';
 import {
   generateWeeklyReport,
@@ -177,6 +132,7 @@ import {
   BITABLE_CONFIGS,
 } from './domains/agent-bitable/configs.js';
 import { createQualityChecksApi } from './domains/agent-auditor/quality-checks.js';
+import { wireAgentsRuntime } from './domains/agent-runtime/wire.js';
 export { getProviderHealthStatus };
 
 const log = childLogger({ domain: 'agents' });
@@ -383,7 +339,6 @@ const {
 export { resolveBrandContextByStore };
 
 let _opsChecklistCardsApi;
-let _opsChecklistProgress;
 
 function buildOpsChecklistItemDetailCard(args) {
   return _opsChecklistCardsApi.buildOpsChecklistItemDetailCard(args);
@@ -1133,8 +1088,8 @@ export async function handleAgentMessage(senderUsername, senderName, senderStore
   return _handleAgentMessage(senderUsername, senderName, senderStore, senderRole, senderBrandContext, text, imageUrls);
 }
 
-// Wave A2b: handleDataAuditorCase → domains/agent-message/handle-data-auditor-case.js (wired below)
-let handleDataAuditorCase;
+// Wave A2b: handleDataAuditorCase → domains/agent-message/handle-data-auditor-case.js (wired below,
+// entirely internal to wireMessage's createHandleAgentMessage call — no module-level binding needed)
 
 
 
@@ -1227,10 +1182,8 @@ async function tryCaptureOpsChecklistDetailFromChat(openId, feishuUser, text, im
 
 // ── 飞书：固定格式「营销文案」+ 菜名/品牌/推荐理由 → 可选配图 → 生成多平台多套文案 ──
 // 实现见 domains/agent-message/marketing-copy*.js；若线上另有未合并进 Git 的同名逻辑，部署前需 diff 合并。
-let _tryFeishuMarketingCopyRound;
-async function tryFeishuMarketingCopyRound(args) {
-  return _tryFeishuMarketingCopyRound(args);
-}
+// (wireFeishu builds this internally and feeds it straight into createOnFeishuEvent — no
+// module-level wrapper needed since nothing outside the wiring cluster calls it.)
 
 let _onFeishuEvent;
 export async function onFeishuEvent(body) {
@@ -1451,8 +1404,14 @@ function checkDataSourceQuality() {
   }).checkDataSourceQuality();
 }
 
-_tableVisitMetricsApi = createTableVisitMetricsApi({
+let _sendPeriodReportsApi;
+
+// P17: bottom `createXxx` wiring cluster peeled to domains/agent-runtime/wire*.js.
+// wireAgentsRuntime(deps) performs the factory calls and returns a flat bag of APIs;
+// agents.js just assigns them to its private `_foo` locals (public exports unchanged).
+const _agentsRuntimeWire = wireAgentsRuntime({
   pool,
+  log,
   bitableConfigs: BITABLE_CONFIGS,
   normalizeBitableDateValue,
   extractDissatisfactionDishFromFields,
@@ -1461,35 +1420,13 @@ _tableVisitMetricsApi = createTableVisitMetricsApi({
   inDateRangeInclusive,
   normalizeStoreKey,
   normProductKey,
-});
-
-_marginMetricsApi = createMarginMetricsApi({
-  pool,
-  log,
   toNum,
-  normProductKey,
-  inDateRangeInclusive,
-  normalizeStoreKey,
   setReportPool,
-});
-
-_auditImage = createAuditImage({
-  pool,
-  log,
   callVisionLLM,
   getOpsAgentConfig,
-});
-
-_getOpsKnowledgeSupport = createGetOpsKnowledgeSupport({
-  log,
   callLLM,
   queryAgentData,
-  getOpsAgentConfig,
   getOpsReasoningModel,
-});
-
-_runDataAuditor = createRunDataAuditor({
-  pool,
   getSharedState,
   getStoresFromState,
   resolveBrandContextByStore,
@@ -1500,41 +1437,26 @@ _runDataAuditor = createRunDataAuditor({
   getStoreThreshold,
   loadTableVisitMetricsByStore,
   checkDataSourceQuality,
-  normalizeStoreKey,
   normalizeCanonicalStoreName,
-});
-
-_runBiFunctionTool = createRunBiFunctionTool({
-  pool,
   normalizeStoreLike,
   formatDate,
   logAgentOperation,
-  getBadReviewTableId: () => BITABLE_CONFIGS?.bad_reviews?.tableId || '',
-  normalizeBitableDateValue,
-  extractBitableFieldText,
   isLikelySameStore,
-  inDateRangeInclusive,
   loadUnifiedTableVisitRowsByStore,
-});
-
-_llmHealthSchedulerApi = createLlmHealthSchedulerApi({
   isExternalEnabled,
   axios,
   markProviderOk,
   markProviderFail,
-  getSharedState,
   lookupFeishuUserByUsername,
   sendLarkMessage,
   getScheduledTaskStatus,
-  getPerformanceMetrics: () => _performanceMetrics,
-  pool,
+  performanceMetrics: _performanceMetrics,
   tenantContext,
   getActiveTenantIds,
   runDataAuditor,
   pushIssuesToFeishu,
   pushIssueToAssignee,
   pushScoresToFeishu,
-  log,
   providerConfig: {
     deepseekModel: DEEPSEEK_MODEL,
     deepseekApiKey: DEEPSEEK_API_KEY,
@@ -1546,168 +1468,38 @@ _llmHealthSchedulerApi = createLlmHealthSchedulerApi({
     doubaoApiKey: DOUBAO_API_KEY,
     doubaoBaseUrl: DOUBAO_BASE_URL,
   },
-});
-
-// Wave P2: LLM client cluster → domains/ai/*
-{
-  const tenantLlm = createTenantLlmConfigCache({
-    pool,
-    getTenantAiModelConfig,
-  });
-  _invalidateTenantLlmConfigCache = tenantLlm.invalidateTenantLlmConfigCache;
-
-  const loadTenantAiConfig = createLoadTenantAiConfig({
-    resolveTenantIdDefault,
-    agentPool,
-  });
-
-  _callLLM = createCallLLM({
-    isExternalEnabled,
-    isAiQualityExternalEnabled,
-    getModelTier,
-    getModelForRole,
-    getTemperatureForRole,
-    getMaxTokensForRole,
-    isTierBudgetExceeded,
-    tenantContext,
-    resolveTenantLlmConfig: tenantLlm.resolveTenantLlmConfig,
-    getCachedResponse,
-    setCachedResponse,
-    performanceMetrics: _performanceMetrics,
-    maskLLMMessages,
-    axios,
-    sanitizeLLMOutputWithAudit,
-    sanitizeLLMOutput,
-    pool,
-    trackLLMCall,
-    trackLLMResult,
-  });
-
-  _callVisionLLM = createCallVisionLLM({
-    loadTenantAiConfig,
-    getOpsVisionModel,
-    axios,
-    trackLLMResult,
-  });
-
-  _callVisionLLMVideo = createCallVisionLLMVideo({
-    loadTenantAiConfig,
-    axios,
-    trackLLMResult,
-  });
-}
-
-_biQueryHelpersApi = createBiQueryHelpersApi({
-  formatDate,
-  pool,
-  normalizeStoreLike,
-  normalizeStoreKey,
-  isBiSourceEnabled,
-  toDateOnly,
-  extractBitableFieldText,
-  normalizeBitableDateValue,
-  isLikelySameStore,
-  inDateRangeInclusive,
-  loadUnifiedTableVisitRowsByStore,
-  extractTableVisitItems,
-});
-
-const biFunctionCallingSupport = createBiFunctionCallingSupport({
-  callLLM,
-  getBiReasoningModel,
-});
-
-_tryHandleBiByFunctionCalling = createTryHandleBiByFunctionCalling({
-  pool,
+  getTenantAiModelConfig,
+  resolveTenantIdDefault,
+  agentPool,
+  isAiQualityExternalEnabled,
   getModelTier,
+  getModelForRole,
+  getTemperatureForRole,
+  getMaxTokensForRole,
+  isTierBudgetExceeded,
+  getCachedResponse,
+  setCachedResponse,
+  maskLLMMessages,
+  sanitizeLLMOutputWithAudit,
+  sanitizeLLMOutput,
+  trackLLMCall,
+  trackLLMResult,
+  getOpsVisionModel,
+  toDateOnly,
+  extractTableVisitItems,
+  extractTableVisitDishes,
+  getBiReasoningModel,
   getAvailableTools,
   isToolAllowed,
-  isTierBudgetExceeded,
   parseFeishuMarketingCopyTemplate,
   clampInt,
   runBiFunctionTool,
-  narrateBiToolResult: biFunctionCallingSupport.narrateBiToolResult,
-  pushBiConversationTurn: biFunctionCallingSupport.pushBiConversationTurn,
-  getBiConversationHistory: biFunctionCallingSupport.getBiConversationHistory,
-  buildBiIntentPlan: biFunctionCallingSupport.buildBiIntentPlan,
-  callLLM,
-  getBiReasoningModel,
-  BI_FUNCTION_TOOLS: biFunctionCallingSupport.BI_FUNCTION_TOOLS,
-  parseToolArgs: biFunctionCallingSupport.parseToolArgs,
   buildBiFactSourceAudit,
   buildBiSourceAuditText,
-});
-
-_buildBiDeterministicDailyReportReply = createBuildBiDeterministicDailyReportReply({
-  pool,
   resolveDateRangeFromQuestion,
-  normalizeStoreLike,
-  normalizeStoreKey,
-});
-
-_buildBiDeterministicSalesRawTopReply = createBuildBiDeterministicSalesRawTopReply({
-  pool,
-  resolveDateRangeFromQuestion,
-  normalizeStoreKey,
-  normalizeStoreLike,
-});
-
-_buildBiDeterministicBadReviewReportReply = createBuildBiDeterministicBadReviewReportReply({
-  pool,
-  resolveDateRangeFromQuestion,
-  getBadReviewTableId: () => BITABLE_CONFIGS?.bad_reviews?.tableId || '',
-  extractBitableFieldText,
-  isLikelySameStore,
-  normalizeBitableDateValue,
-  inDateRangeInclusive,
-  loadUnifiedTableVisitRowsByStore,
-});
-
-const _cascadeBiReplies = createDeterministicCascadeReplies({
-  pool,
-  isBiSourceEnabled,
-  resolveDateRangeFromQuestion,
-  loadUnifiedTableVisitRowsByStore,
-  extractTableVisitDishes,
-  extractBitableFieldText,
-  isLikelySameStore,
-  normalizeBitableDateValue,
-  inDateRangeInclusive,
-  getClosingTableId: () => BITABLE_CONFIGS?.closing_reports?.tableId || '',
-  getOpeningTableId: () => BITABLE_CONFIGS?.opening_reports?.tableId || '',
-  getMeetingTableId: () => BITABLE_CONFIGS?.meeting_reports?.tableId || '',
-  getLossTableId: () => BITABLE_CONFIGS?.loss_reports?.tableId || '',
-  getMaterialTableIds: () => [
-    BITABLE_CONFIGS?.material_hongchao?.tableId,
-    BITABLE_CONFIGS?.material_majixian?.tableId,
-  ].filter(Boolean),
-});
-_buildBiDeterministicDataSourceCoverageReply = _cascadeBiReplies.buildBiDeterministicDataSourceCoverageReply;
-_buildBiDeterministicTableVisitReply = _cascadeBiReplies.buildBiDeterministicTableVisitReply;
-_buildBiDeterministicOpsReportCountReply = _cascadeBiReplies.buildBiDeterministicOpsReportCountReply;
-_buildBiDeterministicClosingReportReply = _cascadeBiReplies.buildBiDeterministicClosingReportReply;
-_buildBiDeterministicOpeningReportReply = _cascadeBiReplies.buildBiDeterministicOpeningReportReply;
-_buildBiDeterministicMaterialReportReply = _cascadeBiReplies.buildBiDeterministicMaterialReportReply;
-_buildBiDeterministicMeetingReportReply = _cascadeBiReplies.buildBiDeterministicMeetingReportReply;
-_buildBiDeterministicLossReportReply = _cascadeBiReplies.buildBiDeterministicLossReportReply;
-
-
-
-handleDataAuditorCase = createHandleDataAuditorCase({
-  pool,
-  inferBrandFromStoreName,
-  tryHandleBiByFunctionCalling,
   isFactLikeQuestion,
-  buildBiFactSourceAudit,
-  buildBiSourceAuditText,
   buildBiGroundingFacts,
-  callLLM,
-  getContext,
-  updateContext,
-  getSharedState,
-  normalizeStoreKey,
-  resolveDateRangeFromQuestion,
-  buildSalesReport,
+  tryHandleBiByFunctionCalling,
   buildBiDeterministicDataSourceCoverageReply,
   buildBiDeterministicDailyReportReply,
   buildBiDeterministicTableVisitReply,
@@ -1719,294 +1511,126 @@ handleDataAuditorCase = createHandleDataAuditorCase({
   buildBiDeterministicMeetingReportReply,
   buildBiDeterministicOpsReportCountReply,
   buildBiDeterministicLossReportReply,
+  getContext,
+  updateContext,
+  buildSalesReport,
   getFeatureFlags: () => AGENT_FEATURE_FLAGS,
-});
-
-_agentQualityAutonomyApi = createAgentQualityAutonomyApi({
-  pool,
-  resolveTenantIdDefault,
-  normalizeStoreKey,
   normalizePlainText,
   recordAiInteraction,
   recordAiFeedback,
-  lookupFeishuUserByUsername,
-  sendLarkMessage,
   prefixWithAgentName,
-  log,
-});
-
-_routeMessage = createRouteMessage({
-  pool,
-  callLLM,
   matchAnalysisRule,
   logExecutorEvent,
-  getFeatureFlags: () => AGENT_FEATURE_FLAGS,
   getAgentLongMemory,
-});
-
-_checkAgentQualityApi = createCheckAgentQualityApi({
-  callLLM,
-  log,
   markQualityMetric,
   recordAgentQualityAudit,
-});
-
-_handleAgentMessage = createHandleAgentMessage({
-  pool,
-  routeMessage,
-  prefixWithAgentName,
-  callLLM,
-  getContext,
-  updateContext,
   getBrandRuntimeConfig,
-  getSharedState,
-  inferBrandFromStoreName,
+  routeMessage,
   runWithCheckAgent,
   enforceUnifiedQualityGate,
-  markQualityMetric,
   setAgentLongMemory,
   getEmployeePositionForKb,
   queryKnowledgeBase,
   getOpsKnowledgeSupport,
-  getOpsReasoningModel,
   auditImage,
-  findStoreManager,
   createOrUpdateAutonomousDataTask,
   notifyAutonomousDataTaskOwner,
-  handleDataAuditorCase,
-});
-
-_archiveOldBitableSubmissions = createArchiveOldBitableSubmissions({
-  pool,
-  archiveThresholdDays: 7,
-  deleteThresholdDays: 60,
-});
-
-_bitableRecordsClient = createBitableRecordsClient({
-  bitableConfigs: BITABLE_CONFIGS,
-  axios,
   sleep,
-});
-
-_processBitableData = createProcessBitableData({
-  pool,
-  bitableConfigs: BITABLE_CONFIGS,
-  tenantContext,
-  extractDissatisfactionDishFromFields,
-  extractDissatisfactionReasonFromFields,
-  normalizeBitableDateValue,
-  normalizeCanonicalStoreName,
-  extractBitableFieldText,
-});
-
-
-_getBitableSubmissionStats = createGetBitableSubmissionStats({
-  pool,
-});
-
-_scheduledTaskRuntimeApi = createScheduledTaskRuntimeApi({
+  extractRelationsFromBitableRecord,
+  deduplicateMessage,
+  processedRecordIds: _bitableProcessedRecordIds,
+  lastProcessedTime: _bitableLastProcessedTime,
+  seedBitableDedup,
+  getBitableRecords,
+  processBitableData,
+  getBitableRecordImageDownloadUrl,
   refreshOpsAgentRuntimeConfig,
   buildScheduledTasksFromConfig,
   executeScheduledTask,
-  log,
-});
-
-_buildScheduledTasksFromConfig = createBuildScheduledTasksFromConfig({
-  getOpsAgentConfig,
   isBlockedOpsChecklistPattern,
-});
-
-_executeScheduledTask = createExecuteScheduledTask({
   sendScheduledChecklist,
   sendSafetyCheck,
-  refreshOpsAgentRuntimeConfig,
-  buildScheduledTasksFromConfig,
-  isBlockedOpsChecklistPattern,
-  getOpsAgentConfig,
-  scheduledTaskRuntimeStatus: _scheduledTaskRuntimeApi.scheduledTaskRuntimeStatus,
-});
-
-_sendSafetyCheck = createSendSafetyCheck({
-  getSharedState,
-  isLikelySameStore,
-  normalizeStoreKey,
-  lookupFeishuUserByUsername,
-  sendLarkCard,
-  sendLarkMessage,
-  prefixWithAgentName,
-  opsTaskReplyAuditLarkMd: OPS_TASK_REPLY_AUDIT_LARK_MD,
-});
-
-_fetchStoreRatingForProfileDisplay = createFetchStoreRatingForProfileDisplay({
-  pool,
   resolveAgentCanonicalStore,
   dailyReportIlikePatterns,
   feishuStoreSearchPatterns,
-});
-
-_runChiefEvaluator = createRunChiefEvaluator({
-  pool,
-  getSharedState,
-  getStoresFromState,
-  resolveBrandContextByStore,
-  inferBrandFromStoreName,
-  getBrandRuntimeConfig,
   calculateStoreRating,
   calculateEmployeeScore,
-  callLLM,
-});
-
-_sendScheduledChecklist = createSendScheduledChecklist({
-  pool,
-  getSharedState,
-  isLikelySameStore,
-  normalizeStoreKey,
-  lookupFeishuUserByUsername,
-  sendLarkCard,
   formatChecklistTypeLabel,
   getOpsChecklistItems,
   opsTaskReplyAuditLarkMd: OPS_TASK_REPLY_AUDIT_LARK_MD,
   shouldSkipHrmsScheduledChecklist,
-});
-
-_opsChecklistCardsApi = createOpsChecklistCardsApi({
-  getOpsAgentConfig,
-});
-_opsChecklistProgress = _opsChecklistCardsApi.opsChecklistProgress;
-_tryCaptureOpsChecklistDetailFromChat = createTryCaptureOpsChecklistDetailFromChat({
-  opsChecklistProgress: _opsChecklistProgress,
   countOpsChecklistAbnormal,
-  sendLarkMessage,
-  prefixWithAgentName,
-});
-
-_followUpOverdueTasks = createFollowUpOverdueTasks({
-  pool,
-  getOpsAgentConfig,
-  sendLarkMessage,
-  prefixWithAgentName,
-  log,
-});
-
-
-
-_handleOpsChecklistCardAction = createHandleOpsChecklistCardAction({
-  pool,
   lookupFeishuUser,
-  sendLarkMessage,
-  sendLarkCard,
-  getSharedState,
-  resolveBrandContextByStore,
   getOpsChecklistProgressKey,
-  getOpsChecklistItems,
-  opsChecklistProgress: _opsChecklistProgress,
   buildOpsChecklistAbnormalItemsCard,
-  prefixWithAgentName,
-  formatChecklistTypeLabel,
-  countOpsChecklistAbnormal,
-  resolveTenantIdDefault,
-});
-
-_tryFeishuMarketingCopyRound = createTryFeishuMarketingCopyRound({
-  callLLM,
-  callVisionLLM,
-  sendLarkMessage,
-  prefixWithAgentName,
-  log,
-});
-
-_pushIssuesToFeishu = createPushIssuesToFeishu({
-  pool,
-  lookupFeishuUserByUsername,
   sendLarkCard,
-  sendLarkMessage,
-  prefixWithAgentName,
-  resolveTenantIdDefault,
-  log,
-});
-
-_feishuUserMessagingApi = createFeishuUserMessagingApi({
   getLarkTenantToken,
-  axios,
-  pool,
-  tenantContext,
-  getActiveTenantIds,
-  getSharedState,
   registerFeishuUser,
-  sendLarkMessage,
-  log,
-});
-
-let _sendPeriodReportsApi;
-_sendPeriodReportsApi = createSendPeriodReportsApi({
-  agentPool,
-  pool,
   reportStoresSeed: ALL_STORE_NAMES,
-  getSharedState,
-  lookupFeishuUserByUsername,
-  sendLarkCard,
-  sendLarkMessage,
-  prefixWithAgentName,
   generateWeeklyReport,
   generateMonthlyReport,
   formatReportMarkdown,
   calendarLastCompletedWeekMonSunShanghai,
   calendarPreviousMonthRangeShanghai,
-  resolveAgentCanonicalStore,
-  dailyReportIlikePatterns,
-  log,
-});
-
-_onFeishuEvent = createOnFeishuEvent({
-  pool,
-  lookupFeishuUser,
   tryAutoBindByName,
-  registerFeishuUser,
-  sendLarkMessage,
-  sendLarkCard,
   getLarkImageUrl,
   recognizeLarkAudio,
-  getSharedState,
-  resolveBrandContextByStore,
-  routeMessage,
   checkAgentPermission,
-  prefixWithAgentName,
   handleAgentMessage,
   handleOpsChecklistCardAction,
   tryCaptureOpsChecklistDetailFromChat,
-  tryFeishuMarketingCopyRound,
   detectOpsChecklistType,
   getTaskResponseHook: () => _taskResponseHook,
 });
 
-const {
-  extractScore,
-  validatePhotoAuthenticity,
-  validateSubmissionLogic,
-} = createOpsSubmissionValidation({
-  pool,
-  callVisionLLM,
-  log,
-});
-
-_pollBitableSubmissions = createPollBitableSubmissions({
-  pool,
-  bitableConfigs: BITABLE_CONFIGS,
-  processedRecordIds: _bitableProcessedRecordIds,
-  lastProcessedTime: _bitableLastProcessedTime,
-  seedBitableDedup,
-  getBitableRecords,
-  extractRelationsFromBitableRecord,
-  processBitableData,
-  validateSubmissionLogic,
-  validatePhotoAuthenticity,
-  getBitableRecordImageDownloadUrl,
-  callVisionLLM,
-  extractScore,
-  deduplicateMessage,
-  sendLarkMessage,
-  prefixWithAgentName,
-});
+_tableVisitMetricsApi = _agentsRuntimeWire.tableVisitMetricsApi;
+_marginMetricsApi = _agentsRuntimeWire.marginMetricsApi;
+_auditImage = _agentsRuntimeWire.auditImage;
+_getOpsKnowledgeSupport = _agentsRuntimeWire.getOpsKnowledgeSupport;
+_runDataAuditor = _agentsRuntimeWire.runDataAuditor;
+_runBiFunctionTool = _agentsRuntimeWire.runBiFunctionTool;
+_llmHealthSchedulerApi = _agentsRuntimeWire.llmHealthSchedulerApi;
+_invalidateTenantLlmConfigCache = _agentsRuntimeWire.invalidateTenantLlmConfigCache;
+_callLLM = _agentsRuntimeWire.callLLM;
+_callVisionLLM = _agentsRuntimeWire.callVisionLLM;
+_callVisionLLMVideo = _agentsRuntimeWire.callVisionLLMVideo;
+_biQueryHelpersApi = _agentsRuntimeWire.biQueryHelpersApi;
+_tryHandleBiByFunctionCalling = _agentsRuntimeWire.tryHandleBiByFunctionCalling;
+_buildBiDeterministicDailyReportReply = _agentsRuntimeWire.buildBiDeterministicDailyReportReply;
+_buildBiDeterministicSalesRawTopReply = _agentsRuntimeWire.buildBiDeterministicSalesRawTopReply;
+_buildBiDeterministicBadReviewReportReply = _agentsRuntimeWire.buildBiDeterministicBadReviewReportReply;
+_buildBiDeterministicDataSourceCoverageReply = _agentsRuntimeWire.buildBiDeterministicDataSourceCoverageReply;
+_buildBiDeterministicTableVisitReply = _agentsRuntimeWire.buildBiDeterministicTableVisitReply;
+_buildBiDeterministicOpsReportCountReply = _agentsRuntimeWire.buildBiDeterministicOpsReportCountReply;
+_buildBiDeterministicClosingReportReply = _agentsRuntimeWire.buildBiDeterministicClosingReportReply;
+_buildBiDeterministicOpeningReportReply = _agentsRuntimeWire.buildBiDeterministicOpeningReportReply;
+_buildBiDeterministicMaterialReportReply = _agentsRuntimeWire.buildBiDeterministicMaterialReportReply;
+_buildBiDeterministicMeetingReportReply = _agentsRuntimeWire.buildBiDeterministicMeetingReportReply;
+_buildBiDeterministicLossReportReply = _agentsRuntimeWire.buildBiDeterministicLossReportReply;
+_agentQualityAutonomyApi = _agentsRuntimeWire.agentQualityAutonomyApi;
+_routeMessage = _agentsRuntimeWire.routeMessage;
+_checkAgentQualityApi = _agentsRuntimeWire.checkAgentQualityApi;
+_handleAgentMessage = _agentsRuntimeWire.handleAgentMessage;
+_archiveOldBitableSubmissions = _agentsRuntimeWire.archiveOldBitableSubmissions;
+_bitableRecordsClient = _agentsRuntimeWire.bitableRecordsClient;
+_processBitableData = _agentsRuntimeWire.processBitableData;
+_getBitableSubmissionStats = _agentsRuntimeWire.getBitableSubmissionStats;
+_scheduledTaskRuntimeApi = _agentsRuntimeWire.scheduledTaskRuntimeApi;
+_buildScheduledTasksFromConfig = _agentsRuntimeWire.buildScheduledTasksFromConfig;
+_executeScheduledTask = _agentsRuntimeWire.executeScheduledTask;
+_sendSafetyCheck = _agentsRuntimeWire.sendSafetyCheck;
+_fetchStoreRatingForProfileDisplay = _agentsRuntimeWire.fetchStoreRatingForProfileDisplay;
+_runChiefEvaluator = _agentsRuntimeWire.runChiefEvaluator;
+_sendScheduledChecklist = _agentsRuntimeWire.sendScheduledChecklist;
+_opsChecklistCardsApi = _agentsRuntimeWire.opsChecklistCardsApi;
+_tryCaptureOpsChecklistDetailFromChat = _agentsRuntimeWire.tryCaptureOpsChecklistDetailFromChat;
+_followUpOverdueTasks = _agentsRuntimeWire.followUpOverdueTasks;
+_handleOpsChecklistCardAction = _agentsRuntimeWire.handleOpsChecklistCardAction;
+_pushIssuesToFeishu = _agentsRuntimeWire.pushIssuesToFeishu;
+_feishuUserMessagingApi = _agentsRuntimeWire.feishuUserMessagingApi;
+_sendPeriodReportsApi = _agentsRuntimeWire.sendPeriodReportsApi;
+_onFeishuEvent = _agentsRuntimeWire.onFeishuEvent;
+_pollBitableSubmissions = _agentsRuntimeWire.pollBitableSubmissions;
 
 
 // getLastSyncTime / checkTaskExecutionQuality / getRecentAuditCount → domains/agent-auditor/quality-checks.js
