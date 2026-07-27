@@ -316,6 +316,7 @@
     "domains/inventory-forecast/history-from-pos.js",
     "domains/inventory-forecast/normalize.js",
     "domains/inventory-forecast/predict-forecast-helpers.js",
+    "domains/inventory-forecast/product-alias-service.js",
     "domains/inventory-forecast/scope.js",
     "domains/inventory-forecast/state-upsert.js",
     "domains/inventory-forecast/upload-history-file-helpers.js",
