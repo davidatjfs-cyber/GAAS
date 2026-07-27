@@ -12,6 +12,7 @@
     "domains/approvals/service-lifecycle.js": { "lines": 80 },
     "domains/auth/service.js": { "lines": 80 },
     "domains/checkin/service.js": { "lines": 55 },
+    "domains/checkin/records-service.js": { "lines": 80 },
     "domains/daily-reports/service.js": { "lines": 80 },
     "domains/employees/service.js": { "lines": 80 },
     "domains/exam-results/service.js": { "lines": 80 },

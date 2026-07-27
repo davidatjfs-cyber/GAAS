@@ -224,6 +224,128 @@ test('listTodayCheckins: returns today records', async () => {
   assert.equal(result.records[0].type, 'clock_in');
 });
 
+test('listTodayCheckins: query failure returns server_error', async () => {
+  const result = await listTodayCheckins(
+    { pool: makePool(async () => { throw new Error('db unavailable'); }) },
+    { username: 'alice' }
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 500);
+  assert.equal(result.error, 'server_error');
+});
+
+test('listCheckinRecords: admin filters records and adds employee display name', async () => {
+  let queryParams;
+  const result = await listCheckinRecords(
+    {
+      pool: makePool(async (_sql, params) => {
+        queryParams = params;
+        return { rows: [{ username: 'alice', status: 'normal' }] };
+      }),
+      getSharedState: async () => ({
+        users: [{ username: 'boss', name: '老板' }],
+        employees: [{ username: 'alice', name: '爱丽丝' }],
+      }),
+      safeDateOnly: (value) => `date:${value}`,
+      loadActiveDutyRowsForUser: async () => [],
+      pickMyStoreFromState: () => '',
+    },
+    {
+      username: 'boss',
+      role: 'admin',
+      filterUser: 'alice',
+      filterStore: '测试店',
+      filterName: '爱丽',
+      start: '2026-07-01',
+      end: '2026-07-31',
+      filterStatus: 'normal',
+      tenantId: 'tenant-1',
+    }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.records[0].display_name, '爱丽丝');
+  assert.deepEqual(queryParams, [
+    'alice', '测试店', ['alice'], 'date:2026-07-01', 'date:2026-07-31', 'normal', 'tenant-1',
+  ]);
+});
+
+test('listCheckinRecords: store manager scopes multiple duty stores and optional user', async () => {
+  let queryParams;
+  const result = await listCheckinRecords(
+    {
+      pool: makePool(async (_sql, params) => {
+        queryParams = params;
+        return { rows: [] };
+      }),
+      getSharedState: async () => ({}),
+      loadActiveDutyRowsForUser: async () => [{ store: '店A' }, { store: '店B' }],
+      pickMyStoreFromState: () => '',
+    },
+    {
+      username: 'manager',
+      role: 'store_manager',
+      filterUser: 'alice',
+      filterStore: '',
+      filterName: '',
+      start: '',
+      end: '',
+      filterStatus: '',
+      tenantId: 'default',
+    }
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(queryParams, [['店A', '店B'], 'alice', 'default']);
+});
+
+test('listCheckinRecords: manager uses state store or self when duty lookup fails', async () => {
+  const seen = [];
+  const makeCtx = (store) => ({
+    pool: makePool(async (_sql, params) => {
+      seen.push(params);
+      return { rows: [] };
+    }),
+    getSharedState: async () => ({}),
+    loadActiveDutyRowsForUser: async () => { throw new Error('unavailable'); },
+    pickMyStoreFromState: () => store,
+  });
+  const input = {
+    username: 'manager', role: 'store_manager', filterUser: '', filterStore: '', filterName: '',
+    start: '', end: '', filterStatus: '', tenantId: 'default',
+  };
+  assert.equal((await listCheckinRecords(makeCtx('店A'), input)).ok, true);
+  assert.equal((await listCheckinRecords(makeCtx(''), input)).ok, true);
+  assert.deepEqual(seen, [['店A', 'default'], ['manager', 'default']]);
+});
+
+test('listCheckinRecords: unmatched name, missing user, and query failure', async () => {
+  const baseInput = {
+    username: 'alice', role: 'employee', filterUser: '', filterStore: '', start: '', end: '',
+    filterStatus: '', tenantId: 'default',
+  };
+  const unmatched = await listCheckinRecords(
+    {
+      pool: makePool(),
+      getSharedState: async () => ({ users: [] }),
+      loadActiveDutyRowsForUser: async () => [],
+      pickMyStoreFromState: () => '',
+    },
+    { ...baseInput, filterName: '不存在' }
+  );
+  assert.deepEqual(unmatched, { ok: true, records: [] });
+  const missing = await listCheckinRecords({}, { ...baseInput, username: '', filterName: '' });
+  assert.equal(missing.error, 'missing_user');
+  const failed = await listCheckinRecords(
+    {
+      pool: makePool(),
+      getSharedState: async () => { throw new Error('state unavailable'); },
+      loadActiveDutyRowsForUser: async () => [],
+      pickMyStoreFromState: () => '',
+    },
+    { ...baseInput, filterName: '' }
+  );
+  assert.equal(failed.error, 'server_error');
+});
+
 test('confirmCheckin: forbidden for employee role', async () => {
   const result = await confirmCheckin(
     {
@@ -382,6 +504,59 @@ test('getCheckinSummary: employee records include display_name and leave balance
   assert.equal(result.records[0].display_name, '爱丽丝');
   assert.ok(result.leaveBalances.alice);
   assert.equal(result.leaveBalances.alice.remaining, 3);
+});
+
+test('getCheckinSummary: admin and manager apply store scope', async () => {
+  const paramsSeen = [];
+  const ctx = {
+    pool: makePool(async (_sql, params) => {
+      paramsSeen.push(params);
+      return { rows: [] };
+    }),
+    getSharedState: async () => ({}),
+    pickMyStoreFromState: (_state, username) => (username === 'manager' ? '店A' : ''),
+    calcEmployeeMonthlyLeaveBalance: () => null,
+  };
+  assert.equal(
+    (await getCheckinSummary(ctx, {
+      username: 'admin', role: 'admin', filterStore: '总部店', month: '2026-07', tenantId: 't1',
+    })).ok,
+    true
+  );
+  assert.equal(
+    (await getCheckinSummary(ctx, {
+      username: 'manager', role: 'store_manager', filterStore: '', month: '2026-07', tenantId: 't1',
+    })).ok,
+    true
+  );
+  assert.deepEqual(paramsSeen, [
+    ['2026-07', '总部店', 't1'],
+    ['2026-07', '店A', 't1'],
+  ]);
+});
+
+test('getCheckinSummary: manager falls back to username and query failure is contained', async () => {
+  const fallback = await getCheckinSummary(
+    {
+      pool: makePool(async () => ({ rows: [{ username: 'unknown' }] })),
+      getSharedState: async () => ({ users: [] }),
+      pickMyStoreFromState: () => '',
+      calcEmployeeMonthlyLeaveBalance: () => null,
+    },
+    { username: 'manager', role: 'store_manager', filterStore: '', month: '2026-07', tenantId: 'default' }
+  );
+  assert.equal(fallback.ok, true);
+  assert.deepEqual(fallback.leaveBalances, {});
+  const failed = await getCheckinSummary(
+    {
+      pool: makePool(async () => { throw new Error('db unavailable'); }),
+      getSharedState: async () => ({}),
+      pickMyStoreFromState: () => '',
+      calcEmployeeMonthlyLeaveBalance: () => null,
+    },
+    { username: 'alice', role: 'employee', filterStore: '', month: '2026-07', tenantId: 'default' }
+  );
+  assert.equal(failed.error, 'server_error');
 });
 
 test('getMonthlyConfirm: returns all confirmations when month omitted', async () => {
