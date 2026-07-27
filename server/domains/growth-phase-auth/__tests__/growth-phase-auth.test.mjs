@@ -7,7 +7,7 @@ import {
   authPhaseApi,
   getPhaseApiTenantId,
   requirePhaseAuth,
-} from '../../growth-phase-auth.js';
+} from '../service.js';
 
 const JWT = 'test-jwt-growth-phase-auth';
 const SYNC = 'sync-secret-phase-auth';

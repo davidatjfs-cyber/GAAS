@@ -17,7 +17,7 @@ import { registerGrowthMenuHealthRoutes } from './domains/growth-menu-health/rou
 import {
   authPhaseApi,
   getPhaseApiTenantId,
-} from './domains/growth-phase-auth.js';
+} from './domains/growth-phase-auth/service.js';
 import { startGrowthPhaseCrons } from './domains/growth-phases/phase-cron.js';
 import { startPosFeishuSyncCron } from './domains/growth-phases/phase-pos-sync-cron.js';
 
