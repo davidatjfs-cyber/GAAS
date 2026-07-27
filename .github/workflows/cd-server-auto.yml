@@ -1,6 +1,7 @@
 # P1.3：CI 绿 → 自动部署变更的 server/domains|utils|services 文件 → 健康检查 → 失败回滚
 # 默认关闭：需在仓库 Settings → Variables 设 CD_AUTO_ENABLED=true，并配置 DEPLOY_SSH_KEY。
 # 巨石入口（index/agents/growth-api）永不自动覆盖。
+# deploy-server-files.sh 使用打包单次传输，避免逐文件 scp 在慢链路上超时。
 name: CD server (auto)
 
 on:
@@ -21,6 +22,8 @@ jobs:
       vars.CD_AUTO_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: production
+    # 超时必须失败（failure），不要变成 cancelled——cancelled 不会触发告警
+    timeout-minutes: 25
     steps:
       - name: Checkout the green commit
         uses: actions/checkout@v4
@@ -66,7 +69,11 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "files=${ALLOWED[*]}" >> "$GITHUB_OUTPUT"
+          {
+            echo "files<<EOF"
+            printf '%s\n' "${ALLOWED[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
           printf 'will deploy:\n'
           printf '  %s\n' "${ALLOWED[@]}"
@@ -81,7 +88,13 @@ jobs:
             echo "::error::缺少 secrets.DEPLOY_SSH_KEY。见 docs/cd-server.md"
             exit 1
           fi
+          # 粗检：必须像私钥
+          if ! printf '%s' "$DEPLOY_SSH_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
+            echo "::error::DEPLOY_SSH_KEY 不像私钥（缺少 BEGIN PRIVATE KEY）。请用 gh secret set DEPLOY_SSH_KEY < keyfile 重新配置"
+            exit 1
+          fi
           echo "DEPLOY_HOST=${DEPLOY_HOST:-root@47.100.96.30}"
+          echo "DEPLOY_SSH_KEY_BYTES=$(printf '%s' "$DEPLOY_SSH_KEY" | wc -c | tr -d ' ')"
 
       - name: SSH setup
         if: steps.files.outputs.skip != 'true'
@@ -92,23 +105,31 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
+          # 保留 secret 原文换行；确保末尾有换行（OpenSSH 要求）
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
           if [ -n "${DEPLOY_KNOWN_HOSTS:-}" ]; then
             printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           else
-            ssh-keyscan -T 10 47.100.96.30 >> ~/.ssh/known_hosts 2>/dev/null || true
+            ssh-keyscan -T 15 47.100.96.30 >> ~/.ssh/known_hosts 2>/dev/null || true
           fi
           chmod 600 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o ConnectTimeout=20 root@47.100.96.30 'echo SSH_OK'
 
-      - name: Deploy via deploy-server-files.sh (auto-rollback on health fail)
+      - name: Deploy via deploy-server-files.sh (tar bundle + auto-rollback)
         if: steps.files.outputs.skip != 'true'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          FILES: ${{ steps.files.outputs.files }}
+          FILES_MULTILINE: ${{ steps.files.outputs.files }}
         run: |
           set -euo pipefail
           export DEPLOY_HOST="${DEPLOY_HOST:-root@47.100.96.30}"
           export DRY_RUN=0
-          # shellcheck disable=SC2086
-          bash scripts/deploy-server-files.sh $FILES
+          export SKIP_PROD_DIFF=1
+          mapfile -t FILES < <(printf '%s\n' "$FILES_MULTILINE" | sed '/^$/d')
+          if [[ ${#FILES[@]} -eq 0 ]]; then
+            echo "::error::empty file list after resolve"
+            exit 1
+          fi
+          bash scripts/deploy-server-files.sh "${FILES[@]}"

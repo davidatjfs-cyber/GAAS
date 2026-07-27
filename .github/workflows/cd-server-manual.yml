@@ -21,8 +21,8 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # 可选：在 Settings → Environments 建 production 并加审阅后取消下一行注释
-    # environment: production
+    timeout-minutes: 25
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +69,10 @@ jobs:
             echo "文档见 docs/cd-server.md"
             exit 1
           fi
+          if ! printf '%s' "$DEPLOY_SSH_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
+            echo "::error::DEPLOY_SSH_KEY 不像私钥（缺少 BEGIN PRIVATE KEY）"
+            exit 1
+          fi
           echo "DEPLOY_HOST=${DEPLOY_HOST:-root@47.100.96.30}"
 
       - name: SSH setup
@@ -81,14 +85,16 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
           if [ -n "${DEPLOY_KNOWN_HOSTS:-}" ]; then
             printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           else
-            ssh-keyscan -T 10 47.100.96.30 >> ~/.ssh/known_hosts 2>/dev/null || true
+            ssh-keyscan -T 15 47.100.96.30 >> ~/.ssh/known_hosts 2>/dev/null || true
           fi
           chmod 600 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o ConnectTimeout=20 root@47.100.96.30 'echo SSH_OK'
 
-      - name: Deploy via deploy-server-files.sh
+      - name: Deploy via deploy-server-files.sh (tar bundle)
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DRY_RUN_INPUT: ${{ inputs.dry_run }}
