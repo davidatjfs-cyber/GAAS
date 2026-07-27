@@ -459,6 +459,7 @@
     "services/tenant-health-incident/notification-actions.js",
     "domains/data-executor/time-range.js",
     "domains/data-executor/metric-query-executors.js",
-    "domains/knowledge/knowledge-groups.js"
+    "domains/knowledge/knowledge-groups.js",
+    "domains/app/routes.js"
   ]
 }
