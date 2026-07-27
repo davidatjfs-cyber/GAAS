@@ -168,20 +168,40 @@ hr-management-system/
 
 ## 🚀 快速开始
 
-1. **克隆项目**
+> 本项目是 Node.js/Express + PostgreSQL 服务（不是纯静态站点），需要 **Node.js >= 22**（见 `.nvmrc` / `package.json#engines`，CI 强制校验）。
+
+1. **克隆并安装依赖**（根 workspace，会连带安装 `server/` 子包）
    ```bash
-   cd /Users/xieding/windsure/hr-management-system
+   git clone https://github.com/davidatjfs-cyber/GAAS.git
+   cd GAAS
+   npm install
    ```
 
-2. **启动本地服务器**
+2. **配置环境变量**
    ```bash
-   python3 -m http.server 8080
+   cp server/.env.example server/.env
+   # 编辑 server/.env，至少填入 DATABASE_URL（本地/测试库）和 JWT_SECRET
+   ```
+   完整变量清单及用途见 [`server/.env.example`](server/.env.example)。
+
+3. **初始化数据库表结构**（连到你自己的空库；生产库需要 `ALLOW_PRODUCTION_MIGRATE=true`，见脚本内注释）
+   ```bash
+   npm run migrate
    ```
 
-3. **访问系统**
+4. **启动服务**
+   ```bash
+   npm start
+   # 等价于：cd server && node index.js
    ```
-   http://localhost:8080
+   默认监听 `server/.env` 里的 `PORT`（生产为 3000）。
+
+5. **跑测试**（不需要真实数据库/密钥即可跑单元测试；集成测试需要本地 Postgres）
+   ```bash
+   npm test
    ```
+
+> PM2 生产进程管理见根目录 [`ecosystem.config.cjs`](ecosystem.config.cjs)；线上部署流程见 [`docs/cd-server.md`](docs/cd-server.md)。
 
 ## 📊 数据库设计
 

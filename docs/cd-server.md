@@ -62,3 +62,32 @@ Actions → **CD server (manual)** → Run workflow：
 scp root@47.100.96.30:/opt/hrms-archive/deploy-bak/server-<ts>/server/domains/foo/bar.js /tmp/
 ./scripts/deploy-server-files.sh server/domains/foo/bar.js
 ```
+
+## 进程管理：ecosystem.config.cjs
+
+PM2 启动参数（`instances`/`exec_mode`/`max_memory_restart` 等）现固化在根目录
+[`ecosystem.config.cjs`](../ecosystem.config.cjs)（2026-07-28 前一直是手敲 `pm2 start` 命令，从未进版本控制，
+灾备重建只能靠 `pm2 describe` 反推）。真实密钥仍只放 `/opt/hrms/server/.env`，不进这个文件。
+
+日常改代码部署走 `deploy-server-files.sh`（内部用 `pm2 reload`），**不需要**碰这个文件。
+只有整机重建/进程被误删时才需要：
+
+```bash
+cd /opt/hrms && pm2 delete hrms-service 2>/dev/null; pm2 start ecosystem.config.cjs --update-env
+```
+
+## 已知坑（2026-07 全量部署踩过，`deploy-server-files.sh` 本身不受影响）
+
+以下两个问题出现在**手工用 tar 打包整个 `server/` 目录做一次性大批量迁移**时（而不是
+`deploy-server-files.sh` 的逐文件 scp 路径），记录下来避免以后重复踩：
+
+1. **`tar --exclude` 必须锚定路径，不能只写目录名**：`tar --exclude='uploads' --exclude='reports'`
+   会匹配任意深度下同名目录，误伤了真实代码目录 `server/domains/uploads/` 和 `server/domains/reports/`，
+   导致换包上线后进程直接 `ERR_MODULE_NOT_FOUND`。必须用带路径前缀的排除规则
+   （如 `--exclude='server/uploads'`，或确保 `-C` 根目录设置正确后用 `--exclude='/uploads'`）。
+2. **`comm` 对比文件清单前，两边必须用同一 locale 排序**：`sort` 在不同 locale 下排序结果不同，
+   两侧列表分别排序后传给 `comm -23`/`comm -13` 会产生假阳性的"缺失文件"。两边一律
+   `LC_ALL=C sort` 再比较。
+
+结论：批量迁移这类非常规操作要格外谨慎地做全量校验（文件级 diff + md5），不要只信 `tar` 的
+exit code 或粗略的行数对比。
