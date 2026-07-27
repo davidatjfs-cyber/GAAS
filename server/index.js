@@ -13,6 +13,7 @@ import { getActiveTenantIds, tenantContext, resolveTenantIdDefault, runWithBoots
 import { registerAuthRoutes } from './auth-routes.js';
 import { registerApprovalRoutes } from './approval-routes.js';
 import { registerApplicationRoutes } from './domains/app/routes.js';
+import { createApplicationRouteDeps } from './domains/app/create-application-route-deps.js';
 import {
   registerApprovalDecideRoutes,
   registerApprovalLifecycleRoutes,
@@ -1352,7 +1353,7 @@ registerHealthRoutes(app, {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-const applicationRouteDeps = {
+const applicationRouteDeps = createApplicationRouteDeps({
   DATABASE_URL,
   JWT_SECRET,
   addStateNotification,
@@ -1546,7 +1547,7 @@ const applicationRouteDeps = {
   upsertTableVisitRecordFromMapped,
   verifyFeishuWebhookRequest,
   verifyLLMHealth,
-};
+});
 
 registerApplicationRoutes(app, applicationRouteDeps);
 

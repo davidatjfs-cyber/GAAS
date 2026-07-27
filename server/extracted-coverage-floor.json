@@ -493,6 +493,7 @@
     "domains/knowledge/knowledge-groups.js",
     "domains/knowledge/explanations.js",
     "domains/app/routes.js",
+    "domains/app/create-application-route-deps.js",
     "domains/store-scoring/store-match-helpers.js",
     "domains/store-scoring/config.js",
     "domains/store-scoring/store-rating.js",
