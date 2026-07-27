@@ -23,6 +23,9 @@ import { randomUUID } from 'crypto';
 import { resolveTenantIdDefault } from './utils/database.js';
 import { getRuntimePromptPatch, recordAiInteraction } from './services/ai-quality-learning-service.js';
 import { childLogger } from './utils/logger.js';
+import { extractTimeRangeFromText, parseTimeRange } from './domains/data-executor/time-range.js';
+
+export { extractTimeRangeFromText, parseTimeRange } from './domains/data-executor/time-range.js';
 
 const log = childLogger({ domain: 'data-executor' });
 
@@ -155,37 +158,6 @@ export async function updateMetricVersion(metricId, changes, changedBy) {
     log.error({ msg: 'update_metric_version_failed', err: e?.message });
     return { ok: false, error: e?.message };
   }
-}
-
-// ── 3. 时间范围解析 ──────────────────────────────────────────
-
-export function parseTimeRange(timeRange) {
-  if (!timeRange) {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    const today = `${y}-${m}-${d}`;
-    return { start: today, end: today, label: '今天' };
-  }
-  // 支持 "2026-02" 月格式
-  if (/^\d{4}-\d{2}$/.test(timeRange)) {
-    const [y, m] = timeRange.split('-');
-    const start = `${y}-${m}-01`;
-    const lastDay = new Date(Number(y), Number(m), 0).getDate();
-    const end = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
-    return { start, end, label: `${y}年${m}月` };
-  }
-  // 支持 "2026-02-01~2026-02-28" 范围格式
-  if (/^\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2}$/.test(timeRange)) {
-    const [start, end] = timeRange.split('~');
-    return { start, end, label: `${start} 至 ${end}` };
-  }
-  // 支持单日 "2026-02-14"
-  if (/^\d{4}-\d{2}-\d{2}$/.test(timeRange)) {
-    return { start: timeRange, end: timeRange, label: timeRange };
-  }
-  return { start: timeRange, end: timeRange, label: timeRange };
 }
 
 // ── 4. 门店名标准化（模糊匹配） ──────────────────────────────
@@ -720,149 +692,6 @@ export function logExecutorEvent(event, data) {
     safe[k] = v === undefined ? null : v;
   }
   log.info({ msg: 'executor_event', event, ...safe });
-}
-
-// ── 15. 自然语言时间范围提取 ─────────────────────────────────
-//  对齐 agents.js 中 resolveDateRangeFromQuestion 的逻辑
-//  返回 "YYYY-MM-DD~YYYY-MM-DD" 格式字符串，供 executeMetrics 使用
-
-export function extractTimeRangeFromText(text) {
-  const q = String(text || '').trim();
-  const now = new Date();
-  const ms = 86400000;
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  function fmt(d) {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-
-  // ── 新增：日期范围识别（优先级最高）──────────────────────────
-  // 支持 "15-22号"、"15号-22号"、"15日-22日"、"2月15日-22日"、"2月15-22号" 等
-  const rangePatterns = [
-    // "2月15日-22日" / "2月15-22号" / "2月15日至22日"
-    /(\d{1,2})[月](\d{1,2})(?:[日号])?[-~至到](\d{1,2})[日号]/,
-    // "15-22号" / "15号-22号" / "15日-22日" / "15至22号"
-    /(\d{1,2})(?:[日号])?[-~至到](\d{1,2})[日号]/,
-    // "2月15日-2月22日"
-    /(\d{1,2})[月](\d{1,2})[日号][-~至到](\d{1,2})[月](\d{1,2})[日号]/
-  ];
-
-  for (const pattern of rangePatterns) {
-    const match = q.match(pattern);
-    if (match) {
-      let startMonth, startDay, endMonth, endDay;
-      
-      if (match.length === 4 && pattern.source.includes('月')) {
-        // "2月15日-22日" 或 "2月15-22号"
-        startMonth = parseInt(match[1], 10);
-        startDay = parseInt(match[2], 10);
-        endMonth = startMonth;
-        endDay = parseInt(match[3], 10);
-      } else if (match.length === 5) {
-        // "2月15日-2月22日"
-        startMonth = parseInt(match[1], 10);
-        startDay = parseInt(match[2], 10);
-        endMonth = parseInt(match[3], 10);
-        endDay = parseInt(match[4], 10);
-      } else {
-        // "15-22号" / "15日-22日"
-        startMonth = now.getMonth() + 1;
-        startDay = parseInt(match[1], 10);
-        endMonth = startMonth;
-        endDay = parseInt(match[2], 10);
-      }
-
-      const year = now.getFullYear();
-      const start = new Date(year, startMonth - 1, startDay);
-      const end = new Date(year, endMonth - 1, endDay);
-      
-      return {
-        timeRange: `${fmt(start)}~${fmt(end)}`,
-        label: `${startMonth}月${startDay}日-${endMonth === startMonth ? '' : endMonth + '月'}${endDay}日`
-      };
-    }
-  }
-
-  if (/今[天日]/.test(q)) {
-    const s = fmt(today);
-    return { timeRange: `${s}~${s}`, label: '今日' };
-  }
-  if (/昨[天日]/.test(q)) {
-    const y = new Date(today - ms);
-    const s = fmt(y);
-    return { timeRange: `${s}~${s}`, label: '昨日' };
-  }
-  if (/前[天日]/.test(q)) {
-    const d = new Date(today - 2 * ms);
-    const s = fmt(d);
-    return { timeRange: `${s}~${s}`, label: '前天' };
-  }
-  if (/上周/.test(q)) {
-    const dow = today.getDay() || 7; // 1=周一 ... 7=周日
-    const mon = new Date(+today - (dow - 1 + 7) * ms); // 上周一
-    const sun = new Date(+mon + 6 * ms);               // 上周日
-    return { timeRange: `${fmt(mon)}~${fmt(sun)}`, label: '上周' };
-  }
-  if (/本周/.test(q)) {
-    const dow = today.getDay() || 7;
-    const mon = new Date(today - (dow - 1) * ms);
-    return { timeRange: `${fmt(mon)}~${fmt(today)}`, label: '本周' };
-  }
-  if (/上[个]?月/.test(q)) {
-    const firstThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastLastMonth = new Date(firstThisMonth - ms);
-    const firstLastMonth = new Date(lastLastMonth.getFullYear(), lastLastMonth.getMonth(), 1);
-    return { timeRange: `${fmt(firstLastMonth)}~${fmt(lastLastMonth)}`, label: '上月' };
-  }
-  if (/本月/.test(q)) {
-    const s = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
-    return { timeRange: `${s}~${fmt(today)}`, label: '本月' };
-  }
-  // 近N天
-  const nm = q.match(/近\s*(\d+)\s*天/);
-  if (nm) {
-    const n = parseInt(nm[1], 10) || 7;
-    return { timeRange: `${fmt(new Date(today - (n - 1) * ms))}~${fmt(today)}`, label: `近${n}天` };
-  }
-  // 具体月份 "2月" "2月份" "二月"
-  const chMonthMap = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12 };
-  const chMonthMatch = q.match(/(十[一二]|[一二三四五六七八九十])[月]/);
-  if (chMonthMatch) {
-    const mNum = chMonthMap[chMonthMatch[1]];
-    if (mNum) {
-      const y = now.getFullYear();
-      const s = `${y}-${String(mNum).padStart(2, '0')}-01`;
-      const lastDay = new Date(y, mNum, 0).getDate();
-      const e = `${y}-${String(mNum).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-      return { timeRange: `${s}~${e}`, label: `${mNum}月` };
-    }
-  }
-  // 具体单日："2月15日"、"3月1号" — 必须在 numMonthMatch 之前，否则"2月"会先匹配
-  const singleDayMatch = q.match(/(\d{1,2})[月](\d{1,2})[日号]/);
-  if (singleDayMatch) {
-    const mNum = parseInt(singleDayMatch[1], 10);
-    const dNum = parseInt(singleDayMatch[2], 10);
-    if (mNum >= 1 && mNum <= 12 && dNum >= 1 && dNum <= 31) {
-      const y = now.getFullYear();
-      const s = `${y}-${String(mNum).padStart(2, '0')}-${String(dNum).padStart(2, '0')}`;
-      return { timeRange: `${s}~${s}`, label: `${mNum}月${dNum}日` };
-    }
-  }
-  // 数字月份 "3月" "3月份"
-  const numMonthMatch = q.match(/(\d{1,2})[月]/);
-  if (numMonthMatch) {
-    const mNum = parseInt(numMonthMatch[1], 10);
-    if (mNum >= 1 && mNum <= 12) {
-      const y = now.getFullYear();
-      const s = `${y}-${String(mNum).padStart(2, '0')}-01`;
-      const lastDay = new Date(y, mNum, 0).getDate();
-      const e = `${y}-${String(mNum).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-      return { timeRange: `${s}~${e}`, label: `${mNum}月` };
-    }
-  }
-  // 默认：近7天
-  const defaultStart = fmt(new Date(today - 6 * ms));
-  return { timeRange: `${defaultStart}~${fmt(today)}`, label: '近7天' };
 }
 
 // ── 16. LLM 调用桥接（注入方式，避免循环依赖）─────────────────
