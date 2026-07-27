@@ -77,6 +77,11 @@ import { createAiQualitySchedulerHandlers } from './domains/shared/ai-quality-sc
 import { runModuleLoadSchemaEnsure } from './domains/shared/module-load-schema-ensure.js';
 import { startBackgroundRuntimeMonitors } from './domains/shared/startup-background-monitors.js';
 import {
+  runHrmsCliSyncTableVisitIfRequested,
+  runHttpListenBootstrap,
+  startPostRouteModuleLoadRuntime,
+} from './domains/shared/startup-listen-or-cli.js';
+import {
   inferContentType,
   buildInlineContentDisposition,
 } from './domains/uploads/content-type.js';
