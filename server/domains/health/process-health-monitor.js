@@ -1,3 +1,4 @@
+/* cd-canary: tar-bundle deploy 2026-07-27 */
 /**
  * 进程健康监视：启动时扫 PM2 日志找「非 SIGINT」异常退出；运行中盯内存压线。
  */
