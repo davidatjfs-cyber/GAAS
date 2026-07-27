@@ -66,6 +66,7 @@ import { createAuditImage } from './domains/agent-ops/audit-image.js';
 import { createTryFeishuMarketingCopyRound } from './domains/agent-message/marketing-copy.js';
 import { createCheckAgentQualityApi } from './domains/agent-message/check-agent-quality.js';
 import { createAgentQualityAutonomyApi } from './domains/agent-message/agent-quality-autonomy.js';
+import { createAgentMessageRuntime } from './domains/agent-message/runtime.js';
 import { parseFeishuMarketingCopyTemplate } from './domains/agent-message/marketing-copy-helpers.js';
 import { createGetOpsKnowledgeSupport } from './domains/agent-ops/knowledge-support.js';
 import { createSendScheduledChecklist } from './domains/agent-ops/send-scheduled-checklist.js';
@@ -783,83 +784,30 @@ export async function ensureAgentTables() {
 // 2. LLM Helpers & Context Management
 // ─────────────────────────────────────────────
 
-// 上下文缓存：存储最近的对话历史
-// M2-FIX: 添加最大用户数限制，防止内存泄漏
-const _conversationContext = new Map();
-const MAX_CONTEXT_LENGTH = 10;
-const MAX_CONTEXT_USERS = 500;
+// 上下文 / 响应缓存 / KB+Bitable 检索 → domains/agent-message/runtime*.js
+const _agentMessageRuntime = createAgentMessageRuntime({
+  pool,
+  resolveTenantIdDefault,
+  getSharedState: (...args) => getSharedState(...args),
+  log,
+});
+const {
+  getCachedResponse,
+  setCachedResponse,
+  updateContext,
+  getContext,
+  getEmployeePositionForKb,
+  performanceMetrics: _performanceMetrics,
+} = _agentMessageRuntime;
 
-// 响应缓存：避免重复调用LLM
-const _responseCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
-
-// 性能监控
-const _performanceMetrics = {
-  totalCalls: 0,
-  cacheHits: 0,
-  avgResponseTime: 0,
-  errorCount: 0
-};
-
-function getCachedResponse(cacheKey) {
-  const cached = _responseCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    _performanceMetrics.cacheHits++;
-    return cached.response;
-  }
-  return null;
+export async function queryKnowledgeBase(agent, query, limit = 5, options = {}) {
+  return _agentMessageRuntime.queryKnowledgeBase(agent, query, limit, options);
 }
-
-function setCachedResponse(cacheKey, response) {
-  _responseCache.set(cacheKey, {
-    response,
-    timestamp: Date.now()
-  });
-  
-  // 清理过期缓存
-  if (_responseCache.size > 100) {
-    const now = Date.now();
-    for (const [key, value] of _responseCache.entries()) {
-      if (now - value.timestamp > CACHE_TTL) {
-        _responseCache.delete(key);
-      }
-    }
-  }
+export async function queryBitableData(agent, query, limit = 10, options = {}) {
+  return _agentMessageRuntime.queryBitableData(agent, query, limit, options);
 }
-
-function updateContext(userId, role, content) {
-  const contextKey = `${resolveTenantIdDefault()}::${String(userId || '').trim().toLowerCase()}`;
-  if (!_conversationContext.has(contextKey)) {
-    _conversationContext.set(contextKey, []);
-  }
-  const context = _conversationContext.get(contextKey);
-  context.push({ role, content, timestamp: Date.now() });
-  
-  // 保持最近10轮对话
-  if (context.length > MAX_CONTEXT_LENGTH) {
-    context.shift();
-  }
-  
-  // 清理过期上下文（1小时）
-  const now = Date.now();
-  while (context.length > 0 && now - context[0].timestamp > 3600000) {
-    context.shift();
-  }
-  
-  // M2-FIX: 限制总用户数，淘汰最旧的用户上下文
-  if (_conversationContext.size > MAX_CONTEXT_USERS) {
-    let oldestKey = null, oldestTime = Infinity;
-    for (const [key, ctx] of _conversationContext.entries()) {
-      const lastTs = ctx.length > 0 ? ctx[ctx.length - 1].timestamp : 0;
-      if (lastTs < oldestTime) { oldestTime = lastTs; oldestKey = key; }
-    }
-    if (oldestKey) _conversationContext.delete(oldestKey);
-  }
-}
-
-function getContext(userId) {
-  const contextKey = `${resolveTenantIdDefault()}::${String(userId || '').trim().toLowerCase()}`;
-  return _conversationContext.get(contextKey) || [];
+export async function queryAgentData(agent, query, limit = 10, options = {}) {
+  return _agentMessageRuntime.queryAgentData(agent, query, limit, options);
 }
 
 // 质量审计 / 长期记忆 / 自治任务 → domains/agent-message/agent-quality-autonomy*.js
@@ -907,120 +855,6 @@ export async function callVisionLLM(imageUrl, prompt, opts = {}) {
 let _callVisionLLMVideo;
 export async function callVisionLLMVideo(videoUrl, prompt, opts = {}) {
   return _callVisionLLMVideo(videoUrl, prompt, opts);
-}
-
-
-async function getEmployeePositionForKb(username) {
-  const u = String(username || '').trim().toLowerCase();
-  if (!u) return '';
-  try {
-    const state = await getSharedState();
-    const employees = Array.isArray(state?.employees) ? state.employees : [];
-    const users = Array.isArray(state?.users) ? state.users : [];
-    const emp = employees.find((e) => String(e?.username || '').trim().toLowerCase() === u);
-    const usr = users.find((x) => String(x?.username || '').trim().toLowerCase() === u);
-    return String(emp?.position || usr?.position || '').trim();
-  } catch (e) {
-    return '';
-  }
-}
-
-export async function queryKnowledgeBase(agent, query, limit = 5, options = {}) {
-  // 委托给 RAG 多维知识库工具（兼容旧调用签名）
-  try {
-    let ragModule;
-    try { ragModule = await import('./rag-tool.js'); } catch (e) { /* fallback below */ }
-    if (ragModule?.ragQuery) {
-      const agentName = Array.isArray(agent) ? 'sop_advisor' : String(agent || 'master_agent').trim();
-      // 必须用用户问题检索 PDF 正文；旧逻辑在 agent 为数组时误用关键词拼接，导致 ILIKE 永远匹配不到上传内容
-      const queryStr = Array.isArray(query)
-        ? query.filter(Boolean).join(' ')
-        : (String(query || '').trim() || (Array.isArray(agent) ? agent.filter(Boolean).join(' ') : String(agent || '')));
-      const result = await ragModule.ragQuery({
-        agentName,
-        userRole: options?.userRole || 'admin',
-        userStore: options?.userStore ?? '',
-        userPosition: options?.userPosition ?? '',
-        skipKnowledgeAudienceFilter: options?.skipKnowledgeAudienceFilter !== false,
-        query: queryStr,
-        brandTag: options?.brandTag,
-        limit
-      });
-      return (result?.results || []).map((r) => ({
-        title: r.title,
-        content: r.content,
-        tags: r.tags,
-        created_at: r.createdAt
-      }));
-    }
-    // fallback: 直接查询
-    const brandTag = String(options?.brandTag || '').trim();
-    const r = await pool().query(
-      `SELECT title, content, tags, created_at FROM knowledge_base WHERE ($1 = '' OR tags && $1) AND (content ILIKE $2 OR title ILIKE $2) ORDER BY created_at DESC LIMIT $3`,
-      [brandTag, `%${query}%`, limit]
-    );
-    return r.rows || [];
-  } catch (e) {
-    log.error('[agents] queryKnowledgeBase error:', e?.message);
-    return [];
-  }
-}
-
-// Query Bitable data for all agents
-export async function queryBitableData(agent, query, limit = 10, options = {}) {
-  try {
-    const contentType = options?.contentType || '';
-    const configKey = options?.configKey || '';
-    
-    let whereClause = `content_type IN ('bitable_submission', 'table_visit', 'vision_analysis')`;
-    let params = [`%${query}%`, limit];
-    
-    if (contentType) {
-      whereClause += ` AND content_type = $${params.length + 1}`;
-      params.push(contentType);
-    }
-    
-    if (configKey) {
-      whereClause += ` AND agent_data::text ILIKE $${params.length + 1}`;
-      params.push(`%"configKey":"${configKey}"%`);
-    }
-    
-    const r = await pool().query(
-      `SELECT content, content_type, agent_data, created_at, sender_name
-       FROM agent_messages 
-       WHERE ${whereClause} 
-         AND (content ILIKE $1 OR agent_data::text ILIKE $1)
-       ORDER BY created_at DESC 
-       LIMIT $2`,
-      params
-    );
-    
-    return r.rows || [];
-  } catch (e) {
-    log.error('[agents] queryBitableData error:', e?.message);
-    return [];
-  }
-}
-
-// Unified query function for all agents
-export async function queryAgentData(agent, query, limit = 10, options = {}) {
-  const includeBitable = options?.includeBitable !== false;
-  const includeKnowledge = options?.includeKnowledge !== false;
-  
-  const results = {
-    knowledge: [],
-    bitable: []
-  };
-  
-  if (includeKnowledge) {
-    results.knowledge = await queryKnowledgeBase(agent, query, limit, options);
-  }
-  
-  if (includeBitable) {
-    results.bitable = await queryBitableData(agent, query, limit, options);
-  }
-  
-  return results;
 }
 
 // ─────────────────────────────────────────────
@@ -1831,8 +1665,8 @@ export function getAgentPerformanceMetrics() {
     ..._performanceMetrics,
     cacheHitRate: _performanceMetrics.totalCalls > 0 ? 
       (_performanceMetrics.cacheHits / _performanceMetrics.totalCalls * 100).toFixed(2) + '%' : '0%',
-    contextSize: _conversationContext.size,
-    cacheSize: _responseCache.size,
+    contextSize: _agentMessageRuntime.getContextSize(),
+    cacheSize: _agentMessageRuntime.getCacheSize(),
     quality: _agentQualityAutonomyApi ? _agentQualityAutonomyApi.getAgentQualityMetrics() : {},
     providerHealth: getProviderHealthStatus(),
     uptime: process.uptime()
@@ -1840,8 +1674,7 @@ export function getAgentPerformanceMetrics() {
 }
 
 export function clearAgentCache() {
-  _responseCache.clear();
-  _conversationContext.clear();
+  _agentMessageRuntime.clearCaches();
   log.info('[agents] Cache cleared');
 }
 
@@ -1899,16 +1732,7 @@ export async function runAgentEvalSuite({ createdBy = '', suiteName = 'default',
 
 // 定期清理过期缓存
 setInterval(() => {
-  const now = Date.now();
-  let cleaned = 0;
-  
-  for (const [key, value] of _responseCache.entries()) {
-    if (now - value.timestamp > CACHE_TTL) {
-      _responseCache.delete(key);
-      cleaned++;
-    }
-  }
-  
+  const cleaned = _agentMessageRuntime.clearExpiredResponseCache();
   if (cleaned > 0) {
     log.info(`[agents] Cleaned ${cleaned} expired cache entries`);
   }
