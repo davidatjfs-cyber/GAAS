@@ -15,7 +15,7 @@ export function createRecurringRewardScheduler(deps) {
     if (started) return;
     started = true;
     setInterval(() => {
-      void runMonthlyRecurringRewardTemplatesJob(deps, slotState).catch((e) =>
+      void runMonthlyRecurringRewardTemplatesJobImpl(deps, slotState).catch((e) =>
         log.error({ msg: 'recurring_reward_tick_failed', err: e?.message || String(e) })
       );
     }, 5 * 60 * 1000);
