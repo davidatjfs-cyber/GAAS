@@ -10,6 +10,10 @@ import {
   predictForecast,
   estimateRevenue,
 } from '../service.js';
+import {
+  loadGrossProfitHistory,
+  mergeDishLibraryCosts,
+} from '../gross-profit-helpers.js';
 
 function baseCtx(overrides = {}) {
   return {
@@ -244,4 +248,103 @@ test('predictForecast: happy path orchestrates helpers and persists state', asyn
   assert.equal(result.historyCount, 1);
   assert.ok(Array.isArray(result.predictions));
   assert.ok(saved?.inventoryForecastPredictions?.length >= 1);
+});
+
+test('mergeDishLibraryCosts: deduplicates configured products and adds valid Feishu costs', async () => {
+  const logs = [];
+  const ctx = baseCtx({
+    normalizeStoreKey: (value) => String(value).toLowerCase(),
+    forecastBrandToken: () => 'm',
+    normalizeProductName: (value) => String(value).trim().toLowerCase(),
+    pool: {
+      query: async (sql, params) => {
+        assert.match(sql, /dish_library_costs/);
+        assert.deepEqual(params, [['a'], 'm']);
+        return {
+          rows: [
+            { biz_type: 'dine_in', dish_name: '已配置', unit_cost: '5' },
+            { biz_type: 'dine_in', dish_name: '新增菜品', unit_cost: '8.125' },
+            { biz_type: 'dine_in', dish_name: '无效成本', unit_cost: '-1' },
+            { biz_type: 'dine_in', dish_name: '', unit_cost: '2' },
+          ],
+        };
+      },
+    },
+  });
+  const profiles = [{ product: '已配置', bizType: 'dine_in', costPerUnit: 4 }];
+
+  const result = await mergeDishLibraryCosts(ctx, profiles, {
+    brandName: '马己仙',
+    storeScope: ['A'],
+  }, {
+    includeSource: true,
+    log: { error: (entry) => logs.push(entry) },
+  });
+
+  assert.equal(result.length, 2);
+  assert.deepEqual(result[1], {
+    product: '新增菜品',
+    bizType: 'dine_in',
+    costPerUnit: 8.125,
+    source: 'feishu_bitable',
+  });
+  assert.deepEqual(logs, []);
+});
+
+test('mergeDishLibraryCosts: returns profiles when cost lookup fails', async () => {
+  const logs = [];
+  const profiles = [{ product: '原菜品' }];
+  const result = await mergeDishLibraryCosts(baseCtx({
+    normalizeStoreKey: (value) => value,
+    forecastBrandToken: () => '',
+    normalizeProductName: (value) => value,
+    pool: { query: async () => { throw new Error('db unavailable'); } },
+  }), profiles, {
+    brandName: '',
+    storeScope: ['A'],
+  }, {
+    log: { error: (entry) => logs.push(entry) },
+  });
+
+  assert.equal(result, profiles);
+  assert.equal(logs[0].msg, 'inventory_gross_profit_dish_costs_merge_failed');
+});
+
+test('loadGrossProfitHistory: loads POS rows and filters matching state history', async () => {
+  const state = {
+    inventoryForecastHistory: [
+      { store: 'A', bizType: 'dine_in', date: '2026-07-01' },
+      { store: 'A', bizType: 'delivery', date: '2026-07-01' },
+      { store: 'B', bizType: 'dine_in', date: '2026-07-01' },
+      { store: 'A', bizType: 'dine_in', date: '2026-06-01' },
+    ],
+  };
+  let mergeArgs;
+  const ctx = baseCtx({
+    loadInventoryForecastHistoryFromSalesRaw: async (input) => {
+      assert.deepEqual(input, {
+        storeScope: ['A'],
+        bizType: 'dine_in',
+        startDate: '2026-07-01',
+        endDate: '2026-07-31',
+      });
+      return [{ store: 'A', date: '2026-07-02' }];
+    },
+    inDateRange: (date, start, end) => date >= start && date <= end,
+    mergePreferredForecastHistoryRows: (...args) => {
+      mergeArgs = args;
+      return [{ merged: true }];
+    },
+  });
+
+  const result = await loadGrossProfitHistory(ctx, state, { storeScope: ['A'] }, {
+    bizType: 'dine_in',
+    startDate: '2026-07-01',
+    endDate: '2026-07-31',
+  });
+
+  assert.deepEqual(result, [{ merged: true }]);
+  assert.equal(mergeArgs[0].length, 1);
+  assert.deepEqual(mergeArgs[1], [{ store: 'A', bizType: 'dine_in', date: '2026-07-01' }]);
+  assert.equal(mergeArgs[2], 5000);
 });

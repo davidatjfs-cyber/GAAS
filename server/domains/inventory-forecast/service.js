@@ -9,6 +9,10 @@ import {
   buildPredictForecastOutput,
   persistPredictForecastState,
 } from './predict-forecast-helpers.js';
+import {
+  loadGrossProfitHistory,
+  mergeDishLibraryCosts,
+} from './gross-profit-helpers.js';
 import { runUploadHistoryFile } from './upload-history-file-helpers.js';
 export {
   listDishAliases,
@@ -435,45 +439,18 @@ export async function listGrossProfitProfiles(ctx, input) {
       });
       if (qBizType) items = items.filter((x) => String(x?.bizType || '').trim() === qBizType || !String(x?.bizType || '').trim());
 
-      // 合并飞书菜品库成本数据（dish_library_costs）
-      try {
-        const storeKeys = scope.storeScope.map(s => ctx.normalizeStoreKey(s));
-        // 按品牌过滤成本，避免两品牌同名菜成本互相污染（品牌从 scope/门店名前缀可靠推断；'*' 为通用兜底）。
-        const dlBrand = ctx.forecastBrandToken(`${scope.brandName||''}${(scope.storeScope||[]).join('')}`);
-        const dlParams = [storeKeys];
-        let dlBrandClause = '';
-        if (dlBrand) { dlParams.push(dlBrand); dlBrandClause = ` AND (brand=$${dlParams.length} OR brand='*')`; }
-        const dlR = await ctx.pool.query(`SELECT biz_type,dish_name,dish_price,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=ANY($1) OR store='*')${dlBrandClause}`, dlParams);
-        const existingKeys = new Set(items.map(x => `${normalizeForecastBizType(x?.bizType)||''}||${normalizeProductName(String(x?.product||'').trim())}`));
-        for (const r of (dlR.rows||[])) {
-          const biz = ctx.normalizeForecastBizType(r.biz_type) || '';
-          const name = String(r.dish_name||'').trim();
-          const nameNorm = ctx.normalizeProductName(name);
-          const cost = ctx.safeNumber(r.unit_cost);
-          if (!nameNorm || !Number.isFinite(cost) || cost < 0) continue;
-          const ek = `${biz}||${nameNorm}`;
-          if (!existingKeys.has(ek)) {
-            items.push({ product: name, bizType: biz, costPerUnit: Number(cost.toFixed(4)), source: 'feishu_bitable' });
-            existingKeys.add(ek);
-          }
-        }
-      } catch (e) { log.error({ msg: 'inventory_profiles_dish_costs_merge_failed', err: e?.message || String(e) }); }
+      items = await mergeDishLibraryCosts(ctx, items, scope, { includeSource: true, log });
 
       items.sort((a, b) => String(a?.product || '').localeCompare(String(b?.product || ''), 'zh-Hans-CN'));
 
       // Enrich with avg price from history for margin rate computation
       const today = new Date().toISOString().slice(0, 10);
-      const salesRawHistoryRows = await ctx.loadInventoryForecastHistoryFromSalesRaw({
-        storeScope: scope.storeScope,
+      const historyRows = await loadGrossProfitHistory(ctx, state0, scope, {
         bizType: qBizType || '',
         startDate: ctx.shiftForecastDate(today, -180),
-        endDate: today
+        endDate: today,
+        filterStateByRange: false,
       });
-      const stateHistoryRows = (Array.isArray(state0.inventoryForecastHistory) ? state0.inventoryForecastHistory : [])
-        .filter((x) => scope.storeScope.includes(String(x?.store || '').trim()))
-        .filter((x) => !qBizType || String(x?.bizType || '').trim() === qBizType)
-        .slice(0, 5000);
-      const historyRows = ctx.mergePreferredForecastHistoryRows(salesRawHistoryRows, stateHistoryRows, 5000);
       const aliasLookup = ctx.buildForecastProductAliasLookup(state0, { store: scope.store, brandId: scope.brandId });
       const priceMap = ctx.computeAvgPricePerProduct(historyRows, scope.storeScope, aliasLookup);
       const enriched = items.map((x) => {
@@ -515,15 +492,11 @@ export async function upsertGrossProfitProfiles(ctx, input) {
 
       // Compute avg prices for cost→gross conversion
       const today = new Date().toISOString().slice(0, 10);
-      const salesRawHistoryRows = await ctx.loadInventoryForecastHistoryFromSalesRaw({
-        storeScope: scope.storeScope,
+      const historyRows = await loadGrossProfitHistory(ctx, state0, scope, {
         startDate: ctx.shiftForecastDate(today, -180),
-        endDate: today
+        endDate: today,
+        filterStateByRange: false,
       });
-      const stateHistoryRows = (Array.isArray(state0.inventoryForecastHistory) ? state0.inventoryForecastHistory : [])
-        .filter((x) => scope.storeScope.includes(String(x?.store || '').trim()))
-        .slice(0, 5000);
-      const historyRows = ctx.mergePreferredForecastHistoryRows(salesRawHistoryRows, stateHistoryRows, 5000);
       const aliasLookup = ctx.buildForecastProductAliasLookup(state0, { store: scope.store, brandId: scope.brandId });
       const priceMap = ctx.computeAvgPricePerProduct(historyRows, scope.storeScope, aliasLookup);
 
@@ -686,33 +659,15 @@ export async function estimateGrossMargin(ctx, input) {
       const scope = ctx.resolveForecastScope(state0, username, role, input.body?.store, input.body?.brandId);
       if (!scope.brandId || !scope.storeScope.length) return { ok: false, status: 400, error: 'missing_brand_or_store_scope' };
 
-      const salesRawHistoryRows = await ctx.loadInventoryForecastHistoryFromSalesRaw({
-        storeScope: scope.storeScope,
+      const historyRows = await loadGrossProfitHistory(ctx, state0, scope, {
         bizType,
         startDate,
-        endDate
+        endDate,
       });
-      const stateHistoryRows = (Array.isArray(state0.inventoryForecastHistory) ? state0.inventoryForecastHistory : [])
-        .filter((x) => scope.storeScope.includes(String(x?.store || '').trim()))
-        .filter((x) => !bizType || String(x?.bizType || '').trim() === bizType)
-        .filter((x) => ctx.inDateRange(String(x?.date || '').trim(), startDate, endDate))
-        .slice(0, 5000);
-      const historyRows = ctx.mergePreferredForecastHistoryRows(salesRawHistoryRows, stateHistoryRows, 5000);
       let profiles = (Array.isArray(state0.forecastGrossProfitProfiles) ? state0.forecastGrossProfitProfiles : [])
         .filter((x) => ctx.normalizeBrandId(x?.brandId || ctx.resolveStoreBrandContext(state0, String(x?.store || '').trim()).brandId) === scope.brandId)
         .slice(0, 5000);
-      // 合并飞书菜品库成本
-      try {
-        const sk = scope.storeScope.map(s => ctx.normalizeStoreKey(s));
-        // 按品牌过滤成本，避免两品牌同名菜成本互相污染。
-        const dlBrand = ctx.forecastBrandToken(`${scope.brandName||''}${(scope.storeScope||[]).join('')}`);
-        const dlParams = [sk];
-        let dlBrandClause = '';
-        if (dlBrand) { dlParams.push(dlBrand); dlBrandClause = ` AND (brand=$${dlParams.length} OR brand='*')`; }
-        const dlR = await ctx.pool.query(`SELECT biz_type,dish_name,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=ANY($1) OR store='*')${dlBrandClause}`, dlParams);
-        const ek = new Set(profiles.map(x => `${normalizeForecastBizType(x?.bizType)||''}||${normalizeProductName(String(x?.product||'').trim())}`));
-        for (const r of (dlR.rows||[])) { const b=ctx.normalizeForecastBizType(r.biz_type)||''; const n=String(r.dish_name||'').trim(); const nNorm=ctx.normalizeProductName(n); const c=ctx.safeNumber(r.unit_cost); if(!nNorm||!Number.isFinite(c)||c<0) continue; const k=`${b}||${nNorm}`; if(!ek.has(k)){profiles.push({product:n,bizType:b,costPerUnit:Number(c.toFixed(4))});ek.add(k);} }
-      } catch (e) { log.error({ msg: 'inventory_margin_dish_costs_merge_failed', err: e?.message || String(e) }); }
+      profiles = await mergeDishLibraryCosts(ctx, profiles, scope, { log });
       const aliasLookup = ctx.buildForecastProductAliasLookup(state0, { store: scope.store, brandId: scope.brandId });
 
       const estimate = ctx.estimateGrossMarginByHistory({
