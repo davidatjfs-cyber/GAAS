@@ -311,6 +311,7 @@
     "domains/inventory-forecast/ai-forecast.js",
     "domains/inventory-forecast/calendar-config.js",
     "domains/inventory-forecast/create-helpers.js",
+    "domains/inventory-forecast/dish-alias-service.js",
     "domains/inventory-forecast/estimate.js",
     "domains/inventory-forecast/heuristic.js",
     "domains/inventory-forecast/history-from-pos.js",

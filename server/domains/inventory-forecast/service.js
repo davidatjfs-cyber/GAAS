@@ -12,6 +12,12 @@ import {
 } from './predict-forecast-helpers.js';
 import { runUploadHistoryFile } from './upload-history-file-helpers.js';
 export {
+  listDishAliases,
+  createDishAlias,
+  updateDishAlias,
+  deleteDishAlias,
+} from './dish-alias-service.js';
+export {
   listProductAliases,
   createProductAlias,
   updateProductAlias,
@@ -154,140 +160,6 @@ export async function uploadSalesRaw(ctx, input) {
       error: 'sales_raw_retired',
       message: '销售明细已改为自动同步（pos_order_items/pos_sales_detail），不再需要手工上传销售明细文件。'
     };
-}
-
-export async function listDishAliases(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可查看菜名别名规则' };
-    try {
-      const store = String(input.query?.store || '*').trim() || '*';
-      const bizType = ctx.normalizeDishAliasBizType(input.query?.bizType || '*');
-      const where = ['enabled = TRUE'];
-      const params = [];
-      if (store !== '*') {
-        params.push(store);
-        where.push(`(store = $${params.length} OR store = '*')`);
-      }
-      if (bizType !== '*') {
-        params.push(bizType);
-        where.push(`(biz_type = $${params.length} OR biz_type = '*')`);
-      }
-      const r = await ctx.pool.query(
-        `SELECT id, store, biz_type, alias_name, canonical_name, enabled, updated_at
-         FROM dish_name_aliases
-         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 2000`,
-        params
-      );
-      return { ok: true, items: r.rows || [] };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function createDishAlias(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可配置菜名别名规则' };
-    try {
-      const store = String(input.body?.store || '*').trim() || '*';
-      const bizType = ctx.normalizeDishAliasBizType(input.body?.bizType || '*');
-      const aliasName = String(input.body?.aliasName || '').trim();
-      const canonicalName = String(input.body?.canonicalName || '').trim();
-      if (!aliasName || !canonicalName) return { ok: false, status: 400, error: 'missing_params', message: 'aliasName/canonicalName 必填' };
-      const r = await ctx.pool.query(
-        `INSERT INTO dish_name_aliases (store, biz_type, alias_name, canonical_name, enabled, created_by, updated_by, updated_at, tenant_id)
-         VALUES ($1,$2,$3,$4,TRUE,$5,$5,NOW(),$6)
-         ON CONFLICT (store, biz_type, alias_name, tenant_id)
-         DO UPDATE SET canonical_name = EXCLUDED.canonical_name, enabled = TRUE, updated_by = EXCLUDED.updated_by, updated_at = NOW()
-         RETURNING id, store, biz_type, alias_name, canonical_name, enabled, updated_at`,
-        [store, bizType, aliasName, canonicalName, username, ctx.resolveTenantIdDefault()]
-      );
-      return { ok: true, item: r.rows?.[0] || null };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function updateDishAlias(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可修改菜名别名规则' };
-    try {
-      const id = Number(input.params?.id || 0);
-      if (!Number.isFinite(id) || id <= 0) return { ok: false, status: 400, error: 'invalid_id' };
-
-      const aliasName = String(input.body?.aliasName || '').trim();
-      const canonicalName = String(input.body?.canonicalName || '').trim();
-      const enabled = input.body?.enabled === undefined ? null : !!input.body.enabled;
-      const sets = [];
-      const vals = [];
-
-      if (aliasName) {
-        vals.push(aliasName);
-        sets.push(`alias_name = $${vals.length}`);
-      }
-      if (canonicalName) {
-        vals.push(canonicalName);
-        sets.push(`canonical_name = $${vals.length}`);
-      }
-      if (enabled !== null) {
-        vals.push(enabled);
-        sets.push(`enabled = $${vals.length}`);
-      }
-      vals.push(username);
-      sets.push(`updated_by = $${vals.length}`);
-      sets.push(`updated_at = NOW()`);
-      vals.push(id);
-
-      if (!sets.length) return { ok: false, status: 400, error: 'nothing_to_update' };
-      const r = await ctx.pool.query(
-        `UPDATE dish_name_aliases
-         SET ${sets.join(', ')}
-         WHERE id = $${vals.length}
-         RETURNING id, store, biz_type, alias_name, canonical_name, enabled, updated_at`,
-        vals
-      );
-      if (!r.rows?.length) return { ok: false, status: 404, error: 'not_found' };
-      return { ok: true, item: r.rows[0] };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function deleteDishAlias(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可删除菜名别名规则' };
-    try {
-      const id = Number(input.params?.id || 0);
-      if (!Number.isFinite(id) || id <= 0) return { ok: false, status: 400, error: 'invalid_id' };
-      const r = await ctx.pool.query(
-        `UPDATE dish_name_aliases
-         SET enabled = FALSE, updated_by = $1, updated_at = NOW()
-         WHERE id = $2
-         RETURNING id`,
-        [username, id]
-      );
-      if (!r.rows?.length) return { ok: false, status: 404, error: 'not_found' };
-      return { ok: true};
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
 }
 
 export async function listCoreProducts(ctx, input) {
