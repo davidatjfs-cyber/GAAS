@@ -1,0 +1,21 @@
+node_modules
+dist
+.DS_Store
+.env
+
+# Ignore the output video from Git but not videos you import into src/.
+out
+
+# 大体积素材（stock 视频/音频共约 104MB）不入 git：
+# 二进制进入 git 历史后无法真正移除，会永久拖慢 clone。
+# 如需版本化请用 git-lfs，或保留在对象存储/网盘。
+public/stock/
+public/audio/
+public/audio-v3/
+public/audio-v4/
+public/*.mp3
+public/*.mp4
+
+# 产品截图暂不入库：含真实门店经营数据（门店名/营业额/客单价/客流量/差评明细），
+# 本仓库为 PUBLIC。如需版本化请先脱敏，或改用私有存储。
+public/assets/
