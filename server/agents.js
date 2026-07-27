@@ -345,7 +345,7 @@ const _LARK_VERIFICATION_TOKEN = process.env.LARK_VERIFICATION_TOKEN || '';
 // Bitable Configuration - 支持多个配置
 const BITABLE_CONFIGS = {
   'ops_checklist': {
-    appId: process.env.BITABLE_OPS_APP_ID || 'cli_a91dae9f9578dcb1',
+    appId: process.env.BITABLE_OPS_APP_ID || (!_isProd ? 'cli_a91dae9f9578dcb1' : ''),
     appSecret: process.env.BITABLE_OPS_APP_SECRET || '',
     appToken: process.env.BITABLE_OPS_APP_TOKEN || 'PtVObRtoPaMAP3stIIFc8DnJngd',
     tableId: process.env.BITABLE_OPS_TABLE_ID || 'tblxHI9ZAKONOTpp',
@@ -355,7 +355,8 @@ const BITABLE_CONFIGS = {
     sortField: '["_id DESC"]'
   },
   'table_visit': {
-    appId: process.env.BITABLE_TABLEVISIT_APP_ID || 'cli_a9fc0d13c838dcd6',
+    // App ID：生产必须走 env（已配 BITABLE_*_APP_ID）；非生产保留本地开发兜底
+    appId: process.env.BITABLE_TABLEVISIT_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : ''),
     appSecret: process.env.BITABLE_TABLEVISIT_APP_SECRET || '',
     appToken: process.env.BITABLE_TABLEVISIT_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_TABLEVISIT_TABLE_ID || 'tblpx5Efqc6eHo3L',
@@ -365,7 +366,7 @@ const BITABLE_CONFIGS = {
     sortField: '["日期 DESC"]'
   },
   'bad_reviews': {
-    appId: process.env.BITABLE_TABLEVISIT_APP_ID || 'cli_a9fc0d13c838dcd6',
+    appId: process.env.BITABLE_TABLEVISIT_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : ''),
     appSecret: process.env.BITABLE_TABLEVISIT_APP_SECRET || '',
     appToken: process.env.BITABLE_TABLEVISIT_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: 'tblgReexNjWJOJB6',
@@ -375,7 +376,7 @@ const BITABLE_CONFIGS = {
     sortField: '["创建日期 DESC"]'
   },
   'closing_reports': {
-    appId: process.env.BITABLE_CLOSING_APP_ID || 'cli_a9fc0d13c838dcd6',
+    appId: process.env.BITABLE_CLOSING_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : ''),
     appSecret: process.env.BITABLE_CLOSING_APP_SECRET || '',
     appToken: process.env.BITABLE_CLOSING_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_CLOSING_TABLE_ID || 'tblXYfSBRrgNGohN',
@@ -385,7 +386,7 @@ const BITABLE_CONFIGS = {
     sortField: '["日期 DESC"]'
   },
   'opening_reports': {
-    appId: process.env.BITABLE_OPENING_APP_ID || 'cli_a9fc0d13c838dcd6',
+    appId: process.env.BITABLE_OPENING_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : ''),
     appSecret: process.env.BITABLE_OPENING_APP_SECRET || '',
     appToken: process.env.BITABLE_OPENING_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_OPENING_TABLE_ID || 'tbl32E6d0CyvLvfi',
@@ -395,7 +396,7 @@ const BITABLE_CONFIGS = {
     sortField: '["日期 DESC"]'
   },
   'meeting_reports': {
-    appId: process.env.BITABLE_MEETING_APP_ID || 'cli_a9fc0d13c838dcd6',
+    appId: process.env.BITABLE_MEETING_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : ''),
     appSecret: process.env.BITABLE_MEETING_APP_SECRET || '',
     appToken: process.env.BITABLE_MEETING_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_MEETING_TABLE_ID || 'tblZXgaU0LpSye2m',
@@ -405,7 +406,7 @@ const BITABLE_CONFIGS = {
     sortField: '["日期 DESC"]'
   },
   'material_majixian': {
-    appId: process.env.BITABLE_MATERIAL_MJX_APP_ID || 'cli_a9fc0d13c838dcd6',
+    appId: process.env.BITABLE_MATERIAL_MJX_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : ''),
     appSecret: process.env.BITABLE_MATERIAL_MJX_APP_SECRET || '',
     appToken: process.env.BITABLE_MATERIAL_MJX_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_MATERIAL_MJX_TABLE_ID || 'tblz4kW1cY22XRlL',
@@ -416,7 +417,7 @@ const BITABLE_CONFIGS = {
     sortField: '["日期 DESC"]'
   },
   'material_hongchao': {
-    appId: process.env.BITABLE_MATERIAL_HC_APP_ID || 'cli_a9fc0d13c838dcd6',
+    appId: process.env.BITABLE_MATERIAL_HC_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : ''),
     appSecret: process.env.BITABLE_MATERIAL_HC_APP_SECRET || '',
     appToken: process.env.BITABLE_MATERIAL_HC_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_MATERIAL_HC_TABLE_ID || 'tbllcV1evqTJyzlN',
@@ -427,7 +428,7 @@ const BITABLE_CONFIGS = {
     sortField: '["日期 DESC"]'
   },
   'loss_reports': {
-    appId: process.env.BITABLE_LOSS_APP_ID || 'cli_a9fc0d13c838dcd6',
+    appId: process.env.BITABLE_LOSS_APP_ID || (!_isProd ? 'cli_a9fc0d13c838dcd6' : ''),
     appSecret: process.env.BITABLE_LOSS_APP_SECRET || '',
     appToken: process.env.BITABLE_LOSS_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
     tableId: process.env.BITABLE_LOSS_TABLE_ID || 'tblLCxLO0ZbV7uyo',
@@ -440,7 +441,7 @@ const BITABLE_CONFIGS = {
     appId:
       process.env.BITABLE_TASK_RESP_APP_ID ||
       process.env.BITABLE_TABLEVISIT_APP_ID ||
-      'cli_a9fc0d13c838dcd6',
+      (!_isProd ? 'cli_a9fc0d13c838dcd6' : ''),
     appSecret:
       process.env.BITABLE_TASK_RESP_APP_SECRET ||
       process.env.BITABLE_TABLEVISIT_APP_SECRET ||
