@@ -16,9 +16,6 @@
  *   店长在飞书回复文字/照片/语音 → webhook → Agent 处理 → 飞书回复
  */
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import axios from 'axios';
 import { isAiQualityExternalEnabled, isExternalEnabled } from './safety.js';
 import crypto from 'crypto';
@@ -60,6 +57,7 @@ import { prefixWithAgentName } from './domains/agent-message/agent-prefix.js';
 import { checkAgentPermission } from './domains/agent-message/check-agent-permission.js';
 import { createRunAgentEvalSuite } from './domains/agent-message/eval-suite.js';
 import { buildFeishuCardFromAgentReply } from './domains/agent-message/feishu-reply-card.js';
+import { normalizePlainText } from './domains/agent-message/check-agent-quality-helpers.js';
 export { prefixWithAgentName };
 import { createLarkSendApi } from './domains/agent-feishu-bot/lark-send.js';
 import { clampInt } from './domains/agent-bi/bi-tool-period.js';
@@ -141,6 +139,10 @@ import {
 } from './domains/agent-bitable/configs.js';
 import { createQualityChecksApi } from './domains/agent-auditor/quality-checks.js';
 import { wireAgentsRuntime } from './domains/agent-runtime/wire.js';
+import { createEnsureAgentTables } from './domains/agent-runtime/ensure-agent-tables.js';
+import { createAssertCriticalFunctions } from './domains/agent-runtime/assert-critical-functions.js';
+import { createAgentPerformanceApi } from './domains/agent-runtime/agent-performance-api.js';
+import { formatDate } from './domains/agent-runtime/format-date.js';
 export { getProviderHealthStatus };
 
 const log = childLogger({ domain: 'agents' });
@@ -178,15 +180,8 @@ const {
 
 // Provider health / fallback chain → domains/ai/llm-provider-helpers.js
 
-function formatDate(d) {
-  const dt = d instanceof Date ? d : new Date(d);
-  if (isNaN(dt.getTime())) return '';
-  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
-}
-
-function normalizePlainText(text, maxLen = 1200) {
-  return String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
-}
+// formatDate → domains/agent-runtime/format-date.js
+// normalizePlainText → domains/agent-message/check-agent-quality-helpers.js
 
 // P2: clampInt / resolveToolPeriod / execBiTool* / runBiFunctionTool → domains/agent-bi/
 let _runBiFunctionTool;
@@ -373,31 +368,7 @@ export function pool() {
 let _taskResponseHook = null;
 export function setTaskResponseHook(fn) { _taskResponseHook = fn; }
 
-export async function ensureAgentTables() {
-  const dir = path.dirname(fileURLToPath(import.meta.url));
-  const runMig = async (name) => {
-    const migrationFile = path.join(dir, 'migrations', name);
-    const sql = fs.readFileSync(migrationFile, 'utf-8');
-    await pool().query(sql);
-    log.info('[agents] Migration', name, 'applied successfully');
-  };
-  try {
-    await runMig('005_agent_p0p2_tables.sql');
-  } catch (e) {
-    const code = String(e?.code || '');
-    if (code !== '23505') log.error('[agents] ensureAgentTables 005 failed:', e?.message || e);
-  }
-  try {
-    await runMig('010_hrms_perf_notifications.sql');
-  } catch (e) {
-    log.error('[agents] ensureAgentTables 010 failed:', e?.message || e);
-  }
-  try {
-    await runMig('012_agent_scores_base_score.sql');
-  } catch (e) {
-    log.error('[agents] ensureAgentTables 012 failed:', e?.message || e);
-  }
-}
+export const ensureAgentTables = createEnsureAgentTables({ pool, log });
 
 // ─────────────────────────────────────────────
 // 2. LLM Helpers & Context Management
@@ -686,27 +657,7 @@ async function sendSafetyCheck(config) {
 }
 
 
-/** 档案绩效展示周期：每月 10 日（上海）起展示上月整月；10 日前仍展示上上月（冻结） */
-function profilePerformanceDisplayPeriodShanghai() {
-  const ymd = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
-  const [y, m, d] = ymd.split('-').map((x) => parseInt(x, 10));
-  const pad = (n) => String(n).padStart(2, '0');
-  const subMonth = (yy, mm, delta) => {
-    let M = mm + delta;
-    let Y = yy;
-    while (M < 1) {
-      M += 12;
-      Y -= 1;
-    }
-    while (M > 12) {
-      M -= 12;
-      Y += 1;
-    }
-    return `${Y}-${pad(M)}`;
-  };
-  if (d >= 10) return subMonth(y, m, -1);
-  return subMonth(y, m, -2);
-}
+// profilePerformanceDisplayPeriodShanghai → domains/agent-records/service.js（agents.js 内重复定义已删）
 
 // 飞书发送 / 注册 / 绩效文案清洗 → domains/agent-feishu-bot/lark-send*.js
 let _larkSendApi;
@@ -990,31 +941,25 @@ export async function verifyLLMHealth(options = {}) {
   return _llmHealthSchedulerApi.verifyLLMHealth(options);
 }
 
-export function assertCriticalFunctions() {
-  const critical = [
-    ['resolveModelProvider', typeof resolveModelProvider],
-    ['getLLMClientConfig', typeof getLLMClientConfig],
-    ['checkAgentPermission', typeof checkAgentPermission],
-    ['callLLM', typeof callLLM],
-    ['callVisionLLM', typeof callVisionLLM],
-    ['routeMessage', typeof routeMessage],
-    ['handleAgentMessage', typeof handleAgentMessage],
-    ['sendLarkMessage', typeof sendLarkMessage],
-    ['buildFeishuCardFromAgentReply', typeof buildFeishuCardFromAgentReply],
-    ['resolveDateRangeFromQuestion', typeof resolveDateRangeFromQuestion],
-    ['formatDate', typeof formatDate],
-    ['isDataBackedReply', typeof isDataBackedReply],
-    ['buildKpiRadarAlertJson', typeof buildKpiRadarAlertJson],
-    ['buildBiDeterministicTableVisitReply', typeof buildBiDeterministicTableVisitReply],
-  ];
-  const missing = critical.filter(([, t]) => t !== 'function');
-  if (missing.length > 0) {
-    const msg = `[CRITICAL] Missing functions at startup: ${missing.map(([n]) => n).join(', ')}`;
-    log.error(msg);
-    throw new Error(msg);
-  }
-  log.info('[agents] Startup assertion passed: all critical functions defined');
-}
+export const assertCriticalFunctions = createAssertCriticalFunctions({
+  fns: {
+    resolveModelProvider,
+    getLLMClientConfig,
+    checkAgentPermission,
+    callLLM,
+    callVisionLLM,
+    routeMessage,
+    handleAgentMessage,
+    sendLarkMessage,
+    buildFeishuCardFromAgentReply,
+    resolveDateRangeFromQuestion,
+    formatDate,
+    isDataBackedReply,
+    buildKpiRadarAlertJson,
+    buildBiDeterministicTableVisitReply,
+  },
+  log,
+});
 
 export function trackLLMResult(ok) {
   return _llmHealthSchedulerApi.trackLLMResult(ok);
@@ -1029,25 +974,24 @@ export function startAgentScheduler() {
 }
 
 // ─────────────────────────────────────────────
-// 15. Performance Monitoring API
+// 15. Performance Monitoring API → domains/agent-runtime/agent-performance-api.js
 // ─────────────────────────────────────────────
 
+const _agentPerformanceApi = createAgentPerformanceApi({
+  performanceMetrics: _performanceMetrics,
+  agentMessageRuntime: _agentMessageRuntime,
+  getAgentQualityMetrics: () =>
+    (_agentQualityAutonomyApi ? _agentQualityAutonomyApi.getAgentQualityMetrics() : {}),
+  getProviderHealthStatus,
+  log,
+});
+
 export function getAgentPerformanceMetrics() {
-  return {
-    ..._performanceMetrics,
-    cacheHitRate: _performanceMetrics.totalCalls > 0 ? 
-      (_performanceMetrics.cacheHits / _performanceMetrics.totalCalls * 100).toFixed(2) + '%' : '0%',
-    contextSize: _agentMessageRuntime.getContextSize(),
-    cacheSize: _agentMessageRuntime.getCacheSize(),
-    quality: _agentQualityAutonomyApi ? _agentQualityAutonomyApi.getAgentQualityMetrics() : {},
-    providerHealth: getProviderHealthStatus(),
-    uptime: process.uptime()
-  };
+  return _agentPerformanceApi.getAgentPerformanceMetrics();
 }
 
 export function clearAgentCache() {
-  _agentMessageRuntime.clearCaches();
-  log.info('[agents] Cache cleared');
+  return _agentPerformanceApi.clearAgentCache();
 }
 
 export const runAgentEvalSuite = createRunAgentEvalSuite({
@@ -1056,13 +1000,7 @@ export const runAgentEvalSuite = createRunAgentEvalSuite({
   log,
 });
 
-// 定期清理过期缓存
-setInterval(() => {
-  const cleaned = _agentMessageRuntime.clearExpiredResponseCache();
-  if (cleaned > 0) {
-    log.info(`[agents] Cleaned ${cleaned} expired cache entries`);
-  }
-}, 10 * 60 * 1000); // 每10分钟清理一次
+_agentPerformanceApi.startExpiredCacheCleanup();
 
 /**
  * 兼容入口：路由已迁至 domains/agent-*（feishu-bot / data-center / ops / records / triggers）。
