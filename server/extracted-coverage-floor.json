@@ -226,6 +226,7 @@
     "domains/gm-mailbox/routes.js",
     "domains/growth-ab/ab-templates.js",
     "domains/growth-ab/dates.js",
+    "domains/growth-ab/learning-service.js",
     "domains/growth-ab/routes.js",
     "domains/growth-actions/helpers.js",
     "domains/growth-actions/service.js",
