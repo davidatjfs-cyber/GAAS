@@ -12,6 +12,7 @@ import { getActiveTenantIds, tenantContext, resolveTenantIdDefault, runWithBoots
 
 import { registerAuthRoutes } from './auth-routes.js';
 import { registerApprovalRoutes } from './approval-routes.js';
+import { registerApplicationRoutes } from './domains/app/routes.js';
 import {
   registerApprovalDecideRoutes,
   registerApprovalLifecycleRoutes,
@@ -1485,457 +1486,205 @@ registerHealthRoutes(app, {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-registerAuthRoutes(app, authRequired, loginRateLimit, {
-  pool,
-  JWT_SECRET,
+const applicationRouteDeps = {
   DATABASE_URL,
-  getSharedState,
-  normalizeRoleForJwt,
-  normalizeUsersTableRole,
-  employeeAccountShouldDisable,
-  getUserStoreAccessContext,
-  pickMyStoreFromState,
-  recordLogin,
-  recordLogout,
-  storeSessionNonce,
-  loadTenantRuntimeStatus,
-});
-
-registerAiChatCompletionsRoutes(app, authRequired);
-
-registerApprovalRoutes(app, authRequired, {
-  pool,
-  getSharedState,
-  saveSharedState,
-  stateOrDbFindUserRecord,
-  pickMyStoreFromState,
-  normalizeApprovalType,
-  safeDateOnly,
-  scheduleLeaveDomainSync,
-});
-
-registerApprovalLifecycleRoutes(app, authRequired, {
-  pool,
-  getSharedState,
-  saveSharedState,
-  mergeSharedStateFields,
-  hrmsNowISO,
-  makeNotif,
+  JWT_SECRET,
   addStateNotification,
+  agentPool,
   appendNotifications,
-  stateFindUserRecord,
-  stateOrDbFindUserRecord,
-  normalizeApprovalType,
-  normalizeRoleForJwt,
-  pickAdminUsername,
-  pickHqManagerUsername,
-  pickCashierUsername,
-  pickHrManagerUsername,
-  approvalTypeLabel,
-  safeDateOnly,
-  safeNumber,
-  uniqUsernames,
-  lookupFeishuUserByUsername,
-  sendLarkMessage,
-  getPaymentFlowForStore,
-  pickStoreRoleUsernameByStore,
-  isKitchenByRoleOrPosition,
-  resolveDutyApproverForStore,
-});
-
-registerApprovalDecideRoutes(app, authRequired, {
-  pool,
-  hrmsNowISO,
-  makeNotif,
-  appendNotifications,
-  getSharedState,
-  mergeSharedStateFields,
-  stateFindUserRecord,
-  uniqUsernames,
-  safeDateOnly,
-  safeNumber,
-  safeErrMessage,
-  safeBizMonth,
-  shanghaiTodayDateOnly,
-  toNullableUuid,
-  randomUUID,
-  buildOnboardingEmployeeRecordFromPayload,
-  createTrainingAssignment,
+  applyHrmsUserAccountGateFromEmployee,
   applyPromotionSalaryNextMonth,
-  insertSalaryTimeline,
+  approvalTypeLabel,
+  archiveOldBitableSubmissions,
+  authRequired,
+  axios,
+  backfillDailyAttendanceRegisterMissing,
+  bcrypt,
+  buildOnboardingEmployeeRecordFromPayload,
+  buildOpsFeedback,
+  calculateStoreRating,
+  callLLM,
+  callVisionLLM,
+  canAccessDailyAttendanceRegister,
+  checkStateOnlyDomainsIntegrityAllTenants,
+  clearAgentCache,
+  createFeishuBitableRecord,
+  createMirrorReconcileScheduler,
+  createTrainingAssignment,
+  cronJobLabelZh,
+  dbFindEmployeeRecord,
+  decryptFeishuEncryptPayload,
+  employeeAccountShouldDisable,
+  ensureUploadsDir,
+  express,
+  fetchStoreRatingForProfileDisplay,
+  fileRoutes,
+  findConfigKeyByTableInfo,
   findUserSalary,
-  upsertPayrollLedgerEntry,
-  resolveAttendancePayrollRules,
+  getActiveTenantIds,
+  getAgentPerformanceMetrics,
+  getAgentSharedState,
+  getAgentsServiceAdminToken,
+  getAgentsServiceBaseUrl,
+  getBitableSubmissionStats,
+  getBrandsFromState,
+  getCreditRisk,
+  getFeishuAccessToken,
+  getFeishuBitableData,
+  getFeishuTokenByConfig,
+  getLarkTenantToken,
+  getLastCompletedWeekRangeShanghai,
+  getPaymentFlowForStore,
   getPromotionRequiredTopics,
   getPromotionTrackProgress,
-  normalizePromotionTrainingPeriods,
-  approvalTypeLabel,
-  calcDateSpanDaysInclusive: leaveAttendanceHelpers.calcDateSpanDaysInclusive,
-  isKitchenByRoleOrPosition,
-  pickHqManagerUsername,
-  pickStoreRoleUsernameByStore,
-  lookupFeishuUserByUsername,
-  sendLarkMessage,
-  notifyAdminsDualWriteFailure,
-  bcrypt,
-});
-
-registerPayrollDomainRoutes(app, authRequired, {
-  pool,
-  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
-});
-
-registerEmployeesDomainRoutes(app, authRequired, {
-  pool,
-  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
-  applyAccountGate: applyHrmsUserAccountGateFromEmployee,
-  upload,
-  recordUploadOwnership,
-  uploadsDir,
-  resolveTenantIdDefault,
-});
-
-// 表权威 vs hrms_state 镜像日对账 + state-only 三域形状日检（见 mirror-reconcile-scheduler）
-{
-  const { startMirrorReconcileScheduler } = createMirrorReconcileScheduler({
-    pool,
-    getActiveTenantIds,
-    notifyAdminsDualWriteFailure,
-    reconcileEmployeesMirrorAllTenants,
-    reconcileFlowConfigMirrorAllTenants,
-    checkStateOnlyDomainsIntegrityAllTenants,
-  });
-  startMirrorReconcileScheduler();
-}
-
-registerFlowConfigRoutes(app, authRequired, {
-  pool,
-  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
+  getScheduledTaskStatus,
   getSharedState,
-});
-
-registerStoresDomainRoutes(app, authRequired, {
-  pool,
-  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
-});
-
-registerStoresCrudRoutes(app, authRequired, {
-  pool,
-  getSharedState,
-  saveSharedState,
-  resolveTenantIdDefault,
-  getCreditRisk,
+  getUserStoreAccessContext,
   hrmsNowISO,
-  normalizeBrandId,
-  getBrandsFromState,
-});
-
-registerBrandsRoutes(app, authRequired, {
-  getSharedState,
-  saveSharedState,
-  hrmsNowISO,
-  normalizeBrandId,
-  getBrandsFromState,
-});
-
-registerPaymentConfigRoutes(app, authRequired, {
-  pool,
-  getSharedState,
-  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
-});
-
-registerPaymentRoutes(app, authRequired, {
-  pool,
-  getSharedState,
-  hrmsNowISO,
-  safeMonthOnly,
-  safeDateOnly,
-  safeUuid,
-  safeNumber,
-});
-
-registerPermissionGroupsRoutes(app, authRequired, {
-  pool,
-  getSharedState,
-  saveSharedState,
-  mergeSharedStateFields,
-});
-
-registerUploadRoutes(app, authRequired, {
-  upload,
-  recordUploadOwnership,
-  pool,
-  uploadsDir,
-});
-
-registerOpsTasksRoutes(app, authRequired, {
-  pool,
-  safeDateOnly,
-  normalizeOpsRole,
-  buildOpsFeedback,
-});
-
-registerStoreDutyBindingsRoutes(app, authRequired, { pool });
-
-registerReadsRoutes(app, authRequired, {
-  pool,
-  getSharedState,
-  stateFindUserRecord,
-  dbFindEmployeeRecord,
-});
-
-registerAttentionScoresRoutes(app, authRequired, {
-  pool,
-  getSharedState,
-  resolveTenantIdDefault,
-});
-
-registerAnnouncementExtraRoutes(app, authRequired, {
-  getSharedState,
-  mergeSharedStateFields,
-  employeeAccountShouldDisable,
-});
-
-registerNotificationsWriteRoutes(app, authRequired, {
-  pool,
-  resolveTenantIdDefault,
-});
-
-registerBirthdayRoutes(app, authRequired, {
-  getSharedState,
-  saveSharedState,
+  inferBrandFromStoreName,
+  insertSalaryTimeline,
   isInactiveStatus,
-  employeeAccountShouldDisable,
-  addStateNotification,
+  isKitchenByRoleOrPosition,
+  isWebhookEnabled,
+  leaveAttendanceHelpers,
+  loadEmployeesFromTable,
+  loadTenantFeishuBitableConfig,
+  loadTenantRuntimeStatus,
+  loginRateLimit,
+  lookupFeishuUserByUsername,
   makeNotif,
-  hrmsNowISO,
-  pickAdminUsername,
-  pickHrManagerUsername,
-  stateFindUserRecord,
-});
-
-registerExamResultsRoutes(app, authRequired, { pool });
-
-registerTenantSettingsRoutes(app, authRequired, {
-  axios,
-  getAgentsServiceBaseUrl,
-  getAgentsServiceAdminToken,
-});
-
-registerUsageWeeklyRoutes(app, authRequired, { pool });
-
-registerWecomCallbackRoutes(app);
-
-registerPromotionTracksRoutes(app, authRequired, {
-  getSharedState,
-  stateFindUserRecord,
-  getPromotionTrackProgress,
-});
-
-registerBitableSyncRoutes(app, authRequired, { pool });
-
-registerRagRoutes(app, authRequired, {
-  getSharedState,
-  ragStats,
-  ragQuery,
-  ragMultiQuery,
-});
-
-registerFeishuSyncRoutes(app, authRequired, {
-  pool,
-  safeErrMessage,
-  getFeishuAccessToken,
-  getFeishuBitableData,
-  findConfigKeyByTableInfo,
-  upsertFeishuGenericRecord,
   mapFeishuFieldToHrms,
-  upsertTableVisitRecordFromMapped,
+  mergeSharedStateFields,
+  normalizeApprovalType,
+  normalizeBrandId,
+  normalizeOpsRole,
+  normalizePromotionTrainingPeriods,
+  normalizeRoleForJwt,
+  normalizeUsersTableRole,
   notifyAdminsDualWriteFailure,
+  onFeishuEvent,
+  pickAdminUsername,
+  pickCashierUsername,
+  pickHqManagerUsername,
+  pickHrManagerUsername,
+  pickMyStoreFromState,
+  pickStoreRoleUsernameByStore,
+  pool,
+  pushIssuesToFeishu,
+  pushScoresToFeishu,
+  ragMultiQuery,
+  ragQuery,
+  ragStats,
+  randomUUID,
+  reconcileEmployeesMirrorAllTenants,
+  reconcileFlowConfigMirrorAllTenants,
+  recordAiFeedback,
+  recordLogin,
+  recordLogout,
+  recordUploadOwnership,
+  registerAdminOpsRoutes,
+  registerAgentConfigRoutes,
+  registerAgentDataCenterRoutes,
+  registerAgentDataRoutes,
+  registerAgentFeishuBotRoutes,
+  registerAgentOpsRoutes,
+  registerAgentRecordsRoutes,
+  registerAgentRoutes,
+  registerAgentTriggersRoutes,
+  registerAiChatCompletionsRoutes,
+  registerAnnouncementExtraRoutes,
+  registerApprovalDecideRoutes,
+  registerApprovalLifecycleRoutes,
+  registerApprovalRoutes,
+  registerAttentionScoresRoutes,
+  registerAuthRoutes,
+  registerBirthdayRoutes,
+  registerBitableAdminRoutes,
+  registerBitableSyncRoutes,
+  registerBrandsRoutes,
+  registerDedupRoutes,
+  registerDiagnosisFeedbackRoutes,
+  registerEmployeesDomainRoutes,
+  registerExamResultsRoutes,
+  registerFeishuSyncRoutes,
+  registerFeishuUser,
+  registerFeishuWebhookRoutes,
+  registerFlowConfigRoutes,
+  registerGmMailboxRoutes,
+  registerHRMSApiRoutes,
+  registerKitchenExecutionRoutes,
+  registerMasterRoutes,
+  registerMetricsAdminRoutes,
+  registerNewScoringRoutes,
+  registerNotificationsWriteRoutes,
+  registerOpsTasksRoutes,
+  registerPaymentConfigRoutes,
+  registerPaymentRoutes,
+  registerPayrollDomainRoutes,
+  registerPerfAdminRoutes,
+  registerPerformanceInvalidationRoutes,
+  registerPermissionGroupsRoutes,
+  registerPromotionTracksRoutes,
+  registerRagRoutes,
+  registerReadsRoutes,
+  registerRecipeRoutes,
+  registerRemainingStateRoutes,
+  registerSOPDistributionRoutes,
+  registerStoreDutyBindingsRoutes,
+  registerStoresCrudRoutes,
+  registerStoresDomainRoutes,
+  registerTenantSettingsRoutes,
+  registerTrainingRoutes,
+  registerUploadRoutes,
+  registerUploadStatusRoute,
+  registerUsageWeeklyRoutes,
+  registerWecomCallbackRoutes,
+  requireWebhookSignature,
+  resolveAttendancePayrollRules,
+  resolveDutyApproverForStore,
+  resolveTenantIdDefault,
+  resolveWebhookTenantId,
+  routeMessage,
+  runAgentEvalSuite,
+  runChiefEvaluator,
+  runDataAuditor,
+  runSalesRawFolderImportOnce,
+  safeBizMonth,
+  safeDateOnly,
+  safeErrMessage,
+  safeMonthOnly,
+  safeNumber,
+  safeUuid,
+  saveSharedState,
+  scheduleLeaveDomainSync,
+  sendAdminSystemAlert,
+  sendLarkMessage,
+  sendWeeklyDishOptimizationReport,
+  shanghaiTodayDateOnly,
+  stateFindUserRecord,
+  stateOrDbFindUserRecord,
+  storeSessionNonce,
+  syncDataAuditorIssuesToMasterTasks,
   syncDishLibraryCosts,
   syncSopSteps,
-  lookupFeishuUserByUsername,
-  sendLarkMessage,
-});
-
-registerBitableAdminRoutes(app, authRequired, {
-  getBitableSubmissionStats,
-  archiveOldBitableSubmissions,
-});
-
-registerPerfAdminRoutes(app, authRequired, {
-  getLastCompletedWeekRangeShanghai,
-  sendWeeklyDishOptimizationReport,
-});
-
-registerMetricsAdminRoutes(app, authRequired, {
-  pool,
-  updateMetricVersion,
-});
-
-registerDedupRoutes(app, authRequired, { pool });
-
-registerAdminOpsRoutes(app, authRequired, {
-  pool,
-  canAccessDailyAttendanceRegister,
-  safeDateOnly,
-  safeMonthOnly,
-  safeErrMessage,
-  backfillDailyAttendanceRegisterMissing,
-  runLeaveCumulativeCloseSnapshotForClosedMonth: leaveAttendanceHelpers.runLeaveCumulativeCloseSnapshotForClosedMonth,
-  runSalesRawFolderImportOnce,
-  notifyAdminsDualWriteFailure,
-  normalizeRoleForJwt,
-  loadEmployeesFromTable,
-  getSharedState,
-  sendAdminSystemAlert,
-  hrmsNowISO,
-});
-
-registerDiagnosisFeedbackRoutes(app, authRequired, {
-  pool,
-  recordAiFeedback,
-});
-
-registerAgentDataRoutes(app, authRequired, {
-  pool,
-  safeErrMessage,
-  getFeishuAccessToken,
-  createFeishuBitableRecord,
-  findConfigKeyByTableInfo,
-  upsertFeishuGenericRecord,
-});
-
-registerFeishuWebhookRoutes(app, {
-  express,
-  pool,
-  isWebhookEnabled,
-  tryParseJson,
-  verifyFeishuWebhookRequest,
-  requireWebhookSignature,
-  decryptFeishuEncryptPayload,
-  resolveWebhookTenantId,
   tenantContext,
-  randomUUID,
-  safeErrMessage,
-  notifyAdminsDualWriteFailure,
-  onFeishuEvent,
-  resolveTenantIdDefault,
-  loadTenantFeishuBitableConfig,
-  getFeishuTokenByConfig,
-  getFeishuAccessToken,
-  getFeishuBitableData,
-  findConfigKeyByTableInfo,
-  upsertFeishuGenericRecord,
-  mapFeishuFieldToHrms,
-  upsertTableVisitRecordFromMapped,
-});
-
-registerRemainingStateRoutes(app, authRequired, {
-  pool,
-  getSharedState,
-  resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
-});
-
-registerGmMailboxRoutes(app, authRequired, {
-  getSharedState,
-  saveSharedState,
-  pickHqManagerUsername,
-  pickAdminUsername,
-  addStateNotification,
-  makeNotif,
+  toNullableUuid,
+  trainingPracticeUpload,
+  tryParseJson,
   uniqUsernames,
-  hrmsNowISO,
-});
-
-registerAgentDataCenterRoutes(app, authRequired, {
-  pool: agentPool,
-  getAgentPerformanceMetrics,
-  cronJobLabelZh,
-});
-registerAgentOpsRoutes(app, authRequired, {
-  pool: agentPool,
-  getAgentPerformanceMetrics,
-  runAgentEvalSuite,
-  getScheduledTaskStatus,
-  clearAgentCache,
-});
-registerAgentRecordsRoutes(app, authRequired, {
-  pool: agentPool,
-  getSharedState: getAgentSharedState,
-  inferBrandFromStoreName,
-  fetchStoreRatingForProfileDisplay,
-  calculateStoreRating,
-  registerFeishuUser,
-});
-registerAgentTriggersRoutes(app, authRequired, {
-  pool: agentPool,
-  runDataAuditor,
-  pushIssuesToFeishu,
-  syncDataAuditorIssuesToMasterTasks,
-  runChiefEvaluator,
-  pushScoresToFeishu,
-  sendLarkMessage,
-  callVisionLLM,
-  callLLM,
-  verifyLLMHealth,
-  getLarkTenantToken,
-  routeMessage,
-  inferBrandFromStoreName,
-  calculateStoreRating,
-  defaultLlmModel: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
-});
-registerAgentFeishuBotRoutes(app, {
-  pool: agentPool,
-  onFeishuEvent,
-});
-registerAgentRoutes(app, authRequired);
-registerAgentConfigRoutes(app, authRequired);
-
-registerMasterRoutes(app, authRequired);
-registerNewScoringRoutes(app, authRequired);
-registerPerformanceInvalidationRoutes(app, authRequired);
-registerHRMSApiRoutes(app, authRequired);
-registerSOPDistributionRoutes(app, authRequired);
-registerKitchenExecutionRoutes(app, authRequired);
-registerRecipeRoutes(app, authRequired, {
+  updateMetricVersion,
   upload,
   uploadsDir,
-  ensureUploadsDir,
-  recordUploadOwnership,
-});
-registerTrainingRoutes(app, authRequired, trainingPracticeUpload, { getSharedState });
-registerUploadStatusRoute(app, { pool, getSharedState, authRequired });
-app.use('/api', authRequired, fileRoutes);
+  upsertFeishuGenericRecord,
+  upsertPayrollLedgerEntry,
+  upsertTableVisitRecordFromMapped,
+  verifyFeishuWebhookRequest,
+  verifyLLMHealth,
+};
 
-/** 运维 CLI：全量同步桌访表入 DB 后退出（不监听端口）。例：cd server && HRMS_CLI_SYNC_TABLE_VISIT=1 node index.js */
-if (String(process.env.HRMS_CLI_SYNC_TABLE_VISIT || '').trim() === '1') {
-  (async () => {
-    try {
-      await ensureFeishuGenericRecordsTable();
-      await ensureFeishuGenericRecordsNotifyTrigger();
-      await ensureTableVisitRecordsTable();
-      const r = await runManualFeishuBitableSync({
-        pool,
-        getFeishuAccessToken,
-        getFeishuBitableData,
-        findConfigKeyByTableInfo,
-        upsertFeishuGenericRecord,
-        mapFeishuFieldToHrms,
-        upsertTableVisitRecordFromMapped,
-        notifyAdminsDualWriteFailure,
-      }, {
-        appToken: process.env.BITABLE_TABLEVISIT_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
-        tableId: process.env.BITABLE_TABLEVISIT_TABLE_ID || 'tblpx5Efqc6eHo3L',
-        appId: process.env.FEISHU_APP_ID,
-        appSecret: process.env.FEISHU_APP_SECRET
-      });
-      logger.info({ msg: 'hrms_cli_sync_table_visit', result: r });
-      process.exit(0);
-    } catch (e) {
-      logger.error({ msg: 'hrms_cli_sync_table_visit_failed', err: e?.message || String(e) });
-      process.exit(1);
-    }
-  })();
+registerApplicationRoutes(app, applicationRouteDeps);
+
+
 const runStartupTenantReconcile = createStartupTenantReconcileRunner({
   pool,
   runForActiveTenants,
@@ -1973,6 +1722,37 @@ const { beatHeartbeat, startListenMonitors } = createListenMonitors({
   hrmsNowISO,
   allowSchemaChanges: __ALLOW_SCHEMA_CHANGES__,
 });
+
+/** 运维 CLI：全量同步桌访表入 DB 后退出（不监听端口）。例：cd server && HRMS_CLI_SYNC_TABLE_VISIT=1 node index.js */
+if (String(process.env.HRMS_CLI_SYNC_TABLE_VISIT || '').trim() === '1') {
+  (async () => {
+    try {
+      await ensureFeishuGenericRecordsTable();
+      await ensureFeishuGenericRecordsNotifyTrigger();
+      await ensureTableVisitRecordsTable();
+      const r = await runManualFeishuBitableSync({
+        pool,
+        getFeishuAccessToken,
+        getFeishuBitableData,
+        findConfigKeyByTableInfo,
+        upsertFeishuGenericRecord,
+        mapFeishuFieldToHrms,
+        upsertTableVisitRecordFromMapped,
+        notifyAdminsDualWriteFailure,
+      }, {
+        appToken: process.env.BITABLE_TABLEVISIT_APP_TOKEN || 'PTWrbUdcbarCshst0QncMoY7nKe',
+        tableId: process.env.BITABLE_TABLEVISIT_TABLE_ID || 'tblpx5Efqc6eHo3L',
+        appId: process.env.FEISHU_APP_ID,
+        appSecret: process.env.FEISHU_APP_SECRET
+      });
+      logger.info({ msg: 'hrms_cli_sync_table_visit', result: r });
+      process.exit(0);
+    } catch (e) {
+      logger.error({ msg: 'hrms_cli_sync_table_visit_failed', err: e?.message || String(e) });
+      process.exit(1);
+    }
+  })();
+
 
 
 } else {

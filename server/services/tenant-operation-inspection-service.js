@@ -1,6 +1,18 @@
 import { SHARED_TABLES } from '@gaas/shared';
 import { childLogger } from '../utils/logger.js';
 import { runCheckDataIntegration } from './check-data-integration-helpers.js';
+import {
+  buildInspectionOverview,
+  buildInspectionStoreResults,
+  calculateHealthScore,
+} from './tenant-operation-inspection/inspection-overview-service.js';
+import {
+  buildInspectionReportHtml,
+  createInspectionReportService,
+  generateInspectionReport,
+} from './tenant-operation-inspection/inspection-report-service.js';
+
+export { buildInspectionReportHtml, calculateHealthScore, generateInspectionReport };
 
 const log = childLogger({ domain: 'tenant-operation-inspection', handler: 'service' });
 
@@ -12,7 +24,6 @@ const STATUS = {
   pending: '待配置',
 };
 
-const SEVERITY_DEDUCTION = { P0: 25, P1: 12, P2: 6, P3: 2 };
 const ALLOWED_SCOPES = new Set(['全部', '基础配置', '数据接入', '数据新鲜度', '任务闭环', 'AI 可运行度', '营销归因']);
 const _CORE_TABLES = ['stores', SHARED_TABLES.POS_ORDER_ITEMS, 'growth_customer_profiles', 'customer_ops_source_records'];
 const RESPONSIBLE_PARTY_LABELS = {
@@ -23,7 +34,6 @@ const RESPONSIBLE_PARTY_LABELS = {
   system_integration: '系统接口',
   customer_success: '客户成功',
 };
-const MODULES = ['经营诊断', '客户资产报告', '自动营销', '营销归因', '任务闭环', '人才盘点', '绩效评估', '老板晨报', '月度复盘'];
 
 function ymd(date = new Date()) {
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
@@ -44,13 +54,6 @@ function n(v) {
 function pct(ok, total) {
   if (n(total) <= 0) return 0;
   return Math.round((n(ok) / n(total)) * 100);
-}
-
-function riskLevel(score) {
-  if (score >= 90) return '健康';
-  if (score >= 75) return '关注';
-  if (score >= 60) return '预警';
-  return '严重';
 }
 
 function normalizeStore(row) {
@@ -187,6 +190,12 @@ async function queryIfTable(pool, table, sql, params = []) {
     return { exists: true, rows: [], error: String(e?.message || e), evidence: { table_exists: true, field_missing: String(e?.message || e) } };
   }
 }
+
+export const {
+  saveInspectionReport,
+  listInspectionReports,
+  markInspectionReportSent,
+} = createInspectionReportService({ queryIfTable });
 
 // “多门店管理”创建门店时生成的是 store_<timestamp> 这种合成ID，只写在 hrms_state.data->'stores'
 // 这个JSON字段里，不落在关系型 stores 表、也不含品牌关键词——loadStores 原来的匹配路径
@@ -488,257 +497,6 @@ async function checkTaskClosedLoop(pool, ctx, stores = []) {
   ];
 }
 
-export function calculateHealthScore(items) {
-  const deductions = (items || [])
-    .filter((item) => item.status !== STATUS.ok)
-    .map((item) => ({
-      item_key: item.item_key,
-      item_name: item.item_name,
-      severity: item.severity,
-      deduction: SEVERITY_DEDUCTION[item.severity] || 0,
-      reason: `${item.severity} ${item.item_name}: ${item.impact_description}`,
-      category: item.category,
-    }));
-  const totalDeduction = deductions.reduce((sum, d) => sum + d.deduction, 0);
-  const health_score = Math.max(0, 100 - totalDeduction);
-  const scoreCategory = (category) => {
-    const sub = (items || []).filter((item) => item.category === category);
-    const bad = sub.filter((item) => item.status !== STATUS.ok).reduce((sum, item) => sum + (SEVERITY_DEDUCTION[item.severity] || 0), 0);
-    return Math.max(0, Math.min(100, 100 - bad));
-  };
-  const baseScore = scoreCategory('基础配置');
-  const integrationScore = scoreCategory('数据接入');
-  return {
-    health_score,
-    risk_level: riskLevel(health_score),
-    data_completeness: Math.round((baseScore + integrationScore) / 2),
-    data_freshness: scoreCategory('数据新鲜度'),
-    task_completion_rate: scoreCategory('任务闭环'),
-    ai_runnable_rate: scoreCategory('AI 可运行度'),
-    attribution_completeness: scoreCategory('营销归因'),
-    deductions,
-  };
-}
-
-function topIssues(items, limit = 3) {
-  const order = { P0: 0, P1: 1, P2: 2, P3: 3 };
-  return (items || [])
-    .filter((item) => item.status !== STATUS.ok)
-    .sort((a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9))
-    .slice(0, limit)
-    .map((item) => ({
-      id: item.id,
-      title: item.item_name,
-      severity: item.severity,
-      impact_modules: item.impact_modules,
-      owner_role: item.owner_role,
-      suggestion: item.suggestion,
-      can_generate_task: item.can_generate_task,
-    }));
-}
-
-function categoryStats(items) {
-  const by = new Map();
-  for (const item of items || []) {
-    const key = item.category || '未分类';
-    if (!by.has(key)) by.set(key, { category: key, ok_count: 0, abnormal_count: 0, missing_count: 0, delayed_count: 0, pending_count: 0, p0_count: 0, p1_count: 0, p2_count: 0, p3_count: 0, total: 0, ok_rate: 0 });
-    const row = by.get(key);
-    row.total += 1;
-    if (item.status === STATUS.ok) row.ok_count += 1;
-    else if (item.status === STATUS.missing) row.missing_count += 1;
-    else if (item.status === STATUS.delayed) row.delayed_count += 1;
-    else if (item.status === STATUS.pending) row.pending_count += 1;
-    else row.abnormal_count += 1;
-    const sev = String(item.severity || '').toLowerCase() + '_count';
-    if (Object.prototype.hasOwnProperty.call(row, sev)) row[sev] += 1;
-  }
-  return Array.from(by.values()).map((row) => ({ ...row, ok_rate: pct(row.ok_count, row.total) }));
-}
-
-function initializationStatus(items, stores) {
-  const byKey = Object.fromEntries((items || []).map((item) => [item.item_key, item]));
-  const required = [];
-  const missingStores = !stores?.length || byKey.tenant_has_stores?.status !== STATUS.ok;
-  const posBlocked = byKey.pos_data_connected?.status !== STATUS.ok;
-  const customerBlocked = byKey.customer_data_updated?.status !== STATUS.ok;
-  if (missingStores) required.push('先创建门店并补齐门店名称、编码和基础资料');
-  if (posBlocked) required.push('接入 POS 订单明细，至少同步最近 1 天真实订单');
-  if (customerBlocked) required.push('导入会员 / 客户数据，确保客户资产和自动营销有名单');
-  if (missingStores) return { inspection_status: 'not_initialized', initialization_required: required };
-  if (posBlocked || customerBlocked) return { inspection_status: 'pending_integration', initialization_required: required };
-  return { inspection_status: 'completed', initialization_required: [] };
-}
-
-function featureAvailability(items) {
-  return MODULES.map((feature) => {
-    const blockers = (items || []).filter((item) => item.status !== STATUS.ok && (item.impact_modules || []).includes(feature));
-    const criticalKeys = feature === '经营诊断'
-      ? new Set(['tenant_has_stores', 'pos_data_connected'])
-      : ['客户资产报告', '自动营销'].includes(feature)
-        ? new Set(['customer_data_updated'])
-        : feature === '月度复盘'
-          ? new Set(['tenant_has_stores', 'pos_data_connected'])
-          : new Set();
-    const criticalMissing = blockers.filter((item) => criticalKeys.has(item.item_key) && item.status === STATUS.missing && item.severity === 'P0');
-    const pendingConfig = blockers.filter((item) => item.status === STATUS.pending);
-    const p0p1 = blockers.filter((item) => ['P0', 'P1'].includes(item.severity));
-    if (feature === '月度复盘') {
-      const businessBlocked = criticalMissing.some((item) => ['数据接入', '数据新鲜度'].includes(item.category));
-      const attributionBlocked = blockers.some((item) => item.category === '营销归因');
-      const status = businessBlocked ? '不可用' : attributionBlocked || blockers.length ? '部分可用' : '可用';
-      return {
-        feature,
-        status,
-        blocked_by: blockers.map((item) => ({ id: item.id, item_key: item.item_key, title: item.item_name, severity: item.severity })),
-        reason: status === '部分可用' ? '月度复盘可以生成经营部分，少量营销效果或任务闭环指标需要结合证据校验。' : status === '不可用' ? '核心经营数据缺失，月度复盘暂不可生成。' : '月度复盘具备当前阶段的基础运行条件。',
-        suggestion: blockers[0]?.suggestion || '保持经营数据、营销数据和任务结果持续同步。',
-      };
-    }
-    const status = blockers.length === 0
-      ? '可用'
-      : criticalMissing.length
-        ? '不可用'
-        : pendingConfig.length && p0p1.length === 0
-          ? '待配置'
-          : '部分可用';
-    const reason = blockers.length
-      ? status === '不可用'
-        ? `${feature}缺少核心数据，当前不能稳定生成。`
-        : `${feature}可以运行，但受${blockers.slice(0, 2).map((x) => x.item_name).join('、')}影响，部分指标需要结合证据校验。`
-      : `${feature}具备当前阶段的基础运行条件。`;
-    return {
-      feature,
-      status,
-      blocked_by: blockers.map((item) => ({ id: item.id, item_key: item.item_key, title: item.item_name, severity: item.severity })),
-      reason,
-      suggestion: blockers[0]?.suggestion || '保持当前数据同步和任务闭环节奏。',
-    };
-  });
-}
-
-function todayPriorities(items, limit = 5) {
-  const severityWeight = { P0: 100, P1: 70, P2: 35, P3: 10 };
-  return (items || [])
-    .filter((item) => item.status !== STATUS.ok)
-    .map((item) => {
-      const modules = item.impact_modules || [];
-      const core = modules.some((m) => ['经营诊断', '客户资产报告', '自动营销', '营销归因', '老板晨报'].includes(m));
-      return { item, score: (severityWeight[item.severity] || 0) + modules.length * 8 + (core ? 25 : 0) };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map(({ item }) => ({
-      id: item.id,
-      title: item.item_name,
-      severity: item.severity,
-      impact_modules: item.impact_modules || [],
-      responsible_party: item.responsible_party,
-      responsible_party_label: item.responsible_party_label || RESPONSIBLE_PARTY_LABELS[item.responsible_party] || item.owner_role,
-      owner_role: item.owner_role,
-      suggestion: item.suggestion,
-      can_generate_task: item.can_generate_task,
-      generated_task_id: item.generated_task_id || null,
-    }));
-}
-
-function operationStage(items) {
-  const byKey = Object.fromEntries((items || []).map((item) => [item.item_key, item]));
-  if (byKey.tenant_has_stores?.status !== STATUS.ok || byKey.pos_data_connected?.status !== STATUS.ok || byKey.customer_data_updated?.status !== STATUS.ok) {
-    return {
-      operation_stage: 'initialization',
-      operation_stage_label: '初始化阶段',
-      stage_message: '当前重点是先完成基础配置和核心数据接入，否则健康分、日报和 AI 报告都没有真实依据。',
-    };
-  }
-  const taskBlocked = (items || []).some((item) => item.category === '任务闭环' && item.status !== STATUS.ok);
-  const freshnessBlocked = (items || []).some((item) => item.category === '数据新鲜度' && item.status !== STATUS.ok);
-  if (taskBlocked || freshnessBlocked) {
-    return {
-      operation_stage: 'trial',
-      operation_stage_label: '30 天试跑阶段',
-      stage_message: '当前重点是稳定每日数据同步、任务执行和老板晨报完整度，让系统连续跑起来。',
-    };
-  }
-  return {
-    operation_stage: 'active',
-    operation_stage_label: '正式运营阶段',
-    stage_message: '当前重点可以转向增长归因、复购提升和月度复盘，用数据推动下一轮运营动作。',
-  };
-}
-
-/** 结构性观察项：不计入托管「高风险」的 P0/P1 计数（与健康中心日巡过滤对齐） */
-const STRUCTURAL_WATCH_KEYS = new Set([
-  'customer_phone_match_rate',
-  'order_phone_complete_rate',
-  'order_customer_id_complete_rate',
-]);
-
-function customerSuccessRisk(score, items) {
-  const actionable = (items || []).filter((item) => !STRUCTURAL_WATCH_KEYS.has(String(item.item_key || '')));
-  const p0p1 = actionable.filter((item) => item.status !== STATUS.ok && ['P0', 'P1'].includes(item.severity));
-  const structuralDeduction = (items || [])
-    .filter((item) => item.status !== STATUS.ok && STRUCTURAL_WATCH_KEYS.has(String(item.item_key || '')))
-    .reduce((sum, item) => sum + (SEVERITY_DEDUCTION[item.severity] || 0), 0);
-  const adjustedScore = score.health_score == null ? null : Math.min(100, score.health_score + structuralDeduction);
-  const taskBad = actionable.some((item) => item.category === '任务闭环' && item.status !== STATUS.ok && ['P1', 'P2'].includes(item.severity));
-  const attrBad = actionable.some((item) => item.category === '营销归因' && item.status !== STATUS.ok && ['P1', 'P2'].includes(item.severity));
-  const dailyBad = actionable.some((item) => item.impact_modules?.includes('老板晨报') && item.status !== STATUS.ok);
-  const reasons = [];
-  if (adjustedScore != null && adjustedScore < 60) reasons.push('健康分连续处于低位风险区间（已排除结构性手机号观察项）');
-  if (p0p1.length) reasons.push(`仍有 ${p0p1.length} 个可处理 P0/P1 阻塞未处理`);
-  if (taskBad) reasons.push('任务执行或审核闭环不足');
-  if (attrBad) reasons.push('自动营销归因无法稳定生成');
-  if (dailyBad) reasons.push('老板晨报依赖的数据或任务结果不完整');
-  const level = p0p1.length >= 2 || (adjustedScore != null && adjustedScore < 60) ? 'high' : reasons.length ? 'medium' : 'low';
-  return {
-    customer_success_risk: level,
-    customer_success_risk_label: level === 'high' ? '高' : level === 'medium' ? '中' : '低',
-    customer_success_risk_reasons: reasons.length ? reasons : ['核心数据和任务闭环当前没有明显托管交付阻塞'],
-    health_score_adjusted: adjustedScore,
-  };
-}
-
-function buildOverview(score, items, stores) {
-  const init = initializationStatus(items, stores);
-  const stage = operationStage(items);
-  const effectiveScore = init.inspection_status === 'completed' ? score.health_score : null;
-  const effectiveRisk = init.inspection_status === 'completed' ? score.risk_level : init.inspection_status === 'not_initialized' ? '初始化未完成' : '待接入';
-  const overview = {
-    ...score,
-    health_score: effectiveScore,
-    raw_health_score: score.health_score,
-    risk_level: effectiveRisk,
-    ...init,
-    ...stage,
-    category_stats: categoryStats(items),
-    feature_availability: featureAvailability(items),
-    today_priorities: todayPriorities(items),
-    top_issues: topIssues(items, 5),
-  };
-  return { ...overview, ...customerSuccessRisk(overview, items) };
-}
-
-function buildStoreResults(stores, items) {
-  const baseStores = stores.length ? stores : [{ store_id: '', store_name: '全部门店' }];
-  return baseStores.map((store) => {
-    const sub = items.filter((item) => !item.store_id || item.store_id === store.store_id || item.store_name === store.store_name);
-    const score = calculateHealthScore(sub);
-    const risk = topIssues(sub, 1)[0];
-    return {
-      store_id: store.store_id || '',
-      store_name: store.store_name || store.store_id || '全部门店',
-      health_score: score.health_score,
-      risk_level: score.risk_level,
-      data_status: sub.some((i) => ['数据接入', '数据新鲜度'].includes(i.category) && i.status !== STATUS.ok) ? '需处理' : '正常',
-      task_status: sub.some((i) => i.category === '任务闭环' && i.status !== STATUS.ok) ? '需处理' : '正常',
-      ai_report_status: sub.some((i) => i.category === 'AI 可运行度' && i.status !== STATUS.ok) ? '受影响' : '可运行',
-      attribution_status: sub.some((i) => i.category === '营销归因' && i.status !== STATUS.ok) ? '不完整' : '完整',
-      main_risk: risk?.title || '暂无主要风险',
-      abnormal_items: sub.filter((item) => item.status !== STATUS.ok).length,
-    };
-  });
-}
-
 async function persistRun(pool, ctx, overview, items) {
   const summary = overview.health_score == null
     ? `${overview.risk_level}：${(overview.initialization_required || []).join('；') || '请先完成初始化配置'}`
@@ -789,10 +547,10 @@ export async function runInspection(pool, opts = {}) {
   ];
   if (ctx.scope !== '全部') items = items.filter((item) => item.category === ctx.scope);
   const score = calculateHealthScore(items);
-  let overview = buildOverview(score, items, stores);
+  let overview = buildInspectionOverview(score, items, stores);
   items = await persistRun(pool, ctx, overview, items);
-  overview = buildOverview(score, items, stores);
-  return { ok: true, tenant_id: ctx.tenantId, store_id: ctx.storeId, date: ctx.date, overview, top_issues: overview.top_issues, store_results: buildStoreResults(stores, items), items };
+  overview = buildInspectionOverview(score, items, stores);
+  return { ok: true, tenant_id: ctx.tenantId, store_id: ctx.storeId, date: ctx.date, overview, top_issues: overview.top_issues, store_results: buildInspectionStoreResults(stores, items), items };
 }
 
 export async function getLatestOverview(pool, opts = {}) {
@@ -819,104 +577,9 @@ export async function listInspectionItems(pool, opts = {}) {
   return r.exists ? r.rows : [];
 }
 
-// 证据摘要给租赁方看，不能直接甩英文字段名——这里把 issue() 里用到的 evidence key 统一翻成中文短语。
-const EVIDENCE_LABELS = {
-  total: '总记录数', rate: '完整率', with_phone: '带手机号记录数', with_customer_id: '已识别客户记录数',
-  with_coupon_id: '带优惠券标识记录数', with_campaign_id: '带活动标识记录数', phone_match_rate: '客户识别率',
-  rows_with_phone: '带客户标识行数', phone_rows: '菜品明细总行数', dish_rate: '菜品分类完整率',
-  dish_rows: '菜品种类数', categorized_dish_rows: '已分类菜品种类数', employee_count: '员工数',
-  bound_count: '已绑定门店岗位员工数', manager_count: '店长/管理员人数', target_count: '经营目标数量',
-  kpi_targets_exists: '是否已建目标表', task_total: '任务总数', task_overdue_count: '逾期任务数',
-  yesterday_order_count: '昨日订单数', latest_sync_time: '最近同步时间', seven_day_avg_order_count: '近7日日均订单数',
-  customer_count: '客户数', customer_updated_7d: '近7天更新客户数', growth_customer_profiles_exists: '客户画像表是否存在',
-  customer_ops_exists: '客户运营原始记录是否存在', delivery_total: '触达记录总数', delivery_sent: '已发送触达数',
-  coupon_writeoff_count: '优惠券核销数', attribution_order_count: '已归因订单数', attribution_total: '归因记录总数',
-  store_count: '门店数', segmented_count: '已分层客户数', linked_orders: '已关联订单数',
-  employee_table_exists: '员工表是否存在', customer_segments_generatable: '客户分层是否可生成',
-};
-function formatEvidenceSummary(evidence = {}) {
-  return Object.entries(evidence)
-    .filter(([k]) => !['table_exists', 'table_missing'].includes(k))
-    .slice(0, 6)
-    .map(([k, v]) => {
-      const label = EVIDENCE_LABELS[k] || k;
-      let value = v;
-      if (typeof v === 'boolean') value = v ? '是' : '否';
-      else if (typeof v === 'object' && v !== null) value = JSON.stringify(v);
-      else if (k === 'rate' || /_rate$/.test(k)) value = `${v}%`;
-      return `${label}：${value}`;
-    })
-    .join('，');
-}
-
-export function generateInspectionReport({ tenantId, overview, store_results = [], items = [] }) {
-  const top = overview?.top_issues || topIssues(items);
-  const affected = Array.from(new Set((items || []).flatMap((item) => item.status !== STATUS.ok ? item.impact_modules || [] : [])));
-  const worstStores = (store_results || []).filter((s) => s.health_score < 90).slice(0, 5);
-  const storeNames = Array.from(new Set((items || []).map((item) => item.store_name).filter(Boolean)));
-  const storeScope = storeNames.length === 1 ? storeNames[0] : storeNames.length > 1 ? storeNames.join('、') : '全部门店';
-  const scoreText = overview?.health_score == null ? (overview?.risk_level || '初始化未完成') : `健康分 ${overview.health_score} 分`;
-  const summary = `本次检测范围：${storeScope}。当前租户系统${scoreText}。主要问题是${top.map((x) => x.title).join('、') || '暂无关键阻塞'}，会影响${affected.slice(0, 4).join('、') || '核心运营模块'}。`;
-  const badItems = (items || []).filter((item) => item.status !== STATUS.ok);
-  const itemToReport = (item) => ({
-    item_name: item.item_name,
-    store_name: item.store_name || storeScope || '全部门店',
-    impact_modules: item.impact_modules || [],
-    status: item.status,
-    severity: item.severity,
-    problem_description: item.impact_description || '',
-    suggested_arrangement: item.responsible_party === 'platform_team' || item.responsible_party === 'system_integration' ? '我方系统实施人员协助说明，租赁方配合确认数据来源' : '租赁方安排系统管理员或门店负责人',
-    suggested_deadline: ['P0', 'P1'].includes(item.severity) ? '建议 3 天内完成' : '建议 7 天内完成',
-    rectification_suggestion: item.suggestion || '',
-    evidence_summary: formatEvidenceSummary(item.evidence || {}),
-    include_in_report: true,
-  });
-  const tenantRectificationItems = badItems
-    .filter((item) => !['platform_team', 'system_integration'].includes(item.responsible_party))
-    .map(itemToReport);
-  const platformNotes = badItems
-    .filter((item) => ['platform_team', 'system_integration'].includes(item.responsible_party))
-    .map((item) => ({
-      problem: item.item_name,
-      impact: item.impact_description || '',
-      suggestion: item.suggestion || '',
-      tenant_cooperation: '请租赁方确认数据源、字段导出或业务采集流程是否具备。',
-      impact_modules: item.impact_modules || [],
-    }));
-  return {
-    tenant_id: tenantId,
-    report_title: '租户运营整改报告',
-    store_scope: storeScope,
-    summary,
-    top_risks: top,
-    affected_modules: affected,
-    tenant_rectification_items: tenantRectificationItems,
-    platform_notes: platformNotes,
-    data_gap_impact: badItems
-      .filter((item) => ['数据接入', '数据新鲜度', '营销归因'].includes(item.category))
-      .map((item) => `${item.item_name}会影响${(item.impact_modules || []).join('、') || '相关报告'}，导致对应判断不完整。`),
-    next_recheck_suggestion: '建议租赁方完成以上整改后，在 3 天内重新运行检测。',
-    store_status: worstStores.length ? worstStores : store_results,
-    ai_conclusion: summary,
-    system_health: overview?.health_score == null ? '当前租户尚未完成初始化，先不要用 0 分判断经营风险。' : (overview?.health_score ?? 0) >= 75 ? '当前租户系统基本可运转，但仍需处理影响准确性的项目。' : '当前租户系统存在明显运转风险，需要先处理数据和任务闭环问题。',
-    blocking_issues: top.map((x) => `${x.title}：${x.suggestion}`),
-    stores_missing_actions: worstStores.map((s) => `${s.store_name}：${s.main_risk}`),
-    inaccurate_ai_features: affected.filter((m) => ['经营诊断', '客户资产报告', '自动营销', '营销归因', '老板晨报'].includes(m)),
-    next_actions: [...tenantRectificationItems.map((x) => x.rectification_suggestion), ...platformNotes.map((x) => x.suggestion)].filter(Boolean).slice(0, 5),
-  };
-}
-
 export async function generateRecoveryTask(pool, { item, itemId } = {}) {
   const { routeInspectionItemToIncident } = await import('./tenant-health-incident-service.js');
   return routeInspectionItemToIncident(pool, { item, itemId });
-}
-
-function normalizeSeverityFilter(value) {
-  if (Array.isArray(value)) return value.map(String).filter(Boolean);
-  const raw = String(value || '').trim();
-  if (!raw) return ['P0', 'P1'];
-  if (raw.includes(',')) return raw.split(',').map((x) => x.trim()).filter(Boolean);
-  return [raw];
 }
 
 export async function generateRecoveryTasksBatch(pool, opts = {}) {
@@ -973,89 +636,4 @@ export async function getInspectionTrends(pool, opts = {}) {
       attribution_completeness: row.attribution_completeness == null ? null : n(row.attribution_completeness),
     };
   });
-}
-
-export async function saveInspectionReport(pool, { tenantId = 'default', runId = null, report = {} } = {}) {
-  const r = await pool.query(
-    `INSERT INTO tenant_operation_inspection_reports
-      (tenant_id, run_id, report_title, report_status, summary, affected_modules, tenant_rectification_items, platform_notes, next_recheck_suggestion, store_scope)
-     VALUES ($1,$2,$3,'generated',$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9)
-     RETURNING *`,
-    [
-      tenantId,
-      runId,
-      report.report_title || '租户运营整改报告',
-      report.summary || '',
-      JSON.stringify(report.affected_modules || []),
-      JSON.stringify(report.tenant_rectification_items || []),
-      JSON.stringify(report.platform_notes || []),
-      report.next_recheck_suggestion || '建议租赁方完成整改后，在 3 天内重新运行检测。',
-      report.store_scope || '全部门店',
-    ]
-  );
-  return { ok: true, report: r.rows?.[0] || null };
-}
-
-export async function listInspectionReports(pool, opts = {}) {
-  const tenantId = String(opts.tenantId || opts.tenant_id || 'default').trim() || 'default';
-  const r = await queryIfTable(
-    pool,
-    'tenant_operation_inspection_reports',
-    `SELECT id, tenant_id, run_id, report_title, report_status, summary, affected_modules, store_scope,
-            tenant_rectification_items, platform_notes, next_recheck_suggestion, pdf_file_url, sent_at, created_at, updated_at
-       FROM tenant_operation_inspection_reports
-      WHERE tenant_id=$1
-      ORDER BY created_at DESC, id DESC
-      LIMIT 50`,
-    [tenantId]
-  );
-  return r.exists ? r.rows : [];
-}
-
-export async function markInspectionReportSent(pool, { reportId, tenantId = 'default' } = {}) {
-  const r = await pool.query(
-    `UPDATE tenant_operation_inspection_reports
-        SET report_status='sent', sent_at=NOW(), updated_at=NOW()
-      WHERE id=$1 AND tenant_id=$2
-      RETURNING id, report_status, sent_at`,
-    [reportId, tenantId]
-  );
-  return {
-    ok: !!r.rows?.length,
-    report: r.rows?.[0] || null,
-    delivery_performed: false,
-    message: '已记录为已发送；当前版本未配置自动发送渠道，请导出报告后自行发送给租赁方。',
-  };
-}
-
-function stripTechnicalText(value) {
-  return String(value || '')
-    .replace(/ontology/ig, '归因计算')
-    .replace(/customer_id/ig, '顾客标识')
-    .replace(/campaign_id/ig, '营销活动标识')
-    .replace(/coupon_id/ig, '优惠券标识')
-    .replace(/master_tasks/ig, '系统任务记录')
-    .replace(/generated_task_id/ig, '已生成记录');
-}
-
-export function buildInspectionReportHtml(report = {}, meta = {}) {
-  const esc = (v) => stripTechnicalText(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const rows = (arr, cols) => (arr || []).map((x) => `<tr>${cols.map(([k]) => `<td>${esc(Array.isArray(x[k]) ? x[k].join('、') : x[k] || '-')}</td>`).join('')}</tr>`).join('');
-  return `<!doctype html><html><head><meta charset="utf-8"><title>租户运营整改报告</title><style>
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;margin:32px;line-height:1.6}
-  h1{font-size:30px;margin:0 0 8px} h2{font-size:18px;margin:28px 0 10px;border-bottom:1px solid #e5e7eb;padding-bottom:6px}
-  .muted{color:#6b7280}.cover{background:#111827;color:white;border-radius:18px;padding:28px;margin-bottom:24px}
-  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.kpi{border:1px solid #e5e7eb;border-radius:12px;padding:12px}
-  table{width:100%;border-collapse:collapse;font-size:12px}td,th{border-bottom:1px solid #e5e7eb;text-align:left;padding:8px;vertical-align:top}th{background:#f9fafb}
-  </style></head><body>
-  <div class="cover"><h1>租户运营整改报告</h1><div>租户：${esc(meta.tenantName || report.tenant_id || '-')}</div><div>检测日期：${esc(meta.date || '')}</div><div>报告生成时间：${esc(new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}))}</div></div>
-  <div class="grid"><div class="kpi"><b>系统运行状态</b><br>${esc(meta.riskLevel || '-')}</div><div class="kpi"><b>健康分</b><br>${esc(meta.healthScore ?? '-')}</div><div class="kpi"><b>报告状态</b><br>${esc(report.report_status || 'generated')}</div><div class="kpi"><b>下次复检</b><br>整改后 3 天内</div></div>
-  <h2>本次检测结论</h2><p>${esc(report.summary || '')}</p>
-  <h2>核心影响</h2><p>${esc((report.affected_modules || []).join('、') || '-')}</p>
-  <h2>需要租赁方安排整改的事项</h2><table><thead><tr><th>整改事项</th><th>涉及门店</th><th>影响功能</th><th>问题说明</th><th>建议安排对象</th><th>建议完成时间</th><th>整改建议</th></tr></thead><tbody>${rows(report.tenant_rectification_items || [], [['item_name'],['store_name'],['impact_modules'],['problem_description'],['suggested_arrangement'],['suggested_deadline'],['rectification_suggestion']])}</tbody></table>
-  <h2>客户未执行责任说明</h2><p>${esc((report.customer_non_execution && report.customer_non_execution.statement) || '本期未附带未执行责任台账。若系统已出建议但客户未确认/未执行，复盘时应明确：无法评价实际改善效果。')}</p>
-  <h2>我方说明 / 协助事项</h2><table><thead><tr><th>问题</th><th>影响</th><th>我方建议</th><th>需要租赁方配合什么</th></tr></thead><tbody>${rows(report.platform_notes || [], [['problem'],['impact'],['suggestion'],['tenant_cooperation']])}</tbody></table>
-  <h2>数据缺失造成的影响说明</h2><ul>${(report.data_gap_impact || []).map((x) => `<li>${esc(x)}</li>`).join('') || '<li>-</li>'}</ul>
-  <h2>下次复检建议</h2><p>${esc(report.next_recheck_suggestion || '建议租赁方完成以上整改后，在 3 天内重新运行检测。')}</p>
-  </body></html>`;
 }

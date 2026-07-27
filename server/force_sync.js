@@ -13,9 +13,11 @@ const configs = {
 };
 
 async function test() {
+  const appId = process.env.BITABLE_TABLEVISIT_APP_ID || process.env.LARK_APP_ID || '';
+  if (!appId) throw new Error('missing BITABLE_TABLEVISIT_APP_ID or LARK_APP_ID');
   const resp = await axios.post('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-    app_id: 'cli_a9fc0d13c838dcd6',
-    app_secret: process.env.FEISHU_APP_SECRET || ''
+    app_id: appId,
+    app_secret: process.env.FEISHU_APP_SECRET || process.env.LARK_APP_SECRET || ''
   });
   const token = resp.data.tenant_access_token;
   

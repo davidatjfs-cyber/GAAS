@@ -2,7 +2,6 @@
  * Inventory forecast + sales-raw dish-alias — pure business logic (no req/res).
  * Returns { ok, status?, error?, message?, ...payload }.
  */
-import { randomUUID } from 'crypto';
 import { childLogger } from '../../utils/logger.js';
 import {
   parsePredictForecastInput,
@@ -10,7 +9,28 @@ import {
   buildPredictForecastOutput,
   persistPredictForecastState,
 } from './predict-forecast-helpers.js';
+import {
+  loadGrossProfitHistory,
+  mergeDishLibraryCosts,
+} from './gross-profit-helpers.js';
 import { runUploadHistoryFile } from './upload-history-file-helpers.js';
+export {
+  listDishAliases,
+  createDishAlias,
+  updateDishAlias,
+  deleteDishAlias,
+} from './dish-alias-service.js';
+export {
+  listProductAliases,
+  createProductAlias,
+  updateProductAlias,
+  deleteProductAlias,
+} from './product-alias-service.js';
+export {
+  listCoreProducts,
+  createCoreProduct,
+  deleteCoreProduct,
+} from './core-product-service.js';
 
 const log = childLogger({ domain: 'inventory-forecast', handler: 'service' });
 
@@ -148,398 +168,6 @@ export async function uploadSalesRaw(ctx, input) {
       error: 'sales_raw_retired',
       message: '销售明细已改为自动同步（pos_order_items/pos_sales_detail），不再需要手工上传销售明细文件。'
     };
-}
-
-export async function listDishAliases(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可查看菜名别名规则' };
-    try {
-      const store = String(input.query?.store || '*').trim() || '*';
-      const bizType = ctx.normalizeDishAliasBizType(input.query?.bizType || '*');
-      const where = ['enabled = TRUE'];
-      const params = [];
-      if (store !== '*') {
-        params.push(store);
-        where.push(`(store = $${params.length} OR store = '*')`);
-      }
-      if (bizType !== '*') {
-        params.push(bizType);
-        where.push(`(biz_type = $${params.length} OR biz_type = '*')`);
-      }
-      const r = await ctx.pool.query(
-        `SELECT id, store, biz_type, alias_name, canonical_name, enabled, updated_at
-         FROM dish_name_aliases
-         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 2000`,
-        params
-      );
-      return { ok: true, items: r.rows || [] };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function createDishAlias(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可配置菜名别名规则' };
-    try {
-      const store = String(input.body?.store || '*').trim() || '*';
-      const bizType = ctx.normalizeDishAliasBizType(input.body?.bizType || '*');
-      const aliasName = String(input.body?.aliasName || '').trim();
-      const canonicalName = String(input.body?.canonicalName || '').trim();
-      if (!aliasName || !canonicalName) return { ok: false, status: 400, error: 'missing_params', message: 'aliasName/canonicalName 必填' };
-      const r = await ctx.pool.query(
-        `INSERT INTO dish_name_aliases (store, biz_type, alias_name, canonical_name, enabled, created_by, updated_by, updated_at, tenant_id)
-         VALUES ($1,$2,$3,$4,TRUE,$5,$5,NOW(),$6)
-         ON CONFLICT (store, biz_type, alias_name, tenant_id)
-         DO UPDATE SET canonical_name = EXCLUDED.canonical_name, enabled = TRUE, updated_by = EXCLUDED.updated_by, updated_at = NOW()
-         RETURNING id, store, biz_type, alias_name, canonical_name, enabled, updated_at`,
-        [store, bizType, aliasName, canonicalName, username, ctx.resolveTenantIdDefault()]
-      );
-      return { ok: true, item: r.rows?.[0] || null };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function updateDishAlias(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可修改菜名别名规则' };
-    try {
-      const id = Number(input.params?.id || 0);
-      if (!Number.isFinite(id) || id <= 0) return { ok: false, status: 400, error: 'invalid_id' };
-
-      const aliasName = String(input.body?.aliasName || '').trim();
-      const canonicalName = String(input.body?.canonicalName || '').trim();
-      const enabled = input.body?.enabled === undefined ? null : !!input.body.enabled;
-      const sets = [];
-      const vals = [];
-
-      if (aliasName) {
-        vals.push(aliasName);
-        sets.push(`alias_name = $${vals.length}`);
-      }
-      if (canonicalName) {
-        vals.push(canonicalName);
-        sets.push(`canonical_name = $${vals.length}`);
-      }
-      if (enabled !== null) {
-        vals.push(enabled);
-        sets.push(`enabled = $${vals.length}`);
-      }
-      vals.push(username);
-      sets.push(`updated_by = $${vals.length}`);
-      sets.push(`updated_at = NOW()`);
-      vals.push(id);
-
-      if (!sets.length) return { ok: false, status: 400, error: 'nothing_to_update' };
-      const r = await ctx.pool.query(
-        `UPDATE dish_name_aliases
-         SET ${sets.join(', ')}
-         WHERE id = $${vals.length}
-         RETURNING id, store, biz_type, alias_name, canonical_name, enabled, updated_at`,
-        vals
-      );
-      if (!r.rows?.length) return { ok: false, status: 404, error: 'not_found' };
-      return { ok: true, item: r.rows[0] };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function deleteDishAlias(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可删除菜名别名规则' };
-    try {
-      const id = Number(input.params?.id || 0);
-      if (!Number.isFinite(id) || id <= 0) return { ok: false, status: 400, error: 'invalid_id' };
-      const r = await ctx.pool.query(
-        `UPDATE dish_name_aliases
-         SET enabled = FALSE, updated_by = $1, updated_at = NOW()
-         WHERE id = $2
-         RETURNING id`,
-        [username, id]
-      );
-      if (!r.rows?.length) return { ok: false, status: 404, error: 'not_found' };
-      return { ok: true};
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function listCoreProducts(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canAccessAnalyticsReports(role)) return { ok: false, status: 403, error: 'forbidden' };
-
-    try {
-      const state0 = (await ctx.getSharedState()) || {};
-      const myStore = ctx.pickMyStoreFromState(state0, username);
-      const qStore = String(input.query?.store || '').trim();
-      const store = ctx.isForecastStoreScopedRole(role) ? myStore : qStore;
-      if (!store) return { ok: false, status: 400, error: 'missing_store' };
-
-      const all = Array.isArray(state0.forecastCoreProducts) ? state0.forecastCoreProducts : [];
-      const items = all.filter(x => String(x?.store || '').trim() === store);
-      return { ok: true, store, items };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function createCoreProduct(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canAccessAnalyticsReports(role)) return { ok: false, status: 403, error: 'forbidden' };
-
-    const product = String(input.body?.product || '').trim();
-    const targetQty = Number(input.body?.targetQty || 0);
-    if (!product) return { ok: false, status: 400, error: 'missing_product' };
-    if (!Number.isFinite(targetQty) || targetQty <= 0) return { ok: false, status: 400, error: 'invalid_target_qty' };
-
-    try {
-      const state0 = (await ctx.getSharedState()) || {};
-      const myStore = ctx.pickMyStoreFromState(state0, username);
-      const qStore = String(input.body?.store || '').trim();
-      const store = ctx.isForecastStoreScopedRole(role) ? myStore : qStore;
-      if (!store) return { ok: false, status: 400, error: 'missing_store' };
-
-      const all = Array.isArray(state0.forecastCoreProducts) ? state0.forecastCoreProducts.slice() : [];
-      const key = `${store}||${product}`;
-      const keyOf = (x) => `${String(x?.store || '').trim()}||${String(x?.product || '').trim()}`;
-      const idx = all.findIndex(x => keyOf(x) === key);
-      const now = ctx.hrmsNowISO();
-      const item = {
-        id: idx >= 0 ? (all[idx]?.id || randomUUID()) : randomUUID(),
-        store,
-        product,
-        targetQty: Number(targetQty.toFixed(1)),
-        createdAt: idx >= 0 ? (all[idx]?.createdAt || now) : now,
-        createdBy: idx >= 0 ? (all[idx]?.createdBy || username) : username,
-        updatedAt: now,
-        updatedBy: username
-      };
-      if (idx >= 0) all.splice(idx, 1, item);
-      else all.unshift(item);
-
-      await ctx.saveSharedState({ ...state0, forecastCoreProducts: all.slice(0, 2000) });
-      return { ok: true, item };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function deleteCoreProduct(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canAccessAnalyticsReports(role)) return { ok: false, status: 403, error: 'forbidden' };
-
-    const id = String(input.params?.id || '').trim();
-    if (!id) return { ok: false, status: 400, error: 'missing_id' };
-
-    try {
-      const state0 = (await ctx.getSharedState()) || {};
-      const all = Array.isArray(state0.forecastCoreProducts) ? state0.forecastCoreProducts.slice() : [];
-      const idx = all.findIndex(x => String(x?.id || '').trim() === id);
-      if (idx < 0) return { ok: false, status: 404, error: 'not_found' };
-      all.splice(idx, 1);
-      await ctx.saveSharedState({ ...state0, forecastCoreProducts: all });
-      return { ok: true};
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function listProductAliases(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可查看别名规则' };
-    try {
-      const state0 = (await ctx.getSharedState()) || {};
-      const scope = ctx.resolveForecastScope(state0, username, role, input.query?.store, input.query?.brandId);
-      if (!scope.brandId) return { ok: false, status: 400, error: 'missing_brand' };
-      let items = Array.isArray(state0.forecastProductAliasRules) ? state0.forecastProductAliasRules.slice() : [];
-      items = items.filter((x) => {
-        const rid = ctx.normalizeBrandId(x?.brandId || ctx.resolveStoreBrandContext(state0, String(x?.store || '').trim()).brandId);
-        return rid === scope.brandId;
-      });
-      items.sort((a, b) => String(a?.canonical || '').localeCompare(String(b?.canonical || ''), 'zh-Hans-CN'));
-      return { ok: true, brandId: scope.brandId, brandName: scope.brandName, items };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function createProductAlias(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可配置别名规则' };
-    const canonical = String(input.body?.canonical || '').trim();
-    const aliases = Array.isArray(input.body?.aliases) ? input.body.aliases : [];
-    if (!canonical) return { ok: false, status: 400, error: 'missing_canonical' };
-    try {
-      const state0 = (await ctx.getSharedState()) || {};
-      const scope = ctx.resolveForecastScope(state0, username, role, input.body?.store, input.body?.brandId);
-      if (!scope.brandId) return { ok: false, status: 400, error: 'missing_brand' };
-
-      const now = ctx.hrmsNowISO();
-      const all = Array.isArray(state0.forecastProductAliasRules) ? state0.forecastProductAliasRules.slice() : [];
-      const normalizedTokens = [canonical, ...aliases]
-        .map((x) => String(x || '').trim())
-        .filter(Boolean)
-        .map((x) => ({ raw: x, norm: ctx.normalizeProductName(x) }))
-        .filter((x) => x.norm);
-      if (!normalizedTokens.length) return { ok: false, status: 400, error: 'invalid_aliases' };
-
-      const storeItems = all.filter((x) => {
-        const rid = ctx.normalizeBrandId(x?.brandId || ctx.resolveStoreBrandContext(state0, String(x?.store || '').trim()).brandId);
-        return rid === scope.brandId;
-      });
-      const used = new Map();
-      storeItems.forEach((it) => {
-        const names = [String(it?.canonical || '').trim(), ...(Array.isArray(it?.aliases) ? it.aliases : [])];
-        names.forEach((name) => {
-          const norm = ctx.normalizeProductName(name);
-          if (!norm) return;
-          used.set(norm, String(it?.id || ''));
-        });
-      });
-      const conflict = normalizedTokens.find((x) => used.has(x.norm));
-      if (conflict) return { ok: false, status: 400, error: 'duplicate_alias', message: `名称「${conflict.raw}」已被其他规则使用` };
-
-      const item = {
-        id: randomUUID(),
-        brandId: scope.brandId,
-        brandName: scope.brandName,
-        store: scope.storeScope[0] || scope.store || '',
-        canonical,
-        aliases: Array.from(new Set(aliases.map((x) => String(x || '').trim()).filter(Boolean))),
-        createdAt: now,
-        createdBy: username,
-        updatedAt: now,
-        updatedBy: username
-      };
-      all.unshift(item);
-      await ctx.saveSharedState({ ...state0, forecastProductAliasRules: all.slice(0, 4000) });
-      return { ok: true, item };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function updateProductAlias(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可修改别名规则' };
-    const id = String(input.params?.id || '').trim();
-    const canonical = String(input.body?.canonical || '').trim();
-    const aliases = Array.isArray(input.body?.aliases) ? input.body.aliases : [];
-    if (!id) return { ok: false, status: 400, error: 'missing_id' };
-    if (!canonical) return { ok: false, status: 400, error: 'missing_canonical' };
-    try {
-      const state0 = (await ctx.getSharedState()) || {};
-      const all = Array.isArray(state0.forecastProductAliasRules) ? state0.forecastProductAliasRules.slice() : [];
-      const idx = all.findIndex((x) => String(x?.id || '').trim() === id);
-      if (idx < 0) return { ok: false, status: 404, error: 'not_found' };
-
-      const existing = all[idx];
-      const store = String(existing?.store || '').trim();
-      const brandId = ctx.normalizeBrandId(existing?.brandId || ctx.resolveStoreBrandContext(state0, store).brandId);
-      const brandName = String(existing?.brandName || ctx.resolveStoreBrandContext(state0, store).brandName || '').trim();
-      const now = ctx.hrmsNowISO();
-      const normalizedTokens = [canonical, ...aliases]
-        .map((x) => String(x || '').trim())
-        .filter(Boolean)
-        .map((x) => ({ raw: x, norm: ctx.normalizeProductName(x) }))
-        .filter((x) => x.norm);
-      if (!normalizedTokens.length) return { ok: false, status: 400, error: 'invalid_aliases' };
-
-      const used = new Map();
-      all
-        .filter((x) => String(x?.id || '').trim() !== id)
-        .filter((x) => ctx.normalizeBrandId(x?.brandId || ctx.resolveStoreBrandContext(state0, String(x?.store || '').trim()).brandId) === brandId)
-        .forEach((it) => {
-          const names = [String(it?.canonical || '').trim(), ...(Array.isArray(it?.aliases) ? it.aliases : [])];
-          names.forEach((name) => {
-            const norm = ctx.normalizeProductName(name);
-            if (!norm) return;
-            used.set(norm, String(it?.id || ''));
-          });
-        });
-      const conflict = normalizedTokens.find((x) => used.has(x.norm));
-      if (conflict) return { ok: false, status: 400, error: 'duplicate_alias', message: `名称「${conflict.raw}」已被其他规则使用` };
-
-      all[idx] = {
-        ...existing,
-        brandId,
-        brandName,
-        canonical,
-        aliases: Array.from(new Set(aliases.map((x) => String(x || '').trim()).filter(Boolean))),
-        updatedAt: now,
-        updatedBy: username
-      };
-      await ctx.saveSharedState({ ...state0, forecastProductAliasRules: all });
-      return { ok: true, item: all[idx] };
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
-}
-
-export async function deleteProductAlias(ctx, input) {
-
-    const username = String(input.username || '').trim();
-    const role = String(input.role || '').trim();
-    if (!username) return { ok: false, status: 400, error: 'missing_user' };
-    if (!ctx.canManageGrossProfitProfiles(role)) return { ok: false, status: 403, error: 'forbidden', message: '仅管理员可删除别名规则' };
-    const id = String(input.params?.id || '').trim();
-    if (!id) return { ok: false, status: 400, error: 'missing_id' };
-    try {
-      const state0 = (await ctx.getSharedState()) || {};
-      const all = Array.isArray(state0.forecastProductAliasRules) ? state0.forecastProductAliasRules.slice() : [];
-      const idx = all.findIndex((x) => String(x?.id || '').trim() === id);
-      if (idx < 0) return { ok: false, status: 404, error: 'not_found' };
-      all.splice(idx, 1);
-      await ctx.saveSharedState({ ...state0, forecastProductAliasRules: all });
-      return { ok: true};
-    } catch (e) {
-      return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
-    }
-  
 }
 
 export async function getCoreProductSales(ctx, input) {
@@ -811,45 +439,18 @@ export async function listGrossProfitProfiles(ctx, input) {
       });
       if (qBizType) items = items.filter((x) => String(x?.bizType || '').trim() === qBizType || !String(x?.bizType || '').trim());
 
-      // 合并飞书菜品库成本数据（dish_library_costs）
-      try {
-        const storeKeys = scope.storeScope.map(s => ctx.normalizeStoreKey(s));
-        // 按品牌过滤成本，避免两品牌同名菜成本互相污染（品牌从 scope/门店名前缀可靠推断；'*' 为通用兜底）。
-        const dlBrand = ctx.forecastBrandToken(`${scope.brandName||''}${(scope.storeScope||[]).join('')}`);
-        const dlParams = [storeKeys];
-        let dlBrandClause = '';
-        if (dlBrand) { dlParams.push(dlBrand); dlBrandClause = ` AND (brand=$${dlParams.length} OR brand='*')`; }
-        const dlR = await ctx.pool.query(`SELECT biz_type,dish_name,dish_price,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=ANY($1) OR store='*')${dlBrandClause}`, dlParams);
-        const existingKeys = new Set(items.map(x => `${normalizeForecastBizType(x?.bizType)||''}||${normalizeProductName(String(x?.product||'').trim())}`));
-        for (const r of (dlR.rows||[])) {
-          const biz = ctx.normalizeForecastBizType(r.biz_type) || '';
-          const name = String(r.dish_name||'').trim();
-          const nameNorm = ctx.normalizeProductName(name);
-          const cost = ctx.safeNumber(r.unit_cost);
-          if (!nameNorm || !Number.isFinite(cost) || cost < 0) continue;
-          const ek = `${biz}||${nameNorm}`;
-          if (!existingKeys.has(ek)) {
-            items.push({ product: name, bizType: biz, costPerUnit: Number(cost.toFixed(4)), source: 'feishu_bitable' });
-            existingKeys.add(ek);
-          }
-        }
-      } catch (e) { log.error({ msg: 'inventory_profiles_dish_costs_merge_failed', err: e?.message || String(e) }); }
+      items = await mergeDishLibraryCosts(ctx, items, scope, { includeSource: true, log });
 
       items.sort((a, b) => String(a?.product || '').localeCompare(String(b?.product || ''), 'zh-Hans-CN'));
 
       // Enrich with avg price from history for margin rate computation
       const today = new Date().toISOString().slice(0, 10);
-      const salesRawHistoryRows = await ctx.loadInventoryForecastHistoryFromSalesRaw({
-        storeScope: scope.storeScope,
+      const historyRows = await loadGrossProfitHistory(ctx, state0, scope, {
         bizType: qBizType || '',
         startDate: ctx.shiftForecastDate(today, -180),
-        endDate: today
+        endDate: today,
+        filterStateByRange: false,
       });
-      const stateHistoryRows = (Array.isArray(state0.inventoryForecastHistory) ? state0.inventoryForecastHistory : [])
-        .filter((x) => scope.storeScope.includes(String(x?.store || '').trim()))
-        .filter((x) => !qBizType || String(x?.bizType || '').trim() === qBizType)
-        .slice(0, 5000);
-      const historyRows = ctx.mergePreferredForecastHistoryRows(salesRawHistoryRows, stateHistoryRows, 5000);
       const aliasLookup = ctx.buildForecastProductAliasLookup(state0, { store: scope.store, brandId: scope.brandId });
       const priceMap = ctx.computeAvgPricePerProduct(historyRows, scope.storeScope, aliasLookup);
       const enriched = items.map((x) => {
@@ -891,15 +492,11 @@ export async function upsertGrossProfitProfiles(ctx, input) {
 
       // Compute avg prices for cost→gross conversion
       const today = new Date().toISOString().slice(0, 10);
-      const salesRawHistoryRows = await ctx.loadInventoryForecastHistoryFromSalesRaw({
-        storeScope: scope.storeScope,
+      const historyRows = await loadGrossProfitHistory(ctx, state0, scope, {
         startDate: ctx.shiftForecastDate(today, -180),
-        endDate: today
+        endDate: today,
+        filterStateByRange: false,
       });
-      const stateHistoryRows = (Array.isArray(state0.inventoryForecastHistory) ? state0.inventoryForecastHistory : [])
-        .filter((x) => scope.storeScope.includes(String(x?.store || '').trim()))
-        .slice(0, 5000);
-      const historyRows = ctx.mergePreferredForecastHistoryRows(salesRawHistoryRows, stateHistoryRows, 5000);
       const aliasLookup = ctx.buildForecastProductAliasLookup(state0, { store: scope.store, brandId: scope.brandId });
       const priceMap = ctx.computeAvgPricePerProduct(historyRows, scope.storeScope, aliasLookup);
 
@@ -1062,33 +659,15 @@ export async function estimateGrossMargin(ctx, input) {
       const scope = ctx.resolveForecastScope(state0, username, role, input.body?.store, input.body?.brandId);
       if (!scope.brandId || !scope.storeScope.length) return { ok: false, status: 400, error: 'missing_brand_or_store_scope' };
 
-      const salesRawHistoryRows = await ctx.loadInventoryForecastHistoryFromSalesRaw({
-        storeScope: scope.storeScope,
+      const historyRows = await loadGrossProfitHistory(ctx, state0, scope, {
         bizType,
         startDate,
-        endDate
+        endDate,
       });
-      const stateHistoryRows = (Array.isArray(state0.inventoryForecastHistory) ? state0.inventoryForecastHistory : [])
-        .filter((x) => scope.storeScope.includes(String(x?.store || '').trim()))
-        .filter((x) => !bizType || String(x?.bizType || '').trim() === bizType)
-        .filter((x) => ctx.inDateRange(String(x?.date || '').trim(), startDate, endDate))
-        .slice(0, 5000);
-      const historyRows = ctx.mergePreferredForecastHistoryRows(salesRawHistoryRows, stateHistoryRows, 5000);
       let profiles = (Array.isArray(state0.forecastGrossProfitProfiles) ? state0.forecastGrossProfitProfiles : [])
         .filter((x) => ctx.normalizeBrandId(x?.brandId || ctx.resolveStoreBrandContext(state0, String(x?.store || '').trim()).brandId) === scope.brandId)
         .slice(0, 5000);
-      // 合并飞书菜品库成本
-      try {
-        const sk = scope.storeScope.map(s => ctx.normalizeStoreKey(s));
-        // 按品牌过滤成本，避免两品牌同名菜成本互相污染。
-        const dlBrand = ctx.forecastBrandToken(`${scope.brandName||''}${(scope.storeScope||[]).join('')}`);
-        const dlParams = [sk];
-        let dlBrandClause = '';
-        if (dlBrand) { dlParams.push(dlBrand); dlBrandClause = ` AND (brand=$${dlParams.length} OR brand='*')`; }
-        const dlR = await ctx.pool.query(`SELECT biz_type,dish_name,unit_cost FROM dish_library_costs WHERE enabled=TRUE AND (lower(regexp_replace(coalesce(store,''),'\\s+','','g'))=ANY($1) OR store='*')${dlBrandClause}`, dlParams);
-        const ek = new Set(profiles.map(x => `${normalizeForecastBizType(x?.bizType)||''}||${normalizeProductName(String(x?.product||'').trim())}`));
-        for (const r of (dlR.rows||[])) { const b=ctx.normalizeForecastBizType(r.biz_type)||''; const n=String(r.dish_name||'').trim(); const nNorm=ctx.normalizeProductName(n); const c=ctx.safeNumber(r.unit_cost); if(!nNorm||!Number.isFinite(c)||c<0) continue; const k=`${b}||${nNorm}`; if(!ek.has(k)){profiles.push({product:n,bizType:b,costPerUnit:Number(c.toFixed(4))});ek.add(k);} }
-      } catch (e) { log.error({ msg: 'inventory_margin_dish_costs_merge_failed', err: e?.message || String(e) }); }
+      profiles = await mergeDishLibraryCosts(ctx, profiles, scope, { log });
       const aliasLookup = ctx.buildForecastProductAliasLookup(state0, { store: scope.store, brandId: scope.brandId });
 
       const estimate = ctx.estimateGrossMarginByHistory({

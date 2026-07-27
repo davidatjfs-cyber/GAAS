@@ -10,6 +10,10 @@ import {
   listInspectionReports,
   markInspectionReportSent,
 } from './tenant-operation-inspection-service.js';
+import {
+  buildInspectionReportHtml as buildInspectionReportHtmlDirect,
+  generateInspectionReport as generateInspectionReportDirect,
+} from './tenant-operation-inspection/inspection-report-service.js';
 
 const STATUS = {
   ok: '正常',
@@ -141,6 +145,22 @@ test('buildInspectionReportHtml escapes technical terms and renders tables', () 
   assert.equal(html.includes('ontology'), false);
   assert.match(html, /归因计算/);
   assert.match(html, /手机号缺失/);
+});
+
+test('inspection report module keeps direct report rendering behavior', () => {
+  const report = generateInspectionReportDirect({
+    tenantId: 'direct-module',
+    overview: { health_score: 100, top_issues: [] },
+    store_results: [],
+    items: [makeItem({ store_name: '', status: STATUS.abnormal, severity: 'P2' })],
+  });
+  const html = buildInspectionReportHtmlDirect(
+    { ...report, customer_non_execution: { statement: '<未执行>' } },
+    { tenantName: '直营店', healthScore: 100 }
+  );
+  assert.equal(report.store_scope, '全部门店');
+  assert.match(html, /&lt;未执行&gt;/);
+  assert.match(html, /直营店/);
 });
 
 function makeInspectionPool({
