@@ -75,6 +75,11 @@ import { createAgentStoreIdentity } from './domains/agent-store/identity.js';
 import { createNotifyBitablePipelineFailure } from './domains/feishu-bitable/pipeline-failure-notify.js';
 import { createTaskResponseApi } from './domains/feishu-bitable/task-response.js';
 import { createBitablePollingController } from './domains/feishu-bitable/start-bitable-polling.js';
+import { createBitableDedupPollApi } from './domains/feishu-bitable/bitable-dedup-poll.js';
+import {
+  createScheduleOpsTasks,
+  createCheckDataTriggers,
+} from './domains/agent-ops/ops-schedule-triggers.js';
 import {
   buildKpiRadarAlertJson,
 } from './domains/agent-auditor/run-data-auditor.js';
@@ -583,81 +588,23 @@ export async function getBitableSubmissionStats() {
 // ─────────────────────────────────────────────
 // Bitable Integration for Checklist (continued)
 
-const _bitableLastProcessedTime = new Map();
-const _bitableProcessedRecordIds = new Set();
-const BITABLE_DEDUP_MAX_KEYS = 30000;
-const BITABLE_DEDUP_CLEAN_COUNT = 8000;
-let _bitableDedupsSeeded = false;
-
-// 启动时从数据库种子化dedup集合，避免重启后重复发送确认消息
-async function seedBitableDedup() {
-  if (_bitableDedupsSeeded) return;
-  _bitableDedupsSeeded = true;
-  try {
-    const r = await pool().query(
-      `SELECT record_id, table_id, MAX(updated_at) AS updated_at
-       FROM feishu_generic_records
-       WHERE created_at > NOW() - INTERVAL '30 days'
-       GROUP BY record_id, table_id
-       LIMIT 20000`
-    );
-    const tableIdToConfigKeys = new Map();
-    for (const [key, cfg] of Object.entries(BITABLE_CONFIGS)) {
-      const tableId = String(cfg?.tableId || '').trim();
-      if (!tableId) continue;
-      if (!tableIdToConfigKeys.has(tableId)) tableIdToConfigKeys.set(tableId, []);
-      tableIdToConfigKeys.get(tableId).push(key);
-    }
-    const fallbackKeys = Object.keys(BITABLE_CONFIGS).filter((k) => BITABLE_CONFIGS[k]?.type !== 'task_response');
-    for (const row of (r.rows || [])) {
-      const recordId = String(row?.record_id || '').trim();
-      if (!recordId) continue;
-      const tableId = String(row?.table_id || '').trim();
-      const configKeys = tableIdToConfigKeys.get(tableId) || fallbackKeys;
-      const rowMs = row?.updated_at ? new Date(row.updated_at).getTime() : 0;
-      const safeMs = Number.isFinite(rowMs) ? rowMs : 0;
-      for (const key of configKeys) {
-        const pk = `${key}_${recordId}`;
-        _bitableProcessedRecordIds.add(pk);
-        _bitableLastProcessedTime.set(pk, safeMs);
-      }
-    }
-    log.info(`[bitable] seeded dedup set with ${_bitableProcessedRecordIds.size} keys from DB`);
-  } catch (e) {
-    log.error('[bitable] seed dedup failed:', e?.message);
-  }
-}
+const _bitableDedupPoll = createBitableDedupPollApi({
+  pool,
+  bitableConfigs: BITABLE_CONFIGS,
+  pollBitableSubmissions: (configKey) => pollBitableSubmissions(configKey),
+  log,
+});
+const {
+  lastProcessedTime: _bitableLastProcessedTime,
+  processedRecordIds: _bitableProcessedRecordIds,
+  seedBitableDedup,
+  pollAllBitableSubmissions,
+} = _bitableDedupPoll;
+export { pollAllBitableSubmissions };
 
 let _pollBitableSubmissions;
 export async function pollBitableSubmissions(configKey = 'ops_checklist') {
   return _pollBitableSubmissions(configKey);
-}
-
-// 多配置轮询调度器
-export async function pollAllBitableSubmissions() {
-  const preferredOrder = [
-    'ops_checklist',
-    'bad_reviews',
-    'closing_reports',
-    'opening_reports',
-    'meeting_reports',
-    'material_majixian',
-    'material_hongchao',
-    'table_visit'
-  ];
-  const known = new Set(preferredOrder);
-  const finalKeys = [
-    ...preferredOrder.filter((k) => BITABLE_CONFIGS[k]),
-    ...Object.keys(BITABLE_CONFIGS).filter((k) => !known.has(k) && BITABLE_CONFIGS[k]?.type !== 'task_response')
-  ];
-  for (const configKey of finalKeys) {
-    try {
-      await pollBitableSubmissions(configKey);
-    } catch (e) {
-      log.error(`[bitable][${configKey}] poll error:`, e?.message);
-    }
-    await new Promise(r => setImmediate(r));
-  }
 }
 
 // ─────────────────────────────────────────────
@@ -869,65 +816,9 @@ export async function getOpsKnowledgeSupport(query, context = {}) {
   return _getOpsKnowledgeSupport(query, context);
 }
 
-// 任务调度与主动触发
-export async function scheduleOpsTasks() {
-  const config = getOpsAgentConfig().scheduledTasks;
-  const now = new Date();
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  
-  const scheduledTasks = [];
-  
-  // 检查日常巡检任务
-  for (const inspection of config.dailyInspections) {
-    if (inspection.time === currentTime) {
-      const storeName = String(inspection?.store || '').trim();
-      if (!storeName) continue;
-      const task = {
-        type: 'daily_inspection',
-        brand: String(inspection?.brand || '').trim(),
-        store: storeName,
-        inspectionType: inspection.type,
-        checklist: inspection.checklist,
-        scheduledTime: now.toISOString()
-      };
-      scheduledTasks.push(task);
-    }
-  }
-  
-  return scheduledTasks;
-}
-
-// 数据联动触发检查
-export async function checkDataTriggers() {
-  const config = getOpsAgentConfig().scheduledTasks.dataTriggers;
-  const triggers = [];
-  
-  // 检查产品投诉阈值
-  try {
-    const recentComplaints = await pool().query(`
-      SELECT store, product_name, COUNT(*) as complaint_count
-      FROM bad_reviews 
-      WHERE review_type = 'product' 
-        AND created_at > NOW() - INTERVAL '24 hours'
-      GROUP BY store, product_name
-      HAVING COUNT(*) >= $1
-    `, [config.productComplaintThreshold]);
-    
-    for (const complaint of recentComplaints.rows) {
-      triggers.push({
-        type: 'product_complaints',
-        store: complaint.store,
-        product: complaint.product_name,
-        count: complaint.complaint_count,
-        action: 'check_production_process'
-      });
-    }
-  } catch (e) {
-    log.error('[ops_supervisor] data trigger check failed:', e?.message);
-  }
-  
-  return triggers;
-}
+// 任务调度与主动触发 → domains/agent-ops/ops-schedule-triggers.js
+export const scheduleOpsTasks = createScheduleOpsTasks({ getOpsAgentConfig });
+export const checkDataTriggers = createCheckDataTriggers({ getOpsAgentConfig, pool, log });
 
 // 执行闭环追踪 - 催办逻辑 → domains/agent-ops/follow-up-overdue-tasks.js
 let _followUpOverdueTasks;
@@ -1017,8 +908,8 @@ const _bitablePolling = createBitablePollingController({
   bitableConfigs: BITABLE_CONFIGS,
   processedRecordIds: _bitableProcessedRecordIds,
   lastProcessedTime: _bitableLastProcessedTime,
-  dedupMaxKeys: BITABLE_DEDUP_MAX_KEYS,
-  dedupCleanCount: BITABLE_DEDUP_CLEAN_COUNT,
+  dedupMaxKeys: 30000,
+  dedupCleanCount: 8000,
   seedBitableDedup,
   extractRelationsFromBitableRecord,
   processBitableData,
@@ -1077,42 +968,6 @@ export async function onFeishuEvent(body) {
 let _pushIssuesToFeishu;
 export async function pushIssuesToFeishu(tenantId = 'default') {
   return _pushIssuesToFeishu(tenantId);
-}
-
-/** 周度异常汇总（anomaly_rollups_v2）的「绩效考核周报」仅周一推送，避免与即时「BI异常情况扣分」卡重复轰炸；非周一积压行保留 feishu_notified=false 至下周一再推。 */
-function isShanghaiMondayNow() {
-  const wd = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Shanghai', weekday: 'short' });
-  return wd === 'Mon';
-}
-
-/** 上海日历 yyyy-mm-dd */
-function shanghaiYmdCal(d = new Date()) {
-  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
-}
-function addDaysYmdShanghaiPush(ymd, delta) {
-  const t = new Date(`${ymd}T12:00:00+08:00`);
-  t.setUTCDate(t.getUTCDate() + delta);
-  return t.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
-}
-/** 刚结束的自然周周一（与 agents 周评分对齐）：昨天所在周的周一 */
-function lastCompletedWeekMondayShanghaiForPush() {
-  const today = shanghaiYmdCal();
-  const yst = addDaysYmdShanghaiPush(today, -1);
-  return addDaysYmdShanghaiPush(yst, -6);
-}
-function currentAndPrevMonthPeriodStrForPush() {
-  const parts = shanghaiYmdCal().split('-');
-  const y = parseInt(parts[0], 10);
-  const m = parseInt(parts[1], 10);
-  const cur = `${y}-${String(m).padStart(2, '0')}`;
-  let pm = m - 1;
-  let py = y;
-  if (pm < 1) {
-    pm = 12;
-    py -= 1;
-  }
-  const prev = `${py}-${String(pm).padStart(2, '0')}`;
-  return { cur, prev };
 }
 
 // Push performance scores to users via Feishu
