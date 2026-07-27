@@ -462,6 +462,7 @@
     "domains/data-executor/time-range.js",
     "domains/data-executor/metric-query-executors.js",
     "domains/knowledge/knowledge-groups.js",
+    "domains/knowledge/explanations.js",
     "domains/app/routes.js"
   ]
 }
