@@ -511,6 +511,8 @@
     "domains/feishu-reports-sync/dish-library-sync.js",
     "domains/feishu-reports-sync/sop-sync.js",
     "domains/feishu-reports-sync/orchestrator.js",
-    "services/feishu-dish-library-schema-ensure.js"
+    "services/feishu-dish-library-schema-ensure.js",
+    "domains/agent-bitable/configs.js",
+    "domains/agent-auditor/quality-checks.js"
   ]
 }
