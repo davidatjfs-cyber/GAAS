@@ -303,6 +303,7 @@ import {
   ensureTenantRuntimeTables as ensureTenantRuntimeTablesImpl,
   ensureUserReadsTable as ensureUserReadsTableImpl,
   ensureLoginLogTable as ensureLoginLogTableImpl,
+  ensureLeaveDomainTable as ensureLeaveDomainTableImpl,
 } from './services/hrms-core-schema-ensure.js';
 // P17：从 index.js 外提的遗留 listen-time ensure*（只搬家，不新增 schema）
 import { ensureOpsTasksTable as ensureOpsTasksTableImpl } from './services/ops-tasks-schema-ensure.js';
@@ -783,7 +784,7 @@ const {
 });
 
 // Wave H29: payroll/leave domain dual-write → domains/payroll/domain-sync.js
-// After getSharedState + notifyAdminsDualWriteFailure; ensureLeaveDomainTable stays in index.
+// After getSharedState + notifyAdminsDualWriteFailure; ensureLeaveDomainTable → hrms-core-schema-ensure.
 const {
   upsertPayrollDomainFromState,
   upsertLeaveDomainFromState,
@@ -871,17 +872,10 @@ registerKnowledgeRoutes(app, {
 // (domains/shared/domain-json-empty.js)
 
 // Wave H29: upsert/schedule payroll+leave domain → domains/payroll/domain-sync.js
+// P20: ensureLeaveDomainTable → services/hrms-core-schema-ensure.js
 
 async function ensureLeaveDomainTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS hrms_leave_domain (
-      id TEXT PRIMARY KEY,
-      leave_balance_overrides JSONB DEFAULT '{}'::jsonb,
-      leave_balance_adjustments JSONB DEFAULT '[]'::jsonb,
-      leave_cumulative_close_snapshots JSONB DEFAULT '{}'::jsonb,
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
+  return ensureLeaveDomainTableImpl(pool);
 }
 
 // Wave H24: upsertEmployeeAttendanceMirrorFromCheckinRow → domains/leave-attendance/attendance-mirror.js

@@ -1,6 +1,6 @@
 /**
  * Dual-write hrms_state payroll / leave JSON blobs into domain tables.
- * No DDL here — leave ensureLeaveDomainTable in index (legacy listen-time).
+ * No DDL here — ensureLeaveDomainTable lives in services/hrms-core-schema-ensure.js.
  */
 
 import { childLogger } from '../../utils/logger.js';

@@ -179,3 +179,16 @@ export async function ensureLoginLogTable(pool) {
     log.error({ msg: 'ensure_login_log_table_failed', err: e?.message || String(e) });
   }
 }
+
+/** P20：从 index.js 外提的遗留 listen-time ensure*（只搬家，不新增 schema） */
+export async function ensureLeaveDomainTable(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hrms_leave_domain (
+      id TEXT PRIMARY KEY,
+      leave_balance_overrides JSONB DEFAULT '{}'::jsonb,
+      leave_balance_adjustments JSONB DEFAULT '[]'::jsonb,
+      leave_cumulative_close_snapshots JSONB DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+}
