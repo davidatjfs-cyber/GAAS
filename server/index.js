@@ -73,11 +73,15 @@ import { createStartupTenantReconcileRunner } from './domains/shared/startup-ten
 import { runStartupAgentSchemaBootstrap } from './domains/shared/startup-agent-schema.js';
 import { runStartupModuleSchedulers } from './domains/shared/startup-module-schedulers.js';
 import { runStartupRoleCleanup } from './domains/shared/startup-role-cleanup.js';
+import { createAiQualitySchedulerHandlers } from './domains/shared/ai-quality-scheduler-handlers.js';
+import { runModuleLoadSchemaEnsure } from './domains/shared/module-load-schema-ensure.js';
+import { startBackgroundRuntimeMonitors } from './domains/shared/startup-background-monitors.js';
 import {
   inferContentType,
   buildInlineContentDisposition,
 } from './domains/uploads/content-type.js';
 import { createObjectStorageHelpers } from './domains/uploads/object-storage.js';
+import { createUploadMulters } from './domains/uploads/create-multers.js';
 import { createRequireEnvHelpers } from './domains/shared/require-env.js';
 import { createLoginLogHelpers } from './domains/auth/login-log.js';
 import { createSessionNonceHelpers } from './domains/auth/session-nonce.js';
@@ -484,69 +488,16 @@ registerWebStaticRoutes(app, { express, fs, path, webRootDir });
 
 // Wave 4h: /api/permission-groups* → domains/permission-groups/routes.js
 
-const UPLOAD_ALLOWED_EXTS = new Set([
-  '.pdf','.doc','.docx','.xls','.xlsx','.ppt','.pptx',
-  '.jpg','.jpeg','.png','.gif','.webp','.bmp',
-  '.txt','.csv','.zip','.rar',
-  '.mp4','.mov','.webm','.avi',
-]);
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      const st = ensureUploadsDir();
-      if (!st.ok) return cb(new Error('uploads_dir_not_writable: ' + String(st.error || 'unknown')));
-      return cb(null, uploadsDir);
-    },
-    filename: (req, file, cb) => {
-      const orig = String(file?.originalname || 'file');
-      const ext = path.extname(orig).toLowerCase().slice(0, 16);
-      if (!UPLOAD_ALLOWED_EXTS.has(ext)) {
-        return cb(new Error(`blocked_file_type: ${ext || 'unknown'}`));
-      }
-      cb(null, `${randomUUID()}${ext}`);
-    }
-  }),
-  limits: { fileSize: 100 * 1024 * 1024 }
-});
-
-const knowledgeUpload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      const st = ensureUploadsDir();
-      if (!st.ok) return cb(new Error('uploads_dir_not_writable: ' + String(st.error || 'unknown')));
-      return cb(null, uploadsDir);
-    },
-    filename: (req, file, cb) => {
-      const orig = String(file?.originalname || 'file');
-      const ext = path.extname(orig).toLowerCase().slice(0, 16);
-      if (!UPLOAD_ALLOWED_EXTS.has(ext) && !['.json', '.md', '.yaml', '.yml'].includes(ext)) {
-        return cb(new Error(`blocked_file_type: ${ext || 'unknown'}`));
-      }
-      cb(null, `${randomUUID()}${ext}`);
-    }
-  }),
-  limits: { fileSize: 500 * 1024 * 1024 } // 视频上传需 500MB
+const { upload, knowledgeUpload, trainingPracticeUpload } = createUploadMulters({
+  multer,
+  path,
+  fs,
+  randomUUID,
+  uploadsDir,
+  ensureUploadsDir,
 });
 
 // Wave H12: recipeMediaUpload + /api/recipes/{upload-step-media,template,import} → recipe-management.js
-
-// 培训实操上传（图片 + 视频）
-const TRAINING_MEDIA_EXTS = new Set(['.jpg','.jpeg','.png','.mp4','.mov','.webm','.heic']);
-const trainingPracticeUpload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      const trainingDir = path.join(uploadsDir, 'training');
-      fs.mkdirSync(trainingDir, { recursive: true });
-      cb(null, trainingDir);
-    },
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase();
-      if (!TRAINING_MEDIA_EXTS.has(ext)) return cb(new Error('blocked_file_type'));
-      cb(null, `training-${randomUUID()}${ext}`);
-    }
-  }),
-  limits: { fileSize: 200 * 1024 * 1024 }
-});
 
 // Wave 4i / H12: POST /api/uploads/* + GET /uploads/* + growth/upload → domains/uploads/routes.js
 
@@ -1713,31 +1664,31 @@ app.listen(PORT, HOST, async () => {
 
 app.use(createExpressErrorMiddleware({ multer }));
 
-if (__ALLOW_SCHEMA_CHANGES__) {
-  void runWithBootstrapTenantContext(async () => {
-    await ensureBaselineSchemaHealth(pool).catch(e => logger.warn({ msg: 'schema_baseline_health', err: e?.message || String(e) }));
-    await ensureExamResultsTable();
-    await ensureHrmsStateTable();
-    await ensureApprovalTables();
-    await ensureUserReadsTable();
-    await ensureUserSessionsTable();
-    await ensureLoginLogTable();
-    await ensureAgentConfigTables();
-
-    await ensureCheckinTable();
-    await ensureOpsTasksTable();
-    await ensureFeishuSyncTable();
-    await ensureFeishuGenericRecordsTable();
-    await ensureFeishuGenericRecordsNotifyTrigger();
-    await ensureTableVisitRecordsTable();
-    await ensureDedupIndexes();
-  }).catch((e) =>
-    logger.error({ msg: 'startup_bootstrap_schema_failed', err: e?.message || String(e) })
-  );
-  startOpsTaskScheduler();
-} else {
-  logger.warn({ msg: 'skip_auto_schema_ensure', appEnv: APP_ENV });
-}
+void runModuleLoadSchemaEnsure({
+  allowSchemaChanges: __ALLOW_SCHEMA_CHANGES__,
+  appEnv: APP_ENV,
+  log: logger,
+  runWithBootstrapTenantContext,
+  ensureBaselineSchemaHealth,
+  pool,
+  ensureExamResultsTable,
+  ensureHrmsStateTable,
+  ensureApprovalTables,
+  ensureUserReadsTable,
+  ensureUserSessionsTable,
+  ensureLoginLogTable,
+  ensureAgentConfigTables,
+  ensureCheckinTable,
+  ensureOpsTasksTable,
+  ensureFeishuSyncTable,
+  ensureFeishuGenericRecordsTable,
+  ensureFeishuGenericRecordsNotifyTrigger,
+  ensureTableVisitRecordsTable,
+  ensureDedupIndexes,
+  startOpsTaskScheduler,
+}).catch((e) =>
+  logger.error({ msg: 'startup_bootstrap_schema_failed', err: e?.message || String(e) })
+);
 
 // Wave H8: offboarding auto-disable + promotion sweep → domains/approvals/scheduler-offboarding-promotion.js
 // Factory after H19 applyHrmsUserAccountGateFromEmployee / notifications / getPromotionTrackRecipients; module-load start (before birthday H6).
@@ -1780,119 +1731,33 @@ startBirthdayGreetingScheduler();
 
 // Wave 4o: usage-weekly → domains/usage-weekly/routes.js
 
-registerProcessGuards({ sendLarkMessage, FEISHU_ALERT_ADMIN_HEALTH });
-
-// Wave H13: notification cleanup + freshness monitor cron → domains/notifications/scheduler-*.js
-const { startNotificationsCleanupScheduler } = createNotificationsCleanupScheduler({
+const aiQualityHandlers = createAiQualitySchedulerHandlers({
+  callLLM,
+  runPlatformQualityModelTask,
   pool,
-  runForActiveTenants,
 });
-startNotificationsCleanupScheduler();
 
-const { startFreshnessMonitorScheduler } = createFreshnessMonitorScheduler({
+startBackgroundRuntimeMonitors({
+  registerProcessGuards,
+  sendLarkMessage,
+  FEISHU_ALERT_ADMIN_HEALTH,
+  FEISHU_ALERT_ADMIN_GROWTH,
+  createNotificationsCleanupScheduler,
+  createFreshnessMonitorScheduler,
   pool,
   runForActiveTenants,
   runFreshnessCheck,
   FRESHNESS_SOURCES,
-  sendLarkMessage,
-});
-startFreshnessMonitorScheduler();
-
-// schema_migrations 漂移对账（仓库 .sql vs 记账表）；告警走增长管理员通道
-startSchemaMigrationDriftMonitor(pool, {
-  notifyFn: async (msg) => {
-    const send = getSendGrowthAlert();
-    if (send) return send(msg, 'schema_migration_drift');
-    return sendLarkMessage(FEISHU_ALERT_ADMIN_GROWTH, String(msg || ''), { skipDedup: true });
-  },
-});
-
-// 进程健康：区分 PM2 部署 SIGINT vs 异常退出；内存接近 max_memory_restart 告警（健康通道）
-startProcessHealthMonitor({
-  processName: 'hrms-service',
-  maxMemoryRestartBytes: Number(process.env.PM2_MAX_MEMORY_RESTART_BYTES || 800 * 1024 * 1024),
-  notifyFn: async (msg) => {
-    return sendLarkMessage(FEISHU_ALERT_ADMIN_HEALTH, String(msg || ''), { skipDedup: true });
-  },
-});
-
-// 经营语义层日更：CST 08:00–08:14 对各活跃租户门店 sync + 诊断（见 ontology/daily-diagnosis-scheduler.js）
-startOntologyDailyDiagnosisScheduler(pool);
-
-// 健康中心日巡缓存：CST 07:00–07:14 全量扫描，客服上班前红名单就绪
-startHealthCenterDailyScanScheduler(pool);
-// 健康中心运营闭环：CST 08:30 队列摘要 + 工作时段 SLA 提醒（投递走 setHealthIncidentNotifiers）
-startHealthOpsLoopScheduler(pool);
-// Multi-tenant AI quality flywheel: contract-authorized policies are synced for
-// active tenants, then tenant-scoped signals become redacted, balanced platform
-// evaluation data. Low-risk prompt patches pass offline and live canary gates
-// automatically; any regression rolls back without employee interaction.
-if (!String(process.env.AI_QUALITY_LLM_API_KEY || '').trim()) {
-  logger.error({ msg: 'ai_quality_llm_api_key_missing' });
-}
-startAiQualityLearningScheduler(pool, {
-  generateCandidate: async ({ route, samples, evidence }) => {
-    const result = await runPlatformQualityModelTask(pool, {
-      operation: 'generate_prompt_patch',
-      route,
-      execute: () => callLLM([
-      {
-        role: 'system',
-        content: `你是平台AI质量工程师。根据已脱敏、跨租户汇总的失败样本，为指定路由提出一个最小提示词补丁。
-只能总结共性，不得复原或猜测租户、员工、顾客身份，不得照抄样本中的专有名词或数字。
-严格返回JSON：{"problem_pattern":"共性问题","prompt_patch":"可追加到系统提示词的明确规则","risk":"潜在副作用","evaluation_focus":["评测重点"]}`,
-      },
-      {
-        role: 'user',
-        content: JSON.stringify({ route, evidence, samples }, null, 2).slice(0, 24000),
-      },
-      ], {
-        purpose: 'quality_improvement',
-        platformQuality: true,
-        temperature: 0,
-        max_tokens: 800,
-        skipCache: true,
-      }),
-    });
-    if (!result?.ok || !result.content) return null;
-    const text = String(result.content).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-    try {
-      return JSON.parse(text);
-    } catch (_error) {
-      return null;
-    }
-  },
-  evaluateCandidate: async ({ route, samples, proposal, evidence }) => {
-    const result = await runPlatformQualityModelTask(pool, {
-      operation: 'evaluate_prompt_patch',
-      route,
-      execute: () => callLLM([
-      {
-        role: 'system',
-        content: `你是独立AI质量评测器。对已脱敏失败样本与候选提示词补丁进行离线对比评测。
-不得猜测或恢复任何身份。只判断补丁能否纠正共性错误、是否有事实依据、是否引入安全风险。
-严格返回JSON：{"quality_score":0到1,"groundedness":0到1,"safety_violation_rate":0到1,"negative_feedback_rate":0到1,"p95_latency_ms":0,"rationale":"不超过100字"}`,
-      },
-      {
-        role: 'user',
-        content: JSON.stringify({ route, evidence, proposal, samples }, null, 2).slice(0, 24000),
-      },
-      ], {
-        purpose: 'quality_improvement_evaluation',
-        platformQuality: true,
-        temperature: 0,
-        max_tokens: 500,
-        skipCache: true,
-      }),
-    });
-    if (!result?.ok || !result.content) return null;
-    const text = String(result.content).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-    try {
-      return JSON.parse(text);
-    } catch (_error) {
-      return null;
-    }
-  },
+  startSchemaMigrationDriftMonitor,
+  getSendGrowthAlert,
+  startProcessHealthMonitor,
+  startOntologyDailyDiagnosisScheduler,
+  startHealthCenterDailyScanScheduler,
+  startHealthOpsLoopScheduler,
+  startAiQualityLearningScheduler,
+  aiQualityHandlers,
+  log: logger,
+  env: process.env,
 });
 
 // 公告已读回执：员工标记自己已读/已确认某条公告。
