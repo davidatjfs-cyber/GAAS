@@ -1,0 +1,15 @@
+{
+  "updated": "2026-07-27",
+  "note": "Mutation L1 默认 mutate 集：仅含最近全量跑实测 mutation score≥70 的文件。覆盖地板仍用 l1-coverage-floor.json；弱断言文件留在地板里继续抬覆盖，但不进默认变异闸门，避免虚假失败。可用 MUTATION_MUTATE=… 覆盖。",
+  "minScorePct": 70,
+  "sourceRun": "https://github.com/davidatjfs-cyber/GAAS/actions/runs/30243491804",
+  "files": [
+    "domains/approvals/normalize-helpers.js",
+    "domains/approvals/handlers/promotion.js",
+    "domains/approvals/handlers/monthly-confirm.js",
+    "domains/employees/account-gate.js",
+    "domains/employees/user-lookup.js",
+    "domains/shared/agents-service-auth.js",
+    "domains/shared/time-number.js"
+  ]
+}
