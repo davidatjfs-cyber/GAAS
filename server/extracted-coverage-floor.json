@@ -453,6 +453,7 @@
     "services/check-data-integration-helpers.js",
     "services/ai-quality-learning/contract-policy-service.js",
     "services/ai-quality-learning/release-candidate-service.js",
-    "services/tenant-operation-inspection/inspection-report-service.js"
+    "services/tenant-operation-inspection/inspection-report-service.js",
+    "services/tenant-health-incident/notification-actions.js"
   ]
 }
