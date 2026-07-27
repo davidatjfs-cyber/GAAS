@@ -52,12 +52,15 @@ import {
 } from './agent-config-manager.js';
 import { createAgentRuntimeConfig } from './domains/agent-runtime/runtime-config.js';
 import {
-  buildEvidencePackage,
-  detectFactDemand,
   isDataBackedReply,
 } from './domains/agent-message/quality-helpers.js';
 import { createAgentMessageRuntime } from './domains/agent-message/runtime.js';
 import { parseFeishuMarketingCopyTemplate } from './domains/agent-message/marketing-copy-helpers.js';
+import { prefixWithAgentName } from './domains/agent-message/agent-prefix.js';
+import { checkAgentPermission } from './domains/agent-message/check-agent-permission.js';
+import { createRunAgentEvalSuite } from './domains/agent-message/eval-suite.js';
+import { buildFeishuCardFromAgentReply } from './domains/agent-message/feishu-reply-card.js';
+export { prefixWithAgentName };
 import { createLarkSendApi } from './domains/agent-feishu-bot/lark-send.js';
 import { clampInt } from './domains/agent-bi/bi-tool-period.js';
 import {
@@ -176,16 +179,6 @@ function formatDate(d) {
   return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
 }
 
-const AGENT_EVAL_CASES = [
-  { text: '近7天门店营业额达成率怎么样', route: 'data_auditor', demand: 'hard' },
-  { text: '帮我看下差评最多的菜品', route: 'data_auditor', demand: 'hard' },
-  { text: '我要开市检查表', route: 'ops_supervisor', demand: 'soft' },
-  { text: '这条绩效扣分我想申诉', route: 'appeal', demand: 'soft' },
-  { text: '我想咨询离职流程', route: 'chief_evaluator', demand: 'soft' },
-  { text: '这个SOP退款标准怎么执行', route: 'train_advisor', demand: 'soft' },
-  { text: '你好', route: 'general', demand: 'none' }
-];
-
 function normalizePlainText(text, maxLen = 1200) {
   return String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
 }
@@ -224,13 +217,6 @@ async function buildBiFactSourceAudit(store, text) {
 }
 function buildBiSourceAuditText(auditRows = []) {
   return _biQueryHelpersApi.buildBiSourceAuditText(auditRows);
-}
-
-function buildFeishuCardFromAgentReply(route, resp) {
-  if (!resp) return null;
-  const t = {data_auditor:'小年',ops_supervisor:'小年',master:'小年'}[route] || '小年';
-  const c = {data_auditor:'blue',ops_supervisor:'green',master:'indigo'}[route] || 'blue';
-  return {config:{wide_screen_mode:true},header:{title:{content:t,tag:'plain_text'},template:c},elements:[{tag:'div',text:{content:String(resp),tag:'lark_md'}}]};
 }
 
 let _buildBiDeterministicTableVisitReply;
@@ -312,19 +298,6 @@ function isBlockedOpsChecklistPattern(checkType, taskKey = '') {
 function shouldSkipHrmsScheduledChecklist(config) {
   return _scheduledTaskRuntimeApi.shouldSkipHrmsScheduledChecklist(config);
 }
-
-const _BRAND_ANALYSIS_CONFIG = {
-  '洪潮': {
-    marginTolerance: 0.01,
-    scoreWeights: { quality: 0.4, cost: 0.3, response: 0.3 },
-    label: '洪潮模式'
-  },
-  '马己仙': {
-    marginTolerance: 0.02,
-    scoreWeights: { efficiency: 0.4, cost: 0.4, execution: 0.2 },
-    label: '马己仙模式'
-  }
-};
 
 const {
   normalizeBrandId,
@@ -962,13 +935,6 @@ export async function followUpOverdueTasks() {
   return _followUpOverdueTasks();
 }
 
-// 辅助函数：根据品牌获取门店列表
-async function getStoresForBrand(brandName) {
-  const state = await getSharedState();
-  const stores = getStoresFromState(state);
-  return stores.filter(s => s.brand === brandName);
-}
-
 let _runChiefEvaluator;
 export async function runChiefEvaluator(period, tenantId = 'default') {
   return _runChiefEvaluator(period, tenantId);
@@ -979,96 +945,8 @@ export async function runChiefEvaluator(period, tenantId = 'default') {
 // 9. Message Router
 // ─────────────────────────────────────────────
 
-const _AUDIT_KEYWORDS = ['损耗', '盘点', '毛利', '牛肉', '成本', '差评', '折扣', '营收', '对账', '异常'];
-const _OPS_KEYWORDS = ['图片', '卫生', '检查', '拍照', '摆盘', '收货', '消毒', '开市', '闭市', '巡检'];
-const _EVAL_KEYWORDS = ['分数', '绩效', '考核', '奖金', '得分', '扣分', '排名', '评价', '这周'];
-const _HR_KEYWORDS = ['离职', '辞职', '入职', '转正', '晋升', '调岗', '加薪', '薪资', '工资', '请假', '休假', '社保', '人事', '档案', '考勤'];
-const _APPEAL_KEYWORDS = ['申诉', '取消扣分', '不公平', '误判', '恢复', '投诉', '举报'];
-const _SOP_KEYWORDS = ['SOP', '赔付', '退款', '培训', '入职培训', '课件', '带教', '讲师', '考核培训', '技能培训', '标准作业'];
-
-// Agent name prefix mapping
-const AGENT_PREFIX = {
-  data_auditor: '小年',
-  ops_supervisor: '小年',
-  chief_evaluator: '小年',
-  train_advisor: '小年',
-  sop_advisor: '小年',
-  appeal: '小年',
-  master: '小年',
-  general: '小年'
-};
-
-export function prefixWithAgentName(route, text) {
-  const prefix = AGENT_PREFIX[route] || 'HRMS';
-  return `${prefix}：${text}`;
-}
-
 async function buildBiGroundingFacts(store, text) {
   return _biQueryHelpersApi.buildBiGroundingFacts(store, text);
-}
-
-async function buildBiDeterministicReviewReply(store, text) {
-  const q = String(text || '').trim();
-  const targetStore = String(store || '').trim();
-  if (!targetStore) return '';
-  if (!/(评价|差评|好评|评论)/.test(q)) return '';
-  if (!/(多少|几条|总数|总评价|统计|上周|本周|昨天|昨日|今天|今日|近7天|7天)/.test(q)) return '';
-
-  const normalizedStore = normalizeStoreKey(targetStore);
-  const period = resolveDateRangeFromQuestion(q, 7);
-  const periodLabel = period.label;
-
-  try {
-    const r = await pool().query(
-      `SELECT COUNT(DISTINCT record_id)::int AS c
-       FROM agent_messages
-       WHERE content_type = 'negative_review'
-         AND lower(regexp_replace(coalesce(
-           agent_data->>'store',
-           agent_data#>>'{fields,store}',
-           agent_data#>>'{fields,所属门店}',
-           agent_data#>>'{fields,门店}',
-           agent_data#>>'{fields,差评门店}',
-           ''
-         ), '\\s+', '', 'g')) LIKE $1
-         AND (
-           CASE
-             WHEN coalesce(agent_data->>'date','') ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN (agent_data->>'date')::date
-             WHEN coalesce(agent_data->>'date','') ~ '^\\d{10,13}$' THEN to_timestamp((agent_data->>'date')::bigint / CASE WHEN length(agent_data->>'date')=13 THEN 1000 ELSE 1 END)::date
-             ELSE created_at::date
-           END
-         ) BETWEEN $2::date AND $3::date`,
-      [normalizeStoreLike(normalizedStore), period.start, period.end]
-    );
-    const badCount = Number(r.rows?.[0]?.c || 0);
-    return `${periodLabel}评价数据（${targetStore}）\n- 差评数：${badCount}条\n- 好评数：当前系统未接入“好评总量”数据源，无法给出\n- 总评价数：当前系统未接入“全量评价”数据源，无法给出\n\n如需“总评价/好评/差评占比”精确值，请接入平台全量评价表（大众点评/美团）后再查。`;
-  } catch (e) {
-    return `${periodLabel}评价数据暂不可用（查询异常）。当前仅保证“差评表”可统计，建议先检查差评表同步状态后重试。`;
-  }
-}
-
-function checkAgentPermission(role, route) {
-  const r = String(role || '').trim();
-  const rt = String(route || '').trim();
-  if (!r || !rt) return { allowed: true };
-  if (r === 'admin' || r === 'hr_manager' || r === 'hq_manager') return { allowed: true };
-  const ROUTE_ROLES = {
-    data_auditor: ['store_manager', 'store_production_manager', 'store_product_manager', 'cashier'],
-    marketing_planner: ['store_manager', 'store_production_manager', 'store_product_manager'],
-    marketing_executor: ['store_manager', 'store_production_manager', 'store_product_manager'],
-    marketing: ['store_manager', 'store_production_manager', 'store_product_manager'],
-    ops_supervisor: ['store_manager', 'store_production_manager'],
-    chief_evaluator: ['store_manager', 'store_production_manager'],
-    sop_advisor: ['store_manager', 'store_production_manager', 'cashier', 'staff'],
-    appeal: ['store_manager', 'store_production_manager', 'cashier', 'staff'],
-    appeal_agent: ['store_manager', 'store_production_manager', 'cashier', 'staff'],
-    train_advisor: ['store_manager', 'store_production_manager', 'cashier', 'staff'],
-    general: true
-  };
-  const allowed = ROUTE_ROLES[rt];
-  if (allowed === true || !allowed) return { allowed: true };
-  if (Array.isArray(allowed) && allowed.includes(r)) return { allowed: true };
-  return { allowed: false, reason: `您的角色（${r}）暂无权限使用该功能，请联系管理员。` };
 }
 
 let _routeMessage;
@@ -1317,57 +1195,11 @@ export function clearAgentCache() {
   log.info('[agents] Cache cleared');
 }
 
-export async function runAgentEvalSuite({ createdBy = '', suiteName = 'default', tenantId = 'default' } = {}) {
-  const rows = [];
-  for (const c of AGENT_EVAL_CASES) {
-    let routed = 'general';
-    let err = '';
-    try {
-      const r = await routeMessage(c.text, false, '');
-      routed = String(r?.route || 'general');
-    } catch (e) {
-      err = String(e?.message || e);
-    }
-    const demand = detectFactDemand(c.text);
-    const routePass = routed === c.route;
-    const demandPass = demand === c.demand;
-    rows.push({
-      text: c.text,
-      expectedRoute: c.route,
-      actualRoute: routed,
-      expectedDemand: c.demand,
-      actualDemand: demand,
-      routePass,
-      demandPass,
-      error: err
-    });
-  }
-
-  const total = rows.length;
-  const routeHit = rows.filter((x) => x.routePass).length;
-  const demandHit = rows.filter((x) => x.demandPass).length;
-  const summary = {
-    total,
-    routeHit,
-    routeAccuracy: total ? Number((routeHit / total).toFixed(3)) : 0,
-    demandHit,
-    demandAccuracy: total ? Number((demandHit / total).toFixed(3)) : 0,
-    createdAt: new Date().toISOString(),
-    cases: rows
-  };
-
-  try {
-    await pool().query(
-      `INSERT INTO agent_eval_runs (suite_name, summary, created_by, tenant_id)
-       VALUES ($1, $2::jsonb, $3, $4)`,
-      [String(suiteName || 'default'), JSON.stringify(summary), String(createdBy || ''), tenantId]
-    );
-  } catch (e) {
-    log.error('[agents] runAgentEvalSuite persist failed:', e?.message || e);
-  }
-
-  return summary;
-}
+export const runAgentEvalSuite = createRunAgentEvalSuite({
+  pool,
+  routeMessage: (text, hasImage, senderUsername) => routeMessage(text, hasImage, senderUsername),
+  log,
+});
 
 // 定期清理过期缓存
 setInterval(() => {
