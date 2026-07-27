@@ -86,6 +86,7 @@ import { createPushIssuesToFeishu } from './domains/agent-feishu-bot/push-issues
 import { createTryHandleBiByFunctionCalling } from './domains/agent-bi/try-handle-bi-by-function-calling.js';
 import { clampInt } from './domains/agent-bi/bi-tool-period.js';
 import { createRunBiFunctionTool } from './domains/agent-bi/run-bi-function-tool.js';
+import { createBiFunctionCallingSupport } from './domains/agent-bi/function-calling-support.js';
 import { createBuildBiDeterministicDailyReportReply } from './domains/agent-bi/build-daily-report-reply.js';
 import { createBuildBiDeterministicSalesRawTopReply } from './domains/agent-bi/build-sales-raw-top-reply.js';
 import { createBuildBiDeterministicBadReviewReportReply } from './domains/agent-bi/build-bad-review-report-reply.js';
@@ -213,10 +214,6 @@ function formatDate(d) {
   return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
 }
 
-const _biConversationCtx = new Map();
-const BI_CONV_CTX_TTL = 10 * 60 * 1000;
-const BI_CONV_CTX_MAX = 4;
-
 const AGENT_EVAL_CASES = [
   { text: '近7天门店营业额达成率怎么样', route: 'data_auditor', demand: 'hard' },
   { text: '帮我看下差评最多的菜品', route: 'data_auditor', demand: 'hard' },
@@ -227,209 +224,14 @@ const AGENT_EVAL_CASES = [
   { text: '你好', route: 'general', demand: 'none' }
 ];
 
-function safeJsonParse(text, fallback = null) {
-  const raw = String(text || '').trim();
-  if (!raw) return fallback;
-  try { return JSON.parse(raw); } catch (e) { /* ignore */ }
-  const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-  try { return JSON.parse(cleaned); } catch (e) { /* ignore */ }
-  const m = cleaned.match(/\{[\s\S]*\}/);
-  if (!m) return fallback;
-  try { return JSON.parse(m[0]); } catch (e) { return fallback; }
-}
-
 function normalizePlainText(text, maxLen = 1200) {
   return String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
-}
-
-function extractNumericLiterals(text) {
-  const vals = String(text || '').match(/-?\d+(?:\.\d+)?%?/g) || [];
-  return vals.slice(0, 24);
-}
-
-function verifyNumericGrounding(responseText, evidenceText) {
-  const answerNums = extractNumericLiterals(responseText);
-  if (!answerNums.length) return { ok: true, missing: [] };
-  const evidenceNums = new Set(extractNumericLiterals(evidenceText));
-  if (!evidenceNums.size) return { ok: false, missing: answerNums.slice(0, 6) };
-  const missing = answerNums.filter((x) => !evidenceNums.has(x));
-  return { ok: missing.length <= Math.max(1, Math.floor(answerNums.length * 0.3)), missing: missing.slice(0, 6) };
-}
-
-function getBiConversationHistory(userId) {
-  const entry = _biConversationCtx.get(userId);
-  if (!entry) return [];
-  if (Date.now() - entry.ts > BI_CONV_CTX_TTL) { _biConversationCtx.delete(userId); return []; }
-  return entry.history || [];
-}
-
-function pushBiConversationTurn(userId, userText, assistantText, toolName) {
-  const entry = _biConversationCtx.get(userId) || { ts: Date.now(), history: [] };
-  entry.ts = Date.now();
-  entry.history.push({ role: 'user', q: String(userText || '').slice(0, 120), tool: toolName || '' });
-  entry.history.push({ role: 'assistant', a: String(assistantText || '').slice(0, 200) });
-  if (entry.history.length > BI_CONV_CTX_MAX * 2) entry.history = entry.history.slice(-BI_CONV_CTX_MAX * 2);
-  _biConversationCtx.set(userId, entry);
-}
-
-const BI_FUNCTION_TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'query_sales_ranking',
-      description: '查询门店菜品销售排行（可查询TOP或倒数，支持堂食/外卖，支持按销量/折前金额/实收金额排序）',
-      parameters: {
-        type: 'object',
-        properties: {
-          period_days: { type: 'integer', description: '统计天数，建议7-90', minimum: 1, maximum: 90 },
-          limit: { type: 'integer', description: '返回条数，建议1-20', minimum: 1, maximum: 20 },
-          sort_order: { type: 'string', enum: ['desc', 'asc'], description: 'desc=TOP最高，asc=倒数最低' },
-          metric: { type: 'string', enum: ['sales_amount', 'revenue', 'qty'], description: 'sales_amount=折前金额，revenue=实收金额，qty=销量' },
-          biz_type: { type: 'string', enum: ['all', 'dinein', 'takeaway'], description: 'all=全部，dinein=堂食，takeaway=外卖' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'query_complaint_product_ranking',
-      description: '查询门店被投诉/差评最多或最少的产品排行',
-      parameters: {
-        type: 'object',
-        properties: {
-          period_days: { type: 'integer', description: '统计天数，建议7-90', minimum: 1, maximum: 90 },
-          limit: { type: 'integer', description: '返回条数，建议1-20', minimum: 1, maximum: 20 },
-          sort_order: { type: 'string', enum: ['desc', 'asc'], description: 'desc=投诉最多，asc=投诉最少' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'query_revenue_summary',
-      description: '查询门店在指定天数内的营业额与达成率汇总',
-      parameters: {
-        type: 'object',
-        properties: {
-          period_days: { type: 'integer', description: '统计天数，建议1-60', minimum: 1, maximum: 60 }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'query_revenue_forecast_next_day',
-      description: '预测门店下一日营业额（优先使用营业日报，缺失时回退销售明细）',
-      parameters: {
-        type: 'object',
-        properties: {
-          lookback_days: { type: 'integer', description: '回看天数，建议7-30', minimum: 3, maximum: 60 }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'query_table_visit',
-      description: '查询门店桌访记录（不满意菜品、桌巡记录等）',
-      parameters: {
-        type: 'object',
-        properties: {
-          period_days: { type: 'integer', description: '统计天数，建议7-30', minimum: 1, maximum: 90 }
-        }
-      }
-    }
-  }
-];
-
-function parseToolArgs(rawArgs) {
-  if (!rawArgs) return {};
-  if (typeof rawArgs === 'object') return rawArgs;
-  try {
-    const parsed = JSON.parse(String(rawArgs));
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch (_e) {
-    return {};
-  }
 }
 
 // P2: clampInt / resolveToolPeriod / execBiTool* / runBiFunctionTool → domains/agent-bi/
 let _runBiFunctionTool;
 async function runBiFunctionTool(toolName, store, args = {}, originalQuery = '', ctx = {}) {
   return _runBiFunctionTool(toolName, store, args, originalQuery, ctx);
-}
-
-function tryParseJsonObjectFromText(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return null;
-  const direct = parseToolArgs(raw);
-  if (direct && Object.keys(direct).length) return direct;
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) return null;
-  const parsed = parseToolArgs(m[0]);
-  return parsed && Object.keys(parsed).length ? parsed : null;
-}
-
-function normalizeIntentPlan(rawPlan = {}) {
-  const intent = String(rawPlan.intent || 'other').trim();
-  const confidence = Math.max(0, Math.min(1, Number(rawPlan.confidence) || 0));
-  const params = rawPlan.params && typeof rawPlan.params === 'object' ? rawPlan.params : {};
-  return { intent, confidence, params };
-}
-
-async function buildBiIntentPlan(text, safeStore, conversationHistory = [], senderRole = '') {
-  const historyHint = conversationHistory.length
-    ? `\n\n最近对话记录（用于理解追问/上下文）：\n${conversationHistory.map(h => h.role === 'user' ? `用户: ${h.q} [工具:${h.tool||'无'}]` : `助手: ${h.a}`).join('\n')}`
-    : '';
-  const planner = await callLLM(
-    [
-      {
-        role: 'system',
-        content: `你是BI意图识别器。\n仅输出JSON，不要额外文字。\n候选intent：query_sales_ranking、query_complaint_product_ranking、query_revenue_summary、query_revenue_forecast_next_day、query_table_visit、marketing_plan_request、other。\n输出格式：{"intent":"...","confidence":0-1,"params":{...}}\nparams仅允许：period_days,lookback_days,limit,sort_order,metric,biz_type,product_name。\n若用户问"最差/倒数/垫底"则sort_order=asc；问"最好/最多/TOP"则sort_order=desc。\n当前门店：${safeStore}（只用于理解上下文，最终权限以后端为准）。\n\n【最高优先级规则-先判断再看其他】：\n- 只要用户消息包含"方案""计划""策略""如何提升""怎么提升""怎样提升""如何增加""怎么增加""行动计划""具体方案"等规划性词汇，无论是否也含有"营收""销售""数据"等词，一律识别为 marketing_plan_request，confidence=1。\n- 仅当用户是纯粹查询数据（如"查一下营收""看看销售额""最近数据""上周多少钱"）时才使用 query_xxx 类型。\n- 若用户要求"做营销方案""推广方案""新品方案""活动策划""行动方案"等战略规划类请求，识别为 marketing_plan_request，confidence=1，params中用product_name记录产品名（如有）。\n\n重要：用户可能在追问上一轮的结果（比如"给我10样""排前10呢""具体投诉什么"），请结合对话记录理解真实意图。若追问内容明显关联上一轮工具，复用同一intent并调整params（如limit/sort_order）。${historyHint}`
-      },
-      { role: 'user', content: String(text || '') }
-    ],
-    {
-      model: getBiReasoningModel(),
-      temperature: 0,
-      max_tokens: 220,
-      skipCache: true,
-      role: senderRole,
-      purpose: 'analysis'
-    }
-  );
-  const parsed = tryParseJsonObjectFromText(planner?.content || '');
-  if (!parsed) return { intent: 'other', confidence: 0, params: {} };
-  return normalizeIntentPlan(parsed);
-}
-
-async function narrateBiToolResult(userText, toolText, store, senderRole = '') {
-  const narr = await callLLM(
-    [
-      {
-        role: 'system',
-        content: `你是门店BI助手。请把工具查询结果转成简洁可执行的中文回答。\n严格要求：\n1) 只能使用"工具结果"中出现的事实，不得新增数字或臆造菜品名称\n2) 结论先行，最多200字\n3) 保留关键口径（例如TOP/倒数、近N天）\n4) 若工具结果提示样本不足/暂无数据，直接如实说明，不要猜测\n5) 严格区分数据来源：桌访（table_visit_records）是门店服务员巡台记录，差评（bad_reviews）是大众点评/美团线上评价，不能混用"投诉""差评"等词描述桌访数据\n6) 桌访数据请用"桌访反馈""桌访不满意"等表述，差评数据才用"投诉""差评"等表述\n7) 禁止臆造菜品名称（如"卤鹅"等），只能使用工具结果中明确列出的菜品\n8) 如果工具结果为空或无具体菜品，必须明确说明"暂无数据"，不得编造示例`
-      },
-      {
-        role: 'user',
-        content: `用户问题：${String(userText || '')}\n门店：${String(store || '')}\n工具结果：\n${String(toolText || '')}`
-      }
-    ],
-    {
-      model: getBiReasoningModel(),
-      temperature: 0.1,
-      max_tokens: 260,
-      skipCache: true,
-      role: senderRole,
-      purpose: 'reasoning'
-    }
-  );
-  const content = String(narr?.content || '').trim();
-  return content || toolText;
 }
 
 let _tryHandleBiByFunctionCalling;
@@ -1975,6 +1777,11 @@ _biQueryHelpersApi = createBiQueryHelpersApi({
   extractTableVisitItems,
 });
 
+const biFunctionCallingSupport = createBiFunctionCallingSupport({
+  callLLM,
+  getBiReasoningModel,
+});
+
 _tryHandleBiByFunctionCalling = createTryHandleBiByFunctionCalling({
   pool,
   getModelTier,
@@ -1984,14 +1791,14 @@ _tryHandleBiByFunctionCalling = createTryHandleBiByFunctionCalling({
   parseFeishuMarketingCopyTemplate,
   clampInt,
   runBiFunctionTool,
-  narrateBiToolResult,
-  pushBiConversationTurn,
-  getBiConversationHistory,
-  buildBiIntentPlan,
+  narrateBiToolResult: biFunctionCallingSupport.narrateBiToolResult,
+  pushBiConversationTurn: biFunctionCallingSupport.pushBiConversationTurn,
+  getBiConversationHistory: biFunctionCallingSupport.getBiConversationHistory,
+  buildBiIntentPlan: biFunctionCallingSupport.buildBiIntentPlan,
   callLLM,
   getBiReasoningModel,
-  BI_FUNCTION_TOOLS,
-  parseToolArgs,
+  BI_FUNCTION_TOOLS: biFunctionCallingSupport.BI_FUNCTION_TOOLS,
+  parseToolArgs: biFunctionCallingSupport.parseToolArgs,
   buildBiFactSourceAudit,
   buildBiSourceAuditText,
 });
