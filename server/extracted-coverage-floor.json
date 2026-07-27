@@ -457,6 +457,7 @@
     "services/ai-quality-learning/release-candidate-service.js",
     "services/tenant-operation-inspection/inspection-report-service.js",
     "services/tenant-health-incident/notification-actions.js",
-    "domains/data-executor/time-range.js"
+    "domains/data-executor/time-range.js",
+    "domains/knowledge/knowledge-groups.js"
   ]
 }
