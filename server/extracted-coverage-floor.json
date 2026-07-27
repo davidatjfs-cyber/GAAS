@@ -449,6 +449,7 @@
     "domains/usage-weekly/routes.js",
     "domains/wecom/routes-callback.js",
     "ontology/run-daily-diagnosis-helpers.js",
-    "services/check-data-integration-helpers.js"
+    "services/check-data-integration-helpers.js",
+    "services/ai-quality-learning/contract-policy-service.js"
   ]
 }
