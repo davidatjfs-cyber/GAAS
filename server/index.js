@@ -150,7 +150,6 @@ import { registerFeishuWebhookRoutes } from './domains/feishu-webhook/routes.js'
 import { registerHealthRoutes } from './domains/health/routes.js';
 import { registerWebStaticRoutes } from './domains/health/web-static.js';
 import { createEnsureUploadsDir } from './domains/uploads/ensure-dir.js';
-import { createHasColumnHelpers } from './domains/shared/has-column.js';
 import { createFeishuBitableHelpers } from './domains/feishu-bitable/create-helpers.js';
 import { createInventoryForecastHelpers } from './domains/inventory-forecast/create-helpers.js';
 import { createLeaveAttendanceHelpers } from './domains/leave-attendance/create-helpers.js';
@@ -295,6 +294,11 @@ import {
   ensureUserReadsTable as ensureUserReadsTableImpl,
   ensureLoginLogTable as ensureLoginLogTableImpl,
 } from './services/hrms-core-schema-ensure.js';
+// P17：从 index.js 外提的遗留 listen-time ensure*（只搬家，不新增 schema）
+import { ensureOpsTasksTable as ensureOpsTasksTableImpl } from './services/ops-tasks-schema-ensure.js';
+import { ensureDataGovernanceTables as ensureDataGovernanceTablesImpl } from './services/data-governance-schema-ensure.js';
+import { ensureCheckinTable as ensureCheckinTableImpl } from './services/checkin-schema-ensure.js';
+import { ensureExamResultsTable as ensureExamResultsTableImpl } from './services/exam-results-schema-ensure.js';
 import { createExpressErrorMiddleware } from './domains/health/express-error-middleware.js';
 import { registerProcessGuards } from './domains/health/process-guards.js';
 import { registerInventoryForecastRoutes } from './inventory-forecast-routes.js';
@@ -438,70 +442,11 @@ const uploadsDir = path.join(__dirname, 'uploads');
 const { ensureUploadsDir } = createEnsureUploadsDir({ fs, uploadsDir });
 
 async function ensureOpsTasksTable() {
-  try {
-    await pool.query('create extension if not exists pgcrypto');
-    await pool.query(
-      `create table if not exists ops_tasks (
-        id uuid primary key default gen_random_uuid(),
-        biz_date date not null,
-        store varchar(200) not null,
-        brand varchar(120),
-        task_type varchar(60) not null,
-        schedule_key varchar(100) not null,
-        dedupe_key varchar(220) not null,
-        title varchar(220) not null,
-        instructions text,
-        checklist jsonb not null default '[]'::jsonb,
-        required_photos int not null default 1,
-        assignee_username varchar(100) not null,
-        assignee_role varchar(60) not null,
-        status varchar(20) not null default 'open',
-        due_at timestamp not null,
-        completed_at timestamp,
-        evidence_urls jsonb not null default '[]'::jsonb,
-        evidence_note text,
-        feedback_score int,
-        feedback_text text,
-        source varchar(60) not null default 'ops_agent',
-        tenant_id varchar(80) not null default 'default',
-        created_at timestamp default current_timestamp,
-        updated_at timestamp default current_timestamp,
-        constraint uq_ops_tasks_dedupe unique (dedupe_key, tenant_id)
-      )`
-    );
-    await pool.query(`create index if not exists idx_ops_tasks_assignee_status on ops_tasks (assignee_username, status)`);
-    await pool.query(`create index if not exists idx_ops_tasks_store_date on ops_tasks (store, biz_date)`);
-    await pool.query(`create index if not exists idx_ops_tasks_due on ops_tasks (due_at)`);
-  } catch (e) {
-    if (safeErrMessage(e).includes('already exists')) return;
-    if (e?.code === '23505') {
-      const rel = await pool.query(`select to_regclass('public.ops_tasks') as rel`).catch(() => null);
-      if (rel?.rows?.[0]?.rel === 'ops_tasks') return;
-    }
-    logger.error({ msg: 'ensure_ops_tasks_table_failed', err: e?.message || String(e) });
-    throw e;
-  }
+  return ensureOpsTasksTableImpl(pool);
 }
 
 async function ensureDataGovernanceTables() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS dish_name_aliases (
-      id BIGSERIAL PRIMARY KEY,
-      store VARCHAR(200) NOT NULL DEFAULT '*',
-      biz_type VARCHAR(20) NOT NULL DEFAULT '*',
-      alias_name VARCHAR(255) NOT NULL,
-      canonical_name VARCHAR(255) NOT NULL,
-      enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      created_by VARCHAR(120),
-      updated_by VARCHAR(120),
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      CONSTRAINT uq_dish_name_aliases_scope UNIQUE (store, biz_type, alias_name)
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_dish_name_aliases_lookup ON dish_name_aliases (store, biz_type, alias_name) WHERE enabled = TRUE`);
-  // sales_raw已于2026-07-03下线，pos_sales_detail视图已直接提供dish_code(sku别名)/category列，
-  // category_code该视图固定为NULL，不需要再对sales_raw做列补齐。
+  return ensureDataGovernanceTablesImpl(pool);
 }
 
 
@@ -616,8 +561,8 @@ const { recordLogin, recordLogout } = createLoginLogHelpers({ pool, tenantContex
 // Before createAccountGateHelpers / registerAuthRoutes (factory not hoisted).
 const { storeSessionNonce } = createSessionNonceHelpers({ pool, resolveTenantIdDefault });
 
-// Wave H30: hasColumn → domains/shared/has-column.js (before ensureExamResultsTable runtime)
-const { hasColumn } = createHasColumnHelpers({ pool });
+// P17: hasColumn 唯一调用点(ensureExamResultsTable)已随 exam-results-schema-ensure.js
+// 外提到 services/ 自行实例化，此处不再需要。
 
 // Wave H11: user/employee lookup helpers → domains/employees/user-lookup.js
 // Must run after pool + expandAgentStoreLabels import; BEFORE registerPointsRoutes
@@ -844,34 +789,7 @@ async function ensureLoginLogTable() {
 // Wave H28: recordLogin / recordLogout → domains/auth/login-log.js (after pool)
 
 async function ensureCheckinTable() {
-  try {
-    await pool.query('create extension if not exists pgcrypto');
-    await pool.query(
-      `create table if not exists checkin_records (
-        id uuid primary key default gen_random_uuid(),
-        username varchar(100) not null,
-        store varchar(200),
-        type varchar(20) not null default 'clock_in',
-        check_time timestamp not null default current_timestamp,
-        latitude double precision,
-        longitude double precision,
-        distance_meters double precision,
-        face_match boolean default false,
-        face_score double precision,
-        photo_url text,
-        status varchar(20) not null default 'normal',
-        note text,
-        confirmed_by varchar(100),
-        confirmed_at timestamp,
-        created_at timestamp default current_timestamp
-      )`
-    );
-    await pool.query(`create index if not exists idx_checkin_username_time on checkin_records (username, check_time)`);
-    await pool.query(`create index if not exists idx_checkin_store_time on checkin_records (store, check_time)`);
-    await pool.query(`create index if not exists idx_checkin_time on checkin_records (check_time)`);
-  } catch (e) {
-    logger.error({ msg: 'ensure_checkin_table_failed', err: e?.message || String(e) });
-  }
+  return ensureCheckinTableImpl(pool);
 }
 
 // Wave H25: haversineDistance / resolveCheckinRadiusMeters → domains/leave-attendance/checkin-geo.js
@@ -1171,59 +1089,7 @@ registerCheckinRoutes(app, {
 // Wave H26: safeUuid → domains/shared/time-number.js (named import)
 
 async function ensureExamResultsTable() {
-  try {
-    await pool.query('create extension if not exists pgcrypto');
-    await pool.query(
-      `create table if not exists exam_results (
-        id uuid primary key default gen_random_uuid(),
-        assignment_id uuid,
-        user_key varchar(100) not null,
-        created_at timestamp default current_timestamp,
-        started_at timestamp,
-        submitted_at timestamp,
-        time_used_seconds integer,
-        auto_submitted boolean default false,
-        set_index integer,
-        total integer,
-        correct integer,
-        score integer,
-        answers jsonb
-      )`
-    );
-
-    // In case an older schema exists, backfill missing columns.
-    await pool.query(`alter table exam_results add column if not exists assignment_id uuid`);
-    await pool.query(`alter table exam_results add column if not exists user_key varchar(100)`);
-    await pool.query(`alter table exam_results add column if not exists created_at timestamp default current_timestamp`);
-    await pool.query(`alter table exam_results add column if not exists started_at timestamp`);
-    await pool.query(`alter table exam_results add column if not exists submitted_at timestamp`);
-    await pool.query(`alter table exam_results add column if not exists time_used_seconds integer`);
-    await pool.query(`alter table exam_results add column if not exists auto_submitted boolean default false`);
-    await pool.query(`alter table exam_results add column if not exists set_index integer`);
-    await pool.query(`alter table exam_results add column if not exists total integer`);
-    await pool.query(`alter table exam_results add column if not exists correct integer`);
-    await pool.query(`alter table exam_results add column if not exists score integer`);
-    await pool.query(`alter table exam_results add column if not exists answers jsonb`);
-
-    const hasUserKey = await hasColumn('exam_results', 'user_key');
-    const hasCreatedAt = await hasColumn('exam_results', 'created_at');
-    const hasAssignmentId = await hasColumn('exam_results', 'assignment_id');
-
-    if (hasUserKey && hasCreatedAt) {
-      await pool.query(
-        `create index if not exists idx_exam_results_user_key_created_at
-         on exam_results (user_key, created_at desc)`
-      );
-    }
-    if (hasAssignmentId) {
-      await pool.query(
-        `create index if not exists idx_exam_results_assignment_id
-         on exam_results (assignment_id)`
-      );
-    }
-  } catch (e) {
-    logger.error({ msg: 'ensure_exam_results_table_failed', err: e?.message || String(e) });
-  }
+  return ensureExamResultsTableImpl(pool);
 }
 
 // Wave H28: getOssClient / getCosClient / build*PublicUrl → domains/uploads/object-storage.js

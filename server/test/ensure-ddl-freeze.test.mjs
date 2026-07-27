@@ -22,6 +22,11 @@ const LEGACY_ENSURE_CREATE_ALLOWLIST = new Set([
   // R53：从 server/feishu-sync.js 外提的遗留 listen-time ensure*（只搬家，不新增 schema）
   'services/feishu-dish-library-schema-ensure.js',
   'services/hrms-core-schema-ensure.js',
+  // P17：从 server/index.js 外提的遗留 listen-time ensure*（只搬家，不新增 schema）
+  'services/ops-tasks-schema-ensure.js',
+  'services/data-governance-schema-ensure.js',
+  'services/checkin-schema-ensure.js',
+  'services/exam-results-schema-ensure.js',
   'services/hrms-payroll-rules.js',
   'services/hrms-permission-engine.js',
   'services/sales/sales-case-library.js',
