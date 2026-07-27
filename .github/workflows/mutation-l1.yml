@@ -1,12 +1,14 @@
 # P4：L1 变异测试（Stryker）——验证高覆盖文件的断言是否真的在测东西。
 # 默认仅 workflow_dispatch / 周调度，避免拖慢每次 PR CI。
+# 默认 mutate = server/mutation-l1-mutate.json（实测 score≥70 子集）。
+# 全量 L1 floor：inputs.mutate 填 `all`（观察用，可能低于 break 70）。
 name: Mutation L1
 
 on:
   workflow_dispatch:
     inputs:
       mutate:
-        description: '可选：逗号分隔 mutate 路径（默认 l1-coverage-floor 全量）'
+        description: '可选：逗号分隔路径，或 all=全量 l1-coverage-floor（默认用 mutation-l1-mutate.json）'
         required: false
         default: ''
   schedule:
