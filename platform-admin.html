@@ -1071,8 +1071,8 @@
             <div class="field"><div class="k">到期倒计时</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="switchCountdown" type="checkbox" checked> 开启</label></div>
           </div>
           <div class="detail-grid">
-            <div class="field"><div class="k">HRMS</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplHrms" type="checkbox" checked> 开启</label></div>
-            <div class="field"><div class="k">Agent V2</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplAgentV2" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">门店管理系统</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplHrms" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">智能体服务</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplAgentV2" type="checkbox" checked> 开启</label></div>
             <div class="field"><div class="k">小程序</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplMiniProgram" type="checkbox" checked> 开启</label></div>
             <div class="field"><div class="k">飞书</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplFeishu" type="checkbox" checked> 开启</label></div>
           </div>
@@ -1100,7 +1100,11 @@
           <div class="hint-box">绑定该租户自己的飞书多维表格。不填则飞书同步相关功能不工作，其它功能不受影响。</div>
           <label>飞书应用 ID<input id="cfgAppId"></label>
           <label>飞书应用密钥<input id="cfgAppSecret" type="password"></label>
-          <label>各业务表 JSON<textarea id="cfgTables">{
+  <label>各业务表 JSON（键名保持英文供系统识别；含义见下方中文对照）</label>
+  <div class="hint-box" style="margin-bottom:8px">
+    ops_checklist=营运检查表 · table_visit=桌访记录 · bad_review=差评记录 · closing_reports=收档报告 · opening_reports=开档报告 · meeting_reports=会议记录 · material_majixian=马己仙物料 · material_hongchao=洪潮物料 · dish_library=菜品库 · dish_library_majixian_takeaway=马己仙外卖菜品库 · loss_report=损耗报告 · task_responses=任务回复 · actual_gross_margin=实际毛利 · sop_steps=SOP步骤
+  </div>
+  <textarea id="cfgTables">{
   "ops_checklist": { "app_token": "", "table_id": "", "view_id": "" },
   "table_visit": { "app_token": "", "table_id": "", "view_id": "" },
   "bad_review": { "app_token": "", "table_id": "", "view_id": "" },
@@ -2466,6 +2470,84 @@ function legacyCopyFallback(value) {
       return v ? '开启' : '关闭';
     }
 
+    const TEMPLATE_SWITCH_LABELS = {
+      hrms: '门店管理系统',
+      agent_v2: '智能体服务',
+      mini_program: '小程序',
+      feishu: '飞书',
+    };
+    const FEATURE_SWITCH_LABELS = {
+      unified_template: '统一模板',
+      auto_acceptance: '自动验收',
+      failure_repair: '失败修复',
+      tenant_alerts: '租户告警',
+      billing: '账单模块',
+      countdown: '到期倒计时',
+    };
+    const FEISHU_TABLE_LABELS = {
+      ops_checklist: '营运检查表',
+      table_visit: '桌访记录',
+      bad_review: '差评记录',
+      closing_reports: '收档报告',
+      opening_reports: '开档报告',
+      meeting_reports: '会议记录',
+      material_majixian: '马己仙物料',
+      material_hongchao: '洪潮物料',
+      dish_library: '菜品库',
+      dish_library_majixian_takeaway: '马己仙外卖菜品库',
+      loss_report: '损耗报告',
+      task_responses: '任务回复',
+      actual_gross_margin: '实际毛利',
+      sop_steps: 'SOP步骤',
+    };
+    function labelTemplateSwitch(key) {
+      return TEMPLATE_SWITCH_LABELS[key] || key;
+    }
+    function labelFeatureSwitch(key) {
+      return FEATURE_SWITCH_LABELS[key] || key;
+    }
+    function labelFeishuTable(key) {
+      return FEISHU_TABLE_LABELS[key] || key;
+    }
+    function formatSwitchMap(map, labelFn) {
+      const entries = Object.entries(map || {});
+      if (!entries.length) return '—';
+      return entries.map(([k, v]) => `${labelFn(k)}：${formatBool(v)}`).join(' · ');
+    }
+    function formatFeishuTables(tables) {
+      const list = Array.isArray(tables) ? tables : [];
+      if (!list.length) return '—';
+      return list.map(labelFeishuTable).join(' · ');
+    }
+    function formatCheckDetail(detail) {
+      const raw = String(detail || '').trim();
+      if (!raw) return '-';
+      const dict = {
+        ok: '正常',
+        tenant_not_found: '租户不存在',
+        missing_hrms_state: '缺少初始状态数据',
+        missing_license: '尚未发放许可证',
+        missing_feishu_bitable: '未绑定飞书多维表格',
+        no_expiry: '未设置到期时间',
+      };
+      if (dict[raw]) return dict[raw];
+      let s = raw;
+      s = s.replace(/^active_admins=(\d+)$/i, '可用管理员 $1 个');
+      s = s.replace(/^status=(.+)$/i, (_, v) => {
+        const zh = { active: '有效', trial: '试用', expired: '已过期', suspended: '已暂停', unknown: '未知' };
+        return `许可证状态：${zh[String(v).toLowerCase()] || v}`;
+      });
+      s = s.replace(/^tables=(.*)$/i, (_, v) => {
+        const names = String(v || '').split(',').filter(Boolean).map(labelFeishuTable);
+        return `已配置表：${names.join('、') || '无'}`;
+      });
+      s = s.replace(/^missing=(.*)$/i, (_, v) => {
+        const names = String(v || '').split(',').filter(Boolean).map(labelFeishuTable);
+        return `缺少表：${names.join('、') || '无'}`;
+      });
+      return s;
+    }
+
     function formatMode(v) {
       return String(v || '').trim() === 'self_hosted' ? '自部署' : '托管租赁';
     }
@@ -2578,7 +2660,7 @@ function legacyCopyFallback(value) {
           ${checks.length ? checks.map((item) => `
             <div class="field">
               <div class="k">${checkLabel(item.key)}</div>
-              <div class="v">${item.ok ? '✅' : '❌'} ${item.detail || ''}</div>
+              <div class="v">${item.ok ? '✅' : '❌'} ${formatCheckDetail(item.detail)}</div>
             </div>
           `).join('') : '<div class="field" style="grid-column:1 / -1"><div class="v">无检查项</div></div>'}
         </div>
@@ -2606,6 +2688,8 @@ function legacyCopyFallback(value) {
       admin_ready: '管理员账号就绪',
       license_present: '已发放许可证',
       license_not_expired: '许可证未过期',
+      feishu_configured: '飞书已配置',
+      feishu_required_tables: '飞书必填表齐全',
     };
     const ACCEPTANCE_ACTION_LABELS = {
       acceptance: '验收',
@@ -3122,10 +3206,10 @@ function legacyCopyFallback(value) {
           <div class="field"><div class="k">飞书应用 ID</div><div class="v mono">${feishu.app_id || '-'}</div></div>
           <div class="field"><div class="k">品牌主色</div><div class="v mono">${profile.brand_color || '-'}</div></div>
           <div class="field"><div class="k">页面标题</div><div class="v">${profile.page_title || '-'}</div></div>
-          <div class="field" style="grid-column:1 / -1"><div class="k">模板开关</div><div class="v">${Object.entries(templateSwitches).map(([k, v]) => `${k}:${formatBool(v)}`).join(' · ') || '—'}</div></div>
-          <div class="field" style="grid-column:1 / -1"><div class="k">功能开关</div><div class="v">${Object.entries(featureSwitches).map(([k, v]) => `${k}:${formatBool(v)}`).join(' · ') || '—'}</div></div>
+          <div class="field" style="grid-column:1 / -1"><div class="k">模板开关</div><div class="v">${formatSwitchMap(templateSwitches, labelTemplateSwitch)}</div></div>
+          <div class="field" style="grid-column:1 / -1"><div class="k">功能开关</div><div class="v">${formatSwitchMap(featureSwitches, labelFeatureSwitch)}</div></div>
           <div class="field" style="grid-column:1 / -1"><div class="k">账单信息</div><div class="v">${profile.billing?.plan_name || '未配置'} · ${profile.billing?.billing_cycle || '未配置'} · ${profile.billing?.billing_contact || '未配置'}</div></div>
-          <div class="field" style="grid-column:1 / -1"><div class="k">表清单</div><div class="v">${tables.length ? tables.join(' · ') : '—'}</div></div>
+          <div class="field" style="grid-column:1 / -1"><div class="k">飞书业务表</div><div class="v">${formatFeishuTables(tables)}</div></div>
         </div>
         <div class="stack" style="margin-top:12px">
           <strong>系统告警</strong>

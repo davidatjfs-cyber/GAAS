@@ -500,6 +500,7 @@ function makeUploadQuery(sessionRow = mockPracticeSession) {
       return { rows: [] };
     }
     if (sql.includes('INSERT INTO training_certifications')) {
+      const hasMediaUrls = /media_urls/i.test(sql);
       return {
         rows: [{
           id: 'cert-1',
@@ -507,7 +508,7 @@ function makeUploadQuery(sessionRow = mockPracticeSession) {
           employee_username: params[1],
           topic_id: params[2],
           media_url: params[3],
-          ai_verdict: params[5],
+          ai_verdict: hasMediaUrls ? params[6] : params[5],
         }],
       };
     }
@@ -594,11 +595,17 @@ test('uploadPracticeMedia: success image + rubric inserts certification', async 
     summary: '操作规范',
   });
 
+  const threeFiles = [1, 2, 3].map((n) => ({
+    path: `/tmp/practice-${n}.jpg`,
+    filename: `practice-${n}.jpg`,
+    originalname: `practice-${n}.jpg`,
+  }));
+
   const result = await uploadPracticeMedia({
     sessionId: 'sess-1',
     username: 'emp1',
     tenantId: 'tenant-1',
-    file: { path: '/tmp/practice.jpg', filename: 'practice.jpg', originalname: 'practice.jpg' },
+    files: threeFiles,
     query: async (sql, params) => {
       if (sql.includes('FROM training_sessions s') && sql.includes('JOIN training_topics')) {
         return { rows: [mockPracticeSession] };
@@ -612,10 +619,9 @@ test('uploadPracticeMedia: success image + rubric inserts certification', async 
       return { rows: [] };
     },
     ...mockUploadDeps,
-    callVisionLLM: async (filePath, prompt) => {
+    callVisionLLM: async (filePathOrParts, prompt) => {
       visionCalled = true;
-      assert.equal(filePath, '/tmp/practice.jpg');
-      assert.match(prompt, /评分表/);
+      assert.ok(Array.isArray(filePathOrParts) || typeof filePathOrParts === 'string');
       return { content: scoringJson };
     },
     callVisionLLMVideo: async () => ({ ok: false }),
@@ -628,5 +634,20 @@ test('uploadPracticeMedia: success image + rubric inserts certification', async 
   assert.equal(certInsertCalled, true);
   assert.equal(certParams[0], 'sess-1');
   assert.equal(certParams[1], 'emp1');
-  assert.equal(certParams[5], 'passed');
+  assert.equal(certParams[6], 'passed');
+  assert.equal(result.media_urls.length, 3);
+});
+
+test('uploadPracticeMedia: image count less than 3 rejected', async () => {
+  const result = await uploadPracticeMedia({
+    sessionId: 'sess-1',
+    username: 'emp1',
+    file: { path: '/tmp/practice.jpg', filename: 'practice.jpg', originalname: 'practice.jpg' },
+    query: makeUploadQuery(mockPracticeSession),
+    ...mockUploadDeps,
+    callVisionLLM: async () => ({}),
+    callVisionLLMVideo: async () => ({}),
+  });
+  assert.equal(result.success, false);
+  assert.match(result.error, /至少上传 3 张/);
 });

@@ -622,6 +622,7 @@ export async function uploadPracticeMedia({
   username,
   tenantId,
   file,
+  files,
   query,
   uploadsDir,
   pathModule = path,
@@ -636,7 +637,10 @@ export async function uploadPracticeMedia({
 }) {
   const q = resolveQuery(query);
   try {
-    if (!file) {
+    const fileList = Array.isArray(files) && files.length
+      ? files.filter(Boolean)
+      : (file ? [file] : []);
+    if (!fileList.length) {
       return { success: false, error: '请上传文件' };
     }
 
@@ -656,18 +660,35 @@ export async function uploadPracticeMedia({
 
     const rubric = session.step_rubric;
     const topicTitle = session.title || '';
+    const primary = fileList[0];
+    const mediaUrls = [];
+    const filePaths = [];
 
-    const filePath = file.path;
-    const fileName = file.filename;
-    const mediaUrl = `/uploads/training/${fileName}`;
-    await q(
-      `INSERT INTO upload_file_owners (filename, tenant_id, uploaded_by) VALUES ($1,$2,$3)
-         ON CONFLICT (filename) DO NOTHING`,
-      [fileName, tenantId || 'default', username || null]
-    ).catch((e) => log.warn?.('[training] recordUploadOwnership failed:', e?.message));
+    for (const f of fileList) {
+      const mediaUrl = `/uploads/training/${f.filename}`;
+      mediaUrls.push(mediaUrl);
+      filePaths.push(f.path);
+      await q(
+        `INSERT INTO upload_file_owners (filename, tenant_id, uploaded_by) VALUES ($1,$2,$3)
+           ON CONFLICT (filename) DO NOTHING`,
+        [f.filename, tenantId || 'default', username || null]
+      ).catch((e) => log.warn?.('[training] recordUploadOwnership failed:', e?.message));
+    }
 
-    const originalExt = pathModule.extname(file.originalname).toLowerCase();
-    const mediaType = resolvePracticeMediaType(originalExt);
+    const hasVideo = fileList.some((f) => resolvePracticeMediaType(pathModule.extname(f.originalname || '').toLowerCase()) === 'video');
+    const mediaType = hasVideo ? 'video' : 'image';
+    if (mediaType === 'image' && fileList.length < 3) {
+      return { success: false, error: '实操认证图片请至少上传 3 张（不同步骤或角度）' };
+    }
+    if (mediaType === 'video' && fileList.length > 1) {
+      // 视频只取第一个，避免混传干扰评分
+      fileList.splice(1);
+      mediaUrls.splice(1);
+      filePaths.splice(1);
+    }
+
+    const mediaUrl = mediaUrls[0];
+    const filePath = filePaths[0];
     const baseUrl = serverBaseUrl || process.env.SERVER_BASE_URL || 'https://nnyx.cc';
 
     let aiVerdict = 'review';
@@ -682,6 +703,7 @@ export async function uploadPracticeMedia({
         topicTitle,
         mediaType,
         filePath,
+        filePaths,
         mediaUrl,
         uploadsDir,
         pathModule,
@@ -704,6 +726,7 @@ export async function uploadPracticeMedia({
         session,
         mediaType,
         filePath,
+        filePaths,
         uploadsDir,
         pathModule,
         fsModule,
@@ -719,12 +742,24 @@ export async function uploadPracticeMedia({
     }
 
     const certTenantId = String(tenantId || 'default').trim() || 'default';
-    const certResult = await q(
-      `INSERT INTO training_certifications (session_id, employee_username, topic_id, media_url, media_type, ai_verdict, ai_feedback, ai_raw_response, ai_step_scores, ai_total_score, review_status, tenant_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)
-         RETURNING *`,
-      [sessionId, username, session.topic_id, mediaUrl, mediaType, aiVerdict, aiFeedback || '', aiRawResponse, JSON.stringify(aiStepScores), aiTotalScore, certTenantId]
-    );
+    let certResult;
+    try {
+      certResult = await q(
+        `INSERT INTO training_certifications (session_id, employee_username, topic_id, media_url, media_type, media_urls, ai_verdict, ai_feedback, ai_raw_response, ai_step_scores, ai_total_score, review_status, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, 'pending', $12)
+           RETURNING *`,
+        [sessionId, username, session.topic_id, mediaUrl, mediaType, JSON.stringify(mediaUrls), aiVerdict, aiFeedback || '', aiRawResponse, JSON.stringify(aiStepScores), aiTotalScore, certTenantId]
+      );
+    } catch (e) {
+      // 兼容尚未跑 migration 155 的库
+      if (!/media_urls|column/i.test(String(e?.message || ''))) throw e;
+      certResult = await q(
+        `INSERT INTO training_certifications (session_id, employee_username, topic_id, media_url, media_type, ai_verdict, ai_feedback, ai_raw_response, ai_step_scores, ai_total_score, review_status, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)
+           RETURNING *`,
+        [sessionId, username, session.topic_id, mediaUrl, mediaType, aiVerdict, aiFeedback || '', aiRawResponse, JSON.stringify(aiStepScores), aiTotalScore, certTenantId]
+      );
+    }
 
     return {
       success: true,
@@ -734,6 +769,7 @@ export async function uploadPracticeMedia({
       step_scores: aiStepScores,
       total_score: aiTotalScore,
       has_rubric: !!rubric,
+      media_urls: mediaUrls,
     };
   } catch (e) {
     return { success: false, error: e?.message };

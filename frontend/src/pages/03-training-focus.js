@@ -3823,6 +3823,10 @@
             try { quizBody.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
         }
 
+        let _trainingPracticeFiles = [];
+        const TRAINING_PRACTICE_MIN_IMAGES = 3;
+        const TRAINING_PRACTICE_MAX_FILES = 6;
+
         function showTrainingPracticeScreen() {
             document.getElementById('training-home-screen').style.display = 'none';
             document.getElementById('training-learn-screen').style.display = 'none';
@@ -3831,15 +3835,98 @@
 
             document.getElementById('training-practice-task').textContent = _trainingCurrentTopic?.practice_task || '按要求完成实操任务';
             document.getElementById('training-practice-result').style.display = 'none';
-            // 重置上传区
+            _trainingPracticeFiles = [];
             const fileInput = document.getElementById('training-practice-file');
             if (fileInput) fileInput.value = '';
+            renderTrainingPracticePreview();
+        }
+
+        function renderTrainingPracticePreview() {
             const preview = document.getElementById('training-file-preview');
-            if (preview) { preview.style.display = 'none'; preview.innerHTML = ''; }
             const uploadBtn = document.getElementById('training-upload-btn');
-            if (uploadBtn) uploadBtn.style.display = 'none';
             const uploadArea = document.getElementById('training-upload-area');
-            if (uploadArea) uploadArea.style.display = '';
+            const countEl = document.getElementById('training-practice-count');
+            if (!preview || !uploadBtn) return;
+
+            if (!_trainingPracticeFiles.length) {
+                preview.style.display = 'none';
+                preview.innerHTML = '';
+                uploadBtn.style.display = 'none';
+                if (uploadArea) uploadArea.style.display = '';
+                if (countEl) { countEl.style.display = 'none'; countEl.textContent = ''; }
+                return;
+            }
+
+            const hasVideo = _trainingPracticeFiles.some((f) => String(f.type || '').startsWith('video/'));
+            const imageCount = _trainingPracticeFiles.filter((f) => String(f.type || '').startsWith('image/')).length;
+            preview.style.display = '';
+            preview.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;">'
+                + _trainingPracticeFiles.map((file, idx) => {
+                    const url = URL.createObjectURL(file);
+                    const isVideo = String(file.type || '').startsWith('video/');
+                    return `<div style="position:relative;border-radius:10px;overflow:hidden;background:rgba(0,0,0,0.25);aspect-ratio:1;">
+                        ${isVideo
+                          ? `<video src="${url}" style="width:100%;height:100%;object-fit:cover;"></video>`
+                          : `<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
+                        <button type="button" data-click="removeTrainingPracticeFile" data-arg="${idx}" data-arg-type="number" data-stop
+                          style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.65);color:#fff;font-size:12px;cursor:pointer;">×</button>
+                      </div>`;
+                }).join('')
+                + (!hasVideo && _trainingPracticeFiles.length < TRAINING_PRACTICE_MAX_FILES
+                    ? `<div data-click="hrmsTriggerClick" data-arg="training-practice-file" style="border:1px dashed rgba(255,255,255,0.25);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(255,255,255,0.55);font-size:28px;aspect-ratio:1;">+</div>`
+                    : '')
+                + '</div>';
+
+            if (uploadArea) uploadArea.style.display = hasVideo ? 'none' : (_trainingPracticeFiles.length >= TRAINING_PRACTICE_MAX_FILES ? 'none' : '');
+            if (countEl) {
+                countEl.style.display = '';
+                if (hasVideo) {
+                    countEl.textContent = '已选择 1 段视频，可直接提交';
+                    countEl.style.color = 'rgba(52,211,153,0.9)';
+                } else {
+                    const ok = imageCount >= TRAINING_PRACTICE_MIN_IMAGES;
+                    countEl.textContent = ok
+                        ? `已选 ${imageCount} 张图片（满足至少 ${TRAINING_PRACTICE_MIN_IMAGES} 张）`
+                        : `已选 ${imageCount} 张，还需 ${TRAINING_PRACTICE_MIN_IMAGES - imageCount} 张才能提交`;
+                    countEl.style.color = ok ? 'rgba(52,211,153,0.9)' : '#fbbf24';
+                }
+            }
+            const canSubmit = hasVideo || imageCount >= TRAINING_PRACTICE_MIN_IMAGES;
+            uploadBtn.style.display = canSubmit ? '' : 'none';
+        }
+
+        function removeTrainingPracticeFile(idx) {
+            const i = Number(idx);
+            if (!Number.isFinite(i) || i < 0 || i >= _trainingPracticeFiles.length) return;
+            _trainingPracticeFiles.splice(i, 1);
+            renderTrainingPracticePreview();
+        }
+
+        function trainingFileSelected(input) {
+            const picked = Array.from(input?.files || []);
+            if (!picked.length) return;
+
+            const hasExistingVideo = _trainingPracticeFiles.some((f) => String(f.type || '').startsWith('video/'));
+            const newVideos = picked.filter((f) => String(f.type || '').startsWith('video/'));
+            const newImages = picked.filter((f) => String(f.type || '').startsWith('image/'));
+
+            if (newVideos.length && (hasExistingVideo || _trainingPracticeFiles.length || newImages.length || newVideos.length > 1)) {
+                // 视频与图片互斥，且只保留 1 段视频
+                _trainingPracticeFiles = [newVideos[0]];
+                showNotification('视频实操只需 1 段，已替换为当前视频', 'info');
+            } else if (newImages.length) {
+                if (hasExistingVideo) _trainingPracticeFiles = [];
+                for (const img of newImages) {
+                    if (_trainingPracticeFiles.length >= TRAINING_PRACTICE_MAX_FILES) break;
+                    _trainingPracticeFiles.push(img);
+                }
+                if (picked.length && _trainingPracticeFiles.length >= TRAINING_PRACTICE_MAX_FILES) {
+                    showNotification(`最多上传 ${TRAINING_PRACTICE_MAX_FILES} 张图片`, 'warning');
+                }
+            }
+
+            input.value = '';
+            renderTrainingPracticePreview();
         }
 
         function showTrainingCertifiedScreen() {
@@ -3853,36 +3940,16 @@
             if (nameEl) nameEl.textContent = _trainingCurrentTopic?.title || '';
         }
 
-        function trainingFileSelected(input) {
-            const file = input.files?.[0];
-            if (!file) return;
-            const preview = document.getElementById('training-file-preview');
-            const uploadBtn = document.getElementById('training-upload-btn');
-            const uploadArea = document.getElementById('training-upload-area');
-            if (!preview || !uploadBtn) return;
-
-            const isVideo = file.type.startsWith('video/');
-            const url = URL.createObjectURL(file);
-            preview.style.display = '';
-            if (isVideo) {
-                preview.innerHTML = `
-                    <video src="${url}" controls playsinline style="width:100%;border-radius:12px;max-height:240px;object-fit:cover;"></video>
-                    <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:6px;text-align:center;">📹 ${escapeHtml(file.name)}</div>`;
-            } else {
-                preview.innerHTML = `
-                    <img src="${url}" style="width:100%;border-radius:12px;max-height:240px;object-fit:cover;">
-                    <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:6px;text-align:center;">🖼 ${escapeHtml(file.name)}</div>`;
-            }
-            if (uploadArea) uploadArea.style.display = 'none';
-            uploadBtn.style.display = '';
-        }
-
         async function uploadTrainingPractice() {
-            const fileInput = document.getElementById('training-practice-file');
-            if (!fileInput.files?.length) return showNotification('请选择文件', 'warning');
+            if (!_trainingPracticeFiles.length) return showNotification('请选择文件', 'warning');
+            const hasVideo = _trainingPracticeFiles.some((f) => String(f.type || '').startsWith('video/'));
+            const imageCount = _trainingPracticeFiles.filter((f) => String(f.type || '').startsWith('image/')).length;
+            if (!hasVideo && imageCount < TRAINING_PRACTICE_MIN_IMAGES) {
+                return showNotification(`实操认证图片请至少上传 ${TRAINING_PRACTICE_MIN_IMAGES} 张`, 'warning');
+            }
 
             const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
+            for (const f of _trainingPracticeFiles) formData.append('files', f);
 
             try {
                 const resp = await fetch('/api/training/sessions/' + _trainingCurrentSession.id + '/upload-practice', {
