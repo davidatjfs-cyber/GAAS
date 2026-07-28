@@ -13,13 +13,17 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
 
 /**
  * 冻结基线（2026-07-23 P3 build:shell 后 wc -l working-fixed.html）。
- * 2026-07-28 一次性上调：新增 frontend/src/pages/15-workspace.js（角色工作台 Phase 1，
- * 含 boss/hq/store/employee/hq_hr 五个 persona 视图 + 一键执行封装 + JS 注入的容器/样式/
- * 导航入口，避免直接堆内联 HTML/CSS）。这是通过正规 frontend/src/pages 结构新增的真实
- * 功能，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然「只减不增」：此后任何改动都不得让总行数
+ * 2026-07-28 第一次上调（69156→69481）：新增 frontend/src/pages/15-workspace.js（角色工作台
+ * Phase 1，含 boss/hq/store/employee/hq_hr 五个 persona 视图 + 一键执行封装 + JS 注入的容器/
+ * 样式/导航入口）。
+ * 2026-07-28 第二次上调（69481→69563）：15-workspace.js 按 role-workspaces-mockup.html 的
+ * 「黑缎玫瑰」配色/字体重写注入样式（原先 fallback 到未定义的 --card 变量导致卡片在深色
+ * 背景上显示成白色）、任务卡「查看进展」按 category 是否命中六大增长方案问题分类分流到
+ * 经营诊断页/Agent任务板、SELECT 增加 category/source 字段。同样通过正规 frontend/src/pages
+ * 结构新增，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然「只减不增」：此后任何改动都不得让总行数
  * 超过这个新基线，除非同样是一次经过说明的、刻意的上调。
  */
-const MAX_LINES = 69481;
+const MAX_LINES = 69563;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

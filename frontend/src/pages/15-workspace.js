@@ -13,33 +13,62 @@ function wsEnsurePageContainer() {
 }
 
 // 样式随容器一起 JS 注入，working-fixed.html 的行数棘轮零余量，不能再往 <style> 里加静态 CSS。
+// 配色/字体 100% 对齐 role-workspaces-mockup.html 的「黑缎玫瑰」主题变量（该文件 :root 段），
+// 用固定色值而不是引用 working-fixed.html 里可能存在也可能不存在的全局 CSS 变量——避免出现
+// 之前那种"卡片背景 fallback 到白色，跟深色背景撞在一起"的问题。
 function wsInjectStyles() {
     if (document.getElementById('ws-styles')) return;
     const style = document.createElement('style');
     style.id = 'ws-styles';
     style.textContent =
-        '.ws-root{padding:20px;max-width:720px;margin:0 auto;}' +
-        '.ws-header h2{margin:0 0 4px;font-size:20px;}' +
-        '.ws-sub{color:#8f8e89;font-size:13px;margin-bottom:16px;}' +
+        '#workspace-page{--ws-bg:#121012;--ws-card:#1C181C;--ws-ink:#F2EAEE;--ws-ink2:#97848E;--ws-line:#2C252C;' +
+        '--ws-accent:#E0A6B4;--ws-accent-deep:#D18FA0;--ws-accent-soft:#2B2027;--ws-on-accent:#241319;' +
+        '--ws-up:#86C9A2;--ws-down:#E58B98;--ws-warn:#CFA14A;' +
+        'background:var(--ws-bg);color:var(--ws-ink);position:relative;isolation:isolate;min-height:100%;' +
+        'font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue","Microsoft YaHei",sans-serif;}' +
+        '.ws-serif{font-family:"Songti SC","STSong","Noto Serif SC",serif;}' +
+        '.ws-root{padding:20px 16px calc(24px + env(safe-area-inset-bottom));max-width:720px;margin:0 auto;box-sizing:border-box;}' +
+        '.ws-header h2{margin:0 0 4px;font-size:22px;font-weight:600;font-family:"Songti SC","STSong",serif;letter-spacing:.01em;}' +
+        '.ws-sub{color:var(--ws-ink2);font-size:13px;margin-bottom:18px;}' +
         '.ws-section{margin-bottom:22px;}' +
-        '.ws-section__title{font-size:14px;font-weight:600;margin-bottom:10px;}' +
+        '.ws-section__title{font-size:13px;font-weight:600;margin-bottom:10px;color:var(--ws-ink);letter-spacing:-.01em;}' +
         '.ws-lights{display:flex;gap:8px;flex-wrap:wrap;}' +
-        '.ws-light{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;font-weight:600;}' +
-        '.ws-light--green{background:#3e8e62;} .ws-light--yellow{background:#d9a43b;} .ws-light--red{background:#d45d4d;}' +
-        '.ws-legend{font-size:12px;color:#8f8e89;margin-top:6px;}' +
-        '.ws-card{background:var(--card,#fff);border:1px solid rgba(0,0,0,.08);border-radius:12px;padding:14px;margin-bottom:10px;}' +
-        '.ws-card__tag{margin-bottom:6px;} .ws-tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:#f0f0f0;color:#666;}' +
-        '.ws-tag--red{background:#fde8e6;color:#b3402f;} .ws-tag--green{background:#e6f4ec;color:#2f7a4f;}' +
-        '.ws-card__title{font-weight:600;margin-bottom:4px;} .ws-card__desc{font-size:13px;color:#666;line-height:1.6;margin-bottom:10px;}' +
-        '.ws-card__acts{display:flex;gap:8px;align-items:center;}' +
-        '.ws-btn{border:1px solid rgba(0,0,0,.12);background:#fff;border-radius:8px;padding:7px 13px;font-size:12.5px;cursor:pointer;}' +
-        '.ws-btn--primary{background:#1b1b19;color:#fff;border-color:#1b1b19;} .ws-btn--link{border-color:transparent;background:transparent;color:#2f6bde;}' +
-        '.ws-action-result{margin-top:8px;font-size:12.5px;} .ws-ok{color:#2f7a4f;font-weight:600;} .ws-err{color:#b3402f;font-weight:600;}' +
-        '.ws-empty{color:#8f8e89;font-size:13px;padding:12px 0;}' +
-        '.ws-promote-form{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}' +
-        '.ws-input{border:1px solid rgba(0,0,0,.15);border-radius:8px;padding:7px 10px;font-size:13px;}' +
-        '.ws-select-multi{min-width:160px;height:70px;}' +
-        '.ws-quicklinks{display:flex;gap:10px;flex-wrap:wrap;}';
+        '.ws-light{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;' +
+        'border:1px solid var(--ws-line);color:var(--ws-ink2);font-family:"Songti SC","STSong",serif;position:relative;}' +
+        '.ws-light::after{content:"";position:absolute;bottom:-2px;right:-2px;width:8px;height:8px;border-radius:50%;border:2px solid var(--ws-card);}' +
+        '.ws-light--green::after{background:var(--ws-up);} .ws-light--yellow::after{background:var(--ws-warn);} .ws-light--red::after{background:var(--ws-down);}' +
+        '.ws-legend{font-size:11.5px;color:var(--ws-ink2);margin-top:8px;font-weight:500;}' +
+        '.ws-card{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.35);box-sizing:border-box;}' +
+        '.ws-card__tag{margin-bottom:8px;}' +
+        '.ws-tag{font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--ws-accent-soft);color:var(--ws-ink2);}' +
+        '.ws-tag--red{background:var(--ws-accent-soft);color:var(--ws-down);} .ws-tag--green{background:var(--ws-accent-soft);color:var(--ws-up);}' +
+        '.ws-card__title{font-weight:600;margin-bottom:6px;font-size:14px;color:var(--ws-ink);}' +
+        '.ws-card__desc{font-size:13px;color:var(--ws-ink2);line-height:1.7;margin-bottom:12px;}' +
+        '.ws-card__acts{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}' +
+        '.ws-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--ws-line);background:var(--ws-card);color:var(--ws-ink);' +
+        'border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:500;cursor:pointer;font-family:inherit;min-height:36px;box-sizing:border-box;}' +
+        '.ws-btn--primary{background:var(--ws-accent);border-color:var(--ws-accent);color:var(--ws-on-accent);font-weight:600;}' +
+        '.ws-btn--link{border-color:transparent;background:transparent;color:var(--ws-accent);padding:9px 6px;}' +
+        '.ws-btn:active{transform:scale(.97);} .ws-btn:disabled{opacity:.6;cursor:default;}' +
+        '.ws-action-result{margin-top:10px;font-size:12.5px;line-height:1.6;}' +
+        '.ws-ok{color:var(--ws-up);font-weight:600;} .ws-err{color:var(--ws-down);font-weight:600;}' +
+        '.ws-empty{color:var(--ws-ink2);font-size:13px;padding:14px 0;}' +
+        '.ws-loading{color:var(--ws-ink2);font-size:13px;padding:24px 0;text-align:center;}' +
+        '.ws-promote-form{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}' +
+        '.ws-input{border:1px solid var(--ws-line);background:var(--ws-bg);color:var(--ws-ink);border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;box-sizing:border-box;}' +
+        '.ws-select-multi{min-width:160px;flex:1;height:76px;}' +
+        '.ws-quicklinks{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}' +
+        '.ws-quicklinks .ws-btn{justify-content:center;}' +
+        '@media (min-width:560px){.ws-quicklinks{grid-template-columns:repeat(4,1fr);}}' +
+        '@media (max-width:480px){' +
+        '.ws-root{padding:16px 14px calc(20px + env(safe-area-inset-bottom));}' +
+        '.ws-header h2{font-size:20px;}' +
+        '.ws-card{padding:14px;border-radius:12px;}' +
+        '.ws-card__acts{gap:8px;}' +
+        '.ws-card__acts .ws-btn{flex:1;justify-content:center;min-width:0;}' +
+        '.ws-promote-form{flex-direction:column;}' +
+        '.ws-select-multi{width:100%;}' +
+        '}';
     document.head.appendChild(style);
 }
 
@@ -96,17 +125,29 @@ function wsRenderStoreLights(storeSummary) {
     return '<div class="ws-lights">' + dots + '</div><div class="ws-legend">' + green + ' 绿 · ' + yellow + ' 黄 · ' + red + ' 红</div>';
 }
 
+// 六大增长方案问题分类（server/domains/growth-solutions/problems.js 的 PROBLEMS 键）——
+// 任务的 category 命中这些键时，说明它背后有经营诊断/增长方案的完整归因与阶梯目标在支撑，
+// 「查看进展」应该去经营诊断页看那套上下文，而不是通用 Agent 任务板（那里只有状态机，没有
+// 归因和目标）。category 不在此列表里的任务（如这次批量推广用的 menu_optimization 之外的
+// 通用 ops 任务）才落到 Agent 任务板——这是目前唯一能反映"这条任务到底谁在跟"的可靠信号，
+// 不是瞎绑：demo 数据里"营收下滑"那条任务 category='ops'，本身就不是真走诊断流程生成的，
+// 所以目前它确实只能停在 Agent 任务板——这不是我们编的路由错了，是这条 demo 任务本身还没有
+// 诊断链路支撑，需要用真诊断生成的任务来验证这条路由。
+const WS_DIAGNOSIS_BACKED_CATEGORIES = ['staff_efficiency', 'revenue', 'kitchen_standard', 'menu_optimization', 'gross_margin', 'training_replication'];
+
 // ── 需拍板/任务卡片：点击直接调 agent-task-board review，原地展示结果 ──
 function wsRenderTaskCard(task) {
     const sevTag = task.severity === 'high' ? '<span class="ws-tag ws-tag--red">需拍板</span>' : '<span class="ws-tag">待处理</span>';
+    const hasDiagnosis = WS_DIAGNOSIS_BACKED_CATEGORIES.includes(String(task.category || ''));
+    const progressLabel = hasDiagnosis ? '查看经营诊断 →' : '查看任务详情 →';
     return (
-        '<div class="ws-card" data-task-id="' + wsEsc(task.task_id) + '">' +
+        '<div class="ws-card" data-task-id="' + wsEsc(task.task_id) + '" data-task-category="' + wsEsc(task.category || '') + '">' +
         '<div class="ws-card__tag">' + sevTag + '</div>' +
         '<div class="ws-card__title">' + wsEsc(task.store || '') + ' — ' + wsEsc(task.title || '') + '</div>' +
         '<div class="ws-card__desc">' + wsEsc(task.detail || '') + '</div>' +
         '<div class="ws-card__acts">' +
         '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>' +
-        '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">查看进展 →</button>' +
+        '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>' +
         '</div>' +
         '<div class="ws-action-result"></div>' +
         '</div>'
@@ -132,7 +173,10 @@ function wsBindTaskCardEvents(root) {
     });
     root.querySelectorAll('[data-ws-open-task]').forEach((btn) => {
         btn.addEventListener('click', () => {
-            try { showPage('agent-tasks'); } catch (e) {}
+            const card = btn.closest('.ws-card');
+            const category = card ? card.getAttribute('data-task-category') : '';
+            const hasDiagnosis = WS_DIAGNOSIS_BACKED_CATEGORIES.includes(String(category || ''));
+            try { showPage(hasDiagnosis ? 'diagnosis' : 'agent-tasks'); } catch (e) {}
         });
     });
 }

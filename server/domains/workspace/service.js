@@ -31,7 +31,7 @@ export async function getOpenTaskSummaryByStore(pool, tenantId) {
 export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
   const lim = Math.min(50, Math.max(1, Number(limit) || 20));
   const r = await pool.query(
-    `SELECT task_id, title, detail, severity, store, status, created_at
+    `SELECT task_id, title, detail, severity, store, status, category, source, created_at
        FROM master_tasks
       WHERE tenant_id = $1 AND assignee_username = $2
         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
@@ -48,7 +48,7 @@ export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
 export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
   const lim = Math.min(20, Math.max(1, Number(limit) || 8));
   const r = await pool.query(
-    `SELECT task_id, title, detail, severity, store, status, created_at
+    `SELECT task_id, title, detail, severity, store, status, category, source, created_at
        FROM master_tasks
       WHERE tenant_id = $1
         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')

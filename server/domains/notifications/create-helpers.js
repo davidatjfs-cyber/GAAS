@@ -33,6 +33,7 @@ export function createNotificationsHelpers({
     systemAlertTitle,
     lookupFeishuUserByUsername,
     sendLarkMessage,
+    resolveTenantIdDefault,
   });
   setMetricAlerts(createMetricAlerts({ sendAdminSystemAlert }));
   const notifyAdminsDualWriteFailure = createNotifyAdminsDualWriteFailure({ pool, sendLarkMessage });
