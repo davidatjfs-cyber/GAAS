@@ -223,16 +223,65 @@ function wsBindPromoteDishEvents(root) {
     });
 }
 
+// ── AI 洞察卡（仅老板）：接 /api/ontology/closed-loop-report 真实数据，不是写死文字。
+// 卡1 = boss_summary（该服务已经按场景手工组织好的一句叙事，本身就是"headline"）；
+// 卡2/3 = key_findings_for_owner[1]/[2] 配对 next_actions_for_owner[1]/[2]（按下标best-effort
+// 配对，findings 和 actions 是两个独立数组不一定语义对应同一件事，这是当前已知的近似，
+// 不是精确绑定——精确到"这条 finding 对应哪条 action"需要 opportunity.issue_id 关联，
+// Phase 3 做「批准」按钮时会顺带做对。这次只做「展示 + 查看详情」，不假装有一键批准按钮。
+function wsRenderInsightCard(text, tag, expandText) {
+    if (!text) return '';
+    const id = 'ws-insight-' + Math.random().toString(36).slice(2, 8);
+    return (
+        '<div class="ws-card ws-card--insight">' +
+        '<div class="ws-card__tag"><span class="ws-tag ws-tag--green">' + wsEsc(tag) + '</span></div>' +
+        '<div class="ws-card__desc">' + wsEsc(text) + '</div>' +
+        (expandText
+            ? '<div class="ws-card__acts"><button type="button" class="ws-btn ws-btn--link" data-ws-toggle="' + id + '">查看依据 →</button></div>' +
+              '<div class="ws-action-result" id="' + id + '" style="display:none;">' + wsEsc(expandText) + '</div>'
+            : '') +
+        '</div>'
+    );
+}
+
+async function wsRenderInsightsSection() {
+    const report = await wsFetchJson('/api/ontology/closed-loop-report?period=30d');
+    if (!report || report.ok === false || report.ontologyStatus === 'insufficient_data') {
+        return '<div class="ws-empty">近30天数据不足，暂时无法生成经营判断（不会强行给结论）</div>';
+    }
+    const findings = Array.isArray(report.key_findings_for_owner) ? report.key_findings_for_owner : [];
+    const actions = Array.isArray(report.next_actions_for_owner) ? report.next_actions_for_owner : [];
+    const cards = [];
+    if (report.boss_summary) {
+        cards.push(wsRenderInsightCard(report.boss_summary, '本期概览', report.confidence_note));
+    }
+    for (let i = 0; i < 2; i++) {
+        const f = findings[i];
+        const a = actions[i];
+        if (!f && !a) continue;
+        const text = f && a ? (f + ' 建议：' + a) : (f || a);
+        cards.push(wsRenderInsightCard(text, '增长机会', report.risk_warning));
+    }
+    if (!cards.length) return '<div class="ws-empty">近30天暂无需要关注的经营异常</div>';
+    return cards.join('');
+}
+
 // ── 老板 / 总部 工作台 ──
 async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const home = await wsFetchJson('/api/workspace/home?scope=notable');
+    const [home, insightsHtml] = await Promise.all([
+        wsFetchJson('/api/workspace/home?scope=notable'),
+        persona === 'boss' ? wsRenderInsightsSection() : Promise.resolve(''),
+    ]);
     const allStores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
     const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
     html += '<div class="ws-sub">未读消息 ' + (home?.unreadCount || 0) + ' 条</div></div>';
+    if (persona === 'boss') {
+        html += '<div class="ws-section"><div class="ws-section__title">AI 洞察（近30天）</div>' + insightsHtml + '</div>';
+    }
     html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯</div>' + wsRenderStoreLights(home?.storeLights) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">今天该处理的事</div>';
     if (tasksList.length) {
@@ -245,6 +294,12 @@ async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = html;
     wsBindTaskCardEvents(root);
     wsBindPromoteDishEvents(root);
+    root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const el = document.getElementById(btn.getAttribute('data-ws-toggle'));
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        });
+    });
 }
 
 // ── 门店工作台 ──

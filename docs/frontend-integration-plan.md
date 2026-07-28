@@ -146,7 +146,12 @@ CREATE TABLE decision_receipts (
 1. ✅ **已完成**：红绿灯改接 `store_ratings`（本节第1条规则）——新增 `getStoreHealthLights()`，
    门店全集 = `store_ratings` 出现过的店 ∪ `master_tasks` 出现过的店（后者覆盖"有任务但还没
    评过级"的店，按规则显示红）；已核实 agents-service-v2 只读不写 `store_ratings`，无冲突
-2. 老板洞察卡接 `closed-loop-report-service.js`
+2. ✅ **已完成**：老板洞察卡接 `/api/ontology/closed-loop-report`——卡1用服务已经组织好的
+   `boss_summary`叙事；卡2/3用 `key_findings_for_owner`配对`next_actions_for_owner`（按下标
+   best-effort配对，两个数组不保证语义对应同一件事，这是当前已知近似，Phase 3 做批准按钮时
+   会靠 opportunity.issue_id 精确关联再修正）。这次只做「展示+查看依据」只读版，没有假的
+   「批准」按钮——批准要真正创建任务，属于 Phase 3 范围。7.1 节"3条卡片怎么选"这个问题
+   目前答案是：不做筛选，findings/actions 数组本来就只有最多3条（后端 slice(0,3)），全部展示。
 3. 员工"我的服务"分区（请假/离职/晋升/积分/档案标签整合）
 4. 总部待审批、门店昨日经营接入
 

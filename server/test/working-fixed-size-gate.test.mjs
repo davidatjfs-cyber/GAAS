@@ -19,11 +19,14 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-07-28 第二次上调（69481→69563）：15-workspace.js 按 role-workspaces-mockup.html 的
  * 「黑缎玫瑰」配色/字体重写注入样式（原先 fallback 到未定义的 --card 变量导致卡片在深色
  * 背景上显示成白色）、任务卡「查看进展」按 category 是否命中六大增长方案问题分类分流到
- * 经营诊断页/Agent任务板、SELECT 增加 category/source 字段。同样通过正规 frontend/src/pages
- * 结构新增，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然「只减不增」：此后任何改动都不得让总行数
- * 超过这个新基线，除非同样是一次经过说明的、刻意的上调。
+ * 经营诊断页/Agent任务板、SELECT 增加 category/source 字段。
+ * 2026-07-28 第三次上调（69563→69618）：老板驾驶舱 AI 洞察卡改接真实
+ * /api/ontology/closed-loop-report，取代写死文字（Phase 2 #2）。
+ * 同样通过正规 frontend/src/pages 结构新增，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然
+ * 「只减不增」：此后任何改动都不得让总行数超过这个新基线，除非同样是一次经过说明的、
+ * 刻意的上调。
  */
-const MAX_LINES = 69563;
+const MAX_LINES = 69618;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
