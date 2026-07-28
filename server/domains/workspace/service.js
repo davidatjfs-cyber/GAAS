@@ -28,6 +28,46 @@ export async function getOpenTaskSummaryByStore(pool, tenantId) {
   return r.rows || [];
 }
 
+/**
+ * 门店红绿灯：直接复用已有的 store_ratings 评级（server/domains/store-scoring/store-rating.js
+ * 的 calculateStoreRating() 已经在跑，每月按「营收达成率」评 A/B/C/D，不是这里新造的规则）。
+ * 映射（已跟业务方确认）：A/B → 绿，C → 黄，D 或从未评级过 → 红。
+ * 这只是营收单一维度，不含差评/人效/任务——门店有开放任务不代表红灯，红灯只看营收达成率。
+ *
+ * 门店全集 = store_ratings 里出现过的店 ∪ master_tasks 里出现过的店（后者覆盖"有任务但还没
+ * 被评过级"的新店/数据不全的店，这些店按规则应该显示红——「无评级→红」）。
+ */
+export async function getStoreHealthLights(pool, tenantId) {
+  const [ratedRows, taskStoreRows] = await Promise.all([
+    pool.query(
+      `SELECT DISTINCT ON (store) store, rating, achievement_rate, period
+         FROM store_ratings
+        WHERE tenant_id = $1 AND store IS NOT NULL AND store <> ''
+        ORDER BY store, period DESC`,
+      [tenantId]
+    ),
+    pool.query(
+      `SELECT DISTINCT store FROM master_tasks
+        WHERE tenant_id = $1 AND store IS NOT NULL AND store <> ''`,
+      [tenantId]
+    ),
+  ]);
+  const ratingByStore = new Map((ratedRows.rows || []).map((r) => [r.store, r]));
+  const allStores = new Set([...ratingByStore.keys(), ...(taskStoreRows.rows || []).map((r) => r.store)]);
+  return [...allStores].map((store) => {
+    const rated = ratingByStore.get(store) || null;
+    const rating = rated?.rating || null;
+    const light = rating === 'A' || rating === 'B' ? 'green' : rating === 'C' ? 'yellow' : 'red';
+    return {
+      store,
+      rating,
+      achievement_rate: rated?.achievement_rate ?? null,
+      period: rated?.period || null,
+      light,
+    };
+  });
+}
+
 export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
   const lim = Math.min(50, Math.max(1, Number(limit) || 20));
   const r = await pool.query(
@@ -75,12 +115,13 @@ export async function getUnreadInboxCount(pool, tenantId, username) {
  * （该查询已聚合 5 张表，前端另行按 5 分钟缓存调用，不在这里重复拼装避免首屏变慢）。
  */
 export async function getWorkspaceHome(pool, tenantId, username, { scope = 'mine' } = {}) {
-  const [storeSummary, tasks, unread] = await Promise.all([
+  const [storeSummary, storeLights, tasks, unread] = await Promise.all([
     getOpenTaskSummaryByStore(pool, tenantId),
+    getStoreHealthLights(pool, tenantId),
     scope === 'notable' ? getNotableOpenTasks(pool, tenantId) : getMyOpenTasks(pool, tenantId, username),
     getUnreadInboxCount(pool, tenantId, username),
   ]);
-  return { storeSummary, myTasks: tasks, unreadCount: unread };
+  return { storeSummary, storeLights, myTasks: tasks, unreadCount: unread };
 }
 
 /**

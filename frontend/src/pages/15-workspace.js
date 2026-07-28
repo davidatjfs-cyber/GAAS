@@ -108,21 +108,21 @@ async function wsFetchJson(url) {
     } catch (e) { return null; }
 }
 
-// ── 门店红绿灯（老板/总部共用）──
-function wsRenderStoreLights(storeSummary) {
-    if (!Array.isArray(storeSummary) || !storeSummary.length) {
-        return '<div class="ws-empty">暂无门店任务数据</div>';
+// ── 门店红绿灯（老板/总部共用）── 依据：store_ratings 营收达成率评级（A/B→绿 C→黄 D/无评级→红），
+// 不是任务数量——这只是营收单一维度，不含差评/人效/任务积压。
+function wsRenderStoreLights(storeLights) {
+    if (!Array.isArray(storeLights) || !storeLights.length) {
+        return '<div class="ws-empty">暂无门店评级数据</div>';
     }
-    const dots = storeSummary.slice(0, 12).map((s) => {
-        const open = Number(s.open_count || 0);
-        const high = Number(s.high_count || 0);
-        const cls = high > 0 ? 'ws-light--red' : (open > 0 ? 'ws-light--yellow' : 'ws-light--green');
-        return '<div class="ws-light ' + cls + '" title="' + wsEsc(s.store) + '：开放任务 ' + open + '，高优 ' + high + '">' + wsEsc(String(s.store || '').slice(0, 1)) + '</div>';
+    const dots = storeLights.slice(0, 12).map((s) => {
+        const cls = 'ws-light--' + s.light;
+        const rateTxt = s.achievement_rate != null ? '营收达成率 ' + s.achievement_rate + '%' : '本月尚无评级（缺目标营收）';
+        return '<div class="ws-light ' + cls + '" title="' + wsEsc(s.store) + '：' + wsEsc(rateTxt) + '（' + wsEsc(s.rating || '无评级') + '）">' + wsEsc(String(s.store || '').slice(0, 1)) + '</div>';
     }).join('');
-    const red = storeSummary.filter((s) => Number(s.high_count) > 0).length;
-    const yellow = storeSummary.filter((s) => Number(s.high_count) === 0 && Number(s.open_count) > 0).length;
-    const green = storeSummary.length - red - yellow;
-    return '<div class="ws-lights">' + dots + '</div><div class="ws-legend">' + green + ' 绿 · ' + yellow + ' 黄 · ' + red + ' 红</div>';
+    const green = storeLights.filter((s) => s.light === 'green').length;
+    const yellow = storeLights.filter((s) => s.light === 'yellow').length;
+    const red = storeLights.filter((s) => s.light === 'red').length;
+    return '<div class="ws-lights">' + dots + '</div><div class="ws-legend">' + green + ' 绿 · ' + yellow + ' 黄 · ' + red + ' 红（仅营收达成率，不含差评/人效）</div>';
 }
 
 // 六大增长方案问题分类（server/domains/growth-solutions/problems.js 的 PROBLEMS 键）——
@@ -227,13 +227,13 @@ function wsBindPromoteDishEvents(root) {
 async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
     const home = await wsFetchJson('/api/workspace/home?scope=notable');
-    const allStores = (home?.storeSummary || []).map((s) => s.store).filter(Boolean);
+    const allStores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
     const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
     html += '<div class="ws-sub">未读消息 ' + (home?.unreadCount || 0) + ' 条</div></div>';
-    html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯</div>' + wsRenderStoreLights(home?.storeSummary) + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯</div>' + wsRenderStoreLights(home?.storeLights) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">今天该处理的事</div>';
     if (tasksList.length) {
         html += tasksList.slice(0, 6).map(wsRenderTaskCard).join('');
@@ -310,7 +310,7 @@ async function wsRunMonthlyPayrollForAllStores() {
     const month = new Date().toISOString().slice(0, 7);
     try {
         const home = await wsFetchJson('/api/workspace/home');
-        const stores = (home?.storeSummary || []).map((s) => s.store).filter(Boolean);
+        const stores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
         if (!stores.length) throw new Error('未找到门店列表');
         let done = 0;
         for (const store of stores) {

@@ -143,7 +143,9 @@ CREATE TABLE decision_receipts (
 ## 6. 接下来的开发顺序（不变，仍按 Phase 2/3，但内容已按本次确认更新）
 
 ### Phase 2（下一步）
-1. 红绿灯改接 `store_ratings`（本节第1条规则）——工作量小，优先做
+1. ✅ **已完成**：红绿灯改接 `store_ratings`（本节第1条规则）——新增 `getStoreHealthLights()`，
+   门店全集 = `store_ratings` 出现过的店 ∪ `master_tasks` 出现过的店（后者覆盖"有任务但还没
+   评过级"的店，按规则显示红）；已核实 agents-service-v2 只读不写 `store_ratings`，无冲突
 2. 老板洞察卡接 `closed-loop-report-service.js`
 3. 员工"我的服务"分区（请假/离职/晋升/积分/档案标签整合）
 4. 总部待审批、门店昨日经营接入
