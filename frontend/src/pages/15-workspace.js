@@ -267,7 +267,7 @@ async function wsRenderStore(root) {
 // ── 员工工作台 ──
 async function wsRenderEmployee(root) {
     root.innerHTML =
-        '<div class="ws-header"><h2>我的今天</h2></div>' +
+        '<div class="ws-header"><h2>我的任务</h2></div>' +
         '<div class="ws-section"><div class="ws-quicklinks">' +
         '<button type="button" class="ws-btn" data-ws-nav="attendance">打卡</button>' +
         '<button type="button" class="ws-btn" data-ws-nav="training">培训</button>' +
