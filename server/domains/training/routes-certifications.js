@@ -2,6 +2,10 @@
  * Training certifications: pending, review, my-certifications.
  */
 import { pool, isManager } from './shared.js';
+import {
+  canUserReviewCertification,
+  buildPendingCertificationAssignerFilter,
+} from './certification-reviewer.js';
 
 export function registerTrainingCertificationsRoutes(app, authMiddleware, _uploadMiddleware) {
   // GET /api/training/certifications/pending - 待审核列表（谁派发谁审核）
@@ -13,40 +17,36 @@ export function registerTrainingCertificationsRoutes(app, authMiddleware, _uploa
       const username = String(req.user?.username || '').trim();
       const role = String(req.user?.role || '').trim();
       const isAdminOrHQ = role === 'admin' || role === 'hq_manager';
-      // 谁派发谁审核：非管理员/总部只能看到自己派发的任务的认证。
-      // assigned_by 为空（如到期复训自动派发未回填指派人的历史脏数据）时，
-      // 兜底给该员工所在门店的店长/出品经理，避免记录永远无人能审。
-      const assignerClause = isAdminOrHQ
-        ? ''
-        : `AND EXISTS (
-             SELECT 1 FROM training_assignments a2
-             WHERE a2.employee_username = c.employee_username
-               AND a2.topic_id = c.topic_id
-               AND (
-                 lower(a2.assigned_by) = lower('${username.replace(/'/g, "''")}')
-                 OR (
-                   a2.assigned_by IS NULL
-                   AND EXISTS (
-                     SELECT 1 FROM employees ce
-                     JOIN employees re ON re.store = ce.store AND lower(re.username) = lower('${username.replace(/'/g, "''")}')
-                     WHERE lower(ce.username) = lower(c.employee_username)
-                       AND re.role IN ('store_production_manager','store_manager')
-                   )
-                 )
-               )
-           )`;
       const tenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
+
+      const params = [tenantId];
+      let assignerClause = '';
+      if (!isAdminOrHQ) {
+        const filter = buildPendingCertificationAssignerFilter(username);
+        assignerClause = filter.sql;
+        params.push(...filter.extraParams);
+      }
+
       const result = await pool().query(`
         SELECT c.*, t.title, t.position, s.employee_username,
-               e.name AS employee_name
+               e.name AS employee_name,
+               a.assigned_by, a.source AS assignment_source,
+               COALESCE(ae.name, a.assigned_by) AS assigner_name
         FROM training_certifications c
         JOIN training_sessions s ON s.id = c.session_id
         JOIN training_topics t ON t.id = c.topic_id
         LEFT JOIN employees e ON e.username = c.employee_username
+        LEFT JOIN LATERAL (
+          SELECT assigned_by, source
+          FROM training_assignments
+          WHERE employee_username = c.employee_username AND topic_id = c.topic_id AND tenant_id = c.tenant_id
+          ORDER BY created_at DESC LIMIT 1
+        ) a ON true
+        LEFT JOIN employees ae ON ae.username = a.assigned_by
         WHERE c.manager_verdict IS NULL AND c.tenant_id = $1
         ${assignerClause}
         ORDER BY c.created_at DESC
-      `, [tenantId]);
+      `, params);
       res.json({ success: true, pending: result.rows });
     } catch (e) {
       res.json({ success: false, error: e?.message });
@@ -63,52 +63,48 @@ export function registerTrainingCertificationsRoutes(app, authMiddleware, _uploa
       const { action, verdict, note, steps } = req.body;
       const reviewer = req.user?.username;
       const role = String(req.user?.role || '').trim();
-      const isAdminOrHQ = role === 'admin' || role === 'hq_manager';
+      const tenantId = String(req.tenantId || req.user?.tenant_id || 'default').trim() || 'default';
 
-      // 获取认证记录
       const existing = (await pool().query(`SELECT * FROM training_certifications WHERE id = $1`, [id])).rows[0];
       if (!existing) return res.json({ success: false, error: '认证记录不存在' });
 
-      // 谁派发谁审核：非管理员/总部校验是否为派发人
-      if (!isAdminOrHQ) {
-        const assignCheck = await pool().query(
-          `SELECT 1 FROM training_assignments WHERE employee_username = $1 AND topic_id = $2 AND lower(assigned_by) = lower($3) LIMIT 1`,
-          [existing.employee_username, existing.topic_id, reviewer]
-        );
-        if (!assignCheck.rows.length) {
-          return res.status(403).json({ error: '只有派发人才能审核此认证' });
-        }
+      const allowed = await canUserReviewCertification(pool(), {
+        reviewerUsername: reviewer,
+        reviewerRole: role,
+        employeeUsername: existing.employee_username,
+        topicId: existing.topic_id,
+        tenantId,
+      });
+      if (!allowed) {
+        return res.status(403).json({ error: '只有派发人或门店负责人才能审核此认证' });
       }
 
       let finalScore = null;
       let managerScore = null;
       let reviewStatus = 'pending';
       let passed = false;
-      let managerNote = note || '';
+      const managerNote = note || '';
       let stepScores = existing.ai_step_scores;
 
       if (action === 'confirm') {
-        // 确认AI评分
         reviewStatus = 'confirmed';
-        finalScore = existing.ai_total_score || 0;
-        passed = (existing.ai_verdict === 'passed' || finalScore >= 80);
+        finalScore = existing.ai_total_score ?? null;
+        passed = existing.ai_verdict === 'passed'
+          || (finalScore != null && finalScore >= 80);
       } else if (action === 'override' && Array.isArray(steps)) {
-        // 人工覆盖评分
         reviewStatus = 'overridden';
         managerScore = steps.reduce((sum, s) => sum + (Number(s.score) || 0), 0);
         finalScore = managerScore;
         stepScores = steps;
-        passed = managerScore >= 80; // rubric pass_threshold always 80
+        passed = managerScore >= 80;
       } else if (verdict && ['passed', 'failed'].includes(verdict)) {
-        // 兼容旧版调用（直接传passed/failed）
         reviewStatus = 'confirmed';
         passed = verdict === 'passed';
-        finalScore = existing.ai_total_score || (passed ? 100 : 0);
+        finalScore = existing.ai_total_score ?? (passed ? 100 : 0);
       } else {
         return res.json({ success: false, error: '请提供 action (confirm/override) 或 verdict (passed/failed)' });
       }
 
-      // 通过则按知识点的认证有效期计算到期日，作为P3持续认证的起点
       let validUntil = null;
       if (passed) {
         const topicRes = await pool().query(`SELECT validity_days FROM training_topics WHERE id = $1`, [existing.topic_id]);
@@ -126,7 +122,7 @@ export function registerTrainingCertificationsRoutes(app, authMiddleware, _uploa
              status = CASE WHEN $8 THEN 'valid' ELSE status END
          WHERE id = $9`,
         [passed ? 'passed' : 'failed', managerNote, reviewer,
-         reviewStatus, managerScore, finalScore, JSON.stringify(stepScores), passed, id, validUntil]
+          reviewStatus, managerScore, finalScore, JSON.stringify(stepScores), passed, id, validUntil]
       );
 
       if (passed) {
@@ -152,7 +148,8 @@ export function registerTrainingCertificationsRoutes(app, authMiddleware, _uploa
                c.manager_verdict, c.manager_note, c.final_score, c.manager_score,
                c.review_status, c.certified_at, c.created_at,
                t.title, t.position,
-               a.require_practice,
+               a.require_practice, a.assigned_by, a.source AS assignment_source,
+               COALESCE(ae.name, a.assigned_by, '门店负责人') AS assigner_name,
                CASE WHEN (c.manager_verdict = 'passed' OR c.legacy_accepted = true)
                           AND COALESCE(c.status, 'valid') = 'valid'
                     THEN 'certified'
@@ -165,12 +162,13 @@ export function registerTrainingCertificationsRoutes(app, authMiddleware, _uploa
         JOIN training_topics t ON t.id = c.topic_id
         JOIN training_sessions s ON s.id = c.session_id
         LEFT JOIN LATERAL (
-          SELECT require_practice
+          SELECT require_practice, assigned_by, source
           FROM training_assignments
           WHERE employee_username = c.employee_username AND topic_id = c.topic_id
             AND tenant_id = c.tenant_id
           ORDER BY created_at DESC LIMIT 1
         ) a ON true
+        LEFT JOIN employees ae ON ae.username = a.assigned_by
         WHERE c.employee_username = $1 AND c.tenant_id = $2
         ORDER BY c.created_at DESC
       `, [username, tenantId]);

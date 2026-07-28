@@ -1927,6 +1927,7 @@
                 if (adminPanel) adminPanel.style.display = '';
                 if (employeePanel) employeePanel.style.display = '';
                 switchTrainingAdminTab('topics');
+                refreshTrainingPendingBadge();
                 loadMyTrainingTopics();
             } else {
                 if (adminPanel) adminPanel.style.display = 'none';
@@ -1954,6 +1955,23 @@
             if (tab === 'pending') loadPendingCertifications();
             if (tab === 'progress') loadPromoProgress();
             if (tab === 'promoreq') loadPromoReqTopics();
+            if (tab === 'pending' || tab === 'topics') refreshTrainingPendingBadge();
+        }
+
+        async function refreshTrainingPendingBadge() {
+            if (!isTrainingManager()) return;
+            try {
+                const resp = await fetch('/api/training/certifications/pending', {
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }
+                });
+                const data = await resp.json();
+                const count = data.success && Array.isArray(data.pending) ? data.pending.length : 0;
+                const badge = document.getElementById('training-pending-badge');
+                if (badge) {
+                    badge.textContent = count > 99 ? '99+' : String(count);
+                    badge.style.display = count > 0 ? '' : 'none';
+                }
+            } catch (_e) { /* ignore */ }
         }
 
         // ── 晋升进度跟踪面板 ────────────────────────────────────────
@@ -3166,6 +3184,7 @@
                 if (!list) return;
                 if (!data.success || !data.pending?.length) {
                     list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.5);">暂无待审核记录</div>';
+                    refreshTrainingPendingBadge();
                     return;
                 }
                 const aiLabel = {passed:'AI：合格',review:'AI：建议复核',failed:'AI：不合格'};
@@ -3173,6 +3192,11 @@
                 list.innerHTML = data.pending.map(c => {
                     const stepScores = c.ai_step_scores;
                     const totalScore = c.ai_total_score;
+                    const sourceLabel = c.assignment_source === 'promotion_qualification'
+                        ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(139,92,246,0.15);color:#c4b5fd;margin-left:6px;">晋升培训</span>'
+                        : (c.assignment_source === 'recert'
+                            ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(59,130,246,0.15);color:#93c5fd;margin-left:6px;">复训</span>'
+                            : '');
                     let scoreHtml = '';
                     if (stepScores && Array.isArray(stepScores) && stepScores.length) {
                         const stepsStr = stepScores.map(s => {
@@ -3193,7 +3217,7 @@
                             <span style="font-weight:700;color:#fff;font-size:14px;">${escapeHtml(c.employee_name || c.employee_username)}</span>
                             <span style="font-size:11px;color:${aiColor[c.ai_verdict]||'#94a3b8'};">${aiLabel[c.ai_verdict]||''}</span>
                         </div>
-                        <div style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:10px;">📚 ${escapeHtml(c.title)} · ${escapeHtml(c.position)}</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:10px;">📚 ${escapeHtml(c.title)} · ${escapeHtml(c.position)}${sourceLabel}${c.assigner_name ? ` · 审核：${escapeHtml(c.assigner_name)}` : ''}</div>
                         ${c.media_url ? (c.media_type === 'video'
                             ? `<video src="${c.media_url}" controls playsinline style="width:100%;border-radius:10px;margin-bottom:10px;max-height:200px;object-fit:cover;"></video>`
                             : `<img src="${c.media_url}" style="width:100%;border-radius:10px;margin-bottom:10px;max-height:200px;object-fit:cover;">`) : ''}
@@ -3205,6 +3229,7 @@
                         </div>
                     </div>`;
                 }).join('');
+                refreshTrainingPendingBadge();
             } catch (e) {
                 showNotification('加载待审核列表失败', 'error');
             }
@@ -3379,7 +3404,10 @@
                             : '<span style="font-size:9px;color:rgba(255,255,255,0.35);">(AI确认)</span>';
                         practiceScoreHtml = `<div style="margin-top:6px;font-size:13px;font-weight:700;color:${scoreColor};">实操 ${finalScore}分 ${scoreBadge}</div>`;
                     } else if (c.require_practice && reviewStatus === 'pending') {
-                        practiceScoreHtml = `<div style="margin-top:6px;font-size:12px;color:#eab308;">实操评分待派发人审核</div>`;
+                        const reviewerLabel = String(c.assigner_name || c.assigned_by || '').trim();
+                        practiceScoreHtml = reviewerLabel
+                            ? `<div style="margin-top:6px;font-size:12px;color:#eab308;">实操评分待 ${escapeHtml(reviewerLabel)} 审核</div>`
+                            : `<div style="margin-top:6px;font-size:12px;color:#eab308;">实操评分待门店负责人审核</div>`;
                     }
                     return `
                     <div style="background:${effectiveStatus === 'certified' ? 'rgba(52,211,153,0.07)' : 'rgba(251,191,36,0.06)'};border:1px solid ${certState.border};border-radius:14px;padding:16px;">

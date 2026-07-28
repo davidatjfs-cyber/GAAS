@@ -10,6 +10,7 @@ import {
   scorePracticeMediaWithRubric,
   scorePracticeMediaWithoutRubric,
 } from './upload-practice-media-helpers.js';
+import { notifyCertificationReviewersPending } from './certification-reviewer.js';
 
 function resolveQuery(query) {
   return query || ((sql, params) => pool().query(sql, params));
@@ -761,9 +762,23 @@ export async function uploadPracticeMedia({
       );
     }
 
+    const cert = certResult.rows[0];
+    try {
+      await notifyCertificationReviewersPending({
+        pool: { query: q },
+        employeeUsername: username,
+        topicId: session.topic_id,
+        topicTitle: session.title,
+        tenantId: certTenantId,
+        certificationId: cert.id,
+      });
+    } catch (notifyErr) {
+      log.warn?.({ msg: 'training_practice_review_notify_failed', err: notifyErr?.message });
+    }
+
     return {
       success: true,
-      certification: certResult.rows[0],
+      certification: cert,
       verdict: aiVerdict,
       feedback: aiFeedback,
       step_scores: aiStepScores,
