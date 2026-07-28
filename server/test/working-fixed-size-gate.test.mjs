@@ -22,11 +22,13 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 经营诊断页/Agent任务板、SELECT 增加 category/source 字段。
  * 2026-07-28 第三次上调（69563→69618）：老板驾驶舱 AI 洞察卡改接真实
  * /api/ontology/closed-loop-report，取代写死文字（Phase 2 #2）。
+ * 2026-07-28 第四次上调（69618→69622）：修复任务卡门店名重复显示的 bug
+ * （master_tasks.title 本身可能已含门店名，之前又拼了一次）。
  * 同样通过正规 frontend/src/pages 结构新增，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然
  * 「只减不增」：此后任何改动都不得让总行数超过这个新基线，除非同样是一次经过说明的、
  * 刻意的上调。
  */
-const MAX_LINES = 69618;
+const MAX_LINES = 69622;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

@@ -69295,10 +69295,14 @@ function wsRenderTaskCard(task) {
     const sevTag = task.severity === 'high' ? '<span class="ws-tag ws-tag--red">需拍板</span>' : '<span class="ws-tag">待处理</span>';
     const hasDiagnosis = WS_DIAGNOSIS_BACKED_CATEGORIES.includes(String(task.category || ''));
     const progressLabel = hasDiagnosis ? '查看经营诊断 →' : '查看任务详情 →';
+    // 门店名单独显示，不拼进标题——master_tasks.title 本身可能已经包含门店名
+    // （比如这条 demo 数据："演示门店A — 请说明营收下滑原因..."），拼接会导致店名显示两遍。
+    const titleText = String(task.title || '');
+    const showStoreSeparately = task.store && !titleText.startsWith(String(task.store));
     return (
         '<div class="ws-card" data-task-id="' + wsEsc(task.task_id) + '" data-task-category="' + wsEsc(task.category || '') + '">' +
-        '<div class="ws-card__tag">' + sevTag + '</div>' +
-        '<div class="ws-card__title">' + wsEsc(task.store || '') + ' — ' + wsEsc(task.title || '') + '</div>' +
+        '<div class="ws-card__tag">' + sevTag + (task.store ? ' <span class="ws-tag">' + wsEsc(task.store) + '</span>' : '') + '</div>' +
+        '<div class="ws-card__title">' + (showStoreSeparately ? wsEsc(task.store) + ' — ' : '') + wsEsc(titleText) + '</div>' +
         '<div class="ws-card__desc">' + wsEsc(task.detail || '') + '</div>' +
         '<div class="ws-card__acts">' +
         '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>' +
