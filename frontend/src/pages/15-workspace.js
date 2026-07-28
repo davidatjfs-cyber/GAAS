@@ -188,6 +188,26 @@ function wsRenderStoreLights(storeLights) {
 // 诊断链路支撑，需要用真诊断生成的任务来验证这条路由。
 const WS_DIAGNOSIS_BACKED_CATEGORIES = ['staff_efficiency', 'revenue', 'kitchen_standard', 'menu_optimization', 'gross_margin', 'training_replication'];
 
+// 2026-07-28：核查发现"任务"栏之前只查 master_tasks，经营诊断六大神器/餐饮总监下发的
+// 任务实际落在完全独立的 growth_solution_tasks 表（server/growth-solutions.js），从未被
+// getMyOpenTasks/getNotableOpenTasks 查过——诊断下发的任务对责任人来说100%"消失"了。
+// 用现成的 GET /api/diagnosis/solutions/my-tasks（该表自己的"我的任务"接口）补上这个缺口，
+// 归一化成跟 wsRenderTaskCard 一样的卡片形状，合并进同一个任务列表展示。
+async function wsFetchGrowthSolutionTasks() {
+    const data = await wsFetchJson('/api/diagnosis/solutions/my-tasks');
+    const rows = Array.isArray(data?.tasks) ? data.tasks : [];
+    return rows.map((t) => ({
+        task_id: t.task_id,
+        title: (t.problem_title ? t.problem_title + '：' : '') + (t.title || ''),
+        detail: t.description || '',
+        store: t.store || '',
+        category: t.problem_key || '',
+        severity: 'normal',
+        source: 'growth_solution',
+        round_id: t.round_id,
+    }));
+}
+
 // ── 需拍板/任务卡片：点击直接调 agent-task-board review，原地展示结果 ──
 // 2026-07-28：用户明确要求"任务"这个待办分区（待办组件的「任务」tab）只留完成按钮，
 // 不要"查看进展/查看任务详情"这个跳Agent任务板的按钮——这是原则问题，不是样式偏好，
@@ -202,14 +222,15 @@ function wsRenderTaskCard(task, opts) {
     // （比如这条 demo 数据："演示门店A — 请说明营收下滑原因..."），拼接会导致店名显示两遍。
     const titleText = String(task.title || '');
     const showStoreSeparately = task.store && !titleText.startsWith(String(task.store));
+    const isGrowthTask = task.source === 'growth_solution';
     return (
-        '<div class="ws-card" data-task-id="' + wsEsc(task.task_id) + '" data-task-category="' + wsEsc(task.category || '') + '">' +
-        '<div class="ws-card__tag">' + sevTag + (task.store ? ' <span class="ws-tag">' + wsEsc(task.store) + '</span>' : '') + '</div>' +
+        '<div class="ws-card" data-task-id="' + wsEsc(task.task_id) + '" data-task-category="' + wsEsc(task.category || '') + '" data-task-source="' + wsEsc(task.source || 'master') + '" data-round-id="' + wsEsc(task.round_id || '') + '">' +
+        '<div class="ws-card__tag">' + sevTag + (task.store ? ' <span class="ws-tag">' + wsEsc(task.store) + '</span>' : '') + (isGrowthTask ? ' <span class="ws-tag">经营诊断</span>' : '') + '</div>' +
         '<div class="ws-card__title">' + (showStoreSeparately ? wsEsc(task.store) + ' — ' : '') + wsEsc(titleText) + '</div>' +
         '<div class="ws-card__desc">' + wsEsc(task.detail || '') + '</div>' +
         '<div class="ws-card__acts">' +
         '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>' +
-        (hideProgressLink ? '' : '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>') +
+        (hideProgressLink || isGrowthTask ? '' : '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>') +
         '</div>' +
         '<div class="ws-action-result"></div>' +
         '</div>'
@@ -221,10 +242,14 @@ function wsBindTaskCardEvents(root) {
         btn.addEventListener('click', () => {
             const card = btn.closest('.ws-card');
             const taskId = btn.getAttribute('data-ws-approve');
+            const isGrowthTask = card && card.getAttribute('data-task-source') === 'growth_solution';
+            const roundId = card ? card.getAttribute('data-round-id') : '';
             wsExecuteAction(card, {
                 confirmText: '确认该任务已完成/批准通过？',
-                endpoint: '/api/agent-task-board/tasks/' + encodeURIComponent(taskId) + '/review',
-                body: { decision: 'approved' },
+                endpoint: isGrowthTask
+                    ? '/api/diagnosis/solutions/rounds/' + encodeURIComponent(roundId) + '/tasks/' + encodeURIComponent(taskId) + '/complete'
+                    : '/api/agent-task-board/tasks/' + encodeURIComponent(taskId) + '/review',
+                body: isGrowthTask ? {} : { decision: 'approved' },
                 onSuccess: (cardEl) => {
                     cardEl.querySelector('.ws-action-result').innerHTML = '<span class="ws-ok">✅ 已确认，任务状态已更新</span>';
                     const acts = cardEl.querySelector('.ws-card__acts');
@@ -451,6 +476,8 @@ function wsBindPromoteDishEvents(root) {
 
 // ── 六大管理神器：点击 → 选门店 → 内嵌任务拆分（接现有 /api/diagnosis/solutions/:key），
 // 不跳转到经营诊断整页，只嵌入这一个问题的方案卡片。
+// 2026-07-28：用户反馈"餐饮总监"混在六大神器按钮网格里容易认错——拆成独立板块，
+// 不再是 WS_SIX_TOOLS 里的第7个按钮，见 wsRenderCustomDirectorSection。
 const WS_SIX_TOOLS = [
     { key: 'revenue', label: '提升营收' },
     { key: 'staff_efficiency', label: '提升员工效率' },
@@ -458,7 +485,6 @@ const WS_SIX_TOOLS = [
     { key: 'menu_optimization', label: '提升菜品质量' },
     { key: 'gross_margin', label: '提升菜品毛利' },
     { key: 'training_replication', label: '复制培养人才' },
-    { key: 'custom', label: '餐饮总监' },
 ];
 
 function wsRenderSixTools(allStores) {
@@ -567,8 +593,25 @@ async function wsDispatchPlan(key, store, plan, containerEl, resultEl) {
 // 什么？"那个自由提问框用的同一个真实接口，不是新做的）。老板输入一句话问题，AI 结合门店
 // 真实数据（差评/离职快照等，接口内部按关键词自动附带）生成分析+任务方案。布局按经营诊断
 // 页原样搬：标题+说明+输入框+按钮，下面"进行中的自定义任务"+"最近查询记录"。
+// 2026-07-28：原来跟六大神器共用同一个网格+同一个 #ws-six-tool-body 容器，用户反馈容易
+// 跟标准六大神器混淆——拆成独立板块（独立标题+独立门店选择器+独立容器 #ws-custom-director-body）。
+function wsRenderCustomDirectorSection(allStores) {
+    const storeOptions = (allStores || []).map((s) => '<option value="' + wsEsc(s) + '">' + wsEsc(s) + '</option>').join('');
+    return (
+        '<select class="ws-input" id="ws-custom-director-store" style="margin-bottom:10px;width:100%;">' + storeOptions + '</select>' +
+        '<div id="ws-custom-director-body"><div class="ws-empty">加载中...</div></div>'
+    );
+}
+
+function wsBindCustomDirectorEvents(root) {
+    const storeSel = root.querySelector('#ws-custom-director-store');
+    if (!storeSel) return;
+    wsRenderCustomDirectorTool(storeSel.value || '');
+    storeSel.addEventListener('change', () => wsRenderCustomDirectorTool(storeSel.value || ''));
+}
+
 function wsRenderCustomDirectorTool(store) {
-    const body = document.getElementById('ws-six-tool-body');
+    const body = document.getElementById('ws-custom-director-body');
     if (!body) return;
     body.innerHTML =
         '<div class="ws-card">' +
@@ -678,7 +721,6 @@ async function wsRunCustomAnalyze(store, question) {
 }
 
 async function wsLoadSixToolPlan(key, store) {
-    if (key === 'custom') { wsRenderCustomDirectorTool(store); return; }
     const body = document.getElementById('ws-six-tool-body');
     if (!body || !store) return;
     body.innerHTML = '<div class="ws-loading">加载中...</div>';
@@ -866,14 +908,15 @@ function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
 
 async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const [home, overview, marketingHtml, approvalsData] = await Promise.all([
+    const [home, overview, marketingHtml, approvalsData, growthTasks] = await Promise.all([
         wsFetchJson('/api/workspace/home?scope=notable'),
         wsFetchJson('/api/workspace/overview'),
         wsRenderMarketingSuggestions(),
         wsFetchJson('/api/approvals?view=assigned&status=pending&limit=50'),
+        wsFetchGrowthSolutionTasks(),
     ]);
     const allStores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
-    const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
+    const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
     const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
@@ -886,10 +929,12 @@ async function wsRenderBossOrHq(root, persona) {
     html += '<div class="ws-section"><div class="ws-section__title">门店营销活动建议</div>' + marketingHtml + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯（上月）</div>' + wsRenderStoreLights(home?.storeLights) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">六大管理神器</div>' + wsRenderSixTools(allStores) + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">餐饮总监</div>' + wsRenderCustomDirectorSection(allStores) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">8大AI督导指挥中心</div>' + wsRenderAgentCommandCenter() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
     wsBindSixToolsEvents(root);
+    wsBindCustomDirectorEvents(root);
     wsBindAgentCommandCenterEvents(root);
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -904,8 +949,8 @@ async function wsRenderBossOrHq(root, persona) {
 // ── 门店工作台 ──
 async function wsRenderStore(root) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const home = await wsFetchJson('/api/workspace/home');
-    const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
+    const [home, growthTasks] = await Promise.all([wsFetchJson('/api/workspace/home'), wsFetchGrowthSolutionTasks()]);
+    const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
     const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '');
     let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
     html += '<div class="ws-section"><div class="ws-section__title">我的待办（' + tasksList.length + '）</div>';

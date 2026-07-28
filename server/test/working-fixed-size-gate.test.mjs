@@ -59,8 +59,14 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-07-28 第十一次上调（70215→70218）：AI洞察空数据状态补上"AI 洞察"标签（之前只有一行
  * 无标签文字，用户反馈六大神器里"没发现"AI洞察功能）；老板/总部/门店工作台头部补充登录人
  * 姓名+角色/职位显示；差评展示区块顺序移到今日经营总览后面（原来在六大神器/AI督导中心后）。
+ * 2026-07-28 第十二次上调（70218→70263）：① 餐饮总监从六大神器按钮网格里拆出来做成独立板块
+ * （用户反馈混在一起容易认错），有自己的门店选择器+容器，不再共用 #ws-six-tool-body；
+ * ② 核查发现经营诊断六大神器/餐饮总监下发的任务落在独立的 growth_solution_tasks 表，
+ * 从未被工作台"任务"列表（只查 master_tasks）读到——用现成的
+ * GET /api/diagnosis/solutions/my-tasks 补上这个真实缺口，归一化合并进同一个任务列表，
+ * 完成按钮按 source 区分调用 growth_solution_tasks 专用的 complete 接口。
  */
-const MAX_LINES = 70218;
+const MAX_LINES = 70263;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
