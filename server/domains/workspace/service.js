@@ -4,6 +4,7 @@
  * master_tasks（已有表、已有状态机），不是新领域对象。
  */
 import { childLogger } from '../../utils/logger.js';
+import { pickAssigneeForCategory } from '../master-agent/resolve-assignee.js';
 
 const log = childLogger({ domain: 'workspace', handler: 'service' });
 
@@ -133,31 +134,56 @@ export async function getWorkspaceHome(pool, tenantId, username, { scope = 'mine
  * 批量推广菜品到多店：把「批准推广」这个动作拆成给每个目标门店的出品经理各建一条
  * master_tasks（复用已有状态机/证据/验收流程），不新建 dish/promotion 领域表。
  */
-export async function promoteDishToStores(pool, { dishName, sourceStore, targetStores, note, actorUsername, tenantId = 'default' }) {
+/**
+ * 2026-07-28 修复：之前这里建的任务没有设置 assignee_username，任务是孤儿——
+ * 出品经理的"我的任务"（按 assignee_username 过滤）里根本看不到。现在用现成的
+ * pickAssigneeForCategory()（server/domains/master-agent/resolve-assignee.js，
+ * 数据审计流程本来就在用同一套规则）按门店+岗位解析出出品经理，写进 assignee_username。
+ * 该店如果没有出品经理，任务仍然会建（不阻断），但会在返回结果里报告哪些店没解析到人，
+ * 调用方（前端）需要把这个报告展示出来，不能假装都成功了。
+ */
+export async function promoteDishToStores(pool, { dishName, sourceStore, targetStores, note, actorUsername, tenantId = 'default', state = {} }) {
   const dish = String(dishName || '').trim();
   const stores = Array.isArray(targetStores) ? targetStores.map((s) => String(s || '').trim()).filter(Boolean) : [];
   if (!dish) return { ok: false, status: 400, error: 'missing_dish_name' };
   if (!stores.length) return { ok: false, status: 400, error: 'missing_target_stores' };
 
   const createdTaskIds = [];
+  const unassignedStores = [];
   for (const store of stores) {
     const taskId = generateTaskId();
     const title = `上新推广：${dish}`;
     const detail = `「${dish}」在${sourceStore ? sourceStore + '首周表现良好，' : ''}建议本店上架并完成出品培训。${note ? '备注：' + String(note).trim() : ''}`;
+
+    let assigneeUsername = null;
+    try {
+      const { assignee } = pickAssigneeForCategory({
+        category: 'menu_optimization',
+        store,
+        state,
+        roleMap: { menu_optimization: 'store_production_manager' },
+      });
+      assigneeUsername = assignee?.username || null;
+    } catch (e) {
+      log.warn({ msg: 'workspace_dish_promotion_assignee_resolve_failed', store, err: e?.message });
+    }
+    if (!assigneeUsername) unassignedStores.push(store);
+
     await pool.query(
-      `INSERT INTO master_tasks (task_id, status, source, current_agent, category, severity, store, title, detail, source_data, tenant_id)
-       VALUES ($1, 'pending_dispatch', 'workspace_dish_promotion', 'workspace', 'menu_optimization', 'medium', $2, $3, $4, $5::jsonb, $6)`,
+      `INSERT INTO master_tasks (task_id, status, source, current_agent, category, severity, store, title, detail, assignee_username, source_data, tenant_id)
+       VALUES ($1, 'pending_dispatch', 'workspace_dish_promotion', 'workspace', 'menu_optimization', 'medium', $2, $3, $4, $5, $6::jsonb, $7)`,
       [
         taskId,
         store,
         title,
         detail,
+        assigneeUsername,
         JSON.stringify({ dish_name: dish, source_store: sourceStore || '', promoted_by: actorUsername || '' }),
         tenantId,
       ]
     );
     createdTaskIds.push(taskId);
   }
-  log.info({ msg: 'workspace_dish_promotion_created', dish, stores: stores.length, actor: actorUsername });
-  return { ok: true, taskIds: createdTaskIds, storeCount: stores.length };
+  log.info({ msg: 'workspace_dish_promotion_created', dish, stores: stores.length, actor: actorUsername, unassigned: unassignedStores.length });
+  return { ok: true, taskIds: createdTaskIds, storeCount: stores.length, unassignedStores };
 }

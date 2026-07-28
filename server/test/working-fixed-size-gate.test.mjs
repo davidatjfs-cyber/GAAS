@@ -39,11 +39,15 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 桌均/堂食外卖占比/人数分布/离职率从多个方块 grid 改成紧凑的 label-value 单行列表；
  * 按用户要求从页面上移除 AI洞察卡+批量推广（不在9项计划内，容易混淆——代码保留未删，
  * 用户要研究这两个功能再决定要不要留）。
+ * 2026-07-28 第八次上调（69962→70097）：六大神器加第7项"餐饮总监"（接现有
+ * /api/diagnosis/solutions/custom/analyze 自由提问接口）+ AI洞察嵌入六大神器选店后展示 +
+ * 新增"待办"三分区组件（任务/待批/通知，待批接现有 /api/approvals）+ 批量推广修复
+ * assignee_username 缺失（用 pickAssigneeForCategory 自动解析出品经理）。
  * 同样通过正规 frontend/src/pages 结构新增，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然
  * 「只减不增」：此后任何改动都不得让总行数超过这个新基线，除非同样是一次经过说明的、
  * 刻意的上调。
  */
-const MAX_LINES = 69962;
+const MAX_LINES = 70097;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

@@ -1269,7 +1269,7 @@ registerStateRoutes(app, authRequired, {
 // Wave 4o: chairman/tenant-settings → domains/tenant-settings/routes.js
 
 // P1: 角色工作台聚合 + 批量推广菜品 → domains/workspace/
-registerWorkspaceRoutes(app, authRequired, { pool, resolveTenantIdDefault });
+registerWorkspaceRoutes(app, authRequired, { pool, resolveTenantIdDefault, getSharedState });
 
 // Wave H21: /api/health + /api/version → domains/health/
 registerHealthRoutes(app, {

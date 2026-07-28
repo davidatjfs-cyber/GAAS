@@ -29,7 +29,7 @@ function resolveOverviewStoreFilter(req) {
  * @param {{ pool: import('pg').Pool, resolveTenantIdDefault: (req)=>string }} deps
  */
 export function registerWorkspaceRoutes(app, authRequired, deps) {
-  const { pool, resolveTenantIdDefault } = deps;
+  const { pool, resolveTenantIdDefault, getSharedState } = deps;
 
   app.get('/api/workspace/home', authRequired, async (req, res) => {
     const tenantId = resolveTenantIdDefault(req.tenantId);
@@ -98,6 +98,7 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
     }
     const tenantId = resolveTenantIdDefault(req.tenantId);
     try {
+      const state = (await getSharedState(tenantId)) || {};
       const result = await promoteDishToStores(pool, {
         dishName: req.body?.dishName,
         sourceStore: req.body?.sourceStore,
@@ -105,6 +106,7 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
         note: req.body?.note,
         actorUsername: req.user?.username,
         tenantId,
+        state,
       });
       if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
       res.json(result);

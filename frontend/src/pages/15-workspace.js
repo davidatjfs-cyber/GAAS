@@ -96,6 +96,10 @@ function wsInjectStyles() {
         '.ws-light-row__store{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
         '.ws-light-row__rate{font-size:12px;color:var(--ws-ink2);font-family:"Songti SC","STSong",serif;}' +
         '.ws-more-toggle{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;color:var(--ws-ink2);font-size:12.5px;cursor:pointer;border-top:1px solid var(--ws-line);margin-top:6px;}' +
+        '.ws-todo{display:flex;gap:8px;margin-bottom:2px;}' +
+        '.ws-todo__tab{flex:1;background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;padding:10px 8px;text-align:center;color:var(--ws-ink2);font-family:inherit;font-size:12px;cursor:pointer;}' +
+        '.ws-todo__tab.is-on{background:var(--ws-accent);border-color:var(--ws-accent);color:var(--ws-on-accent);font-weight:600;}' +
+        '.ws-todo__n{display:block;font-family:"Songti SC","STSong",serif;font-size:17px;font-weight:600;margin-bottom:2px;}' +
         '@media (min-width:560px){.ws-quicklinks{grid-template-columns:repeat(4,1fr);} .ws-kpis{grid-template-columns:repeat(4,1fr);}}' +
         '@media (max-width:480px){' +
         '.ws-root{padding:16px 14px calc(20px + env(safe-area-inset-bottom));}' +
@@ -428,8 +432,11 @@ function wsBindPromoteDishEvents(root) {
             endpoint: '/api/workspace/promote-dish',
             body: { dishName, targetStores },
             onSuccess: (cardEl, d) => {
-                cardEl.querySelector('.ws-action-result').innerHTML =
-                    '<span class="ws-ok">✅ 已批准推广到 ' + (d.storeCount || targetStores.length) + ' 家店，任务已下发</span>';
+                let msg = '<span class="ws-ok">✅ 已批准推广到 ' + (d.storeCount || targetStores.length) + ' 家店，任务已下发</span>';
+                if (Array.isArray(d.unassignedStores) && d.unassignedStores.length) {
+                    msg += '<br><span class="ws-err">⚠️ ' + wsEsc(d.unassignedStores.join('、')) + ' 没有找到出品经理，任务已建但暂时无人认领</span>';
+                }
+                cardEl.querySelector('.ws-action-result').innerHTML = msg;
             },
         });
     });
@@ -444,6 +451,7 @@ const WS_SIX_TOOLS = [
     { key: 'menu_optimization', label: '提升菜品质量' },
     { key: 'gross_margin', label: '提升菜品毛利' },
     { key: 'training_replication', label: '复制培养人才' },
+    { key: 'custom', label: '餐饮总监' },
 ];
 
 function wsRenderSixTools(allStores) {
@@ -458,15 +466,104 @@ function wsRenderSixTools(allStores) {
     );
 }
 
+// AI洞察嵌入六大神器：选了门店之后，把该店的经营闭环叙事（真实数据，不是写死文字）
+// 显示在任务拆分列表上方。⚠️ 这里传的 store_id 就是门店显示名（如"演示门店A"），跟
+// ontology 那套表内部用的 store_id 是不是同一套编码，我没有逐一核实过——如果 ontology
+// 那边的 store_id 是另一套编码（不是展示名），这里会查不到数据，需要拿真实门店数据验证。
+async function wsRenderSixToolInsight(store) {
+    const report = await wsFetchJson('/api/ontology/closed-loop-report?period=30d&store_id=' + encodeURIComponent(store));
+    if (!report || report.ok === false || report.ontologyStatus === 'insufficient_data' || !report.boss_summary) {
+        return '<div class="ws-empty">该门店近30天数据不足，暂无AI经营判断</div>';
+    }
+    return '<div class="ws-card ws-card--insight"><div class="ws-card__tag"><span class="ws-tag ws-tag--green">AI 洞察</span></div>' +
+        '<div class="ws-card__desc">' + wsEsc(report.boss_summary) + '</div></div>';
+}
+
+// 餐饮总监：接现有 /api/diagnosis/solutions/custom/analyze（经营诊断页"目前遇到的问题是
+// 什么？"那个自由提问框用的同一个真实接口，不是新做的）。老板输入一句话问题，AI 结合门店
+// 真实数据（差评/离职快照等，接口内部按关键词自动附带）生成分析+任务方案。
+function wsRenderCustomDirectorTool(store) {
+    const body = document.getElementById('ws-six-tool-body');
+    if (!body) return;
+    body.innerHTML =
+        '<div class="ws-card">' +
+        '<div class="ws-card__title">目前遇到的问题是什么？</div>' +
+        '<div class="ws-card__desc">描述你的经营问题，AI 结合门店真实数据生成解决方案。</div>' +
+        '<textarea class="ws-input" id="ws-custom-question" rows="3" style="width:100%;margin:8px 0;" placeholder="例如：最近外卖差评变多，出餐越来越慢..."></textarea>' +
+        '<div class="ws-card__acts"><button type="button" class="ws-action-btn ws-btn ws-btn--primary" id="ws-custom-submit">AI 生成方案</button></div>' +
+        '</div>' +
+        '<div id="ws-custom-result" style="margin-top:10px;"></div>';
+    const btn = document.getElementById('ws-custom-submit');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+        const question = document.getElementById('ws-custom-question')?.value?.trim();
+        const resultEl = document.getElementById('ws-custom-result');
+        if (!question) { showNotification('请描述你遇到的问题', 'warning'); return; }
+        if (!store) { showNotification('请先选择门店', 'warning'); return; }
+        btn.disabled = true; btn.textContent = '生成中...';
+        resultEl.innerHTML = '<div class="ws-loading">AI 分析中，可能需要几秒...</div>';
+        try {
+            const r = await fetch('/api/diagnosis/solutions/custom/analyze', { method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ store, question }) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+            if (d.mode === 'existing') {
+                resultEl.innerHTML = '<div class="ws-card"><div class="ws-card__desc">' + wsEsc(d.reason || '') + '</div><div class="ws-card__desc">' + wsEsc(d.analysis || '') + '</div>' +
+                    '<div class="ws-card__acts"><button type="button" class="ws-btn ws-btn--link" data-ws-jump-key="' + wsEsc(d.problem_key) + '">这属于"' + wsEsc((WS_SIX_TOOLS.find((t) => t.key === d.problem_key) || {}).label || d.problem_key) + '"标准方案，点击查看 →</button></div></div>';
+                resultEl.querySelector('[data-ws-jump-key]')?.addEventListener('click', (e) => {
+                    const key = e.target.getAttribute('data-ws-jump-key');
+                    document.getElementById('ws-six-tool-panel')?.setAttribute('data-active-key', key);
+                    wsLoadSixToolPlan(key, store);
+                });
+            } else {
+                const tasks = Array.isArray(d.plan) ? d.plan : [];
+                let html = '<div class="ws-card"><div class="ws-card__title">' + wsEsc(d.title || '自定义方案') + '</div>';
+                if (d.reason) html += '<div class="ws-card__desc">' + wsEsc(d.reason) + '</div>';
+                if (d.analysis) html += '<div class="ws-card__desc">' + wsEsc(d.analysis) + '</div>';
+                if (d.priority_recommendation) html += '<div class="ws-card__desc">' + wsEsc(d.priority_recommendation) + '</div>';
+                if (d.out_of_scope) html += '<div class="ws-card__desc">⚠️ ' + wsEsc(d.out_of_scope) + '</div>';
+                html += '</div>';
+                html += tasks.map((t, i) => (
+                    '<div class="ws-card"><div class="ws-card__title">' + wsEsc(t.title || '') + '</div>' +
+                    '<div class="ws-card__desc">' + wsEsc(t.description || t.why || '') + (t.assignee_role ? '（责任岗位：' + wsEsc(t.assignee_role) + '）' : '') + '</div>' +
+                    '<div class="ws-card__acts"><button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-dispatch-custom="' + i + '">下发任务</button></div>' +
+                    '<div class="ws-action-result"></div></div>'
+                )).join('');
+                resultEl.innerHTML = html;
+                resultEl.querySelectorAll('[data-ws-dispatch-custom]').forEach((dbtn) => {
+                    dbtn.addEventListener('click', () => {
+                        const idx = Number(dbtn.getAttribute('data-ws-dispatch-custom'));
+                        const t = tasks[idx];
+                        const card = dbtn.closest('.ws-card');
+                        wsExecuteAction(card, {
+                            confirmText: '将「' + (t.title || '') + '」下发给 ' + store + '，确认？',
+                            endpoint: '/api/agent-task-board/tasks',
+                            body: { content: (t.title || '') + '（' + store + '）：' + (t.description || t.why || '') },
+                            onSuccess: (cardEl) => { cardEl.querySelector('.ws-action-result').innerHTML = '<span class="ws-ok">✅ 已下发</span>'; },
+                        });
+                    });
+                });
+            }
+        } catch (e) {
+            resultEl.innerHTML = '<span class="ws-err">生成失败：' + wsEsc(e?.message || e) + '</span>';
+        } finally {
+            btn.disabled = false; btn.textContent = 'AI 生成方案';
+        }
+    });
+}
+
 async function wsLoadSixToolPlan(key, store) {
+    if (key === 'custom') { wsRenderCustomDirectorTool(store); return; }
     const body = document.getElementById('ws-six-tool-body');
     if (!body || !store) return;
     body.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const data = await wsFetchJson('/api/diagnosis/solutions/' + encodeURIComponent(key) + '?store=' + encodeURIComponent(store));
-    if (!data || data.ok === false) { body.innerHTML = '<div class="ws-empty">加载失败</div>'; return; }
+    const [data, insightHtml] = await Promise.all([
+        wsFetchJson('/api/diagnosis/solutions/' + encodeURIComponent(key) + '?store=' + encodeURIComponent(store)),
+        wsRenderSixToolInsight(store),
+    ]);
+    if (!data || data.ok === false) { body.innerHTML = insightHtml + '<div class="ws-empty">加载失败</div>'; return; }
     const tasks = Array.isArray(data.tasks) ? data.tasks : (Array.isArray(data.round?.tasks) ? data.round.tasks : []);
-    if (!tasks.length) { body.innerHTML = '<div class="ws-empty">该门店暂无该方案的任务拆分（可能还没有开放轮次）</div>'; return; }
-    body.innerHTML = tasks.map((t, i) => (
+    if (!tasks.length) { body.innerHTML = insightHtml + '<div class="ws-empty">该门店暂无该方案的任务拆分（可能还没有开放轮次）</div>'; return; }
+    body.innerHTML = insightHtml + tasks.map((t, i) => (
         '<div class="ws-card"><div class="ws-card__title">' + wsEsc(t.title || '') + '</div>' +
         '<div class="ws-card__desc">' + wsEsc(t.description || t.why || '') + (t.assignee_role ? '（责任岗位：' + wsEsc(t.assignee_role) + '）' : '') + '</div>' +
         '<div class="ws-card__acts"><button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-dispatch-six="' + i + '">下发任务</button></div>' +
@@ -606,18 +703,64 @@ async function wsRenderInsightsSection() {
 // ── 老板 / 总部 工作台 ──
 // 2026-07-28：按用户要求去掉了 AI洞察卡（数据不足前一直显示占位文字，没有实际价值）
 // 和批量推广（真实功能，但不在用户给的9项清单里，混进来显得乱）——只留用户明确要的9项。
+// ── 待办三分区（任务/待批/通知）——2026-07-28 新增。"待批"直接查已有 /api/approvals
+// （view=assigned&status=pending），不重新实现审批归属判断（那套逻辑很复杂，链式审批
+// 都在里面，容易写错）；"通知"这里只给数量，没做列表下钻（没有现成的"通知列表"接口，
+// 只有未读数，列表本身在 hrms_user_notifications，需要另外做才能下钻）。
+function wsRenderTodoWidget(taskCount, pendingApprovalCount, unreadCount) {
+    return (
+        '<div class="ws-todo">' +
+        '<button type="button" class="ws-todo__tab is-on" data-ws-todo-tab="task"><span class="ws-todo__n">' + taskCount + '</span>任务</button>' +
+        '<button type="button" class="ws-todo__tab" data-ws-todo-tab="approval"><span class="ws-todo__n">' + pendingApprovalCount + '</span>待批</button>' +
+        '<button type="button" class="ws-todo__tab" data-ws-todo-tab="notif"><span class="ws-todo__n">' + unreadCount + '</span>通知</button>' +
+        '</div>' +
+        '<div class="ws-todo-pane" id="ws-todo-pane"></div>'
+    );
+}
+
+function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
+    const renderPane = (tab) => {
+        const pane = root.querySelector('#ws-todo-pane');
+        if (!pane) return;
+        if (tab === 'task') {
+            pane.innerHTML = tasksList.length ? tasksList.slice(0, 6).map(wsRenderTaskCard).join('') : '<div class="ws-empty">暂无进行中的任务</div>';
+            wsBindTaskCardEvents(pane);
+            return;
+        }
+        if (tab === 'approval') {
+            pane.innerHTML = pendingApprovals.length
+                ? pendingApprovals.map((a) => '<div class="ws-rank-row"><span class="ws-rank-row__store">' + wsEsc(a.type_label || a.type || '') + ' · ' + wsEsc(a.applicant_name || a.applicant_username || '') + '</span><span class="ws-tag">待审批</span></div>').join('')
+                : '<div class="ws-empty">暂无待批事项</div>';
+            return;
+        }
+        pane.innerHTML = '<div class="ws-empty">通知详情请去"我的档案"查看，这里暂时只显示未读数</div>';
+    };
+    root.querySelectorAll('[data-ws-todo-tab]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            root.querySelectorAll('[data-ws-todo-tab]').forEach((b) => b.classList.remove('is-on'));
+            btn.classList.add('is-on');
+            renderPane(btn.getAttribute('data-ws-todo-tab'));
+        });
+    });
+    renderPane('task');
+}
+
 async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const [home, overview, marketingHtml] = await Promise.all([
+    const [home, overview, marketingHtml, approvalsData] = await Promise.all([
         wsFetchJson('/api/workspace/home?scope=notable'),
         wsFetchJson('/api/workspace/overview'),
         wsRenderMarketingSuggestions(),
+        wsFetchJson('/api/approvals?view=assigned&status=pending&limit=50'),
     ]);
     const allStores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
+    const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
+    const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
     html += '<div class="ws-sub">未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
+    html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
     html += '<div class="ws-section"><div class="ws-section__title">今日经营总览</div>' + wsRenderOverview(overview) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">门店营销活动建议</div>' + marketingHtml + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯（上月）</div>' + wsRenderStoreLights(home?.storeLights) + '</div>';
@@ -625,6 +768,7 @@ async function wsRenderBossOrHq(root, persona) {
     html += '<div class="ws-section"><div class="ws-section__title">8大AI督导指挥中心</div>' + wsRenderAgentCommandCenter() + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(allStores) + '</div>';
     root.innerHTML = html;
+    wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
     wsBindSixToolsEvents(root);
     wsBindAgentCommandCenterEvents(root);
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
