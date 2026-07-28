@@ -934,6 +934,7 @@
                         message: String(n.message || ''),
                         type: String(n.type || ''),
                         createdAt: String(n.created_at || ''),
+                        readAt: n.read_at || null,
                         meta: n.meta || {}
                     }));
                 }
@@ -948,8 +949,10 @@
                     createdAt: n.createdAt || '',
                     level: (n.meta && n.meta.priority === 'A') ? 'urgent' : 'system',
                     meta: n.meta || {},
+                    readAt: n.readAt || null,
                     _src: 'db_notification',
-                    _id: 'db-' + n.id
+                    _id: 'db-' + n.id,
+                    id: String(n.id || '')
                 }));
 
             const anns = (Array.isArray(data.announcements) ? data.announcements : [])
@@ -982,7 +985,7 @@
             // 强制确认队列：覆盖"公司通知"面板里的全部内容——管理员发布的公告 + 系统自动通知
             // （培训任务指派、审批结果、系统告警等），只对"强制确认上线之后"产生的新消息生效，
             // 之前已存在的历史消息不会突然弹窗骚扰所有员工。
-            // 公告的已读状态走服务端 readBy；系统通知没有按用户的已读字段，用本地 localStorage 记忆。
+            // 公告的已读状态走服务端 readBy；系统通知走服务端 read_at（localStorage 仅作乐观缓存）。
             const sysAckKey = 'hrms_acked_sys_notifs_' + myUsername;
             let ackedSysIds = [];
             try { ackedSysIds = JSON.parse(localStorage.getItem(sysAckKey) || '[]'); } catch (e) { ackedSysIds = []; }
@@ -997,7 +1000,12 @@
                 const createdMs = new Date(a?.createdAt || 0).getTime();
                 if (!Number.isFinite(createdMs) || createdMs < forceAckCutoffMs) return false;
                 if (a._src === 'announcement') return !(a?.readBy && a.readBy[myUsername]);
-                if (a._src === 'db_notification') return !ackedSysIds.includes(String(a._id || ''));
+                if (a._src === 'db_notification') {
+                    if (a.readAt) return false;
+                    const nid = String(a.id || a._id || '');
+                    if (ackedSysIds.includes(nid) || ackedSysIds.includes(String(a._id || ''))) return false;
+                    return true;
+                }
                 return false;
             });
             if (ackQueue.length) {
@@ -1209,15 +1217,45 @@
             const annId = String(a.id || a._id || '');
             const myUsername = String(currentUser?.username || currentUser?.id || '').trim().toLowerCase();
             if (a._src === 'db_notification') {
-                // 系统自动通知（培训任务指派/审批结果/系统告警等）没有按用户的服务端已读字段，
-                // 用 localStorage 按账号记一份已确认过的 id 列表。
+                // 系统通知已读必须落服务端 read_at；localStorage 只做乐观缓存，避免 WebView 清缓存后重复弹。
+                const rawId = String(a.id || String(a._id || '').replace(/^db-/, '') || '').trim();
                 try {
-                    const key = 'hrms_acked_sys_notifs_' + myUsername;
-                    let ids = [];
-                    try { ids = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { ids = []; }
-                    if (!ids.includes(annId)) ids.push(annId);
-                    localStorage.setItem(key, JSON.stringify(ids));
-                } catch (e) {}
+                    const ackRes = await HRMS_API.request('/api/hrms-notifications/' + encodeURIComponent(rawId) + '/ack', { method: 'POST' });
+                    const ackedIds = Array.isArray(ackRes?.acked_ids) ? ackRes.acked_ids.map(String) : [rawId];
+                    try {
+                        const key = 'hrms_acked_sys_notifs_' + myUsername;
+                        let ids = [];
+                        try { ids = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { ids = []; }
+                        for (const id of ackedIds) {
+                            const bare = String(id);
+                            const prefixed = bare.startsWith('db-') ? bare : ('db-' + bare);
+                            if (!ids.includes(bare)) ids.push(bare);
+                            if (!ids.includes(prefixed)) ids.push(prefixed);
+                        }
+                        localStorage.setItem(key, JSON.stringify(ids));
+                    } catch (e) {}
+                    // 同 assignment 的历史提醒已在服务端一并标记，本地队列也要跳过，避免继续弹。
+                    if (ackedIds.length > 1) {
+                        const ackedSet = new Set(ackedIds.map((x) => String(x)));
+                        __ackAnnouncementQueue = __ackAnnouncementQueue.filter((item, idx) => {
+                            if (idx === 0) return true;
+                            if (item?._src !== 'db_notification') return true;
+                            const iid = String(item.id || String(item._id || '').replace(/^db-/, '') || '');
+                            return !ackedSet.has(iid);
+                        });
+                    }
+                } catch (e) {
+                    console.warn('ack system notification failed', e);
+                    // 服务端失败时仍写本地，至少本机本会话不再重复；下次登录会再尝试服务端。
+                    try {
+                        const key = 'hrms_acked_sys_notifs_' + myUsername;
+                        let ids = [];
+                        try { ids = JSON.parse(localStorage.getItem(key) || '[]'); } catch (err) { ids = []; }
+                        if (!ids.includes(annId)) ids.push(annId);
+                        if (rawId && !ids.includes(rawId)) ids.push(rawId);
+                        localStorage.setItem(key, JSON.stringify(ids));
+                    } catch (err) {}
+                }
             } else {
                 try {
                     await HRMS_API.request('/api/announcements/' + encodeURIComponent(annId) + '/ack', { method: 'POST' });

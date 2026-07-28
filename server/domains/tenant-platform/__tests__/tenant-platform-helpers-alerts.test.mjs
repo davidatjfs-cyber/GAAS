@@ -77,9 +77,39 @@ test('buildTenantLoginUrl / buildTenantLoginAccess', async () => {
 
   const hint = await buildTenantLoginAccess(pool, mockReq(), 'tenant-x', {});
   assert.ok(hint.password_hint);
+  assert.match(hint.password_hint, /重置管理员密码/);
   assert.equal(hint.password, undefined);
 
   assert.equal(await getTenantPrimaryAdminUsername({ query: async () => ({ rows: [] }) }, 'x'), '');
+});
+
+test('generateTenantAdminTempPassword / resetTenantAdminPassword', async () => {
+  const { generateTenantAdminTempPassword, resetTenantAdminPassword } = await import('../helpers.js');
+  const pw = generateTenantAdminTempPassword();
+  assert.match(pw, /^Gaas[a-f0-9]+!$/);
+  assert.ok(pw.length >= 8);
+
+  const missing = await resetTenantAdminPassword(
+    { query: async () => ({ rows: [] }) },
+    't-missing'
+  );
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error, 'admin_not_found');
+
+  const calls = [];
+  const pool = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      if (/SELECT username FROM users/i.test(sql)) return { rows: [{ username: 'admin1' }] };
+      if (/UPDATE users/i.test(sql)) return { rows: [{ username: 'admin1', real_name: '管理员' }] };
+      return { rows: [] };
+    },
+  };
+  const ok = await resetTenantAdminPassword(pool, 'tenant-a', { password: 'ResetPass9' });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.username, 'admin1');
+  assert.equal(ok.temp_password, 'ResetPass9');
+  assert.ok(calls.some((c) => /UPDATE users/i.test(c.sql)));
 });
 
 test('runTenantAcceptance: tenant 不存在；基础 checks', async () => {

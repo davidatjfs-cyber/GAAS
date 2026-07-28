@@ -11,6 +11,7 @@ import {
   listAppeals,
   listFeishuUsers,
   listMyNotifications,
+  ackMyNotification,
   listVisualAudits,
   resolveAgentIssue,
 } from './service.js';
@@ -92,6 +93,16 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
       const result = await listMyNotifications(pool(), req.user?.username, req.query?.limit);
       if (!result.ok) return res.status(result.status).json({ error: result.error });
       return res.json({ items: result.items });
+    } catch (e) {
+      return res.status(500).json({ error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/hrms-notifications/:id/ack', authRequired, async (req, res) => {
+    try {
+      const result = await ackMyNotification(pool(), req.user?.username, req.params?.id);
+      if (!result.ok) return res.status(result.status).json({ error: result.error, message: result.message });
+      return res.json({ ok: true, acked_ids: result.acked_ids, read_at: result.read_at });
     } catch (e) {
       return res.status(500).json({ error: String(e?.message || e) });
     }

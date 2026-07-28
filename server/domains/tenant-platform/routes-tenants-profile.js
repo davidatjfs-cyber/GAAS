@@ -7,9 +7,11 @@ import {
   platformAdminHtmlPath,
   buildTenantAlerts,
   buildTenantLoginAccess,
+  buildTenantLoginUrl,
   computeLicenseCountdown,
   getTenantPlatformAcceptanceReport,
   getTenantPlatformProfile,
+  resetTenantAdminPassword,
   saveTenantPlatformProfile,
 } from './helpers.js';
 import { childLogger } from '../../utils/logger.js';
@@ -124,6 +126,54 @@ export function registerTenantPlatformTenantsProfileRoutes(app, deps) {
       if (!exists.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
       const saved = await saveTenantPlatformProfile(pool, tenantId, req.body?.profile || req.body || {});
       return res.json({ ok: true, profile: saved });
+    } catch (e) {
+      return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+    }
+  });
+
+  // 随时可查：登录网址 + 管理员用户名（密码仍无法回读明文）
+  app.get('/api/admin/tenants/:tenantId/login-access', platformAdminRequired, async (req, res) => {
+    const tenantId = String(req.params.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ error: 'missing_tenant_id' });
+    try {
+      const exists = await pool.query('SELECT tenant_id, name FROM tenants WHERE tenant_id = $1 LIMIT 1', [tenantId]);
+      if (!exists.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
+      const login_access = await buildTenantLoginAccess(pool, req, tenantId);
+      return res.json({
+        ok: true,
+        tenant_id: tenantId,
+        tenant_name: exists.rows[0].name || '',
+        login_access,
+        login_url: login_access.login_url || buildTenantLoginUrl(req, tenantId),
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
+    }
+  });
+
+  // 重置租户管理员密码；新临时密码仅本次响应返回
+  app.post('/api/admin/tenants/:tenantId/reset-admin-password', platformAdminRequired, async (req, res) => {
+    const tenantId = String(req.params.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ error: 'missing_tenant_id' });
+    try {
+      const exists = await pool.query('SELECT tenant_id FROM tenants WHERE tenant_id = $1 LIMIT 1', [tenantId]);
+      if (!exists.rows.length) return res.status(404).json({ error: 'tenant_not_found' });
+      const customPassword = req.body?.password != null ? String(req.body.password) : '';
+      const result = await resetTenantAdminPassword(pool, tenantId, {
+        password: customPassword || undefined,
+      });
+      if (!result.ok) return res.status(result.status || 400).json({ error: result.error, message: result.message });
+      const login_access = await buildTenantLoginAccess(pool, req, tenantId, { password: result.temp_password });
+      _log.info({ msg: 'tenant_admin_password_reset', tenant_id: tenantId, username: result.username });
+      return res.json({
+        ok: true,
+        tenant_id: result.tenant_id,
+        username: result.username,
+        temp_password: result.temp_password,
+        login_access,
+        password_once: true,
+        message: '管理员密码已重置；请立即复制临时密码发给客户，系统不会再次显示明文',
+      });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: e?.message || 'internal_error' });
     }

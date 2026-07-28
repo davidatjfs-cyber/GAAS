@@ -1,5 +1,7 @@
 import path from 'path';
+import { randomBytes } from 'crypto';
 import { fileURLToPath } from 'url';
+import bcrypt from 'bcryptjs';
 import { tenantContext } from '../../utils/database.js';
 import { getTenantIntegrationSummary } from '../../tenant-integrations.js';
 
@@ -364,7 +366,42 @@ export async function buildTenantLoginAccess(poolOrClient, req, tenantId, { pass
   if (password != null && String(password).length) {
     access.password = String(password);
   } else {
-    access.password_hint = '密码为创建租户时设置的值，系统仅存储哈希，无法再次查看';
+    access.password_hint = '密码为创建租户时设置的值，系统仅存储哈希，无法再次查看；可使用「重置管理员密码」生成新临时密码';
   }
   return access;
+}
+
+/** 生成符合登录强度要求的临时密码（字母+数字，≥8 位） */
+export function generateTenantAdminTempPassword() {
+  return `Gaas${randomBytes(4).toString('hex')}!`;
+}
+
+/**
+ * 重置租户主管理员密码。明文仅本次返回，库内只存哈希。
+ */
+export async function resetTenantAdminPassword(poolOrClient, tenantId, { password } = {}) {
+  const tid = String(tenantId || '').trim();
+  if (!tid) return { ok: false, status: 400, error: 'missing_tenant_id' };
+  const username = await getTenantPrimaryAdminUsername(poolOrClient, tid);
+  if (!username) return { ok: false, status: 404, error: 'admin_not_found', message: '该租户没有可用的管理员账号' };
+  const tempPassword = String(password || '').trim() || generateTenantAdminTempPassword();
+  if (tempPassword.length < 8 || !/[A-Za-z]/.test(tempPassword) || !/[0-9]/.test(tempPassword)) {
+    return { ok: false, status: 400, error: 'weak_password', message: '新密码至少8位，且需同时包含字母和数字' };
+  }
+  const hash = await bcrypt.hash(tempPassword, 10);
+  const r = await poolOrClient.query(
+    `UPDATE users
+        SET password_hash = $3, updated_at = NOW()
+      WHERE tenant_id = $1 AND lower(username) = lower($2) AND role = 'admin' AND is_active = TRUE
+      RETURNING username, real_name`,
+    [tid, username, hash]
+  );
+  if (!r.rows?.length) return { ok: false, status: 404, error: 'admin_not_found', message: '管理员账号更新失败' };
+  return {
+    ok: true,
+    tenant_id: tid,
+    username: r.rows[0].username,
+    real_name: r.rows[0].real_name || '',
+    temp_password: tempPassword,
+  };
 }
