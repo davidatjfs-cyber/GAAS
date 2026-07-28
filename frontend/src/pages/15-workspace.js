@@ -346,16 +346,11 @@ async function wsRunMonthlyPayrollForAllStores() {
     }
 }
 
-// ── 桌面侧栏「工作台」入口（JS 注入，working-fixed.html 行数棘轮零余量，不能加静态 HTML）──
-function wsInjectNavItem() {
-    const nav = document.querySelector('.sidebar nav') || document.querySelector('nav');
-    if (!nav || nav.querySelector('[data-page="workspace"]')) return;
-    const item = document.createElement('div');
-    item.className = 'nav-item';
-    item.setAttribute('data-page', 'workspace');
-    item.innerHTML = '<a href="#" class="nav-link" data-click="showPage" data-arg="workspace"><i>🏠</i> <span>工作台</span></a>';
-    nav.insertBefore(item, nav.firstChild);
+// ── 移除侧栏「工作台」入口（功能未正式上线，避免误点黑屏）──
+function wsRemoveNavItem() {
+    document.querySelectorAll('.nav-item[data-page="workspace"]').forEach((el) => el.remove());
 }
+function wsInjectNavItem() { wsRemoveNavItem(); }
 
 // ── 入口 ──
 async function renderWorkspaceHome() {

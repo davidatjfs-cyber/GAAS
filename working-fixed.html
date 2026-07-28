@@ -1111,17 +1111,17 @@
 
         /* ── 登录页：暗金活力 · 手机优先 ── */
         #login.login-rep {
-            --lr-bg0: #07060a;
-            --lr-bg1: #12100c;
-            --lr-border: rgba(201, 169, 106, 0.22);
-            --lr-border-soft: rgba(255, 255, 255, 0.08);
-            --lr-gold: #c9a96a;
-            --lr-gold-deep: #a8894f;
-            --lr-gold-glow: rgba(201, 169, 106, 0.22);
-            --lr-text: #ece7dc;
-            --lr-muted: rgba(196, 184, 160, 0.62);
-            --lr-sans: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
-            --lr-display: "Outfit", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+            --lr-bg0: #121012;
+            --lr-bg1: #1C181C;
+            --lr-border: #2C252C;
+            --lr-border-soft: rgba(242, 234, 238, 0.08);
+            --lr-gold: #E0A6B4;
+            --lr-gold-deep: #D18FA0;
+            --lr-gold-glow: rgba(224, 166, 180, 0.16);
+            --lr-text: #F2EAEE;
+            --lr-muted: #97848E;
+            --lr-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+            --lr-display: "Songti SC", "STSong", "Noto Serif SC", serif;
             --lr-mono: "IBM Plex Mono", ui-monospace, monospace;
             box-sizing: border-box;
             min-height: 100vh;
@@ -1136,10 +1136,9 @@
             font-family: var(--lr-sans);
             color: var(--lr-text);
             background:
-                radial-gradient(ellipse 70% 45% at 50% -8%, rgba(201, 169, 106, 0.14), transparent 55%),
-                radial-gradient(520px 360px at 110% 18%, rgba(168, 137, 79, 0.08), transparent 50%),
-                radial-gradient(480px 320px at -15% 78%, rgba(120, 100, 70, 0.10), transparent 48%),
-                linear-gradient(168deg, #0c0c0e 0%, #111113 48%, #0a0a0b 100%);
+                radial-gradient(60% 42% at 50% -6%, rgba(224, 166, 180, 0.14), transparent 62%),
+                radial-gradient(40% 30% at 85% 100%, rgba(224, 166, 180, 0.05), transparent 60%),
+                var(--lr-bg0);
             animation: lrEnter 0.55s ease-out both;
         }
 
@@ -1196,14 +1195,14 @@
         }
 
         #login.login-rep .login-rep-title {
-            font-family: var(--lr-sans);
+            font-family: var(--lr-display);
             font-size: clamp(1.35rem, 5.2vw, 1.65rem);
-            font-weight: 700;
-            letter-spacing: 0.12em;
+            font-weight: 600;
+            letter-spacing: 0.06em;
             color: var(--lr-text);
             line-height: 1.35;
             margin: 0 0 10px;
-            text-shadow: 0 0 40px rgba(201, 169, 106, 0.16);
+            text-shadow: 0 0 40px rgba(224, 166, 180, 0.12);
         }
 
         #login.login-rep .login-rep-sub {
@@ -1217,26 +1216,25 @@
 
         #login.login-rep .login-rep-card {
             position: relative;
-            border-radius: 22px;
+            border-radius: 20px;
             padding: 24px 22px 22px;
-            background:
-                linear-gradient(160deg, rgba(255, 236, 180, 0.07), rgba(255, 255, 255, 0.02) 42%, rgba(0, 0, 0, 0.18));
+            background: var(--lr-bg1);
             border: 1px solid var(--lr-border);
             box-shadow:
-                0 0 0 1px rgba(0, 0, 0, 0.4) inset,
-                0 28px 56px -24px rgba(0, 0, 0, 0.72),
-                0 0 48px -18px rgba(201, 169, 106, 0.16);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+                0 1px 2px rgba(0, 0, 0, 0.35),
+                0 24px 60px rgba(0, 0, 0, 0.35);
         }
 
         #login.login-rep .login-rep-card::before {
             content: "";
             position: absolute;
-            inset: 0;
-            border-radius: 22px;
+            top: 0;
+            left: 24px;
+            right: 24px;
+            height: 1px;
+            border-radius: 0;
             pointer-events: none;
-            background: linear-gradient(125deg, rgba(232, 196, 96, 0.14), transparent 40%, rgba(245, 158, 11, 0.05) 78%);
+            background: linear-gradient(90deg, transparent, rgba(224, 166, 180, 0.5), transparent);
         }
 
         #login.login-rep .login-rep-card-inner {
@@ -1260,12 +1258,12 @@
             width: 100%;
             padding: 13px 15px;
             min-height: 50px;
-            border-radius: 14px;
+            border-radius: 12px;
             font-size: 16px;
             font-family: var(--lr-sans);
             font-weight: 500;
-            background: rgba(0, 0, 0, 0.42);
-            border: 1px solid rgba(255, 236, 180, 0.12);
+            background: var(--lr-bg0);
+            border: 1px solid var(--lr-border);
             color: var(--lr-text);
             color-scheme: dark;
             transition: border-color 0.2s, box-shadow 0.2s;
@@ -1274,45 +1272,40 @@
         }
 
         #login.login-rep .form-group input::placeholder {
-            color: rgba(214, 200, 168, 0.38);
-            font-weight: 400;
+            color: #5C4F57;
+            font-weight: 300;
         }
 
         #login.login-rep .form-group input:focus {
             outline: none;
-            border-color: rgba(201, 169, 106, 0.40);
+            border-color: var(--lr-gold);
             box-shadow: 0 0 0 3px var(--lr-gold-glow);
         }
 
         #login.login-rep .btn {
             width: 100%;
             margin-top: 10px;
-            padding: 15px 20px;
+            padding: 14px 20px;
             min-height: 52px;
             font-family: var(--lr-sans);
-            font-size: 15px;
-            font-weight: 700;
-            letter-spacing: 0.28em;
-            text-indent: 0.28em;
-            border-radius: 14px;
-            border: 1px solid rgba(255, 236, 180, 0.45);
+            font-size: 14.5px;
+            font-weight: 600;
+            letter-spacing: 0.3em;
+            text-indent: 0.3em;
+            border-radius: 12px;
+            border: 0;
             cursor: pointer;
             position: relative;
-            color: #1a1408;
-            background: linear-gradient(180deg, #dcc9a0 0%, var(--lr-gold) 42%, var(--lr-gold-deep) 100%);
-            box-shadow:
-                0 0 0 1px rgba(255, 255, 255, 0.28) inset,
-                0 16px 36px -10px rgba(201, 169, 106, 0.35);
-            transition: transform 0.15s ease, filter 0.2s ease, box-shadow 0.2s ease;
+            color: #241319;
+            background: var(--lr-gold);
+            box-shadow: none;
+            transition: transform 0.15s ease, filter 0.2s ease;
             touch-action: manipulation;
             -webkit-tap-highlight-color: transparent;
         }
 
         #login.login-rep .btn:hover {
-            filter: brightness(1.05);
-            box-shadow:
-                0 0 0 1px rgba(255, 255, 255, 0.32) inset,
-                0 18px 40px -8px rgba(201, 169, 106, 0.40);
+            filter: brightness(1.06);
         }
 
         #login.login-rep .btn:active {
@@ -15692,7 +15685,7 @@
                 <img id="login-tenant-logo" src="" alt="logo" style="display:none;width:48px;height:48px;object-fit:cover;border-radius:12px;margin-bottom:10px;">
                 <span class="login-rep-eyebrow">GAAS</span>
                 <h1 class="login-rep-title" id="login-tenant-title">年年有喜管理系统</h1>
-                <p class="login-rep-sub">暗金内台 · 安全登录</p>
+                <p class="login-rep-sub">经营驾驶舱 · 安全登录</p>
                 <p id="login-subscription-hint" class="login-rep-sub" style="display:none;margin-top:6px;font-size:12px;opacity:.85"></p>
             </header>
             <div class="login-rep-card">
@@ -28592,7 +28585,7 @@ th { background: #f5f5f5; font-weight: 700; }
                 document.getElementById('main-app').classList.remove('hidden');
                 updateUserInfo();
                 restoreSidebarState();
-                try { if (typeof wsInjectNavItem === 'function') wsInjectNavItem(); } catch(e) {}
+                try { if (typeof wsRemoveNavItem === 'function') wsRemoveNavItem(); } catch(e) {}
                 try { updateKitchenNavVisibility(); } catch(e) {}
                 try { updateGrowthModuleVisibility(); updateStrategyModuleVisibility(); } catch(e) {}
                 showPage(getHomePageName());
@@ -28685,9 +28678,7 @@ th { background: #f5f5f5; font-weight: 700; }
 
         function hrmsIsAlwaysAllowedPage(pageName) {
             // 考试测评已被培训认证取代，不再单独保留；培训认证改为所有人永远可见
-            // workspace 是角色工作台落地页，任何已登录用户必须可达，不受角色模块权限裁剪，
-            // 否则 getHomePageName() 的权限回退分支会在无权限时把 workspace 又指回 workspace 造成死循环
-            return ['profile', 'attendance', 'training', 'points', 'workspace'].includes(String(pageName || '').trim());
+            return ['profile', 'attendance', 'training', 'points'].includes(String(pageName || '').trim());
         }
 
         // 服务端加载的角色模块配置（登录后从API获取）
@@ -69588,16 +69579,11 @@ async function wsRunMonthlyPayrollForAllStores() {
     }
 }
 
-// ── 桌面侧栏「工作台」入口（JS 注入，working-fixed.html 行数棘轮零余量，不能加静态 HTML）──
-function wsInjectNavItem() {
-    const nav = document.querySelector('.sidebar nav') || document.querySelector('nav');
-    if (!nav || nav.querySelector('[data-page="workspace"]')) return;
-    const item = document.createElement('div');
-    item.className = 'nav-item';
-    item.setAttribute('data-page', 'workspace');
-    item.innerHTML = '<a href="#" class="nav-link" data-click="showPage" data-arg="workspace"><i>🏠</i> <span>工作台</span></a>';
-    nav.insertBefore(item, nav.firstChild);
+// ── 移除侧栏「工作台」入口（功能未正式上线，避免误点黑屏）──
+function wsRemoveNavItem() {
+    document.querySelectorAll('.nav-item[data-page="workspace"]').forEach((el) => el.remove());
 }
+function wsInjectNavItem() { wsRemoveNavItem(); }
 
 // ── 入口 ──
 async function renderWorkspaceHome() {

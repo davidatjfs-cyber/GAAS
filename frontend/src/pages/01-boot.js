@@ -4198,7 +4198,7 @@ th { background: #f5f5f5; font-weight: 700; }
                 document.getElementById('main-app').classList.remove('hidden');
                 updateUserInfo();
                 restoreSidebarState();
-                try { if (typeof wsInjectNavItem === 'function') wsInjectNavItem(); } catch(e) {}
+                try { if (typeof wsRemoveNavItem === 'function') wsRemoveNavItem(); } catch(e) {}
                 try { updateKitchenNavVisibility(); } catch(e) {}
                 try { updateGrowthModuleVisibility(); updateStrategyModuleVisibility(); } catch(e) {}
                 showPage(getHomePageName());
@@ -4291,9 +4291,7 @@ th { background: #f5f5f5; font-weight: 700; }
 
         function hrmsIsAlwaysAllowedPage(pageName) {
             // 考试测评已被培训认证取代，不再单独保留；培训认证改为所有人永远可见
-            // workspace 是角色工作台落地页，任何已登录用户必须可达，不受角色模块权限裁剪，
-            // 否则 getHomePageName() 的权限回退分支会在无权限时把 workspace 又指回 workspace 造成死循环
-            return ['profile', 'attendance', 'training', 'points', 'workspace'].includes(String(pageName || '').trim());
+            return ['profile', 'attendance', 'training', 'points'].includes(String(pageName || '').trim());
         }
 
         // 服务端加载的角色模块配置（登录后从API获取）
