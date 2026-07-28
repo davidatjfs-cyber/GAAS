@@ -69635,7 +69635,8 @@ function wsRenderSixTools(allStores) {
 async function wsRenderSixToolInsight(store) {
     const report = await wsFetchJson('/api/ontology/closed-loop-report?period=30d&store_id=' + encodeURIComponent(store));
     if (!report || report.ok === false || report.ontologyStatus === 'insufficient_data' || !report.boss_summary) {
-        return '<div class="ws-empty">该门店近30天数据不足，暂无AI经营判断</div>';
+        return '<div class="ws-card"><div class="ws-card__tag"><span class="ws-tag ws-tag--green">AI 洞察</span></div>' +
+            '<div class="ws-card__desc">该门店近30天数据不足，暂无AI经营判断</div></div>';
     }
     return '<div class="ws-card ws-card--insight"><div class="ws-card__tag"><span class="ws-tag ws-tag--green">AI 洞察</span></div>' +
         '<div class="ws-card__desc">' + wsEsc(report.boss_summary) + '</div></div>';
@@ -70031,15 +70032,16 @@ async function wsRenderBossOrHq(root, persona) {
     const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
+    const roleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '');
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
-    html += '<div class="ws-sub">未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
+    html += '<div class="ws-sub">' + wsEsc(currentUser?.name || '') + (roleLabel ? '（' + wsEsc(roleLabel) + '）' : '') + ' · 未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
     html += '<div class="ws-section"><div class="ws-section__title">今日经营总览</div>' + wsRenderOverview(overview) + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(allStores) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">门店营销活动建议</div>' + marketingHtml + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯（上月）</div>' + wsRenderStoreLights(home?.storeLights) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">六大管理神器</div>' + wsRenderSixTools(allStores) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">8大AI督导指挥中心</div>' + wsRenderAgentCommandCenter() + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(allStores) + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
     wsBindSixToolsEvents(root);
@@ -70059,7 +70061,8 @@ async function wsRenderStore(root) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
     const home = await wsFetchJson('/api/workspace/home');
     const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
-    let html = '<div class="ws-header"><h2>今日工作台</h2></div>';
+    const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '');
+    let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
     html += '<div class="ws-section"><div class="ws-section__title">我的待办（' + tasksList.length + '）</div>';
     if (tasksList.length) {
         html += tasksList.map(wsRenderTaskCard).join('');

@@ -56,8 +56,11 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 同样通过正规 frontend/src/pages 结构新增，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然
  * 「只减不增」：此后任何改动都不得让总行数超过这个新基线，除非同样是一次经过说明的、
  * 刻意的上调。
+ * 2026-07-28 第十一次上调（70215→70218）：AI洞察空数据状态补上"AI 洞察"标签（之前只有一行
+ * 无标签文字，用户反馈六大神器里"没发现"AI洞察功能）；老板/总部/门店工作台头部补充登录人
+ * 姓名+角色/职位显示；差评展示区块顺序移到今日经营总览后面（原来在六大神器/AI督导中心后）。
  */
-const MAX_LINES = 70215;
+const MAX_LINES = 70218;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
