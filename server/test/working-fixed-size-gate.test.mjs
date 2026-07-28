@@ -43,11 +43,19 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * /api/diagnosis/solutions/custom/analyze 自由提问接口）+ AI洞察嵌入六大神器选店后展示 +
  * 新增"待办"三分区组件（任务/待批/通知，待批接现有 /api/approvals）+ 批量推广修复
  * assignee_username 缺失（用 pickAssigneeForCategory 自动解析出品经理）。
+ * 2026-07-28 第九次上调（70097→70213）：修正三处真实bug——① 待办组件"任务"tab之前
+ * 复用了带"查看进展"跳转Agent任务板按钮的卡片组件，用户明确要求这里只留完成按钮，
+ * 加了 hideProgressLink 参数专门处理这个场景；② 六大神器之前直接调用 agent-task-board
+ * 创建通用任务，完全绕开了经营诊断真正的阶梯目标+轮次机制，导致"点击没反应"（没有开放
+ * 轮次时 plan 为空但没做responsive判断）——改成对齐经营诊断页 gsRenderPlan/gsRenderRound
+ * 同一套真实逻辑，一键下发真正调用 POST /api/diagnosis/solutions/:key/rounds 创建轮次；
+ * ③ 餐饮总监改成完全对齐经营诊断页原有布局（标题+说明+输入框+按钮+进行中的自定义任务+
+ * 最近查询记录），接的都是现成接口（custom/analyze、custom/active-rounds、custom/history）。
  * 同样通过正规 frontend/src/pages 结构新增，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然
  * 「只减不增」：此后任何改动都不得让总行数超过这个新基线，除非同样是一次经过说明的、
  * 刻意的上调。
  */
-const MAX_LINES = 70097;
+const MAX_LINES = 70213;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

@@ -189,7 +189,12 @@ function wsRenderStoreLights(storeLights) {
 const WS_DIAGNOSIS_BACKED_CATEGORIES = ['staff_efficiency', 'revenue', 'kitchen_standard', 'menu_optimization', 'gross_margin', 'training_replication'];
 
 // ── 需拍板/任务卡片：点击直接调 agent-task-board review，原地展示结果 ──
-function wsRenderTaskCard(task) {
+// 2026-07-28：用户明确要求"任务"这个待办分区（待办组件的「任务」tab）只留完成按钮，
+// 不要"查看进展/查看任务详情"这个跳Agent任务板的按钮——这是原则问题，不是样式偏好，
+// 加了 hideProgressLink 参数专门给这个场景用，其它地方（门店工作台自己的任务列表）
+// 调用时不传这个参数，行为不变。
+function wsRenderTaskCard(task, opts) {
+    const hideProgressLink = !!(opts && opts.hideProgressLink);
     const sevTag = task.severity === 'high' ? '<span class="ws-tag ws-tag--red">需拍板</span>' : '<span class="ws-tag">待处理</span>';
     const hasDiagnosis = WS_DIAGNOSIS_BACKED_CATEGORIES.includes(String(task.category || ''));
     const progressLabel = hasDiagnosis ? '查看经营诊断 →' : '查看任务详情 →';
@@ -204,7 +209,7 @@ function wsRenderTaskCard(task) {
         '<div class="ws-card__desc">' + wsEsc(task.detail || '') + '</div>' +
         '<div class="ws-card__acts">' +
         '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>' +
-        '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>' +
+        (hideProgressLink ? '' : '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>') +
         '</div>' +
         '<div class="ws-action-result"></div>' +
         '</div>'
@@ -479,76 +484,194 @@ async function wsRenderSixToolInsight(store) {
         '<div class="ws-card__desc">' + wsEsc(report.boss_summary) + '</div></div>';
 }
 
+// 2026-07-28 重做：之前直接调 agent-task-board 创建通用任务，完全绕开了经营诊断真正的
+// 阶梯目标+轮次机制——现在改成跟经营诊断页（frontend/src/pages/12-files.js 的
+// gsRenderPlan/gsRenderRound/gsDispatch）同一套真实流程：GET .../:key 返回 open_round
+// （已有进行中轮次，只读展示状态）或 plan（还没开始，要选责任人+截止日期后一键下发），
+// 下发调 POST /api/diagnosis/solutions/:key/rounds 真正创建轮次，不是发个通用任务了事。
+const WS_ROUND_STATUS_LABEL = { active: '执行中', observing: '观察期', reviewing: '待复盘确认' };
+
+function wsRenderPlanTasks(plan) {
+    return (plan || []).map((t, i) => {
+        const opts = (t.suggested_assignees || []).map((a) => '<option value="' + wsEsc(a.username) + '">' + wsEsc(a.name) + '(' + wsEsc(a.position || '') + ')</option>').join('');
+        const defDue = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+        return (
+            '<div class="ws-card" data-plan-idx="' + i + '">' +
+            '<div class="ws-card__title">' + wsEsc(t.title || '') + '</div>' +
+            '<div class="ws-card__desc">' + wsEsc(t.description || '') + '</div>' +
+            (t.why ? '<div class="ws-card__desc">💡 ' + wsEsc(t.why) + '</div>' : '') +
+            (t.acceptance_criteria ? '<div class="ws-card__desc">✓ ' + wsEsc(t.acceptance_criteria) + '</div>' : '') +
+            '<div class="ws-promote-form">' +
+            '<select class="ws-input ws-plan-assignee" data-idx="' + i + '">' + (opts || '<option value="">⚠️ 无候选人</option>') + '</select>' +
+            '<input type="date" class="ws-input ws-plan-due" data-idx="' + i + '" value="' + defDue + '">' +
+            '</div></div>'
+        );
+    }).join('');
+}
+
+function wsRenderOpenRoundTasks(round) {
+    const todayYmd = new Date().toISOString().slice(0, 10);
+    const tasks = (round.tasks || []).map((t) => {
+        const overdue = t.status !== 'done' && t.due_date && String(t.due_date).slice(0, 10) < todayYmd;
+        return (
+            '<div class="ws-card"><div class="ws-card__title">' + wsEsc(t.title || '') + '</div>' +
+            '<div class="ws-card__desc">' + wsEsc(t.description || '') + '</div>' +
+            '<div class="ws-card__desc">👤 ' + wsEsc(t.assignee_name || t.assignee_username || '') +
+            (t.due_date ? ' · 截止 ' + String(t.due_date).slice(0, 10) : '') +
+            ' · ' + (t.status === 'done' ? '✓已完成' : (overdue ? '⚠️已逾期' : '进行中')) + '</div></div>'
+        );
+    }).join('');
+    const statusTag = '<div class="ws-card__tag"><span class="ws-tag">' + wsEsc(WS_ROUND_STATUS_LABEL[round.status] || round.status) + ' 第' + round.round_no + '轮</span></div>';
+    return statusTag + tasks;
+}
+
+// 真正的一键下发：POST /api/diagnosis/solutions/:key/rounds，创建阶梯目标轮次
+// （跟经营诊断页 gsDispatch 是同一个接口/同一套body结构），不是发个孤立任务了事。
+async function wsDispatchPlan(key, store, plan, containerEl, resultEl) {
+    const tasks = [];
+    let missing = 0;
+    containerEl.querySelectorAll('[data-plan-idx]').forEach((card) => {
+        const idx = Number(card.getAttribute('data-plan-idx'));
+        const t = plan[idx];
+        const sel = card.querySelector('.ws-plan-assignee');
+        const due = card.querySelector('.ws-plan-due');
+        const username = sel?.value || '';
+        if (!username) { missing++; return; }
+        tasks.push({
+            template_code: t.template_code || null, title: t.title, description: t.description, phase: t.phase,
+            why: t.why || '', acceptance_criteria: t.acceptance_criteria || '',
+            assignee_username: username, assignee_name: sel.selectedOptions[0]?.textContent || '',
+            due_date: due?.value || null,
+        });
+    });
+    if (missing > 0) { showNotification('还有 ' + missing + ' 项任务未指定责任人，不能下发', 'warning'); return; }
+    const ok = await hrmsConfirm({ title: '确认下发', message: '确认下发 ' + tasks.length + ' 项任务给 ' + store + '？', okText: '确认下发' });
+    if (!ok) return;
+    resultEl.innerHTML = '<div class="ws-loading">下发中...</div>';
+    try {
+        const body = { store, tasks };
+        if (String(key).startsWith('custom:')) { body.custom_title = plan.__customTitle || ''; body.metric_key = plan.__metricKey || ''; }
+        const r = await fetch('/api/diagnosis/solutions/' + encodeURIComponent(key) + '/rounds', { method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify(body) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+        resultEl.innerHTML = '<span class="ws-ok">✅ 已下发 ' + tasks.length + ' 项任务，进入第' + (d.round_no || 1) + '轮</span>';
+    } catch (e) {
+        resultEl.innerHTML = '<span class="ws-err">下发失败：' + wsEsc(e?.message || e) + '</span>';
+    }
+}
+
 // 餐饮总监：接现有 /api/diagnosis/solutions/custom/analyze（经营诊断页"目前遇到的问题是
 // 什么？"那个自由提问框用的同一个真实接口，不是新做的）。老板输入一句话问题，AI 结合门店
-// 真实数据（差评/离职快照等，接口内部按关键词自动附带）生成分析+任务方案。
+// 真实数据（差评/离职快照等，接口内部按关键词自动附带）生成分析+任务方案。布局按经营诊断
+// 页原样搬：标题+说明+输入框+按钮，下面"进行中的自定义任务"+"最近查询记录"。
 function wsRenderCustomDirectorTool(store) {
     const body = document.getElementById('ws-six-tool-body');
     if (!body) return;
     body.innerHTML =
         '<div class="ws-card">' +
         '<div class="ws-card__title">目前遇到的问题是什么？</div>' +
-        '<div class="ws-card__desc">描述你的经营问题，AI 结合门店真实数据生成解决方案。</div>' +
-        '<textarea class="ws-input" id="ws-custom-question" rows="3" style="width:100%;margin:8px 0;" placeholder="例如：最近外卖差评变多，出餐越来越慢..."></textarea>' +
+        '<div class="ws-card__desc">描述你的经营问题，AI 结合门店真实数据生成完整解决方案（同样按阶梯目标+任务闭环执行）。</div>' +
+        '<input type="text" class="ws-input" id="ws-custom-question" style="width:100%;margin:8px 0;" placeholder="例如：最近外卖差评变多，出餐越来越慢...">' +
         '<div class="ws-card__acts"><button type="button" class="ws-action-btn ws-btn ws-btn--primary" id="ws-custom-submit">AI 生成方案</button></div>' +
         '</div>' +
-        '<div id="ws-custom-result" style="margin-top:10px;"></div>';
-    const btn = document.getElementById('ws-custom-submit');
-    if (!btn) return;
-    btn.addEventListener('click', async () => {
-        const question = document.getElementById('ws-custom-question')?.value?.trim();
-        const resultEl = document.getElementById('ws-custom-result');
-        if (!question) { showNotification('请描述你遇到的问题', 'warning'); return; }
-        if (!store) { showNotification('请先选择门店', 'warning'); return; }
-        btn.disabled = true; btn.textContent = '生成中...';
-        resultEl.innerHTML = '<div class="ws-loading">AI 分析中，可能需要几秒...</div>';
-        try {
-            const r = await fetch('/api/diagnosis/solutions/custom/analyze', { method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ store, question }) });
-            const d = await r.json().catch(() => ({}));
-            if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
-            if (d.mode === 'existing') {
-                resultEl.innerHTML = '<div class="ws-card"><div class="ws-card__desc">' + wsEsc(d.reason || '') + '</div><div class="ws-card__desc">' + wsEsc(d.analysis || '') + '</div>' +
-                    '<div class="ws-card__acts"><button type="button" class="ws-btn ws-btn--link" data-ws-jump-key="' + wsEsc(d.problem_key) + '">这属于"' + wsEsc((WS_SIX_TOOLS.find((t) => t.key === d.problem_key) || {}).label || d.problem_key) + '"标准方案，点击查看 →</button></div></div>';
-                resultEl.querySelector('[data-ws-jump-key]')?.addEventListener('click', (e) => {
-                    const key = e.target.getAttribute('data-ws-jump-key');
-                    document.getElementById('ws-six-tool-panel')?.setAttribute('data-active-key', key);
-                    wsLoadSixToolPlan(key, store);
-                });
-            } else {
-                const tasks = Array.isArray(d.plan) ? d.plan : [];
-                let html = '<div class="ws-card"><div class="ws-card__title">' + wsEsc(d.title || '自定义方案') + '</div>';
-                if (d.reason) html += '<div class="ws-card__desc">' + wsEsc(d.reason) + '</div>';
-                if (d.analysis) html += '<div class="ws-card__desc">' + wsEsc(d.analysis) + '</div>';
-                if (d.priority_recommendation) html += '<div class="ws-card__desc">' + wsEsc(d.priority_recommendation) + '</div>';
-                if (d.out_of_scope) html += '<div class="ws-card__desc">⚠️ ' + wsEsc(d.out_of_scope) + '</div>';
-                html += '</div>';
-                html += tasks.map((t, i) => (
-                    '<div class="ws-card"><div class="ws-card__title">' + wsEsc(t.title || '') + '</div>' +
-                    '<div class="ws-card__desc">' + wsEsc(t.description || t.why || '') + (t.assignee_role ? '（责任岗位：' + wsEsc(t.assignee_role) + '）' : '') + '</div>' +
-                    '<div class="ws-card__acts"><button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-dispatch-custom="' + i + '">下发任务</button></div>' +
-                    '<div class="ws-action-result"></div></div>'
-                )).join('');
-                resultEl.innerHTML = html;
-                resultEl.querySelectorAll('[data-ws-dispatch-custom]').forEach((dbtn) => {
-                    dbtn.addEventListener('click', () => {
-                        const idx = Number(dbtn.getAttribute('data-ws-dispatch-custom'));
-                        const t = tasks[idx];
-                        const card = dbtn.closest('.ws-card');
-                        wsExecuteAction(card, {
-                            confirmText: '将「' + (t.title || '') + '」下发给 ' + store + '，确认？',
-                            endpoint: '/api/agent-task-board/tasks',
-                            body: { content: (t.title || '') + '（' + store + '）：' + (t.description || t.why || '') },
-                            onSuccess: (cardEl) => { cardEl.querySelector('.ws-action-result').innerHTML = '<span class="ws-ok">✅ 已下发</span>'; },
-                        });
-                    });
-                });
-            }
-        } catch (e) {
-            resultEl.innerHTML = '<span class="ws-err">生成失败：' + wsEsc(e?.message || e) + '</span>';
-        } finally {
-            btn.disabled = false; btn.textContent = 'AI 生成方案';
-        }
+        '<div id="ws-custom-result" style="margin-top:10px;"></div>' +
+        '<div id="ws-custom-active" style="margin-top:10px;"></div>' +
+        '<div id="ws-custom-history" style="margin-top:10px;"></div>';
+
+    wsLoadCustomActiveRounds(store);
+    wsLoadCustomHistory(store);
+
+    document.getElementById('ws-custom-submit')?.addEventListener('click', () => wsRunCustomAnalyze(store, document.getElementById('ws-custom-question')?.value?.trim()));
+}
+
+async function wsLoadCustomActiveRounds(store) {
+    const host = document.getElementById('ws-custom-active');
+    if (!host || !store) return;
+    const data = await wsFetchJson('/api/diagnosis/solutions/custom/active-rounds?store=' + encodeURIComponent(store));
+    const rounds = Array.isArray(data?.rounds) ? data.rounds : [];
+    if (!rounds.length) { host.innerHTML = ''; return; }
+    host.innerHTML = '<div class="ws-section__title" style="font-size:11.5px;">📌 进行中的自定义任务（点击查看进度）</div>' +
+        rounds.map((r) => (
+            '<button type="button" class="ws-btn" style="width:100%;justify-content:space-between;margin-bottom:6px;" data-ws-active-round="' + wsEsc(r.problem_key) + '">' +
+            '<span>' + wsEsc(r.problem_title) + ' · 第' + r.round_no + '轮</span>' +
+            '<span>' + wsEsc(WS_ROUND_STATUS_LABEL[r.status] || r.status) + ' ' + r.tasks_done + '/' + r.tasks_total + '</span>' +
+            '</button>'
+        )).join('');
+    host.querySelectorAll('[data-ws-active-round]').forEach((btn) => {
+        btn.addEventListener('click', () => wsLoadSixToolPlan(btn.getAttribute('data-ws-active-round'), store));
     });
+}
+
+async function wsLoadCustomHistory(store) {
+    const host = document.getElementById('ws-custom-history');
+    if (!host || !store) return;
+    const data = await wsFetchJson('/api/diagnosis/solutions/custom/history?store=' + encodeURIComponent(store) + '&limit=10');
+    const history = Array.isArray(data?.history) ? data.history : [];
+    if (!history.length) { host.innerHTML = ''; return; }
+    host.innerHTML = '<div class="ws-section__title" style="font-size:11.5px;">最近查询记录（点击直接查看，不用重新输入）</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+        history.map((h) => '<button type="button" class="ws-btn" data-ws-history-q="' + wsEsc(h.question) + '">' + wsEsc(h.title || h.question) + '</button>').join('') +
+        '</div>';
+    // 历史记录只重新问一次(数据可能已经变了,不直接显示当时的旧结果)，跟经营诊断页同样的取舍。
+    host.querySelectorAll('[data-ws-history-q]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const q = btn.getAttribute('data-ws-history-q');
+            const input = document.getElementById('ws-custom-question');
+            if (input) input.value = q;
+            wsRunCustomAnalyze(store, q);
+        });
+    });
+}
+
+async function wsRunCustomAnalyze(store, question) {
+    const btn = document.getElementById('ws-custom-submit');
+    const resultEl = document.getElementById('ws-custom-result');
+    if (!question) { showNotification('请描述你遇到的问题', 'warning'); return; }
+    if (!store) { showNotification('请先选择门店', 'warning'); return; }
+    if (btn) { btn.disabled = true; btn.textContent = '生成中...'; }
+    resultEl.innerHTML = '<div class="ws-loading">AI 分析中，可能需要几秒...</div>';
+    try {
+        const r = await fetch('/api/diagnosis/solutions/custom/analyze', { method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ store, question }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+        if (d.mode === 'existing') {
+            resultEl.innerHTML = '<div class="ws-card"><div class="ws-card__desc">' + wsEsc(d.reason || '') + '</div><div class="ws-card__desc">' + wsEsc(d.analysis || '') + '</div>' +
+                '<div class="ws-card__acts"><button type="button" class="ws-btn ws-btn--link" data-ws-jump-key="' + wsEsc(d.problem_key) + '">这属于"' + wsEsc((WS_SIX_TOOLS.find((t) => t.key === d.problem_key) || {}).label || d.problem_key) + '"标准方案，点击查看 →</button></div></div>';
+            resultEl.querySelector('[data-ws-jump-key]')?.addEventListener('click', (e) => {
+                const key = e.target.getAttribute('data-ws-jump-key');
+                document.getElementById('ws-six-tool-panel')?.setAttribute('data-active-key', key);
+                wsLoadSixToolPlan(key, store);
+            });
+        } else {
+            const plan = Array.isArray(d.plan) ? d.plan : [];
+            plan.__customTitle = d.title || '';
+            plan.__metricKey = d.metric_key || '';
+            let html = '<div class="ws-card"><div class="ws-card__title">' + wsEsc(d.title || '自定义方案') + '</div>';
+            if (d.reason) html += '<div class="ws-card__desc">' + wsEsc(d.reason) + '</div>';
+            if (d.analysis) html += '<div class="ws-card__desc">' + wsEsc(d.analysis) + '</div>';
+            if (d.priority_recommendation) html += '<div class="ws-card__desc">' + wsEsc(d.priority_recommendation) + '</div>';
+            if (d.out_of_scope) html += '<div class="ws-card__desc">⚠️ ' + wsEsc(d.out_of_scope) + '</div>';
+            html += '</div>';
+            if (!plan.length) {
+                html += '<div class="ws-empty">AI 未生成有效任务，请换个描述重试</div>';
+                resultEl.innerHTML = html;
+                if (btn) { btn.disabled = false; btn.textContent = 'AI 生成方案'; }
+                return;
+            }
+            const containerId = 'ws-custom-plan-container';
+            html += '<div id="' + containerId + '">' + wsRenderPlanTasks(plan) + '</div>';
+            html += '<div class="ws-card__acts"><button type="button" class="ws-action-btn ws-btn ws-btn--primary" id="ws-custom-dispatch-btn">一键下发全部任务</button></div>';
+            html += '<div class="ws-action-result" id="ws-custom-dispatch-result"></div>';
+            resultEl.innerHTML = html;
+            document.getElementById('ws-custom-dispatch-btn')?.addEventListener('click', () => {
+                wsDispatchPlan(d.problem_key, store, plan, document.getElementById(containerId), document.getElementById('ws-custom-dispatch-result'));
+            });
+        }
+    } catch (e) {
+        resultEl.innerHTML = '<span class="ws-err">生成失败：' + wsEsc(e?.message || e) + '</span>';
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'AI 生成方案'; }
+    }
 }
 
 async function wsLoadSixToolPlan(key, store) {
@@ -561,32 +684,25 @@ async function wsLoadSixToolPlan(key, store) {
         wsRenderSixToolInsight(store),
     ]);
     if (!data || data.ok === false) { body.innerHTML = insightHtml + '<div class="ws-empty">加载失败</div>'; return; }
-    const tasks = Array.isArray(data.tasks) ? data.tasks : (Array.isArray(data.round?.tasks) ? data.round.tasks : []);
-    if (!tasks.length) { body.innerHTML = insightHtml + '<div class="ws-empty">该门店暂无该方案的任务拆分（可能还没有开放轮次）</div>'; return; }
-    body.innerHTML = insightHtml + tasks.map((t, i) => (
-        '<div class="ws-card"><div class="ws-card__title">' + wsEsc(t.title || '') + '</div>' +
-        '<div class="ws-card__desc">' + wsEsc(t.description || t.why || '') + (t.assignee_role ? '（责任岗位：' + wsEsc(t.assignee_role) + '）' : '') + '</div>' +
-        '<div class="ws-card__acts"><button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-dispatch-six="' + i + '">下发任务</button></div>' +
-        '<div class="ws-action-result"></div></div>'
-    )).join('');
-    body.querySelectorAll('[data-ws-dispatch-six]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const idx = Number(btn.getAttribute('data-ws-dispatch-six'));
-            const t = tasks[idx];
-            const card = btn.closest('.ws-card');
-            // 下发走跟「8大AI督导指挥中心」同一个接口（agent-task-board create）——这样下发出去
-            // 的任务在老板/总部工作台的"今天该处理的事"（全租户范围，见 getNotableOpenTasks）里
-            // 都能看到，覆盖用户要求的"下级链条全覆盖"；门店/店长视角能否看到取决于该接口内部
-            // 怎么解析责任人，这一层解析逻辑在 agents-service-v2，这次没有改。
-            wsExecuteAction(card, {
-                confirmText: '将「' + (t.title || '') + '」下发给 ' + store + '，确认？',
-                endpoint: '/api/agent-task-board/tasks',
-                body: { content: (t.title || '') + '（' + store + '）：' + (t.description || t.why || '') },
-                onSuccess: (cardEl) => {
-                    cardEl.querySelector('.ws-action-result').innerHTML = '<span class="ws-ok">✅ 已下发</span>';
-                },
-            });
-        });
+    if (data.open_round) {
+        body.innerHTML = insightHtml + wsRenderOpenRoundTasks(data.open_round);
+        return;
+    }
+    if (data.capped) {
+        body.innerHTML = insightHtml + '<div class="ws-empty">该指标已达阶梯封顶🎉，保持当前水平即可</div>';
+        return;
+    }
+    const plan = Array.isArray(data.plan) ? data.plan : [];
+    if (!plan.length) { body.innerHTML = insightHtml + '<div class="ws-empty">该门店暂无该方案的任务拆分</div>'; return; }
+    const containerId = 'ws-six-tool-plan-container';
+    let html = insightHtml;
+    if (data.analysis) html += '<div class="ws-card"><div class="ws-card__desc">' + wsEsc(data.analysis) + '</div></div>';
+    html += '<div id="' + containerId + '">' + wsRenderPlanTasks(plan) + '</div>';
+    html += '<div class="ws-card__acts"><button type="button" class="ws-action-btn ws-btn ws-btn--primary" id="ws-six-dispatch-btn">一键下发全部任务</button></div>';
+    html += '<div class="ws-action-result" id="ws-six-dispatch-result"></div>';
+    body.innerHTML = html;
+    document.getElementById('ws-six-dispatch-btn')?.addEventListener('click', () => {
+        wsDispatchPlan(key, store, plan, document.getElementById(containerId), document.getElementById('ws-six-dispatch-result'));
     });
 }
 
@@ -723,7 +839,7 @@ function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
         const pane = root.querySelector('#ws-todo-pane');
         if (!pane) return;
         if (tab === 'task') {
-            pane.innerHTML = tasksList.length ? tasksList.slice(0, 6).map(wsRenderTaskCard).join('') : '<div class="ws-empty">暂无进行中的任务</div>';
+            pane.innerHTML = tasksList.length ? tasksList.slice(0, 6).map((t) => wsRenderTaskCard(t, { hideProgressLink: true })).join('') : '<div class="ws-empty">暂无进行中的任务</div>';
             wsBindTaskCardEvents(pane);
             return;
         }
