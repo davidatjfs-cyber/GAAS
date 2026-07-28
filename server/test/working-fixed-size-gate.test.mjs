@@ -51,11 +51,13 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 同一套真实逻辑，一键下发真正调用 POST /api/diagnosis/solutions/:key/rounds 创建轮次；
  * ③ 餐饮总监改成完全对齐经营诊断页原有布局（标题+说明+输入框+按钮+进行中的自定义任务+
  * 最近查询记录），接的都是现成接口（custom/analyze、custom/active-rounds、custom/history）。
+ * 2026-07-28 第十次上调（70213→70215）：营收KPI卡"环比"改成具体对比对象（昨天/上周/
+ * 上月），"同比"统一改成"去年"，不再用财务术语。
  * 同样通过正规 frontend/src/pages 结构新增，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然
  * 「只减不增」：此后任何改动都不得让总行数超过这个新基线，除非同样是一次经过说明的、
  * 刻意的上调。
  */
-const MAX_LINES = 70213;
+const MAX_LINES = 70215;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

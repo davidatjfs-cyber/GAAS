@@ -69411,12 +69411,14 @@ function wsFmtMoney(v) {
     return (Number(v) / 10000).toFixed(1) + '万';
 }
 
-function wsRenderOverviewKpi(label, block) {
+// 2026-07-28：用户要求把"环比"改成具体对比对象（昨天/上周/上月），"同比"统一改成"去年"，
+// 不再用"环比/同比"这种财务术语——momLabel 按卡片类型传入，yoy 统一叫"去年"。
+function wsRenderOverviewKpi(label, block, momLabel) {
     return (
         '<div class="ws-kpi">' +
         '<div class="ws-kpi__label">' + wsEsc(label) + '</div>' +
         '<div class="ws-kpi__value">¥' + wsFmtMoney(block.revenue) + '</div>' +
-        '<div class="ws-kpi__sub">环比 ' + wsFmtPct(block.mom) + ' · 同比 ' + wsFmtPct(block.yoy) + '</div>' +
+        '<div class="ws-kpi__sub">' + wsEsc(momLabel) + ' ' + wsFmtPct(block.mom) + ' · 去年 ' + wsFmtPct(block.yoy) + '</div>' +
         '</div>'
     );
 }
@@ -69441,15 +69443,15 @@ function wsRenderOverview(ov) {
     const rk = ov.rankings || {};
     const p = op.partySizeSharePct || {};
     let html = '<div class="ws-kpis">';
-    html += wsRenderOverviewKpi('今日营收', rev.today || {});
-    html += wsRenderOverviewKpi('本周营收', rev.week || {});
-    html += wsRenderOverviewKpi('本月营收', rev.month || {});
+    html += wsRenderOverviewKpi('今日营收', rev.today || {}, '昨天');
+    html += wsRenderOverviewKpi('本周营收', rev.week || {}, '上周');
+    html += wsRenderOverviewKpi('本月营收', rev.month || {}, '上月');
     html += '<div class="ws-kpi"><div class="ws-kpi__label">实收目标</div><div class="ws-kpi__value">¥' + wsFmtMoney(rev.target?.targetRevenue) + '</div>' +
         '<div class="ws-kpi__sub">理论 ' + (rev.target?.theoreticalAchievementRate ?? '—') + '% · 实际 ' + (rev.target?.actualAchievementRate ?? '—') + '%</div></div>';
     html += '</div>';
 
     html += '<div class="ws-stat-list">' +
-        wsStatRow('客流量（本月累计）', op.traffic ?? '—', '环比' + wsFmtPct(op.trafficMom) + ' 同比' + wsFmtPct(op.trafficYoy)) +
+        wsStatRow('客流量（本月累计）', op.traffic ?? '—', '上月' + wsFmtPct(op.trafficMom) + ' 去年' + wsFmtPct(op.trafficYoy)) +
         wsStatRow('客单价', '¥' + (op.avgSpendPerGuest ?? '—')) +
         wsStatRow('桌均', '¥' + (op.avgSpendPerTable ?? '—')) +
         wsStatRow('堂食 / 外卖占比', (op.dineInSharePct ?? '—') + '% / ' + (op.deliverySharePct ?? '—') + '%') +
