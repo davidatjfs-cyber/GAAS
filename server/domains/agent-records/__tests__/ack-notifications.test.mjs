@@ -23,6 +23,18 @@ test('listMyNotifications: returns read_at', async () => {
   assert.equal(r.items[0].read_at, null);
 });
 
+test('listMyNotifications: unreadOnly adds read_at IS NULL filter', async () => {
+  const sqls = [];
+  const pool = {
+    query: async (sql) => {
+      sqls.push(sql);
+      return { rows: [] };
+    },
+  };
+  await listMyNotifications(pool, 'alice', 10, { unreadOnly: true });
+  assert.match(sqls[0], /read_at IS NULL/);
+});
+
 test('ackMyNotification: marks single + same assignment_id siblings', async () => {
   const updates = [];
   const pool = {

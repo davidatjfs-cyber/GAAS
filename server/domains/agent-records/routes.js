@@ -90,7 +90,8 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
 
   app.get('/api/hrms-notifications/me', authRequired, async (req, res) => {
     try {
-      const result = await listMyNotifications(pool(), req.user?.username, req.query?.limit);
+      const unreadOnly = String(req.query?.unread || '').trim() === '1';
+      const result = await listMyNotifications(pool(), req.user?.username, req.query?.limit, { unreadOnly });
       if (!result.ok) return res.status(result.status).json({ error: result.error });
       return res.json({ items: result.items });
     } catch (e) {

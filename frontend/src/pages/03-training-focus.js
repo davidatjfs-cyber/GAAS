@@ -1908,10 +1908,10 @@
 
         function getTrainingDeadlineBadge(state) {
             if (state.isOverdue) {
-                return `<span class="training-admin-badge" style="background:rgba(239,68,68,0.16);color:#fca5a5;">逾期 ${Math.max(1, state.daysOverdue)} 天</span>`;
+                return `<span class="training-admin-badge" style="background:rgba(229,139,152,0.16);color:#EDA1AC;">逾期 ${Math.max(1, state.daysOverdue)} 天</span>`;
             }
             if (state.isDueToday) {
-                return `<span class="training-admin-badge" style="background:rgba(245,158,11,0.16);color:#fcd34d;">今日到期</span>`;
+                return `<span class="training-admin-badge" style="background:rgba(207,161,74,0.16);color:#fcd34d;">今日到期</span>`;
             }
             return '';
         }
@@ -1943,9 +1943,9 @@
                 const panel = document.getElementById('training-' + t + '-panel');
                 if (btn) {
                     const isActive = t === tab;
-                    btn.style.background = isActive ? 'rgba(99,102,241,0.9)' : 'rgba(255,255,255,0.06)';
-                    btn.style.color = isActive ? '#fff' : 'rgba(255,255,255,0.7)';
-                    btn.style.border = isActive ? 'none' : '1px solid rgba(255,255,255,0.15)';
+                    btn.style.background = isActive ? 'rgba(99,102,241,0.9)' : 'rgba(242,234,238,0.06)';
+                    btn.style.color = isActive ? '#F2EAEE' : 'rgba(242,234,238,0.7)';
+                    btn.style.border = isActive ? 'none' : '1px solid rgba(242,234,238,0.15)';
                 }
                 if (panel) panel.style.display = t === tab ? '' : 'none';
             });
@@ -1978,7 +1978,7 @@
         async function loadPromoProgress() {
             const body = document.getElementById('promo-progress-body');
             if (!body) return;
-            body.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.4);font-size:13px;">加载中…</div>';
+            body.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(242,234,238,0.4);font-size:13px;">加载中…</div>';
             try {
                 const resp = await fetch('/api/promotion/tracks', {
                     headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }
@@ -1986,35 +1986,35 @@
                 const data = await resp.json();
                 const tracks = (data.items || []).filter(t => String(t?.status || '') === 'qualification_approved' && !t?.formalApplied);
                 if (!tracks.length) {
-                    body.innerHTML = '<div style="text-align:center;padding:32px;color:rgba(255,255,255,0.4);font-size:13px;">目前没有在途晋升培训</div>';
+                    body.innerHTML = '<div style="text-align:center;padding:32px;color:rgba(242,234,238,0.4);font-size:13px;">目前没有在途晋升培训</div>';
                     return;
                 }
-                const tierLabel = t => t?.promoTier === 'skill_bump' ? '<span style="font-size:10px;background:rgba(251,191,36,0.2);color:#fbbf24;border-radius:4px;padding:1px 6px;">技能提升</span>' : '<span style="font-size:10px;background:rgba(99,102,241,0.2);color:#a5b4fc;border-radius:4px;padding:1px 6px;">级别晋升</span>';
+                const tierLabel = t => t?.promoTier === 'skill_bump' ? '<span style="font-size:10px;background:rgba(221,182,106,0.2);color:#DDB66A;border-radius:4px;padding:1px 6px;">技能提升</span>' : '<span style="font-size:10px;background:rgba(99,102,241,0.2);color:#a5b4fc;border-radius:4px;padding:1px 6px;">级别晋升</span>';
                 let html = '';
                 for (const tr of tracks) {
                     const items = Array.isArray(tr.trainingProgress?.items) ? tr.trainingProgress.items : [];
                     const total = items.length;
                     const passed = items.filter(i => i.certified).length;
                     const pct = total ? Math.round(passed / total * 100) : 0;
-                    const barColor = pct === 100 ? '#34d399' : pct >= 60 ? '#60a5fa' : '#f87171';
+                    const barColor = pct === 100 ? '#86C9A2' : pct >= 60 ? '#E0A6B4' : '#EDA1AC';
                     const dueDate = tr.trainingDueDate || '';
                     const today = new Date().toISOString().slice(0, 10);
                     const overdue = dueDate && dueDate < today && pct < 100;
 
-                    html += `<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,${overdue ? '0.25' : '0.08'});border-radius:12px;padding:14px 16px;margin-bottom:10px;">
+                    html += `<div style="background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,${overdue ? '0.25' : '0.08'});border-radius:12px;padding:14px 16px;margin-bottom:10px;">
                         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
                             <div>
-                                <span style="font-size:14px;font-weight:700;color:#fff;">${escapeHtml(tr.applicantName || tr.applicantUsername)}</span>
+                                <span style="font-size:14px;font-weight:700;color:#F2EAEE;">${escapeHtml(tr.applicantName || tr.applicantUsername)}</span>
                                 ${tierLabel(tr)}
-                                ${overdue ? '<span style="font-size:10px;background:rgba(248,113,113,0.2);color:#f87171;border-radius:4px;padding:1px 6px;margin-left:4px;">已逾期</span>' : ''}
+                                ${overdue ? '<span style="font-size:10px;background:rgba(237,161,172,0.2);color:#EDA1AC;border-radius:4px;padding:1px 6px;margin-left:4px;">已逾期</span>' : ''}
                             </div>
-                            <div style="text-align:right;font-size:12px;color:rgba(255,255,255,0.45);">
+                            <div style="text-align:right;font-size:12px;color:rgba(242,234,238,0.45);">
                                 ${escapeHtml(tr.targetPosition || '')}${tr.targetLevel ? ' / ' + escapeHtml(tr.targetLevel) : ''}
                                 ${dueDate ? '<br>截止 ' + escapeHtml(dueDate) : ''}
                             </div>
                         </div>
                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-                            <div style="flex:1;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+                            <div style="flex:1;height:6px;background:rgba(242,234,238,0.1);border-radius:3px;overflow:hidden;">
                                 <div style="width:${pct}%;height:100%;background:${barColor};border-radius:3px;transition:width .3s;"></div>
                             </div>
                             <span style="font-size:12px;color:${barColor};font-weight:700;min-width:38px;text-align:right;">${passed}/${total}</span>
@@ -2024,17 +2024,17 @@
                         html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
                         items.forEach(it => {
                             const c = it.certified;
-                            html += `<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:${c ? 'rgba(52,211,153,0.15)' : 'rgba(255,255,255,0.06)'};color:${c ? '#34d399' : 'rgba(255,255,255,0.5)'};border:1px solid ${c ? 'rgba(52,211,153,0.3)' : 'rgba(255,255,255,0.1)'};">${c ? '✓ ' : ''}${escapeHtml(it.title || '')}</span>`;
+                            html += `<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:${c ? 'rgba(134,201,162,0.15)' : 'rgba(242,234,238,0.06)'};color:${c ? '#86C9A2' : 'rgba(242,234,238,0.5)'};border:1px solid ${c ? 'rgba(134,201,162,0.3)' : 'rgba(242,234,238,0.1)'};">${c ? '✓ ' : ''}${escapeHtml(it.title || '')}</span>`;
                         });
                         html += '</div>';
                     } else {
-                        html += '<div style="font-size:12px;color:rgba(255,255,255,0.35);">暂无技能项</div>';
+                        html += '<div style="font-size:12px;color:rgba(242,234,238,0.35);">暂无技能项</div>';
                     }
                     html += '</div>';
                 }
-                body.innerHTML = `<div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:10px;">共 ${tracks.length} 人在途晋升培训</div>` + html;
+                body.innerHTML = `<div style="font-size:12px;color:rgba(242,234,238,0.4);margin-bottom:10px;">共 ${tracks.length} 人在途晋升培训</div>` + html;
             } catch (e) {
-                body.innerHTML = `<div style="text-align:center;padding:24px;color:#f87171;font-size:13px;">${escapeHtml(e.message)}</div>`;
+                body.innerHTML = `<div style="text-align:center;padding:24px;color:#EDA1AC;font-size:13px;">${escapeHtml(e.message)}</div>`;
             }
         }
 
@@ -2045,10 +2045,10 @@
             const body = document.getElementById('promoreq-body');
             if (!body) return;
             if (!position || !level) {
-                body.innerHTML = '<div style="text-align:center;padding:32px;color:rgba(255,255,255,0.4);font-size:13px;">请先选择岗位和级别</div>';
+                body.innerHTML = '<div style="text-align:center;padding:32px;color:rgba(242,234,238,0.4);font-size:13px;">请先选择岗位和级别</div>';
                 return;
             }
-            body.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.4);font-size:13px;">加载中…</div>';
+            body.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(242,234,238,0.4);font-size:13px;">加载中…</div>';
             try {
                 const resp = await fetch('/api/training/topics?position=' + encodeURIComponent(position), {
                     headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }
@@ -2063,51 +2063,51 @@
                 });
 
                 if (!topics.length) {
-                    body.innerHTML = `<div style="text-align:center;padding:32px;color:rgba(255,255,255,0.4);font-size:13px;">该岗位/级别下暂无知识点<br><span style="font-size:11px;opacity:.6">请先在「知识点」标签里创建知识点并设置对应岗位和级别</span></div>`;
+                    body.innerHTML = `<div style="text-align:center;padding:32px;color:rgba(242,234,238,0.4);font-size:13px;">该岗位/级别下暂无知识点<br><span style="font-size:11px;opacity:.6">请先在「知识点」标签里创建知识点并设置对应岗位和级别</span></div>`;
                     return;
                 }
 
                 const reqCount = topics.filter(t => t.promotion_required).length;
                 let html = `
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-                    <div style="font-size:13px;color:rgba(255,255,255,0.6);">
-                        共 <b style="color:#fff">${topics.length}</b> 个知识点，
+                    <div style="font-size:13px;color:rgba(242,234,238,0.6);">
+                        共 <b style="color:#F2EAEE">${topics.length}</b> 个知识点，
                         当前 <b style="color:#a5b4fc">${reqCount}</b> 个设为晋升必须认证
                     </div>
                     <div style="display:flex;gap:8px;">
                         <button data-click="promoReqSelectAll" data-arg="true" style="padding:6px 12px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;cursor:pointer;">全选</button>
-                        <button data-click="promoReqSelectAll" data-arg="false" style="padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;">全不选</button>
-                        <button data-click="savePromoReqTopics" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
+                        <button data-click="promoReqSelectAll" data-arg="false" style="padding:6px 12px;border-radius:8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.15);color:rgba(242,234,238,0.6);font-size:12px;cursor:pointer;">全不选</button>
+                        <button data-click="savePromoReqTopics" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.9);border:none;color:#F2EAEE;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
                     </div>
                 </div>
-                <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-bottom:12px;">✓ 勾选 = 员工晋升到「${position} ${level}」时必须通过此知识点认证；取消勾选 = 不强制要求</div>
+                <div style="font-size:11px;color:rgba(242,234,238,0.35);margin-bottom:12px;">✓ 勾选 = 员工晋升到「${position} ${level}」时必须通过此知识点认证；取消勾选 = 不强制要求</div>
                 <div id="promoreq-checklist" style="display:flex;flex-direction:column;gap:6px;">`;
 
                 topics.forEach(t => {
                     const checked = t.promotion_required ? 'checked' : '';
                     const stageM = /^(.+?)[：:]/.exec(t.title || '');
-                    const stage = stageM ? `<span style="font-size:10px;color:rgba(255,255,255,0.35);margin-right:4px;">[${stageM[1]}]</span>` : '';
+                    const stage = stageM ? `<span style="font-size:10px;color:rgba(242,234,238,0.35);margin-right:4px;">[${stageM[1]}]</span>` : '';
                     const title = stageM ? t.title.slice(stageM[0].length) : t.title;
                     html += `
-                    <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);cursor:pointer;transition:background .15s;"
-                           onmouseover="this.style.background='rgba(99,102,241,0.08)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'">
+                    <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:10px;background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.08);cursor:pointer;transition:background .15s;"
+                           onmouseover="this.style.background='rgba(99,102,241,0.08)'" onmouseout="this.style.background='rgba(242,234,238,0.04)'">
                         <input type="checkbox" data-id="${t.id}" ${checked} style="width:16px;height:16px;accent-color:#6366f1;flex-shrink:0;margin-top:2px;">
                         <div style="flex:1;min-width:0;">
-                            <div style="font-size:13px;color:#fff;line-height:1.4;">${stage}${escapeHtml(title)}</div>
-                            <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px;">有效期 ${t.validity_days || 180} 天${t.practice_task ? ' · 含实操' : ''}</div>
+                            <div style="font-size:13px;color:#F2EAEE;line-height:1.4;">${stage}${escapeHtml(title)}</div>
+                            <div style="font-size:11px;color:rgba(242,234,238,0.35);margin-top:2px;">有效期 ${t.validity_days || 180} 天${t.practice_task ? ' · 含实操' : ''}</div>
                         </div>
-                        <span style="font-size:11px;padding:2px 8px;border-radius:20px;flex-shrink:0;${t.promotion_required ? 'background:rgba(99,102,241,0.2);color:#a5b4fc;' : 'background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.35);'}">${t.promotion_required ? '必须认证' : '不要求'}</span>
+                        <span style="font-size:11px;padding:2px 8px;border-radius:20px;flex-shrink:0;${t.promotion_required ? 'background:rgba(99,102,241,0.2);color:#a5b4fc;' : 'background:rgba(242,234,238,0.06);color:rgba(242,234,238,0.35);'}">${t.promotion_required ? '必须认证' : '不要求'}</span>
                     </label>`;
                 });
 
                 html += `</div>
                 <div style="margin-top:14px;text-align:right;">
-                    <button data-click="savePromoReqTopics" style="padding:8px 20px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">💾 保存晋升认证要求</button>
+                    <button data-click="savePromoReqTopics" style="padding:8px 20px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#F2EAEE;font-size:13px;font-weight:600;cursor:pointer;">💾 保存晋升认证要求</button>
                 </div>`;
 
                 body.innerHTML = html;
             } catch (e) {
-                body.innerHTML = `<div style="text-align:center;padding:24px;color:#f87171;font-size:13px;">${e.message}</div>`;
+                body.innerHTML = `<div style="text-align:center;padding:24px;color:#EDA1AC;font-size:13px;">${e.message}</div>`;
             }
         }
 
@@ -2117,8 +2117,8 @@
                 const badge = cb.closest('label')?.querySelector('span[style*="border-radius:20px"]');
                 if (badge) {
                     badge.textContent = val ? '必须认证' : '不要求';
-                    badge.style.background = val ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.06)';
-                    badge.style.color = val ? '#a5b4fc' : 'rgba(255,255,255,0.35)';
+                    badge.style.background = val ? 'rgba(99,102,241,0.2)' : 'rgba(242,234,238,0.06)';
+                    badge.style.color = val ? '#a5b4fc' : 'rgba(242,234,238,0.35)';
                 }
             });
         }
@@ -2155,7 +2155,7 @@
                 const list = document.getElementById('training-topics-list');
                 if (!list) return;
                 if (!data.success || !data.topics?.length) {
-                    list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.5);">暂无知识点</div>';
+                    list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(242,234,238,0.5);">暂无知识点</div>';
                     return;
                 }
                 const canEdit = isAdminOrHQ();
@@ -2253,7 +2253,7 @@
                     <details class="tt-level-group" open>
                         <summary>
                             <span>📚 通用知识点（非晋升要求）</span>
-                            <span class="training-admin-badge" style="background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);">${ungraded.length} 项</span>
+                            <span class="training-admin-badge" style="background:rgba(242,234,238,0.08);color:rgba(242,234,238,0.6);">${ungraded.length} 项</span>
                         </summary>
                         <div class="tt-level-body">${ungraded.map(t => renderTopicCard(t, t.title)).join('')}</div>
                     </details>`;
@@ -2400,7 +2400,7 @@
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
-                .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#fff;font-weight:700;">$1</strong>');
+                .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#F2EAEE;font-weight:700;">$1</strong>');
         }
 
         function buildTrainingExplanationView(markdown, cacheBadgeHtml) {
@@ -2560,9 +2560,9 @@
                 }
                 return `<label data-click="togglePositionBox" data-arg="${containerId}" data-arg2="${p}" data-arg-self="1"
                     style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;cursor:pointer;font-size:13px;
-                    background:${checked ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)'};
-                    border:1px solid ${checked ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.12)'};
-                    color:${checked ? '#a5b4fc' : 'rgba(255,255,255,0.6)'};"
+                    background:${checked ? 'rgba(99,102,241,0.25)' : 'rgba(242,234,238,0.06)'};
+                    border:1px solid ${checked ? 'rgba(99,102,241,0.5)' : 'rgba(242,234,238,0.12)'};
+                    color:${checked ? '#a5b4fc' : 'rgba(242,234,238,0.6)'};"
                     data-pos="${p}" data-checked="${checked ? '1' : '0'}">
                     <span style="font-size:11px;">${checked ? '☑' : '☐'}</span> ${p}
                 </label>`;
@@ -2582,9 +2582,9 @@
                 if (containerId === 'training-assign-positions') updateTrainingAssignFilterSummary();
                 if (containerId === 'training-topic-positions') updateTrainingTopicSummary();
             } else {
-                el.style.background = newChecked ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)';
-                el.style.border = `1px solid ${newChecked ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.12)'}`;
-                el.style.color = newChecked ? '#a5b4fc' : 'rgba(255,255,255,0.6)';
+                el.style.background = newChecked ? 'rgba(99,102,241,0.25)' : 'rgba(242,234,238,0.06)';
+                el.style.border = `1px solid ${newChecked ? 'rgba(99,102,241,0.5)' : 'rgba(242,234,238,0.12)'}`;
+                el.style.color = newChecked ? '#a5b4fc' : 'rgba(242,234,238,0.6)';
                 el.querySelector('span').textContent = newChecked ? '☑' : '☐';
             }
             // 如果是指派弹窗的岗位选择，自动刷新员工列表
@@ -2653,14 +2653,14 @@
             if (!statusEl || !previewEl) return;
             if (rubric && Array.isArray(rubric.items) && rubric.items.length) {
                 statusEl.textContent = `已配置 · ${rubric.items.length}项 · 合格线${rubric.pass_threshold||80}分`;
-                statusEl.style.color = 'rgba(52,211,153,0.9)';
+                statusEl.style.color = 'rgba(134,201,162,0.9)';
                 previewEl.style.display = '';
                 previewEl.innerHTML = rubric.items.map((s, i) =>
                     `<div style="margin:4px 0">${i+1}. <strong>${s.name}</strong> (${s.weight}分): ${(s.checks||[]).join('；')}</div>`
-                ).join('') + (rubric.fail_criteria?.length ? `<div style="margin-top:6px;color:#fca5a5;">⚠️ 一票否决: ${rubric.fail_criteria.join('；')}</div>` : '');
+                ).join('') + (rubric.fail_criteria?.length ? `<div style="margin-top:6px;color:#EDA1AC;">⚠️ 一票否决: ${rubric.fail_criteria.join('；')}</div>` : '');
             } else {
                 statusEl.textContent = '未配置';
-                statusEl.style.color = 'rgba(255,255,255,0.35)';
+                statusEl.style.color = 'rgba(242,234,238,0.35)';
                 previewEl.style.display = 'none';
                 previewEl.innerHTML = '';
             }
@@ -2816,22 +2816,22 @@
                 const list = document.getElementById('training-assignments-list');
                 if (!list) return;
                 if (!data.success || !data.assignments?.length) {
-                    list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.5);">暂无指派记录</div>';
+                    list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(242,234,238,0.5);">暂无指派记录</div>';
                     return;
                 }
                 const sMap = {not_started:'未开始',learning:'学习中',quiz:'待测验',practice:'待实操认证',certified:'已认证',failed:'未通过'};
-                const sColor = {not_started:'#94a3b8',learning:'#60a5fa',quiz:'#a78bfa',practice:'#fb923c',certified:'#34d399',failed:'#f87171'};
+                const sColor = {not_started:'#97848E',learning:'#E0A6B4',quiz:'#a78bfa',practice:'#DDB66A',certified:'#86C9A2',failed:'#EDA1AC'};
                 list.innerHTML = `<div class="training-admin-stack">` + data.assignments.map(a => {
                     const st = a.session_status || 'not_started';
-                    const color = sColor[st] || '#94a3b8';
+                    const color = sColor[st] || '#97848E';
                     const deadline = getTrainingDeadlineState(a);
                     const displayName = escapeHtml(a.employee_name || a.employee_username);
                     const canRevoke = isAdminOrHQ() || a.assigned_by === currentUser?.username;
-                    const revokeBtn = canRevoke ? `<button data-click="deleteTrainingAssignment" data-arg="${a.id}" data-arg-type="number" style="width:100%;padding:8px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);color:#f87171;font-size:13px;cursor:pointer;">撤销指派</button>` : '';
-                    const badge = `<span class="training-admin-badge" style="background:rgba(255,255,255,0.07);color:${color};">${sMap[st]||'未开始'}</span>`;
+                    const revokeBtn = canRevoke ? `<button data-click="deleteTrainingAssignment" data-arg="${a.id}" data-arg-type="number" style="width:100%;padding:8px;border-radius:8px;background:rgba(229,139,152,0.1);border:1px solid rgba(229,139,152,0.2);color:#EDA1AC;font-size:13px;cursor:pointer;">撤销指派</button>` : '';
+                    const badge = `<span class="training-admin-badge" style="background:rgba(242,234,238,0.07);color:${color};">${sMap[st]||'未开始'}</span>`;
                     const deadlineBadge = getTrainingDeadlineBadge(deadline);
                     const cardStyle = deadline.isOverdue
-                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.42), rgba(30,41,59,0.96));border:1px solid rgba(248,113,113,0.38);box-shadow:0 0 0 1px rgba(239,68,68,0.08) inset;'
+                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.42), rgba(30,41,59,0.96));border:1px solid rgba(237,161,172,0.38);box-shadow:0 0 0 1px rgba(229,139,152,0.08) inset;'
                         : '';
                     return `
                     <div class="training-admin-card" style="${cardStyle}">
@@ -2846,7 +2846,7 @@
                                 </div>
                                 <div class="training-admin-meta">
                                     <span class="training-admin-chip">${escapeHtml(a.position || '未标注岗位')}</span>
-                                    <span class="training-admin-chip" style="${deadline.isOverdue ? 'color:#fecaca;border-color:rgba(248,113,113,0.35);background:rgba(127,29,29,0.22);' : deadline.isDueToday ? 'color:#fde68a;border-color:rgba(245,158,11,0.3);background:rgba(120,53,15,0.22);' : ''}">${escapeHtml(deadline.dueText)}</span>
+                                    <span class="training-admin-chip" style="${deadline.isOverdue ? 'color:#fecaca;border-color:rgba(237,161,172,0.35);background:rgba(127,29,29,0.22);' : deadline.isDueToday ? 'color:#EAD2A0;border-color:rgba(207,161,74,0.3);background:rgba(120,53,15,0.22);' : ''}">${escapeHtml(deadline.dueText)}</span>
                                     ${a.quiz_score !== null ? `<span class="training-admin-chip">测验 ${a.quiz_score}分</span>` : ''}
                                     ${deadlineBadge}
                                 </div>
@@ -2854,7 +2854,7 @@
                             <button class="training-admin-toggle" type="button" data-click="hrmsToggleParentOpen" data-arg-self="1">查看详情</button>
                             <div class="training-admin-details">
                                 <div class="training-admin-sub">指派人：${escapeHtml(a.assigned_by || '系统')} · 员工账号：${escapeHtml(a.employee_username || '')}</div>
-                                ${deadline.isOverdue ? `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(127,29,29,0.22);border:1px solid rgba(248,113,113,0.24);font-size:12px;line-height:1.6;color:#fecaca;">该培训任务已逾期，系统会继续在进度看板中高亮，并向指派人发送飞书催办提醒。</div>` : ''}
+                                ${deadline.isOverdue ? `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(127,29,29,0.22);border:1px solid rgba(237,161,172,0.24);font-size:12px;line-height:1.6;color:#fecaca;">该培训任务已逾期，系统会继续在进度看板中高亮，并向指派人发送飞书催办提醒。</div>` : ''}
                                 ${revokeBtn ? `<div style="margin-top:12px;">${revokeBtn}</div>` : ''}
                             </div>
                         </details>
@@ -2870,7 +2870,7 @@
             _trainingRequirePractice = !_trainingRequirePractice;
             const toggle = document.getElementById('training-assign-practice-toggle');
             const knob = document.getElementById('training-assign-practice-knob');
-            if (toggle) toggle.style.background = _trainingRequirePractice ? 'rgba(245,158,11,0.8)' : 'rgba(255,255,255,0.15)';
+            if (toggle) toggle.style.background = _trainingRequirePractice ? 'rgba(207,161,74,0.8)' : 'rgba(242,234,238,0.15)';
             if (knob) knob.style.left = _trainingRequirePractice ? '23px' : '3px';
         }
 
@@ -2882,7 +2882,7 @@
             _trainingRequirePractice = false;
             const toggle = document.getElementById('training-assign-practice-toggle');
             const knob = document.getElementById('training-assign-practice-knob');
-            if (toggle) toggle.style.background = 'rgba(255,255,255,0.15)';
+            if (toggle) toggle.style.background = 'rgba(242,234,238,0.15)';
             if (knob) knob.style.left = '3px';
             // 渲染岗位多选复选框
             renderPositionCheckboxes('training-assign-positions', []);
@@ -3058,47 +3058,47 @@
                 const content = document.getElementById('training-dashboard-content');
                 if (!content) return;
                 if (!data.success || !data.dashboard?.length) {
-                    content.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.5);">暂无数据</div>';
+                    content.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(242,234,238,0.5);">暂无数据</div>';
                     return;
                 }
                 const stMap = {not_started:'未开始',learning:'学习中',quiz:'待测验',practice:'待实操认证',certified:'已认证',failed:'未通过'};
-                const stBg   = {not_started:'rgba(71,85,105,0.5)',learning:'rgba(96,165,250,0.2)',quiz:'rgba(139,92,246,0.25)',practice:'rgba(249,115,22,0.2)',certified:'rgba(52,211,153,0.2)',failed:'rgba(248,113,113,0.2)'};
-                const stColor = {not_started:'#94a3b8',learning:'#60a5fa',quiz:'#a78bfa',practice:'#fb923c',certified:'#34d399',failed:'#f87171'};
+                const stBg   = {not_started:'rgba(71,85,105,0.5)',learning:'rgba(224,166,180,0.2)',quiz:'rgba(139,92,246,0.25)',practice:'rgba(207,161,74,0.2)',certified:'rgba(134,201,162,0.2)',failed:'rgba(237,161,172,0.2)'};
+                const stColor = {not_started:'#97848E',learning:'#E0A6B4',quiz:'#a78bfa',practice:'#DDB66A',certified:'#86C9A2',failed:'#EDA1AC'};
                 content.innerHTML = `<div class="training-admin-stack">` + data.dashboard.map((d, idx) => {
                     const rate = d.assigned_count > 0 ? Math.round(d.certified_count / d.assigned_count * 100) : 0;
-                    const barColor = rate >= 80 ? '#34d399' : rate >= 50 ? '#fbbf24' : '#f87171';
+                    const barColor = rate >= 80 ? '#86C9A2' : rate >= 50 ? '#DDB66A' : '#EDA1AC';
                     const overdueCount = Number(d.overdue_count || 0);
                     const members = Array.isArray(d.members) ? d.members : [];
-                    const assignerLine = d.assigner_name ? `<span style="font-size:11px;color:rgba(251,191,36,0.7);margin-left:6px;">派发人：${escapeHtml(d.assigner_name)}</span>` : '';
+                    const assignerLine = d.assigner_name ? `<span style="font-size:11px;color:rgba(221,182,106,0.7);margin-left:6px;">派发人：${escapeHtml(d.assigner_name)}</span>` : '';
                     const membersHtml = members.length ? members.map((m, mi) => {
                         const st = m.status || 'not_started';
                         const deadline = getTrainingDeadlineState(m);
                         const needsRetake = st === 'quiz' && m.quiz_score !== null && m.quiz_score !== undefined;
                         const label = deadline.isOverdue ? `逾期 ${Math.max(1, deadline.daysOverdue)} 天` : (needsRetake ? '需补考' : (stMap[st] || st));
-                        const bg = deadline.isOverdue ? 'rgba(239,68,68,0.18)' : (needsRetake ? 'rgba(239,68,68,0.18)' : (stBg[st] || 'rgba(71,85,105,0.5)'));
-                        const color = deadline.isOverdue ? '#fca5a5' : (needsRetake ? '#fca5a5' : (stColor[st] || '#94a3b8'));
+                        const bg = deadline.isOverdue ? 'rgba(229,139,152,0.18)' : (needsRetake ? 'rgba(229,139,152,0.18)' : (stBg[st] || 'rgba(71,85,105,0.5)'));
+                        const color = deadline.isOverdue ? '#EDA1AC' : (needsRetake ? '#EDA1AC' : (stColor[st] || '#97848E'));
                         const scoreNote = (m.quiz_score !== null && m.quiz_score !== undefined) ? ` · ${m.quiz_score}分` : '';
                         // 考试历史
                         const history = Array.isArray(m.quiz_history) ? m.quiz_history : [];
                         const attemptCount = history.length;
                         const historyBadge = attemptCount > 0
-                            ? `<span style="font-size:10px;color:rgba(255,255,255,0.4);margin-left:6px;">考${attemptCount}次</span>`
+                            ? `<span style="font-size:10px;color:rgba(242,234,238,0.4);margin-left:6px;">考${attemptCount}次</span>`
                             : '';
                         const historyHtml = attemptCount > 0 ? history.map((h, hi) => {
                             const sc = h.score ?? '?';
                             const ok = h.passed;
                             const dt = h.at ? h.at.slice(0,10) : '';
-                            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:rgba(255,255,255,0.03);border-radius:6px;margin-bottom:3px;">
-                                <span style="font-size:11px;color:rgba(255,255,255,0.4);">第${hi+1}次 ${dt}</span>
-                                <span style="font-size:12px;font-weight:700;color:${ok ? '#34d399' : '#f87171'};">${sc}分 ${ok ? '✓通过' : '✗未通过'}</span>
+                            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:rgba(242,234,238,0.03);border-radius:6px;margin-bottom:3px;">
+                                <span style="font-size:11px;color:rgba(242,234,238,0.4);">第${hi+1}次 ${dt}</span>
+                                <span style="font-size:12px;font-weight:700;color:${ok ? '#86C9A2' : '#EDA1AC'};">${sc}分 ${ok ? '✓通过' : '✗未通过'}</span>
                             </div>`;
                         }).join('') : '';
                         const historyId = `dash-hist-${idx}-${mi}`;
                         const toggleBtn = attemptCount > 0
-                            ? `<button data-click="hrmsToggleByIdDisplay" data-arg="${historyId}" data-stop style="font-size:10px;padding:2px 7px;border-radius:8px;border:none;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.5);cursor:pointer;margin-left:6px;">历史</button>`
+                            ? `<button data-click="hrmsToggleByIdDisplay" data-arg="${historyId}" data-stop style="font-size:10px;padding:2px 7px;border-radius:8px;border:none;background:rgba(242,234,238,0.07);color:rgba(242,234,238,0.5);cursor:pointer;margin-left:6px;">历史</button>`
                             : '';
                         const memberStyle = deadline.isOverdue
-                            ? 'background:rgba(127,29,29,0.26);border:1px solid rgba(248,113,113,0.26);'
+                            ? 'background:rgba(127,29,29,0.26);border:1px solid rgba(237,161,172,0.26);'
                             : '';
                         const metaDeadline = deadline.dueDate ? ` · ${deadline.dueText}` : '';
                         return `<div class="training-admin-member" style="${memberStyle}">
@@ -3109,12 +3109,12 @@
                             </div>
                             <span class="training-admin-badge" style="background:${bg};color:${color};">${label}</span>
                         </div>`;
-                    }).join('') : '<div style="padding:8px 0;font-size:13px;color:rgba(255,255,255,0.3);">暂无指派成员</div>';
+                    }).join('') : '<div style="padding:8px 0;font-size:13px;color:rgba(242,234,238,0.3);">暂无指派成员</div>';
                     const cardStyle = overdueCount > 0
-                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.4), rgba(30,41,59,0.96));border:1px solid rgba(248,113,113,0.4);box-shadow:0 0 0 1px rgba(239,68,68,0.08) inset;'
+                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.4), rgba(30,41,59,0.96));border:1px solid rgba(237,161,172,0.4);box-shadow:0 0 0 1px rgba(229,139,152,0.08) inset;'
                         : '';
                     const overdueBanner = overdueCount > 0
-                        ? `<div style="margin-bottom:12px;padding:10px 12px;border-radius:12px;background:rgba(127,29,29,0.22);border:1px solid rgba(248,113,113,0.24);font-size:12px;line-height:1.6;color:#fecaca;">当前有 ${overdueCount} 人逾期未完成，该培训主题已进入重点跟进状态。</div>`
+                        ? `<div style="margin-bottom:12px;padding:10px 12px;border-radius:12px;background:rgba(127,29,29,0.22);border:1px solid rgba(237,161,172,0.24);font-size:12px;line-height:1.6;color:#fecaca;">当前有 ${overdueCount} 人逾期未完成，该培训主题已进入重点跟进状态。</div>`
                         : '';
                     return `
                     <div class="training-admin-card" style="${cardStyle}">
@@ -3126,8 +3126,8 @@
                                         <div class="training-admin-sub">${escapeHtml(d.position || '未标注岗位')} ${assignerLine}</div>
                                     </div>
                                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
-                                        ${overdueCount > 0 ? `<span class="training-admin-badge" style="background:rgba(239,68,68,0.16);color:#fca5a5;">${overdueCount} 人逾期</span>` : ''}
-                                        <span class="training-admin-badge" style="background:rgba(255,255,255,0.07);color:${barColor};">${rate}%</span>
+                                        ${overdueCount > 0 ? `<span class="training-admin-badge" style="background:rgba(229,139,152,0.16);color:#EDA1AC;">${overdueCount} 人逾期</span>` : ''}
+                                        <span class="training-admin-badge" style="background:rgba(242,234,238,0.07);color:${barColor};">${rate}%</span>
                                     </div>
                                 </div>
                                 <div class="training-admin-stats">
@@ -3148,7 +3148,7 @@
                             <button class="training-admin-toggle" type="button" data-click="hrmsToggleParentOpen" data-arg-self="1">查看成员进度</button>
                             <div class="training-admin-details">
                                 ${overdueBanner}
-                                <div style="height:6px;border-radius:999px;background:rgba(255,255,255,0.1);overflow:hidden;margin-bottom:12px;">
+                                <div style="height:6px;border-radius:999px;background:rgba(242,234,238,0.1);overflow:hidden;margin-bottom:12px;">
                                     <div style="height:100%;width:${rate}%;background:${barColor};border-radius:999px;transition:width .4s;"></div>
                                 </div>
                                 <div class="training-admin-member-list">${membersHtml}</div>
@@ -3170,7 +3170,7 @@
                 if (btn) btn.style.background = 'rgba(99,102,241,0.15)';
             } else {
                 el.style.display = 'none';
-                if (btn) btn.style.background = 'rgba(255,255,255,0.06)';
+                if (btn) btn.style.background = 'rgba(242,234,238,0.06)';
             }
         }
 
@@ -3183,49 +3183,49 @@
                 const list = document.getElementById('training-pending-list');
                 if (!list) return;
                 if (!data.success || !data.pending?.length) {
-                    list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.5);">暂无待审核记录</div>';
+                    list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(242,234,238,0.5);">暂无待审核记录</div>';
                     refreshTrainingPendingBadge();
                     return;
                 }
                 const aiLabel = {passed:'AI：合格',review:'AI：建议复核',failed:'AI：不合格'};
-                const aiColor = {passed:'#34d399',review:'#fbbf24',failed:'#f87171'};
+                const aiColor = {passed:'#86C9A2',review:'#DDB66A',failed:'#EDA1AC'};
                 list.innerHTML = data.pending.map(c => {
                     const stepScores = c.ai_step_scores;
                     const totalScore = c.ai_total_score;
                     const sourceLabel = c.assignment_source === 'promotion_qualification'
                         ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(139,92,246,0.15);color:#c4b5fd;margin-left:6px;">晋升培训</span>'
                         : (c.assignment_source === 'recert'
-                            ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(59,130,246,0.15);color:#93c5fd;margin-left:6px;">复训</span>'
+                            ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(59,130,246,0.15);color:#EABBC5;margin-left:6px;">复训</span>'
                             : '');
                     let scoreHtml = '';
                     if (stepScores && Array.isArray(stepScores) && stepScores.length) {
                         const stepsStr = stepScores.map(s => {
                             const pct = Math.round((s.score||0)/Math.max(1,s.max||1)*100);
-                            const c2 = pct>=80?'#34d399':pct>=60?'#fbbf24':'#f87171';
+                            const c2 = pct>=80?'#86C9A2':pct>=60?'#DDB66A':'#EDA1AC';
                             return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11px;">
-                                <span style="width:60px;color:rgba(255,255,255,0.55);">${escapeHtml(s.name||'')}</span>
+                                <span style="width:60px;color:rgba(242,234,238,0.55);">${escapeHtml(s.name||'')}</span>
                                 <span style="width:60px;text-align:right;font-weight:600;color:${c2};">${s.score}/${s.max}</span>
                             </div>`;
                         }).join('');
                         scoreHtml = `<div style="background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;margin-bottom:10px;">
-                            <div style="font-size:18px;font-weight:800;color:${totalScore>=80?'#34d399':totalScore>=60?'#fbbf24':'#f87171'};margin-bottom:4px;">AI评分：${totalScore}分</div>
+                            <div style="font-size:18px;font-weight:800;color:${totalScore>=80?'#86C9A2':totalScore>=60?'#DDB66A':'#EDA1AC'};margin-bottom:4px;">AI评分：${totalScore}分</div>
                             ${stepsStr}
                         </div>`;
                     }
-                    return `<div style="background:rgba(255,255,255,0.05);border-radius:14px;padding:14px;margin-bottom:12px;border:1px solid rgba(255,255,255,0.08);">
+                    return `<div style="background:rgba(242,234,238,0.05);border-radius:14px;padding:14px;margin-bottom:12px;border:1px solid rgba(242,234,238,0.08);">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-                            <span style="font-weight:700;color:#fff;font-size:14px;">${escapeHtml(c.employee_name || c.employee_username)}</span>
-                            <span style="font-size:11px;color:${aiColor[c.ai_verdict]||'#94a3b8'};">${aiLabel[c.ai_verdict]||''}</span>
+                            <span style="font-weight:700;color:#F2EAEE;font-size:14px;">${escapeHtml(c.employee_name || c.employee_username)}</span>
+                            <span style="font-size:11px;color:${aiColor[c.ai_verdict]||'#97848E'};">${aiLabel[c.ai_verdict]||''}</span>
                         </div>
-                        <div style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:10px;">📚 ${escapeHtml(c.title)} · ${escapeHtml(c.position)}${sourceLabel}${c.assigner_name ? ` · 审核：${escapeHtml(c.assigner_name)}` : ''}</div>
+                        <div style="font-size:12px;color:rgba(242,234,238,0.45);margin-bottom:10px;">📚 ${escapeHtml(c.title)} · ${escapeHtml(c.position)}${sourceLabel}${c.assigner_name ? ` · 审核：${escapeHtml(c.assigner_name)}` : ''}</div>
                         ${c.media_url ? (c.media_type === 'video'
                             ? `<video src="${c.media_url}" controls playsinline style="width:100%;border-radius:10px;margin-bottom:10px;max-height:200px;object-fit:cover;"></video>`
                             : `<img src="${c.media_url}" style="width:100%;border-radius:10px;margin-bottom:10px;max-height:200px;object-fit:cover;">`) : ''}
-                        ${c.ai_feedback ? `<div style="background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;font-size:13px;color:rgba(255,255,255,0.7);margin-bottom:10px;line-height:1.5;">💬 ${escapeHtml(c.ai_feedback)}</div>` : ''}
+                        ${c.ai_feedback ? `<div style="background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;font-size:13px;color:rgba(242,234,238,0.7);margin-bottom:10px;line-height:1.5;">💬 ${escapeHtml(c.ai_feedback)}</div>` : ''}
                         ${scoreHtml}
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                            <button data-click="reviewCertWithScore" data-arg="${c.id}" data-arg-type="number" data-arg2="confirm" style="padding:12px;border-radius:10px;background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.3);color:#34d399;font-size:14px;font-weight:600;cursor:pointer;">✓ 确认AI评分</button>
-                            <button data-click="reviewCertWithOverride" data-arg="${c.id}" data-arg-type="number" style="padding:12px;border-radius:10px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.25);color:#fbbf24;font-size:14px;font-weight:600;cursor:pointer;">✎ 手动评分</button>
+                            <button data-click="reviewCertWithScore" data-arg="${c.id}" data-arg-type="number" data-arg2="confirm" style="padding:12px;border-radius:10px;background:rgba(134,201,162,0.15);border:1px solid rgba(134,201,162,0.3);color:#86C9A2;font-size:14px;font-weight:600;cursor:pointer;">✓ 确认AI评分</button>
+                            <button data-click="reviewCertWithOverride" data-arg="${c.id}" data-arg-type="number" style="padding:12px;border-radius:10px;background:rgba(221,182,106,0.12);border:1px solid rgba(221,182,106,0.25);color:#DDB66A;font-size:14px;font-weight:600;cursor:pointer;">✎ 手动评分</button>
                         </div>
                     </div>`;
                 }).join('');
@@ -3272,11 +3272,11 @@
 
                 const stepsHtml = scores.map((s, i) =>
                     `<div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
-                        <span style="width:80px;color:rgba(255,255,255,0.7);font-size:13px;">${escapeHtml(s.name||'步骤'+(i+1))}</span>
+                        <span style="width:80px;color:rgba(242,234,238,0.7);font-size:13px;">${escapeHtml(s.name||'步骤'+(i+1))}</span>
                         <input type="number" id="override-score-${i}" value="${s.score||0}" min="0" max="${s.max||100}"
-                            style="width:60px;padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:13px;text-align:center;">
-                        <span style="color:rgba(255,255,255,0.3);font-size:11px;">/${s.max||100}</span>
-                        <span style="font-size:11px;color:rgba(255,255,255,0.35);flex:1;">${escapeHtml(s.feedback||'')}</span>
+                            style="width:60px;padding:6px;border-radius:6px;border:1px solid rgba(242,234,238,0.15);background:rgba(242,234,238,0.08);color:#F2EAEE;font-size:13px;text-align:center;">
+                        <span style="color:rgba(242,234,238,0.3);font-size:11px;">/${s.max||100}</span>
+                        <span style="font-size:11px;color:rgba(242,234,238,0.35);flex:1;">${escapeHtml(s.feedback||'')}</span>
                     </div>`
                 ).join('');
 
@@ -3285,16 +3285,16 @@
                     <div class="modal show" style="display:flex;z-index:9999;">
                         <div class="modal-backdrop" data-click="hrmsRemoveParent" data-arg-self="1"></div>
                         <div class="modal-content" style="width:min(480px,calc(100vw-20px));max-height:90vh;overflow-y:auto;border-radius:18px;padding:24px;background:linear-gradient(180deg,rgba(30,41,59,0.98),rgba(15,23,42,0.98));border:1px solid rgba(148,163,184,0.16);">
-                            <h3 style="color:#fff;margin:0 0 4px;">手动覆盖评分</h3>
-                            <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:16px;">AI评分：${total}分。你可以逐项调整分数。</div>
+                            <h3 style="color:#F2EAEE;margin:0 0 4px;">手动覆盖评分</h3>
+                            <div style="font-size:12px;color:rgba(242,234,238,0.35);margin-bottom:16px;">AI评分：${total}分。你可以逐项调整分数。</div>
                             ${stepsHtml}
                             <div style="margin-top:10px;">
-                                <label style="font-size:11px;color:rgba(255,255,255,0.4);">审核备注</label>
-                                <textarea id="override-note" rows="2" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:12px;resize:vertical;"></textarea>
+                                <label style="font-size:11px;color:rgba(242,234,238,0.4);">审核备注</label>
+                                <textarea id="override-note" rows="2" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#F2EAEE;font-size:12px;resize:vertical;"></textarea>
                             </div>
                             <div style="display:flex;gap:8px;margin-top:16px;">
-                                <button data-click="hrmsRemoveClosest" data-arg=".modal" data-arg-self="1" style="flex:1;padding:12px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;">取消</button>
-                                <button data-click="submitOverride" data-arg="${id}" data-arg-type="number" style="flex:1;padding:12px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">提交人工评分</button>
+                                <button data-click="hrmsRemoveClosest" data-arg=".modal" data-arg-self="1" style="flex:1;padding:12px;border-radius:10px;background:rgba(242,234,238,0.08);border:1px solid rgba(242,234,238,0.12);color:rgba(242,234,238,0.6);font-size:14px;cursor:pointer;">取消</button>
+                                <button data-click="submitOverride" data-arg="${id}" data-arg-type="number" style="flex:1;padding:12px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#F2EAEE;font-size:14px;font-weight:600;cursor:pointer;">提交人工评分</button>
                             </div>
                         </div>
                     </div>`;
@@ -3349,8 +3349,8 @@
             const certsBtn = document.getElementById('emp-tab-certs');
             const tasksPanel = document.getElementById('emp-tasks-panel');
             const certsPanel = document.getElementById('emp-certs-panel');
-            const active = 'flex:1;padding:10px;border-radius:12px;background:rgba(99,102,241,0.9);border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;';
-            const inactive = 'flex:1;padding:10px;border-radius:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);font-size:14px;font-weight:600;cursor:pointer;';
+            const active = 'flex:1;padding:10px;border-radius:12px;background:rgba(99,102,241,0.9);border:none;color:#F2EAEE;font-size:14px;font-weight:700;cursor:pointer;';
+            const inactive = 'flex:1;padding:10px;border-radius:12px;background:rgba(242,234,238,0.07);border:1px solid rgba(242,234,238,0.15);color:rgba(242,234,238,0.7);font-size:14px;font-weight:600;cursor:pointer;';
             if (tab === 'tasks') {
                 if (tasksBtn) tasksBtn.style.cssText = active;
                 if (certsBtn) certsBtn.style.cssText = inactive;
@@ -3393,32 +3393,32 @@
                     const reviewStatus = c.review_status;
                     const effectiveStatus = c.effective_status || (c.manager_verdict === 'passed' ? 'certified' : 'pending_review');
                     const certState = effectiveStatus === 'certified'
-                        ? { label: '✓ 已认证', color: '#34d399', bg: 'rgba(52,211,153,0.15)', border: 'rgba(52,211,153,0.25)' }
+                        ? { label: '✓ 已认证', color: '#86C9A2', bg: 'rgba(134,201,162,0.15)', border: 'rgba(134,201,162,0.25)' }
                         : effectiveStatus === 'pending_review'
-                            ? { label: '⏳ 实操审核中', color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', border: 'rgba(251,191,36,0.25)' }
-                            : { label: '⚠️ 未通过', color: '#fca5a5', bg: 'rgba(248,113,113,0.15)', border: 'rgba(248,113,113,0.25)' };
+                            ? { label: '⏳ 实操审核中', color: '#DDB66A', bg: 'rgba(221,182,106,0.15)', border: 'rgba(221,182,106,0.25)' }
+                            : { label: '⚠️ 未通过', color: '#EDA1AC', bg: 'rgba(237,161,172,0.15)', border: 'rgba(237,161,172,0.25)' };
                     if (c.require_practice && finalScore !== null && finalScore !== undefined) {
-                        const scoreColor = finalScore >= 80 ? '#34d399' : finalScore >= 60 ? '#fbbf24' : '#f87171';
+                        const scoreColor = finalScore >= 80 ? '#86C9A2' : finalScore >= 60 ? '#DDB66A' : '#EDA1AC';
                         const scoreBadge = reviewStatus === 'overridden'
-                            ? '<span style="font-size:9px;color:rgba(255,255,255,0.35);">(人工)</span>'
-                            : '<span style="font-size:9px;color:rgba(255,255,255,0.35);">(AI确认)</span>';
+                            ? '<span style="font-size:9px;color:rgba(242,234,238,0.35);">(人工)</span>'
+                            : '<span style="font-size:9px;color:rgba(242,234,238,0.35);">(AI确认)</span>';
                         practiceScoreHtml = `<div style="margin-top:6px;font-size:13px;font-weight:700;color:${scoreColor};">实操 ${finalScore}分 ${scoreBadge}</div>`;
                     } else if (c.require_practice && reviewStatus === 'pending') {
                         const reviewerLabel = String(c.assigner_name || c.assigned_by || '').trim();
                         practiceScoreHtml = reviewerLabel
-                            ? `<div style="margin-top:6px;font-size:12px;color:#eab308;">实操评分待 ${escapeHtml(reviewerLabel)} 审核</div>`
-                            : `<div style="margin-top:6px;font-size:12px;color:#eab308;">实操评分待门店负责人审核</div>`;
+                            ? `<div style="margin-top:6px;font-size:12px;color:#CFA14A;">实操评分待 ${escapeHtml(reviewerLabel)} 审核</div>`
+                            : `<div style="margin-top:6px;font-size:12px;color:#CFA14A;">实操评分待门店负责人审核</div>`;
                     }
                     return `
-                    <div style="background:${effectiveStatus === 'certified' ? 'rgba(52,211,153,0.07)' : 'rgba(251,191,36,0.06)'};border:1px solid ${certState.border};border-radius:14px;padding:16px;">
+                    <div style="background:${effectiveStatus === 'certified' ? 'rgba(134,201,162,0.07)' : 'rgba(221,182,106,0.06)'};border:1px solid ${certState.border};border-radius:14px;padding:16px;">
                         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">
-                            <div style="font-size:15px;font-weight:700;color:#fff;flex:1;margin-right:8px;">${escapeHtml(c.title)}</div>
+                            <div style="font-size:15px;font-weight:700;color:#F2EAEE;flex:1;margin-right:8px;">${escapeHtml(c.title)}</div>
                             <span style="font-size:11px;padding:3px 10px;border-radius:10px;background:${certState.bg};color:${certState.color};white-space:nowrap;">${certState.label}</span>
                         </div>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${posTags}</div>
                         <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <div style="font-size:12px;color:rgba(255,255,255,0.5);">认证日期：${certDate}</div>
-                            <div style="font-size:13px;font-weight:700;color:#fbbf24;">测验 ${score}</div>
+                            <div style="font-size:12px;color:rgba(242,234,238,0.5);">认证日期：${certDate}</div>
+                            <div style="font-size:13px;font-weight:700;color:#DDB66A;">测验 ${score}</div>
                         </div>
                         ${practiceScoreHtml}
                     </div>`;
@@ -3458,37 +3458,37 @@
                 list.innerHTML = data.topics.map(t => {
                     const sMap = {'learning':'学习中','quiz':'待测验','practice':'实操审核中','certified':'已认证','not_started':'未开始'};
                     const sIcon = {'learning':'📖','quiz':'📝','practice':'⏳','certified':'✅','not_started':'🔔'};
-                    const sBg   = {'learning':'rgba(96,165,250,0.12)','quiz':'rgba(139,92,246,0.12)','practice':'rgba(249,115,22,0.12)','certified':'rgba(52,211,153,0.12)','not_started':'rgba(148,163,184,0.1)'};
-                    const sBorder = {'learning':'rgba(96,165,250,0.3)','quiz':'rgba(139,92,246,0.3)','practice':'rgba(249,115,22,0.3)','certified':'rgba(52,211,153,0.3)','not_started':'rgba(148,163,184,0.2)'};
-                    const sColor = {'learning':'#60a5fa','quiz':'#a78bfa','practice':'#fb923c','certified':'#34d399','not_started':'#94a3b8'};
+                    const sBg   = {'learning':'rgba(224,166,180,0.12)','quiz':'rgba(139,92,246,0.12)','practice':'rgba(207,161,74,0.12)','certified':'rgba(134,201,162,0.12)','not_started':'rgba(148,163,184,0.1)'};
+                    const sBorder = {'learning':'rgba(224,166,180,0.3)','quiz':'rgba(139,92,246,0.3)','practice':'rgba(207,161,74,0.3)','certified':'rgba(134,201,162,0.3)','not_started':'rgba(148,163,184,0.2)'};
+                    const sColor = {'learning':'#E0A6B4','quiz':'#a78bfa','practice':'#DDB66A','certified':'#86C9A2','not_started':'#97848E'};
                     const st = t.effective_status || t.session_status || 'not_started';
                     const deadline = getTrainingDeadlineState(t);
                     const isDone = st === 'certified';
                     const isPending = st === 'practice';
                     const btnLabel = isDone ? '✅ 已完成' : isPending ? '📤 提交实操材料 →' : '开始学习 →';
                     const btnDisabled = isDone;
-                    const practiceTag = t.require_practice === false ? '<span style="font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(96,165,250,0.12);color:#60a5fa;margin-left:6px;">无需实操</span>' : '';
-                    const statusBg = deadline.isOverdue ? 'rgba(239,68,68,0.12)' : sBg[st];
-                    const statusBorder = deadline.isOverdue ? 'rgba(239,68,68,0.3)' : sBorder[st];
-                    const statusColor = deadline.isOverdue ? '#fca5a5' : sColor[st];
+                    const practiceTag = t.require_practice === false ? '<span style="font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(224,166,180,0.12);color:#E0A6B4;margin-left:6px;">无需实操</span>' : '';
+                    const statusBg = deadline.isOverdue ? 'rgba(229,139,152,0.12)' : sBg[st];
+                    const statusBorder = deadline.isOverdue ? 'rgba(229,139,152,0.3)' : sBorder[st];
+                    const statusColor = deadline.isOverdue ? '#EDA1AC' : sColor[st];
                     const statusLabel = deadline.isOverdue ? `⚠️ 已逾期 ${Math.max(1, deadline.daysOverdue)} 天` : `${sIcon[st]} ${sMap[st]||'未开始'}`;
                     const cardStyle = deadline.isOverdue
-                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.36), rgba(30,41,59,0.96));border:1px solid rgba(248,113,113,0.34);'
-                        : 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);';
+                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.36), rgba(30,41,59,0.96));border:1px solid rgba(237,161,172,0.34);'
+                        : 'background:rgba(242,234,238,0.05);border:1px solid rgba(242,234,238,0.08);';
                     return `
                         <div style="${cardStyle}border-radius:16px;overflow:hidden;">
                             <div style="padding:16px;">
                                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                                    <span style="font-weight:700;color:#fff;font-size:15px;">${escapeHtml(t.title)}${practiceTag}</span>
+                                    <span style="font-weight:700;color:#F2EAEE;font-size:15px;">${escapeHtml(t.title)}${practiceTag}</span>
                                     <span style="font-size:12px;padding:4px 10px;border-radius:10px;background:${statusBg};border:1px solid ${statusBorder};color:${statusColor};">${statusLabel}</span>
                                 </div>
-                                <div style="font-size:12px;color:rgba(255,255,255,0.4);">
+                                <div style="font-size:12px;color:rgba(242,234,238,0.4);">
                                     ${escapeHtml(t.position)} &nbsp;·&nbsp; ${escapeHtml(deadline.dueText)}
                                     ${t.quiz_score !== null && t.quiz_score !== undefined ? ' &nbsp;·&nbsp; 测验 '+t.quiz_score+'分' : ''}
                                 </div>
                             </div>
                             <button ${btnDisabled ? '' : 'data-click="hrmsOpenTrainingSession" data-arg="'+t.topic_id+'" data-arg-type="number"'}
-                                style="width:100%;padding:13px;border:none;border-top:1px solid var(--pf-line);background:${btnDisabled ? 'rgba(255,255,255,0.03)' : 'rgba(99,102,241,0.8)'};color:${btnDisabled ? 'rgba(255,255,255,0.3)' : '#fff'};font-size:14px;font-weight:600;cursor:${btnDisabled ? 'default' : 'pointer'};letter-spacing:.3px;">
+                                style="width:100%;padding:13px;border:none;border-top:1px solid var(--pf-line);background:${btnDisabled ? 'rgba(242,234,238,0.03)' : 'rgba(99,102,241,0.8)'};color:${btnDisabled ? 'rgba(242,234,238,0.3)' : '#F2EAEE'};font-size:14px;font-weight:600;cursor:${btnDisabled ? 'default' : 'pointer'};letter-spacing:.3px;">
                                 ${btnLabel}
                             </button>
                         </div>
@@ -3557,7 +3557,7 @@
 
             if (articles.length === 0) {
                 if (tabsDiv) tabsDiv.style.display = 'none';
-                articlesDiv.innerHTML = `<div style="text-align:center;padding:40px 0;color:rgba(255,255,255,0.45);">
+                articlesDiv.innerHTML = `<div style="text-align:center;padding:40px 0;color:rgba(242,234,238,0.45);">
                     <div style="font-size:36px;margin-bottom:10px;">📄</div>
                     <div>暂无培训资料</div>
                 </div>`;
@@ -3569,9 +3569,9 @@
                         tabsDiv.style.display = 'flex';
                         tabsDiv.innerHTML = articles.map((a, i) => `
                             <button id="training-article-tab-${i}" data-click="showTrainingArticle" data-arg="${i}" data-arg-type="number"
-                                style="padding:6px 14px;border-radius:20px;border:1px solid rgba(255,255,255,0.18);
-                                       background:${i === 0 ? 'rgba(167,139,250,0.25)' : 'rgba(255,255,255,0.06)'};
-                                       color:${i === 0 ? '#c4b5fd' : 'rgba(255,255,255,0.6)'};
+                                style="padding:6px 14px;border-radius:20px;border:1px solid rgba(242,234,238,0.18);
+                                       background:${i === 0 ? 'rgba(167,139,250,0.25)' : 'rgba(242,234,238,0.06)'};
+                                       color:${i === 0 ? '#c4b5fd' : 'rgba(242,234,238,0.6)'};
                                        font-size:13px;cursor:pointer;white-space:nowrap;transition:all .2s;">
                                 📖 ${escapeHtml(a.title)}
                             </button>`).join('');
@@ -3587,8 +3587,8 @@
                     articles.forEach((_, i) => {
                         const tab = document.getElementById(`training-article-tab-${i}`);
                         if (!tab) return;
-                        tab.style.background = i === idx ? 'rgba(167,139,250,0.25)' : 'rgba(255,255,255,0.06)';
-                        tab.style.color = i === idx ? '#c4b5fd' : 'rgba(255,255,255,0.6)';
+                        tab.style.background = i === idx ? 'rgba(167,139,250,0.25)' : 'rgba(242,234,238,0.06)';
+                        tab.style.color = i === idx ? '#c4b5fd' : 'rgba(242,234,238,0.6)';
                     });
                     const a = articles[idx];
                     articlesDiv.innerHTML = '';
@@ -3598,7 +3598,7 @@
                 // AI 解析作为主培训内容直接渲染（缓存后全员共用，无需查看原文件）
                 window.loadTrainingAiExplanation = async function(articleId, container) {
                     disableTrainingQuizBtn();
-                    container.innerHTML = '<div style="text-align:center;padding:52px 0;color:rgba(255,255,255,0.4);"><div style="font-size:34px;margin-bottom:14px;opacity:0.7;">✨</div><div style="font-size:13px;">AI 正在整理培训内容，请稍候…</div></div>';
+                    container.innerHTML = '<div style="text-align:center;padding:52px 0;color:rgba(242,234,238,0.4);"><div style="font-size:34px;margin-bottom:14px;opacity:0.7;">✨</div><div style="font-size:13px;">AI 正在整理培训内容，请稍候…</div></div>';
 
                     try {
                         const resp = await fetch('/api/training/kb/' + encodeURIComponent(articleId) + '/explanation', {
@@ -3608,16 +3608,16 @@
 
                         if (data.success && data.explanation) {
                             const cacheBadge = data.cached
-                                ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(52,211,153,0.15);color:#6ee7b7;margin-left:6px;">已缓存</span>'
-                                : '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(251,191,36,0.15);color:#fde68a;margin-left:6px;">✨ 新生成</span>';
+                                ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(134,201,162,0.15);color:#6ee7b7;margin-left:6px;">已缓存</span>'
+                                : '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(221,182,106,0.15);color:#EAD2A0;margin-left:6px;">✨ 新生成</span>';
                             container.innerHTML = buildTrainingExplanationView(data.explanation, cacheBadge);
                         } else if (data.error === 'no_content') {
-                            container.innerHTML = '<div style="text-align:center;padding:44px 0;"><div style="font-size:32px;margin-bottom:12px;">📄</div><div style="color:rgba(255,255,255,0.45);font-size:13px;line-height:1.7;">该培训资料暂无文字内容<br>管理员需填写「视频内容摘要」后方可生成解析</div></div>';
+                            container.innerHTML = '<div style="text-align:center;padding:44px 0;"><div style="font-size:32px;margin-bottom:12px;">📄</div><div style="color:rgba(242,234,238,0.45);font-size:13px;line-height:1.7;">该培训资料暂无文字内容<br>管理员需填写「视频内容摘要」后方可生成解析</div></div>';
                         } else {
-                            container.innerHTML = '<div style="text-align:center;padding:44px 0;"><div style="font-size:32px;margin-bottom:12px;">⚠️</div><div style="color:rgba(255,255,255,0.45);font-size:13px;">' + escapeHtml(data.message || 'AI 解析生成失败，请稍后重试') + '</div></div>';
+                            container.innerHTML = '<div style="text-align:center;padding:44px 0;"><div style="font-size:32px;margin-bottom:12px;">⚠️</div><div style="color:rgba(242,234,238,0.45);font-size:13px;">' + escapeHtml(data.message || 'AI 解析生成失败，请稍后重试') + '</div></div>';
                         }
                     } catch (e) {
-                        container.innerHTML = '<div style="text-align:center;padding:44px 0;"><div style="font-size:32px;margin-bottom:12px;">📡</div><div style="color:rgba(255,255,255,0.45);font-size:13px;">网络错误，请检查连接后重试</div></div>';
+                        container.innerHTML = '<div style="text-align:center;padding:44px 0;"><div style="font-size:32px;margin-bottom:12px;">📡</div><div style="color:rgba(242,234,238,0.45);font-size:13px;">网络错误，请检查连接后重试</div></div>';
                     }
                     enableTrainingQuizBtn();
                 };
@@ -3722,13 +3722,13 @@
             const questions = _trainingCurrentSession?.quiz_questions || [];
             const container = document.getElementById('training-quiz-questions');
             container.innerHTML = questions.map((q, i) => `
-                <div style="background:rgba(255,255,255,0.05);border-radius:14px;padding:16px;margin-bottom:14px;border:1px solid rgba(255,255,255,0.08);">
-                    <div style="font-weight:700;color:#fff;font-size:15px;margin-bottom:14px;line-height:1.5;">第 ${i+1} 题 &nbsp;·&nbsp; ${escapeHtml(q.q)}</div>
+                <div style="background:rgba(242,234,238,0.05);border-radius:14px;padding:16px;margin-bottom:14px;border:1px solid rgba(242,234,238,0.08);">
+                    <div style="font-weight:700;color:#F2EAEE;font-size:15px;margin-bottom:14px;line-height:1.5;">第 ${i+1} 题 &nbsp;·&nbsp; ${escapeHtml(q.q)}</div>
                     <div style="display:flex;flex-direction:column;gap:10px;">
                         ${(q.options || []).map((opt, j) => `
-                            <label style="display:flex;align-items:center;gap:12px;padding:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:rgba(99,102,241,0.15);" ontouchstart="this.style.background='rgba(99,102,241,0.12)'" ontouchend="this.style.background='rgba(255,255,255,0.04)'">
+                            <label style="display:flex;align-items:center;gap:12px;padding:14px;background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.1);border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:rgba(99,102,241,0.15);" ontouchstart="this.style.background='rgba(99,102,241,0.12)'" ontouchend="this.style.background='rgba(242,234,238,0.04)'">
                                 <input type="radio" name="quiz-q${i}" value="${j}" style="width:20px;height:20px;flex-shrink:0;accent-color:#6366f1;">
-                                <span style="color:rgba(255,255,255,0.9);font-size:14px;line-height:1.5;"><span style="color:#a5b4fc;font-weight:600;">${String.fromCharCode(65+j)}.</span> ${escapeHtml(opt)}</span>
+                                <span style="color:rgba(242,234,238,0.9);font-size:14px;line-height:1.5;"><span style="color:#a5b4fc;font-weight:600;">${String.fromCharCode(65+j)}.</span> ${escapeHtml(opt)}</span>
                             </label>
                         `).join('')}
                     </div>
@@ -3777,41 +3777,41 @@
             if (submitBar) submitBar.style.display = 'none';
 
             const correctCount = results.filter(r => r.isCorrect).length;
-            const scoreColor = passed ? '#34d399' : '#f87171';
-            const scoreBg = passed ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)';
-            const scoreBorder = passed ? 'rgba(52,211,153,0.3)' : 'rgba(248,113,113,0.3)';
+            const scoreColor = passed ? '#86C9A2' : '#EDA1AC';
+            const scoreBg = passed ? 'rgba(134,201,162,0.1)' : 'rgba(237,161,172,0.1)';
+            const scoreBorder = passed ? 'rgba(134,201,162,0.3)' : 'rgba(237,161,172,0.3)';
 
             const questionsHtml = results.map((r, i) => {
                 const optLetters = ['A','B','C','D'];
                 const optionsHtml = r.options.map((opt, oi) => {
-                    let bg = 'rgba(255,255,255,0.04)';
-                    let border = 'rgba(255,255,255,0.1)';
-                    let color = 'rgba(255,255,255,0.75)';
+                    let bg = 'rgba(242,234,238,0.04)';
+                    let border = 'rgba(242,234,238,0.1)';
+                    let color = 'rgba(242,234,238,0.75)';
                     let badge = '';
                     if (oi === r.correct) {
-                        bg = 'rgba(52,211,153,0.12)';
-                        border = 'rgba(52,211,153,0.4)';
+                        bg = 'rgba(134,201,162,0.12)';
+                        border = 'rgba(134,201,162,0.4)';
                         color = '#6ee7b7';
-                        badge = `<span style="margin-left:6px;font-size:11px;background:rgba(52,211,153,0.2);color:#6ee7b7;padding:1px 6px;border-radius:8px;">✓ 正确</span>`;
+                        badge = `<span style="margin-left:6px;font-size:11px;background:rgba(134,201,162,0.2);color:#6ee7b7;padding:1px 6px;border-radius:8px;">✓ 正确</span>`;
                     } else if (oi === r.userAnswer && !r.isCorrect) {
-                        bg = 'rgba(248,113,113,0.1)';
-                        border = 'rgba(248,113,113,0.35)';
-                        color = '#fca5a5';
-                        badge = `<span style="margin-left:6px;font-size:11px;background:rgba(248,113,113,0.2);color:#fca5a5;padding:1px 6px;border-radius:8px;">✗ 你的答案</span>`;
+                        bg = 'rgba(237,161,172,0.1)';
+                        border = 'rgba(237,161,172,0.35)';
+                        color = '#EDA1AC';
+                        badge = `<span style="margin-left:6px;font-size:11px;background:rgba(237,161,172,0.2);color:#EDA1AC;padding:1px 6px;border-radius:8px;">✗ 你的答案</span>`;
                     }
                     return `<div style="padding:8px 12px;margin:5px 0;border-radius:10px;border:1px solid ${border};background:${bg};color:${color};font-size:13px;display:flex;align-items:center;gap:4px;">
                         <span style="font-weight:600;flex-shrink:0;">${optLetters[oi]}.</span> ${escapeHtml(opt)}${badge}
                     </div>`;
                 }).join('');
                 const explanationHtml = (!r.isCorrect && r.explanation)
-                    ? `<div style="margin-top:8px;padding:8px 12px;background:rgba(251,191,36,0.08);border-left:2px solid rgba(251,191,36,0.5);border-radius:0 8px 8px 0;font-size:12px;color:#fde68a;line-height:1.6;">💡 ${escapeHtml(r.explanation)}</div>`
+                    ? `<div style="margin-top:8px;padding:8px 12px;background:rgba(221,182,106,0.08);border-left:2px solid rgba(221,182,106,0.5);border-radius:0 8px 8px 0;font-size:12px;color:#EAD2A0;line-height:1.6;">💡 ${escapeHtml(r.explanation)}</div>`
                     : '';
                 const qStatus = r.isCorrect
-                    ? `<span style="font-size:12px;color:#34d399;">✓ 答对</span>`
-                    : `<span style="font-size:12px;color:#f87171;">✗ 答错</span>`;
-                return `<div style="margin-bottom:14px;padding:14px;background:rgba(255,255,255,0.04);border-radius:14px;border:1px solid rgba(255,255,255,0.08);">
+                    ? `<span style="font-size:12px;color:#86C9A2;">✓ 答对</span>`
+                    : `<span style="font-size:12px;color:#EDA1AC;">✗ 答错</span>`;
+                return `<div style="margin-bottom:14px;padding:14px;background:rgba(242,234,238,0.04);border-radius:14px;border:1px solid rgba(242,234,238,0.08);">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-                        <div style="font-size:14px;color:rgba(255,255,255,0.9);line-height:1.6;flex:1;padding-right:8px;">${i+1}. ${escapeHtml(r.q)}</div>
+                        <div style="font-size:14px;color:rgba(242,234,238,0.9);line-height:1.6;flex:1;padding-right:8px;">${i+1}. ${escapeHtml(r.q)}</div>
                         ${qStatus}
                     </div>
                     ${optionsHtml}
@@ -3820,30 +3820,30 @@
             }).join('');
 
             const actionBtn = passed
-                ? `<button data-click="hrmsTrainingQuizContinue" data-arg="${data.next_status}" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(52,211,153,0.9),rgba(16,185,129,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
+                ? `<button data-click="hrmsTrainingQuizContinue" data-arg="${data.next_status}" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(134,201,162,0.9),rgba(16,185,129,0.9));border:none;color:#F2EAEE;font-size:15px;font-weight:700;cursor:pointer;">
                         🎉 继续
                    </button>`
-                : `<button data-click="startTrainingQuiz" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(99,102,241,0.9),rgba(139,92,246,0.9));border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">
+                : `<button data-click="startTrainingQuiz" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(99,102,241,0.9),rgba(139,92,246,0.9));border:none;color:#F2EAEE;font-size:15px;font-weight:700;cursor:pointer;">
                         🔄 重新生成题目再考一次
                    </button>`;
 
             const retakeWarning = !passed ? `
-                <div style="margin-bottom:16px;padding:14px 16px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);border-radius:14px;display:flex;align-items:flex-start;gap:10px;">
+                <div style="margin-bottom:16px;padding:14px 16px;background:rgba(229,139,152,0.12);border:1px solid rgba(229,139,152,0.35);border-radius:14px;display:flex;align-items:flex-start;gap:10px;">
                     <span style="font-size:20px;flex-shrink:0;">⚠️</span>
                     <div>
-                        <div style="font-size:14px;font-weight:700;color:#fca5a5;margin-bottom:4px;">需要重新补考</div>
-                        <div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5;">本次测验未达到90分，<strong style="color:#fca5a5;">此培训任务未完成</strong>。请仔细查看错题解析后，重新生成题目进行补考，直到达到90分及以上方可完成认证。</div>
+                        <div style="font-size:14px;font-weight:700;color:#EDA1AC;margin-bottom:4px;">需要重新补考</div>
+                        <div style="font-size:13px;color:rgba(242,234,238,0.6);line-height:1.5;">本次测验未达到90分，<strong style="color:#EDA1AC;">此培训任务未完成</strong>。请仔细查看错题解析后，重新生成题目进行补考，直到达到90分及以上方可完成认证。</div>
                     </div>
                 </div>` : '';
 
             quizBody.innerHTML = `
                 <div style="text-align:center;padding:20px 0 16px;margin-bottom:16px;background:${scoreBg};border:1px solid ${scoreBorder};border-radius:16px;">
                     <div style="font-size:48px;font-weight:800;color:${scoreColor};line-height:1;">${score}</div>
-                    <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:2px;">/ 100分</div>
+                    <div style="font-size:13px;color:rgba(242,234,238,0.5);margin-top:2px;">/ 100分</div>
                     <div style="font-size:15px;font-weight:600;color:${scoreColor};margin-top:8px;">
                         ${passed ? '🎉 恭喜通过！' : '❌ 未通过，需达到90分'}
                     </div>
-                    <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:4px;">答对 ${correctCount} / ${total} 题</div>
+                    <div style="font-size:13px;color:rgba(242,234,238,0.5);margin-top:4px;">答对 ${correctCount} / ${total} 题</div>
                 </div>
                 ${retakeWarning}
                 <div style="margin-bottom:16px;">${questionsHtml}</div>
@@ -3968,7 +3968,9 @@
             if (nameEl) nameEl.textContent = _trainingCurrentTopic?.title || '';
         }
 
+        let _trainingPracticeUploading = false;
         async function uploadTrainingPractice() {
+            if (_trainingPracticeUploading) return;
             if (!_trainingPracticeFiles.length) return showNotification('请选择文件', 'warning');
             const hasVideo = _trainingPracticeFiles.some((f) => String(f.type || '').startsWith('video/'));
             const imageCount = _trainingPracticeFiles.filter((f) => String(f.type || '').startsWith('image/')).length;
@@ -3979,6 +3981,13 @@
             const formData = new FormData();
             for (const f of _trainingPracticeFiles) formData.append('files', f);
 
+            _trainingPracticeUploading = true;
+            const uploadBtn = document.getElementById('training-upload-btn');
+            const prevLabel = uploadBtn ? uploadBtn.textContent : '';
+            if (uploadBtn) {
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = '提交中…';
+            }
             try {
                 const resp = await fetch('/api/training/sessions/' + _trainingCurrentSession.id + '/upload-practice', {
                     method: 'POST',
@@ -4036,6 +4045,12 @@
                 }
             } catch (e) {
                 showNotification('上传失败', 'error');
+            } finally {
+                _trainingPracticeUploading = false;
+                if (uploadBtn) {
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = prevLabel || '上传并提交 AI 审核';
+                }
             }
         }
 

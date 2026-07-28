@@ -496,6 +496,9 @@ function makeUploadQuery(sessionRow = mockPracticeSession) {
     if (sql.includes('FROM training_sessions s') && sql.includes('JOIN training_topics')) {
       return { rows: sessionRow ? [sessionRow] : [] };
     }
+    if (sql.includes('manager_verdict IS NULL') || sql.includes("INTERVAL '30 seconds'")) {
+      return { rows: [] };
+    }
     if (sql.includes('INSERT INTO upload_file_owners')) {
       return { rows: [] };
     }
@@ -580,6 +583,32 @@ test('uploadPracticeMedia: quiz not passed', async () => {
   });
   assert.equal(result.success, false);
   assert.equal(result.error, '请先通过测验');
+});
+
+test('uploadPracticeMedia: rejects when pending certification exists', async () => {
+  const result = await uploadPracticeMedia({
+    sessionId: 'sess-1',
+    username: 'emp1',
+    files: [1, 2, 3].map((n) => ({
+      path: `/tmp/practice-${n}.jpg`,
+      filename: `practice-${n}.jpg`,
+      originalname: `practice-${n}.jpg`,
+    })),
+    query: async (sql) => {
+      if (sql.includes('FROM training_sessions s') && sql.includes('JOIN training_topics')) {
+        return { rows: [mockPracticeSession] };
+      }
+      if (sql.includes('manager_verdict IS NULL')) {
+        return { rows: [{ id: 99 }] };
+      }
+      return { rows: [] };
+    },
+    ...mockUploadDeps,
+    callVisionLLM: async () => ({}),
+    callVisionLLMVideo: async () => ({}),
+  });
+  assert.equal(result.success, false);
+  assert.match(result.error, /待审核/);
 });
 
 test('uploadPracticeMedia: success image + rubric inserts certification', async () => {

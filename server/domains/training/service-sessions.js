@@ -659,6 +659,28 @@ export async function uploadPracticeMedia({
       return { success: false, error: '请先通过测验' };
     }
 
+    const pendingCert = await q(
+      `SELECT id FROM training_certifications
+         WHERE session_id = $1 AND lower(employee_username) = lower($2)
+           AND manager_verdict IS NULL
+         LIMIT 1`,
+      [sessionId, username]
+    );
+    if (pendingCert.rows.length) {
+      return { success: false, error: '已有待审核的实操提交，请等待审核完成后再提交' };
+    }
+
+    const recentCert = await q(
+      `SELECT id FROM training_certifications
+         WHERE session_id = $1 AND lower(employee_username) = lower($2)
+           AND created_at > NOW() - INTERVAL '30 seconds'
+         LIMIT 1`,
+      [sessionId, username]
+    );
+    if (recentCert.rows.length) {
+      return { success: false, error: '提交过于频繁，请 30 秒后再试' };
+    }
+
     const rubric = session.step_rubric;
     const topicTitle = session.title || '';
     const primary = fileList[0];

@@ -914,15 +914,30 @@
             if (!box || !empty || !currentUser) return;
             const data = HRMS_STORE.ensure();
             const myUsername = String(currentUser.username || currentUser.id || '').trim().toLowerCase();
+            const authHeaders = { 'Authorization': 'Bearer ' + ((typeof HRMS_STORE !== 'undefined' && HRMS_STORE && typeof HRMS_STORE.token === 'function') ? HRMS_STORE.token() : String(localStorage.getItem('HRMS_API_TOKEN') || localStorage.getItem('hrms_token') || '').trim()) };
+
+            // 公告必须从服务端拉 readBy，换设备登录时 localStorage 里的 HRMS_STORE 不能作为已读依据
+            let announcementSource = Array.isArray(data.announcements) ? data.announcements : [];
+            try {
+                const ar = await fetch('/api/announcements', { headers: authHeaders, cache: 'no-store' });
+                if (ar.ok) {
+                    const aj = await ar.json();
+                    if (Array.isArray(aj.items)) {
+                        announcementSource = aj.items;
+                        try {
+                            const localData = HRMS_STORE.ensure();
+                            localData.announcements = aj.items;
+                            HRMS_STORE.set(localData);
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+            } catch (e) { /* ignore */ }
 
             // 从 API 获取 DB 中的公司通知（V2 Agent 直接写入 hrms_user_notifications 表）
             let dbNotifs = [];
             try {
-                const token = (typeof HRMS_STORE !== 'undefined' && HRMS_STORE && typeof HRMS_STORE.token === 'function')
-                    ? HRMS_STORE.token()
-                    : String(localStorage.getItem('HRMS_API_TOKEN') || localStorage.getItem('hrms_token') || '').trim();
                 const r = await fetch('/api/hrms-notifications/me?limit=100', {
-                    headers: { 'Authorization': 'Bearer ' + token },
+                    headers: authHeaders,
                     cache: 'no-store'
                 });
                 if (r.ok) {
@@ -955,7 +970,7 @@
                     id: String(n.id || '')
                 }));
 
-            const anns = (Array.isArray(data.announcements) ? data.announcements : [])
+            const anns = announcementSource
                 .filter(a => {
                     if (!a) return false;
                     const scope = a.scope || { type: 'all' };
@@ -982,29 +997,19 @@
                 return String(b?.createdAt || '').localeCompare(String(a?.createdAt || ''));
             });
 
-            // 强制确认队列：覆盖"公司通知"面板里的全部内容——管理员发布的公告 + 系统自动通知
-            // （培训任务指派、审批结果、系统告警等），只对"强制确认上线之后"产生的新消息生效，
-            // 之前已存在的历史消息不会突然弹窗骚扰所有员工。
-            // 公告的已读状态走服务端 readBy；系统通知走服务端 read_at（localStorage 仅作乐观缓存）。
-            const sysAckKey = 'hrms_acked_sys_notifs_' + myUsername;
-            let ackedSysIds = [];
-            try { ackedSysIds = JSON.parse(localStorage.getItem(sysAckKey) || '[]'); } catch (e) { ackedSysIds = []; }
-            // 注意：系统通知(db_notification)的createdAt来自后端timestamptz自定义解析，格式是
-            // "2026-06-26 19:22:24"(空格分隔，不带T/Z)；公告(announcement)的createdAt是前端
-            // hrmsNowISO()生成的标准ISO("...T...Z")。两种格式直接用字符串>=比较会踩坑——空格
-            // 的ASCII码比'T'小，导致"空格格式"的时间永远被判定"小于"ISO格式的cutoff，不管
-            // 实际多新都会被排除在强制队列外。这里统一转成Date时间戳再比较，规避格式差异。
+            // 强制确认队列：仅以服务端已读状态为准（read_at / announcements.readBy），
+            // 禁止用 localStorage 判定——换设备登录时必须不再重复弹已读通知。
             const forceAckCutoffMs = new Date(ANNOUNCEMENT_FORCE_ACK_SINCE).getTime();
             const ackQueue = visible.filter(a => {
                 if (!a) return false;
                 const createdMs = new Date(a?.createdAt || 0).getTime();
                 if (!Number.isFinite(createdMs) || createdMs < forceAckCutoffMs) return false;
-                if (a._src === 'announcement') return !(a?.readBy && a.readBy[myUsername]);
+                if (a._src === 'announcement') {
+                    const rb = a?.readBy && typeof a.readBy === 'object' ? a.readBy : {};
+                    return !rb[myUsername];
+                }
                 if (a._src === 'db_notification') {
-                    if (a.readAt) return false;
-                    const nid = String(a.id || a._id || '');
-                    if (ackedSysIds.includes(nid) || ackedSysIds.includes(String(a._id || ''))) return false;
-                    return true;
+                    return !(a.readAt != null && String(a.readAt).trim() !== '');
                 }
                 return false;
             });
@@ -1056,7 +1061,9 @@
                 const annLevel = String(a?.level || 'normal');
                 const isUrgent = annLevel === 'urgent';
                 const isImportant = annLevel === 'important' || isUrgent;
-                const isRead = isSys ? true : !!(a?.readBy && a.readBy[myUsername]);
+                const isRead = isSys
+                    ? !!(a.readAt != null && String(a.readAt).trim() !== '')
+                    : !!(a?.readBy && a.readBy[myUsername]);
 
                 const __ic = n => '<svg class="pfi"><use href="#pfi-' + n + '"/></svg>';
                 let typeIcon = __ic(isSys ? 'bell' : 'mega');
@@ -1217,24 +1224,11 @@
             const annId = String(a.id || a._id || '');
             const myUsername = String(currentUser?.username || currentUser?.id || '').trim().toLowerCase();
             if (a._src === 'db_notification') {
-                // 系统通知已读必须落服务端 read_at；localStorage 只做乐观缓存，避免 WebView 清缓存后重复弹。
                 const rawId = String(a.id || String(a._id || '').replace(/^db-/, '') || '').trim();
                 try {
                     const ackRes = await HRMS_API.request('/api/hrms-notifications/' + encodeURIComponent(rawId) + '/ack', { method: 'POST' });
+                    a.readAt = ackRes?.read_at || new Date().toISOString();
                     const ackedIds = Array.isArray(ackRes?.acked_ids) ? ackRes.acked_ids.map(String) : [rawId];
-                    try {
-                        const key = 'hrms_acked_sys_notifs_' + myUsername;
-                        let ids = [];
-                        try { ids = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { ids = []; }
-                        for (const id of ackedIds) {
-                            const bare = String(id);
-                            const prefixed = bare.startsWith('db-') ? bare : ('db-' + bare);
-                            if (!ids.includes(bare)) ids.push(bare);
-                            if (!ids.includes(prefixed)) ids.push(prefixed);
-                        }
-                        localStorage.setItem(key, JSON.stringify(ids));
-                    } catch (e) {}
-                    // 同 assignment 的历史提醒已在服务端一并标记，本地队列也要跳过，避免继续弹。
                     if (ackedIds.length > 1) {
                         const ackedSet = new Set(ackedIds.map((x) => String(x)));
                         __ackAnnouncementQueue = __ackAnnouncementQueue.filter((item, idx) => {
@@ -1246,20 +1240,17 @@
                     }
                 } catch (e) {
                     console.warn('ack system notification failed', e);
-                    // 服务端失败时仍写本地，至少本机本会话不再重复；下次登录会再尝试服务端。
-                    try {
-                        const key = 'hrms_acked_sys_notifs_' + myUsername;
-                        let ids = [];
-                        try { ids = JSON.parse(localStorage.getItem(key) || '[]'); } catch (err) { ids = []; }
-                        if (!ids.includes(annId)) ids.push(annId);
-                        if (rawId && !ids.includes(rawId)) ids.push(rawId);
-                        localStorage.setItem(key, JSON.stringify(ids));
-                    } catch (err) {}
+                    showNotification('已读确认失败，请检查网络后重试', 'error');
+                    return;
                 }
             } else {
                 try {
                     await HRMS_API.request('/api/announcements/' + encodeURIComponent(annId) + '/ack', { method: 'POST' });
-                } catch (e) { console.warn('ack announcement failed', e); }
+                } catch (e) {
+                    console.warn('ack announcement failed', e);
+                    showNotification('公告确认失败，请检查网络后重试', 'error');
+                    return;
+                }
                 // 本地同步标记已读：renderProfileNotifications 用的是本地缓存的 data.announcements，
                 // 不写回的话下次重渲染还是查到 readBy 缺失，又被判定成未读重新塞回强制队列，弹窗消不掉。
                 try {
