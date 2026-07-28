@@ -8,6 +8,7 @@
  * - 同比：跟"去年同一个日历区间"比（今日 vs 去年同一天；本周 vs 去年同一周；本月 vs 去年同月）
  */
 import { childLogger } from '../../utils/logger.js';
+import { getTurnoverRate } from '../../hrms-api-tools.js';
 
 const log = childLogger({ domain: 'workspace', handler: 'overview' });
 
@@ -211,6 +212,38 @@ async function storeRankings(pool, tenantId, today, storeFilter) {
   };
 }
 
+/** 门店员工离职率（当月累计）——复用已有的 getTurnoverRate()（server/hrms-api-tools.js），
+ * 不重新实现一套计算逻辑。多门店时逐店查询后汇总（该函数本身按单个 store 计算）。 */
+async function turnoverSummary(pool, tenantId, storeFilter, getTurnoverRate) {
+  if (typeof getTurnoverRate !== 'function') return null;
+  const stores = Array.isArray(storeFilter) && storeFilter.length ? storeFilter : [''];
+  const results = await Promise.all(stores.map((s) => getTurnoverRate(s, 1)));
+  const totalDepartures = results.reduce((s, r) => s + (r?.departures || 0), 0);
+  const totalEmployees = results.reduce((s, r) => s + (r?.totalEmployees || 0), 0);
+  return {
+    departures: totalDepartures,
+    totalEmployees,
+    turnoverRate: totalEmployees > 0 ? Number(((totalDepartures / totalEmployees) * 100).toFixed(1)) : null,
+  };
+}
+
+/** 下属人员绩效/能力/态度/执行力评级总览——直接读 employee_scores 本月记录，
+ * 这张表已经有 execution_rating/attitude_rating/ability_rating（A/B/C/D）+ total_score，
+ * 不是新算的规则。 */
+async function teamPerformanceSummary(pool, tenantId, storeFilter, period) {
+  const params = [tenantId, period];
+  const filter = storeFilterClause(storeFilter, params.length + 1);
+  if (filter.param) params.push(filter.param);
+  const r = await pool.query(
+    `SELECT username, name, store, role, total_score, execution_rating, attitude_rating, ability_rating
+       FROM employee_scores
+      WHERE tenant_id = $1 AND period = $2${filter.sql}
+      ORDER BY total_score DESC NULLS LAST`,
+    params
+  );
+  return r.rows || [];
+}
+
 /**
  * @param {string[]} storeFilter 空数组/undefined = 不限门店（老板）；非空 = 只看这些门店
  *   （hq_manager/营运经理按各自负责的门店范围传入，范围本身由现有 allowed_stores/
@@ -219,12 +252,14 @@ async function storeRankings(pool, tenantId, today, storeFilter) {
 export async function getBossOverview(pool, tenantId, storeFilter = []) {
   const today = shanghaiToday();
   try {
-    const [revenue, operational, rankings] = await Promise.all([
+    const [revenue, operational, rankings, turnover, team] = await Promise.all([
       revenueRollup(pool, tenantId, today, storeFilter),
       operationalMetrics(pool, tenantId, today, storeFilter),
       storeRankings(pool, tenantId, today, storeFilter),
+      turnoverSummary(pool, tenantId, storeFilter, getTurnoverRate),
+      teamPerformanceSummary(pool, tenantId, storeFilter, periodOf(today)),
     ]);
-    return { ok: true, asOf: today, scoped: storeFilter.length > 0, revenue, operational, rankings };
+    return { ok: true, asOf: today, scoped: storeFilter.length > 0, revenue, operational, rankings, turnover, team };
   } catch (e) {
     log.error({ msg: 'boss_overview_failed', err: e?.message || String(e) });
     return { ok: false, error: e?.message || 'server_error' };

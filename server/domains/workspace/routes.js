@@ -4,6 +4,8 @@
 import { childLogger } from '../../utils/logger.js';
 import { getWorkspaceHome, promoteDishToStores } from './service.js';
 import { getBossOverview } from './overview.js';
+import { getMarketingSuggestions } from './marketing-suggestions.js';
+import { getBadReviewFeed } from './bad-review-feed.js';
 
 const log = childLogger({ domain: 'workspace', handler: 'routes' });
 
@@ -56,6 +58,35 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
       res.json(data);
     } catch (e) {
       log.error({ msg: 'workspace_overview_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  app.get('/api/workspace/marketing-suggestions', authRequired, async (req, res) => {
+    const role = String(req.user?.role || '').trim();
+    if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    try {
+      const storeFilter = resolveOverviewStoreFilter(req);
+      const items = await getMarketingSuggestions(pool, tenantId, storeFilter);
+      res.json({ ok: true, items });
+    } catch (e) {
+      log.error({ msg: 'workspace_marketing_suggestions_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  app.get('/api/workspace/bad-reviews', authRequired, async (req, res) => {
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    try {
+      const items = await getBadReviewFeed(pool, tenantId, {
+        store: String(req.query?.store || '').trim(),
+        startDate: String(req.query?.startDate || '').trim(),
+        endDate: String(req.query?.endDate || '').trim(),
+      });
+      res.json({ ok: true, items });
+    } catch (e) {
+      log.error({ msg: 'workspace_bad_reviews_failed', request_id: req.requestId, err: e?.message });
       res.status(500).json({ error: 'server_error' });
     }
   });

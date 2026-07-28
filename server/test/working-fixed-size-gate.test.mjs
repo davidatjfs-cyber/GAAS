@@ -28,11 +28,16 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 目标达成率、客流/客单/桌均/堂食外卖占比/就餐人数分布、营业额/客流/人效门店排名），
  * 老板=admin 不过滤门店，hq_manager 按 allowed_stores 过滤（这次用户澄清：老板/总经理/
  * 总部营运经理共用同一套首页布局，区别只是门店范围）。
+ * 2026-07-28 第六次上调（69710→69917）：按用户要求一次性做完首页剩余7项：
+ * 门店营销活动建议（growth_actions）、离职率（复用 getTurnoverRate）、下属绩效评级总览
+ * （employee_scores）、六大管理神器（内嵌 diagnosis/solutions/:key 方案+下发按钮）、
+ * 门店红绿灯改严格锁定上月、8大AI督导指挥中心（内嵌发布框，不跳转，接 agent-task-board）、
+ * 差评展示（合并 bad_reviews + table_visit_records，可滚动+按门店/日期检索）。
  * 同样通过正规 frontend/src/pages 结构新增，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然
  * 「只减不增」：此后任何改动都不得让总行数超过这个新基线，除非同样是一次经过说明的、
  * 刻意的上调。
  */
-const MAX_LINES = 69710;
+const MAX_LINES = 69917;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

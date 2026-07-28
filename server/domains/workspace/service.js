@@ -36,15 +36,20 @@ export async function getOpenTaskSummaryByStore(pool, tenantId) {
  *
  * 门店全集 = store_ratings 里出现过的店 ∪ master_tasks 里出现过的店（后者覆盖"有任务但还没
  * 被评过级"的新店/数据不全的店，这些店按规则应该显示红——「无评级→红」）。
+ *
+ * 2026-07-28 用户明确要求「显示上个月ABCD门店」——严格锁定上一个自然月，不是"最新一期"
+ * （之前那版如果本月的评级已经算出来了会显示本月，这次改成固定显示上月）。
  */
 export async function getStoreHealthLights(pool, tenantId) {
+  const now = new Date();
+  const lastMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const lastMonthPeriod = `${lastMonthDate.getUTCFullYear()}-${String(lastMonthDate.getUTCMonth() + 1).padStart(2, '0')}`;
   const [ratedRows, taskStoreRows] = await Promise.all([
     pool.query(
-      `SELECT DISTINCT ON (store) store, rating, achievement_rate, period
+      `SELECT store, rating, achievement_rate, period
          FROM store_ratings
-        WHERE tenant_id = $1 AND store IS NOT NULL AND store <> ''
-        ORDER BY store, period DESC`,
-      [tenantId]
+        WHERE tenant_id = $1 AND store IS NOT NULL AND store <> '' AND period = $2`,
+      [tenantId, lastMonthPeriod]
     ),
     pool.query(
       `SELECT DISTINCT store FROM master_tasks

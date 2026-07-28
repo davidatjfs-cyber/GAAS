@@ -69231,6 +69231,12 @@ function wsInjectStyles() {
         '.ws-rank-row{display:flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 0;}' +
         '.ws-rank-row__n{color:var(--ws-ink2);width:14px;}' +
         '.ws-rank-row__store{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+        '.ws-br-filters{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}' +
+        '.ws-br-filters .ws-input{flex:1;min-width:100px;}' +
+        '.ws-br-list{max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;}' +
+        '.ws-br-item{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;padding:10px 12px;}' +
+        '.ws-br-item__meta{font-size:11px;color:var(--ws-ink2);margin-bottom:4px;}' +
+        '.ws-br-item__content{font-size:13px;line-height:1.6;}' +
         '@media (min-width:560px){.ws-quicklinks{grid-template-columns:repeat(4,1fr);} .ws-kpis{grid-template-columns:repeat(4,1fr);}}' +
         '@media (max-width:480px){' +
         '.ws-root{padding:16px 14px calc(20px + env(safe-area-inset-bottom));}' +
@@ -69465,7 +69471,198 @@ function wsRenderOverview(ov) {
         wsRenderStoreRankList('人效排名', rk.byEfficiency, (r) => r.efficiency) +
         '</div>';
 
+    if (ov.turnover) {
+        html += '<div class="ws-section" style="margin-top:14px;"><div class="ws-section__title">门店员工离职率（当月累计）</div>' +
+            '<div class="ws-metrics-grid">' +
+            '<div class="ws-metric"><div class="ws-metric__v">' + (ov.turnover.turnoverRate ?? '—') + '%</div><div class="ws-metric__l">离职率</div></div>' +
+            '<div class="ws-metric"><div class="ws-metric__v">' + ov.turnover.departures + '</div><div class="ws-metric__l">离职人数</div></div>' +
+            '<div class="ws-metric"><div class="ws-metric__v">' + ov.turnover.totalEmployees + '</div><div class="ws-metric__l">在职人数</div></div>' +
+            '</div></div>';
+    }
+
+    if (Array.isArray(ov.team) && ov.team.length) {
+        const teamRows = ov.team.slice(0, 10).map((t) => (
+            '<div class="ws-rank-row"><span class="ws-rank-row__store">' + wsEsc(t.name || t.username) + '（' + wsEsc(t.store || '') + '）</span>' +
+            '<span class="ws-rank-row__val">执行' + wsEsc(t.execution_rating || '-') + ' 态度' + wsEsc(t.attitude_rating || '-') + ' 能力' + wsEsc(t.ability_rating || '-') + '</span></div>'
+        )).join('');
+        html += '<div class="ws-section" style="margin-top:14px;"><div class="ws-section__title">下属绩效评级总览（本月）</div><div class="ws-rank-col">' + teamRows + '</div></div>';
+    }
+
     return html;
+}
+
+// ── 门店营销活动建议（每天5条，线下/线上分类是按 action_type 关键词做的近似分类）──
+async function wsRenderMarketingSuggestions() {
+    const data = await wsFetchJson('/api/workspace/marketing-suggestions');
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (!items.length) return '<div class="ws-empty">近期暂无待执行的营销建议</div>';
+    return items.map((it) => (
+        '<div class="ws-card">' +
+        '<div class="ws-card__tag"><span class="ws-tag">' + (it.channel === 'online' ? '线上' : '线下') + '</span></div>' +
+        '<div class="ws-card__title">' + wsEsc(it.store || '') + ' — ' + wsEsc(it.title || '') + '</div>' +
+        '<div class="ws-card__desc">' + wsEsc(it.detail || '') + '</div>' +
+        '</div>'
+    )).join('');
+}
+
+// ── 差评展示：可滚动、按门店/日期检索 ──
+async function wsLoadBadReviews(container) {
+    const store = container.querySelector('#ws-br-store')?.value || '';
+    const start = container.querySelector('#ws-br-start')?.value || '';
+    const end = container.querySelector('#ws-br-end')?.value || '';
+    const qs = new URLSearchParams();
+    if (store) qs.set('store', store);
+    if (start) qs.set('startDate', start);
+    if (end) qs.set('endDate', end);
+    const data = await wsFetchJson('/api/workspace/bad-reviews?' + qs.toString());
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const list = container.querySelector('#ws-br-list');
+    if (!list) return;
+    if (!items.length) { list.innerHTML = '<div class="ws-empty">没有符合条件的差评记录</div>'; return; }
+    list.innerHTML = items.map((it) => (
+        '<div class="ws-br-item">' +
+        '<div class="ws-br-item__meta">' + wsEsc(it.store || '') + ' · ' + wsEsc(String(it.date || '').slice(0, 10)) + (it.time ? ' ' + wsEsc(String(it.time).slice(0, 5)) : '') + ' · ' + wsEsc(it.source) + '</div>' +
+        '<div class="ws-br-item__content">' + wsEsc(it.content || '（无文字内容）') + '</div>' +
+        '</div>'
+    )).join('');
+}
+
+function wsRenderBadReviewSection(allStores) {
+    const storeOptions = '<option value="">全部门店</option>' + (allStores || []).map((s) => '<option value="' + wsEsc(s) + '">' + wsEsc(s) + '</option>').join('');
+    return (
+        '<div class="ws-br-filters">' +
+        '<select class="ws-input" id="ws-br-store">' + storeOptions + '</select>' +
+        '<input type="date" class="ws-input" id="ws-br-start" title="起始日期">' +
+        '<input type="date" class="ws-input" id="ws-br-end" title="结束日期">' +
+        '<button type="button" class="ws-btn ws-btn--primary" id="ws-br-search">检索</button>' +
+        '</div>' +
+        '<div class="ws-br-list" id="ws-br-list"><div class="ws-empty">加载中...</div></div>'
+    );
+}
+
+// ── 六大管理神器：点击 → 选门店 → 内嵌任务拆分（接现有 /api/diagnosis/solutions/:key），
+// 不跳转到经营诊断整页，只嵌入这一个问题的方案卡片。
+const WS_SIX_TOOLS = [
+    { key: 'revenue', label: '提升营收' },
+    { key: 'staff_efficiency', label: '提升员工效率' },
+    { key: 'kitchen_standard', label: '提升出品标准' },
+    { key: 'menu_optimization', label: '提升菜品质量' },
+    { key: 'gross_margin', label: '提升菜品毛利' },
+    { key: 'training_replication', label: '复制培养人才' },
+];
+
+function wsRenderSixTools(allStores) {
+    const buttons = WS_SIX_TOOLS.map((t) => '<button type="button" class="ws-btn" data-ws-six-tool="' + t.key + '">' + wsEsc(t.label) + '</button>').join('');
+    const storeOptions = (allStores || []).map((s) => '<option value="' + wsEsc(s) + '">' + wsEsc(s) + '</option>').join('');
+    return (
+        '<div class="ws-quicklinks" style="grid-template-columns:repeat(3,1fr);">' + buttons + '</div>' +
+        '<div id="ws-six-tool-panel" style="display:none;margin-top:12px;">' +
+        '<select class="ws-input" id="ws-six-tool-store" style="margin-bottom:10px;width:100%;">' + storeOptions + '</select>' +
+        '<div id="ws-six-tool-body"><div class="ws-empty">选择门店后加载方案</div></div>' +
+        '</div>'
+    );
+}
+
+async function wsLoadSixToolPlan(key, store) {
+    const body = document.getElementById('ws-six-tool-body');
+    if (!body || !store) return;
+    body.innerHTML = '<div class="ws-loading">加载中...</div>';
+    const data = await wsFetchJson('/api/diagnosis/solutions/' + encodeURIComponent(key) + '?store=' + encodeURIComponent(store));
+    if (!data || data.ok === false) { body.innerHTML = '<div class="ws-empty">加载失败</div>'; return; }
+    const tasks = Array.isArray(data.tasks) ? data.tasks : (Array.isArray(data.round?.tasks) ? data.round.tasks : []);
+    if (!tasks.length) { body.innerHTML = '<div class="ws-empty">该门店暂无该方案的任务拆分（可能还没有开放轮次）</div>'; return; }
+    body.innerHTML = tasks.map((t, i) => (
+        '<div class="ws-card"><div class="ws-card__title">' + wsEsc(t.title || '') + '</div>' +
+        '<div class="ws-card__desc">' + wsEsc(t.description || t.why || '') + (t.assignee_role ? '（责任岗位：' + wsEsc(t.assignee_role) + '）' : '') + '</div>' +
+        '<div class="ws-card__acts"><button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-dispatch-six="' + i + '">下发任务</button></div>' +
+        '<div class="ws-action-result"></div></div>'
+    )).join('');
+    body.querySelectorAll('[data-ws-dispatch-six]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const idx = Number(btn.getAttribute('data-ws-dispatch-six'));
+            const t = tasks[idx];
+            const card = btn.closest('.ws-card');
+            // 下发走跟「8大AI督导指挥中心」同一个接口（agent-task-board create）——这样下发出去
+            // 的任务在老板/总部工作台的"今天该处理的事"（全租户范围，见 getNotableOpenTasks）里
+            // 都能看到，覆盖用户要求的"下级链条全覆盖"；门店/店长视角能否看到取决于该接口内部
+            // 怎么解析责任人，这一层解析逻辑在 agents-service-v2，这次没有改。
+            wsExecuteAction(card, {
+                confirmText: '将「' + (t.title || '') + '」下发给 ' + store + '，确认？',
+                endpoint: '/api/agent-task-board/tasks',
+                body: { content: (t.title || '') + '（' + store + '）：' + (t.description || t.why || '') },
+                onSuccess: (cardEl) => {
+                    cardEl.querySelector('.ws-action-result').innerHTML = '<span class="ws-ok">✅ 已下发</span>';
+                },
+            });
+        });
+    });
+}
+
+function wsBindSixToolsEvents(root) {
+    root.querySelectorAll('[data-ws-six-tool]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const panel = document.getElementById('ws-six-tool-panel');
+            const storeSel = document.getElementById('ws-six-tool-store');
+            if (panel) panel.style.display = '';
+            panel.setAttribute('data-active-key', btn.getAttribute('data-ws-six-tool'));
+            wsLoadSixToolPlan(btn.getAttribute('data-ws-six-tool'), storeSel?.value || '');
+        });
+    });
+    const storeSel = root.querySelector('#ws-six-tool-store');
+    if (storeSel) {
+        storeSel.addEventListener('change', () => {
+            const panel = document.getElementById('ws-six-tool-panel');
+            const key = panel?.getAttribute('data-active-key');
+            if (key) wsLoadSixToolPlan(key, storeSel.value);
+        });
+    }
+}
+
+// ── 8大AI督导指挥中心：内嵌发布框+按钮，状态栏直接同步 agent-task-board 的记录状态，
+// 不跳转到 Agent任务指挥中心整页。
+async function wsLoadAgentBoardList(container) {
+    const list = container.querySelector('#ws-atb-list');
+    if (!list) return;
+    const data = await wsFetchJson('/api/agent-task-board/tasks?limit=8');
+    const items = Array.isArray(data?.tasks) ? data.tasks : (Array.isArray(data?.items) ? data.items : []);
+    if (!items.length) { list.innerHTML = '<div class="ws-empty">暂无记录</div>'; return; }
+    list.innerHTML = items.map((it) => (
+        '<div class="ws-rank-row"><span class="ws-rank-row__store">' + wsEsc(it.title || it.content || '') + '</span>' +
+        '<span class="ws-tag">' + wsEsc(it.status || '') + '</span></div>'
+    )).join('');
+}
+
+function wsRenderAgentCommandCenter() {
+    return (
+        '<div class="ws-promote-form" style="flex-direction:column;">' +
+        '<textarea class="ws-input" id="ws-atb-content" rows="3" placeholder="例：洪潮的卫生太差了，请督促门店2周内整改完成，每次提交前厅、后厨、洗手间照片。"></textarea>' +
+        '<button type="button" class="ws-btn ws-btn--primary" id="ws-atb-publish">发布任务</button>' +
+        '</div>' +
+        '<div id="ws-atb-list" style="margin-top:10px;"><div class="ws-empty">加载中...</div></div>'
+    );
+}
+
+function wsBindAgentCommandCenterEvents(root) {
+    wsLoadAgentBoardList(root);
+    const btn = root.querySelector('#ws-atb-publish');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+        const content = root.querySelector('#ws-atb-content')?.value?.trim();
+        if (!content) { showNotification('请输入任务内容', 'warning'); return; }
+        btn.disabled = true; btn.textContent = '发布中...';
+        try {
+            const r = await fetch('/api/agent-task-board/tasks', { method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ content }) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+            root.querySelector('#ws-atb-content').value = '';
+            showNotification('任务已发布', 'success');
+            wsLoadAgentBoardList(root);
+        } catch (e) {
+            showNotification('发布失败：' + (e?.message || e), 'error');
+        } finally {
+            btn.disabled = false; btn.textContent = '发布任务';
+        }
+    });
 }
 
 // ── AI 洞察卡（仅老板）：接 /api/ontology/closed-loop-report 真实数据，不是写死文字。
@@ -69514,10 +69711,11 @@ async function wsRenderInsightsSection() {
 // ── 老板 / 总部 工作台 ──
 async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const [home, insightsHtml, overview] = await Promise.all([
+    const [home, insightsHtml, overview, marketingHtml] = await Promise.all([
         wsFetchJson('/api/workspace/home?scope=notable'),
         persona === 'boss' ? wsRenderInsightsSection() : Promise.resolve(''),
         wsFetchJson('/api/workspace/overview'),
+        wsRenderMarketingSuggestions(),
     ]);
     const allStores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
     const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
@@ -69529,7 +69727,8 @@ async function wsRenderBossOrHq(root, persona) {
     if (persona === 'boss') {
         html += '<div class="ws-section"><div class="ws-section__title">AI 洞察（近30天）</div>' + insightsHtml + '</div>';
     }
-    html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯</div>' + wsRenderStoreLights(home?.storeLights) + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">门店营销活动建议</div>' + marketingHtml + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯（上月）</div>' + wsRenderStoreLights(home?.storeLights) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">今天该处理的事</div>';
     if (tasksList.length) {
         html += tasksList.slice(0, 6).map(wsRenderTaskCard).join('');
@@ -69537,16 +69736,24 @@ async function wsRenderBossOrHq(root, persona) {
         html += '<div class="ws-empty">暂无指派给你的开放任务</div>';
     }
     html += '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">六大管理神器</div>' + wsRenderSixTools(allStores) + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">8大AI督导指挥中心</div>' + wsRenderAgentCommandCenter() + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(allStores) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">批量推广</div>' + wsRenderPromoteDishWidget(allStores) + '</div>';
     root.innerHTML = html;
     wsBindTaskCardEvents(root);
     wsBindPromoteDishEvents(root);
+    wsBindSixToolsEvents(root);
+    wsBindAgentCommandCenterEvents(root);
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const el = document.getElementById(btn.getAttribute('data-ws-toggle'));
             if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
         });
     });
+    const brSearchBtn = root.querySelector('#ws-br-search');
+    if (brSearchBtn) brSearchBtn.addEventListener('click', () => wsLoadBadReviews(root));
+    wsLoadBadReviews(root);
 }
 
 // ── 门店工作台 ──
