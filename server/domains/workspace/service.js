@@ -120,6 +120,27 @@ export async function getUnreadInboxCount(pool, tenantId, username) {
  * 老板/总部驾驶舱首屏聚合：门店红绿灯 + 未读数。三条洞察卡由 ontology closed-loop-report 单独提供
  * （该查询已聚合 5 张表，前端另行按 5 分钟缓存调用，不在这里重复拼装避免首屏变慢）。
  */
+// 待确认的任务反馈：责任人已提交证据(status='pending_review')、等发起人/admin/hq_manager
+// 确认的任务列表——目前只有 admin/hq_manager 能发起(promote-dish 限定这两个角色)，所以
+// admin/hq_manager 看全部待确认；其他角色只看自己作为发起人(source_data.promoted_by)的。
+export async function getPendingConfirmations(pool, tenantId, username, role) {
+  const isHQ = ['admin', 'hq_manager'].includes(String(role || ''));
+  const params = [tenantId];
+  let whereExtra = '';
+  if (!isHQ) {
+    params.push(username);
+    whereExtra = ` AND source_data->>'promoted_by' = $${params.length}`;
+  }
+  const r = await pool.query(
+    `SELECT task_id, title, detail, store, assignee_username, response_text, response_images, responded_at, source_data
+       FROM master_tasks
+      WHERE tenant_id = $1 AND status = 'pending_review'${whereExtra}
+      ORDER BY responded_at DESC LIMIT 30`,
+    params
+  );
+  return r.rows || [];
+}
+
 export async function getWorkspaceHome(pool, tenantId, username, { scope = 'mine' } = {}) {
   const [storeSummary, storeLights, tasks, unread] = await Promise.all([
     getOpenTaskSummaryByStore(pool, tenantId),
@@ -186,4 +207,79 @@ export async function promoteDishToStores(pool, { dishName, sourceStore, targetS
   }
   log.info({ msg: 'workspace_dish_promotion_created', dish, stores: stores.length, actor: actorUsername, unassigned: unassignedStores.length });
   return { ok: true, taskIds: createdTaskIds, storeCount: stores.length, unassignedStores };
+}
+
+// 2026-07-29 新增：真正的任务完成闭环。之前"确认完成/批准"按钮统一调
+// /api/agent-task-board/tasks/:id/review——那个接口 GAAS 代理层和 agents-service-v2 两边都
+// 限定 admin/hq_manager/hr_manager 才能调，任务真正的责任人（出品经理/店长等）点击必定 403，
+// 而且就算放行了，"点一下就算完成"本身也不构成闭环——用户明确要求：责任人必须提交实际证据
+// （比如被培训人员签字文件/出品经理承诺书），完成动作要能回传给发起人，出问题才能追溯。
+// 这里走 master_tasks 已有的 response_text/response_images/responded_at（责任人提交证据）→
+// review_result/resolved_at（发起人或admin确认）这条现成状态机，不是新建一套。
+export async function respondToTask(pool, tenantId, { taskId, username, responseText, responseImages }) {
+  const text = String(responseText || '').trim();
+  const images = Array.isArray(responseImages) ? responseImages.filter(Boolean) : [];
+  if (!text && !images.length) return { ok: false, status: 400, error: 'missing_evidence' };
+  const r = await pool.query(
+    `UPDATE master_tasks SET status = 'pending_review', response_text = $1, response_images = $2::jsonb,
+            responded_at = NOW(), updated_at = NOW()
+       WHERE task_id = $3 AND tenant_id = $4 AND assignee_username = $5
+         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
+       RETURNING task_id, store, title, source_data`,
+    [text, JSON.stringify(images), taskId, tenantId, username]
+  );
+  if (!r.rows.length) return { ok: false, status: 404, error: 'task_not_found_or_not_yours' };
+  const task = r.rows[0];
+  const dispatcher = String(task.source_data?.promoted_by || task.source_data?.dispatched_by || '').trim();
+  if (dispatcher) {
+    await pool.query(
+      `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+       VALUES ($1, $2, $3, 'task_response_submitted', $4::jsonb, $5)`,
+      [
+        dispatcher,
+        '任务已提交完成反馈，待确认',
+        `${username} 已提交「${task.title}」的完成反馈${text ? '：' + text : ''}${images.length ? '（含' + images.length + '个证据文件）' : ''}，请查看并确认。`,
+        JSON.stringify({ task_id: taskId, store: task.store }),
+        tenantId,
+      ]
+    );
+  }
+  return { ok: true, taskId };
+}
+
+export async function confirmTaskResponse(pool, tenantId, { taskId, reviewerUsername, reviewerRole, decision, note }) {
+  const taskR = await pool.query(
+    `SELECT source_data, assignee_username, title, store FROM master_tasks WHERE task_id = $1 AND tenant_id = $2`,
+    [taskId, tenantId]
+  );
+  if (!taskR.rows.length) return { ok: false, status: 404, error: 'task_not_found' };
+  const task = taskR.rows[0];
+  const dispatcher = String(task.source_data?.promoted_by || task.source_data?.dispatched_by || '').trim();
+  const canReview = ['admin', 'hq_manager'].includes(String(reviewerRole || '')) || (dispatcher && dispatcher === reviewerUsername);
+  if (!canReview) return { ok: false, status: 403, error: 'forbidden' };
+  // 打回不能设成 'rejected'——那是 getMyOpenTasks 的排除状态，任务会从责任人的"任务"列表里
+  // 消失，等于打回了却没人跟进。打回改回 'pending_dispatch'（原始活跃状态），责任人重新看到
+  // 这条任务、收到打回原因的通知，能重新提交，不是把任务憋死。
+  const isReject = decision === 'reject';
+  const r = await pool.query(
+    `UPDATE master_tasks SET status = $1, review_result = $2::jsonb, resolved_at = $3, updated_at = NOW()
+       WHERE task_id = $4 AND tenant_id = $5 AND status = 'pending_review'
+       RETURNING task_id, assignee_username`,
+    [isReject ? 'pending_dispatch' : 'resolved', JSON.stringify({ decision: isReject ? 'reject' : 'approved', note: String(note || '').trim(), reviewer: reviewerUsername }), isReject ? null : new Date().toISOString(), taskId, tenantId]
+  );
+  if (!r.rows.length) return { ok: false, status: 404, error: 'task_not_pending_review' };
+  if (isReject && task.assignee_username) {
+    await pool.query(
+      `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+       VALUES ($1, $2, $3, 'task_response_rejected', $4::jsonb, $5)`,
+      [
+        task.assignee_username,
+        '任务反馈被打回，需重新提交',
+        `「${task.title}」的完成反馈未通过确认${note ? '：' + note : ''}，请重新提交。`,
+        JSON.stringify({ task_id: taskId, store: task.store }),
+        tenantId,
+      ]
+    );
+  }
+  return { ok: true, taskId, status: isReject ? 'rejected' : 'resolved' };
 }

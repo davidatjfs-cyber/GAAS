@@ -69369,6 +69369,15 @@ async function wsFetchGrowthSolutionTasks() {
 // 不要"查看进展/查看任务详情"这个跳Agent任务板的按钮——这是原则问题，不是样式偏好，
 // 加了 hideProgressLink 参数专门给这个场景用，其它地方（门店工作台自己的任务列表）
 // 调用时不传这个参数，行为不变。
+// 2026-07-29：用户指出两个真问题——① "确认完成/批准"点了会直接调
+// /api/agent-task-board/tasks/:id/review，那个接口 GAAS 代理层和 agents-service-v2 两边都限定
+// admin/hq_manager/hr_manager 才能调，真正的责任人（出品经理/店长等）点击必定 403；
+// ② 就算能点通，"点一下就算完成"本身也不构成闭环——用户明确要求责任人必须提交实际证据
+// （文字说明或图片，比如被培训人员签字文件），完成动作要能回传给发起人确认，出问题才能追溯。
+// 现在改成：master_tasks 来源的任务点"提交完成证据"展开一个文字+图片上传的小表单，调
+// /api/workspace/tasks/:id/respond（不再碰 agent-task-board），状态进入 pending_review；
+// 发起人在"待确认的任务反馈"区块里确认/打回。growth_solution 来源的任务不受影响，继续用
+// 它自己的 /complete 接口（那条线本来就没有这个 403 问题）。
 function wsRenderTaskCard(task, opts) {
     const hideProgressLink = !!(opts && opts.hideProgressLink);
     const sevTag = task.severity === 'high' ? '<span class="ws-tag ws-tag--red">需拍板</span>' : '<span class="ws-tag">待处理</span>';
@@ -69379,21 +69388,84 @@ function wsRenderTaskCard(task, opts) {
     const titleText = String(task.title || '');
     const showStoreSeparately = task.store && !titleText.startsWith(String(task.store));
     const isGrowthTask = task.source === 'growth_solution';
+    const isPendingReview = task.status === 'pending_review';
+    let actsHtml;
+    if (isGrowthTask) {
+        actsHtml = '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>';
+    } else if (isPendingReview) {
+        actsHtml = '<span class="ws-tag">已提交，等待确认</span>';
+    } else {
+        actsHtml = '<button type="button" class="ws-btn ws-btn--primary" data-ws-respond-toggle="' + wsEsc(task.task_id) + '">提交完成证据</button>';
+    }
     return (
         '<div class="ws-card" data-task-id="' + wsEsc(task.task_id) + '" data-task-category="' + wsEsc(task.category || '') + '" data-task-source="' + wsEsc(task.source || 'master') + '" data-round-id="' + wsEsc(task.round_id || '') + '">' +
         '<div class="ws-card__tag">' + sevTag + (task.store ? ' <span class="ws-tag">' + wsEsc(task.store) + '</span>' : '') + (isGrowthTask ? ' <span class="ws-tag">经营诊断</span>' : '') + '</div>' +
         '<div class="ws-card__title">' + (showStoreSeparately ? wsEsc(task.store) + ' — ' : '') + wsEsc(titleText) + '</div>' +
         '<div class="ws-card__desc">' + wsEsc(task.detail || '') + '</div>' +
         '<div class="ws-card__acts">' +
-        '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>' +
+        actsHtml +
         (hideProgressLink || isGrowthTask ? '' : '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>') +
         '</div>' +
+        (isGrowthTask || isPendingReview ? '' :
+            '<div class="ws-respond-form" id="ws-respond-form-' + wsEsc(task.task_id) + '" style="display:none;margin-top:8px;">' +
+            '<textarea class="ws-input" rows="2" placeholder="完成说明（如：已完成XX人培训，附签字文件）" data-ws-respond-text></textarea>' +
+            '<input type="file" multiple accept="image/*,.pdf" data-ws-respond-files style="margin-top:6px;">' +
+            '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" style="margin-top:6px;" data-ws-respond-submit="' + wsEsc(task.task_id) + '">提交</button>' +
+            '</div>'
+        ) +
         '<div class="ws-action-result"></div>' +
         '</div>'
     );
 }
 
+// 责任人提交完成证据：先传文件(复用现成的 /api/uploads/ops-task-evidence，任何登录用户都能传，
+// 不需要再建一个上传接口)，拿到URL数组后连同文字说明一起提交给 /api/workspace/tasks/:id/respond。
+async function wsSubmitTaskResponse(taskId, cardEl) {
+    const form = cardEl.querySelector('#ws-respond-form-' + taskId);
+    const text = form?.querySelector('[data-ws-respond-text]')?.value?.trim() || '';
+    const fileInput = form?.querySelector('[data-ws-respond-files]');
+    const files = fileInput?.files ? Array.from(fileInput.files) : [];
+    if (!text && !files.length) { showNotification('请填写完成说明或上传证据文件', 'warning'); return; }
+    const resultEl = cardEl.querySelector('.ws-action-result');
+    resultEl.innerHTML = '<div class="ws-loading">提交中...</div>';
+    try {
+        let responseImages = [];
+        if (files.length) {
+            const fd = new FormData();
+            files.forEach((f) => fd.append('files', f));
+            const upR = await fetch('/api/uploads/ops-task-evidence', { method: 'POST', headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('hrms_token') || '') }, body: fd });
+            const upD = await upR.json().catch(() => ({}));
+            if (!upR.ok) throw new Error(upD?.error || '文件上传失败');
+            responseImages = Array.isArray(upD.urls) ? upD.urls : [];
+        }
+        const r = await fetch('/api/workspace/tasks/' + encodeURIComponent(taskId) + '/respond', {
+            method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ responseText: text, responseImages }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+        resultEl.innerHTML = '<span class="ws-ok">✅ 已提交，等待发起人确认</span>';
+        if (form) form.style.display = 'none';
+        const acts = cardEl.querySelector('.ws-card__acts');
+        if (acts) acts.innerHTML = '<span class="ws-tag">已提交，等待确认</span>';
+    } catch (e) {
+        resultEl.innerHTML = '<span class="ws-err">提交失败：' + wsEsc(e?.message || e) + '</span>';
+    }
+}
+
 function wsBindTaskCardEvents(root) {
+    root.querySelectorAll('[data-ws-respond-toggle]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const taskId = btn.getAttribute('data-ws-respond-toggle');
+            const form = root.querySelector('#ws-respond-form-' + taskId);
+            if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
+        });
+    });
+    root.querySelectorAll('[data-ws-respond-submit]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const taskId = btn.getAttribute('data-ws-respond-submit');
+            wsSubmitTaskResponse(taskId, btn.closest('.ws-card'));
+        });
+    });
     root.querySelectorAll('[data-ws-approve]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const card = btn.closest('.ws-card');
@@ -70062,24 +70134,86 @@ function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
     renderPane('task');
 }
 
+// 待确认的任务反馈：责任人提交完成证据(pending_review)后，发起人在这里确认/打回，
+// 任务闭环的最后一环——没有这一步，责任人点了提交跟没点没区别，发起人根本看不到反馈。
+function wsRenderPendingConfirmations(items) {
+    if (!Array.isArray(items) || !items.length) return '';
+    const cards = items.map((it) => (
+        '<div class="ws-card" data-confirm-task-id="' + wsEsc(it.task_id) + '">' +
+        '<div class="ws-card__title">' + wsEsc(it.title || '') + (it.store ? ' · ' + wsEsc(it.store) : '') + '</div>' +
+        '<div class="ws-card__desc">👤 ' + wsEsc(it.assignee_username || '') + ' 提交：' + wsEsc(it.response_text || '（无文字说明）') + '</div>' +
+        (Array.isArray(it.response_images) && it.response_images.length
+            ? '<div class="ws-card__desc">' + it.response_images.map((u) => '<a href="' + wsEsc(u) + '" target="_blank" class="ws-btn ws-btn--link">证据文件</a>').join(' ') + '</div>'
+            : '') +
+        '<div class="ws-card__acts">' +
+        '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-confirm-approve="' + wsEsc(it.task_id) + '">确认通过</button>' +
+        '<button type="button" class="ws-btn" data-ws-confirm-reject="' + wsEsc(it.task_id) + '">打回重做</button>' +
+        '</div>' +
+        '<div class="ws-action-result"></div>' +
+        '</div>'
+    )).join('');
+    return '<div class="ws-section"><div class="ws-section__title">待确认的任务反馈（' + items.length + '）</div>' + cards + '</div>';
+}
+
+async function wsSubmitConfirmDecision(taskId, decision, cardEl) {
+    const resultEl = cardEl.querySelector('.ws-action-result');
+    if (decision === 'reject') {
+        const note = window.prompt('请说明打回原因（会通知责任人重新提交）');
+        if (note == null) return;
+        await wsConfirmDecisionRequest(taskId, 'reject', note, cardEl, resultEl);
+    } else {
+        const ok = await hrmsConfirm({ title: '确认通过', message: '确认该任务反馈已核实通过？', okText: '确认通过' });
+        if (!ok) return;
+        await wsConfirmDecisionRequest(taskId, 'approve', '', cardEl, resultEl);
+    }
+}
+
+async function wsConfirmDecisionRequest(taskId, decision, note, cardEl, resultEl) {
+    resultEl.innerHTML = '<div class="ws-loading">处理中...</div>';
+    try {
+        const r = await fetch('/api/workspace/tasks/' + encodeURIComponent(taskId) + '/confirm-response', {
+            method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ decision, note }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+        resultEl.innerHTML = decision === 'reject' ? '<span class="ws-ok">✅ 已打回，责任人会收到通知重新提交</span>' : '<span class="ws-ok">✅ 已确认通过</span>';
+        const acts = cardEl.querySelector('.ws-card__acts');
+        if (acts) acts.style.display = 'none';
+    } catch (e) {
+        resultEl.innerHTML = '<span class="ws-err">操作失败：' + wsEsc(e?.message || e) + '</span>';
+    }
+}
+
+function wsBindPendingConfirmationsEvents(root) {
+    root.querySelectorAll('[data-ws-confirm-approve]').forEach((btn) => {
+        btn.addEventListener('click', () => wsSubmitConfirmDecision(btn.getAttribute('data-ws-confirm-approve'), 'approve', btn.closest('.ws-card')));
+    });
+    root.querySelectorAll('[data-ws-confirm-reject]').forEach((btn) => {
+        btn.addEventListener('click', () => wsSubmitConfirmDecision(btn.getAttribute('data-ws-confirm-reject'), 'reject', btn.closest('.ws-card')));
+    });
+}
+
 async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const [home, overview, marketingHtml, approvalsData, growthTasks] = await Promise.all([
+    const [home, overview, marketingHtml, approvalsData, growthTasks, pendingConfirmData] = await Promise.all([
         wsFetchJson('/api/workspace/home?scope=notable'),
         wsFetchJson('/api/workspace/overview'),
         wsRenderMarketingSuggestions(),
         wsFetchJson('/api/approvals?view=assigned&status=pending&limit=50'),
         wsFetchGrowthSolutionTasks(),
+        wsFetchJson('/api/workspace/pending-confirmations'),
     ]);
     const allStores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
     const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
     const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
+    const pendingConfirmations = Array.isArray(pendingConfirmData?.items) ? pendingConfirmData.items : [];
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
     const roleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + '·级别' + (currentUser?.level || '暂无');
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
     html += '<div class="ws-sub">' + wsEsc(currentUser?.name || '') + (roleLabel ? '（' + wsEsc(roleLabel) + '）' : '') + ' · 未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
+    html += wsRenderPendingConfirmations(pendingConfirmations);
     html += '<div class="ws-section"><div class="ws-section__title">今日经营总览</div>' + wsRenderOverview(overview) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(allStores) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">门店营销活动建议</div>' + marketingHtml + '</div>';
@@ -70089,6 +70223,7 @@ async function wsRenderBossOrHq(root, persona) {
     html += '<div class="ws-section"><div class="ws-section__title">8大AI督导指挥中心</div>' + wsRenderAgentCommandCenter() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
+    wsBindPendingConfirmationsEvents(root);
     wsBindSixToolsEvents(root);
     wsBindCustomDirectorEvents(root);
     wsBindAgentCommandCenterEvents(root);

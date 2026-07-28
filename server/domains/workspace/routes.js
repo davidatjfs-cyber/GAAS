@@ -2,7 +2,7 @@
  * 角色工作台 HTTP 路由：只读聚合 + 批量推广菜品这一个薄写路径。
  */
 import { childLogger } from '../../utils/logger.js';
-import { getWorkspaceHome, promoteDishToStores } from './service.js';
+import { getWorkspaceHome, promoteDishToStores, respondToTask, confirmTaskResponse, getPendingConfirmations } from './service.js';
 import { getBossOverview } from './overview.js';
 import { getMarketingSuggestions } from './marketing-suggestions.js';
 import { getBadReviewFeed } from './bad-review-feed.js';
@@ -118,6 +118,59 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
       res.json(result);
     } catch (e) {
       log.error({ msg: 'workspace_promote_dish_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  // 2026-07-29 新增：master_tasks 责任人自己提交完成证据（之前"确认完成/批准"按钮统一走
+  // agent-task-board 的 admin-only /review，真正的责任人点击必定 403，而且"点一下就算完成"
+  // 本身也不构成闭环——这里要求责任人必须提交文字说明或证据图片，不是空点。
+  app.post('/api/workspace/tasks/:taskId/respond', authRequired, async (req, res) => {
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    const username = String(req.user?.username || '').trim();
+    if (!username) return res.status(400).json({ error: 'missing_username' });
+    try {
+      const result = await respondToTask(pool, tenantId, {
+        taskId: req.params.taskId,
+        username,
+        responseText: req.body?.responseText,
+        responseImages: req.body?.responseImages,
+      });
+      if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+      res.json(result);
+    } catch (e) {
+      log.error({ msg: 'workspace_task_respond_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  app.get('/api/workspace/pending-confirmations', authRequired, async (req, res) => {
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    try {
+      const items = await getPendingConfirmations(pool, tenantId, req.user?.username, req.user?.role);
+      res.json({ ok: true, items });
+    } catch (e) {
+      log.error({ msg: 'workspace_pending_confirmations_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  // 发起人（或 admin/hq_manager）确认责任人提交的证据，任务才真正闭环；打回则责任人重新收到
+  // 任务+打回原因，不是直接判死。
+  app.post('/api/workspace/tasks/:taskId/confirm-response', authRequired, async (req, res) => {
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    try {
+      const result = await confirmTaskResponse(pool, tenantId, {
+        taskId: req.params.taskId,
+        reviewerUsername: req.user?.username,
+        reviewerRole: req.user?.role,
+        decision: req.body?.decision,
+        note: req.body?.note,
+      });
+      if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+      res.json(result);
+    } catch (e) {
+      log.error({ msg: 'workspace_task_confirm_response_failed', request_id: req.requestId, err: e?.message });
       res.status(500).json({ error: 'server_error' });
     }
   });

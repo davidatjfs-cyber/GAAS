@@ -85,8 +85,18 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 任意metric_key)只是之前没查到，改成动态读该店真实配置的目标列表，如实说明只有目标值、
  * 暂无自动核算实际值的机制；③ GET /api/tenant-settings/kpi-targets 之前只有
  * admin/hq_manager/hr_manager 能读，店长查自己门店会403，加了门店角色查自己门店的只读放行。
+ * 2026-07-29 第十六次上调（70355→70490）：修复任务完成闭环——① "确认完成/批准"按钮之前
+ * 统一调 /api/agent-task-board/tasks/:id/review，那个接口 GAAS 代理层和 agents-service-v2
+ * 两边都限定 admin/hq_manager/hr_manager 才能调，真正的责任人（出品经理/店长等）点击必定403；
+ * ② 用户明确指出"点一下就算完成"不构成闭环，责任人必须提交实际证据（文字说明/图片如培训
+ * 签字文件），完成动作要能回传给发起人确认。现在 master_tasks 来源的任务改成走
+ * /api/workspace/tasks/:id/respond(责任人提交证据，状态进 pending_review) →
+ * /api/workspace/tasks/:id/confirm-response(发起人/admin/hq_manager 确认通过或打回，打回会
+ * 通知责任人重新提交)，新增"待确认的任务反馈"板块给发起人用；growth_solution 来源任务不受
+ * 影响，继续用它自己的 /complete 接口。证据文件上传复用现成的 /api/uploads/ops-task-evidence，
+ * 没有新建上传接口。
  */
-const MAX_LINES = 70355;
+const MAX_LINES = 70490;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
