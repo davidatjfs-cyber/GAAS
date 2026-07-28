@@ -70076,7 +70076,7 @@ async function wsRenderBossOrHq(root, persona) {
     const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
-    const roleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '');
+    const roleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + (currentUser?.level ? '·' + currentUser.level : '');
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
     html += '<div class="ws-sub">' + wsEsc(currentUser?.name || '') + (roleLabel ? '（' + wsEsc(roleLabel) + '）' : '') + ' · 未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
@@ -70107,7 +70107,7 @@ async function wsRenderStore(root) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
     const [home, growthTasks] = await Promise.all([wsFetchJson('/api/workspace/home'), wsFetchGrowthSolutionTasks()]);
     const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
-    const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '');
+    const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + (currentUser?.level ? '·' + currentUser.level : '');
     let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
     html += '<div class="ws-section"><div class="ws-section__title">我的待办（' + tasksList.length + '）</div>';
     if (tasksList.length) {
