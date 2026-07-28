@@ -102,10 +102,21 @@ function wsEsc(s) {
 
 async function wsFetchJson(url) {
     try {
+        if (typeof HRMS_API !== 'undefined' && HRMS_API && typeof HRMS_API.request === 'function') {
+            return await HRMS_API.request(url, { method: 'GET' });
+        }
         const r = await fetch(url, { headers: wsAuthHeaders() });
-        if (!r.ok) return null;
-        return await r.json();
-    } catch (e) { return null; }
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            const err = new Error(String(data?.message || data?.error || ('HTTP ' + r.status)));
+            err.status = r.status;
+            err.data = data;
+            throw err;
+        }
+        return data;
+    } catch (e) {
+        return { __error: String(e?.message || e), status: e?.status || 0 };
+    }
 }
 
 // ── 门店红绿灯（老板/总部共用）──
@@ -227,6 +238,10 @@ function wsBindPromoteDishEvents(root) {
 async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
     const home = await wsFetchJson('/api/workspace/home?scope=notable');
+    if (!home || home.__error) {
+        root.innerHTML = '<div class="ws-header"><h2>工作台</h2></div><div class="ws-empty ws-err">加载失败：' + wsEsc(home?.__error || '服务暂不可用，请刷新或重新登录') + '</div>';
+        return;
+    }
     const allStores = (home?.storeSummary || []).map((s) => s.store).filter(Boolean);
     const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
 
@@ -251,6 +266,10 @@ async function wsRenderBossOrHq(root, persona) {
 async function wsRenderStore(root) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
     const home = await wsFetchJson('/api/workspace/home');
+    if (!home || home.__error) {
+        root.innerHTML = '<div class="ws-header"><h2>今日工作台</h2></div><div class="ws-empty ws-err">加载失败：' + wsEsc(home?.__error || '服务暂不可用，请刷新或重新登录') + '</div>';
+        return;
+    }
     const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
     let html = '<div class="ws-header"><h2>今日工作台</h2></div>';
     html += '<div class="ws-section"><div class="ws-section__title">我的待办（' + tasksList.length + '）</div>';
