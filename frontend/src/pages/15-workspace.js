@@ -920,7 +920,7 @@ async function wsRenderBossOrHq(root, persona) {
     const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
-    const roleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + (currentUser?.level ? '·' + currentUser.level : '');
+    const roleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + '·级别' + (currentUser?.level || '暂无');
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
     html += '<div class="ws-sub">' + wsEsc(currentUser?.name || '') + (roleLabel ? '（' + wsEsc(roleLabel) + '）' : '') + ' · 未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
@@ -950,7 +950,15 @@ async function wsRenderBossOrHq(root, persona) {
 // 营业日目标(已有，来自 revenueRollup)+毛利目标(daily_reports actual_margin/target_margin
 // 月平均)——用户明确说"大众点评/企微等其他目标"也要有，但查了库里没有这两个的目标配置
 // (revenue_targets/margin_targets 只有营收和毛利)，如实展示"暂无数据源"，不编数字。
-function wsRenderTargetTracking(ov) {
+// 2026-07-28 重做：用户指出"其他目标"（大众点评/企微等）每个租户配置差异很大，不能写死
+// 固定字段，只能从系统真实的目标设置里读——查到系统确实有一套通用KPI目标机制
+// (kpi_targets表，任意metric_key，门店/品牌/公司三级，"任务和绩效"页面管理)，之前漏看了。
+// 现在改成：营业日目标/毛利目标(daily_reports有实际值，能算达成率)继续用已有的真实计算；
+// 其余目标改成动态读 GET /api/tenant-settings/kpi-targets?store=X 拿这家店实际配置了哪些
+// metric_key，逐条展示目标值——但如实说明：这套通用目标机制目前只存了"目标值"，没有对应
+// 的"任意指标自动核算实际值"的机制(那是另一套工程量，calculateKpiAchievement只覆盖agent
+// 质量类固定指标，不含大众点评/企微这类业务指标)，所以这里只能展示目标、不能展示实际达成率。
+async function wsRenderTargetTracking(ov, store) {
     const t = ov?.revenue?.target || {};
     const theo = t.theoreticalAchievementRate;
     const actual = t.actualAchievementRate;
@@ -960,7 +968,15 @@ function wsRenderTargetTracking(ov) {
         wsStatRow('营业日目标', '¥' + wsFmtMoney(t.targetRevenue), '理论达成 ' + (theo ?? '—') + '% · 实际达成 ' + (actual ?? '—') + '% · ' + status) +
         wsStatRow('毛利目标（本月日均）', (m.targetMargin != null ? m.targetMargin + '%' : '—'), '实际 ' + (m.actualMargin != null ? m.actualMargin + '%' : '—')) +
         '</div>';
-    html += '<div class="ws-empty">大众点评/企微等其他目标：系统目前没有对应的目标配置数据源，暂无法展示</div>';
+    const kpiData = store ? await wsFetchJson('/api/tenant-settings/kpi-targets?store=' + encodeURIComponent(store)) : null;
+    const kpiTargets = Array.isArray(kpiData?.targets) ? kpiData.targets : [];
+    if (kpiTargets.length) {
+        html += '<div class="ws-stat-list" style="margin-top:10px;">' +
+            kpiTargets.map((k) => wsStatRow(wsEsc(k.metric_key), (k.target_value ?? '—') + (k.unit ? wsEsc(k.unit) : ''), '实际值：系统暂未接入该指标的自动核算，需人工核对')).join('') +
+            '</div>';
+    } else {
+        html += '<div class="ws-empty">本店在"任务和绩效"目标设置里暂未配置其他目标（如大众点评/企微）</div>';
+    }
     return html;
 }
 
@@ -1012,12 +1028,12 @@ async function wsRenderStore(root) {
     const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
     const pendingApprovals = [];
     const storeLight = (Array.isArray(home?.storeLights) ? home.storeLights : []).find((s) => s.store === store);
-    const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + (currentUser?.level ? '·' + currentUser.level : '') + (storeLight?.rating ? '·门店' + storeLight.rating : '');
+    const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + '·级别' + (currentUser?.level || '暂无') + '·门店级别' + (storeLight?.rating || '暂无');
     let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
     html += '<div class="ws-section"><div class="ws-section__title">今日经营总览</div>' + wsRenderOverview(overview) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(store ? [store] : []) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">当月目标追踪</div>' + wsRenderTargetTracking(overview) + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">当月目标追踪</div><div id="ws-target-tracking"><div class="ws-loading">加载中...</div></div></div>';
     html += '<div class="ws-section"><div class="ws-section__title">智能备货</div>' + wsRenderSmartRestock() + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">员工绩效</div>' + wsRenderEmployeePerformanceList(overview?.team) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">员工培训看板</div><div id="ws-training-board"><div class="ws-loading">加载中...</div></div></div>';
@@ -1035,6 +1051,7 @@ async function wsRenderStore(root) {
     if (store) {
         wsRenderTrainingBoard(store).then((h) => { const el = document.getElementById('ws-training-board'); if (el) el.innerHTML = h; });
         wsRenderKitchenBoard(store).then((h) => { const el = document.getElementById('ws-kitchen-board'); if (el) el.innerHTML = h; });
+        wsRenderTargetTracking(overview, store).then((h) => { const el = document.getElementById('ws-target-tracking'); if (el) el.innerHTML = h; });
     }
 }
 

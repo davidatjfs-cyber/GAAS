@@ -79,8 +79,14 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * /api/training/dashboard新增?store=可选门店过滤，店长看本店全员而不是只看自己派发的)+
  * 厨房打点看板(复用现有/api/kitchen/dashboard真实打点数据)+员工级别/门店级别(级别已在
  * header，门店级别从storeLights里找自己门店的rating一起显示)。
+ * 2026-07-28 第十五次上调（70338→70355）：三处真实修复——① 头部级别/门店级别之前数据为空时
+ * 直接不显示，看着像没做，改成始终显示"级别暂无"/"门店级别暂无"占位；② 当月目标追踪的
+ * "其他目标"之前写死"没有数据源"，核实后发现系统确实有通用KPI目标机制(kpi_targets表，
+ * 任意metric_key)只是之前没查到，改成动态读该店真实配置的目标列表，如实说明只有目标值、
+ * 暂无自动核算实际值的机制；③ GET /api/tenant-settings/kpi-targets 之前只有
+ * admin/hq_manager/hr_manager 能读，店长查自己门店会403，加了门店角色查自己门店的只读放行。
  */
-const MAX_LINES = 70338;
+const MAX_LINES = 70355;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
