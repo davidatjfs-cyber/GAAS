@@ -69225,18 +69225,32 @@ function wsInjectStyles() {
         '.ws-metric__v{font-family:"Songti SC","STSong",serif;font-size:16px;font-weight:600;}' +
         '.ws-metric__l{font-size:10.5px;color:var(--ws-ink2);margin-top:3px;}' +
         '.ws-metric__s{font-size:10px;color:var(--ws-ink2);margin-top:2px;}' +
+        '.ws-stat-list{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:12px;padding:4px 14px;margin-bottom:12px;}' +
+        '.ws-stat-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--ws-line);font-size:12.5px;}' +
+        '.ws-stat-row:last-child{border-bottom:none;}' +
+        '.ws-stat-row__l{color:var(--ws-ink2);flex:none;}' +
+        '.ws-stat-row__v{font-weight:600;text-align:right;font-family:"Songti SC","STSong",serif;}' +
+        '.ws-stat-row__s{display:block;font-size:10.5px;color:var(--ws-ink2);font-weight:500;font-family:inherit;margin-top:2px;}' +
         '.ws-rank-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}' +
         '.ws-rank-col{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;padding:10px;}' +
         '.ws-rank-col__title{font-size:11.5px;font-weight:600;margin-bottom:6px;}' +
         '.ws-rank-row{display:flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 0;}' +
         '.ws-rank-row__n{color:var(--ws-ink2);width:14px;}' +
         '.ws-rank-row__store{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
-        '.ws-br-filters{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}' +
-        '.ws-br-filters .ws-input{flex:1;min-width:100px;}' +
-        '.ws-br-list{max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;}' +
-        '.ws-br-item{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;padding:10px 12px;}' +
+        '.ws-br-filters{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;padding-bottom:2px;}' +
+        '.ws-br-chip{flex:none;border:1px solid var(--ws-line);background:transparent;color:var(--ws-ink2);border-radius:999px;padding:6px 12px;font-size:11.5px;font-family:inherit;cursor:pointer;white-space:nowrap;}' +
+        '.ws-br-chip.active{background:var(--ws-accent-soft);color:var(--ws-ink);border-color:var(--ws-accent);}' +
+        '.ws-br-feed{max-height:420px;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:8px;scroll-snap-type:y proximity;}' +
+        '.ws-br-item{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;padding:10px 12px;scroll-snap-align:start;}' +
         '.ws-br-item__meta{font-size:11px;color:var(--ws-ink2);margin-bottom:4px;}' +
         '.ws-br-item__content{font-size:13px;line-height:1.6;}' +
+        '.ws-lights-list{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--ws-line);}' +
+        '.ws-light-row{display:flex;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid var(--ws-line);}' +
+        '.ws-light-dot{width:8px;height:8px;border-radius:50%;flex:none;}' +
+        '.ws-light-dot--green{background:var(--ws-up);} .ws-light-dot--yellow{background:var(--ws-warn);} .ws-light-dot--red{background:var(--ws-down);}' +
+        '.ws-light-row__store{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+        '.ws-light-row__rate{font-size:12px;color:var(--ws-ink2);font-family:"Songti SC","STSong",serif;}' +
+        '.ws-more-toggle{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;color:var(--ws-ink2);font-size:12.5px;cursor:pointer;border-top:1px solid var(--ws-line);margin-top:6px;}' +
         '@media (min-width:560px){.ws-quicklinks{grid-template-columns:repeat(4,1fr);} .ws-kpis{grid-template-columns:repeat(4,1fr);}}' +
         '@media (max-width:480px){' +
         '.ws-root{padding:16px 14px calc(20px + env(safe-area-inset-bottom));}' +
@@ -69290,19 +69304,29 @@ async function wsFetchJson(url) {
 
 // ── 门店红绿灯（老板/总部共用）── 依据：store_ratings 营收达成率评级（A/B→绿 C→黄 D/无评级→红），
 // 不是任务数量——这只是营收单一维度，不含差评/人效/任务积压。
+// 2026-07-28 重做：原来用门店名首字显示成一个方块，同品牌门店首字撞车根本认不出是哪家店——
+// 改成整行列出「颜色点 + 完整门店名 + 达成率」，按红→黄→绿排序，红灯排最前面最先看到。
 function wsRenderStoreLights(storeLights) {
     if (!Array.isArray(storeLights) || !storeLights.length) {
         return '<div class="ws-empty">暂无门店评级数据</div>';
     }
-    const dots = storeLights.slice(0, 12).map((s) => {
-        const cls = 'ws-light--' + s.light;
-        const rateTxt = s.achievement_rate != null ? '营收达成率 ' + s.achievement_rate + '%' : '本月尚无评级（缺目标营收）';
-        return '<div class="ws-light ' + cls + '" title="' + wsEsc(s.store) + '：' + wsEsc(rateTxt) + '（' + wsEsc(s.rating || '无评级') + '）">' + wsEsc(String(s.store || '').slice(0, 1)) + '</div>';
+    const order = { red: 0, yellow: 1, green: 2 };
+    const sorted = [...storeLights].sort((a, b) => (order[a.light] ?? 3) - (order[b.light] ?? 3));
+    const rows = sorted.map((s) => {
+        const rateTxt = s.achievement_rate != null ? s.achievement_rate + '%' : '无评级';
+        return (
+            '<div class="ws-light-row">' +
+            '<span class="ws-light-dot ws-light-dot--' + s.light + '"></span>' +
+            '<span class="ws-light-row__store">' + wsEsc(s.store) + '</span>' +
+            '<span class="ws-light-row__rate">' + wsEsc(rateTxt) + '</span>' +
+            '<span class="ws-tag">' + wsEsc(s.rating || '—') + '</span>' +
+            '</div>'
+        );
     }).join('');
     const green = storeLights.filter((s) => s.light === 'green').length;
     const yellow = storeLights.filter((s) => s.light === 'yellow').length;
     const red = storeLights.filter((s) => s.light === 'red').length;
-    return '<div class="ws-lights">' + dots + '</div><div class="ws-legend">' + green + ' 绿 · ' + yellow + ' 黄 · ' + red + ' 红（仅营收达成率，不含差评/人效）</div>';
+    return '<div class="ws-lights-list">' + rows + '</div><div class="ws-legend">' + green + ' 绿 · ' + yellow + ' 黄 · ' + red + ' 红（仅营收达成率，不含差评/人效）</div>';
 }
 
 // 六大增长方案问题分类（server/domains/growth-solutions/problems.js 的 PROBLEMS 键）——
@@ -69365,7 +69389,166 @@ function wsBindTaskCardEvents(root) {
     });
 }
 
-// ── 批量推广菜品：真实一键执行，绑定新建的 /api/workspace/promote-dish ──
+
+// ── 今日经营总览（老板/总经理/总部营运经理共用同一套布局，区别只是后端按 allowed_stores 定的范围）──
+function wsFmtPct(v) {
+    if (v == null) return '—';
+    const sign = v > 0 ? '▲' : v < 0 ? '▼' : '';
+    const cls = v > 0 ? 'ws-up' : v < 0 ? 'ws-down' : '';
+    return '<span class="' + cls + '">' + sign + Math.abs(v) + '%</span>';
+}
+function wsFmtMoney(v) {
+    if (v == null) return '—';
+    return (Number(v) / 10000).toFixed(1) + '万';
+}
+
+function wsRenderOverviewKpi(label, block) {
+    return (
+        '<div class="ws-kpi">' +
+        '<div class="ws-kpi__label">' + wsEsc(label) + '</div>' +
+        '<div class="ws-kpi__value">¥' + wsFmtMoney(block.revenue) + '</div>' +
+        '<div class="ws-kpi__sub">环比 ' + wsFmtPct(block.mom) + ' · 同比 ' + wsFmtPct(block.yoy) + '</div>' +
+        '</div>'
+    );
+}
+
+function wsRenderStoreRankList(title, rows, fmt) {
+    if (!rows || !rows.length) return '<div class="ws-rank-col"><div class="ws-rank-col__title">' + wsEsc(title) + '</div><div class="ws-empty">暂无数据</div></div>';
+    const items = rows.slice(0, 5).map((r, i) => '<div class="ws-rank-row"><span class="ws-rank-row__n">' + (i + 1) + '</span><span class="ws-rank-row__store">' + wsEsc(r.store) + '</span><span class="ws-rank-row__val">' + fmt(r) + '</span></div>').join('');
+    return '<div class="ws-rank-col"><div class="ws-rank-col__title">' + wsEsc(title) + '</div>' + items + '</div>';
+}
+
+function wsStatRow(label, value, sub) {
+    return '<div class="ws-stat-row"><span class="ws-stat-row__l">' + wsEsc(label) + '</span><span class="ws-stat-row__v">' + value + (sub ? '<span class="ws-stat-row__s">' + sub + '</span>' : '') + '</span></div>';
+}
+
+// 2026-07-28 重排：原来营收/客流/人数分布各占一整块 grid，视觉很碎——改成
+// KPI 卡只保留营收今日/本周/本月/目标这4个最重要的数字，其余全部用紧凑的 label-value
+// 单行列表（wsStatRow）呈现，一屏能看完，不再是一堆方块。
+function wsRenderOverview(ov) {
+    if (!ov || ov.ok === false) return '<div class="ws-empty">经营数据加载失败</div>';
+    const rev = ov.revenue || {};
+    const op = ov.operational || {};
+    const rk = ov.rankings || {};
+    const p = op.partySizeSharePct || {};
+    let html = '<div class="ws-kpis">';
+    html += wsRenderOverviewKpi('今日营收', rev.today || {});
+    html += wsRenderOverviewKpi('本周营收', rev.week || {});
+    html += wsRenderOverviewKpi('本月营收', rev.month || {});
+    html += '<div class="ws-kpi"><div class="ws-kpi__label">实收目标</div><div class="ws-kpi__value">¥' + wsFmtMoney(rev.target?.targetRevenue) + '</div>' +
+        '<div class="ws-kpi__sub">理论 ' + (rev.target?.theoreticalAchievementRate ?? '—') + '% · 实际 ' + (rev.target?.actualAchievementRate ?? '—') + '%</div></div>';
+    html += '</div>';
+
+    html += '<div class="ws-stat-list">' +
+        wsStatRow('客流量（本月累计）', op.traffic ?? '—', '环比' + wsFmtPct(op.trafficMom) + ' 同比' + wsFmtPct(op.trafficYoy)) +
+        wsStatRow('客单价', '¥' + (op.avgSpendPerGuest ?? '—')) +
+        wsStatRow('桌均', '¥' + (op.avgSpendPerTable ?? '—')) +
+        wsStatRow('堂食 / 外卖占比', (op.dineInSharePct ?? '—') + '% / ' + (op.deliverySharePct ?? '—') + '%') +
+        wsStatRow('就餐人数分布', '1人' + (p.p1 ?? '—') + '% · 2人' + (p.p2 ?? '—') + '% · 3-4人' + (p.p3to4 ?? '—') + '% · 5-6人' + (p.p5to6 ?? '—') + '% · 6人以上' + (p.p6plus ?? '—') + '%') +
+        '</div>';
+
+    html += '<div class="ws-rank-grid">' +
+        wsRenderStoreRankList('营业额排名', rk.byRevenue, (r) => '¥' + wsFmtMoney(r.revenue)) +
+        wsRenderStoreRankList('客流量排名', rk.byTraffic, (r) => r.traffic) +
+        wsRenderStoreRankList('人效排名', rk.byEfficiency, (r) => r.efficiency) +
+        '</div>';
+
+    if (ov.turnover) {
+        html += '<div class="ws-stat-list" style="margin-top:10px;">' +
+            wsStatRow('本月离职率', (ov.turnover.turnoverRate ?? '—') + '%', '离职' + ov.turnover.departures + '人 · 在职' + ov.turnover.totalEmployees + '人') +
+            '</div>';
+    }
+
+    if (Array.isArray(ov.team) && ov.team.length) {
+        const teamRows = ov.team.slice(0, 10).map((t) => (
+            '<div class="ws-rank-row"><span class="ws-rank-row__store">' + wsEsc(t.name || t.username) + '（' + wsEsc(t.store || '') + '）</span>' +
+            '<span class="ws-rank-row__val">执' + wsEsc(t.execution_rating || '-') + ' 态' + wsEsc(t.attitude_rating || '-') + ' 能' + wsEsc(t.ability_rating || '-') + '</span></div>'
+        )).join('');
+        html += '<div class="ws-rank-col" style="margin-top:10px;"><div class="ws-rank-col__title">下属绩效评级（本月）</div>' + teamRows + '</div>';
+    }
+
+    return html;
+}
+
+// ── 门店营销活动建议（每天5条，线下/线上分类是按 action_type 关键词做的近似分类）──
+async function wsRenderMarketingSuggestions() {
+    const data = await wsFetchJson('/api/workspace/marketing-suggestions');
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (!items.length) return '<div class="ws-empty">近期暂无待执行的营销建议</div>';
+    return items.map((it) => (
+        '<div class="ws-card">' +
+        '<div class="ws-card__tag"><span class="ws-tag">' + (it.channel === 'online' ? '线上' : '线下') + '</span></div>' +
+        '<div class="ws-card__title">' + wsEsc(it.store || '') + ' — ' + wsEsc(it.title || '') + '</div>' +
+        '<div class="ws-card__desc">' + wsEsc(it.detail || '') + '</div>' +
+        '</div>'
+    )).join('');
+}
+
+// ── 差评展示：用户明确要求"滚动浏览"而不是搜索表单——去掉输入框式检索，改成
+// 门店下拉 + 日期范围用快捷筛选chip（近7天/近30天/全部），点了直接刷新下面的滚动列表，
+// 不需要单独点"检索"按钮。
+function wsDateRangeFromChip(days) {
+    if (!days) return { start: '', end: '' };
+    const end = shanghaiTodayYmd();
+    const start = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
+    return { start, end };
+}
+function shanghaiTodayYmd() {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+}
+
+async function wsLoadBadReviews(container) {
+    const store = container.querySelector('#ws-br-store')?.value || '';
+    const activeChip = container.querySelector('.ws-br-chip.active');
+    const days = activeChip ? Number(activeChip.getAttribute('data-days') || 0) : 30;
+    const { start, end } = wsDateRangeFromChip(days);
+    const qs = new URLSearchParams();
+    if (store) qs.set('store', store);
+    if (start) qs.set('startDate', start);
+    if (end) qs.set('endDate', end);
+    const list = container.querySelector('#ws-br-feed');
+    if (list) list.innerHTML = '<div class="ws-loading">加载中...</div>';
+    const data = await wsFetchJson('/api/workspace/bad-reviews?' + qs.toString());
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (!list) return;
+    if (!items.length) { list.innerHTML = '<div class="ws-empty">这个范围内没有差评记录</div>'; return; }
+    list.innerHTML = items.map((it) => (
+        '<div class="ws-br-item">' +
+        '<div class="ws-br-item__meta">' + wsEsc(it.store || '') + ' · ' + wsEsc(String(it.date || '').slice(0, 10)) + (it.time ? ' ' + wsEsc(String(it.time).slice(0, 5)) : '') + ' · ' + wsEsc(it.source) + '</div>' +
+        '<div class="ws-br-item__content">' + wsEsc(it.content || '（无文字内容）') + '</div>' +
+        '</div>'
+    )).join('');
+}
+
+function wsRenderBadReviewSection(allStores) {
+    const storeOptions = '<option value="">全部门店</option>' + (allStores || []).map((s) => '<option value="' + wsEsc(s) + '">' + wsEsc(s) + '</option>').join('');
+    return (
+        '<div class="ws-br-filters">' +
+        '<button type="button" class="ws-br-chip" data-days="7">近7天</button>' +
+        '<button type="button" class="ws-br-chip active" data-days="30">近30天</button>' +
+        '<button type="button" class="ws-br-chip" data-days="0">全部</button>' +
+        '<select class="ws-input" id="ws-br-store" style="flex:none;">' + storeOptions + '</select>' +
+        '</div>' +
+        '<div class="ws-br-feed" id="ws-br-feed"><div class="ws-empty">加载中...</div></div>'
+    );
+}
+
+function wsBindBadReviewEvents(root) {
+    root.querySelectorAll('.ws-br-chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+            root.querySelectorAll('.ws-br-chip').forEach((c) => c.classList.remove('active'));
+            chip.classList.add('active');
+            wsLoadBadReviews(root);
+        });
+    });
+    const storeSel = root.querySelector('#ws-br-store');
+    if (storeSel) storeSel.addEventListener('change', () => wsLoadBadReviews(root));
+}
+
+// ── 批量推广菜品：真实一键执行，绑定 /api/workspace/promote-dish。
+// 2026-07-28：按用户要求从驾驶舱页面上移除了（不在9项计划内，容易跟计划内容混淆），
+// 但代码保留不删——用户要先研究这个功能具体是做什么的，再决定要不要放回页面/放到哪。
+// 这两个函数目前没有任何调用点，是有意保留的未使用代码，不要当成遗留垃圾清掉。
 function wsRenderPromoteDishWidget(allStores) {
     const storeOptions = (allStores || []).map((s) => '<option value="' + wsEsc(s) + '">' + wsEsc(s) + '</option>').join('');
     return (
@@ -69405,139 +69588,6 @@ function wsBindPromoteDishEvents(root) {
             },
         });
     });
-}
-
-// ── 今日经营总览（老板/总经理/总部营运经理共用同一套布局，区别只是后端按 allowed_stores 定的范围）──
-function wsFmtPct(v) {
-    if (v == null) return '—';
-    const sign = v > 0 ? '▲' : v < 0 ? '▼' : '';
-    const cls = v > 0 ? 'ws-up' : v < 0 ? 'ws-down' : '';
-    return '<span class="' + cls + '">' + sign + Math.abs(v) + '%</span>';
-}
-function wsFmtMoney(v) {
-    if (v == null) return '—';
-    return (Number(v) / 10000).toFixed(1) + '万';
-}
-
-function wsRenderOverviewKpi(label, block) {
-    return (
-        '<div class="ws-kpi">' +
-        '<div class="ws-kpi__label">' + wsEsc(label) + '</div>' +
-        '<div class="ws-kpi__value">¥' + wsFmtMoney(block.revenue) + '</div>' +
-        '<div class="ws-kpi__sub">环比 ' + wsFmtPct(block.mom) + ' · 同比 ' + wsFmtPct(block.yoy) + '</div>' +
-        '</div>'
-    );
-}
-
-function wsRenderStoreRankList(title, rows, fmt) {
-    if (!rows || !rows.length) return '<div class="ws-rank-col"><div class="ws-rank-col__title">' + wsEsc(title) + '</div><div class="ws-empty">暂无数据</div></div>';
-    const items = rows.slice(0, 5).map((r, i) => '<div class="ws-rank-row"><span class="ws-rank-row__n">' + (i + 1) + '</span><span class="ws-rank-row__store">' + wsEsc(r.store) + '</span><span class="ws-rank-row__val">' + fmt(r) + '</span></div>').join('');
-    return '<div class="ws-rank-col"><div class="ws-rank-col__title">' + wsEsc(title) + '</div>' + items + '</div>';
-}
-
-function wsRenderOverview(ov) {
-    if (!ov || ov.ok === false) return '<div class="ws-empty">经营数据加载失败</div>';
-    const rev = ov.revenue || {};
-    const op = ov.operational || {};
-    const rk = ov.rankings || {};
-    const p = op.partySizeSharePct || {};
-    let html = '<div class="ws-kpis">';
-    html += wsRenderOverviewKpi('今日营收', rev.today || {});
-    html += wsRenderOverviewKpi('本周营收', rev.week || {});
-    html += wsRenderOverviewKpi('本月营收', rev.month || {});
-    html += '<div class="ws-kpi"><div class="ws-kpi__label">实收目标</div><div class="ws-kpi__value">¥' + wsFmtMoney(rev.target?.targetRevenue) + '</div>' +
-        '<div class="ws-kpi__sub">理论达成 ' + (rev.target?.theoreticalAchievementRate ?? '—') + '% · 实际达成 ' + (rev.target?.actualAchievementRate ?? '—') + '%</div></div>';
-    html += '</div>';
-
-    html += '<div class="ws-metrics-grid">' +
-        '<div class="ws-metric"><div class="ws-metric__v">' + (op.traffic ?? '—') + '</div><div class="ws-metric__l">客流量（本月累计）</div><div class="ws-metric__s">环比' + wsFmtPct(op.trafficMom) + ' 同比' + wsFmtPct(op.trafficYoy) + '</div></div>' +
-        '<div class="ws-metric"><div class="ws-metric__v">¥' + (op.avgSpendPerGuest ?? '—') + '</div><div class="ws-metric__l">客单价</div></div>' +
-        '<div class="ws-metric"><div class="ws-metric__v">¥' + (op.avgSpendPerTable ?? '—') + '</div><div class="ws-metric__l">桌均</div></div>' +
-        '<div class="ws-metric"><div class="ws-metric__v">' + (op.dineInSharePct ?? '—') + '%</div><div class="ws-metric__l">堂食占比</div></div>' +
-        '<div class="ws-metric"><div class="ws-metric__v">' + (op.deliverySharePct ?? '—') + '%</div><div class="ws-metric__l">外卖占比</div></div>' +
-        '</div>';
-
-    html += '<div class="ws-metrics-grid">' +
-        '<div class="ws-metric"><div class="ws-metric__v">' + (p.p1 ?? '—') + '%</div><div class="ws-metric__l">1人</div></div>' +
-        '<div class="ws-metric"><div class="ws-metric__v">' + (p.p2 ?? '—') + '%</div><div class="ws-metric__l">2人</div></div>' +
-        '<div class="ws-metric"><div class="ws-metric__v">' + (p.p3to4 ?? '—') + '%</div><div class="ws-metric__l">3-4人</div></div>' +
-        '<div class="ws-metric"><div class="ws-metric__v">' + (p.p5to6 ?? '—') + '%</div><div class="ws-metric__l">5-6人</div></div>' +
-        '<div class="ws-metric"><div class="ws-metric__v">' + (p.p6plus ?? '—') + '%</div><div class="ws-metric__l">6人以上</div></div>' +
-        '</div>';
-
-    html += '<div class="ws-rank-grid">' +
-        wsRenderStoreRankList('营业额排名', rk.byRevenue, (r) => '¥' + wsFmtMoney(r.revenue)) +
-        wsRenderStoreRankList('客流量排名', rk.byTraffic, (r) => r.traffic) +
-        wsRenderStoreRankList('人效排名', rk.byEfficiency, (r) => r.efficiency) +
-        '</div>';
-
-    if (ov.turnover) {
-        html += '<div class="ws-section" style="margin-top:14px;"><div class="ws-section__title">门店员工离职率（当月累计）</div>' +
-            '<div class="ws-metrics-grid">' +
-            '<div class="ws-metric"><div class="ws-metric__v">' + (ov.turnover.turnoverRate ?? '—') + '%</div><div class="ws-metric__l">离职率</div></div>' +
-            '<div class="ws-metric"><div class="ws-metric__v">' + ov.turnover.departures + '</div><div class="ws-metric__l">离职人数</div></div>' +
-            '<div class="ws-metric"><div class="ws-metric__v">' + ov.turnover.totalEmployees + '</div><div class="ws-metric__l">在职人数</div></div>' +
-            '</div></div>';
-    }
-
-    if (Array.isArray(ov.team) && ov.team.length) {
-        const teamRows = ov.team.slice(0, 10).map((t) => (
-            '<div class="ws-rank-row"><span class="ws-rank-row__store">' + wsEsc(t.name || t.username) + '（' + wsEsc(t.store || '') + '）</span>' +
-            '<span class="ws-rank-row__val">执行' + wsEsc(t.execution_rating || '-') + ' 态度' + wsEsc(t.attitude_rating || '-') + ' 能力' + wsEsc(t.ability_rating || '-') + '</span></div>'
-        )).join('');
-        html += '<div class="ws-section" style="margin-top:14px;"><div class="ws-section__title">下属绩效评级总览（本月）</div><div class="ws-rank-col">' + teamRows + '</div></div>';
-    }
-
-    return html;
-}
-
-// ── 门店营销活动建议（每天5条，线下/线上分类是按 action_type 关键词做的近似分类）──
-async function wsRenderMarketingSuggestions() {
-    const data = await wsFetchJson('/api/workspace/marketing-suggestions');
-    const items = Array.isArray(data?.items) ? data.items : [];
-    if (!items.length) return '<div class="ws-empty">近期暂无待执行的营销建议</div>';
-    return items.map((it) => (
-        '<div class="ws-card">' +
-        '<div class="ws-card__tag"><span class="ws-tag">' + (it.channel === 'online' ? '线上' : '线下') + '</span></div>' +
-        '<div class="ws-card__title">' + wsEsc(it.store || '') + ' — ' + wsEsc(it.title || '') + '</div>' +
-        '<div class="ws-card__desc">' + wsEsc(it.detail || '') + '</div>' +
-        '</div>'
-    )).join('');
-}
-
-// ── 差评展示：可滚动、按门店/日期检索 ──
-async function wsLoadBadReviews(container) {
-    const store = container.querySelector('#ws-br-store')?.value || '';
-    const start = container.querySelector('#ws-br-start')?.value || '';
-    const end = container.querySelector('#ws-br-end')?.value || '';
-    const qs = new URLSearchParams();
-    if (store) qs.set('store', store);
-    if (start) qs.set('startDate', start);
-    if (end) qs.set('endDate', end);
-    const data = await wsFetchJson('/api/workspace/bad-reviews?' + qs.toString());
-    const items = Array.isArray(data?.items) ? data.items : [];
-    const list = container.querySelector('#ws-br-list');
-    if (!list) return;
-    if (!items.length) { list.innerHTML = '<div class="ws-empty">没有符合条件的差评记录</div>'; return; }
-    list.innerHTML = items.map((it) => (
-        '<div class="ws-br-item">' +
-        '<div class="ws-br-item__meta">' + wsEsc(it.store || '') + ' · ' + wsEsc(String(it.date || '').slice(0, 10)) + (it.time ? ' ' + wsEsc(String(it.time).slice(0, 5)) : '') + ' · ' + wsEsc(it.source) + '</div>' +
-        '<div class="ws-br-item__content">' + wsEsc(it.content || '（无文字内容）') + '</div>' +
-        '</div>'
-    )).join('');
-}
-
-function wsRenderBadReviewSection(allStores) {
-    const storeOptions = '<option value="">全部门店</option>' + (allStores || []).map((s) => '<option value="' + wsEsc(s) + '">' + wsEsc(s) + '</option>').join('');
-    return (
-        '<div class="ws-br-filters">' +
-        '<select class="ws-input" id="ws-br-store">' + storeOptions + '</select>' +
-        '<input type="date" class="ws-input" id="ws-br-start" title="起始日期">' +
-        '<input type="date" class="ws-input" id="ws-br-end" title="结束日期">' +
-        '<button type="button" class="ws-btn ws-btn--primary" id="ws-br-search">检索</button>' +
-        '</div>' +
-        '<div class="ws-br-list" id="ws-br-list"><div class="ws-empty">加载中...</div></div>'
-    );
 }
 
 // ── 六大管理神器：点击 → 选门店 → 内嵌任务拆分（接现有 /api/diagnosis/solutions/:key），
@@ -69709,11 +69759,12 @@ async function wsRenderInsightsSection() {
 }
 
 // ── 老板 / 总部 工作台 ──
+// 2026-07-28：按用户要求去掉了 AI洞察卡（数据不足前一直显示占位文字，没有实际价值）
+// 和批量推广（真实功能，但不在用户给的9项清单里，混进来显得乱）——只留用户明确要的9项。
 async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const [home, insightsHtml, overview, marketingHtml] = await Promise.all([
+    const [home, overview, marketingHtml] = await Promise.all([
         wsFetchJson('/api/workspace/home?scope=notable'),
-        persona === 'boss' ? wsRenderInsightsSection() : Promise.resolve(''),
         wsFetchJson('/api/workspace/overview'),
         wsRenderMarketingSuggestions(),
     ]);
@@ -69724,9 +69775,6 @@ async function wsRenderBossOrHq(root, persona) {
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
     html += '<div class="ws-sub">未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
     html += '<div class="ws-section"><div class="ws-section__title">今日经营总览</div>' + wsRenderOverview(overview) + '</div>';
-    if (persona === 'boss') {
-        html += '<div class="ws-section"><div class="ws-section__title">AI 洞察（近30天）</div>' + insightsHtml + '</div>';
-    }
     html += '<div class="ws-section"><div class="ws-section__title">门店营销活动建议</div>' + marketingHtml + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯（上月）</div>' + wsRenderStoreLights(home?.storeLights) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">今天该处理的事</div>';
@@ -69739,10 +69787,8 @@ async function wsRenderBossOrHq(root, persona) {
     html += '<div class="ws-section"><div class="ws-section__title">六大管理神器</div>' + wsRenderSixTools(allStores) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">8大AI督导指挥中心</div>' + wsRenderAgentCommandCenter() + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(allStores) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">批量推广</div>' + wsRenderPromoteDishWidget(allStores) + '</div>';
     root.innerHTML = html;
     wsBindTaskCardEvents(root);
-    wsBindPromoteDishEvents(root);
     wsBindSixToolsEvents(root);
     wsBindAgentCommandCenterEvents(root);
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
@@ -69751,8 +69797,7 @@ async function wsRenderBossOrHq(root, persona) {
             if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
         });
     });
-    const brSearchBtn = root.querySelector('#ws-br-search');
-    if (brSearchBtn) brSearchBtn.addEventListener('click', () => wsLoadBadReviews(root));
+    wsBindBadReviewEvents(root);
     wsLoadBadReviews(root);
 }
 
