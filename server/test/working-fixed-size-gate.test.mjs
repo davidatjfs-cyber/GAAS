@@ -65,8 +65,13 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 从未被工作台"任务"列表（只查 master_tasks）读到——用现成的
  * GET /api/diagnosis/solutions/my-tasks 补上这个真实缺口，归一化合并进同一个任务列表，
  * 完成按钮按 source 区分调用 growth_solution_tasks 专用的 complete 接口。
+ * 2026-07-28 第十三次上调（70263→70264）：修复手机端登录看不到"工作台"入口——手机底部
+ * 固定5格导航栏(mobile-nav)只有首页/知识库/考试/更多，没有工作台这一项，桌面端的
+ * wsInjectNavItem 只找 .sidebar nav，手机端压根没有这个选择器命中的元素。在"更多"弹出菜单
+ * (openMobileMoreMenu 的 allItems 列表)第一项加了工作台入口，复用已有的 showPage('workspace')
+ * 分发和已经在白名单里的页面权限判断，不用改动固定导航栏结构。
  */
-const MAX_LINES = 70263;
+const MAX_LINES = 70264;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
