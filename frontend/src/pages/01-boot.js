@@ -1002,19 +1002,7 @@
                 const data = hrmsSafeParseJson(text) || { raw: text };
                 if (!resp.ok) {
                     if (resp.status === 401 && String(data?.error || '') === 'session_replaced') {
-                        if (!window.__HRMS_SESSION_REPLACED_SHOWN) {
-                            window.__HRMS_SESSION_REPLACED_SHOWN = true;
-                            try {
-                                HRMS_API.clearToken();
-                                isLoggedIn = false;
-                                currentUser = null;
-                                const loginEl = document.getElementById('login');
-                                const mainEl = document.getElementById('main-app');
-                                if (loginEl) loginEl.classList.remove('hidden');
-                                if (mainEl) mainEl.classList.add('hidden');
-                                showNotification('您的账号已在其他设备登录，请重新输入密码', 'warning');
-                            } catch (e) {}
-                        }
+                        hrmsHandleSessionReplaced('您的账号已在其他设备登录，请重新输入密码');
                         const err = new Error('session_replaced');
                         err.status = 401;
                         err.data = data;
@@ -1265,17 +1253,7 @@
                         const data = hrmsSafeParseJson(text) || { raw: text };
                         if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
                         if (xhr.status === 401 && String(data?.error || '') === 'session_replaced') {
-                            if (!window.__HRMS_SESSION_REPLACED_SHOWN) {
-                                window.__HRMS_SESSION_REPLACED_SHOWN = true;
-                                try {
-                                    HRMS_API.clearToken(); isLoggedIn = false; currentUser = null;
-                                    const loginEl = document.getElementById('login');
-                                    const mainEl = document.getElementById('main-app');
-                                    if (loginEl) loginEl.classList.remove('hidden');
-                                    if (mainEl) mainEl.classList.add('hidden');
-                                    showNotification('您的账号已在其他设备登录，请重新输入密码', 'warning');
-                                } catch (e) {}
-                            }
+                            hrmsHandleSessionReplaced('您的账号已在其他设备登录，请重新输入密码');
                             const err = new Error('session_replaced');
                             err.status = 401;
                             err.data = data;
@@ -5000,8 +4978,21 @@ th { background: #f5f5f5; font-weight: 700; }
             return ['profile', 'attendance', 'kitchen', 'training'];
         }
 
+        function hrmsHandleSessionReplaced(message) {
+            try {
+                HRMS_API.clearToken();
+                isLoggedIn = false;
+                currentUser = null;
+                const loginEl = document.getElementById('login');
+                const mainEl = document.getElementById('main-app');
+                if (loginEl) loginEl.classList.remove('hidden');
+                if (mainEl) mainEl.classList.add('hidden');
+                showNotification(message || '您的账号已在其他设备登录，请重新输入密码', 'warning');
+            } catch (e) { /* ignore */ }
+        }
+
         function getHomePageName() {
-            return 'workspace';
+            return 'profile';
         }
 
         // persona 只决定工作台排版/首页优先级，不承担任何隐藏系统治理入口的职责——
