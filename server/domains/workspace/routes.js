@@ -18,9 +18,15 @@ const log = childLogger({ domain: 'workspace', handler: 'routes' });
  * 如果 hq_manager 账号没配过 storeScope，allowed_stores 会是空数组，这里会退回到"不过滤"，
  * 等同于老板视角，这不一定是对的，需要业务方确认这些账号有没有配过范围。
  */
+const WS_STORE_LEVEL_ROLES = ['store_manager', 'store_production_manager', 'front_manager', 'front_supervisor'];
+
 function resolveOverviewStoreFilter(req) {
   const role = String(req.user?.role || '').trim();
   if (role === 'admin') return [];
+  if (WS_STORE_LEVEL_ROLES.includes(role)) {
+    const own = String(req.user?.current_store || req.user?.store || '').trim();
+    return own ? [own] : [];
+  }
   const allowed = Array.isArray(req.user?.allowed_stores) ? req.user.allowed_stores.filter(Boolean) : [];
   return allowed;
 }
@@ -47,7 +53,7 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
 
   app.get('/api/workspace/overview', authRequired, async (req, res) => {
     const role = String(req.user?.role || '').trim();
-    if (!['admin', 'hq_manager'].includes(role)) {
+    if (!['admin', 'hq_manager', ...WS_STORE_LEVEL_ROLES].includes(role)) {
       return res.status(403).json({ error: 'forbidden' });
     }
     const tenantId = resolveTenantIdDefault(req.tenantId);

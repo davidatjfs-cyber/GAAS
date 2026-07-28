@@ -947,21 +947,95 @@ async function wsRenderBossOrHq(root, persona) {
 }
 
 // ── 门店工作台 ──
+// 营业日目标(已有，来自 revenueRollup)+毛利目标(daily_reports actual_margin/target_margin
+// 月平均)——用户明确说"大众点评/企微等其他目标"也要有，但查了库里没有这两个的目标配置
+// (revenue_targets/margin_targets 只有营收和毛利)，如实展示"暂无数据源"，不编数字。
+function wsRenderTargetTracking(ov) {
+    const t = ov?.revenue?.target || {};
+    const theo = t.theoreticalAchievementRate;
+    const actual = t.actualAchievementRate;
+    const status = (theo != null && actual != null) ? (actual >= theo ? '<span class="ws-up">超越目标</span>' : '<span class="ws-down">落后目标</span>') : '—';
+    const m = ov?.margin || {};
+    let html = '<div class="ws-stat-list">' +
+        wsStatRow('营业日目标', '¥' + wsFmtMoney(t.targetRevenue), '理论达成 ' + (theo ?? '—') + '% · 实际达成 ' + (actual ?? '—') + '% · ' + status) +
+        wsStatRow('毛利目标（本月日均）', (m.targetMargin != null ? m.targetMargin + '%' : '—'), '实际 ' + (m.actualMargin != null ? m.actualMargin + '%' : '—')) +
+        '</div>';
+    html += '<div class="ws-empty">大众点评/企微等其他目标：系统目前没有对应的目标配置数据源，暂无法展示</div>';
+    return html;
+}
+
+function wsRenderEmployeePerformanceList(team) {
+    if (!Array.isArray(team) || !team.length) return '<div class="ws-empty">本月暂无绩效评分数据</div>';
+    return team.map((t) => (
+        '<div class="ws-stat-row"><span class="ws-stat-row__l">' + wsEsc(t.name || t.username) + (t.position ? ' · ' + wsEsc(t.position) : '') + '</span>' +
+        '<span class="ws-stat-row__v">得分' + wsEsc(t.total_score ?? '—') + '<span class="ws-stat-row__s">态度' + wsEsc(t.attitude_rating || '-') + ' 执行' + wsEsc(t.execution_rating || '-') + ' 能力' + wsEsc(t.ability_rating || '-') + '</span></span></div>'
+    )).join('');
+}
+
+async function wsRenderTrainingBoard(store) {
+    const data = await wsFetchJson('/api/training/dashboard?store=' + encodeURIComponent(store));
+    const rows = data?.success && Array.isArray(data.dashboard) ? data.dashboard : [];
+    if (!rows.length) return '<div class="ws-empty">本店暂无培训计划</div>';
+    return rows.map((r) => (
+        '<div class="ws-stat-row"><span class="ws-stat-row__l">' + wsEsc(r.title) + (r.position ? '（' + wsEsc(r.position) + '）' : '') + '</span>' +
+        '<span class="ws-stat-row__v">' + (r.certified_count || 0) + '/' + (r.assigned_count || 0) + ' 已认证' + (Number(r.overdue_count) > 0 ? '<span class="ws-down"> · ' + r.overdue_count + '人逾期</span>' : '') + '</span></div>'
+    )).join('');
+}
+
+async function wsRenderKitchenBoard(store) {
+    const data = await wsFetchJson('/api/kitchen/dashboard?store=' + encodeURIComponent(store));
+    const summary = data?.success && Array.isArray(data.summary) ? data.summary : [];
+    if (!summary.length) return '<div class="ws-empty">暂无厨房打点数据</div>';
+    return summary.map((s) => (
+        '<div class="ws-stat-row"><span class="ws-stat-row__l">' + wsEsc(s.station || '') + '</span>' +
+        '<span class="ws-stat-row__v">' + (s.confirmed || 0) + '/' + (s.total || 0) + ' (' + (s.rate ?? 0) + '%)</span></div>'
+    )).join('');
+}
+
+// 智能备货：用户明确要求"把目前智能助手的备货整套功能直接放到这里"——预测接口内部参数/
+// 权限逻辑较复杂(server/domains/inventory-forecast)，与其重新拼接一遍容易拼错，改成直接
+// 内嵌现有独立页面 /forecast.html(iframe)，完整复用真实功能，不重新实现。
+function wsRenderSmartRestock() {
+    return '<button type="button" class="ws-btn" data-ws-toggle="ws-restock-frame">展开/收起智能备货</button>' +
+        '<div id="ws-restock-frame" style="display:none;margin-top:10px;height:600px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">' +
+        '<iframe src="/forecast.html" style="width:100%;height:100%;border:0;"></iframe></div>';
+}
+
 async function wsRenderStore(root) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const [home, growthTasks] = await Promise.all([wsFetchJson('/api/workspace/home'), wsFetchGrowthSolutionTasks()]);
+    const store = String(currentUser?.current_store || currentUser?.store || '').trim();
+    const [home, growthTasks, overview] = await Promise.all([
+        wsFetchJson('/api/workspace/home'),
+        wsFetchGrowthSolutionTasks(),
+        wsFetchJson('/api/workspace/overview'),
+    ]);
     const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
-    const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + (currentUser?.level ? '·' + currentUser.level : '');
+    const pendingApprovals = [];
+    const storeLight = (Array.isArray(home?.storeLights) ? home.storeLights : []).find((s) => s.store === store);
+    const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + (currentUser?.level ? '·' + currentUser.level : '') + (storeLight?.rating ? '·门店' + storeLight.rating : '');
     let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
-    html += '<div class="ws-section"><div class="ws-section__title">我的待办（' + tasksList.length + '）</div>';
-    if (tasksList.length) {
-        html += tasksList.map(wsRenderTaskCard).join('');
-    } else {
-        html += '<div class="ws-empty">暂无待办任务，保持关注</div>';
-    }
-    html += '</div>';
+    html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
+    html += '<div class="ws-section"><div class="ws-section__title">今日经营总览</div>' + wsRenderOverview(overview) + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(store ? [store] : []) + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">当月目标追踪</div>' + wsRenderTargetTracking(overview) + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">智能备货</div>' + wsRenderSmartRestock() + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">员工绩效</div>' + wsRenderEmployeePerformanceList(overview?.team) + '</div>';
+    html += '<div class="ws-section"><div class="ws-section__title">员工培训看板</div><div id="ws-training-board"><div class="ws-loading">加载中...</div></div></div>';
+    html += '<div class="ws-section"><div class="ws-section__title">厨房打点看板</div><div id="ws-kitchen-board"><div class="ws-loading">加载中...</div></div></div>';
     root.innerHTML = html;
-    wsBindTaskCardEvents(root);
+    wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
+    root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const el = document.getElementById(btn.getAttribute('data-ws-toggle'));
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        });
+    });
+    wsBindBadReviewEvents(root);
+    wsLoadBadReviews(root);
+    if (store) {
+        wsRenderTrainingBoard(store).then((h) => { const el = document.getElementById('ws-training-board'); if (el) el.innerHTML = h; });
+        wsRenderKitchenBoard(store).then((h) => { const el = document.getElementById('ws-kitchen-board'); if (el) el.innerHTML = h; });
+    }
 }
 
 // ── 员工工作台 ──

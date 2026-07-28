@@ -70,8 +70,17 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * wsInjectNavItem 只找 .sidebar nav，手机端压根没有这个选择器命中的元素。在"更多"弹出菜单
  * (openMobileMoreMenu 的 allItems 列表)第一项加了工作台入口，复用已有的 showPage('workspace')
  * 分发和已经在白名单里的页面权限判断，不用改动固定导航栏结构。
+ * 2026-07-28 第十四次上调（70264→70338）：店长/厨师长工作台按用户完整10项spec重做——
+ * 待办组件(任务/待批/通知)+今日经营总览(改成可传单店门店范围复用老板同一套逻辑)+差评展示+
+ * 当月目标追踪(营业日目标已有数据复用，新增毛利目标读daily_reports月均actual_margin/
+ * target_margin；大众点评/企微目标库里确认没有对应数据源，如实展示"暂无"不编数字)+
+ * 智能备货(直接iframe内嵌现有/forecast.html，不重新实现预测接口)+员工绩效列表(复用
+ * teamPerformanceSummary，新增LEFT JOIN employees取岗位)+员工培训看板(现有
+ * /api/training/dashboard新增?store=可选门店过滤，店长看本店全员而不是只看自己派发的)+
+ * 厨房打点看板(复用现有/api/kitchen/dashboard真实打点数据)+员工级别/门店级别(级别已在
+ * header，门店级别从storeLights里找自己门店的rating一起显示)。
  */
-const MAX_LINES = 70264;
+const MAX_LINES = 70338;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

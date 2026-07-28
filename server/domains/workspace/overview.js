@@ -118,6 +118,25 @@ async function revenueRollup(pool, tenantId, today, storeFilter) {
   };
 }
 
+/** 毛利目标追踪——直接读 daily_reports 本月每日的 actual_margin/target_margin 取平均，
+ * 跟营收目标同一批数据来源(营业日报)，不是另起一套计算。 */
+async function marginTracking(pool, tenantId, today, storeFilter) {
+  const monthStart = monthStartOf(today);
+  const params = [tenantId, monthStart, today];
+  const filter = storeFilterClause(storeFilter, params.length + 1);
+  if (filter.param) params.push(filter.param);
+  const r = await pool.query(
+    `SELECT AVG(actual_margin) AS actual_margin, AVG(target_margin) AS target_margin
+       FROM daily_reports
+      WHERE tenant_id = $1 AND date >= $2 AND date <= $3 AND actual_margin IS NOT NULL${filter.sql}`,
+    params
+  );
+  const row = r.rows[0] || {};
+  const actualMargin = row.actual_margin != null ? Number(row.actual_margin) : null;
+  const targetMargin = row.target_margin != null ? Number(row.target_margin) : null;
+  return { actualMargin, targetMargin };
+}
+
 async function operationalMetrics(pool, tenantId, today, storeFilter) {
   const monthStart = monthStartOf(today);
   const monthStartLM = monthStartOf(addDays(monthStart, -1));
@@ -232,13 +251,14 @@ async function turnoverSummary(pool, tenantId, storeFilter, getTurnoverRate) {
  * 不是新算的规则。 */
 async function teamPerformanceSummary(pool, tenantId, storeFilter, period) {
   const params = [tenantId, period];
-  const filter = storeFilterClause(storeFilter, params.length + 1);
+  const filter = storeFilterClause(storeFilter, params.length + 1, 'es.store');
   if (filter.param) params.push(filter.param);
   const r = await pool.query(
-    `SELECT username, name, store, role, total_score, execution_rating, attitude_rating, ability_rating
-       FROM employee_scores
-      WHERE tenant_id = $1 AND period = $2${filter.sql}
-      ORDER BY total_score DESC NULLS LAST`,
+    `SELECT es.username, es.name, es.store, es.role, es.total_score, es.execution_rating, es.attitude_rating, es.ability_rating, e.position
+       FROM employee_scores es
+       LEFT JOIN employees e ON e.username = es.username AND e.tenant_id = es.tenant_id
+      WHERE es.tenant_id = $1 AND es.period = $2${filter.sql}
+      ORDER BY es.total_score DESC NULLS LAST`,
     params
   );
   return r.rows || [];
@@ -252,14 +272,15 @@ async function teamPerformanceSummary(pool, tenantId, storeFilter, period) {
 export async function getBossOverview(pool, tenantId, storeFilter = []) {
   const today = shanghaiToday();
   try {
-    const [revenue, operational, rankings, turnover, team] = await Promise.all([
+    const [revenue, operational, rankings, turnover, team, margin] = await Promise.all([
       revenueRollup(pool, tenantId, today, storeFilter),
       operationalMetrics(pool, tenantId, today, storeFilter),
       storeRankings(pool, tenantId, today, storeFilter),
       turnoverSummary(pool, tenantId, storeFilter, getTurnoverRate),
       teamPerformanceSummary(pool, tenantId, storeFilter, periodOf(today)),
+      marginTracking(pool, tenantId, today, storeFilter),
     ]);
-    return { ok: true, asOf: today, scoped: storeFilter.length > 0, revenue, operational, rankings, turnover, team };
+    return { ok: true, asOf: today, scoped: storeFilter.length > 0, revenue, operational, rankings, turnover, team, margin };
   } catch (e) {
     log.error({ msg: 'boss_overview_failed', err: e?.message || String(e) });
     return { ok: false, error: e?.message || 'server_error' };
