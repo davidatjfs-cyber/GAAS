@@ -59,7 +59,24 @@ function wsInjectStyles() {
         '.ws-select-multi{min-width:160px;flex:1;height:76px;}' +
         '.ws-quicklinks{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}' +
         '.ws-quicklinks .ws-btn{justify-content:center;}' +
-        '@media (min-width:560px){.ws-quicklinks{grid-template-columns:repeat(4,1fr);}}' +
+        '.ws-up{color:var(--ws-up);} .ws-down{color:var(--ws-down);}' +
+        '.ws-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}' +
+        '.ws-kpi{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:12px;padding:12px 14px;}' +
+        '.ws-kpi__label{font-size:11.5px;color:var(--ws-ink2);margin-bottom:4px;}' +
+        '.ws-kpi__value{font-family:"Songti SC","STSong",serif;font-size:19px;font-weight:600;}' +
+        '.ws-kpi__sub{font-size:11px;color:var(--ws-ink2);margin-top:4px;}' +
+        '.ws-metrics-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}' +
+        '.ws-metric{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;padding:10px;text-align:center;}' +
+        '.ws-metric__v{font-family:"Songti SC","STSong",serif;font-size:16px;font-weight:600;}' +
+        '.ws-metric__l{font-size:10.5px;color:var(--ws-ink2);margin-top:3px;}' +
+        '.ws-metric__s{font-size:10px;color:var(--ws-ink2);margin-top:2px;}' +
+        '.ws-rank-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}' +
+        '.ws-rank-col{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;padding:10px;}' +
+        '.ws-rank-col__title{font-size:11.5px;font-weight:600;margin-bottom:6px;}' +
+        '.ws-rank-row{display:flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 0;}' +
+        '.ws-rank-row__n{color:var(--ws-ink2);width:14px;}' +
+        '.ws-rank-row__store{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+        '@media (min-width:560px){.ws-quicklinks{grid-template-columns:repeat(4,1fr);} .ws-kpis{grid-template-columns:repeat(4,1fr);}}' +
         '@media (max-width:480px){' +
         '.ws-root{padding:16px 14px calc(20px + env(safe-area-inset-bottom));}' +
         '.ws-header h2{font-size:20px;}' +
@@ -68,6 +85,8 @@ function wsInjectStyles() {
         '.ws-card__acts .ws-btn{flex:1;justify-content:center;min-width:0;}' +
         '.ws-promote-form{flex-direction:column;}' +
         '.ws-select-multi{width:100%;}' +
+        '.ws-metrics-grid{grid-template-columns:repeat(2,1fr);}' +
+        '.ws-rank-grid{grid-template-columns:1fr;}' +
         '}';
     document.head.appendChild(style);
 }
@@ -227,6 +246,73 @@ function wsBindPromoteDishEvents(root) {
     });
 }
 
+// ── 今日经营总览（老板/总经理/总部营运经理共用同一套布局，区别只是后端按 allowed_stores 定的范围）──
+function wsFmtPct(v) {
+    if (v == null) return '—';
+    const sign = v > 0 ? '▲' : v < 0 ? '▼' : '';
+    const cls = v > 0 ? 'ws-up' : v < 0 ? 'ws-down' : '';
+    return '<span class="' + cls + '">' + sign + Math.abs(v) + '%</span>';
+}
+function wsFmtMoney(v) {
+    if (v == null) return '—';
+    return (Number(v) / 10000).toFixed(1) + '万';
+}
+
+function wsRenderOverviewKpi(label, block) {
+    return (
+        '<div class="ws-kpi">' +
+        '<div class="ws-kpi__label">' + wsEsc(label) + '</div>' +
+        '<div class="ws-kpi__value">¥' + wsFmtMoney(block.revenue) + '</div>' +
+        '<div class="ws-kpi__sub">环比 ' + wsFmtPct(block.mom) + ' · 同比 ' + wsFmtPct(block.yoy) + '</div>' +
+        '</div>'
+    );
+}
+
+function wsRenderStoreRankList(title, rows, fmt) {
+    if (!rows || !rows.length) return '<div class="ws-rank-col"><div class="ws-rank-col__title">' + wsEsc(title) + '</div><div class="ws-empty">暂无数据</div></div>';
+    const items = rows.slice(0, 5).map((r, i) => '<div class="ws-rank-row"><span class="ws-rank-row__n">' + (i + 1) + '</span><span class="ws-rank-row__store">' + wsEsc(r.store) + '</span><span class="ws-rank-row__val">' + fmt(r) + '</span></div>').join('');
+    return '<div class="ws-rank-col"><div class="ws-rank-col__title">' + wsEsc(title) + '</div>' + items + '</div>';
+}
+
+function wsRenderOverview(ov) {
+    if (!ov || ov.ok === false) return '<div class="ws-empty">经营数据加载失败</div>';
+    const rev = ov.revenue || {};
+    const op = ov.operational || {};
+    const rk = ov.rankings || {};
+    const p = op.partySizeSharePct || {};
+    let html = '<div class="ws-kpis">';
+    html += wsRenderOverviewKpi('今日营收', rev.today || {});
+    html += wsRenderOverviewKpi('本周营收', rev.week || {});
+    html += wsRenderOverviewKpi('本月营收', rev.month || {});
+    html += '<div class="ws-kpi"><div class="ws-kpi__label">实收目标</div><div class="ws-kpi__value">¥' + wsFmtMoney(rev.target?.targetRevenue) + '</div>' +
+        '<div class="ws-kpi__sub">理论达成 ' + (rev.target?.theoreticalAchievementRate ?? '—') + '% · 实际达成 ' + (rev.target?.actualAchievementRate ?? '—') + '%</div></div>';
+    html += '</div>';
+
+    html += '<div class="ws-metrics-grid">' +
+        '<div class="ws-metric"><div class="ws-metric__v">' + (op.traffic ?? '—') + '</div><div class="ws-metric__l">客流量（本月累计）</div><div class="ws-metric__s">环比' + wsFmtPct(op.trafficMom) + ' 同比' + wsFmtPct(op.trafficYoy) + '</div></div>' +
+        '<div class="ws-metric"><div class="ws-metric__v">¥' + (op.avgSpendPerGuest ?? '—') + '</div><div class="ws-metric__l">客单价</div></div>' +
+        '<div class="ws-metric"><div class="ws-metric__v">¥' + (op.avgSpendPerTable ?? '—') + '</div><div class="ws-metric__l">桌均</div></div>' +
+        '<div class="ws-metric"><div class="ws-metric__v">' + (op.dineInSharePct ?? '—') + '%</div><div class="ws-metric__l">堂食占比</div></div>' +
+        '<div class="ws-metric"><div class="ws-metric__v">' + (op.deliverySharePct ?? '—') + '%</div><div class="ws-metric__l">外卖占比</div></div>' +
+        '</div>';
+
+    html += '<div class="ws-metrics-grid">' +
+        '<div class="ws-metric"><div class="ws-metric__v">' + (p.p1 ?? '—') + '%</div><div class="ws-metric__l">1人</div></div>' +
+        '<div class="ws-metric"><div class="ws-metric__v">' + (p.p2 ?? '—') + '%</div><div class="ws-metric__l">2人</div></div>' +
+        '<div class="ws-metric"><div class="ws-metric__v">' + (p.p3to4 ?? '—') + '%</div><div class="ws-metric__l">3-4人</div></div>' +
+        '<div class="ws-metric"><div class="ws-metric__v">' + (p.p5to6 ?? '—') + '%</div><div class="ws-metric__l">5-6人</div></div>' +
+        '<div class="ws-metric"><div class="ws-metric__v">' + (p.p6plus ?? '—') + '%</div><div class="ws-metric__l">6人以上</div></div>' +
+        '</div>';
+
+    html += '<div class="ws-rank-grid">' +
+        wsRenderStoreRankList('营业额排名', rk.byRevenue, (r) => '¥' + wsFmtMoney(r.revenue)) +
+        wsRenderStoreRankList('客流量排名', rk.byTraffic, (r) => r.traffic) +
+        wsRenderStoreRankList('人效排名', rk.byEfficiency, (r) => r.efficiency) +
+        '</div>';
+
+    return html;
+}
+
 // ── AI 洞察卡（仅老板）：接 /api/ontology/closed-loop-report 真实数据，不是写死文字。
 // 卡1 = boss_summary（该服务已经按场景手工组织好的一句叙事，本身就是"headline"）；
 // 卡2/3 = key_findings_for_owner[1]/[2] 配对 next_actions_for_owner[1]/[2]（按下标best-effort
@@ -273,16 +359,18 @@ async function wsRenderInsightsSection() {
 // ── 老板 / 总部 工作台 ──
 async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const [home, insightsHtml] = await Promise.all([
+    const [home, insightsHtml, overview] = await Promise.all([
         wsFetchJson('/api/workspace/home?scope=notable'),
         persona === 'boss' ? wsRenderInsightsSection() : Promise.resolve(''),
+        wsFetchJson('/api/workspace/overview'),
     ]);
     const allStores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
     const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
-    html += '<div class="ws-sub">未读消息 ' + (home?.unreadCount || 0) + ' 条</div></div>';
+    html += '<div class="ws-sub">未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
+    html += '<div class="ws-section"><div class="ws-section__title">今日经营总览</div>' + wsRenderOverview(overview) + '</div>';
     if (persona === 'boss') {
         html += '<div class="ws-section"><div class="ws-section__title">AI 洞察（近30天）</div>' + insightsHtml + '</div>';
     }

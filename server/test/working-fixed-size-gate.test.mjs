@@ -24,11 +24,15 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * /api/ontology/closed-loop-report，取代写死文字（Phase 2 #2）。
  * 2026-07-28 第四次上调（69618→69622）：修复任务卡门店名重复显示的 bug
  * （master_tasks.title 本身可能已含门店名，之前又拼了一次）。
+ * 2026-07-28 第五次上调（69622→69710）：新增「今日经营总览」（营收今日/本周/本月+同比环比+
+ * 目标达成率、客流/客单/桌均/堂食外卖占比/就餐人数分布、营业额/客流/人效门店排名），
+ * 老板=admin 不过滤门店，hq_manager 按 allowed_stores 过滤（这次用户澄清：老板/总经理/
+ * 总部营运经理共用同一套首页布局，区别只是门店范围）。
  * 同样通过正规 frontend/src/pages 结构新增，不是绕过棘轮的偷懒堆砌——按棘轮精神仍然
  * 「只减不增」：此后任何改动都不得让总行数超过这个新基线，除非同样是一次经过说明的、
  * 刻意的上调。
  */
-const MAX_LINES = 69622;
+const MAX_LINES = 69710;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
