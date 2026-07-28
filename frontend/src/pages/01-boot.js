@@ -4220,6 +4220,7 @@ th { background: #f5f5f5; font-weight: 700; }
                 document.getElementById('main-app').classList.remove('hidden');
                 updateUserInfo();
                 restoreSidebarState();
+                try { if (typeof wsInjectNavItem === 'function') wsInjectNavItem(); } catch(e) {}
                 try { updateKitchenNavVisibility(); } catch(e) {}
                 try { updateGrowthModuleVisibility(); updateStrategyModuleVisibility(); } catch(e) {}
                 showPage(getHomePageName());
@@ -4312,7 +4313,9 @@ th { background: #f5f5f5; font-weight: 700; }
 
         function hrmsIsAlwaysAllowedPage(pageName) {
             // 考试测评已被培训认证取代，不再单独保留；培训认证改为所有人永远可见
-            return ['profile', 'attendance', 'training', 'points'].includes(String(pageName || '').trim());
+            // workspace 是角色工作台落地页，任何已登录用户必须可达，不受角色模块权限裁剪，
+            // 否则 getHomePageName() 的权限回退分支会在无权限时把 workspace 又指回 workspace 造成死循环
+            return ['profile', 'attendance', 'training', 'points', 'workspace'].includes(String(pageName || '').trim());
         }
 
         // 服务端加载的角色模块配置（登录后从API获取）
@@ -4998,7 +5001,19 @@ th { background: #f5f5f5; font-weight: 700; }
         }
 
         function getHomePageName() {
-            return 'profile';
+            return 'workspace';
+        }
+
+        // persona 只决定工作台排版/首页优先级，不承担任何隐藏系统治理入口的职责——
+        // users/stores/roles/settings 的 admin 硬边界仍完全在 canAccessModulePage() 里判断，
+        // 这里绝不能新增权限逻辑，只能做展示分支。
+        function resolveWorkspacePersona(user) {
+            const r = String((user || currentUser)?.role || '').trim();
+            if (r === ROLES.ADMIN) return 'boss';
+            if (r === ROLES.HQ_MANAGER) return 'hq';
+            if (r === ROLES.HR_MANAGER) return 'hq_hr';
+            if ([ROLES.STORE_MANAGER, ROLES.PRODUCTION_MANAGER, ROLES.FRONT_MANAGER, ROLES.FRONT_SUPERVISOR].includes(r)) return 'store';
+            return 'staff';
         }
 
         function getAllowedStoresForUser() {

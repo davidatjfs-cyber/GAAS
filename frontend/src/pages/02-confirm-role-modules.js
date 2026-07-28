@@ -1160,6 +1160,9 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 case 'task-performance':
                     loadTaskPerformanceData();
                     break;
+                case 'workspace':
+                    if (typeof renderWorkspaceHome === 'function') renderWorkspaceHome();
+                    break;
             }
         }
 
