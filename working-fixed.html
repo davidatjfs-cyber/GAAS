@@ -69769,7 +69769,6 @@ async function wsRenderBossOrHq(root, persona) {
         wsRenderMarketingSuggestions(),
     ]);
     const allStores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
-    const tasksList = Array.isArray(home?.myTasks) ? home.myTasks : [];
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
@@ -69777,18 +69776,10 @@ async function wsRenderBossOrHq(root, persona) {
     html += '<div class="ws-section"><div class="ws-section__title">今日经营总览</div>' + wsRenderOverview(overview) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">门店营销活动建议</div>' + marketingHtml + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯（上月）</div>' + wsRenderStoreLights(home?.storeLights) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">今天该处理的事</div>';
-    if (tasksList.length) {
-        html += tasksList.slice(0, 6).map(wsRenderTaskCard).join('');
-    } else {
-        html += '<div class="ws-empty">暂无指派给你的开放任务</div>';
-    }
-    html += '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">六大管理神器</div>' + wsRenderSixTools(allStores) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">8大AI督导指挥中心</div>' + wsRenderAgentCommandCenter() + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(allStores) + '</div>';
     root.innerHTML = html;
-    wsBindTaskCardEvents(root);
     wsBindSixToolsEvents(root);
     wsBindAgentCommandCenterEvents(root);
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
