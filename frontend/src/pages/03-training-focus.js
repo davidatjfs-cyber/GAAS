@@ -3223,15 +3223,45 @@
                             : `<img src="${c.media_url}" style="width:100%;border-radius:10px;margin-bottom:10px;max-height:200px;object-fit:cover;">`) : ''}
                         ${c.ai_feedback ? `<div style="background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;font-size:13px;color:rgba(242,234,238,0.7);margin-bottom:10px;line-height:1.5;">💬 ${escapeHtml(c.ai_feedback)}</div>` : ''}
                         ${scoreHtml}
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                            <button data-click="reviewCertWithScore" data-arg="${c.id}" data-arg-type="number" data-arg2="confirm" style="padding:12px;border-radius:10px;background:rgba(134,201,162,0.15);border:1px solid rgba(134,201,162,0.3);color:#86C9A2;font-size:14px;font-weight:600;cursor:pointer;">✓ 确认AI评分</button>
-                            <button data-click="reviewCertWithOverride" data-arg="${c.id}" data-arg-type="number" style="padding:12px;border-radius:10px;background:rgba(221,182,106,0.12);border:1px solid rgba(221,182,106,0.25);color:#DDB66A;font-size:14px;font-weight:600;cursor:pointer;">✎ 手动评分</button>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+                            <button data-click="reviewCertWithVerdict" data-arg="${c.id}" data-arg-type="number" data-arg2="passed" style="padding:12px;border-radius:10px;background:rgba(134,201,162,0.15);border:1px solid rgba(134,201,162,0.3);color:#86C9A2;font-size:13px;font-weight:600;cursor:pointer;">✓ 审批通过</button>
+                            <button data-click="reviewCertWithVerdict" data-arg="${c.id}" data-arg-type="number" data-arg2="failed" style="padding:12px;border-radius:10px;background:rgba(237,161,172,0.12);border:1px solid rgba(237,161,172,0.25);color:#EDA1AC;font-size:13px;font-weight:600;cursor:pointer;">✗ 驳回</button>
+                            <button data-click="reviewCertWithOverride" data-arg="${c.id}" data-arg-type="number" style="padding:12px;border-radius:10px;background:rgba(221,182,106,0.12);border:1px solid rgba(221,182,106,0.25);color:#DDB66A;font-size:13px;font-weight:600;cursor:pointer;">✎ 手动改分</button>
                         </div>
+                        <div style="font-size:10px;color:rgba(242,234,238,0.35);margin-top:8px;text-align:center;">合格线：总分 ≥ 80 分 · AI 不合格时可点「审批通过」或「手动改分≥80」</div>
                     </div>`;
                 }).join('');
                 refreshTrainingPendingBadge();
             } catch (e) {
                 showNotification('加载待审核列表失败', 'error');
+            }
+        }
+
+        async function reviewCertWithVerdict(id, verdict) {
+            const v = String(verdict || '').trim();
+            if (!['passed', 'failed'].includes(v)) return;
+            const ok = v === 'passed'
+                ? await hrmsConfirm({ title: '审批通过', message: 'AI 评分不合格时，将按人工通过处理（默认 85 分）。确认通过？', okText: '确认通过', icon: '✓' })
+                : await hrmsConfirm({ title: '驳回认证', message: '确认驳回该实操认证？员工需重新提交。', okText: '确认驳回', icon: '✗' });
+            if (!ok) return;
+            try {
+                const resp = await fetch('/api/training/certifications/' + id + '/review', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + localStorage.getItem('hrms_token')
+                    },
+                    body: JSON.stringify({ verdict: v })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showNotification(v === 'passed' ? '已通过认证' : '已驳回', v === 'passed' ? 'success' : 'warning');
+                    loadPendingCertifications();
+                } else {
+                    showNotification(data.error || '审核失败', 'error');
+                }
+            } catch (e) {
+                showNotification('审核失败', 'error');
             }
         }
 
@@ -3270,15 +3300,25 @@
                 const total = data.ai_total_score || 0;
                 const feedback = data.certification?.ai_feedback || '';
 
-                const stepsHtml = scores.map((s, i) =>
-                    `<div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
+                let stepsHtml = '';
+                if (scores.length) {
+                    stepsHtml = scores.map((s, i) =>
+                        `<div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
                         <span style="width:80px;color:rgba(242,234,238,0.7);font-size:13px;">${escapeHtml(s.name||'步骤'+(i+1))}</span>
                         <input type="number" id="override-score-${i}" value="${s.score||0}" min="0" max="${s.max||100}"
                             style="width:60px;padding:6px;border-radius:6px;border:1px solid rgba(242,234,238,0.15);background:rgba(242,234,238,0.08);color:#F2EAEE;font-size:13px;text-align:center;">
                         <span style="color:rgba(242,234,238,0.3);font-size:11px;">/${s.max||100}</span>
                         <span style="font-size:11px;color:rgba(242,234,238,0.35);flex:1;">${escapeHtml(s.feedback||'')}</span>
                     </div>`
-                ).join('');
+                    ).join('');
+                } else {
+                    stepsHtml = `<div style="display:flex;align-items:center;gap:8px;margin:12px 0;">
+                        <span style="width:80px;color:rgba(242,234,238,0.7);font-size:13px;">综合得分</span>
+                        <input type="number" id="override-total-score" value="85" min="0" max="100"
+                            style="width:72px;padding:8px;border-radius:6px;border:1px solid rgba(242,234,238,0.15);background:rgba(242,234,238,0.08);color:#F2EAEE;font-size:14px;text-align:center;font-weight:700;">
+                        <span style="color:rgba(242,234,238,0.35);font-size:12px;">/100（≥80 合格）</span>
+                    </div>`;
+                }
 
                 const dialog = document.createElement('div');
                 dialog.innerHTML = `
@@ -3286,7 +3326,7 @@
                         <div class="modal-backdrop" data-click="hrmsRemoveParent" data-arg-self="1"></div>
                         <div class="modal-content" style="width:min(480px,calc(100vw-20px));max-height:90vh;overflow-y:auto;border-radius:18px;padding:24px;background:linear-gradient(180deg,rgba(28,24,28,0.98),rgba(28,24,28,0.98));border:1px solid rgba(151,132,142,0.16);">
                             <h3 style="color:#F2EAEE;margin:0 0 4px;">手动覆盖评分</h3>
-                            <div style="font-size:12px;color:rgba(242,234,238,0.35);margin-bottom:16px;">AI评分：${total}分。你可以逐项调整分数。</div>
+                            <div style="font-size:12px;color:rgba(242,234,238,0.35);margin-bottom:16px;">${total ? ('AI评分：' + total + '分。') : 'AI 未给出分项评分，请填写综合得分（≥80 为合格）。'}</div>
                             ${stepsHtml}
                             <div style="margin-top:10px;">
                                 <label style="font-size:11px;color:rgba(242,234,238,0.4);">审核备注</label>
@@ -3310,8 +3350,21 @@
             while (true) {
                 const inp = document.getElementById('override-score-' + i);
                 if (!inp) break;
-                steps.push({ name: inp.previousElementSibling?.textContent || ('步骤'+(i+1)), score: Math.max(0, Number(inp.value) || 0) });
+                const maxEl = inp.parentElement?.querySelector('span:nth-of-type(2)');
+                const maxMatch = String(maxEl?.textContent || '').match(/\/(\d+)/);
+                const max = maxMatch ? Number(maxMatch[1]) : 100;
+                steps.push({ name: inp.previousElementSibling?.textContent || ('步骤'+(i+1)), score: Math.max(0, Number(inp.value) || 0), max });
                 i++;
+            }
+            if (!steps.length) {
+                const totalInp = document.getElementById('override-total-score');
+                if (totalInp) {
+                    const score = Math.max(0, Number(totalInp.value) || 0);
+                    steps.push({ name: '综合', score, max: 100 });
+                }
+            }
+            if (!steps.length) {
+                return showNotification('请填写评分', 'warning');
             }
             const note = document.getElementById('override-note')?.value || '';
             try {
@@ -3325,7 +3378,8 @@
                 });
                 const data = await resp.json();
                 if (data.success) {
-                    showNotification('已提交人工评分：' + (data.final_score||0) + '分', 'success');
+                    const passed = (data.final_score != null && data.final_score >= 80);
+                    showNotification('已提交人工评分：' + (data.final_score||0) + '分' + (passed ? '（合格）' : '（未达80分，已驳回）'), passed ? 'success' : 'warning');
                     // Close dialog
                     const modals = document.querySelectorAll('.modal.show');
                     modals.forEach(m => m.remove());
@@ -3340,7 +3394,7 @@
 
         // Legacy compatibility
         async function reviewCertification(id, verdict) {
-            return reviewCertWithScore(id, verdict === 'passed' ? 'confirm' : 'override');
+            return reviewCertWithVerdict(id, verdict);
         }
 
         // 员工端 tab 切换
