@@ -31,6 +31,7 @@ export async function afterDecide(ctx) {
 
   try {
     if (!updated || String(updated.type || '') !== 'points') return;
+    const tidPts = req.tenantId || req.user?.tenant_id || 'default';
 
     const state0 = (await getSharedState()) || {};
     const applicantUser = String(updated.applicant_username || '').trim();
@@ -51,7 +52,7 @@ export async function afterDecide(ctx) {
     let pointsRate = 0.5;
     try {
       const resolvedPts = await resolveAttendancePayrollRules({
-        tenantId: req.tenantId || req.user?.tenant_id || 'default',
+        tenantId: tidPts,
         store
       });
       const rate = Number(resolvedPts?.rules?.pointsYuanPerPoint);
@@ -59,7 +60,6 @@ export async function afterDecide(ctx) {
     } catch (_) { /* ignore */ }
 
     if (finalApproved) {
-      const tidPts = req.tenantId || req.user?.tenant_id || 'default';
       let alreadyApplied = false;
       try {
         const dup = await pool.query(
@@ -113,7 +113,6 @@ export async function afterDecide(ctx) {
         }
 
         try {
-          const tidPts = req.tenantId || req.user?.tenant_id || 'default';
           for (const rec of newRecords) {
             await upsertPayrollLedgerEntry({
               tenantId: tidPts,
