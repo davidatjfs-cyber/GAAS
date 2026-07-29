@@ -333,6 +333,60 @@ agents-service-v2 通过 `file:packages/gaas-shared` 引用**同步副本**；�
   并且**传完一律用 md5 对账**（`md5 -q 本地文件` vs `ssh ... "md5sum 远端文件"`），
   只有 md5 一致才继续下一步。shell 也一样：先传到 `.staged`，md5 比对通过后再 `mv` 原子替换。
 
+### 🔴 2026-07-29 事故：三个独立 bug 叠加 + 双会话并发部署，导致生产两次整机失联（连 SSH 都连不上）
+
+这次事故的表现是"登录不上→内存95%→速度极慢→整机连SSH banner都握手超时"，排查后发现是**三个互相独立、
+各自早就埋下的 bug**同时暴露，叠加上**另一个 Claude 会话在同一时间往同一台服务器并发部署**，共同把一台只有
+**2核CPU/3.4G内存**的小机器彻底压垮到操作系统层面无响应（不是 Node 进程崩，是连 sshd 的 banner exchange 都
+超时、nginx 也完全不响应——这个信号本身就是"整机过载"而不是"应用报错"，要跟上面 ssh/scp 那条"连接偶尔正常
+波动"区分开：如果重试几次、间隔拉长依然 100% 连不上，且伴随 HTTP 也整体 000，基本可以判定是整机级过载或挂起，
+不是普通抖动）。
+
+**三个独立 bug**：
+1. **nginx 配置里手写的 `ssl_session_cache`/`ssl_session_timeout`/`ssl_session_tickets` 跟 certbot 的
+   `include /etc/letsencrypt/options-ssl-nginx.conf` 重复声明**——nginx 长期用内存里已加载的旧配置正常跑，
+   这个 bug 从未暴露；直到这次 reboot 强制 nginx 重新 parse 配置文件，才第一次触发 `nginx -t` 失败、
+   nginx 直接起不来，导致站点整体 502/无法访问（Node 本身是健康的）。**这是一个「编辑配置后没有立刻验证」
+   遗留的地雷**：本文件上面已经反复强调过"改完必须验证"的纪律，但那些纪律主要针对 working-fixed.html/前端
+   bundle，没有覆盖到"改 nginx 配置后必须立刻 `nginx -t` + `systemctl reload nginx` 验证"这一类操作。
+2. **PM2 常驻内存上限「返祖」**：`ecosystem.config.cjs` 文件里写的是 2G（2026-07-28 事故修复后的值，文件里
+   还留着修复说明注释），但**当时实际跑着的 pm2 进程用的是更早的 800M 旧值**（`pm2 jlist` 实测
+   `max_memory_restart: 838860800`）。根因：本机 pm2 是通过 `systemd` 的 `pm2-root.service` 管理的，
+   其 `ExecStart=pm2 resurrect`——**重启/重建进程时读的是 `/root/.pm2/dump.pm2` 这份快照，不是
+   `ecosystem.config.cjs` 文件本身**。2026-07-28 那次修复大概率只在内存里生效（或走了不经过文件的
+   `pm2 restart`），**没有紧接着跑 `pm2 save`**，所以这份"正确答案"从未写回 `dump.pm2`；这次 reboot 一
+   `resurrect`，直接读回了修复前的 800M 旧快照，复现了 2026-07-28 同款"内存打到上限→每60~90秒重启一次"
+   的死循环，且每次重启都在同一台仅 2 核的机器上重跑一遍很重的启动期 reconcile（含"日报权威重建"等）。
+   **纠正**：任何一次 `pm2 delete hrms-service && pm2 start ecosystem.config.cjs --update-env` 之后，
+   **必须立刻 `pm2 save`**，否则下次 `resurrect`（含服务器重启）会读到修复前的旧配置——这一步过去是靠
+   记性做的，必须写进部署 checklist，不能再假设"改完 ecosystem.config.cjs 就自动生效"。
+3. **PR84 的代码（`inventory_forecast_history`/`hrms_question_sets` 两张表的 hydrate 逻辑）已经先于对应
+   migration（`165_inventory_forecast_tables.sql`/`167_hrms_question_sets_table.sql`）被部署到生产**——
+   这两张表当时并不存在，导致几乎每个涉及共享 state 的请求都要先付一次"查表失败"的开销，在本就资源紧张的
+   机器上是压垮骆驼的其中一根稻草。当场用 `node migrate.js`（`ALLOW_PRODUCTION_MIGRATE=true`）补跑这两个
+   纯新增（`CREATE TABLE IF NOT EXISTS`）、无风险的 migration 后，这类报错立刻停止。
+
+**叠加的触发条件**：事后确认，**另一个 Claude 会话当时正在并发部署到同一台 47.100.96.30**——生产上能看到
+`server/domains/workspace/*.js` 已经是本次 PR86 的最终版本、还有一个未曾在本会话构建过的新前端 bundle，
+但 `working-fixed.html` 仍指向旧 bundle（部署到一半的状态），时间点与本次过载的起点高度吻合。**两个会话不
+协调地同时对同一台生产机器做部署/重启操作，本身就是这次事故的直接触发器**——任何一边单独的 pm2
+restart/reload 都可能打断另一边正在进行中的、本就很重的启动序列，互相打断的结果是两边都不断重新执行那段
+昂贵的 startup reconcile，CPU/内存双双失控。
+
+**彻底避免的做法**：
+- **多会话协作纪律**：如果怀疑或已知有另一个 Claude 会话可能同时在操作同一台生产服务器，**动手前必须先
+  确认对方已停止**，不能假设"各自动各自的没关系"——本条本身就是本次事故最大的单一诱因。
+- **改 nginx 配置后必须立刻 `nginx -t`**（哪怕暂时不 reload）——不要让"配置文件语法错误"变成一颗只有下次
+  reload/reboot 才会引爆的地雷。
+- **任何通过 pm2 直接改运行时配置（内存上限、env 等）之后，必须立刻 `pm2 save`**——本机 pm2 走
+  `systemd pm2-root.service` + `pm2 resurrect` 启动，不经过 `ecosystem.config.cjs`，`dump.pm2` 快照
+  才是重启后真正生效的东西，两者不同步就是下一次"返祖"的种子。
+- **代码先于对应 migration 部署**这件事本身要避免：新代码依赖的新表，必须在部署代码的同一批次里把
+  migration 一起跑掉，不能"代码先上线、migration 有空再补"。
+- 这台服务器只有 2 核 CPU / 3.4G 内存，同时跑 hrms-service + agents-service-v2 + mempalace-http +
+  Postgres，本身余量就不大——如果后续还会反复顶到这个上限，需要跟用户讨论是否该升级服务器规格，
+  而不是每次都靠事后排查续命。
+
 ### 前端缓存方案：JS 真源在 frontend/src/pages，working-fixed.html 由 bundle 写回后再抽 shell
 
 - **JS 真源**：`frontend/src/pages/*.js`（按业务区物理切分的经典 script，无 import/export）。

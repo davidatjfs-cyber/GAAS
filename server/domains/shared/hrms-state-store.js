@@ -18,9 +18,18 @@ const log = childLogger({ domain: 'shared', handler: 'hrms-state-store' });
  *
  * 缓存策略（方案 B）：缓存的是 hydrate 后的结果。blob 写路径成功后 invalidate（不回填未 hydrate
  * 的 raw），权威表写路径也必须调用 invalidateSharedStateCache，否则最多 2s 读旧。
+ *
+ * 2026-07-29 补充修复（cache stampede）：上面这层 TTL 缓存只缓存"已完成"的结果，不会缓存
+ * "进行中"的 fetch——生产实测同一个 2 秒窗口内出现过 35 个并发 /api/unread-counts 请求，
+ * 全部同时判定"未命中缓存"，于是各自独立发起一次这个几 MB blob 的拉取+hydrate，35 份完全
+ * 重复的重活挤在同一个单线程事件循环里排队执行，才是这台 2 核服务器被打满、几乎所有接口
+ * 响应时间飙到 15~109 秒的真正机制（不是缓存不存在，是缓存没有去重"正在进行中"的请求）。
+ * 修复：命中缓存未命中时，把这次 fetch 产生的 Promise 立即（同步）存入 _inFlight，后续在
+ * 同一窗口内到达的并发调用改成一起 await 这同一个 Promise，只真正拉取一次。
  */
 const STATE_CACHE_TTL_MS = 2000;
 const _stateCache = new Map(); // key -> { data, expiresAt }
+const _inFlight = new Map(); // key -> Promise（去重并发 cache-miss，见上方补充说明）
 // 集成测试里大量测试助手(如 server/test/integration/helpers/db.mjs 的 appendStateEmployee)
 // 是跨进程直接对 hrms_state 表做原始SQL写入的——被测应用进程内存里的这份缓存完全不知道
 // 这次写入，2秒TTL内后续请求会读到写入前的旧快照，导致"刚插入的员工/manager查不到"这类
@@ -42,22 +51,39 @@ function writeStateCache(key, data) {
 
 function invalidateStateCacheKey(key) {
   _stateCache.delete(key);
+  _inFlight.delete(key);
+}
+
+async function fetchAndHydrateState(pool, hydrateFn, key) {
+  const r = await pool.query('select data from hrms_state where key = $1 limit 1', [key]);
+  const row = r.rows?.[0] || null;
+  const data = row?.data && typeof row.data === 'object' ? row.data : null;
+  if (!data) return null;
+  return hydrateFn(pool, data, key);
 }
 
 async function getSharedStateImpl(pool, resolveTenantIdDefault, hydrateFn, tenantId) {
   const key = resolveTenantIdDefault(tenantId);
   const cached = readStateCache(key);
   if (cached !== undefined) return cached;
-  const r = await pool.query('select data from hrms_state where key = $1 limit 1', [key]);
-  const row = r.rows?.[0] || null;
-  const data = row?.data && typeof row.data === 'object' ? row.data : null;
-  if (!data) {
-    writeStateCache(key, null);
-    return null;
+
+  if (STATE_CACHE_DISABLED) {
+    return fetchAndHydrateState(pool, hydrateFn, key);
   }
-  const hydrated = await hydrateFn(pool, data, key);
-  writeStateCache(key, hydrated);
-  return hydrated;
+
+  let inflight = _inFlight.get(key);
+  if (!inflight) {
+    inflight = fetchAndHydrateState(pool, hydrateFn, key)
+      .then((hydrated) => {
+        writeStateCache(key, hydrated);
+        return hydrated;
+      })
+      .finally(() => {
+        _inFlight.delete(key);
+      });
+    _inFlight.set(key, inflight);
+  }
+  return inflight;
 }
 
 async function saveSharedStateImpl(deps, nextData, tenantId) {
