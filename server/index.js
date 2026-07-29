@@ -401,7 +401,10 @@ app.use(express.json({ limit: '5mb' }));
 // ── Security headers ─────────────────────────────────
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  // SAMEORIGIN 而非 DENY：下面这行 CSP 的 frame-src 'self' 已经表明允许同源自嵌(如工作台
+  // iframe 内嵌 /forecast.html)，DENY 会连同源都拦掉，跟 CSP 的意图自相矛盾——防点击劫持
+  // 的核心诉求(禁止跨域嵌套)用 SAMEORIGIN 一样能达到，不是放宽安全。
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' *.feishu.cn *.bytedance.net cdn.jsdelivr.net cdnjs.cloudflare.com unpkg.com cdn.sheetjs.com; style-src 'self' 'unsafe-inline' *.feishu.cn fonts.googleapis.com; font-src 'self' fonts.gstatic.com; img-src 'self' data: *.feishu.cn *.aliyuncs.com; connect-src 'self' *.feishu.cn *.feishuopen.com dashscope.aliyuncs.com api.deepseek.com; frame-src 'self' *:3101");
   next();
@@ -1269,7 +1272,7 @@ registerStateRoutes(app, authRequired, {
 // Wave 4o: chairman/tenant-settings → domains/tenant-settings/routes.js
 
 // P1: 角色工作台聚合 + 批量推广菜品 → domains/workspace/
-registerWorkspaceRoutes(app, authRequired, { pool, resolveTenantIdDefault });
+registerWorkspaceRoutes(app, authRequired, { pool, resolveTenantIdDefault, getSharedState });
 
 // Wave H21: /api/health + /api/version → domains/health/
 registerHealthRoutes(app, {
