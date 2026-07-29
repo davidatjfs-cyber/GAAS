@@ -20,10 +20,18 @@ export function createSendAdminSystemAlert({
   systemAlertTitle: titleFromMsg,
   lookupFeishuUserByUsername,
   sendLarkMessage,
+  resolveTenantIdDefault,
 }) {
   return async function sendAdminSystemAlert(msg, options = {}) {
     const text = String(msg || '').trim();
     if (!text) return { recipients: [], feishuSent: 0, feishuFailed: 0 };
+
+    // 2026-07-28 修复：这两处「群发管理员」查询原来没有 tenant_id 过滤，会把 admin/hq_manager/
+    // hr_manager 查到全部租户，导致新租户的管理员收到跟自己毫无关系的告警（真实事故：新建的
+    // demo 租户管理员收到了另一个租户的定时任务失败通知）。调用方没显式传 tenantId 时，落到
+    // resolveTenantIdDefault() 的 AsyncLocalStorage 上下文，跟其它「找不到就按default处理」
+    // 的代码保持一致，不引入新的兜底语义。
+    const tenantId = String(options?.tenantId || (resolveTenantIdDefault ? resolveTenantIdDefault() : 'default')).trim() || 'default';
 
     const explicitUsernames = uniqUsernames(Array.isArray(options?.usernames) ? options.usernames : []);
     let recipients = explicitUsernames.slice();
@@ -33,7 +41,9 @@ export function createSendAdminSystemAlert({
          FROM users
          WHERE role IN ('admin','hq_manager','hr_manager')
            AND is_active = true
-         LIMIT 8`
+           AND tenant_id = $1
+         LIMIT 8`,
+        [tenantId]
       );
       recipients = uniqUsernames((admins.rows || []).map((r) => r.username));
     }
@@ -90,7 +100,9 @@ export function createSendAdminSystemAlert({
            WHERE registered = true
              AND role IN ('admin','hq_manager','hr_manager')
              AND TRIM(COALESCE(open_id, '')) <> ''
-             AND open_id NOT LIKE '%probe%'`
+             AND open_id NOT LIKE '%probe%'
+             AND tenant_id = $1`,
+          [tenantId]
         );
         for (const row of roleRows.rows || []) {
           const oid = String(row?.open_id || '').trim();

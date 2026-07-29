@@ -25,7 +25,7 @@ ${rubric.items.map((item, i) => {
 合格线：${rubric.pass_threshold || 80}分
 实操科目：${topicTitle}
 
-请先认真观看${mediaType === 'video' ? '完整视频' : '图片'}，然后逐项评分。严格返回JSON：
+请先认真观看${mediaType === 'video' ? '完整视频' : '全部图片（多角度/多步骤）'}，然后逐项评分。严格返回JSON：
 {
   "steps": [{"name":"步骤名称","score":12,"max":15,"feedback":"得分或扣分具体原因"}],
   "total_score": 88,
@@ -69,6 +69,7 @@ export async function scorePracticeMediaWithRubric({
   topicTitle,
   mediaType,
   filePath,
+  filePaths,
   mediaUrl,
   uploadsDir,
   pathModule,
@@ -83,10 +84,28 @@ export async function scorePracticeMediaWithRubric({
 }) {
   const scoringPrompt = buildRubricScoringPrompt(rubric, topicTitle, mediaType);
   const baseUrl = serverBaseUrl || process.env.SERVER_BASE_URL || 'https://nnyx.cc';
+  const imagePaths = Array.isArray(filePaths) && filePaths.length
+    ? filePaths.filter(Boolean)
+    : (filePath ? [filePath] : []);
 
   try {
     if (mediaType === 'image') {
-      const visionResult = await callVisionLLM(filePath, scoringPrompt);
+      let visionResult;
+      if (imagePaths.length > 1) {
+        const parts = [];
+        for (const p of imagePaths) {
+          const buf = fsModule.readFileSync(p);
+          const ext = pathModule.extname(p).replace('.', '') || 'jpeg';
+          parts.push({
+            type: 'image_url',
+            image_url: { url: `data:image/${ext};base64,${buf.toString('base64')}` },
+          });
+        }
+        parts.push({ type: 'text', text: scoringPrompt });
+        visionResult = await callVisionLLM(parts, '');
+      } else {
+        visionResult = await callVisionLLM(imagePaths[0] || filePath, scoringPrompt);
+      }
       const text = visionResult?.content || '';
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -136,6 +155,7 @@ export async function scorePracticeMediaWithoutRubric({
   session,
   mediaType,
   filePath,
+  filePaths,
   uploadsDir,
   pathModule,
   fsModule,
@@ -144,10 +164,28 @@ export async function scorePracticeMediaWithoutRubric({
   randomUUID,
 }) {
   const judgmentPrompt = buildJudgmentPrompt(session);
+  const imagePaths = Array.isArray(filePaths) && filePaths.length
+    ? filePaths.filter(Boolean)
+    : (filePath ? [filePath] : []);
 
   try {
     if (mediaType === 'image') {
-      const visionResult = await callVisionLLM(filePath, judgmentPrompt);
+      let visionResult;
+      if (imagePaths.length > 1) {
+        const parts = [];
+        for (const p of imagePaths) {
+          const buf = fsModule.readFileSync(p);
+          const ext = pathModule.extname(p).replace('.', '') || 'jpeg';
+          parts.push({
+            type: 'image_url',
+            image_url: { url: `data:image/${ext};base64,${buf.toString('base64')}` },
+          });
+        }
+        parts.push({ type: 'text', text: judgmentPrompt });
+        visionResult = await callVisionLLM(parts, '');
+      } else {
+        visionResult = await callVisionLLM(imagePaths[0] || filePath, judgmentPrompt);
+      }
       const text = visionResult?.content || '';
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {

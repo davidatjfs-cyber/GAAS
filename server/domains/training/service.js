@@ -2,6 +2,7 @@
  * Training domain service: schema, promotion/track progress, assignments, development map.
  */
 import { pool, createTrainingUserNotification, sendTrainingFeishuMessage } from './shared.js';
+import { AUTO_ASSIGN_SOURCES, resolveStoreTrainingReviewer } from './certification-reviewer.js';
 
 // 某岗位+级别的晋升能力要求 = 标记了 promotion_required 且 position 包含该岗位、level 匹配该级别的知识点
 // level 留空时不按级别过滤（兼容未设置级别体系的旧知识点）
@@ -58,16 +59,21 @@ export async function createTrainingAssignment({ employeeUsername, topicId, assi
   const topicRes = await pool().query(`SELECT title FROM training_topics WHERE id = $1`, [topicId]);
   const topicTitle = topicRes.rows[0]?.title || '培训任务';
   const tid = String(tenantId || 'default').trim() || 'default';
+  const src = String(source || 'manual').trim();
+  let assigner = String(assignedBy || '').trim();
+  if (!assigner && AUTO_ASSIGN_SOURCES.has(src)) {
+    assigner = await resolveStoreTrainingReviewer(pool(), username, tid);
+  }
   const r = await pool().query(
     `INSERT INTO training_assignments (employee_username, topic_id, assigned_by, due_date, note, require_practice, source, related_track_id, tenant_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
-    [username, topicId, String(assignedBy || '').trim() || null, dueDate || null, note || '', !!requirePractice, String(source || 'manual'), relatedTrackId ? String(relatedTrackId) : null, tid]
+    [username, topicId, assigner || null, dueDate || null, note || '', !!requirePractice, src, relatedTrackId ? String(relatedTrackId) : null, tid]
   );
   const row = r.rows[0];
   if (!row) return null;
 
-  let assignerName = String(assignedBy || '').trim() || '系统';
+  let assignerName = assigner || '系统';
   if (assignerName && assignerName !== '系统') {
     const ar = await pool().query(`SELECT name FROM employees WHERE username = $1 LIMIT 1`, [assignerName]);
     if (ar.rows[0]?.name) assignerName = ar.rows[0].name;
@@ -76,7 +82,7 @@ export async function createTrainingAssignment({ employeeUsername, topicId, assi
     username,
     '你有新的培训任务',
     `${assignerName} 为你指派了培训任务「${topicTitle}」${dueDate ? '，截止日期：' + dueDate : ''}，请尽快完成。`,
-    { topic_id: topicId, topic_title: topicTitle, assigned_by: assignedBy || null, source: source || 'manual', related_track_id: relatedTrackId || null }
+    { topic_id: topicId, topic_title: topicTitle, assigned_by: assigner || null, source: src, related_track_id: relatedTrackId || null }
   );
   await sendTrainingFeishuMessage(
     username,

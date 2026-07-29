@@ -175,8 +175,14 @@ let _slotMonthlyPush = '';
 let _slotDishMonthlyDay1 = '';
 let _slotDishWeekly = '';
 
-/** 失败时通知 admin/hq_manager（与 agents-service runWithCronLog 告警风格一致） */
-async function notifyHrmsPerfAdmins(taskName, err) {
+/**
+ * 失败时通知 admin/hq_manager（与 agents-service runWithCronLog 告警风格一致）。
+ * 2026-07-28 修复：原查询没有 tenant_id 过滤，会把这个租户任务失败的告警发给所有租户的
+ * admin/hq_manager，包括跟这次失败任务毫无关系的新租户（真实事故：demo 租户管理员收到了
+ * 别的租户的定时任务失败通知）。调用方处于按租户循环的场景时必须传入真实 tenantId；
+ * 不在租户循环里的通用 tick 失败沿用 'default'（跟其余「找不到就按default处理」的代码一致）。
+ */
+async function notifyHrmsPerfAdmins(taskName, err, tenantId = 'default') {
   const msg = String(err?.message || err || '未知错误').slice(0, 500);
   const cal = shanghaiCalendar();
   const timeStr = `${cal.ymd} ${String(cal.hour).padStart(2, '0')}:${String(cal.minute).padStart(2, '0')}`;
@@ -184,7 +190,8 @@ async function notifyHrmsPerfAdmins(taskName, err) {
     `⚠️ 【HRMS 定时任务失败】\n任务：${taskName}\n时间：${timeStr}（上海）\n错误：${msg}\n\n请检查服务日志并在必要时联系运维补跑或补发。`;
   try {
     const hq = await pool().query(
-      `SELECT username FROM ${SHARED_TABLES.FEISHU_USERS} WHERE registered = true AND role IN ('admin','hq_manager') AND open_id NOT LIKE '%probe%'`
+      `SELECT username FROM ${SHARED_TABLES.FEISHU_USERS} WHERE registered = true AND role IN ('admin','hq_manager') AND open_id NOT LIKE '%probe%' AND tenant_id = $1`,
+      [String(tenantId || 'default').trim() || 'default']
     );
     for (const h of hq.rows || []) {
       const fu = await lookupFeishuUserByUsername(h.username);
@@ -656,7 +663,7 @@ export function startHrmsPerformanceJobs(options = {}) {
                 await sendMonthlyDishOptimizationReport(period, tenantId);
               } catch (e) {
                 log.error({ msg: 'perf_jobs_monthly_dish_report_failed', err: e?.message || e });
-                await notifyHrmsPerfAdmins(`菜品优化月报（每月1日·${period}·${tenantId}）`, e);
+                await notifyHrmsPerfAdmins(`菜品优化月报（每月1日·${period}·${tenantId}）`, e, tenantId);
               }
             });
             }
@@ -677,7 +684,7 @@ export function startHrmsPerformanceJobs(options = {}) {
                 await sendWeeklyDishOptimizationReport(wkStart, wkEnd, tenantId);
               } catch (e) {
                 log.error({ msg: 'perf_jobs_weekly_dish_report_failed', err: e?.message || e });
-                await notifyHrmsPerfAdmins(`菜品优化周报（${wkStart}～${wkEnd}·${tenantId}）`, e);
+                await notifyHrmsPerfAdmins(`菜品优化周报（${wkStart}～${wkEnd}·${tenantId}）`, e, tenantId);
               }
             });
             }

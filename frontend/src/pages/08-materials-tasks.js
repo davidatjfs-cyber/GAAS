@@ -296,7 +296,7 @@
                 const el = document.getElementById(elId);
                 if (!el) return;
                 if (!items.length) {
-                    el.innerHTML = '<span style="color: rgba(255,255,255,0.4); font-size: 12px;">（暂无）</span>';
+                    el.innerHTML = '<span style="color: rgba(242,234,238,0.4); font-size: 12px;">（暂无）</span>';
                     return;
                 }
                 el.innerHTML = items.map((it, idx) => {
@@ -996,7 +996,7 @@
 
             if (!items || items.length === 0) {
                 container.innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: rgba(255,255,255,0.4); font-size: 13px;">
+                    <div style="text-align: center; padding: 40px; color: rgba(242,234,238,0.4); font-size: 13px;">
                         暂无同步记录
                     </div>
                 `;
@@ -1005,10 +1005,10 @@
 
             const html = items.map(item => {
                 const statusColor = {
-                    pending: '#f59e0b',
-                    success: '#10b981',
-                    failed: '#ef4444'
-                }[item.sync_status] || '#6b7280';
+                    pending: '#CFA14A',
+                    success: '#86C9A2',
+                    failed: '#E58B98'
+                }[item.sync_status] || '#97848E';
 
                 const statusText = {
                     pending: '待处理',
@@ -1019,19 +1019,19 @@
                 const createdAt = new Date(item.created_at).toLocaleString('zh-CN');
 
                 return `
-                    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+                    <div style="background: rgba(242,234,238,0.03); border: 1px solid rgba(242,234,238,0.08); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <span style="color: ${statusColor}; font-size: 12px; font-weight: 600;">${statusText}</span>
-                            <span style="color: rgba(255,255,255,0.4); font-size: 11px;">${createdAt}</span>
+                            <span style="color: rgba(242,234,238,0.4); font-size: 11px;">${createdAt}</span>
                         </div>
-                        <div style="font-size: 13px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">
+                        <div style="font-size: 13px; color: rgba(242,234,238,0.8); margin-bottom: 4px;">
                             事件类型: ${item.event_type}
                         </div>
-                        <div style="font-size: 12px; color: rgba(255,255,255,0.5);">
+                        <div style="font-size: 12px; color: rgba(242,234,238,0.5);">
                             记录ID: ${item.record_id || 'N/A'}
                         </div>
                         ${item.error_message ? `
-                            <div style="font-size: 12px; color: #ef4444; margin-top: 8px; padding: 8px; background: rgba(239,68,68,0.1); border-radius: 4px;">
+                            <div style="font-size: 12px; color: #E58B98; margin-top: 8px; padding: 8px; background: rgba(229,139,152,0.1); border-radius: 4px;">
                                 错误: ${item.error_message}
                             </div>
                         ` : ''}
@@ -1487,8 +1487,8 @@
                 const title = normalizeQ(q?.question || '');
                 const show = title.length > 160 ? (title.slice(0, 160) + '…') : title;
                 return `
-                    <div style="padding: 10px 0; border-bottom: 1px solid rgba(200,215,230,0.18);">
-                        <div style="font-weight: 700; color: rgba(226,232,240,0.96); line-height: 1.5; word-break: break-word;">${start + i + 1}. ${escapeHtml(show)}</div>
+                    <div style="padding: 10px 0; border-bottom: 1px solid rgba(151,132,142,0.18);">
+                        <div style="font-weight: 700; color: rgba(242,234,238,0.96); line-height: 1.5; word-break: break-word;">${start + i + 1}. ${escapeHtml(show)}</div>
                     </div>
                 `;
             }).join('');
@@ -1512,7 +1512,7 @@
                 }
                 return `
                     <div style="margin-top: 10px; display:flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <div style="color: rgba(200, 215, 230, 0.72); font-size: 12px; margin-right: 6px;">第 ${cur}/${totalPages} 页（共 ${bank.length} 题）</div>
+                        <div style="color: rgba(151,132,142, 0.72); font-size: 12px; margin-right: 6px;">第 ${cur}/${totalPages} 页（共 ${bank.length} 题）</div>
                         ${btnPrev}
                         ${pages.join('')}
                         ${btnNext}
@@ -1584,7 +1584,7 @@
             const existingPicked = st.answers[String(idx)] ?? (t === 'multi' ? [] : '');
 
             const timerHtml = window.__EXAM_END_TS
-                ? `<div id="exam-timer" style="margin-bottom: 12px; font-weight: 700; color:#d97706;">剩余时间：--:--</div>`
+                ? `<div id="exam-timer" style="margin-bottom: 12px; font-weight: 700; color:#A67D34;">剩余时间：--:--</div>`
                 : '';
 
             const toggleHtml = needsToggle
@@ -2506,10 +2506,10 @@ ${String(text || '').slice(0, 9000)}`;
             };
             
             if (filtered.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#888;padding:40px;">暂无员工数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#97848E;padding:40px;">暂无员工数据</td></tr>';
                 try {
                     if (cardsEl) {
-                        cardsEl.innerHTML = '<div style="text-align:center;color:rgba(200,215,230,0.72);padding:28px 12px;">暂无员工数据</div>';
+                        cardsEl.innerHTML = '<div style="text-align:center;color:rgba(151,132,142,0.72);padding:28px 12px;">暂无员工数据</div>';
                     }
                 } catch (e) {}
                 return;
@@ -2523,9 +2523,9 @@ ${String(text || '').slice(0, 9000)}`;
             };
 
             const statusLabels = {
-                'active': '<span style="color:#22c55e;">在职</span>',
-                'inactive': '<span style="color:#ef4444;">离职</span>',
-                'pending': '<span style="color:#f59e0b;">待入职</span>'
+                'active': '<span style="color:#86C9A2;">在职</span>',
+                'inactive': '<span style="color:#E58B98;">离职</span>',
+                'pending': '<span style="color:#CFA14A;">待入职</span>'
             };
 
             const statusText = {
@@ -2574,7 +2574,7 @@ ${String(text || '').slice(0, 9000)}`;
                     }
                 } catch (e) {}
                 const newBadge = isNew ? '<span class="emp-new-badge">新</span>' : '';
-                const coreTalentBadge = emp.coreTalent ? '<span style="display:inline-block;background:linear-gradient(135deg,rgba(234,179,8,0.25),rgba(234,179,8,0.15));color:rgba(234,179,8,0.95);font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;margin-left:4px;">核心</span>' : '';
+                const coreTalentBadge = emp.coreTalent ? '<span style="display:inline-block;background:linear-gradient(135deg,rgba(207,161,74,0.25),rgba(207,161,74,0.15));color:rgba(207,161,74,0.95);font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;margin-left:4px;">核心</span>' : '';
 
                 return `<tr>
                     <td>${name}${newBadge}${coreTalentBadge}</td>
@@ -2591,8 +2591,8 @@ ${String(text || '').slice(0, 9000)}`;
                         <div class="action-buttons" style="display:flex;gap:6px;flex-wrap:nowrap;">
                             <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;" data-click="viewEmployee" data-arg="${escapeHtml(empKey)}">查看</button>
                             ${isAdminUser() ? `<button class="btn" style="padding:6px 10px;font-size:12px;" data-click="editEmployee" data-arg="${escapeHtml(empKey)}">编辑</button>` : ''}
-                            ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#ef4444;" data-click="deleteEmployee" data-arg="${escapeHtml(empKey)}">删除</button>` : ''}
-                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" data-click="loginAsEmployee" data-arg="${escapeJsString(empKey)}" data-arg2="${escapeJsString(emp.name || empKey)}">代登录</button>` : ''}
+                            ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#E58B98;" data-click="deleteEmployee" data-arg="${escapeHtml(empKey)}">删除</button>` : ''}
+                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;color:#D18FA0;border-color:rgba(209,143,160,0.35);background:rgba(209,143,160,0.08);" data-click="loginAsEmployee" data-arg="${escapeJsString(empKey)}" data-arg2="${escapeJsString(emp.name || empKey)}">代登录</button>` : ''}
                         </div>
                     </td>
                 </tr>`;
@@ -2642,7 +2642,7 @@ ${String(text || '').slice(0, 9000)}`;
                             }
                         } catch (e) {}
                         const newBadge = isNew ? '<span class="emp-new-badge">新</span>' : '';
-                        const coreTalentBadge = emp.coreTalent ? '<span style="display:inline-block;background:linear-gradient(135deg,rgba(234,179,8,0.25),rgba(234,179,8,0.15));color:rgba(234,179,8,0.95);font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;margin-left:4px;">核心</span>' : '';
+                        const coreTalentBadge = emp.coreTalent ? '<span style="display:inline-block;background:linear-gradient(135deg,rgba(207,161,74,0.25),rgba(207,161,74,0.15));color:rgba(207,161,74,0.95);font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;margin-left:4px;">核心</span>' : '';
 
                         const searchKey = [username, name, store, dept, pos, level, manager, role, statusBadge, joinDate, phone, email, gender, birthday, salary, tenure].join(' ');
 
@@ -2650,8 +2650,8 @@ ${String(text || '').slice(0, 9000)}`;
                         const actions = `
                             <button class="btn btn-secondary" type="button" data-click="viewEmployee" data-arg="${escapeJsString(empKey)}" data-stop>查看</button>
                             ${isAdminUser() ? `<button class="btn btn-secondary" type="button" data-click="editEmployee" data-arg="${escapeJsString(empKey)}" data-stop>编辑</button>` : ''}
-                            ${isAdminUser() ? `<button class="btn btn-secondary" type="button" style="color:#fca5a5;border-color:rgba(248,113,113,0.35);" data-click="deleteEmployee" data-arg="${escapeJsString(empKey)}" data-stop>删除</button>` : ''}
-                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" type="button" style="color:#6366f1;border-color:rgba(99,102,241,0.35);background:rgba(99,102,241,0.08);" data-click="loginAsEmployee" data-arg="${escapeJsString(empKey)}" data-arg2="${escapeJsString(emp.name || empKey)}" data-stop>代登录</button>` : ''}
+                            ${isAdminUser() ? `<button class="btn btn-secondary" type="button" style="color:#EDA1AC;border-color:rgba(237,161,172,0.35);" data-click="deleteEmployee" data-arg="${escapeJsString(empKey)}" data-stop>删除</button>` : ''}
+                            ${isAdminUser() && isInactiveEmp(emp) ? `<button class="btn btn-secondary" type="button" style="color:#D18FA0;border-color:rgba(209,143,160,0.35);background:rgba(209,143,160,0.08);" data-click="loginAsEmployee" data-arg="${escapeJsString(empKey)}" data-arg2="${escapeJsString(emp.name || empKey)}" data-stop>代登录</button>` : ''}
                         `;
 
                         const stCls = emp.status === 'active' ? 'st-active' : (emp.status === 'inactive' ? 'st-inactive' : 'st-pending');
@@ -3537,15 +3537,15 @@ ${String(text || '').slice(0, 9000)}`;
                 const uploadedAt = String(a.created_at || a.uploaded_at || '').slice(0, 10) || '';
                 const row = document.createElement('div');
                 row.className = 'emp-att-row';
-                row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.05); border-radius:8px; border:1px solid rgba(255,255,255,0.08);';
+                row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(242,234,238,0.05); border-radius:8px; border:1px solid rgba(242,234,238,0.08);';
                 row.innerHTML = `
                     <span style="font-size:18px;">${fileName.toLowerCase().endsWith('.pdf') ? '📄' : (fileName.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? '🖼️' : (fileName.match(/\.(xls|xlsx)$/i) ? '📊' : '📎'))}</span>
                     <div style="flex:1; min-width:0;">
-                        <div style="font-size:13px; font-weight:600; color:rgba(226,232,240,0.95); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(desc || fileName)}</div>
-                        <div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:2px;">${escapeHtml(fileName)}${uploadedAt ? ' · ' + uploadedAt : ''}</div>
+                        <div style="font-size:13px; font-weight:600; color:rgba(242,234,238,0.95); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(desc || fileName)}</div>
+                        <div style="font-size:11px; color:rgba(151,132,142,0.5); margin-top:2px;">${escapeHtml(fileName)}${uploadedAt ? ' · ' + uploadedAt : ''}</div>
                     </div>
                     <a href="${escapeHtml(absUrl)}" target="_blank" class="btn btn-secondary" style="padding:5px 10px; font-size:12px; white-space:nowrap;">查看</a>
-                    <button type="button" class="btn" style="padding:5px 10px; font-size:12px; background:rgba(239,68,68,0.2); color:#f87171; border:1px solid rgba(239,68,68,0.3); white-space:nowrap;" data-click="deleteEmployeeAttachment" data-arg="${id}" data-arg-type="number">删除</button>
+                    <button type="button" class="btn" style="padding:5px 10px; font-size:12px; background:rgba(229,139,152,0.2); color:#EDA1AC; border:1px solid rgba(229,139,152,0.3); white-space:nowrap;" data-click="deleteEmployeeAttachment" data-arg="${id}" data-arg-type="number">删除</button>
                 `;
                 container.appendChild(row);
             });
@@ -3557,12 +3557,12 @@ ${String(text || '').slice(0, 9000)}`;
                 const emptyEl = document.getElementById('employee-form-attachments-empty');
                 if (!container) return;
                 if (!empId) { if (emptyEl) emptyEl.style.display = ''; return; }
-                container.innerHTML = '<div style="font-size:12px; color:rgba(200,215,230,0.5);">加载中…</div>';
+                container.innerHTML = '<div style="font-size:12px; color:rgba(151,132,142,0.5);">加载中…</div>';
                 const resp = await HRMS_API.getEmployeeAttachments(empId);
                 renderEmployeeAttachments(Array.isArray(resp) ? resp : (resp?.attachments || resp?.data || []));
             } catch (e) {
                 const container = document.getElementById('employee-form-attachments-list');
-                if (container) container.innerHTML = '<div style="font-size:12px; color:#f87171;">附件加载失败</div>';
+                if (container) container.innerHTML = '<div style="font-size:12px; color:#EDA1AC;">附件加载失败</div>';
             }
         }
 
@@ -4467,10 +4467,10 @@ ${String(text || '').slice(0, 9000)}`;
             const users = HRMS_STORE.getUsers() || [];
 
             if (!users.length) {
-                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#888;padding:40px;">暂无用户</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#97848E;padding:40px;">暂无用户</td></tr>';
                 try {
                     if (cardsEl) {
-                        cardsEl.innerHTML = '<div style="text-align:center;color:rgba(200,215,230,0.72);padding:28px 12px;">暂无用户</div>';
+                        cardsEl.innerHTML = '<div style="text-align:center;color:rgba(151,132,142,0.72);padding:28px 12px;">暂无用户</div>';
                     }
                 } catch (e) {}
                 return;
@@ -4478,7 +4478,7 @@ ${String(text || '').slice(0, 9000)}`;
 
             const statusLabel = (s) => {
                 const v = String(s || 'active');
-                return v === 'inactive' ? '<span style="color:#ef4444;">离职</span>' : '<span style="color:#22c55e;">在职</span>';
+                return v === 'inactive' ? '<span style="color:#E58B98;">离职</span>' : '<span style="color:#86C9A2;">在职</span>';
             };
 
             tbody.innerHTML = users.map(u => {
@@ -4491,9 +4491,9 @@ ${String(text || '').slice(0, 9000)}`;
                 const act = canManage ? `
                     <button class="btn" style="padding:4px 8px;font-size:12px;" data-click="editUser" data-arg="${escapeHtml(uname)}">编辑</button>
                     <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;" data-click="resetUserPassword" data-arg="${escapeHtml(uname)}">重置密码</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;background:#3b82f6;border-color:#3b82f6;" data-click="viewEmployeePassword" data-arg="${escapeHtml(uname)}">查看密码</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;background:#E0A6B4;border-color:#E0A6B4;" data-click="viewEmployeePassword" data-arg="${escapeHtml(uname)}">查看密码</button>
                     <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;" data-click="toggleUserStatus" data-arg="${escapeHtml(uname)}">启用/禁用</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;color:#ef4444;" data-click="deleteUser" data-arg="${escapeHtml(uname)}">删除</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:12px;color:#E58B98;" data-click="deleteUser" data-arg="${escapeHtml(uname)}">删除</button>
                 ` : '-';
                 return `<tr>
                     <td>${escapeHtml(uname)}</td>
@@ -4522,9 +4522,9 @@ ${String(text || '').slice(0, 9000)}`;
                         const act = isAdminUser() ? `
                             <button class="btn" type="button" style="padding:10px 14px;font-size:14px;" data-click="editUser" data-arg="${escapeHtml(uname)}">编辑</button>
                             <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;" data-click="resetUserPassword" data-arg="${escapeHtml(uname)}">重置密码</button>
-                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;background:#3b82f6;border-color:#3b82f6;" data-click="viewEmployeePassword" data-arg="${escapeHtml(uname)}">查看密码</button>
+                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;background:#E0A6B4;border-color:#E0A6B4;" data-click="viewEmployeePassword" data-arg="${escapeHtml(uname)}">查看密码</button>
                             <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;" data-click="toggleUserStatus" data-arg="${escapeHtml(uname)}">启用/禁用</button>
-                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;color:#ef4444;" data-click="deleteUser" data-arg="${escapeHtml(uname)}">删除</button>
+                            <button class="btn btn-secondary" type="button" style="padding:10px 14px;font-size:14px;color:#E58B98;" data-click="deleteUser" data-arg="${escapeHtml(uname)}">删除</button>
                         ` : '';
                         return `
                             <div class="us-card">
@@ -4557,19 +4557,19 @@ ${String(text || '').slice(0, 9000)}`;
             const stores = HRMS_STORE.getStores() || [];
             
             if (stores.length === 0) {
-                grid.innerHTML = '<div style="color:#888;padding:40px;text-align:center;grid-column:1/-1;">暂无门店数据，点击"新增门店"添加</div>';
+                grid.innerHTML = '<div style="color:#97848E;padding:40px;text-align:center;grid-column:1/-1;">暂无门店数据，点击"新增门店"添加</div>';
                 return;
             }
 
             grid.innerHTML = stores.map(store => {
-                const statusColor = store.status === 'active' ? '#22c55e' : '#ef4444';
+                const statusColor = store.status === 'active' ? '#86C9A2' : '#E58B98';
                 const statusText = store.status === 'active' ? '营业中' : '已关闭';
                 return `
                 <div class="card" style="padding:20px;">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
                         <div>
                             <div style="font-weight:600;font-size:16px;">${escapeHtml(store.name || store.id)}</div>
-                            <div style="font-size:12px;color:#888;margin-top:4px;">${escapeHtml(store.city || '')} ${escapeHtml(store.floor || '')}</div>
+                            <div style="font-size:12px;color:#97848E;margin-top:4px;">${escapeHtml(store.city || '')} ${escapeHtml(store.floor || '')}</div>
                         </div>
                         <span style="padding:4px 8px;border-radius:12px;font-size:12px;background:${statusColor}20;color:${statusColor};">${statusText}</span>
                     </div>
@@ -4583,7 +4583,7 @@ ${String(text || '').slice(0, 9000)}`;
                     <div style="display:flex;gap:8px;margin-top:12px;">
                         <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;" data-click="viewStoreDetail" data-arg="${store.id}">查看</button>
                         ${isAdminUser() ? `<button class="btn" style="padding:6px 12px;font-size:12px;" data-click="editStore" data-arg="${store.id}">编辑</button>` : ''}
-                        ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;color:#ef4444;" data-click="deleteStore" data-arg="${store.id}">删除</button>` : ''}
+                        ${isAdminUser() ? `<button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;color:#E58B98;" data-click="deleteStore" data-arg="${store.id}">删除</button>` : ''}
                     </div>
                 </div>`;
             }).join('');
@@ -5324,14 +5324,14 @@ ${String(text || '').slice(0, 9000)}`;
             const printHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <style>
 @page { size: A4 landscape; margin: 8mm; }
-body { font-family: 'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif; margin: 0; padding: 12px; color: #0f172a; }
+body { font-family: 'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif; margin: 0; padding: 12px; color: #121012; }
 h1 { font-size: 15px; margin: 0 0 10px; letter-spacing: 0.06em; }
-.meta { font-size: 11px; color: #64748b; margin-bottom: 10px; }
+.meta { font-size: 11px; color: #7A6B72; margin-bottom: 10px; }
 table { width: 100%; border-collapse: collapse; font-size: 8px; }
-th, td { border: 1px solid #cbd5e1; padding: 4px 5px; text-align: left; vertical-align: top; word-break: break-word; }
-th { background: #f1f5f9; font-weight: 800; }
-tr:nth-child(even) td { background: #fafafa; }
-.hint { margin-top: 10px; font-size: 11px; color: #64748b; }
+th, td { border: 1px solid #B8AAB1; padding: 4px 5px; text-align: left; vertical-align: top; word-break: break-word; }
+th { background: #F2EAEE; font-weight: 800; }
+tr:nth-child(even) td { background: #F2EAEE; }
+.hint { margin-top: 10px; font-size: 11px; color: #7A6B72; }
 @media print { body { padding: 4px; } }
 </style></head><body>
 <h1>${escapeHtml(title)}</h1>

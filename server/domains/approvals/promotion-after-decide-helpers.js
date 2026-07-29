@@ -355,11 +355,16 @@ export async function handleQualificationPromotionApproved({ req, deps, updated,
   const tracks = Array.isArray(state0.promotionTracks) ? state0.promotionTracks.slice() : [];
   tracks.unshift(trackBuild.track);
 
+  const isKitchen = isKitchenByRoleOrPosition(applicantRole, applicantPosition, applicantDepartment);
+  const productionManagerByStore = pickStoreRoleUsernameByStore(state0, applicantStore, ['store_production_manager']);
+  const storeManagerByStore = pickStoreRoleUsernameByStore(state0, applicantStore, ['store_manager']);
+  const assignmentReviewer = trackBuild.mentorUsername || productionManagerByStore || storeManagerByStore || ctx.decidedBy;
+
   for (const topic of requiredTopics) {
     await createTrainingAssignment({
       employeeUsername: applicantUser,
       topicId: topic.id,
-      assignedBy: trackBuild.mentorUsername || ctx.decidedBy,
+      assignedBy: assignmentReviewer,
       dueDate: trackBuild.trainingDueDate,
       note: `晋升至「${trackBuild.targetPosition}」的能力要求培训`,
       requirePractice: true,
@@ -369,9 +374,6 @@ export async function handleQualificationPromotionApproved({ req, deps, updated,
     });
   }
 
-  const isKitchen = isKitchenByRoleOrPosition(applicantRole, applicantPosition, applicantDepartment);
-  const productionManagerByStore = pickStoreRoleUsernameByStore(state0, applicantStore, ['store_production_manager']);
-  const storeManagerByStore = pickStoreRoleUsernameByStore(state0, applicantStore, ['store_manager']);
   const hqManager = await pickHqManagerUsername(state0);
   const mentorDisplay = trackBuild.mentorName || trackBuild.mentorUsername || '待指定带教人';
 

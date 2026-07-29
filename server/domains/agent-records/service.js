@@ -147,22 +147,86 @@ export async function resolveAgentIssue(pool, { id, resolution, tenantId = 'defa
   return { ok: true };
 }
 
-export async function listMyNotifications(pool, username, limit) {
+export async function listMyNotifications(pool, username, limit, opts = {}) {
   const u = String(username || '').trim();
   if (!u) return { ok: false, status: 400, error: 'missing_username' };
   const lim = clampLimit(limit, { min: 1, max: 100, fallback: 30 });
+  const unreadOnly = opts.unreadOnly === true;
+  const unreadSql = unreadOnly ? ' AND read_at IS NULL' : '';
   try {
     const r = await pool.query(
-      `SELECT id, title, message, type, meta, created_at
+      `SELECT id, title, message, type, meta, created_at, read_at
          FROM hrms_user_notifications
-         WHERE target_username = $1
+         WHERE lower(target_username) = lower($1)${unreadSql}
          ORDER BY created_at DESC
          LIMIT $2`,
       [u, lim]
     );
     return { ok: true, items: r.rows || [] };
   } catch (e) {
-    if (String(e?.message || '').includes('does not exist')) return { ok: true, items: [] };
+    const msg = String(e?.message || '');
+    if (msg.includes('does not exist')) return { ok: true, items: [] };
+    // 兼容尚未跑 migration 的旧库（无 read_at）
+    if (/read_at|column/i.test(msg)) {
+      const r = await pool.query(
+        `SELECT id, title, message, type, meta, created_at
+           FROM hrms_user_notifications
+           WHERE lower(target_username) = lower($1)${unreadSql}
+           ORDER BY created_at DESC
+           LIMIT $2`,
+        [u, lim]
+      );
+      return { ok: true, items: (r.rows || []).map((row) => ({ ...row, read_at: null })) };
+    }
+    throw e;
+  }
+}
+
+/**
+ * 确认已读系统通知。同 assignment_id 的历史提醒一并标记，避免培训每日提醒堆积后逐条点完。
+ */
+export async function ackMyNotification(pool, username, id) {
+  const u = String(username || '').trim();
+  const notifId = String(id || '').trim().replace(/^db-/, '');
+  if (!u) return { ok: false, status: 400, error: 'missing_username' };
+  if (!notifId) return { ok: false, status: 400, error: 'missing_id' };
+  try {
+    const found = await pool.query(
+      `SELECT id, meta FROM hrms_user_notifications
+        WHERE id = $1 AND lower(target_username) = lower($2)
+        LIMIT 1`,
+      [notifId, u]
+    );
+    if (!found.rows?.length) return { ok: false, status: 404, error: 'not_found' };
+    const assignmentId = String(found.rows[0]?.meta?.assignment_id || '').trim();
+    let r;
+    if (assignmentId) {
+      r = await pool.query(
+        `UPDATE hrms_user_notifications
+            SET read_at = COALESCE(read_at, NOW())
+          WHERE lower(target_username) = lower($1)
+            AND (
+              id = $2
+              OR COALESCE(meta->>'assignment_id', '') = $3
+            )
+            AND read_at IS NULL
+          RETURNING id`,
+        [u, notifId, assignmentId]
+      );
+    } else {
+      r = await pool.query(
+        `UPDATE hrms_user_notifications
+            SET read_at = COALESCE(read_at, NOW())
+          WHERE id = $1 AND lower(target_username) = lower($2) AND read_at IS NULL
+          RETURNING id`,
+        [notifId, u]
+      );
+    }
+    return { ok: true, acked_ids: (r.rows || []).map((row) => String(row.id)), read_at: new Date().toISOString() };
+  } catch (e) {
+    if (/read_at|column/i.test(String(e?.message || ''))) {
+      return { ok: false, status: 503, error: 'read_at_unavailable', message: '请先执行 migration 154' };
+    }
     throw e;
   }
 }

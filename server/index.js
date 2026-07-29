@@ -276,6 +276,7 @@ import { registerTenantSubscriptionRoutes } from './tenant-subscription-routes.j
 import { createPlatformAdminRequired, registerTenantPlatformRoutes, requireSuperAdmin, requireSalesManagerOrAbove } from './tenant-platform-routes.js';
 import { registerKnowledgeRoutes } from './knowledge-routes.js';
 import { registerCheckinRoutes } from './checkin-routes.js';
+import { registerWorkspaceRoutes } from './domains/workspace/routes.js';
 import { registerReportsRoutes } from './reports-routes.js';
 import { registerDailyReportsRoutes, canAccessDailyReports, dailyReportItemFromPgRow } from './domains/daily-reports/routes.js';
 import { registerPointsRoutes, dedupeGlobalSocialMediaPointRules, ensureGlobalSocialMediaPointRule } from './domains/points/routes.js';
@@ -1266,6 +1267,9 @@ registerStateRoutes(app, authRequired, {
 // (instantiated before registerAgentTaskBoardRoutes)
 
 // Wave 4o: chairman/tenant-settings → domains/tenant-settings/routes.js
+
+// P1: 角色工作台聚合 + 批量推广菜品 → domains/workspace/
+registerWorkspaceRoutes(app, authRequired, { pool, resolveTenantIdDefault });
 
 // Wave H21: /api/health + /api/version → domains/health/
 registerHealthRoutes(app, {
